@@ -616,7 +616,12 @@ export function categorizeMessage(message: StructuredMessage): {
 }
 
 export function sessionGroupKey(gitRemote?: string | null, workspacePath?: string | null): string {
-  return `${normalizeSessionRemote(gitRemote)}|${workspacePath ?? ''}`;
+  const normalizedRemote = normalizeSessionRemote(gitRemote);
+  if (normalizedRemote) {
+    return normalizedRemote;
+  }
+
+  return `|${workspacePath ?? ''}`;
 }
 
 function normalizeSessionRemote(gitRemote?: string | null): string {

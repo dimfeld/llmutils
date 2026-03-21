@@ -611,7 +611,7 @@ describe('lib/server/session_manager', () => {
             planTitle: 'Sessions view',
           }),
           projectId: project.id,
-          groupKey: 'example.com/repo-1|/tmp/repo-1',
+          groupKey: 'example.com/repo-1',
         }),
       })
     );
@@ -689,7 +689,7 @@ describe('lib/server/session_manager', () => {
     expect(session).toMatchObject({
       connectionId: 'conn-1',
       projectId: updatedProject.id,
-      groupKey: 'example.com/repo-2|/tmp/repo-2',
+      groupKey: 'example.com/repo-2',
       sessionInfo: {
         command: 'agent',
         interactive: true,
@@ -705,7 +705,7 @@ describe('lib/server/session_manager', () => {
       expect.objectContaining({
         session: expect.objectContaining({
           projectId: originalProject.id,
-          groupKey: 'example.com/repo-1|/tmp/repo-1',
+          groupKey: 'example.com/repo-1',
         }),
       })
     );
@@ -714,7 +714,7 @@ describe('lib/server/session_manager', () => {
       expect.objectContaining({
         session: expect.objectContaining({
           projectId: updatedProject.id,
-          groupKey: 'example.com/repo-2|/tmp/repo-2',
+          groupKey: 'example.com/repo-2',
           sessionInfo: expect.objectContaining({
             workspacePath: '/tmp/repo-2',
             gitRemote: 'https://example.com/repo-2.git',
@@ -915,7 +915,7 @@ describe('lib/server/session_manager', () => {
     });
 
     expect(first).toMatchObject({
-      connectionId: 'notification:example.com/repo-2|/tmp/ws:wezterm:4',
+      connectionId: 'notification:example.com/repo-2:wezterm:4',
       status: 'notification',
       projectId: project.id,
       disconnectedAt: '2026-03-17T10:00:00.000Z',
@@ -982,16 +982,12 @@ describe('lib/server/session_manager', () => {
 
     expect(session?.messages).toHaveLength(200);
     expect(new Set(session?.messages.map((message) => message.id)).size).toBe(200);
-    expect(session?.messages[0]?.id).toBe(
-      'notification:example.com/notifications|/tmp/notifications:notif-5'
-    );
-    expect(session?.messages.at(-1)?.id).toBe(
-      'notification:example.com/notifications|/tmp/notifications:notif-204'
-    );
+    expect(session?.messages[0]?.id).toBe('notification:example.com/notifications:notif-5');
+    expect(session?.messages.at(-1)?.id).toBe('notification:example.com/notifications:notif-204');
   });
 
-  test('sessionGroupKey combines git remote and workspace path safely', () => {
-    expect(sessionGroupKey('git', '/tmp/ws')).toBe('git|/tmp/ws');
+  test('sessionGroupKey prefers normalized git remote and falls back to workspace path', () => {
+    expect(sessionGroupKey('git', '/tmp/ws')).toBe('git');
     expect(sessionGroupKey(undefined, '/tmp/ws')).toBe('|/tmp/ws');
     expect(sessionGroupKey(null, null)).toBe('|');
   });
@@ -1019,9 +1015,7 @@ describe('lib/server/session_manager', () => {
 
     expect(notificationSession.connectionId).toBe('conn-1');
     expect(manager.getSessionSnapshot().sessions).toHaveLength(1);
-    expect(manager.getSessionSnapshot().sessions[0]?.groupKey).toBe(
-      'github.com/tim/notify|/tmp/repo-3'
-    );
+    expect(manager.getSessionSnapshot().sessions[0]?.groupKey).toBe('github.com/tim/notify');
     expect(manager.getSessionSnapshot().sessions[0]?.projectId).toBe(project.id);
   });
 

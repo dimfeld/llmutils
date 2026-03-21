@@ -1,15 +1,39 @@
+interface ParsedSessionGroupKey {
+  remote: string;
+  workspacePath: string;
+}
+
+function parseSessionGroupKey(groupKey: string): ParsedSessionGroupKey {
+  const separatorIndex = groupKey.indexOf('|');
+  if (separatorIndex === -1) {
+    return {
+      remote: groupKey,
+      workspacePath: '',
+    };
+  }
+
+  return {
+    remote: groupKey.slice(0, separatorIndex),
+    workspacePath: groupKey.slice(separatorIndex + 1),
+  };
+}
+
 export function getSessionGroupKey(projectId: number | null, groupKey: string): string {
+  const { remote, workspacePath } = parseSessionGroupKey(groupKey);
+  if (remote) {
+    return remote;
+  }
+
   if (projectId == null) {
     return groupKey;
   }
-  const parts = groupKey.split('|');
-  const workingDirectory = parts[1] || parts[0] || '';
+
+  const workingDirectory = workspacePath || '';
   return `${projectId}|${workingDirectory}`;
 }
 
 function getWorkspacePathFromSessionGroupKey(groupKey: string): string {
-  const parts = groupKey.split('|');
-  return parts[1] || '';
+  return parseSessionGroupKey(groupKey).workspacePath;
 }
 
 function formatSessionWorkspaceLabel(groupKey: string): string {
@@ -20,8 +44,7 @@ function formatSessionWorkspaceLabel(groupKey: string): string {
 }
 
 function getRepositoryLabelFromSessionGroupKey(groupKey: string): string {
-  const parts = groupKey.split('|');
-  const repositoryPart = parts[0] ?? '';
+  const repositoryPart = parseSessionGroupKey(groupKey).remote;
   if (!repositoryPart) {
     return '';
   }
@@ -43,20 +66,21 @@ function getRepositoryLabelFromSessionGroupKey(groupKey: string): string {
 }
 
 export function getSessionGroupLabel(groupKey: string, projectName?: string): string {
+  const repositoryLabel = getRepositoryLabelFromSessionGroupKey(groupKey);
   const workspaceLabel = formatSessionWorkspaceLabel(groupKey);
+
   if (projectName) {
-    if (workspaceLabel === 'Unknown') {
+    if (repositoryLabel || workspaceLabel === 'Unknown') {
       return projectName;
     }
     return `${projectName} (${workspaceLabel})`;
   }
 
-  const repositoryLabel = getRepositoryLabelFromSessionGroupKey(groupKey);
   if (!repositoryLabel) {
     return workspaceLabel;
   }
   if (workspaceLabel === 'Unknown' || workspaceLabel === repositoryLabel) {
     return repositoryLabel;
   }
-  return `${repositoryLabel} (${workspaceLabel})`;
+  return repositoryLabel;
 }

@@ -48,41 +48,94 @@ function createSession(overrides: Partial<SessionData> = {}): SessionData {
 }
 
 describe('getSessionGroupKey', () => {
-  test('uses project id before working directory when project is known', () => {
+  test('uses git remote alone when it is available', () => {
     expect(
       getSessionGroupKey(42, 'https://example.com/repo.git|/Users/dimfeld/Projects/example')
-    ).toBe('42|/Users/dimfeld/Projects/example');
+    ).toBe('https://example.com/repo.git');
   });
 
-  test('falls back to raw group key when project is unknown', () => {
+  test('uses raw remote when project is unknown and remote is available', () => {
     expect(getSessionGroupKey(null, 'https://example.com/repo.git|/tmp/project')).toBe(
-      'https://example.com/repo.git|/tmp/project'
+      'https://example.com/repo.git'
     );
   });
 
-  test('falls back to repository identifier when working directory is missing', () => {
-    expect(getSessionGroupKey(7, 'https://example.com/repo.git')).toBe(
-      '7|https://example.com/repo.git'
-    );
+  test('falls back to project id plus workspace when no remote is available', () => {
+    expect(getSessionGroupKey(7, '|/tmp/project')).toBe('7|/tmp/project');
   });
 
-  test('labels a known project with workspace path', () => {
+  test('falls back to raw key when both project and remote are unavailable', () => {
+    expect(getSessionGroupKey(null, '|/tmp/project')).toBe('|/tmp/project');
+  });
+
+  test('labels a known project by project only when remote is available', () => {
     expect(
       getSessionGroupLabel(
         'https://example.com/repo.git|/Users/dimfeld/Projects/example',
         'my-project'
       )
-    ).toBe('my-project (Projects/example)');
+    ).toBe('my-project');
   });
 
-  test('labels an unknown project by workspace path only', () => {
+  test('labels an unknown project by repository name when remote is available', () => {
     expect(
       getSessionGroupLabel('https://example.com/repo.git|/Users/dimfeld/Projects/example')
-    ).toBe('repo (Projects/example)');
+    ).toBe('repo');
   });
 
-  test('labels a known project without workspace path as project only', () => {
-    expect(getSessionGroupLabel('https://example.com/repo.git', 'my-project')).toBe('my-project');
+  test('labels a known project with workspace path when no remote is available', () => {
+    expect(getSessionGroupLabel('|/Users/dimfeld/Projects/example', 'my-project')).toBe(
+      'my-project (Projects/example)'
+    );
+  });
+
+  test('labels a workspace-only group by workspace path', () => {
+    expect(getSessionGroupLabel('|/Users/dimfeld/Projects/example')).toBe('Projects/example');
+  });
+});
+
+describe('SessionManager.sessionGroups', () => {
+  test('groups sessions from the same remote together across workspaces', () => {
+    const manager = new SessionManager();
+
+    manager.sessions.set(
+      'conn-1',
+      createSession({
+        connectionId: 'conn-1',
+        projectId: 42,
+        groupKey: 'https://example.com/repo.git|/tmp/worktree-a',
+        sessionInfo: {
+          command: 'agent',
+          interactive: true,
+          workspacePath: '/tmp/worktree-a',
+        },
+      })
+    );
+    manager.sessions.set(
+      'conn-2',
+      createSession({
+        connectionId: 'conn-2',
+        projectId: 42,
+        groupKey: 'https://example.com/repo.git|/tmp/worktree-b',
+        sessionInfo: {
+          command: 'agent',
+          interactive: true,
+          workspacePath: '/tmp/worktree-b',
+        },
+      })
+    );
+
+    manager.setProjects([{ id: 42, repository_id: 'example/repo' }]);
+
+    expect(manager.sessionGroups).toHaveLength(1);
+    expect(manager.sessionGroups[0]).toMatchObject({
+      groupKey: 'https://example.com/repo.git',
+      label: 'example/repo',
+    });
+    expect(manager.sessionGroups[0].sessions.map((session) => session.connectionId)).toEqual([
+      'conn-1',
+      'conn-2',
+    ]);
   });
 });
 
