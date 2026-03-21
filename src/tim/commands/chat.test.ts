@@ -200,6 +200,8 @@ describe('handleChatCommand', () => {
       closeTerminalInputOnResult: false,
       noninteractive: undefined,
     });
+    expect(setupWorkspaceSpy).not.toHaveBeenCalled();
+    expect(getGitRootSpy).not.toHaveBeenCalled();
   });
 
   test('passes --model through to shared executor options for claude', async () => {
@@ -497,6 +499,20 @@ describe('handleChatCommand', () => {
     });
   });
 
+  test('--plan alone implies auto-workspace selection', async () => {
+    const { handleChatCommand } = await import('./chat.js');
+
+    await handleChatCommand('hello', { plan: '123' }, { config: 'tim.json' });
+
+    expect(setupWorkspaceSpy).toHaveBeenCalledTimes(1);
+    expect(setupWorkspaceSpy.mock.calls[0][0]).toMatchObject({
+      autoWorkspace: true,
+      planUuid: '11111111-1111-4111-8111-111111111111',
+      createBranch: false,
+    });
+    expect(resolvePlanFileSpy).toHaveBeenCalledWith('123', 'tim.json');
+  });
+
   test('passes --base through with createBranch disabled when no plan is provided', async () => {
     const { handleChatCommand } = await import('./chat.js');
 
@@ -559,7 +575,7 @@ describe('handleChatCommand', () => {
       callOrder.push('touch');
     });
 
-    await handleChatCommand('hello', { workspace: 'task-123', commit: true }, {});
+    await handleChatCommand('hello', { workspace: 'task-123' }, {});
 
     expect(prepareWorkspaceRoundTripSpy).toHaveBeenCalledWith({
       workspacePath: '/repo-root/workspaces/task-123',
@@ -591,9 +607,9 @@ describe('handleChatCommand', () => {
       throw executionFailure;
     });
 
-    await expect(
-      handleChatCommand('hello', { workspace: 'task-123', commit: true }, {})
-    ).rejects.toThrow('executor failed');
+    await expect(handleChatCommand('hello', { workspace: 'task-123' }, {})).rejects.toThrow(
+      'executor failed'
+    );
 
     expect(runPostExecutionWorkspaceSyncSpy).toHaveBeenCalledTimes(1);
     expect(touchWorkspaceInfoSpy).toHaveBeenCalledWith('/repo-root/workspaces/task-123');

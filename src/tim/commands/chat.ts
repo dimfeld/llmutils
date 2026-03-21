@@ -275,7 +275,7 @@ export async function handleChatCommand(
     executionError = err;
   } finally {
     let roundTripError: unknown;
-    if (roundTripContext && options.commit) {
+    if (roundTripContext) {
       try {
         await runPostExecutionWorkspaceSync(roundTripContext, 'workspace chat session');
       } catch (err) {
