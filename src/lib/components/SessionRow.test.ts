@@ -1,5 +1,5 @@
 import { render } from 'svelte/server';
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import type { SessionData } from '$lib/types/session.js';
 
@@ -37,12 +37,69 @@ function createSession(overrides: Partial<SessionData> = {}): SessionData {
 
 describe('SessionRow', () => {
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-18T10:05:00.000Z'));
     sessionManager.dismissSession.mockReset();
     sessionManager.activateTerminalPane.mockReset();
     sessionManager.hasSessionAttention.mockReset();
     sessionManager.hasSessionAttention.mockImplementation(
       (session: SessionData) => session.activePrompt != null || session.status === 'notification'
     );
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test('shows relative time from the latest notification message when present', () => {
+    const { body } = render(SessionRow, {
+      props: {
+        session: createSession({
+          connectedAt: '2026-03-18T10:00:00.000Z',
+          messages: [
+            {
+              id: 'msg-1',
+              seq: 1,
+              timestamp: '2026-03-18T10:04:00.000Z',
+              category: 'log',
+              bodyType: 'text',
+              body: { type: 'text', text: 'Notification text' },
+              rawType: 'log',
+              triggersNotification: true,
+            },
+          ],
+        }),
+        href: '/projects/1/sessions/conn-1',
+      },
+    });
+
+    expect(body).toContain('1 minute ago');
+    expect(body).not.toContain('5 minutes ago');
+  });
+
+  test('falls back to connected time when no notification message exists', () => {
+    const { body } = render(SessionRow, {
+      props: {
+        session: createSession({
+          connectedAt: '2026-03-18T10:00:00.000Z',
+          messages: [
+            {
+              id: 'msg-1',
+              seq: 1,
+              timestamp: '2026-03-18T10:04:00.000Z',
+              category: 'log',
+              bodyType: 'text',
+              body: { type: 'text', text: 'Regular log' },
+              rawType: 'log',
+              triggersNotification: false,
+            },
+          ],
+        }),
+        href: '/projects/1/sessions/conn-1',
+      },
+    });
+
+    expect(body).toContain('5 minutes ago');
   });
 
   test('shows an attention dot for active prompts', () => {

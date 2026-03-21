@@ -16,7 +16,13 @@
   } = $props();
   const sessionManager = useSessionManager();
 
-  let relativeTime = $derived(formatRelativeTime(session.connectedAt));
+  let relativeTime = $derived.by(() => {
+    const latestNotificationTimestamp = session.messages.findLast(
+      (message) => message.triggersNotification
+    )?.timestamp;
+
+    return formatRelativeTime(latestNotificationTimestamp ?? session.connectedAt);
+  });
   let canDismiss = $derived(session.status !== 'active');
   let hasTerminalPane = $derived(
     session.sessionInfo.terminalType === 'wezterm' && Boolean(session.sessionInfo.terminalPaneId)
