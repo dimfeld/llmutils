@@ -596,27 +596,12 @@ export function createAppServerFormatter() {
         return statusType
           ? {
               type: method,
-              structured:
-                statusType === 'idle'
-                  ? ([
-                      {
-                        type: 'llm_status',
-                        timestamp: ts,
-                        source: 'codex',
-                        status: `codex.thread.${statusType}`,
-                      },
-                      {
-                        type: 'task_completion',
-                        timestamp: ts,
-                        planComplete: false,
-                      },
-                    ] satisfies StructuredMessage[])
-                  : {
-                      type: 'llm_status',
-                      timestamp: ts,
-                      source: 'codex',
-                      status: `codex.thread.${statusType}`,
-                    },
+              structured: {
+                type: 'llm_status',
+                timestamp: ts,
+                source: 'codex',
+                status: `codex.thread.${statusType}`,
+              },
             }
           : { type: method };
       }

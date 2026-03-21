@@ -275,7 +275,7 @@ export async function executeCodexStepViaAppServer(
           resolveCurrentTurnStatus(extractTurnStatus(params));
           currentAttemptActive = false;
           clearInactivityTimer();
-        } else if (method === 'thread/status/changed') {
+        } else if (keepSessionOpen && method === 'thread/status/changed') {
           if (extractThreadStatusType(params) === 'idle') {
             chatTurnCompleted = true;
             resolveCurrentTurnStatus('completed');
