@@ -79,6 +79,24 @@ describe('lib/server/plan_actions', () => {
     });
   });
 
+  test('spawnGenerateProcess falls back to the exit code when early exit has no stderr', async () => {
+    const proc = createFakeProcess({
+      exitCode: 127,
+      stderrText: '',
+    });
+    vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+
+    const resultPromise = spawnGenerateProcess(190, '/tmp/primary-workspace');
+    await vi.advanceTimersByTimeAsync(500);
+    const result = await resultPromise;
+
+    expect(proc.unref).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      success: false,
+      error: 'tim generate exited early with code 127',
+    });
+  });
+
   test('spawnGenerateProcess returns a spawn error when Bun.spawn throws', async () => {
     vi.spyOn(Bun, 'spawn').mockImplementation(() => {
       throw new Error('spawn failed');

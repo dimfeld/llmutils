@@ -82,6 +82,23 @@ describe('plan remote actions', () => {
     });
   });
 
+  test('startGenerate rejects stub plans that are already done or cancelled', async () => {
+    seedPlan({ uuid: 'plan-done', planId: 1891, status: 'done' });
+    seedPlan({ uuid: 'plan-cancelled', planId: 1892, status: 'cancelled' });
+
+    await expect(invokeCommand(startGenerate, { planUuid: 'plan-done' })).rejects.toMatchObject({
+      status: 400,
+      body: { message: 'Plan is not eligible for generate' },
+    });
+    await expect(
+      invokeCommand(startGenerate, { planUuid: 'plan-cancelled' })
+    ).rejects.toMatchObject({
+      status: 400,
+      body: { message: 'Plan is not eligible for generate' },
+    });
+    expect(spawnGenerateProcessMock).not.toHaveBeenCalled();
+  });
+
   test('startGenerate returns the active session when generate is already running', async () => {
     seedPlan({ uuid: 'plan-running', planId: 190 });
     currentManager.handleWebSocketConnect('conn-generate', () => {});
@@ -98,6 +115,36 @@ describe('plan remote actions', () => {
       connectionId: 'conn-generate',
     });
     expect(spawnGenerateProcessMock).not.toHaveBeenCalled();
+  });
+
+  test('startGenerate ignores offline generate sessions and starts a new process', async () => {
+    seedPlan({ uuid: 'plan-offline-session', planId: 1901 });
+    recordWorkspace(currentDb, {
+      projectId,
+      workspacePath: '/tmp/primary-workspace',
+      workspaceType: 'primary',
+    });
+    currentManager.handleWebSocketConnect('conn-offline', () => {});
+    currentManager.handleWebSocketMessage('conn-offline', {
+      type: 'session_info',
+      command: 'generate',
+      interactive: true,
+      planId: 1901,
+      workspacePath: '/tmp/primary-workspace',
+    });
+    currentManager.handleWebSocketDisconnect('conn-offline');
+    spawnGenerateProcessMock.mockResolvedValue({
+      success: true,
+      planId: 1901,
+    });
+
+    await expect(
+      invokeCommand(startGenerate, { planUuid: 'plan-offline-session' })
+    ).resolves.toEqual({
+      status: 'started',
+      planId: 1901,
+    });
+    expect(spawnGenerateProcessMock).toHaveBeenCalledWith(1901, '/tmp/primary-workspace');
   });
 
   test('startGenerate rejects plans without a primary workspace', async () => {
