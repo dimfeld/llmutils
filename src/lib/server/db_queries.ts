@@ -246,23 +246,25 @@ function getPrSummaryStatusByPlanUuid(
     check_rollup_state: string | null;
   }>;
 
-  const statesByPlanUuid = new Map<string, string[]>();
+  const statesByPlanUuid = new Map<string, (string | null)[]>();
   for (const row of rows) {
     const existing = statesByPlanUuid.get(row.plan_uuid);
     if (existing) {
-      existing.push(row.check_rollup_state ?? '');
+      existing.push(row.check_rollup_state);
     } else {
-      statesByPlanUuid.set(row.plan_uuid, [row.check_rollup_state ?? '']);
+      statesByPlanUuid.set(row.plan_uuid, [row.check_rollup_state]);
     }
   }
 
   const summaryByPlanUuid = new Map<string, PrSummaryStatus>();
   for (const planUuid of planUuids) {
-    const states = statesByPlanUuid.get(planUuid) ?? [];
-    if (states.length === 0) {
+    const rawStates = statesByPlanUuid.get(planUuid) ?? [];
+    if (rawStates.length === 0) {
       summaryByPlanUuid.set(planUuid, 'none');
       continue;
     }
+
+    const states = rawStates.filter((s): s is string => s != null && s !== '');
 
     if (states.some((state) => state === 'failure' || state === 'error')) {
       summaryByPlanUuid.set(planUuid, 'failing');
@@ -274,7 +276,7 @@ function getPrSummaryStatusByPlanUuid(
       continue;
     }
 
-    if (states.every((state) => state === 'success')) {
+    if (states.length > 0 && states.every((state) => state === 'success')) {
       summaryByPlanUuid.set(planUuid, 'passing');
       continue;
     }

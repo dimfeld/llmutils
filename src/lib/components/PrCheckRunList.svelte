@@ -4,7 +4,13 @@
   let { checks }: { checks: PrCheckRunRow[] } = $props();
 
   function conclusionColor(conclusion: string | null, status: string): string {
-    if (status === 'in_progress' || status === 'queued' || status === 'pending') {
+    if (
+      status === 'in_progress' ||
+      status === 'queued' ||
+      status === 'pending' ||
+      status === 'waiting' ||
+      status === 'requested'
+    ) {
       return 'text-yellow-600 dark:text-yellow-400';
     }
     switch (conclusion) {
@@ -27,7 +33,13 @@
   }
 
   function conclusionIcon(conclusion: string | null, status: string): string {
-    if (status === 'in_progress' || status === 'queued' || status === 'pending') {
+    if (
+      status === 'in_progress' ||
+      status === 'queued' ||
+      status === 'pending' ||
+      status === 'waiting' ||
+      status === 'requested'
+    ) {
       return '◌';
     }
     switch (conclusion) {
@@ -51,7 +63,8 @@
 
   function displayLabel(conclusion: string | null, status: string): string {
     if (status === 'in_progress') return 'In progress';
-    if (status === 'queued' || status === 'pending') return 'Pending';
+    if (status === 'queued' || status === 'pending' || status === 'waiting' || status === 'requested')
+      return 'Pending';
     return conclusion ?? status;
   }
 </script>

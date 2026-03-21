@@ -409,6 +409,32 @@ function normalizeChecks(
   };
 }
 
+function dedupeReviewsByLatestAuthorReview(reviews: PrStatusReview[]): PrStatusReview[] {
+  const latestReviewByAuthor = new Map<string, PrStatusReview>();
+
+  for (let index = reviews.length - 1; index >= 0; index -= 1) {
+    const review = reviews[index]!;
+    const existingReview = latestReviewByAuthor.get(review.author);
+    if (!existingReview) {
+      latestReviewByAuthor.set(review.author, review);
+      continue;
+    }
+
+    const reviewTime = review.submittedAt
+      ? Date.parse(review.submittedAt)
+      : Number.NEGATIVE_INFINITY;
+    const existingReviewTime = existingReview.submittedAt
+      ? Date.parse(existingReview.submittedAt)
+      : Number.NEGATIVE_INFINITY;
+
+    if (reviewTime > existingReviewTime) {
+      latestReviewByAuthor.set(review.author, review);
+    }
+  }
+
+  return reviews.filter((review) => latestReviewByAuthor.get(review.author) === review);
+}
+
 export async function fetchPrFullStatus(
   owner: string,
   repo: string,
@@ -426,6 +452,17 @@ export async function fetchPrFullStatus(
   }
 
   const normalizedChecks = normalizeChecks(pullRequest.commits);
+  const normalizedReviews = dedupeReviewsByLatestAuthorReview(
+    (pullRequest.reviews?.nodes ?? [])
+      .filter(
+        (review): review is GraphQlReviewNode => review !== null && Boolean(review.author?.login)
+      )
+      .map((review) => ({
+        author: review.author!.login,
+        state: review.state,
+        submittedAt: review.submittedAt,
+      }))
+  );
 
   return {
     number: pullRequest.number,
@@ -444,15 +481,7 @@ export async function fetchPrFullStatus(
         name: label.name,
         color: label.color,
       })),
-    reviews: (pullRequest.reviews?.nodes ?? [])
-      .filter(
-        (review): review is GraphQlReviewNode => review !== null && Boolean(review.author?.login)
-      )
-      .map((review) => ({
-        author: review.author!.login,
-        state: review.state,
-        submittedAt: review.submittedAt,
-      })),
+    reviews: normalizedReviews,
     checks: normalizedChecks.checks,
     checkRollupState: normalizedChecks.checkRollupState,
   };

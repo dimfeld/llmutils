@@ -43,6 +43,7 @@ export const POST: RequestHandler = async ({ params }) => {
 
   const prUrls = parseJsonStringArray(plan.pull_request);
   if (prUrls.length === 0) {
+    await syncPlanPrLinks(db, plan.uuid, []);
     return json({
       prUrls,
       prStatuses: [],
@@ -71,7 +72,7 @@ export const POST: RequestHandler = async ({ params }) => {
     return json({
       prUrls,
       prStatuses: getPrStatusForPlan(db, plan.uuid),
-      error: `GitHub API error: ${err as Error}`,
+      error: `GitHub API error: ${err instanceof Error ? err.message : String(err)}`,
     });
   }
 };

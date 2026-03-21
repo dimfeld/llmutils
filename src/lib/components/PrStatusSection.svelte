@@ -13,10 +13,11 @@
     initialStatuses: PrStatusDetail[];
   } = $props();
 
-  let prStatuses = $state<PrStatusDetail[]>(initialStatuses);
+  let fetchedStatuses = $state<PrStatusDetail[] | null>(null);
   let refreshing = $state(false);
   let refreshError = $state<string | null>(null);
 
+  let prStatuses = $derived(fetchedStatuses ?? initialStatuses);
   let statusByUrl = $derived(new Map(prStatuses.map((pr) => [pr.status.pr_url, pr])));
 
   const FRESHNESS_THRESHOLD_MS = 5 * 60 * 1000;
@@ -34,10 +35,9 @@
   }
 
   $effect(() => {
-    prStatuses = initialStatuses;
-  });
+    // Reset fetched data when props change (new plan selected)
+    fetchedStatuses = null;
 
-  $effect(() => {
     if (!needsRefresh(prUrls, initialStatuses)) return;
 
     const controller = new AbortController();
@@ -55,7 +55,7 @@
       .then((data: { prUrls: string[]; prStatuses: PrStatusDetail[]; error?: string }) => {
         if (controller.signal.aborted) return;
         if (data.prStatuses) {
-          prStatuses = data.prStatuses;
+          fetchedStatuses = data.prStatuses;
         }
         if (data.error) {
           refreshError = data.error;

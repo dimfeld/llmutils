@@ -147,6 +147,91 @@ describe('common/github/pr_status', () => {
     expect(graphql).toHaveBeenCalledTimes(1);
   });
 
+  test('fetchPrFullStatus keeps only the latest review per author', async () => {
+    const graphql = mock(async () => ({
+      repository: {
+        pullRequest: {
+          number: 49,
+          title: 'Deduplicate reviews',
+          state: 'OPEN',
+          isDraft: false,
+          mergeable: 'MERGEABLE',
+          mergedAt: null,
+          headRefOid: 'def456',
+          baseRefName: 'main',
+          headRefName: 'feature/review-dedupe',
+          reviewDecision: 'APPROVED',
+          labels: {
+            nodes: [],
+          },
+          reviews: {
+            nodes: [
+              {
+                author: { login: 'reviewer-1' },
+                state: 'CHANGES_REQUESTED',
+                submittedAt: '2026-03-20T00:00:00.000Z',
+              },
+              {
+                author: { login: 'reviewer-2' },
+                state: 'COMMENTED',
+                submittedAt: '2026-03-20T00:01:00.000Z',
+              },
+              {
+                author: { login: 'reviewer-1' },
+                state: 'APPROVED',
+                submittedAt: '2026-03-20T00:02:00.000Z',
+              },
+              {
+                author: { login: 'reviewer-2' },
+                state: 'APPROVED',
+                submittedAt: '2026-03-20T00:03:00.000Z',
+              },
+            ],
+          },
+          commits: {
+            nodes: [
+              {
+                commit: {
+                  statusCheckRollup: {
+                    state: 'SUCCESS',
+                    contexts: {
+                      nodes: [],
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    }));
+
+    await moduleMocker.mock('octokit', () => ({
+      Octokit: mock(function () {
+        return {
+          graphql,
+        };
+      }),
+    }));
+
+    const { fetchPrFullStatus } = await import('./pr_status.ts');
+
+    await expect(fetchPrFullStatus('owner', 'repo', 49)).resolves.toMatchObject({
+      reviews: [
+        {
+          author: 'reviewer-1',
+          state: 'APPROVED',
+          submittedAt: '2026-03-20T00:02:00.000Z',
+        },
+        {
+          author: 'reviewer-2',
+          state: 'APPROVED',
+          submittedAt: '2026-03-20T00:03:00.000Z',
+        },
+      ],
+    });
+  });
+
   test('throws for unknown check statuses and conclusions', async () => {
     const graphql = mock(async (_query: string, variables: { prNumber: number }) => {
       if (variables.prNumber === 46) {

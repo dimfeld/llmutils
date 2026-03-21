@@ -389,10 +389,12 @@ export async function handlePrStatusCommand(
     log(chalk.red(`Failed to fetch status for ${url}: ${error}`));
   }
 
-  // Sync plan_pr junctions for successfully fetched PRs (best-effort, skip if no UUID)
-  if (plan.uuid && successfulUrls.length > 0) {
+  // Sync plan_pr junctions for all plan PR URLs (best-effort, skip if no UUID)
+  // Use full prUrls list, not just successfulUrls, to avoid removing links for PRs
+  // that failed to refresh but are still in the plan file (source of truth).
+  if (plan.uuid && prUrls.length > 0) {
     try {
-      await syncPlanPrLinks(db, plan.uuid, successfulUrls);
+      await syncPlanPrLinks(db, plan.uuid, prUrls);
     } catch (err) {
       log(chalk.yellow(`Warning: failed to sync PR cache junctions: ${err as Error}`));
     }
