@@ -15,6 +15,30 @@ Command-line utilities for managing context with chat-oriented programming and a
 
 `tim prompts` can print reusable prompt text for CLI-driven workflows. For implementation work, use `tim prompts implement <plan>` to load a plan and instruct the agent to implement it while keeping the plan up to date.
 
+## Tim Chat
+
+`tim chat` runs an arbitrary free-form prompt in Claude Code or Codex. Without workspace options, it behaves exactly as before and runs in the current working directory.
+
+When you provide workspace options, `tim chat` participates in the full workspace roundtrip flow used by other tim workspace-aware commands. This includes workspace selection or creation, branch checkout, optional plan association, workspace sync, and optional committing at the end of the session.
+
+Workspace options:
+
+- `-w, --workspace <id>` to use a specific workspace
+- `--aw, --auto-workspace` to automatically choose a workspace
+- `--nw, --new-workspace` to create a new workspace
+- `--base <ref>` to work against a specific branch or ref in the workspace
+- `--plan <plan>` to associate the session with a plan and use that plan's workspace metadata
+- `--commit` to commit changes after the session finishes
+- `--no-workspace-sync` to disable workspace sync for the roundtrip
+
+Examples:
+
+```bash
+tim chat --aw --plan 42 "Fix the bug"
+tim chat -w my-workspace --base feature-branch "Review code"
+tim chat --aw --base main --commit "Clean up imports"
+```
+
 ## Workspace Management
 
 Use `tim workspace list`, `tim workspace add`, and `tim workspace update` to manage repository workspaces. Workspaces can be `standard`, `primary`, or `auto`: `primary` workspaces are reserved for branch/push operations, while `auto` workspaces form the preferred pool for `--auto-workspace`.
