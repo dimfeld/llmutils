@@ -6,7 +6,7 @@ goal: Fetch PR status from GitHub, cache in DB, display in web UI and CLI via
 id: 248
 uuid: f92da2f3-c73f-4b89-83c8-03b509d58d1d
 generatedBy: agent
-status: done
+status: in_progress
 priority: medium
 parent: 245
 references:
@@ -14,7 +14,7 @@ references:
 planGeneratedAt: 2026-03-21T02:28:58.262Z
 promptsGeneratedAt: 2026-03-21T02:28:58.262Z
 createdAt: 2026-03-21T02:24:53.498Z
-updatedAt: 2026-03-21T20:49:51.369Z
+updatedAt: 2026-03-21T21:03:01.803Z
 tasks:
   - title: Create GitHub GraphQL queries for PR status
     done: true
@@ -367,6 +367,47 @@ tasks:
 
 
       Related file: src/common/github/pr_status.ts:261-420
+  - title: "Address Review Feedback: The new canonicalization logic is not actually
+      canonical for numeric PR IDs."
+    done: false
+    description: >-
+      The new canonicalization logic is not actually canonical for numeric PR
+      IDs. `tryCanonicalizePrUrl()` preserves the raw path segment, so
+      `/pull/001` and `/pull/1` become different `pr_url` keys. I verified
+      `canonicalizePrUrl('https://github.com/o/r/pull/001')` returns
+      `/pull/001`, and `deduplicatePrUrls()` keeps both `/pull/001` and
+      `/pull/1` as separate entries. That reintroduces the duplicate-cache /
+      failed-unlink / orphan-cleanup problems task 18 was supposed to eliminate.
+
+
+      Suggestion: Normalize the PR number through numeric parsing before
+      rebuilding the canonical URL, and add tests covering leading-zero
+      variants.
+
+
+      Related file: src/common/github/identifiers.ts:117
+  - title: "Address Review Feedback: The POST refresh route still calls
+      `syncPlanPrLinks()` with the raw `prUrls` array."
+    done: false
+    description: >-
+      The POST refresh route still calls `syncPlanPrLinks()` with the raw
+      `prUrls` array. If a plan contains one invalid entry plus one uncached
+      valid PR, `syncPlanPrLinks()` throws before linking anything, the catch
+      block falls back to cached URLs only, and `ensurePrStatusFresh()` then
+      fetches the valid PR without ever creating its `plan_pr` row. The response
+      looks successful, but the DB is left inconsistent and the junction-sync
+      requirement is not met for mixed-valid/invalid input. The existing
+      mixed-input route test mocks `syncPlanPrLinks()` as always succeeding, so
+      it does not exercise this failure mode.
+
+
+      Suggestion: Sync using `normalizedPrUrls` (or otherwise strip invalid
+      entries before sync) so valid PRs still get linked, and add an integration
+      test that uses the real `syncPlanPrLinks()` behavior for mixed
+      valid/invalid plan data.
+
+
+      Related file: src/routes/api/plans/[planUuid]/pr-status/+server.ts:86
 changedFiles:
   - CLAUDE.md
   - README.md
