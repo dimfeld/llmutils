@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { canonicalizePrUrl, parsePrOrIssueNumber, tryCanonicalizePrUrl } from './identifiers.ts';
+import {
+  canonicalizePrUrl,
+  deduplicatePrUrls,
+  parsePrOrIssueNumber,
+  tryCanonicalizePrUrl,
+} from './identifiers.ts';
 
 describe('parsePrIdentifier', () => {
   test('should parse valid full URL', async () => {
@@ -118,5 +123,50 @@ describe('tryCanonicalizePrUrl', () => {
     expect(() => canonicalizePrUrl('https://github.com/dimfeld/llmutils/pull/123abc')).toThrow(
       /Invalid pull request number/i
     );
+  });
+});
+
+describe('deduplicatePrUrls', () => {
+  test('deduplicates equivalent canonical PR URLs while preserving first-seen order', () => {
+    expect(
+      deduplicatePrUrls([
+        'https://github.com/dimfeld/llmutils/pulls/123?tab=checks',
+        'https://github.com/dimfeld/llmutils/pull/124',
+        'https://github.com/dimfeld/llmutils/pull/123#discussion_r1',
+        'https://github.com/dimfeld/llmutils/pulls/124/',
+        'https://github.com/dimfeld/llmutils/pull/125',
+      ])
+    ).toEqual({
+      valid: [
+        'https://github.com/dimfeld/llmutils/pull/123',
+        'https://github.com/dimfeld/llmutils/pull/124',
+        'https://github.com/dimfeld/llmutils/pull/125',
+      ],
+      invalid: [],
+    });
+  });
+
+  test('returns invalid and non-PR URLs separately', () => {
+    expect(
+      deduplicatePrUrls([
+        'https://github.com/dimfeld/llmutils/issues/123',
+        'https://example.com/dimfeld/llmutils/pull/123',
+        'https://github.com/dimfeld/llmutils/pull/not-a-number',
+      ])
+    ).toEqual({
+      valid: [],
+      invalid: [
+        'https://github.com/dimfeld/llmutils/issues/123',
+        'https://example.com/dimfeld/llmutils/pull/123',
+        'https://github.com/dimfeld/llmutils/pull/not-a-number',
+      ],
+    });
+  });
+
+  test('returns empty arrays for empty input', () => {
+    expect(deduplicatePrUrls([])).toEqual({
+      valid: [],
+      invalid: [],
+    });
   });
 });

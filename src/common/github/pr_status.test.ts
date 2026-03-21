@@ -367,6 +367,129 @@ describe('common/github/pr_status', () => {
           };
         }
 
+        if (variables.prNumber === 51) {
+          return {
+            repository: {
+              pullRequest: {
+                number: 51,
+                title: 'Unknown review decision fallback',
+                state: 'OPEN',
+                isDraft: false,
+                mergeable: 'MERGEABLE',
+                mergedAt: null,
+                headRefOid: 'jkl012',
+                baseRefName: 'main',
+                headRefName: 'feature/unknown-review-decision',
+                reviewDecision: 'MYSTERY_DECISION',
+                labels: {
+                  nodes: [],
+                },
+                reviews: {
+                  nodes: [],
+                },
+                commits: {
+                  nodes: [
+                    {
+                      commit: {
+                        statusCheckRollup: {
+                          state: 'SUCCESS',
+                          contexts: {
+                            nodes: [],
+                          },
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          };
+        }
+
+        if (variables.prNumber === 52) {
+          return {
+            repository: {
+              pullRequest: {
+                number: 52,
+                title: 'Unknown review state fallback',
+                state: 'OPEN',
+                isDraft: false,
+                mergeable: 'MERGEABLE',
+                mergedAt: null,
+                headRefOid: 'mno345',
+                baseRefName: 'main',
+                headRefName: 'feature/unknown-review-state',
+                reviewDecision: 'APPROVED',
+                labels: {
+                  nodes: [],
+                },
+                reviews: {
+                  nodes: [
+                    {
+                      author: { login: 'reviewer-1' },
+                      state: 'MYSTERY_REVIEW_STATE',
+                      submittedAt: '2026-03-20T00:06:00.000Z',
+                    },
+                  ],
+                },
+                commits: {
+                  nodes: [
+                    {
+                      commit: {
+                        statusCheckRollup: {
+                          state: 'SUCCESS',
+                          contexts: {
+                            nodes: [],
+                          },
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          };
+        }
+
+        if (variables.prNumber === 53) {
+          return {
+            repository: {
+              pullRequest: {
+                number: 53,
+                title: 'Unknown mergeable fallback',
+                state: 'OPEN',
+                isDraft: false,
+                mergeable: 'MYSTERY_MERGEABLE',
+                mergedAt: null,
+                headRefOid: 'pqr678',
+                baseRefName: 'main',
+                headRefName: 'feature/unknown-mergeable',
+                reviewDecision: 'APPROVED',
+                labels: {
+                  nodes: [],
+                },
+                reviews: {
+                  nodes: [],
+                },
+                commits: {
+                  nodes: [
+                    {
+                      commit: {
+                        statusCheckRollup: {
+                          state: 'SUCCESS',
+                          contexts: {
+                            nodes: [],
+                          },
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          };
+        }
+
         return {
           repository: {
             pullRequest: {
@@ -456,8 +579,23 @@ describe('common/github/pr_status', () => {
         ],
         checkRollupState: 'pending',
       });
+      await expect(fetchPrFullStatus('owner', 'repo', 51)).resolves.toMatchObject({
+        reviewDecision: 'REVIEW_REQUIRED',
+      });
+      await expect(fetchPrFullStatus('owner', 'repo', 52)).resolves.toMatchObject({
+        reviews: [
+          {
+            author: 'reviewer-1',
+            state: 'COMMENTED',
+            submittedAt: '2026-03-20T00:06:00.000Z',
+          },
+        ],
+      });
+      await expect(fetchPrFullStatus('owner', 'repo', 53)).resolves.toMatchObject({
+        mergeable: 'UNKNOWN',
+      });
 
-      expect(warn).toHaveBeenCalledTimes(5);
+      expect(warn).toHaveBeenCalledTimes(8);
       expect(warn).toHaveBeenNthCalledWith(
         1,
         'Unknown GitHub PR state: SUPER_OPEN. Falling back to open.'
@@ -477,6 +615,18 @@ describe('common/github/pr_status', () => {
       expect(warn).toHaveBeenNthCalledWith(
         5,
         'Unknown GitHub status context state: BLOCKED. Falling back to pending.'
+      );
+      expect(warn).toHaveBeenNthCalledWith(
+        6,
+        'Unknown GitHub review decision: MYSTERY_DECISION. Falling back to REVIEW_REQUIRED.'
+      );
+      expect(warn).toHaveBeenNthCalledWith(
+        7,
+        'Unknown GitHub review state: MYSTERY_REVIEW_STATE. Falling back to COMMENTED.'
+      );
+      expect(warn).toHaveBeenNthCalledWith(
+        8,
+        'Unknown GitHub mergeable state: MYSTERY_MERGEABLE. Falling back to UNKNOWN.'
       );
     } finally {
       console.warn = originalWarn;
