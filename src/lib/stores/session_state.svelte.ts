@@ -208,12 +208,6 @@ export class SessionManager {
             this.unreadNotifications.delete(connectionId);
           }
         }
-
-        for (const session of sessions) {
-          if (session.status === 'notification') {
-            this.unreadNotifications.set(session.connectionId, true);
-          }
-        }
         break;
       }
       case 'session:new': {
