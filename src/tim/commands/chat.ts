@@ -231,16 +231,9 @@ export async function handleChatCommand(
       );
       currentBaseDir = workspaceResult.baseDir;
       currentPlanFile = workspaceResult.planFile;
+      touchedWorkspacePath = currentBaseDir;
 
-      // Only set up workspace roundtrip if we actually got a different workspace
       if (path.resolve(currentBaseDir) !== path.resolve(originalBaseDir)) {
-        touchedWorkspacePath = currentBaseDir;
-      } else {
-        // Workspace creation failed (requireWorkspace: false), fall back to original cwd
-        currentBaseDir = process.cwd();
-      }
-
-      if (touchedWorkspacePath) {
         roundTripContext = await prepareWorkspaceRoundTrip({
           workspacePath: currentBaseDir,
           workspaceSyncEnabled: options.workspaceSync !== false,
