@@ -182,10 +182,11 @@
   {/if}
 
   <!-- Pull Requests -->
-  {#if plan.pullRequests.length > 0}
+  {#if plan.pullRequests.length > 0 || plan.invalidPrUrls.length > 0}
     <PrStatusSection
       planUuid={plan.uuid}
       prUrls={plan.pullRequests}
+      invalidPrUrls={plan.invalidPrUrls}
       initialStatuses={plan.prStatuses}
     />
   {/if}

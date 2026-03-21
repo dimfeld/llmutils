@@ -6,7 +6,7 @@ goal: Fetch PR status from GitHub, cache in DB, display in web UI and CLI via
 id: 248
 uuid: f92da2f3-c73f-4b89-83c8-03b509d58d1d
 generatedBy: agent
-status: done
+status: in_progress
 priority: medium
 parent: 245
 references:
@@ -14,7 +14,7 @@ references:
 planGeneratedAt: 2026-03-21T02:28:58.262Z
 promptsGeneratedAt: 2026-03-21T02:28:58.262Z
 createdAt: 2026-03-21T02:24:53.498Z
-updatedAt: 2026-03-21T09:35:54.752Z
+updatedAt: 2026-03-21T20:20:55.735Z
 tasks:
   - title: Create GitHub GraphQL queries for PR status
     done: true
@@ -310,6 +310,63 @@ tasks:
 
 
       Related file: src/common/github/pr_status.ts:261-342
+  - title: "Address Review Feedback: Invalid PR entries are still silently dropped
+      in the web path."
+    done: false
+    description: |-
+      Invalid PR entries are still silently dropped in the web path. [src/lib/server/db_queries.ts](/Users/dimfeld/Documents/projects/llmutils-projects-1773995305508/src/lib/server/db_queries.ts#L225) strips invalid URLs entirely, [src/lib/components/PlanDetail.svelte](/Users/dimfeld/Documents/projects/llmutils-projects-1773995305508/src/lib/components/PlanDetail.svelte#L184) only renders the PR section when the normalized list is non-empty, and the GET route at [src/routes/api/plans/[planUuid]/pr-status/+server.ts](/Users/dimfeld/Documents/projects/llmutils-projects-1773995305508/src/routes/api/plans/[planUuid]/pr-status/+server.ts#L24) returns only the normalized list with no error metadata. For a plan whose `pull_request` array contains only invalid entries, the UI/API show nothing at all, so the claimed behavior of warning instead of silently dropping invalid PR entries is not met. The current tests even lock in the silent-drop behavior.
+
+      Suggestion: Surface invalid entries separately from normalized valid URLs, return them from the GET/data layer, and render a warning or placeholder section in the plan detail. Add a regression test for an all-invalid `pull_request` list in the web path.
+
+      Related file: src/lib/server/db_queries.ts:225-233
+  - title: "Address Review Feedback: `getPlansWithPrs()` still treats `plan_pr` as
+      authoritative even when the current plan row says otherwise."
+    done: false
+    description: |-
+      `getPlansWithPrs()` still treats `plan_pr` as authoritative even when the current plan row says otherwise. In [src/tim/db/pr_status.ts](/Users/dimfeld/Documents/projects/llmutils-projects-1773995305508/src/tim/db/pr_status.ts#L467), phase 1 unconditionally seeds results from `plan_pr`, and phase 2 only adds missing URLs from `plan.pull_request`; it never removes stale junction rows. Repro: a plan with `pullRequest: []` plus an old `plan_pr` row still comes back from `getPlansWithPrs()`. I verified that behavior with a direct DB repro. This contradicts the source-of-truth decision used elsewhere in this change set and will make downstream polling/workflows continue to track PRs that were removed via normal plan-file sync or manual edits.
+
+      Suggestion: Filter junction rows against the current `plan.pull_request` contents when that field is present, or reconcile `plan_pr` from the plan row before returning. Add a regression test for a stale `plan_pr` row when `pull_request` is empty or no longer contains that PR.
+
+      Related file: src/tim/db/pr_status.ts:467-560
+  - title: "Address Review Feedback: POST endpoint returns raw prUrls while GET
+      returns normalized ones."
+    done: false
+    description: >-
+      POST endpoint returns raw prUrls while GET returns normalized ones. The
+      POST handler at line 109 returns the raw prUrls from
+      parseJsonStringArray(plan.pull_request) (line 45), while the GET handler
+      normalizes them via normalizePrUrls() (line 30). Currently the frontend
+      only uses prStatuses from the POST response (not prUrls), so this isn't a
+      bug, but it's an inconsistency that could cause issues if the frontend
+      ever uses data.prUrls from the POST response to match against canonical
+      pr_status.pr_url values.
+
+
+      Suggestion: Apply normalizePrUrls() to prUrls in the POST response for
+      consistency with GET, e.g. `prUrls: normalizePrUrls(prUrls)`.
+
+
+      Related file: src/routes/api/plans/[planUuid]/pr-status/+server.ts:109
+  - title: "Address Review Feedback: Inconsistent casing convention across enum
+      normalization functions."
+    done: false
+    description: >-
+      Inconsistent casing convention across enum normalization functions.
+      normalizePrState, normalizeCheckStatus, normalizeCheckConclusion,
+      normalizeCheckRollupState all return lowercase values, while
+      normalizeReviewDecision, normalizeReviewState, normalizeMergeableState
+      return UPPERCASE values. Both the web UI and CLI code use the correct
+      casing for each field, so this works correctly, but the mixed convention
+      makes it harder for future developers to know which convention a given
+      field uses without checking.
+
+
+      Suggestion: Consider documenting the convention (check-related =
+      lowercase, review/merge-related = uppercase) in a comment near the type
+      definitions.
+
+
+      Related file: src/common/github/pr_status.ts:261-420
 changedFiles:
   - CLAUDE.md
   - README.md

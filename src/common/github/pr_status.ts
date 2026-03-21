@@ -1,5 +1,8 @@
 import { Octokit } from 'octokit';
 
+// Casing convention:
+// - check/state rollup fields are normalized to lowercase for easier UI/status aggregation
+// - review and mergeability enums stay in GitHub's uppercase form to match their source values
 export type PrState = 'open' | 'closed' | 'merged';
 export type PrMergeableState = 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN' | null;
 export type PrReviewDecision = 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | null;

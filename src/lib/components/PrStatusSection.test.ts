@@ -93,12 +93,14 @@ function makePrDetail(
 function renderSection(props: {
   planUuid?: string;
   prUrls: string[];
+  invalidPrUrls?: string[];
   initialStatuses: PrStatusDetail[];
 }) {
   return render(PrStatusSection, {
     props: {
       planUuid: props.planUuid ?? 'plan-uuid-1',
       prUrls: props.prUrls,
+      invalidPrUrls: props.invalidPrUrls ?? [],
       initialStatuses: props.initialStatuses,
     },
   });
@@ -122,6 +124,17 @@ describe('PrStatusSection', () => {
   test('renders "Pull Requests" heading', () => {
     const { body } = renderSection({ prUrls: [], initialStatuses: [] });
     expect(body).toContain('Pull Requests');
+  });
+
+  test('renders invalid PR entries as a warning block', () => {
+    const { body } = renderSection({
+      prUrls: [],
+      invalidPrUrls: ['https://github.com/owner/repo/issues/42'],
+      initialStatuses: [],
+    });
+
+    expect(body).toContain('Invalid pull request entries');
+    expect(body).toContain('https://github.com/owner/repo/issues/42');
   });
 
   test('renders PR number and title as a link', () => {

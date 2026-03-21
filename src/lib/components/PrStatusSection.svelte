@@ -10,10 +10,12 @@
   let {
     planUuid,
     prUrls,
+    invalidPrUrls = [],
     initialStatuses,
   }: {
     planUuid: string;
     prUrls: string[];
+    invalidPrUrls?: string[];
     initialStatuses: PrStatusDetail[];
   } = $props();
 
@@ -151,6 +153,19 @@
   {/if}
 
   <div class="space-y-4">
+    {#if invalidPrUrls.length > 0}
+      <div
+        class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+      >
+        <div class="font-medium">Invalid pull request entries</div>
+        <ul class="mt-1 space-y-1 text-xs">
+          {#each invalidPrUrls as invalidUrl (invalidUrl)}
+            <li class="break-all">{invalidUrl}</li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
+
     {#each prUrls as url (url)}
       {@const pr = statusByUrl.get(url)}
       {#if pr}

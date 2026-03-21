@@ -472,6 +472,7 @@ export function getPlansWithPrs(db: Database, projectId?: number): PlanWithLinke
       p.project_id AS project_id,
       p.plan_id AS plan_id,
       p.title AS title,
+      p.pull_request AS pull_request,
       ps.pr_url AS pr_url
     FROM plan p
     INNER JOIN plan_pr pp ON pp.plan_uuid = p.uuid
@@ -488,13 +489,46 @@ export function getPlansWithPrs(db: Database, projectId?: number): PlanWithLinke
     project_id: number;
     plan_id: number;
     title: string | null;
+    pull_request: string | null;
     pr_url: string;
   }>;
 
   const plans = new Map<string, PlanWithLinkedPrs>();
   const seenPrsByPlan = new Map<string, Set<string>>();
+  const canonicalPlanUrlsByPlanUuid = new Map<string, Set<string> | null>();
 
   for (const row of junctionRows) {
+    let allowedUrls = canonicalPlanUrlsByPlanUuid.get(row.uuid);
+    if (allowedUrls === undefined) {
+      if (row.pull_request == null) {
+        allowedUrls = null;
+      } else {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(row.pull_request);
+        } catch {
+          parsed = [];
+        }
+
+        const canonicalUrls = new Set<string>();
+        if (Array.isArray(parsed)) {
+          for (const rawUrl of parsed) {
+            if (typeof rawUrl !== 'string') continue;
+            const canonical = tryCanonicalizePrUrl(rawUrl);
+            if (canonical !== null) {
+              canonicalUrls.add(canonical);
+            }
+          }
+        }
+        allowedUrls = canonicalUrls;
+      }
+      canonicalPlanUrlsByPlanUuid.set(row.uuid, allowedUrls);
+    }
+
+    if (allowedUrls !== null && !allowedUrls.has(row.pr_url)) {
+      continue;
+    }
+
     const existing = plans.get(row.uuid);
     if (existing) {
       existing.prUrls.push(row.pr_url);

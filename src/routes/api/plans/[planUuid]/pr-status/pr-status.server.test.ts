@@ -52,6 +52,13 @@ describe('/api/plans/[planUuid]/pr-status', () => {
       title: 'Plan without PRs',
       filename: '2.plan.md',
     });
+    upsertPlan(currentDb, project.id, {
+      uuid: 'plan-with-only-invalid-prs',
+      planId: 3,
+      title: 'Plan with only invalid PRs',
+      filename: '3.plan.md',
+      pullRequest: ['https://github.com/example/repo/issues/3'],
+    });
 
     const cachedPr = upsertPrStatus(currentDb, {
       prUrl: 'https://github.com/example/repo/pull/1',
@@ -91,6 +98,7 @@ describe('/api/plans/[planUuid]/pr-status', () => {
     expect(response.status).toBe(200);
     expect(payload).toMatchObject({
       prUrls: ['https://github.com/example/repo/pull/1', 'https://github.com/example/repo/pull/2'],
+      invalidPrUrls: [],
     });
     expect(payload.prStatuses).toHaveLength(1);
     expect(payload.prStatuses[0]).toMatchObject({
@@ -104,9 +112,9 @@ describe('/api/plans/[planUuid]/pr-status', () => {
   test('GET returns cached PR status matched directly from plan URLs when plan_pr is missing', async () => {
     upsertPlan(currentDb, getOrCreateProject(currentDb, 'repo-plan-pr-status-route').id, {
       uuid: 'plan-with-cached-pr-no-junction',
-      planId: 3,
+      planId: 4,
       title: 'Plan with cached PR but no junction',
-      filename: '3.plan.md',
+      filename: '4.plan.md',
       pullRequest: ['https://github.com/example/repo/pulls/1?tab=checks'],
     });
 
@@ -118,6 +126,7 @@ describe('/api/plans/[planUuid]/pr-status', () => {
 
     expect(response.status).toBe(200);
     expect(payload.prUrls).toEqual(['https://github.com/example/repo/pull/1']);
+    expect(payload.invalidPrUrls).toEqual([]);
     expect(payload.prStatuses).toHaveLength(1);
     expect(payload.prStatuses[0]).toMatchObject({
       status: {
@@ -136,6 +145,22 @@ describe('/api/plans/[planUuid]/pr-status', () => {
 
     expect(response.status).toBe(404);
     await expect(response.json()).resolves.toEqual({ error: 'Plan not found' });
+  });
+
+  test('GET returns invalid PR entries separately when a plan has only invalid pull_request values', async () => {
+    const { GET } = await import('./+server.js');
+
+    const response = await GET({
+      params: { planUuid: 'plan-with-only-invalid-prs' },
+    } as never);
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual({
+      prUrls: [],
+      invalidPrUrls: ['https://github.com/example/repo/issues/3'],
+      prStatuses: [],
+    });
   });
 
   test('POST returns 404 for an unknown plan', async () => {
@@ -171,6 +196,7 @@ describe('/api/plans/[planUuid]/pr-status', () => {
       'https://github.com/example/repo/pull/1',
       'https://github.com/example/repo/pull/2',
     ]);
+    expect(payload.invalidPrUrls).toEqual([]);
     expect(payload.prStatuses).toHaveLength(1);
   });
 
@@ -310,6 +336,7 @@ describe('/api/plans/[planUuid]/pr-status', () => {
       'https://github.com/example/repo/pull/1',
       'https://github.com/example/repo/pull/2',
     ]);
+    expect(payload.invalidPrUrls).toEqual([]);
     // PR 1 has cached data, PR 2 does not
     expect(payload.prStatuses).toHaveLength(1);
     expect(payload.prStatuses[0]).toMatchObject({
@@ -349,8 +376,49 @@ describe('/api/plans/[planUuid]/pr-status', () => {
     } as never);
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ prUrls: [], prStatuses: [] });
+    await expect(response.json()).resolves.toEqual({
+      prUrls: [],
+      invalidPrUrls: [],
+      prStatuses: [],
+    });
     expect(syncPlanPrLinks).toHaveBeenCalledWith(expect.anything(), 'plan-without-prs', []);
     expect(ensurePrStatusFresh).not.toHaveBeenCalled();
+  });
+
+  test('POST returns normalized valid URLs and invalid PR entries separately', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    syncPlanPrLinks.mockResolvedValue([]);
+    ensurePrStatusFresh.mockResolvedValue({
+      status: {
+        id: 1,
+        pr_url: 'https://github.com/example/repo/pull/1',
+        title: 'PR One',
+      },
+      checks: [],
+      reviews: [],
+      labels: [],
+    });
+
+    upsertPlan(currentDb, getOrCreateProject(currentDb, 'repo-plan-pr-status-route').id, {
+      uuid: 'plan-with-mixed-pr-values',
+      planId: 5,
+      title: 'Plan with mixed PR values',
+      filename: '5.plan.md',
+      pullRequest: [
+        'https://github.com/example/repo/pulls/1?tab=checks',
+        'https://github.com/example/repo/issues/5',
+      ],
+    });
+
+    const { POST } = await import('./+server.js');
+    const response = await POST({
+      params: { planUuid: 'plan-with-mixed-pr-values' },
+    } as never);
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.prUrls).toEqual(['https://github.com/example/repo/pull/1']);
+    expect(payload.invalidPrUrls).toEqual(['https://github.com/example/repo/issues/5']);
+    expect(payload.error).toContain('https://github.com/example/repo/issues/5: not a valid PR URL');
   });
 });

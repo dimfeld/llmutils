@@ -405,6 +405,31 @@ describe('tim db/pr_status', () => {
     expect(getPlansWithPrs(db)).toEqual([]);
   });
 
+  test('getPlansWithPrs excludes stale plan_pr rows when the current plan pull_request is empty', () => {
+    const openPr = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/206',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 206,
+      title: 'PR 206',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    upsertPlan(db, projectId, {
+      uuid: 'plan-1',
+      planId: 1,
+      title: 'Plan 1',
+      filename: '1.plan.md',
+      status: 'in_progress',
+      pullRequest: [],
+    });
+    linkPlanToPr(db, 'plan-1', openPr.status.id);
+
+    expect(getPlansWithPrs(db)).toEqual([]);
+  });
+
   test('cleanOrphanedPrStatus removes unlinked PR status rows', () => {
     const kept = upsertPrStatus(db, {
       prUrl: 'https://github.com/example/repo/pull/106',

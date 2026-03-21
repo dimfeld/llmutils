@@ -282,12 +282,12 @@ describe('lib/server/db_queries', () => {
     });
   });
 
-  test('invalid pullRequest URLs do not crash plan list or detail queries', () => {
+  test('invalid pullRequest URLs are surfaced separately without crashing plan list or detail queries', () => {
     upsertPlan(db, projectId, {
       uuid: 'plan-invalid-pr-url',
       planId: 110,
       title: 'Invalid PR URL plan',
-      goal: 'Should ignore non-PR URLs in pullRequest',
+      goal: 'Should surface non-PR URLs in pullRequest',
       status: 'pending',
       priority: 'medium',
       filename: '110-invalid-pr.plan.md',
@@ -297,11 +297,13 @@ describe('lib/server/db_queries', () => {
     const plans = getPlansForProject(db, projectId);
     expect(plans.find((plan) => plan.uuid === 'plan-invalid-pr-url')).toMatchObject({
       pullRequests: [],
+      invalidPrUrls: ['https://github.com/example/repo/issues/110'],
       prSummaryStatus: 'none',
     });
 
     const detail = getPlanDetail(db, 'plan-invalid-pr-url');
     expect(detail?.pullRequests).toEqual([]);
+    expect(detail?.invalidPrUrls).toEqual(['https://github.com/example/repo/issues/110']);
     expect(detail?.prStatuses).toEqual([]);
   });
 

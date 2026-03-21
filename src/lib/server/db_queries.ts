@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite';
 
-import { tryCanonicalizePrUrl } from '$common/github/identifiers.js';
+import { deduplicatePrUrls } from '$common/github/identifiers.js';
 import { getAssignmentEntry, type AssignmentEntry } from '$tim/db/assignment.js';
 import { getPrStatusForPlan, type PrStatusDetail } from '$tim/db/pr_status.js';
 import { normalizePlanStatus } from '$tim/plans/plan_state_utils.js';
@@ -85,6 +85,7 @@ export interface EnrichedPlan {
   createdAt: string;
   updatedAt: string;
   pullRequests: string[];
+  invalidPrUrls: string[];
   issues: string[];
   prSummaryStatus: PrSummaryStatus;
   tags: string[];
@@ -223,13 +224,11 @@ export function parseJsonStringArray(value: string | null): string[] {
 }
 
 export function normalizePrUrls(prUrls: string[]): string[] {
-  return [
-    ...new Set(
-      prUrls
-        .map((prUrl) => tryCanonicalizePrUrl(prUrl))
-        .filter((prUrl): prUrl is string => prUrl !== null)
-    ),
-  ];
+  return categorizePrUrls(prUrls).valid;
+}
+
+export function categorizePrUrls(prUrls: string[]): { valid: string[]; invalid: string[] } {
+  return deduplicatePrUrls(prUrls);
 }
 
 function getPrSummaryStatusByPlanUuid(
@@ -369,11 +368,20 @@ function enrichPlansWithContext(
     planByUuid.set(dependencyPlan.uuid, dependencyPlan);
   }
 
-  const prUrlsByPlanUuid = new Map<string, string[]>(
+  const categorizedPrUrlsByPlanUuid = new Map<
+    string,
+    {
+      valid: string[];
+      invalid: string[];
+    }
+  >(
     bundle.plans.map((plan) => [
       plan.uuid,
-      normalizePrUrls(parseJsonStringArray(plan.pull_request)),
+      categorizePrUrls(parseJsonStringArray(plan.pull_request)),
     ])
+  );
+  const prUrlsByPlanUuid = new Map<string, string[]>(
+    bundle.plans.map((plan) => [plan.uuid, categorizedPrUrlsByPlanUuid.get(plan.uuid)?.valid ?? []])
   );
 
   const prSummaryStatusByPlanUuid = getPrSummaryStatusByPlanUuid(
@@ -404,6 +412,7 @@ function enrichPlansWithContext(
       createdAt: plan.created_at,
       updatedAt: plan.updated_at,
       pullRequests: prUrlsByPlanUuid.get(plan.uuid) ?? [],
+      invalidPrUrls: categorizedPrUrlsByPlanUuid.get(plan.uuid)?.invalid ?? [],
       issues: parseJsonStringArray(plan.issue),
       prSummaryStatus: prSummaryStatusByPlanUuid.get(plan.uuid) ?? 'none',
       tags: tagsByPlanUuid.get(plan.uuid) ?? [],
