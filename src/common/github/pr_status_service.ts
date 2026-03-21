@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite';
-import { canonicalizePrUrl, parsePrOrIssueNumber, validatePrIdentifier } from './identifiers.js';
+import { canonicalizePrUrl, parsePrOrIssueNumber } from './identifiers.js';
 import { fetchPrCheckStatus, fetchPrFullStatus } from './pr_status.js';
 import {
   getPrStatusByUrl,
@@ -19,7 +19,6 @@ function getPrStatusId(detail: PrStatusDetail): number {
 
 export async function refreshPrStatus(db: Database, prUrl: string): Promise<PrStatusDetail> {
   const canonicalPrUrl = canonicalizePrUrl(prUrl);
-  validatePrIdentifier(canonicalPrUrl);
   const parsed = await parsePrOrIssueNumber(canonicalPrUrl);
   if (!parsed) {
     throw new Error(`Invalid GitHub pull request identifier: ${canonicalPrUrl}`);
@@ -68,7 +67,6 @@ export async function refreshPrStatus(db: Database, prUrl: string): Promise<PrSt
  * (open/merged/closed) should use refreshPrStatus() periodically. */
 export async function refreshPrCheckStatus(db: Database, prUrl: string): Promise<PrStatusDetail> {
   const canonicalPrUrl = canonicalizePrUrl(prUrl);
-  validatePrIdentifier(canonicalPrUrl);
 
   const existing = getPrStatusByUrl(db, canonicalPrUrl);
   if (!existing) {
@@ -136,11 +134,6 @@ export async function syncPlanPrLinks(
   // Phase 1: Identify which URLs need fetching by checking what's already cached.
   // Uses stale cached data intentionally for performance; callers should use
   // ensurePrStatusFresh() separately if freshness matters.
-  // Validate all URLs before doing any work
-  for (const prUrl of canonicalPrUrls) {
-    validatePrIdentifier(prUrl);
-  }
-
   const urlsToFetch: string[] = [];
   for (const prUrl of canonicalPrUrls) {
     const existing = getPrStatusByUrl(db, prUrl);

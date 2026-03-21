@@ -116,7 +116,9 @@ export function tryCanonicalizePrUrl(identifier: string): string | null {
 export function canonicalizePrUrl(identifier: string): string {
   const canonicalized = tryCanonicalizePrUrl(identifier);
   if (canonicalized === null) {
+    // validatePrIdentifier will throw with a descriptive error for non-PR URLs
     validatePrIdentifier(identifier);
+    // Unreachable: if tryCanonicalizePrUrl returned null, validatePrIdentifier always throws
     throw new Error(`Invalid GitHub pull request identifier: ${identifier}`);
   }
 

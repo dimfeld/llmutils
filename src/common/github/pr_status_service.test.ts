@@ -220,13 +220,13 @@ describe('common/github/pr_status_service', () => {
   });
 
   test('refreshPrCheckStatus validates identifiers before using cached rows', async () => {
-    const validatePrIdentifier = mock((identifier: string) => {
-      throw new Error(`invalid: ${identifier}`);
+    const canonicalizePrUrl = mock((identifier: string) => {
+      throw new Error(`Not a pull request URL: ${identifier}`);
     });
 
     await moduleMocker.mock('./identifiers.ts', () =>
       makeIdentifiersMock(async () => ({ owner: 'example', repo: 'repo', number: 221 }), {
-        validatePrIdentifier,
+        canonicalizePrUrl,
       })
     );
     await moduleMocker.mock('./pr_status.ts', () => ({
@@ -238,8 +238,8 @@ describe('common/github/pr_status_service', () => {
 
     await expect(
       refreshPrCheckStatus(db, 'https://github.com/example/repo/issues/221')
-    ).rejects.toThrow('invalid: https://github.com/example/repo/issues/221');
-    expect(validatePrIdentifier).toHaveBeenCalledWith('https://github.com/example/repo/issues/221');
+    ).rejects.toThrow('Not a pull request URL');
+    expect(canonicalizePrUrl).toHaveBeenCalledWith('https://github.com/example/repo/issues/221');
   });
 
   test('ensurePrStatusFresh returns cached data when it is still fresh', async () => {
