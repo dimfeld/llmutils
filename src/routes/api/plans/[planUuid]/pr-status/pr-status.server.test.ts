@@ -194,6 +194,29 @@ describe('/api/plans/[planUuid]/pr-status', () => {
     ]);
   });
 
+  test('POST falls back to cached data when GitHub API fails', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    syncPlanPrLinks.mockRejectedValue(new Error('API rate limit exceeded'));
+
+    const { POST } = await import('./+server.js');
+    const response = await POST({
+      params: { planUuid: 'plan-with-prs' },
+    } as never);
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.error).toContain('GitHub API error');
+    expect(payload.error).toContain('API rate limit exceeded');
+    expect(payload.prUrls).toEqual([
+      'https://github.com/example/repo/pull/1',
+      'https://github.com/example/repo/pull/2',
+    ]);
+    expect(payload.prStatuses).toHaveLength(1);
+    expect(payload.prStatuses[0]).toMatchObject({
+      status: { pr_url: 'https://github.com/example/repo/pull/1' },
+    });
+  });
+
   test('POST returns an empty result when the plan has no linked PR URLs', async () => {
     process.env.GITHUB_TOKEN = 'token';
     const { POST } = await import('./+server.js');

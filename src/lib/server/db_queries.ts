@@ -204,7 +204,7 @@ function isRecentlyUpdated(updatedAt: string, now = Date.now()): boolean {
   return now - updatedAtMs <= RECENTLY_ACTIVE_WINDOW_MS;
 }
 
-function parseJsonStringArray(value: string | null): string[] {
+export function parseJsonStringArray(value: string | null): string[] {
   if (!value) {
     return [];
   }
