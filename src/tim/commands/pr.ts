@@ -1,10 +1,8 @@
-import path from 'node:path';
 import chalk from 'chalk';
 import { parsePrOrIssueNumber } from '../../common/github/identifiers.js';
 import { refreshPrStatus, syncPlanPrLinks } from '../../common/github/pr_status_service.js';
 import { log } from '../../logging.js';
 import { getDatabase } from '../db/database.js';
-import { syncPlanToDb } from '../db/plan_sync.js';
 import {
   cleanOrphanedPrStatus,
   getPrStatusByUrl,
@@ -84,11 +82,8 @@ async function persistPlanPullRequests(
   const nextPullRequests = updatePullRequests(currentPlan.pullRequest ?? []);
   const updatedPlan = { ...currentPlan, pullRequest: nextPullRequests };
 
+  // writePlanFile already calls syncPlanToDb internally
   await writePlanFile(planPath, updatedPlan);
-  await syncPlanToDb(updatedPlan, planPath, {
-    baseDir: path.dirname(path.resolve(planPath)),
-    force: true,
-  });
 }
 
 function formatLifecycleState(status: PrStatusRow): string {
@@ -359,7 +354,17 @@ export async function handlePrStatusCommand(
   }
 
   const db = getDatabase();
-  const details = await syncPlanPrLinks(db, planUuid, prUrls);
+
+  // Force-refresh all PRs from GitHub (CLI always fetches fresh data)
+  const details: PrStatusDetail[] = [];
+  for (const prUrl of prUrls) {
+    const detail = await refreshPrStatus(db, prUrl);
+    details.push(detail);
+  }
+
+  // Sync plan_pr junctions so the cache is usable by web UI
+  // syncPlanPrLinks will find all data already cached and just update junctions
+  await syncPlanPrLinks(db, planUuid, prUrls);
 
   for (const detail of details) {
     logPrStatus(detail);
@@ -385,11 +390,14 @@ export async function handlePrLinkCommand(
     throw new Error(`Invalid GitHub pull request identifier: ${prUrl}`);
   }
 
+  // Canonicalize to full GitHub PR URL for plan file storage (pullRequest is z.url())
+  const canonicalUrl = `https://github.com/${parsed.owner}/${parsed.repo}/pull/${parsed.number}`;
+
   const db = getDatabase();
-  const detail = await refreshPrStatus(db, prUrl);
+  const detail = await refreshPrStatus(db, canonicalUrl);
   linkPlanToPr(db, planUuid, detail.status.id);
   await persistPlanPullRequests(planPath, (pullRequests) =>
-    pullRequests.includes(prUrl) ? pullRequests : [...pullRequests, prUrl]
+    pullRequests.includes(canonicalUrl) ? pullRequests : [...pullRequests, canonicalUrl]
   );
 
   log(
@@ -405,18 +413,19 @@ export async function handlePrUnlinkCommand(
 ): Promise<void> {
   const { plan, planPath } = await resolvePlanForCommand(planId, command);
   const planUuid = requirePlanUuid(plan, planPath);
-  const db = getDatabase();
-  const detail = getPrStatusByUrl(db, prUrl);
 
-  if (!detail) {
-    throw new Error(`No cached PR status found for ${prUrl}`);
-  }
-
-  unlinkPlanFromPr(db, planUuid, detail.status.id);
-  cleanOrphanedPrStatus(db);
+  // Remove from plan file first (source of truth), then clean up DB best-effort
   await persistPlanPullRequests(planPath, (pullRequests) =>
     pullRequests.filter((existingPrUrl) => existingPrUrl !== prUrl)
   );
+
+  // Best-effort DB cleanup - PR status may not be cached yet (lazy population)
+  const db = getDatabase();
+  const detail = getPrStatusByUrl(db, prUrl);
+  if (detail) {
+    unlinkPlanFromPr(db, planUuid, detail.status.id);
+    cleanOrphanedPrStatus(db);
+  }
 
   log(`Unlinked ${chalk.cyan(prUrl)} from plan ${chalk.bold(String(plan.id))}`);
 }

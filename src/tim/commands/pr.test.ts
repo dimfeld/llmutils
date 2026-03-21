@@ -151,10 +151,10 @@ describe('tim/commands/pr', () => {
       'https://github.com/example/repo/pull/101',
       'https://github.com/example/repo/pull/102',
     ];
-    currentSyncedStatuses = [
-      createPrDetail(101, 'First PR', 'success'),
-      createPrDetail(102, 'Second PR', 'failure'),
-    ];
+    const detail101 = createPrDetail(101, 'First PR', 'success');
+    const detail102 = createPrDetail(102, 'Second PR', 'failure');
+    currentRefreshedStatuses.set('https://github.com/example/repo/pull/101', detail101);
+    currentRefreshedStatuses.set('https://github.com/example/repo/pull/102', detail102);
 
     await prModule.handlePrStatusCommand(undefined, {}, createNestedCommand());
 
@@ -162,6 +162,9 @@ describe('tim/commands/pr', () => {
       gitRoot: process.cwd(),
       configPath: '/tmp/tim.yml',
     });
+    // refreshPrStatus called for each URL (force-fresh)
+    expect(mockRefreshPrStatus).toHaveBeenCalledTimes(2);
+    // syncPlanPrLinks called to update junctions
     expect(mockSyncPlanPrLinks).toHaveBeenCalledTimes(1);
     expect(mockSyncPlanPrLinks).toHaveBeenCalledWith(dbHandle, 'plan-248', [
       'https://github.com/example/repo/pull/101',
@@ -186,15 +189,16 @@ describe('tim/commands/pr', () => {
       'https://github.com/example/repo/pull/402',
       'https://github.com/example/repo/pull/403',
     ];
-    currentSyncedStatuses = [
-      createPrDetail(401, 'Passing PR', 'success'),
-      createPrDetail(402, 'Failing PR', 'failure'),
-      createPrDetail(403, 'Pending PR', 'pending'),
-    ];
+    const detail401 = createPrDetail(401, 'Passing PR', 'success');
+    const detail402 = createPrDetail(402, 'Failing PR', 'failure');
+    const detail403 = createPrDetail(403, 'Pending PR', 'pending');
+    currentRefreshedStatuses.set('https://github.com/example/repo/pull/401', detail401);
+    currentRefreshedStatuses.set('https://github.com/example/repo/pull/402', detail402);
+    currentRefreshedStatuses.set('https://github.com/example/repo/pull/403', detail403);
 
     await prModule.handlePrStatusCommand('248', {}, createNestedCommand());
 
-    expect(mockSyncPlanPrLinks).toHaveBeenCalledTimes(1);
+    expect(mockRefreshPrStatus).toHaveBeenCalledTimes(3);
     expect(logs.some((line) => line.includes('example/repo#401: Passing PR'))).toBe(true);
     expect(logs.some((line) => line.includes('Merge readiness: ready'))).toBe(true);
     expect(logs.some((line) => line.includes('example/repo#402: Failing PR'))).toBe(true);
@@ -234,17 +238,7 @@ describe('tim/commands/pr', () => {
       ...currentPlan,
       pullRequest: ['https://github.com/example/repo/pull/201'],
     });
-    expect(mockSyncPlanToDb).toHaveBeenCalledWith(
-      {
-        ...currentPlan,
-        pullRequest: ['https://github.com/example/repo/pull/201'],
-      },
-      '/tmp/248.plan.md',
-      {
-        baseDir: '/tmp',
-        force: true,
-      }
-    );
+    // writePlanFile handles syncPlanToDb internally
     expect(logs.some((line) => line.includes('Linked'))).toBe(true);
   });
 
@@ -273,18 +267,19 @@ describe('tim/commands/pr', () => {
       createNestedCommand()
     );
 
+    // Plan file updated first (source of truth)
+    expect(mockReadPlanFile).toHaveBeenCalledWith('/tmp/248.plan.md');
+    expect(mockWritePlanFile).toHaveBeenCalledWith('/tmp/248.plan.md', {
+      ...currentPlan,
+      pullRequest: [],
+    });
+    // DB cleanup best-effort
     expect(mockGetPrStatusByUrl).toHaveBeenCalledWith(
       dbHandle,
       'https://github.com/example/repo/pull/301'
     );
     expect(mockUnlinkPlanFromPr).toHaveBeenCalledWith(dbHandle, 'plan-248', 88);
     expect(mockCleanOrphanedPrStatus).toHaveBeenCalledWith(dbHandle);
-    expect(mockReadPlanFile).toHaveBeenCalledWith('/tmp/248.plan.md');
-    expect(mockWritePlanFile).toHaveBeenCalledWith('/tmp/248.plan.md', {
-      ...currentPlan,
-      pullRequest: [],
-    });
-    expect(mockSyncPlanToDb).toHaveBeenCalled();
     expect(logs.some((line) => line.includes('Unlinked'))).toBe(true);
   });
 
@@ -328,20 +323,26 @@ describe('tim/commands/pr', () => {
     expect(mockResolvePlan).not.toHaveBeenCalled();
   });
 
-  test('unlink throws when no cached PR status exists for the URL', async () => {
+  test('unlink succeeds even when no cached PR status exists (best-effort DB cleanup)', async () => {
     currentCachedDetail = null;
+    currentPersistedPlan = {
+      ...currentPlan,
+      pullRequest: ['https://github.com/example/repo/pull/999'],
+    };
 
-    await expect(
-      prModule.handlePrUnlinkCommand(
-        '248',
-        'https://github.com/example/repo/pull/999',
-        {},
-        createNestedCommand()
-      )
-    ).rejects.toThrow('No cached PR status found for https://github.com/example/repo/pull/999');
+    await prModule.handlePrUnlinkCommand(
+      '248',
+      'https://github.com/example/repo/pull/999',
+      {},
+      createNestedCommand()
+    );
 
+    // Plan file updated regardless
+    expect(mockWritePlanFile).toHaveBeenCalled();
+    // DB cleanup skipped since no cached row exists
     expect(mockUnlinkPlanFromPr).not.toHaveBeenCalled();
     expect(mockCleanOrphanedPrStatus).not.toHaveBeenCalled();
+    expect(logs.some((line) => line.includes('Unlinked'))).toBe(true);
   });
 
   test('status surfaces plan resolution failures for invalid plan identifiers', async () => {
