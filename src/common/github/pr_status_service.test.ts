@@ -523,4 +523,96 @@ describe('common/github/pr_status_service', () => {
     ]);
     expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/213')).toBeNull();
   });
+
+  test('syncPlanPrLinks keeps existing links unchanged when one new PR fetch succeeds and another fails', async () => {
+    const existingDetail = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/214',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 214,
+      title: 'Existing linked PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: new Date().toISOString(),
+    });
+    const removedIfNonAtomic = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/215',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 215,
+      title: 'Should stay linked',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: new Date().toISOString(),
+    });
+
+    const linkPlanToPr = db.prepare('INSERT INTO plan_pr (plan_uuid, pr_status_id) VALUES (?, ?)');
+    linkPlanToPr.run('plan-service', existingDetail.status.id);
+    linkPlanToPr.run('plan-service', removedIfNonAtomic.status.id);
+
+    const fetchPrFullStatus = mock(async (_owner: string, _repo: string, prNumber: number) => {
+      if (prNumber === 216) {
+        return {
+          number: 216,
+          title: 'Prefetched PR',
+          state: 'open' as const,
+          isDraft: false,
+          mergeable: 'MERGEABLE' as const,
+          mergedAt: null,
+          headSha: 'sha-216',
+          baseRefName: 'main',
+          headRefName: 'feature/216',
+          reviewDecision: null,
+          labels: [],
+          reviews: [],
+          checks: [],
+          checkRollupState: 'pending' as const,
+        };
+      }
+
+      throw new Error('GitHub fetch failed after partial prefetch');
+    });
+
+    await moduleMocker.mock('./identifiers.ts', () => ({
+      parsePrOrIssueNumber: mock(async (identifier: string) => {
+        if (identifier.endsWith('/214')) {
+          return { owner: 'example', repo: 'repo', number: 214 };
+        }
+
+        if (identifier.endsWith('/216')) {
+          return { owner: 'example', repo: 'repo', number: 216 };
+        }
+
+        if (identifier.endsWith('/217')) {
+          return { owner: 'example', repo: 'repo', number: 217 };
+        }
+
+        return { owner: 'example', repo: 'repo', number: 215 };
+      }),
+    }));
+    await moduleMocker.mock('./pr_status.ts', () => ({
+      fetchPrFullStatus,
+      fetchPrCheckStatus: mock(),
+    }));
+
+    const { syncPlanPrLinks } = await import('./pr_status_service.ts');
+
+    await expect(
+      syncPlanPrLinks(db, 'plan-service', [
+        'https://github.com/example/repo/pull/214',
+        'https://github.com/example/repo/pull/216',
+        'https://github.com/example/repo/pull/217',
+      ])
+    ).rejects.toThrow('GitHub fetch failed after partial prefetch');
+
+    expect(fetchPrFullStatus).toHaveBeenCalledTimes(2);
+    expect(getPrStatusForPlan(db, 'plan-service').map((detail) => detail.status.pr_url)).toEqual([
+      'https://github.com/example/repo/pull/214',
+      'https://github.com/example/repo/pull/215',
+    ]);
+    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/216')?.status.pr_number).toBe(
+      216
+    );
+    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/217')).toBeNull();
+  });
 });

@@ -291,6 +291,64 @@ describe('common/github/pr_status', () => {
     });
   });
 
+  test('fetchPrCheckStatus filters null check context nodes', async () => {
+    const graphql = mock(async () => ({
+      repository: {
+        pullRequest: {
+          commits: {
+            nodes: [
+              {
+                commit: {
+                  statusCheckRollup: {
+                    state: 'SUCCESS',
+                    contexts: {
+                      nodes: [
+                        null,
+                        {
+                          __typename: 'StatusContext',
+                          context: 'required-check',
+                          state: 'SUCCESS',
+                          targetUrl: 'https://example.com/status/required-check',
+                          createdAt: '2026-03-20T00:20:00.000Z',
+                        },
+                        null,
+                      ],
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    }));
+
+    await moduleMocker.mock('octokit', () => ({
+      Octokit: mock(function () {
+        return {
+          graphql,
+        };
+      }),
+    }));
+
+    const { fetchPrCheckStatus } = await import('./pr_status.ts');
+
+    await expect(fetchPrCheckStatus('owner', 'repo', 48)).resolves.toEqual({
+      checks: [
+        {
+          name: 'required-check',
+          status: 'completed',
+          conclusion: 'success',
+          detailsUrl: 'https://example.com/status/required-check',
+          startedAt: null,
+          completedAt: '2026-03-20T00:20:00.000Z',
+          source: 'status_context',
+        },
+      ],
+      checkRollupState: 'success',
+    });
+  });
+
   test('normalizes EXPECTED status contexts and handles missing check rollups', async () => {
     const graphql = mock(async (_query: string, variables: { prNumber: number }) => {
       if (variables.prNumber === 44) {

@@ -169,6 +169,41 @@ describe('tim db/pr_status', () => {
     expect(planStatuses).toHaveLength(0);
   });
 
+  test('getPrStatusByUrl returns stored check rollup state and check source fields', () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/1021',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 1021,
+      title: 'Stored fields PR',
+      state: 'open',
+      draft: false,
+      checkRollupState: 'failure',
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      checks: [
+        {
+          name: 'legacy-status',
+          source: 'status_context',
+          status: 'completed',
+          conclusion: 'error',
+        },
+      ],
+    });
+
+    const detail = getPrStatusByUrl(db, 'https://github.com/example/repo/pull/1021');
+
+    expect(detail).not.toBeNull();
+    expect(detail?.status.check_rollup_state).toBe('failure');
+    expect(detail?.checks).toEqual([
+      expect.objectContaining({
+        name: 'legacy-status',
+        source: 'status_context',
+        status: 'completed',
+        conclusion: 'error',
+      }),
+    ]);
+  });
+
   test('updatePrCheckRuns replaces only check rows and updates fetch timestamp', () => {
     const detail = upsertPrStatus(db, {
       prUrl: 'https://github.com/example/repo/pull/103',
