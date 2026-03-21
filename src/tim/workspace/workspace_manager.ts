@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import PQueue from 'p-queue';
 import { debugLog, log } from '../../logging.js';
 import { spawnAndLogOutput } from '../../common/process.js';
-import { getJjBookmarkRevisionForWorkingCopy, getTrunkBranch } from '../../common/git.js';
+import { getTrunkBranch } from '../../common/git.js';
 import { executePostApplyCommand } from '../actions.js';
 import type { PostApplyCommand, TimConfig } from '../configSchema.js';
 import { WorkspaceLock } from './workspace_lock.js';
@@ -607,14 +607,34 @@ export async function ensurePrimaryWorkspaceBranch(
     }
 
     if (isPrimaryJj) {
-      const targetRevision =
-        options?.fromBranch ?? (await getJjBookmarkRevisionForWorkingCopy(mainRepoRoot));
+      let targetRevision: string;
+      if (options?.fromBranch) {
+        targetRevision = options.fromBranch;
+      } else {
+        // Check if working copy is dirty
+        const statusResult = await spawnAndLogOutput(['jj', 'status'], {
+          cwd: mainRepoRoot,
+          quiet: true,
+        });
+        if (
+          statusResult.exitCode !== 0 ||
+          !statusResult.stdout.includes('The working copy has no changes.')
+        ) {
+          return {
+            success: false,
+            error: 'Working copy is dirty. Please commit or discard changes before creating a branch.',
+          };
+        }
+        targetRevision = '@';
+      }
+
       await ensureJjRevisionHasDescription(
         mainRepoRoot,
         targetRevision,
         options?.planFilePath,
         branchName
       );
+
       createResult = await spawnAndLogOutput(
         ['jj', 'bookmark', 'set', branchName, '--revision', targetRevision],
         {
@@ -623,6 +643,13 @@ export async function ensurePrimaryWorkspaceBranch(
       );
       if (createResult.exitCode === 0) {
         createResult = await spawnAndLogOutput(['jj', 'git', 'push', '--bookmark', branchName], {
+          cwd: mainRepoRoot,
+        });
+      }
+
+      // After successful push without fromBranch, create new working copy commit
+      if (createResult.exitCode === 0 && !options?.fromBranch) {
+        await spawnAndLogOutput(['jj', 'new', '@-'], {
           cwd: mainRepoRoot,
         });
       }

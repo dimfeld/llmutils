@@ -9,7 +9,6 @@ describe('ensurePrimaryWorkspaceBranch', () => {
   let moduleMocker: ModuleMocker;
   let tempDir: string;
   const spawnAndLogOutput = mock(async () => ({ exitCode: 0, stdout: '', stderr: '' }));
-  const getJjBookmarkRevisionForWorkingCopy = mock(async () => '@');
 
   beforeEach(async () => {
     moduleMocker = new ModuleMocker(import.meta);
@@ -17,8 +16,6 @@ describe('ensurePrimaryWorkspaceBranch', () => {
     await fs.mkdir(path.join(tempDir, '.jj'));
 
     spawnAndLogOutput.mockClear();
-    getJjBookmarkRevisionForWorkingCopy.mockClear();
-    getJjBookmarkRevisionForWorkingCopy.mockResolvedValue('@-');
 
     await moduleMocker.mock('../../logging.js', () => ({
       debugLog: mock(() => {}),
@@ -30,7 +27,6 @@ describe('ensurePrimaryWorkspaceBranch', () => {
     }));
 
     await moduleMocker.mock('../../common/git.js', () => ({
-      getJjBookmarkRevisionForWorkingCopy,
       getTrunkBranch: mock(async () => 'main'),
     }));
 
@@ -44,16 +40,85 @@ describe('ensurePrimaryWorkspaceBranch', () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  test('uses @- for jj bookmark creation when the working copy has no changes', async () => {
-    const { ensurePrimaryWorkspaceBranch } = await import('./workspace_manager.js');
+  test('returns error when working copy is dirty and no fromBranch', async () => {
+    spawnAndLogOutput.mockImplementation(async (args: string[]) => {
+      if (args[0] === 'jj' && args[1] === 'status') {
+        return { exitCode: 0, stdout: 'Working copy changes:\nM file.txt', stderr: '' };
+      }
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
 
+    const { ensurePrimaryWorkspaceBranch } = await import('./workspace_manager.js');
+    const result = await ensurePrimaryWorkspaceBranch(tempDir, 'task-123');
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Working copy is dirty');
+  });
+
+  test('uses @ revision when working copy is clean and no fromBranch', async () => {
+    spawnAndLogOutput.mockImplementation(async (args: string[]) => {
+      if (args[0] === 'jj' && args[1] === 'status') {
+        return { exitCode: 0, stdout: 'The working copy has no changes.', stderr: '' };
+      }
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    const { ensurePrimaryWorkspaceBranch } = await import('./workspace_manager.js');
     const result = await ensurePrimaryWorkspaceBranch(tempDir, 'task-123');
 
     expect(result).toEqual({ success: true });
-    expect(getJjBookmarkRevisionForWorkingCopy).toHaveBeenCalledWith(tempDir);
-    expect(spawnAndLogOutput).toHaveBeenCalledWith(
-      ['jj', 'bookmark', 'set', 'task-123', '--revision', '@-'],
-      { cwd: tempDir }
+
+    const calls = spawnAndLogOutput.mock.calls;
+    // Find the bookmark set call
+    const bookmarkCall = calls.find(
+      (c) => c[0][0] === 'jj' && c[0][1] === 'bookmark' && c[0][2] === 'set'
     );
+    expect(bookmarkCall).toBeTruthy();
+    expect(bookmarkCall![0]).toEqual(['jj', 'bookmark', 'set', 'task-123', '--revision', '@']);
+  });
+
+  test('runs jj new @- after successful push without fromBranch', async () => {
+    spawnAndLogOutput.mockImplementation(async (args: string[]) => {
+      if (args[0] === 'jj' && args[1] === 'status') {
+        return { exitCode: 0, stdout: 'The working copy has no changes.', stderr: '' };
+      }
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    const { ensurePrimaryWorkspaceBranch } = await import('./workspace_manager.js');
+    const result = await ensurePrimaryWorkspaceBranch(tempDir, 'task-123');
+
+    expect(result).toEqual({ success: true });
+
+    const calls = spawnAndLogOutput.mock.calls;
+    const newCall = calls.find((c) => c[0][0] === 'jj' && c[0][1] === 'new');
+    expect(newCall).toBeTruthy();
+    expect(newCall![0]).toEqual(['jj', 'new', '@-']);
+  });
+
+  test('does not run jj new @- when fromBranch is specified', async () => {
+    const { ensurePrimaryWorkspaceBranch } = await import('./workspace_manager.js');
+    const result = await ensurePrimaryWorkspaceBranch(tempDir, 'task-123', {
+      fromBranch: 'some-branch',
+    });
+
+    expect(result).toEqual({ success: true });
+
+    const calls = spawnAndLogOutput.mock.calls;
+    const newCall = calls.find((c) => c[0][0] === 'jj' && c[0][1] === 'new');
+    expect(newCall).toBeUndefined();
+  });
+
+  test('does not check working copy status when fromBranch is specified', async () => {
+    const { ensurePrimaryWorkspaceBranch } = await import('./workspace_manager.js');
+    const result = await ensurePrimaryWorkspaceBranch(tempDir, 'task-123', {
+      fromBranch: 'some-branch',
+    });
+
+    expect(result).toEqual({ success: true });
+
+    const calls = spawnAndLogOutput.mock.calls;
+    const statusCall = calls.find((c) => c[0][0] === 'jj' && c[0][1] === 'status');
+    expect(statusCall).toBeUndefined();
   });
 });

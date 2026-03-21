@@ -1653,6 +1653,10 @@ describe('createWorkspace', () => {
         return { exitCode: 0, stdout: 'README.md\u0000', stderr: '' };
       }
 
+      if (cmd[0] === 'jj' && cmd[1] === 'status') {
+        return { exitCode: 0, stdout: 'The working copy has no changes.', stderr: '' };
+      }
+
       if (cmd[0] === 'jj' && cmd[1] === 'log' && options?.cwd === targetClonePath) {
         return { exitCode: 0, stdout: '', stderr: '' };
       }
@@ -2123,6 +2127,9 @@ describe('createWorkspace', () => {
     await fs.mkdir(path.join(mainRepoRoot, '.jj'), { recursive: true });
 
     mockSpawnAndLogOutput.mockImplementation(async (cmd: string[]) => {
+      if (cmd[0] === 'jj' && cmd[1] === 'status') {
+        return { exitCode: 0, stdout: 'The working copy has no changes.', stderr: '' };
+      }
       if (cmd[0] === 'jj' && cmd[1] === 'log') {
         return { exitCode: 0, stdout: '', stderr: '' };
       }

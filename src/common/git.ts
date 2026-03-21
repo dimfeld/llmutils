@@ -194,14 +194,24 @@ export async function getWorkingCopyStatus(cwd: string): Promise<WorkingCopyStat
   };
 }
 
-export async function getJjBookmarkRevisionForWorkingCopy(cwd: string): Promise<'@' | '@-'> {
+export async function getJjBookmarkRevisionForWorkingCopy(cwd: string): Promise<string> {
   const result = await $`jj status`.cwd(cwd).quiet().nothrow();
+  let revision: string;
   if (result.exitCode !== 0) {
     return '@';
+  } else {
+    const output = result.stdout.toString();
+    revision = output.includes('The working copy has no changes.') ? '@-' : '@';
   }
 
-  const output = result.stdout.toString();
-  return output.includes('The working copy has no changes.') ? '@-' : '@';
+  const actualChangeId = await $`jj show ${revision} --no-graph -T commit_id`
+    .cwd(cwd)
+    .quiet()
+    .nothrow();
+  if (actualChangeId.exitCode !== 0) {
+    return '@';
+  }
+  return actualChangeId.stdout.toString().trim();
 }
 
 /**
