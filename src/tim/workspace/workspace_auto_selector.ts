@@ -67,7 +67,7 @@ export class WorkspaceAutoSelector {
    */
   async selectWorkspace(
     taskId: string,
-    planFilePath: string,
+    planFilePath: string | undefined,
     options: AutoSelectOptions = {}
   ): Promise<SelectedWorkspace | null> {
     const {
@@ -204,7 +204,7 @@ export class WorkspaceAutoSelector {
    */
   private async createNewWorkspace(
     taskId: string,
-    planFilePath: string,
+    planFilePath: string | undefined,
     options: Pick<AutoSelectOptions, 'createBranch' | 'base'> & {
       workspaceType?: WorkspaceType;
     } = {}

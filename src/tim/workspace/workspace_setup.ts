@@ -63,12 +63,12 @@ async function getParentPlanBranch(
 export async function setupWorkspace(
   options: WorkspaceSetupOptions,
   currentBaseDir: string,
-  currentPlanFile: string,
+  currentPlanFile: string | undefined,
   config: TimConfig,
   commandLabel: string
 ): Promise<WorkspaceSetupResult> {
   let baseDir = currentBaseDir;
-  let planFile = currentPlanFile;
+  let planFile = currentPlanFile ?? '';
   let workspaceTaskId: string | undefined;
   let isNewWorkspace: boolean | undefined;
 
@@ -84,7 +84,7 @@ export async function setupWorkspace(
       const taskId =
         options.workspace || `${path.parse(baseDir).dir.split(path.sep).pop()}-${Date.now()}`;
 
-      selectedWorkspace = await selector.selectWorkspace(taskId, planFile, {
+      selectedWorkspace = await selector.selectWorkspace(taskId, currentPlanFile, {
         interactive: !options.nonInteractive,
         preferNewWorkspace: options.newWorkspace,
         createBranch: options.createBranch,
@@ -113,7 +113,7 @@ export async function setupWorkspace(
 
       if (options.newWorkspace) {
         log(`Creating workspace for task: ${options.workspace}`);
-        workspace = await createWorkspace(baseDir, options.workspace, planFile, config, {
+        workspace = await createWorkspace(baseDir, options.workspace, currentPlanFile, config, {
           ...(options.createBranch !== undefined && { createBranch: options.createBranch }),
           ...(options.base && { fromBranch: options.base }),
         });
@@ -148,7 +148,7 @@ export async function setupWorkspace(
         }
       } else {
         log(`Creating workspace for task: ${options.workspace}`);
-        workspace = await createWorkspace(baseDir, options.workspace, planFile, config, {
+        workspace = await createWorkspace(baseDir, options.workspace, currentPlanFile, config, {
           ...(options.createBranch !== undefined && { createBranch: options.createBranch }),
           ...(options.base && { fromBranch: options.base }),
         });
@@ -167,8 +167,12 @@ export async function setupWorkspace(
         isNewWorkspace = selectedWorkspace.isNew;
       }
 
-      const relativePlanPath = path.relative(currentBaseDir, planFile);
-      const workspacePlanFile = path.join(workspace.path, relativePlanPath);
+      const relativePlanPath = currentPlanFile
+        ? path.relative(currentBaseDir, currentPlanFile)
+        : undefined;
+      const workspacePlanFile = relativePlanPath
+        ? path.join(workspace.path, relativePlanPath)
+        : undefined;
       const primaryRepoRoot = (await getGitRoot(currentBaseDir)) || currentBaseDir;
       // createWorkspace() acquires a persistent lock. Replace it with a PID lock so
       // signal-based cleanup handlers can release it on interruption.
@@ -183,6 +187,10 @@ export async function setupWorkspace(
       WorkspaceLock.setupCleanupHandlers(workspace.path, lockInfo.type);
 
       const copyPlanIntoWorkspace = async (): Promise<void> => {
+        if (!currentPlanFile || !workspacePlanFile) {
+          return;
+        }
+
         if (planFile === workspacePlanFile) {
           log(`Using plan file in workspace: ${planFile}`);
           return;
@@ -218,24 +226,27 @@ export async function setupWorkspace(
           let canRetryWithoutBaseBranch = false;
           const shouldCreateBranch =
             options.createBranch ?? config.workspaceCreation?.createBranch ?? true;
+          const shouldPrepareWorkspaceBranch = Boolean(currentPlanFile || baseBranch);
           try {
-            planData = await readPlanFile(planFile);
-            branchName = planData.branch ?? generateBranchNameFromPlan(planData);
+            if (currentPlanFile) {
+              planData = await readPlanFile(planFile);
+              branchName = planData.branch ?? generateBranchNameFromPlan(planData);
 
-            if (!baseBranch) {
-              baseBranch = planData.baseBranch;
-            }
+              if (!baseBranch) {
+                baseBranch = planData.baseBranch;
+              }
 
-            if (!baseBranch) {
-              const parentBranch = await getParentPlanBranch(
-                planFile,
-                planData,
-                config,
-                currentBaseDir
-              );
-              if (parentBranch) {
-                baseBranch = parentBranch;
-                canRetryWithoutBaseBranch = true;
+              if (!baseBranch) {
+                const parentBranch = await getParentPlanBranch(
+                  planFile,
+                  planData,
+                  config,
+                  currentBaseDir
+                );
+                if (parentBranch) {
+                  baseBranch = parentBranch;
+                  canRetryWithoutBaseBranch = true;
+                }
               }
             }
           } catch (err) {
@@ -245,11 +256,11 @@ export async function setupWorkspace(
           }
 
           let preparedWithPlanBranch = false;
-          if (options.autoWorkspace) {
+          if (options.autoWorkspace && shouldPrepareWorkspaceBranch) {
             const syncBaseResult = await prepareExistingWorkspace(workspace.path, {
               baseBranch,
               branchName,
-              planFilePath: planFile,
+              planFilePath: currentPlanFile ? planFile : undefined,
               createBranch: false,
               logSkippedBranchCreation: false,
             });
@@ -283,18 +294,18 @@ export async function setupWorkspace(
             }
           }
 
-          if (!preparedWithPlanBranch) {
+          if (!preparedWithPlanBranch && shouldPrepareWorkspaceBranch) {
             let prepareResult = await prepareExistingWorkspace(workspace.path, {
               baseBranch,
               branchName,
-              planFilePath: planFile,
+              planFilePath: currentPlanFile ? planFile : undefined,
               createBranch: shouldCreateBranch,
             });
 
             if (!prepareResult.success && canRetryWithoutBaseBranch) {
               prepareResult = await prepareExistingWorkspace(workspace.path, {
                 branchName,
-                planFilePath: planFile,
+                planFilePath: currentPlanFile ? planFile : undefined,
                 createBranch: shouldCreateBranch,
               });
             }
@@ -346,7 +357,7 @@ export async function setupWorkspace(
         }
 
         if (isNewWorkspace) {
-          planFile = workspace.planFilePathInWorkspace ?? workspacePlanFile;
+          planFile = workspace.planFilePathInWorkspace ?? workspacePlanFile ?? planFile;
         }
 
         baseDir = workspace.path;
