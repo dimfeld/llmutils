@@ -20,6 +20,7 @@ const mockRefreshPrStatus = mock(async (..._args: unknown[]) => ({}));
 const mockSyncPlanPrLinks = mock(async (..._args: unknown[]) => []);
 const mockCanonicalizePrUrl = mock((identifier: string) => identifier);
 const mockParsePrOrIssueNumber = mock(async (..._args: unknown[]) => null);
+// validatePrIdentifier is no longer directly called in pr.ts (validation is done inside canonicalizePrUrl)
 const mockValidatePrIdentifier = mock((_identifier: string) => {});
 const mockGetPrStatusByUrl = mock((_db: unknown, _prUrl: string) => null);
 const mockLinkPlanToPr = mock((_db: unknown, _planUuid: string, _prStatusId: number) => {});
@@ -148,13 +149,30 @@ describe('tim/commands/pr', () => {
       return detail;
     });
     mockSyncPlanPrLinks.mockImplementation(async () => currentSyncedStatuses);
-    mockCanonicalizePrUrl.mockImplementation((identifier: string) => identifier);
-    mockParsePrOrIssueNumber.mockImplementation(async () => currentParsedIdentifier);
-    mockValidatePrIdentifier.mockImplementation((identifier: string) => {
-      if (identifier.includes('/issues/')) {
-        throw new Error(`Not a pull request URL: ${identifier}`);
+    mockCanonicalizePrUrl.mockImplementation((identifier: string) => {
+      // Mimic real canonicalizePrUrl: reject non-PR GitHub URLs
+      try {
+        const url = new URL(identifier);
+        const isGitHub = url.hostname === 'github.com' || url.hostname.endsWith('.github.com');
+        if (isGitHub) {
+          const segments = url.pathname.split('/').filter(Boolean);
+          if (segments.length < 4 || (segments[2] !== 'pull' && segments[2] !== 'pulls')) {
+            throw new Error(
+              `Not a pull request URL: ${identifier}. Expected a GitHub PR URL (e.g. https://github.com/owner/repo/pull/123)`
+            );
+          }
+        }
+      } catch (e) {
+        if (e instanceof TypeError) {
+          // Not a URL, pass through
+        } else {
+          throw e;
+        }
       }
+      return identifier;
     });
+    mockParsePrOrIssueNumber.mockImplementation(async () => currentParsedIdentifier);
+    mockValidatePrIdentifier.mockImplementation(() => {});
     mockGetPrStatusByUrl.mockImplementation(() => currentCachedDetail);
     mockLinkPlanToPr.mockImplementation(() => {});
     mockUnlinkPlanFromPr.mockImplementation(() => {});
