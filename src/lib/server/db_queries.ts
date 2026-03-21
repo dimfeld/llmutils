@@ -276,7 +276,7 @@ function getPrSummaryStatusByPlanUuid(
       continue;
     }
 
-    if (states.length > 0 && states.every((state) => state === 'success')) {
+    if (states.length > 0) {
       summaryByPlanUuid.set(planUuid, 'passing');
       continue;
     }

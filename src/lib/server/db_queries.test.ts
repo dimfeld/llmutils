@@ -214,6 +214,36 @@ describe('lib/server/db_queries', () => {
     expect(plans.find((plan) => plan.uuid === 'plan-parent')?.prSummaryStatus).toBe('none');
   });
 
+  test('getPlansForProject treats neutral, cancelled, and skipped PR rollups as passing', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-neutral-pr',
+      planId: 108,
+      title: 'Neutral PR plan',
+      goal: 'Checks completed without failure',
+      status: 'pending',
+      priority: 'medium',
+      filename: '108-neutral.plan.md',
+      pullRequest: ['https://github.com/example/repo/pull/108'],
+    });
+    const neutralPr = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/108',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 108,
+      title: 'Neutral PR',
+      state: 'open',
+      draft: false,
+      checkRollupState: 'neutral',
+      lastFetchedAt: recentTimestamp(),
+    });
+
+    linkPlanToPr(db, 'plan-neutral-pr', neutralPr.status.id);
+
+    const plans = getPlansForProject(db, projectId);
+
+    expect(plans.find((plan) => plan.uuid === 'plan-neutral-pr')?.prSummaryStatus).toBe('passing');
+  });
+
   test('cross-project unresolved dependencies mark a plan as blocked in project lists and detail views', () => {
     const plans = getPlansForProject(db, projectId);
     const crossProjectDependencyPlan = plans.find(

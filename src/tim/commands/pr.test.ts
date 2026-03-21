@@ -1,3 +1,6 @@
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 
 import { ModuleMocker } from '../../testing.js';
@@ -35,9 +38,15 @@ let currentParsedIdentifier: AnyObject | null;
 let currentCachedDetail: AnyObject | null;
 let currentPersistedPlan: AnyObject;
 let prModule: typeof import('./pr.js');
+let tempDir: string;
+let originalCwd: string;
 
 describe('tim/commands/pr', () => {
   beforeAll(async () => {
+    originalCwd = process.cwd();
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-pr-command-test-'));
+    tempDir = await fs.realpath(tempDir);
+
     await moduleMocker.mock('../../logging.js', () => ({
       log: mockLog,
     }));
@@ -74,7 +83,9 @@ describe('tim/commands/pr', () => {
     prModule = await import('./pr.js');
   });
 
-  afterAll(() => {
+  afterAll(async () => {
+    process.chdir(originalCwd);
+    await fs.rm(tempDir, { recursive: true, force: true });
     moduleMocker.clear();
   });
 
@@ -172,6 +183,34 @@ describe('tim/commands/pr', () => {
     ]);
     expect(logs.some((line) => line.includes('example/repo#101: First PR'))).toBe(true);
     expect(logs.some((line) => line.includes('example/repo#102: Second PR'))).toBe(true);
+  });
+
+  test('status resolves the current workspace plan from a nested workspace directory', async () => {
+    const workspaceDir = path.join(tempDir, 'workspace-root');
+    const nestedDir = path.join(workspaceDir, 'src', 'nested');
+    await fs.mkdir(nestedDir, { recursive: true });
+    currentWorkspaceInfo = {
+      originalPlanFilePath: '/tmp/248.plan.md',
+    };
+    currentPlan.pullRequest = [];
+    mockGetWorkspaceInfoByPath.mockImplementation((cwd: string) =>
+      path.basename(cwd) === 'workspace-root' ? currentWorkspaceInfo : null
+    );
+
+    process.chdir(nestedDir);
+    try {
+      await prModule.handlePrStatusCommand(undefined, {}, createNestedCommand());
+    } finally {
+      process.chdir(originalCwd);
+    }
+
+    expect(mockGetWorkspaceInfoByPath).toHaveBeenCalledWith(nestedDir);
+    expect(mockGetWorkspaceInfoByPath).toHaveBeenCalledWith(path.join(workspaceDir, 'src'));
+    expect(mockGetWorkspaceInfoByPath).toHaveBeenCalledWith(workspaceDir);
+    expect(mockResolvePlan).toHaveBeenCalledWith('/tmp/248.plan.md', {
+      gitRoot: nestedDir,
+      configPath: '/tmp/tim.yml',
+    });
   });
 
   test('status reports when a plan has no linked pull requests', async () => {
@@ -280,6 +319,24 @@ describe('tim/commands/pr', () => {
     expect(mockLinkPlanToPr).not.toHaveBeenCalled();
   });
 
+  test('link rejects explicit GitHub issue URLs', async () => {
+    currentParsedIdentifier = { owner: 'example', repo: 'repo', number: 201 };
+
+    await expect(
+      prModule.handlePrLinkCommand(
+        '248',
+        'https://github.com/example/repo/issues/201',
+        {},
+        createNestedCommand()
+      )
+    ).rejects.toThrow(
+      'Invalid GitHub pull request identifier: https://github.com/example/repo/issues/201'
+    );
+
+    expect(mockRefreshPrStatus).not.toHaveBeenCalled();
+    expect(mockLinkPlanToPr).not.toHaveBeenCalled();
+  });
+
   test('unlink removes the junction, cleans orphaned PR cache rows, and persists the plan file', async () => {
     currentCachedDetail = createPrDetail(301, 'Cached PR', 'success', 88);
     currentPersistedPlan = {
@@ -327,6 +384,24 @@ describe('tim/commands/pr', () => {
     expect(mockCleanOrphanedPrStatus).toHaveBeenCalledWith(dbHandle);
     // Reports that URL was not linked in plan file
     expect(logs.some((line) => line.includes('was not linked'))).toBe(true);
+  });
+
+  test('unlink rejects explicit GitHub issue URLs', async () => {
+    currentParsedIdentifier = { owner: 'example', repo: 'repo', number: 302 };
+
+    await expect(
+      prModule.handlePrUnlinkCommand(
+        '248',
+        'https://github.com/example/repo/issues/302',
+        {},
+        createNestedCommand()
+      )
+    ).rejects.toThrow(
+      'Invalid GitHub pull request identifier: https://github.com/example/repo/issues/302'
+    );
+
+    expect(mockGetPrStatusByUrl).not.toHaveBeenCalled();
+    expect(mockUnlinkPlanFromPr).not.toHaveBeenCalled();
   });
 
   test('status requires GITHUB_TOKEN when plan has PRs', async () => {

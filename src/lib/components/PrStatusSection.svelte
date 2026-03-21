@@ -38,12 +38,13 @@
   $effect(() => {
     // Reset fetched data when props change (new plan selected)
     fetchedStatuses = null;
+    refreshing = false;
+    refreshError = null;
 
     if (!needsRefresh(prUrls, initialStatuses)) return;
 
     const controller = new AbortController();
     refreshing = true;
-    refreshError = null;
 
     fetch(`/api/plans/${planUuid}/pr-status`, {
       method: 'POST',
@@ -72,7 +73,10 @@
         }
       });
 
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      refreshing = false;
+    };
   });
 
   function stateBadgeColor(state: string, draft: number): string {

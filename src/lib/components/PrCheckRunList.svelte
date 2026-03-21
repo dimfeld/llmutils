@@ -17,6 +17,7 @@
       case 'success':
         return 'text-green-600 dark:text-green-400';
       case 'failure':
+      case 'error':
       case 'timed_out':
       case 'startup_failure':
         return 'text-red-600 dark:text-red-400';
@@ -46,6 +47,7 @@
       case 'success':
         return '✓';
       case 'failure':
+      case 'error':
       case 'timed_out':
       case 'startup_failure':
         return '✗';

@@ -178,6 +178,21 @@ describe('PrStatusSection', () => {
     expect(body).toContain('Checks pending');
   });
 
+  test('renders error check runs as failures', () => {
+    const detail = makePrDetail({
+      checks: [makeCheck({ conclusion: 'error', name: 'CI / error' })],
+    });
+    const { body } = renderSection({
+      prUrls: [detail.status.pr_url],
+      initialStatuses: [detail],
+    });
+
+    expect(body).toContain('CI / error');
+    expect(body).toContain('text-red-600');
+    expect(body).toContain('✗');
+    expect(body).toContain('error');
+  });
+
   test('renders review decision badges', () => {
     const approved = makePrDetail({ status: { review_decision: 'APPROVED' } });
     const { body: bodyApproved } = renderSection({
