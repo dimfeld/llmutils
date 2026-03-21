@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite';
 
 import { getAssignmentEntry, type AssignmentEntry } from '$tim/db/assignment.js';
+import { getPrStatusForPlan, type PrStatusDetail } from '$tim/db/pr_status.js';
 import { normalizePlanStatus } from '$tim/plans/plan_state_utils.js';
 import { cleanStaleLocks, type WorkspaceLockRow } from '$tim/db/workspace_lock.js';
 import {
@@ -82,6 +83,9 @@ export interface EnrichedPlan {
   filename: string;
   createdAt: string;
   updatedAt: string;
+  pullRequests: string[];
+  issues: string[];
+  prSummaryStatus: PrSummaryStatus;
   tags: string[];
   dependencyUuids: string[];
   tasks: EnrichedPlanTask[];
@@ -95,6 +99,7 @@ export interface PlanDetail extends EnrichedPlan {
   dependencies: EnrichedPlanDependency[];
   assignment: AssignmentEntry | null;
   parent: EnrichedPlanDependency | null;
+  prStatuses: PrStatusDetail[];
 }
 
 export interface EnrichedWorkspace {
@@ -122,6 +127,8 @@ interface PlanQueryBundle {
   dependencies: PlanDependencyRow[];
   tags: PlanTagRow[];
 }
+
+export type PrSummaryStatus = 'passing' | 'failing' | 'pending' | 'none';
 
 export const RECENTLY_DONE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 export const RECENTLY_ACTIVE_WINDOW_MS = 48 * 60 * 60 * 1000;
@@ -197,6 +204,87 @@ function isRecentlyUpdated(updatedAt: string, now = Date.now()): boolean {
   return now - updatedAtMs <= RECENTLY_ACTIVE_WINDOW_MS;
 }
 
+function parseJsonStringArray(value: string | null): string[] {
+  if (!value) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.filter((item): item is string => typeof item === 'string');
+  } catch {
+    return [];
+  }
+}
+
+function getPrSummaryStatusByPlanUuid(
+  db: Database,
+  planUuids: readonly string[]
+): Map<string, PrSummaryStatus> {
+  if (planUuids.length === 0) {
+    return new Map();
+  }
+
+  const placeholders = planUuids.map(() => '?').join(', ');
+  const rows = db
+    .prepare(
+      `
+        SELECT
+          pp.plan_uuid AS plan_uuid,
+          ps.check_rollup_state AS check_rollup_state
+        FROM plan_pr pp
+        INNER JOIN pr_status ps ON ps.id = pp.pr_status_id
+        WHERE pp.plan_uuid IN (${placeholders})
+      `
+    )
+    .all(...planUuids) as Array<{
+    plan_uuid: string;
+    check_rollup_state: string | null;
+  }>;
+
+  const statesByPlanUuid = new Map<string, string[]>();
+  for (const row of rows) {
+    const existing = statesByPlanUuid.get(row.plan_uuid);
+    if (existing) {
+      existing.push(row.check_rollup_state ?? '');
+    } else {
+      statesByPlanUuid.set(row.plan_uuid, [row.check_rollup_state ?? '']);
+    }
+  }
+
+  const summaryByPlanUuid = new Map<string, PrSummaryStatus>();
+  for (const planUuid of planUuids) {
+    const states = statesByPlanUuid.get(planUuid) ?? [];
+    if (states.length === 0) {
+      summaryByPlanUuid.set(planUuid, 'none');
+      continue;
+    }
+
+    if (states.some((state) => state === 'failure' || state === 'error')) {
+      summaryByPlanUuid.set(planUuid, 'failing');
+      continue;
+    }
+
+    if (states.some((state) => state === 'pending' || state === 'expected')) {
+      summaryByPlanUuid.set(planUuid, 'pending');
+      continue;
+    }
+
+    if (states.every((state) => state === 'success')) {
+      summaryByPlanUuid.set(planUuid, 'passing');
+      continue;
+    }
+
+    summaryByPlanUuid.set(planUuid, 'none');
+  }
+
+  return summaryByPlanUuid;
+}
+
 function computeDisplayStatus(
   plan: PlanRow,
   dependencyRows: PlanDependencyRow[],
@@ -248,6 +336,11 @@ function enrichPlansWithContext(
     planByUuid.set(dependencyPlan.uuid, dependencyPlan);
   }
 
+  const prSummaryStatusByPlanUuid = getPrSummaryStatusByPlanUuid(
+    db,
+    bundle.plans.map((plan) => plan.uuid)
+  );
+
   const enrichedPlans = bundle.plans.map((plan) => {
     const tasks = (tasksByPlanUuid.get(plan.uuid) ?? []).map(toTask);
     const dependencyRows = dependenciesByPlanUuid.get(plan.uuid) ?? [];
@@ -269,6 +362,9 @@ function enrichPlansWithContext(
       filename: plan.filename,
       createdAt: plan.created_at,
       updatedAt: plan.updated_at,
+      pullRequests: parseJsonStringArray(plan.pull_request),
+      issues: parseJsonStringArray(plan.issue),
+      prSummaryStatus: prSummaryStatusByPlanUuid.get(plan.uuid) ?? 'none',
       tags: tagsByPlanUuid.get(plan.uuid) ?? [],
       dependencyUuids: dependencyRows.map((dependency) => dependency.depends_on_uuid),
       tasks,
@@ -552,11 +648,13 @@ export function getPlanDetail(db: Database, planUuid: string): PlanDetail | null
   const parent = plan.parent_uuid
     ? toDependencySummary(plan.parent_uuid, planByUuid, dependenciesByPlanUuid)
     : null;
+  const prStatuses = getPrStatusForPlan(db, planUuid);
 
   return {
     ...enrichedPlan,
     dependencies: dependencySummaries,
     assignment,
     parent,
+    prStatuses,
   };
 }

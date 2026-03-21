@@ -7,6 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 import { claimAssignment } from '$tim/db/assignment.js';
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
 import { upsertPlan } from '$tim/db/plan.js';
+import { linkPlanToPr, upsertPrStatus } from '$tim/db/pr_status.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import { patchWorkspace, recordWorkspace } from '$tim/db/workspace.js';
 import { acquireWorkspaceLock, getWorkspaceLock } from '$tim/db/workspace_lock.js';
@@ -128,6 +129,91 @@ describe('lib/server/db_queries', () => {
     expect(needsReviewPlan?.displayStatus).toBe('needs_review');
   });
 
+  test('getPlansForProject parses PR metadata and computes PR summary statuses in bulk', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-pending',
+      planId: 105,
+      title: 'Pending plan',
+      goal: 'No dependencies here',
+      status: 'pending',
+      priority: 'medium',
+      filename: '105-pending.plan.md',
+      pullRequest: ['https://github.com/example/repo/pull/105'],
+      issue: ['https://github.com/example/repo/issues/12'],
+    });
+    upsertPlan(db, projectId, {
+      uuid: 'plan-review',
+      planId: 106,
+      title: 'Needs review plan',
+      goal: 'Awaiting review',
+      status: 'needs_review',
+      priority: 'high',
+      filename: '106-review.plan.md',
+      pullRequest: ['https://github.com/example/repo/pull/106'],
+    });
+    upsertPlan(db, projectId, {
+      uuid: 'plan-resolved-dependency',
+      planId: 107,
+      title: 'Resolved dependency plan',
+      goal: 'Should stay in progress when dependencies are done',
+      status: 'in_progress',
+      priority: 'medium',
+      filename: '107-resolved-dependency.plan.md',
+      pullRequest: ['https://github.com/example/repo/pull/107'],
+    });
+
+    const passingPr = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/105',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 105,
+      title: 'Passing PR',
+      state: 'open',
+      draft: false,
+      checkRollupState: 'success',
+      lastFetchedAt: recentTimestamp(),
+    });
+    const failingPr = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/106',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 106,
+      title: 'Failing PR',
+      state: 'open',
+      draft: false,
+      checkRollupState: 'failure',
+      lastFetchedAt: recentTimestamp(),
+    });
+    const pendingPr = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/107',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 107,
+      title: 'Pending PR',
+      state: 'open',
+      draft: false,
+      checkRollupState: 'pending',
+      lastFetchedAt: recentTimestamp(),
+    });
+
+    linkPlanToPr(db, 'plan-pending', passingPr.status.id);
+    linkPlanToPr(db, 'plan-review', failingPr.status.id);
+    linkPlanToPr(db, 'plan-resolved-dependency', pendingPr.status.id);
+
+    const plans = getPlansForProject(db, projectId);
+
+    expect(plans.find((plan) => plan.uuid === 'plan-pending')).toMatchObject({
+      pullRequests: ['https://github.com/example/repo/pull/105'],
+      issues: ['https://github.com/example/repo/issues/12'],
+      prSummaryStatus: 'passing',
+    });
+    expect(plans.find((plan) => plan.uuid === 'plan-review')?.prSummaryStatus).toBe('failing');
+    expect(plans.find((plan) => plan.uuid === 'plan-resolved-dependency')?.prSummaryStatus).toBe(
+      'pending'
+    );
+    expect(plans.find((plan) => plan.uuid === 'plan-parent')?.prSummaryStatus).toBe('none');
+  });
+
   test('cross-project unresolved dependencies mark a plan as blocked in project lists and detail views', () => {
     const plans = getPlansForProject(db, projectId);
     const crossProjectDependencyPlan = plans.find(
@@ -246,6 +332,75 @@ describe('lib/server/db_queries', () => {
         isResolved: false,
       }),
     ]);
+  });
+
+  test('getPlanDetail includes parsed PR metadata and linked PR status details', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-blocked',
+      planId: 103,
+      title: 'Blocked plan',
+      goal: 'Should surface as blocked',
+      details: 'This plan depends on unfinished work.',
+      status: 'in_progress',
+      priority: 'urgent',
+      parentUuid: 'plan-parent',
+      filename: '103-blocked.plan.md',
+      dependencyUuids: ['plan-dependency-open'],
+      tags: ['backend', 'ui'],
+      tasks: [
+        {
+          title: 'Implement query composition',
+          description: 'Wire list queries together',
+          done: true,
+        },
+        { title: 'Add page filtering', description: 'Expose filters to the UI', done: false },
+      ],
+      pullRequest: ['https://github.com/example/repo/pull/103'],
+      issue: ['https://github.com/example/repo/issues/103'],
+    });
+    const prDetail = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/103',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 103,
+      title: 'Blocked plan PR',
+      state: 'open',
+      draft: false,
+      reviewDecision: 'APPROVED',
+      checkRollupState: 'success',
+      lastFetchedAt: recentTimestamp(),
+      checks: [
+        {
+          name: 'unit',
+          source: 'check_run',
+          status: 'completed',
+          conclusion: 'success',
+        },
+      ],
+      reviews: [{ author: 'alice', state: 'APPROVED' }],
+      labels: [{ name: 'backend', color: 'ff0000' }],
+    });
+    linkPlanToPr(db, 'plan-blocked', prDetail.status.id);
+
+    const detail = getPlanDetail(db, 'plan-blocked');
+
+    expect(detail).not.toBeNull();
+    expect(detail).toMatchObject({
+      pullRequests: ['https://github.com/example/repo/pull/103'],
+      issues: ['https://github.com/example/repo/issues/103'],
+      prSummaryStatus: 'passing',
+    });
+    expect(detail?.prStatuses).toHaveLength(1);
+    expect(detail?.prStatuses[0]).toMatchObject({
+      status: {
+        pr_url: 'https://github.com/example/repo/pull/103',
+        title: 'Blocked plan PR',
+        check_rollup_state: 'success',
+      },
+      checks: [{ name: 'unit', source: 'check_run', status: 'completed', conclusion: 'success' }],
+      reviews: [{ author: 'alice', state: 'APPROVED' }],
+      labels: [{ name: 'backend', color: 'ff0000' }],
+    });
   });
 
   test('getPlanDetail keeps in-progress display status when all dependencies are resolved', () => {
@@ -746,6 +901,10 @@ function daysAgo(days: number): string {
 
 function hoursAgo(hours: number): string {
   return new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+}
+
+function recentTimestamp(): string {
+  return new Date().toISOString();
 }
 
 function setWorkspaceUpdatedAt(db: Database, workspaceId: number, updatedAt: string): void {
