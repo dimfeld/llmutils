@@ -1,17 +1,102 @@
 ---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: PR Status Monitoring
-goal: Fetch PR status from GitHub, cache in DB, display in web UI and CLI via new tim pr subcommand namespace
+goal: Fetch PR status from GitHub, cache in DB, display in web UI and CLI via
+  new tim pr subcommand namespace
 id: 248
 uuid: f92da2f3-c73f-4b89-83c8-03b509d58d1d
+generatedBy: agent
 status: pending
 priority: medium
 parent: 245
 references:
   "245": 50487743-93a6-45c0-bda9-ce9e19100c92
+planGeneratedAt: 2026-03-21T02:28:58.262Z
+promptsGeneratedAt: 2026-03-21T02:28:58.262Z
 createdAt: 2026-03-21T02:24:53.498Z
-updatedAt: 2026-03-21T02:24:53.509Z
-tasks: []
+updatedAt: 2026-03-21T02:28:58.263Z
+tasks:
+  - title: Create GitHub GraphQL queries for PR status
+    done: false
+    description: "Create src/common/github/pr_status.ts with two GraphQL queries:
+      fetchPrFullStatus() (state, mergeable, checks, reviews, labels, title) and
+      fetchPrCheckStatus() (lightweight checks-only for polling). Define
+      TypeScript types for responses. Handle CheckRun vs StatusContext union
+      type normalization. Use existing Octokit graphql client pattern from
+      pull_requests.ts. Add unit tests with mock GraphQL responses."
+  - title: Add database migration and CRUD for PR status tables
+    done: false
+    description: "Add migration 8 to src/tim/db/migrations.ts creating pr_status,
+      pr_check_run, pr_review, pr_label, and plan_pr tables. pr_status keyed by
+      pr_url (UNIQUE) so same PR can link to multiple plans. plan_pr junction
+      table connects plans to PRs. Create src/tim/db/pr_status.ts with CRUD:
+      upsertPrStatus (with child rows), getPrStatusByUrl, getPrStatusForPlan
+      (via plan_pr join), linkPlanToPr, unlinkPlanFromPr, getPlansWithPrs
+      (active plans with PRs), cleanOrphanedPrStatus. All synchronous, writes
+      use db.transaction().immediate(). Add tests."
+  - title: Implement PR status fetch and cache service
+    done: false
+    description: "Create src/common/github/pr_status_service.ts: refreshPrStatus(db,
+      prUrl) fetches full status and upserts to DB. refreshPrCheckStatus(db,
+      prUrl) fetches checks only and updates check_run rows.
+      ensurePrStatusFresh(db, prUrl, maxAgeMs) implements stale-while-revalidate
+      (return cached if fresh, refresh otherwise). syncPlanPrLinks(db, planUuid,
+      prUrls) ensures plan_pr junction matches plan pullRequest URLs. Uses
+      parsePrOrIssueNumber() from identifiers.ts. Add tests for cache freshness
+      logic."
+  - title: Surface PR data in web UI data layer
+    done: false
+    description: "Update src/lib/server/db_queries.ts: Add pullRequests: string[]
+      and issues: string[] to EnrichedPlan interface. Parse JSON arrays from
+      PlanRow.pull_request and PlanRow.issue in enrichPlansWithContext(). Add
+      prStatuses: PrStatusDetail[] to PlanDetail interface. Update
+      getPlanDetail() to join with pr_status + child tables via plan_pr. Define
+      PrStatusDetail type with nested check runs, reviews, labels. Add computed
+      prSummaryStatus to EnrichedPlan for list view indicators
+      (passing/failing/pending/none)."
+  - title: Create web UI API endpoint for PR status refresh
+    done: false
+    description: Create src/routes/api/plans/[planUuid]/pr-status/+server.ts. GET
+      returns cached PR status for the plan. POST triggers refresh from GitHub
+      and returns updated data. PlanDetail page calls POST on mount if data is
+      stale. Handle missing GITHUB_TOKEN gracefully (return PR URLs without
+      status data). Return appropriate error responses.
+  - title: Build PlanDetail PR status section in web UI
+    done: false
+    description: "Create PrStatusSection.svelte component showing PR status on
+      PlanDetail. For each linked PR: PR number + title as link to GitHub,
+      overall status badge (checks passing/failing/pending), merge state badge
+      (open/merged/closed/draft), expandable section with individual check runs
+      (PrCheckRunList.svelte) showing name, status, conclusion, link to details,
+      expandable reviewer list (PrReviewList.svelte) with state, labels as
+      colored chips. Loading state while fetching fresh data. Add to
+      PlanDetail.svelte after existing sections."
+  - title: Add PR status indicators to plan list views
+    done: false
+    description: Create PrStatusIndicator.svelte compact badge showing overall PR
+      health (green=passing, red=failing, yellow=pending, gray=no status).
+      Update PlanRow.svelte to show indicator when pullRequests.length > 0.
+      Update ActivePlanRow.svelte similarly. Status comes from
+      EnrichedPlan.prSummaryStatus computed during enrichment. Shows in both
+      Plans tab and Active Work tab.
+  - title: Create tim pr subcommand namespace with status command
+    done: false
+    description: "In src/tim/tim.ts, create prCommand =
+      program.command(pr).description(GitHub PR commands). Add
+      prCommand.command(status [planId]): resolves plan (positional arg or
+      current workspace plan), fetches fresh PR status from GitHub for each
+      linked PR, writes to DB cache as side effect, displays PR state,
+      individual check runs (name + status/conclusion), review summary, merge
+      readiness with color-coded terminal output. Add prCommand.command(link
+      <planId> <prUrl>) and prCommand.command(unlink <planId> <prUrl>) for
+      manual PR linking."
+  - title: Migrate pr-description to tim pr description
+    done: false
+    description: Move the existing pr-description command registration from
+      program.command(pr-description) to prCommand.command(description
+      <planFile>). Keep pr-description as a hidden alias for backwards
+      compatibility. Implementation in src/tim/commands/description.ts stays the
+      same - only the command registration in tim.ts changes.
 tags: []
 ---
 
