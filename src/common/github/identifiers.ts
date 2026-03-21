@@ -89,6 +89,12 @@ export function validatePrIdentifier(identifier: string): void {
       `Not a pull request URL: ${identifier}. Expected a GitHub PR URL (e.g. https://github.com/owner/repo/pull/123)`
     );
   }
+
+  if (!/^\d+$/.test(segments[3]!)) {
+    throw new Error(
+      `Invalid pull request number in URL: ${identifier}. Expected a GitHub PR URL (e.g. https://github.com/owner/repo/pull/123)`
+    );
+  }
 }
 
 export function tryCanonicalizePrUrl(identifier: string): string | null {
@@ -109,6 +115,10 @@ export function tryCanonicalizePrUrl(identifier: string): string | null {
   const owner = segments[0];
   const repo = segments[1];
   const number = segments[3];
+
+  if (!/^\d+$/.test(number!)) {
+    return null;
+  }
 
   return `https://github.com/${owner}/${repo}/pull/${number}`;
 }

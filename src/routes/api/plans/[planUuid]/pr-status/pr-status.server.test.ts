@@ -117,6 +117,7 @@ describe('/api/plans/[planUuid]/pr-status', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(200);
+    expect(payload.prUrls).toEqual(['https://github.com/example/repo/pull/1']);
     expect(payload.prStatuses).toHaveLength(1);
     expect(payload.prStatuses[0]).toMatchObject({
       status: {

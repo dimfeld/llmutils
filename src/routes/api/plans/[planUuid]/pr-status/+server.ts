@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types';
 import { json } from '@sveltejs/kit';
 
 import { ensurePrStatusFresh, syncPlanPrLinks } from '$common/github/pr_status_service.js';
-import { parseJsonStringArray } from '$lib/server/db_queries.js';
+import { normalizePrUrls, parseJsonStringArray } from '$lib/server/db_queries.js';
 import { getServerContext } from '$lib/server/init.js';
 import { cleanOrphanedPrStatus, getPrStatusByUrl, getPrStatusForPlan } from '$tim/db/pr_status.js';
 import { getPlanByUuid } from '$tim/db/plan.js';
@@ -26,7 +26,7 @@ export const GET: RequestHandler = async ({ params }) => {
     return json({ error: 'Plan not found' }, { status: 404 });
   }
 
-  const prUrls = parseJsonStringArray(plan.pull_request);
+  const prUrls = normalizePrUrls(parseJsonStringArray(plan.pull_request));
   const prStatuses = getPrStatusForPlan(db, plan.uuid, prUrls);
 
   return json({

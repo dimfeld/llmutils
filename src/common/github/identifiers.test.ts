@@ -112,4 +112,11 @@ describe('tryCanonicalizePrUrl', () => {
   test('returns null for non-GitHub URLs', () => {
     expect(tryCanonicalizePrUrl('https://example.com/dimfeld/llmutils/pull/123')).toBeNull();
   });
+
+  test('rejects partially numeric PR numbers', () => {
+    expect(tryCanonicalizePrUrl('https://github.com/dimfeld/llmutils/pull/123abc')).toBeNull();
+    expect(() => canonicalizePrUrl('https://github.com/dimfeld/llmutils/pull/123abc')).toThrow(
+      /Invalid pull request number/i
+    );
+  });
 });

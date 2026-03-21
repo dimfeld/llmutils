@@ -222,7 +222,7 @@ export function parseJsonStringArray(value: string | null): string[] {
   }
 }
 
-function normalizePrUrls(prUrls: string[]): string[] {
+export function normalizePrUrls(prUrls: string[]): string[] {
   return [
     ...new Set(
       prUrls

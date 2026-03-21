@@ -494,10 +494,12 @@ export function getPlansWithPrs(db: Database, projectId?: number): PlanWithLinke
         json_each.value AS pr_url
       FROM plan p
       INNER JOIN json_each(p.pull_request)
+      LEFT JOIN pr_status ps ON ps.pr_url = json_each.value
       WHERE p.status IN ('pending', 'in_progress', 'needs_review')
         AND p.pull_request IS NOT NULL
         AND p.pull_request != ''
         AND p.pull_request != '[]'
+        AND (ps.state = 'open' OR ps.state IS NULL)
         ${projectId === undefined ? '' : 'AND p.project_id = ?'}
     ) results
     ORDER BY results.plan_id, results.uuid, results.pr_url
@@ -534,24 +536,77 @@ export function getPlansWithPrs(db: Database, projectId?: number): PlanWithLinke
 
 export function cleanOrphanedPrStatus(db: Database): number {
   const cleanInTransaction = db.transaction((): number => {
+    const referencedPrUrls = new Set<string>();
+    const planRows = db
+      .prepare(
+        `
+          SELECT pull_request
+          FROM plan
+          WHERE pull_request IS NOT NULL
+            AND pull_request != ''
+            AND pull_request != '[]'
+        `
+      )
+      .all() as Array<{ pull_request: string | null }>;
+
+    for (const row of planRows) {
+      if (!row.pull_request) {
+        continue;
+      }
+
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(row.pull_request);
+      } catch {
+        continue;
+      }
+
+      if (!Array.isArray(parsed)) {
+        continue;
+      }
+
+      for (const value of parsed) {
+        if (typeof value !== 'string') {
+          continue;
+        }
+
+        const canonicalPrUrl = tryCanonicalizePrUrl(value);
+        if (canonicalPrUrl !== null) {
+          referencedPrUrls.add(canonicalPrUrl);
+        }
+      }
+    }
+
+    const unlinkedRows = db
+      .prepare(
+        `
+          SELECT ps.id, ps.pr_url
+          FROM pr_status ps
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM plan_pr pp
+            WHERE pp.pr_status_id = ps.id
+          )
+        `
+      )
+      .all() as Array<{ id: number; pr_url: string }>;
+
+    const idsToDelete = unlinkedRows
+      .filter((row) => !referencedPrUrls.has(row.pr_url))
+      .map((row) => row.id);
+    if (idsToDelete.length === 0) {
+      return 0;
+    }
+
+    const placeholders = idsToDelete.map(() => '?').join(', ');
     const result = db
       .prepare(
         `
         DELETE FROM pr_status
-        WHERE id NOT IN (
-          SELECT pr_status_id FROM plan_pr
-        )
-          AND pr_url NOT IN (
-            SELECT DISTINCT json_each.value
-            FROM plan
-            INNER JOIN json_each(plan.pull_request)
-            WHERE plan.pull_request IS NOT NULL
-              AND plan.pull_request != ''
-              AND plan.pull_request != '[]'
-          )
+        WHERE id IN (${placeholders})
       `
       )
-      .run();
+      .run(...idsToDelete);
 
     return result.changes;
   });

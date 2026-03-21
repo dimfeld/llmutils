@@ -381,6 +381,30 @@ describe('tim db/pr_status', () => {
     ]);
   });
 
+  test('getPlansWithPrs excludes cached closed PRs from the pull_request fallback branch', () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/205',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 205,
+      title: 'Closed PR 205',
+      state: 'closed',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    upsertPlan(db, projectId, {
+      uuid: 'plan-1',
+      planId: 1,
+      title: 'Plan 1',
+      filename: '1.plan.md',
+      status: 'in_progress',
+      pullRequest: ['https://github.com/example/repo/pull/205'],
+    });
+
+    expect(getPlansWithPrs(db)).toEqual([]);
+  });
+
   test('cleanOrphanedPrStatus removes unlinked PR status rows', () => {
     const kept = upsertPrStatus(db, {
       prUrl: 'https://github.com/example/repo/pull/106',
@@ -466,5 +490,29 @@ describe('tim db/pr_status', () => {
 
     expect(cleanOrphanedPrStatus(db)).toBe(0);
     expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/109')).not.toBeNull();
+  });
+
+  test('cleanOrphanedPrStatus keeps canonical cache rows referenced by equivalent non-canonical plan URLs', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-1',
+      planId: 1,
+      title: 'Plan 1',
+      filename: '1.plan.md',
+      pullRequest: ['https://github.com/example/repo/pulls/123?tab=checks'],
+    });
+
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/123',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 123,
+      title: 'Canonical PR 123',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    expect(cleanOrphanedPrStatus(db)).toBe(0);
+    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/123')).not.toBeNull();
   });
 });
