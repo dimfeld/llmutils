@@ -17,9 +17,40 @@ describe('handleChatCommand', () => {
   };
   const buildExecutorAndLogSpy = mock(() => mockExecutor);
   const runWithHeadlessAdapterIfEnabledSpy = mock(async (options: any) => options.callback());
+  const getGitRootSpy = mock(async () => '/repo-root');
+  const commitAllSpy = mock(async () => 0);
+  const setupWorkspaceSpy = mock(async (_options: any, _baseDir: string, planFile?: string) => ({
+    baseDir: '/repo-root/workspaces/task-123',
+    planFile: planFile ?? '',
+    workspaceTaskId: 'task-123',
+    isNewWorkspace: false,
+  }));
+  const prepareWorkspaceRoundTripSpy = mock(async () => null);
+  const runPreExecutionWorkspaceSyncSpy = mock(async () => {});
+  const runPostExecutionWorkspaceSyncSpy = mock(async () => {});
+  const resolvePlanFileSpy = mock(async () => '/repo-root/tasks/123-test.plan.md');
+  const readPlanFileSpy = mock(async () => ({
+    id: 123,
+    uuid: '11111111-1111-4111-8111-111111111111',
+    title: 'Test plan',
+    status: 'pending',
+    priority: 'medium',
+    issue: ['https://example.com/issues/42'],
+    tasks: [],
+  }));
+  const buildDescriptionFromPlanSpy = mock(() => 'Plan description');
+  const getCombinedTitleFromSummarySpy = mock(() => 'Combined test plan');
+  const getWorkspaceInfoByPathSpy = mock(() => ({
+    taskId: 'task-123',
+    workspacePath: '/repo-root/workspaces/task-123',
+  }));
+  const patchWorkspaceInfoSpy = mock(() => {});
+  const touchWorkspaceInfoSpy = mock(() => {});
+  const warnSpy = mock(() => {});
 
   const originalStdinIsTTY = process.stdin.isTTY;
   const originalCodexUseAppServer = process.env.CODEX_USE_APP_SERVER;
+  const originalCwd = process.cwd();
 
   beforeEach(async () => {
     moduleMocker.clear();
@@ -29,12 +60,59 @@ describe('handleChatCommand', () => {
     mockExecutorExecute.mockClear();
     buildExecutorAndLogSpy.mockClear();
     runWithHeadlessAdapterIfEnabledSpy.mockClear();
+    getGitRootSpy.mockClear();
+    commitAllSpy.mockClear();
+    setupWorkspaceSpy.mockClear();
+    prepareWorkspaceRoundTripSpy.mockClear();
+    runPreExecutionWorkspaceSyncSpy.mockClear();
+    runPostExecutionWorkspaceSyncSpy.mockClear();
+    resolvePlanFileSpy.mockClear();
+    readPlanFileSpy.mockClear();
+    buildDescriptionFromPlanSpy.mockClear();
+    getCombinedTitleFromSummarySpy.mockClear();
+    getWorkspaceInfoByPathSpy.mockClear();
+    patchWorkspaceInfoSpy.mockClear();
+    touchWorkspaceInfoSpy.mockClear();
+    warnSpy.mockClear();
 
     loadEffectiveConfigSpy.mockImplementation(async () => ({
       defaultExecutor: undefined,
       terminalInput: true,
+      workspaceSync: { pushTarget: 'origin' },
     }));
     isTunnelActiveSpy.mockImplementation(() => false);
+    getGitRootSpy.mockImplementation(async () => '/repo-root');
+    commitAllSpy.mockImplementation(async () => 0);
+    setupWorkspaceSpy.mockImplementation(
+      async (_options: any, _baseDir: string, planFile?: string) => ({
+        baseDir: '/repo-root/workspaces/task-123',
+        planFile: planFile ?? '',
+        workspaceTaskId: 'task-123',
+        isNewWorkspace: false,
+      })
+    );
+    prepareWorkspaceRoundTripSpy.mockImplementation(async () => null);
+    runPreExecutionWorkspaceSyncSpy.mockImplementation(async () => {});
+    runPostExecutionWorkspaceSyncSpy.mockImplementation(async () => {});
+    resolvePlanFileSpy.mockImplementation(async () => '/repo-root/tasks/123-test.plan.md');
+    readPlanFileSpy.mockImplementation(async () => ({
+      id: 123,
+      uuid: '11111111-1111-4111-8111-111111111111',
+      title: 'Test plan',
+      status: 'pending',
+      priority: 'medium',
+      issue: ['https://example.com/issues/42'],
+      tasks: [],
+    }));
+    buildDescriptionFromPlanSpy.mockImplementation(() => 'Plan description');
+    getCombinedTitleFromSummarySpy.mockImplementation(() => 'Combined test plan');
+    getWorkspaceInfoByPathSpy.mockImplementation(() => ({
+      taskId: 'task-123',
+      workspacePath: '/repo-root/workspaces/task-123',
+    }));
+    patchWorkspaceInfoSpy.mockImplementation(() => {});
+    touchWorkspaceInfoSpy.mockImplementation(() => {});
+    warnSpy.mockImplementation(() => {});
     delete process.env.CODEX_USE_APP_SERVER;
 
     Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
@@ -47,6 +125,18 @@ describe('handleChatCommand', () => {
       runWithHeadlessAdapterIfEnabled: runWithHeadlessAdapterIfEnabledSpy,
     }));
 
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: getGitRootSpy,
+    }));
+
+    await moduleMocker.mock('../../common/process.js', () => ({
+      commitAll: commitAllSpy,
+    }));
+
+    await moduleMocker.mock('../../logging.js', () => ({
+      warn: warnSpy,
+    }));
+
     await moduleMocker.mock('../../logging/tunnel_client.js', () => ({
       isTunnelActive: isTunnelActiveSpy,
     }));
@@ -54,6 +144,32 @@ describe('handleChatCommand', () => {
     await moduleMocker.mock('../executors/index.js', () => ({
       buildExecutorAndLog: buildExecutorAndLogSpy,
       DEFAULT_EXECUTOR: 'claude-code',
+    }));
+
+    await moduleMocker.mock('../plans.js', () => ({
+      resolvePlanFile: resolvePlanFileSpy,
+      readPlanFile: readPlanFileSpy,
+    }));
+
+    await moduleMocker.mock('../display_utils.js', () => ({
+      buildDescriptionFromPlan: buildDescriptionFromPlanSpy,
+      getCombinedTitleFromSummary: getCombinedTitleFromSummarySpy,
+    }));
+
+    await moduleMocker.mock('../workspace/workspace_info.js', () => ({
+      getWorkspaceInfoByPath: getWorkspaceInfoByPathSpy,
+      patchWorkspaceInfo: patchWorkspaceInfoSpy,
+      touchWorkspaceInfo: touchWorkspaceInfoSpy,
+    }));
+
+    await moduleMocker.mock('../workspace/workspace_setup.js', () => ({
+      setupWorkspace: setupWorkspaceSpy,
+    }));
+
+    await moduleMocker.mock('../workspace/workspace_roundtrip.js', () => ({
+      prepareWorkspaceRoundTrip: prepareWorkspaceRoundTripSpy,
+      runPreExecutionWorkspaceSync: runPreExecutionWorkspaceSyncSpy,
+      runPostExecutionWorkspaceSync: runPostExecutionWorkspaceSyncSpy,
     }));
   });
 
@@ -78,6 +194,7 @@ describe('handleChatCommand', () => {
     expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
     expect(buildExecutorAndLogSpy.mock.calls[0][0]).toBe('claude-code');
     expect(buildExecutorAndLogSpy.mock.calls[0][1]).toMatchObject({
+      baseDir: originalCwd,
       terminalInput: true,
       closeTerminalInputOnResult: false,
       noninteractive: undefined,
@@ -318,6 +435,167 @@ describe('handleChatCommand', () => {
     await handleChatCommand('hello', {}, {});
 
     expect(runWithHeadlessAdapterIfEnabledSpy.mock.calls[0][0].config).toBe(config);
+  });
+
+  test('enters workspace mode and passes workspace options through setupWorkspace', async () => {
+    const { handleChatCommand } = await import('./chat.js');
+
+    await handleChatCommand('hello', { workspace: 'task-123', nonInteractive: true }, {});
+
+    expect(getGitRootSpy).toHaveBeenCalledWith(originalCwd);
+    expect(setupWorkspaceSpy).toHaveBeenCalledTimes(1);
+    expect(setupWorkspaceSpy.mock.calls[0]).toEqual([
+      {
+        workspace: 'task-123',
+        autoWorkspace: undefined,
+        newWorkspace: undefined,
+        nonInteractive: true,
+        requireWorkspace: false,
+        createBranch: false,
+        planUuid: undefined,
+        base: undefined,
+        allowPrimaryWorkspaceWhenLocked: true,
+      },
+      '/repo-root',
+      undefined,
+      expect.objectContaining({
+        terminalInput: true,
+      }),
+      'tim chat',
+    ]);
+    expect(buildExecutorAndLogSpy.mock.calls[0][1]).toMatchObject({
+      baseDir: '/repo-root/workspaces/task-123',
+      noninteractive: true,
+    });
+  });
+
+  test('resolves --plan and uses plan data for workspace setup and headless metadata', async () => {
+    const { handleChatCommand } = await import('./chat.js');
+
+    await handleChatCommand('hello', { autoWorkspace: true, plan: '123' }, { config: 'tim.json' });
+
+    expect(resolvePlanFileSpy).toHaveBeenCalledWith('123', 'tim.json');
+    expect(readPlanFileSpy).toHaveBeenCalledWith('/repo-root/tasks/123-test.plan.md');
+    expect(setupWorkspaceSpy.mock.calls[0][0]).toMatchObject({
+      autoWorkspace: true,
+      planUuid: '11111111-1111-4111-8111-111111111111',
+      createBranch: false,
+    });
+    expect(setupWorkspaceSpy.mock.calls[0][2]).toBe('/repo-root/tasks/123-test.plan.md');
+    expect(runWithHeadlessAdapterIfEnabledSpy.mock.calls[0][0]).toMatchObject({
+      plan: {
+        id: 123,
+        title: 'Test plan',
+      },
+    });
+    expect(patchWorkspaceInfoSpy).toHaveBeenCalledWith('/repo-root/workspaces/task-123', {
+      description: '123 - Plan description',
+      planId: '123',
+      planTitle: 'Combined test plan',
+      issueUrls: ['https://example.com/issues/42'],
+    });
+  });
+
+  test('passes --base through with createBranch disabled when no plan is provided', async () => {
+    const { handleChatCommand } = await import('./chat.js');
+
+    await handleChatCommand('hello', { workspace: 'task-123', base: 'feature-branch' }, {});
+
+    expect(setupWorkspaceSpy.mock.calls[0][0]).toMatchObject({
+      workspace: 'task-123',
+      base: 'feature-branch',
+      createBranch: false,
+      planUuid: undefined,
+    });
+    expect(resolvePlanFileSpy).not.toHaveBeenCalled();
+    expect(readPlanFileSpy).not.toHaveBeenCalled();
+  });
+
+  test('commits after execution when --commit is set', async () => {
+    const { handleChatCommand } = await import('./chat.js');
+
+    await handleChatCommand('hello', { workspace: 'task-123', commit: true }, {});
+
+    expect(mockExecutorExecute).toHaveBeenCalledTimes(1);
+    expect(commitAllSpy).toHaveBeenCalledTimes(1);
+    expect(commitAllSpy).toHaveBeenCalledWith(
+      'workspace chat session',
+      '/repo-root/workspaces/task-123'
+    );
+  });
+
+  test('runs workspace roundtrip hooks in order', async () => {
+    const { handleChatCommand } = await import('./chat.js');
+    const callOrder: string[] = [];
+    setupWorkspaceSpy.mockImplementationOnce(
+      async (_options: any, _baseDir: string, planFile?: string) => {
+        callOrder.push('setup');
+        return {
+          baseDir: '/repo-root/workspaces/task-123',
+          planFile: planFile ?? '',
+          workspaceTaskId: 'task-123',
+          isNewWorkspace: false,
+        };
+      }
+    );
+    prepareWorkspaceRoundTripSpy.mockImplementationOnce(async () => {
+      callOrder.push('prepare');
+      return {
+        workspacePath: '/repo-root/workspaces/task-123',
+        syncTarget: 'primary',
+      } as any;
+    });
+    runPreExecutionWorkspaceSyncSpy.mockImplementationOnce(async () => {
+      callOrder.push('pre');
+    });
+    mockExecutorExecute.mockImplementationOnce(async () => {
+      callOrder.push('execute');
+    });
+    runPostExecutionWorkspaceSyncSpy.mockImplementationOnce(async () => {
+      callOrder.push('post');
+    });
+    touchWorkspaceInfoSpy.mockImplementationOnce(() => {
+      callOrder.push('touch');
+    });
+
+    await handleChatCommand('hello', { workspace: 'task-123' }, {});
+
+    expect(prepareWorkspaceRoundTripSpy).toHaveBeenCalledWith({
+      workspacePath: '/repo-root/workspaces/task-123',
+      workspaceSyncEnabled: true,
+      syncTarget: 'origin',
+    });
+    expect(runPreExecutionWorkspaceSyncSpy).toHaveBeenCalledTimes(1);
+    expect(runPostExecutionWorkspaceSyncSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspacePath: '/repo-root/workspaces/task-123',
+      }),
+      'workspace chat session'
+    );
+    expect(touchWorkspaceInfoSpy).toHaveBeenCalledWith('/repo-root/workspaces/task-123');
+    expect(callOrder).toEqual(['setup', 'prepare', 'pre', 'execute', 'post', 'touch']);
+  });
+
+  test('still runs post-sync and touch cleanup when execution fails', async () => {
+    const { handleChatCommand } = await import('./chat.js');
+    const executionFailure = new Error('executor failed');
+    prepareWorkspaceRoundTripSpy.mockImplementationOnce(
+      async () =>
+        ({
+          workspacePath: '/repo-root/workspaces/task-123',
+          syncTarget: 'origin',
+        }) as any
+    );
+    mockExecutorExecute.mockImplementationOnce(async () => {
+      throw executionFailure;
+    });
+
+    await expect(handleChatCommand('hello', { workspace: 'task-123' }, {})).rejects.toThrow(
+      'executor failed'
+    );
+
+    expect(runPostExecutionWorkspaceSyncSpy).toHaveBeenCalledTimes(1);
+    expect(touchWorkspaceInfoSpy).toHaveBeenCalledWith('/repo-root/workspaces/task-123');
   });
 });
 
