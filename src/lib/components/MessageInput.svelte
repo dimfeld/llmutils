@@ -9,6 +9,10 @@
   let sending = $state(false);
   let textareaEl: HTMLTextAreaElement;
 
+  function autofocusOnMount(node: HTMLTextAreaElement) {
+    node.focus();
+  }
+
   async function send() {
     if (!content.trim() || sending) return;
     sending = true;
@@ -37,6 +41,7 @@
       rows="1"
       placeholder="Send input to session..."
       style="field-sizing: content;"
+      use:autofocusOnMount
       bind:this={textareaEl}
       bind:value={content}
       disabled={sending}
