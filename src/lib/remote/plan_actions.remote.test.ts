@@ -82,9 +82,10 @@ describe('plan remote actions', () => {
     });
   });
 
-  test('startGenerate rejects stub plans that are already done or cancelled', async () => {
+  test('startGenerate rejects stub plans that are already done, cancelled, or deferred', async () => {
     seedPlan({ uuid: 'plan-done', planId: 1891, status: 'done' });
     seedPlan({ uuid: 'plan-cancelled', planId: 1892, status: 'cancelled' });
+    seedPlan({ uuid: 'plan-deferred', planId: 1893, status: 'deferred' });
 
     await expect(invokeCommand(startGenerate, { planUuid: 'plan-done' })).rejects.toMatchObject({
       status: 400,
@@ -92,6 +93,12 @@ describe('plan remote actions', () => {
     });
     await expect(
       invokeCommand(startGenerate, { planUuid: 'plan-cancelled' })
+    ).rejects.toMatchObject({
+      status: 400,
+      body: { message: 'Plan is not eligible for generate' },
+    });
+    await expect(
+      invokeCommand(startGenerate, { planUuid: 'plan-deferred' })
     ).rejects.toMatchObject({
       status: 400,
       body: { message: 'Plan is not eligible for generate' },
@@ -198,7 +205,7 @@ describe('plan remote actions', () => {
   function seedPlan(options: {
     uuid: string;
     planId: number;
-    status?: 'pending' | 'done' | 'cancelled';
+    status?: 'pending' | 'done' | 'cancelled' | 'deferred';
     tasks?: Array<{ title: string; description: string }>;
   }): void {
     upsertPlan(currentDb, projectId, {

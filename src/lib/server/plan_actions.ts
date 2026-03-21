@@ -61,6 +61,9 @@ export async function spawnGenerateProcess(
     };
   }
 
+  if (proc.stderr instanceof ReadableStream) {
+    proc.stderr.cancel().catch(() => {});
+  }
   proc.unref();
   return { success: true, planId };
 }

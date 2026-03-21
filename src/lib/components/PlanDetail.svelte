@@ -19,7 +19,7 @@
 
   const sessionManager = useSessionManager();
 
-  const INELIGIBLE_STATUSES = new Set(['done', 'cancelled', 'deferred']);
+  const INELIGIBLE_STATUSES = new Set(['done', 'cancelled', 'deferred', 'recently_done']);
 
   let eligible = $derived(plan.tasks.length === 0 && !INELIGIBLE_STATUSES.has(plan.displayStatus));
 
@@ -39,7 +39,7 @@
 
   let starting = $state(false);
   let errorMessage: string | null = $state(null);
-  let successMessage: { text: string; connectionId?: string } | null = $derived(null);
+  let successMessage: { text: string; connectionId?: string } | null = $state(null);
 
   async function handleGenerate() {
     starting = true;
@@ -112,7 +112,7 @@
         {:else}
           <button
             onclick={handleGenerate}
-            disabled={starting}
+            disabled={starting || !!successMessage}
             class="ml-auto inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600"
           >
             {#if starting}
