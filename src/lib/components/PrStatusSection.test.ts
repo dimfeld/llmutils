@@ -9,6 +9,10 @@ import type {
   PrLabelRow,
 } from '$tim/db/pr_status.js';
 import PrStatusSection from './PrStatusSection.svelte';
+import {
+  createPrStatusRefreshUiStateForPropsChange,
+  needsPrStatusRefresh,
+} from './pr_status_section_state.js';
 
 function makePrStatus(overrides: Partial<PrStatusRow> = {}): PrStatusRow {
   return {
@@ -101,6 +105,20 @@ function renderSection(props: {
 }
 
 describe('PrStatusSection', () => {
+  test('resets refresh UI state on plan changes even when no refresh is needed', () => {
+    expect(createPrStatusRefreshUiStateForPropsChange()).toEqual({
+      fetchedStatuses: null,
+      refreshing: false,
+      refreshError: null,
+    });
+  });
+
+  test('does not request a refresh for a newly selected plan with fresh cached statuses', () => {
+    const detail = makePrDetail();
+
+    expect(needsPrStatusRefresh([detail.status.pr_url], [detail], Date.now())).toBe(false);
+  });
+
   test('renders "Pull Requests" heading', () => {
     const { body } = renderSection({ prUrls: [], initialStatuses: [] });
     expect(body).toContain('Pull Requests');

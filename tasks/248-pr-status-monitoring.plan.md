@@ -6,7 +6,7 @@ goal: Fetch PR status from GitHub, cache in DB, display in web UI and CLI via
 id: 248
 uuid: f92da2f3-c73f-4b89-83c8-03b509d58d1d
 generatedBy: agent
-status: done
+status: in_progress
 priority: medium
 parent: 245
 references:
@@ -14,7 +14,7 @@ references:
 planGeneratedAt: 2026-03-21T02:28:58.262Z
 promptsGeneratedAt: 2026-03-21T02:28:58.262Z
 createdAt: 2026-03-21T02:24:53.498Z
-updatedAt: 2026-03-21T06:48:04.819Z
+updatedAt: 2026-03-21T07:18:52.083Z
 tasks:
   - title: Create GitHub GraphQL queries for PR status
     done: true
@@ -97,6 +97,130 @@ tasks:
       <planFile>). Keep pr-description as a hidden alias for backwards
       compatibility. Implementation in src/tim/commands/description.ts stays the
       same - only the command registration in tim.ts changes.
+  - title: "Address Review Feedback: `PrStatusSection` leaks loading/error state
+      across plan changes."
+    done: false
+    description: >-
+      `PrStatusSection` leaks loading/error state across plan changes. The
+      effect resets `fetchedStatuses`, but `refreshing` and `refreshError` are
+      only updated when a new fetch starts. If a refresh is aborted during
+      navigation and the next plan does not need a refresh, the old
+      `(refreshing...)` indicator or stale error message remains visible
+      indefinitely on the new plan.
+
+
+      Suggestion: Reset `refreshing = false` and `refreshError = null` at the
+      start of the effect before the `needsRefresh()` early return, and add a
+      rerender/navigation regression test.
+
+
+      Related file: src/lib/components/PrStatusSection.svelte:38-46
+  - title: "Address Review Feedback: The no-token path in the POST endpoint calls
+      `syncPlanPrLinks(db, plan.uuid, cachedUrls)` without a try/catch."
+    done: false
+    description: >-
+      The no-token path in the POST endpoint calls `syncPlanPrLinks(db,
+      plan.uuid, cachedUrls)` without a try/catch. While the input should only
+      contain cached URLs, a TOCTOU race (cache deleted between the filter on
+      line 55 and the sync call on line 57) would cause syncPlanPrLinks to
+      attempt a GitHub fetch, which fails without a token and propagates as an
+      unhandled 500 error.
+
+
+      Suggestion: Wrap the `syncPlanPrLinks` call in the no-token path in a
+      try/catch, falling back to returning cached data without junction updates
+      if the sync fails.
+
+
+      Related file: src/routes/api/plans/[planUuid]/pr-status/+server.ts:53-63
+  - title: "Address Review Feedback: The POST endpoint uses `Promise.all` for
+      `ensurePrStatusFresh` across all PR URLs."
+    done: false
+    description: >-
+      The POST endpoint uses `Promise.all` for `ensurePrStatusFresh` across all
+      PR URLs. If one PR refresh fails (e.g., PR deleted from GitHub, transient
+      API error), the entire Promise.all rejects. The catch block then returns
+      entirely cached data, discarding fresh results that were successfully
+      fetched for other PRs.
+
+
+      Suggestion: Use `Promise.allSettled` instead of `Promise.all`. For
+      fulfilled results, use the fresh data. For rejected results, fall back to
+      cached data from `getPrStatusByUrl()` per URL. Optionally include the
+      partial error in the response.
+
+
+      Related file: src/routes/api/plans/[planUuid]/pr-status/+server.ts:66-82
+  - title: "Address Review Feedback: `tim pr status` only auto-resolves the current
+      workspace plan when `process.cwd()` is the exact workspace root."
+    done: false
+    description: >-
+      `tim pr status` only auto-resolves the current workspace plan when
+      `process.cwd()` is the exact workspace root. `getWorkspacePlanReference()`
+      calls `getWorkspaceInfoByPath(cwd)`, and that lookup is exact-path only,
+      so running the command from `workspace/src` or any nested directory throws
+      "Please provide a plan ID/path…" even though the user is still inside the
+      active workspace. The plan requirement was to resolve the current
+      workspace plan when no positional arg is provided.
+
+
+      Suggestion: Resolve the workspace by walking parent directories (or via
+      git root / workspace root detection) instead of requiring an exact path
+      match. Add a test that runs `tim pr status` from a nested workspace
+      subdirectory.
+
+
+      Related file: src/tim/commands/pr.ts:37-55
+  - title: "Address Review Feedback: The new PR-linking/status flow accepts issue
+      URLs as if they were pull-request URLs."
+    done: false
+    description: >-
+      The new PR-linking/status flow accepts issue URLs as if they were
+      pull-request URLs. `handlePrLinkCommand()` and `refreshPrStatus()` both
+      trust `parsePrOrIssueNumber()`, which extracts `{owner, repo, number}`
+      from any GitHub URL path and then canonicalizes it to `/pull/{number}`.
+      Passing `https://github.com/org/repo/issues/123` will silently attempt to
+      link PR 123 instead of rejecting the non-PR URL.
+
+
+      Suggestion: Use a PR-specific parser or explicitly validate that URL path
+      segments contain `/pull/` before accepting the identifier. Add tests for
+      issue URLs and other non-PR GitHub URLs.
+
+
+      Related file: src/tim/commands/pr.ts:428-439
+  - title: "Address Review Feedback: The web check-run list misrenders `error`
+      conclusions."
+    done: false
+    description: >-
+      The web check-run list misrenders `error` conclusions. Backend
+      normalization emits `error`, and the CLI treats it as a failed check, but
+      `PrCheckRunList` falls through to the default gray `?`/neutral styling
+      because `error` is missing from both switch statements. That makes a real
+      failing check look unknown in the UI.
+
+
+      Suggestion: Handle `error` in the same failure branch as
+      `failure`/`timed_out`/`startup_failure`, and add component coverage for
+      that conclusion.
+
+
+      Related file: src/lib/components/PrCheckRunList.svelte:16-31
+  - title: "Address Review Feedback: `prSummaryStatus` returns 'none' for PRs where
+      all check rollup states are 'neutral', 'cancelled', or 'skipped'."
+    done: false
+    description: >-
+      `prSummaryStatus` returns 'none' for PRs where all check rollup states are
+      'neutral', 'cancelled', or 'skipped'. The UI then shows a gray dot
+      identical to plans with no PRs, which could confuse users who expect some
+      indication that checks ran.
+
+
+      Suggestion: Consider adding a 'neutral' or 'skipped' summary status, or at
+      minimum map these states to 'passing' since the checks didn't fail.
+
+
+      Related file: src/lib/server/db_queries.ts:269-284
 changedFiles:
   - CLAUDE.md
   - README.md

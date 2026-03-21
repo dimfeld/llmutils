@@ -214,6 +214,18 @@ describe('/api/plans/[planUuid]/pr-status', () => {
   test('POST returns fresh results where available and cached data for failed refreshes', async () => {
     process.env.GITHUB_TOKEN = 'token';
     syncPlanPrLinks.mockResolvedValue([]);
+    const cachedPrTwo = upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/2',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 2,
+      title: 'Cached PR Two',
+      state: 'open',
+      draft: false,
+      checkRollupState: 'pending',
+      lastFetchedAt: new Date().toISOString(),
+    });
+    linkPlanToPr(currentDb, 'plan-with-prs', cachedPrTwo.status.id);
     ensurePrStatusFresh
       .mockResolvedValueOnce({
         status: {
@@ -231,15 +243,24 @@ describe('/api/plans/[planUuid]/pr-status', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(200);
-    expect(payload.prStatuses).toEqual([
-      {
-        status: {
-          id: 1,
-          pr_url: 'https://github.com/example/repo/pull/1',
-          title: 'Fresh PR One',
-        },
+    expect(payload.prStatuses).toHaveLength(2);
+    expect(payload.prStatuses[0]).toEqual({
+      status: {
+        id: 1,
+        pr_url: 'https://github.com/example/repo/pull/1',
+        title: 'Fresh PR One',
       },
-    ]);
+    });
+    expect(payload.prStatuses[1]).toMatchObject({
+      status: {
+        id: cachedPrTwo.status.id,
+        pr_url: 'https://github.com/example/repo/pull/2',
+        title: 'Cached PR Two',
+      },
+      checks: [],
+      reviews: [],
+      labels: [],
+    });
     expect(payload.error).toContain('GitHub API error for some pull requests');
     expect(payload.error).toContain('https://github.com/example/repo/pull/2');
     expect(payload.error).toContain('second PR refresh failed');

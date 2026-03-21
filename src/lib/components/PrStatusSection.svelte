@@ -2,6 +2,10 @@
   import type { PrStatusDetail } from '$tim/db/pr_status.js';
   import PrCheckRunList from './PrCheckRunList.svelte';
   import PrReviewList from './PrReviewList.svelte';
+  import {
+    createPrStatusRefreshUiStateForPropsChange,
+    needsPrStatusRefresh,
+  } from './pr_status_section_state.js';
 
   let {
     planUuid,
@@ -20,28 +24,13 @@
   let prStatuses = $derived(fetchedStatuses ?? initialStatuses);
   let statusByUrl = $derived(new Map(prStatuses.map((pr) => [pr.status.pr_url, pr])));
 
-  const FRESHNESS_THRESHOLD_MS = 5 * 60 * 1000;
-
-  function needsRefresh(urls: string[], statuses: PrStatusDetail[]): boolean {
-    if (urls.length === 0) return false;
-    const statusMap = new Map(statuses.map((s) => [s.status.pr_url, s]));
-    const now = Date.now();
-    for (const url of urls) {
-      const s = statusMap.get(url);
-      if (!s) return true;
-      const fetchedAtMs = new Date(s.status.last_fetched_at).getTime();
-      if (!Number.isFinite(fetchedAtMs) || now - fetchedAtMs > FRESHNESS_THRESHOLD_MS) return true;
-    }
-    return false;
-  }
-
   $effect(() => {
-    // Reset fetched data when props change (new plan selected)
-    fetchedStatuses = null;
-    refreshing = false;
-    refreshError = null;
+    const nextState = createPrStatusRefreshUiStateForPropsChange();
+    fetchedStatuses = nextState.fetchedStatuses;
+    refreshing = nextState.refreshing;
+    refreshError = nextState.refreshError;
 
-    if (!needsRefresh(prUrls, initialStatuses)) return;
+    if (!needsPrStatusRefresh(prUrls, initialStatuses)) return;
 
     const controller = new AbortController();
     refreshing = true;
