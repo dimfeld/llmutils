@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite';
-import { canonicalizePrUrl } from '../../common/github/identifiers.js';
+import { canonicalizePrUrl, tryCanonicalizePrUrl } from '../../common/github/identifiers.js';
 import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 
 export interface PrStatusRow {
@@ -361,7 +361,10 @@ export function updatePrCheckRuns(
 }
 
 export function getPrStatusByUrl(db: Database, prUrl: string): PrStatusDetail | null {
-  const canonicalPrUrl = canonicalizePrUrl(prUrl);
+  const canonicalPrUrl = tryCanonicalizePrUrl(prUrl);
+  if (canonicalPrUrl === null) {
+    return null;
+  }
   const row =
     (db.prepare('SELECT id FROM pr_status WHERE pr_url = ?').get(canonicalPrUrl) as {
       id: number;
@@ -375,7 +378,13 @@ export function getPrStatusByUrl(db: Database, prUrl: string): PrStatusDetail | 
 }
 
 export function getPrStatusByUrls(db: Database, prUrls: string[]): PrStatusDetail[] {
-  const canonicalPrUrls = [...new Set(prUrls.map((prUrl) => canonicalizePrUrl(prUrl)))];
+  const canonicalPrUrls = [
+    ...new Set(
+      prUrls
+        .map((prUrl) => tryCanonicalizePrUrl(prUrl))
+        .filter((prUrl): prUrl is string => prUrl !== null)
+    ),
+  ];
   if (canonicalPrUrls.length === 0) {
     return [];
   }
@@ -400,8 +409,12 @@ export function getPrStatusByUrls(db: Database, prUrls: string[]): PrStatusDetai
 export function getPrStatusForPlan(
   db: Database,
   planUuid: string,
-  prUrls: string[] = []
+  prUrls?: string[]
 ): PrStatusDetail[] {
+  if (prUrls !== undefined) {
+    return getPrStatusByUrls(db, prUrls);
+  }
+
   const rows = db
     .prepare(
       `
@@ -414,22 +427,9 @@ export function getPrStatusForPlan(
     )
     .all(planUuid) as Array<{ id: number }>;
 
-  const detailsById = new Map<number, PrStatusDetail>();
-  for (const row of rows) {
-    const detail = getDetailById(db, row.id);
-    if (detail) {
-      detailsById.set(detail.status.id, detail);
-    }
-  }
-
-  for (const detail of getPrStatusByUrls(db, prUrls)) {
-    detailsById.set(detail.status.id, detail);
-  }
-
-  return [...detailsById.values()].sort(
-    (left, right) =>
-      left.status.pr_number - right.status.pr_number || left.status.id - right.status.id
-  );
+  return rows
+    .map((row) => getDetailById(db, row.id))
+    .filter((detail): detail is PrStatusDetail => detail !== null);
 }
 
 export function linkPlanToPr(db: Database, planUuid: string, prStatusId: number): void {

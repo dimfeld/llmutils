@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite';
 
-import { canonicalizePrUrl } from '$common/github/identifiers.js';
+import { tryCanonicalizePrUrl } from '$common/github/identifiers.js';
 import { getAssignmentEntry, type AssignmentEntry } from '$tim/db/assignment.js';
 import { getPrStatusForPlan, type PrStatusDetail } from '$tim/db/pr_status.js';
 import { normalizePlanStatus } from '$tim/plans/plan_state_utils.js';
@@ -223,7 +223,13 @@ export function parseJsonStringArray(value: string | null): string[] {
 }
 
 function normalizePrUrls(prUrls: string[]): string[] {
-  return [...new Set(prUrls.map((prUrl) => canonicalizePrUrl(prUrl)))];
+  return [
+    ...new Set(
+      prUrls
+        .map((prUrl) => tryCanonicalizePrUrl(prUrl))
+        .filter((prUrl): prUrl is string => prUrl !== null)
+    ),
+  ];
 }
 
 function getPrSummaryStatusByPlanUuid(
@@ -235,67 +241,41 @@ function getPrSummaryStatusByPlanUuid(
     return new Map();
   }
 
-  const placeholders = planUuids.map(() => '?').join(', ');
-  const linkedRows = db
-    .prepare(
-      `
-        SELECT
-          pp.plan_uuid AS plan_uuid,
-          ps.check_rollup_state AS check_rollup_state
-        FROM plan_pr pp
-        INNER JOIN pr_status ps ON ps.id = pp.pr_status_id
-        WHERE pp.plan_uuid IN (${placeholders})
-      `
-    )
-    .all(...planUuids) as Array<{
-    plan_uuid: string;
-    check_rollup_state: string | null;
-  }>;
-
-  const statesByPlanUuid = new Map<string, (string | null)[]>();
-  for (const row of linkedRows) {
-    const existing = statesByPlanUuid.get(row.plan_uuid);
-    if (existing) {
-      existing.push(row.check_rollup_state);
-    } else {
-      statesByPlanUuid.set(row.plan_uuid, [row.check_rollup_state]);
-    }
-  }
-
-  const fallbackUrls = new Set<string>();
-  const fallbackPlanUuidsByUrl = new Map<string, string[]>();
+  const urls = new Set<string>();
+  const planUuidsByUrl = new Map<string, string[]>();
   for (const planUuid of planUuids) {
     const prUrls = prUrlsByPlanUuid.get(planUuid) ?? [];
     for (const prUrl of prUrls) {
-      fallbackUrls.add(prUrl);
-      const existingPlanUuids = fallbackPlanUuidsByUrl.get(prUrl);
+      urls.add(prUrl);
+      const existingPlanUuids = planUuidsByUrl.get(prUrl);
       if (existingPlanUuids) {
         existingPlanUuids.push(planUuid);
       } else {
-        fallbackPlanUuidsByUrl.set(prUrl, [planUuid]);
+        planUuidsByUrl.set(prUrl, [planUuid]);
       }
     }
   }
 
-  if (fallbackUrls.size > 0) {
-    const fallbackPlaceholders = [...fallbackUrls].map(() => '?').join(', ');
-    const fallbackRows = db
+  const statesByPlanUuid = new Map<string, (string | null)[]>();
+  if (urls.size > 0) {
+    const placeholders = [...urls].map(() => '?').join(', ');
+    const rows = db
       .prepare(
         `
           SELECT
             ps.pr_url AS pr_url,
             ps.check_rollup_state AS check_rollup_state
           FROM pr_status ps
-          WHERE ps.pr_url IN (${fallbackPlaceholders})
+          WHERE ps.pr_url IN (${placeholders})
         `
       )
-      .all(...fallbackUrls) as Array<{
+      .all(...urls) as Array<{
       pr_url: string;
       check_rollup_state: string | null;
     }>;
 
-    for (const row of fallbackRows) {
-      const matchingPlanUuids = fallbackPlanUuidsByUrl.get(row.pr_url) ?? [];
+    for (const row of rows) {
+      const matchingPlanUuids = planUuidsByUrl.get(row.pr_url) ?? [];
       for (const planUuid of matchingPlanUuids) {
         const existing = statesByPlanUuid.get(planUuid);
         if (existing) {

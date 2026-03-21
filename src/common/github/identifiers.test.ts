@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { canonicalizePrUrl, parsePrOrIssueNumber } from './identifiers.ts';
+import { canonicalizePrUrl, parsePrOrIssueNumber, tryCanonicalizePrUrl } from './identifiers.ts';
 
 describe('parsePrIdentifier', () => {
   test('should parse valid full URL', async () => {
@@ -101,5 +101,15 @@ describe('canonicalizePrUrl', () => {
 
   test('returns non-URL identifiers unchanged', () => {
     expect(canonicalizePrUrl('dimfeld/llmutils#123')).toBe('dimfeld/llmutils#123');
+  });
+});
+
+describe('tryCanonicalizePrUrl', () => {
+  test('returns null for GitHub issue URLs', () => {
+    expect(tryCanonicalizePrUrl('https://github.com/dimfeld/llmutils/issues/123')).toBeNull();
+  });
+
+  test('returns null for non-GitHub URLs', () => {
+    expect(tryCanonicalizePrUrl('https://example.com/dimfeld/llmutils/pull/123')).toBeNull();
   });
 });

@@ -282,6 +282,66 @@ describe('lib/server/db_queries', () => {
     });
   });
 
+  test('invalid pullRequest URLs do not crash plan list or detail queries', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-invalid-pr-url',
+      planId: 110,
+      title: 'Invalid PR URL plan',
+      goal: 'Should ignore non-PR URLs in pullRequest',
+      status: 'pending',
+      priority: 'medium',
+      filename: '110-invalid-pr.plan.md',
+      pullRequest: ['https://github.com/example/repo/issues/110'],
+    });
+
+    const plans = getPlansForProject(db, projectId);
+    expect(plans.find((plan) => plan.uuid === 'plan-invalid-pr-url')).toMatchObject({
+      pullRequests: [],
+      prSummaryStatus: 'none',
+    });
+
+    const detail = getPlanDetail(db, 'plan-invalid-pr-url');
+    expect(detail?.pullRequests).toEqual([]);
+    expect(detail?.prStatuses).toEqual([]);
+  });
+
+  test('explicit plan pullRequest URLs override stale plan_pr links in plan list and detail queries', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-stale-pr-link',
+      planId: 111,
+      title: 'Stale PR link plan',
+      goal: 'Removed PRs should not show up from stale plan_pr rows',
+      status: 'pending',
+      priority: 'medium',
+      filename: '111-stale-pr-link.plan.md',
+      pullRequest: [],
+    });
+
+    const stalePr = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/111',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 111,
+      title: 'Stale PR 111',
+      state: 'open',
+      draft: false,
+      checkRollupState: 'failure',
+      lastFetchedAt: recentTimestamp(),
+    });
+
+    linkPlanToPr(db, 'plan-stale-pr-link', stalePr.status.id);
+
+    const plans = getPlansForProject(db, projectId);
+    expect(plans.find((plan) => plan.uuid === 'plan-stale-pr-link')).toMatchObject({
+      pullRequests: [],
+      prSummaryStatus: 'none',
+    });
+
+    const detail = getPlanDetail(db, 'plan-stale-pr-link');
+    expect(detail?.pullRequests).toEqual([]);
+    expect(detail?.prStatuses).toEqual([]);
+  });
+
   test('cross-project unresolved dependencies mark a plan as blocked in project lists and detail views', () => {
     const plans = getPlansForProject(db, projectId);
     const crossProjectDependencyPlan = plans.find(

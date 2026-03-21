@@ -91,7 +91,7 @@ export function validatePrIdentifier(identifier: string): void {
   }
 }
 
-export function canonicalizePrUrl(identifier: string): string {
+export function tryCanonicalizePrUrl(identifier: string): string | null {
   let url: URL;
   try {
     url = new URL(identifier);
@@ -99,7 +99,11 @@ export function canonicalizePrUrl(identifier: string): string {
     return identifier;
   }
 
-  validatePrIdentifier(identifier);
+  try {
+    validatePrIdentifier(identifier);
+  } catch {
+    return null;
+  }
 
   const segments = url.pathname.split('/').filter(Boolean);
   const owner = segments[0];
@@ -107,4 +111,14 @@ export function canonicalizePrUrl(identifier: string): string {
   const number = segments[3];
 
   return `https://github.com/${owner}/${repo}/pull/${number}`;
+}
+
+export function canonicalizePrUrl(identifier: string): string {
+  const canonicalized = tryCanonicalizePrUrl(identifier);
+  if (canonicalized === null) {
+    validatePrIdentifier(identifier);
+    throw new Error(`Invalid GitHub pull request identifier: ${identifier}`);
+  }
+
+  return canonicalized;
 }

@@ -320,6 +320,36 @@ describe('tim/commands/pr', () => {
     expect(logs.some((line) => line.includes('Linked'))).toBe(true);
   });
 
+  test('link canonicalizes existing /pulls variants before deduplicating persisted plan URLs', async () => {
+    currentParsedIdentifier = { owner: 'example', repo: 'repo', number: 201 };
+    currentPersistedPlan = {
+      ...currentPlan,
+      pullRequest: ['https://github.com/example/repo/pulls/201?tab=checks'],
+    };
+    currentRefreshedStatuses.set(
+      'https://github.com/example/repo/pull/201',
+      createPrDetail(201, 'Linked PR', 'pending', 77)
+    );
+    mockCanonicalizePrUrl.mockImplementation((identifier: string) => {
+      if (identifier.startsWith('https://github.com/example/repo/pulls/201')) {
+        return 'https://github.com/example/repo/pull/201';
+      }
+      return identifier;
+    });
+
+    await prModule.handlePrLinkCommand(
+      '248',
+      'https://github.com/example/repo/pull/201',
+      {},
+      createNestedCommand()
+    );
+
+    expect(mockWritePlanFile).toHaveBeenCalledWith('/tmp/248.plan.md', {
+      ...currentPlan,
+      pullRequest: ['https://github.com/example/repo/pull/201'],
+    });
+  });
+
   test('link rejects invalid GitHub pull request identifiers', async () => {
     currentParsedIdentifier = null;
 
@@ -374,6 +404,33 @@ describe('tim/commands/pr', () => {
     );
     expect(mockUnlinkPlanFromPr).toHaveBeenCalledWith(dbHandle, 'plan-248', 88);
     expect(mockCleanOrphanedPrStatus).toHaveBeenCalledWith(dbHandle);
+    expect(logs.some((line) => line.includes('Unlinked'))).toBe(true);
+  });
+
+  test('unlink canonicalizes existing /pulls variants before removing persisted plan URLs', async () => {
+    currentCachedDetail = createPrDetail(301, 'Cached PR', 'success', 88);
+    currentPersistedPlan = {
+      ...currentPlan,
+      pullRequest: ['https://github.com/example/repo/pulls/301?tab=checks'],
+    };
+    mockCanonicalizePrUrl.mockImplementation((identifier: string) => {
+      if (identifier.startsWith('https://github.com/example/repo/pulls/301')) {
+        return 'https://github.com/example/repo/pull/301';
+      }
+      return identifier;
+    });
+
+    await prModule.handlePrUnlinkCommand(
+      '248',
+      'https://github.com/example/repo/pull/301',
+      {},
+      createNestedCommand()
+    );
+
+    expect(mockWritePlanFile).toHaveBeenCalledWith('/tmp/248.plan.md', {
+      ...currentPlan,
+      pullRequest: [],
+    });
     expect(logs.some((line) => line.includes('Unlinked'))).toBe(true);
   });
 

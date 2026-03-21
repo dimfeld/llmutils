@@ -195,6 +195,50 @@ describe('tim db/pr_status', () => {
     ).toEqual(['https://github.com/example/repo/pull/102']);
   });
 
+  test('getPrStatusByUrl and getPrStatusByUrls ignore non-PR URLs instead of throwing', () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/1022',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 1022,
+      title: 'PR 1022',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/issues/1022')).toBeNull();
+    expect(
+      getPrStatusByUrls(db, [
+        'https://github.com/example/repo/issues/1022',
+        'https://github.com/example/repo/pull/1022',
+      ]).map((detail) => detail.status.pr_url)
+    ).toEqual(['https://github.com/example/repo/pull/1022']);
+  });
+
+  test('getPrStatusForPlan ignores stale plan_pr rows when explicit plan URLs are provided', () => {
+    const staleDetail = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/1023',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 1023,
+      title: 'Stale PR 1023',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    linkPlanToPr(db, 'plan-1', staleDetail.status.id);
+
+    expect(getPrStatusForPlan(db, 'plan-1')).toHaveLength(1);
+    expect(getPrStatusForPlan(db, 'plan-1')[0]?.status.pr_url).toBe(
+      'https://github.com/example/repo/pull/1023'
+    );
+    expect(
+      getPrStatusForPlan(db, 'plan-1', ['https://github.com/example/repo/issues/1023'])
+    ).toEqual([]);
+  });
+
   test('getPrStatusByUrl returns stored check rollup state and check source fields', () => {
     upsertPrStatus(db, {
       prUrl: 'https://github.com/example/repo/pull/1021',

@@ -112,6 +112,29 @@ async function persistPlanPullRequests(
   return true;
 }
 
+function normalizeStoredPullRequests(pullRequests: string[]): string[] {
+  return [
+    ...new Set(
+      pullRequests.map((pullRequest) => {
+        try {
+          return canonicalizePrUrl(pullRequest);
+        } catch {
+          return pullRequest;
+        }
+      })
+    ),
+  ];
+}
+
+function isUrlIdentifier(identifier: string): boolean {
+  try {
+    new URL(identifier);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function formatLifecycleState(status: PrStatusRow): string {
   if (status.draft === 1) {
     return chalk.yellow('draft');
@@ -445,18 +468,21 @@ export async function handlePrLinkCommand(
     throw new Error(`Invalid GitHub pull request identifier: ${normalizedInput}`);
   }
 
-  const canonicalUrl = canonicalizePrUrl(
-    `https://github.com/${parsed.owner}/${parsed.repo}/pull/${parsed.number}`
-  );
+  const canonicalUrl = isUrlIdentifier(normalizedInput)
+    ? normalizedInput
+    : `https://github.com/${parsed.owner}/${parsed.repo}/pull/${parsed.number}`;
 
   // Validate with GitHub first - don't modify plan file if PR doesn't exist
   const db = getDatabase();
   const detail = await refreshPrStatus(db, canonicalUrl);
 
   // Now persist to plan file (source of truth) and create DB junction
-  await persistPlanPullRequests(planPath, (pullRequests) =>
-    pullRequests.includes(canonicalUrl) ? pullRequests : [...pullRequests, canonicalUrl]
-  );
+  await persistPlanPullRequests(planPath, (pullRequests) => {
+    const normalizedPullRequests = normalizeStoredPullRequests(pullRequests);
+    return normalizedPullRequests.includes(canonicalUrl)
+      ? normalizedPullRequests
+      : [...normalizedPullRequests, canonicalUrl];
+  });
   linkPlanToPr(db, planUuid, detail.status.id);
 
   log(
@@ -476,15 +502,19 @@ export async function handlePrUnlinkCommand(
   const normalizedInput = canonicalizePrUrl(prUrl);
   validatePrIdentifier(normalizedInput);
   const parsed = await parsePrOrIssueNumber(normalizedInput);
-  const canonicalUrl = parsed
-    ? canonicalizePrUrl(`https://github.com/${parsed.owner}/${parsed.repo}/pull/${parsed.number}`)
-    : normalizedInput;
+  const canonicalUrl =
+    parsed && !isUrlIdentifier(normalizedInput)
+      ? `https://github.com/${parsed.owner}/${parsed.repo}/pull/${parsed.number}`
+      : normalizedInput;
 
   // Remove from plan file first (source of truth), then clean up DB best-effort
   let removed = false;
   await persistPlanPullRequests(planPath, (pullRequests) => {
-    const filtered = pullRequests.filter((existingPrUrl) => existingPrUrl !== canonicalUrl);
-    removed = filtered.length < pullRequests.length;
+    const normalizedPullRequests = normalizeStoredPullRequests(pullRequests);
+    const filtered = normalizedPullRequests.filter(
+      (existingPrUrl) => existingPrUrl !== canonicalUrl
+    );
+    removed = filtered.length < normalizedPullRequests.length;
     return filtered;
   });
 
