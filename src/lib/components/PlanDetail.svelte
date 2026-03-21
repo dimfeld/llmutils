@@ -1,5 +1,7 @@
 <script lang="ts">
   import type { PlanDetail } from '$lib/server/db_queries.js';
+  import { startGenerate } from '$lib/remote/plan_actions.remote.js';
+  import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import StatusBadge from './StatusBadge.svelte';
   import PriorityBadge from './PriorityBadge.svelte';
 
@@ -14,6 +16,51 @@
     projectName?: string;
     tab?: string;
   } = $props();
+
+  const sessionManager = useSessionManager();
+
+  const INELIGIBLE_STATUSES = new Set(['done', 'cancelled', 'deferred', 'recently_done']);
+
+  let eligible = $derived(plan.tasks.length === 0 && !INELIGIBLE_STATUSES.has(plan.displayStatus));
+
+  let activeGenerateSession = $derived.by(() => {
+    if (!eligible) return null;
+    for (const session of sessionManager.sessions.values()) {
+      if (
+        session.sessionInfo.planId === plan.planId &&
+        session.sessionInfo.command === 'generate' &&
+        session.status === 'active'
+      ) {
+        return session.connectionId;
+      }
+    }
+    return null;
+  });
+
+  let starting = $state(false);
+  let errorMessage: string | null = $state(null);
+  let successMessage: { text: string; connectionId?: string } | null = $state(null);
+
+  async function handleGenerate() {
+    starting = true;
+    errorMessage = null;
+    successMessage = null;
+    try {
+      const result = await startGenerate({ planUuid: plan.uuid });
+      if (result.status === 'already_running') {
+        successMessage = {
+          text: 'Generate is already running',
+          connectionId: result.connectionId,
+        };
+      } else {
+        successMessage = { text: 'Generate started' };
+      }
+    } catch (err) {
+      errorMessage = `${err as Error}`;
+    } finally {
+      starting = false;
+    }
+  }
 
   function planUrl(uuid: string, depProjectId?: number | null): string {
     const pid = depProjectId ?? projectId;
@@ -52,7 +99,56 @@
     <div class="mt-2 flex items-center gap-2">
       <StatusBadge status={plan.displayStatus} />
       <PriorityBadge priority={plan.priority} />
+
+      {#if eligible}
+        {#if activeGenerateSession}
+          <a
+            href="/projects/{projectId}/sessions/{activeGenerateSession}"
+            class="ml-auto inline-flex items-center gap-1.5 rounded-md bg-blue-100 px-3 py-1 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-900/60"
+          >
+            <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-blue-500"></span>
+            Generating…
+          </a>
+        {:else}
+          <button
+            onclick={handleGenerate}
+            disabled={starting || !!successMessage}
+            class="ml-auto inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600"
+          >
+            {#if starting}
+              <span
+                class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
+              ></span>
+              Starting…
+            {:else}
+              Generate
+            {/if}
+          </button>
+        {/if}
+      {/if}
     </div>
+
+    {#if errorMessage}
+      <div
+        class="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-300"
+      >
+        {errorMessage}
+      </div>
+    {/if}
+
+    {#if successMessage}
+      <div
+        class="mt-2 rounded-md bg-green-50 px-3 py-2 text-sm text-green-700 dark:bg-green-900/30 dark:text-green-300"
+      >
+        {successMessage.text}
+        {#if successMessage.connectionId}
+          — <a
+            href="/projects/{projectId}/sessions/{successMessage.connectionId}"
+            class="underline hover:no-underline">View session</a
+          >
+        {/if}
+      </div>
+    {/if}
   </div>
 
   <!-- Goal -->

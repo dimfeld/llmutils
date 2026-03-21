@@ -5,7 +5,7 @@ goal: ""
 id: 189
 uuid: 9a812d63-4354-4355-ab9d-d254dcbef3b0
 generatedBy: agent
-status: pending
+status: done
 priority: medium
 dependencies:
   - 184
@@ -20,10 +20,10 @@ references:
 planGeneratedAt: 2026-03-20T23:51:20.469Z
 promptsGeneratedAt: 2026-03-20T23:51:20.469Z
 createdAt: 2026-02-13T21:11:06.976Z
-updatedAt: 2026-03-20T23:51:20.469Z
+updatedAt: 2026-03-21T08:34:46.985Z
 tasks:
   - title: Add hasActiveSessionForPlan to SessionManager
-    done: false
+    done: true
     description: "Add a method to src/lib/server/session_manager.ts that checks
       whether an active session exists for a given plan ID and command type.
       Returns { active: boolean; connectionId?: string }. Iterate this.sessions
@@ -32,14 +32,14 @@ tasks:
       Return the connectionId if found so the UI can link to it. Write tests in
       the existing session manager test file."
   - title: Add getPrimaryWorkspacePath query helper
-    done: false
+    done: true
     description: Add a function to src/lib/server/db_queries.ts that queries the
       primary workspace path for a project. Query workspace table for project_id
       = ? AND workspace_type = 1 (WORKSPACE_TYPE_VALUES.primary), return
       workspace_path or null. Write a test for this alongside existing
       db_queries tests.
   - title: Create server-side spawn handler
-    done: false
+    done: true
     description: "Create src/lib/server/plan_actions.ts with
       spawnGenerateProcess(planId, cwd) function. Spawns [tim, generate, planId,
       --auto-workspace, --no-terminal-input] via Bun.spawn with { detached:
@@ -49,7 +49,7 @@ tasks:
       returns { success: true, planId }. Write tests mocking Bun.spawn for early
       failure and successful spawn cases."
   - title: Create startGenerate remote command
-    done: false
+    done: true
     description: "Create src/lib/remote/plan_actions.remote.ts following the pattern
       in src/lib/remote/session_actions.remote.ts. Define startGenerate command
       with Zod schema accepting { planUuid: string }. Handler: gets server
@@ -60,7 +60,7 @@ tasks:
       tests for the command logic covering plan not found, ineligible,
       duplicate, no primary workspace, successful spawn, and spawn failure."
   - title: Add Generate button to PlanDetail component
-    done: false
+    done: true
     description: "Modify src/lib/components/PlanDetail.svelte: import
       useSessionManager and startGenerate. Add eligibility check
       (plan.tasks.length === 0 && displayStatus not done/cancelled). Add derived
@@ -70,6 +70,18 @@ tasks:
       session link (running), spinner (starting), error message (failed). On
       click call startGenerate({ planUuid: plan.uuid }), show confirmation +
       link to /projects/{projectId}/sessions/{connectionId} on success."
+changedFiles:
+  - docs/implementer-instructions.md
+  - src/lib/components/PlanDetail.svelte
+  - src/lib/remote/plan_actions.remote.test.ts
+  - src/lib/remote/plan_actions.remote.ts
+  - src/lib/server/db_queries.test.ts
+  - src/lib/server/db_queries.ts
+  - src/lib/server/plan_actions.test.ts
+  - src/lib/server/plan_actions.ts
+  - src/lib/server/session_manager.test.ts
+  - src/lib/server/session_manager.ts
+  - src/tim/workspace/workspace_manager.ts
 tags: []
 ---
 
@@ -336,3 +348,27 @@ Modify `src/lib/components/PlanDetail.svelte`:
 - **Workspace locking**: The auto-workspace selection may create a new workspace if all are locked. This is fine — it's the expected behavior.
 - **Process cleanup on error**: If the spawn itself fails (command not found, etc.), the ~500ms wait detects it. If the process fails later, it shows up in the session UI.
 - **No primary workspace**: If the plan's project doesn't have a primary workspace registered, the command returns an error. This is an edge case that should be communicated clearly to the user.
+
+## Current Progress
+### Current State
+- All 5 tasks complete. Plan is done.
+### Completed (So Far)
+- `SessionManager.hasActiveSessionForPlan()` method with tests
+- `getPrimaryWorkspacePath()` DB query helper with tests
+- `spawnGenerateProcess()` detached spawn handler with early failure detection and tests
+- `startGenerate` remote command with full validation pipeline and tests
+- Generate button in PlanDetail.svelte with eligibility check, session-aware state, and error handling
+### Remaining
+- None
+### Next Iteration Guidance
+- None
+### Decisions / Changes
+- Added `deferred` and `recently_done` to eligibility exclusion list (review feedback)
+- TOCTOU race in duplicate detection is acceptable — workspace locking provides safety net
+- Button stays disabled while successMessage is shown to prevent double-clicks before WebSocket session connects
+- Stderr pipe is explicitly cancelled on successful spawn to prevent potential child process blocking
+### Lessons Learned
+- When using `displayStatus` (computed) in UI but `status` (raw) on server, ensure synthetic statuses like `recently_done` are accounted for on the client side to avoid showing buttons that always fail server-side
+- Piped stdio streams on detached processes should be explicitly cancelled/consumed before unref to avoid pipe buffer blocking
+### Risks / Blockers
+- None

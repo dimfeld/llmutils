@@ -19,6 +19,7 @@ import {
 import { listProjects, type Project } from '$tim/db/project.js';
 import {
   dbValueToWorkspaceType,
+  WORKSPACE_TYPE_VALUES,
   type WorkspaceRow,
   type WorkspaceType,
 } from '$tim/db/workspace.js';
@@ -495,6 +496,23 @@ export function getWorkspacesForProject(db: Database, projectId?: number): Enric
       if (timeDiff !== 0) return timeDiff;
       return right.id - left.id;
     });
+}
+
+export function getPrimaryWorkspacePath(db: Database, projectId: number): string | null {
+  const row = db
+    .prepare(
+      `
+        SELECT workspace_path
+        FROM workspace
+        WHERE project_id = ?
+          AND workspace_type = ?
+        ORDER BY updated_at DESC, id DESC
+        LIMIT 1
+      `
+    )
+    .get(projectId, WORKSPACE_TYPE_VALUES.primary) as { workspace_path: string } | null;
+
+  return row?.workspace_path ?? null;
 }
 
 export function getPlanDetail(db: Database, planUuid: string): PlanDetail | null {
