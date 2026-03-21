@@ -20,10 +20,10 @@ references:
 planGeneratedAt: 2026-03-20T23:51:20.469Z
 promptsGeneratedAt: 2026-03-20T23:51:20.469Z
 createdAt: 2026-02-13T21:11:06.976Z
-updatedAt: 2026-03-21T08:08:24.187Z
+updatedAt: 2026-03-21T08:21:57.063Z
 tasks:
   - title: Add hasActiveSessionForPlan to SessionManager
-    done: false
+    done: true
     description: "Add a method to src/lib/server/session_manager.ts that checks
       whether an active session exists for a given plan ID and command type.
       Returns { active: boolean; connectionId?: string }. Iterate this.sessions
@@ -32,14 +32,14 @@ tasks:
       Return the connectionId if found so the UI can link to it. Write tests in
       the existing session manager test file."
   - title: Add getPrimaryWorkspacePath query helper
-    done: false
+    done: true
     description: Add a function to src/lib/server/db_queries.ts that queries the
       primary workspace path for a project. Query workspace table for project_id
       = ? AND workspace_type = 1 (WORKSPACE_TYPE_VALUES.primary), return
       workspace_path or null. Write a test for this alongside existing
       db_queries tests.
   - title: Create server-side spawn handler
-    done: false
+    done: true
     description: "Create src/lib/server/plan_actions.ts with
       spawnGenerateProcess(planId, cwd) function. Spawns [tim, generate, planId,
       --auto-workspace, --no-terminal-input] via Bun.spawn with { detached:
@@ -49,7 +49,7 @@ tasks:
       returns { success: true, planId }. Write tests mocking Bun.spawn for early
       failure and successful spawn cases."
   - title: Create startGenerate remote command
-    done: false
+    done: true
     description: "Create src/lib/remote/plan_actions.remote.ts following the pattern
       in src/lib/remote/session_actions.remote.ts. Define startGenerate command
       with Zod schema accepting { planUuid: string }. Handler: gets server
@@ -70,6 +70,17 @@ tasks:
       session link (running), spinner (starting), error message (failed). On
       click call startGenerate({ planUuid: plan.uuid }), show confirmation +
       link to /projects/{projectId}/sessions/{connectionId} on success."
+changedFiles:
+  - docs/implementer-instructions.md
+  - src/lib/remote/plan_actions.remote.test.ts
+  - src/lib/remote/plan_actions.remote.ts
+  - src/lib/server/db_queries.test.ts
+  - src/lib/server/db_queries.ts
+  - src/lib/server/plan_actions.test.ts
+  - src/lib/server/plan_actions.ts
+  - src/lib/server/session_manager.test.ts
+  - src/lib/server/session_manager.ts
+  - src/tim/workspace/workspace_manager.ts
 tags: []
 ---
 
@@ -336,3 +347,27 @@ Modify `src/lib/components/PlanDetail.svelte`:
 - **Workspace locking**: The auto-workspace selection may create a new workspace if all are locked. This is fine — it's the expected behavior.
 - **Process cleanup on error**: If the spawn itself fails (command not found, etc.), the ~500ms wait detects it. If the process fails later, it shows up in the session UI.
 - **No primary workspace**: If the plan's project doesn't have a primary workspace registered, the command returns an error. This is an edge case that should be communicated clearly to the user.
+
+## Current Progress
+### Current State
+- Tasks 1-4 (all backend work) are complete and tested. Task 5 (UI) remains.
+### Completed (So Far)
+- `SessionManager.hasActiveSessionForPlan()` method with tests
+- `getPrimaryWorkspacePath()` DB query helper with tests
+- `spawnGenerateProcess()` detached spawn handler with early failure detection and tests
+- `startGenerate` remote command with full validation pipeline and tests
+- Review feedback addressed: added `deferred` status exclusion to eligibility check
+### Remaining
+- Task 5: Add Generate button to PlanDetail.svelte component
+### Next Iteration Guidance
+- Task 5 is a Svelte UI task — use claude-code executor since it's better for UI work
+- The `startGenerate` remote command returns `{ status: 'started', planId }` or `{ status: 'already_running', connectionId }` — the UI needs to handle both
+- Use `useSessionManager()` from `$lib/stores/session_state.svelte.ts` for client-side session state
+- Check `startGenerate.pending` for in-flight state tracking
+### Decisions / Changes
+- Added `deferred` status to eligibility exclusion list (review feedback)
+- TOCTOU race in duplicate detection is acceptable — workspace locking provides safety net
+### Lessons Learned
+- None
+### Risks / Blockers
+- None
