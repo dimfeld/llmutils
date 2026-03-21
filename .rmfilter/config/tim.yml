@@ -8,6 +8,13 @@ postApplyCommands:
     command: bun run format
     allowFailure: true
     hideOutputOnSuccess: true
+planning:
+  instructions: docs/planning.md
+agents:
+  reviewer:
+    instructions: docs/reviewer-instructions.md
+  implementer:
+    instructions: docs/implementer-instructions.md
 updateDocs:
   mode: after-iteration
   applyLessons: true
