@@ -352,7 +352,6 @@ export async function handlePrStatusCommand(
   command: RootCommandLike
 ): Promise<void> {
   const { plan } = await resolvePlanForCommand(planId, command);
-  const planUuid = requirePlanUuid(plan, plan.filename ?? String(plan.id));
   const prUrls = plan.pullRequest ?? [];
 
   if (prUrls.length === 0) {
@@ -368,20 +367,19 @@ export async function handlePrStatusCommand(
 
   // Force-refresh all PRs from GitHub (CLI always fetches fresh data)
   const details: PrStatusDetail[] = [];
+  const successfulUrls: string[] = [];
   const errors: Array<{ url: string; error: Error }> = [];
   for (const prUrl of prUrls) {
     try {
       const detail = await refreshPrStatus(db, prUrl);
       details.push(detail);
+      successfulUrls.push(prUrl);
     } catch (err) {
       errors.push({ url: prUrl, error: err as Error });
     }
   }
 
-  // Sync plan_pr junctions so the cache is usable by web UI
-  // syncPlanPrLinks will find all data already cached and just update junctions
-  await syncPlanPrLinks(db, planUuid, prUrls);
-
+  // Display results before junction sync (so partial results are always shown)
   for (const detail of details) {
     logPrStatus(detail);
     log('');
@@ -389,6 +387,15 @@ export async function handlePrStatusCommand(
 
   for (const { url, error } of errors) {
     log(chalk.red(`Failed to fetch status for ${url}: ${error}`));
+  }
+
+  // Sync plan_pr junctions for successfully fetched PRs (best-effort, skip if no UUID)
+  if (plan.uuid && successfulUrls.length > 0) {
+    try {
+      await syncPlanPrLinks(db, plan.uuid, successfulUrls);
+    } catch (err) {
+      log(chalk.yellow(`Warning: failed to sync PR cache junctions: ${err as Error}`));
+    }
   }
 
   if (errors.length > 0 && details.length === 0) {

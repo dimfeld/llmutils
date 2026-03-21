@@ -207,6 +207,31 @@ describe('tim/commands/pr', () => {
     expect(logs.some((line) => line.includes('Merge readiness: checks pending'))).toBe(true);
   });
 
+  test('status shows partial results when some PR fetches fail', async () => {
+    currentPlan.pullRequest = [
+      'https://github.com/example/repo/pull/501',
+      'https://github.com/example/repo/pull/502',
+    ];
+    const detail501 = createPrDetail(501, 'Good PR', 'success');
+    currentRefreshedStatuses.set('https://github.com/example/repo/pull/501', detail501);
+    // PR 502 is NOT in currentRefreshedStatuses, so refreshPrStatus will throw
+
+    await prModule.handlePrStatusCommand('248', {}, createNestedCommand());
+
+    // Successful PR is displayed
+    expect(logs.some((line) => line.includes('example/repo#501: Good PR'))).toBe(true);
+    // Failed PR shows error
+    expect(
+      logs.some((line) =>
+        line.includes('Failed to fetch status for https://github.com/example/repo/pull/502')
+      )
+    ).toBe(true);
+    // syncPlanPrLinks only called with successful URLs
+    expect(mockSyncPlanPrLinks).toHaveBeenCalledWith(dbHandle, 'plan-248', [
+      'https://github.com/example/repo/pull/501',
+    ]);
+  });
+
   test('link validates the PR identifier, refreshes status, links the plan UUID, and persists the plan file', async () => {
     currentParsedIdentifier = { owner: 'example', repo: 'repo', number: 201 };
     currentRefreshedStatuses.set(
