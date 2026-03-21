@@ -72,6 +72,13 @@ The web interface exposes a REST endpoint for fetching and refreshing cached PR 
 - `PlanDetail` (detail view) includes `prStatuses: PrStatusDetail[]` with nested check runs, reviews, and labels.
 - The POST endpoint implements stale-while-revalidate: the PlanDetail page calls POST on mount if cached data is stale, displaying cached data immediately while the refresh runs.
 
+### Components
+
+- **`PrStatusSection.svelte`** — PR detail section rendered inside `PlanDetail`. For each linked PR: title as GitHub link, state badge (open/merged/closed/draft), checks summary badge (passing/failing/pending), review decision, labels as colored chips. Expandable sub-sections for individual check runs and reviews. Uses stale-while-revalidate: shows `initialStatuses` (from server load) immediately, triggers a POST refresh if any PR is missing or stale (>5 min). Uses `AbortController` to cancel stale fetch responses on plan navigation.
+- **`PrCheckRunList.svelte`** — Expandable list of individual CI check runs within a PR. Shows name, status/conclusion with color coding, link to details URL. Handles both CheckRun and StatusContext source types.
+- **`PrReviewList.svelte`** — Expandable list of PR reviews. Shows reviewer name, review state (approved/changes requested/commented/pending/dismissed) with appropriate styling.
+- **`PrStatusIndicator.svelte`** — Compact colored dot badge for plan list views showing overall PR health. Green = all checks passing, red = any failing, yellow = pending, gray = no status data. Used in `PlanRow.svelte` and `ActivePlanRow.svelte` when `pullRequests.length > 0`. Status derived from `EnrichedPlan.prSummaryStatus`.
+
 ## Sessions Tab
 
 The Sessions tab (`/projects/[projectId]/sessions`) provides real-time monitoring of tim agent processes via a WebSocket + SSE architecture.
