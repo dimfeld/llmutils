@@ -96,6 +96,45 @@ describe('common/github/pr_status_service', () => {
     );
   });
 
+  test('refreshPrStatus uses the real URL canonicalization path before caching', async () => {
+    const fetchPrFullStatus = mock(async () => ({
+      number: 219,
+      title: 'Canonicalized by service',
+      state: 'open' as const,
+      isDraft: false,
+      mergeable: 'MERGEABLE' as const,
+      mergedAt: null,
+      headSha: 'canonical-sha',
+      baseRefName: 'main',
+      headRefName: 'feature/canonical',
+      reviewDecision: null,
+      labels: [],
+      reviews: [],
+      checks: [],
+      checkRollupState: 'success' as const,
+    }));
+
+    await moduleMocker.mock('./pr_status.ts', () => ({
+      fetchPrFullStatus,
+      fetchPrCheckStatus: mock(),
+    }));
+
+    const { refreshPrStatus } = await import('./pr_status_service.ts');
+    await refreshPrStatus(
+      db,
+      'https://github.com/example/repo/pulls/219/?tab=checks#partial-pull-merging'
+    );
+
+    expect(fetchPrFullStatus).toHaveBeenCalledWith('example', 'repo', 219);
+    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/219')).not.toBeNull();
+    expect(
+      getPrStatusByUrl(
+        db,
+        'https://github.com/example/repo/pulls/219/?tab=checks#partial-pull-merging'
+      )
+    ).not.toBeNull();
+  });
+
   test('refreshPrCheckStatus updates only the checks when a cached record exists', async () => {
     upsertPrStatus(db, {
       prUrl: 'https://github.com/example/repo/pull/202',
