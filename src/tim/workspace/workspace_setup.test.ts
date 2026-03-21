@@ -10,7 +10,6 @@ import type { TimConfig } from '../configSchema.js';
 import * as git from '../../common/git.js';
 import { WorkspaceAutoSelector } from './workspace_auto_selector.js';
 import { WorkspaceAlreadyLocked, WorkspaceLock } from './workspace_lock.js';
-import * as workspaceCommand from '../commands/workspace.js';
 import * as workspaceManager from './workspace_manager.js';
 import { setupWorkspace } from './workspace_setup.js';
 
@@ -95,8 +94,8 @@ describe('setupWorkspace', () => {
       checkFailed: false,
     });
     spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({ success: true });
-    spyOn(workspaceManager, 'ensurePrimaryWorkspaceBranch').mockResolvedValue({ success: true });
-    spyOn(workspaceCommand, 'pullWorkspaceRefIfExists').mockResolvedValue(false);
+
+
     spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
 
     const result = await setupWorkspace(
@@ -154,8 +153,8 @@ describe('setupWorkspace', () => {
       checkFailed: false,
     });
     spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({ success: true });
-    spyOn(workspaceManager, 'ensurePrimaryWorkspaceBranch').mockResolvedValue({ success: true });
-    spyOn(workspaceCommand, 'pullWorkspaceRefIfExists').mockResolvedValue(false);
+
+
     spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
 
     const result = await setupWorkspace(
@@ -240,7 +239,7 @@ describe('setupWorkspace', () => {
       checkFailed: false,
     });
     spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({ success: true });
-    spyOn(workspaceManager, 'ensurePrimaryWorkspaceBranch').mockResolvedValue({ success: true });
+
 
     await setupWorkspace(
       {
@@ -361,7 +360,7 @@ describe('setupWorkspace', () => {
       checkFailed: false,
     });
     spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({ success: true });
-    spyOn(workspaceManager, 'ensurePrimaryWorkspaceBranch').mockResolvedValue({ success: true });
+
 
     const acquireLockSpy = spyOn(WorkspaceLock, 'acquireLock');
     const setupCleanupHandlersSpy = spyOn(WorkspaceLock, 'setupCleanupHandlers');
@@ -388,7 +387,7 @@ describe('setupWorkspace', () => {
     expect(setupCleanupHandlersSpy).toHaveBeenCalledWith(autoWorkspacePath, 'pid');
   });
 
-  test('auto-workspace syncs base branch before reusing an existing plan branch', async () => {
+  test('auto-workspace creates branch directly in workspace', async () => {
     const autoWorkspacePath = path.join(tempDir, 'workspace-auto-existing-plan-branch');
     await fs.mkdir(autoWorkspacePath, { recursive: true });
     await seedWorkspace(autoWorkspacePath, 'task-auto-existing-plan-branch');
@@ -415,24 +414,11 @@ describe('setupWorkspace', () => {
       hasChanges: false,
       checkFailed: false,
     });
-    spyOn(git, 'getCurrentBranchName').mockResolvedValue('main');
 
-    const prepareSpy = spyOn(workspaceManager, 'prepareExistingWorkspace')
-      .mockResolvedValueOnce({
-        success: true,
-        actualBranchName: 'main',
-      })
-      .mockResolvedValueOnce({
-        success: true,
-        actualBranchName: '42-sync-base-before-plan-branch-reuse',
-      });
-    const ensurePrimaryBranchSpy = spyOn(
-      workspaceManager,
-      'ensurePrimaryWorkspaceBranch'
-    ).mockResolvedValue({
+    const prepareSpy = spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({
       success: true,
+      actualBranchName: '42-sync-base-before-plan-branch-reuse',
     });
-    const pullSpy = spyOn(workspaceCommand, 'pullWorkspaceRefIfExists').mockResolvedValue(true);
     spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
 
     await setupWorkspace(
@@ -447,30 +433,15 @@ describe('setupWorkspace', () => {
     );
 
     expect(prepareSpy).toHaveBeenCalledTimes(1);
-    expect(prepareSpy).toHaveBeenNthCalledWith(1, autoWorkspacePath, {
+    expect(prepareSpy).toHaveBeenCalledWith(autoWorkspacePath, {
       baseBranch: undefined,
       branchName: '42-sync-base-before-plan-branch-reuse',
       planFilePath: validPlanFile,
-      createBranch: false,
-      logSkippedBranchCreation: false,
+      createBranch: true,
     });
-    expect(ensurePrimaryBranchSpy).toHaveBeenCalledWith(
-      baseDir,
-      '42-sync-base-before-plan-branch-reuse',
-      {
-        fromBranch: undefined,
-        planFilePath: validPlanFile,
-      }
-    );
-    expect(pullSpy).toHaveBeenCalledWith(
-      autoWorkspacePath,
-      '42-sync-base-before-plan-branch-reuse',
-      'origin',
-      validPlanFile
-    );
   });
 
-  test('auto-workspace reuse skips primary branch setup when createBranch is false', async () => {
+  test('auto-workspace skips branch creation when createBranch is false', async () => {
     const autoWorkspacePath = path.join(tempDir, 'workspace-auto-existing-no-branch');
     await fs.mkdir(autoWorkspacePath, { recursive: true });
     await seedWorkspace(autoWorkspacePath, 'task-auto-existing-no-branch');
@@ -489,13 +460,9 @@ describe('setupWorkspace', () => {
       hasChanges: false,
       checkFailed: false,
     });
-    spyOn(git, 'getCurrentBranchName').mockResolvedValue('main');
-    spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({
+    const prepareSpy = spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({
       success: true,
-      actualBranchName: 'main',
     });
-    const ensurePrimaryBranchSpy = spyOn(workspaceManager, 'ensurePrimaryWorkspaceBranch');
-    spyOn(workspaceCommand, 'pullWorkspaceRefIfExists').mockResolvedValue(false);
     spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
 
     await setupWorkspace(
@@ -510,7 +477,12 @@ describe('setupWorkspace', () => {
       'tim generate'
     );
 
-    expect(ensurePrimaryBranchSpy).not.toHaveBeenCalled();
+    expect(prepareSpy).toHaveBeenCalledWith(autoWorkspacePath, {
+      baseBranch: undefined,
+      branchName: 'task-auto-existing-no-branch',
+      planFilePath: planFile,
+      createBranch: false,
+    });
   });
 
   test('prepares existing workspace, copies plan, and runs workspace update commands in order', async () => {

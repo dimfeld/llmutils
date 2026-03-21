@@ -4,7 +4,6 @@ import { getGitRoot, getUsingJj, getWorkingCopyStatus } from '../../common/git.j
 import { logSpawn } from '../../common/process.js';
 import { error, log, sendStructured, warn } from '../../logging.js';
 import { generateBranchNameFromPlan } from '../commands/branch.js';
-import { pullWorkspaceRefIfExists } from '../commands/workspace.js';
 import type { TimConfig } from '../configSchema.js';
 import { updateHeadlessSessionInfo } from '../headless.js';
 import { resolveConfiguredTasksPath } from '../path_resolver.js';
@@ -15,7 +14,6 @@ import { findWorkspaceInfosByTaskId } from './workspace_info.js';
 import { WorkspaceAlreadyLocked, WorkspaceLock } from './workspace_lock.js';
 import {
   createWorkspace,
-  ensurePrimaryWorkspaceBranch,
   prepareExistingWorkspace,
   runWorkspaceUpdateCommands,
   type Workspace,
@@ -169,7 +167,6 @@ export async function setupWorkspace(
 
       const relativePlanPath = path.relative(currentBaseDir, planFile);
       const workspacePlanFile = path.join(workspace.path, relativePlanPath);
-      const primaryRepoRoot = (await getGitRoot(currentBaseDir)) || currentBaseDir;
       // createWorkspace() acquires a persistent lock. Replace it with a PID lock so
       // signal-based cleanup handlers can release it on interruption.
       if (isNewWorkspace) {
@@ -243,66 +240,25 @@ export async function setupWorkspace(
           );
         }
 
-        let preparedWithPlanBranch = false;
-        if (options.autoWorkspace) {
-          const syncBaseResult = await prepareExistingWorkspace(workspace.path, {
-            baseBranch,
-            branchName,
-            planFilePath: planFile,
-            createBranch: false,
-            logSkippedBranchCreation: false,
-          });
-          if (!syncBaseResult.success) {
-            throw new Error(
-              `Failed to sync base branch in workspace at ${workspace.path}: ${syncBaseResult.error ?? 'Unknown error'}`
-            );
-          }
+        let prepareResult = await prepareExistingWorkspace(workspace.path, {
+          baseBranch,
+          branchName,
+          planFilePath: planFile,
+          createBranch: shouldCreateBranch,
+        });
 
-          if (shouldCreateBranch) {
-            const createResult = await ensurePrimaryWorkspaceBranch(primaryRepoRoot, branchName, {
-              planFilePath: planFile,
-              fromBranch: baseBranch,
-            });
-            if (!createResult.success) {
-              throw new Error(
-                `Failed to create and push branch "${branchName}" from primary workspace: ${createResult.error ?? 'Unknown error'}`
-              );
-            }
-          }
-
-          try {
-            preparedWithPlanBranch = await pullWorkspaceRefIfExists(
-              workspace.path,
-              branchName,
-              'origin',
-              planFile
-            );
-          } catch (err) {
-            warn(`Failed to pull workspace branch "${branchName}": ${err as Error}`);
-          }
-        }
-
-        if (!preparedWithPlanBranch) {
-          let prepareResult = await prepareExistingWorkspace(workspace.path, {
-            baseBranch,
+        if (!prepareResult.success && canRetryWithoutBaseBranch) {
+          prepareResult = await prepareExistingWorkspace(workspace.path, {
             branchName,
             planFilePath: planFile,
             createBranch: shouldCreateBranch,
           });
+        }
 
-          if (!prepareResult.success && canRetryWithoutBaseBranch) {
-            prepareResult = await prepareExistingWorkspace(workspace.path, {
-              branchName,
-              planFilePath: planFile,
-              createBranch: shouldCreateBranch,
-            });
-          }
-
-          if (!prepareResult.success) {
-            throw new Error(
-              `Failed to prepare workspace at ${workspace.path}: ${prepareResult.error ?? 'Unknown error'}`
-            );
-          }
+        if (!prepareResult.success) {
+          throw new Error(
+            `Failed to prepare workspace at ${workspace.path}: ${prepareResult.error ?? 'Unknown error'}`
+          );
         }
 
         let planFileForUpdateCommands: string | undefined = planFile;

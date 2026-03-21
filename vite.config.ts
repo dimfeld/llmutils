@@ -8,6 +8,9 @@ export default defineConfig({
   plugins: [tailwindcss(), sveltekit(), devtoolsJson()],
   server: {
     port: process.env.PORT ? Number.parseInt(process.env.PORT, 10) : 8124,
+    watch: {
+      ignored: ['tasks/**', '.jj/**'],
+    },
   },
   test: {
     expect: { requireAssertions: true },
