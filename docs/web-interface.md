@@ -148,6 +148,32 @@ Browser clients receive real-time updates via SSE and interact with sessions thr
 - **`MessageInput.svelte`** — Text input with Enter to send, Shift+Enter for newlines. Hidden (not disabled) when session is offline or non-interactive.
 - **Category colors** (`src/lib/utils/session_colors.ts`): lifecycle=green, llmOutput=green, toolUse=cyan, fileChange=cyan, command=cyan, progress=blue, error=red, log=gray, userInput=orange.
 
+## Plan Actions
+
+The plan detail view supports triggering CLI commands directly from the web UI. Currently, the "Generate" action is available for stub plans (plans with no tasks).
+
+### Generate Button (`PlanDetail.svelte`)
+
+The Generate button appears on eligible plan detail pages and spawns `tim generate <planId> --auto-workspace --no-terminal-input` as a detached process from the project's primary workspace.
+
+**Eligibility**: Plan has no tasks and `displayStatus` is not `done`, `cancelled`, `deferred`, or `recently_done`.
+
+**Button states**:
+- **Hidden**: Plan is ineligible (has tasks, or status excludes it)
+- **Generate**: Eligible, no active generate session → clickable
+- **Generating...**: Active generate session exists for this plan → disabled, links to the session
+- **Starting**: Remote command call in flight → disabled with spinner
+- **Error**: Spawn failed → error message shown briefly
+
+**Duplicate prevention**: Client-side check via session store for immediate UI feedback, plus server-side check in the remote command handler via `SessionManager.hasActiveSessionForPlan()`.
+
+### Server-Side Infrastructure
+
+- **Remote command** (`src/lib/remote/plan_actions.remote.ts`): `startGenerate` command validates plan eligibility, checks for duplicate sessions, resolves the primary workspace path, and calls the spawn handler. Follows the same `command()` pattern as `session_actions.remote.ts`.
+- **Spawn handler** (`src/lib/server/plan_actions.ts`): `spawnGenerateProcess()` uses `Bun.spawn` with `{ detached: true }` to create a process that survives web server restarts (including HMR). Pipes stderr for ~500ms to detect early failures, then calls `.unref()`. The spawned process connects back to the web server via HeadlessAdapter WebSocket and appears as a new session.
+- **Session lookup** (`SessionManager.hasActiveSessionForPlan()`): Checks whether an active session already exists for a given plan ID and command type.
+- **Primary workspace query** (`getPrimaryWorkspacePath()` in `db_queries.ts`): Resolves the primary workspace path for a project, used as the cwd for spawned processes.
+
 ## Dark Mode
 
 The web interface supports light, dark, and system-preference color modes using the `mode-watcher` package.
