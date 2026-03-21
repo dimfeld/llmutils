@@ -115,8 +115,8 @@ PR status data from GitHub is cached in SQLite for display in the web UI and CLI
 `src/lib/server/db_queries.ts` provides enriched read-only queries for the SvelteKit web interface, layered on top of the CRUD functions in `src/tim/db/plan.ts`:
 
 - **`getProjectsWithMetadata(db)`**: Lists projects with plan counts by status using a single aggregate SQL query (avoids N+1)
-- **`getPlansForProject(db, projectId?)`**: Returns enriched plan objects with tasks, tags, dependency UUIDs, computed display status, and task completion counts. When `projectId` is omitted, queries all projects with unfiltered SQL.
-- **`getPlanDetail(db, planUuid)`**: Single plan with full dependency details (titles, statuses, resolved flag), parent info, and assignment data. Uses targeted single-plan queries (not full project bundle) and loads transitive dependency plans for accurate display status computation. Assignment is fetched via `getAssignmentEntry` (single lookup) with status overridden from the live plan row to avoid stale assignment data.
+- **`getPlansForProject(db, projectId?)`**: Returns enriched plan objects with tasks, tags, dependency UUIDs, computed display status, task completion counts, `pullRequests`/`issues` (parsed from JSON string columns), and `prSummaryStatus` (`'passing' | 'failing' | 'pending' | 'none'`). The `prSummaryStatus` is computed via an efficient bulk join on `plan_pr → pr_status` (single query for all plans, not N+1). When `projectId` is omitted, queries all projects with unfiltered SQL.
+- **`getPlanDetail(db, planUuid)`**: Single plan with full dependency details (titles, statuses, resolved flag), parent info, assignment data, and `prStatuses: PrStatusDetail[]` (full PR data with nested check runs, reviews, labels joined via `plan_pr`). Uses targeted single-plan queries (not full project bundle) and loads transitive dependency plans for accurate display status computation. Assignment is fetched via `getAssignmentEntry` (single lookup) with status overridden from the live plan row to avoid stale assignment data.
 
 **Display status computation**: A derived status layered on top of raw plan status:
 

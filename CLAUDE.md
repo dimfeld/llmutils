@@ -95,6 +95,7 @@ The codebase is organized into several main modules with improved modularity and
    - Server initialization: `src/lib/server/init.ts` provides lazy-init singleton via `getServerContext()` (async) returning `{ config, db }`.
    - Sessions infrastructure: WebSocket server (`src/lib/server/ws_server.ts`) on port 8123 accepts agent connections; session manager (`src/lib/server/session_manager.ts`) tracks sessions and categorizes messages; session context singleton (`src/lib/server/session_context.ts`) survives HMR; started from `src/hooks.server.ts` init function
    - SSE streaming: `src/routes/api/sessions/events/+server.ts` streams session events to browser; action routes under `src/routes/api/sessions/[connectionId]/` for respond, input, dismiss; shared helpers in `src/lib/server/session_routes.ts`
+   - PR status API: `src/routes/api/plans/[planUuid]/pr-status/+server.ts` — GET returns cached PR status, POST syncs plan-PR links and refreshes from GitHub (stale-while-revalidate with graceful fallback to cached data on API failure)
    - DB query helpers: `src/lib/server/db_queries.ts` provides web-specific enriched queries (`getProjectsWithMetadata`, `getPlansForProject`, `getPlanDetail`, `getWorkspacesForProject`) with computed display statuses (`blocked`, `recently_done`) derived from dependency resolution
    - Server-only constraint: All DB imports must be in `$lib/server/` or `+page.server.ts` files — bun:sqlite cannot be imported client-side
    - Uses `$tim` and `$common` aliases (configured in `svelte.config.js`) to import from the CLI codebase

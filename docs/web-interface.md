@@ -55,6 +55,23 @@ src/routes/projects/[projectId]/active/
 - `ActivePlanRow.svelte` — plan row with plan #, title, goal (truncated), status/priority badges, and relative timestamp
 - `src/lib/utils/time.ts` — `formatRelativeTime()` helper for human-readable relative timestamps
 
+## PR Status API
+
+The web interface exposes a REST endpoint for fetching and refreshing cached PR status data per plan.
+
+### Endpoint
+
+`src/routes/api/plans/[planUuid]/pr-status/+server.ts`:
+
+- **GET**: Returns cached PR status for the plan from the DB. Response: `{ prUrls: string[], prStatuses: PrStatusDetail[] }`.
+- **POST**: Syncs `plan_pr` junction links from the plan's `pullRequest` field, then refreshes each PR from GitHub. Returns updated data. On GitHub API failure, falls back to cached data with an `error` field. Handles missing `GITHUB_TOKEN` gracefully (returns PR URLs without status data).
+
+### Data Flow
+
+- `EnrichedPlan` (list views) includes `pullRequests: string[]`, `issues: string[]`, and `prSummaryStatus: 'passing' | 'failing' | 'pending' | 'none'` — computed via bulk join on `plan_pr → pr_status`.
+- `PlanDetail` (detail view) includes `prStatuses: PrStatusDetail[]` with nested check runs, reviews, and labels.
+- The POST endpoint implements stale-while-revalidate: the PlanDetail page calls POST on mount if cached data is stale, displaying cached data immediately while the refresh runs.
+
 ## Sessions Tab
 
 The Sessions tab (`/projects/[projectId]/sessions`) provides real-time monitoring of tim agent processes via a WebSocket + SSE architecture.
