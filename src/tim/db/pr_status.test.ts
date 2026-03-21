@@ -360,6 +360,27 @@ describe('tim db/pr_status', () => {
     ]);
   });
 
+  test('getPlansWithPrs returns plans with pull_request URLs even without plan_pr junction rows', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-1',
+      planId: 1,
+      title: 'Plan 1',
+      filename: '1.plan.md',
+      status: 'in_progress',
+      pullRequest: ['https://github.com/example/repo/pull/204'],
+    });
+
+    expect(getPlansWithPrs(db)).toEqual([
+      {
+        uuid: 'plan-1',
+        projectId,
+        planId: 1,
+        title: 'Plan 1',
+        prUrls: ['https://github.com/example/repo/pull/204'],
+      },
+    ]);
+  });
+
   test('cleanOrphanedPrStatus removes unlinked PR status rows', () => {
     const kept = upsertPrStatus(db, {
       prUrl: 'https://github.com/example/repo/pull/106',
@@ -421,5 +442,29 @@ describe('tim db/pr_status', () => {
     unlinkPlanFromPr(db, 'plan-2', shared.status.id);
     expect(cleanOrphanedPrStatus(db)).toBeGreaterThanOrEqual(1);
     expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/108')).toBeNull();
+  });
+
+  test('cleanOrphanedPrStatus keeps rows referenced by plan pull_request without plan_pr links', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-1',
+      planId: 1,
+      title: 'Plan 1',
+      filename: '1.plan.md',
+      pullRequest: ['https://github.com/example/repo/pull/109'],
+    });
+
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/109',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 109,
+      title: 'Referenced by plan JSON',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    expect(cleanOrphanedPrStatus(db)).toBe(0);
+    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/109')).not.toBeNull();
   });
 });

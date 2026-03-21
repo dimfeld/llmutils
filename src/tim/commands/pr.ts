@@ -1,11 +1,7 @@
 import path from 'node:path';
 
 import chalk from 'chalk';
-import {
-  canonicalizePrUrl,
-  parsePrOrIssueNumber,
-  validatePrIdentifier,
-} from '../../common/github/identifiers.js';
+import { canonicalizePrUrl, parsePrOrIssueNumber } from '../../common/github/identifiers.js';
 import { refreshPrStatus, syncPlanPrLinks } from '../../common/github/pr_status_service.js';
 import { log } from '../../logging.js';
 import { getDatabase } from '../db/database.js';
@@ -461,13 +457,14 @@ export async function handlePrLinkCommand(
   const { plan, planPath } = await resolvePlanForCommand(planId, command);
   const planUuid = requirePlanUuid(plan, planPath);
   const normalizedInput = canonicalizePrUrl(prUrl);
-  validatePrIdentifier(normalizedInput);
   const parsed = await parsePrOrIssueNumber(normalizedInput);
 
   if (!parsed) {
     throw new Error(`Invalid GitHub pull request identifier: ${normalizedInput}`);
   }
 
+  // For URL inputs, canonicalizePrUrl already returns the canonical form.
+  // For non-URL inputs (e.g. owner/repo#123), construct the canonical URL from parsed components.
   const canonicalUrl = isUrlIdentifier(normalizedInput)
     ? normalizedInput
     : `https://github.com/${parsed.owner}/${parsed.repo}/pull/${parsed.number}`;
@@ -500,7 +497,6 @@ export async function handlePrUnlinkCommand(
   const planUuid = requirePlanUuid(plan, planPath);
 
   const normalizedInput = canonicalizePrUrl(prUrl);
-  validatePrIdentifier(normalizedInput);
   const parsed = await parsePrOrIssueNumber(normalizedInput);
   const canonicalUrl =
     parsed && !isUrlIdentifier(normalizedInput)

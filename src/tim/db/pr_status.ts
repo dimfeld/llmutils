@@ -465,21 +465,46 @@ export function unlinkPlanFromPr(db: Database, planUuid: string, prStatusId: num
 export function getPlansWithPrs(db: Database, projectId?: number): PlanWithLinkedPrs[] {
   const query = `
     SELECT
-      p.uuid AS uuid,
-      p.project_id AS project_id,
-      p.plan_id AS plan_id,
-      p.title AS title,
-      ps.pr_url AS pr_url
-    FROM plan p
-    INNER JOIN plan_pr pp ON pp.plan_uuid = p.uuid
-    INNER JOIN pr_status ps ON ps.id = pp.pr_status_id
-    WHERE ps.state = 'open'
-      AND p.status IN ('pending', 'in_progress', 'needs_review')
-      ${projectId === undefined ? '' : 'AND p.project_id = ?'}
-    ORDER BY p.plan_id, p.uuid, ps.pr_number, ps.id
+      results.uuid AS uuid,
+      results.project_id AS project_id,
+      results.plan_id AS plan_id,
+      results.title AS title,
+      results.pr_url AS pr_url
+    FROM (
+      SELECT
+        p.uuid AS uuid,
+        p.project_id AS project_id,
+        p.plan_id AS plan_id,
+        p.title AS title,
+        ps.pr_url AS pr_url
+      FROM plan p
+      INNER JOIN plan_pr pp ON pp.plan_uuid = p.uuid
+      INNER JOIN pr_status ps ON ps.id = pp.pr_status_id
+      WHERE ps.state = 'open'
+        AND p.status IN ('pending', 'in_progress', 'needs_review')
+        ${projectId === undefined ? '' : 'AND p.project_id = ?'}
+
+      UNION
+
+      SELECT
+        p.uuid AS uuid,
+        p.project_id AS project_id,
+        p.plan_id AS plan_id,
+        p.title AS title,
+        json_each.value AS pr_url
+      FROM plan p
+      INNER JOIN json_each(p.pull_request)
+      WHERE p.status IN ('pending', 'in_progress', 'needs_review')
+        AND p.pull_request IS NOT NULL
+        AND p.pull_request != ''
+        AND p.pull_request != '[]'
+        ${projectId === undefined ? '' : 'AND p.project_id = ?'}
+    ) results
+    ORDER BY results.plan_id, results.uuid, results.pr_url
   `;
 
-  const rows = db.prepare(query).all(...(projectId === undefined ? [] : [projectId])) as Array<{
+  const parameters = projectId === undefined ? [] : [projectId, projectId];
+  const rows = db.prepare(query).all(...parameters) as Array<{
     uuid: string;
     project_id: number;
     plan_id: number;
@@ -516,6 +541,14 @@ export function cleanOrphanedPrStatus(db: Database): number {
         WHERE id NOT IN (
           SELECT pr_status_id FROM plan_pr
         )
+          AND pr_url NOT IN (
+            SELECT DISTINCT json_each.value
+            FROM plan
+            INNER JOIN json_each(plan.pull_request)
+            WHERE plan.pull_request IS NOT NULL
+              AND plan.pull_request != ''
+              AND plan.pull_request != '[]'
+          )
       `
       )
       .run();
