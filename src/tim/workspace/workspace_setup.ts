@@ -72,6 +72,9 @@ export async function setupWorkspace(
   let workspaceTaskId: string | undefined;
   let isNewWorkspace: boolean | undefined;
 
+  // When no plan file and no base branch, skip branch creation — use workspace as-is
+  const effectiveCreateBranch = !currentPlanFile && !options.base ? false : options.createBranch;
+
   if (options.workspace || options.autoWorkspace) {
     let workspace: Workspace | null | undefined;
     let selectedWorkspace:
@@ -87,7 +90,7 @@ export async function setupWorkspace(
       selectedWorkspace = await selector.selectWorkspace(taskId, currentPlanFile, {
         interactive: !options.nonInteractive,
         preferNewWorkspace: options.newWorkspace,
-        createBranch: options.createBranch,
+        createBranch: effectiveCreateBranch,
         base: options.base,
         ...(options.planUuid ? { preferredPlanUuid: options.planUuid } : {}),
       });
@@ -114,7 +117,7 @@ export async function setupWorkspace(
       if (options.newWorkspace) {
         log(`Creating workspace for task: ${options.workspace}`);
         workspace = await createWorkspace(baseDir, options.workspace, currentPlanFile, config, {
-          ...(options.createBranch !== undefined && { createBranch: options.createBranch }),
+          ...(effectiveCreateBranch !== undefined && { createBranch: effectiveCreateBranch }),
           ...(options.base && { fromBranch: options.base }),
         });
         isNewWorkspace = true;
@@ -149,7 +152,7 @@ export async function setupWorkspace(
       } else {
         log(`Creating workspace for task: ${options.workspace}`);
         workspace = await createWorkspace(baseDir, options.workspace, currentPlanFile, config, {
-          ...(options.createBranch !== undefined && { createBranch: options.createBranch }),
+          ...(effectiveCreateBranch !== undefined && { createBranch: effectiveCreateBranch }),
           ...(options.base && { fromBranch: options.base }),
         });
         isNewWorkspace = true;
@@ -225,7 +228,7 @@ export async function setupWorkspace(
           let baseBranch = options.base;
           let canRetryWithoutBaseBranch = false;
           const shouldCreateBranch =
-            options.createBranch ?? config.workspaceCreation?.createBranch ?? true;
+            effectiveCreateBranch ?? config.workspaceCreation?.createBranch ?? true;
           const shouldPrepareWorkspaceBranch = Boolean(currentPlanFile || baseBranch);
           try {
             if (currentPlanFile) {

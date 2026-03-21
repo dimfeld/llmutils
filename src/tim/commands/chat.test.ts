@@ -524,6 +524,26 @@ describe('handleChatCommand', () => {
     expect(generateBranchNameFromPlanSpy).toHaveBeenCalledTimes(1);
   });
 
+  test('uses explicit branch from plan data without calling generateBranchNameFromPlan', async () => {
+    readPlanFileSpy.mockImplementation(async () => ({
+      id: 123,
+      uuid: '11111111-1111-4111-8111-111111111111',
+      title: 'Test plan',
+      branch: 'explicit-branch',
+      status: 'pending',
+      priority: 'medium',
+      tasks: [],
+    }));
+    const { handleChatCommand } = await import('./chat.js');
+
+    await handleChatCommand('hello', { plan: '123' }, {});
+
+    expect(generateBranchNameFromPlanSpy).not.toHaveBeenCalled();
+    expect(setupWorkspaceSpy.mock.calls[0][0]).toMatchObject({
+      base: 'explicit-branch',
+    });
+  });
+
   test('passes --base through with createBranch disabled when no plan is provided', async () => {
     const { handleChatCommand } = await import('./chat.js');
 
