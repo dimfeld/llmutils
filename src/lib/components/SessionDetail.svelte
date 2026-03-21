@@ -69,25 +69,25 @@
 
 <div class="flex h-full min-h-0 w-full flex-col overflow-hidden">
   <!-- Session header -->
-  <div class="shrink-0 border-b border-gray-200 px-4 py-3">
+  <div class="shrink-0 border-b border-border px-4 py-3">
     <div class="flex items-center gap-3">
       <span class="h-2.5 w-2.5 shrink-0 rounded-full {statusDotClass}"></span>
-      <h2 class="text-lg font-semibold text-gray-900">
+      <h2 class="text-lg font-semibold text-foreground">
         {session.sessionInfo.command}
       </h2>
       {#if session.sessionInfo.planTitle || session.sessionInfo.planId != null}
-        <span class="text-sm text-gray-500">
+        <span class="text-sm text-muted-foreground">
           {#if session.sessionInfo.planId != null}
             #{session.sessionInfo.planId}
           {/if}
           {session.sessionInfo.planTitle ?? ''}
         </span>
       {/if}
-      <span class="text-xs text-gray-400">{statusText}</span>
+      <span class="text-xs text-muted-foreground">{statusText}</span>
       {#if hasTerminalPane}
         <button
           type="button"
-          class="rounded p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
+          class="rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
           onclick={handleActivateTerminal}
           aria-label="Activate terminal pane"
           title="Activate terminal pane"
@@ -97,7 +97,7 @@
       {/if}
     </div>
     {#if session.sessionInfo.workspacePath}
-      <div class="mt-1 text-xs text-gray-400">
+      <div class="mt-1 text-xs text-muted-foreground">
         {session.sessionInfo.workspacePath}
       </div>
     {/if}

@@ -27,7 +27,7 @@
 
 {#if groups.length === 0}
   <div class="flex flex-1 items-center justify-center p-8">
-    <p class="text-sm text-gray-400">No sessions</p>
+    <p class="text-sm text-muted-foreground">No sessions</p>
   </div>
 {:else}
   <div class="flex flex-col gap-1 p-2">
@@ -36,12 +36,12 @@
       <div>
         <button
           type="button"
-          class="flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs font-semibold tracking-wide text-gray-500 uppercase transition-colors hover:bg-gray-100"
+          class="flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs font-semibold tracking-wide text-muted-foreground uppercase transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
           onclick={() => toggleGroup(group.groupKey)}
         >
-          <span class="text-[10px] text-gray-400">{isCollapsed ? '▶' : '▼'}</span>
+          <span class="text-[10px] text-muted-foreground/70">{isCollapsed ? '▶' : '▼'}</span>
           <span class="min-w-0 flex-1 truncate">{group.label}</span>
-          <span class="shrink-0 text-[10px] font-normal text-gray-400">
+          <span class="shrink-0 text-[10px] font-normal text-muted-foreground/70">
             {group.sessions.length}
           </span>
         </button>

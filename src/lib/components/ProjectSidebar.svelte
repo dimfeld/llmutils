@@ -21,14 +21,16 @@
   });
 </script>
 
-<aside class="flex w-56 shrink-0 flex-col border-r border-gray-200 bg-gray-50">
-  <div class="p-3 text-xs font-semibold tracking-wide text-gray-500 uppercase">Projects</div>
+<aside class="flex w-56 shrink-0 flex-col border-r border-border bg-background">
+  <div class="p-3 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+    Projects
+  </div>
   <nav class="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2">
     <a
       href={resolve(projectUrl('all', currentTab))}
       class="rounded-md px-3 py-2 text-sm transition-colors {selectedProjectId === 'all'
-        ? 'bg-blue-100 font-medium text-blue-900'
-        : 'text-gray-700 hover:bg-gray-100'}"
+        ? 'bg-blue-100 font-medium text-blue-900 dark:bg-blue-900/30 dark:text-blue-200'
+        : 'text-foreground hover:bg-gray-100 dark:hover:bg-gray-800'}"
     >
       All Projects
     </a>
@@ -37,11 +39,11 @@
       <a
         href={resolve(projectUrl(project.id, currentTab))}
         class="rounded-md px-3 py-2 text-sm transition-colors {isSelected
-          ? 'bg-blue-100 font-medium text-blue-900'
-          : 'text-gray-700 hover:bg-gray-100'}"
+          ? 'bg-blue-100 font-medium text-blue-900 dark:bg-blue-900/30 dark:text-blue-200'
+          : 'text-foreground hover:bg-gray-100 dark:hover:bg-gray-800'}"
       >
         <div class="truncate">{projectDisplayName(project.repository_id, currentUsername)}</div>
-        <div class="mt-0.5 text-xs text-gray-500">
+        <div class="mt-0.5 text-xs text-muted-foreground">
           {project.activePlanCount} active / {project.planCount} total
         </div>
       </a>

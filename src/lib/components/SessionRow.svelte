@@ -64,11 +64,13 @@
 <a
   {href}
   class="group block rounded-md px-3 py-2 transition-colors
-    {selected ? 'bg-blue-50 ring-1 ring-blue-200' : 'hover:bg-gray-50'}"
+    {selected
+    ? 'bg-blue-50 ring-1 ring-blue-200 dark:bg-blue-900/30 dark:ring-blue-700'
+    : 'hover:bg-gray-50 dark:hover:bg-gray-800'}"
 >
   <div class="flex items-center gap-2">
     <span class="h-2 w-2 shrink-0 rounded-full {statusDotClass}"></span>
-    <span class="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">
+    <span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
       {displayCommand}
     </span>
     {#if needsAttention}
@@ -81,7 +83,7 @@
     {#if hasTerminalPane}
       <button
         type="button"
-        class="rounded p-1 text-gray-400 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-gray-200 hover:text-gray-700"
+        class="rounded p-1 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-gray-200 hover:text-foreground dark:hover:bg-gray-700"
         onclick={handleActivateTerminal}
         aria-label="Activate terminal pane"
         title="Activate terminal pane"
@@ -89,24 +91,24 @@
         <TerminalIcon class="size-3.5" />
       </button>
     {/if}
-    <span class="shrink-0 text-xs text-gray-400">{relativeTime}</span>
+    <span class="shrink-0 text-xs text-muted-foreground">{relativeTime}</span>
   </div>
   {#if session.sessionInfo.planTitle || session.sessionInfo.planId != null}
-    <div class="mt-0.5 truncate pl-4 text-xs text-gray-500">
+    <div class="mt-0.5 truncate pl-4 text-xs text-muted-foreground">
       {#if session.sessionInfo.planId != null}
-        <span class="font-medium text-gray-400">#{session.sessionInfo.planId}</span>
+        <span class="font-medium text-muted-foreground">#{session.sessionInfo.planId}</span>
       {/if}
       {session.sessionInfo.planTitle ?? ''}
     </div>
   {/if}
   {#if workspaceLabel}
-    <div class="mt-0.5 truncate pl-4 text-xs text-gray-400">{workspaceLabel}</div>
+    <div class="mt-0.5 truncate pl-4 text-xs text-muted-foreground">{workspaceLabel}</div>
   {/if}
   {#if canDismiss}
     <div class="mt-1 flex justify-end">
       <button
         type="button"
-        class="rounded px-1.5 py-0.5 text-xs text-gray-400 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-gray-200 hover:text-gray-600"
+        class="rounded px-1.5 py-0.5 text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-gray-200 hover:text-foreground dark:hover:bg-gray-700"
         onclick={handleDismiss}
       >
         Dismiss

@@ -7,12 +7,12 @@ goal: Add dark mode support to the web interface with a toggle button, system
 id: 247
 uuid: 6431a1c1-b3d0-457c-80cb-c5acf787763e
 generatedBy: agent
-status: pending
+status: in_progress
 priority: medium
 planGeneratedAt: 2026-03-21T01:55:45.001Z
 promptsGeneratedAt: 2026-03-21T01:55:45.001Z
 createdAt: 2026-03-21T01:40:10.359Z
-updatedAt: 2026-03-21T01:55:45.002Z
+updatedAt: 2026-03-21T02:18:14.421Z
 tasks:
   - title: Integrate ModeWatcher and add dark mode toggle to header
     done: false
