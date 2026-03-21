@@ -14,10 +14,10 @@ references:
 planGeneratedAt: 2026-03-21T02:28:58.262Z
 promptsGeneratedAt: 2026-03-21T02:28:58.262Z
 createdAt: 2026-03-21T02:24:53.498Z
-updatedAt: 2026-03-21T03:29:32.277Z
+updatedAt: 2026-03-21T04:03:33.902Z
 tasks:
   - title: Create GitHub GraphQL queries for PR status
-    done: false
+    done: true
     description: "Create src/common/github/pr_status.ts with two GraphQL queries:
       fetchPrFullStatus() (state, mergeable, checks, reviews, labels, title) and
       fetchPrCheckStatus() (lightweight checks-only for polling). Define
@@ -25,7 +25,7 @@ tasks:
       type normalization. Use existing Octokit graphql client pattern from
       pull_requests.ts. Add unit tests with mock GraphQL responses."
   - title: Add database migration and CRUD for PR status tables
-    done: false
+    done: true
     description: "Add migration 8 to src/tim/db/migrations.ts creating pr_status,
       pr_check_run, pr_review, pr_label, and plan_pr tables. pr_status keyed by
       pr_url (UNIQUE) so same PR can link to multiple plans. plan_pr junction
@@ -35,7 +35,7 @@ tasks:
       (active plans with PRs), cleanOrphanedPrStatus. All synchronous, writes
       use db.transaction().immediate(). Add tests."
   - title: Implement PR status fetch and cache service
-    done: false
+    done: true
     description: "Create src/common/github/pr_status_service.ts: refreshPrStatus(db,
       prUrl) fetches full status and upserts to DB. refreshPrCheckStatus(db,
       prUrl) fetches checks only and updates check_run rows.
@@ -97,6 +97,14 @@ tasks:
       <planFile>). Keep pr-description as a hidden alias for backwards
       compatibility. Implementation in src/tim/commands/description.ts stays the
       same - only the command registration in tim.ts changes.
+changedFiles:
+  - src/common/github/pr_status.test.ts
+  - src/common/github/pr_status.ts
+  - src/common/github/pr_status_service.test.ts
+  - src/common/github/pr_status_service.ts
+  - src/tim/db/migrations.ts
+  - src/tim/db/pr_status.test.ts
+  - src/tim/db/pr_status.ts
 tags: []
 ---
 
@@ -419,3 +427,40 @@ Update `src/lib/components/PlanDetail.svelte`:
 5. Test the CLI pr status command output formatting
 6. Test the web API endpoint
 7. Test graceful degradation when GITHUB_TOKEN is missing
+
+## Changes Made During Implementation
+
+- Added `check_rollup_state` column to `pr_status` and `source` column to `pr_check_run` in migration 8 (not in original schema design). These were identified during review as needed to avoid a future migration.
+- `syncPlanPrLinks()` does not call `cleanOrphanedPrStatus()` internally. Orphan cleanup is the caller's responsibility to avoid race conditions in concurrent scenarios.
+- `plan_pr` junction is populated lazily by the service layer (web UI endpoints, CLI commands), not during synchronous plan file sync. This is because GitHub API calls are async.
+- `getPlansWithPrs()` filters on active plan statuses (pending, in_progress, needs_review), not just open PR state.
+- All GitHub enum normalizers use exhaustive switch statements that throw on unknown values, rather than unsafe `as` casts.
+
+## Current Progress
+### Current State
+- Tasks 1-3 (backend foundation) are complete with comprehensive test coverage
+### Completed (So Far)
+- Task 1: GitHub GraphQL queries (`src/common/github/pr_status.ts`) with `fetchPrFullStatus()` and `fetchPrCheckStatus()`
+- Task 2: DB migration 8 and CRUD (`src/tim/db/pr_status.ts`, `src/tim/db/migrations.ts`)
+- Task 3: Cache service (`src/common/github/pr_status_service.ts`) with refresh, stale-while-revalidate, and atomic sync
+### Remaining
+- Task 4: Surface PR data in web UI data layer (EnrichedPlan, PlanDetail types)
+- Task 5: Web UI API endpoint for PR status refresh
+- Task 6: PlanDetail PR status section UI
+- Task 7: PR status indicators in plan list views
+- Task 8: CLI `tim pr` subcommand namespace
+- Task 9: Migrate pr-description to `tim pr description`
+### Next Iteration Guidance
+- Tasks 4+5 (web data layer + API endpoint) are a natural next pair
+- The `UpsertPrStatusInput` type is already exported from `src/tim/db/pr_status.ts`
+- `PrStatusDetail` type from db/pr_status.ts has: `{ status: PrStatusRow, checks: PrCheckRunRow[], reviews: PrReviewRow[], labels: PrLabelRow[] }`
+### Decisions / Changes
+- `syncPlanPrLinks` is fully atomic: all GitHub fetches complete before any DB writes, and all upserts + link changes happen in one transaction
+- `cleanOrphanedPrStatus` is decoupled from sync - callers handle cleanup explicitly
+- `refreshPrCheckStatus` is documented as lightweight (checks only, no PR state update) - callers needing state changes should use `refreshPrStatus`
+### Lessons Learned
+- GitHub GraphQL connection nodes can be null - always filter before mapping
+- Separating fetch phase from DB write phase enables true atomicity for operations that mix async API calls with sync DB transactions
+- None
+### Risks / Blockers
+- None
