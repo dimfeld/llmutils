@@ -6,7 +6,7 @@ goal: Fetch PR status from GitHub, cache in DB, display in web UI and CLI via
 id: 248
 uuid: f92da2f3-c73f-4b89-83c8-03b509d58d1d
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 parent: 245
 references:
@@ -14,7 +14,7 @@ references:
 planGeneratedAt: 2026-03-21T02:28:58.262Z
 promptsGeneratedAt: 2026-03-21T02:28:58.262Z
 createdAt: 2026-03-21T02:24:53.498Z
-updatedAt: 2026-03-21T08:59:06.185Z
+updatedAt: 2026-03-21T09:35:54.752Z
 tasks:
   - title: Create GitHub GraphQL queries for PR status
     done: true
@@ -294,7 +294,7 @@ tasks:
   - title: "Address Review Feedback: GraphQL enum normalization functions
       (`normalizePrState`, `normalizeCheckStatus`, etc.) throw on unknown
       values."
-    done: false
+    done: true
     description: >-
       GraphQL enum normalization functions (`normalizePrState`,
       `normalizeCheckStatus`, etc.) throw on unknown values. If GitHub adds a
@@ -672,18 +672,19 @@ Update `src/lib/components/PlanDetail.svelte`:
 - `syncPlanPrLinks()` does not call `cleanOrphanedPrStatus()` internally. Orphan cleanup is the caller's responsibility to avoid race conditions in concurrent scenarios.
 - `plan_pr` junction is populated lazily by the service layer (web UI endpoints, CLI commands), not during synchronous plan file sync. This is because GitHub API calls are async.
 - `getPlansWithPrs()` filters on active plan statuses (pending, in_progress, needs_review), not just open PR state.
-- All GitHub enum normalizers use exhaustive switch statements that throw on unknown values, rather than unsafe `as` casts.
+- All GitHub enum normalizers use exhaustive switch statements with `console.warn` + sensible fallback for unknown values. GraphQL response types widened to `string` so TypeScript recognizes default branches as reachable.
 
 ## Current Progress
 ### Current State
-- All 19 tasks complete (tasks 1-19). Task 20 is deferred to background polling child plan.
+- All 20 tasks complete. Plan is done.
 ### Completed (So Far)
 - Tasks 1-16: Core PR status monitoring implementation (GraphQL queries, DB, cache service, web UI, CLI)
 - Task 17: Fixed cached PR status not shown on initial page load — read paths now derive PR status from `plan.pull_request` URLs directly against `pr_status.pr_url`, not solely via `plan_pr` junctions. Stale `plan_pr` links are filtered out when current plan URLs are available.
 - Task 18: Consistent PR URL canonicalization — `canonicalizePrUrl()` and `tryCanonicalizePrUrl()` in `identifiers.ts` normalize `/pulls/` to `/pull/`, strip query params/fragments, reject partially numeric PR numbers. Applied at all entry points (service layer, CLI, DB reads, orphan cleanup, getPlansWithPrs).
 - Task 19: `refreshPrCheckStatus()` now validates identifiers via `canonicalizePrUrl()` before any cache lookup or API call.
+- Task 20: All GraphQL enum normalizers now gracefully degrade with `console.warn` + sensible fallback instead of throwing. Widened all GraphQL response types to `string` for consistency. Added `normalizeReviewDecision`, `normalizeReviewState`, `normalizeMergeableState`. Extracted shared `deduplicatePrUrls()` utility. CLI and API now warn about invalid PR entries instead of silently dropping them.
 ### Remaining
-- Task 20: GraphQL enum normalization throws on unknown values — deferred to background polling child plan
+- None
 ### Next Iteration Guidance
 - None
 ### Decisions / Changes
