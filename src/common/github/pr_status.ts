@@ -267,7 +267,8 @@ function normalizePrState(state: GraphQlPullRequestFullStatus['state']): PrState
     case 'MERGED':
       return 'merged';
     default:
-      throw new Error(`Unhandled GitHub PR state: ${state}`);
+      console.warn(`Unknown GitHub PR state: ${state}. Falling back to open.`);
+      return 'open';
   }
 }
 
@@ -286,7 +287,8 @@ function normalizeCheckStatus(status: string): PrCheckStatus {
     case 'REQUESTED':
       return 'requested';
     default:
-      throw new Error(`Unhandled GitHub check status: ${status}`);
+      console.warn(`Unknown GitHub check status: ${status}. Falling back to pending.`);
+      return 'pending';
   }
 }
 
@@ -317,7 +319,8 @@ function normalizeCheckConclusion(conclusion: string | null): PrCheckConclusion 
     case 'ERROR':
       return 'error';
     default:
-      throw new Error(`Unhandled GitHub check conclusion: ${conclusion}`);
+      console.warn(`Unknown GitHub check conclusion: ${conclusion}. Falling back to null.`);
+      return null;
   }
 }
 
@@ -338,7 +341,8 @@ function normalizeCheckRollupState(state: GraphQlStatusCheckRollup['state']): Pr
     case 'EXPECTED':
       return 'expected';
     default:
-      throw new Error(`Unhandled GitHub check rollup state: ${state}`);
+      console.warn(`Unknown GitHub check rollup state: ${state}. Falling back to null.`);
+      return null;
   }
 }
 
@@ -355,10 +359,9 @@ function normalizeStatusContext(
     case 'PENDING':
     case 'EXPECTED':
       return { status: 'pending', conclusion: null, completedAt: null };
-    default: {
-      const unknownState: never = node.state;
-      throw new Error(`Unhandled GitHub status context state: ${unknownState}`);
-    }
+    default:
+      console.warn(`Unknown GitHub status context state: ${node.state}. Falling back to pending.`);
+      return { status: 'pending', conclusion: null, completedAt: null };
   }
 }
 

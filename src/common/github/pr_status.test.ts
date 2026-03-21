@@ -232,9 +232,141 @@ describe('common/github/pr_status', () => {
     });
   });
 
-  test('throws for unknown check statuses and conclusions', async () => {
-    const graphql = mock(async (_query: string, variables: { prNumber: number }) => {
-      if (variables.prNumber === 46) {
+  test('warns and falls back for unknown enum values', async () => {
+    const warn = mock(() => {});
+    const originalWarn = console.warn;
+    console.warn = warn;
+
+    try {
+      const graphql = mock(async (_query: string, variables: { prNumber: number }) => {
+        if (variables.prNumber === 46) {
+          return {
+            repository: {
+              pullRequest: {
+                number: 46,
+                title: 'Unknown PR state fallback',
+                state: 'SUPER_OPEN',
+                isDraft: false,
+                mergeable: 'MERGEABLE',
+                mergedAt: null,
+                headRefOid: 'ghi789',
+                baseRefName: 'main',
+                headRefName: 'feature/unknown-pr-state',
+                reviewDecision: null,
+                labels: {
+                  nodes: [],
+                },
+                reviews: {
+                  nodes: [],
+                },
+                commits: {
+                  nodes: [
+                    {
+                      commit: {
+                        statusCheckRollup: {
+                          state: 'PENDING',
+                          contexts: {
+                            nodes: [],
+                          },
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          };
+        }
+
+        if (variables.prNumber === 47) {
+          return {
+            repository: {
+              pullRequest: {
+                commits: {
+                  nodes: [
+                    {
+                      commit: {
+                        statusCheckRollup: {
+                          state: 'PENDING',
+                          contexts: {
+                            nodes: [
+                              {
+                                __typename: 'CheckRun',
+                                name: 'mystery-check',
+                                status: 'BLOCKED',
+                                conclusion: null,
+                                detailsUrl: null,
+                                startedAt: null,
+                                completedAt: null,
+                              },
+                            ],
+                          },
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          };
+        }
+
+        if (variables.prNumber === 48) {
+          return {
+            repository: {
+              pullRequest: {
+                commits: {
+                  nodes: [
+                    {
+                      commit: {
+                        statusCheckRollup: {
+                          state: 'FAILURE',
+                          contexts: {
+                            nodes: [
+                              {
+                                __typename: 'CheckRun',
+                                name: 'mystery-conclusion',
+                                status: 'COMPLETED',
+                                conclusion: 'MYSTERY',
+                                detailsUrl: null,
+                                startedAt: null,
+                                completedAt: null,
+                              },
+                            ],
+                          },
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          };
+        }
+
+        if (variables.prNumber === 49) {
+          return {
+            repository: {
+              pullRequest: {
+                commits: {
+                  nodes: [
+                    {
+                      commit: {
+                        statusCheckRollup: {
+                          state: 'MYSTERY',
+                          contexts: {
+                            nodes: [],
+                          },
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          };
+        }
+
         return {
           repository: {
             pullRequest: {
@@ -247,13 +379,11 @@ describe('common/github/pr_status', () => {
                         contexts: {
                           nodes: [
                             {
-                              __typename: 'CheckRun',
-                              name: 'mystery-check',
-                              status: 'BLOCKED',
-                              conclusion: null,
-                              detailsUrl: null,
-                              startedAt: null,
-                              completedAt: null,
+                              __typename: 'StatusContext',
+                              context: 'legacy-status',
+                              state: 'BLOCKED',
+                              targetUrl: null,
+                              createdAt: '2026-03-20T00:05:00.000Z',
                             },
                           ],
                         },
@@ -265,56 +395,92 @@ describe('common/github/pr_status', () => {
             },
           },
         };
-      }
+      });
 
-      return {
-        repository: {
-          pullRequest: {
-            commits: {
-              nodes: [
-                {
-                  commit: {
-                    statusCheckRollup: {
-                      state: 'FAILURE',
-                      contexts: {
-                        nodes: [
-                          {
-                            __typename: 'CheckRun',
-                            name: 'mystery-conclusion',
-                            status: 'COMPLETED',
-                            conclusion: 'MYSTERY',
-                            detailsUrl: null,
-                            startedAt: null,
-                            completedAt: null,
-                          },
-                        ],
-                      },
-                    },
-                  },
-                },
-              ],
-            },
+      await moduleMocker.mock('octokit', () => ({
+        Octokit: mock(function () {
+          return {
+            graphql,
+          };
+        }),
+      }));
+
+      const { fetchPrCheckStatus, fetchPrFullStatus } = await import('./pr_status.ts');
+
+      await expect(fetchPrFullStatus('owner', 'repo', 46)).resolves.toMatchObject({
+        state: 'open',
+      });
+      await expect(fetchPrCheckStatus('owner', 'repo', 47)).resolves.toEqual({
+        checks: [
+          {
+            name: 'mystery-check',
+            status: 'pending',
+            conclusion: null,
+            detailsUrl: null,
+            startedAt: null,
+            completedAt: null,
+            source: 'check_run',
           },
-        },
-      };
-    });
+        ],
+        checkRollupState: 'pending',
+      });
+      await expect(fetchPrCheckStatus('owner', 'repo', 48)).resolves.toEqual({
+        checks: [
+          {
+            name: 'mystery-conclusion',
+            status: 'completed',
+            conclusion: null,
+            detailsUrl: null,
+            startedAt: null,
+            completedAt: null,
+            source: 'check_run',
+          },
+        ],
+        checkRollupState: 'failure',
+      });
+      await expect(fetchPrCheckStatus('owner', 'repo', 49)).resolves.toEqual({
+        checks: [],
+        checkRollupState: null,
+      });
+      await expect(fetchPrCheckStatus('owner', 'repo', 50)).resolves.toEqual({
+        checks: [
+          {
+            name: 'legacy-status',
+            status: 'pending',
+            conclusion: null,
+            detailsUrl: null,
+            startedAt: null,
+            completedAt: null,
+            source: 'status_context',
+          },
+        ],
+        checkRollupState: 'pending',
+      });
 
-    await moduleMocker.mock('octokit', () => ({
-      Octokit: mock(function () {
-        return {
-          graphql,
-        };
-      }),
-    }));
-
-    const { fetchPrCheckStatus } = await import('./pr_status.ts');
-
-    await expect(fetchPrCheckStatus('owner', 'repo', 46)).rejects.toThrow(
-      'Unhandled GitHub check status: BLOCKED'
-    );
-    await expect(fetchPrCheckStatus('owner', 'repo', 47)).rejects.toThrow(
-      'Unhandled GitHub check conclusion: MYSTERY'
-    );
+      expect(warn).toHaveBeenCalledTimes(5);
+      expect(warn).toHaveBeenNthCalledWith(
+        1,
+        'Unknown GitHub PR state: SUPER_OPEN. Falling back to open.'
+      );
+      expect(warn).toHaveBeenNthCalledWith(
+        2,
+        'Unknown GitHub check status: BLOCKED. Falling back to pending.'
+      );
+      expect(warn).toHaveBeenNthCalledWith(
+        3,
+        'Unknown GitHub check conclusion: MYSTERY. Falling back to null.'
+      );
+      expect(warn).toHaveBeenNthCalledWith(
+        4,
+        'Unknown GitHub check rollup state: MYSTERY. Falling back to null.'
+      );
+      expect(warn).toHaveBeenNthCalledWith(
+        5,
+        'Unknown GitHub status context state: BLOCKED. Falling back to pending.'
+      );
+    } finally {
+      console.warn = originalWarn;
+    }
   });
 
   test('fetchPrCheckStatus returns lightweight normalized checks', async () => {
