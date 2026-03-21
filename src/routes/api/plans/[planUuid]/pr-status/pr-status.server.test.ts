@@ -266,9 +266,10 @@ describe('/api/plans/[planUuid]/pr-status', () => {
     expect(payload.error).toContain('second PR refresh failed');
   });
 
-  test('POST falls back to cached data when GitHub API fails', async () => {
+  test('POST falls back to cached data when all refresh calls fail', async () => {
     process.env.GITHUB_TOKEN = 'token';
-    syncPlanPrLinks.mockRejectedValue(new Error('API rate limit exceeded'));
+    syncPlanPrLinks.mockResolvedValue([]);
+    ensurePrStatusFresh.mockRejectedValue(new Error('API rate limit exceeded'));
 
     const { POST } = await import('./+server.js');
     const response = await POST({
@@ -277,16 +278,40 @@ describe('/api/plans/[planUuid]/pr-status', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(200);
-    expect(payload.error).toContain('GitHub API error');
+    expect(payload.error).toContain('GitHub API error for some pull requests');
     expect(payload.error).toContain('API rate limit exceeded');
     expect(payload.prUrls).toEqual([
       'https://github.com/example/repo/pull/1',
       'https://github.com/example/repo/pull/2',
     ]);
+    // PR 1 has cached data, PR 2 does not
     expect(payload.prStatuses).toHaveLength(1);
     expect(payload.prStatuses[0]).toMatchObject({
       status: { pr_url: 'https://github.com/example/repo/pull/1' },
     });
+  });
+
+  test('POST continues refresh when syncPlanPrLinks fails for uncached URLs', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    syncPlanPrLinks.mockRejectedValue(new Error('sync failed'));
+    const freshDetail = {
+      status: { pr_url: 'https://github.com/example/repo/pull/1', title: 'Fresh' },
+      checks: [],
+      reviews: [],
+      labels: [],
+    };
+    ensurePrStatusFresh.mockResolvedValue(freshDetail);
+
+    const { POST } = await import('./+server.js');
+    const response = await POST({
+      params: { planUuid: 'plan-with-prs' },
+    } as never);
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    // Sync failed but refresh succeeded — no error
+    expect(payload.error).toBeUndefined();
+    expect(payload.prStatuses).toHaveLength(2);
   });
 
   test('POST returns an empty result when the plan has no linked PR URLs', async () => {

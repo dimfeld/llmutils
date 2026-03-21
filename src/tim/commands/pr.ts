@@ -403,20 +403,17 @@ export async function handlePrStatusCommand(
   // Sync plan_pr junctions (best-effort, skip if no UUID).
   // Try full prUrls first to preserve links for previously-cached PRs that failed to refresh.
   // If that fails (uncached PR can't be fetched), fall back to just successful URLs.
-  if (plan.uuid && prUrls.length > 0) {
+  if (plan.uuid) {
     try {
       await syncPlanPrLinks(db, plan.uuid, prUrls);
     } catch {
-      if (successfulUrls.length > 0) {
-        try {
-          await syncPlanPrLinks(db, plan.uuid, successfulUrls);
-        } catch (err) {
-          log(
-            chalk.yellow(`Warning: failed to sync PR cache junctions: ${(err as Error).message}`)
-          );
-        }
+      try {
+        await syncPlanPrLinks(db, plan.uuid, successfulUrls);
+      } catch (err) {
+        log(chalk.yellow(`Warning: failed to sync PR cache junctions: ${(err as Error).message}`));
       }
     }
+    cleanOrphanedPrStatus(db);
   }
 
   if (errors.length > 0 && details.length === 0) {

@@ -5,7 +5,7 @@ import { json } from '@sveltejs/kit';
 import { ensurePrStatusFresh, syncPlanPrLinks } from '$common/github/pr_status_service.js';
 import { parseJsonStringArray } from '$lib/server/db_queries.js';
 import { getServerContext } from '$lib/server/init.js';
-import { getPrStatusByUrl, getPrStatusForPlan } from '$tim/db/pr_status.js';
+import { cleanOrphanedPrStatus, getPrStatusByUrl, getPrStatusForPlan } from '$tim/db/pr_status.js';
 import { getPlanByUuid } from '$tim/db/plan.js';
 
 const PR_STATUS_MAX_AGE_MS = 5 * 60 * 1000;
@@ -44,6 +44,7 @@ export const POST: RequestHandler = async ({ params }) => {
   const prUrls = parseJsonStringArray(plan.pull_request);
   if (prUrls.length === 0) {
     await syncPlanPrLinks(db, plan.uuid, []);
+    cleanOrphanedPrStatus(db);
     return json({
       prUrls,
       prStatuses: [],
@@ -52,14 +53,14 @@ export const POST: RequestHandler = async ({ params }) => {
 
   if (!process.env.GITHUB_TOKEN) {
     // Sync junctions for already-cached PRs only (can't fetch new ones without token).
+    // Always sync — even if cachedUrls is empty — to prune stale links from removed PRs.
     const cachedUrls = prUrls.filter((url) => getPrStatusByUrl(db, url) !== null);
-    if (cachedUrls.length > 0) {
-      try {
-        await syncPlanPrLinks(db, plan.uuid, cachedUrls);
-      } catch {
-        // The cache may have changed between filtering and syncing; return cached rows anyway.
-      }
+    try {
+      await syncPlanPrLinks(db, plan.uuid, cachedUrls);
+    } catch {
+      // The cache may have changed between filtering and syncing; return cached rows anyway.
     }
+    cleanOrphanedPrStatus(db);
     return json({
       prUrls,
       prStatuses: getPrStatusForPlan(db, plan.uuid),
@@ -68,7 +69,19 @@ export const POST: RequestHandler = async ({ params }) => {
   }
 
   try {
-    await syncPlanPrLinks(db, plan.uuid, prUrls);
+    // Sync plan-PR links first. If this fails (e.g. bad uncached URL), fall back to
+    // syncing only already-cached URLs so stale links still get pruned.
+    try {
+      await syncPlanPrLinks(db, plan.uuid, prUrls);
+    } catch {
+      const cachedUrls = prUrls.filter((url) => getPrStatusByUrl(db, url) !== null);
+      try {
+        await syncPlanPrLinks(db, plan.uuid, cachedUrls);
+      } catch {
+        // Best-effort — continue to refresh even if sync fails
+      }
+    }
+
     const refreshResults = await Promise.allSettled(
       prUrls.map((prUrl) => ensurePrStatusFresh(db, prUrl, PR_STATUS_MAX_AGE_MS))
     );
@@ -89,6 +102,7 @@ export const POST: RequestHandler = async ({ params }) => {
       return cached ? [cached] : [];
     });
 
+    cleanOrphanedPrStatus(db);
     return json({
       prUrls,
       prStatuses,
@@ -97,6 +111,7 @@ export const POST: RequestHandler = async ({ params }) => {
         : {}),
     });
   } catch (err) {
+    cleanOrphanedPrStatus(db);
     return json({
       prUrls,
       prStatuses: getPrStatusForPlan(db, plan.uuid),
