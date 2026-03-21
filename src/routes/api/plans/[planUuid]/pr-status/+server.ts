@@ -46,7 +46,11 @@ export const POST: RequestHandler = async ({ params }) => {
 
   const prUrls = parseJsonStringArray(plan.pull_request);
   if (prUrls.length === 0) {
-    await syncPlanPrLinks(db, plan.uuid, []);
+    try {
+      await syncPlanPrLinks(db, plan.uuid, []);
+    } catch {
+      // Best-effort junction cleanup
+    }
     cleanOrphanedPrStatus(db);
     return json({
       prUrls: [],

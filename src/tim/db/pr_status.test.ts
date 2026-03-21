@@ -307,6 +307,29 @@ describe('tim db/pr_status', () => {
   });
 
   test('getPlansWithPrs returns open PR links and respects project filter', () => {
+    // Set pull_request on plans so junction rows are not filtered as stale
+    upsertPlan(db, projectId, {
+      uuid: 'plan-1',
+      planId: 1,
+      title: 'Plan 1',
+      filename: '1.plan.md',
+      pullRequest: ['https://github.com/example/repo/pull/104'],
+    });
+    upsertPlan(db, projectId, {
+      uuid: 'plan-2',
+      planId: 2,
+      title: 'Plan 2',
+      filename: '2.plan.md',
+      pullRequest: ['https://github.com/example/repo/pull/105'],
+    });
+    upsertPlan(db, otherProjectId, {
+      uuid: 'plan-3',
+      planId: 3,
+      title: 'Plan 3',
+      filename: '3.plan.md',
+      pullRequest: ['https://github.com/example/repo/pull/104'],
+    });
+
     const openPr = upsertPrStatus(db, {
       prUrl: 'https://github.com/example/repo/pull/104',
       owner: 'example',
@@ -425,6 +448,24 @@ describe('tim db/pr_status', () => {
       status: 'in_progress',
       pullRequest: [],
     });
+    linkPlanToPr(db, 'plan-1', openPr.status.id);
+
+    expect(getPlansWithPrs(db)).toEqual([]);
+  });
+
+  test('getPlansWithPrs excludes stale plan_pr rows when plan has no pull_request field (NULL)', () => {
+    const openPr = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/207',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 207,
+      title: 'PR 207',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    // plan-1 was created in beforeEach without pullRequest field (NULL in DB)
     linkPlanToPr(db, 'plan-1', openPr.status.id);
 
     expect(getPlansWithPrs(db)).toEqual([]);

@@ -495,14 +495,15 @@ export function getPlansWithPrs(db: Database, projectId?: number): PlanWithLinke
 
   const plans = new Map<string, PlanWithLinkedPrs>();
   const seenPrsByPlan = new Map<string, Set<string>>();
-  const canonicalPlanUrlsByPlanUuid = new Map<string, Set<string> | null>();
+  // Cache each plan's current canonical PR URLs for filtering stale junction rows.
+  // NULL/missing pull_request is treated as empty (no PRs), same as the rest of the codebase.
+  const canonicalPlanUrlsByPlanUuid = new Map<string, Set<string>>();
 
   for (const row of junctionRows) {
     let allowedUrls = canonicalPlanUrlsByPlanUuid.get(row.uuid);
     if (allowedUrls === undefined) {
-      if (row.pull_request == null) {
-        allowedUrls = null;
-      } else {
+      const canonicalUrls = new Set<string>();
+      if (row.pull_request != null) {
         let parsed: unknown;
         try {
           parsed = JSON.parse(row.pull_request);
@@ -510,7 +511,6 @@ export function getPlansWithPrs(db: Database, projectId?: number): PlanWithLinke
           parsed = [];
         }
 
-        const canonicalUrls = new Set<string>();
         if (Array.isArray(parsed)) {
           for (const rawUrl of parsed) {
             if (typeof rawUrl !== 'string') continue;
@@ -520,12 +520,12 @@ export function getPlansWithPrs(db: Database, projectId?: number): PlanWithLinke
             }
           }
         }
-        allowedUrls = canonicalUrls;
       }
+      allowedUrls = canonicalUrls;
       canonicalPlanUrlsByPlanUuid.set(row.uuid, allowedUrls);
     }
 
-    if (allowedUrls !== null && !allowedUrls.has(row.pr_url)) {
+    if (!allowedUrls.has(row.pr_url)) {
       continue;
     }
 
