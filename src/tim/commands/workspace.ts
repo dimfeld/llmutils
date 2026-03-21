@@ -1814,6 +1814,8 @@ async function pushJjBookmarkToWorkspace(
   bookmark: string,
   remoteName: string
 ): Promise<void> {
+  const workingCopyRevisionBeforePush = await getJjBookmarkRevisionForWorkingCopy(workspacePath);
+
   const trackOutput = await spawnAndLogOutput(
     ['jj', 'bookmark', 'track', bookmark, '--remote', remoteName],
     { cwd: workspacePath }
@@ -1830,6 +1832,15 @@ async function pushJjBookmarkToWorkspace(
   );
   if (pushResult.exitCode !== 0) {
     throw new Error(`Failed to push bookmark "${bookmark}" to ${remoteName}: ${pushResult.stderr}`);
+  }
+
+  if (workingCopyRevisionBeforePush === '@') {
+    const newResult = await spawnAndLogOutput(['jj', 'new', '@'], { cwd: workspacePath });
+    if (newResult.exitCode !== 0) {
+      throw new Error(
+        `Failed to create a new working change after pushing bookmark "${bookmark}": ${newResult.stderr}`
+      );
+    }
   }
 }
 

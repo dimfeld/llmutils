@@ -387,6 +387,7 @@ describe('handleWorkspacePushCommand', () => {
 
     await moduleMocker.mock('../../common/git.js', () => ({
       getCurrentBranchName: mock(async () => 'feature/jj-match'),
+      getJjBookmarkRevisionForWorkingCopy: mock(async () => '@-'),
       getUsingJj: mock(async () => true),
     }));
     await moduleMocker.mock('../../common/process.js', () => ({
@@ -431,6 +432,76 @@ describe('handleWorkspacePushCommand', () => {
           args[0] === 'jj' && args[1] === 'git' && args[2] === 'remote' && args[3] === 'set-url'
       )
     ).toBe(false);
+    expect(
+      processCalls.some((args) => args[0] === 'jj' && args[1] === 'new' && args[2] === '@')
+    ).toBe(false);
+  });
+
+  test('jj mode creates a new working change after push when working copy is non-empty', async () => {
+    const repositoryId = 'workspace-push-jj-new-after-push';
+    const primaryDir = path.join(tempRoot, 'primary-jj-new');
+    const secondaryDir = path.join(tempRoot, 'secondary-jj-new');
+
+    await fs.mkdir(primaryDir, { recursive: true });
+    await fs.mkdir(secondaryDir, { recursive: true });
+
+    recordWorkspaceForRepo({
+      workspacePath: primaryDir,
+      taskId: 'task-primary',
+      repositoryId,
+      branch: 'main',
+      workspaceType: 'primary',
+    });
+    recordWorkspaceForRepo({
+      workspacePath: secondaryDir,
+      taskId: 'task-secondary',
+      repositoryId,
+      branch: 'feature/jj-new',
+    });
+
+    const processCalls: string[][] = [];
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getCurrentBranchName: mock(async () => 'feature/jj-new'),
+      getJjBookmarkRevisionForWorkingCopy: mock(async () => '@'),
+      getUsingJj: mock(async () => true),
+    }));
+    await moduleMocker.mock('../../common/process.js', () => ({
+      spawnAndLogOutput: mock(async (args: string[]) => {
+        processCalls.push(args);
+
+        if (args[0] === 'jj' && args[1] === 'git' && args[2] === 'remote' && args[3] === 'list') {
+          return {
+            exitCode: 0,
+            stdout: `origin /tmp/origin\nprimary ${primaryDir}\n`,
+            stderr: '',
+          };
+        }
+
+        return {
+          exitCode: 0,
+          stdout: '',
+          stderr: '',
+        };
+      }),
+    }));
+
+    const { handleWorkspacePushCommand } = await import('./workspace.js');
+
+    await expect(
+      handleWorkspacePushCommand(undefined, { from: secondaryDir }, {} as any)
+    ).resolves.toBeUndefined();
+
+    expect(processCalls).toContainEqual([
+      'jj',
+      'git',
+      'push',
+      '--remote',
+      'primary',
+      '--bookmark',
+      'feature/jj-new',
+    ]);
+    expect(processCalls).toContainEqual(['jj', 'new', '@']);
   });
 
   test('supports explicit --from, --to, and --branch options', async () => {
