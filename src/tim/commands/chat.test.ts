@@ -559,6 +559,26 @@ describe('handleChatCommand', () => {
     expect(readPlanFileSpy).not.toHaveBeenCalled();
   });
 
+  test('throws when --base is used without workspace options', async () => {
+    const { handleChatCommand } = await import('./chat.js');
+
+    await expect(handleChatCommand('hello', { base: 'feature-branch' }, {})).rejects.toThrow(
+      '--base requires a workspace option'
+    );
+
+    expect(setupWorkspaceSpy).not.toHaveBeenCalled();
+  });
+
+  test('throws when --commit is used without workspace options', async () => {
+    const { handleChatCommand } = await import('./chat.js');
+
+    await expect(handleChatCommand('hello', { commit: true }, {})).rejects.toThrow(
+      '--commit requires a workspace option'
+    );
+
+    expect(setupWorkspaceSpy).not.toHaveBeenCalled();
+  });
+
   test('commits after execution when --commit is set', async () => {
     const { handleChatCommand } = await import('./chat.js');
 

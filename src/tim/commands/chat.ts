@@ -121,6 +121,17 @@ export async function handleChatCommand(
     options.autoWorkspace === true ||
     options.newWorkspace === true ||
     options.plan !== undefined;
+
+  // Validate that workspace-modifier flags require workspace mode
+  if (!workspaceMode) {
+    if (options.base) {
+      throw new Error('--base requires a workspace option (-w, --aw, --nw, or --plan)');
+    }
+    if (options.commit) {
+      throw new Error('--commit requires a workspace option (-w, --aw, --nw, or --plan)');
+    }
+  }
+
   const requestedExecutorRaw = options.executor ?? config.defaultExecutor;
   const requestedExecutor = resolveChatExecutor(requestedExecutorRaw);
   if (requestedExecutorRaw && !requestedExecutor) {
@@ -220,9 +231,16 @@ export async function handleChatCommand(
       );
       currentBaseDir = workspaceResult.baseDir;
       currentPlanFile = workspaceResult.planFile;
-      touchedWorkspacePath = currentBaseDir;
 
+      // Only set up workspace roundtrip if we actually got a different workspace
       if (path.resolve(currentBaseDir) !== path.resolve(originalBaseDir)) {
+        touchedWorkspacePath = currentBaseDir;
+      } else {
+        // Workspace creation failed (requireWorkspace: false), fall back to original cwd
+        currentBaseDir = process.cwd();
+      }
+
+      if (touchedWorkspacePath) {
         roundTripContext = await prepareWorkspaceRoundTrip({
           workspacePath: currentBaseDir,
           workspaceSyncEnabled: options.workspaceSync !== false,
