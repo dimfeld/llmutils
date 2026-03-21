@@ -97,12 +97,12 @@ describe('plan remote actions', () => {
       status: 400,
       body: { message: 'Plan is not eligible for generate' },
     });
-    await expect(
-      invokeCommand(startGenerate, { planUuid: 'plan-deferred' })
-    ).rejects.toMatchObject({
-      status: 400,
-      body: { message: 'Plan is not eligible for generate' },
-    });
+    await expect(invokeCommand(startGenerate, { planUuid: 'plan-deferred' })).rejects.toMatchObject(
+      {
+        status: 400,
+        body: { message: 'Plan is not eligible for generate' },
+      }
+    );
     expect(spawnGenerateProcessMock).not.toHaveBeenCalled();
   });
 

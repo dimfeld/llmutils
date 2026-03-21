@@ -20,7 +20,7 @@ references:
 planGeneratedAt: 2026-03-20T23:51:20.469Z
 promptsGeneratedAt: 2026-03-20T23:51:20.469Z
 createdAt: 2026-02-13T21:11:06.976Z
-updatedAt: 2026-03-21T08:32:59.252Z
+updatedAt: 2026-03-21T08:34:46.985Z
 tasks:
   - title: Add hasActiveSessionForPlan to SessionManager
     done: true

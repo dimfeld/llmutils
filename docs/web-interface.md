@@ -159,6 +159,7 @@ The Generate button appears on eligible plan detail pages and spawns `tim genera
 **Eligibility**: Plan has no tasks and `displayStatus` is not `done`, `cancelled`, `deferred`, or `recently_done`.
 
 **Button states**:
+
 - **Hidden**: Plan is ineligible (has tasks, or status excludes it)
 - **Generate**: Eligible, no active generate session → clickable
 - **Generating...**: Active generate session exists for this plan → disabled, links to the session
