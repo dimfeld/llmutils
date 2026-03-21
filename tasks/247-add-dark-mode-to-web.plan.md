@@ -7,15 +7,15 @@ goal: Add dark mode support to the web interface with a toggle button, system
 id: 247
 uuid: 6431a1c1-b3d0-457c-80cb-c5acf787763e
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 planGeneratedAt: 2026-03-21T01:55:45.001Z
 promptsGeneratedAt: 2026-03-21T01:55:45.001Z
 createdAt: 2026-03-21T01:40:10.359Z
-updatedAt: 2026-03-21T02:18:14.421Z
+updatedAt: 2026-03-21T02:48:13.713Z
 tasks:
   - title: Integrate ModeWatcher and add dark mode toggle to header
-    done: false
+    done: true
     description: Add the ModeWatcher component from mode-watcher to
       src/routes/+layout.svelte. This activates .dark class management on
       <html>, localStorage persistence, system preference detection, and FOUC
@@ -28,7 +28,7 @@ tasks:
       outer div from bg-gray-50 to bg-background, and the header from
       bg-gray-800 to bg-gray-800 dark:bg-gray-900.
   - title: Convert sidebar and navigation components to support dark mode
-    done: false
+    done: true
     description: "Update ProjectSidebar.svelte: bg-gray-50→bg-background,
       border-gray-200→border-border, text-gray-500→text-muted-foreground,
       text-gray-700→text-foreground, selected state bg-blue-100
@@ -36,7 +36,7 @@ tasks:
       hover:bg-gray-100→add dark:hover:bg-gray-800. Update TabNav.svelte if
       needed (already uses white/transparency which should work)."
   - title: Convert plan list and row components to support dark mode
-    done: false
+    done: true
     description: Update PlansList.svelte, PlanRow.svelte, and ActivePlanRow.svelte.
       Convert borders to border-border, text-gray-900→text-foreground,
       text-gray-500/400→text-muted-foreground, hover:bg-gray-50→add
@@ -46,7 +46,7 @@ tasks:
       dark:bg-gray-800. Also update text-indigo-600 (epic label)→add
       dark:text-indigo-400.
   - title: Convert PlanDetail component to support dark mode
-    done: false
+    done: true
     description: "Update PlanDetail.svelte: text-gray-900→text-foreground for
       title/task text, text-gray-500/400→text-muted-foreground for metadata,
       text-gray-700→text-foreground for goal text, bg-gray-100→add
@@ -56,7 +56,7 @@ tasks:
       dark:text-amber-400 for unresolved deps, hover:bg-gray-100→add
       dark:hover:bg-gray-800 for links."
   - title: Convert badge components (Status, Priority, Workspace) to support dark mode
-    done: false
+    done: true
     description: "Update StatusBadge.svelte, PriorityBadge.svelte, and
       WorkspaceBadge.svelte. All use bg-{color}-100 text-{color}-800 pattern.
       Add dark variants: dark:bg-{color}-900/30 dark:text-{color}-300 for each
@@ -66,7 +66,7 @@ tasks:
       text-gray-600→border-border text-muted-foreground, hover:bg-gray-50→add
       dark:hover:bg-gray-800."
   - title: Convert session list, row, and detail components to support dark mode
-    done: false
+    done: true
     description: "Update SessionList.svelte:
       text-gray-400/500→text-muted-foreground, hover:bg-gray-100→add
       dark:hover:bg-gray-800. Update SessionRow.svelte: same text/hover
@@ -78,7 +78,7 @@ tasks:
       hover:bg-gray-100→add dark:hover:bg-gray-800. The message area bg-gray-900
       stays as-is."
   - title: Convert workspace components to support dark mode
-    done: false
+    done: true
     description: "Update WorkspaceRow.svelte: border-gray-200→border-border,
       hover:bg-gray-50→add dark:hover:bg-gray-800,
       text-gray-900→text-foreground,
@@ -86,7 +86,7 @@ tasks:
       text-gray-600→add dark:bg-gray-800 dark:text-gray-300, link text-blue-600
       hover:text-blue-800→add dark:text-blue-400 dark:hover:text-blue-300."
   - title: Verify session message area and prompt components in dark mode
-    done: false
+    done: true
     description: The session message area (SessionMessage.svelte,
       PromptRenderer.svelte, MessageInput.svelte) is already dark-themed with
       bg-gray-800/900 backgrounds. Verify they look acceptable in dark mode —
@@ -94,6 +94,40 @@ tasks:
       the SessionMessage timestamp text-gray-600 has enough contrast in context.
       Check session_colors.ts category colors render well. If any minor
       adjustments are needed, make them.
+changedFiles:
+  - docs/web-interface.md
+  - src/app.html
+  - src/lib/components/ActivePlanRow.svelte
+  - src/lib/components/FilterChips.svelte
+  - src/lib/components/MessageInput.svelte
+  - src/lib/components/PlanDetail.svelte
+  - src/lib/components/PlanRow.svelte
+  - src/lib/components/PlansList.svelte
+  - src/lib/components/PriorityBadge.svelte
+  - src/lib/components/ProjectSidebar.svelte
+  - src/lib/components/SessionDetail.svelte
+  - src/lib/components/SessionList.svelte
+  - src/lib/components/SessionMessage.svelte
+  - src/lib/components/SessionRow.svelte
+  - src/lib/components/StatusBadge.svelte
+  - src/lib/components/WorkspaceBadge.svelte
+  - src/lib/components/WorkspaceRow.svelte
+  - src/lib/remote/session_actions.remote.test.ts
+  - src/lib/remote/session_actions.remote.ts
+  - src/lib/server/session_integration.test.ts
+  - src/lib/server/session_routes.ts
+  - src/lib/stores/session_state.svelte.ts
+  - src/lib/stores/session_state.test.ts
+  - src/lib/test-utils/invoke_command.ts
+  - src/routes/+layout.svelte
+  - src/routes/+page.svelte
+  - src/routes/projects/[projectId]/active/+layout.svelte
+  - src/routes/projects/[projectId]/active/+page.svelte
+  - src/routes/projects/[projectId]/plans/+layout.svelte
+  - src/routes/projects/[projectId]/plans/+page.svelte
+  - src/routes/projects/[projectId]/sessions/+layout.svelte
+  - src/routes/projects/[projectId]/sessions/+page.svelte
+  - src/routes/projects/[projectId]/sessions/[connectionId]/+page.svelte
 tags: []
 ---
 

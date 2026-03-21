@@ -76,7 +76,7 @@
               {#if task.done}
                 <span class="text-green-600 dark:text-green-400">✓</span>
               {:else}
-                <span class="text-gray-300 dark:text-gray-600">○</span>
+                <span class="text-gray-300 dark:text-gray-500">○</span>
               {/if}
             </span>
             <div class="min-w-0">

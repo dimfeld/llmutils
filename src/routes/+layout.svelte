@@ -10,7 +10,7 @@
   import { initSessionNotifications } from '$lib/stores/session_notifications.js';
   import { requestNotificationPermission } from '$lib/utils/browser_notifications.js';
   import { clearAppBadge, setAppBadge } from '$lib/utils/pwa_badge.js';
-  import { ModeWatcher, mode, setMode, userPrefersMode } from 'mode-watcher';
+  import { ModeWatcher, setMode, userPrefersMode } from 'mode-watcher';
   import Sun from '@lucide/svelte/icons/sun';
   import Moon from '@lucide/svelte/icons/moon';
   import Monitor from '@lucide/svelte/icons/monitor';
@@ -50,14 +50,6 @@
     }
   }
 
-  // Update theme-color meta tag based on resolved mode
-  $effect(() => {
-    const resolvedMode = mode.current;
-    if (!resolvedMode) return;
-    const color = resolvedMode === 'dark' ? '#0c0a09' : '#1f2937';
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', color);
-  });
-
   onMount(() => {
     requestNotificationPermission().catch((e) =>
       console.warn('Failed to request notification permission:', e)
@@ -88,7 +80,7 @@
   });
 </script>
 
-<ModeWatcher defaultMode="system" />
+<ModeWatcher defaultMode="system" themeColors={{ dark: '#0c0a09', light: '#1f2937' }} />
 
 <svelte:head><link rel="icon" href={resolve('/favicon.png')} /></svelte:head>
 
