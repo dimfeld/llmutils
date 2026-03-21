@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite';
 
-import { deduplicatePrUrls } from '$common/github/identifiers.js';
+import { tryCanonicalizePrUrl } from '$common/github/identifiers.js';
 import { getAssignmentEntry, type AssignmentEntry } from '$tim/db/assignment.js';
 import { getPrStatusForPlan, type PrStatusDetail } from '$tim/db/pr_status.js';
 import { normalizePlanStatus } from '$tim/plans/plan_state_utils.js';
@@ -227,8 +227,31 @@ export function normalizePrUrls(prUrls: string[]): string[] {
   return categorizePrUrls(prUrls).valid;
 }
 
+/** Categorize PR URLs for the web path. Plan files should only contain URLs,
+ * so non-URL identifiers (e.g. plain numbers, owner/repo#123) are treated as invalid
+ * even though the CLI accepts them. */
 export function categorizePrUrls(prUrls: string[]): { valid: string[]; invalid: string[] } {
-  return deduplicatePrUrls(prUrls);
+  const seen = new Set<string>();
+  const valid: string[] = [];
+  const invalid: string[] = [];
+  for (const url of prUrls) {
+    // Reject non-URL strings — plan files should only contain full URLs
+    try {
+      new URL(url);
+    } catch {
+      invalid.push(url);
+      continue;
+    }
+    const canonical = tryCanonicalizePrUrl(url);
+    if (canonical && !seen.has(canonical)) {
+      seen.add(canonical);
+      valid.push(canonical);
+    } else if (!canonical) {
+      invalid.push(url);
+    }
+    // duplicates are silently deduped, not treated as invalid
+  }
+  return { valid, invalid };
 }
 
 function getPrSummaryStatusByPlanUuid(

@@ -70,7 +70,7 @@ export const POST: RequestHandler = async ({ params }) => {
     return json({
       prUrls: normalizedPrUrls,
       invalidPrUrls,
-      prStatuses: getPrStatusForPlan(db, plan.uuid, prUrls),
+      prStatuses: getPrStatusForPlan(db, plan.uuid, normalizedPrUrls),
       error: 'GITHUB_TOKEN not configured',
     });
   }
@@ -123,7 +123,7 @@ export const POST: RequestHandler = async ({ params }) => {
     return json({
       prUrls: normalizedPrUrls,
       invalidPrUrls,
-      prStatuses: getPrStatusForPlan(db, plan.uuid, prUrls),
+      prStatuses: getPrStatusForPlan(db, plan.uuid, normalizedPrUrls),
       error: `GitHub API error: ${err instanceof Error ? err.message : String(err)}`,
     });
   }
