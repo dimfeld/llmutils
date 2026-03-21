@@ -241,6 +241,66 @@ const migrations: Migration[] = [
       ALTER TABLE workspace RENAME COLUMN is_primary TO workspace_type;
     `,
   },
+  {
+    version: 8,
+    up: `
+      CREATE TABLE pr_status (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pr_url TEXT NOT NULL UNIQUE,
+        owner TEXT NOT NULL,
+        repo TEXT NOT NULL,
+        pr_number INTEGER NOT NULL,
+        title TEXT,
+        state TEXT NOT NULL,
+        draft INTEGER NOT NULL DEFAULT 0,
+        mergeable TEXT,
+        head_sha TEXT,
+        base_branch TEXT,
+        head_branch TEXT,
+        review_decision TEXT,
+        merged_at TEXT,
+        last_fetched_at TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC})
+      );
+
+      CREATE TABLE pr_check_run (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pr_status_id INTEGER NOT NULL REFERENCES pr_status(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        status TEXT NOT NULL,
+        conclusion TEXT,
+        details_url TEXT,
+        started_at TEXT,
+        completed_at TEXT
+      );
+      CREATE INDEX idx_pr_check_run_pr_status_id ON pr_check_run(pr_status_id);
+
+      CREATE TABLE pr_review (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pr_status_id INTEGER NOT NULL REFERENCES pr_status(id) ON DELETE CASCADE,
+        author TEXT NOT NULL,
+        state TEXT NOT NULL,
+        submitted_at TEXT
+      );
+      CREATE INDEX idx_pr_review_pr_status_id ON pr_review(pr_status_id);
+
+      CREATE TABLE pr_label (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pr_status_id INTEGER NOT NULL REFERENCES pr_status(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        color TEXT
+      );
+      CREATE INDEX idx_pr_label_pr_status_id ON pr_label(pr_status_id);
+
+      CREATE TABLE plan_pr (
+        plan_uuid TEXT NOT NULL REFERENCES plan(uuid) ON DELETE CASCADE,
+        pr_status_id INTEGER NOT NULL REFERENCES pr_status(id) ON DELETE CASCADE,
+        PRIMARY KEY (plan_uuid, pr_status_id)
+      );
+      CREATE INDEX idx_plan_pr_pr_status_id ON plan_pr(pr_status_id);
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {

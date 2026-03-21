@@ -1,0 +1,226 @@
+import { afterEach, describe, expect, mock, test } from 'bun:test';
+import { ModuleMocker } from '../../testing.js';
+
+const moduleMocker = new ModuleMocker(import.meta);
+
+describe('common/github/pr_status', () => {
+  afterEach(() => {
+    moduleMocker.clear();
+  });
+
+  test('fetchPrFullStatus normalizes checks, reviews, and labels', async () => {
+    const graphql = mock(async () => ({
+      repository: {
+        pullRequest: {
+          number: 42,
+          title: 'Add PR status monitoring',
+          state: 'OPEN',
+          isDraft: false,
+          mergeable: 'MERGEABLE',
+          mergedAt: null,
+          headRefOid: 'abc123',
+          baseRefName: 'main',
+          headRefName: 'feature/pr-status',
+          reviewDecision: 'APPROVED',
+          labels: {
+            nodes: [{ name: 'backend', color: '00ff00' }],
+          },
+          reviews: {
+            nodes: [
+              {
+                author: { login: 'reviewer-1' },
+                state: 'APPROVED',
+                submittedAt: '2026-03-20T00:00:00.000Z',
+              },
+              {
+                author: null,
+                state: 'COMMENTED',
+                submittedAt: '2026-03-20T00:01:00.000Z',
+              },
+            ],
+          },
+          commits: {
+            nodes: [
+              {
+                commit: {
+                  statusCheckRollup: {
+                    state: 'FAILURE',
+                    contexts: {
+                      nodes: [
+                        {
+                          __typename: 'CheckRun',
+                          name: 'unit tests',
+                          status: 'COMPLETED',
+                          conclusion: 'SUCCESS',
+                          detailsUrl: 'https://example.com/checks/1',
+                          startedAt: '2026-03-20T00:00:00.000Z',
+                          completedAt: '2026-03-20T00:02:00.000Z',
+                        },
+                        {
+                          __typename: 'StatusContext',
+                          context: 'buildkite',
+                          state: 'PENDING',
+                          targetUrl: 'https://example.com/status/2',
+                          createdAt: '2026-03-20T00:03:00.000Z',
+                        },
+                        {
+                          __typename: 'StatusContext',
+                          context: 'legacy-ci',
+                          state: 'ERROR',
+                          targetUrl: null,
+                          createdAt: '2026-03-20T00:04:00.000Z',
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    }));
+
+    await moduleMocker.mock('octokit', () => ({
+      Octokit: mock(function () {
+        return {
+          graphql,
+        };
+      }),
+    }));
+
+    const { fetchPrFullStatus } = await import('./pr_status.ts');
+    const result = await fetchPrFullStatus('owner', 'repo', 42);
+
+    expect(result).toEqual({
+      number: 42,
+      title: 'Add PR status monitoring',
+      state: 'open',
+      isDraft: false,
+      mergeable: 'MERGEABLE',
+      mergedAt: null,
+      headSha: 'abc123',
+      baseRefName: 'main',
+      headRefName: 'feature/pr-status',
+      reviewDecision: 'APPROVED',
+      labels: [{ name: 'backend', color: '00ff00' }],
+      reviews: [
+        {
+          author: 'reviewer-1',
+          state: 'APPROVED',
+          submittedAt: '2026-03-20T00:00:00.000Z',
+        },
+      ],
+      checks: [
+        {
+          name: 'unit tests',
+          status: 'completed',
+          conclusion: 'success',
+          detailsUrl: 'https://example.com/checks/1',
+          startedAt: '2026-03-20T00:00:00.000Z',
+          completedAt: '2026-03-20T00:02:00.000Z',
+          source: 'check_run',
+        },
+        {
+          name: 'buildkite',
+          status: 'pending',
+          conclusion: null,
+          detailsUrl: 'https://example.com/status/2',
+          startedAt: null,
+          completedAt: null,
+          source: 'status_context',
+        },
+        {
+          name: 'legacy-ci',
+          status: 'completed',
+          conclusion: 'error',
+          detailsUrl: null,
+          startedAt: null,
+          completedAt: '2026-03-20T00:04:00.000Z',
+          source: 'status_context',
+        },
+      ],
+      checkRollupState: 'failure',
+    });
+    expect(graphql).toHaveBeenCalledTimes(1);
+  });
+
+  test('fetchPrCheckStatus returns lightweight normalized checks', async () => {
+    const graphql = mock(async () => ({
+      repository: {
+        pullRequest: {
+          commits: {
+            nodes: [
+              {
+                commit: {
+                  statusCheckRollup: {
+                    state: 'PENDING',
+                    contexts: {
+                      nodes: [
+                        {
+                          __typename: 'CheckRun',
+                          name: 'lint',
+                          status: 'IN_PROGRESS',
+                          conclusion: null,
+                          detailsUrl: 'https://example.com/checks/lint',
+                          startedAt: '2026-03-20T00:10:00.000Z',
+                          completedAt: null,
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    }));
+
+    await moduleMocker.mock('octokit', () => ({
+      Octokit: mock(function () {
+        return {
+          graphql,
+        };
+      }),
+    }));
+
+    const { fetchPrCheckStatus } = await import('./pr_status.ts');
+    const result = await fetchPrCheckStatus('owner', 'repo', 43);
+
+    expect(result).toEqual({
+      checks: [
+        {
+          name: 'lint',
+          status: 'in_progress',
+          conclusion: null,
+          detailsUrl: 'https://example.com/checks/lint',
+          startedAt: '2026-03-20T00:10:00.000Z',
+          completedAt: null,
+          source: 'check_run',
+        },
+      ],
+      checkRollupState: 'pending',
+    });
+  });
+
+  test('throws when the requested PR is missing', async () => {
+    await moduleMocker.mock('octokit', () => ({
+      Octokit: mock(function () {
+        return {
+          graphql: mock(async () => ({
+            repository: {
+              pullRequest: null,
+            },
+          })),
+        };
+      }),
+    }));
+
+    const { fetchPrFullStatus } = await import('./pr_status.ts');
+
+    await expect(fetchPrFullStatus('owner', 'repo', 99)).rejects.toThrow(
+      'Pull request owner/repo#99 not found'
+    );
+  });
+});
