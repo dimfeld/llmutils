@@ -1,7 +1,13 @@
 import { projectDisplayName } from '$lib/stores/project.svelte.js';
 import { base } from '$app/paths';
 import { activateSessionTerminalPane } from '$lib/remote/session_actions.remote.js';
-import type { SessionData, SessionGroup } from '$lib/types/session.js';
+import type {
+  SessionClientEvent,
+  SessionClientEventMap,
+  SessionClientEventName,
+  SessionData,
+  SessionGroup,
+} from '$lib/types/session.js';
 import { createContext } from 'svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import {
@@ -20,7 +26,17 @@ interface ProjectInfo {
   name: string;
 }
 
-export type SessionEventCallback = (eventName: string, parsed: unknown) => void;
+export type SessionEventCallback = <TEventName extends SessionClientEventName>(
+  eventName: TEventName,
+  parsed: SessionClientEventMap[TEventName]
+) => void;
+
+function toSessionClientEvent<TEventName extends SessionClientEventName>(
+  eventName: TEventName,
+  payload: SessionClientEventMap[TEventName]
+): SessionClientEvent {
+  return { eventName, payload } as SessionClientEvent;
+}
 
 export class SessionManager {
   sessions = new SvelteMap<string, SessionData>();
@@ -141,8 +157,11 @@ export class SessionManager {
     }
   }
 
-  private handleSseEvent(eventName: string, data: string): void {
-    const parsed = parseSessionEventPayload(data);
+  private handleSseEvent<TEventName extends SessionClientEventName>(
+    eventName: TEventName,
+    data: string
+  ): void {
+    const parsed = parseSessionEventPayload<SessionClientEventMap[TEventName]>(data);
     if (!parsed) {
       return;
     }
@@ -173,10 +192,15 @@ export class SessionManager {
     }
   }
 
-  private reconcileAcknowledgedNotifications(eventName: string, parsed: unknown): void {
-    switch (eventName) {
+  private reconcileAcknowledgedNotifications<TEventName extends SessionClientEventName>(
+    eventName: TEventName,
+    parsed: SessionClientEventMap[TEventName]
+  ): void {
+    const event = toSessionClientEvent(eventName, parsed);
+
+    switch (event.eventName) {
       case 'session:list': {
-        const sessions = (parsed as { sessions: SessionData[] }).sessions;
+        const sessions = event.payload.sessions;
         const activeSessionIds = new Set(sessions.map((session) => session.connectionId));
 
         for (const connectionId of this.unreadNotifications.keys()) {
@@ -193,24 +217,21 @@ export class SessionManager {
         break;
       }
       case 'session:new': {
-        const session = (parsed as { session: SessionData }).session;
+        const session = event.payload.session;
         if (session.status === 'notification') {
           this.unreadNotifications.set(session.connectionId, true);
         }
         break;
       }
       case 'session:message': {
-        const { connectionId, message } = parsed as {
-          connectionId: string;
-          message: { triggersNotification?: boolean };
-        };
+        const { connectionId, message } = event.payload;
         if (message.triggersNotification) {
           this.unreadNotifications.set(connectionId, true);
         }
         break;
       }
       case 'session:dismissed': {
-        const { connectionId } = parsed as { connectionId: string };
+        const { connectionId } = event.payload;
         this.unreadNotifications.delete(connectionId);
         break;
       }
@@ -252,7 +273,7 @@ export class SessionManager {
       }
     };
 
-    const eventTypes = [
+    const eventTypes: SessionClientEventName[] = [
       'session:list',
       'session:sync-complete',
       'session:new',

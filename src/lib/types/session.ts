@@ -176,3 +176,26 @@ export interface SessionPromptClearedEvent {
 export interface SessionDismissedEvent {
   connectionId: string;
 }
+
+export interface SessionSyncCompleteEvent {}
+
+export interface SessionClientEventMap {
+  'session:list': SessionListEvent;
+  'session:sync-complete': SessionSyncCompleteEvent;
+  'session:new': SessionNewEvent;
+  'session:update': SessionUpdateEvent;
+  'session:disconnect': SessionDisconnectEvent;
+  'session:message': SessionMessageEvent;
+  'session:prompt': SessionPromptEvent;
+  'session:prompt-cleared': SessionPromptClearedEvent;
+  'session:dismissed': SessionDismissedEvent;
+}
+
+export type SessionClientEventName = keyof SessionClientEventMap;
+
+export type SessionClientEvent = {
+  [TEventName in SessionClientEventName]: {
+    eventName: TEventName;
+    payload: SessionClientEventMap[TEventName];
+  };
+}[SessionClientEventName];

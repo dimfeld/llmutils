@@ -1,11 +1,12 @@
 import { resolve } from '$app/paths';
 import type {
-  SessionListEvent,
+  SessionClientEvent,
+  SessionClientEventMap,
+  SessionClientEventName,
   SessionDisconnectEvent,
   SessionMessageEvent,
-  SessionPromptEvent,
   SessionPromptClearedEvent,
-  SessionDismissedEvent,
+  SessionPromptEvent,
 } from '$lib/types/session.js';
 import {
   showBrowserNotification,
@@ -14,6 +15,13 @@ import {
   getActiveNotificationTags,
 } from '$lib/utils/browser_notifications.js';
 import type { SessionManager } from './session_state.svelte.js';
+
+function toSessionClientEvent<TEventName extends SessionClientEventName>(
+  eventName: TEventName,
+  payload: SessionClientEventMap[TEventName]
+): SessionClientEvent {
+  return { eventName, payload } as SessionClientEvent;
+}
 
 function notificationTag(connectionId: string): string {
   return `session:${connectionId}`;
@@ -58,13 +66,14 @@ export function initSessionNotifications(
   const seenMessageIds = new Set<string>();
 
   const unsubscribe = sessionManager.onEvent((eventName, parsed) => {
-    switch (eventName) {
+    const event = toSessionClientEvent(eventName, parsed);
+
+    switch (event.eventName) {
       case 'session:list': {
         // Reconcile: close browser notifications for sessions that no longer need attention.
-        const event = parsed as SessionListEvent;
-        const activeConnectionIds = new Set(event.sessions.map((s) => s.connectionId));
+        const activeConnectionIds = new Set(event.payload.sessions.map((s) => s.connectionId));
         // Record all existing message IDs so we don't re-notify on reconnect
-        for (const session of event.sessions) {
+        for (const session of event.payload.sessions) {
           for (const msg of session.messages) {
             if (msg.triggersNotification) {
               seenMessageIds.add(msg.id);
@@ -79,7 +88,7 @@ export function initSessionNotifications(
             closeNotification(tag);
             continue;
           }
-          const session = event.sessions.find((s) => s.connectionId === connectionId);
+          const session = event.payload.sessions.find((s) => s.connectionId === connectionId);
           if (session && !session.activePrompt) {
             // Session exists but prompt was cleared while disconnected
             closeNotification(tag);
@@ -89,53 +98,48 @@ export function initSessionNotifications(
       }
       case 'session:prompt': {
         if (document.hasFocus() || !sessionManager.initialized) break;
-        const event = parsed as SessionPromptEvent;
-        const session = sessionManager.sessions.get(event.connectionId);
+        const session = sessionManager.sessions.get(event.payload.connectionId);
         showBrowserNotification({
-          title: buildSessionTitle(sessionManager, event.connectionId, 'Prompt'),
-          body: buildPromptBody(event),
-          tag: notificationTag(event.connectionId),
+          title: buildSessionTitle(sessionManager, event.payload.connectionId, 'Prompt'),
+          body: buildPromptBody(event.payload),
+          tag: notificationTag(event.payload.connectionId),
           onClick: () => {
             window.focus();
-            navigate(sessionUrl(session?.projectId ?? null, event.connectionId));
+            navigate(sessionUrl(session?.projectId ?? null, event.payload.connectionId));
           },
         });
         break;
       }
       case 'session:message': {
         if (document.hasFocus() || !sessionManager.initialized) break;
-        const event = parsed as SessionMessageEvent;
-        if (!event.message.triggersNotification) break;
+        if (!event.payload.message.triggersNotification) break;
         // Skip already-seen messages (e.g. from reconciliation/replay)
-        if (seenMessageIds.has(event.message.id)) break;
-        seenMessageIds.add(event.message.id);
-        const text = extractMessageText(event);
+        if (seenMessageIds.has(event.payload.message.id)) break;
+        seenMessageIds.add(event.payload.message.id);
+        const text = extractMessageText(event.payload);
         if (!text) break;
-        const session = sessionManager.sessions.get(event.connectionId);
+        const session = sessionManager.sessions.get(event.payload.connectionId);
         showBrowserNotification({
-          title: buildSessionTitle(sessionManager, event.connectionId, 'Notification'),
+          title: buildSessionTitle(sessionManager, event.payload.connectionId, 'Notification'),
           body: text,
-          tag: notificationTag(event.connectionId),
+          tag: notificationTag(event.payload.connectionId),
           onClick: () => {
             window.focus();
-            navigate(sessionUrl(session?.projectId ?? null, event.connectionId));
+            navigate(sessionUrl(session?.projectId ?? null, event.payload.connectionId));
           },
         });
         break;
       }
       case 'session:prompt-cleared': {
-        const event = parsed as SessionPromptClearedEvent;
-        closeNotification(notificationTag(event.connectionId));
+        closeNotification(notificationTag(event.payload.connectionId));
         break;
       }
       case 'session:disconnect': {
-        const event = parsed as SessionDisconnectEvent;
-        closeNotification(notificationTag(event.session.connectionId));
+        closeNotification(notificationTag(event.payload.session.connectionId));
         break;
       }
       case 'session:dismissed': {
-        const event = parsed as SessionDismissedEvent;
-        closeNotification(notificationTag(event.connectionId));
+        closeNotification(notificationTag(event.payload.connectionId));
         break;
       }
     }

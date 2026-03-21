@@ -1,35 +1,9 @@
 import type {
+  SessionClientEvent,
   SessionData,
-  SessionListEvent,
-  SessionNewEvent,
-  SessionUpdateEvent,
-  SessionDisconnectEvent,
-  SessionMessageEvent,
-  SessionPromptEvent,
-  SessionPromptClearedEvent,
-  SessionDismissedEvent,
+  SessionClientEventMap,
+  SessionClientEventName,
 } from '$lib/types/session.js';
-
-type SessionEventName =
-  | 'session:list'
-  | 'session:sync-complete'
-  | 'session:new'
-  | 'session:update'
-  | 'session:disconnect'
-  | 'session:message'
-  | 'session:prompt'
-  | 'session:prompt-cleared'
-  | 'session:dismissed';
-
-type SessionEventPayload =
-  | SessionListEvent
-  | SessionNewEvent
-  | SessionUpdateEvent
-  | SessionDisconnectEvent
-  | SessionMessageEvent
-  | SessionPromptEvent
-  | SessionPromptClearedEvent
-  | SessionDismissedEvent;
 
 interface SessionMapLike {
   clear(): void;
@@ -59,24 +33,32 @@ function mergeSessionPreservingMessages(
   return incoming;
 }
 
-export function parseSessionEventPayload(data: string): unknown | null {
+export function parseSessionEventPayload<T>(data: string): T | null {
   try {
-    return JSON.parse(data);
+    return JSON.parse(data) as T;
   } catch {
     return null;
   }
 }
 
-export function applySessionEvent(
-  eventName: string,
-  parsed: unknown,
+function toSessionClientEvent<TEventName extends SessionClientEventName>(
+  eventName: TEventName,
+  payload: SessionClientEventMap[TEventName]
+): SessionClientEvent {
+  return { eventName, payload } as SessionClientEvent;
+}
+
+export function applySessionEvent<TEventName extends SessionClientEventName>(
+  eventName: TEventName,
+  parsed: SessionClientEventMap[TEventName],
   state: SessionStoreMutableState
 ): void {
-  switch (eventName as SessionEventName) {
+  const event = toSessionClientEvent(eventName, parsed);
+
+  switch (event.eventName) {
     case 'session:list': {
-      const event = parsed as SessionListEvent;
       state.sessions.clear();
-      for (const session of event.sessions) {
+      for (const session of event.payload.sessions) {
         state.sessions.set(session.connectionId, session);
       }
       break;
@@ -86,63 +68,59 @@ export function applySessionEvent(
       break;
     }
     case 'session:new': {
-      const event = parsed as SessionNewEvent;
-      state.sessions.set(event.session.connectionId, event.session);
+      state.sessions.set(event.payload.session.connectionId, event.payload.session);
       break;
     }
     case 'session:update': {
-      const event = parsed as SessionUpdateEvent;
-      const existing = state.sessions.get(event.session.connectionId);
+      const existing = state.sessions.get(event.payload.session.connectionId);
       state.sessions.set(
-        event.session.connectionId,
-        mergeSessionPreservingMessages(existing, event.session)
+        event.payload.session.connectionId,
+        mergeSessionPreservingMessages(existing, event.payload.session)
       );
       break;
     }
     case 'session:disconnect': {
-      const event = parsed as SessionDisconnectEvent;
-      const existing = state.sessions.get(event.session.connectionId);
+      const existing = state.sessions.get(event.payload.session.connectionId);
       state.sessions.set(
-        event.session.connectionId,
-        mergeSessionPreservingMessages(existing, event.session)
+        event.payload.session.connectionId,
+        mergeSessionPreservingMessages(existing, event.payload.session)
       );
       break;
     }
     case 'session:message': {
-      const event = parsed as SessionMessageEvent;
-      const session = state.sessions.get(event.connectionId);
+      const session = state.sessions.get(event.payload.connectionId);
       if (session) {
-        session.messages.push(event.message);
+        session.messages.push(event.payload.message);
         if (session.messages.length > MAX_CLIENT_MESSAGES) {
           session.messages = session.messages.slice(-MAX_CLIENT_MESSAGES);
         }
         // Re-set to trigger SvelteMap reactivity
-        state.sessions.set(event.connectionId, { ...session });
+        state.sessions.set(event.payload.connectionId, { ...session });
       }
       break;
     }
     case 'session:prompt': {
-      const event = parsed as SessionPromptEvent;
-      const session = state.sessions.get(event.connectionId);
+      const session = state.sessions.get(event.payload.connectionId);
       if (session) {
         // Re-set to trigger SvelteMap reactivity
-        state.sessions.set(event.connectionId, { ...session, activePrompt: event.prompt });
+        state.sessions.set(event.payload.connectionId, {
+          ...session,
+          activePrompt: event.payload.prompt,
+        });
       }
       break;
     }
     case 'session:prompt-cleared': {
-      const event = parsed as SessionPromptClearedEvent;
-      const session = state.sessions.get(event.connectionId);
-      if (session && session.activePrompt?.requestId === event.requestId) {
+      const session = state.sessions.get(event.payload.connectionId);
+      if (session && session.activePrompt?.requestId === event.payload.requestId) {
         // Re-set to trigger SvelteMap reactivity
-        state.sessions.set(event.connectionId, { ...session, activePrompt: null });
+        state.sessions.set(event.payload.connectionId, { ...session, activePrompt: null });
       }
       break;
     }
     case 'session:dismissed': {
-      const event = parsed as SessionDismissedEvent;
-      state.sessions.delete(event.connectionId);
-      if (state.getSelectedSessionId() === event.connectionId) {
+      state.sessions.delete(event.payload.connectionId);
+      if (state.getSelectedSessionId() === event.payload.connectionId) {
         state.setSelectedSessionId(null);
       }
       break;
