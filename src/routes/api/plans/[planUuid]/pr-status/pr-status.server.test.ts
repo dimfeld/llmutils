@@ -287,7 +287,7 @@ describe('/api/plans/[planUuid]/pr-status', () => {
       reviews: [],
       labels: [],
     });
-    expect(payload.error).toContain('GitHub API error for some pull requests');
+    expect(payload.error).toContain('Some pull request entries had issues');
     expect(payload.error).toContain('https://github.com/example/repo/pull/2');
     expect(payload.error).toContain('second PR refresh failed');
   });
@@ -304,7 +304,7 @@ describe('/api/plans/[planUuid]/pr-status', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(200);
-    expect(payload.error).toContain('GitHub API error for some pull requests');
+    expect(payload.error).toContain('Some pull request entries had issues');
     expect(payload.error).toContain('API rate limit exceeded');
     expect(payload.prUrls).toEqual([
       'https://github.com/example/repo/pull/1',

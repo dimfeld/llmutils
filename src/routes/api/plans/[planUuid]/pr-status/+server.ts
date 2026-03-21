@@ -2,7 +2,7 @@ import type { RequestHandler } from './$types';
 
 import { json } from '@sveltejs/kit';
 
-import { tryCanonicalizePrUrl } from '$common/github/identifiers.js';
+import { deduplicatePrUrls } from '$common/github/identifiers.js';
 import { ensurePrStatusFresh, syncPlanPrLinks } from '$common/github/pr_status_service.js';
 import { normalizePrUrls, parseJsonStringArray } from '$lib/server/db_queries.js';
 import { getServerContext } from '$lib/server/init.js';
@@ -10,20 +10,6 @@ import { cleanOrphanedPrStatus, getPrStatusByUrl, getPrStatusForPlan } from '$ti
 import { getPlanByUuid } from '$tim/db/plan.js';
 
 const PR_STATUS_MAX_AGE_MS = 5 * 60 * 1000;
-
-/** Canonicalize and deduplicate PR URLs, dropping any that aren't valid PR URLs. */
-function deduplicatePrUrls(urls: string[]): string[] {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const url of urls) {
-    const canonical = tryCanonicalizePrUrl(url);
-    if (canonical && !seen.has(canonical)) {
-      seen.add(canonical);
-      result.push(canonical);
-    }
-  }
-  return result;
-}
 
 async function loadPlanAndContext(planUuid: string) {
   const { db } = await getServerContext();
@@ -97,11 +83,11 @@ export const POST: RequestHandler = async ({ params }) => {
       }
     }
 
-    const uniquePrUrls = deduplicatePrUrls(prUrls);
+    const { valid: uniquePrUrls, invalid: invalidUrls } = deduplicatePrUrls(prUrls);
     const refreshResults = await Promise.allSettled(
       uniquePrUrls.map((prUrl) => ensurePrStatusFresh(db, prUrl, PR_STATUS_MAX_AGE_MS))
     );
-    const errors: string[] = [];
+    const errors: string[] = invalidUrls.map((url) => `${url}: not a valid PR URL`);
     const prStatuses = refreshResults.flatMap((result, index) => {
       if (result.status === 'fulfilled') {
         return [result.value];
@@ -123,7 +109,7 @@ export const POST: RequestHandler = async ({ params }) => {
       prUrls,
       prStatuses,
       ...(errors.length > 0
-        ? { error: `GitHub API error for some pull requests: ${errors.join('; ')}` }
+        ? { error: `Some pull request entries had issues: ${errors.join('; ')}` }
         : {}),
     });
   } catch (err) {

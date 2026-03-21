@@ -3,8 +3,8 @@ import path from 'node:path';
 import chalk from 'chalk';
 import {
   canonicalizePrUrl,
+  deduplicatePrUrls,
   parsePrOrIssueNumber,
-  tryCanonicalizePrUrl,
 } from '../../common/github/identifiers.js';
 import { refreshPrStatus, syncPlanPrLinks } from '../../common/github/pr_status_service.js';
 import { log } from '../../logging.js';
@@ -404,14 +404,9 @@ export async function handlePrStatusCommand(
   const db = getDatabase();
 
   // Canonicalize and deduplicate PR URLs before fetching
-  const seen = new Set<string>();
-  const uniquePrUrls: string[] = [];
-  for (const url of prUrls) {
-    const canonical = tryCanonicalizePrUrl(url);
-    if (canonical && !seen.has(canonical)) {
-      seen.add(canonical);
-      uniquePrUrls.push(canonical);
-    }
+  const { valid: uniquePrUrls, invalid: invalidUrls } = deduplicatePrUrls(prUrls);
+  for (const url of invalidUrls) {
+    log(chalk.yellow(`Warning: skipping invalid PR URL: ${url}`));
   }
 
   // Force-refresh all PRs from GitHub (CLI always fetches fresh data)

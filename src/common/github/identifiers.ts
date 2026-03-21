@@ -134,3 +134,22 @@ export function canonicalizePrUrl(identifier: string): string {
 
   return canonicalized;
 }
+
+/** Canonicalize and deduplicate PR URLs, returning invalid entries separately. */
+export function deduplicatePrUrls(urls: string[]): { valid: string[]; invalid: string[] } {
+  const seen = new Set<string>();
+  const valid: string[] = [];
+  const invalid: string[] = [];
+  for (const url of urls) {
+    const canonical = tryCanonicalizePrUrl(url);
+    if (canonical) {
+      if (!seen.has(canonical)) {
+        seen.add(canonical);
+        valid.push(canonical);
+      }
+    } else {
+      invalid.push(url);
+    }
+  }
+  return { valid, invalid };
+}

@@ -84,14 +84,14 @@ interface GraphQlLabelNode {
 
 interface GraphQlReviewNode {
   author: GraphQlActor | null;
-  state: PrReviewState;
+  state: string;
   submittedAt: string | null;
 }
 
 interface GraphQlCheckRunNode {
   __typename: 'CheckRun';
   name: string;
-  status: Uppercase<PrCheckStatus>;
+  status: string;
   conclusion: string | null;
   detailsUrl: string | null;
   startedAt: string | null;
@@ -126,7 +126,7 @@ interface GraphQlPullRequestFullStatus {
   title: string;
   state: string;
   isDraft: boolean;
-  mergeable: PrMergeableState;
+  mergeable: string | null;
   mergedAt: string | null;
   headRefOid: string | null;
   baseRefName: string | null;
@@ -383,6 +383,42 @@ function normalizeReviewDecision(decision: string | null): PrReviewDecision {
   }
 }
 
+function normalizeReviewState(state: string): PrReviewState {
+  switch (state) {
+    case 'APPROVED':
+      return 'APPROVED';
+    case 'CHANGES_REQUESTED':
+      return 'CHANGES_REQUESTED';
+    case 'COMMENTED':
+      return 'COMMENTED';
+    case 'PENDING':
+      return 'PENDING';
+    case 'DISMISSED':
+      return 'DISMISSED';
+    default:
+      console.warn(`Unknown GitHub review state: ${state}. Falling back to COMMENTED.`);
+      return 'COMMENTED';
+  }
+}
+
+function normalizeMergeableState(mergeable: string | null): PrMergeableState {
+  if (mergeable === null) {
+    return null;
+  }
+
+  switch (mergeable) {
+    case 'MERGEABLE':
+      return 'MERGEABLE';
+    case 'CONFLICTING':
+      return 'CONFLICTING';
+    case 'UNKNOWN':
+      return 'UNKNOWN';
+    default:
+      console.warn(`Unknown GitHub mergeable state: ${mergeable}. Falling back to UNKNOWN.`);
+      return 'UNKNOWN';
+  }
+}
+
 function normalizeCheckRun(node: GraphQlCheckContextNode): PrStatusCheckRun {
   if (node.__typename === 'CheckRun') {
     return {
@@ -480,7 +516,7 @@ export async function fetchPrFullStatus(
       )
       .map((review) => ({
         author: review.author!.login,
-        state: review.state,
+        state: normalizeReviewState(review.state),
         submittedAt: review.submittedAt,
       }))
   );
@@ -490,7 +526,7 @@ export async function fetchPrFullStatus(
     title: pullRequest.title,
     state: normalizePrState(pullRequest.state),
     isDraft: pullRequest.isDraft,
-    mergeable: pullRequest.mergeable,
+    mergeable: normalizeMergeableState(pullRequest.mergeable),
     mergedAt: pullRequest.mergedAt,
     headSha: pullRequest.headRefOid,
     baseRefName: pullRequest.baseRefName,
