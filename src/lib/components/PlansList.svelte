@@ -22,8 +22,8 @@
 
   const statusOrder: PlanDisplayStatus[] = [
     'in_progress',
-    'blocked',
     'pending',
+    'blocked',
     'needs_review',
     'recently_done',
     'done',
