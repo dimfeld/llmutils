@@ -6,7 +6,7 @@ goal: Fetch PR status from GitHub, cache in DB, display in web UI and CLI via
 id: 248
 uuid: f92da2f3-c73f-4b89-83c8-03b509d58d1d
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 parent: 245
 references:
@@ -14,7 +14,7 @@ references:
 planGeneratedAt: 2026-03-21T02:28:58.262Z
 promptsGeneratedAt: 2026-03-21T02:28:58.262Z
 createdAt: 2026-03-21T02:24:53.498Z
-updatedAt: 2026-03-21T20:20:55.735Z
+updatedAt: 2026-03-21T20:49:51.369Z
 tasks:
   - title: Create GitHub GraphQL queries for PR status
     done: true
@@ -312,7 +312,7 @@ tasks:
       Related file: src/common/github/pr_status.ts:261-342
   - title: "Address Review Feedback: Invalid PR entries are still silently dropped
       in the web path."
-    done: false
+    done: true
     description: |-
       Invalid PR entries are still silently dropped in the web path. [src/lib/server/db_queries.ts](/Users/dimfeld/Documents/projects/llmutils-projects-1773995305508/src/lib/server/db_queries.ts#L225) strips invalid URLs entirely, [src/lib/components/PlanDetail.svelte](/Users/dimfeld/Documents/projects/llmutils-projects-1773995305508/src/lib/components/PlanDetail.svelte#L184) only renders the PR section when the normalized list is non-empty, and the GET route at [src/routes/api/plans/[planUuid]/pr-status/+server.ts](/Users/dimfeld/Documents/projects/llmutils-projects-1773995305508/src/routes/api/plans/[planUuid]/pr-status/+server.ts#L24) returns only the normalized list with no error metadata. For a plan whose `pull_request` array contains only invalid entries, the UI/API show nothing at all, so the claimed behavior of warning instead of silently dropping invalid PR entries is not met. The current tests even lock in the silent-drop behavior.
 
@@ -321,7 +321,7 @@ tasks:
       Related file: src/lib/server/db_queries.ts:225-233
   - title: "Address Review Feedback: `getPlansWithPrs()` still treats `plan_pr` as
       authoritative even when the current plan row says otherwise."
-    done: false
+    done: true
     description: |-
       `getPlansWithPrs()` still treats `plan_pr` as authoritative even when the current plan row says otherwise. In [src/tim/db/pr_status.ts](/Users/dimfeld/Documents/projects/llmutils-projects-1773995305508/src/tim/db/pr_status.ts#L467), phase 1 unconditionally seeds results from `plan_pr`, and phase 2 only adds missing URLs from `plan.pull_request`; it never removes stale junction rows. Repro: a plan with `pullRequest: []` plus an old `plan_pr` row still comes back from `getPlansWithPrs()`. I verified that behavior with a direct DB repro. This contradicts the source-of-truth decision used elsewhere in this change set and will make downstream polling/workflows continue to track PRs that were removed via normal plan-file sync or manual edits.
 
@@ -330,7 +330,7 @@ tasks:
       Related file: src/tim/db/pr_status.ts:467-560
   - title: "Address Review Feedback: POST endpoint returns raw prUrls while GET
       returns normalized ones."
-    done: false
+    done: true
     description: >-
       POST endpoint returns raw prUrls while GET returns normalized ones. The
       POST handler at line 109 returns the raw prUrls from
@@ -349,7 +349,7 @@ tasks:
       Related file: src/routes/api/plans/[planUuid]/pr-status/+server.ts:109
   - title: "Address Review Feedback: Inconsistent casing convention across enum
       normalization functions."
-    done: false
+    done: true
     description: >-
       Inconsistent casing convention across enum normalization functions.
       normalizePrState, normalizeCheckStatus, normalizeCheckConclusion,
@@ -733,13 +733,17 @@ Update `src/lib/components/PlanDetail.svelte`:
 
 ## Current Progress
 ### Current State
-- All 20 tasks complete. Plan is done.
+- All 24 tasks complete. Plan is done.
 ### Completed (So Far)
 - Tasks 1-16: Core PR status monitoring implementation (GraphQL queries, DB, cache service, web UI, CLI)
 - Task 17: Fixed cached PR status not shown on initial page load — read paths now derive PR status from `plan.pull_request` URLs directly against `pr_status.pr_url`, not solely via `plan_pr` junctions. Stale `plan_pr` links are filtered out when current plan URLs are available.
 - Task 18: Consistent PR URL canonicalization — `canonicalizePrUrl()` and `tryCanonicalizePrUrl()` in `identifiers.ts` normalize `/pulls/` to `/pull/`, strip query params/fragments, reject partially numeric PR numbers. Applied at all entry points (service layer, CLI, DB reads, orphan cleanup, getPlansWithPrs).
 - Task 19: `refreshPrCheckStatus()` now validates identifiers via `canonicalizePrUrl()` before any cache lookup or API call.
 - Task 20: All GraphQL enum normalizers now gracefully degrade with `console.warn` + sensible fallback instead of throwing. Widened all GraphQL response types to `string` for consistency. Added `normalizeReviewDecision`, `normalizeReviewState`, `normalizeMergeableState`. Extracted shared `deduplicatePrUrls()` utility. CLI and API now warn about invalid PR entries instead of silently dropping them.
+- Task 21: Invalid PR entries now surfaced in web path — `categorizePrUrls()` rejects non-URL strings, `EnrichedPlan.invalidPrUrls` tracks them, `PrStatusSection` renders warnings, GET/POST endpoints return `invalidPrUrls`.
+- Task 22: `getPlansWithPrs()` now filters stale `plan_pr` junction rows against current `plan.pull_request` contents. NULL `pull_request` treated as empty (no PRs), consistent with rest of codebase.
+- Task 23: POST endpoint now returns normalized `prUrls` and `invalidPrUrls`, consistent with GET. Error/fallback paths also use normalized URLs for `getPrStatusForPlan`.
+- Task 24: Documented casing convention for enum normalizers (check-related = lowercase, review/merge-related = UPPERCASE).
 ### Remaining
 - None
 ### Next Iteration Guidance
@@ -780,5 +784,7 @@ Update `src/lib/components/PlanDetail.svelte`:
 - When mixing SQL queries with TypeScript canonicalization, do the canonicalization in TypeScript rather than trying to do it in SQL. Raw `json_each` values from plan files may not be canonical, causing SQL string comparisons to fail.
 - Read paths should use the plan's current state (e.g., `plan.pull_request` URLs) as source of truth, not lazy junction tables that may be stale or missing. Union with junction data only when the source of truth isn't available.
 - `canonicalizePrUrl` in read paths must not throw — use `tryCanonicalizePrUrl` (returns null for non-PR URLs) to avoid crashing page loads on malformed plan data.
+- Web path needs stricter URL validation than CLI: `tryCanonicalizePrUrl` returns non-URL strings unchanged (for CLI short-form identifiers), so web-path categorization must pre-filter with `new URL()` to reject non-URLs before delegating to `deduplicatePrUrls`.
+- When `getPlansWithPrs` trusts junction data over plan-file state (e.g. NULL vs empty `pull_request`), stale junctions persist indefinitely. Always treat the plan's current `pull_request` field as authoritative.
 ### Risks / Blockers
 - None
