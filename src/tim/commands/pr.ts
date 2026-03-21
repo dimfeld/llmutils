@@ -1,7 +1,11 @@
 import path from 'node:path';
 
 import chalk from 'chalk';
-import { canonicalizePrUrl, parsePrOrIssueNumber } from '../../common/github/identifiers.js';
+import {
+  canonicalizePrUrl,
+  parsePrOrIssueNumber,
+  tryCanonicalizePrUrl,
+} from '../../common/github/identifiers.js';
 import { refreshPrStatus, syncPlanPrLinks } from '../../common/github/pr_status_service.js';
 import { log } from '../../logging.js';
 import { getDatabase } from '../db/database.js';
@@ -399,11 +403,22 @@ export async function handlePrStatusCommand(
 
   const db = getDatabase();
 
+  // Canonicalize and deduplicate PR URLs before fetching
+  const seen = new Set<string>();
+  const uniquePrUrls: string[] = [];
+  for (const url of prUrls) {
+    const canonical = tryCanonicalizePrUrl(url);
+    if (canonical && !seen.has(canonical)) {
+      seen.add(canonical);
+      uniquePrUrls.push(canonical);
+    }
+  }
+
   // Force-refresh all PRs from GitHub (CLI always fetches fresh data)
   const details: PrStatusDetail[] = [];
   const successfulUrls: string[] = [];
   const errors: Array<{ url: string; error: Error }> = [];
-  for (const prUrl of prUrls) {
+  for (const prUrl of uniquePrUrls) {
     try {
       const detail = await refreshPrStatus(db, prUrl);
       details.push(detail);

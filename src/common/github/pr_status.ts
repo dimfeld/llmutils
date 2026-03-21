@@ -101,7 +101,7 @@ interface GraphQlCheckRunNode {
 interface GraphQlStatusContextNode {
   __typename: 'StatusContext';
   context: string;
-  state: 'SUCCESS' | 'FAILURE' | 'PENDING' | 'ERROR' | 'EXPECTED';
+  state: string;
   targetUrl: string | null;
   createdAt: string | null;
 }
@@ -109,7 +109,7 @@ interface GraphQlStatusContextNode {
 type GraphQlCheckContextNode = GraphQlCheckRunNode | GraphQlStatusContextNode;
 
 interface GraphQlStatusCheckRollup {
-  state: Uppercase<Exclude<PrCheckRollupState, null>> | null;
+  state: string | null;
   contexts: {
     nodes: Array<GraphQlCheckContextNode | null> | null;
   } | null;
@@ -124,14 +124,14 @@ interface GraphQlCommitNode {
 interface GraphQlPullRequestFullStatus {
   number: number;
   title: string;
-  state: 'OPEN' | 'CLOSED' | 'MERGED';
+  state: string;
   isDraft: boolean;
   mergeable: PrMergeableState;
   mergedAt: string | null;
   headRefOid: string | null;
   baseRefName: string | null;
   headRefName: string | null;
-  reviewDecision: PrReviewDecision;
+  reviewDecision: string | null;
   labels: { nodes: Array<GraphQlLabelNode | null> | null } | null;
   reviews: { nodes: Array<GraphQlReviewNode | null> | null } | null;
   commits: { nodes: Array<GraphQlCommitNode | null> | null } | null;
@@ -258,7 +258,7 @@ function getOctokit(): Octokit {
   });
 }
 
-function normalizePrState(state: GraphQlPullRequestFullStatus['state']): PrState {
+function normalizePrState(state: string): PrState {
   switch (state) {
     case 'OPEN':
       return 'open';
@@ -324,7 +324,7 @@ function normalizeCheckConclusion(conclusion: string | null): PrCheckConclusion 
   }
 }
 
-function normalizeCheckRollupState(state: GraphQlStatusCheckRollup['state']): PrCheckRollupState {
+function normalizeCheckRollupState(state: string | null): PrCheckRollupState {
   if (state === null) {
     return null;
   }
@@ -362,6 +362,24 @@ function normalizeStatusContext(
     default:
       console.warn(`Unknown GitHub status context state: ${node.state}. Falling back to pending.`);
       return { status: 'pending', conclusion: null, completedAt: null };
+  }
+}
+
+function normalizeReviewDecision(decision: string | null): PrReviewDecision {
+  if (decision === null) {
+    return null;
+  }
+
+  switch (decision) {
+    case 'APPROVED':
+      return 'APPROVED';
+    case 'CHANGES_REQUESTED':
+      return 'CHANGES_REQUESTED';
+    case 'REVIEW_REQUIRED':
+      return 'REVIEW_REQUIRED';
+    default:
+      console.warn(`Unknown GitHub review decision: ${decision}. Falling back to REVIEW_REQUIRED.`);
+      return 'REVIEW_REQUIRED';
   }
 }
 
@@ -477,7 +495,7 @@ export async function fetchPrFullStatus(
     headSha: pullRequest.headRefOid,
     baseRefName: pullRequest.baseRefName,
     headRefName: pullRequest.headRefName,
-    reviewDecision: pullRequest.reviewDecision,
+    reviewDecision: normalizeReviewDecision(pullRequest.reviewDecision),
     labels: (pullRequest.labels?.nodes ?? [])
       .filter((label): label is GraphQlLabelNode => label !== null)
       .map((label) => ({

@@ -2,6 +2,7 @@ import type { RequestHandler } from './$types';
 
 import { json } from '@sveltejs/kit';
 
+import { tryCanonicalizePrUrl } from '$common/github/identifiers.js';
 import { ensurePrStatusFresh, syncPlanPrLinks } from '$common/github/pr_status_service.js';
 import { normalizePrUrls, parseJsonStringArray } from '$lib/server/db_queries.js';
 import { getServerContext } from '$lib/server/init.js';
@@ -9,6 +10,20 @@ import { cleanOrphanedPrStatus, getPrStatusByUrl, getPrStatusForPlan } from '$ti
 import { getPlanByUuid } from '$tim/db/plan.js';
 
 const PR_STATUS_MAX_AGE_MS = 5 * 60 * 1000;
+
+/** Canonicalize and deduplicate PR URLs, dropping any that aren't valid PR URLs. */
+function deduplicatePrUrls(urls: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const url of urls) {
+    const canonical = tryCanonicalizePrUrl(url);
+    if (canonical && !seen.has(canonical)) {
+      seen.add(canonical);
+      result.push(canonical);
+    }
+  }
+  return result;
+}
 
 async function loadPlanAndContext(planUuid: string) {
   const { db } = await getServerContext();
@@ -82,8 +97,9 @@ export const POST: RequestHandler = async ({ params }) => {
       }
     }
 
+    const uniquePrUrls = deduplicatePrUrls(prUrls);
     const refreshResults = await Promise.allSettled(
-      prUrls.map((prUrl) => ensurePrStatusFresh(db, prUrl, PR_STATUS_MAX_AGE_MS))
+      uniquePrUrls.map((prUrl) => ensurePrStatusFresh(db, prUrl, PR_STATUS_MAX_AGE_MS))
     );
     const errors: string[] = [];
     const prStatuses = refreshResults.flatMap((result, index) => {
@@ -91,7 +107,7 @@ export const POST: RequestHandler = async ({ params }) => {
         return [result.value];
       }
 
-      const prUrl = prUrls[index]!;
+      const prUrl = uniquePrUrls[index]!;
       const cached = getPrStatusByUrl(db, prUrl);
       errors.push(
         `${prUrl}: ${

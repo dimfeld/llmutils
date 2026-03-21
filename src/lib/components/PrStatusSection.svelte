@@ -200,7 +200,9 @@
                   ? 'Approved'
                   : pr.status.review_decision === 'CHANGES_REQUESTED'
                     ? 'Changes Requested'
-                    : 'Review Required'}
+                    : pr.status.review_decision === 'REVIEW_REQUIRED'
+                      ? 'Review Required'
+                      : pr.status.review_decision}
               </span>
             {/if}
             {#if pr.status.mergeable === 'CONFLICTING'}
