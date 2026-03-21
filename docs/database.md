@@ -103,6 +103,8 @@ PR status data from GitHub is cached in SQLite for display in the web UI and CLI
 - `getPlansWithPrs(db, projectId?)`: Plans with linked PRs in active statuses (pending, in_progress, needs_review). Canonicalizes plan `pull_request` URLs in TypeScript before matching against `pr_status.pr_url`.
 - `cleanOrphanedPrStatus(db)`: Removes `pr_status` records not referenced by any plan's `pull_request` URLs or `plan_pr` links. Canonicalizes plan URLs in TypeScript before comparison.
 
+**GraphQL enum normalization** (`src/common/github/pr_status.ts`): All normalizers (`normalizePrState`, `normalizeCheckStatus`, `normalizeCheckConclusion`, `normalizeReviewDecision`, `normalizeReviewState`, `normalizeMergeableState`, etc.) gracefully degrade with `console.warn` + sensible fallback for unknown values instead of throwing. GraphQL response types are widened to `string` so TypeScript recognizes default branches as reachable. This prevents the entire status fetch from failing if GitHub adds a new enum value.
+
 **Cache service** (`src/common/github/pr_status_service.ts`):
 
 - `refreshPrStatus(db, prUrl)`: Canonicalizes the URL, fetches full status via GraphQL, upserts to DB
@@ -115,6 +117,7 @@ PR status data from GitHub is cached in SQLite for display in the web UI and CLI
 - `canonicalizePrUrl(identifier)`: Normalizes any PR URL to `https://github.com/{owner}/{repo}/pull/{number}` — handles `/pulls/` → `/pull/`, strips query params/fragments, rejects issue URLs and non-numeric PR numbers. Throws on invalid input. Used at all write/persistence entry points.
 - `tryCanonicalizePrUrl(identifier)`: Non-throwing variant that returns `null` for invalid URLs. Used in read paths (e.g., `getPrStatusForPlan`, `getPrSummaryStatusByPlanUuid`) to avoid crashing page loads on malformed plan data.
 - `validatePrIdentifier(identifier)`: Enforces GitHub host + `/pull/` path + numeric PR number for URL-form identifiers. Rejects issue URLs and other non-PR GitHub URLs.
+- `deduplicatePrUrls(urls, options?)`: Canonicalizes and deduplicates a list of PR URLs. Optionally warns on invalid entries via `onInvalid` callback. Used by CLI commands and API endpoints to normalize input before processing.
 
 ### Web Query Helpers
 
