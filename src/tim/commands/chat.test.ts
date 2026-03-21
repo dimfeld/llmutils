@@ -46,6 +46,7 @@ describe('handleChatCommand', () => {
   }));
   const patchWorkspaceInfoSpy = mock(() => {});
   const touchWorkspaceInfoSpy = mock(() => {});
+  const generateBranchNameFromPlanSpy = mock(() => 'plan-derived-branch');
   const warnSpy = mock(() => {});
 
   const originalStdinIsTTY = process.stdin.isTTY;
@@ -73,6 +74,7 @@ describe('handleChatCommand', () => {
     getWorkspaceInfoByPathSpy.mockClear();
     patchWorkspaceInfoSpy.mockClear();
     touchWorkspaceInfoSpy.mockClear();
+    generateBranchNameFromPlanSpy.mockClear();
     warnSpy.mockClear();
 
     loadEffectiveConfigSpy.mockImplementation(async () => ({
@@ -112,6 +114,7 @@ describe('handleChatCommand', () => {
     }));
     patchWorkspaceInfoSpy.mockImplementation(() => {});
     touchWorkspaceInfoSpy.mockImplementation(() => {});
+    generateBranchNameFromPlanSpy.mockImplementation(() => 'plan-derived-branch');
     warnSpy.mockImplementation(() => {});
     delete process.env.CODEX_USE_APP_SERVER;
 
@@ -171,6 +174,10 @@ describe('handleChatCommand', () => {
       prepareWorkspaceRoundTrip: prepareWorkspaceRoundTripSpy,
       runPreExecutionWorkspaceSync: runPreExecutionWorkspaceSyncSpy,
       runPostExecutionWorkspaceSync: runPostExecutionWorkspaceSyncSpy,
+    }));
+
+    await moduleMocker.mock('./branch.js', () => ({
+      generateBranchNameFromPlan: generateBranchNameFromPlanSpy,
     }));
   });
 
@@ -479,10 +486,12 @@ describe('handleChatCommand', () => {
 
     expect(resolvePlanFileSpy).toHaveBeenCalledWith('123', 'tim.json');
     expect(readPlanFileSpy).toHaveBeenCalledWith('/repo-root/tasks/123-test.plan.md');
+    expect(generateBranchNameFromPlanSpy).toHaveBeenCalledTimes(1);
     expect(setupWorkspaceSpy.mock.calls[0][0]).toMatchObject({
       autoWorkspace: true,
       planUuid: '11111111-1111-4111-8111-111111111111',
       createBranch: false,
+      base: 'plan-derived-branch',
     });
     expect(setupWorkspaceSpy.mock.calls[0][2]).toBe('/repo-root/tasks/123-test.plan.md');
     expect(runWithHeadlessAdapterIfEnabledSpy.mock.calls[0][0]).toMatchObject({
@@ -499,7 +508,7 @@ describe('handleChatCommand', () => {
     });
   });
 
-  test('--plan alone implies auto-workspace selection', async () => {
+  test('--plan alone implies auto-workspace selection and derives branch from plan', async () => {
     const { handleChatCommand } = await import('./chat.js');
 
     await handleChatCommand('hello', { plan: '123' }, { config: 'tim.json' });
@@ -509,8 +518,10 @@ describe('handleChatCommand', () => {
       autoWorkspace: true,
       planUuid: '11111111-1111-4111-8111-111111111111',
       createBranch: false,
+      base: 'plan-derived-branch',
     });
     expect(resolvePlanFileSpy).toHaveBeenCalledWith('123', 'tim.json');
+    expect(generateBranchNameFromPlanSpy).toHaveBeenCalledTimes(1);
   });
 
   test('passes --base through with createBranch disabled when no plan is provided', async () => {

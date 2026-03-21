@@ -12,6 +12,7 @@ import { isCodexAppServerEnabled } from '../executors/codex_cli/app_server_mode.
 import type { ExecutorCommonOptions } from '../executors/types.js';
 import { readPlanFile, resolvePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
+import { generateBranchNameFromPlan } from './branch.js';
 import { resolveOptionalPromptInput, type PromptResolverDeps } from './prompt_input.js';
 import {
   patchWorkspaceInfo,
@@ -194,6 +195,12 @@ export async function handleChatCommand(
         options.autoWorkspace === true ||
         (options.plan !== undefined && !options.workspace && !options.newWorkspace);
 
+      // When --plan is provided without --base, derive branch from plan data
+      let baseBranch = options.base;
+      if (!baseBranch && currentPlanData) {
+        baseBranch = currentPlanData.branch ?? generateBranchNameFromPlan(currentPlanData);
+      }
+
       const workspaceResult = await setupWorkspace(
         {
           workspace: options.workspace,
@@ -203,7 +210,7 @@ export async function handleChatCommand(
           requireWorkspace: false,
           createBranch: false,
           planUuid: currentPlanData?.uuid,
-          base: options.base,
+          base: baseBranch,
           allowPrimaryWorkspaceWhenLocked: true,
         },
         currentBaseDir,
@@ -275,6 +282,8 @@ export async function handleChatCommand(
     executionError = err;
   } finally {
     let roundTripError: unknown;
+    // Post-sync always runs when workspace roundtrip is active (matching generate/agent).
+    // It commits and pushes as part of the workspace lifecycle, independent of --commit.
     if (roundTripContext) {
       try {
         await runPostExecutionWorkspaceSync(roundTripContext, 'workspace chat session');
