@@ -68,7 +68,7 @@ The web interface exposes a REST endpoint for fetching and refreshing cached PR 
 
 ### Data Flow
 
-- `EnrichedPlan` (list views) includes `pullRequests: string[]`, `issues: string[]`, and `prSummaryStatus: 'passing' | 'failing' | 'pending' | 'none'` — computed via bulk join on `plan_pr → pr_status`.
+- `EnrichedPlan` (list views) includes `pullRequests: string[]`, `issues: string[]`, and `prSummaryStatus: 'passing' | 'failing' | 'pending' | 'none'` — computed by canonicalizing plan `pull_request` URLs and matching directly against `pr_status.pr_url`, not via `plan_pr` junctions, ensuring cached data is shown even before junction links are populated.
 - `PlanDetail` (detail view) includes `prStatuses: PrStatusDetail[]` with nested check runs, reviews, and labels.
 - The POST endpoint implements stale-while-revalidate: the PlanDetail page calls POST on mount if cached data is stale, displaying cached data immediately while the refresh runs.
 

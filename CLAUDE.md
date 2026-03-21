@@ -57,8 +57,9 @@ The codebase is organized into several main modules with improved modularity and
 - Input pause registry (`input_pause_registry.ts`): `PausableInputSource` interface and getter/setter for coordinating stdin between terminal input readers and inquirer prompts without coupling `common` to feature modules
 - Prefix selection prompt (`prefix_prompt.ts`): shared custom prompt + `runPrefixPrompt()` used by permissions flows; `prefix_prompt_utils.ts` contains `extractCommandAfterCd()` and `PrefixPromptResult` type, extracted for client-safe reuse in the web UI
 - GitHub integration utilities in `github/` subdirectory
+  - `identifiers.ts`: `parsePrOrIssueNumber()` for URL parsing, `canonicalizePrUrl()` / `tryCanonicalizePrUrl()` for normalizing PR URLs to `https://github.com/{owner}/{repo}/pull/{number}` (handles `/pulls/` variants, strips query params), `validatePrIdentifier()` for rejecting non-PR URLs
   - `pr_status.ts`: GraphQL queries (`fetchPrFullStatus`, `fetchPrCheckStatus`) for PR state, checks, reviews, labels, mergeable status
-  - `pr_status_service.ts`: Cache service with `refreshPrStatus()`, `refreshPrCheckStatus()`, `ensurePrStatusFresh()` (stale-while-revalidate), and `syncPlanPrLinks()` (atomic plan-PR junction sync)
+  - `pr_status_service.ts`: Cache service with `refreshPrStatus()`, `refreshPrCheckStatus()`, `ensurePrStatusFresh()` (stale-while-revalidate), and `syncPlanPrLinks()` (atomic plan-PR junction sync). All entry points canonicalize URLs before persistence or cache lookup.
 
 2. **tim**: Manages step-by-step project plans with LLM integration, organized by sub-commands
    - Modular command structure in `commands/` directory with separate files per sub-command

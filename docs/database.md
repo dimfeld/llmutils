@@ -98,25 +98,31 @@ PR status data from GitHub is cached in SQLite for display in the web UI and CLI
 
 - `upsertPrStatus(db, data)`: INSERT ON CONFLICT(pr_url) DO UPDATE, replaces child rows (check runs, reviews, labels) in the same transaction
 - `getPrStatusByUrl(db, prUrl)`: Returns `PrStatusDetail` (status + checks + reviews + labels)
-- `getPrStatusForPlan(db, planUuid)`: All PR statuses linked to a plan via `plan_pr` join
+- `getPrStatusForPlan(db, planUuid, prUrls?)`: All PR statuses linked to a plan. When `prUrls` (from plan's `pull_request` field) are provided, queries `pr_status` directly by canonicalized URL — bypassing `plan_pr` junctions which may be stale or unpopulated. Falls back to `plan_pr` join only when `prUrls` is not provided. Uses `tryCanonicalizePrUrl()` to safely skip malformed URLs without crashing.
 - `linkPlanToPr(db, planUuid, prStatusId)` / `unlinkPlanFromPr`: Manage plan-PR junction
-- `getPlansWithPrs(db, projectId?)`: Plans with linked PRs in active statuses (pending, in_progress, needs_review)
-- `cleanOrphanedPrStatus(db)`: Removes `pr_status` records with no `plan_pr` links
+- `getPlansWithPrs(db, projectId?)`: Plans with linked PRs in active statuses (pending, in_progress, needs_review). Canonicalizes plan `pull_request` URLs in TypeScript before matching against `pr_status.pr_url`.
+- `cleanOrphanedPrStatus(db)`: Removes `pr_status` records not referenced by any plan's `pull_request` URLs or `plan_pr` links. Canonicalizes plan URLs in TypeScript before comparison.
 
 **Cache service** (`src/common/github/pr_status_service.ts`):
 
-- `refreshPrStatus(db, prUrl)`: Fetches full status via GraphQL, upserts to DB
-- `refreshPrCheckStatus(db, prUrl)`: Lightweight checks-only refresh
+- `refreshPrStatus(db, prUrl)`: Canonicalizes the URL, fetches full status via GraphQL, upserts to DB
+- `refreshPrCheckStatus(db, prUrl)`: Lightweight checks-only refresh. Validates the identifier via `canonicalizePrUrl()` before any cache lookup or API call.
 - `ensurePrStatusFresh(db, prUrl, maxAgeMs)`: Stale-while-revalidate — returns cached if fresh, refreshes otherwise
 - `syncPlanPrLinks(db, planUuid, prUrls)`: Atomic sync of plan-PR junction. All GitHub fetches complete before any DB writes; all upserts + link changes happen in one transaction. Orphan cleanup is the caller's responsibility.
+
+**URL canonicalization** (`src/common/github/identifiers.ts`):
+
+- `canonicalizePrUrl(identifier)`: Normalizes any PR URL to `https://github.com/{owner}/{repo}/pull/{number}` — handles `/pulls/` → `/pull/`, strips query params/fragments, rejects issue URLs and non-numeric PR numbers. Throws on invalid input. Used at all write/persistence entry points.
+- `tryCanonicalizePrUrl(identifier)`: Non-throwing variant that returns `null` for invalid URLs. Used in read paths (e.g., `getPrStatusForPlan`, `getPrSummaryStatusByPlanUuid`) to avoid crashing page loads on malformed plan data.
+- `validatePrIdentifier(identifier)`: Enforces GitHub host + `/pull/` path + numeric PR number for URL-form identifiers. Rejects issue URLs and other non-PR GitHub URLs.
 
 ### Web Query Helpers
 
 `src/lib/server/db_queries.ts` provides enriched read-only queries for the SvelteKit web interface, layered on top of the CRUD functions in `src/tim/db/plan.ts`:
 
 - **`getProjectsWithMetadata(db)`**: Lists projects with plan counts by status using a single aggregate SQL query (avoids N+1)
-- **`getPlansForProject(db, projectId?)`**: Returns enriched plan objects with tasks, tags, dependency UUIDs, computed display status, task completion counts, `pullRequests`/`issues` (parsed from JSON string columns), and `prSummaryStatus` (`'passing' | 'failing' | 'pending' | 'none'`). The `prSummaryStatus` is computed via an efficient bulk join on `plan_pr → pr_status` (single query for all plans, not N+1). When `projectId` is omitted, queries all projects with unfiltered SQL.
-- **`getPlanDetail(db, planUuid)`**: Single plan with full dependency details (titles, statuses, resolved flag), parent info, assignment data, and `prStatuses: PrStatusDetail[]` (full PR data with nested check runs, reviews, labels joined via `plan_pr`). Uses targeted single-plan queries (not full project bundle) and loads transitive dependency plans for accurate display status computation. Assignment is fetched via `getAssignmentEntry` (single lookup) with status overridden from the live plan row to avoid stale assignment data.
+- **`getPlansForProject(db, projectId?)`**: Returns enriched plan objects with tasks, tags, dependency UUIDs, computed display status, task completion counts, `pullRequests`/`issues` (parsed from JSON string columns), and `prSummaryStatus` (`'passing' | 'failing' | 'pending' | 'none'`). The `prSummaryStatus` is computed by canonicalizing each plan's `pull_request` URLs and matching them directly against `pr_status.pr_url` — not via `plan_pr` junctions — so cached status is shown even before junction links are populated. Neutral/cancelled/skipped check states map to `'passing'`; plans with PRs but no check data at all get `'none'`. When `projectId` is omitted, queries all projects with unfiltered SQL.
+- **`getPlanDetail(db, planUuid)`**: Single plan with full dependency details (titles, statuses, resolved flag), parent info, assignment data, and `prStatuses: PrStatusDetail[]` (full PR data with nested check runs, reviews, labels). PR statuses are loaded by canonicalizing the plan's `pull_request` URLs and querying `pr_status` directly, falling back to `plan_pr` join only when URLs aren't available. Uses targeted single-plan queries (not full project bundle) and loads transitive dependency plans for accurate display status computation. Assignment is fetched via `getAssignmentEntry` (single lookup) with status overridden from the live plan row to avoid stale assignment data.
 
 **Display status computation**: A derived status layered on top of raw plan status:
 
