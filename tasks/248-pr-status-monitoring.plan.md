@@ -6,7 +6,7 @@ goal: Fetch PR status from GitHub, cache in DB, display in web UI and CLI via
 id: 248
 uuid: f92da2f3-c73f-4b89-83c8-03b509d58d1d
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 parent: 245
 references:
@@ -14,7 +14,7 @@ references:
 planGeneratedAt: 2026-03-21T02:28:58.262Z
 promptsGeneratedAt: 2026-03-21T02:28:58.262Z
 createdAt: 2026-03-21T02:24:53.498Z
-updatedAt: 2026-03-21T07:18:52.083Z
+updatedAt: 2026-03-21T07:43:20.126Z
 tasks:
   - title: Create GitHub GraphQL queries for PR status
     done: true
@@ -99,7 +99,7 @@ tasks:
       same - only the command registration in tim.ts changes.
   - title: "Address Review Feedback: `PrStatusSection` leaks loading/error state
       across plan changes."
-    done: false
+    done: true
     description: >-
       `PrStatusSection` leaks loading/error state across plan changes. The
       effect resets `fetchedStatuses`, but `refreshing` and `refreshError` are
@@ -117,7 +117,7 @@ tasks:
       Related file: src/lib/components/PrStatusSection.svelte:38-46
   - title: "Address Review Feedback: The no-token path in the POST endpoint calls
       `syncPlanPrLinks(db, plan.uuid, cachedUrls)` without a try/catch."
-    done: false
+    done: true
     description: >-
       The no-token path in the POST endpoint calls `syncPlanPrLinks(db,
       plan.uuid, cachedUrls)` without a try/catch. While the input should only
@@ -135,7 +135,7 @@ tasks:
       Related file: src/routes/api/plans/[planUuid]/pr-status/+server.ts:53-63
   - title: "Address Review Feedback: The POST endpoint uses `Promise.all` for
       `ensurePrStatusFresh` across all PR URLs."
-    done: false
+    done: true
     description: >-
       The POST endpoint uses `Promise.all` for `ensurePrStatusFresh` across all
       PR URLs. If one PR refresh fails (e.g., PR deleted from GitHub, transient
@@ -153,7 +153,7 @@ tasks:
       Related file: src/routes/api/plans/[planUuid]/pr-status/+server.ts:66-82
   - title: "Address Review Feedback: `tim pr status` only auto-resolves the current
       workspace plan when `process.cwd()` is the exact workspace root."
-    done: false
+    done: true
     description: >-
       `tim pr status` only auto-resolves the current workspace plan when
       `process.cwd()` is the exact workspace root. `getWorkspacePlanReference()`
@@ -173,7 +173,7 @@ tasks:
       Related file: src/tim/commands/pr.ts:37-55
   - title: "Address Review Feedback: The new PR-linking/status flow accepts issue
       URLs as if they were pull-request URLs."
-    done: false
+    done: true
     description: >-
       The new PR-linking/status flow accepts issue URLs as if they were
       pull-request URLs. `handlePrLinkCommand()` and `refreshPrStatus()` both
@@ -191,7 +191,7 @@ tasks:
       Related file: src/tim/commands/pr.ts:428-439
   - title: "Address Review Feedback: The web check-run list misrenders `error`
       conclusions."
-    done: false
+    done: true
     description: >-
       The web check-run list misrenders `error` conclusions. Backend
       normalization emits `error`, and the CLI treats it as a failed check, but
@@ -208,7 +208,7 @@ tasks:
       Related file: src/lib/components/PrCheckRunList.svelte:16-31
   - title: "Address Review Feedback: `prSummaryStatus` returns 'none' for PRs where
       all check rollup states are 'neutral', 'cancelled', or 'skipped'."
-    done: false
+    done: true
     description: >-
       `prSummaryStatus` returns 'none' for PRs where all check rollup states are
       'neutral', 'cancelled', or 'skipped'. The UI then shows a gray dot
@@ -226,6 +226,7 @@ changedFiles:
   - README.md
   - docs/database.md
   - docs/web-interface.md
+  - src/common/github/identifiers.ts
   - src/common/github/pr_status.test.ts
   - src/common/github/pr_status.ts
   - src/common/github/pr_status_service.test.ts
@@ -239,6 +240,7 @@ changedFiles:
   - src/lib/components/PrStatusIndicator.test.ts
   - src/lib/components/PrStatusSection.svelte
   - src/lib/components/PrStatusSection.test.ts
+  - src/lib/components/pr_status_section_state.ts
   - src/lib/server/db_queries.test.ts
   - src/lib/server/db_queries.ts
   - src/routes/api/plans/[planUuid]/pr-status/+server.ts
@@ -583,7 +585,7 @@ Update `src/lib/components/PlanDetail.svelte`:
 
 ## Current Progress
 ### Current State
-- All 9 tasks are complete with test coverage. The plan is fully implemented.
+- All 16 tasks complete. Plan is fully implemented with all review feedback addressed.
 ### Completed (So Far)
 - Task 1: GitHub GraphQL queries (`src/common/github/pr_status.ts`) with `fetchPrFullStatus()` and `fetchPrCheckStatus()`
 - Task 2: DB migration 8 and CRUD (`src/tim/db/pr_status.ts`, `src/tim/db/migrations.ts`)
@@ -594,26 +596,35 @@ Update `src/lib/components/PlanDetail.svelte`:
 - Task 7: PR status indicators in plan list views (`PrStatusIndicator.svelte`) — compact colored dot in PlanRow and ActivePlanRow
 - Task 8: CLI `tim pr` subcommand namespace (`src/tim/commands/pr.ts`, `src/tim/tim.ts`) — `tim pr status [planId]` with force-fresh GitHub fetch, partial failure handling, color-coded output; `tim pr link` and `tim pr unlink` with plan file persistence and URL canonicalization
 - Task 9: `pr-description` migrated to `tim pr description` with hidden backwards-compatible alias
+- Task 10: PrStatusSection state leak fix — reset `refreshing`/`refreshError` before `needsRefresh()` early return
+- Task 11: No-token POST path wrapped in try/catch for TOCTOU race safety
+- Task 12: POST endpoint uses `Promise.allSettled` for partial failure tolerance per PR URL
+- Task 13: Workspace plan auto-resolve walks parent directories
+- Task 14: Issue URLs rejected by `validatePrIdentifier()` — shared in `identifiers.ts`, used by CLI and service layer
+- Task 15: `error` conclusion handled as failure in PrCheckRunList (red X icon); `stale` conclusion shows `—` consistently
+- Task 16: neutral/cancelled/skipped rollup states map to 'passing' not 'none'
 ### Remaining
 - None
 ### Next Iteration Guidance
 - None
 ### Decisions / Changes
 - `syncPlanPrLinks` is fully atomic: all GitHub fetches complete before any DB writes, and all upserts + link changes happen in one transaction
-- `cleanOrphanedPrStatus` is decoupled from sync - callers handle cleanup explicitly
+- `cleanOrphanedPrStatus` called after sync in POST endpoint and CLI `tim pr status` to clean up unlinked PR cache rows
 - `refreshPrCheckStatus` is documented as lightweight (checks only, no PR state update) - callers needing state changes should use `refreshPrStatus`
 - `plan_pr` junction is populated lazily by POST endpoint / CLI commands, not on page load GET — GET only reads existing cached data
 - POST endpoint gracefully handles GitHub API failures by falling back to cached data with an error message
+- POST endpoint wraps `syncPlanPrLinks` in try/catch with cached-URL fallback, so `Promise.allSettled` is always reachable
+- No-token path always calls `syncPlanPrLinks` (even with empty cachedUrls) to prune stale links
 - CLI `tim pr status` always force-refreshes from GitHub (never uses cached data), but syncs `plan_pr` junctions afterward for web UI
 - `tim pr link`/`unlink` modify the plan file (source of truth) and update DB cache best-effort. Link validates with GitHub before modifying the plan file.
 - URL canonicalization: `link` and `unlink` both normalize PR identifiers to `https://github.com/{owner}/{repo}/pull/{number}` format
+- `validatePrIdentifier()` in `identifiers.ts` enforces GitHub host + `/pull/` path for URL-form identifiers; used by CLI commands and service layer
 - `persistPlanPullRequests` skips `writePlanFile` when the URL list hasn't changed (no-op detection)
 - CLI partial failures: tries syncing all prUrls first, falls back to just successful URLs if uncached PRs can't be fetched
-- No-token fallback: POST endpoint syncs junctions for already-cached PRs even without GITHUB_TOKEN
 - Reviews are deduplicated to latest per author at the normalization layer
 - PrStatusSection uses stale-while-revalidate: shows initialStatuses immediately, only POSTs if any PR is missing or stale (>5 min)
 - PrStatusSection uses AbortController to prevent stale fetch responses from overwriting fresh data on plan navigation
-- `prSummaryStatus` filters null/empty `check_rollup_state` values — PRs without checks don't poison the aggregate
+- `prSummaryStatus` filters null/empty `check_rollup_state` values — PRs without checks don't poison the aggregate; neutral/cancelled/skipped map to 'passing'
 ### Lessons Learned
 - GitHub GraphQL connection nodes can be null - always filter before mapping
 - Separating fetch phase from DB write phase enables true atomicity for operations that mix async API calls with sync DB transactions
@@ -624,5 +635,7 @@ Update `src/lib/components/PlanDetail.svelte`:
 - When an atomic sync function (syncPlanPrLinks) is used after partial failures, passing the full URL list can cause the sync to fail for uncached URLs — need fallback to a reduced set
 - Svelte 5 `$state(initialProp)` captures the initial value only; use `$derived(fetchedData ?? initialProp)` pattern instead of a separate sync effect to avoid race conditions between prop updates and async fetch results
 - `new Date(invalidString).getTime()` returns NaN; comparisons with NaN always return false, silently skipping staleness checks
+- When wrapping an all-or-nothing sync in try/catch, make sure the partial-failure path (Promise.allSettled) is still reachable — otherwise the resilience pattern is dead code
+- PR URL validation should be centralized in a shared utility and enforced at all entry points (CLI, service layer, API routes), not just the CLI
 ### Risks / Blockers
 - None
