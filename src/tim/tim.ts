@@ -1217,7 +1217,7 @@ prCommand
 
 prCommand
   .command('link <planId> <prUrl>')
-  .description('Link a GitHub PR to a plan in the local cache')
+  .description('Link a GitHub PR to a plan')
   .action(async (planId, prUrl, options, command) => {
     const { handlePrLinkCommand } = await import('./commands/pr.js');
     await handlePrLinkCommand(planId, prUrl, options, command).catch(handleCommandError);
@@ -1225,7 +1225,7 @@ prCommand
 
 prCommand
   .command('unlink <planId> <prUrl>')
-  .description('Unlink a GitHub PR from a plan in the local cache')
+  .description('Unlink a GitHub PR from a plan ')
   .action(async (planId, prUrl, options, command) => {
     const { handlePrUnlinkCommand } = await import('./commands/pr.js');
     await handlePrUnlinkCommand(planId, prUrl, options, command).catch(handleCommandError);

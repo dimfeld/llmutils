@@ -302,14 +302,26 @@ describe('tim/commands/pr', () => {
     expect(logs.some((line) => line.includes('was not linked'))).toBe(true);
   });
 
-  test('status requires GITHUB_TOKEN', async () => {
+  test('status requires GITHUB_TOKEN when plan has PRs', async () => {
     delete process.env.GITHUB_TOKEN;
+    currentPlan.pullRequest = ['https://github.com/example/repo/pull/101'];
 
     await expect(prModule.handlePrStatusCommand('248', {}, createNestedCommand())).rejects.toThrow(
       'GITHUB_TOKEN environment variable is required for PR status commands'
     );
 
-    expect(mockResolvePlan).not.toHaveBeenCalled();
+    // Plan is resolved first, then token is checked
+    expect(mockResolvePlan).toHaveBeenCalled();
+    expect(mockRefreshPrStatus).not.toHaveBeenCalled();
+  });
+
+  test('status with no PRs succeeds without GITHUB_TOKEN', async () => {
+    delete process.env.GITHUB_TOKEN;
+    currentPlan.pullRequest = [];
+
+    await prModule.handlePrStatusCommand('248', {}, createNestedCommand());
+
+    expect(logs).toContain('Plan 248 has no linked pull requests.');
   });
 
   test('link requires GITHUB_TOKEN', async () => {

@@ -74,16 +74,27 @@ function requirePlanUuid(plan: PlanSchema, planPath: string): string {
   return plan.uuid;
 }
 
+/** Update pullRequest URLs in the plan file. Returns true if the file was modified. */
 async function persistPlanPullRequests(
   planPath: string,
   updatePullRequests: (pullRequests: string[]) => string[]
-): Promise<void> {
+): Promise<boolean> {
   const currentPlan = await readPlanFile(planPath);
-  const nextPullRequests = updatePullRequests(currentPlan.pullRequest ?? []);
-  const updatedPlan = { ...currentPlan, pullRequest: nextPullRequests };
+  const currentPullRequests = currentPlan.pullRequest ?? [];
+  const nextPullRequests = updatePullRequests(currentPullRequests);
 
+  // Skip write if nothing changed
+  if (
+    nextPullRequests.length === currentPullRequests.length &&
+    nextPullRequests.every((url, i) => url === currentPullRequests[i])
+  ) {
+    return false;
+  }
+
+  const updatedPlan = { ...currentPlan, pullRequest: nextPullRequests };
   // writePlanFile already calls syncPlanToDb internally
   await writePlanFile(planPath, updatedPlan);
+  return true;
 }
 
 function formatLifecycleState(status: PrStatusRow): string {
@@ -340,10 +351,6 @@ export async function handlePrStatusCommand(
   _options: Record<string, unknown>,
   command: RootCommandLike
 ): Promise<void> {
-  if (!process.env.GITHUB_TOKEN) {
-    throw new Error('GITHUB_TOKEN environment variable is required for PR status commands');
-  }
-
   const { plan } = await resolvePlanForCommand(planId, command);
   const planUuid = requirePlanUuid(plan, plan.filename ?? String(plan.id));
   const prUrls = plan.pullRequest ?? [];
@@ -353,13 +360,22 @@ export async function handlePrStatusCommand(
     return;
   }
 
+  if (!process.env.GITHUB_TOKEN) {
+    throw new Error('GITHUB_TOKEN environment variable is required for PR status commands');
+  }
+
   const db = getDatabase();
 
   // Force-refresh all PRs from GitHub (CLI always fetches fresh data)
   const details: PrStatusDetail[] = [];
+  const errors: Array<{ url: string; error: Error }> = [];
   for (const prUrl of prUrls) {
-    const detail = await refreshPrStatus(db, prUrl);
-    details.push(detail);
+    try {
+      const detail = await refreshPrStatus(db, prUrl);
+      details.push(detail);
+    } catch (err) {
+      errors.push({ url: prUrl, error: err as Error });
+    }
   }
 
   // Sync plan_pr junctions so the cache is usable by web UI
@@ -369,6 +385,14 @@ export async function handlePrStatusCommand(
   for (const detail of details) {
     logPrStatus(detail);
     log('');
+  }
+
+  for (const { url, error } of errors) {
+    log(chalk.red(`Failed to fetch status for ${url}: ${error}`));
+  }
+
+  if (errors.length > 0 && details.length === 0) {
+    throw new Error('Failed to fetch status for all linked pull requests');
   }
 }
 
@@ -393,13 +417,14 @@ export async function handlePrLinkCommand(
   // Canonicalize to full GitHub PR URL for plan file storage (pullRequest is z.url())
   const canonicalUrl = `https://github.com/${parsed.owner}/${parsed.repo}/pull/${parsed.number}`;
 
-  // Persist plan file first (source of truth), then update DB cache
+  // Validate with GitHub first - don't modify plan file if PR doesn't exist
+  const db = getDatabase();
+  const detail = await refreshPrStatus(db, canonicalUrl);
+
+  // Now persist to plan file (source of truth) and create DB junction
   await persistPlanPullRequests(planPath, (pullRequests) =>
     pullRequests.includes(canonicalUrl) ? pullRequests : [...pullRequests, canonicalUrl]
   );
-
-  const db = getDatabase();
-  const detail = await refreshPrStatus(db, canonicalUrl);
   linkPlanToPr(db, planUuid, detail.status.id);
 
   log(
