@@ -1,1 +1,1 @@
-<p class="p-8 text-gray-500">Redirecting...</p>
+<p class="p-8 text-muted-foreground">Redirecting...</p>
