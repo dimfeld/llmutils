@@ -606,13 +606,14 @@ describe('common/github/pr_status_service', () => {
     ).rejects.toThrow('GitHub fetch failed after partial prefetch');
 
     expect(fetchPrFullStatus).toHaveBeenCalledTimes(2);
+    // With atomic sync, no DB mutations should occur on failure:
+    // - Original links remain unchanged
     expect(getPrStatusForPlan(db, 'plan-service').map((detail) => detail.status.pr_url)).toEqual([
       'https://github.com/example/repo/pull/214',
       'https://github.com/example/repo/pull/215',
     ]);
-    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/216')?.status.pr_number).toBe(
-      216
-    );
+    // - Successfully fetched PR data is NOT written to cache when the overall sync fails
+    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/216')).toBeNull();
     expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/217')).toBeNull();
   });
 });

@@ -259,7 +259,16 @@ function getOctokit(): Octokit {
 }
 
 function normalizePrState(state: GraphQlPullRequestFullStatus['state']): PrState {
-  return state.toLowerCase() as PrState;
+  switch (state) {
+    case 'OPEN':
+      return 'open';
+    case 'CLOSED':
+      return 'closed';
+    case 'MERGED':
+      return 'merged';
+    default:
+      throw new Error(`Unhandled GitHub PR state: ${state}`);
+  }
 }
 
 function normalizeCheckStatus(status: string): PrCheckStatus {
@@ -317,7 +326,20 @@ function normalizeCheckRollupState(state: GraphQlStatusCheckRollup['state']): Pr
     return null;
   }
 
-  return state.toLowerCase() as PrCheckRollupState;
+  switch (state) {
+    case 'SUCCESS':
+      return 'success';
+    case 'FAILURE':
+      return 'failure';
+    case 'PENDING':
+      return 'pending';
+    case 'ERROR':
+      return 'error';
+    case 'EXPECTED':
+      return 'expected';
+    default:
+      throw new Error(`Unhandled GitHub check rollup state: ${state}`);
+  }
 }
 
 function normalizeStatusContext(

@@ -429,6 +429,7 @@ export function getPlansWithPrs(db: Database, projectId?: number): PlanWithLinke
     INNER JOIN plan_pr pp ON pp.plan_uuid = p.uuid
     INNER JOIN pr_status ps ON ps.id = pp.pr_status_id
     WHERE ps.state = 'open'
+      AND p.status IN ('pending', 'in_progress', 'needs_review')
       ${projectId === undefined ? '' : 'AND p.project_id = ?'}
     ORDER BY p.plan_id, p.uuid, ps.pr_number, ps.id
   `;

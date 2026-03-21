@@ -7,6 +7,7 @@ import {
   updatePrCheckRuns,
   upsertPrStatus,
   type PrStatusDetail,
+  type UpsertPrStatusInput,
 } from '../../tim/db/pr_status.js';
 
 function getNowIsoString(): string {
@@ -112,12 +113,14 @@ export async function ensurePrStatusFresh(
   return refreshPrStatus(db, prUrl);
 }
 
+// plan_pr rows are populated lazily by the service layer when PR status is viewed or refreshed.
+// We intentionally do not do this during synchronous plan file -> DB sync because fetching GitHub
+// data is async and should not be on the critical path for every plan update.
 export async function syncPlanPrLinks(
   db: Database,
   planUuid: string,
   prUrls: string[]
 ): Promise<PrStatusDetail[]> {
-  const desiredUrls = new Set(prUrls);
   const existingLinked = db
     .prepare(
       `
@@ -129,34 +132,79 @@ export async function syncPlanPrLinks(
     )
     .all(planUuid) as Array<{ id: number; pr_url: string }>;
 
-  const details: PrStatusDetail[] = [];
   const newUrls = prUrls.filter(
     (prUrl) => !existingLinked.some((linked) => linked.pr_url === prUrl)
   );
 
-  // plan_pr rows are populated lazily by the service layer when PR status is viewed or refreshed.
-  // We intentionally do not do this during synchronous plan file -> DB sync because fetching GitHub
-  // data is async and should not be on the critical path for every plan update.
-  const prefetchedDetails = new Map<string, PrStatusDetail>();
+  // Phase 1: Fetch all GitHub data into memory BEFORE any DB mutations.
+  // If any fetch fails, we throw without modifying links.
+  const fetchedData = new Map<string, UpsertPrStatusInput>();
   for (const prUrl of newUrls) {
+    // If already cached in DB, no fetch needed
     const existingDetail = getPrStatusByUrl(db, prUrl);
     if (existingDetail) {
-      prefetchedDetails.set(prUrl, existingDetail);
       continue;
     }
 
-    prefetchedDetails.set(prUrl, await refreshPrStatus(db, prUrl));
+    const parsed = await parsePrOrIssueNumber(prUrl);
+    if (!parsed) {
+      throw new Error(`Invalid GitHub pull request identifier: ${prUrl}`);
+    }
+
+    const fullStatus = await fetchPrFullStatus(parsed.owner, parsed.repo, parsed.number);
+    fetchedData.set(prUrl, {
+      prUrl,
+      owner: parsed.owner,
+      repo: parsed.repo,
+      prNumber: parsed.number,
+      title: fullStatus.title,
+      state: fullStatus.state,
+      draft: fullStatus.isDraft,
+      mergeable: fullStatus.mergeable,
+      headSha: fullStatus.headSha,
+      baseBranch: fullStatus.baseRefName,
+      headBranch: fullStatus.headRefName,
+      reviewDecision: fullStatus.reviewDecision,
+      checkRollupState: fullStatus.checkRollupState,
+      mergedAt: fullStatus.mergedAt,
+      lastFetchedAt: getNowIsoString(),
+      checks: fullStatus.checks.map((check) => ({
+        name: check.name,
+        source: check.source,
+        status: check.status,
+        conclusion: check.conclusion,
+        detailsUrl: check.detailsUrl,
+        startedAt: check.startedAt,
+        completedAt: check.completedAt,
+      })),
+      reviews: fullStatus.reviews.map((review) => ({
+        author: review.author,
+        state: review.state,
+        submittedAt: review.submittedAt,
+      })),
+      labels: fullStatus.labels.map((label) => ({
+        name: label.name,
+        color: label.color,
+      })),
+    });
   }
 
-  const syncLinksInTransaction = db.transaction(
+  // Phase 2: All fetches succeeded. Write upserts + link changes in one transaction.
+  const syncInTransaction = db.transaction(
     (
       nextPlanUuid: string,
       nextExistingLinked: Array<{ id: number; pr_url: string }>,
       nextPrUrls: string[]
-    ): void => {
-      const nextDesiredUrls = new Set(nextPrUrls);
+    ): PrStatusDetail[] => {
+      // Upsert any newly fetched PR statuses
+      for (const [, input] of fetchedData) {
+        upsertPrStatus(db, input);
+      }
+
+      // Remove links for PRs no longer desired
+      const desiredUrls = new Set(nextPrUrls);
       for (const linked of nextExistingLinked) {
-        if (!nextDesiredUrls.has(linked.pr_url)) {
+        if (!desiredUrls.has(linked.pr_url)) {
           db.prepare('DELETE FROM plan_pr WHERE plan_uuid = ? AND pr_status_id = ?').run(
             nextPlanUuid,
             linked.id
@@ -164,36 +212,26 @@ export async function syncPlanPrLinks(
         }
       }
 
+      // Add links for all desired PRs
       const insertLink = db.prepare(
-        `
-          INSERT OR IGNORE INTO plan_pr (
-            plan_uuid,
-            pr_status_id
-          ) VALUES (?, ?)
-        `
+        `INSERT OR IGNORE INTO plan_pr (plan_uuid, pr_status_id) VALUES (?, ?)`
       );
 
+      const details: PrStatusDetail[] = [];
       for (const prUrl of nextPrUrls) {
-        const detail = prefetchedDetails.get(prUrl) ?? getPrStatusByUrl(db, prUrl);
+        const detail = getPrStatusByUrl(db, prUrl);
         if (!detail) {
           throw new Error(`Failed to load PR status detail for ${prUrl}`);
         }
-
         insertLink.run(nextPlanUuid, detail.status.id);
+        details.push(detail);
       }
+
+      return details;
     }
   );
 
-  syncLinksInTransaction.immediate(planUuid, existingLinked, prUrls);
-
-  for (const prUrl of prUrls) {
-    const detail = prefetchedDetails.get(prUrl) ?? getPrStatusByUrl(db, prUrl);
-    if (!detail) {
-      throw new Error(`Failed to load PR status detail for ${prUrl}`);
-    }
-
-    details.push(detail);
-  }
+  const details = syncInTransaction.immediate(planUuid, existingLinked, prUrls);
 
   cleanOrphanedPrStatus(db);
 
