@@ -112,6 +112,20 @@ describe('/api/plans/[planUuid]/pr-status', () => {
     await expect(response.json()).resolves.toEqual({ error: 'Plan not found' });
   });
 
+  test('POST returns 404 for an unknown plan', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    const { POST } = await import('./+server.js');
+
+    const response = await POST({
+      params: { planUuid: 'missing-plan' },
+    } as never);
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({ error: 'Plan not found' });
+    expect(syncPlanPrLinks).not.toHaveBeenCalled();
+    expect(ensurePrStatusFresh).not.toHaveBeenCalled();
+  });
+
   test('POST returns cached data and an error when GITHUB_TOKEN is not configured', async () => {
     const { POST } = await import('./+server.js');
 
