@@ -1205,37 +1205,79 @@ program
     }).catch(handleCommandError);
   });
 
-program
-  .command('pr-description <planFile>')
-  .description(
-    'Generate a comprehensive pull request description from plan context and code changes'
-  )
-  .option(`-x, --executor <name>`, 'The executor to use for description generation')
-  .addHelpText('after', `Available executors: ${executorNames}`)
-  .option(
-    '-m, --model <model>',
-    'Specify the LLM model to use for description generation. Overrides model from tim config.'
-  )
-  .option('--dry-run', 'Generate and print the description prompt but do not execute it', false)
-  .option(
-    '--instructions <text>',
-    'Inline custom instructions for the PR description. Overrides config file instructions.'
-  )
-  .option(
-    '--instructions-file <path>',
-    'Path to file containing custom description instructions. Overrides config file instructions.'
-  )
-  .option(
-    '--base <branch>',
-    'Base branch to compare against (defaults to auto-detected main/master/trunk)'
-  )
-  .option('--output-file <path>', 'Save the generated description to the specified file')
-  .option('--copy', 'Copy the generated description to the clipboard')
-  .option('--create-pr', 'Create a GitHub PR using the generated description with gh CLI')
-  .action(async (planFile, options, command) => {
-    const { handleDescriptionCommand } = await import('./commands/description.js');
-    await handleDescriptionCommand(planFile, options, command).catch(handleCommandError);
+const prCommand = program.command('pr').description('GitHub PR commands');
+
+prCommand
+  .command('status [planId]')
+  .description('Fetch and display GitHub PR status for a plan')
+  .action(async (planId, options, command) => {
+    const { handlePrStatusCommand } = await import('./commands/pr.js');
+    await handlePrStatusCommand(planId, options, command).catch(handleCommandError);
   });
+
+prCommand
+  .command('link <planId> <prUrl>')
+  .description('Link a GitHub PR to a plan in the local cache')
+  .action(async (planId, prUrl, options, command) => {
+    const { handlePrLinkCommand } = await import('./commands/pr.js');
+    await handlePrLinkCommand(planId, prUrl, options, command).catch(handleCommandError);
+  });
+
+prCommand
+  .command('unlink <planId> <prUrl>')
+  .description('Unlink a GitHub PR from a plan in the local cache')
+  .action(async (planId, prUrl, options, command) => {
+    const { handlePrUnlinkCommand } = await import('./commands/pr.js');
+    await handlePrUnlinkCommand(planId, prUrl, options, command).catch(handleCommandError);
+  });
+
+function registerPrDescriptionCommand(
+  targetCommand: Command,
+  signature: string,
+  hidden = false
+): void {
+  const descriptionCommand = hidden
+    ? targetCommand.command(signature, { hidden: true })
+    : targetCommand.command(signature);
+
+  descriptionCommand
+    .description(
+      'Generate a comprehensive pull request description from plan context and code changes'
+    )
+    .option(`-x, --executor <name>`, 'The executor to use for description generation')
+    .addHelpText('after', `Available executors: ${executorNames}`)
+    .option(
+      '-m, --model <model>',
+      'Specify the LLM model to use for description generation. Overrides model from tim config.'
+    )
+    .option('--dry-run', 'Generate and print the description prompt but do not execute it', false)
+    .option(
+      '--instructions <text>',
+      'Inline custom instructions for the PR description. Overrides config file instructions.'
+    )
+    .option(
+      '--instructions-file <path>',
+      'Path to file containing custom description instructions. Overrides config file instructions.'
+    )
+    .option(
+      '--base <branch>',
+      'Base branch to compare against (defaults to auto-detected main/master/trunk)'
+    )
+    .option('--output-file <path>', 'Save the generated description to the specified file')
+    .option('--copy', 'Copy the generated description to the clipboard')
+    .option('--create-pr', 'Create a GitHub PR using the generated description with gh CLI')
+    .action(async (planFile, options, command) => {
+      const { handleDescriptionCommand } = await import('./commands/description.js');
+      const rootParent = command.parent?.parent ?? command.parent;
+      await handleDescriptionCommand(planFile, options, {
+        ...command,
+        parent: rootParent,
+      }).catch(handleCommandError);
+    });
+}
+
+registerPrDescriptionCommand(prCommand, 'description <planFile>');
+registerPrDescriptionCommand(program, 'pr-description <planFile>', true);
 
 // Create the workspace command
 const workspaceCommand = program.command('workspace').description('Manage workspaces for plans');
