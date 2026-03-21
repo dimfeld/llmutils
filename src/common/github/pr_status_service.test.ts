@@ -395,7 +395,8 @@ describe('common/github/pr_status_service', () => {
       'https://github.com/example/repo/pull/206',
       'https://github.com/example/repo/pull/207',
     ]);
-    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/205')).toBeNull();
+    // Orphaned PR status record remains (cleanup is caller's responsibility, not syncPlanPrLinks')
+    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/205')).not.toBeNull();
   });
 
   test('syncPlanPrLinks preserves shared PR records and reuses cached details', async () => {

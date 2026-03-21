@@ -417,6 +417,8 @@ export function unlinkPlanFromPr(db: Database, planUuid: string, prStatusId: num
   unlinkInTransaction.immediate(planUuid, prStatusId);
 }
 
+/** Returns plans in actionable states (pending, in_progress, needs_review) that have open PRs.
+ * Used by background polling to determine which PRs need status checks. */
 export function getPlansWithPrs(db: Database, projectId?: number): PlanWithLinkedPrs[] {
   const query = `
     SELECT
