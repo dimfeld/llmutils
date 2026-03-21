@@ -14,7 +14,7 @@ references:
 planGeneratedAt: 2026-03-21T02:28:58.262Z
 promptsGeneratedAt: 2026-03-21T02:28:58.262Z
 createdAt: 2026-03-21T02:24:53.498Z
-updatedAt: 2026-03-21T04:22:04.326Z
+updatedAt: 2026-03-21T06:06:55.375Z
 tasks:
   - title: Create GitHub GraphQL queries for PR status
     done: true
@@ -80,7 +80,7 @@ tasks:
       EnrichedPlan.prSummaryStatus computed during enrichment. Shows in both
       Plans tab and Active Work tab.
   - title: Create tim pr subcommand namespace with status command
-    done: false
+    done: true
     description: "In src/tim/tim.ts, create prCommand =
       program.command(pr).description(GitHub PR commands). Add
       prCommand.command(status [planId]): resolves plan (positional arg or
@@ -91,7 +91,7 @@ tasks:
       <planId> <prUrl>) and prCommand.command(unlink <planId> <prUrl>) for
       manual PR linking."
   - title: Migrate pr-description to tim pr description
-    done: false
+    done: true
     description: Move the existing pr-description command registration from
       program.command(pr-description) to prCommand.command(description
       <planFile>). Keep pr-description as a hidden alias for backwards
@@ -100,6 +100,7 @@ tasks:
 changedFiles:
   - CLAUDE.md
   - docs/database.md
+  - docs/web-interface.md
   - src/common/github/pr_status.test.ts
   - src/common/github/pr_status.ts
   - src/common/github/pr_status_service.test.ts
@@ -108,9 +109,13 @@ changedFiles:
   - src/lib/server/db_queries.ts
   - src/routes/api/plans/[planUuid]/pr-status/+server.ts
   - src/routes/api/plans/[planUuid]/pr-status/pr-status.server.test.ts
+  - src/tim/commands/pr.test.ts
+  - src/tim/commands/pr.ts
+  - src/tim/db/database.test.ts
   - src/tim/db/migrations.ts
   - src/tim/db/pr_status.test.ts
   - src/tim/db/pr_status.ts
+  - src/tim/tim.ts
 tags: []
 ---
 
@@ -444,34 +449,41 @@ Update `src/lib/components/PlanDetail.svelte`:
 
 ## Current Progress
 ### Current State
-- Tasks 1-5 (backend foundation + web data layer + API endpoint) are complete with test coverage
+- Tasks 1-5 (backend) and Tasks 8-9 (CLI) are complete with test coverage. Tasks 6-7 (web UI) remain.
 ### Completed (So Far)
 - Task 1: GitHub GraphQL queries (`src/common/github/pr_status.ts`) with `fetchPrFullStatus()` and `fetchPrCheckStatus()`
 - Task 2: DB migration 8 and CRUD (`src/tim/db/pr_status.ts`, `src/tim/db/migrations.ts`)
 - Task 3: Cache service (`src/common/github/pr_status_service.ts`) with refresh, stale-while-revalidate, and atomic sync
 - Task 4: Web UI data layer (`src/lib/server/db_queries.ts`) — `EnrichedPlan` now has `pullRequests`, `issues`, `prSummaryStatus`; `PlanDetail` has `prStatuses`; bulk `prSummaryStatus` computed via efficient join query on `plan_pr → pr_status`
 - Task 5: API endpoint (`src/routes/api/plans/[planUuid]/pr-status/+server.ts`) — GET returns cached data, POST syncs links + refreshes from GitHub with error fallback to cached data
+- Task 8: CLI `tim pr` subcommand namespace (`src/tim/commands/pr.ts`, `src/tim/tim.ts`) — `tim pr status [planId]` with force-fresh GitHub fetch, partial failure handling, color-coded output; `tim pr link` and `tim pr unlink` with plan file persistence and URL canonicalization
+- Task 9: `pr-description` migrated to `tim pr description` with hidden backwards-compatible alias
 ### Remaining
 - Task 6: PlanDetail PR status section UI
 - Task 7: PR status indicators in plan list views
-- Task 8: CLI `tim pr` subcommand namespace
-- Task 9: Migrate pr-description to `tim pr description`
 ### Next Iteration Guidance
 - Tasks 6+7 (UI components) are the natural next pair — they consume the data layer and API endpoint from Tasks 4+5
 - `EnrichedPlan.prSummaryStatus` is available for list view indicators (`'passing' | 'failing' | 'pending' | 'none'`)
 - `PlanDetail.prStatuses` contains full `PrStatusDetail[]` for the detail view
 - The POST endpoint returns `{ prUrls, prStatuses, error? }` — UI should call POST on mount for stale-while-revalidate
 - `parseJsonStringArray()` is exported from `$lib/server/db_queries.js` for reuse
-- Tasks 8+9 (CLI) are independent of Tasks 6+7 and could be done in parallel
 ### Decisions / Changes
 - `syncPlanPrLinks` is fully atomic: all GitHub fetches complete before any DB writes, and all upserts + link changes happen in one transaction
 - `cleanOrphanedPrStatus` is decoupled from sync - callers handle cleanup explicitly
 - `refreshPrCheckStatus` is documented as lightweight (checks only, no PR state update) - callers needing state changes should use `refreshPrStatus`
 - `plan_pr` junction is populated lazily by POST endpoint / CLI commands, not on page load GET — GET only reads existing cached data
 - POST endpoint gracefully handles GitHub API failures by falling back to cached data with an error message
+- CLI `tim pr status` always force-refreshes from GitHub (never uses cached data), but syncs `plan_pr` junctions afterward for web UI
+- `tim pr link`/`unlink` modify the plan file (source of truth) and update DB cache best-effort. Link validates with GitHub before modifying the plan file.
+- URL canonicalization: `link` and `unlink` both normalize PR identifiers to `https://github.com/{owner}/{repo}/pull/{number}` format
+- `persistPlanPullRequests` skips `writePlanFile` when the URL list hasn't changed (no-op detection)
+- `tim pr status` handles partial failures gracefully — shows results for successful PR fetches, logs errors for failures, and only syncs successfully-fetched URLs to `plan_pr`
 ### Lessons Learned
 - GitHub GraphQL connection nodes can be null - always filter before mapping
 - Separating fetch phase from DB write phase enables true atomicity for operations that mix async API calls with sync DB transactions
 - For bulk computed fields like `prSummaryStatus`, a single efficient query joining all plans to their PR statuses is much better than N+1 queries per plan
+- When CLI commands modify both a plan file (source of truth) and DB cache, validate external API calls before modifying the plan file, and treat DB updates as best-effort
+- `writePlanFile()` already calls `syncPlanToDb()` internally — don't add a redundant sync call afterward
+- URL canonicalization must be symmetric between link and unlink commands, otherwise unlink silently fails for non-URL identifiers
 ### Risks / Blockers
 - None
