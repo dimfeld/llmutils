@@ -64,7 +64,7 @@ The codebase is organized into several main modules with improved modularity and
    - Modular command structure in `commands/` directory with separate files per sub-command
 
 - Core functionality: `add.ts`, `agent.ts`, `branch.ts`, `chat.ts`, `generate.ts`, `list.ts`, `next.ts`, `done.ts`
-- Specialized commands: `answer-pr.ts`, `cleanup.ts`, `extract.ts`, `split.ts`, `validate.ts`, `set.ts`
+- Specialized commands: `answer-pr.ts`, `cleanup.ts`, `extract.ts`, `pr.ts`, `split.ts`, `validate.ts`, `set.ts`
 
 - Database layer: `db/` directory with SQLite-backed storage for assignments, workspaces, permissions, and project metadata
   - `database.ts`: Singleton connection with WAL mode, foreign keys, and auto-migration
