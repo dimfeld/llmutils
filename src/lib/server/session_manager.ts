@@ -1067,6 +1067,23 @@ export class SessionManager {
     return dismissed;
   }
 
+  hasActiveSessionForPlan(
+    planId: number,
+    command: string
+  ): { active: boolean; connectionId?: string } {
+    for (const session of this.sessions.values()) {
+      if (
+        session.status === 'active' &&
+        session.sessionInfo.planId === planId &&
+        session.sessionInfo.command === command
+      ) {
+        return { active: true, connectionId: session.connectionId };
+      }
+    }
+
+    return { active: false };
+  }
+
   // Clones sessions with messages capped at MAX_SNAPSHOT_MESSAGES per session.
   getSessionSnapshot(): SessionSnapshot {
     return {

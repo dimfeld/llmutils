@@ -622,7 +622,8 @@ export async function ensurePrimaryWorkspaceBranch(
         ) {
           return {
             success: false,
-            error: 'Working copy is dirty. Please commit or discard changes before creating a branch.',
+            error:
+              'Working copy is dirty. Please commit or discard changes before creating a branch.',
           };
         }
         targetRevision = '@';

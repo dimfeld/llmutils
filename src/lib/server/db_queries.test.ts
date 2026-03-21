@@ -14,6 +14,7 @@ import { acquireWorkspaceLock, getWorkspaceLock } from '$tim/db/workspace_lock.j
 import {
   getPlanDetail,
   getPlansForProject,
+  getPrimaryWorkspacePath,
   getProjectsWithMetadata,
   getWorkspacesForProject,
 } from './db_queries.js';
@@ -317,6 +318,22 @@ describe('lib/server/db_queries', () => {
       status: 'done',
       planStatus: 'done',
     });
+  });
+
+  test('getPrimaryWorkspacePath returns the primary workspace path for a project', () => {
+    recordWorkspace(db, {
+      projectId,
+      workspacePath: '/tmp/workspaces/standard-primary-query',
+      workspaceType: 'standard',
+    });
+    recordWorkspace(db, {
+      projectId,
+      workspacePath: '/tmp/workspaces/primary-primary-query',
+      workspaceType: 'primary',
+    });
+
+    expect(getPrimaryWorkspacePath(db, projectId)).toBe('/tmp/workspaces/primary-primary-query');
+    expect(getPrimaryWorkspacePath(db, otherProjectId)).toBeNull();
   });
 
   test('getPlansForProject without a projectId returns plans from multiple projects', () => {

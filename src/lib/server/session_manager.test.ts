@@ -1227,4 +1227,53 @@ describe('lib/server/session_manager', () => {
     expect(freshSnapshot.sessions[0].sessionInfo.command).toBe('unknown');
     expect(freshSnapshot.sessions[1].messages).toHaveLength(0);
   });
+
+  test('hasActiveSessionForPlan returns only matching active sessions', () => {
+    manager.handleWebSocketConnect('generate-active', () => {});
+    manager.handleWebSocketMessage('generate-active', {
+      type: 'session_info',
+      command: 'generate',
+      interactive: true,
+      planId: 42,
+      workspacePath: '/tmp/ws-generate',
+    });
+
+    manager.handleWebSocketConnect('generate-offline', () => {});
+    manager.handleWebSocketMessage('generate-offline', {
+      type: 'session_info',
+      command: 'generate',
+      interactive: true,
+      planId: 42,
+      workspacePath: '/tmp/ws-offline',
+    });
+    manager.handleWebSocketDisconnect('generate-offline');
+
+    manager.handleWebSocketConnect('agent-active', () => {});
+    manager.handleWebSocketMessage('agent-active', {
+      type: 'session_info',
+      command: 'agent',
+      interactive: true,
+      planId: 42,
+      workspacePath: '/tmp/ws-agent',
+    });
+
+    manager.handleWebSocketConnect('other-plan', () => {});
+    manager.handleWebSocketMessage('other-plan', {
+      type: 'session_info',
+      command: 'generate',
+      interactive: true,
+      planId: 99,
+      workspacePath: '/tmp/ws-other',
+    });
+
+    expect(manager.hasActiveSessionForPlan(42, 'generate')).toEqual({
+      active: true,
+      connectionId: 'generate-active',
+    });
+    expect(manager.hasActiveSessionForPlan(42, 'agent')).toEqual({
+      active: true,
+      connectionId: 'agent-active',
+    });
+    expect(manager.hasActiveSessionForPlan(43, 'generate')).toEqual({ active: false });
+  });
 });

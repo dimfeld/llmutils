@@ -5,7 +5,7 @@ goal: ""
 id: 189
 uuid: 9a812d63-4354-4355-ab9d-d254dcbef3b0
 generatedBy: agent
-status: pending
+status: in_progress
 priority: medium
 dependencies:
   - 184
@@ -20,7 +20,7 @@ references:
 planGeneratedAt: 2026-03-20T23:51:20.469Z
 promptsGeneratedAt: 2026-03-20T23:51:20.469Z
 createdAt: 2026-02-13T21:11:06.976Z
-updatedAt: 2026-03-20T23:51:20.469Z
+updatedAt: 2026-03-21T08:08:24.187Z
 tasks:
   - title: Add hasActiveSessionForPlan to SessionManager
     done: false
