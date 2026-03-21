@@ -20,6 +20,7 @@ import {
   ensurePrimaryWorkspaceBranch,
   prepareExistingWorkspace,
 } from './workspace_manager.js';
+import { WorkspaceLock } from './workspace_lock.js';
 import type { TimConfig, TimConfigInput } from '../configSchema.js';
 
 describe('createWorkspace', () => {
@@ -629,6 +630,17 @@ describe('createWorkspace', () => {
       stderr: '',
     }));
 
+    const acquireLockSpy = spyOn(WorkspaceLock, 'acquireLock').mockResolvedValue({
+      type: 'persistent',
+      command: `tim agent --workspace ${taskId}`,
+      startedAt: new Date().toISOString(),
+      hostname: 'test-host',
+      version: 2,
+    } as any);
+    const setupCleanupHandlersSpy = spyOn(WorkspaceLock, 'setupCleanupHandlers').mockImplementation(
+      () => {}
+    );
+
     // Execute with undefined plan file
     const result = await createWorkspace(mainRepoRoot, taskId, undefined, config);
 
@@ -645,6 +657,58 @@ describe('createWorkspace', () => {
     expect(mockLog).toHaveBeenCalledWith(
       expect.stringContaining('Creating and pushing branch task-456')
     );
+    expect(acquireLockSpy).not.toHaveBeenCalled();
+    expect(setupCleanupHandlersSpy).not.toHaveBeenCalled();
+  });
+
+  test('createWorkspace with plan data acquires a lock by default', async () => {
+    // Setup
+    const taskId = 'task-789';
+    const repositoryUrl = 'https://github.com/example/repo.git';
+    const cloneLocation = path.join(testTempDir, 'clones');
+    const targetClonePath = path.join(cloneLocation, 'repo-task-789');
+    const planData = {
+      id: 789,
+      title: 'Test Plan',
+      goal: 'Test Goal',
+    } as any;
+
+    const config: TimConfig = {
+      workspaceCreation: {
+        repositoryUrl,
+        cloneLocation,
+      },
+    };
+
+    mockSpawnAndLogOutput.mockImplementationOnce(async () => {
+      await fs.mkdir(targetClonePath, { recursive: true });
+      return {
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+      };
+    });
+
+    const acquireLockSpy = spyOn(WorkspaceLock, 'acquireLock').mockResolvedValue({
+      type: 'persistent',
+      command: `tim agent --workspace ${taskId}`,
+      startedAt: new Date().toISOString(),
+      hostname: 'test-host',
+      version: 2,
+    } as any);
+    const setupCleanupHandlersSpy = spyOn(WorkspaceLock, 'setupCleanupHandlers').mockImplementation(
+      () => {}
+    );
+
+    // Execute with plan data
+    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config, { planData });
+
+    // Verify
+    expect(result).not.toBeNull();
+    expect(acquireLockSpy).toHaveBeenCalledTimes(1);
+    expect(acquireLockSpy).toHaveBeenCalledWith(targetClonePath, `tim agent --workspace ${taskId}`);
+    expect(setupCleanupHandlersSpy).toHaveBeenCalledTimes(1);
+    expect(setupCleanupHandlersSpy).toHaveBeenCalledWith(targetClonePath, 'persistent');
   });
 
   test('createWorkspace with a plan file exposes the expected workspace plan path', async () => {

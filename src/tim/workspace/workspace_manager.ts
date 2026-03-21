@@ -622,7 +622,8 @@ export async function ensurePrimaryWorkspaceBranch(
         ) {
           return {
             success: false,
-            error: 'Working copy is dirty. Please commit or discard changes before creating a branch.',
+            error:
+              'Working copy is dirty. Please commit or discard changes before creating a branch.',
           };
         }
         targetRevision = '@';
@@ -1142,16 +1143,18 @@ export async function createWorkspace(
   });
   setWorkspaceIssues(db, workspaceRow.id, options?.planData?.issue ?? []);
 
-  // Acquire lock for the workspace
-  try {
-    const lockInfo = await WorkspaceLock.acquireLock(
-      targetClonePath,
-      `tim agent --workspace ${taskId}`
-    );
-    WorkspaceLock.setupCleanupHandlers(targetClonePath, lockInfo.type);
-  } catch (error) {
-    log(`Warning: Failed to acquire workspace lock: ${String(error)}`);
-    // Continue without lock - this isn't fatal
+  // Acquire a persistent lock only when the workspace is tied to a plan ID.
+  if (options?.planData?.id !== undefined) {
+    try {
+      const lockInfo = await WorkspaceLock.acquireLock(
+        targetClonePath,
+        `tim agent --workspace ${taskId}`
+      );
+      WorkspaceLock.setupCleanupHandlers(targetClonePath, lockInfo.type);
+    } catch (error) {
+      log(`Warning: Failed to acquire workspace lock: ${String(error)}`);
+      // Continue without lock - this isn't fatal
+    }
   }
 
   // Return the workspace information
