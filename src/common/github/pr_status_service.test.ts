@@ -210,6 +210,112 @@ describe('common/github/pr_status_service', () => {
     expect(result.status.state).toBe('merged');
   });
 
+  test('ensurePrStatusFresh refreshes when cached timestamp is invalid', async () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/208',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 208,
+      title: 'Broken timestamp PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: 'not-a-timestamp',
+    });
+
+    const fetchPrFullStatus = mock(async () => ({
+      number: 208,
+      title: 'Recovered PR',
+      state: 'open' as const,
+      isDraft: false,
+      mergeable: 'MERGEABLE' as const,
+      mergedAt: null,
+      headSha: null,
+      baseRefName: 'main',
+      headRefName: 'feature/recovered',
+      reviewDecision: null,
+      labels: [],
+      reviews: [],
+      checks: [],
+      checkRollupState: null,
+    }));
+
+    await moduleMocker.mock('./identifiers.ts', () => ({
+      parsePrOrIssueNumber: mock(async () => ({ owner: 'example', repo: 'repo', number: 208 })),
+    }));
+    await moduleMocker.mock('./pr_status.ts', () => ({
+      fetchPrFullStatus,
+      fetchPrCheckStatus: mock(),
+    }));
+
+    const { ensurePrStatusFresh } = await import('./pr_status_service.ts');
+    const result = await ensurePrStatusFresh(
+      db,
+      'https://github.com/example/repo/pull/208',
+      60_000
+    );
+
+    expect(fetchPrFullStatus).toHaveBeenCalledTimes(1);
+    expect(result.status.title).toBe('Recovered PR');
+  });
+
+  test('refreshPrStatus rejects invalid PR identifiers before fetching', async () => {
+    const fetchPrFullStatus = mock(async () => {
+      throw new Error('should not fetch');
+    });
+
+    await moduleMocker.mock('./identifiers.ts', () => ({
+      parsePrOrIssueNumber: mock(async () => null),
+    }));
+    await moduleMocker.mock('./pr_status.ts', () => ({
+      fetchPrFullStatus,
+      fetchPrCheckStatus: mock(),
+    }));
+
+    const { refreshPrStatus } = await import('./pr_status_service.ts');
+
+    await expect(refreshPrStatus(db, 'not-a-pr')).rejects.toThrow(
+      'Invalid GitHub pull request identifier: not-a-pr'
+    );
+    expect(fetchPrFullStatus).not.toHaveBeenCalled();
+  });
+
+  test('refreshPrCheckStatus falls back to full refresh when cache is missing', async () => {
+    const fetchPrFullStatus = mock(async () => ({
+      number: 209,
+      title: 'Fetched from full refresh',
+      state: 'open' as const,
+      isDraft: false,
+      mergeable: 'MERGEABLE' as const,
+      mergedAt: null,
+      headSha: 'sha-209',
+      baseRefName: 'main',
+      headRefName: 'feature/209',
+      reviewDecision: null,
+      labels: [],
+      reviews: [],
+      checks: [],
+      checkRollupState: 'pending' as const,
+    }));
+    const fetchPrCheckStatus = mock(async () => {
+      throw new Error('should not fetch lightweight checks');
+    });
+
+    await moduleMocker.mock('./identifiers.ts', () => ({
+      parsePrOrIssueNumber: mock(async () => ({ owner: 'example', repo: 'repo', number: 209 })),
+    }));
+    await moduleMocker.mock('./pr_status.ts', () => ({
+      fetchPrFullStatus,
+      fetchPrCheckStatus,
+    }));
+
+    const { refreshPrCheckStatus } = await import('./pr_status_service.ts');
+    const result = await refreshPrCheckStatus(db, 'https://github.com/example/repo/pull/209');
+
+    expect(fetchPrFullStatus).toHaveBeenCalledTimes(1);
+    expect(fetchPrCheckStatus).not.toHaveBeenCalled();
+    expect(result.status.pr_number).toBe(209);
+  });
+
   test('syncPlanPrLinks links new PRs, unlinks removed PRs, and cleans orphans', async () => {
     const oldDetail = upsertPrStatus(db, {
       prUrl: 'https://github.com/example/repo/pull/205',
@@ -286,5 +392,69 @@ describe('common/github/pr_status_service', () => {
       'https://github.com/example/repo/pull/207',
     ]);
     expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/205')).toBeNull();
+  });
+
+  test('syncPlanPrLinks preserves shared PR records and reuses cached details', async () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-service-2',
+      planId: 2,
+      title: 'Second service plan',
+      filename: '2.plan.md',
+    });
+
+    const sharedDetail = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/210',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 210,
+      title: 'Shared PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: new Date().toISOString(),
+    });
+
+    const linkPlanToPr = db.prepare('INSERT INTO plan_pr (plan_uuid, pr_status_id) VALUES (?, ?)');
+    linkPlanToPr.run('plan-service', sharedDetail.status.id);
+    linkPlanToPr.run('plan-service-2', sharedDetail.status.id);
+
+    const fetchPrFullStatus = mock(async () => {
+      throw new Error('should not fetch cached PR');
+    });
+
+    await moduleMocker.mock('./identifiers.ts', () => ({
+      parsePrOrIssueNumber: mock(async () => ({ owner: 'example', repo: 'repo', number: 210 })),
+    }));
+    await moduleMocker.mock('./pr_status.ts', () => ({
+      fetchPrFullStatus,
+      fetchPrCheckStatus: mock(),
+    }));
+
+    const { syncPlanPrLinks } = await import('./pr_status_service.ts');
+    const result = await syncPlanPrLinks(db, 'plan-service', []);
+
+    expect(result).toEqual([]);
+    expect(fetchPrFullStatus).not.toHaveBeenCalled();
+    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/210')).not.toBeNull();
+    expect(getPrStatusForPlan(db, 'plan-service')).toEqual([]);
+    expect(getPrStatusForPlan(db, 'plan-service-2').map((detail) => detail.status.pr_url)).toEqual([
+      'https://github.com/example/repo/pull/210',
+    ]);
+  });
+
+  test('syncPlanPrLinks surfaces parse failures for newly linked PRs', async () => {
+    await moduleMocker.mock('./identifiers.ts', () => ({
+      parsePrOrIssueNumber: mock(async () => null),
+    }));
+    await moduleMocker.mock('./pr_status.ts', () => ({
+      fetchPrFullStatus: mock(),
+      fetchPrCheckStatus: mock(),
+    }));
+
+    const { syncPlanPrLinks } = await import('./pr_status_service.ts');
+
+    await expect(syncPlanPrLinks(db, 'plan-service', ['invalid-pr-url'])).rejects.toThrow(
+      'Invalid GitHub pull request identifier: invalid-pr-url'
+    );
+    expect(getPrStatusForPlan(db, 'plan-service')).toEqual([]);
   });
 });

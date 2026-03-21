@@ -204,6 +204,105 @@ describe('common/github/pr_status', () => {
     });
   });
 
+  test('normalizes EXPECTED status contexts and handles missing check rollups', async () => {
+    const graphql = mock(async (_query: string, variables: { prNumber: number }) => {
+      if (variables.prNumber === 44) {
+        return {
+          repository: {
+            pullRequest: {
+              commits: {
+                nodes: [
+                  {
+                    commit: {
+                      statusCheckRollup: {
+                        state: 'EXPECTED',
+                        contexts: {
+                          nodes: [
+                            {
+                              __typename: 'StatusContext',
+                              context: 'required-ci',
+                              state: 'EXPECTED',
+                              targetUrl: 'https://example.com/status/required-ci',
+                              createdAt: '2026-03-20T00:05:00.000Z',
+                            },
+                            {
+                              __typename: 'CheckRun',
+                              name: 'bootstrap',
+                              status: 'COMPLETED',
+                              conclusion: 'STARTUP_FAILURE',
+                              detailsUrl: null,
+                              startedAt: '2026-03-20T00:00:00.000Z',
+                              completedAt: '2026-03-20T00:01:00.000Z',
+                            },
+                          ],
+                        },
+                      },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        };
+      }
+
+      return {
+        repository: {
+          pullRequest: {
+            commits: {
+              nodes: [
+                {
+                  commit: {
+                    statusCheckRollup: null,
+                  },
+                },
+              ],
+            },
+          },
+        },
+      };
+    });
+
+    await moduleMocker.mock('octokit', () => ({
+      Octokit: mock(function () {
+        return {
+          graphql,
+        };
+      }),
+    }));
+
+    const { fetchPrCheckStatus } = await import('./pr_status.ts');
+
+    await expect(fetchPrCheckStatus('owner', 'repo', 44)).resolves.toEqual({
+      checks: [
+        {
+          name: 'required-ci',
+          status: 'pending',
+          conclusion: null,
+          detailsUrl: 'https://example.com/status/required-ci',
+          startedAt: null,
+          completedAt: null,
+          source: 'status_context',
+        },
+        {
+          name: 'bootstrap',
+          status: 'completed',
+          conclusion: 'startup_failure',
+          detailsUrl: null,
+          startedAt: '2026-03-20T00:00:00.000Z',
+          completedAt: '2026-03-20T00:01:00.000Z',
+          source: 'check_run',
+        },
+      ],
+      checkRollupState: 'expected',
+    });
+
+    await expect(fetchPrCheckStatus('owner', 'repo', 45)).resolves.toEqual({
+      checks: [],
+      checkRollupState: null,
+    });
+  });
+
   test('throws when the requested PR is missing', async () => {
     await moduleMocker.mock('octokit', () => ({
       Octokit: mock(function () {

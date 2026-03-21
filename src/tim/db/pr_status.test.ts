@@ -272,4 +272,38 @@ describe('tim db/pr_status', () => {
     expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/106')).not.toBeNull();
     expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/107')).toBeNull();
   });
+
+  test('cleanOrphanedPrStatus keeps rows linked from any plan and removes them after final unlink', () => {
+    const shared = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/108',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 108,
+      title: 'Shared PR 108',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      checks: [{ name: 'ci', status: 'completed', conclusion: 'success' }],
+      reviews: [{ author: 'alice', state: 'APPROVED' }],
+      labels: [{ name: 'shared' }],
+    });
+
+    linkPlanToPr(db, 'plan-1', shared.status.id);
+    linkPlanToPr(db, 'plan-2', shared.status.id);
+
+    expect(cleanOrphanedPrStatus(db)).toBe(0);
+    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/108')?.checks).toHaveLength(
+      1
+    );
+
+    unlinkPlanFromPr(db, 'plan-1', shared.status.id);
+    expect(cleanOrphanedPrStatus(db)).toBe(0);
+    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/108')?.reviews).toHaveLength(
+      1
+    );
+
+    unlinkPlanFromPr(db, 'plan-2', shared.status.id);
+    expect(cleanOrphanedPrStatus(db)).toBeGreaterThanOrEqual(1);
+    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/108')).toBeNull();
+  });
 });
