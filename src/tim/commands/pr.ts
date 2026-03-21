@@ -393,12 +393,14 @@ export async function handlePrLinkCommand(
   // Canonicalize to full GitHub PR URL for plan file storage (pullRequest is z.url())
   const canonicalUrl = `https://github.com/${parsed.owner}/${parsed.repo}/pull/${parsed.number}`;
 
-  const db = getDatabase();
-  const detail = await refreshPrStatus(db, canonicalUrl);
-  linkPlanToPr(db, planUuid, detail.status.id);
+  // Persist plan file first (source of truth), then update DB cache
   await persistPlanPullRequests(planPath, (pullRequests) =>
     pullRequests.includes(canonicalUrl) ? pullRequests : [...pullRequests, canonicalUrl]
   );
+
+  const db = getDatabase();
+  const detail = await refreshPrStatus(db, canonicalUrl);
+  linkPlanToPr(db, planUuid, detail.status.id);
 
   log(
     `Linked ${chalk.cyan(`${parsed.owner}/${parsed.repo}#${parsed.number}`)} to plan ${chalk.bold(String(plan.id))}`
@@ -414,18 +416,31 @@ export async function handlePrUnlinkCommand(
   const { plan, planPath } = await resolvePlanForCommand(planId, command);
   const planUuid = requirePlanUuid(plan, planPath);
 
+  // Canonicalize URL to match link command behavior
+  const parsed = await parsePrOrIssueNumber(prUrl);
+  const canonicalUrl = parsed
+    ? `https://github.com/${parsed.owner}/${parsed.repo}/pull/${parsed.number}`
+    : prUrl;
+
   // Remove from plan file first (source of truth), then clean up DB best-effort
-  await persistPlanPullRequests(planPath, (pullRequests) =>
-    pullRequests.filter((existingPrUrl) => existingPrUrl !== prUrl)
-  );
+  let removed = false;
+  await persistPlanPullRequests(planPath, (pullRequests) => {
+    const filtered = pullRequests.filter((existingPrUrl) => existingPrUrl !== canonicalUrl);
+    removed = filtered.length < pullRequests.length;
+    return filtered;
+  });
 
   // Best-effort DB cleanup - PR status may not be cached yet (lazy population)
   const db = getDatabase();
-  const detail = getPrStatusByUrl(db, prUrl);
+  const detail = getPrStatusByUrl(db, canonicalUrl);
   if (detail) {
     unlinkPlanFromPr(db, planUuid, detail.status.id);
     cleanOrphanedPrStatus(db);
   }
 
-  log(`Unlinked ${chalk.cyan(prUrl)} from plan ${chalk.bold(String(plan.id))}`);
+  if (removed) {
+    log(`Unlinked ${chalk.cyan(canonicalUrl)} from plan ${chalk.bold(String(plan.id))}`);
+  } else {
+    log(`${chalk.yellow(canonicalUrl)} was not linked to plan ${chalk.bold(String(plan.id))}`);
+  }
 }

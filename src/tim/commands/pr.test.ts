@@ -283,8 +283,10 @@ describe('tim/commands/pr', () => {
     expect(logs.some((line) => line.includes('Unlinked'))).toBe(true);
   });
 
-  test('unlink is idempotent when the cached PR exists but the link is already absent', async () => {
+  test('unlink reports no-op when URL not in plan file, but still cleans DB cache', async () => {
     currentCachedDetail = createPrDetail(302, 'Cached PR', 'success', 89);
+    // Plan file has no PR URLs - the URL is only in the DB cache
+    currentPersistedPlan = { ...currentPlan, pullRequest: [] };
 
     await prModule.handlePrUnlinkCommand(
       '248',
@@ -293,9 +295,11 @@ describe('tim/commands/pr', () => {
       createNestedCommand()
     );
 
+    // DB cleanup still happens (best-effort)
     expect(mockUnlinkPlanFromPr).toHaveBeenCalledWith(dbHandle, 'plan-248', 89);
     expect(mockCleanOrphanedPrStatus).toHaveBeenCalledWith(dbHandle);
-    expect(logs.some((line) => line.includes('Unlinked'))).toBe(true);
+    // Reports that URL was not linked in plan file
+    expect(logs.some((line) => line.includes('was not linked'))).toBe(true);
   });
 
   test('status requires GITHUB_TOKEN', async () => {
