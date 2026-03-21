@@ -17,13 +17,15 @@
 
 <div class="flex h-full min-h-0 w-full">
   <!-- Left pane: session list -->
-  <div class="w-96 shrink-0 overflow-y-auto border-r border-gray-200">
-    <div class="flex items-center justify-between border-b border-gray-100 px-3 py-2">
+  <div class="w-96 shrink-0 overflow-y-auto border-r border-border">
+    <div class="flex items-center justify-between border-b border-border px-3 py-2">
       <div class="flex items-center gap-2">
-        <h3 class="text-xs font-semibold tracking-wide text-gray-500 uppercase">Sessions</h3>
+        <h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+          Sessions
+        </h3>
         {#if hasInactiveSessions}
           <button
-            class="rounded px-1.5 py-0.5 text-xs text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            class="rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
             onclick={() => sessionManager.dismissInactiveSessions()}
           >
             Clear Inactive

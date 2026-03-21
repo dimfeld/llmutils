@@ -134,16 +134,16 @@
 </script>
 
 <div class="flex h-full flex-col">
-  <div class="space-y-3 border-b border-gray-200 p-3">
+  <div class="space-y-3 border-b border-border p-3">
     <input
       type="text"
       placeholder="Search plans..."
-      class="w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+      class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
       bind:value={searchQuery}
     />
     <div class="flex items-center gap-2">
       <select
-        class="rounded-md border border-gray-300 px-2 py-1 text-xs focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+        class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
         bind:value={sortOption}
       >
         <option value="updated">Recently Updated</option>
@@ -159,14 +159,14 @@
       {@const group = groupedPlans[status]}
       {#if group && group.length > 0}
         {@const isCollapsed = collapsedGroups.includes(status)}
-        <div class="border-b border-gray-100">
+        <div class="border-b border-border">
           <button
-            class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold tracking-wide text-gray-500 uppercase hover:bg-gray-50"
+            class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold tracking-wide text-muted-foreground uppercase hover:bg-gray-50 dark:hover:bg-gray-800"
             onclick={() => toggleGroup(status)}
           >
             <span class="transition-transform {isCollapsed ? '' : 'rotate-90'}">▶</span>
             {statusGroupLabels[status]}
-            <span class="font-normal text-gray-400">({group.length})</span>
+            <span class="font-normal text-muted-foreground/70">({group.length})</span>
           </button>
           {#if !isCollapsed}
             <div class="space-y-0.5 px-2 pb-2">
@@ -185,7 +185,7 @@
     {/each}
 
     {#if sortedPlans.length === 0}
-      <div class="flex items-center justify-center p-8 text-sm text-gray-400">
+      <div class="flex items-center justify-center p-8 text-sm text-muted-foreground">
         {searchQuery || activeFilters.length > 0
           ? 'No plans match the current filters'
           : 'No plans'}

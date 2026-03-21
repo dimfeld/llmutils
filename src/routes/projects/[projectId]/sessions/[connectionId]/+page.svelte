@@ -38,10 +38,10 @@
   {/key}
 {:else if !sessionManager.initialized}
   <div class="flex flex-1 items-center justify-center">
-    <p class="text-gray-400">Loading...</p>
+    <p class="text-muted-foreground">Loading...</p>
   </div>
 {:else}
   <div class="flex flex-1 items-center justify-center">
-    <p class="text-gray-400">Session not found</p>
+    <p class="text-muted-foreground">Session not found</p>
   </div>
 {/if}

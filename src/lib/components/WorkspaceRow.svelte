@@ -24,22 +24,24 @@
   });
 </script>
 
-<div class="rounded-md border border-gray-200 px-3 py-2 transition-colors hover:bg-gray-50">
+<div
+  class="rounded-md border border-border px-3 py-2 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
+>
   <div class="flex items-center gap-2">
-    <span class="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">
+    <span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
       {displayName}
     </span>
     <WorkspaceBadge status={badgeStatus} />
   </div>
 
   {#if projectName}
-    <div class="mt-0.5 truncate text-xs text-gray-400">{projectName}</div>
+    <div class="mt-0.5 truncate text-xs text-muted-foreground">{projectName}</div>
   {/if}
 
   <div class="mt-1 flex flex-wrap items-center gap-1.5">
     {#if workspace.branch}
       <span
-        class="inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600"
+        class="inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300"
       >
         {workspace.branch}
       </span>
@@ -50,12 +52,12 @@
         <a
           href={planHref}
           data-sveltekit-preload-data
-          class="truncate text-xs text-blue-600 hover:text-blue-800 hover:underline"
+          class="truncate text-xs text-blue-600 hover:text-blue-800 hover:underline dark:text-blue-400 dark:hover:text-blue-300"
         >
           Plan #{workspace.planId} &mdash; {workspace.planTitle ?? 'Untitled'}
         </a>
       {:else}
-        <span class="truncate text-xs text-gray-500">
+        <span class="truncate text-xs text-muted-foreground">
           Plan #{workspace.planId} &mdash; {workspace.planTitle ?? 'Untitled'}
         </span>
       {/if}
@@ -63,7 +65,7 @@
   </div>
 
   {#if workspace.isLocked && workspace.lockInfo?.command}
-    <div class="mt-1 truncate text-xs text-gray-400">
+    <div class="mt-1 truncate text-xs text-muted-foreground">
       {workspace.lockInfo.command}
     </div>
   {/if}

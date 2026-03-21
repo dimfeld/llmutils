@@ -70,13 +70,13 @@
 </script>
 
 <div class="py-0.5 {colorClass}">
-  <span class="mr-2 text-xs text-gray-600">{timeStr}</span>
+  <span class="mr-2 text-xs text-gray-400">{timeStr}</span>
   {#if message.body.type === 'text'}
     <span class="whitespace-pre-wrap">{displayText}</span>
     {#if isTruncatable}
       <button
         type="button"
-        class="ml-1 text-xs text-gray-500 hover:text-gray-300"
+        class="ml-1 text-xs text-gray-400 hover:text-gray-300"
         onclick={() => (expanded = !expanded)}
       >
         {expandLabel}
@@ -87,7 +87,7 @@
     {#if isTruncatable}
       <button
         type="button"
-        class="ml-1 text-xs text-gray-500 hover:text-gray-300"
+        class="ml-1 text-xs text-gray-400 hover:text-gray-300"
         onclick={() => (expanded = !expanded)}
       >
         {expandLabel}
@@ -106,7 +106,7 @@
               ? 'text-blue-400'
               : item.status === 'blocked'
                 ? 'text-red-400'
-                : 'text-gray-500'}
+                : 'text-gray-400'}
         >
           {item.status === 'completed'
             ? '✓'
@@ -152,14 +152,14 @@
           isToolUseValues
         )}
         <div class="flex gap-2">
-          <span class="shrink-0 text-gray-500">{entry.key}:</span>
+          <span class="shrink-0 text-gray-400">{entry.key}:</span>
           <span class="whitespace-pre-wrap">{entryTruncation.displayText}</span>
         </div>
       {/each}
       {#if hasLongValues}
         <button
           type="button"
-          class="mt-1 text-xs text-gray-500 hover:text-gray-300"
+          class="mt-1 text-xs text-gray-400 hover:text-gray-300"
           onclick={() => (kvExpanded = !kvExpanded)}
         >
           {kvExpanded ? 'Show less' : 'Show more'}

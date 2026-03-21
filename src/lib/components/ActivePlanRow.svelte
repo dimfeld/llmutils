@@ -23,20 +23,22 @@
   {href}
   data-sveltekit-preload-data
   class="block w-full rounded-md px-3 py-2 text-left transition-colors
-    {selected ? 'bg-blue-50 ring-1 ring-blue-200' : 'hover:bg-gray-50'}"
+    {selected
+    ? 'bg-blue-50 ring-1 ring-blue-200 dark:bg-blue-900/30 dark:ring-blue-700'
+    : 'hover:bg-gray-50 dark:hover:bg-gray-800'}"
 >
   <div class="flex items-center gap-2">
-    <span class="shrink-0 text-xs font-medium text-gray-400">#{plan.planId}</span>
-    <span class="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">
+    <span class="shrink-0 text-xs font-medium text-muted-foreground">#{plan.planId}</span>
+    <span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
       {plan.title ?? 'Untitled'}
     </span>
-    <span class="shrink-0 text-xs text-gray-400">{relativeTime}</span>
+    <span class="shrink-0 text-xs text-muted-foreground">{relativeTime}</span>
   </div>
   {#if projectName}
-    <div class="mt-0.5 truncate text-xs text-gray-400">{projectName}</div>
+    <div class="mt-0.5 truncate text-xs text-muted-foreground">{projectName}</div>
   {/if}
   {#if plan.goal}
-    <div class="mt-0.5 truncate text-xs text-gray-500">{plan.goal}</div>
+    <div class="mt-0.5 truncate text-xs text-muted-foreground">{plan.goal}</div>
   {/if}
   <div class="mt-1 flex items-center gap-1.5">
     <StatusBadge status={plan.displayStatus} />
