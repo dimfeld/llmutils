@@ -15,6 +15,7 @@ export interface PrStatusRow {
   base_branch: string | null;
   head_branch: string | null;
   review_decision: string | null;
+  check_rollup_state: string | null;
   merged_at: string | null;
   last_fetched_at: string;
   created_at: string;
@@ -25,6 +26,7 @@ export interface PrCheckRunRow {
   id: number;
   pr_status_id: number;
   name: string;
+  source: 'check_run' | 'status_context';
   status: string;
   conclusion: string | null;
   details_url: string | null;
@@ -54,6 +56,7 @@ export interface PlanPrRow {
 
 export interface StoredPrCheckRunInput {
   name: string;
+  source: 'check_run' | 'status_context';
   status: string;
   conclusion?: string | null;
   detailsUrl?: string | null;
@@ -85,6 +88,7 @@ export interface UpsertPrStatusInput {
   baseBranch?: string | null;
   headBranch?: string | null;
   reviewDecision?: string | null;
+  checkRollupState?: string | null;
   mergedAt?: string | null;
   lastFetchedAt: string;
   checks?: StoredPrCheckRunInput[];
@@ -119,12 +123,13 @@ function replaceCheckRuns(db: Database, prStatusId: number, checks: StoredPrChec
       INSERT INTO pr_check_run (
         pr_status_id,
         name,
+        source,
         status,
         conclusion,
         details_url,
         started_at,
         completed_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `
   );
 
@@ -132,6 +137,7 @@ function replaceCheckRuns(db: Database, prStatusId: number, checks: StoredPrChec
     insert.run(
       prStatusId,
       check.name,
+      check.source,
       check.status,
       check.conclusion ?? null,
       check.detailsUrl ?? null,
@@ -251,11 +257,12 @@ export function upsertPrStatus(db: Database, input: UpsertPrStatusInput): PrStat
           base_branch,
           head_branch,
           review_decision,
+          check_rollup_state,
           merged_at,
           last_fetched_at,
           created_at,
           updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
         ON CONFLICT(pr_url) DO UPDATE SET
           owner = excluded.owner,
           repo = excluded.repo,
@@ -268,6 +275,7 @@ export function upsertPrStatus(db: Database, input: UpsertPrStatusInput): PrStat
           base_branch = excluded.base_branch,
           head_branch = excluded.head_branch,
           review_decision = excluded.review_decision,
+          check_rollup_state = excluded.check_rollup_state,
           merged_at = excluded.merged_at,
           last_fetched_at = excluded.last_fetched_at,
           updated_at = ${SQL_NOW_ISO_UTC}
@@ -285,6 +293,7 @@ export function upsertPrStatus(db: Database, input: UpsertPrStatusInput): PrStat
       nextInput.baseBranch ?? null,
       nextInput.headBranch ?? null,
       nextInput.reviewDecision ?? null,
+      nextInput.checkRollupState ?? null,
       nextInput.mergedAt ?? null,
       nextInput.lastFetchedAt
     );
@@ -316,22 +325,25 @@ export function updatePrCheckRuns(
   db: Database,
   prStatusId: number,
   checks: StoredPrCheckRunInput[],
+  checkRollupState: string | null,
   lastFetchedAt: string
 ): PrStatusDetail {
   const updateInTransaction = db.transaction(
     (
       nextPrStatusId: number,
       nextChecks: StoredPrCheckRunInput[],
+      nextCheckRollupState: string | null,
       nextLastFetchedAt: string
     ): PrStatusDetail => {
       db.prepare(
         `
           UPDATE pr_status
           SET last_fetched_at = ?,
+              check_rollup_state = ?,
               updated_at = ${SQL_NOW_ISO_UTC}
           WHERE id = ?
         `
-      ).run(nextLastFetchedAt, nextPrStatusId);
+      ).run(nextLastFetchedAt, nextCheckRollupState, nextPrStatusId);
 
       replaceCheckRuns(db, nextPrStatusId, nextChecks);
 
@@ -344,7 +356,7 @@ export function updatePrCheckRuns(
     }
   );
 
-  return updateInTransaction.immediate(prStatusId, checks, lastFetchedAt);
+  return updateInTransaction.immediate(prStatusId, checks, checkRollupState, lastFetchedAt);
 }
 
 export function getPrStatusByUrl(db: Database, prUrl: string): PrStatusDetail | null {

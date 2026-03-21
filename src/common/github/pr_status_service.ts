@@ -4,8 +4,6 @@ import { fetchPrCheckStatus, fetchPrFullStatus } from './pr_status.js';
 import {
   cleanOrphanedPrStatus,
   getPrStatusByUrl,
-  linkPlanToPr,
-  unlinkPlanFromPr,
   updatePrCheckRuns,
   upsertPrStatus,
   type PrStatusDetail,
@@ -39,10 +37,12 @@ export async function refreshPrStatus(db: Database, prUrl: string): Promise<PrSt
     baseBranch: fullStatus.baseRefName,
     headBranch: fullStatus.headRefName,
     reviewDecision: fullStatus.reviewDecision,
+    checkRollupState: fullStatus.checkRollupState,
     mergedAt: fullStatus.mergedAt,
     lastFetchedAt: getNowIsoString(),
     checks: fullStatus.checks.map((check) => ({
       name: check.name,
+      source: check.source,
       status: check.status,
       conclusion: check.conclusion,
       detailsUrl: check.detailsUrl,
@@ -78,12 +78,14 @@ export async function refreshPrCheckStatus(db: Database, prUrl: string): Promise
     getPrStatusId(existing),
     checkStatus.checks.map((check) => ({
       name: check.name,
+      source: check.source,
       status: check.status,
       conclusion: check.conclusion,
       detailsUrl: check.detailsUrl,
       startedAt: check.startedAt,
       completedAt: check.completedAt,
     })),
+    checkStatus.checkRollupState,
     getNowIsoString()
   );
 }
@@ -127,20 +129,69 @@ export async function syncPlanPrLinks(
     )
     .all(planUuid) as Array<{ id: number; pr_url: string }>;
 
-  for (const linked of existingLinked) {
-    if (!desiredUrls.has(linked.pr_url)) {
-      unlinkPlanFromPr(db, planUuid, linked.id);
+  const details: PrStatusDetail[] = [];
+  const newUrls = prUrls.filter(
+    (prUrl) => !existingLinked.some((linked) => linked.pr_url === prUrl)
+  );
+
+  // plan_pr rows are populated lazily by the service layer when PR status is viewed or refreshed.
+  // We intentionally do not do this during synchronous plan file -> DB sync because fetching GitHub
+  // data is async and should not be on the critical path for every plan update.
+  const prefetchedDetails = new Map<string, PrStatusDetail>();
+  for (const prUrl of newUrls) {
+    const existingDetail = getPrStatusByUrl(db, prUrl);
+    if (existingDetail) {
+      prefetchedDetails.set(prUrl, existingDetail);
+      continue;
     }
+
+    prefetchedDetails.set(prUrl, await refreshPrStatus(db, prUrl));
   }
 
-  const details: PrStatusDetail[] = [];
+  const syncLinksInTransaction = db.transaction(
+    (
+      nextPlanUuid: string,
+      nextExistingLinked: Array<{ id: number; pr_url: string }>,
+      nextPrUrls: string[]
+    ): void => {
+      const nextDesiredUrls = new Set(nextPrUrls);
+      for (const linked of nextExistingLinked) {
+        if (!nextDesiredUrls.has(linked.pr_url)) {
+          db.prepare('DELETE FROM plan_pr WHERE plan_uuid = ? AND pr_status_id = ?').run(
+            nextPlanUuid,
+            linked.id
+          );
+        }
+      }
+
+      const insertLink = db.prepare(
+        `
+          INSERT OR IGNORE INTO plan_pr (
+            plan_uuid,
+            pr_status_id
+          ) VALUES (?, ?)
+        `
+      );
+
+      for (const prUrl of nextPrUrls) {
+        const detail = prefetchedDetails.get(prUrl) ?? getPrStatusByUrl(db, prUrl);
+        if (!detail) {
+          throw new Error(`Failed to load PR status detail for ${prUrl}`);
+        }
+
+        insertLink.run(nextPlanUuid, detail.status.id);
+      }
+    }
+  );
+
+  syncLinksInTransaction.immediate(planUuid, existingLinked, prUrls);
+
   for (const prUrl of prUrls) {
-    let detail = getPrStatusByUrl(db, prUrl);
+    const detail = prefetchedDetails.get(prUrl) ?? getPrStatusByUrl(db, prUrl);
     if (!detail) {
-      detail = await refreshPrStatus(db, prUrl);
+      throw new Error(`Failed to load PR status detail for ${prUrl}`);
     }
 
-    linkPlanToPr(db, planUuid, detail.status.id);
     details.push(detail);
   }
 

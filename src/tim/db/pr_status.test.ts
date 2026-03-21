@@ -69,11 +69,13 @@ describe('tim db/pr_status', () => {
       baseBranch: 'main',
       headBranch: 'feature/a',
       reviewDecision: 'REVIEW_REQUIRED',
+      checkRollupState: 'pending',
       mergedAt: null,
       lastFetchedAt: '2026-03-20T00:00:00.000Z',
       checks: [
         {
           name: 'test',
+          source: 'check_run',
           status: 'completed',
           conclusion: 'success',
           detailsUrl: 'https://example.com/check/1',
@@ -91,7 +93,9 @@ describe('tim db/pr_status', () => {
 
     expect(created.status.pr_number).toBe(101);
     expect(created.status.created_at).toBeTruthy();
+    expect(created.status.check_rollup_state).toBe('pending');
     expect(created.checks.map((check) => check.name)).toEqual(['test']);
+    expect(created.checks.map((check) => check.source)).toEqual(['check_run']);
     expect(created.reviews.map((review) => review.author)).toEqual(['reviewer']);
     expect(created.labels.map((label) => label.name)).toEqual(['backend']);
 
@@ -108,11 +112,13 @@ describe('tim db/pr_status', () => {
       baseBranch: 'release',
       headBranch: 'feature/b',
       reviewDecision: 'APPROVED',
+      checkRollupState: 'success',
       mergedAt: '2026-03-20T00:15:00.000Z',
       lastFetchedAt: '2026-03-20T00:16:00.000Z',
       checks: [
         {
           name: 'lint',
+          source: 'status_context',
           status: 'pending',
           conclusion: null,
         },
@@ -132,7 +138,9 @@ describe('tim db/pr_status', () => {
     expect(updated.status.state).toBe('merged');
     expect(updated.status.draft).toBe(1);
     expect(updated.status.review_decision).toBe('APPROVED');
+    expect(updated.status.check_rollup_state).toBe('success');
     expect(updated.checks.map((check) => check.name)).toEqual(['lint']);
+    expect(updated.checks.map((check) => check.source)).toEqual(['status_context']);
     expect(updated.reviews.map((review) => review.author)).toEqual(['reviewer-2']);
     expect(updated.labels.map((label) => label.name)).toEqual(['frontend']);
   });
@@ -172,7 +180,7 @@ describe('tim db/pr_status', () => {
       draft: false,
       reviewDecision: 'CHANGES_REQUESTED',
       lastFetchedAt: '2026-03-20T00:00:00.000Z',
-      checks: [{ name: 'old', status: 'pending' }],
+      checks: [{ name: 'old', source: 'check_run', status: 'pending' }],
       reviews: [{ author: 'alice', state: 'CHANGES_REQUESTED' }],
       labels: [{ name: 'needs-work' }],
     });
@@ -180,12 +188,15 @@ describe('tim db/pr_status', () => {
     const updated = updatePrCheckRuns(
       db,
       detail.status.id,
-      [{ name: 'new', status: 'completed', conclusion: 'success' }],
+      [{ name: 'new', source: 'status_context', status: 'completed', conclusion: 'success' }],
+      'success',
       '2026-03-20T01:00:00.000Z'
     );
 
     expect(updated.status.last_fetched_at).toBe('2026-03-20T01:00:00.000Z');
+    expect(updated.status.check_rollup_state).toBe('success');
     expect(updated.checks.map((check) => check.name)).toEqual(['new']);
+    expect(updated.checks.map((check) => check.source)).toEqual(['status_context']);
     expect(updated.reviews.map((review) => review.author)).toEqual(['alice']);
     expect(updated.labels.map((label) => label.name)).toEqual(['needs-work']);
   });
@@ -283,7 +294,7 @@ describe('tim db/pr_status', () => {
       state: 'open',
       draft: false,
       lastFetchedAt: '2026-03-20T00:00:00.000Z',
-      checks: [{ name: 'ci', status: 'completed', conclusion: 'success' }],
+      checks: [{ name: 'ci', source: 'check_run', status: 'completed', conclusion: 'success' }],
       reviews: [{ author: 'alice', state: 'APPROVED' }],
       labels: [{ name: 'shared' }],
     });

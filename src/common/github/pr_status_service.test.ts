@@ -76,6 +76,7 @@ describe('common/github/pr_status_service', () => {
 
     expect(fetchPrFullStatus).toHaveBeenCalledWith('example', 'repo', 201);
     expect(result.status.title).toBe('Service PR');
+    expect(result.status.check_rollup_state).toBe('success');
     expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/201')?.checks).toHaveLength(
       1
     );
@@ -91,8 +92,9 @@ describe('common/github/pr_status_service', () => {
       state: 'open',
       draft: false,
       reviewDecision: 'CHANGES_REQUESTED',
+      checkRollupState: 'pending',
       lastFetchedAt: '2026-03-20T00:00:00.000Z',
-      checks: [{ name: 'old-check', status: 'pending' }],
+      checks: [{ name: 'old-check', source: 'check_run', status: 'pending' }],
       reviews: [{ author: 'bob', state: 'CHANGES_REQUESTED' }],
       labels: [{ name: 'bug' }],
     });
@@ -125,6 +127,8 @@ describe('common/github/pr_status_service', () => {
 
     expect(fetchPrCheckStatus).toHaveBeenCalledWith('example', 'repo', 202);
     expect(result.checks.map((check) => check.name)).toEqual(['new-check']);
+    expect(result.checks.map((check) => check.source)).toEqual(['check_run']);
+    expect(result.status.check_rollup_state).toBe('failure');
     expect(result.reviews.map((review) => review.author)).toEqual(['bob']);
     expect(result.labels.map((label) => label.name)).toEqual(['bug']);
   });
@@ -456,5 +460,67 @@ describe('common/github/pr_status_service', () => {
       'Invalid GitHub pull request identifier: invalid-pr-url'
     );
     expect(getPrStatusForPlan(db, 'plan-service')).toEqual([]);
+  });
+
+  test('syncPlanPrLinks does not modify links if fetching a new PR fails', async () => {
+    const existingDetail = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/211',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 211,
+      title: 'Existing linked PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: new Date().toISOString(),
+    });
+    const otherDetail = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/212',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 212,
+      title: 'Other linked PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: new Date().toISOString(),
+    });
+
+    const linkPlanToPr = db.prepare('INSERT INTO plan_pr (plan_uuid, pr_status_id) VALUES (?, ?)');
+    linkPlanToPr.run('plan-service', existingDetail.status.id);
+    linkPlanToPr.run('plan-service', otherDetail.status.id);
+
+    await moduleMocker.mock('./identifiers.ts', () => ({
+      parsePrOrIssueNumber: mock(async (identifier: string) => {
+        if (identifier.endsWith('/213')) {
+          return { owner: 'example', repo: 'repo', number: 213 };
+        }
+
+        if (identifier.endsWith('/211')) {
+          return { owner: 'example', repo: 'repo', number: 211 };
+        }
+
+        return { owner: 'example', repo: 'repo', number: 212 };
+      }),
+    }));
+    await moduleMocker.mock('./pr_status.ts', () => ({
+      fetchPrFullStatus: mock(async () => {
+        throw new Error('GitHub fetch failed');
+      }),
+      fetchPrCheckStatus: mock(),
+    }));
+
+    const { syncPlanPrLinks } = await import('./pr_status_service.ts');
+
+    await expect(
+      syncPlanPrLinks(db, 'plan-service', [
+        'https://github.com/example/repo/pull/211',
+        'https://github.com/example/repo/pull/213',
+      ])
+    ).rejects.toThrow('GitHub fetch failed');
+
+    expect(getPrStatusForPlan(db, 'plan-service').map((detail) => detail.status.pr_url)).toEqual([
+      'https://github.com/example/repo/pull/211',
+      'https://github.com/example/repo/pull/212',
+    ]);
+    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/213')).toBeNull();
   });
 });

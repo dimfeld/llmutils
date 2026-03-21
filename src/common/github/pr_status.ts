@@ -111,7 +111,7 @@ type GraphQlCheckContextNode = GraphQlCheckRunNode | GraphQlStatusContextNode;
 interface GraphQlStatusCheckRollup {
   state: Uppercase<Exclude<PrCheckRollupState, null>> | null;
   contexts: {
-    nodes: GraphQlCheckContextNode[];
+    nodes: Array<GraphQlCheckContextNode | null> | null;
   } | null;
 }
 
@@ -132,13 +132,13 @@ interface GraphQlPullRequestFullStatus {
   baseRefName: string | null;
   headRefName: string | null;
   reviewDecision: PrReviewDecision;
-  labels: { nodes: GraphQlLabelNode[] | null } | null;
-  reviews: { nodes: GraphQlReviewNode[] | null } | null;
-  commits: { nodes: GraphQlCommitNode[] | null } | null;
+  labels: { nodes: Array<GraphQlLabelNode | null> | null } | null;
+  reviews: { nodes: Array<GraphQlReviewNode | null> | null } | null;
+  commits: { nodes: Array<GraphQlCommitNode | null> | null } | null;
 }
 
 interface GraphQlPullRequestChecksOnly {
-  commits: { nodes: GraphQlCommitNode[] | null } | null;
+  commits: { nodes: Array<GraphQlCommitNode | null> | null } | null;
 }
 
 interface FullStatusGraphQlResponse {
@@ -263,7 +263,22 @@ function normalizePrState(state: GraphQlPullRequestFullStatus['state']): PrState
 }
 
 function normalizeCheckStatus(status: string): PrCheckStatus {
-  return status.toLowerCase() as PrCheckStatus;
+  switch (status) {
+    case 'QUEUED':
+      return 'queued';
+    case 'IN_PROGRESS':
+      return 'in_progress';
+    case 'COMPLETED':
+      return 'completed';
+    case 'WAITING':
+      return 'waiting';
+    case 'PENDING':
+      return 'pending';
+    case 'REQUESTED':
+      return 'requested';
+    default:
+      throw new Error(`Unhandled GitHub check status: ${status}`);
+  }
 }
 
 function normalizeCheckConclusion(conclusion: string | null): PrCheckConclusion {
@@ -271,7 +286,30 @@ function normalizeCheckConclusion(conclusion: string | null): PrCheckConclusion 
     return null;
   }
 
-  return conclusion.toLowerCase() as PrCheckConclusion;
+  switch (conclusion) {
+    case 'SUCCESS':
+      return 'success';
+    case 'FAILURE':
+      return 'failure';
+    case 'NEUTRAL':
+      return 'neutral';
+    case 'CANCELLED':
+      return 'cancelled';
+    case 'SKIPPED':
+      return 'skipped';
+    case 'TIMED_OUT':
+      return 'timed_out';
+    case 'ACTION_REQUIRED':
+      return 'action_required';
+    case 'STALE':
+      return 'stale';
+    case 'STARTUP_FAILURE':
+      return 'startup_failure';
+    case 'ERROR':
+      return 'error';
+    default:
+      throw new Error(`Unhandled GitHub check conclusion: ${conclusion}`);
+  }
 }
 
 function normalizeCheckRollupState(state: GraphQlStatusCheckRollup['state']): PrCheckRollupState {
@@ -327,16 +365,21 @@ function normalizeCheckRun(node: GraphQlCheckContextNode): PrStatusCheckRun {
   };
 }
 
-function getStatusRollupFromCommits(commits: { nodes: GraphQlCommitNode[] | null } | null) {
-  const latestCommit = commits?.nodes?.[0]?.commit ?? null;
+function getStatusRollupFromCommits(
+  commits: { nodes: Array<GraphQlCommitNode | null> | null } | null
+) {
+  const latestCommit =
+    commits?.nodes?.find((node): node is GraphQlCommitNode => node !== null)?.commit ?? null;
   return latestCommit?.statusCheckRollup ?? null;
 }
 
 function normalizeChecks(
-  commits: { nodes: GraphQlCommitNode[] | null } | null
+  commits: { nodes: Array<GraphQlCommitNode | null> | null } | null
 ): PrCheckStatusResult {
   const statusRollup = getStatusRollupFromCommits(commits);
-  const checks = (statusRollup?.contexts?.nodes ?? []).map(normalizeCheckRun);
+  const checks = (statusRollup?.contexts?.nodes ?? [])
+    .filter((node): node is GraphQlCheckContextNode => node !== null)
+    .map(normalizeCheckRun);
 
   return {
     checks,
@@ -373,12 +416,16 @@ export async function fetchPrFullStatus(
     baseRefName: pullRequest.baseRefName,
     headRefName: pullRequest.headRefName,
     reviewDecision: pullRequest.reviewDecision,
-    labels: (pullRequest.labels?.nodes ?? []).map((label) => ({
-      name: label.name,
-      color: label.color,
-    })),
+    labels: (pullRequest.labels?.nodes ?? [])
+      .filter((label): label is GraphQlLabelNode => label !== null)
+      .map((label) => ({
+        name: label.name,
+        color: label.color,
+      })),
     reviews: (pullRequest.reviews?.nodes ?? [])
-      .filter((review): review is GraphQlReviewNode => Boolean(review?.author?.login))
+      .filter(
+        (review): review is GraphQlReviewNode => review !== null && Boolean(review.author?.login)
+      )
       .map((review) => ({
         author: review.author!.login,
         state: review.state,
