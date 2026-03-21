@@ -2,6 +2,7 @@
   import type { EnrichedPlan } from '$lib/server/db_queries.js';
   import StatusBadge from './StatusBadge.svelte';
   import PriorityBadge from './PriorityBadge.svelte';
+  import PrStatusIndicator from './PrStatusIndicator.svelte';
 
   let {
     plan,
@@ -36,6 +37,9 @@
   <div class="mt-1 flex items-center gap-1.5">
     <StatusBadge status={plan.displayStatus} />
     <PriorityBadge priority={plan.priority} />
+    {#if plan.pullRequests.length > 0}
+      <PrStatusIndicator status={plan.prSummaryStatus} />
+    {/if}
     {#if plan.taskCounts.total > 0}
       <span class="text-xs text-muted-foreground">
         {plan.taskCounts.done}/{plan.taskCounts.total}

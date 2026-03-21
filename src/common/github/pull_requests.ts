@@ -1,4 +1,3 @@
-import { Octokit } from 'octokit';
 import { checkbox, input, select, Separator } from '@inquirer/prompts';
 import { limitLines, singleLineWithPrefix } from '../formatting.ts';
 import type { DetailedReviewComment } from '../rmpr_types.ts';
@@ -6,6 +5,7 @@ import { debugLog, error, log, warn } from '../../logging.ts';
 import { parsePrOrIssueNumber } from './identifiers.ts';
 import { getCurrentBranchName } from '../git.ts';
 import { getGitRepository } from '../git.js';
+import { getOctokit } from './octokit.js';
 
 export interface CommentAuthor {
   login: string;
@@ -79,9 +79,7 @@ export async function fetchOpenPullRequests(
     throw new Error('GITHUB_TOKEN environment variable is not set');
   }
 
-  const octokit = new Octokit({
-    auth: process.env.GITHUB_TOKEN,
-  });
+  const octokit = getOctokit();
 
   try {
     const response = await octokit.rest.pulls.list({
@@ -112,9 +110,7 @@ export async function fetchPullRequestAndComments(
   repo: string,
   prNumber: number
 ): Promise<{ pullRequest: PullRequest }> {
-  const octokit = new Octokit({
-    auth: process.env.GITHUB_TOKEN,
-  });
+  const octokit = getOctokit();
 
   const query = `
     query GetPullRequestThreads($owner: String!, $repo: String!, $prNumber: Int!) {
@@ -484,7 +480,7 @@ export async function addReplyToReviewThread(
     return false;
   }
 
-  const octokit = new Octokit({ auth: token });
+  const octokit = getOctokit();
 
   const mutation = `
     mutation AddReplyToThread($threadId: ID!, $body: String!) {

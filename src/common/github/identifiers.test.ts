@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { parsePrOrIssueNumber } from './identifiers.ts';
+import {
+  canonicalizePrUrl,
+  deduplicatePrUrls,
+  parsePrOrIssueNumber,
+  tryCanonicalizePrUrl,
+} from './identifiers.ts';
 
 describe('parsePrIdentifier', () => {
   test('should parse valid full URL', async () => {
@@ -86,6 +91,82 @@ describe('parsePrIdentifier', () => {
     test('should return null for URL with missing repo', async () => {
       const identifier = 'https://github.com/dimfeld//pull/123';
       expect(await parsePrOrIssueNumber(identifier)).toBeNull();
+    });
+  });
+});
+
+describe('canonicalizePrUrl', () => {
+  test('normalizes equivalent GitHub PR URLs to a canonical /pull form', () => {
+    expect(
+      canonicalizePrUrl(
+        'https://github.com/dimfeld/llmutils/pulls/123/?tab=checks#partial-pull-merging'
+      )
+    ).toBe('https://github.com/dimfeld/llmutils/pull/123');
+  });
+
+  test('returns non-URL identifiers unchanged', () => {
+    expect(canonicalizePrUrl('dimfeld/llmutils#123')).toBe('dimfeld/llmutils#123');
+  });
+});
+
+describe('tryCanonicalizePrUrl', () => {
+  test('returns null for GitHub issue URLs', () => {
+    expect(tryCanonicalizePrUrl('https://github.com/dimfeld/llmutils/issues/123')).toBeNull();
+  });
+
+  test('returns null for non-GitHub URLs', () => {
+    expect(tryCanonicalizePrUrl('https://example.com/dimfeld/llmutils/pull/123')).toBeNull();
+  });
+
+  test('rejects partially numeric PR numbers', () => {
+    expect(tryCanonicalizePrUrl('https://github.com/dimfeld/llmutils/pull/123abc')).toBeNull();
+    expect(() => canonicalizePrUrl('https://github.com/dimfeld/llmutils/pull/123abc')).toThrow(
+      /Invalid pull request number/i
+    );
+  });
+});
+
+describe('deduplicatePrUrls', () => {
+  test('deduplicates equivalent canonical PR URLs while preserving first-seen order', () => {
+    expect(
+      deduplicatePrUrls([
+        'https://github.com/dimfeld/llmutils/pulls/123?tab=checks',
+        'https://github.com/dimfeld/llmutils/pull/124',
+        'https://github.com/dimfeld/llmutils/pull/123#discussion_r1',
+        'https://github.com/dimfeld/llmutils/pulls/124/',
+        'https://github.com/dimfeld/llmutils/pull/125',
+      ])
+    ).toEqual({
+      valid: [
+        'https://github.com/dimfeld/llmutils/pull/123',
+        'https://github.com/dimfeld/llmutils/pull/124',
+        'https://github.com/dimfeld/llmutils/pull/125',
+      ],
+      invalid: [],
+    });
+  });
+
+  test('returns invalid and non-PR URLs separately', () => {
+    expect(
+      deduplicatePrUrls([
+        'https://github.com/dimfeld/llmutils/issues/123',
+        'https://example.com/dimfeld/llmutils/pull/123',
+        'https://github.com/dimfeld/llmutils/pull/not-a-number',
+      ])
+    ).toEqual({
+      valid: [],
+      invalid: [
+        'https://github.com/dimfeld/llmutils/issues/123',
+        'https://example.com/dimfeld/llmutils/pull/123',
+        'https://github.com/dimfeld/llmutils/pull/not-a-number',
+      ],
+    });
+  });
+
+  test('returns empty arrays for empty input', () => {
+    expect(deduplicatePrUrls([])).toEqual({
+      valid: [],
+      invalid: [],
     });
   });
 });

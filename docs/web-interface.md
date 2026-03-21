@@ -55,6 +55,28 @@ src/routes/projects/[projectId]/active/
 - `ActivePlanRow.svelte` — plan row with plan #, title, goal (truncated), status/priority badges, and relative timestamp
 - `src/lib/utils/time.ts` — `formatRelativeTime()` helper for human-readable relative timestamps
 
+## PR Status
+
+PR status data is fetched and refreshed via remote functions in `src/lib/remote/pr_status.remote.ts`:
+
+### Remote Functions
+
+- **`getPrStatus`** (`query`): Returns cached PR status for the plan from the DB. Response: `{ prUrls: string[], invalidPrUrls: string[], prStatuses: PrStatusDetail[] }`. Non-URL entries and non-PR URLs from the plan's `pull_request` field are returned in `invalidPrUrls` rather than silently dropped.
+- **`refreshPrStatus`** (`command`): Syncs `plan_pr` junction links from the plan's `pullRequest` field, then refreshes each PR from GitHub using `Promise.allSettled` for per-PR partial failure tolerance. Handles missing `GITHUB_TOKEN` gracefully (syncs links from cached URLs only). Only accepts PR URLs (not issue URLs), validated by `validatePrIdentifier()`. Returns `{ error?: string }` — the actual data is delivered by calling `getPrStatus({ planUuid }).refresh()` before returning, which causes subscribed clients to re-fetch the query automatically.
+
+### Data Flow
+
+- `EnrichedPlan` (list views) includes `pullRequests: string[]`, `invalidPrUrls: string[]`, `issues: string[]`, and `prSummaryStatus: 'passing' | 'failing' | 'pending' | 'none'` — computed by canonicalizing plan `pull_request` URLs and matching directly against `pr_status.pr_url`, not via `plan_pr` junctions, ensuring cached data is shown even before junction links are populated. `invalidPrUrls` contains non-URL strings and non-PR URLs from the plan's `pull_request` field (categorized via `categorizePrUrls()`).
+- `PlanDetail` (detail view) includes `prStatuses: PrStatusDetail[]` with nested check runs, reviews, and labels.
+- `PrStatusSection` uses `$derived(await getPrStatus({ planUuid }))` as its primary data source. An `$effect` calls `refreshPrStatus` on mount/plan change, which updates the DB and refreshes the query — the `$derived` expression automatically picks up the new data.
+
+### Components
+
+- **`PrStatusSection.svelte`** — PR detail section rendered inside `PlanDetail`. Takes only `planUuid` as a prop and fetches its own data via the `getPrStatus` query. For each linked PR: title as GitHub link, state badge (open/merged/closed/draft), checks summary badge (passing/failing/pending), review decision, labels as colored chips. Expandable sub-sections for individual check runs and reviews. Renders warning banners for invalid PR entries (non-URL strings, issue URLs). Triggers `refreshPrStatus` command on mount which refreshes data from GitHub and updates the query automatically.
+- **`PrCheckRunList.svelte`** — Expandable list of individual CI check runs within a PR. Shows name, status/conclusion with color coding, link to details URL. Handles both CheckRun and StatusContext source types.
+- **`PrReviewList.svelte`** — Expandable list of PR reviews. Shows reviewer name, review state (approved/changes requested/commented/pending/dismissed) with appropriate styling.
+- **`PrStatusIndicator.svelte`** — Compact colored dot badge for plan list views showing overall PR health. Green = all checks passing, red = any failing, yellow = pending, gray = no status data. Used in `PlanRow.svelte` and `ActivePlanRow.svelte` when `pullRequests.length > 0`. Status derived from `EnrichedPlan.prSummaryStatus`.
+
 ## Sessions Tab
 
 The Sessions tab (`/projects/[projectId]/sessions`) provides real-time monitoring of tim agent processes via a WebSocket + SSE architecture.

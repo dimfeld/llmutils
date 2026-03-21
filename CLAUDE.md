@@ -57,17 +57,20 @@ The codebase is organized into several main modules with improved modularity and
 - Input pause registry (`input_pause_registry.ts`): `PausableInputSource` interface and getter/setter for coordinating stdin between terminal input readers and inquirer prompts without coupling `common` to feature modules
 - Prefix selection prompt (`prefix_prompt.ts`): shared custom prompt + `runPrefixPrompt()` used by permissions flows; `prefix_prompt_utils.ts` contains `extractCommandAfterCd()` and `PrefixPromptResult` type, extracted for client-safe reuse in the web UI
 - GitHub integration utilities in `github/` subdirectory
+  - `identifiers.ts`: `parsePrOrIssueNumber()` for URL parsing, `canonicalizePrUrl()` / `tryCanonicalizePrUrl()` for normalizing PR URLs to `https://github.com/{owner}/{repo}/pull/{number}` (handles `/pulls/` variants, strips query params), `validatePrIdentifier()` for rejecting non-PR URLs, `deduplicatePrUrls()` for canonicalizing and deduplicating a list of PR URLs (used by CLI and API entry points), `categorizePrUrls()` for separating valid PR URLs from invalid entries (non-URLs, issue URLs) used by the web data layer
+  - `pr_status.ts`: GraphQL queries (`fetchPrFullStatus`, `fetchPrCheckStatus`) for PR state, checks, reviews, labels, mergeable status
+  - `pr_status_service.ts`: Cache service with `refreshPrStatus()`, `refreshPrCheckStatus()`, `ensurePrStatusFresh()` (stale-while-revalidate), and `syncPlanPrLinks()` (atomic plan-PR junction sync). All entry points canonicalize URLs before persistence or cache lookup.
 
 2. **tim**: Manages step-by-step project plans with LLM integration, organized by sub-commands
    - Modular command structure in `commands/` directory with separate files per sub-command
 
 - Core functionality: `add.ts`, `agent.ts`, `branch.ts`, `chat.ts`, `generate.ts`, `list.ts`, `next.ts`, `done.ts`
-- Specialized commands: `answer-pr.ts`, `cleanup.ts`, `extract.ts`, `split.ts`, `validate.ts`, `set.ts`
+- Specialized commands: `answer-pr.ts`, `cleanup.ts`, `extract.ts`, `pr.ts`, `split.ts`, `validate.ts`, `set.ts`
 
 - Database layer: `db/` directory with SQLite-backed storage for assignments, workspaces, permissions, and project metadata
   - `database.ts`: Singleton connection with WAL mode, foreign keys, and auto-migration
   - `migrations.ts`: Schema versioning with `schema_version` table
-  - CRUD modules: `project.ts`, `assignment.ts`, `permission.ts`, `workspace.ts`, `workspace_lock.ts`, `plan.ts`
+  - CRUD modules: `project.ts`, `assignment.ts`, `permission.ts`, `workspace.ts`, `workspace_lock.ts`, `plan.ts`, `pr_status.ts`
   - Plan sync: `plan_sync.ts` bridges plan files and DB CRUD with lazy-cached project context; `syncPlanToDb()` is called after every `writePlanFile()`, `syncAllPlansToDb()` handles bulk sync with optional prune
   - `sql_utils.ts`: Shared SQL helpers (e.g. `SQL_NOW_ISO_UTC` for ISO-8601 UTC timestamps)
   - `json_import.ts`: One-time import from legacy JSON files on first DB creation
@@ -93,8 +96,7 @@ The codebase is organized into several main modules with improved modularity and
    - Server initialization: `src/lib/server/init.ts` provides lazy-init singleton via `getServerContext()` (async) returning `{ config, db }`.
    - Sessions infrastructure: WebSocket server (`src/lib/server/ws_server.ts`) on port 8123 accepts agent connections; session manager (`src/lib/server/session_manager.ts`) tracks sessions and categorizes messages; session context singleton (`src/lib/server/session_context.ts`) survives HMR; started from `src/hooks.server.ts` init function
    - SSE streaming: `src/routes/api/sessions/events/+server.ts` streams session events to browser; action routes under `src/routes/api/sessions/[connectionId]/` for respond, input, dismiss; shared helpers in `src/lib/server/session_routes.ts`
-   - DB query helpers: `src/lib/server/db_queries.ts` provides web-specific enriched queries (`getProjectsWithMetadata`, `getPlansForProject`, `getPlanDetail`, `getWorkspacesForProject`, `getPrimaryWorkspacePath`) with computed display statuses (`blocked`, `recently_done`) derived from dependency resolution
-   - Plan actions: `src/lib/server/plan_actions.ts` provides `spawnGenerateProcess()` for launching detached `tim generate` processes; `src/lib/remote/plan_actions.remote.ts` exposes the `startGenerate` remote command with eligibility validation and duplicate session prevention
+   - DB query helpers: `src/lib/server/db_queries.ts` provides web-specific enriched queries (`getProjectsWithMetadata`, `getPlansForProject`, `getPlanDetail`, `getWorkspacesForProject`) with computed display statuses (`blocked`, `recently_done`) derived from dependency resolution
    - Server-only constraint: All DB imports must be in `$lib/server/` or `+page.server.ts` files — bun:sqlite cannot be imported client-side
    - Uses `$tim` and `$common` aliases (configured in `svelte.config.js`) to import from the CLI codebase
    - Route structure: `/projects/[projectId]/{tab}` where `projectId` is a numeric ID or `all`, and tab is `sessions`, `active`, or `plans`
@@ -105,7 +107,7 @@ The codebase is organized into several main modules with improved modularity and
    - Home page (`/`) redirects to `/projects/{lastProjectId}/sessions` via server-side redirect, falling back to `/projects/all/sessions`
    - Plan detail route: `/projects/[projectId]/plans/[planId]` sub-route loads plan detail server-side; redirects to owning project if accessed under wrong projectId
    - Active Work route: `/projects/[projectId]/active` with nested `[planId]` sub-route; split-pane layout with workspaces + active plans list on left, plan detail on right (see `docs/web-interface.md` for details)
-   - Components in `src/lib/components/`: `TabNav.svelte`, `ProjectSidebar.svelte`, `PlansList.svelte`, `PlanRow.svelte`, `PlanDetail.svelte`, `FilterChips.svelte`, `StatusBadge.svelte`, `PriorityBadge.svelte`, `WorkspaceBadge.svelte`, `WorkspaceRow.svelte`, `ActivePlanRow.svelte`, `SessionList.svelte`, `SessionRow.svelte`, `SessionDetail.svelte`, `SessionMessage.svelte`, `PromptRenderer.svelte`, `MessageInput.svelte`
+   - Components in `src/lib/components/`: `TabNav.svelte`, `ProjectSidebar.svelte`, `PlansList.svelte`, `PlanRow.svelte`, `PlanDetail.svelte`, `FilterChips.svelte`, `StatusBadge.svelte`, `PriorityBadge.svelte`, `WorkspaceBadge.svelte`, `WorkspaceRow.svelte`, `ActivePlanRow.svelte`, `PrStatusSection.svelte`, `PrCheckRunList.svelte`, `PrReviewList.svelte`, `PrStatusIndicator.svelte`, `SessionList.svelte`, `SessionRow.svelte`, `SessionDetail.svelte`, `SessionMessage.svelte`, `PromptRenderer.svelte`, `MessageInput.svelte`
    - Session store: `src/lib/stores/session_state.svelte.ts` manages SSE connection and reactive session state; SSE event application logic extracted to `src/lib/stores/session_state_events.ts` for testability; `initialized` flag tracks whether initial SSE sync is complete (gated on `session:sync-complete` event, reset on reconnect); session grouping utilities (`getSessionGroupKey`, `getSessionGroupLabel`) extracted to `src/lib/stores/session_group_utils.ts` as a plain TS module for testability; `src/lib/utils/session_colors.ts` defines category color mapping
    - Plans browser helpers: `src/lib/server/plans_browser.ts` abstraction layer between route handlers and `db_queries.ts`; includes `getActiveWorkData()` for the Active Work tab
    - Shared utilities: `src/lib/utils/time.ts` provides `formatRelativeTime()` for human-readable relative timestamps

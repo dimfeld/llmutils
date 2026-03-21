@@ -10,6 +10,7 @@ Complete reference for tim command-line interface.
 - [Prompt Commands](#prompt-commands)
 - [Workspace Commands](#workspace-commands)
 - [Assignment Commands](#assignment-commands)
+- [PR Commands](#pr-commands)
 - [Utility Commands](#utility-commands)
 - [Common Workflows](#common-workflows)
 
@@ -298,6 +299,46 @@ Manage assignments across workspaces.
 tim assignments list
 tim assignments show-conflicts
 tim assignments clean-stale
+```
+
+## PR Commands
+
+### tim pr status
+
+Fetch and display PR status for a plan (checks, reviews, merge readiness). Resolves the plan from a positional argument or the current workspace plan (walks parent directories to find the workspace root).
+
+```bash
+tim pr status 123
+tim pr status                          # Auto-resolve from current workspace
+```
+
+### tim pr link
+
+Link a PR to a plan. Validates the PR exists on GitHub and canonicalizes the URL before updating the plan file. Only accepts GitHub PR URLs (not issue URLs).
+
+```bash
+tim pr link 123 https://github.com/org/repo/pull/456
+tim pr link 123 org/repo#456           # Shorthand notation
+```
+
+### tim pr unlink
+
+Remove a PR link from a plan.
+
+```bash
+tim pr unlink 123 https://github.com/org/repo/pull/456
+tim pr unlink 123 org/repo#456
+```
+
+### tim pr description
+
+Generate a PR description from a plan (migrated from `tim pr-description`, which remains as a hidden alias).
+
+```bash
+tim pr description tasks/feature.yml
+tim pr description tasks/feature.yml --dry-run
+tim pr description tasks/feature.yml --create-pr
+tim pr description tasks/feature.yml --copy
 ```
 
 ## Utility Commands

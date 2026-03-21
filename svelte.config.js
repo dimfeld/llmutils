@@ -12,6 +12,11 @@ const config = {
       $common: './src/common',
     },
   },
+  compilerOptions: {
+    experimental: {
+      async: true,
+    },
+  },
   vitePlugin: {
     dynamicCompileOptions: ({ filename }) =>
       filename.includes('node_modules') ? undefined : { runes: true },

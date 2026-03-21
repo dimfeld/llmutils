@@ -24,6 +24,7 @@
         "change-case": "^5.4.4",
         "clipboardy": "^5.0.2",
         "commander": "^14.0.3",
+        "debug": "^4.4.3",
         "diff": "^8.0.3",
         "dotenv": "^16.5.0",
         "fastmcp": "^3.26.7",

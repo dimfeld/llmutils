@@ -1,8 +1,8 @@
-import { Octokit } from 'octokit';
 import { checkbox } from '@inquirer/prompts';
 import { limitLines, singleLineWithPrefix } from '../formatting.ts';
 import { parsePrOrIssueNumber } from './identifiers.ts';
 import { getGitRepository } from '../git.ts';
+import { getOctokit } from './octokit.js';
 import {
   parseCommandOptionsFromComment,
   combineRmprOptions,
@@ -69,10 +69,7 @@ export async function fetchIssueAndComments({
   repo: string;
   number: number;
 }) {
-  // Initialize Octokit with GitHub token
-  const octokit = new Octokit({
-    auth: process.env.GITHUB_TOKEN,
-  });
+  const octokit = getOctokit();
 
   // Fetch the issue and comments concurrently
   const [issueResponse, commentsResponse] = await Promise.all([
@@ -116,10 +113,7 @@ export async function fetchAllOpenIssues() {
     throw new Error(`Invalid repository format: ${repoString}`);
   }
 
-  // Initialize Octokit with GitHub token
-  const octokit = new Octokit({
-    auth: process.env.GITHUB_TOKEN,
-  });
+  const octokit = getOctokit();
 
   // Use paginate to fetch all open issues
   const issues = await octokit.paginate(octokit.rest.issues.listForRepo, {

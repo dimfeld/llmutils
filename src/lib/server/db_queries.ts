@@ -1,6 +1,8 @@
 import type { Database } from 'bun:sqlite';
 
+import { deduplicatePrUrls } from '$common/github/identifiers.js';
 import { getAssignmentEntry, type AssignmentEntry } from '$tim/db/assignment.js';
+import { getPrStatusForPlan, type PrStatusDetail } from '$tim/db/pr_status.js';
 import { normalizePlanStatus } from '$tim/plans/plan_state_utils.js';
 import { cleanStaleLocks, type WorkspaceLockRow } from '$tim/db/workspace_lock.js';
 import {
@@ -83,6 +85,10 @@ export interface EnrichedPlan {
   filename: string;
   createdAt: string;
   updatedAt: string;
+  pullRequests: string[];
+  invalidPrUrls: string[];
+  issues: string[];
+  prSummaryStatus: PrSummaryStatus;
   tags: string[];
   dependencyUuids: string[];
   tasks: EnrichedPlanTask[];
@@ -96,6 +102,7 @@ export interface PlanDetail extends EnrichedPlan {
   dependencies: EnrichedPlanDependency[];
   assignment: AssignmentEntry | null;
   parent: EnrichedPlanDependency | null;
+  prStatuses: PrStatusDetail[];
 }
 
 export interface EnrichedWorkspace {
@@ -123,6 +130,8 @@ interface PlanQueryBundle {
   dependencies: PlanDependencyRow[];
   tags: PlanTagRow[];
 }
+
+export type PrSummaryStatus = 'passing' | 'failing' | 'pending' | 'none';
 
 export const RECENTLY_DONE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 export const RECENTLY_ACTIVE_WINDOW_MS = 48 * 60 * 60 * 1000;
@@ -198,6 +207,131 @@ function isRecentlyUpdated(updatedAt: string, now = Date.now()): boolean {
   return now - updatedAtMs <= RECENTLY_ACTIVE_WINDOW_MS;
 }
 
+export function parseJsonStringArray(value: string | null): string[] {
+  if (!value) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.filter((item): item is string => typeof item === 'string');
+  } catch {
+    return [];
+  }
+}
+
+export function normalizePrUrls(prUrls: string[]): string[] {
+  return categorizePrUrls(prUrls).valid;
+}
+
+/** Categorize PR URLs for the web path. Plan files should only contain URLs,
+ * so non-URL identifiers (e.g. plain numbers, owner/repo#123) are treated as invalid
+ * even though the CLI accepts them. Delegates to deduplicatePrUrls after pre-filtering. */
+export function categorizePrUrls(prUrls: string[]): { valid: string[]; invalid: string[] } {
+  const urlStrings: string[] = [];
+  const invalid: string[] = [];
+  for (const url of prUrls) {
+    try {
+      new URL(url);
+      urlStrings.push(url);
+    } catch {
+      invalid.push(url);
+    }
+  }
+  const result = deduplicatePrUrls(urlStrings);
+  return { valid: result.valid, invalid: [...invalid, ...result.invalid] };
+}
+
+function getPrSummaryStatusByPlanUuid(
+  db: Database,
+  planUuids: readonly string[],
+  prUrlsByPlanUuid: ReadonlyMap<string, string[]>
+): Map<string, PrSummaryStatus> {
+  if (planUuids.length === 0) {
+    return new Map();
+  }
+
+  const urls = new Set<string>();
+  const planUuidsByUrl = new Map<string, string[]>();
+  for (const planUuid of planUuids) {
+    const prUrls = prUrlsByPlanUuid.get(planUuid) ?? [];
+    for (const prUrl of prUrls) {
+      urls.add(prUrl);
+      const existingPlanUuids = planUuidsByUrl.get(prUrl);
+      if (existingPlanUuids) {
+        existingPlanUuids.push(planUuid);
+      } else {
+        planUuidsByUrl.set(prUrl, [planUuid]);
+      }
+    }
+  }
+
+  const statesByPlanUuid = new Map<string, (string | null)[]>();
+  if (urls.size > 0) {
+    const placeholders = [...urls].map(() => '?').join(', ');
+    const rows = db
+      .prepare(
+        `
+          SELECT
+            ps.pr_url AS pr_url,
+            ps.check_rollup_state AS check_rollup_state
+          FROM pr_status ps
+          WHERE ps.pr_url IN (${placeholders})
+        `
+      )
+      .all(...urls) as Array<{
+      pr_url: string;
+      check_rollup_state: string | null;
+    }>;
+
+    for (const row of rows) {
+      const matchingPlanUuids = planUuidsByUrl.get(row.pr_url) ?? [];
+      for (const planUuid of matchingPlanUuids) {
+        const existing = statesByPlanUuid.get(planUuid);
+        if (existing) {
+          existing.push(row.check_rollup_state);
+        } else {
+          statesByPlanUuid.set(planUuid, [row.check_rollup_state]);
+        }
+      }
+    }
+  }
+
+  const summaryByPlanUuid = new Map<string, PrSummaryStatus>();
+  for (const planUuid of planUuids) {
+    const rawStates = statesByPlanUuid.get(planUuid) ?? [];
+    if (rawStates.length === 0) {
+      summaryByPlanUuid.set(planUuid, 'none');
+      continue;
+    }
+
+    const states = rawStates.filter((s): s is string => s != null && s !== '');
+
+    if (states.some((state) => state === 'failure' || state === 'error')) {
+      summaryByPlanUuid.set(planUuid, 'failing');
+      continue;
+    }
+
+    if (states.some((state) => state === 'pending' || state === 'expected')) {
+      summaryByPlanUuid.set(planUuid, 'pending');
+      continue;
+    }
+
+    if (states.length > 0) {
+      summaryByPlanUuid.set(planUuid, 'passing');
+      continue;
+    }
+
+    summaryByPlanUuid.set(planUuid, 'none');
+  }
+
+  return summaryByPlanUuid;
+}
+
 function computeDisplayStatus(
   plan: PlanRow,
   dependencyRows: PlanDependencyRow[],
@@ -249,6 +383,28 @@ function enrichPlansWithContext(
     planByUuid.set(dependencyPlan.uuid, dependencyPlan);
   }
 
+  const categorizedPrUrlsByPlanUuid = new Map<
+    string,
+    {
+      valid: string[];
+      invalid: string[];
+    }
+  >(
+    bundle.plans.map((plan) => [
+      plan.uuid,
+      categorizePrUrls(parseJsonStringArray(plan.pull_request)),
+    ])
+  );
+  const prUrlsByPlanUuid = new Map<string, string[]>(
+    bundle.plans.map((plan) => [plan.uuid, categorizedPrUrlsByPlanUuid.get(plan.uuid)?.valid ?? []])
+  );
+
+  const prSummaryStatusByPlanUuid = getPrSummaryStatusByPlanUuid(
+    db,
+    bundle.plans.map((plan) => plan.uuid),
+    prUrlsByPlanUuid
+  );
+
   const enrichedPlans = bundle.plans.map((plan) => {
     const tasks = (tasksByPlanUuid.get(plan.uuid) ?? []).map(toTask);
     const dependencyRows = dependenciesByPlanUuid.get(plan.uuid) ?? [];
@@ -270,6 +426,10 @@ function enrichPlansWithContext(
       filename: plan.filename,
       createdAt: plan.created_at,
       updatedAt: plan.updated_at,
+      pullRequests: prUrlsByPlanUuid.get(plan.uuid) ?? [],
+      invalidPrUrls: categorizedPrUrlsByPlanUuid.get(plan.uuid)?.invalid ?? [],
+      issues: parseJsonStringArray(plan.issue),
+      prSummaryStatus: prSummaryStatusByPlanUuid.get(plan.uuid) ?? 'none',
       tags: tagsByPlanUuid.get(plan.uuid) ?? [],
       dependencyUuids: dependencyRows.map((dependency) => dependency.depends_on_uuid),
       tasks,
@@ -570,11 +730,13 @@ export function getPlanDetail(db: Database, planUuid: string): PlanDetail | null
   const parent = plan.parent_uuid
     ? toDependencySummary(plan.parent_uuid, planByUuid, dependenciesByPlanUuid)
     : null;
+  const prStatuses = getPrStatusForPlan(db, planUuid, enrichedPlan.pullRequests);
 
   return {
     ...enrichedPlan,
     dependencies: dependencySummaries,
     assignment,
     parent,
+    prStatuses,
   };
 }

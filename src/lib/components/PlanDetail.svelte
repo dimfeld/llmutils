@@ -4,6 +4,7 @@
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import StatusBadge from './StatusBadge.svelte';
   import PriorityBadge from './PriorityBadge.svelte';
+  import PrStatusSection from './PrStatusSection.svelte';
 
   let {
     plan,
@@ -274,6 +275,11 @@
         {/each}
       </div>
     </div>
+  {/if}
+
+  <!-- Pull Requests -->
+  {#if plan.pullRequests.length > 0 || plan.invalidPrUrls.length > 0}
+    <PrStatusSection planUuid={plan.uuid} />
   {/if}
 
   <!-- Branch -->

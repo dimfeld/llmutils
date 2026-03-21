@@ -108,16 +108,14 @@ describe('fetchAllOpenIssues', () => {
     }));
 
     // Mock Octokit
-    await moduleMocker.mock('octokit', () => ({
-      Octokit: mock(function () {
-        return {
-          paginate: mockPaginate,
-          rest: {
-            issues: {
-              listForRepo: mock(),
-            },
+    await moduleMocker.mock('./octokit.js', () => ({
+      getOctokit: () => ({
+        paginate: mockPaginate,
+        rest: {
+          issues: {
+            listForRepo: mock(),
           },
-        };
+        },
       }),
     }));
 
