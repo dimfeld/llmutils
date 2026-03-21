@@ -5,7 +5,7 @@ import { json } from '@sveltejs/kit';
 import { ensurePrStatusFresh, syncPlanPrLinks } from '$common/github/pr_status_service.js';
 import { parseJsonStringArray } from '$lib/server/db_queries.js';
 import { getServerContext } from '$lib/server/init.js';
-import { getPrStatusForPlan } from '$tim/db/pr_status.js';
+import { getPrStatusByUrl, getPrStatusForPlan } from '$tim/db/pr_status.js';
 import { getPlanByUuid } from '$tim/db/plan.js';
 
 const PR_STATUS_MAX_AGE_MS = 5 * 60 * 1000;
@@ -51,6 +51,11 @@ export const POST: RequestHandler = async ({ params }) => {
   }
 
   if (!process.env.GITHUB_TOKEN) {
+    // Sync junctions for already-cached PRs only (can't fetch new ones without token).
+    const cachedUrls = prUrls.filter((url) => getPrStatusByUrl(db, url) !== null);
+    if (cachedUrls.length > 0) {
+      await syncPlanPrLinks(db, plan.uuid, cachedUrls);
+    }
     return json({
       prUrls,
       prStatuses: getPrStatusForPlan(db, plan.uuid),

@@ -29,7 +29,8 @@
     for (const url of urls) {
       const s = statusMap.get(url);
       if (!s) return true;
-      if (now - new Date(s.status.last_fetched_at).getTime() > FRESHNESS_THRESHOLD_MS) return true;
+      const fetchedAtMs = new Date(s.status.last_fetched_at).getTime();
+      if (!Number.isFinite(fetchedAtMs) || now - fetchedAtMs > FRESHNESS_THRESHOLD_MS) return true;
     }
     return false;
   }

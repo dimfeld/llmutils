@@ -6,7 +6,7 @@ goal: Fetch PR status from GitHub, cache in DB, display in web UI and CLI via
 id: 248
 uuid: f92da2f3-c73f-4b89-83c8-03b509d58d1d
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 parent: 245
 references:
@@ -14,7 +14,7 @@ references:
 planGeneratedAt: 2026-03-21T02:28:58.262Z
 promptsGeneratedAt: 2026-03-21T02:28:58.262Z
 createdAt: 2026-03-21T02:24:53.498Z
-updatedAt: 2026-03-21T06:06:55.375Z
+updatedAt: 2026-03-21T06:48:04.819Z
 tasks:
   - title: Create GitHub GraphQL queries for PR status
     done: true
@@ -62,7 +62,7 @@ tasks:
       stale. Handle missing GITHUB_TOKEN gracefully (return PR URLs without
       status data). Return appropriate error responses.
   - title: Build PlanDetail PR status section in web UI
-    done: false
+    done: true
     description: "Create PrStatusSection.svelte component showing PR status on
       PlanDetail. For each linked PR: PR number + title as link to GitHub,
       overall status badge (checks passing/failing/pending), merge state badge
@@ -72,7 +72,7 @@ tasks:
       colored chips. Loading state while fetching fresh data. Add to
       PlanDetail.svelte after existing sections."
   - title: Add PR status indicators to plan list views
-    done: false
+    done: true
     description: Create PrStatusIndicator.svelte compact badge showing overall PR
       health (green=passing, red=failing, yellow=pending, gray=no status).
       Update PlanRow.svelte to show indicator when pullRequests.length > 0.
@@ -99,12 +99,22 @@ tasks:
       same - only the command registration in tim.ts changes.
 changedFiles:
   - CLAUDE.md
+  - README.md
   - docs/database.md
   - docs/web-interface.md
   - src/common/github/pr_status.test.ts
   - src/common/github/pr_status.ts
   - src/common/github/pr_status_service.test.ts
   - src/common/github/pr_status_service.ts
+  - src/lib/components/ActivePlanRow.svelte
+  - src/lib/components/PlanDetail.svelte
+  - src/lib/components/PlanRow.svelte
+  - src/lib/components/PrCheckRunList.svelte
+  - src/lib/components/PrReviewList.svelte
+  - src/lib/components/PrStatusIndicator.svelte
+  - src/lib/components/PrStatusIndicator.test.ts
+  - src/lib/components/PrStatusSection.svelte
+  - src/lib/components/PrStatusSection.test.ts
   - src/lib/server/db_queries.test.ts
   - src/lib/server/db_queries.ts
   - src/routes/api/plans/[planUuid]/pr-status/+server.ts
@@ -449,24 +459,21 @@ Update `src/lib/components/PlanDetail.svelte`:
 
 ## Current Progress
 ### Current State
-- Tasks 1-5 (backend) and Tasks 8-9 (CLI) are complete with test coverage. Tasks 6-7 (web UI) remain.
+- All 9 tasks are complete with test coverage. The plan is fully implemented.
 ### Completed (So Far)
 - Task 1: GitHub GraphQL queries (`src/common/github/pr_status.ts`) with `fetchPrFullStatus()` and `fetchPrCheckStatus()`
 - Task 2: DB migration 8 and CRUD (`src/tim/db/pr_status.ts`, `src/tim/db/migrations.ts`)
 - Task 3: Cache service (`src/common/github/pr_status_service.ts`) with refresh, stale-while-revalidate, and atomic sync
 - Task 4: Web UI data layer (`src/lib/server/db_queries.ts`) — `EnrichedPlan` now has `pullRequests`, `issues`, `prSummaryStatus`; `PlanDetail` has `prStatuses`; bulk `prSummaryStatus` computed via efficient join query on `plan_pr → pr_status`
 - Task 5: API endpoint (`src/routes/api/plans/[planUuid]/pr-status/+server.ts`) — GET returns cached data, POST syncs links + refreshes from GitHub with error fallback to cached data
+- Task 6: PlanDetail PR status section (`PrStatusSection.svelte`, `PrCheckRunList.svelte`, `PrReviewList.svelte`) — shows PR state, checks, reviews, labels with stale-while-revalidate refresh
+- Task 7: PR status indicators in plan list views (`PrStatusIndicator.svelte`) — compact colored dot in PlanRow and ActivePlanRow
 - Task 8: CLI `tim pr` subcommand namespace (`src/tim/commands/pr.ts`, `src/tim/tim.ts`) — `tim pr status [planId]` with force-fresh GitHub fetch, partial failure handling, color-coded output; `tim pr link` and `tim pr unlink` with plan file persistence and URL canonicalization
 - Task 9: `pr-description` migrated to `tim pr description` with hidden backwards-compatible alias
 ### Remaining
-- Task 6: PlanDetail PR status section UI
-- Task 7: PR status indicators in plan list views
+- None
 ### Next Iteration Guidance
-- Tasks 6+7 (UI components) are the natural next pair — they consume the data layer and API endpoint from Tasks 4+5
-- `EnrichedPlan.prSummaryStatus` is available for list view indicators (`'passing' | 'failing' | 'pending' | 'none'`)
-- `PlanDetail.prStatuses` contains full `PrStatusDetail[]` for the detail view
-- The POST endpoint returns `{ prUrls, prStatuses, error? }` — UI should call POST on mount for stale-while-revalidate
-- `parseJsonStringArray()` is exported from `$lib/server/db_queries.js` for reuse
+- None
 ### Decisions / Changes
 - `syncPlanPrLinks` is fully atomic: all GitHub fetches complete before any DB writes, and all upserts + link changes happen in one transaction
 - `cleanOrphanedPrStatus` is decoupled from sync - callers handle cleanup explicitly
@@ -477,7 +484,12 @@ Update `src/lib/components/PlanDetail.svelte`:
 - `tim pr link`/`unlink` modify the plan file (source of truth) and update DB cache best-effort. Link validates with GitHub before modifying the plan file.
 - URL canonicalization: `link` and `unlink` both normalize PR identifiers to `https://github.com/{owner}/{repo}/pull/{number}` format
 - `persistPlanPullRequests` skips `writePlanFile` when the URL list hasn't changed (no-op detection)
-- `tim pr status` handles partial failures gracefully — shows results for successful PR fetches, logs errors for failures, and only syncs successfully-fetched URLs to `plan_pr`
+- CLI partial failures: tries syncing all prUrls first, falls back to just successful URLs if uncached PRs can't be fetched
+- No-token fallback: POST endpoint syncs junctions for already-cached PRs even without GITHUB_TOKEN
+- Reviews are deduplicated to latest per author at the normalization layer
+- PrStatusSection uses stale-while-revalidate: shows initialStatuses immediately, only POSTs if any PR is missing or stale (>5 min)
+- PrStatusSection uses AbortController to prevent stale fetch responses from overwriting fresh data on plan navigation
+- `prSummaryStatus` filters null/empty `check_rollup_state` values — PRs without checks don't poison the aggregate
 ### Lessons Learned
 - GitHub GraphQL connection nodes can be null - always filter before mapping
 - Separating fetch phase from DB write phase enables true atomicity for operations that mix async API calls with sync DB transactions
@@ -485,5 +497,8 @@ Update `src/lib/components/PlanDetail.svelte`:
 - When CLI commands modify both a plan file (source of truth) and DB cache, validate external API calls before modifying the plan file, and treat DB updates as best-effort
 - `writePlanFile()` already calls `syncPlanToDb()` internally — don't add a redundant sync call afterward
 - URL canonicalization must be symmetric between link and unlink commands, otherwise unlink silently fails for non-URL identifiers
+- When an atomic sync function (syncPlanPrLinks) is used after partial failures, passing the full URL list can cause the sync to fail for uncached URLs — need fallback to a reduced set
+- Svelte 5 `$state(initialProp)` captures the initial value only; use `$derived(fetchedData ?? initialProp)` pattern instead of a separate sync effect to avoid race conditions between prop updates and async fetch results
+- `new Date(invalidString).getTime()` returns NaN; comparisons with NaN always return false, silently skipping staleness checks
 ### Risks / Blockers
 - None

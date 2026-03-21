@@ -63,7 +63,12 @@
 
   function displayLabel(conclusion: string | null, status: string): string {
     if (status === 'in_progress') return 'In progress';
-    if (status === 'queued' || status === 'pending' || status === 'waiting' || status === 'requested')
+    if (
+      status === 'queued' ||
+      status === 'pending' ||
+      status === 'waiting' ||
+      status === 'requested'
+    )
       return 'Pending';
     return conclusion ?? status;
   }

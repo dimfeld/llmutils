@@ -135,7 +135,10 @@ describe('/api/plans/[planUuid]/pr-status', () => {
     const payload = await response.json();
 
     expect(response.status).toBe(200);
-    expect(syncPlanPrLinks).not.toHaveBeenCalled();
+    // Without GITHUB_TOKEN, only already-cached PR URLs are synced
+    expect(syncPlanPrLinks).toHaveBeenCalledWith(expect.anything(), 'plan-with-prs', [
+      'https://github.com/example/repo/pull/1',
+    ]);
     expect(ensurePrStatusFresh).not.toHaveBeenCalled();
     expect(payload.error).toBe('GITHUB_TOKEN not configured');
     expect(payload.prUrls).toEqual([
@@ -227,7 +230,7 @@ describe('/api/plans/[planUuid]/pr-status', () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ prUrls: [], prStatuses: [] });
-    expect(syncPlanPrLinks).not.toHaveBeenCalled();
+    expect(syncPlanPrLinks).toHaveBeenCalledWith(expect.anything(), 'plan-without-prs', []);
     expect(ensurePrStatusFresh).not.toHaveBeenCalled();
   });
 });

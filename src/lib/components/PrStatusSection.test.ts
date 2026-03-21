@@ -1,7 +1,13 @@
 import { render } from 'svelte/server';
 import { describe, expect, test } from 'vitest';
 
-import type { PrStatusDetail, PrStatusRow, PrCheckRunRow, PrReviewRow, PrLabelRow } from '$tim/db/pr_status.js';
+import type {
+  PrStatusDetail,
+  PrStatusRow,
+  PrCheckRunRow,
+  PrReviewRow,
+  PrLabelRow,
+} from '$tim/db/pr_status.js';
 import PrStatusSection from './PrStatusSection.svelte';
 
 function makePrStatus(overrides: Partial<PrStatusRow> = {}): PrStatusRow {
@@ -64,12 +70,14 @@ function makeLabel(overrides: Partial<PrLabelRow> = {}): PrLabelRow {
   };
 }
 
-function makePrDetail(overrides: {
-  status?: Partial<PrStatusRow>;
-  checks?: PrCheckRunRow[];
-  reviews?: PrReviewRow[];
-  labels?: PrLabelRow[];
-} = {}): PrStatusDetail {
+function makePrDetail(
+  overrides: {
+    status?: Partial<PrStatusRow>;
+    checks?: PrCheckRunRow[];
+    reviews?: PrReviewRow[];
+    labels?: PrLabelRow[];
+  } = {}
+): PrStatusDetail {
   return {
     status: makePrStatus(overrides.status),
     checks: overrides.checks ?? [],
@@ -179,7 +187,11 @@ describe('PrStatusSection', () => {
     expect(bodyApproved).toContain('Approved');
 
     const changesRequested = makePrDetail({
-      status: { review_decision: 'CHANGES_REQUESTED', pr_url: 'https://github.com/o/r/pull/2', pr_number: 2 },
+      status: {
+        review_decision: 'CHANGES_REQUESTED',
+        pr_url: 'https://github.com/o/r/pull/2',
+        pr_number: 2,
+      },
     });
     const { body: bodyCR } = renderSection({
       prUrls: [changesRequested.status.pr_url],
@@ -188,7 +200,11 @@ describe('PrStatusSection', () => {
     expect(bodyCR).toContain('Changes Requested');
 
     const reviewRequired = makePrDetail({
-      status: { review_decision: 'REVIEW_REQUIRED', pr_url: 'https://github.com/o/r/pull/3', pr_number: 3 },
+      status: {
+        review_decision: 'REVIEW_REQUIRED',
+        pr_url: 'https://github.com/o/r/pull/3',
+        pr_number: 3,
+      },
     });
     const { body: bodyRR } = renderSection({
       prUrls: [reviewRequired.status.pr_url],
@@ -299,7 +315,9 @@ describe('PrStatusSection', () => {
   test('renders multiple PRs with mixed status availability', () => {
     const cachedUrl = 'https://github.com/owner/repo/pull/42';
     const uncachedUrl = 'https://github.com/owner/repo/pull/99';
-    const detail = makePrDetail({ status: { pr_url: cachedUrl, pr_number: 42, title: 'Known PR' } });
+    const detail = makePrDetail({
+      status: { pr_url: cachedUrl, pr_number: 42, title: 'Known PR' },
+    });
 
     const { body } = renderSection({
       prUrls: [cachedUrl, uncachedUrl],

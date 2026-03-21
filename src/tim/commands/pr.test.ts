@@ -226,9 +226,11 @@ describe('tim/commands/pr', () => {
         line.includes('Failed to fetch status for https://github.com/example/repo/pull/502')
       )
     ).toBe(true);
-    // syncPlanPrLinks only called with successful URLs
+    // syncPlanPrLinks called with all plan PR URLs (not just successful ones)
+    // to avoid removing links for PRs that failed to refresh transiently
     expect(mockSyncPlanPrLinks).toHaveBeenCalledWith(dbHandle, 'plan-248', [
       'https://github.com/example/repo/pull/501',
+      'https://github.com/example/repo/pull/502',
     ]);
   });
 
