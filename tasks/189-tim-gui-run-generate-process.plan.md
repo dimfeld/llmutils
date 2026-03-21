@@ -5,7 +5,7 @@ goal: ""
 id: 189
 uuid: 9a812d63-4354-4355-ab9d-d254dcbef3b0
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 dependencies:
   - 184
@@ -20,7 +20,7 @@ references:
 planGeneratedAt: 2026-03-20T23:51:20.469Z
 promptsGeneratedAt: 2026-03-20T23:51:20.469Z
 createdAt: 2026-02-13T21:11:06.976Z
-updatedAt: 2026-03-21T08:21:57.063Z
+updatedAt: 2026-03-21T08:32:59.252Z
 tasks:
   - title: Add hasActiveSessionForPlan to SessionManager
     done: true
@@ -60,7 +60,7 @@ tasks:
       tests for the command logic covering plan not found, ineligible,
       duplicate, no primary workspace, successful spawn, and spawn failure."
   - title: Add Generate button to PlanDetail component
-    done: false
+    done: true
     description: "Modify src/lib/components/PlanDetail.svelte: import
       useSessionManager and startGenerate. Add eligibility check
       (plan.tasks.length === 0 && displayStatus not done/cancelled). Add derived
@@ -72,6 +72,7 @@ tasks:
       link to /projects/{projectId}/sessions/{connectionId} on success."
 changedFiles:
   - docs/implementer-instructions.md
+  - src/lib/components/PlanDetail.svelte
   - src/lib/remote/plan_actions.remote.test.ts
   - src/lib/remote/plan_actions.remote.ts
   - src/lib/server/db_queries.test.ts
@@ -350,24 +351,24 @@ Modify `src/lib/components/PlanDetail.svelte`:
 
 ## Current Progress
 ### Current State
-- Tasks 1-4 (all backend work) are complete and tested. Task 5 (UI) remains.
+- All 5 tasks complete. Plan is done.
 ### Completed (So Far)
 - `SessionManager.hasActiveSessionForPlan()` method with tests
 - `getPrimaryWorkspacePath()` DB query helper with tests
 - `spawnGenerateProcess()` detached spawn handler with early failure detection and tests
 - `startGenerate` remote command with full validation pipeline and tests
-- Review feedback addressed: added `deferred` status exclusion to eligibility check
+- Generate button in PlanDetail.svelte with eligibility check, session-aware state, and error handling
 ### Remaining
-- Task 5: Add Generate button to PlanDetail.svelte component
-### Next Iteration Guidance
-- Task 5 is a Svelte UI task — use claude-code executor since it's better for UI work
-- The `startGenerate` remote command returns `{ status: 'started', planId }` or `{ status: 'already_running', connectionId }` — the UI needs to handle both
-- Use `useSessionManager()` from `$lib/stores/session_state.svelte.ts` for client-side session state
-- Check `startGenerate.pending` for in-flight state tracking
-### Decisions / Changes
-- Added `deferred` status to eligibility exclusion list (review feedback)
-- TOCTOU race in duplicate detection is acceptable — workspace locking provides safety net
-### Lessons Learned
 - None
+### Next Iteration Guidance
+- None
+### Decisions / Changes
+- Added `deferred` and `recently_done` to eligibility exclusion list (review feedback)
+- TOCTOU race in duplicate detection is acceptable — workspace locking provides safety net
+- Button stays disabled while successMessage is shown to prevent double-clicks before WebSocket session connects
+- Stderr pipe is explicitly cancelled on successful spawn to prevent potential child process blocking
+### Lessons Learned
+- When using `displayStatus` (computed) in UI but `status` (raw) on server, ensure synthetic statuses like `recently_done` are accounted for on the client side to avoid showing buttons that always fail server-side
+- Piped stdio streams on detached processes should be explicitly cancelled/consumed before unref to avoid pipe buffer blocking
 ### Risks / Blockers
 - None
