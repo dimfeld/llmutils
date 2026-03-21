@@ -148,6 +148,32 @@ Browser clients receive real-time updates via SSE and interact with sessions thr
 - **`MessageInput.svelte`** — Text input with Enter to send, Shift+Enter for newlines. Hidden (not disabled) when session is offline or non-interactive.
 - **Category colors** (`src/lib/utils/session_colors.ts`): lifecycle=green, llmOutput=green, toolUse=cyan, fileChange=cyan, command=cyan, progress=blue, error=red, log=gray, userInput=orange.
 
+## Dark Mode
+
+The web interface supports light, dark, and system-preference color modes using the `mode-watcher` package.
+
+### How It Works
+
+- `ModeWatcher` component in `src/routes/+layout.svelte` manages the `.dark` class on `<html>`, persists the user's preference to localStorage, and injects a `<head>` script to prevent FOUC (flash of unstyled content) on page load.
+- CSS variables for dark mode are defined in `src/routes/layout.css` under the `.dark` class (lines 42-74). The Tailwind `@custom-variant dark (&:is(.dark *))` directive enables `dark:` utility classes.
+- A cycling toggle button in the header (right of TabNav) switches between light → dark → system modes using Sun/Moon/Monitor icons from `@lucide/svelte`. Uses `setMode()` and `userPrefersMode` from `mode-watcher`.
+- The `themeColors` prop on `ModeWatcher` dynamically updates the `<meta name="theme-color">` tag to match the current mode. A static fallback meta tag in `src/app.html` covers the pre-JS state.
+
+### Color Strategy
+
+A hybrid approach is used for dark mode colors:
+
+- **Semantic tokens** (`bg-background`, `text-foreground`, `text-muted-foreground`, `border-border`) where they map well to existing CSS variables
+- **`dark:` variant classes** for colored states that don't have semantic equivalents (badges, selected states, hover effects) — e.g., `bg-blue-100 dark:bg-blue-900/30`
+- **shadcn/ui components** (`src/lib/components/ui/`) already include `dark:` variants and need no changes
+- **Session message area** (SessionMessage, PromptRenderer, MessageInput) is always rendered on a dark background (`bg-gray-900`) and doesn't use `dark:` variants
+
+### When Modifying Components
+
+- Use semantic tokens over hardcoded grays where possible
+- For colored badges/pills, follow the existing `bg-{color}-100 text-{color}-800 dark:bg-{color}-900/30 dark:text-{color}-300` pattern
+- Ensure sufficient contrast in dark mode — `text-gray-400` is the minimum for readable secondary text on `bg-gray-900` (avoid `text-gray-600` which has ~2.35:1 contrast ratio)
+
 ## PWA Support
 
 The web interface is installable as a Progressive Web App, allowing it to run as a standalone desktop/mobile app without browser chrome.

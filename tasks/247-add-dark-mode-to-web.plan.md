@@ -388,3 +388,29 @@ Consider adding `<meta name="color-scheme" content="light dark" />` to `src/app.
 3. **Badge contrast**: The `bg-{color}-100 text-{color}-800` pattern may need tuning in dark mode. Using `bg-{color}-900/30 text-{color}-300` is a good starting point but should be visually verified.
 4. **Focus rings**: Some components use `focus:ring-blue-500` or `focus:border-blue-500` — these should work in dark mode but may need contrast adjustments.
 5. **Scrollbar styling**: Adding `color-scheme: light dark` in CSS will make native scrollbars adapt to the mode.
+
+## Current Progress
+### Current State
+- All 8 tasks completed and committed
+### Completed (So Far)
+- ModeWatcher integration with system preference detection, FOUC prevention, localStorage persistence
+- Cycling theme toggle (Sun/Moon/Monitor) in header
+- All components converted: sidebar, plans list/row/detail, badges (status/priority/workspace), filter chips, sessions list/row/detail, workspace row
+- Route-level layouts and pages converted (sessions, active, plans tabs)
+- Session message area verified — timestamps upgraded from text-gray-600 to text-gray-400 for contrast
+- Static theme-color meta kept as fallback, ModeWatcher themeColors handles dynamic updates
+- color-scheme meta tag added to app.html
+### Remaining
+- None — all tasks complete
+### Next Iteration Guidance
+- None
+### Decisions / Changes
+- Used hybrid approach: semantic tokens (bg-background, text-foreground, text-muted-foreground, border-border) where they map well, dark: variants for colored states (badges, selected states, hover)
+- Kept static theme-color meta in app.html as pre-JS fallback alongside ModeWatcher's themeColors prop for runtime updates
+- Session message area (SessionMessage, PromptRenderer, MessageInput) left as-is since always on dark bg, only upgraded low-contrast text colors
+### Lessons Learned
+- When using ModeWatcher's themeColors prop alongside a static theme-color meta in app.html, the library will update the existing static tag at runtime — no duplicate tag issue as long as you don't have both static + themeColors injecting separate tags
+- Route-level layout/page files need dark mode conversion too, not just shared components — easy to miss in initial pass
+- text-gray-600 on bg-gray-900 has poor contrast (~2.35:1); text-gray-400 is the minimum for readable secondary text on dark backgrounds
+### Risks / Blockers
+- None
