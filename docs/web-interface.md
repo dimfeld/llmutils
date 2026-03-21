@@ -64,7 +64,7 @@ The web interface exposes a REST endpoint for fetching and refreshing cached PR 
 `src/routes/api/plans/[planUuid]/pr-status/+server.ts`:
 
 - **GET**: Returns cached PR status for the plan from the DB. Response: `{ prUrls: string[], prStatuses: PrStatusDetail[] }`.
-- **POST**: Syncs `plan_pr` junction links from the plan's `pullRequest` field, then refreshes each PR from GitHub. Returns updated data. On GitHub API failure, falls back to cached data with an `error` field. Handles missing `GITHUB_TOKEN` gracefully (returns PR URLs without status data).
+- **POST**: Syncs `plan_pr` junction links from the plan's `pullRequest` field, then refreshes each PR from GitHub using `Promise.allSettled` for per-PR partial failure tolerance (fresh data for successful fetches, cached fallback for failed ones). Handles missing `GITHUB_TOKEN` gracefully (syncs links from cached URLs only, returns PR URLs without status data). Only accepts PR URLs (not issue URLs), validated by `validatePrIdentifier()`.
 
 ### Data Flow
 

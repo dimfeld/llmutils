@@ -25,8 +25,8 @@ Use `tim workspace list`, `tim workspace add`, and `tim workspace update` to man
 
 `tim pr` is a subcommand namespace for GitHub PR operations:
 
-- `tim pr status [planId]` — Fetch and display PR status for a plan (checks, reviews, merge readiness) with color-coded terminal output. Resolves the plan from a positional argument or the current workspace plan.
-- `tim pr link <planId> <prUrl>` — Link a PR to a plan. Validates the PR exists on GitHub and canonicalizes the URL before updating the plan file.
+- `tim pr status [planId]` — Fetch and display PR status for a plan (checks, reviews, merge readiness) with color-coded terminal output. Resolves the plan from a positional argument or the current workspace plan (walks parent directories to find the workspace root).
+- `tim pr link <planId> <prUrl>` — Link a PR to a plan. Validates the PR exists on GitHub, rejects non-PR URLs (e.g. issue URLs), and canonicalizes the URL before updating the plan file.
 - `tim pr unlink <planId> <prUrl>` — Remove a PR link from a plan.
 - `tim pr description <planFile>` — Generate a PR description from a plan (migrated from the former `tim pr-description` command, which remains as a hidden alias for backwards compatibility).
 
