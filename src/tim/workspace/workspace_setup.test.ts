@@ -95,7 +95,6 @@ describe('setupWorkspace', () => {
     });
     spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({ success: true });
 
-
     spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
 
     const result = await setupWorkspace(
@@ -153,7 +152,6 @@ describe('setupWorkspace', () => {
       checkFailed: false,
     });
     spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({ success: true });
-
 
     spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
 
@@ -239,7 +237,6 @@ describe('setupWorkspace', () => {
       checkFailed: false,
     });
     spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({ success: true });
-
 
     await setupWorkspace(
       {
@@ -360,7 +357,6 @@ describe('setupWorkspace', () => {
       checkFailed: false,
     });
     spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({ success: true });
-
 
     const acquireLockSpy = spyOn(WorkspaceLock, 'acquireLock');
     const setupCleanupHandlersSpy = spyOn(WorkspaceLock, 'setupCleanupHandlers');

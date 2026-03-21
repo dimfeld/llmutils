@@ -254,12 +254,15 @@ export async function setupWorkspace(
           );
         }
 
+        let reusedExistingBranch = false;
         if (shouldPrepareWorkspaceBranch) {
+          const hasExplicitBase = Boolean(options.base);
           let prepareResult = await prepareExistingWorkspace(workspace.path, {
             baseBranch,
             branchName,
             planFilePath: currentPlanFile ? planFile : undefined,
             createBranch: shouldCreateBranch,
+            reuseExistingBranch: !hasExplicitBase,
           });
 
           if (!prepareResult.success && canRetryWithoutBaseBranch) {
@@ -267,6 +270,7 @@ export async function setupWorkspace(
               branchName,
               planFilePath: currentPlanFile ? planFile : undefined,
               createBranch: shouldCreateBranch,
+              reuseExistingBranch: !hasExplicitBase,
             });
           }
 
@@ -275,16 +279,29 @@ export async function setupWorkspace(
               `Failed to prepare workspace at ${workspace.path}: ${prepareResult.error ?? 'Unknown error'}`
             );
           }
+
+          reusedExistingBranch = prepareResult.reusedExistingBranch ?? false;
         }
 
         let planFileForUpdateCommands: string | undefined = planFile;
-        try {
-          await copyPlanIntoWorkspace();
+        if (reusedExistingBranch) {
+          // When reusing an existing branch, the plan file in the workspace
+          // is assumed to be more current than the one in the primary workspace.
+          // Use the workspace's version instead of overwriting it.
+          if (workspacePlanFile) {
+            planFile = workspacePlanFile;
+            log(`Using existing plan file in workspace: ${planFile}`);
+          }
           planFileForUpdateCommands = planFile;
-        } catch (err) {
-          error(`Failed to copy plan file to workspace: ${err as Error}`);
-          error('Continuing without workspace plan file for update commands.');
-          planFileForUpdateCommands = undefined;
+        } else {
+          try {
+            await copyPlanIntoWorkspace();
+            planFileForUpdateCommands = planFile;
+          } catch (err) {
+            error(`Failed to copy plan file to workspace: ${err as Error}`);
+            error('Continuing without workspace plan file for update commands.');
+            planFileForUpdateCommands = undefined;
+          }
         }
 
         const updateSuccess = await runWorkspaceUpdateCommands(

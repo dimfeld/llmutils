@@ -1203,23 +1203,72 @@ async function branchExists(
 }
 
 /**
+ * Checks if a branch/bookmark exists on the remote.
+ * Supports both Git and Jujutsu repositories.
+ *
+ * @param workspacePath - Path to the workspace
+ * @param branchName - Name of the branch to check
+ * @param isJj - Whether the workspace uses Jujutsu
+ * @param remoteName - Name of the remote (default: 'origin')
+ * @returns true if the branch exists on the remote, false otherwise
+ */
+async function remoteBranchExists(
+  workspacePath: string,
+  branchName: string,
+  isJj: boolean,
+  remoteName = 'origin'
+): Promise<boolean> {
+  if (isJj) {
+    const result = await spawnAndLogOutput(['jj', 'bookmark', 'list', '--all'], {
+      cwd: workspacePath,
+      quiet: true,
+    });
+    if (result.exitCode !== 0) {
+      return false;
+    }
+    const lines = result.stdout.split('\n');
+    for (const line of lines) {
+      const name = line.split(/[\s:]/)[0];
+      if (name === `${branchName}@${remoteName}`) {
+        return true;
+      }
+    }
+    return false;
+  } else {
+    const result = await spawnAndLogOutput(
+      ['git', 'rev-parse', '--verify', `refs/remotes/${remoteName}/${branchName}`],
+      {
+        cwd: workspacePath,
+        quiet: true,
+      }
+    );
+    return result.exitCode === 0;
+  }
+}
+
+/**
  * Finds a unique branch name by appending suffixes (-2, -3, etc.) if the name already exists.
  * Supports both Git and Jujutsu repositories.
  *
  * @param workspacePath - Path to the workspace
  * @param baseName - Base name for the branch
  * @param isJj - Whether the workspace uses Jujutsu
+ * @param options - Optional settings. When checkRemote is true, also checks remote refs for conflicts.
  * @returns A unique branch name (may include suffix)
  */
 export async function findUniqueBranchName(
   workspacePath: string,
   baseName: string,
-  isJj: boolean
+  isJj: boolean,
+  options?: { checkRemote?: boolean }
 ): Promise<string> {
   let candidate = baseName;
   let suffix = 2;
 
-  while (await branchExists(workspacePath, candidate, isJj)) {
+  while (
+    (await branchExists(workspacePath, candidate, isJj)) ||
+    (options?.checkRemote && (await remoteBranchExists(workspacePath, candidate, isJj)))
+  ) {
     candidate = `${baseName}-${suffix}`;
     suffix++;
     // Safety limit to prevent infinite loops
@@ -1255,6 +1304,9 @@ export interface PrepareWorkspaceOptions {
   logSkippedBranchCreation?: boolean;
   /** Whether to force the checked-out base branch to the fetched remote tip when available */
   updateBaseFromRemote?: boolean;
+  /** When true, check if branchName exists locally and reuse it instead of creating new.
+   *  Also checks remote when finding unique names for new branches. */
+  reuseExistingBranch?: boolean;
 }
 
 /**
@@ -1267,6 +1319,8 @@ export interface PrepareWorkspaceResult {
   error?: string;
   /** The actual branch name used (may include auto-suffix) */
   actualBranchName?: string;
+  /** Whether an existing local branch was reused (vs creating a new one) */
+  reusedExistingBranch?: boolean;
 }
 
 /**
@@ -1276,9 +1330,11 @@ export interface PrepareWorkspaceResult {
  * This function:
  * 1. Detects VCS type (git vs jj)
  * 2. Fetches latest from remote
- * 3. Checks out the base branch
- * 4. Finds a unique branch name (auto-suffixing if needed)
- * 5. Creates and checks out the new branch (if enabled)
+ * 2a. If reuseExistingBranch: checks if branchName exists locally, and if so checks it out + pulls latest
+ * 3. Determines the base branch
+ * 4. Checks out the base branch
+ * 5. Finds a unique branch name (auto-suffixing if needed; also checks remote when reuseExistingBranch)
+ * 6. Creates and checks out the new branch (if enabled)
  *
  * @param workspacePath - Absolute path to the workspace
  * @param options - Options including base branch and new branch name
@@ -1349,14 +1405,85 @@ export async function prepareExistingWorkspace(
     }
   }
 
-  // Step 2: Determine base branch
+  const shouldCreateBranch = options.createBranch ?? true;
+
+  // Step 2: If reuseExistingBranch is enabled, check if the plan branch already exists locally
+  if (options.reuseExistingBranch && shouldCreateBranch) {
+    const localExists = await branchExists(workspacePath, options.branchName, isJj);
+
+    if (localExists) {
+      log(
+        `Found existing local branch "${options.branchName}", checking out and pulling latest...`
+      );
+
+      if (isJj) {
+        const editResult = await spawnAndLogOutput(['jj', 'new', options.branchName], {
+          cwd: workspacePath,
+        });
+        if (editResult.exitCode !== 0) {
+          return {
+            success: false,
+            error: `Failed to check out existing bookmark "${options.branchName}": ${editResult.stderr}`,
+          };
+        }
+        await ensureJjRevisionHasDescription(
+          workspacePath,
+          '@',
+          options.planFilePath,
+          options.branchName
+        );
+
+        // Track remote version if it exists to incorporate remote changes
+        if (hasRemote !== false) {
+          await spawnAndLogOutput(
+            ['jj', 'bookmark', 'track', options.branchName, '--remote', 'origin'],
+            { cwd: workspacePath, quiet: true }
+          );
+        }
+      } else {
+        const checkoutResult = await spawnAndLogOutput(['git', 'checkout', options.branchName], {
+          cwd: workspacePath,
+        });
+        if (checkoutResult.exitCode !== 0) {
+          return {
+            success: false,
+            error: `Failed to check out existing branch "${options.branchName}": ${checkoutResult.stderr}`,
+          };
+        }
+
+        // Pull latest if remote exists (non-fatal if branch isn't on remote yet)
+        if (hasRemote !== false) {
+          const pullResult = await spawnAndLogOutput(
+            ['git', 'pull', '--ff-only', 'origin', options.branchName],
+            { cwd: workspacePath, quiet: true }
+          );
+          if (pullResult.exitCode !== 0) {
+            log(
+              `Note: Could not fast-forward "${options.branchName}" from remote (may not exist remotely yet)`
+            );
+          }
+        }
+      }
+
+      log(`Successfully prepared workspace with existing branch "${options.branchName}"`);
+      return {
+        success: true,
+        actualBranchName: options.branchName,
+        reusedExistingBranch: true,
+      };
+    }
+
+    // Branch doesn't exist locally — fall through to create a new branch,
+    // but findUniqueBranchName will also check remote refs
+  }
+
+  // Step 3: Determine base branch
   const baseBranch = options.baseBranch || (await getTrunkBranch(workspacePath));
   log(`Using base branch: ${baseBranch}`);
 
-  const shouldCreateBranch = options.createBranch ?? true;
   const shouldUpdateBaseFromRemote = options.updateBaseFromRemote ?? true;
 
-  // Step 3: Checkout base branch or create a new change
+  // Step 4: Checkout base branch or create a new change
   log(`Checking out base branch "${baseBranch}"...`);
   const checkoutResult = isJj
     ? await spawnAndLogOutput(['jj', 'new', baseBranch], { cwd: workspacePath })
@@ -1407,10 +1534,15 @@ export async function prepareExistingWorkspace(
     };
   }
 
-  // Step 4: Find unique branch name
-  const actualBranchName = await findUniqueBranchName(workspacePath, options.branchName, isJj);
+  // Step 5: Find unique branch name (also checking remote when reuseExistingBranch is set)
+  const actualBranchName = await findUniqueBranchName(
+    workspacePath,
+    options.branchName,
+    isJj,
+    options.reuseExistingBranch ? { checkRemote: true } : undefined
+  );
 
-  // Step 5: Create new branch
+  // Step 6: Create new branch
   log(`Creating new branch "${actualBranchName}"...`);
   // For jj, we already created a new change with "jj new", now set the bookmark
   // For git, create and checkout a new branch

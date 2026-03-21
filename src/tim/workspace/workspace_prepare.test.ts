@@ -650,3 +650,226 @@ describe('prepareExistingWorkspace with Jujutsu', () => {
     }
   });
 });
+
+describe('reuseExistingBranch', () => {
+  let tempDir: string;
+  let remoteDir: string;
+
+  beforeEach(async () => {
+    clearAllGitCaches();
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-reuse-test-'));
+    remoteDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-reuse-remote-'));
+
+    // Create a bare remote repository
+    await runGit(remoteDir, ['init', '--bare']);
+
+    // Initialize the workspace as a clone of the "remote"
+    await initGitRepository(tempDir);
+    await runGit(tempDir, ['remote', 'add', 'origin', remoteDir]);
+    await runGit(tempDir, ['push', '-u', 'origin', 'main']);
+  });
+
+  afterEach(async () => {
+    clearAllGitCaches();
+    if (tempDir) {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+    if (remoteDir) {
+      await fs.rm(remoteDir, { recursive: true, force: true });
+    }
+  });
+
+  test('checks out existing local branch instead of creating new one', async () => {
+    // Create a branch with some work on it
+    await runGit(tempDir, ['checkout', '-b', 'my-plan-branch']);
+    await fs.writeFile(path.join(tempDir, 'plan-work.txt'), 'work in progress');
+    await runGit(tempDir, ['add', '.']);
+    await runGit(tempDir, ['commit', '-m', 'Plan work']);
+    await runGit(tempDir, ['checkout', 'main']);
+
+    const result = await prepareExistingWorkspace(tempDir, {
+      branchName: 'my-plan-branch',
+      createBranch: true,
+      reuseExistingBranch: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.actualBranchName).toBe('my-plan-branch');
+    expect(result.reusedExistingBranch).toBe(true);
+
+    const currentBranch = await getCurrentBranch(tempDir);
+    expect(currentBranch).toBe('my-plan-branch');
+
+    // Verify the branch content is preserved
+    const fileExists = await fs
+      .access(path.join(tempDir, 'plan-work.txt'))
+      .then(() => true)
+      .catch(() => false);
+    expect(fileExists).toBe(true);
+  });
+
+  test('creates new branch with exact name when not local and not remote', async () => {
+    const result = await prepareExistingWorkspace(tempDir, {
+      branchName: 'brand-new-branch',
+      createBranch: true,
+      reuseExistingBranch: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.actualBranchName).toBe('brand-new-branch');
+    expect(result.reusedExistingBranch).toBeFalsy();
+
+    const currentBranch = await getCurrentBranch(tempDir);
+    expect(currentBranch).toBe('brand-new-branch');
+  });
+
+  test('creates suffixed branch when branch exists only on remote', async () => {
+    // Create a branch, push it to remote, then delete it locally
+    await runGit(tempDir, ['checkout', '-b', 'remote-only-branch']);
+    await fs.writeFile(path.join(tempDir, 'remote-work.txt'), 'remote content');
+    await runGit(tempDir, ['add', '.']);
+    await runGit(tempDir, ['commit', '-m', 'Remote work']);
+    await runGit(tempDir, ['push', '-u', 'origin', 'remote-only-branch']);
+    await runGit(tempDir, ['checkout', 'main']);
+    await runGit(tempDir, ['branch', '-D', 'remote-only-branch']);
+
+    // Fetch so remote refs are available
+    await runGit(tempDir, ['fetch', 'origin']);
+
+    const result = await prepareExistingWorkspace(tempDir, {
+      branchName: 'remote-only-branch',
+      createBranch: true,
+      reuseExistingBranch: true,
+    });
+
+    expect(result.success).toBe(true);
+    // Should be suffixed since the name exists on remote
+    expect(result.actualBranchName).toBe('remote-only-branch-2');
+
+    const currentBranch = await getCurrentBranch(tempDir);
+    expect(currentBranch).toBe('remote-only-branch-2');
+  });
+
+  test('does not reuse branch when reuseExistingBranch is false', async () => {
+    // Create a branch
+    await runGit(tempDir, ['checkout', '-b', 'existing-branch']);
+    await runGit(tempDir, ['checkout', 'main']);
+
+    const result = await prepareExistingWorkspace(tempDir, {
+      branchName: 'existing-branch',
+      createBranch: true,
+      reuseExistingBranch: false,
+    });
+
+    expect(result.success).toBe(true);
+    // Should be suffixed (old behavior) since reuseExistingBranch is false
+    expect(result.actualBranchName).toBe('existing-branch-2');
+  });
+
+  test('pulls latest from remote when reusing existing branch', async () => {
+    // Create a branch and push it
+    await runGit(tempDir, ['checkout', '-b', 'shared-branch']);
+    await fs.writeFile(path.join(tempDir, 'initial.txt'), 'initial');
+    await runGit(tempDir, ['add', '.']);
+    await runGit(tempDir, ['commit', '-m', 'Initial on branch']);
+    await runGit(tempDir, ['push', '-u', 'origin', 'shared-branch']);
+
+    // Simulate a remote update: clone, commit, push from another clone
+    const otherCloneDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-other-clone-'));
+    try {
+      await cloneGitRepository(remoteDir, otherCloneDir);
+      await runGit(otherCloneDir, ['checkout', 'shared-branch']);
+      await fs.writeFile(path.join(otherCloneDir, 'remote-update.txt'), 'from remote');
+      await runGit(otherCloneDir, ['add', '.']);
+      await runGit(otherCloneDir, ['commit', '-m', 'Remote update']);
+      await runGit(otherCloneDir, ['push', 'origin', 'shared-branch']);
+    } finally {
+      await fs.rm(otherCloneDir, { recursive: true, force: true });
+    }
+
+    // Go back to main so prepareExistingWorkspace can check out the branch
+    await runGit(tempDir, ['checkout', 'main']);
+
+    const result = await prepareExistingWorkspace(tempDir, {
+      branchName: 'shared-branch',
+      createBranch: true,
+      reuseExistingBranch: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.actualBranchName).toBe('shared-branch');
+
+    // The remote update should have been pulled
+    const fileExists = await fs
+      .access(path.join(tempDir, 'remote-update.txt'))
+      .then(() => true)
+      .catch(() => false);
+    expect(fileExists).toBe(true);
+  });
+});
+
+describe('findUniqueBranchName with checkRemote', () => {
+  let tempDir: string;
+  let remoteDir: string;
+
+  beforeEach(async () => {
+    clearAllGitCaches();
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-unique-remote-test-'));
+    remoteDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-unique-remote-'));
+
+    await runGit(remoteDir, ['init', '--bare']);
+    await initGitRepository(tempDir);
+    await runGit(tempDir, ['remote', 'add', 'origin', remoteDir]);
+    await runGit(tempDir, ['push', '-u', 'origin', 'main']);
+  });
+
+  afterEach(async () => {
+    clearAllGitCaches();
+    if (tempDir) {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+    if (remoteDir) {
+      await fs.rm(remoteDir, { recursive: true, force: true });
+    }
+  });
+
+  test('returns original name when branch not on local or remote', async () => {
+    const name = await findUniqueBranchName(tempDir, 'fresh-branch', false, {
+      checkRemote: true,
+    });
+    expect(name).toBe('fresh-branch');
+  });
+
+  test('suffixes when branch exists only on remote', async () => {
+    // Create and push a branch, then delete locally
+    await runGit(tempDir, ['checkout', '-b', 'remote-branch']);
+    await fs.writeFile(path.join(tempDir, 'file.txt'), 'content');
+    await runGit(tempDir, ['add', '.']);
+    await runGit(tempDir, ['commit', '-m', 'commit']);
+    await runGit(tempDir, ['push', '-u', 'origin', 'remote-branch']);
+    await runGit(tempDir, ['checkout', 'main']);
+    await runGit(tempDir, ['branch', '-D', 'remote-branch']);
+    await runGit(tempDir, ['fetch', 'origin']);
+
+    const name = await findUniqueBranchName(tempDir, 'remote-branch', false, {
+      checkRemote: true,
+    });
+    expect(name).toBe('remote-branch-2');
+  });
+
+  test('does not check remote when checkRemote is false', async () => {
+    // Create and push a branch, then delete locally
+    await runGit(tempDir, ['checkout', '-b', 'remote-branch']);
+    await fs.writeFile(path.join(tempDir, 'file.txt'), 'content');
+    await runGit(tempDir, ['add', '.']);
+    await runGit(tempDir, ['commit', '-m', 'commit']);
+    await runGit(tempDir, ['push', '-u', 'origin', 'remote-branch']);
+    await runGit(tempDir, ['checkout', 'main']);
+    await runGit(tempDir, ['branch', '-D', 'remote-branch']);
+    await runGit(tempDir, ['fetch', 'origin']);
+
+    // Without checkRemote, it should not detect the remote branch
+    const name = await findUniqueBranchName(tempDir, 'remote-branch', false);
+    expect(name).toBe('remote-branch');
+  });
+});
