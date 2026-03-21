@@ -57,6 +57,8 @@ The codebase is organized into several main modules with improved modularity and
 - Input pause registry (`input_pause_registry.ts`): `PausableInputSource` interface and getter/setter for coordinating stdin between terminal input readers and inquirer prompts without coupling `common` to feature modules
 - Prefix selection prompt (`prefix_prompt.ts`): shared custom prompt + `runPrefixPrompt()` used by permissions flows; `prefix_prompt_utils.ts` contains `extractCommandAfterCd()` and `PrefixPromptResult` type, extracted for client-safe reuse in the web UI
 - GitHub integration utilities in `github/` subdirectory
+     - `pr_status.ts`: GraphQL queries (`fetchPrFullStatus`, `fetchPrCheckStatus`) for PR state, checks, reviews, labels, mergeable status
+     - `pr_status_service.ts`: Cache service with `refreshPrStatus()`, `refreshPrCheckStatus()`, `ensurePrStatusFresh()` (stale-while-revalidate), and `syncPlanPrLinks()` (atomic plan-PR junction sync)
 
 2. **tim**: Manages step-by-step project plans with LLM integration, organized by sub-commands
    - Modular command structure in `commands/` directory with separate files per sub-command
@@ -67,7 +69,7 @@ The codebase is organized into several main modules with improved modularity and
 - Database layer: `db/` directory with SQLite-backed storage for assignments, workspaces, permissions, and project metadata
   - `database.ts`: Singleton connection with WAL mode, foreign keys, and auto-migration
   - `migrations.ts`: Schema versioning with `schema_version` table
-  - CRUD modules: `project.ts`, `assignment.ts`, `permission.ts`, `workspace.ts`, `workspace_lock.ts`, `plan.ts`
+  - CRUD modules: `project.ts`, `assignment.ts`, `permission.ts`, `workspace.ts`, `workspace_lock.ts`, `plan.ts`, `pr_status.ts`
   - Plan sync: `plan_sync.ts` bridges plan files and DB CRUD with lazy-cached project context; `syncPlanToDb()` is called after every `writePlanFile()`, `syncAllPlansToDb()` handles bulk sync with optional prune
   - `sql_utils.ts`: Shared SQL helpers (e.g. `SQL_NOW_ISO_UTC` for ISO-8601 UTC timestamps)
   - `json_import.ts`: One-time import from legacy JSON files on first DB creation

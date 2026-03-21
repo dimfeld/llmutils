@@ -82,6 +82,34 @@ Plan metadata, tasks, and dependencies are mirrored in SQLite alongside the YAML
 
 **Error handling layers**: `syncPlanToDb` has a single try/catch that logs warnings and never rethrows. Callers (e.g., `writePlanFile`) trust this and do not add redundant outer error handling.
 
+### PR Status Cache
+
+PR status data from GitHub is cached in SQLite for display in the web UI and CLI. The schema (migration v8) separates the PR data from plan linkage so the same PR can be linked to multiple plans.
+
+**Tables**:
+
+- `pr_status`: Core PR record keyed by `pr_url` (UNIQUE). Stores state (open/closed/merged), draft flag, mergeable status, review decision, head/base branches, SHA, and `last_fetched_at` for cache freshness.
+- `pr_check_run`: Individual CI check runs per PR (name, status, conclusion, details URL). `source` column distinguishes `check_run` vs `status_context` (GitHub's two check APIs).
+- `pr_review`: Individual reviews per PR (author, state, submitted_at).
+- `pr_label`: Labels per PR (name, color).
+- `plan_pr`: Junction table linking `plan.uuid` to `pr_status.id`. Both sides have CASCADE deletes.
+
+**CRUD module** (`src/tim/db/pr_status.ts`):
+
+- `upsertPrStatus(db, data)`: INSERT ON CONFLICT(pr_url) DO UPDATE, replaces child rows (check runs, reviews, labels) in the same transaction
+- `getPrStatusByUrl(db, prUrl)`: Returns `PrStatusDetail` (status + checks + reviews + labels)
+- `getPrStatusForPlan(db, planUuid)`: All PR statuses linked to a plan via `plan_pr` join
+- `linkPlanToPr(db, planUuid, prStatusId)` / `unlinkPlanFromPr`: Manage plan-PR junction
+- `getPlansWithPrs(db, projectId?)`: Plans with linked PRs in active statuses (pending, in_progress, needs_review)
+- `cleanOrphanedPrStatus(db)`: Removes `pr_status` records with no `plan_pr` links
+
+**Cache service** (`src/common/github/pr_status_service.ts`):
+
+- `refreshPrStatus(db, prUrl)`: Fetches full status via GraphQL, upserts to DB
+- `refreshPrCheckStatus(db, prUrl)`: Lightweight checks-only refresh
+- `ensurePrStatusFresh(db, prUrl, maxAgeMs)`: Stale-while-revalidate — returns cached if fresh, refreshes otherwise
+- `syncPlanPrLinks(db, planUuid, prUrls)`: Atomic sync of plan-PR junction. All GitHub fetches complete before any DB writes; all upserts + link changes happen in one transaction. Orphan cleanup is the caller's responsibility.
+
 ### Web Query Helpers
 
 `src/lib/server/db_queries.ts` provides enriched read-only queries for the SvelteKit web interface, layered on top of the CRUD functions in `src/tim/db/plan.ts`:
