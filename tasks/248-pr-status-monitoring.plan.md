@@ -14,7 +14,7 @@ references:
 planGeneratedAt: 2026-03-21T02:28:58.262Z
 promptsGeneratedAt: 2026-03-21T02:28:58.262Z
 createdAt: 2026-03-21T02:24:53.498Z
-updatedAt: 2026-03-21T07:58:09.164Z
+updatedAt: 2026-03-21T08:59:06.185Z
 tasks:
   - title: Create GitHub GraphQL queries for PR status
     done: true
@@ -224,7 +224,7 @@ tasks:
   - title: "Address Review Feedback: Cached PR status is not reliably shown on
       initial page load because all read paths depend on lazy `plan_pr`
       junctions."
-    done: false
+    done: true
     description: >-
       Cached PR status is not reliably shown on initial page load because all
       read paths depend on lazy `plan_pr` junctions. `syncPlanPrLinks()`
@@ -250,7 +250,7 @@ tasks:
   - title: "Address Review Feedback: PR URLs are validated but not normalized
       consistently, so equivalent URLs for the same PR can be stored as
       different records and cannot be reliably unlinked."
-    done: false
+    done: true
     description: >-
       PR URLs are validated but not normalized consistently, so equivalent URLs
       for the same PR can be stored as different records and cannot be reliably
@@ -274,7 +274,7 @@ tasks:
   - title: "Address Review Feedback: `refreshPrCheckStatus()` calls
       `parsePrOrIssueNumber()` without calling `validatePrIdentifier()` first,
       unlike `refreshPrStatus()` (line 21)."
-    done: false
+    done: true
     description: >-
       `refreshPrCheckStatus()` calls `parsePrOrIssueNumber()` without calling
       `validatePrIdentifier()` first, unlike `refreshPrStatus()` (line 21).
@@ -313,8 +313,10 @@ tasks:
 changedFiles:
   - CLAUDE.md
   - README.md
+  - claude-plugin/skills/using-tim/references/cli-commands.md
   - docs/database.md
   - docs/web-interface.md
+  - src/common/github/identifiers.test.ts
   - src/common/github/identifiers.ts
   - src/common/github/pr_status.test.ts
   - src/common/github/pr_status.ts
@@ -674,46 +676,37 @@ Update `src/lib/components/PlanDetail.svelte`:
 
 ## Current Progress
 ### Current State
-- All 16 tasks complete. Plan is fully implemented with all review feedback addressed.
+- All 19 tasks complete (tasks 1-19). Task 20 is deferred to background polling child plan.
 ### Completed (So Far)
-- Task 1: GitHub GraphQL queries (`src/common/github/pr_status.ts`) with `fetchPrFullStatus()` and `fetchPrCheckStatus()`
-- Task 2: DB migration 8 and CRUD (`src/tim/db/pr_status.ts`, `src/tim/db/migrations.ts`)
-- Task 3: Cache service (`src/common/github/pr_status_service.ts`) with refresh, stale-while-revalidate, and atomic sync
-- Task 4: Web UI data layer (`src/lib/server/db_queries.ts`) — `EnrichedPlan` now has `pullRequests`, `issues`, `prSummaryStatus`; `PlanDetail` has `prStatuses`; bulk `prSummaryStatus` computed via efficient join query on `plan_pr → pr_status`
-- Task 5: API endpoint (`src/routes/api/plans/[planUuid]/pr-status/+server.ts`) — GET returns cached data, POST syncs links + refreshes from GitHub with error fallback to cached data
-- Task 6: PlanDetail PR status section (`PrStatusSection.svelte`, `PrCheckRunList.svelte`, `PrReviewList.svelte`) — shows PR state, checks, reviews, labels with stale-while-revalidate refresh
-- Task 7: PR status indicators in plan list views (`PrStatusIndicator.svelte`) — compact colored dot in PlanRow and ActivePlanRow
-- Task 8: CLI `tim pr` subcommand namespace (`src/tim/commands/pr.ts`, `src/tim/tim.ts`) — `tim pr status [planId]` with force-fresh GitHub fetch, partial failure handling, color-coded output; `tim pr link` and `tim pr unlink` with plan file persistence and URL canonicalization
-- Task 9: `pr-description` migrated to `tim pr description` with hidden backwards-compatible alias
-- Task 10: PrStatusSection state leak fix — reset `refreshing`/`refreshError` before `needsRefresh()` early return
-- Task 11: No-token POST path wrapped in try/catch for TOCTOU race safety
-- Task 12: POST endpoint uses `Promise.allSettled` for partial failure tolerance per PR URL
-- Task 13: Workspace plan auto-resolve walks parent directories
-- Task 14: Issue URLs rejected by `validatePrIdentifier()` — shared in `identifiers.ts`, used by CLI and service layer
-- Task 15: `error` conclusion handled as failure in PrCheckRunList (red X icon); `stale` conclusion shows `—` consistently
-- Task 16: neutral/cancelled/skipped rollup states map to 'passing' not 'none'
+- Tasks 1-16: Core PR status monitoring implementation (GraphQL queries, DB, cache service, web UI, CLI)
+- Task 17: Fixed cached PR status not shown on initial page load — read paths now derive PR status from `plan.pull_request` URLs directly against `pr_status.pr_url`, not solely via `plan_pr` junctions. Stale `plan_pr` links are filtered out when current plan URLs are available.
+- Task 18: Consistent PR URL canonicalization — `canonicalizePrUrl()` and `tryCanonicalizePrUrl()` in `identifiers.ts` normalize `/pulls/` to `/pull/`, strip query params/fragments, reject partially numeric PR numbers. Applied at all entry points (service layer, CLI, DB reads, orphan cleanup, getPlansWithPrs).
+- Task 19: `refreshPrCheckStatus()` now validates identifiers via `canonicalizePrUrl()` before any cache lookup or API call.
 ### Remaining
-- None
+- Task 20: GraphQL enum normalization throws on unknown values — deferred to background polling child plan
 ### Next Iteration Guidance
 - None
 ### Decisions / Changes
 - `syncPlanPrLinks` is fully atomic: all GitHub fetches complete before any DB writes, and all upserts + link changes happen in one transaction
 - `cleanOrphanedPrStatus` called after sync in POST endpoint and CLI `tim pr status` to clean up unlinked PR cache rows
+- `cleanOrphanedPrStatus` canonicalizes plan `pull_request` URLs in TypeScript before comparing against `pr_status.pr_url`, preventing incorrect deletion of cached rows for non-canonical plan URLs
 - `refreshPrCheckStatus` is documented as lightweight (checks only, no PR state update) - callers needing state changes should use `refreshPrStatus`
 - `plan_pr` junction is populated lazily by POST endpoint / CLI commands, not on page load GET — GET only reads existing cached data
+- Read paths (`getPrStatusForPlan`, `getPrSummaryStatusByPlanUuid`) use `plan.pull_request` URLs as source of truth when available, falling back to `plan_pr` only when URLs aren't provided. This ensures cached data is shown even before `plan_pr` is populated.
 - POST endpoint gracefully handles GitHub API failures by falling back to cached data with an error message
 - POST endpoint wraps `syncPlanPrLinks` in try/catch with cached-URL fallback, so `Promise.allSettled` is always reachable
 - No-token path always calls `syncPlanPrLinks` (even with empty cachedUrls) to prune stale links
 - CLI `tim pr status` always force-refreshes from GitHub (never uses cached data), but syncs `plan_pr` junctions afterward for web UI
 - `tim pr link`/`unlink` modify the plan file (source of truth) and update DB cache best-effort. Link validates with GitHub before modifying the plan file.
-- URL canonicalization: `link` and `unlink` both normalize PR identifiers to `https://github.com/{owner}/{repo}/pull/{number}` format
-- `validatePrIdentifier()` in `identifiers.ts` enforces GitHub host + `/pull/` path for URL-form identifiers; used by CLI commands and service layer
-- `persistPlanPullRequests` skips `writePlanFile` when the URL list hasn't changed (no-op detection)
+- URL canonicalization: all PR URL entry points normalize to `https://github.com/{owner}/{repo}/pull/{number}` format. `canonicalizePrUrl()` (throwing) for write paths, `tryCanonicalizePrUrl()` (returns null) for read paths.
+- `validatePrIdentifier()` enforces GitHub host + `/pull/` path + numeric PR number for URL-form identifiers
+- `persistPlanPullRequests` normalizes existing plan-file PR URLs during link/unlink, deduplicating equivalent URL forms
 - CLI partial failures: tries syncing all prUrls first, falls back to just successful URLs if uncached PRs can't be fetched
 - Reviews are deduplicated to latest per author at the normalization layer
 - PrStatusSection uses stale-while-revalidate: shows initialStatuses immediately, only POSTs if any PR is missing or stale (>5 min)
 - PrStatusSection uses AbortController to prevent stale fetch responses from overwriting fresh data on plan navigation
 - `prSummaryStatus` filters null/empty `check_rollup_state` values — PRs without checks don't poison the aggregate; neutral/cancelled/skipped map to 'passing'
+- `getPlansWithPrs()` fallback branch canonicalizes plan URLs in TypeScript before matching against `pr_status`, correctly filtering closed PRs and deduplicating
 ### Lessons Learned
 - GitHub GraphQL connection nodes can be null - always filter before mapping
 - Separating fetch phase from DB write phase enables true atomicity for operations that mix async API calls with sync DB transactions
@@ -726,5 +719,8 @@ Update `src/lib/components/PlanDetail.svelte`:
 - `new Date(invalidString).getTime()` returns NaN; comparisons with NaN always return false, silently skipping staleness checks
 - When wrapping an all-or-nothing sync in try/catch, make sure the partial-failure path (Promise.allSettled) is still reachable — otherwise the resilience pattern is dead code
 - PR URL validation should be centralized in a shared utility and enforced at all entry points (CLI, service layer, API routes), not just the CLI
+- When mixing SQL queries with TypeScript canonicalization, do the canonicalization in TypeScript rather than trying to do it in SQL. Raw `json_each` values from plan files may not be canonical, causing SQL string comparisons to fail.
+- Read paths should use the plan's current state (e.g., `plan.pull_request` URLs) as source of truth, not lazy junction tables that may be stale or missing. Union with junction data only when the source of truth isn't available.
+- `canonicalizePrUrl` in read paths must not throw — use `tryCanonicalizePrUrl` (returns null for non-PR URLs) to avoid crashing page loads on malformed plan data.
 ### Risks / Blockers
 - None
