@@ -90,3 +90,21 @@ export function validatePrIdentifier(identifier: string): void {
     );
   }
 }
+
+export function canonicalizePrUrl(identifier: string): string {
+  let url: URL;
+  try {
+    url = new URL(identifier);
+  } catch {
+    return identifier;
+  }
+
+  validatePrIdentifier(identifier);
+
+  const segments = url.pathname.split('/').filter(Boolean);
+  const owner = segments[0];
+  const repo = segments[1];
+  const number = segments[3];
+
+  return `https://github.com/${owner}/${repo}/pull/${number}`;
+}

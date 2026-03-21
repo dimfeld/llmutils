@@ -6,7 +6,7 @@ goal: Fetch PR status from GitHub, cache in DB, display in web UI and CLI via
 id: 248
 uuid: f92da2f3-c73f-4b89-83c8-03b509d58d1d
 generatedBy: agent
-status: done
+status: in_progress
 priority: medium
 parent: 245
 references:
@@ -14,7 +14,7 @@ references:
 planGeneratedAt: 2026-03-21T02:28:58.262Z
 promptsGeneratedAt: 2026-03-21T02:28:58.262Z
 createdAt: 2026-03-21T02:24:53.498Z
-updatedAt: 2026-03-21T07:43:20.126Z
+updatedAt: 2026-03-21T07:58:09.164Z
 tasks:
   - title: Create GitHub GraphQL queries for PR status
     done: true
@@ -221,6 +221,95 @@ tasks:
 
 
       Related file: src/lib/server/db_queries.ts:269-284
+  - title: "Address Review Feedback: Cached PR status is not reliably shown on
+      initial page load because all read paths depend on lazy `plan_pr`
+      junctions."
+    done: false
+    description: >-
+      Cached PR status is not reliably shown on initial page load because all
+      read paths depend on lazy `plan_pr` junctions. `syncPlanPrLinks()`
+      explicitly leaves `plan_pr` population lazy, but
+      `getPrSummaryStatusByPlanUuid()` queries only `plan_pr`, `getPlanDetail()`
+      loads PR status only via `getPrStatusForPlan()`, and the GET route does
+      the same. If a plan's `pull_request` list changes through normal plan-file
+      sync or the same cached PR is linked to another plan, the `pr_status` row
+      can exist while `plan_pr` does not. In that state SSR and list views
+      render no cached PR status until the client POST runs, which violates the
+      stated stale-while-revalidate requirement to show cached data immediately
+      on page load.
+
+
+      Suggestion: Stop treating `plan_pr` as the sole source for reads. Either
+      derive cached PR status directly from `plan.pull_request` URLs at read
+      time, or reconcile `plan_pr` synchronously from existing cached rows
+      during plan sync. Add an integration test for: cached `pr_status` exists,
+      `plan_pr` missing, plan has `pull_request` URL.
+
+
+      Related file: src/lib/server/db_queries.ts:224-241,653
+  - title: "Address Review Feedback: PR URLs are validated but not normalized
+      consistently, so equivalent URLs for the same PR can be stored as
+      different records and cannot be reliably unlinked."
+    done: false
+    description: >-
+      PR URLs are validated but not normalized consistently, so equivalent URLs
+      for the same PR can be stored as different records and cannot be reliably
+      unlinked. `validatePrIdentifier()` accepts both `/pull/123` and
+      `/pulls/123`, but `refreshPrStatus()` and `syncPlanPrLinks()` persist the
+      raw input string as `pr_url`. The CLI link/unlink commands then compare
+      exact strings against canonical `/pull/{number}` URLs. A plan containing
+      `https://github.com/org/repo/pulls/123` is therefore treated as different
+      from `.../pull/123`: linking can add a semantic duplicate, cache rows
+      split across two `pr_url` keys, and unlinking the canonical form leaves
+      the original entry behind.
+
+
+      Suggestion: Canonicalize every explicit PR URL to a single form before
+      persistence, cache lookup, and plan-file comparison. The CLI and service
+      layer should share one normalization helper, and tests should cover
+      `/pulls/` and other equivalent URL forms.
+
+
+      Related file: src/common/github/pr_status_service.ts:20-30,124-156
+  - title: "Address Review Feedback: `refreshPrCheckStatus()` calls
+      `parsePrOrIssueNumber()` without calling `validatePrIdentifier()` first,
+      unlike `refreshPrStatus()` (line 21)."
+    done: false
+    description: >-
+      `refreshPrCheckStatus()` calls `parsePrOrIssueNumber()` without calling
+      `validatePrIdentifier()` first, unlike `refreshPrStatus()` (line 21).
+      Currently this function is only reachable through validated paths
+      (existing cached entries that went through `refreshPrStatus` initially),
+      but it's a defense-in-depth gap. If a future caller uses
+      `refreshPrCheckStatus` directly with an issue URL, it would attempt a
+      GitHub API call for a non-existent PR instead of failing fast with a clear
+      validation error.
+
+
+      Suggestion: Add `validatePrIdentifier(prUrl)` call at the start of
+      `refreshPrCheckStatus()` to match the pattern in `refreshPrStatus()`.
+
+
+      Related file: src/common/github/pr_status_service.ts:68-95
+  - title: "Address Review Feedback: GraphQL enum normalization functions
+      (`normalizePrState`, `normalizeCheckStatus`, etc.) throw on unknown
+      values."
+    done: false
+    description: >-
+      GraphQL enum normalization functions (`normalizePrState`,
+      `normalizeCheckStatus`, etc.) throw on unknown values. If GitHub adds a
+      new enum value, the entire status fetch will fail rather than gracefully
+      degrading. This is a deliberate design choice and acceptable for a CLI
+      tool, but worth considering for the future background polling feature
+      where silent partial failure might be preferred.
+
+
+      Suggestion: When implementing background polling (child plan 2), consider
+      adding fallback/default branches to normalization functions instead of
+      throwing, or catching normalization errors at the polling layer.
+
+
+      Related file: src/common/github/pr_status.ts:261-342
 changedFiles:
   - CLAUDE.md
   - README.md

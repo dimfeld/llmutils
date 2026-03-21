@@ -244,6 +244,44 @@ describe('lib/server/db_queries', () => {
     expect(plans.find((plan) => plan.uuid === 'plan-neutral-pr')?.prSummaryStatus).toBe('passing');
   });
 
+  test('getPlansForProject and getPlanDetail read cached PR status from plan URLs when plan_pr is missing', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-cached-pr-no-junction',
+      planId: 109,
+      title: 'Cached PR without junction',
+      goal: 'Should show cached PR status during SSR',
+      status: 'pending',
+      priority: 'medium',
+      filename: '109-cached-pr.plan.md',
+      pullRequest: ['https://github.com/example/repo/pulls/109?tab=checks'],
+    });
+
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/109',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 109,
+      title: 'Cached PR 109',
+      state: 'open',
+      draft: false,
+      checkRollupState: 'failure',
+      lastFetchedAt: recentTimestamp(),
+    });
+
+    const plans = getPlansForProject(db, projectId);
+    expect(plans.find((plan) => plan.uuid === 'plan-cached-pr-no-junction')).toMatchObject({
+      pullRequests: ['https://github.com/example/repo/pull/109'],
+      prSummaryStatus: 'failing',
+    });
+
+    const detail = getPlanDetail(db, 'plan-cached-pr-no-junction');
+    expect(detail?.prStatuses).toHaveLength(1);
+    expect(detail?.prStatuses[0]?.status).toMatchObject({
+      pr_url: 'https://github.com/example/repo/pull/109',
+      title: 'Cached PR 109',
+    });
+  });
+
   test('cross-project unresolved dependencies mark a plan as blocked in project lists and detail views', () => {
     const plans = getPlansForProject(db, projectId);
     const crossProjectDependencyPlan = plans.find(

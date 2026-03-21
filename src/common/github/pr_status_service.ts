@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite';
-import { parsePrOrIssueNumber, validatePrIdentifier } from './identifiers.js';
+import { canonicalizePrUrl, parsePrOrIssueNumber, validatePrIdentifier } from './identifiers.js';
 import { fetchPrCheckStatus, fetchPrFullStatus } from './pr_status.js';
 import {
   getPrStatusByUrl,
@@ -18,15 +18,16 @@ function getPrStatusId(detail: PrStatusDetail): number {
 }
 
 export async function refreshPrStatus(db: Database, prUrl: string): Promise<PrStatusDetail> {
-  validatePrIdentifier(prUrl);
-  const parsed = await parsePrOrIssueNumber(prUrl);
+  const canonicalPrUrl = canonicalizePrUrl(prUrl);
+  validatePrIdentifier(canonicalPrUrl);
+  const parsed = await parsePrOrIssueNumber(canonicalPrUrl);
   if (!parsed) {
-    throw new Error(`Invalid GitHub pull request identifier: ${prUrl}`);
+    throw new Error(`Invalid GitHub pull request identifier: ${canonicalPrUrl}`);
   }
 
   const fullStatus = await fetchPrFullStatus(parsed.owner, parsed.repo, parsed.number);
   return upsertPrStatus(db, {
-    prUrl,
+    prUrl: canonicalPrUrl,
     owner: parsed.owner,
     repo: parsed.repo,
     prNumber: parsed.number,
@@ -66,14 +67,17 @@ export async function refreshPrStatus(db: Database, prUrl: string): Promise<PrSt
  * Designed for frequent polling between full refreshes. Callers that need updated PR state
  * (open/merged/closed) should use refreshPrStatus() periodically. */
 export async function refreshPrCheckStatus(db: Database, prUrl: string): Promise<PrStatusDetail> {
-  const existing = getPrStatusByUrl(db, prUrl);
+  const canonicalPrUrl = canonicalizePrUrl(prUrl);
+  validatePrIdentifier(canonicalPrUrl);
+
+  const existing = getPrStatusByUrl(db, canonicalPrUrl);
   if (!existing) {
-    return refreshPrStatus(db, prUrl);
+    return refreshPrStatus(db, canonicalPrUrl);
   }
 
-  const parsed = await parsePrOrIssueNumber(prUrl);
+  const parsed = await parsePrOrIssueNumber(canonicalPrUrl);
   if (!parsed) {
-    throw new Error(`Invalid GitHub pull request identifier: ${prUrl}`);
+    throw new Error(`Invalid GitHub pull request identifier: ${canonicalPrUrl}`);
   }
 
   const checkStatus = await fetchPrCheckStatus(parsed.owner, parsed.repo, parsed.number);
@@ -99,21 +103,22 @@ export async function ensurePrStatusFresh(
   prUrl: string,
   maxAgeMs: number
 ): Promise<PrStatusDetail> {
-  const existing = getPrStatusByUrl(db, prUrl);
+  const canonicalPrUrl = canonicalizePrUrl(prUrl);
+  const existing = getPrStatusByUrl(db, canonicalPrUrl);
   if (!existing) {
-    return refreshPrStatus(db, prUrl);
+    return refreshPrStatus(db, canonicalPrUrl);
   }
 
   const lastFetchedAtMs = Date.parse(existing.status.last_fetched_at);
   if (!Number.isFinite(lastFetchedAtMs)) {
-    return refreshPrStatus(db, prUrl);
+    return refreshPrStatus(db, canonicalPrUrl);
   }
 
   if (Date.now() - lastFetchedAtMs <= maxAgeMs) {
     return existing;
   }
 
-  return refreshPrStatus(db, prUrl);
+  return refreshPrStatus(db, canonicalPrUrl);
 }
 
 // plan_pr rows are populated lazily by the service layer when PR status is viewed or refreshed
@@ -126,16 +131,18 @@ export async function syncPlanPrLinks(
   planUuid: string,
   prUrls: string[]
 ): Promise<PrStatusDetail[]> {
+  const canonicalPrUrls = [...new Set(prUrls.map((prUrl) => canonicalizePrUrl(prUrl)))];
+
   // Phase 1: Identify which URLs need fetching by checking what's already cached.
   // Uses stale cached data intentionally for performance; callers should use
   // ensurePrStatusFresh() separately if freshness matters.
   // Validate all URLs before doing any work
-  for (const prUrl of prUrls) {
+  for (const prUrl of canonicalPrUrls) {
     validatePrIdentifier(prUrl);
   }
 
   const urlsToFetch: string[] = [];
-  for (const prUrl of prUrls) {
+  for (const prUrl of canonicalPrUrls) {
     const existing = getPrStatusByUrl(db, prUrl);
     if (!existing) {
       urlsToFetch.push(prUrl);
@@ -237,5 +244,5 @@ export async function syncPlanPrLinks(
     }
   );
 
-  return syncInTransaction.immediate(planUuid, prUrls);
+  return syncInTransaction.immediate(planUuid, canonicalPrUrls);
 }

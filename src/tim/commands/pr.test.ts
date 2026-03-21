@@ -18,7 +18,9 @@ const mockGetWorkspaceInfoByPath = mock((_cwd: string) => null);
 const mockGetDatabase = mock(() => ({}));
 const mockRefreshPrStatus = mock(async (..._args: unknown[]) => ({}));
 const mockSyncPlanPrLinks = mock(async (..._args: unknown[]) => []);
+const mockCanonicalizePrUrl = mock((identifier: string) => identifier);
 const mockParsePrOrIssueNumber = mock(async (..._args: unknown[]) => null);
+const mockValidatePrIdentifier = mock((_identifier: string) => {});
 const mockGetPrStatusByUrl = mock((_db: unknown, _prUrl: string) => null);
 const mockLinkPlanToPr = mock((_db: unknown, _planUuid: string, _prStatusId: number) => {});
 const mockUnlinkPlanFromPr = mock((_db: unknown, _planUuid: string, _prStatusId: number) => {});
@@ -64,7 +66,9 @@ describe('tim/commands/pr', () => {
       syncPlanPrLinks: mockSyncPlanPrLinks,
     }));
     await moduleMocker.mock('../../common/github/identifiers.js', () => ({
+      canonicalizePrUrl: mockCanonicalizePrUrl,
       parsePrOrIssueNumber: mockParsePrOrIssueNumber,
+      validatePrIdentifier: mockValidatePrIdentifier,
     }));
     await moduleMocker.mock('../db/pr_status.js', () => ({
       getPrStatusByUrl: mockGetPrStatusByUrl,
@@ -116,7 +120,9 @@ describe('tim/commands/pr', () => {
     mockGetDatabase.mockClear();
     mockRefreshPrStatus.mockClear();
     mockSyncPlanPrLinks.mockClear();
+    mockCanonicalizePrUrl.mockClear();
     mockParsePrOrIssueNumber.mockClear();
+    mockValidatePrIdentifier.mockClear();
     mockGetPrStatusByUrl.mockClear();
     mockLinkPlanToPr.mockClear();
     mockUnlinkPlanFromPr.mockClear();
@@ -142,7 +148,13 @@ describe('tim/commands/pr', () => {
       return detail;
     });
     mockSyncPlanPrLinks.mockImplementation(async () => currentSyncedStatuses);
+    mockCanonicalizePrUrl.mockImplementation((identifier: string) => identifier);
     mockParsePrOrIssueNumber.mockImplementation(async () => currentParsedIdentifier);
+    mockValidatePrIdentifier.mockImplementation((identifier: string) => {
+      if (identifier.includes('/issues/')) {
+        throw new Error(`Not a pull request URL: ${identifier}`);
+      }
+    });
     mockGetPrStatusByUrl.mockImplementation(() => currentCachedDetail);
     mockLinkPlanToPr.mockImplementation(() => {});
     mockUnlinkPlanFromPr.mockImplementation(() => {});

@@ -9,6 +9,7 @@ import {
   cleanOrphanedPrStatus,
   getPlansWithPrs,
   getPrStatusByUrl,
+  getPrStatusByUrls,
   getPrStatusForPlan,
   linkPlanToPr,
   unlinkPlanFromPr,
@@ -167,6 +168,31 @@ describe('tim db/pr_status', () => {
     unlinkPlanFromPr(db, 'plan-1', detail.status.id);
     planStatuses = getPrStatusForPlan(db, 'plan-1');
     expect(planStatuses).toHaveLength(0);
+  });
+
+  test('getPrStatusByUrls and getPrStatusForPlan fall back to cached rows by URL when plan_pr is missing', () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/102',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 102,
+      title: 'PR 102',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    expect(
+      getPrStatusByUrls(db, ['https://github.com/example/repo/pulls/102?tab=checks']).map(
+        (detail) => detail.status.pr_url
+      )
+    ).toEqual(['https://github.com/example/repo/pull/102']);
+
+    expect(
+      getPrStatusForPlan(db, 'plan-1', ['https://github.com/example/repo/pulls/102']).map(
+        (detail) => detail.status.pr_url
+      )
+    ).toEqual(['https://github.com/example/repo/pull/102']);
   });
 
   test('getPrStatusByUrl returns stored check rollup state and check source fields', () => {

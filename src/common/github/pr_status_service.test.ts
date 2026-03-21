@@ -12,6 +12,20 @@ import { getOrCreateProject } from '../../tim/db/project.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
+function makeIdentifiersMock(
+  parsePrOrIssueNumberImpl: (...args: unknown[]) => unknown,
+  options?: {
+    canonicalizePrUrl?: (identifier: string) => string;
+    validatePrIdentifier?: (identifier: string) => void;
+  }
+) {
+  return {
+    canonicalizePrUrl: options?.canonicalizePrUrl ?? ((identifier: string) => identifier),
+    parsePrOrIssueNumber: mock(parsePrOrIssueNumberImpl),
+    validatePrIdentifier: options?.validatePrIdentifier ?? (() => {}),
+  };
+}
+
 describe('common/github/pr_status_service', () => {
   let tempDir: string;
   let db: Database;
@@ -63,9 +77,9 @@ describe('common/github/pr_status_service', () => {
       checkRollupState: 'success' as const,
     }));
 
-    await moduleMocker.mock('./identifiers.ts', () => ({
-      parsePrOrIssueNumber: mock(async () => ({ owner: 'example', repo: 'repo', number: 201 })),
-    }));
+    await moduleMocker.mock('./identifiers.ts', () =>
+      makeIdentifiersMock(async () => ({ owner: 'example', repo: 'repo', number: 201 }))
+    );
     await moduleMocker.mock('./pr_status.ts', () => ({
       fetchPrFullStatus,
       fetchPrCheckStatus: mock(),
@@ -114,9 +128,9 @@ describe('common/github/pr_status_service', () => {
       checkRollupState: 'failure' as const,
     }));
 
-    await moduleMocker.mock('./identifiers.ts', () => ({
-      parsePrOrIssueNumber: mock(async () => ({ owner: 'example', repo: 'repo', number: 202 })),
-    }));
+    await moduleMocker.mock('./identifiers.ts', () =>
+      makeIdentifiersMock(async () => ({ owner: 'example', repo: 'repo', number: 202 }))
+    );
     await moduleMocker.mock('./pr_status.ts', () => ({
       fetchPrFullStatus: mock(),
       fetchPrCheckStatus,
@@ -131,6 +145,62 @@ describe('common/github/pr_status_service', () => {
     expect(result.status.check_rollup_state).toBe('failure');
     expect(result.reviews.map((review) => review.author)).toEqual(['bob']);
     expect(result.labels.map((label) => label.name)).toEqual(['bug']);
+  });
+
+  test('refreshPrCheckStatus canonicalizes equivalent PR URLs before cache lookup', async () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/220',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 220,
+      title: 'Canonical PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    const fetchPrCheckStatus = mock(async () => ({
+      checks: [],
+      checkRollupState: 'success' as const,
+    }));
+
+    await moduleMocker.mock('./identifiers.ts', () =>
+      makeIdentifiersMock(async () => ({ owner: 'example', repo: 'repo', number: 220 }), {
+        canonicalizePrUrl: () => 'https://github.com/example/repo/pull/220',
+      })
+    );
+    await moduleMocker.mock('./pr_status.ts', () => ({
+      fetchPrFullStatus: mock(),
+      fetchPrCheckStatus,
+    }));
+
+    const { refreshPrCheckStatus } = await import('./pr_status_service.ts');
+    await refreshPrCheckStatus(db, 'https://github.com/example/repo/pulls/220?tab=checks');
+
+    expect(fetchPrCheckStatus).toHaveBeenCalledWith('example', 'repo', 220);
+  });
+
+  test('refreshPrCheckStatus validates identifiers before using cached rows', async () => {
+    const validatePrIdentifier = mock((identifier: string) => {
+      throw new Error(`invalid: ${identifier}`);
+    });
+
+    await moduleMocker.mock('./identifiers.ts', () =>
+      makeIdentifiersMock(async () => ({ owner: 'example', repo: 'repo', number: 221 }), {
+        validatePrIdentifier,
+      })
+    );
+    await moduleMocker.mock('./pr_status.ts', () => ({
+      fetchPrFullStatus: mock(),
+      fetchPrCheckStatus: mock(),
+    }));
+
+    const { refreshPrCheckStatus } = await import('./pr_status_service.ts');
+
+    await expect(
+      refreshPrCheckStatus(db, 'https://github.com/example/repo/issues/221')
+    ).rejects.toThrow('invalid: https://github.com/example/repo/issues/221');
+    expect(validatePrIdentifier).toHaveBeenCalledWith('https://github.com/example/repo/issues/221');
   });
 
   test('ensurePrStatusFresh returns cached data when it is still fresh', async () => {
@@ -150,9 +220,9 @@ describe('common/github/pr_status_service', () => {
       throw new Error('should not be called');
     });
 
-    await moduleMocker.mock('./identifiers.ts', () => ({
-      parsePrOrIssueNumber: mock(async () => ({ owner: 'example', repo: 'repo', number: 203 })),
-    }));
+    await moduleMocker.mock('./identifiers.ts', () =>
+      makeIdentifiersMock(async () => ({ owner: 'example', repo: 'repo', number: 203 }))
+    );
     await moduleMocker.mock('./pr_status.ts', () => ({
       fetchPrFullStatus,
       fetchPrCheckStatus: mock(),
@@ -198,9 +268,9 @@ describe('common/github/pr_status_service', () => {
       checkRollupState: 'success' as const,
     }));
 
-    await moduleMocker.mock('./identifiers.ts', () => ({
-      parsePrOrIssueNumber: mock(async () => ({ owner: 'example', repo: 'repo', number: 204 })),
-    }));
+    await moduleMocker.mock('./identifiers.ts', () =>
+      makeIdentifiersMock(async () => ({ owner: 'example', repo: 'repo', number: 204 }))
+    );
     await moduleMocker.mock('./pr_status.ts', () => ({
       fetchPrFullStatus,
       fetchPrCheckStatus: mock(),
@@ -243,9 +313,9 @@ describe('common/github/pr_status_service', () => {
       checkRollupState: null,
     }));
 
-    await moduleMocker.mock('./identifiers.ts', () => ({
-      parsePrOrIssueNumber: mock(async () => ({ owner: 'example', repo: 'repo', number: 208 })),
-    }));
+    await moduleMocker.mock('./identifiers.ts', () =>
+      makeIdentifiersMock(async () => ({ owner: 'example', repo: 'repo', number: 208 }))
+    );
     await moduleMocker.mock('./pr_status.ts', () => ({
       fetchPrFullStatus,
       fetchPrCheckStatus: mock(),
@@ -267,9 +337,7 @@ describe('common/github/pr_status_service', () => {
       throw new Error('should not fetch');
     });
 
-    await moduleMocker.mock('./identifiers.ts', () => ({
-      parsePrOrIssueNumber: mock(async () => null),
-    }));
+    await moduleMocker.mock('./identifiers.ts', () => makeIdentifiersMock(async () => null));
     await moduleMocker.mock('./pr_status.ts', () => ({
       fetchPrFullStatus,
       fetchPrCheckStatus: mock(),
@@ -304,9 +372,9 @@ describe('common/github/pr_status_service', () => {
       throw new Error('should not fetch lightweight checks');
     });
 
-    await moduleMocker.mock('./identifiers.ts', () => ({
-      parsePrOrIssueNumber: mock(async () => ({ owner: 'example', repo: 'repo', number: 209 })),
-    }));
+    await moduleMocker.mock('./identifiers.ts', () =>
+      makeIdentifiersMock(async () => ({ owner: 'example', repo: 'repo', number: 209 }))
+    );
     await moduleMocker.mock('./pr_status.ts', () => ({
       fetchPrFullStatus,
       fetchPrCheckStatus,
@@ -363,8 +431,8 @@ describe('common/github/pr_status_service', () => {
       checkRollupState: 'pending' as const,
     }));
 
-    await moduleMocker.mock('./identifiers.ts', () => ({
-      parsePrOrIssueNumber: mock(async (identifier: string) => {
+    await moduleMocker.mock('./identifiers.ts', () =>
+      makeIdentifiersMock(async (identifier: string) => {
         if (identifier.endsWith('/206')) {
           return { owner: 'example', repo: 'repo', number: 206 };
         }
@@ -374,8 +442,8 @@ describe('common/github/pr_status_service', () => {
         }
 
         return { owner: 'example', repo: 'repo', number: 205 };
-      }),
-    }));
+      })
+    );
     await moduleMocker.mock('./pr_status.ts', () => ({
       fetchPrFullStatus,
       fetchPrCheckStatus: mock(),
@@ -426,9 +494,9 @@ describe('common/github/pr_status_service', () => {
       throw new Error('should not fetch cached PR');
     });
 
-    await moduleMocker.mock('./identifiers.ts', () => ({
-      parsePrOrIssueNumber: mock(async () => ({ owner: 'example', repo: 'repo', number: 210 })),
-    }));
+    await moduleMocker.mock('./identifiers.ts', () =>
+      makeIdentifiersMock(async () => ({ owner: 'example', repo: 'repo', number: 210 }))
+    );
     await moduleMocker.mock('./pr_status.ts', () => ({
       fetchPrFullStatus,
       fetchPrCheckStatus: mock(),
@@ -446,10 +514,49 @@ describe('common/github/pr_status_service', () => {
     ]);
   });
 
-  test('syncPlanPrLinks surfaces parse failures for newly linked PRs', async () => {
-    await moduleMocker.mock('./identifiers.ts', () => ({
-      parsePrOrIssueNumber: mock(async () => null),
+  test('syncPlanPrLinks canonicalizes equivalent URLs before fetching and linking', async () => {
+    const fetchPrFullStatus = mock(async () => ({
+      number: 222,
+      title: 'Fetched canonical PR',
+      state: 'open' as const,
+      isDraft: false,
+      mergeable: 'MERGEABLE' as const,
+      mergedAt: null,
+      headSha: 'sha-222',
+      baseRefName: 'main',
+      headRefName: 'feature/222',
+      reviewDecision: null,
+      labels: [],
+      reviews: [],
+      checks: [],
+      checkRollupState: 'success' as const,
     }));
+
+    await moduleMocker.mock('./identifiers.ts', () =>
+      makeIdentifiersMock(async () => ({ owner: 'example', repo: 'repo', number: 222 }), {
+        canonicalizePrUrl: () => 'https://github.com/example/repo/pull/222',
+      })
+    );
+    await moduleMocker.mock('./pr_status.ts', () => ({
+      fetchPrFullStatus,
+      fetchPrCheckStatus: mock(),
+    }));
+
+    const { syncPlanPrLinks } = await import('./pr_status_service.ts');
+    const result = await syncPlanPrLinks(db, 'plan-service', [
+      'https://github.com/example/repo/pulls/222?tab=checks',
+      'https://github.com/example/repo/pull/222',
+    ]);
+
+    expect(fetchPrFullStatus).toHaveBeenCalledTimes(1);
+    expect(result.map((detail) => detail.status.pr_url)).toEqual([
+      'https://github.com/example/repo/pull/222',
+    ]);
+    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/222')).not.toBeNull();
+  });
+
+  test('syncPlanPrLinks surfaces parse failures for newly linked PRs', async () => {
+    await moduleMocker.mock('./identifiers.ts', () => makeIdentifiersMock(async () => null));
     await moduleMocker.mock('./pr_status.ts', () => ({
       fetchPrFullStatus: mock(),
       fetchPrCheckStatus: mock(),
@@ -489,8 +596,8 @@ describe('common/github/pr_status_service', () => {
     linkPlanToPr.run('plan-service', existingDetail.status.id);
     linkPlanToPr.run('plan-service', otherDetail.status.id);
 
-    await moduleMocker.mock('./identifiers.ts', () => ({
-      parsePrOrIssueNumber: mock(async (identifier: string) => {
+    await moduleMocker.mock('./identifiers.ts', () =>
+      makeIdentifiersMock(async (identifier: string) => {
         if (identifier.endsWith('/213')) {
           return { owner: 'example', repo: 'repo', number: 213 };
         }
@@ -500,8 +607,8 @@ describe('common/github/pr_status_service', () => {
         }
 
         return { owner: 'example', repo: 'repo', number: 212 };
-      }),
-    }));
+      })
+    );
     await moduleMocker.mock('./pr_status.ts', () => ({
       fetchPrFullStatus: mock(async () => {
         throw new Error('GitHub fetch failed');
@@ -574,8 +681,8 @@ describe('common/github/pr_status_service', () => {
       throw new Error('GitHub fetch failed after partial prefetch');
     });
 
-    await moduleMocker.mock('./identifiers.ts', () => ({
-      parsePrOrIssueNumber: mock(async (identifier: string) => {
+    await moduleMocker.mock('./identifiers.ts', () =>
+      makeIdentifiersMock(async (identifier: string) => {
         if (identifier.endsWith('/214')) {
           return { owner: 'example', repo: 'repo', number: 214 };
         }
@@ -589,8 +696,8 @@ describe('common/github/pr_status_service', () => {
         }
 
         return { owner: 'example', repo: 'repo', number: 215 };
-      }),
-    }));
+      })
+    );
     await moduleMocker.mock('./pr_status.ts', () => ({
       fetchPrFullStatus,
       fetchPrCheckStatus: mock(),

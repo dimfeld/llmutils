@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { parsePrOrIssueNumber } from './identifiers.ts';
+import { canonicalizePrUrl, parsePrOrIssueNumber } from './identifiers.ts';
 
 describe('parsePrIdentifier', () => {
   test('should parse valid full URL', async () => {
@@ -87,5 +87,19 @@ describe('parsePrIdentifier', () => {
       const identifier = 'https://github.com/dimfeld//pull/123';
       expect(await parsePrOrIssueNumber(identifier)).toBeNull();
     });
+  });
+});
+
+describe('canonicalizePrUrl', () => {
+  test('normalizes equivalent GitHub PR URLs to a canonical /pull form', () => {
+    expect(
+      canonicalizePrUrl(
+        'https://github.com/dimfeld/llmutils/pulls/123/?tab=checks#partial-pull-merging'
+      )
+    ).toBe('https://github.com/dimfeld/llmutils/pull/123');
+  });
+
+  test('returns non-URL identifiers unchanged', () => {
+    expect(canonicalizePrUrl('dimfeld/llmutils#123')).toBe('dimfeld/llmutils#123');
   });
 });

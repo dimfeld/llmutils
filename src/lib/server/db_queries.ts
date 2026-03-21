@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite';
 
+import { canonicalizePrUrl } from '$common/github/identifiers.js';
 import { getAssignmentEntry, type AssignmentEntry } from '$tim/db/assignment.js';
 import { getPrStatusForPlan, type PrStatusDetail } from '$tim/db/pr_status.js';
 import { normalizePlanStatus } from '$tim/plans/plan_state_utils.js';
@@ -221,16 +222,21 @@ export function parseJsonStringArray(value: string | null): string[] {
   }
 }
 
+function normalizePrUrls(prUrls: string[]): string[] {
+  return [...new Set(prUrls.map((prUrl) => canonicalizePrUrl(prUrl)))];
+}
+
 function getPrSummaryStatusByPlanUuid(
   db: Database,
-  planUuids: readonly string[]
+  planUuids: readonly string[],
+  prUrlsByPlanUuid: ReadonlyMap<string, string[]>
 ): Map<string, PrSummaryStatus> {
   if (planUuids.length === 0) {
     return new Map();
   }
 
   const placeholders = planUuids.map(() => '?').join(', ');
-  const rows = db
+  const linkedRows = db
     .prepare(
       `
         SELECT
@@ -247,12 +253,57 @@ function getPrSummaryStatusByPlanUuid(
   }>;
 
   const statesByPlanUuid = new Map<string, (string | null)[]>();
-  for (const row of rows) {
+  for (const row of linkedRows) {
     const existing = statesByPlanUuid.get(row.plan_uuid);
     if (existing) {
       existing.push(row.check_rollup_state);
     } else {
       statesByPlanUuid.set(row.plan_uuid, [row.check_rollup_state]);
+    }
+  }
+
+  const fallbackUrls = new Set<string>();
+  const fallbackPlanUuidsByUrl = new Map<string, string[]>();
+  for (const planUuid of planUuids) {
+    const prUrls = prUrlsByPlanUuid.get(planUuid) ?? [];
+    for (const prUrl of prUrls) {
+      fallbackUrls.add(prUrl);
+      const existingPlanUuids = fallbackPlanUuidsByUrl.get(prUrl);
+      if (existingPlanUuids) {
+        existingPlanUuids.push(planUuid);
+      } else {
+        fallbackPlanUuidsByUrl.set(prUrl, [planUuid]);
+      }
+    }
+  }
+
+  if (fallbackUrls.size > 0) {
+    const fallbackPlaceholders = [...fallbackUrls].map(() => '?').join(', ');
+    const fallbackRows = db
+      .prepare(
+        `
+          SELECT
+            ps.pr_url AS pr_url,
+            ps.check_rollup_state AS check_rollup_state
+          FROM pr_status ps
+          WHERE ps.pr_url IN (${fallbackPlaceholders})
+        `
+      )
+      .all(...fallbackUrls) as Array<{
+      pr_url: string;
+      check_rollup_state: string | null;
+    }>;
+
+    for (const row of fallbackRows) {
+      const matchingPlanUuids = fallbackPlanUuidsByUrl.get(row.pr_url) ?? [];
+      for (const planUuid of matchingPlanUuids) {
+        const existing = statesByPlanUuid.get(planUuid);
+        if (existing) {
+          existing.push(row.check_rollup_state);
+        } else {
+          statesByPlanUuid.set(planUuid, [row.check_rollup_state]);
+        }
+      }
     }
   }
 
@@ -338,9 +389,17 @@ function enrichPlansWithContext(
     planByUuid.set(dependencyPlan.uuid, dependencyPlan);
   }
 
+  const prUrlsByPlanUuid = new Map<string, string[]>(
+    bundle.plans.map((plan) => [
+      plan.uuid,
+      normalizePrUrls(parseJsonStringArray(plan.pull_request)),
+    ])
+  );
+
   const prSummaryStatusByPlanUuid = getPrSummaryStatusByPlanUuid(
     db,
-    bundle.plans.map((plan) => plan.uuid)
+    bundle.plans.map((plan) => plan.uuid),
+    prUrlsByPlanUuid
   );
 
   const enrichedPlans = bundle.plans.map((plan) => {
@@ -364,7 +423,7 @@ function enrichPlansWithContext(
       filename: plan.filename,
       createdAt: plan.created_at,
       updatedAt: plan.updated_at,
-      pullRequests: parseJsonStringArray(plan.pull_request),
+      pullRequests: prUrlsByPlanUuid.get(plan.uuid) ?? [],
       issues: parseJsonStringArray(plan.issue),
       prSummaryStatus: prSummaryStatusByPlanUuid.get(plan.uuid) ?? 'none',
       tags: tagsByPlanUuid.get(plan.uuid) ?? [],
@@ -650,7 +709,7 @@ export function getPlanDetail(db: Database, planUuid: string): PlanDetail | null
   const parent = plan.parent_uuid
     ? toDependencySummary(plan.parent_uuid, planByUuid, dependenciesByPlanUuid)
     : null;
-  const prStatuses = getPrStatusForPlan(db, planUuid);
+  const prStatuses = getPrStatusForPlan(db, planUuid, enrichedPlan.pullRequests);
 
   return {
     ...enrichedPlan,

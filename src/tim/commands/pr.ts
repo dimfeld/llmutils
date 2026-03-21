@@ -1,7 +1,11 @@
 import path from 'node:path';
 
 import chalk from 'chalk';
-import { parsePrOrIssueNumber, validatePrIdentifier } from '../../common/github/identifiers.js';
+import {
+  canonicalizePrUrl,
+  parsePrOrIssueNumber,
+  validatePrIdentifier,
+} from '../../common/github/identifiers.js';
 import { refreshPrStatus, syncPlanPrLinks } from '../../common/github/pr_status_service.js';
 import { log } from '../../logging.js';
 import { getDatabase } from '../db/database.js';
@@ -433,16 +437,17 @@ export async function handlePrLinkCommand(
 
   const { plan, planPath } = await resolvePlanForCommand(planId, command);
   const planUuid = requirePlanUuid(plan, planPath);
-  const parsed = await parsePrOrIssueNumber(prUrl);
+  const normalizedInput = canonicalizePrUrl(prUrl);
+  validatePrIdentifier(normalizedInput);
+  const parsed = await parsePrOrIssueNumber(normalizedInput);
 
   if (!parsed) {
-    throw new Error(`Invalid GitHub pull request identifier: ${prUrl}`);
+    throw new Error(`Invalid GitHub pull request identifier: ${normalizedInput}`);
   }
 
-  validatePrIdentifier(prUrl);
-
-  // Canonicalize to full GitHub PR URL for plan file storage (pullRequest is z.url())
-  const canonicalUrl = `https://github.com/${parsed.owner}/${parsed.repo}/pull/${parsed.number}`;
+  const canonicalUrl = canonicalizePrUrl(
+    `https://github.com/${parsed.owner}/${parsed.repo}/pull/${parsed.number}`
+  );
 
   // Validate with GitHub first - don't modify plan file if PR doesn't exist
   const db = getDatabase();
@@ -468,14 +473,12 @@ export async function handlePrUnlinkCommand(
   const { plan, planPath } = await resolvePlanForCommand(planId, command);
   const planUuid = requirePlanUuid(plan, planPath);
 
-  // Canonicalize URL to match link command behavior
-  const parsed = await parsePrOrIssueNumber(prUrl);
-  if (parsed) {
-    validatePrIdentifier(prUrl);
-  }
+  const normalizedInput = canonicalizePrUrl(prUrl);
+  validatePrIdentifier(normalizedInput);
+  const parsed = await parsePrOrIssueNumber(normalizedInput);
   const canonicalUrl = parsed
-    ? `https://github.com/${parsed.owner}/${parsed.repo}/pull/${parsed.number}`
-    : prUrl;
+    ? canonicalizePrUrl(`https://github.com/${parsed.owner}/${parsed.repo}/pull/${parsed.number}`)
+    : normalizedInput;
 
   // Remove from plan file first (source of truth), then clean up DB best-effort
   let removed = false;

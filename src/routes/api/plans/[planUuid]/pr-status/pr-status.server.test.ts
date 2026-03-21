@@ -101,6 +101,31 @@ describe('/api/plans/[planUuid]/pr-status', () => {
     });
   });
 
+  test('GET returns cached PR status matched directly from plan URLs when plan_pr is missing', async () => {
+    upsertPlan(currentDb, getOrCreateProject(currentDb, 'repo-plan-pr-status-route').id, {
+      uuid: 'plan-with-cached-pr-no-junction',
+      planId: 3,
+      title: 'Plan with cached PR but no junction',
+      filename: '3.plan.md',
+      pullRequest: ['https://github.com/example/repo/pulls/1?tab=checks'],
+    });
+
+    const { GET } = await import('./+server.js');
+    const response = await GET({
+      params: { planUuid: 'plan-with-cached-pr-no-junction' },
+    } as never);
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.prStatuses).toHaveLength(1);
+    expect(payload.prStatuses[0]).toMatchObject({
+      status: {
+        pr_url: 'https://github.com/example/repo/pull/1',
+        title: 'Cached PR',
+      },
+    });
+  });
+
   test('GET returns 404 for an unknown plan', async () => {
     const { GET } = await import('./+server.js');
 

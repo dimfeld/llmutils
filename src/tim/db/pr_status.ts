@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite';
+import { canonicalizePrUrl } from '../../common/github/identifiers.js';
 import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 
 export interface PrStatusRow {
@@ -360,9 +361,11 @@ export function updatePrCheckRuns(
 }
 
 export function getPrStatusByUrl(db: Database, prUrl: string): PrStatusDetail | null {
+  const canonicalPrUrl = canonicalizePrUrl(prUrl);
   const row =
-    (db.prepare('SELECT id FROM pr_status WHERE pr_url = ?').get(prUrl) as { id: number } | null) ??
-    null;
+    (db.prepare('SELECT id FROM pr_status WHERE pr_url = ?').get(canonicalPrUrl) as {
+      id: number;
+    } | null) ?? null;
 
   if (!row) {
     return null;
@@ -371,7 +374,34 @@ export function getPrStatusByUrl(db: Database, prUrl: string): PrStatusDetail | 
   return getDetailById(db, row.id);
 }
 
-export function getPrStatusForPlan(db: Database, planUuid: string): PrStatusDetail[] {
+export function getPrStatusByUrls(db: Database, prUrls: string[]): PrStatusDetail[] {
+  const canonicalPrUrls = [...new Set(prUrls.map((prUrl) => canonicalizePrUrl(prUrl)))];
+  if (canonicalPrUrls.length === 0) {
+    return [];
+  }
+
+  const placeholders = canonicalPrUrls.map(() => '?').join(', ');
+  const rows = db
+    .prepare(
+      `
+        SELECT ps.id
+        FROM pr_status ps
+        WHERE ps.pr_url IN (${placeholders})
+        ORDER BY ps.pr_number, ps.id
+      `
+    )
+    .all(...canonicalPrUrls) as Array<{ id: number }>;
+
+  return rows
+    .map((row) => getDetailById(db, row.id))
+    .filter((detail): detail is PrStatusDetail => detail !== null);
+}
+
+export function getPrStatusForPlan(
+  db: Database,
+  planUuid: string,
+  prUrls: string[] = []
+): PrStatusDetail[] {
   const rows = db
     .prepare(
       `
@@ -384,9 +414,22 @@ export function getPrStatusForPlan(db: Database, planUuid: string): PrStatusDeta
     )
     .all(planUuid) as Array<{ id: number }>;
 
-  return rows
-    .map((row) => getDetailById(db, row.id))
-    .filter((detail): detail is PrStatusDetail => detail !== null);
+  const detailsById = new Map<number, PrStatusDetail>();
+  for (const row of rows) {
+    const detail = getDetailById(db, row.id);
+    if (detail) {
+      detailsById.set(detail.status.id, detail);
+    }
+  }
+
+  for (const detail of getPrStatusByUrls(db, prUrls)) {
+    detailsById.set(detail.status.id, detail);
+  }
+
+  return [...detailsById.values()].sort(
+    (left, right) =>
+      left.status.pr_number - right.status.pr_number || left.status.id - right.status.id
+  );
 }
 
 export function linkPlanToPr(db: Database, planUuid: string, prStatusId: number): void {
