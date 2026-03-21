@@ -426,3 +426,36 @@ Document the new workspace options for `tim chat` in the README, following the e
   - `setupWorkspace()` may fail or behave unexpectedly with an empty plan file path — test this path carefully
   - The `createBranch` semantics change: for chat with `--base`, we want to check out an existing branch, not create new one
   - Workspace cleanup in the `finally` block must handle all error cases (generation error + sync error) like `generate.ts` does
+
+## Current Progress
+### Current State
+- All 5 tasks completed and tests passing (34 chat tests, 43 workspace setup tests, 40 workspace manager tests)
+
+### Completed (So Far)
+- Task 1: setupWorkspace refactored — planFile parameter now optional (string | undefined), with effectiveCreateBranch logic to skip branch creation when no plan/base
+- Task 2: CLI options added to chat command in tim.ts matching generate pattern
+- Task 3: Full workspace lifecycle in handleChatCommand following generate.ts reference
+- Task 4: 34 tests in chat.test.ts covering workspace mode, plan resolution, branch derivation, validation, roundtrip hooks, cleanup
+- Task 5: README updated with workspace options documentation and examples
+
+### Remaining
+- None — all tasks complete
+
+### Next Iteration Guidance
+- None
+
+### Decisions / Changes
+- `--plan` alone implies `--auto-workspace` — no need to specify both
+- `--base` and `--commit` require a workspace option (-w, --aw, --nw, or --plan) and will error if used standalone
+- Branch is derived from plan data (plan.branch ?? generateBranchNameFromPlan) when --plan is provided without --base
+- Post-sync always runs in workspace mode (matching generate/agent), independent of --commit flag
+- `createBranch` added to `createWorkspace()` options type to allow per-call override
+- `effectiveCreateBranch` in setupWorkspace enforces `false` when no plan file and no base branch
+
+### Lessons Learned
+- The workspace roundtrip post-sync unconditionally calls commitAll() — this is by design (matches generate/agent) but means --commit in chat callback is redundant when roundtrip is active. The callback commit exists for the case when sync is disabled.
+- When adding new options that are modifiers of a mode (like --base requiring workspace mode), validate early with clear error messages rather than silently ignoring.
+- The generate.ts workspace lifecycle pattern should be followed closely for consistency — deviations (like conditional touchedWorkspacePath) create subtle bugs that reviews catch.
+
+### Risks / Blockers
+- None
