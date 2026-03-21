@@ -17,20 +17,44 @@
   let refreshing = $state(false);
   let refreshError = $state<string | null>(null);
 
+  let statusByUrl = $derived(new Map(prStatuses.map((pr) => [pr.status.pr_url, pr])));
+
+  const FRESHNESS_THRESHOLD_MS = 5 * 60 * 1000;
+
+  function needsRefresh(urls: string[], statuses: PrStatusDetail[]): boolean {
+    if (urls.length === 0) return false;
+    const statusMap = new Map(statuses.map((s) => [s.status.pr_url, s]));
+    const now = Date.now();
+    for (const url of urls) {
+      const s = statusMap.get(url);
+      if (!s) return true;
+      if (now - new Date(s.status.last_fetched_at).getTime() > FRESHNESS_THRESHOLD_MS) return true;
+    }
+    return false;
+  }
+
   $effect(() => {
     prStatuses = initialStatuses;
   });
 
   $effect(() => {
-    if (prUrls.length === 0) return;
+    if (!needsRefresh(prUrls, initialStatuses)) return;
 
+    const controller = new AbortController();
     refreshing = true;
     refreshError = null;
 
-    fetch(`/api/plans/${planUuid}/pr-status`, { method: 'POST' })
-      .then((res) => res.json())
+    fetch(`/api/plans/${planUuid}/pr-status`, {
+      method: 'POST',
+      signal: controller.signal,
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`Server error: ${res.status}`);
+        return res.json();
+      })
       .then((data: { prUrls: string[]; prStatuses: PrStatusDetail[]; error?: string }) => {
-        if (data.prStatuses?.length > 0) {
+        if (controller.signal.aborted) return;
+        if (data.prStatuses) {
           prStatuses = data.prStatuses;
         }
         if (data.error) {
@@ -38,11 +62,16 @@
         }
       })
       .catch((err) => {
+        if (controller.signal.aborted) return;
         refreshError = `Failed to refresh: ${err}`;
       })
       .finally(() => {
-        refreshing = false;
+        if (!controller.signal.aborted) {
+          refreshing = false;
+        }
       });
+
+    return () => controller.abort();
   });
 
   function stateBadgeColor(state: string, draft: number): string {
@@ -105,7 +134,7 @@
   }
 
   function labelStyle(color: string | null): string {
-    if (!color) return '';
+    if (!color || !/^[0-9a-fA-F]{6}$/.test(color)) return '';
     const r = parseInt(color.slice(0, 2), 16);
     const g = parseInt(color.slice(2, 4), 16);
     const b = parseInt(color.slice(4, 6), 16);
@@ -127,9 +156,10 @@
     <p class="mb-2 text-xs text-amber-600 dark:text-amber-400">{refreshError}</p>
   {/if}
 
-  {#if prStatuses.length > 0}
-    <div class="space-y-4">
-      {#each prStatuses as pr (pr.status.pr_url)}
+  <div class="space-y-4">
+    {#each prUrls as url (url)}
+      {@const pr = statusByUrl.get(url)}
+      {#if pr}
         <div class="rounded-md border border-gray-200 p-3 dark:border-gray-700">
           <!-- PR Header -->
           <div class="flex items-start gap-2">
@@ -230,13 +260,9 @@
             </details>
           {/if}
         </div>
-      {/each}
-    </div>
-  {:else if prUrls.length > 0 && !refreshing}
-    <!-- PR URLs exist but no cached status yet -->
-    <ul class="space-y-1">
-      {#each prUrls as url (url)}
-        <li>
+      {:else}
+        <!-- PR URL with no cached status -->
+        <div class="rounded-md border border-gray-200 p-3 dark:border-gray-700">
           <a
             href={url}
             target="_blank"
@@ -245,10 +271,11 @@
           >
             {url}
           </a>
-        </li>
-      {/each}
-    </ul>
-  {:else if refreshing}
-    <p class="text-sm text-muted-foreground">Loading PR status...</p>
-  {/if}
+          {#if refreshing}
+            <span class="ml-2 text-xs text-muted-foreground">Loading...</span>
+          {/if}
+        </div>
+      {/if}
+    {/each}
+  </div>
 </div>

@@ -21,6 +21,4 @@
   let title = $derived(titleMap[status] ?? 'Unknown PR status');
 </script>
 
-{#if status !== 'none'}
-  <span class="inline-block h-2 w-2 rounded-full {colorClass}" {title}></span>
-{/if}
+<span class="inline-block h-2 w-2 rounded-full {colorClass}" {title}></span>
