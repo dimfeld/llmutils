@@ -197,136 +197,134 @@ export async function setupWorkspace(
       };
 
       try {
-        if (!isNewWorkspace) {
-          const status = await getWorkingCopyStatus(workspace.path);
-          if (status.checkFailed) {
-            throw new Error(
-              `Failed to check working copy status for workspace at ${workspace.path}.`
-            );
+        const status = await getWorkingCopyStatus(workspace.path);
+        if (status.checkFailed) {
+          throw new Error(
+            `Failed to check working copy status for workspace at ${workspace.path}.`
+          );
+        }
+
+        const workspaceIsJj = await getUsingJj(workspace.path);
+        if (status.hasChanges && !workspaceIsJj) {
+          throw new Error(
+            `Workspace at ${workspace.path} has uncommitted changes. Please commit or stash them before reuse.`
+          );
+        }
+
+        let branchName = workspace.taskId;
+        let planData: PlanSchema | undefined;
+        let baseBranch = options.base;
+        let canRetryWithoutBaseBranch = false;
+        const shouldCreateBranch =
+          options.createBranch ?? config.workspaceCreation?.createBranch ?? true;
+        try {
+          planData = await readPlanFile(planFile);
+          branchName = planData.branch ?? generateBranchNameFromPlan(planData);
+
+          if (!baseBranch) {
+            baseBranch = planData.baseBranch;
           }
 
-          const workspaceIsJj = await getUsingJj(workspace.path);
-          if (status.hasChanges && !workspaceIsJj) {
-            throw new Error(
-              `Workspace at ${workspace.path} has uncommitted changes. Please commit or stash them before reuse.`
+          if (!baseBranch) {
+            const parentBranch = await getParentPlanBranch(
+              planFile,
+              planData,
+              config,
+              currentBaseDir
             );
-          }
-
-          let branchName = workspace.taskId;
-          let planData: PlanSchema | undefined;
-          let baseBranch = options.base;
-          let canRetryWithoutBaseBranch = false;
-          const shouldCreateBranch =
-            options.createBranch ?? config.workspaceCreation?.createBranch ?? true;
-          try {
-            planData = await readPlanFile(planFile);
-            branchName = planData.branch ?? generateBranchNameFromPlan(planData);
-
-            if (!baseBranch) {
-              baseBranch = planData.baseBranch;
+            if (parentBranch) {
+              baseBranch = parentBranch;
+              canRetryWithoutBaseBranch = true;
             }
+          }
+        } catch (err) {
+          warn(
+            `Failed to generate branch name from plan file ${planFile}. Falling back to workspace task ID: ${err as Error}`
+          );
+        }
 
-            if (!baseBranch) {
-              const parentBranch = await getParentPlanBranch(
-                planFile,
-                planData,
-                config,
-                currentBaseDir
-              );
-              if (parentBranch) {
-                baseBranch = parentBranch;
-                canRetryWithoutBaseBranch = true;
-              }
-            }
-          } catch (err) {
-            warn(
-              `Failed to generate branch name from plan file ${planFile}. Falling back to workspace task ID: ${err as Error}`
+        let preparedWithPlanBranch = false;
+        if (options.autoWorkspace) {
+          const syncBaseResult = await prepareExistingWorkspace(workspace.path, {
+            baseBranch,
+            branchName,
+            planFilePath: planFile,
+            createBranch: false,
+            logSkippedBranchCreation: false,
+          });
+          if (!syncBaseResult.success) {
+            throw new Error(
+              `Failed to sync base branch in workspace at ${workspace.path}: ${syncBaseResult.error ?? 'Unknown error'}`
             );
           }
 
-          let preparedWithPlanBranch = false;
-          if (options.autoWorkspace) {
-            const syncBaseResult = await prepareExistingWorkspace(workspace.path, {
-              baseBranch,
-              branchName,
+          if (shouldCreateBranch) {
+            const createResult = await ensurePrimaryWorkspaceBranch(primaryRepoRoot, branchName, {
               planFilePath: planFile,
-              createBranch: false,
-              logSkippedBranchCreation: false,
+              fromBranch: baseBranch,
             });
-            if (!syncBaseResult.success) {
+            if (!createResult.success) {
               throw new Error(
-                `Failed to sync base branch in workspace at ${workspace.path}: ${syncBaseResult.error ?? 'Unknown error'}`
+                `Failed to create and push branch "${branchName}" from primary workspace: ${createResult.error ?? 'Unknown error'}`
               );
-            }
-
-            if (shouldCreateBranch) {
-              const createResult = await ensurePrimaryWorkspaceBranch(primaryRepoRoot, branchName, {
-                planFilePath: planFile,
-                fromBranch: baseBranch,
-              });
-              if (!createResult.success) {
-                throw new Error(
-                  `Failed to create and push branch "${branchName}" from primary workspace: ${createResult.error ?? 'Unknown error'}`
-                );
-              }
-            }
-
-            try {
-              preparedWithPlanBranch = await pullWorkspaceRefIfExists(
-                workspace.path,
-                branchName,
-                'origin',
-                planFile
-              );
-            } catch (err) {
-              warn(`Failed to pull workspace branch "${branchName}": ${err as Error}`);
             }
           }
 
-          if (!preparedWithPlanBranch) {
-            let prepareResult = await prepareExistingWorkspace(workspace.path, {
-              baseBranch,
+          try {
+            preparedWithPlanBranch = await pullWorkspaceRefIfExists(
+              workspace.path,
+              branchName,
+              'origin',
+              planFile
+            );
+          } catch (err) {
+            warn(`Failed to pull workspace branch "${branchName}": ${err as Error}`);
+          }
+        }
+
+        if (!preparedWithPlanBranch) {
+          let prepareResult = await prepareExistingWorkspace(workspace.path, {
+            baseBranch,
+            branchName,
+            planFilePath: planFile,
+            createBranch: shouldCreateBranch,
+          });
+
+          if (!prepareResult.success && canRetryWithoutBaseBranch) {
+            prepareResult = await prepareExistingWorkspace(workspace.path, {
               branchName,
               planFilePath: planFile,
               createBranch: shouldCreateBranch,
             });
-
-            if (!prepareResult.success && canRetryWithoutBaseBranch) {
-              prepareResult = await prepareExistingWorkspace(workspace.path, {
-                branchName,
-                planFilePath: planFile,
-                createBranch: shouldCreateBranch,
-              });
-            }
-
-            if (!prepareResult.success) {
-              throw new Error(
-                `Failed to prepare workspace at ${workspace.path}: ${prepareResult.error ?? 'Unknown error'}`
-              );
-            }
           }
 
-          let planFileForUpdateCommands: string | undefined = planFile;
-          try {
-            await copyPlanIntoWorkspace();
-            planFileForUpdateCommands = planFile;
-          } catch (err) {
-            error(`Failed to copy plan file to workspace: ${err as Error}`);
-            error('Continuing without workspace plan file for update commands.');
-            planFileForUpdateCommands = undefined;
-          }
-
-          const updateSuccess = await runWorkspaceUpdateCommands(
-            workspace.path,
-            config,
-            workspace.taskId,
-            planFileForUpdateCommands
-          );
-          if (!updateSuccess) {
+          if (!prepareResult.success) {
             throw new Error(
-              `Failed to run workspace update commands for workspace at ${workspace.path}`
+              `Failed to prepare workspace at ${workspace.path}: ${prepareResult.error ?? 'Unknown error'}`
             );
           }
+        }
+
+        let planFileForUpdateCommands: string | undefined = planFile;
+        try {
+          await copyPlanIntoWorkspace();
+          planFileForUpdateCommands = planFile;
+        } catch (err) {
+          error(`Failed to copy plan file to workspace: ${err as Error}`);
+          error('Continuing without workspace plan file for update commands.');
+          planFileForUpdateCommands = undefined;
+        }
+
+        const updateSuccess = await runWorkspaceUpdateCommands(
+          workspace.path,
+          config,
+          workspace.taskId,
+          planFileForUpdateCommands
+        );
+        if (!updateSuccess) {
+          throw new Error(
+            `Failed to run workspace update commands for workspace at ${workspace.path}`
+          );
         }
 
         try {

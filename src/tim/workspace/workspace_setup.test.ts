@@ -90,6 +90,14 @@ describe('setupWorkspace', () => {
       isNew: true,
       clearedStaleLock: false,
     });
+    spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
+      hasChanges: false,
+      checkFailed: false,
+    });
+    spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({ success: true });
+    spyOn(workspaceManager, 'ensurePrimaryWorkspaceBranch').mockResolvedValue({ success: true });
+    spyOn(workspaceCommand, 'pullWorkspaceRefIfExists').mockResolvedValue(false);
+    spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
 
     const result = await setupWorkspace(
       {
@@ -120,7 +128,7 @@ describe('setupWorkspace', () => {
         .access(result.planFile)
         .then(() => true)
         .catch(() => false)
-    ).toBe(false);
+    ).toBe(true);
   });
 
   test('preserves relative plan path for new selected workspaces', async () => {
@@ -141,6 +149,14 @@ describe('setupWorkspace', () => {
       isNew: true,
       clearedStaleLock: false,
     });
+    spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
+      hasChanges: false,
+      checkFailed: false,
+    });
+    spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({ success: true });
+    spyOn(workspaceManager, 'ensurePrimaryWorkspaceBranch').mockResolvedValue({ success: true });
+    spyOn(workspaceCommand, 'pullWorkspaceRefIfExists').mockResolvedValue(false);
+    spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
 
     const result = await setupWorkspace(
       {
@@ -161,7 +177,7 @@ describe('setupWorkspace', () => {
         .access(result.planFile)
         .then(() => true)
         .catch(() => false)
-    ).toBe(false);
+    ).toBe(true);
   });
 
   test('preserves relative plan path when reusing an existing manual workspace', async () => {
@@ -700,23 +716,28 @@ describe('setupWorkspace', () => {
     expect(callOrder).toEqual(['dirty-check', 'prepare']);
   });
 
-  test('does not prepare existing workspace for newly created workspace', async () => {
+  test('prepares newly created workspace the same as existing workspaces', async () => {
     const createdWorkspacePath = path.join(tempDir, 'workspace-new-no-prepare');
     await fs.mkdir(createdWorkspacePath, { recursive: true });
 
     const createWorkspaceSpy = spyOn(workspaceManager, 'createWorkspace').mockResolvedValue({
       path: createdWorkspacePath,
-      taskId: 'task-new-no-prepare',
+      taskId: 'task-new-prepare',
       originalPlanFilePath: planFile,
       planFilePathInWorkspace: path.join(createdWorkspacePath, path.basename(planFile)),
     });
-    const getWorkingCopyStatusSpy = spyOn(git, 'getWorkingCopyStatus');
-    const prepareSpy = spyOn(workspaceManager, 'prepareExistingWorkspace');
-    const updateSpy = spyOn(workspaceManager, 'runWorkspaceUpdateCommands');
+    const getWorkingCopyStatusSpy = spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
+      hasChanges: false,
+      checkFailed: false,
+    });
+    const prepareSpy = spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({
+      success: true,
+    });
+    const updateSpy = spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
 
     const result = await setupWorkspace(
       {
-        workspace: 'task-new-no-prepare',
+        workspace: 'task-new-prepare',
         newWorkspace: true,
       },
       baseDir,
@@ -726,9 +747,9 @@ describe('setupWorkspace', () => {
     );
 
     expect(createWorkspaceSpy).toHaveBeenCalled();
-    expect(getWorkingCopyStatusSpy).not.toHaveBeenCalled();
-    expect(prepareSpy).not.toHaveBeenCalled();
-    expect(updateSpy).not.toHaveBeenCalled();
+    expect(getWorkingCopyStatusSpy).toHaveBeenCalled();
+    expect(prepareSpy).toHaveBeenCalled();
+    expect(updateSpy).toHaveBeenCalled();
     expect(result.baseDir).toBe(createdWorkspacePath);
     expect(result.isNewWorkspace).toBe(true);
   });
@@ -1269,6 +1290,12 @@ describe('setupWorkspace', () => {
       originalPlanFilePath: planFile,
       planFilePathInWorkspace: path.join(createdWorkspacePath, path.basename(planFile)),
     });
+    spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
+      hasChanges: false,
+      checkFailed: false,
+    });
+    spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({ success: true });
+    spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
 
     const acquireLockSpy = spyOn(WorkspaceLock, 'acquireLock');
     const releaseLockSpy = spyOn(WorkspaceLock, 'releaseLock');
@@ -1289,15 +1316,6 @@ describe('setupWorkspace', () => {
     expect(result.baseDir).toBe(createdWorkspacePath);
     expect(result.workspaceTaskId).toBe('task-new');
     expect(result.isNewWorkspace).toBe(true);
-
-    const copiedPlanFile = path.join(createdWorkspacePath, path.basename(planFile));
-    expect(result.planFile).toBe(copiedPlanFile);
-    expect(
-      await fs
-        .access(copiedPlanFile)
-        .then(() => true)
-        .catch(() => false)
-    ).toBe(false);
 
     expect(releaseLockSpy).toHaveBeenCalledWith(createdWorkspacePath, { force: true });
     expect(acquireLockSpy).toHaveBeenCalledWith(
@@ -1322,6 +1340,12 @@ describe('setupWorkspace', () => {
       originalPlanFilePath: planFile,
       planFilePathInWorkspace: path.join(createdWorkspacePath, path.basename(planFile)),
     });
+    spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
+      hasChanges: false,
+      checkFailed: false,
+    });
+    spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({ success: true });
+    spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
 
     await setupWorkspace(
       {
@@ -1385,6 +1409,12 @@ describe('setupWorkspace', () => {
       originalPlanFilePath: planFile,
       planFilePathInWorkspace: path.join(createdWorkspacePath, path.basename(planFile)),
     });
+    spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
+      hasChanges: false,
+      checkFailed: false,
+    });
+    spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({ success: true });
+    spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
 
     const result = await setupWorkspace(
       {
@@ -1446,6 +1476,12 @@ describe('setupWorkspace', () => {
       originalPlanFilePath: planFile,
       planFilePathInWorkspace: path.join(createdWorkspacePath, path.basename(planFile)),
     });
+    spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
+      hasChanges: false,
+      checkFailed: false,
+    });
+    spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({ success: true });
+    spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
 
     const result = await setupWorkspace(
       {
@@ -1528,6 +1564,12 @@ describe('setupWorkspace', () => {
       originalPlanFilePath: planFile,
       planFilePathInWorkspace: path.join(createdWorkspacePath, path.basename(planFile)),
     });
+    spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
+      hasChanges: false,
+      checkFailed: false,
+    });
+    spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({ success: true });
+    spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
 
     const result = await setupWorkspace(
       {
