@@ -57,6 +57,7 @@
         return '⊘';
       case 'skipped':
       case 'neutral':
+      case 'stale':
         return '—';
       default:
         return '?';

@@ -1,7 +1,7 @@
 import path from 'node:path';
 
 import chalk from 'chalk';
-import { parsePrOrIssueNumber } from '../../common/github/identifiers.js';
+import { parsePrOrIssueNumber, validatePrIdentifier } from '../../common/github/identifiers.js';
 import { refreshPrStatus, syncPlanPrLinks } from '../../common/github/pr_status_service.js';
 import { log } from '../../logging.js';
 import { getDatabase } from '../db/database.js';
@@ -51,28 +51,6 @@ function getWorkspacePlanReference(cwd: string): string | null {
     }
 
     currentDir = parentDir;
-  }
-}
-
-function isExplicitUrl(value: string): boolean {
-  try {
-    new URL(value);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function validatePullRequestIdentifier(identifier: string): void {
-  if (!isExplicitUrl(identifier)) {
-    return;
-  }
-
-  const url = new URL(identifier);
-  const segments = url.pathname.split('/').filter(Boolean);
-
-  if (segments.length < 4 || (segments[2] !== 'pull' && segments[2] !== 'pulls')) {
-    throw new Error(`Invalid GitHub pull request identifier: ${identifier}`);
   }
 }
 
@@ -464,7 +442,7 @@ export async function handlePrLinkCommand(
     throw new Error(`Invalid GitHub pull request identifier: ${prUrl}`);
   }
 
-  validatePullRequestIdentifier(prUrl);
+  validatePrIdentifier(prUrl);
 
   // Canonicalize to full GitHub PR URL for plan file storage (pullRequest is z.url())
   const canonicalUrl = `https://github.com/${parsed.owner}/${parsed.repo}/pull/${parsed.number}`;
@@ -496,7 +474,7 @@ export async function handlePrUnlinkCommand(
   // Canonicalize URL to match link command behavior
   const parsed = await parsePrOrIssueNumber(prUrl);
   if (parsed) {
-    validatePullRequestIdentifier(prUrl);
+    validatePrIdentifier(prUrl);
   }
   const canonicalUrl = parsed
     ? `https://github.com/${parsed.owner}/${parsed.repo}/pull/${parsed.number}`

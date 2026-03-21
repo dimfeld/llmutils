@@ -63,3 +63,23 @@ export async function parsePrOrIssueNumber(identifier: string): Promise<{
   }
   return value;
 }
+
+/** Validates that a PR identifier is not an issue URL or other non-PR GitHub URL.
+ * For explicit URLs, requires `/pull/` or `/pulls/` in the path.
+ * Non-URL identifiers (owner/repo#123, plain numbers) are always accepted since they're ambiguous. */
+export function validatePrIdentifier(identifier: string): void {
+  let url: URL;
+  try {
+    url = new URL(identifier);
+  } catch {
+    // Not a URL — accept short-form identifiers
+    return;
+  }
+
+  const segments = url.pathname.split('/').filter(Boolean);
+  if (segments.length < 4 || (segments[2] !== 'pull' && segments[2] !== 'pulls')) {
+    throw new Error(
+      `Not a pull request URL: ${identifier}. Expected a GitHub PR URL (e.g. https://github.com/owner/repo/pull/123)`
+    );
+  }
+}

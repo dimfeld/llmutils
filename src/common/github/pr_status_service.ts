@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite';
-import { parsePrOrIssueNumber } from './identifiers.js';
+import { parsePrOrIssueNumber, validatePrIdentifier } from './identifiers.js';
 import { fetchPrCheckStatus, fetchPrFullStatus } from './pr_status.js';
 import {
   getPrStatusByUrl,
@@ -18,6 +18,7 @@ function getPrStatusId(detail: PrStatusDetail): number {
 }
 
 export async function refreshPrStatus(db: Database, prUrl: string): Promise<PrStatusDetail> {
+  validatePrIdentifier(prUrl);
   const parsed = await parsePrOrIssueNumber(prUrl);
   if (!parsed) {
     throw new Error(`Invalid GitHub pull request identifier: ${prUrl}`);
@@ -128,6 +129,11 @@ export async function syncPlanPrLinks(
   // Phase 1: Identify which URLs need fetching by checking what's already cached.
   // Uses stale cached data intentionally for performance; callers should use
   // ensurePrStatusFresh() separately if freshness matters.
+  // Validate all URLs before doing any work
+  for (const prUrl of prUrls) {
+    validatePrIdentifier(prUrl);
+  }
+
   const urlsToFetch: string[] = [];
   for (const prUrl of prUrls) {
     const existing = getPrStatusByUrl(db, prUrl);

@@ -329,9 +329,7 @@ describe('tim/commands/pr', () => {
         {},
         createNestedCommand()
       )
-    ).rejects.toThrow(
-      'Invalid GitHub pull request identifier: https://github.com/example/repo/issues/201'
-    );
+    ).rejects.toThrow('Not a pull request URL: https://github.com/example/repo/issues/201');
 
     expect(mockRefreshPrStatus).not.toHaveBeenCalled();
     expect(mockLinkPlanToPr).not.toHaveBeenCalled();
@@ -396,9 +394,7 @@ describe('tim/commands/pr', () => {
         {},
         createNestedCommand()
       )
-    ).rejects.toThrow(
-      'Invalid GitHub pull request identifier: https://github.com/example/repo/issues/302'
-    );
+    ).rejects.toThrow('Not a pull request URL: https://github.com/example/repo/issues/302');
 
     expect(mockGetPrStatusByUrl).not.toHaveBeenCalled();
     expect(mockUnlinkPlanFromPr).not.toHaveBeenCalled();
