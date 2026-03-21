@@ -6,15 +6,15 @@ goal: ""
 id: 219
 uuid: 9a638137-5cb4-46a0-9f13-bf129cd3efdb
 generatedBy: agent
-status: pending
+status: done
 priority: medium
 planGeneratedAt: 2026-03-20T23:30:46.768Z
 promptsGeneratedAt: 2026-03-20T23:30:46.768Z
 createdAt: 2026-03-07T07:43:56.083Z
-updatedAt: 2026-03-20T23:30:46.768Z
+updatedAt: 2026-03-21T09:15:19.808Z
 tasks:
   - title: Refactor setupWorkspace to make plan file optional
-    done: false
+    done: true
     description: "In src/tim/workspace/workspace_setup.ts, change the planFile
       parameter from required string to optional (string | undefined). Add
       guards so that plan file copy (lines 185-197) is skipped when no plan file
@@ -26,7 +26,7 @@ tasks:
       and no --base is specified: skip branch checkout entirely and use the
       workspace current branch as-is."
   - title: Add workspace CLI options to tim chat command registration
-    done: false
+    done: true
     description: "In src/tim/tim.ts, find the chat command registration and add
       workspace-related options matching the patterns used by generate and
       agent: -w/--workspace <id>, --aw/--auto-workspace, --nw/--new-workspace,
@@ -36,7 +36,7 @@ tasks:
       the new fields: workspace, autoWorkspace, newWorkspace, base,
       workspaceSync (boolean), commit, plan."
   - title: Implement workspace lifecycle in handleChatCommand
-    done: false
+    done: true
     description: "Modify handleChatCommand in src/tim/commands/chat.ts to add the
       full workspace roundtrip when workspace options are provided. Follow
       generate.ts as the reference implementation. Key steps: (1) Detect
@@ -54,7 +54,7 @@ tasks:
       (generation error + sync error). When --plan is provided, update workspace
       metadata from plan data and include plan info in headless adapter call."
   - title: Write tests for workspace-enabled chat
-    done: false
+    done: true
     description: "Add tests in src/tim/commands/chat.test.ts (create if needed).
       Test: (1) When no workspace options are provided, behavior is unchanged —
       executor gets process.cwd() as baseDir. (2) When workspace options are
@@ -69,7 +69,7 @@ tasks:
       dependency injection patterns already established in the codebase (e.g.
       RunPromptCommandDeps pattern)."
   - title: Update README with workspace options for tim chat
-    done: false
+    done: true
     description: "Update the README documentation for tim chat to describe the new
       workspace options. Document that workspace options (-w, --aw, --nw,
       --base, --plan, --commit, --no-workspace-sync) enable the full workspace
@@ -77,6 +77,16 @@ tasks:
       chat -w my-workspace --base feature-branch Review code, tim chat --aw
       --base main --commit Clean up imports. Note that without workspace
       options, chat works exactly as before."
+changedFiles:
+  - README.md
+  - docs/implementer-instructions.md
+  - src/tim/commands/chat.test.ts
+  - src/tim/commands/chat.ts
+  - src/tim/tim.ts
+  - src/tim/workspace/workspace_auto_selector.ts
+  - src/tim/workspace/workspace_manager.test.ts
+  - src/tim/workspace/workspace_manager.ts
+  - src/tim/workspace/workspace_setup.ts
 tags: []
 ---
 
@@ -416,3 +426,36 @@ Document the new workspace options for `tim chat` in the README, following the e
   - `setupWorkspace()` may fail or behave unexpectedly with an empty plan file path — test this path carefully
   - The `createBranch` semantics change: for chat with `--base`, we want to check out an existing branch, not create new one
   - Workspace cleanup in the `finally` block must handle all error cases (generation error + sync error) like `generate.ts` does
+
+## Current Progress
+### Current State
+- All 5 tasks completed and tests passing (34 chat tests, 43 workspace setup tests, 40 workspace manager tests)
+
+### Completed (So Far)
+- Task 1: setupWorkspace refactored — planFile parameter now optional (string | undefined), with effectiveCreateBranch logic to skip branch creation when no plan/base
+- Task 2: CLI options added to chat command in tim.ts matching generate pattern
+- Task 3: Full workspace lifecycle in handleChatCommand following generate.ts reference
+- Task 4: 34 tests in chat.test.ts covering workspace mode, plan resolution, branch derivation, validation, roundtrip hooks, cleanup
+- Task 5: README updated with workspace options documentation and examples
+
+### Remaining
+- None — all tasks complete
+
+### Next Iteration Guidance
+- None
+
+### Decisions / Changes
+- `--plan` alone implies `--auto-workspace` — no need to specify both
+- `--base` and `--commit` require a workspace option (-w, --aw, --nw, or --plan) and will error if used standalone
+- Branch is derived from plan data (plan.branch ?? generateBranchNameFromPlan) when --plan is provided without --base
+- Post-sync always runs in workspace mode (matching generate/agent), independent of --commit flag
+- `createBranch` added to `createWorkspace()` options type to allow per-call override
+- `effectiveCreateBranch` in setupWorkspace enforces `false` when no plan file and no base branch
+
+### Lessons Learned
+- The workspace roundtrip post-sync unconditionally calls commitAll() — this is by design (matches generate/agent) but means --commit in chat callback is redundant when roundtrip is active. The callback commit exists for the case when sync is disabled.
+- When adding new options that are modifiers of a mode (like --base requiring workspace mode), validate early with clear error messages rather than silently ignoring.
+- The generate.ts workspace lifecycle pattern should be followed closely for consistency — deviations (like conditional touchedWorkspacePath) create subtle bugs that reviews catch.
+
+### Risks / Blockers
+- None

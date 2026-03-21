@@ -686,6 +686,22 @@ program
   )
   .option('-m, --model <model>', 'Model to use')
   .option('--prompt-file <path>', 'Read initial prompt from a file')
+  .option(
+    '-w, --workspace <id>',
+    'ID for the task, used for workspace naming and tracking. If provided, a new workspace will be created.'
+  )
+  .option(
+    '--aw, --auto-workspace',
+    'Automatically select an available workspace or create a new one'
+  )
+  .option(
+    '--nw, --new-workspace',
+    'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
+  )
+  .option('--base <ref>', 'Base branch or revision to checkout in workspace')
+  .option('--no-workspace-sync', 'Disable automatic workspace round-trip sync')
+  .option('--commit', 'Commit changes to jj/git after successful chat execution')
+  .option('--plan <plan>', 'Associate chat with a plan for branch/workspace assignment')
   .option('--non-interactive', 'Disable interactive terminal input')
   .option('--no-terminal-input', 'Disable terminal input forwarding')
   .option(

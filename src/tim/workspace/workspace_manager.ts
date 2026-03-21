@@ -781,6 +781,7 @@ export async function createWorkspace(
     fromBranch?: string;
     targetDir?: string;
     workspaceType?: WorkspaceType;
+    createBranch?: boolean;
   }
 ): Promise<Workspace | null> {
   // Check if workspace creation is enabled in the config
@@ -954,7 +955,7 @@ export async function createWorkspace(
   }
 
   const branchName = options?.branchName ?? taskId;
-  const shouldCreateBranch = workspaceConfig.createBranch ?? false;
+  const shouldCreateBranch = options?.createBranch ?? workspaceConfig.createBranch ?? false;
   const planFilePathInWorkspace = originalPlanFilePath
     ? path.join(targetClonePath, path.relative(mainRepoRoot, originalPlanFilePath))
     : undefined;
@@ -1143,18 +1144,16 @@ export async function createWorkspace(
   });
   setWorkspaceIssues(db, workspaceRow.id, options?.planData?.issue ?? []);
 
-  // Acquire a persistent lock only when the workspace is tied to a plan ID.
-  if (options?.planData?.id !== undefined) {
-    try {
-      const lockInfo = await WorkspaceLock.acquireLock(
-        targetClonePath,
-        `tim agent --workspace ${taskId}`
-      );
-      WorkspaceLock.setupCleanupHandlers(targetClonePath, lockInfo.type);
-    } catch (error) {
-      log(`Warning: Failed to acquire workspace lock: ${String(error)}`);
-      // Continue without lock - this isn't fatal
-    }
+  // Acquire lock for the workspace
+  try {
+    const lockInfo = await WorkspaceLock.acquireLock(
+      targetClonePath,
+      `tim agent --workspace ${taskId}`
+    );
+    WorkspaceLock.setupCleanupHandlers(targetClonePath, lockInfo.type);
+  } catch (error) {
+    log(`Warning: Failed to acquire workspace lock: ${String(error)}`);
+    // Continue without lock - this isn't fatal
   }
 
   // Return the workspace information
