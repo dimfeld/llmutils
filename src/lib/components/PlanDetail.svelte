@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { PlanDetail } from '$lib/server/db_queries.js';
+  import { afterNavigate } from '$app/navigation';
   import { startGenerate } from '$lib/remote/plan_actions.remote.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import StatusBadge from './StatusBadge.svelte';
@@ -41,6 +42,14 @@
   let starting = $state(false);
   let errorMessage: string | null = $state(null);
   let successMessage: { text: string; connectionId?: string } | null = $state(null);
+
+  afterNavigate(({ from, to }) => {
+    if (from && to && from.url.pathname !== to.url.pathname) {
+      starting = false;
+      errorMessage = null;
+      successMessage = null;
+    }
+  });
 
   async function handleGenerate() {
     starting = true;
