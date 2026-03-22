@@ -49,7 +49,13 @@ export interface HeadlessUserInputServerMessage {
   content: string;
 }
 
+/** Server→client message: request that the running session end gracefully. */
+export interface HeadlessEndSessionServerMessage {
+  type: 'end_session';
+}
+
 /** Discriminated union of all server→client messages over the headless websocket. */
 export type HeadlessServerMessage =
   | HeadlessPromptResponseServerMessage
-  | HeadlessUserInputServerMessage;
+  | HeadlessUserInputServerMessage
+  | HeadlessEndSessionServerMessage;

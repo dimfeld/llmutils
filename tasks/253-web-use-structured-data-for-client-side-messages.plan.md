@@ -18,4 +18,4 @@ Instead, we should just pass the structured message down to the client, which ca
 formatting. 
 
 The first example here should be to show much nicer output for review issues. The rest of the text formatting can stay
-the same for now at least.  
+the same for now at least.

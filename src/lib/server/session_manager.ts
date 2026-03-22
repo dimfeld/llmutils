@@ -1024,6 +1024,10 @@ export class SessionManager {
     });
   }
 
+  endSession(connectionId: string): boolean {
+    return this.trySend(connectionId, { type: 'end_session' });
+  }
+
   private trySend(connectionId: string, message: HeadlessServerMessage): boolean {
     const sender = this.senders.get(connectionId);
     if (!sender) {

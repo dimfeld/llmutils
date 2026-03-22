@@ -52,6 +52,13 @@ export const sendSessionUserInput = command(userInputSchema, async (target) => {
   }
 });
 
+export const endSession = command(sessionTargetSchema, async (target) => {
+  const ended = getSessionManager().endSession(target.connectionId);
+  if (!ended) {
+    error(404, 'Session not found');
+  }
+});
+
 export const dismissSession = command(sessionTargetSchema, async (target) => {
   const dismissed = getSessionManager().dismissSession(target.connectionId);
   if (!dismissed) {

@@ -4,6 +4,7 @@ import {
   activateSessionTerminalPane,
   dismissInactiveSessions,
   dismissSession,
+  endSession as endSessionRemote,
   sendSessionPromptResponse,
   sendSessionUserInput,
 } from '$lib/remote/session_actions.remote.js';
@@ -334,6 +335,15 @@ export class SessionManager {
         connectionId,
         content,
       });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async endSession(connectionId: string): Promise<boolean> {
+    try {
+      await endSessionRemote({ connectionId });
       return true;
     } catch {
       return false;

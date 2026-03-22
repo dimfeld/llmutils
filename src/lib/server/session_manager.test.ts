@@ -1204,6 +1204,20 @@ describe('lib/server/session_manager', () => {
     });
   });
 
+  test('endSession delegates to the registered sender', () => {
+    const sender = vi.fn<(message: HeadlessServerMessage) => void>();
+    manager.handleWebSocketConnect('conn-1', sender);
+
+    const ended = manager.endSession('conn-1');
+    const missing = manager.endSession('missing');
+
+    expect(ended).toBe(true);
+    expect(missing).toBe(false);
+    expect(sender).toHaveBeenCalledWith({
+      type: 'end_session',
+    });
+  });
+
   test('getSessionSnapshot returns sessions sorted by connection time and cloned from internal state', () => {
     manager.handleWebSocketConnect('conn-1', vi.fn());
     vi.setSystemTime(new Date('2026-03-17T10:00:02.000Z'));

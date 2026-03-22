@@ -143,10 +143,10 @@ async function raceWithWebSocket<T>(
   wsPromise.catch(() => {});
 
   const wsAbortController = new AbortController();
-  // When ws resolves, abort the terminal prompt
+  // When ws resolves or is rejected (e.g. end_session), abort the terminal prompt
   wsPromise.then(
     () => wsAbortController.abort(),
-    () => {}
+    () => wsAbortController.abort()
   );
 
   // Combine ws-abort signal with optional timeout signal

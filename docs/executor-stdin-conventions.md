@@ -53,6 +53,16 @@ The `HeadlessAdapter` supports a `setUserInputHandler()` callback, mirroring the
 
 This enables tim-gui to send user messages to running agent sessions via the headless WebSocket connection.
 
+### Headless Adapter End Session
+
+The `HeadlessAdapter` also supports a `setEndSessionHandler()` callback for gracefully ending sessions from the web UI. When `executeWithTerminalInput()` detects a `HeadlessAdapter`, it wires a three-tier handler:
+
+1. **Interactive sessions (terminal input active)**: Calls `terminalInputController.onResultMessage()` to stop the reader and close stdin — equivalent to the user pressing Ctrl-D
+2. **Headless forwarding (stdin open, no terminal)**: Calls `stdinGuard.close()` to close stdin gracefully
+3. **Non-interactive (stdin already closed)**: Sends `SIGTERM` to the subprocess as a fallback
+
+The handler also clears tunnel and headless user input handlers, rejects pending prompts with 'Session ended', and removes itself after firing. This enables the web UI's "End Session" button to cleanly terminate running agent sessions regardless of their input mode.
+
 ## `executeWithTerminalInput()` Branching
 
 The shared helper in `terminal_input_lifecycle.ts` handles three distinct modes:

@@ -62,6 +62,7 @@ import { createHeadlessAdapterForCommand } from '../headless.js';
 import { toStructuredReviewIssues } from '../review_structured_message.js';
 import { timestamp } from './agent/agent_helpers.js';
 import { resolveOrchestratorInput } from '../utils/orchestrator_input.js';
+import { loadAgentInstructionsFor } from '../executors/codex_cli/agent_helpers.js';
 import which from 'which';
 const FIX_EXECUTOR_COMMANDS = {
   'claude-code': 'claude',
@@ -885,6 +886,9 @@ export async function handleReviewCommand(
             )
           );
         }
+      } else {
+        // Fall back to agents.reviewer.instructions
+        customInstructions = await loadAgentInstructionsFor('reviewer', gitRoot, config);
       }
 
       if (options.previousResponse) {
@@ -1798,6 +1802,9 @@ export async function buildReviewPromptFromOptions(
         `Warning: Could not read instructions file from config: ${config.review.customInstructionsPath}. ${errorMessage}`
       );
     }
+  } else {
+    // Fall back to agents.reviewer.instructions
+    customInstructions = await loadAgentInstructionsFor('reviewer', gitRoot, config);
   }
 
   if (options.previousResponse) {

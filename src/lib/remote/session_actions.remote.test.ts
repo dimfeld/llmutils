@@ -17,6 +17,7 @@ vi.mock('$lib/server/session_context.js', () => ({
 }));
 
 import {
+  endSession,
   dismissInactiveSessions,
   dismissSession,
   sendSessionPromptResponse,
@@ -147,6 +148,20 @@ describe('session remote actions', () => {
     ).rejects.toBeTruthy();
   });
 
+  test('endSession validates input and forwards end_session', async () => {
+    const connectionId = 'conn-end';
+    const sentMessages: HeadlessServerMessage[] = [];
+    currentManager.handleWebSocketConnect(connectionId, (message) => {
+      sentMessages.push(message);
+    });
+
+    await expect(invokeCommand(endSession, undefined as never)).rejects.toBeTruthy();
+
+    await invokeCommand(endSession, { connectionId });
+
+    expect(sentMessages).toEqual([{ type: 'end_session' }]);
+  });
+
   test('dismissSession removes offline sessions and rejects active or missing sessions', async () => {
     const activeConnectionId = 'conn-active';
     const offlineConnectionId = 'conn-offline';
@@ -267,6 +282,15 @@ describe('session remote actions', () => {
       invokeCommand(sendSessionUserInput, {
         connectionId: 'missing',
         content: 'hello',
+      })
+    ).rejects.toMatchObject({
+      status: 404,
+      body: { message: 'Session not found' },
+    });
+
+    await expect(
+      invokeCommand(endSession, {
+        connectionId: 'missing',
       })
     ).rejects.toMatchObject({
       status: 404,

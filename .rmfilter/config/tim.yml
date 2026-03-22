@@ -10,6 +10,8 @@ postApplyCommands:
     hideOutputOnSuccess: true
 planning:
   instructions: docs/planning.md
+review:
+  customInstructionsPath: docs/reviewer-instructions.md
 agents:
   reviewer:
     instructions: docs/reviewer-instructions.md

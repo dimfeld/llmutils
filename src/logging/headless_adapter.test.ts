@@ -1477,6 +1477,39 @@ describe('HeadlessAdapter prompt handling', () => {
     expect(p2).rejects.toThrow('HeadlessAdapter destroyed');
   });
 
+  it('end_session rejects all pending prompts before invoking the end-session handler', async () => {
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = createTestHeadlessAdapter(
+      'ws://127.0.0.1:1/tim-agent',
+      { command: 'agent' },
+      wrapped,
+      { reconnectIntervalMs: TEST_RECONNECT_INTERVAL_MS }
+    );
+
+    const { promise: p1 } = adapter.waitForPromptResponse('req-end-1');
+    const { promise: p2 } = adapter.waitForPromptResponse('req-end-2');
+    p1.catch(() => {});
+    p2.catch(() => {});
+
+    let pendingCountWhenHandlerRan = -1;
+    adapter.setEndSessionHandler(() => {
+      pendingCountWhenHandlerRan = (adapter as any).pendingPrompts.size;
+    });
+
+    (adapter as any).handleServerMessage({
+      type: 'end_session',
+    });
+
+    await expect(p1).rejects.toThrow('Session ended');
+    await expect(p2).rejects.toThrow('Session ended');
+
+    const internals = adapter as any;
+    expect(pendingCountWhenHandlerRan).toBe(0);
+    expect(internals.pendingPrompts.size).toBe(0);
+
+    await adapter.destroy();
+  });
+
   it('unknown requestIds are silently ignored', async () => {
     const server = await createPromptWebSocketServer();
     serversToClose.push(server);
@@ -1838,6 +1871,59 @@ describe('HeadlessAdapter user input handling', () => {
     expect(() =>
       (adapter as any).handleServerMessage({ type: 'user_input', content: 'ignored' })
     ).not.toThrow();
+
+    await adapter.destroy();
+  });
+
+  it('accepts websocket end_session messages and dispatches the registered handler', async () => {
+    const server = await createWebSocketServer();
+    serversToClose.push(server);
+
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = createTestHeadlessAdapter(
+      `ws://127.0.0.1:${server.port}/tim-agent`,
+      { command: 'agent' },
+      wrapped,
+      { reconnectIntervalMs: 0 }
+    );
+
+    const received: string[] = [];
+    adapter.setEndSessionHandler(() => {
+      received.push('called');
+    });
+
+    adapter.log('connect');
+    await waitFor(() => server.messages.some((message) => message.type === 'replay_end'));
+
+    server.sendToAll({ type: 'end_session' });
+    await waitFor(() => received.length === 1);
+
+    expect(received).toEqual(['called']);
+
+    await adapter.destroy();
+  });
+
+  it('setEndSessionHandler supports set, dispatch, replace, and clear lifecycle', async () => {
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = createTestHeadlessAdapter(
+      'ws://127.0.0.1:1/tim-agent',
+      { command: 'agent' },
+      wrapped,
+      { reconnectIntervalMs: TEST_RECONNECT_INTERVAL_MS }
+    );
+
+    const received: string[] = [];
+
+    adapter.setEndSessionHandler(() => received.push('first'));
+    (adapter as any).handleServerMessage({ type: 'end_session' });
+
+    adapter.setEndSessionHandler(() => received.push('second'));
+    (adapter as any).handleServerMessage({ type: 'end_session' });
+
+    adapter.setEndSessionHandler(undefined);
+    (adapter as any).handleServerMessage({ type: 'end_session' });
+
+    expect(received).toEqual(['first', 'second']);
 
     await adapter.destroy();
   });

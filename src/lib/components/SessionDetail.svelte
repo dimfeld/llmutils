@@ -6,12 +6,20 @@
   import SessionMessage from './SessionMessage.svelte';
   import PromptRenderer from './PromptRenderer.svelte';
   import MessageInput from './MessageInput.svelte';
+  import { afterNavigate } from '$app/navigation';
 
   let { session }: { session: SessionData } = $props();
   const sessionManager = useSessionManager();
 
   let scrollContainer: HTMLDivElement | undefined = $state();
   let autoScroll = $state(true);
+  let confirmingEndSession = $state(false);
+
+  afterNavigate(({ from, to }) => {
+    if (from && to && from.url.pathname !== to.url.pathname) {
+      confirmingEndSession = false;
+    }
+  });
 
   // Track whether user is near the bottom of the scroll area
   function handleScroll() {
@@ -23,14 +31,12 @@
 
   // Auto-scroll to bottom when new messages arrive and autoScroll is enabled
   $effect(() => {
-    // Access messages.length to create a dependency
-    session.messages.length;
     if (autoScroll && scrollContainer) {
-      // Use requestAnimationFrame to scroll after DOM update
-      requestAnimationFrame(() => {
-        if (scrollContainer && autoScroll) {
-          scrollContainer.scrollTop = scrollContainer.scrollHeight;
-        }
+      // Access messages.length to create a dependency
+      session.messages.length;
+      scrollContainer.scrollTo({
+        top: scrollContainer.scrollHeight,
+        behavior: 'smooth',
       });
     }
   });
@@ -61,40 +67,93 @@
   let hasTerminalPane = $derived(
     session.sessionInfo.terminalType === 'wezterm' && Boolean(session.sessionInfo.terminalPaneId)
   );
+  let showEndSession = $derived(session.status === 'active');
 
   function handleActivateTerminal() {
     void sessionManager.activateTerminalPane(session);
+  }
+
+  function handleRequestEndSession() {
+    confirmingEndSession = true;
+  }
+
+  function handleCancelEndSession() {
+    confirmingEndSession = false;
+  }
+
+  async function handleConfirmEndSession() {
+    const ended = await sessionManager.endSession(session.connectionId);
+    if (ended) {
+      confirmingEndSession = false;
+    }
   }
 </script>
 
 <div class="flex h-full min-h-0 w-full flex-col overflow-hidden">
   <!-- Session header -->
   <div class="shrink-0 border-b border-border px-4 py-3">
-    <div class="flex items-center gap-3">
-      <span class="h-2.5 w-2.5 shrink-0 rounded-full {statusDotClass}"></span>
-      <h2 class="text-lg font-semibold text-foreground">
-        {session.sessionInfo.command}
-      </h2>
-      {#if session.sessionInfo.planTitle || session.sessionInfo.planId != null}
-        <span class="text-sm text-muted-foreground">
-          {#if session.sessionInfo.planId != null}
-            #{session.sessionInfo.planId}
+    <div class="flex items-start justify-between gap-3">
+      <div class="flex min-w-0 items-center gap-3">
+        <span class="h-2.5 w-2.5 shrink-0 rounded-full {statusDotClass}"></span>
+        <h2 class="truncate text-lg font-semibold text-foreground">
+          {session.sessionInfo.command}
+        </h2>
+        {#if session.sessionInfo.planTitle || session.sessionInfo.planId != null}
+          <span class="truncate text-sm text-muted-foreground">
+            {#if session.sessionInfo.planId != null}
+              #{session.sessionInfo.planId}
+            {/if}
+            {session.sessionInfo.planTitle ?? ''}
+          </span>
+        {/if}
+        <span class="text-xs text-muted-foreground">{statusText}</span>
+      </div>
+
+      <div class="flex shrink-0 items-center gap-2">
+        {#if showEndSession}
+          {#if confirmingEndSession}
+            <div
+              class="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-900 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-100"
+            >
+              <span>End this running session?</span>
+              <button
+                type="button"
+                class="rounded bg-red-600 px-2 py-1 font-medium text-white transition-colors hover:bg-red-700"
+                onclick={handleConfirmEndSession}
+              >
+                End Session
+              </button>
+              <button
+                type="button"
+                class="rounded px-2 py-1 text-red-900 transition-colors hover:bg-red-100 dark:text-red-100 dark:hover:bg-red-900/40"
+                onclick={handleCancelEndSession}
+              >
+                Cancel
+              </button>
+            </div>
+          {:else}
+            <button
+              type="button"
+              class="rounded border border-red-200 px-2 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-950/40"
+              onclick={handleRequestEndSession}
+            >
+              End Session
+            </button>
           {/if}
-          {session.sessionInfo.planTitle ?? ''}
-        </span>
-      {/if}
-      <span class="text-xs text-muted-foreground">{statusText}</span>
-      {#if hasTerminalPane}
-        <button
-          type="button"
-          class="rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
-          onclick={handleActivateTerminal}
-          aria-label="Activate terminal pane"
-          title="Activate terminal pane"
-        >
-          <TerminalIcon class="size-4" />
-        </button>
-      {/if}
+        {/if}
+
+        {#if hasTerminalPane}
+          <button
+            type="button"
+            class="rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
+            onclick={handleActivateTerminal}
+            aria-label="Activate terminal pane"
+            title="Activate terminal pane"
+          >
+            <TerminalIcon class="size-4" />
+          </button>
+        {/if}
+      </div>
     </div>
     {#if session.sessionInfo.workspacePath}
       <div class="mt-1 text-xs text-muted-foreground">

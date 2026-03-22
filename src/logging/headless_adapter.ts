@@ -49,6 +49,8 @@ function isValidHeadlessServerMessage(message: unknown): message is HeadlessServ
       );
     case 'user_input':
       return typeof msg.content === 'string';
+    case 'end_session':
+      return true;
     default:
       return false;
   }
@@ -78,6 +80,7 @@ export class HeadlessAdapter implements LoggerAdapter {
   private nextOutputSequence = 1;
   private pendingPrompts: Map<string, PendingPromptRequest> = new Map();
   private userInputHandler?: (content: string) => void;
+  private endSessionHandler?: () => void;
 
   constructor(
     url: string,
@@ -240,6 +243,15 @@ export class HeadlessAdapter implements LoggerAdapter {
           this.wrappedAdapter.warn(`Headless user input handler error: ${err as Error}`);
         }
         break;
+      case 'end_session':
+        // Reject any pending prompts so the process doesn't hang waiting for a response.
+        this.rejectAllPending('Session ended');
+        try {
+          this.endSessionHandler?.();
+        } catch (err) {
+          this.wrappedAdapter.warn(`Headless end session handler error: ${err as Error}`);
+        }
+        break;
     }
   }
 
@@ -249,6 +261,14 @@ export class HeadlessAdapter implements LoggerAdapter {
    */
   setUserInputHandler(callback: ((content: string) => void) | undefined): void {
     this.userInputHandler = callback;
+  }
+
+  /**
+   * Registers the single active end-session handler.
+   * Calling this again replaces the previous handler.
+   */
+  setEndSessionHandler(callback: (() => void) | undefined): void {
+    this.endSessionHandler = callback;
   }
 
   /**
@@ -279,11 +299,11 @@ export class HeadlessAdapter implements LoggerAdapter {
   }
 
   /**
-   * Rejects all pending prompt requests. Called only from destroy()/destroySync(),
-   * NOT on websocket disconnect (pending prompts survive disconnects).
+   * Rejects all pending prompt requests. Called from destroy()/destroySync()
+   * and end_session handling. NOT on websocket disconnect (pending prompts survive disconnects).
    */
-  private rejectAllPending(): void {
-    const error = new Error('HeadlessAdapter destroyed');
+  private rejectAllPending(reason = 'HeadlessAdapter destroyed'): void {
+    const error = new Error(reason);
     for (const [requestId, pending] of this.pendingPrompts) {
       pending.reject(error);
       this.pendingPrompts.delete(requestId);

@@ -226,6 +226,21 @@ export function executeWithTerminalInput(
       headlessHandlerActive = false;
       loggerAdapter.setUserInputHandler(undefined);
     };
+
+    loggerAdapter.setEndSessionHandler(() => {
+      clearTunnelUserInputHandler();
+      clearHeadlessUserInputHandler();
+
+      if (terminalInputController) {
+        terminalInputController.onResultMessage();
+      } else if (!stdinGuard.isClosed) {
+        stdinGuard.close();
+      } else {
+        streaming.kill('SIGTERM');
+      }
+
+      loggerAdapter.setEndSessionHandler(undefined);
+    });
   }
 
   // When a HeadlessAdapter is present (tim-gui use case), it acts as an interactive
@@ -311,6 +326,9 @@ export function executeWithTerminalInput(
     cleanup: () => {
       clearTunnelUserInputHandler();
       clearHeadlessUserInputHandler();
+      if (loggerAdapter instanceof HeadlessAdapter) {
+        loggerAdapter.setEndSessionHandler(undefined);
+      }
     },
   };
 }
