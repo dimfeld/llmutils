@@ -338,7 +338,7 @@ function computeDisplayStatus(
   planByUuid: ReadonlyMap<string, PlanRow>,
   now = Date.now()
 ): PlanDisplayStatus {
-  if (plan.status === 'pending' || plan.status === 'in_progress') {
+  if (!plan.epic && (plan.status === 'pending' || plan.status === 'in_progress')) {
     const hasUnresolvedDependency = dependencyRows.some((dependency) => {
       const dependencyPlan = planByUuid.get(dependency.depends_on_uuid);
       return dependencyPlan == null || dependencyPlan.status !== 'done';

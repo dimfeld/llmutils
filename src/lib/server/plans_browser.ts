@@ -44,9 +44,20 @@ export function getActiveWorkData(db: Database, projectId: string): ActiveWorkDa
 
   return {
     workspaces: getWorkspacesForProject(db, numericProjectId),
-    activePlans: allPlans.filter(
-      (plan) => plan.displayStatus === 'in_progress' || plan.displayStatus === 'blocked'
-    ),
+    activePlans: allPlans
+      .filter(
+        (plan) =>
+          plan.displayStatus === 'in_progress' ||
+          plan.displayStatus === 'blocked' ||
+          plan.displayStatus === 'recently_done'
+      )
+      .sort((a, b) => {
+        const order = { in_progress: 0, blocked: 1, recently_done: 2 };
+        return (
+          (order[a.displayStatus as keyof typeof order] ?? 3) -
+          (order[b.displayStatus as keyof typeof order] ?? 3)
+        );
+      }),
     planNumberToUuid,
   };
 }

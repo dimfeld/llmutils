@@ -65,7 +65,7 @@ describe('lib/server/plans_browser', () => {
     ]);
   });
 
-  test('getActiveWorkData returns workspaces plus only in-progress and blocked plans', () => {
+  test('getActiveWorkData returns workspaces plus in-progress, blocked, and recently_done plans', () => {
     const timestamp = daysAgo(2);
 
     upsertPlan(db, projectId, {
@@ -92,6 +92,17 @@ describe('lib/server/plans_browser', () => {
       dependencyUuids: ['active-open-dependency'],
     });
 
+    upsertPlan(db, projectId, {
+      uuid: 'recently-done-plan',
+      planId: 405,
+      title: 'Recently done plan',
+      status: 'done',
+      priority: 'medium',
+      filename: '405-recently-done.plan.md',
+      sourceCreatedAt: timestamp,
+      sourceUpdatedAt: timestamp,
+    });
+
     const result = getActiveWorkData(db, String(projectId));
 
     expect(result.workspaces.map((workspace) => workspace.workspacePath)).toEqual([
@@ -100,6 +111,8 @@ describe('lib/server/plans_browser', () => {
     expect(result.activePlans.map((plan) => [plan.planId, plan.displayStatus])).toEqual([
       [402, 'in_progress'],
       [404, 'blocked'],
+      [401, 'recently_done'],
+      [405, 'recently_done'],
     ]);
 
     // planNumberToUuid includes all plans, not just active ones
@@ -107,6 +120,41 @@ describe('lib/server/plans_browser', () => {
     expect(result.planNumberToUuid[`${projectId}:402`]).toBe('feature-plan');
     expect(result.planNumberToUuid[`${projectId}:403`]).toBe('active-open-dependency');
     expect(result.planNumberToUuid[`${projectId}:404`]).toBe('blocked-plan');
+    expect(result.planNumberToUuid[`${projectId}:405`]).toBe('recently-done-plan');
+  });
+
+  test('epic plans with unresolved dependencies show as in_progress not blocked', () => {
+    const timestamp = daysAgo(2);
+
+    upsertPlan(db, projectId, {
+      uuid: 'epic-child-pending',
+      planId: 406,
+      title: 'Epic child pending',
+      status: 'pending',
+      priority: 'medium',
+      filename: '406-epic-child.plan.md',
+      sourceCreatedAt: timestamp,
+      sourceUpdatedAt: timestamp,
+    });
+
+    upsertPlan(db, projectId, {
+      uuid: 'epic-plan',
+      planId: 407,
+      title: 'Epic plan',
+      status: 'in_progress',
+      priority: 'high',
+      epic: true,
+      filename: '407-epic.plan.md',
+      sourceCreatedAt: timestamp,
+      sourceUpdatedAt: timestamp,
+      dependencyUuids: ['epic-child-pending'],
+    });
+
+    const result = getActiveWorkData(db, String(projectId));
+
+    const epicPlan = result.activePlans.find((p) => p.uuid === 'epic-plan');
+    expect(epicPlan).toBeDefined();
+    expect(epicPlan!.displayStatus).toBe('in_progress');
   });
 
   test('getActiveWorkData supports all-project mode', () => {
@@ -131,6 +179,7 @@ describe('lib/server/plans_browser', () => {
     ).toEqual([
       [projectId, 'feature-plan', 'in_progress'],
       [otherProjectId, 'other-project-plan', 'blocked'],
+      [projectId, 'dependency-done', 'recently_done'],
     ]);
   });
 
