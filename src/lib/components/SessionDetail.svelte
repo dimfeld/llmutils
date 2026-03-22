@@ -12,18 +12,32 @@
   const sessionManager = useSessionManager();
 
   let scrollContainer: HTMLDivElement | undefined = $state();
+  let isProgrammaticallyScrolled = $state(false);
+  let isFirstScroll = $state(true);
   let autoScroll = $state(true);
   let confirmingEndSession = $state(false);
 
   afterNavigate(({ from, to }) => {
     if (from && to && from.url.pathname !== to.url.pathname) {
       confirmingEndSession = false;
+      isFirstScroll = true;
+      isProgrammaticallyScrolled = false;
+      autoScroll = true;
     }
   });
 
   // Track whether user is near the bottom of the scroll area
   function handleScroll() {
+    if (!scrollContainer || isProgrammaticallyScrolled) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
+    // Consider "at bottom" if within 50px of the bottom
+    autoScroll = scrollHeight - scrollTop - clientHeight < 50;
+  }
+
+  function handleScrollEnd() {
     if (!scrollContainer) return;
+    isProgrammaticallyScrolled = false;
+
     const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
     // Consider "at bottom" if within 50px of the bottom
     autoScroll = scrollHeight - scrollTop - clientHeight < 50;
@@ -34,10 +48,12 @@
     if (autoScroll && scrollContainer) {
       // Access messages.length to create a dependency
       session.messages.length;
+      isProgrammaticallyScrolled = true;
       scrollContainer.scrollTo({
         top: scrollContainer.scrollHeight,
-        behavior: 'smooth',
+        behavior: isFirstScroll ? 'instant' : 'smooth',
       });
+      isFirstScroll = false;
     }
   });
 
@@ -176,6 +192,7 @@
     class="h-0 min-h-0 flex-1 overflow-y-auto bg-gray-900 p-4 font-mono text-sm"
     bind:this={scrollContainer}
     onscroll={handleScroll}
+    onscrollend={handleScrollEnd}
   >
     {#if session.messages.length === 0}
       <p class="text-gray-500">No messages yet</p>
