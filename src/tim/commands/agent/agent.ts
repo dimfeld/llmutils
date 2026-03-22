@@ -161,7 +161,11 @@ export async function handleAgentCommand(
         log(chalk.green(`Found ready plan: ${result.plan.filename}`));
       }
       resolvedPlanFile = result.plan.filename;
-      headlessPlanSummary = { id: result.plan.id, title: result.plan.title };
+      headlessPlanSummary = {
+        id: result.plan.id,
+        uuid: result.plan.uuid,
+        title: result.plan.title,
+      };
     } else if (options.latest) {
       // Find the most recently updated plan
       const tasksDir = await resolveTasksDir(config);
@@ -194,7 +198,7 @@ export async function handleAgentCommand(
         log(chalk.green(`Found latest plan: ${latestPlan.filename}`));
       }
       resolvedPlanFile = latestPlan.filename;
-      headlessPlanSummary = { id: latestPlan.id, title: latestPlan.title };
+      headlessPlanSummary = { id: latestPlan.id, uuid: latestPlan.uuid, title: latestPlan.title };
     } else if (options.next || options.current) {
       // Find the next ready plan or current plan
       const tasksDir = await resolveTasksDir(config);
@@ -223,7 +227,7 @@ export async function handleAgentCommand(
         log(chalk.green(`Found plan: ${plan.filename}`));
       }
       resolvedPlanFile = plan.filename;
-      headlessPlanSummary = { id: plan.id, title: plan.title };
+      headlessPlanSummary = { id: plan.id, uuid: plan.uuid, title: plan.title };
     } else {
       if (!planFile) {
         throw new Error(
@@ -244,6 +248,7 @@ export async function handleAgentCommand(
         const plan = await readPlanFile(resolvedPlanFilePath);
         headlessPlanSummary = {
           id: plan.id,
+          uuid: plan.uuid,
           title: plan.title,
         };
       } catch {

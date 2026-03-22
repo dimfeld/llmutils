@@ -5,7 +5,7 @@ goal: ""
 id: 190
 uuid: 822217b3-06f6-4200-b958-dae9bfd31ba0
 generatedBy: agent
-status: pending
+status: done
 priority: medium
 dependencies:
   - 184
@@ -22,10 +22,10 @@ references:
 planGeneratedAt: 2026-03-21T09:20:29.522Z
 promptsGeneratedAt: 2026-03-21T09:20:29.522Z
 createdAt: 2026-02-13T21:11:54.474Z
-updatedAt: 2026-03-21T09:20:29.522Z
+updatedAt: 2026-03-23T00:11:46.689Z
 tasks:
   - title: Generalize the process spawning function
-    done: false
+    done: true
     description: Refactor spawnGenerateProcess() in src/lib/server/plan_actions.ts
       into a shared spawnTimProcess(args, cwd) function. Create
       spawnAgentProcess(planId, cwd) that calls it with ["agent", planId,
@@ -33,7 +33,7 @@ tasks:
       spawnGenerateProcess() to also use the shared function. Rename types from
       SpawnGenerate* to SpawnProcess* since they are now shared.
   - title: Make hasActiveSessionForPlan command-agnostic and update startGenerate
-    done: false
+    done: true
     description: In src/lib/server/session_manager.ts, make the command parameter
       optional in hasActiveSessionForPlan(planId, command?). When command is
       omitted, match any active session for the plan regardless of command type.
@@ -44,7 +44,7 @@ tasks:
       cross-command test (startGenerate returns already_running when an agent
       session is active).
   - title: Add the startAgent remote command
-    done: false
+    done: true
     description: "In src/lib/remote/plan_actions.remote.ts, add startAgent command
       following the startGenerate pattern. Create isPlanEligibleForAgent(plan):
       not done/cancelled/deferred, and if tasks exist then not all done (plans
@@ -53,7 +53,7 @@ tasks:
       workspace path, spawn agent process. Return {status: started, planId} or
       {status: already_running, connectionId}."
   - title: Add split action button to PlanDetail UI
-    done: false
+    done: true
     description: "Refactor PlanDetail.svelte to use a split action button with
       ButtonGroup and DropdownMenu UI components. Plans with incomplete tasks:
       default action is Run Agent (no dropdown for now). Plans without tasks:
@@ -64,7 +64,7 @@ tasks:
       session is active, show Running... link with pulse indicator pointing to
       the session."
   - title: Write tests for startAgent remote command
-    done: false
+    done: true
     description: "Add describe(startAgent) block in
       src/lib/remote/plan_actions.remote.test.ts. Test cases: rejects missing
       plans (404), rejects done/cancelled/deferred plans (400), rejects plans
@@ -74,6 +74,103 @@ tasks:
       sessions and starts new process, rejects plans without primary workspace
       (400), successfully spawns agent, surfaces spawn failures (500). Enhance
       seedPlan() helper if needed to support tasks with done state."
+  - title: "Address Review Feedback: `startGenerate` and `startAgent` still
+      hard-code `['generate', 'agent']` when checking for an active plan
+      session."
+    done: true
+    description: >-
+      `startGenerate` and `startAgent` still hard-code `['generate', 'agent']`
+      when checking for an active plan session. That means an active `tim chat`
+      or `tim review` session on the same plan will not block a new launch,
+      which violates the plan's command-agnostic duplicate-prevention
+      requirement. This is not theoretical: both chat and review publish
+      `planId` into headless session info, so they are plan-scoped sessions
+      already. Current tests only cover generate/agent conflicts, so this
+      regression is completely unguarded.
+
+
+      Suggestion: Call `hasActiveSessionForPlan(plan.planId)` without a command
+      filter for both remote actions, and add tests covering active `chat` and
+      `review` sessions on the same plan.
+
+
+      Related file: src/lib/remote/plan_actions.remote.ts:57-60,100-103
+  - title: "Address Review Feedback: The action buttons are only disabled while the
+      RPC is in flight."
+    done: true
+    description: >-
+      The action buttons are only disabled while the RPC is in flight. After a
+      successful `{ status: 'started' }` response, `successMessage` is shown but
+      the button becomes clickable again until the websocket session appears in
+      the store. Because server-side duplicate detection is still based on
+      seeing an active session, repeated clicks in that gap can start multiple
+      `tim generate`/`tim agent` processes for the same plan. The previous
+      implementation kept Generate disabled once a success message existed; this
+      change regresses that protection.
+
+
+      Suggestion: Keep the action controls disabled after a successful start
+      until an active session is observed or navigation resets the state.
+      Preferably add a server-side launch lock keyed by plan ID so duplicate
+      prevention does not depend on websocket registration timing.
+
+
+      Related file: src/lib/components/PlanDetail.svelte:175-195,210-235,249-260
+  - title: "Address Review Feedback: `startGenerate`, `startAgent`, the client-side
+      running-state lookup, and the new launch lock all key off the numeric
+      `planId` alone."
+    done: true
+    description: >-
+      `startGenerate`, `startAgent`, the client-side running-state lookup, and
+      the new launch lock all key off the numeric `planId` alone. That is not a
+      stable plan identity in this codebase: plan IDs are only scoped within a
+      project, not globally. The schema only indexes `(project_id, plan_id)`, so
+      project A plan `#190` and project B plan `#190` are valid and common. With
+      the current code, an active chat/review/generate/agent session for project
+      B can block launching project A, show the wrong "Running…" link in the UI,
+      or clear the wrong launch lock. This directly violates the requirement to
+      prevent duplicates for the same plan, not unrelated plans in other repos.
+
+
+      Suggestion: Change duplicate-prevention and UI session matching to use a
+      project-scoped identity, e.g. `(projectId, planId)` or the plan UUID.
+      `SessionManager.hasActiveSessionForPlan` and the launch-lock key need the
+      project dimension, and `PlanDetail.svelte` should filter by
+      `session.projectId === plan.projectId` as well. Add cross-project tests
+      with the same numeric plan ID in two different projects.
+
+
+      Related file: src/lib/remote/plan_actions.remote.ts:58-77,112-131
+  - title: "Address Review Feedback: The startGenerate and startAgent command
+      handlers are nearly identical (~50 lines each)."
+    done: true
+    description: >-
+      The startGenerate and startAgent command handlers are nearly identical
+      (~50 lines each). The entire flow (plan lookup, eligibility check, active
+      session check, launch lock check, workspace lookup, lock set, try/catch
+      spawn, lock clear on failure, error on failure, return started) is
+      duplicated line-for-line. This risks future drift if a new check is added
+      to one but forgotten in the other.
+
+
+      Suggestion: Extract a shared helper like launchTimCommand(db, planUuid,
+      eligibilityFn, eligibilityErrorMsg, spawnFn) that encapsulates the common
+      flow, then have both commands call it with their specific eligibility and
+      spawn functions.
+
+
+      Related file: src/lib/remote/plan_actions.remote.ts:46-148
+changedFiles:
+  - README.md
+  - docs/web-interface.md
+  - src/lib/components/PlanDetail.svelte
+  - src/lib/remote/plan_actions.remote.test.ts
+  - src/lib/remote/plan_actions.remote.ts
+  - src/lib/server/launch_lock.ts
+  - src/lib/server/plan_actions.test.ts
+  - src/lib/server/plan_actions.ts
+  - src/lib/server/session_manager.test.ts
+  - src/lib/server/session_manager.ts
 tags: []
 ---
 
@@ -314,3 +411,42 @@ The approach mirrors the generate button exactly because:
 - The agent command already supports `--auto-workspace` and headless adapter
 - Duplicate detection and session monitoring work identically
 - The only meaningful difference is the CLI command and eligibility criteria
+
+## Current Progress
+### Current State
+- All tasks complete. Plan done.
+### Completed (So Far)
+- Task 1: Generalized spawnGenerateProcess into shared spawnTimProcess with explicit planId param, added spawnAgentProcess
+- Task 2: hasActiveSessionForPlan now has optional command param; startGenerate uses command-filtered check; PlanDetail.svelte activeSession filters to generate/agent
+- Task 3: Added startAgent remote command with isPlanEligibleForAgent validation
+- Task 4: Split action button in PlanDetail UI using ButtonGroup + DropdownMenu. Plans with tasks show "Run Agent"; plans without tasks show "Generate" with "Run Agent" in dropdown. Blocked plan confirmation dialog. Success banner auto-hides when activeSession appears.
+- Task 5: Full test coverage for startAgent (19 remote tests) and spawnAgentProcess (8 spawn tests)
+- Task 6: Made session detection truly command-agnostic — removed `['generate', 'agent']` filter from both server-side hasActiveSessionForPlan calls and client-side activeSession detection. Added tests for chat/review sessions blocking launches.
+- Task 7: Added `startedSuccessfully` state to keep buttons disabled after successful launch until session appears (with 30s fallback timeout). Added server-side launch lock in `src/lib/server/launch_lock.ts` with session-based clearing via SessionManager subscribe.
+- Task 8: Switched all duplicate-prevention and session matching from numeric planId to plan UUID. Added `planUuid` to HeadlessSessionInfo protocol and client types. `hasActiveSessionForPlan` now takes `planUuid: string`. Launch lock keyed by UUID. PlanDetail.svelte matches on `session.sessionInfo.planUuid === plan.uuid`. Cross-project isolation tests added (29 tests pass).
+- Task 9: Extracted `launchTimCommand()` shared helper in plan_actions.remote.ts. Both `startGenerate` and `startAgent` are now thin wrappers. Uses proper `SpawnProcessResult` discriminated union type.
+### Remaining
+- None
+### Next Iteration Guidance
+- None
+### Decisions / Changes
+- spawnTimProcess takes planId as explicit parameter (not extracted from args array) per review feedback
+- spawnTimProcess is not exported — only the wrapper functions are public API
+- Types renamed from SpawnGenerate* to SpawnProcess* since they're shared
+- Reversed earlier decision: session detection is now fully command-agnostic (any plan-scoped session blocks launches), matching server and client behavior
+- Active session detection independent of eligibility to handle plan status transitions while running
+- hasActiveSessionForPlan supports string | string[] command parameter for flexible filtering
+- Launch lock extracted to `src/lib/server/launch_lock.ts` because SvelteKit remote function modules can only export `command()` results
+- Launch lock uses SessionManager.subscribe('session:update') to clear locks when sessions register, with 30s timeout fallback
+- Used plan UUID instead of (projectId, planId) composite key for cross-project isolation — simpler and naturally globally unique
+- Launch lock state stored on globalThis via Symbol.for() for HMR safety, matching session_context.ts pattern
+### Lessons Learned
+- When generalizing a function that returns domain-specific data (like planId), pass domain values as explicit parameters rather than extracting from generic args arrays to avoid fragile coupling
+- Active session indicators should always be independent of action eligibility — a running process doesn't stop being visible just because the plan's status changed
+- SvelteKit remote function files (*.remote.ts) can only export `command()` results — non-command exports cause runtime errors. Utility functions must go in separate modules.
+- SessionManager exposes `subscribe()` not `on()` — it wraps EventEmitter privately. Always check the actual public API, not the base class.
+- When server-side behavior is broadened (e.g. making session checks command-agnostic), client-side checks must be updated to match, or the UI will be inconsistent with what the server enforces.
+- Module-scoped state in SvelteKit server modules is NOT HMR-safe. Use globalThis with Symbol.for() keys (matching session_context.ts pattern) for any state that must survive dev-server reloads.
+- When adding a field to a protocol type that has separate server and client definitions (e.g. HeadlessSessionInfo in both headless_protocol.ts and types/session.ts), update ALL copies or client-side type checks will silently fail.
+### Risks / Blockers
+- None

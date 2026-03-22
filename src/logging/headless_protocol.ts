@@ -4,6 +4,7 @@ export interface HeadlessSessionInfo {
   command: string;
   interactive?: boolean;
   planId?: number;
+  planUuid?: string;
   planTitle?: string;
   workspacePath?: string;
   gitRemote?: string;

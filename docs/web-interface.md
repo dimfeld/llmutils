@@ -8,6 +8,14 @@
 - All DB imports must be in `$lib/server/` or `+page.server.ts` files — `bun:sqlite` cannot be imported client-side.
 - The server context (`src/lib/server/init.ts`) is lazily initialized because SvelteKit may import server modules during `svelte-kit sync` or type checking without a running server.
 
+### HMR-Safe Server State
+
+Module-scoped state in SvelteKit server modules is **not** HMR-safe — dev-server reloads re-execute the module and reset the state. For any server-side state that must survive HMR (singletons, locks, caches), store it on `globalThis` using `Symbol.for()` keys. See `src/lib/server/session_context.ts` and `src/lib/server/launch_lock.ts` for the canonical pattern.
+
+### Server/Client Consistency
+
+When broadening server-side behavior (e.g. making a check command-agnostic instead of filtering to specific commands), update all corresponding client-side logic to match. Otherwise the UI will be inconsistent with what the server enforces — for example, a client filtering sessions to `['generate', 'agent']` while the server blocks launches for any command type.
+
 ### Reactivity Gotchas (Svelte 5)
 
 - `$derived(() => { ... })` wraps the **function object itself**, not the return value. For multi-statement derivations, use `$derived.by(() => { ... })`.
@@ -173,29 +181,36 @@ Browser clients receive real-time updates via SSE and interact with sessions thr
 
 ## Plan Actions
 
-The plan detail view supports triggering CLI commands directly from the web UI. Currently, the "Generate" action is available for stub plans (plans with no tasks).
+The plan detail view supports triggering CLI commands directly from the web UI. Two actions are available:
 
-### Generate Button (`PlanDetail.svelte`)
+- **Generate**: For stub plans (no tasks) — spawns `tim generate` to flesh out the plan
+- **Run Agent**: For plans with incomplete tasks — spawns `tim agent` to execute the plan
 
-The Generate button appears on eligible plan detail pages and spawns `tim generate <planId> --auto-workspace --no-terminal-input` as a detached process from the project's primary workspace.
+### Eligibility
 
-**Eligibility**: Plan has no tasks and `displayStatus` is not `done`, `cancelled`, `deferred`, or `recently_done`.
+- **Generate** (`isPlanEligibleForGenerate`): Plan has no tasks and `displayStatus` is not `done`, `cancelled`, `deferred`, or `recently_done`.
+- **Agent** (`isPlanEligibleForAgent`): Plan is not `done`, `cancelled`, or `deferred`. If the plan has tasks, at least one must be incomplete (not all done). Plans without tasks are also eligible (simple/stub plans).
 
-**Button states**:
+### Button States
 
-- **Hidden**: Plan is ineligible (has tasks, or status excludes it)
-- **Generate**: Eligible, no active generate session → clickable
-- **Generating...**: Active generate session exists for this plan → disabled, links to the session
+- **Hidden**: Plan is ineligible for any action
+- **Generate / Run Agent**: Eligible, no active session → clickable
+- **Running...**: Active session exists for this plan (any command) → links to the session
 - **Starting**: Remote command call in flight → disabled with spinner
 - **Error**: Spawn failed → error message shown briefly
 
-**Duplicate prevention**: Client-side check via session store for immediate UI feedback, plus server-side check in the remote command handler via `SessionManager.hasActiveSessionForPlan()`.
+**Duplicate prevention**: Both actions share command-agnostic duplicate detection — only one plan-scoped session (generate, agent, chat, review, or any other command publishing a `planUuid` in session info) can be active per plan at a time. All identity checks use the plan UUID (not numeric planId) for cross-project safety. Three layers of protection:
+
+1. **Client-side session check**: Session store filters for any active session with a matching `planUuid` for immediate UI feedback.
+2. **Server-side session check**: `SessionManager.hasActiveSessionForPlan(planUuid)` (no command filter) rejects launches when a session is already active.
+3. **Launch lock** (`src/lib/server/launch_lock.ts`): After a successful spawn, a per-plan lock (keyed by UUID) prevents duplicate launches in the gap before the spawned process connects via WebSocket and registers as a session. The lock is cleared when `session:update` fires with the plan's UUID, or after a 30-second timeout fallback. Lock state is stored on `globalThis` via `Symbol.for()` for HMR safety. On the client side, `startedSuccessfully` state keeps the action button disabled until an active session appears (also with a 30-second fallback timeout).
 
 ### Server-Side Infrastructure
 
-- **Remote command** (`src/lib/remote/plan_actions.remote.ts`): `startGenerate` command validates plan eligibility, checks for duplicate sessions, resolves the primary workspace path, and calls the spawn handler. Follows the same `command()` pattern as `session_actions.remote.ts`.
-- **Spawn handler** (`src/lib/server/plan_actions.ts`): `spawnGenerateProcess()` uses `Bun.spawn` with `{ detached: true }` to create a process that survives web server restarts (including HMR). Pipes stderr for ~500ms to detect early failures, then calls `.unref()`. The spawned process connects back to the web server via HeadlessAdapter WebSocket and appears as a new session.
-- **Session lookup** (`SessionManager.hasActiveSessionForPlan()`): Checks whether an active session already exists for a given plan ID and command type.
+- **Remote commands** (`src/lib/remote/plan_actions.remote.ts`): `startGenerate` and `startAgent` are thin wrappers around `launchTimCommand()`, a shared helper that validates plan eligibility, checks for duplicate sessions (command-agnostic via UUID), resolves the primary workspace path, and calls the spawn handler. Both follow the same `command()` pattern as `session_actions.remote.ts`.
+- **Spawn handler** (`src/lib/server/plan_actions.ts`): `spawnTimProcess()` (internal) uses `Bun.spawn` with `{ detached: true }` to create a process that survives web server restarts (including HMR). Pipes stderr for ~500ms to detect early failures, then calls `.unref()`. Public wrappers `spawnGenerateProcess()` and `spawnAgentProcess()` pass the appropriate CLI args. The spawned process connects back to the web server via HeadlessAdapter WebSocket and appears as a new session.
+- **Session lookup** (`SessionManager.hasActiveSessionForPlan(planUuid, command?)`): Checks whether an active session exists for a given plan UUID. The `command` parameter is optional — when omitted, matches any active session regardless of command type. Used without a command filter for duplicate prevention across all plan-scoped commands.
+- **Launch lock** (`src/lib/server/launch_lock.ts`): In-memory per-plan lock (keyed by UUID, stored on `globalThis` for HMR safety) bridging the gap between process spawn and WebSocket session registration. Exported as a separate module because SvelteKit remote function files can only export `command()` results. Subscribes to `SessionManager.subscribe('session:update')` to clear locks when sessions register.
 - **Primary workspace query** (`getPrimaryWorkspacePath()` in `db_queries.ts`): Resolves the primary workspace path for a project, used as the cwd for spawned processes.
 
 ## Dark Mode

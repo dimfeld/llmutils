@@ -298,6 +298,7 @@ export async function handleGenerateCommand(
       config,
       plan: {
         id: parsedPlan.id,
+        uuid: parsedPlan.uuid,
         title: parsedPlan.title,
       },
       callback: async () => {

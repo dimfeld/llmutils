@@ -15,6 +15,7 @@ export function resetHeadlessWarningStateForTests(): void {
 
 export interface HeadlessPlanSummary {
   id?: number;
+  uuid?: string;
   title?: string;
 }
 
@@ -96,6 +97,7 @@ export async function buildHeadlessSessionInfo(
     command,
     interactive,
     planId: plan?.id,
+    planUuid: plan?.uuid,
     planTitle: plan?.title,
     workspacePath,
     gitRemote,

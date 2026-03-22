@@ -14,6 +14,7 @@ import { invokeCommand } from '$lib/test-utils/invoke_command.js';
 let currentDb: Database;
 let currentManager: SessionManager;
 const spawnGenerateProcessMock = vi.fn();
+const spawnAgentProcessMock = vi.fn();
 
 vi.mock('$lib/server/init.js', () => ({
   getServerContext: async () => ({
@@ -29,13 +30,17 @@ vi.mock('$lib/server/session_context.js', () => ({
 vi.mock('$lib/server/plan_actions.js', () => ({
   spawnGenerateProcess: (...args: Parameters<typeof spawnGenerateProcessMock>) =>
     spawnGenerateProcessMock(...args),
+  spawnAgentProcess: (...args: Parameters<typeof spawnAgentProcessMock>) =>
+    spawnAgentProcessMock(...args),
 }));
 
-import { startGenerate } from './plan_actions.remote.js';
+import { isPlanLaunching, resetLaunchLockState, setLaunchLock } from '$lib/server/launch_lock.js';
+import { startAgent, startGenerate } from './plan_actions.remote.js';
 
 describe('plan remote actions', () => {
   let tempDir: string;
   let projectId: number;
+  let secondProjectId: number;
 
   beforeAll(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-plan-actions-remote-test-'));
@@ -45,14 +50,20 @@ describe('plan remote actions', () => {
     currentDb = openDatabase(path.join(tempDir, `${crypto.randomUUID()}-${DATABASE_FILENAME}`));
     currentManager = new SessionManager(currentDb);
     spawnGenerateProcessMock.mockReset();
+    spawnAgentProcessMock.mockReset();
 
     projectId = getOrCreateProject(currentDb, 'repo-plan-actions', {
       remoteUrl: 'https://example.com/repo-plan-actions.git',
       lastGitRoot: '/tmp/repo-plan-actions',
     }).id;
+    secondProjectId = getOrCreateProject(currentDb, 'repo-plan-actions-2', {
+      remoteUrl: 'https://example.com/repo-plan-actions-2.git',
+      lastGitRoot: '/tmp/repo-plan-actions-2',
+    }).id;
   });
 
   afterEach(() => {
+    resetLaunchLockState();
     currentDb.close(false);
   });
 
@@ -114,12 +125,74 @@ describe('plan remote actions', () => {
       command: 'generate',
       interactive: true,
       planId: 190,
+      planUuid: 'plan-running',
       workspacePath: '/tmp/primary-workspace',
     });
 
     await expect(invokeCommand(startGenerate, { planUuid: 'plan-running' })).resolves.toEqual({
       status: 'already_running',
       connectionId: 'conn-generate',
+    });
+    expect(spawnGenerateProcessMock).not.toHaveBeenCalled();
+  });
+
+  test('startGenerate returns the active session when an agent session is already running', async () => {
+    seedPlan({ uuid: 'plan-running-agent', planId: 1902 });
+    currentManager.handleWebSocketConnect('conn-agent', () => {});
+    currentManager.handleWebSocketMessage('conn-agent', {
+      type: 'session_info',
+      command: 'agent',
+      interactive: true,
+      planId: 1902,
+      planUuid: 'plan-running-agent',
+      workspacePath: '/tmp/primary-workspace',
+    });
+
+    await expect(invokeCommand(startGenerate, { planUuid: 'plan-running-agent' })).resolves.toEqual(
+      {
+        status: 'already_running',
+        connectionId: 'conn-agent',
+      }
+    );
+    expect(spawnGenerateProcessMock).not.toHaveBeenCalled();
+  });
+
+  test('startGenerate returns the active session when a chat session is already running', async () => {
+    seedPlan({ uuid: 'plan-running-chat', planId: 1903 });
+    currentManager.handleWebSocketConnect('conn-chat', () => {});
+    currentManager.handleWebSocketMessage('conn-chat', {
+      type: 'session_info',
+      command: 'chat',
+      interactive: true,
+      planId: 1903,
+      planUuid: 'plan-running-chat',
+      workspacePath: '/tmp/primary-workspace',
+    });
+
+    await expect(invokeCommand(startGenerate, { planUuid: 'plan-running-chat' })).resolves.toEqual({
+      status: 'already_running',
+      connectionId: 'conn-chat',
+    });
+    expect(spawnGenerateProcessMock).not.toHaveBeenCalled();
+  });
+
+  test('startGenerate returns the active session when a review session is already running', async () => {
+    seedPlan({ uuid: 'plan-running-review', planId: 1904 });
+    currentManager.handleWebSocketConnect('conn-review', () => {});
+    currentManager.handleWebSocketMessage('conn-review', {
+      type: 'session_info',
+      command: 'review',
+      interactive: true,
+      planId: 1904,
+      planUuid: 'plan-running-review',
+      workspacePath: '/tmp/primary-workspace',
+    });
+
+    await expect(
+      invokeCommand(startGenerate, { planUuid: 'plan-running-review' })
+    ).resolves.toEqual({
+      status: 'already_running',
+      connectionId: 'conn-review',
     });
     expect(spawnGenerateProcessMock).not.toHaveBeenCalled();
   });
@@ -137,6 +210,7 @@ describe('plan remote actions', () => {
       command: 'generate',
       interactive: true,
       planId: 1901,
+      planUuid: 'plan-offline-session',
       workspacePath: '/tmp/primary-workspace',
     });
     currentManager.handleWebSocketDisconnect('conn-offline');
@@ -200,15 +274,507 @@ describe('plan remote actions', () => {
       status: 500,
       body: { message: 'tim binary not found' },
     });
+    expect(isPlanLaunching('plan-failure')).toBe(false);
+  });
+
+  test('startGenerate does not block on a session for a different plan UUID with the same numeric planId', async () => {
+    seedPlan({ uuid: 'plan-generate-a', planId: 194, projectId });
+    seedPlan({ uuid: 'plan-generate-b', planId: 194, projectId: secondProjectId });
+    recordWorkspace(currentDb, {
+      projectId: secondProjectId,
+      workspacePath: '/tmp/primary-workspace-b',
+      workspaceType: 'primary',
+    });
+    currentManager.handleWebSocketConnect('conn-other-project-generate', () => {});
+    currentManager.handleWebSocketMessage('conn-other-project-generate', {
+      type: 'session_info',
+      command: 'agent',
+      interactive: true,
+      planId: 194,
+      planUuid: 'plan-generate-a',
+      workspacePath: '/tmp/primary-workspace',
+    });
+    spawnGenerateProcessMock.mockResolvedValue({
+      success: true,
+      planId: 194,
+    });
+
+    await expect(invokeCommand(startGenerate, { planUuid: 'plan-generate-b' })).resolves.toEqual({
+      status: 'started',
+      planId: 194,
+    });
+    expect(spawnGenerateProcessMock).toHaveBeenCalledWith(194, '/tmp/primary-workspace-b');
+  });
+
+  describe('startAgent', () => {
+    test('rejects missing plans', async () => {
+      await expect(invokeCommand(startAgent, { planUuid: 'missing-plan' })).rejects.toMatchObject({
+        status: 404,
+        body: { message: 'Plan not found' },
+      });
+    });
+
+    test('rejects done, cancelled, or deferred plans', async () => {
+      seedPlan({ uuid: 'agent-plan-done', planId: 2001, status: 'done' });
+      seedPlan({ uuid: 'agent-plan-cancelled', planId: 2002, status: 'cancelled' });
+      seedPlan({ uuid: 'agent-plan-deferred', planId: 2003, status: 'deferred' });
+
+      await expect(
+        invokeCommand(startAgent, { planUuid: 'agent-plan-done' })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Plan is not eligible for agent' },
+      });
+      await expect(
+        invokeCommand(startAgent, { planUuid: 'agent-plan-cancelled' })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Plan is not eligible for agent' },
+      });
+      await expect(
+        invokeCommand(startAgent, { planUuid: 'agent-plan-deferred' })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Plan is not eligible for agent' },
+      });
+      expect(spawnAgentProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('rejects plans where all tasks are done', async () => {
+      seedPlan({
+        uuid: 'agent-plan-all-done',
+        planId: 2004,
+        tasks: [
+          { title: 'Task 1', description: 'Done already', done: true },
+          { title: 'Task 2', description: 'Also done', done: true },
+        ],
+      });
+
+      await expect(
+        invokeCommand(startAgent, { planUuid: 'agent-plan-all-done' })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Plan is not eligible for agent' },
+      });
+      expect(spawnAgentProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('allows plans without tasks', async () => {
+      seedPlan({ uuid: 'agent-plan-no-tasks', planId: 2005 });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      spawnAgentProcessMock.mockResolvedValue({
+        success: true,
+        planId: 2005,
+      });
+
+      await expect(invokeCommand(startAgent, { planUuid: 'agent-plan-no-tasks' })).resolves.toEqual(
+        {
+          status: 'started',
+          planId: 2005,
+        }
+      );
+      expect(spawnAgentProcessMock).toHaveBeenCalledWith(2005, '/tmp/primary-workspace');
+    });
+
+    test('returns already_running when an agent session exists', async () => {
+      seedPlan({
+        uuid: 'agent-plan-running',
+        planId: 2006,
+        tasks: [{ title: 'Task', description: 'Pending', done: false }],
+      });
+      currentManager.handleWebSocketConnect('conn-agent-running', () => {});
+      currentManager.handleWebSocketMessage('conn-agent-running', {
+        type: 'session_info',
+        command: 'agent',
+        interactive: true,
+        planId: 2006,
+        planUuid: 'agent-plan-running',
+        workspacePath: '/tmp/primary-workspace',
+      });
+
+      await expect(invokeCommand(startAgent, { planUuid: 'agent-plan-running' })).resolves.toEqual({
+        status: 'already_running',
+        connectionId: 'conn-agent-running',
+      });
+      expect(spawnAgentProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('returns already_running when a generate session exists on the same plan', async () => {
+      seedPlan({ uuid: 'agent-plan-generate-running', planId: 2007 });
+      currentManager.handleWebSocketConnect('conn-generate-running', () => {});
+      currentManager.handleWebSocketMessage('conn-generate-running', {
+        type: 'session_info',
+        command: 'generate',
+        interactive: true,
+        planId: 2007,
+        planUuid: 'agent-plan-generate-running',
+        workspacePath: '/tmp/primary-workspace',
+      });
+
+      await expect(
+        invokeCommand(startAgent, { planUuid: 'agent-plan-generate-running' })
+      ).resolves.toEqual({
+        status: 'already_running',
+        connectionId: 'conn-generate-running',
+      });
+      expect(spawnAgentProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('returns already_running when a chat session exists on the same plan', async () => {
+      seedPlan({ uuid: 'agent-plan-chat-running', planId: 2012 });
+      currentManager.handleWebSocketConnect('conn-chat-running', () => {});
+      currentManager.handleWebSocketMessage('conn-chat-running', {
+        type: 'session_info',
+        command: 'chat',
+        interactive: true,
+        planId: 2012,
+        planUuid: 'agent-plan-chat-running',
+        workspacePath: '/tmp/primary-workspace',
+      });
+
+      await expect(
+        invokeCommand(startAgent, { planUuid: 'agent-plan-chat-running' })
+      ).resolves.toEqual({
+        status: 'already_running',
+        connectionId: 'conn-chat-running',
+      });
+      expect(spawnAgentProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('returns already_running when a review session exists on the same plan', async () => {
+      seedPlan({ uuid: 'agent-plan-review-running', planId: 2013 });
+      currentManager.handleWebSocketConnect('conn-review-running', () => {});
+      currentManager.handleWebSocketMessage('conn-review-running', {
+        type: 'session_info',
+        command: 'review',
+        interactive: true,
+        planId: 2013,
+        planUuid: 'agent-plan-review-running',
+        workspacePath: '/tmp/primary-workspace',
+      });
+
+      await expect(
+        invokeCommand(startAgent, { planUuid: 'agent-plan-review-running' })
+      ).resolves.toEqual({
+        status: 'already_running',
+        connectionId: 'conn-review-running',
+      });
+      expect(spawnAgentProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('ignores offline sessions and starts a new process', async () => {
+      seedPlan({
+        uuid: 'agent-plan-offline-session',
+        planId: 2008,
+        tasks: [{ title: 'Task', description: 'Pending', done: false }],
+      });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      currentManager.handleWebSocketConnect('conn-agent-offline', () => {});
+      currentManager.handleWebSocketMessage('conn-agent-offline', {
+        type: 'session_info',
+        command: 'agent',
+        interactive: true,
+        planId: 2008,
+        planUuid: 'agent-plan-offline-session',
+        workspacePath: '/tmp/primary-workspace',
+      });
+      currentManager.handleWebSocketDisconnect('conn-agent-offline');
+      spawnAgentProcessMock.mockResolvedValue({
+        success: true,
+        planId: 2008,
+      });
+
+      await expect(
+        invokeCommand(startAgent, { planUuid: 'agent-plan-offline-session' })
+      ).resolves.toEqual({
+        status: 'started',
+        planId: 2008,
+      });
+      expect(spawnAgentProcessMock).toHaveBeenCalledWith(2008, '/tmp/primary-workspace');
+    });
+
+    test('rejects plans without a primary workspace', async () => {
+      seedPlan({
+        uuid: 'agent-plan-no-workspace',
+        planId: 2009,
+        tasks: [{ title: 'Task', description: 'Pending', done: false }],
+      });
+
+      await expect(
+        invokeCommand(startAgent, { planUuid: 'agent-plan-no-workspace' })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Project does not have a primary workspace' },
+      });
+      expect(spawnAgentProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('spawns tim agent from the primary workspace', async () => {
+      seedPlan({
+        uuid: 'agent-plan-start',
+        planId: 2010,
+        tasks: [{ title: 'Task', description: 'Pending', done: false }],
+      });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      spawnAgentProcessMock.mockResolvedValue({
+        success: true,
+        planId: 2010,
+      });
+
+      await expect(invokeCommand(startAgent, { planUuid: 'agent-plan-start' })).resolves.toEqual({
+        status: 'started',
+        planId: 2010,
+      });
+      expect(spawnAgentProcessMock).toHaveBeenCalledWith(2010, '/tmp/primary-workspace');
+    });
+
+    test('does not block on a session for a different plan UUID with the same numeric planId', async () => {
+      seedPlan({
+        uuid: 'agent-plan-project-a',
+        planId: 2016,
+        projectId,
+        tasks: [{ title: 'Task', description: 'Pending', done: false }],
+      });
+      seedPlan({
+        uuid: 'agent-plan-project-b',
+        planId: 2016,
+        projectId: secondProjectId,
+        tasks: [{ title: 'Task', description: 'Pending', done: false }],
+      });
+      recordWorkspace(currentDb, {
+        projectId: secondProjectId,
+        workspacePath: '/tmp/primary-workspace-b',
+        workspaceType: 'primary',
+      });
+      currentManager.handleWebSocketConnect('conn-other-project-agent', () => {});
+      currentManager.handleWebSocketMessage('conn-other-project-agent', {
+        type: 'session_info',
+        command: 'agent',
+        interactive: true,
+        planId: 2016,
+        planUuid: 'agent-plan-project-a',
+        workspacePath: '/tmp/primary-workspace',
+      });
+      spawnAgentProcessMock.mockResolvedValue({
+        success: true,
+        planId: 2016,
+      });
+
+      await expect(
+        invokeCommand(startAgent, { planUuid: 'agent-plan-project-b' })
+      ).resolves.toEqual({
+        status: 'started',
+        planId: 2016,
+      });
+      expect(spawnAgentProcessMock).toHaveBeenCalledWith(2016, '/tmp/primary-workspace-b');
+    });
+
+    test('surfaces spawn failures', async () => {
+      seedPlan({
+        uuid: 'agent-plan-failure',
+        planId: 2011,
+        tasks: [{ title: 'Task', description: 'Pending', done: false }],
+      });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      spawnAgentProcessMock.mockResolvedValue({
+        success: false,
+        error: 'tim agent failed to start',
+      });
+
+      await expect(
+        invokeCommand(startAgent, { planUuid: 'agent-plan-failure' })
+      ).rejects.toMatchObject({
+        status: 500,
+        body: { message: 'tim agent failed to start' },
+      });
+      expect(isPlanLaunching('agent-plan-failure')).toBe(false);
+    });
+
+    test('launch lock is cleared when session registers for the plan', async () => {
+      seedPlan({
+        uuid: 'agent-plan-lock-clear',
+        planId: 2015,
+        tasks: [{ title: 'Task', description: 'Pending', done: false }],
+      });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+
+      spawnAgentProcessMock.mockResolvedValue({ success: true, planId: 2015 });
+
+      // First launch sets the lock
+      await expect(
+        invokeCommand(startAgent, { planUuid: 'agent-plan-lock-clear' })
+      ).resolves.toEqual({
+        status: 'started',
+        planId: 2015,
+      });
+      expect(isPlanLaunching('agent-plan-lock-clear')).toBe(true);
+
+      // Simulate session registration by emitting session_info through the session manager
+      currentManager.handleWebSocketConnect('conn-lock-clear', () => {});
+      currentManager.handleWebSocketMessage('conn-lock-clear', {
+        type: 'session_info',
+        command: 'agent',
+        planId: 2015,
+        planUuid: 'agent-plan-lock-clear',
+      });
+
+      // Lock should be cleared by the session listener
+      expect(isPlanLaunching('agent-plan-lock-clear')).toBe(false);
+
+      // Disconnect the session so hasActiveSessionForPlan returns false
+      currentManager.handleWebSocketDisconnect('conn-lock-clear');
+
+      // Second launch should succeed since both lock and session are cleared
+      await expect(
+        invokeCommand(startAgent, { planUuid: 'agent-plan-lock-clear' })
+      ).resolves.toEqual({
+        status: 'started',
+        planId: 2015,
+      });
+      expect(spawnAgentProcessMock).toHaveBeenCalledTimes(2);
+    });
+
+    test('launch lock does not block a different plan UUID with the same numeric planId', async () => {
+      seedPlan({
+        uuid: 'agent-plan-lock-a',
+        planId: 2017,
+        projectId,
+        tasks: [{ title: 'Task', description: 'Pending', done: false }],
+      });
+      seedPlan({
+        uuid: 'agent-plan-lock-b',
+        planId: 2017,
+        projectId: secondProjectId,
+        tasks: [{ title: 'Task', description: 'Pending', done: false }],
+      });
+      recordWorkspace(currentDb, {
+        projectId: secondProjectId,
+        workspacePath: '/tmp/primary-workspace-b',
+        workspaceType: 'primary',
+      });
+
+      setLaunchLock('agent-plan-lock-a');
+      spawnAgentProcessMock.mockResolvedValue({ success: true, planId: 2017 });
+
+      await expect(invokeCommand(startAgent, { planUuid: 'agent-plan-lock-b' })).resolves.toEqual({
+        status: 'started',
+        planId: 2017,
+      });
+      expect(spawnAgentProcessMock).toHaveBeenCalledWith(2017, '/tmp/primary-workspace-b');
+      expect(isPlanLaunching('agent-plan-lock-a')).toBe(true);
+    });
+
+    test('session listener clears only the matching plan UUID lock', async () => {
+      seedPlan({
+        uuid: 'agent-plan-lock-listener-a',
+        planId: 2018,
+        projectId,
+        tasks: [{ title: 'Task', description: 'Pending', done: false }],
+      });
+      seedPlan({
+        uuid: 'agent-plan-lock-listener-b',
+        planId: 2018,
+        projectId: secondProjectId,
+        tasks: [{ title: 'Task', description: 'Pending', done: false }],
+      });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+
+      spawnAgentProcessMock.mockResolvedValue({ success: true, planId: 2018 });
+
+      await expect(
+        invokeCommand(startAgent, { planUuid: 'agent-plan-lock-listener-a' })
+      ).resolves.toEqual({
+        status: 'started',
+        planId: 2018,
+      });
+      expect(isPlanLaunching('agent-plan-lock-listener-a')).toBe(true);
+
+      currentManager.handleWebSocketConnect('conn-lock-listener-b', () => {});
+      currentManager.handleWebSocketMessage('conn-lock-listener-b', {
+        type: 'session_info',
+        command: 'agent',
+        planId: 2018,
+        planUuid: 'agent-plan-lock-listener-b',
+      });
+      expect(isPlanLaunching('agent-plan-lock-listener-a')).toBe(true);
+
+      currentManager.handleWebSocketConnect('conn-lock-listener-a', () => {});
+      currentManager.handleWebSocketMessage('conn-lock-listener-a', {
+        type: 'session_info',
+        command: 'agent',
+        planId: 2018,
+        planUuid: 'agent-plan-lock-listener-a',
+      });
+      expect(isPlanLaunching('agent-plan-lock-listener-a')).toBe(false);
+    });
+
+    test('prevents duplicate launches before any session registers', async () => {
+      seedPlan({
+        uuid: 'agent-plan-race',
+        planId: 2014,
+        tasks: [{ title: 'Task', description: 'Pending', done: false }],
+      });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+
+      let resolveSpawn: ((value: { success: true; planId: number }) => void) | undefined;
+      const spawnPromise = new Promise<{ success: true; planId: number }>((resolve) => {
+        resolveSpawn = resolve;
+      });
+      spawnAgentProcessMock.mockReturnValue(spawnPromise);
+
+      const firstLaunch = invokeCommand(startAgent, { planUuid: 'agent-plan-race' });
+      const secondLaunch = invokeCommand(startAgent, { planUuid: 'agent-plan-race' });
+
+      await expect(secondLaunch).resolves.toEqual({
+        status: 'already_running',
+      });
+      expect(spawnAgentProcessMock).toHaveBeenCalledTimes(1);
+
+      resolveSpawn?.({ success: true, planId: 2014 });
+
+      await expect(firstLaunch).resolves.toEqual({
+        status: 'started',
+        planId: 2014,
+      });
+    });
   });
 
   function seedPlan(options: {
     uuid: string;
     planId: number;
+    projectId?: number;
     status?: 'pending' | 'done' | 'cancelled' | 'deferred';
-    tasks?: Array<{ title: string; description: string }>;
+    tasks?: Array<{ title: string; description: string; done?: boolean }>;
   }): void {
-    upsertPlan(currentDb, projectId, {
+    upsertPlan(currentDb, options.projectId ?? projectId, {
       uuid: options.uuid,
       planId: options.planId,
       title: `Plan ${options.planId}`,

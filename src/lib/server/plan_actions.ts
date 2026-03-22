@@ -1,16 +1,16 @@
 const EARLY_EXIT_CHECK_DELAY_MS = 500;
 
-export interface SpawnGenerateSuccess {
+export interface SpawnProcessSuccess {
   success: true;
   planId: number;
 }
 
-export interface SpawnGenerateFailure {
+export interface SpawnProcessFailure {
   success: false;
   error: string;
 }
 
-export type SpawnGenerateResult = SpawnGenerateSuccess | SpawnGenerateFailure;
+export type SpawnProcessResult = SpawnProcessSuccess | SpawnProcessFailure;
 
 function waitForSpawnWindow(delayMs = EARLY_EXIT_CHECK_DELAY_MS): Promise<void> {
   return new Promise((resolve) => {
@@ -26,28 +26,26 @@ async function readStderr(stderr: ReadableStream<Uint8Array> | null | undefined)
   return (await new Response(stderr).text()).trim();
 }
 
-export async function spawnGenerateProcess(
+async function spawnTimProcess(
   planId: number,
+  args: string[],
   cwd: string
-): Promise<SpawnGenerateResult> {
+): Promise<SpawnProcessResult> {
   let proc: ReturnType<typeof Bun.spawn>;
 
   try {
-    proc = Bun.spawn(
-      ['tim', 'generate', String(planId), '--auto-workspace', '--no-terminal-input'],
-      {
-        cwd,
-        env: process.env,
-        stdin: 'ignore',
-        stdout: 'ignore',
-        stderr: 'pipe',
-        detached: true,
-      }
-    );
+    proc = Bun.spawn(['tim', ...args], {
+      cwd,
+      env: process.env,
+      stdin: 'ignore',
+      stdout: 'ignore',
+      stderr: 'pipe',
+      detached: true,
+    });
   } catch (err) {
     return {
       success: false,
-      error: `Failed to start tim generate: ${err as Error}`,
+      error: `Failed to start tim ${args[0]}: ${err as Error}`,
     };
   }
 
@@ -57,7 +55,7 @@ export async function spawnGenerateProcess(
     const stderr = await readStderr(proc.stderr instanceof ReadableStream ? proc.stderr : null);
     return {
       success: false,
-      error: stderr || `tim generate exited early with code ${proc.exitCode}`,
+      error: stderr || `tim ${args[0]} exited early with code ${proc.exitCode}`,
     };
   }
 
@@ -66,4 +64,23 @@ export async function spawnGenerateProcess(
   }
   proc.unref();
   return { success: true, planId };
+}
+
+export async function spawnGenerateProcess(
+  planId: number,
+  cwd: string
+): Promise<SpawnProcessResult> {
+  return spawnTimProcess(
+    planId,
+    ['generate', String(planId), '--auto-workspace', '--no-terminal-input'],
+    cwd
+  );
+}
+
+export async function spawnAgentProcess(planId: number, cwd: string): Promise<SpawnProcessResult> {
+  return spawnTimProcess(
+    planId,
+    ['agent', String(planId), '--auto-workspace', '--no-terminal-input'],
+    cwd
+  );
 }

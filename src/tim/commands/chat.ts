@@ -269,6 +269,7 @@ export async function handleChatCommand(
       plan: currentPlanData
         ? {
             id: currentPlanData.id,
+            uuid: currentPlanData.uuid,
             title: currentPlanData.title,
           }
         : undefined,

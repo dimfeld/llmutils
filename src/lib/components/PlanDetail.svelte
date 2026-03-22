@@ -1,11 +1,14 @@
 <script lang="ts">
   import type { PlanDetail } from '$lib/server/db_queries.js';
   import { afterNavigate } from '$app/navigation';
-  import { startGenerate } from '$lib/remote/plan_actions.remote.js';
+  import { startGenerate, startAgent } from '$lib/remote/plan_actions.remote.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import StatusBadge from './StatusBadge.svelte';
   import PriorityBadge from './PriorityBadge.svelte';
   import PrStatusSection from './PrStatusSection.svelte';
+  import { ButtonGroup } from '$lib/components/ui/button-group/index.js';
+  import { Button } from '$lib/components/ui/button/index.js';
+  import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 
   let {
     plan,
@@ -23,52 +26,124 @@
 
   const INELIGIBLE_STATUSES = new Set(['done', 'cancelled', 'deferred', 'recently_done']);
 
-  let eligible = $derived(plan.tasks.length === 0 && !INELIGIBLE_STATUSES.has(plan.displayStatus));
+  let isIneligible = $derived(INELIGIBLE_STATUSES.has(plan.displayStatus));
+  let hasTasks = $derived(plan.tasks.length > 0);
+  let hasIncompleteTasks = $derived(plan.taskCounts.done < plan.taskCounts.total);
+  let isBlocked = $derived(plan.displayStatus === 'blocked');
 
-  let activeGenerateSession = $derived.by(() => {
-    if (!eligible) return null;
+  // Plans with incomplete tasks: show single "Run Agent" button
+  let showAgentOnly = $derived(hasTasks && hasIncompleteTasks && !isIneligible);
+  // Plans without tasks: show "Generate" as primary + "Run Agent" in dropdown
+  let showGenerateWithAgent = $derived(!hasTasks && !isIneligible);
+
+  // Active session detection is independent of eligibility so the "Running" link
+  // remains visible even if the plan transitions to an ineligible status.
+  // Matches any active session on the plan (command-agnostic), consistent with
+  // server-side duplicate prevention.
+  let activeSession = $derived.by(() => {
     for (const session of sessionManager.sessions.values()) {
-      if (
-        session.sessionInfo.planId === plan.planId &&
-        session.sessionInfo.command === 'generate' &&
-        session.status === 'active'
-      ) {
-        return session.connectionId;
+      if (session.status === 'active' && session.sessionInfo.planUuid === plan.uuid) {
+        return {
+          connectionId: session.connectionId,
+          command: session.sessionInfo.command,
+        };
       }
     }
     return null;
   });
 
-  let starting = $state(false);
+  let startingGenerate = $state(false);
+  let startingAgent = $state(false);
+  let startedSuccessfully = $state(false);
   let errorMessage: string | null = $state(null);
   let successMessage: { text: string; connectionId?: string } | null = $state(null);
 
   afterNavigate(({ from, to }) => {
     if (from && to && from.url.pathname !== to.url.pathname) {
-      starting = false;
+      startingGenerate = false;
+      startingAgent = false;
+      startedSuccessfully = false;
+      clearStartedTimeout();
       errorMessage = null;
       successMessage = null;
     }
   });
 
+  let startedSuccessfullyTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  function clearStartedTimeout() {
+    if (startedSuccessfullyTimeout) {
+      clearTimeout(startedSuccessfullyTimeout);
+      startedSuccessfullyTimeout = null;
+    }
+  }
+
+  $effect(() => {
+    if (activeSession) {
+      startedSuccessfully = false;
+      clearStartedTimeout();
+    }
+    return () => clearStartedTimeout();
+  });
+
+  function setStartedSuccessfully() {
+    startedSuccessfully = true;
+    if (startedSuccessfullyTimeout) {
+      clearTimeout(startedSuccessfullyTimeout);
+    }
+    startedSuccessfullyTimeout = setTimeout(() => {
+      startedSuccessfully = false;
+      startedSuccessfullyTimeout = null;
+    }, 30_000);
+  }
+
   async function handleGenerate() {
-    starting = true;
+    startingGenerate = true;
     errorMessage = null;
     successMessage = null;
     try {
       const result = await startGenerate({ planUuid: plan.uuid });
       if (result.status === 'already_running') {
         successMessage = {
-          text: 'Generate is already running',
+          text: 'A session is already running for this plan',
           connectionId: result.connectionId,
         };
       } else {
         successMessage = { text: 'Generate started' };
       }
+      setStartedSuccessfully();
     } catch (err) {
       errorMessage = `${err as Error}`;
     } finally {
-      starting = false;
+      startingGenerate = false;
+    }
+  }
+
+  let starting = $derived(startingGenerate || startingAgent);
+  let controlsDisabled = $derived(starting || startedSuccessfully);
+
+  async function handleRunAgent() {
+    if (isBlocked && !confirm('This plan has unresolved dependencies. Run agent anyway?')) {
+      return;
+    }
+    startingAgent = true;
+    errorMessage = null;
+    successMessage = null;
+    try {
+      const result = await startAgent({ planUuid: plan.uuid });
+      if (result.status === 'already_running') {
+        successMessage = {
+          text: 'A session is already running for this plan',
+          connectionId: result.connectionId,
+        };
+      } else {
+        successMessage = { text: 'Agent started' };
+      }
+      setStartedSuccessfully();
+    } catch (err) {
+      errorMessage = `${err as Error}`;
+    } finally {
+      startingAgent = false;
     }
   }
 
@@ -110,22 +185,51 @@
       <StatusBadge status={plan.displayStatus} />
       <PriorityBadge priority={plan.priority} />
 
-      {#if eligible}
-        {#if activeGenerateSession}
-          <a
-            href="/projects/{projectId}/sessions/{activeGenerateSession}"
-            class="ml-auto inline-flex items-center gap-1.5 rounded-md bg-blue-100 px-3 py-1 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-900/60"
-          >
-            <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-blue-500"></span>
-            Generating…
-          </a>
-        {:else}
-          <button
+      {#if activeSession}
+        <a
+          href="/projects/{projectId}/sessions/{activeSession.connectionId}"
+          class="ml-auto inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-sm font-medium transition-colors
+            {activeSession.command === 'agent'
+            ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-900/60'
+            : 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-900/60'}"
+        >
+          <span
+            class="inline-block h-2 w-2 animate-pulse rounded-full {activeSession.command ===
+            'agent'
+              ? 'bg-emerald-500'
+              : 'bg-blue-500'}"
+          ></span>
+          {activeSession.command === 'agent'
+            ? 'Agent Running…'
+            : activeSession.command === 'generate'
+              ? 'Generating…'
+              : `${activeSession.command.charAt(0).toUpperCase() + activeSession.command.slice(1)} Running…`}
+        </a>
+      {:else if showAgentOnly}
+        <Button
+          onclick={handleRunAgent}
+          disabled={controlsDisabled}
+          size="sm"
+          class="ml-auto bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600"
+        >
+          {#if startingAgent}
+            <span
+              class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
+            ></span>
+            Starting…
+          {:else}
+            Run Agent
+          {/if}
+        </Button>
+      {:else if showGenerateWithAgent}
+        <ButtonGroup class="ml-auto">
+          <Button
             onclick={handleGenerate}
-            disabled={starting || !!successMessage}
-            class="ml-auto inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600"
+            disabled={controlsDisabled}
+            size="sm"
+            class="bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
           >
-            {#if starting}
+            {#if startingGenerate}
               <span
                 class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
               ></span>
@@ -133,8 +237,38 @@
             {:else}
               Generate
             {/if}
-          </button>
-        {/if}
+          </Button>
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger>
+              {#snippet child({ props })}
+                <Button
+                  {...props}
+                  disabled={controlsDisabled}
+                  size="icon-sm"
+                  aria-label="More plan actions"
+                  class="bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </Button>
+              {/snippet}
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Content align="end">
+              <DropdownMenu.Item onclick={handleRunAgent}>Run Agent</DropdownMenu.Item>
+            </DropdownMenu.Content>
+          </DropdownMenu.Root>
+        </ButtonGroup>
       {/if}
     </div>
 
@@ -146,7 +280,7 @@
       </div>
     {/if}
 
-    {#if successMessage}
+    {#if successMessage && !activeSession}
       <div
         class="mt-2 rounded-md bg-green-50 px-3 py-2 text-sm text-green-700 dark:bg-green-900/30 dark:text-green-300"
       >

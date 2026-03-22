@@ -4,8 +4,15 @@ import * as z from 'zod';
 
 import { getPrimaryWorkspacePath, getPlanDetail } from '$lib/server/db_queries.js';
 import { getServerContext } from '$lib/server/init.js';
-import { spawnGenerateProcess } from '$lib/server/plan_actions.js';
+import { clearLaunchLock, isPlanLaunching, setLaunchLock } from '$lib/server/launch_lock.js';
+import {
+  type SpawnProcessResult,
+  spawnAgentProcess,
+  spawnGenerateProcess,
+} from '$lib/server/plan_actions.js';
 import { getSessionManager } from '$lib/server/session_context.js';
+
+type PlanDetailResult = NonNullable<ReturnType<typeof getPlanDetail>>;
 
 const startGenerateSchema = z.object({
   planUuid: z.string().min(1),
@@ -13,7 +20,7 @@ const startGenerateSchema = z.object({
 
 function isPlanEligibleForGenerate(
   plan: ReturnType<typeof getPlanDetail>
-): plan is NonNullable<typeof plan> {
+): plan is PlanDetailResult {
   return (
     plan != null &&
     plan.tasks.length === 0 &&
@@ -23,7 +30,31 @@ function isPlanEligibleForGenerate(
   );
 }
 
-export const startGenerate = command(startGenerateSchema, async ({ planUuid }) => {
+function isPlanEligibleForAgent(plan: ReturnType<typeof getPlanDetail>): plan is PlanDetailResult {
+  if (
+    plan == null ||
+    plan.status === 'done' ||
+    plan.status === 'cancelled' ||
+    plan.status === 'deferred'
+  ) {
+    return false;
+  }
+
+  if (plan.tasks.length > 0 && plan.taskCounts.done >= plan.taskCounts.total) {
+    return false;
+  }
+
+  return true;
+}
+
+async function launchTimCommand(
+  planUuid: string,
+  eligibilityCheck: (plan: ReturnType<typeof getPlanDetail>) => plan is PlanDetailResult,
+  eligibilityError: string,
+  spawnProcess: (planId: number, cwd: string) => Promise<SpawnProcessResult>
+): Promise<
+  { status: 'started'; planId: number } | { status: 'already_running'; connectionId?: string }
+> {
   const { db } = await getServerContext();
   const plan = getPlanDetail(db, planUuid);
 
@@ -31,15 +62,21 @@ export const startGenerate = command(startGenerateSchema, async ({ planUuid }) =
     error(404, 'Plan not found');
   }
 
-  if (!isPlanEligibleForGenerate(plan)) {
-    error(400, 'Plan is not eligible for generate');
+  if (!eligibilityCheck(plan)) {
+    error(400, eligibilityError);
   }
 
-  const activeSession = getSessionManager().hasActiveSessionForPlan(plan.planId, 'generate');
+  const activeSession = getSessionManager().hasActiveSessionForPlan(plan.uuid);
   if (activeSession.active) {
     return {
-      status: 'already_running' as const,
+      status: 'already_running',
       connectionId: activeSession.connectionId,
+    };
+  }
+
+  if (isPlanLaunching(plan.uuid)) {
+    return {
+      status: 'already_running',
     };
   }
 
@@ -48,13 +85,45 @@ export const startGenerate = command(startGenerateSchema, async ({ planUuid }) =
     error(400, 'Project does not have a primary workspace');
   }
 
-  const result = await spawnGenerateProcess(plan.planId, primaryWorkspacePath);
+  setLaunchLock(plan.uuid);
+
+  let result;
+  try {
+    result = await spawnProcess(plan.planId, primaryWorkspacePath);
+  } catch (e) {
+    clearLaunchLock(plan.uuid);
+    throw e;
+  }
+
   if (!result.success) {
+    clearLaunchLock(plan.uuid);
     error(500, result.error);
   }
 
   return {
-    status: 'started' as const,
+    status: 'started',
     planId: result.planId,
   };
+}
+
+export const startGenerate = command(startGenerateSchema, async ({ planUuid }) => {
+  return launchTimCommand(
+    planUuid,
+    isPlanEligibleForGenerate,
+    'Plan is not eligible for generate',
+    spawnGenerateProcess
+  );
+});
+
+const startAgentSchema = z.object({
+  planUuid: z.string().min(1),
+});
+
+export const startAgent = command(startAgentSchema, async ({ planUuid }) => {
+  return launchTimCommand(
+    planUuid,
+    isPlanEligibleForAgent,
+    'Plan is not eligible for agent',
+    spawnAgentProcess
+  );
 });

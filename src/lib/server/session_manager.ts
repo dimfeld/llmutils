@@ -832,6 +832,7 @@ export class SessionManager {
           command: message.command,
           interactive: message.interactive,
           planId: message.planId,
+          planUuid: message.planUuid,
           planTitle: message.planTitle,
           workspacePath: message.workspacePath,
           gitRemote: message.gitRemote,
@@ -1072,14 +1073,17 @@ export class SessionManager {
   }
 
   hasActiveSessionForPlan(
-    planId: number,
-    command: string
+    planUuid: string,
+    command?: string | string[]
   ): { active: boolean; connectionId?: string } {
     for (const session of this.sessions.values()) {
       if (
         session.status === 'active' &&
-        session.sessionInfo.planId === planId &&
-        session.sessionInfo.command === command
+        session.sessionInfo.planUuid === planUuid &&
+        (command == null ||
+          (Array.isArray(command)
+            ? command.includes(session.sessionInfo.command)
+            : session.sessionInfo.command === command))
       ) {
         return { active: true, connectionId: session.connectionId };
       }

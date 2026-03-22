@@ -20,6 +20,7 @@ import { HeadlessAdapter } from '../../logging/headless_adapter.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { loadEffectiveConfig, loadGlobalConfigForNotifications } from '../configLoader.js';
 import { getDefaultConfig } from '../configSchema.js';
+import type { HeadlessPlanSummary } from '../headless.js';
 import { buildExecutorAndLog } from '../executors/index.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
 import { getReviewerPrompt } from '../executors/claude_code/agent_prompts.js';
@@ -771,11 +772,12 @@ export async function handleReviewCommand(
     // In print mode the headless adapter wraps the print-specific logger so output is
     // both redirected away from stdout AND mirrored to the WebSocket.
     if (!tunnelActive) {
-      let planSummary: { id?: number; title?: string } | undefined;
+      let planSummary: HeadlessPlanSummary | undefined;
       try {
         const plan = await readPlanFile(resolvedPlanFilePath);
         planSummary = {
           id: plan.id,
+          uuid: plan.uuid,
           title: plan.title,
         };
       } catch {

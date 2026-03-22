@@ -1249,6 +1249,7 @@ describe('lib/server/session_manager', () => {
       command: 'generate',
       interactive: true,
       planId: 42,
+      planUuid: 'plan-42',
       workspacePath: '/tmp/ws-generate',
     });
 
@@ -1258,6 +1259,7 @@ describe('lib/server/session_manager', () => {
       command: 'generate',
       interactive: true,
       planId: 42,
+      planUuid: 'plan-42',
       workspacePath: '/tmp/ws-offline',
     });
     manager.handleWebSocketDisconnect('generate-offline');
@@ -1268,6 +1270,7 @@ describe('lib/server/session_manager', () => {
       command: 'agent',
       interactive: true,
       planId: 42,
+      planUuid: 'plan-42',
       workspacePath: '/tmp/ws-agent',
     });
 
@@ -1277,17 +1280,31 @@ describe('lib/server/session_manager', () => {
       command: 'generate',
       interactive: true,
       planId: 99,
+      planUuid: 'plan-99',
       workspacePath: '/tmp/ws-other',
     });
 
-    expect(manager.hasActiveSessionForPlan(42, 'generate')).toEqual({
+    expect(manager.hasActiveSessionForPlan('plan-42', 'generate')).toEqual({
       active: true,
       connectionId: 'generate-active',
     });
-    expect(manager.hasActiveSessionForPlan(42, 'agent')).toEqual({
+    expect(manager.hasActiveSessionForPlan('plan-42', 'agent')).toEqual({
       active: true,
       connectionId: 'agent-active',
     });
-    expect(manager.hasActiveSessionForPlan(43, 'generate')).toEqual({ active: false });
+    expect(manager.hasActiveSessionForPlan('plan-43', 'generate')).toEqual({ active: false });
+
+    // Array of commands matches any session with a matching command
+    expect(manager.hasActiveSessionForPlan('plan-42', ['generate', 'agent'])).toEqual({
+      active: true,
+      connectionId: 'generate-active',
+    });
+    expect(manager.hasActiveSessionForPlan('plan-42', ['chat'])).toEqual({ active: false });
+
+    // Undefined command matches any active session on the plan
+    expect(manager.hasActiveSessionForPlan('plan-42')).toEqual({
+      active: true,
+      connectionId: 'generate-active',
+    });
   });
 });
