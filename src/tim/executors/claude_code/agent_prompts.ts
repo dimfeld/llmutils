@@ -562,6 +562,10 @@ Any functionality that is implemented but does not meet requirements is a CRITIC
 - Tests with insufficient coverage of critical paths
 - Integration tests missing for complex workflows
 
+## Check for the Same Issue Elsewhere
+
+When you find an issue, check whether the same pattern exists in other related files or nearby code paths. The fixer agent works best when it has a complete list of every location that needs attention, rather than discovering additional instances in later review rounds. Flag all affected files and line numbers explicitly so that fixes can be comprehensive in a single pass.
+
 ## Pre-existing Issues
 
 If you notice issues in the codebase that pre-date the current changes (i.e. they exist in code that was not modified
