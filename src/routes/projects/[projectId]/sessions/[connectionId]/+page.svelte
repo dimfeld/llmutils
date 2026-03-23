@@ -11,7 +11,7 @@
 
   // Sync selectedSessionId for any external consumers
   $effect(() => {
-    sessionManager.selectSession(connectionId ?? null);
+    sessionManager.selectSession(connectionId ?? null, page.params.projectId);
   });
 
   $effect(() => {

@@ -50,6 +50,7 @@ export class SessionManager {
   private unreadNotifications = new SvelteMap<string, boolean>();
   initialized = $state(false);
   selectedSessionId: string | null = $state(null);
+  private lastSelectedSessionIds = new SvelteMap<string, string>();
   connectionStatus: ConnectionStatus = $state('disconnected');
   currentProjectId: string | null = $state(null);
   projectsById = new SvelteMap<number, ProjectInfo>();
@@ -133,8 +134,27 @@ export class SessionManager {
     };
   }
 
-  selectSession(id: string | null): void {
+  selectSession(id: string | null, routeProjectId?: string): void {
     this.selectedSessionId = id;
+    // Only remember sessions that actually exist in the map to avoid
+    // poisoning the per-project memory with stale/nonexistent connection IDs
+    if (id != null && routeProjectId != null && this.sessions.has(id)) {
+      this.lastSelectedSessionIds.set(routeProjectId, id);
+    }
+  }
+
+  getLastSelectedSessionId(routeProjectId: string): string | null {
+    return this.lastSelectedSessionIds.get(routeProjectId) ?? null;
+  }
+
+  private findMostRecentSessionId(): string | null {
+    let mostRecent: { connectionId: string; connectedAt: string } | null = null;
+    for (const session of this.sessions.values()) {
+      if (!mostRecent || session.connectedAt > mostRecent.connectedAt) {
+        mostRecent = { connectionId: session.connectionId, connectedAt: session.connectedAt };
+      }
+    }
+    return mostRecent?.connectionId ?? null;
   }
 
   acknowledgeSessionAttention(connectionId: string): void {
@@ -215,6 +235,23 @@ export class SessionManager {
             this.unreadNotifications.delete(connectionId);
           }
         }
+
+        const staleProjectIds: string[] = [];
+        for (const [projectId, connectionId] of this.lastSelectedSessionIds) {
+          if (!activeSessionIds.has(connectionId)) {
+            staleProjectIds.push(projectId);
+          }
+        }
+        if (staleProjectIds.length > 0) {
+          const fallback = this.findMostRecentSessionId();
+          for (const projectId of staleProjectIds) {
+            if (fallback) {
+              this.lastSelectedSessionIds.set(projectId, fallback);
+            } else {
+              this.lastSelectedSessionIds.delete(projectId);
+            }
+          }
+        }
         break;
       }
       case 'session:new': {
@@ -234,6 +271,22 @@ export class SessionManager {
       case 'session:dismissed': {
         const { connectionId } = event.payload;
         this.unreadNotifications.delete(connectionId);
+        const affectedProjectIds: string[] = [];
+        for (const [projectId, lastId] of this.lastSelectedSessionIds) {
+          if (lastId === connectionId) {
+            affectedProjectIds.push(projectId);
+          }
+        }
+        if (affectedProjectIds.length > 0) {
+          const dismissFallback = this.findMostRecentSessionId();
+          for (const projectId of affectedProjectIds) {
+            if (dismissFallback) {
+              this.lastSelectedSessionIds.set(projectId, dismissFallback);
+            } else {
+              this.lastSelectedSessionIds.delete(projectId);
+            }
+          }
+        }
         break;
       }
     }

@@ -5,31 +5,36 @@ goal: ""
 id: 258
 uuid: 3a0cf3eb-7c67-4b93-ac97-ee1fbbacbbf4
 generatedBy: agent
-status: pending
+status: done
 priority: medium
 planGeneratedAt: 2026-03-22T09:26:56.511Z
 promptsGeneratedAt: 2026-03-22T09:26:56.511Z
 createdAt: 2026-03-22T08:36:36.982Z
-updatedAt: 2026-03-22T09:26:56.511Z
+updatedAt: 2026-03-23T19:50:08.787Z
 tasks:
   - title: Add lastSelectedSessionId field and findMostRecentSessionId helper to
       SessionManager
-    done: false
+    done: true
     description: In src/lib/stores/session_state.svelte.ts, add a new reactive field
       lastSelectedSessionId and update selectSession to track it. Add
       findMostRecentSessionId() helper.
   - title: Handle lastSelectedSessionId fallback on session dismissal and reconnect
-    done: false
+    done: true
     description: In reconcileAcknowledgedNotifications, fall back to most recent
       session on dismiss and session:list events.
   - title: Add redirect effect in sessions empty-state page
-    done: false
+    done: true
     description: In sessions/+page.svelte, add $effect that redirects to
       lastSelectedSessionId if it exists.
   - title: Write unit tests for lastSelectedSessionId behavior
-    done: false
+    done: true
     description: Test selectSession tracking, dismiss fallback, session:list
       fallback, and empty state.
+changedFiles:
+  - src/lib/stores/session_state.svelte.ts
+  - src/lib/stores/session_state.test.ts
+  - src/routes/projects/[projectId]/sessions/+page.svelte
+  - src/routes/projects/[projectId]/sessions/[connectionId]/+page.svelte
 tags: []
 ---
 
@@ -220,3 +225,32 @@ The SessionManager unit tests can verify these directly. The redirect behavior i
   - The `$effect` in the empty-state page runs reactively. If `lastSelectedSessionId` or the sessions map changes while on that page, it could trigger an unexpected redirect. Guard with `sessionManager.initialized` to avoid premature redirects before the session list is loaded.
   - `encodeURIComponent` must be used on the connectionId when building the redirect URL, matching the existing pattern in the sessions layout.
   - The `session:list` SSE event replaces all sessions on reconnect. If `lastSelectedSessionId` references a session no longer present after reconnect, it should be cleared.
+
+## Changes Made During Implementation
+
+- **Per-project tracking instead of global**: Changed from a single `lastSelectedSessionId: string | null` to a `SvelteMap<string, string>` keyed by route `projectId`. This ensures each project tab remembers its own last-viewed session independently, since the sessions sidebar shows all sessions on every project route and users can view cross-project sessions.
+- **Session existence validation**: `selectSession()` only stores a session ID if it actually exists in the sessions map, preventing stale/nonexistent URLs from poisoning the per-project memory.
+- **No project-ownership guard in redirect**: Removed the `session.projectId` matching check from the redirect effect. The sessions sidebar renders all sessions regardless of project, so the redirect trusts the per-project stored value.
+- **Safe map iteration**: Collect stale entries first, then mutate, to avoid modifying `SvelteMap` during iteration.
+
+## Current Progress
+### Current State
+- All 4 tasks complete. Feature fully implemented and tested.
+### Completed (So Far)
+- Per-project `lastSelectedSessionIds` SvelteMap in SessionManager with `selectSession`, `getLastSelectedSessionId`, and `findMostRecentSessionId`
+- Redirect `$effect` in `sessions/+page.svelte` with `replaceState: true`
+- Dismiss and reconnect fallback handlers in `reconcileAcknowledgedNotifications`
+- 38 passing unit tests including per-project isolation, dismiss fallback, reconnect fallback, nonexistent session guard
+### Remaining
+- None
+### Next Iteration Guidance
+- None
+### Decisions / Changes
+- Used per-project Map instead of global string to handle cross-project navigation correctly
+- No project-ownership guard in the redirect because the UI already allows viewing any session from any project route
+- `selectSession` validates session existence before storing to prevent stale URL poisoning
+### Lessons Learned
+- The sessions sidebar shows ALL sessions on every project route, so project-scoping the redirect guard was incorrect — it blocked valid cross-project session viewing
+- Mutating a Map/SvelteMap while iterating can skip entries; collect first, then mutate
+### Risks / Blockers
+- None
