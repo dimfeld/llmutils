@@ -82,6 +82,12 @@ Plan metadata, tasks, and dependencies are mirrored in SQLite alongside the YAML
 
 **Error handling layers**: `syncPlanToDb` has a single try/catch that logs warnings and never rethrows. Callers (e.g., `writePlanFile`) trust this and do not add redundant outer error handling.
 
+### Plan Loading from DB
+
+`src/tim/plans_db.ts` provides `loadPlansFromDb(searchDir, repositoryId)` — a shared function that assembles `PlanWithFilename` objects from DB rows (plans, tasks, tags, dependencies) for a given project. Returns `PlansLoadResult` with `plans: Map<number, PlanWithFilename>` and `duplicates`. Resolves `parent_uuid` to numeric plan IDs using an internal UUID-to-ID map, enabling `--epic` filtering in DB mode. Also populates `assignedTo` from the DB row's `assigned_to` field.
+
+Used by `tim list`, `tim ready`, and the MCP `list-ready-plans` tool via a DB-with-fallback pattern: try DB first, fall back to local YAML files if the DB returns no plans. The `--local` flag on both CLI commands bypasses the DB and reads files directly.
+
 ### PR Status Cache
 
 PR status data from GitHub is cached in SQLite for display in the web UI and CLI. The schema (migration v8) separates the PR data from plan linkage so the same PR can be linked to multiple plans.

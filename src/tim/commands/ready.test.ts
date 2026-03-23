@@ -6,6 +6,7 @@ import yaml from 'yaml';
 import { ModuleMocker } from '../../testing.js';
 import { claimAssignment } from '../db/assignment.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
+import { upsertPlan } from '../db/plan.js';
 import { getOrCreateProject } from '../db/project.js';
 import { recordWorkspace } from '../db/workspace.js';
 
@@ -151,6 +152,47 @@ describe('handleReadyCommand', () => {
   async function createPlan(plan: PlanSchema) {
     const filename = path.join(tasksDir, `${plan.id}-test.yml`);
     await fs.writeFile(filename, `---\n${yaml.stringify(plan)}---\n`);
+  }
+
+  function upsertDbPlan(plan: PlanSchema) {
+    if (typeof plan.id !== 'number' || !plan.uuid) {
+      throw new Error('DB test plans must include numeric id and uuid');
+    }
+
+    const db = getDatabase();
+    const project = getOrCreateProject(db, repositoryId, {
+      remoteUrl: 'https://example.com/repo.git',
+      lastGitRoot: repoDir,
+    });
+
+    upsertPlan(db, project.id, {
+      uuid: plan.uuid,
+      planId: plan.id,
+      title: plan.title ?? null,
+      goal: plan.goal ?? null,
+      details: plan.details ?? null,
+      sourceCreatedAt: plan.createdAt ?? null,
+      sourceUpdatedAt: plan.updatedAt ?? null,
+      status: plan.status,
+      priority: plan.priority ?? null,
+      branch: plan.branch ?? null,
+      simple: typeof plan.simple === 'boolean' ? plan.simple : null,
+      tdd: typeof plan.tdd === 'boolean' ? plan.tdd : null,
+      discoveredFrom: plan.discoveredFrom ?? null,
+      issue: plan.issue ?? null,
+      pullRequest: plan.pullRequest ?? null,
+      assignedTo: plan.assignedTo ?? null,
+      baseBranch: plan.baseBranch ?? null,
+      parentUuid:
+        typeof plan.parent === 'number'
+          ? `plan-${plan.parent}`
+          : plan.references?.[`${plan.parent}`],
+      epic: plan.epic === true,
+      filename: `${plan.id}-test.yml`,
+      tasks: plan.tasks ?? [],
+      dependencyUuids: (plan.dependencies ?? []).map((dependencyId) => `plan-${dependencyId}`),
+      tags: plan.tags ?? [],
+    });
   }
 
   function syncAssignmentsDataToDb() {
@@ -1197,6 +1239,42 @@ describe('handleReadyCommand', () => {
     expect(logOutput).not.toContain('Legacy Bob Plan');
   });
 
+  test('--user uses SQLite assignedTo values by default when DB state differs from local files', async () => {
+    const now = new Date().toISOString();
+
+    await createPlan({
+      id: 60,
+      uuid: 'plan-60',
+      title: 'Local Bob Plan',
+      status: 'pending',
+      tasks: [{ title: 'Task', description: 'Do work', done: false }],
+      dependencies: [],
+      assignedTo: 'bob',
+      createdAt: now,
+    });
+
+    upsertDbPlan({
+      id: 60,
+      uuid: 'plan-60',
+      title: 'DB Alice Plan',
+      status: 'pending',
+      tasks: [{ title: 'Task', description: 'Do work', done: false }],
+      dependencies: [],
+      assignedTo: 'alice',
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    assignmentsData = {};
+
+    await runReady({ user: 'alice' }, createCommand());
+
+    const logOutput = mockLog.mock.calls.map((call) => call[0]).join('\n');
+
+    expect(logOutput).toContain('DB Alice Plan');
+    expect(logOutput).not.toContain('Local Bob Plan');
+  });
+
   test('--user matches assigned users case-insensitively', async () => {
     const now = new Date().toISOString();
 
@@ -1479,6 +1557,178 @@ describe('handleReadyCommand', () => {
 
     mockLog.mockClear();
     await runReady({ epic: 20 }, createCommand());
+
+    const output = mockLog.mock.calls.map((call) => call[0]).join('\n');
+    expect(output).toContain('Epic Plan');
+    expect(output).toContain('Child Plan');
+    expect(output).toContain('Grandchild Plan');
+    expect(output).not.toContain('Unrelated Plan');
+  });
+
+  test('uses SQLite plans by default when DB state differs from local files', async () => {
+    await createPlan({
+      id: 30,
+      uuid: 'plan-30',
+      goal: 'DB Ready Plan',
+      status: 'pending',
+      tasks: [],
+      dependencies: [],
+    });
+
+    upsertDbPlan({
+      id: 30,
+      uuid: 'plan-30',
+      goal: 'DB Ready Plan',
+      status: 'pending',
+      tasks: [],
+      dependencies: [],
+    });
+
+    await createPlan({
+      id: 30,
+      uuid: 'plan-30',
+      goal: 'Local Not Ready Plan',
+      status: 'done',
+      tasks: [],
+      dependencies: [],
+    });
+
+    mockLog.mockClear();
+    await runReady({}, createCommand());
+
+    const output = mockLog.mock.calls.map((call) => call[0]).join('\n');
+    expect(output).toContain('DB Ready Plan');
+    expect(output).not.toContain('Local Not Ready Plan');
+  });
+
+  test('uses local plans when --local is passed even if DB state differs', async () => {
+    await createPlan({
+      id: 31,
+      uuid: 'plan-31',
+      goal: 'DB Ready Plan',
+      status: 'pending',
+      tasks: [],
+      dependencies: [],
+    });
+
+    upsertDbPlan({
+      id: 31,
+      uuid: 'plan-31',
+      goal: 'DB Ready Plan',
+      status: 'pending',
+      tasks: [],
+      dependencies: [],
+    });
+
+    await createPlan({
+      id: 31,
+      uuid: 'plan-31',
+      goal: 'Local Not Ready Plan',
+      status: 'done',
+      tasks: [],
+      dependencies: [],
+    });
+
+    mockLog.mockClear();
+    await runReady({ local: true }, createCommand());
+
+    const output = mockLog.mock.calls.map((call) => call[0]).join('\n');
+    expect(output).toContain('No plans are currently ready to execute.');
+    expect(output).not.toContain('DB Ready Plan');
+  });
+
+  test('falls back to local plans when SQLite has no synced plans', async () => {
+    await createPlan({
+      id: 32,
+      goal: 'Local Fallback Plan',
+      status: 'pending',
+      tasks: [],
+      dependencies: [],
+    });
+
+    mockLog.mockClear();
+    await runReady({}, createCommand());
+
+    const output = mockLog.mock.calls.map((call) => call[0]).join('\n');
+    expect(output).toContain('Ready Plans (1)');
+    expect(output).toContain('Local Fallback Plan');
+  });
+
+  test('filters ready plans by epic id when loading plans from SQLite', async () => {
+    await createPlan({
+      id: 40,
+      uuid: 'plan-40',
+      goal: 'Epic Plan',
+      status: 'pending',
+      epic: true,
+      tasks: [],
+      dependencies: [],
+    });
+    await createPlan({
+      id: 41,
+      uuid: 'plan-41',
+      goal: 'Child Plan',
+      status: 'pending',
+      parent: 40,
+      tasks: [],
+      dependencies: [],
+    });
+    await createPlan({
+      id: 42,
+      uuid: 'plan-42',
+      goal: 'Grandchild Plan',
+      status: 'pending',
+      parent: 41,
+      tasks: [],
+      dependencies: [],
+    });
+    await createPlan({
+      id: 43,
+      uuid: 'plan-43',
+      goal: 'Unrelated Plan',
+      status: 'pending',
+      tasks: [],
+      dependencies: [],
+    });
+
+    upsertDbPlan({
+      id: 40,
+      uuid: 'plan-40',
+      goal: 'Epic Plan',
+      status: 'pending',
+      epic: true,
+      tasks: [],
+      dependencies: [],
+    });
+    upsertDbPlan({
+      id: 41,
+      uuid: 'plan-41',
+      goal: 'Child Plan',
+      status: 'pending',
+      parent: 40,
+      tasks: [],
+      dependencies: [],
+    });
+    upsertDbPlan({
+      id: 42,
+      uuid: 'plan-42',
+      goal: 'Grandchild Plan',
+      status: 'pending',
+      parent: 41,
+      tasks: [],
+      dependencies: [],
+    });
+    upsertDbPlan({
+      id: 43,
+      uuid: 'plan-43',
+      goal: 'Unrelated Plan',
+      status: 'pending',
+      tasks: [],
+      dependencies: [],
+    });
+
+    mockLog.mockClear();
+    await runReady({ epic: 40 }, createCommand());
 
     const output = mockLog.mock.calls.map((call) => call[0]).join('\n');
     expect(output).toContain('Epic Plan');

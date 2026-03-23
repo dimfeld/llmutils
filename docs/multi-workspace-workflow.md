@@ -42,7 +42,7 @@ Managing large features often requires multiple active workspaces, or even multi
 
 The assignments database augments the existing plan metadata. Commands read both sources and merge them so workspaces always see the most relevant plans:
 
-- `tim ready` defaults to the current workspace's claims plus any unassigned plans. Add `--all`, `--unassigned`, or `--user <name>` to broaden the view.
+- `tim ready` loads plans from SQLite by default (matching `tim list` behavior) and shows the current workspace's claims plus any unassigned plans. Use `--local` to read from YAML files instead. Add `--all`, `--unassigned`, or `--user <name>` to broaden the view.
 - `tim list --assigned` shows only claimed plans. Use `--unassigned` for the inverse.
 - `tim show 42` prints the workspace path, user, and claim timestamps.
 - `tim assignments list` provides a repository-wide overview of every assignment.

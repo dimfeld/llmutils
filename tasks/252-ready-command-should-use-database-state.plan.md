@@ -5,40 +5,48 @@ goal: ""
 id: 252
 uuid: 33f4731f-f5f6-4b0a-91a9-4c1bbb7b78fe
 generatedBy: agent
-status: pending
+status: done
 priority: medium
 planGeneratedAt: 2026-03-21T08:28:47.931Z
 promptsGeneratedAt: 2026-03-21T08:28:47.931Z
 createdAt: 2026-03-21T08:06:15.269Z
-updatedAt: 2026-03-21T08:28:47.932Z
+updatedAt: 2026-03-23T01:07:57.625Z
 tasks:
   - title: Extract loadPlansFromDb to shared module and fix parent field
-    done: false
+    done: true
     description: Move loadPlansFromDb from src/tim/commands/list.ts to
       src/tim/plans_db.ts. Export the function and PlansLoadResult type. Update
       list.ts to import from the new module. Fix the parent field by resolving
       row.parent_uuid to numeric plan ID using the planUuidToId map.
   - title: Add --local flag to tim ready CLI registration
-    done: false
+    done: true
     description: In src/tim/tim.ts add --local option to the ready command registration.
   - title: Update handleReadyCommand to use DB by default
-    done: false
+    done: true
     description: In src/tim/commands/ready.ts replace readAllPlans with
       DB-with-fallback pattern. Add local to options interface. Move
       getRepositoryIdentity before plan loading.
   - title: Update MCP list_ready_plans tool to use DB by default
-    done: false
+    done: true
     description: In src/tim/tools/list_ready_plans.ts use loadPlansFromDb with
       fallback to readAllPlans.
   - title: Update existing tests and add DB-path tests
-    done: false
+    done: true
     description: Add local:true to existing tests. Add new tests that sync plans to
       DB first then test default DB path, fallback, and epic filtering with
       parent field.
   - title: Run formatting type checking and tests
-    done: false
+    done: true
     description: Run bun run format, bun run check, and relevant test files. Fix any
       failures.
+changedFiles:
+  - src/tim/commands/list.ts
+  - src/tim/commands/ready.test.ts
+  - src/tim/commands/ready.ts
+  - src/tim/commands/tools.test.ts
+  - src/tim/plans_db.ts
+  - src/tim/tim.ts
+  - src/tim/tools/list_ready_plans.ts
 tags: []
 ---
 
@@ -263,3 +271,28 @@ In `src/tim/commands/ready.test.ts`:
   to a numeric plan ID. This means `--epic` filtering via `isUnderEpic()` is broken for DB-loaded plans in
   both `tim list` and `tim ready`. This will be fixed as part of this plan by resolving `parent_uuid` → plan ID
   using the `planUuidToId` map that `loadPlansFromDb()` already builds.
+
+## Current Progress
+### Current State
+- All tasks complete. `tim ready` and the MCP `list-ready-plans` tool now use SQLite by default with fallback to local files.
+### Completed (So Far)
+- Extracted `loadPlansFromDb` to `src/tim/plans_db.ts` shared module with `PlansLoadResult` type
+- Fixed `parent` field resolution (parent_uuid → numeric plan ID) for epic filtering in DB mode
+- Added `assignedTo` field from `PlanRow.assigned_to` to DB-loaded plans
+- Added `--local` flag to `tim ready` CLI registration in `src/tim/tim.ts`
+- Updated `handleReadyCommand` in `src/tim/commands/ready.ts` with DB-with-fallback pattern
+- Updated `listReadyPlansTool` in `src/tim/tools/list_ready_plans.ts` with DB-with-fallback pattern
+- Updated `list.ts` to import from shared module
+- Added tests for DB-path loading, --local flag, fallback, epic filtering, and --user filtering
+### Remaining
+- None
+### Next Iteration Guidance
+- None
+### Decisions / Changes
+- `ready.ts` uses `getRepositoryIdentity()` (no args, defaults to cwd) while `list.ts` uses `getRepositoryIdentity({ cwd: searchDir })`. This is intentional: ready doesn't have a `--dir` option, and using cwd matches plan_sync/assignment storage keys. A follow-up could align list.ts to match.
+- The `PlanWithFilename` type is imported from `src/tim/utils/hierarchy.ts` (already exported there) rather than re-exporting from `plans_db.ts`.
+### Lessons Learned
+- `writePlanFile()` internally calls `syncPlanToDb()`, so using it in tests that need an empty DB for fallback testing won't work. Write YAML files directly with `fs.writeFile` to bypass auto-sync.
+- DB-loaded plans need `assignedTo` populated from `PlanRow.assigned_to` because the ready command uses it as a fallback for `--user` filtering when assignment entries don't exist.
+### Risks / Blockers
+- None

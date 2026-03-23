@@ -806,6 +806,7 @@ program
   .option('--unassigned', 'Show only ready plans that are not currently claimed')
   .option('--user <username>', 'Show ready plans claimed by the specified user')
   .option('--here', 'Show only ready plans assigned to the current workspace')
+  .option('--local', 'Read plan data from local files instead of SQLite')
   .option('--has-tasks', 'Show only ready plans that have tasks defined')
   .option('--tag <tags...>', 'Filter ready plans by tag (repeatable)')
   .option(

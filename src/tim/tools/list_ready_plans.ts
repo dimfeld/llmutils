@@ -1,11 +1,13 @@
 import { clearPlanCache, readAllPlans } from '../plans.js';
 import { resolveTasksDir } from '../configSchema.js';
+import { loadPlansFromDb } from '../plans_db.js';
 import { filterAndSortReadyPlans, formatReadyPlansAsJson } from '../ready_plans.js';
 import { normalizeTags } from '../utils/tags.js';
 import type { ToolContext, ToolResult } from './context.js';
 import type { ListReadyPlansArguments } from './schemas.js';
 import type { EnrichedReadyPlan } from '../ready_plans.js';
 import type { PlanSchema } from '../planSchema.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 
 type ReadyPlansResult = {
   count: number;
@@ -32,10 +34,15 @@ export async function listReadyPlansTool(
   context: ToolContext
 ): Promise<ToolResult<ReadyPlansResult>> {
   try {
-    clearPlanCache();
     const tasksDir = await resolveTasksDir(context.config);
-    // Bypass the in-memory cache so tool clients always see the latest edits.
-    const { plans } = await readAllPlans(tasksDir, false);
+    const repository = await getRepositoryIdentity({ cwd: context.gitRoot });
+
+    let plans = loadPlansFromDb(tasksDir, repository.repositoryId).plans;
+    if (plans.size === 0) {
+      clearPlanCache();
+      // Bypass the in-memory cache so tool clients always see the latest edits.
+      ({ plans } = await readAllPlans(tasksDir, false));
+    }
 
     let readyPlans = filterAndSortReadyPlans(plans, {
       pendingOnly: args.pendingOnly ?? false,

@@ -18,6 +18,7 @@ import {
   getCombinedTitleFromSummary,
 } from '../display_utils.js';
 import { readAllPlans } from '../plans.js';
+import { loadPlansFromDb } from '../plans_db.js';
 import {
   READY_PLAN_SORT_FIELDS,
   filterAndSortReadyPlans,
@@ -31,13 +32,11 @@ import type {
   GenerateModeRegistrationContext,
   ListReadyPlansArguments,
 } from '../mcp/generate_mode.js';
-import { isUnderEpic } from '../utils/hierarchy.js';
+import { isUnderEpic, type PlanWithFilename } from '../utils/hierarchy.js';
 import { normalizeTags } from '../utils/tags.js';
 import { listReadyPlansTool } from '../tools/index.js';
 
-type PlanWithFilename = EnrichedReadyPlan;
-
-type ReadyPlan = PlanWithFilename & {
+type ReadyPlan = EnrichedReadyPlan & {
   assignmentEntry?: AssignmentEntry;
   assignedWorkspaces: string[];
   assignedUsers: string[];
@@ -63,6 +62,7 @@ interface ReadyCommandOptions {
   hasTasks?: boolean;
   tag?: string[];
   epic?: number | string;
+  local?: boolean;
 }
 
 const VALID_FORMATS = ['list', 'table', 'json'] as const;
@@ -405,9 +405,18 @@ export async function handleReadyCommand(options: ReadyCommandOptions, command: 
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
   const tasksDir = await resolveTasksDir(config);
-  const { plans: rawPlans } = await readAllPlans(tasksDir);
-
   const repository = await getRepositoryIdentity();
+
+  const useLocalFiles = options.local === true;
+  let rawPlans: Map<number, PlanWithFilename>;
+  if (useLocalFiles) {
+    ({ plans: rawPlans } = await readAllPlans(tasksDir));
+  } else {
+    ({ plans: rawPlans } = loadPlansFromDb(tasksDir, repository.repositoryId));
+    if (rawPlans.size === 0) {
+      ({ plans: rawPlans } = await readAllPlans(tasksDir));
+    }
+  }
 
   const assignmentsLookup = loadAssignmentsLookup(repository.repositoryId);
 

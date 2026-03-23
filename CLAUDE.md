@@ -86,6 +86,7 @@ The codebase is organized into several main modules with improved modularity and
 - Shared utilities captured in purpose-built modules:
   - `plan_display.ts`: Resolves plans and assembles context summaries for both CLI output and MCP tooling
   - `plan_merge.ts`: Handles delimiter-aware plan detail updates and task merging while preserving metadata
+  - `plans_db.ts`: Shared `loadPlansFromDb()` for loading plans from SQLite with parent UUID resolution, used by `list`, `ready`, and MCP tools with DB-with-fallback pattern
   - `ready_plans.ts`: Implements readiness detection, filtering, and sorting used by the CLI and MCP list tools
   - `utils/task_operations.ts`: Centralizes task prompting helpers (interactive input, title search, selection menus) used by both CLI commands and MCP tools for task management
 - MCP server (`mcp/generate_mode.ts`) now focuses on registering prompts and delegates tool handlers to the relevant command modules

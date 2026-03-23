@@ -4,6 +4,10 @@ import path from 'node:path';
 import os from 'node:os';
 import { ModuleMocker, clearAllTimCaches } from '../../testing.js';
 import { getDefaultConfig } from '../configSchema.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
+import { upsertPlan } from '../db/plan.js';
+import { getOrCreateProject } from '../db/project.js';
 import { writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import {
@@ -34,12 +38,20 @@ describe('tim tools CLI handlers', () => {
   let restoreIsTTY: RestoreFn | null;
   let command: any;
   let config: ReturnType<typeof getDefaultConfig>;
+  let originalEnv: Partial<Record<string, string>>;
 
   beforeEach(async () => {
     clearAllTimCaches();
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tools-cli-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
+    originalEnv = {
+      XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+      APPDATA: process.env.APPDATA,
+    };
+    process.env.XDG_CONFIG_HOME = path.join(tempDir, 'config');
+    delete process.env.APPDATA;
+    closeDatabaseForTesting();
 
     config = getDefaultConfig();
     config.paths = { tasks: tasksDir };
@@ -84,6 +96,17 @@ describe('tim tools CLI handlers', () => {
     restoreIsTTY?.();
     moduleMocker.clear();
     clearAllTimCaches();
+    closeDatabaseForTesting();
+    if (originalEnv.XDG_CONFIG_HOME === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalEnv.XDG_CONFIG_HOME;
+    }
+    if (originalEnv.APPDATA === undefined) {
+      delete process.env.APPDATA;
+    } else {
+      process.env.APPDATA = originalEnv.APPDATA;
+    }
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
@@ -148,6 +171,49 @@ describe('tim tools CLI handlers', () => {
       info: () => {},
       warn: () => {},
     };
+  }
+
+  function createDbTestUuid(id: number): string {
+    return `00000000-0000-4000-8000-${String(id).padStart(12, '0')}`;
+  }
+
+  async function upsertDbPlan(plan: PlanSchema) {
+    if (typeof plan.id !== 'number' || !plan.uuid) {
+      throw new Error('DB test plans must include numeric id and uuid');
+    }
+
+    const repository = await getRepositoryIdentity({ cwd: tempDir });
+    const db = getDatabase();
+    const project = getOrCreateProject(db, repository.repositoryId, {
+      remoteUrl: repository.remoteUrl,
+      lastGitRoot: repository.gitRoot,
+    });
+
+    upsertPlan(db, project.id, {
+      uuid: plan.uuid,
+      planId: plan.id,
+      title: plan.title ?? null,
+      goal: plan.goal ?? null,
+      details: plan.details ?? null,
+      sourceCreatedAt: plan.createdAt ?? null,
+      sourceUpdatedAt: plan.updatedAt ?? null,
+      status: plan.status,
+      priority: plan.priority ?? null,
+      branch: plan.branch ?? null,
+      simple: typeof plan.simple === 'boolean' ? plan.simple : null,
+      tdd: typeof plan.tdd === 'boolean' ? plan.tdd : null,
+      discoveredFrom: plan.discoveredFrom ?? null,
+      issue: plan.issue ?? null,
+      pullRequest: plan.pullRequest ?? null,
+      assignedTo: plan.assignedTo ?? null,
+      baseBranch: plan.baseBranch ?? null,
+      parentUuid: typeof plan.parent === 'number' ? createDbTestUuid(plan.parent) : null,
+      epic: plan.epic === true,
+      filename: `${plan.id}-db.plan.md`,
+      tasks: plan.tasks ?? [],
+      dependencyUuids: (plan.dependencies ?? []).map((dependencyId) => `plan-${dependencyId}`),
+      tags: plan.tags ?? [],
+    });
   }
 
   test('create-plan returns JSON output and writes plan file', async () => {
@@ -466,6 +532,96 @@ describe('tim tools CLI handlers', () => {
 
     const mcpOutput = await mcpListReadyPlans(args, context);
     expect(mcpOutput).toBe(toolOutput.text);
+  });
+
+  test('listReadyPlansTool falls back to local files when SQLite has no synced plans', async () => {
+    // Write the plan file directly (bypassing writePlanFile which auto-syncs to DB)
+    // so the DB stays empty and the fallback path is actually exercised.
+    const planFile = path.join(tasksDir, '14-ready-fallback.plan.md');
+    const planYaml = [
+      '---',
+      'id: 14',
+      'title: Fallback Ready Plan',
+      'goal: Use local file when DB is empty',
+      'status: pending',
+      'tasks: []',
+      '---',
+      '',
+    ].join('\n');
+    await fs.writeFile(planFile, planYaml);
+
+    const context = createToolContext();
+    const toolOutput = await listReadyPlansTool({}, context);
+
+    expect(toolOutput.data?.count).toBe(1);
+    expect(toolOutput.data?.plans[0]?.title).toBe('Fallback Ready Plan');
+    expect(toolOutput.text).toContain('Fallback Ready Plan');
+  });
+
+  test('listReadyPlansTool uses SQLite plans by default for epic filtering when local files diverge', async () => {
+    await writePlanFile(
+      path.join(tasksDir, '50-epic.plan.md'),
+      {
+        id: 50,
+        uuid: createDbTestUuid(50),
+        title: 'Local Done Epic',
+        goal: 'Local version should be ignored',
+        status: 'done',
+        epic: true,
+        tasks: [],
+      },
+      { skipUpdatedAt: true }
+    );
+    await writePlanFile(
+      path.join(tasksDir, '51-child.plan.md'),
+      {
+        id: 51,
+        uuid: createDbTestUuid(51),
+        title: 'Local Done Child',
+        goal: 'Local version should be ignored',
+        status: 'done',
+        parent: 50,
+        tasks: [],
+      },
+      { skipUpdatedAt: true }
+    );
+
+    await upsertDbPlan({
+      id: 50,
+      uuid: createDbTestUuid(50),
+      title: 'DB Epic',
+      goal: 'Epic from SQLite',
+      status: 'pending',
+      epic: true,
+      tasks: [],
+    });
+    await upsertDbPlan({
+      id: 51,
+      uuid: createDbTestUuid(51),
+      title: 'DB Child',
+      goal: 'Child from SQLite',
+      status: 'pending',
+      parent: 50,
+      tasks: [],
+    });
+    await upsertDbPlan({
+      id: 52,
+      uuid: createDbTestUuid(52),
+      title: 'DB Unrelated',
+      goal: 'Should be filtered out',
+      status: 'pending',
+      tasks: [],
+    });
+
+    const context = createToolContext();
+    const toolOutput = await listReadyPlansTool({ epic: 50 }, context);
+
+    expect(toolOutput.data?.count).toBe(2);
+    expect(toolOutput.data?.plans.map((plan) => plan.title)).toEqual(['DB Epic', 'DB Child']);
+    expect(toolOutput.text).toContain('DB Epic');
+    expect(toolOutput.text).toContain('DB Child');
+    expect(toolOutput.text).not.toContain('Local Done Epic');
+    expect(toolOutput.text).not.toContain('DB Unrelated');
   });
 
   test('invalid JSON input returns JSON error payload', async () => {

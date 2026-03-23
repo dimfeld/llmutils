@@ -68,6 +68,7 @@ Or for a single mock defined across the entire test file, use `afterAll(() => mo
 - Close the database in `afterEach` with `db.close(false)` — the `false` argument avoids throwing on pending transactions
 - For tests that exercise code calling the singleton `getDatabase()`, use `closeDatabaseForTesting()` in cleanup
 - Tests using module mocking that touch DB-dependent code paths need `closeDatabaseForTesting()` and `XDG_CONFIG_HOME` isolation even when the test itself doesn't directly use the DB — transitive calls (e.g., `loadSharedPermissions` via an executor) can initialize the singleton and leak state to subsequent test files
+- **`writePlanFile()` auto-syncs to DB**: `writePlanFile()` internally calls `syncPlanToDb()`, so tests that need an empty DB (e.g., testing DB-empty fallback to local files) cannot use `writePlanFile()` to create fixture plans. Write YAML files directly with `fs.writeFile` to bypass the auto-sync.
 
 ### Server/Network Testing
 
