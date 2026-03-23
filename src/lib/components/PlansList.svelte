@@ -22,6 +22,7 @@
 
   const statusOrder: PlanDisplayStatus[] = [
     'in_progress',
+    'ready',
     'pending',
     'needs_review',
     'recently_done',
@@ -33,6 +34,7 @@
 
   const statusGroupLabels: Record<PlanDisplayStatus, string> = {
     in_progress: 'In Progress',
+    ready: 'Ready',
     blocked: 'Blocked',
     pending: 'Pending',
     needs_review: 'Needs Review',

@@ -28,6 +28,7 @@ import {
 
 export type PlanDisplayStatus =
   | 'pending'
+  | 'ready'
   | 'in_progress'
   | 'blocked'
   | 'needs_review'
@@ -82,6 +83,7 @@ export interface EnrichedPlan {
   branch: string | null;
   parentUuid: string | null;
   epic: boolean;
+  simple: boolean;
   filename: string;
   createdAt: string;
   updatedAt: string;
@@ -409,6 +411,12 @@ function enrichPlansWithContext(
     const tasks = (tasksByPlanUuid.get(plan.uuid) ?? []).map(toTask);
     const dependencyRows = dependenciesByPlanUuid.get(plan.uuid) ?? [];
     const doneTaskCount = tasks.filter((task) => task.done).length;
+    const simple = plan.simple === 1;
+
+    let displayStatus = computeDisplayStatus(plan, dependencyRows, planByUuid, now);
+    if (displayStatus === 'pending' && (tasks.length > 0 || simple)) {
+      displayStatus = 'ready';
+    }
 
     return {
       uuid: plan.uuid,
@@ -418,11 +426,12 @@ function enrichPlansWithContext(
       goal: plan.goal,
       details: plan.details,
       status: plan.status,
-      displayStatus: computeDisplayStatus(plan, dependencyRows, planByUuid, now),
+      displayStatus,
       priority: plan.priority,
       branch: plan.branch,
       parentUuid: plan.parent_uuid,
       epic: plan.epic === 1,
+      simple,
       filename: plan.filename,
       createdAt: plan.created_at,
       updatedAt: plan.updated_at,

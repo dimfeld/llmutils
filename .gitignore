@@ -1,5 +1,6 @@
 # dependencies (bun install)
 node_modules
+.claude/worktrees
 
 # output
 out
