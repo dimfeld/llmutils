@@ -263,6 +263,7 @@ export async function setupWorkspace(
             planFilePath: currentPlanFile ? planFile : undefined,
             createBranch: shouldCreateBranch,
             reuseExistingBranch: !hasExplicitBase,
+            primaryWorkspacePath: currentBaseDir,
           });
 
           if (!prepareResult.success && canRetryWithoutBaseBranch) {
@@ -271,6 +272,7 @@ export async function setupWorkspace(
               planFilePath: currentPlanFile ? planFile : undefined,
               createBranch: shouldCreateBranch,
               reuseExistingBranch: !hasExplicitBase,
+              primaryWorkspacePath: currentBaseDir,
             });
           }
 

@@ -1211,9 +1211,11 @@ describe('workspace add --reuse and --try-reuse', () => {
     await fs.mkdir(existingWorkspace, { recursive: true });
     await initGitRepository(existingWorkspace, bareRemoteDir);
 
-    // Create the branch that would conflict
-    await runGit(existingWorkspace, ['checkout', '-b', 'task-54']);
-    await runGit(existingWorkspace, ['checkout', 'main']);
+    // Create the conflicting branch in the primary workspace (where branch name
+    // decisions are made) and push it so both repos can see it
+    await runGit(mainRepoDir, ['checkout', '-b', 'task-54']);
+    await runGit(mainRepoDir, ['checkout', 'main']);
+    await runGit(mainRepoDir, ['push', 'origin', 'task-54']);
 
     // Register the workspace
     const workspaceEntry: WorkspaceInfo = {
