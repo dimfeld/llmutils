@@ -1,7 +1,11 @@
 import chalk from 'chalk';
 import { isPromptTimeoutError, promptPrefixSelect, promptSelect } from '../../../common/input';
 import { debugLog, log } from '../../../logging';
-import { addPermissionToFile, parseAllowedToolsList } from '../claude_code/permissions_mcp_setup';
+import {
+  addPermissionToFile,
+  ALWAYS_ALLOWED_BASH_SUFFIXES,
+  parseAllowedToolsList,
+} from '../claude_code/permissions_mcp_setup';
 import { AppServerRequestError } from './app_server_connection';
 
 const BASH_TOOL_NAME = 'Bash';
@@ -80,6 +84,11 @@ function extractCommandText(params: unknown): string | undefined {
 function isCommandAllowed(allowedToolsMap: AllowedToolsMap, command: string): boolean {
   const allowed = allowedToolsMap.get(BASH_TOOL_NAME);
   if (allowed === true) {
+    return true;
+  }
+
+  const trimmedCommand = command.trimEnd();
+  if (ALWAYS_ALLOWED_BASH_SUFFIXES.some((suffix) => trimmedCommand.endsWith(suffix))) {
     return true;
   }
 

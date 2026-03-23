@@ -37,6 +37,7 @@ const USER_CHOICE_ALLOW = 'allow';
 const USER_CHOICE_ALWAYS_ALLOW = 'always_allow';
 const USER_CHOICE_SESSION_ALLOW = 'session_allow';
 const USER_CHOICE_DISALLOW = 'disallow';
+export const ALWAYS_ALLOWED_BASH_SUFFIXES: string[] = ['tim tools update-plan-tasks'];
 
 interface PermissionsMcpSetupResult {
   /** Path to the generated MCP config file */
@@ -493,6 +494,19 @@ async function handlePermissionLine(
           }
         }
       } else if (allowedValue === true) {
+        const response = {
+          type: 'permission_response',
+          requestId,
+          approved: true,
+        };
+        socket.write(JSON.stringify(response) + '\n');
+        return;
+      }
+    }
+
+    if (tool_name === BASH_TOOL_NAME && typeof input.command === 'string') {
+      const trimmedCommand = input.command.trimEnd();
+      if (ALWAYS_ALLOWED_BASH_SUFFIXES.some((suffix) => trimmedCommand.endsWith(suffix))) {
         const response = {
           type: 'permission_response',
           requestId,

@@ -44,29 +44,7 @@ beforeAll(async () => {
   }));
 
   await moduleMocker.mock('../claude_code/permissions_mcp_setup.ts', () => {
-    const parseAllowedToolsList = (allowedTools: string[]) => {
-      const result = new Map<string, true | string[]>();
-      for (const tool of allowedTools) {
-        if (tool.startsWith('Bash(') && tool.endsWith(')')) {
-          const inner = tool.slice(5, -1);
-          const prefix = inner.endsWith(':*') ? inner.slice(0, -2) : inner;
-          const existing = result.get('Bash');
-          if (Array.isArray(existing)) {
-            if (!existing.includes(prefix)) {
-              existing.push(prefix);
-            }
-          } else {
-            result.set('Bash', [prefix]);
-          }
-          continue;
-        }
-        result.set(tool, true);
-      }
-      return result;
-    };
-
     return {
-      parseAllowedToolsList,
       addPermissionToFile: async (
         toolName: string,
         argument?: { exact: boolean; command?: string }
@@ -145,6 +123,54 @@ describe('createApprovalHandler', () => {
 
     expect(result).toEqual({ decision: 'accept' });
     expect(mockPromptSelect).not.toHaveBeenCalled();
+  });
+
+  test('auto-approves piped update-plan-tasks commands by suffix', async () => {
+    const handler = createApprovalHandler({ allowedTools: [] });
+
+    const result = await handler('item/commandExecution/requestApproval', 1, {
+      command: 'echo \'{"plan":"42","tasks":[]}\' | tim tools update-plan-tasks',
+    });
+
+    expect(result).toEqual({ decision: 'accept' });
+    expect(mockPromptSelect).not.toHaveBeenCalled();
+    expect(mockPromptPrefixSelect).not.toHaveBeenCalled();
+  });
+
+  test('auto-approves direct update-plan-tasks commands by suffix', async () => {
+    const handler = createApprovalHandler({ allowedTools: [] });
+
+    const result = await handler('item/commandExecution/requestApproval', 1, {
+      command: 'tim tools update-plan-tasks',
+    });
+
+    expect(result).toEqual({ decision: 'accept' });
+    expect(mockPromptSelect).not.toHaveBeenCalled();
+    expect(mockPromptPrefixSelect).not.toHaveBeenCalled();
+  });
+
+  test('auto-approves update-plan-tasks commands with trailing whitespace', async () => {
+    const handler = createApprovalHandler({ allowedTools: [] });
+
+    const result = await handler('item/commandExecution/requestApproval', 1, {
+      command: 'tim tools update-plan-tasks   ',
+    });
+
+    expect(result).toEqual({ decision: 'accept' });
+    expect(mockPromptSelect).not.toHaveBeenCalled();
+    expect(mockPromptPrefixSelect).not.toHaveBeenCalled();
+  });
+
+  test('still prompts for unrelated commands', async () => {
+    selectResponses.push('decline');
+    const handler = createApprovalHandler({ allowedTools: [] });
+
+    const result = await handler('item/commandExecution/requestApproval', 1, {
+      command: 'tim tools list-ready-plans',
+    });
+
+    expect(result).toEqual({ decision: 'decline' });
+    expect(mockPromptSelect).toHaveBeenCalledTimes(1);
   });
 
   test('declines unknown command when prompt returns decline', async () => {

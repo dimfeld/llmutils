@@ -806,6 +806,101 @@ describe('permissions socket server allowlist persistence behavior', () => {
     expect(mockPromptSelect).toHaveBeenCalledTimes(1);
   });
 
+  test('auto-approves piped update-plan-tasks commands by suffix without prompting', async () => {
+    const result = await setupPermissionsMcp({
+      allowedTools: [],
+    });
+    cleanups.push(result.cleanup);
+    const socketPath = path.join(result.tempDir, 'permissions.sock');
+
+    const response = await sendAndReceive(socketPath, {
+      type: 'permission_request',
+      requestId: 'bash-suffix-piped',
+      tool_name: 'Bash',
+      input: {
+        command: 'echo \'{"plan":"42","tasks":[]}\' | tim tools update-plan-tasks',
+      },
+    });
+
+    expect(response).toEqual({
+      type: 'permission_response',
+      requestId: 'bash-suffix-piped',
+      approved: true,
+    });
+    expect(mockPromptSelect).not.toHaveBeenCalled();
+    expect(mockPromptPrefixSelect).not.toHaveBeenCalled();
+  });
+
+  test('auto-approves direct update-plan-tasks commands by suffix without prompting', async () => {
+    const result = await setupPermissionsMcp({
+      allowedTools: [],
+    });
+    cleanups.push(result.cleanup);
+    const socketPath = path.join(result.tempDir, 'permissions.sock');
+
+    const response = await sendAndReceive(socketPath, {
+      type: 'permission_request',
+      requestId: 'bash-suffix-direct',
+      tool_name: 'Bash',
+      input: { command: 'tim tools update-plan-tasks' },
+    });
+
+    expect(response).toEqual({
+      type: 'permission_response',
+      requestId: 'bash-suffix-direct',
+      approved: true,
+    });
+    expect(mockPromptSelect).not.toHaveBeenCalled();
+    expect(mockPromptPrefixSelect).not.toHaveBeenCalled();
+  });
+
+  test('auto-approves update-plan-tasks commands with trailing whitespace', async () => {
+    const result = await setupPermissionsMcp({
+      allowedTools: [],
+    });
+    cleanups.push(result.cleanup);
+    const socketPath = path.join(result.tempDir, 'permissions.sock');
+
+    const response = await sendAndReceive(socketPath, {
+      type: 'permission_request',
+      requestId: 'bash-suffix-whitespace',
+      tool_name: 'Bash',
+      input: { command: 'tim tools update-plan-tasks   ' },
+    });
+
+    expect(response).toEqual({
+      type: 'permission_response',
+      requestId: 'bash-suffix-whitespace',
+      approved: true,
+    });
+    expect(mockPromptSelect).not.toHaveBeenCalled();
+    expect(mockPromptPrefixSelect).not.toHaveBeenCalled();
+  });
+
+  test('still prompts for unrelated Bash commands', async () => {
+    selectResponses.push('disallow');
+
+    const result = await setupPermissionsMcp({
+      allowedTools: [],
+    });
+    cleanups.push(result.cleanup);
+    const socketPath = path.join(result.tempDir, 'permissions.sock');
+
+    const response = await sendAndReceive(socketPath, {
+      type: 'permission_request',
+      requestId: 'bash-suffix-negative',
+      tool_name: 'Bash',
+      input: { command: 'tim tools list-ready-plans' },
+    });
+
+    expect(response).toEqual({
+      type: 'permission_response',
+      requestId: 'bash-suffix-negative',
+      approved: false,
+    });
+    expect(mockPromptSelect).toHaveBeenCalledTimes(1);
+  });
+
   test('always allow for Bash uses prefixPrompt and persists selected prefix', async () => {
     selectResponses.push('always_allow');
     prefixPromptResponses.push({ exact: false, command: 'git status' });
