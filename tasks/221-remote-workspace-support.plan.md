@@ -4,7 +4,7 @@ title: remote workspace support
 goal: ""
 id: 221
 uuid: 8d41284b-b510-4713-bd21-2db13687f2e5
-status: pending
+status: in_progress
 priority: medium
 epic: true
 dependencies:
@@ -22,7 +22,7 @@ references:
   "225": f8a4ee11-c59e-451f-bf40-651524b0709d
   "226": 38a8e157-c4c8-403a-b706-778dad59f6e1
 createdAt: 2026-03-07T07:45:45.386Z
-updatedAt: 2026-03-09T18:28:15.831Z
+updatedAt: 2026-03-23T19:12:15.412Z
 tasks: []
 tags: []
 ---
