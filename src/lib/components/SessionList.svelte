@@ -1,6 +1,12 @@
 <script lang="ts">
+  import { goto } from '$app/navigation';
   import { SvelteSet } from 'svelte/reactivity';
   import type { SessionGroup } from '$lib/types/session.js';
+  import {
+    isListNavEvent,
+    getAdjacentItem,
+    scrollListItemIntoView,
+  } from '$lib/utils/keyboard_nav.js';
   import SessionRow from './SessionRow.svelte';
 
   let {
@@ -16,6 +22,29 @@
   // Track which groups are collapsed
   let collapsed = new SvelteSet<string>();
 
+  let visibleSessionIds = $derived.by(() => {
+    const ids: string[] = [];
+    for (const group of groups) {
+      if (collapsed.has(group.groupKey)) continue;
+      for (const session of group.sessions) {
+        ids.push(session.connectionId);
+      }
+    }
+    return ids;
+  });
+
+  function handleKeydown(event: KeyboardEvent) {
+    const direction = isListNavEvent(event);
+    if (!direction) return;
+
+    event.preventDefault();
+
+    const nextId = getAdjacentItem(visibleSessionIds, selectedSessionId, direction);
+    if (!nextId) return;
+
+    void goto(sessionHref(nextId)).then(() => scrollListItemIntoView(nextId));
+  }
+
   function toggleGroup(groupKey: string) {
     if (collapsed.has(groupKey)) {
       collapsed.delete(groupKey);
@@ -24,6 +53,8 @@
     }
   }
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 {#if groups.length === 0}
   <div class="flex flex-1 items-center justify-center p-8">

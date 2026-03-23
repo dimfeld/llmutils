@@ -5,56 +5,66 @@ goal: ""
 id: 257
 uuid: e1cc32f1-a4fe-4d02-9709-5fc62ee25d9c
 generatedBy: agent
-status: pending
+status: done
 priority: medium
 planGeneratedAt: 2026-03-22T09:38:17.448Z
 promptsGeneratedAt: 2026-03-22T09:38:17.448Z
 createdAt: 2026-03-22T08:35:33.330Z
-updatedAt: 2026-03-22T09:38:17.449Z
+updatedAt: 2026-03-23T01:02:06.015Z
 tasks:
   - title: Create shared keyboard navigation helper
-    done: false
+    done: true
     description: 'Create src/lib/utils/keyboard_nav.ts with three functions:
       isListNavEvent(event) to detect Alt+ArrowUp/Down, getAdjacentItem(items,
       currentId, direction) for adjacent index computation with no-wrap boundary
       behavior, and scrollListItemIntoView(itemId) that queries for
       [data-list-item-id] and calls scrollIntoView({ block: "nearest" }).'
   - title: Add data-list-item-id attributes to row components
-    done: false
+    done: true
     description: Add data-list-item-id={connectionId} to SessionRow.svelte root
       element, data-list-item-id={plan.uuid} to PlanRow.svelte root element, and
       data-list-item-id={plan.uuid} to ActivePlanRow.svelte root element. These
       are used by scrollListItemIntoView to find target elements.
   - title: Add keyboard navigation to SessionList
-    done: false
+    done: true
     description: "In SessionList.svelte: add svelte:window onkeydown handler, add
       $derived computing flat list of visible session connection IDs (iterating
       groups, skipping collapsed), use isListNavEvent + getAdjacentItem +
       goto(sessionHref(nextId)) + tick + scrollListItemIntoView pattern. Import
       goto from $app/navigation and tick from svelte."
   - title: Add keyboard navigation to PlansList
-    done: false
+    done: true
     description: "In PlansList.svelte: add svelte:window onkeydown handler, add
       $derived computing flat list of visible plan UUIDs (iterating statusOrder,
       skipping collapsedGroups, collecting from groupedPlans), use same
       navigation pattern. Navigate to /projects/${projectId}/plans/${nextId}.
       Import goto and tick."
   - title: Add keyboard navigation to Active Work layout
-    done: false
+    done: true
     description: "In src/routes/projects/[projectId]/active/+layout.svelte: add
       svelte:window onkeydown handler, flat list is data.activePlans.map(p =>
       p.uuid), navigate to /projects/${projectId}/active/${nextId}. Use same
       pattern with goto + tick + scrollListItemIntoView."
   - title: Write tests for keyboard_nav utilities
-    done: false
+    done: true
     description: "Create src/lib/utils/keyboard_nav.test.ts testing: getAdjacentItem
       (next/prev, boundary no-wrap, empty list, null currentId, currentId not in
       list) and isListNavEvent (Alt+ArrowUp/Down detection, rejection of other
       combos like plain arrows, Ctrl+arrows, etc)."
   - title: Format and type-check
-    done: false
+    done: true
     description: Run bun run format and bun run check to ensure code quality and no
       type errors.
+changedFiles:
+  - README.md
+  - src/lib/components/ActivePlanRow.svelte
+  - src/lib/components/PlanRow.svelte
+  - src/lib/components/PlansList.svelte
+  - src/lib/components/SessionList.svelte
+  - src/lib/components/SessionRow.svelte
+  - src/lib/utils/keyboard_nav.test.ts
+  - src/lib/utils/keyboard_nav.ts
+  - src/routes/projects/[projectId]/active/+layout.svelte
 tags: []
 ---
 
@@ -236,3 +246,25 @@ Run `bun run format` and `bun run check` to ensure code quality.
 7. Focus the search input in Plans, press Option+Down—should still navigate to next plan.
 8. With no item selected, press Option+Down—should select first item.
 9. At last item, press Option+Down—should do nothing.
+
+## Current Progress
+### Current State
+- All tasks complete. Feature fully implemented and reviewed.
+### Completed (So Far)
+- Shared keyboard_nav.ts utility with isListNavEvent, getAdjacentItem, scrollListItemIntoView
+- data-list-item-id attributes on SessionRow, PlanRow, ActivePlanRow
+- Keyboard handlers in SessionList, PlansList, and Active Work layout
+- 20 unit tests covering utility functions
+- README updated with shortcut documentation
+### Remaining
+- None
+### Next Iteration Guidance
+- None
+### Decisions / Changes
+- preventDefault is called as soon as the Alt+Arrow event is recognized, even at list boundaries, to prevent native browser behavior from interfering
+- goto() is chained with scrollListItemIntoView via .then() for proper sequencing
+- isListNavEvent rejects events with Ctrl, Meta, or Shift modifiers to avoid conflicts with other shortcuts
+### Lessons Learned
+- None
+### Risks / Blockers
+- None

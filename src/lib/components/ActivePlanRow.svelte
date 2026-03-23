@@ -22,6 +22,7 @@
 
 <a
   {href}
+  data-list-item-id={plan.uuid}
   data-sveltekit-preload-data
   class="block w-full rounded-md px-3 py-2 text-left transition-colors
     {selected

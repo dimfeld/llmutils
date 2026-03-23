@@ -1,8 +1,14 @@
 <script lang="ts">
+  import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import WorkspaceRow from '$lib/components/WorkspaceRow.svelte';
   import ActivePlanRow from '$lib/components/ActivePlanRow.svelte';
   import { projectDisplayName } from '$lib/stores/project.svelte.js';
+  import {
+    isListNavEvent,
+    getAdjacentItem,
+    scrollListItemIntoView,
+  } from '$lib/utils/keyboard_nav.js';
   import type { Snippet } from 'svelte';
   import type { LayoutData } from './$types';
 
@@ -35,6 +41,20 @@
   let selectedPlanUuid = $derived(page.params.planId ?? null);
   let projectId = $derived(page.params.projectId);
 
+  let activePlanUuids = $derived(data.activePlans.map((p) => p.uuid));
+
+  function handleKeydown(event: KeyboardEvent) {
+    const direction = isListNavEvent(event);
+    if (!direction) return;
+
+    event.preventDefault();
+
+    const nextId = getAdjacentItem(activePlanUuids, selectedPlanUuid, direction);
+    if (!nextId) return;
+
+    void goto(`/projects/${projectId}/active/${nextId}`).then(() => scrollListItemIntoView(nextId));
+  }
+
   function workspacePlanHref(wsProjectId: number, planId: string | null): string | null {
     if (!planId) return null;
     const uuid = data.planNumberToUuid[`${wsProjectId}:${planId}`];
@@ -42,6 +62,8 @@
     return `/projects/${projectId}/active/${uuid}`;
   }
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 <div class="flex h-full w-full">
   <!-- Left pane: workspaces + active plans -->

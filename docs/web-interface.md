@@ -179,6 +179,28 @@ Browser clients receive real-time updates via SSE and interact with sessions thr
 - **`MessageInput.svelte`** — Text input with Enter to send, Shift+Enter for newlines. Hidden (not disabled) when session is offline or non-interactive.
 - **Category colors** (`src/lib/utils/session_colors.ts`): lifecycle=green, llmOutput=green, toolUse=cyan, fileChange=cyan, command=cyan, progress=blue, error=red, log=gray, userInput=orange.
 
+## Keyboard Navigation
+
+All three tabs (Sessions, Plans, Active Work) support **Alt+ArrowDown** / **Alt+ArrowUp** (Option+Down/Up on macOS) to navigate to the next/previous item in the list. The shortcut fires regardless of focus state, including when in text inputs.
+
+### Behavior
+
+- Navigation respects collapsed groups and active filters — only visible items are navigable
+- When no item is selected, Alt+Down selects the first visible item; Alt+Up selects the last
+- At list boundaries, the shortcut does nothing (no wrap)
+- The navigated-to item is scrolled into view via `scrollIntoView({ block: 'nearest' })`
+- Events with Ctrl, Meta, or Shift modifiers are ignored to avoid shortcut conflicts
+
+### Implementation
+
+Each list component (`SessionList.svelte`, `PlansList.svelte`, active work `+layout.svelte`) adds its own `<svelte:window onkeydown>` handler. Since only one tab is mounted at a time, there's no conflict. Shared logic lives in `src/lib/utils/keyboard_nav.ts`:
+
+- **`isListNavEvent(event)`** — Returns `'up'` or `'down'` for Alt+Arrow events, `null` otherwise
+- **`getAdjacentItem(items, currentId, direction)`** — Computes the adjacent item ID with boundary clamping
+- **`scrollListItemIntoView(itemId)`** — Finds `[data-list-item-id]` element and scrolls it into view
+
+Row components (`SessionRow`, `PlanRow`, `ActivePlanRow`) have `data-list-item-id` attributes for scroll targeting.
+
 ## Plan Actions
 
 The plan detail view supports triggering CLI commands directly from the web UI. Two actions are available:

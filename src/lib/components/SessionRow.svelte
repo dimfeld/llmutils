@@ -69,6 +69,7 @@
 
 <a
   {href}
+  data-list-item-id={session.connectionId}
   class="group block rounded-md px-3 py-2 transition-colors
     {selected
     ? 'bg-blue-50 ring-1 ring-blue-200 dark:bg-blue-900/30 dark:ring-blue-700'

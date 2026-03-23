@@ -1,6 +1,12 @@
 <script lang="ts">
+  import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import type { EnrichedPlan, PlanDisplayStatus } from '$lib/server/db_queries.js';
+  import {
+    isListNavEvent,
+    getAdjacentItem,
+    scrollListItemIntoView,
+  } from '$lib/utils/keyboard_nav.js';
   import FilterChips from './FilterChips.svelte';
   import PlanRow from './PlanRow.svelte';
 
@@ -133,7 +139,34 @@
       collapsedGroups = [...collapsedGroups, status];
     }
   }
+
+  let visiblePlanUuids = $derived.by(() => {
+    const ids: string[] = [];
+    for (const status of statusOrder) {
+      if (collapsedGroups.includes(status)) continue;
+      const group = groupedPlans[status];
+      if (!group) continue;
+      for (const plan of group) {
+        ids.push(plan.uuid);
+      }
+    }
+    return ids;
+  });
+
+  function handleKeydown(event: KeyboardEvent) {
+    const direction = isListNavEvent(event);
+    if (!direction) return;
+
+    event.preventDefault();
+
+    const nextId = getAdjacentItem(visiblePlanUuids, selectedPlanUuid ?? null, direction);
+    if (!nextId) return;
+
+    void goto(`/projects/${projectId}/plans/${nextId}`).then(() => scrollListItemIntoView(nextId));
+  }
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 <div class="flex h-full flex-col">
   <div class="space-y-3 border-b border-border p-3">
