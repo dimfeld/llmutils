@@ -260,6 +260,113 @@ describe('permissions socket server line buffering', () => {
   });
 });
 
+describe('Bash command cd-prefix stripping for auto-approval', () => {
+  let cleanups: (() => Promise<void>)[] = [];
+
+  afterEach(async () => {
+    for (const cleanup of cleanups) {
+      await cleanup();
+    }
+    cleanups = [];
+  });
+
+  function sendAndReceive(
+    socketPath: string,
+    writes: string[]
+  ): Promise<{ type: string; requestId: string; approved: boolean }> {
+    return new Promise((resolve, reject) => {
+      const client = net.createConnection(socketPath, () => {
+        for (const chunk of writes) {
+          client.write(chunk);
+        }
+      });
+
+      let buffer = '';
+      client.on('data', (data) => {
+        buffer += data.toString();
+        const newlineIdx = buffer.indexOf('\n');
+        if (newlineIdx !== -1) {
+          const msg = buffer.slice(0, newlineIdx);
+          client.end();
+          resolve(JSON.parse(msg));
+        }
+      });
+
+      client.on('error', reject);
+      setTimeout(() => {
+        client.end();
+        reject(new Error('Timed out waiting for response'));
+      }, 5000);
+    });
+  }
+
+  test('approves Bash command matching prefix directly', async () => {
+    const result = await setupPermissionsMcp({
+      allowedTools: ['Bash(tim tools update-plan-tasks:*)'],
+    });
+    cleanups.push(result.cleanup);
+
+    const socketPath = path.join(result.tempDir, 'permissions.sock');
+    const request = JSON.stringify({
+      type: 'permission_request',
+      requestId: 'cd-test-1',
+      tool_name: 'Bash',
+      input: { command: 'tim tools update-plan-tasks --plan 261' },
+    });
+
+    const response = await sendAndReceive(socketPath, [request + '\n']);
+    expect(response).toEqual({
+      type: 'permission_response',
+      requestId: 'cd-test-1',
+      approved: true,
+    });
+  });
+
+  test('approves Bash command with cd prefix before allowed command', async () => {
+    const result = await setupPermissionsMcp({
+      allowedTools: ['Bash(tim tools update-plan-tasks:*)'],
+    });
+    cleanups.push(result.cleanup);
+
+    const socketPath = path.join(result.tempDir, 'permissions.sock');
+    const request = JSON.stringify({
+      type: 'permission_request',
+      requestId: 'cd-test-2',
+      tool_name: 'Bash',
+      input: { command: 'cd /some/workspace && tim tools update-plan-tasks --plan 261' },
+    });
+
+    const response = await sendAndReceive(socketPath, [request + '\n']);
+    expect(response).toEqual({
+      type: 'permission_response',
+      requestId: 'cd-test-2',
+      approved: true,
+    });
+  });
+
+  test('approves Bash command with quoted cd path before allowed command', async () => {
+    const result = await setupPermissionsMcp({
+      allowedTools: ['Bash(git commit:*)'],
+    });
+    cleanups.push(result.cleanup);
+
+    const socketPath = path.join(result.tempDir, 'permissions.sock');
+    const request = JSON.stringify({
+      type: 'permission_request',
+      requestId: 'cd-test-3',
+      tool_name: 'Bash',
+      input: { command: 'cd "/path with spaces" && git commit -m "test"' },
+    });
+
+    const response = await sendAndReceive(socketPath, [request + '\n']);
+    expect(response).toEqual({
+      type: 'permission_response',
+      requestId: 'cd-test-3',
+      approved: true,
+    });
+  });
+});
+
 describe('permissions socket server AskUserQuestion handling', () => {
   let cleanups: (() => Promise<void>)[] = [];
 

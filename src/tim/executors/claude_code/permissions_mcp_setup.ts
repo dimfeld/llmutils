@@ -23,6 +23,7 @@ import {
   isPromptTimeoutError,
 } from '../../../common/input.js';
 import { getGitRoot } from '../../../common/git.js';
+import { extractCommandAfterCd } from '../../../common/prefix_prompt_utils.js';
 import { debugLog, log } from '../../../logging.js';
 import { createLineSplitter } from '../../../common/process.js';
 import { getRepositoryIdentity } from '../../assignments/workspace_identifier.js';
@@ -476,7 +477,10 @@ async function handlePermissionLine(
       if (tool_name === BASH_TOOL_NAME && Array.isArray(allowedValue)) {
         if (typeof input.command === 'string') {
           const command = input.command;
-          const isAllowed = allowedValue.some((prefix) => command.startsWith(prefix));
+          const strippedCommand = extractCommandAfterCd(command);
+          const isAllowed = allowedValue.some(
+            (prefix) => command.startsWith(prefix) || strippedCommand.startsWith(prefix)
+          );
 
           if (isAllowed) {
             const response = {

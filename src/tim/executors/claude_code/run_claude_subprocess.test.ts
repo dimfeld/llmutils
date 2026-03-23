@@ -41,6 +41,7 @@ describe('getDefaultAllowedTools', () => {
     expect(tools).toContain('Bash(tim review:*)');
     expect(tools).toContain('Bash(tim set-task-done:*)');
     expect(tools).toContain('Bash(tim subagent:*)');
+    expect(tools).toContain('Bash(tim tools update-plan-tasks:*)');
   });
 
   test('includes JS task runner commands for all runners', () => {

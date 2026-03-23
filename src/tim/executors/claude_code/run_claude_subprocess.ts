@@ -88,6 +88,7 @@ export function getDefaultAllowedTools(): string[] {
     'Bash(tim review:*)',
     'Bash(tim set-task-done:*)',
     'Bash(tim subagent:*)',
+    'Bash(tim tools update-plan-tasks:*)',
   ];
 }
 
