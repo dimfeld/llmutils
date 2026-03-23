@@ -1575,7 +1575,9 @@ export async function pushWorkspaceRefToRemote(options: {
 }
 
 function isMissingJjBookmarkError(message: string): boolean {
-  return /no such bookmark|bookmark .* not found|could not resolve revision/i.test(message);
+  return /no such bookmark|No matching bookmarks for names|bookmark .* not found|could not resolve revision/i.test(
+    message
+  );
 }
 
 export async function pullWorkspaceRefIfExists(

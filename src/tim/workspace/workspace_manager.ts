@@ -1285,7 +1285,13 @@ export async function findUniqueBranchName(
 }
 
 function isMissingJjBookmarkError(message: string): boolean {
-  return /No such bookmark|Revision .* doesn't exist/i.test(message);
+  return /No such bookmark|No matching bookmarks for names|Revision .* doesn't exist/i.test(
+    message
+  );
+}
+
+function isMissingGitRemoteBranchError(message: string): boolean {
+  return /couldn't find remote ref|fatal: no such ref/i.test(message);
 }
 
 /**
@@ -1511,6 +1517,8 @@ export async function prepareExistingWorkspace(
       const updateOutput = `${updateBaseResult.stderr}\n${updateBaseResult.stdout}`.trim();
       if (isJj && isMissingJjBookmarkError(updateOutput)) {
         log(`Remote bookmark "${baseBranch}" not found; using local base branch.`);
+      } else if (!isJj && isMissingGitRemoteBranchError(updateOutput)) {
+        log(`Remote branch "${baseBranch}" not found; using local base branch.`);
       } else if (allowOffline) {
         log(
           `Warning: Failed to update base branch from remote (continuing in offline mode): ${updateBaseResult.stderr}`
