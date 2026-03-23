@@ -126,6 +126,13 @@ export interface EnrichedWorkspace {
   isRecentlyActive: boolean;
 }
 
+export interface WorkspaceDetail extends EnrichedWorkspace {
+  description: string | null;
+  createdAt: string;
+  lockStartedAt: string | null;
+  lockPid: number | null;
+}
+
 interface PlanQueryBundle {
   plans: PlanRow[];
   tasks: PlanTaskRow[];
@@ -665,6 +672,62 @@ export function getWorkspacesForProject(db: Database, projectId?: number): Enric
       if (timeDiff !== 0) return timeDiff;
       return right.id - left.id;
     });
+}
+
+export function getWorkspaceDetail(db: Database, workspaceId: number): WorkspaceDetail | null {
+  cleanStaleLocks(db);
+
+  const row = db
+    .prepare(
+      `
+      SELECT
+        w.*,
+        wl.lock_type,
+        wl.pid,
+        wl.started_at,
+        wl.hostname,
+        wl.command
+      FROM workspace w
+      LEFT JOIN workspace_lock wl ON wl.workspace_id = w.id
+      WHERE w.id = ?
+    `
+    )
+    .get(workspaceId) as WorkspaceQueryRow | null;
+
+  if (!row) return null;
+
+  const workspaceType = dbValueToWorkspaceType(row.workspace_type);
+  const isLocked = row.lock_type !== null;
+  const isRecentlyActive =
+    isLocked ||
+    workspaceType === 'primary' ||
+    workspaceType === 'auto' ||
+    isRecentlyUpdated(row.updated_at);
+
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    workspacePath: row.workspace_path,
+    name: row.name,
+    branch: row.branch,
+    planId: row.plan_id,
+    planTitle: row.plan_title,
+    workspaceType,
+    isLocked,
+    lockInfo: isLocked
+      ? {
+          type: row.lock_type!,
+          command: row.command ?? '',
+          hostname: row.hostname ?? '',
+        }
+      : null,
+    updatedAt: row.updated_at,
+    isRecentlyActive,
+    description: row.description,
+    createdAt: row.created_at,
+    lockStartedAt: row.started_at,
+    lockPid: row.pid,
+  };
 }
 
 export function getPrimaryWorkspacePath(db: Database, projectId: number): string | null {

@@ -39,6 +39,9 @@
   );
 
   let selectedPlanUuid = $derived(page.params.planId ?? null);
+  let selectedWorkspaceId = $derived(
+    page.params.workspaceId ? Number(page.params.workspaceId) : null
+  );
   let projectId = $derived(page.params.projectId);
 
   let activePlanUuids = $derived(data.activePlans.map((p) => p.uuid));
@@ -93,6 +96,8 @@
               {workspace}
               projectName={showProject ? projectNamesById[workspace.projectId] : undefined}
               planHref={workspacePlanHref(workspace.projectId, workspace.planId)}
+              href="/projects/{projectId}/active/workspace/{workspace.id}"
+              selected={workspace.id === selectedWorkspaceId}
             />
           {/each}
         </div>
@@ -122,7 +127,7 @@
     </div>
   </div>
 
-  <!-- Right pane: plan detail (child route) -->
+  <!-- Right pane: workspace or plan detail (child route) -->
   <div class="flex-1 overflow-y-auto">
     {@render children()}
   </div>

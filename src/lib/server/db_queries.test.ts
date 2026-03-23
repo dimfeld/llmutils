@@ -17,6 +17,7 @@ import {
   getPlansForProject,
   getPrimaryWorkspacePath,
   getProjectsWithMetadata,
+  getWorkspaceDetail,
   getWorkspacesForProject,
 } from './db_queries.js';
 
@@ -815,6 +816,114 @@ describe('lib/server/db_queries', () => {
       projectId: otherProjectId,
       name: 'Other project workspace',
     });
+  });
+
+  test('getWorkspaceDetail returns null when the workspace does not exist', () => {
+    expect(getWorkspaceDetail(db, 999_999)).toBeNull();
+  });
+
+  test('getWorkspaceDetail returns an unlocked workspace with detail fields', () => {
+    const workspace = recordWorkspace(db, {
+      projectId,
+      workspacePath: '/tmp/workspaces/detail-unlocked',
+      branch: 'feature/detail-unlocked',
+      name: 'Detail unlocked workspace',
+      description: 'Workspace for detail view coverage',
+      planId: 'plan-pending',
+      planTitle: 'Pending plan',
+    });
+    const updatedAt = daysAgo(4);
+    setWorkspaceUpdatedAt(db, workspace.id, updatedAt);
+
+    expect(getWorkspaceDetail(db, workspace.id)).toEqual({
+      id: workspace.id,
+      projectId,
+      workspacePath: '/tmp/workspaces/detail-unlocked',
+      name: 'Detail unlocked workspace',
+      branch: 'feature/detail-unlocked',
+      planId: 'plan-pending',
+      planTitle: 'Pending plan',
+      workspaceType: 'standard',
+      isLocked: false,
+      lockInfo: null,
+      updatedAt,
+      isRecentlyActive: false,
+      description: 'Workspace for detail view coverage',
+      createdAt: workspace.created_at,
+      lockStartedAt: null,
+      lockPid: null,
+    });
+  });
+
+  test('getWorkspaceDetail returns persistent lock details', () => {
+    const workspace = recordWorkspace(db, {
+      projectId,
+      workspacePath: '/tmp/workspaces/detail-persistent-lock',
+      branch: 'feature/detail-persistent-lock',
+      name: 'Persistent lock workspace',
+    });
+    const updatedAt = daysAgo(5);
+    setWorkspaceUpdatedAt(db, workspace.id, updatedAt);
+    acquireWorkspaceLock(db, workspace.id, {
+      lockType: 'persistent',
+      hostname: 'devbox',
+      command: 'web: manual lock',
+    });
+
+    const detail = getWorkspaceDetail(db, workspace.id);
+
+    expect(detail).toMatchObject({
+      id: workspace.id,
+      projectId,
+      workspacePath: '/tmp/workspaces/detail-persistent-lock',
+      workspaceType: 'standard',
+      isLocked: true,
+      lockInfo: {
+        type: 'persistent',
+        command: 'web: manual lock',
+        hostname: 'devbox',
+      },
+      updatedAt,
+      isRecentlyActive: true,
+      lockPid: null,
+    });
+    expect(detail?.lockStartedAt).toEqual(expect.any(String));
+  });
+
+  test('getWorkspaceDetail includes pid lock details', () => {
+    const workspace = recordWorkspace(db, {
+      projectId,
+      workspacePath: '/tmp/workspaces/detail-pid-lock',
+      branch: 'feature/detail-pid-lock',
+      name: 'PID lock workspace',
+    });
+    const updatedAt = daysAgo(5);
+    setWorkspaceUpdatedAt(db, workspace.id, updatedAt);
+    acquireWorkspaceLock(db, workspace.id, {
+      lockType: 'pid',
+      pid: process.pid,
+      hostname: 'devbox',
+      command: 'tim agent --plan 259',
+    });
+
+    const detail = getWorkspaceDetail(db, workspace.id);
+
+    expect(detail).toMatchObject({
+      id: workspace.id,
+      projectId,
+      workspacePath: '/tmp/workspaces/detail-pid-lock',
+      workspaceType: 'standard',
+      isLocked: true,
+      lockInfo: {
+        type: 'pid',
+        command: 'tim agent --plan 259',
+        hostname: 'devbox',
+      },
+      updatedAt,
+      isRecentlyActive: true,
+      lockPid: process.pid,
+    });
+    expect(detail?.lockStartedAt).toEqual(expect.any(String));
   });
 });
 

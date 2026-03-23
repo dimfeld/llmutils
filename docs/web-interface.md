@@ -22,6 +22,10 @@ When broadening server-side behavior (e.g. making a check command-agnostic inste
 - SvelteKit **reuses page components** across param-only navigations — local `$state` persists across route changes. Use `afterNavigate` to reset `$state` when needed, though best is to use a "writable derived" when possible.
 - Setting a reactive variable that controls a `disabled` attribute doesn't immediately update the DOM. You must `await tick()` before interacting with the element if the interaction depends on the updated DOM state (e.g., focusing a previously-disabled textarea after setting `sending = false`).
 
+### HTML & Component Gotchas
+
+- **No nested `<a>` tags**: When wrapping a component in an `<a>` tag (e.g., making a row clickable), check for nested `<a>` tags inside — browsers handle nested anchors unpredictably (the inner link may not work, or clicking behavior differs across browsers). Render inner links as plain text when the outer element is already a link.
+
 ### Routing Gotchas
 
 - SvelteKit's `resolve()` from `$app/paths` enforces typed route parameters — it won't accept dynamic/computed path segments. Use `base` from `$app/paths` + template literals for dynamic paths.
@@ -44,10 +48,13 @@ The Active Work tab (`/projects/[projectId]/active`) provides a dashboard of cur
 src/routes/projects/[projectId]/active/
 ├── +layout.server.ts       # Loads workspaces + active plans via getActiveWorkData()
 ├── +layout.svelte          # Split-pane: left sidebar (workspaces + plans list), right detail area
-├── +page.svelte            # Empty state: "Select a plan to view details"
-└── [planId]/
-    ├── +page.server.ts     # Loads plan detail via getPlanDetailRouteData(tab: 'plans')
-    └── +page.svelte        # Renders PlanDetail component
+├── +page.svelte            # Empty state: "Select a workspace or plan to view details"
+├── [planId]/
+│   ├── +page.server.ts     # Loads plan detail via getPlanDetailRouteData(tab: 'plans')
+│   └── +page.svelte        # Renders PlanDetail component
+└── workspace/[workspaceId]/
+    ├── +page.server.ts     # Loads workspace detail via getWorkspaceDetail(), validates ownership
+    └── +page.svelte        # Workspace detail with lock/unlock actions
 ```
 
 ### Data Flow
@@ -59,9 +66,19 @@ src/routes/projects/[projectId]/active/
 ### Components
 
 - `WorkspaceBadge.svelte` — pill badge for workspace status: Primary (blue), Auto (green), Locked (amber), Available (gray)
-- `WorkspaceRow.svelte` — card-style row showing workspace name/path, branch chip, assigned plan link, status badge, lock command info, optional project name
+- `WorkspaceRow.svelte` — clickable card-style row showing workspace name/path, branch chip, assigned plan link, status badge, lock command info, optional project name. Accepts `href` and `selected` props; when `href` is set, renders as an `<a>` tag with preload and inner plan links render as plain text to avoid nested anchors
 - `ActivePlanRow.svelte` — plan row with plan #, title, goal (truncated), status/priority badges, and relative timestamp
 - `src/lib/utils/time.ts` — `formatRelativeTime()` helper for human-readable relative timestamps
+
+### Workspace Detail & Lock/Unlock
+
+The workspace detail view (`/projects/[projectId]/active/workspace/[workspaceId]`) displays full workspace info (name, path, branch, type, assigned plan, description) and lock status with management actions.
+
+- **Query**: `getWorkspaceDetail(db, workspaceId)` in `db_queries.ts` returns a `WorkspaceDetail` type extending `EnrichedWorkspace` with `description`, `createdAt`, and `lockStartedAt` fields
+- **Remote commands** (`src/lib/remote/workspace_actions.remote.ts`): `lockWorkspace` and `unlockWorkspace` are `command()` exports. `lockWorkspace` acquires a persistent lock (`lockType: 'persistent'`, `command: 'web: manual lock'`). `unlockWorkspace` force-releases any lock (`force: true`). Both call `invalidateAll()` after mutation to keep the sidebar in sync
+- **PID lock safety**: When unlocking a PID-locked workspace, a confirmation dialog warns that a process is actively using the workspace (shows PID, command, hostname) before proceeding with force-release
+- **Route validation**: Workspace ID is validated with strict regex (`/^\d+$/`); workspace ownership is checked against the current project (redirects to owning project if mismatched, matching plan detail route behavior)
+- **Navigation**: Clicking a workspace row in the sidebar navigates to the detail view; selecting a workspace visually deselects any selected plan and vice versa. Uses `afterNavigate` to reset transient UI state (submitting flags, error messages) when navigating between workspaces
 
 ## PR Status
 

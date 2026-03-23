@@ -6,10 +6,14 @@
     workspace,
     projectName,
     planHref = null,
+    href = null,
+    selected = false,
   }: {
     workspace: EnrichedWorkspace;
     projectName?: string;
     planHref?: string | null;
+    href?: string | null;
+    selected?: boolean;
   } = $props();
 
   let displayName = $derived(
@@ -24,9 +28,7 @@
   });
 </script>
 
-<div
-  class="rounded-md border border-border px-3 py-2 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
->
+{#snippet content()}
   <div class="flex items-center gap-2">
     <span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
       {displayName}
@@ -48,7 +50,7 @@
     {/if}
 
     {#if workspace.planId}
-      {#if planHref}
+      {#if planHref && !href}
         <a
           href={planHref}
           data-sveltekit-preload-data
@@ -69,4 +71,23 @@
       {workspace.lockInfo.command}
     </div>
   {/if}
-</div>
+{/snippet}
+
+{#if href}
+  <a
+    {href}
+    data-sveltekit-preload-data
+    class="block rounded-md border border-border px-3 py-2 transition-colors
+      {selected
+      ? 'bg-blue-50 ring-1 ring-blue-200 dark:bg-blue-900/30 dark:ring-blue-700'
+      : 'hover:bg-gray-50 dark:hover:bg-gray-800'}"
+  >
+    {@render content()}
+  </a>
+{:else}
+  <div
+    class="rounded-md border border-border px-3 py-2 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
+  >
+    {@render content()}
+  </div>
+{/if}
