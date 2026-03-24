@@ -7,6 +7,7 @@ import * as fs from 'node:fs/promises';
 import { promptConfirm } from '../../../common/input.js';
 import { getGitRoot } from '../../../common/git.js';
 import { logSpawn } from '../../../common/process.js';
+import { CleanupRegistry } from '../../../common/cleanup_registry.js';
 import {
   boldMarkdownHeaders,
   closeLogFile,
@@ -66,6 +67,8 @@ import {
   runPostExecutionWorkspaceSync,
   runPreExecutionWorkspaceSync,
 } from '../../workspace/workspace_roundtrip.js';
+import { LifecycleManager } from '../../lifecycle.js';
+import { getSignalExitCode, isShuttingDown } from '../../shutdown_state.js';
 
 export async function handleAgentCommand(
   planFile: string | undefined,
@@ -273,6 +276,7 @@ export async function handleAgentCommand(
 }
 
 export async function timAgent(planFile: string, options: any, globalCliOptions: any) {
+  const cleanupRegistry = CleanupRegistry.getInstance();
   let currentPlanFile = planFile;
   let config = getDefaultConfig();
   let currentBaseDir = process.cwd();
@@ -283,6 +287,8 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
   let postExecutionError: Error | undefined;
   let failureReason: Error | undefined;
   let lastKnownPlan: PlanSchema | undefined;
+  let lifecycleManager: LifecycleManager | undefined;
+  let unregisterLifecycleCleanup: (() => void) | undefined;
   const recordFailure = (err: unknown): void => {
     if (failureReason) return;
     if (err instanceof Error) {
@@ -373,6 +379,17 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
 
     // Update workspace description from plan data (if running in a tracked workspace)
     await updateWorkspaceDescriptionFromPlan(currentBaseDir, planData, config);
+
+    if (config.lifecycle?.commands && config.lifecycle.commands.length > 0) {
+      const workspaceInfo = getWorkspaceInfoByPath(currentBaseDir);
+      lifecycleManager = new LifecycleManager(
+        config.lifecycle.commands,
+        currentBaseDir,
+        workspaceInfo?.workspaceType
+      );
+      unregisterLifecycleCleanup = cleanupRegistry.register(() => lifecycleManager?.killDaemons());
+      await lifecycleManager.startup();
+    }
 
     // Check if plan has simple field set and respect it
     // CLI flags take precedence: explicit --simple or --no-simple override plan field
@@ -576,6 +593,10 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
 
       let stepCount = 0;
       while (stepCount < maxSteps) {
+        if (isShuttingDown()) {
+          break;
+        }
+
         stepCount++;
 
         const planData = await readPlanFile(currentPlanFile);
@@ -1147,6 +1168,20 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     executionError = failureReason ?? (err instanceof Error ? err : new Error(String(err)));
     throw err;
   } finally {
+    let lifecycleShutdownError: Error | undefined;
+    try {
+      await lifecycleManager?.shutdown();
+    } catch (err) {
+      lifecycleShutdownError = err instanceof Error ? err : new Error(String(err));
+      if (!executionError) {
+        executionError = lifecycleShutdownError;
+      } else {
+        warn(`Lifecycle shutdown failed after execution error: ${lifecycleShutdownError}`);
+      }
+    } finally {
+      unregisterLifecycleCleanup?.();
+    }
+
     let workspaceSyncError: Error | undefined;
     if (roundTripContext) {
       try {
@@ -1206,6 +1241,13 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
 
     if (!hadExecutionFailure && workspaceSyncError) {
       postExecutionError = workspaceSyncError;
+    }
+    if (!hadExecutionFailure && !postExecutionError && lifecycleShutdownError) {
+      postExecutionError = lifecycleShutdownError;
+    }
+
+    if (isShuttingDown()) {
+      process.exit(getSignalExitCode());
     }
   }
 

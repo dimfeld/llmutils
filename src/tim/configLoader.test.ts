@@ -774,6 +774,82 @@ autoexamples:
       }
     });
 
+    test('loadEffectiveConfig keeps repository lifecycle commands when no overrides exist', async () => {
+      const mainConfigPath = path.join(configDir, 'tim.yml');
+      await fs.writeFile(
+        mainConfigPath,
+        yaml.stringify({
+          lifecycle: {
+            commands: [
+              { title: 'repo setup', command: 'echo repo setup' },
+              { title: 'repo cleanup', command: 'echo repo cleanup', shutdown: 'echo done' },
+            ],
+          },
+        }),
+        'utf-8'
+      );
+
+      const config = await loadEffectiveConfig();
+
+      expect(config.lifecycle?.commands?.map((command) => command.title)).toEqual([
+        'repo setup',
+        'repo cleanup',
+      ]);
+    });
+
+    test('loadEffectiveConfig keeps global lifecycle commands when repository config omits lifecycle', async () => {
+      const originalEnv = process.env.TIM_LOAD_GLOBAL_CONFIG;
+      delete process.env.TIM_LOAD_GLOBAL_CONFIG;
+
+      try {
+        const globalConfigPath = path.join(fakeHomeDir, '.config', 'tim', 'config.yml');
+        await fs.mkdir(path.dirname(globalConfigPath), { recursive: true });
+        await fs.writeFile(
+          globalConfigPath,
+          yaml.stringify({
+            lifecycle: {
+              commands: [{ title: 'global only', command: 'echo global only' }],
+            },
+          }),
+          'utf-8'
+        );
+
+        const mainConfigPath = path.join(configDir, 'tim.yml');
+        await fs.writeFile(
+          mainConfigPath,
+          yaml.stringify({
+            defaultExecutor: DEFAULT_EXECUTOR,
+          }),
+          'utf-8'
+        );
+
+        const config = await loadEffectiveConfig();
+
+        expect(config.lifecycle?.commands?.map((command) => command.title)).toEqual([
+          'global only',
+        ]);
+      } finally {
+        if (originalEnv !== undefined) {
+          process.env.TIM_LOAD_GLOBAL_CONFIG = originalEnv;
+        }
+      }
+    });
+
+    test('loadEffectiveConfig omits lifecycle when no config defines it', async () => {
+      const mainConfigPath = path.join(configDir, 'tim.yml');
+      await fs.writeFile(
+        mainConfigPath,
+        yaml.stringify({
+          defaultExecutor: DEFAULT_EXECUTOR,
+        }),
+        'utf-8'
+      );
+
+      const config = await loadEffectiveConfig();
+
+      expect(config.lifecycle).toBeUndefined();
+    });
+
     test('loadEffectiveConfig merges executors field correctly', async () => {
       const mainConfigPath = path.join(configDir, 'tim.yml');
       const localConfigPath = path.join(configDir, 'tim.local.yml');
