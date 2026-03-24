@@ -27,6 +27,7 @@ describe('timAgent lifecycle integration', () => {
   const markStepDoneSpy = mock(async () => ({ message: 'Step marked', planComplete: false }));
   const markTaskDoneSpy = mock(async () => ({ message: 'Task marked', planComplete: false }));
   const runUpdateDocsSpy = mock(async () => {});
+  const runUpdateLessonsSpy = mock(async () => {});
   const executePostApplyCommandSpy = mock(async () => true);
   const summaryOrder: string[] = [];
   const trackFileChangesSpy = mock(async () => {});
@@ -46,6 +47,7 @@ describe('timAgent lifecycle integration', () => {
     markStepDoneSpy.mockClear();
     markTaskDoneSpy.mockClear();
     runUpdateDocsSpy.mockClear();
+    runUpdateLessonsSpy.mockClear();
     executePostApplyCommandSpy.mockClear();
     summaryOrder.length = 0;
     trackFileChangesSpy.mockClear();
@@ -176,6 +178,10 @@ describe('timAgent lifecycle integration', () => {
 
     await moduleMocker.mock('../update-docs.js', () => ({
       runUpdateDocs: runUpdateDocsSpy,
+    }));
+
+    await moduleMocker.mock('../update-lessons.js', () => ({
+      runUpdateLessons: runUpdateLessonsSpy,
     }));
 
     await moduleMocker.mock('../../actions.js', () => ({
@@ -324,6 +330,53 @@ describe('timAgent lifecycle integration', () => {
     expect(markStepDoneSpy).not.toHaveBeenCalled();
   });
 
+  test('serial step execution skips after-iteration docs when shutdown is requested after post-apply commands', async () => {
+    effectiveConfig.updateDocs = { mode: 'after-iteration' };
+    effectiveConfig.postApplyCommands = [{ title: 'post-apply', command: 'echo ok' }];
+    executePostApplyCommandSpy.mockImplementationOnce(async () => {
+      setShuttingDown(130);
+      return true;
+    });
+
+    await moduleMocker.mock('../../plans/find_next.js', () => ({
+      findNextActionableItem: mock(() => ({
+        type: 'step',
+        taskIndex: 0,
+        stepIndex: 0,
+        task: { title: 'Task 1', description: 'Do the work', steps: [{ prompt: 'implement' }] },
+      })),
+    }));
+
+    await moduleMocker.mock('../../plans/prepare_step.js', () => ({
+      prepareNextStep: mock(async () => ({
+        prompt: 'CTX',
+        promptFilePath: undefined,
+        rmfilterArgs: undefined,
+        taskIndex: 0,
+        stepIndex: 0,
+        numStepsSelected: 1,
+      })),
+    }));
+
+    const originalExit = process.exit;
+    process.exit = ((code?: number) => {
+      throw new Error(`process.exit(${code})`);
+    }) as typeof process.exit;
+
+    try {
+      const { timAgent } = await import('./agent.ts');
+
+      await expect(
+        timAgent(planFile, { log: false, summary: false, serialTasks: true }, {})
+      ).rejects.toThrow('process.exit(130)');
+    } finally {
+      process.exit = originalExit;
+    }
+
+    expect(runUpdateDocsSpy).not.toHaveBeenCalled();
+    expect(markStepDoneSpy).not.toHaveBeenCalled();
+  });
+
   test('serial task execution does not mark the task done after shutdown is requested during docs update', async () => {
     effectiveConfig.updateDocs = { mode: 'after-iteration' };
     runUpdateDocsSpy.mockImplementationOnce(async () => {
@@ -355,5 +408,55 @@ describe('timAgent lifecycle integration', () => {
 
     expect(runUpdateDocsSpy).toHaveBeenCalledTimes(1);
     expect(markTaskDoneSpy).not.toHaveBeenCalled();
+  });
+
+  test('serial step completion skips after-completion docs when shutdown is requested after marking the step done', async () => {
+    effectiveConfig.updateDocs = { mode: 'after-completion' };
+    markStepDoneSpy.mockImplementationOnce(async () => {
+      setShuttingDown(130);
+      return { message: 'Step marked', planComplete: true };
+    });
+
+    await moduleMocker.mock('../../plans/find_next.js', () => ({
+      findNextActionableItem: mock(() => ({
+        type: 'step',
+        taskIndex: 0,
+        stepIndex: 0,
+        task: { title: 'Task 1', description: 'Do the work', steps: [{ prompt: 'implement' }] },
+      })),
+    }));
+
+    await moduleMocker.mock('../../plans/prepare_step.js', () => ({
+      prepareNextStep: mock(async () => ({
+        prompt: 'CTX',
+        promptFilePath: undefined,
+        rmfilterArgs: undefined,
+        taskIndex: 0,
+        stepIndex: 0,
+        numStepsSelected: 1,
+      })),
+    }));
+
+    const originalExit = process.exit;
+    process.exit = ((code?: number) => {
+      throw new Error(`process.exit(${code})`);
+    }) as typeof process.exit;
+
+    try {
+      const { timAgent } = await import('./agent.ts');
+
+      await expect(
+        timAgent(
+          planFile,
+          { log: false, summary: false, serialTasks: true, finalReview: false },
+          {}
+        )
+      ).rejects.toThrow('process.exit(130)');
+    } finally {
+      process.exit = originalExit;
+    }
+
+    expect(runUpdateDocsSpy).not.toHaveBeenCalled();
+    expect(runUpdateLessonsSpy).not.toHaveBeenCalled();
   });
 });
