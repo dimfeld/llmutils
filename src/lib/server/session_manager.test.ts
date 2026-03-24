@@ -284,6 +284,28 @@ describe('lib/server/session_manager', () => {
     });
   });
 
+  test('formatTunnelMessage handles malformed structured payloads gracefully', () => {
+    const nullMessage = formatTunnelMessage('conn-1', 99, {
+      type: 'structured',
+      message: null as unknown as StructuredMessage,
+    });
+    expect(nullMessage).toMatchObject({
+      category: 'log',
+      bodyType: 'text',
+      body: { type: 'text', text: '[unknown: no type]' },
+    });
+
+    const undefinedMessage = formatTunnelMessage('conn-1', 100, {
+      type: 'structured',
+      message: undefined as unknown as StructuredMessage,
+    });
+    expect(undefinedMessage).toMatchObject({
+      category: 'log',
+      bodyType: 'text',
+      body: { type: 'text' },
+    });
+  });
+
   test('formatTunnelMessage includes detailed review issues, suggestions, and follow-up items', () => {
     const message = formatTunnelMessage('conn-1', 10, {
       type: 'structured',

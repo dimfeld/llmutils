@@ -241,22 +241,39 @@ export function formatTunnelMessage(
     case 'debug':
       return null;
     case 'structured': {
-      const triggersNotification =
-        message.message.type === 'agent_session_end' &&
-        message.message.transportSource !== 'tunnel';
-      return {
-        id: `${connectionId}:${seq}`,
-        seq,
-        timestamp: message.message.timestamp,
-        category: 'structured',
-        bodyType: 'structured',
-        body: {
-          type: 'structured',
-          message: stripStructuredMessage(message.message),
-        },
-        rawType: message.message.type,
-        triggersNotification,
-      };
+      try {
+        const triggersNotification =
+          message.message.type === 'agent_session_end' &&
+          message.message.transportSource !== 'tunnel';
+        return {
+          id: `${connectionId}:${seq}`,
+          seq,
+          timestamp: message.message.timestamp ?? new Date().toISOString(),
+          category: 'structured',
+          bodyType: 'structured',
+          body: {
+            type: 'structured',
+            message: stripStructuredMessage(message.message),
+          },
+          rawType: message.message.type,
+          triggersNotification,
+        };
+      } catch {
+        return {
+          id: `${connectionId}:${seq}`,
+          seq,
+          timestamp: message.message?.timestamp ?? new Date().toISOString(),
+          category: 'log',
+          bodyType: 'text',
+          body: {
+            type: 'text',
+            text: `[unknown: ${(message.message as { type?: string })?.type ?? 'no type'}]`,
+          },
+          rawType:
+            (message.message as { type?: string })?.type ??
+            ('unknown' as StructuredMessage['type']),
+        };
+      }
     }
     case 'stdout':
     case 'stderr':

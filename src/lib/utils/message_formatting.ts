@@ -339,10 +339,7 @@ function keyValueEntries(entries: Array<[string, unknown]>): KeyValuePairEntry[]
 }
 
 function summarizeCommandResult(
-  message: Omit<
-    Extract<StructuredMessagePayload, { type: 'command_result' }>,
-    'timestamp' | 'transportSource'
-  >
+  message: Extract<StructuredMessagePayload, { type: 'command_result' }>
 ): string {
   const sections: string[] = [];
 
