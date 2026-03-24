@@ -572,7 +572,7 @@ index 1234567..abcdefg 100644
     expect(prompt).toContain('2. **Add data validation**');
 
     // Verify diff content is included
-    expect(prompt).toContain('Base Branch:** main');
+    expect(prompt).toContain('Diff Base:** main');
     expect(prompt).toContain('Changed Files (2):**');
     expect(prompt).toContain('- src/auth.ts');
     expect(prompt).toContain('- src/validation.ts');
@@ -759,7 +759,7 @@ index 1234567..abcdefg 100644
     expect(prompt).not.toContain('Details:**');
     expect(prompt).toContain('1. **Task 1**');
     expect(prompt).toContain('Description 1');
-    expect(prompt).toContain('Base Branch:** master');
+    expect(prompt).toContain('Diff Base:** master');
   });
 
   test('uses originalIndex for task numbering when tasks have originalIndex', async () => {

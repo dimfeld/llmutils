@@ -17,6 +17,8 @@ export interface DiffResult {
   hasChanges: boolean;
   changedFiles: string[];
   baseBranch: string;
+  /** The merge-base commit hash used for the diff (common ancestor of current branch and base branch) */
+  mergeBaseCommit?: string;
   diffContent: string;
 }
 
@@ -544,12 +546,25 @@ async function generateRegularDiffForReview(
 
   let changedFiles: string[] = [];
   let diffContent = '';
+  let mergeBaseCommit: string | undefined;
 
   if (usingJj) {
     // Use jj commands for diff generation
+    // Use merge-base revset to only show changes on this branch since it diverged
+    const mergeBaseRevset = `heads(::@ & ::${safeBranch})`;
     try {
+      // Resolve the merge-base revset to a concrete commit hash
+      const mergeBaseResolveResult =
+        await $`jj log -r ${mergeBaseRevset} --no-graph -T commit_id --limit 1`
+          .cwd(gitRoot)
+          .nothrow()
+          .quiet();
+      if (mergeBaseResolveResult.exitCode === 0) {
+        mergeBaseCommit = mergeBaseResolveResult.stdout.toString().trim();
+      }
+
       // Get list of changed files
-      const filesResult = await $`jj diff --from ${safeBranch} --summary`
+      const filesResult = await $`jj diff --from ${mergeBaseRevset} --summary`
         .quiet()
         .cwd(gitRoot)
         .nothrow();
@@ -580,7 +595,7 @@ async function generateRegularDiffForReview(
       }
 
       // Get full diff content
-      const diffResult = await $`jj diff --from ${safeBranch}`.cwd(gitRoot).nothrow().quiet();
+      const diffResult = await $`jj diff --from ${mergeBaseRevset}`.cwd(gitRoot).nothrow().quiet();
       if (diffResult.exitCode === 0) {
         const fullDiff = diffResult.stdout.toString();
         if (Buffer.byteLength(fullDiff, 'utf8') > MAX_DIFF_SIZE) {
@@ -600,11 +615,21 @@ async function generateRegularDiffForReview(
   } else {
     // Use git commands for diff generation
     try {
-      // Get list of changed files
-      const filesResult = await $`git diff --name-only ${safeBranch}`
+      // Find the merge-base to only show changes on this branch since it diverged
+      const mergeBaseResult = await $`git merge-base ${safeBranch} HEAD`
         .cwd(gitRoot)
         .nothrow()
         .quiet();
+      if (mergeBaseResult.exitCode !== 0) {
+        throw new Error(
+          `git merge-base command failed (exit code ${mergeBaseResult.exitCode}): ${mergeBaseResult.stderr.toString()}`
+        );
+      }
+      const mergeBase = mergeBaseResult.stdout.toString().trim();
+      mergeBaseCommit = mergeBase;
+
+      // Get list of changed files
+      const filesResult = await $`git diff --name-only ${mergeBase}`.cwd(gitRoot).nothrow().quiet();
       if (filesResult.exitCode === 0) {
         changedFiles = filesResult.stdout
           .toString()
@@ -618,7 +643,7 @@ async function generateRegularDiffForReview(
       }
 
       // Get full diff content
-      const diffResult = await $`git diff ${safeBranch}`.cwd(gitRoot).nothrow().quiet();
+      const diffResult = await $`git diff ${mergeBase}`.cwd(gitRoot).nothrow().quiet();
       if (diffResult.exitCode === 0) {
         const fullDiff = diffResult.stdout.toString();
         if (Buffer.byteLength(fullDiff, 'utf8') > MAX_DIFF_SIZE) {
@@ -640,7 +665,8 @@ async function generateRegularDiffForReview(
   return {
     hasChanges: changedFiles.length > 0,
     changedFiles,
-    baseBranch: baseBranch, // Return original for display purposes
+    baseBranch: baseBranch,
+    mergeBaseCommit,
     diffContent,
   };
 }

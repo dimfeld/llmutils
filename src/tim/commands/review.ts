@@ -2011,7 +2011,7 @@ export function buildReviewPrompt(
   const changedFilesSection = [
     `# Code Changes to Review`,
     ``,
-    `**Base Branch:** ${diffResult.baseBranch}`,
+    `**Diff Base:** ${diffResult.mergeBaseCommit ?? diffResult.baseBranch}`,
     `**Changed Files (${diffResult.changedFiles.length}):**`,
   ];
 
@@ -2190,7 +2190,7 @@ export function buildAutofixPrompt(
   prompt.push(
     `## Files to Fix`,
     ``,
-    `**Base Branch:** ${diffResult.baseBranch}`,
+    `**Diff Base:** ${diffResult.mergeBaseCommit ?? diffResult.baseBranch}`,
     `**Changed Files:**`
   );
 

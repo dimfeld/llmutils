@@ -146,7 +146,7 @@ export function buildPrDescriptionPrompt(
   const changedFilesSection = [
     `# Code Changes Implemented`,
     ``,
-    `**Base Branch:** ${diffResult.baseBranch}`,
+    `**Diff Base:** ${diffResult.mergeBaseCommit ?? diffResult.baseBranch}`,
     `**Changed Files (${diffResult.changedFiles.length}):**`,
   ];
 

@@ -485,7 +485,7 @@ Do this for each task that was successfully implemented and reviewed before prov
 
 ${subagentDirective}CRITICAL: Do not be polite or encouraging. Your job is to find issues, not to praise good code. If code is acceptable, simply state that briefly. Focus your energy on identifying real problems that need fixing.
 
-Use git commands to see the recent related commits and which files were changed, so you know what to focus on.
+Use git commands to see the recent related commits and which files were changed, so you know what to focus on. When diffing against a base branch, always use the merge-base (e.g. \`git diff $(git merge-base <branch> HEAD)\` or three-dot syntax \`git diff <branch>...HEAD\`) to avoid including unrelated changes from the base branch.
 
 Make sure that your feedback is congruent with the requirements of the project. For example, flagging increased number of rows from a database query is not useful feedback if the feature being implemented requires it.
 
