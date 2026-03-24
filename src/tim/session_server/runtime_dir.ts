@@ -7,9 +7,11 @@ export interface SessionInfoFile {
   sessionId: string;
   pid: number;
   port: number;
+  hostname?: string;
   command: string;
   workspacePath?: string;
   planId?: number;
+  planUuid?: string;
   planTitle?: string;
   gitRemote?: string;
   startedAt: string;
@@ -32,7 +34,7 @@ function parseSessionInfoFile(value: unknown): SessionInfoFile {
   if (typeof data.sessionId !== 'string') {
     throw new Error('Session info file is missing sessionId');
   }
-  if (typeof data.pid !== 'number' || !Number.isInteger(data.pid) || data.pid < 0) {
+  if (typeof data.pid !== 'number' || !Number.isInteger(data.pid) || data.pid <= 0) {
     throw new Error('Session info file has invalid pid');
   }
   if (
@@ -42,6 +44,9 @@ function parseSessionInfoFile(value: unknown): SessionInfoFile {
     data.port > 65535
   ) {
     throw new Error('Session info file has invalid port');
+  }
+  if (data.hostname != null && typeof data.hostname !== 'string') {
+    throw new Error('Session info file has invalid hostname');
   }
   if (typeof data.command !== 'string') {
     throw new Error('Session info file is missing command');
@@ -54,6 +59,9 @@ function parseSessionInfoFile(value: unknown): SessionInfoFile {
   }
   if (data.planId != null && (typeof data.planId !== 'number' || !Number.isInteger(data.planId))) {
     throw new Error('Session info file has invalid planId');
+  }
+  if (data.planUuid != null && typeof data.planUuid !== 'string') {
+    throw new Error('Session info file has invalid planUuid');
   }
   if (data.planTitle != null && typeof data.planTitle !== 'string') {
     throw new Error('Session info file has invalid planTitle');
@@ -69,9 +77,11 @@ function parseSessionInfoFile(value: unknown): SessionInfoFile {
     sessionId: data.sessionId,
     pid: data.pid,
     port: data.port,
+    hostname: data.hostname as string | undefined,
     command: data.command,
     workspacePath: data.workspacePath as string | undefined,
     planId: data.planId as number | undefined,
+    planUuid: data.planUuid as string | undefined,
     planTitle: data.planTitle as string | undefined,
     gitRemote: data.gitRemote as string | undefined,
     startedAt: data.startedAt,

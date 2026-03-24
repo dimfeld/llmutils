@@ -527,7 +527,6 @@ export async function handleRunPromptCommand(
         enabled: !isTunnelActiveFn(),
         command: 'run-prompt',
         interactive: false,
-        config,
         callback: async () => {
           if (executor === 'claude') {
             if (options.reasoningLevel) {

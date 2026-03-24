@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { HeadlessAdapter } from './headless_adapter.ts';
 import type { HeadlessMessage } from './headless_protocol.ts';
 import { createRecordingAdapter } from './test_helpers.ts';
@@ -33,71 +33,29 @@ async function waitFor(condition: () => boolean, timeoutMs: number = 3000): Prom
   }
 }
 
-async function createWebSocketServer(): Promise<{
-  port: number;
-  messages: HeadlessMessage[];
-  close: () => void;
-}> {
-  const messages: HeadlessMessage[] = [];
-  const clients = new Set<ServerWebSocket<unknown>>();
-
-  const server = Bun.serve({
-    port: 0,
-    fetch(req, srv) {
-      const url = new URL(req.url);
-      if (url.pathname === '/tim-agent' && srv.upgrade(req)) {
-        return;
-      }
-      return new Response('Not Found', { status: 404 });
-    },
-    websocket: {
-      open(ws) {
-        clients.add(ws);
-      },
-      message(_, message) {
-        const parsed = parseMessage(message);
-        if (parsed) {
-          messages.push(parsed);
-        }
-      },
-      close(ws) {
-        clients.delete(ws);
-      },
-    },
-  });
-
-  return {
-    port: server.port,
-    messages,
-    close: () => {
-      for (const ws of clients) {
-        ws.close();
-      }
-      server.stop(true);
-    },
-  };
-}
-
-const serversToClose: Array<{ close: () => void }> = [];
-
-afterEach(() => {
-  for (const server of serversToClose.splice(0)) {
-    server.close();
-  }
-});
-
 describe('logging sendStructured end-to-end', () => {
-  it('sends structured output through the active headless adapter websocket', async () => {
-    const server = await createWebSocketServer();
-    serversToClose.push(server);
-
+  it('sends structured output through the active headless adapter embedded server', async () => {
     const { adapter: wrapped, calls } = createRecordingAdapter();
-    const adapter = new HeadlessAdapter(
-      `ws://127.0.0.1:${server.port}/tim-agent`,
-      { command: 'agent' },
-      wrapped,
-      { reconnectIntervalMs: 50, connectWhenSuppressed: true }
-    );
+    const adapter = new HeadlessAdapter({ command: 'agent' }, wrapped, {
+      serverPort: 0,
+      serverHostname: '127.0.0.1',
+    });
+    const ws = new WebSocket(`ws://127.0.0.1:${(adapter as any).sessionServer.port}/tim-agent`);
+    const messages: HeadlessMessage[] = [];
+
+    await new Promise<void>((resolve, reject) => {
+      ws.addEventListener('open', () => resolve(), { once: true });
+      ws.addEventListener('error', () => reject(new Error('WebSocket error')), { once: true });
+    });
+    ws.addEventListener('message', (event) => {
+      const parsed = parseMessage(event.data as string);
+      if (parsed) {
+        messages.push(parsed);
+      }
+    });
+
+    await waitFor(() => messages.some((message) => message.type === 'replay_end'));
+    messages.length = 0;
 
     await runWithLogger(adapter, async () => {
       sendStructured({
@@ -108,7 +66,7 @@ describe('logging sendStructured end-to-end', () => {
       });
 
       await waitFor(() =>
-        server.messages.some(
+        messages.some(
           (message) =>
             message.type === 'output' &&
             message.message.type === 'structured' &&
@@ -129,7 +87,7 @@ describe('logging sendStructured end-to-end', () => {
       ],
     });
 
-    const structuredOutput = server.messages.find(
+    const structuredOutput = messages.find(
       (message): message is Extract<HeadlessMessage, { type: 'output' }> =>
         message.type === 'output' &&
         message.message.type === 'structured' &&
@@ -147,6 +105,7 @@ describe('logging sendStructured end-to-end', () => {
       },
     });
 
+    ws.close();
     await adapter.destroy();
   });
 });

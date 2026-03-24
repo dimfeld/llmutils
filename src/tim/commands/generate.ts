@@ -295,7 +295,6 @@ export async function handleGenerateCommand(
       enabled: !isTunnelActive(),
       command: 'generate',
       interactive: true,
-      config,
       plan: {
         id: parsedPlan.id,
         uuid: parsedPlan.uuid,

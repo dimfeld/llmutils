@@ -23,7 +23,6 @@ interface RunWithHeadlessOptions<T> {
   enabled: boolean;
   command: 'agent' | 'review' | 'run-prompt' | 'generate' | 'chat';
   interactive: boolean;
-  config: Pick<TimConfig, 'headless'>;
   plan?: HeadlessPlanSummary;
   callback: () => Promise<T>;
 }
@@ -31,7 +30,6 @@ interface RunWithHeadlessOptions<T> {
 interface CreateHeadlessAdapterOptions {
   command: 'agent' | 'review' | 'run-prompt' | 'generate' | 'chat';
   interactive: boolean;
-  config: Pick<TimConfig, 'headless'>;
   plan?: HeadlessPlanSummary;
 }
 
@@ -110,7 +108,6 @@ export async function runWithHeadlessAdapterIfEnabled<T>({
   enabled,
   command,
   interactive,
-  config,
   plan,
   callback,
 }: RunWithHeadlessOptions<T>): Promise<T> {
@@ -119,8 +116,7 @@ export async function runWithHeadlessAdapterIfEnabled<T>({
   }
 
   const sessionInfo = await buildHeadlessSessionInfo(command, interactive, plan);
-  const url = resolveHeadlessUrl(config);
-  const headlessAdapter = createHeadlessAdapter(url, sessionInfo);
+  const headlessAdapter = createHeadlessAdapter(sessionInfo);
 
   try {
     return await runWithLogger(headlessAdapter, callback);
@@ -132,12 +128,10 @@ export async function runWithHeadlessAdapterIfEnabled<T>({
 export async function createHeadlessAdapterForCommand({
   command,
   interactive,
-  config,
   plan,
 }: CreateHeadlessAdapterOptions): Promise<HeadlessAdapter> {
   const sessionInfo = await buildHeadlessSessionInfo(command, interactive, plan);
-  const url = resolveHeadlessUrl(config);
-  return createHeadlessAdapter(url, sessionInfo);
+  return createHeadlessAdapter(sessionInfo);
 }
 
 export function updateHeadlessSessionInfo(patch: Partial<HeadlessSessionInfo>): void {
@@ -149,7 +143,7 @@ export function updateHeadlessSessionInfo(patch: Partial<HeadlessSessionInfo>): 
   adapter.updateSessionInfo(patch);
 }
 
-function createHeadlessAdapter(url: string, sessionInfo: HeadlessSessionInfo): HeadlessAdapter {
+function createHeadlessAdapter(sessionInfo: HeadlessSessionInfo): HeadlessAdapter {
   const wrappedAdapter = getLoggerAdapter();
   const noServer = process.env.TIM_NO_SERVER === '1';
   const portStr = process.env.TIM_SERVER_PORT?.trim();
@@ -176,6 +170,6 @@ function createHeadlessAdapter(url: string, sessionInfo: HeadlessSessionInfo): H
   };
 
   return wrappedAdapter
-    ? new HeadlessAdapter(url, sessionInfo, wrappedAdapter, options)
-    : new HeadlessAdapter(url, sessionInfo, undefined, options);
+    ? new HeadlessAdapter(sessionInfo, wrappedAdapter, options)
+    : new HeadlessAdapter(sessionInfo, undefined, options);
 }

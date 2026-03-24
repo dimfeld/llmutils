@@ -113,6 +113,7 @@ export interface ActivePrompt {
 export interface HeadlessSessionInfo {
   command: string;
   interactive?: boolean;
+  sessionId?: string;
   planId?: number;
   planUuid?: string;
   planTitle?: string;

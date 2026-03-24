@@ -1,9 +1,11 @@
 import type { SessionManager } from './session_manager.js';
+import type { SessionDiscoveryClient } from './session_discovery.js';
 import type { WebSocketServerHandle } from './ws_server.js';
 
 interface SessionContextState {
   manager: SessionManager | null;
   server: WebSocketServerHandle | null;
+  discoveryClient: SessionDiscoveryClient | null;
   initPromise: Promise<SessionManager> | null;
 }
 
@@ -17,6 +19,7 @@ function getState(): SessionContextState {
   globalState[sessionContextKey] ??= {
     manager: null,
     server: null,
+    discoveryClient: null,
     initPromise: null,
   };
 
@@ -32,7 +35,7 @@ export function getSessionManager(): SessionManager {
   return manager;
 }
 
-export function setSessionManager(manager: SessionManager): void {
+export function setSessionManager(manager: SessionManager | null): void {
   getState().manager = manager;
 }
 
@@ -40,8 +43,16 @@ export function getWebSocketServerHandle(): WebSocketServerHandle | null {
   return getState().server;
 }
 
-export function setWebSocketServerHandle(server: WebSocketServerHandle): void {
+export function setWebSocketServerHandle(server: WebSocketServerHandle | null): void {
   getState().server = server;
+}
+
+export function getSessionDiscoveryClient(): SessionDiscoveryClient | null {
+  return getState().discoveryClient;
+}
+
+export function setSessionDiscoveryClient(discoveryClient: SessionDiscoveryClient | null): void {
+  getState().discoveryClient = discoveryClient;
 }
 
 export function getSessionInitPromise(): Promise<SessionManager> | null {

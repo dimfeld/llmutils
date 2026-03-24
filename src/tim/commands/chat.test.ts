@@ -433,7 +433,7 @@ describe('handleChatCommand', () => {
     console.warn = originalWarn;
   });
 
-  test('passes the loaded config through to the headless adapter', async () => {
+  test('invokes the headless adapter without forwarding config', async () => {
     const config: Partial<TimConfig> = {
       defaultExecutor: 'claude-code',
       terminalInput: true,
@@ -444,7 +444,7 @@ describe('handleChatCommand', () => {
 
     await handleChatCommand('hello', {}, {});
 
-    expect(runWithHeadlessAdapterIfEnabledSpy.mock.calls[0][0].config).toBe(config);
+    expect(runWithHeadlessAdapterIfEnabledSpy.mock.calls[0][0]).not.toHaveProperty('config');
   });
 
   test('enters workspace mode and passes workspace options through setupWorkspace', async () => {

@@ -51,7 +51,7 @@ The `HeadlessAdapter` supports a `setUserInputHandler()` callback, mirroring the
 3. Broadcasts via `tunnelServer?.sendUserInput()` (if a tunnel is also active)
 4. Emits a `user_terminal_input` structured message for logging/display
 
-This enables tim-gui to send user messages to running agent sessions via the headless WebSocket connection.
+This enables tim-gui to send user messages to running agent sessions via the WebSocket connection (tim-gui discovers agent processes and connects to their embedded WebSocket servers).
 
 ### Headless Adapter End Session
 

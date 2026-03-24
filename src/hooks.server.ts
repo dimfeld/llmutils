@@ -4,13 +4,16 @@ import type { Handle, ServerInit } from '@sveltejs/kit';
 
 import { getServerContext } from '$lib/server/init.js';
 import {
+  getSessionDiscoveryClient,
   getSessionInitPromise,
   getSessionManager,
   getWebSocketServerHandle,
+  setSessionDiscoveryClient,
   setSessionInitPromise,
   setSessionManager,
   setWebSocketServerHandle,
 } from '$lib/server/session_context.js';
+import { SessionDiscoveryClient } from '$lib/server/session_discovery.js';
 import { SessionManager } from '$lib/server/session_manager.js';
 import { startWebSocketServer } from '$lib/server/ws_server.js';
 
@@ -57,22 +60,63 @@ export const init: ServerInit = async () => {
     return;
   }
 
+  const existingServer = getWebSocketServerHandle();
+  const existingDiscoveryClient = getSessionDiscoveryClient();
+  if (existingServer && existingDiscoveryClient) {
+    return;
+  }
+
+  const createdResources = {
+    manager: false,
+    server: false,
+    discoveryClient: false,
+  };
+
   const initPromise = (async () => {
-    const existingServer = getWebSocketServerHandle();
-    if (existingServer) {
-      return getSessionManager();
+    const { config, db } = await getServerContext();
+    const sessionManager = existingServer ? getSessionManager() : new SessionManager(db);
+    const serverHandle = existingServer ?? startWebSocketServer(sessionManager, config);
+    const discoveryClient = existingDiscoveryClient ?? new SessionDiscoveryClient(sessionManager);
+
+    // Store references before await so they are tracked for cleanup on failure.
+    if (!existingServer) {
+      createdResources.manager = true;
+      createdResources.server = true;
+      setSessionManager(sessionManager);
+      setWebSocketServerHandle(serverHandle);
+    }
+    if (!existingDiscoveryClient) {
+      createdResources.discoveryClient = true;
+      setSessionDiscoveryClient(discoveryClient);
     }
 
-    const { config, db } = await getServerContext();
-    const sessionManager = new SessionManager(db);
-    const serverHandle = startWebSocketServer(sessionManager, config);
+    await discoveryClient.start();
 
-    setSessionManager(sessionManager);
-    setWebSocketServerHandle(serverHandle);
-    registerShutdownHandlers(serverHandle.stop);
+    registerShutdownHandlers(() => {
+      discoveryClient.stop();
+      serverHandle.stop();
+    });
 
     return sessionManager;
   })().catch((error) => {
+    // Clean up only resources created during this failed init attempt.
+    if (createdResources.discoveryClient) {
+      const discoveryClient = getSessionDiscoveryClient();
+      if (discoveryClient) {
+        discoveryClient.stop();
+        setSessionDiscoveryClient(null);
+      }
+    }
+    if (createdResources.server) {
+      const serverHandle = getWebSocketServerHandle();
+      if (serverHandle) {
+        serverHandle.stop();
+        setWebSocketServerHandle(null);
+      }
+    }
+    if (createdResources.manager) {
+      setSessionManager(null);
+    }
     setSessionInitPromise(null);
     throw error;
   });

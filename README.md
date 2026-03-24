@@ -60,20 +60,20 @@ PR status data (check runs, reviews, labels, merge state) is cached in the SQLit
 
 Tim long-running commands (`agent`, `generate`, `chat`, `review`, `run-prompt`) automatically start an embedded WebSocket server that allows external clients (such as the tim web interface) to connect and monitor the session in real time. Each process advertises itself via a session info file in `~/.cache/tim/sessions/` (respects `XDG_CACHE_HOME`), enabling discovery by the web UI or other tools.
 
-The embedded server runs alongside the existing client connection to the tim-gui WebSocket server — both modes operate simultaneously by default.
+The tim web interface discovers running agent processes by scanning the session directory and connects to their embedded servers as a WebSocket client. Agents do not need to know the GUI's address and no longer open a client connection back to tim-gui.
 
 ### Environment Variables
 
 | Variable              | Description                                                                                                                                                                     |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `TIM_SERVER_PORT`     | Port for the embedded server (default: `0` for random). If the port is unavailable, the process exits with an error.                                                            |
-| `TIM_NO_SERVER`       | Set to `1` to disable the embedded server (client-only mode).                                                                                                                   |
+| `TIM_NO_SERVER`       | Set to `1` to disable the embedded server entirely. The adapter buffers messages locally with no external visibility.                                                           |
 | `TIM_SERVER_HOSTNAME` | Hostname to bind to (default: `127.0.0.1`). Set to `0.0.0.0` for remote/container access.                                                                                       |
 | `TIM_WS_BEARER_TOKEN` | When set, requires `Authorization: Bearer <token>` on WebSocket upgrade. The session info file records `token: true` (not the token itself) so consumers know auth is required. |
 
 ### Session Info Files
 
-Each running process writes a JSON file at `~/.cache/tim/sessions/<pid>.json` containing the session ID, port, command, workspace path, plan info, git remote, and whether auth is required. These files are cleaned up automatically on process exit. Stale files from crashed processes can be detected by checking PID liveness.
+Each running process writes a JSON file at `~/.cache/tim/sessions/<pid>.json` containing the session ID, port, command, workspace path, plan info (including plan UUID), git remote, and whether auth is required. These files are cleaned up automatically on process exit. Stale files from crashed processes are detected by PID liveness checks and cleaned up by the web interface's session discovery client.
 
 ## Web Interface
 
@@ -81,7 +81,7 @@ Tim includes a SvelteKit-based web interface for browsing and managing plans. Th
 
 The interface is organized around projects, with three tabs per project:
 
-- **Sessions** — real-time monitoring of tim agent processes with live message transcripts, prompt interaction (confirm/input/select/checkbox/prefix_select), free-form user input, end session with confirmation for active sessions, a terminal button for WezTerm-backed sessions that focuses the associated pane, and an "Open Terminal" button that opens a new terminal window in the session's workspace directory. The Open Terminal button also appears in plan detail views next to assigned workspace paths. Connects to agents via WebSocket server on port 8123 and streams updates to the browser via SSE. Plans can be acted on directly from the plan detail view: stub plans (no tasks) can be generated via `tim generate`, and plans with tasks can be executed via `tim agent` — both spawn detached processes that appear as new sessions.
+- **Sessions** — real-time monitoring of tim agent processes with live message transcripts, prompt interaction (confirm/input/select/checkbox/prefix_select), and free-form user input.
 - **Active Work** — dashboard of current work per project showing workspaces (with Primary/Auto/Locked/Available status badges) and active plans (in_progress + blocked). Workspaces are filtered to "recently active" by default (locked, primary, or updated within 48 hours) with a toggle to show all. Clicking a plan shows full detail in the right pane.
 - **Plans** — browse, filter, search, and inspect plans with two-column layout (list + detail), status/priority badges, collapsible status groups, and clickable dependency navigation
 

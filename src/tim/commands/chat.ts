@@ -265,7 +265,6 @@ export async function handleChatCommand(
       enabled: options.headlessAdapter === true || !tunnelActive,
       command: 'chat',
       interactive: !noninteractive,
-      config,
       plan: currentPlanData
         ? {
             id: currentPlanData.id,

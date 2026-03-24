@@ -46,9 +46,11 @@ describe('session_server/runtime_dir', () => {
       sessionId: 'session-1',
       pid: overrides.pid ?? 41001,
       port: 9123,
+      hostname: '127.0.0.1',
       command: 'agent',
       workspacePath: '/tmp/workspace',
       planId: 222,
+      planUuid: 'plan-uuid-222',
       planTitle: 'tim runs websocket server',
       gitRemote: 'github.com/owner/repo',
       startedAt: '2026-03-23T00:00:00.000Z',
@@ -112,6 +114,65 @@ describe('session_server/runtime_dir', () => {
     );
     fs.mkdirSync(path.join(getTimSessionDir(), 'not-a-json-file'));
 
+    expect(listSessionInfoFiles()).toEqual([info]);
+  });
+
+  test('readSessionInfoFile rejects invalid planUuid values and listSessionInfoFiles ignores them', () => {
+    const info = createInfo({ pid: 41032, sessionId: 'valid-session' });
+    writeSessionInfoFile(info);
+
+    const invalidPath = path.join(getTimSessionDir(), 'invalid-plan-uuid.json');
+    fs.writeFileSync(
+      invalidPath,
+      JSON.stringify({
+        ...info,
+        pid: 41033,
+        sessionId: 'invalid-plan-uuid',
+        planUuid: 123,
+      }),
+      'utf8'
+    );
+
+    expect(() => readSessionInfoFile(invalidPath)).toThrow('invalid planUuid');
+    expect(listSessionInfoFiles()).toEqual([info]);
+  });
+
+  test('readSessionInfoFile rejects invalid hostname values and listSessionInfoFiles ignores them', () => {
+    const info = createInfo({ pid: 41034, sessionId: 'valid-hostname' });
+    writeSessionInfoFile(info);
+
+    const invalidPath = path.join(getTimSessionDir(), 'invalid-hostname.json');
+    fs.writeFileSync(
+      invalidPath,
+      JSON.stringify({
+        ...info,
+        pid: 41036,
+        sessionId: 'invalid-hostname',
+        hostname: 123,
+      }),
+      'utf8'
+    );
+
+    expect(() => readSessionInfoFile(invalidPath)).toThrow('invalid hostname');
+    expect(listSessionInfoFiles()).toEqual([info]);
+  });
+
+  test('readSessionInfoFile rejects pid 0 and listSessionInfoFiles ignores it', () => {
+    const info = createInfo({ pid: 41037, sessionId: 'valid-pid' });
+    writeSessionInfoFile(info);
+
+    const invalidPath = path.join(getTimSessionDir(), 'invalid-pid.json');
+    fs.writeFileSync(
+      invalidPath,
+      JSON.stringify({
+        ...info,
+        pid: 0,
+        sessionId: 'invalid-pid',
+      }),
+      'utf8'
+    );
+
+    expect(() => readSessionInfoFile(invalidPath)).toThrow('invalid pid');
     expect(listSessionInfoFiles()).toEqual([info]);
   });
 

@@ -567,6 +567,7 @@ describe('lib/server/session_manager', () => {
     manager.handleWebSocketConnect('conn-1', vi.fn());
     manager.handleWebSocketMessage('conn-1', {
       type: 'session_info',
+      sessionId: 'session-conn-1',
       command: 'agent',
       interactive: true,
       planId: 229,
@@ -607,6 +608,7 @@ describe('lib/server/session_manager', () => {
           connectionId: 'conn-1',
           sessionInfo: expect.objectContaining({
             command: 'agent',
+            sessionId: 'session-conn-1',
             planId: 229,
             planTitle: 'Sessions view',
           }),
@@ -642,6 +644,9 @@ describe('lib/server/session_manager', () => {
     expect(snapshot.sessions[0]).toMatchObject({
       connectionId: 'conn-1',
       projectId: project.id,
+      sessionInfo: expect.objectContaining({
+        sessionId: 'session-conn-1',
+      }),
       messages: [
         expect.objectContaining({
           seq: 1,

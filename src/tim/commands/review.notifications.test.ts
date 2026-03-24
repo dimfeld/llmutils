@@ -297,12 +297,7 @@ describe('review notifications', () => {
     const headlessModule = await import('../headless.js');
     const createAdapterSpy = spyOn(headlessModule, 'createHeadlessAdapterForCommand');
     const { handleReviewCommand } = await import('./review.js');
-    const existingHeadlessAdapter = new HeadlessAdapter(
-      'not-a-websocket-url',
-      { command: 'agent' },
-      noOpAdapter,
-      { reconnectIntervalMs: Number.MAX_SAFE_INTEGER }
-    );
+    const existingHeadlessAdapter = new HeadlessAdapter({ command: 'agent' }, noOpAdapter);
 
     try {
       await runWithLogger(existingHeadlessAdapter, () =>

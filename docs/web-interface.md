@@ -108,18 +108,19 @@ The Sessions tab (`/projects/[projectId]/sessions`) provides real-time monitorin
 
 ### Server Infrastructure
 
-The sessions system has a dual WebSocket architecture:
+The sessions system uses a discovery-based architecture where the web GUI discovers and connects to agent processes:
 
 1. **Agent-side embedded servers**: Each tim long-running command (`agent`, `generate`, `chat`, `review`, `run-prompt`) starts its own embedded WebSocket server via `HeadlessAdapter`. The server broadcasts output messages, supports replay for late-connecting clients, and routes incoming prompt responses and user input. Session discovery is via PID info files in `~/.cache/tim/sessions/`. See the README "Embedded Session Server" section for environment variable configuration.
 
-2. **Tim-gui WebSocket server**: The web interface runs a separate server that agents connect to as clients (existing architecture).
+2. **Session discovery client** (`src/lib/server/session_discovery.ts`): The web interface discovers agent processes by scanning `~/.cache/tim/sessions/` for session info files and connects to each agent's embedded WebSocket server as a client. Uses `fs.watch()` with debounced re-scan (500ms) for real-time discovery of new/removed processes, plus periodic reconciliation polling (30s) for PID liveness checks and stale file cleanup. Handles connection retry with exponential backoff (100ms to 5s) for cases where the PID file appears before the server is ready. Enforces loopback-only connections: non-loopback hostnames in session info files are rejected with a warning (full `127.0.0.0/8` range and `::1` accepted; wildcard binds like `0.0.0.0` and `::` are mapped to `127.0.0.1` and `[::1]` respectively). Processes with `token: true` are skipped (bearer token auth deferred to remote workspace plans). Survives HMR via the session context singleton pattern.
 
-Both modes run simultaneously by default — the agent process acts as both a WebSocket client (connecting to tim-gui) and a WebSocket server (accepting direct connections).
+3. **Tim-gui WebSocket server**: The web interface also runs a WebSocket server on port 8123 for the HTTP notification endpoint and future use. Agent processes no longer connect to this server; session discovery is the only live session transport.
 
-- **WebSocket server** (`src/lib/server/ws_server.ts`): Listens on port 8123 (configurable via `TIM_WS_PORT` env var or `headless.url` config). Accepts agent WebSocket connections at `/tim-agent` and HTTP POST notifications at `/messages`. Message parsing uses shared utilities from `src/logging/headless_message_utils.ts`.
+- **WebSocket server** (`src/lib/server/ws_server.ts`): Listens on port 8123 (configurable via `TIM_WS_PORT` env var or `headless.url` config). Accepts HTTP POST notifications at `/messages`. It remains in place for notifications and future features, but not for agent session connections. Message parsing uses shared utilities from `src/logging/headless_message_utils.ts`.
+- **Session discovery client** (`src/lib/server/session_discovery.ts`): Watches the session directory, manages WebSocket client connections to discovered agent processes, and feeds messages into SessionManager via `handleWebSocketConnect/Message/Disconnect`. Uses the session info file's `sessionId` as the `connectionId` for SessionManager. Session registration is gated on validated `session_info` (sessionId must match PID file); reconnections to existing offline sessions buffer messages until `replay_end` to protect existing session history.
 - **Session manager** (`src/lib/server/session_manager.ts`): Central state management singleton. Tracks active/offline/notification sessions, categorizes all 29 StructuredMessage types into display categories (lifecycle, llmOutput, toolUse, fileChange, command, progress, error, log, userInput), handles replay buffering, prompt tracking, and project resolution from DB.
-- **Session context** (`src/lib/server/session_context.ts`): HMR-safe singleton (uses `Symbol.for`) exposing `getSessionManager()` and `getWsConnections()` for use by SSE and API routes.
-- **Server init** (`src/hooks.server.ts`): Starts the WebSocket server on SvelteKit boot via the `init` export.
+- **Session context** (`src/lib/server/session_context.ts`): HMR-safe singleton (uses `Symbol.for`) exposing `getSessionManager()`, `getWsConnections()`, and `getSessionDiscoveryClient()` / `setSessionDiscoveryClient()` for use by SSE and API routes.
+- **Server init** (`src/hooks.server.ts`): Starts the WebSocket server and session discovery client on SvelteKit boot via the `init` export.
 
 ### Message Processing
 
@@ -173,7 +174,7 @@ Browser clients receive real-time updates via SSE and interact with sessions thr
 
 - Each WebSocket connection creates a new session (no reconnection merging)
 - Port 8123 conflicts with macOS tim-gui — only one should run at a time
-- Vite HMR may restart the WS server during dev; agents auto-reconnect within 5 seconds
+- Vite HMR may restart the discovery client during dev; it reconnects to discovered agents on restart
 - SSE subscribes before taking snapshot to avoid lost-event race window, with event buffering during snapshot delivery
 - `sendPromptResponse` validates requestId against activePrompt and clears prompt on success — prevents duplicate responses from multiple browser tabs
 - SSE enqueue calls are wrapped in try/catch for resilience against closed streams
@@ -259,7 +260,7 @@ An "Open Terminal" button (AppWindow icon) appears next to each workspace path i
 ### Server-Side Infrastructure
 
 - **Remote commands** (`src/lib/remote/plan_actions.remote.ts`): `startGenerate` and `startAgent` are thin wrappers around `launchTimCommand()`, a shared helper that validates plan eligibility, checks for duplicate sessions (command-agnostic via UUID), resolves the primary workspace path, and calls the spawn handler. Both follow the same `command()` pattern as `session_actions.remote.ts`.
-- **Spawn handler** (`src/lib/server/plan_actions.ts`): `spawnTimProcess()` (internal) uses `Bun.spawn` with `{ detached: true }` to create a process that survives web server restarts (including HMR). Pipes stderr for ~500ms to detect early failures, then calls `.unref()`. Public wrappers `spawnGenerateProcess()` and `spawnAgentProcess()` pass the appropriate CLI args. The spawned process connects back to the web server via HeadlessAdapter WebSocket and appears as a new session.
+- **Spawn handler** (`src/lib/server/plan_actions.ts`): `spawnTimProcess()` (internal) uses `Bun.spawn` with `{ detached: true }` to create a process that survives web server restarts (including HMR). Pipes stderr for ~500ms to detect early failures, then calls `.unref()`. Public wrappers `spawnGenerateProcess()` and `spawnAgentProcess()` pass the appropriate CLI args. The spawned process starts an embedded WebSocket server and writes a session info file; the discovery client detects and connects to it, making it appear as a new session.
 - **Session lookup** (`SessionManager.hasActiveSessionForPlan(planUuid, command?)`): Checks whether an active session exists for a given plan UUID. The `command` parameter is optional — when omitted, matches any active session regardless of command type. Used without a command filter for duplicate prevention across all plan-scoped commands.
 - **Launch lock** (`src/lib/server/launch_lock.ts`): In-memory per-plan lock (keyed by UUID, stored on `globalThis` for HMR safety) bridging the gap between process spawn and WebSocket session registration. Exported as a separate module because SvelteKit remote function files can only export `command()` results. Subscribes to `SessionManager.subscribe('session:update')` to clear locks when sessions register.
 - **Primary workspace query** (`getPrimaryWorkspacePath()` in `db_queries.ts`): Resolves the primary workspace path for a project, used as the cwd for spawned processes.

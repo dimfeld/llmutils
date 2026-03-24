@@ -831,6 +831,7 @@ export class SessionManager {
         session.sessionInfo = {
           command: message.command,
           interactive: message.interactive,
+          sessionId: message.sessionId,
           planId: message.planId,
           planUuid: message.planUuid,
           planTitle: message.planTitle,

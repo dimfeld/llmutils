@@ -8,6 +8,7 @@ describe('hooks.server init', () => {
     const sessionContext = await import('./session_context.js');
     (sessionContext.setSessionManager as unknown as (manager: null) => void)(null);
     (sessionContext.setWebSocketServerHandle as unknown as (server: null) => void)(null);
+    sessionContext.setSessionDiscoveryClient(null);
     sessionContext.setSessionInitPromise(null);
     const globalState = globalThis as typeof globalThis & {
       [sessionShutdownKey]?: { cleanup: (() => void) | null };
@@ -20,6 +21,7 @@ describe('hooks.server init', () => {
     const sessionContext = await import('./session_context.js');
     (sessionContext.setSessionManager as unknown as (manager: null) => void)(null);
     (sessionContext.setWebSocketServerHandle as unknown as (server: null) => void)(null);
+    sessionContext.setSessionDiscoveryClient(null);
     sessionContext.setSessionInitPromise(null);
     const globalState = globalThis as typeof globalThis & {
       [sessionShutdownKey]?: { cleanup: (() => void) | null };
@@ -29,6 +31,7 @@ describe('hooks.server init', () => {
     vi.resetModules();
     vi.clearAllMocks();
     vi.doUnmock('$lib/server/init.js');
+    vi.doUnmock('$lib/server/session_discovery.js');
     vi.doUnmock('$lib/server/ws_server.js');
   });
 
@@ -127,5 +130,44 @@ describe('hooks.server init', () => {
 
     expect(offSpy).toHaveBeenCalledWith('SIGTERM', sigtermHandler);
     expect(offSpy).toHaveBeenCalledWith('SIGINT', sigintHandler);
+  });
+
+  test('init failure only tears down resources created during that attempt', async () => {
+    const config = { headless: { url: 'ws://localhost:8123/tim-agent' } };
+    const db = { fake: true };
+    const getServerContext = vi.fn().mockResolvedValue({ config, db });
+    const reusedServerHandle = { port: 8123, stop: vi.fn() };
+    const reusedManager = { reused: true };
+    const failingDiscoveryClient = {
+      start: vi.fn().mockRejectedValue(new Error('discovery boom')),
+      stop: vi.fn(),
+    };
+
+    vi.doMock('$lib/server/init.js', () => ({ getServerContext }));
+    class FailingSessionDiscoveryClient {
+      constructor() {
+        return failingDiscoveryClient;
+      }
+    }
+
+    vi.doMock('$lib/server/session_discovery.js', () => ({
+      SessionDiscoveryClient: FailingSessionDiscoveryClient,
+    }));
+
+    const sessionContext = await import('./session_context.js');
+    (sessionContext.setSessionManager as unknown as (manager: object) => void)(reusedManager);
+    sessionContext.setWebSocketServerHandle(reusedServerHandle as any);
+    sessionContext.setSessionDiscoveryClient(null);
+
+    const hooks = await import('../../hooks.server.js');
+
+    await expect(hooks.init()).rejects.toThrow('discovery boom');
+
+    expect(failingDiscoveryClient.stop).toHaveBeenCalledTimes(1);
+    expect(reusedServerHandle.stop).not.toHaveBeenCalled();
+    expect(sessionContext.getSessionManager()).toBe(reusedManager);
+    expect(sessionContext.getWebSocketServerHandle()).toBe(reusedServerHandle);
+    expect(sessionContext.getSessionDiscoveryClient()).toBeNull();
+    expect(sessionContext.getSessionInitPromise()).toBeNull();
   });
 });

@@ -260,7 +260,6 @@ export async function handleAgentCommand(
       enabled: !isTunnelActive(),
       command: 'agent',
       interactive: options.nonInteractive !== true,
-      config,
       plan: headlessPlanSummary,
       callback: async () => timAgent(resolvedPlanFilePath, options, globalCliOptions),
     });

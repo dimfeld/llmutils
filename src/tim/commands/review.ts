@@ -795,7 +795,6 @@ export async function handleReviewCommand(
             createHeadlessAdapterForCommand({
               command: 'review',
               interactive: false,
-              config,
               plan: planSummary,
             })
           );
@@ -803,7 +802,6 @@ export async function handleReviewCommand(
           headlessAdapter = await createHeadlessAdapterForCommand({
             command: 'review',
             interactive: false,
-            config,
             plan: planSummary,
           });
         }

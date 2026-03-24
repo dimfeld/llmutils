@@ -280,7 +280,6 @@ describe('runWithHeadlessAdapterIfEnabled', () => {
           enabled: true,
           command: 'agent',
           interactive: false,
-          config: {},
           plan: { id: 166, title: 'headless mode' },
           callback: async () => getLoggerAdapter(),
         })
@@ -300,7 +299,6 @@ describe('runWithHeadlessAdapterIfEnabled', () => {
         enabled: false,
         command: 'review',
         interactive: false,
-        config: {},
         callback: async () => getLoggerAdapter(),
       })
     );
@@ -316,7 +314,6 @@ describe('runWithHeadlessAdapterIfEnabled', () => {
           enabled: true,
           command: 'review',
           interactive: false,
-          config: {},
           callback: async () => {
             throw new Error('boom');
           },
@@ -345,7 +342,6 @@ describe('createHeadlessAdapterForCommand', () => {
       createHeadlessAdapterForCommand({
         command: 'review',
         interactive: false,
-        config: { headless: { url: 'ws://127.0.0.1:9/tim-agent' } },
         plan: { id: 42, title: 'review plan' },
       })
     );
@@ -362,7 +358,6 @@ describe('createHeadlessAdapterForCommand', () => {
     const headlessAdapter = await createHeadlessAdapterForCommand({
       command: 'review',
       interactive: false,
-      config: { headless: { url: 'ws://127.0.0.1:9/tim-agent' } },
       plan: { id: 42, title: 'review plan' },
     });
 
@@ -392,7 +387,6 @@ describe('createHeadlessAdapterForCommand', () => {
     const headlessAdapter = await createHeadlessAdapterForCommand({
       command: 'agent',
       interactive: true,
-      config: { headless: { url: 'ws://127.0.0.1:9/tim-agent' } },
     });
 
     try {
@@ -411,7 +405,6 @@ describe('createHeadlessAdapterForCommand', () => {
     const noServerAdapter = await createHeadlessAdapterForCommand({
       command: 'chat',
       interactive: true,
-      config: { headless: { url: 'ws://127.0.0.1:9/tim-agent' } },
     });
 
     try {
@@ -442,7 +435,6 @@ describe('createHeadlessAdapterForCommand', () => {
     const headlessAdapter = await createHeadlessAdapterForCommand({
       command: 'agent',
       interactive: false,
-      config: { headless: { url: 'ws://127.0.0.1:9/tim-agent' } },
     });
 
     try {
@@ -475,7 +467,6 @@ describe('createHeadlessAdapterForCommand', () => {
         createHeadlessAdapterForCommand({
           command: 'agent',
           interactive: false,
-          config: { headless: { url: 'ws://127.0.0.1:9/tim-agent' } },
         })
       ).rejects.toThrow(/Invalid TIM_SERVER_PORT/);
       delete process.env.TIM_SERVER_PORT;
@@ -491,7 +482,6 @@ describe('createHeadlessAdapterForCommand', () => {
     const headlessAdapter = await createHeadlessAdapterForCommand({
       command: 'generate',
       interactive: false,
-      config: { headless: { url: 'ws://127.0.0.1:9/tim-agent' } },
     });
 
     const port = (headlessAdapter as any).sessionServer.port as number;
@@ -532,7 +522,6 @@ describe('updateHeadlessSessionInfo', () => {
         const headlessAdapter = await createHeadlessAdapterForCommand({
           command: 'agent',
           interactive: false,
-          config: { headless: { url: 'ws://127.0.0.1:9/tim-agent' } },
           plan: { id: 42, title: 'session update test' },
         });
 

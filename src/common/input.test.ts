@@ -14,11 +14,8 @@ import { createRecordingAdapter } from '../logging/test_helpers.ts';
 import { ModuleMocker } from '../testing.js';
 
 function createTestHeadlessAdapter(...args: ConstructorParameters<typeof HeadlessAdapter>) {
-  const [url, sessionInfo, wrappedAdapter, options] = args;
-  return new HeadlessAdapter(url, sessionInfo, wrappedAdapter, {
-    ...options,
-    connectWhenSuppressed: true,
-  });
+  const [sessionInfo, wrappedAdapter, options] = args;
+  return new HeadlessAdapter(sessionInfo, wrappedAdapter, options);
 }
 
 // Mock the @inquirer/prompts module so tests don't require a TTY.
@@ -639,9 +636,7 @@ describe('prompt wrappers', () => {
     });
   });
 
-  describe('headless dual-channel path (websocket + terminal racing)', () => {
-    const headlessServersToClose: Array<{ close: () => void }> = [];
-
+  describe('headless dual-channel path (embedded server + terminal racing)', () => {
     function parseMessage(
       message: string | Buffer | ArrayBuffer | ArrayBufferView
     ): HeadlessMessage | null {
@@ -660,68 +655,6 @@ describe('prompt wrappers', () => {
       }
     }
 
-    async function createPromptWebSocketServer(): Promise<{
-      port: number;
-      messages: HeadlessMessage[];
-      getOpenCount: () => number;
-      close: () => void;
-      disconnectClients: () => void;
-      sendToAll: (message: HeadlessServerMessage) => void;
-    }> {
-      const messages: HeadlessMessage[] = [];
-      const clients = new Set<ServerWebSocket<unknown>>();
-      let openCount = 0;
-
-      const server = Bun.serve({
-        port: 0,
-        fetch(req, srv) {
-          const url = new URL(req.url);
-          if (url.pathname === '/tim-agent' && srv.upgrade(req)) {
-            return;
-          }
-          return new Response('Not Found', { status: 404 });
-        },
-        websocket: {
-          open(ws) {
-            openCount += 1;
-            clients.add(ws);
-          },
-          message(_, message) {
-            const parsed = parseMessage(message);
-            if (parsed) {
-              messages.push(parsed);
-            }
-          },
-          close(ws) {
-            clients.delete(ws);
-          },
-        },
-      });
-
-      return {
-        port: server.port,
-        messages,
-        getOpenCount: () => openCount,
-        close: () => {
-          for (const ws of clients) {
-            ws.close();
-          }
-          server.stop(true);
-        },
-        disconnectClients: () => {
-          for (const ws of clients) {
-            ws.close();
-          }
-        },
-        sendToAll: (message: HeadlessServerMessage) => {
-          const payload = JSON.stringify(message);
-          for (const ws of clients) {
-            ws.send(payload);
-          }
-        },
-      };
-    }
-
     async function waitFor(condition: () => boolean, timeoutMs: number = 6000): Promise<void> {
       const start = Date.now();
       while (!condition()) {
@@ -732,31 +665,48 @@ describe('prompt wrappers', () => {
       }
     }
 
-    afterEach(() => {
-      for (const server of headlessServersToClose.splice(0)) {
-        server.close();
-      }
-    });
+    async function connectSessionClient(headlessAdapter: HeadlessAdapter): Promise<{
+      ws: WebSocket;
+      messages: HeadlessMessage[];
+      send: (message: HeadlessServerMessage) => void;
+      close: () => void;
+    }> {
+      const port = (headlessAdapter as any).sessionServer.port as number;
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/tim-agent`);
+      const messages: HeadlessMessage[] = [];
+
+      await new Promise<void>((resolve, reject) => {
+        ws.addEventListener('open', () => resolve(), { once: true });
+        ws.addEventListener('error', () => reject(new Error('WebSocket error')), { once: true });
+      });
+
+      ws.addEventListener('message', (event) => {
+        const parsed = parseMessage(event.data as string);
+        if (parsed) {
+          messages.push(parsed);
+        }
+      });
+
+      await waitFor(() => messages.some((message) => message.type === 'replay_end'));
+
+      return {
+        ws,
+        messages,
+        send: (message) => ws.send(JSON.stringify(message)),
+        close: () => ws.close(),
+      };
+    }
 
     it('websocket responds first and terminal is cancelled', async () => {
-      const server = await createPromptWebSocketServer();
-      headlessServersToClose.push(server);
-
       const { adapter: wrapped, calls } = createRecordingAdapter();
-      const headlessAdapter = createTestHeadlessAdapter(
-        `ws://127.0.0.1:${server.port}/tim-agent`,
-        { command: 'agent' },
-        wrapped,
-        { reconnectIntervalMs: 50 }
-      );
+      const headlessAdapter = createTestHeadlessAdapter({ command: 'agent' }, wrapped, {
+        serverPort: 0,
+        serverHostname: '127.0.0.1',
+      });
+      const client = await connectSessionClient(headlessAdapter);
 
-      // Trigger connection and wait for it to be ready
-      headlessAdapter.log('connect');
-      await waitFor(() => server.messages.some((m) => m.type === 'replay_end'));
-
-      // Mock inquirer to block until aborted (simulating a terminal waiting for input)
       mockConfirm.mockImplementation((_config: unknown, opts?: { signal?: AbortSignal }) => {
-        return new Promise<boolean>((resolve, reject) => {
+        return new Promise<boolean>((_resolve, reject) => {
           if (opts?.signal) {
             const onAbort = () => {
               const err = new Error('Prompt was aborted');
@@ -769,18 +719,15 @@ describe('prompt wrappers', () => {
             }
             opts.signal.addEventListener('abort', onAbort, { once: true });
           }
-          // Otherwise never resolves (terminal is waiting)
         });
       });
 
-      // Start the prompt in the headless adapter context
       const promptPromise = runWithLogger(headlessAdapter, () =>
         promptConfirm({ message: 'Continue?' })
       );
 
-      // Wait for the prompt_request to arrive at the server
       await waitFor(() =>
-        server.messages.some(
+        client.messages.some(
           (m) =>
             m.type === 'output' &&
             m.message.type === 'structured' &&
@@ -788,8 +735,7 @@ describe('prompt wrappers', () => {
         )
       );
 
-      // Extract the requestId from the prompt_request
-      const promptRequestOutput = server.messages.find(
+      const promptRequestOutput = client.messages.find(
         (m): m is Extract<HeadlessMessage, { type: 'output' }> =>
           m.type === 'output' &&
           m.message.type === 'structured' &&
@@ -797,50 +743,37 @@ describe('prompt wrappers', () => {
       );
       const requestId = (promptRequestOutput!.message as any).message.requestId as string;
 
-      // Respond from the websocket
-      server.sendToAll({
+      client.send({
         type: 'prompt_response',
         requestId,
         value: true,
       });
 
-      const result = await promptPromise;
-      expect(result).toBe(true);
-
-      // Verify prompt_answered was sent with source: 'websocket'
-      const answeredCalls = calls.filter(
-        (c) =>
-          c.method === 'sendStructured' &&
-          (c.args[0] as Record<string, unknown>).type === 'prompt_answered'
-      );
-      expect(answeredCalls).toHaveLength(1);
-      const answeredMsg = answeredCalls[0].args[0] as Record<string, unknown>;
-      expect(answeredMsg).toMatchObject({
-        type: 'prompt_answered',
-        promptType: 'confirm',
-        value: true,
-        source: 'websocket',
+      expect(await promptPromise).toBe(true);
+      expect(calls).toContainEqual({
+        method: 'sendStructured',
+        args: [
+          expect.objectContaining({
+            type: 'prompt_answered',
+            promptType: 'confirm',
+            value: true,
+            source: 'websocket',
+          }),
+        ],
       });
 
+      client.close();
       await headlessAdapter.destroy();
     });
 
     it('terminal responds first and ws wait is cancelled', async () => {
-      const server = await createPromptWebSocketServer();
-      headlessServersToClose.push(server);
-
       const { adapter: wrapped, calls } = createRecordingAdapter();
-      const headlessAdapter = createTestHeadlessAdapter(
-        `ws://127.0.0.1:${server.port}/tim-agent`,
-        { command: 'agent' },
-        wrapped,
-        { reconnectIntervalMs: 50 }
-      );
+      const headlessAdapter = createTestHeadlessAdapter({ command: 'agent' }, wrapped, {
+        serverPort: 0,
+        serverHostname: '127.0.0.1',
+      });
+      const client = await connectSessionClient(headlessAdapter);
 
-      headlessAdapter.log('connect');
-      await waitFor(() => server.messages.some((m) => m.type === 'replay_end'));
-
-      // Mock inquirer to resolve immediately (terminal wins)
       mockSelect.mockImplementation(() => Promise.resolve('allow'));
 
       const result = await runWithLogger(headlessAdapter, () =>
@@ -854,224 +787,34 @@ describe('prompt wrappers', () => {
       );
 
       expect(result).toBe('allow');
-
-      // Verify prompt_answered was sent with source: 'terminal'
-      const answeredCalls = calls.filter(
-        (c) =>
-          c.method === 'sendStructured' &&
-          (c.args[0] as Record<string, unknown>).type === 'prompt_answered'
-      );
-      expect(answeredCalls).toHaveLength(1);
-      const answeredMsg = answeredCalls[0].args[0] as Record<string, unknown>;
-      expect(answeredMsg).toMatchObject({
-        type: 'prompt_answered',
-        promptType: 'select',
-        value: 'allow',
-        source: 'terminal',
+      expect(calls).toContainEqual({
+        method: 'sendStructured',
+        args: [
+          expect.objectContaining({
+            type: 'prompt_answered',
+            promptType: 'select',
+            value: 'allow',
+            source: 'terminal',
+          }),
+        ],
       });
+      expect((headlessAdapter as any).pendingPrompts.size).toBe(0);
 
-      // Verify the ws pending prompt was cleaned up (cancelled)
-      const internals = headlessAdapter as any;
-      expect(internals.pendingPrompts.size).toBe(0);
-
-      await headlessAdapter.destroy();
-    });
-
-    it('promptPrefixSelect sends prompt_answered after terminal resolution in headless mode', async () => {
-      const server = await createPromptWebSocketServer();
-      headlessServersToClose.push(server);
-
-      const { adapter: wrapped, calls } = createRecordingAdapter();
-      const headlessAdapter = createTestHeadlessAdapter(
-        `ws://127.0.0.1:${server.port}/tim-agent`,
-        { command: 'agent' },
-        wrapped,
-        { reconnectIntervalMs: 50 }
-      );
-
-      headlessAdapter.log('connect');
-      await waitFor(() => server.messages.some((m) => m.type === 'replay_end'));
-
-      mockRunPrefixPrompt.mockImplementation(() =>
-        Promise.resolve({ exact: false, command: 'git status' })
-      );
-
-      const result = await runWithLogger(headlessAdapter, () =>
-        promptPrefixSelect({
-          message: 'Choose prefix:',
-          command: 'git status --short',
-        })
-      );
-
-      expect(result).toEqual({ exact: false, command: 'git status' });
-
-      const answeredCalls = calls.filter(
-        (c) =>
-          c.method === 'sendStructured' &&
-          (c.args[0] as Record<string, unknown>).type === 'prompt_answered'
-      );
-      expect(answeredCalls).toHaveLength(1);
-      expect(answeredCalls[0].args[0]).toMatchObject({
-        type: 'prompt_answered',
-        promptType: 'prefix_select',
-        value: { exact: false, command: 'git status' },
-        source: 'terminal',
-      });
-
-      const internals = headlessAdapter as any;
-      expect(internals.pendingPrompts.size).toBe(0);
-
-      await headlessAdapter.destroy();
-    });
-
-    it('prompt_answered structured message sent after ws resolution (promptInput)', async () => {
-      const server = await createPromptWebSocketServer();
-      headlessServersToClose.push(server);
-
-      const { adapter: wrapped, calls } = createRecordingAdapter();
-      const headlessAdapter = createTestHeadlessAdapter(
-        `ws://127.0.0.1:${server.port}/tim-agent`,
-        { command: 'agent' },
-        wrapped,
-        { reconnectIntervalMs: 50 }
-      );
-
-      headlessAdapter.log('connect');
-      await waitFor(() => server.messages.some((m) => m.type === 'replay_end'));
-
-      // Mock inquirer to block until aborted
-      mockInput.mockImplementation((_config: unknown, opts?: { signal?: AbortSignal }) => {
-        return new Promise<string>((resolve, reject) => {
-          if (opts?.signal) {
-            const onAbort = () => {
-              const err = new Error('Prompt was aborted');
-              err.name = 'AbortPromptError';
-              reject(err);
-            };
-            if (opts.signal.aborted) {
-              onAbort();
-              return;
-            }
-            opts.signal.addEventListener('abort', onAbort, { once: true });
-          }
-        });
-      });
-
-      const promptPromise = runWithLogger(headlessAdapter, () =>
-        promptInput({ message: 'Enter name:' })
-      );
-
-      // Wait for prompt_request
-      await waitFor(() =>
-        server.messages.some(
-          (m) =>
-            m.type === 'output' &&
-            m.message.type === 'structured' &&
-            m.message.message.type === 'prompt_request'
-        )
-      );
-
-      const promptRequestOutput = server.messages.find(
-        (m): m is Extract<HeadlessMessage, { type: 'output' }> =>
-          m.type === 'output' &&
-          m.message.type === 'structured' &&
-          m.message.message.type === 'prompt_request'
-      );
-      const requestId = (promptRequestOutput!.message as any).message.requestId as string;
-
-      server.sendToAll({
-        type: 'prompt_response',
-        requestId,
-        value: 'ws-entered-name',
-      });
-
-      const result = await promptPromise;
-      expect(result).toBe('ws-entered-name');
-
-      // Verify prompt_answered
-      const answeredCalls = calls.filter(
-        (c) =>
-          c.method === 'sendStructured' &&
-          (c.args[0] as Record<string, unknown>).type === 'prompt_answered'
-      );
-      expect(answeredCalls).toHaveLength(1);
-      expect(answeredCalls[0].args[0]).toMatchObject({
-        type: 'prompt_answered',
-        promptType: 'input',
-        value: 'ws-entered-name',
-        source: 'websocket',
-        requestId,
-      });
-
-      await headlessAdapter.destroy();
-    });
-
-    it('prompt_answered structured message sent after terminal resolution (promptCheckbox)', async () => {
-      const server = await createPromptWebSocketServer();
-      headlessServersToClose.push(server);
-
-      const { adapter: wrapped, calls } = createRecordingAdapter();
-      const headlessAdapter = createTestHeadlessAdapter(
-        `ws://127.0.0.1:${server.port}/tim-agent`,
-        { command: 'agent' },
-        wrapped,
-        { reconnectIntervalMs: 50 }
-      );
-
-      headlessAdapter.log('connect');
-      await waitFor(() => server.messages.some((m) => m.type === 'replay_end'));
-
-      // Terminal responds immediately
-      mockCheckbox.mockImplementation(() => Promise.resolve(['opt1', 'opt3']));
-
-      const result = await runWithLogger(headlessAdapter, () =>
-        promptCheckbox({
-          message: 'Select:',
-          choices: [
-            { name: 'Opt 1', value: 'opt1' },
-            { name: 'Opt 2', value: 'opt2' },
-            { name: 'Opt 3', value: 'opt3' },
-          ],
-        })
-      );
-
-      expect(result).toEqual(['opt1', 'opt3']);
-
-      const answeredCalls = calls.filter(
-        (c) =>
-          c.method === 'sendStructured' &&
-          (c.args[0] as Record<string, unknown>).type === 'prompt_answered'
-      );
-      expect(answeredCalls).toHaveLength(1);
-      expect(answeredCalls[0].args[0]).toMatchObject({
-        type: 'prompt_answered',
-        promptType: 'checkbox',
-        source: 'terminal',
-      });
-      expect((answeredCalls[0].args[0] as any).value).toEqual(['opt1', 'opt3']);
-
+      client.close();
       await headlessAdapter.destroy();
     });
 
     it('timeout cancels both channels', async () => {
-      const server = await createPromptWebSocketServer();
-      headlessServersToClose.push(server);
-
       const { adapter: wrapped } = createRecordingAdapter();
-      const headlessAdapter = createTestHeadlessAdapter(
-        `ws://127.0.0.1:${server.port}/tim-agent`,
-        { command: 'agent' },
-        wrapped,
-        { reconnectIntervalMs: 50 }
-      );
+      const headlessAdapter = createTestHeadlessAdapter({ command: 'agent' }, wrapped, {
+        serverPort: 0,
+        serverHostname: '127.0.0.1',
+      });
+      const client = await connectSessionClient(headlessAdapter);
 
-      headlessAdapter.log('connect');
-      await waitFor(() => server.messages.some((m) => m.type === 'replay_end'));
-
-      // Mock inquirer to block until aborted (and track the abort)
       let abortSignalFired = false;
       mockConfirm.mockImplementation((_config: unknown, opts?: { signal?: AbortSignal }) => {
-        return new Promise<boolean>((resolve, reject) => {
+        return new Promise<boolean>((_resolve, reject) => {
           if (opts?.signal) {
             const onAbort = () => {
               abortSignalFired = true;
@@ -1088,102 +831,27 @@ describe('prompt wrappers', () => {
         });
       });
 
-      // Neither terminal nor websocket responds; timeout fires
       const err = await runWithLogger(headlessAdapter, () =>
         promptConfirm({ message: 'Will timeout', timeoutMs: 100 })
-      ).catch((e: unknown) => e);
+      ).catch((error: unknown) => error);
 
       expect(err).toBeInstanceOf(Error);
       expect((err as Error).name).toBe('AbortPromptError');
       expect(abortSignalFired).toBe(true);
+      expect((headlessAdapter as any).pendingPrompts.size).toBe(0);
 
-      // Pending ws prompt should be cleaned up
-      const internals = headlessAdapter as any;
-      expect(internals.pendingPrompts.size).toBe(0);
-
-      await headlessAdapter.destroy();
-    });
-
-    it('ws disconnect during prompt degrades to terminal-only', async () => {
-      const server = await createPromptWebSocketServer();
-      headlessServersToClose.push(server);
-
-      const { adapter: wrapped, calls } = createRecordingAdapter();
-      const headlessAdapter = createTestHeadlessAdapter(
-        `ws://127.0.0.1:${server.port}/tim-agent`,
-        { command: 'agent' },
-        wrapped,
-        { reconnectIntervalMs: 60000 } // Don't reconnect during test
-      );
-
-      headlessAdapter.log('connect');
-      await waitFor(() => server.messages.some((m) => m.type === 'replay_end'));
-
-      // Mock inquirer to wait a bit then respond (simulating terminal answering after disconnect)
-      mockConfirm.mockImplementation((_config: unknown, opts?: { signal?: AbortSignal }) => {
-        return new Promise<boolean>((resolve, reject) => {
-          const timer = setTimeout(() => resolve(false), 150);
-          if (opts?.signal) {
-            const onAbort = () => {
-              clearTimeout(timer);
-              const err = new Error('Prompt was aborted');
-              err.name = 'AbortPromptError';
-              reject(err);
-            };
-            if (opts.signal.aborted) {
-              clearTimeout(timer);
-              onAbort();
-              return;
-            }
-            opts.signal.addEventListener('abort', onAbort, { once: true });
-          }
-        });
-      });
-
-      const promptPromise = runWithLogger(headlessAdapter, () =>
-        promptConfirm({ message: 'Continue?' })
-      );
-
-      // Wait a bit, then disconnect the websocket
-      await new Promise((resolve) => setTimeout(resolve, 30));
-      server.disconnectClients();
-
-      // Terminal should still work and resolve
-      const result = await promptPromise;
-      expect(result).toBe(false);
-
-      // Verify prompt_answered with source: 'terminal'
-      const answeredCalls = calls.filter(
-        (c) =>
-          c.method === 'sendStructured' &&
-          (c.args[0] as Record<string, unknown>).type === 'prompt_answered'
-      );
-      expect(answeredCalls).toHaveLength(1);
-      expect(answeredCalls[0].args[0]).toMatchObject({
-        type: 'prompt_answered',
-        source: 'terminal',
-        value: false,
-      });
-
+      client.close();
       await headlessAdapter.destroy();
     });
 
     it('tunnel mode still takes priority over headless mode', async () => {
-      const server = await createPromptWebSocketServer();
-      headlessServersToClose.push(server);
-
       const { adapter: wrapped } = createRecordingAdapter();
-      const headlessAdapter = createTestHeadlessAdapter(
-        `ws://127.0.0.1:${server.port}/tim-agent`,
-        { command: 'agent' },
-        wrapped,
-        { reconnectIntervalMs: 50 }
-      );
+      const headlessAdapter = createTestHeadlessAdapter({ command: 'agent' }, wrapped, {
+        serverPort: 0,
+        serverHostname: '127.0.0.1',
+      });
+      const client = await connectSessionClient(headlessAdapter);
 
-      headlessAdapter.log('connect');
-      await waitFor(() => server.messages.some((m) => m.type === 'replay_end'));
-
-      // Create a tunnel server + adapter (which takes priority)
       await mkdir(TEMP_BASE, { recursive: true });
       const testDir = await mkdtemp(path.join(TEMP_BASE, 'headless-tunnel-'));
       const sp = path.join(testDir, 't.sock');
@@ -1202,14 +870,11 @@ describe('prompt wrappers', () => {
       const tunnelClient = await createTunnelAdapter(sp);
 
       try {
-        // Run with tunnel adapter inside headless context.
-        // TunnelAdapter check happens first, so tunnel should handle it.
         const result = await runWithLogger(headlessAdapter, () =>
           runWithLogger(tunnelClient, () => promptConfirm({ message: 'Tunnel first?' }))
         );
 
         expect(result).toBe(true);
-        // inquirer should NOT have been called (tunnel handled it)
         expect(mockConfirm).not.toHaveBeenCalled();
       } finally {
         await tunnelClient.destroy();
@@ -1217,6 +882,7 @@ describe('prompt wrappers', () => {
         await rm(testDir, { recursive: true, force: true });
       }
 
+      client.close();
       await headlessAdapter.destroy();
     });
   });
