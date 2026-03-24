@@ -31,9 +31,14 @@ tasks:
       fields: title (string), command (string), mode (enum run|daemon,
       optional), check (string, optional), shutdown (string, optional),
       workingDirectory (string, optional), env (record, optional), allowFailure
-      (boolean, optional). Add lifecycle object to timConfigSchema containing
-      commands array. Do NOT use .default() in zod schemas. Export
-      LifecycleCommand type. Regenerate schema/tim-config-schema.json."
+      (boolean, optional), onlyWorkspaceType (enum auto|standard|primary,
+      optional). When onlyWorkspaceType is set, the command (both startup and
+      shutdown) is skipped unless the current workspace matches that type. This
+      allows e.g. shutdown commands that should only run in auto workspaces to
+      avoid running when using a primary workspace manually. Add lifecycle
+      object to timConfigSchema containing commands array. Do NOT use
+      .default() in zod schemas. Export LifecycleCommand type. Regenerate
+      schema/tim-config-schema.json."
   - title: Update config merging for lifecycle
     done: false
     description: "In src/tim/configLoader.ts, add special merge handling for the
@@ -47,39 +52,51 @@ tasks:
   - title: Create LifecycleManager class
     done: false
     description: "Create src/tim/lifecycle.ts with LifecycleManager class.
-      Constructor takes lifecycle.commands array and baseDir. Implement
-      startup() method: iterate commands in order; for daemon mode with check,
-      run check and skip if exit 0; for daemon mode, spawn as child process via
+      Constructor takes lifecycle.commands array, baseDir, and current
+      workspace type (WorkspaceType | undefined, undefined when not in a
+      workspace). Implement startup() method: iterate commands in order; first
+      check onlyWorkspaceType — if set and the current workspace type does not
+      match (or there is no workspace), skip the command entirely (mark as
+      skipped, same as check-based skip). Then for daemon mode with check, run
+      check and skip if exit 0; for daemon mode, spawn as child process via
       Bun.spawn and track handle with background stdout/stderr readers; for run
       mode, execute and wait like executePostApplyCommand. check is available on
       any command with shutdown behavior (has shutdown field or is mode:
       daemon). Implement shutdown() method: process in reverse order; for
-      skipped commands skip shutdown; for daemons with explicit shutdown run
-      that command then kill if still alive; for daemons without shutdown kill
-      process (SIGTERM, 5s timeout, then SIGKILL); for run commands with
-      shutdown run the shutdown command. Errors during shutdown are logged but
-      dont prevent subsequent steps. Implement killDaemons() synchronous method
-      for CleanupRegistry fallback."
+      skipped commands (whether by onlyWorkspaceType or check) skip shutdown;
+      for daemons with explicit shutdown run that command then kill if still
+      alive; for daemons without shutdown kill process (SIGTERM, 5s timeout,
+      then SIGKILL); for run commands with shutdown run the shutdown command.
+      Errors during shutdown are logged but dont prevent subsequent steps.
+      Implement killDaemons() synchronous method for CleanupRegistry fallback."
   - title: Write lifecycle manager tests
     done: false
     description: "Create src/tim/lifecycle.test.ts with comprehensive tests. Startup
       tests: run-and-wait executes in order; daemon spawned and tracked;
       allowFailure behavior; check succeeds on daemon skips startup and
       suppresses shutdown; check succeeds on run-with-shutdown skips both; check
-      fails runs normally; check ignored on commands without shutdown behavior.
+      fails runs normally; check ignored on commands without shutdown behavior;
+      onlyWorkspaceType skips command when workspace type does not match;
+      onlyWorkspaceType skips command when no workspace is active;
+      onlyWorkspaceType allows command when workspace type matches.
       Shutdown tests: reverse order; daemon killed (SIGTERM then SIGKILL) when
       no explicit shutdown; daemon with explicit shutdown runs command then
       kills if alive; run with shutdown runs command; skipped commands have
-      shutdown suppressed; errors dont block other shutdowns; shutdown runs even
-      after startup errors. Integration test with mixed command types."
+      shutdown suppressed (both check-skipped and workspaceType-skipped);
+      errors dont block other shutdowns; shutdown runs even after startup
+      errors. Integration test with mixed command types."
   - title: Integrate lifecycle into agent command
     done: false
     description: "In src/tim/commands/agent/agent.ts timAgent() function: after
       config loaded and workspace set up (around line 314), create
-      LifecycleManager from config.lifecycle?.commands and currentBaseDir. Call
-      lifecycleManager.startup() before execution loop (before line 429).
-      Register lifecycleManager.killDaemons() with CleanupRegistry as sync
-      fallback. In the finally block (around line 1086), call await
+      LifecycleManager from config.lifecycle?.commands, currentBaseDir, and
+      the current workspace type. The workspace type can be resolved via
+      getWorkspaceInfoByPath(currentBaseDir)?.workspaceType after
+      setupWorkspace() completes. Pass it to the LifecycleManager constructor
+      so onlyWorkspaceType filtering works. Call lifecycleManager.startup()
+      before execution loop (before line 429). Register
+      lifecycleManager.killDaemons() with CleanupRegistry as sync fallback. In
+      the finally block (around line 1086), call await
       lifecycleManager.shutdown() before summary collection, log file closing,
       and notifications. If no lifecycle commands configured, skip lifecycle
       manager creation entirely."
@@ -90,9 +107,10 @@ tasks:
       with all fields; examples showing managed daemon (dev server), external
       daemon (Docker compose with check), run-and-wait with cleanup, and simple
       run-and-wait; explanation of check command behavior (available on commands
-      with shutdown behavior); signal handling behavior (shutdown runs on
-      SIGINT/SIGTERM/SIGHUP); config merging behavior (commands concatenated
-      across global/repo/local)."
+      with shutdown behavior); onlyWorkspaceType filtering (restrict commands
+      to specific workspace types like auto); signal handling behavior
+      (shutdown runs on SIGINT/SIGTERM/SIGHUP); config merging behavior
+      (commands concatenated across global/repo/local)."
 ---
 
 We want to be able to define commands that can be run in the project level configuration file. For each command, we should be able to run it in daemon mode and then kill it at the end, or just run it and wait for it to finish. These commands should be run when doing the run command. We should also be able to define commands that run when the run command exits, and this should include on a SIGINT or similar.
