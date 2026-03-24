@@ -257,6 +257,11 @@ export interface PromptAnsweredMessage extends StructuredMessageBase {
   source: 'terminal' | 'websocket';
 }
 
+export interface PromptCancelledMessage extends StructuredMessageBase {
+  type: 'prompt_cancelled';
+  requestId: string;
+}
+
 export interface PlanDiscoveryMessage extends StructuredMessageBase {
   type: 'plan_discovery';
   planId: number;
@@ -298,6 +303,7 @@ export type StructuredMessage =
   | UserTerminalInputMessage
   | PromptRequestMessage
   | PromptAnsweredMessage
+  | PromptCancelledMessage
   | PlanDiscoveryMessage
   | WorkspaceInfoMessage;
 
@@ -329,6 +335,7 @@ export const structuredMessageTypeList = [
   'user_terminal_input',
   'prompt_request',
   'prompt_answered',
+  'prompt_cancelled',
   'plan_discovery',
   'workspace_info',
 ] as const satisfies readonly StructuredMessage['type'][];

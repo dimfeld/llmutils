@@ -343,6 +343,14 @@ describe('tunnel_prompt_handler', () => {
       expect(response.error).toBeDefined();
       expect(response.error).toContain('aborted');
       expect(response.value).toBeUndefined();
+
+      // Should emit prompt_cancelled structured message
+      expect(mockSendStructured).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'prompt_cancelled',
+          requestId: msg.requestId,
+        })
+      );
     });
   });
 
@@ -382,6 +390,14 @@ describe('tunnel_prompt_handler', () => {
       expect(response.error).toBeDefined();
       expect(response.error).toContain('TTY not available');
       expect(response.value).toBeUndefined();
+
+      // Should emit prompt_cancelled structured message
+      expect(mockSendStructured).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'prompt_cancelled',
+          requestId: msg.requestId,
+        })
+      );
     });
 
     it('responds with error when inquirer throws a non-Error value', async () => {

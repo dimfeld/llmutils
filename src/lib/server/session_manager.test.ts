@@ -347,6 +347,15 @@ describe('lib/server/session_manager', () => {
       },
       {
         message: {
+          type: 'prompt_cancelled',
+          timestamp,
+          requestId: 'req-1',
+        },
+        category: 'lifecycle',
+        bodyType: 'text',
+      },
+      {
+        message: {
           type: 'plan_discovery',
           timestamp,
           planId: 229,
@@ -890,6 +899,49 @@ describe('lib/server/session_manager', () => {
     expect(onPromptCleared).toHaveBeenCalledWith({
       connectionId: 'conn-1',
       requestId: 'req-2',
+    });
+    expect(session.activePrompt).toBeNull();
+  });
+
+  test('clears active prompt and emits prompt-cleared when prompt is cancelled', () => {
+    const onPromptCleared = vi.fn();
+
+    manager.subscribe('session:prompt-cleared', onPromptCleared);
+
+    manager.handleWebSocketConnect('conn-1', vi.fn());
+    manager.handleWebSocketMessage('conn-1', {
+      type: 'output',
+      seq: 1,
+      message: {
+        type: 'structured',
+        message: {
+          type: 'prompt_request',
+          timestamp: '2026-03-17T10:00:01.000Z',
+          requestId: 'req-cancelled',
+          promptType: 'confirm',
+          promptConfig: { message: 'Continue?' },
+          timeoutMs: 1000,
+        },
+      },
+    });
+    manager.handleWebSocketMessage('conn-1', {
+      type: 'output',
+      seq: 2,
+      message: {
+        type: 'structured',
+        message: {
+          type: 'prompt_cancelled',
+          timestamp: '2026-03-17T10:00:02.000Z',
+          requestId: 'req-cancelled',
+        },
+      },
+    });
+
+    const session = manager.getSessionSnapshot().sessions[0];
+
+    expect(onPromptCleared).toHaveBeenCalledWith({
+      connectionId: 'conn-1',
+      requestId: 'req-cancelled',
     });
     expect(session.activePrompt).toBeNull();
   });

@@ -301,6 +301,9 @@ export function formatStructuredMessage(message: StructuredMessage): string {
         // Silent for local console -- the prompt result is already visible from the inquirer prompt.
         // Transport adapters still forward the structured event for UI state tracking.
         return '';
+      case 'prompt_cancelled':
+        // Silent for local console -- prompt cancellation is represented by the prompt disappearing.
+        return '';
       case 'plan_discovery':
         return chalk.green(`Found ready plan: ${message.planId} - ${message.title}`);
       case 'workspace_info':

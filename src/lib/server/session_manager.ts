@@ -574,6 +574,14 @@ function summarizeStructuredMessage(message: StructuredMessage): MessageFormatti
             .join(' | '),
         },
       };
+    case 'prompt_cancelled':
+      return {
+        category: 'lifecycle',
+        body: {
+          type: 'text',
+          text: `Prompt cancelled: ${message.requestId}`,
+        },
+      };
     case 'plan_discovery':
       return {
         category: 'lifecycle',
@@ -1236,6 +1244,27 @@ export class SessionManager {
       if (cleared && !session.isReplaying) {
         this.emit('session:prompt-cleared', { connectionId, requestId });
       }
+      return;
+    }
+
+    if (message.type === 'prompt_cancelled') {
+      const requestId = message.requestId;
+      let cleared = false;
+
+      if (session.activePrompt?.requestId === requestId) {
+        session.activePrompt = null;
+        cleared = true;
+      }
+      const internals = this.internals.get(connectionId);
+      if (internals?.deferredPromptEvent?.requestId === requestId) {
+        internals.deferredPromptEvent = null;
+        cleared = true;
+      }
+
+      if (cleared && !session.isReplaying) {
+        this.emit('session:prompt-cleared', { connectionId, requestId });
+      }
+      return;
     }
   }
 

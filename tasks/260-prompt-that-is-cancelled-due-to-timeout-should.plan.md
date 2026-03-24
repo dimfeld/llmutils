@@ -5,28 +5,28 @@ goal: ""
 id: 260
 uuid: b3a56bfd-a1f0-4565-b612-16fa6e180448
 generatedBy: agent
-status: pending
+status: done
 priority: medium
 planGeneratedAt: 2026-03-24T00:36:20.721Z
 promptsGeneratedAt: 2026-03-24T00:36:20.721Z
 createdAt: 2026-03-23T19:17:13.967Z
-updatedAt: 2026-03-24T00:36:20.721Z
+updatedAt: 2026-03-24T08:30:28.236Z
 tasks:
   - title: Define PromptCancelledMessage type
-    done: false
+    done: true
     description: "In src/logging/structured_messages.ts: Add a new
       PromptCancelledMessage interface with type prompt_cancelled and requestId
       string (no reason field). Add it to the StructuredMessage union type and
       to structuredMessageTypeList."
   - title: Add sendPromptCancelled() helper and wire into raceWithWebSocket
-    done: false
+    done: true
     description: "In src/common/input.ts: Add sendPromptCancelled(promptMessage:
       PromptRequestMessage) function that calls sendStructured() with a
       PromptCancelledMessage. Then in raceWithWebSocket() at the inner catch
       block (line ~177-179 where both channels failed), call
       sendPromptCancelled(promptMessage) before re-throwing the error."
   - title: Handle prompt_cancelled in SessionManager
-    done: false
+    done: true
     description: "In src/lib/server/session_manager.ts in
       handleStructuredSideEffects(): Add a handler for prompt_cancelled that
       mirrors the prompt_answered handler — clear session.activePrompt if
@@ -34,12 +34,23 @@ tasks:
       emit session:prompt-cleared event if anything was cleared and not
       replaying."
   - title: Add tests for prompt cancellation
-    done: false
+    done: true
     description: Add unit test in src/common/input.test.ts verifying that when a
       prompt times out in raceWithWebSocket, a prompt_cancelled structured
       message is sent with the correct requestId. Add unit test in
       SessionManager tests verifying that processing a prompt_cancelled message
       clears activePrompt and emits session:prompt-cleared.
+changedFiles:
+  - src/common/input.test.ts
+  - src/common/input.ts
+  - src/lib/server/session_manager.test.ts
+  - src/lib/server/session_manager.ts
+  - src/logging/console_formatter.ts
+  - src/logging/structured_messages.test.ts
+  - src/logging/structured_messages.ts
+  - src/logging/tunnel_prompt_handler.test.ts
+  - src/logging/tunnel_prompt_handler.ts
+  - src/logging/tunnel_server.ts
 tags: []
 ---
 
@@ -228,3 +239,31 @@ No changes are needed in the client-side store (`session_state_events.ts`) since
 - **Centralized in `input.ts`**: All prompt lifecycle management is already in this file. Adding cancellation here keeps the pattern consistent.
 - **Only `raceWithWebSocket` path**: Terminal-only paths don't have a web UI connected, so sending cancellation there would be unnecessary.
 - **Using existing `session:prompt-cleared` event**: The client-side already handles this event correctly. No UI changes needed — the existing reactive clearing mechanism works for both answers and cancellations.
+
+## Changes Made During Implementation
+
+- **Tunnel prompt handler also needed fix**: The plan originally stated the tunnel path didn't need changes, but review identified that `tunnel_prompt_handler.ts` emits `prompt_request` for UI visibility, so it also needs to emit `prompt_cancelled` on timeout/error to avoid stale prompts from tunneled agents.
+- **Additional files modified**: `console_formatter.ts` and `tunnel_server.ts` needed updates for exhaustive switch/validation coverage of the new message type.
+
+## Current Progress
+### Current State
+- All 4 tasks complete. prompt_cancelled lifecycle fully implemented and tested.
+### Completed (So Far)
+- PromptCancelledMessage type defined in structured_messages.ts
+- sendPromptCancelled() helper added in input.ts, wired into raceWithWebSocket failure path
+- SessionManager handles prompt_cancelled to clear activePrompt and emit session:prompt-cleared
+- Tests added in input.test.ts, session_manager.test.ts, structured_messages.test.ts, and tunnel_prompt_handler.test.ts
+- Tunnel prompt handler also emits prompt_cancelled on timeout/error paths
+- console_formatter.ts and tunnel_server.ts updated for exhaustive coverage
+### Remaining
+- None
+### Next Iteration Guidance
+- None
+### Decisions / Changes
+- Added prompt_cancelled to tunnel_prompt_handler.ts beyond original plan scope (review caught this gap)
+- No reason field on PromptCancelledMessage — kept minimal with just type and requestId
+### Lessons Learned
+- When adding a new structured message type, remember to update ALL exhaustive switch/validation paths (console_formatter, tunnel_server, structured_messages.test.ts fixture list) — not just the primary handler
+- The tunnel prompt handler is a separate prompt lifecycle from the headless/raceWithWebSocket path; changes to prompt lifecycle messages need to cover both paths
+### Risks / Blockers
+- None

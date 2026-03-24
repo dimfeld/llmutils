@@ -84,6 +84,7 @@ describe('structured_messages', () => {
         value: true,
         source: 'terminal',
       },
+      { type: 'prompt_cancelled', timestamp, requestId: 'test-id' },
       { type: 'plan_discovery', timestamp, planId: 1, title: 'Plan' },
       { type: 'workspace_info', timestamp, path: '/tmp/ws' },
     ];

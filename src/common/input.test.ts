@@ -804,8 +804,8 @@ describe('prompt wrappers', () => {
       await headlessAdapter.destroy();
     });
 
-    it('timeout cancels both channels', async () => {
-      const { adapter: wrapped } = createRecordingAdapter();
+    it('timeout cancels both channels and emits prompt_cancelled', async () => {
+      const { adapter: wrapped, calls } = createRecordingAdapter();
       const headlessAdapter = createTestHeadlessAdapter({ command: 'agent' }, wrapped, {
         serverPort: 0,
         serverHostname: '127.0.0.1',
@@ -839,6 +839,18 @@ describe('prompt wrappers', () => {
       expect((err as Error).name).toBe('AbortPromptError');
       expect(abortSignalFired).toBe(true);
       expect((headlessAdapter as any).pendingPrompts.size).toBe(0);
+      const structured = calls.filter((call) => call.method === 'sendStructured');
+      expect(structured).toHaveLength(2);
+      const requestMessage = structured[0]!.args[0] as Record<string, unknown>;
+      const cancelledMessage = structured[1]!.args[0] as Record<string, unknown>;
+      expect(requestMessage).toMatchObject({
+        type: 'prompt_request',
+        promptType: 'confirm',
+      });
+      expect(cancelledMessage).toMatchObject({
+        type: 'prompt_cancelled',
+        requestId: requestMessage.requestId,
+      });
 
       client.close();
       await headlessAdapter.destroy();

@@ -125,6 +125,14 @@ function sendPromptAnswered(
   });
 }
 
+function sendPromptCancelled(promptMessage: PromptRequestMessage): void {
+  sendStructured({
+    type: 'prompt_cancelled',
+    timestamp: new Date().toISOString(),
+    requestId: promptMessage.requestId,
+  });
+}
+
 /**
  * Races a terminal inquirer prompt against a websocket prompt response.
  * Whichever channel responds first wins; the loser is cancelled.
@@ -175,7 +183,8 @@ async function raceWithWebSocket<T>(
       sendPromptAnswered(promptMessage, wsValue, 'websocket');
       return wsValue as T;
     } catch {
-      // WS was also cancelled/failed -- rethrow the original error (likely timeout)
+      // WS was also cancelled/failed -- broadcast cancellation before rethrowing.
+      sendPromptCancelled(promptMessage);
       throw err;
     }
   } finally {

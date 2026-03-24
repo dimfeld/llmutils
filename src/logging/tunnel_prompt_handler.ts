@@ -143,6 +143,11 @@ export function createPromptRequestHandler(): PromptRequestHandler {
         requestId,
         error: err instanceof Error ? err.message : String(err),
       });
+      sendStructured({
+        type: 'prompt_cancelled',
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
     } finally {
       inputSource?.resume();
       if (timer) {
