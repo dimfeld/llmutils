@@ -553,7 +553,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     const maxSteps = options.steps ? parseInt(options.steps, 10) : Infinity;
 
     // Check if batch mode is enabled (default is true, disabled by --serial-tasks)
-    if (!options.serialTasks) {
+    if (!options.serialTasks && !isShuttingDown()) {
       try {
         const res = await executeBatchMode(
           {

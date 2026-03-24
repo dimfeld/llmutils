@@ -776,20 +776,30 @@ describe('LifecycleManager', () => {
     expect(processExists(childPid)).toBeFalse();
   }, 10000);
 
-  test('shutdown continues after shutdown command failures', async () => {
-    const events = await startupAndShutdown([
-      {
-        title: 'first',
-        command: appendLineCommand(logFile, 'first'),
-        shutdown: 'exit 4',
-      },
-      {
-        title: 'second',
-        command: appendLineCommand(logFile, 'second'),
-        shutdown: appendLineCommand(logFile, 'second-stop'),
-      },
-    ]);
+  test('shutdown continues after shutdown command failures and reports errors', async () => {
+    const manager = new LifecycleManager(
+      [
+        {
+          title: 'first',
+          command: appendLineCommand(logFile, 'first'),
+          shutdown: 'exit 4',
+        },
+        {
+          title: 'second',
+          command: appendLineCommand(logFile, 'second'),
+          shutdown: appendLineCommand(logFile, 'second-stop'),
+        },
+      ],
+      tempDir,
+      undefined
+    );
+    await manager.startup();
 
+    // shutdown() should throw with the aggregated errors but still run all shutdown commands
+    await expect(manager.shutdown()).rejects.toThrow('Lifecycle shutdown had 1 failure(s)');
+
+    const events = await readLines(logFile);
+    // second-stop still ran despite first's shutdown failing
     expect(events).toEqual(['first', 'second', 'second-stop']);
   });
 

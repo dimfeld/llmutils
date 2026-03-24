@@ -2,6 +2,7 @@ import path from 'node:path';
 import { error, log, warn, writeStderr, writeStdout } from '../logging.js';
 import type { LifecycleCommand } from './configSchema.js';
 import type { WorkspaceType } from './db/workspace.js';
+import { isShuttingDown } from './shutdown_state.js';
 
 type LifecycleMode = 'run' | 'daemon';
 type StartupState = 'pending' | 'skipped' | 'succeeded' | 'failed' | 'running';
@@ -40,6 +41,11 @@ async function readOutput(
   for await (const chunk of stream) {
     writer(decoder.decode(chunk, { stream: true }));
   }
+  // Flush any remaining bytes from the decoder
+  const remaining = decoder.decode();
+  if (remaining) {
+    writer(remaining);
+  }
 }
 
 export class LifecycleManager {
@@ -61,6 +67,10 @@ export class LifecycleManager {
 
   async startup(): Promise<void> {
     for (const state of this.states) {
+      if (isShuttingDown()) {
+        break;
+      }
+
       const { command, mode } = state;
 
       if (command.onlyWorkspaceType && command.onlyWorkspaceType !== this.workspaceType) {
@@ -163,6 +173,8 @@ export class LifecycleManager {
     }
     this.shutdownStarted = true;
 
+    const errors: Error[] = [];
+
     for (const state of [...this.states].reverse()) {
       if (!state.shouldRunShutdown) {
         continue;
@@ -178,8 +190,10 @@ export class LifecycleManager {
               command: command.shutdown,
             });
             if (exitCode !== 0) {
-              warn(
-                `Lifecycle shutdown command "${command.title}" failed with exit code ${exitCode}.`
+              errors.push(
+                new Error(
+                  `Lifecycle shutdown command "${command.title}" failed with exit code ${exitCode}.`
+                )
               );
             }
           }
@@ -194,14 +208,23 @@ export class LifecycleManager {
             command: command.shutdown,
           });
           if (exitCode !== 0) {
-            warn(
-              `Lifecycle shutdown command "${command.title}" failed with exit code ${exitCode}.`
+            errors.push(
+              new Error(
+                `Lifecycle shutdown command "${command.title}" failed with exit code ${exitCode}.`
+              )
             );
           }
         }
       } catch (err) {
         error(`Error while shutting down lifecycle command "${command.title}": ${err as Error}`);
+        errors.push(err instanceof Error ? err : new Error(String(err)));
       }
+    }
+
+    if (errors.length > 0) {
+      throw new Error(
+        `Lifecycle shutdown had ${errors.length} failure(s):\n${errors.map((e) => `  - ${e.message}`).join('\n')}`
+      );
     }
   }
 
