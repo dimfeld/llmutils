@@ -1,6 +1,6 @@
 import type { LoggerAdapter } from './adapter.js';
 import { writeToLogFile } from './common.js';
-import { debug } from '../common/process.js';
+import { debug } from '../common/process_state.js';
 import { inspect } from 'node:util';
 import type { StructuredMessage } from './structured_messages.js';
 import { formatStructuredMessage } from './console_formatter.js';

@@ -53,7 +53,7 @@ The codebase is organized into several main modules with improved modularity and
 
 - Terminal interaction (`terminal.ts`)
 - Prompt transport (`common/input.ts` + structured messages): `prompt_request.promptConfig` supports optional `header` and `question` fields for richer GUI rendering in addition to `message`
-- Config path utilities (`config_paths.ts`) with `getTimConfigRoot()` for XDG-aware config directory resolution
+- Config path utilities (`config_paths.ts`) with `getTimConfigRoot()` for XDG-aware config directory resolution and `getTimCacheDir()` for XDG-aware cache directory (`~/.cache/tim/`)
 - Input pause registry (`input_pause_registry.ts`): `PausableInputSource` interface and getter/setter for coordinating stdin between terminal input readers and inquirer prompts without coupling `common` to feature modules
 - Prefix selection prompt (`prefix_prompt.ts`): shared custom prompt + `runPrefixPrompt()` used by permissions flows; `prefix_prompt_utils.ts` contains `extractCommandAfterCd()` and `PrefixPromptResult` type, extracted for client-safe reuse in the web UI
 - GitHub integration utilities in `github/` subdirectory
@@ -90,12 +90,15 @@ The codebase is organized into several main modules with improved modularity and
   - `ready_plans.ts`: Implements readiness detection, filtering, and sorting used by the CLI and MCP list tools
   - `utils/task_operations.ts`: Centralizes task prompting helpers (interactive input, title search, selection menus) used by both CLI commands and MCP tools for task management
 - MCP server (`mcp/generate_mode.ts`) now focuses on registering prompts and delegates tool handlers to the relevant command modules
+- Session server infrastructure in `session_server/` for per-process embedded WebSocket servers:
+  - `runtime_dir.ts`: Session info file management in `~/.cache/tim/sessions/` (XDG-aware). `SessionInfoFile` interface with sessionId, pid, port, command, workspacePath, planId, planTitle, gitRemote, startedAt, token fields. Provides `getTimSessionDir()`, `writeSessionInfoFile()`, `removeSessionInfoFile()`, `readSessionInfoFile()`, `listSessionInfoFiles()`. Registers `process.on('exit')` cleanup handlers for PID file removal; `removeSessionInfoFile()` auto-unregisters cleanup handlers.
+  - `embedded_server.ts`: `startEmbeddedServer(options)` creates a `Bun.serve()` WebSocket server on `/tim-agent`. Options: port (default 0 for random), hostname (default `127.0.0.1`), bearerToken (optional, validated with `crypto.timingSafeEqual`), onConnect/onMessage/onDisconnect callbacks. Returns `EmbeddedServerHandle` with port, stop(), broadcast(), sendTo(), connectedClients. Supports multiple simultaneous client connections.
 - Executor system in `executors/` for different LLM integration approaches. The two main executors are claude_code and codex_cli. The others are not used much anymore.
 - **Automatic Parent-Child Relationship Maintenance**: All commands (`add`, `set`, `validate`) work together to ensure bidirectional consistency in the dependency graph, automatically updating parent plans when child relationships are created, modified, or removed
 
 3. **Web interface** (`src/lib/`, `src/routes/`): SvelteKit-based plans browser and real-time sessions monitor (see `docs/web-interface.md` for conventions and gotchas)
    - Server initialization: `src/lib/server/init.ts` provides lazy-init singleton via `getServerContext()` (async) returning `{ config, db }`.
-   - Sessions infrastructure: WebSocket server (`src/lib/server/ws_server.ts`) on port 8123 accepts agent connections; session manager (`src/lib/server/session_manager.ts`) tracks sessions and categorizes messages; session context singleton (`src/lib/server/session_context.ts`) survives HMR; started from `src/hooks.server.ts` init function
+   - Sessions infrastructure: WebSocket server (`src/lib/server/ws_server.ts`) on port 8123 accepts agent connections using shared message parsing from `src/logging/headless_message_utils.ts`; session manager (`src/lib/server/session_manager.ts`) tracks sessions and categorizes messages; session context singleton (`src/lib/server/session_context.ts`) survives HMR; started from `src/hooks.server.ts` init function
    - SSE streaming: `src/routes/api/sessions/events/+server.ts` streams session events to browser; action routes under `src/routes/api/sessions/[connectionId]/` for respond, input, dismiss; shared helpers in `src/lib/server/session_routes.ts`
    - DB query helpers: `src/lib/server/db_queries.ts` provides web-specific enriched queries (`getProjectsWithMetadata`, `getPlansForProject`, `getPlanDetail`, `getWorkspacesForProject`, `getWorkspaceDetail`) with computed display statuses (`blocked`, `recently_done`) derived from dependency resolution
    - Server-only constraint: All DB imports must be in `$lib/server/` or `+page.server.ts` files — bun:sqlite cannot be imported client-side

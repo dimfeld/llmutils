@@ -151,7 +151,31 @@ export function updateHeadlessSessionInfo(patch: Partial<HeadlessSessionInfo>): 
 
 function createHeadlessAdapter(url: string, sessionInfo: HeadlessSessionInfo): HeadlessAdapter {
   const wrappedAdapter = getLoggerAdapter();
+  const noServer = process.env.TIM_NO_SERVER === '1';
+  const portStr = process.env.TIM_SERVER_PORT?.trim();
+  let serverPort: number | undefined;
+  if (!noServer) {
+    if (portStr) {
+      const parsed = Number.parseInt(portStr, 10);
+      if (Number.isNaN(parsed) || parsed < 0 || parsed > 65535 || String(parsed) !== portStr) {
+        throw new Error(
+          `Invalid TIM_SERVER_PORT "${portStr}". Must be an integer between 0 and 65535.`
+        );
+      }
+      serverPort = parsed;
+    } else {
+      serverPort = 0;
+    }
+  }
+  const bearerToken = process.env.TIM_WS_BEARER_TOKEN?.trim() || undefined;
+  const serverHostname = process.env.TIM_SERVER_HOSTNAME?.trim() || undefined;
+  const options = {
+    serverPort,
+    serverHostname,
+    bearerToken,
+  };
+
   return wrappedAdapter
-    ? new HeadlessAdapter(url, sessionInfo, wrappedAdapter)
-    : new HeadlessAdapter(url, sessionInfo);
+    ? new HeadlessAdapter(url, sessionInfo, wrappedAdapter, options)
+    : new HeadlessAdapter(url, sessionInfo, undefined, options);
 }

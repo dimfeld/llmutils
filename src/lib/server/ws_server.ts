@@ -4,7 +4,7 @@ import { inspect } from 'node:util';
 import type { TimConfig } from '$tim/configSchema.js';
 import { resolveHeadlessUrl } from '$tim/headless.js';
 
-import type { HeadlessMessage } from '../../logging/headless_protocol.js';
+import { parseHeadlessMessage } from '../../logging/headless_message_utils.js';
 import type { MessagePayload, SessionManager } from './session_manager.js';
 
 const DEFAULT_WS_PORT = 8123;
@@ -75,8 +75,6 @@ export function resolveHeadlessServerPort(config: Pick<TimConfig, 'headless'>): 
   return resolveHeadlessServerConfig(config).port;
 }
 
-const VALID_HEADLESS_TYPES = new Set(['session_info', 'replay_start', 'replay_end', 'output']);
-
 function truncateLogString(value: string): string {
   if (value.length <= MAX_LOG_STRING_LENGTH) {
     return value;
@@ -101,25 +99,6 @@ function sanitizeMessageForLog(value: unknown): unknown {
   }
 
   return value;
-}
-
-function parseHeadlessMessage(payload: string): HeadlessMessage | null {
-  try {
-    const parsed = JSON.parse(payload);
-    if (typeof parsed !== 'object' || parsed === null || !('type' in parsed)) {
-      return null;
-    }
-    if (!VALID_HEADLESS_TYPES.has(parsed.type)) {
-      return null;
-    }
-    // Validate required fields for output messages
-    if (parsed.type === 'output' && (typeof parsed.seq !== 'number' || !parsed.message)) {
-      return null;
-    }
-    return parsed as HeadlessMessage;
-  } catch {
-    return null;
-  }
 }
 
 export function startWebSocketServer(

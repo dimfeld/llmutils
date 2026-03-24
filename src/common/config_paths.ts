@@ -14,3 +14,17 @@ export function getTimConfigRoot(): string {
 
   return path.join(os.homedir(), '.config', 'tim');
 }
+
+export function getTimCacheDir(): string {
+  if (process.platform === 'win32') {
+    const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+    return path.join(localAppData, 'tim');
+  }
+
+  const xdgCacheHome = process.env.XDG_CACHE_HOME?.trim();
+  if (xdgCacheHome) {
+    return path.join(xdgCacheHome, 'tim');
+  }
+
+  return path.join(os.homedir(), '.cache', 'tim');
+}

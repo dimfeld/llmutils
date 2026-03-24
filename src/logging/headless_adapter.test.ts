@@ -1,8 +1,13 @@
-import { afterEach, describe, expect, it, setDefaultTimeout } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from 'bun:test';
+import * as fs from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { HeadlessAdapter } from './headless_adapter.ts';
 import type { HeadlessMessage, HeadlessServerMessage } from './headless_protocol.ts';
 import { createRecordingAdapter } from './test_helpers.ts';
 import { debug, setDebug } from '../common/process.ts';
+import { readSessionInfoFile } from '../tim/session_server/runtime_dir.ts';
 
 function createTestHeadlessAdapter(...args: ConstructorParameters<typeof HeadlessAdapter>) {
   const [url, sessionInfo, wrappedAdapter, options] = args;
@@ -132,10 +137,26 @@ async function createWebSocketServer(options?: { port?: number; closeOnOpen?: bo
 
 const serversToClose: Array<{ close: () => void }> = [];
 const TEST_RECONNECT_INTERVAL_MS = 50;
+const originalXdgCacheHome = process.env.XDG_CACHE_HOME;
+let tempCacheDir: string;
 
-afterEach(() => {
+beforeEach(async () => {
+  tempCacheDir = await mkdtemp(path.join(os.tmpdir(), 'tim-headless-adapter-test-'));
+  process.env.XDG_CACHE_HOME = tempCacheDir;
+});
+
+afterEach(async () => {
   for (const server of serversToClose.splice(0)) {
     server.close();
+  }
+  if (originalXdgCacheHome === undefined) {
+    delete process.env.XDG_CACHE_HOME;
+  } else {
+    process.env.XDG_CACHE_HOME = originalXdgCacheHome;
+  }
+  if (tempCacheDir) {
+    await rm(tempCacheDir, { recursive: true, force: true });
+    tempCacheDir = '';
   }
 });
 
@@ -1925,6 +1946,196 @@ describe('HeadlessAdapter user input handling', () => {
 
     expect(received).toEqual(['first', 'second']);
 
+    await adapter.destroy();
+  });
+});
+
+describe('HeadlessAdapter embedded server mode', () => {
+  async function openEmbeddedClient(port: number): Promise<WebSocket> {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/tim-agent`);
+
+    await new Promise<void>((resolve, reject) => {
+      ws.addEventListener('open', () => resolve(), { once: true });
+      ws.addEventListener('error', () => reject(new Error(`WebSocket error for ${port}`)), {
+        once: true,
+      });
+    });
+
+    return ws;
+  }
+
+  async function collectClientMessages(ws: WebSocket, count: number): Promise<HeadlessMessage[]> {
+    const messages: HeadlessMessage[] = [];
+    while (messages.length < count) {
+      messages.push(
+        await new Promise<HeadlessMessage>((resolve, reject) => {
+          ws.addEventListener('message', (event) => resolve(parseMessage(event.data)!), {
+            once: true,
+          });
+          ws.addEventListener('error', () => reject(new Error('WebSocket error while waiting')), {
+            once: true,
+          });
+        })
+      );
+    }
+    return messages;
+  }
+
+  it('writes a pid file, replays history to embedded clients, and cleans up on destroy', async () => {
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = createTestHeadlessAdapter(
+      'ws://127.0.0.1:1/tim-agent',
+      {
+        command: 'agent',
+        planId: 222,
+        planTitle: 'tim runs websocket server',
+        workspacePath: '/tmp/workspace-a',
+        gitRemote: 'github.com/owner/repo',
+      },
+      wrapped,
+      {
+        reconnectIntervalMs: TEST_RECONNECT_INTERVAL_MS,
+        serverPort: 0,
+      }
+    );
+
+    const internals = adapter as any;
+    expect(internals.sessionServer.port).toBeGreaterThan(0);
+    expect(readSessionInfoFile(process.pid)).toMatchObject({
+      pid: process.pid,
+      port: internals.sessionServer.port,
+      command: 'agent',
+      planId: 222,
+      planTitle: 'tim runs websocket server',
+      workspacePath: '/tmp/workspace-a',
+      gitRemote: 'github.com/owner/repo',
+    });
+
+    adapter.log('before connect');
+
+    const client = await openEmbeddedClient(internals.sessionServer.port);
+    const replayMessages = await collectClientMessages(client, 4);
+    expect(replayMessages).toEqual([
+      {
+        type: 'session_info',
+        command: 'agent',
+        planId: 222,
+        planTitle: 'tim runs websocket server',
+        workspacePath: '/tmp/workspace-a',
+        gitRemote: 'github.com/owner/repo',
+      },
+      { type: 'replay_start' },
+      expect.objectContaining({
+        type: 'output',
+        message: { type: 'log', args: ['before connect'] },
+      }),
+      { type: 'replay_end' },
+    ]);
+
+    adapter.writeStdout('live output\n');
+    const liveMessage = await collectClientMessages(client, 1);
+    expect(liveMessage).toEqual([
+      expect.objectContaining({
+        type: 'output',
+        message: { type: 'stdout', data: 'live output\n' },
+      }),
+    ]);
+
+    adapter.updateSessionInfo({ workspacePath: '/tmp/workspace-b' });
+    const sessionUpdate = await collectClientMessages(client, 1);
+    expect(sessionUpdate).toEqual([
+      expect.objectContaining({
+        type: 'session_info',
+        workspacePath: '/tmp/workspace-b',
+      }),
+    ]);
+    expect(readSessionInfoFile(process.pid)).toMatchObject({
+      workspacePath: '/tmp/workspace-b',
+    });
+
+    client.close();
+    await adapter.destroy();
+    expect(fs.existsSync(path.join(tempCacheDir, 'tim', 'sessions', `${process.pid}.json`))).toBe(
+      false
+    );
+  });
+
+  it('routes embedded client prompt responses and can run client and server modes together', async () => {
+    const remoteServer = await createWebSocketServer();
+    serversToClose.push(remoteServer);
+
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = createTestHeadlessAdapter(
+      `ws://127.0.0.1:${remoteServer.port}/tim-agent`,
+      { command: 'review' },
+      wrapped,
+      {
+        reconnectIntervalMs: 0,
+        serverPort: 0,
+      }
+    );
+
+    adapter.log('connect both');
+    await waitFor(() => remoteServer.messages.some((message) => message.type === 'replay_end'));
+
+    const embeddedPort = (adapter as any).sessionServer.port as number;
+    const embeddedClient = await openEmbeddedClient(embeddedPort);
+    await waitFor(() =>
+      remoteServer.messages.some(
+        (message) =>
+          message.type === 'output' &&
+          message.message.type === 'log' &&
+          message.message.args[0] === 'connect both'
+      )
+    );
+
+    const prompt = adapter.waitForPromptResponse('req-1');
+    embeddedClient.send(JSON.stringify({ type: 'prompt_response', requestId: 'req-1', value: 17 }));
+
+    await expect(prompt.promise).resolves.toBe(17);
+    embeddedClient.close();
+    await adapter.destroy();
+  });
+
+  it('uses the first prompt response received across embedded and remote server connections', async () => {
+    const remoteServer = await createPromptWebSocketServer();
+    serversToClose.push(remoteServer);
+
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = createTestHeadlessAdapter(
+      `ws://127.0.0.1:${remoteServer.port}/tim-agent`,
+      { command: 'review' },
+      wrapped,
+      {
+        reconnectIntervalMs: TEST_RECONNECT_INTERVAL_MS,
+        serverPort: 0,
+      }
+    );
+
+    adapter.log('prime both transports');
+    await waitFor(() => remoteServer.messages.some((message) => message.type === 'replay_end'));
+
+    const embeddedPort = (adapter as any).sessionServer.port as number;
+    const embeddedClient = await openEmbeddedClient(embeddedPort);
+    await collectClientMessages(embeddedClient, 3);
+
+    const prompt = adapter.waitForPromptResponse('req-first-wins');
+    embeddedClient.send(
+      JSON.stringify({
+        type: 'prompt_response',
+        requestId: 'req-first-wins',
+        value: 'embedded-value',
+      })
+    );
+    remoteServer.sendToAll({
+      type: 'prompt_response',
+      requestId: 'req-first-wins',
+      value: 'remote-value',
+    });
+
+    await expect(prompt.promise).resolves.toBe('embedded-value');
+
+    embeddedClient.close();
     await adapter.destroy();
   });
 });

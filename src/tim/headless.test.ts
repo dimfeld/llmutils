@@ -1,9 +1,14 @@
 import { afterAll, afterEach, beforeAll, describe, expect, mock, spyOn, test } from 'bun:test';
+import { mkdtemp, rm } from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { getLoggerAdapter, runWithLogger, type LoggerAdapter } from '../logging/adapter.js';
 import { HeadlessAdapter } from '../logging/headless_adapter.js';
+import type { HeadlessMessage } from '../logging/headless_protocol.js';
 import * as logging from '../logging.js';
 import { ModuleMocker } from '../testing.js';
 import type { StructuredMessage } from '../logging/structured_messages.js';
+import { listSessionInfoFiles } from './session_server/runtime_dir.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -19,6 +24,8 @@ let runWithHeadlessAdapterIfEnabled: typeof import('./headless.js').runWithHeadl
 let createHeadlessAdapterForCommand: typeof import('./headless.js').createHeadlessAdapterForCommand;
 let updateHeadlessSessionInfo: typeof import('./headless.js').updateHeadlessSessionInfo;
 let resetHeadlessWarningStateForTests: typeof import('./headless.js').resetHeadlessWarningStateForTests;
+const originalXdgCacheHome = process.env.XDG_CACHE_HOME;
+let tempCacheDir: string | undefined;
 
 beforeAll(async () => {
   await moduleMocker.mock('./assignments/workspace_identifier.js', () => ({
@@ -35,16 +42,63 @@ beforeAll(async () => {
   } = await import('./headless.js'));
 });
 
-afterEach(() => {
+afterEach(async () => {
   getRepositoryIdentitySpy.mockClear();
   delete process.env.TIM_HEADLESS_URL;
+  delete process.env.TIM_NO_SERVER;
+  delete process.env.TIM_SERVER_PORT;
+  delete process.env.TIM_SERVER_HOSTNAME;
+  delete process.env.TIM_WS_BEARER_TOKEN;
   delete process.env.WEZTERM_PANE;
+  if (originalXdgCacheHome === undefined) {
+    delete process.env.XDG_CACHE_HOME;
+  } else {
+    process.env.XDG_CACHE_HOME = originalXdgCacheHome;
+  }
+  if (tempCacheDir) {
+    await rm(tempCacheDir, { recursive: true, force: true });
+    tempCacheDir = undefined;
+  }
   resetHeadlessWarningStateForTests();
 });
 
 afterAll(() => {
   moduleMocker.clear();
 });
+
+async function waitFor(condition: () => boolean, timeoutMs: number = 4000): Promise<void> {
+  const start = Date.now();
+  while (!condition()) {
+    if (Date.now() - start > timeoutMs) {
+      throw new Error('Timed out waiting for condition');
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+async function openWebSocket(url: string): Promise<WebSocket> {
+  const ws = new WebSocket(url);
+
+  await new Promise<void>((resolve, reject) => {
+    ws.addEventListener('open', () => resolve(), { once: true });
+    ws.addEventListener('error', () => reject(new Error(`WebSocket error for ${url}`)), {
+      once: true,
+    });
+  });
+
+  return ws;
+}
+
+function waitForMessage(ws: WebSocket): Promise<HeadlessMessage> {
+  return new Promise((resolve, reject) => {
+    ws.addEventListener('message', (event) => resolve(JSON.parse(event.data as string)), {
+      once: true,
+    });
+    ws.addEventListener('error', () => reject(new Error('WebSocket error while waiting')), {
+      once: true,
+    });
+  });
+}
 
 describe('resolveHeadlessUrl', () => {
   test('uses TIM_HEADLESS_URL before config and default', () => {
@@ -299,6 +353,163 @@ describe('createHeadlessAdapterForCommand', () => {
     expect(headlessAdapter).toBeInstanceOf(HeadlessAdapter);
     expect((headlessAdapter as any).wrappedAdapter).toBe(wrappedAdapter);
     await headlessAdapter.destroy();
+  });
+
+  test('starts an embedded server by default and writes session metadata', async () => {
+    tempCacheDir = await mkdtemp(path.join(os.tmpdir(), 'tim-headless-test-'));
+    process.env.XDG_CACHE_HOME = tempCacheDir;
+
+    const headlessAdapter = await createHeadlessAdapterForCommand({
+      command: 'review',
+      interactive: false,
+      config: { headless: { url: 'ws://127.0.0.1:9/tim-agent' } },
+      plan: { id: 42, title: 'review plan' },
+    });
+
+    try {
+      expect((headlessAdapter as any).sessionServer.port).toBeGreaterThan(0);
+      expect(listSessionInfoFiles()).toEqual([
+        expect.objectContaining({
+          pid: process.pid,
+          command: 'review',
+          planId: 42,
+          planTitle: 'review plan',
+        }),
+      ]);
+    } finally {
+      await headlessAdapter.destroy();
+    }
+  });
+
+  test('honors TIM_SERVER_PORT, TIM_SERVER_HOSTNAME, TIM_WS_BEARER_TOKEN, and TIM_NO_SERVER', async () => {
+    tempCacheDir = await mkdtemp(path.join(os.tmpdir(), 'tim-headless-test-'));
+    process.env.XDG_CACHE_HOME = tempCacheDir;
+
+    process.env.TIM_SERVER_PORT = '0';
+    process.env.TIM_SERVER_HOSTNAME = '127.0.0.1';
+    process.env.TIM_WS_BEARER_TOKEN = 'secret-token';
+
+    const headlessAdapter = await createHeadlessAdapterForCommand({
+      command: 'agent',
+      interactive: true,
+      config: { headless: { url: 'ws://127.0.0.1:9/tim-agent' } },
+    });
+
+    try {
+      const sessionInfo = listSessionInfoFiles()[0];
+      expect(sessionInfo).toMatchObject({
+        pid: process.pid,
+        command: 'agent',
+        token: true,
+      });
+      expect((headlessAdapter as any).sessionServer.port).toBe(sessionInfo?.port);
+    } finally {
+      await headlessAdapter.destroy();
+    }
+
+    process.env.TIM_NO_SERVER = '1';
+    const noServerAdapter = await createHeadlessAdapterForCommand({
+      command: 'chat',
+      interactive: true,
+      config: { headless: { url: 'ws://127.0.0.1:9/tim-agent' } },
+    });
+
+    try {
+      expect((noServerAdapter as any).sessionServer).toBeUndefined();
+      expect(listSessionInfoFiles()).toEqual([]);
+    } finally {
+      await noServerAdapter.destroy();
+    }
+  });
+
+  test('uses a requested TIM_SERVER_PORT and enforces bearer auth on the embedded server', async () => {
+    tempCacheDir = await mkdtemp(path.join(os.tmpdir(), 'tim-headless-test-'));
+    process.env.XDG_CACHE_HOME = tempCacheDir;
+
+    const reservedPortServer = Bun.serve({
+      port: 0,
+      fetch() {
+        return new Response('ok');
+      },
+    });
+    const requestedPort = reservedPortServer.port;
+    reservedPortServer.stop(true);
+
+    process.env.TIM_SERVER_PORT = String(requestedPort);
+    process.env.TIM_SERVER_HOSTNAME = '127.0.0.1';
+    process.env.TIM_WS_BEARER_TOKEN = 'secret-token';
+
+    const headlessAdapter = await createHeadlessAdapterForCommand({
+      command: 'agent',
+      interactive: false,
+      config: { headless: { url: 'ws://127.0.0.1:9/tim-agent' } },
+    });
+
+    try {
+      expect((headlessAdapter as any).sessionServer.port).toBe(requestedPort);
+      expect(listSessionInfoFiles()).toEqual([
+        expect.objectContaining({
+          port: requestedPort,
+          token: true,
+        }),
+      ]);
+
+      const unauthorized = await fetch(`http://127.0.0.1:${requestedPort}/tim-agent`);
+      expect(unauthorized.status).toBe(401);
+
+      const authorized = await openWebSocket(
+        `ws://127.0.0.1:${requestedPort}/tim-agent?token=secret-token`
+      );
+      expect(await waitForMessage(authorized)).toMatchObject({ type: 'session_info' });
+      authorized.close();
+    } finally {
+      await headlessAdapter.destroy();
+    }
+  });
+
+  test('throws on invalid TIM_SERVER_PORT values', async () => {
+    for (const badPort of ['abc', '123abc', '-1', '65536', '3.14', '']) {
+      if (badPort === '') continue; // empty string falls back to port 0
+      process.env.TIM_SERVER_PORT = badPort;
+      await expect(
+        createHeadlessAdapterForCommand({
+          command: 'agent',
+          interactive: false,
+          config: { headless: { url: 'ws://127.0.0.1:9/tim-agent' } },
+        })
+      ).rejects.toThrow(/Invalid TIM_SERVER_PORT/);
+      delete process.env.TIM_SERVER_PORT;
+    }
+  });
+
+  test('respects TIM_SERVER_HOSTNAME and stops the embedded server on destroy', async () => {
+    tempCacheDir = await mkdtemp(path.join(os.tmpdir(), 'tim-headless-test-'));
+    process.env.XDG_CACHE_HOME = tempCacheDir;
+    process.env.TIM_SERVER_PORT = '0';
+    process.env.TIM_SERVER_HOSTNAME = '127.0.0.1';
+
+    const headlessAdapter = await createHeadlessAdapterForCommand({
+      command: 'generate',
+      interactive: false,
+      config: { headless: { url: 'ws://127.0.0.1:9/tim-agent' } },
+    });
+
+    const port = (headlessAdapter as any).sessionServer.port as number;
+    const sessionClient = await openWebSocket(`ws://127.0.0.1:${port}/tim-agent`);
+
+    try {
+      expect(await waitForMessage(sessionClient)).toMatchObject({
+        type: 'session_info',
+        command: 'generate',
+      });
+    } finally {
+      sessionClient.close();
+      await headlessAdapter.destroy();
+    }
+
+    await waitFor(() => listSessionInfoFiles().length === 0);
+
+    await expect(fetch(`http://127.0.0.1:${port}/tim-agent`)).rejects.toThrow();
   });
 });
 

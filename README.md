@@ -56,6 +56,25 @@ Use `tim workspace list`, `tim workspace add`, and `tim workspace update` to man
 
 PR status data (check runs, reviews, labels, merge state) is cached in the SQLite database and surfaced in the web interface. The CLI always force-refreshes from GitHub; the web UI uses stale-while-revalidate caching. Requires `GITHUB_TOKEN` environment variable for GitHub API access.
 
+## Embedded Session Server
+
+Tim long-running commands (`agent`, `generate`, `chat`, `review`, `run-prompt`) automatically start an embedded WebSocket server that allows external clients (such as the tim web interface) to connect and monitor the session in real time. Each process advertises itself via a session info file in `~/.cache/tim/sessions/` (respects `XDG_CACHE_HOME`), enabling discovery by the web UI or other tools.
+
+The embedded server runs alongside the existing client connection to the tim-gui WebSocket server — both modes operate simultaneously by default.
+
+### Environment Variables
+
+| Variable              | Description                                                                                                                                                                     |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TIM_SERVER_PORT`     | Port for the embedded server (default: `0` for random). If the port is unavailable, the process exits with an error.                                                            |
+| `TIM_NO_SERVER`       | Set to `1` to disable the embedded server (client-only mode).                                                                                                                   |
+| `TIM_SERVER_HOSTNAME` | Hostname to bind to (default: `127.0.0.1`). Set to `0.0.0.0` for remote/container access.                                                                                       |
+| `TIM_WS_BEARER_TOKEN` | When set, requires `Authorization: Bearer <token>` on WebSocket upgrade. The session info file records `token: true` (not the token itself) so consumers know auth is required. |
+
+### Session Info Files
+
+Each running process writes a JSON file at `~/.cache/tim/sessions/<pid>.json` containing the session ID, port, command, workspace path, plan info, git remote, and whether auth is required. These files are cleaned up automatically on process exit. Stale files from crashed processes can be detected by checking PID liveness.
+
 ## Web Interface
 
 Tim includes a SvelteKit-based web interface for browsing and managing plans. The server-side layer uses lazy initialization to load the tim configuration, sync plan files to the SQLite database, and serve enriched plan data with computed display statuses (e.g. blocked, recently done).

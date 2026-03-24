@@ -5,7 +5,7 @@ goal: ""
 id: 222
 uuid: 80e8e677-777a-4917-9d42-984dfca6d8f3
 generatedBy: agent
-status: pending
+status: done
 priority: medium
 parent: 221
 references:
@@ -13,10 +13,10 @@ references:
 planGeneratedAt: 2026-03-23T18:46:25.055Z
 promptsGeneratedAt: 2026-03-23T18:46:25.055Z
 createdAt: 2026-03-07T07:46:46.426Z
-updatedAt: 2026-03-23T18:46:25.056Z
+updatedAt: 2026-03-24T00:03:51.906Z
 tasks:
   - title: Create runtime directory utilities
-    done: false
+    done: true
     description: Create src/tim/session_server/runtime_dir.ts with
       getTimSessionDir() (XDG_CACHE_HOME-aware ~/.cache/tim/sessions/),
       writeSessionInfoFile(), removeSessionInfoFile(), readSessionInfoFile(),
@@ -27,7 +27,7 @@ tasks:
       command, workspacePath, planId, planTitle, gitRemote, startedAt, token
       fields.
   - title: Create embedded WebSocket server module
-    done: false
+    done: true
     description: "Create src/tim/session_server/embedded_server.ts with
       startEmbeddedServer(options). Uses Bun.serve() with WebSocket on
       /tim-agent path. Options: port (default 0), bearerToken (optional),
@@ -37,7 +37,7 @@ tasks:
       Returns handle with { port, stop(), broadcast(), sendTo(),
       connectedClients }. Supports multiple simultaneous client connections."
   - title: Extract shared protocol utilities
-    done: false
+    done: true
     description: Move parseHeadlessMessage() and message validation logic from
       src/lib/server/ws_server.ts into a shared location
       (src/logging/headless_message_utils.ts or add to
@@ -45,7 +45,7 @@ tasks:
       shared location. Both the existing tim-gui server and the new embedded
       server need this parsing logic.
   - title: Extend HeadlessAdapter with server mode
-    done: false
+    done: true
     description: "Extend HeadlessAdapter in src/logging/headless_adapter.ts to
       optionally start and manage the embedded server alongside its existing
       client connection. Add serverPort and bearerToken constructor options.
@@ -59,7 +59,7 @@ tasks:
       stop server and remove PID file. Register process.on(exit) for synchronous
       PID file cleanup."
   - title: Update headless.ts integration functions
-    done: false
+    done: true
     description: Modify createHeadlessAdapter() in src/tim/headless.ts to read env
       vars (TIM_SERVER_PORT, TIM_NO_SERVER, TIM_WS_BEARER_TOKEN) and pass server
       options to HeadlessAdapter. When TIM_NO_SERVER=1, skip server
@@ -69,13 +69,13 @@ tasks:
       automatically pick up env vars, so no changes needed in individual command
       files.
   - title: Unit tests for runtime directory utilities
-    done: false
+    done: true
     description: "Test src/tim/session_server/runtime_dir.ts:
       writing/reading/listing/removing PID files, directory creation with proper
       permissions, concurrent writes, stale file detection (file exists but PID
       is dead). Use temp directories for test isolation."
   - title: Unit tests for embedded server
-    done: false
+    done: true
     description: "Test src/tim/session_server/embedded_server.ts: server starts on
       random port (port 0), server starts on specific port, port conflict causes
       error, bearer token validation (accepts valid, rejects invalid with 401,
@@ -83,7 +83,7 @@ tasks:
       multiple simultaneous client connections, broadcast to all clients, client
       disconnect handling."
   - title: Integration tests for HeadlessAdapter server mode
-    done: false
+    done: true
     description: "Test full flow: adapter starts with server mode, writes PID file,
       serves WebSocket on /tim-agent. Client connects and receives replay of
       message history (replay_start, history, replay_end). New messages
@@ -92,11 +92,65 @@ tasks:
       cleaned up on adapter destroy. Both client and server modes run
       simultaneously."
   - title: Test env var integration
-    done: false
+    done: true
     description: "Test that headless.ts correctly reads env vars and configures the
       adapter: TIM_SERVER_PORT sets specific port, TIM_NO_SERVER=1 disables
       server, default (no env vars) starts server on random port,
       TIM_WS_BEARER_TOKEN enables auth. Server stops when adapter is destroyed."
+  - title: "Address Review Feedback: The Bun.serve() WebSocket configuration doesn't
+      set `idleTimeout`."
+    done: true
+    description: >-
+      The Bun.serve() WebSocket configuration doesn't set `idleTimeout`. Bun's
+      default WebSocket idle timeout is 120 seconds. For tim's long-running
+      commands (agent, generate, chat), sessions can easily go idle for longer
+      than 2 minutes while waiting for LLM responses, user input, or during
+      extended operations. When the timeout fires, Bun silently closes the
+      WebSocket, disconnecting the tim-gui client. The existing ws_server.ts has
+      the same omission but the traffic pattern differs — there the tim process
+      is a client that reconnects automatically.
+
+
+      Suggestion: Add `idleTimeout: 0` (or a large value) to the websocket
+      configuration to prevent silent disconnections during idle periods:
+      `websocket: { idleTimeout: 0, open(ws) { ... }, ... }`
+
+
+      Related file: src/tim/session_server/embedded_server.ts:78-133
+  - title: "Address Review Feedback: The temp file naming uses
+      `${filePath}.${process.pid}.${Date.now()}.tmp`."
+    done: true
+    description: >-
+      The temp file naming uses `${filePath}.${process.pid}.${Date.now()}.tmp`.
+      Date.now() has millisecond resolution, so two rapid successive writes in
+      the same millisecond would produce identical temp filenames. The risk is
+      very low in practice since writes are typically sequential.
+
+
+      Suggestion: Consider adding a monotonic counter for additional uniqueness
+
+
+      Related file: src/tim/session_server/runtime_dir.ts:126
+changedFiles:
+  - CLAUDE.md
+  - README.md
+  - docs/web-interface.md
+  - src/common/config_paths.test.ts
+  - src/common/config_paths.ts
+  - src/common/process.ts
+  - src/common/process_state.ts
+  - src/lib/server/ws_server.ts
+  - src/logging/console.ts
+  - src/logging/headless_adapter.test.ts
+  - src/logging/headless_adapter.ts
+  - src/logging/headless_message_utils.test.ts
+  - src/logging/headless_message_utils.ts
+  - src/tim/headless.test.ts
+  - src/tim/headless.ts
+  - src/tim/session_server/embedded_server.test.ts
+  - src/tim/session_server/embedded_server.ts
+  - src/tim/session_server/runtime_dir.test.ts
+  - src/tim/session_server/runtime_dir.ts
 tags: []
 ---
 
@@ -331,3 +385,40 @@ Test that environment variables correctly control the embedded server:
 - **`~/.cache/tim/sessions/` for PID files**: A well-known, cross-platform path that doesn't require env var setup. Respects `XDG_CACHE_HOME` when set. Stale files from crashes are expected and handled by consumers via PID liveness checks.
 - **Bearer token via env var**: Avoids exposing secrets in `ps` output. The PID file stores only a boolean `token: true` flag so consumers know auth is required, not the token itself.
 - **Replay on client connect**: Essential for the use case where tim-gui discovers a running session and connects mid-stream. The client needs the full history to render the session state.
+
+## Current Progress
+### Current State
+- All tasks complete. The HeadlessAdapter now supports dual client+server mode with full replay, broadcast, prompt routing, PID file lifecycle, and env var configuration.
+### Completed (So Far)
+- Task 1: `src/tim/session_server/runtime_dir.ts` with SessionInfoFile interface, getTimSessionDir(), writeSessionInfoFile(), removeSessionInfoFile(), readSessionInfoFile(), listSessionInfoFiles(), and cleanup handlers
+- Task 2: `src/tim/session_server/embedded_server.ts` with startEmbeddedServer() supporting port 0/specific port, hostname binding, bearer token auth (timing-safe), multiple clients, broadcast/sendTo/broadcastRaw/sendToRaw
+- Task 3: `src/logging/headless_message_utils.ts` with parseHeadlessMessage() and parseHeadlessServerMessage() extracted from ws_server.ts
+- Task 4: HeadlessAdapter extended with server mode — starts embedded server, writes PID file, broadcasts output to server clients, replays history on connect, routes incoming server messages through handleServerMessage(), updates PID file on updateSessionInfo(), cleans up on destroy
+- Task 5: `src/tim/headless.ts` updated to read TIM_SERVER_PORT, TIM_NO_SERVER, TIM_SERVER_HOSTNAME, TIM_WS_BEARER_TOKEN env vars and pass to HeadlessAdapter. Strict port validation rejects non-integer/out-of-range values.
+- Task 6: Unit tests for runtime directory utilities (runtime_dir.test.ts)
+- Task 7: Unit tests for embedded server (embedded_server.test.ts)
+- Task 8: Integration tests for HeadlessAdapter server mode (headless_adapter.test.ts) — replay, broadcast, prompt routing, PID lifecycle, dual-mode operation
+- Task 9: Env var integration tests (headless.test.ts) — port, hostname, bearer token, no-server, invalid port validation
+- Added `getTimCacheDir()` to `src/common/config_paths.ts`
+- Extracted `src/common/process_state.ts` to break circular dependency between process.ts and console.ts
+### Remaining
+- None
+### Next Iteration Guidance
+- None — all tasks including review feedback are complete. Future work: tunnel mode gating (commands skip HeadlessAdapter when tunnel active, which also skips embedded server) may need decoupling if embedded server should run in tunnel mode. CLI flags for --server-port/--no-server could be added to commands if env vars alone are insufficient.
+### Decisions / Changes
+- Cleanup handlers only register `process.on('exit')` — not SIGINT/SIGTERM/SIGHUP — because signal handlers suppress Node's default termination and the cleanup module should not control process exit
+- `removeSessionInfoFile()` auto-unregisters cleanup handlers to prevent footgun
+- Token comparison uses `crypto.timingSafeEqual` for remote/container security
+- Embedded server defaults hostname to `127.0.0.1` with configurable `hostname` option for remote binding
+- `getTimSessionDir()` caches the mkdirSync call per-path to avoid redundant filesystem operations
+- `stopSessionServer()` guards on `this.sessionServer` existence to prevent deleting another adapter's PID file
+- `startEmbeddedServer()` validates port is integer in [0, 65535] before calling Bun.serve()
+- `TIM_SERVER_PORT` parsing uses strict validation (rejects `123abc`, `-1`, `65536`, etc.)
+### Lessons Learned
+- Signal handlers that call `process.exit()` short-circuit other registered handlers — per-feature cleanup modules should only clean up their own resources, never control process exit. Only register `process.on('exit')` for cleanup, not signal handlers.
+- `fs.rmSync({ force: true })` already suppresses ENOENT, so wrapping it in try/catch for ENOENT is redundant
+- When caching directory creation status, cache by path (not boolean) to handle env var changes between tests
+- `Number.parseInt` is permissive (accepts `123abc` → 123), so always validate with `String(parsed) !== portStr` for strict integer parsing
+- When multiple adapter instances may exist in the same process, cleanup must be instance-scoped (guard on ownership) not process-scoped
+### Risks / Blockers
+- None

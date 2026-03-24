@@ -18,33 +18,9 @@
 import type { FileSink, SpawnOptions } from 'bun';
 import { debugLog, log, sendStructured, writeStderr, writeStdout } from '../logging.js';
 import { getUsingJj, hasUncommittedChanges } from './git.js';
+import { debug, quiet, setDebug, setQuiet } from './process_state.js';
 import type { StructuredMessage } from '../logging/structured_messages.js';
-
-// Debug and quiet flags for process operations
-export let debug = false;
-export let quiet = false;
-
-/**
- * Sets the global quiet mode flag that suppresses process output.
- * When quiet mode is enabled, spawned processes will have their stdout and stderr
- * redirected to ignore unless explicitly set to 'pipe' mode.
- *
- * @param value - Whether to enable quiet mode. Defaults to false if undefined
- */
-export function setQuiet(value: boolean | undefined) {
-  quiet = value ?? false;
-}
-
-/**
- * Sets the global debug mode flag that enables verbose process logging.
- * When debug mode is enabled, all spawned processes will log their commands
- * and working directories before execution.
- *
- * @param value - Whether to enable debug mode. Defaults to false if undefined
- */
-export function setDebug(value: boolean | undefined) {
-  debug = value ?? false;
-}
+export { debug, quiet, setDebug, setQuiet };
 
 /** The type of executor that may have spawned this process */
 export type TimExecutorType = 'claude' | 'codex';

@@ -7,10 +7,20 @@ import type {
   HeadlessSessionInfo,
   HeadlessSessionInfoMessage,
 } from './headless_protocol.js';
+import { parseHeadlessServerMessage } from './headless_message_utils.js';
 import { serializeArgs } from './tunnel_protocol.js';
 import type { TunnelMessage } from './tunnel_protocol.js';
-import { debug } from '../common/process.js';
+import { debug } from '../common/process_state.js';
 import type { StructuredMessage } from './structured_messages.js';
+import {
+  startEmbeddedServer,
+  type EmbeddedServerHandle,
+} from '../tim/session_server/embedded_server.js';
+import {
+  writeSessionInfoFile,
+  removeSessionInfoFile,
+  type SessionInfoFile,
+} from '../tim/session_server/runtime_dir.js';
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'draining';
 
@@ -23,37 +33,15 @@ interface HeadlessAdapterOptions {
   maxBufferBytes?: number;
   reconnectIntervalMs?: number;
   connectWhenSuppressed?: boolean;
+  serverPort?: number;
+  serverHostname?: string;
+  bearerToken?: string;
 }
 
 /** Pending prompt request entry tracked by the HeadlessAdapter. */
 interface PendingPromptRequest {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
-}
-
-/**
- * Validates that a parsed JSON object is a valid HeadlessServerMessage.
- */
-function isValidHeadlessServerMessage(message: unknown): message is HeadlessServerMessage {
-  if (typeof message !== 'object' || message === null) {
-    return false;
-  }
-
-  const msg = message as Record<string, unknown>;
-
-  switch (msg.type) {
-    case 'prompt_response':
-      return (
-        typeof msg.requestId === 'string' &&
-        (msg.error === undefined || typeof msg.error === 'string')
-      );
-    case 'user_input':
-      return typeof msg.content === 'string';
-    case 'end_session':
-      return true;
-    default:
-      return false;
-  }
 }
 
 const DEFAULT_MAX_BUFFER_BYTES = 10 * 1024 * 1024;
@@ -66,9 +54,13 @@ export class HeadlessAdapter implements LoggerAdapter {
   private readonly maxBufferBytes: number;
   private readonly reconnectIntervalMs: number;
   private readonly connectWhenSuppressed: boolean;
+  private readonly bearerToken?: string;
+  private readonly serverSessionId?: string;
+  private readonly serverStartedAt?: string;
 
   private state: ConnectionState = 'disconnected';
   private socket: WebSocket | undefined;
+  private sessionServer: EmbeddedServerHandle | undefined;
   private queue: QueuedMessage[] = [];
   private history: QueuedMessage[] = [];
   private bufferedOutputBytes: number = 0;
@@ -94,6 +86,20 @@ export class HeadlessAdapter implements LoggerAdapter {
     this.maxBufferBytes = options?.maxBufferBytes ?? DEFAULT_MAX_BUFFER_BYTES;
     this.reconnectIntervalMs = options?.reconnectIntervalMs ?? DEFAULT_RECONNECT_INTERVAL_MS;
     this.connectWhenSuppressed = options?.connectWhenSuppressed ?? false;
+    this.bearerToken = options?.bearerToken;
+
+    if (options && 'serverPort' in options && options.serverPort != null) {
+      this.serverSessionId = crypto.randomUUID();
+      this.serverStartedAt = new Date().toISOString();
+      this.sessionServer = startEmbeddedServer({
+        port: options.serverPort,
+        hostname: options.serverHostname,
+        bearerToken: options.bearerToken,
+        onConnect: (connectionId) => this.sendReplayToServerClient(connectionId),
+        onMessage: (_connectionId, message) => this.handleServerMessage(message),
+      });
+      this.writeSessionInfoFile();
+    }
   }
 
   log(...args: any[]): void {
@@ -139,6 +145,7 @@ export class HeadlessAdapter implements LoggerAdapter {
     this.destroyed = true;
     this.drainGeneration += 1;
     this.rejectAllPending();
+    this.stopSessionServer();
 
     if (
       this.socket &&
@@ -157,6 +164,8 @@ export class HeadlessAdapter implements LoggerAdapter {
 
   updateSessionInfo(patch: Partial<HeadlessSessionInfo>): void {
     Object.assign(this.sessionInfo, patch);
+    this.broadcastSessionInfo();
+    this.writeSessionInfoFile();
 
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
       return;
@@ -174,6 +183,7 @@ export class HeadlessAdapter implements LoggerAdapter {
     this.destroyed = true;
     this.state = 'draining';
     this.rejectAllPending();
+    this.stopSessionServer();
     const deadline = Date.now() + timeoutMs;
     const connectWaitMs = Math.max(0, Math.floor(timeoutMs / 2));
 
@@ -329,6 +339,7 @@ export class HeadlessAdapter implements LoggerAdapter {
       return;
     }
     this.enqueueOutputPayload(payload);
+    this.sessionServer?.broadcastRaw(payload);
 
     this.maybeConnect();
     this.startDrainLoop();
@@ -402,13 +413,9 @@ export class HeadlessAdapter implements LoggerAdapter {
         typeof event.data === 'string'
           ? event.data
           : new TextDecoder().decode(event.data as ArrayBuffer);
-      try {
-        const parsed = JSON.parse(data);
-        if (isValidHeadlessServerMessage(parsed)) {
-          this.handleServerMessage(parsed);
-        }
-      } catch {
-        // Malformed JSON -- silently ignore
+      const parsed = parseHeadlessServerMessage(data);
+      if (parsed) {
+        this.handleServerMessage(parsed);
       }
     };
 
@@ -465,6 +472,71 @@ export class HeadlessAdapter implements LoggerAdapter {
       this.bufferedOutputBytes += entry.outputBytes;
     }
     this.enqueueControlPayload(JSON.stringify({ type: 'replay_end' } as HeadlessMessage));
+  }
+
+  private sendReplayToServerClient(connectionId: string): void {
+    const server = this.sessionServer;
+    if (!server) {
+      return;
+    }
+
+    server.sendTo(connectionId, {
+      type: 'session_info',
+      ...this.sessionInfo,
+    });
+    server.sendTo(connectionId, { type: 'replay_start' });
+    for (const entry of this.history) {
+      server.sendToRaw(connectionId, entry.payload);
+    }
+    server.sendTo(connectionId, { type: 'replay_end' });
+  }
+
+  private buildSessionInfoFile(): SessionInfoFile | undefined {
+    if (!this.sessionServer || !this.serverSessionId || !this.serverStartedAt) {
+      return undefined;
+    }
+
+    return {
+      sessionId: this.serverSessionId,
+      pid: process.pid,
+      port: this.sessionServer.port,
+      command: this.sessionInfo.command,
+      workspacePath: this.sessionInfo.workspacePath,
+      planId: this.sessionInfo.planId,
+      planTitle: this.sessionInfo.planTitle,
+      gitRemote: this.sessionInfo.gitRemote,
+      startedAt: this.serverStartedAt,
+      token: this.bearerToken ? true : undefined,
+    };
+  }
+
+  private writeSessionInfoFile(): void {
+    const info = this.buildSessionInfoFile();
+    if (!info) {
+      return;
+    }
+
+    writeSessionInfoFile(info);
+  }
+
+  private stopSessionServer(): void {
+    if (!this.sessionServer) {
+      return;
+    }
+    this.sessionServer.stop();
+    this.sessionServer = undefined;
+    removeSessionInfoFile(process.pid);
+  }
+
+  private broadcastSessionInfo(): void {
+    if (!this.sessionServer) {
+      return;
+    }
+
+    this.sessionServer.broadcast({
+      type: 'session_info',
+      ...this.sessionInfo,
+    });
   }
 
   private startDrainLoop(): void {

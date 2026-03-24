@@ -108,9 +108,15 @@ The Sessions tab (`/projects/[projectId]/sessions`) provides real-time monitorin
 
 ### Server Infrastructure
 
-The sessions system runs a separate Bun.serve() WebSocket server alongside the SvelteKit dev server:
+The sessions system has a dual WebSocket architecture:
 
-- **WebSocket server** (`src/lib/server/ws_server.ts`): Listens on port 8123 (configurable via `TIM_WS_PORT` env var or `headless.url` config). Accepts agent WebSocket connections at `/tim-agent` and HTTP POST notifications at `/messages`.
+1. **Agent-side embedded servers**: Each tim long-running command (`agent`, `generate`, `chat`, `review`, `run-prompt`) starts its own embedded WebSocket server via `HeadlessAdapter`. The server broadcasts output messages, supports replay for late-connecting clients, and routes incoming prompt responses and user input. Session discovery is via PID info files in `~/.cache/tim/sessions/`. See the README "Embedded Session Server" section for environment variable configuration.
+
+2. **Tim-gui WebSocket server**: The web interface runs a separate server that agents connect to as clients (existing architecture).
+
+Both modes run simultaneously by default — the agent process acts as both a WebSocket client (connecting to tim-gui) and a WebSocket server (accepting direct connections).
+
+- **WebSocket server** (`src/lib/server/ws_server.ts`): Listens on port 8123 (configurable via `TIM_WS_PORT` env var or `headless.url` config). Accepts agent WebSocket connections at `/tim-agent` and HTTP POST notifications at `/messages`. Message parsing uses shared utilities from `src/logging/headless_message_utils.ts`.
 - **Session manager** (`src/lib/server/session_manager.ts`): Central state management singleton. Tracks active/offline/notification sessions, categorizes all 29 StructuredMessage types into display categories (lifecycle, llmOutput, toolUse, fileChange, command, progress, error, log, userInput), handles replay buffering, prompt tracking, and project resolution from DB.
 - **Session context** (`src/lib/server/session_context.ts`): HMR-safe singleton (uses `Symbol.for`) exposing `getSessionManager()` and `getWsConnections()` for use by SSE and API routes.
 - **Server init** (`src/hooks.server.ts`): Starts the WebSocket server on SvelteKit boot via the `init` export.
