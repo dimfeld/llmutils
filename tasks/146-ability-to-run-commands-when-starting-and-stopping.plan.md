@@ -10,10 +10,10 @@ priority: medium
 planGeneratedAt: 2026-02-15T09:35:34.117Z
 promptsGeneratedAt: 2026-02-15T09:35:34.117Z
 createdAt: 2025-11-07T21:16:48.398Z
-updatedAt: 2026-03-24T08:54:32.674Z
+updatedAt: 2026-03-24T09:43:06.209Z
 tasks:
   - title: Restructure signal handling for async cleanup
-    done: false
+    done: true
     description: Modify signal handlers in src/tim/tim.ts to support async cleanup.
       Instead of calling process.exit() immediately in SIGINT/SIGTERM/SIGHUP
       handlers, have them set a shutting-down flag and run synchronous cleanup
@@ -40,7 +40,7 @@ tasks:
       in zod schemas. Export LifecycleCommand type. Regenerate
       schema/tim-config-schema.json."
   - title: Update config merging for lifecycle
-    done: false
+    done: true
     description: "In src/tim/configLoader.ts, add special merge handling for the
       lifecycle key. Since lifecycle is an object containing a commands array, a
       simple shallow merge would replace the array instead of concatenating. Add
@@ -86,7 +86,7 @@ tasks:
       block other shutdowns; shutdown runs even after startup errors.
       Integration test with mixed command types."
   - title: Integrate lifecycle into agent command
-    done: false
+    done: true
     description: "In src/tim/commands/agent/agent.ts timAgent() function: after
       config loaded and workspace set up (around line 314), create
       LifecycleManager from config.lifecycle?.commands, currentBaseDir, and the
@@ -111,11 +111,21 @@ tasks:
       runs on SIGINT/SIGTERM/SIGHUP); config merging behavior (commands
       concatenated across global/repo/local)."
 changedFiles:
+  - CLAUDE.md
+  - README.md
   - schema/tim-config-schema.json
+  - src/tim/commands/agent/agent.lifecycle.test.ts
+  - src/tim/commands/agent/agent.ts
+  - src/tim/commands/agent/batch_mode.ts
+  - src/tim/configLoader.test.ts
   - src/tim/configSchema.test.ts
   - src/tim/configSchema.ts
   - src/tim/lifecycle.test.ts
   - src/tim/lifecycle.ts
+  - src/tim/shutdown_state.test.ts
+  - src/tim/shutdown_state.ts
+  - src/tim/tim.signal_handlers.test.ts
+  - src/tim/tim.ts
 ---
 
 We want to be able to define commands that can be run in the project level configuration file. For each command, we should be able to run it in daemon mode and then kill it at the end, or just run it and wait for it to finish. These commands should be run when doing the run command. We should also be able to define commands that run when the run command exits, and this should include on a SIGINT or similar.
@@ -500,32 +510,39 @@ Document the new `lifecycle` configuration section in the README with:
 
 ## Current Progress
 ### Current State
-- Config schema, LifecycleManager class, and comprehensive tests are complete and reviewed.
+- All implementation tasks complete. Only Task 7 (README documentation) remains.
 ### Completed (So Far)
+- Task 1: Restructured signal handling with `shutdown_state.ts` module. Signal handlers use `deferSignalExit` opt-in pattern — only agent command defers exit; all other commands retain immediate exit behavior. Double Ctrl+C force-exits.
 - Task 2: Added `onlyWorkspaceType` field to `lifecycleCommandSchema` in configSchema.ts, regenerated JSON schema
-- Task 3: Config merging for lifecycle was already implemented (pre-existing)
+- Task 3: Config merging for lifecycle verified with concatenation test (repo+local commands merged in order). Also fixed env var restoration in test.
 - Task 4: Created `src/tim/lifecycle.ts` with LifecycleManager class supporting startup/shutdown/daemon management
 - Task 5: Created `src/tim/lifecycle.test.ts` with 36 tests covering all specified scenarios
+- Task 6: Integrated lifecycle into `timAgent()` — startup after workspace setup, killDaemons registered with CleanupRegistry, shutdown in finally block. Both serial and batch modes check shutdown state. Workspace round-trip sync skipped on interrupt. Interrupted runs reported as 'interrupted' status in notifications.
 ### Remaining
-- Task 1: Restructure signal handling for async cleanup (signal handlers still use old process.exit() pattern)
-- Task 6: Integrate lifecycle into agent command (timAgent function)
 - Task 7: Update README with lifecycle documentation
 ### Next Iteration Guidance
-- Task 1 (signal handling) should be done before Task 6 (integration) since the integration depends on signals being restructured to allow async cleanup
-- Task 6 needs to import LifecycleManager, create it after workspace setup, call startup() before the loop, register killDaemons() with CleanupRegistry, and call shutdown() in the finally block
-- The workspace type can be resolved via getWorkspaceInfoByPath after setupWorkspace()
+- Task 7 is a documentation-only task, no code changes needed
+- Document: lifecycle.commands config, modes (run/daemon), check commands, onlyWorkspaceType, shutdown behavior, signal handling, config merging
 ### Decisions / Changes
 - Daemon exit 0 within the startup check window is treated as a startup failure (not success), since mode: daemon expects a long-running process
 - Process group killing is used for daemon shutdown (process.kill(-pid, signal)) to ensure child processes are also terminated
 - Check command spawn failures fall through to run the actual command (rather than skipping it)
 - killDaemons() and shutdown() coordinate via a killedByCleanup flag to avoid double-signaling
+- killDaemons() kills ALL running daemons (including those with explicit shutdown commands) since it's an emergency fallback — on force exit the async shutdown() won't run
 - Background daemon exit monitoring warns when a daemon crashes unexpectedly during the agent run
 - stdin is intentionally 'ignore' for lifecycle commands (automated, not interactive)
 - Windows is not supported for daemon process management
+- Signal handling uses `deferSignalExit` opt-in: non-agent commands still exit immediately on signals; only the agent command defers to allow async lifecycle shutdown
+- Interrupted agent runs skip workspace round-trip sync to avoid committing/pushing partial work
+- shutdown() collects all errors and throws an aggregated error after attempting all cleanup commands
+- LifecycleManager.startup() aborts early if shutdown is requested mid-startup
 ### Lessons Learned
 - Daemon process management requires process group signals — just killing the shell wrapper (sh -c) doesn't kill child processes
 - Early daemon exit detection needs careful handling of both zero and non-zero exit codes
 - Check command failures should be treated as "could not determine, proceed" rather than skipping the command
 - The CleanupRegistry sync fallback (killDaemons) and async shutdown need explicit coordination to avoid race conditions
+- Globally changing signal handler behavior (removing process.exit()) breaks non-agent commands. Use an opt-in flag so only commands that need deferred exit enable it.
+- On force-exit (second signal), the async shutdown path won't run, so the sync killDaemons() must handle ALL daemons regardless of explicit shutdown commands
+- setDeferSignalExit must be inside the try block to ensure the finally block resets it
 ### Risks / Blockers
 - None
