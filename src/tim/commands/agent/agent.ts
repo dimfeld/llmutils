@@ -512,7 +512,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     // Check if this is a true stub plan (no tasks at all)
     const needsPreparation = !planData.tasks.length;
 
-    if (needsPreparation) {
+    if (needsPreparation && !isShuttingDown()) {
       let continueAfterStubPlan = false;
 
       // This is a true stub plan with no tasks - handle it specially
@@ -658,6 +658,8 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
           log('\n--dry-run mode: Would execute the above prompt');
           break;
         }
+
+        if (isShuttingDown()) break;
 
         try {
           sendStructured({
@@ -983,6 +985,8 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
         break;
       }
 
+      if (isShuttingDown()) break;
+
       try {
         sendStructured({
           type: 'agent_step_start',
@@ -1145,8 +1149,6 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
               }
             }
           }
-
-          if (isShuttingDown()) break;
 
           if (config.updateDocs?.applyLessons || options.applyLessons) {
             if (isShuttingDown()) break;

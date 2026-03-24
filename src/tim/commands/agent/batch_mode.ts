@@ -196,6 +196,10 @@ Available tasks:\n\n${taskDescriptions}`,
         break;
       }
 
+      if (isShuttingDown()) {
+        break;
+      }
+
       const workingCopyStatusBeforeRun = await getWorkingCopyStatus(baseDir);
       let executionDurationMs = 0;
 
@@ -496,7 +500,7 @@ Available tasks:\n\n${taskDescriptions}`,
         }
 
         // Handle parent plan updates similar to existing logic
-        if (updatedPlanData.parent) {
+        if (updatedPlanData.parent && !isShuttingDown()) {
           await checkAndMarkParentDone(updatedPlanData.parent, config, baseDir);
         }
 

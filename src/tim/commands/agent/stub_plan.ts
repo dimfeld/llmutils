@@ -38,13 +38,19 @@ export async function executeStubPlan({
   configPath?: string;
 }): Promise<StubPlanExecutionResult> {
   // Update plan status to in_progress
-  planData.status = 'in_progress';
-  planData.updatedAt = new Date().toISOString();
-  await writePlanFile(planFilePath, planData);
+  if (!isShuttingDown()) {
+    planData.status = 'in_progress';
+    planData.updatedAt = new Date().toISOString();
+    await writePlanFile(planFilePath, planData);
+  }
 
   // If this plan has a parent, mark it as in_progress too
-  if (planData.parent) {
+  if (planData.parent && !isShuttingDown()) {
     await markParentInProgress(planData.parent, config);
+  }
+
+  if (isShuttingDown()) {
+    return {};
   }
 
   // Build execution prompt using the unified function
@@ -68,6 +74,10 @@ export async function executeStubPlan({
 
   if (dryRun) {
     log('\n--dry-run mode: Would execute the above prompt');
+    return {};
+  }
+
+  if (isShuttingDown()) {
     return {};
   }
 
