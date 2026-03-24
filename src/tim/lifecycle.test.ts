@@ -297,20 +297,61 @@ describe('LifecycleManager', () => {
     expect(await readLines(logFile)).toEqual([]);
   });
 
-  test('daemon immediate exit with code 0 warns and still allows explicit shutdown', async () => {
+  test('daemon exit with code 0 is treated as a startup failure and does not trigger shutdown', async () => {
     const warnSpy = spyOn(logging, 'warn').mockImplementation(() => {});
 
     try {
-      const events = await startupAndShutdown([
-        {
-          title: 'short daemon',
-          command: await createImmediateExitDaemonCommand(logFile, 0),
-          mode: 'daemon',
-          shutdown: appendLineCommand(logFile, 'daemon-stop'),
-        },
-      ]);
+      const manager = new LifecycleManager(
+        [
+          {
+            title: 'short daemon',
+            command: await createImmediateExitDaemonCommand(logFile, 0),
+            mode: 'daemon',
+            shutdown: appendLineCommand(logFile, 'daemon-stop'),
+          },
+        ],
+        tempDir,
+        undefined
+      );
 
-      expect(events).toEqual(['daemon-stop']);
+      await expect(manager.startup()).rejects.toThrow(
+        'Lifecycle daemon "short daemon" exited immediately with code 0. Consider using mode: "run" if this is not a long-running process.'
+      );
+      await manager.shutdown();
+
+      expect(await readLines(logFile)).toEqual([]);
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  test('daemon exit with code 0 respects allowFailure and still suppresses shutdown', async () => {
+    const warnSpy = spyOn(logging, 'warn').mockImplementation(() => {});
+
+    try {
+      const manager = new LifecycleManager(
+        [
+          {
+            title: 'short daemon',
+            command: await createImmediateExitDaemonCommand(logFile, 0),
+            mode: 'daemon',
+            allowFailure: true,
+            shutdown: appendLineCommand(logFile, 'daemon-stop'),
+          },
+          {
+            title: 'after',
+            command: appendLineCommand(logFile, 'after'),
+          },
+        ],
+        tempDir,
+        undefined
+      );
+
+      await manager.startup();
+      await manager.shutdown();
+
+      expect(await readLines(logFile)).toEqual(['after']);
       expect(warnSpy).toHaveBeenCalledWith(
         'Lifecycle daemon "short daemon" exited immediately with code 0. Consider using mode: "run" if this is not a long-running process.'
       );
@@ -356,6 +397,49 @@ describe('LifecycleManager', () => {
     await manager.shutdown();
 
     expect(await readLines(logFile)).toEqual(['before', 'before-stop']);
+  });
+
+  test('run command with shutdown that fails still runs shutdown when failure is not allowed', async () => {
+    const manager = new LifecycleManager(
+      [
+        {
+          title: 'seed',
+          command: 'exit 2',
+          shutdown: appendLineCommand(logFile, 'seed-stop'),
+        },
+      ],
+      tempDir,
+      undefined
+    );
+
+    await expect(manager.startup()).rejects.toThrow('Lifecycle command "seed" failed');
+    await manager.shutdown();
+
+    expect(await readLines(logFile)).toEqual(['seed-stop']);
+  });
+
+  test('run command with shutdown that fails still runs shutdown when failure is allowed', async () => {
+    const manager = new LifecycleManager(
+      [
+        {
+          title: 'seed',
+          command: 'exit 2',
+          shutdown: appendLineCommand(logFile, 'seed-stop'),
+          allowFailure: true,
+        },
+        {
+          title: 'after',
+          command: appendLineCommand(logFile, 'after'),
+        },
+      ],
+      tempDir,
+      undefined
+    );
+
+    await manager.startup();
+    await manager.shutdown();
+
+    expect(await readLines(logFile)).toEqual(['after', 'seed-stop']);
   });
 
   test('workingDirectory is resolved relative to the lifecycle base directory', async () => {
@@ -473,6 +557,19 @@ describe('LifecycleManager', () => {
         mode: 'daemon',
         check: 'exit 0',
         shutdown: appendLineCommand(logFile, 'daemon-stop'),
+      },
+    ]);
+
+    expect(events).toEqual([]);
+  });
+
+  test('successful check skips daemon startup even without an explicit shutdown command', async () => {
+    const events = await startupAndShutdown([
+      {
+        title: 'daemon',
+        command: await createDaemonCommand(logFile, 'daemon-start', 'daemon-term'),
+        mode: 'daemon',
+        check: 'exit 0',
       },
     ]);
 

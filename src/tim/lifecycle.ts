@@ -13,6 +13,7 @@ interface LifecycleCommandState {
   shouldRunShutdown: boolean;
   daemon?: Bun.Subprocess<'ignore', 'pipe', 'pipe'>;
   killedByCleanup?: boolean;
+  intentionallyTerminated?: boolean;
 }
 
 function getShellCommand(command: string): string[] {
@@ -116,7 +117,7 @@ export class LifecycleManager {
           state.startupState = 'running';
           state.shouldRunShutdown = true;
           void daemon.exited.then((exitCode) => {
-            if (exitCode !== null && exitCode !== 0 && state.startupState === 'running') {
+            if (exitCode !== null && exitCode !== 0 && !state.intentionallyTerminated) {
               warn(
                 `Lifecycle daemon "${command.title}" exited unexpectedly with code ${exitCode}.`
               );
@@ -218,7 +219,7 @@ export class LifecycleManager {
         continue;
       }
 
-      state.startupState = 'succeeded';
+      state.intentionallyTerminated = true;
 
       if (!this.tryKillProcessGroup(state.daemon.pid, 'SIGTERM')) {
         try {
@@ -277,23 +278,18 @@ export class LifecycleManager {
     state.shouldRunShutdown = false;
 
     if (!state.command.allowFailure) {
-      throw new Error(
-        `Lifecycle daemon "${state.command.title}" exited immediately with exit code ${exitCode}.`
-      );
+      const exitDescription =
+        exitCode === 0
+          ? 'exited immediately with code 0. Consider using mode: "run" if this is not a long-running process.'
+          : `exited immediately with exit code ${exitCode}.`;
+      throw new Error(`Lifecycle daemon "${state.command.title}" ${exitDescription}`);
     }
 
-    warn(
-      `Lifecycle daemon "${state.command.title}" exited immediately with exit code ${exitCode}, but failure is allowed.`
-    );
-  }
-
-  private async handleDaemonExitZero(state: LifecycleCommandState): Promise<boolean> {
-    warn(
-      `Lifecycle daemon "${state.command.title}" exited immediately with code 0. Consider using mode: "run" if this is not a long-running process.`
-    );
-    state.startupState = 'succeeded';
-    state.shouldRunShutdown = Boolean(state.command.shutdown);
-    return true;
+    const exitDescription =
+      exitCode === 0
+        ? 'exited immediately with code 0. Consider using mode: "run" if this is not a long-running process.'
+        : `exited immediately with exit code ${exitCode}, but failure is allowed.`;
+    warn(`Lifecycle daemon "${state.command.title}" ${exitDescription}`);
   }
 
   private shouldRunCheck(command: LifecycleCommand, mode: LifecycleMode): boolean {
@@ -314,6 +310,7 @@ export class LifecycleManager {
         ...process.env,
         ...(command.env ?? {}),
       },
+      // Process-group signaling here uses Unix semantics. tim does not target Windows.
       // Lifecycle hooks are fully automated and must not compete with the agent loop for stdin.
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -338,10 +335,6 @@ export class LifecycleManager {
     const exitCode = daemon.exitCode;
     if (exitCode === null) {
       return false;
-    }
-
-    if (exitCode === 0) {
-      return await this.handleDaemonExitZero(state);
     }
 
     this.handleDaemonFailure(state, exitCode);
@@ -378,7 +371,7 @@ export class LifecycleManager {
       return;
     }
 
-    state.startupState = 'succeeded';
+    state.intentionallyTerminated = true;
 
     if (!state.killedByCleanup) {
       if (
