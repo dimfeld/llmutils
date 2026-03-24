@@ -104,7 +104,7 @@ lifecycle:
 ### Behavior
 
 - **Startup**: Commands run sequentially in config order before the agent execution loop begins.
-- **Shutdown**: Commands are processed in reverse order when the agent exits — including on SIGINT/SIGTERM/SIGHUP.
+- **Shutdown**: Commands are processed in reverse order when the agent exits — including on SIGINT/SIGTERM/SIGHUP. Errors during shutdown (including daemon termination failures) are collected and reported after all commands have been attempted.
 - **Daemons**: `mode: daemon` commands are spawned as child processes. On shutdown, they receive SIGTERM (then SIGKILL after 5s timeout) unless an explicit `shutdown` command is provided. If a daemon exits unexpectedly during the agent run (including with exit code 0), a warning is logged.
 - **Check**: The `check` command lets you skip startup when the resource is already running, and suppresses the corresponding shutdown so it isn't torn down on exit.
 - **Interrupts**: On SIGINT/SIGTERM, the agent stops executing new work immediately and runs lifecycle shutdown before exiting. A second interrupt force-exits.
