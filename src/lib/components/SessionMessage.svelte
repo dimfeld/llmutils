@@ -60,9 +60,7 @@
   let effectiveLineLimit = $derived(
     displayCategory === 'toolUse' || displayCategory === 'command'
       ? TOOL_USE_TRUNCATE_LINE_LIMIT
-      : message.category === 'log'
-        ? undefined
-        : undefined
+      : undefined
   );
 
   let textTruncation = $derived(
@@ -191,5 +189,7 @@
         </button>
       {/if}
     </div>
+  {:else if renderBody === null}
+    <span class="text-gray-400">Unsupported message type: {message.rawType}</span>
   {/if}
 </div>

@@ -3,20 +3,19 @@ import type { DisplayCategory } from './message_formatting.js';
 
 export function categoryColorClass(category: MessageCategory | DisplayCategory): string {
   switch (category) {
+    case 'lifecycle':
+    case 'llmOutput':
+      return 'text-green-400';
+    case 'toolUse':
+    case 'fileChange':
+    case 'command':
+      return 'text-cyan-400';
+    case 'progress':
+      return 'text-blue-400';
     case 'error':
       return 'text-red-400';
-    case 'lifecycle':
-      return 'text-gray-400';
-    case 'llmOutput':
     case 'userInput':
-      return 'text-gray-300';
-    case 'toolUse':
-    case 'command':
-      return 'text-gray-300';
-    case 'fileChange':
-      return 'text-cyan-300';
-    case 'progress':
-      return 'text-gray-300';
+      return 'text-orange-400';
     case 'structured':
     case 'log':
     default:

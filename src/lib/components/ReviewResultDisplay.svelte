@@ -82,7 +82,7 @@
     <div>
       <div class="font-medium text-gray-300">Recommendations</div>
       <ul class="list-disc pl-6 text-gray-300">
-        {#each message.recommendations as rec (rec)}
+        {#each message.recommendations as rec, i (i)}
           <li>{rec}</li>
         {/each}
       </ul>
@@ -93,7 +93,7 @@
     <div>
       <div class="font-medium text-gray-300">Action Items</div>
       <ul class="list-disc pl-6 text-gray-300">
-        {#each message.actionItems as item (item)}
+        {#each message.actionItems as item, i (i)}
           <li>{item}</li>
         {/each}
       </ul>
