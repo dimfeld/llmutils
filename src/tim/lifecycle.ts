@@ -6,13 +6,14 @@ import { isShuttingDown } from './shutdown_state.js';
 
 type LifecycleMode = 'run' | 'daemon';
 type StartupState = 'pending' | 'skipped' | 'succeeded' | 'failed' | 'running';
+type LifecycleSubprocess = Bun.Subprocess<'ignore', 'pipe', 'pipe'>;
 
 interface LifecycleCommandState {
   command: LifecycleCommand;
   mode: LifecycleMode;
   startupState: StartupState;
   shouldRunShutdown: boolean;
-  daemon?: Bun.Subprocess<'ignore', 'pipe', 'pipe'>;
+  daemon?: LifecycleSubprocess;
   killedByCleanup?: boolean;
   intentionallyTerminated?: boolean;
 }
@@ -24,6 +25,7 @@ function getShellCommand(command: string): string[] {
 const DAEMON_STARTUP_CHECK_DELAY_MS = 75;
 const DAEMON_SIGTERM_TIMEOUT_MS = 5000;
 const DAEMON_SIGKILL_WAIT_MS = 1000;
+const SHUTDOWN_COMMAND_TIMEOUT_MS = 30000;
 
 async function readOutput(
   stream: ReadableStream<Uint8Array> | null,
@@ -47,11 +49,13 @@ async function readOutput(
 export class LifecycleManager {
   private readonly states: LifecycleCommandState[];
   private shutdownStarted = false;
+  private activeShutdownProc?: LifecycleSubprocess;
 
   constructor(
     commands: LifecycleCommand[] | undefined,
     private readonly baseDir: string,
-    private readonly workspaceType: WorkspaceType | undefined
+    private readonly workspaceType: WorkspaceType | undefined,
+    private readonly shutdownTimeoutMs = SHUTDOWN_COMMAND_TIMEOUT_MS
   ) {
     this.states = (commands ?? []).map((command) => ({
       command,
@@ -196,6 +200,9 @@ export class LifecycleManager {
             log(`Running lifecycle shutdown command "${command.title}"...`);
             const exitCode = await this.runShellCommand(command, {
               command: command.shutdown,
+              timeoutMs: this.shutdownTimeoutMs,
+              title: command.title,
+              trackAsShutdown: true,
             });
             if (exitCode !== 0) {
               errors.push(
@@ -214,6 +221,9 @@ export class LifecycleManager {
           log(`Running lifecycle shutdown command "${command.title}"...`);
           const exitCode = await this.runShellCommand(command, {
             command: command.shutdown,
+            timeoutMs: this.shutdownTimeoutMs,
+            title: command.title,
+            trackAsShutdown: true,
           });
           if (exitCode !== 0) {
             errors.push(
@@ -241,6 +251,8 @@ export class LifecycleManager {
    *  on signal, and on forced exit (second signal) the async shutdown() path
    *  won't get a chance to run, so we must not leave any daemons orphaned. */
   killDaemons(): void {
+    this.killActiveShutdownProcess();
+
     for (const state of this.states) {
       if (state.mode !== 'daemon' || !state.shouldRunShutdown || !state.daemon) {
         continue;
@@ -266,6 +278,20 @@ export class LifecycleManager {
     }
   }
 
+  private killActiveShutdownProcess(): void {
+    const proc = this.activeShutdownProc;
+    if (!proc || !this.isProcessRunning(proc)) {
+      return;
+    }
+
+    this.tryKillProcess(
+      proc,
+      'SIGKILL',
+      'active shutdown command',
+      'Failed to kill lifecycle shutdown command'
+    );
+  }
+
   private tryKillProcessGroup(pid: number, signal: NodeJS.Signals): boolean {
     try {
       process.kill(-pid, signal);
@@ -276,7 +302,7 @@ export class LifecycleManager {
   }
 
   private tryKillProcess(
-    proc: Bun.Subprocess<'ignore', 'pipe', 'pipe'>,
+    proc: LifecycleSubprocess,
     signal: NodeJS.Signals,
     title: string,
     failureMessage: string
@@ -294,10 +320,7 @@ export class LifecycleManager {
     }
   }
 
-  private async waitForProcessExit(
-    proc: Bun.Subprocess<'ignore', 'pipe', 'pipe'>,
-    timeoutMs: number
-  ): Promise<boolean> {
+  private async waitForProcessExit(proc: LifecycleSubprocess, timeoutMs: number): Promise<boolean> {
     if (!this.isProcessRunning(proc)) {
       return true;
     }
@@ -338,7 +361,7 @@ export class LifecycleManager {
       : this.baseDir;
   }
 
-  private spawnDaemon(command: LifecycleCommand): Bun.Subprocess<'ignore', 'pipe', 'pipe'> {
+  private spawnDaemon(command: LifecycleCommand): LifecycleSubprocess {
     const proc = Bun.spawn(getShellCommand(command.command), {
       cwd: this.resolveCwd(command),
       detached: true,
@@ -381,6 +404,9 @@ export class LifecycleManager {
     commandConfig: Pick<LifecycleCommand, 'workingDirectory' | 'env'>,
     command: {
       command: string;
+      timeoutMs?: number;
+      title?: string;
+      trackAsShutdown?: boolean;
     }
   ): Promise<number> {
     const proc = Bun.spawn(getShellCommand(command.command), {
@@ -393,11 +419,74 @@ export class LifecycleManager {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
-    await Promise.all([readOutput(proc.stdout, writeStdout), readOutput(proc.stderr, writeStderr)]);
-    return await proc.exited;
+    if (command.trackAsShutdown) {
+      this.activeShutdownProc = proc;
+    }
+
+    const outputPromise = Promise.all([
+      readOutput(proc.stdout, writeStdout),
+      readOutput(proc.stderr, writeStderr),
+    ]);
+
+    try {
+      if (command.timeoutMs === undefined) {
+        const [, exitCode] = await Promise.all([outputPromise, proc.exited]);
+        return exitCode;
+      }
+
+      const exitCode = await this.raceWithTimeout(proc.exited, command.timeoutMs, null);
+      if (exitCode !== null) {
+        await outputPromise;
+        return exitCode;
+      }
+
+      const title = command.title ?? command.command;
+      warn(
+        `Lifecycle shutdown command "${title}" timed out after ${command.timeoutMs}ms; terminating it.`
+      );
+
+      if (
+        !this.tryKillProcess(
+          proc,
+          'SIGTERM',
+          title,
+          'Failed to send SIGTERM to lifecycle shutdown command'
+        ) &&
+        this.isProcessRunning(proc)
+      ) {
+        throw new Error(`Failed to terminate lifecycle shutdown command "${title}" with SIGTERM.`);
+      }
+
+      const exitedAfterSigterm = await this.waitForProcessExit(proc, DAEMON_SIGKILL_WAIT_MS);
+      if (!exitedAfterSigterm && this.isProcessRunning(proc)) {
+        warn(`Lifecycle shutdown command "${title}" did not exit after SIGTERM; sending SIGKILL.`);
+        if (
+          !this.tryKillProcess(
+            proc,
+            'SIGKILL',
+            title,
+            'Failed to kill lifecycle shutdown command'
+          ) &&
+          this.isProcessRunning(proc)
+        ) {
+          throw new Error(`Failed to kill lifecycle shutdown command "${title}" with SIGKILL.`);
+        }
+      }
+
+      await this.raceWithTimeout(
+        outputPromise.then(() => undefined),
+        DAEMON_SIGKILL_WAIT_MS,
+        undefined
+      );
+      return proc.exitCode ?? 124;
+    } finally {
+      if (command.trackAsShutdown && this.activeShutdownProc === proc) {
+        this.activeShutdownProc = undefined;
+      }
+    }
   }
 
-  private isProcessRunning(proc: Bun.Subprocess<'ignore', 'pipe', 'pipe'>): boolean {
+  private isProcessRunning(proc: LifecycleSubprocess): boolean {
     return proc.exitCode === null;
   }
 

@@ -166,6 +166,29 @@ async function createDelayedExitDaemonCommand(
   return `exec node ${JSON.stringify(scriptPath)}`;
 }
 
+async function createHangingShutdownCommand(
+  filePath: string,
+  pidFilePath: string,
+  startLine: string,
+  termLine: string
+): Promise<string> {
+  const scriptPath = path.join(path.dirname(filePath), `${startLine}.cjs`);
+  await fs.writeFile(
+    scriptPath,
+    [
+      `const fs = require('node:fs');`,
+      `fs.writeFileSync(${JSON.stringify(pidFilePath)}, String(process.pid));`,
+      `fs.appendFileSync(${JSON.stringify(filePath)}, ${JSON.stringify(startLine + '\n')});`,
+      `process.on('SIGTERM', () => {`,
+      `  fs.appendFileSync(${JSON.stringify(filePath)}, ${JSON.stringify(termLine + '\n')});`,
+      `});`,
+      `setInterval(() => {}, 1000);`,
+    ].join('\n'),
+    'utf8'
+  );
+  return `exec node ${JSON.stringify(scriptPath)}`;
+}
+
 function processExists(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -878,6 +901,97 @@ describe('LifecycleManager', () => {
     const events = await readLines(logFile);
     // second-stop still ran despite first's shutdown failing
     expect(events).toEqual(['first', 'second', 'second-stop']);
+  });
+
+  test('shutdown command timeout kills the hanging shutdown process and continues cleanup', async () => {
+    const hangingPidFile = path.join(tempDir, 'hanging-shutdown.pid');
+    const manager = new LifecycleManager(
+      [
+        {
+          title: 'before',
+          command: appendLineCommand(logFile, 'before'),
+          shutdown: appendLineCommand(logFile, 'before-stop'),
+        },
+        {
+          title: 'hanging',
+          command: appendLineCommand(logFile, 'hanging-startup'),
+          shutdown: await createHangingShutdownCommand(
+            logFile,
+            hangingPidFile,
+            'hanging-stop-start',
+            'hanging-stop-sigterm'
+          ),
+        },
+      ],
+      tempDir,
+      undefined,
+      100
+    );
+    await manager.startup();
+
+    await expect(manager.shutdown()).rejects.toThrow('Lifecycle shutdown had 1 failure(s)');
+
+    const hangingPid = Number.parseInt(await fs.readFile(hangingPidFile, 'utf8'), 10);
+    expect(processExists(hangingPid)).toBeFalse();
+    expect(await readLines(logFile)).toEqual([
+      'before',
+      'hanging-startup',
+      'hanging-stop-start',
+      'hanging-stop-sigterm',
+      'before-stop',
+    ]);
+  }, 10000);
+
+  test('killDaemons kills the active shutdown command process', async () => {
+    const hangingPidFile = path.join(tempDir, 'active-shutdown.pid');
+    const manager = new LifecycleManager(
+      [
+        {
+          title: 'hanging',
+          command: appendLineCommand(logFile, 'start'),
+          shutdown: await createHangingShutdownCommand(
+            logFile,
+            hangingPidFile,
+            'shutdown-start',
+            'shutdown-sigterm'
+          ),
+        },
+      ],
+      tempDir,
+      undefined,
+      5000
+    );
+    await manager.startup();
+
+    const shutdownPromise = manager.shutdown();
+    await waitForLine(logFile, 'shutdown-start');
+    manager.killDaemons();
+
+    await expect(shutdownPromise).rejects.toThrow('Lifecycle shutdown had 1 failure(s)');
+
+    const hangingPid = Number.parseInt(await fs.readFile(hangingPidFile, 'utf8'), 10);
+    expect(processExists(hangingPid)).toBeFalse();
+    expect(await readLines(logFile)).toEqual(['start', 'shutdown-start']);
+  }, 10000);
+
+  test('shutdown timeout override still allows normal shutdown commands to complete', async () => {
+    const manager = new LifecycleManager(
+      [
+        {
+          title: 'seed',
+          command: appendLineCommand(logFile, 'seed'),
+          shutdown: `${appendLineCommand(logFile, 'seed-stop')}; sleep 0.05`,
+        },
+      ],
+      tempDir,
+      undefined,
+      200
+    );
+
+    await manager.startup();
+    await manager.shutdown();
+
+    expect(await readLines(logFile)).toEqual(['seed', 'seed-stop']);
   });
 
   test('shutdown reports daemon termination failures', async () => {
