@@ -88,6 +88,26 @@ async function createStubbornDaemonCommand(
   return `exec node ${JSON.stringify(scriptPath)}`;
 }
 
+async function createImmediateExitDaemonCommand(
+  filePath: string,
+  exitCode: number,
+  line?: string
+): Promise<string> {
+  const scriptPath = path.join(path.dirname(filePath), `immediate-exit-${exitCode}.cjs`);
+  await fs.writeFile(
+    scriptPath,
+    [
+      `const fs = require('node:fs');`,
+      ...(line
+        ? [`fs.appendFileSync(${JSON.stringify(filePath)}, ${JSON.stringify(line + '\n')});`]
+        : []),
+      `process.exit(${exitCode});`,
+    ].join('\n'),
+    'utf8'
+  );
+  return `exec node ${JSON.stringify(scriptPath)}`;
+}
+
 function processExists(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -161,6 +181,63 @@ describe('LifecycleManager', () => {
     await manager.shutdown();
     const events = await readLines(logFile);
     expect(events).toContain('daemon-term');
+  });
+
+  test('daemon startup fails when the process exits immediately with a non-zero code', async () => {
+    const manager = new LifecycleManager(
+      [
+        {
+          title: 'failing daemon',
+          command: await createImmediateExitDaemonCommand(logFile, 7),
+          mode: 'daemon',
+        },
+      ],
+      tempDir,
+      undefined
+    );
+
+    await expect(manager.startup()).rejects.toThrow(
+      'Lifecycle daemon "failing daemon" exited immediately with exit code 7.'
+    );
+  });
+
+  test('daemon immediate exit is tolerated when allowFailure is true', async () => {
+    const events = await startupAndShutdown([
+      {
+        title: 'allowed daemon failure',
+        command: await createImmediateExitDaemonCommand(logFile, 9),
+        mode: 'daemon',
+        allowFailure: true,
+        shutdown: appendLineCommand(logFile, 'daemon-stop'),
+      },
+      {
+        title: 'after',
+        command: appendLineCommand(logFile, 'after'),
+      },
+    ]);
+
+    expect(events).toEqual(['after']);
+  });
+
+  test('daemon that fails immediately does not trigger shutdown', async () => {
+    const manager = new LifecycleManager(
+      [
+        {
+          title: 'failing daemon',
+          command: await createImmediateExitDaemonCommand(logFile, 5),
+          mode: 'daemon',
+          allowFailure: true,
+          shutdown: appendLineCommand(logFile, 'daemon-stop'),
+        },
+      ],
+      tempDir,
+      undefined
+    );
+
+    await manager.startup();
+    await manager.shutdown();
+
+    expect(await readLines(logFile)).toEqual([]);
   });
 
   test('run command failures are tolerated when allowFailure is true', async () => {

@@ -23,6 +23,8 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const DAEMON_STARTUP_CHECK_DELAY_MS = 75;
+
 async function readOutput(
   stream: ReadableStream<Uint8Array> | null,
   writer: (text: string) => void
@@ -82,8 +84,11 @@ export class LifecycleManager {
         log(`Starting lifecycle daemon "${command.title}"...`);
         const daemon = this.spawnDaemon(command);
         state.daemon = daemon;
-        state.startupState = 'running';
-        state.shouldRunShutdown = true;
+        const exitedTooSoon = await this.handleEarlyDaemonExit(state);
+        if (!exitedTooSoon) {
+          state.startupState = 'running';
+          state.shouldRunShutdown = true;
+        }
         continue;
       }
 
@@ -116,7 +121,7 @@ export class LifecycleManager {
     this.shutdownStarted = true;
 
     for (const state of [...this.states].reverse()) {
-      if (!state.shouldRunShutdown || state.startupState === 'skipped') {
+      if (!state.shouldRunShutdown) {
         continue;
       }
 
@@ -203,6 +208,33 @@ export class LifecycleManager {
     });
 
     return proc;
+  }
+
+  private async handleEarlyDaemonExit(state: LifecycleCommandState): Promise<boolean> {
+    const daemon = state.daemon;
+    if (!daemon) {
+      return false;
+    }
+
+    await wait(DAEMON_STARTUP_CHECK_DELAY_MS);
+    const exitCode = daemon.exitCode;
+    if (exitCode === null || exitCode === 0) {
+      return false;
+    }
+
+    state.startupState = 'failed';
+    state.shouldRunShutdown = false;
+
+    if (!state.command.allowFailure) {
+      throw new Error(
+        `Lifecycle daemon "${state.command.title}" exited immediately with exit code ${exitCode}.`
+      );
+    }
+
+    warn(
+      `Lifecycle daemon "${state.command.title}" exited immediately with exit code ${exitCode}, but failure is allowed.`
+    );
+    return true;
   }
 
   private async runShellCommand(
