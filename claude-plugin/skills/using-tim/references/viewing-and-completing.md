@@ -64,10 +64,15 @@ When all tasks are complete, mark the entire plan as done:
 tim done 123                    # Mark plan complete
 ```
 
-You can also use `tim set` to change plan status:
+You can also use `tim set` to change plan status and other metadata:
 
 ```bash
 tim set 123 --status done
 tim set 123 --status in_progress
 tim set 123 --status pending
+tim set 123 --depends-on 101 102       # Add dependencies
+tim set 123 --no-depends-on 101        # Remove a dependency
+tim set 123 --parent 100               # Set parent plan
 ```
+
+See the CLI reference or `adding-plans.md` for the full list of `tim set` options.

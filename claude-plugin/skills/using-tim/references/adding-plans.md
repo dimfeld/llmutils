@@ -36,3 +36,31 @@ tim add "Plan title" --output tasks/custom.yml  # Custom file path
 ```bash
 tim add "Plan title" --issue https://github.com/org/repo/issues/123
 ```
+
+## Modifying Plans After Creation
+
+Use `tim set` to update plan metadata after creation. This is the primary way to modify dependencies, parent relationships, tags, and other properties on existing plans.
+
+```bash
+# Add dependencies
+tim set 123 --depends-on 101 102
+
+# Remove a dependency
+tim set 123 --no-depends-on 101
+
+# Set parent relationship
+tim set 123 --parent 100
+
+# Change status/priority
+tim set 123 --status in_progress
+tim set 123 --priority high
+
+# Add/remove tags
+tim set 123 --tag frontend
+tim set 123 --no-tag backend
+
+# Link issues
+tim set 123 --issue https://github.com/org/repo/issues/456
+```
+
+See the CLI reference for the full list of `tim set` options.
