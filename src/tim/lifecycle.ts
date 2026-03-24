@@ -118,10 +118,12 @@ export class LifecycleManager {
           throw err;
         }
         state.daemon = daemon;
+        // Set shouldRunShutdown immediately so killDaemons() can reach the daemon
+        // if a signal arrives during the early exit check window
+        state.shouldRunShutdown = true;
         const exitedTooSoon = await this.handleEarlyDaemonExit(state);
         if (!exitedTooSoon) {
           state.startupState = 'running';
-          state.shouldRunShutdown = true;
           void daemon.exited.then((exitCode) => {
             if (exitCode !== null && exitCode !== 0 && !state.intentionallyTerminated) {
               warn(
@@ -228,9 +230,17 @@ export class LifecycleManager {
     }
   }
 
+  /** Synchronous fallback for emergency cleanup. Only kills daemons that have no
+   *  explicit `shutdown` command — those with `shutdown` are handled by the async
+   *  `shutdown()` method which runs in the finally block. */
   killDaemons(): void {
     for (const state of this.states) {
       if (state.mode !== 'daemon' || !state.shouldRunShutdown || !state.daemon) {
+        continue;
+      }
+
+      // Skip daemons with explicit shutdown commands — they need the async shutdown() path
+      if (state.command.shutdown) {
         continue;
       }
 

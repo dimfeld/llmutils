@@ -835,6 +835,42 @@ autoexamples:
       }
     });
 
+    test('loadEffectiveConfig concatenates lifecycle commands from repo and local configs', async () => {
+      const mainConfigPath = path.join(configDir, 'tim.yml');
+      await fs.writeFile(
+        mainConfigPath,
+        yaml.stringify({
+          lifecycle: {
+            commands: [{ title: 'repo setup', command: 'echo repo setup' }],
+          },
+        }),
+        'utf-8'
+      );
+
+      const localConfigPath = path.join(configDir, 'tim.local.yml');
+      await fs.writeFile(
+        localConfigPath,
+        yaml.stringify({
+          lifecycle: {
+            commands: [
+              { title: 'local setup', command: 'echo local setup' },
+              { title: 'local daemon', command: 'echo daemon', mode: 'daemon' },
+            ],
+          },
+        }),
+        'utf-8'
+      );
+
+      const config = await loadEffectiveConfig();
+
+      // Repo commands come first, then local
+      expect(config.lifecycle?.commands?.map((c) => c.title)).toEqual([
+        'repo setup',
+        'local setup',
+        'local daemon',
+      ]);
+    });
+
     test('loadEffectiveConfig omits lifecycle when no config defines it', async () => {
       const mainConfigPath = path.join(configDir, 'tim.yml');
       await fs.writeFile(

@@ -298,10 +298,10 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     failureReason = new Error(typeof err === 'string' ? err : String(err));
   };
 
-  // Enable deferred signal exit so lifecycle shutdown can run asynchronously
-  setDeferSignalExit(true);
-
   try {
+    // Enable deferred signal exit so lifecycle shutdown can run asynchronously
+    // Must be inside try so the finally block always resets it
+    setDeferSignalExit(true);
     config = await loadEffectiveConfig(globalCliOptions.config);
     currentPlanFile = await resolvePlanFile(planFile, globalCliOptions.config);
 
@@ -1218,8 +1218,9 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     }
 
     const planSummary = planForNotification ? getCombinedTitleFromSummary(planForNotification) : '';
-    const status = executionError ? 'error' : 'success';
-    let message = `tim agent ${executionError ? 'failed' : 'completed'}`;
+    const interrupted = isShuttingDown();
+    const status = executionError ? 'error' : interrupted ? 'interrupted' : 'success';
+    let message = `tim agent ${executionError ? 'failed' : interrupted ? 'interrupted' : 'completed'}`;
     if (planSummary) {
       message += `: ${planSummary}`;
     }
