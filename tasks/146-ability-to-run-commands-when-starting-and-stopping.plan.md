@@ -10,7 +10,7 @@ priority: medium
 planGeneratedAt: 2026-02-15T09:35:34.117Z
 promptsGeneratedAt: 2026-02-15T09:35:34.117Z
 createdAt: 2025-11-07T21:16:48.398Z
-updatedAt: 2026-03-24T20:38:55.791Z
+updatedAt: 2026-03-24T20:49:21.247Z
 tasks:
   - title: Restructure signal handling for async cleanup
     done: true
@@ -197,7 +197,7 @@ tasks:
       liveness check.
   - title: "Address Review Feedback: Interrupting during a lifecycle `check` can
       still start the real startup command."
-    done: false
+    done: true
     description: |-
       Interrupting during a lifecycle `check` can still start the real startup command. In [`src/tim/lifecycle.ts`](/Users/dimfeld/Documents/projects/llmutils-projects-1774226734072/src/tim/lifecycle.ts#L84), `startup()` awaits `runShellCommand(command.check)` and then immediately falls through into `spawnDaemon()` / `runShellCommand(command.command)` without re-checking `isShuttingDown()`. If SIGINT/SIGTERM arrives while the check command is running, shutdown is already requested, but the actual startup command still runs anyway. That means a Ctrl+C during a `docker compose ps`-style check can still launch the daemon or setup command after the user has asked the agent to stop. This violates the interrupt semantics this change is supposed to enforce.
 
@@ -206,7 +206,7 @@ tasks:
       Related file: src/tim/lifecycle.ts:84-105
   - title: "Address Review Feedback: For run-mode commands, `shouldRunShutdown` is
       set at line 159 AFTER `await runShellCommand()` completes."
-    done: false
+    done: true
     description: >-
       For run-mode commands, `shouldRunShutdown` is set at line 159 AFTER `await
       runShellCommand()` completes. If a signal arrives while the run-mode
@@ -245,7 +245,7 @@ tasks:
       Related file: src/tim/lifecycle.ts:197-198
   - title: "Address Review Feedback: `Promise.race` in `waitForProcessExit` races
       `proc.exited` against `wait(timeoutMs)`."
-    done: false
+    done: true
     description: >-
       `Promise.race` in `waitForProcessExit` races `proc.exited` against
       `wait(timeoutMs)`. When the process exits before the timeout, the
@@ -262,7 +262,7 @@ tasks:
       Related file: src/tim/lifecycle.ts:305
   - title: "Address Review Feedback: Same non-cleared timer issue in the SIGKILL
       wait path at line 441-443."
-    done: false
+    done: true
     description: >-
       Same non-cleared timer issue in the SIGKILL wait path at line 441-443. The
       1-second DAEMON_SIGKILL_WAIT_MS timer also keeps the event loop alive
@@ -297,8 +297,10 @@ changedFiles:
   - schema/tim-config-schema.json
   - src/tim/commands/agent/agent.lifecycle.test.ts
   - src/tim/commands/agent/agent.ts
+  - src/tim/commands/agent/agent_batch_mode.test.ts
   - src/tim/commands/agent/batch_mode.soft_failure.test.ts
   - src/tim/commands/agent/batch_mode.ts
+  - src/tim/commands/agent/stub_plan.ts
   - src/tim/configLoader.test.ts
   - src/tim/configLoader.ts
   - src/tim/configSchema.test.ts
@@ -310,6 +312,8 @@ changedFiles:
   - src/tim/shutdown_state.ts
   - src/tim/tim.signal_handlers.test.ts
   - src/tim/tim.ts
+  - src/tim/workspace/workspace_lock.test.ts
+  - src/tim/workspace/workspace_lock.ts
 ---
 
 We want to be able to define commands that can be run in the project level configuration file. For each command, we should be able to run it in daemon mode and then kill it at the end, or just run it and wait for it to finish. These commands should be run when doing the run command. We should also be able to define commands that run when the run command exits, and this should include on a SIGINT or similar.
@@ -710,11 +714,17 @@ Document the new `lifecycle` configuration section in the README with:
 - Task 12: Workspace lock signal handlers now respect isDeferSignalExit() — lock release is deferred during agent shutdown so lifecycle commands complete first.
 - Task 13: Added isShuttingDown() guards before every runUpdateDocs() and runUpdateLessons() call in agent.ts and batch_mode.ts.
 - Task 14: Daemon termination failures in stopDaemon() now throw errors that are included in shutdown()'s aggregated error report. Added TOCTOU guard and pre-SIGKILL liveness check.
-- Additional: Added isShuttingDown() guards before executor.execute() calls, stub-plan initial mutations, runPostApplyCommands per-command checks, and batch-mode parent-done guard.
+- Task 15: Added isShuttingDown() check after lifecycle check command returns, before starting the real startup command. Added regression test.
+- Task 16: Moved shouldRunShutdown assignment before the await runShellCommand() for run-mode commands, matching daemon pattern. Added regression test.
+- Task 18: Extracted raceWithTimeout helper; waitForProcessExit now clears its timer when the process exits early.
+- Task 19: SIGKILL wait path also uses raceWithTimeout, fixing the same timer leak.
+- Additional: Added isShuttingDown() guards before executor.execute() calls, stub-plan initial mutations, runPostApplyCommands per-command checks, and batch-mode parent-done guard. Replaced unused wait() helper with Bun.sleep().
 ### Remaining
-- None
+- Task 17: Track shutdown command processes for force-exit cleanup / add timeout
+- Task 20: Add integration test for agent lifecycle without mocks
 ### Next Iteration Guidance
-- None
+- Task 17 (track shutdown command processes for force-exit) and Task 20 (integration test) remain
+- Review noted that runShellCommand() during startup/check doesn't cancel in-flight subprocesses on shutdown — this is a broader improvement beyond the current tasks
 ### Decisions / Changes
 - Daemon exit 0 within the startup check window is treated as a startup failure (not success), since mode: daemon expects a long-running process
 - Process group killing is used for daemon shutdown (process.kill(-pid, signal)) to ensure child processes are also terminated

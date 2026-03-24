@@ -21,10 +21,6 @@ function getShellCommand(command: string): string[] {
   return ['sh', '-c', command];
 }
 
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 const DAEMON_STARTUP_CHECK_DELAY_MS = 75;
 const DAEMON_SIGTERM_TIMEOUT_MS = 5000;
 const DAEMON_SIGKILL_WAIT_MS = 1000;
@@ -371,7 +367,7 @@ export class LifecycleManager {
       return false;
     }
 
-    await wait(DAEMON_STARTUP_CHECK_DELAY_MS);
+    await Bun.sleep(DAEMON_STARTUP_CHECK_DELAY_MS);
     const exitCode = daemon.exitCode;
     if (exitCode === null) {
       return false;
