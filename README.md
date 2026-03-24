@@ -89,17 +89,17 @@ lifecycle:
 
 ### Command Options
 
-| Field              | Description                                                                                                  |
-| ------------------ | ------------------------------------------------------------------------------------------------------------ |
-| `title`            | Display name for logging                                                                                     |
-| `command`          | Shell command to run at startup                                                                              |
-| `mode`             | `run` (default) — run and wait; `daemon` — spawn as managed child process                                   |
-| `shutdown`         | Shell command to run at shutdown (for `run` mode) or before killing the daemon (for `daemon` mode)           |
-| `check`            | Shell command run before startup; if exit 0, both startup and shutdown are skipped (available when `shutdown` is set or mode is `daemon`) |
-| `workingDirectory` | Working directory for the command (defaults to repo root)                                                    |
-| `env`              | Additional environment variables                                                                             |
-| `allowFailure`     | If true, startup failure won't abort the agent                                                               |
-| `onlyWorkspaceType`| Only run in workspaces of this type (`auto`, `standard`, or `primary`); skipped otherwise                    |
+| Field               | Description                                                                                                                               |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `title`             | Display name for logging                                                                                                                  |
+| `command`           | Shell command to run at startup                                                                                                           |
+| `mode`              | `run` (default) — run and wait; `daemon` — spawn as managed child process                                                                 |
+| `shutdown`          | Shell command to run at shutdown (for `run` mode) or before killing the daemon (for `daemon` mode)                                        |
+| `check`             | Shell command run before startup; if exit 0, both startup and shutdown are skipped (available when `shutdown` is set or mode is `daemon`) |
+| `workingDirectory`  | Working directory for the command (defaults to repo root)                                                                                 |
+| `env`               | Additional environment variables                                                                                                          |
+| `allowFailure`      | If true, startup failure won't abort the agent                                                                                            |
+| `onlyWorkspaceType` | Only run in workspaces of this type (`auto`, `standard`, or `primary`); skipped otherwise                                                 |
 
 ### Behavior
 
