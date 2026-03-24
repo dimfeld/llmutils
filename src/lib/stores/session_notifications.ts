@@ -14,6 +14,7 @@ import {
   closeAllNotifications,
   getActiveNotificationTags,
 } from '$lib/utils/browser_notifications.js';
+import { formatStructuredMessage } from '$lib/utils/message_formatting.js';
 import type { SessionManager } from './session_state.svelte.js';
 
 function toSessionClientEvent<TEventName extends SessionClientEventName>(
@@ -50,6 +51,12 @@ function extractMessageText(event: SessionMessageEvent): string | null {
   const body = event.message.body;
   if (body.type === 'text') {
     return body.text;
+  }
+  if (body.type === 'structured') {
+    const formatted = formatStructuredMessage(body.message);
+    if (formatted?.type === 'text' || formatted?.type === 'monospaced') {
+      return formatted.text;
+    }
   }
   return null;
 }

@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import type { HeadlessServerMessage } from '$common/../logging/headless_protocol.js';
+import type { StructuredMessage } from '$common/../logging/structured_messages.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
 
@@ -190,20 +191,26 @@ describe('session integration', () => {
     expect(snapshot.sessions[0].messages).toHaveLength(2);
     expect(snapshot.sessions[0].messages[0]).toMatchObject({
       seq: 1,
-      category: 'llmOutput',
-      bodyType: 'text',
+      category: 'structured',
+      bodyType: 'structured',
       rawType: 'llm_response',
-      body: { type: 'text', text: 'Implemented session list rendering' },
+      body: {
+        type: 'structured',
+        message: { type: 'llm_response', text: 'Implemented session list rendering' },
+      },
     });
     expect(snapshot.sessions[0].messages[1]).toMatchObject({
       seq: 2,
-      category: 'fileChange',
-      bodyType: 'fileChanges',
+      category: 'structured',
+      bodyType: 'structured',
       rawType: 'file_change_summary',
       body: {
-        type: 'fileChanges',
-        status: 'completed',
-        changes: [{ kind: 'updated', path: 'src/lib/server/session_manager.ts' }],
+        type: 'structured',
+        message: {
+          type: 'file_change_summary',
+          status: 'completed',
+          changes: [{ kind: 'updated', path: 'src/lib/server/session_manager.ts' }],
+        },
       },
     });
   });
@@ -280,6 +287,127 @@ describe('session integration', () => {
     }
 
     expect(snapshot.sessions[0].activePrompt).toBeNull();
+  });
+
+  test('ignores malformed prompt side effects while still recording the structured messages', () => {
+    expect.hasAssertions();
+
+    const { events, unsubscribe } = recordEvents(manager);
+
+    manager.handleWebSocketConnect('conn-malformed-prompt', () => {});
+    manager.handleWebSocketMessage('conn-malformed-prompt', {
+      type: 'session_info',
+      command: 'agent',
+      interactive: true,
+      workspacePath: '/tmp/malformed-prompt',
+      gitRemote: undefined,
+    });
+    manager.handleWebSocketMessage('conn-malformed-prompt', {
+      type: 'output',
+      seq: 1,
+      message: {
+        type: 'structured',
+        message: {
+          type: 'prompt_request',
+          timestamp: '2026-03-17T10:00:01.000Z',
+          requestId: 'req-valid',
+          promptType: 'confirm',
+          promptConfig: { message: 'Continue?' },
+        },
+      },
+    });
+    manager.handleWebSocketMessage('conn-malformed-prompt', {
+      type: 'output',
+      seq: 2,
+      message: {
+        type: 'structured',
+        message: {
+          type: 'prompt_answered',
+          timestamp: '2026-03-17T10:00:02.000Z',
+          requestId: 123,
+          promptType: 'confirm',
+          source: 'terminal',
+          value: true,
+        } as unknown as StructuredMessage,
+      },
+    });
+    manager.handleWebSocketMessage('conn-malformed-prompt', {
+      type: 'output',
+      seq: 3,
+      message: {
+        type: 'structured',
+        message: {
+          type: 'prompt_request',
+          timestamp: '2026-03-17T10:00:03.000Z',
+          requestId: 456,
+          promptType: 'confirm',
+        } as unknown as StructuredMessage,
+      },
+    });
+    manager.handleWebSocketMessage('conn-malformed-prompt', {
+      type: 'output',
+      seq: 4,
+      message: {
+        type: 'structured',
+        message: {
+          type: 'prompt_request',
+          timestamp: '2026-03-17T10:00:04.000Z',
+          requestId: 'req-bad-config',
+          promptType: 'confirm',
+          promptConfig: 'Continue?' as unknown as StructuredMessage['promptConfig'],
+        } as unknown as StructuredMessage,
+      },
+    });
+
+    const snapshot = manager.getSessionSnapshot();
+    unsubscribe();
+
+    expect(events.map((event) => event.event)).toEqual([
+      'session:new',
+      'session:update',
+      'session:prompt',
+      'session:message',
+      'session:message',
+      'session:message',
+      'session:message',
+    ]);
+    expect(snapshot.sessions[0].activePrompt).toMatchObject({
+      requestId: 'req-valid',
+      promptType: 'confirm',
+      promptConfig: { message: 'Continue?' },
+    });
+    expect(snapshot.sessions[0].messages.map((message) => message.seq)).toEqual([1, 2, 3, 4]);
+    expect(snapshot.sessions[0].messages[1]).toMatchObject({
+      rawType: 'prompt_answered',
+      body: {
+        type: 'structured',
+        message: {
+          type: 'prompt_answered',
+          requestId: 123,
+        },
+      },
+    });
+    expect(snapshot.sessions[0].messages[2]).toMatchObject({
+      rawType: 'prompt_request',
+      body: {
+        type: 'structured',
+        message: {
+          type: 'prompt_request',
+          requestId: 456,
+        },
+      },
+    });
+    expect(snapshot.sessions[0].messages[3]).toMatchObject({
+      rawType: 'prompt_request',
+      body: {
+        type: 'structured',
+        message: {
+          type: 'prompt_request',
+          requestId: 'req-bad-config',
+          promptConfig: 'Continue?',
+        },
+      },
+    });
   });
 
   test('creates notification-only sessions and emits both lifecycle and message events', () => {
@@ -609,7 +737,10 @@ describe('session integration', () => {
       data: {
         connectionId: 'conn-sse',
         message: {
-          body: { type: 'text', text: 'Live update' },
+          body: {
+            type: 'structured',
+            message: { type: 'llm_response', text: 'Live update' },
+          },
           rawType: 'llm_response',
         },
       },
@@ -700,7 +831,10 @@ describe('session integration', () => {
         connectionId: 'conn-replay',
         message: {
           seq: 2,
-          body: { type: 'text', text: 'Live message' },
+          body: {
+            type: 'structured',
+            message: { type: 'llm_response', text: 'Live message' },
+          },
         },
       },
     });
@@ -708,8 +842,11 @@ describe('session integration', () => {
     const snapshot = manager.getSessionSnapshot();
     expect(snapshot.sessions[0].messages.map((message) => message.seq)).toEqual([1, 2]);
     expect(snapshot.sessions[0].messages[0].body).toMatchObject({
-      type: 'text',
-      text: 'Replayed message',
+      type: 'structured',
+      message: {
+        type: 'llm_response',
+        text: 'Replayed message',
+      },
     });
 
     abortController.abort();

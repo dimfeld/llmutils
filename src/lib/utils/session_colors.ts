@@ -1,6 +1,7 @@
 import type { MessageCategory } from '$lib/types/session.js';
+import type { DisplayCategory } from './message_formatting.js';
 
-export function categoryColorClass(category: MessageCategory): string {
+export function categoryColorClass(category: MessageCategory | DisplayCategory): string {
   switch (category) {
     case 'lifecycle':
     case 'llmOutput':
@@ -15,6 +16,7 @@ export function categoryColorClass(category: MessageCategory): string {
       return 'text-red-400';
     case 'userInput':
       return 'text-orange-400';
+    case 'structured':
     case 'log':
     default:
       return 'text-gray-300';

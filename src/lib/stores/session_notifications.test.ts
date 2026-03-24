@@ -500,11 +500,17 @@ describe('session_notifications', () => {
       connectionId: 'active-1',
       message: createMessage({
         seq: 42,
+        category: 'structured',
+        bodyType: 'structured',
         rawType: 'agent_session_end',
         triggersNotification: true,
         body: {
-          type: 'text',
-          text: 'Agent session completed | turns=1',
+          type: 'structured',
+          message: {
+            type: 'agent_session_end',
+            success: true,
+            turns: 1,
+          },
         },
       }),
     });

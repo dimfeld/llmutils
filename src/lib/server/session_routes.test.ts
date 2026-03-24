@@ -108,7 +108,7 @@ describe('lib/server/session_routes', () => {
       event: 'session:new',
       data: {
         session: {
-          connectionId: 'notification:example.com/repo|/tmp/repo',
+          connectionId: 'notification:example.com/repo',
         },
       },
     });
@@ -218,14 +218,14 @@ describe('lib/server/session_routes', () => {
     expect(receivedEvents[1]).toMatchObject({
       data: {
         session: {
-          connectionId: 'notification:example.com/repo|/tmp/repo',
+          connectionId: 'notification:example.com/repo',
           status: 'notification',
         },
       },
     });
     expect(receivedEvents[2]).toMatchObject({
       data: {
-        connectionId: 'notification:example.com/repo|/tmp/repo',
+        connectionId: 'notification:example.com/repo',
         message: {
           body: { text: 'First notification', type: 'text' },
         },
@@ -233,7 +233,7 @@ describe('lib/server/session_routes', () => {
     });
     expect(receivedEvents[4]).toMatchObject({
       data: {
-        connectionId: 'notification:example.com/repo|/tmp/repo',
+        connectionId: 'notification:example.com/repo',
         message: {
           body: { text: 'Second notification', type: 'text' },
         },
@@ -258,7 +258,7 @@ describe('lib/server/session_routes', () => {
     });
     expect(receivedEvents[8]).toEqual({
       event: 'session:dismissed',
-      data: { connectionId: 'notification:example.com/repo|/tmp/repo' },
+      data: { connectionId: 'notification:example.com/repo' },
     });
     expect(receivedEvents[11]).toMatchObject({
       data: {
@@ -405,7 +405,7 @@ describe('lib/server/session_routes', () => {
         event: 'session:new',
         data: {
           session: expect.objectContaining({
-            connectionId: 'notification:example.com/repo|/tmp/repo',
+            connectionId: 'notification:example.com/repo',
             status: 'notification',
           }),
         },
@@ -413,7 +413,7 @@ describe('lib/server/session_routes', () => {
       {
         event: 'session:message',
         data: {
-          connectionId: 'notification:example.com/repo|/tmp/repo',
+          connectionId: 'notification:example.com/repo',
           message: expect.objectContaining({
             body: { type: 'text', text: 'Buffered notification' },
           }),

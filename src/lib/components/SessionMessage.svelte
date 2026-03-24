@@ -1,16 +1,39 @@
 <script lang="ts">
-  import type { DisplayMessage } from '$lib/types/session.js';
+  import type { DisplayMessage, DisplayMessageBody } from '$lib/types/session.js';
   import { categoryColorClass } from '$lib/utils/session_colors.js';
+  import {
+    getDisplayCategory,
+    formatStructuredMessage,
+    type DisplayCategory,
+  } from '$lib/utils/message_formatting.js';
   import {
     getTextTruncationState,
     KV_VALUE_TRUNCATE_CHARS,
     TOOL_USE_TRUNCATE_LINE_LIMIT,
   } from './session_message_truncation.js';
+  import ReviewResultDisplay from './ReviewResultDisplay.svelte';
 
   let { message }: { message: DisplayMessage } = $props();
 
-  let colorClass = $derived(categoryColorClass(message.category));
+  let displayCategory: DisplayCategory | null = $derived(
+    message.body.type === 'structured' ? getDisplayCategory(message.body.message) : null
+  );
+
+  let colorClass = $derived(
+    displayCategory ? categoryColorClass(displayCategory) : categoryColorClass(message.category)
+  );
+
   let timeStr = $derived(new Date(message.timestamp).toLocaleTimeString());
+
+  /** The body to render — either the message body directly, or the formatted structured message. */
+  let renderBody: DisplayMessageBody | null = $derived.by(() => {
+    if (message.body.type !== 'structured') return message.body;
+    try {
+      return formatStructuredMessage(message.body.message);
+    } catch {
+      return { type: 'text', text: `[render error: ${message.rawType}]` };
+    }
+  });
 
   let expanded = $state(false);
   let kvExpanded = $state(false);
@@ -28,21 +51,21 @@
   }
 
   let textContent = $derived.by(() => {
-    if (message.body.type === 'text') return message.body.text;
-    if (message.body.type === 'monospaced') return message.body.text;
+    if (renderBody?.type === 'text') return renderBody.text;
+    if (renderBody?.type === 'monospaced') return renderBody.text;
     return '';
   });
 
   let skipTruncation = $derived(
-    message.category === 'llmOutput' || message.rawType === 'review_result'
+    displayCategory === 'llmOutput' || message.rawType === 'review_result'
   );
+
   let effectiveLineLimit = $derived(
-    message.category === 'toolUse' || message.category === 'command'
+    displayCategory === 'toolUse' || displayCategory === 'command'
       ? TOOL_USE_TRUNCATE_LINE_LIMIT
       : undefined
   );
 
-  let lineCount = $derived(textContent.split('\n').length);
   let textTruncation = $derived(
     skipTruncation
       ? {
@@ -55,7 +78,7 @@
       : getTextTruncationState(textContent, expanded, { lineLimit: effectiveLineLimit })
   );
   let isTruncatable = $derived(
-    (message.body.type === 'text' || message.body.type === 'monospaced') &&
+    (renderBody?.type === 'text' || renderBody?.type === 'monospaced') &&
       textTruncation.isTruncatable
   );
   let displayText = $derived(textTruncation.displayText);
@@ -67,11 +90,15 @@
 
     return `Show more (${textTruncation.hiddenCharCount} more chars)`;
   });
+
+  let isToolUseValues = $derived(displayCategory === 'toolUse');
 </script>
 
 <div class="py-0.5 {colorClass}">
   <span class="mr-2 text-xs text-gray-400">{timeStr}</span>
-  {#if message.body.type === 'text'}
+  {#if message.body.type === 'structured' && message.body.message.type === 'review_result'}
+    <ReviewResultDisplay message={message.body.message} />
+  {:else if renderBody?.type === 'text'}
     <span class="whitespace-pre-wrap">{displayText}</span>
     {#if isTruncatable}
       <button
@@ -82,7 +109,7 @@
         {expandLabel}
       </button>
     {/if}
-  {:else if message.body.type === 'monospaced'}
+  {:else if renderBody?.type === 'monospaced'}
     <pre class="mt-1 whitespace-pre-wrap">{displayText}</pre>
     {#if isTruncatable}
       <button
@@ -93,11 +120,11 @@
         {expandLabel}
       </button>
     {/if}
-  {:else if message.body.type === 'todoList'}
-    {#if message.body.explanation}
-      <span class="text-gray-400">{message.body.explanation}</span>
+  {:else if renderBody?.type === 'todoList'}
+    {#if renderBody.explanation}
+      <span class="text-gray-400">{renderBody.explanation}</span>
     {/if}
-    {#each message.body.items as item, i (i)}
+    {#each renderBody.items as item, i (i)}
       <div class="pl-2">
         <span
           class={item.status === 'completed'
@@ -109,23 +136,23 @@
                 : 'text-gray-400'}
         >
           {item.status === 'completed'
-            ? '✓'
+            ? '\u2713'
             : item.status === 'in_progress'
-              ? '→'
+              ? '\u2192'
               : item.status === 'blocked'
-                ? '✗'
+                ? '\u2717'
                 : item.status === 'unknown'
                   ? '?'
-                  : '○'}
+                  : '\u25CB'}
         </span>
         {item.label}
       </div>
     {/each}
-  {:else if message.body.type === 'fileChanges'}
-    {#if message.body.status}
-      <span class="text-gray-400">{message.body.status}</span>
+  {:else if renderBody?.type === 'fileChanges'}
+    {#if renderBody.status}
+      <span class="text-gray-400">{renderBody.status}</span>
     {/if}
-    {#each message.body.changes as change, i (change.path + ':' + i)}
+    {#each renderBody.changes as change, i (change.path + ':' + i)}
       <div class="pl-2">
         <span
           class={change.kind === 'added'
@@ -139,13 +166,12 @@
         {change.path}
       </div>
     {/each}
-  {:else if message.body.type === 'keyValuePairs'}
-    {@const isToolUseValues = message.category === 'toolUse'}
-    {@const hasLongValues = message.body.entries.some(
+  {:else if renderBody?.type === 'keyValuePairs'}
+    {@const hasLongValues = renderBody.entries.some(
       (e) => getKeyValueTruncationState(e.value, kvExpanded, isToolUseValues).isTruncatable
     )}
     <div class="mt-1 pl-2">
-      {#each message.body.entries as entry (entry.key)}
+      {#each renderBody.entries as entry (entry.key)}
         {@const entryTruncation = getKeyValueTruncationState(
           entry.value,
           kvExpanded,
@@ -166,5 +192,7 @@
         </button>
       {/if}
     </div>
+  {:else if renderBody === null}
+    <span class="text-gray-400">Unsupported message type: {message.rawType}</span>
   {/if}
 </div>

@@ -118,7 +118,7 @@ The sessions system uses a discovery-based architecture where the web GUI discov
 
 - **WebSocket server** (`src/lib/server/ws_server.ts`): Listens on port 8123 (configurable via `TIM_WS_PORT` env var or `headless.url` config). Accepts HTTP POST notifications at `/messages`. It remains in place for notifications and future features, but not for agent session connections. Message parsing uses shared utilities from `src/logging/headless_message_utils.ts`.
 - **Session discovery client** (`src/lib/server/session_discovery.ts`): Watches the session directory, manages WebSocket client connections to discovered agent processes, and feeds messages into SessionManager via `handleWebSocketConnect/Message/Disconnect`. Uses the session info file's `sessionId` as the `connectionId` for SessionManager. Session registration is gated on validated `session_info` (sessionId must match PID file); reconnections to existing offline sessions buffer messages until `replay_end` to protect existing session history.
-- **Session manager** (`src/lib/server/session_manager.ts`): Central state management singleton. Tracks active/offline/notification sessions, categorizes all 29 StructuredMessage types into display categories (lifecycle, llmOutput, toolUse, fileChange, command, progress, error, log, userInput), handles replay buffering, prompt tracking, and project resolution from DB.
+- **Session manager** (`src/lib/server/session_manager.ts`): Central state management singleton. Tracks active/offline/notification sessions, passes structured messages through to the client as-is (category set to `'structured'`), handles replay buffering, prompt tracking, and project resolution from DB. Display category computation (lifecycle, llmOutput, toolUse, etc.) is done client-side via `src/lib/utils/message_formatting.ts`.
 - **Session context** (`src/lib/server/session_context.ts`): HMR-safe singleton (uses `Symbol.for`) exposing `getSessionManager()`, `getWsConnections()`, and `getSessionDiscoveryClient()` / `setSessionDiscoveryClient()` for use by SSE and API routes.
 - **Server init** (`src/hooks.server.ts`): Starts the WebSocket server and session discovery client on SvelteKit boot via the `init` export.
 
@@ -128,9 +128,9 @@ The sessions system uses a discovery-based architecture where the web GUI discov
 - **Dynamic session info updates**: The headless adapter can re-send `session_info` after initial handshake (e.g., after workspace switching in `setupWorkspace()`). The server handler is idempotent — it replaces `session.sessionInfo`, recomputes `groupKey` and `projectId`, and emits `session:update`. The web UI re-groups the session automatically via reactive `sessionGroups`.
 - Messages during replay (`replay_start`..`replay_end`) are added to the session's message list but NOT emitted as SSE events
 - **Replay prompt suppression**: Prompts received during replay are deferred to internal state (`deferredPromptEvent` in `SessionInternals`) rather than stored in `session.activePrompt`. On `replay_end`, any deferred prompt is promoted to the active prompt and emitted. `getSessionSnapshot()` and `cloneSession()` strip `activePrompt` while `isReplaying` is true. `sendPromptResponse()` rejects during replay as a safety guard.
-- Each message is categorized into a `DisplayMessage` with category-based color coding, body type (text/monospaced/todoList/fileChanges/keyValuePairs), and the original structured type
-- Debug tunnel messages are suppressed; `token_usage` and `llm_status` render as compact single-line summaries
-- Non-structured TunnelMessages (log/error/warn/stdout/stderr) have args joined by spaces
+- Each message becomes a `DisplayMessage`. Structured messages are passed through with `body: { type: 'structured', message: StructuredMessagePayload }` and `category: 'structured'`. The client computes display categories and formatting via `src/lib/utils/message_formatting.ts`. Non-structured TunnelMessages (log/error/warn/stdout/stderr) retain server-side formatting into text/monospaced body types with `category: 'log' | 'error'`.
+- Debug tunnel messages are suppressed
+- `MessageCategory` on the wire is simplified to `'log' | 'error' | 'structured'`. The richer display categories (lifecycle, llmOutput, toolUse, fileChange, command, progress, error, userInput) are computed client-side from the structured message's `type` field via `getDisplayCategory()`.
 
 ### Message Limits
 
@@ -141,9 +141,11 @@ The sessions system uses a discovery-based architecture where the web GUI discov
 
 ### Defensive Message Handling
 
-- `summarizeStructuredMessage()` has a default case returning a generic fallback for unknown structured message types, preventing crashes from unexpected agent protocol additions.
-- `handleStructuredSideEffects()` is guarded against missing nested message data.
+- `formatTunnelMessage()` wraps structured message processing in try/catch with a fallback text body for malformed payloads, preventing crashes from unexpected agent protocol additions. Validates structured payloads are plain objects with a string `type` before passing through; rejects malformed payloads to a text log fallback.
+- `handleStructuredSideEffects()` validates structured payloads before acting on them: `prompt_request` requires `requestId`, `promptConfig`, and valid `choices` (array or absent); `prompt_answered` requires `requestId`. Malformed payloads are silently skipped rather than installing invalid prompt state.
 - WebSocket message dispatch in `ws_server.ts` wraps `sessionManager.handleWebSocketMessage()` in try/catch so malformed client frames cannot crash message processing for that socket.
+- Client-side `formatStructuredMessage()` in `src/lib/utils/message_formatting.ts` has a default case returning a generic text fallback for unknown structured message types. `SessionMessage.svelte` wraps `formatStructuredMessage()` calls in try/catch for graceful degradation on malformed payloads. `ReviewResultDisplay.svelte` validates input arrays and issue entries independently.
+- Browser notifications (`session_notifications.ts`): `extractMessageText()` handles structured message bodies via `formatStructuredMessage()`, so events like `agent_session_end` trigger notifications correctly even though they arrive as structured bodies rather than text.
 
 ### Notification Sessions
 
@@ -200,10 +202,10 @@ Browser clients receive real-time updates via SSE and interact with sessions thr
 - **`SessionList.svelte`** — Grouped session sidebar (left pane, w-96). Groups are collapsible by project. Shows all sessions regardless of selected project.
 - **`SessionRow.svelte`** — Individual session entry with status indicator dot (green=active, gray=offline, blue=notification), command name, plan title/ID, dismiss button for offline/notification sessions, a terminal icon when the session includes WezTerm pane metadata, and an "Open Terminal" button (AppWindow icon) that opens a new terminal window in the session's workspace directory (visible on hover when `workspacePath` exists).
 - **`SessionDetail.svelte`** — Message transcript view with session header (command, plan, workspace, status), optional terminal activation button for WezTerm-backed sessions, "Open Terminal" button (AppWindow icon, always visible when `workspacePath` exists) that opens a new terminal in the workspace directory, End Session button with inline confirmation for active sessions, scrollable message list, fixed-position prompt area above messages, conditional message input bar. Uses `{#key connectionId}` for remount on session switch. Auto-scroll is scroll-position-based: active when at bottom, disabled when user scrolls up, resumes on scroll to bottom.
-- **`SessionMessage.svelte`** — Renders messages by body type: text (colored by category), monospaced (preformatted code blocks), todoList (items with status icons), fileChanges (paths with +/~/- indicators), keyValuePairs (structured metadata table). Long content truncated with expandable reveal.
+- **`SessionMessage.svelte`** — Renders messages by body type: text (colored by category), monospaced (preformatted code blocks), todoList (items with status icons), fileChanges (paths with +/~/- indicators), keyValuePairs (structured metadata table), structured (raw structured message data formatted client-side via `formatStructuredMessage()`, with dedicated components for specific types like `ReviewResultDisplay`). Long content truncated with expandable reveal.
 - **`PromptRenderer.svelte`** — Renders by prompt type: confirm (Yes/No buttons with default highlighted), input (text field with submit), select (radio group), checkbox (checkbox group), prefix_select (clickable word segments for bash command prefix authorization — selected words highlighted in accent color, remaining dimmed; "Submit Prefix" and "Allow Exact Command" buttons). Uses `{#key requestId}` for state reset. Shows header/question fields from promptConfig when present. Falls back to raw JSON display for unsupported types.
 - **`MessageInput.svelte`** — Text input with Enter to send, Shift+Enter for newlines. Hidden (not disabled) when session is offline or non-interactive.
-- **Category colors** (`src/lib/utils/session_colors.ts`): lifecycle=green, llmOutput=green, toolUse=cyan, fileChange=cyan, command=cyan, progress=blue, error=red, log=gray, userInput=orange.
+- **Category colors** (`src/lib/utils/session_colors.ts`): Maps `DisplayCategory` values to Tailwind color classes — lifecycle=green, llmOutput=green, toolUse=cyan, fileChange=cyan, command=cyan, progress=blue, error=red, log=gray, userInput=orange. For structured messages, the display category is computed client-side via `getDisplayCategory()` from `src/lib/utils/message_formatting.ts`.
 
 ## Keyboard Navigation
 

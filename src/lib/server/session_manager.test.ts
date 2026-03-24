@@ -10,12 +10,7 @@ import type { TunnelMessage } from '../../logging/tunnel_protocol.js';
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 
-import {
-  SessionManager,
-  categorizeMessage,
-  formatTunnelMessage,
-  sessionGroupKey,
-} from './session_manager.js';
+import { SessionManager, formatTunnelMessage, sessionGroupKey } from './session_manager.js';
 
 describe('lib/server/session_manager', () => {
   let tempDir: string;
@@ -43,345 +38,137 @@ describe('lib/server/session_manager', () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  test('categorizeMessage covers all structured message types', () => {
+  test('formatTunnelMessage passes through all structured message types as structured body', () => {
     const timestamp = '2026-03-17T10:00:00.000Z';
-    const cases: Array<{
-      message: StructuredMessage;
-      category: ReturnType<typeof categorizeMessage>['category'];
-      bodyType: ReturnType<typeof categorizeMessage>['bodyType'];
-    }> = [
+    const messages: StructuredMessage[] = [
+      { type: 'agent_session_start', timestamp, executor: 'codex', mode: 'agent', planId: 229 },
+      { type: 'agent_session_end', timestamp, success: true, durationMs: 100, turns: 2 },
+      { type: 'agent_iteration_start', timestamp, iterationNumber: 1, taskTitle: 'Ship it' },
+      { type: 'agent_step_start', timestamp, phase: 'implement', message: 'starting' },
+      { type: 'agent_step_end', timestamp, phase: 'implement', success: true, summary: 'done' },
+      { type: 'llm_thinking', timestamp, text: 'thinking' },
+      { type: 'llm_response', timestamp, text: 'response' },
       {
-        message: {
-          type: 'agent_session_start',
-          timestamp,
-          executor: 'codex',
-          mode: 'agent',
-          planId: 229,
-        },
-        category: 'lifecycle',
-        bodyType: 'text',
+        type: 'llm_tool_use',
+        timestamp,
+        toolName: 'search',
+        inputSummary: 'query',
+        input: { q: 'tim' },
       },
       {
-        message: {
-          type: 'agent_session_end',
-          timestamp,
-          success: true,
-          durationMs: 100,
-          turns: 2,
+        type: 'llm_tool_result',
+        timestamp,
+        toolName: 'search',
+        resultSummary: 'ok',
+        result: { hits: 1 },
+      },
+      { type: 'llm_status', timestamp, source: 'codex', status: 'running', detail: 'phase' },
+      {
+        type: 'todo_update',
+        timestamp,
+        items: [{ label: 'Write tests', status: 'in_progress' }],
+        explanation: 'working',
+      },
+      { type: 'task_completion', timestamp, taskTitle: 'Write tests', planComplete: false },
+      { type: 'file_write', timestamp, path: 'src/file.ts', lineCount: 10 },
+      { type: 'file_edit', timestamp, path: 'src/file.ts', diff: '+ test' },
+      {
+        type: 'file_change_summary',
+        timestamp,
+        changes: [{ path: 'src/file.ts', kind: 'updated' }],
+        status: 'completed',
+      },
+      { type: 'command_exec', timestamp, command: 'bun test', cwd: '/repo' },
+      {
+        type: 'command_result',
+        timestamp,
+        command: 'bun test',
+        cwd: '/repo',
+        exitCode: 0,
+        stdout: 'ok',
+      },
+      { type: 'review_start', timestamp, executor: 'codex', planId: 229 },
+      {
+        type: 'review_result',
+        timestamp,
+        verdict: 'NEEDS_FIXES',
+        issues: [],
+        recommendations: [],
+        actionItems: [],
+      },
+      { type: 'workflow_progress', timestamp, message: 'Working', phase: 'tests' },
+      { type: 'failure_report', timestamp, summary: 'Failed', problems: 'Broken' },
+      {
+        type: 'execution_summary',
+        timestamp,
+        summary: {
+          planId: '229',
+          planTitle: 'Sessions view',
+          planFilePath: 'tasks/229.plan.md',
+          mode: 'serial',
+          startedAt: timestamp,
+          durationMs: 123,
+          steps: [],
+          changedFiles: ['src/a.ts'],
+          errors: [],
+          metadata: { totalSteps: 1, failedSteps: 0 },
         },
-        category: 'lifecycle',
-        bodyType: 'text',
+      },
+      { type: 'token_usage', timestamp, totalTokens: 50, inputTokens: 20, outputTokens: 30 },
+      { type: 'input_required', timestamp, prompt: 'Continue?' },
+      { type: 'user_terminal_input', timestamp, content: 'y', source: 'terminal' },
+      {
+        type: 'prompt_request',
+        timestamp,
+        requestId: 'req-1',
+        promptType: 'confirm',
+        promptConfig: { message: 'Confirm?' },
+        timeoutMs: 5000,
       },
       {
-        message: {
-          type: 'agent_iteration_start',
-          timestamp,
-          iterationNumber: 1,
-          taskTitle: 'Ship it',
-        },
-        category: 'lifecycle',
-        bodyType: 'text',
+        type: 'prompt_answered',
+        timestamp,
+        requestId: 'req-1',
+        promptType: 'confirm',
+        value: true,
+        source: 'terminal',
       },
+      { type: 'prompt_cancelled', timestamp, requestId: 'req-1' },
+      { type: 'plan_discovery', timestamp, planId: 229, title: 'Sessions view' },
       {
-        message: {
-          type: 'agent_step_start',
-          timestamp,
-          phase: 'implement',
-          message: 'starting',
-        },
-        category: 'lifecycle',
-        bodyType: 'text',
-      },
-      {
-        message: {
-          type: 'agent_step_end',
-          timestamp,
-          phase: 'implement',
-          success: true,
-          summary: 'done',
-        },
-        category: 'lifecycle',
-        bodyType: 'text',
-      },
-      {
-        message: {
-          type: 'llm_thinking',
-          timestamp,
-          text: 'thinking',
-        },
-        category: 'llmOutput',
-        bodyType: 'monospaced',
-      },
-      {
-        message: {
-          type: 'llm_response',
-          timestamp,
-          text: 'response',
-        },
-        category: 'llmOutput',
-        bodyType: 'text',
-      },
-      {
-        message: {
-          type: 'llm_tool_use',
-          timestamp,
-          toolName: 'search',
-          inputSummary: 'query',
-          input: { q: 'tim' },
-        },
-        category: 'toolUse',
-        bodyType: 'keyValuePairs',
-      },
-      {
-        message: {
-          type: 'llm_tool_result',
-          timestamp,
-          toolName: 'search',
-          resultSummary: 'ok',
-          result: { hits: 1 },
-        },
-        category: 'toolUse',
-        bodyType: 'text',
-      },
-      {
-        message: {
-          type: 'llm_status',
-          timestamp,
-          source: 'codex',
-          status: 'running',
-          detail: 'phase',
-        },
-        category: 'progress',
-        bodyType: 'text',
-      },
-      {
-        message: {
-          type: 'todo_update',
-          timestamp,
-          items: [{ label: 'Write tests', status: 'in_progress' }],
-          explanation: 'working',
-        },
-        category: 'progress',
-        bodyType: 'todoList',
-      },
-      {
-        message: {
-          type: 'task_completion',
-          timestamp,
-          taskTitle: 'Write tests',
-          planComplete: false,
-        },
-        category: 'progress',
-        bodyType: 'text',
-      },
-      {
-        message: {
-          type: 'file_write',
-          timestamp,
-          path: 'src/file.ts',
-          lineCount: 10,
-        },
-        category: 'fileChange',
-        bodyType: 'text',
-      },
-      {
-        message: {
-          type: 'file_edit',
-          timestamp,
-          path: 'src/file.ts',
-          diff: '+ test',
-        },
-        category: 'fileChange',
-        bodyType: 'monospaced',
-      },
-      {
-        message: {
-          type: 'file_change_summary',
-          timestamp,
-          changes: [{ path: 'src/file.ts', kind: 'updated' }],
-          status: 'completed',
-        },
-        category: 'fileChange',
-        bodyType: 'fileChanges',
-      },
-      {
-        message: {
-          type: 'command_exec',
-          timestamp,
-          command: 'bun test',
-          cwd: '/repo',
-        },
-        category: 'command',
-        bodyType: 'monospaced',
-      },
-      {
-        message: {
-          type: 'command_result',
-          timestamp,
-          command: 'bun test',
-          cwd: '/repo',
-          exitCode: 0,
-          stdout: 'ok',
-        },
-        category: 'command',
-        bodyType: 'monospaced',
-      },
-      {
-        message: {
-          type: 'review_start',
-          timestamp,
-          executor: 'codex',
-          planId: 229,
-        },
-        category: 'lifecycle',
-        bodyType: 'text',
-      },
-      {
-        message: {
-          type: 'review_result',
-          timestamp,
-          verdict: 'NEEDS_FIXES',
-          issues: [],
-          recommendations: [],
-          actionItems: [],
-        },
-        category: 'error',
-        bodyType: 'monospaced',
-      },
-      {
-        message: {
-          type: 'workflow_progress',
-          timestamp,
-          message: 'Working',
-          phase: 'tests',
-        },
-        category: 'progress',
-        bodyType: 'text',
-      },
-      {
-        message: {
-          type: 'failure_report',
-          timestamp,
-          summary: 'Failed',
-          problems: 'Broken',
-        },
-        category: 'error',
-        bodyType: 'text',
-      },
-      {
-        message: {
-          type: 'execution_summary',
-          timestamp,
-          summary: {
-            planId: '229',
-            planTitle: 'Sessions view',
-            planFilePath: 'tasks/229.plan.md',
-            mode: 'serial',
-            startedAt: timestamp,
-            durationMs: 123,
-            steps: [],
-            changedFiles: ['src/a.ts'],
-            errors: [],
-            metadata: {
-              totalSteps: 1,
-              failedSteps: 0,
-            },
-          },
-        },
-        category: 'lifecycle',
-        bodyType: 'keyValuePairs',
-      },
-      {
-        message: {
-          type: 'token_usage',
-          timestamp,
-          totalTokens: 50,
-          inputTokens: 20,
-          outputTokens: 30,
-        },
-        category: 'progress',
-        bodyType: 'text',
-      },
-      {
-        message: {
-          type: 'input_required',
-          timestamp,
-          prompt: 'Continue?',
-        },
-        category: 'lifecycle',
-        bodyType: 'text',
-      },
-      {
-        message: {
-          type: 'user_terminal_input',
-          timestamp,
-          content: 'y',
-          source: 'terminal',
-        },
-        category: 'userInput',
-        bodyType: 'text',
-      },
-      {
-        message: {
-          type: 'prompt_request',
-          timestamp,
-          requestId: 'req-1',
-          promptType: 'confirm',
-          promptConfig: { message: 'Confirm?' },
-          timeoutMs: 5000,
-        },
-        category: 'lifecycle',
-        bodyType: 'text',
-      },
-      {
-        message: {
-          type: 'prompt_answered',
-          timestamp,
-          requestId: 'req-1',
-          promptType: 'confirm',
-          value: true,
-          source: 'terminal',
-        },
-        category: 'lifecycle',
-        bodyType: 'text',
-      },
-      {
-        message: {
-          type: 'prompt_cancelled',
-          timestamp,
-          requestId: 'req-1',
-        },
-        category: 'lifecycle',
-        bodyType: 'text',
-      },
-      {
-        message: {
-          type: 'plan_discovery',
-          timestamp,
-          planId: 229,
-          title: 'Sessions view',
-        },
-        category: 'lifecycle',
-        bodyType: 'text',
-      },
-      {
-        message: {
-          type: 'workspace_info',
-          timestamp,
-          workspaceId: 'ws-1',
-          path: '/tmp/ws',
-          planFile: 'tasks/229.plan.md',
-        },
-        category: 'lifecycle',
-        bodyType: 'text',
+        type: 'workspace_info',
+        timestamp,
+        workspaceId: 'ws-1',
+        path: '/tmp/ws',
+        planFile: 'tasks/229.plan.md',
       },
     ];
 
-    for (const testCase of cases) {
-      expect(categorizeMessage(testCase.message)).toEqual({
-        category: testCase.category,
-        bodyType: testCase.bodyType,
+    for (const msg of messages) {
+      const result = formatTunnelMessage('conn-1', 1, {
+        type: 'structured',
+        message: msg,
       });
+      expect(result).toMatchObject({
+        category: 'structured',
+        bodyType: 'structured',
+        rawType: msg.type,
+        body: {
+          type: 'structured',
+          message: expect.objectContaining({ type: msg.type }),
+        },
+      });
+      // timestamp and transportSource should be stripped from the payload
+      const payload = (result!.body as { type: 'structured'; message: Record<string, unknown> })
+        .message;
+      expect(payload).not.toHaveProperty('timestamp');
+      expect(payload).not.toHaveProperty('transportSource');
+      if (msg.type === 'llm_tool_result') {
+        expect(payload).toMatchObject({
+          resultSummary: 'ok',
+          result: { hits: 1 },
+        });
+      }
     }
   });
 
@@ -405,13 +192,18 @@ describe('lib/server/session_manager', () => {
 
     expect(structured).toMatchObject({
       id: 'conn-1:1',
-      category: 'progress',
-      bodyType: 'text',
+      category: 'structured',
+      bodyType: 'structured',
       rawType: 'token_usage',
       triggersNotification: false,
       body: {
-        type: 'text',
-        text: 'tokens=100 | input=40 | output=60',
+        type: 'structured',
+        message: {
+          type: 'token_usage',
+          totalTokens: 100,
+          inputTokens: 40,
+          outputTokens: 60,
+        },
       },
     });
     expect(stdout).toMatchObject({
@@ -478,7 +270,7 @@ describe('lib/server/session_manager', () => {
     });
   });
 
-  test('formatTunnelMessage falls back for unknown structured message types', () => {
+  test('formatTunnelMessage passes through unknown structured message types as structured body', () => {
     const message = formatTunnelMessage('conn-1', 9, {
       type: 'structured',
       message: {
@@ -489,13 +281,57 @@ describe('lib/server/session_manager', () => {
 
     expect(message).toMatchObject({
       id: 'conn-1:9',
-      category: 'log',
-      bodyType: 'text',
+      category: 'structured',
+      bodyType: 'structured',
       rawType: 'unexpected_structured_type',
       body: {
-        type: 'text',
-        text: 'Unsupported structured message type: unexpected_structured_type',
+        type: 'structured',
+        message: { type: 'unexpected_structured_type' },
       },
+    });
+  });
+
+  test('formatTunnelMessage handles malformed structured payloads gracefully', () => {
+    const nullMessage = formatTunnelMessage('conn-1', 99, {
+      type: 'structured',
+      message: null as unknown as StructuredMessage,
+    });
+    expect(nullMessage).toMatchObject({
+      category: 'log',
+      bodyType: 'text',
+      body: { type: 'text', text: '[malformed structured message]' },
+    });
+
+    const undefinedMessage = formatTunnelMessage('conn-1', 100, {
+      type: 'structured',
+      message: undefined as unknown as StructuredMessage,
+    });
+    expect(undefinedMessage).toMatchObject({
+      category: 'log',
+      bodyType: 'text',
+      body: { type: 'text', text: '[malformed structured message]' },
+    });
+
+    // Array payload should be rejected
+    const arrayMessage = formatTunnelMessage('conn-1', 101, {
+      type: 'structured',
+      message: [] as unknown as StructuredMessage,
+    });
+    expect(arrayMessage).toMatchObject({
+      category: 'log',
+      bodyType: 'text',
+      body: { type: 'text', text: '[malformed structured message]' },
+    });
+
+    // Object without string type should be rejected
+    const noTypeMessage = formatTunnelMessage('conn-1', 102, {
+      type: 'structured',
+      message: { foo: 'bar' } as unknown as StructuredMessage,
+    });
+    expect(noTypeMessage).toMatchObject({
+      category: 'log',
+      bodyType: 'text',
+      body: { type: 'text', text: '[malformed structured message]' },
     });
   });
 
@@ -529,32 +365,34 @@ describe('lib/server/session_manager', () => {
 
     expect(message).toMatchObject({
       id: 'conn-1:10',
-      category: 'error',
-      bodyType: 'monospaced',
+      category: 'structured',
+      bodyType: 'structured',
       rawType: 'review_result',
     });
     expect(message?.body).toEqual({
-      type: 'monospaced',
-      text: [
-        'Review verdict: NEEDS_FIXES',
-        '',
-        'Address the major issues before merging.',
-        '',
-        'Issues (2):',
-        '',
-        '[!] Major (1)',
-        '  - [correctness] (src/lib/components/SessionMessage.svelte:137) The tool output truncates too aggressively.',
-        '    Suggestion: Apply the 40-line threshold used by the console formatter.',
-        '',
-        '[~] Minor (1)',
-        '  - [ux] Review results should stay expanded.',
-        '',
-        'Recommendations:',
-        '  - Re-run the web session rendering tests.',
-        '',
-        'Action Items:',
-        '  - Verify review output stays untruncated in the browser.',
-      ].join('\n'),
+      type: 'structured',
+      message: {
+        type: 'review_result',
+        verdict: 'NEEDS_FIXES',
+        fixInstructions: 'Address the major issues before merging.',
+        issues: [
+          {
+            severity: 'major',
+            category: 'correctness',
+            content: 'The tool output truncates too aggressively.',
+            file: 'src/lib/components/SessionMessage.svelte',
+            line: 137,
+            suggestion: 'Apply the 40-line threshold used by the console formatter.',
+          },
+          {
+            severity: 'minor',
+            category: 'ux',
+            content: 'Review results should stay expanded.',
+          },
+        ],
+        recommendations: ['Re-run the web session rendering tests.'],
+        actionItems: ['Verify review output stays untruncated in the browser.'],
+      },
     });
   });
 
@@ -631,8 +469,8 @@ describe('lib/server/session_manager', () => {
         connectionId: 'conn-1',
         message: expect.objectContaining({
           seq: 1,
-          category: 'llmOutput',
-          bodyType: 'text',
+          category: 'structured',
+          bodyType: 'structured',
         }),
       })
     );
@@ -799,7 +637,10 @@ describe('lib/server/session_manager', () => {
         connectionId: 'conn-1',
         message: expect.objectContaining({
           seq: 3,
-          body: expect.objectContaining({ text: 'live' }),
+          body: expect.objectContaining({
+            type: 'structured',
+            message: expect.objectContaining({ text: 'live' }),
+          }),
         }),
       })
     );
