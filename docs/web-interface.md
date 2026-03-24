@@ -140,10 +140,11 @@ Both modes run simultaneously by default — the agent process acts as both a We
 
 ### Defensive Message Handling
 
-- `formatTunnelMessage()` wraps structured message processing in try/catch with a fallback text body for malformed payloads, preventing crashes from unexpected agent protocol additions.
-- `handleStructuredSideEffects()` is guarded against missing nested message data.
+- `formatTunnelMessage()` wraps structured message processing in try/catch with a fallback text body for malformed payloads, preventing crashes from unexpected agent protocol additions. Validates structured payloads are plain objects with a string `type` before passing through; rejects malformed payloads to a text log fallback.
+- `handleStructuredSideEffects()` validates structured payloads before acting on them: `prompt_request` requires `requestId`, `promptConfig`, and valid `choices` (array or absent); `prompt_answered` requires `requestId`. Malformed payloads are silently skipped rather than installing invalid prompt state.
 - WebSocket message dispatch in `ws_server.ts` wraps `sessionManager.handleWebSocketMessage()` in try/catch so malformed client frames cannot crash message processing for that socket.
-- Client-side `formatStructuredMessage()` in `src/lib/utils/message_formatting.ts` has a default case returning a generic text fallback for unknown structured message types.
+- Client-side `formatStructuredMessage()` in `src/lib/utils/message_formatting.ts` has a default case returning a generic text fallback for unknown structured message types. `SessionMessage.svelte` wraps `formatStructuredMessage()` calls in try/catch for graceful degradation on malformed payloads. `ReviewResultDisplay.svelte` validates input arrays and issue entries independently.
+- Browser notifications (`session_notifications.ts`): `extractMessageText()` handles structured message bodies via `formatStructuredMessage()`, so events like `agent_session_end` trigger notifications correctly even though they arrive as structured bodies rather than text.
 
 ### Notification Sessions
 
