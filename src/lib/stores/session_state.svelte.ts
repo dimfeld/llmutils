@@ -5,6 +5,7 @@ import {
   dismissInactiveSessions,
   dismissSession,
   endSession as endSessionRemote,
+  openTerminal,
   sendSessionPromptResponse,
   sendSessionUserInput,
 } from '$lib/remote/session_actions.remote.js';
@@ -436,6 +437,10 @@ export class SessionManager {
     } catch {
       return false;
     }
+  }
+
+  async openTerminalInDirectory(directory: string): Promise<void> {
+    await openTerminal({ directory });
   }
 }
 

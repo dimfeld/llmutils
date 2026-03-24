@@ -5,56 +5,69 @@ goal: ""
 id: 255
 uuid: 7c48380a-336f-4335-ae4e-1de231841be6
 generatedBy: agent
-status: pending
+status: done
 priority: medium
 planGeneratedAt: 2026-03-22T08:09:33.010Z
 promptsGeneratedAt: 2026-03-22T08:09:33.010Z
 createdAt: 2026-03-22T07:26:55.822Z
-updatedAt: 2026-03-22T08:09:33.010Z
+updatedAt: 2026-03-24T00:55:28.986Z
 tasks:
   - title: Add terminalApp config field to configSchema.ts
-    done: false
+    done: true
     description: Add a new optional string field alongside terminalInput. Do NOT use
       .default() — apply default at point of use.
   - title: Add openTerminalInDirectory function to terminal_control.ts
-    done: false
+    done: true
     description: "New exported async function: openTerminalInDirectory(directory,
       terminalApp?, deps?). Validates directory exists, resolves app name
       (default WezTerm), runs open -a <app> <dir> on macOS, throws on other
       platforms or failure."
   - title: Add tests for openTerminalInDirectory in terminal_control.test.ts
-    done: false
+    done: true
     description: "Test cases: happy path with default terminal, custom terminal app,
       directory not found error, non-macOS platform error, spawn failure error."
   - title: Add openTerminal remote command in session_actions.remote.ts
-    done: false
+    done: true
     description: "New command export with zod schema {directory: string}. Reads
       config.terminalApp via getServerContext() and passes to
       openTerminalInDirectory."
   - title: Mount Toaster component in root layout
-    done: false
+    done: true
     description: Add <Toaster /> from src/lib/components/ui/sonner/ to
       src/routes/+layout.svelte for app-wide toast notifications.
   - title: Add openTerminalInDirectory method to SessionManager
-    done: false
+    done: true
     description: Add method to SessionManager in session_state.svelte.ts that calls
       the openTerminal remote command. Let errors propagate for toast handling
       by callers.
   - title: Add Open Terminal button to SessionRow.svelte
-    done: false
+    done: true
     description: AppWindow icon button, visible on hover when workspacePath exists.
       Calls sessionManager.openTerminalInDirectory, catches errors and shows
       toast.error. Uses stopPropagation/preventDefault.
   - title: Add Open Terminal button to SessionDetail.svelte
-    done: false
+    done: true
     description: AppWindow icon button in session header alongside existing
       activate-pane button. Visible when workspacePath exists. Always visible
       (not hover-only). Toast error on failure.
   - title: Add Open Terminal button to PlanDetail.svelte
-    done: false
+    done: true
     description: AppWindow icon button next to each workspace path in the Assigned
       Workspace section. Replace plain div with flex row containing path text
       and button. Toast error on failure.
+changedFiles:
+  - src/lib/components/PlanDetail.svelte
+  - src/lib/components/SessionDetail.svelte
+  - src/lib/components/SessionRow.svelte
+  - src/lib/remote/session_actions.remote.test.ts
+  - src/lib/remote/session_actions.remote.ts
+  - src/lib/server/terminal_control.test.ts
+  - src/lib/server/terminal_control.ts
+  - src/lib/stores/session_state.svelte.ts
+  - src/lib/stores/session_state.test.ts
+  - src/routes/+layout.svelte
+  - src/tim/configSchema.test.ts
+  - src/tim/configSchema.ts
 tags: []
 ---
 
@@ -282,3 +295,36 @@ In the "Assigned Workspace" section (around line 247-263), add a button next to 
 5. Click the button — verify terminal opens in workspace directory
 6. Test with a session that has no workspace path — verify button is hidden
 7. Test with a plan that has no assignment — verify no button appears
+
+## Current Progress
+### Current State
+- All 9 tasks complete. Feature is fully implemented.
+### Completed (So Far)
+- Task 1: `terminalApp` config field added to `configSchema.ts` (no `.default()`)
+- Task 2: `openTerminalInDirectory()` in `terminal_control.ts` — uses `wezterm start --cwd` for WezTerm, `open -a` for other apps, validates directory via `directoryExists` dep
+- Task 3: Tests in `terminal_control.test.ts` covering default WezTerm, lowercase wezterm, custom app, missing dir, non-directory path, unsupported platform, spawn failure
+- Task 4: `openTerminal` remote command in `session_actions.remote.ts` with tests
+- Task 5: Toaster mounted in root layout
+- Task 6: `openTerminalInDirectory` method on SessionManager with tests for correct forwarding and error propagation
+- Task 7: Open Terminal button added to SessionRow (hover-visible, with loading state)
+- Task 8: Open Terminal button added to SessionDetail (always-visible, with loading state)
+- Task 9: Open Terminal button added to PlanDetail workspace paths (with loading state, disables all buttons during any launch)
+- README and docs/web-interface.md updated with feature documentation
+### Remaining
+- None
+### Next Iteration Guidance
+- N/A — all tasks complete
+### Decisions / Changes
+- WezTerm uses `wezterm start --cwd <dir>` instead of `open -a WezTerm <dir>` — the latter doesn't reliably create a new window in the target directory
+- Added `directoryExists` to `TerminalControlDeps` interface (uses `fs.stat().isDirectory()`) to validate paths are directories, not just files
+- Case-insensitive WezTerm matching (`app.toLowerCase() === 'wezterm'`) to handle config variants like `"wezterm"` vs `"WezTerm"`
+- All buttons include loading/disabled state to prevent double-clicks
+- Error toasts include descriptive error messages from the server
+- PlanDetail disables all workspace terminal buttons while any launch is in progress (not just the clicked one)
+### Lessons Learned
+- `open -a <App> <dir>` on macOS activates the app but doesn't reliably set cwd; use app-specific CLI commands (like `wezterm start --cwd`) when available
+- Config values should be compared case-insensitively when they represent app names that users might write in different cases
+- Subagents may revert changes made by the orchestrator if they modify the same files — need to verify after each subagent run
+- When a button guard blocks all clicks but the disabled attribute is per-item, users see a clickable-looking button that silently does nothing — always align visual state with handler behavior
+### Risks / Blockers
+- None

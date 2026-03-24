@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from 'vitest';
 
 import {
   focusTerminalPane,
+  openTerminalInDirectory,
   type TerminalControlDeps,
   type TerminalSessionTarget,
 } from './terminal_control.js';
@@ -23,6 +24,7 @@ function createDeps(spawnImpl: TerminalControlDeps['spawnAndLogOutput']): Termin
   spawnAndLogOutput: ReturnType<typeof vi.fn<TerminalControlDeps['spawnAndLogOutput']>>;
 } {
   return {
+    directoryExists: vi.fn(async () => false),
     fileExists: vi.fn(async () => false),
     platform: 'darwin',
     spawnAndLogOutput: vi.fn(spawnImpl),
@@ -36,6 +38,85 @@ const weztermTarget: TerminalSessionTarget = {
 };
 
 describe('terminal_control', () => {
+  test('openTerminalInDirectory uses wezterm start --cwd by default', async () => {
+    const deps = createDeps(async () => createResult());
+    deps.directoryExists.mockResolvedValue(true);
+
+    await openTerminalInDirectory('/tmp/workspace', undefined, deps);
+
+    expect(deps.spawnAndLogOutput).toHaveBeenCalledWith(
+      ['/opt/homebrew/bin/wezterm', 'start', '--cwd', '/tmp/workspace'],
+      { quiet: true }
+    );
+  });
+
+  test('openTerminalInDirectory uses wezterm start --cwd for lowercase wezterm config', async () => {
+    const deps = createDeps(async () => createResult());
+    deps.directoryExists.mockResolvedValue(true);
+
+    await openTerminalInDirectory('/tmp/workspace', 'wezterm', deps);
+
+    expect(deps.spawnAndLogOutput).toHaveBeenCalledWith(
+      ['/opt/homebrew/bin/wezterm', 'start', '--cwd', '/tmp/workspace'],
+      { quiet: true }
+    );
+  });
+
+  test('openTerminalInDirectory uses open -a for custom terminal apps', async () => {
+    const deps = createDeps(async () => createResult());
+    deps.directoryExists.mockResolvedValue(true);
+
+    await openTerminalInDirectory('/tmp/workspace', 'iTerm', deps);
+
+    expect(deps.spawnAndLogOutput).toHaveBeenCalledWith(['open', '-a', 'iTerm', '/tmp/workspace'], {
+      quiet: true,
+    });
+  });
+
+  test('openTerminalInDirectory rejects missing directories', async () => {
+    const deps = createDeps(async () => createResult());
+
+    await expect(openTerminalInDirectory('/tmp/missing', undefined, deps)).rejects.toThrow(
+      'Directory does not exist: /tmp/missing'
+    );
+    expect(deps.spawnAndLogOutput).not.toHaveBeenCalled();
+  });
+
+  test('openTerminalInDirectory rejects non-directory paths', async () => {
+    const deps = createDeps(async () => createResult());
+    // directoryExists defaults to false — simulates a file path
+
+    await expect(openTerminalInDirectory('/tmp/somefile.txt', undefined, deps)).rejects.toThrow(
+      'Directory does not exist: /tmp/somefile.txt'
+    );
+    expect(deps.spawnAndLogOutput).not.toHaveBeenCalled();
+  });
+
+  test('openTerminalInDirectory rejects unsupported platforms', async () => {
+    const deps = createDeps(async () => createResult());
+    deps.directoryExists.mockResolvedValue(true);
+    deps.platform = 'linux';
+
+    await expect(openTerminalInDirectory('/tmp/workspace', undefined, deps)).rejects.toThrow(
+      'Opening terminal windows is only supported on macOS'
+    );
+    expect(deps.spawnAndLogOutput).not.toHaveBeenCalled();
+  });
+
+  test('openTerminalInDirectory surfaces spawn failures', async () => {
+    const deps = createDeps(async () =>
+      createResult({
+        exitCode: 1,
+        stderr: 'spawn failed',
+      })
+    );
+    deps.directoryExists.mockResolvedValue(true);
+
+    await expect(openTerminalInDirectory('/tmp/workspace', 'Terminal', deps)).rejects.toThrow(
+      'spawn failed'
+    );
+  });
+
   test('focusTerminalPane switches workspace and activates the pane', async () => {
     const deps = createDeps(async (args: string[]) => {
       if (args[1] === 'cli' && args[2] === 'list') {

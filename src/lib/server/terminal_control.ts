@@ -18,6 +18,7 @@ interface WeztermPaneEntry {
 const WEZTERM_CANDIDATE_PATHS = ['/opt/homebrew/bin/wezterm', '/usr/local/bin/wezterm'] as const;
 
 export interface TerminalControlDeps {
+  directoryExists: (path: string) => Promise<boolean>;
   fileExists: (path: string) => Promise<boolean>;
   platform: NodeJS.Platform;
   spawnAndLogOutput: (
@@ -28,11 +29,21 @@ export interface TerminalControlDeps {
 }
 
 const DEFAULT_TERMINAL_CONTROL_DEPS: TerminalControlDeps = {
+  directoryExists,
   fileExists,
   platform: process.platform,
   spawnAndLogOutput,
   which: (command, options) => which(command, options),
 };
+
+async function directoryExists(path: string): Promise<boolean> {
+  try {
+    const stat = await fs.stat(path);
+    return stat.isDirectory();
+  } catch {
+    return false;
+  }
+}
 
 async function fileExists(path: string): Promise<boolean> {
   try {
@@ -119,6 +130,31 @@ async function bringWeztermToFront(deps: TerminalControlDeps): Promise<void> {
   }
 
   await deps.spawnAndLogOutput(['open', '-a', 'WezTerm'], { quiet: true });
+}
+
+export async function openTerminalInDirectory(
+  directory: string,
+  terminalApp?: string,
+  deps: TerminalControlDeps = DEFAULT_TERMINAL_CONTROL_DEPS
+): Promise<void> {
+  if (!(await deps.directoryExists(directory))) {
+    throw new Error(`Directory does not exist: ${directory}`);
+  }
+
+  if (deps.platform !== 'darwin') {
+    throw new Error('Opening terminal windows is only supported on macOS');
+  }
+
+  const app = terminalApp?.trim() || 'WezTerm';
+  const command =
+    app.toLowerCase() === 'wezterm'
+      ? [await resolveWeztermPath(deps), 'start', '--cwd', directory]
+      : ['open', '-a', app, directory];
+
+  const result = await deps.spawnAndLogOutput(command, { quiet: true });
+  if (result.exitCode !== 0) {
+    throw new Error(result.stderr.trim() || `Failed to open terminal with ${app}`);
+  }
 }
 
 export async function focusTerminalPane(

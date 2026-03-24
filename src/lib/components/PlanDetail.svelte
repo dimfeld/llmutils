@@ -1,4 +1,7 @@
 <script lang="ts">
+  import AppWindow from '@lucide/svelte/icons/app-window';
+  import { toast } from 'svelte-sonner';
+
   import type { PlanDetail } from '$lib/server/db_queries.js';
   import { afterNavigate } from '$app/navigation';
   import { startGenerate, startAgent } from '$lib/remote/plan_actions.remote.js';
@@ -23,6 +26,20 @@
   } = $props();
 
   const sessionManager = useSessionManager();
+
+  let openingTerminalPath: string | null = $state(null);
+
+  async function handleOpenTerminal(wsPath: string) {
+    if (openingTerminalPath) return;
+    openingTerminalPath = wsPath;
+    try {
+      await sessionManager.openTerminalInDirectory(wsPath);
+    } catch (err) {
+      toast.error(`Failed to open terminal: ${(err as Error).message}`);
+    } finally {
+      openingTerminalPath = null;
+    }
+  }
 
   const INELIGIBLE_STATUSES = new Set(['done', 'cancelled', 'deferred', 'recently_done']);
 
@@ -394,7 +411,19 @@
       </h3>
       <div class="text-sm text-foreground">
         {#each plan.assignment.workspacePaths as wsPath (wsPath)}
-          <div class="truncate">{wsPath}</div>
+          <div class="flex items-center gap-1">
+            <div class="min-w-0 truncate">{wsPath}</div>
+            <button
+              type="button"
+              class="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
+              onclick={() => handleOpenTerminal(wsPath)}
+              disabled={openingTerminalPath !== null}
+              aria-label="Open new terminal"
+              title="Open new terminal"
+            >
+              <AppWindow class="size-3.5" />
+            </button>
+          </div>
         {/each}
         {#if plan.assignment.users.length > 0}
           <div class="mt-0.5 text-xs text-muted-foreground">

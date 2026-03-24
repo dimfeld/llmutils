@@ -166,6 +166,7 @@ Browser clients receive real-time updates via SSE and interact with sessions thr
   - `endSession`: validates `{ connectionId }` and sends an `end_session` message to the agent process. For interactive sessions, this gracefully closes subprocess stdin (equivalent to Ctrl-D); for non-interactive sessions, it sends SIGTERM. Throws 404 for missing session.
   - `dismissInactiveSessions`: bulk-dismisses all inactive sessions, returns `{ dismissed: number }`.
   - `activateSessionTerminalPane`: resolves the WezTerm pane from session metadata, switches to the pane's workspace, activates the pane, and brings WezTerm to the foreground on macOS.
+  - `openTerminal`: opens a new terminal window in the specified directory. Reads `terminalApp` from config (defaults to WezTerm). Uses `wezterm start --cwd` for WezTerm or `open -a <app>` for other macOS terminal apps. macOS only.
 - **Shared helpers** (`src/lib/server/session_routes.ts`): `formatSseEvent()`, `createSessionEventsResponse()` used by the SSE endpoint.
 
 ### Key Design Decisions
@@ -189,15 +190,15 @@ Browser clients receive real-time updates via SSE and interact with sessions thr
 - **Initialization tracking**: The `initialized` flag is set to `true` only when the `session:sync-complete` event is received, indicating that the snapshot and all buffered catch-up events have been processed. It resets to `false` on SSE reconnect. Pages that need to distinguish "not yet loaded" from "not found" should gate on this flag.
 - **State**: `sessions` (SvelteMap for reactivity), `selectedSessionId`, `lastSelectedSessionIds` (SvelteMap keyed by route projectId — remembers last-viewed session per project), `connectionStatus` (connected/reconnecting/disconnected), `initialized`
 - **Derived**: `sessionGroups` — sessions grouped by `groupKey`, with the current project's group sorted to top. Group labels resolved from project display name (when `projectId` matches a known project) or workspace path (last 2 components).
-- **Actions**: `sendPromptResponse(connectionId, requestId, value)`, `sendUserInput(connectionId, content)`, `dismissSession(connectionId)`, `endSession(connectionId)` — all call remote `command()` functions from `src/lib/remote/session_actions.remote.ts`. `activateTerminalPane(session)` also calls a remote command from the same module.
+- **Actions**: `sendPromptResponse(connectionId, requestId, value)`, `sendUserInput(connectionId, content)`, `dismissSession(connectionId)`, `endSession(connectionId)` — all call remote `command()` functions from `src/lib/remote/session_actions.remote.ts`. `activateTerminalPane(session)` and `openTerminalInDirectory(directory)` also call remote commands from the same module.
 - **SvelteMap reactivity**: SvelteMap only tracks `.set()`/`.delete()`/`.clear()` — after mutating nested properties on stored objects, the entry must be re-set to trigger reactivity.
 - **Per-project session memory**: `lastSelectedSessionIds` tracks the last-viewed session per project route. When the user navigates away from a session detail and returns to the Sessions tab, the empty-state page (`sessions/+page.svelte`) redirects to the remembered session if it still exists. Uses `replaceState: true` to avoid back-button loops. On session dismissal or SSE reconnect, falls back to the most recently connected remaining session via `findMostRecentSessionId()`. Stale entries (sessions no longer in the sessions map) are pruned during fallback.
 
 ### UI Components
 
 - **`SessionList.svelte`** — Grouped session sidebar (left pane, w-96). Groups are collapsible by project. Shows all sessions regardless of selected project.
-- **`SessionRow.svelte`** — Individual session entry with status indicator dot (green=active, gray=offline, blue=notification), command name, plan title/ID, dismiss button for offline/notification sessions, and a terminal icon when the session includes WezTerm pane metadata.
-- **`SessionDetail.svelte`** — Message transcript view with session header (command, plan, workspace, status), optional terminal activation button for WezTerm-backed sessions, End Session button with inline confirmation for active sessions, scrollable message list, fixed-position prompt area above messages, conditional message input bar. Uses `{#key connectionId}` for remount on session switch. Auto-scroll is scroll-position-based: active when at bottom, disabled when user scrolls up, resumes on scroll to bottom.
+- **`SessionRow.svelte`** — Individual session entry with status indicator dot (green=active, gray=offline, blue=notification), command name, plan title/ID, dismiss button for offline/notification sessions, a terminal icon when the session includes WezTerm pane metadata, and an "Open Terminal" button (AppWindow icon) that opens a new terminal window in the session's workspace directory (visible on hover when `workspacePath` exists).
+- **`SessionDetail.svelte`** — Message transcript view with session header (command, plan, workspace, status), optional terminal activation button for WezTerm-backed sessions, "Open Terminal" button (AppWindow icon, always visible when `workspacePath` exists) that opens a new terminal in the workspace directory, End Session button with inline confirmation for active sessions, scrollable message list, fixed-position prompt area above messages, conditional message input bar. Uses `{#key connectionId}` for remount on session switch. Auto-scroll is scroll-position-based: active when at bottom, disabled when user scrolls up, resumes on scroll to bottom.
 - **`SessionMessage.svelte`** — Renders messages by body type: text (colored by category), monospaced (preformatted code blocks), todoList (items with status icons), fileChanges (paths with +/~/- indicators), keyValuePairs (structured metadata table). Long content truncated with expandable reveal.
 - **`PromptRenderer.svelte`** — Renders by prompt type: confirm (Yes/No buttons with default highlighted), input (text field with submit), select (radio group), checkbox (checkbox group), prefix_select (clickable word segments for bash command prefix authorization — selected words highlighted in accent color, remaining dimmed; "Submit Prefix" and "Allow Exact Command" buttons). Uses `{#key requestId}` for state reset. Shows header/question fields from promptConfig when present. Falls back to raw JSON display for unsupported types.
 - **`MessageInput.svelte`** — Text input with Enter to send, Shift+Enter for newlines. Hidden (not disabled) when session is offline or non-interactive.
@@ -228,6 +229,10 @@ Row components (`SessionRow`, `PlanRow`, `ActivePlanRow`) have `data-list-item-i
 ## Plan Actions
 
 The plan detail view supports triggering CLI commands directly from the web UI. Two actions are available:
+
+### Open Terminal Button (`PlanDetail.svelte`)
+
+An "Open Terminal" button (AppWindow icon) appears next to each workspace path in the "Assigned Workspace" section. Clicking it opens a new terminal window in that workspace directory via the `openTerminal` remote command. All workspace terminal buttons are disabled while any launch is in progress. Error feedback is shown via toast notifications.
 
 - **Generate**: For stub plans (no tasks) — spawns `tim generate` to flesh out the plan
 - **Run Agent**: For plans with incomplete tasks — spawns `tim agent` to execute the plan

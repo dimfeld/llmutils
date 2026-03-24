@@ -853,6 +853,20 @@ describe('configSchema', () => {
       expect(() => timConfigSchema.parse({ terminalInput: 'yes' })).toThrow();
     });
 
+    test('accepts terminalApp as an optional string', () => {
+      const result = timConfigSchema.parse({ terminalApp: 'iTerm' });
+      expect(result.terminalApp).toBe('iTerm');
+    });
+
+    test('terminalApp is undefined when not specified', () => {
+      const result = timConfigSchema.parse({});
+      expect(result.terminalApp).toBeUndefined();
+    });
+
+    test('rejects non-string terminalApp values', () => {
+      expect(() => timConfigSchema.parse({ terminalApp: true })).toThrow();
+    });
+
     test('accepts subagent model overrides per executor', () => {
       const result = timConfigSchema.parse({
         subagents: {

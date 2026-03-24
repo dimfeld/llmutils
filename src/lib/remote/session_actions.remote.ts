@@ -2,8 +2,9 @@ import { command } from '$app/server';
 import { error } from '@sveltejs/kit';
 import * as z from 'zod';
 
+import { getServerContext } from '$lib/server/init.js';
 import { getSessionManager } from '$lib/server/session_context.js';
-import { focusTerminalPane } from '$lib/server/terminal_control.js';
+import { focusTerminalPane, openTerminalInDirectory } from '$lib/server/terminal_control.js';
 
 const terminalPaneSchema = z.object({
   terminalPaneId: z.string(),
@@ -12,6 +13,10 @@ const terminalPaneSchema = z.object({
 
 const sessionTargetSchema = z.object({
   connectionId: z.string(),
+});
+
+const openTerminalSchema = z.object({
+  directory: z.string().min(1),
 });
 
 const promptResponseSchema = sessionTargetSchema.extend({
@@ -25,6 +30,11 @@ const userInputSchema = sessionTargetSchema.extend({
 
 export const activateSessionTerminalPane = command(terminalPaneSchema, async (target) => {
   await focusTerminalPane(target);
+});
+
+export const openTerminal = command(openTerminalSchema, async ({ directory }) => {
+  const { config } = await getServerContext();
+  await openTerminalInDirectory(directory, config.terminalApp);
 });
 
 export const sendSessionPromptResponse = command(promptResponseSchema, async (target) => {

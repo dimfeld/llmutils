@@ -81,13 +81,15 @@ Tim includes a SvelteKit-based web interface for browsing and managing plans. Th
 
 The interface is organized around projects, with three tabs per project:
 
-- **Sessions** — real-time monitoring of tim agent processes with live message transcripts, prompt interaction (confirm/input/select/checkbox/prefix_select), free-form user input, end session with confirmation for active sessions, and a terminal button for WezTerm-backed sessions that focuses the associated pane through a server-side remote command. Connects to agents via WebSocket server on port 8123 and streams updates to the browser via SSE. Plans can be acted on directly from the plan detail view: stub plans (no tasks) can be generated via `tim generate`, and plans with tasks can be executed via `tim agent` — both spawn detached processes that appear as new sessions.
+- **Sessions** — real-time monitoring of tim agent processes with live message transcripts, prompt interaction (confirm/input/select/checkbox/prefix_select), free-form user input, end session with confirmation for active sessions, a terminal button for WezTerm-backed sessions that focuses the associated pane, and an "Open Terminal" button that opens a new terminal window in the session's workspace directory. The Open Terminal button also appears in plan detail views next to assigned workspace paths. Connects to agents via WebSocket server on port 8123 and streams updates to the browser via SSE. Plans can be acted on directly from the plan detail view: stub plans (no tasks) can be generated via `tim generate`, and plans with tasks can be executed via `tim agent` — both spawn detached processes that appear as new sessions.
 - **Active Work** — dashboard of current work per project showing workspaces (with Primary/Auto/Locked/Available status badges) and active plans (in_progress + blocked). Workspaces are filtered to "recently active" by default (locked, primary, or updated within 48 hours) with a toggle to show all. Clicking a plan shows full detail in the right pane.
 - **Plans** — browse, filter, search, and inspect plans with two-column layout (list + detail), status/priority badges, collapsible status groups, and clickable dependency navigation
 
 Navigation uses route-based project selection at `/projects/{projectId}/{tab}`, with cookie persistence to remember the last-selected project. The home page redirects to the most recently used project. On all three tabs, pressing **Option+Down** (Alt+Down) / **Option+Up** (Alt+Up) navigates to the next/previous item in the list, respecting collapsed groups and active filters.
 
 The web interface supports PWA installation, allowing it to be added to your desktop or mobile home screen and run as a standalone app without browser chrome. Static assets are cached by a service worker for faster loads, while API calls and real-time connections (SSE, WebSocket) always go through the network. When installed as a PWA, the app icon shows a badge dot whenever any session needs attention (active prompt or unhandled notification).
+
+The terminal app used by the "Open Terminal" button is configurable via the `terminalApp` config field (defaults to WezTerm). Set it to `"Terminal"`, `"iTerm"`, or any other macOS terminal application name. macOS only.
 
 ```bash
 # Start the dev server

@@ -11,12 +11,32 @@ import { SessionManager } from '$lib/server/session_manager.js';
 import { invokeCommand } from '$lib/test-utils/invoke_command.js';
 
 let currentManager: SessionManager;
+const { mockOpenTerminalInDirectory } = vi.hoisted(() => ({
+  mockOpenTerminalInDirectory: vi.fn(),
+}));
 
 vi.mock('$lib/server/session_context.js', () => ({
   getSessionManager: () => currentManager,
 }));
 
+vi.mock('$lib/server/init.js', () => ({
+  getServerContext: async () => ({
+    config: {
+      terminalApp: 'iTerm',
+    },
+  }),
+}));
+
+vi.mock('$lib/server/terminal_control.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$lib/server/terminal_control.js')>();
+  return {
+    ...actual,
+    openTerminalInDirectory: mockOpenTerminalInDirectory,
+  };
+});
+
 import {
+  openTerminal,
   endSession,
   dismissInactiveSessions,
   dismissSession,
@@ -38,6 +58,7 @@ describe('session remote actions', () => {
   });
 
   afterEach(() => {
+    mockOpenTerminalInDirectory.mockReset();
     db.close(false);
   });
 
@@ -160,6 +181,21 @@ describe('session remote actions', () => {
     await invokeCommand(endSession, { connectionId });
 
     expect(sentMessages).toEqual([{ type: 'end_session' }]);
+  });
+
+  test('openTerminal validates input and forwards directory with configured terminal app', async () => {
+    await invokeCommand(openTerminal, { directory: '/tmp/workspace' });
+
+    expect(mockOpenTerminalInDirectory).toHaveBeenCalledWith('/tmp/workspace', 'iTerm');
+  });
+
+  test('openTerminal rejects malformed values', async () => {
+    await expect(invokeCommand(openTerminal, undefined as never)).rejects.toBeTruthy();
+    await expect(
+      invokeCommand(openTerminal, {
+        directory: '',
+      } as never)
+    ).rejects.toBeTruthy();
   });
 
   test('dismissSession removes offline sessions and rejects active or missing sessions', async () => {

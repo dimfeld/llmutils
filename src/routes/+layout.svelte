@@ -14,6 +14,7 @@
   import Sun from '@lucide/svelte/icons/sun';
   import Moon from '@lucide/svelte/icons/moon';
   import Monitor from '@lucide/svelte/icons/monitor';
+  import { Toaster } from '$lib/components/ui/sonner/index.js';
   import type { LayoutData } from './$types';
 
   let { data, children }: { data: LayoutData; children: Snippet } = $props();
@@ -114,4 +115,6 @@
   <main class="flex min-h-0 flex-1 overflow-hidden">
     {@render children()}
   </main>
+
+  <Toaster />
 </div>

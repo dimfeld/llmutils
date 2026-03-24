@@ -10,6 +10,7 @@ vi.mock('$lib/remote/session_actions.remote.js', () => ({
   dismissInactiveSessions: vi.fn(),
   dismissSession: vi.fn(),
   endSession: vi.fn(),
+  openTerminal: vi.fn(),
   sendSessionPromptResponse: vi.fn(),
   sendSessionUserInput: vi.fn(),
 }));
@@ -19,6 +20,7 @@ import {
   dismissInactiveSessions,
   dismissSession,
   endSession,
+  openTerminal,
   sendSessionPromptResponse,
   sendSessionUserInput,
 } from '$lib/remote/session_actions.remote.js';
@@ -349,6 +351,22 @@ describe('SessionManager remote action wrappers', () => {
     vi.mocked(dismissInactiveSessions).mockRejectedValueOnce(new Error('boom'));
 
     await expect(manager.dismissInactiveSessions()).resolves.toBe(false);
+  });
+
+  test('openTerminalInDirectory calls the remote command with the directory', async () => {
+    const manager = new SessionManager();
+
+    await manager.openTerminalInDirectory('/tmp/workspace');
+    expect(vi.mocked(openTerminal)).toHaveBeenCalledWith({ directory: '/tmp/workspace' });
+  });
+
+  test('openTerminalInDirectory propagates errors instead of catching them', async () => {
+    const manager = new SessionManager();
+    vi.mocked(openTerminal).mockRejectedValueOnce(new Error('terminal not found'));
+
+    await expect(manager.openTerminalInDirectory('/tmp/workspace')).rejects.toThrow(
+      'terminal not found'
+    );
   });
 
   test('activateTerminalPane returns false when the remote command throws', async () => {

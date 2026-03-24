@@ -1,5 +1,7 @@
 <script lang="ts">
   import TerminalIcon from '@lucide/svelte/icons/terminal';
+  import AppWindow from '@lucide/svelte/icons/app-window';
+  import { toast } from 'svelte-sonner';
 
   import type { SessionData } from '$lib/types/session.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
@@ -89,6 +91,20 @@
     void sessionManager.activateTerminalPane(session);
   }
 
+  let openingTerminal = $state(false);
+
+  async function handleOpenTerminal() {
+    if (openingTerminal) return;
+    openingTerminal = true;
+    try {
+      await sessionManager.openTerminalInDirectory(session.sessionInfo.workspacePath!);
+    } catch (err) {
+      toast.error(`Failed to open terminal: ${(err as Error).message}`);
+    } finally {
+      openingTerminal = false;
+    }
+  }
+
   function handleRequestEndSession() {
     confirmingEndSession = true;
   }
@@ -158,6 +174,18 @@
           {/if}
         {/if}
 
+        {#if session.sessionInfo.workspacePath}
+          <button
+            type="button"
+            class="rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
+            onclick={handleOpenTerminal}
+            disabled={openingTerminal}
+            aria-label="Open new terminal"
+            title="Open new terminal"
+          >
+            <AppWindow class="size-4" />
+          </button>
+        {/if}
         {#if hasTerminalPane}
           <button
             type="button"

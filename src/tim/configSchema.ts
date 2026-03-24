@@ -260,6 +260,12 @@ export const timConfigSchema = z
       .boolean()
       .optional()
       .describe('Whether terminal input is enabled during Claude Code execution in tim agent'),
+    terminalApp: z
+      .string()
+      .optional()
+      .describe(
+        'Terminal application to use when opening new terminal windows (for example "WezTerm", "Terminal", or "iTerm"). Defaults to "WezTerm".'
+      ),
     /** Default executor to use for subagents in the agent command */
     defaultSubagentExecutor: z
       .enum(['codex-cli', 'claude-code', 'dynamic'])
