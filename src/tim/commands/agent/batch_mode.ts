@@ -317,6 +317,10 @@ Available tasks:\n\n${taskDescriptions}`,
       // Update docs if configured for after-iteration mode
       // Calculate which tasks were just completed by comparing before/after state
       if (updateDocsMode === 'after-iteration') {
+        if (isShuttingDown()) {
+          break;
+        }
+
         const justCompletedTaskIndices = incompleteTasks
           .map((t) => t.taskIndex)
           .filter((index) => !remainingTaskIndices.has(index));
@@ -365,6 +369,10 @@ Available tasks:\n\n${taskDescriptions}`,
 
         // Update docs if configured for after-completion mode
         if (updateDocsMode === 'after-completion') {
+          if (isShuttingDown()) {
+            break;
+          }
+
           try {
             await runUpdateDocs(currentPlanFile, config, {
               executor: config.updateDocs?.executor,
@@ -441,6 +449,10 @@ Available tasks:\n\n${taskDescriptions}`,
         }
 
         if (planStillCompleteAfterReview && (config.updateDocs?.applyLessons || applyLessons)) {
+          if (isShuttingDown()) {
+            break;
+          }
+
           try {
             await runUpdateLessons(currentPlanFile, config, {
               executor: config.updateDocs?.executor,

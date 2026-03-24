@@ -407,7 +407,9 @@ export class LifecycleManager {
           'Failed to terminate lifecycle daemon'
         )
       ) {
-        return;
+        throw new Error(
+          `Failed to terminate lifecycle daemon "${state.command.title}" with SIGTERM.`
+        );
       }
     }
 
@@ -420,9 +422,15 @@ export class LifecycleManager {
     if (
       !this.tryKillProcess(proc, 'SIGKILL', state.command.title, 'Failed to kill lifecycle daemon')
     ) {
-      return;
+      throw new Error(`Failed to kill lifecycle daemon "${state.command.title}" with SIGKILL.`);
     }
 
-    await Promise.race([proc.exited, wait(DAEMON_SIGKILL_WAIT_MS)]);
+    const exitedAfterSigkill = await Promise.race([
+      proc.exited.then(() => true),
+      wait(DAEMON_SIGKILL_WAIT_MS).then(() => false),
+    ]);
+    if (!exitedAfterSigkill && this.isProcessRunning(proc)) {
+      throw new Error(`Lifecycle daemon "${state.command.title}" did not exit after SIGKILL.`);
+    }
   }
 }

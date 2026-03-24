@@ -289,6 +289,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
   let lastKnownPlan: PlanSchema | undefined;
   let lifecycleManager: LifecycleManager | undefined;
   let unregisterLifecycleCleanup: (() => void) | undefined;
+  let lifecycleShutdownError: Error | undefined;
   const recordFailure = (err: unknown): void => {
     if (failureReason) return;
     if (err instanceof Error) {
@@ -750,6 +751,8 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
 
           // Update docs if configured for after-iteration mode
           if (updateDocsMode === 'after-iteration') {
+            if (isShuttingDown()) break;
+
             try {
               await runUpdateDocs(currentPlanFile, config, {
                 executor: config.updateDocs?.executor,
@@ -800,6 +803,8 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
 
               // Update docs if configured for after-completion mode
               if (updateDocsMode === 'after-completion') {
+                if (isShuttingDown()) break;
+
                 try {
                   await runUpdateDocs(currentPlanFile, config, {
                     executor: config.updateDocs?.executor,
@@ -881,6 +886,8 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
                 planStillCompleteAfterReview &&
                 (config.updateDocs?.applyLessons || options.applyLessons)
               ) {
+                if (isShuttingDown()) break;
+
                 try {
                   await runUpdateLessons(currentPlanFile, config, {
                     executor: config.updateDocs?.executor,
@@ -1069,6 +1076,8 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
 
         // Update docs if configured for after-iteration mode
         if (updateDocsMode === 'after-iteration') {
+          if (isShuttingDown()) break;
+
           try {
             await runUpdateDocs(currentPlanFile, config, {
               executor: config.updateDocs?.executor,
@@ -1117,6 +1126,8 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
           if (markResult.planComplete) {
             // Update docs if configured for after-completion mode
             if (updateDocsMode === 'after-completion') {
+              if (isShuttingDown()) break;
+
               try {
                 await runUpdateDocs(currentPlanFile, config, {
                   executor: config.updateDocs?.executor,
@@ -1147,6 +1158,8 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
             if (isShuttingDown()) break;
 
             if (config.updateDocs?.applyLessons || options.applyLessons) {
+              if (isShuttingDown()) break;
+
               try {
                 await runUpdateLessons(currentPlanFile, config, {
                   executor: config.updateDocs?.executor,
@@ -1187,6 +1200,21 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
         throw new Error('Agent stopped due to error.');
       }
     } finally {
+      try {
+        await lifecycleManager?.shutdown();
+      } catch (err) {
+        lifecycleShutdownError = err instanceof Error ? err : new Error(String(err));
+        if (!executionError) {
+          executionError = lifecycleShutdownError;
+        } else {
+          error(
+            `Lifecycle shutdown failed (cleanup commands may not have completed): ${lifecycleShutdownError}`
+          );
+        }
+      } finally {
+        unregisterLifecycleCleanup?.();
+      }
+
       if (summaryEnabled) {
         summaryCollector.recordExecutionEnd();
         await summaryCollector.trackFileChanges(currentBaseDir);
@@ -1199,22 +1227,6 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     executionError = failureReason ?? (err instanceof Error ? err : new Error(String(err)));
     throw err;
   } finally {
-    let lifecycleShutdownError: Error | undefined;
-    try {
-      await lifecycleManager?.shutdown();
-    } catch (err) {
-      lifecycleShutdownError = err instanceof Error ? err : new Error(String(err));
-      if (!executionError) {
-        executionError = lifecycleShutdownError;
-      } else {
-        error(
-          `Lifecycle shutdown failed (cleanup commands may not have completed): ${lifecycleShutdownError}`
-        );
-      }
-    } finally {
-      unregisterLifecycleCleanup?.();
-    }
-
     let workspaceSyncError: Error | undefined;
     if (roundTripContext && !isShuttingDown()) {
       try {

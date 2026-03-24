@@ -833,6 +833,33 @@ describe('LifecycleManager', () => {
     expect(events).toEqual(['first', 'second', 'second-stop']);
   });
 
+  test('shutdown reports daemon termination failures', async () => {
+    const manager = new LifecycleManager(
+      [
+        {
+          title: 'daemon',
+          command: await createDaemonCommand(logFile, 'daemon-start', 'daemon-term'),
+          mode: 'daemon',
+        },
+      ],
+      tempDir,
+      undefined
+    );
+    const tryKillProcessSpy = spyOn(manager as any, 'tryKillProcess').mockReturnValue(false);
+
+    try {
+      await manager.startup();
+      await waitForLine(logFile, 'daemon-start');
+
+      await expect(manager.shutdown()).rejects.toThrow(
+        'Failed to terminate lifecycle daemon "daemon" with SIGTERM.'
+      );
+    } finally {
+      tryKillProcessSpy.mockRestore();
+      manager.killDaemons();
+    }
+  });
+
   test('shutdown is idempotent', async () => {
     const manager = new LifecycleManager(
       [

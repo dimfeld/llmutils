@@ -28,6 +28,9 @@ describe('timAgent lifecycle integration', () => {
   const markTaskDoneSpy = mock(async () => ({ message: 'Task marked', planComplete: false }));
   const runUpdateDocsSpy = mock(async () => {});
   const executePostApplyCommandSpy = mock(async () => true);
+  const summaryOrder: string[] = [];
+  const trackFileChangesSpy = mock(async () => {});
+  const writeOrDisplaySummarySpy = mock(async () => {});
 
   beforeEach(async () => {
     CleanupRegistry['instance'] = undefined;
@@ -44,6 +47,9 @@ describe('timAgent lifecycle integration', () => {
     markTaskDoneSpy.mockClear();
     runUpdateDocsSpy.mockClear();
     executePostApplyCommandSpy.mockClear();
+    summaryOrder.length = 0;
+    trackFileChangesSpy.mockClear();
+    writeOrDisplaySummarySpy.mockClear();
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-agent-lifecycle-'));
     const tasksDir = path.join(tempDir, 'tasks');
@@ -82,7 +88,10 @@ describe('timAgent lifecycle integration', () => {
 
     await moduleMocker.mock('../../../logging.js', () => ({
       boldMarkdownHeaders: (text: string) => text,
-      closeLogFile: closeLogFileSpy,
+      closeLogFile: mock(async () => {
+        summaryOrder.push('close-log');
+        await closeLogFileSpy();
+      }),
       error: mock(() => {}),
       log: mock(() => {}),
       openLogFile: openLogFileSpy,
@@ -131,17 +140,25 @@ describe('timAgent lifecycle integration', () => {
     await moduleMocker.mock('../../summary/collector.js', () => ({
       SummaryCollector: class {
         recordExecutionStart = mock(() => {});
-        recordExecutionEnd = mock(() => {});
+        recordExecutionEnd = mock(() => {
+          summaryOrder.push('record-end');
+        });
         addStepResult = mock(() => {});
         addError = mock(() => {});
-        trackFileChanges = mock(async () => {});
+        trackFileChanges = mock(async () => {
+          summaryOrder.push('track-files');
+          await trackFileChangesSpy();
+        });
         getExecutionSummary = mock(() => ({}));
         constructor(_init: any) {}
       },
     }));
 
     await moduleMocker.mock('../../summary/display.js', () => ({
-      writeOrDisplaySummary: mock(async () => {}),
+      writeOrDisplaySummary: mock(async () => {
+        summaryOrder.push('write-summary');
+        await writeOrDisplaySummarySpy();
+      }),
     }));
 
     await moduleMocker.mock('../../utils/references.js', () => ({
@@ -210,7 +227,25 @@ describe('timAgent lifecycle integration', () => {
     expect(await fs.readFile(path.join(tempDir, 'lifecycle-shutdown.txt'), 'utf-8')).toBe(
       'stopped'
     );
+    expect(summaryOrder).toEqual(['close-log']);
     expect(CleanupRegistry.getInstance().size).toBe(0);
+  });
+
+  test('runs lifecycle shutdown before summary tracking and log closure', async () => {
+    const shutdownFile = path.join(tempDir, 'lifecycle-shutdown.txt');
+    trackFileChangesSpy.mockImplementation(async () => {
+      expect(await fs.readFile(shutdownFile, 'utf-8')).toBe('stopped');
+    });
+
+    await moduleMocker.mock('../../plans/find_next.js', () => ({
+      findNextActionableItem: mock(() => null),
+    }));
+
+    const { timAgent } = await import('./agent.ts');
+    await timAgent(planFile, { log: true, summary: true, serialTasks: true }, {});
+
+    expect(await fs.readFile(shutdownFile, 'utf-8')).toBe('stopped');
+    expect(summaryOrder).toEqual(['record-end', 'track-files', 'write-summary', 'close-log']);
   });
 
   test('skips lifecycle startup when shutdown is already requested', async () => {
