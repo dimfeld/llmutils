@@ -497,6 +497,9 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
         message: 'Running post-apply commands',
       });
       for (const commandConfig of config.postApplyCommands) {
+        if (isShuttingDown()) {
+          return null;
+        }
         const commandSucceeded = await executePostApplyCommand(commandConfig, currentBaseDir);
         if (!commandSucceeded) {
           return commandConfig.title;
@@ -604,7 +607,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
         planFileNeedsUpdate = true;
 
         // If this plan has a parent, mark it as in_progress too
-        if (planData.parent) {
+        if (planData.parent && !isShuttingDown()) {
           await markParentInProgress(planData.parent, config);
         }
       }

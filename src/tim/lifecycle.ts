@@ -257,6 +257,7 @@ export class LifecycleManager {
           state.daemon.kill('SIGTERM');
           state.killedByCleanup = true;
         } catch (err) {
+          state.killedByCleanup = true;
           warn(`Failed to terminate lifecycle daemon "${state.command.title}": ${err as Error}`);
         }
       } else {
@@ -428,6 +429,9 @@ export class LifecycleManager {
     }
 
     warn(`Lifecycle daemon "${state.command.title}" did not exit after SIGTERM; sending SIGKILL.`);
+    if (!this.isProcessRunning(proc)) {
+      return;
+    }
     if (
       !this.tryKillProcess(proc, 'SIGKILL', state.command.title, 'Failed to kill lifecycle daemon')
     ) {

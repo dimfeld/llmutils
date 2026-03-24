@@ -6,6 +6,7 @@ import type { Executor } from '../../executors/types.js';
 import { setPlanStatus, writePlanFile } from '../../plans.js';
 import type { PlanSchema } from '../../planSchema.js';
 import { buildExecutionPromptWithoutSteps } from '../../prompt_builder.js';
+import { isShuttingDown } from '../../shutdown_state.js';
 import { checkAndMarkParentDone, markParentInProgress } from './parent_plans.js';
 import { handleReviewCommand } from '../review.js';
 
@@ -79,9 +80,16 @@ export async function executeStubPlan({
   });
 
   // Execute post-apply commands if configured and no error occurred
+  if (isShuttingDown()) {
+    return {};
+  }
+
   if (config.postApplyCommands && config.postApplyCommands.length > 0) {
     log(boldMarkdownHeaders('\n## Running Post-Apply Commands'));
     for (const commandConfig of config.postApplyCommands) {
+      if (isShuttingDown()) {
+        return {};
+      }
       const commandSucceeded = await executePostApplyCommand(commandConfig, baseDir);
       if (!commandSucceeded) {
         throw new Error(`Required command "${commandConfig.title}" failed`);
@@ -90,15 +98,22 @@ export async function executeStubPlan({
   }
 
   // Mark plan as complete only if no error occurred
+  if (isShuttingDown()) {
+    return {};
+  }
   await setPlanStatus(planFilePath, 'done');
   log('Plan executed directly and marked as complete!');
 
   // Check if parent plan should be marked done
-  if (planData.parent) {
+  if (planData.parent && !isShuttingDown()) {
     await checkAndMarkParentDone(planData.parent, config, baseDir);
   }
 
   // Run final review if enabled
+  if (isShuttingDown()) {
+    return {};
+  }
+
   if (finalReview !== false) {
     log(boldMarkdownHeaders('\n## Running Final Review\n'));
     try {
@@ -111,6 +126,9 @@ export async function executeStubPlan({
       );
 
       if (reviewResult.tasksAppended > 0) {
+        if (isShuttingDown()) {
+          return {};
+        }
         await setPlanStatus(planFilePath, 'in_progress');
         return { tasksAppended: reviewResult.tasksAppended };
       }
@@ -121,6 +139,10 @@ export async function executeStubPlan({
   }
 
   // Check if commit was requested
+  if (isShuttingDown()) {
+    return {};
+  }
+
   if (commit) {
     const commitMessage = [planData.title, planData.goal, planData.details]
       .filter(Boolean)

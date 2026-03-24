@@ -84,6 +84,9 @@ export async function executeBatchMode(
       message: 'Running post-apply commands',
     });
     for (const commandConfig of config.postApplyCommands) {
+      if (isShuttingDown()) {
+        return null;
+      }
       const commandSucceeded = await executePostApplyCommand(commandConfig, baseDir);
       if (!commandSucceeded) {
         return commandConfig.title;
