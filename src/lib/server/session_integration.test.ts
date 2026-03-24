@@ -344,6 +344,20 @@ describe('session integration', () => {
         } as unknown as StructuredMessage,
       },
     });
+    manager.handleWebSocketMessage('conn-malformed-prompt', {
+      type: 'output',
+      seq: 4,
+      message: {
+        type: 'structured',
+        message: {
+          type: 'prompt_request',
+          timestamp: '2026-03-17T10:00:04.000Z',
+          requestId: 'req-bad-config',
+          promptType: 'confirm',
+          promptConfig: 'Continue?' as unknown as StructuredMessage['promptConfig'],
+        } as unknown as StructuredMessage,
+      },
+    });
 
     const snapshot = manager.getSessionSnapshot();
     unsubscribe();
@@ -355,13 +369,14 @@ describe('session integration', () => {
       'session:message',
       'session:message',
       'session:message',
+      'session:message',
     ]);
     expect(snapshot.sessions[0].activePrompt).toMatchObject({
       requestId: 'req-valid',
       promptType: 'confirm',
       promptConfig: { message: 'Continue?' },
     });
-    expect(snapshot.sessions[0].messages.map((message) => message.seq)).toEqual([1, 2, 3]);
+    expect(snapshot.sessions[0].messages.map((message) => message.seq)).toEqual([1, 2, 3, 4]);
     expect(snapshot.sessions[0].messages[1]).toMatchObject({
       rawType: 'prompt_answered',
       body: {
@@ -379,6 +394,17 @@ describe('session integration', () => {
         message: {
           type: 'prompt_request',
           requestId: 456,
+        },
+      },
+    });
+    expect(snapshot.sessions[0].messages[3]).toMatchObject({
+      rawType: 'prompt_request',
+      body: {
+        type: 'structured',
+        message: {
+          type: 'prompt_request',
+          requestId: 'req-bad-config',
+          promptConfig: 'Continue?',
         },
       },
     });
