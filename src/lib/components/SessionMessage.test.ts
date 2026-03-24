@@ -6,7 +6,18 @@ import type { DisplayMessage } from '$lib/types/session.js';
 import SessionMessage from './SessionMessage.svelte';
 
 function createMessage(
-  overrides: Partial<DisplayMessage> & Pick<DisplayMessage, 'category' | 'bodyType' | 'body'>
+  overrides: Omit<Partial<DisplayMessage>, 'category'> &
+    Pick<DisplayMessage, 'bodyType' | 'body'> & {
+      category:
+        | DisplayMessage['category']
+        | 'llmOutput'
+        | 'toolUse'
+        | 'command'
+        | 'progress'
+        | 'fileChange'
+        | 'lifecycle'
+        | 'userInput';
+    }
 ): DisplayMessage {
   return {
     id: 'msg-1',
@@ -14,7 +25,7 @@ function createMessage(
     timestamp: '2026-03-17T10:00:00.000Z',
     rawType: 'llm_response',
     ...overrides,
-  };
+  } as DisplayMessage;
 }
 
 describe('SessionMessage', () => {

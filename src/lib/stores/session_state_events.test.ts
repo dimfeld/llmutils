@@ -129,7 +129,7 @@ describe('applySessionEvent', () => {
           id: 'conn-1-1',
           seq: 1,
           timestamp: '2026-03-17T10:00:01.000Z',
-          category: 'llmOutput',
+          category: 'structured',
           bodyType: 'text',
           body: { type: 'text', text: 'next' },
           rawType: 'llm_response',
@@ -212,7 +212,7 @@ describe('applySessionEvent', () => {
     const replacementMessage = createMessage({
       id: 'replacement',
       seq: 9,
-      category: 'progress',
+      category: 'structured',
       rawType: 'workflow_progress',
     });
 

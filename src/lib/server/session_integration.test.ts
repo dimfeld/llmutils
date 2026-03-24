@@ -190,20 +190,26 @@ describe('session integration', () => {
     expect(snapshot.sessions[0].messages).toHaveLength(2);
     expect(snapshot.sessions[0].messages[0]).toMatchObject({
       seq: 1,
-      category: 'llmOutput',
-      bodyType: 'text',
+      category: 'structured',
+      bodyType: 'structured',
       rawType: 'llm_response',
-      body: { type: 'text', text: 'Implemented session list rendering' },
+      body: {
+        type: 'structured',
+        message: { type: 'llm_response', text: 'Implemented session list rendering' },
+      },
     });
     expect(snapshot.sessions[0].messages[1]).toMatchObject({
       seq: 2,
-      category: 'fileChange',
-      bodyType: 'fileChanges',
+      category: 'structured',
+      bodyType: 'structured',
       rawType: 'file_change_summary',
       body: {
-        type: 'fileChanges',
-        status: 'completed',
-        changes: [{ kind: 'updated', path: 'src/lib/server/session_manager.ts' }],
+        type: 'structured',
+        message: {
+          type: 'file_change_summary',
+          status: 'completed',
+          changes: [{ kind: 'updated', path: 'src/lib/server/session_manager.ts' }],
+        },
       },
     });
   });
@@ -609,7 +615,10 @@ describe('session integration', () => {
       data: {
         connectionId: 'conn-sse',
         message: {
-          body: { type: 'text', text: 'Live update' },
+          body: {
+            type: 'structured',
+            message: { type: 'llm_response', text: 'Live update' },
+          },
           rawType: 'llm_response',
         },
       },
@@ -700,7 +709,10 @@ describe('session integration', () => {
         connectionId: 'conn-replay',
         message: {
           seq: 2,
-          body: { type: 'text', text: 'Live message' },
+          body: {
+            type: 'structured',
+            message: { type: 'llm_response', text: 'Live message' },
+          },
         },
       },
     });
@@ -708,8 +720,11 @@ describe('session integration', () => {
     const snapshot = manager.getSessionSnapshot();
     expect(snapshot.sessions[0].messages.map((message) => message.seq)).toEqual([1, 2]);
     expect(snapshot.sessions[0].messages[0].body).toMatchObject({
-      type: 'text',
-      text: 'Replayed message',
+      type: 'structured',
+      message: {
+        type: 'llm_response',
+        text: 'Replayed message',
+      },
     });
 
     abortController.abort();
