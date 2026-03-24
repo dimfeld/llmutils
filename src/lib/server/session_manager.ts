@@ -19,17 +19,25 @@ import { listProjects } from '$tim/db/project.js';
 import { parseGitRemoteUrl } from '$common/git_url_parser.js';
 
 export type SessionStatus = 'active' | 'offline' | 'notification';
-export type MessageCategory =
-  | 'lifecycle'
-  | 'llmOutput'
-  | 'toolUse'
-  | 'fileChange'
-  | 'command'
-  | 'progress'
-  | 'error'
-  | 'log'
-  | 'userInput';
-export type MessageBodyType = 'text' | 'monospaced' | 'todoList' | 'fileChanges' | 'keyValuePairs';
+export type MessageCategory = 'log' | 'error' | 'structured';
+export type MessageBodyType =
+  | 'text'
+  | 'monospaced'
+  | 'todoList'
+  | 'fileChanges'
+  | 'keyValuePairs'
+  | 'structured';
+
+export type StructuredMessagePayload = StructuredMessage extends infer T
+  ? T extends StructuredMessage
+    ? Omit<T, 'timestamp' | 'transportSource'>
+    : never
+  : never;
+
+export interface StructuredMessageBody {
+  type: 'structured';
+  message: StructuredMessagePayload;
+}
 
 export interface TextMessageBody {
   type: 'text';
@@ -68,7 +76,8 @@ export type DisplayMessageBody =
   | MonospacedMessageBody
   | TodoListMessageBody
   | FileChangesMessageBody
-  | KeyValuePairsMessageBody;
+  | KeyValuePairsMessageBody
+  | StructuredMessageBody;
 
 export interface DisplayMessage {
   id: string;
@@ -129,11 +138,6 @@ type SessionEventName = keyof SessionManagerEvents;
 type SessionEventListener<T extends SessionEventName> = (payload: SessionManagerEvents[T]) => void;
 type AgentSender = (message: HeadlessServerMessage) => void;
 
-interface MessageFormattingResult {
-  category: MessageCategory;
-  body: DisplayMessageBody;
-}
-
 interface SessionInternals {
   deferredPromptEvent: ActivePrompt | null;
   nextNotificationId: number;
@@ -154,465 +158,10 @@ const MAX_NOTIFICATION_MESSAGES = 200;
 const MAX_SESSION_MESSAGES = 5000;
 const MAX_SNAPSHOT_MESSAGES = 500;
 
-function formatJsonValue(value: unknown): string {
-  if (typeof value === 'string') {
-    return value;
-  }
-
-  if (value == null) {
-    return String(value);
-  }
-
-  return JSON.stringify(value, null, 2);
-}
-
-function keyValueEntries(entries: Array<[string, unknown]>): KeyValuePairEntry[] {
-  return entries
-    .filter(([, value]) => value !== undefined && value !== null && value !== '')
-    .map(([key, value]) => [key, formatJsonValue(value)] satisfies [string, string])
-    .map(([key, value]) => ({ key, value }));
-}
-
-function summarizeCommandResult(
-  message: Extract<StructuredMessage, { type: 'command_result' }>
-): string {
-  const sections: string[] = [];
-
-  if (message.command) {
-    sections.push(`$ ${message.command}`);
-  }
-
-  sections.push(`exit ${message.exitCode}`);
-
-  if (message.cwd) {
-    sections.push(`cwd: ${message.cwd}`);
-  }
-
-  if (message.stdout) {
-    sections.push(`stdout:\n${message.stdout}`);
-  }
-
-  if (message.stderr) {
-    sections.push(`stderr:\n${message.stderr}`);
-  }
-
-  return sections.join('\n\n');
-}
-
-function summarizeStructuredMessage(message: StructuredMessage): MessageFormattingResult {
-  switch (message.type) {
-    case 'agent_session_start':
-      return {
-        category: 'lifecycle',
-        body: {
-          type: 'text',
-          text: [
-            'Agent session started',
-            message.executor ? `executor=${message.executor}` : null,
-            message.mode ? `mode=${message.mode}` : null,
-            message.planId != null ? `plan=${message.planId}` : null,
-          ]
-            .filter(Boolean)
-            .join(' | '),
-        },
-      };
-    case 'agent_session_end':
-      return {
-        category: 'lifecycle',
-        body: {
-          type: 'text',
-          text: [
-            message.success ? 'Agent session completed' : 'Agent session failed',
-            message.durationMs != null ? `duration=${message.durationMs}ms` : null,
-            message.turns != null ? `turns=${message.turns}` : null,
-            message.costUsd != null ? `cost=$${message.costUsd}` : null,
-            message.summary ?? null,
-          ]
-            .filter(Boolean)
-            .join(' | '),
-        },
-      };
-    case 'agent_iteration_start':
-      return {
-        category: 'lifecycle',
-        body: {
-          type: 'text',
-          text: [
-            `Iteration ${message.iterationNumber}`,
-            message.taskTitle ?? null,
-            message.taskDescription ?? null,
-          ]
-            .filter(Boolean)
-            .join(' | '),
-        },
-      };
-    case 'agent_step_start':
-      return {
-        category: 'lifecycle',
-        body: {
-          type: 'text',
-          text: [
-            `Step start: ${message.phase}`,
-            message.executor ?? null,
-            message.stepNumber != null ? `step=${message.stepNumber}` : null,
-            message.attempt != null ? `attempt=${message.attempt}` : null,
-            message.message ?? null,
-          ]
-            .filter(Boolean)
-            .join(' | '),
-        },
-      };
-    case 'agent_step_end':
-      return {
-        category: 'lifecycle',
-        body: {
-          type: 'text',
-          text: [
-            `Step ${message.success ? 'completed' : 'failed'}: ${message.phase}`,
-            message.summary ?? null,
-          ]
-            .filter(Boolean)
-            .join(' | '),
-        },
-      };
-    case 'llm_thinking':
-      return {
-        category: 'llmOutput',
-        body: {
-          type: 'monospaced',
-          text: message.text,
-        },
-      };
-    case 'llm_response':
-      return {
-        category: 'llmOutput',
-        body: {
-          type: 'text',
-          text: message.text,
-        },
-      };
-    case 'llm_tool_use':
-      return {
-        category: 'toolUse',
-        body: {
-          type: 'keyValuePairs',
-          entries: keyValueEntries([
-            ['Tool', message.toolName],
-            ['Summary', message.inputSummary],
-            ['Input', message.input],
-          ]),
-        },
-      };
-    case 'llm_tool_result':
-      return {
-        category: 'toolUse',
-        body: {
-          type: 'text',
-          text: [
-            message.toolName,
-            message.resultSummary ??
-              (message.result != null ? formatJsonValue(message.result) : null),
-          ]
-            .filter(Boolean)
-            .join(': '),
-        },
-      };
-    case 'llm_status':
-      return {
-        category: 'progress',
-        body: {
-          type: 'text',
-          text: [message.source ?? null, message.status, message.detail ?? null]
-            .filter(Boolean)
-            .join(' | '),
-        },
-      };
-    case 'todo_update':
-      return {
-        category: 'progress',
-        body: {
-          type: 'todoList',
-          items: message.items,
-          explanation: message.explanation,
-        },
-      };
-    case 'task_completion':
-      return {
-        category: 'progress',
-        body: {
-          type: 'text',
-          text: message.planComplete
-            ? `Plan completed${message.taskTitle ? ` after ${message.taskTitle}` : ''}`
-            : `Task completed${message.taskTitle ? `: ${message.taskTitle}` : ''}`,
-        },
-      };
-    case 'file_write':
-      return {
-        category: 'fileChange',
-        body: {
-          type: 'text',
-          text: `Wrote ${message.path} (${message.lineCount} lines)`,
-        },
-      };
-    case 'file_edit':
-      return {
-        category: 'fileChange',
-        body: {
-          type: 'monospaced',
-          text: `${message.path}\n${message.diff}`,
-        },
-      };
-    case 'file_change_summary':
-      return {
-        category: 'fileChange',
-        body: {
-          type: 'fileChanges',
-          changes: message.changes,
-          status: message.status,
-        },
-      };
-    case 'command_exec':
-      return {
-        category: 'command',
-        body: {
-          type: 'monospaced',
-          text: [message.cwd ? `# cwd: ${message.cwd}` : null, `$ ${message.command}`]
-            .filter(Boolean)
-            .join('\n'),
-        },
-      };
-    case 'command_result':
-      return {
-        category: 'command',
-        body: {
-          type: 'monospaced',
-          text: summarizeCommandResult(message),
-        },
-      };
-    case 'review_start':
-      return {
-        category: 'lifecycle',
-        body: {
-          type: 'text',
-          text: [
-            'Review started',
-            message.executor ? `executor=${message.executor}` : null,
-            message.planId != null ? `plan=${message.planId}` : null,
-          ]
-            .filter(Boolean)
-            .join(' | '),
-        },
-      };
-    case 'review_result': {
-      const sections: string[] = [];
-      sections.push(`Review verdict: ${message.verdict}`);
-
-      if (message.fixInstructions) {
-        sections.push('');
-        sections.push(message.fixInstructions);
-      }
-
-      if (message.issues.length > 0) {
-        sections.push('');
-        sections.push(`Issues (${message.issues.length}):`);
-
-        const severityOrder = ['critical', 'major', 'minor', 'info'] as const;
-        const grouped: Record<string, typeof message.issues> = {};
-        for (const issue of message.issues) {
-          (grouped[issue.severity] ??= []).push(issue);
-        }
-
-        for (const severity of severityOrder) {
-          const issues = grouped[severity];
-          if (!issues?.length) continue;
-
-          const icon =
-            severity === 'critical'
-              ? '!!'
-              : severity === 'major'
-                ? '!'
-                : severity === 'minor'
-                  ? '~'
-                  : 'i';
-          sections.push('');
-          sections.push(
-            `[${icon}] ${severity.charAt(0).toUpperCase() + severity.slice(1)} (${issues.length})`
-          );
-
-          for (const issue of issues) {
-            const location = issue.file
-              ? ` (${issue.file}${issue.line != null ? `:${issue.line}` : ''})`
-              : '';
-            sections.push(`  - [${issue.category}]${location} ${issue.content}`);
-            if (issue.suggestion) {
-              sections.push(`    Suggestion: ${issue.suggestion}`);
-            }
-          }
-        }
-      }
-
-      if (message.recommendations.length > 0) {
-        sections.push('');
-        sections.push('Recommendations:');
-        for (const rec of message.recommendations) {
-          sections.push(`  - ${rec}`);
-        }
-      }
-
-      if (message.actionItems.length > 0) {
-        sections.push('');
-        sections.push('Action Items:');
-        for (const item of message.actionItems) {
-          sections.push(`  - ${item}`);
-        }
-      }
-
-      return {
-        category: message.verdict === 'NEEDS_FIXES' ? 'error' : 'lifecycle',
-        body: {
-          type: 'monospaced',
-          text: sections.join('\n'),
-        },
-      };
-    }
-    case 'workflow_progress':
-      return {
-        category: 'progress',
-        body: {
-          type: 'text',
-          text: [message.phase ?? null, message.message].filter(Boolean).join(' | '),
-        },
-      };
-    case 'failure_report':
-      return {
-        category: 'error',
-        body: {
-          type: 'text',
-          text: [
-            message.summary,
-            message.requirements ?? null,
-            message.problems ?? null,
-            message.solutions ?? null,
-          ]
-            .filter(Boolean)
-            .join('\n\n'),
-        },
-      };
-    case 'execution_summary':
-      return {
-        category: 'lifecycle',
-        body: {
-          type: 'keyValuePairs',
-          entries: keyValueEntries([
-            ['Plan ID', message.summary.planId],
-            ['Plan Title', message.summary.planTitle],
-            ['Mode', message.summary.mode],
-            ['Duration', message.summary.durationMs],
-            ['Changed Files', message.summary.changedFiles.join('\n')],
-            ['Errors', message.summary.errors.join('\n')],
-          ]),
-        },
-      };
-    case 'token_usage':
-      return {
-        category: 'progress',
-        body: {
-          type: 'text',
-          text: [
-            `tokens=${message.totalTokens ?? '?'}`,
-            message.inputTokens != null ? `input=${message.inputTokens}` : null,
-            message.cachedInputTokens != null ? `cached=${message.cachedInputTokens}` : null,
-            message.outputTokens != null ? `output=${message.outputTokens}` : null,
-            message.reasoningTokens != null ? `reasoning=${message.reasoningTokens}` : null,
-          ]
-            .filter(Boolean)
-            .join(' | '),
-        },
-      };
-    case 'input_required':
-      return {
-        category: 'lifecycle',
-        body: {
-          type: 'text',
-          text: message.prompt ?? 'Input required',
-        },
-      };
-    case 'user_terminal_input':
-      return {
-        category: 'userInput',
-        body: {
-          type: 'text',
-          text: message.content,
-        },
-      };
-    case 'prompt_request':
-      return {
-        category: 'lifecycle',
-        body: {
-          type: 'text',
-          text: [
-            `Prompt requested: ${message.promptType}`,
-            message.promptConfig.header ?? null,
-            message.promptConfig.question ?? null,
-            message.promptConfig.message,
-          ]
-            .filter(Boolean)
-            .join(' | '),
-        },
-      };
-    case 'prompt_answered':
-      return {
-        category: 'lifecycle',
-        body: {
-          type: 'text',
-          text: [
-            `Prompt answered: ${message.promptType}`,
-            message.source,
-            message.value !== undefined ? formatJsonValue(message.value) : null,
-          ]
-            .filter(Boolean)
-            .join(' | '),
-        },
-      };
-    case 'plan_discovery':
-      return {
-        category: 'lifecycle',
-        body: {
-          type: 'text',
-          text: `Discovered plan ${message.planId}: ${message.title}`,
-        },
-      };
-    case 'workspace_info':
-      return {
-        category: 'lifecycle',
-        body: {
-          type: 'text',
-          text: [
-            `Workspace: ${message.path}`,
-            message.workspaceId ? `id=${message.workspaceId}` : null,
-            message.planFile ? `plan=${message.planFile}` : null,
-          ]
-            .filter(Boolean)
-            .join(' | '),
-        },
-      };
-    default:
-      return {
-        category: 'log',
-        body: {
-          type: 'text',
-          text: `Unsupported structured message type: ${(message as { type?: string }).type ?? 'unknown'}`,
-        },
-      };
-  }
-}
-
-export function categorizeMessage(message: StructuredMessage): {
-  category: MessageCategory;
-  bodyType: MessageBodyType;
-} {
-  const formatted = summarizeStructuredMessage(message);
-  return { category: formatted.category, bodyType: formatted.body.type };
+function stripStructuredMessage(message: StructuredMessage): StructuredMessagePayload {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { timestamp, transportSource, ...payload } = message;
+  return payload as StructuredMessagePayload;
 }
 
 export function sessionGroupKey(gitRemote?: string | null, workspacePath?: string | null): string {
@@ -692,37 +241,21 @@ export function formatTunnelMessage(
     case 'debug':
       return null;
     case 'structured': {
-      let formatted: MessageFormattingResult;
-      try {
-        formatted = summarizeStructuredMessage(message.message);
-      } catch {
-        // Unknown or malformed structured message type — render as generic log
-        return {
-          id: `${connectionId}:${seq}`,
-          seq,
-          timestamp: message.message?.timestamp ?? new Date().toISOString(),
-          category: 'log',
-          bodyType: 'text',
-          body: {
-            type: 'text',
-            text: `[unknown: ${(message.message as { type?: string })?.type ?? 'no type'}]`,
-          },
-          rawType:
-            (message.message as { type?: string })?.type ??
-            ('unknown' as StructuredMessage['type']),
-        };
-      }
+      const triggersNotification =
+        message.message.type === 'agent_session_end' &&
+        message.message.transportSource !== 'tunnel';
       return {
         id: `${connectionId}:${seq}`,
         seq,
         timestamp: message.message.timestamp,
-        category: formatted.category,
-        bodyType: formatted.body.type,
-        body: formatted.body,
+        category: 'structured',
+        bodyType: 'structured',
+        body: {
+          type: 'structured',
+          message: stripStructuredMessage(message.message),
+        },
         rawType: message.message.type,
-        triggersNotification:
-          message.message.type === 'agent_session_end' &&
-          message.message.transportSource !== 'tunnel',
+        triggersNotification,
       };
     }
     case 'stdout':
@@ -1319,6 +852,11 @@ function cloneBody(body: DisplayMessageBody): DisplayMessageBody {
       return {
         ...body,
         entries: body.entries.map((entry) => ({ ...entry })),
+      };
+    case 'structured':
+      return {
+        type: 'structured',
+        message: structuredClone(body.message),
       };
   }
 }

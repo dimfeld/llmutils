@@ -3,20 +3,26 @@
  * These cannot be imported from $lib/server/ because bun:sqlite is not available client-side.
  */
 
+import type { StructuredMessage } from '../../logging/structured_messages.js';
+
 export type SessionStatus = 'active' | 'offline' | 'notification';
 
-export type MessageCategory =
-  | 'lifecycle'
-  | 'llmOutput'
-  | 'toolUse'
-  | 'fileChange'
-  | 'command'
-  | 'progress'
-  | 'error'
-  | 'log'
-  | 'userInput';
+export type MessageCategory = 'log' | 'error' | 'structured';
 
-export type MessageBodyType = 'text' | 'monospaced' | 'todoList' | 'fileChanges' | 'keyValuePairs';
+export type MessageBodyType =
+  | 'text'
+  | 'monospaced'
+  | 'todoList'
+  | 'fileChanges'
+  | 'keyValuePairs'
+  | 'structured';
+
+/** The structured message with transport-only fields stripped. Distributive to preserve discriminated union narrowing. */
+export type StructuredMessagePayload = StructuredMessage extends infer T
+  ? T extends StructuredMessage
+    ? Omit<T, 'timestamp' | 'transportSource'>
+    : never
+  : never;
 
 export type TodoUpdateStatus = 'pending' | 'in_progress' | 'completed' | 'blocked' | 'unknown';
 
@@ -65,12 +71,18 @@ export interface KeyValuePairsMessageBody {
   entries: KeyValuePairEntry[];
 }
 
+export interface StructuredMessageBody {
+  type: 'structured';
+  message: StructuredMessagePayload;
+}
+
 export type DisplayMessageBody =
   | TextMessageBody
   | MonospacedMessageBody
   | TodoListMessageBody
   | FileChangesMessageBody
-  | KeyValuePairsMessageBody;
+  | KeyValuePairsMessageBody
+  | StructuredMessageBody;
 
 export interface DisplayMessage {
   id: string;
