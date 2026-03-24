@@ -189,6 +189,42 @@ async function createHangingShutdownCommand(
   return `exec node ${JSON.stringify(scriptPath)}`;
 }
 
+async function createHangingShutdownWithChildCommand(
+  filePath: string,
+  launcherPidFilePath: string,
+  childPidFilePath: string,
+  launcherStartLine: string,
+  childStartLine: string
+): Promise<string> {
+  const childScriptPath = path.join(path.dirname(filePath), `${childStartLine}.cjs`);
+  await fs.writeFile(
+    childScriptPath,
+    [
+      `const fs = require('node:fs');`,
+      `fs.writeFileSync(${JSON.stringify(childPidFilePath)}, String(process.pid));`,
+      `fs.appendFileSync(${JSON.stringify(filePath)}, ${JSON.stringify(childStartLine + '\n')});`,
+      `setInterval(() => {}, 1000);`,
+    ].join('\n'),
+    'utf8'
+  );
+
+  const launcherScriptPath = path.join(path.dirname(filePath), `${launcherStartLine}.cjs`);
+  await fs.writeFile(
+    launcherScriptPath,
+    [
+      `const fs = require('node:fs');`,
+      `const { spawn } = require('node:child_process');`,
+      `fs.writeFileSync(${JSON.stringify(launcherPidFilePath)}, String(process.pid));`,
+      `fs.appendFileSync(${JSON.stringify(filePath)}, ${JSON.stringify(launcherStartLine + '\n')});`,
+      `spawn(process.execPath, [${JSON.stringify(childScriptPath)}], { stdio: 'ignore' });`,
+      `setInterval(() => {}, 1000);`,
+    ].join('\n'),
+    'utf8'
+  );
+
+  return `node ${JSON.stringify(launcherScriptPath)}`;
+}
+
 function processExists(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -942,6 +978,44 @@ describe('LifecycleManager', () => {
     ]);
   }, 10000);
 
+  test('shutdown timeout kills both the shutdown wrapper and its child process', async () => {
+    const launcherPidFile = path.join(tempDir, 'hanging-shutdown-launcher.pid');
+    const childPidFile = path.join(tempDir, 'hanging-shutdown-child.pid');
+    const manager = new LifecycleManager(
+      [
+        {
+          title: 'hanging with child',
+          command: appendLineCommand(logFile, 'start'),
+          shutdown: await createHangingShutdownWithChildCommand(
+            logFile,
+            launcherPidFile,
+            childPidFile,
+            'shutdown-launcher-start',
+            'shutdown-child-start'
+          ),
+        },
+      ],
+      tempDir,
+      undefined,
+      200
+    );
+    await manager.startup();
+
+    await expect(manager.shutdown()).rejects.toThrow('Lifecycle shutdown had 1 failure(s)');
+
+    const launcherPid = Number.parseInt(await fs.readFile(launcherPidFile, 'utf8'), 10);
+    const childPid = Number.parseInt(await fs.readFile(childPidFile, 'utf8'), 10);
+    await Bun.sleep(200);
+
+    expect(processExists(launcherPid)).toBeFalse();
+    expect(processExists(childPid)).toBeFalse();
+    expect(await readLines(logFile)).toEqual([
+      'start',
+      'shutdown-launcher-start',
+      'shutdown-child-start',
+    ]);
+  }, 10000);
+
   test('killDaemons kills the active shutdown command process', async () => {
     const hangingPidFile = path.join(tempDir, 'active-shutdown.pid');
     const manager = new LifecycleManager(
@@ -972,6 +1046,83 @@ describe('LifecycleManager', () => {
     const hangingPid = Number.parseInt(await fs.readFile(hangingPidFile, 'utf8'), 10);
     expect(processExists(hangingPid)).toBeFalse();
     expect(await readLines(logFile)).toEqual(['start', 'shutdown-start']);
+  }, 10000);
+
+  test('killDaemons kills both the active shutdown wrapper and its child process', async () => {
+    const launcherPidFile = path.join(tempDir, 'active-shutdown-launcher.pid');
+    const childPidFile = path.join(tempDir, 'active-shutdown-child.pid');
+    const manager = new LifecycleManager(
+      [
+        {
+          title: 'hanging with child',
+          command: appendLineCommand(logFile, 'start'),
+          shutdown: await createHangingShutdownWithChildCommand(
+            logFile,
+            launcherPidFile,
+            childPidFile,
+            'shutdown-launcher-start',
+            'shutdown-child-start'
+          ),
+        },
+      ],
+      tempDir,
+      undefined,
+      5000
+    );
+    await manager.startup();
+
+    const shutdownPromise = manager.shutdown();
+    await waitForLine(logFile, 'shutdown-launcher-start');
+    await waitForLine(logFile, 'shutdown-child-start');
+    manager.killDaemons();
+
+    await expect(shutdownPromise).rejects.toThrow('Lifecycle shutdown had 1 failure(s)');
+
+    const launcherPid = Number.parseInt(await fs.readFile(launcherPidFile, 'utf8'), 10);
+    const childPid = Number.parseInt(await fs.readFile(childPidFile, 'utf8'), 10);
+    await Bun.sleep(200);
+
+    expect(processExists(launcherPid)).toBeFalse();
+    expect(processExists(childPid)).toBeFalse();
+  }, 10000);
+
+  test('killDaemons coordinates cleanly when it races the shutdown timeout', async () => {
+    const launcherPidFile = path.join(tempDir, 'race-shutdown-launcher.pid');
+    const childPidFile = path.join(tempDir, 'race-shutdown-child.pid');
+    const manager = new LifecycleManager(
+      [
+        {
+          title: 'hanging with child',
+          command: appendLineCommand(logFile, 'start'),
+          shutdown: await createHangingShutdownWithChildCommand(
+            logFile,
+            launcherPidFile,
+            childPidFile,
+            'shutdown-launcher-start',
+            'shutdown-child-start'
+          ),
+        },
+      ],
+      tempDir,
+      undefined,
+      200
+    );
+    await manager.startup();
+
+    const shutdownPromise = manager.shutdown();
+    await waitForLine(logFile, 'shutdown-launcher-start');
+    await waitForLine(logFile, 'shutdown-child-start');
+    await Bun.sleep(150);
+    manager.killDaemons();
+
+    await expect(shutdownPromise).rejects.toThrow('Lifecycle shutdown had 1 failure(s)');
+
+    const launcherPid = Number.parseInt(await fs.readFile(launcherPidFile, 'utf8'), 10);
+    const childPid = Number.parseInt(await fs.readFile(childPidFile, 'utf8'), 10);
+    await Bun.sleep(200);
+
+    expect(processExists(launcherPid)).toBeFalse();
+    expect(processExists(childPid)).toBeFalse();
   }, 10000);
 
   test('shutdown timeout override still allows normal shutdown commands to complete', async () => {

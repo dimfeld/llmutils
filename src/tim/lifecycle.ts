@@ -284,6 +284,8 @@ export class LifecycleManager {
       return;
     }
 
+    // Force-exit path: prefer immediate teardown over graceful shutdown so a
+    // wedged cleanup command cannot keep the process alive after a second Ctrl+C.
     this.tryKillProcess(
       proc,
       'SIGKILL',
@@ -411,6 +413,7 @@ export class LifecycleManager {
   ): Promise<number> {
     const proc = Bun.spawn(getShellCommand(command.command), {
       cwd: this.resolveCwd(commandConfig),
+      detached: command.trackAsShutdown ? true : undefined,
       env: {
         ...process.env,
         ...(commandConfig.env ?? {}),
