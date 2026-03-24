@@ -149,6 +149,54 @@ describe('applySessionEvent', () => {
     });
   });
 
+  test('session:message preserves structured bodies for client-side rendering', () => {
+    const session = createSession();
+    const state = createState(session);
+
+    applySessionEvent(
+      'session:message',
+      {
+        connectionId: session.connectionId,
+        message: createMessage({
+          id: 'conn-1-structured',
+          seq: 2,
+          category: 'structured',
+          bodyType: 'structured',
+          body: {
+            type: 'structured',
+            message: {
+              type: 'review_result',
+              verdict: 'NEEDS_FIXES',
+              issues: [],
+              recommendations: ['Add coverage'],
+              actionItems: ['Fix rendering'],
+            },
+          },
+          rawType: 'review_result',
+        }),
+      },
+      state
+    );
+
+    const updated = state.sessions.get(session.connectionId);
+    expect(updated?.messages.at(-1)).toEqual(
+      expect.objectContaining({
+        id: 'conn-1-structured',
+        bodyType: 'structured',
+        body: {
+          type: 'structured',
+          message: {
+            type: 'review_result',
+            verdict: 'NEEDS_FIXES',
+            issues: [],
+            recommendations: ['Add coverage'],
+            actionItems: ['Fix rendering'],
+          },
+        },
+      })
+    );
+  });
+
   test('session:message trims to MAX_CLIENT_MESSAGES entries', () => {
     const session = createSession();
     session.messages = [];

@@ -271,16 +271,13 @@ describe('lib/server/ws_server', () => {
       ws.addEventListener('error', () => reject(new Error('websocket error')));
     });
 
-    expect(logSpy).toHaveBeenCalledWith('[ws_server] Received WebSocket message', {
-      connectionId: expect.any(String),
-      message: {
-        type: 'session_info',
-        command: `${'x'.repeat(200)}...(40 more chars)`,
-        extra: {
-          nested: `${'x'.repeat(200)}...(40 more chars)`,
-        },
-      },
-    });
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    const [label, payload] = logSpy.mock.calls[0] ?? [];
+    expect(label).toBe('[ws_server] Received WebSocket message');
+    expect(payload).toEqual(expect.any(String));
+    expect(payload).toContain("type: 'session_info'");
+    expect(payload).toContain(`command: '${'x'.repeat(200)}...(40 more chars)'`);
+    expect(payload).toContain(`nested: '${'x'.repeat(200)}...(40 more chars)'`);
 
     ws.close();
     logSpy.mockRestore();

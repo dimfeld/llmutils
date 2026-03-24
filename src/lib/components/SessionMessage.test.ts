@@ -81,6 +81,44 @@ describe('SessionMessage', () => {
     expect(body).not.toContain('output 41');
   });
 
+  test('renders structured todo updates through the existing todo list renderer', () => {
+    const { body } = render(SessionMessage, {
+      props: {
+        message: createStructuredMessage({
+          type: 'todo_update',
+          explanation: 'Working through tasks',
+          items: [
+            { label: 'Done task', status: 'completed' },
+            { label: 'Current task', status: 'in_progress' },
+          ],
+        }),
+      },
+    });
+
+    expect(body).toContain('Working through tasks');
+    expect(body).toContain('Done task');
+    expect(body).toContain('Current task');
+  });
+
+  test('renders structured file change summaries through the existing file changes renderer', () => {
+    const { body } = render(SessionMessage, {
+      props: {
+        message: createStructuredMessage({
+          type: 'file_change_summary',
+          status: 'completed',
+          changes: [
+            { path: 'src/lib/components/SessionMessage.svelte', kind: 'updated' },
+            { path: 'src/lib/components/ReviewResultDisplay.svelte', kind: 'added' },
+          ],
+        }),
+      },
+    });
+
+    expect(body).toContain('completed');
+    expect(body).toContain('src/lib/components/SessionMessage.svelte');
+    expect(body).toContain('src/lib/components/ReviewResultDisplay.svelte');
+  });
+
   test('renders review_result with ReviewResultDisplay', () => {
     const { body } = render(SessionMessage, {
       props: {
@@ -167,5 +205,25 @@ describe('SessionMessage', () => {
     });
 
     expect(body).toContain('some output');
+  });
+
+  test('renders structured key-value messages through the existing key value renderer', () => {
+    const { body } = render(SessionMessage, {
+      props: {
+        message: createStructuredMessage({
+          type: 'llm_tool_use',
+          toolName: 'search_query',
+          inputSummary: 'Find plan',
+          input: { query: 'plan 253' },
+        }),
+      },
+    });
+
+    expect(body).toContain('Tool:');
+    expect(body).toContain('search_query');
+    expect(body).toContain('Summary:');
+    expect(body).toContain('Find plan');
+    expect(body).toContain('Input:');
+    expect(body).toContain('"query": "plan 253"');
   });
 });
