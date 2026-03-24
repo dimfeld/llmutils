@@ -5,12 +5,12 @@ goal: ""
 id: 146
 uuid: e37079a4-2cc9-4161-a9a6-b75de7a45756
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 planGeneratedAt: 2026-02-15T09:35:34.117Z
 promptsGeneratedAt: 2026-02-15T09:35:34.117Z
 createdAt: 2025-11-07T21:16:48.398Z
-updatedAt: 2026-03-24T18:16:10.644Z
+updatedAt: 2026-03-24T18:45:44.921Z
 tasks:
   - title: Restructure signal handling for async cleanup
     done: true
@@ -112,7 +112,7 @@ tasks:
       concatenated across global/repo/local)."
   - title: "Address Review Feedback: Interrupt handling only checks
       `isShuttingDown()` at loop boundaries."
-    done: false
+    done: true
     description: >-
       Interrupt handling only checks `isShuttingDown()` at loop boundaries. If
       SIGINT/SIGTERM arrives after `executor.execute()` returns, the agent still
@@ -132,7 +132,7 @@ tasks:
   - title: "Address Review Feedback: `timAgent()` now sends `status: 'interrupted'`
       to notifications, but the notification contract still only allows
       `'success' | 'error' | 'input'`."
-    done: false
+    done: true
     description: >-
       `timAgent()` now sends `status: 'interrupted'` to notifications, but the
       notification contract still only allows `'success' | 'error' | 'input'`.
@@ -151,7 +151,7 @@ tasks:
       Related file: src/tim/commands/agent/agent.ts:1223-1238
   - title: "Address Review Feedback: In lifecycle.ts lines 127-133, the background
       daemon exit monitor only warns on non-zero exit codes."
-    done: false
+    done: true
     description: >-
       In lifecycle.ts lines 127-133, the background daemon exit monitor only
       warns on non-zero exit codes. A daemon that exits cleanly (code 0) after
@@ -174,6 +174,7 @@ changedFiles:
   - schema/tim-config-schema.json
   - src/tim/commands/agent/agent.lifecycle.test.ts
   - src/tim/commands/agent/agent.ts
+  - src/tim/commands/agent/batch_mode.soft_failure.test.ts
   - src/tim/commands/agent/batch_mode.ts
   - src/tim/configLoader.test.ts
   - src/tim/configLoader.ts
@@ -181,6 +182,7 @@ changedFiles:
   - src/tim/configSchema.ts
   - src/tim/lifecycle.test.ts
   - src/tim/lifecycle.ts
+  - src/tim/notifications.ts
   - src/tim/shutdown_state.test.ts
   - src/tim/shutdown_state.ts
   - src/tim/tim.signal_handlers.test.ts
@@ -575,9 +577,12 @@ Document the new `lifecycle` configuration section in the README with:
 - Task 2: Added `onlyWorkspaceType` field to `lifecycleCommandSchema` in configSchema.ts, regenerated JSON schema
 - Task 3: Config merging for lifecycle verified with concatenation test (repo+local commands merged in order). Also fixed env var restoration in test.
 - Task 4: Created `src/tim/lifecycle.ts` with LifecycleManager class supporting startup/shutdown/daemon management
-- Task 5: Created `src/tim/lifecycle.test.ts` with 36 tests covering all specified scenarios
+- Task 5: Created `src/tim/lifecycle.test.ts` with 37 tests covering all specified scenarios
 - Task 6: Integrated lifecycle into `timAgent()` — startup after workspace setup, killDaemons registered with CleanupRegistry, shutdown in finally block. Both serial and batch modes check shutdown state. Workspace round-trip sync skipped on interrupt. Interrupted runs reported as 'interrupted' status in notifications.
 - Task 7: README already had comprehensive lifecycle documentation from a previous iteration. During final review, fixed critical signal handling bug where killDaemons() was called on first signal before async shutdown() could run explicit shutdown commands.
+- Task 8: Added `isShuttingDown()` checks throughout post-execution mutation paths in both serial and batch mode. Checks guard: after executor.execute(), before every runPostApplyCommands() that follows async work, before markTaskDone/markStepDone, before commitAll, before checkAndMarkParentDone, before setPlanStatus, and before setup mutations (autoClaimPlan, pending→in_progress).
+- Task 9: Added 'interrupted' to `NotificationStatus` type in notifications.ts. Added test assertion verifying interrupted status in notification payload.
+- Task 10: Removed `exitCode !== 0` condition in lifecycle daemon exit monitor so exit code 0 also triggers warning. Added dedicated test for clean daemon exit warning.
 ### Remaining
 - None
 ### Next Iteration Guidance
@@ -588,7 +593,7 @@ Document the new `lifecycle` configuration section in the README with:
 - Check command spawn failures fall through to run the actual command (rather than skipping it)
 - killDaemons() and shutdown() coordinate via a killedByCleanup flag to avoid double-signaling
 - killDaemons() kills ALL running daemons (including those with explicit shutdown commands) since it's an emergency fallback — on force exit the async shutdown() won't run
-- Background daemon exit monitoring warns when a daemon crashes unexpectedly during the agent run
+- Background daemon exit monitoring warns when a daemon crashes unexpectedly during the agent run (including exit code 0)
 - stdin is intentionally 'ignore' for lifecycle commands (automated, not interactive)
 - Windows is not supported for daemon process management
 - Signal handling uses `deferSignalExit` opt-in: non-agent commands still exit immediately on signals; only the agent command defers to allow async lifecycle shutdown
@@ -596,6 +601,7 @@ Document the new `lifecycle` configuration section in the README with:
 - shutdown() collects all errors and throws an aggregated error after attempting all cleanup commands
 - LifecycleManager.startup() aborts early if shutdown is requested mid-startup
 - First signal in deferred mode does NOT run cleanupRegistry.executeAll() — this lets async lifecycle shutdown() run explicit shutdown commands before daemons are killed. killDaemons() is reserved for the force-exit path (second signal → process.exit → exit event).
+- Shutdown checks use `if (!isShuttingDown()) { ... }` wrapping pattern for post-apply hooks that follow async operations, rather than standalone `break` checks, to avoid running arbitrary shell commands after interrupt
 ### Lessons Learned
 - Daemon process management requires process group signals — just killing the shell wrapper (sh -c) doesn't kill child processes
 - Early daemon exit detection needs careful handling of both zero and non-zero exit codes
@@ -605,5 +611,6 @@ Document the new `lifecycle` configuration section in the README with:
 - On force-exit (second signal), the async shutdown path won't run, so the sync killDaemons() must handle ALL daemons regardless of explicit shutdown commands
 - setDeferSignalExit must be inside the try block to ensure the finally block resets it
 - Running cleanupRegistry.executeAll() on the first deferred signal defeats the purpose of deferred exit — sync fallbacks (killDaemons) preempt async shutdown commands. The registry should only run on the force-exit/exit-event path.
+- Shutdown guards need to be placed before EVERY mutation boundary, not just after executor.execute(). Each async operation (docs update, lessons update) creates a new window where a signal could arrive, so the subsequent mutation (post-apply hook, markDone, commit) needs its own guard.
 ### Risks / Blockers
 - None
