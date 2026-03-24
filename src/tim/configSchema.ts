@@ -100,6 +100,13 @@ export const workspaceCreationConfigSchema = z.object({
    * Defaults to false.
    */
   createBranch: z.boolean().optional(),
+  /**
+   * When true, auto-workspace selection will only consider workspaces with type 'auto'.
+   * By default, this behavior is implicit: if any 'auto' workspace exists, only 'auto'
+   * workspaces are eligible. This option forces that behavior even when no 'auto' workspaces
+   * exist yet, ensuring newly created workspaces are always typed 'auto'.
+   */
+  requireAutoType: z.boolean().optional(),
 });
 
 export type WorkspaceCreationConfig = z.infer<typeof workspaceCreationConfigSchema>;

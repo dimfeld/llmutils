@@ -92,11 +92,13 @@ export class WorkspaceAutoSelector {
     const allWorkspaces = findWorkspaceInfosByRepositoryId(repositoryId).sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
-    const hasAutoWorkspaces = allWorkspaces.some((workspace) => workspace.workspaceType === 'auto');
+    const requireAutoType =
+      this.config.workspaceCreation?.requireAutoType ||
+      allWorkspaces.some((workspace) => workspace.workspaceType === 'auto');
     const eligibleWorkspaces = allWorkspaces.filter((workspace) =>
-      hasAutoWorkspaces ? workspace.workspaceType === 'auto' : workspace.workspaceType !== 'primary'
+      requireAutoType ? workspace.workspaceType === 'auto' : workspace.workspaceType !== 'primary'
     );
-    const newWorkspaceType: WorkspaceType | undefined = hasAutoWorkspaces ? 'auto' : undefined;
+    const newWorkspaceType: WorkspaceType | undefined = requireAutoType ? 'auto' : undefined;
 
     if (preferNewWorkspace) {
       // Try to create new workspace first
