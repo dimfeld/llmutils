@@ -21,6 +21,24 @@ async function readLines(filePath: string): Promise<string[]> {
   }
 }
 
+async function waitForLine(
+  filePath: string,
+  expectedLine: string,
+  timeoutMs = 1000
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const lines = await readLines(filePath);
+    if (lines.includes(expectedLine)) {
+      return;
+    }
+
+    await Bun.sleep(25);
+  }
+
+  throw new Error(`Timed out waiting for line "${expectedLine}" in ${filePath}`);
+}
+
 function appendLineCommand(filePath: string, line: string): string {
   return `printf '${line}\\n' >> ${JSON.stringify(filePath)}`;
 }
@@ -45,6 +63,42 @@ async function createDaemonCommand(
     'utf8'
   );
   return `exec node ${JSON.stringify(scriptPath)}`;
+}
+
+async function createStubbornDaemonCommand(
+  filePath: string,
+  pidFilePath: string,
+  startLine: string,
+  termLine: string
+): Promise<string> {
+  const scriptPath = path.join(path.dirname(filePath), `${startLine}.cjs`);
+  await fs.writeFile(
+    scriptPath,
+    [
+      `const fs = require('node:fs');`,
+      `fs.writeFileSync(${JSON.stringify(pidFilePath)}, String(process.pid));`,
+      `fs.appendFileSync(${JSON.stringify(filePath)}, ${JSON.stringify(startLine + '\n')});`,
+      `process.on('SIGTERM', () => {`,
+      `  fs.appendFileSync(${JSON.stringify(filePath)}, ${JSON.stringify(termLine + '\n')});`,
+      `});`,
+      `setInterval(() => {}, 1000);`,
+    ].join('\n'),
+    'utf8'
+  );
+  return `exec node ${JSON.stringify(scriptPath)}`;
+}
+
+function processExists(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    const errorWithCode = err as NodeJS.ErrnoException;
+    if (errorWithCode.code === 'ESRCH') {
+      return false;
+    }
+    throw err;
+  }
 }
 
 describe('LifecycleManager', () => {
@@ -146,6 +200,30 @@ describe('LifecycleManager', () => {
     await manager.shutdown();
 
     expect(await readLines(logFile)).toEqual(['before', 'before-stop']);
+  });
+
+  test('shutdown still cleans up previously started daemons after startup aborts', async () => {
+    const manager = new LifecycleManager(
+      [
+        {
+          title: 'daemon',
+          command: await createDaemonCommand(logFile, 'daemon-start', 'daemon-term'),
+          mode: 'daemon',
+        },
+        {
+          title: 'failing',
+          command: 'exit 2',
+        },
+      ],
+      tempDir,
+      undefined
+    );
+
+    await expect(manager.startup()).rejects.toThrow('Lifecycle command "failing" failed');
+    await waitForLine(logFile, 'daemon-start');
+    await manager.shutdown();
+
+    expect(await readLines(logFile)).toEqual(['daemon-start', 'daemon-term']);
   });
 
   test('successful check skips daemon startup and suppresses shutdown', async () => {
@@ -265,6 +343,37 @@ describe('LifecycleManager', () => {
 
     expect(await readLines(logFile)).toEqual(['daemon-start', 'daemon-stop', 'daemon-term']);
   });
+
+  test('daemon shutdown sends SIGKILL after timeout when SIGTERM does not stop the process', async () => {
+    const pidFile = path.join(tempDir, 'stubborn.pid');
+    const manager = new LifecycleManager(
+      [
+        {
+          title: 'stubborn daemon',
+          command: await createStubbornDaemonCommand(
+            logFile,
+            pidFile,
+            'stubborn-start',
+            'stubborn-sigterm'
+          ),
+          mode: 'daemon',
+        },
+      ],
+      tempDir,
+      undefined
+    );
+
+    await manager.startup();
+    await waitForLine(logFile, 'stubborn-start');
+    const pid = Number.parseInt(await fs.readFile(pidFile, 'utf8'), 10);
+
+    await manager.shutdown();
+
+    const events = await readLines(logFile);
+    expect(events).toContain('stubborn-start');
+    expect(events).toContain('stubborn-sigterm');
+    expect(processExists(pid)).toBeFalse();
+  }, 10000);
 
   test('shutdown continues after shutdown command failures', async () => {
     const events = await startupAndShutdown([
