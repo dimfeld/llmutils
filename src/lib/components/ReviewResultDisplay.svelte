@@ -54,16 +54,16 @@
   {#if issues.length > 0}
     <div class="space-y-2">
       {#each severityOrder as severity (severity)}
-        {@const issues = groupedIssues[severity]}
-        {#if issues && issues.length > 0}
+        {@const severityIssues = groupedIssues[severity]}
+        {#if severityIssues && severityIssues.length > 0}
           {@const config = severityConfig[severity]}
           <div>
             <div class="font-medium {config.colorClass}">
               {config.emoji}
-              {severity.charAt(0).toUpperCase() + severity.slice(1)} ({issues.length})
+              {severity.charAt(0).toUpperCase() + severity.slice(1)} ({severityIssues.length})
             </div>
             <div class="space-y-1 pl-4">
-              {#each issues as issue, i (i)}
+              {#each severityIssues as issue (issue.file + ':' + issue.line + ':' + issue.category)}
                 <div>
                   <span class="text-gray-400">[{issue.category}]</span>
                   {#if issue.file}
@@ -88,7 +88,7 @@
     <div>
       <div class="font-medium text-gray-300">Recommendations</div>
       <ul class="list-disc pl-6 text-gray-300">
-        {#each recommendations as rec, i (i)}
+        {#each recommendations as rec (rec)}
           <li>{rec}</li>
         {/each}
       </ul>
@@ -99,7 +99,7 @@
     <div>
       <div class="font-medium text-gray-300">Action Items</div>
       <ul class="list-disc pl-6 text-gray-300">
-        {#each actionItems as item, i (i)}
+        {#each actionItems as item (item)}
           <li>{item}</li>
         {/each}
       </ul>

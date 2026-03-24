@@ -162,6 +162,12 @@ describe('lib/server/session_manager', () => {
         .message;
       expect(payload).not.toHaveProperty('timestamp');
       expect(payload).not.toHaveProperty('transportSource');
+      if (msg.type === 'llm_tool_result') {
+        expect(payload).toMatchObject({
+          resultSummary: 'ok',
+          result: { hits: 1 },
+        });
+      }
     }
   });
 

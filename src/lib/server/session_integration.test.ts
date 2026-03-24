@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import type { HeadlessServerMessage } from '$common/../logging/headless_protocol.js';
+import type { StructuredMessage } from '$common/../logging/structured_messages.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
 
@@ -286,6 +287,101 @@ describe('session integration', () => {
     }
 
     expect(snapshot.sessions[0].activePrompt).toBeNull();
+  });
+
+  test('ignores malformed prompt side effects while still recording the structured messages', () => {
+    expect.hasAssertions();
+
+    const { events, unsubscribe } = recordEvents(manager);
+
+    manager.handleWebSocketConnect('conn-malformed-prompt', () => {});
+    manager.handleWebSocketMessage('conn-malformed-prompt', {
+      type: 'session_info',
+      command: 'agent',
+      interactive: true,
+      workspacePath: '/tmp/malformed-prompt',
+      gitRemote: undefined,
+    });
+    manager.handleWebSocketMessage('conn-malformed-prompt', {
+      type: 'output',
+      seq: 1,
+      message: {
+        type: 'structured',
+        message: {
+          type: 'prompt_request',
+          timestamp: '2026-03-17T10:00:01.000Z',
+          requestId: 'req-valid',
+          promptType: 'confirm',
+          promptConfig: { message: 'Continue?' },
+        },
+      },
+    });
+    manager.handleWebSocketMessage('conn-malformed-prompt', {
+      type: 'output',
+      seq: 2,
+      message: {
+        type: 'structured',
+        message: {
+          type: 'prompt_answered',
+          timestamp: '2026-03-17T10:00:02.000Z',
+          requestId: 123,
+          promptType: 'confirm',
+          source: 'terminal',
+          value: true,
+        } as unknown as StructuredMessage,
+      },
+    });
+    manager.handleWebSocketMessage('conn-malformed-prompt', {
+      type: 'output',
+      seq: 3,
+      message: {
+        type: 'structured',
+        message: {
+          type: 'prompt_request',
+          timestamp: '2026-03-17T10:00:03.000Z',
+          requestId: 456,
+          promptType: 'confirm',
+        } as unknown as StructuredMessage,
+      },
+    });
+
+    const snapshot = manager.getSessionSnapshot();
+    unsubscribe();
+
+    expect(events.map((event) => event.event)).toEqual([
+      'session:new',
+      'session:update',
+      'session:prompt',
+      'session:message',
+      'session:message',
+      'session:message',
+    ]);
+    expect(snapshot.sessions[0].activePrompt).toMatchObject({
+      requestId: 'req-valid',
+      promptType: 'confirm',
+      promptConfig: { message: 'Continue?' },
+    });
+    expect(snapshot.sessions[0].messages.map((message) => message.seq)).toEqual([1, 2, 3]);
+    expect(snapshot.sessions[0].messages[1]).toMatchObject({
+      rawType: 'prompt_answered',
+      body: {
+        type: 'structured',
+        message: {
+          type: 'prompt_answered',
+          requestId: 123,
+        },
+      },
+    });
+    expect(snapshot.sessions[0].messages[2]).toMatchObject({
+      rawType: 'prompt_request',
+      body: {
+        type: 'structured',
+        message: {
+          type: 'prompt_request',
+          requestId: 456,
+        },
+      },
+    });
   });
 
   test('creates notification-only sessions and emits both lifecycle and message events', () => {

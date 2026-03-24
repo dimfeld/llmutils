@@ -5,12 +5,12 @@ goal: ""
 id: 253
 uuid: eaf60266-b11f-4524-bfd0-505ed40f8836
 generatedBy: agent
-status: done
+status: in_progress
 priority: medium
 planGeneratedAt: 2026-03-24T08:34:13.237Z
 promptsGeneratedAt: 2026-03-24T08:34:13.237Z
 createdAt: 2026-03-22T07:23:12.505Z
-updatedAt: 2026-03-24T09:26:21.214Z
+updatedAt: 2026-03-24T18:13:23.425Z
 tasks:
   - title: Add StructuredMessageBody type and update DisplayMessage types
     done: true
@@ -89,6 +89,99 @@ tasks:
       command_result, todo_update, file_change_summary, etc.). Test that
       formatStructuredMessage() returns null for review_result. Verify
       session_state_events tests still pass with the new structured body type.
+  - title: "Address Review Feedback: `llm_tool_result` is no longer passed through
+      as raw structured data."
+    done: false
+    description: >-
+      `llm_tool_result` is no longer passed through as raw structured data.
+      `formatTunnelMessage()` strips `timestamp`/`transportSource`, then
+      additionally zeroes out `result` whenever `resultSummary` exists. The plan
+      requirement was to send the raw structured payload to the client for all
+      structured message types, with only transport-only fields removed. This
+      breaks that contract for a common message type and prevents any richer
+      client-side rendering or inspection of full tool results later.
+
+
+      Suggestion: Stop mutating `llm_tool_result.result` out of the payload. If
+      payload size needs separate handling, add an explicit size/caching design
+      instead of silently dropping fields from the structured message.
+
+
+      Related file: src/lib/server/session_manager.ts:268-276
+  - title: "Address Review Feedback: The malformed-structured-message hardening is
+      incomplete because only the display path is validated."
+    done: false
+    description: >-
+      The malformed-structured-message hardening is incomplete because only the
+      display path is validated. `handleWebSocketMessage()` still passes the
+      original raw payload into `handleStructuredSideEffects()`, and that code
+      trusts `prompt_request`/`prompt_answered` fields unconditionally. A
+      malformed `{ type: 'prompt_request' }` payload will still install an
+      invalid `activePrompt` and emit `session:prompt` with missing
+      `promptConfig`, which can break the client prompt UI despite the new
+      fallback display message. The added tests only exercise
+      `formatTunnelMessage()`, not the side-effect path.
+
+
+      Suggestion: Validate and narrow structured payloads once, then reuse the
+      validated object for both display formatting and side effects. Add an
+      integration test covering malformed `prompt_request`/`prompt_answered`
+      payloads through `handleWebSocketMessage()`.
+
+
+      Related file: src/lib/server/session_manager.ts:456-457
+  - title: "Address Review Feedback: Turn-done browser notifications are broken by
+      the new structured message shape."
+    done: false
+    description: >-
+      Turn-done browser notifications are broken by the new structured message
+      shape. `agent_session_end` now arrives with `body.type === 'structured'`,
+      but `extractMessageText()` only handles `body.type === 'text'`. The
+      `session:message` handler bails out when `extractMessageText()` returns
+      null, so the existing `triggersNotification` path no longer shows a
+      browser notification for completed sessions. The test still injects the
+      pre-refactor text body, so it does not cover the real event shape.
+
+
+      Suggestion: Teach notifications to derive text from structured bodies,
+      likely by reusing the client-side formatter for structured messages.
+      Update the notification test to emit the real structured
+      `agent_session_end` body coming from `formatTunnelMessage()`.
+
+
+      Related file: src/lib/stores/session_notifications.ts:49-55
+  - title: "Address Review Feedback: Variable shadowing of `issues` in
+      ReviewResultDisplay.svelte."
+    done: false
+    description: >-
+      Variable shadowing of `issues` in ReviewResultDisplay.svelte. The `{@const
+      issues = groupedIssues[severity]}` on line 56 shadows the outer `issues`
+      derived declared on line 23. While Svelte's template scoping handles this
+      correctly at runtime, it reduces readability.
+
+
+      Suggestion: Rename the inner variable to `severityIssues` or `groupIssues`
+      to avoid shadowing.
+
+
+      Related file: src/lib/components/ReviewResultDisplay.svelte:56
+  - title: "Address Review Feedback: Index used as each-block key in
+      ReviewResultDisplay.svelte."
+    done: false
+    description: >-
+      Index used as each-block key in ReviewResultDisplay.svelte. `{#each issues
+      as issue, i (i)}` uses the array index as key, similarly for
+      recommendations (line 89) and action items (line 96). Per Svelte best
+      practices, index should not be used as a key. The data is effectively
+      immutable, so this is low-risk.
+
+
+      Suggestion: Use a composite key for issues (e.g.,
+      `${issue.file}:${issue.line}:${issue.category}`) or the string content
+      itself for recommendations/action items.
+
+
+      Related file: src/lib/components/ReviewResultDisplay.svelte:62
 changedFiles:
   - CLAUDE.md
   - docs/web-interface.md

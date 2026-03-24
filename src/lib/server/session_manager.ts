@@ -164,6 +164,10 @@ function stripStructuredMessage(message: StructuredMessage): StructuredMessagePa
   return payload as StructuredMessagePayload;
 }
 
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
 export function sessionGroupKey(gitRemote?: string | null, workspacePath?: string | null): string {
   const normalizedRemote = normalizeSessionRemote(gitRemote);
   if (normalizedRemote) {
@@ -266,14 +270,6 @@ export function formatTunnelMessage(
         const triggersNotification =
           structured.type === 'agent_session_end' && structured.transportSource !== 'tunnel';
         const stripped = stripStructuredMessage(structured);
-        // Strip heavy fields the client doesn't render
-        if (
-          stripped.type === 'llm_tool_result' &&
-          'resultSummary' in stripped &&
-          stripped.resultSummary
-        ) {
-          (stripped as Record<string, unknown>).result = undefined;
-        }
         return {
           id: `${connectionId}:${seq}`,
           seq,
@@ -768,6 +764,10 @@ export class SessionManager {
     message: StructuredMessage
   ): void {
     if (message.type === 'prompt_request') {
+      if (typeof message.requestId !== 'string' || !isObjectRecord(message.promptConfig)) {
+        return;
+      }
+
       // Clear previous prompt if one was still active
       if (session.activePrompt && !session.isReplaying) {
         this.emit('session:prompt-cleared', {
@@ -796,6 +796,10 @@ export class SessionManager {
     }
 
     if (message.type === 'prompt_answered') {
+      if (typeof message.requestId !== 'string') {
+        return;
+      }
+
       const requestId = message.requestId;
       let cleared = false;
 
