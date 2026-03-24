@@ -15,6 +15,7 @@ import type { SummaryCollector } from '../../summary/collector.js';
 import { runUpdateDocs } from '../update-docs.js';
 import { runUpdateLessons } from '../update-lessons.js';
 import { handleReviewCommand } from '../review.js';
+import { isShuttingDown } from '../../shutdown_state.js';
 
 const FAST_NOOP_BATCH_RETRY_MS = 5 * 60 * 1000;
 
@@ -109,6 +110,10 @@ export async function executeBatchMode(
 
     // Batch mode: continue until no incomplete tasks remain
     while (iteration < maxSteps) {
+      if (isShuttingDown()) {
+        break;
+      }
+
       // Read the current plan file to get updated state
       const planData = await readPlanFile(currentPlanFile);
 
@@ -307,6 +312,10 @@ Available tasks:\n\n${taskDescriptions}`,
 
       // Update docs if configured for after-iteration mode
       // Calculate which tasks were just completed by comparing before/after state
+      if (isShuttingDown()) {
+        break;
+      }
+
       if (updateDocsMode === 'after-iteration') {
         const justCompletedTaskIndices = incompleteTasks
           .map((t) => t.taskIndex)
@@ -326,6 +335,10 @@ Available tasks:\n\n${taskDescriptions}`,
       }
 
       // Run post-apply commands if configured
+      if (isShuttingDown()) {
+        break;
+      }
+
       const failedPostApplyCommand = await runPostApplyCommands();
       if (failedPostApplyCommand) {
         error(`Batch mode stopping because required command "${failedPostApplyCommand}" failed.`);
@@ -346,6 +359,10 @@ Available tasks:\n\n${taskDescriptions}`,
         await setPlanStatus(currentPlanFile, 'done');
 
         // Update docs if configured for after-completion mode
+        if (isShuttingDown()) {
+          break;
+        }
+
         if (updateDocsMode === 'after-completion') {
           try {
             await runUpdateDocs(currentPlanFile, config, {
@@ -374,6 +391,10 @@ Available tasks:\n\n${taskDescriptions}`,
         const shouldSkipFinalReview =
           finalReview === false || (initialCompletedTaskCount === 0 && iteration === 1);
         let planStillCompleteAfterReview = true;
+        if (isShuttingDown()) {
+          break;
+        }
+
         if (!shouldSkipFinalReview) {
           sendStructured({
             type: 'workflow_progress',
@@ -412,6 +433,10 @@ Available tasks:\n\n${taskDescriptions}`,
           }
         }
 
+        if (isShuttingDown()) {
+          break;
+        }
+
         if (planStillCompleteAfterReview && (config.updateDocs?.applyLessons || applyLessons)) {
           try {
             await runUpdateLessons(currentPlanFile, config, {
@@ -444,6 +469,11 @@ Available tasks:\n\n${taskDescriptions}`,
         if (updatedPlanData.parent) {
           await checkAndMarkParentDone(updatedPlanData.parent, config, baseDir);
         }
+
+        if (isShuttingDown()) {
+          break;
+        }
+
         await commitAll(`Plan complete: ${planData.title}`, baseDir);
         if (summaryCollector) {
           await summaryCollector.trackFileChanges(baseDir);
@@ -451,6 +481,10 @@ Available tasks:\n\n${taskDescriptions}`,
         }
         break;
       } else {
+        if (isShuttingDown()) {
+          break;
+        }
+
         await commitAll('Finish batch tasks iteration', baseDir);
         if (summaryCollector) {
           await summaryCollector.trackFileChanges(baseDir);
