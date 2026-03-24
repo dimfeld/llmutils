@@ -10,7 +10,7 @@ priority: medium
 planGeneratedAt: 2026-02-15T09:35:34.117Z
 promptsGeneratedAt: 2026-02-15T09:35:34.117Z
 createdAt: 2025-11-07T21:16:48.398Z
-updatedAt: 2026-03-24T21:14:59.702Z
+updatedAt: 2026-03-24T21:57:39.289Z
 tasks:
   - title: Restructure signal handling for async cleanup
     done: true
@@ -314,6 +314,55 @@ changedFiles:
   - src/tim/tim.ts
   - src/tim/workspace/workspace_lock.test.ts
   - src/tim/workspace/workspace_lock.ts
+reviewIssues:
+  - severity: critical
+    category: bug
+    content: Deferred signal exit is enabled too early in timAgent, so an interrupt
+      during setup still allows side-effectful setup work to continue before any
+      shutdown guard runs. `setDeferSignalExit(true)` is called at the top of
+      `timAgent`, but the first `isShuttingDown()` check does not happen until
+      after config load, UUID/reference validation, workspace selection,
+      workspace round-trip setup, and optional pre-execution workspace sync. If
+      SIGINT/SIGTERM arrives during any of those awaits, the old immediate-exit
+      behavior is gone and the command can still acquire locks, switch
+      workspaces/branches, or run sync/update commands after the user asked it
+      to stop. This violates the intended interrupt semantics. The added tests
+      only cover shutdown before startup or after startup has already finished,
+      not a signal during setup.
+    file: src/tim/commands/agent/agent.ts
+    line: 305-392
+    suggestion: Do not enable deferred signal exit until the code reaches the
+      portion that actually needs async lifecycle shutdown, or add
+      `isShuttingDown()` checks and early returns around each setup phase
+      (`ensureUuidsAndReferences`, `setupWorkspace`,
+      `prepareWorkspaceRoundTrip`, `runPreExecutionWorkspaceSync`, etc.) so
+      setup stops immediately once shutdown is requested.
+    id: issue-2
+  - severity: critical
+    category: bug
+    content: Signal-based shutdown is not reliable for SIGTERM/SIGHUP because the
+      implementation only flips a shutdown flag and does not forward those
+      signals to currently running child processes. In deferred mode,
+      `registerShutdownSignalHandlers()` just calls `setShuttingDown()`.
+      Lifecycle startup/check commands executed via `runShellCommand()` are then
+      awaited until `proc.exited`, but those subprocesses are not tracked by
+      `killDaemons()` unless they are daemons or shutdown commands. For `kill
+      -TERM <tim-pid>` / `kill -HUP <tim-pid>`, the child process does not
+      automatically receive the signal, so the agent can hang indefinitely
+      before reaching the `finally` block that is supposed to run lifecycle
+      shutdown. A second signal force-exits the parent, but still cannot clean
+      up an untracked startup/check subprocess. The same problem exists for an
+      active executor subprocess unless its implementation happens to handle
+      forwarding itself. This misses the acceptance criterion that shutdown runs
+      on SIGINT/SIGTERM/SIGHUP.
+    file: src/tim/tim.ts
+    line: 132-156
+    suggestion: Track the currently running lifecycle startup/check subprocesses
+      (and, ideally, the active executor child) and explicitly forward/cancel
+      them when shutdown is requested. Otherwise deferred shutdown only works
+      for terminal-generated SIGINT, not for the full signal set promised by the
+      plan.
+    id: issue-5
 ---
 
 We want to be able to define commands that can be run in the project level configuration file. For each command, we should be able to run it in daemon mode and then kill it at the end, or just run it and wait for it to finish. These commands should be run when doing the run command. We should also be able to define commands that run when the run command exits, and this should include on a SIGINT or similar.
