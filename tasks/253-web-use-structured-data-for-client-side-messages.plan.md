@@ -5,12 +5,12 @@ goal: ""
 id: 253
 uuid: eaf60266-b11f-4524-bfd0-505ed40f8836
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 planGeneratedAt: 2026-03-24T08:34:13.237Z
 promptsGeneratedAt: 2026-03-24T08:34:13.237Z
 createdAt: 2026-03-22T07:23:12.505Z
-updatedAt: 2026-03-24T18:13:23.425Z
+updatedAt: 2026-03-24T19:28:24.910Z
 tasks:
   - title: Add StructuredMessageBody type and update DisplayMessage types
     done: true
@@ -91,7 +91,7 @@ tasks:
       session_state_events tests still pass with the new structured body type.
   - title: "Address Review Feedback: `llm_tool_result` is no longer passed through
       as raw structured data."
-    done: false
+    done: true
     description: >-
       `llm_tool_result` is no longer passed through as raw structured data.
       `formatTunnelMessage()` strips `timestamp`/`transportSource`, then
@@ -110,7 +110,7 @@ tasks:
       Related file: src/lib/server/session_manager.ts:268-276
   - title: "Address Review Feedback: The malformed-structured-message hardening is
       incomplete because only the display path is validated."
-    done: false
+    done: true
     description: >-
       The malformed-structured-message hardening is incomplete because only the
       display path is validated. `handleWebSocketMessage()` still passes the
@@ -132,7 +132,7 @@ tasks:
       Related file: src/lib/server/session_manager.ts:456-457
   - title: "Address Review Feedback: Turn-done browser notifications are broken by
       the new structured message shape."
-    done: false
+    done: true
     description: >-
       Turn-done browser notifications are broken by the new structured message
       shape. `agent_session_end` now arrives with `body.type === 'structured'`,
@@ -152,7 +152,7 @@ tasks:
       Related file: src/lib/stores/session_notifications.ts:49-55
   - title: "Address Review Feedback: Variable shadowing of `issues` in
       ReviewResultDisplay.svelte."
-    done: false
+    done: true
     description: >-
       Variable shadowing of `issues` in ReviewResultDisplay.svelte. The `{@const
       issues = groupedIssues[severity]}` on line 56 shadows the outer `issues`
@@ -167,7 +167,7 @@ tasks:
       Related file: src/lib/components/ReviewResultDisplay.svelte:56
   - title: "Address Review Feedback: Index used as each-block key in
       ReviewResultDisplay.svelte."
-    done: false
+    done: true
     description: >-
       Index used as each-block key in ReviewResultDisplay.svelte. `{#each issues
       as issue, i (i)}` uses the array index as key, similarly for
@@ -193,6 +193,8 @@ changedFiles:
   - src/lib/server/session_manager.ts
   - src/lib/server/session_routes.test.ts
   - src/lib/server/ws_server.test.ts
+  - src/lib/stores/session_notifications.test.ts
+  - src/lib/stores/session_notifications.ts
   - src/lib/stores/session_state_events.test.ts
   - src/lib/types/session.ts
   - src/lib/utils/message_formatting.test.ts
@@ -448,16 +450,21 @@ The existing `skipTruncation` logic for `rawType === 'review_result'` should be 
 
 ## Current Progress
 ### Current State
-- All 7 tasks complete. The full structured message pass-through pipeline is working end-to-end.
-- 347 web tests passing.
+- All 12 tasks complete. The full structured message pass-through pipeline is working end-to-end with all review feedback addressed.
+- 348 web tests passing.
 ### Completed (So Far)
 - Task 1: Added StructuredMessageBody type and StructuredMessagePayload (distributive Omit to preserve discriminated union narrowing) to both client and server type files. Simplified MessageCategory to 'log' | 'error' | 'structured'.
 - Task 2: Removed ~400 lines of summarizeStructuredMessage() and helpers from server. formatTunnelMessage() now passes structured data through with defensive error handling for malformed payloads. cloneBody() uses structuredClone() for structured bodies.
 - Task 3: Created src/lib/utils/message_formatting.ts with getDisplayCategory(), formatStructuredMessage(), and ported helper functions. Returns null for review_result.
 - Task 4: Updated SessionMessage.svelte with structured body rendering branch. Computes displayCategory from structured payload for color class, truncation, and key-value behavior. Updated session_colors.ts to accept DisplayCategory with restored pre-refactor color mapping.
-- Task 5: Created ReviewResultDisplay.svelte with verdict line, issues grouped by severity with emoji headers, recommendations and action items lists. Hardened against missing/invalid arrays.
+- Task 5: Created ReviewResultDisplay.svelte with verdict line, issues grouped by severity with emoji headers, recommendations and action items lists. Hardened against missing/invalid arrays and malformed issue entries.
 - Task 6: Server-side tests updated for pass-through behavior including malformed payload validation (null, undefined, arrays, objects without type).
 - Task 7: Client-side formatting tests comprehensive. SessionMessage.test.ts rewritten for structured body type.
+- Task 8: Removed code that stripped llm_tool_result.result when resultSummary existed. Raw structured data now passes through completely.
+- Task 9: Added validation in handleStructuredSideEffects() for prompt_request (requestId, promptConfig, choices) and prompt_answered (requestId). Integration tests for malformed payloads through handleWebSocketMessage().
+- Task 10: Updated extractMessageText() in session_notifications.ts to handle structured bodies via formatStructuredMessage(). Updated notification test to use real structured agent_session_end body.
+- Task 11: Renamed shadowed `issues` variable to `severityIssues` in ReviewResultDisplay.svelte.
+- Task 12: Replaced index-based each-block keys with composite keys (content-based for issues, index+content for recommendations/actionItems).
 ### Remaining
 - None
 ### Next Iteration Guidance
@@ -467,12 +474,17 @@ The existing `skipTruncation` logic for `rawType === 'review_result'` should be 
 - categorizeMessage() was removed entirely (no external callers found outside of tests)
 - Color mapping restored to match pre-refactor values (green for lifecycle/llmOutput, cyan for toolUse/fileChange/command, blue for progress, orange for userInput, red for error)
 - Server now validates structured payloads are plain objects with a string `type` before passing through; rejects malformed payloads to a text log fallback
-- Server strips `llm_tool_result.result` when `resultSummary` is present to avoid sending heavy payloads the client doesn't render
-- ReviewResultDisplay hardened with Array.isArray guards for issues, recommendations, actionItems
+- llm_tool_result.result is now passed through unchanged (no longer stripped when resultSummary exists)
+- ReviewResultDisplay hardened with Array.isArray guards and object/severity validation for issue entries
+- prompt_request validation extended to check choices is an array (or absent)
+- SessionMessage.svelte wraps formatStructuredMessage() in try/catch for graceful degradation on malformed payloads
+- extractMessageText() in session_notifications.ts now handles structured bodies via formatStructuredMessage()
 ### Lessons Learned
 - When removing server-side formatting and replacing with pass-through, don't forget to preserve defensive error handling for malformed WebSocket payloads. The try/catch around structured message processing is important.
-- Both src/lib/types/session.ts (client) and src/lib/server/session_manager.ts (server) have mirrored type definitions that must be kept in sync.
+- Both src/lib/types/session.ts (client) and src/lib/server/session_manager.ts (server) have mirrored type definitions that must be kept in sync. Consider consolidating into a shared types file.
 - When passing raw structured data through to the client, validate payload shape at the boundary (not just null checks) — arrays, primitives, and objects without a `type` field can slip through and crash client-side rendering.
-- Pass-through architectures need to strip heavy fields the client doesn't use, especially for high-volume messages like tool results. The client formatter may only use a summary field while the full result stays in memory.
+- Client-side formatters that trust TypeScript types at runtime are fragile against malformed payloads. A try/catch at the render call site is the most pragmatic defense.
+- Validation must cover nested fields (e.g., promptConfig.choices) not just top-level fields — cloneSession/cloneSessionMetadata call .map() on choices, so non-array values crash the snapshot path.
+- When a component bypasses a shared error boundary (like ReviewResultDisplay bypassing renderBody's try/catch), it needs its own input validation.
 ### Risks / Blockers
 - None
