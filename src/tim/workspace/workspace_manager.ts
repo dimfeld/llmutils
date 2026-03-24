@@ -1656,6 +1656,17 @@ export async function prepareExistingWorkspace(
     // Check out the branch in the workspace
     log(`Checking out branch "${actualBranchName}" in workspace...`);
     if (workspaceIsJj) {
+      const trackResult = await spawnAndLogOutput(['jj', 'bookmark', 'track', actualBranchName], {
+        cwd: workspacePath,
+        quiet: true,
+      });
+      if (trackResult.exitCode !== 0) {
+        return {
+          success: false,
+          error: `Failed to track branch "${actualBranchName}" in workspace: ${trackResult.stderr}`,
+        };
+      }
+
       const newResult = await spawnAndLogOutput(['jj', 'new', actualBranchName], {
         cwd: workspacePath,
       });
