@@ -5,12 +5,12 @@ goal: ""
 id: 146
 uuid: e37079a4-2cc9-4161-a9a6-b75de7a45756
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 planGeneratedAt: 2026-02-15T09:35:34.117Z
 promptsGeneratedAt: 2026-02-15T09:35:34.117Z
 createdAt: 2025-11-07T21:16:48.398Z
-updatedAt: 2026-03-24T09:43:06.209Z
+updatedAt: 2026-03-24T10:03:53.739Z
 tasks:
   - title: Restructure signal handling for async cleanup
     done: true
@@ -100,7 +100,7 @@ tasks:
       log file closing, and notifications. If no lifecycle commands configured,
       skip lifecycle manager creation entirely."
   - title: Update README with lifecycle documentation
-    done: false
+    done: true
     description: "Document the lifecycle configuration section in README. Include:
       overview of the feature; config schema reference for lifecycle.commands
       with all fields; examples showing managed daemon (dev server), external
@@ -118,6 +118,7 @@ changedFiles:
   - src/tim/commands/agent/agent.ts
   - src/tim/commands/agent/batch_mode.ts
   - src/tim/configLoader.test.ts
+  - src/tim/configLoader.ts
   - src/tim/configSchema.test.ts
   - src/tim/configSchema.ts
   - src/tim/lifecycle.test.ts
@@ -510,7 +511,7 @@ Document the new `lifecycle` configuration section in the README with:
 
 ## Current Progress
 ### Current State
-- All implementation tasks complete. Only Task 7 (README documentation) remains.
+- All tasks complete. Plan is done.
 ### Completed (So Far)
 - Task 1: Restructured signal handling with `shutdown_state.ts` module. Signal handlers use `deferSignalExit` opt-in pattern — only agent command defers exit; all other commands retain immediate exit behavior. Double Ctrl+C force-exits.
 - Task 2: Added `onlyWorkspaceType` field to `lifecycleCommandSchema` in configSchema.ts, regenerated JSON schema
@@ -518,11 +519,11 @@ Document the new `lifecycle` configuration section in the README with:
 - Task 4: Created `src/tim/lifecycle.ts` with LifecycleManager class supporting startup/shutdown/daemon management
 - Task 5: Created `src/tim/lifecycle.test.ts` with 36 tests covering all specified scenarios
 - Task 6: Integrated lifecycle into `timAgent()` — startup after workspace setup, killDaemons registered with CleanupRegistry, shutdown in finally block. Both serial and batch modes check shutdown state. Workspace round-trip sync skipped on interrupt. Interrupted runs reported as 'interrupted' status in notifications.
+- Task 7: README already had comprehensive lifecycle documentation from a previous iteration. During final review, fixed critical signal handling bug where killDaemons() was called on first signal before async shutdown() could run explicit shutdown commands.
 ### Remaining
-- Task 7: Update README with lifecycle documentation
+- None
 ### Next Iteration Guidance
-- Task 7 is a documentation-only task, no code changes needed
-- Document: lifecycle.commands config, modes (run/daemon), check commands, onlyWorkspaceType, shutdown behavior, signal handling, config merging
+- None
 ### Decisions / Changes
 - Daemon exit 0 within the startup check window is treated as a startup failure (not success), since mode: daemon expects a long-running process
 - Process group killing is used for daemon shutdown (process.kill(-pid, signal)) to ensure child processes are also terminated
@@ -536,6 +537,7 @@ Document the new `lifecycle` configuration section in the README with:
 - Interrupted agent runs skip workspace round-trip sync to avoid committing/pushing partial work
 - shutdown() collects all errors and throws an aggregated error after attempting all cleanup commands
 - LifecycleManager.startup() aborts early if shutdown is requested mid-startup
+- First signal in deferred mode does NOT run cleanupRegistry.executeAll() — this lets async lifecycle shutdown() run explicit shutdown commands before daemons are killed. killDaemons() is reserved for the force-exit path (second signal → process.exit → exit event).
 ### Lessons Learned
 - Daemon process management requires process group signals — just killing the shell wrapper (sh -c) doesn't kill child processes
 - Early daemon exit detection needs careful handling of both zero and non-zero exit codes
@@ -544,5 +546,6 @@ Document the new `lifecycle` configuration section in the README with:
 - Globally changing signal handler behavior (removing process.exit()) breaks non-agent commands. Use an opt-in flag so only commands that need deferred exit enable it.
 - On force-exit (second signal), the async shutdown path won't run, so the sync killDaemons() must handle ALL daemons regardless of explicit shutdown commands
 - setDeferSignalExit must be inside the try block to ensure the finally block resets it
+- Running cleanupRegistry.executeAll() on the first deferred signal defeats the purpose of deferred exit — sync fallbacks (killDaemons) preempt async shutdown commands. The registry should only run on the force-exit/exit-event path.
 ### Risks / Blockers
 - None

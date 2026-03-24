@@ -131,17 +131,24 @@ export function registerShutdownSignalHandlers(
 
   const handleSignal = (exitCode: number) => {
     if (isShuttingDown()) {
-      // Second signal — force exit immediately
+      // Second signal — force exit immediately.
+      // process.exit() triggers the 'exit' handler which runs cleanupRegistry.executeAll(),
+      // so killDaemons() still fires as an emergency fallback.
       process.exit(exitCode);
       return;
     }
-    cleanupRegistry.executeAll();
     setShuttingDown(exitCode);
     if (!isDeferSignalExit()) {
-      // No async cleanup registered — exit immediately (preserves behavior for non-agent commands)
+      // No async cleanup registered — run sync cleanup and exit immediately
+      // (preserves behavior for non-agent commands)
+      cleanupRegistry.executeAll();
       process.exit(exitCode);
     }
-    // When deferSignalExit is set, the agent's finally block will call process.exit()
+    // When deferSignalExit is set, the agent's finally block handles async lifecycle
+    // shutdown (explicit shutdown commands, then daemon kills) before calling process.exit().
+    // The cleanupRegistry is NOT run here so killDaemons() doesn't preempt explicit
+    // shutdown commands. It remains registered for the force-exit path (second signal →
+    // process.exit → 'exit' event → cleanupRegistry.executeAll).
   };
 
   proc.on('SIGINT', () => handleSignal(130));

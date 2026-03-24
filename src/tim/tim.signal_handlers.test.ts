@@ -76,7 +76,10 @@ describe('registerShutdownSignalHandlers', () => {
 
     fakeProcess.handlers.get('SIGINT')?.();
 
-    expect(cleanupRegistry.executeAll).toHaveBeenCalledTimes(1);
+    // cleanupRegistry is NOT called on first signal in deferred mode —
+    // async lifecycle shutdown() handles cleanup, killDaemons stays registered
+    // for the force-exit path (second signal → process.exit → exit event)
+    expect(cleanupRegistry.executeAll).toHaveBeenCalledTimes(0);
     expect(isShuttingDown()).toBe(true);
     expect(getSignalExitCode()).toBe(130);
     expect(exitCalls).toEqual([]); // No process.exit() called
@@ -104,9 +107,12 @@ describe('registerShutdownSignalHandlers', () => {
     registerShutdownSignalHandlers(cleanupRegistry, fakeProcess);
 
     fakeProcess.handlers.get('SIGHUP')?.();
-    fakeProcess.handlers.get('exit')?.();
+    // First signal in deferred mode does NOT call executeAll
+    expect(cleanupRegistry.executeAll).toHaveBeenCalledTimes(0);
 
-    expect(cleanupRegistry.executeAll).toHaveBeenCalledTimes(2);
+    // Exit event (e.g., from process.exit after async cleanup) always runs cleanup
+    fakeProcess.handlers.get('exit')?.();
+    expect(cleanupRegistry.executeAll).toHaveBeenCalledTimes(1);
     expect(getSignalExitCode()).toBe(129);
   });
 });

@@ -1179,7 +1179,9 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
       if (!executionError) {
         executionError = lifecycleShutdownError;
       } else {
-        warn(`Lifecycle shutdown failed after execution error: ${lifecycleShutdownError}`);
+        error(
+          `Lifecycle shutdown failed (cleanup commands may not have completed): ${lifecycleShutdownError}`
+        );
       }
     } finally {
       unregisterLifecycleCleanup?.();
@@ -1254,7 +1256,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     setDeferSignalExit(false);
 
     if (isShuttingDown()) {
-      process.exit(getSignalExitCode());
+      process.exit(getSignalExitCode() ?? 1);
     }
   }
 
