@@ -168,6 +168,37 @@ tasks:
 
 
       Related file: src/tim/lifecycle.ts:127-133
+  - title: "Address Review Feedback: Lifecycle shutdown runs after summary tracking
+      and log-file closure, not before."
+    done: true
+    description: >-
+      Moved lifecycle shutdown into the outer finally block that wraps all
+      execution paths (stub-plan, batch, serial), ensuring it runs before
+      summary tracking and log-file closure. Previously shutdown was only in
+      the serial mode's inner finally.
+  - title: "Address Review Feedback: The signal-handling redesign still releases
+      workspace locks before lifecycle shutdown runs."
+    done: true
+    description: >-
+      Made workspace_lock.ts signal handlers respect isDeferSignalExit(). When
+      deferred, lock release is skipped on SIGINT/SIGTERM/SIGHUP signals — the
+      lock is released through the normal exit event handler after lifecycle
+      shutdown completes.
+  - title: "Address Review Feedback: runUpdateDocs and runUpdateLessons execute
+      after shutdown is requested."
+    done: true
+    description: >-
+      Added isShuttingDown() checks before each runUpdateDocs() and
+      runUpdateLessons() call in agent.ts and batch_mode.ts so these
+      long-running LLM operations are skipped when shutdown has been requested.
+  - title: "Address Review Feedback: Daemon termination failures are swallowed."
+    done: true
+    description: >-
+      Modified stopDaemon() to throw errors when SIGTERM/SIGKILL delivery
+      fails instead of silently returning. Errors are caught by shutdown()'s
+      try/catch and included in the aggregated shutdown error. Added TOCTOU
+      guard (re-check isProcessRunning after failed kill) and pre-SIGKILL
+      liveness check.
 changedFiles:
   - CLAUDE.md
   - README.md
@@ -583,6 +614,11 @@ Document the new `lifecycle` configuration section in the README with:
 - Task 8: Added `isShuttingDown()` checks throughout post-execution mutation paths in both serial and batch mode. Checks guard: after executor.execute(), before every runPostApplyCommands() that follows async work, before markTaskDone/markStepDone, before commitAll, before checkAndMarkParentDone, before setPlanStatus, and before setup mutations (autoClaimPlan, pending→in_progress).
 - Task 9: Added 'interrupted' to `NotificationStatus` type in notifications.ts. Added test assertion verifying interrupted status in notification payload.
 - Task 10: Removed `exitCode !== 0` condition in lifecycle daemon exit monitor so exit code 0 also triggers warning. Added dedicated test for clean daemon exit warning.
+- Task 11: Moved lifecycle shutdown to outer finally wrapping all execution paths (stub-plan, batch, serial). Summary tracking and log closure now happen after lifecycle shutdown.
+- Task 12: Workspace lock signal handlers now respect isDeferSignalExit() — lock release is deferred during agent shutdown so lifecycle commands complete first.
+- Task 13: Added isShuttingDown() guards before every runUpdateDocs() and runUpdateLessons() call in agent.ts and batch_mode.ts.
+- Task 14: Daemon termination failures in stopDaemon() now throw errors that are included in shutdown()'s aggregated error report. Added TOCTOU guard and pre-SIGKILL liveness check.
+- Additional: Added isShuttingDown() guards before executor.execute() calls, stub-plan initial mutations, runPostApplyCommands per-command checks, and batch-mode parent-done guard.
 ### Remaining
 - None
 ### Next Iteration Guidance
@@ -602,6 +638,10 @@ Document the new `lifecycle` configuration section in the README with:
 - LifecycleManager.startup() aborts early if shutdown is requested mid-startup
 - First signal in deferred mode does NOT run cleanupRegistry.executeAll() — this lets async lifecycle shutdown() run explicit shutdown commands before daemons are killed. killDaemons() is reserved for the force-exit path (second signal → process.exit → exit event).
 - Shutdown checks use `if (!isShuttingDown()) { ... }` wrapping pattern for post-apply hooks that follow async operations, rather than standalone `break` checks, to avoid running arbitrary shell commands after interrupt
+- Lifecycle shutdown runs in an outer finally that wraps ALL execution paths (stub, batch, serial) so cleanup is guaranteed regardless of which path was taken
+- Workspace lock release is deferred when isDeferSignalExit() is true, so lifecycle shutdown completes before another agent can claim the workspace
+- Daemon exit monitor suppresses warnings once shutdownStarted is true or killedByCleanup is set, preventing false "exited unexpectedly" warnings during normal shutdown
+- stopDaemon() has TOCTOU protection: re-checks isProcessRunning after failed kill attempt and before SIGKILL escalation
 ### Lessons Learned
 - Daemon process management requires process group signals — just killing the shell wrapper (sh -c) doesn't kill child processes
 - Early daemon exit detection needs careful handling of both zero and non-zero exit codes
@@ -612,5 +652,7 @@ Document the new `lifecycle` configuration section in the README with:
 - setDeferSignalExit must be inside the try block to ensure the finally block resets it
 - Running cleanupRegistry.executeAll() on the first deferred signal defeats the purpose of deferred exit — sync fallbacks (killDaemons) preempt async shutdown commands. The registry should only run on the force-exit/exit-event path.
 - Shutdown guards need to be placed before EVERY mutation boundary, not just after executor.execute(). Each async operation (docs update, lessons update) creates a new window where a signal could arrive, so the subsequent mutation (post-apply hook, markDone, commit) needs its own guard.
+- When restructuring try/finally nesting (e.g. moving lifecycle shutdown to outer scope), verify that ALL execution paths (not just serial mode) are covered. Multiple branches with their own finally blocks can easily miss shared cleanup.
+- Process signal handlers registered by different modules (workspace_lock, cleanup_registry) must coordinate with the deferred exit pattern — each module's handlers need to check the flag independently.
 ### Risks / Blockers
 - None
