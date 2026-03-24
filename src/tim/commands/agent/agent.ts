@@ -385,7 +385,9 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     lastKnownPlan = planData;
 
     // Update workspace description from plan data (if running in a tracked workspace)
-    await updateWorkspaceDescriptionFromPlan(currentBaseDir, planData, config);
+    if (!isShuttingDown()) {
+      await updateWorkspaceDescriptionFromPlan(currentBaseDir, planData, config);
+    }
 
     if (config.lifecycle?.commands && config.lifecycle.commands.length > 0 && !isShuttingDown()) {
       const workspaceInfo = getWorkspaceInfoByPath(currentBaseDir);
@@ -529,10 +531,12 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
         if (stubResult.tasksAppended && stubResult.tasksAppended > 0) {
           const updatedPlanData = await readPlanFile(currentPlanFile);
           const planIdStr = updatedPlanData.id ? ` ${updatedPlanData.id}` : '';
-          continueAfterStubPlan = await promptConfirm({
-            message: `${stubResult.tasksAppended} new task(s) added from review to plan${planIdStr}. You can edit the plan first if needed. Continue running?`,
-            default: true,
-          });
+          if (!isShuttingDown()) {
+            continueAfterStubPlan = await promptConfirm({
+              message: `${stubResult.tasksAppended} new task(s) added from review to plan${planIdStr}. You can edit the plan first if needed. Continue running?`,
+              default: true,
+            });
+          }
         }
       } catch (err) {
         error('Direct execution failed:', err);
@@ -605,7 +609,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
         }
       }
 
-      if (planFileNeedsUpdate) {
+      if (planFileNeedsUpdate && !isShuttingDown()) {
         await writePlanFile(currentPlanFile, planData);
       }
 
@@ -846,10 +850,13 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
                   // Read the updated plan to get the plan ID
                   const updatedPlanData = await readPlanFile(currentPlanFile);
                   const planIdStr = updatedPlanData.id ? ` ${updatedPlanData.id}` : '';
-                  const shouldContinue = await promptConfirm({
-                    message: `${reviewResult.tasksAppended} new task(s) added from review to plan${planIdStr}. You can edit the plan first if needed. Continue running?`,
-                    default: true,
-                  });
+                  let shouldContinue = false;
+                  if (!isShuttingDown()) {
+                    shouldContinue = await promptConfirm({
+                      message: `${reviewResult.tasksAppended} new task(s) added from review to plan${planIdStr}. You can edit the plan first if needed. Continue running?`,
+                      default: true,
+                    });
+                  }
 
                   if (shouldContinue) {
                     continue; // Continue the loop to process new tasks

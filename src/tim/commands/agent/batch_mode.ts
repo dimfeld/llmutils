@@ -121,10 +121,13 @@ export async function executeBatchMode(
       if (planData.status === 'pending' && !isShuttingDown()) {
         planData.status = 'in_progress';
         planData.updatedAt = new Date().toISOString();
+        if (isShuttingDown()) {
+          break;
+        }
         await writePlanFile(currentPlanFile, planData);
 
         // If this plan has a parent, mark it as in_progress too
-        if (planData.parent) {
+        if (planData.parent && !isShuttingDown()) {
           await markParentInProgress(planData.parent, config);
         }
       }
@@ -425,10 +428,13 @@ Available tasks:\n\n${taskDescriptions}`,
             // If tasks were appended, ask if user wants to continue
             if (reviewResult?.tasksAppended && reviewResult.tasksAppended > 0) {
               const planIdStr = updatedPlanData.id ? ` ${updatedPlanData.id}` : '';
-              const shouldContinue = await promptConfirm({
-                message: `${reviewResult.tasksAppended} new task(s) added from review to plan${planIdStr}. You can edit the plan first if needed. Continue running?`,
-                default: true,
-              });
+              let shouldContinue = false;
+              if (!isShuttingDown()) {
+                shouldContinue = await promptConfirm({
+                  message: `${reviewResult.tasksAppended} new task(s) added from review to plan${planIdStr}. You can edit the plan first if needed. Continue running?`,
+                  default: true,
+                });
+              }
 
               if (shouldContinue) {
                 continue; // Continue the loop to process new tasks

@@ -125,7 +125,12 @@ export class LifecycleManager {
         if (!exitedTooSoon) {
           state.startupState = 'running';
           void daemon.exited.then((exitCode) => {
-            if (exitCode !== null && !state.intentionallyTerminated && !this.shutdownStarted) {
+            if (
+              exitCode !== null &&
+              !state.intentionallyTerminated &&
+              !state.killedByCleanup &&
+              !this.shutdownStarted
+            ) {
               warn(
                 `Lifecycle daemon "${command.title}" exited unexpectedly with code ${exitCode}.`
               );
@@ -405,7 +410,7 @@ export class LifecycleManager {
           proc,
           'SIGTERM',
           state.command.title,
-          'Failed to terminate lifecycle daemon'
+          'Failed to send SIGTERM to lifecycle daemon (tried process group and direct signal)'
         )
       ) {
         if (!this.isProcessRunning(proc)) {
