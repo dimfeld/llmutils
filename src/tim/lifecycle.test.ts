@@ -741,6 +741,36 @@ describe('LifecycleManager', () => {
     }
   });
 
+  test('warns when a running daemon exits unexpectedly later with code 0', async () => {
+    const warnSpy = spyOn(logging, 'warn').mockImplementation(() => {});
+
+    try {
+      const manager = new LifecycleManager(
+        [
+          {
+            title: 'clean-exit daemon',
+            command: await createDelayedExitDaemonCommand(logFile, 0, 150, 'clean-start'),
+            mode: 'daemon',
+            shutdown: appendLineCommand(logFile, 'clean-stop'),
+          },
+        ],
+        tempDir,
+        undefined
+      );
+
+      await manager.startup();
+      await waitForLine(logFile, 'clean-start');
+      await Bun.sleep(300);
+      await manager.shutdown();
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        'Lifecycle daemon "clean-exit daemon" exited unexpectedly with code 0.'
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   test('daemon shutdown kills non-exec child processes via the daemon process group', async () => {
     const launcherPidFile = path.join(tempDir, 'launcher.pid');
     const childPidFile = path.join(tempDir, 'child.pid');
