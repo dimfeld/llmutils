@@ -26,11 +26,14 @@
   let timeStr = $derived(new Date(message.timestamp).toLocaleTimeString());
 
   /** The body to render — either the message body directly, or the formatted structured message. */
-  let renderBody: DisplayMessageBody | null = $derived(
-    message.body.type === 'structured'
-      ? formatStructuredMessage(message.body.message)
-      : message.body
-  );
+  let renderBody: DisplayMessageBody | null = $derived.by(() => {
+    if (message.body.type !== 'structured') return message.body;
+    try {
+      return formatStructuredMessage(message.body.message);
+    } catch {
+      return { type: 'text', text: `[render error: ${message.rawType}]` };
+    }
+  });
 
   let expanded = $state(false);
   let kvExpanded = $state(false);
