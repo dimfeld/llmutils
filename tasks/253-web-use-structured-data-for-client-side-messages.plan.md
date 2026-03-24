@@ -5,12 +5,12 @@ goal: ""
 id: 253
 uuid: eaf60266-b11f-4524-bfd0-505ed40f8836
 generatedBy: agent
-status: in_progress
+status: done
 priority: medium
 planGeneratedAt: 2026-03-24T08:34:13.237Z
 promptsGeneratedAt: 2026-03-24T08:34:13.237Z
 createdAt: 2026-03-22T07:23:12.505Z
-updatedAt: 2026-03-24T08:57:46.307Z
+updatedAt: 2026-03-24T09:26:21.214Z
 tasks:
   - title: Add StructuredMessageBody type and update DisplayMessage types
     done: true
@@ -48,7 +48,7 @@ tasks:
       keyValueEntries(), summarizeCommandResult(). Define the DisplayCategory
       type."
   - title: Update SessionMessage.svelte and session_colors.ts for new message types
-    done: false
+    done: true
     description: 'Update src/lib/utils/session_colors.ts: change
       categoryColorClass() to accept the new DisplayCategory type (the rich
       values like lifecycle, llmOutput, toolUse etc). In
@@ -60,7 +60,7 @@ tasks:
       Update truncation logic (skipTruncation for review_result rawType check
       may need adjustment).'
   - title: Create ReviewResultDisplay component for rich review rendering
-    done: false
+    done: true
     description: "Create src/lib/components/ReviewResultDisplay.svelte. Receives the
       review_result structured message data as a prop. Render inline in the
       message stream: verdict line with emoji indicator (checkmark for
@@ -70,7 +70,7 @@ tasks:
       issue showing [category] file:line content with suggestion as indented
       text line, recommendations as ul/li list, action items as ul/li list."
   - title: Update server-side tests for pass-through behavior
-    done: false
+    done: true
     description: 'In src/lib/server/session_manager.test.ts: update the
       review_result formatting test to expect bodyType "structured" and body
       containing the raw structured message data (minus
@@ -80,7 +80,7 @@ tasks:
       structured body type. Verify triggersNotification still works correctly
       for agent_session_end.'
   - title: Add client-side formatting tests
-    done: false
+    done: true
     description: Create src/lib/utils/message_formatting.test.ts. Test
       getDisplayCategory() maps each structured message type to the correct
       display category. Test formatStructuredMessage() produces equivalent text
@@ -90,15 +90,22 @@ tasks:
       formatStructuredMessage() returns null for review_result. Verify
       session_state_events tests still pass with the new structured body type.
 changedFiles:
+  - CLAUDE.md
+  - docs/web-interface.md
+  - src/lib/components/ReviewResultDisplay.svelte
+  - src/lib/components/SessionMessage.svelte
   - src/lib/components/SessionMessage.test.ts
   - src/lib/server/session_integration.test.ts
   - src/lib/server/session_manager.test.ts
   - src/lib/server/session_manager.ts
+  - src/lib/server/session_routes.test.ts
+  - src/lib/server/ws_server.test.ts
   - src/lib/stores/session_state_events.test.ts
   - src/lib/types/session.ts
   - src/lib/utils/message_formatting.test.ts
   - src/lib/utils/message_formatting.ts
   - src/lib/utils/session_colors.ts
+  - src/routes/api/sessions/events/events.server.test.ts
 tags: []
 ---
 
@@ -348,28 +355,31 @@ The existing `skipTruncation` logic for `rawType === 'review_result'` should be 
 
 ## Current Progress
 ### Current State
-- Tasks 1-3 complete: type system, server simplification, and client-side formatting utilities are all in place
-- SessionMessage.svelte is in an intermediate state — it still references old MessageCategory values and has no structured body rendering branch. This is expected and will be addressed in Tasks 4-5.
+- All 7 tasks complete. The full structured message pass-through pipeline is working end-to-end.
+- 347 web tests passing.
 ### Completed (So Far)
 - Task 1: Added StructuredMessageBody type and StructuredMessagePayload (distributive Omit to preserve discriminated union narrowing) to both client and server type files. Simplified MessageCategory to 'log' | 'error' | 'structured'.
 - Task 2: Removed ~400 lines of summarizeStructuredMessage() and helpers from server. formatTunnelMessage() now passes structured data through with defensive error handling for malformed payloads. cloneBody() uses structuredClone() for structured bodies.
 - Task 3: Created src/lib/utils/message_formatting.ts with getDisplayCategory(), formatStructuredMessage(), and ported helper functions. Returns null for review_result.
+- Task 4: Updated SessionMessage.svelte with structured body rendering branch. Computes displayCategory from structured payload for color class, truncation, and key-value behavior. Updated session_colors.ts to accept DisplayCategory with restored pre-refactor color mapping.
+- Task 5: Created ReviewResultDisplay.svelte with verdict line, issues grouped by severity with emoji headers, recommendations and action items lists. Hardened against missing/invalid arrays.
+- Task 6: Server-side tests updated for pass-through behavior including malformed payload validation (null, undefined, arrays, objects without type).
+- Task 7: Client-side formatting tests comprehensive. SessionMessage.test.ts rewritten for structured body type.
 ### Remaining
-- Task 4: Update SessionMessage.svelte and session_colors.ts to use DisplayCategory and handle structured body type
-- Task 5: Create ReviewResultDisplay.svelte component
-- Task 6: Update server-side tests for pass-through behavior (partially done already — tests were updated during Tasks 1-3)
-- Task 7: Add client-side formatting tests (partially done — message_formatting.test.ts exists with comprehensive coverage)
+- None
 ### Next Iteration Guidance
-- Tasks 4 and 5 should be done together since SessionMessage.svelte needs the ReviewResultDisplay component for the structured body rendering branch
-- Tasks 6 and 7 are largely already done from the implementation/tester phases. May just need a final verification pass.
-- SessionMessage.svelte currently has dead comparisons against old category values (llmOutput, toolUse, command) — Task 4 must update these to use getDisplayCategory()
-- SessionMessage.test.ts uses `as DisplayMessage` casts with old category values — should be updated in Task 4
+- None
 ### Decisions / Changes
 - Used distributive conditional type for StructuredMessagePayload instead of simple Omit, to preserve discriminated union narrowing on the client
 - categorizeMessage() was removed entirely (no external callers found outside of tests)
-- session_colors.ts temporarily maps 'structured' to gray — Task 4 will restore type-specific colors via getDisplayCategory()
+- Color mapping restored to match pre-refactor values (green for lifecycle/llmOutput, cyan for toolUse/fileChange/command, blue for progress, orange for userInput, red for error)
+- Server now validates structured payloads are plain objects with a string `type` before passing through; rejects malformed payloads to a text log fallback
+- Server strips `llm_tool_result.result` when `resultSummary` is present to avoid sending heavy payloads the client doesn't render
+- ReviewResultDisplay hardened with Array.isArray guards for issues, recommendations, actionItems
 ### Lessons Learned
 - When removing server-side formatting and replacing with pass-through, don't forget to preserve defensive error handling for malformed WebSocket payloads. The try/catch around structured message processing is important.
 - Both src/lib/types/session.ts (client) and src/lib/server/session_manager.ts (server) have mirrored type definitions that must be kept in sync.
+- When passing raw structured data through to the client, validate payload shape at the boundary (not just null checks) — arrays, primitives, and objects without a `type` field can slip through and crash client-side rendering.
+- Pass-through architectures need to strip heavy fields the client doesn't use, especially for high-volume messages like tool results. The client formatter may only use a summary field while the full result stays in memory.
 ### Risks / Blockers
 - None
