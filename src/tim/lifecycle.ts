@@ -17,8 +17,7 @@ interface LifecycleCommandState {
 }
 
 function getShellCommand(command: string): string[] {
-  const isWindows = process.platform === 'win32';
-  return isWindows ? ['cmd', '/c', command] : ['sh', '-c', command];
+  return ['sh', '-c', command];
 }
 
 function wait(ms: number): Promise<void> {
@@ -73,23 +72,20 @@ export class LifecycleManager {
       }
 
       if (this.shouldRunCheck(command, mode)) {
-        let checkExitCode: number;
+        let checkPassed = false;
         try {
-          checkExitCode = await this.runShellCommand(command, {
+          const checkExitCode = await this.runShellCommand(command, {
             command: command.check!,
           });
+          checkPassed = checkExitCode === 0;
         } catch (err) {
-          if (command.allowFailure) {
-            state.startupState = 'failed';
-            warn(
-              `Lifecycle check for "${command.title}" failed to start, but failure is allowed: ${err as Error}`
-            );
-            continue;
-          }
-          throw err;
+          // Check failed to run — treat as "could not determine, proceed with command"
+          warn(
+            `Lifecycle check for "${command.title}" failed to run, proceeding with command: ${err as Error}`
+          );
         }
 
-        if (checkExitCode === 0) {
+        if (checkPassed) {
           state.startupState = 'skipped';
           log(`Skipping lifecycle command "${command.title}" because its check command succeeded.`);
           continue;

@@ -902,4 +902,27 @@ describe('LifecycleManager', () => {
     manager.killDaemons();
     await expect(manager.shutdown()).resolves.toBeUndefined();
   });
+
+  test('check spawn failure with good command still runs the command', async () => {
+    const manager = new LifecycleManager(
+      [
+        {
+          title: 'seed',
+          command: appendLineCommand(logFile, 'seed'),
+          // check references a nonexistent binary that will cause spawn to fail or return non-zero
+          check: '/nonexistent-binary-zzz 2>/dev/null',
+          shutdown: appendLineCommand(logFile, 'seed-reset'),
+        },
+      ],
+      tempDir,
+      undefined
+    );
+
+    await manager.startup();
+    await manager.shutdown();
+
+    // Check returned non-zero (command not found), so command proceeds
+    const events = await readLines(logFile);
+    expect(events).toEqual(['seed', 'seed-reset']);
+  });
 });
