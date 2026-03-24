@@ -448,7 +448,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     const updateDocsMode: 'never' | 'after-iteration' | 'after-completion' =
       options.updateDocs || config.updateDocs?.mode || 'never';
 
-    if (isAutoClaimEnabled()) {
+    if (isAutoClaimEnabled() && !isShuttingDown()) {
       if (planData.uuid) {
         try {
           await autoClaimPlan(
@@ -607,7 +607,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
         let planFileNeedsUpdate = false;
 
         // Check if status needs to be updated from 'pending' to 'in progress'
-        if (planData.status === 'pending') {
+        if (planData.status === 'pending' && !isShuttingDown()) {
           planData.status = 'in_progress';
           planData.updatedAt = new Date().toISOString();
           planFileNeedsUpdate = true;
@@ -915,8 +915,6 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
                 );
               }
 
-              if (isShuttingDown()) break;
-
               break;
             }
             sendStructured({
@@ -1173,8 +1171,6 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
                 }
               }
             }
-
-            if (isShuttingDown()) break;
 
             break;
           }
