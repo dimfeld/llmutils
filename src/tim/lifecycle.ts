@@ -125,7 +125,7 @@ export class LifecycleManager {
         if (!exitedTooSoon) {
           state.startupState = 'running';
           void daemon.exited.then((exitCode) => {
-            if (exitCode !== null && !state.intentionallyTerminated) {
+            if (exitCode !== null && !state.intentionallyTerminated && !this.shutdownStarted) {
               warn(
                 `Lifecycle daemon "${command.title}" exited unexpectedly with code ${exitCode}.`
               );
@@ -187,6 +187,7 @@ export class LifecycleManager {
       try {
         if (mode === 'daemon') {
           if (command.shutdown) {
+            state.intentionallyTerminated = true;
             log(`Running lifecycle shutdown command "${command.title}"...`);
             const exitCode = await this.runShellCommand(command, {
               command: command.shutdown,
@@ -407,6 +408,9 @@ export class LifecycleManager {
           'Failed to terminate lifecycle daemon'
         )
       ) {
+        if (!this.isProcessRunning(proc)) {
+          return;
+        }
         throw new Error(
           `Failed to terminate lifecycle daemon "${state.command.title}" with SIGTERM.`
         );

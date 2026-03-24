@@ -254,6 +254,38 @@ describe('timAgent lifecycle integration', () => {
     expect(summaryOrder).toEqual(['record-end', 'track-files', 'write-summary', 'close-log']);
   });
 
+  test('runs lifecycle shutdown for the batch mode execution path', async () => {
+    await moduleMocker.mock('./batch_mode.js', () => ({
+      executeBatchMode: mock(async () => undefined),
+    }));
+
+    const { timAgent } = await import('./agent.ts');
+    await timAgent(planFile, { log: false, summary: false }, {});
+
+    expect(await fs.readFile(path.join(tempDir, 'lifecycle-startup.txt'), 'utf-8')).toBe('started');
+    expect(await fs.readFile(path.join(tempDir, 'lifecycle-shutdown.txt'), 'utf-8')).toBe(
+      'stopped'
+    );
+    expect(summaryOrder).toEqual(['close-log']);
+  });
+
+  test('runs lifecycle shutdown before summary tracking and log closure in batch mode', async () => {
+    const shutdownFile = path.join(tempDir, 'lifecycle-shutdown.txt');
+    trackFileChangesSpy.mockImplementation(async () => {
+      expect(await fs.readFile(shutdownFile, 'utf-8')).toBe('stopped');
+    });
+
+    await moduleMocker.mock('./batch_mode.js', () => ({
+      executeBatchMode: mock(async () => undefined),
+    }));
+
+    const { timAgent } = await import('./agent.ts');
+    await timAgent(planFile, { log: true, summary: true }, {});
+
+    expect(await fs.readFile(shutdownFile, 'utf-8')).toBe('stopped');
+    expect(summaryOrder).toEqual(['record-end', 'track-files', 'write-summary', 'close-log']);
+  });
+
   test('skips lifecycle startup when shutdown is already requested', async () => {
     // Set shutdown flag BEFORE timAgent starts
     setShuttingDown(130);
