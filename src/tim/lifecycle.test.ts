@@ -444,6 +444,28 @@ describe('LifecycleManager', () => {
     expect(await readLines(logFile)).toEqual(['after', 'seed-stop']);
   });
 
+  test('run command shutdown still runs if shutdown starts while the startup command is in flight', async () => {
+    const manager = new LifecycleManager(
+      [
+        {
+          title: 'seed',
+          command: `${appendLineCommand(logFile, 'seed-start')}; sleep 0.2; ${appendLineCommand(logFile, 'seed-end')}`,
+          shutdown: appendLineCommand(logFile, 'seed-stop'),
+        },
+      ],
+      tempDir,
+      undefined
+    );
+
+    const startupPromise = manager.startup();
+    await waitForLine(logFile, 'seed-start');
+    setShuttingDown(130);
+    await manager.shutdown();
+    await startupPromise;
+
+    expect(await readLines(logFile)).toEqual(['seed-start', 'seed-stop', 'seed-end']);
+  });
+
   test('workingDirectory is resolved relative to the lifecycle base directory', async () => {
     const subdir = path.join(tempDir, 'subdir');
     await fs.mkdir(subdir);
