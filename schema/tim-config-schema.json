@@ -116,6 +116,14 @@
               },
               "allowFailure": {
                 "type": "boolean"
+              },
+              "onlyWorkspaceType": {
+                "type": "string",
+                "enum": [
+                  "auto",
+                  "standard",
+                  "primary"
+                ]
               }
             },
             "required": [

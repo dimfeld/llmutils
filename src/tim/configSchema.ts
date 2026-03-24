@@ -37,6 +37,7 @@ export const lifecycleCommandSchema = z.object({
   workingDirectory: z.string().optional(),
   env: z.record(z.string(), z.string()).optional(),
   allowFailure: z.boolean().optional(),
+  onlyWorkspaceType: z.enum(['auto', 'standard', 'primary']).optional(),
 });
 
 /**
