@@ -96,12 +96,6 @@ describe('timAgent lifecycle integration', () => {
       defaultModelForExecutor: mock(() => undefined),
     }));
 
-    await moduleMocker.mock('../../plans/find_next.js', () => ({
-      findNextActionableItem: mock(() => {
-        throw new Error('findNextActionableItem should not run after shutdown is requested');
-      }),
-    }));
-
     await moduleMocker.mock('../../workspace/workspace_setup.js', () => ({
       setupWorkspace: mock(async () => ({
         baseDir: tempDir,
@@ -154,7 +148,15 @@ describe('timAgent lifecycle integration', () => {
   });
 
   test('runs lifecycle startup and shutdown and exits with the captured signal code', async () => {
-    setShuttingDown(130);
+    // Simulate signal arriving DURING the execution loop (after startup)
+    // by having findNextActionableItem trigger the shutdown flag
+    await moduleMocker.mock('../../plans/find_next.js', () => ({
+      findNextActionableItem: mock(() => {
+        // Simulate SIGINT arriving during execution
+        setShuttingDown(130);
+        return null;
+      }),
+    }));
 
     const originalExit = process.exit;
     process.exit = ((code?: number) => {
@@ -171,13 +173,45 @@ describe('timAgent lifecycle integration', () => {
       process.exit = originalExit;
     }
 
-    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
     expect(touchWorkspaceInfoSpy).toHaveBeenCalledWith(tempDir);
     expect(sendNotificationSpy).toHaveBeenCalledTimes(1);
+    // Lifecycle startup should have run (signal arrives after startup)
     expect(await fs.readFile(path.join(tempDir, 'lifecycle-startup.txt'), 'utf-8')).toBe('started');
+    // Lifecycle shutdown should have run in the finally block
     expect(await fs.readFile(path.join(tempDir, 'lifecycle-shutdown.txt'), 'utf-8')).toBe(
       'stopped'
     );
     expect(CleanupRegistry.getInstance().size).toBe(0);
+  });
+
+  test('skips lifecycle startup when shutdown is already requested', async () => {
+    // Set shutdown flag BEFORE timAgent starts
+    setShuttingDown(130);
+
+    await moduleMocker.mock('../../plans/find_next.js', () => ({
+      findNextActionableItem: mock(() => null),
+    }));
+
+    const originalExit = process.exit;
+    process.exit = ((code?: number) => {
+      throw new Error(`process.exit(${code})`);
+    }) as typeof process.exit;
+
+    try {
+      const { timAgent } = await import('./agent.ts');
+
+      await expect(
+        timAgent(planFile, { log: false, summary: false, serialTasks: true }, {})
+      ).rejects.toThrow('process.exit(130)');
+    } finally {
+      process.exit = originalExit;
+    }
+
+    // Lifecycle startup should NOT have run
+    const startupFileExists = await fs
+      .stat(path.join(tempDir, 'lifecycle-startup.txt'))
+      .then(() => true)
+      .catch(() => false);
+    expect(startupFileExists).toBe(false);
   });
 });

@@ -1,6 +1,11 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { registerShutdownSignalHandlers } from './tim.ts';
-import { getSignalExitCode, isShuttingDown, resetShutdownState } from './shutdown_state.js';
+import {
+  getSignalExitCode,
+  isShuttingDown,
+  resetShutdownState,
+  setDeferSignalExit,
+} from './shutdown_state.js';
 
 type RegisteredHandler = () => void;
 
@@ -16,8 +21,21 @@ function createFakeProcess() {
   };
 }
 
+// Mock process.exit to prevent test from actually exiting
+const originalExit = process.exit;
+let exitCalls: number[] = [];
+
 describe('registerShutdownSignalHandlers', () => {
   beforeEach(() => {
+    resetShutdownState();
+    exitCalls = [];
+    process.exit = mock((code?: number) => {
+      exitCalls.push(code ?? 0);
+    }) as typeof process.exit;
+  });
+
+  afterEach(() => {
+    process.exit = originalExit;
     resetShutdownState();
   });
 
@@ -35,23 +53,53 @@ describe('registerShutdownSignalHandlers', () => {
     ]);
   });
 
-  test('signal handlers run synchronous cleanup and capture the first exit code', () => {
+  test('signal handlers call process.exit() immediately when deferSignalExit is false', () => {
     const cleanupRegistry = { executeAll: mock(() => {}) };
     const fakeProcess = createFakeProcess();
 
     registerShutdownSignalHandlers(cleanupRegistry, fakeProcess);
 
     fakeProcess.handlers.get('SIGINT')?.();
-    fakeProcess.handlers.get('SIGTERM')?.();
 
     expect(cleanupRegistry.executeAll).toHaveBeenCalledTimes(1);
     expect(isShuttingDown()).toBe(true);
     expect(getSignalExitCode()).toBe(130);
+    expect(exitCalls).toEqual([130]);
+  });
+
+  test('signal handlers defer exit when deferSignalExit is true', () => {
+    const cleanupRegistry = { executeAll: mock(() => {}) };
+    const fakeProcess = createFakeProcess();
+    setDeferSignalExit(true);
+
+    registerShutdownSignalHandlers(cleanupRegistry, fakeProcess);
+
+    fakeProcess.handlers.get('SIGINT')?.();
+
+    expect(cleanupRegistry.executeAll).toHaveBeenCalledTimes(1);
+    expect(isShuttingDown()).toBe(true);
+    expect(getSignalExitCode()).toBe(130);
+    expect(exitCalls).toEqual([]); // No process.exit() called
+  });
+
+  test('second signal force-exits even when deferSignalExit is true', () => {
+    const cleanupRegistry = { executeAll: mock(() => {}) };
+    const fakeProcess = createFakeProcess();
+    setDeferSignalExit(true);
+
+    registerShutdownSignalHandlers(cleanupRegistry, fakeProcess);
+
+    fakeProcess.handlers.get('SIGINT')?.();
+    expect(exitCalls).toEqual([]); // First signal deferred
+
+    fakeProcess.handlers.get('SIGTERM')?.();
+    expect(exitCalls).toEqual([143]); // Second signal force-exits
   });
 
   test('exit handler still runs cleanup after shutdown has already started', () => {
     const cleanupRegistry = { executeAll: mock(() => {}) };
     const fakeProcess = createFakeProcess();
+    setDeferSignalExit(true);
 
     registerShutdownSignalHandlers(cleanupRegistry, fakeProcess);
 

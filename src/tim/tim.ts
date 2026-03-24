@@ -47,7 +47,7 @@ import { enableAutoClaim } from './assignments/auto_claim.js';
 import { runWithLogger } from '../logging.js';
 import { type TunnelAdapter, createTunnelAdapter } from '../logging/tunnel_client.js';
 import { TIM_OUTPUT_SOCKET } from '../logging/tunnel_protocol.js';
-import { isShuttingDown, setShuttingDown } from './shutdown_state.js';
+import { isDeferSignalExit, isShuttingDown, setShuttingDown } from './shutdown_state.js';
 import {
   getPlanParameters,
   createPlanParameters,
@@ -129,29 +129,24 @@ export function registerShutdownSignalHandlers(
     cleanupRegistry.executeAll();
   });
 
-  proc.on('SIGINT', () => {
+  const handleSignal = (exitCode: number) => {
     if (isShuttingDown()) {
+      // Second signal — force exit immediately
+      process.exit(exitCode);
       return;
     }
     cleanupRegistry.executeAll();
-    setShuttingDown(130);
-  });
+    setShuttingDown(exitCode);
+    if (!isDeferSignalExit()) {
+      // No async cleanup registered — exit immediately (preserves behavior for non-agent commands)
+      process.exit(exitCode);
+    }
+    // When deferSignalExit is set, the agent's finally block will call process.exit()
+  };
 
-  proc.on('SIGTERM', () => {
-    if (isShuttingDown()) {
-      return;
-    }
-    cleanupRegistry.executeAll();
-    setShuttingDown(143);
-  });
-
-  proc.on('SIGHUP', () => {
-    if (isShuttingDown()) {
-      return;
-    }
-    cleanupRegistry.executeAll();
-    setShuttingDown(129);
-  });
+  proc.on('SIGINT', () => handleSignal(130));
+  proc.on('SIGTERM', () => handleSignal(143));
+  proc.on('SIGHUP', () => handleSignal(129));
 }
 program.name('tim').description('Generate and execute task plans using LLMs');
 

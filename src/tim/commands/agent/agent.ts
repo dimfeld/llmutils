@@ -68,7 +68,7 @@ import {
   runPreExecutionWorkspaceSync,
 } from '../../workspace/workspace_roundtrip.js';
 import { LifecycleManager } from '../../lifecycle.js';
-import { getSignalExitCode, isShuttingDown } from '../../shutdown_state.js';
+import { getSignalExitCode, isShuttingDown, setDeferSignalExit } from '../../shutdown_state.js';
 
 export async function handleAgentCommand(
   planFile: string | undefined,
@@ -298,6 +298,9 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     failureReason = new Error(typeof err === 'string' ? err : String(err));
   };
 
+  // Enable deferred signal exit so lifecycle shutdown can run asynchronously
+  setDeferSignalExit(true);
+
   try {
     config = await loadEffectiveConfig(globalCliOptions.config);
     currentPlanFile = await resolvePlanFile(planFile, globalCliOptions.config);
@@ -380,7 +383,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     // Update workspace description from plan data (if running in a tracked workspace)
     await updateWorkspaceDescriptionFromPlan(currentBaseDir, planData, config);
 
-    if (config.lifecycle?.commands && config.lifecycle.commands.length > 0) {
+    if (config.lifecycle?.commands && config.lifecycle.commands.length > 0 && !isShuttingDown()) {
       const workspaceInfo = getWorkspaceInfoByPath(currentBaseDir);
       lifecycleManager = new LifecycleManager(
         config.lifecycle.commands,
@@ -1245,6 +1248,9 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     if (!hadExecutionFailure && !postExecutionError && lifecycleShutdownError) {
       postExecutionError = lifecycleShutdownError;
     }
+
+    // Disable deferred exit — no more async cleanup to do
+    setDeferSignalExit(false);
 
     if (isShuttingDown()) {
       process.exit(getSignalExitCode());
