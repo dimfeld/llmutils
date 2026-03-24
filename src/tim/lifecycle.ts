@@ -125,7 +125,7 @@ export class LifecycleManager {
         if (!exitedTooSoon) {
           state.startupState = 'running';
           void daemon.exited.then((exitCode) => {
-            if (exitCode !== null && exitCode !== 0 && !state.intentionallyTerminated) {
+            if (exitCode !== null && !state.intentionallyTerminated) {
               warn(
                 `Lifecycle daemon "${command.title}" exited unexpectedly with code ${exitCode}.`
               );

@@ -5,12 +5,12 @@ goal: ""
 id: 146
 uuid: e37079a4-2cc9-4161-a9a6-b75de7a45756
 generatedBy: agent
-status: done
+status: in_progress
 priority: medium
 planGeneratedAt: 2026-02-15T09:35:34.117Z
 promptsGeneratedAt: 2026-02-15T09:35:34.117Z
 createdAt: 2025-11-07T21:16:48.398Z
-updatedAt: 2026-03-24T10:03:53.739Z
+updatedAt: 2026-03-24T18:16:10.644Z
 tasks:
   - title: Restructure signal handling for async cleanup
     done: true
@@ -110,6 +110,64 @@ tasks:
       specific workspace types like auto); signal handling behavior (shutdown
       runs on SIGINT/SIGTERM/SIGHUP); config merging behavior (commands
       concatenated across global/repo/local)."
+  - title: "Address Review Feedback: Interrupt handling only checks
+      `isShuttingDown()` at loop boundaries."
+    done: false
+    description: >-
+      Interrupt handling only checks `isShuttingDown()` at loop boundaries. If
+      SIGINT/SIGTERM arrives after `executor.execute()` returns, the agent still
+      runs post-apply hooks, doc updates, `markTaskDone`/`markStepDone`, and
+      batch `commitAll()` before exiting. That is a regression from the old
+      immediate-exit behavior and means Ctrl+C can still mutate plans and create
+      commits after the interrupt. The current tests only simulate shutdown
+      before iteration work starts, so this path is untested.
+
+
+      Suggestion: Re-check `isShuttingDown()` before every post-execution
+      mutation path in serial and batch mode, and bail directly to the outer
+      `finally` once shutdown is requested.
+
+
+      Related file: src/tim/commands/agent/agent.ts:598-601
+  - title: "Address Review Feedback: `timAgent()` now sends `status: 'interrupted'`
+      to notifications, but the notification contract still only allows
+      `'success' | 'error' | 'input'`."
+    done: false
+    description: >-
+      `timAgent()` now sends `status: 'interrupted'` to notifications, but the
+      notification contract still only allows `'success' | 'error' | 'input'`.
+      This adds a new `bun run check` failure (`Type '"interrupted"' is not
+      assignable to type 'NotificationStatus'`) and also pushes an unexpected
+      status to any notification consumer that still matches the old enum.
+      Either extend the notification contract end-to-end or map interrupted runs
+      onto an existing supported status before calling `sendNotification()`.
+
+
+      Suggestion: Update `NotificationStatus` and all notification
+      consumers/tests to support `'interrupted'`, or stop emitting that value
+      from `timAgent()`.
+
+
+      Related file: src/tim/commands/agent/agent.ts:1223-1238
+  - title: "Address Review Feedback: In lifecycle.ts lines 127-133, the background
+      daemon exit monitor only warns on non-zero exit codes."
+    done: false
+    description: >-
+      In lifecycle.ts lines 127-133, the background daemon exit monitor only
+      warns on non-zero exit codes. A daemon that exits cleanly (code 0) after
+      the 75ms startup check window silently disappears with no warning. The
+      user would only discover this when the expected service isn't available
+      during the agent run.
+
+
+      Suggestion: Add a warning for daemon exit code 0 after the startup check
+      window, similar to the non-zero case, to alert users that a daemon they
+      expected to be long-running has exited. Something like: if (exitCode === 0
+      && !state.intentionallyTerminated) { warn(`Lifecycle daemon
+      "${command.title}" exited unexpectedly with code 0.`); }
+
+
+      Related file: src/tim/lifecycle.ts:127-133
 changedFiles:
   - CLAUDE.md
   - README.md

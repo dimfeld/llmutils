@@ -280,6 +280,10 @@ Available tasks:\n\n${taskDescriptions}`,
         break;
       }
 
+      if (isShuttingDown()) {
+        break;
+      }
+
       // After execution, re-read the plan file to get the updated state
       const updatedPlanData = await readPlanFile(currentPlanFile);
       const remainingIncompleteTasks = getAllIncompleteTasks(updatedPlanData);

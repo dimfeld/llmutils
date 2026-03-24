@@ -736,6 +736,8 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
             break;
           }
 
+          if (isShuttingDown()) break;
+
           // Run post-apply commands if configured
           const failedPostApplyCommand = await runPostApplyCommands();
           if (failedPostApplyCommand) {
@@ -1039,6 +1041,8 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
           });
           break;
         }
+
+        if (isShuttingDown()) break;
 
         const failedPostApplyCommand = await runPostApplyCommands();
         if (failedPostApplyCommand) {
