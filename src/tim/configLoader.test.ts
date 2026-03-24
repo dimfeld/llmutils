@@ -831,6 +831,8 @@ autoexamples:
       } finally {
         if (originalEnv !== undefined) {
           process.env.TIM_LOAD_GLOBAL_CONFIG = originalEnv;
+        } else {
+          delete process.env.TIM_LOAD_GLOBAL_CONFIG;
         }
       }
     });

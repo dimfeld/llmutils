@@ -1186,7 +1186,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     }
 
     let workspaceSyncError: Error | undefined;
-    if (roundTripContext) {
+    if (roundTripContext && !isShuttingDown()) {
       try {
         const planTitle = lastKnownPlan?.title || path.parse(currentPlanFile).name;
         await runPostExecutionWorkspaceSync(roundTripContext, planTitle);

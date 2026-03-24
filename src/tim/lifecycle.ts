@@ -230,17 +230,13 @@ export class LifecycleManager {
     }
   }
 
-  /** Synchronous fallback for emergency cleanup. Only kills daemons that have no
-   *  explicit `shutdown` command — those with `shutdown` are handled by the async
-   *  `shutdown()` method which runs in the finally block. */
+  /** Synchronous emergency fallback — kills ALL running daemons regardless of
+   *  whether they have explicit shutdown commands. This runs via CleanupRegistry
+   *  on signal, and on forced exit (second signal) the async shutdown() path
+   *  won't get a chance to run, so we must not leave any daemons orphaned. */
   killDaemons(): void {
     for (const state of this.states) {
       if (state.mode !== 'daemon' || !state.shouldRunShutdown || !state.daemon) {
-        continue;
-      }
-
-      // Skip daemons with explicit shutdown commands — they need the async shutdown() path
-      if (state.command.shutdown) {
         continue;
       }
 
