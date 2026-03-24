@@ -376,14 +376,16 @@ Available tasks:\n\n${taskDescriptions}`,
             // Don't stop execution for documentation update failures
           }
 
-          const failedAfterCompletionDocsPostApplyCommand = await runPostApplyCommands();
-          if (failedAfterCompletionDocsPostApplyCommand) {
-            error(
-              `Batch mode stopping because required command "${failedAfterCompletionDocsPostApplyCommand}" failed.`
-            );
-            hasError = true;
-            if (summaryCollector) summaryCollector.addError('Post-apply command failed');
-            break;
+          if (!isShuttingDown()) {
+            const failedAfterCompletionDocsPostApplyCommand = await runPostApplyCommands();
+            if (failedAfterCompletionDocsPostApplyCommand) {
+              error(
+                `Batch mode stopping because required command "${failedAfterCompletionDocsPostApplyCommand}" failed.`
+              );
+              hasError = true;
+              if (summaryCollector) summaryCollector.addError('Post-apply command failed');
+              break;
+            }
           }
         }
 
@@ -450,14 +452,16 @@ Available tasks:\n\n${taskDescriptions}`,
             // Don't stop execution for lessons update failures
           }
 
-          const failedAfterLessonsPostApplyCommand = await runPostApplyCommands();
-          if (failedAfterLessonsPostApplyCommand) {
-            error(
-              `Batch mode stopping because required command "${failedAfterLessonsPostApplyCommand}" failed.`
-            );
-            hasError = true;
-            if (summaryCollector) summaryCollector.addError('Post-apply command failed');
-            break;
+          if (!isShuttingDown()) {
+            const failedAfterLessonsPostApplyCommand = await runPostApplyCommands();
+            if (failedAfterLessonsPostApplyCommand) {
+              error(
+                `Batch mode stopping because required command "${failedAfterLessonsPostApplyCommand}" failed.`
+              );
+              hasError = true;
+              if (summaryCollector) summaryCollector.addError('Post-apply command failed');
+              break;
+            }
           }
         } else if (
           !planStillCompleteAfterReview &&
