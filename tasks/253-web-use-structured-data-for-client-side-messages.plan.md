@@ -10,7 +10,7 @@ priority: medium
 planGeneratedAt: 2026-03-24T08:34:13.237Z
 promptsGeneratedAt: 2026-03-24T08:34:13.237Z
 createdAt: 2026-03-22T07:23:12.505Z
-updatedAt: 2026-03-24T19:28:24.910Z
+updatedAt: 2026-03-24T19:31:04.275Z
 tasks:
   - title: Add StructuredMessageBody type and update DisplayMessage types
     done: true
