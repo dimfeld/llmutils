@@ -292,7 +292,7 @@ describe('lib/server/session_manager', () => {
     expect(nullMessage).toMatchObject({
       category: 'log',
       bodyType: 'text',
-      body: { type: 'text', text: '[unknown: no type]' },
+      body: { type: 'text', text: '[malformed structured message]' },
     });
 
     const undefinedMessage = formatTunnelMessage('conn-1', 100, {
@@ -302,7 +302,29 @@ describe('lib/server/session_manager', () => {
     expect(undefinedMessage).toMatchObject({
       category: 'log',
       bodyType: 'text',
-      body: { type: 'text' },
+      body: { type: 'text', text: '[malformed structured message]' },
+    });
+
+    // Array payload should be rejected
+    const arrayMessage = formatTunnelMessage('conn-1', 101, {
+      type: 'structured',
+      message: [] as unknown as StructuredMessage,
+    });
+    expect(arrayMessage).toMatchObject({
+      category: 'log',
+      bodyType: 'text',
+      body: { type: 'text', text: '[malformed structured message]' },
+    });
+
+    // Object without string type should be rejected
+    const noTypeMessage = formatTunnelMessage('conn-1', 102, {
+      type: 'structured',
+      message: { foo: 'bar' } as unknown as StructuredMessage,
+    });
+    expect(noTypeMessage).toMatchObject({
+      category: 'log',
+      bodyType: 'text',
+      body: { type: 'text', text: '[malformed structured message]' },
     });
   });
 

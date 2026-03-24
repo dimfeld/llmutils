@@ -242,20 +242,49 @@ export function formatTunnelMessage(
       return null;
     case 'structured': {
       try {
+        const structured = message.message;
+        // Validate that the payload is a plain object with a string type
+        if (
+          structured == null ||
+          typeof structured !== 'object' ||
+          Array.isArray(structured) ||
+          typeof structured.type !== 'string'
+        ) {
+          return {
+            id: `${connectionId}:${seq}`,
+            seq,
+            timestamp: new Date().toISOString(),
+            category: 'log',
+            bodyType: 'text',
+            body: {
+              type: 'text',
+              text: `[malformed structured message]`,
+            },
+            rawType: 'unknown' as StructuredMessage['type'],
+          };
+        }
         const triggersNotification =
-          message.message.type === 'agent_session_end' &&
-          message.message.transportSource !== 'tunnel';
+          structured.type === 'agent_session_end' && structured.transportSource !== 'tunnel';
+        const stripped = stripStructuredMessage(structured);
+        // Strip heavy fields the client doesn't render
+        if (
+          stripped.type === 'llm_tool_result' &&
+          'resultSummary' in stripped &&
+          stripped.resultSummary
+        ) {
+          (stripped as Record<string, unknown>).result = undefined;
+        }
         return {
           id: `${connectionId}:${seq}`,
           seq,
-          timestamp: message.message.timestamp ?? new Date().toISOString(),
+          timestamp: structured.timestamp ?? new Date().toISOString(),
           category: 'structured',
           bodyType: 'structured',
           body: {
             type: 'structured',
-            message: stripStructuredMessage(message.message),
+            message: stripped,
           },
-          rawType: message.message.type,
+          rawType: structured.type,
           triggersNotification,
         };
       } catch {

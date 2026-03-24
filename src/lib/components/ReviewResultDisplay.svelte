@@ -16,9 +16,15 @@
     info: { emoji: '\u{2139}\u{FE0F}', colorClass: 'text-blue-400' },
   };
 
+  let issues = $derived(Array.isArray(message.issues) ? message.issues : []);
+  let recommendations = $derived(
+    Array.isArray(message.recommendations) ? message.recommendations : []
+  );
+  let actionItems = $derived(Array.isArray(message.actionItems) ? message.actionItems : []);
+
   let groupedIssues = $derived.by(() => {
     const groups: Partial<Record<Severity, ReviewIssue[]>> = {};
-    for (const issue of message.issues) {
+    for (const issue of issues) {
       const list = groups[issue.severity];
       if (list) {
         list.push(issue);
@@ -45,7 +51,7 @@
     <div class="text-gray-300">{message.fixInstructions}</div>
   {/if}
 
-  {#if message.issues.length > 0}
+  {#if issues.length > 0}
     <div class="space-y-2">
       {#each severityOrder as severity (severity)}
         {@const issues = groupedIssues[severity]}
@@ -78,22 +84,22 @@
     </div>
   {/if}
 
-  {#if message.recommendations.length > 0}
+  {#if recommendations.length > 0}
     <div>
       <div class="font-medium text-gray-300">Recommendations</div>
       <ul class="list-disc pl-6 text-gray-300">
-        {#each message.recommendations as rec, i (i)}
+        {#each recommendations as rec, i (i)}
           <li>{rec}</li>
         {/each}
       </ul>
     </div>
   {/if}
 
-  {#if message.actionItems.length > 0}
+  {#if actionItems.length > 0}
     <div>
       <div class="font-medium text-gray-300">Action Items</div>
       <ul class="list-disc pl-6 text-gray-300">
-        {#each message.actionItems as item, i (i)}
+        {#each actionItems as item, i (i)}
           <li>{item}</li>
         {/each}
       </ul>
