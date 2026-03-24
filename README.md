@@ -56,6 +56,61 @@ Use `tim workspace list`, `tim workspace add`, and `tim workspace update` to man
 
 PR status data (check runs, reviews, labels, merge state) is cached in the SQLite database and surfaced in the web interface. The CLI always force-refreshes from GitHub; the web UI uses stale-while-revalidate caching. Requires `GITHUB_TOKEN` environment variable for GitHub API access.
 
+## Lifecycle Commands
+
+Tim supports defining lifecycle commands that run automatically when starting and stopping agent sessions (`tim agent` / `tim run`). This is useful for managing dev servers, Docker containers, database migrations, and other setup/teardown tasks.
+
+Configure lifecycle commands in your `tim.yml` config file:
+
+```yaml
+lifecycle:
+  commands:
+    # Managed daemon — spawned as child process, killed on shutdown
+    - title: Dev server
+      command: node server.js
+      mode: daemon
+
+    # External daemon — start something externally, explicit shutdown to clean up
+    # check prevents starting (and shutting down) if already running
+    - title: Docker containers
+      command: docker compose up -d
+      check: docker compose ps --status running | grep -q mycontainer
+      shutdown: docker compose down
+
+    # Run-and-wait with cleanup on exit
+    - title: Seed test data
+      command: bun run seed
+      shutdown: bun run seed:reset
+
+    # Simple run-and-wait, no cleanup needed
+    - title: Run migrations
+      command: bun run migrate
+```
+
+### Command Options
+
+| Field               | Description                                                                                                                               |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `title`             | Display name for logging                                                                                                                  |
+| `command`           | Shell command to run at startup                                                                                                           |
+| `mode`              | `run` (default) — run and wait; `daemon` — spawn as managed child process                                                                 |
+| `shutdown`          | Shell command to run at shutdown (for `run` mode) or before killing the daemon (for `daemon` mode)                                        |
+| `check`             | Shell command run before startup; if exit 0, both startup and shutdown are skipped (available when `shutdown` is set or mode is `daemon`) |
+| `workingDirectory`  | Working directory for the command (defaults to repo root)                                                                                 |
+| `env`               | Additional environment variables                                                                                                          |
+| `allowFailure`      | If true, startup failure won't abort the agent                                                                                            |
+| `onlyWorkspaceType` | Only run in workspaces of this type (`auto`, `standard`, or `primary`); skipped otherwise                                                 |
+
+### Behavior
+
+- **Startup**: Commands run sequentially in config order before the agent execution loop begins.
+- **Shutdown**: Commands are processed in reverse order when the agent exits — including on SIGINT/SIGTERM/SIGHUP. Errors during shutdown (including daemon termination failures) are collected and reported after all commands have been attempted.
+- **Shutdown timeouts**: Explicit shutdown commands are given 30 seconds by default; if they hang, tim terminates the shutdown process and continues cleaning up remaining lifecycle commands.
+- **Daemons**: `mode: daemon` commands are spawned as child processes. On shutdown, they receive SIGTERM (then SIGKILL after 5s timeout) unless an explicit `shutdown` command is provided. If a daemon exits unexpectedly during the agent run (including with exit code 0), a warning is logged.
+- **Check**: The `check` command lets you skip startup when the resource is already running, and suppresses the corresponding shutdown so it isn't torn down on exit.
+- **Interrupts**: On SIGINT/SIGTERM, the agent stops executing new work immediately and runs lifecycle shutdown before exiting. A second interrupt force-exits.
+- **Config merging**: `lifecycle.commands` arrays are concatenated across global, repo, and local configs (global first, then repo, then local).
+
 ## Embedded Session Server
 
 Tim long-running commands (`agent`, `generate`, `chat`, `review`, `run-prompt`) automatically start an embedded WebSocket server that allows external clients (such as the tim web interface) to connect and monitor the session in real time. Each process advertises itself via a session info file in `~/.cache/tim/sessions/` (respects `XDG_CACHE_HOME`), enabling discovery by the web UI or other tools.

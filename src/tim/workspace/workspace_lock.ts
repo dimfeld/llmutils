@@ -11,6 +11,7 @@ import {
 } from '../db/workspace_lock.js';
 import { getOrCreateProject } from '../db/project.js';
 import { getWorkspaceByPath, recordWorkspace } from '../db/workspace.js';
+import { isDeferSignalExit } from '../shutdown_state.js';
 
 export type LockType = 'persistent' | 'pid';
 
@@ -52,7 +53,13 @@ export class WorkspaceLock {
   // Allow overriding process.pid for testing
   public static pid = process.pid;
 
-  private static readonly cleanupHandlersByWorkspace = new Map<string, () => void>();
+  private static readonly cleanupHandlersByWorkspace = new Map<
+    string,
+    {
+      cleanup: () => void;
+      cleanupOnSignal: () => void;
+    }
+  >();
 
   /**
    * Set a custom PID for testing purposes
@@ -269,24 +276,32 @@ export class WorkspaceLock {
       }
     };
 
-    this.cleanupHandlersByWorkspace.set(workspacePath, cleanup);
+    const cleanupOnSignal = () => {
+      if (isDeferSignalExit()) {
+        return;
+      }
+
+      cleanup();
+    };
+
+    this.cleanupHandlersByWorkspace.set(workspacePath, { cleanup, cleanupOnSignal });
 
     process.on('exit', cleanup);
-    process.on('SIGINT', cleanup);
-    process.on('SIGTERM', cleanup);
-    process.on('SIGHUP', cleanup);
+    process.on('SIGINT', cleanupOnSignal);
+    process.on('SIGTERM', cleanupOnSignal);
+    process.on('SIGHUP', cleanupOnSignal);
   }
 
   private static unregisterCleanupHandlers(workspacePath: string): void {
-    const cleanup = this.cleanupHandlersByWorkspace.get(workspacePath);
-    if (!cleanup) {
+    const handlers = this.cleanupHandlersByWorkspace.get(workspacePath);
+    if (!handlers) {
       return;
     }
 
-    process.off('exit', cleanup);
-    process.off('SIGINT', cleanup);
-    process.off('SIGTERM', cleanup);
-    process.off('SIGHUP', cleanup);
+    process.off('exit', handlers.cleanup);
+    process.off('SIGINT', handlers.cleanupOnSignal);
+    process.off('SIGTERM', handlers.cleanupOnSignal);
+    process.off('SIGHUP', handlers.cleanupOnSignal);
     this.cleanupHandlersByWorkspace.delete(workspacePath);
   }
 

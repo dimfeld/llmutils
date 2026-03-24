@@ -9,7 +9,7 @@ import type { PlanSchema } from './planSchema.js';
 
 export type NotificationCommandName = 'agent' | 'review';
 export type NotificationEvent = 'agent_done' | 'review_done' | 'review_input';
-export type NotificationStatus = 'success' | 'error' | 'input';
+export type NotificationStatus = 'success' | 'error' | 'input' | 'interrupted';
 
 export interface NotificationPayload {
   source: 'tim';

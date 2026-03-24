@@ -11,6 +11,7 @@ import { createRecordingAdapter } from '../../../logging/test_helpers.js';
 import type { StructuredMessage } from '../../../logging/structured_messages.js';
 import type { PlanSchema, PlanSchemaInput } from '../../planSchema.js';
 import { ModuleMocker } from '../../../testing.js';
+import { resetShutdownState, setShuttingDown } from '../../shutdown_state.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -41,6 +42,15 @@ const getWorkingCopyStatusSpy = mock(async () => ({
   checkFailed: false,
 }));
 const buildExecutionPromptWithoutStepsSpy = mock(async () => 'Test batch prompt');
+const setPlanStatusSpy = mock(async (filePath: string, status: string) => {
+  const content = await fs.readFile(filePath, 'utf-8');
+  const planData = yaml.parse(content.replace(/^#.*\n/, ''));
+  planData.status = status;
+  planData.updatedAt = new Date().toISOString();
+  const schemaComment =
+    '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json\n';
+  await fs.writeFile(filePath, schemaComment + yaml.stringify(planData));
+});
 const executePostApplyCommandSpy = mock(async () => true);
 const runUpdateDocsSpy = mock(async () => {});
 const runUpdateLessonsSpy = mock(async () => {});
@@ -64,10 +74,12 @@ describe('timAgent - Batch Mode Execution Loop', () => {
     getGitRootSpy.mockClear();
     getWorkingCopyStatusSpy.mockClear();
     buildExecutionPromptWithoutStepsSpy.mockClear();
+    setPlanStatusSpy.mockClear();
     executePostApplyCommandSpy.mockClear();
     executePostApplyCommandSpy.mockResolvedValue(true);
     runUpdateDocsSpy.mockClear();
     runUpdateLessonsSpy.mockClear();
+    resetShutdownState();
 
     // Clear plan cache
     clearPlanCache();
@@ -146,13 +158,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
         await fs.writeFile(filePath, schemaComment + yaml.stringify(planData));
       }),
       setPlanStatus: mock(async (filePath: string, status: string) => {
-        const content = await fs.readFile(filePath, 'utf-8');
-        const planData = yaml.parse(content.replace(/^#.*\n/, ''));
-        planData.status = status;
-        planData.updatedAt = new Date().toISOString();
-        const schemaComment =
-          '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json\n';
-        await fs.writeFile(filePath, schemaComment + yaml.stringify(planData));
+        await setPlanStatusSpy(filePath, status);
       }),
       readAllPlans: mock(async () => ({ plans: new Map() })),
       clearPlanCache: mock(() => {}),
@@ -168,6 +174,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
 
   afterEach(async () => {
     moduleMocker.clear();
+    resetShutdownState();
     if (tempDir) {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
@@ -760,6 +767,168 @@ describe('timAgent - Batch Mode Execution Loop', () => {
 
       expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
       expect(executePostApplyCommandSpy).toHaveBeenCalledTimes(2);
+    });
+
+    test('batch mode skips after-iteration docs when shutdown is requested after execution', async () => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        updateDocs: { mode: 'after-iteration' },
+      });
+
+      executorExecuteSpy.mockImplementationOnce(async () => {
+        await createPlanFile({
+          tasks: [
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
+        });
+        setShuttingDown(130);
+      });
+
+      const originalExit = process.exit;
+      process.exit = ((code?: number) => {
+        throw new Error(`process.exit(${code})`);
+      }) as typeof process.exit;
+
+      try {
+        await expect(timAgent(planFile, { log: false, nonInteractive: true }, {})).rejects.toThrow(
+          'process.exit(130)'
+        );
+      } finally {
+        process.exit = originalExit;
+      }
+
+      expect(runUpdateDocsSpy).not.toHaveBeenCalled();
+      expect(executePostApplyCommandSpy).not.toHaveBeenCalled();
+    });
+
+    test('batch mode skips after-completion docs when shutdown is requested after plan status is updated', async () => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        updateDocs: { mode: 'after-completion' },
+      });
+
+      executorExecuteSpy.mockImplementationOnce(async () => {
+        await createPlanFile({
+          tasks: [
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
+        });
+      });
+
+      setPlanStatusSpy.mockImplementationOnce(async (filePath: string, status: string) => {
+        const content = await fs.readFile(filePath, 'utf-8');
+        const planData = yaml.parse(content.replace(/^#.*\n/, ''));
+        planData.status = status;
+        planData.updatedAt = new Date().toISOString();
+        const schemaComment =
+          '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json\n';
+        await fs.writeFile(filePath, schemaComment + yaml.stringify(planData));
+        setShuttingDown(130);
+      });
+
+      const originalExit = process.exit;
+      process.exit = ((code?: number) => {
+        throw new Error(`process.exit(${code})`);
+      }) as typeof process.exit;
+
+      try {
+        await expect(
+          timAgent(planFile, { log: false, nonInteractive: true, finalReview: false }, {})
+        ).rejects.toThrow('process.exit(130)');
+      } finally {
+        process.exit = originalExit;
+      }
+
+      expect(runUpdateDocsSpy).not.toHaveBeenCalled();
+    });
+
+    test('batch mode skips lessons update when shutdown is requested after plan status is updated', async () => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        updateDocs: { mode: 'never', applyLessons: true },
+      });
+
+      executorExecuteSpy.mockImplementationOnce(async () => {
+        await createPlanFile({
+          tasks: [
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
+        });
+      });
+
+      setPlanStatusSpy.mockImplementationOnce(async (filePath: string, status: string) => {
+        const content = await fs.readFile(filePath, 'utf-8');
+        const planData = yaml.parse(content.replace(/^#.*\n/, ''));
+        planData.status = status;
+        planData.updatedAt = new Date().toISOString();
+        const schemaComment =
+          '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json\n';
+        await fs.writeFile(filePath, schemaComment + yaml.stringify(planData));
+        setShuttingDown(130);
+      });
+
+      const originalExit = process.exit;
+      process.exit = ((code?: number) => {
+        throw new Error(`process.exit(${code})`);
+      }) as typeof process.exit;
+
+      try {
+        await expect(
+          timAgent(planFile, { log: false, nonInteractive: true, finalReview: false }, {})
+        ).rejects.toThrow('process.exit(130)');
+      } finally {
+        process.exit = originalExit;
+      }
+
+      expect(runUpdateLessonsSpy).not.toHaveBeenCalled();
     });
   });
 

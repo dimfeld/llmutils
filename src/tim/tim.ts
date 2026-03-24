@@ -47,6 +47,7 @@ import { enableAutoClaim } from './assignments/auto_claim.js';
 import { runWithLogger } from '../logging.js';
 import { type TunnelAdapter, createTunnelAdapter } from '../logging/tunnel_client.js';
 import { TIM_OUTPUT_SOCKET } from '../logging/tunnel_protocol.js';
+import { isDeferSignalExit, isShuttingDown, setShuttingDown } from './shutdown_state.js';
 import {
   getPlanParameters,
   createPlanParameters,
@@ -117,6 +118,43 @@ async function runWithCommandTunnelAdapter<T>(callback: () => Promise<T> | T): P
 }
 
 const program = new Command();
+
+type SignalHandlerProcess = Pick<NodeJS.Process, 'on'>;
+
+export function registerShutdownSignalHandlers(
+  cleanupRegistry: Pick<CleanupRegistry, 'executeAll'> = CleanupRegistry.getInstance(),
+  proc: SignalHandlerProcess = process
+): void {
+  proc.on('exit', () => {
+    cleanupRegistry.executeAll();
+  });
+
+  const handleSignal = (exitCode: number) => {
+    if (isShuttingDown()) {
+      // Second signal — force exit immediately.
+      // process.exit() triggers the 'exit' handler which runs cleanupRegistry.executeAll(),
+      // so killDaemons() still fires as an emergency fallback.
+      process.exit(exitCode);
+      return;
+    }
+    setShuttingDown(exitCode);
+    if (!isDeferSignalExit()) {
+      // No async cleanup registered — run sync cleanup and exit immediately
+      // (preserves behavior for non-agent commands)
+      cleanupRegistry.executeAll();
+      process.exit(exitCode);
+    }
+    // When deferSignalExit is set, the agent's finally block handles async lifecycle
+    // shutdown (explicit shutdown commands, then daemon kills) before calling process.exit().
+    // The cleanupRegistry is NOT run here so killDaemons() doesn't preempt explicit
+    // shutdown commands. It remains registered for the force-exit path (second signal →
+    // process.exit → 'exit' event → cleanupRegistry.executeAll).
+  };
+
+  proc.on('SIGINT', () => handleSignal(130));
+  proc.on('SIGTERM', () => handleSignal(143));
+  proc.on('SIGHUP', () => handleSignal(129));
+}
 program.name('tim').description('Generate and execute task plans using LLMs');
 
 const statusSchemaHelpText = `(${statusSchema.options.join(', ')})`;
@@ -1487,26 +1525,7 @@ async function run() {
   enableAutoClaim();
 
   // Set up signal handlers for cleanup
-  const cleanupRegistry = CleanupRegistry.getInstance();
-
-  process.on('exit', () => {
-    cleanupRegistry.executeAll();
-  });
-
-  process.on('SIGINT', () => {
-    cleanupRegistry.executeAll();
-    process.exit(130);
-  });
-
-  process.on('SIGTERM', () => {
-    cleanupRegistry.executeAll();
-    process.exit(143);
-  });
-
-  process.on('SIGHUP', () => {
-    cleanupRegistry.executeAll();
-    process.exit(129);
-  });
+  registerShutdownSignalHandlers();
 
   await program.parseAsync(process.argv);
 }

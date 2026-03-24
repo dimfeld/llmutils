@@ -15,6 +15,7 @@ import type { SummaryCollector } from '../../summary/collector.js';
 import { runUpdateDocs } from '../update-docs.js';
 import { runUpdateLessons } from '../update-lessons.js';
 import { handleReviewCommand } from '../review.js';
+import { isShuttingDown } from '../../shutdown_state.js';
 
 const FAST_NOOP_BATCH_RETRY_MS = 5 * 60 * 1000;
 
@@ -83,6 +84,9 @@ export async function executeBatchMode(
       message: 'Running post-apply commands',
     });
     for (const commandConfig of config.postApplyCommands) {
+      if (isShuttingDown()) {
+        return null;
+      }
       const commandSucceeded = await executePostApplyCommand(commandConfig, baseDir);
       if (!commandSucceeded) {
         return commandConfig.title;
@@ -109,17 +113,24 @@ export async function executeBatchMode(
 
     // Batch mode: continue until no incomplete tasks remain
     while (iteration < maxSteps) {
+      if (isShuttingDown()) {
+        break;
+      }
+
       // Read the current plan file to get updated state
       const planData = await readPlanFile(currentPlanFile);
 
       // Check if status needs to be updated from 'pending' to 'in progress'
-      if (planData.status === 'pending') {
+      if (planData.status === 'pending' && !isShuttingDown()) {
         planData.status = 'in_progress';
         planData.updatedAt = new Date().toISOString();
+        if (isShuttingDown()) {
+          break;
+        }
         await writePlanFile(currentPlanFile, planData);
 
         // If this plan has a parent, mark it as in_progress too
-        if (planData.parent) {
+        if (planData.parent && !isShuttingDown()) {
           await markParentInProgress(planData.parent, config);
         }
       }
@@ -182,6 +193,10 @@ Available tasks:\n\n${taskDescriptions}`,
         log(boldMarkdownHeaders('\n## Batch Mode Dry Run - Generated Prompt\n'));
         log(batchPrompt);
         log('\n--dry-run mode: Would execute the above prompt');
+        break;
+      }
+
+      if (isShuttingDown()) {
         break;
       }
 
@@ -275,6 +290,10 @@ Available tasks:\n\n${taskDescriptions}`,
         break;
       }
 
+      if (isShuttingDown()) {
+        break;
+      }
+
       // After execution, re-read the plan file to get the updated state
       const updatedPlanData = await readPlanFile(currentPlanFile);
       const remainingIncompleteTasks = getAllIncompleteTasks(updatedPlanData);
@@ -308,6 +327,10 @@ Available tasks:\n\n${taskDescriptions}`,
       // Update docs if configured for after-iteration mode
       // Calculate which tasks were just completed by comparing before/after state
       if (updateDocsMode === 'after-iteration') {
+        if (isShuttingDown()) {
+          break;
+        }
+
         const justCompletedTaskIndices = incompleteTasks
           .map((t) => t.taskIndex)
           .filter((index) => !remainingTaskIndices.has(index));
@@ -323,6 +346,10 @@ Available tasks:\n\n${taskDescriptions}`,
           error('Failed to update documentation:', err);
           // Don't stop execution for documentation update failures
         }
+      }
+
+      if (isShuttingDown()) {
+        break;
       }
 
       // Run post-apply commands if configured
@@ -343,10 +370,19 @@ Available tasks:\n\n${taskDescriptions}`,
           taskTitle: completedTaskTitles.join(', ') || 'Batch mode iteration',
           planComplete: true,
         });
+
+        if (isShuttingDown()) {
+          break;
+        }
+
         await setPlanStatus(currentPlanFile, 'done');
 
         // Update docs if configured for after-completion mode
         if (updateDocsMode === 'after-completion') {
+          if (isShuttingDown()) {
+            break;
+          }
+
           try {
             await runUpdateDocs(currentPlanFile, config, {
               executor: config.updateDocs?.executor,
@@ -358,15 +394,21 @@ Available tasks:\n\n${taskDescriptions}`,
             // Don't stop execution for documentation update failures
           }
 
-          const failedAfterCompletionDocsPostApplyCommand = await runPostApplyCommands();
-          if (failedAfterCompletionDocsPostApplyCommand) {
-            error(
-              `Batch mode stopping because required command "${failedAfterCompletionDocsPostApplyCommand}" failed.`
-            );
-            hasError = true;
-            if (summaryCollector) summaryCollector.addError('Post-apply command failed');
-            break;
+          if (!isShuttingDown()) {
+            const failedAfterCompletionDocsPostApplyCommand = await runPostApplyCommands();
+            if (failedAfterCompletionDocsPostApplyCommand) {
+              error(
+                `Batch mode stopping because required command "${failedAfterCompletionDocsPostApplyCommand}" failed.`
+              );
+              hasError = true;
+              if (summaryCollector) summaryCollector.addError('Post-apply command failed');
+              break;
+            }
           }
+        }
+
+        if (isShuttingDown()) {
+          break;
         }
 
         // Run final review if enabled
@@ -393,10 +435,13 @@ Available tasks:\n\n${taskDescriptions}`,
             // If tasks were appended, ask if user wants to continue
             if (reviewResult?.tasksAppended && reviewResult.tasksAppended > 0) {
               const planIdStr = updatedPlanData.id ? ` ${updatedPlanData.id}` : '';
-              const shouldContinue = await promptConfirm({
-                message: `${reviewResult.tasksAppended} new task(s) added from review to plan${planIdStr}. You can edit the plan first if needed. Continue running?`,
-                default: true,
-              });
+              let shouldContinue = false;
+              if (!isShuttingDown()) {
+                shouldContinue = await promptConfirm({
+                  message: `${reviewResult.tasksAppended} new task(s) added from review to plan${planIdStr}. You can edit the plan first if needed. Continue running?`,
+                  default: true,
+                });
+              }
 
               if (shouldContinue) {
                 continue; // Continue the loop to process new tasks
@@ -412,7 +457,15 @@ Available tasks:\n\n${taskDescriptions}`,
           }
         }
 
+        if (isShuttingDown()) {
+          break;
+        }
+
         if (planStillCompleteAfterReview && (config.updateDocs?.applyLessons || applyLessons)) {
+          if (isShuttingDown()) {
+            break;
+          }
+
           try {
             await runUpdateLessons(currentPlanFile, config, {
               executor: config.updateDocs?.executor,
@@ -424,14 +477,16 @@ Available tasks:\n\n${taskDescriptions}`,
             // Don't stop execution for lessons update failures
           }
 
-          const failedAfterLessonsPostApplyCommand = await runPostApplyCommands();
-          if (failedAfterLessonsPostApplyCommand) {
-            error(
-              `Batch mode stopping because required command "${failedAfterLessonsPostApplyCommand}" failed.`
-            );
-            hasError = true;
-            if (summaryCollector) summaryCollector.addError('Post-apply command failed');
-            break;
+          if (!isShuttingDown()) {
+            const failedAfterLessonsPostApplyCommand = await runPostApplyCommands();
+            if (failedAfterLessonsPostApplyCommand) {
+              error(
+                `Batch mode stopping because required command "${failedAfterLessonsPostApplyCommand}" failed.`
+              );
+              hasError = true;
+              if (summaryCollector) summaryCollector.addError('Post-apply command failed');
+              break;
+            }
           }
         } else if (
           !planStillCompleteAfterReview &&
@@ -440,10 +495,19 @@ Available tasks:\n\n${taskDescriptions}`,
           log('Skipping lessons-learned documentation update because review added new tasks.');
         }
 
+        if (isShuttingDown()) {
+          break;
+        }
+
         // Handle parent plan updates similar to existing logic
-        if (updatedPlanData.parent) {
+        if (updatedPlanData.parent && !isShuttingDown()) {
           await checkAndMarkParentDone(updatedPlanData.parent, config, baseDir);
         }
+
+        if (isShuttingDown()) {
+          break;
+        }
+
         await commitAll(`Plan complete: ${planData.title}`, baseDir);
         if (summaryCollector) {
           await summaryCollector.trackFileChanges(baseDir);
@@ -451,6 +515,10 @@ Available tasks:\n\n${taskDescriptions}`,
         }
         break;
       } else {
+        if (isShuttingDown()) {
+          break;
+        }
+
         await commitAll('Finish batch tasks iteration', baseDir);
         if (summaryCollector) {
           await summaryCollector.trackFileChanges(baseDir);

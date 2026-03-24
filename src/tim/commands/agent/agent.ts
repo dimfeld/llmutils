@@ -7,6 +7,7 @@ import * as fs from 'node:fs/promises';
 import { promptConfirm } from '../../../common/input.js';
 import { getGitRoot } from '../../../common/git.js';
 import { logSpawn } from '../../../common/process.js';
+import { CleanupRegistry } from '../../../common/cleanup_registry.js';
 import {
   boldMarkdownHeaders,
   closeLogFile,
@@ -66,6 +67,8 @@ import {
   runPostExecutionWorkspaceSync,
   runPreExecutionWorkspaceSync,
 } from '../../workspace/workspace_roundtrip.js';
+import { LifecycleManager } from '../../lifecycle.js';
+import { getSignalExitCode, isShuttingDown, setDeferSignalExit } from '../../shutdown_state.js';
 
 export async function handleAgentCommand(
   planFile: string | undefined,
@@ -273,6 +276,7 @@ export async function handleAgentCommand(
 }
 
 export async function timAgent(planFile: string, options: any, globalCliOptions: any) {
+  const cleanupRegistry = CleanupRegistry.getInstance();
   let currentPlanFile = planFile;
   let config = getDefaultConfig();
   let currentBaseDir = process.cwd();
@@ -283,6 +287,12 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
   let postExecutionError: Error | undefined;
   let failureReason: Error | undefined;
   let lastKnownPlan: PlanSchema | undefined;
+  let lifecycleManager: LifecycleManager | undefined;
+  let unregisterLifecycleCleanup: (() => void) | undefined;
+  let lifecycleShutdownError: Error | undefined;
+  let summaryEnabled = false;
+  let summaryFilePath: string | undefined;
+  let summaryCollector!: SummaryCollector;
   const recordFailure = (err: unknown): void => {
     if (failureReason) return;
     if (err instanceof Error) {
@@ -293,6 +303,9 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
   };
 
   try {
+    // Enable deferred signal exit so lifecycle shutdown can run asynchronously
+    // Must be inside try so the finally block always resets it
+    setDeferSignalExit(true);
     config = await loadEffectiveConfig(globalCliOptions.config);
     currentPlanFile = await resolvePlanFile(planFile, globalCliOptions.config);
 
@@ -372,7 +385,20 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     lastKnownPlan = planData;
 
     // Update workspace description from plan data (if running in a tracked workspace)
-    await updateWorkspaceDescriptionFromPlan(currentBaseDir, planData, config);
+    if (!isShuttingDown()) {
+      await updateWorkspaceDescriptionFromPlan(currentBaseDir, planData, config);
+    }
+
+    if (config.lifecycle?.commands && config.lifecycle.commands.length > 0 && !isShuttingDown()) {
+      const workspaceInfo = getWorkspaceInfoByPath(currentBaseDir);
+      lifecycleManager = new LifecycleManager(
+        config.lifecycle.commands,
+        currentBaseDir,
+        workspaceInfo?.workspaceType
+      );
+      unregisterLifecycleCleanup = cleanupRegistry.register(() => lifecycleManager?.killDaemons());
+      await lifecycleManager.startup();
+    }
 
     // Check if plan has simple field set and respect it
     // CLI flags take precedence: explicit --simple or --no-simple override plan field
@@ -428,7 +454,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     const updateDocsMode: 'never' | 'after-iteration' | 'after-completion' =
       options.updateDocs || config.updateDocs?.mode || 'never';
 
-    if (isAutoClaimEnabled()) {
+    if (isAutoClaimEnabled() && !isShuttingDown()) {
       if (planData.uuid) {
         try {
           await autoClaimPlan(
@@ -450,9 +476,9 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     const envSummary = process.env.TIM_SUMMARY_ENABLED;
     const envSummaryEnabled =
       envSummary == null ? true : !(envSummary.toLowerCase() === 'false' || envSummary === '0');
-    const summaryEnabled = options.summary === false ? false : envSummaryEnabled;
-    const summaryFilePath: string | undefined = options.summaryFile;
-    const summaryCollector = new SummaryCollector({
+    summaryEnabled = options.summary === false ? false : envSummaryEnabled;
+    summaryFilePath = options.summaryFile;
+    summaryCollector = new SummaryCollector({
       planId: planData.id?.toString() ?? 'unknown',
       planTitle: planData.title ?? 'Untitled Plan',
       planFilePath: currentPlanFile,
@@ -471,6 +497,9 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
         message: 'Running post-apply commands',
       });
       for (const commandConfig of config.postApplyCommands) {
+        if (isShuttingDown()) {
+          return null;
+        }
         const commandSucceeded = await executePostApplyCommand(commandConfig, currentBaseDir);
         if (!commandSucceeded) {
           return commandConfig.title;
@@ -483,7 +512,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     // Check if this is a true stub plan (no tasks at all)
     const needsPreparation = !planData.tasks.length;
 
-    if (needsPreparation) {
+    if (needsPreparation && !isShuttingDown()) {
       let continueAfterStubPlan = false;
 
       // This is a true stub plan with no tasks - handle it specially
@@ -505,24 +534,17 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
         if (stubResult.tasksAppended && stubResult.tasksAppended > 0) {
           const updatedPlanData = await readPlanFile(currentPlanFile);
           const planIdStr = updatedPlanData.id ? ` ${updatedPlanData.id}` : '';
-          continueAfterStubPlan = await promptConfirm({
-            message: `${stubResult.tasksAppended} new task(s) added from review to plan${planIdStr}. You can edit the plan first if needed. Continue running?`,
-            default: true,
-          });
+          if (!isShuttingDown()) {
+            continueAfterStubPlan = await promptConfirm({
+              message: `${stubResult.tasksAppended} new task(s) added from review to plan${planIdStr}. You can edit the plan first if needed. Continue running?`,
+              default: true,
+            });
+          }
         }
       } catch (err) {
         error('Direct execution failed:', err);
         if (summaryEnabled) summaryCollector.addError(err);
         throw err;
-      } finally {
-        if (!continueAfterStubPlan && summaryEnabled) {
-          summaryCollector.recordExecutionEnd();
-          await summaryCollector.trackFileChanges(currentBaseDir);
-          await writeOrDisplaySummary(summaryCollector.getExecutionSummary(), summaryFilePath);
-        }
-        if (!continueAfterStubPlan) {
-          await closeLogFile();
-        }
       }
 
       if (!continueAfterStubPlan) {
@@ -533,7 +555,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     const maxSteps = options.steps ? parseInt(options.steps, 10) : Infinity;
 
     // Check if batch mode is enabled (default is true, disabled by --serial-tasks)
-    if (!options.serialTasks) {
+    if (!options.serialTasks && !isShuttingDown()) {
       try {
         const res = await executeBatchMode(
           {
@@ -556,394 +578,88 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
       } catch (err) {
         if (summaryEnabled) summaryCollector.addError(err);
         throw err;
-      } finally {
-        if (summaryEnabled) {
-          summaryCollector.recordExecutionEnd();
-          await summaryCollector.trackFileChanges(currentBaseDir);
-          await writeOrDisplaySummary(summaryCollector.getExecutionSummary(), summaryFilePath);
-        }
-        await closeLogFile();
       }
     }
 
     log('Starting agent to execute plan:', currentPlanFile);
-    try {
-      let hasError = false;
+    let hasError = false;
 
-      // Track initial state to determine whether to skip final review
-      // We skip final review if we started with no tasks completed and finished in a single iteration
-      const initialCompletedTaskCount = planData.tasks.filter((t) => t.done).length;
+    // Track initial state to determine whether to skip final review
+    // We skip final review if we started with no tasks completed and finished in a single iteration
+    const initialCompletedTaskCount = planData.tasks.filter((t) => t.done).length;
 
-      let stepCount = 0;
-      while (stepCount < maxSteps) {
-        stepCount++;
+    let stepCount = 0;
+    while (stepCount < maxSteps) {
+      if (isShuttingDown()) {
+        break;
+      }
 
-        const planData = await readPlanFile(currentPlanFile);
-        lastKnownPlan = planData;
-        let planFileNeedsUpdate = false;
+      stepCount++;
 
-        // Check if status needs to be updated from 'pending' to 'in progress'
-        if (planData.status === 'pending') {
-          planData.status = 'in_progress';
-          planData.updatedAt = new Date().toISOString();
-          planFileNeedsUpdate = true;
+      const planData = await readPlanFile(currentPlanFile);
+      lastKnownPlan = planData;
+      let planFileNeedsUpdate = false;
 
-          // If this plan has a parent, mark it as in_progress too
-          if (planData.parent) {
-            await markParentInProgress(planData.parent, config);
-          }
+      // Check if status needs to be updated from 'pending' to 'in progress'
+      if (planData.status === 'pending' && !isShuttingDown()) {
+        planData.status = 'in_progress';
+        planData.updatedAt = new Date().toISOString();
+        planFileNeedsUpdate = true;
+
+        // If this plan has a parent, mark it as in_progress too
+        if (planData.parent && !isShuttingDown()) {
+          await markParentInProgress(planData.parent, config);
         }
+      }
 
-        if (planFileNeedsUpdate) {
-          await writePlanFile(currentPlanFile, planData);
-        }
+      if (planFileNeedsUpdate && !isShuttingDown()) {
+        await writePlanFile(currentPlanFile, planData);
+      }
 
-        const actionableItem = findNextActionableItem(planData);
-        if (!actionableItem) {
-          sendStructured({
-            type: 'task_completion',
-            timestamp: timestamp(),
-            planComplete: true,
-          });
-          break;
-        }
-
-        // Branch based on the type of actionable item
-        if (actionableItem.type === 'task') {
-          // Simple task without steps
-          sendStructured({
-            type: 'agent_iteration_start',
-            timestamp: timestamp(),
-            iterationNumber: stepCount,
-            taskTitle: actionableItem.task.title,
-            taskDescription: actionableItem.task.description,
-          });
-
-          // Build the prompt for the simple task using the unified function
-          const taskPrompt = await buildExecutionPromptWithoutSteps({
-            executor,
-            planData,
-            planFilePath: currentPlanFile,
-            baseDir: currentBaseDir,
-            config,
-            task: {
-              title: actionableItem.task.title,
-              description: actionableItem.task.description,
-            },
-            filePathPrefix: executor.filePathPrefix,
-            includeCurrentPlanContext: false, // Don't include current plan context since it's already in project context
-          });
-
-          if (options.dryRun) {
-            log(boldMarkdownHeaders('\n## Dry Run - Generated Prompt\n'));
-            log(taskPrompt);
-            log('\n--dry-run mode: Would execute the above prompt');
-            break;
-          }
-
-          try {
-            sendStructured({
-              type: 'agent_step_start',
-              timestamp: timestamp(),
-              phase: 'execution',
-              executor: executorName,
-              stepNumber: stepCount,
-            });
-            const start = Date.now();
-            const output = await executor.execute(taskPrompt, {
-              planId: planData.id?.toString() ?? 'unknown',
-              planTitle: planData.title ?? 'Untitled Plan',
-              planFilePath: currentPlanFile,
-              executionMode,
-              captureOutput: summaryEnabled ? 'result' : 'none',
-            });
-            // Detect executor-declared failure and stop early
-            const ok = output ? output.success !== false : true;
-            if (!ok) {
-              const fd = output?.failureDetails;
-              sendFailureReport(fd?.problems || 'Executor reported failure.', {
-                requirements: fd?.requirements,
-                problems: fd?.problems,
-                solutions: fd?.solutions,
-                sourceAgent: fd?.sourceAgent,
-              });
-              hasError = true;
-              recordFailure(fd?.problems || 'Executor reported failure.');
-            }
-            sendStructured({
-              type: 'agent_step_end',
-              timestamp: timestamp(),
-              phase: 'execution',
-              success: ok,
-              summary: ok ? 'Task execution completed.' : 'Task execution failed.',
-            });
-            if (summaryEnabled) {
-              const end = Date.now();
-              summaryCollector.addStepResult({
-                title: `Task ${actionableItem.taskIndex + 1}: ${actionableItem.task.title}`,
-                executor: executorName,
-                output: output ?? undefined,
-                success: ok,
-                startedAt: new Date(start).toISOString(),
-                endedAt: new Date(end).toISOString(),
-                durationMs: end - start,
-              });
-            }
-            if (hasError) break;
-          } catch (err) {
-            error('Task execution failed:', err);
-            hasError = true;
-            recordFailure(err);
-            if (summaryEnabled) {
-              summaryCollector.addStepResult({
-                title: `Task ${actionableItem.taskIndex + 1}: ${actionableItem.task.title}`,
-                executor: executorName,
-                success: false,
-                errorMessage: String(err instanceof Error ? err.message : err),
-              });
-            }
-            sendStructured({
-              type: 'agent_step_end',
-              timestamp: timestamp(),
-              phase: 'execution',
-              success: false,
-              summary: `Task execution threw: ${String(err instanceof Error ? err.message : err)}`,
-            });
-            break;
-          }
-
-          // Run post-apply commands if configured
-          const failedPostApplyCommand = await runPostApplyCommands();
-          if (failedPostApplyCommand) {
-            error(`Agent stopping because required command "${failedPostApplyCommand}" failed.`);
-            hasError = true;
-            recordFailure(`Post-apply command failed: ${failedPostApplyCommand}`);
-            if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
-            break;
-          }
-
-          // Update docs if configured for after-iteration mode
-          if (updateDocsMode === 'after-iteration') {
-            try {
-              await runUpdateDocs(currentPlanFile, config, {
-                executor: config.updateDocs?.executor,
-                model: config.updateDocs?.model,
-                baseDir: currentBaseDir,
-                justCompletedTaskIndices: [actionableItem.taskIndex],
-              });
-            } catch (err) {
-              error('Failed to update documentation:', err);
-              // Don't stop execution for documentation update failures
-            }
-
-            const failedAfterDocsPostApplyCommand = await runPostApplyCommands();
-            if (failedAfterDocsPostApplyCommand) {
-              error(
-                `Agent stopping because required command "${failedAfterDocsPostApplyCommand}" failed.`
-              );
-              hasError = true;
-              recordFailure(`Post-apply command failed: ${failedAfterDocsPostApplyCommand}`);
-              if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
-              break;
-            }
-          }
-
-          // Mark the task as done
-          try {
-            log(boldMarkdownHeaders('\n## Marking task done\n'));
-            const markResult = await markTaskDone(
-              currentPlanFile,
-              actionableItem.taskIndex,
-              { commit: true },
-              currentBaseDir,
-              config
-            );
-            // Defer file change tracking to the end for efficiency
-
-            if (markResult.planComplete) {
-              sendStructured({
-                type: 'task_completion',
-                timestamp: timestamp(),
-                taskTitle: actionableItem.task.title,
-                planComplete: true,
-              });
-
-              // Update docs if configured for after-completion mode
-              if (updateDocsMode === 'after-completion') {
-                try {
-                  await runUpdateDocs(currentPlanFile, config, {
-                    executor: config.updateDocs?.executor,
-                    model: config.updateDocs?.model,
-                    baseDir: currentBaseDir,
-                  });
-                } catch (err) {
-                  error('Failed to update documentation:', err);
-                  // Don't stop execution for documentation update failures
-                }
-
-                const failedAfterCompletionDocsPostApplyCommand = await runPostApplyCommands();
-                if (failedAfterCompletionDocsPostApplyCommand) {
-                  error(
-                    `Agent stopping because required command "${failedAfterCompletionDocsPostApplyCommand}" failed.`
-                  );
-                  hasError = true;
-                  recordFailure(
-                    `Post-apply command failed: ${failedAfterCompletionDocsPostApplyCommand}`
-                  );
-                  if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
-                  break;
-                }
-              }
-
-              // Run final review if enabled
-              // Skip if we started with no completed tasks and finished in a single iteration
-              const shouldSkipFinalReview =
-                options.finalReview === false ||
-                (initialCompletedTaskCount === 0 && stepCount === 1);
-              let planStillCompleteAfterReview = true;
-              if (!shouldSkipFinalReview) {
-                sendStructured({
-                  type: 'workflow_progress',
-                  timestamp: timestamp(),
-                  phase: 'final-review',
-                  message: 'Running final review',
-                });
-                try {
-                  const reviewResult = await handleReviewCommand(
-                    currentPlanFile,
-                    { cwd: currentBaseDir },
-                    {
-                      parent: { opts: () => ({ config: globalCliOptions.config }) },
-                    }
-                  );
-
-                  // If tasks were appended, ask if user wants to continue
-                  if (reviewResult?.tasksAppended && reviewResult.tasksAppended > 0) {
-                    // Read the updated plan to get the plan ID
-                    const updatedPlanData = await readPlanFile(currentPlanFile);
-                    const planIdStr = updatedPlanData.id ? ` ${updatedPlanData.id}` : '';
-                    const shouldContinue = await promptConfirm({
-                      message: `${reviewResult.tasksAppended} new task(s) added from review to plan${planIdStr}. You can edit the plan first if needed. Continue running?`,
-                      default: true,
-                    });
-
-                    if (shouldContinue) {
-                      continue; // Continue the loop to process new tasks
-                    }
-
-                    // New tasks were appended but execution is not continuing,
-                    // so the plan is no longer complete.
-                    planStillCompleteAfterReview = false;
-                  }
-                } catch (err) {
-                  warn(`Final review failed: ${err as Error}`);
-                  // Don't fail the agent - plan execution succeeded
-                }
-              }
-
-              if (
-                planStillCompleteAfterReview &&
-                (config.updateDocs?.applyLessons || options.applyLessons)
-              ) {
-                try {
-                  await runUpdateLessons(currentPlanFile, config, {
-                    executor: config.updateDocs?.executor,
-                    model: config.updateDocs?.model,
-                    baseDir: currentBaseDir,
-                  });
-                } catch (err) {
-                  error('Failed to apply lessons learned:', err as Error);
-                  // Don't stop execution for lessons update failures
-                }
-
-                const failedAfterLessonsPostApplyCommand = await runPostApplyCommands();
-                if (failedAfterLessonsPostApplyCommand) {
-                  error(
-                    `Agent stopping because required command "${failedAfterLessonsPostApplyCommand}" failed.`
-                  );
-                  hasError = true;
-                  recordFailure(`Post-apply command failed: ${failedAfterLessonsPostApplyCommand}`);
-                  if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
-                  break;
-                }
-              } else if (
-                !planStillCompleteAfterReview &&
-                (config.updateDocs?.applyLessons || options.applyLessons)
-              ) {
-                log(
-                  'Skipping lessons-learned documentation update because review added new tasks.'
-                );
-              }
-
-              break;
-            }
-            sendStructured({
-              type: 'task_completion',
-              timestamp: timestamp(),
-              taskTitle: actionableItem.task.title,
-              planComplete: false,
-            });
-          } catch (err) {
-            error('Failed to mark task as done:', err);
-            hasError = true;
-            recordFailure(err);
-            if (summaryEnabled) summaryCollector.addError(err);
-            break;
-          }
-
-          continue;
-        }
-
-        // Handle step execution (existing logic)
-        const pendingTaskInfo = {
-          taskIndex: actionableItem.taskIndex,
-          task: actionableItem.task,
-        };
-
-        const stepPreparationResult = await prepareNextStep(
-          config,
-          currentPlanFile,
-          {
-            filePathPrefix: executor.filePathPrefix,
-          },
-          currentBaseDir
-        ).catch((err) => {
-          error('Failed to prepare next step:', err);
-          hasError = true;
-          recordFailure(err);
-          if (summaryEnabled) summaryCollector.addError(err);
-          return null;
+      const actionableItem = findNextActionableItem(planData);
+      if (!actionableItem) {
+        sendStructured({
+          type: 'task_completion',
+          timestamp: timestamp(),
+          planComplete: true,
         });
+        break;
+      }
 
-        if (!stepPreparationResult) {
-          break;
-        }
-
+      // Branch based on the type of actionable item
+      if (actionableItem.type === 'task') {
+        // Simple task without steps
         sendStructured({
           type: 'agent_iteration_start',
           timestamp: timestamp(),
           iterationNumber: stepCount,
-          taskTitle: pendingTaskInfo.task.title,
-          taskDescription: pendingTaskInfo.task.description,
+          taskTitle: actionableItem.task.title,
+          taskDescription: actionableItem.task.description,
         });
 
-        const { taskIndex } = stepPreparationResult;
-
-        let contextContent: string;
-
-        sendStructured({
-          type: 'workflow_progress',
-          timestamp: timestamp(),
-          phase: 'context',
-          message: 'Using direct prompt as context',
+        // Build the prompt for the simple task using the unified function
+        const taskPrompt = await buildExecutionPromptWithoutSteps({
+          executor,
+          planData,
+          planFilePath: currentPlanFile,
+          baseDir: currentBaseDir,
+          config,
+          task: {
+            title: actionableItem.task.title,
+            description: actionableItem.task.description,
+          },
+          filePathPrefix: executor.filePathPrefix,
+          includeCurrentPlanContext: false, // Don't include current plan context since it's already in project context
         });
-        contextContent = stepPreparationResult.prompt;
-        log(contextContent);
 
         if (options.dryRun) {
-          log('\n--dry-run mode: Would execute the above context');
+          log(boldMarkdownHeaders('\n## Dry Run - Generated Prompt\n'));
+          log(taskPrompt);
+          log('\n--dry-run mode: Would execute the above prompt');
           break;
         }
+
+        if (isShuttingDown()) break;
 
         try {
           sendStructured({
@@ -954,14 +670,14 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
             stepNumber: stepCount,
           });
           const start = Date.now();
-          const output = await executor.execute(contextContent, {
+          const output = await executor.execute(taskPrompt, {
             planId: planData.id?.toString() ?? 'unknown',
             planTitle: planData.title ?? 'Untitled Plan',
             planFilePath: currentPlanFile,
             executionMode,
             captureOutput: summaryEnabled ? 'result' : 'none',
-            retryFastNoopOrchestratorTurn: true,
           });
+          // Detect executor-declared failure and stop early
           const ok = output ? output.success !== false : true;
           if (!ok) {
             const fd = output?.failureDetails;
@@ -979,15 +695,15 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
             timestamp: timestamp(),
             phase: 'execution',
             success: ok,
-            summary: ok ? 'Step execution completed.' : 'Step execution failed.',
+            summary: ok ? 'Task execution completed.' : 'Task execution failed.',
           });
           if (summaryEnabled) {
             const end = Date.now();
             summaryCollector.addStepResult({
-              title: `${pendingTaskInfo.task.title}`,
+              title: `Task ${actionableItem.taskIndex + 1}: ${actionableItem.task.title}`,
               executor: executorName,
-              success: ok,
               output: output ?? undefined,
+              success: ok,
               startedAt: new Date(start).toISOString(),
               endedAt: new Date(end).toISOString(),
               durationMs: end - start,
@@ -995,12 +711,12 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
           }
           if (hasError) break;
         } catch (err) {
-          error('Execution step failed:', err);
+          error('Task execution failed:', err);
           hasError = true;
           recordFailure(err);
           if (summaryEnabled) {
             summaryCollector.addStepResult({
-              title: `${pendingTaskInfo.task.title}`,
+              title: `Task ${actionableItem.taskIndex + 1}: ${actionableItem.task.title}`,
               executor: executorName,
               success: false,
               errorMessage: String(err instanceof Error ? err.message : err),
@@ -1011,11 +727,14 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
             timestamp: timestamp(),
             phase: 'execution',
             success: false,
-            summary: `Step execution threw: ${String(err instanceof Error ? err.message : err)}`,
+            summary: `Task execution threw: ${String(err instanceof Error ? err.message : err)}`,
           });
           break;
         }
 
+        if (isShuttingDown()) break;
+
+        // Run post-apply commands if configured
         const failedPostApplyCommand = await runPostApplyCommands();
         if (failedPostApplyCommand) {
           error(`Agent stopping because required command "${failedPostApplyCommand}" failed.`);
@@ -1027,50 +746,60 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
 
         // Update docs if configured for after-iteration mode
         if (updateDocsMode === 'after-iteration') {
+          if (isShuttingDown()) break;
+
           try {
             await runUpdateDocs(currentPlanFile, config, {
               executor: config.updateDocs?.executor,
               model: config.updateDocs?.model,
               baseDir: currentBaseDir,
-              justCompletedTaskIndices: [taskIndex],
+              justCompletedTaskIndices: [actionableItem.taskIndex],
             });
           } catch (err) {
             error('Failed to update documentation:', err);
             // Don't stop execution for documentation update failures
           }
 
-          const failedAfterDocsPostApplyCommand = await runPostApplyCommands();
-          if (failedAfterDocsPostApplyCommand) {
-            error(
-              `Agent stopping because required command "${failedAfterDocsPostApplyCommand}" failed.`
-            );
-            hasError = true;
-            recordFailure(`Post-apply command failed: ${failedAfterDocsPostApplyCommand}`);
-            if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
-            break;
+          if (!isShuttingDown()) {
+            const failedAfterDocsPostApplyCommand = await runPostApplyCommands();
+            if (failedAfterDocsPostApplyCommand) {
+              error(
+                `Agent stopping because required command "${failedAfterDocsPostApplyCommand}" failed.`
+              );
+              hasError = true;
+              recordFailure(`Post-apply command failed: ${failedAfterDocsPostApplyCommand}`);
+              if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
+              break;
+            }
           }
         }
 
-        let markResult;
+        if (isShuttingDown()) break;
+
+        // Mark the task as done
         try {
-          log(boldMarkdownHeaders('\n## Marking done\n'));
-          markResult = await markStepDone(
+          log(boldMarkdownHeaders('\n## Marking task done\n'));
+          const markResult = await markTaskDone(
             currentPlanFile,
+            actionableItem.taskIndex,
             { commit: true },
-            { taskIndex },
             currentBaseDir,
             config
           );
           // Defer file change tracking to the end for efficiency
-          sendStructured({
-            type: 'task_completion',
-            timestamp: timestamp(),
-            taskTitle: pendingTaskInfo.task.title,
-            planComplete: markResult.planComplete,
-          });
+
           if (markResult.planComplete) {
+            sendStructured({
+              type: 'task_completion',
+              timestamp: timestamp(),
+              taskTitle: actionableItem.task.title,
+              planComplete: true,
+            });
+
             // Update docs if configured for after-completion mode
             if (updateDocsMode === 'after-completion') {
+              if (isShuttingDown()) break;
+
               try {
                 await runUpdateDocs(currentPlanFile, config, {
                   executor: config.updateDocs?.executor,
@@ -1082,6 +811,330 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
                 // Don't stop execution for documentation update failures
               }
 
+              if (!isShuttingDown()) {
+                const failedAfterCompletionDocsPostApplyCommand = await runPostApplyCommands();
+                if (failedAfterCompletionDocsPostApplyCommand) {
+                  error(
+                    `Agent stopping because required command "${failedAfterCompletionDocsPostApplyCommand}" failed.`
+                  );
+                  hasError = true;
+                  recordFailure(
+                    `Post-apply command failed: ${failedAfterCompletionDocsPostApplyCommand}`
+                  );
+                  if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
+                  break;
+                }
+              }
+            }
+
+            if (isShuttingDown()) break;
+
+            // Run final review if enabled
+            // Skip if we started with no completed tasks and finished in a single iteration
+            const shouldSkipFinalReview =
+              options.finalReview === false || (initialCompletedTaskCount === 0 && stepCount === 1);
+            let planStillCompleteAfterReview = true;
+            if (!shouldSkipFinalReview) {
+              sendStructured({
+                type: 'workflow_progress',
+                timestamp: timestamp(),
+                phase: 'final-review',
+                message: 'Running final review',
+              });
+              try {
+                const reviewResult = await handleReviewCommand(
+                  currentPlanFile,
+                  { cwd: currentBaseDir },
+                  {
+                    parent: { opts: () => ({ config: globalCliOptions.config }) },
+                  }
+                );
+
+                // If tasks were appended, ask if user wants to continue
+                if (reviewResult?.tasksAppended && reviewResult.tasksAppended > 0) {
+                  // Read the updated plan to get the plan ID
+                  const updatedPlanData = await readPlanFile(currentPlanFile);
+                  const planIdStr = updatedPlanData.id ? ` ${updatedPlanData.id}` : '';
+                  let shouldContinue = false;
+                  if (!isShuttingDown()) {
+                    shouldContinue = await promptConfirm({
+                      message: `${reviewResult.tasksAppended} new task(s) added from review to plan${planIdStr}. You can edit the plan first if needed. Continue running?`,
+                      default: true,
+                    });
+                  }
+
+                  if (shouldContinue) {
+                    continue; // Continue the loop to process new tasks
+                  }
+
+                  // New tasks were appended but execution is not continuing,
+                  // so the plan is no longer complete.
+                  planStillCompleteAfterReview = false;
+                }
+              } catch (err) {
+                warn(`Final review failed: ${err as Error}`);
+                // Don't fail the agent - plan execution succeeded
+              }
+            }
+
+            if (isShuttingDown()) break;
+
+            if (
+              planStillCompleteAfterReview &&
+              (config.updateDocs?.applyLessons || options.applyLessons)
+            ) {
+              if (isShuttingDown()) break;
+
+              try {
+                await runUpdateLessons(currentPlanFile, config, {
+                  executor: config.updateDocs?.executor,
+                  model: config.updateDocs?.model,
+                  baseDir: currentBaseDir,
+                });
+              } catch (err) {
+                error('Failed to apply lessons learned:', err as Error);
+                // Don't stop execution for lessons update failures
+              }
+
+              if (!isShuttingDown()) {
+                const failedAfterLessonsPostApplyCommand = await runPostApplyCommands();
+                if (failedAfterLessonsPostApplyCommand) {
+                  error(
+                    `Agent stopping because required command "${failedAfterLessonsPostApplyCommand}" failed.`
+                  );
+                  hasError = true;
+                  recordFailure(`Post-apply command failed: ${failedAfterLessonsPostApplyCommand}`);
+                  if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
+                  break;
+                }
+              }
+            } else if (
+              !planStillCompleteAfterReview &&
+              (config.updateDocs?.applyLessons || options.applyLessons)
+            ) {
+              log('Skipping lessons-learned documentation update because review added new tasks.');
+            }
+
+            break;
+          }
+          sendStructured({
+            type: 'task_completion',
+            timestamp: timestamp(),
+            taskTitle: actionableItem.task.title,
+            planComplete: false,
+          });
+        } catch (err) {
+          error('Failed to mark task as done:', err);
+          hasError = true;
+          recordFailure(err);
+          if (summaryEnabled) summaryCollector.addError(err);
+          break;
+        }
+
+        continue;
+      }
+
+      // Handle step execution (existing logic)
+      const pendingTaskInfo = {
+        taskIndex: actionableItem.taskIndex,
+        task: actionableItem.task,
+      };
+
+      const stepPreparationResult = await prepareNextStep(
+        config,
+        currentPlanFile,
+        {
+          filePathPrefix: executor.filePathPrefix,
+        },
+        currentBaseDir
+      ).catch((err) => {
+        error('Failed to prepare next step:', err);
+        hasError = true;
+        recordFailure(err);
+        if (summaryEnabled) summaryCollector.addError(err);
+        return null;
+      });
+
+      if (!stepPreparationResult) {
+        break;
+      }
+
+      sendStructured({
+        type: 'agent_iteration_start',
+        timestamp: timestamp(),
+        iterationNumber: stepCount,
+        taskTitle: pendingTaskInfo.task.title,
+        taskDescription: pendingTaskInfo.task.description,
+      });
+
+      const { taskIndex } = stepPreparationResult;
+
+      let contextContent: string;
+
+      sendStructured({
+        type: 'workflow_progress',
+        timestamp: timestamp(),
+        phase: 'context',
+        message: 'Using direct prompt as context',
+      });
+      contextContent = stepPreparationResult.prompt;
+      log(contextContent);
+
+      if (options.dryRun) {
+        log('\n--dry-run mode: Would execute the above context');
+        break;
+      }
+
+      if (isShuttingDown()) break;
+
+      try {
+        sendStructured({
+          type: 'agent_step_start',
+          timestamp: timestamp(),
+          phase: 'execution',
+          executor: executorName,
+          stepNumber: stepCount,
+        });
+        const start = Date.now();
+        const output = await executor.execute(contextContent, {
+          planId: planData.id?.toString() ?? 'unknown',
+          planTitle: planData.title ?? 'Untitled Plan',
+          planFilePath: currentPlanFile,
+          executionMode,
+          captureOutput: summaryEnabled ? 'result' : 'none',
+          retryFastNoopOrchestratorTurn: true,
+        });
+        const ok = output ? output.success !== false : true;
+        if (!ok) {
+          const fd = output?.failureDetails;
+          sendFailureReport(fd?.problems || 'Executor reported failure.', {
+            requirements: fd?.requirements,
+            problems: fd?.problems,
+            solutions: fd?.solutions,
+            sourceAgent: fd?.sourceAgent,
+          });
+          hasError = true;
+          recordFailure(fd?.problems || 'Executor reported failure.');
+        }
+        sendStructured({
+          type: 'agent_step_end',
+          timestamp: timestamp(),
+          phase: 'execution',
+          success: ok,
+          summary: ok ? 'Step execution completed.' : 'Step execution failed.',
+        });
+        if (summaryEnabled) {
+          const end = Date.now();
+          summaryCollector.addStepResult({
+            title: `${pendingTaskInfo.task.title}`,
+            executor: executorName,
+            success: ok,
+            output: output ?? undefined,
+            startedAt: new Date(start).toISOString(),
+            endedAt: new Date(end).toISOString(),
+            durationMs: end - start,
+          });
+        }
+        if (hasError) break;
+      } catch (err) {
+        error('Execution step failed:', err);
+        hasError = true;
+        recordFailure(err);
+        if (summaryEnabled) {
+          summaryCollector.addStepResult({
+            title: `${pendingTaskInfo.task.title}`,
+            executor: executorName,
+            success: false,
+            errorMessage: String(err instanceof Error ? err.message : err),
+          });
+        }
+        sendStructured({
+          type: 'agent_step_end',
+          timestamp: timestamp(),
+          phase: 'execution',
+          success: false,
+          summary: `Step execution threw: ${String(err instanceof Error ? err.message : err)}`,
+        });
+        break;
+      }
+
+      if (isShuttingDown()) break;
+
+      const failedPostApplyCommand = await runPostApplyCommands();
+      if (failedPostApplyCommand) {
+        error(`Agent stopping because required command "${failedPostApplyCommand}" failed.`);
+        hasError = true;
+        recordFailure(`Post-apply command failed: ${failedPostApplyCommand}`);
+        if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
+        break;
+      }
+
+      // Update docs if configured for after-iteration mode
+      if (updateDocsMode === 'after-iteration') {
+        if (isShuttingDown()) break;
+
+        try {
+          await runUpdateDocs(currentPlanFile, config, {
+            executor: config.updateDocs?.executor,
+            model: config.updateDocs?.model,
+            baseDir: currentBaseDir,
+            justCompletedTaskIndices: [taskIndex],
+          });
+        } catch (err) {
+          error('Failed to update documentation:', err);
+          // Don't stop execution for documentation update failures
+        }
+
+        if (!isShuttingDown()) {
+          const failedAfterDocsPostApplyCommand = await runPostApplyCommands();
+          if (failedAfterDocsPostApplyCommand) {
+            error(
+              `Agent stopping because required command "${failedAfterDocsPostApplyCommand}" failed.`
+            );
+            hasError = true;
+            recordFailure(`Post-apply command failed: ${failedAfterDocsPostApplyCommand}`);
+            if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
+            break;
+          }
+        }
+      }
+
+      if (isShuttingDown()) break;
+
+      let markResult;
+      try {
+        log(boldMarkdownHeaders('\n## Marking done\n'));
+        markResult = await markStepDone(
+          currentPlanFile,
+          { commit: true },
+          { taskIndex },
+          currentBaseDir,
+          config
+        );
+        // Defer file change tracking to the end for efficiency
+        sendStructured({
+          type: 'task_completion',
+          timestamp: timestamp(),
+          taskTitle: pendingTaskInfo.task.title,
+          planComplete: markResult.planComplete,
+        });
+        if (markResult.planComplete) {
+          // Update docs if configured for after-completion mode
+          if (updateDocsMode === 'after-completion') {
+            if (isShuttingDown()) break;
+
+            try {
+              await runUpdateDocs(currentPlanFile, config, {
+                executor: config.updateDocs?.executor,
+                model: config.updateDocs?.model,
+                baseDir: currentBaseDir,
+              });
+            } catch (err) {
+              error('Failed to update documentation:', err);
+              // Don't stop execution for documentation update failures
+            }
+
+            if (!isShuttingDown()) {
               const failedAfterCompletionDocsPostApplyCommand = await runPostApplyCommands();
               if (failedAfterCompletionDocsPostApplyCommand) {
                 error(
@@ -1095,19 +1148,23 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
                 break;
               }
             }
+          }
 
-            if (config.updateDocs?.applyLessons || options.applyLessons) {
-              try {
-                await runUpdateLessons(currentPlanFile, config, {
-                  executor: config.updateDocs?.executor,
-                  model: config.updateDocs?.model,
-                  baseDir: currentBaseDir,
-                });
-              } catch (err) {
-                error('Failed to apply lessons learned:', err as Error);
-                // Don't stop execution for lessons update failures
-              }
+          if (config.updateDocs?.applyLessons || options.applyLessons) {
+            if (isShuttingDown()) break;
 
+            try {
+              await runUpdateLessons(currentPlanFile, config, {
+                executor: config.updateDocs?.executor,
+                model: config.updateDocs?.model,
+                baseDir: currentBaseDir,
+              });
+            } catch (err) {
+              error('Failed to apply lessons learned:', err as Error);
+              // Don't stop execution for lessons update failures
+            }
+
+            if (!isShuttingDown()) {
               const failedAfterLessonsPostApplyCommand = await runPostApplyCommands();
               if (failedAfterLessonsPostApplyCommand) {
                 error(
@@ -1119,28 +1176,21 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
                 break;
               }
             }
-
-            break;
           }
-        } catch (err) {
-          error('Failed to mark step as done:', err);
-          hasError = true;
-          recordFailure(err);
-          if (summaryEnabled) summaryCollector.addError(err);
+
           break;
         }
+      } catch (err) {
+        error('Failed to mark step as done:', err);
+        hasError = true;
+        recordFailure(err);
+        if (summaryEnabled) summaryCollector.addError(err);
+        break;
       }
+    }
 
-      if (hasError) {
-        throw new Error('Agent stopped due to error.');
-      }
-    } finally {
-      if (summaryEnabled) {
-        summaryCollector.recordExecutionEnd();
-        await summaryCollector.trackFileChanges(currentBaseDir);
-        await writeOrDisplaySummary(summaryCollector.getExecutionSummary(), summaryFilePath);
-      }
-      await closeLogFile();
+    if (hasError) {
+      throw new Error('Agent stopped due to error.');
     }
   } catch (err) {
     hadExecutionFailure = true;
@@ -1148,7 +1198,7 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     throw err;
   } finally {
     let workspaceSyncError: Error | undefined;
-    if (roundTripContext) {
+    if (roundTripContext && !isShuttingDown()) {
       try {
         const planTitle = lastKnownPlan?.title || path.parse(currentPlanFile).name;
         await runPostExecutionWorkspaceSync(roundTripContext, planTitle);
@@ -1170,6 +1220,28 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
       }
     }
 
+    try {
+      await lifecycleManager?.shutdown();
+    } catch (err) {
+      lifecycleShutdownError = err instanceof Error ? err : new Error(String(err));
+      if (!executionError) {
+        executionError = lifecycleShutdownError;
+      } else {
+        error(
+          `Lifecycle shutdown failed (cleanup commands may not have completed): ${lifecycleShutdownError}`
+        );
+      }
+    } finally {
+      unregisterLifecycleCleanup?.();
+    }
+
+    if (summaryEnabled && summaryCollector) {
+      summaryCollector.recordExecutionEnd();
+      await summaryCollector.trackFileChanges(currentBaseDir);
+      await writeOrDisplaySummary(summaryCollector.getExecutionSummary(), summaryFilePath);
+    }
+    await closeLogFile();
+
     let planForNotification = lastKnownPlan;
     try {
       planForNotification = await readPlanFile(currentPlanFile);
@@ -1180,8 +1252,9 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     }
 
     const planSummary = planForNotification ? getCombinedTitleFromSummary(planForNotification) : '';
-    const status = executionError ? 'error' : 'success';
-    let message = `tim agent ${executionError ? 'failed' : 'completed'}`;
+    const interrupted = isShuttingDown();
+    const status = executionError ? 'error' : interrupted ? 'interrupted' : 'success';
+    let message = `tim agent ${executionError ? 'failed' : interrupted ? 'interrupted' : 'completed'}`;
     if (planSummary) {
       message += `: ${planSummary}`;
     }
@@ -1206,6 +1279,16 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
 
     if (!hadExecutionFailure && workspaceSyncError) {
       postExecutionError = workspaceSyncError;
+    }
+    if (!hadExecutionFailure && !postExecutionError && lifecycleShutdownError) {
+      postExecutionError = lifecycleShutdownError;
+    }
+
+    // Disable deferred exit — no more async cleanup to do
+    setDeferSignalExit(false);
+
+    if (isShuttingDown()) {
+      process.exit(getSignalExitCode() ?? 1);
     }
   }
 

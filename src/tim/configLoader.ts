@@ -118,7 +118,8 @@ function mergeConfigs(mainConfig: TimConfig, localConfig: TimConfig): TimConfig 
     }
   }
 
-  // Handle lifecycle.commands: concatenate command arrays while shallow-merging lifecycle object fields
+  // Handle lifecycle.commands: concatenate command arrays while shallow-merging lifecycle object fields.
+  // When only mainConfig has lifecycle, it's already in `merged` via the initial spread.
   if (localConfig.lifecycle !== undefined) {
     if (mainConfig.lifecycle && localConfig.lifecycle) {
       const mergedLifecycle: NonNullable<TimConfig['lifecycle']> = {

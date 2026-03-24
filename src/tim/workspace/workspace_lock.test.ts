@@ -6,6 +6,7 @@ import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { getOrCreateProject } from '../db/project.js';
 import { isProcessAlive } from '../db/workspace_lock.js';
 import { recordWorkspace } from '../db/workspace.js';
+import { resetShutdownState, setDeferSignalExit } from '../shutdown_state.js';
 import { WorkspaceLock } from './workspace_lock';
 
 describe('WorkspaceLock', () => {
@@ -21,6 +22,7 @@ describe('WorkspaceLock', () => {
     process.env.XDG_CONFIG_HOME = tempDir;
     closeDatabaseForTesting();
     WorkspaceLock.setTestPid(undefined);
+    resetShutdownState();
 
     const db = getDatabase();
     const project = getOrCreateProject(db, 'workspace-lock-db-test-repo');
@@ -44,6 +46,7 @@ describe('WorkspaceLock', () => {
   afterEach(async () => {
     WorkspaceLock.setTestPid(undefined);
     closeDatabaseForTesting();
+    resetShutdownState();
 
     if (originalXdgConfigHome === undefined) {
       delete process.env.XDG_CONFIG_HOME;
@@ -243,6 +246,21 @@ describe('WorkspaceLock', () => {
     for (const signal of signals) {
       expect(process.listeners(signal).length).toBe(beforeCounts[signal]);
     }
+  });
+
+  test('signal cleanup does not release pid lock when deferred signal exit is enabled', async () => {
+    await WorkspaceLock.acquireLock(cleanupWorkspacePath, 'tim agent run', { type: 'pid' });
+    WorkspaceLock.setupCleanupHandlers(cleanupWorkspacePath, 'pid');
+    setDeferSignalExit(true);
+
+    const sigintListeners = process.listeners('SIGINT');
+    const cleanupOnSignal = sigintListeners[sigintListeners.length - 1];
+    cleanupOnSignal?.();
+
+    expect(await WorkspaceLock.getLockInfo(cleanupWorkspacePath)).not.toBeNull();
+
+    setDeferSignalExit(false);
+    await WorkspaceLock.releaseLock(cleanupWorkspacePath);
   });
 
   test('isProcessAlive correctly detects running process', () => {

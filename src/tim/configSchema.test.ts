@@ -113,6 +113,26 @@ describe('configSchema', () => {
     });
   });
 
+  describe('lifecycle configuration', () => {
+    test('accepts lifecycle commands with onlyWorkspaceType', () => {
+      const config = {
+        lifecycle: {
+          commands: [
+            {
+              title: 'docker',
+              command: 'docker compose up -d',
+              shutdown: 'docker compose down',
+              onlyWorkspaceType: 'auto' as const,
+            },
+          ],
+        },
+      };
+
+      const result = timConfigSchema.parse(config);
+      expect(result.lifecycle?.commands?.[0]?.onlyWorkspaceType).toBe('auto');
+    });
+  });
+
   describe('getDefaultConfig', () => {
     test('should include issueTracker with default value "github"', () => {
       const defaultConfig = getDefaultConfig();
