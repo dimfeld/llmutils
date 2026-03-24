@@ -222,6 +222,8 @@ async function createHangingShutdownWithChildCommand(
     'utf8'
   );
 
+  // Intentionally NOT using `exec` — the test needs a shell wrapper + child process
+  // tree to verify that process group cleanup kills the entire tree, not just the shell.
   return `node ${JSON.stringify(launcherScriptPath)}`;
 }
 
@@ -1089,6 +1091,8 @@ describe('LifecycleManager', () => {
   test('killDaemons coordinates cleanly when it races the shutdown timeout', async () => {
     const launcherPidFile = path.join(tempDir, 'race-shutdown-launcher.pid');
     const childPidFile = path.join(tempDir, 'race-shutdown-child.pid');
+    // Use a long timeout so killDaemons() always fires before the timeout,
+    // making the race deterministic rather than timing-dependent.
     const manager = new LifecycleManager(
       [
         {
@@ -1105,14 +1109,13 @@ describe('LifecycleManager', () => {
       ],
       tempDir,
       undefined,
-      200
+      5000
     );
     await manager.startup();
 
     const shutdownPromise = manager.shutdown();
     await waitForLine(logFile, 'shutdown-launcher-start');
     await waitForLine(logFile, 'shutdown-child-start');
-    await Bun.sleep(150);
     manager.killDaemons();
 
     await expect(shutdownPromise).rejects.toThrow('Lifecycle shutdown had 1 failure(s)');
