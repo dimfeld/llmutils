@@ -6,6 +6,7 @@ import * as logging from '../logging.js';
 import { LifecycleManager } from './lifecycle.js';
 import type { LifecycleCommand } from './configSchema.js';
 import type { WorkspaceType } from './db/workspace.js';
+import { resetShutdownState, setShuttingDown } from './shutdown_state.js';
 
 async function readLines(filePath: string): Promise<string[]> {
   try {
@@ -188,6 +189,7 @@ describe('LifecycleManager', () => {
   });
 
   afterEach(async () => {
+    resetShutdownState();
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
@@ -600,6 +602,29 @@ describe('LifecycleManager', () => {
     ]);
 
     expect(events).toEqual(['seed', 'seed-reset']);
+  });
+
+  test('shutdown requested during a check prevents the startup command from running', async () => {
+    const manager = new LifecycleManager(
+      [
+        {
+          title: 'seed',
+          command: appendLineCommand(logFile, 'seed'),
+          check: `${appendLineCommand(logFile, 'check-start')}; sleep 0.2`,
+          shutdown: appendLineCommand(logFile, 'seed-reset'),
+        },
+      ],
+      tempDir,
+      undefined
+    );
+
+    const startupPromise = manager.startup();
+    await waitForLine(logFile, 'check-start');
+    setShuttingDown(130);
+    await startupPromise;
+    await manager.shutdown();
+
+    expect(await readLines(logFile)).toEqual(['check-start']);
   });
 
   test('check is ignored for run commands without shutdown behavior', async () => {

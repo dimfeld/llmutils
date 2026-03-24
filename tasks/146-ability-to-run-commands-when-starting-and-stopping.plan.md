@@ -5,12 +5,12 @@ goal: ""
 id: 146
 uuid: e37079a4-2cc9-4161-a9a6-b75de7a45756
 generatedBy: agent
-status: done
+status: in_progress
 priority: medium
 planGeneratedAt: 2026-02-15T09:35:34.117Z
 promptsGeneratedAt: 2026-02-15T09:35:34.117Z
 createdAt: 2025-11-07T21:16:48.398Z
-updatedAt: 2026-03-24T18:45:44.921Z
+updatedAt: 2026-03-24T20:38:55.791Z
 tasks:
   - title: Restructure signal handling for async cleanup
     done: true
@@ -171,34 +171,126 @@ tasks:
   - title: "Address Review Feedback: Lifecycle shutdown runs after summary tracking
       and log-file closure, not before."
     done: true
-    description: >-
-      Moved lifecycle shutdown into the outer finally block that wraps all
-      execution paths (stub-plan, batch, serial), ensuring it runs before
-      summary tracking and log-file closure. Previously shutdown was only in
-      the serial mode's inner finally.
+    description: Moved lifecycle shutdown into the outer finally block that wraps
+      all execution paths (stub-plan, batch, serial), ensuring it runs before
+      summary tracking and log-file closure. Previously shutdown was only in the
+      serial mode's inner finally.
   - title: "Address Review Feedback: The signal-handling redesign still releases
       workspace locks before lifecycle shutdown runs."
     done: true
-    description: >-
-      Made workspace_lock.ts signal handlers respect isDeferSignalExit(). When
-      deferred, lock release is skipped on SIGINT/SIGTERM/SIGHUP signals — the
-      lock is released through the normal exit event handler after lifecycle
+    description: Made workspace_lock.ts signal handlers respect isDeferSignalExit().
+      When deferred, lock release is skipped on SIGINT/SIGTERM/SIGHUP signals —
+      the lock is released through the normal exit event handler after lifecycle
       shutdown completes.
   - title: "Address Review Feedback: runUpdateDocs and runUpdateLessons execute
       after shutdown is requested."
     done: true
-    description: >-
-      Added isShuttingDown() checks before each runUpdateDocs() and
+    description: Added isShuttingDown() checks before each runUpdateDocs() and
       runUpdateLessons() call in agent.ts and batch_mode.ts so these
       long-running LLM operations are skipped when shutdown has been requested.
   - title: "Address Review Feedback: Daemon termination failures are swallowed."
     done: true
-    description: >-
-      Modified stopDaemon() to throw errors when SIGTERM/SIGKILL delivery
+    description: Modified stopDaemon() to throw errors when SIGTERM/SIGKILL delivery
       fails instead of silently returning. Errors are caught by shutdown()'s
       try/catch and included in the aggregated shutdown error. Added TOCTOU
       guard (re-check isProcessRunning after failed kill) and pre-SIGKILL
       liveness check.
+  - title: "Address Review Feedback: Interrupting during a lifecycle `check` can
+      still start the real startup command."
+    done: false
+    description: |-
+      Interrupting during a lifecycle `check` can still start the real startup command. In [`src/tim/lifecycle.ts`](/Users/dimfeld/Documents/projects/llmutils-projects-1774226734072/src/tim/lifecycle.ts#L84), `startup()` awaits `runShellCommand(command.check)` and then immediately falls through into `spawnDaemon()` / `runShellCommand(command.command)` without re-checking `isShuttingDown()`. If SIGINT/SIGTERM arrives while the check command is running, shutdown is already requested, but the actual startup command still runs anyway. That means a Ctrl+C during a `docker compose ps`-style check can still launch the daemon or setup command after the user has asked the agent to stop. This violates the interrupt semantics this change is supposed to enforce.
+
+      Suggestion: Re-check `isShuttingDown()` immediately after the check command returns and bail out before starting the real lifecycle command. Add a regression test in [`src/tim/lifecycle.test.ts`](/Users/dimfeld/Documents/projects/llmutils-projects-1774226734072/src/tim/lifecycle.test.ts) that simulates shutdown during a check command and asserts that the startup command never runs.
+
+      Related file: src/tim/lifecycle.ts:84-105
+  - title: "Address Review Feedback: For run-mode commands, `shouldRunShutdown` is
+      set at line 159 AFTER `await runShellCommand()` completes."
+    done: false
+    description: >-
+      For run-mode commands, `shouldRunShutdown` is set at line 159 AFTER `await
+      runShellCommand()` completes. If a signal arrives while the run-mode
+      startup command is executing, `shouldRunShutdown` is still `false`, so the
+      corresponding shutdown command is silently skipped. Compare with daemon
+      mode (line 123) where `shouldRunShutdown` is set BEFORE the await. This
+      means a command like 'seed test data' with `shutdown: 'bun run
+      seed:reset'` would skip cleanup if the user Ctrl+C's during the seed
+      command.
+
+
+      Suggestion: Move `state.shouldRunShutdown = Boolean(command.shutdown)` to
+      before line 146 (before the `await runShellCommand` call), matching the
+      daemon pattern at line 123.
+
+
+      Related file: src/tim/lifecycle.ts:143-159
+  - title: "Address Review Feedback: `runShellCommand` during shutdown waits
+      indefinitely for the shutdown command to complete."
+    done: false
+    description: >-
+      `runShellCommand` during shutdown waits indefinitely for the shutdown
+      command to complete. If a shutdown command hangs (e.g., `docker compose
+      down` on a wedged network), the entire shutdown process hangs. The user's
+      only recourse is a second Ctrl+C (force exit), which kills daemons via
+      `killDaemons()` but does NOT kill the transient shell process spawned by
+      `runShellCommand` — `killDaemons()` only tracks daemon processes. This
+      leaves orphaned shell processes even after force-exit.
+
+
+      Suggestion: Track active shutdown command processes so `killDaemons()` can
+      kill them too on force-exit. Alternatively, add a configurable timeout
+      (e.g., 30s default) for shutdown commands.
+
+
+      Related file: src/tim/lifecycle.ts:197-198
+  - title: "Address Review Feedback: `Promise.race` in `waitForProcessExit` races
+      `proc.exited` against `wait(timeoutMs)`."
+    done: false
+    description: >-
+      `Promise.race` in `waitForProcessExit` races `proc.exited` against
+      `wait(timeoutMs)`. When the process exits before the timeout, the
+      `setTimeout` from `wait()` continues running for up to
+      DAEMON_SIGTERM_TIMEOUT_MS (5 seconds), keeping the event loop alive and
+      delaying process exit during shutdown.
+
+
+      Suggestion: Use a clearable timeout pattern: store the timer ID and clear
+      it when the race resolves, or use `AbortSignal.timeout()` with
+      `Bun.sleep`.
+
+
+      Related file: src/tim/lifecycle.ts:305
+  - title: "Address Review Feedback: Same non-cleared timer issue in the SIGKILL
+      wait path at line 441-443."
+    done: false
+    description: >-
+      Same non-cleared timer issue in the SIGKILL wait path at line 441-443. The
+      1-second DAEMON_SIGKILL_WAIT_MS timer also keeps the event loop alive
+      unnecessarily.
+
+
+      Suggestion: Apply the same clearable timeout fix as for
+      waitForProcessExit.
+
+
+      Related file: src/tim/lifecycle.ts:441-443
+  - title: "Address Review Feedback: agent.lifecycle.test.ts mocks 16 modules,
+      testing orchestration flow but not real integration."
+    done: false
+    description: >-
+      agent.lifecycle.test.ts mocks 16 modules, testing orchestration flow but
+      not real integration. There's no end-to-end test for the signal →
+      lifecycle shutdown → daemon kill flow. The lifecycle.test.ts tests use
+      real processes (which is good), but the agent integration path is only
+      tested with mocks.
+
+
+      Suggestion: Consider adding a focused integration test that exercises
+      timAgent() with real (trivial) lifecycle commands and a simulated signal,
+      without mocking the lifecycle manager.
+
+
+      Related file: src/tim/commands/agent/agent.lifecycle.test.ts:91-189
 changedFiles:
   - CLAUDE.md
   - README.md

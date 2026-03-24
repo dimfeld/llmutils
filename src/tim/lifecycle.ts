@@ -100,6 +100,10 @@ export class LifecycleManager {
           log(`Skipping lifecycle command "${command.title}" because its check command succeeded.`);
           continue;
         }
+
+        if (isShuttingDown()) {
+          break;
+        }
       }
 
       if (mode === 'daemon') {
@@ -141,6 +145,7 @@ export class LifecycleManager {
       }
 
       log(`Running lifecycle command "${command.title}"...`);
+      state.shouldRunShutdown = Boolean(command.shutdown);
       let exitCode: number;
       try {
         exitCode = await this.runShellCommand(command, {
@@ -156,7 +161,6 @@ export class LifecycleManager {
         }
         throw err;
       }
-      state.shouldRunShutdown = Boolean(command.shutdown);
 
       if (exitCode === 0) {
         state.startupState = 'succeeded';
@@ -302,7 +306,11 @@ export class LifecycleManager {
       return true;
     }
 
-    return await Promise.race([proc.exited.then(() => true), wait(timeoutMs).then(() => false)]);
+    return await this.raceWithTimeout(
+      proc.exited.then(() => true),
+      timeoutMs,
+      false
+    );
   }
 
   private handleDaemonFailure(state: LifecycleCommandState, exitCode: number): void {
@@ -397,6 +405,27 @@ export class LifecycleManager {
     return proc.exitCode === null;
   }
 
+  private async raceWithTimeout<T>(
+    promise: Promise<T>,
+    timeoutMs: number,
+    timeoutValue: T
+  ): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<T>((resolve) => {
+          timer = setTimeout(() => resolve(timeoutValue), timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timer !== undefined) {
+        clearTimeout(timer);
+      }
+    }
+  }
+
   private async stopDaemon(state: LifecycleCommandState): Promise<void> {
     const proc = state.daemon;
     if (!proc || !this.isProcessRunning(proc)) {
@@ -438,10 +467,11 @@ export class LifecycleManager {
       throw new Error(`Failed to kill lifecycle daemon "${state.command.title}" with SIGKILL.`);
     }
 
-    const exitedAfterSigkill = await Promise.race([
+    const exitedAfterSigkill = await this.raceWithTimeout(
       proc.exited.then(() => true),
-      wait(DAEMON_SIGKILL_WAIT_MS).then(() => false),
-    ]);
+      DAEMON_SIGKILL_WAIT_MS,
+      false
+    );
     if (!exitedAfterSigkill && this.isProcessRunning(proc)) {
       throw new Error(`Lifecycle daemon "${state.command.title}" did not exit after SIGKILL.`);
     }
