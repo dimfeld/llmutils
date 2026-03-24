@@ -16,7 +16,14 @@
     info: { emoji: '\u{2139}\u{FE0F}', colorClass: 'text-blue-400' },
   };
 
-  let issues = $derived(Array.isArray(message.issues) ? message.issues : []);
+  let issues = $derived(
+    Array.isArray(message.issues)
+      ? message.issues.filter(
+          (i): i is ReviewIssue =>
+            i != null && typeof i === 'object' && typeof i.severity === 'string'
+        )
+      : []
+  );
   let recommendations = $derived(
     Array.isArray(message.recommendations) ? message.recommendations : []
   );

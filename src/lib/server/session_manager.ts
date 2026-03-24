@@ -767,6 +767,10 @@ export class SessionManager {
       if (typeof message.requestId !== 'string' || !isObjectRecord(message.promptConfig)) {
         return;
       }
+      // Validate choices is an array (or absent) so cloneSession/PromptRenderer don't crash
+      if (message.promptConfig.choices != null && !Array.isArray(message.promptConfig.choices)) {
+        return;
+      }
 
       // Clear previous prompt if one was still active
       if (session.activePrompt && !session.isReplaying) {
