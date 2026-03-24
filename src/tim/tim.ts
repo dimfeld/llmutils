@@ -118,6 +118,41 @@ async function runWithCommandTunnelAdapter<T>(callback: () => Promise<T> | T): P
 }
 
 const program = new Command();
+
+type SignalHandlerProcess = Pick<NodeJS.Process, 'on'>;
+
+export function registerShutdownSignalHandlers(
+  cleanupRegistry: Pick<CleanupRegistry, 'executeAll'> = CleanupRegistry.getInstance(),
+  proc: SignalHandlerProcess = process
+): void {
+  proc.on('exit', () => {
+    cleanupRegistry.executeAll();
+  });
+
+  proc.on('SIGINT', () => {
+    if (isShuttingDown()) {
+      return;
+    }
+    cleanupRegistry.executeAll();
+    setShuttingDown(130);
+  });
+
+  proc.on('SIGTERM', () => {
+    if (isShuttingDown()) {
+      return;
+    }
+    cleanupRegistry.executeAll();
+    setShuttingDown(143);
+  });
+
+  proc.on('SIGHUP', () => {
+    if (isShuttingDown()) {
+      return;
+    }
+    cleanupRegistry.executeAll();
+    setShuttingDown(129);
+  });
+}
 program.name('tim').description('Generate and execute task plans using LLMs');
 
 const statusSchemaHelpText = `(${statusSchema.options.join(', ')})`;
@@ -1488,35 +1523,7 @@ async function run() {
   enableAutoClaim();
 
   // Set up signal handlers for cleanup
-  const cleanupRegistry = CleanupRegistry.getInstance();
-
-  process.on('exit', () => {
-    cleanupRegistry.executeAll();
-  });
-
-  process.on('SIGINT', () => {
-    if (isShuttingDown()) {
-      return;
-    }
-    cleanupRegistry.executeAll();
-    setShuttingDown(130);
-  });
-
-  process.on('SIGTERM', () => {
-    if (isShuttingDown()) {
-      return;
-    }
-    cleanupRegistry.executeAll();
-    setShuttingDown(143);
-  });
-
-  process.on('SIGHUP', () => {
-    if (isShuttingDown()) {
-      return;
-    }
-    cleanupRegistry.executeAll();
-    setShuttingDown(129);
-  });
+  registerShutdownSignalHandlers();
 
   await program.parseAsync(process.argv);
 }
