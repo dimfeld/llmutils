@@ -194,15 +194,50 @@ tim remove-task 123 --interactive      # Select interactively
 
 ### tim set
 
-Update plan metadata.
+Update plan metadata. Supports adding and removing most plan properties.
 
 ```bash
+# Status and priority
 tim set 123 --status in_progress
 tim set 123 --status done
 tim set 123 --priority high
+tim set 123 --status-description "Waiting on API review"
+tim set 123 --no-status-description    # Remove status description
+
+# Dependencies
+tim set 123 --depends-on 101 102       # Add dependencies
+tim set 123 --no-depends-on 101        # Remove a dependency
+
+# Parent/child relationships
 tim set 123 --parent 100
+tim set 123 --no-parent                # Remove parent
+
+# Discovery tracking
+tim set 123 --discovered-from 99
+tim set 123 --no-discovered-from       # Remove
+
+# Tags
 tim set 123 --tag backend
 tim set 123 --no-tag frontend          # Remove tag
+
+# Issues and docs
+tim set 123 --issue https://github.com/org/repo/issues/456
+tim set 123 --no-issue https://github.com/org/repo/issues/456
+tim set 123 --doc docs/design.md
+tim set 123 --no-doc docs/design.md
+
+# Assignment
+tim set 123 --assign username
+tim set 123 --no-assign
+
+# Plan type flags
+tim set 123 --epic                     # Mark as epic
+tim set 123 --no-epic
+tim set 123 --simple                   # Mark as simple
+tim set 123 --no-simple
+
+# Rmfilter files
+tim set 123 --rmfilter src/api.ts src/db.ts
 ```
 
 ## Prompt Commands

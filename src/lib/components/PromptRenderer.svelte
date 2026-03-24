@@ -89,7 +89,7 @@
   }
 </script>
 
-<div class="border-b border-gray-700 bg-gray-800 px-4 py-3">
+<div class="max-h-full overflow-y-auto border-b border-gray-700 bg-gray-800 px-4 py-3">
   {#if prompt.promptConfig.header}
     <div class="mb-1 text-xs font-semibold text-gray-400 uppercase">
       {prompt.promptConfig.header}

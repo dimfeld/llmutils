@@ -208,7 +208,7 @@
 
   <!-- Prompt area (fixed above messages) -->
   {#if !session.isReplaying && session.activePrompt}
-    <div class="shrink-0">
+    <div class="max-h-1/2 overflow-y-auto">
       {#key session.activePrompt.requestId}
         <PromptRenderer prompt={session.activePrompt} connectionId={session.connectionId} />
       {/key}
