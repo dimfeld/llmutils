@@ -145,6 +145,26 @@ async function createImmediateExitDaemonCommand(
   return `exec node ${JSON.stringify(scriptPath)}`;
 }
 
+async function createDelayedExitDaemonCommand(
+  filePath: string,
+  exitCode: number,
+  delayMs: number,
+  startLine: string
+): Promise<string> {
+  const scriptPath = path.join(path.dirname(filePath), `delayed-exit-${exitCode}-${delayMs}.cjs`);
+  await fs.writeFile(
+    scriptPath,
+    [
+      `const fs = require('node:fs');`,
+      `fs.appendFileSync(${JSON.stringify(filePath)}, ${JSON.stringify(startLine + '\n')});`,
+      `setTimeout(() => process.exit(${exitCode}), ${delayMs});`,
+      `setInterval(() => {}, 1000);`,
+    ].join('\n'),
+    'utf8'
+  );
+  return `exec node ${JSON.stringify(scriptPath)}`;
+}
+
 function processExists(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -368,6 +388,59 @@ describe('LifecycleManager', () => {
     expect(await readLines(logFile)).toEqual(['test-value']);
   });
 
+  test('spawn-time startup failures respect allowFailure for run commands', async () => {
+    const missingDir = path.join(tempDir, 'missing-dir');
+    const events = await startupAndShutdown([
+      {
+        title: 'allowed missing cwd',
+        command: appendLineCommand(logFile, 'should-not-run'),
+        workingDirectory: missingDir,
+        allowFailure: true,
+      },
+      {
+        title: 'after',
+        command: appendLineCommand(logFile, 'after'),
+      },
+    ]);
+
+    expect(events).toEqual(['after']);
+  });
+
+  test('spawn-time startup failures still throw when allowFailure is false', async () => {
+    const manager = new LifecycleManager(
+      [
+        {
+          title: 'missing cwd',
+          command: appendLineCommand(logFile, 'never'),
+          workingDirectory: path.join(tempDir, 'missing-dir'),
+        },
+      ],
+      tempDir,
+      undefined
+    );
+
+    await expect(manager.startup()).rejects.toThrow();
+  });
+
+  test('spawn-time startup failures respect allowFailure for daemon commands', async () => {
+    const events = await startupAndShutdown([
+      {
+        title: 'allowed missing cwd daemon',
+        command: 'node -e "setInterval(() => {}, 1000)"',
+        mode: 'daemon',
+        workingDirectory: path.join(tempDir, 'missing-daemon-dir'),
+        allowFailure: true,
+        shutdown: appendLineCommand(logFile, 'daemon-stop'),
+      },
+      {
+        title: 'after',
+        command: appendLineCommand(logFile, 'after'),
+      },
+    ]);
+
+    expect(events).toEqual(['after']);
+  });
+
   test('shutdown still cleans up previously started daemons after startup aborts', async () => {
     const manager = new LifecycleManager(
       [
@@ -541,6 +614,36 @@ describe('LifecycleManager', () => {
     expect(processExists(pid)).toBeFalse();
   }, 10000);
 
+  test('warns when a running daemon exits unexpectedly later', async () => {
+    const warnSpy = spyOn(logging, 'warn').mockImplementation(() => {});
+
+    try {
+      const manager = new LifecycleManager(
+        [
+          {
+            title: 'flaky daemon',
+            command: await createDelayedExitDaemonCommand(logFile, 12, 150, 'flaky-start'),
+            mode: 'daemon',
+            shutdown: appendLineCommand(logFile, 'flaky-stop'),
+          },
+        ],
+        tempDir,
+        undefined
+      );
+
+      await manager.startup();
+      await waitForLine(logFile, 'flaky-start');
+      await Bun.sleep(300);
+      await manager.shutdown();
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        'Lifecycle daemon "flaky daemon" exited unexpectedly with code 12.'
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   test('daemon shutdown kills non-exec child processes via the daemon process group', async () => {
     const launcherPidFile = path.join(tempDir, 'launcher.pid');
     const childPidFile = path.join(tempDir, 'child.pid');
@@ -591,6 +694,26 @@ describe('LifecycleManager', () => {
     ]);
 
     expect(events).toEqual(['first', 'second', 'second-stop']);
+  });
+
+  test('shutdown is idempotent', async () => {
+    const manager = new LifecycleManager(
+      [
+        {
+          title: 'seed',
+          command: appendLineCommand(logFile, 'seed'),
+          shutdown: appendLineCommand(logFile, 'seed-stop'),
+        },
+      ],
+      tempDir,
+      undefined
+    );
+
+    await manager.startup();
+    await manager.shutdown();
+    await manager.shutdown();
+
+    expect(await readLines(logFile)).toEqual(['seed', 'seed-stop']);
   });
 
   test('mixed command types execute together correctly', async () => {
@@ -651,5 +774,35 @@ describe('LifecycleManager', () => {
     await Bun.sleep(200);
 
     expect(await readLines(logFile)).toContain('daemon-term');
+  });
+
+  test('killDaemons coordinates cleanly with async shutdown', async () => {
+    const manager = new LifecycleManager(
+      [
+        {
+          title: 'daemon',
+          command: await createDaemonCommand(logFile, 'daemon-start', 'daemon-term'),
+          mode: 'daemon',
+        },
+      ],
+      tempDir,
+      undefined
+    );
+
+    await manager.startup();
+    await waitForLine(logFile, 'daemon-start');
+
+    manager.killDaemons();
+    await manager.shutdown();
+
+    expect(await readLines(logFile)).toEqual(['daemon-start', 'daemon-term']);
+  });
+
+  test('empty command lists are a no-op', async () => {
+    const manager = new LifecycleManager([], tempDir, undefined);
+
+    await expect(manager.startup()).resolves.toBeUndefined();
+    manager.killDaemons();
+    await expect(manager.shutdown()).resolves.toBeUndefined();
   });
 });
