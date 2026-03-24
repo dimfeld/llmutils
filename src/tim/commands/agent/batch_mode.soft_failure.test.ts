@@ -2,6 +2,7 @@ import { describe, test, expect, mock, afterEach, beforeEach } from 'bun:test';
 import { runWithLogger, type LoggerAdapter } from '../../../logging/adapter.js';
 import type { StructuredMessage } from '../../../logging/structured_messages.js';
 import { ModuleMocker } from '../../../testing.js';
+import { resetShutdownState, setShuttingDown } from '../../shutdown_state.js';
 
 describe('executeBatchMode stops on structured executor failure', () => {
   const moduleMocker = new ModuleMocker(import.meta);
@@ -26,10 +27,12 @@ describe('executeBatchMode stops on structured executor failure', () => {
   beforeEach(() => {
     commitAllSpy.mockClear();
     executePostApplyCommandSpy.mockClear();
+    resetShutdownState();
   });
 
   afterEach(() => {
     moduleMocker.clear();
+    resetShutdownState();
   });
 
   test('breaks after first iteration, prints details, records failed step, and throws', async () => {
@@ -162,5 +165,108 @@ describe('executeBatchMode stops on structured executor failure', () => {
     expect(lines.join('\n')).toContain('FAILED (implementer)');
     expect(lines.join('\n')).toContain('Requirements:');
     expect(lines.join('\n')).toContain('Possible solutions:');
+  });
+
+  test('does not run post-apply commands or commit after shutdown is requested during docs update', async () => {
+    let workingCopyCallCount = 0;
+    await moduleMocker.mock('../../../common/git.js', () => ({
+      getWorkingCopyStatus: mock(async () => ({
+        hasChanges: true,
+        checkFailed: false,
+        diffHash: `hash-${workingCopyCallCount++}`,
+      })),
+    }));
+
+    let readCount = 0;
+    await moduleMocker.mock('../../plans.js', () => ({
+      readPlanFile: mock(async () => ({
+        id: 1,
+        title: 'P',
+        status: readCount++ === 0 ? 'pending' : 'in_progress',
+        tasks: [{ title: 'T', steps: [{ prompt: 'p', done: false }] }],
+      })),
+      writePlanFile: mock(async (_p: string, _data: any) => {}),
+      setPlanStatus: mock(async () => {}),
+    }));
+
+    let incompleteCalls = 0;
+    await moduleMocker.mock('../../plans/find_next.js', () => ({
+      getAllIncompleteTasks: mock(() => {
+        incompleteCalls += 1;
+        return incompleteCalls === 1
+          ? [
+              {
+                taskIndex: 0,
+                task: { title: 'T1', description: 'D1', steps: [{ prompt: 'p', done: false }] },
+              },
+            ]
+          : [
+              {
+                taskIndex: 0,
+                task: { title: 'T1', description: 'D1', steps: [{ prompt: 'p', done: false }] },
+              },
+            ];
+      }),
+    }));
+
+    await moduleMocker.mock('../../prompt_builder.js', () => ({
+      buildExecutionPromptWithoutSteps: mock(async () => 'BATCH PROMPT'),
+    }));
+
+    await moduleMocker.mock('../../actions.js', () => ({
+      executePostApplyCommand: executePostApplyCommandSpy,
+    }));
+
+    const runUpdateDocsSpy = mock(async () => {
+      setShuttingDown(130);
+    });
+    await moduleMocker.mock('../update-docs.js', () => ({
+      runUpdateDocs: runUpdateDocsSpy,
+    }));
+
+    await moduleMocker.mock('../../../common/process.js', () => ({
+      commitAll: commitAllSpy,
+    }));
+
+    const { SummaryCollector } = await import('../../summary/collector.js');
+    const { executeBatchMode } = await import('./batch_mode.js');
+
+    const executor = {
+      filePathPrefix: '',
+      execute: mock(async () => ({
+        content: 'ok',
+        success: true,
+      })),
+    } as any;
+
+    const collector = new SummaryCollector({
+      planId: '1',
+      planTitle: 'P',
+      planFilePath: '/tmp/plan.yml',
+      mode: 'batch',
+    });
+
+    await runWithLogger(createCaptureAdapter([]), async () => {
+      await executeBatchMode(
+        {
+          currentPlanFile: '/tmp/plan.yml',
+          config: {
+            postApplyCommands: [{ title: 'Should not run', command: 'echo x' }],
+            updateDocs: { mode: 'after-iteration' },
+          } as any,
+          executor,
+          baseDir: '/tmp/repo',
+          dryRun: false,
+          executorName: 'codex-cli',
+          executionMode: 'normal',
+          updateDocsMode: 'after-iteration',
+        },
+        collector as any
+      );
+    });
+
+    expect(runUpdateDocsSpy).toHaveBeenCalledTimes(1);
+    expect(executePostApplyCommandSpy).not.toHaveBeenCalled();
+    expect(commitAllSpy).not.toHaveBeenCalled();
   });
 });

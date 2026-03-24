@@ -334,6 +334,10 @@ Available tasks:\n\n${taskDescriptions}`,
         }
       }
 
+      if (isShuttingDown()) {
+        break;
+      }
+
       // Run post-apply commands if configured
       const failedPostApplyCommand = await runPostApplyCommands();
       if (failedPostApplyCommand) {
@@ -352,6 +356,11 @@ Available tasks:\n\n${taskDescriptions}`,
           taskTitle: completedTaskTitles.join(', ') || 'Batch mode iteration',
           planComplete: true,
         });
+
+        if (isShuttingDown()) {
+          break;
+        }
+
         await setPlanStatus(currentPlanFile, 'done');
 
         // Update docs if configured for after-completion mode
@@ -376,6 +385,10 @@ Available tasks:\n\n${taskDescriptions}`,
             if (summaryCollector) summaryCollector.addError('Post-apply command failed');
             break;
           }
+        }
+
+        if (isShuttingDown()) {
+          break;
         }
 
         // Run final review if enabled
@@ -421,6 +434,10 @@ Available tasks:\n\n${taskDescriptions}`,
           }
         }
 
+        if (isShuttingDown()) {
+          break;
+        }
+
         if (planStillCompleteAfterReview && (config.updateDocs?.applyLessons || applyLessons)) {
           try {
             await runUpdateLessons(currentPlanFile, config, {
@@ -449,9 +466,17 @@ Available tasks:\n\n${taskDescriptions}`,
           log('Skipping lessons-learned documentation update because review added new tasks.');
         }
 
+        if (isShuttingDown()) {
+          break;
+        }
+
         // Handle parent plan updates similar to existing logic
         if (updatedPlanData.parent) {
           await checkAndMarkParentDone(updatedPlanData.parent, config, baseDir);
+        }
+
+        if (isShuttingDown()) {
+          break;
         }
 
         await commitAll(`Plan complete: ${planData.title}`, baseDir);
@@ -461,6 +486,10 @@ Available tasks:\n\n${taskDescriptions}`,
         }
         break;
       } else {
+        if (isShuttingDown()) {
+          break;
+        }
+
         await commitAll('Finish batch tasks iteration', baseDir);
         if (summaryCollector) {
           await summaryCollector.trackFileChanges(baseDir);

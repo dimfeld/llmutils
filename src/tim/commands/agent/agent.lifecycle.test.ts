@@ -11,6 +11,7 @@ describe('timAgent lifecycle integration', () => {
   const moduleMocker = new ModuleMocker(import.meta);
   let tempDir: string;
   let planFile: string;
+  let effectiveConfig: Record<string, unknown>;
   const buildExecutorAndLogSpy = mock(() => ({
     execute: mock(async () => ({ success: true })),
     filePathPrefix: '',
@@ -22,6 +23,11 @@ describe('timAgent lifecycle integration', () => {
   const sendNotificationSpy = mock(async () => {});
   const closeLogFileSpy = mock(async () => {});
   const openLogFileSpy = mock(() => {});
+  const loadEffectiveConfigSpy = mock(async () => effectiveConfig);
+  const markStepDoneSpy = mock(async () => ({ message: 'Step marked', planComplete: false }));
+  const markTaskDoneSpy = mock(async () => ({ message: 'Task marked', planComplete: false }));
+  const runUpdateDocsSpy = mock(async () => {});
+  const executePostApplyCommandSpy = mock(async () => true);
 
   beforeEach(async () => {
     CleanupRegistry['instance'] = undefined;
@@ -33,11 +39,30 @@ describe('timAgent lifecycle integration', () => {
     sendNotificationSpy.mockClear();
     closeLogFileSpy.mockClear();
     openLogFileSpy.mockClear();
+    loadEffectiveConfigSpy.mockClear();
+    markStepDoneSpy.mockClear();
+    markTaskDoneSpy.mockClear();
+    runUpdateDocsSpy.mockClear();
+    executePostApplyCommandSpy.mockClear();
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-agent-lifecycle-'));
     const tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
     planFile = path.join(tasksDir, '1-plan.yml');
+
+    effectiveConfig = {
+      models: {},
+      postApplyCommands: [],
+      lifecycle: {
+        commands: [
+          {
+            title: 'Lifecycle setup',
+            command: `printf started > ${JSON.stringify(path.join(tempDir, 'lifecycle-startup.txt'))}`,
+            shutdown: `printf stopped > ${JSON.stringify(path.join(tempDir, 'lifecycle-shutdown.txt'))}`,
+          },
+        ],
+      },
+    };
 
     await writePlanFile(planFile, {
       id: 1,
@@ -70,19 +95,7 @@ describe('timAgent lifecycle integration', () => {
     }));
 
     await moduleMocker.mock('../../configLoader.js', () => ({
-      loadEffectiveConfig: mock(async () => ({
-        models: {},
-        postApplyCommands: [],
-        lifecycle: {
-          commands: [
-            {
-              title: 'Lifecycle setup',
-              command: `printf started > ${JSON.stringify(path.join(tempDir, 'lifecycle-startup.txt'))}`,
-              shutdown: `printf stopped > ${JSON.stringify(path.join(tempDir, 'lifecycle-shutdown.txt'))}`,
-            },
-          ],
-        },
-      })),
+      loadEffectiveConfig: loadEffectiveConfigSpy,
     }));
 
     await moduleMocker.mock('../../configSchema.js', () => ({
@@ -138,6 +151,19 @@ describe('timAgent lifecycle integration', () => {
     await moduleMocker.mock('../../notifications.js', () => ({
       sendNotification: sendNotificationSpy,
     }));
+
+    await moduleMocker.mock('../../plans/mark_done.js', () => ({
+      markStepDone: markStepDoneSpy,
+      markTaskDone: markTaskDoneSpy,
+    }));
+
+    await moduleMocker.mock('../update-docs.js', () => ({
+      runUpdateDocs: runUpdateDocsSpy,
+    }));
+
+    await moduleMocker.mock('../../actions.js', () => ({
+      executePostApplyCommand: executePostApplyCommandSpy,
+    }));
   });
 
   afterEach(async () => {
@@ -175,6 +201,9 @@ describe('timAgent lifecycle integration', () => {
 
     expect(touchWorkspaceInfoSpy).toHaveBeenCalledWith(tempDir);
     expect(sendNotificationSpy).toHaveBeenCalledTimes(1);
+    expect(sendNotificationSpy.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({ status: 'interrupted' })
+    );
     // Lifecycle startup should have run (signal arrives after startup)
     expect(await fs.readFile(path.join(tempDir, 'lifecycle-startup.txt'), 'utf-8')).toBe('started');
     // Lifecycle shutdown should have run in the finally block
@@ -213,5 +242,83 @@ describe('timAgent lifecycle integration', () => {
       .then(() => true)
       .catch(() => false);
     expect(startupFileExists).toBe(false);
+  });
+
+  test('serial step execution does not mark the step done after shutdown is requested during docs update', async () => {
+    effectiveConfig.updateDocs = { mode: 'after-iteration' };
+    runUpdateDocsSpy.mockImplementationOnce(async () => {
+      setShuttingDown(130);
+    });
+
+    await moduleMocker.mock('../../plans/find_next.js', () => ({
+      findNextActionableItem: mock(() => ({
+        type: 'step',
+        taskIndex: 0,
+        stepIndex: 0,
+        task: { title: 'Task 1', description: 'Do the work', steps: [{ prompt: 'implement' }] },
+      })),
+    }));
+
+    await moduleMocker.mock('../../plans/prepare_step.js', () => ({
+      prepareNextStep: mock(async () => ({
+        prompt: 'CTX',
+        promptFilePath: undefined,
+        rmfilterArgs: undefined,
+        taskIndex: 0,
+        stepIndex: 0,
+        numStepsSelected: 1,
+      })),
+    }));
+
+    const originalExit = process.exit;
+    process.exit = ((code?: number) => {
+      throw new Error(`process.exit(${code})`);
+    }) as typeof process.exit;
+
+    try {
+      const { timAgent } = await import('./agent.ts');
+
+      await expect(
+        timAgent(planFile, { log: false, summary: false, serialTasks: true }, {})
+      ).rejects.toThrow('process.exit(130)');
+    } finally {
+      process.exit = originalExit;
+    }
+
+    expect(runUpdateDocsSpy).toHaveBeenCalledTimes(1);
+    expect(markStepDoneSpy).not.toHaveBeenCalled();
+  });
+
+  test('serial task execution does not mark the task done after shutdown is requested during docs update', async () => {
+    effectiveConfig.updateDocs = { mode: 'after-iteration' };
+    runUpdateDocsSpy.mockImplementationOnce(async () => {
+      setShuttingDown(130);
+    });
+
+    await moduleMocker.mock('../../plans/find_next.js', () => ({
+      findNextActionableItem: mock(() => ({
+        type: 'task',
+        taskIndex: 0,
+        task: { title: 'Task 1', description: 'Do the work', steps: [{ prompt: 'implement' }] },
+      })),
+    }));
+
+    const originalExit = process.exit;
+    process.exit = ((code?: number) => {
+      throw new Error(`process.exit(${code})`);
+    }) as typeof process.exit;
+
+    try {
+      const { timAgent } = await import('./agent.ts');
+
+      await expect(
+        timAgent(planFile, { log: false, summary: false, serialTasks: true }, {})
+      ).rejects.toThrow('process.exit(130)');
+    } finally {
+      process.exit = originalExit;
+    }
+
+    expect(runUpdateDocsSpy).toHaveBeenCalledTimes(1);
+    expect(markTaskDoneSpy).not.toHaveBeenCalled();
   });
 });

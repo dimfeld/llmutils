@@ -774,6 +774,8 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
             }
           }
 
+          if (isShuttingDown()) break;
+
           // Mark the task as done
           try {
             log(boldMarkdownHeaders('\n## Marking task done\n'));
@@ -821,6 +823,8 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
                 }
               }
 
+              if (isShuttingDown()) break;
+
               // Run final review if enabled
               // Skip if we started with no completed tasks and finished in a single iteration
               const shouldSkipFinalReview =
@@ -867,6 +871,8 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
                 }
               }
 
+              if (isShuttingDown()) break;
+
               if (
                 planStillCompleteAfterReview &&
                 (config.updateDocs?.applyLessons || options.applyLessons)
@@ -900,6 +906,8 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
                   'Skipping lessons-learned documentation update because review added new tasks.'
                 );
               }
+
+              if (isShuttingDown()) break;
 
               break;
             }
@@ -1079,6 +1087,8 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
           }
         }
 
+        if (isShuttingDown()) break;
+
         let markResult;
         try {
           log(boldMarkdownHeaders('\n## Marking done\n'));
@@ -1124,6 +1134,8 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
               }
             }
 
+            if (isShuttingDown()) break;
+
             if (config.updateDocs?.applyLessons || options.applyLessons) {
               try {
                 await runUpdateLessons(currentPlanFile, config, {
@@ -1147,6 +1159,8 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
                 break;
               }
             }
+
+            if (isShuttingDown()) break;
 
             break;
           }
