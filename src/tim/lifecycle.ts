@@ -24,6 +24,8 @@ function wait(ms: number): Promise<void> {
 }
 
 const DAEMON_STARTUP_CHECK_DELAY_MS = 75;
+const DAEMON_SIGTERM_TIMEOUT_MS = 5000;
+const DAEMON_SIGKILL_WAIT_MS = 1000;
 
 async function readOutput(
   stream: ReadableStream<Uint8Array> | null,
@@ -172,12 +174,85 @@ export class LifecycleManager {
         continue;
       }
 
-      try {
-        state.daemon.kill('SIGTERM');
-      } catch (err) {
-        warn(`Failed to terminate lifecycle daemon "${state.command.title}": ${err as Error}`);
+      if (!this.tryKillProcessGroup(state.daemon.pid, 'SIGTERM')) {
+        try {
+          state.daemon.kill('SIGTERM');
+        } catch (err) {
+          warn(`Failed to terminate lifecycle daemon "${state.command.title}": ${err as Error}`);
+        }
       }
     }
+  }
+
+  private tryKillProcessGroup(pid: number, signal: NodeJS.Signals): boolean {
+    try {
+      process.kill(-pid, signal);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private tryKillProcess(
+    proc: Bun.Subprocess<'ignore', 'pipe', 'pipe'>,
+    signal: NodeJS.Signals,
+    title: string,
+    failureMessage: string
+  ): boolean {
+    if (this.tryKillProcessGroup(proc.pid, signal)) {
+      return true;
+    }
+
+    try {
+      proc.kill(signal);
+      return true;
+    } catch (err) {
+      warn(`${failureMessage} "${title}": ${err as Error}`);
+      return false;
+    }
+  }
+
+  private async waitForProcessExit(
+    proc: Bun.Subprocess<'ignore', 'pipe', 'pipe'>,
+    timeoutMs: number
+  ): Promise<boolean> {
+    if (!this.isProcessRunning(proc)) {
+      return true;
+    }
+
+    return await Promise.race([proc.exited.then(() => true), wait(timeoutMs).then(() => false)]);
+  }
+
+  private shouldTreatDaemonExitAsFailure(exitCode: number): boolean {
+    return exitCode !== 0;
+  }
+
+  private async handleDaemonFailure(
+    state: LifecycleCommandState,
+    exitCode: number
+  ): Promise<boolean> {
+    state.startupState = 'failed';
+    state.shouldRunShutdown = false;
+
+    if (!state.command.allowFailure) {
+      throw new Error(
+        `Lifecycle daemon "${state.command.title}" exited immediately with exit code ${exitCode}.`
+      );
+    }
+
+    warn(
+      `Lifecycle daemon "${state.command.title}" exited immediately with exit code ${exitCode}, but failure is allowed.`
+    );
+    return true;
+  }
+
+  private async handleDaemonExitZero(state: LifecycleCommandState): Promise<boolean> {
+    warn(
+      `Lifecycle daemon "${state.command.title}" exited immediately with code 0. Consider using mode: "run" if this is not a long-running process.`
+    );
+    state.startupState = 'succeeded';
+    state.shouldRunShutdown = Boolean(state.command.shutdown);
+    return true;
   }
 
   private shouldRunCheck(command: LifecycleCommand, mode: LifecycleMode): boolean {
@@ -193,6 +268,7 @@ export class LifecycleManager {
   private spawnDaemon(command: LifecycleCommand): Bun.Subprocess<'ignore', 'pipe', 'pipe'> {
     const proc = Bun.spawn(getShellCommand(command.command), {
       cwd: this.resolveCwd(command),
+      detached: true,
       env: {
         ...process.env,
         ...(command.env ?? {}),
@@ -218,23 +294,15 @@ export class LifecycleManager {
 
     await wait(DAEMON_STARTUP_CHECK_DELAY_MS);
     const exitCode = daemon.exitCode;
-    if (exitCode === null || exitCode === 0) {
+    if (exitCode === null) {
       return false;
     }
 
-    state.startupState = 'failed';
-    state.shouldRunShutdown = false;
-
-    if (!state.command.allowFailure) {
-      throw new Error(
-        `Lifecycle daemon "${state.command.title}" exited immediately with exit code ${exitCode}.`
-      );
+    if (!this.shouldTreatDaemonExitAsFailure(exitCode)) {
+      return await this.handleDaemonExitZero(state);
     }
 
-    warn(
-      `Lifecycle daemon "${state.command.title}" exited immediately with exit code ${exitCode}, but failure is allowed.`
-    );
-    return true;
+    return await this.handleDaemonFailure(state, exitCode);
   }
 
   private async runShellCommand(
@@ -266,27 +334,29 @@ export class LifecycleManager {
       return;
     }
 
-    try {
-      proc.kill('SIGTERM');
-    } catch (err) {
-      warn(`Failed to terminate lifecycle daemon "${state.command.title}": ${err as Error}`);
+    if (
+      !this.tryKillProcess(
+        proc,
+        'SIGTERM',
+        state.command.title,
+        'Failed to terminate lifecycle daemon'
+      )
+    ) {
       return;
     }
 
-    const exitedAfterSigterm = await Promise.race([
-      proc.exited.then(() => true),
-      wait(5000).then(() => false),
-    ]);
+    const exitedAfterSigterm = await this.waitForProcessExit(proc, DAEMON_SIGTERM_TIMEOUT_MS);
     if (exitedAfterSigterm) {
       return;
     }
 
     warn(`Lifecycle daemon "${state.command.title}" did not exit after SIGTERM; sending SIGKILL.`);
-    try {
-      proc.kill('SIGKILL');
-      await Promise.race([proc.exited, wait(1000)]);
-    } catch (err) {
-      warn(`Failed to kill lifecycle daemon "${state.command.title}": ${err as Error}`);
+    if (
+      !this.tryKillProcess(proc, 'SIGKILL', state.command.title, 'Failed to kill lifecycle daemon')
+    ) {
+      return;
     }
+
+    await Promise.race([proc.exited, wait(DAEMON_SIGKILL_WAIT_MS)]);
   }
 }

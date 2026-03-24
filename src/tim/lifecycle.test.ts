@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import * as logging from '../logging.js';
 import { LifecycleManager } from './lifecycle.js';
 import type { LifecycleCommand } from './configSchema.js';
 import type { WorkspaceType } from './db/workspace.js';
@@ -86,6 +87,42 @@ async function createStubbornDaemonCommand(
     'utf8'
   );
   return `exec node ${JSON.stringify(scriptPath)}`;
+}
+
+async function createNonExecDaemonWithChildCommand(
+  filePath: string,
+  launcherPidFilePath: string,
+  childPidFilePath: string,
+  launcherStartLine: string,
+  childStartLine: string
+): Promise<string> {
+  const childScriptPath = path.join(path.dirname(filePath), `${childStartLine}.cjs`);
+  await fs.writeFile(
+    childScriptPath,
+    [
+      `const fs = require('node:fs');`,
+      `fs.writeFileSync(${JSON.stringify(childPidFilePath)}, String(process.pid));`,
+      `fs.appendFileSync(${JSON.stringify(filePath)}, ${JSON.stringify(childStartLine + '\n')});`,
+      `setInterval(() => {}, 1000);`,
+    ].join('\n'),
+    'utf8'
+  );
+
+  const launcherScriptPath = path.join(path.dirname(filePath), `${launcherStartLine}.cjs`);
+  await fs.writeFile(
+    launcherScriptPath,
+    [
+      `const fs = require('node:fs');`,
+      `const { spawn } = require('node:child_process');`,
+      `fs.writeFileSync(${JSON.stringify(launcherPidFilePath)}, String(process.pid));`,
+      `fs.appendFileSync(${JSON.stringify(filePath)}, ${JSON.stringify(launcherStartLine + '\n')});`,
+      `spawn(process.execPath, [${JSON.stringify(childScriptPath)}], { stdio: 'ignore' });`,
+      `setInterval(() => {}, 1000);`,
+    ].join('\n'),
+    'utf8'
+  );
+
+  return `node ${JSON.stringify(launcherScriptPath)}`;
 }
 
 async function createImmediateExitDaemonCommand(
@@ -240,6 +277,28 @@ describe('LifecycleManager', () => {
     expect(await readLines(logFile)).toEqual([]);
   });
 
+  test('daemon immediate exit with code 0 warns and still allows explicit shutdown', async () => {
+    const warnSpy = spyOn(logging, 'warn').mockImplementation(() => {});
+
+    try {
+      const events = await startupAndShutdown([
+        {
+          title: 'short daemon',
+          command: await createImmediateExitDaemonCommand(logFile, 0),
+          mode: 'daemon',
+          shutdown: appendLineCommand(logFile, 'daemon-stop'),
+        },
+      ]);
+
+      expect(events).toEqual(['daemon-stop']);
+      expect(warnSpy).toHaveBeenCalledWith(
+        'Lifecycle daemon "short daemon" exited immediately with code 0. Consider using mode: "run" if this is not a long-running process.'
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   test('run command failures are tolerated when allowFailure is true', async () => {
     const events = await startupAndShutdown([
       {
@@ -277,6 +336,36 @@ describe('LifecycleManager', () => {
     await manager.shutdown();
 
     expect(await readLines(logFile)).toEqual(['before', 'before-stop']);
+  });
+
+  test('workingDirectory is resolved relative to the lifecycle base directory', async () => {
+    const subdir = path.join(tempDir, 'subdir');
+    await fs.mkdir(subdir);
+    const realSubdir = await fs.realpath(subdir);
+
+    await startupAndShutdown([
+      {
+        title: 'pwd',
+        command: `pwd >> ${JSON.stringify(logFile)}`,
+        workingDirectory: 'subdir',
+      },
+    ]);
+
+    expect(await readLines(logFile)).toEqual([realSubdir]);
+  });
+
+  test('env variables are passed to lifecycle commands', async () => {
+    await startupAndShutdown([
+      {
+        title: 'env',
+        command: `echo "$MY_VAR" >> ${JSON.stringify(logFile)}`,
+        env: {
+          MY_VAR: 'test-value',
+        },
+      },
+    ]);
+
+    expect(await readLines(logFile)).toEqual(['test-value']);
   });
 
   test('shutdown still cleans up previously started daemons after startup aborts', async () => {
@@ -450,6 +539,41 @@ describe('LifecycleManager', () => {
     expect(events).toContain('stubborn-start');
     expect(events).toContain('stubborn-sigterm');
     expect(processExists(pid)).toBeFalse();
+  }, 10000);
+
+  test('daemon shutdown kills non-exec child processes via the daemon process group', async () => {
+    const launcherPidFile = path.join(tempDir, 'launcher.pid');
+    const childPidFile = path.join(tempDir, 'child.pid');
+    const manager = new LifecycleManager(
+      [
+        {
+          title: 'daemon with child',
+          command: await createNonExecDaemonWithChildCommand(
+            logFile,
+            launcherPidFile,
+            childPidFile,
+            'launcher-start',
+            'child-start'
+          ),
+          mode: 'daemon',
+        },
+      ],
+      tempDir,
+      undefined
+    );
+
+    await manager.startup();
+    await waitForLine(logFile, 'launcher-start');
+    await waitForLine(logFile, 'child-start');
+
+    const launcherPid = Number.parseInt(await fs.readFile(launcherPidFile, 'utf8'), 10);
+    const childPid = Number.parseInt(await fs.readFile(childPidFile, 'utf8'), 10);
+
+    await manager.shutdown();
+    await Bun.sleep(200);
+
+    expect(processExists(launcherPid)).toBeFalse();
+    expect(processExists(childPid)).toBeFalse();
   }, 10000);
 
   test('shutdown continues after shutdown command failures', async () => {
