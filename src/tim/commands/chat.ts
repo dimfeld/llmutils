@@ -20,7 +20,6 @@ import {
   touchWorkspaceInfo,
 } from '../workspace/workspace_info.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
-import { updateHeadlessSessionInfo } from '../headless.js';
 import {
   prepareWorkspaceRoundTrip,
   runPostExecutionWorkspaceSync,
@@ -191,91 +190,87 @@ export async function handleChatCommand(
   let roundTripContext: Awaited<ReturnType<typeof prepareWorkspaceRoundTrip>> = null;
   let executionError: unknown;
 
-  try {
-    if (workspaceMode) {
-      const originalBaseDir = await getGitRoot(process.cwd());
-      currentBaseDir = originalBaseDir;
+  if (options.plan) {
+    currentPlanFile = await resolvePlanFile(options.plan, globalOpts.config);
+    currentPlanData = await readPlanFile(currentPlanFile);
+  }
 
-      if (options.plan) {
-        currentPlanFile = await resolvePlanFile(options.plan, globalOpts.config);
-        currentPlanData = await readPlanFile(currentPlanFile);
-      }
-
-      // --plan implies auto-workspace selection when no explicit workspace option is set
-      const useAutoWorkspace =
-        options.autoWorkspace === true ||
-        (options.plan !== undefined && !options.workspace && !options.newWorkspace);
-
-      // When --plan is provided without --base, derive branch from plan data
-      let baseBranch = options.base;
-      if (!baseBranch && currentPlanData) {
-        baseBranch = currentPlanData.branch ?? generateBranchNameFromPlan(currentPlanData);
-      }
-
-      const workspaceResult = await setupWorkspace(
-        {
-          workspace: options.workspace,
-          autoWorkspace: useAutoWorkspace,
-          newWorkspace: options.newWorkspace,
-          nonInteractive: options.nonInteractive,
-          requireWorkspace: false,
-          createBranch: false,
-          planUuid: currentPlanData?.uuid,
-          base: baseBranch,
-          allowPrimaryWorkspaceWhenLocked: true,
-        },
-        currentBaseDir,
-        currentPlanFile || undefined,
-        config,
-        'tim chat'
-      );
-      currentBaseDir = workspaceResult.baseDir;
-      currentPlanFile = workspaceResult.planFile;
-      touchedWorkspacePath = currentBaseDir;
-
-      if (path.resolve(currentBaseDir) !== path.resolve(originalBaseDir)) {
-        roundTripContext = await prepareWorkspaceRoundTrip({
-          workspacePath: currentBaseDir,
-          workspaceSyncEnabled: options.workspaceSync !== false,
-          syncTarget: config.workspaceSync?.pushTarget ?? 'origin',
-        });
-      }
-
-      if (roundTripContext && roundTripContext.syncTarget !== 'origin') {
-        await runPreExecutionWorkspaceSync(roundTripContext);
-      }
-
-      if (currentPlanData) {
-        await updateWorkspaceDescriptionFromPlan(currentBaseDir, currentPlanData);
-      }
-    }
-
-    const executor = buildExecutorAndLog(
-      executorName,
-      {
-        ...sharedExecutorOptions,
-        baseDir: currentBaseDir,
-      },
-      config
-    );
-    const promptForExecution =
-      executorName === CodexCliExecutorName && codexAppServerEnabled ? (prompt ?? '') : prompt;
-
-    await runWithHeadlessAdapterIfEnabled({
-      enabled: options.headlessAdapter === true || !tunnelActive,
-      command: 'chat',
-      interactive: !noninteractive,
-      plan: currentPlanData
-        ? {
-            id: currentPlanData.id,
-            uuid: currentPlanData.uuid,
-            title: currentPlanData.title,
-          }
-        : undefined,
-      callback: async () => {
-        if (workspaceMode && currentBaseDir !== process.cwd()) {
-          updateHeadlessSessionInfo({ workspacePath: currentBaseDir });
+  await runWithHeadlessAdapterIfEnabled({
+    enabled: options.headlessAdapter === true || !tunnelActive,
+    command: 'chat',
+    interactive: !noninteractive,
+    plan: currentPlanData
+      ? {
+          id: currentPlanData.id,
+          uuid: currentPlanData.uuid,
+          title: currentPlanData.title,
         }
+      : undefined,
+    callback: async () => {
+      try {
+        if (workspaceMode) {
+          const originalBaseDir = await getGitRoot(process.cwd());
+          currentBaseDir = originalBaseDir;
+
+          // --plan implies auto-workspace selection when no explicit workspace option is set
+          const useAutoWorkspace =
+            options.autoWorkspace === true ||
+            (options.plan !== undefined && !options.workspace && !options.newWorkspace);
+
+          // When --plan is provided without --base, derive branch from plan data
+          let baseBranch = options.base;
+          if (!baseBranch && currentPlanData) {
+            baseBranch = currentPlanData.branch ?? generateBranchNameFromPlan(currentPlanData);
+          }
+
+          const workspaceResult = await setupWorkspace(
+            {
+              workspace: options.workspace,
+              autoWorkspace: useAutoWorkspace,
+              newWorkspace: options.newWorkspace,
+              nonInteractive: options.nonInteractive,
+              requireWorkspace: false,
+              createBranch: false,
+              planUuid: currentPlanData?.uuid,
+              base: baseBranch,
+              allowPrimaryWorkspaceWhenLocked: true,
+            },
+            currentBaseDir,
+            currentPlanFile || undefined,
+            config,
+            'tim chat'
+          );
+          currentBaseDir = workspaceResult.baseDir;
+          currentPlanFile = workspaceResult.planFile;
+          touchedWorkspacePath = currentBaseDir;
+
+          if (path.resolve(currentBaseDir) !== path.resolve(originalBaseDir)) {
+            roundTripContext = await prepareWorkspaceRoundTrip({
+              workspacePath: currentBaseDir,
+              workspaceSyncEnabled: options.workspaceSync !== false,
+              syncTarget: config.workspaceSync?.pushTarget ?? 'origin',
+            });
+          }
+
+          if (roundTripContext && roundTripContext.syncTarget !== 'origin') {
+            await runPreExecutionWorkspaceSync(roundTripContext);
+          }
+
+          if (currentPlanData) {
+            await updateWorkspaceDescriptionFromPlan(currentBaseDir, currentPlanData);
+          }
+        }
+
+        const executor = buildExecutorAndLog(
+          executorName,
+          {
+            ...sharedExecutorOptions,
+            baseDir: currentBaseDir,
+          },
+          config
+        );
+        const promptForExecution =
+          executorName === CodexCliExecutorName && codexAppServerEnabled ? (prompt ?? '') : prompt;
 
         await executor.execute(promptForExecution, {
           planId: currentPlanData?.id ? String(currentPlanData.id) : 'chat',
@@ -287,39 +282,39 @@ export async function handleChatCommand(
         if (options.commit) {
           await commitAll('workspace chat session', currentBaseDir);
         }
-      },
-    });
-  } catch (err) {
-    executionError = err;
-  } finally {
-    let roundTripError: unknown;
-    // Post-sync always runs when workspace roundtrip is active (matching generate/agent).
-    // It commits and pushes as part of the workspace lifecycle, independent of --commit.
-    if (roundTripContext) {
-      try {
-        await runPostExecutionWorkspaceSync(roundTripContext, 'workspace chat session');
       } catch (err) {
-        roundTripError = err;
-      }
-    }
+        executionError = err;
+      } finally {
+        let roundTripError: unknown;
+        // Post-sync always runs when workspace roundtrip is active (matching generate/agent).
+        // It commits and pushes as part of the workspace lifecycle, independent of --commit.
+        if (roundTripContext) {
+          try {
+            await runPostExecutionWorkspaceSync(roundTripContext, 'workspace chat session');
+          } catch (err) {
+            roundTripError = err;
+          }
+        }
 
-    if (touchedWorkspacePath) {
-      try {
-        touchWorkspaceInfo(touchedWorkspacePath);
-      } catch (err) {
-        warn(`Failed to update workspace last used time: ${err as Error}`);
-      }
-    }
+        if (touchedWorkspacePath) {
+          try {
+            touchWorkspaceInfo(touchedWorkspacePath);
+          } catch (err) {
+            warn(`Failed to update workspace last used time: ${err as Error}`);
+          }
+        }
 
-    if (executionError) {
-      if (roundTripError) {
-        warn(`Workspace sync failed after chat error: ${roundTripError as Error}`);
-      }
-      throw executionError;
-    }
+        if (executionError) {
+          if (roundTripError) {
+            warn(`Workspace sync failed after chat error: ${roundTripError as Error}`);
+          }
+          throw executionError;
+        }
 
-    if (roundTripError) {
-      throw roundTripError;
-    }
-  }
+        if (roundTripError) {
+          throw roundTripError;
+        }
+      }
+    },
+  });
 }

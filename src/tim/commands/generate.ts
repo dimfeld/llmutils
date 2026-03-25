@@ -192,115 +192,115 @@ export async function handleGenerateCommand(
   let roundTripContext: Awaited<ReturnType<typeof prepareWorkspaceRoundTrip>> = null;
   let generationError: unknown;
 
-  try {
-    const originalBaseDir = currentBaseDir;
-    const workspaceResult = await setupWorkspace(
-      {
-        workspace: options.workspace,
-        autoWorkspace: options.autoWorkspace,
-        newWorkspace: options.newWorkspace,
-        nonInteractive: options.nonInteractive,
-        requireWorkspace: options.requireWorkspace,
-        createBranch: options.createBranch,
-        planUuid: parsedPlan.uuid,
-        base: options.base,
-        allowPrimaryWorkspaceWhenLocked: true,
-      },
-      currentBaseDir,
-      currentPlanFile,
-      config,
-      'tim generate'
-    );
-    currentBaseDir = workspaceResult.baseDir;
-    currentPlanFile = workspaceResult.planFile;
-    touchedWorkspacePath = currentBaseDir;
+  await runWithHeadlessAdapterIfEnabled({
+    enabled: !isTunnelActive(),
+    command: 'generate',
+    interactive: true,
+    plan: {
+      id: parsedPlan.id,
+      uuid: parsedPlan.uuid,
+      title: parsedPlan.title,
+    },
+    callback: async () => {
+      try {
+        const originalBaseDir = currentBaseDir;
+        const workspaceResult = await setupWorkspace(
+          {
+            workspace: options.workspace,
+            autoWorkspace: options.autoWorkspace,
+            newWorkspace: options.newWorkspace,
+            nonInteractive: options.nonInteractive,
+            requireWorkspace: options.requireWorkspace,
+            createBranch: options.createBranch,
+            planUuid: parsedPlan.uuid,
+            base: options.base,
+            allowPrimaryWorkspaceWhenLocked: true,
+          },
+          currentBaseDir,
+          currentPlanFile,
+          config,
+          'tim generate'
+        );
+        currentBaseDir = workspaceResult.baseDir;
+        currentPlanFile = workspaceResult.planFile;
+        touchedWorkspacePath = currentBaseDir;
 
-    if (path.resolve(currentBaseDir) !== path.resolve(originalBaseDir)) {
-      roundTripContext = await prepareWorkspaceRoundTrip({
-        workspacePath: currentBaseDir,
-        workspaceSyncEnabled: options.workspaceSync !== false,
-        syncTarget: config.workspaceSync?.pushTarget ?? 'origin',
-      });
-    }
-
-    if (roundTripContext && roundTripContext.syncTarget !== 'origin') {
-      await runPreExecutionWorkspaceSync(roundTripContext);
-    }
-
-    // Auto-claim the plan if enabled (before execution, matching agent pattern)
-    if (isAutoClaimEnabled()) {
-      if (parsedPlan.uuid) {
-        try {
-          await autoClaimPlan(
-            { plan: { ...parsedPlan, filename: currentPlanFile }, uuid: parsedPlan.uuid },
-            { cwdForIdentity: currentBaseDir }
-          );
-        } catch (err) {
-          const label = currentPlanId ?? parsedPlan.uuid;
-          warn(`Failed to auto-claim plan ${label}: ${err as Error}`);
+        if (path.resolve(currentBaseDir) !== path.resolve(originalBaseDir)) {
+          roundTripContext = await prepareWorkspaceRoundTrip({
+            workspacePath: currentBaseDir,
+            workspaceSyncEnabled: options.workspaceSync !== false,
+            syncTarget: config.workspaceSync?.pushTarget ?? 'origin',
+          });
         }
-      } else {
-        warn(`Plan at ${currentPlanFile} is missing a UUID; skipping auto-claim.`);
-      }
-    }
 
-    await updateWorkspaceDescriptionFromPlan(currentBaseDir, parsedPlan);
+        if (roundTripContext && roundTripContext.syncTarget !== 'origin') {
+          await runPreExecutionWorkspaceSync(roundTripContext);
+        }
 
-    // Build the prompt using the new interactive prompt system
-    // Use 'generate-plan-simple' for simple mode, 'generate-plan' for full interactive mode
-    // loadResearchPrompt handles the simple flag check on the plan itself,
-    // but we need to handle the --simple CLI flag explicitly
-    const promptName = options.simple ? 'generate-plan-simple' : 'generate-plan';
+        // Auto-claim the plan if enabled (before execution, matching agent pattern)
+        if (isAutoClaimEnabled()) {
+          if (parsedPlan.uuid) {
+            try {
+              await autoClaimPlan(
+                { plan: { ...parsedPlan, filename: currentPlanFile }, uuid: parsedPlan.uuid },
+                { cwdForIdentity: currentBaseDir }
+              );
+            } catch (err) {
+              const label = currentPlanId ?? parsedPlan.uuid;
+              warn(`Failed to auto-claim plan ${label}: ${err as Error}`);
+            }
+          } else {
+            warn(`Plan at ${currentPlanFile} is missing a UUID; skipping auto-claim.`);
+          }
+        }
 
-    const context: GenerateModeRegistrationContext = {
-      config,
-      configPath: globalOpts.config,
-      gitRoot, // Use actual git root for plan resolution, not workspace dir
-    };
+        await updateWorkspaceDescriptionFromPlan(currentBaseDir, parsedPlan);
 
-    const singlePrompt = await buildPromptText(
-      promptName,
-      {
-        plan: currentPlanFile,
-        allowMultiplePlans: true,
-      },
-      context
-    );
+        // Build the prompt using the new interactive prompt system
+        // Use 'generate-plan-simple' for simple mode, 'generate-plan' for full interactive mode
+        // loadResearchPrompt handles the simple flag check on the plan itself,
+        // but we need to handle the --simple CLI flag explicitly
+        const promptName = options.simple ? 'generate-plan-simple' : 'generate-plan';
 
-    // Compute terminal input and noninteractive options
-    const noninteractive = options.nonInteractive === true;
-    const terminalInputEnabled =
-      !noninteractive &&
-      process.stdin.isTTY === true &&
-      options.terminalInput !== false &&
-      config.terminalInput !== false;
+        const context: GenerateModeRegistrationContext = {
+          config,
+          configPath: globalOpts.config,
+          gitRoot, // Use actual git root for plan resolution, not workspace dir
+        };
 
-    // Build executor
-    const executorName =
-      options.executor ||
-      config.generate?.defaultExecutor ||
-      config.defaultExecutor ||
-      DEFAULT_EXECUTOR;
-    const sharedExecutorOptions: ExecutorCommonOptions = {
-      baseDir: currentBaseDir,
-      model: config.models?.stepGeneration,
-      noninteractive: noninteractive ? true : undefined,
-      terminalInput: terminalInputEnabled,
-      closeTerminalInputOnResult: false,
-      disableInactivityTimeout: true,
-    };
-    const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
+        const singlePrompt = await buildPromptText(
+          promptName,
+          {
+            plan: currentPlanFile,
+            allowMultiplePlans: true,
+          },
+          context
+        );
 
-    await runWithHeadlessAdapterIfEnabled({
-      enabled: !isTunnelActive(),
-      command: 'generate',
-      interactive: true,
-      plan: {
-        id: parsedPlan.id,
-        uuid: parsedPlan.uuid,
-        title: parsedPlan.title,
-      },
-      callback: async () => {
+        // Compute terminal input and noninteractive options
+        const noninteractive = options.nonInteractive === true;
+        const terminalInputEnabled =
+          !noninteractive &&
+          process.stdin.isTTY === true &&
+          options.terminalInput !== false &&
+          config.terminalInput !== false;
+
+        // Build executor
+        const executorName =
+          options.executor ||
+          config.generate?.defaultExecutor ||
+          config.defaultExecutor ||
+          DEFAULT_EXECUTOR;
+        const sharedExecutorOptions: ExecutorCommonOptions = {
+          baseDir: currentBaseDir,
+          model: config.models?.stepGeneration,
+          noninteractive: noninteractive ? true : undefined,
+          terminalInput: terminalInputEnabled,
+          closeTerminalInputOnResult: false,
+          disableInactivityTimeout: true,
+        };
+        const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
+
         log(chalk.blue('🤖 Running plan generation with executor...'));
 
         // Execute the prompt
@@ -345,42 +345,42 @@ export async function handleGenerateCommand(
           config,
           baseDir: currentBaseDir,
         });
-      },
-    });
-  } catch (err) {
-    generationError = err;
-  } finally {
-    let roundTripError: unknown;
-    if (roundTripContext) {
-      try {
-        const planTitle = parsedPlan.title || parsedPlan.goal || 'plan';
-        const planId = parsedPlan.id;
-        await runPostExecutionWorkspaceSync(
-          roundTripContext,
-          `generate plan for ${planId}: ${planTitle}`
-        );
       } catch (err) {
-        roundTripError = err;
-      }
-    }
+        generationError = err;
+      } finally {
+        let roundTripError: unknown;
+        if (roundTripContext) {
+          try {
+            const planTitle = parsedPlan.title || parsedPlan.goal || 'plan';
+            const planId = parsedPlan.id;
+            await runPostExecutionWorkspaceSync(
+              roundTripContext,
+              `generate plan for ${planId}: ${planTitle}`
+            );
+          } catch (err) {
+            roundTripError = err;
+          }
+        }
 
-    if (touchedWorkspacePath) {
-      try {
-        touchWorkspaceInfo(touchedWorkspacePath);
-      } catch (err) {
-        warn(`Failed to update workspace last used time: ${err as Error}`);
-      }
-    }
+        if (touchedWorkspacePath) {
+          try {
+            touchWorkspaceInfo(touchedWorkspacePath);
+          } catch (err) {
+            warn(`Failed to update workspace last used time: ${err as Error}`);
+          }
+        }
 
-    if (generationError) {
-      if (roundTripError) {
-        warn(`Workspace sync failed after generation error: ${roundTripError as Error}`);
-      }
-      throw generationError;
-    }
+        if (generationError) {
+          if (roundTripError) {
+            warn(`Workspace sync failed after generation error: ${roundTripError as Error}`);
+          }
+          throw generationError;
+        }
 
-    if (roundTripError) {
-      throw roundTripError;
-    }
-  }
+        if (roundTripError) {
+          throw roundTripError;
+        }
+      }
+    },
+  });
 }
