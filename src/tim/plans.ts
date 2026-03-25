@@ -652,7 +652,7 @@ function normalizeFancyQuotes(value: unknown, skipFields: Set<string> = new Set(
 export async function writePlanFile(
   filePath: string,
   input: PlanSchemaInput & { filename?: string },
-  options?: { skipUpdatedAt?: boolean }
+  options?: { skipUpdatedAt?: boolean; skipSync?: boolean }
 ): Promise<void> {
   const absolutePath = resolve(filePath);
   // Plans from readAllPlans will have a filename which we want to strip out
@@ -696,9 +696,19 @@ export async function writePlanFile(
   if (cleanedPlan.simple === false) {
     delete cleanedPlan.simple;
   }
+  if (cleanedPlan.tdd === false) {
+    delete cleanedPlan.tdd;
+  }
 
   // Remove empty arrays
-  const arrayFields = ['dependencies', 'issue', 'pullRequest', 'docs', 'reviewIssues'] as const;
+  const arrayFields = [
+    'dependencies',
+    'issue',
+    'pullRequest',
+    'docs',
+    'reviewIssues',
+    'changedFiles',
+  ] as const;
   for (const field of arrayFields) {
     if (Array.isArray(cleanedPlan[field]) && (cleanedPlan[field] as unknown[]).length === 0) {
       delete cleanedPlan[field];
@@ -737,10 +747,12 @@ export async function writePlanFile(
 
   await Bun.write(absolutePath, fullContent);
 
-  await syncPlanToDb(result.data, absolutePath, {
-    baseDir: path.dirname(absolutePath),
-    force: true,
-  });
+  if (!options?.skipSync) {
+    await syncPlanToDb(result.data, absolutePath, {
+      baseDir: path.dirname(absolutePath),
+      force: true,
+    });
+  }
 }
 
 /**

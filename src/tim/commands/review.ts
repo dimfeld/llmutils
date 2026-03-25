@@ -888,7 +888,7 @@ export async function handleReviewCommand(
         }
       } else {
         // Fall back to agents.reviewer.instructions
-        customInstructions = await loadAgentInstructionsFor('reviewer', gitRoot, config);
+        customInstructions = (await loadAgentInstructionsFor('reviewer', gitRoot, config)) ?? '';
       }
 
       if (options.previousResponse) {
@@ -1804,7 +1804,7 @@ export async function buildReviewPromptFromOptions(
     }
   } else {
     // Fall back to agents.reviewer.instructions
-    customInstructions = await loadAgentInstructionsFor('reviewer', gitRoot, config);
+    customInstructions = (await loadAgentInstructionsFor('reviewer', gitRoot, config)) ?? '';
   }
 
   if (options.previousResponse) {

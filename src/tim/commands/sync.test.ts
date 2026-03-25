@@ -4,9 +4,10 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { ModuleMocker, clearAllTimCaches, stringifyPlanWithFrontmatter } from '../../testing.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
-import { getPlansByProject } from '../db/plan.js';
+import { getPlanByPlanId, getPlansByProject, upsertPlan } from '../db/plan.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
-import { getProject } from '../db/project.js';
+import { getOrCreateProject, getProject } from '../db/project.js';
+import { writePlanFile } from '../plans.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
@@ -101,7 +102,7 @@ describe('tim sync command', () => {
     );
 
     const { handleSyncCommand } = await import('./sync.js');
-    await handleSyncCommand({}, makeCommand() as any);
+    await handleSyncCommand(undefined, {}, makeCommand() as any);
 
     const repository = await getRepositoryIdentity();
     const db = getDatabase();
@@ -144,7 +145,7 @@ describe('tim sync command', () => {
     );
 
     const { handleSyncCommand } = await import('./sync.js');
-    await handleSyncCommand({ plan: '1' }, makeCommand() as any);
+    await handleSyncCommand(undefined, { plan: '1' }, makeCommand() as any);
 
     const repository = await getRepositoryIdentity();
     const db = getDatabase();
@@ -175,7 +176,7 @@ describe('tim sync command', () => {
     );
 
     const { handleSyncCommand } = await import('./sync.js');
-    await handleSyncCommand({ plan: '6' }, makeCommand() as any);
+    await handleSyncCommand(undefined, { plan: '6' }, makeCommand() as any);
 
     const repository = await getRepositoryIdentity();
     const db = getDatabase();
@@ -199,11 +200,11 @@ describe('tim sync command', () => {
       })
     );
 
-    await handleSyncCommand({ plan: '6' }, makeCommand() as any);
+    await handleSyncCommand(undefined, { plan: '6' }, makeCommand() as any);
     let plans = getPlansByProject(db, project!.id);
     expect(plans.find((plan) => plan.uuid === planUuid)?.title).toBe('Initial title');
 
-    await handleSyncCommand({ plan: '6', force: true }, makeCommand() as any);
+    await handleSyncCommand(undefined, { plan: '6', force: true }, makeCommand() as any);
     plans = getPlansByProject(db, project!.id);
     expect(plans.find((plan) => plan.uuid === planUuid)?.title).toBe('Stale update title');
   });
@@ -240,7 +241,7 @@ describe('tim sync command', () => {
     );
 
     const { handleSyncCommand } = await import('./sync.js');
-    await handleSyncCommand({ plan: '8' }, makeCommand() as any);
+    await handleSyncCommand(undefined, { plan: '8' }, makeCommand() as any);
 
     const repository = await getRepositoryIdentity();
     const db = getDatabase();
@@ -278,11 +279,11 @@ describe('tim sync command', () => {
     );
 
     const { handleSyncCommand } = await import('./sync.js');
-    await handleSyncCommand({}, makeCommand() as any);
+    await handleSyncCommand(undefined, {}, makeCommand() as any);
 
     await fs.rm(removedFilePath, { force: true });
 
-    await handleSyncCommand({ prune: true }, makeCommand() as any);
+    await handleSyncCommand(undefined, { prune: true }, makeCommand() as any);
 
     const repository = await getRepositoryIdentity();
     const db = getDatabase();
@@ -314,7 +315,7 @@ describe('tim sync command', () => {
     try {
       process.chdir(repoDir);
       const { handleSyncCommand } = await import('./sync.js');
-      await handleSyncCommand({ dir: externalTasksDir }, makeCommand() as any);
+      await handleSyncCommand(undefined, { dir: externalTasksDir }, makeCommand() as any);
 
       const repository = await getRepositoryIdentity();
       const db = getDatabase();
@@ -331,7 +332,54 @@ describe('tim sync command', () => {
   test('handleSyncCommand rejects combining --plan and --prune', async () => {
     const { handleSyncCommand } = await import('./sync.js');
     await expect(
-      handleSyncCommand({ plan: '1', prune: true }, makeCommand() as any)
+      handleSyncCommand(undefined, { plan: '1', prune: true }, makeCommand() as any)
     ).rejects.toThrow('--prune cannot be used together with --plan');
+  });
+
+  test('handleSyncCommand positional planId syncs a materialized plan', async () => {
+    const { handleSyncCommand } = await import('./sync.js');
+    const repository = await getRepositoryIdentity({ cwd: repoDir });
+    const db = getDatabase();
+    const project = getOrCreateProject(db, repository.repositoryId, {
+      remoteUrl: repository.remoteUrl,
+      lastGitRoot: repository.gitRoot,
+    });
+
+    upsertPlan(db, project.id, {
+      uuid: '33333333-3333-4333-8333-333333333333',
+      planId: 3,
+      title: 'DB title',
+      goal: 'Sync through materialized file',
+      details: 'Before materialized edit',
+      filename: '3-primary.plan.md',
+      tasks: [],
+    });
+
+    const materializedDir = path.join(repoDir, '.tim', 'plans');
+    await fs.mkdir(materializedDir, { recursive: true });
+    const planPath = path.join(materializedDir, '3.plan.md');
+    await writePlanFile(
+      planPath,
+      {
+        id: 3,
+        uuid: '33333333-3333-4333-8333-333333333333',
+        title: 'Edited on disk',
+        goal: 'Sync through materialized file',
+        details: 'After materialized edit',
+        tasks: [],
+      },
+      { skipSync: true }
+    );
+
+    const originalCwd = process.cwd();
+    try {
+      process.chdir(repoDir);
+      await handleSyncCommand('3', {}, makeCommand() as any);
+    } finally {
+      process.chdir(originalCwd);
+    }
+
+    expect(getPlanByPlanId(db, project.id, 3)?.title).toBe('Edited on disk');
+    expect(mockLog).toHaveBeenCalledWith('Synced materialized plan 3.');
   });
 });

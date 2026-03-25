@@ -38,7 +38,6 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
       .describe('Plan details. This can also be in markdown content after the YAML'),
     id: z.number().int().positive(),
     uuid: z.guid().optional(),
-    generatedBy: z.enum(['agent', 'oneshot']).optional(),
     simple: z.boolean().optional(),
     tdd: z.boolean().optional(),
     status: z.preprocess((s) => {
@@ -51,7 +50,6 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
 
       return s;
     }, statusSchema.default('pending')),
-    statusDescription: z.string().optional(),
     priority: prioritySchema.optional(),
     container: z.boolean().optional().describe('Deprecated. Use epic instead.'),
     epic: z
@@ -75,13 +73,6 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
       .positive()
       .optional()
       .describe('Plan ID that led to discovering this issue during research/implementation'),
-    references: z
-      .record(z.string(), z.guid())
-      .default(() => ({}))
-      .optional()
-      .describe(
-        'Maps numeric plan IDs to their UUIDs for deterministic tracking across renumbering'
-      ),
     issue: z
       .array(z.url())
       .default(() => [])
@@ -96,16 +87,13 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
       .optional(),
     assignedTo: z.string().optional(),
     planGeneratedAt: z.string().datetime().optional(),
-    promptsGeneratedAt: z.string().datetime().optional(),
     createdAt: z.string().datetime().optional(),
     updatedAt: z.string().datetime().optional(),
-    compactedAt: z.string().datetime().optional(),
     project: projectSchema.optional(),
     tasks: z.array(taskSchema),
     baseBranch: z.string().optional(),
     branch: z.string().optional(),
     changedFiles: z.array(z.string()).optional(),
-    rmfilter: z.array(z.string()).optional(),
     tags: z.array(z.string()).optional(),
     reviewIssues: z
       .array(
@@ -162,12 +150,21 @@ export function normalizeContainerToEpic<T extends { container?: boolean; epic?:
 }
 
 export const planSchema = phaseSchema;
-export type PlanSchema = z.output<typeof phaseSchema>;
+type LegacyPlanPassthroughFields = {
+  generatedBy?: 'agent' | 'oneshot';
+  promptsGeneratedAt?: string;
+  compactedAt?: string;
+  statusDescription?: string;
+  rmfilter?: string[];
+  references?: Record<string, string>;
+};
+
+export type PlanSchema = z.output<typeof phaseSchema> & LegacyPlanPassthroughFields;
 export type PlanSchemaWithFilename = PlanSchema & {
   filename: string;
 };
 export type TaskSchema = z.output<typeof defaultSchemas.taskSchema>;
-export type PlanSchemaInput = z.input<typeof phaseSchema>;
+export type PlanSchemaInput = z.input<typeof phaseSchema> & LegacyPlanPassthroughFields;
 export type PlanSchemaInputWithFilename = PlanSchemaInput & {
   filename: string;
 };

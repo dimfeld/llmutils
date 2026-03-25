@@ -389,6 +389,22 @@ tim validate --no-fix
 tim validate --verbose
 ```
 
+### tim materialize
+
+Materialize a DB-backed plan into `.tim/plans/` for editing. Related plans are also written as `.ref.md` context files.
+
+```bash
+tim materialize 123
+```
+
+### tim cleanup-materialized
+
+Delete stale materialized plan files from `.tim/plans/`. Primary files are removed when their plan is missing, done, or cancelled. Reference files are removed when their plan no longer exists.
+
+```bash
+tim cleanup-materialized
+```
+
 ### tim compact
 
 Summarize completed plan for archival.
@@ -457,10 +473,12 @@ tim extract --input description.txt --output tasks/plan.yml
 
 ### tim sync
 
-Sync all plan files to the SQLite database. Useful for initial population or reconciling after manual file edits.
+Sync plan files to the SQLite database. When given a plan ID, syncs a materialized `.tim/plans/<id>.plan.md` file back to the database. Without a plan ID, syncs all plan files from the tasks directory.
 
 ```bash
+tim sync 123                           # Sync materialized plan back to DB
 tim sync                               # Sync all plans to DB
+tim sync --plan 123                    # Sync specific plan from tasks directory
 tim sync --prune                       # Also remove DB entries for deleted plans
 tim sync --dir tasks/                  # Sync from specific directory
 ```

@@ -31,4 +31,8 @@ tags:
 
 4. **Clean up plan file I/O functions** — Review plans.ts and remove or simplify functions that are no longer needed now that DB is source of truth. readPlanFile() may still be needed for the sync path (reading materialized files), but scanForPlans(), loadPlans(), and similar directory-scanning functions can be removed.
 
-5. **Update documentation and CLAUDE.md** — Update CLAUDE.md, README, and any other docs to reflect the new DB-first architecture. Remove references to tasks directories and plan file locations.
+5. **Strip obsolete fields from plan files and schema** — Add stripping logic to `writePlanFile()` cleanup section (alongside existing `container`, `progressNotes` removal) for obsolete fields removed from `planSchema.ts` in plan 279: `generatedBy`, `rmfilter`, `promptsGeneratedAt`, `compactedAt`, `statusDescription`, `references`, `project`. Until this point, `.passthrough()` silently preserves these fields in existing files. This is the safe time to strip them since all plans are DB-first and no code depends on these fields.
+
+6. **Update documentation and CLAUDE.md** — Update CLAUDE.md, README, and any other docs to reflect the new DB-first architecture. Remove references to tasks directories and plan file locations.
+
+7. **Update the using-tim skill** — Update the tim skill references (adding-plans.md, generating-plans.md, viewing-and-completing.md, cli-commands.md) to reflect the new DB-first architecture, materialization commands (`tim materialize`, `tim sync`), `.tim/plans/` file locations, and removal of tasks directory concepts.

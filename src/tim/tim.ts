@@ -589,16 +589,34 @@ program
   });
 
 program
-  .command('sync')
-  .description('Sync all plan files to the SQLite database')
+  .command('cleanup-materialized')
+  .description('Delete stale materialized plan files from .tim/plans/')
+  .action(async (options, command) => {
+    const { handleCleanupMaterializedCommand } = await import('./commands/cleanup-materialized.js');
+    await handleCleanupMaterializedCommand(options, command).catch(handleCommandError);
+  });
+
+program
+  .command('sync [planId]')
+  .description(
+    'Sync plan files to the SQLite database, or sync a materialized .tim/plans/<id>.plan.md'
+  )
   .option('--plan <planId>', 'Sync only the specified plan ID or file path')
   .option('--force', 'Force sync even when plan file updatedAt is older than SQLite updated_at')
   .option('--verbose', 'Show additional sync warnings and details')
   .option('--prune', 'Remove DB entries for plans that no longer exist on disk')
   .option('--dir <directory>', 'Directory to sync (defaults to configured task directory)')
-  .action(async (options, command) => {
+  .action(async (planId, options, command) => {
     const { handleSyncCommand } = await import('./commands/sync.js');
-    await handleSyncCommand(options, command).catch(handleCommandError);
+    await handleSyncCommand(planId, options, command).catch(handleCommandError);
+  });
+
+program
+  .command('materialize <planId>')
+  .description('Materialize a plan from the database to .tim/plans/ for editing')
+  .action(async (planId, options, command) => {
+    const { handleMaterializeCommand } = await import('./commands/materialize.js');
+    await handleMaterializeCommand(planId, options, command).catch(handleCommandError);
   });
 
 const executorNames = executors

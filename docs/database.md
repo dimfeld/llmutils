@@ -43,9 +43,9 @@
 
 Plan metadata, tasks, and dependencies are mirrored in SQLite alongside the YAML plan files. This enables centralized querying across workspaces without reading individual files from disk.
 
-**Tables** (migration v2):
+**Tables** (migration v2, extended through v9):
 
-- `plan`: Core metadata (uuid PRIMARY KEY, project_id FK, plan_id, title, goal, details, status, priority, parent_uuid, epic, filename, timestamps). No unique constraint on `(project_id, plan_id)` to tolerate temporary duplicate numeric IDs.
+- `plan`: Core metadata (uuid PRIMARY KEY, project_id FK, plan_id, title, goal, details, status, priority, parent_uuid, epic, filename, timestamps). Additional columns added in later migrations: `assigned_to`, `simple`, `tdd`, `discovered_from`, `base_branch`, `issue` (JSON), `pull_request` (JSON), `branch`, `temp` (INTEGER), `docs` (JSON array), `changed_files` (JSON array), `plan_generated_at` (TEXT), `review_issues` (JSON array of objects). No unique constraint on `(project_id, plan_id)` to tolerate temporary duplicate numeric IDs.
 - `plan_task`: Tasks per plan (plan_uuid FK with CASCADE, task_index, title, description, done). UNIQUE on `(plan_uuid, task_index)`.
 - `plan_dependency`: Dependencies by UUID (plan_uuid FK with CASCADE, depends_on_uuid, composite PK). No FK on `depends_on_uuid` since the referenced plan may not be synced yet.
 
@@ -58,7 +58,7 @@ Plan metadata, tasks, and dependencies are mirrored in SQLite alongside the YAML
 
 **Sync module** (`src/tim/db/plan_sync.ts`):
 
-- `syncPlanToDb(plan, filePath, options?)`: Upserts a single plan to DB. Uses lazy-cached project context (keyed by git root) resolved via `getRepositoryIdentity()` + `getOrCreateProject()`. Accepts optional `idToUuid` map for bulk operations.
+- `syncPlanToDb(plan, filePath, options?)`: Upserts a single plan to DB. Uses lazy-cached project context (keyed by git root) resolved via `getRepositoryIdentity()` + `getOrCreateProject()`. Accepts optional `idToUuid` map for bulk operations. Options: `throwOnError` (propagate errors instead of logging warnings), `cwdForIdentity` (override CWD for repository identity resolution).
 - `removePlanFromDb(planUuid)`: Deletes plan and its assignment in a single transaction.
 - `syncAllPlansToDb(projectId, tasksDir, options?)`: Bulk sync with optional prune (removes DB plans not found on disk, including their assignments).
 - `clearPlanSyncContext()`: Resets cached context for testing.
@@ -80,11 +80,32 @@ Plan metadata, tasks, and dependencies are mirrored in SQLite alongside the YAML
 
 **Deletion ordering**: Plan deletion commands (`tim remove`, `tim cleanup-temp`) use file-then-DB order: delete the plan file first, then remove the DB row. Orphan DB rows (file deleted but DB row remains) are safely cleaned up by `tim sync --prune`, while orphan files (DB deleted but file remains) would reappear on next sync. `removePlanFromDb` handles both plan and assignment deletion in a single transaction, so callers do not need to call `removePlanAssignment` separately.
 
-**Error handling layers**: `syncPlanToDb` has a single try/catch that logs warnings and never rethrows. Callers (e.g., `writePlanFile`) trust this and do not add redundant outer error handling.
+**Error handling layers**: `syncPlanToDb` has a single try/catch that logs warnings and never rethrows by default. The `throwOnError: true` option enables error propagation for callers that need correctness guarantees (e.g., `syncMaterializedPlan`). The `cwdForIdentity` option overrides the working directory used by `getRepositoryIdentity()` during context resolution. Callers (e.g., `writePlanFile`) trust the default behavior and do not add redundant outer error handling.
+
+### Plan Materialization
+
+Plan materialization writes plan files from DB data to disk at well-known paths, enabling agents to edit plans as files while the DB remains the source of truth. Module: `src/tim/plan_materialize.ts`.
+
+**File layout**: Materialized plans live at `{repoRoot}/.tim/plans/{planId}.plan.md`. Related plans (parent, children, siblings, dependencies) are written as `{planId}.ref.md` files in the same directory. `ensureMaterializeDir()` creates the directory and writes a `.gitignore` with `*.plan.md` and `*.ref.md` patterns to prevent accidental commits.
+
+**Core functions**:
+
+- `materializePlan(planId, repoRoot, options?)`: Queries plan from DB, converts via `planRowToSchemaInput()`, writes with `writePlanFile()` using `skipSync: true` to prevent circular DB sync. Returns the file path.
+- `materializeRelatedPlans(planId, repoRoot, options?)`: Materializes parent, children, siblings, and dependency plans as `.ref.md` reference files.
+- `syncMaterializedPlan(planId, repoRoot)`: Pre-validates UUID from raw file content, then reads materialized file via `readPlanFile()` and syncs to DB via `syncPlanToDb()` with `throwOnError: true`.
+- `withPlanAutoSync(planId, repoRoot, fn)`: Auto-sync wrapper for commands that modify plans while agents may be editing the materialized file. Syncs file→DB before `fn()`, re-materializes DB→file after. Uses try/finally with error suppression in the finally block to prevent re-materialization errors from masking `fn()` errors.
+
+**CLI entry points**: `tim materialize <planId>` writes the working copy, `tim sync <planId>` syncs that materialized file back to DB, and `tim cleanup-materialized` removes stale files.
+
+**`skipSync` option on `writePlanFile()`**: Prevents the automatic `syncPlanToDb()` call at the end of file writing. Used by materialization to avoid circular sync when writing a file that was just read from the DB.
+
+**UUID safety**: `syncMaterializedPlan()` extracts the UUID from raw file YAML before calling `readPlanFile()`, because `readPlanFile()` auto-generates UUIDs for files missing them (which would corrupt a materialized file with a wrong UUID).
 
 ### Plan Loading from DB
 
-`src/tim/plans_db.ts` provides `loadPlansFromDb(searchDir, repositoryId)` — a shared function that assembles `PlanWithFilename` objects from DB rows (plans, tasks, tags, dependencies) for a given project. Returns `PlansLoadResult` with `plans: Map<number, PlanWithFilename>` and `duplicates`. Resolves `parent_uuid` to numeric plan IDs using an internal UUID-to-ID map, enabling `--epic` filtering in DB mode. Also populates `assignedTo` from the DB row's `assigned_to` field.
+`src/tim/plans_db.ts` provides `loadPlansFromDb(searchDir, repositoryId)` — a shared function that assembles `PlanWithFilename` objects from DB rows (plans, tasks, tags, dependencies) for a given project. Returns `PlansLoadResult` with `plans: Map<number, PlanWithFilename>` and `duplicates`. Uses `planRowToSchemaInput()` to convert DB rows to `PlanSchema` objects with full field coverage.
+
+**`planRowToSchemaInput(row, tasks, deps, tags, uuidToPlanId?)`** converts a single plan's DB data to `PlanSchema`. Handles all fields including JSON-stored columns (`issue`, `pullRequest`, `docs`, `changedFiles`, `reviewIssues`). Resolves `parent_uuid` and dependency UUIDs back to numeric plan IDs — if a `uuidToPlanId` map is provided it uses that, otherwise it queries the DB for needed UUIDs. This shared converter is used by both `loadPlansFromDb()` (bulk loading) and will be used by `materializePlan()` (single-plan reconstruction).
 
 Used by `tim list`, `tim ready`, and the MCP `list-ready-plans` tool via a DB-with-fallback pattern: try DB first, fall back to local YAML files if the DB returns no plans. The `--local` flag on both CLI commands bypasses the DB and reads files directly.
 

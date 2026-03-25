@@ -2,16 +2,94 @@ import * as path from 'node:path';
 import { getDatabase } from './db/database.js';
 import {
   getPlanDependenciesByProject,
+  getPlanByUuid,
   getPlansByProject,
   getPlanTasksByProject,
   getPlanTagsByProject,
+  type PlanRow,
 } from './db/plan.js';
 import { getProject } from './db/project.js';
+import type { PlanSchema, PlanSchemaInput } from './planSchema.js';
 import type { PlanWithFilename } from './utils/hierarchy.js';
 
 export interface PlansLoadResult {
   plans: Map<number, PlanWithFilename>;
   duplicates: Record<number, string[]>;
+}
+
+function parseOptionalStringArray(value: string | null): string[] | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  return JSON.parse(value) as string[];
+}
+
+function parseOptionalReviewIssues(value: string | null): PlanSchema['reviewIssues'] | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  return JSON.parse(value) as PlanSchema['reviewIssues'];
+}
+
+function resolveUuidToPlanId(uuid: string, uuidToPlanId?: Map<string, number>): number | undefined {
+  const mappedPlanId = uuidToPlanId?.get(uuid);
+  if (typeof mappedPlanId === 'number') {
+    return mappedPlanId;
+  }
+
+  const db = getDatabase();
+  return getPlanByUuid(db, uuid)?.plan_id;
+}
+
+/**
+ * Convert a DB plan row and its related data into a PlanSchemaInput suitable
+ * for writePlanFile(). Resolves parent UUID and dependency UUIDs to numeric
+ * plan IDs using the provided map or DB lookups as fallback.
+ */
+export function planRowToSchemaInput(
+  row: PlanRow,
+  tasks: Array<{ title: string; description: string; done: boolean }>,
+  dependencyUuids: string[],
+  tags: string[],
+  uuidToPlanId?: Map<string, number>
+): PlanSchema {
+  const parent = row.parent_uuid ? resolveUuidToPlanId(row.parent_uuid, uuidToPlanId) : undefined;
+
+  const dependencies = dependencyUuids
+    .map((uuid) => resolveUuidToPlanId(uuid, uuidToPlanId))
+    .filter((id): id is number => typeof id === 'number');
+
+  return {
+    id: row.plan_id,
+    uuid: row.uuid,
+    title: row.title ?? undefined,
+    goal: row.goal ?? '',
+    details: row.details ?? '',
+    status: row.status,
+    priority: row.priority ?? undefined,
+    branch: row.branch ?? undefined,
+    simple: row.simple === 1 ? true : undefined,
+    tdd: row.tdd === 1 ? true : undefined,
+    discoveredFrom: row.discovered_from ?? undefined,
+    baseBranch: row.base_branch ?? undefined,
+    epic: row.epic === 1 ? true : undefined,
+    assignedTo: row.assigned_to ?? undefined,
+    issue: parseOptionalStringArray(row.issue),
+    pullRequest: parseOptionalStringArray(row.pull_request),
+    temp: row.temp === 1 ? true : undefined,
+    docs: parseOptionalStringArray(row.docs),
+    changedFiles: parseOptionalStringArray(row.changed_files),
+    planGeneratedAt: row.plan_generated_at ?? undefined,
+    reviewIssues: parseOptionalReviewIssues(row.review_issues),
+    parent,
+    dependencies,
+    tasks,
+    tags,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  } satisfies PlanSchema;
 }
 
 export function loadPlansFromDb(searchDir: string, repositoryId: string): PlansLoadResult {
@@ -54,17 +132,12 @@ export function loadPlansFromDb(searchDir: string, repositoryId: string): PlansL
     tasksByPlanUuid.set(taskRow.plan_uuid, list);
   }
 
-  const dependenciesByPlanUuid = new Map<string, number[]>();
+  const dependencyUuidsByPlanUuid = new Map<string, string[]>();
   const dependencyRows = getPlanDependenciesByProject(db, project.id);
   for (const dependencyRow of dependencyRows) {
-    const dependencyPlanId = planUuidToId.get(dependencyRow.depends_on_uuid);
-    if (dependencyPlanId === undefined) {
-      continue;
-    }
-
-    const list = dependenciesByPlanUuid.get(dependencyRow.plan_uuid) ?? [];
-    list.push(dependencyPlanId);
-    dependenciesByPlanUuid.set(dependencyRow.plan_uuid, list);
+    const list = dependencyUuidsByPlanUuid.get(dependencyRow.plan_uuid) ?? [];
+    list.push(dependencyRow.depends_on_uuid);
+    dependencyUuidsByPlanUuid.set(dependencyRow.plan_uuid, list);
   }
 
   const plans = new Map<number, PlanWithFilename>();
@@ -77,23 +150,13 @@ export function loadPlansFromDb(searchDir: string, repositoryId: string): PlansL
     seenIds.set(row.plan_id, existingPaths);
 
     const plan: PlanWithFilename = {
-      id: row.plan_id,
-      uuid: row.uuid,
-      title: row.title ?? undefined,
-      goal: row.goal ?? '',
-      details: row.details ?? '',
-      simple: row.simple === 1 ? true : undefined,
-      tags: tagsByPlanUuid.get(row.uuid),
-      status: row.status,
-      priority: row.priority ?? undefined,
-      branch: row.branch ?? undefined,
-      parent: row.parent_uuid ? planUuidToId.get(row.parent_uuid) : undefined,
-      assignedTo: row.assigned_to ?? undefined,
-      epic: row.epic === 1,
-      tasks: tasksByPlanUuid.get(row.uuid) ?? [],
-      dependencies: dependenciesByPlanUuid.get(row.uuid) ?? [],
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
+      ...planRowToSchemaInput(
+        row,
+        tasksByPlanUuid.get(row.uuid) ?? [],
+        dependencyUuidsByPlanUuid.get(row.uuid) ?? [],
+        tagsByPlanUuid.get(row.uuid) ?? [],
+        planUuidToId
+      ),
       filename: absoluteFilename,
     };
 

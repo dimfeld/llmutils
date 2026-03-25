@@ -304,7 +304,7 @@ export async function extractMarkdownToYaml(
       console.error('Invalid YAML (saved to tim-validation-failure.yml):', convertedYaml);
       throw new Error('Validation failed');
     }
-    validatedPlan = result.data;
+    validatedPlan = result.data as PlanSchema;
 
     // Preserve all fields from the original plan that aren't in the updated plan
     // This includes fields like parent, epic, baseBranch, changedFiles, etc.
@@ -540,7 +540,7 @@ export async function saveMultiPhaseYaml(
         validation.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ')
     );
   }
-  let combinedPlan = validation.data;
+  let combinedPlan = validation.data as PlanSchema;
 
   if (options.researchContent?.trim()) {
     combinedPlan = appendResearchToPlan(combinedPlan, options.researchContent, {

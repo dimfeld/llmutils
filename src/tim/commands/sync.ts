@@ -9,6 +9,7 @@ import { getDatabase } from '../db/database.js';
 import { getPlanByUuid } from '../db/plan.js';
 import { getOrCreateProject } from '../db/project.js';
 import { syncAllPlansToDb, syncPlanToDb } from '../db/plan_sync.js';
+import { parsePlanId, resolveProjectContext, syncMaterializedPlan } from '../plan_materialize.js';
 import { readAllPlans, readPlanFile } from '../plans.js';
 import type { PlanSchemaInput } from '../planSchema.js';
 
@@ -144,11 +145,41 @@ async function syncMissingReferencedPlans(
 }
 
 export async function handleSyncCommand(
+  planIdArg: string | undefined,
   options: SyncCommandOptions,
   command: Command
 ): Promise<void> {
+  if (planIdArg && options.plan) {
+    throw new Error('Positional <planId> cannot be used together with --plan');
+  }
   if (options.plan && options.prune) {
     throw new Error('--prune cannot be used together with --plan');
+  }
+
+  if (planIdArg) {
+    if (options.prune) {
+      throw new Error('--prune cannot be used together with positional <planId>');
+    }
+    if (options.dir) {
+      throw new Error('--dir cannot be used together with positional <planId>');
+    }
+    if (options.force) {
+      throw new Error(
+        '--force is only supported for tasks-directory sync, not positional <planId>'
+      );
+    }
+    if (options.verbose) {
+      throw new Error(
+        '--verbose is only supported for tasks-directory sync, not positional <planId>'
+      );
+    }
+
+    const planId = parsePlanId(planIdArg);
+    const repository = await getRepositoryIdentity();
+    const context = await resolveProjectContext(repository.gitRoot, repository);
+    await syncMaterializedPlan(planId, repository.gitRoot, { context });
+    log(`Synced materialized plan ${planId}.`);
+    return;
   }
 
   const globalOpts = command.parent?.opts?.() ?? {};

@@ -174,9 +174,14 @@ Update `src/tim/db/plan.ts`:
 
 ### Update the Sync Module
 
-Update `src/tim/db/plan_sync.ts` to map the plan schema field to the DB input field in `syncPlanToDb()`.
+There are two conversion functions that map between plan schema and DB representations:
 
-Not all plan schema fields need to be in SQLite — the `details` field, for example, is intentionally excluded to keep the DB lightweight. Only add fields that benefit from centralized querying.
+- **`toPlanUpsertInput()`** in `src/tim/db/plan_sync.ts`: Maps `PlanSchema` → `UpsertPlanInput` (file→DB direction). Update this to include the new field when syncing plan files to the database.
+- **`planRowToSchemaInput()`** in `src/tim/plans_db.ts`: Maps DB rows → `PlanSchema` (DB→file direction). Update this to include the new field when reconstructing plan data from the database. For JSON-stored fields (arrays, objects), parse with `JSON.parse()` and handle null values.
+
+Both must be updated for the field to round-trip correctly through DB→file→DB.
+
+Not all plan schema fields need to be in SQLite — only add fields that benefit from centralized querying or are needed for faithful plan materialization.
 
 ## Step 6: Test Your Changes
 

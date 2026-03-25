@@ -303,6 +303,16 @@ const migrations: Migration[] = [
       CREATE INDEX idx_plan_pr_pr_status_id ON plan_pr(pr_status_id);
     `,
   },
+  {
+    version: 9,
+    up: `
+      ALTER TABLE plan ADD COLUMN temp INTEGER;
+      ALTER TABLE plan ADD COLUMN docs TEXT;
+      ALTER TABLE plan ADD COLUMN changed_files TEXT;
+      ALTER TABLE plan ADD COLUMN plan_generated_at TEXT;
+      ALTER TABLE plan ADD COLUMN review_issues TEXT;
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {

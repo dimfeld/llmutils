@@ -10,6 +10,10 @@ import { resolveTasksDir, type TimConfig } from '../configSchema.js';
 import { statusSchema, type PlanSchemaInput, type PlanSchema } from '../planSchema.js';
 import { readAllPlans, readPlanFile } from '../plans.js';
 
+type PlanReferences = {
+  references?: Record<string, string>;
+};
+
 interface PlanSyncContext {
   projectId: number;
   repositoryId: string;
@@ -21,7 +25,9 @@ interface PlanSyncOptions {
   idToUuid?: Map<number, string>;
   baseDir?: string;
   tasksDir?: string;
+  cwdForIdentity?: string;
   force?: boolean;
+  throwOnError?: boolean;
 }
 
 const cachedContextsByGitRoot = new Map<string, PlanSyncContext>();
@@ -48,7 +54,7 @@ function coercePlanPriority(value: unknown): 'low' | 'medium' | 'high' | 'urgent
 }
 
 function getPlanReferenceUuid(
-  plan: Pick<PlanSchemaInput, 'references'>,
+  plan: PlanReferences,
   planId: number,
   idToUuid?: Map<number, string>
 ): string | undefined {
@@ -61,14 +67,15 @@ function getPlanReferenceUuid(
 }
 
 function collectMissingReferenceIds(plan: PlanSchemaInput): number[] {
+  const planWithReferences = plan as PlanSchemaInput & PlanReferences;
   const missing = new Set<number>();
 
-  if (typeof plan.parent === 'number' && !plan.references?.[String(plan.parent)]) {
+  if (typeof plan.parent === 'number' && !planWithReferences.references?.[String(plan.parent)]) {
     missing.add(plan.parent);
   }
 
   for (const depId of plan.dependencies ?? []) {
-    if (!plan.references?.[String(depId)]) {
+    if (!planWithReferences.references?.[String(depId)]) {
       missing.add(depId);
     }
   }
@@ -93,7 +100,9 @@ async function resolvePlanSyncContext(options: PlanSyncOptions = {}): Promise<Pl
   const contextPromise = (async (): Promise<PlanSyncContext> => {
     const config = options.config ?? (await loadEffectiveConfig());
     const tasksDir = await resolveTasksDir(config);
-    const repository = await getRepositoryIdentity();
+    const repository = await getRepositoryIdentity({
+      cwd: options.cwdForIdentity ?? process.cwd(),
+    });
 
     const existingContext = cachedContextsByGitRoot.get(repository.gitRoot);
     if (existingContext) {
@@ -166,6 +175,11 @@ function toPlanUpsertInput(
   pullRequest?: string[] | null;
   assignedTo?: string | null;
   baseBranch?: string | null;
+  temp?: boolean | null;
+  docs?: string[] | null;
+  changedFiles?: string[] | null;
+  planGeneratedAt?: string | null;
+  reviewIssues?: PlanSchema['reviewIssues'] | null;
   parentUuid?: string | null;
   epic: boolean;
   filename: string;
@@ -204,6 +218,11 @@ function toPlanUpsertInput(
     pullRequest: plan.pullRequest ?? null,
     assignedTo: plan.assignedTo ?? null,
     baseBranch: plan.baseBranch ?? null,
+    temp: typeof plan.temp === 'boolean' ? plan.temp : null,
+    docs: plan.docs ?? null,
+    changedFiles: plan.changedFiles ?? null,
+    planGeneratedAt: plan.planGeneratedAt ?? null,
+    reviewIssues: plan.reviewIssues ?? null,
     parentUuid,
     epic: plan.epic === true,
     filename: path.basename(filePath),
@@ -242,6 +261,9 @@ export async function syncPlanToDb(
       forceOverwrite: options.force === true,
     });
   } catch (error) {
+    if (options.throwOnError) {
+      throw error;
+    }
     const label = plan.id ?? plan.uuid;
     warn(
       `Failed to sync plan ${label} to SQLite: ${Error.isError(error) ? error.stack : String(error)}`

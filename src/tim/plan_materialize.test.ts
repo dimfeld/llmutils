@@ -1,0 +1,819 @@
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { ModuleMocker, clearAllTimCaches } from '../testing.js';
+import { getRepositoryIdentity } from './assignments/workspace_identifier.js';
+import { closeDatabaseForTesting, getDatabase } from './db/database.js';
+import {
+  getPlanByPlanId,
+  getPlanByUuid,
+  getPlanDependenciesByUuid,
+  getPlanTagsByUuid,
+  getPlanTasksByUuid,
+  upsertPlan,
+} from './db/plan.js';
+import { clearPlanSyncContext } from './db/plan_sync.js';
+import { getOrCreateProject } from './db/project.js';
+import {
+  cleanupMaterializedPlans,
+  ensureMaterializeDir,
+  getMaterializedPlanPath,
+  getMaterializedRefPath,
+  materializePlan,
+  materializeRelatedPlans,
+  syncMaterializedPlan,
+  withPlanAutoSync,
+} from './plan_materialize.js';
+import { readPlanFile, writePlanFile } from './plans.js';
+import { handleCleanupMaterializedCommand } from './commands/cleanup-materialized.js';
+import { handleMaterializeCommand } from './commands/materialize.js';
+import { handleSyncCommand } from './commands/sync.js';
+
+const moduleMocker = new ModuleMocker(import.meta);
+
+async function importFreshPlanMaterialize(suffix: string) {
+  return import(`./plan_materialize.js?${suffix}-${Date.now()}`);
+}
+
+async function initializeGitRepository(repoDir: string): Promise<void> {
+  await Bun.$`git init`.cwd(repoDir).quiet();
+  await Bun.$`git remote add origin https://example.com/acme/materialize-tests.git`
+    .cwd(repoDir)
+    .quiet();
+}
+
+describe('tim plan_materialize', () => {
+  let tempDir: string;
+  let repoDir: string;
+  let originalXdgConfigHome: string | undefined;
+
+  beforeEach(async () => {
+    clearAllTimCaches();
+    closeDatabaseForTesting();
+    clearPlanSyncContext();
+
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-plan-materialize-test-'));
+    repoDir = path.join(tempDir, 'repo');
+    await fs.mkdir(repoDir, { recursive: true });
+    await initializeGitRepository(repoDir);
+
+    originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
+    process.env.XDG_CONFIG_HOME = path.join(tempDir, 'xdg');
+  });
+
+  afterEach(async () => {
+    clearAllTimCaches();
+    closeDatabaseForTesting();
+    clearPlanSyncContext();
+    moduleMocker.clear();
+
+    if (originalXdgConfigHome === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
+    }
+
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  async function seedProject() {
+    const repository = await getRepositoryIdentity({ cwd: repoDir });
+    const db = getDatabase();
+    const project = getOrCreateProject(db, repository.repositoryId, {
+      remoteUrl: repository.remoteUrl,
+      lastGitRoot: repository.gitRoot,
+    });
+
+    upsertPlan(db, project.id, {
+      uuid: '11111111-1111-4111-8111-111111111111',
+      planId: 1,
+      title: 'Parent plan',
+      goal: 'Parent goal',
+      details: 'Parent details',
+      filename: '1-parent.plan.md',
+      tasks: [{ title: 'parent task', description: 'parent task', done: false }],
+      tags: ['parent'],
+    });
+    upsertPlan(db, project.id, {
+      uuid: '22222222-2222-4222-8222-222222222222',
+      planId: 2,
+      title: 'Dependency plan',
+      goal: 'Dependency goal',
+      details: 'Dependency details',
+      filename: '2-dependency.plan.md',
+      tasks: [{ title: 'dep task', description: 'dep task', done: true }],
+      tags: ['dependency'],
+    });
+    upsertPlan(db, project.id, {
+      uuid: '33333333-3333-4333-8333-333333333333',
+      planId: 3,
+      title: 'Primary plan',
+      goal: 'Primary goal',
+      details: 'Primary details',
+      status: 'in_progress',
+      priority: 'high',
+      branch: 'feature/materialize',
+      simple: true,
+      tdd: true,
+      discoveredFrom: 99,
+      issue: ['https://github.com/example/repo/issues/3'],
+      pullRequest: ['https://github.com/example/repo/pull/30'],
+      assignedTo: 'dimfeld',
+      baseBranch: 'main',
+      temp: true,
+      docs: ['docs/primary.md'],
+      changedFiles: ['src/tim/plan_materialize.ts'],
+      planGeneratedAt: '2026-03-01T00:00:00.000Z',
+      reviewIssues: [
+        {
+          severity: 'major',
+          category: 'coverage',
+          content: 'Need round-trip test',
+          file: 'src/tim/plan_materialize.ts',
+          line: 1,
+        },
+      ],
+      parentUuid: '11111111-1111-4111-8111-111111111111',
+      epic: false,
+      filename: '3-primary.plan.md',
+      tasks: [
+        { title: 'implement', description: 'build materialize flow', done: false },
+        { title: 'verify', description: 'run tests', done: false },
+      ],
+      dependencyUuids: ['22222222-2222-4222-8222-222222222222'],
+      tags: ['materialize', 'sync'],
+    });
+    upsertPlan(db, project.id, {
+      uuid: '44444444-4444-4444-8444-444444444444',
+      planId: 4,
+      title: 'Child plan',
+      goal: 'Child goal',
+      details: 'Child details',
+      parentUuid: '33333333-3333-4333-8333-333333333333',
+      filename: '4-child.plan.md',
+    });
+    upsertPlan(db, project.id, {
+      uuid: '55555555-5555-4555-8555-555555555555',
+      planId: 5,
+      title: 'Sibling plan',
+      goal: 'Sibling goal',
+      details: 'Sibling details',
+      parentUuid: '11111111-1111-4111-8111-111111111111',
+      filename: '5-sibling.plan.md',
+    });
+
+    return { db, project };
+  }
+
+  test('materializePlan writes the primary plan and materializeRelatedPlans writes refs', async () => {
+    await seedProject();
+
+    const materializeDir = await ensureMaterializeDir(repoDir);
+    expect(await fs.readFile(path.join(materializeDir, '.gitignore'), 'utf8')).toBe(
+      '*.plan.md\n*.ref.md\n'
+    );
+
+    const planPath = await materializePlan(3, repoDir);
+    expect(planPath).toBe(getMaterializedPlanPath(repoDir, 3));
+
+    const materializedPlan = await readPlanFile(planPath);
+    expect(materializedPlan).toMatchObject({
+      id: 3,
+      uuid: '33333333-3333-4333-8333-333333333333',
+      title: 'Primary plan',
+      goal: 'Primary goal',
+      details: 'Primary details',
+      status: 'in_progress',
+      priority: 'high',
+      branch: 'feature/materialize',
+      simple: true,
+      tdd: true,
+      discoveredFrom: 99,
+      issue: ['https://github.com/example/repo/issues/3'],
+      pullRequest: ['https://github.com/example/repo/pull/30'],
+      assignedTo: 'dimfeld',
+      baseBranch: 'main',
+      temp: true,
+      docs: ['docs/primary.md'],
+      changedFiles: ['src/tim/plan_materialize.ts'],
+      planGeneratedAt: '2026-03-01T00:00:00.000Z',
+      parent: 1,
+      dependencies: [2],
+      tags: ['materialize', 'sync'],
+    });
+    expect(materializedPlan.tasks).toHaveLength(2);
+    expect(materializedPlan.reviewIssues).toHaveLength(1);
+
+    const refPaths = await materializeRelatedPlans(3, repoDir);
+    expect(refPaths.sort()).toEqual(
+      [
+        getMaterializedRefPath(repoDir, 1),
+        getMaterializedRefPath(repoDir, 2),
+        getMaterializedRefPath(repoDir, 4),
+        getMaterializedRefPath(repoDir, 5),
+      ].sort()
+    );
+
+    const parentRef = await readPlanFile(getMaterializedRefPath(repoDir, 1));
+    const dependencyRef = await readPlanFile(getMaterializedRefPath(repoDir, 2));
+    const childRef = await readPlanFile(getMaterializedRefPath(repoDir, 4));
+    const siblingRef = await readPlanFile(getMaterializedRefPath(repoDir, 5));
+
+    expect(parentRef.title).toBe('Parent plan');
+    expect(dependencyRef.title).toBe('Dependency plan');
+    expect(childRef.parent).toBe(3);
+    expect(siblingRef.parent).toBe(1);
+  });
+
+  test('syncMaterializedPlan syncs edited materialized files back into the database', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.title = 'Primary plan edited on disk';
+    editedPlan.details = 'Primary details updated from file';
+    editedPlan.temp = undefined;
+    editedPlan.docs = ['docs/primary.md', 'docs/edited.md'];
+    editedPlan.changedFiles = ['src/tim/plan_materialize.ts', 'src/tim/plan_materialize.test.ts'];
+    editedPlan.reviewIssues = [
+      {
+        severity: 'minor',
+        category: 'correctness',
+        content: 'Updated review issue from materialized file',
+        file: 'src/tim/plan_materialize.test.ts',
+        line: 1,
+      },
+    ];
+    editedPlan.tags = ['materialize', 'verified'];
+    editedPlan.dependencies = [1, 2];
+    editedPlan.tasks.push({
+      title: 'sync changes',
+      description: 'persist file edits',
+      done: true,
+    });
+    await writePlanFile(planPath, editedPlan, { skipSync: true });
+
+    await syncMaterializedPlan(3, repoDir);
+
+    const saved = getPlanByPlanId(db, project.id, 3);
+    expect(saved?.title).toBe('Primary plan edited on disk');
+    expect(saved?.details).toBe('Primary details updated from file');
+    expect(saved?.filename).toBe('3-primary.plan.md');
+    expect(saved?.temp).toBe(0);
+    expect(saved?.docs).toBe('["docs/primary.md","docs/edited.md"]');
+    expect(saved?.changed_files).toBe(
+      '["src/tim/plan_materialize.ts","src/tim/plan_materialize.test.ts"]'
+    );
+    expect(saved?.review_issues).toBe(
+      '[{"severity":"minor","category":"correctness","content":"Updated review issue from materialized file","file":"src/tim/plan_materialize.test.ts","line":1}]'
+    );
+
+    const tasks = getPlanTasksByUuid(db, '33333333-3333-4333-8333-333333333333');
+    expect(tasks).toHaveLength(3);
+    expect(tasks[2]?.title).toBe('sync changes');
+
+    const tags = getPlanTagsByUuid(db, '33333333-3333-4333-8333-333333333333');
+    expect(tags.map((tag) => tag.tag)).toEqual(['materialize', 'verified']);
+
+    const deps = getPlanDependenciesByUuid(db, '33333333-3333-4333-8333-333333333333');
+    expect(deps.map((dependency) => dependency.depends_on_uuid)).toEqual([
+      '11111111-1111-4111-8111-111111111111',
+      '22222222-2222-4222-8222-222222222222',
+    ]);
+
+    await materializePlan(3, repoDir);
+    const rematerializedPlan = await readPlanFile(planPath);
+    expect(rematerializedPlan).toMatchObject({
+      title: 'Primary plan edited on disk',
+      details: 'Primary details updated from file',
+      docs: ['docs/primary.md', 'docs/edited.md'],
+      changedFiles: ['src/tim/plan_materialize.ts', 'src/tim/plan_materialize.test.ts'],
+      reviewIssues: [
+        {
+          severity: 'minor',
+          category: 'correctness',
+          content: 'Updated review issue from materialized file',
+          file: 'src/tim/plan_materialize.test.ts',
+          line: 1,
+        },
+      ],
+      tags: ['materialize', 'verified'],
+      dependencies: [1, 2],
+      temp: false,
+    });
+  });
+
+  test('withPlanAutoSync syncs file edits before DB changes and re-materializes after', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.title = 'Title from materialized file';
+    await writePlanFile(planPath, editedPlan, { skipSync: true });
+
+    await withPlanAutoSync(3, repoDir, async () => {
+      const syncedRow = getPlanByPlanId(db, project.id, 3);
+      expect(syncedRow?.title).toBe('Title from materialized file');
+
+      db.prepare('UPDATE plan SET status = ?, updated_at = ? WHERE uuid = ?').run(
+        'done',
+        '2026-03-24T00:00:00.000Z',
+        '33333333-3333-4333-8333-333333333333'
+      );
+    });
+
+    const saved = getPlanByUuid(db, '33333333-3333-4333-8333-333333333333');
+    expect(saved?.title).toBe('Title from materialized file');
+    expect(saved?.status).toBe('done');
+
+    const rematerializedPlan = await readPlanFile(planPath);
+    expect(rematerializedPlan.title).toBe('Title from materialized file');
+    expect(rematerializedPlan.status).toBe('done');
+  });
+
+  test('materializePlan throws when the plan does not exist in the repo project', async () => {
+    await seedProject();
+
+    await expect(materializePlan(999, repoDir)).rejects.toThrow(
+      `Plan 999 was not found in the database for ${repoDir}`
+    );
+  });
+
+  test('syncMaterializedPlan rejects when the materialized file plan ID does not match the requested ID', async () => {
+    await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    const mismatchedPlan = await readPlanFile(planPath);
+    mismatchedPlan.id = 30;
+    await writePlanFile(planPath, mismatchedPlan, { skipSync: true });
+
+    await expect(syncMaterializedPlan(3, repoDir)).rejects.toThrow(
+      `Materialized plan path ${planPath} contains plan ID 30, expected 3`
+    );
+  });
+
+  test('syncMaterializedPlan rejects when the materialized file UUID does not match the DB row', async () => {
+    await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    const mismatchedPlan = await readPlanFile(planPath);
+    mismatchedPlan.uuid = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    await writePlanFile(planPath, mismatchedPlan, { skipSync: true });
+
+    await expect(syncMaterializedPlan(3, repoDir)).rejects.toThrow(
+      `Materialized plan at ${planPath} contains UUID aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa, expected 33333333-3333-4333-8333-333333333333`
+    );
+  });
+
+  test('syncMaterializedPlan accepts quoted UUID frontmatter values with inline comments', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    const content = await fs.readFile(planPath, 'utf8');
+    await fs.writeFile(
+      planPath,
+      content.replace(
+        /^uuid: .*$/m,
+        'uuid: "33333333-3333-4333-8333-333333333333" # preserve comment handling'
+      )
+    );
+
+    await syncMaterializedPlan(3, repoDir);
+
+    expect(getPlanByPlanId(db, project.id, 3)?.uuid).toBe('33333333-3333-4333-8333-333333333333');
+  });
+
+  test('withPlanAutoSync does not materialize a file when none exists yet', async () => {
+    const { db, project } = await seedProject();
+    const planPath = getMaterializedPlanPath(repoDir, 3);
+
+    expect(await Bun.file(planPath).exists()).toBe(false);
+
+    await withPlanAutoSync(3, repoDir, async () => {
+      db.prepare(
+        'UPDATE plan SET status = ?, updated_at = ? WHERE project_id = ? AND plan_id = ?'
+      ).run('cancelled', '2026-03-24T00:00:00.000Z', project.id, 3);
+    });
+
+    const saved = getPlanByPlanId(db, project.id, 3);
+    expect(saved?.status).toBe('cancelled');
+    expect(await Bun.file(planPath).exists()).toBe(false);
+  });
+
+  test('withPlanAutoSync re-materializes even when the wrapped operation throws', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.title = 'Title from materialized file';
+    await writePlanFile(planPath, editedPlan, { skipSync: true });
+
+    await expect(
+      withPlanAutoSync(3, repoDir, async () => {
+        db.prepare(
+          'UPDATE plan SET status = ?, updated_at = ? WHERE project_id = ? AND plan_id = ?'
+        ).run('done', '2026-03-24T00:00:00.000Z', project.id, 3);
+        throw new Error('boom');
+      })
+    ).rejects.toThrow('boom');
+
+    const rematerializedPlan = await readPlanFile(planPath);
+    expect(rematerializedPlan.title).toBe('Title from materialized file');
+    expect(rematerializedPlan.status).toBe('done');
+  });
+
+  test('cleanupMaterializedPlans removes stale plan files and orphaned ref files', async () => {
+    const { db, project } = await seedProject();
+
+    const activePlanPath = await materializePlan(3, repoDir);
+    const donePlanPath = await materializePlan(2, repoDir);
+    const orphanRefPath = getMaterializedRefPath(repoDir, 999);
+    await fs.writeFile(orphanRefPath, 'orphan ref');
+
+    db.prepare(
+      'UPDATE plan SET status = ?, updated_at = ? WHERE project_id = ? AND plan_id = ?'
+    ).run('done', '2026-03-24T00:00:00.000Z', project.id, 2);
+
+    const result = await cleanupMaterializedPlans(repoDir);
+
+    expect(result.deletedPlanFiles).toEqual([donePlanPath]);
+    expect(result.deletedRefFiles).toEqual([orphanRefPath]);
+    expect(await Bun.file(activePlanPath).exists()).toBe(true);
+    expect(await Bun.file(donePlanPath).exists()).toBe(false);
+    expect(await Bun.file(orphanRefPath).exists()).toBe(false);
+    expect(getPlanByPlanId(db, project.id, 2)?.status).toBe('done');
+  });
+
+  test('syncMaterializedPlan refreshes related refs and removes stale dependency refs', async () => {
+    await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+    await materializeRelatedPlans(3, repoDir);
+
+    const removedDependencyRef = getMaterializedRefPath(repoDir, 2);
+    const addedParentRef = getMaterializedRefPath(repoDir, 1);
+    expect(await Bun.file(removedDependencyRef).exists()).toBe(true);
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.dependencies = [];
+    await writePlanFile(planPath, editedPlan, { skipSync: true });
+
+    await syncMaterializedPlan(3, repoDir);
+
+    expect(await Bun.file(removedDependencyRef).exists()).toBe(false);
+    expect(await Bun.file(addedParentRef).exists()).toBe(true);
+    expect(await Bun.file(getMaterializedRefPath(repoDir, 4)).exists()).toBe(true);
+    expect(await Bun.file(getMaterializedRefPath(repoDir, 5)).exists()).toBe(true);
+  });
+
+  test('cleanupMaterializedPlans keeps reference files for existing plans', async () => {
+    await seedProject();
+    await materializePlan(3, repoDir);
+    const refPaths = await materializeRelatedPlans(3, repoDir);
+
+    const result = await cleanupMaterializedPlans(repoDir);
+
+    expect(result.deletedPlanFiles).toEqual([]);
+    expect(result.deletedRefFiles).toEqual([]);
+    expect(await Bun.file(refPaths[0]!).exists()).toBe(true);
+  });
+
+  test('cleanupMaterializedPlans removes cancelled and orphaned plan files while preserving active files', async () => {
+    const { db, project } = await seedProject();
+
+    const activePlanPath = await materializePlan(3, repoDir);
+    const cancelledPlanPath = await materializePlan(4, repoDir);
+    const orphanPlanPath = getMaterializedPlanPath(repoDir, 999);
+    const validRefPath = getMaterializedRefPath(repoDir, 1);
+    await writePlanFile(orphanPlanPath, {
+      id: 999,
+      uuid: '99999999-9999-4999-8999-999999999999',
+      title: 'Orphaned materialized plan',
+      filename: '999.plan.md',
+      tasks: [],
+    });
+    await materializePlan(1, repoDir);
+    await materializeRelatedPlans(3, repoDir);
+
+    db.prepare(
+      'UPDATE plan SET status = ?, updated_at = ? WHERE project_id = ? AND plan_id = ?'
+    ).run('cancelled', '2026-03-24T00:00:00.000Z', project.id, 4);
+
+    const result = await cleanupMaterializedPlans(repoDir);
+
+    expect(result.deletedPlanFiles.sort()).toEqual([cancelledPlanPath, orphanPlanPath].sort());
+    expect(result.deletedRefFiles).toEqual([]);
+    expect(await Bun.file(activePlanPath).exists()).toBe(true);
+    expect(await Bun.file(cancelledPlanPath).exists()).toBe(false);
+    expect(await Bun.file(orphanPlanPath).exists()).toBe(false);
+    expect(await Bun.file(validRefPath).exists()).toBe(true);
+    expect(getPlanByPlanId(db, project.id, 4)?.status).toBe('cancelled');
+  });
+
+  test('cleanupMaterializedPlans removes orphaned refs after deleting a materialized plan', async () => {
+    const { db, project } = await seedProject();
+
+    const planPath = await materializePlan(3, repoDir);
+    const refPaths = await materializeRelatedPlans(3, repoDir);
+    expect(refPaths).toHaveLength(4);
+
+    db.prepare(
+      'UPDATE plan SET status = ?, updated_at = ? WHERE project_id = ? AND plan_id = ?'
+    ).run('done', '2026-03-24T00:00:00.000Z', project.id, 3);
+
+    const result = await cleanupMaterializedPlans(repoDir);
+
+    expect(result.deletedPlanFiles).toEqual([planPath]);
+    expect(result.deletedRefFiles.sort()).toEqual(refPaths.sort());
+    expect(await Bun.file(planPath).exists()).toBe(false);
+    for (const refPath of refPaths) {
+      expect(await Bun.file(refPath).exists()).toBe(false);
+    }
+  });
+
+  test('cleanupMaterializedPlans returns empty results when the materialized directory is missing', async () => {
+    await seedProject();
+
+    const result = await cleanupMaterializedPlans(repoDir);
+
+    expect(result).toEqual({
+      deletedPlanFiles: [],
+      deletedRefFiles: [],
+    });
+  });
+
+  test('cleanupMaterializedPlans tolerates ENOENT when a stale file disappears before unlink', async () => {
+    const { db, project } = await seedProject();
+    const stalePlanPath = await materializePlan(4, repoDir);
+
+    db.prepare(
+      'UPDATE plan SET status = ?, updated_at = ? WHERE project_id = ? AND plan_id = ?'
+    ).run('cancelled', '2026-03-24T00:00:00.000Z', project.id, 4);
+
+    const realFs = await import('node:fs/promises');
+    const mockedUnlink = mock(async (entryPath: string) => {
+      if (entryPath === stalePlanPath) {
+        const error = new Error('already removed') as NodeJS.ErrnoException;
+        error.code = 'ENOENT';
+        throw error;
+      }
+
+      await realFs.unlink(entryPath);
+    });
+    await moduleMocker.mock('node:fs/promises', () => ({
+      ...realFs,
+      unlink: mockedUnlink,
+    }));
+
+    const { cleanupMaterializedPlans: cleanupWithMock } =
+      await importFreshPlanMaterialize('cleanup-enoent');
+    const result = await cleanupWithMock(repoDir);
+
+    expect(result.deletedPlanFiles).toContain(stalePlanPath);
+    expect(mockedUnlink).toHaveBeenCalledWith(stalePlanPath);
+  });
+
+  test('withPlanAutoSync limits repository identity lookups to the wrapper and syncPlanToDb', async () => {
+    const { db, project } = await seedProject();
+    await materializePlan(3, repoDir);
+
+    const workspaceIdentifier = await import('./assignments/workspace_identifier.js');
+    const originalGetRepositoryIdentity = workspaceIdentifier.getRepositoryIdentity;
+    const mockedGetRepositoryIdentity = mock(
+      async (options?: Parameters<typeof workspaceIdentifier.getRepositoryIdentity>[0]) =>
+        originalGetRepositoryIdentity(options)
+    );
+    await moduleMocker.mock('./assignments/workspace_identifier.js', () => ({
+      ...workspaceIdentifier,
+      getRepositoryIdentity: mockedGetRepositoryIdentity,
+    }));
+
+    const { withPlanAutoSync: withPlanAutoSyncFresh } =
+      await importFreshPlanMaterialize('auto-sync-identity');
+    await withPlanAutoSyncFresh(3, repoDir, async () => {
+      db.prepare(
+        'UPDATE plan SET status = ?, updated_at = ? WHERE project_id = ? AND plan_id = ?'
+      ).run('done', '2026-03-24T00:00:00.000Z', project.id, 3);
+    });
+
+    expect(mockedGetRepositoryIdentity).toHaveBeenCalledTimes(2);
+  });
+
+  test('materialize, sync, and cleanup-materialized command handlers work together', async () => {
+    const { db, project } = await seedProject();
+    const originalCwd = process.cwd();
+
+    try {
+      process.chdir(repoDir);
+
+      await handleMaterializeCommand('3', {}, {} as any);
+
+      const planPath = getMaterializedPlanPath(repoDir, 3);
+      const dependencyRefPath = getMaterializedRefPath(repoDir, 2);
+      expect(await Bun.file(planPath).exists()).toBe(true);
+      expect(await Bun.file(dependencyRefPath).exists()).toBe(true);
+
+      const editedPlan = await readPlanFile(planPath);
+      editedPlan.title = 'Edited via command flow';
+      await writePlanFile(planPath, editedPlan, { skipSync: true });
+
+      await handleSyncCommand('3', {}, {} as any);
+      const syncedPlan = getPlanByPlanId(db, project.id, 3);
+      expect(syncedPlan?.title).toBe('Edited via command flow');
+      expect(syncedPlan?.filename).toBe('3-primary.plan.md');
+
+      db.prepare(
+        'UPDATE plan SET status = ?, updated_at = ? WHERE project_id = ? AND plan_id = ?'
+      ).run('done', '2026-03-24T00:00:00.000Z', project.id, 3);
+
+      await handleCleanupMaterializedCommand({}, {} as any);
+      expect(await Bun.file(planPath).exists()).toBe(false);
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+
+  test('materialize, sync, and rematerialize preserve all schema-backed fields through a round trip', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.title = 'Primary plan round-tripped';
+    editedPlan.goal = 'Updated primary goal';
+    editedPlan.details = 'Updated primary details';
+    editedPlan.status = 'done';
+    editedPlan.priority = 'medium';
+    editedPlan.branch = 'feature/round-trip';
+    editedPlan.simple = false;
+    editedPlan.tdd = false;
+    editedPlan.discoveredFrom = 101;
+    editedPlan.issue = [
+      'https://github.com/example/repo/issues/3',
+      'https://github.com/example/repo/issues/7',
+    ];
+    editedPlan.pullRequest = ['https://github.com/example/repo/pull/31'];
+    editedPlan.assignedTo = 'qa-agent';
+    editedPlan.baseBranch = 'develop';
+    editedPlan.temp = false;
+    editedPlan.docs = ['docs/primary.md', 'docs/round-trip.md'];
+    editedPlan.changedFiles = [
+      'src/tim/plan_materialize.ts',
+      'src/tim/plan_materialize.test.ts',
+      'src/tim/commands/materialize.ts',
+    ];
+    editedPlan.planGeneratedAt = '2026-03-24T00:00:00.000Z';
+    editedPlan.reviewIssues = [
+      {
+        severity: 'critical',
+        category: 'correctness',
+        content: 'Round-trip coverage must preserve review findings',
+        file: 'src/tim/plan_materialize.ts',
+        line: 42,
+      },
+      {
+        severity: 'minor',
+        category: 'coverage',
+        content: 'Verify cleanup cases',
+        file: 'src/tim/plan_materialize.test.ts',
+        line: 1,
+      },
+    ];
+    editedPlan.parent = 1;
+    editedPlan.dependencies = [1, 2];
+    editedPlan.tags = ['materialize', 'round-trip', 'verified'];
+    editedPlan.tasks = [
+      { title: 'rewrite', description: 'exercise every field', done: true },
+      { title: 'verify', description: 'read back from DB and disk', done: false },
+    ];
+    await writePlanFile(planPath, editedPlan, { skipSync: true });
+
+    await syncMaterializedPlan(3, repoDir);
+    await materializePlan(3, repoDir);
+
+    const saved = getPlanByPlanId(db, project.id, 3);
+    expect(saved).toMatchObject({
+      title: 'Primary plan round-tripped',
+      goal: 'Updated primary goal',
+      details: 'Updated primary details',
+      status: 'done',
+      priority: 'medium',
+      branch: 'feature/round-trip',
+      simple: null,
+      tdd: null,
+      discovered_from: 101,
+      issue:
+        '["https://github.com/example/repo/issues/3","https://github.com/example/repo/issues/7"]',
+      pull_request: '["https://github.com/example/repo/pull/31"]',
+      assigned_to: 'qa-agent',
+      base_branch: 'develop',
+      temp: 0,
+      docs: '["docs/primary.md","docs/round-trip.md"]',
+      changed_files:
+        '["src/tim/plan_materialize.ts","src/tim/plan_materialize.test.ts","src/tim/commands/materialize.ts"]',
+      plan_generated_at: '2026-03-24T00:00:00.000Z',
+      review_issues:
+        '[{"severity":"critical","category":"correctness","content":"Round-trip coverage must preserve review findings","file":"src/tim/plan_materialize.ts","line":42},{"severity":"minor","category":"coverage","content":"Verify cleanup cases","file":"src/tim/plan_materialize.test.ts","line":1}]',
+      parent_uuid: '11111111-1111-4111-8111-111111111111',
+    });
+
+    expect(
+      getPlanTasksByUuid(db, '33333333-3333-4333-8333-333333333333').map((task) => ({
+        task_index: task.task_index,
+        title: task.title,
+        description: task.description,
+        done: task.done,
+      }))
+    ).toEqual([
+      {
+        task_index: 0,
+        title: 'rewrite',
+        description: 'exercise every field',
+        done: 1,
+      },
+      {
+        task_index: 1,
+        title: 'verify',
+        description: 'read back from DB and disk',
+        done: 0,
+      },
+    ]);
+    expect(
+      getPlanDependenciesByUuid(db, '33333333-3333-4333-8333-333333333333').map(
+        (dependency) => dependency.depends_on_uuid
+      )
+    ).toEqual(['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222']);
+    expect(getPlanTagsByUuid(db, '33333333-3333-4333-8333-333333333333')).toEqual([
+      { plan_uuid: '33333333-3333-4333-8333-333333333333', tag: 'materialize' },
+      { plan_uuid: '33333333-3333-4333-8333-333333333333', tag: 'round-trip' },
+      { plan_uuid: '33333333-3333-4333-8333-333333333333', tag: 'verified' },
+    ]);
+
+    const rematerializedPlan = await readPlanFile(planPath);
+    expect(rematerializedPlan).toMatchObject({
+      id: 3,
+      uuid: '33333333-3333-4333-8333-333333333333',
+      title: 'Primary plan round-tripped',
+      goal: 'Updated primary goal',
+      details: 'Updated primary details',
+      status: 'done',
+      priority: 'medium',
+      branch: 'feature/round-trip',
+      discoveredFrom: 101,
+      issue: [
+        'https://github.com/example/repo/issues/3',
+        'https://github.com/example/repo/issues/7',
+      ],
+      pullRequest: ['https://github.com/example/repo/pull/31'],
+      assignedTo: 'qa-agent',
+      baseBranch: 'develop',
+      temp: false,
+      docs: ['docs/primary.md', 'docs/round-trip.md'],
+      changedFiles: [
+        'src/tim/plan_materialize.ts',
+        'src/tim/plan_materialize.test.ts',
+        'src/tim/commands/materialize.ts',
+      ],
+      planGeneratedAt: '2026-03-24T00:00:00.000Z',
+      reviewIssues: [
+        {
+          severity: 'critical',
+          category: 'correctness',
+          content: 'Round-trip coverage must preserve review findings',
+          file: 'src/tim/plan_materialize.ts',
+          line: 42,
+        },
+        {
+          severity: 'minor',
+          category: 'coverage',
+          content: 'Verify cleanup cases',
+          file: 'src/tim/plan_materialize.test.ts',
+          line: 1,
+        },
+      ],
+      parent: 1,
+      dependencies: [1, 2],
+      tags: ['materialize', 'round-trip', 'verified'],
+    });
+    expect(rematerializedPlan.simple).toBeUndefined();
+    expect(rematerializedPlan.tdd).toBeUndefined();
+    expect(rematerializedPlan.tasks).toEqual([
+      { title: 'rewrite', description: 'exercise every field', done: true },
+      { title: 'verify', description: 'read back from DB and disk', done: false },
+    ]);
+  });
+
+  test('getPlanByPlanId rejects duplicate plan IDs within a project', async () => {
+    const { db, project } = await seedProject();
+
+    upsertPlan(db, project.id, {
+      uuid: '66666666-6666-4666-8666-666666666666',
+      planId: 3,
+      title: 'Duplicate plan',
+      filename: '3-duplicate.plan.md',
+    });
+
+    expect(() => getPlanByPlanId(db, project.id, 3)).toThrow(
+      `Multiple plans found for project ${project.id} with plan ID 3`
+    );
+  });
+});

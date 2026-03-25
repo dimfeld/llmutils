@@ -19,6 +19,11 @@ export interface PlanRow {
   pull_request: string | null;
   assigned_to: string | null;
   base_branch: string | null;
+  temp: number | null;
+  docs: string | null;
+  changed_files: string | null;
+  plan_generated_at: string | null;
+  review_issues: string | null;
   parent_uuid: string | null;
   epic: number;
   filename: string;
@@ -64,6 +69,11 @@ export interface UpsertPlanInput {
   pullRequest?: string[] | null;
   assignedTo?: string | null;
   baseBranch?: string | null;
+  temp?: boolean | null;
+  docs?: string[] | null;
+  changedFiles?: string[] | null;
+  planGeneratedAt?: string | null;
+  reviewIssues?: PlanSchema['reviewIssues'] | null;
   parentUuid?: string | null;
   epic?: boolean;
   filename: string;
@@ -194,12 +204,17 @@ export function upsertPlan(db: Database, projectId: number, input: UpsertPlanInp
           pull_request,
           assigned_to,
           base_branch,
+          temp,
+          docs,
+          changed_files,
+          plan_generated_at,
+          review_issues,
           parent_uuid,
           epic,
           filename,
           created_at,
           updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ${SQL_NOW_ISO_UTC}), COALESCE(?, ${SQL_NOW_ISO_UTC}))
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ${SQL_NOW_ISO_UTC}), COALESCE(?, ${SQL_NOW_ISO_UTC}))
         ON CONFLICT(uuid) DO UPDATE SET
           project_id = excluded.project_id,
           plan_id = excluded.plan_id,
@@ -216,6 +231,11 @@ export function upsertPlan(db: Database, projectId: number, input: UpsertPlanInp
           pull_request = excluded.pull_request,
           assigned_to = excluded.assigned_to,
           base_branch = excluded.base_branch,
+          temp = excluded.temp,
+          docs = excluded.docs,
+          changed_files = excluded.changed_files,
+          plan_generated_at = excluded.plan_generated_at,
+          review_issues = excluded.review_issues,
           parent_uuid = excluded.parent_uuid,
           epic = excluded.epic,
           filename = excluded.filename,
@@ -239,6 +259,11 @@ export function upsertPlan(db: Database, projectId: number, input: UpsertPlanInp
         nextInput.pullRequest ? JSON.stringify(nextInput.pullRequest) : null,
         nextInput.assignedTo ?? null,
         nextInput.baseBranch ?? null,
+        typeof nextInput.temp === 'boolean' ? (nextInput.temp ? 1 : 0) : null,
+        nextInput.docs ? JSON.stringify(nextInput.docs) : null,
+        nextInput.changedFiles ? JSON.stringify(nextInput.changedFiles) : null,
+        nextInput.planGeneratedAt ?? null,
+        nextInput.reviewIssues ? JSON.stringify(nextInput.reviewIssues) : null,
         nextInput.parentUuid ?? null,
         nextInput.epic ? 1 : 0,
         nextInput.filename,
@@ -303,6 +328,18 @@ export function getPlansByProject(db: Database, projectId: number): PlanRow[] {
     .all(projectId) as PlanRow[];
 }
 
+export function getPlanByPlanId(db: Database, projectId: number, planId: number): PlanRow | null {
+  const rows = db
+    .prepare('SELECT * FROM plan WHERE project_id = ? AND plan_id = ? ORDER BY uuid')
+    .all(projectId, planId) as PlanRow[];
+
+  if (rows.length > 1) {
+    throw new Error(`Multiple plans found for project ${projectId} with plan ID ${planId}`);
+  }
+
+  return rows[0] ?? null;
+}
+
 export function getPlanTasksByUuid(db: Database, planUuid: string): PlanTaskRow[] {
   return db
     .prepare('SELECT * FROM plan_task WHERE plan_uuid = ? ORDER BY task_index, id')
@@ -335,6 +372,19 @@ export function getPlanDependenciesByProject(db: Database, projectId: number): P
     `
     )
     .all(projectId) as PlanDependencyRow[];
+}
+
+export function getPlanDependenciesByUuid(db: Database, planUuid: string): PlanDependencyRow[] {
+  return db
+    .prepare(
+      `
+      SELECT plan_uuid, depends_on_uuid
+      FROM plan_dependency
+      WHERE plan_uuid = ?
+      ORDER BY depends_on_uuid
+    `
+    )
+    .all(planUuid) as PlanDependencyRow[];
 }
 
 export function getPlanTagsByUuid(db: Database, planUuid: string): PlanTagRow[] {

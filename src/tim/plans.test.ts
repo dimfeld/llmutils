@@ -1486,7 +1486,6 @@ const test = "example";
       docs: [],
       issue: [],
       pullRequest: [],
-      references: {},
       temp: false,
       updatedAt: expect.any(String),
       uuid: expect.stringMatching(UUID_REGEX),
@@ -1516,6 +1515,34 @@ const test = "example";
 
     const readBackPlan = await readPlanFile(planPath);
     expect((readBackPlan as { progressNotes?: string[] }).progressNotes).toBeUndefined();
+  });
+
+  it('should omit empty changedFiles and false tdd when writing a plan file', async () => {
+    const planPath = join(tempDir, 'omit-empty-changed-files.plan.md');
+    const planToWrite: PlanSchemaInput = {
+      id: 104,
+      title: 'Omit empty defaults',
+      goal: 'Keep frontmatter clean',
+      details: 'Body content',
+      status: 'pending',
+      tasks: [],
+      tdd: false,
+      changedFiles: [],
+    };
+
+    await writePlanFile(planPath, planToWrite);
+
+    const fileContent = await readFile(planPath, 'utf-8');
+    const frontMatterEndIndex = fileContent.indexOf('\n---\n', 4);
+    const frontMatterSection = fileContent.substring(4, frontMatterEndIndex);
+    const frontMatterData = yaml.parse(frontMatterSection);
+
+    expect(frontMatterData.tdd).toBeUndefined();
+    expect(frontMatterData.changedFiles).toBeUndefined();
+
+    const readBackPlan = await readPlanFile(planPath);
+    expect(readBackPlan.tdd).toBeUndefined();
+    expect(readBackPlan.changedFiles).toBeUndefined();
   });
 
   it('should load plans without discoveredFrom without errors', async () => {
@@ -1770,7 +1797,6 @@ const roundTrip = "test";
       docs: [],
       issue: [],
       pullRequest: [],
-      references: {},
       temp: false,
       updatedAt: expect.any(String),
       uuid: expect.stringMatching(UUID_REGEX),

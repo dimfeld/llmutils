@@ -87,7 +87,8 @@ The codebase is organized into several main modules with improved modularity and
 - Shared utilities captured in purpose-built modules:
   - `plan_display.ts`: Resolves plans and assembles context summaries for both CLI output and MCP tooling
   - `plan_merge.ts`: Handles delimiter-aware plan detail updates and task merging while preserving metadata
-  - `plans_db.ts`: Shared `loadPlansFromDb()` for loading plans from SQLite with parent UUID resolution, used by `list`, `ready`, and MCP tools with DB-with-fallback pattern
+  - `plan_materialize.ts`: DB-first plan materialization and sync. `materializePlan()` writes a plan from DB to `{repoRoot}/.tim/plans/{planId}.plan.md`; `materializeRelatedPlans()` writes parent/children/siblings/dependencies as `.ref.md` files; `syncMaterializedPlan()` reads a materialized file back to DB; `withPlanAutoSync()` wraps DB modifications with file→DB sync before and DB→file re-materialization after. Path helpers: `getMaterializedPlanPath()`, `getMaterializedRefPath()`, `ensureMaterializeDir()` (creates `.gitignore` with `*.plan.md`/`*.ref.md`)
+  - `plans_db.ts`: Shared `loadPlansFromDb()` and `planRowToSchemaInput()` for loading plans from SQLite with full field coverage and parent/dependency UUID resolution, used by `list`, `ready`, MCP tools, and plan materialization
   - `ready_plans.ts`: Implements readiness detection, filtering, and sorting used by the CLI and MCP list tools
   - `utils/task_operations.ts`: Centralizes task prompting helpers (interactive input, title search, selection menus) used by both CLI commands and MCP tools for task management
 - MCP server (`mcp/generate_mode.ts`) now focuses on registering prompts and delegates tool handlers to the relevant command modules
