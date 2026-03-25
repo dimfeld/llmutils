@@ -1,7 +1,9 @@
 ---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: "Web UI: Responsive mobile layout"
-goal: "Make the web UI usable on mobile/tablet screens by adding responsive breakpoints, collapsible sidebars, and stacked layouts for narrow viewports, improving the PWA experience on mobile devices."
+goal: Make the web UI usable on mobile/tablet screens by adding responsive
+  breakpoints, collapsible sidebars, and stacked layouts for narrow viewports,
+  improving the PWA experience on mobile devices.
 id: 274
 uuid: 2b200eed-8661-44c9-a3c6-b69d11c62f46
 status: pending

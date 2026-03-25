@@ -1,7 +1,10 @@
 ---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: "Web UI: Keyboard accessibility improvements"
-goal: "Improve keyboard accessibility across the web UI: add proper ARIA labels to interactive elements, manage focus in confirmation dialogs and modals, ensure status indicators are not color-only, and add keyboard shortcuts for common actions."
+goal: "Improve keyboard accessibility across the web UI: add proper ARIA labels
+  to interactive elements, manage focus in confirmation dialogs and modals,
+  ensure status indicators are not color-only, and add keyboard shortcuts for
+  common actions."
 id: 273
 uuid: cb5d783a-daf4-4bf5-a489-6173dfb10f54
 status: pending

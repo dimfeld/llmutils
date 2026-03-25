@@ -1,7 +1,9 @@
 ---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: "Web UI: Plan creation and editing"
-goal: "Add the ability to create new plans and edit existing plan metadata (title, goal, priority, status, dependencies, tags) directly from the web UI, reducing reliance on the CLI for basic plan management."
+goal: Add the ability to create new plans and edit existing plan metadata
+  (title, goal, priority, status, dependencies, tags) directly from the web UI,
+  reducing reliance on the CLI for basic plan management.
 id: 269
 uuid: 71d04676-37a9-4b52-828e-82f4abdca949
 status: pending

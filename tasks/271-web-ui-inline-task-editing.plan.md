@@ -1,7 +1,9 @@
 ---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: "Web UI: Inline task editing"
-goal: "Allow inline editing of tasks in the plan detail view — toggling task completion status, editing task titles, and reordering tasks — without requiring CLI round-trips."
+goal: Allow inline editing of tasks in the plan detail view — toggling task
+  completion status, editing task titles, and reordering tasks — without
+  requiring CLI round-trips.
 id: 271
 uuid: 533e1cc6-8599-4060-a182-57176b90360b
 status: pending

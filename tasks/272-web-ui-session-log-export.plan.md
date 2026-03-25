@@ -1,7 +1,9 @@
 ---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json
 title: "Web UI: Session log export"
-goal: "Add the ability to export a session transcript as markdown or plain text, with options to copy to clipboard or download as a file, for sharing context or debugging."
+goal: Add the ability to export a session transcript as markdown or plain text,
+  with options to copy to clipboard or download as a file, for sharing context
+  or debugging.
 id: 272
 uuid: 19cb5f45-f68b-419f-a281-4d17acfd9067
 status: pending

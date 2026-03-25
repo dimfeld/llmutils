@@ -4,7 +4,7 @@ title: DB-first plan storage
 goal: ""
 id: 278
 uuid: 8c8ba325-58ad-4033-b45a-a9a1efd654a6
-status: pending
+status: in_progress
 priority: high
 epic: true
 dependencies:
@@ -18,7 +18,7 @@ references:
   "281": 27796c49-6f51-4d41-83c9-1ad8db6c67d2
   "282": f299ed01-b2d9-4cd3-82fb-622229d5c4d2
 createdAt: 2026-03-25T03:46:29.544Z
-updatedAt: 2026-03-25T03:50:59.103Z
+updatedAt: 2026-03-25T07:24:42.882Z
 tasks: []
 tags:
   - architecture
