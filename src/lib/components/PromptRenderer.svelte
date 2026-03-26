@@ -149,7 +149,7 @@
     {/if}
   {:else if prompt.promptType === 'select'}
     <div class="flex flex-col gap-1">
-      {#each prompt.promptConfig.choices ?? [] as choice (choice.value)}
+      {#each prompt.promptConfig.choices ?? [] as choice}
         <label
           class="flex cursor-pointer items-center gap-2 rounded px-2 py-1 transition-colors hover:bg-gray-700"
         >
@@ -178,7 +178,7 @@
     </div>
   {:else if prompt.promptType === 'checkbox'}
     <div class="flex flex-col gap-1">
-      {#each prompt.promptConfig.choices ?? [] as choice (choice.value)}
+      {#each prompt.promptConfig.choices ?? [] as choice}
         <label
           class="flex cursor-pointer items-center gap-2 rounded px-2 py-1 transition-colors hover:bg-gray-700"
         >

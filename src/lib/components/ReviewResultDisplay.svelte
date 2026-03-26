@@ -70,7 +70,7 @@
               {severity.charAt(0).toUpperCase() + severity.slice(1)} ({severityIssues.length})
             </div>
             <div class="space-y-1 pl-4">
-              {#each severityIssues as issue (issue.file + ':' + issue.line + ':' + issue.category)}
+              {#each severityIssues as issue}
                 <div>
                   <span class="text-gray-400">[{issue.category}]</span>
                   {#if issue.file}
@@ -95,7 +95,7 @@
     <div>
       <div class="font-medium text-gray-300">Recommendations</div>
       <ul class="list-disc pl-6 text-gray-300">
-        {#each recommendations as rec, i (i + ':' + rec)}
+        {#each recommendations as rec}
           <li>{rec}</li>
         {/each}
       </ul>
@@ -106,7 +106,7 @@
     <div>
       <div class="font-medium text-gray-300">Action Items</div>
       <ul class="list-disc pl-6 text-gray-300">
-        {#each actionItems as item, i (i + ':' + item)}
+        {#each actionItems as item}
           <li>{item}</li>
         {/each}
       </ul>
