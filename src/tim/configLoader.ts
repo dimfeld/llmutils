@@ -56,6 +56,7 @@ function mergeConfigs(mainConfig: TimConfig, localConfig: TimConfig): TimConfig 
   mergeConfigKey('subagents');
   mergeConfigKey('tags');
   mergeConfigKey('updateDocs');
+  mergeConfigKey('workspaceCreation');
 
   // Handle executors: deep merge objects
   if (localConfig.executors !== undefined) {
