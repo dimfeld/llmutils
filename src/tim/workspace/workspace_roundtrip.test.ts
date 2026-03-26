@@ -34,6 +34,7 @@ describe('runPostExecutionWorkspaceSync', () => {
     await moduleMocker.mock('../../common/git.js', () => ({
       getUsingJj,
       getCurrentBranchName: mock(async () => 'task-123'),
+      getTrunkBranch: mock(async () => 'main'),
     }));
 
     await moduleMocker.mock('../commands/workspace.js', () => ({
@@ -131,6 +132,7 @@ describe('runPostExecutionWorkspaceSync', () => {
 describe('prepareWorkspaceRoundTrip', () => {
   let moduleMocker: ModuleMocker;
   const getCurrentBranchName = mock(async () => 'task-123');
+  const getTrunkBranch = mock(async () => 'main');
   const getRepositoryIdentity = mock(async () => ({ repositoryId: 'repo' }));
   const findPrimaryWorkspaceForRepository = mock(() => null);
   const getWorkspaceInfoByPath = mock(() => null);
@@ -138,12 +140,14 @@ describe('prepareWorkspaceRoundTrip', () => {
   beforeEach(async () => {
     moduleMocker = new ModuleMocker(import.meta);
     getCurrentBranchName.mockClear();
+    getTrunkBranch.mockClear();
     getRepositoryIdentity.mockClear();
     findPrimaryWorkspaceForRepository.mockClear();
     getWorkspaceInfoByPath.mockClear();
 
     await moduleMocker.mock('../../common/git.js', () => ({
       getCurrentBranchName,
+      getTrunkBranch,
       getUsingJj: mock(async () => true),
     }));
 
@@ -197,5 +201,27 @@ describe('prepareWorkspaceRoundTrip', () => {
       refName: 'task-123',
       syncTarget: 'origin',
     });
+  });
+
+  test('returns null when the current branch is the trunk branch', async () => {
+    getCurrentBranchName.mockReturnValue(Promise.resolve('main'));
+    getWorkspaceInfoByPath.mockReturnValue({
+      workspaceType: 'standard',
+      repositoryId: 'repo',
+      branch: 'main',
+    });
+    findPrimaryWorkspaceForRepository.mockReturnValue({
+      workspacePath: '/tmp/primary',
+    });
+
+    const { prepareWorkspaceRoundTrip } = await import('./workspace_roundtrip.js');
+
+    await expect(
+      prepareWorkspaceRoundTrip({
+        workspacePath: '/tmp/workspace',
+        workspaceSyncEnabled: true,
+        syncTarget: 'origin',
+      })
+    ).resolves.toBeNull();
   });
 });

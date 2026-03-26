@@ -1,4 +1,4 @@
-import { getCurrentBranchName, getUsingJj } from '../../common/git.js';
+import { getCurrentBranchName, getTrunkBranch, getUsingJj } from '../../common/git.js';
 import { commitAll } from '../../common/process.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { findPrimaryWorkspaceForRepository, getWorkspaceInfoByPath } from './workspace_info.js';
@@ -39,6 +39,11 @@ export async function prepareWorkspaceRoundTrip(options: {
     throw new Error(
       `No current branch/bookmark detected for workspace ${options.workspacePath}. Check out or create a branch before syncing.`
     );
+  }
+
+  const trunkBranch = await getTrunkBranch(options.workspacePath);
+  if (refName === trunkBranch) {
+    return null;
   }
 
   const repositoryId =
