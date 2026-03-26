@@ -9,13 +9,13 @@ priority: medium
 dependencies:
   - 275
   - 265
+createdAt: 2026-03-24T21:50:31.074Z
+updatedAt: 2026-03-26T06:53:19.636Z
+tasks: []
+tags: []
 references:
   "265": 428ed935-e91e-4d20-a4cb-46947ee8b2aa
   "275": 1b54394a-e12c-4f26-8a06-be5da8ab65a9
-createdAt: 2026-03-24T21:50:31.074Z
-updatedAt: 2026-03-25T00:25:41.998Z
-tasks: []
-tags: []
 ---
 
 Still figuring this out, but basically it would be something where we can send single messages to a plan. And it would
@@ -24,3 +24,8 @@ Each run would contain the previous context of messages. The messages and result
 
 We should have a way to reference artifacts in the messages in a way that they show up in the web interface. A special
 tag or markdown link or something.
+
+Another way that might work well is to just do this as part of the `chat` command, which leaves the session active, but
+that's ok. And then we could save the user input and each turn's final output and so on. I feel like we want both
+though, as once we have ephemeral server support we don't necessarily want to keep the instance running forever, but
+might want a fire-and-forget kind of thing.

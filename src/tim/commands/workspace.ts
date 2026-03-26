@@ -1037,7 +1037,7 @@ export async function handleWorkspaceAddCommand(
         : undefined;
     const reuseResult = await tryReuseExistingWorkspace(effectiveConfig, trackingFilePath, {
       fromBranch: options.fromBranch,
-      createBranch: effectiveConfig.workspaceCreation?.createBranch,
+      createBranch: true,
       branchName,
       planData,
       resolvedPlanFilePath,

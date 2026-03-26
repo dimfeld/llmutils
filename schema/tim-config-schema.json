@@ -540,9 +540,6 @@
             "type": "string"
           }
         },
-        "createBranch": {
-          "type": "boolean"
-        },
         "requireAutoType": {
           "type": "boolean"
         }

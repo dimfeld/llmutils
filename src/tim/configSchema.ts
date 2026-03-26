@@ -97,11 +97,6 @@ export const workspaceCreationConfigSchema = z.object({
    */
   copyAdditionalGlobs: z.array(z.string()).optional(),
   /**
-   * Whether to automatically create a new branch for the workspace.
-   * Defaults to false.
-   */
-  createBranch: z.boolean().optional(),
-  /**
    * When true, auto-workspace selection will only consider workspaces with type 'auto'.
    * By default, this behavior is implicit: if any 'auto' workspace exists, only 'auto'
    * workspaces are eligible. This option forces that behavior even when no 'auto' workspaces

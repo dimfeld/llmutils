@@ -223,8 +223,7 @@ export async function setupWorkspace(
         let planData: PlanSchema | undefined;
         let baseBranch = options.base;
         let canRetryWithoutBaseBranch = false;
-        const shouldCreateBranch =
-          effectiveCreateBranch ?? config.workspaceCreation?.createBranch ?? true;
+        const shouldCreateBranch = effectiveCreateBranch ?? true;
         const shouldPrepareWorkspaceBranch = Boolean(currentPlanFile || baseBranch);
         try {
           if (currentPlanFile) {

@@ -955,7 +955,7 @@ export async function createWorkspace(
   }
 
   const branchName = options?.branchName ?? taskId;
-  const shouldCreateBranch = options?.createBranch ?? workspaceConfig.createBranch ?? false;
+  const shouldCreateBranch = options?.createBranch ?? false;
   const planFilePathInWorkspace = originalPlanFilePath
     ? path.join(targetClonePath, path.relative(mainRepoRoot, originalPlanFilePath))
     : undefined;
