@@ -9,6 +9,9 @@
   import PromptRenderer from './PromptRenderer.svelte';
   import MessageInput from './MessageInput.svelte';
   import { afterNavigate } from '$app/navigation';
+  import { page } from '$app/state';
+  import { getPlanTaskCounts } from '$lib/remote/plan_task_counts.remote.js';
+  import { resolve } from '$app/paths';
 
   let { session }: { session: SessionData } = $props();
   const sessionManager = useSessionManager();
@@ -87,6 +90,21 @@
   );
   let showEndSession = $derived(session.status === 'active');
 
+  let planLink = $derived.by(() => {
+    const uuid = session.sessionInfo.planUuid;
+    const projectId = page.params.projectId;
+    if (uuid && projectId) {
+      return resolve(`/projects/[projectId]/plans/[planId]`, { projectId, planId: uuid });
+    }
+    return null;
+  });
+
+  let taskCounts = $derived(
+    session.sessionInfo.planUuid
+      ? await getPlanTaskCounts({ planUuid: session.sessionInfo.planUuid })
+      : null
+  );
+
   function handleActivateTerminal() {
     void sessionManager.activateTerminalPane(session);
   }
@@ -131,12 +149,29 @@
           {session.sessionInfo.command}
         </h2>
         {#if session.sessionInfo.planTitle || session.sessionInfo.planId != null}
-          <span class="truncate text-sm text-muted-foreground">
+          {#snippet planText()}
             {#if session.sessionInfo.planId != null}
               #{session.sessionInfo.planId}
             {/if}
             {session.sessionInfo.planTitle ?? ''}
-          </span>
+          {/snippet}
+          {#if planLink}
+            <a
+              href={planLink}
+              class="truncate text-sm text-muted-foreground hover:text-foreground hover:underline"
+            >
+              {@render planText()}
+            </a>
+          {:else}
+            <span class="truncate text-sm text-muted-foreground">
+              {@render planText()}
+            </span>
+          {/if}
+          {#if taskCounts && taskCounts.total > 0}
+            <span class="text-xs text-muted-foreground tabular-nums">
+              {taskCounts.done}/{taskCounts.total}
+            </span>
+          {/if}
         {/if}
         <span class="text-xs text-muted-foreground">{statusText}</span>
       </div>
