@@ -17,7 +17,7 @@ import { getDatabase } from './db/database.js';
 import { toPlanUpsertInput } from './db/plan_sync.js';
 import { getOrCreateProject } from './db/project.js';
 import { resolveProjectContext } from './plan_materialize.js';
-import { getMaterializedPlanPath } from './plan_materialize.js';
+import { getMaterializedPlanPath, readMaterializedPlanRole } from './plan_materialize.js';
 import type { ProjectContext } from './plan_materialize.js';
 import {
   normalizeContainerToEpic,
@@ -243,11 +243,20 @@ export async function resolvePlanFromDb(
   const { row, plan } = readPlanSnapshot();
   const materializedPath = getMaterializedPlanPath(repoRoot, row.plan_id);
   let planPath: string | null = null;
+  const materializedDir = path.join(repoRoot, '.tim', 'plans') + path.sep;
   if (directPath && (await fileExists(directPath))) {
-    planPath = directPath;
-  } else if (await fileExists(materializedPath)) {
+    // Reject reference materializations even when addressed by direct path
+    if (
+      !directPath.startsWith(materializedDir) ||
+      (await readMaterializedPlanRole(directPath)) === 'primary'
+    ) {
+      planPath = directPath;
+    }
+  }
+  if (!planPath && (await readMaterializedPlanRole(materializedPath)) === 'primary') {
     planPath = materializedPath;
-  } else {
+  }
+  if (!planPath) {
     const filenameCandidates =
       row.filename && row.filename.length > 0
         ? [

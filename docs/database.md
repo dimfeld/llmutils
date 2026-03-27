@@ -79,13 +79,14 @@ Plan metadata, tasks, and dependencies are mirrored in SQLite alongside the YAML
 
 Plan materialization writes plan files from DB data to disk at well-known paths, enabling agents to edit plans as files while the DB remains the source of truth. Module: `src/tim/plan_materialize.ts`.
 
-**File layout**: Materialized plans live at `{repoRoot}/.tim/plans/{planId}.plan.md`. Related plans (parent, children, siblings, dependencies) are written as `{planId}.ref.md` files in the same directory. `ensureMaterializeDir()` creates the directory and writes a `.gitignore` with `*.plan.md` and `*.ref.md` patterns to prevent accidental commits.
+**File layout**: All materialized plans live at `{repoRoot}/.tim/plans/{planId}.plan.md`. Each file contains a `materializedAs` YAML frontmatter field (`'primary' | 'reference'`) to distinguish explicitly materialized plans from related-plan snapshots. `ensureMaterializeDir()` creates the directory and writes a `.gitignore` with `*.plan.md` to prevent accidental commits.
 
 **Core functions**:
 
-- `materializePlan(planId, repoRoot, options?)`: Queries plan from DB, converts via `planRowToSchemaInput()`, writes with `writePlanFile()` using `skipDb: true` to prevent circular DB sync. Returns the file path.
-- `materializeRelatedPlans(planId, repoRoot, options?)`: Materializes parent, children, siblings, and dependency plans as `.ref.md` reference files.
-- `syncMaterializedPlan(planId, repoRoot)`: Pre-validates UUID from raw file content, then reads materialized file via `readPlanFile()` and syncs to DB via `syncPlanToDb()` with `throwOnError: true`. Relies on the normal timestamp guard (no `force: true`) to prevent stale materialized files from overwriting newer DB state. Rejects materialized files missing `updatedAt` when the DB already has a valid timestamp for that plan.
+- `materializePlan(planId, repoRoot, options?)`: Queries plan from DB, converts via `planRowToSchemaInput()`, writes with `writePlanFile()` using `skipDb: true` and `materializedAs: 'primary'`. Returns the file path.
+- `materializeRelatedPlans(planId, repoRoot, options?)`: Materializes parent, children, siblings, and dependency plans as `.plan.md` files with `materializedAs: 'reference'`. Skips existing primary files to preserve user edits; overwrites existing reference files with fresh DB content.
+- `syncMaterializedPlan(planId, repoRoot)`: Skips reference files (they are read-only snapshots). For primary files, pre-validates UUID from raw file content, then reads materialized file via `readPlanFile()` and syncs to DB via `syncPlanToDb()` with `throwOnError: true`. Relies on the normal timestamp guard (no `force: true`) to prevent stale materialized files from overwriting newer DB state. Rejects materialized files missing `updatedAt` when the DB already has a valid timestamp for that plan.
+- `readMaterializedPlanRole(filePath)`: Side-effect-free frontmatter reader that returns the `materializedAs` role without triggering DB writes or UUID generation.
 - `withPlanAutoSync(planId, repoRoot, fn)`: Auto-sync wrapper for commands that modify plans while agents may be editing the materialized file. Syncs file→DB before `fn()`, re-materializes DB→file after. Uses try/finally with error suppression in the finally block to prevent re-materialization errors from masking `fn()` errors.
 
 **CLI entry points**: `tim materialize <planId>` writes the working copy, `tim sync <planId>` syncs a single materialized file back to DB, `tim sync` (no args) scans `.tim/plans/` for all `*.plan.md` files and syncs them all (supports `--verbose` for progress output), and `tim cleanup-materialized` removes stale files.

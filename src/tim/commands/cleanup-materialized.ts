@@ -10,7 +10,7 @@ export async function handleCleanupMaterializedCommand(
 ): Promise<void> {
   const repository = await getRepositoryIdentity();
   const result = await cleanupMaterializedPlans(repository.gitRoot);
-  const deletedCount = result.deletedPlanFiles.length + result.deletedRefFiles.length;
+  const deletedCount = result.deletedPrimaryFiles.length + result.deletedReferenceFiles.length;
 
   if (deletedCount === 0) {
     log(chalk.gray('No stale materialized plan files found.'));
@@ -19,7 +19,7 @@ export async function handleCleanupMaterializedCommand(
 
   log(
     chalk.green(
-      `Deleted ${result.deletedPlanFiles.length} plan file(s) and ${result.deletedRefFiles.length} reference file(s).`
+      `Deleted ${result.deletedPrimaryFiles.length} primary plan file(s) and ${result.deletedReferenceFiles.length} reference file(s).`
     )
   );
 }

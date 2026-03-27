@@ -165,7 +165,7 @@ describe('tim sync command', () => {
     const materializedDir = path.join(repoDir, '.tim', 'plans');
     await fs.writeFile(path.join(materializedDir, 'notes.txt'), 'ignore me', 'utf8');
     await fs.writeFile(path.join(materializedDir, 'draft.plan.md'), 'ignore me too', 'utf8');
-    await fs.writeFile(path.join(materializedDir, '999.ref.md'), 'still ignore me', 'utf8');
+    await fs.writeFile(path.join(materializedDir, '999.reference.md'), 'still ignore me', 'utf8');
 
     const { handleSyncCommand } = await import('./sync.js');
     await handleSyncCommand(undefined, {}, makeCommand() as any);

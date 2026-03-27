@@ -391,7 +391,7 @@ tim validate --dir /path/to/repo
 
 ### tim materialize
 
-Materialize a DB-backed plan into `.tim/plans/` for editing. Related plans are also written as `.ref.md` context files.
+Materialize a DB-backed plan into `.tim/plans/` for editing. Related plans are also written as `.plan.md` files with `materializedAs: reference` in their frontmatter.
 
 ```bash
 tim materialize 123
