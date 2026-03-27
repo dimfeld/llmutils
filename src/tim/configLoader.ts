@@ -272,6 +272,8 @@ export function clearConfigCache(): void {
 export interface LoadEffectiveConfigOptions {
   /** When true, suppress informational messages like "Using external tim storage at ..." */
   quiet?: boolean;
+  /** Resolve repository-local config relative to this cwd instead of process.cwd(). */
+  cwd?: string;
 }
 
 function assertNotificationCommandConfigured(config: TimConfig): void {
@@ -304,7 +306,7 @@ export async function loadEffectiveConfig(
 ): Promise<TimConfig> {
   let resolution: RepositoryConfigResolution;
   try {
-    const resolver = await RepositoryConfigResolver.create({ overridePath });
+    const resolver = await RepositoryConfigResolver.create({ overridePath, cwd: options.cwd });
     resolution = await resolver.resolve();
   } catch (err: any) {
     error(`Error finding configuration file: ${err.message}`);

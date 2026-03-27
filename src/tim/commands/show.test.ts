@@ -2,7 +2,6 @@ import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import yaml from 'yaml';
 import stripAnsi from 'strip-ansi';
 import { handleShowCommand, mcpGetPlan } from './show.js';
 import { clearPlanCache } from '../plans.js';
@@ -15,6 +14,11 @@ const moduleMocker = new ModuleMocker(import.meta);
 const logSpy = mock(() => {});
 const errorSpy = mock(() => {});
 const warnSpy = mock(() => {});
+const fakeDb = {
+  transaction<T>(fn: () => T) {
+    return fn;
+  },
+};
 
 describe('handleShowCommand', () => {
   let tempDir: string;
@@ -25,6 +29,7 @@ describe('handleShowCommand', () => {
   let dbPlans: any[];
   let dbPlanTasks: any[];
   let dbPlanDependencies: any[];
+  let dbPlanTags: any[];
   let currentBranchName: string | null;
 
   beforeEach(async () => {
@@ -46,6 +51,7 @@ describe('handleShowCommand', () => {
     dbPlans = [];
     dbPlanTasks = [];
     dbPlanDependencies = [];
+    dbPlanTags = [];
     currentBranchName = null;
 
     // Mock modules
@@ -77,15 +83,27 @@ describe('handleShowCommand', () => {
     }));
 
     await moduleMocker.mock('../db/database.js', () => ({
-      getDatabase: () => ({}) as any,
+      getDatabase: () => fakeDb as any,
     }));
     await moduleMocker.mock('../db/project.js', () => ({
       getProject: () => ({ id: 1 }),
+      getOrCreateProject: () => ({ id: 1 }),
     }));
     await moduleMocker.mock('../db/plan.js', () => ({
       getPlansByProject: () => dbPlans,
       getPlanTasksByProject: () => dbPlanTasks,
       getPlanDependenciesByProject: () => dbPlanDependencies,
+      getPlanTagsByProject: () => dbPlanTags,
+      getPlanByPlanId: (_db: unknown, _projectId: number, planId: number) =>
+        dbPlans.find((plan) => plan.plan_id === planId) ?? null,
+      getPlanByUuid: (_db: unknown, uuid: string) =>
+        dbPlans.find((plan) => plan.uuid === uuid) ?? null,
+      getPlanTasksByUuid: (_db: unknown, uuid: string) =>
+        dbPlanTasks.filter((task) => task.plan_uuid === uuid),
+      getPlanDependenciesByUuid: (_db: unknown, uuid: string) =>
+        dbPlanDependencies.filter((dependency) => dependency.plan_uuid === uuid),
+      getPlanTagsByUuid: (_db: unknown, uuid: string) =>
+        dbPlanTags.filter((tag) => tag.plan_uuid === uuid),
     }));
     await moduleMocker.mock('../db/assignment.js', () => ({
       getAssignmentEntriesByProject: () => assignmentsData,
@@ -99,6 +117,65 @@ describe('handleShowCommand', () => {
     // Clean up
     await fs.rm(tempDir, { recursive: true, force: true });
   });
+
+  function addDbPlan(plan: Record<string, any>) {
+    if (typeof plan.id !== 'number') {
+      throw new Error('Test plan must include a numeric id');
+    }
+
+    const uuid = typeof plan.uuid === 'string' ? plan.uuid : `plan-${plan.id}`;
+    dbPlans.push({
+      uuid,
+      project_id: 1,
+      plan_id: plan.id,
+      title: plan.title ?? null,
+      goal: plan.goal ?? '',
+      details: plan.details ?? '',
+      status: plan.status ?? 'pending',
+      priority: plan.priority ?? null,
+      branch: plan.branch ?? null,
+      parent_uuid: typeof plan.parent === 'number' ? `plan-${plan.parent}` : null,
+      discovered_from: typeof plan.discoveredFrom === 'number' ? plan.discoveredFrom : null,
+      epic: plan.epic ? 1 : 0,
+      simple: plan.simple ? 1 : 0,
+      tdd: plan.tdd ? 1 : 0,
+      assigned_to: plan.assignedTo ?? null,
+      issue: plan.issue ? JSON.stringify(plan.issue) : null,
+      pull_request: plan.pullRequest ? JSON.stringify(plan.pullRequest) : null,
+      docs: plan.docs ? JSON.stringify(plan.docs) : null,
+      changed_files: plan.changedFiles ? JSON.stringify(plan.changedFiles) : null,
+      temp: plan.temp ? 1 : 0,
+      base_branch: plan.baseBranch ?? null,
+      review_issues: plan.reviewIssues ? JSON.stringify(plan.reviewIssues) : null,
+      plan_generated_at: plan.planGeneratedAt ?? null,
+      filename: `${plan.id}.plan.md`,
+      created_at: plan.createdAt ?? '2026-01-01T00:00:00.000Z',
+      updated_at: plan.updatedAt ?? null,
+    });
+
+    for (const task of plan.tasks ?? []) {
+      dbPlanTasks.push({
+        plan_uuid: uuid,
+        title: task.title ?? '',
+        description: task.description ?? '',
+        done: task.done ? 1 : 0,
+      });
+    }
+
+    for (const dependencyId of plan.dependencies ?? []) {
+      dbPlanDependencies.push({
+        plan_uuid: uuid,
+        depends_on_uuid: `plan-${dependencyId}`,
+      });
+    }
+
+    for (const tag of plan.tags ?? []) {
+      dbPlanTags.push({
+        plan_uuid: uuid,
+        tag,
+      });
+    }
+  }
 
   test('shows plan details when given valid plan ID', async () => {
     // Create a test plan
@@ -127,7 +204,7 @@ describe('handleShowCommand', () => {
       ],
     };
 
-    await fs.writeFile(path.join(tasksDir, '1.yml'), `---\n${yaml.stringify(plan)}---\n`);
+    addDbPlan(plan);
 
     const options = {};
     const command = {
@@ -160,7 +237,7 @@ describe('handleShowCommand', () => {
       tasks: [],
     };
 
-    await fs.writeFile(path.join(tasksDir, '50.yml'), `---\n${yaml.stringify(plan)}---\n`);
+    addDbPlan(plan);
 
     await handleShowCommand('50', {}, { parent: { opts: () => ({}) } });
 
@@ -177,7 +254,7 @@ describe('handleShowCommand', () => {
       tasks: [],
     };
 
-    await fs.writeFile(path.join(tasksDir, '51.yml'), `---\n${yaml.stringify(plan)}---\n`);
+    addDbPlan(plan);
 
     await handleShowCommand('51', {}, { parent: { opts: () => ({}) } });
 
@@ -208,9 +285,9 @@ describe('handleShowCommand', () => {
       tasks: [],
     };
 
-    await fs.writeFile(path.join(tasksDir, '1.yml'), `---\n${yaml.stringify(epic)}---\n`);
-    await fs.writeFile(path.join(tasksDir, '2.yml'), `---\n${yaml.stringify(phase)}---\n`);
-    await fs.writeFile(path.join(tasksDir, '3.yml'), `---\n${yaml.stringify(child)}---\n`);
+    addDbPlan(epic);
+    addDbPlan(phase);
+    addDbPlan(child);
 
     await handleShowCommand('3', {}, { parent: { opts: () => ({}) } });
 
@@ -239,7 +316,7 @@ describe('handleShowCommand', () => {
       ],
     } as any;
 
-    await fs.writeFile(path.join(tasksDir, '2.yml'), `---\n${yaml.stringify(plan)}---\n`);
+    addDbPlan(plan);
 
     const options = { short: true } as any;
     const command = { parent: { opts: () => ({}) } } as any;
@@ -324,7 +401,7 @@ describe('handleShowCommand', () => {
       ],
     };
 
-    await fs.writeFile(path.join(tasksDir, '1.yml'), `---\n${yaml.stringify(plan)}---\n`);
+    addDbPlan(plan);
 
     const options = {
       next: true,
@@ -381,10 +458,7 @@ describe('handleShowCommand', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(
-        path.join(tasksDir, `${plan.id}.yml`),
-        `---\n${yaml.stringify(plan)}---\n`
-      );
+      addDbPlan(plan);
     }
 
     const options = {
@@ -433,10 +507,7 @@ describe('handleShowCommand', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(
-        path.join(tasksDir, `${plan.id}.yml`),
-        `---\n${yaml.stringify(plan)}---\n`
-      );
+      addDbPlan(plan);
     }
 
     const options = {
@@ -483,10 +554,7 @@ describe('handleShowCommand', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(
-        path.join(tasksDir, `${plan.id}.yml`),
-        `---\n${yaml.stringify(plan)}---\n`
-      );
+      addDbPlan(plan);
     }
 
     const options = {
@@ -519,7 +587,7 @@ describe('handleShowCommand', () => {
       tasks: [],
     };
 
-    await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), `---\n${yaml.stringify(plan)}---\n`);
+    addDbPlan(plan);
 
     const options = {
       latest: true,
@@ -532,18 +600,17 @@ describe('handleShowCommand', () => {
 
     await handleShowCommand(undefined, options, command);
 
-    expect(logSpy).toHaveBeenCalledWith('No plans with updatedAt field found in tasks directory.');
+    expect(logSpy).toHaveBeenCalledWith('No plans with updatedAt field found in database.');
   });
 
-  test('shows message when no ready plans found', async () => {
-    // Create only blocked plans
-    const plan = {
+  test('follows DB-backed dependencies when selecting the next ready plan', async () => {
+    addDbPlan({
       id: 1,
       title: 'Blocked Plan',
       goal: 'Blocked by dependencies',
       details: 'Details',
       status: 'pending',
-      dependencies: [999],
+      dependencies: [2],
       tasks: [
         {
           title: 'Task 1',
@@ -551,9 +618,21 @@ describe('handleShowCommand', () => {
           steps: [{ prompt: 'Do step', done: false }],
         },
       ],
-    };
-
-    await fs.writeFile(path.join(tasksDir, '1.yml'), `---\n${yaml.stringify(plan)}---\n`);
+    });
+    addDbPlan({
+      id: 2,
+      title: 'Incomplete Dependency',
+      goal: 'Still pending',
+      details: 'Details',
+      status: 'pending',
+      tasks: [
+        {
+          title: 'Task 1',
+          description: 'Do task',
+          steps: [{ prompt: 'Do step', done: false }],
+        },
+      ],
+    });
 
     const options = {
       next: true,
@@ -566,9 +645,9 @@ describe('handleShowCommand', () => {
 
     await handleShowCommand(undefined, options, command);
 
-    expect(logSpy).toHaveBeenCalledWith(
-      'No ready plans found. All pending plans have incomplete dependencies.'
-    );
+    const output = stripAnsi(logSpy.mock.calls.map((call) => call[0]).join('\n'));
+    expect(output).toContain('Found next ready plan: 2');
+    expect(output).toContain('Incomplete Dependency');
   });
 
   test('shows error when no plan file provided and no flags', async () => {
@@ -596,7 +675,7 @@ describe('handleShowCommand', () => {
       tasks: [],
     };
 
-    await fs.writeFile(path.join(tasksDir, '42.yml'), `---\n${yaml.stringify(plan)}---\n`);
+    addDbPlan(plan);
 
     await handleShowCommand(undefined, {}, { parent: { opts: () => ({}) } });
 
@@ -628,7 +707,7 @@ describe('handleShowCommand', () => {
       tasks: [],
     };
 
-    await fs.writeFile(path.join(tasksDir, '8.yml'), `---\n${yaml.stringify(plan)}---\n`);
+    addDbPlan(plan);
 
     assignmentsData = {
       'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa': {
@@ -666,7 +745,7 @@ describe('handleShowCommand', () => {
       tasks: [],
     };
 
-    await fs.writeFile(path.join(tasksDir, '9.yml'), `---\n${yaml.stringify(plan)}---\n`);
+    addDbPlan(plan);
 
     assignmentsData = {
       'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb': {
@@ -701,7 +780,7 @@ describe('handleShowCommand', () => {
       tasks: [],
     };
 
-    await fs.writeFile(path.join(tasksDir, '10.yml'), `---\n${yaml.stringify(plan)}---\n`);
+    addDbPlan(plan);
 
     const options = {};
     const command = {
@@ -719,39 +798,83 @@ describe('handleShowCommand', () => {
 });
 
 describe('mcpGetPlan', () => {
-  test('returns formatted plan context for the given file', async () => {
+  test('returns formatted plan context for the given plan id', async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-mcp-get-plan-'));
 
     try {
-      const planPath = path.join(tempDir, '200.plan.yml');
-      const planData = {
-        id: 200,
-        title: 'MCP integration plan',
-        goal: 'Ensure MCP server shares logic',
-        status: 'pending',
-        priority: 'high',
-        details: 'Detailed info for MCP consumers.',
-        tasks: [
-          {
-            title: 'Refactor MCP server',
-            description: 'Move handlers into command modules',
-            done: false,
-            files: ['src/tim/mcp/generate_mode.ts'],
-            docs: [],
-            steps: [],
-          },
-        ],
-      };
-      await fs.writeFile(planPath, `---\n${yaml.stringify(planData)}---\n`, 'utf8');
+      const dbPlans = [
+        {
+          uuid: 'plan-200',
+          project_id: 1,
+          plan_id: 200,
+          title: 'MCP integration plan',
+          goal: 'Ensure MCP server shares logic',
+          details: 'Detailed info for MCP consumers.',
+          status: 'pending',
+          priority: 'high',
+          branch: null,
+          parent_uuid: null,
+          discovered_from: null,
+          epic: 0,
+          simple: 0,
+          tdd: 0,
+          assigned_to: null,
+          issue: null,
+          pull_request: null,
+          docs: null,
+          changed_files: null,
+          temp: 0,
+          base_branch: null,
+          review_issues: null,
+          plan_generated_at: null,
+          filename: '200.plan.md',
+          created_at: '2026-01-01T00:00:00.000Z',
+          updated_at: null,
+        },
+      ];
+      const dbPlanTasks = [
+        {
+          plan_uuid: 'plan-200',
+          title: 'Refactor MCP server',
+          description: 'Move handlers into command modules',
+          done: 0,
+        },
+      ];
+
+      await moduleMocker.mock('../assignments/workspace_identifier.ts', () => ({
+        getRepositoryIdentity: async () => ({
+          repositoryId: 'mcp-tests',
+          remoteUrl: 'https://example.com/repo.git',
+          gitRoot: tempDir,
+        }),
+      }));
+      await moduleMocker.mock('../db/database.js', () => ({
+        getDatabase: () => fakeDb as any,
+      }));
+      await moduleMocker.mock('../db/project.js', () => ({
+        getProject: () => ({ id: 1 }),
+        getOrCreateProject: () => ({ id: 1 }),
+      }));
+      await moduleMocker.mock('../db/plan.js', () => ({
+        getPlanByPlanId: (_db: unknown, _projectId: number, planId: number) =>
+          dbPlans.find((plan) => plan.plan_id === planId) ?? null,
+        getPlanByUuid: (_db: unknown, uuid: string) =>
+          dbPlans.find((plan) => plan.uuid === uuid) ?? null,
+        getPlansByProject: () => dbPlans,
+        getPlanTasksByUuid: (_db: unknown, uuid: string) =>
+          dbPlanTasks.filter((task) => task.plan_uuid === uuid),
+        getPlanDependenciesByUuid: () => [],
+        getPlanTagsByUuid: () => [],
+      }));
 
       const context: GenerateModeRegistrationContext = {
         config: {} as any,
         gitRoot: tempDir,
       };
 
-      const result = await mcpGetPlan({ plan: planPath }, context);
+      const result = await mcpGetPlan({ plan: '200' }, context);
 
-      expect(result).toContain('Plan file: 200.plan.yml');
+      expect(result).toContain('Plan file: Plan 200');
       expect(result).toContain('Plan ID: 200');
       expect(result).toContain('Status: pending');
       expect(result).toContain('Priority: high');
@@ -760,6 +883,7 @@ describe('mcpGetPlan', () => {
       expect(result).toContain('Details:\nDetailed info for MCP consumers.');
       expect(result).toContain('### Existing Tasks');
     } finally {
+      moduleMocker.clear();
       await fs.rm(tempDir, { recursive: true, force: true });
     }
   });
@@ -769,6 +893,10 @@ describe('inverse relationships', () => {
   let tempDir: string;
   let repoDir: string;
   let tasksDir: string;
+  let dbPlans: any[];
+  let dbPlanTasks: any[];
+  let dbPlanDependencies: any[];
+  let dbPlanTags: any[];
 
   beforeEach(async () => {
     logSpy.mockClear();
@@ -780,6 +908,10 @@ describe('inverse relationships', () => {
     repoDir = path.join(tempDir, 'repo');
     tasksDir = path.join(repoDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
+    dbPlans = [];
+    dbPlanTasks = [];
+    dbPlanDependencies = [];
+    dbPlanTags = [];
 
     await moduleMocker.mock('../../logging.js', () => ({
       log: logSpy,
@@ -804,10 +936,27 @@ describe('inverse relationships', () => {
     }));
 
     await moduleMocker.mock('../db/database.js', () => ({
-      getDatabase: () => ({}) as any,
+      getDatabase: () => fakeDb as any,
     }));
     await moduleMocker.mock('../db/project.js', () => ({
       getProject: () => ({ id: 1 }),
+      getOrCreateProject: () => ({ id: 1 }),
+    }));
+    await moduleMocker.mock('../db/plan.js', () => ({
+      getPlansByProject: () => dbPlans,
+      getPlanTasksByProject: () => dbPlanTasks,
+      getPlanDependenciesByProject: () => dbPlanDependencies,
+      getPlanTagsByProject: () => dbPlanTags,
+      getPlanByPlanId: (_db: unknown, _projectId: number, planId: number) =>
+        dbPlans.find((plan) => plan.plan_id === planId) ?? null,
+      getPlanByUuid: (_db: unknown, uuid: string) =>
+        dbPlans.find((plan) => plan.uuid === uuid) ?? null,
+      getPlanTasksByUuid: (_db: unknown, uuid: string) =>
+        dbPlanTasks.filter((task) => task.plan_uuid === uuid),
+      getPlanDependenciesByUuid: (_db: unknown, uuid: string) =>
+        dbPlanDependencies.filter((dependency) => dependency.plan_uuid === uuid),
+      getPlanTagsByUuid: (_db: unknown, uuid: string) =>
+        dbPlanTags.filter((tag) => tag.plan_uuid === uuid),
     }));
     await moduleMocker.mock('../db/assignment.js', () => ({
       getAssignmentEntriesByProject: () => ({}),
@@ -818,6 +967,58 @@ describe('inverse relationships', () => {
     moduleMocker.clear();
     await fs.rm(tempDir, { recursive: true, force: true });
   });
+
+  function addDbPlan(plan: Record<string, any>) {
+    if (typeof plan.id !== 'number') {
+      throw new Error('Test plan must include a numeric id');
+    }
+
+    const uuid = typeof plan.uuid === 'string' ? plan.uuid : `plan-${plan.id}`;
+    dbPlans.push({
+      uuid,
+      project_id: 1,
+      plan_id: plan.id,
+      title: plan.title ?? null,
+      goal: plan.goal ?? '',
+      details: plan.details ?? '',
+      status: plan.status ?? 'pending',
+      priority: plan.priority ?? null,
+      branch: null,
+      parent_uuid: typeof plan.parent === 'number' ? `plan-${plan.parent}` : null,
+      discovered_from: typeof plan.discoveredFrom === 'number' ? plan.discoveredFrom : null,
+      epic: plan.epic ? 1 : 0,
+      simple: 0,
+      tdd: 0,
+      assigned_to: null,
+      issue: null,
+      pull_request: null,
+      docs: null,
+      changed_files: null,
+      temp: 0,
+      base_branch: null,
+      review_issues: null,
+      plan_generated_at: null,
+      filename: `${plan.id}.plan.md`,
+      created_at: plan.createdAt ?? '2026-01-01T00:00:00.000Z',
+      updated_at: plan.updatedAt ?? null,
+    });
+
+    for (const task of plan.tasks ?? []) {
+      dbPlanTasks.push({
+        plan_uuid: uuid,
+        title: task.title ?? '',
+        description: task.description ?? '',
+        done: task.done ? 1 : 0,
+      });
+    }
+
+    for (const dependencyId of plan.dependencies ?? []) {
+      dbPlanDependencies.push({
+        plan_uuid: uuid,
+        depends_on_uuid: `plan-${dependencyId}`,
+      });
+    }
+  }
 
   test('displays blocked plans in full mode', async () => {
     const plans = [
@@ -847,10 +1048,7 @@ describe('inverse relationships', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(
-        path.join(tasksDir, `${plan.id}.yml`),
-        `---\n${yaml.stringify(plan)}---\n`
-      );
+      addDbPlan(plan);
     }
 
     await handleShowCommand('100', {}, { parent: { opts: () => ({}) } } as any);
@@ -891,10 +1089,7 @@ describe('inverse relationships', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(
-        path.join(tasksDir, `${plan.id}.yml`),
-        `---\n${yaml.stringify(plan)}---\n`
-      );
+      addDbPlan(plan);
     }
 
     await handleShowCommand('200', {}, { parent: { opts: () => ({}) } } as any);
@@ -935,10 +1130,7 @@ describe('inverse relationships', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(
-        path.join(tasksDir, `${plan.id}.yml`),
-        `---\n${yaml.stringify(plan)}---\n`
-      );
+      addDbPlan(plan);
     }
 
     await handleShowCommand('300', {}, { parent: { opts: () => ({}) } } as any);
@@ -991,10 +1183,7 @@ describe('inverse relationships', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(
-        path.join(tasksDir, `${plan.id}.yml`),
-        `---\n${yaml.stringify(plan)}---\n`
-      );
+      addDbPlan(plan);
     }
 
     await handleShowCommand('350', {}, { parent: { opts: () => ({}) } } as any);
@@ -1028,10 +1217,7 @@ describe('inverse relationships', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(
-        path.join(tasksDir, `${plan.id}.yml`),
-        `---\n${yaml.stringify(plan)}---\n`
-      );
+      addDbPlan(plan);
     }
 
     await handleShowCommand('401', {}, { parent: { opts: () => ({}) } } as any);
@@ -1053,7 +1239,7 @@ describe('inverse relationships', () => {
       tasks: [],
     };
 
-    await fs.writeFile(path.join(tasksDir, '500.yml'), `---\n${yaml.stringify(plan)}---\n`);
+    addDbPlan(plan);
 
     await handleShowCommand('500', {}, { parent: { opts: () => ({}) } } as any);
 
@@ -1085,10 +1271,7 @@ describe('inverse relationships', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(
-        path.join(tasksDir, `${plan.id}.yml`),
-        `---\n${yaml.stringify(plan)}---\n`
-      );
+      addDbPlan(plan);
     }
 
     await handleShowCommand('600', { short: true }, { parent: { opts: () => ({}) } } as any);
@@ -1113,7 +1296,7 @@ describe('inverse relationships', () => {
       tasks: [],
     };
 
-    await fs.writeFile(path.join(tasksDir, '700.yml'), `---\n${yaml.stringify(plan)}---\n`);
+    addDbPlan(plan);
 
     // Test without --full flag (should truncate)
     await handleShowCommand('700', {}, { parent: { opts: () => ({}) } } as any);

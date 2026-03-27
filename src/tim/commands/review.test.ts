@@ -18,18 +18,29 @@ import { validateInstructionsFilePath } from '../utils/file_validation.js';
 import { generateDiffForReview } from '../incremental_review.js';
 import type { PlanSchema } from '../planSchema.js';
 import type { PlanWithFilename } from '../utils/hierarchy.js';
-import { readPlanFile, writePlanFile } from '../plans.js';
+import { readPlanFile, resolvePlanFromDb, writePlanFile, writePlanToDb } from '../plans.js';
+import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
 let testDir: string;
+let sendNotificationSpy: ReturnType<typeof mock>;
+
+function createMockPlanContext(overrides: Record<string, unknown> = {}) {
+  return {
+    repoRoot: testDir,
+    gitRoot: testDir,
+    ...overrides,
+  };
+}
 
 beforeEach(async () => {
   testDir = await mkdtemp(join(tmpdir(), 'tim-review-test-'));
   vi.spyOn(console, 'error').mockImplementation(() => {});
+  sendNotificationSpy = mock(async () => true);
 
   await moduleMocker.mock('../notifications.js', () => ({
-    sendNotification: mock(async () => true),
+    sendNotification: sendNotificationSpy,
   }));
 });
 
@@ -74,40 +85,48 @@ describe('review issue persistence helpers', () => {
   });
 
   test('clearSavedReviewIssues removes saved issues and is a no-op when absent', async () => {
-    const planFile = join(testDir, 'clear-review-issues.plan.md');
-    await writePlanFile(planFile, {
-      id: 2,
-      title: 'Clear review issues',
-      goal: 'Verify saved issues can be removed',
-      details: 'Details',
-      tasks: [],
-      reviewIssues: [
-        {
-          id: 'issue-1',
-          severity: 'critical',
-          category: 'security',
-          content: 'A critical issue',
-        },
-      ],
-    });
+    const configPath = join(testDir, '.tim.yml');
+    await writeFile(configPath, 'review: {}\n');
+    await writePlanToDb(
+      {
+        id: 2,
+        title: 'Clear review issues',
+        goal: 'Verify saved issues can be removed',
+        details: 'Details',
+        tasks: [],
+        reviewIssues: [
+          {
+            id: 'issue-1',
+            severity: 'critical',
+            category: 'security',
+            content: 'A critical issue',
+          },
+        ],
+      },
+      { cwdForIdentity: testDir }
+    );
 
-    await clearSavedReviewIssues(planFile);
-    await clearSavedReviewIssues(planFile);
+    await clearSavedReviewIssues('2', configPath);
+    await clearSavedReviewIssues('2', configPath);
 
-    const updatedPlan = await readPlanFile(planFile);
+    const updatedPlan = (await resolvePlanFromDb('2', testDir)).plan;
     expect(updatedPlan.reviewIssues).toBeUndefined();
   });
 });
 
-test('interactive save for later persists only the selected review issues', async () => {
-  const planFile = join(testDir, 'save-selected-review-issues.yml');
-  await writePlanFile(planFile, {
-    id: 10,
-    title: 'Save selected review issues',
-    goal: 'Only persist the issues the user selected',
-    details: 'Details',
-    tasks: [],
-  });
+test('saveReviewIssuesToPlan persists only the selected review issues', async () => {
+  const configPath = join(testDir, '.tim.yml');
+  await writeFile(configPath, 'review: {}\n');
+  await writePlanToDb(
+    {
+      id: 10,
+      title: 'Save selected review issues',
+      goal: 'Only persist the issues the user selected',
+      details: 'Details',
+      tasks: [],
+    },
+    { cwdForIdentity: testDir }
+  );
 
   const reviewIssues = [
     {
@@ -128,77 +147,9 @@ test('interactive save for later persists only the selected review issues', asyn
     },
   ];
 
-  await moduleMocker.mock('../../common/input.js', () => ({
-    promptSelect: mock(async () => 'exit'),
-    promptCheckbox: mock(async () => [0]),
-  }));
+  await saveReviewIssuesToPlan('10', [reviewIssues[0]], configPath);
 
-  await moduleMocker.mock('../configLoader.js', () => ({
-    loadEffectiveConfig: async () => ({
-      defaultExecutor: 'codex-cli',
-    }),
-    loadGlobalConfigForNotifications: async () => ({}),
-  }));
-
-  await moduleMocker.mock('../../common/git.js', () => ({
-    getGitRoot: async () => testDir,
-    getTrunkBranch: async () => 'main',
-    getUsingJj: async () => false,
-    getCurrentCommitHash: async () => 'abc123',
-  }));
-
-  await moduleMocker.mock('./review.js', () => ({
-    handleReviewCommand,
-    generateDiffForReview: async () => ({
-      hasChanges: true,
-      changedFiles: ['src/security.ts'],
-      baseBranch: 'main',
-      diffContent: 'diff content',
-    }),
-    buildReviewPrompt: () => 'test review prompt',
-  }));
-
-  await moduleMocker.mock('../review_runner.js', () => ({
-    prepareReviewExecutors: async () => [],
-    runReview: async () => ({
-      reviewResult: {
-        planId: '10',
-        planTitle: 'Save selected review issues',
-        reviewTimestamp: '2026-03-16T00:00:00.000Z',
-        baseBranch: 'main',
-        changedFiles: ['src/security.ts'],
-        summary: 'Issues found',
-        issues: reviewIssues,
-        rawOutput: JSON.stringify({ issues: reviewIssues }),
-        recommendations: [],
-        actionItems: [],
-      },
-      rawOutput: JSON.stringify({ issues: reviewIssues }),
-      usedExecutors: ['codex-cli'],
-      warnings: [],
-    }),
-  }));
-
-  const mockCommand = {
-    parent: {
-      opts: () => ({}),
-    },
-  };
-
-  const originalInteractive = process.env.TIM_INTERACTIVE;
-  process.env.TIM_INTERACTIVE = '1';
-
-  try {
-    await handleReviewCommand(planFile, {}, mockCommand);
-  } finally {
-    if (originalInteractive === undefined) {
-      delete process.env.TIM_INTERACTIVE;
-    } else {
-      process.env.TIM_INTERACTIVE = originalInteractive;
-    }
-  }
-
-  const updatedPlan = await readPlanFile(planFile);
+  const updatedPlan = (await resolvePlanFromDb('10', testDir)).plan;
   expect(updatedPlan.reviewIssues).toEqual([reviewIssues[0]]);
 });
 
@@ -239,6 +190,41 @@ tasks:
     }),
   }));
 
+  await moduleMocker.mock('../utils/context_gathering.js', () => ({
+    gatherPlanContext: async () =>
+      createMockPlanContext({
+        resolvedPlanFile: planFile,
+        planData: {
+          id: 1,
+          title: 'Test Plan',
+          goal: 'Test the review functionality',
+          details: 'This is a test plan for the review command',
+          tasks: [
+            {
+              title: 'Test task',
+              description: 'A test task',
+              steps: [
+                {
+                  prompt: 'Do something',
+                  done: false,
+                },
+              ],
+            },
+          ],
+        },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['test.ts'],
+          baseBranch: 'main',
+          diffContent: 'mock diff',
+        },
+        incrementalSummary: null,
+        noChangesDetected: false,
+      }),
+  }));
+
   await moduleMocker.mock('../../common/git.js', () => ({
     getGitRoot: async () => testDir,
     getTrunkBranch: async () => 'main',
@@ -276,22 +262,48 @@ tasks:
 });
 
 test('handleReviewCommand resolves plan by ID', async () => {
-  // Create a test plan file with ID
-  const planContent = `
-id: 42
-title: Test Plan with ID
-goal: Test plan resolution by ID
-details: This plan should be resolvable by its ID
-tasks:
-  - title: Test task
-    description: A test task
-    steps:
-      - prompt: Do something
-        done: false
-`;
+  await writePlanToDb(
+    {
+      id: 42,
+      title: 'Test Plan with ID',
+      goal: 'Test plan resolution by ID',
+      details: 'This plan should be resolvable by its ID',
+      tasks: [
+        {
+          title: 'Test task',
+          description: 'A test task',
+        },
+      ],
+    },
+    { cwdForIdentity: testDir }
+  );
 
-  const planFile = join(testDir, 'test-plan-42.yml');
-  await writeFile(planFile, `---\n${planContent}---\n`);
+  const gatherPlanContextMock = mock(async (planArg: string) => {
+    expect(planArg).toBe('42');
+    return createMockPlanContext({
+      resolvedPlanFile: '42',
+      planData: {
+        id: 42,
+        title: 'Test Plan with ID',
+        goal: 'Test plan resolution by ID',
+        details: 'This plan should be resolvable by its ID',
+        tasks: [
+          {
+            title: 'Test task',
+            description: 'A test task',
+          },
+        ],
+      },
+      parentChain: [],
+      completedChildren: [],
+      diffResult: {
+        hasChanges: true,
+        changedFiles: ['test.ts'],
+        baseBranch: 'main',
+        diffContent: 'mock diff',
+      },
+    });
+  });
 
   // Mock dependencies
   await moduleMocker.mock('../executors/index.js', () => ({
@@ -312,25 +324,8 @@ tasks:
     }),
   }));
 
-  await moduleMocker.mock('../plans.js', () => ({
-    resolvePlanFile: async (planFileOrId: string) => {
-      if (planFileOrId === '42') {
-        return planFile;
-      }
-      return planFileOrId;
-    },
-    readPlanFile: async () => ({
-      id: 42,
-      title: 'Test Plan with ID',
-      goal: 'Test plan resolution by ID',
-      details: 'This plan should be resolvable by its ID',
-      tasks: [
-        {
-          title: 'Test task',
-          description: 'A test task',
-        },
-      ],
-    }),
+  await moduleMocker.mock('../utils/context_gathering.js', () => ({
+    gatherPlanContext: gatherPlanContextMock,
   }));
 
   await moduleMocker.mock('../../common/git.js', () => ({
@@ -366,9 +361,25 @@ tasks:
   };
 
   await handleReviewCommand('42', {}, mockCommand);
+  expect(gatherPlanContextMock).toHaveBeenCalledTimes(1);
 });
 
 test('uses review default executor from config when no executor option passed', async () => {
+  await writePlanToDb(
+    {
+      id: 1,
+      title: 'Review Executor Test',
+      goal: 'Use review default executor',
+      tasks: [
+        {
+          title: 'Task',
+          description: 'Review task',
+        },
+      ],
+    },
+    { cwdForIdentity: testDir }
+  );
+
   const mockExecutor = {
     execute: mock(async () =>
       JSON.stringify({
@@ -380,28 +391,29 @@ test('uses review default executor from config when no executor option passed', 
   };
 
   await moduleMocker.mock('../utils/context_gathering.js', () => ({
-    gatherPlanContext: async () => ({
-      resolvedPlanFile: 'plan.yml',
-      planData: {
-        id: 1,
-        title: 'Review Executor Test',
-        goal: 'Use review default executor',
-        tasks: [
-          {
-            title: 'Task',
-            description: 'Review task',
-          },
-        ],
-      },
-      parentChain: [],
-      completedChildren: [],
-      diffResult: {
-        hasChanges: true,
-        changedFiles: ['src/test.ts'],
-        baseBranch: 'main',
-        diffContent: 'diff',
-      },
-    }),
+    gatherPlanContext: async () =>
+      createMockPlanContext({
+        resolvedPlanFile: 'plan.yml',
+        planData: {
+          id: 1,
+          title: 'Review Executor Test',
+          goal: 'Use review default executor',
+          tasks: [
+            {
+              title: 'Task',
+              description: 'Review task',
+            },
+          ],
+        },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['src/test.ts'],
+          baseBranch: 'main',
+          diffContent: 'diff',
+        },
+      }),
   }));
 
   await moduleMocker.mock('../configLoader.js', () => ({
@@ -825,30 +837,31 @@ describe('handleReviewCommand error handling', () => {
     const planFile = join(testDir, 'no-changes.yml');
 
     await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () => ({
-        resolvedPlanFile: planFile,
-        planData: {
-          id: 1,
-          title: 'Test Plan',
-          goal: 'Test goal',
-          tasks: [
-            {
-              title: 'Test task',
-              description: 'A test task',
-            },
-          ],
-        },
-        parentChain: [],
-        completedChildren: [],
-        diffResult: {
-          hasChanges: false,
-          changedFiles: [],
-          baseBranch: 'main',
-          diffContent: '',
-        },
-        incrementalSummary: null,
-        noChangesDetected: true,
-      }),
+      gatherPlanContext: async () =>
+        createMockPlanContext({
+          resolvedPlanFile: planFile,
+          planData: {
+            id: 1,
+            title: 'Test Plan',
+            goal: 'Test goal',
+            tasks: [
+              {
+                title: 'Test task',
+                description: 'A test task',
+              },
+            ],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: false,
+            changedFiles: [],
+            baseBranch: 'main',
+            diffContent: '',
+          },
+          incrementalSummary: null,
+          noChangesDetected: true,
+        }),
     }));
 
     await moduleMocker.mock('../configLoader.js', () => ({
@@ -869,6 +882,20 @@ describe('handleReviewCommand error handling', () => {
 
   test('handles executor execution failure', async () => {
     const planFile = join(testDir, 'executor-fail.yml');
+    await writePlanToDb(
+      {
+        id: 126,
+        title: 'Test No Issues',
+        goal: 'Test goal',
+        tasks: [
+          {
+            title: 'Test task',
+            description: 'A test task',
+          },
+        ],
+      },
+      { cwdForIdentity: testDir }
+    );
 
     const mockExecutor = {
       execute: mock(async () => {
@@ -877,30 +904,31 @@ describe('handleReviewCommand error handling', () => {
     };
 
     await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () => ({
-        resolvedPlanFile: planFile,
-        planData: {
-          id: 1,
-          title: 'Test Plan',
-          goal: 'Test goal',
-          tasks: [
-            {
-              title: 'Test task',
-              description: 'A test task',
-            },
-          ],
-        },
-        parentChain: [],
-        completedChildren: [],
-        diffResult: {
-          hasChanges: true,
-          changedFiles: ['src/test.ts'],
-          baseBranch: 'main',
-          diffContent: 'mock diff content',
-        },
-        incrementalSummary: null,
-        noChangesDetected: false,
-      }),
+      gatherPlanContext: async () =>
+        createMockPlanContext({
+          resolvedPlanFile: planFile,
+          planData: {
+            id: 1,
+            title: 'Test Plan',
+            goal: 'Test goal',
+            tasks: [
+              {
+                title: 'Test task',
+                description: 'A test task',
+              },
+            ],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['src/test.ts'],
+            baseBranch: 'main',
+            diffContent: 'mock diff content',
+          },
+          incrementalSummary: null,
+          noChangesDetected: false,
+        }),
     }));
 
     await moduleMocker.mock('../configLoader.js', () => ({
@@ -921,30 +949,31 @@ describe('handleReviewCommand error handling', () => {
 
     // Avoid real context gathering that would hit git/FS
     await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () => ({
-        resolvedPlanFile: planFile,
-        planData: {
-          id: 126,
-          title: 'Test No Issues',
-          goal: 'Test goal',
-          tasks: [
-            {
-              title: 'Test task',
-              description: 'A test task',
-            },
-          ],
-        },
-        parentChain: [],
-        completedChildren: [],
-        diffResult: {
-          hasChanges: true,
-          changedFiles: ['src/test.ts'],
-          baseBranch: 'main',
-          diffContent: 'mock diff content',
-        },
-        incrementalSummary: null,
-        noChangesDetected: false,
-      }),
+      gatherPlanContext: async () =>
+        createMockPlanContext({
+          resolvedPlanFile: planFile,
+          planData: {
+            id: 126,
+            title: 'Test No Issues',
+            goal: 'Test goal',
+            tasks: [
+              {
+                title: 'Test task',
+                description: 'A test task',
+              },
+            ],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['src/test.ts'],
+            baseBranch: 'main',
+            diffContent: 'mock diff content',
+          },
+          incrementalSummary: null,
+          noChangesDetected: false,
+        }),
     }));
 
     const mockCommand = {
@@ -986,25 +1015,38 @@ tasks:
       }),
     };
 
-    await moduleMocker.mock('../plans.js', () => ({
-      resolvePlanFile: async () => planFile,
-      readPlanFile: async () => ({
-        id: 123,
-        title: 'Integration Test Plan',
-        goal: 'Test executor integration',
-        tasks: [
-          {
-            title: 'Test task',
-            description: 'Integration test task',
-          },
-        ],
-      }),
-    }));
-
     await moduleMocker.mock('../configLoader.js', () => ({
       loadEffectiveConfig: async () => ({
         defaultExecutor: 'claude-code',
       }),
+    }));
+
+    await moduleMocker.mock('../utils/context_gathering.js', () => ({
+      gatherPlanContext: async () =>
+        createMockPlanContext({
+          resolvedPlanFile: planFile,
+          planData: {
+            id: 123,
+            title: 'Integration Test Plan',
+            goal: 'Test executor integration',
+            tasks: [
+              {
+                title: 'Test task',
+                description: 'Integration test task',
+              },
+            ],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['src/test.ts'],
+            baseBranch: 'main',
+            diffContent: 'test diff content',
+          },
+          incrementalSummary: null,
+          noChangesDetected: false,
+        }),
     }));
 
     await moduleMocker.mock('../executors/index.js', () => ({
@@ -1024,6 +1066,7 @@ tasks:
 
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: async () => testDir,
+      getCurrentBranchName: async () => null,
     }));
 
     await moduleMocker.mock('./review.js', () => ({
@@ -1076,25 +1119,38 @@ tasks:
       }),
     };
 
-    await moduleMocker.mock('../plans.js', () => ({
-      resolvePlanFile: async () => planFile,
-      readPlanFile: async () => ({
-        id: 123,
-        title: 'Test Review Execution',
-        goal: 'Test that review command uses review execution mode',
-        tasks: [
-          {
-            title: 'Test task',
-            description: 'A test task for review execution mode',
-          },
-        ],
-      }),
-    }));
-
     await moduleMocker.mock('../configLoader.js', () => ({
       loadEffectiveConfig: async () => ({
         defaultExecutor: 'claude-code',
       }),
+    }));
+
+    await moduleMocker.mock('../utils/context_gathering.js', () => ({
+      gatherPlanContext: async () =>
+        createMockPlanContext({
+          resolvedPlanFile: planFile,
+          planData: {
+            id: 123,
+            title: 'Test Review Execution',
+            goal: 'Test that review command uses review execution mode',
+            tasks: [
+              {
+                title: 'Test task',
+                description: 'A test task for review execution mode',
+              },
+            ],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['src/test.ts'],
+            baseBranch: 'main',
+            diffContent: 'test diff content',
+          },
+          incrementalSummary: null,
+          noChangesDetected: false,
+        }),
     }));
 
     await moduleMocker.mock('../executors/index.js', () => ({
@@ -1104,6 +1160,7 @@ tasks:
 
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: async () => testDir,
+      getCurrentBranchName: async () => null,
     }));
 
     await moduleMocker.mock('./review.js', () => ({
@@ -1146,28 +1203,29 @@ tasks:
     };
 
     await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () => ({
-        resolvedPlanFile: join(testDir, 'dry-run.yml'),
-        planData: {
-          id: 1,
-          title: 'Dry Run Test',
-          goal: 'Test dry run functionality',
-          tasks: [
-            {
-              title: 'Test task',
-              description: 'Dry run test task',
-            },
-          ],
-        },
-        parentChain: [],
-        completedChildren: [],
-        diffResult: {
-          hasChanges: true,
-          changedFiles: ['test.ts'],
-          baseBranch: 'main',
-          diffContent: 'test diff',
-        },
-      }),
+      gatherPlanContext: async () =>
+        createMockPlanContext({
+          resolvedPlanFile: join(testDir, 'dry-run.yml'),
+          planData: {
+            id: 1,
+            title: 'Dry Run Test',
+            goal: 'Test dry run functionality',
+            tasks: [
+              {
+                title: 'Test task',
+                description: 'Dry run test task',
+              },
+            ],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['test.ts'],
+            baseBranch: 'main',
+            diffContent: 'test diff',
+          },
+        }),
     }));
 
     await moduleMocker.mock('../configLoader.js', () => ({
@@ -1199,6 +1257,20 @@ tasks:
 
   test('print mode forces json output without prompting', async () => {
     const planFile = join(testDir, 'print-mode.yml');
+    await writePlanToDb(
+      {
+        id: 1,
+        title: 'Print Mode Plan',
+        goal: 'Test print mode',
+        tasks: [
+          {
+            title: 'Task One',
+            description: 'First task',
+          },
+        ],
+      },
+      { cwdForIdentity: testDir }
+    );
 
     const mockExecutor = {
       execute: mock(async () =>
@@ -1220,30 +1292,31 @@ tasks:
     };
 
     await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () => ({
-        resolvedPlanFile: planFile,
-        planData: {
-          id: 1,
-          title: 'Print Mode Plan',
-          goal: 'Test print mode',
-          tasks: [
-            {
-              title: 'Task One',
-              description: 'First task',
-            },
-          ],
-        },
-        parentChain: [],
-        completedChildren: [],
-        diffResult: {
-          hasChanges: true,
-          changedFiles: ['src/test.ts'],
-          baseBranch: 'main',
-          diffContent: 'mock diff content',
-        },
-        incrementalSummary: null,
-        noChangesDetected: false,
-      }),
+      gatherPlanContext: async () =>
+        createMockPlanContext({
+          resolvedPlanFile: planFile,
+          planData: {
+            id: 1,
+            title: 'Print Mode Plan',
+            goal: 'Test print mode',
+            tasks: [
+              {
+                title: 'Task One',
+                description: 'First task',
+              },
+            ],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['src/test.ts'],
+            baseBranch: 'main',
+            diffContent: 'mock diff content',
+          },
+          incrementalSummary: null,
+          noChangesDetected: false,
+        }),
     }));
 
     await moduleMocker.mock('../configLoader.js', () => ({
@@ -1454,32 +1527,60 @@ describe('Parent plan context handling', () => {
 
   test('handles parent plan context integration in handleReviewCommand', async () => {
     const testDir = await mkdtemp(join(tmpdir(), 'tim-parent-test-'));
-
-    // Create parent plan file
-    const parentPlanContent = `
-id: 99
-title: Parent Plan
-goal: Parent goal for context
-details: This is the parent plan providing context
-tasks:
-  - title: Parent task
-    description: A parent task
-`;
-    const parentPlanFile = join(testDir, 'parent-99.yml');
-    await writeFile(parentPlanFile, `---\n${parentPlanContent}---\n`);
-
-    // Create child plan file
-    const childPlanContent = `
-id: 101
-title: Child Plan
-goal: Child goal that implements parent
-parent: 99
-tasks:
-  - title: Child task
-    description: A child task
-`;
     const childPlanFile = join(testDir, 'child-101.yml');
-    await writeFile(childPlanFile, `---\n${childPlanContent}---\n`);
+    await writePlanToDb(
+      {
+        id: 101,
+        title: 'Child Plan',
+        goal: 'Child goal that implements parent',
+        parent: 99,
+        tasks: [
+          {
+            title: 'Child task',
+            description: 'A child task',
+          },
+        ],
+      },
+      { cwdForIdentity: testDir }
+    );
+    const parentPlan = {
+      id: 99,
+      title: 'Parent Plan',
+      goal: 'Parent goal for context',
+      details: 'This is the parent plan providing context',
+      tasks: [
+        {
+          title: 'Parent task',
+          description: 'A parent task',
+        },
+      ],
+      filename: join(testDir, '.tim', 'plans', '99.plan.md'),
+    };
+    const gatherPlanContextMock = mock(async () =>
+      createMockPlanContext({
+        resolvedPlanFile: childPlanFile,
+        planData: {
+          id: 101,
+          title: 'Child Plan',
+          goal: 'Child goal that implements parent',
+          parent: 99,
+          tasks: [
+            {
+              title: 'Child task',
+              description: 'A child task',
+            },
+          ],
+        },
+        parentChain: [parentPlan],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['test.ts'],
+          baseBranch: 'main',
+          diffContent: 'test diff',
+        },
+      })
+    );
 
     const mockExecutor = {
       execute: mock(async (prompt: string) => {
@@ -1495,46 +1596,6 @@ tasks:
       }),
     };
 
-    await moduleMocker.mock('../plans.js', () => ({
-      resolvePlanFile: async (planFileOrId: string) => {
-        if (planFileOrId === childPlanFile) return childPlanFile;
-        if (planFileOrId === parentPlanFile) return parentPlanFile;
-        if (planFileOrId === '99') return parentPlanFile; // Handle parent ID resolution
-        return planFileOrId;
-      },
-      readPlanFile: async (filePath: string) => {
-        if (filePath === parentPlanFile) {
-          return {
-            id: 99,
-            title: 'Parent Plan',
-            goal: 'Parent goal for context',
-            details: 'This is the parent plan providing context',
-            tasks: [
-              {
-                title: 'Parent task',
-                description: 'A parent task',
-              },
-            ],
-          };
-        }
-        if (filePath === childPlanFile) {
-          return {
-            id: 101,
-            title: 'Child Plan',
-            goal: 'Child goal that implements parent',
-            parent: 99,
-            tasks: [
-              {
-                title: 'Child task',
-                description: 'A child task',
-              },
-            ],
-          };
-        }
-        return null;
-      },
-    }));
-
     await moduleMocker.mock('../configLoader.js', () => ({
       loadEffectiveConfig: async () => ({
         defaultExecutor: 'codex-cli',
@@ -1544,6 +1605,10 @@ tasks:
     await moduleMocker.mock('../executors/index.js', () => ({
       buildExecutorAndLog: () => mockExecutor,
       DEFAULT_EXECUTOR: 'codex-cli',
+    }));
+
+    await moduleMocker.mock('../utils/context_gathering.js', () => ({
+      gatherPlanContext: gatherPlanContextMock,
     }));
 
     await moduleMocker.mock('../../common/git.js', () => ({
@@ -1596,6 +1661,7 @@ tasks:
 
     await handleReviewCommand(childPlanFile, {}, mockCommand);
 
+    expect(gatherPlanContextMock).toHaveBeenCalledTimes(1);
     expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
   });
 });
@@ -2119,23 +2185,36 @@ tasks:
         },
       };
 
-      await moduleMocker.mock('../plans.js', () => ({
-        resolvePlanFile: async () => planFile,
-        readPlanFile: async () => ({
-          id: 1,
-          title: 'Test Plan',
-          goal: 'Test goal',
-          tasks: [
-            {
-              title: 'Test task',
-              description: 'A test task',
-            },
-          ],
-        }),
-      }));
-
       await moduleMocker.mock('../configLoader.js', () => ({
         loadEffectiveConfig: async () => ({}),
+      }));
+
+      await moduleMocker.mock('../utils/context_gathering.js', () => ({
+        gatherPlanContext: async () =>
+          createMockPlanContext({
+            resolvedPlanFile: planFile,
+            planData: {
+              id: 1,
+              title: 'Test Plan',
+              goal: 'Test goal',
+              tasks: [
+                {
+                  title: 'Test task',
+                  description: 'A test task',
+                },
+              ],
+            },
+            parentChain: [],
+            completedChildren: [],
+            diffResult: {
+              hasChanges: true,
+              changedFiles: ['test.ts'],
+              baseBranch: 'main',
+              diffContent: 'test diff',
+            },
+            incrementalSummary: null,
+            noChangesDetected: false,
+          }),
       }));
 
       await moduleMocker.mock('../executors/index.js', () => ({
@@ -2568,6 +2647,156 @@ describe('Custom review instructions', () => {
 });
 
 describe('Autofix functionality', () => {
+  test('materializes DB-only plans before review and autofix execution', async () => {
+    process.chdir(testDir);
+    await writePlanToDb(
+      {
+        id: 123,
+        title: 'DB-only Autofix Plan',
+        goal: 'Verify review/autofix materialization',
+        tasks: [
+          {
+            title: 'Fix review issues',
+            description: 'Materialize before executor handoff',
+          },
+        ],
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    const materializedPlanPath = join(testDir, '.tim', 'plans', '123.plan.md');
+
+    await moduleMocker.mock('@inquirer/prompts', () => ({
+      confirm: mock(async () => {
+        throw new Error('Confirm should not be called with --autofix flag');
+      }),
+      checkbox: mock(async ({ choices }: { choices: any[] }) =>
+        choices.map((choice) => choice.value)
+      ),
+    }));
+
+    const mockExecutor = {
+      execute: mock(async (prompt: string, metadata: any) => {
+        if (metadata.executionMode === 'review') {
+          expect(metadata.planFilePath).toBe(materializedPlanPath);
+          return JSON.stringify({
+            issues: [
+              {
+                severity: 'critical',
+                category: 'security',
+                content: 'Missing authorization check',
+                file: 'src/auth.ts',
+                line: '12',
+                suggestion: 'Add the missing authorization guard.',
+              },
+            ],
+            recommendations: [],
+            actionItems: [],
+          });
+        }
+
+        expect(metadata.executionMode).toBe('normal');
+        expect(metadata.planFilePath).toBe(materializedPlanPath);
+        expect(prompt).toContain('Autofix Request');
+        await writePlanFile(materializedPlanPath, {
+          id: 123,
+          title: 'DB-only Autofix Plan',
+          goal: 'Verify review/autofix materialization',
+          details: 'Updated by autofix',
+          tasks: [
+            {
+              title: 'Fix review issues',
+              description: 'Materialize before executor handoff',
+              done: true,
+            },
+          ],
+        });
+        return 'Autofix completed successfully';
+      }),
+    };
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        defaultExecutor: 'claude-code',
+      }),
+    }));
+
+    await moduleMocker.mock('../utils/context_gathering.js', () => ({
+      gatherPlanContext: async () =>
+        createMockPlanContext({
+          resolvedPlanFile: '123',
+          planData: {
+            id: 123,
+            title: 'DB-only Autofix Plan',
+            goal: 'Verify review/autofix materialization',
+            tasks: [
+              {
+                title: 'Fix review issues',
+                description: 'Materialize before executor handoff',
+              },
+            ],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['src/auth.ts'],
+            baseBranch: 'main',
+            diffContent: 'diff content',
+          },
+          incrementalSummary: null,
+          noChangesDetected: false,
+        }),
+    }));
+
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: () => mockExecutor,
+      DEFAULT_EXECUTOR: 'codex-cli',
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => testDir,
+    }));
+
+    await moduleMocker.mock('./review.js', () => ({
+      handleReviewCommand,
+      generateDiffForReview: async () => ({
+        hasChanges: true,
+        changedFiles: ['src/auth.ts'],
+        baseBranch: 'main',
+        diffContent: 'diff content',
+      }),
+      buildReviewPrompt: () => 'test review prompt',
+      detectIssuesInReview: (reviewResult: any) =>
+        Array.isArray(reviewResult.issues) && reviewResult.issues.length > 0,
+      buildAutofixPrompt: () => '# Autofix Request\n\nFix the issues.',
+    }));
+
+    const mockCommand = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleReviewCommand('123', { autofix: true, noSave: true }, mockCommand);
+
+    expect(mockExecutor.execute).toHaveBeenCalledTimes(2);
+    expect(mockExecutor.execute.mock.calls[0]?.[1]?.planFilePath).toBe(materializedPlanPath);
+    expect(mockExecutor.execute.mock.calls[1]?.[1]?.planFilePath).toBe(materializedPlanPath);
+    const materializedPlan = await readPlanFile(materializedPlanPath);
+    expect(materializedPlan.id).toBe(123);
+    expect(materializedPlan.title).toBe('DB-only Autofix Plan');
+    expect(sendNotificationSpy).toHaveBeenCalled();
+    expect(
+      sendNotificationSpy.mock.calls.some(
+        ([, payload]) => payload?.command === 'review' && payload?.planFile === materializedPlanPath
+      )
+    ).toBe(true);
+    const updatedPlan = (await resolvePlanFromDb('123', testDir)).plan;
+    expect(updatedPlan.details).toBe('Updated by autofix');
+    expect(updatedPlan.tasks?.[0]?.done).toBe(true);
+  });
+
   test('autofix flag executes review then autofix when issues found', async () => {
     const planContent = `
 id: 123
@@ -2628,25 +2857,38 @@ tasks:
       }),
     };
 
-    await moduleMocker.mock('../plans.js', () => ({
-      resolvePlanFile: async () => planFile,
-      readPlanFile: async () => ({
-        id: 123,
-        title: 'Test Plan with Issues',
-        goal: 'Test autofix functionality',
-        tasks: [
-          {
-            title: 'Test task',
-            description: 'A test task that has issues',
-          },
-        ],
-      }),
-    }));
-
     await moduleMocker.mock('../configLoader.js', () => ({
       loadEffectiveConfig: async () => ({
         defaultExecutor: 'claude-code',
       }),
+    }));
+
+    await moduleMocker.mock('../utils/context_gathering.js', () => ({
+      gatherPlanContext: async () =>
+        createMockPlanContext({
+          resolvedPlanFile: planFile,
+          planData: {
+            id: 123,
+            title: 'Test Plan with Issues',
+            goal: 'Test autofix functionality',
+            tasks: [
+              {
+                title: 'Test task',
+                description: 'A test task that has issues',
+              },
+            ],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['src/test.ts'],
+            baseBranch: 'main',
+            diffContent: 'test diff content',
+          },
+          incrementalSummary: null,
+          noChangesDetected: false,
+        }),
     }));
 
     await moduleMocker.mock('../executors/index.js', () => ({
@@ -2889,25 +3131,38 @@ tasks:
       }),
     }));
 
-    await moduleMocker.mock('../plans.js', () => ({
-      resolvePlanFile: async () => planFile,
-      readPlanFile: async () => ({
-        id: 125,
-        title: 'Test Declined Autofix',
-        goal: 'Test user declining autofix',
-        tasks: [
-          {
-            title: 'Test task',
-            description: 'A test task with issues',
-          },
-        ],
-      }),
-    }));
-
     await moduleMocker.mock('../configLoader.js', () => ({
       loadEffectiveConfig: async () => ({
         defaultExecutor: 'claude-code',
       }),
+    }));
+
+    await moduleMocker.mock('../utils/context_gathering.js', () => ({
+      gatherPlanContext: async () =>
+        createMockPlanContext({
+          resolvedPlanFile: planFile,
+          planData: {
+            id: 125,
+            title: 'Test Declined Autofix',
+            goal: 'Test user declining autofix',
+            tasks: [
+              {
+                title: 'Test task',
+                description: 'A test task with issues',
+              },
+            ],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['src/test.ts'],
+            baseBranch: 'main',
+            diffContent: 'test diff',
+          },
+          incrementalSummary: null,
+          noChangesDetected: false,
+        }),
     }));
 
     await moduleMocker.mock('../executors/index.js', () => ({
@@ -2991,25 +3246,38 @@ tasks:
       }),
     }));
 
-    await moduleMocker.mock('../plans.js', () => ({
-      resolvePlanFile: async () => planFile,
-      readPlanFile: async () => ({
-        id: 126,
-        title: 'Test No Issues',
-        goal: 'Test no autofix when no issues',
-        tasks: [
-          {
-            title: 'Test task',
-            description: 'A clean test task',
-          },
-        ],
-      }),
-    }));
-
     await moduleMocker.mock('../configLoader.js', () => ({
       loadEffectiveConfig: async () => ({
         defaultExecutor: 'claude-code',
       }),
+    }));
+
+    await moduleMocker.mock('../utils/context_gathering.js', () => ({
+      gatherPlanContext: async () =>
+        createMockPlanContext({
+          resolvedPlanFile: planFile,
+          planData: {
+            id: 126,
+            title: 'Test No Issues',
+            goal: 'Test no autofix when no issues',
+            tasks: [
+              {
+                title: 'Test task',
+                description: 'A clean test task',
+              },
+            ],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['src/test.ts'],
+            baseBranch: 'main',
+            diffContent: 'test diff',
+          },
+          incrementalSummary: null,
+          noChangesDetected: false,
+        }),
     }));
 
     await moduleMocker.mock('../executors/index.js', () => ({
@@ -3117,30 +3385,31 @@ tasks:
 
     // Short-circuit context gathering to avoid touching real git and IO
     await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () => ({
-        resolvedPlanFile: planFile,
-        planData: {
-          id: 127,
-          title: 'Test No-Autofix Flag',
-          goal: 'Test no-autofix flag prevention',
-          tasks: [
-            {
-              title: 'Test task',
-              description: 'A test task with issues',
-            },
-          ],
-        },
-        parentChain: [],
-        completedChildren: [],
-        diffResult: {
-          hasChanges: true,
-          changedFiles: ['src/test.ts'],
-          baseBranch: 'main',
-          diffContent: 'mock diff content',
-        },
-        incrementalSummary: null,
-        noChangesDetected: false,
-      }),
+      gatherPlanContext: async () =>
+        createMockPlanContext({
+          resolvedPlanFile: planFile,
+          planData: {
+            id: 127,
+            title: 'Test No-Autofix Flag',
+            goal: 'Test no-autofix flag prevention',
+            tasks: [
+              {
+                title: 'Test task',
+                description: 'A test task with issues',
+              },
+            ],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['src/test.ts'],
+            baseBranch: 'main',
+            diffContent: 'mock diff content',
+          },
+          incrementalSummary: null,
+          noChangesDetected: false,
+        }),
     }));
 
     await moduleMocker.mock('../configLoader.js', () => ({
@@ -3433,6 +3702,35 @@ tasks:
       }),
     }));
 
+    await moduleMocker.mock('../utils/context_gathering.js', () => ({
+      gatherPlanContext: async () =>
+        createMockPlanContext({
+          resolvedPlanFile: planFile,
+          planData: {
+            id: 42,
+            title: 'Branch-specific Plan',
+            goal: 'Test auto-selection functionality',
+            createdAt: '2024-01-01T00:00:00.000Z',
+            tasks: [
+              {
+                title: 'Test task',
+                description: 'A test task on this branch',
+              },
+            ],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['src/test.ts'],
+            baseBranch: 'main',
+            diffContent: 'test diff',
+          },
+          incrementalSummary: null,
+          noChangesDetected: false,
+        }),
+    }));
+
     await moduleMocker.mock('../executors/index.js', () => ({
       buildExecutorAndLog: () => mockExecutor,
       DEFAULT_EXECUTOR: 'codex-cli',
@@ -3440,6 +3738,7 @@ tasks:
 
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: async () => testDir,
+      getCurrentBranchName: async () => null,
     }));
 
     await moduleMocker.mock('./review.js', () => ({
@@ -3477,6 +3776,10 @@ tasks:
       loadEffectiveConfig: async () => ({}),
     }));
 
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getCurrentBranchName: async () => null,
+    }));
+
     const mockCommand = {
       parent: {
         opts: () => ({}),
@@ -3486,6 +3789,378 @@ tasks:
     await expect(handleReviewCommand(undefined, {}, mockCommand)).rejects.toThrow(
       'No plan file specified and no suitable plans found'
     );
+  });
+
+  test('auto-selects DB-backed plan from branch name before file scanning fallbacks', async () => {
+    await writePlanToDb(
+      {
+        id: 280,
+        title: 'DB-selected Plan',
+        goal: 'Resolve review plan from branch name',
+        tasks: [],
+      },
+      { cwdForIdentity: testDir }
+    );
+    const materializedPlanPath = join(testDir, '.tim', 'plans', '280.plan.md');
+    await mkdir(join(testDir, '.tim', 'plans'), { recursive: true });
+    await writeFile(
+      materializedPlanPath,
+      `---
+id: 280
+title: Stale materialized copy
+goal: Stale goal
+tasks: []
+---
+`
+    );
+
+    const mockExecutor = {
+      execute: mock(async () =>
+        JSON.stringify({
+          issues: [],
+          recommendations: [],
+          actionItems: [],
+        })
+      ),
+    };
+    const gatherPlanContextMock = mock(async (planArg: string) => {
+      expect(planArg).toBe(materializedPlanPath);
+      return createMockPlanContext({
+        resolvedPlanFile: materializedPlanPath,
+        planData: {
+          id: 280,
+          title: 'DB-selected Plan',
+          goal: 'Resolve review plan from branch name',
+          tasks: [],
+        },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['src/test.ts'],
+          baseBranch: 'main',
+          diffContent: 'test diff',
+        },
+      });
+    });
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        defaultExecutor: 'claude-code',
+      }),
+    }));
+
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: () => mockExecutor,
+      DEFAULT_EXECUTOR: 'codex-cli',
+    }));
+
+    await moduleMocker.mock('../utils/context_gathering.js', () => ({
+      gatherPlanContext: gatherPlanContextMock,
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => testDir,
+      getCurrentBranchName: async () => '280-db-selected-plan',
+    }));
+
+    await moduleMocker.mock('./review.js', () => ({
+      handleReviewCommand,
+      generateDiffForReview: async () => ({
+        hasChanges: true,
+        changedFiles: ['src/test.ts'],
+        baseBranch: 'main',
+        diffContent: 'test diff',
+      }),
+      buildReviewPrompt: () => 'test review prompt',
+    }));
+
+    const mockCommand = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleReviewCommand(undefined, {}, mockCommand);
+
+    expect(gatherPlanContextMock).toHaveBeenCalledTimes(1);
+    expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
+    const materializedPlan = await readPlanFile(materializedPlanPath);
+    expect(materializedPlan.title).toBe('DB-selected Plan');
+    const dbPlan = await resolvePlanFromDb('280', testDir);
+    expect(dbPlan.plan.title).toBe('DB-selected Plan');
+  });
+
+  test('branch-name auto-selected DB-only plans materialize before review and autofix execution', async () => {
+    process.chdir(testDir);
+    await writePlanToDb(
+      {
+        id: 281,
+        title: 'DB-only Branch Autofix Plan',
+        goal: 'Verify branch-name review/autofix materialization',
+        tasks: [
+          {
+            title: 'Fix issues from branch-selected review',
+            description: 'Materialize before executor handoff',
+          },
+        ],
+      },
+      { cwdForIdentity: testDir }
+    );
+    const persistedPlan = (await resolvePlanFromDb('281', testDir)).plan;
+
+    const materializedPlanPath = join(testDir, '.tim', 'plans', '281.plan.md');
+
+    await moduleMocker.mock('@inquirer/prompts', () => ({
+      confirm: mock(async () => {
+        throw new Error('Confirm should not be called with --autofix flag');
+      }),
+      checkbox: mock(async ({ choices }: { choices: any[] }) =>
+        choices.map((choice) => choice.value)
+      ),
+    }));
+
+    const mockExecutor = {
+      execute: mock(async (prompt: string, metadata: any) => {
+        if (metadata.executionMode === 'review') {
+          expect(metadata.planFilePath).toBe(materializedPlanPath);
+          return JSON.stringify({
+            issues: [
+              {
+                severity: 'major',
+                category: 'bug',
+                content: 'Missing branch-name autofix coverage',
+                file: 'src/tim/commands/review.ts',
+                line: '721',
+                suggestion: 'Add the missing regression test.',
+              },
+            ],
+            recommendations: [],
+            actionItems: [],
+          });
+        }
+
+        expect(metadata.executionMode).toBe('normal');
+        expect(metadata.planFilePath).toBe(materializedPlanPath);
+        expect(prompt).toContain('Autofix Request');
+        await writeFile(
+          materializedPlanPath,
+          `---
+id: 281
+uuid: ${persistedPlan.uuid}
+title: DB-only Branch Autofix Plan
+goal: Verify branch-name review/autofix materialization
+updatedAt: 2026-03-27T10:54:00.000Z
+tasks:
+  - title: Fix issues from branch-selected review
+    description: Materialize before executor handoff
+    done: true
+---
+
+Updated by branch-name autofix
+`
+        );
+        return 'Autofix completed successfully';
+      }),
+    };
+
+    const gatherPlanContextMock = mock(async (planArg: string) => {
+      expect(planArg).toBe(materializedPlanPath);
+      return createMockPlanContext({
+        resolvedPlanFile: '281',
+        planData: {
+          id: 281,
+          title: 'DB-only Branch Autofix Plan',
+          goal: 'Verify branch-name review/autofix materialization',
+          tasks: [
+            {
+              title: 'Fix issues from branch-selected review',
+              description: 'Materialize before executor handoff',
+            },
+          ],
+        },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['src/tim/commands/review.ts'],
+          baseBranch: 'main',
+          diffContent: 'diff content',
+        },
+      });
+    });
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        defaultExecutor: 'claude-code',
+      }),
+    }));
+
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: () => mockExecutor,
+      DEFAULT_EXECUTOR: 'codex-cli',
+    }));
+
+    await moduleMocker.mock('../utils/context_gathering.js', () => ({
+      gatherPlanContext: gatherPlanContextMock,
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => testDir,
+      getCurrentBranchName: async () => '281-db-only-branch-autofix-plan',
+    }));
+
+    await moduleMocker.mock('./review.js', () => ({
+      handleReviewCommand,
+      generateDiffForReview: async () => ({
+        hasChanges: true,
+        changedFiles: ['src/tim/commands/review.ts'],
+        baseBranch: 'main',
+        diffContent: 'diff content',
+      }),
+      buildReviewPrompt: () => 'test review prompt',
+      detectIssuesInReview: (reviewResult: any) =>
+        Array.isArray(reviewResult.issues) && reviewResult.issues.length > 0,
+      buildAutofixPrompt: () => '# Autofix Request\n\nFix the issues.',
+    }));
+
+    const mockCommand = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleReviewCommand(undefined, { autofix: true, noSave: true }, mockCommand);
+
+    expect(gatherPlanContextMock).toHaveBeenCalledTimes(1);
+    expect(mockExecutor.execute).toHaveBeenCalledTimes(2);
+    expect(mockExecutor.execute.mock.calls[0]?.[1]?.planFilePath).toBe(materializedPlanPath);
+    expect(mockExecutor.execute.mock.calls[1]?.[1]?.planFilePath).toBe(materializedPlanPath);
+    const updatedPlan = (await resolvePlanFromDb('281', testDir)).plan;
+    expect(updatedPlan.details).toBe('Updated by branch-name autofix');
+    expect(updatedPlan.tasks?.[0]?.done).toBe(true);
+  });
+
+  test('falls back to file-based auto-selection when branch-name DB lookup misses', async () => {
+    const planContent = `
+id: 42
+title: Branch fallback Plan
+goal: Use file discovery after branch-name DB miss
+createdAt: 2024-01-01T00:00:00.000Z
+tasks:
+  - title: Test task
+    description: A test task on this branch
+`;
+    const planFile = join(testDir, 'branch-fallback-plan.yml');
+    await writeFile(planFile, `---\n${planContent}---\n`);
+
+    const mockExecutor = {
+      execute: mock(async () =>
+        JSON.stringify({
+          issues: [],
+          recommendations: [],
+          actionItems: [],
+        })
+      ),
+    };
+    const findBranchSpecificPlanMock = mock(async () => ({
+      id: 42,
+      title: 'Branch fallback Plan',
+      goal: 'Use file discovery after branch-name DB miss',
+      createdAt: '2024-01-01T00:00:00.000Z',
+      filename: planFile,
+      tasks: [
+        {
+          title: 'Test task',
+          description: 'A test task on this branch',
+        },
+      ],
+    }));
+
+    await moduleMocker.mock('../plans.js', () => ({
+      findBranchSpecificPlan: findBranchSpecificPlanMock,
+      findSingleModifiedPlanOnBranch: mock(async () => null),
+      resolvePlanFile: async () => planFile,
+      readPlanFile: async () => ({
+        id: 42,
+        title: 'Branch fallback Plan',
+        goal: 'Use file discovery after branch-name DB miss',
+        createdAt: '2024-01-01T00:00:00.000Z',
+        tasks: [
+          {
+            title: 'Test task',
+            description: 'A test task on this branch',
+          },
+        ],
+      }),
+    }));
+
+    await moduleMocker.mock('../configLoader.js', () => ({
+      loadEffectiveConfig: async () => ({
+        defaultExecutor: 'claude-code',
+      }),
+    }));
+
+    await moduleMocker.mock('../utils/context_gathering.js', () => ({
+      gatherPlanContext: async () =>
+        createMockPlanContext({
+          resolvedPlanFile: planFile,
+          planData: {
+            id: 42,
+            title: 'Branch fallback Plan',
+            goal: 'Use file discovery after branch-name DB miss',
+            createdAt: '2024-01-01T00:00:00.000Z',
+            tasks: [
+              {
+                title: 'Test task',
+                description: 'A test task on this branch',
+              },
+            ],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['src/test.ts'],
+            baseBranch: 'main',
+            diffContent: 'test diff',
+          },
+          incrementalSummary: null,
+          noChangesDetected: false,
+        }),
+    }));
+
+    await moduleMocker.mock('../executors/index.js', () => ({
+      buildExecutorAndLog: () => mockExecutor,
+      DEFAULT_EXECUTOR: 'codex-cli',
+    }));
+
+    await moduleMocker.mock('../../common/git.js', () => ({
+      getGitRoot: async () => testDir,
+      getCurrentBranchName: async () => '999-nonexistent-plan',
+    }));
+
+    await moduleMocker.mock('./review.js', () => ({
+      handleReviewCommand,
+      generateDiffForReview: async () => ({
+        hasChanges: true,
+        changedFiles: ['src/test.ts'],
+        baseBranch: 'main',
+        diffContent: 'test diff',
+      }),
+      buildReviewPrompt: () => 'test review prompt',
+    }));
+
+    const mockCommand = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
+
+    await handleReviewCommand(undefined, {}, mockCommand);
+
+    expect(findBranchSpecificPlanMock).toHaveBeenCalledTimes(1);
+    expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
   });
 
   test('still works with explicit planFile when provided', async () => {
@@ -3533,6 +4208,34 @@ tasks:
       loadEffectiveConfig: async () => ({}),
     }));
 
+    await moduleMocker.mock('../utils/context_gathering.js', () => ({
+      gatherPlanContext: async () =>
+        createMockPlanContext({
+          resolvedPlanFile: planFile,
+          planData: {
+            id: 1,
+            title: 'Explicit Plan',
+            goal: 'Test explicit plan selection',
+            tasks: [
+              {
+                title: 'Test task',
+                description: 'A test task',
+              },
+            ],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['test.ts'],
+            baseBranch: 'main',
+            diffContent: 'test diff',
+          },
+          incrementalSummary: null,
+          noChangesDetected: false,
+        }),
+    }));
+
     await moduleMocker.mock('../executors/index.js', () => ({
       buildExecutorAndLog: () => mockExecutor,
       DEFAULT_EXECUTOR: 'codex-cli',
@@ -3540,6 +4243,7 @@ tasks:
 
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: async () => testDir,
+      getCurrentBranchName: async () => null,
     }));
 
     await moduleMocker.mock('./review.js', () => ({
@@ -3624,6 +4328,34 @@ tasks:
       loadEffectiveConfig: async () => ({}),
     }));
 
+    await moduleMocker.mock('../utils/context_gathering.js', () => ({
+      gatherPlanContext: async () =>
+        createMockPlanContext({
+          resolvedPlanFile: planFile,
+          planData: {
+            id: 100,
+            title: 'Auto-selected Plan',
+            goal: 'Test auto-selection logging',
+            tasks: [
+              {
+                title: 'Test task',
+                description: 'A test task for logging',
+              },
+            ],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['test.ts'],
+            baseBranch: 'main',
+            diffContent: 'test diff',
+          },
+          incrementalSummary: null,
+          noChangesDetected: false,
+        }),
+    }));
+
     await moduleMocker.mock('../executors/index.js', () => ({
       buildExecutorAndLog: () => mockExecutor,
       DEFAULT_EXECUTOR: 'codex-cli',
@@ -3631,6 +4363,7 @@ tasks:
 
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: async () => testDir,
+      getCurrentBranchName: async () => null,
     }));
 
     // Mock the log function to capture calls
@@ -4111,30 +4844,31 @@ tasks:
     }));
 
     await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () => ({
-        resolvedPlanFile: planFile,
-        planData: {
-          id: 200,
-          title: 'JSON Output Test Plan',
-          goal: 'Test JSON output parsing',
-          tasks: [
-            {
-              title: 'Test task',
-              description: 'A test task for JSON output',
-            },
-          ],
-        },
-        parentChain: [],
-        completedChildren: [],
-        diffResult: {
-          hasChanges: true,
-          changedFiles: ['src/db.ts', 'src/api.ts'],
-          baseBranch: 'main',
-          diffContent: 'mock diff content',
-        },
-        incrementalSummary: null,
-        noChangesDetected: false,
-      }),
+      gatherPlanContext: async () =>
+        createMockPlanContext({
+          resolvedPlanFile: planFile,
+          planData: {
+            id: 200,
+            title: 'JSON Output Test Plan',
+            goal: 'Test JSON output parsing',
+            tasks: [
+              {
+                title: 'Test task',
+                description: 'A test task for JSON output',
+              },
+            ],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['src/db.ts', 'src/api.ts'],
+            baseBranch: 'main',
+            diffContent: 'mock diff content',
+          },
+          incrementalSummary: null,
+          noChangesDetected: false,
+        }),
     }));
 
     const mockCommand = {
@@ -4223,30 +4957,31 @@ tasks:
     }));
 
     await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () => ({
-        resolvedPlanFile: planFile,
-        planData: {
-          id: 201,
-          title: 'Text Output Test Plan',
-          goal: 'Test text output parsing',
-          tasks: [
-            {
-              title: 'Test task',
-              description: 'A test task for text output',
-            },
-          ],
-        },
-        parentChain: [],
-        completedChildren: [],
-        diffResult: {
-          hasChanges: true,
-          changedFiles: ['src/queries.ts'],
-          baseBranch: 'main',
-          diffContent: 'mock diff content',
-        },
-        incrementalSummary: null,
-        noChangesDetected: false,
-      }),
+      gatherPlanContext: async () =>
+        createMockPlanContext({
+          resolvedPlanFile: planFile,
+          planData: {
+            id: 201,
+            title: 'Text Output Test Plan',
+            goal: 'Test text output parsing',
+            tasks: [
+              {
+                title: 'Test task',
+                description: 'A test task for text output',
+              },
+            ],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['src/queries.ts'],
+            baseBranch: 'main',
+            diffContent: 'mock diff content',
+          },
+          incrementalSummary: null,
+          noChangesDetected: false,
+        }),
     }));
 
     const mockCommand = {
@@ -4334,30 +5069,31 @@ tasks:
     }));
 
     await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () => ({
-        resolvedPlanFile: planFile,
-        planData: {
-          id: 202,
-          title: 'Explicit Text Mode Plan',
-          goal: 'Test explicit text mode',
-          tasks: [
-            {
-              title: 'Test task',
-              description: 'A test task',
-            },
-          ],
-        },
-        parentChain: [],
-        completedChildren: [],
-        diffResult: {
-          hasChanges: true,
-          changedFiles: ['src/test.ts'],
-          baseBranch: 'main',
-          diffContent: 'mock diff',
-        },
-        incrementalSummary: null,
-        noChangesDetected: false,
-      }),
+      gatherPlanContext: async () =>
+        createMockPlanContext({
+          resolvedPlanFile: planFile,
+          planData: {
+            id: 202,
+            title: 'Explicit Text Mode Plan',
+            goal: 'Test explicit text mode',
+            tasks: [
+              {
+                title: 'Test task',
+                description: 'A test task',
+              },
+            ],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['src/test.ts'],
+            baseBranch: 'main',
+            diffContent: 'mock diff',
+          },
+          incrementalSummary: null,
+          noChangesDetected: false,
+        }),
     }));
 
     const mockCommand = {

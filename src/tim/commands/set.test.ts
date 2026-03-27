@@ -3,11 +3,14 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import yaml from 'yaml';
-import { readPlanFile } from '../plans.js';
+import { readPlanFile, resolvePlanFromDb, writePlanFile } from '../plans.js';
 import { handleSetCommand } from './set.js';
 import type { PlanSchema } from '../planSchema.js';
 import type { TimConfig } from '../configSchema.js';
 import { ModuleMocker, clearAllTimCaches, stringifyPlanWithFrontmatter } from '../../testing.js';
+import { closeDatabaseForTesting } from '../db/database.js';
+import { clearPlanSyncContext } from '../db/plan_sync.js';
+import { materializePlan } from '../plan_materialize.js';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -31,6 +34,8 @@ describe('tim set command', () => {
   beforeEach(async () => {
     moduleMocker.clear();
     clearAllTimCaches();
+    closeDatabaseForTesting();
+    clearPlanSyncContext();
     logSpy.mockClear();
     warnSpy.mockClear();
     errorSpy.mockClear();
@@ -63,14 +68,6 @@ describe('tim set command', () => {
       error: errorSpy,
     }));
 
-    await moduleMocker.mock('../db/database.js', () => ({
-      getDatabase: () => ({}) as any,
-    }));
-
-    await moduleMocker.mock('../db/project.js', () => ({
-      getProject: () => ({ id: 1 }),
-    }));
-
     await moduleMocker.mock('../db/assignment.js', () => ({
       removeAssignment: removeAssignmentSpy,
     }));
@@ -83,6 +80,8 @@ describe('tim set command', () => {
   afterEach(async () => {
     moduleMocker.clear();
     clearAllTimCaches();
+    closeDatabaseForTesting();
+    clearPlanSyncContext();
     if (tempDir) {
       await rm(tempDir, { recursive: true, force: true });
     }
@@ -104,7 +103,7 @@ describe('tim set command', () => {
     if (overrides) {
       Object.assign(plan, overrides);
     }
-    await writeFile(planPath, stringifyPlanWithFrontmatter(plan));
+    await writePlanFile(planPath, plan, { skipUpdatedAt: true, cwdForIdentity: tempDir });
     return planPath;
   };
 
@@ -227,7 +226,7 @@ describe('tim set command', () => {
     );
 
     const updatedLastChild = await readPlanFile(lastChildPath);
-    const updatedParent = await readPlanFile(parentPlanPath);
+    const updatedParent = (await resolvePlanFromDb('114', tempDir)).plan;
     const doneChild = await readPlanFile(doneChildPath);
 
     expect(updatedLastChild.status).toBe('cancelled');
@@ -236,6 +235,9 @@ describe('tim set command', () => {
   });
 
   test('should add dependencies', async () => {
+    // Create dependency plans so validation passes
+    await createTestPlan(10);
+    await createTestPlan(11);
     const planPath = await createTestPlan(12);
 
     await handleSetCommand(
@@ -244,7 +246,7 @@ describe('tim set command', () => {
         planFile: planPath,
         dependsOn: [10, 11],
       },
-      {}
+      globalOpts
     );
 
     const updatedPlan = await readPlanFile(planPath);
@@ -252,6 +254,9 @@ describe('tim set command', () => {
   });
 
   test('should not duplicate dependencies', async () => {
+    // Create dependency plans so validation passes
+    await createTestPlan(10);
+    await createTestPlan(11);
     const planPath = await createTestPlan(13);
 
     // First add
@@ -279,6 +284,10 @@ describe('tim set command', () => {
   });
 
   test('should remove dependencies', async () => {
+    // Create dependency plans so validation passes
+    await createTestPlan(10);
+    await createTestPlan(11);
+    await createTestPlan(12);
     const planPath = await createTestPlan(14);
 
     // First add dependencies
@@ -322,6 +331,9 @@ describe('tim set command', () => {
   });
 
   test('should update multiple fields at once', async () => {
+    // Create dependency plans so validation passes
+    await createTestPlan(10);
+    await createTestPlan(11);
     const planPath = await createTestPlan(16);
 
     await handleSetCommand(
@@ -826,52 +838,73 @@ describe('tim set command', () => {
   });
 
   test('should prevent circular dependencies when setting parent', async () => {
-    // Create three plans to set up a circular dependency scenario
     const planAPath = await createTestPlan(207);
     const planBPath = await createTestPlan(208);
     const planCPath = await createTestPlan(209);
-
-    // Create a dependency chain: B -> C -> A
-    await handleSetCommand(
-      planBPath,
-      {
-        planFile: planBPath,
-        dependsOn: [209],
-      },
-      globalOpts
-    );
 
     await handleSetCommand(
       planCPath,
       {
         planFile: planCPath,
-        dependsOn: [207],
+        parent: 207,
       },
       globalOpts
     );
 
-    // Verify the dependency chain exists: B depends on C, C depends on A
+    await handleSetCommand(
+      planBPath,
+      {
+        planFile: planBPath,
+        parent: 209,
+      },
+      globalOpts
+    );
+
     const planB = await readPlanFile(planBPath);
     const planC = await readPlanFile(planCPath);
-    expect(planB.dependencies).toEqual([209]);
-    expect(planC.dependencies).toEqual([207]);
+    expect(planB.parent).toBe(209);
+    expect(planC.parent).toBe(207);
 
-    // Now if we try to set plan B's parent to plan A, it would create a cycle:
-    // A -> B (via parent-child) but B -> C -> A (via dependencies), creating A -> B -> C -> A
     await expect(
       handleSetCommand(
-        planBPath,
+        planAPath,
         {
-          planFile: planBPath,
-          parent: 207,
+          planFile: planAPath,
+          parent: 208,
         },
         globalOpts
       )
-    ).rejects.toThrow('Setting parent 207 would create a circular dependency');
+    ).rejects.toThrow('Setting parent 208 would create a circular dependency');
 
-    // Verify plan B still has no parent
-    const updatedPlanB = await readPlanFile(planBPath);
-    expect(updatedPlanB.parent).toBeUndefined();
+    const updatedPlanA = await readPlanFile(planAPath);
+    expect(updatedPlanA.parent).toBeUndefined();
+  });
+
+  test('should detect parent cycles introduced by unsynced materialized parent files', async () => {
+    const childPlanPath = await createTestPlan(560);
+    await createTestPlan(561);
+
+    const materializedParentPath = await materializePlan(561, tempDir);
+    const materializedParent = await readPlanFile(materializedParentPath);
+    materializedParent.parent = 560;
+    await writePlanFile(materializedParentPath, materializedParent, {
+      skipDb: true,
+      skipUpdatedAt: true,
+    });
+
+    await expect(
+      handleSetCommand(
+        childPlanPath,
+        {
+          planFile: childPlanPath,
+          parent: 561,
+        },
+        globalOpts
+      )
+    ).rejects.toThrow('Setting parent 561 would create a circular dependency');
+
+    const updatedChild = await readPlanFile(childPlanPath);
+    expect(updatedChild.parent).toBeUndefined();
   });
 
   test('should handle setting parent to same value without duplicating dependencies', async () => {
@@ -913,6 +946,7 @@ describe('tim set command', () => {
   });
 
   test('should set discoveredFrom field', async () => {
+    await createTestPlan(38);
     const planPath = await createTestPlan(40);
 
     await handleSetCommand(
@@ -930,6 +964,7 @@ describe('tim set command', () => {
   });
 
   test('should remove discoveredFrom field', async () => {
+    await createTestPlan(38);
     const planPath = await createTestPlan(41);
 
     // First set discoveredFrom
@@ -976,6 +1011,8 @@ describe('tim set command', () => {
   });
 
   test('should allow changing discoveredFrom value', async () => {
+    await createTestPlan(38);
+    await createTestPlan(39);
     const planPath = await createTestPlan(43);
 
     // First set discoveredFrom to 38

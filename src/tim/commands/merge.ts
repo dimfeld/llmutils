@@ -1,11 +1,27 @@
 import { unlink } from 'node:fs/promises';
-import { relative, join, isAbsolute } from 'node:path';
+import { relative, resolve as resolvePath } from 'node:path';
 import { getGitRoot } from '../../common/git.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { readAllPlans, readPlanFile, resolvePlanFile, writePlanFile } from '../plans.js';
-import type { PlanSchema } from '../planSchema.js';
-import { log, warn } from '../../logging.js';
 import { resolveTasksDir } from '../configSchema.js';
+import { removeAssignment } from '../db/assignment.js';
+import { getDatabase } from '../db/database.js';
+import { deletePlan, getPlanByPlanId, type PlanRow, upsertPlan } from '../db/plan.js';
+import { toPlanUpsertInput } from '../db/plan_sync.js';
+import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import {
+  getMaterializedPlanPath,
+  resolveProjectContext,
+  syncMaterializedPlan,
+} from '../plan_materialize.js';
+import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { readPlanFile, resolvePlanFromDb, writePlanFile } from '../plans.js';
+import type { PlanSchema } from '../planSchema.js';
+import { resolveWritablePath } from '../plans/resolve_writable_path.js';
+import { mergeYamlPassthroughFields } from '../plans/yaml_passthrough.js';
+import { ensureReferences } from '../utils/references.js';
+import { loadPlansFromDb } from '../plans_db.js';
+import { log, warn } from '../../logging.js';
 
 interface MergeOptions {
   children?: string[];
@@ -156,19 +172,23 @@ function buildMergedProgressSection(
 export async function handleMergeCommand(planFile: string, options: MergeOptions, command: any) {
   const globalOpts = command.parent.opts();
   const gitRoot = (await getGitRoot()) || process.cwd();
+  const repoRoot = await resolveRepoRootForPlanArg(planFile, gitRoot, globalOpts.config);
   const config = await loadEffectiveConfig(globalOpts.config);
   const tasksDir = await resolveTasksDir(config);
+  const resolvedTasksDir = resolvePath(repoRoot, tasksDir);
+  const repository = await getRepositoryIdentity({ cwd: repoRoot });
+  let context = await resolveProjectContext(repoRoot, repository);
+  await syncMaterializedPlans(repoRoot, context.rows);
+  context = await resolveProjectContext(repoRoot, repository);
 
-  // Resolve the main plan file
-  const resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
-  const mainPlan = await readPlanFile(resolvedPlanFile);
+  const mainResolution = await resolvePlanFromDbOrSyncFile(planFile, repoRoot, repoRoot);
+  const mainPlan = structuredClone(mainResolution.plan);
 
   if (!mainPlan.id) {
     throw new Error('Main plan must have an ID');
   }
 
-  // Read all plans to find children and handle updates
-  const { plans } = await readAllPlans(tasksDir);
+  const { plans } = loadPlansFromDb(tasksDir, repository.repositoryId);
 
   // Find all direct children of the main plan and sort by ID for consistent ordering
   const allChildren = Array.from(plans.values())
@@ -195,11 +215,13 @@ export async function handleMergeCommand(planFile: string, options: MergeOptions
         child = allChildren.find((c) => c.id === childId);
       }
 
-      // If not found by ID, try by filename
+      // If not found by ID, resolve the plan argument and ensure it is a direct child.
       if (!child) {
-        const childPath = await resolvePlanFile(childArg, globalOpts.config).catch(() => null);
-        if (childPath) {
-          child = allChildren.find((c) => c.filename === childPath);
+        const resolvedChild = await resolvePlanFromDbOrSyncFile(childArg, repoRoot, repoRoot).catch(
+          () => null
+        );
+        if (resolvedChild?.plan.id) {
+          child = allChildren.find((c) => c.id === resolvedChild.plan.id);
         }
       }
 
@@ -331,49 +353,172 @@ export async function handleMergeCommand(planFile: string, options: MergeOptions
     (plan) => plan.parent && childIds.has(plan.parent)
   );
 
-  // Update grandchildren to point to the main plan
+  const affectedPlans = new Map<number, PlanSchema>([[mainPlan.id, mainPlan]]);
+  // Update grandchildren to point to the main plan.
   for (const grandchild of grandchildren) {
-    grandchild.parent = mainPlan.id;
-    grandchild.updatedAt = new Date().toISOString();
-    await writePlanFile(grandchild.filename, grandchild);
-    log(`Updated parent of ${grandchild.title || `Plan ${grandchild.id}`} to main plan`);
+    if (!grandchild.id) {
+      continue;
+    }
+    affectedPlans.set(grandchild.id, {
+      ...grandchild,
+      parent: mainPlan.id,
+      updatedAt: new Date().toISOString(),
+    });
   }
 
   // Prune dangling dependencies in all remaining plans (excluding the ones being deleted and main plan which we write below)
   for (const plan of plans.values()) {
-    if ((plan.id && childIdsNumbers.has(plan.id)) || plan.filename === resolvedPlanFile) {
+    if ((plan.id && childIdsNumbers.has(plan.id)) || plan.id === mainPlan.id) {
       continue;
     }
     if (plan.dependencies && plan.dependencies.length > 0) {
       const originalLen = plan.dependencies.length;
-      plan.dependencies = plan.dependencies.filter((dep) => !childIdsNumbers.has(dep));
-      if (plan.dependencies.length !== originalLen) {
-        plan.updatedAt = new Date().toISOString();
-        await writePlanFile(plan.filename, plan);
-        log(
-          `Removed ${originalLen - plan.dependencies.length} dangling dependenc(ies) from ${
-            plan.title || `Plan ${plan.id}`
-          }`
-        );
+      const nextDependencies = plan.dependencies.filter((dep) => !childIdsNumbers.has(dep));
+      if (nextDependencies.length !== originalLen && plan.id) {
+        affectedPlans.set(plan.id, {
+          ...plan,
+          dependencies: nextDependencies,
+          updatedAt: new Date().toISOString(),
+        });
       }
     }
   }
 
-  // Save the updated main plan
-  await writePlanFile(resolvedPlanFile, mainPlan);
-  log(`Updated main plan: ${relative(gitRoot, resolvedPlanFile)}`);
+  const db = getDatabase();
+  const idToUuid = new Map(context.planIdToUuid);
+  const writeChanges = db.transaction(() => {
+    for (const child of childrenToMerge) {
+      if (!child.uuid) {
+        continue;
+      }
+      deletePlan(db, child.uuid);
+      removeAssignment(db, context.projectId, child.uuid);
+    }
+
+    for (const [planId, plan] of affectedPlans.entries()) {
+      const row = getPlanByPlanId(db, context.projectId, planId);
+      if (!row) {
+        throw new Error(`Plan ${planId} not found`);
+      }
+      const { updatedPlan } = ensureReferences(plan, { planIdToUuid: idToUuid });
+      upsertPlan(db, context.projectId, {
+        ...toPlanUpsertInput(updatedPlan, row.filename, idToUuid),
+        forceOverwrite: true,
+      });
+    }
+  });
+  writeChanges.immediate();
+
+  const refreshedContext = await resolveProjectContext(repoRoot, repository);
+  const plansToRewrite = new Set<number>([
+    ...affectedPlans.keys(),
+    ...refreshedContext.rows
+      .map((row) => row.plan_id)
+      .filter((planId) => !childIdsNumbers.has(planId)),
+  ]);
+  let updatedMainPath: string | null = mainResolution.planPath;
+  for (const planId of plansToRewrite) {
+    const refreshedPlan = (
+      await resolvePlanFromDb(String(planId), repoRoot, {
+        context: refreshedContext,
+      })
+    ).plan;
+    const row = getPlanByPlanId(getDatabase(), refreshedContext.projectId, planId);
+    const candidatePaths = new Set<string>();
+    if (planId === mainPlan.id && mainResolution.planPath) {
+      candidatePaths.add(mainResolution.planPath);
+    }
+    const legacyPath = plans.get(planId)?.filename;
+    if (legacyPath) {
+      candidatePaths.add(legacyPath);
+    }
+    if (row) {
+      const fallbackPath = await resolveWritablePath(
+        String(planId),
+        row,
+        resolvedTasksDir,
+        repoRoot
+      );
+      if (fallbackPath) {
+        candidatePaths.add(fallbackPath);
+      }
+    }
+
+    for (const outputPath of candidatePaths) {
+      const exists = await Bun.file(outputPath)
+        .stat()
+        .then((stats) => stats.isFile())
+        .catch(() => false);
+      if (!exists) {
+        continue;
+      }
+
+      const planForFile = structuredClone(refreshedPlan);
+      const existingFile = await readPlanFile(outputPath);
+      if (planId === mainPlan.id) {
+        const preservedDependencies = (existingFile.dependencies ?? []).filter(
+          (dep) => !childIdsNumbers.has(dep)
+        );
+        planForFile.dependencies = [
+          ...new Set([...(planForFile.dependencies ?? []), ...preservedDependencies]),
+        ];
+      }
+      if (planForFile.dependencies && planForFile.dependencies.length > 1) {
+        planForFile.dependencies = [...planForFile.dependencies].sort((a, b) => a - b);
+      }
+      mergeYamlPassthroughFields(planForFile, existingFile);
+      await writePlanFile(outputPath, planForFile, {
+        cwdForIdentity: repoRoot,
+        context: refreshedContext,
+        skipDb: true,
+        skipUpdatedAt: true,
+      });
+      if (planId === mainPlan.id) {
+        updatedMainPath = outputPath;
+      }
+    }
+  }
+
+  if (updatedMainPath) {
+    log(`Updated main plan: ${relative(gitRoot, updatedMainPath)}`);
+  }
 
   // Delete the merged child plan files
   for (const child of childrenToMerge) {
-    try {
-      await unlink(child.filename);
-      log(`Deleted merged child plan: ${relative(gitRoot, child.filename)}`);
-    } catch (err) {
-      warn(`Failed to delete child plan file ${child.filename}: ${err as Error}`);
+    const targetPaths = [child.filename, getMaterializedPlanPath(repoRoot, child.id ?? 0)].filter(
+      (filePath, index, all) => Boolean(filePath) && all.indexOf(filePath) === index
+    );
+    for (const targetPath of targetPaths) {
+      try {
+        await unlink(targetPath);
+        log(`Deleted merged child plan: ${relative(gitRoot, targetPath)}`);
+      } catch (err) {
+        const isMissing =
+          err &&
+          typeof err === 'object' &&
+          'code' in err &&
+          (err as NodeJS.ErrnoException).code === 'ENOENT';
+        if (!isMissing) {
+          warn(`Failed to delete child plan file ${targetPath}: ${err as Error}`);
+        }
+      }
     }
   }
 
   log(
     `Successfully merged ${childrenToMerge.length} child plan(s) into ${mainPlan.title || `Plan ${mainPlan.id}`}`
   );
+}
+
+async function syncMaterializedPlans(repoRoot: string, rows: PlanRow[]): Promise<void> {
+  for (const row of rows) {
+    const materializedPath = getMaterializedPlanPath(repoRoot, row.plan_id);
+    const exists = await Bun.file(materializedPath)
+      .stat()
+      .then((stats) => stats.isFile())
+      .catch(() => false);
+    if (exists) {
+      await syncMaterializedPlan(row.plan_id, repoRoot);
+    }
+  }
 }

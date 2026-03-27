@@ -35,6 +35,8 @@ describe('handleReadyCommand', () => {
   let repositoryId: string;
   let assignmentsData: Record<string, any>;
   let originalEnv: Partial<Record<string, string>>;
+  let getRepositoryIdentityMock: ReturnType<typeof mock>;
+  let currentConfigPath: string | undefined;
 
   beforeEach(async () => {
     // Clear mocks
@@ -62,6 +64,12 @@ describe('handleReadyCommand', () => {
     closeDatabaseForTesting();
     repositoryId = 'ready-tests';
     assignmentsData = {};
+    currentConfigPath = undefined;
+    getRepositoryIdentityMock = mock(async (_options?: { cwd?: string }) => ({
+      repositoryId,
+      remoteUrl: 'https://example.com/repo.git',
+      gitRoot: repoDir,
+    }));
 
     // Set up mocks
     await moduleMocker.mock('../../logging.js', () => ({
@@ -111,11 +119,7 @@ describe('handleReadyCommand', () => {
     }));
 
     await moduleMocker.mock('../assignments/workspace_identifier.ts', () => ({
-      getRepositoryIdentity: async () => ({
-        repositoryId,
-        remoteUrl: 'https://example.com/repo.git',
-        gitRoot: repoDir,
-      }),
+      getRepositoryIdentity: getRepositoryIdentityMock,
     }));
   });
 
@@ -143,15 +147,21 @@ describe('handleReadyCommand', () => {
   function createCommand() {
     return {
       parent: {
-        opts: () => ({}),
+        opts: () => ({ config: currentConfigPath }),
       },
     };
   }
 
   // Helper function to create a plan
-  async function createPlan(plan: PlanSchema) {
+  async function createPlan(plan: PlanSchema, options?: { syncDb?: boolean }) {
     const filename = path.join(tasksDir, `${plan.id}-test.yml`);
     await fs.writeFile(filename, `---\n${yaml.stringify(plan)}---\n`);
+    if (options?.syncDb !== false) {
+      upsertDbPlan({
+        ...plan,
+        uuid: plan.uuid ?? `plan-${plan.id}`,
+      });
+    }
   }
 
   function upsertDbPlan(plan: PlanSchema) {
@@ -911,8 +921,7 @@ describe('handleReadyCommand', () => {
     expect(logOutput).toContain('Priority: maybe');
   });
 
-  test('handles missing dependency plans gracefully', async () => {
-    // Create a plan that depends on a non-existent plan
+  test('treats unresolved DB dependency ids as absent dependencies', async () => {
     await createPlan({
       id: 1,
       goal: 'Plan with missing dependency',
@@ -931,8 +940,8 @@ describe('handleReadyCommand', () => {
     const logCalls = mockLog.mock.calls.map((call) => call[0]);
     const logOutput = logCalls.join('\n');
 
-    // Plan should not be shown because dependency is not found
-    expect(logOutput).toContain('No plans are currently ready to execute');
+    // DB loading drops dependency UUIDs that do not resolve to a plan id.
+    expect(logOutput).toContain('Plan with missing dependency');
   });
 
   test('handles circular dependencies without crashing', async () => {
@@ -1242,16 +1251,19 @@ describe('handleReadyCommand', () => {
   test('--user uses SQLite assignedTo values by default when DB state differs from local files', async () => {
     const now = new Date().toISOString();
 
-    await createPlan({
-      id: 60,
-      uuid: 'plan-60',
-      title: 'Local Bob Plan',
-      status: 'pending',
-      tasks: [{ title: 'Task', description: 'Do work', done: false }],
-      dependencies: [],
-      assignedTo: 'bob',
-      createdAt: now,
-    });
+    await createPlan(
+      {
+        id: 60,
+        uuid: 'plan-60',
+        title: 'Local Bob Plan',
+        status: 'pending',
+        tasks: [{ title: 'Task', description: 'Do work', done: false }],
+        dependencies: [],
+        assignedTo: 'bob',
+        createdAt: now,
+      },
+      { syncDb: false }
+    );
 
     upsertDbPlan({
       id: 60,
@@ -1566,14 +1578,17 @@ describe('handleReadyCommand', () => {
   });
 
   test('uses SQLite plans by default when DB state differs from local files', async () => {
-    await createPlan({
-      id: 30,
-      uuid: 'plan-30',
-      goal: 'DB Ready Plan',
-      status: 'pending',
-      tasks: [],
-      dependencies: [],
-    });
+    await createPlan(
+      {
+        id: 30,
+        uuid: 'plan-30',
+        goal: 'DB Ready Plan',
+        status: 'pending',
+        tasks: [],
+        dependencies: [],
+      },
+      { syncDb: false }
+    );
 
     upsertDbPlan({
       id: 30,
@@ -1584,14 +1599,17 @@ describe('handleReadyCommand', () => {
       dependencies: [],
     });
 
-    await createPlan({
-      id: 30,
-      uuid: 'plan-30',
-      goal: 'Local Not Ready Plan',
-      status: 'done',
-      tasks: [],
-      dependencies: [],
-    });
+    await createPlan(
+      {
+        id: 30,
+        uuid: 'plan-30',
+        goal: 'Local Not Ready Plan',
+        status: 'done',
+        tasks: [],
+        dependencies: [],
+      },
+      { syncDb: false }
+    );
 
     mockLog.mockClear();
     await runReady({}, createCommand());
@@ -1602,14 +1620,17 @@ describe('handleReadyCommand', () => {
   });
 
   test('uses local plans when --local is passed even if DB state differs', async () => {
-    await createPlan({
-      id: 31,
-      uuid: 'plan-31',
-      goal: 'DB Ready Plan',
-      status: 'pending',
-      tasks: [],
-      dependencies: [],
-    });
+    await createPlan(
+      {
+        id: 31,
+        uuid: 'plan-31',
+        goal: 'DB Ready Plan',
+        status: 'pending',
+        tasks: [],
+        dependencies: [],
+      },
+      { syncDb: false }
+    );
 
     upsertDbPlan({
       id: 31,
@@ -1620,14 +1641,17 @@ describe('handleReadyCommand', () => {
       dependencies: [],
     });
 
-    await createPlan({
-      id: 31,
-      uuid: 'plan-31',
-      goal: 'Local Not Ready Plan',
-      status: 'done',
-      tasks: [],
-      dependencies: [],
-    });
+    await createPlan(
+      {
+        id: 31,
+        uuid: 'plan-31',
+        goal: 'Local Not Ready Plan',
+        status: 'done',
+        tasks: [],
+        dependencies: [],
+      },
+      { syncDb: false }
+    );
 
     mockLog.mockClear();
     await runReady({ local: true }, createCommand());
@@ -1637,21 +1661,24 @@ describe('handleReadyCommand', () => {
     expect(output).not.toContain('DB Ready Plan');
   });
 
-  test('falls back to local plans when SQLite has no synced plans', async () => {
-    await createPlan({
-      id: 32,
-      goal: 'Local Fallback Plan',
-      status: 'pending',
-      tasks: [],
-      dependencies: [],
-    });
+  test('does not fall back to local plans when SQLite has no synced plans', async () => {
+    await createPlan(
+      {
+        id: 32,
+        goal: 'Local Fallback Plan',
+        status: 'pending',
+        tasks: [],
+        dependencies: [],
+      },
+      { syncDb: false }
+    );
 
     mockLog.mockClear();
     await runReady({}, createCommand());
 
     const output = mockLog.mock.calls.map((call) => call[0]).join('\n');
-    expect(output).toContain('Ready Plans (1)');
-    expect(output).toContain('Local Fallback Plan');
+    expect(output).toContain('No plans are currently ready to execute.');
+    expect(output).not.toContain('Local Fallback Plan');
   });
 
   test('filters ready plans by epic id when loading plans from SQLite', async () => {
@@ -1790,5 +1817,16 @@ describe('handleReadyCommand', () => {
     const jsonOutput = mockLog.mock.calls.at(-1)?.[0] ?? '';
     const parsed = JSON.parse(jsonOutput);
     expect(parsed.plans[0].tags).toEqual(['frontend', 'urgent']);
+  });
+
+  test('uses the configured repo root for repository identity under --config', async () => {
+    const configRepo = path.join(tempDir, 'configured-repo');
+    currentConfigPath = path.join(configRepo, '.tim.yml');
+    await fs.mkdir(configRepo, { recursive: true });
+    await fs.writeFile(currentConfigPath, 'paths:\n  tasks: tasks\n', 'utf-8');
+
+    await runReady({}, createCommand());
+
+    expect(getRepositoryIdentityMock).toHaveBeenCalledWith({ cwd: configRepo });
   });
 });

@@ -12,9 +12,10 @@ import {
   type GenerateModeRegistrationContext,
 } from '../mcp/generate_mode.js';
 import { loadCompactPlanPrompt } from '../mcp/prompts/compact_plan.js';
-import { readAllPlans, readPlanFile, resolvePlanFile } from '../plans.js';
 import { getCombinedTitle } from '../display_utils.js';
-import { findNextReadyDependency } from './find_next_dependency.js';
+import { findLatestPlanFromDb, findNextReadyDependencyFromDb } from './plan_discovery.js';
+import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 import type { PlanSchema } from '../planSchema.js';
 import * as fs from 'node:fs/promises';
 
@@ -313,22 +314,28 @@ export async function handlePromptsCommand(
   // Handle --next-ready option - find and operate on next ready dependency
   if (options.nextReady) {
     const tasksDir = pathContext.tasksDir;
+    const repoRoot = pathContext.gitRoot;
     // Convert string ID to number or resolve plan file to get numeric ID
     let parentPlanId: number;
     const planIdNumber = parseInt(options.nextReady, 10);
     if (!isNaN(planIdNumber)) {
       parentPlanId = planIdNumber;
     } else {
-      // Try to resolve as a file path and get the plan ID
-      const planFile = await resolvePlanFile(options.nextReady, globalOpts.config);
-      const parentPlan = await readPlanFile(planFile);
+      const parentRepoRoot = await resolveRepoRootForPlanArg(
+        options.nextReady,
+        repoRoot,
+        globalOpts.config
+      );
+      const parentPlan = (
+        await resolvePlanFromDbOrSyncFile(options.nextReady, parentRepoRoot, parentRepoRoot)
+      ).plan;
       if (!parentPlan.id) {
-        throw new Error(`Plan file ${planFile} does not have a valid ID`);
+        throw new Error(`Plan ${options.nextReady} does not have a valid ID`);
       }
       parentPlanId = parentPlan.id;
     }
 
-    const result = await findNextReadyDependency(parentPlanId, tasksDir, true);
+    const result = await findNextReadyDependencyFromDb(parentPlanId, tasksDir, repoRoot, true);
 
     if (!result.plan) {
       log(result.message);
@@ -337,20 +344,12 @@ export async function handlePromptsCommand(
 
     log(chalk.green(`Found ready plan: ${result.plan.id} - ${result.plan.title}`));
 
-    // Set the resolved plan as the target
-    plan = result.plan.filename;
+    plan = String(result.plan.id);
   } else if (options.latest) {
-    const { plans } = await readAllPlans(pathContext.tasksDir);
-
-    if (plans.size === 0) {
-      log('No plans found in tasks directory.');
-      return;
-    }
-
-    const latestPlan = await findMostRecentlyUpdatedPlan(plans);
+    const latestPlan = await findLatestPlanFromDb(pathContext.tasksDir, pathContext.gitRoot);
 
     if (!latestPlan) {
-      log('No plans found in tasks directory.');
+      log('No plans found in the database.');
       return;
     }
 
@@ -362,7 +361,7 @@ export async function handlePromptsCommand(
 
     log(chalk.green(`Found latest plan: ${label}`));
 
-    plan = latestPlan.filename;
+    plan = String(latestPlan.id);
   }
 
   const promptText = await buildPromptText(

@@ -5,25 +5,30 @@
  */
 
 import chalk from 'chalk';
-import { resolvePlanFile, readPlanFile, readAllPlans } from '../plans.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
 import type { PlanSchema } from '../planSchema.js';
+import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { loadPlansFromDb } from '../plans_db.js';
 import { getParentChain, getCompletedChildren } from './hierarchy.js';
 import type { PlanWithFilename } from './hierarchy.js';
 import { generateDiffForReview, getIncrementalSummary } from '../incremental_review.js';
 import type { DiffResult } from '../incremental_review.js';
 import { getGitRoot } from '../../common/git.js';
 import { log } from '../../logging.js';
-import { loadEffectiveConfig } from '../configLoader.js';
-import { resolveTasksDir } from '../configSchema.js';
 
 /**
  * Result object containing all gathered context for a plan
  */
 export interface PlanContext {
-  /** The resolved plan file path */
+  /** The resolved plan file path, or a plan ID string for DB-only plans without a backing file */
   resolvedPlanFile: string;
   /** The loaded plan data */
   planData: PlanSchema;
+  /** The resolved repository root (from resolveRepoRootForPlanArg) */
+  repoRoot: string;
+  /** The resolved git root (derived from repoRoot) */
+  gitRoot: string;
   /** Chain of parent plans from immediate parent to root */
   parentChain: PlanWithFilename[];
   /** All completed child plans */
@@ -45,28 +50,30 @@ export interface PlanContext {
  * Dependencies that can be injected for testing
  */
 export interface ContextGatheringDependencies {
-  resolvePlanFile: typeof resolvePlanFile;
-  readPlanFile: typeof readPlanFile;
-  readAllPlans: typeof readAllPlans;
+  resolvePlanFromDbOrSyncFile: typeof resolvePlanFromDbOrSyncFile;
+  loadPlansFromDb: typeof loadPlansFromDb;
   generateDiffForReview: typeof generateDiffForReview;
   getGitRoot: typeof getGitRoot;
   getParentChain: typeof getParentChain;
   getCompletedChildren: typeof getCompletedChildren;
   getIncrementalSummary: typeof getIncrementalSummary;
+  resolveRepoRootForPlanArg: typeof resolveRepoRootForPlanArg;
+  getRepositoryIdentity: typeof getRepositoryIdentity;
 }
 
 /**
  * Default dependencies using the actual implementations
  */
 const defaultDependencies: ContextGatheringDependencies = {
-  resolvePlanFile,
-  readPlanFile,
-  readAllPlans,
+  resolvePlanFromDbOrSyncFile,
+  loadPlansFromDb,
   generateDiffForReview,
   getGitRoot,
   getParentChain,
   getCompletedChildren,
   getIncrementalSummary,
+  resolveRepoRootForPlanArg,
+  getRepositoryIdentity,
 };
 
 /**
@@ -93,11 +100,10 @@ export async function gatherPlanContext(
   },
   deps: ContextGatheringDependencies = defaultDependencies
 ): Promise<PlanContext> {
-  // Resolve the plan file (support both file paths and plan IDs)
-  const resolvedPlanFile = await deps.resolvePlanFile(planFile, globalOpts.config);
-
-  // Load the plan details
-  const planData = await deps.readPlanFile(resolvedPlanFile);
+  const repoRoot = await deps.resolveRepoRootForPlanArg(planFile, options.cwd, globalOpts.config);
+  const resolvedPlan = await deps.resolvePlanFromDbOrSyncFile(planFile, repoRoot, repoRoot);
+  const planData = resolvedPlan.plan;
+  const resolvedPlanFile = resolvedPlan.planPath ?? String(planData.id ?? planFile);
 
   // Validate plan exists and has content
   if (!planData) {
@@ -106,16 +112,15 @@ export async function gatherPlanContext(
 
   log(chalk.green(`Loading plan context: ${planData.id} - ${planData.title}`));
 
-  // Load all plans for hierarchy traversal
-  const gitRoot = await deps.getGitRoot(options.cwd);
-  const config = await loadEffectiveConfig(globalOpts.config);
-  const plansDir = await resolveTasksDir(config);
+  // Use repoRoot for git operations so --config cross-repo invocations use the correct repository
+  const gitRoot = await deps.getGitRoot(repoRoot);
 
   let parentChain: PlanWithFilename[] = [];
   let completedChildren: PlanWithFilename[] = [];
 
   try {
-    const { plans: allPlans } = await deps.readAllPlans(plansDir);
+    const { repositoryId } = await deps.getRepositoryIdentity({ cwd: repoRoot });
+    const { plans: allPlans } = deps.loadPlansFromDb(repoRoot, repositoryId);
 
     // Add filename to the current plan for hierarchy compatibility
     const planWithFilename: PlanWithFilename = {
@@ -215,6 +220,8 @@ export async function gatherPlanContext(
   return {
     resolvedPlanFile,
     planData,
+    repoRoot,
+    gitRoot,
     parentChain,
     completedChildren,
     diffResult,

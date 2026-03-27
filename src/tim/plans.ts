@@ -7,22 +7,46 @@ import { debugLog, warn } from '../logging.js';
 import { getGitRoot, getTrunkBranch, getUsingJj } from '../common/git.js';
 import { loadEffectiveConfig } from './configLoader.js';
 import { resolveTasksDir } from './configSchema.js';
-import { syncPlanToDb } from './db/plan_sync.js';
+import {
+  deletePlan,
+  getPlanByPlanId,
+  getPlanByUuid,
+  getPlanDependenciesByUuid,
+  getPlansByProject,
+  getPlanTagsByUuid,
+  getPlanTasksByUuid,
+  upsertPlan,
+} from './db/plan.js';
+import { getDatabase } from './db/database.js';
+import { toPlanUpsertInput } from './db/plan_sync.js';
+import { getOrCreateProject } from './db/project.js';
 import { resolvePlanPathContext } from './path_resolver.js';
+import { getMaterializedPlanPath } from './plan_materialize.js';
+import type { ProjectContext } from './plan_materialize.js';
 import {
   normalizeContainerToEpic,
   phaseSchema,
   type PlanSchema,
   type PlanSchemaInput,
 } from './planSchema.js';
+import { planRowToSchemaInput } from './plans_db.js';
+import { getRepositoryIdentity } from './assignments/workspace_identifier.js';
 import { createModel } from '../common/model_factory.js';
 import { generateText } from 'ai';
 import { $ } from 'bun';
+import { ensureReferences } from './utils/references.js';
 
 export class NoFrontmatterError extends Error {
   constructor(filePath: string) {
     super(`File lacks frontmatter: ${filePath}`);
     this.name = 'NoFrontmatterError';
+  }
+}
+
+export class PlanNotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PlanNotFoundError';
   }
 }
 
@@ -221,6 +245,159 @@ export async function getMaxNumericPlanId(tasksDir: string): Promise<number> {
   clearPlanCache();
   const { maxNumericId } = await readAllPlans(tasksDir);
   return maxNumericId;
+}
+
+export interface ResolvedPlanFromDb {
+  plan: PlanSchema;
+  planPath: string | null;
+}
+
+interface ExistingPlanLookupOptions {
+  context?: ProjectContext;
+  cwdForIdentity?: string;
+  filename?: string;
+}
+
+export function parsePlanIdentifier(planArg: string | number): { planId?: number; uuid?: string } {
+  if (typeof planArg === 'number') {
+    return Number.isInteger(planArg) && planArg > 0 ? { planId: planArg } : {};
+  }
+
+  const trimmed = planArg.trim();
+  if (/^\d+$/.test(trimmed)) {
+    const parsedId = Number(trimmed);
+    return parsedId > 0 ? { planId: parsedId } : {};
+  }
+
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(trimmed)) {
+    return { uuid: trimmed };
+  }
+
+  const fileName = path.basename(trimmed);
+  const fileMatch = fileName.match(/^(\d+)(?:[.-].*)?\.(?:plan\.md|ya?ml)$/i);
+  if (fileMatch) {
+    return { planId: Number(fileMatch[1]) };
+  }
+
+  return {};
+}
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await stat(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function resolvePlanFromDb(
+  planArg: string | number,
+  repoRoot: string,
+  options?: { context?: ProjectContext; resolveDir?: string }
+): Promise<ResolvedPlanFromDb> {
+  let directPath: string | null = null;
+  let resolvedPlanArg = planArg;
+  let parsedIdentifier = parsePlanIdentifier(planArg);
+  const resolveDir = options?.resolveDir ?? process.cwd();
+  if (
+    typeof resolvedPlanArg === 'string' &&
+    typeof parsedIdentifier.planId !== 'number' &&
+    typeof parsedIdentifier.uuid !== 'string'
+  ) {
+    directPath = path.isAbsolute(resolvedPlanArg)
+      ? resolvedPlanArg
+      : resolve(resolveDir, resolvedPlanArg);
+    if (await fileExists(directPath)) {
+      const parsedPlan = await readPlanFile(directPath);
+      resolvedPlanArg = parsedPlan.uuid ?? parsedPlan.id;
+      parsedIdentifier = parsePlanIdentifier(resolvedPlanArg);
+    }
+  } else if (typeof resolvedPlanArg === 'string') {
+    const candidatePath = path.isAbsolute(resolvedPlanArg)
+      ? resolvedPlanArg
+      : resolve(resolveDir, resolvedPlanArg);
+    if (await fileExists(candidatePath)) {
+      directPath = candidatePath;
+    }
+  }
+
+  const db = getDatabase();
+  const projectContext = options?.context;
+  const repository = projectContext?.repository ?? (await getRepositoryIdentity({ cwd: repoRoot }));
+  const projectId =
+    projectContext?.projectId ??
+    getOrCreateProject(db, repository.repositoryId, {
+      remoteUrl: repository.remoteUrl,
+      lastGitRoot: repository.gitRoot,
+    }).id;
+
+  const { planId, uuid } = parsedIdentifier;
+  if (typeof planId !== 'number' && typeof uuid !== 'string') {
+    throw new PlanNotFoundError(
+      `Could not parse plan identifier: expected a numeric ID, UUID, or plan file path, got: "${planArg}"`
+    );
+  }
+  const readPlanSnapshot = db.transaction(() => {
+    const row =
+      typeof planId === 'number'
+        ? getPlanByPlanId(db, projectId, planId)
+        : typeof uuid === 'string'
+          ? getPlanByUuid(db, uuid)
+          : null;
+
+    if (!row || row.project_id !== projectId) {
+      throw new PlanNotFoundError(`No plan found in the database for identifier: ${planArg}`);
+    }
+
+    const tasks = getPlanTasksByUuid(db, row.uuid).map((task) => ({
+      title: task.title,
+      description: task.description,
+      done: task.done === 1,
+    }));
+    const dependencyUuids = getPlanDependenciesByUuid(db, row.uuid).map(
+      (dependency) => dependency.depends_on_uuid
+    );
+    const tags = getPlanTagsByUuid(db, row.uuid).map((tag) => tag.tag);
+    const uuidToPlanId =
+      projectContext?.uuidToPlanId ??
+      new Map(
+        getPlansByProject(db, projectId).map((projectRow) => [projectRow.uuid, projectRow.plan_id])
+      );
+
+    return {
+      row,
+      plan: planRowToSchemaInput(row, tasks, dependencyUuids, tags, uuidToPlanId),
+    };
+  });
+  const { row, plan } = readPlanSnapshot();
+  const materializedPath = getMaterializedPlanPath(repoRoot, row.plan_id);
+  let planPath: string | null = null;
+  if (directPath && (await fileExists(directPath))) {
+    planPath = directPath;
+  } else if (await fileExists(materializedPath)) {
+    planPath = materializedPath;
+  } else {
+    const filenameCandidates =
+      row.filename && row.filename.length > 0
+        ? [
+            row.filename,
+            path.join(repoRoot, row.filename),
+            path.join(repoRoot, 'tasks', row.filename),
+          ].filter((candidate, index, all) => all.indexOf(candidate) === index)
+        : [];
+    for (const candidate of filenameCandidates) {
+      if (await fileExists(candidate)) {
+        planPath = candidate;
+        break;
+      }
+    }
+  }
+
+  return {
+    plan,
+    planPath,
+  };
 }
 
 /**
@@ -524,6 +701,13 @@ export async function collectDependenciesInOrder(
  * @returns The validated plan data
  * @throws Error if the file cannot be read or validation fails
  */
+/**
+ * Reads and parses a plan file from disk.
+ *
+ * Warning: this is not a pure read. If the file is missing a UUID, this
+ * function generates one and persists it via `writePlanFile()`, which also
+ * updates the DB-first plan store.
+ */
 export async function readPlanFile(filePath: string): Promise<PlanSchema> {
   const absolutePath = resolve(filePath);
   const content = await Bun.file(absolutePath).text();
@@ -642,27 +826,15 @@ function normalizeFancyQuotes(value: unknown, skipFields: Set<string> = new Set(
   return value;
 }
 
-/**
- * Writes a plan to a YAML file with the yaml-language-server schema line.
- * @param filePath - The path where to write the YAML file
- * @param plan - The plan data to write
- * @param options - Optional flags to control write behavior
- * @param options.skipUpdatedAt - If true, does not update the updatedAt timestamp (useful for validation/renumbering operations)
- */
-export async function writePlanFile(
-  filePath: string,
+function validatePlanForWrite(
   input: PlanSchemaInput & { filename?: string },
-  options?: { skipUpdatedAt?: boolean; skipSync?: boolean }
-): Promise<void> {
-  const absolutePath = resolve(filePath);
-  // Plans from readAllPlans will have a filename which we want to strip out
-  const { filename: _, ...plan } = input;
-
-  // Normalize fancy quotes to regular quotes to prevent YAML parsing errors
-  // Skip the details field since it's user-written markdown content
-  const quotesNormalized = normalizeFancyQuotes(plan, new Set(['details'])) as PlanSchemaInput;
-
-  // Validate the plan before writing
+  options?: { skipUpdatedAt?: boolean }
+): PlanSchema {
+  const { filename: _, ...planWithoutFilename } = input;
+  const quotesNormalized = normalizeFancyQuotes(
+    planWithoutFilename,
+    new Set(['details'])
+  ) as PlanSchemaInput;
   const normalizedPlan = normalizeContainerToEpic(quotesNormalized);
   const result = phaseSchema.safeParse(normalizedPlan);
   if (!result.success) {
@@ -672,21 +844,30 @@ export async function writePlanFile(
     throw new Error(`Invalid plan data:\n${errors}`);
   }
 
+  if (!result.data.uuid) {
+    result.data.uuid = crypto.randomUUID();
+  }
+
   if (!options?.skipUpdatedAt) {
     result.data.updatedAt = new Date().toISOString();
   }
 
-  // Separate the details field from the rest of the plan
-  const { details, ...planWithoutDetails } = result.data;
+  return {
+    ...result.data,
+    uuid: result.data.uuid,
+  };
+}
 
-  // Remove default values to keep YAML clean
+function cleanPlanForYaml(plan: PlanSchema): {
+  cleanedPlan: Record<string, unknown>;
+  details?: string;
+} {
+  const { details, ...planWithoutDetails } = plan;
   const cleanedPlan: Record<string, unknown> = { ...planWithoutDetails };
 
-  // Remove deprecated 'container' field - always use 'epic' instead
   delete cleanedPlan.container;
-  // Strip legacy progress notes field if present
   delete cleanedPlan.progressNotes;
-  // Remove false boolean defaults for rarely used fields
+
   if (cleanedPlan.epic === false) {
     delete cleanedPlan.epic;
   }
@@ -700,7 +881,6 @@ export async function writePlanFile(
     delete cleanedPlan.tdd;
   }
 
-  // Remove empty arrays
   const arrayFields = [
     'dependencies',
     'issue',
@@ -715,7 +895,6 @@ export async function writePlanFile(
     }
   }
 
-  // Remove empty objects
   if (
     cleanedPlan.references &&
     typeof cleanedPlan.references === 'object' &&
@@ -723,6 +902,164 @@ export async function writePlanFile(
   ) {
     delete cleanedPlan.references;
   }
+
+  return { cleanedPlan, details };
+}
+
+async function writeValidatedPlanToDb(
+  plan: PlanSchema,
+  options?: {
+    context?: ProjectContext;
+    cwdForIdentity?: string;
+    filename?: string;
+  }
+): Promise<PlanSchema> {
+  const db = getDatabase();
+  const projectContext = options?.context;
+  const repository =
+    projectContext?.repository ??
+    (await getRepositoryIdentity({ cwd: options?.cwdForIdentity ?? process.cwd() }));
+  const projectId =
+    projectContext?.projectId ??
+    getOrCreateProject(db, repository.repositoryId, {
+      remoteUrl: repository.remoteUrl,
+      lastGitRoot: repository.gitRoot,
+    }).id;
+
+  const idToUuid = new Map(
+    (projectContext?.rows ?? getPlansByProject(db, projectId)).map((row) => [row.plan_id, row.uuid])
+  );
+  if (!plan.uuid) {
+    throw new Error('Plan must have a UUID before writing to DB');
+  }
+  idToUuid.set(plan.id, plan.uuid);
+  const { updatedPlan } = ensureReferences(plan, { planIdToUuid: idToUuid });
+
+  const existingRow = getPlanByUuid(db, updatedPlan.uuid!);
+  const filename = options?.filename ?? existingRow?.filename;
+  const legacyUuidlessRow =
+    existingRow === null
+      ? (projectContext?.rows ?? getPlansByProject(db, projectId)).find(
+          (row) => row.plan_id === updatedPlan.id && row.uuid === ''
+        )
+      : null;
+
+  if (legacyUuidlessRow) {
+    deletePlan(db, legacyUuidlessRow.uuid);
+  }
+
+  upsertPlan(db, projectId, {
+    ...toPlanUpsertInput(updatedPlan, filename, idToUuid),
+    forceOverwrite: true,
+  });
+
+  return updatedPlan;
+}
+
+async function findExistingPlanUuid(
+  input: PlanSchemaInput & { filename?: string },
+  options?: ExistingPlanLookupOptions
+): Promise<string | undefined> {
+  if (input.uuid) {
+    return input.uuid;
+  }
+
+  const db = getDatabase();
+  const projectContext = options?.context;
+  const repository =
+    projectContext?.repository ??
+    (await getRepositoryIdentity({ cwd: options?.cwdForIdentity ?? process.cwd() }));
+  const projectId =
+    projectContext?.projectId ??
+    getOrCreateProject(db, repository.repositoryId, {
+      remoteUrl: repository.remoteUrl,
+      lastGitRoot: repository.gitRoot,
+    }).id;
+
+  const candidateFilenames = new Set<string>();
+  if (options?.filename) {
+    candidateFilenames.add(path.basename(options.filename));
+  }
+  if (input.filename) {
+    candidateFilenames.add(path.basename(input.filename));
+  }
+
+  const rows = projectContext?.rows ?? getPlansByProject(db, projectId);
+  for (const candidateFilename of candidateFilenames) {
+    const row = rows.find((candidate) => path.basename(candidate.filename) === candidateFilename);
+    if (row) {
+      return row.uuid;
+    }
+  }
+
+  const row = rows.find((candidate) => candidate.plan_id === input.id);
+  return row?.uuid;
+}
+
+export async function writePlanToDb(
+  input: PlanSchemaInput & { filename?: string },
+  options?: {
+    skipUpdatedAt?: boolean;
+    cwdForIdentity?: string;
+    context?: ProjectContext;
+    filename?: string;
+  }
+): Promise<PlanSchema> {
+  const existingUuid = await findExistingPlanUuid(input, options);
+  let plan = validatePlanForWrite(existingUuid ? { ...input, uuid: existingUuid } : input, options);
+  return writeValidatedPlanToDb(plan, {
+    ...options,
+    filename: options?.filename ?? input.filename,
+  });
+}
+
+/**
+ * Writes a plan to a YAML file with the yaml-language-server schema line.
+ * @param filePath - The path where to write the YAML file
+ * @param plan - The plan data to write
+ * @param options - Optional flags to control write behavior
+ * @param options.skipUpdatedAt - If true, does not update the updatedAt timestamp (useful for validation/renumbering operations)
+ */
+export async function writePlanFile(
+  filePath: string | null,
+  input: PlanSchemaInput & { filename?: string },
+  options?: {
+    skipUpdatedAt?: boolean;
+    skipFile?: boolean;
+    skipDb?: boolean;
+    skipSync?: boolean;
+    cwdForIdentity?: string;
+    context?: ProjectContext;
+  }
+): Promise<void> {
+  const absolutePath = filePath ? resolve(filePath) : null;
+  if (!absolutePath && !options?.cwdForIdentity && !options?.context) {
+    throw new Error('writePlanFile requires cwdForIdentity or context when filePath is null');
+  }
+  const existingUuid = await findExistingPlanUuid(input, {
+    cwdForIdentity:
+      options?.cwdForIdentity ?? (absolutePath ? path.dirname(absolutePath) : undefined),
+    context: options?.context,
+    filename: input.filename ?? absolutePath ?? undefined,
+  });
+  let plan = validatePlanForWrite(existingUuid ? { ...input, uuid: existingUuid } : input, options);
+  const skipDb = options?.skipDb ?? options?.skipSync ?? false;
+  const skipFile = options?.skipFile ?? !absolutePath;
+
+  if (!skipDb) {
+    plan = await writeValidatedPlanToDb(plan, {
+      cwdForIdentity:
+        options?.cwdForIdentity ?? (absolutePath ? path.dirname(absolutePath) : undefined),
+      context: options?.context,
+      filename: input.filename ?? (absolutePath ? path.basename(absolutePath) : undefined),
+    });
+  }
+
+  if (skipFile || !absolutePath) {
+    return;
+  }
+
+  const { cleanedPlan, details } = cleanPlanForYaml(plan);
 
   // The yaml-language-server schema line
   const schemaLine =
@@ -746,13 +1083,6 @@ export async function writePlanFile(
   }
 
   await Bun.write(absolutePath, fullContent);
-
-  if (!options?.skipSync) {
-    await syncPlanToDb(result.data, absolutePath, {
-      baseDir: path.dirname(absolutePath),
-      force: true,
-    });
-  }
 }
 
 /**
@@ -773,6 +1103,25 @@ export async function setPlanStatus(
   await writePlanFile(planFilePath, plan);
 
   debugLog(`Updated plan status in ${planFilePath} to ${newStatus}`);
+}
+
+export async function setPlanStatusById(
+  planId: number,
+  newStatus: PlanSchema['status'],
+  repoRoot: string,
+  filePath?: string | null
+): Promise<void> {
+  const resolvedPlan = await resolvePlanFromDb(String(planId), repoRoot);
+  const plan: PlanSchema = resolvedPlan.plan;
+  const targetPath = filePath ?? resolvedPlan.planPath ?? null;
+
+  plan.status = newStatus;
+  plan.updatedAt = new Date().toISOString();
+  await writePlanFile(targetPath, plan, {
+    cwdForIdentity: repoRoot,
+  });
+
+  debugLog(`Updated plan ${planId} status to ${newStatus}`);
 }
 
 export async function generateSuggestedFilename(

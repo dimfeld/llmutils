@@ -5,14 +5,13 @@ goal: Implement the "Detailed Planning Mode" feature for `dimfeld/llmutils`,
   markdown plan with phases, parsing it into phase-specific YAML files,
   generating detailed prompts for each phase, and updating the CLI to support
   these new workflows.
-id: 1
+id: 2
 uuid: 73cb497c-4ee0-4664-b071-ea32cf03d894
 status: done
 priority: high
 issue:
   - https://api.github.com/repos/dimfeld/llmutils/issues/98
 planGeneratedAt: 2025-05-29T02:13:21.502Z
-promptsGeneratedAt: 2025-05-29T02:13:21.502Z
 createdAt: 2025-05-29T02:13:21.502Z
 updatedAt: 2025-05-29T03:48:40.485Z
 tasks:
@@ -92,6 +91,8 @@ changedFiles:
   - tasks/issue-98-detailed-planning-mode.yml
   - test-id-generation.ts
   - test-id-utils.ts
+tags: []
+promptsGeneratedAt: 2025-05-29T02:13:21.502Z
 rmfilter:
   - src/tim
   - --with-imports

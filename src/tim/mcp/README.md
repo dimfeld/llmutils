@@ -9,7 +9,7 @@ The MCP server exposes two primary interfaces:
 - **Tools**: Programmatic actions to create and modify plans (create-plan, update-plan-tasks, etc.)
 - **Resources**: Read-only access to browse plan data (tim://plans/list, tim://plans/ready, etc.)
 
-Both interfaces operate on plan files stored in the repository's tasks directory and follow the same data model as the tim CLI commands.
+Both interfaces operate on plan data stored in the SQLite database (source of truth) and follow the same data model as the tim CLI commands. Plans that have been materialized to files are kept in sync via the `withPlanAutoSync()` wrapper.
 
 ## Available Tools
 
@@ -17,7 +17,7 @@ Both interfaces operate on plan files stored in the repository's tasks directory
 
 #### create-plan
 
-Create a new plan file with specified properties. Automatically updates parent plan dependencies to maintain bidirectional relationships.
+Create a new plan in the DB with specified properties. Automatically updates parent plan dependencies to maintain bidirectional relationships. No tasks directory or file is required.
 
 **Parameters:**
 
@@ -44,7 +44,7 @@ const result = await mcp.call('create-plan', {
   priority: 'high',
   details: '## Problem\nFound during implementation of plan 42...',
 });
-// Returns: "Created plan 43 at tasks/43-fix-authentication-edge-case.plan.md"
+// Returns: "Created plan 43: Fix authentication edge case"
 ```
 
 ### Task Management
@@ -340,7 +340,7 @@ Resources are pull-based and read-only, making them ideal for non-destructive op
 - **Modifying plan metadata** like priority, status, or dependencies
 - **Managing tasks** by adding, removing, or updating them
 - **Updating plan details** with research or implementation notes
-- **Performing any write operation** that changes plan files
+- **Performing any write operation** that changes plan data
 
 Tools are push-based and can modify plan data, making them essential for active plan management.
 
@@ -502,9 +502,9 @@ When creating a child plan with a `parent` parameter, the create-plan tool autom
 
 1. Sets the child's `parent` field to the specified parent ID
 2. Adds the child's ID to the parent's `dependencies` array
-3. Updates the parent plan file on disk
+3. Updates the parent in the database (and re-materializes the file if one exists)
 
-This maintains bidirectional consistency in the dependency graph.
+This maintains bidirectional consistency in the dependency graph. All writes go to the DB first; file materialization is optional.
 
 ### Task Management
 

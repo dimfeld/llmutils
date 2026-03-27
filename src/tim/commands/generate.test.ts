@@ -14,6 +14,7 @@ import { ModuleMocker } from '../../testing.js';
 const moduleMocker = new ModuleMocker(import.meta);
 const isTunnelActiveSpy = mock(() => false);
 const runWithHeadlessAdapterIfEnabledSpy = mock(async (options: any) => options.callback());
+const syncPlanToDbSpy = mock(async () => {});
 
 describe('handleGenerateCommand', () => {
   let tempDir: string;
@@ -62,28 +63,69 @@ describe('handleGenerateCommand', () => {
   const prepareWorkspaceRoundTripSpy = mock(async () => null);
   const runPreExecutionWorkspaceSyncSpy = mock(async () => {});
   const runPostExecutionWorkspaceSyncSpy = mock(async () => {});
+  const resolvePlanFromDbOrSyncFileSpy = mock(async (planArg: string) => ({
+    plan: await readPlanFile(planArg),
+    planPath: planArg,
+  }));
 
   beforeEach(async () => {
     logSpy.mockClear();
     warnSpy.mockClear();
     mockExecutorExecute.mockClear();
+    mockExecutorExecute.mockImplementation(async () => {});
     buildExecutorAndLogSpy.mockClear();
+    buildExecutorAndLogSpy.mockImplementation(() => mockExecutor);
     setupWorkspaceSpy.mockClear();
+    setupWorkspaceSpy.mockImplementation(
+      async (options: any, baseDir: string, planFile: string) => ({
+        baseDir,
+        planFile,
+        workspaceTaskId: options.workspace,
+        isNewWorkspace: false,
+      })
+    );
     buildPromptTextSpy.mockClear();
+    buildPromptTextSpy.mockImplementation(async () => 'Generated prompt text');
     isAutoClaimEnabledSpy.mockClear();
+    isAutoClaimEnabledSpy.mockImplementation(() => false);
     autoClaimPlanSpy.mockClear();
+    autoClaimPlanSpy.mockImplementation(async () => {});
     commitAllSpy.mockClear();
+    commitAllSpy.mockImplementation(async () => 0);
     getCurrentBranchNameSpy.mockClear();
+    getCurrentBranchNameSpy.mockImplementation(async () => 'main');
     getTrunkBranchSpy.mockClear();
+    getTrunkBranchSpy.mockImplementation(async () => 'main');
     prepareWorkspaceRoundTripSpy.mockClear();
+    prepareWorkspaceRoundTripSpy.mockImplementation(async () => null);
     runPreExecutionWorkspaceSyncSpy.mockClear();
+    runPreExecutionWorkspaceSyncSpy.mockImplementation(async () => {});
     runPostExecutionWorkspaceSyncSpy.mockClear();
+    runPostExecutionWorkspaceSyncSpy.mockImplementation(async () => {});
+    resolvePlanFromDbOrSyncFileSpy.mockClear();
+    resolvePlanFromDbOrSyncFileSpy.mockImplementation(async (planArg: string) => ({
+      plan: await readPlanFile(planArg),
+      planPath: planArg,
+    }));
+    syncPlanToDbSpy.mockClear();
+    syncPlanToDbSpy.mockImplementation(async () => {});
     trackedWorkspacePath = undefined;
     getWorkspaceInfoByPathSpy.mockClear();
+    getWorkspaceInfoByPathSpy.mockImplementation((baseDir: string) => {
+      return baseDir === trackedWorkspacePath
+        ? { taskId: 'ws-tracked', workspacePath: baseDir }
+        : null;
+    });
     patchWorkspaceInfoSpy.mockClear();
+    patchWorkspaceInfoSpy.mockImplementation(() => ({}));
     touchWorkspaceInfoSpy.mockClear();
+    touchWorkspaceInfoSpy.mockImplementation(() => ({}));
     isTunnelActiveSpy.mockClear();
+    isTunnelActiveSpy.mockImplementation(() => false);
     runWithHeadlessAdapterIfEnabledSpy.mockClear();
+    runWithHeadlessAdapterIfEnabledSpy.mockImplementation(async (options: any) =>
+      options.callback()
+    );
 
     clearPlanCache();
 
@@ -108,6 +150,18 @@ describe('handleGenerateCommand', () => {
 
     await moduleMocker.mock('../workspace/workspace_setup.js', () => ({
       setupWorkspace: setupWorkspaceSpy,
+    }));
+
+    const actualPlans = await import('../plans.js');
+    await moduleMocker.mock('../plans.js', () => ({
+      ...actualPlans,
+    }));
+    await moduleMocker.mock('../ensure_plan_in_db.js', () => ({
+      resolvePlanFromDbOrSyncFile: resolvePlanFromDbOrSyncFileSpy,
+    }));
+
+    await moduleMocker.mock('../db/plan_sync.js', () => ({
+      syncPlanToDb: syncPlanToDbSpy,
     }));
 
     await moduleMocker.mock('./prompts.js', () => ({
@@ -213,6 +267,15 @@ describe('handleGenerateCommand', () => {
       planId: '101',
       executionMode: 'planning',
     });
+    expect(syncPlanToDbSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 101 }),
+      planPath,
+      expect.objectContaining({
+        cwdForIdentity: tempDir,
+        force: true,
+        throwOnError: true,
+      })
+    );
   });
 
   test('uses generate-plan-simple prompt when --simple flag is set', async () => {
@@ -333,6 +396,7 @@ describe('handleGenerateCommand', () => {
       newWorkspace: true,
       nonInteractive: true,
       requireWorkspace: true,
+      planId: 108,
       planUuid: '11111111-1111-4111-8111-111111111111',
       allowPrimaryWorkspaceWhenLocked: true,
     });
@@ -363,6 +427,7 @@ describe('handleGenerateCommand', () => {
     expect(wsOptions).toMatchObject({
       autoWorkspace: true,
       createBranch: false,
+      planId: 109,
     });
   });
 
@@ -606,13 +671,32 @@ describe('handleGenerateCommand', () => {
     );
   });
 
+  test('throws when workspace setup leaves the plan file unset', async () => {
+    const planPath = await createStubPlan(130);
+
+    setupWorkspaceSpy.mockResolvedValueOnce({
+      baseDir: tempDir,
+      planFile: '',
+      workspaceTaskId: 'ws-missing-plan',
+      isNewWorkspace: true,
+    });
+
+    await expect(
+      handleGenerateCommand(
+        undefined,
+        { plan: planPath, workspace: 'ws-missing-plan' },
+        buildCommand()
+      )
+    ).rejects.toThrow('Plan file not materialized');
+  });
+
   test('throws error when plan file is not valid YAML', async () => {
     const invalidPath = path.join(tempDir, 'not-a-plan.txt');
     await fs.writeFile(invalidPath, 'this is not yaml');
 
     await expect(
       handleGenerateCommand(undefined, { plan: invalidPath }, buildCommand())
-    ).rejects.toThrow('Failed to read plan file');
+    ).rejects.toThrow('File lacks frontmatter');
   });
 
   test('accepts positional plan argument', async () => {
@@ -821,15 +905,17 @@ describe('handleGenerateCommand with --next-ready flag', () => {
   let tasksDir: string;
 
   const logSpy = mock(() => {});
-  const findNextReadyDependencySpy = mock(async () => ({
+  const findNextReadyDependencyFromDbSpy = mock(async () => ({
     plan: null as any,
     message: 'No ready dependencies found',
   }));
-  const resolvePlanFileSpy = mock(async () => '/mock/plan/path.plan.md');
-  const readPlanFileSpy = mock(async () => ({
-    id: 123,
-    title: 'Mock Plan',
-    tasks: [{ title: 'Task', description: 'Desc', done: false }],
+  const resolvePlanFromDbOrSyncFileSpy = mock(async () => ({
+    plan: {
+      id: 123,
+      title: 'Mock Plan',
+      tasks: [{ title: 'Task', description: 'Desc', done: false }],
+    },
+    planPath: '/mock/plan/path.plan.md',
   }));
 
   const mockExecutorExecute = mock(async () => {});
@@ -843,9 +929,8 @@ describe('handleGenerateCommand with --next-ready flag', () => {
 
   beforeEach(async () => {
     logSpy.mockClear();
-    findNextReadyDependencySpy.mockClear();
-    resolvePlanFileSpy.mockClear();
-    readPlanFileSpy.mockClear();
+    findNextReadyDependencyFromDbSpy.mockClear();
+    resolvePlanFromDbOrSyncFileSpy.mockClear();
     mockExecutorExecute.mockClear();
     buildExecutorAndLogSpy.mockClear();
     prepareWorkspaceRoundTripSpy.mockClear();
@@ -853,6 +938,7 @@ describe('handleGenerateCommand with --next-ready flag', () => {
     runPostExecutionWorkspaceSyncSpy.mockClear();
     isTunnelActiveSpy.mockClear();
     runWithHeadlessAdapterIfEnabledSpy.mockClear();
+    syncPlanToDbSpy.mockClear();
 
     clearPlanCache();
 
@@ -866,15 +952,16 @@ describe('handleGenerateCommand with --next-ready flag', () => {
       warn: mock(() => {}),
     }));
 
-    await moduleMocker.mock('./find_next_dependency.js', () => ({
-      findNextReadyDependency: findNextReadyDependencySpy,
-    }));
-
+    const actualPlans = await import('../plans.js');
     await moduleMocker.mock('../plans.js', () => ({
-      ...require('../plans.js'),
-      resolvePlanFile: resolvePlanFileSpy,
-      readPlanFile: readPlanFileSpy,
+      ...actualPlans,
       clearPlanCache: mock(() => {}),
+    }));
+    await moduleMocker.mock('../ensure_plan_in_db.js', () => ({
+      resolvePlanFromDbOrSyncFile: resolvePlanFromDbOrSyncFileSpy,
+    }));
+    await moduleMocker.mock('../db/plan_sync.js', () => ({
+      syncPlanToDb: syncPlanToDbSpy,
     }));
 
     await moduleMocker.mock('../configLoader.js', () => ({
@@ -924,6 +1011,11 @@ describe('handleGenerateCommand with --next-ready flag', () => {
       runPostExecutionWorkspaceSync: runPostExecutionWorkspaceSyncSpy,
     }));
 
+    await moduleMocker.mock('./plan_discovery.js', () => ({
+      findNextReadyDependencyFromDb: findNextReadyDependencyFromDbSpy,
+      findLatestPlanFromDb: mock(async () => null),
+    }));
+
     await moduleMocker.mock('../../logging/tunnel_client.js', () => ({
       isTunnelActive: isTunnelActiveSpy,
     }));
@@ -954,7 +1046,7 @@ describe('handleGenerateCommand with --next-ready flag', () => {
       filename: '456-ready-dependency-plan.plan.md',
     };
 
-    findNextReadyDependencySpy.mockResolvedValueOnce({
+    findNextReadyDependencyFromDbSpy.mockResolvedValueOnce({
       plan: readyPlan,
       message: 'Found ready plan: Ready Dependency Plan (ID: 456)',
     });
@@ -970,7 +1062,7 @@ describe('handleGenerateCommand with --next-ready flag', () => {
     await handleGenerateCommand(undefined, options, command);
 
     // Should call findNextReadyDependency with the parent plan ID
-    expect(findNextReadyDependencySpy).toHaveBeenCalledWith(123, tasksDir, true);
+    expect(findNextReadyDependencyFromDbSpy).toHaveBeenCalledWith(123, tasksDir, tempDir, true);
 
     // Should log the success message
     expect(logSpy).toHaveBeenCalledWith(
@@ -978,23 +1070,25 @@ describe('handleGenerateCommand with --next-ready flag', () => {
     );
 
     // Should have set options.plan to the found plan's filename
-    expect(options.plan).toBe('456-ready-dependency-plan.plan.md');
+    expect(options.plan).toBe('456');
   });
 
   test('successfully finds and operates on a ready dependency with file path', async () => {
     const parentPlanPath = '/mock/parent/plan.plan.md';
 
-    resolvePlanFileSpy.mockResolvedValueOnce(parentPlanPath);
-    readPlanFileSpy.mockResolvedValueOnce({
-      id: 123,
-      title: 'Parent Plan',
-      goal: 'Parent goal',
-      details: 'Parent details',
-      status: 'in_progress',
-      priority: 'high',
-      createdAt: '2024-01-01T00:00:00Z',
-      updatedAt: '2024-01-01T00:00:00Z',
-      tasks: [],
+    resolvePlanFromDbOrSyncFileSpy.mockResolvedValueOnce({
+      plan: {
+        id: 123,
+        title: 'Parent Plan',
+        goal: 'Parent goal',
+        details: 'Parent details',
+        status: 'in_progress',
+        priority: 'high',
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-01T00:00:00Z',
+        tasks: [],
+      },
+      planPath: parentPlanPath,
     });
 
     const readyPlan: PlanSchema & { filename: string } = {
@@ -1010,7 +1104,7 @@ describe('handleGenerateCommand with --next-ready flag', () => {
       filename: '456-ready-dependency-plan.plan.md',
     };
 
-    findNextReadyDependencySpy.mockResolvedValueOnce({
+    findNextReadyDependencyFromDbSpy.mockResolvedValueOnce({
       plan: readyPlan,
       message: 'Found ready plan: Ready Dependency Plan (ID: 456)',
     });
@@ -1025,19 +1119,18 @@ describe('handleGenerateCommand with --next-ready flag', () => {
 
     await handleGenerateCommand(undefined, options, command);
 
-    expect(resolvePlanFileSpy).toHaveBeenCalledWith(parentPlanPath, undefined);
-    expect(readPlanFileSpy).toHaveBeenCalledWith(parentPlanPath);
-    expect(findNextReadyDependencySpy).toHaveBeenCalledWith(123, tasksDir, true);
+    expect(resolvePlanFromDbOrSyncFileSpy).toHaveBeenCalledWith(parentPlanPath, tempDir, tempDir);
+    expect(findNextReadyDependencyFromDbSpy).toHaveBeenCalledWith(123, tasksDir, tempDir, true);
 
     expect(logSpy).toHaveBeenCalledWith(
       expect.stringContaining('Found ready plan: 456 - Ready Dependency Plan')
     );
 
-    expect(options.plan).toBe('456-ready-dependency-plan.plan.md');
+    expect(options.plan).toBe('456');
   });
 
   test('handles case when no ready dependencies exist', async () => {
-    findNextReadyDependencySpy.mockResolvedValueOnce({
+    findNextReadyDependencyFromDbSpy.mockResolvedValueOnce({
       plan: null,
       message: 'No ready or pending dependencies found',
     });
@@ -1052,14 +1145,14 @@ describe('handleGenerateCommand with --next-ready flag', () => {
 
     await handleGenerateCommand(undefined, options, command);
 
-    expect(findNextReadyDependencySpy).toHaveBeenCalledWith(123, tasksDir, true);
+    expect(findNextReadyDependencyFromDbSpy).toHaveBeenCalledWith(123, tasksDir, tempDir, true);
     expect(logSpy).toHaveBeenCalledWith(
       expect.stringContaining('No ready or pending dependencies found')
     );
   });
 
   test('handles invalid parent plan ID', async () => {
-    findNextReadyDependencySpy.mockResolvedValueOnce({
+    findNextReadyDependencyFromDbSpy.mockResolvedValueOnce({
       plan: null,
       message: 'Plan not found: 999',
     });
@@ -1074,23 +1167,25 @@ describe('handleGenerateCommand with --next-ready flag', () => {
 
     await handleGenerateCommand(undefined, options, command);
 
-    expect(findNextReadyDependencySpy).toHaveBeenCalledWith(999, tasksDir, true);
+    expect(findNextReadyDependencyFromDbSpy).toHaveBeenCalledWith(999, tasksDir, tempDir, true);
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Plan not found: 999'));
   });
 
   test('handles parent plan file without valid ID', async () => {
     const invalidPlanPath = '/mock/invalid/plan.plan.md';
 
-    resolvePlanFileSpy.mockResolvedValueOnce(invalidPlanPath);
-    readPlanFileSpy.mockResolvedValueOnce({
-      title: 'Parent Plan Without ID',
-      goal: 'Parent goal',
-      details: 'Parent details',
-      status: 'in_progress',
-      priority: 'high',
-      createdAt: '2024-01-01T00:00:00Z',
-      updatedAt: '2024-01-01T00:00:00Z',
-      tasks: [],
+    resolvePlanFromDbOrSyncFileSpy.mockResolvedValueOnce({
+      plan: {
+        title: 'Parent Plan Without ID',
+        goal: 'Parent goal',
+        details: 'Parent details',
+        status: 'in_progress',
+        priority: 'high',
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2024-01-01T00:00:00Z',
+        tasks: [],
+      },
+      planPath: invalidPlanPath,
     });
 
     const options = {

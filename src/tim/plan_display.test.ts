@@ -7,6 +7,8 @@ import * as yaml from 'yaml';
 import type { PlanSchema } from './planSchema.js';
 import { buildPlanContext, formatExistingTasks, resolvePlan } from './plan_display.js';
 import { clearConfigCache } from './configLoader.js';
+import { getMaterializedPlanPath } from './plan_materialize.js';
+import { readPlanFile, writePlanFile } from './plans.js';
 
 function createPlan(overrides: Partial<PlanSchema> & { id: PlanSchema['id'] }): PlanSchema {
   return {
@@ -134,6 +136,17 @@ describe('buildPlanContext', () => {
     expect(context).not.toContain('### Existing Tasks');
     expect(context).not.toContain('Details:');
   });
+
+  it('falls back to the plan ID when no path is available', () => {
+    const plan = createPlan({
+      id: 125,
+      goal: 'Fallback goal',
+      details: 'Fallback details',
+    });
+
+    const context = buildPlanContext(plan, null, { gitRoot: '/repo' });
+    expect(context).toContain('Plan file: Plan 125');
+  });
 });
 
 describe('resolvePlan', () => {
@@ -149,20 +162,23 @@ describe('resolvePlan', () => {
     const tempDir = await mkdtemp(join(tmpdir(), 'plan-display-test-'));
     temporaryDirectories.push(tempDir);
     const planPath = join(tempDir, '0001.plan.yml');
-    const contents =
-      [
-        '---',
-        'id: 1',
-        'title: Sample plan',
-        'status: pending',
-        'priority: medium',
-        'tasks:',
-        '  - title: Prepare environment',
-        '    description: Set up tooling',
-        '    done: false',
-        '---',
-      ].join('\n') + '\n';
-    await writeFile(planPath, contents, 'utf8');
+    await writePlanFile(
+      planPath,
+      {
+        id: 1,
+        title: 'Sample plan',
+        status: 'pending',
+        priority: 'medium',
+        tasks: [
+          {
+            title: 'Prepare environment',
+            description: 'Set up tooling',
+            done: false,
+          },
+        ],
+      },
+      { skipUpdatedAt: true, cwdForIdentity: tempDir }
+    );
 
     const { plan, planPath: resolvedPath } = await resolvePlan(planPath, {
       gitRoot: tempDir,
@@ -180,20 +196,23 @@ describe('resolvePlan', () => {
     const tasksDir = join(tempDir, 'tasks');
     await mkdir(tasksDir, { recursive: true });
     const planPath = join(tasksDir, '0300.plan.md');
-    const planContents =
-      [
-        '---',
-        'id: 300',
-        'title: Configured plan',
-        'status: pending',
-        'priority: medium',
-        'tasks:',
-        '  - title: Verify config loading',
-        '    description: Ensure resolvePlan finds plans by ID',
-        '    done: false',
-        '---',
-      ].join('\n') + '\n';
-    await writeFile(planPath, planContents, 'utf8');
+    await writePlanFile(
+      planPath,
+      {
+        id: 300,
+        title: 'Configured plan',
+        status: 'pending',
+        priority: 'medium',
+        tasks: [
+          {
+            title: 'Verify config loading',
+            description: 'Ensure resolvePlan finds plans by ID',
+            done: false,
+          },
+        ],
+      },
+      { skipUpdatedAt: true, cwdForIdentity: tasksDir }
+    );
 
     const configPath = join(tempDir, 'tim.yml');
     const configData = {
@@ -205,12 +224,52 @@ describe('resolvePlan', () => {
 
     clearConfigCache();
     const { plan, planPath: resolvedPath } = await resolvePlan('300', {
-      gitRoot: tempDir,
+      gitRoot: tasksDir,
       configPath,
     });
 
     expect(resolvedPath).toBe(planPath);
     expect(plan.id).toBe(300);
     expect(plan.title).toBe('Configured plan');
+  });
+
+  it('resolves plans by UUID and returns the existing materialized path', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'plan-display-uuid-test-'));
+    temporaryDirectories.push(tempDir);
+    const sourcePath = join(tempDir, '301.plan.md');
+    const materializedPath = getMaterializedPlanPath(tempDir, 301);
+
+    await writePlanFile(
+      sourcePath,
+      {
+        id: 301,
+        uuid: '30130130-1111-4111-8111-111111111111',
+        title: 'UUID-resolved plan',
+        status: 'pending',
+        priority: 'medium',
+        details: 'Resolve from DB by UUID.',
+        tasks: [
+          {
+            title: 'Check UUID lookup',
+            description: 'Ensure resolvePlan uses DB records',
+            done: false,
+          },
+        ],
+      },
+      { skipUpdatedAt: true, cwdForIdentity: tempDir }
+    );
+
+    await writePlanFile(materializedPath, await readPlanFile(sourcePath), {
+      skipDb: true,
+      skipUpdatedAt: true,
+    });
+
+    const { plan, planPath } = await resolvePlan('30130130-1111-4111-8111-111111111111', {
+      gitRoot: tempDir,
+    });
+
+    expect(plan.id).toBe(301);
+    expect(plan.title).toBe('UUID-resolved plan');
+    expect(planPath).toBe(materializedPath);
   });
 });

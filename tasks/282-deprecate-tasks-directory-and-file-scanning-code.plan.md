@@ -5,20 +5,17 @@ goal: Remove the tasks directory as a concept, eliminate file-scanning code
   paths, and clean up configuration that references task directories.
 id: 282
 uuid: f299ed01-b2d9-4cd3-82fb-622229d5c4d2
-generatedBy: agent
 status: pending
 priority: medium
-dependencies:
-  - 281
 parent: 278
-references:
-  "278": 8c8ba325-58ad-4033-b45a-a9a1efd654a6
-  "281": 27796c49-6f51-4d41-83c9-1ad8db6c67d2
 createdAt: 2026-03-25T03:46:36.964Z
-updatedAt: 2026-03-25T03:50:25.783Z
+updatedAt: 2026-03-27T09:12:50.286Z
 tasks: []
 tags:
   - architecture
+generatedBy: agent
+references:
+  "278": 8c8ba325-58ad-4033-b45a-a9a1efd654a6
 ---
 
 ## Planned Work

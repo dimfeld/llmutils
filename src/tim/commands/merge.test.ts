@@ -6,6 +6,8 @@ import { clearPlanCache, readPlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { handleMergeCommand } from './merge.js';
 import { ModuleMocker } from '../../testing.js';
+import { closeDatabaseForTesting } from '../db/database.js';
+import { clearPlanSyncContext } from '../db/plan_sync.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -19,6 +21,9 @@ describe('tim merge', () => {
 
     // Clear plan cache
     clearPlanCache();
+    closeDatabaseForTesting();
+    clearPlanSyncContext();
+    await Bun.write(join(testDir, '.tim.yml'), 'paths:\n  tasks: .\n');
 
     // Mock modules
     await moduleMocker.mock('../configLoader.js', () => ({
@@ -42,6 +47,8 @@ describe('tim merge', () => {
 
   afterEach(async () => {
     moduleMocker.clear();
+    closeDatabaseForTesting();
+    clearPlanSyncContext();
     await rm(testDir, { recursive: true, force: true });
   });
 
@@ -65,12 +72,24 @@ describe('tim merge', () => {
       ],
     };
     const parentFile = join(testDir, '1-parent.plan.md');
-    await writePlanFile(parentFile, parentPlan);
+    await writePlanFile(parentFile, parentPlan, { cwdForIdentity: testDir });
 
     // Create dependency placeholder plans to validate dependency carry-over
-    await writePlanFile(join(testDir, '10-dep.plan.md'), { id: 10, title: 'Dep 10', tasks: [] });
-    await writePlanFile(join(testDir, '11-dep.plan.md'), { id: 11, title: 'Dep 11', tasks: [] });
-    await writePlanFile(join(testDir, '12-dep.plan.md'), { id: 12, title: 'Dep 12', tasks: [] });
+    await writePlanFile(
+      join(testDir, '10-dep.plan.md'),
+      { id: 10, title: 'Dep 10', tasks: [] },
+      { cwdForIdentity: testDir }
+    );
+    await writePlanFile(
+      join(testDir, '11-dep.plan.md'),
+      { id: 11, title: 'Dep 11', tasks: [] },
+      { cwdForIdentity: testDir }
+    );
+    await writePlanFile(
+      join(testDir, '12-dep.plan.md'),
+      { id: 12, title: 'Dep 12', tasks: [] },
+      { cwdForIdentity: testDir }
+    );
 
     // Create child plans
     const child1: PlanSchema = {
@@ -87,7 +106,7 @@ describe('tim merge', () => {
       ],
       dependencies: [10, 11],
     };
-    await writePlanFile(join(testDir, '2-child1.plan.md'), child1);
+    await writePlanFile(join(testDir, '2-child1.plan.md'), child1, { cwdForIdentity: testDir });
 
     const child2: PlanSchema = {
       id: 3,
@@ -103,7 +122,7 @@ describe('tim merge', () => {
       ],
       dependencies: [11, 12],
     };
-    await writePlanFile(join(testDir, '3-child2.plan.md'), child2);
+    await writePlanFile(join(testDir, '3-child2.plan.md'), child2, { cwdForIdentity: testDir });
 
     // Create a grandchild that should have its parent updated
     const grandchild: PlanSchema = {
@@ -114,7 +133,7 @@ describe('tim merge', () => {
       tasks: [],
     };
     const grandchildFile = join(testDir, '4-grandchild.plan.md');
-    await writePlanFile(grandchildFile, grandchild);
+    await writePlanFile(grandchildFile, grandchild, { cwdForIdentity: testDir });
 
     // Mock command structure
     const command = {
@@ -165,7 +184,7 @@ describe('tim merge', () => {
       tasks: [],
     };
     const parentFile = join(testDir, '1-parent.plan.md');
-    await writePlanFile(parentFile, parentPlan);
+    await writePlanFile(parentFile, parentPlan, { cwdForIdentity: testDir });
 
     // Create child plans
     const child1: PlanSchema = {
@@ -180,7 +199,7 @@ describe('tim merge', () => {
         },
       ],
     };
-    await writePlanFile(join(testDir, '2-child1.plan.md'), child1);
+    await writePlanFile(join(testDir, '2-child1.plan.md'), child1, { cwdForIdentity: testDir });
 
     const child2: PlanSchema = {
       id: 3,
@@ -195,7 +214,7 @@ describe('tim merge', () => {
       ],
     };
     const child2File = join(testDir, '3-child2.plan.md');
-    await writePlanFile(child2File, child2);
+    await writePlanFile(child2File, child2, { cwdForIdentity: testDir });
 
     // Mock command structure
     const command = {
@@ -228,7 +247,7 @@ describe('tim merge', () => {
       tasks: [],
     };
     const parentFile = join(testDir, '1-parent.plan.md');
-    await writePlanFile(parentFile, parentPlan);
+    await writePlanFile(parentFile, parentPlan, { cwdForIdentity: testDir });
 
     const childPlan: PlanSchema = {
       id: 2,
@@ -238,7 +257,7 @@ describe('tim merge', () => {
       details: 'Child details\n\n## Current Progress\n### Current State\n- Child progress',
       tasks: [],
     };
-    await writePlanFile(join(testDir, '2-child.plan.md'), childPlan);
+    await writePlanFile(join(testDir, '2-child.plan.md'), childPlan, { cwdForIdentity: testDir });
 
     const command = {
       parent: {
@@ -272,7 +291,7 @@ describe('tim merge', () => {
       tasks: [],
     };
     const parentFile = join(testDir, '1-parent.plan.md');
-    await writePlanFile(parentFile, parentPlan);
+    await writePlanFile(parentFile, parentPlan, { cwdForIdentity: testDir });
 
     const childPlan: PlanSchema = {
       id: 2,
@@ -282,7 +301,7 @@ describe('tim merge', () => {
       details: 'Child details\n\n## Current Progress\n### Current State\n- Child progress',
       tasks: [],
     };
-    await writePlanFile(join(testDir, '2-child.plan.md'), childPlan);
+    await writePlanFile(join(testDir, '2-child.plan.md'), childPlan, { cwdForIdentity: testDir });
 
     const command = {
       parent: {
@@ -310,7 +329,7 @@ describe('tim merge', () => {
       tasks: [],
     };
     const parentFile = join(testDir, '1-parent.plan.md');
-    await writePlanFile(parentFile, parentPlan);
+    await writePlanFile(parentFile, parentPlan, { cwdForIdentity: testDir });
 
     const childPlanA: PlanSchema = {
       id: 2,
@@ -320,7 +339,9 @@ describe('tim merge', () => {
       details: 'Child A details\n\n## Current Progress\n### Current State\n- Child A progress',
       tasks: [],
     };
-    await writePlanFile(join(testDir, '2-child-a.plan.md'), childPlanA);
+    await writePlanFile(join(testDir, '2-child-a.plan.md'), childPlanA, {
+      cwdForIdentity: testDir,
+    });
 
     const childPlanB: PlanSchema = {
       id: 3,
@@ -330,7 +351,9 @@ describe('tim merge', () => {
       details: 'Child B details\n\n## Current Progress\n### Current State\n- Child B progress',
       tasks: [],
     };
-    await writePlanFile(join(testDir, '3-child-b.plan.md'), childPlanB);
+    await writePlanFile(join(testDir, '3-child-b.plan.md'), childPlanB, {
+      cwdForIdentity: testDir,
+    });
 
     const command = {
       parent: {
@@ -362,7 +385,7 @@ describe('tim merge', () => {
       tasks: [],
     };
     const parentFile = join(testDir, '1-parent.plan.md');
-    await writePlanFile(parentFile, parentPlan);
+    await writePlanFile(parentFile, parentPlan, { cwdForIdentity: testDir });
 
     const childPlan: PlanSchema = {
       id: 2,
@@ -373,7 +396,7 @@ describe('tim merge', () => {
         'Child details\n\n## Progress Tracking\n- Should stay\n\n```md\n## Progress\n- Code block should stay\n```\n',
       tasks: [],
     };
-    await writePlanFile(join(testDir, '2-child.plan.md'), childPlan);
+    await writePlanFile(join(testDir, '2-child.plan.md'), childPlan, { cwdForIdentity: testDir });
 
     const command = {
       parent: {
@@ -398,7 +421,7 @@ describe('tim merge', () => {
       tasks: [],
     };
     const parentFile = join(testDir, '1-parent.plan.md');
-    await writePlanFile(parentFile, parentPlan);
+    await writePlanFile(parentFile, parentPlan, { cwdForIdentity: testDir });
 
     const childPlan: PlanSchema = {
       id: 2,
@@ -409,7 +432,7 @@ describe('tim merge', () => {
         'Child details\n\n    ## Progress\n    - Indented code block should stay\n\nRegular line\n',
       tasks: [],
     };
-    await writePlanFile(join(testDir, '2-child.plan.md'), childPlan);
+    await writePlanFile(join(testDir, '2-child.plan.md'), childPlan, { cwdForIdentity: testDir });
 
     const command = {
       parent: {
@@ -434,7 +457,7 @@ describe('tim merge', () => {
       tasks: [],
     };
     const parentFile = join(testDir, '1-parent.plan.md');
-    await writePlanFile(parentFile, parentPlan);
+    await writePlanFile(parentFile, parentPlan, { cwdForIdentity: testDir });
 
     // Mock command structure
     const command = {

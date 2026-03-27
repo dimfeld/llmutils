@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-import { readPlanFile, resolvePlanFile } from './plans.js';
+import { resolvePlanFromDb } from './plans.js';
 import type { PlanSchema } from './planSchema.js';
 
 export interface PlanDisplayContext {
@@ -53,12 +53,14 @@ export function formatExistingTasks(
 
 export function buildPlanContext(
   plan: PlanSchema,
-  planPath: string,
+  planPath: string | null,
   context: PlanDisplayContext,
   options?: PlanDisplayOptions
 ): string {
   const { includeGoal, includeIssues, includeDocs, includeDetails } = getOptions(options);
-  const relativePath = path.relative(context.gitRoot, planPath) || planPath;
+  const relativePath = planPath
+    ? path.relative(context.gitRoot, planPath) || planPath
+    : `Plan ${plan.id}`;
   const parts: string[] = [
     `Plan file: ${relativePath}`,
     `Plan ID: ${plan.id}`,
@@ -94,8 +96,6 @@ export function buildPlanContext(
 export async function resolvePlan(
   planArg: string,
   context: PlanDisplayContext
-): Promise<{ plan: PlanSchema; planPath: string }> {
-  const planPath = await resolvePlanFile(planArg, context.configPath);
-  const plan = await readPlanFile(planPath);
-  return { plan, planPath };
+): Promise<{ plan: PlanSchema; planPath: string | null }> {
+  return resolvePlanFromDb(planArg, context.gitRoot, { resolveDir: context.gitRoot });
 }

@@ -25,8 +25,15 @@ const spawnAndLogOutputSpy = mock(async () => ({
 const executeStubPlanSpy = mock(async () => ({}));
 const executeBatchModeSpy = mock(async () => undefined);
 const buildExecutorAndLogSpy = mock(() => ({ execute: mock(async () => {}), filePathPrefix: '' }));
-const findNextPlanSpy = mock(async () => undefined);
-const resolvePlanFileSpy = mock(async (p: string) => p);
+const findNextPlanFromDbSpy = mock(async () => undefined);
+const resolvePlanFromDbOrSyncFileSpy = mock(async (planArg: string) => {
+  const resolvedPath = path.resolve(planArg);
+  const content = await fs.readFile(resolvedPath, 'utf-8');
+  return {
+    plan: yaml.parse(content),
+    planPath: resolvedPath,
+  };
+});
 let loadEffectiveConfigSpy: ReturnType<typeof mock>;
 let loadGlobalConfigForNotificationsSpy: ReturnType<typeof mock>;
 
@@ -61,8 +68,8 @@ describe('timAgent notifications', () => {
     executeStubPlanSpy.mockClear();
     executeBatchModeSpy.mockClear();
     buildExecutorAndLogSpy.mockClear();
-    findNextPlanSpy.mockClear();
-    resolvePlanFileSpy.mockClear();
+    findNextPlanFromDbSpy.mockClear();
+    resolvePlanFromDbOrSyncFileSpy.mockClear();
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-notify-test-'));
     planFile = path.join(tempDir, 'plan.yml');
@@ -110,7 +117,6 @@ describe('timAgent notifications', () => {
     }));
 
     await moduleMocker.mock('../../plans.js', () => ({
-      resolvePlanFile: resolvePlanFileSpy,
       readPlanFile: mock(async (p: string) => {
         const content = await fs.readFile(p, 'utf-8');
         return yaml.parse(content);
@@ -118,7 +124,14 @@ describe('timAgent notifications', () => {
       writePlanFile: mock(async (p: string, data: any) => {
         await fs.writeFile(p, yaml.stringify(data));
       }),
-      findNextPlan: findNextPlanSpy,
+    }));
+
+    await moduleMocker.mock('../../ensure_plan_in_db.js', () => ({
+      resolvePlanFromDbOrSyncFile: resolvePlanFromDbOrSyncFileSpy,
+    }));
+
+    await moduleMocker.mock('../plan_discovery.js', () => ({
+      findNextPlanFromDb: findNextPlanFromDbSpy,
     }));
 
     await moduleMocker.mock('./stub_plan.js', () => ({
@@ -185,7 +198,7 @@ describe('timAgent notifications', () => {
   });
 
   test('sends notification when plan resolution fails', async () => {
-    resolvePlanFileSpy.mockImplementationOnce(async () => {
+    resolvePlanFromDbOrSyncFileSpy.mockImplementationOnce(async () => {
       throw new Error('duplicate plan id');
     });
 
@@ -280,7 +293,7 @@ describe('timAgent notifications', () => {
   test('sends notification when --next finds no plan', async () => {
     await handleAgentCommand(undefined, { next: true }, {} as any);
 
-    expect(findNextPlanSpy).toHaveBeenCalledTimes(1);
+    expect(findNextPlanFromDbSpy).toHaveBeenCalledTimes(1);
     expect(spawnAndLogOutputSpy).toHaveBeenCalledTimes(1);
     const [, options] = spawnAndLogOutputSpy.mock.calls[0];
     const payload = JSON.parse(options.stdin.trim());

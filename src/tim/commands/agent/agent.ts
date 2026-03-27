@@ -20,6 +20,7 @@ import {
 import { executePostApplyCommand } from '../../actions.js';
 import { loadEffectiveConfig, loadGlobalConfigForNotifications } from '../../configLoader.js';
 import { getDefaultConfig, resolveTasksDir } from '../../configSchema.js';
+import { syncPlanToDb } from '../../db/plan_sync.js';
 import { getCombinedTitleFromSummary } from '../../display_utils.js';
 import {
   buildExecutorAndLog,
@@ -28,20 +29,12 @@ import {
 } from '../../executors/index.js';
 import type { ExecutorCommonOptions } from '../../executors/types.js';
 import type { PlanSchema } from '../../planSchema.js';
-import {
-  findNextPlan,
-  readAllPlans,
-  readPlanFile,
-  resolvePlanFile,
-  writePlanFile,
-} from '../../plans.js';
-import { findMostRecentlyUpdatedPlan } from '../prompts.js';
+import { readPlanFile, writePlanFile } from '../../plans.js';
 import { findNextActionableItem } from '../../plans/find_next.js';
 import { markStepDone, markTaskDone } from '../../plans/mark_done.js';
 import { prepareNextStep } from '../../plans/prepare_step.js';
 import { buildExecutionPromptWithoutSteps } from '../../prompt_builder.js';
 import { buildDescriptionFromPlan } from '../../display_utils.js';
-import { findNextReadyDependency } from '../find_next_dependency.js';
 import { executeBatchMode } from './batch_mode.js';
 import { sendFailureReport, timestamp } from './agent_helpers.js';
 import { markParentInProgress } from './parent_plans.js';
@@ -69,6 +62,13 @@ import {
 } from '../../workspace/workspace_roundtrip.js';
 import { LifecycleManager } from '../../lifecycle.js';
 import { getSignalExitCode, isShuttingDown, setDeferSignalExit } from '../../shutdown_state.js';
+import {
+  findLatestPlanFromDb,
+  findNextPlanFromDb,
+  findNextReadyDependencyFromDb,
+  toHeadlessPlanSummary,
+} from '../plan_discovery.js';
+import { resolvePlanFromDbOrSyncFile } from '../../ensure_plan_in_db.js';
 
 export async function handleAgentCommand(
   planFile: string | undefined,
@@ -76,7 +76,7 @@ export async function handleAgentCommand(
   globalCliOptions: any
 ) {
   let config = getDefaultConfig();
-  let resolvedPlanFile: string | undefined;
+  let resolvedPlanArg: string | undefined;
   let headlessPlanSummary: HeadlessPlanSummary | undefined;
   let didInvokeAgent = false;
   const notifyNoPlanFound = async (message: string): Promise<void> => {
@@ -131,21 +131,20 @@ export async function handleAgentCommand(
       // Find the next ready dependency of the specified parent plan
       const tasksDir = await resolveTasksDir(config);
       // Convert string ID to number or resolve plan file to get numeric ID
+      const repoRoot = await getGitRoot();
       let parentPlanId: number;
       const planIdNumber = parseInt(options.nextReady, 10);
       if (!isNaN(planIdNumber)) {
         parentPlanId = planIdNumber;
       } else {
-        // Try to resolve as a file path and get the plan ID
-        const planFile = await resolvePlanFile(options.nextReady, globalCliOptions.config);
-        const plan = await readPlanFile(planFile);
+        const { plan } = await resolvePlanFromDbOrSyncFile(options.nextReady, repoRoot, repoRoot);
         if (!plan.id || typeof plan.id !== 'number') {
-          throw new Error(`Plan file ${planFile} does not have a valid numeric ID`);
+          throw new Error(`Plan file ${options.nextReady} does not have a valid numeric ID`);
         }
         parentPlanId = plan.id;
       }
 
-      const result = await findNextReadyDependency(parentPlanId, tasksDir);
+      const result = await findNextReadyDependencyFromDb(parentPlanId, tasksDir, repoRoot);
 
       if (!result.plan) {
         log(result.message);
@@ -163,28 +162,15 @@ export async function handleAgentCommand(
       } else {
         log(chalk.green(`Found ready plan: ${result.plan.filename}`));
       }
-      resolvedPlanFile = result.plan.filename;
-      headlessPlanSummary = {
-        id: result.plan.id,
-        uuid: result.plan.uuid,
-        title: result.plan.title,
-      };
+      resolvedPlanArg = String(result.plan.id);
+      headlessPlanSummary = toHeadlessPlanSummary(result.plan);
     } else if (options.latest) {
-      // Find the most recently updated plan
       const tasksDir = await resolveTasksDir(config);
-      const { plans } = await readAllPlans(tasksDir);
-
-      if (plans.size === 0) {
-        const noPlanMessage = 'No plans found in tasks directory.';
-        log(noPlanMessage);
-        await notifyNoPlanFound(`tim agent completed: ${noPlanMessage} (no work executed)`);
-        return;
-      }
-
-      const latestPlan = await findMostRecentlyUpdatedPlan(plans);
+      const repoRoot = await getGitRoot();
+      const latestPlan = await findLatestPlanFromDb(tasksDir, repoRoot);
 
       if (!latestPlan) {
-        const noPlanMessage = 'No plans found in tasks directory.';
+        const noPlanMessage = 'No plans found in the database.';
         log(noPlanMessage);
         await notifyNoPlanFound(`tim agent completed: ${noPlanMessage} (no work executed)`);
         return;
@@ -200,12 +186,12 @@ export async function handleAgentCommand(
       } else {
         log(chalk.green(`Found latest plan: ${latestPlan.filename}`));
       }
-      resolvedPlanFile = latestPlan.filename;
-      headlessPlanSummary = { id: latestPlan.id, uuid: latestPlan.uuid, title: latestPlan.title };
+      resolvedPlanArg = String(latestPlan.id);
+      headlessPlanSummary = toHeadlessPlanSummary(latestPlan);
     } else if (options.next || options.current) {
-      // Find the next ready plan or current plan
       const tasksDir = await resolveTasksDir(config);
-      const plan = await findNextPlan(tasksDir, {
+      const repoRoot = await getGitRoot();
+      const plan = await findNextPlanFromDb(tasksDir, repoRoot, {
         includePending: true,
         includeInProgress: options.current,
       });
@@ -229,31 +215,27 @@ export async function handleAgentCommand(
       } else {
         log(chalk.green(`Found plan: ${plan.filename}`));
       }
-      resolvedPlanFile = plan.filename;
-      headlessPlanSummary = { id: plan.id, uuid: plan.uuid, title: plan.title };
+      resolvedPlanArg = String(plan.id);
+      headlessPlanSummary = toHeadlessPlanSummary(plan);
     } else {
       if (!planFile) {
         throw new Error(
           'Plan file is required, or use --next/--current/--next-ready/--latest to find a plan'
         );
       }
-      resolvedPlanFile = await resolvePlanFile(planFile, globalCliOptions.config);
+      resolvedPlanArg = planFile;
     }
 
-    if (!resolvedPlanFile) {
-      throw new Error('No plan file resolved for agent execution.');
+    if (!resolvedPlanArg) {
+      throw new Error('No plan resolved for agent execution.');
     }
 
-    const resolvedPlanFilePath = resolvedPlanFile;
     didInvokeAgent = true;
     if (!headlessPlanSummary) {
       try {
-        const plan = await readPlanFile(resolvedPlanFilePath);
-        headlessPlanSummary = {
-          id: plan.id,
-          uuid: plan.uuid,
-          title: plan.title,
-        };
+        const repoRoot = await getGitRoot();
+        const { plan } = await resolvePlanFromDbOrSyncFile(resolvedPlanArg, repoRoot, repoRoot);
+        headlessPlanSummary = toHeadlessPlanSummary(plan);
       } catch {
         // No-op: missing plan metadata should not block execution.
       }
@@ -264,7 +246,7 @@ export async function handleAgentCommand(
       command: 'agent',
       interactive: options.nonInteractive !== true,
       plan: headlessPlanSummary,
-      callback: async () => timAgent(resolvedPlanFilePath, options, globalCliOptions),
+      callback: async () => timAgent(resolvedPlanArg!, options, globalCliOptions),
     });
   } catch (err) {
     if (!didInvokeAgent) {
@@ -275,9 +257,9 @@ export async function handleAgentCommand(
   }
 }
 
-export async function timAgent(planFile: string, options: any, globalCliOptions: any) {
+export async function timAgent(planArg: string, options: any, globalCliOptions: any) {
   const cleanupRegistry = CleanupRegistry.getInstance();
-  let currentPlanFile = planFile;
+  let currentPlanFile = '';
   let config = getDefaultConfig();
   let currentBaseDir = process.cwd();
   let touchedWorkspacePath: string | null = null;
@@ -307,7 +289,13 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     // Must be inside try so the finally block always resets it
     setDeferSignalExit(true);
     config = await loadEffectiveConfig(globalCliOptions.config);
-    currentPlanFile = await resolvePlanFile(planFile, globalCliOptions.config);
+    currentBaseDir = await getGitRoot();
+    const initialResolvedPlan = await resolvePlanFromDbOrSyncFile(
+      planArg,
+      currentBaseDir,
+      currentBaseDir
+    );
+    const initialPlanData = initialResolvedPlan.plan;
 
     // Ensure all plans have UUIDs and complete reference entries before starting
     const tasksDir = await resolveTasksDir(config);
@@ -317,14 +305,19 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     }
 
     if (options.log !== false) {
-      const parsed = path.parse(currentPlanFile);
-      let logFilePath = path.join(parsed.dir, parsed.name + '-agent-output.md');
+      let logFilePath: string;
+      if (initialResolvedPlan.planPath) {
+        logFilePath = path.join(
+          path.parse(initialResolvedPlan.planPath).dir,
+          path.parse(initialResolvedPlan.planPath).name + '-agent-output.md'
+        );
+      } else {
+        const logDir = path.join(currentBaseDir, '.tim', 'logs');
+        await fs.mkdir(logDir, { recursive: true });
+        logFilePath = path.join(logDir, `plan-${initialPlanData.id ?? 'unknown'}-agent-output.md`);
+      }
       openLogFile(logFilePath);
     }
-
-    // Determine the base directory for operations
-    currentBaseDir = await getGitRoot();
-    const initialPlanData = await readPlanFile(currentPlanFile);
 
     const workspaceResult = await setupWorkspace(
       {
@@ -334,11 +327,12 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
         nonInteractive: options.nonInteractive,
         requireWorkspace: options.requireWorkspace,
         createBranch: options.createBranch,
+        planId: initialPlanData.id,
         planUuid: initialPlanData.uuid,
         base: options.base,
       },
       currentBaseDir,
-      currentPlanFile,
+      initialResolvedPlan.planPath ?? undefined,
       config,
       'tim agent'
     );
@@ -1198,6 +1192,24 @@ export async function timAgent(planFile: string, options: any, globalCliOptions:
     throw err;
   } finally {
     let workspaceSyncError: Error | undefined;
+    if (currentPlanFile && !isShuttingDown()) {
+      try {
+        const updatedPlan = await readPlanFile(currentPlanFile);
+        await syncPlanToDb(updatedPlan, currentPlanFile, {
+          cwdForIdentity: currentBaseDir,
+          force: true,
+          throwOnError: true,
+        });
+      } catch (err) {
+        const syncError = err instanceof Error ? err : new Error(String(err));
+        if (!executionError) {
+          executionError = syncError;
+        } else {
+          warn(`Plan sync failed after execution error: ${syncError}`);
+        }
+      }
+    }
+
     if (roundTripContext && !isShuttingDown()) {
       try {
         const planTitle = lastKnownPlan?.title || path.parse(currentPlanFile).name;

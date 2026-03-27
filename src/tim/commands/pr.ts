@@ -23,7 +23,9 @@ import {
 } from '../db/pr_status.js';
 import { resolvePlan } from '../plan_display.js';
 import type { PlanSchema } from '../planSchema.js';
-import { readPlanFile, writePlanFile } from '../plans.js';
+import { mergeYamlPassthroughFields } from '../plans/yaml_passthrough.js';
+import { readPlanFile, resolvePlanFromDb, writePlanFile } from '../plans.js';
+import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 import { getWorkspaceInfoByPath } from '../workspace/workspace_info.js';
 
 interface RootCommandLike {
@@ -63,7 +65,7 @@ function getWorkspacePlanReference(cwd: string): string | null {
 async function resolvePlanForCommand(
   planArg: string | undefined,
   command: RootCommandLike | undefined
-): Promise<{ plan: PlanSchema; planPath: string }> {
+): Promise<{ plan: PlanSchema; planPath: string | null; repoRoot: string }> {
   const trimmedPlanArg = planArg?.trim();
   const effectivePlanArg =
     trimmedPlanArg && trimmedPlanArg.length > 0
@@ -77,10 +79,16 @@ async function resolvePlanForCommand(
   }
 
   const globalOpts = getRootOptions(command);
-  return resolvePlan(effectivePlanArg, {
-    gitRoot: process.cwd(),
+  const repoRoot = await resolveRepoRootForPlanArg(
+    effectivePlanArg,
+    process.cwd(),
+    globalOpts.config
+  );
+  const resolved = await resolvePlan(effectivePlanArg, {
+    gitRoot: repoRoot,
     configPath: globalOpts.config,
   });
+  return { ...resolved, repoRoot };
 }
 
 function requirePlanUuid(plan: PlanSchema, planPath: string): string {
@@ -93,11 +101,28 @@ function requirePlanUuid(plan: PlanSchema, planPath: string): string {
 
 /** Update pullRequest URLs in the plan file. Returns true if the file was modified. */
 async function persistPlanPullRequests(
-  planPath: string,
+  repoRoot: string,
+  planPath: string | null,
+  currentPlan: PlanSchema,
   updatePullRequests: (pullRequests: string[]) => string[]
 ): Promise<boolean> {
-  const currentPlan = await readPlanFile(planPath);
-  const currentPullRequests = currentPlan.pullRequest ?? [];
+  // Re-read from DB for freshest state. Small TOCTOU window between read and write
+  // is acceptable for a CLI tool — much smaller than the old window that spanned API calls.
+  const resolved = await resolvePlanFromDb(currentPlan.uuid ?? String(currentPlan.id), repoRoot);
+  const freshPlan = resolved.plan;
+
+  if (planPath) {
+    try {
+      const filePlan = await readPlanFile(planPath);
+      mergeYamlPassthroughFields(freshPlan, filePlan);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw error;
+      }
+    }
+  }
+
+  const currentPullRequests = freshPlan.pullRequest ?? [];
   const nextPullRequests = updatePullRequests(currentPullRequests);
 
   // Skip write if nothing changed
@@ -108,9 +133,8 @@ async function persistPlanPullRequests(
     return false;
   }
 
-  const updatedPlan = { ...currentPlan, pullRequest: nextPullRequests };
-  // writePlanFile already calls syncPlanToDb internally
-  await writePlanFile(planPath, updatedPlan);
+  const updatedPlan = { ...freshPlan, pullRequest: nextPullRequests };
+  await writePlanFile(planPath, updatedPlan, { cwdForIdentity: repoRoot });
   return true;
 }
 
@@ -423,8 +447,13 @@ export async function handlePrStatusCommand(
   _options: Record<string, unknown>,
   command: RootCommandLike
 ): Promise<void> {
-  const { plan, planPath } = await resolvePlanForCommand(planId, command);
+  const { plan, planPath, repoRoot } = await resolvePlanForCommand(planId, command);
   let prUrls = plan.pullRequest ?? [];
+
+  if (prUrls.length === 0 && !plan.branch) {
+    log(`Plan ${plan.id} has no linked pull requests and no branch to look up.`);
+    return;
+  }
 
   if (!process.env.GITHUB_TOKEN) {
     throw new Error('GITHUB_TOKEN environment variable is required for PR status commands');
@@ -436,7 +465,7 @@ export async function handlePrStatusCommand(
     if (foundUrl) {
       // Auto-link the discovered PR to the plan
       const planUuid = plan.uuid;
-      await persistPlanPullRequests(planPath, (pullRequests) => {
+      await persistPlanPullRequests(repoRoot, planPath, plan, (pullRequests) => {
         const normalized = normalizeStoredPullRequests(pullRequests);
         return normalized.includes(foundUrl) ? normalized : [...normalized, foundUrl];
       });
@@ -447,11 +476,6 @@ export async function handlePrStatusCommand(
       }
       prUrls = [foundUrl];
     }
-  }
-
-  if (prUrls.length === 0) {
-    log(`Plan ${plan.id} has no linked pull requests and no branch to look up.`);
-    return;
   }
 
   const db = getDatabase();
@@ -517,8 +541,8 @@ export async function handlePrLinkCommand(
     throw new Error('GITHUB_TOKEN environment variable is required for PR status commands');
   }
 
-  const { plan, planPath } = await resolvePlanForCommand(planId, command);
-  const planUuid = requirePlanUuid(plan, planPath);
+  const { plan, planPath, repoRoot } = await resolvePlanForCommand(planId, command);
+  const planUuid = requirePlanUuid(plan, planPath ?? `plan ${plan.id}`);
 
   // Resolve the PR URL: could be a URL, short-form (owner/repo#123), branch name, or omitted
   let effectivePrUrl = prUrl;
@@ -573,7 +597,7 @@ export async function handlePrLinkCommand(
   const detail = await refreshPrStatus(db, canonicalUrl);
 
   // Now persist to plan file (source of truth) and create DB junction
-  await persistPlanPullRequests(planPath, (pullRequests) => {
+  await persistPlanPullRequests(repoRoot, planPath, plan, (pullRequests) => {
     const normalizedPullRequests = normalizeStoredPullRequests(pullRequests);
     return normalizedPullRequests.includes(canonicalUrl)
       ? normalizedPullRequests
@@ -592,8 +616,8 @@ export async function handlePrUnlinkCommand(
   _options: Record<string, unknown>,
   command: RootCommandLike
 ): Promise<void> {
-  const { plan, planPath } = await resolvePlanForCommand(planId, command);
-  const planUuid = requirePlanUuid(plan, planPath);
+  const { plan, planPath, repoRoot } = await resolvePlanForCommand(planId, command);
+  const planUuid = requirePlanUuid(plan, planPath ?? `plan ${plan.id}`);
 
   const normalizedInput = canonicalizePrUrl(prUrl);
   const parsed = await parsePrOrIssueNumber(normalizedInput);
@@ -602,9 +626,9 @@ export async function handlePrUnlinkCommand(
       ? `https://github.com/${parsed.owner}/${parsed.repo}/pull/${parsed.number}`
       : normalizedInput;
 
-  // Remove from plan file first (source of truth), then clean up DB best-effort
+  // Remove from plan (writes DB, then re-materializes file if present)
   let removed = false;
-  await persistPlanPullRequests(planPath, (pullRequests) => {
+  await persistPlanPullRequests(repoRoot, planPath, plan, (pullRequests) => {
     const normalizedPullRequests = normalizeStoredPullRequests(pullRequests);
     const filtered = normalizedPullRequests.filter(
       (existingPrUrl) => existingPrUrl !== canonicalUrl

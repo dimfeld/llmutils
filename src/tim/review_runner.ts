@@ -324,20 +324,22 @@ function formatReviewExecutorError(name: ReviewExecutorName, error: unknown): st
 function mergeReviewOutputs(
   results: Array<{ name: ReviewExecutorName; parsed: ReturnType<typeof parseJsonReviewOutput> }>
 ): ReviewOutput {
-  const issues = results.flatMap((result) => result.parsed.issues);
+  const issues: ReviewIssue[] = results.flatMap((result) => result.parsed.issues);
   const recommendations = results.flatMap((result) => result.parsed.recommendations);
   const actionItems = results.flatMap((result) => result.parsed.actionItems);
 
   const sortedIssues = sortIssuesByLocation(issues);
 
   return {
-    issues: sortedIssues,
+    issues: sortedIssues as ReviewIssueOutput[],
     recommendations,
     actionItems,
   };
 }
 
-function sortIssuesByLocation(issues: ReviewIssueOutput[]): ReviewIssueOutput[] {
+function sortIssuesByLocation<T extends { file?: string; line?: string | number }>(
+  issues: T[]
+): T[] {
   const decorated = issues.map((issue, index) => ({ issue, index }));
 
   decorated.sort((a, b) => {

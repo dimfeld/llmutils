@@ -24,10 +24,12 @@ describe('handleClaimCommand', () => {
   let mockLog: ReturnType<typeof mock>;
   let mockWarn: ReturnType<typeof mock>;
   let mockError: ReturnType<typeof mock>;
+  let getRepositoryIdentityMock: ReturnType<typeof mock>;
 
   let handleClaimCommand: (planArg: string, options: any, command: any) => Promise<void>;
 
   const repositoryId = 'multi-user-demo';
+  let currentRepositoryId: string;
 
   function getAssignmentRow(uuid: string) {
     const db = getDatabase();
@@ -58,6 +60,7 @@ describe('handleClaimCommand', () => {
 
     currentWorkspacePath = repoDir;
     currentUser = 'alice';
+    currentRepositoryId = repositoryId;
 
     originalEnv = {
       XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
@@ -70,6 +73,11 @@ describe('handleClaimCommand', () => {
     mockLog = mock(() => {});
     mockWarn = mock(() => {});
     mockError = mock(() => {});
+    getRepositoryIdentityMock = mock(async (_options?: { cwd?: string }) => ({
+      repositoryId: currentRepositoryId,
+      remoteUrl: 'https://example.com/repo.git',
+      gitRoot: currentWorkspacePath,
+    }));
 
     const chalkMock = (value: string) => value;
 
@@ -103,11 +111,7 @@ describe('handleClaimCommand', () => {
     }));
 
     await moduleMocker.mock('../assignments/workspace_identifier.ts', () => ({
-      getRepositoryIdentity: async () => ({
-        repositoryId,
-        remoteUrl: 'https://example.com/repo.git',
-        gitRoot: currentWorkspacePath,
-      }),
+      getRepositoryIdentity: getRepositoryIdentityMock,
       getCurrentWorkspacePath: async () => currentWorkspacePath,
       getUserIdentity: () => currentUser,
     }));
@@ -267,5 +271,27 @@ describe('handleClaimCommand', () => {
 
     expect(mockWarn).not.toHaveBeenCalled();
     expect(mockLog).not.toHaveBeenCalled();
+  });
+
+  test('uses the resolved plan repo root for repository identity under --config', async () => {
+    const configuredRepoDir = path.join(tempRoot, 'other-repo');
+    const configuredTasksDir = path.join(configuredRepoDir, 'tasks');
+    const configPath = path.join(configuredRepoDir, '.tim.yml');
+    currentRepositoryId = 'configured-repo';
+    await fs.mkdir(configuredTasksDir, { recursive: true });
+    await fs.writeFile(configPath, 'paths:\n  tasks: tasks\n', 'utf-8');
+    await writePlanFile(path.join(configuredTasksDir, '1-configured.plan.md'), {
+      id: 1,
+      uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      title: 'Configured Plan',
+      goal: 'Resolve via explicit config',
+      details: '',
+      tasks: [],
+    });
+
+    const command = { parent: { opts: () => ({ config: configPath }) } };
+    await handleClaimCommand('1', {}, command);
+
+    expect(getRepositoryIdentityMock).toHaveBeenCalledWith({ cwd: configuredRepoDir });
   });
 });

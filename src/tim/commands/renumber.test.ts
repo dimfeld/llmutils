@@ -7,11 +7,64 @@ import { handleRenumber } from './renumber.js';
 import { type PlanSchema } from '../planSchema.js';
 import { readPlanFile, writePlanFile } from '../plans.js';
 import { ModuleMocker, stringifyPlanWithFrontmatter } from '../../testing.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import { getDatabase } from '../db/database.js';
+import { getPlanByUuid, getPlanDependenciesByUuid, upsertPlan } from '../db/plan.js';
+import { getOrCreateProject, getProject } from '../db/project.js';
+import { getMaterializedPlanPath, materializePlan } from '../plan_materialize.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
+let repoRootForTest = process.cwd();
 
-function writeTestPlan(planPath: string, plan: any) {
-  return Bun.write(planPath, stringifyPlanWithFrontmatter(plan));
+async function writeTestPlan(planPath: string, plan: any) {
+  await fs.promises.mkdir(path.dirname(planPath), { recursive: true });
+  const planWithUuid = {
+    ...plan,
+    uuid: plan.uuid ?? crypto.randomUUID(),
+  };
+  await Bun.write(planPath, stringifyPlanWithFrontmatter(planWithUuid));
+  const repository = await getRepositoryIdentity({ cwd: repoRootForTest });
+  const db = getDatabase();
+  const project = getOrCreateProject(db, repository.repositoryId, {
+    remoteUrl: repository.remoteUrl,
+    lastGitRoot: repository.gitRoot,
+  });
+  const relativeFilename = path.relative(path.join(repoRootForTest, 'tasks'), planPath);
+  return upsertPlan(db, project.id, {
+    planId: planWithUuid.id,
+    uuid: planWithUuid.uuid,
+    title: planWithUuid.title ?? null,
+    goal: planWithUuid.goal ?? null,
+    details: planWithUuid.details ?? null,
+    sourceCreatedAt: planWithUuid.createdAt ?? null,
+    sourceUpdatedAt: planWithUuid.updatedAt ?? null,
+    status: planWithUuid.status ?? 'pending',
+    priority: planWithUuid.priority ?? null,
+    branch: planWithUuid.branch ?? null,
+    simple: typeof planWithUuid.simple === 'boolean' ? planWithUuid.simple : null,
+    tdd: typeof planWithUuid.tdd === 'boolean' ? planWithUuid.tdd : null,
+    discoveredFrom: planWithUuid.discoveredFrom ?? null,
+    issue: planWithUuid.issue ?? null,
+    pullRequest: planWithUuid.pullRequest ?? null,
+    assignedTo: planWithUuid.assignedTo ?? null,
+    baseBranch: planWithUuid.baseBranch ?? null,
+    temp: typeof planWithUuid.temp === 'boolean' ? planWithUuid.temp : null,
+    docs: planWithUuid.docs ?? null,
+    changedFiles: planWithUuid.changedFiles ?? null,
+    planGeneratedAt: planWithUuid.planGeneratedAt ?? null,
+    reviewIssues: planWithUuid.reviewIssues ?? null,
+    parentUuid: null,
+    epic: planWithUuid.epic === true,
+    filename: relativeFilename,
+    tasks: (planWithUuid.tasks ?? []).map((task: any) => ({
+      title: task.title,
+      description: task.description ?? '',
+      done: task.done,
+    })),
+    dependencyUuids: [],
+    tags: planWithUuid.tags ?? [],
+    forceOverwrite: true,
+  });
 }
 
 describe('tim renumber', () => {
@@ -21,6 +74,7 @@ describe('tim renumber', () => {
 
   beforeEach(async () => {
     tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'tim-renumber-test-'));
+    repoRootForTest = tempDir;
     tasksDir = path.join(tempDir, 'tasks');
     await fs.promises.mkdir(tasksDir, { recursive: true });
 
@@ -2093,6 +2147,125 @@ describe('tim renumber', () => {
 
       // Original file should be gone
       expect(fs.existsSync(path.join(tasksDir, '5-task.yml'))).toBe(false);
+    });
+
+    test('refreshes materialized plan files after simple renumber', async () => {
+      await createPlan(5, 'Task to renumber', '5-task.yml');
+
+      const oldMaterializedPath = await materializePlan(5, tempDir);
+      expect(oldMaterializedPath).toBe(getMaterializedPlanPath(tempDir, 5));
+      expect(fs.existsSync(oldMaterializedPath)).toBe(true);
+
+      await handleRenumber({ from: 5, to: 7 }, createMockCommand());
+
+      const newMaterializedPath = getMaterializedPlanPath(tempDir, 7);
+      expect(fs.existsSync(oldMaterializedPath)).toBe(false);
+      expect(fs.existsSync(newMaterializedPath)).toBe(true);
+
+      const materializedPlan = await readPlanFile(newMaterializedPath);
+      expect(materializedPlan.id).toBe(7);
+      expect(materializedPlan.title).toBe('Task to renumber');
+    });
+
+    test('restores exact DB snapshot when file writes fail after DB update', async () => {
+      const parentPlan: PlanSchema = {
+        id: 5,
+        title: 'Parent',
+        goal: 'Parent goal',
+        details: 'Parent details',
+        status: 'pending',
+        priority: 'medium',
+        createdAt: new Date('2024-01-01').toISOString(),
+        updatedAt: new Date('2024-01-01').toISOString(),
+        tasks: [],
+      };
+      const childPlan: PlanSchema = {
+        id: 10,
+        title: 'Child',
+        goal: 'Child goal',
+        details: 'Child details',
+        status: 'pending',
+        priority: 'medium',
+        parent: 5,
+        dependencies: [5],
+        createdAt: new Date('2024-01-02').toISOString(),
+        updatedAt: new Date('2024-01-02').toISOString(),
+        tasks: [],
+      };
+
+      await writeTestPlan(path.join(tasksDir, 'locked/5-parent.yml'), parentPlan);
+      await writeTestPlan(path.join(tasksDir, 'locked/nested/10-child.yml'), childPlan);
+
+      const parentFromDisk = await readPlanFile(path.join(tasksDir, 'locked/5-parent.yml'));
+      const childFromDisk = await readPlanFile(path.join(tasksDir, 'locked/nested/10-child.yml'));
+      const repository = await getRepositoryIdentity({ cwd: repoRootForTest });
+      const db = getDatabase();
+      const project = getProject(db, repository.repositoryId);
+      expect(project).toBeTruthy();
+
+      upsertPlan(db, project!.id, {
+        planId: childFromDisk.id!,
+        uuid: childFromDisk.uuid!,
+        title: childFromDisk.title ?? null,
+        goal: childFromDisk.goal ?? null,
+        details: childFromDisk.details ?? null,
+        sourceCreatedAt: childFromDisk.createdAt ?? null,
+        sourceUpdatedAt: childFromDisk.updatedAt ?? null,
+        status: childFromDisk.status,
+        priority: childFromDisk.priority ?? null,
+        branch: childFromDisk.branch ?? null,
+        simple: typeof childFromDisk.simple === 'boolean' ? childFromDisk.simple : null,
+        tdd: typeof childFromDisk.tdd === 'boolean' ? childFromDisk.tdd : null,
+        discoveredFrom: childFromDisk.discoveredFrom ?? null,
+        issue: childFromDisk.issue ?? null,
+        pullRequest: childFromDisk.pullRequest ?? null,
+        assignedTo: childFromDisk.assignedTo ?? null,
+        baseBranch: childFromDisk.baseBranch ?? null,
+        temp: typeof childFromDisk.temp === 'boolean' ? childFromDisk.temp : null,
+        docs: childFromDisk.docs ?? null,
+        changedFiles: childFromDisk.changedFiles ?? null,
+        planGeneratedAt: childFromDisk.planGeneratedAt ?? null,
+        reviewIssues: childFromDisk.reviewIssues ?? null,
+        parentUuid: parentFromDisk.uuid!,
+        epic: childFromDisk.epic === true,
+        filename: 'locked/nested/10-child.yml',
+        tasks: (childFromDisk.tasks ?? []).map((task) => ({
+          title: task.title,
+          description: task.description ?? '',
+          done: task.done,
+        })),
+        dependencyUuids: [parentFromDisk.uuid!],
+        tags: childFromDisk.tags ?? [],
+        forceOverwrite: true,
+      });
+
+      await fs.promises.chmod(path.join(tasksDir, 'locked'), 0o555);
+
+      try {
+        await expect(handleRenumber({ from: 5, to: 7 }, createMockCommand())).rejects.toThrow(
+          'Swap/renumber failed:'
+        );
+      } finally {
+        await fs.promises.chmod(path.join(tasksDir, 'locked'), 0o755);
+      }
+
+      const parentRow = getPlanByUuid(db, parentFromDisk.uuid!);
+      const childRow = getPlanByUuid(db, childFromDisk.uuid!);
+      expect(parentRow?.plan_id).toBe(5);
+      expect(parentRow?.filename).toBe('locked/5-parent.yml');
+      expect(childRow?.plan_id).toBe(10);
+      expect(childRow?.filename).toBe('locked/nested/10-child.yml');
+      expect(childRow?.parent_uuid).toBe(parentFromDisk.uuid);
+      expect(
+        getPlanDependenciesByUuid(db, childFromDisk.uuid!).map((row) => row.depends_on_uuid)
+      ).toEqual([parentFromDisk.uuid]);
+
+      const childFileAfterFailure = await readPlanFile(
+        path.join(tasksDir, 'locked/nested/10-child.yml')
+      );
+      expect(childFileAfterFailure.parent).toBe(5);
+      expect(childFileAfterFailure.dependencies).toEqual([5]);
+      expect(fs.existsSync(path.join(tasksDir, 'locked/7-parent.yml'))).toBe(false);
     });
 
     test('swaps two plans when both IDs exist', async () => {

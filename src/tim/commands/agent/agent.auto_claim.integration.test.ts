@@ -116,8 +116,11 @@ describe('timAgent auto-claim integration', () => {
       getGitRoot: async () => tempRoot,
     }));
 
-    await moduleMocker.mock('../find_next_dependency.js', () => ({
-      findNextReadyDependency: mock(async () => ({ plan: null, message: '' })),
+    await moduleMocker.mock('../plan_discovery.js', () => ({
+      findLatestPlanFromDb: mock(async () => null),
+      findNextPlanFromDb: mock(async () => null),
+      findNextReadyDependencyFromDb: mock(async () => ({ plan: null, message: '' })),
+      toHeadlessPlanSummary: mock(() => undefined),
     }));
 
     ({ timAgent } = await import('./agent.js'));

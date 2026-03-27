@@ -1,16 +1,31 @@
-import path from 'path';
+import path from 'node:path';
 import { getGitRoot } from '../../common/git.js';
-import { log, warn } from '../../logging.js';
-import { readAllPlans, readPlanFile, writePlanFile, resolvePlanFile } from '../plans.js';
+import { log } from '../../logging.js';
+import { removePlanAssignment } from '../assignments/remove_plan_assignment.js';
+import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir } from '../configSchema.js';
 import type { TimConfig } from '../configSchema.js';
-import { loadEffectiveConfig } from '../configLoader.js';
+import { getDatabase } from '../db/database.js';
+import { getPlanByPlanId, type PlanRow, upsertPlan } from '../db/plan.js';
+import { toPlanUpsertInput } from '../db/plan_sync.js';
+import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import {
+  getMaterializedPlanPath,
+  materializePlan,
+  resolveProjectContext,
+  syncMaterializedPlan,
+  withPlanAutoSync,
+  type ProjectContext,
+} from '../plan_materialize.js';
 import { updatePlanProperties } from '../planPropertiesUpdater.js';
-import { wouldCreateCircularDependency } from './validate.js';
-import { checkAndMarkParentDone } from './agent/parent_plans.js';
-import { removePlanAssignment } from '../assignments/remove_plan_assignment.js';
 import type { PlanSchema, Priority } from '../planSchema.js';
-import { ensureReferences, writePlansWithGeneratedUuids } from '../utils/references.js';
+import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { readPlanFile, resolvePlanFromDb, writePlanFile } from '../plans.js';
+import { invertPlanIdToUuidMap, planRowForTransaction } from '../plans_db.js';
+import { checkAndMarkParentDone } from '../plans/parent_cascade.js';
+import { resolveWritablePath } from '../plans/resolve_writable_path.js';
+import { mergeYamlPassthroughFields } from '../plans/yaml_passthrough.js';
+import { ensureReferences } from '../utils/references.js';
 
 export interface SetOptions {
   planFile: string;
@@ -39,248 +54,177 @@ export interface SetOptions {
 }
 
 export async function handleSetCommand(
-  planFile: string,
+  planArg: string,
   options: SetOptions,
   globalOpts: any
 ): Promise<void> {
-  const resolvedPlanFile = await resolvePlanFile(planFile, globalOpts?.config);
-  options.planFile = resolvedPlanFile;
-  const plan = await readPlanFile(options.planFile);
-  let modified = false;
-  let needsReferenceUpdate = false;
-  let shouldRemoveAssignment = false;
-  let shouldCheckParentCompletion = false;
-  let cachedConfig: TimConfig | undefined;
-  let allPlans: Map<number, PlanSchema & { filename: string }> | undefined;
+  const config = await loadEffectiveConfig(globalOpts?.config);
+  const repoRoot = await resolveRepoRootForPlanArg(
+    planArg,
+    (await getGitRoot()) || process.cwd(),
+    globalOpts?.config
+  );
+  const initialPlan = await resolvePlanFromDbOrSyncFile(planArg, repoRoot, repoRoot);
+  const resolvedPlanArg = initialPlan.plan.uuid ?? planArg;
 
-  const getConfig = async (): Promise<TimConfig> => {
-    if (!cachedConfig) {
-      cachedConfig = await loadEffectiveConfig(globalOpts?.config);
-    }
-    return cachedConfig;
-  };
+  await withPlanAutoSync(initialPlan.plan.id, repoRoot, async () => {
+    let context = await resolveProjectContext(repoRoot);
+    const target = await resolvePlanFromDb(resolvedPlanArg, repoRoot, { context });
+    const tasksDir = await resolveTasksDir(config);
+    const planRow = getRequiredPlanRow(context, target.plan.id);
+    const outputPath = await resolveWritablePath(planArg, planRow, tasksDir, repoRoot);
 
-  // Update priority
-  if (options.priority) {
-    plan.priority = options.priority;
-    modified = true;
-    log(`Updated priority to ${options.priority}`);
-  }
+    const plan = target.plan;
+    let modified = false;
+    let shouldRemoveAssignment = false;
+    let oldParentIdToUpdate: number | undefined;
+    let newParentIdToUpdate: number | undefined;
 
-  // Update status
-  if (options.status) {
-    plan.status = options.status;
-    modified = true;
-    log(`Updated status to ${options.status}`);
-
-    // Clear status description when changing status unless explicitly provided
-    if (!options.statusDescription && plan.statusDescription) {
-      delete plan.statusDescription;
-      log('Cleared status description (status changed)');
-    }
-
-    if (plan.parent && (plan.status === 'done' || plan.status === 'cancelled')) {
-      shouldCheckParentCompletion = true;
-    }
-
-    if (plan.uuid && (plan.status === 'done' || plan.status === 'cancelled')) {
-      shouldRemoveAssignment = true;
-    }
-  }
-
-  // Update status description
-  if (options.statusDescription) {
-    plan.statusDescription = options.statusDescription;
-    modified = true;
-    log(`Updated status description`);
-  }
-
-  // Remove status description
-  if (options.noStatusDescription) {
-    if (plan.statusDescription !== undefined) {
-      delete plan.statusDescription;
+    if (options.priority) {
+      plan.priority = options.priority;
       modified = true;
-      log('Removed status description');
-    } else {
-      log('No status description to remove');
+      log(`Updated priority to ${options.priority}`);
     }
-  }
 
-  // Add dependencies
-  if (options.dependsOn && options.dependsOn.length > 0) {
-    if (!plan.dependencies) {
-      plan.dependencies = [];
-    }
-    for (const dep of options.dependsOn) {
-      if (!plan.dependencies.includes(dep)) {
-        plan.dependencies.push(dep);
-        modified = true;
-        needsReferenceUpdate = true;
-        log(`Added dependency: ${dep}`);
-      } else {
-        log(`Dependency already exists: ${dep}`);
+    if (options.status) {
+      plan.status = options.status;
+      modified = true;
+      log(`Updated status to ${options.status}`);
+
+      if (!options.statusDescription && plan.statusDescription) {
+        delete plan.statusDescription;
+        log('Cleared status description (status changed)');
+      }
+
+      if (plan.uuid && (plan.status === 'done' || plan.status === 'cancelled')) {
+        shouldRemoveAssignment = true;
       }
     }
-  }
 
-  // Remove dependencies
-  if (options.noDependsOn && options.noDependsOn.length > 0) {
-    if (plan.dependencies) {
+    if (options.statusDescription) {
+      plan.statusDescription = options.statusDescription;
+      modified = true;
+      log('Updated status description');
+    }
+
+    if (options.noStatusDescription) {
+      if (plan.statusDescription !== undefined) {
+        delete plan.statusDescription;
+        modified = true;
+        log('Removed status description');
+      } else {
+        log('No status description to remove');
+      }
+    }
+
+    if (options.dependsOn?.length) {
+      const dependencies = new Set(plan.dependencies ?? []);
+      for (const dep of options.dependsOn) {
+        if (!context.planIdToUuid.has(dep)) {
+          throw new Error(`Dependency plan ${dep} not found`);
+        }
+        if (!dependencies.has(dep)) {
+          dependencies.add(dep);
+          modified = true;
+          log(`Added dependency: ${dep}`);
+        } else {
+          log(`Dependency already exists: ${dep}`);
+        }
+      }
+      plan.dependencies = [...dependencies];
+    }
+
+    if (options.noDependsOn?.length && plan.dependencies?.length) {
       const originalLength = plan.dependencies.length;
       plan.dependencies = plan.dependencies.filter((dep) => !options.noDependsOn!.includes(dep));
       if (plan.dependencies.length < originalLength) {
         modified = true;
-        needsReferenceUpdate = true;
         log(`Removed ${originalLength - plan.dependencies.length} dependencies`);
       }
     }
-  }
 
-  // Handle parent operations (set parent or remove parent)
-  if (options.parent !== undefined || options.noParent) {
-    // Load all plans once for both operations
-    const config = await getConfig();
-    const planDir = await resolveTasksDir(config);
-    ({ plans: allPlans } = await readAllPlans(planDir, false));
+    if (options.parent !== undefined || options.noParent) {
+      const currentPlanId = plan.id;
+      const currentParentId = plan.parent;
 
-    const currentPlanId = plan.id;
-    if (!currentPlanId) {
-      throw new Error('Current plan has no ID');
-    }
+      if (options.parent !== undefined) {
+        if (!context.planIdToUuid.has(options.parent)) {
+          throw new Error(`Parent plan with ID ${options.parent} not found`);
+        }
+        await syncIfMaterialized(options.parent, repoRoot);
+        if (currentParentId !== undefined && currentParentId !== options.parent) {
+          await syncIfMaterialized(currentParentId, repoRoot);
+        }
 
-    // Set parent
-    if (options.parent !== undefined) {
-      const parentPlan = allPlans.get(options.parent);
-      if (!parentPlan) {
-        throw new Error(`Parent plan with ID ${options.parent} not found`);
-      }
+        context = await resolveProjectContext(repoRoot);
+        if (wouldCreateParentCycle(context, options.parent, currentPlanId)) {
+          throw new Error(`Setting parent ${options.parent} would create a circular dependency`);
+        }
 
-      // Check for circular dependencies before making any changes
-      if (wouldCreateCircularDependency(allPlans, options.parent, currentPlanId)) {
-        throw new Error(`Setting parent ${options.parent} would create a circular dependency`);
-      }
+        if (currentParentId !== undefined && currentParentId !== options.parent) {
+          oldParentIdToUpdate = currentParentId;
+          log(`Removed ${currentPlanId} from old parent ${currentParentId}'s dependencies`);
+        }
 
-      // Handle changing parents - remove from old parent's dependencies if it exists
-      const oldParentId = plan.parent;
-      if (oldParentId !== undefined && oldParentId !== options.parent) {
-        const oldParentPlan = allPlans.get(oldParentId);
-        if (oldParentPlan && oldParentPlan.dependencies) {
-          const originalLength = oldParentPlan.dependencies.length;
-          oldParentPlan.dependencies = oldParentPlan.dependencies.filter(
-            (dep) => dep !== currentPlanId
-          );
-          if (oldParentPlan.dependencies.length < originalLength) {
-            oldParentPlan.updatedAt = new Date().toISOString();
-            const { updatedPlan: updatedOldParent, plansWithGeneratedUuids } = ensureReferences(
-              oldParentPlan,
-              allPlans
-            );
-            await writePlanFile(oldParentPlan.filename, updatedOldParent);
-            await writePlansWithGeneratedUuids(plansWithGeneratedUuids, allPlans);
-            log(`Removed ${currentPlanId} from old parent ${oldParentId}'s dependencies`);
-          }
+        if (currentParentId !== options.parent) {
+          newParentIdToUpdate = options.parent;
+          plan.parent = options.parent;
+          modified = true;
+          log(`Set parent to ${options.parent}`);
+          log(`Updated parent plan ${options.parent} to include dependency on ${currentPlanId}`);
         }
       }
 
-      // Add this plan's ID to the parent's dependencies (if not already present)
-      if (!parentPlan.dependencies) {
-        parentPlan.dependencies = [];
+      if (options.noParent) {
+        if (plan.parent !== undefined) {
+          await syncIfMaterialized(plan.parent, repoRoot);
+          oldParentIdToUpdate = plan.parent;
+          delete plan.parent;
+          modified = true;
+          log('Removed parent');
+        } else {
+          log('No parent to remove');
+        }
       }
-      if (!parentPlan.dependencies.includes(currentPlanId)) {
-        parentPlan.dependencies.push(currentPlanId);
-        parentPlan.updatedAt = new Date().toISOString();
+    }
 
-        // Write the updated parent plan with references
-        const { updatedPlan: updatedParent, plansWithGeneratedUuids } = ensureReferences(
-          parentPlan,
-          allPlans
-        );
-        await writePlanFile(parentPlan.filename, updatedParent);
-        await writePlansWithGeneratedUuids(plansWithGeneratedUuids, allPlans);
-        log(`Updated parent plan ${options.parent} to include dependency on ${currentPlanId}`);
+    if (options.discoveredFrom !== undefined) {
+      if (!context.planIdToUuid.has(options.discoveredFrom)) {
+        throw new Error(`DiscoveredFrom plan ${options.discoveredFrom} not found`);
       }
-
-      plan.parent = options.parent;
+      plan.discoveredFrom = options.discoveredFrom;
       modified = true;
-      needsReferenceUpdate = true;
-      log(`Set parent to ${options.parent}`);
-    }
-
-    // Remove parent
-    if (options.noParent) {
-      if (plan.parent !== undefined) {
-        const oldParentId = plan.parent;
-
-        // Remove this plan from the old parent's dependencies
-        const oldParentPlan = allPlans.get(oldParentId);
-        if (oldParentPlan && oldParentPlan.dependencies) {
-          const originalLength = oldParentPlan.dependencies.length;
-          oldParentPlan.dependencies = oldParentPlan.dependencies.filter(
-            (dep) => dep !== currentPlanId
-          );
-          if (oldParentPlan.dependencies.length < originalLength) {
-            oldParentPlan.updatedAt = new Date().toISOString();
-            const { updatedPlan: updatedOldParent, plansWithGeneratedUuids } = ensureReferences(
-              oldParentPlan,
-              allPlans
-            );
-            await writePlanFile(oldParentPlan.filename, updatedOldParent);
-            await writePlansWithGeneratedUuids(plansWithGeneratedUuids, allPlans);
-            log(`Removed ${currentPlanId} from parent ${oldParentId}'s dependencies`);
-          }
-        }
-
-        delete plan.parent;
+      log(`Set discoveredFrom to ${options.discoveredFrom}`);
+    } else if (options.noDiscoveredFrom) {
+      if (plan.discoveredFrom !== undefined) {
+        delete plan.discoveredFrom;
         modified = true;
-        needsReferenceUpdate = true;
-        log('Removed parent');
+        log('Removed discoveredFrom');
       } else {
-        log('No parent to remove');
+        log('No discoveredFrom to remove');
       }
     }
-  }
 
-  // Handle discoveredFrom operations (set discoveredFrom or remove discoveredFrom)
-  if (options.discoveredFrom !== undefined) {
-    plan.discoveredFrom = options.discoveredFrom;
-    modified = true;
-    needsReferenceUpdate = true;
-    log(`Set discoveredFrom to ${options.discoveredFrom}`);
-  } else if (options.noDiscoveredFrom) {
-    if (plan.discoveredFrom !== undefined) {
-      delete plan.discoveredFrom;
+    const needsTagConfig = Boolean(
+      (options.tag && options.tag.length > 0) || (options.noTag && options.noTag.length > 0)
+    );
+    const propertiesModified = updatePlanProperties(
+      plan,
+      {
+        rmfilter: options.rmfilter,
+        issue: options.issue,
+        doc: options.doc,
+        assign: options.assign,
+        tag: options.tag,
+        noTag: options.noTag,
+      },
+      needsTagConfig ? config : undefined
+    );
+    if (propertiesModified) {
       modified = true;
-      needsReferenceUpdate = true;
-      log('Removed discoveredFrom');
-    } else {
-      log('No discoveredFrom to remove');
     }
-  }
 
-  // Update properties using shared function
-  const needsTagConfig = Boolean(
-    (options.tag && options.tag.length > 0) || (options.noTag && options.noTag.length > 0)
-  );
-  const configForTags = needsTagConfig ? await getConfig() : undefined;
-  const propertiesModified = updatePlanProperties(
-    plan,
-    {
-      rmfilter: options.rmfilter,
-      issue: options.issue,
-      doc: options.doc,
-      assign: options.assign,
-      tag: options.tag,
-      noTag: options.noTag,
-    },
-    configForTags
-  );
-  if (propertiesModified) {
-    modified = true;
-  }
-
-  // Remove issue URLs
-  if (options.noIssue && options.noIssue.length > 0) {
-    if (plan.issue) {
+    if (options.noIssue?.length && plan.issue) {
       const originalLength = plan.issue.length;
       plan.issue = plan.issue.filter((url) => !options.noIssue!.includes(url));
       if (plan.issue.length < originalLength) {
@@ -288,84 +232,263 @@ export async function handleSetCommand(
         log(`Removed ${originalLength - plan.issue.length} issue URLs`);
       }
     }
-  }
 
-  // Remove documentation paths
-  if (options.noDoc && options.noDoc.length > 0) {
-    if (plan.docs) {
+    if (options.noDoc?.length && plan.docs) {
       const originalLength = plan.docs.length;
-      plan.docs = plan.docs.filter((url: string) => !options.noDoc!.includes(url));
+      plan.docs = plan.docs.filter((doc) => !options.noDoc!.includes(doc));
       if (plan.docs.length < originalLength) {
         modified = true;
         log(`Removed ${originalLength - plan.docs.length} documentation paths`);
       }
     }
-  }
 
-  // Remove assignedTo
-  if (options.noAssign) {
-    if (plan.assignedTo !== undefined) {
-      delete plan.assignedTo;
-      modified = true;
-      log('Removed assignedTo');
-    } else {
-      log('No assignedTo to remove');
+    if (options.noAssign) {
+      if (plan.assignedTo !== undefined) {
+        delete plan.assignedTo;
+        modified = true;
+        log('Removed assignedTo');
+      } else {
+        log('No assignedTo to remove');
+      }
     }
-  }
 
-  // Set epic
-  if (options.epic !== undefined) {
-    plan.epic = options.epic;
-    modified = true;
-    log(`Set epic to ${options.epic}`);
-  }
-
-  // Remove epic (set to false)
-  if (options.noEpic) {
-    if (plan.epic !== false) {
-      plan.epic = false;
+    if (options.epic !== undefined) {
+      plan.epic = options.epic;
       modified = true;
-      log('Set epic to false');
-    } else {
-      log('Epic is already false');
+      log(`Set epic to ${options.epic}`);
     }
-  }
 
-  if (options.simple !== undefined) {
-    plan.simple = options.simple;
-    modified = true;
-    log(`Set simple to ${options.simple}`);
-  }
+    if (options.noEpic) {
+      if (plan.epic !== false) {
+        plan.epic = false;
+        modified = true;
+        log('Set epic to false');
+      } else {
+        log('Epic is already false');
+      }
+    }
 
-  if (modified) {
+    if (options.simple !== undefined) {
+      plan.simple = options.simple;
+      modified = true;
+      log(`Set simple to ${options.simple}`);
+    }
+
+    if (!modified) {
+      log('No changes made');
+      return;
+    }
+
+    const parentIds = [oldParentIdToUpdate, newParentIdToUpdate];
+    const parentMaterializedIds = await collectMaterializedIds(repoRoot, parentIds);
+    const parentFileWrites = await collectLegacyFileWrites(context, tasksDir, parentIds);
+
     plan.updatedAt = new Date().toISOString();
+    const db = getDatabase();
+    const idToUuid = new Map(context.planIdToUuid);
 
-    if (needsReferenceUpdate) {
-      // Load allPlans if not already loaded (parent block loads it)
-      if (!allPlans) {
-        const config = await getConfig();
-        const planDir = await resolveTasksDir(config);
-        ({ plans: allPlans } = await readAllPlans(planDir, false));
+    const writePlans = db.transaction(() => {
+      const childRow = getPlanByPlanId(db, context.projectId, plan.id);
+      if (!childRow) {
+        throw new Error(`Plan ${plan.id} not found`);
+      }
+      const { updatedPlan } = ensureReferences(plan, { planIdToUuid: idToUuid });
+      upsertPlan(db, context.projectId, {
+        ...toPlanUpsertInput(updatedPlan, childRow.filename, idToUuid),
+        forceOverwrite: true,
+      });
+
+      if (oldParentIdToUpdate !== undefined) {
+        const oldParentRow = getPlanByPlanId(db, context.projectId, oldParentIdToUpdate);
+        if (!oldParentRow) {
+          throw new Error(`Plan ${oldParentIdToUpdate} not found`);
+        }
+        const oldParentPlan = planRowForTransaction(oldParentRow, invertPlanIdToUuidMap(idToUuid));
+        oldParentPlan.dependencies = (oldParentPlan.dependencies ?? []).filter(
+          (dep) => dep !== plan.id
+        );
+        oldParentPlan.updatedAt = new Date().toISOString();
+        const { updatedPlan: updatedOldParent } = ensureReferences(oldParentPlan, {
+          planIdToUuid: idToUuid,
+        });
+        upsertPlan(db, context.projectId, {
+          ...toPlanUpsertInput(updatedOldParent, oldParentRow.filename, idToUuid),
+          forceOverwrite: true,
+        });
       }
 
-      const { updatedPlan, plansWithGeneratedUuids } = ensureReferences(plan, allPlans);
-      await writePlanFile(options.planFile, updatedPlan);
-      await writePlansWithGeneratedUuids(plansWithGeneratedUuids, allPlans);
-    } else {
-      await writePlanFile(options.planFile, plan);
+      if (newParentIdToUpdate !== undefined) {
+        const newParentRow = getPlanByPlanId(db, context.projectId, newParentIdToUpdate);
+        if (!newParentRow) {
+          throw new Error(`Plan ${newParentIdToUpdate} not found`);
+        }
+        const newParentPlan = planRowForTransaction(newParentRow, invertPlanIdToUuidMap(idToUuid));
+        const dependencies = new Set(newParentPlan.dependencies ?? []);
+        dependencies.add(plan.id);
+        newParentPlan.dependencies = [...dependencies];
+        if (newParentPlan.status === 'done') {
+          newParentPlan.status = 'in_progress';
+        }
+        newParentPlan.updatedAt = new Date().toISOString();
+        const { updatedPlan: updatedNewParent } = ensureReferences(newParentPlan, {
+          planIdToUuid: idToUuid,
+        });
+        upsertPlan(db, context.projectId, {
+          ...toPlanUpsertInput(updatedNewParent, newParentRow.filename, idToUuid),
+          forceOverwrite: true,
+        });
+      }
+    });
+    writePlans.immediate();
+
+    const freshContext = await resolveProjectContext(repoRoot);
+    const refreshedPlan = (
+      await resolvePlanFromDb(plan.uuid ?? String(plan.id), repoRoot, {
+        context: freshContext,
+      })
+    ).plan;
+
+    mergeYamlPassthroughFields(refreshedPlan, plan);
+
+    const { updatedPlan: refreshedPlanWithReferences } = ensureReferences(refreshedPlan, {
+      planIdToUuid: freshContext.planIdToUuid,
+    });
+
+    if (
+      outputPath &&
+      outputPath !== getMaterializedPlanPath(repoRoot, refreshedPlanWithReferences.id)
+    ) {
+      const filePlan = await readPlanFile(outputPath);
+      mergeYamlPassthroughFields(refreshedPlanWithReferences, filePlan);
+      await writePlanFile(outputPath, refreshedPlanWithReferences, {
+        cwdForIdentity: repoRoot,
+        context: freshContext,
+        skipDb: true,
+        skipUpdatedAt: true,
+      });
     }
 
-    log(`Plan ${options.planFile} updated successfully`);
+    for (const [parentId, filePath] of parentFileWrites) {
+      const refreshedParent = (
+        await resolvePlanFromDb(String(parentId), repoRoot, {
+          context: freshContext,
+        })
+      ).plan;
+      const { updatedPlan: refreshedParentWithReferences } = ensureReferences(refreshedParent, {
+        planIdToUuid: freshContext.planIdToUuid,
+      });
+      const filePlan = await readPlanFile(filePath);
+      mergeYamlPassthroughFields(refreshedParentWithReferences, filePlan);
+      await writePlanFile(filePath, refreshedParentWithReferences, {
+        cwdForIdentity: repoRoot,
+        context: freshContext,
+        skipDb: true,
+        skipUpdatedAt: true,
+      });
+    }
+
+    for (const parentId of parentMaterializedIds) {
+      await materializePlan(parentId, repoRoot, { context: freshContext });
+    }
+
+    log(`Plan ${refreshedPlanWithReferences.id} updated successfully`);
 
     if (shouldRemoveAssignment) {
-      await removePlanAssignment(plan, path.dirname(options.planFile));
+      await removePlanAssignment(refreshedPlanWithReferences, repoRoot);
     }
 
-    if (shouldCheckParentCompletion && plan.parent) {
-      const config = await getConfig();
-      await checkAndMarkParentDone(plan.parent, config, path.dirname(options.planFile));
+    const shouldCheckParentCompletion =
+      Boolean(refreshedPlanWithReferences.parent) &&
+      (refreshedPlanWithReferences.status === 'done' ||
+        refreshedPlanWithReferences.status === 'cancelled');
+    if (shouldCheckParentCompletion && refreshedPlanWithReferences.parent) {
+      await checkAndMarkParentDone(refreshedPlanWithReferences.parent, config, {
+        baseDir: repoRoot,
+      });
     }
-  } else {
-    log('No changes made');
+  });
+}
+
+function getRequiredPlanRow(context: ProjectContext, planId: number): PlanRow {
+  const row = context.rows.find((candidate) => candidate.plan_id === planId);
+  if (!row) {
+    throw new Error(`Plan ${planId} not found`);
   }
+  return row;
+}
+
+function wouldCreateParentCycle(
+  context: ProjectContext,
+  candidateParentId: number,
+  planId: number
+): boolean {
+  let currentId: number | undefined = candidateParentId;
+  while (currentId !== undefined) {
+    if (currentId === planId) {
+      return true;
+    }
+    const row = context.rows.find((candidate) => candidate.plan_id === currentId);
+    if (!row?.parent_uuid) {
+      return false;
+    }
+    currentId = context.uuidToPlanId.get(row.parent_uuid);
+  }
+  return false;
+}
+
+async function syncIfMaterialized(planId: number, repoRoot: string): Promise<void> {
+  const filePath = getMaterializedPlanPath(repoRoot, planId);
+  const exists = await Bun.file(filePath)
+    .stat()
+    .then((stats) => stats.isFile())
+    .catch(() => false);
+  if (exists) {
+    await syncMaterializedPlan(planId, repoRoot);
+  }
+}
+
+async function collectMaterializedIds(
+  repoRoot: string,
+  planIds: Array<number | undefined>
+): Promise<Set<number>> {
+  const result = new Set<number>();
+  for (const planId of planIds) {
+    if (planId === undefined) {
+      continue;
+    }
+    const filePath = getMaterializedPlanPath(repoRoot, planId);
+    const exists = await Bun.file(filePath)
+      .stat()
+      .then((stats) => stats.isFile())
+      .catch(() => false);
+    if (exists) {
+      result.add(planId);
+    }
+  }
+  return result;
+}
+
+async function collectLegacyFileWrites(
+  context: ProjectContext,
+  tasksDir: string,
+  planIds: Array<number | undefined>
+): Promise<Map<number, string>> {
+  const result = new Map<number, string>();
+  for (const planId of planIds) {
+    if (planId === undefined) {
+      continue;
+    }
+    const row = getRequiredPlanRow(context, planId);
+    const legacyPath = path.isAbsolute(row.filename)
+      ? row.filename
+      : path.join(tasksDir, row.filename);
+    const exists = await Bun.file(legacyPath)
+      .stat()
+      .then((stats) => stats.isFile())
+      .catch(() => false);
+    if (exists) {
+      result.set(planId, legacyPath);
+    }
+  }
+  return result;
 }

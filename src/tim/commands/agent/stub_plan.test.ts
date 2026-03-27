@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { ModuleMocker, stringifyPlanWithFrontmatter } from '../../../testing.js';
-import { clearPlanCache, readPlanFile } from '../../plans.js';
+import { ModuleMocker } from '../../../testing.js';
+import { clearPlanCache, readPlanFile, writePlanFile } from '../../plans.js';
 import type { PlanSchema } from '../../planSchema.js';
 
 describe('executeStubPlan', () => {
@@ -26,6 +26,10 @@ describe('executeStubPlan', () => {
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'stub-plan-test-'));
     planFile = path.join(tempDir, 'plan.md');
+    await Bun.$`git init`.cwd(tempDir).quiet();
+    await Bun.$`git remote add origin https://example.com/acme/stub-plan-test.git`
+      .cwd(tempDir)
+      .quiet();
 
     const plan: PlanSchema = {
       id: 242,
@@ -36,7 +40,7 @@ describe('executeStubPlan', () => {
       tasks: [],
       updatedAt: new Date().toISOString(),
     };
-    await fs.writeFile(planFile, stringifyPlanWithFrontmatter(plan));
+    await writePlanFile(planFile, plan, { cwdForIdentity: tempDir });
 
     await moduleMocker.mock('../../../logging.js', () => ({
       log: mock(() => {}),

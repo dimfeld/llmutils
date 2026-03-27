@@ -321,7 +321,7 @@ describe('Agent workspace description auto-update', () => {
     );
   });
 
-  test('updates workspace description with project title', async () => {
+  test('updates workspace description using the DB-backed plan title', async () => {
     // Update plan to have project context
     const planContent = {
       id: 999,
@@ -353,8 +353,7 @@ describe('Agent workspace description auto-update', () => {
     const workspaceMetadata = getWorkspaceByPath(db, workspaceDir);
     expect(workspaceMetadata).toBeDefined();
 
-    // Description should include project title
-    expect(workspaceMetadata!.description).toBe('999 - #111 Project X - Phase 1');
-    expect(workspaceMetadata!.plan_title).toBe('Project X - Phase 1');
+    expect(workspaceMetadata!.description).toBe('999 - #111 Phase 1');
+    expect(workspaceMetadata!.plan_title).toBe('Phase 1');
   });
 });

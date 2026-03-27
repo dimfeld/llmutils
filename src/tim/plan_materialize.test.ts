@@ -22,6 +22,7 @@ import {
   getMaterializedRefPath,
   materializePlan,
   materializeRelatedPlans,
+  resolveProjectContext,
   syncMaterializedPlan,
   withPlanAutoSync,
 } from './plan_materialize.js';
@@ -47,6 +48,7 @@ describe('tim plan_materialize', () => {
   let tempDir: string;
   let repoDir: string;
   let originalXdgConfigHome: string | undefined;
+  let originalGitConfigGlobal: string | undefined;
 
   beforeEach(async () => {
     clearAllTimCaches();
@@ -60,6 +62,9 @@ describe('tim plan_materialize', () => {
 
     originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
     process.env.XDG_CONFIG_HOME = path.join(tempDir, 'xdg');
+    originalGitConfigGlobal = process.env.GIT_CONFIG_GLOBAL;
+    process.env.GIT_CONFIG_GLOBAL = path.join(tempDir, 'gitconfig-global');
+    await fs.writeFile(process.env.GIT_CONFIG_GLOBAL, '', 'utf8');
   });
 
   afterEach(async () => {
@@ -72,6 +77,12 @@ describe('tim plan_materialize', () => {
       delete process.env.XDG_CONFIG_HOME;
     } else {
       process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
+    }
+
+    if (originalGitConfigGlobal === undefined) {
+      delete process.env.GIT_CONFIG_GLOBAL;
+    } else {
+      process.env.GIT_CONFIG_GLOBAL = originalGitConfigGlobal;
     }
 
     await fs.rm(tempDir, { recursive: true, force: true });
@@ -170,9 +181,11 @@ describe('tim plan_materialize', () => {
     await seedProject();
 
     const materializeDir = await ensureMaterializeDir(repoDir);
-    expect(await fs.readFile(path.join(materializeDir, '.gitignore'), 'utf8')).toBe(
-      '*.plan.md\n*.ref.md\n'
-    );
+    const infoExcludePath = path.join(repoDir, '.git', 'info', 'exclude');
+    expect(await fs.readFile(infoExcludePath, 'utf8')).toContain('.tim/plans\n');
+    await expect(fs.access(path.join(materializeDir, '.gitignore'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
 
     const planPath = await materializePlan(3, repoDir);
     expect(planPath).toBe(getMaterializedPlanPath(repoDir, 3));
@@ -224,6 +237,42 @@ describe('tim plan_materialize', () => {
     expect(dependencyRef.title).toBe('Dependency plan');
     expect(childRef.parent).toBe(3);
     expect(siblingRef.parent).toBe(1);
+  });
+
+  test('ensureMaterializeDir does not duplicate .tim/plans in .git/info/exclude', async () => {
+    const infoExcludePath = path.join(repoDir, '.git', 'info', 'exclude');
+    await fs.appendFile(infoExcludePath, '\n.tim/plans\n');
+
+    await ensureMaterializeDir(repoDir);
+
+    const lines = (await fs.readFile(infoExcludePath, 'utf8'))
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+    expect(lines.filter((line) => line === '.tim/plans')).toHaveLength(1);
+  });
+
+  test('ensureMaterializeDir skips updating .git/info/exclude when core.excludesfile already ignores .tim/plans', async () => {
+    const globalExcludePath = path.join(tempDir, 'global-gitignore');
+    await fs.writeFile(globalExcludePath, '.tim/plans\n', 'utf8');
+    await Bun.$`git config core.excludesfile ${globalExcludePath}`.cwd(repoDir).quiet();
+    const infoExcludePath = path.join(repoDir, '.git', 'info', 'exclude');
+    const before = await fs.readFile(infoExcludePath, 'utf8');
+
+    const materializeDir = await ensureMaterializeDir(repoDir);
+
+    expect(materializeDir).toBe(path.join(repoDir, '.tim', 'plans'));
+    expect(await fs.readFile(infoExcludePath, 'utf8')).toBe(before);
+    await expect(fs.access(path.join(materializeDir, '.gitignore'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  test('resolveProjectContext includes the max numeric plan id', async () => {
+    await seedProject();
+
+    const context = await resolveProjectContext(repoDir);
+    expect(context.maxNumericId).toBe(5);
   });
 
   test('syncMaterializedPlan syncs edited materialized files back into the database', async () => {
@@ -384,6 +433,62 @@ describe('tim plan_materialize', () => {
     expect(getPlanByPlanId(db, project.id, 3)?.uuid).toBe('33333333-3333-4333-8333-333333333333');
   });
 
+  test('syncMaterializedPlan does not overwrite newer DB state with a stale materialized file', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    const stalePlan = await readPlanFile(planPath);
+    stalePlan.title = 'Older title from materialized file';
+    stalePlan.updatedAt = '2026-03-24T00:00:00.000Z';
+    await writePlanFile(planPath, stalePlan, { skipDb: true, skipUpdatedAt: true });
+
+    db.prepare(
+      'UPDATE plan SET title = ?, updated_at = ? WHERE project_id = ? AND plan_id = ?'
+    ).run('Newer title from DB', '2026-03-25T00:00:00.000Z', project.id, 3);
+
+    await syncMaterializedPlan(3, repoDir);
+
+    expect(getPlanByPlanId(db, project.id, 3)?.title).toBe('Newer title from DB');
+  });
+
+  test('syncMaterializedPlan skips file-to-DB sync when the materialized file is missing updatedAt', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    const stalePlan = await readPlanFile(planPath);
+    stalePlan.title = 'Title from timestamp-less materialized file';
+    stalePlan.updatedAt = undefined;
+    await writePlanFile(planPath, stalePlan, { skipDb: true, skipUpdatedAt: true });
+
+    db.prepare(
+      'UPDATE plan SET title = ?, updated_at = ? WHERE project_id = ? AND plan_id = ?'
+    ).run('Authoritative title from DB', '2026-03-25T00:00:00.000Z', project.id, 3);
+
+    const returnedPath = await syncMaterializedPlan(3, repoDir);
+
+    expect(returnedPath).toBe(planPath);
+    expect(getPlanByPlanId(db, project.id, 3)?.title).toBe('Authoritative title from DB');
+  });
+
+  test('syncMaterializedPlan updates the DB when the materialized file is newer', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    db.prepare(
+      'UPDATE plan SET title = ?, updated_at = ? WHERE project_id = ? AND plan_id = ?'
+    ).run('Older title from DB', '2026-03-24T00:00:00.000Z', project.id, 3);
+
+    const newerPlan = await readPlanFile(planPath);
+    newerPlan.title = 'Newer title from materialized file';
+    newerPlan.updatedAt = '2026-03-25T00:00:00.000Z';
+    await writePlanFile(planPath, newerPlan, { skipDb: true, skipUpdatedAt: true });
+
+    await syncMaterializedPlan(3, repoDir);
+
+    const saved = getPlanByPlanId(db, project.id, 3);
+    expect(saved?.title).toBe('Newer title from materialized file');
+  });
+
   test('withPlanAutoSync does not materialize a file when none exists yet', async () => {
     const { db, project } = await seedProject();
     const planPath = getMaterializedPlanPath(repoDir, 3);
@@ -485,13 +590,17 @@ describe('tim plan_materialize', () => {
     const cancelledPlanPath = await materializePlan(4, repoDir);
     const orphanPlanPath = getMaterializedPlanPath(repoDir, 999);
     const validRefPath = getMaterializedRefPath(repoDir, 1);
-    await writePlanFile(orphanPlanPath, {
-      id: 999,
-      uuid: '99999999-9999-4999-8999-999999999999',
-      title: 'Orphaned materialized plan',
-      filename: '999.plan.md',
-      tasks: [],
-    });
+    await writePlanFile(
+      orphanPlanPath,
+      {
+        id: 999,
+        uuid: '99999999-9999-4999-8999-999999999999',
+        title: 'Orphaned materialized plan',
+        filename: '999.plan.md',
+        tasks: [],
+      },
+      { skipDb: true }
+    );
     await materializePlan(1, repoDir);
     await materializeRelatedPlans(3, repoDir);
 

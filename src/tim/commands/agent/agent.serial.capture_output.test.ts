@@ -50,16 +50,25 @@ describe('timAgent serial captureOutput integration', () => {
       })),
     }));
 
-    // Mock plans
+    // Mock plan resolution and plan reads/writes
+    await moduleMocker.mock('../../ensure_plan_in_db.js', () => ({
+      resolvePlanFromDbOrSyncFile: mock(async (_p: string) => ({
+        plan: {
+          id: 1,
+          title: 'P',
+          tasks: [{ title: 'T1', steps: [{ prompt: 'p', done: false }] }],
+        },
+        planPath: '/tmp/plan.yml',
+      })),
+    }));
+
     await moduleMocker.mock('../../plans.js', () => ({
-      resolvePlanFile: mock(async (_p: string) => '/tmp/plan.yml'),
       readPlanFile: mock(async () => ({
         id: 1,
         title: 'P',
         tasks: [{ title: 'T1', steps: [{ prompt: 'p', done: false }] }],
       })),
       writePlanFile: mock(async (_p: string, _data: any) => {}),
-      findNextPlan: mock(async () => null),
     }));
 
     await moduleMocker.mock('../../plans/mark_done.js', () => ({

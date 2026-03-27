@@ -7,6 +7,7 @@ import { getDefaultConfig } from '../configSchema.js';
 import type { PlanSchema } from '../planSchema.js';
 import {
   writePlanFile,
+  writePlanToDb,
   readPlanFile,
   clearPlanCache,
   readAllPlans,
@@ -55,6 +56,7 @@ describe('tim MCP generate mode helpers', () => {
   beforeEach(async () => {
     clearPlanCache();
     tmpDir = await mkdtemp(path.join(os.tmpdir(), 'tim-mcp-'));
+    await Bun.$`git init`.cwd(tmpDir).quiet();
     planPath = path.join(tmpDir, '99999-test.plan.md');
     await writePlanFile(planPath, basePlan);
 
@@ -247,6 +249,58 @@ describe('tim MCP generate mode helpers', () => {
     expect(messageText).toContain(
       '- Done Sibling (status: done, path: 99997-done-sibling.plan.md)'
     );
+  });
+
+  test('loadResearchPrompt includes DB-only parent and sibling context', async () => {
+    await writePlanToDb(
+      {
+        ...basePlan,
+        id: 99998,
+        title: 'Parent Plan',
+        goal: 'Coordinate the broader feature',
+        details: 'Parent-level context stored only in the DB.',
+        filename: '99998-parent.plan.md',
+      },
+      { cwdForIdentity: tmpDir }
+    );
+    await writePlanToDb(
+      {
+        ...basePlan,
+        id: 99997,
+        title: 'Done Sibling',
+        status: 'done',
+        parent: 99998,
+        filename: '99997-done-sibling.plan.md',
+      },
+      { cwdForIdentity: tmpDir }
+    );
+    await writePlanToDb(
+      {
+        ...basePlan,
+        id: 99996,
+        title: 'Pending Sibling',
+        status: 'pending',
+        parent: 99998,
+        filename: '99996-pending-sibling.plan.md',
+      },
+      { cwdForIdentity: tmpDir }
+    );
+    await writePlanFile(planPath, {
+      ...basePlan,
+      parent: 99998,
+    });
+
+    const prompt = await loadResearchPrompt({ plan: planPath }, context);
+    const messageText = prompt.messages[0]?.content?.text ?? '';
+
+    expect(messageText).toContain('# Parent Plan Context');
+    expect(messageText).toContain('Title: Parent Plan');
+    expect(messageText).toContain('Parent-level context stored only in the DB.');
+    expect(messageText).toContain('# Sibling Plans');
+    expect(messageText).toContain('- Pending Sibling (status: pending)');
+    expect(messageText).toContain('- Done Sibling (status: done)');
+    expect(messageText).not.toContain('path: 99996-pending-sibling.plan.md');
+    expect(messageText).not.toContain('path: 99997-done-sibling.plan.md');
   });
 
   test('loadPlanPrompt returns plan details and wait instruction', async () => {
@@ -1000,6 +1054,7 @@ describe('mcpListReadyPlans', () => {
   beforeEach(async () => {
     clearPlanCache();
     tmpDir = await mkdtemp(path.join(os.tmpdir(), 'tim-mcp-ready-'));
+    await Bun.$`git init`.cwd(tmpDir).quiet();
 
     const config = getDefaultConfig();
     config.paths = { tasks: tmpDir };
@@ -1020,6 +1075,12 @@ describe('mcpListReadyPlans', () => {
   async function createPlan(plan: PlanSchema) {
     const planPath = path.join(tmpDir, `${plan.id}-test.plan.md`);
     await writePlanFile(planPath, plan);
+  }
+
+  function createdPlanId(result: string): number {
+    const match = result.match(/Created plan (\d+)/);
+    expect(match).toBeDefined();
+    return Number(match![1]);
   }
 
   // Test 1: Returns all ready plans as JSON
@@ -1326,6 +1387,17 @@ describe('mcpListReadyPlans', () => {
   // Test 7: Includes all required fields
   test('includes all required fields', async () => {
     await createPlan({
+      id: 99,
+      title: 'Dependency',
+      goal: 'Foundation',
+      status: 'done',
+      priority: 'medium',
+      tasks: [{ title: 'Task', description: 'Done', done: true }],
+      dependencies: [],
+      createdAt: new Date().toISOString(),
+    });
+
+    await createPlan({
       id: 1,
       title: 'Test Plan',
       goal: 'Ship a high-quality feature',
@@ -1339,18 +1411,6 @@ describe('mcpListReadyPlans', () => {
       assignedTo: 'alice',
       createdAt: '2025-01-15T10:30:00Z',
       updatedAt: '2025-01-20T14:22:00Z',
-    });
-
-    // Create the dependency as done so plan 1 is ready
-    await createPlan({
-      id: 99,
-      title: 'Dependency',
-      goal: 'Foundation',
-      status: 'done',
-      priority: 'medium',
-      tasks: [{ title: 'Task', description: 'Done', done: true }],
-      dependencies: [],
-      createdAt: new Date().toISOString(),
     });
 
     const args = listReadyPlansParameters.parse({});
@@ -1523,7 +1583,9 @@ describe('mcpListReadyPlans', () => {
     expect(parsed.count).toBe(1);
     expect(parsed.plans[0].id).toBe(3);
     expect(parsed.plans[0].title).toBe('Ready Plan');
-    expect(parsed.plans[0].dependencies).toEqual([1, 2]);
+    expect([...(parsed.plans[0].dependencies ?? [])].sort((a: number, b: number) => a - b)).toEqual(
+      [1, 2]
+    );
   });
 
   test('filters ready plans by tags using OR logic', async () => {
@@ -1665,6 +1727,7 @@ describe('Helper Functions', () => {
   beforeEach(async () => {
     clearPlanCache();
     tmpDir = await mkdtemp(path.join(os.tmpdir(), 'tim-helpers-'));
+    await Bun.$`git init`.cwd(tmpDir).quiet();
 
     // Isolate config directory to avoid updating real shared storage
     const fakeConfigDir = path.join(tmpDir, 'config');
@@ -1809,6 +1872,7 @@ describe('mcpCreatePlan', () => {
     }));
 
     tmpDir = await mkdtemp(path.join(os.tmpdir(), 'tim-create-'));
+    await Bun.$`git init`.cwd(tmpDir).quiet();
 
     const config = getDefaultConfig();
     config.paths = { tasks: tmpDir };
@@ -1831,6 +1895,12 @@ describe('mcpCreatePlan', () => {
     await writePlanFile(planPath, plan);
   }
 
+  function createdPlanId(result: string): number {
+    const match = result.match(/Created plan (\d+)/);
+    expect(match).toBeDefined();
+    return Number(match![1]);
+  }
+
   test('creates valid plan file with minimal args', async () => {
     const { mcpCreatePlan, createPlanParameters } = await import('./generate_mode.js');
 
@@ -1841,30 +1911,26 @@ describe('mcpCreatePlan', () => {
     const result = await mcpCreatePlan(args, context);
 
     expect(result).toContain('Created plan');
-    expect(result).toContain('test-plan.plan.md');
-
-    // Extract the plan ID from the result message
-    const match = result.match(/Created plan (\d+) at (\d+-test-plan\.plan\.md)/);
-    expect(match).toBeDefined();
-    const planId = parseInt(match![1]);
-    const filename = match![2];
-
-    const planPath = path.join(tmpDir, filename);
-    const plan = await readPlanFile(planPath);
+    const planId = createdPlanId(result);
+    const { plan } = await resolvePlan(String(planId), context);
 
     expect(plan.id).toBe(planId);
     expect(plan.title).toBe('Test Plan');
     expect(plan.status).toBe('pending');
     expect(plan.tasks).toEqual([]);
     expect(plan.dependencies).toEqual([]);
-    expect(plan.epic).toBe(false);
-    expect(plan.temp).toBe(false);
+    expect(plan.epic).toBeUndefined();
+    expect(plan.temp).toBeUndefined();
     expect(plan.createdAt).toBeDefined();
     expect(plan.updatedAt).toBeDefined();
   });
 
   test('sets all optional properties correctly', async () => {
     const { mcpCreatePlan, createPlanParameters } = await import('./generate_mode.js');
+
+    await createPlan({ id: 5, title: 'Source Plan', status: 'pending', tasks: [] });
+    await createPlan({ id: 10, title: 'Dependency A', status: 'pending', tasks: [] });
+    await createPlan({ id: 20, title: 'Dependency B', status: 'pending', tasks: [] });
 
     const args = createPlanParameters.parse({
       title: 'Feature Plan',
@@ -1883,29 +1949,21 @@ describe('mcpCreatePlan', () => {
     const result = await mcpCreatePlan(args, context);
 
     expect(result).toContain('Created plan');
-    expect(result).toContain('feature-plan.plan.md');
-
-    // Extract the plan ID from the result message
-    const match = result.match(/Created plan (\d+) at (\d+-feature-plan\.plan\.md)/);
-    expect(match).toBeDefined();
-    const planId = parseInt(match![1]);
-    const filename = match![2];
-
-    const planPath = path.join(tmpDir, filename);
-    const plan = await readPlanFile(planPath);
+    const planId = createdPlanId(result);
+    const { plan } = await resolvePlan(String(planId), context);
 
     expect(plan.id).toBe(planId);
     expect(plan.title).toBe('Feature Plan');
     expect(plan.goal).toBe('Implement new feature');
     expect(plan.details).toBe('## Overview\nThis is a test plan.');
     expect(plan.priority).toBe('high');
-    expect(plan.dependencies).toEqual([10, 20]);
+    expect([...(plan.dependencies ?? [])].sort((a, b) => a - b)).toEqual([10, 20]);
     expect(plan.discoveredFrom).toBe(5);
     expect(plan.assignedTo).toBe('alice');
     expect(plan.issue).toEqual(['https://github.com/org/repo/issues/123']);
     expect(plan.docs).toEqual(['docs/feature.md']);
     expect(plan.epic).toBe(true);
-    expect(plan.temp).toBe(false);
+    expect(plan.temp).toBeUndefined();
   });
 
   test('maps deprecated container flag to epic', async () => {
@@ -1919,13 +1977,7 @@ describe('mcpCreatePlan', () => {
     const result = await mcpCreatePlan(args, context);
 
     expect(result).toContain('Created plan');
-
-    const match = result.match(/Created plan (\d+) at (\d+-legacy-container-plan\.plan\.md)/);
-    expect(match).toBeDefined();
-    const filename = match![2];
-
-    const planPath = path.join(tmpDir, filename);
-    const plan = await readPlanFile(planPath);
+    const { plan } = await resolvePlan(String(createdPlanId(result)), context);
 
     expect(plan.title).toBe('Legacy Container Plan');
     expect(plan.epic).toBe(true);
@@ -1943,16 +1995,10 @@ describe('mcpCreatePlan', () => {
     const result = await mcpCreatePlan(args, context);
 
     expect(result).toContain('Created plan');
-
-    const match = result.match(/Created plan (\d+) at (\d+-explicit-epic-plan\.plan\.md)/);
-    expect(match).toBeDefined();
-    const filename = match![2];
-
-    const planPath = path.join(tmpDir, filename);
-    const plan = await readPlanFile(planPath);
+    const { plan } = await resolvePlan(String(createdPlanId(result)), context);
 
     expect(plan.title).toBe('Explicit Epic Plan');
-    expect(plan.epic).toBe(false);
+    expect(plan.epic).toBeUndefined();
   });
 
   test('rejects non-boolean container values', async () => {
@@ -1974,10 +2020,8 @@ describe('mcpCreatePlan', () => {
       tags: ['Frontend', 'backend', ' FRONTEND '],
     });
 
-    await mcpCreatePlan(args, context);
-
-    const planPath = path.join(tmpDir, '1-tagged-plan.plan.md');
-    const plan = await readPlanFile(planPath);
+    const result = await mcpCreatePlan(args, context);
+    const { plan } = await resolvePlan(String(createdPlanId(result)), context);
     expect(plan.tags).toEqual(['backend', 'frontend']);
   });
 
@@ -2014,14 +2058,15 @@ describe('mcpCreatePlan', () => {
     });
 
     const result = await mcpCreatePlan(args, context);
+    const planId = createdPlanId(result);
 
-    expect(result).toContain('Created plan 11 at');
+    expect(planId).toBe(11);
 
     // Parent plan should be modified to maintain bidirectional relationship
-    const parentPlan = await readPlanFile(path.join(tmpDir, '10-test.plan.md'));
+    const { plan: parentPlan } = await resolvePlan('10', context);
     expect(parentPlan.dependencies).toContain(11);
 
-    const childPlan = await readPlanFile(path.join(tmpDir, '11-child-plan.plan.md'));
+    const { plan: childPlan } = await resolvePlan(String(planId), context);
     expect(childPlan.parent).toBe(10);
   });
 
@@ -2030,23 +2075,23 @@ describe('mcpCreatePlan', () => {
 
     const args1 = createPlanParameters.parse({ title: 'Plan 1' });
     const result1 = await mcpCreatePlan(args1, context);
-    expect(result1).toContain('Created plan 1 at');
+    expect(createdPlanId(result1)).toBe(1);
 
     clearPlanCache();
 
     const args2 = createPlanParameters.parse({ title: 'Plan 2' });
     const result2 = await mcpCreatePlan(args2, context);
-    expect(result2).toContain('Created plan 2 at');
+    expect(createdPlanId(result2)).toBe(2);
 
     clearPlanCache();
 
     const args3 = createPlanParameters.parse({ title: 'Plan 3' });
     const result3 = await mcpCreatePlan(args3, context);
-    expect(result3).toContain('Created plan 3 at');
+    expect(createdPlanId(result3)).toBe(3);
 
-    const plan1 = await readPlanFile(path.join(tmpDir, '1-plan-1.plan.md'));
-    const plan2 = await readPlanFile(path.join(tmpDir, '2-plan-2.plan.md'));
-    const plan3 = await readPlanFile(path.join(tmpDir, '3-plan-3.plan.md'));
+    const { plan: plan1 } = await resolvePlan('1', context);
+    const { plan: plan2 } = await resolvePlan('2', context);
+    const { plan: plan3 } = await resolvePlan('3', context);
 
     expect(plan1.id).toBe(1);
     expect(plan2.id).toBe(2);
@@ -2059,9 +2104,7 @@ describe('mcpCreatePlan', () => {
     const args = createPlanParameters.parse({ title: 'My Test Plan' });
     const result = await mcpCreatePlan(args, context);
 
-    expect(result).toContain('Created plan 1 at');
-    expect(result).toContain('1-my-test-plan.plan.md');
-    expect(result).not.toContain(tmpDir); // Should be relative path
+    expect(result).toBe('Created plan 1');
   });
 
   test('handles special characters in title for filename', async () => {
@@ -2070,11 +2113,8 @@ describe('mcpCreatePlan', () => {
     const args = createPlanParameters.parse({ title: 'Fix: Auth & Sessions!' });
     const result = await mcpCreatePlan(args, context);
 
-    expect(result).toContain('Created plan 1 at');
-    expect(result).toContain('1-fix-auth-sessions.plan.md');
-
-    const planPath = path.join(tmpDir, '1-fix-auth-sessions.plan.md');
-    const plan = await readPlanFile(planPath);
+    expect(createdPlanId(result)).toBe(1);
+    const { plan } = await resolvePlan('1', context);
     expect(plan.title).toBe('Fix: Auth & Sessions!');
   });
 
@@ -2102,15 +2142,13 @@ describe('mcpCreatePlan', () => {
 
     const args = createPlanParameters.parse({ title: 'Minimal Plan' });
     await mcpCreatePlan(args, context);
-
-    const planPath = path.join(tmpDir, '1-minimal-plan.plan.md');
-    const plan = await readPlanFile(planPath);
+    const { plan } = await resolvePlan('1', context);
 
     expect(plan.issue).toEqual([]);
     expect(plan.docs).toEqual([]);
     expect(plan.dependencies).toEqual([]);
-    expect(plan.epic).toBe(false);
-    expect(plan.temp).toBe(false);
+    expect(plan.epic).toBeUndefined();
+    expect(plan.temp).toBeUndefined();
   });
 
   test('increments from existing highest ID', async () => {
@@ -2126,10 +2164,8 @@ describe('mcpCreatePlan', () => {
     const args = createPlanParameters.parse({ title: 'New Plan' });
     const result = await mcpCreatePlan(args, context);
 
-    expect(result).toContain('Created plan 6 at');
-
-    const planPath = path.join(tmpDir, '6-new-plan.plan.md');
-    const plan = await readPlanFile(planPath);
+    expect(createdPlanId(result)).toBe(6);
+    const { plan } = await resolvePlan('6', context);
     expect(plan.id).toBe(6);
   });
 
@@ -2153,10 +2189,8 @@ describe('mcpCreatePlan', () => {
     const args = createPlanParameters.parse({ title: '  Trimmed Plan  ' });
     const result = await mcpCreatePlan(args, context);
 
-    expect(result).toContain('Created plan 1 at');
-
-    const planPath = path.join(tmpDir, '1-trimmed-plan.plan.md');
-    const plan = await readPlanFile(planPath);
+    expect(createdPlanId(result)).toBe(1);
+    const { plan } = await resolvePlan('1', context);
     expect(plan.title).toBe('Trimmed Plan');
   });
 });
@@ -2168,6 +2202,7 @@ describe('MCP Resources', () => {
   beforeEach(async () => {
     clearPlanCache();
     tmpDir = await mkdtemp(path.join(os.tmpdir(), 'tim-resources-'));
+    await Bun.$`git init`.cwd(tmpDir).quiet();
 
     const config = getDefaultConfig();
     config.paths = { tasks: tmpDir };
@@ -2189,7 +2224,62 @@ describe('MCP Resources', () => {
     await writePlanFile(planPath, plan);
   }
 
+  function registerResources() {
+    const resources: Array<{ uri: string; load: () => Promise<{ text: string }> }> = [];
+    const resourceTemplates: Array<{
+      uriTemplate: string;
+      load: (args: Record<string, string>) => Promise<{ text: string }>;
+    }> = [];
+
+    registerGenerateMode(
+      {
+        addPrompt: () => {},
+        addTool: () => {},
+        addResource: (resource: any) => {
+          resources.push(resource);
+        },
+        addResourceTemplate: (resourceTemplate: any) => {
+          resourceTemplates.push(resourceTemplate);
+        },
+      } as any,
+      context,
+      { registerTools: false }
+    );
+
+    return { resources, resourceTemplates };
+  }
+
   describe('tim://plans/list', () => {
+    test('includes DB-only plans via the registered resource', async () => {
+      await writePlanToDb(
+        {
+          id: 11,
+          title: 'DB Only Plan',
+          goal: 'Stored only in the database',
+          status: 'pending',
+          tasks: [{ title: 'Task 1', description: 'Do task', done: false }],
+          dependencies: [],
+          filename: '11-db-only.plan.md',
+        },
+        { cwdForIdentity: tmpDir }
+      );
+
+      const { resources } = registerResources();
+      const resource = resources.find((entry) => entry.uri === 'tim://plans/list');
+      const payload = await resource!.load();
+      const parsed = JSON.parse(payload.text);
+
+      expect(parsed).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: 11,
+            title: 'DB Only Plan',
+            taskCount: 1,
+          }),
+        ])
+      );
+    });
+
     test('returns all plans with summaries', async () => {
       await createPlan({
         id: 1,
@@ -2423,6 +2513,11 @@ describe('MCP Resources', () => {
     });
 
     test('includes full plan details', async () => {
+      await createPlan({ id: 3, title: 'Discovery Source', status: 'pending', tasks: [] });
+      await createPlan({ id: 5, title: 'Parent Plan', status: 'pending', tasks: [] });
+      await createPlan({ id: 10, title: 'Dependency A', status: 'pending', tasks: [] });
+      await createPlan({ id: 20, title: 'Dependency B', status: 'pending', tasks: [] });
+
       await createPlan({
         id: 1,
         title: 'Detailed Plan',
@@ -2457,17 +2552,59 @@ describe('MCP Resources', () => {
       expect(plan.priority).toBe('high');
       expect(plan.parent).toBe(5);
       expect(plan.tasks).toHaveLength(2);
-      expect(plan.dependencies).toEqual([10, 20]);
+      expect([...(plan.dependencies ?? [])].sort((a, b) => a - b)).toEqual([10, 20]);
       expect(plan.discoveredFrom).toBe(3);
       expect(plan.assignedTo).toBe('charlie');
       expect(plan.issue).toEqual(['https://github.com/org/repo/issues/1']);
       expect(plan.docs).toEqual(['docs/plan.md']);
-      expect(plan.epic).toBe(false);
+      expect(plan.epic).toBeUndefined();
       expect(plan.temp).toBe(true);
     });
   });
 
   describe('tim://plans/ready', () => {
+    test('includes DB-only ready plans via the registered resource', async () => {
+      await writePlanToDb(
+        {
+          id: 1,
+          title: 'Done Dependency',
+          status: 'done',
+          tasks: [],
+          dependencies: [],
+          filename: '1-done-dependency.plan.md',
+        },
+        { cwdForIdentity: tmpDir }
+      );
+      await writePlanToDb(
+        {
+          id: 2,
+          title: 'DB Ready Plan',
+          status: 'pending',
+          priority: 'high',
+          tasks: [{ title: 'Task', description: 'Do it', done: false }],
+          dependencies: [1],
+          filename: '2-db-ready.plan.md',
+        },
+        { cwdForIdentity: tmpDir }
+      );
+
+      const { resources } = registerResources();
+      const resource = resources.find((entry) => entry.uri === 'tim://plans/ready');
+      const payload = await resource!.load();
+      const parsed = JSON.parse(payload.text);
+
+      expect(parsed.count).toBe(1);
+      expect(parsed.plans).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: 2,
+            title: 'DB Ready Plan',
+            filename: '',
+          }),
+        ])
+      );
+    });
+
     test('filters by dependencies and status', async () => {
       // Create done dependency
       await createPlan({

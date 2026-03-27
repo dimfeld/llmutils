@@ -26,7 +26,12 @@ const mockGetPrStatusByUrl = mock((_db: unknown, _prUrl: string) => null);
 const mockLinkPlanToPr = mock((_db: unknown, _planUuid: string, _prStatusId: number) => {});
 const mockUnlinkPlanFromPr = mock((_db: unknown, _planUuid: string, _prStatusId: number) => {});
 const mockCleanOrphanedPrStatus = mock((_db: unknown) => {});
+const mockFetchOpenPullRequests = mock(async (..._args: unknown[]) => []);
 const mockReadPlanFile = mock(async (..._args: unknown[]) => ({}));
+const mockResolvePlanFromDb = mock(async (..._args: unknown[]) => ({
+  plan: {},
+  planPath: '',
+}));
 const mockWritePlanFile = mock(async (..._args: unknown[]) => {});
 const mockSyncPlanToDb = mock(async (..._args: unknown[]) => {});
 
@@ -66,6 +71,9 @@ describe('tim/commands/pr', () => {
       refreshPrStatus: mockRefreshPrStatus,
       syncPlanPrLinks: mockSyncPlanPrLinks,
     }));
+    await moduleMocker.mock('../../common/github/pull_requests.js', () => ({
+      fetchOpenPullRequests: mockFetchOpenPullRequests,
+    }));
     await moduleMocker.mock('../../common/github/identifiers.js', () => ({
       canonicalizePrUrl: mockCanonicalizePrUrl,
       parsePrOrIssueNumber: mockParsePrOrIssueNumber,
@@ -79,6 +87,7 @@ describe('tim/commands/pr', () => {
     }));
     await moduleMocker.mock('../plans.js', () => ({
       readPlanFile: mockReadPlanFile,
+      resolvePlanFromDb: mockResolvePlanFromDb,
       writePlanFile: mockWritePlanFile,
     }));
     await moduleMocker.mock('../db/plan_sync.js', () => ({
@@ -128,7 +137,9 @@ describe('tim/commands/pr', () => {
     mockLinkPlanToPr.mockClear();
     mockUnlinkPlanFromPr.mockClear();
     mockCleanOrphanedPrStatus.mockClear();
+    mockFetchOpenPullRequests.mockClear();
     mockReadPlanFile.mockClear();
+    mockResolvePlanFromDb.mockClear();
     mockWritePlanFile.mockClear();
     mockSyncPlanToDb.mockClear();
 
@@ -177,7 +188,12 @@ describe('tim/commands/pr', () => {
     mockLinkPlanToPr.mockImplementation(() => {});
     mockUnlinkPlanFromPr.mockImplementation(() => {});
     mockCleanOrphanedPrStatus.mockImplementation(() => {});
+    mockFetchOpenPullRequests.mockImplementation(async () => []);
     mockReadPlanFile.mockImplementation(async () => currentPersistedPlan);
+    mockResolvePlanFromDb.mockImplementation(async () => ({
+      plan: currentPersistedPlan,
+      planPath: currentPlanPath,
+    }));
     mockWritePlanFile.mockImplementation(async (_planPath: string, plan: unknown) => {
       currentPersistedPlan = plan as AnyObject;
     });
@@ -200,7 +216,7 @@ describe('tim/commands/pr', () => {
     await prModule.handlePrStatusCommand(undefined, {}, createNestedCommand());
 
     expect(mockResolvePlan).toHaveBeenCalledWith('/tmp/248.plan.md', {
-      gitRoot: process.cwd(),
+      gitRoot: '/tmp',
       configPath: '/tmp/tim.yml',
     });
     // refreshPrStatus called for each URL (force-fresh)
@@ -238,7 +254,7 @@ describe('tim/commands/pr', () => {
     expect(mockGetWorkspaceInfoByPath).toHaveBeenCalledWith(path.join(workspaceDir, 'src'));
     expect(mockGetWorkspaceInfoByPath).toHaveBeenCalledWith(workspaceDir);
     expect(mockResolvePlan).toHaveBeenCalledWith('/tmp/248.plan.md', {
-      gitRoot: nestedDir,
+      gitRoot: '/tmp',
       configPath: '/tmp/tim.yml',
     });
   });
@@ -249,7 +265,7 @@ describe('tim/commands/pr', () => {
     await prModule.handlePrStatusCommand('248', {}, createNestedCommand());
 
     expect(mockSyncPlanPrLinks).not.toHaveBeenCalled();
-    expect(logs).toContain('Plan 248 has no linked pull requests.');
+    expect(logs).toContain('Plan 248 has no linked pull requests and no branch to look up.');
   });
 
   test('status logs passing, failing, and pending PR states', async () => {
@@ -318,7 +334,7 @@ describe('tim/commands/pr', () => {
     );
 
     expect(mockResolvePlan).toHaveBeenCalledWith('248', {
-      gitRoot: process.cwd(),
+      gitRoot: '/tmp',
       configPath: '/tmp/tim.yml',
     });
     expect(mockParsePrOrIssueNumber).toHaveBeenCalledWith(
@@ -330,10 +346,15 @@ describe('tim/commands/pr', () => {
     );
     expect(mockLinkPlanToPr).toHaveBeenCalledWith(dbHandle, 'plan-248', 77);
     expect(mockReadPlanFile).toHaveBeenCalledWith('/tmp/248.plan.md');
-    expect(mockWritePlanFile).toHaveBeenCalledWith('/tmp/248.plan.md', {
-      ...currentPlan,
-      pullRequest: ['https://github.com/example/repo/pull/201'],
-    });
+    expect(mockResolvePlanFromDb).toHaveBeenCalled();
+    expect(mockWritePlanFile).toHaveBeenCalledWith(
+      '/tmp/248.plan.md',
+      {
+        ...currentPersistedPlan,
+        pullRequest: ['https://github.com/example/repo/pull/201'],
+      },
+      { cwdForIdentity: '/tmp' }
+    );
     // writePlanFile handles syncPlanToDb internally
     expect(logs.some((line) => line.includes('Linked'))).toBe(true);
   });
@@ -362,10 +383,96 @@ describe('tim/commands/pr', () => {
       createNestedCommand()
     );
 
-    expect(mockWritePlanFile).toHaveBeenCalledWith('/tmp/248.plan.md', {
+    expect(mockWritePlanFile).toHaveBeenCalledWith(
+      '/tmp/248.plan.md',
+      {
+        ...currentPersistedPlan,
+        pullRequest: ['https://github.com/example/repo/pull/201'],
+      },
+      { cwdForIdentity: '/tmp' }
+    );
+  });
+
+  test('link re-reads fresh plan data before writing pull requests', async () => {
+    currentParsedIdentifier = { owner: 'example', repo: 'repo', number: 201 };
+    currentPlan = {
       ...currentPlan,
-      pullRequest: ['https://github.com/example/repo/pull/201'],
-    });
+      title: 'Stale plan from command start',
+      status: 'pending',
+    };
+    currentPersistedPlan = {
+      ...currentPersistedPlan,
+      title: 'Fresh plan from DB',
+      status: 'in_progress',
+      pullRequest: [],
+    };
+    currentRefreshedStatuses.set(
+      'https://github.com/example/repo/pull/201',
+      createPrDetail(201, 'Linked PR', 'pending', 77)
+    );
+
+    await prModule.handlePrLinkCommand(
+      '248',
+      'https://github.com/example/repo/pull/201',
+      {},
+      createNestedCommand()
+    );
+
+    expect(mockWritePlanFile).toHaveBeenCalledWith(
+      '/tmp/248.plan.md',
+      expect.objectContaining({
+        title: 'Fresh plan from DB',
+        status: 'in_progress',
+        pullRequest: ['https://github.com/example/repo/pull/201'],
+      }),
+      { cwdForIdentity: '/tmp' }
+    );
+  });
+
+  test('link preserves YAML-only fields by re-reading the file-backed plan when available', async () => {
+    currentParsedIdentifier = { owner: 'example', repo: 'repo', number: 201 };
+    currentPersistedPlan = {
+      ...currentPersistedPlan,
+      title: 'Fresh plan from DB',
+      status: 'in_progress',
+      pullRequest: [],
+    };
+    mockReadPlanFile.mockImplementationOnce(async () => ({
+      ...currentPersistedPlan,
+      title: 'Stale title from file',
+      generatedBy: 'tim generate',
+      rmfilter: {
+        include: ['src/tim/commands/pr.ts'],
+      },
+      pullRequest: [],
+    }));
+    currentRefreshedStatuses.set(
+      'https://github.com/example/repo/pull/201',
+      createPrDetail(201, 'Linked PR', 'pending', 77)
+    );
+
+    await prModule.handlePrLinkCommand(
+      '248',
+      'https://github.com/example/repo/pull/201',
+      {},
+      createNestedCommand()
+    );
+
+    expect(mockReadPlanFile).toHaveBeenCalledWith('/tmp/248.plan.md');
+    expect(mockResolvePlanFromDb).toHaveBeenCalled();
+    expect(mockWritePlanFile).toHaveBeenCalledWith(
+      '/tmp/248.plan.md',
+      expect.objectContaining({
+        title: 'Fresh plan from DB',
+        status: 'in_progress',
+        generatedBy: 'tim generate',
+        rmfilter: {
+          include: ['src/tim/commands/pr.ts'],
+        },
+        pullRequest: ['https://github.com/example/repo/pull/201'],
+      }),
+      { cwdForIdentity: '/tmp' }
+    );
   });
 
   test('link rejects invalid GitHub pull request identifiers', async () => {
@@ -373,10 +480,13 @@ describe('tim/commands/pr', () => {
 
     await expect(
       prModule.handlePrLinkCommand('248', 'not-a-pr', {}, createNestedCommand())
-    ).rejects.toThrow('Invalid GitHub pull request identifier: not-a-pr');
+    ).rejects.toThrow(
+      'No open PR found for branch "not-a-pr". Please specify a PR URL explicitly.'
+    );
 
     expect(mockRefreshPrStatus).not.toHaveBeenCalled();
     expect(mockLinkPlanToPr).not.toHaveBeenCalled();
+    expect(mockFetchOpenPullRequests).toHaveBeenCalled();
   });
 
   test('link rejects explicit GitHub issue URLs', async () => {
@@ -397,6 +507,7 @@ describe('tim/commands/pr', () => {
 
   test('unlink removes the junction, cleans orphaned PR cache rows, and persists the plan file', async () => {
     currentCachedDetail = createPrDetail(301, 'Cached PR', 'success', 88);
+    currentPlan.pullRequest = ['https://github.com/example/repo/pull/301'];
     currentPersistedPlan = {
       ...currentPlan,
       pullRequest: ['https://github.com/example/repo/pull/301'],
@@ -409,12 +520,17 @@ describe('tim/commands/pr', () => {
       createNestedCommand()
     );
 
-    // Plan file updated first (source of truth)
+    // Plan update uses the freshest DB-backed copy and merges YAML-only file fields when present.
     expect(mockReadPlanFile).toHaveBeenCalledWith('/tmp/248.plan.md');
-    expect(mockWritePlanFile).toHaveBeenCalledWith('/tmp/248.plan.md', {
-      ...currentPlan,
-      pullRequest: [],
-    });
+    expect(mockResolvePlanFromDb).toHaveBeenCalled();
+    expect(mockWritePlanFile).toHaveBeenCalledWith(
+      '/tmp/248.plan.md',
+      {
+        ...currentPersistedPlan,
+        pullRequest: [],
+      },
+      { cwdForIdentity: '/tmp' }
+    );
     // DB cleanup best-effort
     expect(mockGetPrStatusByUrl).toHaveBeenCalledWith(
       dbHandle,
@@ -427,6 +543,7 @@ describe('tim/commands/pr', () => {
 
   test('unlink canonicalizes existing /pulls variants before removing persisted plan URLs', async () => {
     currentCachedDetail = createPrDetail(301, 'Cached PR', 'success', 88);
+    currentPlan.pullRequest = ['https://github.com/example/repo/pulls/301?tab=checks'];
     currentPersistedPlan = {
       ...currentPlan,
       pullRequest: ['https://github.com/example/repo/pulls/301?tab=checks'],
@@ -445,11 +562,86 @@ describe('tim/commands/pr', () => {
       createNestedCommand()
     );
 
-    expect(mockWritePlanFile).toHaveBeenCalledWith('/tmp/248.plan.md', {
-      ...currentPlan,
-      pullRequest: [],
-    });
+    expect(mockWritePlanFile).toHaveBeenCalledWith(
+      '/tmp/248.plan.md',
+      {
+        ...currentPersistedPlan,
+        pullRequest: [],
+      },
+      { cwdForIdentity: '/tmp' }
+    );
     expect(logs.some((line) => line.includes('Unlinked'))).toBe(true);
+  });
+
+  test('unlink re-reads the fresh file-backed plan before writing pull requests', async () => {
+    currentCachedDetail = createPrDetail(301, 'Cached PR', 'success', 88);
+    currentPlan = {
+      ...currentPlan,
+      title: 'Stale plan from command start',
+      status: 'pending',
+      pullRequest: ['https://github.com/example/repo/pull/301'],
+    };
+    currentPersistedPlan = {
+      ...currentPersistedPlan,
+      title: 'Fresh plan from DB',
+      status: 'in_progress',
+      details: 'concurrent change preserved',
+      pullRequest: ['https://github.com/example/repo/pull/301'],
+    };
+
+    await prModule.handlePrUnlinkCommand(
+      '248',
+      'https://github.com/example/repo/pull/301',
+      {},
+      createNestedCommand()
+    );
+
+    expect(mockReadPlanFile).toHaveBeenCalledWith('/tmp/248.plan.md');
+    expect(mockResolvePlanFromDb).toHaveBeenCalled();
+    expect(mockWritePlanFile).toHaveBeenCalledWith(
+      '/tmp/248.plan.md',
+      expect.objectContaining({
+        title: 'Fresh plan from DB',
+        status: 'in_progress',
+        details: 'concurrent change preserved',
+        pullRequest: [],
+      }),
+      { cwdForIdentity: '/tmp' }
+    );
+  });
+
+  test('unlink falls back to DB when the file-backed plan no longer exists', async () => {
+    currentCachedDetail = createPrDetail(301, 'Cached PR', 'success', 88);
+    currentPersistedPlan = {
+      ...currentPersistedPlan,
+      title: 'Fresh plan from DB',
+      generatedBy: 'tim generate',
+      pullRequest: ['https://github.com/example/repo/pull/301'],
+    };
+    mockReadPlanFile.mockImplementationOnce(async () => {
+      const error = new Error('missing file') as NodeJS.ErrnoException;
+      error.code = 'ENOENT';
+      throw error;
+    });
+
+    await prModule.handlePrUnlinkCommand(
+      '248',
+      'https://github.com/example/repo/pull/301',
+      {},
+      createNestedCommand()
+    );
+
+    expect(mockReadPlanFile).toHaveBeenCalledWith('/tmp/248.plan.md');
+    expect(mockResolvePlanFromDb).toHaveBeenCalledWith('plan-248', '/tmp');
+    expect(mockWritePlanFile).toHaveBeenCalledWith(
+      '/tmp/248.plan.md',
+      expect.objectContaining({
+        title: 'Fresh plan from DB',
+        generatedBy: 'tim generate',
+        pullRequest: [],
+      }),
+      { cwdForIdentity: '/tmp' }
+    );
   });
 
   test('unlink reports no-op when URL not in plan file, but still cleans DB cache', async () => {
@@ -506,7 +698,7 @@ describe('tim/commands/pr', () => {
 
     await prModule.handlePrStatusCommand('248', {}, createNestedCommand());
 
-    expect(logs).toContain('Plan 248 has no linked pull requests.');
+    expect(logs).toContain('Plan 248 has no linked pull requests and no branch to look up.');
   });
 
   test('link requires GITHUB_TOKEN', async () => {
@@ -526,6 +718,7 @@ describe('tim/commands/pr', () => {
 
   test('unlink succeeds even when no cached PR status exists (best-effort DB cleanup)', async () => {
     currentCachedDetail = null;
+    currentPlan.pullRequest = ['https://github.com/example/repo/pull/999'];
     currentPersistedPlan = {
       ...currentPlan,
       pullRequest: ['https://github.com/example/repo/pull/999'],

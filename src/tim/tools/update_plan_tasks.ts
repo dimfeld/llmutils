@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { withPlanAutoSync } from '../plan_materialize.js';
 import { resolvePlan } from '../plan_display.js';
 import { mergeTasksIntoPlan } from '../plan_merge.js';
 import { clearPlanCache, writePlanFile } from '../plans.js';
@@ -11,7 +12,11 @@ export async function updatePlanTasksTool(
   context: ToolContext
 ): Promise<ToolResult<{ path: string; taskCount: number }>> {
   clearPlanCache();
-  const { plan, planPath } = await resolvePlan(args.plan, context);
+  // Resolve plan to get its numeric ID for withPlanAutoSync
+  const { plan: initialPlan } = await resolvePlan(args.plan, context);
+  if (typeof initialPlan.id !== 'number') {
+    throw new Error('Resolved plan is missing a numeric ID.');
+  }
 
   try {
     context.log?.info('Merging generated plan data');
@@ -32,12 +37,18 @@ export async function updatePlanTasksTool(
     if (args.details !== undefined) newPlanData.details = args.details;
     if (args.priority !== undefined) newPlanData.priority = args.priority;
 
-    const updatedPlan = await mergeTasksIntoPlan(newPlanData, plan);
+    let relativePath = `plan ${initialPlan.id}`;
+    let taskCount = 0;
+    await withPlanAutoSync(initialPlan.id, context.gitRoot, async () => {
+      const { plan, planPath } = await resolvePlan(args.plan, context);
+      const updatedPlan = await mergeTasksIntoPlan(newPlanData, plan);
+      await writePlanFile(planPath, updatedPlan, { cwdForIdentity: context.gitRoot });
+      relativePath = planPath
+        ? path.relative(context.gitRoot, planPath) || planPath
+        : `plan ${plan.id}`;
+      taskCount = updatedPlan.tasks.length;
+    });
 
-    await writePlanFile(planPath, updatedPlan);
-
-    const relativePath = path.relative(context.gitRoot, planPath) || planPath;
-    const taskCount = updatedPlan.tasks.length;
     const text = `Successfully updated plan at ${relativePath} with ${taskCount} task${
       taskCount === 1 ? '' : 's'
     }`;

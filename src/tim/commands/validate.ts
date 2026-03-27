@@ -1,12 +1,15 @@
+import { existsSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import * as path from 'node:path';
 import * as yaml from 'yaml';
 import chalk from 'chalk';
 import * as z from 'zod/v4';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { createPlanSchemas, type PlanSchema } from '../planSchema.js';
-import { resolveTasksDir } from '../configSchema.js';
-import { readAllPlans, readPlanFile, writePlanFile } from '../plans.js';
+import { readPlanFile, writePlanFile, writePlanToDb } from '../plans.js';
+import { resolvePlanPathContext } from '../path_resolver.js';
+import { loadPlansFromDb } from '../plans_db.js';
 import {
   ensureReferences,
   verifyReferences,
@@ -65,14 +68,71 @@ interface ObsoleteKeyFixResult {
   errors: string[];
 }
 
+interface ValidationPlanState {
+  planMap: Map<number, PlanSchema & { filename: string }>;
+  uuidToId: Map<string, number>;
+  idToUuid: Map<number, string>;
+}
+
 const { phaseSchema: strictPhaseSchema } = createPlanSchemas((shape) =>
   z
     .object({
       ...shape,
       progressNotes: z.unknown().optional(),
+      references: z.record(z.string(), z.string()).optional(),
     })
     .strict()
 );
+
+function validatePlanData(filename: string, parsed: Record<string, unknown>): ValidationResult {
+  const result = strictPhaseSchema.safeParse(parsed);
+
+  if (result.success) {
+    return { filename, isValid: true };
+  }
+
+  const errors: string[] = [];
+  const unknownKeys: string[] = [];
+
+  result.error.issues.forEach((issue) => {
+    if (issue.code === 'unrecognized_keys') {
+      const basePath = issue.path.length > 0 ? issue.path.join('.') : '';
+      issue.keys.forEach((key) => {
+        const fullPath = basePath ? `${basePath}.${key}` : key;
+        unknownKeys.push(fullPath);
+      });
+    } else {
+      const path = issue.path.length > 0 ? issue.path.join('.') : 'root';
+      errors.push(`${path}: ${issue.message}`);
+    }
+  });
+
+  return {
+    filename,
+    isValid: false,
+    errors: errors.length > 0 ? errors : undefined,
+    unknownKeys: unknownKeys.length > 0 ? unknownKeys : undefined,
+  };
+}
+
+function isDbOnlyPlan(filename: string): boolean {
+  return !existsSync(filename);
+}
+
+async function writeValidationPlan(
+  plan: PlanSchema & { filename: string },
+  identityCwd: string
+): Promise<void> {
+  if (isDbOnlyPlan(plan.filename)) {
+    await writePlanToDb(plan, {
+      skipUpdatedAt: true,
+      cwdForIdentity: identityCwd,
+    });
+    return;
+  }
+
+  await writePlanFile(plan.filename, plan, { skipUpdatedAt: true, cwdForIdentity: identityCwd });
+}
 
 async function validatePlanFile(filePath: string): Promise<ValidationResult> {
   const filename = path.basename(filePath);
@@ -113,36 +173,7 @@ async function validatePlanFile(filePath: string): Promise<ValidationResult> {
       return { filename, isValid: true, skipped: true };
     }
 
-    // Validate with the strict schema
-    const result = strictPhaseSchema.safeParse(parsed);
-
-    if (result.success) {
-      return { filename, isValid: true };
-    } else {
-      const errors: string[] = [];
-      const unknownKeys: string[] = [];
-
-      result.error.issues.forEach((issue) => {
-        if (issue.code === 'unrecognized_keys') {
-          // For unrecognized keys, combine the path with the unknown keys
-          const basePath = issue.path.length > 0 ? issue.path.join('.') : '';
-          issue.keys.forEach((key) => {
-            const fullPath = basePath ? `${basePath}.${key}` : key;
-            unknownKeys.push(fullPath);
-          });
-        } else {
-          const path = issue.path.length > 0 ? issue.path.join('.') : 'root';
-          errors.push(`${path}: ${issue.message}`);
-        }
-      });
-
-      return {
-        filename,
-        isValid: false,
-        errors: errors.length > 0 ? errors : undefined,
-        unknownKeys: unknownKeys.length > 0 ? unknownKeys : undefined,
-      };
-    }
+    return validatePlanData(filename, parsed);
   } catch (error) {
     return {
       filename,
@@ -152,6 +183,66 @@ async function validatePlanFile(filePath: string): Promise<ValidationResult> {
       ],
     };
   }
+}
+
+async function loadValidationPlanState(
+  tasksDir: string,
+  repositoryId: string,
+  planFiles: string[]
+): Promise<ValidationPlanState> {
+  const dbPlans = loadPlansFromDb(tasksDir, repositoryId).plans;
+  const planMap = new Map<number, PlanSchema & { filename: string }>();
+  const uuidToCurrentId = new Map<string, number>();
+
+  for (const [planId, plan] of dbPlans.entries()) {
+    planMap.set(planId, plan);
+    if (plan.uuid) {
+      uuidToCurrentId.set(plan.uuid, planId);
+    }
+  }
+
+  for (const file of planFiles) {
+    const filePath = path.join(tasksDir, file);
+
+    try {
+      const plan = await readPlanFile(filePath);
+      if (
+        plan.not_tim ||
+        typeof plan.id !== 'number' ||
+        !Number.isInteger(plan.id) ||
+        plan.id <= 0
+      ) {
+        continue;
+      }
+
+      if (plan.uuid) {
+        const existingId = uuidToCurrentId.get(plan.uuid);
+        if (existingId !== undefined && existingId !== plan.id) {
+          planMap.delete(existingId);
+        }
+        uuidToCurrentId.set(plan.uuid, plan.id);
+      }
+
+      planMap.set(plan.id, {
+        ...plan,
+        filename: filePath,
+      });
+    } catch {
+      // Invalid files are handled separately by validatePlanFile().
+    }
+  }
+
+  const uuidToId = new Map<string, number>();
+  const idToUuid = new Map<number, string>();
+  for (const [planId, plan] of planMap.entries()) {
+    if (!plan.uuid) {
+      continue;
+    }
+    uuidToId.set(plan.uuid, planId);
+    idToUuid.set(planId, plan.uuid);
+  }
+
+  return { planMap, uuidToId, idToUuid };
 }
 
 function validateParentChildRelationships(
@@ -305,15 +396,21 @@ export function wouldCreateCircularDependency(
 }
 
 async function fixParentChildRelationships(
-  inconsistencies: ParentChildInconsistency[]
+  inconsistencies: ParentChildInconsistency[],
+  planMap: Map<number, PlanSchema & { filename: string }>,
+  identityCwd: string
 ): Promise<FixResult> {
   let fixedRelationships = 0;
   const errors: string[] = [];
 
   for (const inconsistency of inconsistencies) {
     try {
-      // Read the current version of the parent plan
-      const parentPlan = await readPlanFile(inconsistency.parentFilename);
+      const parentPlan = isDbOnlyPlan(inconsistency.parentFilename)
+        ? planMap.get(inconsistency.parentId)
+        : await readPlanFile(inconsistency.parentFilename);
+      if (!parentPlan) {
+        throw new Error(`Parent plan ${inconsistency.parentId} could not be loaded`);
+      }
 
       // Initialize dependencies array if it doesn't exist
       if (!parentPlan.dependencies) {
@@ -335,8 +432,10 @@ async function fixParentChildRelationships(
         // Update the plan with new dependencies
         parentPlan.dependencies = newDependencies;
 
-        // Write the updated plan back to file without updating timestamp
-        await writePlanFile(inconsistency.parentFilename, parentPlan, { skipUpdatedAt: true });
+        await writeValidationPlan(
+          { ...parentPlan, filename: inconsistency.parentFilename },
+          identityCwd
+        );
 
         fixedRelationships++;
       }
@@ -351,14 +450,21 @@ async function fixParentChildRelationships(
 }
 
 async function fixDiscoveredFromReferences(
-  issues: DiscoveredFromIssue[]
+  issues: DiscoveredFromIssue[],
+  planMap: Map<number, PlanSchema & { filename: string }>,
+  identityCwd: string
 ): Promise<DiscoveredFromFixResult> {
   const cleared: Array<{ planId: number; referencedPlanId: number; filename: string }> = [];
   const errors: string[] = [];
 
   for (const issue of issues) {
     try {
-      const plan = await readPlanFile(issue.filename);
+      const plan = isDbOnlyPlan(issue.filename)
+        ? planMap.get(issue.planId)
+        : await readPlanFile(issue.filename);
+      if (!plan) {
+        throw new Error(`Plan ${issue.planId} could not be loaded for discoveredFrom repair`);
+      }
 
       if (plan.discoveredFrom !== issue.referencedPlanId) {
         continue;
@@ -367,7 +473,7 @@ async function fixDiscoveredFromReferences(
       // Remove the discoveredFrom field entirely
       delete (plan as { discoveredFrom?: number }).discoveredFrom;
 
-      await writePlanFile(issue.filename, plan, { skipUpdatedAt: true });
+      await writeValidationPlan({ ...plan, filename: issue.filename }, identityCwd);
       cleared.push({
         planId: issue.planId,
         referencedPlanId: issue.referencedPlanId,
@@ -426,14 +532,26 @@ function detectObsoleteTaskKeys(
   return issues;
 }
 
-async function fixObsoleteTaskKeys(issues: ObsoleteKeyIssue[]): Promise<ObsoleteKeyFixResult> {
+async function fixObsoleteTaskKeys(
+  issues: ObsoleteKeyIssue[],
+  planMap: Map<number, PlanSchema & { filename: string }>,
+  identityCwd: string
+): Promise<ObsoleteKeyFixResult> {
   let fixedPlans = 0;
   let totalKeysRemoved = 0;
   const errors: string[] = [];
 
   for (const issue of issues) {
     try {
-      const plan = await readPlanFile(issue.filename);
+      if (issue.planId === undefined) {
+        throw new Error(`Plan ID missing for ${issue.filename}`);
+      }
+      const plan = isDbOnlyPlan(issue.filename)
+        ? planMap.get(issue.planId)
+        : await readPlanFile(issue.filename);
+      if (!plan) {
+        throw new Error(`Plan ${issue.planId} could not be loaded for obsolete key cleanup`);
+      }
 
       if (!plan.tasks || plan.tasks.length === 0) {
         continue;
@@ -479,7 +597,7 @@ async function fixObsoleteTaskKeys(issues: ObsoleteKeyIssue[]): Promise<Obsolete
       });
 
       if (hasChanges) {
-        await writePlanFile(issue.filename, plan, { skipUpdatedAt: true });
+        await writeValidationPlan({ ...plan, filename: issue.filename }, identityCwd);
         fixedPlans++;
         totalKeysRemoved += keysRemovedInPlan;
       }
@@ -499,35 +617,48 @@ export async function handleValidateCommand(
 ): Promise<void> {
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
+  const pathContext = await resolvePlanPathContext(config);
 
   // Determine directory to search
-  const tasksDir = options.dir || (await resolveTasksDir(config));
+  const tasksDir = options.dir || pathContext.tasksDir;
 
-  // Read all plan files
-  const files = await readdir(tasksDir);
+  // Resolve repo identity from the directory being validated, not the config base dir
+  const identityCwd = options.dir || pathContext.configBaseDir;
+  const repository = await getRepositoryIdentity({ cwd: identityCwd });
+
+  // Read all plan files (tasks dir may not exist for DB-only projects)
+  let files: string[] = [];
+  try {
+    files = await readdir(tasksDir);
+  } catch (e: any) {
+    if (e?.code !== 'ENOENT') throw e;
+  }
   const planFiles = files.filter(
     (file) => file.endsWith('.plan.md') || file.endsWith('.yml') || file.endsWith('.yaml')
-  );
-
-  if (planFiles.length === 0) {
-    console.log(chalk.yellow('No plan files found in'), tasksDir);
-    return;
-  }
-
-  console.log(
-    chalk.bold(
-      `Validating ${planFiles.length} plan file${planFiles.length === 1 ? '' : 's'} in ${tasksDir}\n`
-    )
   );
 
   // First pass: Load all plans to check for obsolete keys
   let planMap: Map<number, PlanSchema & { filename: string }> | null = null;
   let obsoleteKeyIssues: ObsoleteKeyIssue[] = [];
   let obsoleteKeyFixResult: ObsoleteKeyFixResult | null = null;
+  let dbOnlyPlanCount = 0;
 
   try {
-    const planResults = await readAllPlans(tasksDir);
-    planMap = planResults.plans;
+    const planResults = await loadValidationPlanState(tasksDir, repository.repositoryId, planFiles);
+    planMap = planResults.planMap;
+    dbOnlyPlanCount = Array.from(planMap.values()).filter((plan) =>
+      isDbOnlyPlan(plan.filename)
+    ).length;
+
+    console.log(
+      chalk.bold(
+        `Validating ${planFiles.length} plan file${planFiles.length === 1 ? '' : 's'}${
+          dbOnlyPlanCount > 0
+            ? ` and ${dbOnlyPlanCount} DB-only plan${dbOnlyPlanCount === 1 ? '' : 's'}`
+            : ''
+        } in ${tasksDir}\n`
+      )
+    );
 
     // Detect obsolete keys
     obsoleteKeyIssues = detectObsoleteTaskKeys(planMap);
@@ -547,7 +678,7 @@ export async function handleValidateCommand(
         console.log(chalk.yellow('--no-fix flag specified, will report as validation errors.\n'));
       } else {
         console.log(chalk.blue('Auto-fixing obsolete task keys before validation...'));
-        obsoleteKeyFixResult = await fixObsoleteTaskKeys(obsoleteKeyIssues);
+        obsoleteKeyFixResult = await fixObsoleteTaskKeys(obsoleteKeyIssues, planMap, identityCwd);
 
         if (obsoleteKeyFixResult.fixedPlans > 0) {
           console.log(
@@ -557,8 +688,12 @@ export async function handleValidateCommand(
           );
 
           // Reload plans to get the fixed data (prevents later operations from overwriting the fix)
-          const reloadedPlans = await readAllPlans(tasksDir, false);
-          planMap = reloadedPlans.plans;
+          const reloadedPlans = await loadValidationPlanState(
+            tasksDir,
+            repository.repositoryId,
+            planFiles
+          );
+          planMap = reloadedPlans.planMap;
         }
 
         if (obsoleteKeyFixResult.errors.length > 0) {
@@ -599,7 +734,7 @@ export async function handleValidateCommand(
         console.log(chalk.yellow('--no-fix flag specified, will report as validation errors.\n'));
       } else {
         console.log(chalk.blue('Auto-generating UUIDs...'));
-        uuidFixResult = await fixMissingUuids(uuidIssues);
+        uuidFixResult = await fixMissingUuids(uuidIssues, planMap, identityCwd);
 
         if (uuidFixResult.generated.length > 0) {
           console.log(
@@ -609,8 +744,12 @@ export async function handleValidateCommand(
           );
 
           // Reload plans to get the new UUIDs
-          const reloadedPlans = await readAllPlans(tasksDir, false);
-          planMap = reloadedPlans.plans;
+          const reloadedPlans = await loadValidationPlanState(
+            tasksDir,
+            repository.repositoryId,
+            planFiles
+          );
+          planMap = reloadedPlans.planMap;
           uuidToId = reloadedPlans.uuidToId;
           idToUuid = reloadedPlans.idToUuid;
         }
@@ -625,7 +764,11 @@ export async function handleValidateCommand(
       }
     } else {
       // Load UUID maps even if no missing UUIDs
-      const planResults = await readAllPlans(tasksDir, false);
+      const planResults = await loadValidationPlanState(
+        tasksDir,
+        repository.repositoryId,
+        planFiles
+      );
       uuidToId = planResults.uuidToId;
       idToUuid = planResults.idToUuid;
     }
@@ -650,7 +793,7 @@ export async function handleValidateCommand(
         console.log(chalk.yellow('--no-fix flag specified, will report as validation errors.\n'));
       } else {
         console.log(chalk.blue('Auto-fixing reference mismatches...'));
-        referenceFixResult = await fixReferenceIssues(referenceIssues, planMap);
+        referenceFixResult = await fixReferenceIssues(referenceIssues, planMap, identityCwd);
 
         if (referenceFixResult.updated.length > 0) {
           console.log(
@@ -660,8 +803,12 @@ export async function handleValidateCommand(
           );
 
           // Reload plans to get updated references
-          const reloadedPlans = await readAllPlans(tasksDir, false);
-          planMap = reloadedPlans.plans;
+          const reloadedPlans = await loadValidationPlanState(
+            tasksDir,
+            repository.repositoryId,
+            planFiles
+          );
+          planMap = reloadedPlans.planMap;
         }
 
         if (referenceFixResult.errors.length > 0) {
@@ -676,9 +823,19 @@ export async function handleValidateCommand(
   }
 
   // Validate all files (after fixing obsolete keys if applicable)
-  const results = await Promise.all(
+  const fileResults = await Promise.all(
     planFiles.map((file) => validatePlanFile(path.join(tasksDir, file)))
   );
+  const dbOnlyResults =
+    planMap === null
+      ? []
+      : Array.from(planMap.entries())
+          .filter(([, plan]) => isDbOnlyPlan(plan.filename))
+          .map(([planId, plan]) => {
+            const { filename: _filename, ...rest } = plan;
+            return validatePlanData(`Plan ${planId} (DB-only)`, rest);
+          });
+  const results = [...fileResults, ...dbOnlyResults];
 
   // Separate valid, invalid, and skipped files
   const skippedFiles = results.filter((r) => r.skipped);
@@ -691,16 +848,10 @@ export async function handleValidateCommand(
   let discoveredFromIssues: DiscoveredFromIssue[] = [];
   let discoveredFixResult: DiscoveredFromFixResult | null = null;
 
-  if (validFiles.length > 0) {
+  if (planMap && planMap.size > 0) {
     console.log(chalk.blue.bold('Checking parent-child relationships...'));
 
     try {
-      // Reload plans if we haven't loaded them yet (shouldn't happen, but being safe)
-      if (!planMap) {
-        const planResults = await readAllPlans(tasksDir);
-        planMap = planResults.plans;
-      }
-
       // Find parent-child inconsistencies
       parentChildInconsistencies = validateParentChildRelationships(planMap);
 
@@ -764,12 +915,16 @@ export async function handleValidateCommand(
         } else if (safeInconsistencies.length > 0) {
           // Auto-fix the inconsistencies
           console.log(chalk.blue('\nAuto-fixing parent-child relationships...'));
-          fixResult = await fixParentChildRelationships(safeInconsistencies);
+          fixResult = await fixParentChildRelationships(safeInconsistencies, planMap, identityCwd);
 
           if (fixResult.fixedRelationships > 0) {
             // Reload plans to pick up the new dependencies
-            const reloadedPlans = await readAllPlans(tasksDir, false);
-            planMap = reloadedPlans.plans;
+            const reloadedPlans = await loadValidationPlanState(
+              tasksDir,
+              repository.repositoryId,
+              planFiles
+            );
+            planMap = reloadedPlans.planMap;
           }
         }
       }
@@ -812,12 +967,20 @@ export async function handleValidateCommand(
           );
         } else {
           console.log(chalk.blue('\nRemoving invalid discoveredFrom references...'));
-          discoveredFixResult = await fixDiscoveredFromReferences(discoveredFromIssues);
+          discoveredFixResult = await fixDiscoveredFromReferences(
+            discoveredFromIssues,
+            planMap,
+            identityCwd
+          );
 
           if (discoveredFixResult.cleared.length > 0) {
             // Reload plans to pick up the removed references
-            const reloadedPlans = await readAllPlans(tasksDir, false);
-            planMap = reloadedPlans.plans;
+            const reloadedPlans = await loadValidationPlanState(
+              tasksDir,
+              repository.repositoryId,
+              planFiles
+            );
+            planMap = reloadedPlans.planMap;
           }
         }
       } else if (options.verbose) {
@@ -829,7 +992,7 @@ export async function handleValidateCommand(
       // Ensure all plans have complete references (after all fixes that may add dependencies)
       if (options.fix !== false && uuidToId.size > 0) {
         console.log(chalk.blue.bold('Ensuring all references are complete...'));
-        const ensureResult = await ensureAllReferences(planMap);
+        const ensureResult = await ensureAllReferences(planMap, identityCwd);
 
         if (ensureResult.updated > 0) {
           console.log(
@@ -839,8 +1002,12 @@ export async function handleValidateCommand(
           );
 
           // Reload plans one more time
-          const reloadedPlans = await readAllPlans(tasksDir, false);
-          planMap = reloadedPlans.plans;
+          const reloadedPlans = await loadValidationPlanState(
+            tasksDir,
+            repository.repositoryId,
+            planFiles
+          );
+          planMap = reloadedPlans.planMap;
         }
 
         if (ensureResult.errors.length > 0) {

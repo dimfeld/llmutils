@@ -182,10 +182,12 @@ tim workspace list --format json              # For programmatic use
 
 When creating a new workspace (`tim workspace add`), branch setup follows a two-phase approach:
 
-1. **Primary workspace**: The branch/bookmark is created in the primary workspace. The plan file is staged and committed so it's included in the branch history. For git, `git branch -f` is used; for jj, `jj bookmark set`. This makes branch creation idempotent — rerunning workspace creation for the same task reuses or updates the existing ref instead of failing.
-2. **New workspace**: The branch is pushed to origin from the primary workspace, then fetched and checked out in the new workspace clone. This ensures the plan file and any other committed content are available via normal git sync.
+1. **Primary workspace**: The branch/bookmark is created in the primary workspace. For git, `git branch -f` is used; for jj, `jj bookmark set`. This makes branch creation idempotent — rerunning workspace creation for the same task reuses or updates the existing ref instead of failing.
+2. **New workspace**: The branch is pushed to origin from the primary workspace, then fetched and checked out in the new workspace clone.
 
-For the `--reuse` flow (reusing an existing workspace), the plan file is copied directly into the workspace since there's no clone step.
+Plans are not copied as files during workspace creation. Instead, when commands like `tim agent`, `tim generate`, or `tim chat` run in a workspace, they materialize the plan from the DB into the workspace at `.tim/plans/{planId}.plan.md` via `setupWorkspace()`. This approach keeps the DB as the source of truth and avoids stale file copies. After the executor finishes editing the materialized file, changes are synced back to the DB.
+
+When reusing an existing workspace that already contains a plan file, the reuse path syncs the existing file back to the DB before overwriting it with the new materialized version. This prevents data loss from unsynced local edits made during a previous session. If the sync fails, the file copy is skipped (setting the workspace plan file path to `undefined`) rather than silently discarding the edits.
 
 ## Workspace Push Design Notes
 

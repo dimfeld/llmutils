@@ -3,13 +3,14 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
-import { clearPlanCache, readPlanFile, readAllPlans } from './plans.js';
+import { clearPlanCache, readPlanFile, resolvePlanFromDb, writePlanFile } from './plans.js';
 import type { PlanSchema } from './planSchema.js';
 import { handleAddCommand } from './commands/add.js';
 import { handleAddTaskCommand } from './commands/add-task.js';
 import { handleDoneCommand } from './commands/done.js';
 import { handleRemoveTaskCommand } from './commands/remove-task.js';
-import { ModuleMocker, stringifyPlanWithFrontmatter } from '../testing.js';
+import { ModuleMocker } from '../testing.js';
+import { materializePlan } from './plan_materialize.js';
 
 // Handlers that rely on mocked modules are imported dynamically in beforeEach
 let handleListCommand: any;
@@ -71,13 +72,10 @@ describe('tim CLI integration tests (internal handlers)', () => {
     const command = { parent: { opts: () => ({ config: configPath }) } };
     await handleAddCommand(['Integration', 'Test', 'Plan'], {}, command);
 
-    // Check that file was created
     const planFiles = await fs.readdir(tasksDir);
-    expect(planFiles).toHaveLength(1);
-    expect(planFiles[0]).toBe('1-integration-test-plan.plan.md');
+    expect(planFiles).toHaveLength(0);
 
-    // Verify plan content
-    const plan = await readPlanFile(path.join(tasksDir, '1-integration-test-plan.plan.md'));
+    const { plan } = await resolvePlanFromDb('1', tempDir);
     expect(plan.id).toBe(1);
     expect(plan.title).toBe('Integration Test Plan');
   });
@@ -92,7 +90,7 @@ describe('tim CLI integration tests (internal handlers)', () => {
       status: 'pending',
       tasks: [],
     };
-    await fs.writeFile(path.join(tasksDir, '1.yml'), stringifyPlanWithFrontmatter(plan));
+    await writePlanFile(path.join(tasksDir, '1.yml'), plan);
 
     const command = { parent: { opts: () => ({ config: configPath }) } } as any;
     await handleListCommand({ sort: 'created' }, command);
@@ -117,7 +115,7 @@ describe('tim CLI integration tests (internal handlers)', () => {
         },
       ],
     };
-    await fs.writeFile(path.join(tasksDir, '1.yml'), stringifyPlanWithFrontmatter(plan));
+    await writePlanFile(path.join(tasksDir, '1.yml'), plan);
 
     const command = { parent: { opts: () => ({ config: configPath }) } } as any;
     await handleShowCommand('1', {}, command);
@@ -142,7 +140,7 @@ describe('tim CLI integration tests (internal handlers)', () => {
         },
       ],
     };
-    await fs.writeFile(path.join(tasksDir, '1.yml'), stringifyPlanWithFrontmatter(plan));
+    await writePlanFile(path.join(tasksDir, '1.yml'), plan);
 
     const command = { parent: { opts: () => ({ config: configPath }) } } as any;
     await handleDoneCommand('1', {}, command);
@@ -163,16 +161,12 @@ describe('tim CLI integration tests (internal handlers)', () => {
 
     await handleAddCommand(['Integration', 'AddTask', 'Plan'], {}, command);
 
-    const planFiles = await fs.readdir(tasksDir);
-    expect(planFiles).toHaveLength(1);
-    const planFilePath = path.join(tasksDir, planFiles[0] as string);
-
-    const initialPlan = await readPlanFile(planFilePath);
+    const initialPlan = (await resolvePlanFromDb('1', tempDir)).plan;
     expect(initialPlan.tasks ?? []).toHaveLength(0);
 
     mockLog.mockClear();
     await handleAddTaskCommand(
-      planFilePath,
+      '1',
       {
         title: 'Integration Task',
         description: 'Created via add-task integration test',
@@ -180,7 +174,7 @@ describe('tim CLI integration tests (internal handlers)', () => {
       command
     );
 
-    const updatedPlan = await readPlanFile(planFilePath);
+    const updatedPlan = (await resolvePlanFromDb('1', tempDir)).plan;
     expect(updatedPlan.tasks).toHaveLength(1);
     const [task] = updatedPlan.tasks;
     expect(task?.title).toBe('Integration Task');
@@ -222,7 +216,7 @@ describe('tim CLI integration tests (internal handlers)', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), stringifyPlanWithFrontmatter(plan));
+      await writePlanFile(path.join(tasksDir, `${plan.id}.yml`), plan);
     }
 
     // Test filtering by done status using internal handler and mocked logger
@@ -240,12 +234,8 @@ describe('tim CLI integration tests (internal handlers)', () => {
 
     await handleAddCommand(['Integration', 'Task', 'Removal'], {}, command);
 
-    const planFiles = await fs.readdir(tasksDir);
-    expect(planFiles).toHaveLength(1);
-    const planFilePath = path.join(tasksDir, planFiles[0] as string);
-
     await handleAddTaskCommand(
-      planFilePath,
+      '1',
       {
         title: 'First Task',
         description: 'Initial task to remove later',
@@ -253,15 +243,16 @@ describe('tim CLI integration tests (internal handlers)', () => {
       command
     );
     await handleAddTaskCommand(
-      planFilePath,
+      '1',
       {
         title: 'Second Task',
         description: 'Task that should remain',
       },
       command
     );
-    const preRemovalPlan = await readPlanFile(planFilePath);
+    const preRemovalPlan = (await resolvePlanFromDb('1', tempDir)).plan;
     expect(preRemovalPlan.tasks).toHaveLength(2);
+    const planFilePath = await materializePlan(1, tempDir);
 
     mockLog.mockClear();
     await handleRemoveTaskCommand(
@@ -272,7 +263,7 @@ describe('tim CLI integration tests (internal handlers)', () => {
       command
     );
 
-    const updatedPlan = await readPlanFile(planFilePath);
+    const updatedPlan = (await resolvePlanFromDb('1', tempDir)).plan;
     expect(updatedPlan.tasks).toHaveLength(1);
     expect(updatedPlan.tasks[0]?.title).toBe('Second Task');
     expect(typeof updatedPlan.updatedAt).toBe('string');
@@ -317,7 +308,7 @@ describe('tim CLI integration tests (internal handlers)', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), stringifyPlanWithFrontmatter(plan));
+      await writePlanFile(path.join(tasksDir, `${plan.id}.yml`), plan);
     }
 
     const command = { parent: { opts: () => ({ config: configPath }) } } as any;
@@ -330,22 +321,20 @@ describe('tim CLI integration tests (internal handlers)', () => {
 
   test('tim add with dependencies and priority', async () => {
     const command = { parent: { opts: () => ({ config: configPath }) } } as any;
-    // First create a plan to depend on
+    // Create existing dependency plans first.
     await handleAddCommand(['First', 'Plan'], {}, command);
+    await handleAddCommand(['Second', 'Plan'], {}, command);
 
     // Create a plan with dependencies and priority
     await handleAddCommand(
       ['Dependent', 'Plan'],
-      { dependsOn: [1, 3], priority: 'high', debug: true },
+      { dependsOn: [1, 2], priority: 'high', debug: true },
       command
     );
 
     // Verify the plan has dependencies and priority
-    const files = await fs.readdir(tasksDir);
-    const depFile = files.find((f) => f.endsWith('-dependent-plan.plan.md'));
-    expect(depFile).toBeDefined();
-    const created = await readPlanFile(path.join(tasksDir, depFile!));
-    expect(created.dependencies).toEqual([1, 3]);
+    const created = (await resolvePlanFromDb('3', tempDir)).plan;
+    expect([...(created.dependencies ?? [])].sort((a, b) => a - b)).toEqual([1, 2]);
     expect(created.priority).toBe('high');
   });
 });

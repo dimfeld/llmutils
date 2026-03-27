@@ -512,6 +512,60 @@ export async function getGitRepository(cwd = process.cwd()): Promise<string> {
   return fallbackName;
 }
 
+export async function getGitInfoExcludePath(gitRoot: string): Promise<string | null> {
+  const infoExcludeResult = await $`git rev-parse --path-format=absolute --git-path info/exclude`
+    .cwd(gitRoot)
+    .quiet()
+    .nothrow();
+  if (infoExcludeResult.exitCode !== 0) {
+    return null;
+  }
+
+  const infoExcludePath = infoExcludeResult.stdout.toString().trim();
+  return infoExcludePath ? path.normalize(infoExcludePath) : null;
+}
+
+export async function isIgnoredByGitSharedExcludes(
+  gitRoot: string,
+  relativePath: string
+): Promise<boolean> {
+  const ignoreSourceResult = await $`git check-ignore -v ${relativePath}`
+    .cwd(gitRoot)
+    .quiet()
+    .nothrow();
+  if (ignoreSourceResult.exitCode !== 0) {
+    return false;
+  }
+
+  const ignoreSourceOutput = ignoreSourceResult.stdout.toString().trim();
+  if (!ignoreSourceOutput) {
+    return false;
+  }
+
+  const match = ignoreSourceOutput.match(/^(.*?):\d+:[^\t]*\t/);
+  const matchedSource = match?.[1]?.trim();
+  if (!matchedSource) {
+    return false;
+  }
+
+  const infoExcludePath = (await getGitInfoExcludePath(gitRoot)) ?? '';
+
+  const globalExcludeResult = await $`git config --path core.excludesfile`
+    .cwd(gitRoot)
+    .quiet()
+    .nothrow();
+  const globalExcludePath =
+    globalExcludeResult.exitCode === 0
+      ? path.normalize(globalExcludeResult.stdout.toString().trim())
+      : '';
+
+  const normalizedSource = path.normalize(
+    path.isAbsolute(matchedSource) ? matchedSource : path.join(gitRoot, matchedSource)
+  );
+
+  return normalizedSource === infoExcludePath || normalizedSource === globalExcludePath;
+}
+
 /**
  * Resets the cached git repository name. Intended for use in tests.
  */

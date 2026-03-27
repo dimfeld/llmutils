@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, test, mock, afterEach } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import yaml from 'yaml';
 import { ModuleMocker } from '../../testing.js';
-import { clearPlanCache } from '../plans.js';
+import { clearPlanCache, writePlanFile } from '../plans.js';
+import { closeDatabaseForTesting } from '../db/database.js';
+import { clearPlanSyncContext } from '../db/plan_sync.js';
 import { generateBranchNameFromPlan, handleBranchCommand } from './branch.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
@@ -89,11 +90,14 @@ describe('handleBranchCommand', () => {
     logSpy.mockClear();
     writeStdoutSpy.mockClear();
     clearPlanCache();
+    closeDatabaseForTesting();
+    clearPlanSyncContext();
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-branch-test-'));
     repoDir = path.join(tempDir, 'repo');
     tasksDir = path.join(repoDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
+    await fs.writeFile(path.join(repoDir, '.tim.yml'), 'paths:\n  tasks: tasks\n');
 
     await moduleMocker.mock('../../logging.js', () => ({
       log: logSpy,
@@ -111,6 +115,8 @@ describe('handleBranchCommand', () => {
 
   afterEach(async () => {
     moduleMocker.clear();
+    closeDatabaseForTesting();
+    clearPlanSyncContext();
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
@@ -122,7 +128,7 @@ describe('handleBranchCommand', () => {
       status: 'pending',
       tasks: [],
     };
-    await fs.writeFile(path.join(tasksDir, '7.yml'), `---\n${yaml.stringify(plan)}---\n`);
+    await writePlanFile(path.join(tasksDir, '7.yml'), plan, { cwdForIdentity: process.cwd() });
 
     const command = { parent: { opts: () => ({}) } } as any;
     await handleBranchCommand('7', {}, command);
@@ -136,7 +142,7 @@ describe('handleBranchCommand', () => {
       title: 'Older plan',
       goal: 'Older plan',
       status: 'pending',
-      updatedAt: '2024-01-01T00:00:00.000Z',
+      updatedAt: '2098-01-01T00:00:00.000Z',
       tasks: [],
     };
     const newer = {
@@ -144,11 +150,17 @@ describe('handleBranchCommand', () => {
       title: 'Latest plan',
       goal: 'Latest plan',
       status: 'pending',
-      updatedAt: '2024-02-01T00:00:00.000Z',
+      updatedAt: '2099-02-01T00:00:00.000Z',
       tasks: [],
     };
-    await fs.writeFile(path.join(tasksDir, '10.yml'), `---\n${yaml.stringify(older)}---\n`);
-    await fs.writeFile(path.join(tasksDir, '11.yml'), `---\n${yaml.stringify(newer)}---\n`);
+    await writePlanFile(path.join(tasksDir, '10.yml'), older, {
+      cwdForIdentity: process.cwd(),
+      skipUpdatedAt: true,
+    });
+    await writePlanFile(path.join(tasksDir, '11.yml'), newer, {
+      cwdForIdentity: process.cwd(),
+      skipUpdatedAt: true,
+    });
 
     const command = { parent: { opts: () => ({}) } } as any;
     await handleBranchCommand(undefined, { latest: true }, command);

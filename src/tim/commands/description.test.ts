@@ -35,6 +35,8 @@ const createMockContext = (overrides: Partial<PlanContext> = {}): PlanContext =>
       },
     ],
   } as PlanSchema,
+  repoRoot: testDir,
+  gitRoot: testDir,
   parentChain: [],
   completedChildren: [],
   diffResult: {

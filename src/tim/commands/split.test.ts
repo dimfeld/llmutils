@@ -3,10 +3,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import yaml from 'yaml';
-import { clearPlanCache, getMaxNumericPlanId, readPlanFile, writePlanFile } from '../plans.js';
+import {
+  clearPlanCache,
+  getMaxNumericPlanId,
+  readPlanFile,
+  resolvePlanFromDb,
+  writePlanFile,
+} from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { ModuleMocker } from '../../testing.js';
 import { handleSplitCommand, parseTaskSpecifier } from './split.js';
+import { closeDatabaseForTesting } from '../db/database.js';
+import { clearPlanSyncContext } from '../db/plan_sync.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -19,6 +27,9 @@ describe('tim split - manual', () => {
     tasksDir = testDir;
 
     clearPlanCache();
+    closeDatabaseForTesting();
+    clearPlanSyncContext();
+    await Bun.write(join(testDir, '.tim.yml'), 'paths:\n  tasks: .\n');
 
     // Mock config and environment
     await moduleMocker.mock('../configLoader.js', () => ({
@@ -46,6 +57,8 @@ describe('tim split - manual', () => {
 
   afterEach(async () => {
     moduleMocker.clear();
+    closeDatabaseForTesting();
+    clearPlanSyncContext();
     await rm(testDir, { recursive: true, force: true });
   });
 
@@ -75,7 +88,7 @@ describe('tim split - manual', () => {
       ],
     };
     const parentFile = join(testDir, '1-parent.plan.md');
-    await writePlanFile(parentFile, parentPlan);
+    await writePlanFile(parentFile, parentPlan, { cwdForIdentity: testDir });
 
     const command = { parent: { opts: () => ({}) } } as any;
 
@@ -88,8 +101,7 @@ describe('tim split - manual', () => {
     expect(updatedParent.epic).toBeFalsy();
 
     // Child created with id 2
-    const childFile = join(testDir, '2-task-2.plan.md');
-    const child = await readPlanFile(childFile);
+    const child = (await resolvePlanFromDb('2', testDir)).plan;
     expect(child.id).toBe(2);
     expect(child.parent).toBe(1);
     expect(child.tasks?.length).toBe(0);
@@ -109,7 +121,7 @@ describe('tim split - manual', () => {
       ],
     };
     const parentFile = join(testDir, '1-parent.plan.md');
-    await writePlanFile(parentFile, parentPlan);
+    await writePlanFile(parentFile, parentPlan, { cwdForIdentity: testDir });
 
     const command = { parent: { opts: () => ({}) } } as any;
 
@@ -118,8 +130,7 @@ describe('tim split - manual', () => {
     const updatedParent = await readPlanFile(parentFile);
     expect(updatedParent.tags).toEqual(['frontend', 'urgent']);
 
-    const childFile = join(testDir, '2-task-1.plan.md');
-    const child = await readPlanFile(childFile);
+    const child = (await resolvePlanFromDb('2', testDir)).plan;
     expect(child.tags).toEqual(['frontend', 'urgent']);
   });
 
@@ -140,7 +151,7 @@ describe('tim split - manual', () => {
       ],
     };
     const parentFile = join(testDir, '1-parent.plan.md');
-    await writePlanFile(parentFile, parentPlan);
+    await writePlanFile(parentFile, parentPlan, { cwdForIdentity: testDir });
 
     const command = { parent: { opts: () => ({}) } } as any;
     await handleSplitCommand(parentFile, { tasks: '1-2' }, command);
@@ -149,8 +160,7 @@ describe('tim split - manual', () => {
     expect(updatedParent.tasks.map((t) => t.title)).toEqual(['Docs']);
     expect(updatedParent.dependencies).toEqual([2]);
 
-    const childFile = join(testDir, '2-combined-child-title.plan.md');
-    const child = await readPlanFile(childFile);
+    const child = (await resolvePlanFromDb('2', testDir)).plan;
     expect(child.id).toBe(2);
     expect(child.title).toBe('Combined Child Title');
     expect(child.details).toContain('## Init');
@@ -180,7 +190,7 @@ describe('tim split - manual', () => {
       ],
     };
     const parentFile = join(testDir, '1-parent.plan.md');
-    await writePlanFile(parentFile, parentPlan);
+    await writePlanFile(parentFile, parentPlan, { cwdForIdentity: testDir });
 
     const command = { parent: { opts: () => ({}) } } as any;
     await handleSplitCommand(parentFile, { select: true }, command);
@@ -190,8 +200,7 @@ describe('tim split - manual', () => {
     expect(updatedParent.tasks.map((t) => t.title)).toEqual(['Two']);
     expect(updatedParent.dependencies).toEqual([2]);
 
-    const childFile = join(testDir, '2-interactive-child-title.plan.md');
-    const child = await readPlanFile(childFile);
+    const child = (await resolvePlanFromDb('2', testDir)).plan;
     expect(child.id).toBe(2);
     expect(child.parent).toBe(1);
     expect(child.title).toBe('Interactive Child Title');
@@ -217,7 +226,7 @@ describe('tim split - manual', () => {
       ],
     };
     const parentFile = join(testDir, '1-parent.plan.md');
-    await writePlanFile(parentFile, parentPlan);
+    await writePlanFile(parentFile, parentPlan, { cwdForIdentity: testDir });
 
     const command = { parent: { opts: () => ({}) } } as any;
     await handleSplitCommand(parentFile, { select: true }, command);
@@ -246,7 +255,7 @@ describe('tim split - manual', () => {
       ],
     };
     const parentFile = join(testDir, '1-parent.plan.md');
-    await writePlanFile(parentFile, parentPlan);
+    await writePlanFile(parentFile, parentPlan, { cwdForIdentity: testDir });
 
     const command = { parent: { opts: () => ({}) } } as any;
     await handleSplitCommand(parentFile, { select: true }, command);
@@ -272,7 +281,7 @@ describe('tim split - manual', () => {
       ],
     };
     const parentFile = join(testDir, '1-parent.plan.md');
-    await writePlanFile(parentFile, parentPlan);
+    await writePlanFile(parentFile, parentPlan, { cwdForIdentity: testDir });
 
     const command = { parent: { opts: () => ({}) } } as any;
     await handleSplitCommand(parentFile, { tasks: '1-2' }, command);
@@ -282,8 +291,7 @@ describe('tim split - manual', () => {
     expect(updatedParent.epic).toBe(true);
     expect(updatedParent.dependencies).toEqual([2]);
 
-    const childFile = join(testDir, '2-all-tasks-child.plan.md');
-    const child = await readPlanFile(childFile);
+    const child = (await resolvePlanFromDb('2', testDir)).plan;
     expect(child.parent).toBe(1);
     expect(child.tasks?.length).toBe(0);
     expect(child.details).toContain('## A');
@@ -301,7 +309,7 @@ describe('tim split - manual', () => {
       ],
     };
     const parentFile = join(testDir, '1-parent.plan.md');
-    await writePlanFile(parentFile, parentPlan);
+    await writePlanFile(parentFile, parentPlan, { cwdForIdentity: testDir });
 
     const command = { parent: { opts: () => ({}) } } as any;
 
@@ -330,7 +338,7 @@ describe('tim split - manual', () => {
       ],
     };
     const parentFile = join(testDir, '1-parent.plan.md');
-    await writePlanFile(parentFile, parentPlan);
+    await writePlanFile(parentFile, parentPlan, { cwdForIdentity: testDir });
 
     const command = { parent: { opts: () => ({}) } } as any;
 

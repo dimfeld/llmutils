@@ -6,7 +6,7 @@ import chalk from 'chalk';
 import { executePostApplyCommand } from '../../actions.js';
 import { type TimConfig } from '../../configSchema.js';
 import type { Executor } from '../../executors/types.js';
-import { readPlanFile, setPlanStatus, writePlanFile } from '../../plans.js';
+import { readPlanFile, setPlanStatusById, writePlanFile } from '../../plans.js';
 import { getAllIncompleteTasks } from '../../plans/find_next.js';
 import { buildExecutionPromptWithoutSteps } from '../../prompt_builder.js';
 import { checkAndMarkParentDone, markParentInProgress } from './parent_plans.js';
@@ -375,7 +375,11 @@ Available tasks:\n\n${taskDescriptions}`,
           break;
         }
 
-        await setPlanStatus(currentPlanFile, 'done');
+        if (typeof updatedPlanData.id !== 'number') {
+          throw new Error(`Batch mode plan is missing a numeric ID: ${currentPlanFile}`);
+        }
+
+        await setPlanStatusById(updatedPlanData.id, 'done', baseDir, currentPlanFile);
 
         // Update docs if configured for after-completion mode
         if (updateDocsMode === 'after-completion') {

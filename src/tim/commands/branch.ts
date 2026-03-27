@@ -1,13 +1,17 @@
 import { writeStdout } from '../../logging.js';
+import { getGitRoot } from '../../common/git.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir } from '../configSchema.js';
-import { getCombinedTitle } from '../display_utils.js';
 import { slugify } from '../id_utils.js';
 import { parseLinearIssueIdentifier } from '../../common/linear.js';
 import { parseGitHubIssueIdentifier } from '../../common/github/issues.js';
-import { findNextReadyDependency } from './find_next_dependency.js';
-import { findMostRecentlyUpdatedPlan } from './prompts.js';
-import { findNextPlan, readAllPlans, readPlanFile, resolvePlanFile } from '../plans.js';
+import {
+  findLatestPlanFromDb,
+  findNextPlanFromDb,
+  findNextReadyDependencyFromDb,
+} from './plan_discovery.js';
+import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 import type { PlanSchema } from '../planSchema.js';
 
 type BranchCommandOptions = {
@@ -122,8 +126,8 @@ export async function handleBranchCommand(
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
   const tasksDir = await resolveTasksDir(config);
+  const repoRoot = (await getGitRoot()) || process.cwd();
 
-  let resolvedPlanFile: string;
   let selectedPlan: PlanSchema | undefined;
 
   if (options.nextReady) {
@@ -136,36 +140,35 @@ export async function handleBranchCommand(
     if (!Number.isNaN(parsedId)) {
       parentPlanId = parsedId;
     } else {
-      const resolvedInput = await resolvePlanFile(options.nextReady, globalOpts.config);
-      const planFromFile = await readPlanFile(resolvedInput);
+      const parentRepoRoot = await resolveRepoRootForPlanArg(
+        options.nextReady,
+        repoRoot,
+        globalOpts.config
+      );
+      const planFromFile = (
+        await resolvePlanFromDbOrSyncFile(options.nextReady, parentRepoRoot, parentRepoRoot)
+      ).plan;
       if (!planFromFile.id || typeof planFromFile.id !== 'number') {
-        throw new Error(`Plan file ${resolvedInput} does not have a valid numeric ID`);
+        throw new Error(`Plan ${options.nextReady} does not have a valid numeric ID`);
       }
       parentPlanId = planFromFile.id;
     }
 
-    const result = await findNextReadyDependency(parentPlanId, tasksDir, true);
+    const result = await findNextReadyDependencyFromDb(parentPlanId, tasksDir, repoRoot, true);
     if (!result.plan) {
       throw new Error(result.message);
     }
 
-    resolvedPlanFile = result.plan.filename;
     selectedPlan = result.plan;
   } else if (options.latest) {
-    const { plans } = await readAllPlans(tasksDir);
-    if (plans.size === 0) {
-      throw new Error('No plans found in tasks directory.');
-    }
-
-    const latestPlan = await findMostRecentlyUpdatedPlan(plans);
+    const latestPlan = await findLatestPlanFromDb(tasksDir, repoRoot);
     if (!latestPlan) {
-      throw new Error('No plans with updatedAt field found in tasks directory.');
+      throw new Error('No plans with updatedAt field found in the database.');
     }
 
-    resolvedPlanFile = latestPlan.filename;
     selectedPlan = latestPlan;
   } else if (options.next || options.current) {
-    const plan = await findNextPlan(tasksDir, {
+    const plan = await findNextPlanFromDb(tasksDir, repoRoot, {
       includePending: true,
       includeInProgress: options.current,
     });
@@ -180,7 +183,6 @@ export async function handleBranchCommand(
       }
     }
 
-    resolvedPlanFile = plan.filename;
     selectedPlan = plan;
   } else {
     if (!planFile) {
@@ -189,10 +191,14 @@ export async function handleBranchCommand(
       );
     }
 
-    resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
+    const planRepoRoot = await resolveRepoRootForPlanArg(planFile, repoRoot, globalOpts.config);
+    selectedPlan = (await resolvePlanFromDbOrSyncFile(planFile, planRepoRoot, planRepoRoot)).plan;
   }
 
-  const plan = selectedPlan ?? (await readPlanFile(resolvedPlanFile));
+  const plan = selectedPlan;
+  if (!plan) {
+    throw new Error('Failed to resolve plan');
+  }
   const branchName = generateBranchNameFromPlan(plan);
   writeStdout(`${branchName}\n`);
 }

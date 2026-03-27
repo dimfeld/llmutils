@@ -12,20 +12,22 @@ describe('getInstructionsFromGithubIssue', () => {
   });
 
   test('parses and combines RmprOptions from issue body and comments', async () => {
+    const fetchedIssue = {
+      issue: {
+        number: 123,
+        title: 'Test Issue',
+        body: 'Issue body\n--rmpr include-all with-imports',
+      },
+      comments: [
+        { body: 'Comment 1\n--rmpr with-importers' },
+        { body: 'Comment 2\n--rmpr include src/utils.ts' },
+      ],
+    };
+
     // Mock the issues.ts module
     await moduleMocker.mock('./issues.ts', () => ({
       getInstructionsFromGithubIssue,
-      fetchIssueAndComments: async () => ({
-        issue: {
-          number: 123,
-          title: 'Test Issue',
-          body: 'Issue body\n--rmpr include-all with-imports',
-        },
-        comments: [
-          { body: 'Comment 1\n--rmpr with-importers' },
-          { body: 'Comment 2\n--rmpr include src/utils.ts' },
-        ],
-      }),
+      fetchIssueAndComments: async () => fetchedIssue,
       selectIssueComments: async () => ['Issue body', 'Comment 1', 'Comment 2'],
       parsePrOrIssueNumber: () => ({ owner: 'test', repo: 'repo', number: 123 }),
     }));
@@ -34,7 +36,7 @@ describe('getInstructionsFromGithubIssue', () => {
     const logSpy = spyOn(logging, 'log').mockImplementation(() => {});
 
     try {
-      const result = await getInstructionsFromGithubIssue('123');
+      const result = await getInstructionsFromGithubIssue(fetchedIssue);
 
       expect(result.rmprOptions).toEqual({
         includeAll: true,
@@ -52,17 +54,19 @@ describe('getInstructionsFromGithubIssue', () => {
   });
 
   test('handles issue with no RmprOptions', async () => {
+    const fetchedIssue = {
+      issue: {
+        number: 123,
+        title: 'Test Issue',
+        body: 'Issue body',
+      },
+      comments: [{ body: 'Comment 1' }],
+    };
+
     // Mock the issues.ts module
     await moduleMocker.mock('./issues.ts', () => ({
       getInstructionsFromGithubIssue,
-      fetchIssueAndComments: async () => ({
-        issue: {
-          number: 123,
-          title: 'Test Issue',
-          body: 'Issue body',
-        },
-        comments: [{ body: 'Comment 1' }],
-      }),
+      fetchIssueAndComments: async () => fetchedIssue,
       selectIssueComments: async () => ['Issue body', 'Comment 1'],
       parsePrOrIssueNumber: () => ({ owner: 'test', repo: 'repo', number: 123 }),
     }));
@@ -71,7 +75,7 @@ describe('getInstructionsFromGithubIssue', () => {
     const logSpy = spyOn(logging, 'log').mockImplementation(() => {});
 
     try {
-      const result = await getInstructionsFromGithubIssue('123');
+      const result = await getInstructionsFromGithubIssue(fetchedIssue);
 
       expect(result.rmprOptions).toBeNull();
       expect(result.plan).toBe('Issue body\n\nComment 1');

@@ -3,13 +3,15 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import yaml from 'yaml';
-import { clearAllTimCaches, stringifyPlanWithFrontmatter } from '../../testing.js';
+import { clearAllTimCaches } from '../../testing.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import { closeDatabaseForTesting } from '../db/database.js';
+import { clearPlanSyncContext } from '../db/plan_sync.js';
 import { getDatabase } from '../db/database.js';
 import { getPlanByUuid, upsertPlan } from '../db/plan.js';
 import { getOrCreateProject } from '../db/project.js';
 import { handleRemoveCommand } from './remove.js';
-import { readPlanFile } from '../plans.js';
+import { readPlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 
 describe('tim remove command', () => {
@@ -25,6 +27,8 @@ describe('tim remove command', () => {
 
   beforeEach(async () => {
     clearAllTimCaches();
+    closeDatabaseForTesting();
+    clearPlanSyncContext();
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-remove-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
@@ -43,6 +47,8 @@ describe('tim remove command', () => {
 
   afterEach(async () => {
     clearAllTimCaches();
+    closeDatabaseForTesting();
+    clearPlanSyncContext();
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
@@ -58,7 +64,7 @@ describe('tim remove command', () => {
       tasks: [],
     };
 
-    await fs.writeFile(filePath, stringifyPlanWithFrontmatter({ ...basePlan, ...overrides }));
+    await writePlanFile(filePath, { ...basePlan, ...overrides }, { cwdForIdentity: tempDir });
     return filePath;
   }
 
@@ -105,15 +111,14 @@ describe('tim remove command', () => {
         '3': '33333333-3333-4333-8333-333333333333',
       },
     });
+    await writePlan(3, { uuid: '33333333-3333-4333-8333-333333333333' });
 
     await handleRemoveCommand(['1'], { force: true }, makeCommand());
 
     await expect(fs.stat(path.join(tasksDir, '1.plan.md'))).rejects.toThrow();
     const dependent = await readPlanFile(dependentPath);
     expect(dependent.dependencies).toEqual([3]);
-    expect(dependent.references).toEqual({
-      '3': '33333333-3333-4333-8333-333333333333',
-    });
+    expect(dependent.references).toBeUndefined();
   });
 
   test('removes with --force and clears child parent references', async () => {
@@ -128,7 +133,7 @@ describe('tim remove command', () => {
 
   test('errors when removing a non-existent plan', async () => {
     await expect(handleRemoveCommand(['9999'], {}, makeCommand())).rejects.toThrow(
-      'No plan found with ID or file path: 9999'
+      'No plan found in the database for identifier: 9999'
     );
   });
 
@@ -152,7 +157,7 @@ describe('tim remove command', () => {
     const remaining = await readPlanFile(remainingPath);
     expect(remaining.dependencies).toEqual([]);
     expect(remaining.parent).toBeUndefined();
-    expect(remaining.references).toEqual({});
+    expect(remaining.references).toBeUndefined();
   });
 
   test('removes multiple dependent targets without --force when all dependents are selected', async () => {
@@ -166,7 +171,7 @@ describe('tim remove command', () => {
   });
 
   test('removes a SQLite plan when no local file exists', async () => {
-    const repository = await getRepositoryIdentity({ cwd: tasksDir });
+    const repository = await getRepositoryIdentity({ cwd: tempDir });
     const db = getDatabase();
     const project = getOrCreateProject(db, repository.repositoryId);
     upsertPlan(db, project.id, {

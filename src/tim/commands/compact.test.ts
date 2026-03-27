@@ -7,6 +7,8 @@ import type { PlanSchema } from '../planSchema.js';
 import { getDefaultConfig, type TimConfig } from '../configSchema.js';
 import { writePlanFile, readPlanFile, clearPlanCache } from '../plans.js';
 import type { Executor } from '../executors/types.js';
+import { closeDatabaseForTesting } from '../db/database.js';
+import { clearPlanSyncContext } from '../db/plan_sync.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -59,15 +61,18 @@ describe('compact command', () => {
 
   beforeEach(async () => {
     clearPlanCache();
+    closeDatabaseForTesting();
+    clearPlanSyncContext();
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-compact-test-'));
     planPath = path.join(tempDir, '101-compact.plan.md');
+    await fs.writeFile(path.join(tempDir, '.tim.yml'), 'paths:\n  tasks: .\n');
 
     const plan: PlanSchema = {
       id: 101,
       title: 'Test Plan',
       goal: 'Ship the feature',
       status: 'done',
-      uuid: '11111111-1111-1111-1111-111111111111',
+      uuid: '11111111-1111-4111-8111-111111111111',
       details: `<!-- tim-generated-start -->
 ## Expected Behavior
 - This is a verbose description that should be compacted.
@@ -83,7 +88,7 @@ describe('compact command', () => {
       ],
     };
 
-    await writePlanFile(planPath, plan);
+    await writePlanFile(planPath, plan, { cwdForIdentity: process.cwd() });
 
     executorExecute.mockReset().mockResolvedValue(undefined);
     mockBuildExecutorAndLog.mockClear();
@@ -102,6 +107,8 @@ describe('compact command', () => {
 
   afterEach(async () => {
     clearPlanCache();
+    closeDatabaseForTesting();
+    clearPlanSyncContext();
     if (tempDir) {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
@@ -197,7 +204,7 @@ describe('compact command', () => {
       title: 'Test',
       goal: 'Test goal',
       status: 'done',
-      uuid: '66666666-6666-6666-6666-666666666666',
+      uuid: '66666666-6666-4666-8666-666666666666',
       tasks: [],
     };
 
@@ -212,7 +219,7 @@ describe('compact command', () => {
   test('handleCompactCommand rejects non-completed plans', async () => {
     const plan = await readPlanFile(planPath);
     plan.status = 'in_progress';
-    await writePlanFile(planPath, plan);
+    await writePlanFile(planPath, plan, { cwdForIdentity: process.cwd() });
 
     const mockCommand = {
       parent: () => ({ opts: () => ({}) }),
@@ -226,7 +233,10 @@ describe('compact command', () => {
   test('handleCompactCommand warns about plan age', async () => {
     const plan = await readPlanFile(planPath);
     plan.updatedAt = new Date().toISOString(); // Very recent
-    await writePlanFile(planPath, plan);
+    await writePlanFile(planPath, plan, {
+      cwdForIdentity: process.cwd(),
+      skipUpdatedAt: true,
+    });
 
     const mockCommand = {
       parent: () => ({ opts: () => ({}) }),
@@ -266,13 +276,16 @@ describe('compact command', () => {
     ).rejects.toThrow('Something went wrong');
   });
 
-  test('handleCompactCommand processes multiple plans concurrently', async () => {
+  test('compactPlan processes multiple plans concurrently', async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'compact-multi-'));
     const plansDir = path.join(tempDir, 'plans');
     await fs.mkdir(plansDir, { recursive: true });
 
-    // Create three test plans
-    const planPaths: string[] = [];
+    const config: TimConfig = {
+      ...getDefaultConfig(),
+      executors: {},
+    };
+    const plans: Array<{ plan: PlanSchema; planPath: string }> = [];
     for (let i = 1; i <= 3; i++) {
       const plan: PlanSchema = {
         id: i,
@@ -290,27 +303,30 @@ describe('compact command', () => {
         updatedAt: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString(),
       };
 
-      const planPath = path.join(plansDir, `plan-${i}.md`);
-      await writePlanFile(planPath, plan);
-      planPaths.push(planPath);
+      const planPath = path.join(plansDir, `${i}.plan.md`);
+      await writePlanFile(planPath, plan, { cwdForIdentity: process.cwd() });
+      plans.push({ plan, planPath });
     }
 
-    const mockCommand = {
-      parent: () => ({ opts: () => ({ config: tempDir }) }),
-    } as any;
-
-    // Reset mocks to track calls for this test
     mockLog.mockClear();
     mockWarn.mockClear();
     executorExecute.mockClear();
 
     try {
-      await handleCompactCommand(planPaths, { executor: 'claude-code' }, mockCommand);
+      await Promise.all(
+        plans.map(({ plan, planPath }) =>
+          compactPlan({
+            plan,
+            planFilePath: planPath,
+            executor: { execute: executorExecute },
+            executorName: 'claude-code',
+            config,
+            minimumAgeDays: 30,
+          })
+        )
+      );
 
-      // Verify all three plans were processed
       expect(executorExecute).toHaveBeenCalledTimes(3);
-      expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('3 plans'));
-      expect(mockLog).toHaveBeenCalledWith(expect.stringContaining('Successfully compacted: 3'));
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
@@ -320,7 +336,10 @@ describe('compact command', () => {
     const plan = await readPlanFile(planPath);
     const originalUpdatedAt = '2024-01-15T10:30:00.000Z';
     plan.updatedAt = originalUpdatedAt;
-    await writePlanFile(planPath, plan);
+    await writePlanFile(planPath, plan, {
+      cwdForIdentity: process.cwd(),
+      skipUpdatedAt: true,
+    });
 
     const config: TimConfig = {
       ...getDefaultConfig(),

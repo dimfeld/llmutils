@@ -28,14 +28,16 @@ describe('assignments command handlers', () => {
   let logMock: ReturnType<typeof mock>;
   let warnMock: ReturnType<typeof mock>;
   let confirmMock: ReturnType<typeof mock>;
+  let getRepositoryIdentityMock: ReturnType<typeof mock>;
   let currentConfig: Record<string, unknown>;
+  let currentConfigPath: string | undefined;
 
   let handleAssignmentsListCommand: (options: any, command: any) => Promise<void>;
   let handleAssignmentsCleanStaleCommand: (options: any, command: any) => Promise<void>;
   let handleAssignmentsShowConflictsCommand: (options: any, command: any) => Promise<void>;
 
   function buildCommandChain(): { parent: { parent: { opts: () => Record<string, unknown> } } } {
-    return { parent: { parent: { opts: () => ({}) } } };
+    return { parent: { parent: { opts: () => ({ config: currentConfigPath }) } } };
   }
 
   function getProjectId(): number {
@@ -103,9 +105,15 @@ describe('assignments command handlers', () => {
     logMock = mock(() => {});
     warnMock = mock(() => {});
     confirmMock = mock(async () => true);
+    getRepositoryIdentityMock = mock(async (_options?: { cwd?: string }) => ({
+      repositoryId,
+      remoteUrl: repositoryRemoteUrl,
+      gitRoot: currentWorkspace,
+    }));
     currentConfig = {
       paths: { tasks: tasksDir },
     };
+    currentConfigPath = undefined;
 
     const chalkIdentity = (value: string) => value;
 
@@ -136,11 +144,7 @@ describe('assignments command handlers', () => {
     }));
 
     await moduleMocker.mock('../assignments/workspace_identifier.ts', () => ({
-      getRepositoryIdentity: async () => ({
-        repositoryId,
-        remoteUrl: repositoryRemoteUrl,
-        gitRoot: currentWorkspace,
-      }),
+      getRepositoryIdentity: getRepositoryIdentityMock,
     }));
 
     await writePlanFile(path.join(tasksDir, planPathFragment), {
@@ -381,5 +385,17 @@ describe('assignments command handlers', () => {
     expect(logMock).toHaveBeenLastCalledWith(
       'Assignment conflicts are not possible in the single-workspace assignment model.'
     );
+  });
+
+  test('uses the configured repo root for repository identity under --config', async () => {
+    const configRepo = path.join(tempRoot, 'configured-repo');
+    currentConfigPath = path.join(configRepo, '.tim.yml');
+    await fs.mkdir(configRepo, { recursive: true });
+    await fs.writeFile(currentConfigPath, 'paths:\n  tasks: tasks\n', 'utf-8');
+
+    const command = buildCommandChain();
+    await handleAssignmentsListCommand({}, command);
+
+    expect(getRepositoryIdentityMock).toHaveBeenCalledWith({ cwd: configRepo });
   });
 });

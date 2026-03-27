@@ -2,11 +2,15 @@
 // Displays detailed information about a plan
 
 import chalk from 'chalk';
-import { stat } from 'node:fs/promises';
-import * as path from 'node:path';
+import * as fs from 'node:fs';
 import * as clipboard from '../../common/clipboard.js';
 import { getCurrentBranchName } from '../../common/git.js';
 import { log, warn } from '../../logging.js';
+import {
+  findNextPlanFromCollection,
+  findNextReadyDependencyFromCollection,
+} from './plan_discovery.js';
+import { findMostRecentlyUpdatedPlan } from './prompts.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveTasksDir } from '../configSchema.js';
 import {
@@ -19,32 +23,14 @@ import {
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { getAssignmentEntriesByProject, type AssignmentEntry } from '../db/assignment.js';
 import { getDatabase } from '../db/database.js';
-import {
-  getPlanDependenciesByProject,
-  getPlansByProject,
-  getPlanTasksByProject,
-} from '../db/plan.js';
 import { getProject } from '../db/project.js';
-import {
-  findNextPlan,
-  getBlockedPlans,
-  getChildPlans,
-  getDiscoveredPlans,
-  isPlanReady,
-  readAllPlans,
-  readPlanFile,
-  resolvePlanFile,
-} from '../plans.js';
+import { getBlockedPlans, getChildPlans, getDiscoveredPlans, isPlanReady } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
-import { findNextReadyDependency } from './find_next_dependency.js';
-import { buildPlanContext, resolvePlan } from '../plan_display.js';
+import { resolvePlan } from '../plan_display.js';
 import type { GenerateModeRegistrationContext, GetPlanArguments } from '../mcp/generate_mode.js';
-import { getParentChain } from '../utils/hierarchy.js';
+import { loadPlansFromDb } from '../plans_db.js';
+import { getParentChain, type PlanWithFilename } from '../utils/hierarchy.js';
 import { getPlanTool } from '../tools/index.js';
-
-type PlanWithFilename = PlanSchema & { filename: string };
-
-const MIN_TIMESTAMP = Number.NEGATIVE_INFINITY;
 
 interface AssignmentDisplayInfo {
   entry?: AssignmentEntry;
@@ -126,76 +112,6 @@ function applyAssignmentsToPlans(
   return result;
 }
 
-function loadPlansFromDb(searchDir: string, repositoryId: string): Map<number, PlanWithFilename> {
-  const db = getDatabase();
-  const project = getProject(db, repositoryId);
-  if (!project) {
-    return new Map();
-  }
-
-  const rows = getPlansByProject(db, project.id);
-  if (rows.length === 0) {
-    return new Map();
-  }
-
-  const planUuidToId = new Map<string, number>();
-  for (const row of rows) {
-    planUuidToId.set(row.uuid, row.plan_id);
-  }
-
-  const tasksByPlanUuid = new Map<
-    string,
-    Array<{ title: string; description: string; done: boolean }>
-  >();
-  const taskRows = getPlanTasksByProject(db, project.id);
-  for (const taskRow of taskRows) {
-    const list = tasksByPlanUuid.get(taskRow.plan_uuid) ?? [];
-    list.push({
-      title: taskRow.title,
-      description: taskRow.description,
-      done: taskRow.done === 1,
-    });
-    tasksByPlanUuid.set(taskRow.plan_uuid, list);
-  }
-
-  const dependenciesByPlanUuid = new Map<string, number[]>();
-  const dependencyRows = getPlanDependenciesByProject(db, project.id);
-  for (const dependencyRow of dependencyRows) {
-    const dependencyPlanId = planUuidToId.get(dependencyRow.depends_on_uuid);
-    if (dependencyPlanId === undefined) {
-      continue;
-    }
-
-    const list = dependenciesByPlanUuid.get(dependencyRow.plan_uuid) ?? [];
-    list.push(dependencyPlanId);
-    dependenciesByPlanUuid.set(dependencyRow.plan_uuid, list);
-  }
-
-  const plans = new Map<number, PlanWithFilename>();
-  for (const row of rows) {
-    const parentId = row.parent_uuid ? planUuidToId.get(row.parent_uuid) : undefined;
-    plans.set(row.plan_id, {
-      id: row.plan_id,
-      uuid: row.uuid,
-      title: row.title ?? undefined,
-      goal: row.goal ?? '',
-      details: row.details ?? '',
-      status: row.status,
-      priority: row.priority ?? undefined,
-      branch: row.branch ?? undefined,
-      parent: parentId,
-      epic: row.epic === 1,
-      tasks: tasksByPlanUuid.get(row.uuid) ?? [],
-      dependencies: dependenciesByPlanUuid.get(row.uuid) ?? [],
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      filename: path.join(searchDir, row.filename),
-    });
-  }
-
-  return plans;
-}
-
 function buildAssignmentDisplayInfo(
   plan: PlanSchema,
   entry: AssignmentEntry | undefined,
@@ -235,23 +151,8 @@ function buildAssignmentDisplayInfo(
   };
 }
 
-async function getPlanTimestamp(plan: PlanWithFilename): Promise<number> {
-  const updatedAt = parseIsoTimestamp(plan.updatedAt);
-  if (updatedAt !== undefined) {
-    return updatedAt;
-  }
-
-  const createdAt = parseIsoTimestamp(plan.createdAt);
-  if (createdAt !== undefined) {
-    return createdAt;
-  }
-
-  try {
-    const fileStats = await stat(plan.filename);
-    return fileStats.mtimeMs;
-  } catch {
-    return MIN_TIMESTAMP;
-  }
+function getPlanDisplayLocation(plan: Pick<PlanSchema, 'id'>, planPath?: string | null): string {
+  return planPath ?? (plan.id ? `Plan ${plan.id}` : 'Plan');
 }
 
 /**
@@ -629,102 +530,83 @@ async function displayPlanInfo(
 
 export async function handleShowCommand(planFile: string | undefined, options: any, command: any) {
   const globalOpts = command.parent.opts();
-
   const config = await loadEffectiveConfig(globalOpts.config);
+  const tasksDir = await resolveTasksDir(config);
+  const repository = await getRepositoryIdentity({ cwd: tasksDir });
+  const db = getDatabase();
 
-  let resolvedPlanFile: string;
-  let tasksDir: string | undefined;
-  let preloadedPlans: Map<number, PlanWithFilename> | undefined;
-  let selectedPlan: PlanWithFilename | undefined;
-  const requestedPlanArg = planFile;
+  const fetchAssignments = async (): Promise<Record<string, AssignmentEntry>> => {
+    const project = getProject(db, repository.repositoryId);
+    if (!project) {
+      return {};
+    }
+
+    return getAssignmentEntriesByProject(db, project.id);
+  };
+
+  const loadPlanCollection = (): Map<number, PlanWithFilename> =>
+    loadPlansFromDb(tasksDir, repository.repositoryId).plans;
+
+  let allPlans = loadPlanCollection();
+  let selectedPlan: PlanSchema | undefined;
+  let selectedPlanId: number | undefined;
+  let resolvedPlanFile: string | undefined;
 
   if (options.nextReady) {
-    // Validate that --next-ready has a value (parent plan ID or file path)
     if (!options.nextReady || options.nextReady === true || options.nextReady.trim() === '') {
       throw new Error('--next-ready requires a parent plan ID or file path');
     }
 
-    // Find the next ready dependency of the specified parent plan
-    if (!tasksDir) {
-      tasksDir = await resolveTasksDir(config);
-    }
-
-    // Convert string ID to number or resolve plan file to get numeric ID
     let parentPlanId: number;
     const planIdNumber = parseInt(options.nextReady, 10);
     if (!isNaN(planIdNumber)) {
       parentPlanId = planIdNumber;
     } else {
-      // Try to resolve as a file path and get the plan ID
-      const resolvedInput = await resolvePlanFile(options.nextReady, globalOpts.config);
-      const planFromFile = await readPlanFile(resolvedInput);
-      if (!planFromFile.id || typeof planFromFile.id !== 'number') {
-        throw new Error(`Plan file ${resolvedInput} does not have a valid numeric ID`);
+      const resolvedParent = await resolvePlan(options.nextReady, {
+        gitRoot: repository.gitRoot,
+        configPath: globalOpts.config,
+      });
+      if (!resolvedParent.plan.id || typeof resolvedParent.plan.id !== 'number') {
+        throw new Error(`Plan ${options.nextReady} does not have a valid numeric ID`);
       }
-      parentPlanId = planFromFile.id;
+      parentPlanId = resolvedParent.plan.id;
     }
 
-    const result = await findNextReadyDependency(parentPlanId, tasksDir, true);
-
+    const result = findNextReadyDependencyFromCollection(parentPlanId, allPlans, true);
     if (!result.plan) {
       log(result.message);
       return;
     }
 
     log(chalk.green(`Found ready plan: ${result.plan.id} - ${result.plan.title}`));
-    resolvedPlanFile = result.plan.filename;
     selectedPlan = result.plan;
+    selectedPlanId = result.plan.id;
+    resolvedPlanFile = fs.existsSync(result.plan.filename) ? result.plan.filename : undefined;
   } else if (options.latest) {
-    if (!tasksDir) {
-      tasksDir = await resolveTasksDir(config);
-    }
-
-    const { plans } = await readAllPlans(tasksDir);
-    preloadedPlans = plans;
-
-    if (plans.size === 0) {
-      log('No plans found in tasks directory.');
+    if (allPlans.size === 0) {
+      log('No plans found in database.');
       return;
     }
 
-    // Only consider plans with an updatedAt field
-    const plansWithUpdatedAt = Array.from(plans.values()).filter((plan) => plan.updatedAt);
+    const latestPlan = await findMostRecentlyUpdatedPlan(allPlans);
 
-    if (plansWithUpdatedAt.length === 0) {
-      log('No plans with updatedAt field found in tasks directory.');
+    if (!latestPlan) {
+      log('No plans with updatedAt field found in database.');
       return;
     }
 
-    const candidates = await Promise.all(
-      plansWithUpdatedAt.map(async (candidate) => ({
-        plan: candidate,
-        timestamp: await getPlanTimestamp(candidate),
-      }))
-    );
-
-    let latestEntry = candidates[0];
-    for (const entry of candidates.slice(1)) {
-      if (entry.timestamp > latestEntry.timestamp) {
-        latestEntry = entry;
-      }
-    }
-
-    const title = getCombinedTitle(latestEntry.plan);
+    const title = getCombinedTitle(latestPlan);
     const label =
-      latestEntry.plan.id !== undefined && latestEntry.plan.id !== null
-        ? `${latestEntry.plan.id} - ${title}`
-        : title || latestEntry.plan.filename;
+      latestPlan.id !== undefined && latestPlan.id !== null
+        ? `${latestPlan.id} - ${title}`
+        : title || latestPlan.filename;
 
     log(chalk.green(`Found latest plan: ${label}`));
-    resolvedPlanFile = latestEntry.plan.filename;
-    selectedPlan = latestEntry.plan;
+    selectedPlan = latestPlan;
+    selectedPlanId = latestPlan.id;
+    resolvedPlanFile = fs.existsSync(latestPlan.filename) ? latestPlan.filename : undefined;
   } else if (options.next || options.current) {
-    // Find the next ready plan or current plan
-    if (!tasksDir) {
-      tasksDir = await resolveTasksDir(config);
-    }
-
-    const plan = await findNextPlan(tasksDir, {
+    const plan = findNextPlanFromCollection(allPlans, {
       includePending: true,
       includeInProgress: options.current,
     });
@@ -742,8 +624,9 @@ export async function handleShowCommand(planFile: string | undefined, options: a
       ? `Found current plan: ${plan.id}`
       : `Found next ready plan: ${plan.id}`;
     log(chalk.green(message));
-    resolvedPlanFile = plan.filename;
     selectedPlan = plan;
+    selectedPlanId = plan.id;
+    resolvedPlanFile = fs.existsSync(plan.filename) ? plan.filename : undefined;
   } else {
     if (!planFile) {
       const currentBranch = await getCurrentBranchName();
@@ -762,99 +645,25 @@ export async function handleShowCommand(planFile: string | undefined, options: a
       );
       planFile = inferredPlanId;
     }
-    try {
-      resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
-    } catch (error) {
-      if (!tasksDir) {
-        tasksDir = await resolveTasksDir(config);
-      }
-      const repositoryForDb = await getRepositoryIdentity({ cwd: tasksDir });
-      const dbPlans = loadPlansFromDb(tasksDir, repositoryForDb.repositoryId);
-      const numericPlanArg = Number(planFile);
-      const dbPlan = !Number.isNaN(numericPlanArg) ? dbPlans.get(numericPlanArg) : undefined;
-      if (!dbPlan) {
-        throw error;
-      }
-
-      selectedPlan = dbPlan;
-      resolvedPlanFile = dbPlan.filename;
-      preloadedPlans = dbPlans;
-    }
+    const resolvedPlan = await resolvePlan(planFile, {
+      gitRoot: repository.gitRoot,
+      configPath: globalOpts.config,
+    });
+    selectedPlan = resolvedPlan.plan;
+    selectedPlanId = resolvedPlan.plan.id;
+    resolvedPlanFile = getPlanDisplayLocation(resolvedPlan.plan, resolvedPlan.planPath);
   }
-
-  if (!tasksDir) {
-    tasksDir = await resolveTasksDir(config);
-  }
-
-  if (!tasksDir) {
-    throw new Error('Unable to resolve tasks directory for tim show command');
-  }
-
-  if (!preloadedPlans) {
-    const { plans } = await readAllPlans(tasksDir);
-    preloadedPlans = plans;
-  }
-
-  let allPlans = preloadedPlans;
-  const resolvedTasksDir = tasksDir;
-
-  const repository = await getRepositoryIdentity({ cwd: path.dirname(resolvedPlanFile) });
-  const db = getDatabase();
-
-  const fetchAssignments = async (): Promise<Record<string, AssignmentEntry>> => {
-    const project = getProject(db, repository.repositoryId);
-    if (!project) {
-      return {};
-    }
-
-    return getAssignmentEntriesByProject(db, project.id);
-  };
 
   let assignmentEntries = await fetchAssignments();
+  let plan: PlanSchema | undefined =
+    (selectedPlanId !== undefined ? allPlans.get(selectedPlanId) : undefined) ?? selectedPlan;
+
+  if (!plan) {
+    throw new Error(`Failed to load plan from ${planFile ?? 'current selection'}`);
+  }
+  resolvedPlanFile ??= getPlanDisplayLocation(plan);
+
   let plansWithAssignments = applyAssignmentsToPlans(allPlans, assignmentEntries);
-
-  // Find the specific plan from the collection
-  let plan: PlanSchema | undefined = selectedPlan;
-
-  if (!plan) {
-    for (const p of allPlans.values()) {
-      if (p.filename === resolvedPlanFile) {
-        plan = p;
-        break;
-      }
-    }
-  }
-
-  if (!plan) {
-    // Fallback to reading the file directly if not found in collection
-    try {
-      plan = await readPlanFile(resolvedPlanFile);
-    } catch (error) {
-      const dbPlans = loadPlansFromDb(resolvedTasksDir, repository.repositoryId);
-      const numericRequestedArg =
-        typeof requestedPlanArg === 'string' ? Number(requestedPlanArg) : Number.NaN;
-      const dbPlanById = !Number.isNaN(numericRequestedArg)
-        ? dbPlans.get(numericRequestedArg)
-        : undefined;
-      const dbPlanByFilename = Array.from(dbPlans.values()).find(
-        (candidate) => path.resolve(candidate.filename) === path.resolve(resolvedPlanFile)
-      );
-      const fallbackPlan = dbPlanById ?? dbPlanByFilename;
-      if (!fallbackPlan) {
-        throw error;
-      }
-
-      plan = fallbackPlan;
-      resolvedPlanFile = fallbackPlan.filename;
-      allPlans = dbPlans;
-    }
-  }
-
-  if (!plan) {
-    throw new Error(`Failed to load plan from ${resolvedPlanFile}`);
-  }
-
-  plansWithAssignments = applyAssignmentsToPlans(allPlans, assignmentEntries);
 
   let planAssignmentEntry = plan.uuid ? assignmentEntries[plan.uuid] : undefined;
   let displayedPlan = applyAssignmentStatus(plan, planAssignmentEntry);
@@ -889,9 +698,10 @@ export async function handleShowCommand(planFile: string | undefined, options: a
           // process.stdout.write('\x1b[0J'); // Clear from cursor to end
         }
 
-        // Re-read the plan data for updates
-        const updatedPlan = await readPlanFile(resolvedPlanFile);
-        const { plans: updatedAllPlans } = await readAllPlans(resolvedTasksDir);
+        const updatedAllPlans = loadPlanCollection();
+        const updatedPlan =
+          (selectedPlanId !== undefined ? updatedAllPlans.get(selectedPlanId) : undefined) ??
+          displayedPlan;
 
         assignmentEntries = await fetchAssignments();
         plansWithAssignments = applyAssignmentsToPlans(updatedAllPlans, assignmentEntries);

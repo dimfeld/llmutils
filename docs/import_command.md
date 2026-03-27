@@ -46,8 +46,8 @@ In interactive mode, the command will:
 
 The command automatically prevents creating duplicate plans by:
 
-- Checking existing plan files in the configured tasks directory
-- Looking for the issue's URL in the `issue` field of existing plan files
+- Checking existing plans in the database for matching issue URLs
+- Refreshing the plan snapshot after each successful import, so subsequent imports in the same batch see newly created plans
 - Filtering out any issues that have already been imported
 
 ### Content Selection
@@ -58,13 +58,17 @@ For each issue being imported, you can choose which parts to include:
 - **Comments**: Individual comments from the issue thread
 - Interactive prompts let you select exactly what content becomes the plan's `details`
 
+### Atomic Hierarchical Imports
+
+When importing issues with sub-issues (hierarchical imports), all related plans (parent + children) are written to the database atomically in a single transaction. This ensures that if the process fails midway through, the DB remains consistent — either all plans from the hierarchy are created, or none are. File writes happen after the transaction completes.
+
 ### rmfilter Argument Parsing
 
 Similar to the `generate` command, the import command can parse embedded `rmfilter` arguments from issue text. This allows issues to specify which files should be included for context when working on the implementation.
 
 ### Stub Plan Output
 
-Each imported issue creates a "stub" plan file containing:
+Each imported issue creates a "stub" plan in the database containing:
 
 - **Title**: Derived from the issue title
 - **Goal**: Summary of what the issue aims to accomplish
@@ -105,10 +109,10 @@ The import command is designed to work seamlessly with the existing tim workflow
 
 ## Output Format
 
-The generated plan files follow the standard tim YAML schema:
+Imported plans are stored in the SQLite database as the source of truth. Each plan follows the standard tim schema:
 
 ```yaml
-id: issue-123-implement-feature
+id: 123
 title: 'Implement new feature X'
 goal: 'Add functionality Y to improve user experience'
 status: pending

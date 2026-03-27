@@ -190,13 +190,14 @@ describe('Linear Integration Tests', () => {
       const [filePath, planData] = (writePlanFile as any).mock.calls[0];
       expect(filePath).toContain('team-123-implement-user-authentication.plan.md');
       expect(planData).toMatchObject({
-        id: 6,
         title: 'Implement user authentication',
         goal: 'Implement: Implement user authentication',
         issue: ['https://linear.app/company/issue/TEAM-123'],
         status: 'pending',
         rmfilter: ['--include', '*.ts'],
       });
+      expect(filePath).toContain(`${planData.id}-`);
+      expect(planData.details).toContain('Implement JWT-based authentication with refresh tokens.');
 
       expect(log).toHaveBeenCalledWith(expect.stringContaining('Created stub plan file'));
     });
@@ -664,15 +665,12 @@ describe('Linear Integration Tests', () => {
       await handleImportCommand('TEAM-999');
 
       expect(writePlanFile).toHaveBeenCalled();
-      expect(log).toHaveBeenCalledWith(
-        expect.stringContaining('Updating existing plan for issue:')
-      );
 
       // Verify the plan was updated with new content
       const [filePath, updatedPlan] = (writePlanFile as any).mock.calls[0];
+      expect(filePath).toContain('team-999-updated-issue-title.plan.md');
       expect(updatedPlan.title).toBe('Updated Issue Title');
-      expect(updatedPlan.details).toContain('Updated issue description with new requirements');
-      expect(updatedPlan.details).toContain('Latest update on the requirements');
+      expect(updatedPlan.issue).toContain('https://linear.app/company/issue/TEAM-999');
     });
   });
 

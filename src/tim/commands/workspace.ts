@@ -17,7 +17,7 @@ import {
   isInGitRepository,
 } from '../../common/git.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { resolvePlanFile, readPlanFile, setPlanStatus } from '../plans.js';
+import { readPlanFile, setPlanStatusById } from '../plans.js';
 import { generateAlphanumericId } from '../id_utils.js';
 import { WorkspaceAutoSelector } from '../workspace/workspace_auto_selector.js';
 import {
@@ -28,6 +28,7 @@ import {
 } from '../workspace/workspace_manager.js';
 import { deleteWorkspace } from '../db/workspace.js';
 import { getDatabase } from '../db/database.js';
+import { syncPlanToDb } from '../db/plan_sync.js';
 import {
   formatWorkspacePath,
   getCombinedTitleFromSummary,
@@ -43,7 +44,6 @@ import { logClaimOutcome } from '../assignments/claim_logging.js';
 import { getRepositoryIdentity, getUserIdentity } from '../assignments/workspace_identifier.js';
 import { getIssueTracker } from '../../common/issue_tracker/factory.js';
 import { importSingleIssue } from './import/import.js';
-import { readAllPlans } from '../plans.js';
 import { parseIssueInput, type ParsedIssueInput } from '../issue_utils.js';
 import { spawnAndLogOutput } from '../../common/process.js';
 import { generateBranchNameFromPlan } from './branch.js';
@@ -60,6 +60,10 @@ import {
 import { getAssignmentEntriesByProject } from '../db/assignment.js';
 import { getProject } from '../db/project.js';
 import type { WorkspaceType } from '../db/workspace.js';
+import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { loadPlansFromDb } from '../plans_db.js';
+import { materializePlan } from '../plan_materialize.js';
 
 const PRIMARY_REMOTE_NAME = 'primary';
 
@@ -841,9 +845,31 @@ async function tryReuseExistingWorkspace(
       if (options.resolvedPlanFilePath && planFilePathInWorkspace) {
         try {
           if (options.resolvedPlanFilePath !== planFilePathInWorkspace) {
-            const srcContent = await fs.readFile(options.resolvedPlanFilePath, 'utf8');
-            await fs.mkdir(path.dirname(planFilePathInWorkspace), { recursive: true });
-            await fs.writeFile(planFilePathInWorkspace, srcContent, 'utf8');
+            // Sync any existing workspace plan edits back to DB before overwriting
+            const existingWorkspacePlan = await Bun.file(planFilePathInWorkspace)
+              .stat()
+              .then((stats) => stats.isFile())
+              .catch(() => false);
+            if (existingWorkspacePlan) {
+              try {
+                const existingPlan = await readPlanFile(planFilePathInWorkspace);
+                await syncPlanToDb(existingPlan, planFilePathInWorkspace, {
+                  cwdForIdentity: options.mainRepoRoot,
+                  throwOnError: true,
+                });
+              } catch (error) {
+                warn(
+                  `Failed to sync existing workspace plan before overwrite: ${error as Error}. Skipping plan file copy to avoid data loss.`
+                );
+                planFilePathInWorkspace = undefined;
+              }
+            }
+
+            if (planFilePathInWorkspace) {
+              const srcContent = await fs.readFile(options.resolvedPlanFilePath, 'utf8');
+              await fs.mkdir(path.dirname(planFilePathInWorkspace), { recursive: true });
+              await fs.writeFile(planFilePathInWorkspace, srcContent, 'utf8');
+            }
           }
         } catch (error) {
           warn(`Failed to copy plan file into reused workspace: ${error as Error}`);
@@ -1002,10 +1028,20 @@ export async function handleWorkspaceAddCommand(
 
   if (planIdentifier) {
     try {
-      resolvedPlanFilePath = await resolvePlanFile(planIdentifier, globalOpts.config);
-
-      // Read and parse the plan file
-      planData = await readPlanFile(resolvedPlanFilePath);
+      const planRepoRoot = await resolveRepoRootForPlanArg(
+        planIdentifier,
+        gitRoot,
+        globalOpts.config
+      );
+      const resolvedPlan = await resolvePlanFromDbOrSyncFile(
+        planIdentifier,
+        planRepoRoot,
+        planRepoRoot
+      );
+      planData = resolvedPlan.plan;
+      resolvedPlanFilePath =
+        resolvedPlan.planPath ??
+        (planData.id ? await materializePlan(planData.id, planRepoRoot) : undefined);
 
       // If no custom ID was provided, use the plan's ID if available
       if (!options.id && planData.id) {
@@ -1037,7 +1073,7 @@ export async function handleWorkspaceAddCommand(
         : undefined;
     const reuseResult = await tryReuseExistingWorkspace(effectiveConfig, trackingFilePath, {
       fromBranch: options.fromBranch,
-      createBranch: true,
+      createBranch: options.createBranch,
       branchName,
       planData,
       resolvedPlanFilePath,
@@ -1081,7 +1117,7 @@ export async function handleWorkspaceAddCommand(
       resolvedPlanFilePath,
       effectiveConfig,
       {
-        createBranch: options.createBranch,
+        createBranch: options.createBranch ?? true,
         ...(customBranchName && { branchName: customBranchName }),
         ...(options.fromBranch && { fromBranch: options.fromBranch }),
         ...(planData && { planData }),
@@ -1108,12 +1144,13 @@ export async function handleWorkspaceAddCommand(
       const issueTracker = await getIssueTracker(effectiveConfig);
       const tasksDir = path.join(workspace.path, effectiveConfig.paths?.tasks || 'tasks');
 
-      // Read existing plans from workspace to pass to importSingleIssue
-      const { plans: allPlans } = await readAllPlans(tasksDir);
+      const repository = await getRepositoryIdentity({ cwd: workspace.path });
+      const { plans: allPlans } = loadPlansFromDb(tasksDir, repository.repositoryId);
 
       // Import the issue
-      const success = await importSingleIssue(
+      const result = await importSingleIssue(
         issueInfo.originalInput,
+        workspace.path,
         tasksDir,
         issueTracker,
         {}, // No additional options for import
@@ -1121,16 +1158,19 @@ export async function handleWorkspaceAddCommand(
         false // withSubissues
       );
 
-      if (success) {
+      if (result.success) {
         log(chalk.green(`✓ Issue ${issueInfo.identifier} imported successfully`));
-        // Find the imported plan file to show in success message
-        const { plans: updatedPlans } = await readAllPlans(tasksDir, false);
-        for (const [_, plan] of updatedPlans) {
-          if (plan.issue?.some((url: string) => url.includes(issueInfo.identifier))) {
-            importedPlanFile = plan.filename;
-            importedPlan = plan;
-            break;
-          }
+        importedPlanFile = result.planPath;
+        if (result.planPath) {
+          const resolvedImportedPlan = await resolvePlanFromDbOrSyncFile(
+            result.planPath,
+            workspace.path,
+            workspace.path
+          );
+          importedPlan = {
+            ...resolvedImportedPlan.plan,
+            filename: result.planPath,
+          };
         }
       } else {
         warn(`Issue ${issueInfo.identifier} was already imported or import failed`);
@@ -1154,9 +1194,14 @@ export async function handleWorkspaceAddCommand(
   }
 
   // Update plan status in the new workspace if plan was copied
-  if (workspace.planFilePathInWorkspace) {
+  if (workspace.planFilePathInWorkspace && planData?.id) {
     try {
-      await setPlanStatus(workspace.planFilePathInWorkspace, 'in_progress');
+      await setPlanStatusById(
+        planData.id,
+        'in_progress',
+        workspace.path,
+        workspace.planFilePathInWorkspace
+      );
       log('Plan status updated to in_progress in workspace');
     } catch (err) {
       warn(`Failed to update plan status in workspace: ${err as Error}`);
@@ -1369,8 +1414,12 @@ export async function handleWorkspacePullPlanCommand(
 
   const globalOpts = command.parent!.parent!.opts();
   const workspace = await resolveWorkspaceIdentifier(options.workspace);
-  const planFile = await resolvePlanFile(planIdentifier, globalOpts.config);
-  const plan = await readPlanFile(planFile);
+  const repoRoot = await resolveRepoRootForPlanArg(
+    planIdentifier,
+    process.cwd(),
+    globalOpts.config
+  );
+  const plan = (await resolvePlanFromDbOrSyncFile(planIdentifier, repoRoot, repoRoot)).plan;
   const branchName = options.branch ?? plan.branch ?? generateBranchNameFromPlan(plan);
   const remoteName = options.remote ?? 'origin';
 
@@ -1912,8 +1961,12 @@ export async function handleWorkspaceUpdateCommand(
   // Handle description - from-plan takes precedence if both specified
   if (options.fromPlan) {
     try {
-      const planPath = await resolvePlanFile(options.fromPlan, globalOpts.config);
-      const plan = await readPlanFile(planPath);
+      const repoRoot = await resolveRepoRootForPlanArg(
+        options.fromPlan,
+        process.cwd(),
+        globalOpts.config
+      );
+      const plan = (await resolvePlanFromDbOrSyncFile(options.fromPlan, repoRoot, repoRoot)).plan;
       const planDescription = buildDescriptionFromPlan(plan);
       const planId = plan.id ? String(plan.id) : '';
       patch.description = planId ? `${planId} - ${planDescription}` : planDescription;

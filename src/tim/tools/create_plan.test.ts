@@ -1,13 +1,15 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { clearAllTimCaches } from '../../testing.js';
 import { getDefaultConfig } from '../configSchema.js';
-import { readPlanFile, getMaxNumericPlanId } from '../plans.js';
-import { ModuleMocker, clearAllTimCaches, stringifyPlanWithFrontmatter } from '../../testing.js';
+import { closeDatabaseForTesting } from '../db/database.js';
+import { resolvePlanFromDb, writePlanToDb } from '../plans.js';
 import { createPlanTool } from './create_plan.js';
 import type { ToolContext } from './context.js';
 import type { TimConfig } from '../configSchema.js';
+import type { PlanSchema } from '../planSchema.js';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -16,22 +18,13 @@ describe('createPlanTool references', () => {
   let tasksDir: string;
   let config: TimConfig;
   let context: ToolContext;
-  const moduleMocker = new ModuleMocker(import.meta);
 
   beforeEach(async () => {
     clearAllTimCaches();
-
-    // Mock generateNumericPlanId to use local-only ID generation (avoids shared storage)
-    await moduleMocker.mock('../id_utils.js', () => ({
-      generateNumericPlanId: mock(async (dir: string) => {
-        const maxId = await getMaxNumericPlanId(dir);
-        return maxId + 1;
-      }),
-    }));
+    closeDatabaseForTesting();
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-create-plan-test-'));
     tasksDir = path.join(tempDir, 'tasks');
-    await fs.mkdir(tasksDir, { recursive: true });
 
     config = {
       ...getDefaultConfig(),
@@ -45,14 +38,43 @@ describe('createPlanTool references', () => {
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
     clearAllTimCaches();
+    closeDatabaseForTesting();
     if (tempDir) {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
   });
 
-  test('creates plan with uuid', async () => {
+  async function seedPlan(plan: Partial<PlanSchema> & Pick<PlanSchema, 'id' | 'title' | 'goal'>) {
+    await writePlanToDb(
+      {
+        id: plan.id,
+        uuid: plan.uuid,
+        title: plan.title,
+        goal: plan.goal,
+        details: plan.details ?? '',
+        status: plan.status ?? 'pending',
+        priority: plan.priority,
+        parent: plan.parent,
+        dependencies: plan.dependencies ?? [],
+        discoveredFrom: plan.discoveredFrom,
+        assignedTo: plan.assignedTo,
+        issue: plan.issue ?? [],
+        docs: plan.docs ?? [],
+        tags: plan.tags ?? [],
+        epic: plan.epic ?? false,
+        temp: plan.temp ?? false,
+        tasks: plan.tasks ?? [],
+        references: plan.references,
+        createdAt: plan.createdAt ?? new Date().toISOString(),
+        updatedAt: plan.updatedAt ?? new Date().toISOString(),
+        filename: `${plan.id}-seed.plan.md`,
+      },
+      { cwdForIdentity: tempDir, skipUpdatedAt: true }
+    );
+  }
+
+  test('creates a DB-only plan with uuid and no tasks directory requirement', async () => {
     const result = await createPlanTool(
       {
         title: 'Test Plan',
@@ -63,28 +85,25 @@ describe('createPlanTool references', () => {
       context
     );
 
-    const planPath = path.join(tasksDir, '1-test-plan.plan.md');
-    const plan = await readPlanFile(planPath);
+    const { plan, planPath } = await resolvePlanFromDb('1', tempDir);
     expect(plan.uuid).toMatch(UUID_REGEX);
-    expect(result.data?.id).toBe(1);
+    expect(plan.title).toBe('Test Plan');
+    expect(plan.details).toBe('Test details');
+    expect(planPath).toBeNull();
+    expect(result.data).toEqual({ id: 1, path: 'plan 1' });
+    await expect(fs.access(tasksDir)).rejects.toThrow();
   });
 
-  test('creates plan with parent references', async () => {
+  test('creates plan with parent references and updates the parent in DB', async () => {
     const parentUuid = crypto.randomUUID();
-    await fs.writeFile(
-      path.join(tasksDir, '1-parent.yml'),
-      stringifyPlanWithFrontmatter({
-        id: 1,
-        uuid: parentUuid,
-        title: 'Parent Plan',
-        goal: 'Parent goal',
-        details: '',
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        tasks: [],
-      })
-    );
+    await seedPlan({
+      id: 1,
+      uuid: parentUuid,
+      title: 'Parent Plan',
+      goal: 'Parent goal',
+      epic: true,
+      status: 'done',
+    });
 
     const result = await createPlanTool(
       {
@@ -97,50 +116,28 @@ describe('createPlanTool references', () => {
       context
     );
 
-    const childPath = path.join(tasksDir, '2-child-plan.plan.md');
-    const childPlan = await readPlanFile(childPath);
+    const { plan: childPlan } = await resolvePlanFromDb(String(result.data?.id), tempDir);
     expect(childPlan.uuid).toMatch(UUID_REGEX);
     expect(childPlan.parent).toBe(1);
-    // Child should have reference to parent
-    expect(childPlan.references).toBeDefined();
-    expect(childPlan.references![1]).toBe(parentUuid);
+    expect(childPlan.references).toBeUndefined();
 
-    // Parent should have reference to child
-    const parentPlan = await readPlanFile(path.join(tasksDir, '1-parent.yml'));
+    const { plan: parentPlan } = await resolvePlanFromDb('1', tempDir);
     expect(parentPlan.dependencies).toEqual([2]);
-    expect(parentPlan.references).toBeDefined();
-    expect(parentPlan.references![2]).toBe(childPlan.uuid);
+    expect(parentPlan.references).toBeUndefined();
+    expect(parentPlan.status).toBe('in_progress');
   });
 
-  test('creates plan with dependsOn references', async () => {
-    // Create dependency plans without UUIDs to test generation
-    await fs.writeFile(
-      path.join(tasksDir, '1-dep.yml'),
-      stringifyPlanWithFrontmatter({
-        id: 1,
-        title: 'Dependency 1',
-        goal: 'Goal',
-        details: '',
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        tasks: [],
-      })
-    );
-
-    await fs.writeFile(
-      path.join(tasksDir, '2-dep.yml'),
-      stringifyPlanWithFrontmatter({
-        id: 2,
-        title: 'Dependency 2',
-        goal: 'Goal',
-        details: '',
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        tasks: [],
-      })
-    );
+  test('creates plan with dependsOn references from DB-backed dependency plans', async () => {
+    await seedPlan({
+      id: 1,
+      title: 'Dependency 1',
+      goal: 'Goal',
+    });
+    await seedPlan({
+      id: 2,
+      title: 'Dependency 2',
+      goal: 'Goal',
+    });
 
     await createPlanTool(
       {
@@ -153,36 +150,24 @@ describe('createPlanTool references', () => {
       context
     );
 
-    const planPath = path.join(tasksDir, '3-plan-with-deps.plan.md');
-    const plan = await readPlanFile(planPath);
-    expect(plan.dependencies).toEqual([1, 2]);
-    expect(plan.references).toBeDefined();
-    expect(plan.references![1]).toMatch(UUID_REGEX);
-    expect(plan.references![2]).toMatch(UUID_REGEX);
+    const { plan } = await resolvePlanFromDb('3', tempDir);
+    const { plan: dep1 } = await resolvePlanFromDb('1', tempDir);
+    const { plan: dep2 } = await resolvePlanFromDb('2', tempDir);
 
-    // Referenced plans should have UUIDs generated
-    const dep1 = await readPlanFile(path.join(tasksDir, '1-dep.yml'));
-    const dep2 = await readPlanFile(path.join(tasksDir, '2-dep.yml'));
+    expect([...plan.dependencies].sort((a, b) => a - b)).toEqual([1, 2]);
+    expect(plan.references).toBeUndefined();
     expect(dep1.uuid).toMatch(UUID_REGEX);
     expect(dep2.uuid).toMatch(UUID_REGEX);
-    expect(plan.references![1]).toBe(dep1.uuid);
-    expect(plan.references![2]).toBe(dep2.uuid);
+    expect(dep1.uuid).not.toBe(dep2.uuid);
   });
 
-  test('creates plan with discoveredFrom reference', async () => {
-    await fs.writeFile(
-      path.join(tasksDir, '1-source.yml'),
-      stringifyPlanWithFrontmatter({
-        id: 1,
-        title: 'Source Plan',
-        goal: 'Goal',
-        details: '',
-        status: 'in_progress',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        tasks: [],
-      })
-    );
+  test('creates plan with discoveredFrom reference from the DB', async () => {
+    await seedPlan({
+      id: 1,
+      title: 'Source Plan',
+      goal: 'Goal',
+      status: 'in_progress',
+    });
 
     await createPlanTool(
       {
@@ -195,18 +180,15 @@ describe('createPlanTool references', () => {
       context
     );
 
-    const planPath = path.join(tasksDir, '2-discovered-plan.plan.md');
-    const plan = await readPlanFile(planPath);
-    expect(plan.discoveredFrom).toBe(1);
-    expect(plan.references).toBeDefined();
-    expect(plan.references![1]).toMatch(UUID_REGEX);
+    const { plan } = await resolvePlanFromDb('2', tempDir);
+    const { plan: sourcePlan } = await resolvePlanFromDb('1', tempDir);
 
-    const sourcePlan = await readPlanFile(path.join(tasksDir, '1-source.yml'));
+    expect(plan.discoveredFrom).toBe(1);
+    expect(plan.references).toBeUndefined();
     expect(sourcePlan.uuid).toMatch(UUID_REGEX);
-    expect(plan.references![1]).toBe(sourcePlan.uuid);
   });
 
-  test('creates plan without references when no relationships', async () => {
+  test('creates plan without references when no relationships exist', async () => {
     await createPlanTool(
       {
         title: 'Standalone Plan',
@@ -217,10 +199,8 @@ describe('createPlanTool references', () => {
       context
     );
 
-    const planPath = path.join(tasksDir, '1-standalone-plan.plan.md');
-    const plan = await readPlanFile(planPath);
+    const { plan } = await resolvePlanFromDb('1', tempDir);
     expect(plan.uuid).toMatch(UUID_REGEX);
-    // No references should exist since there are no relationships
     expect(plan.references === undefined || Object.keys(plan.references).length === 0).toBe(true);
   });
 });

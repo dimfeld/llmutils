@@ -3,8 +3,11 @@ import { getDatabase } from './db/database.js';
 import {
   getPlanDependenciesByProject,
   getPlanByUuid,
+  getPlanDependenciesByUuid,
   getPlansByProject,
+  getPlanTagsByUuid,
   getPlanTasksByProject,
+  getPlanTasksByUuid,
   getPlanTagsByProject,
   type PlanRow,
 } from './db/plan.js';
@@ -59,7 +62,8 @@ export function planRowToSchemaInput(
 
   const dependencies = dependencyUuids
     .map((uuid) => resolveUuidToPlanId(uuid, uuidToPlanId))
-    .filter((id): id is number => typeof id === 'number');
+    .filter((id): id is number => typeof id === 'number')
+    .sort((a, b) => a - b);
 
   return {
     id: row.plan_id,
@@ -90,6 +94,24 @@ export function planRowToSchemaInput(
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   } satisfies PlanSchema;
+}
+
+export function planRowForTransaction(row: PlanRow, uuidToPlanId: Map<string, number>): PlanSchema {
+  const db = getDatabase();
+  const tasks = getPlanTasksByUuid(db, row.uuid).map((task) => ({
+    title: task.title,
+    description: task.description,
+    done: task.done === 1,
+  }));
+  const dependencyUuids = getPlanDependenciesByUuid(db, row.uuid).map(
+    (dependency) => dependency.depends_on_uuid
+  );
+  const tags = getPlanTagsByUuid(db, row.uuid).map((tag) => tag.tag);
+  return planRowToSchemaInput(row, tasks, dependencyUuids, tags, uuidToPlanId);
+}
+
+export function invertPlanIdToUuidMap(idToUuid: Map<number, string>): Map<string, number> {
+  return new Map(Array.from(idToUuid.entries(), ([planId, uuid]) => [uuid, planId]));
 }
 
 export function loadPlansFromDb(searchDir: string, repositoryId: string): PlansLoadResult {
@@ -144,7 +166,7 @@ export function loadPlansFromDb(searchDir: string, repositoryId: string): PlansL
   const seenIds = new Map<number, string[]>();
 
   for (const row of rows) {
-    const absoluteFilename = path.join(searchDir, row.filename);
+    const absoluteFilename = row.filename ? path.join(searchDir, row.filename) : '';
     const existingPaths = seenIds.get(row.plan_id) ?? [];
     existingPaths.push(absoluteFilename);
     seenIds.set(row.plan_id, existingPaths);

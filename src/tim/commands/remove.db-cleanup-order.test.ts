@@ -1,21 +1,24 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import yaml from 'yaml';
-import { ModuleMocker, clearAllTimCaches, stringifyPlanWithFrontmatter } from '../../testing.js';
+import { clearAllTimCaches } from '../../testing.js';
+import { claimPlan } from '../assignments/claim_plan.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import { getAssignment } from '../db/assignment.js';
+import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
+import { getPlanByUuid } from '../db/plan.js';
+import { getOrCreateProject } from '../db/project.js';
+import { writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
-
-const moduleMocker = new ModuleMocker(import.meta);
+import { handleRemoveCommand } from './remove.js';
 
 describe('tim remove command DB cleanup flow', () => {
   let tempDir: string;
   let tasksDir: string;
   let configPath: string;
-
-  const removePlanFromDbMock = mock(async () => {});
-  const removePlanAssignmentMock = mock(async () => {});
-  const existsAtDbCleanupCall: boolean[] = [];
+  let repositoryId: string;
 
   const makeCommand = () => ({
     parent: {
@@ -25,6 +28,7 @@ describe('tim remove command DB cleanup flow', () => {
 
   beforeEach(async () => {
     clearAllTimCaches();
+    closeDatabaseForTesting();
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-remove-db-order-test-'));
     tasksDir = path.join(tempDir, 'tasks');
@@ -41,14 +45,12 @@ describe('tim remove command DB cleanup flow', () => {
       })
     );
 
-    removePlanFromDbMock.mockReset();
-    removePlanAssignmentMock.mockReset();
-    existsAtDbCleanupCall.length = 0;
+    repositoryId = (await getRepositoryIdentity({ cwd: tempDir })).repositoryId;
   });
 
   afterEach(async () => {
     clearAllTimCaches();
-    moduleMocker.clear();
+    closeDatabaseForTesting();
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
@@ -64,43 +66,41 @@ describe('tim remove command DB cleanup flow', () => {
       tasks: [],
     };
 
-    await fs.writeFile(filePath, stringifyPlanWithFrontmatter({ ...basePlan, ...overrides }));
+    await writePlanFile(filePath, { ...basePlan, ...overrides }, { cwdForIdentity: tempDir });
     return filePath;
   }
 
-  test('deletes plan file before DB cleanup', async () => {
-    const planPath = await writePlan(1, { uuid: '11111111-1111-4111-8111-111111111111' });
+  function getProjectId(): number {
+    return getOrCreateProject(getDatabase(), repositoryId).id;
+  }
 
-    await moduleMocker.mock('../db/plan_sync.js', () => ({
-      removePlanFromDb: mock(async () => {
-        const exists = await fs
-          .access(planPath)
-          .then(() => true)
-          .catch(() => false);
-        existsAtDbCleanupCall.push(exists);
-      }),
-    }));
+  test('removes the plan file and deletes the DB row', async () => {
+    const planUuid = '11111111-1111-4111-8111-111111111111';
+    const planPath = await writePlan(1, { uuid: planUuid });
 
-    const { handleRemoveCommand } = await import('./remove.js');
     await handleRemoveCommand(['1'], {}, makeCommand());
 
-    expect(existsAtDbCleanupCall).toEqual([false]);
+    await expect(fs.access(planPath)).rejects.toThrow();
+    expect(getPlanByUuid(getDatabase(), planUuid)).toBeNull();
   });
 
-  test('does not call removePlanAssignment directly', async () => {
-    await writePlan(1, { uuid: '22222222-2222-4222-8222-222222222222' });
+  test('removes any assignment row alongside the plan row', async () => {
+    const planUuid = '22222222-2222-4222-8222-222222222222';
+    await writePlan(1, { uuid: planUuid });
 
-    await moduleMocker.mock('../db/plan_sync.js', () => ({
-      removePlanFromDb: removePlanFromDbMock,
-    }));
-    await moduleMocker.mock('../assignments/remove_plan_assignment.js', () => ({
-      removePlanAssignment: removePlanAssignmentMock,
-    }));
+    await claimPlan(1, {
+      uuid: planUuid,
+      repositoryId,
+      repositoryRemoteUrl: null,
+      workspacePath: tempDir,
+      user: 'alice',
+    });
 
-    const { handleRemoveCommand } = await import('./remove.js');
+    expect(getAssignment(getDatabase(), getProjectId(), planUuid)).not.toBeNull();
+
     await handleRemoveCommand(['1'], {}, makeCommand());
 
-    expect(removePlanFromDbMock).toHaveBeenCalledTimes(1);
-    expect(removePlanAssignmentMock).not.toHaveBeenCalled();
+    expect(getPlanByUuid(getDatabase(), planUuid)).toBeNull();
+    expect(getAssignment(getDatabase(), getProjectId(), planUuid)).toBeNull();
   });
 });

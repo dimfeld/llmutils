@@ -10,6 +10,8 @@ import { readPlanFile } from '../plans.js';
 import { extractMarkdownToYaml, type ExtractMarkdownToYamlOptions } from '../process_markdown.js';
 import { setQuiet } from '../../common/process.ts';
 import type { PlanSchema } from '../planSchema.js';
+import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 
 export async function handleExtractCommand(inputFile: string | undefined, options: any) {
   setQuiet(options.quiet);
@@ -50,7 +52,12 @@ export async function handleExtractCommand(inputFile: string | undefined, option
       ? outputPath
       : `${outputPath}.plan.md`;
   try {
-    const existingPlan = await readPlanFile(outputPlanPath);
+    const repoRoot = await resolveRepoRootForPlanArg(outputPlanPath, process.cwd(), options.config);
+    const existingPlan = (
+      await resolvePlanFromDbOrSyncFile(outputPlanPath, repoRoot, repoRoot).catch(async () => ({
+        plan: await readPlanFile(outputPlanPath),
+      }))
+    ).plan;
     // Check if it's a stub plan (has structure but no tasks)
     if (existingPlan && (!existingPlan.tasks || existingPlan.tasks.length === 0)) {
       stubPlanData = existingPlan;

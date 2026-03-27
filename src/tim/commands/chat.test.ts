@@ -18,6 +18,7 @@ describe('handleChatCommand', () => {
   const buildExecutorAndLogSpy = mock(() => mockExecutor);
   const runWithHeadlessAdapterIfEnabledSpy = mock(async (options: any) => options.callback());
   const getGitRootSpy = mock(async () => '/repo-root');
+  const resolveRepoRootForPlanArgSpy = mock(async () => '/repo-root');
   const commitAllSpy = mock(async () => 0);
   const setupWorkspaceSpy = mock(async (_options: any, _baseDir: string, planFile?: string) => ({
     baseDir: '/repo-root/workspaces/task-123',
@@ -28,7 +29,18 @@ describe('handleChatCommand', () => {
   const prepareWorkspaceRoundTripSpy = mock(async () => null);
   const runPreExecutionWorkspaceSyncSpy = mock(async () => {});
   const runPostExecutionWorkspaceSyncSpy = mock(async () => {});
-  const resolvePlanFileSpy = mock(async () => '/repo-root/tasks/123-test.plan.md');
+  const resolvePlanFromDbOrSyncFileSpy = mock(async () => ({
+    plan: {
+      id: 123,
+      uuid: '11111111-1111-4111-8111-111111111111',
+      title: 'Test plan',
+      status: 'pending',
+      priority: 'medium',
+      issue: ['https://example.com/issues/42'],
+      tasks: [],
+    },
+    planPath: '/repo-root/tasks/123-test.plan.md',
+  }));
   const readPlanFileSpy = mock(async () => ({
     id: 123,
     uuid: '11111111-1111-4111-8111-111111111111',
@@ -48,6 +60,7 @@ describe('handleChatCommand', () => {
   const touchWorkspaceInfoSpy = mock(() => {});
   const generateBranchNameFromPlanSpy = mock(() => 'plan-derived-branch');
   const warnSpy = mock(() => {});
+  const syncPlanToDbSpy = mock(async () => {});
 
   const originalStdinIsTTY = process.stdin.isTTY;
   const originalCodexUseAppServer = process.env.CODEX_USE_APP_SERVER;
@@ -62,12 +75,13 @@ describe('handleChatCommand', () => {
     buildExecutorAndLogSpy.mockClear();
     runWithHeadlessAdapterIfEnabledSpy.mockClear();
     getGitRootSpy.mockClear();
+    resolveRepoRootForPlanArgSpy.mockClear();
     commitAllSpy.mockClear();
     setupWorkspaceSpy.mockClear();
     prepareWorkspaceRoundTripSpy.mockClear();
     runPreExecutionWorkspaceSyncSpy.mockClear();
     runPostExecutionWorkspaceSyncSpy.mockClear();
-    resolvePlanFileSpy.mockClear();
+    resolvePlanFromDbOrSyncFileSpy.mockClear();
     readPlanFileSpy.mockClear();
     buildDescriptionFromPlanSpy.mockClear();
     getCombinedTitleFromSummarySpy.mockClear();
@@ -76,6 +90,7 @@ describe('handleChatCommand', () => {
     touchWorkspaceInfoSpy.mockClear();
     generateBranchNameFromPlanSpy.mockClear();
     warnSpy.mockClear();
+    syncPlanToDbSpy.mockClear();
 
     loadEffectiveConfigSpy.mockImplementation(async () => ({
       defaultExecutor: undefined,
@@ -84,6 +99,7 @@ describe('handleChatCommand', () => {
     }));
     isTunnelActiveSpy.mockImplementation(() => false);
     getGitRootSpy.mockImplementation(async () => '/repo-root');
+    resolveRepoRootForPlanArgSpy.mockImplementation(async () => '/repo-root');
     commitAllSpy.mockImplementation(async () => 0);
     setupWorkspaceSpy.mockImplementation(
       async (_options: any, _baseDir: string, planFile?: string) => ({
@@ -96,7 +112,10 @@ describe('handleChatCommand', () => {
     prepareWorkspaceRoundTripSpy.mockImplementation(async () => null);
     runPreExecutionWorkspaceSyncSpy.mockImplementation(async () => {});
     runPostExecutionWorkspaceSyncSpy.mockImplementation(async () => {});
-    resolvePlanFileSpy.mockImplementation(async () => '/repo-root/tasks/123-test.plan.md');
+    resolvePlanFromDbOrSyncFileSpy.mockImplementation(async () => ({
+      plan: await readPlanFileSpy(),
+      planPath: '/repo-root/tasks/123-test.plan.md',
+    }));
     readPlanFileSpy.mockImplementation(async () => ({
       id: 123,
       uuid: '11111111-1111-4111-8111-111111111111',
@@ -129,6 +148,10 @@ describe('handleChatCommand', () => {
       updateHeadlessSessionInfo: mock(() => {}),
     }));
 
+    await moduleMocker.mock('../plan_repo_root.js', () => ({
+      resolveRepoRootForPlanArg: resolveRepoRootForPlanArgSpy,
+    }));
+
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: getGitRootSpy,
     }));
@@ -151,8 +174,15 @@ describe('handleChatCommand', () => {
     }));
 
     await moduleMocker.mock('../plans.js', () => ({
-      resolvePlanFile: resolvePlanFileSpy,
       readPlanFile: readPlanFileSpy,
+    }));
+
+    await moduleMocker.mock('../ensure_plan_in_db.js', () => ({
+      resolvePlanFromDbOrSyncFile: resolvePlanFromDbOrSyncFileSpy,
+    }));
+
+    await moduleMocker.mock('../db/plan_sync.js', () => ({
+      syncPlanToDb: syncPlanToDbSpy,
     }));
 
     await moduleMocker.mock('../display_utils.js', () => ({
@@ -452,7 +482,8 @@ describe('handleChatCommand', () => {
 
     await handleChatCommand('hello', { workspace: 'task-123', nonInteractive: true }, {});
 
-    expect(getGitRootSpy).toHaveBeenCalledWith(originalCwd);
+    expect(resolveRepoRootForPlanArgSpy).toHaveBeenCalledTimes(1);
+    expect(getGitRootSpy).not.toHaveBeenCalled();
     expect(setupWorkspaceSpy).toHaveBeenCalledTimes(1);
     expect(setupWorkspaceSpy.mock.calls[0]).toEqual([
       {
@@ -462,6 +493,7 @@ describe('handleChatCommand', () => {
         nonInteractive: true,
         requireWorkspace: false,
         createBranch: false,
+        planId: undefined,
         planUuid: undefined,
         base: undefined,
         allowPrimaryWorkspaceWhenLocked: true,
@@ -484,11 +516,12 @@ describe('handleChatCommand', () => {
 
     await handleChatCommand('hello', { autoWorkspace: true, plan: '123' }, { config: 'tim.json' });
 
-    expect(resolvePlanFileSpy).toHaveBeenCalledWith('123', 'tim.json');
-    expect(readPlanFileSpy).toHaveBeenCalledWith('/repo-root/tasks/123-test.plan.md');
+    expect(resolveRepoRootForPlanArgSpy).toHaveBeenCalledTimes(1);
+    expect(resolvePlanFromDbOrSyncFileSpy).toHaveBeenCalledWith('123', '/repo-root', '/repo-root');
     expect(generateBranchNameFromPlanSpy).toHaveBeenCalledTimes(1);
     expect(setupWorkspaceSpy.mock.calls[0][0]).toMatchObject({
       autoWorkspace: true,
+      planId: 123,
       planUuid: '11111111-1111-4111-8111-111111111111',
       createBranch: false,
       base: 'plan-derived-branch',
@@ -506,6 +539,15 @@ describe('handleChatCommand', () => {
       planTitle: 'Combined test plan',
       issueUrls: ['https://example.com/issues/42'],
     });
+    expect(syncPlanToDbSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 123 }),
+      '/repo-root/tasks/123-test.plan.md',
+      expect.objectContaining({
+        cwdForIdentity: '/repo-root/workspaces/task-123',
+        force: true,
+        throwOnError: true,
+      })
+    );
   });
 
   test('--plan alone implies auto-workspace selection and derives branch from plan', async () => {
@@ -516,23 +558,58 @@ describe('handleChatCommand', () => {
     expect(setupWorkspaceSpy).toHaveBeenCalledTimes(1);
     expect(setupWorkspaceSpy.mock.calls[0][0]).toMatchObject({
       autoWorkspace: true,
+      planId: 123,
       planUuid: '11111111-1111-4111-8111-111111111111',
       createBranch: false,
       base: 'plan-derived-branch',
     });
-    expect(resolvePlanFileSpy).toHaveBeenCalledWith('123', 'tim.json');
+    expect(resolvePlanFromDbOrSyncFileSpy).toHaveBeenCalledWith('123', '/repo-root', '/repo-root');
     expect(generateBranchNameFromPlanSpy).toHaveBeenCalledTimes(1);
   });
 
+  test('uses config-derived repo root for workspace setup when --config targets another repo', async () => {
+    resolveRepoRootForPlanArgSpy.mockImplementation(async () => '/other-repo');
+    resolvePlanFromDbOrSyncFileSpy.mockImplementationOnce(async () => ({
+      plan: {
+        id: 123,
+        uuid: '11111111-1111-4111-8111-111111111111',
+        title: 'Test plan',
+        status: 'pending',
+        priority: 'medium',
+        tasks: [],
+      },
+      planPath: '/other-repo/tasks/123-test.plan.md',
+    }));
+    const { handleChatCommand } = await import('./chat.js');
+
+    await handleChatCommand('hello', { plan: '123' }, { config: '/other-repo/.tim.json' });
+
+    expect(resolvePlanFromDbOrSyncFileSpy).toHaveBeenCalledWith(
+      '123',
+      '/other-repo',
+      '/other-repo'
+    );
+    expect(setupWorkspaceSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      '/other-repo',
+      '/other-repo/tasks/123-test.plan.md',
+      expect.anything(),
+      'tim chat'
+    );
+  });
+
   test('uses explicit branch from plan data without calling generateBranchNameFromPlan', async () => {
-    readPlanFileSpy.mockImplementation(async () => ({
-      id: 123,
-      uuid: '11111111-1111-4111-8111-111111111111',
-      title: 'Test plan',
-      branch: 'explicit-branch',
-      status: 'pending',
-      priority: 'medium',
-      tasks: [],
+    resolvePlanFromDbOrSyncFileSpy.mockImplementation(async () => ({
+      plan: {
+        id: 123,
+        uuid: '11111111-1111-4111-8111-111111111111',
+        title: 'Test plan',
+        branch: 'explicit-branch',
+        status: 'pending',
+        priority: 'medium',
+        tasks: [],
+      },
+      planPath: '/repo-root/tasks/123-test.plan.md',
     }));
     const { handleChatCommand } = await import('./chat.js');
 
@@ -555,8 +632,7 @@ describe('handleChatCommand', () => {
       createBranch: false,
       planUuid: undefined,
     });
-    expect(resolvePlanFileSpy).not.toHaveBeenCalled();
-    expect(readPlanFileSpy).not.toHaveBeenCalled();
+    expect(resolvePlanFromDbOrSyncFileSpy).not.toHaveBeenCalled();
   });
 
   test('throws when --base is used without workspace options', async () => {

@@ -129,6 +129,21 @@ describe('WorkspaceAutoSelector', () => {
     await seedWorkspace('github.com/test/repo', unlockedPath, 'task-1', 'task-1');
     await seedWorkspace('github.com/test/repo', lockedPath, 'task-2', 'task-2');
     await WorkspaceLock.acquireLock(lockedPath, 'tim agent');
+    const getLockInfoIncludingStaleSpy = spyOn(
+      WorkspaceLock,
+      'getLockInfoIncludingStale'
+    ).mockImplementation(async (workspacePath: string) => {
+      if (workspacePath === lockedPath) {
+        return {
+          type: 'persistent',
+          command: 'tim agent',
+          startedAt: new Date().toISOString(),
+          hostname: 'test-host',
+          version: 2,
+        };
+      }
+      return null;
+    });
 
     const result = await selector.selectWorkspace('task-3', '/test/plan3.yml', {
       interactive: false,
@@ -138,6 +153,7 @@ describe('WorkspaceAutoSelector', () => {
     expect(result?.workspace.taskId).toBe('task-1');
     expect(result?.isNew).toBe(false);
     expect(result?.clearedStaleLock).toBe(false);
+    expect(getLockInfoIncludingStaleSpy).toHaveBeenCalledWith(lockedPath);
   });
 
   test('selectWorkspace clears stale lock in non-interactive mode', async () => {

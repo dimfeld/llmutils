@@ -1,16 +1,18 @@
 import * as path from 'node:path';
-import { getGitRoot } from '../../common/git.js';
 import { commitAll } from '../../common/process.js';
 import { warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
+import { syncPlanToDb } from '../db/plan_sync.js';
 import { buildDescriptionFromPlan, getCombinedTitleFromSummary } from '../display_utils.js';
+import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
 import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../executors/index.js';
 import { ClaudeCodeExecutorName, CodexCliExecutorName } from '../executors/schemas.js';
 import { isCodexAppServerEnabled } from '../executors/codex_cli/app_server_mode.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
-import { readPlanFile, resolvePlanFile } from '../plans.js';
+import { readPlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { generateBranchNameFromPlan } from './branch.js';
 import { resolveOptionalPromptInput, type PromptResolverDeps } from './prompt_input.js';
@@ -190,9 +192,21 @@ export async function handleChatCommand(
   let roundTripContext: Awaited<ReturnType<typeof prepareWorkspaceRoundTrip>> = null;
   let executionError: unknown;
 
+  // Resolve repo root from config/plan arg once, for both plan resolution and workspace setup
+  const configRepoRoot = await resolveRepoRootForPlanArg(
+    options.plan ?? '',
+    undefined,
+    globalOpts.config
+  );
+
   if (options.plan) {
-    currentPlanFile = await resolvePlanFile(options.plan, globalOpts.config);
-    currentPlanData = await readPlanFile(currentPlanFile);
+    const resolvedPlan = await resolvePlanFromDbOrSyncFile(
+      options.plan,
+      configRepoRoot,
+      configRepoRoot
+    );
+    currentPlanFile = resolvedPlan.planPath ?? '';
+    currentPlanData = resolvedPlan.plan;
   }
 
   await runWithHeadlessAdapterIfEnabled({
@@ -209,8 +223,7 @@ export async function handleChatCommand(
     callback: async () => {
       try {
         if (workspaceMode) {
-          const originalBaseDir = await getGitRoot(process.cwd());
-          currentBaseDir = originalBaseDir;
+          currentBaseDir = configRepoRoot;
 
           // --plan implies auto-workspace selection when no explicit workspace option is set
           const useAutoWorkspace =
@@ -231,6 +244,7 @@ export async function handleChatCommand(
               nonInteractive: options.nonInteractive,
               requireWorkspace: false,
               createBranch: false,
+              planId: currentPlanData?.id,
               planUuid: currentPlanData?.uuid,
               base: baseBranch,
               allowPrimaryWorkspaceWhenLocked: true,
@@ -244,7 +258,7 @@ export async function handleChatCommand(
           currentPlanFile = workspaceResult.planFile;
           touchedWorkspacePath = currentBaseDir;
 
-          if (path.resolve(currentBaseDir) !== path.resolve(originalBaseDir)) {
+          if (path.resolve(currentBaseDir) !== path.resolve(configRepoRoot)) {
             roundTripContext = await prepareWorkspaceRoundTrip({
               workspacePath: currentBaseDir,
               workspaceSyncEnabled: options.workspaceSync !== false,
@@ -278,6 +292,16 @@ export async function handleChatCommand(
           planFilePath: currentPlanFile,
           executionMode: 'bare',
         });
+
+        if (currentPlanFile) {
+          // force:true is correct here: the executor just wrote this file and it is authoritative
+          const updatedPlan = await readPlanFile(currentPlanFile);
+          await syncPlanToDb(updatedPlan, currentPlanFile, {
+            cwdForIdentity: currentBaseDir,
+            force: true,
+            throwOnError: true,
+          });
+        }
 
         if (options.commit) {
           await commitAll('workspace chat session', currentBaseDir);

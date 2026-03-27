@@ -1,5 +1,6 @@
 import { FastMCP, UserError } from 'fastmcp';
 import type { SerializableValue } from 'fastmcp';
+import * as fs from 'node:fs';
 import path from 'node:path';
 import {
   generateClaudeCodePlanningPrompt,
@@ -11,7 +12,9 @@ import { resolveTasksDir } from '../configSchema.js';
 import { buildPlanContext, resolvePlan } from '../plan_display.js';
 import { mcpGetPlan } from '../commands/show.js';
 import { mcpListReadyPlans } from '../commands/ready.js';
-import { readAllPlans, clearPlanCache } from '../plans.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import { materializePlan } from '../plan_materialize.js';
+import { loadPlansFromDb } from '../plans_db.js';
 import { loadCompactPlanPrompt } from './prompts/compact_plan.js';
 import { filterAndSortReadyPlans, formatReadyPlansAsJson } from '../ready_plans.js';
 import {
@@ -131,7 +134,7 @@ async function buildGeneratePromptContext(
   context: GenerateModeRegistrationContext
 ): Promise<{
   plan: Awaited<ReturnType<typeof resolvePlan>>['plan'];
-  planPath: string;
+  planPath: string | null;
   contextBlock: string;
 }> {
   const { plan, planPath } = await resolvePlan(planArg, context);
@@ -141,14 +144,15 @@ async function buildGeneratePromptContext(
   if (plan.parent !== undefined) {
     try {
       const tasksDir = await resolveTasksDir(context.config);
-      const { plans } = await readAllPlans(tasksDir);
+      const repository = await getRepositoryIdentity({ cwd: context.gitRoot });
+      const { plans } = loadPlansFromDb(tasksDir, repository.repositoryId);
       const parentPlan = plans.get(plan.parent);
 
       if (!parentPlan) {
         throw new Error(`Parent plan ${plan.parent} not found`);
       }
 
-      const parentPlanPath = parentPlan.filename;
+      const parentPlanPath = fs.existsSync(parentPlan.filename) ? parentPlan.filename : null;
       const parentContext = buildPlanContext(parentPlan, parentPlanPath, context);
       const siblingPlans = Array.from(plans.values())
         .filter((candidate) => candidate.id !== plan.id && candidate.parent === plan.parent)
@@ -160,9 +164,12 @@ async function buildGeneratePromptContext(
 
 ${siblingPlans
   .map((sibling) => {
-    const relativePath = path.relative(context.gitRoot, sibling.filename) || sibling.filename;
-    const siblingStatus = sibling.status === 'done' ? 'done' : 'pending';
-    return `- ${sibling.title || `Plan ${sibling.id}`} (status: ${siblingStatus}, path: ${relativePath})`;
+    const siblingStatus = sibling.status || 'pending';
+    const relativePath = fs.existsSync(sibling.filename)
+      ? path.relative(context.gitRoot, sibling.filename) || sibling.filename
+      : null;
+    const pathSuffix = relativePath ? `, path: ${relativePath}` : '';
+    return `- ${sibling.title || `Plan ${sibling.id}`} (status: ${siblingStatus}${pathSuffix})`;
   })
   .join('\n')}
 
@@ -193,11 +200,12 @@ export async function loadResearchPrompt(
   args: { plan?: string; allowMultiplePlans?: unknown },
   context: GenerateModeRegistrationContext
 ) {
-  clearPlanCache();
   const { plan, planPath, contextBlock } = await buildGeneratePromptContext(
     args.plan ?? '',
     context
   );
+  // Materialize DB-only plans so research prompt can reference the file path
+  const writablePlanPath = planPath ?? (await materializePlan(plan.id, context.gitRoot));
 
   const allowMultiplePlans = parseBooleanOption(args.allowMultiplePlans, true);
   const parentPlanId = plan.id;
@@ -254,7 +262,7 @@ ${generateClaudeCodePlanningPrompt(contextBlock, {
 
 ${generateClaudeCodeResearchPrompt(`Once your research is complete`)}
 
-Add your research and implementation guide directly to the plan file at ${planPath}. The output should include both "## Research" and "## Implementation Guide" sections. You can directly edit this file; don't use the tim MCP tools for adding this content.
+Add your research and implementation guide directly to the plan file at ${writablePlanPath}. The output should include both "## Research" and "## Implementation Guide" sections. You can directly edit this file; don't use the tim MCP tools for adding this content.
 
 When done, collaborate with your human partner to refine this plan. ${questionText}
 
@@ -279,7 +287,6 @@ export async function loadQuestionsPrompt(
   args: { plan?: string },
   context: GenerateModeRegistrationContext
 ) {
-  clearPlanCache();
   let contextBlock = '';
   if (args.plan) {
     const { plan, planPath } = await resolvePlan(args.plan ?? '', context);
@@ -307,7 +314,6 @@ export async function loadPlanPrompt(
   args: { plan: string },
   context: GenerateModeRegistrationContext
 ) {
-  clearPlanCache();
   const { plan, planPath } = await resolvePlan(args.plan, context);
   const contextBlock = buildPlanContext(plan, planPath, context);
 
@@ -334,7 +340,6 @@ export async function loadImplementPrompt(
   args: { plan: string },
   context: GenerateModeRegistrationContext
 ) {
-  clearPlanCache();
   const { plan, planPath } = await resolvePlan(args.plan, context);
   const contextBlock = buildPlanContext(plan, planPath, context);
   const hasTasks = Array.isArray(plan.tasks) && plan.tasks.length > 0;
@@ -374,7 +379,6 @@ export async function loadGeneratePrompt(
   args: { plan?: string; allowMultiplePlans?: unknown },
   context: GenerateModeRegistrationContext
 ) {
-  clearPlanCache();
   let contextBlock = '';
   let parentPlanId: number | undefined;
   if (args.plan) {
@@ -532,8 +536,6 @@ export async function mcpCreatePlan(
   context: GenerateModeRegistrationContext,
   execContext?: { log: GenerateModeExecutionLogger }
 ): Promise<string> {
-  clearPlanCache();
-
   args = normalizeContainerToEpic(args);
 
   const title = args.title.trim();
@@ -764,9 +766,9 @@ export function registerGenerateMode(
     description: 'List of all plans in the repository',
     mimeType: 'application/json',
     async load() {
-      clearPlanCache();
       const tasksDir = await resolveTasksDir(context.config);
-      const { plans } = await readAllPlans(tasksDir);
+      const repository = await getRepositoryIdentity({ cwd: context.gitRoot });
+      const { plans } = loadPlansFromDb(tasksDir, repository.repositoryId);
 
       const planList = Array.from(plans.values()).map((plan) => ({
         id: plan.id,
@@ -802,7 +804,6 @@ export function registerGenerateMode(
       },
     ],
     async load(args) {
-      clearPlanCache();
       const { plan } = await resolvePlan(args.planId, context);
       return {
         text: JSON.stringify(plan, null, 2),
@@ -816,9 +817,9 @@ export function registerGenerateMode(
     description: 'Plans ready to execute (all dependencies satisfied)',
     mimeType: 'application/json',
     async load() {
-      clearPlanCache();
       const tasksDir = await resolveTasksDir(context.config);
-      const { plans } = await readAllPlans(tasksDir);
+      const repository = await getRepositoryIdentity({ cwd: context.gitRoot });
+      const { plans } = loadPlansFromDb(tasksDir, repository.repositoryId);
 
       const readyPlans = filterAndSortReadyPlans(plans, {
         pendingOnly: false,
@@ -826,9 +827,10 @@ export function registerGenerateMode(
       });
 
       const enrichedPlans = readyPlans.map((plan) => {
+        const filename = plans.get(plan.id)?.filename;
         return {
           ...plan,
-          filename: plans.get(plan.id)?.filename || '',
+          filename: filename && fs.existsSync(filename) ? filename : '',
         };
       });
 

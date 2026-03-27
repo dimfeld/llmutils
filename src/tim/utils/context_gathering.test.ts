@@ -1,19 +1,24 @@
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
-import { mkdtemp, writeFile, mkdir, rm, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
-import yaml from 'yaml';
+import { describe, test, expect, beforeEach } from 'bun:test';
 import { gatherPlanContext } from './context_gathering.js';
 import type { DiffResult } from '../incremental_review.js';
+import type { PlanSchema } from '../planSchema.js';
 import type { PlanWithFilename } from './hierarchy.js';
 
-// Mock dependencies for testing
 interface MockDependencies {
-  resolvePlanFile: (planFile: string, config?: string) => Promise<string>;
-  readPlanFile: (filePath: string) => Promise<any>;
-  readAllPlans: (config: string) => Promise<{ plans: Map<number, PlanWithFilename> }>;
+  resolvePlanFromDbOrSyncFile: (
+    planFile: string,
+    repoRoot: string,
+    configBaseDir?: string
+  ) => Promise<{
+    plan: PlanSchema;
+    planPath: string | null;
+  }>;
+  loadPlansFromDb: (
+    searchDir: string,
+    repositoryId: string
+  ) => { plans: Map<number, PlanWithFilename> };
   generateDiffForReview: (gitRoot: string, options?: any) => Promise<DiffResult>;
-  getGitRoot: () => Promise<string>;
+  getGitRoot: (cwd?: string) => Promise<string>;
   getParentChain: (
     plan: PlanWithFilename,
     allPlans: Map<number, PlanWithFilename>
@@ -23,45 +28,51 @@ interface MockDependencies {
     allPlans: Map<number, PlanWithFilename>
   ) => PlanWithFilename[];
   getIncrementalSummary: (gitRoot: string, planId: string, opts: any[]) => Promise<any>;
+  resolveRepoRootForPlanArg: (
+    planArg: string,
+    fallbackDir?: string,
+    configPath?: string
+  ) => Promise<string>;
+  getRepositoryIdentity: (options?: { cwd?: string }) => Promise<{
+    repositoryId: string;
+    remoteUrl: string | null;
+    gitRoot: string;
+  }>;
 }
 
 describe('gatherPlanContext', () => {
-  let tempDir: string;
   let gitRoot: string;
+  let repoRoot: string;
   let planFile: string;
+  let basePlan: PlanSchema;
   let mockDeps: MockDependencies;
 
-  beforeEach(async () => {
-    tempDir = await mkdtemp(join(tmpdir(), 'context-gathering-test-'));
-    gitRoot = tempDir;
-    planFile = join(tempDir, 'test-plan.md');
+  beforeEach(() => {
+    gitRoot = '/tmp/git-root';
+    repoRoot = '/tmp/repo-root';
+    planFile = '/tmp/repo-root/tasks/123-test-plan.plan.md';
+    basePlan = {
+      id: 123,
+      uuid: '12345678-1234-4234-8234-123456789abc',
+      title: 'Test Plan',
+      goal: 'Test plan goal',
+      details: 'Test plan details',
+      tasks: [
+        {
+          title: 'Task 1',
+          description: 'First task description',
+          done: false,
+        },
+      ],
+      status: 'pending',
+    };
 
-    // Create a basic plan file
-    await writeFile(
-      planFile,
-      JSON.stringify({
-        id: 123,
-        title: 'Test Plan',
-        goal: 'Test plan goal',
-        details: 'Test plan details',
-        tasks: [
-          {
-            title: 'Task 1',
-            description: 'First task description',
-            steps: [
-              { prompt: 'Step 1', done: true },
-              { prompt: 'Step 2', done: false },
-            ],
-          },
-        ],
-      })
-    );
-
-    // Setup mock dependencies
     mockDeps = {
-      resolvePlanFile: async (file) => file,
-      readPlanFile: async (file) => JSON.parse(await readFile(file, 'utf-8')),
-      readAllPlans: async () => ({ plans: new Map() }),
+      resolvePlanFromDbOrSyncFile: async () => ({
+        plan: basePlan,
+        planPath: planFile,
+      }),
+      loadPlansFromDb: () => ({ plans: new Map() }),
       generateDiffForReview: async () => ({
         hasChanges: true,
         changedFiles: ['src/test.ts', 'src/another.ts'],
@@ -72,23 +83,25 @@ describe('gatherPlanContext', () => {
       getParentChain: () => [],
       getCompletedChildren: () => [],
       getIncrementalSummary: async () => null,
+      resolveRepoRootForPlanArg: async () => repoRoot,
+      getRepositoryIdentity: async () => ({
+        repositoryId: 'repo-id',
+        remoteUrl: 'git@github.com:test/repo.git',
+        gitRoot: repoRoot,
+      }),
     };
   });
 
-  afterEach(async () => {
-    await rm(tempDir, { recursive: true, force: true });
-  });
-
   test('should gather basic plan context successfully', async () => {
-    const options = {};
-    const globalOpts = {};
+    const result = await gatherPlanContext(planFile, {}, {}, mockDeps);
 
-    const result = await gatherPlanContext(planFile, options, globalOpts, mockDeps);
-
+    expect(result.resolvedPlanFile).toBe(planFile);
     expect(result.planData).toBeDefined();
     expect(result.planData.id).toBe(123);
     expect(result.planData.title).toBe('Test Plan');
     expect(result.planData.goal).toBe('Test plan goal');
+    expect(result.repoRoot).toBe(repoRoot);
+    expect(result.gitRoot).toBe(gitRoot);
     expect(result.parentChain).toEqual([]);
     expect(result.completedChildren).toEqual([]);
     expect(result.diffResult).toBeDefined();
@@ -96,7 +109,35 @@ describe('gatherPlanContext', () => {
     expect(result.diffResult.changedFiles).toEqual(['src/test.ts', 'src/another.ts']);
   });
 
-  test('should resolve git root from the provided cwd', async () => {
+  test('should resolve repo root using cwd and config path', async () => {
+    let receivedArgs:
+      | {
+          planArg: string;
+          fallbackDir?: string;
+          configPath?: string;
+        }
+      | undefined;
+
+    mockDeps.resolveRepoRootForPlanArg = async (planArg, fallbackDir, configPath) => {
+      receivedArgs = { planArg, fallbackDir, configPath };
+      return repoRoot;
+    };
+
+    await gatherPlanContext(
+      planFile,
+      { cwd: '/tmp/switched-workspace' },
+      { config: '/tmp/custom.tim.yml' },
+      mockDeps
+    );
+
+    expect(receivedArgs).toEqual({
+      planArg: planFile,
+      fallbackDir: '/tmp/switched-workspace',
+      configPath: '/tmp/custom.tim.yml',
+    });
+  });
+
+  test('should resolve git root from the resolved repoRoot, not cwd', async () => {
     let receivedCwd: string | undefined;
     mockDeps.getGitRoot = async (cwd?: string) => {
       receivedCwd = cwd;
@@ -105,76 +146,70 @@ describe('gatherPlanContext', () => {
 
     await gatherPlanContext(planFile, { cwd: '/tmp/switched-workspace' }, {}, mockDeps);
 
-    expect(receivedCwd).toBe('/tmp/switched-workspace');
+    // getGitRoot should receive repoRoot (from resolveRepoRootForPlanArg), not options.cwd
+    expect(receivedCwd).toBe(repoRoot);
   });
 
-  test('should handle parent chain loading', async () => {
+  test('should load hierarchy from DB-backed plan map', async () => {
     const parentPlan: PlanWithFilename = {
       id: 100,
       title: 'Parent Plan',
       goal: 'Parent goal',
-      filename: 'parent.md',
+      filename: '/tmp/repo-root/.tim/plans/100.plan.md',
     };
-
-    const childPlan = {
-      id: 123,
-      title: 'Child Plan',
-      goal: 'Child goal',
-      parent: 100,
-      tasks: [
-        {
-          title: 'Child Task',
-          description: 'Child task description',
-        },
-      ],
-    };
-
-    // Update plan file to have a parent
-    await writeFile(planFile, JSON.stringify(childPlan));
-
-    const allPlans = new Map<number, PlanWithFilename>();
-    allPlans.set(100, parentPlan);
-    allPlans.set(123, { ...childPlan, filename: planFile });
-
-    mockDeps.readAllPlans = async () => ({ plans: allPlans });
-    mockDeps.getParentChain = () => [parentPlan];
-
-    const options = {};
-    const globalOpts = {};
-
-    const result = await gatherPlanContext(planFile, options, globalOpts, mockDeps);
-
-    expect(result.parentChain).toHaveLength(1);
-    expect(result.parentChain[0].id).toBe(100);
-    expect(result.parentChain[0].title).toBe('Parent Plan');
-  });
-
-  test('should handle completed children loading', async () => {
     const completedChild: PlanWithFilename = {
       id: 124,
       title: 'Completed Child',
       goal: 'Child goal',
       status: 'done',
       parent: 123,
-      filename: 'child.md',
+      filename: '/tmp/repo-root/.tim/plans/124.plan.md',
     };
 
     const allPlans = new Map<number, PlanWithFilename>();
-    allPlans.set(123, { id: 123, title: 'Parent Plan', goal: 'Parent goal', filename: planFile });
+    allPlans.set(100, parentPlan);
+    allPlans.set(123, { ...basePlan, parent: 100, filename: planFile });
     allPlans.set(124, completedChild);
 
-    mockDeps.readAllPlans = async () => ({ plans: allPlans });
+    mockDeps.resolvePlanFromDbOrSyncFile = async () => ({
+      plan: { ...basePlan, parent: 100 },
+      planPath: planFile,
+    });
+    mockDeps.loadPlansFromDb = (searchDir, repositoryId) => {
+      expect(searchDir).toBe(repoRoot);
+      expect(repositoryId).toBe('repo-id');
+      return { plans: allPlans };
+    };
+    mockDeps.getParentChain = () => [parentPlan];
     mockDeps.getCompletedChildren = () => [completedChild];
 
-    const options = {};
-    const globalOpts = {};
+    const result = await gatherPlanContext(planFile, {}, {}, mockDeps);
 
-    const result = await gatherPlanContext(planFile, options, globalOpts, mockDeps);
-
+    expect(result.parentChain).toHaveLength(1);
+    expect(result.parentChain[0]?.id).toBe(100);
     expect(result.completedChildren).toHaveLength(1);
-    expect(result.completedChildren[0].id).toBe(124);
-    expect(result.completedChildren[0].title).toBe('Completed Child');
-    expect(result.completedChildren[0].status).toBe('done');
+    expect(result.completedChildren[0]?.id).toBe(124);
+  });
+
+  test('should use plan id as resolvedPlanFile for DB-only plans', async () => {
+    mockDeps.resolvePlanFromDbOrSyncFile = async () => ({
+      plan: basePlan,
+      planPath: null,
+    });
+
+    const result = await gatherPlanContext('123', {}, {}, mockDeps);
+
+    expect(result.resolvedPlanFile).toBe('123');
+  });
+
+  test('should surface DB resolution failures', async () => {
+    mockDeps.resolvePlanFromDbOrSyncFile = async () => {
+      throw new Error('No plan found in the database for identifier: 123');
+    };
+
+    await expect(gatherPlanContext('123', {}, {}, mockDeps)).rejects.toThrow(
+      'No plan found in the database for identifier: 123'
+    );
   });
 
   test('should handle incremental review scenarios', async () => {
@@ -187,10 +222,7 @@ describe('gatherPlanContext', () => {
 
     mockDeps.getIncrementalSummary = async () => incrementalSummary;
 
-    const options = { incremental: true };
-    const globalOpts = {};
-
-    const result = await gatherPlanContext(planFile, options, globalOpts, mockDeps);
+    const result = await gatherPlanContext(planFile, { incremental: true }, {}, mockDeps);
 
     expect(result.incrementalSummary).toBeDefined();
     expect(result.incrementalSummary?.totalFiles).toBe(2);
@@ -205,58 +237,19 @@ describe('gatherPlanContext', () => {
       diffContent: '',
     });
 
-    const options = {};
-    const globalOpts = {};
-
-    const result = await gatherPlanContext(planFile, options, globalOpts, mockDeps);
+    const result = await gatherPlanContext(planFile, {}, {}, mockDeps);
 
     expect(result.diffResult.hasChanges).toBe(false);
     expect(result.diffResult.changedFiles).toEqual([]);
-  });
-
-  test('should validate task structure', async () => {
-    // Create plan with invalid task
-    const planWithInvalidTask = {
-      id: 123,
-      title: 'Test Plan',
-      goal: 'Test goal',
-      tasks: [
-        {
-          // missing title
-          description: 'Task description',
-        },
-      ],
-    };
-    const content = `---\n${yaml.stringify(planWithInvalidTask)}---\n`;
-    await writeFile(planFile, content);
-
-    // Use real readPlanFile function for validation in this test
-    const { readPlanFile } = await import('../plans.js');
-    const validationMockDeps = {
-      ...mockDeps,
-      readPlanFile,
-    };
-
-    const options = {};
-    const globalOpts = {};
-
-    await expect(
-      gatherPlanContext(planFile, options, globalOpts, validationMockDeps)
-    ).rejects.toThrow(/tasks\.0\.title.*expected string, received undefined/);
+    expect(result.noChangesDetected).toBe(true);
   });
 
   test('should handle hierarchy errors gracefully', async () => {
-    const allPlans = new Map<number, PlanWithFilename>();
-
-    mockDeps.readAllPlans = async () => {
-      throw new Error('Failed to read plans');
+    mockDeps.loadPlansFromDb = () => {
+      throw new Error('Failed to load plans from DB');
     };
 
-    const options = {};
-    const globalOpts = {};
-
-    // Should not throw but continue with empty hierarchy
-    const result = await gatherPlanContext(planFile, options, globalOpts, mockDeps);
+    const result = await gatherPlanContext(planFile, {}, {}, mockDeps);
 
     expect(result.planData).toBeDefined();
     expect(result.parentChain).toEqual([]);
@@ -273,10 +266,7 @@ describe('gatherPlanContext', () => {
 
     mockDeps.getIncrementalSummary = async () => incrementalSummary;
 
-    const options = { incremental: true };
-    const globalOpts = {};
-
-    const result = await gatherPlanContext(planFile, options, globalOpts, mockDeps);
+    const result = await gatherPlanContext(planFile, { incremental: true }, {}, mockDeps);
 
     expect(result.incrementalSummary).toBeDefined();
     expect(result.incrementalSummary?.totalFiles).toBe(0);
@@ -294,10 +284,7 @@ describe('gatherPlanContext', () => {
       }),
     };
 
-    const options = {};
-    const globalOpts = {};
-
-    const result = await gatherPlanContext(planFile, options, globalOpts, customDeps);
+    const result = await gatherPlanContext(planFile, {}, {}, customDeps);
 
     expect(result.diffResult.changedFiles).toEqual(['custom-file.ts']);
     expect(result.diffResult.baseBranch).toBe('feature-branch');
@@ -306,7 +293,7 @@ describe('gatherPlanContext', () => {
   test('should pass incremental options correctly to diff generation', async () => {
     let capturedOptions: any;
 
-    mockDeps.generateDiffForReview = async (gitRoot: string, options?: any) => {
+    mockDeps.generateDiffForReview = async (_gitRoot: string, options?: any) => {
       capturedOptions = options;
       return {
         hasChanges: true,
@@ -316,14 +303,16 @@ describe('gatherPlanContext', () => {
       };
     };
 
-    const options = {
-      incremental: true,
-      sinceLastReview: true,
-      since: 'abc123',
-    };
-    const globalOpts = {};
-
-    await gatherPlanContext(planFile, options, globalOpts, mockDeps);
+    await gatherPlanContext(
+      planFile,
+      {
+        incremental: true,
+        sinceLastReview: true,
+        since: 'abc123',
+      },
+      {},
+      mockDeps
+    );
 
     expect(capturedOptions).toBeDefined();
     expect(capturedOptions.incremental).toBe(true);

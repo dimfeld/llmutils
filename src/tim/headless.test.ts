@@ -89,6 +89,18 @@ async function openWebSocket(url: string): Promise<WebSocket> {
   return ws;
 }
 
+async function reserveAvailablePort(): Promise<number> {
+  const server = Bun.serve({
+    port: 0,
+    fetch() {
+      return new Response('ok');
+    },
+  });
+  const port = server.port;
+  server.stop(true);
+  return port;
+}
+
 function waitForMessage(ws: WebSocket): Promise<HeadlessMessage> {
   return new Promise((resolve, reject) => {
     ws.addEventListener('message', (event) => resolve(JSON.parse(event.data as string)), {
@@ -418,24 +430,33 @@ describe('createHeadlessAdapterForCommand', () => {
   test('uses a requested TIM_SERVER_PORT and enforces bearer auth on the embedded server', async () => {
     tempCacheDir = await mkdtemp(path.join(os.tmpdir(), 'tim-headless-test-'));
     process.env.XDG_CACHE_HOME = tempCacheDir;
-
-    const reservedPortServer = Bun.serve({
-      port: 0,
-      fetch() {
-        return new Response('ok');
-      },
-    });
-    const requestedPort = reservedPortServer.port;
-    reservedPortServer.stop(true);
-
-    process.env.TIM_SERVER_PORT = String(requestedPort);
     process.env.TIM_SERVER_HOSTNAME = '127.0.0.1';
     process.env.TIM_WS_BEARER_TOKEN = 'secret-token';
 
-    const headlessAdapter = await createHeadlessAdapterForCommand({
-      command: 'agent',
-      interactive: false,
-    });
+    let requestedPort = 0;
+    let headlessAdapter: HeadlessAdapter | undefined;
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      requestedPort = await reserveAvailablePort();
+      process.env.TIM_SERVER_PORT = String(requestedPort);
+      try {
+        headlessAdapter = await createHeadlessAdapterForCommand({
+          command: 'agent',
+          interactive: false,
+        });
+        lastError = undefined;
+        break;
+      } catch (error) {
+        lastError = error;
+        if (!(error instanceof Error) || !error.message.includes('EADDRINUSE')) {
+          throw error;
+        }
+      }
+    }
+
+    if (!headlessAdapter) {
+      throw lastError instanceof Error ? lastError : new Error('Failed to acquire a test port');
+    }
 
     try {
       expect((headlessAdapter as any).sessionServer.port).toBe(requestedPort);

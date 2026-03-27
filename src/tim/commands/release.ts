@@ -5,6 +5,7 @@ import { releasePlan } from '../assignments/release_plan.js';
 import { resolvePlanWithUuid } from '../assignments/uuid_lookup.js';
 import { getRepositoryIdentity, getUserIdentity } from '../assignments/workspace_identifier.js';
 import { writePlanFile } from '../plans.js';
+import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 
 export interface ReleaseCommandOptions {
   resetStatus?: boolean;
@@ -20,11 +21,11 @@ export async function handleReleaseCommand(
   }
 
   const globalOpts = command?.parent?.opts?.() ?? {};
-  const { plan, uuid } = await resolvePlanWithUuid(planArg, {
+  const { plan, repoRoot, uuid } = await resolvePlanWithUuid(planArg, {
     configPath: globalOpts.config,
   });
 
-  const repository = await getRepositoryIdentity();
+  const repository = await getRepositoryIdentity({ cwd: repoRoot });
   const user = getUserIdentity();
 
   const planId = typeof plan.id === 'number' && !Number.isNaN(plan.id) ? plan.id : undefined;
@@ -78,8 +79,9 @@ export async function handleReleaseCommand(
   if (options.resetStatus) {
     const originalStatus = plan.status;
     if (originalStatus !== 'pending') {
+      const repoRoot = await resolveRepoRootForPlanArg(planArg, process.cwd(), globalOpts.config);
       plan.status = 'pending';
-      await writePlanFile(plan.filename, plan);
+      await writePlanFile(plan.filename || null, plan, { cwdForIdentity: repoRoot });
       log(`${chalk.green('✓')} Reset status for plan ${planLabel} to pending`);
     } else {
       log(`${chalk.yellow('•')} Plan ${planLabel} is already pending`);

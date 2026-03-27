@@ -1,9 +1,11 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'path';
+import { ModuleMocker } from '../../testing.js';
 import type { TimConfig } from '../configSchema.js';
 import type { PlanSchema } from '../planSchema.js';
+import { writePlanToDb } from '../plans.js';
 import {
   buildUpdateLessonsPrompt,
   extractLessonsLearned,
@@ -12,16 +14,24 @@ import {
 } from './update-lessons.js';
 
 describe('update-lessons command', () => {
+  const moduleMocker = new ModuleMocker(import.meta);
   let tempDir: string;
+  let otherDir: string;
   let planFile: string;
+  let originalCwd: string;
 
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-update-lessons-test-'));
+    otherDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-update-lessons-other-'));
     planFile = path.join(tempDir, 'test-plan.md');
+    originalCwd = process.cwd();
   });
 
   afterEach(async () => {
+    process.chdir(originalCwd);
+    moduleMocker.clear();
     await fs.rm(tempDir, { recursive: true, force: true });
+    await fs.rm(otherDir, { recursive: true, force: true });
   });
 
   describe('extractLessonsLearned', () => {
@@ -232,24 +242,187 @@ notes: |
         'Plan file or ID is required'
       );
     });
+
+    test('uses resolved repoRoot as executor baseDir for cross-repo config', async () => {
+      const configPath = path.join(tempDir, '.tim.yml');
+      await fs.writeFile(configPath, 'defaultExecutor: codex-cli\n');
+      await writePlanToDb(
+        {
+          id: 8,
+          title: 'Cross-repo lessons update',
+          goal: 'Apply lessons in the target repo',
+          details: `## Current Progress
+### Lessons Learned
+- Keep cross-repo execution anchored to the target repo.
+`,
+          tasks: [],
+        },
+        { cwdForIdentity: tempDir }
+      );
+
+      const executeSpy = mock(async () => undefined);
+      const buildExecutorAndLogSpy = mock((_executor: string, options: { baseDir: string }) => {
+        expect(options.baseDir).toBe(tempDir);
+        return { execute: executeSpy };
+      });
+
+      await moduleMocker.mock('../../common/input.js', () => ({
+        promptCheckbox: async ({ choices }: { choices: Array<{ value: string }> }) =>
+          choices.map((choice) => choice.value),
+      }));
+      await moduleMocker.mock('../configLoader.js', () => ({
+        loadEffectiveConfig: async () => ({
+          defaultExecutor: 'codex-cli',
+          updateDocs: {},
+          isUsingExternalStorage: true,
+        }),
+      }));
+      await moduleMocker.mock('../executors/index.js', () => ({
+        buildExecutorAndLog: buildExecutorAndLogSpy,
+        DEFAULT_EXECUTOR: 'codex-cli',
+        defaultModelForExecutor: () => 'test-model',
+      }));
+
+      process.chdir(otherDir);
+
+      const mockCommand = {
+        parent: {
+          opts: () => ({ config: configPath }),
+        },
+      };
+
+      await handleUpdateLessonsCommand('8', {}, mockCommand);
+
+      expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+      expect(executeSpy).toHaveBeenCalledTimes(1);
+      expect(executeSpy.mock.calls[0]?.[1]?.planFilePath).toBe(
+        path.join(tempDir, '.tim', 'plans', '8.plan.md')
+      );
+    });
   });
 
   describe('runUpdateLessons', () => {
     test('returns false when lessons are missing', async () => {
-      const content = `---
-id: 177
-title: lessons learned updating
----
-
-## Current Progress
+      const content = `## Current Progress
 ### Current State
 - Working through tasks
 `;
       await fs.writeFile(planFile, content);
 
-      const didRun = await runUpdateLessons(planFile, {} as TimConfig, {});
+      const planData: PlanSchema = {
+        id: 177,
+        title: 'lessons learned updating',
+        goal: '',
+        details: content,
+      };
+
+      const didRun = await runUpdateLessons(planData, planFile, {} as TimConfig, {});
 
       expect(didRun).toBe(false);
+    });
+
+    test('resolves repoRoot for string plan args when baseDir is omitted', async () => {
+      const helperPlanFile = path.join(tempDir, 'helper-lessons-plan.md');
+      await fs.writeFile(
+        helperPlanFile,
+        `---
+id: 188
+title: Cross-repo helper lessons update
+goal: Run helper in target repo
+tasks: []
+---
+
+## Current Progress
+### Lessons Learned
+- Keep helper execution anchored to the target repo.
+`
+      );
+
+      const executeSpy = mock(async () => undefined);
+      const buildExecutorAndLogSpy = mock((_executor: string, options: { baseDir: string }) => {
+        expect(options.baseDir).toBe(tempDir);
+        return { execute: executeSpy };
+      });
+
+      await moduleMocker.mock('../../common/input.js', () => ({
+        promptCheckbox: async ({ choices }: { choices: Array<{ value: string }> }) =>
+          choices.map((choice) => choice.value),
+      }));
+      await moduleMocker.mock('../executors/index.js', () => ({
+        buildExecutorAndLog: buildExecutorAndLogSpy,
+        DEFAULT_EXECUTOR: 'codex-cli',
+        defaultModelForExecutor: () => 'test-model',
+      }));
+
+      process.chdir(otherDir);
+
+      const didRun = await runUpdateLessons(
+        helperPlanFile,
+        {
+          defaultExecutor: 'codex-cli',
+          updateDocs: {},
+          isUsingExternalStorage: true,
+        } as TimConfig,
+        {}
+      );
+
+      expect(didRun).toBe(true);
+      expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+      expect(executeSpy).toHaveBeenCalledTimes(1);
+      expect(executeSpy.mock.calls[0]?.[1]?.planFilePath).toBe(helperPlanFile);
+    });
+
+    test('uses configPath to resolve target repo for string plan IDs', async () => {
+      const configPath = path.join(tempDir, '.tim.yml');
+      await fs.writeFile(configPath, 'defaultExecutor: codex-cli\n');
+      await writePlanToDb(
+        {
+          id: 18,
+          title: 'Helper config-path lessons update',
+          goal: 'Resolve repo from config path',
+          details: `## Current Progress
+### Lessons Learned
+- Keep helper execution anchored to the configured repo.
+`,
+          tasks: [],
+        },
+        { cwdForIdentity: tempDir }
+      );
+
+      const executeSpy = mock(async () => undefined);
+      const buildExecutorAndLogSpy = mock((_executor: string, options: { baseDir: string }) => {
+        expect(options.baseDir).toBe(tempDir);
+        return { execute: executeSpy };
+      });
+
+      await moduleMocker.mock('../../common/input.js', () => ({
+        promptCheckbox: async ({ choices }: { choices: Array<{ value: string }> }) =>
+          choices.map((choice) => choice.value),
+      }));
+      await moduleMocker.mock('../executors/index.js', () => ({
+        buildExecutorAndLog: buildExecutorAndLogSpy,
+        DEFAULT_EXECUTOR: 'codex-cli',
+        defaultModelForExecutor: () => 'test-model',
+      }));
+
+      process.chdir(otherDir);
+
+      const didRun = await runUpdateLessons(
+        '18',
+        {
+          defaultExecutor: 'codex-cli',
+          updateDocs: {},
+          isUsingExternalStorage: true,
+        } as TimConfig,
+        { configPath }
+      );
+
+      expect(didRun).toBe(true);
+      expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+      expect(executeSpy).toHaveBeenCalledTimes(1);
+      expect(executeSpy.mock.calls[0]?.[1]?.planFilePath).toBe(
+        path.join(tempDir, '.tim', 'plans', '18.plan.md')
+      );
     });
   });
 });

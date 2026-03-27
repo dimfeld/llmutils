@@ -10,7 +10,7 @@ import { mcpListReadyPlans } from './commands/ready.js';
 import { getDefaultConfig, type TimConfig } from './configSchema.js';
 import type { GenerateModeRegistrationContext } from './mcp/generate_mode.js';
 import { mcpCreatePlan } from './mcp/generate_mode.js';
-import { clearPlanCache, readPlanFile } from './plans.js';
+import { clearPlanCache, resolvePlanFromDb } from './plans.js';
 
 describe('tag workflows across CLI and MCP', () => {
   let tempDir: string;
@@ -49,8 +49,9 @@ describe('tag workflows across CLI and MCP', () => {
 
     await moduleMocker.mock('./assignments/workspace_identifier.js', () => ({
       getRepositoryIdentity: async () => ({
-        repositoryId: 'test-repo',
-        repositoryRemoteUrl: null,
+        repositoryId: `test-repo-${path.basename(tempDir)}`,
+        remoteUrl: null,
+        gitRoot: tempDir,
       }),
     }));
 
@@ -101,20 +102,17 @@ describe('tag workflows across CLI and MCP', () => {
   });
 
   test('MCP-created tags can be updated through CLI set command', async () => {
-    await mcpCreatePlan(
+    const result = await mcpCreatePlan(
       {
         title: 'MCP-origin plan',
         tags: ['Frontend'],
       },
       mcpContext
     );
-
-    const planFiles = await fs.readdir(tasksDir);
-    expect(planFiles).toHaveLength(1);
-    const planPath = path.join(tasksDir, planFiles[0]);
+    const createdId = Number(result.match(/Created plan (\d+)/)?.[1]);
 
     await handleSetCommand(
-      planPath,
+      String(createdId),
       {
         tag: ['OPS'],
         noTag: ['frontend'],
@@ -122,7 +120,9 @@ describe('tag workflows across CLI and MCP', () => {
       command.parent.opts()
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    expect(createdId).toBeGreaterThan(0);
+
+    const { plan: updatedPlan } = await resolvePlanFromDb(String(createdId), tempDir);
     expect(updatedPlan.tags).toEqual(['ops']);
 
     const filteredJson = await mcpListReadyPlans({ tags: ['ops'] }, mcpContext);
@@ -135,12 +135,10 @@ describe('tag workflows across CLI and MCP', () => {
     mockConfig.tags = { allowed: ['frontend'] };
 
     await handleAddCommand(['Allowlisted', 'Plan'], { tag: ['Frontend'] }, command);
-    const planFiles = await fs.readdir(tasksDir);
-    const planPath = path.join(tasksDir, planFiles[0]);
 
     await expect(
       handleSetCommand(
-        planPath,
+        '1',
         {
           tag: ['backend'],
         },
@@ -158,7 +156,7 @@ describe('tag workflows across CLI and MCP', () => {
       )
     ).rejects.toThrow('Invalid tag');
 
-    const planAfterFailure = await readPlanFile(planPath);
+    const { plan: planAfterFailure } = await resolvePlanFromDb('1', tempDir);
     expect(planAfterFailure.tags).toEqual(['frontend']);
   });
 });

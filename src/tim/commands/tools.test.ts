@@ -8,7 +8,7 @@ import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { upsertPlan } from '../db/plan.js';
 import { getOrCreateProject } from '../db/project.js';
-import { writePlanFile } from '../plans.js';
+import { resolvePlanFromDb, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import {
   getPlanTool,
@@ -45,6 +45,10 @@ describe('tim tools CLI handlers', () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tools-cli-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
+    await Bun.$`git init`.cwd(tempDir).quiet();
+    await Bun.$`git remote add origin https://example.com/acme/tools-tests.git`
+      .cwd(tempDir)
+      .quiet();
     originalEnv = {
       XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
       APPDATA: process.env.APPDATA,
@@ -177,6 +181,18 @@ describe('tim tools CLI handlers', () => {
     return `00000000-0000-4000-8000-${String(id).padStart(12, '0')}`;
   }
 
+  async function writeDbBackedPlan(planPath: string, plan: PlanSchema) {
+    const planWithUuid: PlanSchema = {
+      ...plan,
+      uuid: plan.uuid ?? createDbTestUuid(plan.id),
+    };
+
+    await writePlanFile(planPath, planWithUuid, {
+      skipUpdatedAt: true,
+      cwdForIdentity: tempDir,
+    });
+  }
+
   async function upsertDbPlan(plan: PlanSchema) {
     if (typeof plan.id !== 'number' || !plan.uuid) {
       throw new Error('DB test plans must include numeric id and uuid');
@@ -216,7 +232,7 @@ describe('tim tools CLI handlers', () => {
     });
   }
 
-  test('create-plan returns JSON output and writes plan file', async () => {
+  test('create-plan returns JSON output and writes plan to the database', async () => {
     const { handleToolCommand } = await import('./tools.js');
     restoreIsTTY = mockIsTTY(false);
     restoreBunStdin = mockBunStdinText(JSON.stringify({ title: 'CLI Plan' }));
@@ -225,6 +241,7 @@ describe('tim tools CLI handlers', () => {
 
     const output = readStdout();
     const payload = JSON.parse(output);
+    const resultId = payload.result.id;
     const resultPath = payload.result.path;
 
     expect(payload.success).toBe(true);
@@ -232,10 +249,10 @@ describe('tim tools CLI handlers', () => {
       id: expect.any(Number),
       path: expect.any(String),
     });
-
-    const planPath = path.join(tempDir, String(resultPath));
-    const stats = await fs.stat(planPath);
-    expect(stats.isFile()).toBe(true);
+    expect(resultPath).toBe(`plan ${resultId}`);
+    expect(await getPlanTool({ plan: String(resultId) }, createToolContext())).toMatchObject({
+      data: expect.objectContaining({ id: resultId, title: 'CLI Plan' }),
+    });
   });
 
   test('get-plan CLI output matches shared tool output', async () => {
@@ -250,7 +267,7 @@ describe('tim tools CLI handlers', () => {
       status: 'pending',
       tasks: [],
     };
-    await writePlanFile(planFile, plan, { skipUpdatedAt: true });
+    await writeDbBackedPlan(planFile, plan);
 
     const context = {
       config,
@@ -258,17 +275,17 @@ describe('tim tools CLI handlers', () => {
       gitRoot: tempDir,
     };
 
-    const toolOutput = await getPlanTool({ plan: planFile }, context);
+    const toolOutput = await getPlanTool({ plan: '42' }, context);
     const expected = toolOutput.text.endsWith('\n') ? toolOutput.text : `${toolOutput.text}\n`;
 
     restoreIsTTY = mockIsTTY(false);
-    restoreBunStdin = mockBunStdinText(JSON.stringify({ plan: planFile }));
+    restoreBunStdin = mockBunStdinText(JSON.stringify({ plan: '42' }));
 
     await handleToolCommand('get-plan', {}, command);
 
     expect(readStdout()).toBe(expected);
 
-    const mcpOutput = await mcpGetPlan({ plan: planFile }, context);
+    const mcpOutput = await mcpGetPlan({ plan: '42' }, context);
     expect(mcpOutput).toBe(toolOutput.text);
   });
 
@@ -286,11 +303,11 @@ describe('tim tools CLI handlers', () => {
     };
 
     const context = createToolContext();
-    const args = { plan: planFile, details: 'New details' };
-    await writePlanFile(planFile, plan, { skipUpdatedAt: true });
+    const args = { plan: '10', details: 'New details' };
+    await writeDbBackedPlan(planFile, plan);
     const toolOutput = await updatePlanDetailsTool(args, context);
 
-    await writePlanFile(planFile, plan, { skipUpdatedAt: true });
+    await writeDbBackedPlan(planFile, plan);
 
     restoreIsTTY = mockIsTTY(false);
     restoreBunStdin = mockBunStdinText(JSON.stringify(args));
@@ -300,7 +317,7 @@ describe('tim tools CLI handlers', () => {
     const expected = toolOutput.text.endsWith('\n') ? toolOutput.text : `${toolOutput.text}\n`;
     expect(readStdout()).toBe(expected);
 
-    await writePlanFile(planFile, plan, { skipUpdatedAt: true });
+    await writeDbBackedPlan(planFile, plan);
 
     const mcpOutput = await mcpUpdatePlanDetails(args, context);
     expect(mcpOutput).toBe(toolOutput.text);
@@ -321,7 +338,7 @@ describe('tim tools CLI handlers', () => {
 
     const context = createToolContext();
     const args = {
-      plan: planFile,
+      plan: '11',
       tasks: [
         {
           title: 'Task 1',
@@ -329,10 +346,10 @@ describe('tim tools CLI handlers', () => {
         },
       ],
     };
-    await writePlanFile(planFile, plan, { skipUpdatedAt: true });
+    await writeDbBackedPlan(planFile, plan);
     const toolOutput = await updatePlanTasksTool(args, context);
 
-    await writePlanFile(planFile, plan, { skipUpdatedAt: true });
+    await writeDbBackedPlan(planFile, plan);
 
     restoreIsTTY = mockIsTTY(false);
     restoreBunStdin = mockBunStdinText(JSON.stringify(args));
@@ -342,7 +359,7 @@ describe('tim tools CLI handlers', () => {
     const expected = toolOutput.text.endsWith('\n') ? toolOutput.text : `${toolOutput.text}\n`;
     expect(readStdout()).toBe(expected);
 
-    await writePlanFile(planFile, plan, { skipUpdatedAt: true });
+    await writeDbBackedPlan(planFile, plan);
 
     const mcpOutput = await mcpUpdatePlanTasks(args, context, { log: createNoopLogger() });
     expect(mcpOutput).toBe(toolOutput.text);
@@ -361,7 +378,7 @@ describe('tim tools CLI handlers', () => {
 
     const context = createToolContext();
     const args = {
-      plan: planFile,
+      plan: '15',
       tasks: [
         {
           title: 'Task with detail',
@@ -369,7 +386,7 @@ describe('tim tools CLI handlers', () => {
         },
       ],
     };
-    await writePlanFile(planFile, plan, { skipUpdatedAt: true });
+    await writeDbBackedPlan(planFile, plan);
     const toolOutput = await updatePlanTasksTool(
       args as Parameters<typeof updatePlanTasksTool>[0],
       context
@@ -378,10 +395,10 @@ describe('tim tools CLI handlers', () => {
     expect(toolOutput.text).toContain('Successfully updated plan');
     expect(toolOutput.text).toContain('1 task');
 
-    // Verify the task was written with description field
-    const updatedPlan = await fs.readFile(planFile, 'utf-8');
-    expect(updatedPlan).toContain('Task with detail');
-    expect(updatedPlan).toContain('This uses detail instead of description');
+    const { plan: storedPlan } = await resolvePlanFromDb('15', tempDir);
+    expect(storedPlan.tasks).toHaveLength(1);
+    expect(storedPlan.tasks[0]?.title).toBe('Task with detail');
+    expect(storedPlan.tasks[0]?.description).toBe('This uses detail instead of description');
   });
 
   test('update-plan-tasks accepts details as alias for description', async () => {
@@ -397,7 +414,7 @@ describe('tim tools CLI handlers', () => {
 
     const context = createToolContext();
     const args = {
-      plan: planFile,
+      plan: '16',
       tasks: [
         {
           title: 'Task with details',
@@ -405,7 +422,7 @@ describe('tim tools CLI handlers', () => {
         },
       ],
     };
-    await writePlanFile(planFile, plan, { skipUpdatedAt: true });
+    await writeDbBackedPlan(planFile, plan);
     const toolOutput = await updatePlanTasksTool(
       args as Parameters<typeof updatePlanTasksTool>[0],
       context
@@ -414,10 +431,10 @@ describe('tim tools CLI handlers', () => {
     expect(toolOutput.text).toContain('Successfully updated plan');
     expect(toolOutput.text).toContain('1 task');
 
-    // Verify the task was written with description field
-    const updatedPlan = await fs.readFile(planFile, 'utf-8');
-    expect(updatedPlan).toContain('Task with details');
-    expect(updatedPlan).toContain('This uses details instead of description');
+    const { plan: storedPlan } = await resolvePlanFromDb('16', tempDir);
+    expect(storedPlan.tasks).toHaveLength(1);
+    expect(storedPlan.tasks[0]?.title).toBe('Task with details');
+    expect(storedPlan.tasks[0]?.description).toBe('This uses details instead of description');
   });
 
   test('update-plan-tasks with --tasks option bypasses stdin', async () => {
@@ -433,7 +450,7 @@ describe('tim tools CLI handlers', () => {
       tasks: [],
     };
 
-    await writePlanFile(planFile, plan, { skipUpdatedAt: true });
+    await writeDbBackedPlan(planFile, plan);
 
     const tasksJson = JSON.stringify([
       {
@@ -445,7 +462,7 @@ describe('tim tools CLI handlers', () => {
     // Use inputData instead of stdin
     const options = {
       inputData: {
-        plan: planFile,
+        plan: '14',
         tasks: JSON.parse(tasksJson),
       },
     };
@@ -456,10 +473,10 @@ describe('tim tools CLI handlers', () => {
     expect(output).toContain('Successfully updated plan');
     expect(output).toContain('1 task');
 
-    // Verify the task was actually written to the file
-    const updatedPlan = await fs.readFile(planFile, 'utf-8');
-    expect(updatedPlan).toContain('Task from --tasks');
-    expect(updatedPlan).toContain('This task was passed via CLI option');
+    const { plan: storedPlan } = await resolvePlanFromDb('14', tempDir);
+    expect(storedPlan.tasks).toHaveLength(1);
+    expect(storedPlan.tasks[0]?.title).toBe('Task from --tasks');
+    expect(storedPlan.tasks[0]?.description).toBe('This task was passed via CLI option');
   });
 
   test('manage-plan-task CLI output matches shared tool output and JSON preserves action data', async () => {
@@ -474,23 +491,23 @@ describe('tim tools CLI handlers', () => {
       status: 'pending',
       tasks: [],
     };
-    await writePlanFile(planFile, plan, { skipUpdatedAt: true });
+    await writeDbBackedPlan(planFile, plan);
 
     const context = createToolContext();
     const args = {
-      plan: planFile,
+      plan: '12',
       action: 'add',
       title: 'New Task',
       description: 'Add a task',
     } as const;
     const toolOutput = await managePlanTaskTool(args, context);
 
-    await writePlanFile(planFile, plan, { skipUpdatedAt: true });
+    await writeDbBackedPlan(planFile, plan);
 
     const mcpOutput = await mcpManagePlanTask(args, context);
     expect(mcpOutput).toBe(toolOutput.text);
 
-    await writePlanFile(planFile, plan, { skipUpdatedAt: true });
+    await writeDbBackedPlan(planFile, plan);
 
     restoreIsTTY = mockIsTTY(false);
     restoreBunStdin = mockBunStdinText(JSON.stringify(args));
@@ -516,7 +533,7 @@ describe('tim tools CLI handlers', () => {
       status: 'pending',
       tasks: [],
     };
-    await writePlanFile(planFile, plan, { skipUpdatedAt: true });
+    await writeDbBackedPlan(planFile, plan);
 
     const context = createToolContext();
     const args = {};
@@ -534,28 +551,12 @@ describe('tim tools CLI handlers', () => {
     expect(mcpOutput).toBe(toolOutput.text);
   });
 
-  test('listReadyPlansTool falls back to local files when SQLite has no synced plans', async () => {
-    // Write the plan file directly (bypassing writePlanFile which auto-syncs to DB)
-    // so the DB stays empty and the fallback path is actually exercised.
-    const planFile = path.join(tasksDir, '14-ready-fallback.plan.md');
-    const planYaml = [
-      '---',
-      'id: 14',
-      'title: Fallback Ready Plan',
-      'goal: Use local file when DB is empty',
-      'status: pending',
-      'tasks: []',
-      '---',
-      '',
-    ].join('\n');
-    await fs.writeFile(planFile, planYaml);
-
+  test('listReadyPlansTool reads only SQLite plans', async () => {
     const context = createToolContext();
     const toolOutput = await listReadyPlansTool({}, context);
 
-    expect(toolOutput.data?.count).toBe(1);
-    expect(toolOutput.data?.plans[0]?.title).toBe('Fallback Ready Plan');
-    expect(toolOutput.text).toContain('Fallback Ready Plan');
+    expect(toolOutput.data?.count).toBe(0);
+    expect(toolOutput.text).toContain('"count": 0');
   });
 
   test('listReadyPlansTool uses SQLite plans by default for epic filtering when local files diverge', async () => {
@@ -570,7 +571,7 @@ describe('tim tools CLI handlers', () => {
         epic: true,
         tasks: [],
       },
-      { skipUpdatedAt: true }
+      { skipUpdatedAt: true, cwdForIdentity: tempDir }
     );
     await writePlanFile(
       path.join(tasksDir, '51-child.plan.md'),
@@ -583,7 +584,7 @@ describe('tim tools CLI handlers', () => {
         parent: 50,
         tasks: [],
       },
-      { skipUpdatedAt: true }
+      { skipUpdatedAt: true, cwdForIdentity: tempDir }
     );
 
     await upsertDbPlan({

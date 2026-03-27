@@ -82,6 +82,8 @@ const mockLinearIssueTracker: IssueTrackerClient = {
 
 let mockConfig: any;
 let gitRootDir: string;
+let transactionImmediateSpy: ReturnType<typeof mock>;
+let upsertPlanSpy: ReturnType<typeof mock>;
 
 const mockPlansResult = {
   plans: new Map(),
@@ -110,6 +112,93 @@ describe('Hierarchical Linear Import', () => {
       getMaxNumericPlanId: mock(() => Promise.resolve(5)),
       readPlanFile: mock(() => Promise.resolve({ issue: [] })),
       getImportedIssueUrls: mock(() => Promise.resolve(new Set())),
+      resolvePlanFromDb: mock(() =>
+        Promise.resolve({
+          plan: {
+            id: 6,
+            title: 'Existing plan',
+            goal: '',
+            details: '',
+            status: 'pending',
+            tasks: [],
+            issue: [],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+          planPath: null,
+        })
+      ),
+    }));
+
+    transactionImmediateSpy = mock((callback: () => void) => callback());
+    upsertPlanSpy = mock(() => ({}));
+
+    await moduleMocker.mock('../../db/database.js', () => ({
+      getDatabase: () => ({
+        transaction: (callback: () => void) => {
+          const wrapped = () => callback();
+          wrapped.immediate = () => transactionImmediateSpy(callback);
+          return wrapped;
+        },
+      }),
+    }));
+
+    await moduleMocker.mock('../../db/plan.js', () => ({
+      upsertPlan: upsertPlanSpy,
+    }));
+
+    await moduleMocker.mock('../../db/plan_sync.js', () => ({
+      toPlanUpsertInput: mock((plan: PlanSchema, filePath: string) => ({
+        planId: plan.id,
+        uuid: plan.uuid ?? `uuid-${plan.id}`,
+        status: plan.status ?? 'pending',
+        epic: false,
+        filename: path.basename(filePath),
+        tasks: [],
+        dependencyUuids: [],
+        tags: [],
+      })),
+    }));
+
+    await moduleMocker.mock('../../utils/references.js', () => ({
+      ensureReferences: mock((plan: PlanSchema) => ({
+        updatedPlan: {
+          ...plan,
+          uuid: plan.uuid ?? `uuid-${plan.id}`,
+        },
+      })),
+    }));
+
+    await moduleMocker.mock('../../plan_materialize.js', () => ({
+      resolveProjectContext: mock(() =>
+        Promise.resolve({
+          projectId: 1,
+          maxNumericId: 5,
+          rows: [],
+          planIdToUuid: new Map(),
+          uuidToPlanId: new Map(),
+          duplicatePlanIds: new Set(),
+          repository: {
+            repositoryId: `test-repo-${gitRootDir}`,
+            remoteUrl: null,
+            gitRoot: gitRootDir,
+          },
+        })
+      ),
+    }));
+
+    await moduleMocker.mock('../../plans_db.js', () => ({
+      loadPlansFromDb: mock(() => mockPlansResult),
+    }));
+
+    await moduleMocker.mock('../../assignments/workspace_identifier.js', () => ({
+      getRepositoryIdentity: mock(() =>
+        Promise.resolve({
+          repositoryId: `test-repo-${gitRootDir}`,
+          remoteUrl: null,
+          gitRoot: gitRootDir,
+        })
+      ),
     }));
 
     await moduleMocker.mock('../../configLoader.js', () => ({
@@ -255,6 +344,24 @@ describe('Hierarchical Linear Import', () => {
       title: 'Child Issue - API Endpoints',
       parent: 6, // Parent plan ID
     });
+    expect(transactionImmediateSpy.mock.calls.length).toBeGreaterThan(0);
+    expect(upsertPlanSpy).toHaveBeenCalledTimes(3);
+  });
+
+  test('does not write any files if the transactional DB batch fails', async () => {
+    upsertPlanSpy.mockImplementationOnce(() => ({}));
+    upsertPlanSpy.mockImplementationOnce(() => {
+      throw new Error('DB write failed');
+    });
+
+    const { writePlanFile } = await import('../../plans.js');
+
+    await expect(handleImportCommand('TEAM-123', { withSubissues: true })).rejects.toThrow(
+      'DB write failed'
+    );
+
+    expect(transactionImmediateSpy.mock.calls.length).toBeGreaterThan(0);
+    expect(writePlanFile).not.toHaveBeenCalled();
   });
 
   test('should import Linear issue with children into one plan when --with-merged-subissues is provided', async () => {

@@ -84,7 +84,9 @@ function collectMissingReferenceIds(plan: PlanSchemaInput): number[] {
 }
 
 async function resolvePlanSyncContext(options: PlanSyncOptions = {}): Promise<PlanSyncContext> {
-  const requestKey = path.resolve(options.baseDir ?? process.cwd());
+  const identityCwd = options.cwdForIdentity ?? process.cwd();
+  const contextCwd = options.cwdForIdentity ?? options.baseDir ?? process.cwd();
+  const requestKey = path.resolve(contextCwd);
   const cachedGitRoot = requestKeyToGitRoot.get(requestKey);
   if (cachedGitRoot) {
     const cachedContext = cachedContextsByGitRoot.get(cachedGitRoot);
@@ -98,11 +100,11 @@ async function resolvePlanSyncContext(options: PlanSyncOptions = {}): Promise<Pl
   }
 
   const contextPromise = (async (): Promise<PlanSyncContext> => {
-    const config = options.config ?? (await loadEffectiveConfig());
-    const tasksDir = await resolveTasksDir(config);
     const repository = await getRepositoryIdentity({
-      cwd: options.cwdForIdentity ?? process.cwd(),
+      cwd: identityCwd,
     });
+    const config = options.config ?? (await loadEffectiveConfig(undefined, { cwd: contextCwd }));
+    const tasksDir = await resolveTasksDir(config, contextCwd);
 
     const existingContext = cachedContextsByGitRoot.get(repository.gitRoot);
     if (existingContext) {
@@ -153,9 +155,9 @@ async function resolveIdToUuidMap(
   return allPlans.idToUuid;
 }
 
-function toPlanUpsertInput(
+export function toPlanUpsertInput(
   plan: PlanSchemaInput,
-  filePath: string,
+  filePath: string | undefined,
   idToUuid?: Map<number, string>
 ): {
   planId: number;
@@ -225,7 +227,7 @@ function toPlanUpsertInput(
     reviewIssues: plan.reviewIssues ?? null,
     parentUuid,
     epic: plan.epic === true,
-    filename: path.basename(filePath),
+    filename: filePath ? path.basename(filePath) : '',
     tasks: (plan.tasks ?? []).map((task) => ({
       title: task.title,
       description: task.description ?? '',
@@ -288,6 +290,9 @@ export async function removePlanFromDb(
     });
     removeInTransaction.immediate(context.projectId, planUuid);
   } catch (error) {
+    if (options.throwOnError) {
+      throw error;
+    }
     warn(
       `Failed to remove plan ${planUuid} from SQLite: ${
         error instanceof Error ? error.message : String(error)

@@ -1,40 +1,44 @@
 // Command handler for 'tim add'
-// Creates a new plan stub file that can be filled with tasks using generate
+// Creates a new plan stub in the database and optionally opens it for editing
 
-import * as path from 'path';
 import * as fs from 'node:fs/promises';
 import chalk from 'chalk';
+import { getGitRoot } from '../../common/git.js';
 import { log } from '../../logging.js';
-import { loadEffectiveConfig } from '../configLoader.js';
-import { generateNumericPlanId } from '../id_utils.js';
-import { generatePlanFilename } from '../utils/filename.js';
-import { writePlanFile, readAllPlans, readPlanFile } from '../plans.js';
-import { prioritySchema, statusSchema, type PlanSchema } from '../planSchema.js';
 import { needArrayOrUndefined } from '../../common/cli.js';
+import { loadEffectiveConfig } from '../configLoader.js';
+import { getDatabase } from '../db/database.js';
+import { getPlanByUuid, upsertPlan } from '../db/plan.js';
+import { reserveNextPlanId } from '../db/project.js';
+import { toPlanUpsertInput } from '../db/plan_sync.js';
+import {
+  getMaterializedPlanPath,
+  materializePlan,
+  resolveProjectContext,
+  syncMaterializedPlan,
+} from '../plan_materialize.js';
+import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 import { updatePlanProperties } from '../planPropertiesUpdater.js';
-import { resolvePlanPathContext } from '../path_resolver.js';
-import { ensureReferences, writePlansWithGeneratedUuids } from '../utils/references.js';
-import { syncPlanToDb } from '../db/plan_sync.js';
+import { prioritySchema, statusSchema, type PlanSchema } from '../planSchema.js';
+import { invertPlanIdToUuidMap, planRowForTransaction } from '../plans_db.js';
+import { resolvePlanFromDb } from '../plans.js';
+import { ensureReferences } from '../utils/references.js';
+import { editMaterializedPlan } from './materialized_edit.js';
 
 export async function handleAddCommand(title: string[], options: any, command: any) {
   const globalOpts = command.parent.opts();
+  const config = await loadEffectiveConfig(globalOpts.config);
+  const repoRoot = await resolveRepoRootForPlanArg(
+    '',
+    (await getGitRoot()) || process.cwd(),
+    globalOpts.config
+  );
+  const projectContext = await resolveProjectContext(repoRoot);
+  const db = getDatabase();
 
   let planTitle: string;
-  let referencedPlan: (PlanSchema & { filename: string }) | null = null;
+  let referencedPlan: PlanSchema | null = null;
 
-  // Load the effective configuration
-  const config = await loadEffectiveConfig(globalOpts.config);
-
-  // Determine the target directory for the new plan file
-  const { tasksDir: targetDir } = await resolvePlanPathContext(config);
-
-  // Ensure the target directory exists
-  await fs.mkdir(targetDir, { recursive: true });
-
-  // Load all plans once at the beginning to avoid race conditions
-  const { plans: allPlans } = await readAllPlans(targetDir);
-
-  // Validate discoveredFrom option if provided
   if (options.discoveredFrom !== undefined) {
     if (typeof options.discoveredFrom !== 'number' || Number.isNaN(options.discoveredFrom)) {
       throw new Error('--discovered-from option requires a numeric plan ID');
@@ -43,56 +47,36 @@ export async function handleAddCommand(title: string[], options: any, command: a
     if (!Number.isInteger(discoveredFromPlanId) || discoveredFromPlanId <= 0) {
       throw new Error('--discovered-from option requires a positive integer plan ID');
     }
-    if (!allPlans.has(discoveredFromPlanId)) {
+    if (!projectContext.planIdToUuid.has(discoveredFromPlanId)) {
       throw new Error(`Plan with ID ${discoveredFromPlanId} not found`);
     }
     options.discoveredFrom = discoveredFromPlanId;
   }
 
-  // Handle cleanup option
   if (options.cleanup !== undefined) {
-    // Validate that cleanup plan ID is provided and is positive
     if (typeof options.cleanup !== 'number') {
       throw new Error('--cleanup option requires a numeric plan ID');
     }
     if (options.cleanup <= 0) {
       throw new Error('--cleanup option requires a positive plan ID');
     }
-    const foundPlan = allPlans.get(options.cleanup);
-    if (!foundPlan) {
-      throw new Error(`Plan with ID ${options.cleanup} not found`);
-    }
-    referencedPlan = foundPlan;
-
-    // Generate default title if none provided, otherwise use custom title
+    referencedPlan = (
+      await resolvePlanFromDb(options.cleanup, repoRoot, { context: projectContext })
+    ).plan;
     if (title.length === 0) {
       planTitle = `${referencedPlan.title} - Cleanup`;
     } else {
       planTitle = title.join(' ');
     }
-  } else {
-    // Regular flow - title is required when not using cleanup or edit
-    if (title.length === 0) {
-      if (!options.edit) {
-        throw new Error('Plan title is required when not using --cleanup or --edit option');
-      }
-      // Use empty string when --edit is provided without a title
-      planTitle = '';
-    } else {
-      planTitle = title.join(' ');
+  } else if (title.length === 0) {
+    if (!options.edit) {
+      throw new Error('Plan title is required when not using --cleanup or --edit option');
     }
+    planTitle = '';
+  } else {
+    planTitle = title.join(' ');
   }
 
-  // Generate a unique numeric plan ID
-  const planId = await generateNumericPlanId(targetDir);
-
-  // Create filename using plan ID + slugified title
-  const filename = generatePlanFilename(planId, planTitle);
-
-  // Construct the full path to the new plan file
-  const filePath = path.join(targetDir, filename);
-
-  // Validate priority if provided
   if (options.priority) {
     const validPriorities = prioritySchema.options;
     if (!validPriorities.includes(options.priority)) {
@@ -102,7 +86,6 @@ export async function handleAddCommand(title: string[], options: any, command: a
     }
   }
 
-  // Validate status if provided
   if (options.status) {
     const validStatuses = statusSchema.options;
     if (!validStatuses.includes(options.status)) {
@@ -112,7 +95,14 @@ export async function handleAddCommand(title: string[], options: any, command: a
     }
   }
 
-  // Create the initial plan object adhering to PlanSchema
+  const { startId: planId } = reserveNextPlanId(
+    db,
+    projectContext.repository.repositoryId,
+    projectContext.maxNumericId,
+    1,
+    projectContext.repository.remoteUrl
+  );
+
   const plan: PlanSchema = {
     id: planId,
     uuid: crypto.randomUUID(),
@@ -138,30 +128,29 @@ export async function handleAddCommand(title: string[], options: any, command: a
     tags: [],
   };
 
-  // Handle cleanup-specific logic: aggregate changedFiles into rmfilter
+  for (const dependencyId of plan.dependencies ?? []) {
+    if (!projectContext.planIdToUuid.has(dependencyId)) {
+      throw new Error(`Dependency plan ${dependencyId} not found`);
+    }
+  }
+
   if (referencedPlan) {
     const filePaths = new Set<string>();
+    referencedPlan.changedFiles?.forEach((file) => filePaths.add(file));
 
-    // Add files from the referenced plan
-    if (referencedPlan.changedFiles) {
-      referencedPlan.changedFiles.forEach((file) => filePaths.add(file));
-    }
-
-    // Find all child plans of the referenced plan with status "done"
-    for (const childPlan of allPlans.values()) {
+    for (const childRow of projectContext.rows) {
       if (
-        childPlan.parent === referencedPlan.id &&
-        childPlan.status === 'done' &&
-        childPlan.changedFiles
+        childRow.parent_uuid === referencedPlan.uuid &&
+        childRow.status === 'done' &&
+        childRow.changed_files
       ) {
-        childPlan.changedFiles.forEach((file) => filePaths.add(file));
+        for (const file of JSON.parse(childRow.changed_files) as string[]) {
+          filePaths.add(file);
+        }
       }
     }
 
-    // Convert to sorted array and set as rmfilter
     plan.rmfilter = Array.from(filePaths).sort();
-
-    // Copy over the rmfilter args from the referenced plan
     if (referencedPlan.rmfilter?.length) {
       if (plan.rmfilter.length) {
         plan.rmfilter.push('--');
@@ -170,7 +159,6 @@ export async function handleAddCommand(title: string[], options: any, command: a
     }
   }
 
-  // Apply additional properties using the shared function
   updatePlanProperties(
     plan,
     {
@@ -183,16 +171,13 @@ export async function handleAddCommand(title: string[], options: any, command: a
     config
   );
 
-  // Collect details if provided
   if (options.details) {
     plan.details = options.details;
   } else if (options.detailsFile) {
     if (options.detailsFile === '-') {
-      // Read from stdin
       const { readStdin } = await import('../utils/editor.js');
       plan.details = await readStdin();
     } else {
-      // Read from file
       plan.details = await fs.readFile(options.detailsFile, 'utf-8');
     }
   } else if (options.editorDetails) {
@@ -200,79 +185,80 @@ export async function handleAddCommand(title: string[], options: any, command: a
     plan.details = await openEditorForInput('Enter plan details (markdown):');
   }
 
-  // Insert the new plan into allPlans so ensureReferences can find its UUID
-  allPlans.set(planId, { ...plan, filename: filePath });
-
-  // Update parent plan dependencies - handles both regular parent and cleanup cases
   const parentPlanId = referencedPlan ? referencedPlan.id : options.parent;
-  if (parentPlanId !== undefined) {
-    const parentPlan = allPlans.get(parentPlanId);
-    if (!parentPlan) {
-      throw new Error(`Parent plan with ID ${parentPlanId} not found`);
-    }
+  const parentPlan =
+    parentPlanId === undefined
+      ? undefined
+      : (await resolvePlanFromDb(parentPlanId, repoRoot, { context: projectContext })).plan;
 
-    // Add this plan's ID to the parent's dependencies
-    if (!parentPlan.dependencies) {
-      parentPlan.dependencies = [];
-    }
-    if (!parentPlan.dependencies.includes(planId)) {
-      parentPlan.dependencies.push(planId);
-      parentPlan.updatedAt = new Date().toISOString();
+  const idToUuid = new Map(projectContext.planIdToUuid).set(planId, plan.uuid!);
+  const { updatedPlan: updatedNewPlan } = ensureReferences(plan, { planIdToUuid: idToUuid });
 
-      if (parentPlan.status === 'done') {
-        parentPlan.status = 'in_progress';
-        log(chalk.yellow(`  Parent plan "${parentPlan.title}" marked as in_progress`));
-      }
-
-      // Ensure references are populated on the parent plan
-      const { updatedPlan: updatedParent, plansWithGeneratedUuids } = ensureReferences(
-        parentPlan,
-        allPlans
-      );
-      await writePlanFile(parentPlan.filename, updatedParent);
-      await writePlansWithGeneratedUuids(plansWithGeneratedUuids, allPlans);
-      log(chalk.gray(`  Updated parent plan ${parentPlan.id} to include dependency on ${planId}`));
+  let parentMaterializedExists = false;
+  if (parentPlan) {
+    const parentMaterializedPath = getMaterializedPlanPath(repoRoot, parentPlan.id);
+    parentMaterializedExists = await Bun.file(parentMaterializedPath)
+      .stat()
+      .then((stats) => stats.isFile())
+      .catch(() => false);
+    if (parentMaterializedExists) {
+      await syncMaterializedPlan(parentPlan.id, repoRoot, { context: projectContext });
     }
   }
 
-  // Ensure references are populated on the new plan
-  const { updatedPlan: updatedNewPlan, plansWithGeneratedUuids } = ensureReferences(plan, allPlans);
-  await writePlanFile(filePath, updatedNewPlan);
-  await writePlansWithGeneratedUuids(plansWithGeneratedUuids, allPlans);
-  let finalPlanFile = filePath;
+  const writePlans = db.transaction(() => {
+    upsertPlan(db, projectContext.projectId, {
+      ...toPlanUpsertInput(updatedNewPlan, `${planId}.plan.md`, idToUuid),
+      forceOverwrite: true,
+    });
 
-  // Log success message
-  log(chalk.green('\u2713 Created plan stub:'), filePath, 'for ID', chalk.green(planId));
+    if (!parentPlan) {
+      return;
+    }
+
+    const parentRow = getPlanByUuid(db, parentPlan.uuid!);
+    if (!parentRow) {
+      throw new Error(`Parent plan with ID ${parentPlan.id} not found`);
+    }
+
+    const freshParent = planRowForTransaction(parentRow, invertPlanIdToUuidMap(idToUuid));
+    if ((freshParent.dependencies ?? []).includes(planId)) {
+      return;
+    }
+
+    const updatedParent: PlanSchema = {
+      ...freshParent,
+      dependencies: [...(freshParent.dependencies ?? []), planId],
+      updatedAt: new Date().toISOString(),
+      status: freshParent.status === 'done' ? 'in_progress' : freshParent.status,
+    };
+    const { updatedPlan: referencedParent } = ensureReferences(updatedParent, {
+      planIdToUuid: idToUuid,
+    });
+
+    upsertPlan(db, projectContext.projectId, {
+      ...toPlanUpsertInput(referencedParent, parentRow.filename, idToUuid),
+      forceOverwrite: true,
+    });
+  });
+  writePlans.immediate();
+
+  if (parentPlan && parentMaterializedExists) {
+    const freshContext = await resolveProjectContext(repoRoot);
+    await materializePlan(parentPlan.id, repoRoot, { context: freshContext });
+  }
+
+  log(chalk.green('\u2713 Created plan stub:'), `plan ${planId}`);
   log(`  Next step: Add plan detail and run the generate process.`);
 
-  // Open in editor if requested
-  if (options.edit) {
-    const editor = process.env.EDITOR || 'nano';
-    const editorProcess = Bun.spawn([editor, filePath], {
-      stdio: ['inherit', 'inherit', 'inherit'],
-    });
-    await editorProcess.exited;
-
-    // Read the edited plan to check if title was updated
-    const editedPlan = await readPlanFile(filePath);
-
-    // If the title changed, rename the file to match
-    if (editedPlan.title && editedPlan.title !== planTitle) {
-      const newFilename = generatePlanFilename(planId, editedPlan.title);
-      const newFilePath = path.join(targetDir, newFilename);
-
-      // Only rename if the new filename is different
-      if (newFilename !== filename) {
-        await fs.rename(filePath, newFilePath);
-        finalPlanFile = newFilePath;
-        log(chalk.gray(`  Renamed plan file to: ${newFilename}`));
-      }
+  if (parentPlan) {
+    log(chalk.gray(`  Updated parent plan ${parentPlan.id} to include dependency on ${planId}`));
+    if (parentPlan.status === 'done') {
+      log(chalk.yellow(`  Parent plan "${parentPlan.title}" marked as in_progress`));
     }
   }
 
-  const editedPlan = options.edit ? await readPlanFile(finalPlanFile) : updatedNewPlan;
-  await syncPlanToDb(editedPlan, finalPlanFile, {
-    config,
-    force: true,
-  });
+  if (options.edit) {
+    await editMaterializedPlan(planId, repoRoot, options.editor);
+  }
 }

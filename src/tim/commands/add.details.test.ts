@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import { handleAddCommand } from './add.js';
-import { readPlanFile, clearPlanCache } from '../plans.js';
+import { clearPlanCache, resolvePlanFromDb } from '../plans.js';
 
 describe('tim add with details', () => {
   let tempDir: string;
@@ -50,12 +50,7 @@ describe('tim add with details', () => {
 
     await handleAddCommand(title, options, command);
 
-    // Find the created plan file
-    const files = await fs.readdir(tasksDir);
-    expect(files.length).toBe(1);
-
-    const planFile = path.join(tasksDir, files[0]);
-    const plan = await readPlanFile(planFile);
+    const { plan } = await resolvePlanFromDb('1', tempDir);
 
     expect(plan.title).toBe('Test Plan');
     expect(plan.details).toBe(details);
@@ -81,12 +76,7 @@ describe('tim add with details', () => {
 
     await handleAddCommand(title, options, command);
 
-    const files = await fs.readdir(tasksDir);
-    const planFiles = files.filter((f) => f.endsWith('.plan.md'));
-    expect(planFiles.length).toBe(1);
-
-    const planFile = path.join(tasksDir, planFiles[0]);
-    const plan = await readPlanFile(planFile);
+    const { plan } = await resolvePlanFromDb('1', tempDir);
 
     expect(plan.title).toBe('Test Plan');
     expect(plan.details).toBe(detailsContent);
@@ -103,11 +93,7 @@ describe('tim add with details', () => {
 
     await handleAddCommand(title, options, command);
 
-    const files = await fs.readdir(tasksDir);
-    expect(files.length).toBe(1);
-
-    const planFile = path.join(tasksDir, files[0]);
-    const plan = await readPlanFile(planFile);
+    const { plan } = await resolvePlanFromDb('1', tempDir);
 
     expect(plan.title).toBe('Test Plan');
     expect(plan.details).toBe('');
@@ -128,11 +114,7 @@ describe('tim add with details', () => {
 
     await handleAddCommand(title, options, command);
 
-    const files = await fs.readdir(tasksDir);
-    expect(files.length).toBe(1);
-
-    const planFile = path.join(tasksDir, files[0]);
-    const plan = await readPlanFile(planFile);
+    const { plan } = await resolvePlanFromDb('1', tempDir);
 
     expect(plan.details).toBe(details);
   });
@@ -150,11 +132,7 @@ describe('tim add with details', () => {
 
     await handleAddCommand(title, options, command);
 
-    const files = await fs.readdir(tasksDir);
-    expect(files.length).toBe(1);
-
-    const planFile = path.join(tasksDir, files[0]);
-    const plan = await readPlanFile(planFile);
+    const { plan } = await resolvePlanFromDb('1', tempDir);
 
     expect(plan.title).toBe('Test Plan');
     expect(plan.details).toBe('');
@@ -178,12 +156,7 @@ describe('tim add with details', () => {
 
     await handleAddCommand(title, options, command);
 
-    const files = await fs.readdir(tasksDir);
-    const planFiles = files.filter((f) => f.endsWith('.plan.md'));
-    expect(planFiles.length).toBe(1);
-
-    const planFile = path.join(tasksDir, planFiles[0]);
-    const plan = await readPlanFile(planFile);
+    const { plan } = await resolvePlanFromDb('1', tempDir);
 
     expect(plan.title).toBe('Test Plan');
     expect(plan.details).toBe(detailsContent);
@@ -206,11 +179,7 @@ describe('tim add with details', () => {
 
     await handleAddCommand(title, options, command);
 
-    const files = await fs.readdir(tasksDir);
-    expect(files.length).toBe(1);
-
-    const planFile = path.join(tasksDir, files[0]);
-    const plan = await readPlanFile(planFile);
+    const { plan } = await resolvePlanFromDb('1', tempDir);
 
     expect(plan.title).toBe('Test Plan');
     expect(plan.details).toBe(details);

@@ -160,6 +160,14 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       setPlanStatus: mock(async (filePath: string, status: string) => {
         await setPlanStatusSpy(filePath, status);
       }),
+      setPlanStatusById: mock(
+        async (_planId: number, status: string, _repoRoot: string, filePath?: string | null) => {
+          if (!filePath) {
+            throw new Error('Expected file path for setPlanStatusById test mock');
+          }
+          await setPlanStatusSpy(filePath, status);
+        }
+      ),
       readAllPlans: mock(async () => ({ plans: new Map() })),
       clearPlanCache: mock(() => {}),
     }));

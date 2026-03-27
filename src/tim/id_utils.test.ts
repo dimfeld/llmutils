@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { slugify, timestamp } from './id_utils.js';
 import { closeDatabaseForTesting } from './db/database.js';
 import { ModuleMocker, stringifyPlanWithFrontmatter } from '../testing.js';
+import { writePlanFile } from './plans.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -55,25 +56,20 @@ describe('generateNumericPlanId with shared storage', () => {
     const planDir = path.join(tempDir, 'plans');
     await fs.mkdir(planDir, { recursive: true });
 
-    // Create mock plan files
-    await Bun.write(
-      `${planDir}/1.yml`,
-      stringifyPlanWithFrontmatter({
-        id: 1,
-        goal: 'Test plan 1',
-        details: 'Details for test plan 1',
-        tasks: [],
-      })
-    );
-    await Bun.write(
-      `${planDir}/100.yml`,
-      stringifyPlanWithFrontmatter({
-        id: 100,
-        goal: 'Test plan 100',
-        details: 'Details for test plan 100',
-        tasks: [],
-      })
-    );
+    await writePlanFile(`${planDir}/1.yml`, {
+      id: 1,
+      title: 'Plan 1',
+      goal: 'Test plan 1',
+      details: 'Details for test plan 1',
+      tasks: [],
+    });
+    await writePlanFile(`${planDir}/100.yml`, {
+      id: 100,
+      title: 'Plan 100',
+      goal: 'Test plan 100',
+      details: 'Details for test plan 100',
+      tasks: [],
+    });
     await Bun.write(
       `${planDir}/old.yml`,
       stringifyPlanWithFrontmatter({
@@ -134,16 +130,13 @@ describe('generateNumericPlanId with shared storage', () => {
     const planDir = path.join(tempDir, 'plans-mixed');
     await fs.mkdir(planDir, { recursive: true });
 
-    // Create plan files with mixed ID types
-    await Bun.write(
-      `${planDir}/5.yml`,
-      stringifyPlanWithFrontmatter({
-        id: 5,
-        goal: 'Numeric plan 5',
-        details: 'Details for plan 5',
-        tasks: [],
-      })
-    );
+    await writePlanFile(`${planDir}/5.yml`, {
+      id: 5,
+      title: 'Numeric plan 5',
+      goal: 'Numeric plan 5',
+      details: 'Details for plan 5',
+      tasks: [],
+    });
     await Bun.write(
       `${planDir}/string-id.yml`,
       stringifyPlanWithFrontmatter({
@@ -161,15 +154,13 @@ describe('generateNumericPlanId with shared storage', () => {
         tasks: [],
       })
     );
-    await Bun.write(
-      `${planDir}/20.yml`,
-      stringifyPlanWithFrontmatter({
-        id: 20,
-        goal: 'Numeric plan 20',
-        details: 'Details for plan 20',
-        tasks: [],
-      })
-    );
+    await writePlanFile(`${planDir}/20.yml`, {
+      id: 20,
+      title: 'Numeric plan 20',
+      goal: 'Numeric plan 20',
+      details: 'Details for plan 20',
+      tasks: [],
+    });
 
     const { generateNumericPlanId } = await import('./id_utils.js');
     const nextId = await generateNumericPlanId(planDir);

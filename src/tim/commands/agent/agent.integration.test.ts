@@ -2,7 +2,8 @@ import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import yaml from 'yaml';
+import { closeDatabaseForTesting } from '../../db/database.js';
+import { writePlanFile } from '../../plans.js';
 import { ModuleMocker } from '../../../testing.js';
 
 // We'll import timAgent dynamically after setting up mocks in tests
@@ -13,6 +14,7 @@ describe('tim agent integration (execution summaries)', () => {
   let tasksDir: string;
   let configPath: string;
   let moduleMocker: ModuleMocker;
+  let originalEnv: Partial<Record<string, string>>;
 
   const mockLog = mock(() => {});
   const mockWarn = mock(() => {});
@@ -21,15 +23,21 @@ describe('tim agent integration (execution summaries)', () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-agent-integration-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
+    await Bun.$`git init`.cwd(tempDir).quiet();
+    await Bun.$`git remote add origin https://example.com/acme/agent-integration.git`
+      .cwd(tempDir)
+      .quiet();
+    originalEnv = {
+      XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+      APPDATA: process.env.APPDATA,
+    };
+    process.env.XDG_CONFIG_HOME = path.join(tempDir, 'config');
+    delete process.env.APPDATA;
+    closeDatabaseForTesting();
 
     configPath = path.join(tempDir, '.rmfilter', 'tim.yml');
     await fs.mkdir(path.dirname(configPath), { recursive: true });
-    await fs.writeFile(
-      configPath,
-      yaml.stringify({
-        paths: { tasks: 'tasks' },
-      })
-    );
+    await fs.writeFile(configPath, 'paths:\n  tasks: tasks\n');
 
     moduleMocker = new ModuleMocker(import.meta);
 
@@ -89,18 +97,24 @@ describe('tim agent integration (execution summaries)', () => {
   });
 
   afterEach(async () => {
+    closeDatabaseForTesting();
+    if (originalEnv.XDG_CONFIG_HOME === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalEnv.XDG_CONFIG_HOME;
+    }
+    if (originalEnv.APPDATA === undefined) {
+      delete process.env.APPDATA;
+    } else {
+      process.env.APPDATA = originalEnv.APPDATA;
+    }
     await fs.rm(tempDir, { recursive: true, force: true });
     moduleMocker.clear();
   });
 
   async function writePlan(fileName: string, plan: any) {
     const fp = path.join(tasksDir, fileName);
-    const { details, ...planWithoutDetails } = plan;
-    let content = `---\n${yaml.stringify(planWithoutDetails)}---\n`;
-    if (details) {
-      content += `\n${details}\n`;
-    }
-    await fs.writeFile(fp, content);
+    await writePlanFile(fp, plan, { cwdForIdentity: tempDir });
     return fp;
   }
 

@@ -4,6 +4,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { ModuleMocker } from '../../testing.js';
+import { closeDatabaseForTesting } from '../db/database.js';
+import { clearPlanSyncContext, syncPlanToDb } from '../db/plan_sync.js';
 import { clearPlanCache, writePlanFile } from '../plans.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
@@ -12,6 +14,7 @@ describe('handleGenerateCommand auto-claim integration', () => {
   let tempRoot: string;
   let tasksDir: string;
   let planPath: string;
+  let originalEnv: Partial<Record<'XDG_CONFIG_HOME' | 'APPDATA', string | undefined>>;
 
   const autoClaimPlanSpy = mock(async () => ({ result: { persisted: true } }));
 
@@ -33,9 +36,19 @@ describe('handleGenerateCommand auto-claim integration', () => {
   let disableAutoClaim: () => void;
 
   beforeEach(async () => {
+    closeDatabaseForTesting();
+    clearPlanSyncContext();
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-generate-auto-claim-'));
     tasksDir = path.join(tempRoot, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
+    await Bun.$`git init`.cwd(tempRoot).quiet();
+
+    originalEnv = {
+      XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+      APPDATA: process.env.APPDATA,
+    };
+    process.env.XDG_CONFIG_HOME = path.join(tempRoot, 'config');
+    delete process.env.APPDATA;
 
     planPath = path.join(tasksDir, '42-auto.plan.md');
     // Write a stub plan (empty tasks) that the generate command will process
@@ -46,6 +59,15 @@ describe('handleGenerateCommand auto-claim integration', () => {
       title: 'Auto-claim plan',
       goal: 'Demo',
       tasks: [],
+    });
+    await syncPlanToDb(await (await import('../plans.js')).readPlanFile(planPath), planPath, {
+      config: {
+        paths: {
+          tasks: tasksDir,
+        },
+        models: {},
+      },
+      cwdForIdentity: tempRoot,
     });
 
     clearPlanCache();
@@ -115,6 +137,10 @@ describe('handleGenerateCommand auto-claim integration', () => {
       DEFAULT_EXECUTOR: 'claude_code',
     }));
 
+    await moduleMocker.mock('../plan_materialize.js', () => ({
+      syncMaterializedPlan: mock(async () => {}),
+    }));
+
     ({ handleGenerateCommand } = await import('./generate.js'));
     ({ enableAutoClaim, disableAutoClaim } = await import('../assignments/auto_claim.js'));
     disableAutoClaim();
@@ -122,6 +148,18 @@ describe('handleGenerateCommand auto-claim integration', () => {
 
   afterEach(async () => {
     moduleMocker.clear();
+    closeDatabaseForTesting();
+    clearPlanSyncContext();
+    if (originalEnv.XDG_CONFIG_HOME === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalEnv.XDG_CONFIG_HOME;
+    }
+    if (originalEnv.APPDATA === undefined) {
+      delete process.env.APPDATA;
+    } else {
+      process.env.APPDATA = originalEnv.APPDATA;
+    }
     await fs.rm(tempRoot, { recursive: true, force: true });
   });
 

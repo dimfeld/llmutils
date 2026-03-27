@@ -5,20 +5,105 @@ import * as path from 'node:path';
 import { handleValidateCommand } from './validate.js';
 import type { TimConfig } from '../configSchema.js';
 import { clearAllTimCaches } from '../../testing.js';
-import { readPlanFile } from '../plans.js';
+import { readPlanFile, resolvePlanFromDb, writePlanToDb } from '../plans.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
+import { clearPlanSyncContext } from '../db/plan_sync.js';
+import { upsertPlan } from '../db/plan.js';
+import { getOrCreateProject } from '../db/project.js';
 
 describe('validate command', () => {
   let tempDir: string;
 
   beforeEach(async () => {
     clearAllTimCaches();
+    closeDatabaseForTesting();
+    clearPlanSyncContext();
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'validate-test-'));
   });
 
   afterEach(async () => {
     await fs.rm(tempDir, { recursive: true, force: true });
+    closeDatabaseForTesting();
+    clearPlanSyncContext();
     clearAllTimCaches();
   });
+
+  const seedPlanFileInDb = async (filePath: string) => {
+    const plan = await readPlanFile(filePath);
+    await writePlanToDb(
+      {
+        ...plan,
+        filename: path.basename(filePath),
+      },
+      {
+        skipUpdatedAt: true,
+        cwdForIdentity: tempDir,
+      }
+    );
+  };
+
+  const seedDbPlan = async (input: {
+    id: number;
+    uuid: string;
+    title?: string;
+    goal?: string | null;
+    details?: string | null;
+    filename?: string;
+    status?: string;
+    parentUuid?: string | null;
+    dependencyUuids?: string[];
+    tasks?: Array<{ title: string; description: string; done?: boolean }>;
+  }) => {
+    const db = getDatabase();
+    const repository = await getRepositoryIdentity({ cwd: tempDir });
+    const project = getOrCreateProject(db, repository.repositoryId, {
+      lastGitRoot: tempDir,
+    });
+
+    return upsertPlan(db, project.id, {
+      uuid: input.uuid,
+      planId: input.id,
+      title: input.title ?? `Plan ${input.id}`,
+      goal: input.goal ?? `Goal ${input.id}`,
+      details: input.details ?? `Details ${input.id}`,
+      status: (input.status as any) ?? 'pending',
+      filename: input.filename ?? `${input.id}.plan.md`,
+      parentUuid: input.parentUuid ?? null,
+      dependencyUuids: input.dependencyUuids ?? [],
+      tasks: input.tasks ?? [{ title: 'Task', description: 'Task details', done: false }],
+    });
+  };
+
+  const runValidate = async (options: { dir?: string; verbose?: boolean; fix?: boolean }) => {
+    const originalLog = console.log;
+    const originalExit = process.exit;
+    let exitCode: number | undefined;
+    const logOutput: string[] = [];
+
+    console.log = (...args) => {
+      logOutput.push(args.join(' '));
+    };
+
+    process.exit = ((code?: number) => {
+      exitCode = code;
+      throw new Error(`process.exit(${code})`);
+    }) as never;
+
+    try {
+      await handleValidateCommand(options, { parent: { opts: () => ({}) } });
+    } catch (e) {
+      // Only swallow the process.exit sentinel; re-throw real errors
+      if (!(e instanceof Error && e.message.startsWith('process.exit('))) {
+        throw e;
+      }
+    } finally {
+      console.log = originalLog;
+      process.exit = originalExit;
+    }
+
+    return { exitCode, output: logOutput.join('\n') };
+  };
 
   describe('valid plan files', () => {
     test('should pass validation for a valid basic plan file', async () => {
@@ -574,6 +659,8 @@ Additional child plan details.`;
 
       await fs.writeFile(path.join(tempDir, 'parent.plan.md'), parentPlan);
       await fs.writeFile(path.join(tempDir, 'child.plan.md'), childPlan);
+      await seedPlanFileInDb(path.join(tempDir, 'parent.plan.md'));
+      await seedPlanFileInDb(path.join(tempDir, 'child.plan.md'));
 
       // Mock console methods to capture output
       const originalLog = console.log;
@@ -639,6 +726,8 @@ Additional child plan details.`;
 
       await fs.writeFile(path.join(tempDir, 'parent.plan.md'), parentPlan);
       await fs.writeFile(path.join(tempDir, 'child.plan.md'), childPlan);
+      await seedPlanFileInDb(path.join(tempDir, 'parent.plan.md'));
+      await seedPlanFileInDb(path.join(tempDir, 'child.plan.md'));
 
       // Mock console methods to capture output
       const originalLog = console.log;
@@ -730,6 +819,9 @@ Additional child 2 plan details.`;
       await fs.writeFile(path.join(tempDir, 'parent.plan.md'), parentPlan);
       await fs.writeFile(path.join(tempDir, 'child1.plan.md'), child1Plan);
       await fs.writeFile(path.join(tempDir, 'child2.plan.md'), child2Plan);
+      await seedPlanFileInDb(path.join(tempDir, 'parent.plan.md'));
+      await seedPlanFileInDb(path.join(tempDir, 'child1.plan.md'));
+      await seedPlanFileInDb(path.join(tempDir, 'child2.plan.md'));
 
       // Mock console methods to capture output
       const originalLog = console.log;
@@ -803,6 +895,8 @@ Additional child plan details.`;
 
       await fs.writeFile(path.join(tempDir, 'parent.plan.md'), parentPlan);
       await fs.writeFile(path.join(tempDir, 'child.plan.md'), childPlan);
+      await seedPlanFileInDb(path.join(tempDir, 'parent.plan.md'));
+      await seedPlanFileInDb(path.join(tempDir, 'child.plan.md'));
 
       // Mock console methods to capture output
       const originalLog = console.log;
@@ -944,6 +1038,9 @@ Additional grandchild plan details.`;
       await fs.writeFile(path.join(tempDir, 'parent.plan.md'), parentPlan);
       await fs.writeFile(path.join(tempDir, 'child.plan.md'), childPlan);
       await fs.writeFile(path.join(tempDir, 'grandchild.plan.md'), grandchildPlan);
+      await seedPlanFileInDb(path.join(tempDir, 'parent.plan.md'));
+      await seedPlanFileInDb(path.join(tempDir, 'child.plan.md'));
+      await seedPlanFileInDb(path.join(tempDir, 'grandchild.plan.md'));
 
       // Mock console methods to capture output
       const originalLog = console.log;
@@ -1245,6 +1342,8 @@ Discovered plan body.`;
 
       await fs.writeFile(path.join(tempDir, 'source.plan.md'), sourcePlan);
       await fs.writeFile(path.join(tempDir, 'discovered.plan.md'), discoveredPlan);
+      await seedPlanFileInDb(path.join(tempDir, 'source.plan.md'));
+      await seedPlanFileInDb(path.join(tempDir, 'discovered.plan.md'));
 
       const originalLog = console.log;
       const originalExit = process.exit;
@@ -1380,6 +1479,160 @@ Orphan plan body.`;
 
       const plan = await readPlanFile(path.join(tempDir, 'no-fix.plan.md'));
       expect(plan.discoveredFrom).toBe(888);
+    });
+
+    test('should validate and fix DB-only plans without creating task files', async () => {
+      await writePlanToDb(
+        {
+          id: 80,
+          title: 'DB only orphan plan',
+          details: 'Stored only in the DB',
+          discoveredFrom: 999,
+          tasks: [{ title: 'Task', description: 'Task details' }],
+          filename: '80.plan.md',
+        },
+        {
+          skipUpdatedAt: true,
+          cwdForIdentity: tempDir,
+        }
+      );
+
+      const { exitCode, output } = await runValidate({ dir: tempDir });
+
+      expect(exitCode).toBeUndefined();
+      expect(output).toContain('Validating 0 plan files and 1 DB-only plan');
+      expect(output).toContain('✓ 1 valid');
+      expect(output).toContain('Found 1 orphaned discovery reference');
+      expect(output).toContain('1 discoveredFrom reference removed');
+
+      const resolved = await resolvePlanFromDb('80', tempDir);
+      expect(resolved.plan.discoveredFrom).toBeUndefined();
+      expect(await fs.stat(path.join(tempDir, '80.plan.md')).catch(() => null)).toBeNull();
+    });
+  });
+
+  describe('DB-only validation', () => {
+    test('should fail schema validation for an invalid DB-only plan row', async () => {
+      const row = await seedDbPlan({
+        id: 91,
+        uuid: '11111111-1111-4111-8111-111111111111',
+      });
+      getDatabase()
+        .prepare('UPDATE plan SET updated_at = ? WHERE uuid = ?')
+        .run('not-a-date', row.uuid);
+
+      const { exitCode, output } = await runValidate({ dir: tempDir, verbose: true });
+
+      expect(exitCode).toBe(1);
+      expect(output).toContain('Validating 0 plan files and 1 DB-only plan');
+      expect(output).toContain('✗ 1 invalid');
+      expect(output).toContain('Plan 91 (DB-only)');
+      expect(output).toContain('updatedAt');
+      expect(await fs.stat(path.join(tempDir, '91.plan.md')).catch(() => null)).toBeNull();
+    });
+
+    test('should count DB-only plans in schema validation output', async () => {
+      await writePlanToDb(
+        {
+          id: 90,
+          title: 'DB only valid plan',
+          details: 'A valid plan that has not been materialized',
+          tasks: [{ title: 'Task', description: 'Task details' }],
+          filename: '90.plan.md',
+        },
+        {
+          skipUpdatedAt: true,
+          cwdForIdentity: tempDir,
+        }
+      );
+
+      const { exitCode, output } = await runValidate({ dir: tempDir, verbose: true });
+
+      expect(exitCode).toBeUndefined();
+      expect(output).toContain('Validating 0 plan files and 1 DB-only plan');
+      expect(output).toContain('✓ Valid files:');
+      expect(output).toContain('Plan 90 (DB-only)');
+      expect(output).toContain('✓ 1 valid');
+      expect(await fs.stat(path.join(tempDir, '90.plan.md')).catch(() => null)).toBeNull();
+    });
+
+    test('should generate a UUID for a DB-only plan without creating a file', async () => {
+      await seedDbPlan({
+        id: 92,
+        uuid: '',
+        filename: '92.plan.md',
+      });
+
+      const { exitCode, output } = await runValidate({ dir: tempDir });
+
+      expect(exitCode).toBeUndefined();
+      expect(output).toContain('Found 1 plan without UUIDs');
+      expect(output).toContain('Auto-generating UUIDs...');
+      expect(output).toContain('✓ Generated 1 UUID');
+
+      const resolved = await resolvePlanFromDb('92', tempDir);
+      expect(resolved.plan.uuid).toBeTruthy();
+      expect(await fs.stat(path.join(tempDir, '92.plan.md')).catch(() => null)).toBeNull();
+    });
+
+    test('should fix DB-only parent-child inconsistencies without creating files', async () => {
+      const parentUuid = '22222222-2222-4222-8222-222222222222';
+      await seedDbPlan({
+        id: 93,
+        uuid: parentUuid,
+        filename: '93.plan.md',
+      });
+      await seedDbPlan({
+        id: 94,
+        uuid: '33333333-3333-4333-8333-333333333333',
+        filename: '94.plan.md',
+        parentUuid,
+      });
+
+      const { exitCode, output } = await runValidate({ dir: tempDir });
+
+      expect(exitCode).toBeUndefined();
+      expect(output).toContain('Validating 0 plan files and 2 DB-only plans');
+      expect(output).toContain('Found 1 parent-child inconsistencies');
+      expect(output).toContain('1 parent-child relationships fixed');
+
+      const resolvedParent = await resolvePlanFromDb('93', tempDir);
+      expect(resolvedParent.plan.dependencies).toEqual([94]);
+      expect(await fs.stat(path.join(tempDir, '93.plan.md')).catch(() => null)).toBeNull();
+      expect(await fs.stat(path.join(tempDir, '94.plan.md')).catch(() => null)).toBeNull();
+    });
+
+    test('should validate mixed file-backed and DB-only plans in one run', async () => {
+      const validPlan = `---
+id: 95
+goal: File-backed valid plan
+details: File-backed details
+tasks:
+  - title: Task 1
+    description: Task details
+    done: false
+---
+`;
+
+      await fs.writeFile(path.join(tempDir, '95.plan.md'), validPlan);
+      await seedPlanFileInDb(path.join(tempDir, '95.plan.md'));
+      const row = await seedDbPlan({
+        id: 96,
+        uuid: '44444444-4444-4444-8444-444444444444',
+      });
+      getDatabase()
+        .prepare('UPDATE plan SET updated_at = ? WHERE uuid = ?')
+        .run('still-not-a-date', row.uuid);
+
+      const { exitCode, output } = await runValidate({ dir: tempDir, verbose: true });
+
+      expect(exitCode).toBe(1);
+      expect(output).toContain('Validating 1 plan file and 1 DB-only plan');
+      expect(output).toContain('✓ 1 valid');
+      expect(output).toContain('✗ 1 invalid');
+      expect(output).toContain('• 95.plan.md');
+      expect(output).toContain('Plan 96 (DB-only)');
+      expect(await fs.stat(path.join(tempDir, '96.plan.md')).catch(() => null)).toBeNull();
     });
   });
 });

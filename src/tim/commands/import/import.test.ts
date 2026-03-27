@@ -83,12 +83,17 @@ const mockIssueTracker: IssueTrackerClient = {
 
 let mockConfig: any;
 let gitRootDir: string;
+let transactionImmediateSpy: ReturnType<typeof mock>;
+let upsertPlanSpy: ReturnType<typeof mock>;
+let toPlanUpsertInputSpy: ReturnType<typeof mock>;
+let ensureReferencesSpy: ReturnType<typeof mock>;
 
 const mockPlansResult = {
   plans: new Map(),
   maxNumericId: 5,
   duplicates: {},
 };
+let currentPlansResult = mockPlansResult;
 
 // Mock Linear issue tracker client
 const mockLinearIssueTracker: IssueTrackerClient = {
@@ -162,11 +167,81 @@ describe('handleImportCommand', () => {
     }));
 
     await moduleMocker.mock('../../plans.js', () => ({
-      readAllPlans: mock(() => Promise.resolve(mockPlansResult)),
       writePlanFile: mock(() => Promise.resolve()),
-      getMaxNumericPlanId: mock(() => Promise.resolve(5)),
-      readPlanFile: mock(() => Promise.resolve({ issue: [] })),
-      getImportedIssueUrls: mock(() => Promise.resolve(new Set())),
+      resolvePlanFromDb: mock((planArg: string) => {
+        const plan = currentPlansResult.plans.get(Number(planArg));
+        if (!plan) {
+          throw new Error(`No plan found in the database for identifier: ${planArg}`);
+        }
+
+        return Promise.resolve({
+          plan,
+          planPath: plan.filename,
+        });
+      }),
+    }));
+
+    await moduleMocker.mock('../../plans_db.js', () => ({
+      loadPlansFromDb: mock(() => currentPlansResult),
+    }));
+
+    await moduleMocker.mock('../../plan_materialize.js', () => ({
+      resolveProjectContext: mock(() =>
+        Promise.resolve({
+          projectId: 1,
+          maxNumericId: currentPlansResult.maxNumericId,
+          rows: [],
+          planIdToUuid: new Map(),
+          uuidToPlanId: new Map(),
+          duplicatePlanIds: new Set(),
+          repository: {
+            repositoryId: `test-repo-${gitRootDir}`,
+            remoteUrl: null,
+            gitRoot: gitRootDir,
+          },
+        })
+      ),
+    }));
+
+    transactionImmediateSpy = mock((callback: () => void) => callback());
+    upsertPlanSpy = mock(() => ({}));
+    toPlanUpsertInputSpy = mock((plan: PlanSchemaInput, filePath: string) => ({
+      planId: plan.id,
+      uuid: plan.uuid ?? `uuid-${plan.id}`,
+      status: plan.status ?? 'pending',
+      epic: false,
+      filename: path.basename(filePath),
+      tasks: [],
+      dependencyUuids: [],
+      tags: [],
+    }));
+    ensureReferencesSpy = mock((plan: PlanSchema) => ({
+      updatedPlan: {
+        ...plan,
+        uuid: plan.uuid ?? `uuid-${plan.id}`,
+      },
+    }));
+
+    await moduleMocker.mock('../../db/database.js', () => ({
+      getDatabase: () => ({
+        transaction: (callback: () => void) => {
+          const wrapped = () => callback();
+          wrapped.immediate = () => transactionImmediateSpy(callback);
+          return wrapped;
+        },
+      }),
+    }));
+
+    await moduleMocker.mock('../../db/plan.js', () => ({
+      upsertPlan: upsertPlanSpy,
+    }));
+
+    await moduleMocker.mock('../../db/plan_sync.js', () => ({
+      toPlanUpsertInput: toPlanUpsertInputSpy,
+    }));
+
+    await moduleMocker.mock('../../utils/references.js', () => ({
+      ensureReferences: ensureReferencesSpy,
     }));
 
     await moduleMocker.mock('../../configLoader.js', () => ({
@@ -196,6 +271,8 @@ describe('handleImportCommand', () => {
       singleLineWithPrefix: mock((prefix, text) => prefix + text),
       limitLines: mock((text) => text),
     }));
+
+    currentPlansResult = mockPlansResult;
   });
 
   afterEach(async () => {
@@ -287,19 +364,24 @@ describe('handleImportCommand', () => {
   test('should exclude already imported issues in interactive mode', async () => {
     // Mock data where one issue is already imported
     const mockPlansWithImported = {
-      plans: new Map([[1, { filename: '/test/imported-plan.yml' }]]),
+      plans: new Map([
+        [
+          1,
+          {
+            id: 1,
+            goal: 'Imported plan',
+            status: 'pending',
+            details: 'Already imported',
+            issue: ['https://github.com/owner/repo/issues/100'],
+            tasks: [],
+            filename: '/test/imported-plan.yml',
+          },
+        ],
+      ]),
       maxNumericId: 5,
       duplicates: {},
     };
-
-    const mockImportedPlan: PlanSchemaInput = {
-      id: 1,
-      goal: 'Imported plan',
-      status: 'pending',
-      details: 'Already imported',
-      issue: ['https://github.com/owner/repo/issues/100'], // This one is already imported
-      tasks: [],
-    };
+    currentPlansResult = mockPlansWithImported as typeof mockPlansResult;
 
     // Override the issue tracker to return specific issues for this test
     const testIssueTracker = {
@@ -342,16 +424,6 @@ describe('handleImportCommand', () => {
 
     await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
       getIssueTracker: mock(() => Promise.resolve(testIssueTracker)),
-    }));
-
-    await moduleMocker.mock('../../plans.js', () => ({
-      readAllPlans: mock(() => Promise.resolve(mockPlansWithImported)),
-      writePlanFile: mock(() => Promise.resolve()),
-      getMaxNumericPlanId: mock(() => Promise.resolve(5)),
-      readPlanFile: mock(() => Promise.resolve(mockImportedPlan)),
-      getImportedIssueUrls: mock(() =>
-        Promise.resolve(new Set(['https://github.com/owner/repo/issues/100']))
-      ),
     }));
 
     // Mock the checkbox to return no selections to avoid actual import
@@ -417,18 +489,15 @@ describe('handleImportCommand', () => {
       getIssueTracker: mock(() => Promise.resolve(testIssueTracker)),
     }));
 
-    // Override the plans mock to include getImportedIssueUrls for this test
-    await moduleMocker.mock('../../plans.js', () => ({
-      readAllPlans: mock(() => Promise.resolve(mockPlansResult)),
-      writePlanFile: mock(() => Promise.resolve()),
-      getMaxNumericPlanId: mock(() => Promise.resolve(5)),
-      readPlanFile: mock(() => Promise.resolve({ issue: [] })),
-      getImportedIssueUrls: mock(() => Promise.resolve(new Set())), // No imported issues
-    }));
+    currentPlansResult = mockPlansResult;
 
     // Mock the checkbox to return selected issues
+    let checkboxCall = 0;
     await moduleMocker.mock('@inquirer/prompts', () => ({
-      checkbox: mock(() => Promise.resolve([100, 101])),
+      checkbox: mock(() => {
+        checkboxCall++;
+        return Promise.resolve(checkboxCall === 1 ? [100, 101] : []);
+      }),
     }));
 
     await handleImportCommand();
@@ -458,6 +527,171 @@ describe('handleImportCommand', () => {
     expect(log).toHaveBeenCalledWith('Use "tim generate" to add tasks to these plans.');
   });
 
+  test('refreshes plan snapshot after each successful interactive import', async () => {
+    const testIssueTracker = {
+      ...mockIssueTracker,
+      fetchAllOpenIssues: mock(() =>
+        Promise.resolve([
+          {
+            id: '100',
+            number: 100,
+            title: 'Parent issue',
+            htmlUrl: 'https://github.com/owner/repo/issues/100',
+            state: 'open',
+            createdAt: '2023-01-01T00:00:00Z',
+            updatedAt: '2023-01-01T00:00:00Z',
+            author: { login: 'user', name: 'User' },
+          },
+          {
+            id: '101',
+            number: 101,
+            title: 'Child issue',
+            htmlUrl: 'https://github.com/owner/repo/issues/101',
+            state: 'open',
+            createdAt: '2023-01-01T00:00:00Z',
+            updatedAt: '2023-01-01T00:00:00Z',
+            author: { login: 'user', name: 'User' },
+          },
+        ])
+      ),
+    };
+
+    await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
+      getIssueTracker: mock(() => Promise.resolve(testIssueTracker)),
+    }));
+
+    await moduleMocker.mock('@inquirer/prompts', () => ({
+      checkbox: mock(() => Promise.resolve([100, 101])),
+    }));
+
+    const loadPlansCalls: number[] = [];
+    await moduleMocker.mock('../../plans_db.js', () => ({
+      loadPlansFromDb: mock(() => {
+        loadPlansCalls.push(loadPlansCalls.length + 1);
+        return currentPlansResult;
+      }),
+    }));
+
+    await handleImportCommand();
+
+    expect(loadPlansCalls.length).toBe(3);
+  });
+
+  test('uses the refreshed snapshot so a later interactive import updates instead of duplicating', async () => {
+    const initialPlans = new Map<number, PlanSchema & { filename: string }>();
+    currentPlansResult = {
+      plans: initialPlans,
+      maxNumericId: 0,
+      duplicates: {},
+    } as typeof mockPlansResult;
+
+    const testIssueTracker = {
+      ...mockIssueTracker,
+      fetchAllOpenIssues: mock(() =>
+        Promise.resolve([
+          {
+            id: '100',
+            number: 100,
+            title: 'Canonical issue',
+            htmlUrl: 'https://github.com/owner/repo/issues/100',
+            state: 'open',
+            createdAt: '2023-01-01T00:00:00Z',
+            updatedAt: '2023-01-01T00:00:00Z',
+            author: { login: 'user', name: 'User' },
+          },
+          {
+            id: '101',
+            number: 101,
+            title: 'Alias issue',
+            htmlUrl: 'https://github.com/owner/repo/issues/101',
+            state: 'open',
+            createdAt: '2023-01-01T00:00:00Z',
+            updatedAt: '2023-01-01T00:00:00Z',
+            author: { login: 'user', name: 'User' },
+          },
+        ])
+      ),
+      fetchIssue: mock((issueNumber: string) =>
+        Promise.resolve({
+          issue: {
+            id: issueNumber,
+            number: Number(issueNumber),
+            title: issueNumber === '100' ? 'Canonical issue' : 'Canonical issue updated',
+            body: issueNumber === '100' ? `${issueNumber} body` : undefined,
+            htmlUrl: 'https://github.com/owner/repo/issues/100',
+            state: 'open',
+            createdAt: '2023-01-01T00:00:00Z',
+            updatedAt: '2023-01-01T00:00:00Z',
+            author: { login: 'user', name: 'User' },
+          },
+          comments: [],
+        } satisfies IssueWithComments)
+      ),
+    };
+
+    await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
+      getIssueTracker: mock(() => Promise.resolve(testIssueTracker)),
+    }));
+
+    await moduleMocker.mock('../../issue_utils.js', () => ({
+      getInstructionsFromIssue: mock((_, issueNumber: string) =>
+        Promise.resolve({
+          suggestedFileName:
+            issueNumber === '100' ? 'canonical-issue.plan.md' : 'canonical-issue-updated.plan.md',
+          issue: {
+            title: issueNumber === '100' ? 'Canonical issue' : 'Canonical issue updated',
+            html_url: 'https://github.com/owner/repo/issues/100',
+            number: Number(issueNumber),
+          },
+          plan: `${issueNumber} body`,
+          rmprOptions: null,
+        })
+      ),
+      createStubPlanFromIssue: mock((issueData, id) => ({
+        id,
+        title: issueData.issue.title,
+        goal: `Implement: ${issueData.issue.title}`,
+        details: issueData.plan,
+        status: 'pending',
+        issue: [issueData.issue.html_url],
+        tasks: [],
+        createdAt: '2023-01-01T00:00:00.000Z',
+        updatedAt: '2023-01-01T00:00:00.000Z',
+      })),
+    }));
+
+    await moduleMocker.mock('@inquirer/prompts', () => ({
+      checkbox: mock(() => Promise.resolve([100, 101])),
+    }));
+
+    const { writePlanFile } = await import('../../plans.js');
+    (writePlanFile as ReturnType<typeof mock>).mockImplementation(
+      async (filePath: string, plan: PlanSchema) => {
+        currentPlansResult = {
+          ...currentPlansResult,
+          maxNumericId: Math.max(currentPlansResult.maxNumericId, plan.id ?? 0),
+          plans: new Map(currentPlansResult.plans).set(plan.id!, {
+            ...plan,
+            filename:
+              filePath ??
+              currentPlansResult.plans.get(plan.id ?? -1)?.filename ??
+              path.join(gitRootDir, 'tasks', `${plan.id}-updated.plan.md`),
+          }),
+        };
+      }
+    );
+
+    await handleImportCommand();
+
+    const persistedPlans = Array.from(currentPlansResult.plans.values());
+    expect(persistedPlans).toHaveLength(1);
+    expect(persistedPlans[0]?.title).toBe('Canonical issue updated');
+    expect((writePlanFile as ReturnType<typeof mock>).mock.calls).toHaveLength(2);
+    expect((writePlanFile as ReturnType<typeof mock>).mock.calls[1]?.[0]).toBe(
+      (writePlanFile as ReturnType<typeof mock>).mock.calls[0]?.[0]
+    );
+  });
+
   test('should update existing plan when re-importing an issue', async () => {
     // Mock data where the issue is already imported
     const existingPlan: PlanSchema = {
@@ -482,6 +716,7 @@ describe('handleImportCommand', () => {
       maxNumericId: 5,
       duplicates: {},
     };
+    currentPlansResult = mockPlansWithExisting as typeof mockPlansResult;
 
     // Create a mock issue with comments for this test
     const issueWithComments: IssueWithComments = {
@@ -522,16 +757,6 @@ describe('handleImportCommand', () => {
 
     await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
       getIssueTracker: mock(() => Promise.resolve(testIssueTracker)),
-    }));
-
-    await moduleMocker.mock('../../plans.js', () => ({
-      readAllPlans: mock(() => Promise.resolve(mockPlansWithExisting)),
-      writePlanFile: mock(() => Promise.resolve()),
-      getMaxNumericPlanId: mock(() => Promise.resolve(5)),
-      readPlanFile: mock(() => Promise.resolve(existingPlan)),
-      getImportedIssueUrls: mock(() =>
-        Promise.resolve(new Set(['https://github.com/owner/repo/issues/123']))
-      ),
     }));
 
     // Mock checkbox to select the issue body (which will be the first item since it's not in existing details)
@@ -614,6 +839,7 @@ describe('handleImportCommand', () => {
       maxNumericId: 5,
       duplicates: {},
     };
+    currentPlansResult = mockPlansWithDuplicate as typeof mockPlansResult;
 
     // Create a mock issue without new comments
     const issueWithoutComments: IssueWithComments = {
@@ -639,13 +865,6 @@ describe('handleImportCommand', () => {
 
     await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
       getIssueTracker: mock(() => Promise.resolve(testIssueTracker)),
-    }));
-
-    await moduleMocker.mock('../../plans.js', () => ({
-      readAllPlans: mock(() => Promise.resolve(mockPlansWithDuplicate)),
-      writePlanFile: mock(() => Promise.resolve()),
-      getMaxNumericPlanId: mock(() => Promise.resolve(5)),
-      readPlanFile: mock(() => Promise.resolve(mockExistingPlan)),
     }));
 
     await handleImportCommand('123');

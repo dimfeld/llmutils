@@ -2,13 +2,16 @@ import { describe, test, beforeEach, afterEach, expect, mock } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { ModuleMocker } from '../../testing.js';
+import { ModuleMocker, clearAllTimCaches } from '../../testing.js';
 import { clearPlanCache, readPlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
+import { resolvePlan } from '../plan_display.js';
 import { handleAddTaskCommand } from './add-task.js';
 import { handleRemoveTaskCommand } from './remove-task.js';
 import { handleShowCommand } from './show.js';
 import { getDefaultConfig } from '../configSchema.js';
+import { clearPlanSyncContext } from '../db/plan_sync.js';
+import { closeDatabaseForTesting } from '../db/database.js';
 import {
   addPlanTaskParameters,
   mcpAddPlanTask,
@@ -26,13 +29,23 @@ describe('task management integration workflows', () => {
   let logSpy: ReturnType<typeof mock>;
   let warnSpy: ReturnType<typeof mock>;
   let mcpContext: GenerateModeRegistrationContext;
+  let originalXdgConfigHome: string | undefined;
 
   beforeEach(async () => {
+    clearAllTimCaches();
+    closeDatabaseForTesting();
+    clearPlanSyncContext();
     clearPlanCache();
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-task-mgmt-'));
+    originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
+    process.env.XDG_CONFIG_HOME = path.join(tempDir, 'xdg');
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
+    await Bun.$`git init`.cwd(tempDir).quiet();
+    await Bun.$`git remote add origin https://example.com/acme/task-mgmt-tests.git`
+      .cwd(tempDir)
+      .quiet();
     planFile = path.join(tasksDir, 'task-mgmt.plan.md');
 
     moduleMocker = new ModuleMocker(import.meta);
@@ -52,21 +65,6 @@ describe('task management integration workflows', () => {
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: async () => tempDir,
     }));
-    await moduleMocker.mock('../db/database.js', () => ({
-      getDatabase: () => ({}) as any,
-    }));
-    await moduleMocker.mock('../db/project.js', () => ({
-      getProject: () => ({ id: 1 }),
-    }));
-    await moduleMocker.mock('../db/assignment.js', () => ({
-      getAssignmentEntriesByProject: () => ({}),
-    }));
-    await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
-      getRepositoryIdentity: async () => ({
-        repositoryId: 'test-repo',
-        repositoryRemoteUrl: null,
-      }),
-    }));
     await moduleMocker.mock('../../common/clipboard.js', () => ({
       copy: async () => {},
       isEnabled: () => false,
@@ -84,8 +82,16 @@ describe('task management integration workflows', () => {
   });
 
   afterEach(async () => {
+    clearAllTimCaches();
+    closeDatabaseForTesting();
+    clearPlanSyncContext();
     moduleMocker.clear();
     clearPlanCache();
+    if (originalXdgConfigHome === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
+    }
     await fs.rm(tempDir, { recursive: true, force: true });
     logSpy.mockReset();
     warnSpy.mockReset();
@@ -227,7 +233,19 @@ describe('task management integration workflows', () => {
     );
 
     const updated = await readPlanFile(planFile);
-    expect(updated.tasks).toEqual(originalTasks);
+    expect(
+      updated.tasks.map((task) => ({
+        title: task.title,
+        description: task.description,
+        done: task.done,
+      }))
+    ).toEqual(
+      originalTasks.map((task: any) => ({
+        title: task.title,
+        description: task.description,
+        done: task.done,
+      }))
+    );
   });
 
   test('MCP add and remove tools update the plan end-to-end', async () => {
@@ -248,7 +266,7 @@ describe('task management integration workflows', () => {
     };
 
     const addArgs = addPlanTaskParameters.parse({
-      plan: planFile,
+      plan: '404',
       title: 'Investigate outage',
       description: 'Collect logs and metrics from affected services.',
       docs: ['docs/runbook.md'],
@@ -256,7 +274,7 @@ describe('task management integration workflows', () => {
     const addResult = await mcpAddPlanTask(addArgs, mcpContext, { log: logger });
     expect(addResult).toContain('Added task "Investigate outage"');
 
-    const afterAdd = await readPlanFile(planFile);
+    const { plan: afterAdd } = await resolvePlan('404', { gitRoot: tempDir });
     expect(afterAdd.tasks).toHaveLength(1);
     const addedTask = afterAdd.tasks[0];
     expect(addedTask?.title).toBe('Investigate outage');
@@ -265,13 +283,13 @@ describe('task management integration workflows', () => {
     const addTimestamp = afterAdd.updatedAt;
 
     const removeArgs = removePlanTaskParameters.parse({
-      plan: planFile,
+      plan: '404',
       taskTitle: 'outage',
     });
     const removeResult = await mcpRemovePlanTask(removeArgs, mcpContext, { log: logger });
     expect(removeResult).toContain('Removed task "Investigate outage"');
 
-    const afterRemove = await readPlanFile(planFile);
+    const { plan: afterRemove } = await resolvePlan('404', { gitRoot: tempDir });
     expect(afterRemove.tasks).toHaveLength(0);
     expect(afterRemove.updatedAt).toBeString();
     if (addTimestamp) {
@@ -301,7 +319,7 @@ describe('task management integration workflows', () => {
     );
 
     const removeArgs = removePlanTaskParameters.parse({
-      plan: planFile,
+      plan: '505',
       taskTitle: 'Mixed Task',
     });
     const logger = {
@@ -313,7 +331,7 @@ describe('task management integration workflows', () => {
     const removeResult = await mcpRemovePlanTask(removeArgs, mcpContext, { log: logger });
     expect(removeResult).toContain('Removed task "Mixed Task"');
 
-    const finalPlan = await readPlanFile(planFile);
+    const { plan: finalPlan } = await resolvePlan('505', { gitRoot: tempDir });
     expect(finalPlan.tasks).toHaveLength(0);
   });
 });

@@ -3,6 +3,7 @@ import type { GenerateModeRegistrationContext } from '../generate_mode.js';
 import { resolvePlan } from '../../plan_display.js';
 import { generateCompactionPrompt } from '../../commands/compact.js';
 import { clearPlanCache } from '../../plans.js';
+import { materializePlan } from '../../plan_materialize.js';
 
 const COMPLETED_STATUSES = new Set(['done', 'cancelled', 'deferred']);
 const DEFAULT_MINIMUM_AGE_DAYS = 30;
@@ -22,6 +23,8 @@ export async function loadCompactPlanPrompt(
   }
 
   const { plan, planPath } = await resolvePlan(planIdentifier, context);
+  // Compact needs to read the plan file, so materialize if not already on disk
+  const readablePlanPath = planPath ?? (await materializePlan(plan.id, context.gitRoot));
 
   if (!COMPLETED_STATUSES.has(plan.status)) {
     const status = plan.status ?? 'unknown';
@@ -37,10 +40,10 @@ export async function loadCompactPlanPrompt(
     DEFAULT_MINIMUM_AGE_DAYS;
 
   const sectionToggles = context.config.compaction?.sections ?? {};
-  const planFileContent = await Bun.file(planPath).text();
+  const planFileContent = await Bun.file(readablePlanPath).text();
   const basePrompt = generateCompactionPrompt(
     plan,
-    planPath,
+    readablePlanPath,
     planFileContent,
     minimumAgeDays,
     sectionToggles

@@ -1,19 +1,23 @@
-import type { PlanSchema, PlanSchemaWithFilename } from '../planSchema.js';
-import { readPlanFile, resolvePlanFile } from '../plans.js';
+import path from 'node:path';
+import type { PlanSchema } from '../planSchema.js';
+import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { readPlanFile } from '../plans.js';
 
 export interface ResolvePlanWithUuidOptions {
   configPath?: string;
 }
 
 export interface ResolvePlanWithUuidResult {
-  plan: PlanSchemaWithFilename;
+  plan: PlanSchema & { filename?: string };
+  repoRoot: string;
   uuid: string;
 }
 
 export function findPlanByUuid(
   uuid: string,
-  allPlans: Map<number, PlanSchemaWithFilename>
-): PlanSchemaWithFilename | undefined {
+  allPlans: Map<number, PlanSchema>
+): PlanSchema | undefined {
   for (const plan of allPlans.values()) {
     if (plan.uuid === uuid) {
       return plan;
@@ -24,7 +28,7 @@ export function findPlanByUuid(
 }
 
 export interface VerifyPlanIdResult {
-  plan: PlanSchemaWithFilename;
+  plan: PlanSchema;
   planId: number;
   cacheUpdated: boolean;
 }
@@ -32,7 +36,7 @@ export interface VerifyPlanIdResult {
 export function verifyPlanIdCache(
   cachedPlanId: number | null | undefined,
   uuid: string,
-  allPlans: Map<number, PlanSchemaWithFilename>
+  allPlans: Map<number, PlanSchema>
 ): VerifyPlanIdResult | null {
   if (!uuid) {
     return null;
@@ -65,15 +69,37 @@ export async function resolvePlanWithUuid(
   planArg: string,
   options: ResolvePlanWithUuidOptions = {}
 ): Promise<ResolvePlanWithUuidResult> {
-  const resolvedPath = await resolvePlanFile(planArg, options.configPath);
-  const plan = await readPlanFile(resolvedPath);
+  const repoRoot = await resolveRepoRootForPlanArg(planArg, process.cwd(), options.configPath);
+
+  if (path.isAbsolute(planArg)) {
+    const directExists = await Bun.file(planArg)
+      .stat()
+      .then((stats) => stats.isFile())
+      .catch(() => false);
+    if (directExists) {
+      await readPlanFile(planArg);
+      const persistedPlan = await readPlanFile(planArg);
+      if (!persistedPlan.uuid) {
+        throw new Error(`Plan ${planArg} does not have a UUID`);
+      }
+
+      return {
+        plan: { ...persistedPlan, filename: planArg },
+        repoRoot,
+        uuid: persistedPlan.uuid,
+      };
+    }
+  }
+
+  const { plan, planPath } = await resolvePlanFromDbOrSyncFile(planArg, repoRoot, repoRoot);
 
   if (!plan.uuid) {
-    throw new Error(`Plan at ${resolvedPath} does not have a UUID`);
+    throw new Error(`Plan ${planArg} does not have a UUID`);
   }
 
   return {
-    plan: { ...plan, filename: resolvedPath },
+    plan: planPath ? { ...plan, filename: planPath } : plan,
+    repoRoot,
     uuid: plan.uuid,
   };
 }

@@ -256,10 +256,9 @@ describe('handleImportCommand Integration Tests', () => {
       title: 'Linear Issue Example',
       issue: ['https://linear.app/team/issue/LIN-123'],
     });
+    expect(filePath).toContain(`${planData.id}-`);
 
-    expect(log).toHaveBeenCalledWith(
-      expect.stringContaining('6-linear-123-linear-issue-example.plan.md')
-    );
+    expect(log).toHaveBeenCalledWith(expect.stringContaining(path.basename(filePath)));
   });
 
   test('should work with GitHub configuration', async () => {
@@ -301,10 +300,9 @@ describe('handleImportCommand Integration Tests', () => {
       title: 'GitHub Issue Example',
       issue: ['https://github.com/owner/repo/issues/456'],
     });
+    expect(filePath).toContain(`${planData.id}-`);
 
-    expect(log).toHaveBeenCalledWith(
-      expect.stringContaining('6-issue-456-github-issue-example.plan.md')
-    );
+    expect(log).toHaveBeenCalledWith(expect.stringContaining(path.basename(filePath)));
   });
 
   test('should work with Linear in interactive mode', async () => {

@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { CleanupRegistry } from '../../../common/cleanup_registry.js';
+import { closeDatabaseForTesting } from '../../db/database.js';
 import { writePlanFile } from '../../plans.js';
 import { ModuleMocker } from '../../../testing.js';
 import { resetShutdownState, setShuttingDown } from '../../shutdown_state.js';
@@ -11,6 +12,7 @@ describe('timAgent lifecycle integration', () => {
   const moduleMocker = new ModuleMocker(import.meta);
   let tempDir: string;
   let planFile: string;
+  let originalEnv: Partial<Record<string, string>>;
   let effectiveConfig: Record<string, unknown>;
   const buildExecutorAndLogSpy = mock(() => ({
     execute: mock(async () => ({ success: true })),
@@ -56,6 +58,17 @@ describe('timAgent lifecycle integration', () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-agent-lifecycle-'));
     const tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
+    await Bun.$`git init`.cwd(tempDir).quiet();
+    await Bun.$`git remote add origin https://example.com/acme/agent-lifecycle.git`
+      .cwd(tempDir)
+      .quiet();
+    originalEnv = {
+      XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+      APPDATA: process.env.APPDATA,
+    };
+    process.env.XDG_CONFIG_HOME = path.join(tempDir, 'config');
+    delete process.env.APPDATA;
+    closeDatabaseForTesting();
     planFile = path.join(tasksDir, '1-plan.yml');
 
     effectiveConfig = {
@@ -72,21 +85,25 @@ describe('timAgent lifecycle integration', () => {
       },
     };
 
-    await writePlanFile(planFile, {
-      id: 1,
-      title: 'Lifecycle Plan',
-      goal: 'Test lifecycle integration',
-      details: 'Exercise shutdown-aware cleanup',
-      status: 'pending',
-      tasks: [
-        {
-          title: 'Task 1',
-          description: 'Do the work',
-          steps: [{ prompt: 'implement', done: false }],
-        },
-      ],
-      updatedAt: new Date().toISOString(),
-    });
+    await writePlanFile(
+      planFile,
+      {
+        id: 1,
+        title: 'Lifecycle Plan',
+        goal: 'Test lifecycle integration',
+        details: 'Exercise shutdown-aware cleanup',
+        status: 'pending',
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'Do the work',
+            steps: [{ prompt: 'implement', done: false }],
+          },
+        ],
+        updatedAt: new Date().toISOString(),
+      },
+      { cwdForIdentity: tempDir }
+    );
 
     await moduleMocker.mock('../../../logging.js', () => ({
       boldMarkdownHeaders: (text: string) => text,
@@ -193,6 +210,17 @@ describe('timAgent lifecycle integration', () => {
     moduleMocker.clear();
     resetShutdownState();
     CleanupRegistry['instance'] = undefined;
+    closeDatabaseForTesting();
+    if (originalEnv.XDG_CONFIG_HOME === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalEnv.XDG_CONFIG_HOME;
+    }
+    if (originalEnv.APPDATA === undefined) {
+      delete process.env.APPDATA;
+    } else {
+      process.env.APPDATA = originalEnv.APPDATA;
+    }
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 

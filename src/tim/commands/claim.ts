@@ -17,11 +17,11 @@ export async function handleClaimCommand(
   }
 
   const globalOpts = command?.parent?.opts?.() ?? {};
-  const { plan, uuid } = await resolvePlanWithUuid(planArg, {
+  const { plan, repoRoot, uuid } = await resolvePlanWithUuid(planArg, {
     configPath: globalOpts.config,
   });
 
-  const repository = await getRepositoryIdentity();
+  const repository = await getRepositoryIdentity({ cwd: repoRoot });
   const user = getUserIdentity();
 
   const planLabel = String(plan.id);

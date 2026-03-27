@@ -2,6 +2,7 @@
 // Lists all plan files in the tasks directory
 
 import chalk from 'chalk';
+import fs from 'node:fs';
 import * as path from 'node:path';
 import { table } from 'table';
 
@@ -106,10 +107,6 @@ export async function handleListCommand(options: any, command: any, searchTerms?
     ({ plans, duplicates } = await readAllPlans(searchDir));
   } else {
     ({ plans, duplicates } = loadPlansFromDb(searchDir, repository.repositoryId));
-    if (plans.size === 0) {
-      // Fallback keeps list useful in repositories that have not synced plans into SQLite yet.
-      ({ plans, duplicates } = await readAllPlans(searchDir));
-    }
   }
 
   if (plans.size === 0) {
@@ -484,7 +481,11 @@ export async function handleListCommand(options: any, command: any, searchTerms?
     ];
 
     if (options.showFiles) {
-      row.push(chalk.gray(path.relative(searchDir, plan.filename)));
+      row.push(
+        plan.filename && fs.existsSync(plan.filename)
+          ? chalk.gray(path.relative(searchDir, plan.filename))
+          : ''
+      );
     }
 
     tableData.push(row);

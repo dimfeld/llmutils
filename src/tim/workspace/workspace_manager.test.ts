@@ -110,7 +110,9 @@ describe('createWorkspace', () => {
     });
 
     // Execute
-    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config, {
+      createBranch: true,
+    });
 
     // Verify
     expect(result).not.toBeNull();
@@ -173,7 +175,9 @@ describe('createWorkspace', () => {
     }));
 
     // Execute
-    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config, {
+      createBranch: true,
+    });
 
     // Verify
     expect(result).not.toBeNull();
@@ -217,7 +221,9 @@ describe('createWorkspace', () => {
       return { exitCode: 0, stdout: '', stderr: '' };
     });
 
-    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config, {
+      createBranch: true,
+    });
 
     expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
       ['git', 'status', '--porcelain', '--', 'tasks/task-primary-branch.plan.md'],
@@ -278,7 +284,9 @@ describe('createWorkspace', () => {
     }));
 
     // Execute
-    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config, {
+      createBranch: true,
+    });
 
     // Verify
     expect(result).toBeNull();
@@ -333,7 +341,9 @@ describe('createWorkspace', () => {
     mockExecutePostApplyCommand.mockResolvedValue(true);
 
     // Execute
-    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config, {
+      createBranch: true,
+    });
 
     // Verify
     expect(result).not.toBeNull();
@@ -425,7 +435,9 @@ describe('createWorkspace', () => {
     }));
 
     // Execute
-    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config, {
+      createBranch: true,
+    });
 
     // Verify
     expect(result).toBeNull();
@@ -463,7 +475,9 @@ describe('createWorkspace', () => {
     }));
 
     // Execute
-    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config, {
+      createBranch: true,
+    });
 
     // Verify
     expect(result).toBeNull();
@@ -515,7 +529,9 @@ describe('createWorkspace', () => {
     mockExecutePostApplyCommand.mockResolvedValue(false);
 
     // Execute
-    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config, {
+      createBranch: true,
+    });
 
     // Verify
     expect(result).toBeNull();
@@ -577,7 +593,9 @@ describe('createWorkspace', () => {
     mockExecutePostApplyCommand.mockResolvedValue(false);
 
     // Execute
-    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config, {
+      createBranch: true,
+    });
 
     // Verify
     expect(result).not.toBeNull();
@@ -642,7 +660,9 @@ describe('createWorkspace', () => {
     );
 
     // Execute with undefined plan file
-    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config, {
+      createBranch: true,
+    });
 
     // Verify
     expect(result).not.toBeNull();
@@ -690,7 +710,9 @@ describe('createWorkspace', () => {
     });
 
     // Execute with plan file
-    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config, {
+      createBranch: true,
+    });
 
     // Verify
     expect(result).not.toBeNull();
@@ -761,7 +783,9 @@ describe('createWorkspace', () => {
     });
 
     // Execute
-    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config, {
+      createBranch: true,
+    });
 
     // Verify
     expect(result).not.toBeNull();
@@ -820,7 +844,9 @@ describe('createWorkspace', () => {
     });
 
     // Execute without plan file
-    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config, {
+      createBranch: true,
+    });
 
     // Verify
     expect(result).not.toBeNull();
@@ -858,7 +884,9 @@ describe('createWorkspace', () => {
     });
 
     // Execute
-    await createWorkspace(mainRepoRoot, taskId, undefined, config);
+    await createWorkspace(mainRepoRoot, taskId, undefined, config, {
+      createBranch: true,
+    });
 
     const branchCreateCall = mockSpawnAndLogOutput.mock.calls.find(
       (call) => call[0][0] === 'git' && call[0][1] === 'branch'
@@ -903,7 +931,9 @@ describe('createWorkspace', () => {
     }));
 
     // Execute
-    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config, {
+      createBranch: true,
+    });
 
     // Verify
     expect(result).not.toBeNull();
@@ -976,7 +1006,9 @@ describe('createWorkspace', () => {
     });
 
     // Execute
-    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config, {
+      createBranch: true,
+    });
 
     // Verify
     expect(result).not.toBeNull();
@@ -1060,7 +1092,9 @@ describe('createWorkspace', () => {
     });
 
     // Execute
-    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config, {
+      createBranch: true,
+    });
 
     // Verify
     expect(result).not.toBeNull();
@@ -1135,7 +1169,9 @@ describe('createWorkspace', () => {
       return { exitCode: 0, stdout: '', stderr: '' };
     });
 
-    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config, {
+      createBranch: true,
+    });
 
     expect(result).not.toBeNull();
     expect(result?.path).toBe(targetClonePath);
@@ -1207,7 +1243,9 @@ describe('createWorkspace', () => {
       return { exitCode: 0, stdout: '', stderr: '' };
     });
 
-    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config, {
+      createBranch: true,
+    });
 
     expect(result).not.toBeNull();
     const copiedTracked = await fs.readFile(path.join(targetClonePath, 'tracked.txt'), 'utf-8');
@@ -1259,7 +1297,9 @@ describe('createWorkspace', () => {
       return { exitCode: 0, stdout: '', stderr: '' };
     });
 
-    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config, {
+      createBranch: true,
+    });
 
     expect(result).not.toBeNull();
     const copiedJjRepo = await fs.readFile(path.join(targetClonePath, '.jj', 'repo'), 'utf-8');
@@ -1590,6 +1630,7 @@ describe('createWorkspace', () => {
     const result = await createWorkspace(mainRepoRoot, taskId, undefined, config, {
       fromBranch: 'main',
       branchName: 'jj-feature',
+      createBranch: true,
     });
 
     expect(result).not.toBeNull();
@@ -1680,6 +1721,7 @@ describe('createWorkspace', () => {
 
     const result = await createWorkspace(mainRepoRoot, taskId, planPath, config, {
       branchName: 'jj-feature-description',
+      createBranch: true,
     });
 
     expect(result).not.toBeNull();
@@ -1778,7 +1820,10 @@ describe('createWorkspace', () => {
       return { exitCode: 0, stdout: '', stderr: '' };
     });
 
-    await createWorkspace(mainRepoRoot, taskId, undefined, config, { fromBranch: 'develop' });
+    await createWorkspace(mainRepoRoot, taskId, undefined, config, {
+      fromBranch: 'develop',
+      createBranch: true,
+    });
 
     expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
       ['git', 'branch', '-f', taskId, 'origin/develop'],
@@ -1813,7 +1858,9 @@ describe('createWorkspace', () => {
       return { exitCode: 0, stdout: '', stderr: '' };
     });
 
-    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config);
+    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config, {
+      createBranch: true,
+    });
 
     expect(result).toBeNull();
     expect(

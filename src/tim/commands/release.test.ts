@@ -9,7 +9,13 @@ import { getAssignment } from '../db/assignment.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { getOrCreateProject } from '../db/project.js';
 import { recordWorkspace } from '../db/workspace.js';
-import { clearPlanCache, readPlanFile, writePlanFile } from '../plans.js';
+import {
+  clearPlanCache,
+  readPlanFile,
+  resolvePlanFromDb,
+  writePlanFile,
+  writePlanToDb,
+} from '../plans.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -26,12 +32,14 @@ describe('handleReleaseCommand', () => {
   let mockLog: ReturnType<typeof mock>;
   let mockWarn: ReturnType<typeof mock>;
   let mockError: ReturnType<typeof mock>;
+  let getRepositoryIdentityMock: ReturnType<typeof mock>;
 
   let handleReleaseCommand: (planArg: string, options: any, command: any) => Promise<void>;
 
   const repositoryId = 'multi-user-demo';
   const planUuid = '33333333-3333-4333-8333-333333333333';
   const repositoryRemoteUrl = 'https://example.com/repo.git';
+  let currentRepositoryId: string;
 
   function getAssignmentRow(uuid: string) {
     const db = getDatabase();
@@ -64,6 +72,7 @@ describe('handleReleaseCommand', () => {
 
     currentWorkspacePath = repoDir;
     currentUser = 'alice';
+    currentRepositoryId = repositoryId;
 
     originalEnv = {
       XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
@@ -76,6 +85,11 @@ describe('handleReleaseCommand', () => {
     mockLog = mock(() => {});
     mockWarn = mock(() => {});
     mockError = mock(() => {});
+    getRepositoryIdentityMock = mock(async (_options?: { cwd?: string }) => ({
+      repositoryId: currentRepositoryId,
+      remoteUrl: repositoryRemoteUrl,
+      gitRoot: currentWorkspacePath,
+    }));
 
     const chalkMock = (value: string) => value;
 
@@ -109,11 +123,7 @@ describe('handleReleaseCommand', () => {
     }));
 
     await moduleMocker.mock('../assignments/workspace_identifier.ts', () => ({
-      getRepositoryIdentity: async () => ({
-        repositoryId,
-        remoteUrl: repositoryRemoteUrl,
-        gitRoot: currentWorkspacePath,
-      }),
+      getRepositoryIdentity: getRepositoryIdentityMock,
       getCurrentWorkspacePath: async () => currentWorkspacePath,
       getUserIdentity: () => currentUser,
     }));
@@ -263,5 +273,55 @@ describe('handleReleaseCommand', () => {
     expect(refreshedPlan.status).toBe('pending');
 
     expect(mockLog).toHaveBeenCalledWith(`✓ Reset status for plan 1 to pending`);
+  });
+
+  test('reset status flag updates DB-only plans without trying to write the cwd', async () => {
+    await fs.rm(path.join(tasksDir, '1-sample.plan.md'));
+    await writePlanToDb(
+      {
+        id: 1,
+        uuid: planUuid,
+        title: 'DB-only Plan',
+        goal: 'Reset status in the database',
+        status: 'in_progress',
+        details: '',
+        tasks: [],
+        filename: '',
+      },
+      { cwdForIdentity: repoDir, skipUpdatedAt: true }
+    );
+    await seedClaim(currentWorkspacePath, currentUser);
+
+    const command = { parent: { opts: () => ({}) } };
+    await handleReleaseCommand('1', { resetStatus: true }, command);
+
+    const { plan, planPath } = await resolvePlanFromDb('1', repoDir);
+    expect(plan.status).toBe('pending');
+    expect(planPath).toBeNull();
+
+    expect(mockLog).toHaveBeenCalledWith(`✓ Reset status for plan 1 to pending`);
+  });
+
+  test('uses the resolved plan repo root for repository identity under --config', async () => {
+    const configuredRepoDir = path.join(tempRoot, 'other-repo');
+    const configuredTasksDir = path.join(configuredRepoDir, 'tasks');
+    const configPath = path.join(configuredRepoDir, '.tim.yml');
+    currentRepositoryId = 'configured-repo';
+    await fs.mkdir(configuredTasksDir, { recursive: true });
+    await fs.writeFile(configPath, 'paths:\n  tasks: tasks\n', 'utf-8');
+    await writePlanFile(path.join(configuredTasksDir, '1-configured.plan.md'), {
+      id: 1,
+      uuid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      title: 'Configured Plan',
+      goal: 'Resolve via explicit config',
+      status: 'pending',
+      details: '',
+      tasks: [],
+    });
+
+    const command = { parent: { opts: () => ({ config: configPath }) } };
+    await handleReleaseCommand('1', {}, command);
+
+    expect(getRepositoryIdentityMock).toHaveBeenCalledWith({ cwd: configuredRepoDir });
   });
 });

@@ -16,7 +16,9 @@ import {
 } from '../executors/index.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
 import type { PlanSchema } from '../planSchema.js';
-import { readPlanFile, resolvePlanFile } from '../plans.js';
+import { materializePlan } from '../plan_materialize.js';
+import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 
 interface UpdateLessonsPromptOptions {
   include?: string[];
@@ -24,8 +26,7 @@ interface UpdateLessonsPromptOptions {
   docsPaths?: string[];
 }
 
-export async function extractLessonsLearned(planFilePath: string): Promise<string | null> {
-  const raw = await fs.readFile(planFilePath, 'utf-8');
+function extractLessonsLearnedFromContent(raw: string): string | null {
   const searchText = stripYamlFrontmatter(raw);
 
   const currentProgressMatch = /^## Current Progress\s*$/m.exec(searchText);
@@ -73,6 +74,11 @@ export async function extractLessonsLearned(planFilePath: string): Promise<strin
   }
 
   return trimmedLessons;
+}
+
+export async function extractLessonsLearned(planFilePath: string): Promise<string | null> {
+  const raw = await fs.readFile(planFilePath, 'utf-8');
+  return extractLessonsLearnedFromContent(raw);
 }
 
 /** Parse a lessons learned markdown text into individual lesson items. */
@@ -188,15 +194,51 @@ function stripLessonsFromPlanContext(details: string): string {
 }
 
 export async function runUpdateLessons(
-  planFilePath: string,
-  config: TimConfig,
-  options: {
+  planDataOrPath: PlanSchema | string,
+  planFilePathOrConfig: string | TimConfig,
+  configOrOptions:
+    | TimConfig
+    | {
+        executor?: string;
+        model?: string;
+        baseDir?: string;
+        configPath?: string;
+      },
+  maybeOptions?: {
     executor?: string;
     model?: string;
     baseDir?: string;
+    configPath?: string;
   }
 ): Promise<boolean> {
-  let lessonsLearned = await extractLessonsLearned(planFilePath);
+  const options = maybeOptions ?? (configOrOptions as NonNullable<typeof maybeOptions>);
+  let planData: PlanSchema;
+  let planFilePath: string;
+  let effectiveConfig: TimConfig;
+  let resolvedBaseDir = options.baseDir;
+  if (typeof planDataOrPath === 'string') {
+    const repoRoot =
+      options.baseDir ??
+      (await resolveRepoRootForPlanArg(planDataOrPath, process.cwd(), options.configPath));
+    const resolvedPlan = await resolvePlanFromDbOrSyncFile(planDataOrPath, repoRoot, repoRoot);
+    planData = resolvedPlan.plan;
+    planFilePath = resolvedPlan.planPath ?? (await materializePlan(planData.id, repoRoot));
+    effectiveConfig = planFilePathOrConfig as TimConfig;
+    resolvedBaseDir = repoRoot;
+  } else {
+    planData = planDataOrPath;
+    planFilePath = planFilePathOrConfig as string;
+    effectiveConfig = configOrOptions as TimConfig;
+  }
+  const lessonsSource = await Bun.file(planFilePath)
+    .text()
+    .catch(() => null);
+  let lessonsLearned =
+    lessonsSource !== null
+      ? extractLessonsLearnedFromContent(lessonsSource)
+      : planData.details
+        ? extractLessonsLearnedFromContent(planData.details)
+        : null;
   if (!lessonsLearned) {
     log('No lessons learned found in Current Progress. Skipping lessons documentation update.');
     return false;
@@ -221,30 +263,32 @@ export async function runUpdateLessons(
     lessonsLearned = selected.map((item) => `- ${item}`).join('\n');
   }
 
-  const planData = await readPlanFile(planFilePath);
-  const baseDir = options.baseDir || (await getGitRoot()) || process.cwd();
+  const baseDir = resolvedBaseDir || (await getGitRoot()) || process.cwd();
 
-  const excludePatterns = [...(config.updateDocs?.exclude ?? [])];
+  const excludePatterns = [...(effectiveConfig.updateDocs?.exclude ?? [])];
 
-  if (!config.isUsingExternalStorage) {
-    const tasksDir = await resolveTasksDir(config);
+  if (!effectiveConfig.isUsingExternalStorage) {
+    const tasksDir = await resolveTasksDir(effectiveConfig);
     const relativeTasksDir = path.relative(baseDir, tasksDir);
     excludePatterns.push(`Plan files in ${relativeTasksDir || tasksDir}`);
   }
 
   const prompt = buildUpdateLessonsPrompt(planData, lessonsLearned, {
-    docsPaths: config.paths?.docs,
-    include: config.updateDocs?.include,
+    docsPaths: effectiveConfig.paths?.docs,
+    include: effectiveConfig.updateDocs?.include,
     exclude: excludePatterns.length > 0 ? excludePatterns : undefined,
   });
 
   const executorName =
-    options.executor || config.updateDocs?.executor || config.defaultExecutor || DEFAULT_EXECUTOR;
+    options.executor ||
+    effectiveConfig.updateDocs?.executor ||
+    effectiveConfig.defaultExecutor ||
+    DEFAULT_EXECUTOR;
 
   const model =
     options.model ||
-    config.updateDocs?.model ||
-    config.models?.execution ||
+    effectiveConfig.updateDocs?.model ||
+    effectiveConfig.models?.execution ||
     defaultModelForExecutor(executorName, 'execution');
 
   const sharedExecutorOptions: ExecutorCommonOptions = {
@@ -252,7 +296,7 @@ export async function runUpdateLessons(
     model,
   };
 
-  const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
+  const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, effectiveConfig);
 
   log(boldMarkdownHeaders('\n## Applying Lessons Learned to Documentation\n'));
   await executor.execute(prompt, {
@@ -277,13 +321,20 @@ export async function handleUpdateLessonsCommand(
     throw new Error('Plan file or ID is required');
   }
 
-  const resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
-  const baseDir = (await getGitRoot()) || process.cwd();
+  const repoRoot = await resolveRepoRootForPlanArg(
+    planFile,
+    (await getGitRoot()) || process.cwd(),
+    globalOpts.config
+  );
+  const { plan, planPath } = await resolvePlanFromDbOrSyncFile(planFile, repoRoot, repoRoot);
+  const resolvedPlanFile = planPath ?? (await materializePlan(plan.id, repoRoot));
+  const baseDir = repoRoot;
 
-  const didRun = await runUpdateLessons(resolvedPlanFile, config, {
+  const didRun = await runUpdateLessons(plan, resolvedPlanFile, config, {
     executor: options.executor,
     model: options.model,
     baseDir,
+    configPath: globalOpts.config,
   });
 
   if (didRun) {

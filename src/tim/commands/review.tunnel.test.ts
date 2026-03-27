@@ -10,12 +10,16 @@ import { runWithLogger } from '../../logging.js';
 import { TunnelAdapter, createTunnelAdapter } from '../../logging/tunnel_client.js';
 import type { LoggerAdapter } from '../../logging/adapter.js';
 import type { StructuredMessage } from '../../logging/structured_messages.js';
+import { closeDatabaseForTesting } from '../db/database.js';
+import { writePlanFile } from '../plans.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
 let testDir: string;
 let originalTIMOutputSocket: string | undefined;
 let originalTIMInteractive: string | undefined;
+let originalXdgConfigHome: string | undefined;
+let originalAppData: string | undefined;
 
 // Use /tmp/claude as the base for mkdtemp to keep socket paths short enough
 // for the Unix domain socket path length limit (104 bytes on macOS).
@@ -24,9 +28,18 @@ const TEMP_BASE = '/tmp/claude';
 beforeEach(async () => {
   await mkdir(TEMP_BASE, { recursive: true });
   testDir = await mkdtemp(join(TEMP_BASE, 'rt-'));
+  await Bun.$`git init`.cwd(testDir).quiet();
+  await Bun.$`git remote add origin https://example.com/acme/review-tunnel.git`
+    .cwd(testDir)
+    .quiet();
   spyOn(console, 'error').mockImplementation(() => {});
   originalTIMOutputSocket = process.env[TIM_OUTPUT_SOCKET];
   originalTIMInteractive = process.env.TIM_INTERACTIVE;
+  originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
+  originalAppData = process.env.APPDATA;
+  process.env.XDG_CONFIG_HOME = path.join(testDir, 'config');
+  delete process.env.APPDATA;
+  closeDatabaseForTesting();
 
   await moduleMocker.mock('../notifications.js', () => ({
     sendNotification: mock(async () => true),
@@ -35,6 +48,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   moduleMocker.clear();
+  closeDatabaseForTesting();
   // Restore original env
   if (originalTIMOutputSocket === undefined) {
     delete process.env[TIM_OUTPUT_SOCKET];
@@ -45,6 +59,16 @@ afterEach(async () => {
     delete process.env.TIM_INTERACTIVE;
   } else {
     process.env.TIM_INTERACTIVE = originalTIMInteractive;
+  }
+  if (originalXdgConfigHome === undefined) {
+    delete process.env.XDG_CONFIG_HOME;
+  } else {
+    process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
+  }
+  if (originalAppData === undefined) {
+    delete process.env.APPDATA;
+  } else {
+    process.env.APPDATA = originalAppData;
   }
   // Clean up temp directory
   if (testDir) {
@@ -58,6 +82,23 @@ afterEach(async () => {
  * JSON blob.
  */
 async function setupReviewCommandMocks(planFile: string) {
+  await writePlanFile(
+    planFile,
+    {
+      id: 1,
+      title: 'Tunnel Test Plan',
+      goal: 'Test tunnel behavior in review mode',
+      status: 'pending',
+      tasks: [
+        {
+          title: 'Task One',
+          description: 'First task',
+        },
+      ],
+    },
+    { cwdForIdentity: testDir }
+  );
+
   const mockExecutor = {
     execute: mock(async () =>
       JSON.stringify({
@@ -91,6 +132,8 @@ async function setupReviewCommandMocks(planFile: string) {
           },
         ],
       },
+      repoRoot: testDir,
+      gitRoot: testDir,
       parentChain: [],
       completedChildren: [],
       diffResult: {

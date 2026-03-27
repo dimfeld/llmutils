@@ -4,7 +4,9 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import { timAgent, handleAgentCommand } from './agent.js';
-import { clearPlanCache, readPlanFile, writePlanFile } from '../../plans.js';
+import { clearPlanCache, readPlanFile, resolvePlanFromDb, writePlanFile } from '../../plans.js';
+import { closeDatabaseForTesting } from '../../db/database.js';
+import { clearPlanSyncContext } from '../../db/plan_sync.js';
 import { runWithLogger, type LoggerAdapter } from '../../../logging/adapter.js';
 import type { StructuredMessage } from '../../../logging/structured_messages.js';
 import { createRecordingAdapter } from '../../../logging/test_helpers.js';
@@ -49,6 +51,17 @@ describe('timAgent - Parent Plan Status Updates', () => {
   let config: any;
   let parentPlanFile: string;
   let childPlanFile: string;
+  let originalEnv: Partial<Record<string, string>>;
+
+  async function writeDbBackedPlan(planPath: string, plan: PlanSchema) {
+    await writePlanFile(planPath, plan, {
+      cwdForIdentity: tempDir,
+    });
+  }
+
+  async function readDbPlan(planId: number): Promise<PlanSchema> {
+    return (await resolvePlanFromDb(planId, tempDir)).plan;
+  }
 
   beforeEach(async () => {
     clearPlanCache();
@@ -56,6 +69,15 @@ describe('timAgent - Parent Plan Status Updates', () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-agent-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
+    await Bun.$`git init`.cwd(tempDir).quiet();
+    await Bun.$`git remote add origin https://example.com/acme/agent-test.git`.cwd(tempDir).quiet();
+    originalEnv = {
+      XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+      APPDATA: process.env.APPDATA,
+    };
+    process.env.XDG_CONFIG_HOME = path.join(tempDir, 'config');
+    delete process.env.APPDATA;
+    closeDatabaseForTesting();
     config = { paths: { tasks: tasksDir } };
 
     parentPlanFile = path.join(tasksDir, '100-parent-plan.yml');
@@ -88,11 +110,22 @@ describe('timAgent - Parent Plan Status Updates', () => {
       updatedAt: new Date().toISOString(),
     };
 
-    await writePlanFile(parentPlanFile, parentPlan);
-    await writePlanFile(childPlanFile, childPlan);
+    await writeDbBackedPlan(parentPlanFile, parentPlan);
+    await writeDbBackedPlan(childPlanFile, childPlan);
   });
 
   afterEach(async () => {
+    closeDatabaseForTesting();
+    if (originalEnv.XDG_CONFIG_HOME === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalEnv.XDG_CONFIG_HOME;
+    }
+    if (originalEnv.APPDATA === undefined) {
+      delete process.env.APPDATA;
+    } else {
+      process.env.APPDATA = originalEnv.APPDATA;
+    }
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
@@ -100,7 +133,7 @@ describe('timAgent - Parent Plan Status Updates', () => {
     const { adapter, calls } = createRecordingAdapter();
     await runWithLogger(adapter, () => markParentInProgress(100, config));
 
-    const parentPlan = await readPlanFile(parentPlanFile);
+    const parentPlan = await readDbPlan(100);
     const childPlan = await readPlanFile(childPlanFile);
     const structuredMessages = calls
       .filter((call) => call.method === 'sendStructured')
@@ -121,7 +154,7 @@ describe('timAgent - Parent Plan Status Updates', () => {
   test('does not mark already in_progress parent', async () => {
     const parentPlan = await readPlanFile(parentPlanFile);
     parentPlan.status = 'in_progress';
-    await writePlanFile(parentPlanFile, parentPlan);
+    await writeDbBackedPlan(parentPlanFile, parentPlan);
 
     const { adapter, calls } = createRecordingAdapter();
     await runWithLogger(adapter, () => markParentInProgress(100, config));
@@ -129,7 +162,7 @@ describe('timAgent - Parent Plan Status Updates', () => {
       .filter((call) => call.method === 'sendStructured')
       .map((call) => call.args[0] as StructuredMessage);
 
-    const updatedParentPlan = await readPlanFile(parentPlanFile);
+    const updatedParentPlan = await readDbPlan(100);
 
     expect(updatedParentPlan.status).toBe('in_progress');
     expect(
@@ -428,6 +461,8 @@ describe.skip('timAgent - Direct Execution Flow', () => {
 describe('timAgent - simple mode flag plumbing', () => {
   let tempDir: string;
   let simplePlanFile: string;
+  let originalEnv: Partial<Record<string, string>>;
+  let originalCwd: string;
   const executeBatchModeSpy = mock(async () => undefined);
   const testExecutor = {
     execute: executorExecuteSpy,
@@ -449,29 +484,46 @@ describe('timAgent - simple mode flag plumbing', () => {
 
   beforeEach(async () => {
     clearPlanCache();
+    clearPlanSyncContext();
     defaultConfig.executors = {};
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-simple-flag-test-'));
+    await Bun.$`git init`.cwd(tempDir).quiet();
+    await Bun.$`git remote add origin https://example.com/acme/agent-simple.git`
+      .cwd(tempDir)
+      .quiet();
+    originalEnv = {
+      XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+      APPDATA: process.env.APPDATA,
+    };
+    process.env.XDG_CONFIG_HOME = path.join(tempDir, 'config');
+    delete process.env.APPDATA;
+    closeDatabaseForTesting();
+    originalCwd = process.cwd();
+    process.chdir(tempDir);
     const tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
 
     simplePlanFile = path.join(tasksDir, '123-simple-plan.yml');
-    const planContent = `---\n${yaml.stringify({
-      id: 123,
-      title: 'Simple Flag Plan',
-      goal: 'Exercise executor plumbing',
-      details: 'Ensure simple flag flows through to executor builder',
-      status: 'pending',
-      tasks: [
-        {
-          title: 'Task 1',
-          description: 'Has explicit steps so preparation is skipped',
-          done: false,
-          steps: [{ prompt: 'Do the work', done: false }],
-        },
-      ],
-    })}---\n`;
-    await fs.writeFile(simplePlanFile, planContent, 'utf-8');
+    await writePlanFile(
+      simplePlanFile,
+      {
+        id: 123,
+        title: 'Simple Flag Plan',
+        goal: 'Exercise executor plumbing',
+        details: 'Ensure simple flag flows through to executor builder',
+        status: 'pending',
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'Has explicit steps so preparation is skipped',
+            done: false,
+            steps: [{ prompt: 'Do the work', done: false }],
+          },
+        ],
+      },
+      { cwdForIdentity: tempDir }
+    );
 
     buildExecutorAndLogSpy.mockReset();
     executorExecuteSpy.mockReset();
@@ -548,6 +600,20 @@ describe('timAgent - simple mode flag plumbing', () => {
 
   afterEach(async () => {
     moduleMocker.clear();
+    clearPlanCache();
+    clearPlanSyncContext();
+    closeDatabaseForTesting();
+    process.chdir(originalCwd);
+    if (originalEnv.XDG_CONFIG_HOME === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalEnv.XDG_CONFIG_HOME;
+    }
+    if (originalEnv.APPDATA === undefined) {
+      delete process.env.APPDATA;
+    } else {
+      process.env.APPDATA = originalEnv.APPDATA;
+    }
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
@@ -716,7 +782,7 @@ describe('timAgent - simple mode flag plumbing', () => {
   test('enables tdd mode from plan frontmatter when CLI flag is not provided', async () => {
     const plan = await readPlanFile(simplePlanFile);
     (plan as any).tdd = true;
-    await writePlanFile(simplePlanFile, plan);
+    await writePlanFile(simplePlanFile, plan, { cwdForIdentity: tempDir });
     clearPlanCache();
 
     await timAgent(simplePlanFile, { log: false } as any, {});
@@ -741,7 +807,7 @@ describe('timAgent - simple mode flag plumbing', () => {
   test('explicit --no-tdd overrides plan tdd: true', async () => {
     const plan = await readPlanFile(simplePlanFile);
     (plan as any).tdd = true;
-    await writePlanFile(simplePlanFile, plan);
+    await writePlanFile(simplePlanFile, plan, { cwdForIdentity: tempDir });
     clearPlanCache();
 
     await timAgent(simplePlanFile, { log: false, tdd: false } as any, {});
@@ -978,7 +1044,8 @@ describe('handleAgentCommand - --next-ready flag', () => {
   let notReadyPlanFile: string;
 
   // Mock functions specifically for --next-ready tests
-  const findNextReadyDependencySpy = mock();
+  const findNextReadyDependencyFromDbSpy = mock();
+  const resolvePlanFromDbOrSyncFileSpy = mock();
   const timAgentSpy = mock();
   type LogCapture = { logs: string[]; errors: string[]; warnings: string[] };
 
@@ -1007,7 +1074,8 @@ describe('handleAgentCommand - --next-ready flag', () => {
     logSpy.mockClear();
     errorSpy.mockClear();
     warnSpy.mockClear();
-    findNextReadyDependencySpy.mockClear();
+    findNextReadyDependencyFromDbSpy.mockClear();
+    resolvePlanFromDbOrSyncFileSpy.mockClear();
     timAgentSpy.mockClear();
 
     // Clear plan cache
@@ -1094,15 +1162,32 @@ describe('handleAgentCommand - --next-ready flag', () => {
     }));
 
     await moduleMocker.mock('../../plans.js', () => ({
-      resolvePlanFile: mock(async (planFile: string) => planFile),
       readPlanFile: async (filePath: string) => {
         const content = await fs.readFile(filePath, 'utf-8');
         return yaml.parse(content) as PlanSchema;
       },
     }));
 
-    await moduleMocker.mock('.././find_next_dependency.js', () => ({
-      findNextReadyDependency: findNextReadyDependencySpy,
+    resolvePlanFromDbOrSyncFileSpy.mockImplementation(async (planArg: string) => {
+      const resolvedPath = path.resolve(planArg);
+      const content = await fs.readFile(resolvedPath, 'utf-8');
+      return {
+        plan: yaml.parse(content) as PlanSchema,
+        planPath: resolvedPath,
+      };
+    });
+
+    await moduleMocker.mock('../../ensure_plan_in_db.js', () => ({
+      resolvePlanFromDbOrSyncFile: resolvePlanFromDbOrSyncFileSpy,
+    }));
+
+    await moduleMocker.mock('../plan_discovery.js', () => ({
+      findNextReadyDependencyFromDb: findNextReadyDependencyFromDbSpy,
+      toHeadlessPlanSummary: (plan: Pick<PlanSchema, 'id' | 'uuid' | 'title'>) => ({
+        id: plan.id,
+        uuid: plan.uuid,
+        title: plan.title,
+      }),
     }));
 
     await moduleMocker.mock('./agent.js', () => ({
@@ -1151,7 +1236,7 @@ describe('handleAgentCommand - --next-ready flag', () => {
     };
     readyPlan.filename = readyPlanFile;
 
-    findNextReadyDependencySpy.mockResolvedValue({
+    findNextReadyDependencyFromDbSpy.mockResolvedValue({
       plan: readyPlan,
       message: 'Found ready plan: Ready Dependency Plan (ID: 101)',
     });
@@ -1164,8 +1249,12 @@ describe('handleAgentCommand - --next-ready flag', () => {
       handleAgentCommand(undefined, options, globalCliOptions)
     );
 
-    // Verify findNextReadyDependency was called with correct parent plan ID
-    expect(findNextReadyDependencySpy).toHaveBeenCalledWith(100, expect.any(String));
+    // Verify next-ready lookup was called with correct parent plan ID
+    expect(findNextReadyDependencyFromDbSpy).toHaveBeenCalledWith(
+      100,
+      expect.any(String),
+      expect.any(String)
+    );
 
     expect(structuredMessages).toContainEqual(
       expect.objectContaining({
@@ -1175,8 +1264,8 @@ describe('handleAgentCommand - --next-ready flag', () => {
       })
     );
 
-    // Verify timAgent was called with the ready plan's filename
-    expect(timAgentSpy).toHaveBeenCalledWith(readyPlanFile, options, globalCliOptions);
+    // Verify timAgent was called with the resolved plan ID
+    expect(timAgentSpy).toHaveBeenCalledWith('101', options, globalCliOptions);
   });
 
   test('finds ready dependency using parent plan file path', async () => {
@@ -1185,7 +1274,7 @@ describe('handleAgentCommand - --next-ready flag', () => {
     };
     readyPlan.filename = readyPlanFile;
 
-    findNextReadyDependencySpy.mockResolvedValue({
+    findNextReadyDependencyFromDbSpy.mockResolvedValue({
       plan: readyPlan,
       message: 'Found ready plan: Ready Dependency Plan (ID: 101)',
     });
@@ -1198,8 +1287,16 @@ describe('handleAgentCommand - --next-ready flag', () => {
       handleAgentCommand(undefined, options, globalCliOptions)
     );
 
-    // Verify findNextReadyDependency was called with correct parent plan ID (100)
-    expect(findNextReadyDependencySpy).toHaveBeenCalledWith(100, expect.any(String));
+    expect(resolvePlanFromDbOrSyncFileSpy).toHaveBeenCalledWith(
+      parentPlanFile,
+      expect.any(String),
+      expect.any(String)
+    );
+    expect(findNextReadyDependencyFromDbSpy).toHaveBeenCalledWith(
+      100,
+      expect.any(String),
+      expect.any(String)
+    );
 
     expect(structuredMessages).toContainEqual(
       expect.objectContaining({
@@ -1209,12 +1306,11 @@ describe('handleAgentCommand - --next-ready flag', () => {
       })
     );
 
-    // Verify timAgent was called with the ready plan's filename
-    expect(timAgentSpy).toHaveBeenCalledWith(readyPlanFile, options, globalCliOptions);
+    expect(timAgentSpy).toHaveBeenCalledWith('101', options, globalCliOptions);
   });
 
   test('handles no ready dependencies found', async () => {
-    findNextReadyDependencySpy.mockResolvedValue({
+    findNextReadyDependencyFromDbSpy.mockResolvedValue({
       plan: null,
       message: 'No ready dependencies found',
     });
@@ -1228,8 +1324,11 @@ describe('handleAgentCommand - --next-ready flag', () => {
       handleAgentCommand(undefined, options, globalCliOptions)
     );
 
-    // Verify findNextReadyDependency was called
-    expect(findNextReadyDependencySpy).toHaveBeenCalledWith(100, expect.any(String));
+    expect(findNextReadyDependencyFromDbSpy).toHaveBeenCalledWith(
+      100,
+      expect.any(String),
+      expect.any(String)
+    );
 
     // Verify timAgent was NOT called
     expect(timAgentSpy).not.toHaveBeenCalled();
@@ -1241,7 +1340,7 @@ describe('handleAgentCommand - --next-ready flag', () => {
     const structuredMessages: StructuredMessage[] = [];
     const capturedLogs: LogCapture = { logs: [], errors: [], warnings: [] };
 
-    findNextReadyDependencySpy.mockResolvedValue({
+    findNextReadyDependencyFromDbSpy.mockResolvedValue({
       plan: null,
       message: 'Plan not found: 999',
     });
@@ -1278,7 +1377,7 @@ describe('handleAgentCommand - --next-ready flag', () => {
     };
     readyPlan.filename = readyPlanFile;
 
-    findNextReadyDependencySpy.mockResolvedValue({
+    findNextReadyDependencyFromDbSpy.mockResolvedValue({
       plan: readyPlan,
       message: 'Found ready plan: Ready Dependency Plan (ID: 101)',
     });
@@ -1293,7 +1392,7 @@ describe('handleAgentCommand - --next-ready flag', () => {
     await handleAgentCommand(undefined, options, globalCliOptions);
 
     // Verify timAgent was called with all options intact
-    expect(timAgentSpy).toHaveBeenCalledWith(readyPlanFile, options, globalCliOptions);
+    expect(timAgentSpy).toHaveBeenCalledWith('101', options, globalCliOptions);
   });
 
   test('works with execution options', async () => {
@@ -1302,7 +1401,7 @@ describe('handleAgentCommand - --next-ready flag', () => {
     };
     readyPlan.filename = readyPlanFile;
 
-    findNextReadyDependencySpy.mockResolvedValue({
+    findNextReadyDependencyFromDbSpy.mockResolvedValue({
       plan: readyPlan,
       message: 'Found ready plan: Ready Dependency Plan (ID: 101)',
     });
@@ -1320,11 +1419,11 @@ describe('handleAgentCommand - --next-ready flag', () => {
     await handleAgentCommand(undefined, options, globalCliOptions);
 
     // Verify timAgent was called with all execution options intact
-    expect(timAgentSpy).toHaveBeenCalledWith(readyPlanFile, options, globalCliOptions);
+    expect(timAgentSpy).toHaveBeenCalledWith('101', options, globalCliOptions);
   });
 
   test('handles findNextReadyDependency throwing error', async () => {
-    findNextReadyDependencySpy.mockRejectedValue(new Error('Dependency traversal failed'));
+    findNextReadyDependencyFromDbSpy.mockRejectedValue(new Error('Dependency traversal failed'));
 
     const options = { nextReady: '100' };
     const globalCliOptions = {};
@@ -1338,18 +1437,13 @@ describe('handleAgentCommand - --next-ready flag', () => {
   });
 
   test('handles plan file resolution errors', async () => {
-    // Mock resolvePlanFile to throw an error when trying to resolve the parent plan file
-    await moduleMocker.mock('../../plans.js', () => ({
-      resolvePlanFile: mock(async (planFile: string) => {
+    await moduleMocker.mock('../../ensure_plan_in_db.js', () => ({
+      resolvePlanFromDbOrSyncFile: mock(async (planFile: string, repoRoot: string) => {
         if (planFile.includes('non-existent')) {
           throw new Error('File not found');
         }
-        return planFile;
+        return resolvePlanFromDbOrSyncFileSpy(planFile, repoRoot);
       }),
-      readPlanFile: async (filePath: string) => {
-        const content = await fs.readFile(filePath, 'utf-8');
-        return yaml.parse(content) as PlanSchema;
-      },
     }));
 
     const options = { nextReady: '/path/to/non-existent-plan.yml' };
@@ -1360,7 +1454,7 @@ describe('handleAgentCommand - --next-ready flag', () => {
     );
 
     // Verify findNextReadyDependency was NOT called when plan resolution fails
-    expect(findNextReadyDependencySpy).not.toHaveBeenCalled();
+    expect(findNextReadyDependencyFromDbSpy).not.toHaveBeenCalled();
     expect(timAgentSpy).not.toHaveBeenCalled();
   });
 
@@ -1372,7 +1466,7 @@ describe('handleAgentCommand - --next-ready flag', () => {
     readyPlan.goal = 'Implement authentication system';
     readyPlan.details = 'Add OAuth and session management';
 
-    findNextReadyDependencySpy.mockResolvedValue({
+    findNextReadyDependencyFromDbSpy.mockResolvedValue({
       plan: readyPlan,
       message:
         'Found ready plan: Ready Dependency Plan (ID: 101) with goal: Implement authentication system',
@@ -1394,8 +1488,7 @@ describe('handleAgentCommand - --next-ready flag', () => {
       })
     );
 
-    // Verify timAgent was called with the ready plan's filename
-    expect(timAgentSpy).toHaveBeenCalledWith(readyPlanFile, options, globalCliOptions);
+    expect(timAgentSpy).toHaveBeenCalledWith('101', options, globalCliOptions);
   });
 
   test('preserves logging options when redirecting to dependency', async () => {
@@ -1404,7 +1497,7 @@ describe('handleAgentCommand - --next-ready flag', () => {
     };
     readyPlan.filename = readyPlanFile;
 
-    findNextReadyDependencySpy.mockResolvedValue({
+    findNextReadyDependencyFromDbSpy.mockResolvedValue({
       plan: readyPlan,
       message: 'Found ready plan: Ready Dependency Plan (ID: 101)',
     });
@@ -1418,8 +1511,7 @@ describe('handleAgentCommand - --next-ready flag', () => {
 
     await handleAgentCommand(undefined, options, globalCliOptions);
 
-    // Verify timAgent was called with logging options intact
-    expect(timAgentSpy).toHaveBeenCalledWith(readyPlanFile, options, globalCliOptions);
+    expect(timAgentSpy).toHaveBeenCalledWith('101', options, globalCliOptions);
   });
 
   test('works with complex globalCliOptions', async () => {
@@ -1428,7 +1520,7 @@ describe('handleAgentCommand - --next-ready flag', () => {
     };
     readyPlan.filename = readyPlanFile;
 
-    findNextReadyDependencySpy.mockResolvedValue({
+    findNextReadyDependencyFromDbSpy.mockResolvedValue({
       plan: readyPlan,
       message: 'Found ready plan: Ready Dependency Plan (ID: 101)',
     });
@@ -1449,8 +1541,7 @@ describe('handleAgentCommand - --next-ready flag', () => {
 
     await handleAgentCommand(undefined, options, globalCliOptions);
 
-    // Verify complex global CLI options are passed through
-    expect(timAgentSpy).toHaveBeenCalledWith(readyPlanFile, options, globalCliOptions);
+    expect(timAgentSpy).toHaveBeenCalledWith('101', options, globalCliOptions);
   });
 
   test('handles plan with string ID correctly', async () => {
@@ -1467,13 +1558,8 @@ describe('handleAgentCommand - --next-ready flag', () => {
     };
     await fs.writeFile(stringIdPlanFile, yaml.stringify(stringIdPlan));
 
-    // Update the mock to handle string IDs
-    await moduleMocker.mock('../../plans.js', () => ({
-      resolvePlanFile: mock(async (planFile: string) => planFile),
-      readPlanFile: async (filePath: string) => {
-        const content = await fs.readFile(filePath, 'utf-8');
-        return yaml.parse(content) as PlanSchema;
-      },
+    await moduleMocker.mock('../../ensure_plan_in_db.js', () => ({
+      resolvePlanFromDbOrSyncFile: resolvePlanFromDbOrSyncFileSpy,
     }));
 
     const options = { nextReady: stringIdPlanFile };
@@ -1484,7 +1570,7 @@ describe('handleAgentCommand - --next-ready flag', () => {
     );
 
     // Verify findNextReadyDependency was NOT called for invalid ID
-    expect(findNextReadyDependencySpy).not.toHaveBeenCalled();
+    expect(findNextReadyDependencyFromDbSpy).not.toHaveBeenCalled();
 
     // Verify timAgent was NOT called
     expect(timAgentSpy).not.toHaveBeenCalled();
@@ -1496,7 +1582,7 @@ describe('handleAgentCommand - --next-ready flag', () => {
     };
     readyPlan.filename = readyPlanFile;
 
-    findNextReadyDependencySpy.mockResolvedValue({
+    findNextReadyDependencyFromDbSpy.mockResolvedValue({
       plan: readyPlan,
       message: 'Found ready plan: Ready Dependency Plan (ID: 101)',
     });
@@ -1514,8 +1600,7 @@ describe('handleAgentCommand - --next-ready flag', () => {
       handleAgentCommand(undefined, options, globalCliOptions)
     );
 
-    // Verify timAgent was called with the redirected plan file (not the parent)
-    expect(timAgentSpy).toHaveBeenCalledWith(readyPlanFile, options, globalCliOptions);
+    expect(timAgentSpy).toHaveBeenCalledWith('101', options, globalCliOptions);
 
     expect(structuredMessages).toContainEqual(
       expect.objectContaining({
@@ -1545,22 +1630,19 @@ describe('handleAgentCommand - headless metadata for direct plan argument', () =
 
   const timAgentSpy = mock(async () => {});
   const runWithHeadlessAdapterIfEnabledSpy = mock(async (options: any) => options.callback());
-  const resolvePlanFileSpy = mock(async (_planRef: string) => planPath);
-  const readPlanFileSpy = mock(async (filePath: string) => {
-    if (filePath !== planPath) {
-      throw new Error(`Unexpected readPlanFile path: ${filePath}`);
-    }
-
-    const content = await fs.readFile(filePath, 'utf-8');
-    return yaml.parse(content) as PlanSchema;
+  const resolvePlanFromDbOrSyncFileSpy = mock(async (_planRef: string) => {
+    const content = await fs.readFile(planPath, 'utf-8');
+    return {
+      plan: yaml.parse(content) as PlanSchema,
+      planPath,
+    };
   });
 
   beforeEach(async () => {
     moduleMocker.clear();
     timAgentSpy.mockClear();
     runWithHeadlessAdapterIfEnabledSpy.mockClear();
-    resolvePlanFileSpy.mockClear();
-    readPlanFileSpy.mockClear();
+    resolvePlanFromDbOrSyncFileSpy.mockClear();
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-agent-headless-direct-'));
     tasksDir = path.join(tempDir, 'tasks');
@@ -1586,9 +1668,8 @@ describe('handleAgentCommand - headless metadata for direct plan argument', () =
       })),
     }));
 
-    await moduleMocker.mock('../../plans.js', () => ({
-      resolvePlanFile: resolvePlanFileSpy,
-      readPlanFile: readPlanFileSpy,
+    await moduleMocker.mock('../../ensure_plan_in_db.js', () => ({
+      resolvePlanFromDbOrSyncFile: resolvePlanFromDbOrSyncFileSpy,
     }));
 
     await moduleMocker.mock('../../headless.js', () => ({
@@ -1613,8 +1694,11 @@ describe('handleAgentCommand - headless metadata for direct plan argument', () =
   test('resolves direct plan argument before constructing headless plan summary', async () => {
     await handleAgentCommand('123', {}, {});
 
-    expect(resolvePlanFileSpy).toHaveBeenCalledWith('123', undefined);
-    expect(readPlanFileSpy).toHaveBeenCalledWith(planPath);
+    expect(resolvePlanFromDbOrSyncFileSpy).toHaveBeenCalledWith(
+      '123',
+      expect.any(String),
+      expect.any(String)
+    );
 
     expect(runWithHeadlessAdapterIfEnabledSpy).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1624,7 +1708,7 @@ describe('handleAgentCommand - headless metadata for direct plan argument', () =
       })
     );
 
-    expect(timAgentSpy).toHaveBeenCalledWith(planPath, {}, {});
+    expect(timAgentSpy).toHaveBeenCalledWith('123', {}, {});
   });
 
   test('keeps headless session interactive when terminal input is disabled', async () => {
@@ -1661,9 +1745,8 @@ describe('handleAgentCommand - headless metadata for direct plan argument', () =
       })),
     }));
 
-    await moduleMocker.mock('../../plans.js', () => ({
-      resolvePlanFile: resolvePlanFileSpy,
-      readPlanFile: readPlanFileSpy,
+    await moduleMocker.mock('../../ensure_plan_in_db.js', () => ({
+      resolvePlanFromDbOrSyncFile: resolvePlanFromDbOrSyncFileSpy,
     }));
 
     await moduleMocker.mock('../../headless.js', () => ({
@@ -1747,13 +1830,27 @@ describe('timAgent - Batch Tasks Mode', () => {
   let tempDir: string;
   let batchPlanFile: string;
   let testExecutor: TestBatchExecutor;
+  let originalEnv: Partial<Record<string, string>>;
+  let workingCopyStatusCallCount: number;
 
   beforeEach(async () => {
     // Clear plan cache
     clearPlanCache();
+    workingCopyStatusCallCount = 0;
 
     // Create temporary directory
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-batch-test-'));
+    await Bun.$`git init`.cwd(tempDir).quiet();
+    await Bun.$`git remote add origin https://example.com/acme/agent-batch.git`
+      .cwd(tempDir)
+      .quiet();
+    originalEnv = {
+      XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+      APPDATA: process.env.APPDATA,
+    };
+    process.env.XDG_CONFIG_HOME = path.join(tempDir, 'config');
+    delete process.env.APPDATA;
+    closeDatabaseForTesting();
     const tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
 
@@ -1806,7 +1903,7 @@ describe('timAgent - Batch Tasks Mode', () => {
 
     // Use real writePlanFile to create proper plan file format
     const { writePlanFile } = await import('../../plans.js');
-    await writePlanFile(batchPlanFile, batchPlan);
+    await writePlanFile(batchPlanFile, batchPlan, { cwdForIdentity: tempDir });
 
     // Create test executor with default strategy
     testExecutor = new TestBatchExecutor();
@@ -1843,6 +1940,12 @@ describe('timAgent - Batch Tasks Mode', () => {
       getGitRoot: mock(async () => tempDir),
       getCurrentBranchName: mock(async () => 'feature/batch-test'),
       getTrunkBranch: mock(async () => 'main'),
+      getWorkingCopyStatus: mock(async () => ({
+        hasChanges: true,
+        diffHash: `batch-${workingCopyStatusCallCount++}`,
+        checkFailed: false,
+        output: '',
+      })),
     }));
 
     await moduleMocker.mock('../../../common/process.js', () => ({
@@ -1879,6 +1982,17 @@ describe('timAgent - Batch Tasks Mode', () => {
   afterEach(async () => {
     // Clean up mocks
     moduleMocker.clear();
+    closeDatabaseForTesting();
+    if (originalEnv.XDG_CONFIG_HOME === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalEnv.XDG_CONFIG_HOME;
+    }
+    if (originalEnv.APPDATA === undefined) {
+      delete process.env.APPDATA;
+    } else {
+      process.env.APPDATA = originalEnv.APPDATA;
+    }
 
     // Clean up temporary directory
     await fs.rm(tempDir, { recursive: true, force: true });
@@ -2011,13 +2125,27 @@ describe('timAgent - Batch Tasks Mode', () => {
 describe('timAgent - Batch Tasks Mode Integration', () => {
   let tempDir: string;
   let batchPlanFile: string;
+  let originalEnv: Partial<Record<string, string>>;
+  let workingCopyStatusCallCount: number;
 
   beforeEach(async () => {
     // Clear plan cache
     clearPlanCache();
+    workingCopyStatusCallCount = 0;
 
     // Create temporary directory
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-batch-integration-'));
+    await Bun.$`git init`.cwd(tempDir).quiet();
+    await Bun.$`git remote add origin https://example.com/acme/agent-batch-integration.git`
+      .cwd(tempDir)
+      .quiet();
+    originalEnv = {
+      XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+      APPDATA: process.env.APPDATA,
+    };
+    process.env.XDG_CONFIG_HOME = path.join(tempDir, 'config');
+    delete process.env.APPDATA;
+    closeDatabaseForTesting();
     const tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
 
@@ -2047,7 +2175,7 @@ describe('timAgent - Batch Tasks Mode Integration', () => {
 
     // Use real writePlanFile to create proper plan file format
     const { writePlanFile } = await import('../../plans.js');
-    await writePlanFile(batchPlanFile, integrationPlan);
+    await writePlanFile(batchPlanFile, integrationPlan, { cwdForIdentity: tempDir });
 
     // Mock only logging to suppress output during test
     await moduleMocker.mock('../../../logging.js', () => ({
@@ -2075,6 +2203,12 @@ describe('timAgent - Batch Tasks Mode Integration', () => {
       getGitRoot: mock(async () => tempDir), // Use actual temp directory
       getCurrentBranchName: mock(async () => 'main'),
       getTrunkBranch: mock(async () => 'main'),
+      getWorkingCopyStatus: mock(async () => ({
+        hasChanges: true,
+        diffHash: `integration-${workingCopyStatusCallCount++}`,
+        checkFailed: false,
+        output: '',
+      })),
     }));
 
     await moduleMocker.mock('../../../common/process.js', () => ({
@@ -2121,6 +2255,17 @@ describe('timAgent - Batch Tasks Mode Integration', () => {
   afterEach(async () => {
     // Clean up mocks
     moduleMocker.clear();
+    closeDatabaseForTesting();
+    if (originalEnv.XDG_CONFIG_HOME === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalEnv.XDG_CONFIG_HOME;
+    }
+    if (originalEnv.APPDATA === undefined) {
+      delete process.env.APPDATA;
+    } else {
+      process.env.APPDATA = originalEnv.APPDATA;
+    }
 
     // Clean up temporary directory
     await fs.rm(tempDir, { recursive: true, force: true });

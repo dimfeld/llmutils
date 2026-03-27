@@ -126,7 +126,12 @@ describe('handleSetTaskDoneCommand', () => {
         commit: undefined,
       },
       tempDir,
-      expect.any(Object)
+      {
+        paths: {
+          tasks: tasksDir,
+        },
+      },
+      undefined
     );
   });
 
@@ -168,7 +173,12 @@ describe('handleSetTaskDoneCommand', () => {
         commit: undefined,
       },
       tempDir,
-      expect.any(Object)
+      {
+        paths: {
+          tasks: tasksDir,
+        },
+      },
+      undefined
     );
   });
 
@@ -207,7 +217,12 @@ describe('handleSetTaskDoneCommand', () => {
         commit: true,
       },
       tempDir,
-      expect.any(Object)
+      {
+        paths: {
+          tasks: tasksDir,
+        },
+      },
+      undefined
     );
   });
 

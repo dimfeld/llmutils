@@ -5,15 +5,19 @@ import * as os from 'node:os';
 import yaml from 'yaml';
 import { markTaskDone, markStepDone } from '../../plans/mark_done.js';
 import { checkAndMarkParentDone as agentCheckAndMarkParentDone } from './parent_plans.js';
-import { clearPlanCache, readPlanFile, writePlanFile } from '../../plans.js';
+import { clearPlanCache, readPlanFile, resolvePlanFromDb, writePlanFile } from '../../plans.js';
 import type { PlanSchema, PlanSchemaInput } from '../../planSchema.js';
 import type { TimConfig } from '../../configSchema.js';
+import { closeDatabaseForTesting } from '../../db/database.js';
+import { clearPlanSyncContext } from '../../db/plan_sync.js';
 import { ModuleMocker } from '../../../testing.js';
 
 describe('Parent Plan Completion', () => {
   let tempDir: string;
   let tasksDir: string;
   let config: TimConfig;
+  let originalEnv: Partial<Record<string, string>>;
+  let originalCwd: string;
   const moduleMocker = new ModuleMocker(import.meta);
   const removeAssignmentSpy = mock(() => true);
   const getRepositoryIdentitySpy = mock(async () => ({
@@ -22,14 +26,36 @@ describe('Parent Plan Completion', () => {
     gitRoot: '',
   }));
 
+  async function writeDbBackedPlan(planPath: string, plan: PlanSchema | PlanSchemaInput) {
+    await writePlanFile(planPath, plan, {
+      cwdForIdentity: tempDir,
+    });
+  }
+
+  async function readDbPlan(planId: number): Promise<PlanSchema> {
+    return (await resolvePlanFromDb(planId, tempDir)).plan;
+  }
+
   beforeEach(async () => {
     // Clear plan cache
     clearPlanCache();
+    clearPlanSyncContext();
 
     // Create temporary directory
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-parent-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
+    await Bun.$`git init`.cwd(tempDir).quiet();
+    await Bun.$`git remote add origin https://example.com/acme/agent-test.git`.cwd(tempDir).quiet();
+    originalEnv = {
+      XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+      APPDATA: process.env.APPDATA,
+    };
+    process.env.XDG_CONFIG_HOME = path.join(tempDir, 'config');
+    delete process.env.APPDATA;
+    closeDatabaseForTesting();
+    originalCwd = process.cwd();
+    process.chdir(tempDir);
 
     config = {
       paths: {
@@ -45,12 +71,6 @@ describe('Parent Plan Completion', () => {
       gitRoot: tempDir,
     });
 
-    await moduleMocker.mock('../../db/database.js', () => ({
-      getDatabase: () => ({}) as any,
-    }));
-    await moduleMocker.mock('../../db/project.js', () => ({
-      getProject: () => ({ id: 1 }),
-    }));
     await moduleMocker.mock('../../db/assignment.js', () => ({
       removeAssignment: removeAssignmentSpy,
     }));
@@ -62,6 +82,20 @@ describe('Parent Plan Completion', () => {
 
   afterEach(async () => {
     moduleMocker.clear();
+    clearPlanCache();
+    clearPlanSyncContext();
+    closeDatabaseForTesting();
+    process.chdir(originalCwd);
+    if (originalEnv.XDG_CONFIG_HOME === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalEnv.XDG_CONFIG_HOME;
+    }
+    if (originalEnv.APPDATA === undefined) {
+      delete process.env.APPDATA;
+    } else {
+      process.env.APPDATA = originalEnv.APPDATA;
+    }
     // Clean up
     await fs.rm(tempDir, { recursive: true, force: true });
   });
@@ -79,7 +113,7 @@ describe('Parent Plan Completion', () => {
       updatedAt: new Date().toISOString(),
     };
     const parentPath = path.join(tasksDir, '1.yaml');
-    await writePlanFile(parentPath, parentPlan);
+    await writeDbBackedPlan(parentPath, parentPlan);
 
     // Create child plans
     const child1: PlanSchemaInput = {
@@ -100,7 +134,7 @@ describe('Parent Plan Completion', () => {
       updatedAt: new Date().toISOString(),
     };
     const child1Path = path.join(tasksDir, '2.yaml');
-    await writePlanFile(child1Path, child1);
+    await writeDbBackedPlan(child1Path, child1);
 
     const child2: PlanSchemaInput = {
       id: 3,
@@ -124,7 +158,7 @@ describe('Parent Plan Completion', () => {
       updatedAt: new Date().toISOString(),
     };
     const child2Path = path.join(tasksDir, '3.yaml');
-    await writePlanFile(child2Path, child2);
+    await writeDbBackedPlan(child2Path, child2);
 
     // Mark child 1 task as done (simple task without steps)
     await markTaskDone(child1Path, 0, { commit: false }, tempDir, config);
@@ -137,7 +171,7 @@ describe('Parent Plan Completion', () => {
     await markStepDone(child2Path, { steps: 2 }, { taskIndex: 0, stepIndex: 0 }, tempDir, config);
 
     // Parent should now be done
-    parent = await readPlanFile(parentPath);
+    parent = await readDbPlan(1);
     expect(parent.status).toBe('done');
     expect(parent.changedFiles).toContain('file1.ts');
     expect(parent.changedFiles).toContain('file2.ts');
@@ -156,7 +190,7 @@ describe('Parent Plan Completion', () => {
       updatedAt: new Date().toISOString(),
     };
     const parentPath = path.join(tasksDir, 'parent.yaml');
-    await writePlanFile(parentPath, parentPlan);
+    await writeDbBackedPlan(parentPath, parentPlan);
 
     const childPlan: PlanSchemaInput = {
       id: 2,
@@ -175,13 +209,13 @@ describe('Parent Plan Completion', () => {
       updatedAt: new Date().toISOString(),
     };
     const childPath = path.join(tasksDir, 'child.yaml');
-    await writePlanFile(childPath, childPlan);
+    await writeDbBackedPlan(childPath, childPlan);
 
     removeAssignmentSpy.mockClear();
 
     await agentCheckAndMarkParentDone(1, config, tempDir);
 
-    const parent = await readPlanFile(parentPath);
+    const parent = await readDbPlan(1);
     expect(parent.status).toBe('done');
 
     const removalUuids = removeAssignmentSpy.mock.calls.map((args) => args[2]);
@@ -200,7 +234,7 @@ describe('Parent Plan Completion', () => {
       updatedAt: new Date().toISOString(),
     };
     const parentPath = path.join(tasksDir, 'parent-cancelled.yaml');
-    await writePlanFile(parentPath, parentPlan);
+    await writeDbBackedPlan(parentPath, parentPlan);
 
     const doneChild: PlanSchemaInput = {
       id: 2,
@@ -212,7 +246,7 @@ describe('Parent Plan Completion', () => {
       tasks: [],
       updatedAt: new Date().toISOString(),
     };
-    await writePlanFile(path.join(tasksDir, 'done-child.yaml'), doneChild);
+    await writeDbBackedPlan(path.join(tasksDir, 'done-child.yaml'), doneChild);
 
     const cancelledChild: PlanSchemaInput = {
       id: 3,
@@ -224,13 +258,13 @@ describe('Parent Plan Completion', () => {
       tasks: [],
       updatedAt: new Date().toISOString(),
     };
-    await writePlanFile(path.join(tasksDir, 'cancelled-child.yaml'), cancelledChild);
+    await writeDbBackedPlan(path.join(tasksDir, 'cancelled-child.yaml'), cancelledChild);
 
     removeAssignmentSpy.mockClear();
 
     await agentCheckAndMarkParentDone(1, config, tempDir);
 
-    const parent = await readPlanFile(parentPath);
+    const parent = await readDbPlan(1);
     expect(parent.status).toBe('done');
 
     const removalUuids = removeAssignmentSpy.mock.calls.map((args) => args[2]);
@@ -249,7 +283,7 @@ describe('Parent Plan Completion', () => {
       updatedAt: new Date().toISOString(),
     };
     const parentPath = path.join(tasksDir, 'cancelled-parent.yaml');
-    await writePlanFile(parentPath, parentPlan);
+    await writeDbBackedPlan(parentPath, parentPlan);
 
     const doneChild: PlanSchemaInput = {
       id: 2,
@@ -261,7 +295,7 @@ describe('Parent Plan Completion', () => {
       tasks: [],
       updatedAt: new Date().toISOString(),
     };
-    await writePlanFile(path.join(tasksDir, 'done-child-cancelled-parent.yaml'), doneChild);
+    await writeDbBackedPlan(path.join(tasksDir, 'done-child-cancelled-parent.yaml'), doneChild);
 
     const cancelledChild: PlanSchemaInput = {
       id: 3,
@@ -273,7 +307,7 @@ describe('Parent Plan Completion', () => {
       tasks: [],
       updatedAt: new Date().toISOString(),
     };
-    await writePlanFile(
+    await writeDbBackedPlan(
       path.join(tasksDir, 'cancelled-child-cancelled-parent.yaml'),
       cancelledChild
     );
@@ -282,7 +316,7 @@ describe('Parent Plan Completion', () => {
 
     await agentCheckAndMarkParentDone(1, config, tempDir);
 
-    const parent = await readPlanFile(parentPath);
+    const parent = await readDbPlan(1);
     expect(parent.status).toBe('cancelled');
     expect(removeAssignmentSpy).not.toHaveBeenCalled();
   });
@@ -299,7 +333,7 @@ describe('Parent Plan Completion', () => {
       updatedAt: new Date().toISOString(),
     };
     const parentPath = path.join(tasksDir, '1.yaml');
-    await writePlanFile(parentPath, parentPlan);
+    await writeDbBackedPlan(parentPath, parentPlan);
 
     const childPlan: PlanSchemaInput = {
       id: 2,
@@ -318,11 +352,11 @@ describe('Parent Plan Completion', () => {
       updatedAt: new Date().toISOString(),
     };
     const childPath = path.join(tasksDir, '2.yaml');
-    await writePlanFile(childPath, childPlan);
+    await writeDbBackedPlan(childPath, childPlan);
 
     await markTaskDone(childPath, 0, { commit: false }, tempDir, config);
 
-    const parent = await readPlanFile(parentPath);
+    const parent = await readDbPlan(1);
     expect(parent.status).toBe('in_progress');
   });
 
@@ -339,7 +373,7 @@ describe('Parent Plan Completion', () => {
       updatedAt: new Date().toISOString(),
     };
     const grandparentPath = path.join(tasksDir, '1.yaml');
-    await writePlanFile(grandparentPath, grandparentPlan);
+    await writeDbBackedPlan(grandparentPath, grandparentPlan);
 
     // Create parent plan
     const parentPlan: PlanSchema = {
@@ -354,7 +388,7 @@ describe('Parent Plan Completion', () => {
       updatedAt: new Date().toISOString(),
     };
     const parentPath = path.join(tasksDir, '2.yaml');
-    await writePlanFile(parentPath, parentPlan);
+    await writeDbBackedPlan(parentPath, parentPlan);
 
     // Create child plan
     const childPlan: PlanSchemaInput = {
@@ -375,16 +409,16 @@ describe('Parent Plan Completion', () => {
       updatedAt: new Date().toISOString(),
     };
     const childPath = path.join(tasksDir, '3.yaml');
-    await writePlanFile(childPath, childPlan);
+    await writeDbBackedPlan(childPath, childPlan);
 
     // Mark child task as done
     await markTaskDone(childPath, 0, { commit: false }, tempDir, config);
 
     // Both parent and grandparent should be done
-    const parent = await readPlanFile(parentPath);
+    const parent = await readDbPlan(2);
     expect(parent.status).toBe('done');
 
-    const grandparent = await readPlanFile(grandparentPath);
+    const grandparent = await readDbPlan(1);
     expect(grandparent.status).toBe('done');
     expect(grandparent.changedFiles).toContain('file1.ts');
   });
@@ -402,7 +436,7 @@ describe('Parent Plan Completion', () => {
       updatedAt: new Date().toISOString(),
     };
     const parentPath = path.join(tasksDir, '1.yaml');
-    await writePlanFile(parentPath, parentPlan);
+    await writeDbBackedPlan(parentPath, parentPlan);
 
     // Create two child plans
     const child1: PlanSchemaInput = {
@@ -422,7 +456,7 @@ describe('Parent Plan Completion', () => {
       updatedAt: new Date().toISOString(),
     };
     const child1Path = path.join(tasksDir, '2.yaml');
-    await writePlanFile(child1Path, child1);
+    await writeDbBackedPlan(child1Path, child1);
 
     const child2: PlanSchemaInput = {
       id: 3,
@@ -441,7 +475,7 @@ describe('Parent Plan Completion', () => {
       updatedAt: new Date().toISOString(),
     };
     const child2Path = path.join(tasksDir, '3.yaml');
-    await writePlanFile(child2Path, child2);
+    await writeDbBackedPlan(child2Path, child2);
 
     // Mark only child 1 as done
     await markTaskDone(child1Path, 0, { commit: false }, tempDir, config);

@@ -1,8 +1,9 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
+import path from 'node:path';
 import { log, warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { readPlanFile, resolvePlanFile, writePlanFile } from '../plans.js';
+import { readPlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import {
   buildExecutorAndLog,
@@ -13,6 +14,9 @@ import type { Executor, ExecutorOutput } from '../executors/types.js';
 import type { TimConfig } from '../configSchema.js';
 import { getGitRoot } from '../../common/git.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
+import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { materializePlan, withPlanAutoSync } from '../plan_materialize.js';
 
 const COMPLETED_STATUSES = new Set(['done', 'cancelled', 'deferred']);
 const DEFAULT_MINIMUM_AGE_DAYS = 30;
@@ -84,8 +88,15 @@ export async function handleCompactCommand(
 
   for (const planArg of planArgs) {
     try {
-      const resolvedPlanFile = await resolvePlanFile(planArg, globalOptions.config);
-      const plan = await readPlanFile(resolvedPlanFile);
+      const repoRoot = await resolveRepoRootForPlanArg(
+        planArg,
+        gitRoot || process.cwd(),
+        globalOptions.config
+      );
+      const resolvedPlan = await resolvePlanFromDbOrSyncFile(planArg, repoRoot, repoRoot);
+      const planFilePath =
+        resolvedPlan.planPath ?? (await materializePlan(resolvedPlan.plan.id, repoRoot));
+      const plan = resolvedPlan.plan;
 
       if (!COMPLETED_STATUSES.has(plan.status)) {
         warn(
@@ -114,7 +125,7 @@ export async function handleCompactCommand(
 
       plansToCompact.push({
         planArg,
-        planFilePath: resolvedPlanFile,
+        planFilePath,
         plan,
       });
     } catch (err) {
@@ -181,32 +192,49 @@ export async function handleCompactCommand(
 
 export async function compactPlan(args: CompactPlanArgs): Promise<void> {
   const { plan, executor, config, planFilePath, minimumAgeDays } = args;
+  const planDir = path.dirname(planFilePath);
+  const detectedGitRoot = await getGitRoot(planDir);
+  const repoRoot =
+    detectedGitRoot && planFilePath.startsWith(`${detectedGitRoot}${path.sep}`)
+      ? detectedGitRoot
+      : planDir;
 
-  const originalFileContent = await Bun.file(planFilePath).text();
-  const sectionToggles = config.compaction?.sections ?? {};
+  await withPlanAutoSync(plan.id, repoRoot, async () => {
+    let workingPlanPath = planFilePath;
+    let workingPlan = plan;
 
-  // Capture the original updatedAt timestamp before compaction
-  const originalUpdatedAt = plan.updatedAt;
+    const resolvedPlan = await resolvePlanFromDbOrSyncFile(
+      plan.uuid ?? String(plan.id),
+      repoRoot,
+      repoRoot
+    );
+    workingPlan = resolvedPlan.plan;
+    workingPlanPath =
+      resolvedPlan.planPath ?? (await materializePlan(resolvedPlan.plan.id, repoRoot));
 
-  const prompt = generateCompactionPrompt(
-    plan,
-    planFilePath,
-    originalFileContent,
-    minimumAgeDays,
-    sectionToggles
-  );
+    const originalFileContent = await Bun.file(workingPlanPath).text();
+    const sectionToggles = config.compaction?.sections ?? {};
+    const originalUpdatedAt = workingPlan.updatedAt;
 
-  await runCompactionPrompt(executor, prompt, plan, planFilePath);
+    const prompt = generateCompactionPrompt(
+      workingPlan,
+      workingPlanPath,
+      originalFileContent,
+      minimumAgeDays,
+      sectionToggles
+    );
 
-  // Read the plan after compaction to update timestamps
-  const compactedPlan = await readPlanFile(planFilePath);
+    await runCompactionPrompt(executor, prompt, workingPlan, workingPlanPath);
 
-  // Preserve the original updatedAt and set compactedAt
-  compactedPlan.updatedAt = originalUpdatedAt;
-  compactedPlan.compactedAt = new Date().toISOString();
+    const compactedPlan = await readPlanFile(workingPlanPath);
+    compactedPlan.updatedAt = originalUpdatedAt;
+    compactedPlan.compactedAt = new Date().toISOString();
 
-  // Write back with skipUpdatedAt flag to preserve our timestamp
-  await writePlanFile(planFilePath, compactedPlan, { skipUpdatedAt: true });
+    await writePlanFile(workingPlanPath, compactedPlan, {
+      skipUpdatedAt: true,
+      cwdForIdentity: repoRoot,
+    });
+  });
 }
 
 export function generateCompactionPrompt(

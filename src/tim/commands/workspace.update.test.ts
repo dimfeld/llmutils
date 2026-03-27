@@ -558,24 +558,20 @@ Authentication implementation plan
     const planFile = path.join(tasksDir, '789-implement-auth.plan.md');
     await fs.writeFile(planFile, planContent);
 
-    // Re-mock to include plan resolution
-    await moduleMocker.mock('../plans.js', () => ({
-      resolvePlanFile: async (identifier: string) => {
-        if (identifier === '789') {
-          return planFile;
+    await moduleMocker.mock('../ensure_plan_in_db.js', () => ({
+      resolvePlanFromDbOrSyncFile: async (identifier: string) => {
+        if (identifier !== '789') {
+          throw new Error(`Plan not found: ${identifier}`);
         }
-        throw new Error(`Plan not found: ${identifier}`);
-      },
-      readPlanFile: async (filePath: string) => {
-        if (filePath === planFile) {
-          return {
+        return {
+          plan: {
             id: 789,
             title: 'Implement Authentication',
             goal: 'Add OAuth2 support',
             issue: ['https://github.com/example/repo/issues/789'],
-          };
-        }
-        throw new Error(`Plan file not found: ${filePath}`);
+          },
+          planPath: planFile,
+        };
       },
     }));
 
@@ -615,11 +611,13 @@ Authentication implementation plan
     const planFile = path.join(tasksDir, 'no-id.plan.md');
     await fs.writeFile(planFile, '---\ntitle: Maintenance\n---\n');
 
-    await moduleMocker.mock('../plans.js', () => ({
-      resolvePlanFile: async () => planFile,
-      readPlanFile: async () => ({
-        title: 'Maintenance',
-        issue: [],
+    await moduleMocker.mock('../ensure_plan_in_db.js', () => ({
+      resolvePlanFromDbOrSyncFile: async () => ({
+        plan: {
+          title: 'Maintenance',
+          issue: [],
+        },
+        planPath: planFile,
       }),
     }));
 
@@ -687,9 +685,11 @@ describe('extractIssueNumber helper', () => {
       getUserIdentity: () => 'tester',
     }));
 
-    await localModuleMocker.mock('../plans.js', () => ({
-      resolvePlanFile: async () => '/fake/plan.md',
-      readPlanFile: async () => plan,
+    await localModuleMocker.mock('../ensure_plan_in_db.js', () => ({
+      resolvePlanFromDbOrSyncFile: async () => ({
+        plan,
+        planPath: '/fake/plan.md',
+      }),
     }));
 
     const { handleWorkspaceUpdateCommand } = await import('./workspace.js');

@@ -2,8 +2,9 @@ import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import * as yaml from 'yaml';
 import { ModuleMocker } from '../../testing.js';
-import { clearPlanCache, writePlanFile } from '../plans.js';
+import { clearPlanCache } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import {
   getImplementerPrompt,
@@ -13,6 +14,25 @@ import {
 } from '../executors/claude_code/agent_prompts.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
+
+async function writePlanFixture(planFilePath: string, plan: PlanSchema): Promise<void> {
+  const { details, ...planWithoutDetails } = plan;
+  const yamlContent = yaml.stringify(planWithoutDetails);
+  let fullContent = '---\n';
+  fullContent +=
+    '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json\n';
+  fullContent += yamlContent;
+  fullContent += '---\n';
+
+  if (details) {
+    fullContent += `\n${details}`;
+    if (!details.endsWith('\n')) {
+      fullContent += '\n';
+    }
+  }
+
+  await fs.writeFile(planFilePath, fullContent, 'utf8');
+}
 
 function createStreamingProcessMock(overrides?: {
   exitCode?: number;
@@ -75,6 +95,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
   let capturedCodexPrompt: string | undefined;
   let capturedCodexOptions: Record<string, unknown> | undefined;
   let capturedClaudeSpawnArgs: string[] | undefined;
+  let currentPlanData: PlanSchema;
 
   // Spy on Bun.write to capture final output (source uses Bun.write(Bun.stdout, ...))
   let stdoutWriteCalls: string[] = [];
@@ -113,6 +134,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
     stdoutWriteCalls = [];
     agentInstructionRequests = [];
     customInstructionsMap = {};
+    currentPlanData = structuredClone(basePlan);
     restoreBunStdin = null;
     restoreIsTTY = null;
 
@@ -121,7 +143,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
     await fs.mkdir(tasksDir, { recursive: true });
 
     planFilePath = path.join(tasksDir, '42-test-plan.plan.md');
-    await writePlanFile(planFilePath, basePlan);
+    await writePlanFixture(planFilePath, basePlan);
 
     // Capture Bun.write(Bun.stdout, ...) calls
     originalBunWrite = Bun.write;
@@ -158,6 +180,13 @@ describe('subagent command - prompt construction and executor delegation', () =>
     // Mock git root
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../ensure_plan_in_db.js', () => ({
+      resolvePlanFromDbOrSyncFile: mock(async () => ({
+        plan: currentPlanData,
+        planPath: planFilePath,
+      })),
     }));
 
     // Mock prompt_builder to return a controlled context string.
@@ -639,7 +668,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
         },
       ],
     };
-    await writePlanFile(planFilePath, donePlan);
+    currentPlanData = structuredClone(donePlan);
     clearPlanCache();
 
     const { handleSubagentCommand } = await import('./subagent.js');
@@ -1189,6 +1218,7 @@ describe('subagent command - permissions MCP integration', () => {
   let tasksDir: string;
   let planFilePath: string;
   let capturedPermissionsMcpSetupOptions: any;
+  let currentPlanData: PlanSchema;
 
   let capturedClaudeSpawnArgs: string[] | undefined;
   let stdoutWriteCalls: string[] = [];
@@ -1215,13 +1245,14 @@ describe('subagent command - permissions MCP integration', () => {
     capturedClaudeSpawnArgs = undefined;
     capturedPermissionsMcpSetupOptions = undefined;
     stdoutWriteCalls = [];
+    currentPlanData = structuredClone(basePlan);
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-subagent-mcp-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
 
     planFilePath = path.join(tasksDir, '42-test-plan.plan.md');
-    await writePlanFile(planFilePath, basePlan);
+    await writePlanFixture(planFilePath, basePlan);
 
     originalBunWrite = Bun.write;
     Bun.write = (async (dest: any, data: any) => {
@@ -1245,6 +1276,13 @@ describe('subagent command - permissions MCP integration', () => {
 
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../ensure_plan_in_db.js', () => ({
+      resolvePlanFromDbOrSyncFile: mock(async () => ({
+        plan: currentPlanData,
+        planPath: planFilePath,
+      })),
     }));
 
     await moduleMocker.mock('../prompt_builder.js', () => ({
@@ -1543,6 +1581,7 @@ describe('subagent command - executeWithClaude error scenarios', () => {
   let stdoutWriteCalls: string[] = [];
   let originalBunWrite: typeof Bun.write;
   let originalConsoleLog: typeof console.log;
+  let currentPlanData: PlanSchema;
 
   const basePlan: PlanSchema = {
     id: 42,
@@ -1562,13 +1601,14 @@ describe('subagent command - executeWithClaude error scenarios', () => {
   beforeEach(async () => {
     clearPlanCache();
     stdoutWriteCalls = [];
+    currentPlanData = structuredClone(basePlan);
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-subagent-err-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
 
     planFilePath = path.join(tasksDir, '42-test-plan.plan.md');
-    await writePlanFile(planFilePath, basePlan);
+    await writePlanFixture(planFilePath, basePlan);
 
     originalBunWrite = Bun.write;
     Bun.write = (async (dest: any, data: any) => {
@@ -1601,6 +1641,13 @@ describe('subagent command - executeWithClaude error scenarios', () => {
 
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../ensure_plan_in_db.js', () => ({
+      resolvePlanFromDbOrSyncFile: mock(async () => ({
+        plan: currentPlanData,
+        planPath: planFilePath,
+      })),
     }));
 
     await moduleMocker.mock('../prompt_builder.js', () => ({
@@ -1849,6 +1896,7 @@ describe('subagent command - tunnel behavior', () => {
   let createTunnelServerCalls: string[] = [];
   let createTunnelServerOptions: any[] = [];
   let tunnelCloseCallCount = 0;
+  let currentPlanData: PlanSchema;
 
   const basePlan: PlanSchema = {
     id: 42,
@@ -1889,6 +1937,13 @@ describe('subagent command - tunnel behavior', () => {
 
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: mock(async () => tempDir),
+    }));
+
+    await moduleMocker.mock('../ensure_plan_in_db.js', () => ({
+      resolvePlanFromDbOrSyncFile: mock(async () => ({
+        plan: currentPlanData,
+        planPath: planFilePath,
+      })),
     }));
 
     await moduleMocker.mock('../prompt_builder.js', () => ({
@@ -1988,13 +2043,14 @@ describe('subagent command - tunnel behavior', () => {
   beforeEach(async () => {
     clearPlanCache();
     stdoutWriteCalls = [];
+    currentPlanData = structuredClone(basePlan);
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-subagent-tunnel-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
 
     planFilePath = path.join(tasksDir, '42-test-plan.plan.md');
-    await writePlanFile(planFilePath, basePlan);
+    await writePlanFixture(planFilePath, basePlan);
 
     originalBunWrite = Bun.write;
     Bun.write = (async (dest: any, data: any) => {
@@ -2067,71 +2123,7 @@ describe('subagent command - tunnel behavior', () => {
   });
 
   test('calls tunnel server close on cleanup even after execution failure', async () => {
-    createTunnelServerCalls = [];
-    tunnelCloseCallCount = 0;
-    capturedSpawnEnv = undefined;
-
-    // Set up all mocks except the process mock, which we customize for failure
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: mock(() => {}),
-      error: mock(() => {}),
-      warn: mock(() => {}),
-      debugLog: mock(() => {}),
-    }));
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: mock(async () => ({
-        paths: { tasks: tasksDir },
-        models: {},
-        executors: {},
-        agents: {},
-      })),
-    }));
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: mock(async () => tempDir),
-    }));
-    await moduleMocker.mock('../prompt_builder.js', () => ({
-      buildExecutionPromptWithoutSteps: mock(async () => 'Mock context'),
-    }));
-    await moduleMocker.mock('../../logging/tunnel_client.js', () => ({
-      isTunnelActive: mock(() => false),
-    }));
-    await moduleMocker.mock('../../logging/tunnel_server.js', () => ({
-      createTunnelServer: mock(async (socketPath: string) => {
-        createTunnelServerCalls.push(socketPath);
-        return {
-          close: mock(() => {
-            tunnelCloseCallCount++;
-          }),
-        };
-      }),
-    }));
-    await moduleMocker.mock('../executors/codex_cli/codex_runner.js', () => ({
-      executeCodexStep: mock(async () => 'Codex done.'),
-    }));
-    await moduleMocker.mock('../executors/codex_cli/agent_helpers.js', () => ({
-      loadAgentInstructionsFor: mock(async () => undefined),
-    }));
-    await moduleMocker.mock('../db/database.js', () => ({
-      getDatabase: mock(() => ({}) as any),
-    }));
-    await moduleMocker.mock('../db/project.js', () => ({
-      getOrCreateProject: mock(() => ({ id: 1 })),
-    }));
-    await moduleMocker.mock('../db/permission.js', () => ({
-      getPermissions: mock(() => ({ allow: [], deny: [] })),
-      addPermission: mock(() => true),
-    }));
-    await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
-      getRepositoryIdentity: mock(async () => ({ repositoryId: 'test-repo' })),
-    }));
-    await moduleMocker.mock('../executors/claude_code/permissions_mcp_setup.js', () => ({
-      setupPermissionsMcp: mock(async () => ({
-        mcpConfigFile: '/tmp/mock-mcp-config.json',
-        tempDir: '/tmp/mock-mcp-dir',
-        socketServer: { close: mock(() => {}) },
-        cleanup: mock(async () => {}),
-      })),
-    }));
+    await setupCommonMocks(false);
     await moduleMocker.mock('../executors/claude_code/format.js', () => ({
       extractStructuredMessages: mock(() => []),
       formatJsonMessage: mock(() => ({ type: 'unknown' })),

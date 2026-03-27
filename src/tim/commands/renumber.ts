@@ -3,15 +3,28 @@ import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'yaml';
 import { getDatabase } from '../db/database.js';
+import {
+  getPlanByUuid,
+  getPlanDependenciesByUuid,
+  getPlansByProject,
+  getPlanTagsByUuid,
+  getPlanTasksByUuid,
+  upsertPlanInTransaction,
+  type UpsertPlanInput,
+} from '../db/plan.js';
+import { getOrCreateProject, getProject } from '../db/project.js';
 import { reserveNextPlanId } from '../db/project.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { NoFrontmatterError, readAllPlans, readPlanFile, writePlanFile } from '../plans.js';
+import { NoFrontmatterError, readPlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { getCurrentBranchName, getChangedFilesOnBranch } from '../../common/git.js';
+import { getMaterializedPlanPath, materializePlan } from '../plan_materialize.js';
 import { resolvePlanPathContext } from '../path_resolver.js';
 import { debugLog, log } from '../../logging.js';
 import { ensureReferences } from '../utils/references.js';
+import { invertPlanIdToUuidMap, loadPlansFromDb, planRowForTransaction } from '../plans_db.js';
+import { toPlanUpsertInput } from '../db/plan_sync.js';
 
 /**
  * Validates that a file path is safe and doesn't contain path traversal attacks.
@@ -72,6 +85,318 @@ interface RenumberCommand {
 
 // Constants for trunk branch names
 const TRUNK_BRANCHES = ['main', 'master'] as const;
+
+async function loadPlansForRenumbering(
+  tasksDirectory: string,
+  repositoryId: string
+): Promise<{
+  allPlans: Map<string, Record<string, any>>;
+  planFiles: string[];
+  maxNumericId: number;
+}> {
+  const allPlans = new Map<string, Record<string, any>>();
+  const planFiles: string[] = [];
+  let maxNumericId = 0;
+
+  const db = getDatabase();
+  const project = getProject(db, repositoryId);
+  if (!project) {
+    return { allPlans, planFiles, maxNumericId };
+  }
+
+  const rows = getPlansByProject(db, project.id);
+  const idToUuid = new Map<number, string>();
+  for (const row of rows) {
+    if (!idToUuid.has(row.plan_id)) {
+      idToUuid.set(row.plan_id, row.uuid);
+    }
+  }
+  const uuidToPlanId = invertPlanIdToUuidMap(idToUuid);
+
+  for (const row of rows) {
+    const absoluteFilename = path.join(tasksDirectory, row.filename);
+    const fileExists = fs.existsSync(absoluteFilename);
+    let plan = planRowForTransaction(row, uuidToPlanId);
+    if (fileExists) {
+      try {
+        const filePlan = await readPlanFile(absoluteFilename);
+        if (!filePlan.not_tim) {
+          plan = {
+            ...plan,
+            ...filePlan,
+            uuid: filePlan.uuid ?? plan.uuid,
+          };
+        }
+      } catch (error) {
+        if (!(error instanceof NoFrontmatterError)) {
+          debugLog(`Using DB copy for invalid plan file: ${absoluteFilename}`);
+        }
+      }
+    }
+    maxNumericId = Math.max(maxNumericId, row.plan_id);
+    allPlans.set(absoluteFilename, structuredClone({ ...plan, filename: absoluteFilename }));
+    if (fileExists) {
+      planFiles.push(absoluteFilename);
+    }
+  }
+
+  return { allPlans, planFiles, maxNumericId };
+}
+
+interface PlannedFileOperation {
+  originalPath: string;
+  newPath: string;
+  plan: PlanSchema;
+  needsRename: boolean;
+  writeFile: boolean;
+}
+
+interface MaterializedPlanRefresh {
+  oldId: number;
+  newId: number;
+  hadMaterializedFile: boolean;
+}
+
+function applyRenumberDbState(
+  repositoryId: string,
+  plans: Iterable<readonly [string, Record<string, any>]>,
+  dbFilenames: Map<string, string>
+): void {
+  const db = getDatabase();
+  const project = getOrCreateProject(db, repositoryId);
+  const planEntries = Array.from(
+    plans,
+    ([filePath, plan]) => [filePath, plan as PlanSchema] as const
+  );
+
+  // Build idToUuid from ALL plans in the project, not just the changed set.
+  // This ensures parent/dependency UUIDs pointing to unchanged plans are resolved.
+  const allProjectPlans = getPlansByProject(db, project.id);
+  const idToUuid = new Map<number, string>();
+  for (const row of allProjectPlans) {
+    idToUuid.set(row.plan_id, row.uuid);
+  }
+  // Overlay changed plans (which may have new IDs)
+  for (const [, plan] of planEntries) {
+    if (typeof plan.id === 'number' && plan.uuid) {
+      idToUuid.set(plan.id, plan.uuid);
+    }
+  }
+
+  const applyTransaction = db.transaction(() => {
+    for (const [filePath, plan] of planEntries) {
+      const filename = dbFilenames.get(filePath) ?? path.basename(filePath);
+      upsertPlanInTransaction(db, project.id, {
+        ...toPlanUpsertInput(plan, filename, idToUuid),
+        forceOverwrite: true,
+      });
+    }
+  });
+
+  applyTransaction.immediate();
+}
+
+function snapshotOriginalDbState(
+  repositoryId: string,
+  plans: Iterable<readonly [string, Record<string, any>]>
+): UpsertPlanInput[] {
+  const db = getDatabase();
+  const project = getProject(db, repositoryId);
+  if (!project) {
+    throw new Error(`Project ${repositoryId} was not found in the database`);
+  }
+
+  const snapshots: UpsertPlanInput[] = [];
+  const seenUuids = new Set<string>();
+
+  for (const [, plan] of plans) {
+    if (!plan.uuid || seenUuids.has(plan.uuid)) {
+      continue;
+    }
+    seenUuids.add(plan.uuid);
+
+    const row = getPlanByUuid(db, plan.uuid);
+    if (!row || row.project_id !== project.id) {
+      throw new Error(`Unable to snapshot original DB state for plan ${plan.uuid}`);
+    }
+
+    snapshots.push({
+      uuid: row.uuid,
+      planId: row.plan_id,
+      title: row.title,
+      goal: row.goal,
+      details: row.details,
+      sourceCreatedAt: row.created_at,
+      sourceUpdatedAt: row.updated_at,
+      status: row.status,
+      priority: row.priority,
+      branch: row.branch,
+      simple: row.simple === null ? null : row.simple === 1,
+      tdd: row.tdd === null ? null : row.tdd === 1,
+      discoveredFrom: row.discovered_from,
+      issue: row.issue ? JSON.parse(row.issue) : null,
+      pullRequest: row.pull_request ? JSON.parse(row.pull_request) : null,
+      assignedTo: row.assigned_to,
+      baseBranch: row.base_branch,
+      temp: row.temp === null ? null : row.temp === 1,
+      docs: row.docs ? JSON.parse(row.docs) : null,
+      changedFiles: row.changed_files ? JSON.parse(row.changed_files) : null,
+      planGeneratedAt: row.plan_generated_at,
+      reviewIssues: row.review_issues ? JSON.parse(row.review_issues) : null,
+      parentUuid: row.parent_uuid,
+      epic: row.epic === 1,
+      filename: row.filename,
+      tasks: getPlanTasksByUuid(db, row.uuid).map((task) => ({
+        title: task.title,
+        description: task.description,
+        done: task.done === 1,
+      })),
+      dependencyUuids: getPlanDependenciesByUuid(db, row.uuid).map(
+        (dependency) => dependency.depends_on_uuid
+      ),
+      tags: getPlanTagsByUuid(db, row.uuid).map((tag) => tag.tag),
+      forceOverwrite: true,
+    });
+  }
+
+  return snapshots;
+}
+
+function restoreOriginalDbState(repositoryId: string, snapshots: readonly UpsertPlanInput[]): void {
+  const db = getDatabase();
+  const project = getOrCreateProject(db, repositoryId);
+  const restoreTransaction = db.transaction(() => {
+    for (const snapshot of snapshots) {
+      upsertPlanInTransaction(db, project.id, { ...snapshot, forceOverwrite: true });
+    }
+  });
+  restoreTransaction.immediate();
+}
+
+function collectMaterializedPlanRefreshes(
+  repoRoot: string,
+  originalPlans: Iterable<readonly [string, Record<string, any>]>,
+  changedPlans: Iterable<readonly [string, Record<string, any>]>
+): MaterializedPlanRefresh[] {
+  const originalIdsByPath = new Map<string, number>();
+  for (const [filePath, plan] of originalPlans) {
+    if (typeof plan.id === 'number') {
+      originalIdsByPath.set(filePath, plan.id);
+    }
+  }
+
+  const refreshes: MaterializedPlanRefresh[] = [];
+  const seen = new Set<string>();
+  for (const [filePath, plan] of changedPlans) {
+    const oldId = originalIdsByPath.get(filePath);
+    if (oldId === undefined || typeof plan.id !== 'number' || oldId === plan.id) {
+      continue;
+    }
+
+    const key = `${oldId}->${plan.id}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+
+    refreshes.push({
+      oldId,
+      newId: plan.id,
+      hadMaterializedFile: fs.existsSync(getMaterializedPlanPath(repoRoot, oldId)),
+    });
+  }
+
+  return refreshes;
+}
+
+async function refreshMaterializedPlanFiles(
+  repoRoot: string,
+  refreshes: readonly MaterializedPlanRefresh[]
+): Promise<void> {
+  const oldPathsToDelete = new Set<string>();
+  const newPlanIdsToMaterialize = new Set<number>();
+
+  for (const refresh of refreshes) {
+    if (!refresh.hadMaterializedFile) {
+      continue;
+    }
+    oldPathsToDelete.add(getMaterializedPlanPath(repoRoot, refresh.oldId));
+    newPlanIdsToMaterialize.add(refresh.newId);
+  }
+
+  for (const oldPath of oldPathsToDelete) {
+    if (fs.existsSync(oldPath)) {
+      await fs.promises.unlink(oldPath);
+    }
+  }
+
+  for (const planId of newPlanIdsToMaterialize) {
+    await materializePlan(planId, repoRoot);
+  }
+}
+
+async function applyRenumberFileOperations(fileOperations: PlannedFileOperation[]): Promise<void> {
+  const completedOperations: { originalPath: string; newPath: string; backupPath?: string }[] = [];
+
+  try {
+    for (const operation of fileOperations) {
+      if (!operation.writeFile) {
+        continue;
+      }
+
+      const targetDir = path.dirname(operation.newPath);
+      await fs.promises.mkdir(targetDir, { recursive: true });
+
+      let backupPath: string | undefined;
+      if (fs.existsSync(operation.originalPath)) {
+        backupPath = `${operation.originalPath}.backup.${Date.now()}`;
+        await fs.promises.copyFile(operation.originalPath, backupPath);
+      }
+
+      await writePlanFile(operation.newPath, operation.plan, {
+        skipDb: true,
+        skipUpdatedAt: true,
+      });
+
+      if (operation.needsRename && operation.originalPath !== operation.newPath) {
+        await fs.promises.unlink(operation.originalPath);
+      }
+
+      completedOperations.push({
+        originalPath: operation.originalPath,
+        newPath: operation.newPath,
+        backupPath,
+      });
+    }
+
+    for (const completed of completedOperations) {
+      if (completed.backupPath && fs.existsSync(completed.backupPath)) {
+        await fs.promises.unlink(completed.backupPath);
+      }
+    }
+  } catch (error) {
+    log('\nError during file operations, attempting rollback...');
+
+    for (const completed of completedOperations.reverse()) {
+      try {
+        if (completed.backupPath && fs.existsSync(completed.backupPath)) {
+          await fs.promises.copyFile(completed.backupPath, completed.originalPath);
+          await fs.promises.unlink(completed.backupPath);
+        }
+
+        if (completed.newPath !== completed.originalPath && fs.existsSync(completed.newPath)) {
+          await fs.promises.unlink(completed.newPath);
+        }
+      } catch (rollbackError) {
+        log(
+          `Warning: Failed to rollback operation for ${completed.originalPath}: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`
+        );
+      }
+    }
+
+    throw error;
+  }
+}
 
 // Helper functions for hierarchical renumbering
 
@@ -213,25 +538,13 @@ function ensureReferencesForAllPlans(
   let updatedCount = 0;
   for (const [filePath, plan] of allPlans) {
     const originalReferences = plan.references;
-    const { updatedPlan, plansWithGeneratedUuids } = ensureReferences(
-      plan as PlanSchema,
-      plansByIdMap
-    );
+    const { updatedPlan } = ensureReferences(plan as PlanSchema, plansByIdMap);
 
     allPlans.set(filePath, updatedPlan);
 
     if (!Bun.deepEquals(originalReferences, updatedPlan.references)) {
       plansToWrite.add(filePath);
       updatedCount++;
-    }
-
-    for (const { id } of plansWithGeneratedUuids) {
-      for (const [fp, p] of allPlans) {
-        if (p.id === id) {
-          plansToWrite.add(fp);
-          break;
-        }
-      }
     }
   }
 
@@ -822,7 +1135,8 @@ export function reassignFamilyIds(
 async function handleSwapOrRenumber(
   options: RenumberOptions,
   tasksDirectory: string,
-  gitRoot: string
+  gitRoot: string,
+  repositoryId: string
 ): Promise<void> {
   const fromId = options.from!;
   const toId = options.to!;
@@ -830,31 +1144,10 @@ async function handleSwapOrRenumber(
   log(`Checking plans for swap/renumber operation: ${fromId} → ${toId}`);
 
   // Read all plans to build UUID maps
-  const allPlans = new Map<string, Record<string, any>>();
-  const filesInDir = await fs.promises.readdir(tasksDirectory, { recursive: true });
-  const planFiles = filesInDir.filter(
-    (f) =>
-      typeof f === 'string' && (f.endsWith('.plan.md') || f.endsWith('.yml') || f.endsWith('.yaml'))
+  const { allPlans } = await loadPlansForRenumbering(tasksDirectory, repositoryId);
+  const originalPlans = new Map(
+    Array.from(allPlans.entries(), ([filePath, plan]) => [filePath, structuredClone(plan)])
   );
-
-  for (const file of planFiles) {
-    const filePath = path.join(tasksDirectory, file);
-    try {
-      const plan = await readPlanFile(filePath);
-      if (plan.not_tim) {
-        debugLog(`Skipping plan marked with not_tim: ${filePath}`);
-        continue;
-      }
-      allPlans.set(filePath, plan);
-    } catch (e) {
-      if (e instanceof NoFrontmatterError) {
-        debugLog(`Skipping file without frontmatter: ${filePath}`);
-        continue;
-      }
-      // Skip invalid files
-      debugLog(`Skipping invalid plan file: ${filePath}`);
-    }
-  }
 
   // Find plans by ID
   let fromPlan: { filePath: string; plan: Record<string, any> } | undefined;
@@ -901,25 +1194,12 @@ async function handleSwapOrRenumber(
   // Ensure references are tracked before renumbering
   for (const [filePath, plan] of allPlans) {
     const originalRefs = normalizeRefs(plan.references);
-    const { updatedPlan, plansWithGeneratedUuids } = ensureReferences(
-      plan as PlanSchema,
-      plansByIdMap
-    );
+    const { updatedPlan } = ensureReferences(plan as PlanSchema, plansByIdMap);
     allPlans.set(filePath, updatedPlan);
 
     const updatedRefs = normalizeRefs(updatedPlan.references);
     if (!Bun.deepEquals(originalRefs, updatedRefs)) {
       plansToWrite.add(filePath);
-    }
-
-    // Track plans that had UUIDs generated for them
-    for (const { id } of plansWithGeneratedUuids) {
-      for (const [fp, p] of allPlans) {
-        if (p.id === id) {
-          plansToWrite.add(fp);
-          break;
-        }
-      }
     }
   }
 
@@ -1003,12 +1283,8 @@ async function handleSwapOrRenumber(
   // Write all modified files
   log('\nWriting updated plan files...');
 
-  const fileOperations: Array<{
-    originalPath: string;
-    newPath: string;
-    plan: PlanSchema;
-    needsRename: boolean;
-  }> = [];
+  const fileOperations: PlannedFileOperation[] = [];
+  const dbFilenames = new Map<string, string>();
 
   // Prepare file operations
   for (const filePath of plansToWrite) {
@@ -1043,28 +1319,53 @@ async function handleSwapOrRenumber(
       newPath: safeTargetPath,
       plan: plan as PlanSchema,
       needsRename: writeFilePath !== filePath,
+      writeFile: fs.existsSync(filePath),
     });
+    dbFilenames.set(filePath, path.relative(tasksDirectory, safeTargetPath));
   }
 
-  // Execute file operations with proper error handling
-  for (const operation of fileOperations) {
-    try {
-      const targetDir = path.dirname(operation.newPath);
-      await fs.promises.mkdir(targetDir, { recursive: true });
+  const changedPlans = Array.from(
+    plansToWrite,
+    (filePath) => [filePath, allPlans.get(filePath)!] as const
+  );
+  const originalChangedPlans = Array.from(
+    plansToWrite,
+    (filePath) => [filePath, originalPlans.get(filePath)!] as const
+  );
+  const originalDbSnapshots = snapshotOriginalDbState(repositoryId, originalChangedPlans);
+  const materializedRefreshes = collectMaterializedPlanRefreshes(
+    gitRoot,
+    originalChangedPlans,
+    changedPlans
+  );
+  let dbWriteSucceeded = false;
 
-      // Write the file
-      await writePlanFile(operation.newPath, operation.plan, { skipUpdatedAt: true });
-
-      // Remove old file if renamed
-      if (operation.needsRename && operation.originalPath !== operation.newPath) {
-        await fs.promises.unlink(operation.originalPath);
+  try {
+    applyRenumberDbState(repositoryId, changedPlans, dbFilenames);
+    dbWriteSucceeded = true;
+    await applyRenumberFileOperations(fileOperations);
+  } catch (error) {
+    if (dbWriteSucceeded) {
+      try {
+        restoreOriginalDbState(repositoryId, originalDbSnapshots);
+      } catch (rollbackError) {
+        throw new Error(
+          `Swap/renumber failed: ${error instanceof Error ? error.message : String(error)}. DB rollback also failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`
+        );
       }
+    }
+    throw new Error(
+      `Swap/renumber failed: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
 
+  await refreshMaterializedPlanFiles(gitRoot, materializedRefreshes);
+
+  for (const operation of fileOperations) {
+    if (operation.writeFile) {
       log(`  ✓ Updated ${path.relative(tasksDirectory, operation.newPath)}`);
-    } catch (error) {
-      throw new Error(
-        `Failed to write ${operation.newPath}: ${error instanceof Error ? error.message : String(error)}`
-      );
+    } else {
+      log(`  ✓ Updated DB-only plan ${operation.plan.id}`);
     }
   }
 
@@ -1075,7 +1376,8 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
   const pathContext = await resolvePlanPathContext(config);
-  const { gitRoot, tasksDir: tasksDirectory } = pathContext;
+  const { gitRoot, tasksDir: tasksDirectory, configBaseDir } = pathContext;
+  const repository = await getRepositoryIdentity({ cwd: configBaseDir });
 
   // Validate --from/--to options
   if (options.from !== undefined || options.to !== undefined) {
@@ -1087,7 +1389,7 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
     }
 
     // Execute swap operation and exit early
-    await handleSwapOrRenumber(options, tasksDirectory, gitRoot);
+    await handleSwapOrRenumber(options, tasksDirectory, gitRoot, repository.repositoryId);
     return;
   }
 
@@ -1132,54 +1434,36 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
   log('Scanning for plans that need renumbering...');
 
   // Read all plans and detect issues
-  const allPlans = new Map<string, Record<string, any>>();
-  let maxNumericId = 0;
+  const { allPlans, maxNumericId: initialMaxNumericId } = await loadPlansForRenumbering(
+    tasksDirectory,
+    repository.repositoryId
+  );
+  const originalPlans = new Map(
+    Array.from(allPlans.entries(), ([filePath, plan]) => [filePath, structuredClone(plan)])
+  );
+  let maxNumericId = initialMaxNumericId;
   const plansToRenumber: PlanToRenumber[] = [];
   const idToFiles = new Map<number, { plan: PlanSchema; filePath: string }[]>();
   const plansToWrite = new Set<string>();
 
-  // Build maps of IDs to files to detect conflicts
-  // We need to re-scan files because readAllPlans overwrites duplicates
-  const filesInDir = await fs.promises.readdir(tasksDirectory, { recursive: true });
-  const planFiles = filesInDir.filter(
-    (f) =>
-      typeof f === 'string' && (f.endsWith('.plan.md') || f.endsWith('.yml') || f.endsWith('.yaml'))
-  );
+  for (const [filePath, plan] of allPlans) {
+    if (plan.id) {
+      const numId = Number(plan.id);
+      if (!Number.isNaN(numId)) {
+        maxNumericId = Math.max(maxNumericId, numId);
 
-  // Build ID to files mapping by scanning files directly
-  for (const file of planFiles) {
-    const filePath = path.join(tasksDirectory, file);
-    try {
-      const plan = await readPlanFile(filePath);
-      if (plan.not_tim) {
-        debugLog(`Skipping plan marked with not_tim: ${filePath}`);
-        continue;
-      }
-      if (plan.id) {
-        let numId = Number(plan.id);
-        if (!Number.isNaN(numId)) {
-          maxNumericId = Math.max(maxNumericId, numId);
-
-          if (!idToFiles.has(plan.id)) {
-            idToFiles.set(plan.id, []);
-          }
-          idToFiles.get(plan.id)!.push({ plan, filePath });
+        if (!idToFiles.has(plan.id)) {
+          idToFiles.set(plan.id, []);
         }
-      } else {
-        plansToRenumber.push({
-          filePath: filePath,
-          currentId: plan.id,
-          plan,
-          reason: 'missing',
-        });
+        idToFiles.get(plan.id)!.push({ plan: plan as PlanSchema, filePath });
       }
-      allPlans.set(filePath, plan);
-    } catch (e) {
-      if (e instanceof NoFrontmatterError) {
-        debugLog(`Skipping file without frontmatter: ${filePath}`);
-        continue;
-      }
-      // Skip invalid plan files
+    } else {
+      plansToRenumber.push({
+        filePath,
+        currentId: plan.id,
+        plan,
+        reason: 'missing',
+      });
     }
   }
 
@@ -1372,14 +1656,13 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
     // Reserve IDs from shared storage to avoid conflicts across workspaces
     let nextIdStart: number;
     try {
-      const repoIdentity = await getRepositoryIdentity({ cwd: gitRoot });
       const db = getDatabase();
       const result = reserveNextPlanId(
         db,
-        repoIdentity.repositoryId,
+        repository.repositoryId,
         maxNumericId,
         plansToRenumber.length,
-        repoIdentity.remoteUrl
+        repository.remoteUrl
       );
       nextIdStart = result.startId;
     } catch {
@@ -1495,10 +1778,7 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
   for (const [filePath, plan] of allPlans) {
     // Ensure references field is populated
     const originalReferences = JSON.stringify(plan.references);
-    const { updatedPlan, plansWithGeneratedUuids } = ensureReferences(
-      plan as PlanSchema,
-      plansByIdMap
-    );
+    const { updatedPlan } = ensureReferences(plan as PlanSchema, plansByIdMap);
 
     // Update the plan in allPlans with the new references
     allPlans.set(filePath, updatedPlan);
@@ -1507,18 +1787,6 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
     if (JSON.stringify(updatedPlan.references) !== originalReferences) {
       plansToWrite.add(filePath);
       referencesUpdatedCount++;
-    }
-
-    // Write plans that had UUIDs generated for them
-    for (const { id, uuid } of plansWithGeneratedUuids) {
-      // Find the file path for this plan ID
-      for (const [fp, p] of allPlans) {
-        if (p.id === id) {
-          plansToWrite.add(fp);
-          debugLog(`Generated UUID ${uuid} for referenced plan ${id}`);
-          break;
-        }
-      }
     }
   }
   if (referencesUpdatedCount > 0) {
@@ -1670,180 +1938,123 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
       currentIdToOriginalId.set(newId, oldId);
     }
 
-    // Process all file operations with proper error handling and rollback
-    interface FileOperation {
-      originalPath: string;
-      newPath: string;
-      plan: PlanSchema;
-      needsRename: boolean;
+    const fileOperations: PlannedFileOperation[] = [];
+    const dbFilenames = new Map<string, string>();
+
+    for (const filePath of plansToWrite) {
+      const plan = allPlans.get(filePath);
+      if (!plan) {
+        throw new Error(`Plan not found for file path: ${filePath}`);
+      }
+
+      let writeFilePath = filePath;
+      const conflictOldId = renumberedByPath.get(filePath)?.currentId;
+      const hierarchicalOriginalId =
+        typeof plan.id === 'number' ? currentIdToOriginalId.get(plan.id) : undefined;
+
+      let originalIdForFileRename: number | undefined;
+      if (conflictOldId) {
+        originalIdForFileRename = conflictOldId;
+      } else if (hierarchicalOriginalId) {
+        originalIdForFileRename = hierarchicalOriginalId;
+      }
+
+      if (originalIdForFileRename) {
+        const parsed = path.parse(filePath);
+        if (parsed.name.startsWith(`${originalIdForFileRename}-`)) {
+          const suffix = parsed.base.slice(`${originalIdForFileRename}-`.length);
+          writeFilePath = path.join(parsed.dir, `${plan.id}-${suffix}`);
+        }
+      }
+
+      const conflictOldParentId = conflictOldParents.get(filePath);
+      let hierarchicalOldParentId: number | undefined;
+      if (typeof plan.parent === 'number') {
+        for (const [oldId, newId] of hierarchicalIdMappings) {
+          if (newId === plan.parent) {
+            hierarchicalOldParentId = oldId;
+            break;
+          }
+        }
+      }
+
+      let oldParentIdForDirRename: number | undefined;
+      if (conflictOldParentId) {
+        oldParentIdForDirRename = conflictOldParentId;
+      } else if (hierarchicalOldParentId) {
+        oldParentIdForDirRename = hierarchicalOldParentId;
+      }
+
+      if (oldParentIdForDirRename && plan.parent) {
+        const currentPath = path.parse(writeFilePath);
+        const dirParts = currentPath.dir.split(path.sep);
+        const updatedDirParts = dirParts.map((part) => {
+          if (part.startsWith(`${oldParentIdForDirRename}-`)) {
+            return `${plan.parent}-${part.slice(`${oldParentIdForDirRename}-`.length)}`;
+          }
+          return part;
+        });
+        const newDir = updatedDirParts.join(path.sep);
+        if (newDir !== currentPath.dir) {
+          writeFilePath = path.join(newDir, currentPath.base);
+          log(`  ✓ Updated directory path from ${currentPath.dir} to ${newDir}`);
+        }
+      }
+
+      const safeTargetPath = validateSafePath(writeFilePath, gitRoot);
+      if (!safeTargetPath) {
+        throw new Error(`Unsafe target path detected: ${writeFilePath}`);
+      }
+
+      fileOperations.push({
+        originalPath: filePath,
+        newPath: safeTargetPath,
+        plan: plan as PlanSchema,
+        needsRename: writeFilePath !== filePath,
+        writeFile: fs.existsSync(filePath),
+      });
+      dbFilenames.set(filePath, path.relative(tasksDirectory, safeTargetPath));
     }
 
-    const fileOperations: FileOperation[] = [];
-    const completedOperations: { originalPath: string; newPath: string; backupPath?: string }[] =
-      [];
+    const changedPlans = Array.from(
+      plansToWrite,
+      (filePath) => [filePath, allPlans.get(filePath)!] as const
+    );
+    const originalChangedPlans = Array.from(
+      plansToWrite,
+      (filePath) => [filePath, originalPlans.get(filePath)!] as const
+    );
+    const originalDbSnapshots = snapshotOriginalDbState(
+      repository.repositoryId,
+      originalChangedPlans
+    );
+    const materializedRefreshes = collectMaterializedPlanRefreshes(
+      gitRoot,
+      originalChangedPlans,
+      changedPlans
+    );
+    let dbWriteSucceeded = false;
 
     try {
-      // First, prepare all file operations and validate paths
-      for (const filePath of plansToWrite) {
-        const plan = allPlans.get(filePath);
-        if (!plan) {
-          throw new Error(`Plan not found for file path: ${filePath}`);
-        }
-
-        let writeFilePath = filePath;
-
-        // Handle file renaming for both conflict resolution and hierarchical changes
-        // First, check if this plan was renumbered due to conflicts
-        const conflictOldId = renumberedByPath.get(filePath)?.currentId;
-        // Then, check if this plan's current ID came from hierarchical renumbering
-        const hierarchicalOriginalId =
-          typeof plan.id === 'number' ? currentIdToOriginalId.get(plan.id) : undefined;
-
-        // Determine the original ID for file renaming based on which type of change occurred
-        // Priority: conflict resolution changes take precedence over hierarchical changes
-        // since conflict resolution happens first and hierarchical changes work on the result
-        let originalIdForFileRename: number | undefined;
-        if (conflictOldId) {
-          originalIdForFileRename = conflictOldId;
-        } else if (hierarchicalOriginalId) {
-          originalIdForFileRename = hierarchicalOriginalId;
-        }
-
-        if (originalIdForFileRename) {
-          let parsed = path.parse(filePath);
-          if (parsed.name.startsWith(`${originalIdForFileRename}-`)) {
-            let suffix = parsed.base.slice(`${originalIdForFileRename}-`.length);
-            writeFilePath = path.join(parsed.dir, `${plan.id}-${suffix}`);
-          }
-        }
-
-        // Check if directory starts with old parent ID and update it
-        // This handles both conflict resolution parent changes and hierarchical parent changes
-        const conflictOldParentId = conflictOldParents.get(filePath);
-
-        // Also check if the current parent ID was changed due to hierarchical renumbering
-        let hierarchicalOldParentId: number | undefined;
-        if (typeof plan.parent === 'number') {
-          // Find if this parent ID was the result of hierarchical renumbering
-          for (const [oldId, newId] of hierarchicalIdMappings) {
-            if (newId === plan.parent) {
-              hierarchicalOldParentId = oldId;
-              break;
-            }
-          }
-        }
-
-        // Determine the old parent ID for directory renaming based on which type of change occurred
-        // Priority: conflict resolution changes take precedence over hierarchical changes
-        let oldParentIdForDirRename: number | undefined;
-        if (conflictOldParentId) {
-          oldParentIdForDirRename = conflictOldParentId;
-        } else if (hierarchicalOldParentId) {
-          oldParentIdForDirRename = hierarchicalOldParentId;
-        }
-
-        if (oldParentIdForDirRename && plan.parent) {
-          let currentPath = path.parse(writeFilePath);
-          const dirParts = currentPath.dir.split(path.sep);
-
-          // Find if any directory part starts with the old parent ID
-          const updatedDirParts = dirParts.map((part) => {
-            if (part.startsWith(`${oldParentIdForDirRename}-`)) {
-              // Replace old parent ID with new parent ID
-              return `${plan.parent}-${part.slice(`${oldParentIdForDirRename}-`.length)}`;
-            }
-            return part;
-          });
-
-          const newDir = updatedDirParts.join(path.sep);
-          if (newDir !== currentPath.dir) {
-            writeFilePath = path.join(newDir, currentPath.base);
-            log(`  ✓ Updated directory path from ${currentPath.dir} to ${newDir}`);
-          }
-        }
-
-        // Validate the target path
-        const targetDir = path.dirname(writeFilePath);
-        const safeTargetPath = validateSafePath(writeFilePath, gitRoot);
-        if (!safeTargetPath) {
-          throw new Error(`Unsafe target path detected: ${writeFilePath}`);
-        }
-
-        fileOperations.push({
-          originalPath: filePath,
-          newPath: safeTargetPath,
-          plan: plan as PlanSchema,
-          needsRename: writeFilePath !== filePath,
-        });
-      }
-
-      // Execute file operations with proper error handling
-      for (const operation of fileOperations) {
-        try {
-          // Ensure target directory exists
-          const targetDir = path.dirname(operation.newPath);
-          await fs.promises.mkdir(targetDir, { recursive: true });
-
-          // If this is a rename operation, create a backup of the original file
-          let backupPath: string | undefined;
-          if (operation.needsRename && fs.existsSync(operation.originalPath)) {
-            backupPath = `${operation.originalPath}.backup.${Date.now()}`;
-            await fs.promises.copyFile(operation.originalPath, backupPath);
-          }
-
-          // Write the new file without updating timestamp
-          await writePlanFile(operation.newPath, operation.plan, { skipUpdatedAt: true });
-
-          // If this was a rename operation, remove the original file
-          if (operation.needsRename && operation.originalPath !== operation.newPath) {
-            await fs.promises.unlink(operation.originalPath);
-          }
-
-          // Track completed operation
-          completedOperations.push({
-            originalPath: operation.originalPath,
-            newPath: operation.newPath,
-            backupPath,
-          });
-
-          // Clean up backup file if operation was successful
-          if (backupPath && fs.existsSync(backupPath)) {
-            await fs.promises.unlink(backupPath);
-          }
-        } catch (operationError) {
-          log(
-            `Error processing file ${operation.originalPath}: ${operationError instanceof Error ? operationError.message : String(operationError)}`
-          );
-          throw operationError; // Re-throw to trigger rollback
-        }
-      }
+      applyRenumberDbState(repository.repositoryId, changedPlans, dbFilenames);
+      dbWriteSucceeded = true;
+      await applyRenumberFileOperations(fileOperations);
     } catch (error) {
-      // Rollback completed operations on error
-      log('\nError during file operations, attempting rollback...');
-
-      for (const completed of completedOperations.reverse()) {
+      if (dbWriteSucceeded) {
         try {
-          // If we have a backup, restore it
-          if (completed.backupPath && fs.existsSync(completed.backupPath)) {
-            await fs.promises.copyFile(completed.backupPath, completed.originalPath);
-            await fs.promises.unlink(completed.backupPath);
-          }
-
-          // Remove the new file if it exists and is different from original
-          if (completed.newPath !== completed.originalPath && fs.existsSync(completed.newPath)) {
-            await fs.promises.unlink(completed.newPath);
-          }
+          restoreOriginalDbState(repository.repositoryId, originalDbSnapshots);
         } catch (rollbackError) {
-          log(
-            `Warning: Failed to rollback operation for ${completed.originalPath}: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`
+          throw new Error(
+            `File operations failed: ${error instanceof Error ? error.message : String(error)}. DB rollback also failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`
           );
         }
       }
-
       throw new Error(
         `File operations failed: ${error instanceof Error ? error.message : String(error)}`
       );
     }
+
+    await refreshMaterializedPlanFiles(gitRoot, materializedRefreshes);
 
     log('\nRenumbering complete!');
   } else {

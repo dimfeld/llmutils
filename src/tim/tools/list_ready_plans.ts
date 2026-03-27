@@ -1,4 +1,3 @@
-import { clearPlanCache, readAllPlans } from '../plans.js';
 import { resolveTasksDir } from '../configSchema.js';
 import { loadPlansFromDb } from '../plans_db.js';
 import { filterAndSortReadyPlans, formatReadyPlansAsJson } from '../ready_plans.js';
@@ -36,13 +35,7 @@ export async function listReadyPlansTool(
   try {
     const tasksDir = await resolveTasksDir(context.config);
     const repository = await getRepositoryIdentity({ cwd: context.gitRoot });
-
-    let plans = loadPlansFromDb(tasksDir, repository.repositoryId).plans;
-    if (plans.size === 0) {
-      clearPlanCache();
-      // Bypass the in-memory cache so tool clients always see the latest edits.
-      ({ plans } = await readAllPlans(tasksDir, false));
-    }
+    const plans = loadPlansFromDb(tasksDir, repository.repositoryId).plans;
 
     let readyPlans = filterAndSortReadyPlans(plans, {
       pendingOnly: args.pendingOnly ?? false,

@@ -99,6 +99,8 @@ beforeEach(async () => {
   gatherPlanContextSpy = mock(async () => ({
     resolvedPlanFile: planFile,
     planData: { ...basePlan },
+    repoRoot: tempDir,
+    gitRoot: tempDir,
     parentChain: [],
     completedChildren: [],
     diffResult: { ...baseDiff },
@@ -272,6 +274,8 @@ describe('review notifications', () => {
     gatherPlanContextSpy.mockImplementationOnce(async () => ({
       resolvedPlanFile: planFile,
       planData: { ...basePlan },
+      repoRoot: tempDir,
+      gitRoot: tempDir,
       parentChain: [],
       completedChildren: [],
       diffResult: { ...baseDiff },
@@ -317,6 +321,8 @@ describe('review notifications', () => {
       return {
         resolvedPlanFile: planFile,
         planData: { ...basePlan },
+        repoRoot: tempDir,
+        gitRoot: tempDir,
         parentChain: [],
         completedChildren: [],
         diffResult: { ...baseDiff },

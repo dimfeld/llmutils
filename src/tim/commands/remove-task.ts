@@ -1,9 +1,12 @@
 import chalk from 'chalk';
 import { log, warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { readPlanFile, resolvePlanFile, writePlanFile } from '../plans.js';
+import { writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { findTaskByTitle, selectTaskInteractive } from '../utils/task_operations.js';
+import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { withPlanAutoSync } from '../plan_materialize.js';
 
 export interface RemoveTaskOptions {
   title?: string;
@@ -21,11 +24,9 @@ export async function handleRemoveTaskCommand(
   const globalOpts = command.parent?.opts?.() ?? {};
 
   await loadEffectiveConfig(globalOpts.config);
-
-  const planPath = await resolvePlanFile(plan, globalOpts.config);
-  const planData = await readPlanFile(planPath);
-
-  if (!Array.isArray(planData.tasks) || planData.tasks.length === 0) {
+  const repoRoot = await resolveRepoRootForPlanArg(plan, process.cwd(), globalOpts.config);
+  const resolvedPlan = await resolvePlanFromDbOrSyncFile(plan, repoRoot, repoRoot);
+  if (!Array.isArray(resolvedPlan.plan.tasks) || resolvedPlan.plan.tasks.length === 0) {
     throw new Error('Plan has no tasks to remove.');
   }
 
@@ -44,38 +45,45 @@ export async function handleRemoveTaskCommand(
     );
   }
 
-  const index = await resolveTaskIndex(planData.tasks, options);
+  await withPlanAutoSync(resolvedPlan.plan.id, repoRoot, async () => {
+    const planData = (await resolvePlanFromDbOrSyncFile(plan, repoRoot, repoRoot)).plan;
+    if (!Array.isArray(planData.tasks) || planData.tasks.length === 0) {
+      throw new Error('Plan has no tasks to remove.');
+    }
 
-  if (index < 0 || index >= planData.tasks.length) {
-    throw new Error(
-      `Task index ${index + 1} is out of bounds for plan with ${planData.tasks.length} tasks (valid range: 1-${planData.tasks.length}).`
-    );
-  }
+    const index = await resolveTaskIndex(planData.tasks, options);
 
-  const previousLength = planData.tasks.length;
-  const [removedTask] = planData.tasks.splice(index, 1);
+    if (index < 0 || index >= planData.tasks.length) {
+      throw new Error(
+        `Task index ${index + 1} is out of bounds for plan with ${planData.tasks.length} tasks (valid range: 1-${planData.tasks.length}).`
+      );
+    }
 
-  if (!removedTask) {
-    throw new Error(`Failed to remove task at index ${index + 1}.`);
-  }
+    const previousLength = planData.tasks.length;
+    const [removedTask] = planData.tasks.splice(index, 1);
 
-  planData.updatedAt = new Date().toISOString();
-  await writePlanFile(planPath, planData);
+    if (!removedTask) {
+      throw new Error(`Failed to remove task at index ${index + 1}.`);
+    }
 
-  const planIdentifier = planData.id ? `plan ${planData.id}` : 'plan';
-  log(
-    chalk.green(
-      `✓ Removed task "${removedTask.title}" from ${planIdentifier} (${planPath}); it was previously at index ${index + 1}.`
-    )
-  );
+    planData.updatedAt = new Date().toISOString();
+    await writePlanFile(resolvedPlan.planPath, planData, { cwdForIdentity: repoRoot });
 
-  if (index < previousLength - 1) {
-    warn(
-      chalk.yellow(
-        `Indices of ${previousLength - index - 1} subsequent task(s) have shifted after removal.`
+    const planIdentifier = planData.id ? `plan ${planData.id}` : 'plan';
+    log(
+      chalk.green(
+        `✓ Removed task "${removedTask.title}" from ${planIdentifier}; it was previously at index ${index + 1}.`
       )
     );
-  }
+
+    if (index < previousLength - 1) {
+      warn(
+        chalk.yellow(
+          `Indices of ${previousLength - index - 1} subsequent task(s) have shifted after removal.`
+        )
+      );
+    }
+  });
 }
 
 async function resolveTaskIndex(tasks: PlanTask[], options: RemoveTaskOptions): Promise<number> {

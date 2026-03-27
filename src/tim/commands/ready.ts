@@ -2,6 +2,7 @@
 // Lists all plans that are ready to execute (pending/in_progress with dependencies done)
 
 import chalk from 'chalk';
+import fs from 'node:fs';
 import * as path from 'path';
 import { table, type TableUserConfig } from 'table';
 
@@ -17,6 +18,7 @@ import {
   formatWorkspacePath,
   getCombinedTitleFromSummary,
 } from '../display_utils.js';
+import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 import { readAllPlans } from '../plans.js';
 import { loadPlansFromDb } from '../plans_db.js';
 import {
@@ -211,7 +213,9 @@ function displayListFormat(
 
     // File path in verbose mode
     if (verbose) {
-      log(chalk.gray(`  File: ${plan.filename}`));
+      if (plan.filename && fs.existsSync(plan.filename)) {
+        log(chalk.gray(`  File: ${plan.filename}`));
+      }
     }
   }
 
@@ -348,7 +352,8 @@ async function displayJsonFormat(plans: ReadyPlan[], context: ReadyDisplayContex
       needsGenerate: (plan.tasks?.length || 0) === 0,
       dependencies: plan.dependencies || [],
       assignedTo: plan.assignedTo,
-      filename: path.relative(gitRoot, plan.filename),
+      filename:
+        plan.filename && fs.existsSync(plan.filename) ? path.relative(gitRoot, plan.filename) : '',
       createdAt: plan.createdAt,
       updatedAt: plan.updatedAt,
       workspacePaths: plan.assignedWorkspaces,
@@ -405,7 +410,8 @@ export async function handleReadyCommand(options: ReadyCommandOptions, command: 
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
   const tasksDir = await resolveTasksDir(config);
-  const repository = await getRepositoryIdentity();
+  const repoRoot = await resolveRepoRootForPlanArg('', process.cwd(), globalOpts.config);
+  const repository = await getRepositoryIdentity({ cwd: repoRoot });
 
   const useLocalFiles = options.local === true;
   let rawPlans: Map<number, PlanWithFilename>;
@@ -413,9 +419,6 @@ export async function handleReadyCommand(options: ReadyCommandOptions, command: 
     ({ plans: rawPlans } = await readAllPlans(tasksDir));
   } else {
     ({ plans: rawPlans } = loadPlansFromDb(tasksDir, repository.repositoryId));
-    if (rawPlans.size === 0) {
-      ({ plans: rawPlans } = await readAllPlans(tasksDir));
-    }
   }
 
   const assignmentsLookup = loadAssignmentsLookup(repository.repositoryId);

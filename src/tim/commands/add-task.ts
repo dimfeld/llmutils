@@ -2,9 +2,16 @@ import chalk from 'chalk';
 import { editor } from '@inquirer/prompts';
 import { log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { readPlanFile, resolvePlanFile, writePlanFile } from '../plans.js';
+import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import { resolveProjectContext, withPlanAutoSync } from '../plan_materialize.js';
+import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { resolveTasksDir } from '../configSchema.js';
+import { readPlanFile, resolvePlanFromDb, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
+import { mergeYamlPassthroughFields } from '../plans/yaml_passthrough.js';
 import { promptForTaskInfo, type TaskInput } from '../utils/task_operations.js';
+import type { PlanRow } from '../db/plan.js';
+import { resolveWritablePath } from '../plans/resolve_writable_path.js';
 
 export interface AddTaskOptions {
   title?: string;
@@ -21,35 +28,54 @@ export async function handleAddTaskCommand(
   command: any
 ): Promise<void> {
   const globalOpts = command.parent?.opts?.() ?? {};
-
-  await loadEffectiveConfig(globalOpts.config);
-
-  const planPath = await resolvePlanFile(plan, globalOpts.config);
-  const planData = await readPlanFile(planPath);
+  const config = await loadEffectiveConfig(globalOpts.config);
+  const repoRoot = await resolveRepoRootForPlanArg(plan, undefined, globalOpts.config);
+  const initialPlan = await resolvePlanFromDbOrSyncFile(plan, repoRoot, repoRoot);
+  const resolvedPlanArg = initialPlan.plan.uuid ?? plan;
 
   const taskInfo = await collectTaskInput(options);
+  await withPlanAutoSync(initialPlan.plan.id, repoRoot, async () => {
+    const context = await resolveProjectContext(repoRoot);
+    const target = await resolvePlanFromDb(resolvedPlanArg, repoRoot, { context });
+    const planRow = getRequiredPlanRow(context.rows, target.plan.id);
+    const planPath = await resolveWritablePath(
+      plan,
+      planRow,
+      await resolveTasksDir(config),
+      repoRoot
+    );
+    const tasks = Array.isArray(target.plan.tasks) ? target.plan.tasks : [];
+    const newTask: PlanTask = {
+      title: taskInfo.title,
+      description: taskInfo.description,
+      done: false,
+    };
 
-  const tasks = Array.isArray(planData.tasks) ? planData.tasks : [];
-  const newTask: PlanTask = {
-    title: taskInfo.title,
-    description: taskInfo.description,
-    done: false,
-  };
+    tasks.push(newTask);
+    target.plan.tasks = tasks;
+    target.plan.updatedAt = new Date().toISOString();
 
-  tasks.push(newTask);
-  planData.tasks = tasks;
-  planData.updatedAt = new Date().toISOString();
+    const legacyPlanExists = planPath
+      ? await Bun.file(planPath)
+          .stat()
+          .then((stats) => stats.isFile())
+          .catch(() => false)
+      : false;
+    if (legacyPlanExists && planPath) {
+      const filePlan = await readPlanFile(planPath);
+      mergeYamlPassthroughFields(target.plan, filePlan);
+    }
 
-  await writePlanFile(planPath, planData);
+    await writePlanFile(planPath, target.plan, { cwdForIdentity: repoRoot, context });
 
-  const index = tasks.length - 1;
-  const planIdentifier = planData.id ? `plan ${planData.id}` : 'plan';
-
-  log(
-    chalk.green(
-      `✓ Added task "${newTask.title}" at index ${index} to ${planIdentifier} (${planPath})`
-    )
-  );
+    const index = tasks.length - 1;
+    const planIdentifier = target.plan.id ? `plan ${target.plan.id}` : 'plan';
+    log(
+      chalk.green(
+        `✓ Added task "${newTask.title}" at index ${index} to ${planIdentifier}${planPath ? ` (${planPath})` : ''}`
+      )
+    );
+  });
 }
 
 async function collectTaskInput(options: AddTaskOptions): Promise<TaskInput> {
@@ -97,4 +123,12 @@ async function collectTaskInput(options: AddTaskOptions): Promise<TaskInput> {
     title: title.trim(),
     description: description.trim(),
   };
+}
+
+function getRequiredPlanRow(rows: PlanRow[], planId: number): PlanRow {
+  const row = rows.find((candidate) => candidate.plan_id === planId);
+  if (!row) {
+    throw new Error(`Plan ${planId} not found`);
+  }
+  return row;
 }

@@ -13,8 +13,10 @@ import {
   defaultModelForExecutor,
 } from '../executors/index.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
-import { readPlanFile, resolvePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
+import { materializePlan } from '../plan_materialize.js';
+import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 
 interface UpdateDocsPromptOptions {
   justCompletedTaskIndices?: number[];
@@ -130,24 +132,52 @@ function buildUpdateDocsPrompt(
  * Core logic for updating documentation based on a plan
  */
 export async function runUpdateDocs(
-  planFilePath: string,
-  config: TimConfig,
-  options: {
+  planDataOrPath: PlanSchema | string,
+  planFilePathOrConfig: string | TimConfig,
+  configOrOptions:
+    | TimConfig
+    | {
+        executor?: string;
+        model?: string;
+        baseDir?: string;
+        configPath?: string;
+        justCompletedTaskIndices?: number[];
+      },
+  maybeOptions?: {
     executor?: string;
     model?: string;
     baseDir?: string;
+    configPath?: string;
     justCompletedTaskIndices?: number[];
   }
 ): Promise<void> {
-  const planData = await readPlanFile(planFilePath);
-  const baseDir = options.baseDir || (await getGitRoot()) || process.cwd();
+  const options = maybeOptions ?? (configOrOptions as NonNullable<typeof maybeOptions>);
+  let planData: PlanSchema;
+  let planFilePath: string;
+  let effectiveConfig: TimConfig;
+  let resolvedBaseDir = options.baseDir;
+  if (typeof planDataOrPath === 'string') {
+    const repoRoot =
+      options.baseDir ??
+      (await resolveRepoRootForPlanArg(planDataOrPath, process.cwd(), options.configPath));
+    const resolvedPlan = await resolvePlanFromDbOrSyncFile(planDataOrPath, repoRoot, repoRoot);
+    planData = resolvedPlan.plan;
+    planFilePath = resolvedPlan.planPath ?? (await materializePlan(resolvedPlan.plan.id, repoRoot));
+    effectiveConfig = planFilePathOrConfig as TimConfig;
+    resolvedBaseDir = repoRoot;
+  } else {
+    planData = planDataOrPath;
+    planFilePath = planFilePathOrConfig as string;
+    effectiveConfig = configOrOptions as TimConfig;
+  }
+  const baseDir = resolvedBaseDir || (await getGitRoot()) || process.cwd();
 
   // Build exclude list from config and automatically exclude tasks directory
-  const excludePatterns = [...(config.updateDocs?.exclude ?? [])];
+  const excludePatterns = [...(effectiveConfig.updateDocs?.exclude ?? [])];
 
   // Add tasks directory to exclude list if not using external storage
-  if (!config.isUsingExternalStorage) {
-    const tasksDir = await resolveTasksDir(config);
+  if (!effectiveConfig.isUsingExternalStorage) {
+    const tasksDir = await resolveTasksDir(effectiveConfig);
     // Make the path relative to baseDir for clearer messaging
     const relativeTasksDir = path.relative(baseDir, tasksDir);
     excludePatterns.push(`Plan files in ${relativeTasksDir || tasksDir}`);
@@ -156,18 +186,21 @@ export async function runUpdateDocs(
   // Build the prompt
   const prompt = buildUpdateDocsPrompt(planData, {
     justCompletedTaskIndices: options.justCompletedTaskIndices,
-    include: config.updateDocs?.include,
+    include: effectiveConfig.updateDocs?.include,
     exclude: excludePatterns.length > 0 ? excludePatterns : undefined,
   });
 
   // Determine executor and model
   const executorName =
-    options.executor || config.updateDocs?.executor || config.defaultExecutor || DEFAULT_EXECUTOR;
+    options.executor ||
+    effectiveConfig.updateDocs?.executor ||
+    effectiveConfig.defaultExecutor ||
+    DEFAULT_EXECUTOR;
 
   const model =
     options.model ||
-    config.updateDocs?.model ||
-    config.models?.execution ||
+    effectiveConfig.updateDocs?.model ||
+    effectiveConfig.models?.execution ||
     defaultModelForExecutor(executorName, 'execution');
 
   // Create executor
@@ -176,7 +209,7 @@ export async function runUpdateDocs(
     model,
   };
 
-  const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
+  const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, effectiveConfig);
 
   // Execute the documentation update
   log(boldMarkdownHeaders('\n## Updating Documentation\n'));
@@ -204,13 +237,20 @@ export async function handleUpdateDocsCommand(
     throw new Error('Plan file or ID is required');
   }
 
-  const resolvedPlanFile = await resolvePlanFile(planFile, globalOpts.config);
-  const baseDir = (await getGitRoot()) || process.cwd();
+  const repoRoot = await resolveRepoRootForPlanArg(
+    planFile,
+    (await getGitRoot()) || process.cwd(),
+    globalOpts.config
+  );
+  const { plan, planPath } = await resolvePlanFromDbOrSyncFile(planFile, repoRoot, repoRoot);
+  const resolvedPlanFile = planPath ?? (await materializePlan(plan.id, repoRoot));
+  const baseDir = repoRoot;
 
-  await runUpdateDocs(resolvedPlanFile, config, {
+  await runUpdateDocs(plan, resolvedPlanFile, config, {
     executor: options.executor,
     model: options.model,
     baseDir,
+    configPath: globalOpts.config,
   });
 
   log('\n✅ Documentation update complete');

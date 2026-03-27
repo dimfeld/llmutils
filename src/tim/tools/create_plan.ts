@@ -1,11 +1,19 @@
-import path from 'node:path';
-import { resolveTasksDir } from '../configSchema.js';
-import { generateNumericPlanId } from '../id_utils.js';
 import type { PlanSchema } from '../planSchema.js';
-import { generatePlanFilename } from '../utils/filename.js';
+import {
+  getMaterializedPlanPath,
+  materializePlan,
+  resolveProjectContext,
+  syncMaterializedPlan,
+} from '../plan_materialize.js';
+import { resolvePlanFromDb, writePlanFile } from '../plans.js';
 import { validateTags } from '../utils/tags.js';
-import { clearPlanCache, readAllPlans, writePlanFile } from '../plans.js';
-import { ensureReferences, writePlansWithGeneratedUuids } from '../utils/references.js';
+import { clearPlanCache } from '../plans.js';
+import { ensureReferences } from '../utils/references.js';
+import { getDatabase } from '../db/database.js';
+import { getPlanByUuid, upsertPlan, type PlanRow } from '../db/plan.js';
+import { reserveNextPlanId } from '../db/project.js';
+import { toPlanUpsertInput } from '../db/plan_sync.js';
+import { invertPlanIdToUuidMap, planRowForTransaction } from '../plans_db.js';
 import type { ToolContext, ToolResult } from './context.js';
 import type { CreatePlanArguments } from './schemas.js';
 
@@ -27,13 +35,35 @@ export async function createPlanTool(
     throw new Error(message);
   }
 
-  const tasksDir = await resolveTasksDir(context.config);
-  const nextId = await generateNumericPlanId(tasksDir);
+  const projectContext = await resolveProjectContext(context.gitRoot);
+  const db = getDatabase();
+  const { startId: nextId } = reserveNextPlanId(
+    db,
+    projectContext.repository.repositoryId,
+    projectContext.maxNumericId,
+    1,
+    projectContext.repository.remoteUrl
+  );
   const parentPlan =
-    args.parent === undefined ? undefined : (await readAllPlans(tasksDir)).plans.get(args.parent);
+    args.parent === undefined
+      ? undefined
+      : (await resolvePlanFromDb(args.parent, context.gitRoot, { context: projectContext })).plan;
 
   if (args.parent !== undefined && !parentPlan) {
     throw new Error(`Parent plan ${args.parent} not found`);
+  }
+
+  // Validate dependency IDs before creating the plan
+  const dependsOn = args.dependsOn || [];
+  for (const depId of dependsOn) {
+    if (!projectContext.planIdToUuid.has(depId)) {
+      throw new Error(`Dependency plan ${depId} not found`);
+    }
+  }
+
+  // Validate discoveredFrom ID
+  if (args.discoveredFrom !== undefined && !projectContext.planIdToUuid.has(args.discoveredFrom)) {
+    throw new Error(`DiscoveredFrom plan ${args.discoveredFrom} not found`);
   }
 
   const plan: PlanSchema = {
@@ -44,7 +74,7 @@ export async function createPlanTool(
     details: args.details,
     priority: args.priority,
     parent: args.parent,
-    dependencies: args.dependsOn || [],
+    dependencies: dependsOn,
     discoveredFrom: args.discoveredFrom,
     assignedTo: args.assignedTo,
     issue: args.issue || [],
@@ -58,71 +88,115 @@ export async function createPlanTool(
     tasks: [],
   };
 
-  const filename = generatePlanFilename(nextId, title);
-  const planPath = path.join(tasksDir, filename);
+  const { updatedPlan } = ensureReferences(plan, projectContext);
 
-  // Load allPlans if the plan has any references that need tracking
-  const hasReferences =
-    args.parent !== undefined ||
-    (args.dependsOn && args.dependsOn.length > 0) ||
-    args.discoveredFrom !== undefined;
-
-  let allPlans: Map<number, PlanSchema & { filename: string }> | undefined;
-  if (hasReferences || parentPlan) {
-    ({ plans: allPlans } = await readAllPlans(tasksDir));
-    // Insert the new plan so ensureReferences can find its UUID
-    allPlans.set(nextId, { ...plan, filename: planPath });
+  // If parent has a materialized file, sync it to DB before the transaction
+  let parentMaterializedExists = false;
+  if (parentPlan) {
+    const parentMaterialized = getMaterializedPlanPath(context.gitRoot, parentPlan.id);
+    parentMaterializedExists = await Bun.file(parentMaterialized)
+      .stat()
+      .then((s) => s.isFile())
+      .catch(() => false);
+    if (parentMaterializedExists) {
+      await syncMaterializedPlan(parentPlan.id, context.gitRoot);
+    }
   }
 
-  if (parentPlan && allPlans) {
-    if (!parentPlan.dependencies) {
-      parentPlan.dependencies = [];
+  // Atomically insert child and update parent in a single DB transaction
+  let parentUpdated = false;
+  let parentStatusChanged = false;
+  const idToUuid = new Map(projectContext.planIdToUuid).set(nextId, updatedPlan.uuid!);
+  const writePlans = db.transaction(() => {
+    // Insert child plan
+    // Note: filename is a required DB column; using synthetic name for DB-only plans
+    // until the schema is updated to allow nullable filenames (plan 282)
+    upsertPlan(db, projectContext.projectId, {
+      ...toPlanUpsertInput(updatedPlan, `${nextId}.plan.md`, idToUuid),
+      forceOverwrite: true,
+    });
+
+    if (!parentPlan) {
+      return;
     }
-    if (!parentPlan.dependencies.includes(nextId)) {
-      parentPlan.dependencies.push(nextId);
-      parentPlan.updatedAt = new Date().toISOString();
 
-      if (parentPlan.status === 'done') {
-        parentPlan.status = 'in_progress';
-        context.log?.info('Parent plan status changed', {
-          parentId: parentPlan.id,
-          oldStatus: 'done',
-          newStatus: 'in_progress',
-        });
-      }
+    // Re-read parent from DB (may have been updated by sync above)
+    const freshParentRow = getPlanByUuid(db, parentPlan.uuid!);
+    if (!freshParentRow) {
+      return;
+    }
 
-      const { updatedPlan: updatedParent, plansWithGeneratedUuids } = ensureReferences(
-        parentPlan,
-        allPlans
-      );
-      await writePlanFile(parentPlan.filename, updatedParent);
-      await writePlansWithGeneratedUuids(plansWithGeneratedUuids, allPlans);
-      context.log?.info('Updated parent plan dependencies', {
+    // Check if parent already has this dependency via DB row
+    // (the in-memory parentPlan may be stale after sync)
+    const freshParentResolved = resolvePlanRowForTransaction(freshParentRow, idToUuid);
+    if ((freshParentResolved.dependencies ?? []).includes(nextId)) {
+      return;
+    }
+
+    const updatedParent: PlanSchema = {
+      ...freshParentResolved,
+      dependencies: [...(freshParentResolved.dependencies ?? []), nextId],
+      updatedAt: new Date().toISOString(),
+      status: freshParentResolved.status === 'done' ? 'in_progress' : freshParentResolved.status,
+    };
+    const { updatedPlan: referencedParent } = ensureReferences(updatedParent, {
+      planIdToUuid: idToUuid,
+    });
+
+    upsertPlan(db, projectContext.projectId, {
+      ...toPlanUpsertInput(referencedParent, freshParentRow.filename, idToUuid),
+      forceOverwrite: true,
+    });
+
+    parentUpdated = true;
+    parentStatusChanged = freshParentResolved.status === 'done';
+  });
+  writePlans.immediate();
+
+  // Re-materialize parent file after transaction if it existed
+  if (parentPlan && parentMaterializedExists) {
+    try {
+      const freshContext = await resolveProjectContext(context.gitRoot);
+      await materializePlan(parentPlan.id, context.gitRoot, { context: freshContext });
+    } catch (error) {
+      // Log but don't fail - the DB is already consistent
+      context.log?.warn?.('Failed to re-materialize parent plan', {
         parentId: parentPlan.id,
-        childId: nextId,
+        error: `${error as Error}`,
       });
     }
   }
 
-  // Ensure references are populated on the new plan
-  if (allPlans) {
-    const { updatedPlan, plansWithGeneratedUuids } = ensureReferences(plan, allPlans);
-    await writePlanFile(planPath, updatedPlan);
-    await writePlansWithGeneratedUuids(plansWithGeneratedUuids, allPlans);
-  } else {
-    await writePlanFile(planPath, plan);
+  if (parentUpdated) {
+    if (parentStatusChanged) {
+      context.log?.info('Parent plan status changed', {
+        parentId: parentPlan!.id,
+        oldStatus: 'done',
+        newStatus: 'in_progress',
+      });
+    }
+    context.log?.info('Updated parent plan dependencies', {
+      parentId: parentPlan!.id,
+      childId: nextId,
+    });
   }
 
-  const relativePath = path.relative(context.gitRoot, planPath) || planPath;
   context.log?.info('Created plan', {
     planId: nextId,
-    planPath: relativePath,
+    planPath: `plan ${nextId}`,
   });
 
-  const text = `Created plan ${nextId} at ${relativePath}`;
+  const text = `Created plan ${nextId}`;
   return {
     text,
-    data: { id: nextId, path: relativePath },
+    data: { id: nextId, path: `plan ${nextId}` },
     message: text,
   };
+}
+
+/**
+ * Convert a PlanRow to PlanSchema for use inside a synchronous transaction.
+ */
+function resolvePlanRowForTransaction(row: PlanRow, planIdToUuid: Map<number, string>): PlanSchema {
+  return planRowForTransaction(row, invertPlanIdToUuidMap(planIdToUuid));
 }

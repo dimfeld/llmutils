@@ -6,8 +6,12 @@ import { error, log, sendStructured, warn } from '../../logging.js';
 import { generateBranchNameFromPlan } from '../commands/branch.js';
 import type { TimConfig } from '../configSchema.js';
 import { updateHeadlessSessionInfo } from '../headless.js';
-import { resolveConfiguredTasksPath } from '../path_resolver.js';
-import { readAllPlans, readPlanFile } from '../plans.js';
+import {
+  getMaterializedPlanPath,
+  materializePlan,
+  syncMaterializedPlan,
+} from '../plan_materialize.js';
+import { readPlanFile, resolvePlanFromDb } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { WorkspaceAutoSelector } from './workspace_auto_selector.js';
 import { findWorkspaceInfosByTaskId } from './workspace_info.js';
@@ -25,6 +29,7 @@ export interface WorkspaceSetupOptions {
   newWorkspace?: boolean;
   nonInteractive?: boolean;
   requireWorkspace?: boolean;
+  planId?: number;
   planUuid?: string;
   base?: string;
   createBranch?: boolean;
@@ -43,7 +48,6 @@ function timestamp(): string {
 }
 
 async function getParentPlanBranch(
-  planFile: string,
   plan: PlanSchema,
   config: TimConfig,
   currentBaseDir: string
@@ -53,9 +57,8 @@ async function getParentPlanBranch(
   }
 
   const gitRoot = await getGitRoot(currentBaseDir);
-  const tasksDir = resolveConfiguredTasksPath(config, gitRoot);
-  const { plans } = await readAllPlans(tasksDir, false);
-  return plans.get(plan.parent)?.branch;
+  const parentPlan = await resolvePlanFromDb(String(plan.parent), gitRoot);
+  return parentPlan.plan.branch;
 }
 
 export async function setupWorkspace(
@@ -69,9 +72,53 @@ export async function setupWorkspace(
   let planFile = currentPlanFile ?? '';
   let workspaceTaskId: string | undefined;
   let isNewWorkspace: boolean | undefined;
+  const copyExistingPlanFile = async (targetPlanFile: string): Promise<string> => {
+    if (!currentPlanFile) {
+      throw new Error('No source plan file available to copy into workspace.');
+    }
+    if (planFile === targetPlanFile) {
+      log(`Using plan file in workspace: ${planFile}`);
+      return planFile;
+    }
+
+    log(`Copying plan file to workspace: ${targetPlanFile}`);
+    const srcContent = await fs.readFile(currentPlanFile, 'utf8');
+    await fs.mkdir(path.dirname(targetPlanFile), { recursive: true });
+    await fs.writeFile(targetPlanFile, srcContent, 'utf8');
+    planFile = targetPlanFile;
+    log(`Using plan file in workspace: ${planFile}`);
+    return planFile;
+  };
+  const resolveMaterializedPlanForWorkspace = async (workspaceRoot: string): Promise<string> => {
+    if (typeof options.planId !== 'number') {
+      return planFile;
+    }
+
+    try {
+      planFile = await materializePlan(options.planId, workspaceRoot);
+      log(`Using plan file in workspace: ${planFile}`);
+    } catch (err) {
+      if (!currentPlanFile) {
+        throw err;
+      }
+
+      const fallbackTarget = path.join(
+        workspaceRoot,
+        path.relative(currentBaseDir, currentPlanFile)
+      );
+      warn(
+        `Failed to materialize plan ${options.planId} in ${workspaceRoot}; falling back to copying the existing plan file: ${err as Error}`
+      );
+      await copyExistingPlanFile(fallbackTarget);
+    }
+    return planFile;
+  };
 
   // When no plan file and no base branch, skip branch creation — use workspace as-is
-  const effectiveCreateBranch = !currentPlanFile && !options.base ? false : options.createBranch;
+  const effectiveCreateBranch =
+    !currentPlanFile && typeof options.planId !== 'number' && !options.base
+      ? false
+      : options.createBranch;
 
   if (options.workspace || options.autoWorkspace) {
     let workspace: Workspace | null | undefined;
@@ -186,22 +233,17 @@ export async function setupWorkspace(
       );
       WorkspaceLock.setupCleanupHandlers(workspace.path, lockInfo.type);
 
-      const copyPlanIntoWorkspace = async (): Promise<void> => {
+      const materializePlanIntoWorkspace = async (): Promise<void> => {
+        if (typeof options.planId === 'number') {
+          await resolveMaterializedPlanForWorkspace(workspace.path);
+          return;
+        }
+
         if (!currentPlanFile || !workspacePlanFile) {
           return;
         }
 
-        if (planFile === workspacePlanFile) {
-          log(`Using plan file in workspace: ${planFile}`);
-          return;
-        }
-
-        log(`Copying plan file to workspace: ${workspacePlanFile}`);
-        const srcContent = await fs.readFile(planFile, 'utf8');
-        await fs.mkdir(path.dirname(workspacePlanFile), { recursive: true });
-        await fs.writeFile(workspacePlanFile, srcContent, 'utf8');
-        planFile = workspacePlanFile;
-        log(`Using plan file in workspace: ${planFile}`);
+        await copyExistingPlanFile(workspacePlanFile);
       };
 
       try {
@@ -224,33 +266,41 @@ export async function setupWorkspace(
         let baseBranch = options.base;
         let canRetryWithoutBaseBranch = false;
         const shouldCreateBranch = effectiveCreateBranch ?? true;
-        const shouldPrepareWorkspaceBranch = Boolean(currentPlanFile || baseBranch);
-        try {
-          if (currentPlanFile) {
+        const shouldPrepareWorkspaceBranch = Boolean(
+          currentPlanFile || typeof options.planId === 'number' || baseBranch
+        );
+        if (currentPlanFile) {
+          try {
             planData = await readPlanFile(planFile);
+          } catch (err) {
+            warn(
+              `Failed to generate branch name from plan file ${planFile}. Falling back to workspace task ID: ${err as Error}`
+            );
+          }
+        } else if (typeof options.planId === 'number') {
+          planData = (await resolvePlanFromDb(String(options.planId), currentBaseDir)).plan;
+        }
+
+        if (planData) {
+          try {
             branchName = planData.branch ?? generateBranchNameFromPlan(planData);
+          } catch (err) {
+            warn(
+              `Failed to generate branch name from plan file ${planFile}. Falling back to workspace task ID: ${err as Error}`
+            );
+          }
 
-            if (!baseBranch) {
-              baseBranch = planData.baseBranch;
-            }
+          if (!baseBranch) {
+            baseBranch = planData.baseBranch;
+          }
 
-            if (!baseBranch) {
-              const parentBranch = await getParentPlanBranch(
-                planFile,
-                planData,
-                config,
-                currentBaseDir
-              );
-              if (parentBranch) {
-                baseBranch = parentBranch;
-                canRetryWithoutBaseBranch = true;
-              }
+          if (!baseBranch) {
+            const parentBranch = await getParentPlanBranch(planData, config, currentBaseDir);
+            if (parentBranch) {
+              baseBranch = parentBranch;
+              canRetryWithoutBaseBranch = true;
             }
           }
-        } catch (err) {
-          warn(
-            `Failed to generate branch name from plan file ${planFile}. Falling back to workspace task ID: ${err as Error}`
-          );
         }
 
         let reusedExistingBranch = false;
@@ -292,14 +342,24 @@ export async function setupWorkspace(
           if (workspacePlanFile) {
             planFile = workspacePlanFile;
             log(`Using existing plan file in workspace: ${planFile}`);
+          } else if (typeof options.planId === 'number') {
+            const existingMaterializedPath = getMaterializedPlanPath(
+              workspace.path,
+              options.planId
+            );
+            const existingMaterializedFile = Bun.file(existingMaterializedPath);
+            if (await existingMaterializedFile.exists()) {
+              await syncMaterializedPlan(options.planId, workspace.path);
+            }
+            await resolveMaterializedPlanForWorkspace(workspace.path);
           }
           planFileForUpdateCommands = planFile;
         } else {
           try {
-            await copyPlanIntoWorkspace();
+            await materializePlanIntoWorkspace();
             planFileForUpdateCommands = planFile;
           } catch (err) {
-            error(`Failed to copy plan file to workspace: ${err as Error}`);
+            error(`Failed to materialize plan into workspace: ${err as Error}`);
             error('Continuing without workspace plan file for update commands.');
             planFileForUpdateCommands = undefined;
           }
@@ -368,6 +428,10 @@ export async function setupWorkspace(
     } else {
       throw err;
     }
+  }
+
+  if (typeof options.planId === 'number' && !currentPlanFile) {
+    await resolveMaterializedPlanForWorkspace(baseDir);
   }
 
   return { baseDir, planFile, workspaceTaskId, isNewWorkspace };

@@ -1,5 +1,13 @@
+import { existsSync } from 'node:fs';
+import * as path from 'node:path';
 import type { PlanSchema } from '../planSchema.ts';
-import { readAllPlans, readPlanFile, writePlanFile } from '../plans.ts';
+import { readAllPlans, readPlanFile, writePlanFile, writePlanToDb } from '../plans.ts';
+
+type ReferenceLookupSource =
+  | Map<number, PlanSchema>
+  | Map<number, PlanSchema & { filename: string }>
+  | Map<number, string>
+  | { planIdToUuid: Map<number, string> };
 
 export interface UuidIssue {
   planId: number;
@@ -20,6 +28,25 @@ export interface ReferenceIssue {
 export interface ReferenceFixResult {
   updated: Array<{ planId: number; filename: string }>;
   errors: string[];
+}
+
+function isExistingPlanFile(filename: string): boolean {
+  return existsSync(filename);
+}
+
+async function writePlanFix(
+  plan: PlanSchema & { filename: string },
+  options?: { skipUpdatedAt?: boolean; cwdForIdentity?: string }
+): Promise<void> {
+  if (isExistingPlanFile(plan.filename)) {
+    await writePlanFile(plan.filename, plan, options);
+    return;
+  }
+
+  await writePlanToDb(plan, {
+    skipUpdatedAt: options?.skipUpdatedAt,
+    cwdForIdentity: options?.cwdForIdentity,
+  });
 }
 
 /**
@@ -54,38 +81,22 @@ export function getReferencedPlanIds(plan: PlanSchema): number[] {
  */
 export function ensureReferences(
   plan: PlanSchema,
-  allPlans: Map<number, PlanSchema>
+  allPlans: ReferenceLookupSource
 ): {
   updatedPlan: PlanSchema;
-  plansWithGeneratedUuids: Array<{ id: number; uuid: string }>;
 } {
   const referencedIds = getReferencedPlanIds(plan);
   const references = plan.references ? { ...plan.references } : {};
-  const plansWithGeneratedUuids: Array<{ id: number; uuid: string }> = [];
 
   for (const id of referencedIds) {
-    // If we already have a UUID for this ID, keep it - existing UUIDs are the source of truth
-    // This is critical during renumbering: the UUID tracks the actual plan identity
     if (references[id]) {
       continue;
     }
 
-    const referencedPlan = allPlans.get(id);
-    if (!referencedPlan) {
-      // Referenced plan doesn't exist - this is a validation error
-      // but we don't handle it here. The validate command will catch it.
+    const uuid = getReferenceUuid(allPlans, id);
+    if (!uuid) {
       continue;
     }
-
-    // If the referenced plan doesn't have a UUID, generate one
-    let uuid = referencedPlan.uuid;
-    if (!uuid) {
-      uuid = crypto.randomUUID();
-      referencedPlan.uuid = uuid;
-      plansWithGeneratedUuids.push({ id, uuid });
-    }
-
-    // Add the reference (only for new references, not overwriting existing ones)
     references[id] = uuid;
   }
 
@@ -102,8 +113,19 @@ export function ensureReferences(
       ...plan,
       references: Object.keys(references).length > 0 ? references : undefined,
     },
-    plansWithGeneratedUuids,
   };
+}
+
+function getReferenceUuid(allPlans: ReferenceLookupSource, id: number): string | undefined {
+  if ('planIdToUuid' in allPlans) {
+    return allPlans.planIdToUuid.get(id);
+  }
+
+  const value = allPlans.get(id);
+  if (typeof value === 'string') {
+    return value;
+  }
+  return value?.uuid;
 }
 
 export interface ReferenceVerificationResult {
@@ -250,16 +272,28 @@ export function detectMissingUuids(
 /**
  * Generates UUIDs for plans that don't have them
  */
-export async function fixMissingUuids(issues: UuidIssue[]): Promise<UuidFixResult> {
+export async function fixMissingUuids(
+  issues: UuidIssue[],
+  planMap?: Map<number, PlanSchema & { filename: string }>,
+  cwdForIdentity?: string
+): Promise<UuidFixResult> {
   const generated: UuidFixResult['generated'] = [];
   const errors: string[] = [];
 
   for (const issue of issues) {
     try {
-      const plan = await readPlanFile(issue.filename);
+      const plan = isExistingPlanFile(issue.filename)
+        ? await readPlanFile(issue.filename)
+        : planMap?.get(issue.planId);
+      if (!plan) {
+        throw new Error(`Plan ${issue.planId} could not be loaded for UUID generation`);
+      }
       const uuid = crypto.randomUUID();
       plan.uuid = uuid;
-      await writePlanFile(issue.filename, plan, { skipUpdatedAt: true });
+      await writePlanFix(
+        { ...plan, filename: issue.filename },
+        { skipUpdatedAt: true, cwdForIdentity }
+      );
       generated.push({ planId: issue.planId, uuid, filename: issue.filename });
     } catch (error) {
       errors.push(
@@ -296,20 +330,32 @@ export function detectReferenceIssues(
  */
 export async function fixReferenceIssues(
   issues: ReferenceIssue[],
-  planMap: Map<number, PlanSchema & { filename: string }>
+  planMap: Map<number, PlanSchema & { filename: string }>,
+  cwdForIdentity?: string
 ): Promise<ReferenceFixResult> {
   const updated: ReferenceFixResult['updated'] = [];
   const errors: string[] = [];
 
   for (const issue of issues) {
     try {
-      const plan = await readPlanFile(issue.filename);
+      const plan = isExistingPlanFile(issue.filename)
+        ? await readPlanFile(issue.filename)
+        : planMap.get(issue.planId);
+      if (!plan) {
+        throw new Error(`Plan ${issue.planId} could not be loaded for reference repair`);
+      }
       const fixedPlan = fixReferenceMismatches(plan, issue.verificationResult);
 
-      // Update references after fixing mismatches
-      const { updatedPlan } = ensureReferences(fixedPlan, planMap);
+      // For file-backed plans, also update the `references` map (YAML-only field)
+      // For DB-only plans, skip `ensureReferences` since `references` is not persisted in DB
+      const planToWrite = isExistingPlanFile(issue.filename)
+        ? ensureReferences(fixedPlan, planMap).updatedPlan
+        : fixedPlan;
 
-      await writePlanFile(issue.filename, updatedPlan, { skipUpdatedAt: true });
+      await writePlanFix(
+        { ...planToWrite, filename: issue.filename },
+        { skipUpdatedAt: true, cwdForIdentity }
+      );
       updated.push({ planId: issue.planId, filename: issue.filename });
     } catch (error) {
       errors.push(
@@ -328,67 +374,45 @@ export async function fixReferenceIssues(
  * @param plan The plan to update and write
  * @param allPlans Map of all plans (for looking up UUIDs)
  * @param options Options to pass to writePlanFile
- * @returns Array of plans that had UUIDs generated
  */
 export async function updateAndWritePlan(
   plan: PlanSchema & { filename: string },
   allPlans: Map<number, PlanSchema>,
   options?: { skipUpdatedAt?: boolean }
-): Promise<Array<{ id: number; uuid: string }>> {
-  const { updatedPlan, plansWithGeneratedUuids } = ensureReferences(plan, allPlans);
-  await writePlanFile(plan.filename, updatedPlan, options);
-  return plansWithGeneratedUuids;
-}
-
-/**
- * Writes plans that had UUIDs generated by ensureReferences.
- * This is extracted from ensureAllReferences for reuse in add/set/create_plan commands.
- *
- * @param plansWithGeneratedUuids Array from ensureReferences result
- * @param allPlans Map of all plans (to look up filenames)
- * @param options Options to pass to writePlanFile
- */
-export async function writePlansWithGeneratedUuids(
-  plansWithGeneratedUuids: Array<{ id: number; uuid: string }>,
-  allPlans: Map<number, PlanSchema & { filename: string }>,
-  options?: { skipUpdatedAt?: boolean }
 ): Promise<void> {
-  for (const { id } of plansWithGeneratedUuids) {
-    const plan = allPlans.get(id);
-    if (plan) {
-      await writePlanFile(plan.filename, plan, options);
-    }
-  }
+  const { updatedPlan } = ensureReferences(plan, allPlans);
+  await writePlanFile(plan.filename, updatedPlan, options);
 }
 
 /**
  * Ensures all plans have complete reference entries
  */
 export async function ensureAllReferences(
-  planMap: Map<number, PlanSchema & { filename: string }>
+  planMap: Map<number, PlanSchema & { filename: string }>,
+  cwdForIdentity?: string
 ): Promise<{ updated: number; errors: string[] }> {
   let updated = 0;
   const errors: string[] = [];
 
   for (const [_planId, plan] of planMap.entries()) {
     try {
-      const { updatedPlan, plansWithGeneratedUuids } = ensureReferences(plan, planMap);
+      // Skip DB-only plans — the `references` field is YAML-only and not persisted in the DB
+      if (!isExistingPlanFile(plan.filename)) {
+        continue;
+      }
+
+      const { updatedPlan } = ensureReferences(plan, planMap);
 
       // Only write if something changed
       const hasNewReferences =
         JSON.stringify(updatedPlan.references) !== JSON.stringify(plan.references);
 
-      if (hasNewReferences || plansWithGeneratedUuids.length > 0) {
-        await writePlanFile(plan.filename, updatedPlan, { skipUpdatedAt: true });
+      if (hasNewReferences) {
+        await writePlanFix(
+          { ...updatedPlan, filename: plan.filename },
+          { skipUpdatedAt: true, cwdForIdentity }
+        );
         updated++;
-
-        // Write plans that had UUIDs generated
-        for (const { id: genId } of plansWithGeneratedUuids) {
-          const genPlan = planMap.get(genId);
-          if (genPlan) {
-            await writePlanFile(genPlan.filename, genPlan, { skipUpdatedAt: true });
-          }
-        }
       }
     } catch (error) {
       errors.push(

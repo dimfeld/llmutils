@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { ModuleMocker } from '../../testing.js';
+import { closeDatabaseForTesting } from '../db/database.js';
 import { clearPlanCache, readPlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { handleRemoveTaskCommand } from './remove-task.js';
@@ -12,12 +13,27 @@ const moduleMocker = new ModuleMocker(import.meta);
 describe('handleRemoveTaskCommand', () => {
   let tempDir: string;
   let planFile: string;
+  let originalEnv: Partial<Record<string, string>>;
+  let originalCwd: string;
   const logSpy = mock(() => {});
   const warnSpy = mock(() => {});
 
   beforeEach(async () => {
     clearPlanCache();
+    originalCwd = process.cwd();
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-remove-task-'));
+    await Bun.$`git init`.cwd(tempDir).quiet();
+    await Bun.$`git remote add origin https://example.com/acme/remove-task.git`
+      .cwd(tempDir)
+      .quiet();
+    originalEnv = {
+      XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+      APPDATA: process.env.APPDATA,
+    };
+    process.env.XDG_CONFIG_HOME = path.join(tempDir, 'config');
+    delete process.env.APPDATA;
+    closeDatabaseForTesting();
+    process.chdir(tempDir);
     planFile = path.join(tempDir, '200-remove-task.plan.md');
 
     const plan: PlanSchema = {
@@ -32,7 +48,7 @@ describe('handleRemoveTaskCommand', () => {
       ],
     };
 
-    await writePlanFile(planFile, plan);
+    await writePlanFile(planFile, plan, { cwdForIdentity: tempDir });
 
     await moduleMocker.mock('../../logging.js', () => ({
       log: logSpy,
@@ -50,6 +66,18 @@ describe('handleRemoveTaskCommand', () => {
   afterEach(async () => {
     moduleMocker.clear();
     clearPlanCache();
+    closeDatabaseForTesting();
+    process.chdir(originalCwd);
+    if (originalEnv.XDG_CONFIG_HOME === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalEnv.XDG_CONFIG_HOME;
+    }
+    if (originalEnv.APPDATA === undefined) {
+      delete process.env.APPDATA;
+    } else {
+      process.env.APPDATA = originalEnv.APPDATA;
+    }
     await fs.rm(tempDir, { recursive: true, force: true });
     logSpy.mockReset();
     warnSpy.mockReset();

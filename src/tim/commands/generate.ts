@@ -7,8 +7,10 @@ import { getCurrentBranchName, getGitRoot, getTrunkBranch } from '../../common/g
 import { commitAll } from '../../common/process.js';
 import { log, warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
+import { syncPlanToDb } from '../db/plan_sync.js';
+import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
 import { resolvePlanPathContext } from '../path_resolver.js';
-import { readAllPlans, readPlanFile, resolvePlanFile, writePlanFile } from '../plans.js';
+import { readPlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import {
   buildDescriptionFromPlan,
@@ -17,7 +19,6 @@ import {
 } from '../display_utils.js';
 import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../executors/index.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
-import { findNextReadyDependency } from './find_next_dependency.js';
 import { autoClaimPlan, isAutoClaimEnabled } from '../assignments/auto_claim.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
 import {
@@ -25,16 +26,16 @@ import {
   patchWorkspaceInfo,
   touchWorkspaceInfo,
 } from '../workspace/workspace_info.js';
-import { buildPromptText, findMostRecentlyUpdatedPlan } from './prompts.js';
+import { buildPromptText } from './prompts.js';
 import type { GenerateModeRegistrationContext } from '../mcp/generate_mode.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
-import { syncPlanToDb } from '../db/plan_sync.js';
 import {
   prepareWorkspaceRoundTrip,
   runPostExecutionWorkspaceSync,
   runPreExecutionWorkspaceSync,
 } from '../workspace/workspace_roundtrip.js';
+import { findLatestPlanFromDb, findNextReadyDependencyFromDb } from './plan_discovery.js';
 
 async function updateWorkspaceDescriptionFromPlan(
   baseDir: string,
@@ -91,15 +92,14 @@ export async function handleGenerateCommand(
     if (!isNaN(planIdNumber)) {
       parentPlanId = planIdNumber;
     } else {
-      const planFile = await resolvePlanFile(options.nextReady, globalOpts.config);
-      const plan = await readPlanFile(planFile);
+      const { plan } = await resolvePlanFromDbOrSyncFile(options.nextReady, gitRoot, gitRoot);
       if (!plan.id) {
-        throw new Error(`Plan file ${planFile} does not have a valid ID`);
+        throw new Error(`Plan ${options.nextReady} does not have a valid ID`);
       }
       parentPlanId = plan.id;
     }
 
-    const result = await findNextReadyDependency(parentPlanId, tasksDirectory, true);
+    const result = await findNextReadyDependencyFromDb(parentPlanId, tasksDirectory, gitRoot, true);
 
     if (!result.plan) {
       log(result.message);
@@ -108,20 +108,13 @@ export async function handleGenerateCommand(
 
     log(chalk.green(`Found ready plan: ${result.plan.id} - ${result.plan.title}`));
 
-    options.plan = result.plan.filename;
+    options.plan = String(result.plan.id);
     planArg = undefined;
   } else if (options.latest) {
-    const { plans } = await readAllPlans(tasksDirectory);
-
-    if (plans.size === 0) {
-      log('No plans found in tasks directory.');
-      return;
-    }
-
-    const latestPlan = await findMostRecentlyUpdatedPlan(plans);
+    const latestPlan = await findLatestPlanFromDb(tasksDirectory, gitRoot);
 
     if (!latestPlan) {
-      log('No plans found in tasks directory.');
+      log('No plans found in the database.');
       return;
     }
 
@@ -133,7 +126,7 @@ export async function handleGenerateCommand(
 
     log(chalk.green(`Found latest plan: ${label}`));
 
-    options.plan = latestPlan.filename;
+    options.plan = String(latestPlan.id);
     planArg = undefined;
   }
 
@@ -146,15 +139,9 @@ export async function handleGenerateCommand(
     throw new Error('No plan specified.');
   }
 
-  const planFile = await resolvePlanFile(options.plan, globalOpts.config);
-
-  // Read and validate the plan
-  let parsedPlan: PlanSchema;
-  try {
-    parsedPlan = await readPlanFile(planFile);
-  } catch {
-    throw new Error(`Failed to read plan file: ${planFile}. The plan must be a valid YAML plan.`);
-  }
+  const resolvedPlan = await resolvePlanFromDbOrSyncFile(options.plan, gitRoot, gitRoot);
+  const initialPlanFile = resolvedPlan.planPath;
+  const parsedPlan: PlanSchema = resolvedPlan.plan;
 
   const isStubPlan = !parsedPlan.tasks || parsedPlan.tasks.length === 0;
   if (!isStubPlan) {
@@ -183,11 +170,11 @@ export async function handleGenerateCommand(
     options.simple = true;
   }
 
-  log(chalk.blue('🔄 Generating detailed tasks for:'), planFile);
+  log(chalk.blue('🔄 Generating detailed tasks for:'), initialPlanFile ?? `plan ${parsedPlan.id}`);
 
   // Workspace setup
   let currentBaseDir = gitRoot;
-  let currentPlanFile = planFile;
+  let currentPlanFile = initialPlanFile ?? '';
   let touchedWorkspacePath: string | null = null;
   let roundTripContext: Awaited<ReturnType<typeof prepareWorkspaceRoundTrip>> = null;
   let generationError: unknown;
@@ -212,6 +199,7 @@ export async function handleGenerateCommand(
             nonInteractive: options.nonInteractive,
             requireWorkspace: options.requireWorkspace,
             createBranch: options.createBranch,
+            planId: parsedPlan.id,
             planUuid: parsedPlan.uuid,
             base: options.base,
             allowPrimaryWorkspaceWhenLocked: true,
@@ -312,6 +300,9 @@ export async function handleGenerateCommand(
         });
 
         // Report generation result
+        if (!currentPlanFile) {
+          throw new Error('Plan file not materialized');
+        }
         const updatedPlan = await readPlanFile(currentPlanFile);
 
         const hasTasks = updatedPlan.tasks && updatedPlan.tasks.length > 0;
@@ -341,9 +332,9 @@ export async function handleGenerateCommand(
         }
 
         await syncPlanToDb(updatedPlan, currentPlanFile, {
+          cwdForIdentity: currentBaseDir,
           force: true,
-          config,
-          baseDir: currentBaseDir,
+          throwOnError: true,
         });
       } catch (err) {
         generationError = err;

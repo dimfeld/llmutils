@@ -5,10 +5,11 @@ import * as os from 'node:os';
 import { WorkspaceLock } from '../workspace/workspace_lock.js';
 import { ModuleMocker, stringifyPlanWithFrontmatter } from '../../testing.js';
 import type { PlanSchema } from '../planSchema.js';
-import { readAllPlans } from '../plans.js';
 import { clearAllGitCaches } from '../../common/git.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { getOrCreateProject, getProjectById, listProjects } from '../db/project.js';
+import { loadPlansFromDb } from '../plans_db.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import {
   findWorkspacesByProjectId,
   getWorkspaceIssues,
@@ -321,7 +322,9 @@ describe('workspace add --reuse and --try-reuse', () => {
     // Create a plan file
     const planPath = await createPlanFile(path.join(mainRepoDir, 'tasks'), 42, 'Test Plan');
 
-    const { handleWorkspaceAddCommand } = await import('./workspace.js');
+    const { handleWorkspaceAddCommand } = await import(
+      `./workspace.js?reuse-presync-${Date.now()}`
+    );
 
     await handleWorkspaceAddCommand(planPath, { reuse: true }, {
       parent: {
@@ -970,6 +973,88 @@ describe('workspace add --reuse and --try-reuse', () => {
     await WorkspaceLock.releaseLock(existingWorkspace, { force: true });
   });
 
+  test('syncs existing workspace plan edits before overwriting them during reuse', async () => {
+    const existingWorkspace = path.join(clonesDir, 'reuse-sync-before-overwrite');
+    await fs.mkdir(existingWorkspace, { recursive: true });
+    await initGitRepository(existingWorkspace, bareRemoteDir);
+
+    const workspaceEntry: WorkspaceInfo = {
+      taskId: 'reuse-sync-before-overwrite-task',
+      workspacePath: existingWorkspace,
+      createdAt: new Date().toISOString(),
+      repositoryId: 'test-repo-id',
+    };
+    await writeTrackingData({ [existingWorkspace]: workspaceEntry });
+
+    const sourcePlanPath = await createPlanFile(path.join(mainRepoDir, 'tasks'), 63, 'Source Plan');
+    const workspacePlanPath = path.join(existingWorkspace, 'tasks', '63.plan.md');
+    await fs.mkdir(path.dirname(workspacePlanPath), { recursive: true });
+    await fs.writeFile(
+      workspacePlanPath,
+      stringifyPlanWithFrontmatter({
+        id: 63,
+        uuid: '33333333-3333-4333-8333-333333333333',
+        title: 'Workspace Local Edits',
+        goal: 'Workspace goal',
+        status: 'in_progress',
+        createdAt: new Date('2026-03-26T10:00:00.000Z').toISOString(),
+        updatedAt: new Date('2026-03-26T12:00:00.000Z').toISOString(),
+        tasks: [
+          {
+            title: 'Preserve workspace edits',
+            description: 'This content should sync to DB before overwrite',
+            steps: [{ prompt: 'Keep synced state', done: false }],
+          },
+        ],
+      } satisfies PlanSchema)
+    );
+    await runGit(existingWorkspace, ['add', '.']);
+    await runGit(existingWorkspace, ['commit', '-m', 'Add existing workspace plan']);
+    const syncPlanToDbSpy = mock(async () => {});
+    const actualWorkspaceManager = await import('../workspace/workspace_manager.js');
+    await moduleMocker.mock('../db/plan_sync.js', () => ({
+      syncPlanToDb: syncPlanToDbSpy,
+    }));
+    await moduleMocker.mock('../workspace/workspace_manager.js', () => ({
+      ...actualWorkspaceManager,
+      prepareExistingWorkspace: async () => ({
+        success: true,
+        actualBranchName: 'main',
+      }),
+      runWorkspaceUpdateCommands: async () => true,
+    }));
+
+    const { handleWorkspaceAddCommand } = await import(`./workspace.js?reuse-sync-${Date.now()}`);
+    await handleWorkspaceAddCommand(sourcePlanPath, { reuse: true }, {
+      parent: {
+        parent: {
+          opts: () => ({ config: undefined }),
+        },
+      },
+    } as any);
+
+    const workspaceSyncCall = syncPlanToDbSpy.mock.calls.find(
+      (call) => call[1] === workspacePlanPath
+    );
+    expect(workspaceSyncCall).toBeDefined();
+    expect(workspaceSyncCall?.[0]).toMatchObject({
+      id: 63,
+      uuid: '33333333-3333-4333-8333-333333333333',
+      title: 'Workspace Local Edits',
+      status: 'in_progress',
+    });
+    expect(workspaceSyncCall?.[2]).toEqual({
+      cwdForIdentity: mainRepoDir,
+      throwOnError: true,
+    });
+
+    const planInWorkspace = await fs.readFile(workspacePlanPath, 'utf8');
+    expect(planInWorkspace).toContain('title: Source Plan');
+    expect(planInWorkspace).not.toContain('title: Workspace Local Edits');
+
+    await WorkspaceLock.releaseLock(existingWorkspace, { force: true });
+  });
+
   test('skips branch creation when createBranch is false on reuse', async () => {
     const existingWorkspace = path.join(clonesDir, 'reuse-no-branch-workspace');
     await fs.mkdir(existingWorkspace, { recursive: true });
@@ -1313,7 +1398,10 @@ describe('workspace add --reuse and --try-reuse', () => {
         const planPath = path.join(tasksDir, '101-imported.plan.md');
         const planContent = stringifyPlanWithFrontmatter(plan);
         await fs.writeFile(planPath, planContent);
-        return true;
+        return {
+          success: true,
+          planPath,
+        };
       },
     }));
 
@@ -1339,7 +1427,11 @@ describe('workspace add --reuse and --try-reuse', () => {
     const updatedEntry = trackingData[existingWorkspace];
     expect(updatedEntry).toBeDefined();
 
-    const { plans } = await readAllPlans(path.join(existingWorkspace, 'tasks'), false);
+    const repository = await getRepositoryIdentity({ cwd: existingWorkspace });
+    const { plans } = loadPlansFromDb(
+      path.join(existingWorkspace, 'tasks'),
+      repository.repositoryId
+    );
     const importedPlan = plans.values().next().value;
     expect(importedPlan).toBeDefined();
 

@@ -18,7 +18,7 @@ Complete reference for tim command-line interface.
 
 ### tim add
 
-Create a plan stub for later generation.
+Create a plan stub in the DB for later generation. No tasks directory or file is required.
 
 ```bash
 tim add "Plan title"
@@ -29,7 +29,6 @@ tim add "Plan title" --discovered-from 99
 tim add "Plan title" --tag frontend --tag urgent
 tim add "Plan title" --simple  # Skip research phase
 tim add "Plan title" --edit    # Open in editor after creation
-tim add "Plan title" --output tasks/custom-name.yml
 ```
 
 ### tim generate
@@ -99,6 +98,14 @@ Mark a plan as complete.
 ```bash
 tim done 123
 tim done 123 --commit                  # Commit changes
+```
+
+### tim edit
+
+Open a plan in `$EDITOR`. Materializes the plan from DB to `.tim/plans/{planId}.plan.md`, opens the editor, syncs changes back to DB on close, then cleans up the temporary file.
+
+```bash
+tim edit 123
 ```
 
 ## Viewing Commands
@@ -349,7 +356,7 @@ tim pr status                          # Auto-resolve from current workspace
 
 ### tim pr link
 
-Link a PR to a plan. Validates the PR exists on GitHub and canonicalizes the URL before updating the plan file. Only accepts GitHub PR URLs (not issue URLs).
+Link a PR to a plan. Validates the PR exists on GitHub and canonicalizes the URL before updating the plan. Only accepts GitHub PR URLs (not issue URLs).
 
 ```bash
 tim pr link 123 https://github.com/org/repo/pull/456
@@ -380,13 +387,14 @@ tim pr description tasks/feature.yml --copy
 
 ### tim validate
 
-Validate plan files and relationships.
+Validate plans and relationships. Loads plans from the DB with a file overlay for YAML-specific validation. Checks parent-child consistency, circular dependencies, and dependency resolution.
 
 ```bash
 tim validate
 tim validate 123 124
 tim validate --no-fix
 tim validate --verbose
+tim validate --dir /path/to/repo
 ```
 
 ### tim materialize

@@ -8,7 +8,7 @@ import { error, log } from '../../logging.js';
 import { createModel } from '../../common/model_factory.js';
 import { runStreamingPrompt } from '../llm_utils/run_and_apply.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { readPlanFile, resolvePlanFile, writePlanFile, readAllPlans } from '../plans.js';
+import { readPlanFile, resolvePlanFromDb, writePlanFile } from '../plans.js';
 import { generateSplitPlanPrompt } from '../prompt.js';
 import { multiPhasePlanSchema, type PlanSchema } from '../planSchema.js';
 import {
@@ -19,10 +19,18 @@ import {
 import { fixYaml } from '../fix_yaml.js';
 import type { Command } from 'commander';
 import { resolveTasksDir } from '../configSchema.js';
-import { generateNumericPlanId } from '../id_utils.js';
-import { generatePlanFilename } from '../utils/filename.js';
 import { generateText } from 'ai';
 import { checkbox } from '@inquirer/prompts';
+import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { getDatabase } from '../db/database.js';
+import { reserveNextPlanId } from '../db/project.js';
+import { getPlanByPlanId, upsertPlan } from '../db/plan.js';
+import { toPlanUpsertInput } from '../db/plan_sync.js';
+import { materializePlan, resolveProjectContext } from '../plan_materialize.js';
+import { resolveWritablePath } from '../plans/resolve_writable_path.js';
+import { mergeYamlPassthroughFields } from '../plans/yaml_passthrough.js';
+import { ensureReferences } from '../utils/references.js';
 
 // --- Manual split helpers ---
 
@@ -93,9 +101,11 @@ async function buildChildTitleAndDetails(
  * Returns the paths of the written files.
  */
 export async function manualSplitPlan(
-  parent: PlanSchema & { filename: string },
+  parent: PlanSchema,
   selectedIndices: number[],
-  config: any
+  config: any,
+  repoRoot: string,
+  planArg: string
 ): Promise<{ parentPath: string; childPath: string; childId: number }> {
   if (!parent.id || typeof parent.id !== 'number') {
     throw new Error('Parent plan must have a numeric id');
@@ -116,9 +126,15 @@ export async function manualSplitPlan(
   }
 
   const tasksDir = await resolveTasksDir(config);
-  // Preload all plans for ID generation stability
-  await readAllPlans(tasksDir);
-  const childId = await generateNumericPlanId(tasksDir);
+  const db = getDatabase();
+  let context = await resolveProjectContext(repoRoot);
+  const { startId: childId } = reserveNextPlanId(
+    db,
+    context.repository.repositoryId,
+    context.maxNumericId,
+    1,
+    context.repository.remoteUrl
+  );
 
   // Extract selected tasks and build title/details
   const selectedTasks = unique.map((i) => parent.tasks[i]);
@@ -140,8 +156,7 @@ export async function manualSplitPlan(
     tags: parent.tags ? [...parent.tags] : [],
   };
 
-  const filename = generatePlanFilename(childId, childTitle || 'split');
-  const childPath = path.join(tasksDir, filename);
+  const childPath = path.join(tasksDir, `${childId}.plan.md`);
 
   // Update parent: remove selected tasks and add dependency
   const remainingTasks = parent.tasks.filter((_, idx) => !unique.includes(idx));
@@ -151,9 +166,46 @@ export async function manualSplitPlan(
   );
   if (parent.tasks.length === 0) parent.epic = true;
 
-  // Write both files
-  await writePlanFile(parent.filename, parent);
-  await writePlanFile(childPath, childPlan);
+  const parentRow = getPlanByPlanId(db, context.projectId, parent.id);
+  if (!parentRow) {
+    throw new Error(`Parent plan ${parent.id} not found`);
+  }
+
+  const outputPath = await resolveWritablePath(planArg, parentRow, tasksDir, repoRoot);
+  const idToUuid = new Map(context.planIdToUuid).set(
+    childId,
+    childPlan.uuid ?? crypto.randomUUID()
+  );
+  childPlan.uuid = idToUuid.get(childId);
+
+  const writePlans = db.transaction(() => {
+    const { updatedPlan: updatedParent } = ensureReferences(parent, { planIdToUuid: idToUuid });
+    upsertPlan(db, context.projectId, {
+      ...toPlanUpsertInput(updatedParent, parentRow.filename, idToUuid),
+      forceOverwrite: true,
+    });
+
+    const { updatedPlan: updatedChild } = ensureReferences(childPlan, { planIdToUuid: idToUuid });
+    upsertPlan(db, context.projectId, {
+      ...toPlanUpsertInput(updatedChild, `${childId}.plan.md`, idToUuid),
+      forceOverwrite: true,
+    });
+  });
+  writePlans.immediate();
+
+  context = await resolveProjectContext(repoRoot);
+  if (outputPath) {
+    const refreshedParent = (await resolvePlanFromDb(String(parent.id), repoRoot, { context }))
+      .plan;
+    const filePlan = await readPlanFile(outputPath);
+    mergeYamlPassthroughFields(refreshedParent, filePlan);
+    await writePlanFile(outputPath, refreshedParent, {
+      cwdForIdentity: repoRoot,
+      context,
+      skipDb: true,
+      skipUpdatedAt: true,
+    });
+  }
 
   log(
     chalk.green(
@@ -161,7 +213,7 @@ export async function manualSplitPlan(
     )
   );
 
-  return { parentPath: parent.filename, childPath, childId };
+  return { parentPath: outputPath ?? '', childPath, childId };
 }
 
 export async function handleSplitCommand(planArg: string, options: any, command: Command) {
@@ -188,15 +240,13 @@ export async function handleSplitCommand(planArg: string, options: any, command:
   }
 
   // Step 1: Resolve the input plan file path
-  const resolvedPlanFile = await resolvePlanFile(planArg, globalOpts.config);
+  const repoRoot = await resolveRepoRootForPlanArg(planArg, process.cwd(), globalOpts.config);
+  const resolvedPlan = await resolvePlanFromDbOrSyncFile(planArg, repoRoot, repoRoot);
+  const resolvedPlanFile =
+    resolvedPlan.planPath ?? (await materializePlan(resolvedPlan.plan.id, repoRoot));
 
   // Step 2: Read and validate the plan file
-  let validatedPlan: PlanSchema;
-  try {
-    validatedPlan = await readPlanFile(resolvedPlanFile);
-  } catch (err) {
-    throw new Error(`Failed to read or validate plan file '${resolvedPlanFile}': ${err as Error}`);
-  }
+  const validatedPlan = resolvedPlan.plan;
 
   if (options.auto) {
     // Existing LLM-based behavior
@@ -298,10 +348,7 @@ export async function handleSplitCommand(planArg: string, options: any, command:
     const config = await loadEffectiveConfig(globalOpts.config);
     const indices = parseTaskSpecifier(options.tasks, validatedPlan.tasks?.length || 0);
     // Use validatedPlan with filename context from resolvedPlanFile
-    const parentWithPath = { ...validatedPlan, filename: resolvedPlanFile } as PlanSchema & {
-      filename: string;
-    };
-    await manualSplitPlan(parentWithPath, indices, config);
+    await manualSplitPlan(validatedPlan, indices, config, repoRoot, planArg);
     return;
   }
 
@@ -341,10 +388,7 @@ export async function handleSplitCommand(planArg: string, options: any, command:
       return;
     }
 
-    const parentWithPath = { ...validatedPlan, filename: resolvedPlanFile } as PlanSchema & {
-      filename: string;
-    };
-    await manualSplitPlan(parentWithPath, selected, config);
+    await manualSplitPlan(validatedPlan, selected, config, repoRoot, planArg);
     return;
   }
 }

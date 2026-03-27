@@ -16,6 +16,7 @@ const logSpy = mock(() => {});
 const resolvePlanFileSpy = mock(async (planFile: string) => planFile);
 const loadEffectiveConfigSpy = mock(async () => ({}));
 const resolveTasksDirSpy = mock(async () => '/test/tasks');
+const findNextPlanFromDbSpy = mock(async () => null);
 
 describe('--serial-tasks flag pass-through tests', () => {
   let tempDir: string;
@@ -28,6 +29,7 @@ describe('--serial-tasks flag pass-through tests', () => {
     resolvePlanFileSpy.mockClear();
     loadEffectiveConfigSpy.mockClear();
     resolveTasksDirSpy.mockClear();
+    findNextPlanFromDbSpy.mockClear();
 
     // Clear plan cache
     clearPlanCache();
@@ -66,9 +68,15 @@ describe('--serial-tasks flag pass-through tests', () => {
       resolveTasksDir: resolveTasksDirSpy,
     }));
 
-    await moduleMocker.mock('../../plans.js', () => ({
-      resolvePlanFile: resolvePlanFileSpy,
-      findNextPlan: mock(async () => null), // No next plan available
+    await moduleMocker.mock('../plan_discovery.js', () => ({
+      findNextPlanFromDb: findNextPlanFromDbSpy,
+      findLatestPlanFromDb: mock(async () => null),
+      findNextReadyDependencyFromDb: mock(async () => ({ plan: null, message: '' })),
+      toHeadlessPlanSummary: (plan: { id?: number; uuid?: string; title?: string }) => ({
+        id: plan.id,
+        uuid: plan.uuid,
+        title: plan.title,
+      }),
     }));
 
     await moduleMocker.mock('./agent.js', () => ({
@@ -232,10 +240,7 @@ describe('--serial-tasks flag pass-through tests', () => {
         filename: '/test/next-plan.yml',
       };
 
-      await moduleMocker.mock('../../plans.js', () => ({
-        resolvePlanFile: resolvePlanFileSpy,
-        findNextPlan: mock(async () => nextPlan),
-      }));
+      findNextPlanFromDbSpy.mockResolvedValueOnce(nextPlan as any);
 
       const options = {
         serialTasks: true,
@@ -245,7 +250,7 @@ describe('--serial-tasks flag pass-through tests', () => {
 
       await handleAgentCommand(undefined, options, globalCliOptions);
 
-      expect(timAgentSpy).toHaveBeenCalledWith(nextPlan.filename, options, globalCliOptions);
+      expect(timAgentSpy).toHaveBeenCalledWith(String(nextPlan.id), options, globalCliOptions);
 
       const passedOptions = timAgentSpy.mock.calls[0][1];
       expect(passedOptions.serialTasks).toBe(true);
@@ -259,10 +264,7 @@ describe('--serial-tasks flag pass-through tests', () => {
         filename: '/test/current-plan.yml',
       };
 
-      await moduleMocker.mock('../../plans.js', () => ({
-        resolvePlanFile: resolvePlanFileSpy,
-        findNextPlan: mock(async () => currentPlan),
-      }));
+      findNextPlanFromDbSpy.mockResolvedValueOnce(currentPlan as any);
 
       const options = {
         serialTasks: true,
@@ -272,7 +274,7 @@ describe('--serial-tasks flag pass-through tests', () => {
 
       await handleAgentCommand(undefined, options, globalCliOptions);
 
-      expect(timAgentSpy).toHaveBeenCalledWith(currentPlan.filename, options, globalCliOptions);
+      expect(timAgentSpy).toHaveBeenCalledWith(String(currentPlan.id), options, globalCliOptions);
 
       const passedOptions = timAgentSpy.mock.calls[0][1];
       expect(passedOptions.serialTasks).toBe(true);

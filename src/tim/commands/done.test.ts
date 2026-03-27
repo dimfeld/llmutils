@@ -11,6 +11,7 @@ import { clearConfigCache } from '../configLoader.js';
 describe('handleDoneCommand', () => {
   let tempDir: string;
   let tasksDir: string;
+  let configPath: string;
   let markStepDoneSpy: ReturnType<typeof mock>;
   const moduleMocker = new ModuleMocker(import.meta);
 
@@ -23,7 +24,8 @@ describe('handleDoneCommand', () => {
     // Write config file so plan resolution works
     const configDir = path.join(tempDir, '.rmfilter');
     await fs.mkdir(configDir, { recursive: true });
-    await fs.writeFile(path.join(configDir, 'tim.yml'), `paths:\n  tasks: ${tasksDir}\n`);
+    configPath = path.join(configDir, 'tim.yml');
+    await fs.writeFile(configPath, `paths:\n  tasks: ${tasksDir}\n`);
 
     // Mock markStepDone
     markStepDoneSpy = mock(async () => ({
@@ -72,7 +74,7 @@ describe('handleDoneCommand', () => {
 
     const command = {
       parent: {
-        opts: () => ({ config: path.join(tempDir, '.rmfilter/tim.yml') }),
+        opts: () => ({ config: configPath }),
       },
     };
 
@@ -80,7 +82,7 @@ describe('handleDoneCommand', () => {
 
     // Check that markStepDone was called with correct parameters
     expect(markStepDoneSpy).toHaveBeenCalledWith(
-      expect.stringContaining('1.plan.md'),
+      '1',
       {
         commit: undefined,
       },
@@ -90,7 +92,8 @@ describe('handleDoneCommand', () => {
         paths: {
           tasks: expect.any(String),
         },
-      })
+      }),
+      configPath
     );
   });
 
@@ -118,14 +121,14 @@ describe('handleDoneCommand', () => {
 
     const command = {
       parent: {
-        opts: () => ({ config: path.join(tempDir, '.rmfilter/tim.yml') }),
+        opts: () => ({ config: configPath }),
       },
     };
 
     await handleDoneCommand('1', options, command);
 
     expect(markStepDoneSpy).toHaveBeenCalledWith(
-      expect.stringContaining('1.plan.md'),
+      '1',
       {
         commit: true,
       },
@@ -135,7 +138,8 @@ describe('handleDoneCommand', () => {
         paths: {
           tasks: expect.any(String),
         },
-      })
+      }),
+      configPath
     );
   });
 
@@ -161,14 +165,14 @@ describe('handleDoneCommand', () => {
 
     const command = {
       parent: {
-        opts: () => ({ config: path.join(tempDir, '.rmfilter/tim.yml') }),
+        opts: () => ({ config: configPath }),
       },
     };
 
     await handleDoneCommand('1', options, command);
 
     expect(markStepDoneSpy).toHaveBeenCalledWith(
-      expect.stringContaining('1.plan.md'),
+      '1',
       {
         commit: undefined,
       },
@@ -178,7 +182,8 @@ describe('handleDoneCommand', () => {
         paths: {
           tasks: expect.any(String),
         },
-      })
+      }),
+      configPath
     );
   });
 });

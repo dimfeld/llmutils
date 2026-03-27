@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'bun:test';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 import type { PlanSchema } from './planSchema.js';
 import {
@@ -190,25 +193,54 @@ describe('filterAndSortReadyPlans', () => {
 
 describe('formatReadyPlansAsJson', () => {
   it('formats plans with relative filenames', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ready-plans-test-'));
+    const existingFile = path.join(tempDir, 'tasks', '001.plan.yaml');
+    fs.mkdirSync(path.dirname(existingFile), { recursive: true });
+    fs.writeFileSync(existingFile, 'test');
+
     const plans: Array<EnrichedReadyPlan> = [
       {
         ...createPlan({ id: 1, priority: 'medium', tags: ['Frontend', 'backend'] }),
-        filename: '/repo/tasks/001.plan.yaml',
+        filename: existingFile,
       },
     ];
 
-    const json = formatReadyPlansAsJson(plans, { gitRoot: '/repo' });
-    const parsed = JSON.parse(json);
+    try {
+      const json = formatReadyPlansAsJson(plans, { gitRoot: tempDir });
+      const parsed = JSON.parse(json);
 
-    expect(parsed.count).toBe(1);
-    expect(parsed.plans[0]).toMatchObject({
-      id: 1,
-      title: 'Plan 1',
-      priority: 'medium',
-      taskCount: 1,
-      completedTasks: 0,
-      filename: 'tasks/001.plan.yaml',
-      tags: ['backend', 'frontend'],
-    });
+      expect(parsed.count).toBe(1);
+      expect(parsed.plans[0]).toMatchObject({
+        id: 1,
+        title: 'Plan 1',
+        priority: 'medium',
+        taskCount: 1,
+        completedTasks: 0,
+        filename: 'tasks/001.plan.yaml',
+        tags: ['backend', 'frontend'],
+      });
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('omits filenames for plans without a backing file on disk', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ready-plans-test-'));
+
+    try {
+      const plans: Array<EnrichedReadyPlan> = [
+        {
+          ...createPlan({ id: 2, priority: 'low' }),
+          filename: path.join(tempDir, 'missing.plan.md'),
+        },
+      ];
+
+      const json = formatReadyPlansAsJson(plans, { gitRoot: tempDir });
+      const parsed = JSON.parse(json);
+
+      expect(parsed.plans[0].filename).toBe('');
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 });

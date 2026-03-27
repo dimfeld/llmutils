@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { withPlanAutoSync } from '../plan_materialize.js';
 import { resolvePlan } from '../plan_display.js';
 import { clearPlanCache, writePlanFile } from '../plans.js';
 import type { PlanSchema, TaskSchema } from '../planSchema.js';
@@ -80,8 +81,11 @@ export async function addPlanTaskTool(
   context: ToolContext
 ): Promise<ToolResult<{ index: number }>> {
   clearPlanCache();
-
-  const { plan, planPath } = await resolvePlan(args.plan, context);
+  // Resolve plan to get its numeric ID for withPlanAutoSync
+  const { plan: initialPlan } = await resolvePlan(args.plan, context);
+  if (typeof initialPlan.id !== 'number') {
+    throw new Error('Resolved plan is missing a numeric ID.');
+  }
 
   const title = args.title.trim();
   const description = args.description.trim();
@@ -92,28 +96,35 @@ export async function addPlanTaskTool(
     throw new Error('Task description cannot be empty.');
   }
 
-  const tasks = Array.isArray(plan.tasks) ? plan.tasks : [];
-  const newTask: TaskSchema = {
-    title,
-    description,
-    done: false,
-  };
+  let index = 0;
+  let planIdentifier = `plan ${initialPlan.id}`;
+  await withPlanAutoSync(initialPlan.id, context.gitRoot, async () => {
+    const { plan, planPath } = await resolvePlan(args.plan, context);
+    const tasks = Array.isArray(plan.tasks) ? plan.tasks : [];
+    const newTask: TaskSchema = {
+      title,
+      description,
+      done: false,
+    };
 
-  tasks.push(newTask);
-  plan.tasks = tasks;
-  plan.updatedAt = new Date().toISOString();
+    tasks.push(newTask);
+    plan.tasks = tasks;
+    plan.updatedAt = new Date().toISOString();
 
-  await writePlanFile(planPath, plan);
-
-  const index = tasks.length - 1;
-  const relativePath = path.relative(context.gitRoot, planPath) || planPath;
-  context.log?.info('Added task to plan', {
-    planId: plan.id ?? null,
-    planPath: relativePath,
-    index,
+    await writePlanFile(planPath, plan, { cwdForIdentity: context.gitRoot });
+    index = tasks.length - 1;
+    planIdentifier = plan.id
+      ? `plan ${plan.id}`
+      : planPath
+        ? path.relative(context.gitRoot, planPath) || planPath
+        : 'unknown';
   });
 
-  const planIdentifier = plan.id ? `plan ${plan.id}` : relativePath;
+  context.log?.info('Added task to plan', {
+    planId: initialPlan.id ?? null,
+    planPath: planIdentifier,
+    index,
+  });
   const text = `Added task "${title}" to ${planIdentifier} at index ${index + 1}.`;
 
   return {
@@ -128,41 +139,56 @@ export async function removePlanTaskTool(
   context: ToolContext
 ): Promise<ToolResult<{ index: number; shifted: number }>> {
   clearPlanCache();
-  const { plan, planPath } = await resolvePlan(args.plan, context);
-
-  if (!Array.isArray(plan.tasks) || plan.tasks.length === 0) {
-    throw new Error('Plan has no tasks to remove.');
+  // Resolve plan to get its numeric ID for withPlanAutoSync
+  const { plan: initialPlan } = await resolvePlan(args.plan, context);
+  if (typeof initialPlan.id !== 'number') {
+    throw new Error('Resolved plan is missing a numeric ID.');
   }
 
-  const index = resolveTaskIndex(plan.tasks, args, 'remove');
-  if (index < 0 || index >= plan.tasks.length) {
-    throw new Error(
-      `Task index ${index + 1} is out of bounds for plan with ${plan.tasks.length} task(s) (valid range: 1-${plan.tasks.length}).`
-    );
-  }
+  let index = 0;
+  let shiftedCount = 0;
+  let removedTaskTitle = '';
+  let planIdentifier = `plan ${initialPlan.id}`;
+  await withPlanAutoSync(initialPlan.id, context.gitRoot, async () => {
+    const { plan, planPath } = await resolvePlan(args.plan, context);
+    if (!Array.isArray(plan.tasks) || plan.tasks.length === 0) {
+      throw new Error('Plan has no tasks to remove.');
+    }
 
-  const previousLength = plan.tasks.length;
-  const [removedTask] = plan.tasks.splice(index, 1);
-  if (!removedTask) {
-    throw new Error(`Failed to remove task at index ${index + 1}.`);
-  }
+    index = resolveTaskIndex(plan.tasks, args, 'remove');
+    if (index < 0 || index >= plan.tasks.length) {
+      throw new Error(
+        `Task index ${index + 1} is out of bounds for plan with ${plan.tasks.length} task(s) (valid range: 1-${plan.tasks.length}).`
+      );
+    }
 
-  plan.updatedAt = new Date().toISOString();
-  await writePlanFile(planPath, plan);
+    const previousLength = plan.tasks.length;
+    const [removedTask] = plan.tasks.splice(index, 1);
+    if (!removedTask) {
+      throw new Error(`Failed to remove task at index ${index + 1}.`);
+    }
 
-  const relativePath = path.relative(context.gitRoot, planPath) || planPath;
-  context.log?.info('Removed task from plan', {
-    planId: plan.id ?? null,
-    planPath: relativePath,
-    index,
+    removedTaskTitle = removedTask.title;
+    shiftedCount = index < previousLength - 1 ? previousLength - index - 1 : 0;
+    plan.updatedAt = new Date().toISOString();
+    await writePlanFile(planPath, plan, { cwdForIdentity: context.gitRoot });
+
+    planIdentifier = plan.id
+      ? `plan ${plan.id}`
+      : planPath
+        ? path.relative(context.gitRoot, planPath) || planPath
+        : 'unknown';
   });
 
-  const shiftedCount = index < previousLength - 1 ? previousLength - index - 1 : 0;
+  context.log?.info('Removed task from plan', {
+    planId: initialPlan.id ?? null,
+    planPath: planIdentifier,
+    index,
+  });
   const shiftWarning =
     shiftedCount > 0 ? ` Indices of ${shiftedCount} subsequent task(s) have shifted.` : '';
-  const planIdentifier = plan.id ? `plan ${plan.id}` : relativePath;
 
-  const text = `Removed task "${removedTask.title}" from ${planIdentifier} (index ${index + 1}).${shiftWarning}`;
+  const text = `Removed task "${removedTaskTitle}" from ${planIdentifier} (index ${index + 1}).${shiftWarning}`;
 
   return {
     text,
@@ -176,10 +202,10 @@ export async function updatePlanTaskTool(
   context: ToolContext
 ): Promise<ToolResult<{ index: number }>> {
   clearPlanCache();
-  const { plan, planPath } = await resolvePlan(args.plan, context);
-
-  if (!Array.isArray(plan.tasks) || plan.tasks.length === 0) {
-    throw new Error('Plan has no tasks to update.');
+  // Resolve plan to get its numeric ID for withPlanAutoSync
+  const { plan: initialPlan } = await resolvePlan(args.plan, context);
+  if (typeof initialPlan.id !== 'number') {
+    throw new Error('Resolved plan is missing a numeric ID.');
   }
 
   if (args.newTitle === undefined && args.newDescription === undefined && args.done === undefined) {
@@ -188,56 +214,70 @@ export async function updatePlanTaskTool(
     );
   }
 
-  const index = resolveTaskIndex(plan.tasks, args, 'update');
-  if (index < 0 || index >= plan.tasks.length) {
-    throw new Error(
-      `Task index ${index + 1} is out of bounds for plan with ${plan.tasks.length} task(s) (valid range: 1-${plan.tasks.length}).`
-    );
-  }
-
-  const task = plan.tasks[index];
-  if (!task) {
-    throw new Error(`Task at index ${index + 1} not found.`);
-  }
-
-  const oldTitle = task.title;
-  const updates: string[] = [];
-
-  if (args.newTitle !== undefined) {
-    const trimmedTitle = args.newTitle.trim();
-    if (!trimmedTitle) {
-      throw new Error('New task title cannot be empty.');
+  let index = 0;
+  let oldTitle = '';
+  let updates: string[] = [];
+  let planIdentifier = `plan ${initialPlan.id}`;
+  await withPlanAutoSync(initialPlan.id, context.gitRoot, async () => {
+    const { plan, planPath } = await resolvePlan(args.plan, context);
+    if (!Array.isArray(plan.tasks) || plan.tasks.length === 0) {
+      throw new Error('Plan has no tasks to update.');
     }
-    task.title = trimmedTitle;
-    updates.push(`title to "${trimmedTitle}"`);
-  }
 
-  if (args.newDescription !== undefined) {
-    const trimmedDescription = args.newDescription.trim();
-    if (!trimmedDescription) {
-      throw new Error('New task description cannot be empty.');
+    index = resolveTaskIndex(plan.tasks, args, 'update');
+    if (index < 0 || index >= plan.tasks.length) {
+      throw new Error(
+        `Task index ${index + 1} is out of bounds for plan with ${plan.tasks.length} task(s) (valid range: 1-${plan.tasks.length}).`
+      );
     }
-    task.description = trimmedDescription;
-    updates.push('description');
-  }
 
-  if (args.done !== undefined) {
-    task.done = args.done;
-    updates.push(`done status to ${args.done}`);
-  }
+    const task = plan.tasks[index];
+    if (!task) {
+      throw new Error(`Task at index ${index + 1} not found.`);
+    }
 
-  plan.updatedAt = new Date().toISOString();
-  await writePlanFile(planPath, plan);
+    oldTitle = task.title;
+    updates = [];
 
-  const relativePath = path.relative(context.gitRoot, planPath) || planPath;
+    if (args.newTitle !== undefined) {
+      const trimmedTitle = args.newTitle.trim();
+      if (!trimmedTitle) {
+        throw new Error('New task title cannot be empty.');
+      }
+      task.title = trimmedTitle;
+      updates.push(`title to "${trimmedTitle}"`);
+    }
+
+    if (args.newDescription !== undefined) {
+      const trimmedDescription = args.newDescription.trim();
+      if (!trimmedDescription) {
+        throw new Error('New task description cannot be empty.');
+      }
+      task.description = trimmedDescription;
+      updates.push('description');
+    }
+
+    if (args.done !== undefined) {
+      task.done = args.done;
+      updates.push(`done status to ${args.done}`);
+    }
+
+    plan.updatedAt = new Date().toISOString();
+    await writePlanFile(planPath, plan, { cwdForIdentity: context.gitRoot });
+
+    planIdentifier = plan.id
+      ? `plan ${plan.id}`
+      : planPath
+        ? path.relative(context.gitRoot, planPath) || planPath
+        : 'unknown';
+  });
+
   context.log?.info('Updated task in plan', {
-    planId: plan.id ?? null,
-    planPath: relativePath,
+    planId: initialPlan.id ?? null,
+    planPath: planIdentifier,
     index,
     updates: updates.join(', '),
   });
-
-  const planIdentifier = plan.id ? `plan ${plan.id}` : relativePath;
   const updatesText = updates.length > 0 ? ` Updated: ${updates.join(', ')}.` : '';
   const text = `Updated task "${oldTitle}" in ${planIdentifier} (index ${index + 1}).${updatesText}`;
 

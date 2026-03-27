@@ -582,7 +582,7 @@ export type NotificationCommand = z.output<typeof notificationCommandSchema>;
  * Resolves the tasks directory path, handling both absolute and relative paths.
  * If tasks path is relative, it's resolved relative to the git root.
  */
-export async function resolveTasksDir(config: TimConfig): Promise<string> {
+export async function resolveTasksDir(config: TimConfig, cwd?: string): Promise<string> {
   if (config.isUsingExternalStorage) {
     const baseDir = config.externalRepositoryConfigDir;
     if (baseDir) {
@@ -596,7 +596,7 @@ export async function resolveTasksDir(config: TimConfig): Promise<string> {
     }
   }
 
-  const gitRoot = (await getGitRoot()) || process.cwd();
+  const gitRoot = (await getGitRoot(cwd)) || cwd || process.cwd();
 
   if (config.paths?.tasks) {
     const resolvedPath = path.isAbsolute(config.paths.tasks)

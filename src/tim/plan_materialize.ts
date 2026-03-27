@@ -1,6 +1,7 @@
 import { mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import yaml from 'yaml';
+import { getGitInfoExcludePath, isIgnoredByGitSharedExcludes } from '../common/git.js';
 import { warn } from '../logging.js';
 import {
   getRepositoryIdentity,
@@ -21,7 +22,6 @@ import { readPlanFile, writePlanFile } from './plans.js';
 import { planRowToSchemaInput } from './plans_db.js';
 
 const MATERIALIZED_DIR = path.join('.tim', 'plans');
-const GITIGNORE_PATTERNS = ['*.plan.md', '*.ref.md'];
 
 export function parsePlanId(planId: string): number {
   const parsed = Number(planId);
@@ -31,13 +31,14 @@ export function parsePlanId(planId: string): number {
   return parsed;
 }
 
-type ProjectContext = {
+export type ProjectContext = {
   repository: RepositoryIdentity;
   projectId: number;
   rows: PlanRow[];
   planIdToUuid: Map<number, string>;
   uuidToPlanId: Map<string, number>;
   duplicatePlanIds: Set<number>;
+  maxNumericId: number;
 };
 
 type MaterializePlanOptions = {
@@ -89,6 +90,7 @@ export async function resolveProjectContext(
   });
   const rows = getPlansByProject(db, project.id);
   const { planIdToUuid, uuidToPlanId, duplicatePlanIds } = buildPlanMaps(rows);
+  const maxNumericId = rows.reduce((maxId, row) => Math.max(maxId, row.plan_id), 0);
 
   return {
     repository: resolvedRepository,
@@ -97,6 +99,7 @@ export async function resolveProjectContext(
     planIdToUuid,
     uuidToPlanId,
     duplicatePlanIds,
+    maxNumericId,
   };
 }
 
@@ -117,7 +120,7 @@ async function materializePlanRow(
   const tags = getPlanTagsByUuid(db, row.uuid).map((tag) => tag.tag);
   const plan = planRowToSchemaInput(row, tasks, dependencyUuids, tags, uuidToPlanId);
 
-  await writePlanFile(targetPath, plan, { skipSync: true, skipUpdatedAt: true });
+  await writePlanFile(targetPath, plan, { skipDb: true, skipUpdatedAt: true });
   return targetPath;
 }
 
@@ -177,20 +180,30 @@ export async function ensureMaterializeDir(repoRoot: string): Promise<string> {
   const directory = path.join(repoRoot, MATERIALIZED_DIR);
   await mkdir(directory, { recursive: true });
 
-  const gitignorePath = path.join(directory, '.gitignore');
+  const plansDirIsIgnored = await isIgnoredByGitSharedExcludes(
+    repoRoot,
+    path.join(MATERIALIZED_DIR, '__tim_materialize_probe__')
+  );
+  if (plansDirIsIgnored) {
+    return directory;
+  }
+
+  const infoExcludePath = await getGitInfoExcludePath(repoRoot);
+  if (!infoExcludePath) {
+    return directory;
+  }
+
   let existingContent = '';
   try {
-    existingContent = await readFile(gitignorePath, 'utf8');
+    existingContent = await readFile(infoExcludePath, 'utf8');
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-    // File doesn't exist yet
   }
 
   const existingLines = existingContent.split('\n').map((l) => l.trim());
-  const missingPatterns = GITIGNORE_PATTERNS.filter((p) => !existingLines.includes(p));
-  if (missingPatterns.length > 0) {
+  if (!existingLines.includes(MATERIALIZED_DIR)) {
     const suffix = existingContent && !existingContent.endsWith('\n') ? '\n' : '';
-    await writeFile(gitignorePath, existingContent + suffix + missingPatterns.join('\n') + '\n');
+    await writeFile(infoExcludePath, existingContent + suffix + MATERIALIZED_DIR + '\n');
   }
 
   return directory;
@@ -390,6 +403,13 @@ export async function syncMaterializedPlan(
   await validateMaterializedFileUuid(filePath, canonicalRow.uuid);
 
   const plan = await readPlanFile(filePath);
+  if (!plan.updatedAt && canonicalRow.updated_at) {
+    warn(
+      `Materialized plan ${planId} at ${filePath} is missing updatedAt. ` +
+        `Skipping file→DB sync to protect newer DB state.`
+    );
+    return filePath;
+  }
   if (plan.id !== planId) {
     throw new Error(
       `Materialized plan path ${filePath} contains plan ID ${plan.id}, expected ${planId}`
@@ -400,7 +420,6 @@ export async function syncMaterializedPlan(
     baseDir: repoRoot,
     cwdForIdentity: repoRoot,
     idToUuid: resolvedContext.planIdToUuid,
-    force: true,
     throwOnError: true,
   });
   // Re-resolve context after DB sync since plan data has changed

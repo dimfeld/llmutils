@@ -3,7 +3,7 @@ import { boldMarkdownHeaders, log, warn } from '../../../logging.js';
 import { executePostApplyCommand } from '../../actions.js';
 import { type TimConfig } from '../../configSchema.js';
 import type { Executor } from '../../executors/types.js';
-import { setPlanStatus, writePlanFile } from '../../plans.js';
+import { setPlanStatusById, writePlanFile } from '../../plans.js';
 import type { PlanSchema } from '../../planSchema.js';
 import { buildExecutionPromptWithoutSteps } from '../../prompt_builder.js';
 import { isShuttingDown } from '../../shutdown_state.js';
@@ -111,7 +111,10 @@ export async function executeStubPlan({
   if (isShuttingDown()) {
     return {};
   }
-  await setPlanStatus(planFilePath, 'done');
+  if (typeof planData.id !== 'number') {
+    throw new Error('Stub plan is missing a numeric plan ID');
+  }
+  await setPlanStatusById(planData.id, 'done', baseDir, planFilePath);
   log('Plan executed directly and marked as complete!');
 
   // Check if parent plan should be marked done
@@ -139,7 +142,7 @@ export async function executeStubPlan({
         if (isShuttingDown()) {
           return {};
         }
-        await setPlanStatus(planFilePath, 'in_progress');
+        await setPlanStatusById(planData.id, 'in_progress', baseDir, planFilePath);
         return { tasksAppended: reviewResult.tasksAppended };
       }
     } catch (err) {

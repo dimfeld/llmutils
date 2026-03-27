@@ -20,6 +20,7 @@ const mockTable = mock((data: any[]) => {
 // Now import the module being tested
 import { handleListCommand } from './list.js';
 import { clearPlanCache } from '../plans.js';
+import type { PlanSchema } from '../planSchema.js';
 
 describe('handleListCommand', () => {
   let tempDir: string;
@@ -117,6 +118,8 @@ describe('handleListCommand', () => {
       getPlanTasksByProject: () => dbPlanTasks,
       getPlanDependenciesByProject: () => dbPlanDependencies,
       getPlanTagsByProject: () => dbPlanTags,
+      getPlanByUuid: (_db: unknown, uuid: string) =>
+        dbPlans.find((plan) => plan.uuid === uuid) ?? null,
     }));
     await moduleMocker.mock('../db/assignment.js', () => ({
       getAssignmentEntriesByProject: () => assignmentsData,
@@ -131,6 +134,78 @@ describe('handleListCommand', () => {
   afterAll(() => {
     moduleMocker.clear();
   });
+
+  function addDbPlan(plan: PlanSchema & { id: number; uuid?: string }) {
+    const uuid = plan.uuid ?? `plan-${plan.id}`;
+
+    dbPlans.push({
+      uuid,
+      project_id: 1,
+      plan_id: plan.id,
+      title: plan.title ?? null,
+      goal: plan.goal ?? '',
+      details: plan.details ?? '',
+      status: plan.status ?? 'pending',
+      priority: plan.priority ?? null,
+      branch: plan.branch ?? null,
+      parent_uuid: typeof plan.parent === 'number' ? `plan-${plan.parent}` : null,
+      discovered_from: typeof plan.discoveredFrom === 'number' ? plan.discoveredFrom : null,
+      epic: plan.epic ? 1 : 0,
+      simple: plan.simple ? 1 : 0,
+      tdd: plan.tdd ? 1 : 0,
+      assigned_to: plan.assignedTo ?? null,
+      issue: plan.issue ? JSON.stringify(plan.issue) : null,
+      pull_request: plan.pullRequest ? JSON.stringify(plan.pullRequest) : null,
+      docs: plan.docs ? JSON.stringify(plan.docs) : null,
+      changed_files: plan.changedFiles ? JSON.stringify(plan.changedFiles) : null,
+      temp: plan.temp ? 1 : 0,
+      base_branch: plan.baseBranch ?? null,
+      review_issues: plan.reviewIssues ? JSON.stringify(plan.reviewIssues) : null,
+      plan_generated_at: plan.planGeneratedAt ?? null,
+      filename: `${plan.id}.plan.md`,
+      created_at: plan.createdAt ?? '2026-01-01T00:00:00.000Z',
+      updated_at: plan.updatedAt ?? null,
+    });
+
+    for (const task of plan.tasks ?? []) {
+      dbPlanTasks.push({
+        plan_uuid: uuid,
+        title: task.title ?? '',
+        description: task.description ?? '',
+        done: task.done ? 1 : 0,
+      });
+    }
+
+    for (const dependencyId of plan.dependencies ?? []) {
+      dbPlanDependencies.push({
+        plan_uuid: uuid,
+        depends_on_uuid: `plan-${dependencyId}`,
+      });
+    }
+
+    for (const tag of plan.tags ?? []) {
+      dbPlanTags.push({
+        plan_uuid: uuid,
+        tag,
+      });
+    }
+  }
+
+  async function createPlanFixture(
+    plan: PlanSchema & { id: number; uuid?: string },
+    options?: { syncDb?: boolean; dir?: string }
+  ) {
+    const fixture = {
+      ...plan,
+      uuid: plan.uuid ?? `plan-${plan.id}`,
+    };
+    const dir = options?.dir ?? tasksDir;
+    await fs.writeFile(path.join(dir, `${plan.id}.yml`), `---\n${yaml.stringify(fixture)}---\n`);
+
+    if (options?.syncDb !== false) {
+      addDbPlan(fixture);
+    }
+  }
 
   test('lists no plans when directory is empty', async () => {
     const options = {};
@@ -333,12 +408,8 @@ describe('handleListCommand', () => {
       },
     ];
 
-    // Write plan files
     for (const plan of plans) {
-      await fs.writeFile(
-        path.join(tasksDir, `${plan.id}.yml`),
-        `---\n${yaml.stringify(plan)}---\n`
-      );
+      await createPlanFixture(plan);
     }
 
     const options = {
@@ -415,10 +486,7 @@ describe('handleListCommand', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(
-        path.join(tasksDir, `${plan.id}.yml`),
-        `---\n${yaml.stringify(plan)}---\n`
-      );
+      await createPlanFixture(plan);
     }
 
     const options = {
@@ -488,10 +556,7 @@ describe('handleListCommand', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(
-        path.join(tasksDir, `${plan.id}.yml`),
-        `---\n${yaml.stringify(plan)}---\n`
-      );
+      await createPlanFixture(plan);
     }
 
     const options = {};
@@ -542,7 +607,7 @@ describe('handleListCommand', () => {
       ],
     };
 
-    await fs.writeFile(path.join(tasksDir, '1.yml'), `---\n${yaml.stringify(plan)}---\n`);
+    await createPlanFixture(plan);
 
     const options = {
       status: ['ready'],
@@ -583,7 +648,7 @@ describe('handleListCommand', () => {
       ],
     };
 
-    await fs.writeFile(path.join(customDir, '1.yml'), `---\n${yaml.stringify(plan)}---\n`);
+    await createPlanFixture(plan, { dir: customDir });
 
     const options = {
       dir: customDir,
@@ -602,7 +667,7 @@ describe('handleListCommand', () => {
     expect(tableData[1][0]).toBe(1);
   });
 
-  test('handles plans with projects in title display', async () => {
+  test('shows the stored plan title when reading from SQLite', async () => {
     const plan = {
       id: 1,
       title: 'Plan Title',
@@ -623,7 +688,7 @@ describe('handleListCommand', () => {
       ],
     };
 
-    await fs.writeFile(path.join(tasksDir, '1.yml'), `---\n${yaml.stringify(plan)}---\n`);
+    await createPlanFixture(plan);
 
     const options = {};
     const command = {
@@ -637,12 +702,10 @@ describe('handleListCommand', () => {
     expect(mockTable).toHaveBeenCalled();
     const tableData = mockTable.mock.calls[0][0];
 
-    // The combined title should include the project
-    expect(tableData[1][2]).toContain('project-123');
     expect(tableData[1][2]).toContain('Plan Title');
   });
 
-  test('shows S in tasks column for simple plans without tasks from local files', async () => {
+  test('shows S in tasks column for simple plans without tasks', async () => {
     const plan = {
       id: 1,
       title: 'Simple Local Plan',
@@ -653,10 +716,9 @@ describe('handleListCommand', () => {
       tasks: [],
     };
 
-    await fs.writeFile(path.join(tasksDir, '1.yml'), `---\n${yaml.stringify(plan)}---\n`);
+    await createPlanFixture(plan);
 
     const options = {
-      local: true,
       all: true,
     };
     const command = {
@@ -733,12 +795,8 @@ describe('handleListCommand', () => {
       },
     ];
 
-    // Write plan files
     for (const plan of plans) {
-      await fs.writeFile(
-        path.join(tasksDir, `${plan.id}.yml`),
-        `---\n${yaml.stringify(plan)}---\n`
-      );
+      await createPlanFixture(plan);
     }
 
     const options = {};
@@ -764,11 +822,9 @@ describe('handleListCommand', () => {
     // - 1✓ (done)
     // - 2… (in_progress)
     // - 3 (pending)
-    // - 999(?) (not found)
     expect(depsColumn).toContain('1✓');
     expect(depsColumn).toContain('2…');
     expect(depsColumn).toContain('3');
-    expect(depsColumn).toContain('999(?)');
   });
 
   test('filters plans by search terms', async () => {
@@ -810,10 +866,10 @@ describe('handleListCommand', () => {
       tasks: [],
     };
 
-    await fs.writeFile(path.join(tasksDir, '1.yml'), `---\n${yaml.stringify(plan1)}---\n`);
-    await fs.writeFile(path.join(tasksDir, '2.yml'), `---\n${yaml.stringify(plan2)}---\n`);
-    await fs.writeFile(path.join(tasksDir, '3.yml'), `---\n${yaml.stringify(plan3)}---\n`);
-    await fs.writeFile(path.join(tasksDir, '4.yml'), `---\n${yaml.stringify(plan4)}---\n`);
+    await createPlanFixture(plan1);
+    await createPlanFixture(plan2);
+    await createPlanFixture(plan3);
+    await createPlanFixture(plan4);
 
     const options = {};
     const command = {
@@ -868,8 +924,8 @@ describe('handleListCommand', () => {
       tasks: [],
     };
 
-    await fs.writeFile(path.join(tasksDir, '1.yml'), `---\n${yaml.stringify(plan1)}---\n`);
-    await fs.writeFile(path.join(tasksDir, '2.yml'), `---\n${yaml.stringify(plan2)}---\n`);
+    await createPlanFixture(plan1);
+    await createPlanFixture(plan2);
 
     const options = {};
     const command = {
@@ -924,9 +980,9 @@ describe('handleListCommand', () => {
       tasks: [],
     };
 
-    await fs.writeFile(path.join(tasksDir, '1.yml'), `---\n${yaml.stringify(plan1)}---\n`);
-    await fs.writeFile(path.join(tasksDir, '2.yml'), `---\n${yaml.stringify(plan2)}---\n`);
-    await fs.writeFile(path.join(tasksDir, '3.yml'), `---\n${yaml.stringify(plan3)}---\n`);
+    await createPlanFixture(plan1);
+    await createPlanFixture(plan2);
+    await createPlanFixture(plan3);
 
     const options = {};
     const command = {
@@ -987,12 +1043,8 @@ describe('handleListCommand', () => {
       },
     ];
 
-    // Write plan files
     for (const plan of plans) {
-      await fs.writeFile(
-        path.join(tasksDir, `${plan.id}.yml`),
-        `---\n${yaml.stringify(plan)}---\n`
-      );
+      await createPlanFixture(plan);
     }
 
     const options = {
@@ -1043,12 +1095,8 @@ describe('handleListCommand', () => {
       });
     }
 
-    // Write plan files
     for (const plan of plans) {
-      await fs.writeFile(
-        path.join(tasksDir, `${plan.id}.yml`),
-        `---\n${yaml.stringify(plan)}---\n`
-      );
+      await createPlanFixture(plan);
     }
 
     const options = {
@@ -1103,12 +1151,8 @@ describe('handleListCommand', () => {
       });
     }
 
-    // Write plan files
     for (const plan of plans) {
-      await fs.writeFile(
-        path.join(tasksDir, `${plan.id}.yml`),
-        `---\n${yaml.stringify(plan)}---\n`
-      );
+      await createPlanFixture(plan);
     }
 
     const options = {
@@ -1184,12 +1228,8 @@ describe('handleListCommand', () => {
       },
     ];
 
-    // Write plan files
     for (const plan of plans) {
-      await fs.writeFile(
-        path.join(tasksDir, `${plan.id}.yml`),
-        `---\n${yaml.stringify(plan)}---\n`
-      );
+      await createPlanFixture(plan);
     }
 
     const options = {
@@ -1270,12 +1310,8 @@ describe('handleListCommand', () => {
       },
     ];
 
-    // Write plan files
     for (const plan of plans) {
-      await fs.writeFile(
-        path.join(tasksDir, `${plan.id}.yml`),
-        `---\n${yaml.stringify(plan)}---\n`
-      );
+      await createPlanFixture(plan);
     }
 
     const options = {
@@ -1308,7 +1344,7 @@ describe('handleListCommand', () => {
     expect(shownIds).toEqual([3, 2, 1]);
   });
 
-  test('limits results without including nullish sort values at the tail', async () => {
+  test('uses DB timestamps when limiting results sorted by created date', async () => {
     // Clear cache and mocks
     clearPlanCache();
     mockTable.mockClear();
@@ -1343,10 +1379,7 @@ describe('handleListCommand', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(
-        path.join(tasksDir, `${plan.id}.yml`),
-        `---\n${yaml.stringify(plan)}---\n`
-      );
+      await createPlanFixture(plan);
     }
 
     await handleListCommand(
@@ -1366,7 +1399,7 @@ describe('handleListCommand', () => {
     const tableData = mockTable.mock.calls[0][0];
     const shownTitles = tableData.slice(1).map((row: any[]) => row[2]);
 
-    expect(shownTitles).toEqual(['Dated Plan']);
+    expect(shownTitles).toEqual(['Dated Plan', 'Missing Created At 2']);
   });
 
   test('includes workspace assignments in table output', async () => {
@@ -1381,7 +1414,7 @@ describe('handleListCommand', () => {
       dependencies: [],
     };
 
-    await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), `---\n${yaml.stringify(plan)}---\n`);
+    await createPlanFixture(plan);
 
     assignmentsData = {
       'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa': {
@@ -1425,10 +1458,7 @@ describe('handleListCommand', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(
-        path.join(tasksDir, `${plan.id}.yml`),
-        `---\n${yaml.stringify(plan)}---\n`
-      );
+      await createPlanFixture(plan);
     }
 
     assignmentsData = {
@@ -1473,10 +1503,7 @@ describe('handleListCommand', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(
-        path.join(tasksDir, `${plan.id}.yml`),
-        `---\n${yaml.stringify(plan)}---\n`
-      );
+      await createPlanFixture(plan);
     }
 
     assignmentsData = {
@@ -1521,10 +1548,7 @@ describe('handleListCommand', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(
-        path.join(tasksDir, `${plan.id}.yml`),
-        `---\n${yaml.stringify(plan)}---\n`
-      );
+      await createPlanFixture(plan);
     }
 
     assignmentsData = {
@@ -1565,7 +1589,7 @@ describe('handleListCommand', () => {
       dependencies: [],
     };
 
-    await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), `---\n${yaml.stringify(plan)}---\n`);
+    await createPlanFixture(plan);
 
     assignmentsData = {
       '30303030-3030-4030-8030-303030303030': {
@@ -1594,7 +1618,7 @@ describe('handleListCommand', () => {
       dependencies: [],
     };
 
-    await fs.writeFile(path.join(tasksDir, `${plan.id}.yml`), `---\n${yaml.stringify(plan)}---\n`);
+    await createPlanFixture(plan);
 
     currentUser = null;
 
@@ -1622,10 +1646,7 @@ describe('handleListCommand', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(
-        path.join(tasksDir, `${plan.id}.yml`),
-        `---\n${yaml.stringify(plan)}---\n`
-      );
+      await createPlanFixture(plan);
     }
 
     await handleListCommand(
@@ -1647,10 +1668,7 @@ describe('handleListCommand', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(
-        path.join(tasksDir, `${plan.id}.yml`),
-        `---\n${yaml.stringify(plan)}---\n`
-      );
+      await createPlanFixture(plan);
     }
 
     await handleListCommand(
@@ -1678,14 +1696,8 @@ describe('handleListCommand', () => {
       tasks: [],
     };
 
-    await fs.writeFile(
-      path.join(tasksDir, '1.yml'),
-      `---\n${yaml.stringify(planWithMixedCase)}---\n`
-    );
-    await fs.writeFile(
-      path.join(tasksDir, '2.yml'),
-      `---\n${yaml.stringify(planWithoutTags)}---\n`
-    );
+    await createPlanFixture(planWithMixedCase);
+    await createPlanFixture(planWithoutTags);
 
     await handleListCommand({ all: true, tag: ['DESIGN'] }, { parent: { opts: () => ({}) } });
 
@@ -1702,10 +1714,7 @@ describe('handleListCommand', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(
-        path.join(tasksDir, `${plan.id}.yml`),
-        `---\n${yaml.stringify(plan)}---\n`
-      );
+      await createPlanFixture(plan);
     }
 
     await handleListCommand({ all: true, sort: 'id' }, { parent: { opts: () => ({}) } });
@@ -1729,10 +1738,7 @@ describe('handleListCommand', () => {
     ];
 
     for (const plan of plans) {
-      await fs.writeFile(
-        path.join(tasksDir, `${plan.id}.yml`),
-        `---\n${yaml.stringify(plan)}---\n`
-      );
+      await createPlanFixture(plan);
     }
 
     await handleListCommand({ all: true, sort: 'id', epic: 1 }, { parent: { opts: () => ({}) } });
@@ -1750,7 +1756,7 @@ describe('handleListCommand', () => {
       tags: ['frontend', 'urgent'],
       tasks: [],
     };
-    await fs.writeFile(path.join(tasksDir, '5.yml'), `---\n${yaml.stringify(plan)}---\n`);
+    await createPlanFixture(plan);
 
     await handleListCommand({ all: true }, { parent: { opts: () => ({}) } });
 

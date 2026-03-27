@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import * as path from 'path';
 
 import type { PlanSchema } from './planSchema.js';
@@ -216,7 +217,12 @@ export function formatReadyPlansAsJson<T extends PlanSchema>(
       needsGenerate: (plan.tasks?.length ?? 0) === 0,
       dependencies: plan.dependencies ?? [],
       assignedTo: plan.assignedTo,
-      filename: gitRoot ? path.relative(gitRoot, plan.filename) : plan.filename,
+      filename:
+        plan.filename && fs.existsSync(plan.filename)
+          ? gitRoot
+            ? path.relative(gitRoot, plan.filename)
+            : plan.filename
+          : '',
       createdAt: plan.createdAt,
       updatedAt: plan.updatedAt,
       tags: normalizeTags(plan.tags),

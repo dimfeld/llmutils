@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { withPlanAutoSync } from '../plan_materialize.js';
 import { resolvePlan } from '../plan_display.js';
 import { clearPlanCache, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
@@ -11,18 +12,29 @@ export async function updatePlanDetailsTool(
   context: ToolContext
 ): Promise<ToolResult<{ path: string }>> {
   clearPlanCache();
-  const { plan, planPath } = await resolvePlan(args.plan, context);
-  const updatedDetails = updateDetailsWithinDelimiters(args.details, plan.details, args.append);
+  // Resolve plan to get its numeric ID for withPlanAutoSync
+  const { plan: initialPlan } = await resolvePlan(args.plan, context);
+  if (typeof initialPlan.id !== 'number') {
+    throw new Error('Resolved plan is missing a numeric ID.');
+  }
 
-  const updatedPlan: PlanSchema = {
-    ...plan,
-    details: updatedDetails,
-    updatedAt: new Date().toISOString(),
-  };
+  let relativePath = `plan ${initialPlan.id}`;
+  await withPlanAutoSync(initialPlan.id, context.gitRoot, async () => {
+    const { plan, planPath } = await resolvePlan(args.plan, context);
+    const updatedDetails = updateDetailsWithinDelimiters(args.details, plan.details, args.append);
 
-  await writePlanFile(planPath, updatedPlan);
+    const updatedPlan: PlanSchema = {
+      ...plan,
+      details: updatedDetails,
+      updatedAt: new Date().toISOString(),
+    };
 
-  const relativePath = path.relative(context.gitRoot, planPath) || planPath;
+    await writePlanFile(planPath, updatedPlan, { cwdForIdentity: context.gitRoot });
+    relativePath = planPath
+      ? path.relative(context.gitRoot, planPath) || planPath
+      : `plan ${plan.id}`;
+  });
+
   const action = args.append ? 'Appended to' : 'Updated';
   const text = `${action} details in ${relativePath}`;
 

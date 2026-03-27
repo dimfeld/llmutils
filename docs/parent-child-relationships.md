@@ -26,7 +26,7 @@ All tim commands work together to maintain consistency:
 
 When all child plans of a parent reach a terminal state (`done` or `cancelled`), the parent plan is automatically marked as `done`. This applies consistently across both the CLI (`tim done`) and agent execution paths. A cancelled parent is preserved — completing the last child will not overwrite a parent that was explicitly cancelled.
 
-**Implementation note**: Parent completion checks must run _after_ writing the child's updated status to the plan file. If the check runs before the write, it reads stale data and may not detect that all children are now complete.
+**Implementation note**: Parent completion is handled by a single consolidated implementation in `src/tim/plans/parent_cascade.ts`. Both `checkAndMarkParentDone()` and `markParentInProgress()` use DB queries (`getPlansByParentUuid()`) to find children and check their statuses, rather than scanning plan files. The functions accept `ParentCascadeOptions` with callbacks for logging, allowing CLI and agent code to provide different output. Parent completion checks must run _after_ writing the child's updated status to the DB.
 
 ### Circular Dependency Prevention
 
@@ -40,43 +40,46 @@ When creating new plans, you can establish parent-child relationships immediatel
 
 ```bash
 # Create a parent plan
-tim add "User Authentication System" --output tasks/auth-system.yml
+tim add "User Authentication System"
 
 # Create child plans that reference the parent
-tim add "Database Schema" --parent auth-system --output tasks/db-schema.yml
-tim add "API Endpoints" --parent auth-system --depends-on db-schema --output tasks/api-endpoints.yml
-tim add "Frontend Components" --parent auth-system --depends-on api-endpoints --output tasks/frontend.yml
+tim add "Database Schema" --parent auth-system
+tim add "API Endpoints" --parent auth-system --depends-on db-schema
+tim add "Frontend Components" --parent auth-system --depends-on api-endpoints
 ```
 
 In this example:
 
-- `auth-system.yml` becomes the parent plan
-- All child plans (`db-schema.yml`, `api-endpoints.yml`, `frontend.yml`) will automatically be added to the parent's dependencies array
+- The parent plan is created in the DB and assigned a numeric ID
+- All child plans will automatically be added to the parent's dependencies array
 - Child plans can have their own dependencies (like `api-endpoints` depending on `db-schema`)
+- No tasks directory or output files are required — plans are stored in the SQLite database
 
 ### Using the Set Command
 
 You can establish or modify parent-child relationships for existing plans:
 
 ```bash
-# Set a parent for an existing plan
-tim set existing-plan.yml --parent parent-plan-id
+# Set a parent for an existing plan (by plan ID)
+tim set 123 --parent 100
 
 # Change a plan's parent (updates both old and new parents)
-tim set child-plan.yml --parent new-parent-id
+tim set 124 --parent 101
 
 # Remove a parent relationship
-tim set child-plan.yml --no-parent
+tim set 124 --no-parent
 ```
 
-## Plan File Structure
+## Plan Structure
 
-### Child Plan Structure
+Plans are stored in the SQLite database as the source of truth. When materialized to files (e.g., during `tim edit` or agent execution), they use YAML frontmatter + markdown body format:
+
+### Child Plan
 
 ```yaml
-id: child-plan-123
+id: 123
 title: 'Database Schema Setup'
-parent: auth-system-456 # References parent plan ID
+parent: 456 # References parent plan ID
 dependencies: [] # Child's own dependencies
 status: pending
 priority: high
@@ -85,12 +88,12 @@ tasks:
     # ... task details
 ```
 
-### Parent Plan Structure
+### Parent Plan
 
 ```yaml
-id: auth-system-456
+id: 456
 title: 'User Authentication System'
-dependencies: [child-plan-123, another-child-789] # Automatically maintained
+dependencies: [123, 789] # Automatically maintained
 status: pending
 priority: high
 tasks:
@@ -119,19 +122,19 @@ Project Root (ID: 100)
 
 ```bash
 # Create the root project
-tim add "Complete Authentication System" --output tasks/auth-root.yml
+tim add "Complete Authentication System"
 
 # Create phase plans
-tim add "Foundation Phase" --parent auth-root --output tasks/phase-1.yml
-tim add "Features Phase" --parent auth-root --depends-on phase-1 --output tasks/phase-2.yml
-tim add "Integration Phase" --parent auth-root --depends-on phase-2 --output tasks/phase-3.yml
+tim add "Foundation Phase" --parent auth-root
+tim add "Features Phase" --parent auth-root --depends-on phase-1
+tim add "Integration Phase" --parent auth-root --depends-on phase-2
 
 # Create sub-tasks for each phase
-tim add "Database Schema" --parent phase-1 --output tasks/db-schema.yml
-tim add "Core API" --parent phase-1 --depends-on db-schema --output tasks/core-api.yml
+tim add "Database Schema" --parent phase-1
+tim add "Core API" --parent phase-1 --depends-on db-schema
 
-tim add "User Management" --parent phase-2 --depends-on core-api --output tasks/user-mgmt.yml
-tim add "Authentication" --parent phase-2 --depends-on user-mgmt --output tasks/auth-impl.yml
+tim add "User Management" --parent phase-2 --depends-on core-api
+tim add "Authentication" --parent phase-2 --depends-on user-mgmt
 ```
 
 ## Validation and Auto-Fixing
@@ -141,25 +144,25 @@ tim add "Authentication" --parent phase-2 --depends-on user-mgmt --output tasks/
 The `validate` command ensures your plan relationships remain consistent:
 
 ```bash
-# Validate all plans
+# Validate all plans (loads from DB)
 tim validate
-
-# Validate specific plans
-tim validate tasks/*.yml
 
 # Validate with detailed output
 tim validate --verbose
 
 # Check without auto-fixing
 tim validate --no-fix
+
+# Validate plans within a specific repo context
+tim validate --dir /path/to/repo
 ```
 
 ### What Gets Validated
 
-1. **Schema Compliance**: Ensures all plan files follow the correct YAML structure
-2. **Parent-Child Consistency**: Verifies that every child-parent relationship is bidirectional
-3. **Circular Dependencies**: Detects and prevents circular reference chains
-4. **Dependency Resolution**: Ensures all referenced dependencies exist
+1. **Parent-Child Consistency**: Verifies that every child-parent relationship is bidirectional
+2. **Circular Dependencies**: Detects and prevents circular reference chains
+3. **Dependency Resolution**: Ensures all referenced dependencies exist
+4. **Schema Compliance**: Validates plan structure for both file-backed and DB-only plans
 
 ### Auto-Fixing Behavior
 
@@ -169,11 +172,12 @@ When inconsistencies are found, `validate` automatically:
 - Removes orphaned dependencies from parent plans
 - Reports all changes made
 - Preserves existing dependencies and metadata
+- For DB-only plans, fixes are written directly to the DB via `writePlanToDb()` without creating files
 
 Example output:
 
 ```
-✓ Validated 15 plan files
+✓ Validated 15 plans
 ⚠ Found 2 inconsistencies:
   - Added child-plan-123 to parent auth-system-456 dependencies
   - Removed orphaned dependency old-child-999 from parent auth-system-456
@@ -196,20 +200,7 @@ tim add "Part 1"
 tim add "TODO Items"
 ```
 
-**Organize files logically:**
-
-```
-tasks/
-├── auth-system/
-│   ├── auth-root.yml
-│   ├── phase-1-foundation.yml
-│   ├── phase-2-features.yml
-│   └── components/
-│       ├── db-schema.yml
-│       ├── api-endpoints.yml
-│       └── frontend.yml
-└── other-features/
-```
+**Use `tim edit` to add details:** Plans are stored in the DB. Use `tim edit <planId>` to open a plan in your editor — it materializes to a temporary file, opens `$EDITOR`, and syncs changes back to DB on close.
 
 ### 2. Dependency Design
 
@@ -234,16 +225,16 @@ Database Schema → API Endpoints → Frontend → Testing
 
 ```bash
 # 1. Create the overall project structure
-tim add "E-commerce Platform" --output tasks/ecommerce-root.yml
+tim add "E-commerce Platform"
 
 # 2. Break into phases
-tim add "Backend Services" --parent ecommerce-root --output tasks/backend.yml
-tim add "Frontend Application" --parent ecommerce-root --output tasks/frontend.yml
-tim add "Integration & Testing" --parent ecommerce-root --output tasks/integration.yml
+tim add "Backend Services" --parent ecommerce-root
+tim add "Frontend Application" --parent ecommerce-root
+tim add "Integration & Testing" --parent ecommerce-root
 
 # 3. Add detailed tasks to each phase as needed
-tim add "Product Catalog API" --parent backend --output tasks/catalog-api.yml
-tim add "Shopping Cart Service" --parent backend --depends-on catalog-api --output tasks/cart-service.yml
+tim add "Product Catalog API" --parent backend
+tim add "Shopping Cart Service" --parent backend --depends-on catalog-api
 ```
 
 **Use the `--next-ready` workflow:**
@@ -284,22 +275,22 @@ tim validate --no-fix  # Fail if inconsistencies found
 1. **Create the root plan:**
 
    ```bash
-   tim add "My New Feature" --priority high --output tasks/my-feature.yml
+   tim add "My New Feature" --priority high
    ```
 
 2. **Break into phases:**
 
    ```bash
-   tim add "Phase 1: Foundation" --parent my-feature --output tasks/phase-1.yml
-   tim add "Phase 2: Implementation" --parent my-feature --depends-on phase-1 --output tasks/phase-2.yml
-   tim add "Phase 3: Testing" --parent my-feature --depends-on phase-2 --output tasks/phase-3.yml
+   tim add "Phase 1: Foundation" --parent my-feature
+   tim add "Phase 2: Implementation" --parent my-feature --depends-on phase-1
+   tim add "Phase 3: Testing" --parent my-feature --depends-on phase-2
    ```
 
 3. **Add detailed tasks:**
 
    ```bash
-   tim add "Database Setup" --parent phase-1 --output tasks/db-setup.yml
-   tim add "API Framework" --parent phase-1 --depends-on db-setup --output tasks/api-framework.yml
+   tim add "Database Setup" --parent phase-1
+   tim add "API Framework" --parent phase-1 --depends-on db-setup
    ```
 
 4. **Validate and execute:**
@@ -314,20 +305,20 @@ tim validate --no-fix  # Fail if inconsistencies found
 
    ```bash
    tim list --all
-   tim show existing-plan.yml
+   tim show 100
    ```
 
 2. **Create new parent if needed:**
 
    ```bash
-   tim add "Refactored Project Structure" --output tasks/new-parent.yml
+   tim add "Refactored Project Structure"
    ```
 
 3. **Update relationships:**
 
    ```bash
-   tim set existing-child-1.yml --parent new-parent
-   tim set existing-child-2.yml --parent new-parent
+   tim set 101 --parent new-parent
+   tim set 102 --parent new-parent
    ```
 
 4. **Validate changes:**
@@ -367,7 +358,7 @@ Solution: Run `tim validate` to automatically fix the inconsistency.
 
 ```bash
 # See detailed plan information
-tim show plan.yml --verbose
+tim show 123 --verbose
 
 # Check dependency resolution
 tim list --status all --sort dependencies

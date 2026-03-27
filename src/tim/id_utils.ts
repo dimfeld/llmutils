@@ -1,7 +1,8 @@
 import { getDatabase } from './db/database.js';
 import { reserveNextPlanId } from './db/project.js';
 import { getRepositoryIdentity } from './assignments/workspace_identifier.js';
-import { getMaxNumericPlanId } from './plans.js';
+import { resolveProjectContext } from './plan_materialize.js';
+import { getGitRoot } from '../common/git.js';
 
 const EPOCH = new Date('2025-05-01T00:00:00.000Z').getTime();
 
@@ -65,12 +66,16 @@ export function generateAlphanumericId(): string {
  * Uses shared storage to coordinate IDs across multiple workspaces.
  * Falls back to local-only behavior if shared storage is unavailable.
  */
-export async function generateNumericPlanId(tasksDir: string): Promise<number> {
-  const localMaxId = await getMaxNumericPlanId(tasksDir);
+export async function generateNumericPlanId(
+  tasksDir: string,
+  options?: { repoRoot?: string }
+): Promise<number> {
+  const repoRoot = options?.repoRoot ?? (await getGitRoot(tasksDir)) ?? tasksDir;
+  const { maxNumericId: localMaxId } = await resolveProjectContext(repoRoot);
 
   // Try to use shared ID storage for coordination across workspaces
   try {
-    const repoIdentity = await getRepositoryIdentity();
+    const repoIdentity = await getRepositoryIdentity({ cwd: repoRoot });
     const db = getDatabase();
     const result = reserveNextPlanId(
       db,

@@ -3,14 +3,14 @@ import * as path from 'node:path';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 
-import { packageUp } from 'package-up';
 import { ImportWalker } from './walk_imports';
 import { Extractor } from '../treesitter/extract.ts';
 import { Resolver } from './resolve.ts';
 
 describe('getDefiningFiles', () => {
+  const rootDir = path.resolve(import.meta.dir, '../../..');
+
   test('walk imports from walk_imports.ts', async () => {
-    const rootDir = path.dirname((await packageUp())!);
     const walker = new ImportWalker(new Extractor(), await Resolver.new(rootDir));
 
     const imports = await walker.getDefiningFiles(
@@ -25,7 +25,6 @@ describe('getDefiningFiles', () => {
   });
 
   test('walk imports from apply-llm-edits.ts', async () => {
-    const rootDir = path.dirname((await packageUp())!);
     const walker = new ImportWalker(new Extractor(), await Resolver.new(rootDir));
 
     const imports = await walker.getDefiningFiles(

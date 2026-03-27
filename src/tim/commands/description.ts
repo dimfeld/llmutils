@@ -4,7 +4,6 @@
 import chalk from 'chalk';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { getGitRoot } from '../../common/git.js';
 import { log } from '../../logging.js';
 import { write } from '../../common/clipboard.js';
 import { spawnAndLogOutput } from '../../common/process.js';
@@ -419,13 +418,11 @@ export async function handleDescriptionCommand(
     return;
   }
 
-  // Extract context for use in the rest of the function
-  const { resolvedPlanFile, planData, diffResult } = context;
+  // Extract context for use in the rest of the function — use gitRoot from context
+  // (derived from resolved repoRoot, not CWD) so --config cross-repo works correctly
+  const { resolvedPlanFile, planData, gitRoot, diffResult } = context;
 
   log(chalk.green(`Generating PR description for plan: ${planData.id} - ${planData.title}`));
-
-  // Get git root for file operations
-  const gitRoot = await getGitRoot();
 
   // Load custom instructions
   let customInstructions = '';

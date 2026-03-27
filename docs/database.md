@@ -19,6 +19,7 @@
 - Import functions should preserve legacy field values (status, timestamps, etc.) rather than applying defaults that lose data
 - The `shouldRunImport`/`markImportCompleted` pattern uses a persistent `import_completed` flag in `schema_version`, not record counts, to prevent redundant filesystem scans on subsequent opens
 - One-time migration on DB creation is sufficient — re-importing legacy data on every command invocation can overwrite newer DB state
+- Hierarchical imports (parent + children from a single GitHub issue) are written to the DB atomically in a single transaction via `writeImportedPlansToDbTransactionally()`. File writes happen after the transaction with `skipDb: true`. The plan snapshot is refreshed after each successful import so subsequent imports in the same batch see newly created plans
 
 ### Querying / Listing Patterns
 
@@ -59,11 +60,11 @@ Plan metadata, tasks, and dependencies are mirrored in SQLite alongside the YAML
 **Sync module** (`src/tim/db/plan_sync.ts`):
 
 - `syncPlanToDb(plan, filePath, options?)`: Upserts a single plan to DB. Uses lazy-cached project context (keyed by git root) resolved via `getRepositoryIdentity()` + `getOrCreateProject()`. Accepts optional `idToUuid` map for bulk operations. Options: `throwOnError` (propagate errors instead of logging warnings), `cwdForIdentity` (override CWD for repository identity resolution).
-- `removePlanFromDb(planUuid)`: Deletes plan and its assignment in a single transaction.
+- `removePlanFromDb(planUuid, options?)`: Deletes plan and its assignment in a single transaction. Supports `throwOnError: true` to propagate DB deletion failures to the caller (used by `cleanup-temp` to keep the DB row intact when file deletion succeeds but DB deletion fails).
 - `syncAllPlansToDb(projectId, tasksDir, options?)`: Bulk sync with optional prune (removes DB plans not found on disk, including their assignments).
 - `clearPlanSyncContext()`: Resets cached context for testing.
 - DB sync failures are logged as warnings, never blocking plan file writes.
-- Stale write protection: when a plan includes `updatedAt`, upserts are skipped if that timestamp is older than the existing row's `updated_at`. `tim sync --force` disables this guard.
+- Stale write protection: when a plan includes `updatedAt`, upserts are skipped if that timestamp is older than the existing row's `updated_at`. `tim sync --force` disables this guard. All file→DB sync paths (including `syncMaterializedPlan` and `resolvePlanFromDbOrSyncFile`) rely on this guard — `force: true` is reserved for explicit user-initiated sync operations, never used in generic resolution or workspace reuse paths.
 - Single-plan sync hydration: `tim sync --plan <id>` also checks the named plan's `references` UUIDs and syncs any referenced plans that are missing in SQLite.
 
 **Context caching**: The sync module caches project context per git root to avoid repeated `getRepositoryIdentity()` calls. Concurrent context resolution for the same git root is deduplicated via a shared promise.
@@ -90,24 +91,127 @@ Plan materialization writes plan files from DB data to disk at well-known paths,
 
 **Core functions**:
 
-- `materializePlan(planId, repoRoot, options?)`: Queries plan from DB, converts via `planRowToSchemaInput()`, writes with `writePlanFile()` using `skipSync: true` to prevent circular DB sync. Returns the file path.
+- `materializePlan(planId, repoRoot, options?)`: Queries plan from DB, converts via `planRowToSchemaInput()`, writes with `writePlanFile()` using `skipDb: true` to prevent circular DB sync. Returns the file path.
 - `materializeRelatedPlans(planId, repoRoot, options?)`: Materializes parent, children, siblings, and dependency plans as `.ref.md` reference files.
-- `syncMaterializedPlan(planId, repoRoot)`: Pre-validates UUID from raw file content, then reads materialized file via `readPlanFile()` and syncs to DB via `syncPlanToDb()` with `throwOnError: true`.
+- `syncMaterializedPlan(planId, repoRoot)`: Pre-validates UUID from raw file content, then reads materialized file via `readPlanFile()` and syncs to DB via `syncPlanToDb()` with `throwOnError: true`. Relies on the normal timestamp guard (no `force: true`) to prevent stale materialized files from overwriting newer DB state. Rejects materialized files missing `updatedAt` when the DB already has a valid timestamp for that plan.
 - `withPlanAutoSync(planId, repoRoot, fn)`: Auto-sync wrapper for commands that modify plans while agents may be editing the materialized file. Syncs file→DB before `fn()`, re-materializes DB→file after. Uses try/finally with error suppression in the finally block to prevent re-materialization errors from masking `fn()` errors.
 
 **CLI entry points**: `tim materialize <planId>` writes the working copy, `tim sync <planId>` syncs that materialized file back to DB, and `tim cleanup-materialized` removes stale files.
 
-**`skipSync` option on `writePlanFile()`**: Prevents the automatic `syncPlanToDb()` call at the end of file writing. Used by materialization to avoid circular sync when writing a file that was just read from the DB.
+**`skipDb` / `skipFile` options on `writePlanFile()`**: `skipDb` (aliased as `skipSync` for backward compatibility) prevents the DB write; used by materialization to avoid circular sync when writing a file that was just read from the DB. `skipFile` prevents the file write; used when only the DB needs updating. When `filePath` is null, file writing is automatically skipped.
 
 **UUID safety**: `syncMaterializedPlan()` extracts the UUID from raw file YAML before calling `readPlanFile()`, because `readPlanFile()` auto-generates UUIDs for files missing them (which would corrupt a materialized file with a wrong UUID).
+
+**`readPlanFile()` write side effect**: `readPlanFile()` is not a pure read operation. When a plan file is missing a UUID, it auto-generates one and persists it back to disk via `writePlanFile()`, which also triggers a DB insert. Callers expecting read-only behavior should be aware of this mutation.
+
+### DB-First Plan Resolution and Writing
+
+The plan system uses DB-first access: the SQLite database is the source of truth for plan data, with files as optional materialized views.
+
+**Plan resolution** (`src/tim/plans.ts`):
+
+- `resolvePlanFromDb(planArg, repoRoot, options?)`: Resolves a plan from the DB by numeric ID or UUID string. Returns `{ plan: PlanSchema, planPath: string | null }` where `planPath` is the materialized file path (via `getMaterializedPlanPath()`) if one exists on disk, or `null` for DB-only plans. Throws `PlanNotFoundError` if the plan is not found in the DB — no file fallback. Options: `context` (pre-resolved `ProjectContext`), `resolveDir` (base directory for resolving relative file paths — defaults to `process.cwd()`).
+- `PlanNotFoundError` (`src/tim/plans.ts`): Custom error class for plan-not-found conditions. Use `isPlanNotFoundError()` from `ensure_plan_in_db.ts` (which uses `instanceof`) to check errors — avoids false positives from broad string matching against unrelated "not found" messages.
+- `resolvePlan()` in `plan_display.ts` delegates to `resolvePlanFromDb()`. Returns nullable `planPath` — callers must handle `null`.
+
+**Plan writing** (`src/tim/plans.ts`):
+
+- `writePlanToDb(input, options?)`: Validates, normalizes (fancy quotes, deprecated fields), and writes a plan to the DB in a single transaction (`upsertPlan` + `upsertPlanTasks` + `upsertPlanDependencies` + `upsertPlanTags`). Returns the validated `PlanSchema`. Accepts optional `ProjectContext` to avoid redundant queries.
+- `writePlanFile(filePath, input, options?)`: DB-first write function. `filePath` can be `string | null` — when null, only the DB is written (file write is skipped). When `filePath` is null, either `cwdForIdentity` or `context` must be provided (throws otherwise) so the correct project can be resolved for the DB write. Options: `skipFile` (skip file write), `skipDb`/`skipSync` (skip DB write, used by materialization to avoid circular sync), `skipUpdatedAt`, `cwdForIdentity`, `context`.
+
+**Project context** (`src/tim/plan_materialize.ts`):
+
+- `resolveProjectContext(repoRoot, repository?)`: Returns `ProjectContext` with `projectId`, `rows`, `planIdToUuid`/`uuidToPlanId` maps, `duplicatePlanIds`, and `maxNumericId` (highest plan ID in DB). Caches results per repo root. Used by `resolvePlanFromDb()`, `writePlanToDb()`, and `generateNumericPlanId()`.
+
+**ID generation** (`src/tim/id_utils.ts`):
+
+- `generateNumericPlanId(tasksDir, options?)`: Uses `resolveProjectContext().maxNumericId` from the DB instead of scanning local files via `readAllPlans()`.
 
 ### Plan Loading from DB
 
 `src/tim/plans_db.ts` provides `loadPlansFromDb(searchDir, repositoryId)` — a shared function that assembles `PlanWithFilename` objects from DB rows (plans, tasks, tags, dependencies) for a given project. Returns `PlansLoadResult` with `plans: Map<number, PlanWithFilename>` and `duplicates`. Uses `planRowToSchemaInput()` to convert DB rows to `PlanSchema` objects with full field coverage.
 
-**`planRowToSchemaInput(row, tasks, deps, tags, uuidToPlanId?)`** converts a single plan's DB data to `PlanSchema`. Handles all fields including JSON-stored columns (`issue`, `pullRequest`, `docs`, `changedFiles`, `reviewIssues`). Resolves `parent_uuid` and dependency UUIDs back to numeric plan IDs — if a `uuidToPlanId` map is provided it uses that, otherwise it queries the DB for needed UUIDs. This shared converter is used by both `loadPlansFromDb()` (bulk loading) and will be used by `materializePlan()` (single-plan reconstruction).
+**`planRowToSchemaInput(row, tasks, deps, tags, uuidToPlanId?)`** converts a single plan's DB data to `PlanSchema`. Handles all fields including JSON-stored columns (`issue`, `pullRequest`, `docs`, `changedFiles`, `reviewIssues`). Resolves `parent_uuid` and dependency UUIDs back to numeric plan IDs — if a `uuidToPlanId` map is provided it uses that, otherwise it queries the DB for needed UUIDs. This shared converter is used by both `loadPlansFromDb()` (bulk loading) and `resolvePlanFromDb()` (single-plan resolution).
 
-Used by `tim list`, `tim ready`, and the MCP `list-ready-plans` tool via a DB-with-fallback pattern: try DB first, fall back to local YAML files if the DB returns no plans. The `--local` flag on both CLI commands bypasses the DB and reads files directly.
+**`planRowForTransaction(row, uuidToPlanId)`** is a convenience wrapper that fetches tasks, dependencies, and tags from the DB for a given plan row, then delegates to `planRowToSchemaInput()`. Used by commands that need to resolve a plan within a DB transaction (e.g., `add`, `set`, `create_plan`). **`invertPlanIdToUuidMap(planIdToUuid)`** converts a `Map<number, string>` (planId→UUID) to the `Map<string, number>` (UUID→planId) format expected by `planRowToSchemaInput`. Both are exported from `plans_db.ts` to avoid duplication across command modules.
+
+Used by `tim list`, `tim ready`, `tim show` (for `--next-ready` dependency resolution), and the MCP `list-ready-plans` tool (DB-only, no file fallback). The `--local` flag on CLI list/ready commands bypasses the DB and reads files directly.
+
+### Parent Cascade (DB-First)
+
+Parent completion and status cascading is handled by `src/tim/plans/parent_cascade.ts`, a consolidated module replacing the previous two separate implementations in `mark_done.ts` and `commands/agent/parent_plans.ts`.
+
+**Key functions**:
+
+- `checkAndMarkParentDone(config, plan, options?)`: Queries `getPlansByParentUuid()` to find all children of the parent, checks their statuses from DB. If all children are terminal (`done` or `cancelled`) and the parent isn't cancelled, marks the parent as `done` via `writePlanFile()` with auto-materialization. Recursively checks grandparent.
+- `markParentInProgress(config, plan, options?)`: Sets parent status to `in_progress` if currently `pending`. Uses DB queries to look up parent by UUID.
+
+**`ParentCascadeOptions`**: Both functions accept optional callbacks (`onParentMarkedDone`, `onParentMarkedInProgress`) for logging, allowing CLI and agent code to provide different output behavior.
+
+**Pattern**: Parent cascade operations must run _after_ writing the child's updated status to the DB. The functions use `withPlanAutoSync()` internally when the parent has a materialized file, ensuring file↔DB consistency.
+
+### MCP Tool DB-First Patterns
+
+MCP tools that modify plans follow a consistent DB-first pattern using `withPlanAutoSync()`:
+
+**Read-modify-write tools** (`manage_plan_task`, `update_plan_tasks`, `update_plan_details`):
+
+1. Resolve plan via `resolvePlan()` (DB-first) for initial ID extraction
+2. Wrap modification in `withPlanAutoSync(planId, repoRoot, async () => { ... })`
+3. Inside the wrapper: re-resolve from DB, modify in-memory, write back via `writePlanToDb()` or `writePlanFile()`
+4. Auto-sync handles file→DB before and DB→file after
+
+**Create tool** (`create_plan`):
+
+- Writes new plan directly to DB via atomic transaction (`upsertPlan` + `upsertPlanTasks` + parent update in single `db.transaction().immediate()`)
+- Generates numeric ID from `reserveNextPlanId()` (DB-backed)
+- Syncs parent materialized file before transaction, re-materializes after (async I/O outside synchronous transaction)
+- No tasks directory required
+
+**Read-only tools** (`get_plan`, `list_ready_plans`):
+
+- `get_plan` uses DB-first `resolvePlan()`
+- `list_ready_plans` is DB-only (no `readAllPlans()` fallback)
+
+### CLI Command DB-First Patterns
+
+All CLI commands use DB-first access — the SQLite database is the source of truth, with files as optional materialized views.
+
+**`tim add`**: Creates new plans directly in the DB without requiring a tasks directory or output file. Generates numeric IDs from `resolveProjectContext().maxNumericId`. Parent updates (adding child to parent's dependencies) happen atomically in the same DB transaction. When the `--edit` flag is used, the plan is materialized to `.tim/plans/{planId}.plan.md`, opened in `$EDITOR`, synced back to DB, then the temporary materialized file is cleaned up.
+
+**`tim edit`**: Materializes the plan from DB to `.tim/plans/{planId}.plan.md`, opens `$EDITOR`, syncs the edited file back to DB via `syncMaterializedPlan()`, then cleans up the materialized file. Pre-existing materialized files are preserved (only temp files created by the edit command are deleted). The editor's exit code is checked before syncing — non-zero exit skips the sync.
+
+**`tim set`**: Loads plan from DB via `resolvePlanFromDb()`, applies metadata changes in-memory, writes to DB via `writePlanToDb()`. Multi-plan updates (parent/child cascading, dependency changes) use DB transactions for atomicity. Re-materializes the plan file if one exists on disk. Uses `checkAndMarkParentDone()` from `parent_cascade.ts` for parent status cascading.
+
+**`tim done` / `mark_done.ts`**: Loads plan from DB, marks tasks/plans as done, updates `changedFiles` from Git, writes to DB via `writePlanToDb()`. Re-materializes if a materialized file exists. Parent cascade (`checkAndMarkParentDone()`) runs after the child's status is written to DB.
+
+**`tim set-task-done` / `tim add-task`**: Both use `resolvePlanFromDbOrSyncFile()` from `ensure_plan_in_db.ts` to resolve plans. This function syncs existing file paths to DB before resolving, ensuring file edits are captured during the transition period. Writes go through `writePlanFile()` (DB-first, then optional file materialization).
+
+**`tim list` / `tim ready`**: DB-only via `loadPlansFromDb()` — the `readAllPlans()` file-scanning fallback has been removed. The `--local` flag retains file scanning for backward compatibility. All filtering, sorting, and display logic operates on DB-loaded plans. Filenames in JSON/structured output are checked with `fs.existsSync()` before inclusion — DB-only plans get empty filenames instead of bogus synthesized paths, matching the MCP `list_ready_plans` behavior.
+
+**`tim show`**: Resolves plans from DB via `resolvePlanFromDb()`. When `--next-ready` is used, finds the next ready dependency using `loadPlansFromDb()` and DB-backed readiness checks, falling back to the parent plan when all dependencies are complete. Plan context display assembled from DB data; `planPath` may be null for DB-only plans.
+
+**`tim generate` / `tim chat`**: Resolve plans from DB via `resolvePlanFromDbOrSyncFile()`. Both commands derive the repo root from the loaded config via `resolveRepoRootForPlanArg()`, which correctly handles `--config` for cross-repo plan resolution. The repo root is computed once and shared between plan resolution and workspace setup. Plans are materialized into the workspace at `.tim/plans/{planId}.plan.md` via `setupWorkspace()` (which accepts a `planId` option) instead of copying task files. The executor edits the materialized file during execution. After the executor finishes, `syncPlanToDb()` syncs the edited file back to DB. Post-execution sync targets the actual file the executor edited (which may be the original `tasks/` path for file-backed plans running in the primary repo).
+
+**`tim agent`**: Uses DB-backed plan discovery functions from `plan_discovery.ts` for all plan resolution modes (`--next-ready`, `--latest`, `--next`, `--current`, direct argument). `resolvePlanFromDbOrSyncFile()` resolves the plan, then materializes into the workspace via `setupWorkspace()`. `batch_mode.ts` uses `setPlanStatusById()` for DB-first completion status updates. `stub_plan.ts` uses `setPlanStatusById()` for status transitions. When reusing a workspace branch, existing materialized files are synced back to DB before re-materializing to prevent data loss from unsynced edits. `ensure_plan_in_db.ts` promotes UUID-less file plans into DB state by generating UUIDs before syncing.
+
+**`tim review`**: When no plan file is specified, auto-detects the plan using a three-tier strategy via `autoSelectPlanForReview()`: (1) **Branch name match** (DB-first): extracts plan ID from the current branch name using `/^(\d+)-/` pattern and resolves via `resolvePlanFromDb()`. If found, materializes fresh from DB to avoid stale file overwrites. (2) **New plan on branch**: falls back to `findBranchSpecificPlan()` which scans git for newly created plan files. (3) **Single modified plan**: falls back to `findSingleModifiedPlanOnBranch()`. When a plan is explicitly specified via `tim review <planId>`, uses `resolvePlanFromDbOrSyncFile()`. Write operations (`resolveReviewPlanForWrite()`) use `resolveRepoRootForPlanArg()` with `configPath` threading for correct cross-repo resolution. `gatherPlanContext()` in `context_gathering.ts` uses `resolvePlanFromDbOrSyncFile()` for plan resolution and `loadPlansFromDb()` for hierarchy (parent chain, completed children), returning `repoRoot` and `gitRoot` in `PlanContext` so callers don't re-derive them from CWD. `autoSelectPlanForReview()` narrows its catch to plan-not-found errors only — unexpected DB failures are re-thrown instead of silently falling back to file-based selection. For `--autofix` flows, `ensureReviewPlanFilePath()` materializes DB-only plans before invoking the executor, memoizing to avoid redundant materialization. After the autofix executor edits the materialized file, `syncPlanToDb(force: true)` syncs changes back to DB (force is intentional since the executor just wrote the latest state). Both explicit `tim review 123 --autofix` and branch-name auto-selected DB-only plans are covered.
+
+**`tim description`**: Uses `gatherPlanContext()` for DB-first plan resolution and hierarchy loading. Derives `gitRoot` from the returned `PlanContext` rather than re-computing from CWD, ensuring correct behavior under `--config` for cross-repo scenarios.
+
+**`tim update-docs` / `tim update-lessons`**: Both commands accept `configPath` in their options and use `resolveRepoRootForPlanArg()` with it to derive the correct repo root. The resolved `repoRoot` is used as the executor's `baseDir`, ensuring cross-repo invocations (via `--config`) run the LLM against the correct working tree. The exported helper functions (`runUpdateDocs()`, `runUpdateLessons()`) also accept `configPath` in their options so direct callers (e.g., review autofix) can thread `--config` through correctly.
+
+**`tim validate`**: Loads all plans from DB via `loadPlansFromDb()` with a file overlay for YAML-specific validation (schema compliance, formatting). DB-only plans are schema-validated and participate in all fix passes. File-based validation concerns previously handled by the command (missing UUIDs, missing parent references) are now enforced by the DB schema and sync layer. Circular dependency detection remains as a graph-level check. When `--fix` auto-fixers operate on plans with backing files, they use `readPlanFile()`/`writePlanFile()`. For DB-only plans, fixers route through `writePlanToDb()` directly — no synthetic task files are created. The `references` YAML-only field is skipped for DB-only plans since it is not persisted in the DB. Fix functions in `references.ts` (`fixMissingUuids`, `fixReferenceIssues`, `ensureAllReferences`) handle DB-only plans: parent/dependency ID mismatches are fixed, but `references` map updates are skipped. DB-only validate fixes preserve existing DB `filename` metadata. The `--dir` flag validates plans within a specific repository context.
+
+**`tim renumber`**: Loads plans from DB, wraps multi-plan ID changes in a single DB transaction with snapshot-based rollback. After renumbering, stale materialized files at `.tim/plans/{oldId}.plan.md` are cleaned up and re-materialized with new IDs. Task files (if they exist) are also renamed. The ID→UUID map used for DB writes includes ALL project plans (not just the changed set) to ensure `toPlanUpsertInput()` can resolve parent/dependency UUID references.
+
+**Plan discovery** (`src/tim/plans/plan_discovery.ts`): DB-backed replacements for file-scanning plan discovery functions. `findNextReadyDependencyFromDb()` finds the next ready dependency for a plan. `findLatestPlanFromDb()` finds the most recently updated plan. `findNextPlanFromDb()` finds the next plan after a given plan ID. All use `loadPlansFromDb()` and DB queries instead of `readAllPlans()`. The former file-based `findNextReadyDependency` module (`find_next_dependency.ts`) has been removed — `findNextReadyDependencyFromDb` is the sole implementation. Shared in-memory collection helpers `findNextPlanFromCollection()` and `findNextReadyDependencyFromCollection()` are exported for callers that already have loaded plans (e.g., `show.ts`), avoiding redundant DB queries. All discovery functions use a unified priority scale: `{ urgent: 5, high: 4, medium: 3, low: 2, maybe: 1 }`. BFS traversal includes both dependency and child plan edges (matching `dependency_traversal.ts` semantics).
+
+**File-to-DB promotion** (`src/tim/ensure_plan_in_db.ts`): `resolvePlanFromDbOrSyncFile()` handles the transition from file-first to DB-first. When passed a file path, it syncs the file to DB (generating a UUID if missing) before resolving from DB — but without `force: true`, so the normal timestamp guard protects newer DB state from being overwritten by stale files. Files without `updatedAt` are treated as non-authoritative when the plan already exists in DB. Only `PlanNotFoundError` from DB resolution triggers the sync path (checked via `isPlanNotFoundError()` using `instanceof`); other errors are propagated. When passed a numeric ID or UUID, it resolves directly from DB. Callers are responsible for passing the correct `repoRoot` — typically obtained from `resolveRepoRootForPlanArg()` with `configPath` to honor `--config` for cross-repo scenarios. Accepts an optional `configBaseDir` parameter — when provided, relative file paths are resolved against it instead of `process.cwd()`, ensuring correct resolution under `--config` for cross-repo scenarios. Used by `generate`, `chat`, `agent`, `review`, `set-task-done`, and `add-task` commands.
+
+**Repo root resolution** (`src/tim/plan_repo_root.ts`): `resolveRepoRootForPlanArg(planArg, repoRoot?, configPath?)` derives the correct repository root for a plan argument. Absolute plan paths take precedence over `configPath` — the repo root is derived from the file's actual location, preventing cross-repo DB corruption (e.g., syncing a plan from repo B into repo A's database). When only `configPath` is provided, the repo root is derived from the config file's directory. Falls back to `getGitRoot()` or `process.cwd()` when neither is provided.
+
+**YAML-only field preservation**: Fields stored only in YAML files (rmfilter, generatedBy, promptsGeneratedAt, compactedAt, statusDescription) are not in the DB schema. When writing plans back to files after a DB round-trip, `mergeYamlPassthroughFields()` from `src/tim/plans/yaml_passthrough.ts` merges these fields from the original file content. These fields are lost for DB-only plans that have never been materialized.
 
 ### PR Status Cache
 

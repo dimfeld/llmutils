@@ -34,7 +34,7 @@ When you run a command with `--next-ready <parentPlanId>`, tim:
    - Plans must have defined tasks (not just stubs)
    - For `pending` plans: all dependencies must be marked as `done`
    - For `in_progress` plans: immediately actionable (someone is already working on it)
-5. **Sorts candidates** by priority: status (`in_progress` > `pending`), then priority level (`urgent` > `high` > `medium` > `low`), then by plan ID (ascending)
+5. **Sorts candidates** by priority: status (`in_progress` > `pending`), then priority level (`urgent` > `high` > `medium` > `low` > `maybe`), then by plan ID (ascending)
 6. **Returns the first candidate** from the sorted list
 
 ### Readiness Criteria

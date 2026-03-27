@@ -6,11 +6,15 @@ import yaml from 'yaml';
 import {
   findNextPlan,
   readAllPlans,
+  parsePlanIdentifier,
   resolvePlanFile,
+  resolvePlanFromDb,
   setPlanStatus,
+  setPlanStatusById,
   clearPlanCache,
   readPlanFile,
   writePlanFile,
+  writePlanToDb,
   getBlockedPlans,
   getChildPlans,
   getDiscoveredPlans,
@@ -18,10 +22,22 @@ import {
 import * as plansModule from './plans.js';
 import { planSchema, type PlanSchema, type PlanSchemaInput } from './planSchema.js';
 import { ModuleMocker } from '../testing.js';
+import { getDatabase } from './db/database.js';
+import {
+  getPlanByPlanId,
+  getPlanDependenciesByUuid,
+  getPlanTagsByUuid,
+  getPlanTasksByUuid,
+} from './db/plan.js';
+import { getMaterializedPlanPath, resolveProjectContext } from './plan_materialize.js';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const moduleMocker = new ModuleMocker(import.meta);
+
+async function importFreshPlansModule(suffix: string) {
+  return import(`./plans.js?${suffix}-${Date.now()}`);
+}
 
 /**
  * Helper function to write a plan as a frontmatter-style file.
@@ -1492,6 +1508,329 @@ const test = "example";
     });
   });
 
+  it('should persist plan data to the database before writing the file', async () => {
+    const planPath = join(tempDir, 'db-first.plan.md');
+    await writePlanFile(
+      planPath,
+      {
+        id: 110,
+        title: 'DB First Plan',
+        goal: 'Write DB first',
+        details: 'Round-trip through SQLite before file materialization.',
+        status: 'in_progress',
+        tasks: [{ title: 'Persist', description: 'Write through DB', done: false }],
+      },
+      { skipUpdatedAt: true, cwdForIdentity: tempDir }
+    );
+
+    const context = await resolveProjectContext(tempDir);
+    const row = getPlanByPlanId(getDatabase(), context.projectId, 110);
+    expect(row).not.toBeNull();
+    expect(row?.title).toBe('DB First Plan');
+
+    const resolved = await resolvePlanFromDb('110', tempDir);
+    expect(resolved.plan.id).toBe(110);
+    expect(resolved.plan.title).toBe('DB First Plan');
+    expect(resolved.planPath).toBe(planPath);
+  });
+
+  it('should write directly to the database without materializing a file', async () => {
+    const plan = await writePlanToDb(
+      {
+        id: 111,
+        title: 'DB Only Plan',
+        goal: 'Persist without writing a file',
+        details: 'DB-only plan body',
+        tasks: [],
+      },
+      { skipUpdatedAt: true, cwdForIdentity: tempDir }
+    );
+
+    const context = await resolveProjectContext(tempDir);
+    const row = getPlanByPlanId(getDatabase(), context.projectId, 111);
+    expect(row?.title).toBe('DB Only Plan');
+
+    const materializedPath = getMaterializedPlanPath(tempDir, 111);
+    expect(await Bun.file(materializedPath).exists()).toBe(false);
+    expect(plan.uuid).toMatch(UUID_REGEX);
+  });
+
+  it('should resolve DB-first plans by UUID, file path, and existing materialized path', async () => {
+    const planPath = join(tempDir, '112-source.plan.md');
+    await writePlanFile(
+      planPath,
+      {
+        id: 112,
+        uuid: '11211211-1111-4111-8111-111111111111',
+        title: 'Lookup variants plan',
+        goal: 'Resolve by multiple identifiers',
+        details: 'Support ID, UUID, and source file arguments.',
+        tasks: [{ title: 'Lookup', description: 'Resolve variants', done: false }],
+      },
+      { skipUpdatedAt: true, cwdForIdentity: tempDir }
+    );
+
+    const materializedPath = getMaterializedPlanPath(tempDir, 112);
+    await writePlanFile(materializedPath, await readPlanFile(planPath), {
+      skipDb: true,
+      skipUpdatedAt: true,
+    });
+
+    const byUuid = await resolvePlanFromDb('11211211-1111-4111-8111-111111111111', tempDir);
+    expect(byUuid.plan.id).toBe(112);
+    expect(byUuid.planPath).toBe(materializedPath);
+
+    const byPath = await resolvePlanFromDb(planPath, tempDir);
+    expect(byPath.plan.id).toBe(112);
+    expect(byPath.plan.title).toBe('Lookup variants plan');
+    expect(byPath.planPath).toBe(planPath);
+  });
+
+  it('should throw when resolving a plan that is not present in the database', async () => {
+    await expect(resolvePlanFromDb('999999', tempDir)).rejects.toThrow(
+      'No plan found in the database for identifier: 999999'
+    );
+  });
+
+  it('should read the DB-backed plan snapshot inside a single transaction', async () => {
+    const transactionStates: boolean[] = [];
+    let inTransaction = false;
+    const fakeDb = {
+      transaction<TArgs extends unknown[], TResult>(callback: (...args: TArgs) => TResult) {
+        return (...args: TArgs): TResult => {
+          inTransaction = true;
+          try {
+            return callback(...args);
+          } finally {
+            inTransaction = false;
+          }
+        };
+      },
+    };
+
+    await moduleMocker.mock('./db/database.js', () => ({
+      getDatabase: () => fakeDb,
+    }));
+
+    await moduleMocker.mock('./db/plan.js', () => ({
+      getPlanByPlanId: () => {
+        transactionStates.push(inTransaction);
+        return {
+          project_id: 7,
+          plan_id: 110,
+          uuid: '11011011-1111-4111-8111-111111111111',
+          filename: '110.plan.md',
+          title: 'Transactional plan',
+          goal: 'Read through one snapshot',
+          details: 'Details',
+          status: 'pending',
+          parent_uuid: null,
+          priority: null,
+          branch: null,
+          simple: 0,
+          tdd: 0,
+          discovered_from: null,
+          base_branch: null,
+          epic: 0,
+          assigned_to: null,
+          issue: null,
+          pull_request: null,
+          temp: 0,
+          docs: null,
+          changed_files: null,
+          plan_generated_at: null,
+          review_issues: null,
+          created_at: '2026-03-26T00:00:00.000Z',
+          updated_at: '2026-03-26T00:00:00.000Z',
+        };
+      },
+      getPlanTasksByUuid: () => {
+        transactionStates.push(inTransaction);
+        return [{ title: 'Task', description: 'Inside snapshot', done: 0 }];
+      },
+      getPlanDependenciesByUuid: () => {
+        transactionStates.push(inTransaction);
+        return [];
+      },
+      getPlanTagsByUuid: () => {
+        transactionStates.push(inTransaction);
+        return [{ tag: 'alpha' }];
+      },
+      getPlansByProject: () => {
+        transactionStates.push(inTransaction);
+        return [{ uuid: '11011011-1111-4111-8111-111111111111', plan_id: 110 }];
+      },
+    }));
+
+    const freshPlansModule = await importFreshPlansModule('resolve-plan-transaction');
+    const resolved = await freshPlansModule.resolvePlanFromDb('110', tempDir, {
+      context: {
+        projectId: 7,
+        repository: {
+          repositoryId: 'repo-id',
+          remoteUrl: 'https://example.com/repo.git',
+          gitRoot: tempDir,
+        },
+      },
+    });
+
+    expect(resolved.plan.id).toBe(110);
+    expect(transactionStates).toEqual([true, true, true, true, true]);
+
+    moduleMocker.clear();
+  });
+
+  it('should normalize and persist plan relationships when writing directly to the database', async () => {
+    await writePlanToDb(
+      {
+        id: 120,
+        uuid: '12012012-1111-4111-8111-111111111111',
+        title: 'Parent Plan',
+        goal: 'Provide a parent reference',
+        details: 'Parent details',
+        tasks: [],
+      },
+      { skipUpdatedAt: true, cwdForIdentity: tempDir }
+    );
+    await writePlanToDb(
+      {
+        id: 121,
+        uuid: '12112112-1111-4111-8111-111111111111',
+        title: 'Dependency Plan',
+        goal: 'Provide a dependency reference',
+        details: 'Dependency details',
+        tasks: [],
+      },
+      { skipUpdatedAt: true, cwdForIdentity: tempDir }
+    );
+
+    const plan = await writePlanToDb(
+      {
+        id: 122,
+        title: 'Curly “Quotes” Plan',
+        goal: 'Normalize “quotes” outside details',
+        details: 'Keep “details” untouched',
+        container: true,
+        parent: 120,
+        dependencies: [121],
+        tags: ['alpha', 'beta'],
+        tasks: [
+          {
+            title: 'Normalize “task” text',
+            description: 'Fix “quotes” in task metadata',
+            done: false,
+          },
+        ],
+      },
+      { skipUpdatedAt: true, cwdForIdentity: tempDir }
+    );
+
+    expect(plan.updatedAt).toBeUndefined();
+    expect(plan.epic).toBe(true);
+    expect(plan.title).toBe('Curly "Quotes" Plan');
+    expect(plan.details).toBe('Keep “details” untouched');
+
+    const context = await resolveProjectContext(tempDir);
+    const row = getPlanByPlanId(getDatabase(), context.projectId, 122);
+    expect(row?.title).toBe('Curly "Quotes" Plan');
+    expect(row?.goal).toBe('Normalize "quotes" outside details');
+    expect(row?.details).toBe('Keep “details” untouched');
+    expect(row?.epic).toBe(1);
+    expect(row?.parent_uuid).toBe('12012012-1111-4111-8111-111111111111');
+
+    const tasks = getPlanTasksByUuid(getDatabase(), plan.uuid!);
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]?.title).toBe('Normalize "task" text');
+    expect(tasks[0]?.description).toBe('Fix "quotes" in task metadata');
+
+    const dependencies = getPlanDependenciesByUuid(getDatabase(), plan.uuid!);
+    expect(dependencies.map((dependency) => dependency.depends_on_uuid)).toEqual([
+      '12112112-1111-4111-8111-111111111111',
+    ]);
+
+    const tags = getPlanTagsByUuid(getDatabase(), plan.uuid!);
+    expect(tags.map((tag) => tag.tag).sort()).toEqual(['alpha', 'beta']);
+  });
+
+  it('should support DB-only and file-only writePlanFile modes', async () => {
+    const dbOnlyPath = join(tempDir, '123-db-only.plan.md');
+    await writePlanFile(
+      dbOnlyPath,
+      {
+        id: 123,
+        title: 'DB only via writePlanFile',
+        goal: 'Skip file writes',
+        details: 'Database should still be updated.',
+        tasks: [],
+      },
+      { skipUpdatedAt: true, skipFile: true, cwdForIdentity: tempDir }
+    );
+
+    const context = await resolveProjectContext(tempDir);
+    const dbOnlyRow = getPlanByPlanId(getDatabase(), context.projectId, 123);
+    expect(dbOnlyRow?.title).toBe('DB only via writePlanFile');
+    expect(await Bun.file(dbOnlyPath).exists()).toBe(false);
+
+    const fileOnlyPath = join(tempDir, '124-file-only.plan.md');
+    await writePlanFile(
+      fileOnlyPath,
+      {
+        id: 124,
+        title: 'File only via writePlanFile',
+        goal: 'Skip database writes',
+        details: 'File should still be written.',
+        tasks: [],
+      },
+      { skipUpdatedAt: true, skipDb: true }
+    );
+
+    expect(await Bun.file(fileOnlyPath).exists()).toBe(true);
+    expect(getPlanByPlanId(getDatabase(), context.projectId, 124)).toBeNull();
+
+    const legacyAliasPath = join(tempDir, '125-legacy-skip-sync.plan.md');
+    await writePlanFile(
+      legacyAliasPath,
+      {
+        id: 125,
+        title: 'Legacy skipSync alias',
+        goal: 'Preserve backwards compatibility',
+        details: 'skipSync should bypass DB writes.',
+        tasks: [],
+      },
+      { skipUpdatedAt: true, skipSync: true }
+    );
+
+    expect(await Bun.file(legacyAliasPath).exists()).toBe(true);
+    expect(getPlanByPlanId(getDatabase(), context.projectId, 125)).toBeNull();
+  });
+
+  it('should propagate DB lookup failures in setPlanStatusById even when a file path is provided', async () => {
+    const planPath = join(tempDir, '130-db-first.plan.md');
+    await writePlanFile(
+      planPath,
+      {
+        id: 130,
+        uuid: '13013013-1111-4111-8111-111111111111',
+        title: 'Status update plan',
+        goal: 'Require DB lookup to succeed',
+        details: 'Do not fall back to file-only status updates.',
+        status: 'pending',
+        tasks: [],
+      },
+      { skipUpdatedAt: true, cwdForIdentity: tempDir }
+    );
+
+    const wrongRepoRoot = join(tempDir, 'other-repo');
+    await mkdir(wrongRepoRoot, { recursive: true });
+
+    await expect(setPlanStatusById(130, 'done', wrongRepoRoot, planPath)).rejects.toThrow(
+      'No plan found in the database for identifier: 130'
+    );
+
+    const persistedPlan = await readPlanFile(planPath);
+    expect(persistedPlan.status).toBe('pending');
+  });
+
   it('should strip legacy progressNotes when writing a plan file', async () => {
     const planPath = join(tempDir, 'legacy-progress-notes.plan.md');
     const planToWrite: PlanSchemaInput & { progressNotes: string[] } = {
@@ -2329,5 +2668,26 @@ tasks: []
     if (!result.success) {
       expect(result.error.issues[0]?.path).toEqual(['reviewIssues', 0, 'severity']);
     }
+  });
+});
+
+describe('parsePlanIdentifier', () => {
+  it('rejects zero-valued identifiers from string and number inputs', () => {
+    expect(parsePlanIdentifier('0')).toEqual({});
+    expect(parsePlanIdentifier(0)).toEqual({});
+  });
+});
+
+describe('writePlanFile', () => {
+  it('throws when writing a DB-only plan without project identity context', async () => {
+    await expect(
+      writePlanFile(null, {
+        id: 301,
+        title: 'Missing identity context',
+        goal: 'Require repo identity',
+        details: 'DB-only writes need cwdForIdentity or context.',
+        tasks: [],
+      })
+    ).rejects.toThrow('writePlanFile requires cwdForIdentity or context when filePath is null');
   });
 });
