@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
-import { clearPlanCache, getMaxNumericPlanId, readPlanFile, resolvePlanFromDb } from '../plans.js';
+import { getMaxNumericPlanId, readPlanFile, resolvePlanFromDb } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { ModuleMocker } from '../../testing.js';
 import { getDefaultConfig } from '../configSchema.js';
@@ -29,7 +29,6 @@ describe('handlePromoteCommand', () => {
     errorSpy.mockClear();
 
     // Clear plan cache
-    clearPlanCache();
     clearConfigCache();
     closeDatabaseForTesting();
     clearPlanSyncContext();

@@ -132,7 +132,7 @@ Each running process writes a JSON file at `~/.cache/tim/sessions/<pid>.json` co
 
 ## Web Interface
 
-Tim includes a SvelteKit-based web interface for browsing and managing plans. The server-side layer uses lazy initialization to load the tim configuration, sync plan files to the SQLite database, and serve enriched plan data with computed display statuses (e.g. blocked, recently done).
+Tim includes a SvelteKit-based web interface for browsing and managing plans. The server-side layer uses lazy initialization to load the tim configuration, sync materialized plan files to the SQLite database, and serve enriched plan data with computed display statuses (e.g. blocked, recently done).
 
 The interface is organized around projects, with three tabs per project:
 

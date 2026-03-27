@@ -157,7 +157,6 @@ describe('handleImportCommand Integration Tests', () => {
 
     // Mock common dependencies
     await moduleMocker.mock('../../plans.js', () => ({
-      readAllPlans: mock(() => Promise.resolve(mockPlansResult)),
       writePlanFile: mock(() => Promise.resolve()),
       getMaxNumericPlanId: mock(() => Promise.resolve(5)),
       readPlanFile: mock(() => Promise.resolve({ issue: [] })),

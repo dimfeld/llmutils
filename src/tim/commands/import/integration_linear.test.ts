@@ -140,9 +140,6 @@ describe('Linear Integration Tests', () => {
       }));
 
       await moduleMocker.mock('../../plans.js', () => ({
-        readAllPlans: mock(() =>
-          Promise.resolve({ plans: new Map(), maxNumericId: 5, duplicates: {} })
-        ),
         writePlanFile: mock(() => Promise.resolve()),
         getMaxNumericPlanId: mock(() => Promise.resolve(5)),
         readPlanFile: mock(() => Promise.resolve({ issue: [] })),
@@ -244,9 +241,6 @@ describe('Linear Integration Tests', () => {
       }));
 
       await moduleMocker.mock('../../plans.js', () => ({
-        readAllPlans: mock(() =>
-          Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })
-        ),
         writePlanFile: mock(() => Promise.resolve()),
         getMaxNumericPlanId: mock(() => Promise.resolve(0)),
         readPlanFile: mock(() => Promise.resolve({ issue: [] })),
@@ -347,9 +341,6 @@ describe('Linear Integration Tests', () => {
       }));
 
       await moduleMocker.mock('../../plans.js', () => ({
-        readAllPlans: mock(() =>
-          Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })
-        ),
         writePlanFile: mock(() => Promise.resolve()),
         getMaxNumericPlanId: mock(() => Promise.resolve(0)),
         readPlanFile: mock(() => Promise.resolve({ issue: [] })),
@@ -486,9 +477,6 @@ describe('Linear Integration Tests', () => {
       }));
 
       await moduleMocker.mock('../../plans.js', () => ({
-        readAllPlans: mock(() =>
-          Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })
-        ),
         writePlanFile: mock(() => Promise.resolve()),
         getMaxNumericPlanId: mock(() => Promise.resolve(0)),
         readPlanFile: mock(() => Promise.resolve({ issue: [] })),
@@ -615,13 +603,6 @@ describe('Linear Integration Tests', () => {
       }));
 
       await moduleMocker.mock('../../plans.js', () => ({
-        readAllPlans: mock(() =>
-          Promise.resolve({
-            plans: new Map([[42, existingPlan]]),
-            maxNumericId: 42,
-            duplicates: {},
-          })
-        ),
         writePlanFile: mock(() => Promise.resolve()),
         getMaxNumericPlanId: mock(() => Promise.resolve(42)),
         readPlanFile: mock(() => Promise.resolve(existingPlan)),
@@ -723,9 +704,6 @@ describe('Linear Integration Tests', () => {
       }));
 
       await moduleMocker.mock('../../plans.js', () => ({
-        readAllPlans: mock(() =>
-          Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })
-        ),
         writePlanFile: mock(() => Promise.resolve()),
         getMaxNumericPlanId: mock(() => Promise.resolve(0)),
         readPlanFile: mock(() => Promise.resolve({ issue: [] })),
@@ -876,9 +854,6 @@ describe('Linear Integration Tests', () => {
         }));
 
         await moduleMocker.mock('../../plans.js', () => ({
-          readAllPlans: mock(() =>
-            Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })
-          ),
           writePlanFile: mock(() => Promise.resolve()),
           getMaxNumericPlanId: mock(() => Promise.resolve(0)),
           readPlanFile: mock(() => Promise.resolve({ issue: [] })),

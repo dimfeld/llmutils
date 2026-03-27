@@ -148,10 +148,6 @@
     "paths": {
       "type": "object",
       "properties": {
-        "tasks": {
-          "description": "Path to directory containing task definitions",
-          "type": "string"
-        },
         "docs": {
           "description": "Paths to directories to search for .md and .mdc documentation files to auto-include",
           "type": "array",

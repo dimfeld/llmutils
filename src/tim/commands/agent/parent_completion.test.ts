@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import yaml from 'yaml';
 import { markTaskDone, markStepDone } from '../../plans/mark_done.js';
 import { checkAndMarkParentDone as agentCheckAndMarkParentDone } from './parent_plans.js';
-import { clearPlanCache, readPlanFile, resolvePlanFromDb, writePlanFile } from '../../plans.js';
+import { readPlanFile, resolvePlanFromDb, writePlanFile } from '../../plans.js';
 import type { PlanSchema, PlanSchemaInput } from '../../planSchema.js';
 import type { TimConfig } from '../../configSchema.js';
 import { closeDatabaseForTesting } from '../../db/database.js';
@@ -38,7 +38,6 @@ describe('Parent Plan Completion', () => {
 
   beforeEach(async () => {
     // Clear plan cache
-    clearPlanCache();
     clearPlanSyncContext();
 
     // Create temporary directory
@@ -82,7 +81,6 @@ describe('Parent Plan Completion', () => {
 
   afterEach(async () => {
     moduleMocker.clear();
-    clearPlanCache();
     clearPlanSyncContext();
     closeDatabaseForTesting();
     process.chdir(originalCwd);

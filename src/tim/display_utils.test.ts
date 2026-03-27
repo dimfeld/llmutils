@@ -10,7 +10,7 @@ import {
   extractIssueNumber,
   buildDescriptionFromPlan,
 } from './display_utils.js';
-import type { PlanSchema, PlanSummary } from './planSchema.js';
+import type { PlanSchema } from './planSchema.js';
 
 describe('getCombinedTitle', () => {
   test('returns title when no project', () => {
@@ -26,7 +26,7 @@ describe('getCombinedTitle', () => {
     expect(result).toBe('My Task Title');
   });
 
-  test('combines project and title when project exists', () => {
+  test('ignores legacy project metadata and returns the plan title', () => {
     const plan: PlanSchema = {
       id: '1',
       title: 'My Task Title',
@@ -41,10 +41,10 @@ describe('getCombinedTitle', () => {
     };
 
     const result = getCombinedTitle(plan);
-    expect(result).toBe('project-123 - My Task Title');
+    expect(result).toBe('My Task Title');
   });
 
-  test('handles empty title with project', () => {
+  test('returns Untitled when title is empty even if legacy project metadata exists', () => {
     const plan: PlanSchema = {
       id: '1',
       title: '',
@@ -59,7 +59,7 @@ describe('getCombinedTitle', () => {
     };
 
     const result = getCombinedTitle(plan);
-    expect(result).toBe('project-123');
+    expect(result).toBe('Untitled');
   });
 
   test('returns Untitled when no title or project', () => {
@@ -113,7 +113,7 @@ describe('getCombinedGoal', () => {
     expect(result).toBe('Achieve something great');
   });
 
-  test('combines project and goal when project exists and goals differ', () => {
+  test('ignores legacy project metadata and returns the plan goal', () => {
     const plan: PlanSchema = {
       id: '1',
       title: 'Test Plan',
@@ -128,7 +128,7 @@ describe('getCombinedGoal', () => {
     };
 
     const result = getCombinedGoal(plan);
-    expect(result).toBe('Project goal - Phase goal');
+    expect(result).toBe('Phase goal');
   });
 
   test('returns phase goal when project and phase goals are the same', () => {
@@ -149,7 +149,7 @@ describe('getCombinedGoal', () => {
     expect(result).toBe('Same goal');
   });
 
-  test('returns project goal when phase goal is empty', () => {
+  test('returns empty string when goal is empty even if legacy project metadata exists', () => {
     const plan: PlanSchema = {
       id: '1',
       title: 'Test Plan',
@@ -164,7 +164,7 @@ describe('getCombinedGoal', () => {
     };
 
     const result = getCombinedGoal(plan);
-    expect(result).toBe('Project goal only');
+    expect(result).toBe('');
   });
 
   test('returns empty string when no goals exist', () => {
@@ -192,36 +192,6 @@ describe('getCombinedTitleFromSummary', () => {
     expect(result).toBe('Summary Title');
   });
 
-  test('combines project and title when project exists', () => {
-    const summary = {
-      title: 'Summary Title',
-      goal: 'Summary goal',
-      project: {
-        title: 'project-789',
-        goal: 'Project goal',
-        details: 'Project details',
-      },
-    };
-
-    const result = getCombinedTitleFromSummary(summary);
-    expect(result).toBe('project-789 - Summary Title');
-  });
-
-  test('returns project title when summary title is empty', () => {
-    const summary = {
-      title: '',
-      goal: 'Summary goal',
-      project: {
-        title: 'project-only',
-        goal: 'Project goal',
-        details: 'Project details',
-      },
-    };
-
-    const result = getCombinedTitleFromSummary(summary);
-    expect(result).toBe('project-only');
-  });
-
   test('returns goal when no title exists', () => {
     const summary = {
       title: '',
@@ -240,21 +210,6 @@ describe('getCombinedTitleFromSummary', () => {
 
     const result = getCombinedTitleFromSummary(summary);
     expect(result).toBe('Untitled');
-  });
-
-  test('handles full plan summary with project', () => {
-    const summary = {
-      title: 'Full Summary',
-      goal: 'Complete goal',
-      project: {
-        title: 'full-project',
-        goal: 'Project goal',
-        details: 'Project details',
-      },
-    };
-
-    const result = getCombinedTitleFromSummary(summary);
-    expect(result).toBe('full-project - Full Summary');
   });
 });
 
@@ -338,24 +293,6 @@ describe('buildDescriptionFromPlan', () => {
     };
 
     expect(buildDescriptionFromPlan(plan)).toBe('#111 Multiple Issues');
-  });
-
-  test('combines project and phase title with issue', () => {
-    const plan: PlanSchema = {
-      id: '1',
-      title: 'Phase One',
-      goal: 'Complete phase',
-      details: 'Details',
-      project: {
-        title: 'Big Project',
-        goal: 'Complete project',
-        details: 'Project details',
-      },
-      issue: ['https://github.com/owner/repo/issues/999'],
-      tasks: [],
-    };
-
-    expect(buildDescriptionFromPlan(plan)).toBe('#999 Big Project - Phase One');
   });
 
   test('falls back to goal when no title', () => {

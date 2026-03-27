@@ -1,7 +1,7 @@
 // Utilities for processing issues from various issue trackers into tim data structures
 
 import { checkbox } from '@inquirer/prompts';
-import type { PlanSchema } from './planSchema.js';
+import type { PlanSchema, PlanWithLegacyMetadata } from './planSchema.js';
 import type {
   IssueTrackerClient,
   IssueWithComments,
@@ -537,7 +537,7 @@ export function createStubPlanFromIssue(
 ): PlanSchema {
   const now = new Date().toISOString();
 
-  const stubPlan: PlanSchema = {
+  const stubPlan: PlanWithLegacyMetadata = {
     id: planId,
     title: issueData.issue.title,
     details: issueData.plan,

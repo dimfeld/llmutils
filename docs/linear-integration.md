@@ -44,7 +44,6 @@ issueTracker: 'linear'
 
 # Optional: Configure other tim settings
 paths:
-  tasks: './tasks'
   docs:
     - './docs'
     - './project-docs'
@@ -81,14 +80,11 @@ tim import https://linear.app/mycompany/issue/TEAM-123/implement-user-authentica
 
 ### Issue Import
 
-Import Linear issues as tim task files:
+Import Linear issues as tim plans:
 
 ```bash
 # Import a specific Linear issue
 tim import TEAM-123
-
-# Import with custom output location
-tim import TEAM-456 --output custom-tasks/feature.yml
 
 # Interactive mode - select multiple issues to import
 tim import
@@ -134,14 +130,12 @@ export LINEAR_API_KEY="lin_api_your_key_here"
 # 2. Configure tim for Linear
 cat > .rmfilter/config/tim.yml << EOF
 issueTracker: 'linear'
-paths:
-  tasks: './tasks'
 EOF
 
 # 3. Import a Linear issue
 tim import TEAM-123
 
-# 4. The resulting task file is created at tasks/team-123-issue-title.yml
+# 4. The plan is created in the SQLite database
 ```
 
 ### Advanced Planning Workflow
@@ -167,10 +161,10 @@ tim done 456 --commit
 tim import
 
 # 2. Create dependencies between imported plans
-# Edit the YAML files to add dependency relationships
+tim set 457 --depends-on 456
 
 # 3. Execute plans in dependency order
-tim agent --next-ready parent-plan-id
+tim agent --next-ready 456
 ```
 
 ## Sample Output
@@ -179,12 +173,8 @@ tim agent --next-ready parent-plan-id
 
 ```
 $ tim import TEAM-123
-✓ Connected to Linear workspace: MyCompany
-✓ Found Linear issue: TEAM-123 - Implement user authentication
-✓ Processing issue comments (3 found)
-✓ Generated plan file: tasks/team-123-implement-user-authentication.yml
-
-Issue imported successfully!
+Created stub plan: plan 7
+Plan ID: 7
 ```
 
 ### Interactive Import Session
@@ -204,7 +194,7 @@ Select issues to import (use Space to select, Enter to confirm):
 Navigation: ↑/↓ to move, Space to select, Enter to confirm, q to quit
 ```
 
-### Generated Plan File Structure
+### Plan Schema Example
 
 ```yaml
 id: 7
@@ -252,7 +242,7 @@ updatedAt: '2024-01-16T10:30:00.000Z'
 - Issue status and metadata
 - User information (name, email, avatar)
 - Automatic duplicate detection during import
-- Custom output file locations
+- DB-backed plan storage
 
 ### ⚠️ Partially Supported
 
@@ -388,7 +378,6 @@ You can customize how Linear issues are processed by modifying the tim configura
 ```yaml
 # Custom paths for Linear projects
 paths:
-  tasks: './linear-tasks'
   docs:
     - './docs/linear'
     - './specs'

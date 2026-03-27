@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import { ModuleMocker } from '../../testing.js';
 import { closeDatabaseForTesting } from '../db/database.js';
 import { clearPlanSyncContext, syncPlanToDb } from '../db/plan_sync.js';
-import { clearPlanCache, writePlanFile } from '../plans.js';
+import { writePlanFile } from '../plans.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -24,7 +24,6 @@ describe('handleGenerateCommand auto-claim integration', () => {
     const plan = await readPlanFile(planPath);
     plan.tasks = [{ title: 'Generated task', description: 'Auto-generated', done: false }];
     await writePlanFile(planPath, plan);
-    clearPlanCache();
   });
   const mockExecutor = {
     execute: mockExecutorExecute,
@@ -69,8 +68,6 @@ describe('handleGenerateCommand auto-claim integration', () => {
       },
       cwdForIdentity: tempRoot,
     });
-
-    clearPlanCache();
 
     autoClaimPlanSpy.mockClear();
     mockExecutorExecute.mockClear();

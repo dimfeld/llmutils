@@ -8,6 +8,7 @@ import chalk from 'chalk';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
 import type { PlanSchema } from '../planSchema.js';
+import { getLegacyAwareSearchDir } from '../path_resolver.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 import { loadPlansFromDb } from '../plans_db.js';
 import { getParentChain, getCompletedChildren } from './hierarchy.js';
@@ -120,7 +121,10 @@ export async function gatherPlanContext(
 
   try {
     const { repositoryId } = await deps.getRepositoryIdentity({ cwd: repoRoot });
-    const { plans: allPlans } = deps.loadPlansFromDb(repoRoot, repositoryId);
+    const { plans: allPlans } = deps.loadPlansFromDb(
+      getLegacyAwareSearchDir(gitRoot, repoRoot),
+      repositoryId
+    );
 
     // Add filename to the current plan for hierarchy compatibility
     const planWithFilename: PlanWithFilename = {

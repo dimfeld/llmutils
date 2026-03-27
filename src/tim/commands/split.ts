@@ -8,7 +8,7 @@ import { error, log } from '../../logging.js';
 import { createModel } from '../../common/model_factory.js';
 import { runStreamingPrompt } from '../llm_utils/run_and_apply.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { readPlanFile, resolvePlanFromDb, writePlanFile } from '../plans.js';
+import { resolvePlanFromDb, writePlanFile } from '../plans.js';
 import { generateSplitPlanPrompt } from '../prompt.js';
 import { multiPhasePlanSchema, type PlanSchema } from '../planSchema.js';
 import {
@@ -18,7 +18,6 @@ import {
 } from '../process_markdown.js';
 import { fixYaml } from '../fix_yaml.js';
 import type { Command } from 'commander';
-import { resolveTasksDir } from '../configSchema.js';
 import { generateText } from 'ai';
 import { checkbox } from '@inquirer/prompts';
 import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
@@ -29,7 +28,6 @@ import { getPlanByPlanId, upsertPlan } from '../db/plan.js';
 import { toPlanUpsertInput } from '../db/plan_sync.js';
 import { materializePlan, resolveProjectContext } from '../plan_materialize.js';
 import { resolveWritablePath } from '../plans/resolve_writable_path.js';
-import { mergeYamlPassthroughFields } from '../plans/yaml_passthrough.js';
 import { ensureReferences } from '../utils/references.js';
 
 // --- Manual split helpers ---
@@ -125,7 +123,6 @@ export async function manualSplitPlan(
     }
   }
 
-  const tasksDir = await resolveTasksDir(config);
   const db = getDatabase();
   let context = await resolveProjectContext(repoRoot);
   const { startId: childId } = reserveNextPlanId(
@@ -156,7 +153,7 @@ export async function manualSplitPlan(
     tags: parent.tags ? [...parent.tags] : [],
   };
 
-  const childPath = path.join(tasksDir, `${childId}.plan.md`);
+  const childPath = path.join(repoRoot, `${childId}.plan.md`);
 
   // Update parent: remove selected tasks and add dependency
   const remainingTasks = parent.tasks.filter((_, idx) => !unique.includes(idx));
@@ -171,7 +168,7 @@ export async function manualSplitPlan(
     throw new Error(`Parent plan ${parent.id} not found`);
   }
 
-  const outputPath = await resolveWritablePath(planArg, parentRow, tasksDir, repoRoot);
+  const outputPath = await resolveWritablePath(planArg, parentRow, repoRoot, repoRoot);
   const idToUuid = new Map(context.planIdToUuid).set(
     childId,
     childPlan.uuid ?? crypto.randomUUID()
@@ -197,8 +194,6 @@ export async function manualSplitPlan(
   if (outputPath) {
     const refreshedParent = (await resolvePlanFromDb(String(parent.id), repoRoot, { context }))
       .plan;
-    const filePlan = await readPlanFile(outputPath);
-    mergeYamlPassthroughFields(refreshedParent, filePlan);
     await writePlanFile(outputPath, refreshedParent, {
       cwdForIdentity: repoRoot,
       context,

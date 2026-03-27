@@ -5,10 +5,10 @@ import { getGitRoot } from '../common/git.js';
 import { createModel } from '../common/model_factory.js';
 import { commitAll } from '../common/process.js';
 import { boldMarkdownHeaders, debugLog, error, log, warn } from '../logging.js';
-import { resolveTasksDir, timConfigSchema, type TimConfig } from './configSchema.js';
+import { timConfigSchema, type TimConfig } from './configSchema.js';
 import { fixYaml } from './fix_yaml.js';
 import { generateNumericPlanId } from './id_utils.js';
-import type { PlanSchema } from './planSchema.js';
+import type { PlanSchema, PlanWithLegacyMetadata } from './planSchema.js';
 import { normalizeContainerToEpic, phaseSchema, planSchema } from './planSchema.js';
 import { mergeTaskLists } from './plan_merge.js';
 import { isTaskDone, writePlanFile } from './plans.js';
@@ -240,7 +240,6 @@ export interface ExtractMarkdownToYamlOptions {
   stubPlan?: { data: PlanSchema; path: string };
   updatePlan?: { data: PlanSchema; path: string };
   commit?: boolean;
-  generatedBy?: 'agent' | 'oneshot';
   researchContent?: string;
 }
 
@@ -286,7 +285,7 @@ export async function extractMarkdownToYaml(
   }
 
   // Single-phase plan - continue with existing logic
-  let validatedPlan: PlanSchema;
+  let validatedPlan: PlanWithLegacyMetadata;
 
   if (!convertedYaml.startsWith('# yaml-language-server')) {
     const schemaLine = `# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json`;
@@ -304,7 +303,7 @@ export async function extractMarkdownToYaml(
       console.error('Invalid YAML (saved to tim-validation-failure.yml):', convertedYaml);
       throw new Error('Validation failed');
     }
-    validatedPlan = result.data as PlanSchema;
+    validatedPlan = result.data as PlanWithLegacyMetadata;
 
     // Preserve all fields from the original plan that aren't in the updated plan
     // This includes fields like parent, epic, baseBranch, changedFiles, etc.
@@ -325,7 +324,7 @@ export async function extractMarkdownToYaml(
 
     // When updating a plan, preserve all existing fields that weren't explicitly updated
     if (options.updatePlan?.data) {
-      const originalPlan = options.updatePlan.data;
+      const originalPlan = options.updatePlan.data as PlanWithLegacyMetadata;
 
       for (const field of fieldsToPreserve) {
         if (originalPlan[field] !== undefined && validatedPlan[field] === undefined) {
@@ -342,9 +341,6 @@ export async function extractMarkdownToYaml(
       validatedPlan.planGeneratedAt =
         validatedPlan.planGeneratedAt || originalPlan.planGeneratedAt || new Date().toISOString();
 
-      // Preserve promptsGeneratedAt from original
-      validatedPlan.promptsGeneratedAt = originalPlan.promptsGeneratedAt;
-
       // Set status from original if not set
       if (!validatedPlan.status) {
         if (originalPlan.status === 'done') {
@@ -353,17 +349,12 @@ export async function extractMarkdownToYaml(
           validatedPlan.status = originalPlan.status || 'pending';
         }
       }
-
-      // Set generatedBy if provided
-      if (options.generatedBy) {
-        validatedPlan.generatedBy = options.generatedBy;
-      }
     } else {
       // Not an update - set metadata fields for new plan
       validatedPlan.id =
         options.stubPlan?.data?.id ||
         options.projectId ||
-        (await generateNumericPlanId(await resolveTasksDir(config)));
+        (await generateNumericPlanId((await getGitRoot()) || process.cwd()));
       const now = new Date().toISOString();
       validatedPlan.createdAt = options.stubPlan?.data?.createdAt || now;
       validatedPlan.updatedAt = now;
@@ -373,18 +364,14 @@ export async function extractMarkdownToYaml(
       if (!validatedPlan.status) {
         validatedPlan.status = 'pending';
       }
-
-      // Set generatedBy if provided
-      if (options.generatedBy) {
-        validatedPlan.generatedBy = options.generatedBy;
-      }
     }
 
     // Inherit fields from stub plan if provided
     if (options.stubPlan?.data) {
-      const stubPlanDetails = options.stubPlan.data.details?.trim();
-      const stubPlanTitle = options.stubPlan.data.title?.trim();
-      const stubPlanGoal = options.stubPlan.data.goal?.trim();
+      const stubPlan = options.stubPlan.data as PlanWithLegacyMetadata;
+      const stubPlanDetails = stubPlan.details?.trim();
+      const stubPlanTitle = stubPlan.title?.trim();
+      const stubPlanGoal = stubPlan.goal?.trim();
 
       if (stubPlanTitle) {
         validatedPlan.title = stubPlanTitle;
@@ -405,7 +392,7 @@ export async function extractMarkdownToYaml(
 
       // Merge the fixed fields, combining arrays and preferring the stub plan for scalars
       for (const field of fieldsToPreserve) {
-        const stubValue = options.stubPlan.data[field];
+        const stubValue = stubPlan[field];
         const newValue = validatedPlan[field];
 
         if (
@@ -540,7 +527,7 @@ export async function saveMultiPhaseYaml(
         validation.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ')
     );
   }
-  let combinedPlan = validation.data as PlanSchema;
+  let combinedPlan = validation.data as PlanWithLegacyMetadata;
 
   if (options.researchContent?.trim()) {
     combinedPlan = appendResearchToPlan(combinedPlan, options.researchContent, {
@@ -568,7 +555,7 @@ export async function saveMultiPhaseYaml(
   ] as const;
 
   if (options.updatePlan?.data) {
-    const original = options.updatePlan.data;
+    const original = options.updatePlan.data as PlanWithLegacyMetadata;
     for (const field of [...fieldsToPreserve, ...arrayFieldsToPreserve]) {
       if (original[field] !== undefined && combinedPlan[field] === undefined) {
         (combinedPlan as any)[field] = original[field];
@@ -580,16 +567,13 @@ export async function saveMultiPhaseYaml(
     combinedPlan.planGeneratedAt =
       combinedPlan.planGeneratedAt || original.planGeneratedAt || new Date().toISOString();
 
-    // Preserve promptsGeneratedAt from original
-    combinedPlan.promptsGeneratedAt = original.promptsGeneratedAt;
-
     if (!combinedPlan.status) {
       combinedPlan.status = original.status || 'pending';
     }
   } else {
-    const tasksDir = await resolveTasksDir(config);
+    const repoRoot = (await getGitRoot()) || process.cwd();
     combinedPlan.id =
-      options.stubPlan?.data?.id || options.projectId || (await generateNumericPlanId(tasksDir));
+      options.stubPlan?.data?.id || options.projectId || (await generateNumericPlanId(repoRoot));
     const now = new Date().toISOString();
     combinedPlan.createdAt = options.stubPlan?.data?.createdAt || now;
     combinedPlan.updatedAt = now;
@@ -601,9 +585,10 @@ export async function saveMultiPhaseYaml(
 
   // Inherit fields from stub plan if provided (merge arrays, prefer stub for scalars)
   if (options.stubPlan?.data) {
-    const stubPlanDetails = options.stubPlan.data.details?.trim();
-    const stubPlanTitle = options.stubPlan.data.title?.trim();
-    const stubPlanGoal = options.stubPlan.data.goal?.trim();
+    const stubPlan = options.stubPlan.data as PlanWithLegacyMetadata;
+    const stubPlanDetails = stubPlan.details?.trim();
+    const stubPlanTitle = stubPlan.title?.trim();
+    const stubPlanGoal = stubPlan.goal?.trim();
 
     if (stubPlanTitle) {
       combinedPlan.title = stubPlanTitle;
@@ -621,13 +606,13 @@ export async function saveMultiPhaseYaml(
     }
 
     for (const field of fieldsToPreserve) {
-      const stubValue = options.stubPlan.data[field];
+      const stubValue = stubPlan[field];
       if (stubValue !== undefined) {
         (combinedPlan as any)[field] = stubValue;
       }
     }
     for (const field of arrayFieldsToPreserve) {
-      const stubValue = options.stubPlan.data[field];
+      const stubValue = stubPlan[field];
       const newValue = combinedPlan[field];
       if (
         (stubValue == null || Array.isArray(stubValue)) &&
@@ -658,9 +643,6 @@ export async function saveMultiPhaseYaml(
       ? options.output
       : `${options.output}.plan.md`;
 
-  if (options.generatedBy) {
-    combinedPlan.generatedBy = options.generatedBy;
-  }
   await writePlanFile(outputPath, combinedPlan);
 
   if (!quiet) {

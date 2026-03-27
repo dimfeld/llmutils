@@ -4,7 +4,6 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import { ModuleMocker } from '../../../testing.js';
-import { clearPlanCache } from '../../plans.js';
 import { closeDatabaseForTesting, getDatabase } from '../../db/database.js';
 import { getOrCreateProject } from '../../db/project.js';
 import {
@@ -43,7 +42,6 @@ describe('Agent workspace description auto-update', () => {
 
   beforeEach(async () => {
     moduleMocker = new ModuleMocker(import.meta);
-    clearPlanCache();
 
     // Create temp directories
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-ws-desc-test-'));
@@ -100,16 +98,9 @@ describe('Agent workspace description auto-update', () => {
 
     await moduleMocker.mock('../../configLoader.js', () => ({
       loadEffectiveConfig: mock(async () => ({
-        paths: {
-          tasks: tasksDir,
-        },
         models: {},
         postApplyCommands: [],
       })),
-    }));
-
-    await moduleMocker.mock('../../configSchema.js', () => ({
-      resolveTasksDir: mock(async () => tasksDir),
     }));
 
     await moduleMocker.mock('../../../common/git.js', () => ({
@@ -227,7 +218,6 @@ describe('Agent workspace description auto-update', () => {
       ],
     };
     await fs.writeFile(planFile, `---\n${yaml.stringify(planContent)}---\n`);
-    clearPlanCache();
 
     const { timAgent } = await import('./agent.js');
 
@@ -261,7 +251,6 @@ describe('Agent workspace description auto-update', () => {
       ],
     };
     await fs.writeFile(planFile, `---\n${yaml.stringify(planContent)}---\n`);
-    clearPlanCache();
 
     const db = getDatabase();
     patchWorkspace(db, workspaceDir, {

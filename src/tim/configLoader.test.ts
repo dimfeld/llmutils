@@ -232,10 +232,7 @@ describe('configLoader', () => {
 
   test('loadEffectiveConfig applies tags allowlist overrides from local config', async () => {
     const mainConfigPath = path.join(configDir, 'tim.yml');
-    const tasksPath = path.join(testDir, 'tasks');
-    await fs.mkdir(tasksPath, { recursive: true });
     const mainConfig = yaml.stringify({
-      paths: { tasks: tasksPath },
       tags: { allowed: ['frontend', 'backend'] },
     });
     await fs.writeFile(mainConfigPath, mainConfig, 'utf-8');
@@ -264,22 +261,11 @@ describe('configLoader', () => {
       'config',
       'tim.yml'
     );
-    const expectedTasksDir = path.join(
-      fakeHomeDir,
-      '.config',
-      'tim',
-      'repositories',
-      repositoryName,
-      'tasks'
-    );
-
     const result = await findConfigPath();
 
     expect(result).toBe(expectedConfigPath);
     const configDirStats = await fs.stat(path.dirname(expectedConfigPath));
     expect(configDirStats.isDirectory()).toBe(true);
-    const tasksDirStats = await fs.stat(expectedTasksDir);
-    expect(tasksDirStats.isDirectory()).toBe(true);
   });
 
   test('findConfigPath returns override path when provided', async () => {
@@ -626,8 +612,6 @@ defaultExecutor: direct-call
 postApplyCommands:
   - title: Main Command
     command: echo "main"
-paths:
-  tasks: "./main-tasks"
 models:
   execution: "claude-3-sonnet"
 subagents:
@@ -646,8 +630,6 @@ defaultExecutor: ${DEFAULT_EXECUTOR}
 postApplyCommands:
   - title: Local Command
     command: echo "local"
-paths:
-  tasks: "./local-tasks"
 models:
   convert_yaml: "claude-3-haiku"
 subagents:
@@ -675,9 +657,6 @@ autoexamples:
       expect(config.autoexamples).toHaveLength(2);
       expect(config.autoexamples).toContain('main-example');
       expect(config.autoexamples).toContain('local-example');
-
-      // Objects should be deeply merged
-      expect(config.paths?.tasks).toBe('./local-tasks'); // local overrides main
 
       expect(config.models?.execution).toBe('claude-3-sonnet'); // from main
       expect(config.models?.convert_yaml).toBe('claude-3-haiku'); // from local
@@ -985,8 +964,6 @@ workspaceCreation: {}
 defaultExecutor: direct-call
 planning:
   direct_mode: true
-paths:
-  tasks: "./tasks"
 `
       );
 
@@ -1006,8 +983,6 @@ paths:
 defaultExecutor: direct-call
 planning:
   direct_mode: false
-paths:
-  tasks: "./tasks"
 `
       );
 
@@ -1025,8 +1000,6 @@ paths:
         mainConfigPath,
         `
 defaultExecutor: direct-call
-paths:
-  tasks: "./tasks"
 `
       );
 
@@ -1046,8 +1019,6 @@ paths:
 defaultExecutor: direct-call
 planning:
   direct_mode: false
-paths:
-  tasks: "./tasks"
 `
       );
 
@@ -1075,8 +1046,6 @@ planning:
         `
 defaultExecutor: direct-call
 issueTracker: github
-paths:
-  tasks: "./tasks"
 `
       );
 
@@ -1100,8 +1069,6 @@ issueTracker: linear
         mainConfigPath,
         `
 defaultExecutor: direct-call
-paths:
-  tasks: "./tasks"
 `
       );
 
@@ -1116,8 +1083,7 @@ paths:
       await fs.writeFile(
         mainConfigPath,
         `
-paths:
-  tasks: "./tasks"
+
 `
       );
 
@@ -1149,8 +1115,7 @@ paths:
         await fs.writeFile(
           mainConfigPath,
           `
-paths:
-  tasks: "./tasks"
+
 `
         );
 

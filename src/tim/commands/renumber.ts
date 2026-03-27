@@ -20,7 +20,7 @@ import { NoFrontmatterError, readPlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { getCurrentBranchName, getChangedFilesOnBranch } from '../../common/git.js';
 import { getMaterializedPlanPath, materializePlan } from '../plan_materialize.js';
-import { resolvePlanPathContext } from '../path_resolver.js';
+import { getLegacyAwareSearchDir, resolvePlanPathContext } from '../path_resolver.js';
 import { debugLog, log } from '../../logging.js';
 import { ensureReferences } from '../utils/references.js';
 import { invertPlanIdToUuidMap, loadPlansFromDb, planRowForTransaction } from '../plans_db.js';
@@ -59,6 +59,25 @@ function validateSafePath(filePath: string, baseDir: string): string | null {
   }
 }
 
+function resolvePlanFilename(filename: string, gitRoot: string, configBaseDir: string): string {
+  if (path.isAbsolute(filename)) {
+    return filename;
+  }
+
+  const searchDir = getLegacyAwareSearchDir(gitRoot, configBaseDir);
+
+  if (filename === path.basename(filename)) {
+    return path.join(searchDir, filename);
+  }
+
+  const searchDirCandidate = path.join(searchDir, filename);
+  if (fs.existsSync(searchDirCandidate)) {
+    return searchDirCandidate;
+  }
+
+  return path.join(configBaseDir, filename);
+}
+
 interface PlanToRenumber {
   filePath: string;
   currentId: number | undefined;
@@ -87,7 +106,8 @@ interface RenumberCommand {
 const TRUNK_BRANCHES = ['main', 'master'] as const;
 
 async function loadPlansForRenumbering(
-  tasksDirectory: string,
+  gitRoot: string,
+  configBaseDir: string,
   repositoryId: string
 ): Promise<{
   allPlans: Map<string, Record<string, any>>;
@@ -114,7 +134,7 @@ async function loadPlansForRenumbering(
   const uuidToPlanId = invertPlanIdToUuidMap(idToUuid);
 
   for (const row of rows) {
-    const absoluteFilename = path.join(tasksDirectory, row.filename);
+    const absoluteFilename = resolvePlanFilename(row.filename, gitRoot, configBaseDir);
     const fileExists = fs.existsSync(absoluteFilename);
     let plan = planRowForTransaction(row, uuidToPlanId);
     if (fileExists) {
@@ -1129,22 +1149,22 @@ export function reassignFamilyIds(
  * If a plan exists at the target ID, performs a swap. Otherwise, performs a simple renumber.
  *
  * @param options - Contains from, to, and dryRun options
- * @param tasksDirectory - Directory containing plan files
  * @param gitRoot - Git repository root
  */
 async function handleSwapOrRenumber(
   options: RenumberOptions,
-  tasksDirectory: string,
   gitRoot: string,
+  configBaseDir: string,
   repositoryId: string
 ): Promise<void> {
+  const searchDir = getLegacyAwareSearchDir(gitRoot, configBaseDir);
   const fromId = options.from!;
   const toId = options.to!;
 
   log(`Checking plans for swap/renumber operation: ${fromId} → ${toId}`);
 
   // Read all plans to build UUID maps
-  const { allPlans } = await loadPlansForRenumbering(tasksDirectory, repositoryId);
+  const { allPlans } = await loadPlansForRenumbering(gitRoot, configBaseDir, repositoryId);
   const originalPlans = new Map(
     Array.from(allPlans.entries(), ([filePath, plan]) => [filePath, structuredClone(plan)])
   );
@@ -1308,7 +1328,7 @@ async function handleSwapOrRenumber(
       }
     }
 
-    // Validate target path
+    // Validate target path against gitRoot (not searchDir) to allow plans anywhere in the repo
     const safeTargetPath = validateSafePath(writeFilePath, gitRoot);
     if (!safeTargetPath) {
       throw new Error(`Unsafe target path detected: ${writeFilePath}`);
@@ -1321,7 +1341,7 @@ async function handleSwapOrRenumber(
       needsRename: writeFilePath !== filePath,
       writeFile: fs.existsSync(filePath),
     });
-    dbFilenames.set(filePath, path.relative(tasksDirectory, safeTargetPath));
+    dbFilenames.set(filePath, path.relative(searchDir, safeTargetPath));
   }
 
   const changedPlans = Array.from(
@@ -1363,7 +1383,7 @@ async function handleSwapOrRenumber(
 
   for (const operation of fileOperations) {
     if (operation.writeFile) {
-      log(`  ✓ Updated ${path.relative(tasksDirectory, operation.newPath)}`);
+      log(`  ✓ Updated ${path.relative(searchDir, operation.newPath)}`);
     } else {
       log(`  ✓ Updated DB-only plan ${operation.plan.id}`);
     }
@@ -1376,7 +1396,8 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
   const pathContext = await resolvePlanPathContext(config);
-  const { gitRoot, tasksDir: tasksDirectory, configBaseDir } = pathContext;
+  const { gitRoot, configBaseDir } = pathContext;
+  const searchDir = getLegacyAwareSearchDir(gitRoot, configBaseDir);
   const repository = await getRepositoryIdentity({ cwd: configBaseDir });
 
   // Validate --from/--to options
@@ -1389,7 +1410,7 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
     }
 
     // Execute swap operation and exit early
-    await handleSwapOrRenumber(options, tasksDirectory, gitRoot, repository.repositoryId);
+    await handleSwapOrRenumber(options, gitRoot, configBaseDir, repository.repositoryId);
     return;
   }
 
@@ -1435,7 +1456,8 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
 
   // Read all plans and detect issues
   const { allPlans, maxNumericId: initialMaxNumericId } = await loadPlansForRenumbering(
-    tasksDirectory,
+    gitRoot,
+    configBaseDir,
     repository.repositoryId
   );
   const originalPlans = new Map(
@@ -1487,7 +1509,7 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
           return p;
         }
         // Validate path to prevent path traversal attacks
-        return validateSafePath(p, tasksDirectory);
+        return validateSafePath(p, searchDir);
       })
       .filter((p): p is string => p !== null);
 
@@ -1679,7 +1701,7 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
       plansToWrite.add(plan.filePath);
 
       log(
-        `  ✓ Renumbered ${plan.currentId || 'missing'} → ${nextId} in ${path.relative(tasksDirectory, plan.filePath)}`
+        `  ✓ Renumbered ${plan.currentId || 'missing'} → ${nextId} in ${path.relative(searchDir, plan.filePath)}`
       );
     }
 
@@ -2001,6 +2023,7 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
         }
       }
 
+      // Validate target path against gitRoot (not searchDir) to allow plans anywhere in the repo
       const safeTargetPath = validateSafePath(writeFilePath, gitRoot);
       if (!safeTargetPath) {
         throw new Error(`Unsafe target path detected: ${writeFilePath}`);
@@ -2013,7 +2036,7 @@ export async function handleRenumber(options: RenumberOptions, command: Renumber
         needsRename: writeFilePath !== filePath,
         writeFile: fs.existsSync(filePath),
       });
-      dbFilenames.set(filePath, path.relative(tasksDirectory, safeTargetPath));
+      dbFilenames.set(filePath, path.relative(searchDir, safeTargetPath));
     }
 
     const changedPlans = Array.from(

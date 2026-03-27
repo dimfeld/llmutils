@@ -47,9 +47,6 @@ describe('Plan File Validation Tests', () => {
     }));
 
     await moduleMocker.mock('../../plans.js', () => ({
-      readAllPlans: mock(() =>
-        Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })
-      ),
       writePlanFile: mock(async (filePath: string, planData: any) => {
         // Actually write the file to the filesystem for validation
         const yamlContent = yaml.stringify(planData);

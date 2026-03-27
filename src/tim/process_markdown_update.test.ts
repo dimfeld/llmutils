@@ -12,17 +12,12 @@ describe.skip('extractMarkdownToYaml update functionality', () => {
   // The core logic is tested through unit tests of the individual functions
   let tempDir: string;
   let tasksDir: string;
-  const testConfig: TimConfig = {
-    paths: {
-      tasks: '',
-    },
-  };
+  const testConfig: TimConfig = {};
 
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-extract-update-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
-    testConfig.paths.tasks = tasksDir;
   });
 
   afterEach(async () => {

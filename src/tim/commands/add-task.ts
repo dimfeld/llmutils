@@ -5,10 +5,8 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
 import { resolveProjectContext, withPlanAutoSync } from '../plan_materialize.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
-import { resolveTasksDir } from '../configSchema.js';
-import { readPlanFile, resolvePlanFromDb, writePlanFile } from '../plans.js';
+import { resolvePlanFromDb, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
-import { mergeYamlPassthroughFields } from '../plans/yaml_passthrough.js';
 import { promptForTaskInfo, type TaskInput } from '../utils/task_operations.js';
 import type { PlanRow } from '../db/plan.js';
 import { resolveWritablePath } from '../plans/resolve_writable_path.js';
@@ -38,12 +36,7 @@ export async function handleAddTaskCommand(
     const context = await resolveProjectContext(repoRoot);
     const target = await resolvePlanFromDb(resolvedPlanArg, repoRoot, { context });
     const planRow = getRequiredPlanRow(context.rows, target.plan.id);
-    const planPath = await resolveWritablePath(
-      plan,
-      planRow,
-      await resolveTasksDir(config),
-      repoRoot
-    );
+    const planPath = await resolveWritablePath(plan, planRow, repoRoot, repoRoot);
     const tasks = Array.isArray(target.plan.tasks) ? target.plan.tasks : [];
     const newTask: PlanTask = {
       title: taskInfo.title,
@@ -54,17 +47,6 @@ export async function handleAddTaskCommand(
     tasks.push(newTask);
     target.plan.tasks = tasks;
     target.plan.updatedAt = new Date().toISOString();
-
-    const legacyPlanExists = planPath
-      ? await Bun.file(planPath)
-          .stat()
-          .then((stats) => stats.isFile())
-          .catch(() => false)
-      : false;
-    if (legacyPlanExists && planPath) {
-      const filePlan = await readPlanFile(planPath);
-      mergeYamlPassthroughFields(target.plan, filePlan);
-    }
 
     await writePlanFile(planPath, target.plan, { cwdForIdentity: repoRoot, context });
 

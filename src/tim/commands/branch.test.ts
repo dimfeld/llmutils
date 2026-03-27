@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { ModuleMocker } from '../../testing.js';
-import { clearPlanCache, writePlanFile } from '../plans.js';
+import { writePlanFile } from '../plans.js';
 import { closeDatabaseForTesting } from '../db/database.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
 import { generateBranchNameFromPlan, handleBranchCommand } from './branch.js';
@@ -89,7 +89,6 @@ describe('handleBranchCommand', () => {
   beforeEach(async () => {
     logSpy.mockClear();
     writeStdoutSpy.mockClear();
-    clearPlanCache();
     closeDatabaseForTesting();
     clearPlanSyncContext();
 

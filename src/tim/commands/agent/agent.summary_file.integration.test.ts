@@ -60,10 +60,21 @@ describe('timAgent - summary file write (batch mode)', () => {
         const content = await fs.readFile(filePath, 'utf8');
         return yaml.parse(content.replace(/^#.*\n/, ''));
       }),
+      setPlanStatusById: mock(
+        async (_planId: number, status: string, _repoRoot: string, filePath?: string | null) => {
+          if (!filePath) {
+            throw new Error('Expected file path');
+          }
+          const content = await fs.readFile(filePath, 'utf8');
+          const data = yaml.parse(content.replace(/^#.*\n/, ''));
+          data.status = status;
+          data.updatedAt = new Date().toISOString();
+          await createPlanFile(filePath, data);
+        }
+      ),
       writePlanFile: mock(async (filePath: string, data: any) => {
         await createPlanFile(filePath, data);
       }),
-      clearPlanCache: mock(() => {}),
     }));
 
     // Prompt builder used by batch mode to construct prompt; keep simple

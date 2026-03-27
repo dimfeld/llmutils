@@ -1,6 +1,5 @@
 import { mock } from 'bun:test';
 import yaml from 'yaml';
-import { clearPlanCache } from './tim/plans.js';
 import { clearConfigCache } from './tim/configLoader.js';
 import { clearAllGitCaches } from './common/git.js';
 import type { PlanSchema } from './tim/planSchema.js';
@@ -25,7 +24,6 @@ export function stringifyPlanWithFrontmatter(plan: PlanSchema): string {
  * to ensure tests don't pollute each other's state.
  */
 export function clearAllTimCaches(): void {
-  clearPlanCache();
   clearConfigCache();
   clearAllGitCaches();
 }

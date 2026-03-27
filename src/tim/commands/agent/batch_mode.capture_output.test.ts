@@ -32,7 +32,7 @@ describe('executeBatchMode captureOutput integration', () => {
     await moduleMocker.mock('../../plans.js', () => ({
       readPlanFile: mock(async () => ({ id: 1, title: 'P', status: 'pending', tasks: [] })),
       writePlanFile: mock(async (_p: string, _data: any) => {}),
-      setPlanStatus: mock(async () => {}),
+      setPlanStatusById: mock(async () => {}),
     }));
 
     // First call returns one incomplete task, second call returns none

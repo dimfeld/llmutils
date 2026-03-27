@@ -128,7 +128,6 @@ describe('timAgent lifecycle integration', () => {
 
     await moduleMocker.mock('../../configSchema.js', () => ({
       getDefaultConfig: () => ({}),
-      resolveTasksDir: mock(async () => tasksDir),
     }));
 
     await moduleMocker.mock('../../executors/index.js', () => ({
@@ -178,10 +177,6 @@ describe('timAgent lifecycle integration', () => {
         summaryOrder.push('write-summary');
         await writeOrDisplaySummarySpy();
       }),
-    }));
-
-    await moduleMocker.mock('../../utils/references.js', () => ({
-      ensureUuidsAndReferences: mock(async () => ({ errors: [] })),
     }));
 
     await moduleMocker.mock('../../notifications.js', () => ({

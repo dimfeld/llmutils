@@ -5,7 +5,7 @@ import { getMaterializedPlanPath } from '../plan_materialize.js';
 export async function resolveWritablePath(
   planArg: string,
   row: PlanRow | undefined,
-  tasksDir: string,
+  baseDir: string,
   repoRoot: string
 ): Promise<string | null> {
   const directPath = path.isAbsolute(planArg) ? planArg : path.resolve(repoRoot, planArg);
@@ -18,15 +18,21 @@ export async function resolveWritablePath(
   }
 
   if (row) {
-    const legacyPath = path.isAbsolute(row.filename)
-      ? row.filename
-      : path.join(tasksDir, row.filename);
-    const legacyExists = await Bun.file(legacyPath)
-      .stat()
-      .then((stats) => stats.isFile())
-      .catch(() => false);
-    if (legacyExists) {
-      return legacyPath;
+    const candidatePaths = path.isAbsolute(row.filename)
+      ? [row.filename]
+      : [
+          path.join(baseDir, '.tim', 'plans', row.filename),
+          path.join(baseDir, row.filename),
+        ];
+
+    for (const candidatePath of candidatePaths) {
+      const candidateExists = await Bun.file(candidatePath)
+        .stat()
+        .then((stats) => stats.isFile())
+        .catch(() => false);
+      if (candidateExists) {
+        return candidatePath;
+      }
     }
   }
 

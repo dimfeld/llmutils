@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import * as path from 'node:path';
 import type { PlanSchema } from '../planSchema.ts';
-import { readAllPlans, readPlanFile, writePlanFile, writePlanToDb } from '../plans.ts';
+import { readPlanFile, writePlanFile, writePlanToDb } from '../plans.ts';
 
 type ReferenceLookupSource =
   | Map<number, PlanSchema>
@@ -422,77 +422,4 @@ export async function ensureAllReferences(
   }
 
   return { updated, errors };
-}
-
-/**
- * Ensures all plans have UUIDs and complete reference entries.
- * This is a silent operation that runs as part of other commands like agent.
- *
- * @param tasksDir The directory containing plan files
- * @returns Summary of what was fixed
- */
-export async function ensureUuidsAndReferences(tasksDir: string): Promise<{
-  uuidsGenerated: number;
-  referencesMismatchesFixed: number;
-  referencesUpdated: number;
-  errors: string[];
-}> {
-  const errors: string[] = [];
-  let uuidsGenerated = 0;
-  let referencesMismatchesFixed = 0;
-  let referencesUpdated = 0;
-
-  try {
-    // Load all plans
-    const planResults = await readAllPlans(tasksDir, false);
-    let planMap = planResults.plans;
-    let uuidToId = planResults.uuidToId;
-
-    // Step 1: Fix missing UUIDs
-    const uuidIssues = detectMissingUuids(planMap);
-    if (uuidIssues.length > 0) {
-      const uuidFixResult = await fixMissingUuids(uuidIssues);
-      uuidsGenerated = uuidFixResult.generated.length;
-      errors.push(...uuidFixResult.errors);
-
-      // Reload plans to get the new UUIDs
-      if (uuidFixResult.generated.length > 0) {
-        const reloadedPlans = await readAllPlans(tasksDir, false);
-        planMap = reloadedPlans.plans;
-        uuidToId = reloadedPlans.uuidToId;
-      }
-    }
-
-    // Step 2: Fix reference mismatches
-    if (uuidToId.size > 0) {
-      const referenceIssues = detectReferenceIssues(planMap, uuidToId);
-      if (referenceIssues.length > 0) {
-        const referenceFixResult = await fixReferenceIssues(referenceIssues, planMap);
-        referencesMismatchesFixed = referenceFixResult.updated.length;
-        errors.push(...referenceFixResult.errors);
-
-        // Reload plans to get updated references
-        if (referenceFixResult.updated.length > 0) {
-          const reloadedPlans = await readAllPlans(tasksDir, false);
-          planMap = reloadedPlans.plans;
-        }
-      }
-
-      // Step 3: Ensure all references are complete
-      const ensureResult = await ensureAllReferences(planMap);
-      referencesUpdated = ensureResult.updated;
-      errors.push(...ensureResult.errors);
-    }
-  } catch (error) {
-    errors.push(
-      `Failed to ensure UUIDs and references: ${error instanceof Error ? error.message : String(error)}`
-    );
-  }
-
-  return {
-    uuidsGenerated,
-    referencesMismatchesFixed,
-    referencesUpdated,
-    errors,
-  };
 }

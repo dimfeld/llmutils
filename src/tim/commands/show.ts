@@ -12,7 +12,6 @@ import {
 } from './plan_discovery.js';
 import { findMostRecentlyUpdatedPlan } from './prompts.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { resolveTasksDir } from '../configSchema.js';
 import {
   formatTagsSummary,
   formatWorkspacePath,
@@ -28,6 +27,7 @@ import { getBlockedPlans, getChildPlans, getDiscoveredPlans, isPlanReady } from 
 import type { PlanSchema } from '../planSchema.js';
 import { resolvePlan } from '../plan_display.js';
 import type { GenerateModeRegistrationContext, GetPlanArguments } from '../mcp/generate_mode.js';
+import { getLegacyAwareSearchDir, resolvePlanPathContext } from '../path_resolver.js';
 import { loadPlansFromDb } from '../plans_db.js';
 import { getParentChain, type PlanWithFilename } from '../utils/hierarchy.js';
 import { getPlanTool } from '../tools/index.js';
@@ -288,10 +288,6 @@ async function displayPlanInfo(
     log(`${chalk.cyan('Title:')} ${getCombinedTitle(plan)}`);
     log(`${chalk.cyan('Status:')} ${statusColor(statusDisplay)}`);
 
-    if (plan.statusDescription) {
-      log(`${chalk.cyan('Status Description:')} ${plan.statusDescription}`);
-    }
-
     const priorityColor =
       plan.priority === 'urgent'
         ? chalk.red
@@ -531,8 +527,8 @@ async function displayPlanInfo(
 export async function handleShowCommand(planFile: string | undefined, options: any, command: any) {
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
-  const tasksDir = await resolveTasksDir(config);
-  const repository = await getRepositoryIdentity({ cwd: tasksDir });
+  const pathContext = await resolvePlanPathContext(config);
+  const repository = await getRepositoryIdentity({ cwd: pathContext.configBaseDir });
   const db = getDatabase();
 
   const fetchAssignments = async (): Promise<Record<string, AssignmentEntry>> => {
@@ -545,7 +541,10 @@ export async function handleShowCommand(planFile: string | undefined, options: a
   };
 
   const loadPlanCollection = (): Map<number, PlanWithFilename> =>
-    loadPlansFromDb(tasksDir, repository.repositoryId).plans;
+    loadPlansFromDb(
+      getLegacyAwareSearchDir(repository.gitRoot, pathContext.configBaseDir),
+      repository.repositoryId
+    ).plans;
 
   let allPlans = loadPlanCollection();
   let selectedPlan: PlanSchema | undefined;

@@ -3,7 +3,6 @@ import chalk from 'chalk';
 import { log, warn } from '../../logging.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { resolveTasksDir } from '../configSchema.js';
 import { removeAssignment } from '../db/assignment.js';
 import { getDatabase } from '../db/database.js';
 import { deletePlan, getPlanByPlanId, upsertPlan, type PlanRow } from '../db/plan.js';
@@ -14,11 +13,11 @@ import {
   resolveProjectContext,
   syncMaterializedPlan,
 } from '../plan_materialize.js';
+import { getLegacyAwareSearchDir } from '../path_resolver.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
-import { readPlanFile, resolvePlanFromDb, writePlanFile } from '../plans.js';
+import { resolvePlanFromDb, writePlanFile } from '../plans.js';
 import { invertPlanIdToUuidMap, loadPlansFromDb, planRowForTransaction } from '../plans_db.js';
 import { resolveWritablePath } from '../plans/resolve_writable_path.js';
-import { mergeYamlPassthroughFields } from '../plans/yaml_passthrough.js';
 import type { PlanSchema } from '../planSchema.js';
 import { ensureReferences } from '../utils/references.js';
 
@@ -36,13 +35,12 @@ export async function handleRemoveCommand(
   }
 
   const globalOpts = command.parent.opts();
-  const config = await loadEffectiveConfig(globalOpts.config);
+  await loadEffectiveConfig(globalOpts.config);
   const repoRoot = await resolveRepoRootForPlanArg(
     planFiles[0] ?? '',
     process.cwd(),
     globalOpts.config
   );
-  const tasksDir = await resolveTasksDir(config);
   const repository = await getRepositoryIdentity({ cwd: repoRoot });
 
   let context = await resolveProjectContext(repoRoot, repository);
@@ -59,7 +57,10 @@ export async function handleRemoveCommand(
       .filter((uuid): uuid is string => typeof uuid === 'string' && uuid.length > 0)
   );
 
-  const { plans: allPlans } = loadPlansFromDb(tasksDir, repository.repositoryId);
+  const { plans: allPlans } = loadPlansFromDb(
+    getLegacyAwareSearchDir(repository.gitRoot, repoRoot),
+    repository.repositoryId
+  );
   const blockingPlans = new Map<number, string[]>();
 
   for (const plan of allPlans.values()) {
@@ -148,7 +149,7 @@ export async function handleRemoveCommand(
     plan.updatedAt = new Date().toISOString();
     affectedPlans.set(plan.id, plan);
 
-    const outputPath = await resolveWritablePath(String(plan.id), row, tasksDir, repoRoot);
+    const outputPath = await resolveWritablePath(String(plan.id), row, repoRoot, repoRoot);
     if (outputPath) {
       affectedOutputPaths.set(plan.id, outputPath);
     }
@@ -184,8 +185,6 @@ export async function handleRemoveCommand(
     const refreshedPlan = (
       await resolvePlanFromDb(String(planId), repoRoot, { context: refreshedContext })
     ).plan;
-    const existingFile = await readPlanFile(outputPath);
-    mergeYamlPassthroughFields(refreshedPlan, existingFile);
     await writePlanFile(outputPath, refreshedPlan, {
       cwdForIdentity: repoRoot,
       context: refreshedContext,

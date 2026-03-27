@@ -5,7 +5,6 @@ import * as path from 'node:path';
 import yaml from 'yaml';
 import { ModuleMocker, stringifyPlanWithFrontmatter } from '../../testing.js';
 import { clearConfigCache } from '../configLoader.js';
-import { clearPlanCache } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 
 describe('tim cleanup-temp command', () => {
@@ -17,7 +16,6 @@ describe('tim cleanup-temp command', () => {
 
   beforeEach(async () => {
     clearConfigCache();
-    clearPlanCache();
     moduleMocker = new ModuleMocker(import.meta);
     currentPlans = new Map();
     removePlanFromDbMock = mock(async () => {});
@@ -42,7 +40,6 @@ describe('tim cleanup-temp command', () => {
 
   afterEach(async () => {
     clearConfigCache();
-    clearPlanCache();
     moduleMocker.clear();
 
     // Clean up temporary directory

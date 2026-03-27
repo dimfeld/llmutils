@@ -8,14 +8,13 @@ import {
   generateClaudeCodeGenerationPrompt,
 } from '../prompt.js';
 import type { TimConfig } from '../configSchema.js';
-import { resolveTasksDir } from '../configSchema.js';
 import { buildPlanContext, resolvePlan } from '../plan_display.js';
 import { mcpGetPlan } from '../commands/show.js';
 import { mcpListReadyPlans } from '../commands/ready.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { materializePlan } from '../plan_materialize.js';
+import { getLegacyAwareSearchDir } from '../path_resolver.js';
 import { loadPlansFromDb } from '../plans_db.js';
-import { loadCompactPlanPrompt } from './prompts/compact_plan.js';
 import { filterAndSortReadyPlans, formatReadyPlansAsJson } from '../ready_plans.js';
 import {
   addPlanTaskTool,
@@ -68,6 +67,7 @@ export interface GenerateModeRegistrationContext {
   config: TimConfig;
   configPath?: string;
   gitRoot: string;
+  configBaseDir?: string;
 }
 
 const questionText = `Ask one concise, high-impact question at a time that will help you improve the plan's tasks and execution details. Interview your human partner relentlessly until you reach a shared understanding of every important aspect of the plan. As you figure things out, update the details in the plan file if necessary. Ask as many questions as you need to figure things out, since it improves the implementation quality.
@@ -143,9 +143,11 @@ async function buildGeneratePromptContext(
 
   if (plan.parent !== undefined) {
     try {
-      const tasksDir = await resolveTasksDir(context.config);
       const repository = await getRepositoryIdentity({ cwd: context.gitRoot });
-      const { plans } = loadPlansFromDb(tasksDir, repository.repositoryId);
+      const { plans } = loadPlansFromDb(
+        getLegacyAwareSearchDir(context.gitRoot, context.configBaseDir),
+        repository.repositoryId
+      );
       const parentPlan = plans.get(plan.parent);
 
       if (!parentPlan) {
@@ -608,25 +610,6 @@ export function registerGenerateMode(
   });
 
   server.addPrompt({
-    name: 'compact-plan',
-    description:
-      'Summarize a completed plan for archival by generating the compaction YAML output for review.',
-    arguments: [
-      {
-        name: 'plan',
-        description: 'Plan ID or file path to compact',
-        required: true,
-      },
-    ],
-    load: async (args) => {
-      if (!args.plan) {
-        throw new UserError('Plan ID or file path is required for this prompt');
-      }
-      return loadCompactPlanPrompt({ plan: args.plan }, context);
-    },
-  });
-
-  server.addPrompt({
     name: 'load-plan',
     description:
       'Load a plan and share its current details, then wait for the human collaborator before taking additional action.',
@@ -766,9 +749,11 @@ export function registerGenerateMode(
     description: 'List of all plans in the repository',
     mimeType: 'application/json',
     async load() {
-      const tasksDir = await resolveTasksDir(context.config);
       const repository = await getRepositoryIdentity({ cwd: context.gitRoot });
-      const { plans } = loadPlansFromDb(tasksDir, repository.repositoryId);
+      const { plans } = loadPlansFromDb(
+        getLegacyAwareSearchDir(context.gitRoot, context.configBaseDir),
+        repository.repositoryId
+      );
 
       const planList = Array.from(plans.values()).map((plan) => ({
         id: plan.id,
@@ -817,9 +802,11 @@ export function registerGenerateMode(
     description: 'Plans ready to execute (all dependencies satisfied)',
     mimeType: 'application/json',
     async load() {
-      const tasksDir = await resolveTasksDir(context.config);
       const repository = await getRepositoryIdentity({ cwd: context.gitRoot });
-      const { plans } = loadPlansFromDb(tasksDir, repository.repositoryId);
+      const { plans } = loadPlansFromDb(
+        getLegacyAwareSearchDir(context.gitRoot, context.configBaseDir),
+        repository.repositoryId
+      );
 
       const readyPlans = filterAndSortReadyPlans(plans, {
         pendingOnly: false,

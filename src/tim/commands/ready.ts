@@ -9,7 +9,6 @@ import { table, type TableUserConfig } from 'table';
 import { log } from '../../logging.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { resolveTasksDir } from '../configSchema.js';
 import { getAssignmentEntriesByProject, type AssignmentEntry } from '../db/assignment.js';
 import { getDatabase } from '../db/database.js';
 import { getProject } from '../db/project.js';
@@ -19,7 +18,6 @@ import {
   getCombinedTitleFromSummary,
 } from '../display_utils.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
-import { readAllPlans } from '../plans.js';
 import { loadPlansFromDb } from '../plans_db.js';
 import {
   READY_PLAN_SORT_FIELDS,
@@ -30,6 +28,7 @@ import {
 } from '../ready_plans.js';
 import type { EnrichedReadyPlan, ReadyPlanSortField } from '../ready_plans.js';
 import { getGitRoot } from '../../common/git.js';
+import { getLegacyAwareSearchDir } from '../path_resolver.js';
 import type {
   GenerateModeRegistrationContext,
   ListReadyPlansArguments,
@@ -64,7 +63,6 @@ interface ReadyCommandOptions {
   hasTasks?: boolean;
   tag?: string[];
   epic?: number | string;
-  local?: boolean;
 }
 
 const VALID_FORMATS = ['list', 'table', 'json'] as const;
@@ -409,17 +407,16 @@ export async function handleReadyCommand(options: ReadyCommandOptions, command: 
 
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
-  const tasksDir = await resolveTasksDir(config);
   const repoRoot = await resolveRepoRootForPlanArg('', process.cwd(), globalOpts.config);
   const repository = await getRepositoryIdentity({ cwd: repoRoot });
+  const configBaseDir =
+    config.isUsingExternalStorage && config.externalRepositoryConfigDir
+      ? config.externalRepositoryConfigDir
+      : repository.gitRoot;
+  const searchDir = getLegacyAwareSearchDir(repository.gitRoot, configBaseDir);
 
-  const useLocalFiles = options.local === true;
   let rawPlans: Map<number, PlanWithFilename>;
-  if (useLocalFiles) {
-    ({ plans: rawPlans } = await readAllPlans(tasksDir));
-  } else {
-    ({ plans: rawPlans } = loadPlansFromDb(tasksDir, repository.repositoryId));
-  }
+  ({ plans: rawPlans } = loadPlansFromDb(searchDir, repository.repositoryId));
 
   const assignmentsLookup = loadAssignmentsLookup(repository.repositoryId);
 

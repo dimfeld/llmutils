@@ -71,7 +71,7 @@ export async function handleGenerateCommand(
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
   const pathContext = await resolvePlanPathContext(config);
-  const { gitRoot, tasksDir: tasksDirectory } = pathContext;
+  const { gitRoot } = pathContext;
 
   // Validate input options - only one plan source allowed
   const planOptionsSet = [planArg, options.plan, options.nextReady, options.latest].reduce(
@@ -99,7 +99,7 @@ export async function handleGenerateCommand(
       parentPlanId = plan.id;
     }
 
-    const result = await findNextReadyDependencyFromDb(parentPlanId, tasksDirectory, gitRoot, true);
+    const result = await findNextReadyDependencyFromDb(parentPlanId, gitRoot, gitRoot, true);
 
     if (!result.plan) {
       log(result.message);
@@ -111,7 +111,7 @@ export async function handleGenerateCommand(
     options.plan = String(result.plan.id);
     planArg = undefined;
   } else if (options.latest) {
-    const latestPlan = await findLatestPlanFromDb(tasksDirectory, gitRoot);
+    const latestPlan = await findLatestPlanFromDb(gitRoot, gitRoot);
 
     if (!latestPlan) {
       log('No plans found in the database.');
@@ -254,6 +254,7 @@ export async function handleGenerateCommand(
           config,
           configPath: globalOpts.config,
           gitRoot, // Use actual git root for plan resolution, not workspace dir
+          configBaseDir: pathContext.configBaseDir,
         };
 
         const singlePrompt = await buildPromptText(

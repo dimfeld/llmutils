@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
-import { clearPlanCache, readPlanFile, resolvePlanFromDb, writePlanFile } from './plans.js';
+import { readPlanFile, resolvePlanFromDb, writePlanFile } from './plans.js';
 import type { PlanSchema } from './planSchema.js';
 import { handleAddCommand } from './commands/add.js';
 import { handleAddTaskCommand } from './commands/add-task.js';
@@ -25,7 +25,6 @@ describe('tim CLI integration tests (internal handlers)', () => {
 
   beforeEach(async () => {
     // Clear plan cache
-    clearPlanCache();
 
     // Create temporary directory structure
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-integration-'));
@@ -146,7 +145,7 @@ describe('tim CLI integration tests (internal handlers)', () => {
     await handleDoneCommand('1', {}, command);
 
     // Verify the task was marked as done
-    const updatedPlan = await readPlanFile(path.join(tasksDir, '1.yml'));
+    const updatedPlan = (await resolvePlanFromDb('1', tempDir)).plan;
 
     // The plan should have tasks
     expect(updatedPlan.tasks).toBeDefined();
@@ -275,7 +274,6 @@ describe('tim CLI integration tests (internal handlers)', () => {
 
   test('tim show --next finds next ready plan', async () => {
     // Clear the plan cache again to be sure
-    clearPlanCache();
 
     // Create plans with dependencies
     const plans = [

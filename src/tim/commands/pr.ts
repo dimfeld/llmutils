@@ -23,8 +23,7 @@ import {
 } from '../db/pr_status.js';
 import { resolvePlan } from '../plan_display.js';
 import type { PlanSchema } from '../planSchema.js';
-import { mergeYamlPassthroughFields } from '../plans/yaml_passthrough.js';
-import { readPlanFile, resolvePlanFromDb, writePlanFile } from '../plans.js';
+import { resolvePlanFromDb, writePlanFile } from '../plans.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 import { getWorkspaceInfoByPath } from '../workspace/workspace_info.js';
 
@@ -110,17 +109,6 @@ async function persistPlanPullRequests(
   // is acceptable for a CLI tool — much smaller than the old window that spanned API calls.
   const resolved = await resolvePlanFromDb(currentPlan.uuid ?? String(currentPlan.id), repoRoot);
   const freshPlan = resolved.plan;
-
-  if (planPath) {
-    try {
-      const filePlan = await readPlanFile(planPath);
-      mergeYamlPassthroughFields(freshPlan, filePlan);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        throw error;
-      }
-    }
-  }
 
   const currentPullRequests = freshPlan.pullRequest ?? [];
   const nextPullRequests = updatePullRequests(currentPullRequests);

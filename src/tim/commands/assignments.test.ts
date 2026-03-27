@@ -8,7 +8,7 @@ import { claimAssignment, getAssignment } from '../db/assignment.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { getOrCreateProject } from '../db/project.js';
 import { recordWorkspace } from '../db/workspace.js';
-import { clearPlanCache, writePlanFile } from '../plans.js';
+import { writePlanFile } from '../plans.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -84,8 +84,6 @@ describe('assignments command handlers', () => {
   }
 
   beforeEach(async () => {
-    clearPlanCache();
-
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-assignments-cmd-'));
     repoDir = path.join(tempRoot, 'repo');
     tasksDir = path.join(repoDir, 'tasks');
@@ -165,7 +163,6 @@ describe('assignments command handlers', () => {
 
   afterEach(async () => {
     moduleMocker.clear();
-    clearPlanCache();
     closeDatabaseForTesting();
     if (originalEnv.XDG_CONFIG_HOME === undefined) {
       delete process.env.XDG_CONFIG_HOME;

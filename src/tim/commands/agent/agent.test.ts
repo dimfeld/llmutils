@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import { timAgent, handleAgentCommand } from './agent.js';
-import { clearPlanCache, readPlanFile, resolvePlanFromDb, writePlanFile } from '../../plans.js';
+import { readPlanFile, resolvePlanFromDb, writePlanFile } from '../../plans.js';
 import { closeDatabaseForTesting } from '../../db/database.js';
 import { clearPlanSyncContext } from '../../db/plan_sync.js';
 import { runWithLogger, type LoggerAdapter } from '../../../logging/adapter.js';
@@ -51,6 +51,7 @@ describe('timAgent - Parent Plan Status Updates', () => {
   let config: any;
   let parentPlanFile: string;
   let childPlanFile: string;
+  let originalCwd: string;
   let originalEnv: Partial<Record<string, string>>;
 
   async function writeDbBackedPlan(planPath: string, plan: PlanSchema) {
@@ -64,13 +65,13 @@ describe('timAgent - Parent Plan Status Updates', () => {
   }
 
   beforeEach(async () => {
-    clearPlanCache();
-
+    originalCwd = process.cwd();
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-agent-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
     await Bun.$`git init`.cwd(tempDir).quiet();
     await Bun.$`git remote add origin https://example.com/acme/agent-test.git`.cwd(tempDir).quiet();
+    process.chdir(tempDir);
     originalEnv = {
       XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
       APPDATA: process.env.APPDATA,
@@ -115,6 +116,7 @@ describe('timAgent - Parent Plan Status Updates', () => {
   });
 
   afterEach(async () => {
+    process.chdir(originalCwd);
     closeDatabaseForTesting();
     if (originalEnv.XDG_CONFIG_HOME === undefined) {
       delete process.env.XDG_CONFIG_HOME;
@@ -202,7 +204,6 @@ describe.skip('timAgent - Direct Execution Flow', () => {
     findNextActionableItemSpy.mockReturnValue(null);
 
     // Clear plan cache
-    clearPlanCache();
 
     // Create temporary directory
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-agent-test-'));
@@ -278,7 +279,6 @@ describe.skip('timAgent - Direct Execution Flow', () => {
         await fs.writeFile(filePath, yaml.stringify(plan));
       },
       setPlanStatus: setPlanStatusSpy,
-      clearPlanCache,
     }));
 
     await moduleMocker.mock('../../configLoader.js', () => ({
@@ -483,7 +483,6 @@ describe('timAgent - simple mode flag plumbing', () => {
   }));
 
   beforeEach(async () => {
-    clearPlanCache();
     clearPlanSyncContext();
     defaultConfig.executors = {};
 
@@ -600,7 +599,6 @@ describe('timAgent - simple mode flag plumbing', () => {
 
   afterEach(async () => {
     moduleMocker.clear();
-    clearPlanCache();
     clearPlanSyncContext();
     closeDatabaseForTesting();
     process.chdir(originalCwd);
@@ -783,7 +781,6 @@ describe('timAgent - simple mode flag plumbing', () => {
     const plan = await readPlanFile(simplePlanFile);
     (plan as any).tdd = true;
     await writePlanFile(simplePlanFile, plan, { cwdForIdentity: tempDir });
-    clearPlanCache();
 
     await timAgent(simplePlanFile, { log: false } as any, {});
 
@@ -808,7 +805,6 @@ describe('timAgent - simple mode flag plumbing', () => {
     const plan = await readPlanFile(simplePlanFile);
     (plan as any).tdd = true;
     await writePlanFile(simplePlanFile, plan, { cwdForIdentity: tempDir });
-    clearPlanCache();
 
     await timAgent(simplePlanFile, { log: false, tdd: false } as any, {});
 
@@ -1079,7 +1075,6 @@ describe('handleAgentCommand - --next-ready flag', () => {
     timAgentSpy.mockClear();
 
     // Clear plan cache
-    clearPlanCache();
 
     // Create temporary directory
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-next-ready-test-'));
@@ -1151,14 +1146,9 @@ describe('handleAgentCommand - --next-ready flag', () => {
 
     await moduleMocker.mock('../../configLoader.js', () => ({
       loadEffectiveConfig: mock(async () => ({
-        paths: { tasks: tasksDir },
         models: {},
         postApplyCommands: [],
       })),
-    }));
-
-    await moduleMocker.mock('../../configSchema.js', () => ({
-      resolveTasksDir: mock(async () => tasksDir),
     }));
 
     await moduleMocker.mock('../../plans.js', () => ({
@@ -1835,7 +1825,6 @@ describe('timAgent - Batch Tasks Mode', () => {
 
   beforeEach(async () => {
     // Clear plan cache
-    clearPlanCache();
     workingCopyStatusCallCount = 0;
 
     // Create temporary directory
@@ -1926,14 +1915,9 @@ describe('timAgent - Batch Tasks Mode', () => {
 
     await moduleMocker.mock('../../configLoader.js', () => ({
       loadEffectiveConfig: mock(async () => ({
-        paths: { tasks: tasksDir },
         models: {},
         postApplyCommands: [],
       })),
-    }));
-
-    await moduleMocker.mock('../../configSchema.js', () => ({
-      resolveTasksDir: mock(async () => tasksDir),
     }));
 
     await moduleMocker.mock('../../../common/git.js', () => ({
@@ -2000,7 +1984,7 @@ describe('timAgent - Batch Tasks Mode', () => {
 
   test('batch mode executes and actually modifies plan file to mark tasks done', async () => {
     const options = { batchTasks: true, log: false, nonInteractive: true } as any;
-    const globalCliOptions = { config: { paths: { tasks: path.join(tempDir, 'tasks') } } };
+    const globalCliOptions = { config: {} };
 
     await timAgent(batchPlanFile, options, globalCliOptions);
 
@@ -2031,7 +2015,7 @@ describe('timAgent - Batch Tasks Mode', () => {
     }));
 
     const options = { batchTasks: true, log: false, nonInteractive: true } as any;
-    const globalCliOptions = { config: { paths: { tasks: path.join(tempDir, 'tasks') } } };
+    const globalCliOptions = { config: {} };
 
     await timAgent(batchPlanFile, options, globalCliOptions);
 
@@ -2055,7 +2039,7 @@ describe('timAgent - Batch Tasks Mode', () => {
     await writePlanFile(batchPlanFile, plan);
 
     const options = { batchTasks: true, log: false, nonInteractive: true } as any;
-    const globalCliOptions = { config: { paths: { tasks: path.join(tempDir, 'tasks') } } };
+    const globalCliOptions = { config: {} };
 
     await timAgent(batchPlanFile, options, globalCliOptions);
 
@@ -2078,7 +2062,7 @@ describe('timAgent - Batch Tasks Mode', () => {
     }));
 
     const options = { batchTasks: true, log: false, nonInteractive: true } as any;
-    const globalCliOptions = { config: { paths: { tasks: path.join(tempDir, 'tasks') } } };
+    const globalCliOptions = { config: {} };
 
     await expect(timAgent(batchPlanFile, options, globalCliOptions)).rejects.toThrow(
       'Batch mode stopped due to error'
@@ -2095,7 +2079,7 @@ describe('timAgent - Batch Tasks Mode', () => {
 
   test('batch mode correctly updates plan status from pending to in_progress to done', async () => {
     const options = { batchTasks: true, log: false, nonInteractive: true } as any;
-    const globalCliOptions = { config: { paths: { tasks: path.join(tempDir, 'tasks') } } };
+    const globalCliOptions = { config: {} };
 
     // Verify initial status using real plan reading
     const { readPlanFile } = await import('../../plans.js');
@@ -2112,7 +2096,7 @@ describe('timAgent - Batch Tasks Mode', () => {
 
   test('batch mode does not update plan branch metadata when running on non-trunk branch', async () => {
     const options = { batchTasks: true, log: false, nonInteractive: true } as any;
-    const globalCliOptions = { config: { paths: { tasks: path.join(tempDir, 'tasks') } } };
+    const globalCliOptions = { config: {} };
 
     await timAgent(batchPlanFile, options, globalCliOptions);
 
@@ -2130,7 +2114,6 @@ describe('timAgent - Batch Tasks Mode Integration', () => {
 
   beforeEach(async () => {
     // Clear plan cache
-    clearPlanCache();
     workingCopyStatusCallCount = 0;
 
     // Create temporary directory
@@ -2189,14 +2172,9 @@ describe('timAgent - Batch Tasks Mode Integration', () => {
 
     await moduleMocker.mock('../../configLoader.js', () => ({
       loadEffectiveConfig: mock(async () => ({
-        paths: { tasks: tasksDir },
         models: {},
         postApplyCommands: [],
       })),
-    }));
-
-    await moduleMocker.mock('../../configSchema.js', () => ({
-      resolveTasksDir: mock(async () => tasksDir),
     }));
 
     await moduleMocker.mock('../../../common/git.js', () => ({

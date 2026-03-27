@@ -25,6 +25,7 @@ const moduleMocker = new ModuleMocker(import.meta);
 
 let testDir: string;
 let sendNotificationSpy: ReturnType<typeof mock>;
+let originalCwd: string;
 
 function createMockPlanContext(overrides: Record<string, unknown> = {}) {
   return {
@@ -35,6 +36,7 @@ function createMockPlanContext(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(async () => {
+  originalCwd = process.cwd();
   testDir = await mkdtemp(join(tmpdir(), 'tim-review-test-'));
   vi.spyOn(console, 'error').mockImplementation(() => {});
   sendNotificationSpy = mock(async () => true);
@@ -45,6 +47,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  process.chdir(originalCwd);
   moduleMocker.clear();
 });
 
@@ -3641,157 +3644,7 @@ tasks:
 });
 
 describe('Auto-selection of branch-specific plans', () => {
-  test('auto-selects plan when no planFile provided and branch-specific plan exists', async () => {
-    const planContent = `
-id: 42
-title: Branch-specific Plan
-goal: Test auto-selection functionality
-createdAt: 2024-01-01T00:00:00.000Z
-tasks:
-  - title: Test task
-    description: A test task on this branch
-`;
-
-    const planFile = join(testDir, 'branch-plan.yml');
-    await writeFile(planFile, `---\n${planContent}---\n`);
-
-    const mockExecutor = {
-      execute: mock(async (prompt: string, metadata: any) => {
-        return JSON.stringify({
-          issues: [],
-          recommendations: [],
-          actionItems: [],
-        });
-      }),
-    };
-
-    // Mock findBranchSpecificPlan to return a plan
-    await moduleMocker.mock('../plans.js', () => ({
-      findBranchSpecificPlan: mock(async () => ({
-        id: 42,
-        title: 'Branch-specific Plan',
-        goal: 'Test auto-selection functionality',
-        createdAt: '2024-01-01T00:00:00.000Z',
-        filename: planFile,
-        tasks: [
-          {
-            title: 'Test task',
-            description: 'A test task on this branch',
-          },
-        ],
-      })),
-      // Keep other needed functions
-      resolvePlanFile: async () => planFile,
-      readPlanFile: async () => ({
-        id: 42,
-        title: 'Branch-specific Plan',
-        goal: 'Test auto-selection functionality',
-        createdAt: '2024-01-01T00:00:00.000Z',
-        tasks: [
-          {
-            title: 'Test task',
-            description: 'A test task on this branch',
-          },
-        ],
-      }),
-    }));
-
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        defaultExecutor: 'claude-code',
-      }),
-    }));
-
-    await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () =>
-        createMockPlanContext({
-          resolvedPlanFile: planFile,
-          planData: {
-            id: 42,
-            title: 'Branch-specific Plan',
-            goal: 'Test auto-selection functionality',
-            createdAt: '2024-01-01T00:00:00.000Z',
-            tasks: [
-              {
-                title: 'Test task',
-                description: 'A test task on this branch',
-              },
-            ],
-          },
-          parentChain: [],
-          completedChildren: [],
-          diffResult: {
-            hasChanges: true,
-            changedFiles: ['src/test.ts'],
-            baseBranch: 'main',
-            diffContent: 'test diff',
-          },
-          incrementalSummary: null,
-          noChangesDetected: false,
-        }),
-    }));
-
-    await moduleMocker.mock('../executors/index.js', () => ({
-      buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => testDir,
-      getCurrentBranchName: async () => null,
-    }));
-
-    await moduleMocker.mock('./review.js', () => ({
-      handleReviewCommand,
-      generateDiffForReview: async () => ({
-        hasChanges: true,
-        changedFiles: ['src/test.ts'],
-        baseBranch: 'main',
-        diffContent: 'test diff',
-      }),
-      buildReviewPrompt: () => 'test review prompt',
-    }));
-
-    const mockCommand = {
-      parent: {
-        opts: () => ({}),
-      },
-    };
-
-    // Call without planFile - should auto-select
-    await handleReviewCommand(undefined, {}, mockCommand);
-
-    // Verify the executor was called
-    expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
-  });
-
-  test('throws error when no planFile provided and no branch-specific plans exist', async () => {
-    // Mock both branch-specific and modified plan finders to return null
-    await moduleMocker.mock('../plans.js', () => ({
-      findBranchSpecificPlan: mock(async () => null),
-      findSingleModifiedPlanOnBranch: mock(async () => null),
-    }));
-
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({}),
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getCurrentBranchName: async () => null,
-    }));
-
-    const mockCommand = {
-      parent: {
-        opts: () => ({}),
-      },
-    };
-
-    await expect(handleReviewCommand(undefined, {}, mockCommand)).rejects.toThrow(
-      'No plan file specified and no suitable plans found'
-    );
-  });
-
-  test('auto-selects DB-backed plan from branch name before file scanning fallbacks', async () => {
+  test('auto-selects a DB-backed plan from the current branch name', async () => {
     await writePlanToDb(
       {
         id: 280,
@@ -3801,19 +3654,8 @@ tasks:
       },
       { cwdForIdentity: testDir }
     );
-    const materializedPlanPath = join(testDir, '.tim', 'plans', '280.plan.md');
-    await mkdir(join(testDir, '.tim', 'plans'), { recursive: true });
-    await writeFile(
-      materializedPlanPath,
-      `---
-id: 280
-title: Stale materialized copy
-goal: Stale goal
-tasks: []
----
-`
-    );
 
+    const materializedPlanPath = join(testDir, '.tim', 'plans', '280.plan.md');
     const mockExecutor = {
       execute: mock(async () =>
         JSON.stringify({
@@ -3849,21 +3691,17 @@ tasks: []
         defaultExecutor: 'claude-code',
       }),
     }));
-
     await moduleMocker.mock('../executors/index.js', () => ({
       buildExecutorAndLog: () => mockExecutor,
       DEFAULT_EXECUTOR: 'codex-cli',
     }));
-
     await moduleMocker.mock('../utils/context_gathering.js', () => ({
       gatherPlanContext: gatherPlanContextMock,
     }));
-
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: async () => testDir,
       getCurrentBranchName: async () => '280-db-selected-plan',
     }));
-
     await moduleMocker.mock('./review.js', () => ({
       handleReviewCommand,
       generateDiffForReview: async () => ({
@@ -3885,10 +3723,7 @@ tasks: []
 
     expect(gatherPlanContextMock).toHaveBeenCalledTimes(1);
     expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
-    const materializedPlan = await readPlanFile(materializedPlanPath);
-    expect(materializedPlan.title).toBe('DB-selected Plan');
-    const dbPlan = await resolvePlanFromDb('280', testDir);
-    expect(dbPlan.plan.title).toBe('DB-selected Plan');
+    expect((await readPlanFile(materializedPlanPath)).title).toBe('DB-selected Plan');
   });
 
   test('branch-name auto-selected DB-only plans materialize before review and autofix execution', async () => {
@@ -3908,8 +3743,17 @@ tasks: []
       { cwdForIdentity: testDir }
     );
     const persistedPlan = (await resolvePlanFromDb('281', testDir)).plan;
-
     const materializedPlanPath = join(testDir, '.tim', 'plans', '281.plan.md');
+    await mkdir(join(testDir, '.tim', 'plans'), { recursive: true });
+    await writePlanFile(
+      materializedPlanPath,
+      {
+        ...persistedPlan,
+        details: 'Local unsynced materialized edits',
+        updatedAt: '2026-03-27T10:53:00.000Z',
+      },
+      { skipSync: true }
+    );
 
     await moduleMocker.mock('@inquirer/prompts', () => ({
       confirm: mock(async () => {
@@ -3924,6 +3768,8 @@ tasks: []
       execute: mock(async (prompt: string, metadata: any) => {
         if (metadata.executionMode === 'review') {
           expect(metadata.planFilePath).toBe(materializedPlanPath);
+          const existingMaterializedPlan = await readPlanFile(materializedPlanPath);
+          expect(existingMaterializedPlan.details).toBe('Local unsynced materialized edits');
           return JSON.stringify({
             issues: [
               {
@@ -3967,7 +3813,7 @@ Updated by branch-name autofix
     const gatherPlanContextMock = mock(async (planArg: string) => {
       expect(planArg).toBe(materializedPlanPath);
       return createMockPlanContext({
-        resolvedPlanFile: '281',
+        resolvedPlanFile: materializedPlanPath,
         planData: {
           id: 281,
           title: 'DB-only Branch Autofix Plan',
@@ -3995,21 +3841,17 @@ Updated by branch-name autofix
         defaultExecutor: 'claude-code',
       }),
     }));
-
     await moduleMocker.mock('../executors/index.js', () => ({
       buildExecutorAndLog: () => mockExecutor,
       DEFAULT_EXECUTOR: 'codex-cli',
     }));
-
     await moduleMocker.mock('../utils/context_gathering.js', () => ({
       gatherPlanContext: gatherPlanContextMock,
     }));
-
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: async () => testDir,
       getCurrentBranchName: async () => '281-db-only-branch-autofix-plan',
     }));
-
     await moduleMocker.mock('./review.js', () => ({
       handleReviewCommand,
       generateDiffForReview: async () => ({
@@ -4034,227 +3876,21 @@ Updated by branch-name autofix
 
     expect(gatherPlanContextMock).toHaveBeenCalledTimes(1);
     expect(mockExecutor.execute).toHaveBeenCalledTimes(2);
-    expect(mockExecutor.execute.mock.calls[0]?.[1]?.planFilePath).toBe(materializedPlanPath);
-    expect(mockExecutor.execute.mock.calls[1]?.[1]?.planFilePath).toBe(materializedPlanPath);
+    expect(await Bun.file(materializedPlanPath).exists()).toBe(true);
+    const materializedPlan = await readPlanFile(materializedPlanPath);
+    expect(materializedPlan.details).toBe('Updated by branch-name autofix');
+    expect(materializedPlan.tasks?.[0]?.done).toBe(true);
     const updatedPlan = (await resolvePlanFromDb('281', testDir)).plan;
     expect(updatedPlan.details).toBe('Updated by branch-name autofix');
     expect(updatedPlan.tasks?.[0]?.done).toBe(true);
   });
 
-  test('falls back to file-based auto-selection when branch-name DB lookup misses', async () => {
-    const planContent = `
-id: 42
-title: Branch fallback Plan
-goal: Use file discovery after branch-name DB miss
-createdAt: 2024-01-01T00:00:00.000Z
-tasks:
-  - title: Test task
-    description: A test task on this branch
-`;
-    const planFile = join(testDir, 'branch-fallback-plan.yml');
-    await writeFile(planFile, `---\n${planContent}---\n`);
-
-    const mockExecutor = {
-      execute: mock(async () =>
-        JSON.stringify({
-          issues: [],
-          recommendations: [],
-          actionItems: [],
-        })
-      ),
-    };
-    const findBranchSpecificPlanMock = mock(async () => ({
-      id: 42,
-      title: 'Branch fallback Plan',
-      goal: 'Use file discovery after branch-name DB miss',
-      createdAt: '2024-01-01T00:00:00.000Z',
-      filename: planFile,
-      tasks: [
-        {
-          title: 'Test task',
-          description: 'A test task on this branch',
-        },
-      ],
-    }));
-
-    await moduleMocker.mock('../plans.js', () => ({
-      findBranchSpecificPlan: findBranchSpecificPlanMock,
-      findSingleModifiedPlanOnBranch: mock(async () => null),
-      resolvePlanFile: async () => planFile,
-      readPlanFile: async () => ({
-        id: 42,
-        title: 'Branch fallback Plan',
-        goal: 'Use file discovery after branch-name DB miss',
-        createdAt: '2024-01-01T00:00:00.000Z',
-        tasks: [
-          {
-            title: 'Test task',
-            description: 'A test task on this branch',
-          },
-        ],
-      }),
-    }));
-
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        defaultExecutor: 'claude-code',
-      }),
-    }));
-
-    await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () =>
-        createMockPlanContext({
-          resolvedPlanFile: planFile,
-          planData: {
-            id: 42,
-            title: 'Branch fallback Plan',
-            goal: 'Use file discovery after branch-name DB miss',
-            createdAt: '2024-01-01T00:00:00.000Z',
-            tasks: [
-              {
-                title: 'Test task',
-                description: 'A test task on this branch',
-              },
-            ],
-          },
-          parentChain: [],
-          completedChildren: [],
-          diffResult: {
-            hasChanges: true,
-            changedFiles: ['src/test.ts'],
-            baseBranch: 'main',
-            diffContent: 'test diff',
-          },
-          incrementalSummary: null,
-          noChangesDetected: false,
-        }),
-    }));
-
-    await moduleMocker.mock('../executors/index.js', () => ({
-      buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => testDir,
-      getCurrentBranchName: async () => '999-nonexistent-plan',
-    }));
-
-    await moduleMocker.mock('./review.js', () => ({
-      handleReviewCommand,
-      generateDiffForReview: async () => ({
-        hasChanges: true,
-        changedFiles: ['src/test.ts'],
-        baseBranch: 'main',
-        diffContent: 'test diff',
-      }),
-      buildReviewPrompt: () => 'test review prompt',
-    }));
-
-    const mockCommand = {
-      parent: {
-        opts: () => ({}),
-      },
-    };
-
-    await handleReviewCommand(undefined, {}, mockCommand);
-
-    expect(findBranchSpecificPlanMock).toHaveBeenCalledTimes(1);
-    expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
-  });
-
-  test('still works with explicit planFile when provided', async () => {
-    const planContent = `
-id: 1
-title: Explicit Plan
-goal: Test explicit plan selection
-tasks:
-  - title: Test task
-    description: A test task
-`;
-    const planFile = join(testDir, 'explicit-plan.yml');
-    await writeFile(planFile, `---\n${planContent}---\n`);
-
-    const mockExecutor = {
-      execute: mock(async () =>
-        JSON.stringify({
-          issues: [],
-          recommendations: [],
-          actionItems: [],
-        })
-      ),
-    };
-
-    // Mock findBranchSpecificPlan - should NOT be called when planFile is provided
-    await moduleMocker.mock('../plans.js', () => ({
-      findBranchSpecificPlan: mock(async () => {
-        throw new Error('findBranchSpecificPlan should not be called when planFile is provided');
-      }),
-      resolvePlanFile: async () => planFile,
-      readPlanFile: async () => ({
-        id: 1,
-        title: 'Explicit Plan',
-        goal: 'Test explicit plan selection',
-        tasks: [
-          {
-            title: 'Test task',
-            description: 'A test task',
-          },
-        ],
-      }),
-    }));
-
+  test('throws when the branch name does not identify a DB plan', async () => {
     await moduleMocker.mock('../configLoader.js', () => ({
       loadEffectiveConfig: async () => ({}),
     }));
-
-    await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () =>
-        createMockPlanContext({
-          resolvedPlanFile: planFile,
-          planData: {
-            id: 1,
-            title: 'Explicit Plan',
-            goal: 'Test explicit plan selection',
-            tasks: [
-              {
-                title: 'Test task',
-                description: 'A test task',
-              },
-            ],
-          },
-          parentChain: [],
-          completedChildren: [],
-          diffResult: {
-            hasChanges: true,
-            changedFiles: ['test.ts'],
-            baseBranch: 'main',
-            diffContent: 'test diff',
-          },
-          incrementalSummary: null,
-          noChangesDetected: false,
-        }),
-    }));
-
-    await moduleMocker.mock('../executors/index.js', () => ({
-      buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
-
     await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => testDir,
       getCurrentBranchName: async () => null,
-    }));
-
-    await moduleMocker.mock('./review.js', () => ({
-      handleReviewCommand,
-      generateDiffForReview: async () => ({
-        hasChanges: true,
-        changedFiles: ['test.ts'],
-        baseBranch: 'main',
-        diffContent: 'test diff',
-      }),
-      buildReviewPrompt: () => 'test prompt',
     }));
 
     const mockCommand = {
@@ -4263,502 +3899,29 @@ tasks:
       },
     };
 
-    // Call with explicit planFile - should NOT trigger auto-selection
-    await handleReviewCommand(planFile, {}, mockCommand);
-
-    expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
-  });
-
-  test('includes auto-selection logging in output', async () => {
-    const planContent = `
-id: 100
-title: Auto-selected Plan
-goal: Test auto-selection logging
-tasks:
-  - title: Test task
-    description: A test task for logging
-`;
-    const planFile = join(testDir, 'auto-selected-plan.yml');
-    await writeFile(planFile, `---\n${planContent}---\n`);
-
-    const mockExecutor = {
-      execute: mock(async () =>
-        JSON.stringify({
-          issues: [],
-          recommendations: [],
-          actionItems: [],
-        })
-      ),
-    };
-
-    // Capture log calls to verify auto-selection messages
-    const logCalls: string[] = [];
-    const mockLog = mock((message: string) => {
-      logCalls.push(message);
-    });
-
-    await moduleMocker.mock('../plans.js', () => ({
-      findBranchSpecificPlan: mock(async () => ({
-        id: 100,
-        title: 'Auto-selected Plan',
-        goal: 'Test auto-selection logging',
-        filename: planFile,
-        tasks: [
-          {
-            title: 'Test task',
-            description: 'A test task for logging',
-          },
-        ],
-      })),
-      resolvePlanFile: async () => planFile,
-      readPlanFile: async () => ({
-        id: 100,
-        title: 'Auto-selected Plan',
-        goal: 'Test auto-selection logging',
-        tasks: [
-          {
-            title: 'Test task',
-            description: 'A test task for logging',
-          },
-        ],
-      }),
-    }));
-
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({}),
-    }));
-
-    await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () =>
-        createMockPlanContext({
-          resolvedPlanFile: planFile,
-          planData: {
-            id: 100,
-            title: 'Auto-selected Plan',
-            goal: 'Test auto-selection logging',
-            tasks: [
-              {
-                title: 'Test task',
-                description: 'A test task for logging',
-              },
-            ],
-          },
-          parentChain: [],
-          completedChildren: [],
-          diffResult: {
-            hasChanges: true,
-            changedFiles: ['test.ts'],
-            baseBranch: 'main',
-            diffContent: 'test diff',
-          },
-          incrementalSummary: null,
-          noChangesDetected: false,
-        }),
-    }));
-
-    await moduleMocker.mock('../executors/index.js', () => ({
-      buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => testDir,
-      getCurrentBranchName: async () => null,
-    }));
-
-    // Mock the log function to capture calls
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: mockLog,
-    }));
-
-    await moduleMocker.mock('./review.js', () => ({
-      handleReviewCommand,
-      generateDiffForReview: async () => ({
-        hasChanges: true,
-        changedFiles: ['test.ts'],
-        baseBranch: 'main',
-        diffContent: 'test diff',
-      }),
-      buildReviewPrompt: () => 'test prompt',
-    }));
-
-    const mockCommand = {
-      parent: {
-        opts: () => ({}),
-      },
-    };
-
-    await handleReviewCommand(undefined, {}, mockCommand);
-
-    // Verify auto-selection logging occurred
-    const autoSelectionLogs = logCalls.filter(
-      (msg) => msg.includes('Auto-selected plan') || msg.includes('100 - Auto-selected Plan')
+    await expect(handleReviewCommand(undefined, {}, mockCommand)).rejects.toThrow(
+      'No plan file specified and no suitable plans found'
     );
-    expect(autoSelectionLogs.length).toBeGreaterThan(0);
-  });
-});
-
-// TODO Not properly mocking somewhere. Try to replace with real temp dir
-describe.skip('Branch-specific plan discovery', () => {
-  test('getNewPlanFilesOnBranch finds new plan files using git', async () => {
-    // Import the function to test it directly
-    const { getNewPlanFilesOnBranch } = await import('../plans.js');
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getTrunkBranch: async () => 'main',
-      getUsingJj: async () => false,
-    }));
-
-    await moduleMocker.mock('bun', () => ({
-      $: mock().mockImplementation((template: TemplateStringsArray) => {
-        const command = template.join('');
-        if (command.includes('git diff --name-status')) {
-          return {
-            cwd: mock(() => ({
-              nothrow: () => ({
-                text: () => 'A\tsome/plan.yml\nA\tother/file.txt\nM\texisting.yml',
-              }),
-            })),
-            nothrow: mock(() => ({
-              text: () => 'A\tsome/plan.yml\nA\tother/file.txt\nM\texisting.yml',
-            })),
-            text: mock(() => 'A\tsome/plan.yml\nA\tother/file.txt\nM\texisting.yml'),
-          };
-        }
-        return {
-          cwd: mock(() => ({ nothrow: () => ({ text: () => '' }) })),
-          nothrow: mock(() => ({ text: () => '' })),
-          text: mock(() => ''),
-        };
-      }),
-    }));
-
-    const result = await getNewPlanFilesOnBranch('/test/repo', '/test/repo');
-    expect(result).toContain('/test/repo/some/plan.yml');
-    expect(result).not.toContain('/test/repo/other/file.txt'); // Not a plan file
-    expect(result).not.toContain('/test/repo/existing.yml'); // Modified, not added
   });
 
-  test('getNewPlanFilesOnBranch finds new plan files using jj', async () => {
-    const { getNewPlanFilesOnBranch } = await import('../plans.js');
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getTrunkBranch: async () => 'main',
-      getUsingJj: async () => true,
-    }));
-
-    await moduleMocker.mock('bun', () => ({
-      $: mock().mockImplementation((template: TemplateStringsArray) => {
-        const command = template.join('');
-        if (command.includes('jj diff --from')) {
-          return {
-            cwd: mock(() => ({
-              nothrow: () => ({
-                text: () =>
-                  '-F tasks/new-plan.yml\n-F tasks/another.plan.md\nFF existing/modified.yml',
-              }),
-            })),
-            nothrow: mock(() => ({
-              text: () =>
-                '-F tasks/new-plan.yml\n-F tasks/another.plan.md\nFF existing/modified.yml',
-            })),
-            text: mock(
-              () => '-F tasks/new-plan.yml\n-F tasks/another.plan.md\nFF existing/modified.yml'
-            ),
-          };
-        }
-        return {
-          cwd: mock(() => ({ nothrow: () => ({ text: () => '' }) })),
-          nothrow: mock(() => ({ text: () => '' })),
-          text: mock(() => ''),
-        };
-      }),
-    }));
-
-    const result = await getNewPlanFilesOnBranch('/test/repo', '/test/repo/tasks');
-    expect(result).toContain('/test/repo/tasks/new-plan.yml');
-    expect(result).toContain('/test/repo/tasks/another.plan.md');
-    expect(result).not.toContain('/test/repo/existing/modified.yml'); // Not a new file
-  });
-
-  test('findBranchSpecificPlan sorts by createdAt then by ID', async () => {
-    const { findBranchSpecificPlan } = await import('../plans.js');
-
-    // Mock plans with different timestamps and IDs
-    const plan1File = join(testDir, 'plan1.yml');
-    const plan2File = join(testDir, 'plan2.yml');
-    const plan3File = join(testDir, 'plan3.yml');
-
-    await moduleMocker.mock('../plans.js', () => ({
-      findBranchSpecificPlan,
-      getNewPlanFilesOnBranch: mock(async () => [plan1File, plan2File, plan3File]),
-      readPlanFile: mock(async (filePath: string) => {
-        if (filePath === plan1File) {
-          return {
-            id: 3,
-            title: 'Plan 3',
-            goal: 'Third plan',
-            createdAt: '2024-01-03T00:00:00.000Z', // Newest
-          };
-        } else if (filePath === plan2File) {
-          return {
-            id: 1,
-            title: 'Plan 1',
-            goal: 'First plan',
-            createdAt: '2024-01-01T00:00:00.000Z', // Oldest
-          };
-        } else if (filePath === plan3File) {
-          return {
-            id: 2,
-            title: 'Plan 2',
-            goal: 'Second plan',
-            createdAt: '2024-01-02T00:00:00.000Z', // Middle
-          };
-        }
-        return null;
-      }),
-    }));
-
+  test('throws when the branch name matches the pattern but the DB plan does not exist', async () => {
     await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: { tasks: testDir },
-      }),
+      loadEffectiveConfig: async () => ({}),
     }));
-
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: async () => testDir,
+      getCurrentBranchName: async () => '999-missing-plan',
     }));
 
-    const result = await findBranchSpecificPlan();
+    const mockCommand = {
+      parent: {
+        opts: () => ({}),
+      },
+    };
 
-    // Should select plan with earliest createdAt (plan1 with 2024-01-01)
-    expect(result?.id).toBe(1);
-    expect(result?.title).toBe('Plan 1');
-  });
-
-  test('findBranchSpecificPlan falls back to ID sorting when createdAt missing', async () => {
-    const { findBranchSpecificPlan } = await import('../plans.js');
-
-    const plan1File = join(testDir, 'plan1.yml');
-    const plan2File = join(testDir, 'plan2.yml');
-
-    await moduleMocker.mock('../plans.js', () => ({
-      findBranchSpecificPlan,
-      getNewPlanFilesOnBranch: mock(async () => [plan1File, plan2File]),
-      readPlanFile: mock(async (filePath: string) => {
-        if (filePath === plan1File) {
-          return {
-            id: 5,
-            title: 'Plan 5',
-            goal: 'Higher ID plan',
-            // No createdAt
-          };
-        } else if (filePath === plan2File) {
-          return {
-            id: 2,
-            title: 'Plan 2',
-            goal: 'Lower ID plan',
-            // No createdAt
-          };
-        }
-        return null;
-      }),
-    }));
-
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: { tasks: testDir },
-      }),
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => testDir,
-    }));
-
-    const result = await findBranchSpecificPlan();
-
-    // Should select plan with lowest ID (plan2 with ID 2)
-    expect(result?.id).toBe(2);
-    expect(result?.title).toBe('Plan 2');
-  });
-
-  test('findSingleModifiedPlanOnBranch returns plan when exactly one modified', async () => {
-    const { findSingleModifiedPlanOnBranch } = await import('../plans.js');
-
-    const modifiedPlanFile = join(testDir, 'modified-plan.yml');
-
-    await moduleMocker.mock('../plans.js', () => ({
-      findSingleModifiedPlanOnBranch,
-      getModifiedPlanFilesOnBranch: mock(async () => [modifiedPlanFile]),
-      readPlanFile: mock(async (filePath: string) => {
-        if (filePath === modifiedPlanFile) {
-          return {
-            id: 42,
-            title: 'Modified Plan',
-            goal: 'Plan that was modified on this branch',
-          };
-        }
-        return null;
-      }),
-    }));
-
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: { tasks: testDir },
-      }),
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => testDir,
-    }));
-
-    const result = await findSingleModifiedPlanOnBranch();
-
-    expect(result).not.toBeNull();
-    expect(result?.id).toBe(42);
-    expect(result?.title).toBe('Modified Plan');
-    expect(result?.filename).toBe(modifiedPlanFile);
-  });
-
-  test('findSingleModifiedPlanOnBranch returns null when multiple plans modified', async () => {
-    const { findSingleModifiedPlanOnBranch } = await import('../plans.js');
-
-    const plan1File = join(testDir, 'modified-plan1.yml');
-    const plan2File = join(testDir, 'modified-plan2.yml');
-
-    await moduleMocker.mock('../plans.js', () => ({
-      findSingleModifiedPlanOnBranch,
-      getModifiedPlanFilesOnBranch: mock(async () => [plan1File, plan2File]),
-      readPlanFile: mock(async () => ({
-        id: 1,
-        title: 'Some Plan',
-        goal: 'Some goal',
-      })),
-    }));
-
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: { tasks: testDir },
-      }),
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => testDir,
-    }));
-
-    const result = await findSingleModifiedPlanOnBranch();
-
-    expect(result).toBeNull();
-  });
-
-  test('findSingleModifiedPlanOnBranch returns null when no plans modified', async () => {
-    const { findSingleModifiedPlanOnBranch } = await import('../plans.js');
-
-    await moduleMocker.mock('../plans.js', () => ({
-      findSingleModifiedPlanOnBranch,
-      getModifiedPlanFilesOnBranch: mock(async () => []),
-      readPlanFile: mock(async () => null),
-    }));
-
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: { tasks: testDir },
-      }),
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => testDir,
-    }));
-
-    const result = await findSingleModifiedPlanOnBranch();
-
-    expect(result).toBeNull();
-  });
-
-  test('getModifiedPlanFilesOnBranch detects modified files in git', async () => {
-    const { getModifiedPlanFilesOnBranch } = await import('../plans.js');
-
-    await moduleMocker.mock('bun', () => ({
-      $: mock().mockImplementation((template: TemplateStringsArray) => {
-        const command = template.join('');
-        if (command.includes('git diff --name-status')) {
-          return {
-            cwd: mock(() => ({
-              nothrow: () => ({
-                text: () =>
-                  'M\ttasks/modified-plan.yml\nM\ttasks/another.plan.md\nA\ttasks/new.yml',
-              }),
-            })),
-            nothrow: mock(() => ({
-              text: () => 'M\ttasks/modified-plan.yml\nM\ttasks/another.plan.md\nA\ttasks/new.yml',
-            })),
-            text: mock(
-              () => 'M\ttasks/modified-plan.yml\nM\ttasks/another.plan.md\nA\ttasks/new.yml'
-            ),
-          };
-        }
-        return {
-          cwd: mock(() => ({ nothrow: () => ({ text: () => '' }) })),
-          nothrow: mock(() => ({ text: () => '' })),
-          text: mock(() => ''),
-        };
-      }),
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getTrunkBranch: async () => 'main',
-      getUsingJj: async () => false,
-    }));
-
-    const result = await getModifiedPlanFilesOnBranch('/test/repo', '/test/repo/tasks');
-
-    expect(result).toHaveLength(2);
-    expect(result).toContain('/test/repo/tasks/modified-plan.yml');
-    expect(result).toContain('/test/repo/tasks/another.plan.md');
-    expect(result).not.toContain('/test/repo/tasks/new.yml'); // Added file, not modified
-  });
-
-  test('getModifiedPlanFilesOnBranch detects modified files in jj', async () => {
-    const { getModifiedPlanFilesOnBranch } = await import('../plans.js');
-
-    await moduleMocker.mock('bun', () => ({
-      $: mock().mockImplementation((template: TemplateStringsArray) => {
-        const command = template.join('');
-        if (command.includes('jj diff --from')) {
-          return {
-            cwd: mock(() => ({
-              nothrow: () => ({
-                text: () =>
-                  'FF tasks/modified-plan.yml\nFF tasks/another.plan.md\n-F tasks/new.yml',
-              }),
-            })),
-            nothrow: mock(() => ({
-              text: () => 'FF tasks/modified-plan.yml\nFF tasks/another.plan.md\n-F tasks/new.yml',
-            })),
-            text: mock(
-              () => 'FF tasks/modified-plan.yml\nFF tasks/another.plan.md\n-F tasks/new.yml'
-            ),
-          };
-        }
-        return {
-          cwd: mock(() => ({ nothrow: () => ({ text: () => '' }) })),
-          nothrow: mock(() => ({ text: () => '' })),
-          text: mock(() => ''),
-        };
-      }),
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getTrunkBranch: async () => 'main',
-      getUsingJj: async () => true,
-    }));
-
-    const result = await getModifiedPlanFilesOnBranch('/test/repo', '/test/repo/tasks');
-
-    expect(result).toHaveLength(2);
-    expect(result).toContain('/test/repo/tasks/modified-plan.yml');
-    expect(result).toContain('/test/repo/tasks/another.plan.md');
-    expect(result).not.toContain('/test/repo/tasks/new.yml'); // Added file, not modified
+    await expect(handleReviewCommand(undefined, {}, mockCommand)).rejects.toThrow(
+      'No plan file specified and no suitable plans found'
+    );
   });
 });
 

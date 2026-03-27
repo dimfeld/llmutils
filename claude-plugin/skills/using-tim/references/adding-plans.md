@@ -28,7 +28,6 @@ tim add "Plan title" --discovered-from 99     # Link to source plan
 tim add "Plan title" --tag frontend --tag urgent  # Add tags
 tim add "Plan title" --simple                 # Skip research phase during generation
 tim add "Plan title" --edit                   # Open in editor after creation
-tim add "Plan title" --output tasks/custom.yml  # Custom file path
 ```
 
 ## From GitHub Issues

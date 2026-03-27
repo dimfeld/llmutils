@@ -10,7 +10,7 @@ import { mcpListReadyPlans } from './commands/ready.js';
 import { getDefaultConfig, type TimConfig } from './configSchema.js';
 import type { GenerateModeRegistrationContext } from './mcp/generate_mode.js';
 import { mcpCreatePlan } from './mcp/generate_mode.js';
-import { clearPlanCache, resolvePlanFromDb } from './plans.js';
+import { resolvePlanFromDb } from './plans.js';
 
 describe('tag workflows across CLI and MCP', () => {
   let tempDir: string;
@@ -23,8 +23,6 @@ describe('tag workflows across CLI and MCP', () => {
   let mcpContext: GenerateModeRegistrationContext;
 
   beforeEach(async () => {
-    clearPlanCache();
-
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tag-flow-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
@@ -80,7 +78,6 @@ describe('tag workflows across CLI and MCP', () => {
 
   afterEach(async () => {
     moduleMocker.clear();
-    clearPlanCache();
     await fs.rm(tempDir, { recursive: true, force: true });
     logSpy.mockReset();
     warnSpy.mockReset();

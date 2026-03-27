@@ -1,13 +1,15 @@
+import * as path from 'node:path';
 import type { ExecutePlanInfo } from '../types';
 import type { TimConfig } from '../../configSchema';
 import type { PlanSchema } from '../../planSchema';
 import type { DiffResult } from '../../incremental_review';
 import type { PlanWithFilename } from '../../utils/hierarchy';
-import { resolveTasksDir } from '../../configSchema';
-import { readAllPlans } from '../../plans';
+import { getRepositoryIdentity } from '../../assignments/workspace_identifier.js';
 import { getParentChain, getCompletedChildren } from '../../utils/hierarchy';
 import { generateDiffForReview } from '../../incremental_review';
 import { buildReviewPrompt } from '../../commands/review';
+import { getLegacyAwareSearchDir, resolvePlanPathContext } from '../../path_resolver.js';
+import { loadPlansFromDb } from '../../plans_db.js';
 import { runReview } from '../../review_runner';
 import { createFormatter, type ReviewResult } from '../../formatters/review_formatter';
 import { loadRepositoryReviewDoc } from './agent_helpers';
@@ -58,8 +60,14 @@ export async function loadReviewHierarchy(
     return { parentChain, completedChildren };
   }
 
-  const tasksDir = await resolveTasksDir(timConfig);
-  const { plans: allPlans } = await readAllPlans(tasksDir);
+  const { gitRoot, repositoryId } = await getRepositoryIdentity({
+    cwd: path.dirname(planFilePath),
+  });
+  const { configBaseDir } = await resolvePlanPathContext(timConfig);
+  const { plans: allPlans } = loadPlansFromDb(
+    getLegacyAwareSearchDir(gitRoot, configBaseDir),
+    repositoryId
+  );
   const planWithFilename: PlanWithFilename = {
     ...planData,
     filename: planFilePath,

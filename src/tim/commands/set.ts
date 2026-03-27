@@ -3,8 +3,8 @@ import { getGitRoot } from '../../common/git.js';
 import { log } from '../../logging.js';
 import { removePlanAssignment } from '../assignments/remove_plan_assignment.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { resolveTasksDir } from '../configSchema.js';
 import type { TimConfig } from '../configSchema.js';
+import { getLegacyAwareSearchDir } from '../path_resolver.js';
 import { getDatabase } from '../db/database.js';
 import { getPlanByPlanId, type PlanRow, upsertPlan } from '../db/plan.js';
 import { toPlanUpsertInput } from '../db/plan_sync.js';
@@ -24,15 +24,12 @@ import { readPlanFile, resolvePlanFromDb, writePlanFile } from '../plans.js';
 import { invertPlanIdToUuidMap, planRowForTransaction } from '../plans_db.js';
 import { checkAndMarkParentDone } from '../plans/parent_cascade.js';
 import { resolveWritablePath } from '../plans/resolve_writable_path.js';
-import { mergeYamlPassthroughFields } from '../plans/yaml_passthrough.js';
 import { ensureReferences } from '../utils/references.js';
 
 export interface SetOptions {
   planFile: string;
   priority?: Priority;
   status?: PlanSchema['status'];
-  statusDescription?: string;
-  noStatusDescription?: boolean;
   dependsOn?: number[];
   noDependsOn?: number[];
   parent?: number;
@@ -69,10 +66,10 @@ export async function handleSetCommand(
 
   await withPlanAutoSync(initialPlan.plan.id, repoRoot, async () => {
     let context = await resolveProjectContext(repoRoot);
+    const tasksDir = getLegacyAwareSearchDir(repoRoot);
     const target = await resolvePlanFromDb(resolvedPlanArg, repoRoot, { context });
-    const tasksDir = await resolveTasksDir(config);
     const planRow = getRequiredPlanRow(context, target.plan.id);
-    const outputPath = await resolveWritablePath(planArg, planRow, tasksDir, repoRoot);
+    const outputPath = await resolveWritablePath(planArg, planRow, repoRoot, repoRoot);
 
     const plan = target.plan;
     let modified = false;
@@ -91,29 +88,8 @@ export async function handleSetCommand(
       modified = true;
       log(`Updated status to ${options.status}`);
 
-      if (!options.statusDescription && plan.statusDescription) {
-        delete plan.statusDescription;
-        log('Cleared status description (status changed)');
-      }
-
       if (plan.uuid && (plan.status === 'done' || plan.status === 'cancelled')) {
         shouldRemoveAssignment = true;
-      }
-    }
-
-    if (options.statusDescription) {
-      plan.statusDescription = options.statusDescription;
-      modified = true;
-      log('Updated status description');
-    }
-
-    if (options.noStatusDescription) {
-      if (plan.statusDescription !== undefined) {
-        delete plan.statusDescription;
-        modified = true;
-        log('Removed status description');
-      } else {
-        log('No status description to remove');
       }
     }
 
@@ -348,8 +324,6 @@ export async function handleSetCommand(
       })
     ).plan;
 
-    mergeYamlPassthroughFields(refreshedPlan, plan);
-
     const { updatedPlan: refreshedPlanWithReferences } = ensureReferences(refreshedPlan, {
       planIdToUuid: freshContext.planIdToUuid,
     });
@@ -358,8 +332,6 @@ export async function handleSetCommand(
       outputPath &&
       outputPath !== getMaterializedPlanPath(repoRoot, refreshedPlanWithReferences.id)
     ) {
-      const filePlan = await readPlanFile(outputPath);
-      mergeYamlPassthroughFields(refreshedPlanWithReferences, filePlan);
       await writePlanFile(outputPath, refreshedPlanWithReferences, {
         cwdForIdentity: repoRoot,
         context: freshContext,
@@ -377,8 +349,6 @@ export async function handleSetCommand(
       const { updatedPlan: refreshedParentWithReferences } = ensureReferences(refreshedParent, {
         planIdToUuid: freshContext.planIdToUuid,
       });
-      const filePlan = await readPlanFile(filePath);
-      mergeYamlPassthroughFields(refreshedParentWithReferences, filePlan);
       await writePlanFile(filePath, refreshedParentWithReferences, {
         cwdForIdentity: repoRoot,
         context: freshContext,
@@ -474,20 +444,29 @@ async function collectLegacyFileWrites(
   planIds: Array<number | undefined>
 ): Promise<Map<number, string>> {
   const result = new Map<number, string>();
+  const candidateBaseDirs = [tasksDir, path.dirname(tasksDir)].filter(
+    (value, index, all) => all.indexOf(value) === index
+  );
   for (const planId of planIds) {
     if (planId === undefined) {
       continue;
     }
     const row = getRequiredPlanRow(context, planId);
-    const legacyPath = path.isAbsolute(row.filename)
-      ? row.filename
-      : path.join(tasksDir, row.filename);
-    const exists = await Bun.file(legacyPath)
-      .stat()
-      .then((stats) => stats.isFile())
-      .catch(() => false);
-    if (exists) {
-      result.set(planId, legacyPath);
+    const candidatePaths = path.isAbsolute(row.filename)
+      ? [row.filename]
+      : candidateBaseDirs.flatMap((baseDir) => [
+          path.join(baseDir, row.filename),
+          path.join(baseDir, 'tasks', row.filename),
+        ]);
+    for (const candidatePath of candidatePaths) {
+      const exists = await Bun.file(candidatePath)
+        .stat()
+        .then((stats) => stats.isFile())
+        .catch(() => false);
+      if (exists) {
+        result.set(planId, candidatePath);
+        break;
+      }
     }
   }
   return result;

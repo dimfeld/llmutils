@@ -7,7 +7,6 @@ import {
 } from '../plan_materialize.js';
 import { resolvePlanFromDb, writePlanFile } from '../plans.js';
 import { validateTags } from '../utils/tags.js';
-import { clearPlanCache } from '../plans.js';
 import { ensureReferences } from '../utils/references.js';
 import { getDatabase } from '../db/database.js';
 import { getPlanByUuid, upsertPlan, type PlanRow } from '../db/plan.js';
@@ -21,7 +20,6 @@ export async function createPlanTool(
   args: CreatePlanArguments,
   context: ToolContext
 ): Promise<ToolResult<{ id: number; path: string }>> {
-  clearPlanCache();
   const title = args.title.trim();
   if (!title) {
     throw new Error('Plan title cannot be empty.');

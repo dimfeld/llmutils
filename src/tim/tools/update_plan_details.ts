@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { withPlanAutoSync } from '../plan_materialize.js';
 import { resolvePlan } from '../plan_display.js';
-import { clearPlanCache, writePlanFile } from '../plans.js';
+import { writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { updateDetailsWithinDelimiters } from '../plan_merge.js';
 import type { ToolContext, ToolResult } from './context.js';
@@ -11,7 +11,6 @@ export async function updatePlanDetailsTool(
   args: UpdatePlanDetailsArguments,
   context: ToolContext
 ): Promise<ToolResult<{ path: string }>> {
-  clearPlanCache();
   // Resolve plan to get its numeric ID for withPlanAutoSync
   const { plan: initialPlan } = await resolvePlan(args.plan, context);
   if (typeof initialPlan.id !== 'number') {

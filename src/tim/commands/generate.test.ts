@@ -7,7 +7,7 @@ import {
   generateClaudeCodePlanningPrompt,
   generateClaudeCodeSimplePlanningPrompt,
 } from '../prompt.js';
-import { clearPlanCache, readPlanFile, writePlanFile } from '../plans.js';
+import { readPlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { ModuleMocker } from '../../testing.js';
 
@@ -126,8 +126,6 @@ describe('handleGenerateCommand', () => {
     runWithHeadlessAdapterIfEnabledSpy.mockImplementation(async (options: any) =>
       options.callback()
     );
-
-    clearPlanCache();
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-generate-test-'));
     tasksDir = path.join(tempDir, 'tasks');
@@ -940,8 +938,6 @@ describe('handleGenerateCommand with --next-ready flag', () => {
     runWithHeadlessAdapterIfEnabledSpy.mockClear();
     syncPlanToDbSpy.mockClear();
 
-    clearPlanCache();
-
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-generate-nextready-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
@@ -955,7 +951,6 @@ describe('handleGenerateCommand with --next-ready flag', () => {
     const actualPlans = await import('../plans.js');
     await moduleMocker.mock('../plans.js', () => ({
       ...actualPlans,
-      clearPlanCache: mock(() => {}),
     }));
     await moduleMocker.mock('../ensure_plan_in_db.js', () => ({
       resolvePlanFromDbOrSyncFile: resolvePlanFromDbOrSyncFileSpy,
@@ -1062,7 +1057,7 @@ describe('handleGenerateCommand with --next-ready flag', () => {
     await handleGenerateCommand(undefined, options, command);
 
     // Should call findNextReadyDependency with the parent plan ID
-    expect(findNextReadyDependencyFromDbSpy).toHaveBeenCalledWith(123, tasksDir, tempDir, true);
+    expect(findNextReadyDependencyFromDbSpy).toHaveBeenCalledWith(123, tempDir, tempDir, true);
 
     // Should log the success message
     expect(logSpy).toHaveBeenCalledWith(
@@ -1120,7 +1115,7 @@ describe('handleGenerateCommand with --next-ready flag', () => {
     await handleGenerateCommand(undefined, options, command);
 
     expect(resolvePlanFromDbOrSyncFileSpy).toHaveBeenCalledWith(parentPlanPath, tempDir, tempDir);
-    expect(findNextReadyDependencyFromDbSpy).toHaveBeenCalledWith(123, tasksDir, tempDir, true);
+    expect(findNextReadyDependencyFromDbSpy).toHaveBeenCalledWith(123, tempDir, tempDir, true);
 
     expect(logSpy).toHaveBeenCalledWith(
       expect.stringContaining('Found ready plan: 456 - Ready Dependency Plan')
@@ -1145,7 +1140,7 @@ describe('handleGenerateCommand with --next-ready flag', () => {
 
     await handleGenerateCommand(undefined, options, command);
 
-    expect(findNextReadyDependencyFromDbSpy).toHaveBeenCalledWith(123, tasksDir, tempDir, true);
+    expect(findNextReadyDependencyFromDbSpy).toHaveBeenCalledWith(123, tempDir, tempDir, true);
     expect(logSpy).toHaveBeenCalledWith(
       expect.stringContaining('No ready or pending dependencies found')
     );
@@ -1167,7 +1162,7 @@ describe('handleGenerateCommand with --next-ready flag', () => {
 
     await handleGenerateCommand(undefined, options, command);
 
-    expect(findNextReadyDependencyFromDbSpy).toHaveBeenCalledWith(999, tasksDir, tempDir, true);
+    expect(findNextReadyDependencyFromDbSpy).toHaveBeenCalledWith(999, tempDir, tempDir, true);
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Plan not found: 999'));
   });
 

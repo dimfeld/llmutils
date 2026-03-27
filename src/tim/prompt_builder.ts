@@ -1,5 +1,5 @@
 import * as path from 'path';
-import type { PlanSchema } from './planSchema.js';
+import type { PlanSchema, PlanWithLegacyMetadata } from './planSchema.js';
 import type { TimConfig } from './configSchema.js';
 import { buildPlanContextPrompt, isURL } from './context_helpers.js';
 import { getGitRoot } from '../common/git.js';
@@ -28,17 +28,18 @@ export interface ExecutionPromptOptions {
  * Build the project or phase context section of a prompt
  */
 export function buildProjectContextSection(planData: PlanSchema): string {
+  const legacyPlan = planData as PlanWithLegacyMetadata;
   const parts: string[] = [];
 
-  if (planData.project?.goal) {
+  if (legacyPlan.project?.goal) {
     // We have a project-level context
     parts.push(
-      `# Project Goal: ${planData.project.goal}\n`,
+      `# Project Goal: ${legacyPlan.project.goal}\n`,
       'These instructions define a particular task of a feature implementation for this project'
     );
 
-    if (planData.project.details) {
-      parts.push(`## Project Details:\n\n${planData.project.details}\n`);
+    if (legacyPlan.project.details) {
+      parts.push(`## Project Details:\n\n${legacyPlan.project.details}\n`);
     }
 
     if (planData.goal) {
@@ -171,7 +172,7 @@ export async function buildExecutionPromptWithoutSteps(
     planData,
     planFilePath,
     baseDir,
-    config,
+    configBaseDir: config.isUsingExternalStorage ? config.externalRepositoryConfigDir : undefined,
     includeCurrentPlanContext,
   });
   if (planContext) {

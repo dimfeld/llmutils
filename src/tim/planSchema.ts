@@ -23,12 +23,6 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
     description: z.string(),
   });
 
-  const projectSchema = objectFactory({
-    title: z.string(),
-    goal: z.string().optional(),
-    details: z.string().optional(),
-  });
-
   const phaseSchema = objectFactory({
     title: z.string().optional(),
     goal: z.string().optional(),
@@ -85,11 +79,12 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
       .array(z.string())
       .default(() => [])
       .optional(),
+    rmfilter: z.array(z.string()).optional(),
+    references: z.record(z.string(), z.string()).optional(),
     assignedTo: z.string().optional(),
     planGeneratedAt: z.string().datetime().optional(),
     createdAt: z.string().datetime().optional(),
     updatedAt: z.string().datetime().optional(),
-    project: projectSchema.optional(),
     tasks: z.array(taskSchema),
     baseBranch: z.string().optional(),
     branch: z.string().optional(),
@@ -107,10 +102,6 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
         })
       )
       .optional(),
-    not_tim: z
-      .boolean()
-      .optional()
-      .describe('Mark file as not a tim plan, to be ignored when listing and reading plans'),
   }).describe('tim phase file schema');
 
   const multiPhasePlanSchema = objectFactory({
@@ -150,21 +141,27 @@ export function normalizeContainerToEpic<T extends { container?: boolean; epic?:
 }
 
 export const planSchema = phaseSchema;
-type LegacyPlanPassthroughFields = {
+export type PlanSchema = z.output<typeof phaseSchema>;
+export interface LegacyProjectMetadata {
+  title: string;
+  goal?: string;
+  details?: string;
+}
+export interface LegacyPlanFileMetadata {
+  project?: LegacyProjectMetadata;
+  not_tim?: boolean;
   generatedBy?: 'agent' | 'oneshot';
   promptsGeneratedAt?: string;
   compactedAt?: string;
   statusDescription?: string;
-  rmfilter?: string[];
-  references?: Record<string, string>;
-};
-
-export type PlanSchema = z.output<typeof phaseSchema> & LegacyPlanPassthroughFields;
+}
 export type PlanSchemaWithFilename = PlanSchema & {
   filename: string;
 };
+export type PlanWithLegacyMetadata = PlanSchema & LegacyPlanFileMetadata;
 export type TaskSchema = z.output<typeof defaultSchemas.taskSchema>;
-export type PlanSchemaInput = z.input<typeof phaseSchema> & LegacyPlanPassthroughFields;
+export type PlanSchemaInput = z.input<typeof phaseSchema>;
+export type PlanSchemaInputWithLegacyMetadata = PlanSchemaInput & LegacyPlanFileMetadata;
 export type PlanSchemaInputWithFilename = PlanSchemaInput & {
   filename: string;
 };

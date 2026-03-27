@@ -685,7 +685,7 @@ describe('workspace add --reuse and --try-reuse', () => {
     const lockInfo = await WorkspaceLock.getLockInfo(existingWorkspace);
     expect(lockInfo).not.toBeNull();
 
-    const planInWorkspace = path.join(existingWorkspace, 'tasks', '61.plan.md');
+    const planInWorkspace = path.join(existingWorkspace, '.tim', 'plans', '61.plan.md');
     const planExists = await fs
       .access(planInWorkspace)
       .then(() => true)
@@ -907,7 +907,7 @@ describe('workspace add --reuse and --try-reuse', () => {
     } as any);
 
     // Verify the plan path points into the workspace and is copied during reuse
-    const planInWorkspace = path.join(existingWorkspace, 'tasks', '49.plan.md');
+    const planInWorkspace = path.join(existingWorkspace, '.tim', 'plans', '49.plan.md');
     const planExists = await fs
       .access(planInWorkspace)
       .then(() => true)
@@ -966,7 +966,7 @@ describe('workspace add --reuse and --try-reuse', () => {
       },
     } as any);
 
-    const expectedPlanPath = path.join(existingWorkspace, 'tasks', '62.plan.md');
+    const expectedPlanPath = path.join(existingWorkspace, '.tim', 'plans', '62.plan.md');
     expect(updateCommandPlanPath).toBe(expectedPlanPath);
     expect(planExistedWhenUpdateRan).toBe(true);
 
@@ -987,7 +987,7 @@ describe('workspace add --reuse and --try-reuse', () => {
     await writeTrackingData({ [existingWorkspace]: workspaceEntry });
 
     const sourcePlanPath = await createPlanFile(path.join(mainRepoDir, 'tasks'), 63, 'Source Plan');
-    const workspacePlanPath = path.join(existingWorkspace, 'tasks', '63.plan.md');
+    const workspacePlanPath = path.join(existingWorkspace, '.tim', 'plans', '63.plan.md');
     await fs.mkdir(path.dirname(workspacePlanPath), { recursive: true });
     await fs.writeFile(
       workspacePlanPath,
@@ -1382,7 +1382,7 @@ describe('workspace add --reuse and --try-reuse', () => {
     }));
 
     await moduleMocker.mock('./import/import.js', () => ({
-      importSingleIssue: async (_issue: string, tasksDir: string) => {
+      importSingleIssue: async (_issue: string, repoRoot: string) => {
         const plan: PlanSchema = {
           id: 101,
           title: 'Imported Issue Plan',
@@ -1394,6 +1394,7 @@ describe('workspace add --reuse and --try-reuse', () => {
           tasks: [],
         };
 
+        const tasksDir = path.join(repoRoot, '.tim', 'plans');
         await fs.mkdir(tasksDir, { recursive: true });
         const planPath = path.join(tasksDir, '101-imported.plan.md');
         const planContent = stringifyPlanWithFrontmatter(plan);

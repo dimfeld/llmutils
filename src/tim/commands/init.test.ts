@@ -56,17 +56,7 @@ describe('tim init command', () => {
     // Verify config content
     const configContent = await fs.readFile(configPath, 'utf-8');
     const config = yaml.parse(configContent);
-    expect(config).toHaveProperty('paths');
-    expect(config.paths).toHaveProperty('tasks', 'tasks');
     expect(config).toHaveProperty('defaultExecutor');
-
-    // Verify tasks directory was created
-    const tasksDir = path.join(tempDir, 'tasks');
-    const tasksDirExists = await fs
-      .access(tasksDir)
-      .then(() => true)
-      .catch(() => false);
-    expect(tasksDirExists).toBe(true);
   });
 
   test('creates minimal configuration with --minimal flag', async () => {
@@ -83,8 +73,6 @@ describe('tim init command', () => {
     const config = yaml.parse(configContent);
 
     // Minimal config should have only essential fields
-    expect(config).toHaveProperty('paths');
-    expect(config.paths).toHaveProperty('tasks', 'tasks');
     expect(config).toHaveProperty('defaultExecutor');
 
     // Should not have optional fields like postApplyCommands
@@ -119,7 +107,7 @@ describe('tim init command', () => {
     // Verify config was not changed
     const configContent = await fs.readFile(configPath, 'utf-8');
     const config = yaml.parse(configContent);
-    expect(config.paths.tasks).toBe('my-custom-tasks');
+    expect(config.paths?.tasks).toBe('my-custom-tasks');
     expect(config.defaultExecutor).toBe('custom-executor');
   });
 
@@ -144,23 +132,8 @@ describe('tim init command', () => {
     // Verify config was overwritten
     const configContent = await fs.readFile(configPath, 'utf-8');
     const config = yaml.parse(configContent);
-    expect(config.paths.tasks).toBe('tasks');
+    expect(config.paths?.tasks).toBeUndefined();
     expect(config.defaultExecutor).not.toBe('custom-executor');
-  });
-
-  test('creates tasks directory at configured path', async () => {
-    const command = {
-      parent: {
-        opts: () => ({}),
-      },
-    };
-
-    await handleInitCommand({ yes: true }, command);
-
-    // Verify tasks directory was created
-    const tasksDir = path.join(tempDir, 'tasks');
-    const stats = await fs.stat(tasksDir);
-    expect(stats.isDirectory()).toBe(true);
   });
 
   test('includes default postApplyCommands when using --yes', async () => {
@@ -228,17 +201,10 @@ describe('tim init command', () => {
     );
   });
 
-  test('handles absolute paths for tasks directory', async () => {
-    const absoluteTasksPath = path.join(tempDir, 'custom', 'tasks', 'location');
-
-    // Mock inquirer to return absolute path
+  test('interactive init no longer prompts for a plan files directory', async () => {
+    const inputSpy = mock(async () => 'npm run format');
     await moduleMocker.mock('@inquirer/prompts', () => ({
-      input: mock(async (options: any) => {
-        if (options.message.includes('plan files')) {
-          return absoluteTasksPath;
-        }
-        return 'npm run format';
-      }),
+      input: inputSpy,
       select: mock(async () => 'copy-only'),
       confirm: mock(async () => true),
     }));
@@ -251,9 +217,7 @@ describe('tim init command', () => {
 
     await handleInitCommand({}, command);
 
-    // Verify absolute path directory was created
-    const stats = await fs.stat(absoluteTasksPath);
-    expect(stats.isDirectory()).toBe(true);
+    expect(inputSpy).toHaveBeenCalledTimes(1);
   });
 
   test('creates .gitignore with required entries when file does not exist', async () => {

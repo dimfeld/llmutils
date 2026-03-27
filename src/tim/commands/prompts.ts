@@ -11,7 +11,6 @@ import {
   loadResearchPrompt,
   type GenerateModeRegistrationContext,
 } from '../mcp/generate_mode.js';
-import { loadCompactPlanPrompt } from '../mcp/prompts/compact_plan.js';
 import { getCombinedTitle } from '../display_utils.js';
 import { findLatestPlanFromDb, findNextReadyDependencyFromDb } from './plan_discovery.js';
 import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
@@ -100,12 +99,6 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
     requiresPlan: true,
     supportsAllowMultiplePlans: false,
     load: (args, context) => loadImplementPrompt({ plan: args.plan ?? '' }, context),
-  },
-  {
-    name: 'compact-plan',
-    requiresPlan: true,
-    supportsAllowMultiplePlans: false,
-    load: (args, context) => loadCompactPlanPrompt({ plan: args.plan ?? '' }, context),
   },
   {
     name: 'review',
@@ -294,6 +287,7 @@ export async function handlePromptsCommand(
     config,
     configPath: globalOpts.config,
     gitRoot: pathContext.gitRoot,
+    configBaseDir: pathContext.configBaseDir,
   };
 
   // Validate input options first
@@ -313,7 +307,6 @@ export async function handlePromptsCommand(
 
   // Handle --next-ready option - find and operate on next ready dependency
   if (options.nextReady) {
-    const tasksDir = pathContext.tasksDir;
     const repoRoot = pathContext.gitRoot;
     // Convert string ID to number or resolve plan file to get numeric ID
     let parentPlanId: number;
@@ -335,7 +328,7 @@ export async function handlePromptsCommand(
       parentPlanId = parentPlan.id;
     }
 
-    const result = await findNextReadyDependencyFromDb(parentPlanId, tasksDir, repoRoot, true);
+    const result = await findNextReadyDependencyFromDb(parentPlanId, repoRoot, repoRoot, true);
 
     if (!result.plan) {
       log(result.message);
@@ -346,7 +339,7 @@ export async function handlePromptsCommand(
 
     plan = String(result.plan.id);
   } else if (options.latest) {
-    const latestPlan = await findLatestPlanFromDb(pathContext.tasksDir, pathContext.gitRoot);
+    const latestPlan = await findLatestPlanFromDb(pathContext.gitRoot, pathContext.gitRoot);
 
     if (!latestPlan) {
       log('No plans found in the database.');

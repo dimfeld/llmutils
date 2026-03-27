@@ -46,9 +46,6 @@ describe.skip('Issue Tracker Abstraction Integration Tests', () => {
     }));
 
     await moduleMocker.mock('../../plans.js', () => ({
-      readAllPlans: mock(() =>
-        Promise.resolve({ plans: new Map(), maxNumericId: 0, duplicates: {} })
-      ),
       writePlanFile: mock(() => Promise.resolve()),
       getMaxNumericPlanId: mock(() => Promise.resolve(0)),
       readPlanFile: mock(() => Promise.resolve({ issue: [] })),

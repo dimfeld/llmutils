@@ -1,7 +1,5 @@
 # yaml-language-server: $schema=../../schema/tim-config-schema.json
 
-paths:
-  tasks: tasks
 defaultExecutor: claude-code
 postApplyCommands:
   - title: Format JS

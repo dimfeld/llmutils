@@ -9,7 +9,6 @@ import { table } from 'table';
 import { log, warn } from '../../logging.js';
 import { getRepositoryIdentity, getUserIdentity } from '../assignments/workspace_identifier.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { resolveTasksDir } from '../configSchema.js';
 import { getAssignmentEntriesByProject, type AssignmentEntry } from '../db/assignment.js';
 import { getDatabase } from '../db/database.js';
 import { getProject } from '../db/project.js';
@@ -18,8 +17,9 @@ import {
   formatWorkspacePath,
   getCombinedTitleFromSummary,
 } from '../display_utils.js';
+import { getLegacyAwareSearchDir } from '../path_resolver.js';
 import { loadPlansFromDb } from '../plans_db.js';
-import { isPlanReady, isTaskDone, readAllPlans } from '../plans.js';
+import { isPlanReady, isTaskDone } from '../plans.js';
 import { getParentChain, isUnderEpic, type PlanWithFilename } from '../utils/hierarchy.js';
 import { normalizeTags } from '../utils/tags.js';
 
@@ -96,21 +96,17 @@ export async function handleListCommand(options: any, command: any, searchTerms?
   }
 
   // Determine directory to search
-  let searchDir = options.dir || (await resolveTasksDir(config));
+  const searchDir = options.dir || process.cwd();
 
   const repository = await getRepositoryIdentity({ cwd: searchDir });
+  const planSearchDir = getLegacyAwareSearchDir(repository.gitRoot, searchDir);
 
-  const useLocalFiles = options.local === true;
   let plans: Map<number, PlanWithFilename>;
   let duplicates: Record<number, string[]>;
-  if (useLocalFiles) {
-    ({ plans, duplicates } = await readAllPlans(searchDir));
-  } else {
-    ({ plans, duplicates } = loadPlansFromDb(searchDir, repository.repositoryId));
-  }
+  ({ plans, duplicates } = loadPlansFromDb(planSearchDir, repository.repositoryId));
 
   if (plans.size === 0) {
-    log('No plans found in', searchDir);
+    log('No plans found in', planSearchDir);
     return;
   }
 

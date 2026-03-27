@@ -1,6 +1,6 @@
 # Multi-Workspace Workflows with tim
 
-Managing large features often requires multiple active workspaces, or even multiple developers working on the same repository. tim's shared assignments system keeps those workspaces coordinated without forcing everyone to edit the same plan files. This guide explains how assignments work, how to claim plans for specific workspaces and users, and resolve conflicts when they appear.
+Managing large features often requires multiple active workspaces, or even multiple developers working on the same repository. tim's shared assignments system keeps those workspaces coordinated without forcing everyone to edit the same materialized plan file. This guide explains how assignments work, how to claim plans for specific workspaces and users, and resolve conflicts when they appear.
 
 ## Quick Start
 
@@ -42,7 +42,7 @@ Managing large features often requires multiple active workspaces, or even multi
 
 The assignments database augments the existing plan metadata. Commands read both sources and merge them so workspaces always see the most relevant plans:
 
-- `tim ready` loads plans from SQLite by default (matching `tim list` behavior) and shows the current workspace's claims plus any unassigned plans. Use `--local` to read from YAML files instead. Add `--all`, `--unassigned`, or `--user <name>` to broaden the view.
+- `tim ready` loads plans from SQLite (matching `tim list` behavior) and shows the current workspace's claims plus any unassigned plans. Add `--all`, `--unassigned`, or `--user <name>` to broaden the view.
 - `tim list --assigned` shows only claimed plans. Use `--unassigned` for the inverse.
 - `tim show 42` prints the workspace path, user, and claim timestamps.
 - `tim assignments list` provides a repository-wide overview of every assignment.

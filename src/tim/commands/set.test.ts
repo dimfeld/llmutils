@@ -12,8 +12,6 @@ import { closeDatabaseForTesting } from '../db/database.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
 import { materializePlan } from '../plan_materialize.js';
 
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 const moduleMocker = new ModuleMocker(import.meta);
 const logSpy = mock(() => {});
 const warnSpy = mock(() => {});
@@ -310,11 +308,11 @@ describe('tim set command', () => {
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanFromDb('14', tempDir)).plan;
     expect(updatedPlan.dependencies).toEqual([11]);
   });
 
-  test('should update rmfilter', async () => {
+  test('should ignore rmfilter updates because the field is no longer persisted', async () => {
     const planPath = await createTestPlan(15);
 
     await handleSetCommand(
@@ -326,8 +324,8 @@ describe('tim set command', () => {
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
-    expect(updatedPlan.rmfilter).toEqual(['src/**/*.ts', 'tests/**/*.test.ts']);
+    const updatedPlan = (await resolvePlanFromDb('15', tempDir)).plan;
+    expect(updatedPlan.rmfilter).toBeUndefined();
   });
 
   test('should update multiple fields at once', async () => {
@@ -348,11 +346,11 @@ describe('tim set command', () => {
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanFromDb('16', tempDir)).plan;
     expect(updatedPlan.priority).toBe('urgent');
     expect(updatedPlan.status).toBe('in_progress');
     expect(updatedPlan.dependencies).toEqual([10, 11]);
-    expect(updatedPlan.rmfilter).toEqual(['src/**/*.ts']);
+    expect(updatedPlan.rmfilter).toBeUndefined();
   });
 
   test('should not update if no changes made', async () => {
@@ -666,7 +664,7 @@ describe('tim set command', () => {
       globalOpts
     );
 
-    updatedPlan = await readPlanFile(planPath);
+    updatedPlan = (await resolvePlanFromDb('31', tempDir)).plan;
     expect(updatedPlan.parent).toBeUndefined();
   });
 
@@ -722,7 +720,7 @@ describe('tim set command', () => {
 
   test('should update parent plan dependencies when setting parent', async () => {
     // Create both parent and child plans
-    const parentPlanPath = await createTestPlan(200);
+    await createTestPlan(200);
     const childPlanPath = await createTestPlan(201);
 
     await handleSetCommand(
@@ -735,26 +733,18 @@ describe('tim set command', () => {
     );
 
     // Verify child has parent field set
-    const updatedChild = await readPlanFile(childPlanPath);
+    const updatedChild = (await resolvePlanFromDb('201', tempDir)).plan;
     expect(updatedChild.parent).toBe(200);
-    // Child should have a reference to its parent
-    expect(updatedChild.references).toBeDefined();
-    expect(updatedChild.references![200]).toMatch(UUID_REGEX);
 
     // Verify parent has child in dependencies array
-    const updatedParent = await readPlanFile(parentPlanPath);
+    const updatedParent = (await resolvePlanFromDb('200', tempDir)).plan;
     expect(updatedParent.dependencies).toEqual([201]);
     expect(updatedParent.updatedAt).toBeDefined();
-    // Parent should have a reference to the child
-    expect(updatedParent.references).toBeDefined();
-    expect(updatedParent.references![201]).toMatch(UUID_REGEX);
-    // Parent's UUID should match child's reference
-    expect(updatedChild.references![200]).toBe(updatedParent.uuid);
   });
 
   test('should remove child from parent dependencies when removing parent', async () => {
     // Create both parent and child plans
-    const parentPlanPath = await createTestPlan(202);
+    await createTestPlan(202);
     const childPlanPath = await createTestPlan(203);
 
     // First set parent relationship
@@ -768,8 +758,8 @@ describe('tim set command', () => {
     );
 
     // Verify relationship is established
-    let updatedChild = await readPlanFile(childPlanPath);
-    let updatedParent = await readPlanFile(parentPlanPath);
+    let updatedChild = (await resolvePlanFromDb('203', tempDir)).plan;
+    let updatedParent = (await resolvePlanFromDb('202', tempDir)).plan;
     expect(updatedChild.parent).toBe(202);
     expect(updatedParent.dependencies).toEqual([203]);
 
@@ -784,19 +774,19 @@ describe('tim set command', () => {
     );
 
     // Verify child parent field is removed
-    updatedChild = await readPlanFile(childPlanPath);
+    updatedChild = (await resolvePlanFromDb('203', tempDir)).plan;
     expect(updatedChild.parent).toBeUndefined();
 
     // Verify parent dependencies array is updated
-    updatedParent = await readPlanFile(parentPlanPath);
+    updatedParent = (await resolvePlanFromDb('202', tempDir)).plan;
     expect(updatedParent.dependencies).toEqual([]);
   });
 
   test('should update both old and new parent when changing parent', async () => {
     // Create child, old parent, and new parent plans
     const childPlanPath = await createTestPlan(204);
-    const oldParentPlanPath = await createTestPlan(205);
-    const newParentPlanPath = await createTestPlan(206);
+    await createTestPlan(205);
+    await createTestPlan(206);
 
     // Establish initial relationship with old parent
     await handleSetCommand(
@@ -809,8 +799,8 @@ describe('tim set command', () => {
     );
 
     // Verify initial relationship
-    let updatedChild = await readPlanFile(childPlanPath);
-    let oldParent = await readPlanFile(oldParentPlanPath);
+    let updatedChild = (await resolvePlanFromDb('204', tempDir)).plan;
+    let oldParent = (await resolvePlanFromDb('205', tempDir)).plan;
     expect(updatedChild.parent).toBe(205);
     expect(oldParent.dependencies).toEqual([204]);
 
@@ -825,15 +815,15 @@ describe('tim set command', () => {
     );
 
     // Verify child has new parent
-    updatedChild = await readPlanFile(childPlanPath);
+    updatedChild = (await resolvePlanFromDb('204', tempDir)).plan;
     expect(updatedChild.parent).toBe(206);
 
     // Verify old parent no longer has child in dependencies
-    oldParent = await readPlanFile(oldParentPlanPath);
+    oldParent = (await resolvePlanFromDb('205', tempDir)).plan;
     expect(oldParent.dependencies).toEqual([]);
 
     // Verify new parent has child in dependencies
-    const newParent = await readPlanFile(newParentPlanPath);
+    const newParent = (await resolvePlanFromDb('206', tempDir)).plan;
     expect(newParent.dependencies).toEqual([204]);
   });
 
@@ -1225,8 +1215,8 @@ describe('tim set command', () => {
     expect(updatedPlan.epic).toBe(false);
   });
 
-  test('should populate references when adding dependsOn', async () => {
-    const depPlanPath = await createTestPlan(400);
+  test('should preserve dependencies when adding dependsOn', async () => {
+    await createTestPlan(400);
     const planPath = await createTestPlan(401);
 
     await handleSetCommand(
@@ -1238,19 +1228,12 @@ describe('tim set command', () => {
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanFromDb('401', tempDir)).plan;
     expect(updatedPlan.dependencies).toEqual([400]);
-    expect(updatedPlan.references).toBeDefined();
-    expect(updatedPlan.references![400]).toMatch(UUID_REGEX);
-
-    // Dependency plan should have a UUID generated
-    const depPlan = await readPlanFile(depPlanPath);
-    expect(depPlan.uuid).toMatch(UUID_REGEX);
-    expect(updatedPlan.references![400]).toBe(depPlan.uuid);
   });
 
-  test('should populate references when setting discoveredFrom', async () => {
-    const sourcePlanPath = await createTestPlan(410);
+  test('should preserve discoveredFrom when setting it', async () => {
+    await createTestPlan(410);
     const planPath = await createTestPlan(411);
 
     await handleSetCommand(
@@ -1262,20 +1245,13 @@ describe('tim set command', () => {
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanFromDb('411', tempDir)).plan;
     expect(updatedPlan.discoveredFrom).toBe(410);
-    expect(updatedPlan.references).toBeDefined();
-    expect(updatedPlan.references![410]).toMatch(UUID_REGEX);
-
-    // Source plan should have a UUID generated
-    const sourcePlan = await readPlanFile(sourcePlanPath);
-    expect(sourcePlan.uuid).toMatch(UUID_REGEX);
-    expect(updatedPlan.references![410]).toBe(sourcePlan.uuid);
   });
 
-  test('should clean up stale references when removing dependency', async () => {
-    const dep1Path = await createTestPlan(420);
-    const dep2Path = await createTestPlan(421);
+  test('should preserve remaining dependencies when removing one', async () => {
+    await createTestPlan(420);
+    await createTestPlan(421);
     const planPath = await createTestPlan(422);
 
     // Add two dependencies
@@ -1288,9 +1264,6 @@ describe('tim set command', () => {
       globalOpts
     );
 
-    let updatedPlan = await readPlanFile(planPath);
-    expect(Object.keys(updatedPlan.references!)).toHaveLength(2);
-
     // Remove one dependency
     await handleSetCommand(
       planPath,
@@ -1301,15 +1274,12 @@ describe('tim set command', () => {
       globalOpts
     );
 
-    updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanFromDb('422', tempDir)).plan;
     expect(updatedPlan.dependencies).toEqual([421]);
-    // Only the remaining dependency's reference should exist
-    expect(updatedPlan.references![421]).toMatch(UUID_REGEX);
-    expect(updatedPlan.references![420]).toBeUndefined();
   });
 
-  test('should clean up references when removing parent', async () => {
-    const parentPlanPath = await createTestPlan(430);
+  test('should remove parent without leaving the child attached', async () => {
+    await createTestPlan(430);
     const childPlanPath = await createTestPlan(431);
 
     // Set parent
@@ -1322,8 +1292,8 @@ describe('tim set command', () => {
       globalOpts
     );
 
-    let updatedChild = await readPlanFile(childPlanPath);
-    expect(updatedChild.references![430]).toMatch(UUID_REGEX);
+    let updatedChild = (await resolvePlanFromDb('431', tempDir)).plan;
+    expect(updatedChild.parent).toBe(430);
 
     // Remove parent
     await handleSetCommand(
@@ -1335,16 +1305,12 @@ describe('tim set command', () => {
       globalOpts
     );
 
-    updatedChild = await readPlanFile(childPlanPath);
+    updatedChild = (await resolvePlanFromDb('431', tempDir)).plan;
     expect(updatedChild.parent).toBeUndefined();
-    // References should be cleaned up (empty or undefined since no references remain)
-    expect(
-      updatedChild.references === undefined || Object.keys(updatedChild.references).length === 0
-    ).toBe(true);
   });
 
-  test('should clean up references when removing discoveredFrom', async () => {
-    const sourcePlanPath = await createTestPlan(440);
+  test('should remove discoveredFrom cleanly', async () => {
+    await createTestPlan(440);
     const planPath = await createTestPlan(441);
 
     // Set discoveredFrom
@@ -1357,8 +1323,8 @@ describe('tim set command', () => {
       globalOpts
     );
 
-    let updatedPlan = await readPlanFile(planPath);
-    expect(updatedPlan.references![440]).toMatch(UUID_REGEX);
+    let updatedPlan = (await resolvePlanFromDb('441', tempDir)).plan;
+    expect(updatedPlan.discoveredFrom).toBe(440);
 
     // Remove discoveredFrom
     await handleSetCommand(
@@ -1370,17 +1336,13 @@ describe('tim set command', () => {
       globalOpts
     );
 
-    updatedPlan = await readPlanFile(planPath);
+    updatedPlan = (await resolvePlanFromDb('441', tempDir)).plan;
     expect(updatedPlan.discoveredFrom).toBeUndefined();
-    // References should be cleaned up (empty or undefined since no references remain)
-    expect(
-      updatedPlan.references === undefined || Object.keys(updatedPlan.references).length === 0
-    ).toBe(true);
   });
 
-  test('should preserve existing UUID when generating references', async () => {
+  test('should preserve existing UUID when adding a dependency', async () => {
     const existingUuid = crypto.randomUUID();
-    const depPlanPath = await createTestPlan(450, { uuid: existingUuid });
+    await createTestPlan(450, { uuid: existingUuid });
     const planPath = await createTestPlan(451);
 
     await handleSetCommand(
@@ -1392,11 +1354,11 @@ describe('tim set command', () => {
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
-    expect(updatedPlan.references![450]).toBe(existingUuid);
+    const updatedPlan = (await resolvePlanFromDb('451', tempDir)).plan;
+    expect(updatedPlan.dependencies).toEqual([450]);
 
     // The dependency plan's UUID should not have changed
-    const depPlan = await readPlanFile(depPlanPath);
+    const depPlan = (await resolvePlanFromDb('450', tempDir)).plan;
     expect(depPlan.uuid).toBe(existingUuid);
   });
 });

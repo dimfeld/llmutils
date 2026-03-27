@@ -4,7 +4,6 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import yaml from 'yaml';
 import { ModuleMocker } from '../../../testing.js';
-import { clearPlanCache } from '../../plans.js';
 import { getDefaultConfig as realGetDefaultConfig } from '../../configSchema.js';
 
 describe('timAgent stub plan review continuation', () => {
@@ -38,7 +37,6 @@ describe('timAgent stub plan review continuation', () => {
 
   beforeEach(async () => {
     moduleMocker = new ModuleMocker(import.meta);
-    clearPlanCache();
     promptConfirmSpy.mockClear();
     executeStubPlanSpy.mockClear();
     executeBatchModeSpy.mockClear();
@@ -81,7 +79,6 @@ describe('timAgent stub plan review continuation', () => {
 
     await moduleMocker.mock('../../configSchema.js', () => ({
       getDefaultConfig: realGetDefaultConfig,
-      resolveTasksDir: mock(async () => tempDir),
     }));
 
     await moduleMocker.mock('../../executors/index.js', () => ({
@@ -127,10 +124,6 @@ describe('timAgent stub plan review continuation', () => {
       writeOrDisplaySummary: mock(async () => undefined),
     }));
 
-    await moduleMocker.mock('../../utils/references.js', () => ({
-      ensureUuidsAndReferences: mock(async () => ({ errors: [] })),
-    }));
-
     await moduleMocker.mock('../../workspace/workspace_setup.js', () => ({
       setupWorkspace: mock(async (_options: any, baseDir: string, currentPlanFile: string) => ({
         baseDir,
@@ -172,7 +165,6 @@ describe('timAgent stub plan review continuation', () => {
 
   afterEach(async () => {
     moduleMocker.clear();
-    clearPlanCache();
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 

@@ -42,7 +42,7 @@ echo '{"plan": "123"}' | tim tools get-plan
 
 ### create-plan
 
-Create a new plan file. This is similar to `tim add` but takes JSON.
+Create a new plan. This is similar to `tim add` but takes JSON.
 
 ```bash
 echo '{"title": "New plan", "priority": "high", "parent": 100}' | tim tools create-plan

@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { clearPlanCache, readPlanFile, writePlanFile } from '../plans.js';
+import { readPlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { handleMergeCommand } from './merge.js';
 import { ModuleMocker } from '../../testing.js';
@@ -20,7 +20,6 @@ describe('tim merge', () => {
     tasksDir = testDir; // Use testDir as tasksDir for simplicity
 
     // Clear plan cache
-    clearPlanCache();
     closeDatabaseForTesting();
     clearPlanSyncContext();
     await Bun.write(join(testDir, '.tim.yml'), 'paths:\n  tasks: .\n');

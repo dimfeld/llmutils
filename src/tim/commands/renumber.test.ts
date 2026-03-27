@@ -29,7 +29,7 @@ async function writeTestPlan(planPath: string, plan: any) {
     remoteUrl: repository.remoteUrl,
     lastGitRoot: repository.gitRoot,
   });
-  const relativeFilename = path.relative(path.join(repoRootForTest, 'tasks'), planPath);
+  const relativeFilename = path.relative(repoRootForTest, planPath);
   return upsertPlan(db, project.id, {
     planId: planWithUuid.id,
     uuid: planWithUuid.uuid,
@@ -94,14 +94,7 @@ describe('tim renumber', () => {
 
     // Create a config file
     configPath = path.join(tempDir, '.tim.yml');
-    await Bun.write(
-      configPath,
-      yaml.stringify({
-        paths: {
-          tasks: 'tasks', // Use relative path since we're mocking git root
-        },
-      })
-    );
+    await Bun.write(configPath, yaml.stringify({}));
   });
 
   afterEach(async () => {
@@ -181,7 +174,9 @@ describe('tim renumber', () => {
       tasks: [],
     };
     // Write using writePlanFile to get consistent format
-    await writePlanFile(path.join(tasksDir, '123.yml'), plan);
+    await writePlanFile(path.join(tasksDir, '123.yml'), plan, {
+      cwdForIdentity: repoRootForTest,
+    });
 
     // Read original file content
     const originalContent = await Bun.file(path.join(tasksDir, '123.yml')).text();
@@ -1993,14 +1988,8 @@ describe('tim renumber', () => {
     // Read the dependent plan
     const dependentAfter = await readPlanFile(path.join(tasksDir, '3-dependent.yml'));
 
-    // The references field should exist and contain proper UUID mappings
-    expect(dependentAfter.references).toBeDefined();
-
-    // If the dependent plan originally depended on plan1 (the older one that kept ID 1),
-    // its reference should still point to ID 1
-    // If it was supposed to depend on plan2 (which got renumbered to ID 2),
-    // the reference should now point to ID 2
-    // The UUID tracking determines which is correct based on creation order
+    // Legacy reference mappings are no longer written back to plan files.
+    expect(dependentAfter.references).toBeUndefined();
   });
 
   test('discoveredFrom is updated when referenced plan is renumbered', async () => {
@@ -2252,7 +2241,7 @@ describe('tim renumber', () => {
       const parentRow = getPlanByUuid(db, parentFromDisk.uuid!);
       const childRow = getPlanByUuid(db, childFromDisk.uuid!);
       expect(parentRow?.plan_id).toBe(5);
-      expect(parentRow?.filename).toBe('locked/5-parent.yml');
+      expect(parentRow?.filename).toBe('tasks/locked/5-parent.yml');
       expect(childRow?.plan_id).toBe(10);
       expect(childRow?.filename).toBe('locked/nested/10-child.yml');
       expect(childRow?.parent_uuid).toBe(parentFromDisk.uuid);
@@ -2297,7 +2286,10 @@ describe('tim renumber', () => {
       const childPath = path.join(tasksDir, '10-child.yml');
       const childPlan = await readPlanFile(childPath);
       childPlan.parent = 5;
-      await writePlanFile(childPath, childPlan);
+      await writePlanFile(childPath, childPlan, {
+        cwdForIdentity: repoRootForTest,
+        skipDb: true,
+      });
 
       // Swap 5 ↔ 10
       await handleRenumber({ from: 5, to: 10 }, createMockCommand());
@@ -2308,9 +2300,8 @@ describe('tim renumber', () => {
       expect(updatedChild.id).toBe(5);
       expect(updatedChild.parent).toBe(10);
 
-      // Verify UUID references are maintained
-      expect(updatedChild.references).toBeDefined();
-      expect(updatedChild.references![10]).toBeDefined();
+      // Legacy reference mappings are no longer written back to plan files.
+      expect(updatedChild.references).toBeUndefined();
     });
 
     test('--dry-run with swap operation', async () => {
@@ -2343,7 +2334,10 @@ describe('tim renumber', () => {
       const taskPath = path.join(tasksDir, '5-task.yml');
       const taskPlan = await readPlanFile(taskPath);
       taskPlan.dependencies = [3];
-      await writePlanFile(taskPath, taskPlan);
+      await writePlanFile(taskPath, taskPlan, {
+        cwdForIdentity: repoRootForTest,
+        skipDb: true,
+      });
 
       // Swap 3 ↔ 5
       await handleRenumber({ from: 3, to: 5 }, createMockCommand());

@@ -4,7 +4,6 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import { handleSetTaskDoneCommand } from './set-task-done.js';
-import { clearPlanCache } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { ModuleMocker } from '../../testing.js';
 
@@ -35,7 +34,6 @@ describe('handleSetTaskDoneCommand', () => {
     releaseLockSpy.mockClear();
 
     // Clear plan cache
-    clearPlanCache();
 
     // Create temporary directory
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-set-task-done-test-'));

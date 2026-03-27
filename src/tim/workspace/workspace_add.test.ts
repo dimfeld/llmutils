@@ -61,14 +61,6 @@ describe('workspace add command - integration', () => {
     expect(plan.goal).toBe('Test goal');
   });
 
-  test('resolvePlanFile works with file paths', async () => {
-    const { resolvePlanFile } = await import('../plans.js');
-
-    // Test with absolute path
-    const resolved = await resolvePlanFile(planPath, undefined);
-    expect(resolved).toBe(planPath);
-  });
-
   test('generateAlphanumericPlanId creates valid IDs', async () => {
     const { generateAlphanumericId } = await import('../id_utils.js');
 

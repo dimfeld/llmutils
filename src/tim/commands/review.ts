@@ -12,13 +12,7 @@ import {
 } from '../../common/git.js';
 import { promptCheckbox, promptSelect } from '../../common/input.js';
 import { isPlanNotFoundError, resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
-import {
-  findBranchSpecificPlan,
-  findSingleModifiedPlanOnBranch,
-  readPlanFile,
-  resolvePlanFromDb,
-  writePlanFile,
-} from '../plans.js';
+import { readPlanFile, resolvePlanFromDb, writePlanFile } from '../plans.js';
 import { log, warn, runWithLogger, sendStructured } from '../../logging.js';
 import { getLoggerAdapter, type LoggerAdapter } from '../../logging/adapter.js';
 import type { StructuredMessage } from '../../logging/structured_messages.js';
@@ -73,7 +67,7 @@ import { resolveOrchestratorInput } from '../utils/orchestrator_input.js';
 import { loadAgentInstructionsFor } from '../executors/codex_cli/agent_helpers.js';
 import { syncPlanToDb } from '../db/plan_sync.js';
 import which from 'which';
-import { materializePlan } from '../plan_materialize.js';
+import { getMaterializedPlanPath, materializePlan } from '../plan_materialize.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 const FIX_EXECUTOR_COMMANDS = {
   'claude-code': 'claude',
@@ -314,7 +308,7 @@ type AutoSelectedReviewPlan = {
   plan: PlanSchema;
   planRef: string;
   repoRoot?: string;
-  selectionReason: 'branch-name' | 'new-plan' | 'modified-plan';
+  selectionReason: 'branch-name';
   displayPath?: string;
 };
 
@@ -337,33 +331,12 @@ async function autoSelectPlanForReview(
         displayPath: resolved.planPath ?? undefined,
       };
     } catch (err) {
-      // Only fall back to legacy file-based discovery when the plan was genuinely
-      // not found. Re-throw unexpected errors (DB failures, malformed rows, etc.)
-      // to prevent silently switching to an unrelated file-based plan.
+      // If the plan wasn't found in the DB, return null so the caller can report
+      // the error. Re-throw unexpected errors (DB failures, malformed rows, etc.)
       if (!isPlanNotFoundError(err)) {
         throw err;
       }
     }
-  }
-
-  const branchSpecificPlan = await findBranchSpecificPlan(configPath);
-  if (branchSpecificPlan) {
-    return {
-      plan: branchSpecificPlan,
-      planRef: branchSpecificPlan.filename,
-      selectionReason: 'new-plan',
-      displayPath: branchSpecificPlan.filename,
-    };
-  }
-
-  const modifiedPlan = await findSingleModifiedPlanOnBranch(configPath);
-  if (modifiedPlan) {
-    return {
-      plan: modifiedPlan,
-      planRef: modifiedPlan.filename,
-      selectionReason: 'modified-plan',
-      displayPath: modifiedPlan.filename,
-    };
   }
 
   return null;
@@ -716,7 +689,13 @@ async function handleReviewIssueActions(params: {
       captureOutput: 'none',
       executionMode: 'normal',
     });
-    if (executionPlanFile !== planRefForWrite) {
+    const materializedPlanPath =
+      planData.id != null
+        ? getMaterializedPlanPath(sharedExecutorOptions.baseDir, planData.id)
+        : null;
+    const shouldSyncEditedPlan =
+      executionPlanFile !== planRefForWrite || executionPlanFile === materializedPlanPath;
+    if (shouldSyncEditedPlan) {
       const updatedPlan = await readPlanFile(executionPlanFile);
       await syncPlanToDb(updatedPlan, executionPlanFile, {
         cwdForIdentity: sharedExecutorOptions.baseDir,
@@ -837,19 +816,11 @@ export async function handleReviewCommand(
         );
       }
 
-      if (autoSelectedPlan.selectionReason === 'modified-plan') {
-        reviewLog(
-          chalk.cyan(
-            `No new plans found on branch. Auto-selected modified plan: ${autoSelectedPlan.plan.id} - ${autoSelectedPlan.plan.title}`
-          )
-        );
-      } else {
-        reviewLog(
-          chalk.cyan(
-            `Auto-selected plan: ${autoSelectedPlan.plan.id} - ${autoSelectedPlan.plan.title}`
-          )
-        );
-      }
+      reviewLog(
+        chalk.cyan(
+          `Auto-selected plan: ${autoSelectedPlan.plan.id} - ${autoSelectedPlan.plan.title}`
+        )
+      );
       if (autoSelectedPlan.displayPath) {
         reviewLog(chalk.gray(`Plan file: ${autoSelectedPlan.displayPath}`));
       }
@@ -866,7 +837,23 @@ export async function handleReviewCommand(
       const repoRoot =
         autoSelectedPlanForReview.repoRoot ??
         (await resolveRepoRootForPlanArg(resolvedPlanFile, options.cwd, globalOpts.config));
-      const materializedPath = await materializePlan(autoSelectedPlanForReview.plan.id, repoRoot);
+      const existingPath = await materializedPlanFileExists(
+        repoRoot,
+        autoSelectedPlanForReview.plan.id
+      );
+      let materializedPath: string;
+      if (existingPath) {
+        // Validate the existing file belongs to this plan before reusing it
+        const filePlan = await readPlanFile(existingPath);
+        if (filePlan.id !== autoSelectedPlanForReview.plan.id) {
+          // File has wrong ID — re-materialize from DB
+          materializedPath = await materializePlan(autoSelectedPlanForReview.plan.id, repoRoot);
+        } else {
+          materializedPath = existingPath;
+        }
+      } else {
+        materializedPath = await materializePlan(autoSelectedPlanForReview.plan.id, repoRoot);
+      }
       initialResolvedPlan = {
         plan: structuredClone(autoSelectedPlanForReview.plan),
         planPath: materializedPath,
@@ -1893,6 +1880,19 @@ async function ensureReviewPlanFilePath(
     }
 
     return materializePlan(planData.id, repoRoot);
+  }
+}
+
+async function materializedPlanFileExists(
+  repoRoot: string,
+  planId: number
+): Promise<string | null> {
+  const materializedPath = getMaterializedPlanPath(repoRoot, planId);
+  try {
+    await access(materializedPath, constants.F_OK);
+    return materializedPath;
+  } catch {
+    return null;
   }
 }
 

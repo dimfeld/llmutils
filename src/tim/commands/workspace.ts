@@ -64,6 +64,7 @@ import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 import { loadPlansFromDb } from '../plans_db.js';
 import { materializePlan } from '../plan_materialize.js';
+import { getLegacyAwareSearchDir } from '../path_resolver.js';
 
 const PRIMARY_REMOTE_NAME = 'primary';
 
@@ -1142,16 +1143,16 @@ export async function handleWorkspaceAddCommand(
 
       // Get issue tracker and import the issue
       const issueTracker = await getIssueTracker(effectiveConfig);
-      const tasksDir = path.join(workspace.path, effectiveConfig.paths?.tasks || 'tasks');
-
       const repository = await getRepositoryIdentity({ cwd: workspace.path });
-      const { plans: allPlans } = loadPlansFromDb(tasksDir, repository.repositoryId);
+      const { plans: allPlans } = loadPlansFromDb(
+        getLegacyAwareSearchDir(workspace.path),
+        repository.repositoryId
+      );
 
       // Import the issue
       const result = await importSingleIssue(
         issueInfo.originalInput,
         workspace.path,
-        tasksDir,
         issueTracker,
         {}, // No additional options for import
         allPlans,

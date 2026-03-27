@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { planSchema } from './planSchema.js';
-import { readPlanFile, writePlanFile, clearPlanCache } from './plans.js';
+import { readPlanFile, writePlanFile } from './plans.js';
 import type { PlanSchema } from './planSchema.js';
 import { stringifyPlanWithFrontmatter } from '../testing.js';
 
@@ -121,14 +121,12 @@ describe('simple field file I/O', () => {
 
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'simple-field-test-'));
-    clearPlanCache();
   });
 
   afterEach(async () => {
     if (tempDir) {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
-    clearPlanCache();
   });
 
   test('writes and reads plan with simple: true', async () => {
@@ -186,14 +184,12 @@ describe('simple field logic in commands', () => {
 
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'simple-cmd-test-'));
-    clearPlanCache();
   });
 
   afterEach(async () => {
     if (tempDir) {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
-    clearPlanCache();
   });
 
   test('add command creates plan object with simple field from options', () => {
@@ -270,7 +266,6 @@ describe('simple field logic in commands', () => {
       expect(promptText).toContain('tim tools update-plan-tasks');
     } finally {
       await fs.rm(tmpDir, { recursive: true, force: true });
-      clearPlanCache();
     }
   });
 
@@ -305,7 +300,6 @@ describe('simple field logic in commands', () => {
       expect(promptText).toContain('Once your research is complete');
     } finally {
       await fs.rm(tmpDir, { recursive: true, force: true });
-      clearPlanCache();
     }
   });
 
@@ -339,7 +333,6 @@ describe('simple field logic in commands', () => {
       expect(promptText).toContain('Once your research is complete');
     } finally {
       await fs.rm(tmpDir, { recursive: true, force: true });
-      clearPlanCache();
     }
   });
 

@@ -3,8 +3,9 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
+  getLegacyAwareSearchDir,
+  getPlanStorageDir,
   resolveConfiguredPath,
-  resolveConfiguredTasksPath,
   resolvePlanPathContext,
 } from './path_resolver.js';
 import { getDefaultConfig } from './configSchema.js';
@@ -31,61 +32,17 @@ describe('path_resolver helpers', () => {
     await fs.rm(externalDir, { recursive: true, force: true });
   });
 
-  test('resolveConfiguredTasksPath prefers external repository directory', () => {
-    const config = {
-      ...getDefaultConfig(),
-      paths: undefined,
-      isUsingExternalStorage: true,
-      externalRepositoryConfigDir: path.join(externalDir, 'repositories', 'sample'),
-      resolvedConfigPath: path.join(
-        externalDir,
-        'repositories',
-        'sample',
-        '.rmfilter',
-        'config',
-        'tim.yml'
-      ),
-      repositoryConfigName: 'sample',
-      repositoryRemoteUrl: null,
-    };
-
-    const tasksPath = resolveConfiguredTasksPath(config, gitRoot);
-    expect(tasksPath).toBe(path.join(config.externalRepositoryConfigDir!, 'tasks'));
-  });
-
-  test('resolveConfiguredTasksPath returns absolute paths unchanged', () => {
-    const absoluteTasksDir = path.join(gitRoot, 'abs-tasks');
-    const config = {
-      ...getDefaultConfig(),
-      paths: {
-        tasks: absoluteTasksDir,
-      },
-    };
-
-    const tasksPath = resolveConfiguredTasksPath(config, gitRoot);
-    expect(tasksPath).toBe(absoluteTasksDir);
-  });
-
   test('resolvePlanPathContext uses git root for local storage', async () => {
-    const config = {
-      ...getDefaultConfig(),
-      paths: {
-        tasks: 'plans',
-      },
-    };
+    const config = getDefaultConfig();
 
     const context = await resolvePlanPathContext(config);
 
     expect(context.gitRoot).toBe(gitRoot);
-    expect(context.tasksDir).toBe(path.join(gitRoot, 'plans'));
     expect(context.repositoryConfigDir).toBeUndefined();
     expect(context.configBaseDir).toBe(gitRoot);
-
-    const stats = await fs.stat(context.tasksDir);
-    expect(stats.isDirectory()).toBe(true);
   });
 
-  test('resolvePlanPathContext returns external storage paths and creates directories', async () => {
+  test('resolvePlanPathContext returns external storage paths', async () => {
     const repositoryConfigDir = path.join(externalDir, 'repositories', 'sample');
     const config = {
       ...getDefaultConfig(),
@@ -100,21 +57,13 @@ describe('path_resolver helpers', () => {
     const context = await resolvePlanPathContext(config);
 
     expect(context.gitRoot).toBe(gitRoot);
-    expect(context.tasksDir).toBe(path.join(repositoryConfigDir, 'tasks'));
     expect(context.repositoryConfigDir).toBe(repositoryConfigDir);
     expect(context.configBaseDir).toBe(repositoryConfigDir);
-
-    const tasksExists = await fs
-      .stat(context.tasksDir)
-      .then((stats) => stats.isDirectory())
-      .catch(() => false);
-    expect(tasksExists).toBe(true);
   });
 
   test('resolveConfiguredPath handles undefined and absolute inputs', () => {
     const context = {
       gitRoot,
-      tasksDir: path.join(gitRoot, 'tasks'),
       repositoryConfigDir: undefined,
       configBaseDir: gitRoot,
     };
@@ -129,7 +78,6 @@ describe('path_resolver helpers', () => {
     const repositoryConfigDir = path.join(externalDir, 'repositories', 'sample');
     const context = {
       gitRoot,
-      tasksDir: path.join(repositoryConfigDir, 'tasks'),
       repositoryConfigDir,
       configBaseDir: repositoryConfigDir,
     };
@@ -137,6 +85,20 @@ describe('path_resolver helpers', () => {
     const relativePath = path.join('configs', 'settings.yml');
     expect(resolveConfiguredPath(context, relativePath)).toBe(
       path.join(repositoryConfigDir, relativePath)
+    );
+  });
+
+  test('getPlanStorageDir returns the materialized plans directory', () => {
+    expect(getPlanStorageDir(gitRoot)).toBe(path.join(gitRoot, '.tim', 'plans'));
+  });
+
+  test('getLegacyAwareSearchDir returns the materialized plans directory', async () => {
+    const configBaseDir = path.join(gitRoot, 'external-storage');
+    const tasksDir = path.join(configBaseDir, 'tasks');
+    await fs.mkdir(tasksDir, { recursive: true });
+
+    expect(getLegacyAwareSearchDir(gitRoot, configBaseDir)).toBe(
+      path.join(gitRoot, '.tim', 'plans')
     );
   });
 });

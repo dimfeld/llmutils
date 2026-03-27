@@ -51,9 +51,6 @@ export async function handleInitCommand(options: InitOptions, command: any) {
     if (options.minimal) {
       // Minimal configuration with just defaults
       config = {
-        paths: {
-          tasks: 'tasks',
-        },
         defaultExecutor: DEFAULT_EXECUTOR,
       };
       log(chalk.blue('Creating minimal configuration...'));
@@ -82,16 +79,6 @@ export async function handleInitCommand(options: InitOptions, command: any) {
 
     await fs.writeFile(configPath, configWithSchema, 'utf-8');
     log(chalk.green('✓ Created configuration file:'), configPath);
-
-    // Create tasks directory if specified
-    const tasksPath = config.paths?.tasks;
-    if (tasksPath) {
-      const resolvedTasksPath = path.isAbsolute(tasksPath)
-        ? tasksPath
-        : path.join(gitRoot, tasksPath);
-      await fs.mkdir(resolvedTasksPath, { recursive: true });
-      log(chalk.green('✓ Created tasks directory:'), resolvedTasksPath);
-    }
 
     // Update .gitignore
     await updateGitignore(gitRoot);
@@ -159,9 +146,6 @@ async function updateGitignore(gitRoot: string): Promise<void> {
  */
 function createDefaultConfig(): TimConfigInput {
   return {
-    paths: {
-      tasks: 'tasks',
-    },
     defaultExecutor: DEFAULT_EXECUTOR,
     postApplyCommands: [
       {
@@ -194,18 +178,6 @@ function createDefaultConfig(): TimConfigInput {
 async function promptForConfig(): Promise<TimConfigInput> {
   log(chalk.blue('Setting up tim configuration...\n'));
 
-  // Ask for tasks directory
-  const tasksDir = await input({
-    message: 'Where should plan files be stored?',
-    default: 'tasks',
-    validate: (value: string) => {
-      if (!value || value.trim() === '') {
-        return 'Please provide a directory path';
-      }
-      return true;
-    },
-  });
-
   // Ask for default executor
   const executor = await select({
     message: 'Which executor should be used by default?',
@@ -231,9 +203,6 @@ async function promptForConfig(): Promise<TimConfigInput> {
   });
 
   const config: TimConfigInput = {
-    paths: {
-      tasks: tasksDir,
-    },
     defaultExecutor: executor,
   };
 

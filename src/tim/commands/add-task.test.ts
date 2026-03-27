@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { ModuleMocker, clearAllTimCaches } from '../../testing.js';
 import { closeDatabaseForTesting } from '../db/database.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
-import { clearPlanCache, readPlanFile, writePlanFile } from '../plans.js';
+import { readPlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { handleAddTaskCommand } from './add-task.js';
 
@@ -24,7 +24,6 @@ describe('handleAddTaskCommand', () => {
     clearAllTimCaches();
     closeDatabaseForTesting();
     clearPlanSyncContext();
-    clearPlanCache();
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-add-task-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
@@ -73,7 +72,6 @@ describe('handleAddTaskCommand', () => {
     clearAllTimCaches();
     closeDatabaseForTesting();
     clearPlanSyncContext();
-    clearPlanCache();
     await fs.rm(tempDir, { recursive: true, force: true });
     logSpy.mockReset();
   });

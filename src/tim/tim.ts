@@ -415,25 +415,6 @@ program
   });
 
 program
-  .command('compact [plans...]')
-  .description('Compact completed plans for archival by summarizing verbose sections')
-  .option('--executor <name>', 'Executor to use for compaction (default: claude-code)')
-  .option('--model <model>', 'Model to use for the executor')
-  .option('--age <days>', 'Minimum age in days before compaction', (value) => {
-    const parsed = Number.parseInt(value, 10);
-    if (Number.isNaN(parsed) || parsed < 0) {
-      throw new Error(`Invalid age: ${value}`);
-    }
-    return parsed;
-  })
-  .option('--dry-run', 'Preview compacted content without writing changes')
-  .option('--yes', 'Skip confirmation prompt and write changes immediately')
-  .action(async (planArgs, options, command) => {
-    const { handleCompactCommand } = await import('./commands/compact.js');
-    await handleCompactCommand(planArgs, options, command).catch(handleCommandError);
-  });
-
-program
   .command('add [title...]')
   .description('Create a new plan stub file that can be filled with tasks using generate')
   .option('--edit', 'Open the newly created plan file in your editor')
@@ -598,14 +579,9 @@ program
 
 program
   .command('sync [planId]')
-  .description(
-    'Sync plan files to the SQLite database, or sync a materialized .tim/plans/<id>.plan.md'
-  )
-  .option('--plan <planId>', 'Sync only the specified plan ID or file path')
-  .option('--force', 'Force sync even when plan file updatedAt is older than SQLite updated_at')
-  .option('--verbose', 'Show additional sync warnings and details')
-  .option('--prune', 'Remove DB entries for plans that no longer exist on disk')
-  .option('--dir <directory>', 'Directory to sync (defaults to configured task directory)')
+  .description('Sync materialized plans in .tim/plans/ back to the database')
+  .option('--force', 'Sync even when the materialized file looks stale')
+  .option('--verbose', 'Reserved for additional sync diagnostics')
   .action(async (planId, options, command) => {
     const { handleSyncCommand } = await import('./commands/sync.js');
     await handleSyncCommand(planId, options, command).catch(handleCommandError);
@@ -799,9 +775,7 @@ program
 
 program
   .command('list [searchTerms...]')
-  .description(
-    'List all plan files in the tasks directory. Optionally filter by title search terms.'
-  )
+  .description('List plans from the database. Optionally filter by title search terms.')
   .option(
     '--dir <directory>',
     'Directory to search for plan files (defaults to configured tasks directory)'
@@ -817,7 +791,6 @@ program
     `Filter by status (can specify multiple). Valid values: ${statusSchema.options.join(', ')}, ready`
   )
   .option('--all', 'Show all plans regardless of status (overrides default filter)')
-  .option('--local', 'Read plan data from local files instead of SQLite')
   .option('--show-files', 'Show file paths column')
   .option('-u, --user <username>', 'Filter by assignedTo username')
   .option('--mine', 'Show only plans assigned to current user')
@@ -862,7 +835,6 @@ program
   .option('--unassigned', 'Show only ready plans that are not currently claimed')
   .option('--user <username>', 'Show ready plans claimed by the specified user')
   .option('--here', 'Show only ready plans assigned to the current workspace')
-  .option('--local', 'Read plan data from local files instead of SQLite')
   .option('--has-tasks', 'Show only ready plans that have tasks defined')
   .option('--tag <tags...>', 'Filter ready plans by tag (repeatable)')
   .option(
@@ -1111,8 +1083,6 @@ program
   .option('--no-epic', 'Mark the plan as not an epic')
   .option('--simple', 'Mark the plan as simple')
   .option('--no-simple', 'Mark the plan as not simple')
-  .option('--sd, --status-description <description>', 'Set a description for the current status')
-  .option('--no-sd, --no-status-description', 'Remove the status description')
   .action(async (planFile, options, command) => {
     const { handleSetCommand } = await import('./commands/set.js');
     const rawArgs = command.rawArgs ?? [];

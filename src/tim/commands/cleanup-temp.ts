@@ -6,7 +6,7 @@ import chalk from 'chalk';
 import { log, warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { removePlanFromDb } from '../db/plan_sync.js';
-import { resolvePlanPathContext } from '../path_resolver.js';
+import { getLegacyAwareSearchDir, resolvePlanPathContext } from '../path_resolver.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadPlansFromDb } from '../plans_db.js';
 
@@ -17,10 +17,16 @@ export async function handleCleanupTempCommand(options: any, command: any) {
   const config = await loadEffectiveConfig(globalOpts.config);
 
   // Determine the target directory for plan files
-  const { tasksDir, configBaseDir } = await resolvePlanPathContext(config);
-  const repository = await getRepositoryIdentity({ cwd: configBaseDir });
+  const pathContext = await resolvePlanPathContext(config);
+  const identityCwd = pathContext.configBaseDir ?? pathContext.gitRoot ?? process.cwd();
+  const repository = await getRepositoryIdentity({ cwd: identityCwd });
+  const configBaseDir = pathContext.configBaseDir ?? repository.gitRoot;
+  const gitRoot = pathContext.gitRoot ?? repository.gitRoot;
 
-  const { plans: allPlans } = loadPlansFromDb(tasksDir, repository.repositoryId);
+  const { plans: allPlans } = loadPlansFromDb(
+    getLegacyAwareSearchDir(gitRoot, configBaseDir),
+    repository.repositoryId
+  );
 
   // Filter plans where temp === true
   const tempPlans = Array.from(allPlans.values()).filter((plan) => plan.temp === true);

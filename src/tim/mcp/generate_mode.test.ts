@@ -5,14 +5,9 @@ import path from 'node:path';
 import * as z from 'zod/v4';
 import { getDefaultConfig } from '../configSchema.js';
 import type { PlanSchema } from '../planSchema.js';
-import {
-  writePlanFile,
-  writePlanToDb,
-  readPlanFile,
-  clearPlanCache,
-  readAllPlans,
-  getMaxNumericPlanId,
-} from '../plans.js';
+import { writePlanFile, writePlanToDb, readPlanFile, getMaxNumericPlanId } from '../plans.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import { loadPlansFromDb } from '../plans_db.js';
 import { ModuleMocker, clearAllTimCaches } from '../../testing.js';
 import { resolvePlan } from '../plan_display.js';
 import {
@@ -33,7 +28,6 @@ import {
   loadResearchPrompt,
   type GenerateModeRegistrationContext,
 } from './generate_mode.js';
-import { loadCompactPlanPrompt } from './prompts/compact_plan.js';
 import { mcpGetPlan } from '../commands/show.js';
 import { mcpUpdatePlanTasks } from './generate_mode.js';
 import { mcpListReadyPlans } from '../commands/ready.js';
@@ -48,13 +42,17 @@ const basePlan: PlanSchema = {
   tasks: [],
 };
 
+async function loadPlansForRepo(searchDir: string) {
+  const repository = await getRepositoryIdentity({ cwd: searchDir });
+  return loadPlansFromDb(searchDir, repository.repositoryId);
+}
+
 describe('tim MCP generate mode helpers', () => {
   let tmpDir: string;
   let planPath: string;
   let context: GenerateModeRegistrationContext;
 
   beforeEach(async () => {
-    clearPlanCache();
     tmpDir = await mkdtemp(path.join(os.tmpdir(), 'tim-mcp-'));
     await Bun.$`git init`.cwd(tmpDir).quiet();
     planPath = path.join(tmpDir, '99999-test.plan.md');
@@ -72,7 +70,6 @@ describe('tim MCP generate mode helpers', () => {
 
   afterEach(async () => {
     await rm(tmpDir, { recursive: true, force: true });
-    clearPlanCache();
   });
 
   test('registerGenerateMode skips tools when disabled', () => {
@@ -358,70 +355,6 @@ describe('tim MCP generate mode helpers', () => {
     expect(messageText).toContain('does not have structured tasks or details');
     expect(messageText).toContain('Use the plan title as the primary direction');
     expect(messageText).toContain('satisfies the plan title');
-  });
-
-  test('loadCompactPlanPrompt builds compaction instructions for eligible plans', async () => {
-    const donePlan: PlanSchema = {
-      ...basePlan,
-      status: 'done',
-      updatedAt: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString(),
-      details: `${basePlan.details}\n\n## Research\n- Deep dive`,
-    };
-    await writePlanFile(planPath, donePlan);
-
-    const prompt = await loadCompactPlanPrompt({ plan: planPath }, context);
-    const message = prompt.messages[0]?.content;
-    expect(message?.text).toContain('You are an expert technical editor');
-    expect(message?.text).toContain('Read the plan file at:');
-    expect(message?.text).toContain('Compact the plan by editing the file directly');
-    expect(message?.text).toContain('let your human collaborator know the compaction is complete');
-  });
-
-  test('loadCompactPlanPrompt rejects plans that are not completed', async () => {
-    await expect(loadCompactPlanPrompt({ plan: planPath }, context)).rejects.toThrow(
-      'Only done, cancelled, or deferred plans can be compacted.'
-    );
-  });
-
-  test('loadCompactPlanPrompt requires a plan identifier', async () => {
-    await expect(loadCompactPlanPrompt({ plan: '   ' }, context)).rejects.toThrow(
-      'Plan ID or file path is required to build a compaction prompt.'
-    );
-  });
-
-  test('loadCompactPlanPrompt appends an age warning when plan is younger than minimum threshold', async () => {
-    const recentPlan: PlanSchema = {
-      ...basePlan,
-      status: 'done',
-      updatedAt: new Date().toISOString(),
-      details: `${basePlan.details}\n\n## Research\n- Recent notes`,
-    };
-    await writePlanFile(planPath, recentPlan);
-
-    context.config.compaction = { minimumAgeDays: 60 };
-
-    const prompt = await loadCompactPlanPrompt({ plan: planPath }, context);
-    const messageText = prompt.messages[0]?.content?.text ?? '';
-    expect(messageText).toContain('Minimum age threshold: 60 days');
-    expect(messageText).toContain('Warning: This plan was last updated');
-    expect(messageText).toContain('let your human collaborator know the compaction is complete');
-  });
-
-  test('loadCompactPlanPrompt respects configured minimum age when no warning is needed', async () => {
-    const olderPlan: PlanSchema = {
-      ...basePlan,
-      status: 'done',
-      updatedAt: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
-      details: `${basePlan.details}\n\n## Research\n- Long-running work`,
-    };
-    await writePlanFile(planPath, olderPlan, { skipUpdatedAt: true });
-
-    context.config.compaction = { minimumAgeDays: 7 };
-
-    const prompt = await loadCompactPlanPrompt({ plan: planPath }, context);
-    const messageText = prompt.messages[0]?.content?.text ?? '';
-    expect(messageText).toContain('Minimum age threshold: 7 days');
-    expect(messageText).not.toContain('Warning: This plan was last updated');
   });
 
   test('mcpUpdatePlanTasks updates plan with structured data', async () => {
@@ -1052,7 +985,6 @@ describe('mcpListReadyPlans', () => {
   let context: GenerateModeRegistrationContext;
 
   beforeEach(async () => {
-    clearPlanCache();
     tmpDir = await mkdtemp(path.join(os.tmpdir(), 'tim-mcp-ready-'));
     await Bun.$`git init`.cwd(tmpDir).quiet();
 
@@ -1068,7 +1000,6 @@ describe('mcpListReadyPlans', () => {
 
   afterEach(async () => {
     await rm(tmpDir, { recursive: true, force: true });
-    clearPlanCache();
   });
 
   // Helper function to create a plan
@@ -1725,7 +1656,6 @@ describe('Helper Functions', () => {
   const originalEnv: Partial<Record<string, string>> = {};
 
   beforeEach(async () => {
-    clearPlanCache();
     tmpDir = await mkdtemp(path.join(os.tmpdir(), 'tim-helpers-'));
     await Bun.$`git init`.cwd(tmpDir).quiet();
 
@@ -1775,7 +1705,6 @@ describe('Helper Functions', () => {
     }
 
     await rm(tmpDir, { recursive: true, force: true });
-    clearPlanCache();
   });
 
   async function createPlan(plan: PlanSchema) {
@@ -2048,7 +1977,6 @@ describe('mcpCreatePlan', () => {
     });
 
     // Clear cache to ensure getNextPlanId gets correct value
-    clearPlanCache();
 
     const { mcpCreatePlan, createPlanParameters } = await import('./generate_mode.js');
 
@@ -2077,13 +2005,9 @@ describe('mcpCreatePlan', () => {
     const result1 = await mcpCreatePlan(args1, context);
     expect(createdPlanId(result1)).toBe(1);
 
-    clearPlanCache();
-
     const args2 = createPlanParameters.parse({ title: 'Plan 2' });
     const result2 = await mcpCreatePlan(args2, context);
     expect(createdPlanId(result2)).toBe(2);
-
-    clearPlanCache();
 
     const args3 = createPlanParameters.parse({ title: 'Plan 3' });
     const result3 = await mcpCreatePlan(args3, context);
@@ -2200,7 +2124,6 @@ describe('MCP Resources', () => {
   let context: GenerateModeRegistrationContext;
 
   beforeEach(async () => {
-    clearPlanCache();
     tmpDir = await mkdtemp(path.join(os.tmpdir(), 'tim-resources-'));
     await Bun.$`git init`.cwd(tmpDir).quiet();
 
@@ -2216,7 +2139,6 @@ describe('MCP Resources', () => {
 
   afterEach(async () => {
     await rm(tmpDir, { recursive: true, force: true });
-    clearPlanCache();
   });
 
   async function createPlan(plan: PlanSchema) {
@@ -2282,6 +2204,14 @@ describe('MCP Resources', () => {
 
     test('returns all plans with summaries', async () => {
       await createPlan({
+        id: 5,
+        title: 'Dependency Plan',
+        status: 'done',
+        tasks: [],
+        dependencies: [],
+      });
+
+      await createPlan({
         id: 1,
         title: 'Plan 1',
         goal: 'Goal 1',
@@ -2309,8 +2239,7 @@ describe('MCP Resources', () => {
         updatedAt: '2025-01-21T10:00:00Z',
       });
 
-      const { readAllPlans } = await import('../plans.js');
-      const { plans } = await readAllPlans(tmpDir);
+      const { plans } = await loadPlansForRepo(tmpDir);
 
       const planList = Array.from(plans.values()).map((plan) => ({
         id: plan.id,
@@ -2327,7 +2256,7 @@ describe('MCP Resources', () => {
         updatedAt: plan.updatedAt,
       }));
 
-      expect(planList).toHaveLength(2);
+      expect(planList).toHaveLength(3);
 
       const plan1 = planList.find((p) => p.id === 1);
       expect(plan1).toBeDefined();
@@ -2356,8 +2285,7 @@ describe('MCP Resources', () => {
         dependencies: [],
       });
 
-      const { readAllPlans } = await import('../plans.js');
-      const { plans } = await readAllPlans(tmpDir);
+      const { plans } = await loadPlansForRepo(tmpDir);
 
       const planList = Array.from(plans.values()).map((plan) => ({
         id: plan.id,
@@ -2383,8 +2311,7 @@ describe('MCP Resources', () => {
     });
 
     test('returns empty array for no plans', async () => {
-      const { readAllPlans } = await import('../plans.js');
-      const { plans } = await readAllPlans(tmpDir);
+      const { plans } = await loadPlansForRepo(tmpDir);
 
       const planList = Array.from(plans.values());
       expect(planList).toHaveLength(0);
@@ -2396,6 +2323,28 @@ describe('MCP Resources', () => {
     });
 
     test('includes all required fields', async () => {
+      await createPlan({
+        id: 5,
+        title: 'Dependency 5',
+        status: 'done',
+        tasks: [],
+        dependencies: [],
+      });
+      await createPlan({
+        id: 7,
+        title: 'Dependency 7',
+        status: 'done',
+        tasks: [],
+        dependencies: [],
+      });
+      await createPlan({
+        id: 10,
+        title: 'Parent 10',
+        status: 'pending',
+        tasks: [],
+        dependencies: [],
+      });
+
       await createPlan({
         id: 1,
         title: 'Complete Plan',
@@ -2412,8 +2361,7 @@ describe('MCP Resources', () => {
         createdAt: '2025-01-15T10:00:00Z',
       });
 
-      const { readAllPlans } = await import('../plans.js');
-      const { plans } = await readAllPlans(tmpDir);
+      const { plans } = await loadPlansForRepo(tmpDir);
 
       const planList = Array.from(plans.values()).map((plan) => ({
         id: plan.id,
@@ -2652,7 +2600,7 @@ describe('MCP Resources', () => {
       });
 
       const { filterAndSortReadyPlans } = await import('../ready_plans.js');
-      const { plans } = await readAllPlans(tmpDir);
+      const { plans } = await loadPlansForRepo(tmpDir);
 
       const readyPlans = filterAndSortReadyPlans(plans, {
         pendingOnly: false,
@@ -2681,7 +2629,7 @@ describe('MCP Resources', () => {
       });
 
       const { filterAndSortReadyPlans, formatReadyPlansAsJson } = await import('../ready_plans.js');
-      const { plans } = await readAllPlans(tmpDir);
+      const { plans } = await loadPlansForRepo(tmpDir);
 
       const readyPlans = filterAndSortReadyPlans(plans, {
         pendingOnly: false,
@@ -2722,7 +2670,7 @@ describe('MCP Resources', () => {
       });
 
       const { filterAndSortReadyPlans, formatReadyPlansAsJson } = await import('../ready_plans.js');
-      const { plans } = await readAllPlans(tmpDir);
+      const { plans } = await loadPlansForRepo(tmpDir);
 
       const readyPlans = filterAndSortReadyPlans(plans, {
         pendingOnly: false,
@@ -2765,7 +2713,7 @@ describe('MCP Resources', () => {
       });
 
       const { filterAndSortReadyPlans } = await import('../ready_plans.js');
-      const { plans } = await readAllPlans(tmpDir);
+      const { plans } = await loadPlansForRepo(tmpDir);
 
       const readyPlans = filterAndSortReadyPlans(plans, {
         pendingOnly: false,

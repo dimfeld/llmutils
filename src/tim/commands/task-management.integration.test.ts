@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { ModuleMocker, clearAllTimCaches } from '../../testing.js';
-import { clearPlanCache, readPlanFile, writePlanFile } from '../plans.js';
+import { readPlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { resolvePlan } from '../plan_display.js';
 import { handleAddTaskCommand } from './add-task.js';
@@ -35,7 +35,6 @@ describe('task management integration workflows', () => {
     clearAllTimCaches();
     closeDatabaseForTesting();
     clearPlanSyncContext();
-    clearPlanCache();
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-task-mgmt-'));
     originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
@@ -86,7 +85,6 @@ describe('task management integration workflows', () => {
     closeDatabaseForTesting();
     clearPlanSyncContext();
     moduleMocker.clear();
-    clearPlanCache();
     if (originalXdgConfigHome === undefined) {
       delete process.env.XDG_CONFIG_HOME;
     } else {

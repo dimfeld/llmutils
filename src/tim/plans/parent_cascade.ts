@@ -1,7 +1,7 @@
 import { getGitRoot } from '../../common/git.js';
 import { warn } from '../../logging.js';
 import { removePlanAssignment } from '../assignments/remove_plan_assignment.js';
-import { resolveTasksDir, type TimConfig } from '../configSchema.js';
+import type { TimConfig } from '../configSchema.js';
 import { getDatabase } from '../db/database.js';
 import { getPlanByPlanId, getPlansByParentUuid } from '../db/plan.js';
 import {
@@ -19,14 +19,12 @@ type ParentCascadeOptions = {
   onParentMarkedInProgress?: (plan: PlanSchema) => void | Promise<void>;
 };
 
-async function getRepoRoot(_config: TimConfig, baseDir?: string): Promise<string> {
+async function getRepoRoot(baseDir?: string): Promise<string> {
   if (baseDir) {
     return (await getGitRoot(baseDir)) ?? baseDir;
   }
 
-  const tasksDir = await resolveTasksDir(_config);
-  const gitRoot = await getGitRoot(tasksDir);
-  return gitRoot ?? tasksDir;
+  return (await getGitRoot()) ?? process.cwd();
 }
 
 async function materializedPathOrNull(repoRoot: string, planId: number): Promise<string | null> {
@@ -49,7 +47,7 @@ export async function checkAndMarkParentDone(
   config: TimConfig,
   options: ParentCascadeOptions = {}
 ): Promise<PlanSchema | undefined> {
-  const repoRoot = await getRepoRoot(config, options.baseDir);
+  const repoRoot = await getRepoRoot(options.baseDir);
   const result = await withPlanAutoSync(parentId, repoRoot, async () => {
     const context = await resolveProjectContext(repoRoot);
     const db = getDatabase();
@@ -111,7 +109,7 @@ export async function markParentInProgress(
   config: TimConfig,
   options: ParentCascadeOptions = {}
 ): Promise<void> {
-  const repoRoot = await getRepoRoot(config, options.baseDir);
+  const repoRoot = await getRepoRoot(options.baseDir);
   const result = await withPlanAutoSync(parentId, repoRoot, async () => {
     const context = await resolveProjectContext(repoRoot);
     const db = getDatabase();

@@ -4,43 +4,17 @@ import * as path from 'node:path';
 import type { PlanSchema } from './planSchema.js';
 
 /**
- * Combines project title and plan title for display.
- * If both exist, returns "Project Title - Plan Title"
- * Otherwise returns whichever exists, or 'Untitled' if neither exists.
+ * Returns the plan title or 'Untitled' if not set.
  */
 export function getCombinedTitle(plan: PlanSchema): string {
-  const projectTitle = plan.project?.title;
-  const planTitle = plan.title;
-
-  if (projectTitle && planTitle) {
-    return `${projectTitle} - ${planTitle}`;
-  } else if (projectTitle) {
-    return projectTitle;
-  } else if (planTitle) {
-    return planTitle;
-  } else {
-    return 'Untitled';
-  }
+  return plan.title || 'Untitled';
 }
 
 /**
- * Combines project goal and plan goal for display.
- * If both exist, returns "Project Goal - Plan Goal"
- * Otherwise returns whichever exists.
+ * Returns the plan goal or empty string if not set.
  */
 export function getCombinedGoal(plan: PlanSchema): string {
-  const projectGoal = plan.project?.goal;
-  const planGoal = plan.goal;
-
-  if (projectGoal && planGoal && projectGoal !== planGoal) {
-    return `${projectGoal} - ${planGoal}`;
-  } else if (planGoal) {
-    return planGoal;
-  } else if (projectGoal) {
-    return projectGoal;
-  } else {
-    return '';
-  }
+  return plan.goal || '';
 }
 
 /**
@@ -49,52 +23,14 @@ export function getCombinedGoal(plan: PlanSchema): string {
 type PartialPlan = {
   title?: string;
   goal?: string;
-  project?: {
-    title: string;
-    goal?: string;
-    details?: string;
-  };
 };
 
-/**
- * Combines project title and plan title for display from partial plan data.
- * If both exist, returns "Project Title - Plan Title"
- * Otherwise returns whichever exists, or falls back to goal if no title.
- */
 export function getCombinedTitleFromSummary(plan: PartialPlan): string {
-  const projectTitle = plan.project?.title;
-  const planTitle = plan.title;
-
-  if (projectTitle && planTitle) {
-    return `${projectTitle} - ${planTitle}`;
-  } else if (projectTitle) {
-    return projectTitle;
-  } else if (planTitle) {
-    return planTitle;
-  } else {
-    // Fallback to goal if no title exists
-    return plan.goal || 'Untitled';
-  }
+  return plan.title || plan.goal || 'Untitled';
 }
 
-/**
- * Combines project goal and plan goal for display from partial plan data.
- * If both exist and are different, returns "Project Goal - Plan Goal"
- * Otherwise returns whichever exists.
- */
 export function getCombinedGoalFromSummary(plan: PartialPlan): string {
-  const projectGoal = plan.project?.goal;
-  const planGoal = plan.goal;
-
-  if (projectGoal && planGoal && projectGoal !== planGoal) {
-    return `${projectGoal} - ${planGoal}`;
-  } else if (planGoal) {
-    return planGoal;
-  } else if (projectGoal) {
-    return projectGoal;
-  } else {
-    return '';
-  }
+  return plan.goal || '';
 }
 
 function normalizeForComparison(p: string): string {

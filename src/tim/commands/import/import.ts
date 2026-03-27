@@ -13,7 +13,7 @@ import { upsertPlan } from '../../db/plan.js';
 import { reserveNextPlanId } from '../../db/project.js';
 import { writePlanFile } from '../../plans.js';
 import { loadEffectiveConfig } from '../../configLoader.js';
-import { resolvePlanPathContext } from '../../path_resolver.js';
+import { getPlanStorageDir, resolvePlanPathContext } from '../../path_resolver.js';
 import {
   createStubPlanFromIssue,
   getInstructionsFromIssue,
@@ -21,7 +21,12 @@ import {
   type IssueInstructionData,
   type HierarchicalIssueInstructionData,
 } from '../../issue_utils.js';
-import { prioritySchema, statusSchema, type PlanSchema } from '../../planSchema.js';
+import {
+  prioritySchema,
+  statusSchema,
+  type PlanSchema,
+  type PlanWithLegacyMetadata,
+} from '../../planSchema.js';
 import {
   parseCommandOptionsFromComment,
   combineRmprOptions,
@@ -44,9 +49,10 @@ type PendingImportedPlanWrite = {
   dbPath: string;
 };
 
-async function refreshPlanSnapshot(repoRoot: string, tasksDir: string): Promise<PlanSnapshot> {
+async function refreshPlanSnapshot(repoRoot: string, planRoot: string): Promise<PlanSnapshot> {
   const repository = await getRepositoryIdentity({ cwd: repoRoot });
-  return loadPlansFromDb(tasksDir, repository.repositoryId).plans;
+  return loadPlansFromDb(planRoot || getPlanStorageDir(repository.gitRoot), repository.repositoryId)
+    .plans;
 }
 
 async function writeImportedPlansToDbTransactionally(
@@ -349,13 +355,13 @@ async function copyIssueToClipboard(
 async function importHierarchicalIssue(
   issueSpecifier: string,
   repoRoot: string,
-  tasksDir: string,
   issueTracker: IssueTrackerClient,
   options: any,
   allPlans: Map<number, PlanSchema & { filename: string }>
 ): Promise<{ successCount: number; parentPlanId?: number; parentPlanPath?: string }> {
   log(`Importing issue hierarchically: ${issueSpecifier}`);
   let currentPlans = allPlans;
+  const planDir = getPlanStorageDir(repoRoot);
 
   // Check if the issue tracker supports hierarchical fetching
   if (!issueTracker.fetchIssueWithChildren) {
@@ -452,7 +458,7 @@ async function importHierarchicalIssue(
         ? hierarchicalData.parentIssue.suggestedFileName.replace(/\.md$/, '.plan.md')
         : `${hierarchicalData.parentIssue.suggestedFileName}.plan.md`;
     const filename = `${parentPlanId}-${filenameSuffix}`;
-    parentPlanPath = path.join(tasksDir, filename);
+    parentPlanPath = path.join(planDir, filename);
   }
 
   let successCount = 0;
@@ -531,7 +537,7 @@ async function importHierarchicalIssue(
           ? child.issueData.suggestedFileName.replace(/\.md$/, '.plan.md')
           : `${child.issueData.suggestedFileName}.plan.md`;
       const childFilename = `${currentMaxId}-${childFilenameSuffix}`;
-      childPlanPath = path.join(tasksDir, childFilename);
+      childPlanPath = path.join(planDir, childFilename);
 
       childPlanIds.push(currentMaxId);
     }
@@ -574,7 +580,7 @@ async function importHierarchicalIssue(
       skipDb: true,
     });
     successCount++;
-    currentPlans = await refreshPlanSnapshot(repoRoot, tasksDir);
+    currentPlans = await refreshPlanSnapshot(repoRoot, planDir);
 
     log(
       `${existingChildPlan ? 'Updated' : 'Created'} child plan: ${persistedChildWrite.filePath ?? `plan ${persistedChildWrite.plan.id}`}`
@@ -588,7 +594,7 @@ async function importHierarchicalIssue(
     skipDb: true,
   });
   successCount++;
-  currentPlans = await refreshPlanSnapshot(repoRoot, tasksDir);
+  currentPlans = await refreshPlanSnapshot(repoRoot, planDir);
 
   log(
     `${existingParentPlan ? 'Updated' : 'Created'} parent plan: ${persistedParentWrite.filePath ?? `plan ${persistedParentWrite.plan.id}`}`
@@ -619,12 +625,12 @@ async function importHierarchicalIssue(
 async function importHierarchicalIssueMerged(
   issueSpecifier: string,
   repoRoot: string,
-  tasksDir: string,
   issueTracker: IssueTrackerClient,
   options: any,
   allPlans: Map<number, PlanSchema & { filename: string }>
 ): Promise<{ successCount: number; parentPlanId?: number; parentPlanPath?: string }> {
   log(`Importing issue hierarchically into a single plan: ${issueSpecifier}`);
+  const planDir = getPlanStorageDir(repoRoot);
 
   if (!issueTracker.fetchIssueWithChildren) {
     throw new Error('Issue tracker does not support hierarchical issue fetching');
@@ -711,7 +717,7 @@ async function importHierarchicalIssueMerged(
         ? hierarchicalData.parentIssue.suggestedFileName.replace(/\.md$/, '.plan.md')
         : `${hierarchicalData.parentIssue.suggestedFileName}.plan.md`;
     const filename = `${newId}-${filenameSuffix}`;
-    parentPlanPath = path.join(tasksDir, filename);
+    parentPlanPath = path.join(planDir, filename);
   }
 
   await writePlanFile(parentPlanPath, parentPlan, { cwdForIdentity: repoRoot });
@@ -745,18 +751,18 @@ async function importHierarchicalIssueMerged(
 export async function importSingleIssue(
   issueSpecifier: string,
   repoRoot: string,
-  tasksDir: string,
   issueTracker: IssueTrackerClient,
   options: any,
   allPlans: Map<number, PlanSchema & { filename: string }>,
   withSubissues = false,
   withMergedSubissues = false
 ): Promise<{ success: boolean; planPath?: string }> {
+  const planDir = getPlanStorageDir(repoRoot);
+
   if (withMergedSubissues && issueTracker.fetchIssueWithChildren) {
     const result = await importHierarchicalIssueMerged(
       issueSpecifier,
       repoRoot,
-      tasksDir,
       issueTracker,
       options,
       allPlans
@@ -768,7 +774,6 @@ export async function importSingleIssue(
     const result = await importHierarchicalIssue(
       issueSpecifier,
       repoRoot,
-      tasksDir,
       issueTracker,
       options,
       allPlans
@@ -795,7 +800,7 @@ export async function importSingleIssue(
     log(`Updating existing plan for issue: ${issueUrl}`);
     const resolvedExistingPlan = await resolvePlanFromDb(String(existingPlan.id), repoRoot);
     const fullPath = resolvedExistingPlan.planPath;
-    const currentPlan = resolvedExistingPlan.plan;
+    const currentPlan = resolvedExistingPlan.plan as PlanWithLegacyMetadata;
 
     // Parse RmprOptions from issue body and comments
     let rmprOptions: RmprOptions | null = null;
@@ -823,20 +828,9 @@ export async function importSingleIssue(
       rmprOptions &&
       rmprOptions.rmfilter &&
       JSON.stringify(currentPlan.rmfilter) !== JSON.stringify(rmprOptions.rmfilter);
-    const projectChanged =
-      JSON.stringify(currentPlan.project) !==
-      JSON.stringify(
-        data.issue.project
-          ? {
-              title: data.issue.project.name,
-              goal: data.issue.project.description || data.issue.project.name,
-              details: data.issue.project.description,
-            }
-          : undefined
-      );
     const hasNewComments = newComments.length > 0;
 
-    if (!titleChanged && !rmfilterChanged && !projectChanged && !hasNewComments) {
+    if (!titleChanged && !rmfilterChanged && !hasNewComments) {
       log(`No updates needed for plan ${currentPlan.id} - all content is already up to date.`);
       return { success: true, planPath: fullPath ?? undefined };
     }
@@ -856,7 +850,7 @@ export async function importSingleIssue(
     }
 
     // Update the plan with new data from the issue while preserving important fields
-    const updatedPlan: PlanSchema = {
+    const updatedPlan: PlanWithLegacyMetadata = {
       ...currentPlan,
       title: data.issue.title, // Update title in case it changed
       details: updatedDetails,
@@ -866,18 +860,6 @@ export async function importSingleIssue(
     // Update rmfilter if present in the new issue data
     if (rmprOptions && rmprOptions.rmfilter) {
       updatedPlan.rmfilter = rmprOptions.rmfilter;
-    }
-
-    // Update project if present in the new issue data
-    if (data.issue.project) {
-      updatedPlan.project = {
-        title: data.issue.project.name,
-        goal: data.issue.project.description || data.issue.project.name,
-        details: data.issue.project.description,
-      };
-    } else if (currentPlan.project) {
-      // Remove project field if the issue no longer has a project
-      updatedPlan.project = undefined;
     }
 
     // Write the updated plan
@@ -890,15 +872,6 @@ export async function importSingleIssue(
     }
     if (rmfilterChanged) {
       log(`Updated rmfilter options`);
-    }
-    if (projectChanged) {
-      if (data.issue.project && currentPlan.project) {
-        log(`Updated project from "${currentPlan.project.title}" to "${data.issue.project.name}"`);
-      } else if (data.issue.project) {
-        log(`Added project: "${data.issue.project.name}"`);
-      } else if (currentPlan.project) {
-        log(`Removed project: "${currentPlan.project.title}"`);
-      }
     }
     if (hasNewComments) {
       log(`Added ${newComments.length} new comment(s) to the plan.`);
@@ -926,7 +899,7 @@ export async function importSingleIssue(
       : `${issueData.suggestedFileName}.plan.md`;
   const filename = `${newId}-${filenameSuffix}`;
 
-  const fullPath = path.join(tasksDir, filename);
+  const fullPath = path.join(planDir, filename);
 
   // Write the stub plan file
   await writePlanFile(fullPath, stubPlan);
@@ -987,13 +960,14 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
   // Determine the issue specifier from either positional argument or --issue flag
   const issueSpecifier = issue || options.issue;
 
-  // Get configuration and tasks directory
+  // Get configuration and repository context
   const config = await loadEffectiveConfig();
-  const { configBaseDir, tasksDir } = await resolvePlanPathContext(config);
+  const { gitRoot } = await resolvePlanPathContext(config);
+  const planDir = getPlanStorageDir(gitRoot);
 
   // Load all plans upfront for validation and dependency updates
-  const repository = await getRepositoryIdentity({ cwd: configBaseDir });
-  let { plans: allPlans } = loadPlansFromDb(tasksDir, repository.repositoryId);
+  const repository = await getRepositoryIdentity({ cwd: gitRoot });
+  let { plans: allPlans } = loadPlansFromDb(planDir, repository.repositoryId);
 
   // Validate priority if provided
   if (options.priority) {
@@ -1094,8 +1068,7 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
 
       const result = await importSingleIssue(
         issueNumber.toString(),
-        configBaseDir,
-        tasksDir,
+        gitRoot,
         issueTracker,
         options,
         allPlans,
@@ -1107,7 +1080,7 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
         if (wasAlreadyImported) {
           updateCount++;
         }
-        allPlans = await refreshPlanSnapshot(configBaseDir, tasksDir);
+        allPlans = await refreshPlanSnapshot(gitRoot, planDir);
       }
     }
 
@@ -1131,8 +1104,7 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
 
   const result = await importSingleIssue(
     issueSpecifier,
-    configBaseDir,
-    tasksDir,
+    gitRoot,
     issueTracker,
     options,
     allPlans,

@@ -9,20 +9,20 @@ The `--batch-tasks` feature is a new execution mode for the `tim agent` command 
 ### Basic Command
 
 ```bash
-tim agent --batch-tasks <plan_file>
+tim agent --batch-tasks <planId>
 ```
 
 ### Examples
 
 ```bash
 # Execute a plan in batch mode
-tim agent --batch-tasks tasks/my-feature.yml
+tim agent --batch-tasks 123
 
 # Use batch mode with a different executor
-tim agent --batch-tasks --executor claude-code tasks/refactor-plan.yml
+tim agent --batch-tasks --executor claude-code 456
 
 # Run with verbose output to see batch selection decisions
-tim agent --batch-tasks --verbose tasks/optimization-tasks.yml
+tim agent --batch-tasks --verbose 789
 ```
 
 ## How It Works

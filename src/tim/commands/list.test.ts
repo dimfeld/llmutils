@@ -19,7 +19,6 @@ const mockTable = mock((data: any[]) => {
 
 // Now import the module being tested
 import { handleListCommand } from './list.js';
-import { clearPlanCache } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 
 describe('handleListCommand', () => {
@@ -42,7 +41,6 @@ describe('handleListCommand', () => {
     mockTable.mockClear();
 
     // Clear plan cache
-    clearPlanCache();
 
     // Create temporary directory
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-list-test-'));
@@ -217,7 +215,9 @@ describe('handleListCommand', () => {
 
     await handleListCommand(options, command);
 
-    expect(mockLog).toHaveBeenCalledWith('No plans found in', tasksDir);
+    expect(mockLog).toHaveBeenCalledTimes(1);
+    expect(mockLog.mock.calls[0]?.[0]).toBe('No plans found in');
+    expect(String(mockLog.mock.calls[0]?.[1] ?? '')).toMatch(/\/tasks$/);
     expect(mockTable).not.toHaveBeenCalled();
   });
 
@@ -829,7 +829,6 @@ describe('handleListCommand', () => {
 
   test('filters plans by search terms', async () => {
     // Clear cache and mocks
-    clearPlanCache();
     mockTable.mockClear();
 
     // Create test plans with various titles
@@ -904,7 +903,6 @@ describe('handleListCommand', () => {
 
   test('search is case insensitive', async () => {
     // Clear cache and mocks
-    clearPlanCache();
     mockTable.mockClear();
 
     const plan1 = {
@@ -952,7 +950,6 @@ describe('handleListCommand', () => {
 
   test('multiple search terms match any term', async () => {
     // Clear cache and mocks
-    clearPlanCache();
     mockTable.mockClear();
 
     const plan1 = {
@@ -1072,7 +1069,6 @@ describe('handleListCommand', () => {
 
   test('limits results when -n option is used', async () => {
     // Clear cache and mocks
-    clearPlanCache();
     mockTable.mockClear();
     mockLog.mockClear();
 
@@ -1128,7 +1124,6 @@ describe('handleListCommand', () => {
 
   test('shows all plans when -n is larger than available plans', async () => {
     // Clear cache and mocks
-    clearPlanCache();
     mockTable.mockClear();
     mockLog.mockClear();
 
@@ -1180,7 +1175,6 @@ describe('handleListCommand', () => {
 
   test('combines -n option with status filtering', async () => {
     // Clear cache and mocks
-    clearPlanCache();
     mockTable.mockClear();
     mockLog.mockClear();
 
@@ -1262,7 +1256,6 @@ describe('handleListCommand', () => {
 
   test('combines -n option with sorting', async () => {
     // Clear cache and mocks
-    clearPlanCache();
     mockTable.mockClear();
     mockLog.mockClear();
 
@@ -1346,7 +1339,6 @@ describe('handleListCommand', () => {
 
   test('uses DB timestamps when limiting results sorted by created date', async () => {
     // Clear cache and mocks
-    clearPlanCache();
     mockTable.mockClear();
     mockLog.mockClear();
 

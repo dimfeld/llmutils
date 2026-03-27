@@ -26,6 +26,7 @@ export async function startMcpServer(options: StartMcpServerOptions = {}): Promi
     config,
     configPath: options.configPath,
     gitRoot: pathContext.gitRoot,
+    configBaseDir: pathContext.configBaseDir,
   };
 
   registerGenerateMode(server, registrationContext, {

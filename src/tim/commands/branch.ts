@@ -1,7 +1,6 @@
 import { writeStdout } from '../../logging.js';
 import { getGitRoot } from '../../common/git.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { resolveTasksDir } from '../configSchema.js';
 import { slugify } from '../id_utils.js';
 import { parseLinearIssueIdentifier } from '../../common/linear.js';
 import { parseGitHubIssueIdentifier } from '../../common/github/issues.js';
@@ -124,8 +123,7 @@ export async function handleBranchCommand(
   command: any
 ): Promise<void> {
   const globalOpts = command.parent.opts();
-  const config = await loadEffectiveConfig(globalOpts.config);
-  const tasksDir = await resolveTasksDir(config);
+  await loadEffectiveConfig(globalOpts.config);
   const repoRoot = (await getGitRoot()) || process.cwd();
 
   let selectedPlan: PlanSchema | undefined;
@@ -154,21 +152,21 @@ export async function handleBranchCommand(
       parentPlanId = planFromFile.id;
     }
 
-    const result = await findNextReadyDependencyFromDb(parentPlanId, tasksDir, repoRoot, true);
+    const result = await findNextReadyDependencyFromDb(parentPlanId, repoRoot, repoRoot, true);
     if (!result.plan) {
       throw new Error(result.message);
     }
 
     selectedPlan = result.plan;
   } else if (options.latest) {
-    const latestPlan = await findLatestPlanFromDb(tasksDir, repoRoot);
+    const latestPlan = await findLatestPlanFromDb(repoRoot, repoRoot);
     if (!latestPlan) {
       throw new Error('No plans with updatedAt field found in the database.');
     }
 
     selectedPlan = latestPlan;
   } else if (options.next || options.current) {
-    const plan = await findNextPlanFromDb(tasksDir, repoRoot, {
+    const plan = await findNextPlanFromDb(repoRoot, repoRoot, {
       includePending: true,
       includeInProgress: options.current,
     });

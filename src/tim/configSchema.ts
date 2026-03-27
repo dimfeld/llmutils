@@ -1,8 +1,5 @@
-import * as fs from 'node:fs/promises';
-import * as path from 'path';
 import * as z from 'zod/v4';
 import { DEFAULT_EXECUTOR } from './constants.js';
-import { getGitRoot } from '../common/git.js';
 import {
   ClaudeCodeExecutorName,
   CodexCliExecutorName,
@@ -138,7 +135,6 @@ export const timConfigSchema = z
       .describe('Configuration for headless output streaming'),
     paths: z
       .object({
-        tasks: z.string().optional().describe('Path to directory containing task definitions'),
         docs: z
           .array(z.string())
           .optional()
@@ -577,38 +573,6 @@ export type TimConfigInput = z.input<typeof timConfigSchema>;
 export type PostApplyCommand = z.output<typeof postApplyCommandSchema>;
 export type LifecycleCommand = z.infer<typeof lifecycleCommandSchema>;
 export type NotificationCommand = z.output<typeof notificationCommandSchema>;
-
-/**
- * Resolves the tasks directory path, handling both absolute and relative paths.
- * If tasks path is relative, it's resolved relative to the git root.
- */
-export async function resolveTasksDir(config: TimConfig, cwd?: string): Promise<string> {
-  if (config.isUsingExternalStorage) {
-    const baseDir = config.externalRepositoryConfigDir;
-    if (baseDir) {
-      const tasksPath = config.paths?.tasks
-        ? path.isAbsolute(config.paths.tasks)
-          ? config.paths.tasks
-          : path.join(baseDir, config.paths.tasks)
-        : path.join(baseDir, 'tasks');
-      await fs.mkdir(tasksPath, { recursive: true });
-      return tasksPath;
-    }
-  }
-
-  const gitRoot = (await getGitRoot(cwd)) || cwd || process.cwd();
-
-  if (config.paths?.tasks) {
-    const resolvedPath = path.isAbsolute(config.paths.tasks)
-      ? config.paths.tasks
-      : path.join(gitRoot, config.paths.tasks);
-    await fs.mkdir(resolvedPath, { recursive: true });
-    return resolvedPath;
-  }
-
-  await fs.mkdir(gitRoot, { recursive: true });
-  return gitRoot;
-}
 
 /**
  * Returns a default configuration object.

@@ -19,7 +19,7 @@ import {
 } from '../../../logging.js';
 import { executePostApplyCommand } from '../../actions.js';
 import { loadEffectiveConfig, loadGlobalConfigForNotifications } from '../../configLoader.js';
-import { getDefaultConfig, resolveTasksDir } from '../../configSchema.js';
+import { getDefaultConfig } from '../../configSchema.js';
 import { syncPlanToDb } from '../../db/plan_sync.js';
 import { getCombinedTitleFromSummary } from '../../display_utils.js';
 import {
@@ -45,7 +45,6 @@ import { autoClaimPlan, isAutoClaimEnabled } from '../../assignments/auto_claim.
 import { runUpdateDocs } from '../update-docs.js';
 import { runUpdateLessons } from '../update-lessons.js';
 import { handleReviewCommand } from '../review.js';
-import { ensureUuidsAndReferences } from '../../utils/references.js';
 import { sendNotification } from '../../notifications.js';
 import { isTunnelActive } from '../../../logging/tunnel_client.js';
 import { runWithHeadlessAdapterIfEnabled, type HeadlessPlanSummary } from '../../headless.js';
@@ -129,7 +128,6 @@ export async function handleAgentCommand(
       }
 
       // Find the next ready dependency of the specified parent plan
-      const tasksDir = await resolveTasksDir(config);
       // Convert string ID to number or resolve plan file to get numeric ID
       const repoRoot = await getGitRoot();
       let parentPlanId: number;
@@ -144,7 +142,7 @@ export async function handleAgentCommand(
         parentPlanId = plan.id;
       }
 
-      const result = await findNextReadyDependencyFromDb(parentPlanId, tasksDir, repoRoot);
+      const result = await findNextReadyDependencyFromDb(parentPlanId, repoRoot, repoRoot);
 
       if (!result.plan) {
         log(result.message);
@@ -165,9 +163,8 @@ export async function handleAgentCommand(
       resolvedPlanArg = String(result.plan.id);
       headlessPlanSummary = toHeadlessPlanSummary(result.plan);
     } else if (options.latest) {
-      const tasksDir = await resolveTasksDir(config);
       const repoRoot = await getGitRoot();
-      const latestPlan = await findLatestPlanFromDb(tasksDir, repoRoot);
+      const latestPlan = await findLatestPlanFromDb(repoRoot, repoRoot);
 
       if (!latestPlan) {
         const noPlanMessage = 'No plans found in the database.';
@@ -189,9 +186,8 @@ export async function handleAgentCommand(
       resolvedPlanArg = String(latestPlan.id);
       headlessPlanSummary = toHeadlessPlanSummary(latestPlan);
     } else if (options.next || options.current) {
-      const tasksDir = await resolveTasksDir(config);
       const repoRoot = await getGitRoot();
-      const plan = await findNextPlanFromDb(tasksDir, repoRoot, {
+      const plan = await findNextPlanFromDb(repoRoot, repoRoot, {
         includePending: true,
         includeInProgress: options.current,
       });
@@ -296,13 +292,6 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
       currentBaseDir
     );
     const initialPlanData = initialResolvedPlan.plan;
-
-    // Ensure all plans have UUIDs and complete reference entries before starting
-    const tasksDir = await resolveTasksDir(config);
-    const validationResult = await ensureUuidsAndReferences(tasksDir);
-    if (validationResult.errors.length > 0) {
-      validationResult.errors.forEach((err) => warn(`Validation warning: ${err}`));
-    }
 
     if (options.log !== false) {
       let logFilePath: string;

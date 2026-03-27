@@ -4,7 +4,6 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import { handleAgentCommand } from './agent.js';
-import { clearPlanCache } from '../../plans.js';
 import type { PlanSchema } from '../../planSchema.js';
 import { ModuleMocker } from '../../../testing.js';
 
@@ -15,7 +14,6 @@ const timAgentSpy = mock();
 const logSpy = mock(() => {});
 const resolvePlanFileSpy = mock(async (planFile: string) => planFile);
 const loadEffectiveConfigSpy = mock(async () => ({}));
-const resolveTasksDirSpy = mock(async () => '/test/tasks');
 const findNextPlanFromDbSpy = mock(async () => null);
 
 describe('--serial-tasks flag pass-through tests', () => {
@@ -28,11 +26,9 @@ describe('--serial-tasks flag pass-through tests', () => {
     logSpy.mockClear();
     resolvePlanFileSpy.mockClear();
     loadEffectiveConfigSpy.mockClear();
-    resolveTasksDirSpy.mockClear();
     findNextPlanFromDbSpy.mockClear();
 
     // Clear plan cache
-    clearPlanCache();
 
     // Create temporary directory and test plan
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'batch-tasks-unit-test-'));
@@ -62,10 +58,6 @@ describe('--serial-tasks flag pass-through tests', () => {
 
     await moduleMocker.mock('../../configLoader.js', () => ({
       loadEffectiveConfig: loadEffectiveConfigSpy,
-    }));
-
-    await moduleMocker.mock('../../configSchema.js', () => ({
-      resolveTasksDir: resolveTasksDirSpy,
     }));
 
     await moduleMocker.mock('../plan_discovery.js', () => ({
@@ -207,7 +199,6 @@ describe('--serial-tasks flag pass-through tests', () => {
       const globalCliOptions = {
         config: {
           paths: {
-            tasks: '/custom/tasks',
             workspace: '/custom/workspaces',
           },
           models: {

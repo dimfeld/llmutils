@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { ModuleMocker } from '../../testing.js';
 import { closeDatabaseForTesting } from '../db/database.js';
-import { clearPlanCache, readPlanFile, writePlanFile } from '../plans.js';
+import { readPlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { handleRemoveTaskCommand } from './remove-task.js';
 
@@ -19,7 +19,6 @@ describe('handleRemoveTaskCommand', () => {
   const warnSpy = mock(() => {});
 
   beforeEach(async () => {
-    clearPlanCache();
     originalCwd = process.cwd();
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-remove-task-'));
     await Bun.$`git init`.cwd(tempDir).quiet();
@@ -65,7 +64,6 @@ describe('handleRemoveTaskCommand', () => {
 
   afterEach(async () => {
     moduleMocker.clear();
-    clearPlanCache();
     closeDatabaseForTesting();
     process.chdir(originalCwd);
     if (originalEnv.XDG_CONFIG_HOME === undefined) {

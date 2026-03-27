@@ -5,7 +5,6 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import { timAgent } from './agent.js';
-import { clearPlanCache } from '../../plans.js';
 import { runWithLogger } from '../../../logging/adapter.js';
 import { createRecordingAdapter } from '../../../logging/test_helpers.js';
 import type { StructuredMessage } from '../../../logging/structured_messages.js';
@@ -82,7 +81,6 @@ describe('timAgent - Batch Mode Execution Loop', () => {
     resetShutdownState();
 
     // Clear plan cache
-    clearPlanCache();
 
     // Create temporary directory and plan file
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-batch-mode-test-'));
@@ -168,12 +166,6 @@ describe('timAgent - Batch Mode Execution Loop', () => {
           await setPlanStatusSpy(filePath, status);
         }
       ),
-      readAllPlans: mock(async () => ({ plans: new Map() })),
-      clearPlanCache: mock(() => {}),
-    }));
-
-    await moduleMocker.mock('../../configSchema.js', () => ({
-      resolveTasksDir: mock(async () => '/test/tasks'),
     }));
 
     // Set up default mock behaviors

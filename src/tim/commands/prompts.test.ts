@@ -55,12 +55,6 @@ describe('handlePromptsCommand', () => {
         throw new Error('unexpected call');
       }),
     }));
-
-    await moduleMocker.mock('../mcp/prompts/compact_plan.js', () => ({
-      loadCompactPlanPrompt: mock(() => {
-        throw new Error('unexpected call');
-      }),
-    }));
   });
 
   test('lists implement in available prompt names', async () => {

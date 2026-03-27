@@ -1,5 +1,6 @@
 import { debugLog } from '../../logging.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import { getLegacyAwareSearchDir } from '../path_resolver.js';
 import { findMostRecentlyUpdatedPlan } from './prompts.js';
 import { loadPlansFromDb } from '../plans_db.js';
 import { isReadyPlan } from '../ready_plans.js';
@@ -24,7 +25,10 @@ export async function loadDbPlans(
   repoRoot: string
 ): Promise<Map<number, PlanWithFilename>> {
   const repository = await getRepositoryIdentity({ cwd: repoRoot });
-  return loadPlansFromDb(tasksDir, repository.repositoryId).plans;
+  return loadPlansFromDb(
+    getLegacyAwareSearchDir(repository.gitRoot, tasksDir),
+    repository.repositoryId
+  ).plans;
 }
 
 export async function findLatestPlanFromDb(

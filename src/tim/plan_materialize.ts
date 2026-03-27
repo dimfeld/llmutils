@@ -43,6 +43,7 @@ export type ProjectContext = {
 
 type MaterializePlanOptions = {
   context?: ProjectContext;
+  force?: boolean;
 };
 
 type CleanupMaterializedPlansResult = {
@@ -403,7 +404,7 @@ export async function syncMaterializedPlan(
   await validateMaterializedFileUuid(filePath, canonicalRow.uuid);
 
   const plan = await readPlanFile(filePath);
-  if (!plan.updatedAt && canonicalRow.updated_at) {
+  if (!options.force && !plan.updatedAt && canonicalRow.updated_at) {
     warn(
       `Materialized plan ${planId} at ${filePath} is missing updatedAt. ` +
         `Skipping file→DB sync to protect newer DB state.`

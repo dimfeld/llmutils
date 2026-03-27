@@ -13,10 +13,7 @@ import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 import { resolveProjectContext } from '../plan_materialize.js';
 import { resolvePlanFromDb, writePlanFile } from '../plans.js';
 import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
-import { resolveTasksDir } from '../configSchema.js';
 import { resolveWritablePath } from '../plans/resolve_writable_path.js';
-import { mergeYamlPassthroughFields } from '../plans/yaml_passthrough.js';
-import { readPlanFile } from '../plans.js';
 import { ensureReferences } from '../utils/references.js';
 
 export async function handlePromoteCommand(taskIds: string[], options: any) {
@@ -50,7 +47,6 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
     process.cwd(),
     options.config
   );
-  const tasksDir = await resolveTasksDir(config);
   const db = getDatabase();
   let context = await resolveProjectContext(repoRoot);
 
@@ -100,11 +96,6 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
         goal: '',
         details: taskToPromote.description,
         parent: originalPlan.parent,
-        project: {
-          title: originalPlan.title || '',
-          goal: originalPlan.goal,
-          details: originalPlan.details || '',
-        },
         status: 'pending',
         tasks: [],
         tags: originalPlan.tags ? [...originalPlan.tags] : [],
@@ -153,15 +144,13 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
     const outputPath = await resolveWritablePath(
       String(originalPlan.id),
       originalRow,
-      tasksDir,
+      repoRoot,
       repoRoot
     );
     if (outputPath) {
       const refreshedOriginal = (
         await resolvePlanFromDb(String(originalPlan.id), repoRoot, { context })
       ).plan;
-      const filePlan = await readPlanFile(outputPath);
-      mergeYamlPassthroughFields(refreshedOriginal, filePlan);
       await writePlanFile(outputPath, refreshedOriginal, {
         cwdForIdentity: repoRoot,
         context,

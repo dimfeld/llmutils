@@ -1,22 +1,17 @@
 import * as path from 'node:path';
-import { stat } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import type { Command } from 'commander';
+import { Glob } from 'bun';
 import { log, warn } from '../../logging.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
-import { loadEffectiveConfig } from '../configLoader.js';
-import { resolveTasksDir, type TimConfig } from '../configSchema.js';
-import { getDatabase } from '../db/database.js';
-import { getPlanByUuid } from '../db/plan.js';
-import { getOrCreateProject } from '../db/project.js';
-import { syncAllPlansToDb, syncPlanToDb } from '../db/plan_sync.js';
-import { parsePlanId, resolveProjectContext, syncMaterializedPlan } from '../plan_materialize.js';
-import { readAllPlans, readPlanFile } from '../plans.js';
-import type { PlanSchemaInput } from '../planSchema.js';
+import {
+  getMaterializedPlanPath,
+  parsePlanId,
+  resolveProjectContext,
+  syncMaterializedPlan,
+} from '../plan_materialize.js';
 
 interface SyncCommandOptions {
-  prune?: boolean;
-  dir?: string;
-  plan?: string;
   force?: boolean;
   verbose?: boolean;
 }
@@ -25,199 +20,76 @@ function pluralize(count: number, singular: string, plural = `${singular}s`): st
   return count === 1 ? singular : plural;
 }
 
-async function resolvePlanFileForSync(planArg: string, tasksDir: string): Promise<string> {
+async function getMaterializedPlanIds(repoRoot: string): Promise<number[]> {
+  const materializedDir = path.join(repoRoot, '.tim', 'plans');
   try {
-    const absolutePath = path.resolve(planArg);
-    await stat(absolutePath);
-    return absolutePath;
-  } catch {
-    // Not an existing direct path; continue resolving.
-  }
-
-  if (!planArg.includes('/') && !planArg.includes('\\') && planArg.includes('.')) {
-    const potentialPath = path.join(tasksDir, planArg);
-    try {
-      await stat(potentialPath);
-      return potentialPath;
-    } catch {
-      // Not a filename in tasksDir; continue resolving.
+    await readdir(materializedDir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return [];
     }
+    throw error;
   }
 
-  if (!planArg.includes('/') && !planArg.includes('\\') && !planArg.includes('.')) {
-    const planMdPath = path.join(tasksDir, `${planArg}.plan.md`);
-    try {
-      await stat(planMdPath);
-      return planMdPath;
-    } catch {
-      const ymlPath = path.join(tasksDir, `${planArg}.yml`);
-      try {
-        await stat(ymlPath);
-        return ymlPath;
-      } catch {
-        // Neither default extension exists; continue to ID lookup.
-      }
-    }
-  }
-
-  if (planArg.includes('/') || planArg.includes('\\')) {
-    throw new Error(`Plan file not found: ${planArg}`);
-  }
-
-  const numericPlanArg = Number(planArg);
-  if (Number.isNaN(numericPlanArg)) {
-    throw new Error(`No plan found with ID or file path: ${planArg}`);
-  }
-
-  const { plans, duplicates } = await readAllPlans(tasksDir, false);
-  if (duplicates[numericPlanArg]) {
-    throw new Error(
-      `Plan ID ${numericPlanArg} is duplicated in multiple files. Please run 'tim renumber' to fix this issue.`
-    );
-  }
-
-  const matchingPlan = plans.get(numericPlanArg);
-  if (!matchingPlan) {
-    throw new Error(`No plan found with ID or file path: ${planArg}`);
-  }
-
-  return matchingPlan.filename;
-}
-
-async function syncMissingReferencedPlans(
-  plan: PlanSchemaInput,
-  tasksDir: string,
-  options: { force: boolean; config: TimConfig }
-): Promise<void> {
-  const referencedUuids = new Set<string>(Object.values(plan.references ?? {}));
-  if (referencedUuids.size === 0) {
-    return;
-  }
-
-  const db = getDatabase();
-  const allPlans = await readAllPlans(tasksDir, false);
-  const plansByUuid = new Map<string, PlanSchemaInput & { filename: string }>();
-  for (const candidate of allPlans.plans.values()) {
-    if (candidate.uuid) {
-      plansByUuid.set(candidate.uuid, candidate);
-    }
-  }
-
-  for (const referenceUuid of referencedUuids) {
-    if (getPlanByUuid(db, referenceUuid)) {
+  const planIds: number[] = [];
+  const glob = new Glob('*.plan.md');
+  for await (const entry of glob.scan(materializedDir)) {
+    const match = entry.match(/^(\d+)\.plan\.md$/);
+    if (!match) {
       continue;
     }
 
-    let referencedPlan = plansByUuid.get(referenceUuid);
-    if (!referencedPlan) {
-      for (const duplicatePaths of Object.values(allPlans.duplicates)) {
-        for (const duplicatePath of duplicatePaths) {
-          try {
-            const duplicatePlan = await readPlanFile(duplicatePath);
-            if (duplicatePlan.uuid === referenceUuid) {
-              referencedPlan = {
-                ...duplicatePlan,
-                filename: duplicatePath,
-              };
-              break;
-            }
-          } catch {
-            // Ignore parse errors here; full sync already reports these.
-          }
-        }
-        if (referencedPlan) {
-          break;
-        }
-      }
+    const planId = Number.parseInt(match[1], 10);
+    if (Number.isInteger(planId) && planId > 0) {
+      planIds.push(planId);
     }
-
-    if (!referencedPlan) {
-      warn(`Referenced plan UUID ${referenceUuid} was not found on disk during single-plan sync.`);
-      continue;
-    }
-
-    await syncPlanToDb(referencedPlan, referencedPlan.filename, {
-      tasksDir,
-      force: options.force,
-      config: options.config,
-    });
   }
+
+  planIds.sort((a, b) => a - b);
+  return planIds;
 }
 
 export async function handleSyncCommand(
   planIdArg: string | undefined,
   options: SyncCommandOptions,
-  command: Command
+  _command: Command
 ): Promise<void> {
-  if (planIdArg && options.plan) {
-    throw new Error('Positional <planId> cannot be used together with --plan');
-  }
-  if (options.plan && options.prune) {
-    throw new Error('--prune cannot be used together with --plan');
-  }
+  const repository = await getRepositoryIdentity();
+  const context = await resolveProjectContext(repository.gitRoot, repository);
 
   if (planIdArg) {
-    if (options.prune) {
-      throw new Error('--prune cannot be used together with positional <planId>');
-    }
-    if (options.dir) {
-      throw new Error('--dir cannot be used together with positional <planId>');
-    }
-    if (options.force) {
-      throw new Error(
-        '--force is only supported for tasks-directory sync, not positional <planId>'
-      );
-    }
-    if (options.verbose) {
-      throw new Error(
-        '--verbose is only supported for tasks-directory sync, not positional <planId>'
-      );
-    }
-
     const planId = parsePlanId(planIdArg);
-    const repository = await getRepositoryIdentity();
-    const context = await resolveProjectContext(repository.gitRoot, repository);
-    await syncMaterializedPlan(planId, repository.gitRoot, { context });
+    if (options.verbose) {
+      log(`Syncing materialized plan ${planId}`);
+    }
+    await syncMaterializedPlan(planId, repository.gitRoot, { context, force: options.force });
     log(`Synced materialized plan ${planId}.`);
     return;
   }
 
-  const globalOpts = command.parent?.opts?.() ?? {};
-  const config = await loadEffectiveConfig(globalOpts.config);
-  const tasksDir = options.dir ? path.resolve(options.dir) : await resolveTasksDir(config);
+  const planIds = await getMaterializedPlanIds(repository.gitRoot);
+  let synced = 0;
+  let errors = 0;
 
-  const repository = await getRepositoryIdentity();
-  const db = getDatabase();
-  const project = getOrCreateProject(db, repository.repositoryId, {
-    remoteUrl: repository.remoteUrl,
-    lastGitRoot: repository.gitRoot,
-  });
+  for (const planId of planIds) {
+    const planFile = getMaterializedPlanPath(repository.gitRoot, planId);
+    if (options.verbose) {
+      log(`Syncing ${planFile}`);
+    }
 
-  if (options.plan) {
-    const planFile = await resolvePlanFileForSync(options.plan, tasksDir);
-    const plan = await readPlanFile(planFile);
-    await syncPlanToDb(plan, planFile, {
-      config,
-      tasksDir,
-      force: options.force === true,
-    });
-    await syncMissingReferencedPlans(plan, tasksDir, {
-      force: options.force === true,
-      config,
-    });
-    log(`Synced plan ${plan.id} (${path.basename(planFile)}).`);
-    return;
+    try {
+      await syncMaterializedPlan(planId, repository.gitRoot, { context, force: options.force });
+      synced += 1;
+    } catch (error) {
+      errors += 1;
+      warn(`Failed to sync ${planFile}: ${error as Error}`);
+    }
   }
 
-  const result = await syncAllPlansToDb(project.id, tasksDir, {
-    prune: options.prune === true,
-    force: options.force === true,
-    verbose: options.verbose === true,
-  });
+  const errorSummary = errors > 0 ? ` (${errors} ${pluralize(errors, 'error')})` : '';
+  log(`Synced ${synced} ${pluralize(synced, 'materialized plan')}${errorSummary}.`);
 
-  log(
-    `Synced ${result.synced} ${pluralize(result.synced, 'plan')}. ` +
-      `Pruned ${result.pruned} ${pluralize(result.pruned, 'plan')}. ` +
-      `${result.errors} ${pluralize(result.errors, 'error')}.`
-  );
+  if (errors > 0) {
+    throw new Error(`Failed to sync ${errors} ${pluralize(errors, 'materialized plan')}`);
+  }
 }

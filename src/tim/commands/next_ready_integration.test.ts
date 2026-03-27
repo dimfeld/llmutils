@@ -5,7 +5,6 @@ import * as os from 'node:os';
 import yaml from 'yaml';
 import { handleGenerateCommand } from './generate.js';
 import { handleAgentCommand } from './agent/agent.js';
-import { clearPlanCache } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { ModuleMocker } from '../../testing.js';
 
@@ -27,7 +26,6 @@ describe('--next-ready CLI flag integration tests', () => {
     warnSpy.mockClear();
 
     // Clear plan cache
-    clearPlanCache();
 
     // Create temporary directory
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-next-ready-test-'));

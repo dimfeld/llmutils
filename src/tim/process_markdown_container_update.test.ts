@@ -10,17 +10,12 @@ import type { TimConfig } from './configSchema.js';
 describe('extractMarkdownToYaml container normalization', () => {
   let tempDir: string;
   let tasksDir: string;
-  const testConfig: TimConfig = {
-    paths: {
-      tasks: '',
-    },
-  };
+  const testConfig: TimConfig = {};
 
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-container-update-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
-    testConfig.paths.tasks = tasksDir;
   });
 
   afterEach(async () => {

@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { ModuleMocker } from '../../../testing.js';
-import { clearPlanCache, readPlanFile, writePlanFile } from '../../plans.js';
+import { readPlanFile, writePlanFile } from '../../plans.js';
 import type { PlanSchema } from '../../planSchema.js';
 
 describe('executeStubPlan', () => {
@@ -18,7 +18,6 @@ describe('executeStubPlan', () => {
 
   beforeEach(async () => {
     moduleMocker = new ModuleMocker(import.meta);
-    clearPlanCache();
     handleReviewCommandSpy.mockClear();
     executorExecuteSpy.mockClear();
     checkAndMarkParentDoneSpy.mockClear();
@@ -72,7 +71,6 @@ describe('executeStubPlan', () => {
 
   afterEach(async () => {
     moduleMocker.clear();
-    clearPlanCache();
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 

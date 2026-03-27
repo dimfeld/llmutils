@@ -14,7 +14,6 @@ Commands for viewing plan status and marking tasks/plans as complete.
 
 ```bash
 tim show 123                    # Show plan by ID
-tim show tasks/feature.yml      # Show plan by file path
 tim show 123 --short            # Brief summary
 tim show 123 --full             # Full details
 tim show --next                 # Next ready plan

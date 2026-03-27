@@ -9,13 +9,7 @@ import { getAssignment } from '../db/assignment.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { getOrCreateProject } from '../db/project.js';
 import { recordWorkspace } from '../db/workspace.js';
-import {
-  clearPlanCache,
-  readPlanFile,
-  resolvePlanFromDb,
-  writePlanFile,
-  writePlanToDb,
-} from '../plans.js';
+import { readPlanFile, resolvePlanFromDb, writePlanFile, writePlanToDb } from '../plans.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -58,8 +52,6 @@ describe('handleReleaseCommand', () => {
   }
 
   beforeEach(async () => {
-    clearPlanCache();
-
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-release-test-'));
     repoDir = path.join(tempRoot, 'repo');
     tasksDir = path.join(repoDir, 'tasks');
@@ -143,7 +135,6 @@ describe('handleReleaseCommand', () => {
 
   afterEach(async () => {
     moduleMocker.clear();
-    clearPlanCache();
     closeDatabaseForTesting();
     if (originalEnv.XDG_CONFIG_HOME === undefined) {
       delete process.env.XDG_CONFIG_HOME;

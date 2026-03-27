@@ -2,13 +2,13 @@ import * as path from 'node:path';
 import { warn } from '../../logging.js';
 import { removeAssignment } from './assignment.js';
 import { getDatabase } from './database.js';
-import { deletePlan, getPlansNotInSet, upsertPlan } from './plan.js';
+import { deletePlan, getPlansByProject, upsertPlan } from './plan.js';
 import { getOrCreateProject } from './project.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { resolveTasksDir, type TimConfig } from '../configSchema.js';
+import type { TimConfig } from '../configSchema.js';
 import { statusSchema, type PlanSchemaInput, type PlanSchema } from '../planSchema.js';
-import { readAllPlans, readPlanFile } from '../plans.js';
+import { readPlanFile } from '../plans.js';
 
 type PlanReferences = {
   references?: Record<string, string>;
@@ -17,14 +17,12 @@ type PlanReferences = {
 interface PlanSyncContext {
   projectId: number;
   repositoryId: string;
-  tasksDir: string;
 }
 
 interface PlanSyncOptions {
   config?: TimConfig;
   idToUuid?: Map<number, string>;
   baseDir?: string;
-  tasksDir?: string;
   cwdForIdentity?: string;
   force?: boolean;
   throwOnError?: boolean;
@@ -103,8 +101,9 @@ async function resolvePlanSyncContext(options: PlanSyncOptions = {}): Promise<Pl
     const repository = await getRepositoryIdentity({
       cwd: identityCwd,
     });
-    const config = options.config ?? (await loadEffectiveConfig(undefined, { cwd: contextCwd }));
-    const tasksDir = await resolveTasksDir(config, contextCwd);
+    if (!options.config) {
+      await loadEffectiveConfig(undefined, { cwd: contextCwd });
+    }
 
     const existingContext = cachedContextsByGitRoot.get(repository.gitRoot);
     if (existingContext) {
@@ -121,7 +120,6 @@ async function resolvePlanSyncContext(options: PlanSyncOptions = {}): Promise<Pl
     const context: PlanSyncContext = {
       projectId: project.id,
       repositoryId: repository.repositoryId,
-      tasksDir,
     };
     cachedContextsByGitRoot.set(repository.gitRoot, context);
     requestKeyToGitRoot.set(requestKey, repository.gitRoot);
@@ -139,8 +137,7 @@ async function resolvePlanSyncContext(options: PlanSyncOptions = {}): Promise<Pl
 async function resolveIdToUuidMap(
   plan: PlanSchemaInput,
   context: PlanSyncContext,
-  providedMap?: Map<number, string>,
-  tasksDirOverride?: string
+  providedMap?: Map<number, string>
 ): Promise<Map<number, string> | undefined> {
   if (providedMap) {
     return providedMap;
@@ -151,8 +148,8 @@ async function resolveIdToUuidMap(
     return undefined;
   }
 
-  const allPlans = await readAllPlans(tasksDirOverride ?? context.tasksDir);
-  return allPlans.idToUuid;
+  const db = getDatabase();
+  return new Map(getPlansByProject(db, context.projectId).map((row) => [row.plan_id, row.uuid]));
 }
 
 export function toPlanUpsertInput(
@@ -255,8 +252,7 @@ export async function syncPlanToDb(
 
   try {
     const context = await resolvePlanSyncContext(options);
-    const tasksDirOverride = options.tasksDir ?? context.tasksDir;
-    const idToUuid = await resolveIdToUuidMap(plan, context, options.idToUuid, tasksDirOverride);
+    const idToUuid = await resolveIdToUuidMap(plan, context, options.idToUuid);
     const db = getDatabase();
     upsertPlan(db, context.projectId, {
       ...toPlanUpsertInput(plan, filePath, idToUuid),
@@ -299,114 +295,4 @@ export async function removePlanFromDb(
       }`
     );
   }
-}
-
-export async function syncAllPlansToDb(
-  projectId: number,
-  tasksDir: string,
-  options: { prune?: boolean; force?: boolean; verbose?: boolean } = {}
-): Promise<{ synced: number; pruned: number; errors: number }> {
-  const db = getDatabase();
-  const allPlans = await readAllPlans(tasksDir, false);
-  let synced = 0;
-  let errors = 0;
-  if (allPlans.erroredFiles.length > 0) {
-    errors += allPlans.erroredFiles.length;
-    if (options.verbose) {
-      for (const erroredFile of allPlans.erroredFiles) {
-        warn(`Failed to parse plan file during sync: ${erroredFile}`);
-      }
-    }
-  }
-  const plansToSync = new Map<string, PlanSchemaInput & { filename: string }>();
-  const processedFilePaths = new Set<string>();
-
-  for (const plan of allPlans.plans.values()) {
-    processedFilePaths.add(plan.filename);
-    if (plan.uuid) {
-      plansToSync.set(plan.uuid, plan);
-    }
-  }
-
-  for (const duplicatePaths of Object.values(allPlans.duplicates)) {
-    for (const duplicatePath of duplicatePaths) {
-      if (processedFilePaths.has(duplicatePath)) {
-        continue;
-      }
-
-      try {
-        const duplicatePlan = await readPlanFile(duplicatePath);
-        processedFilePaths.add(duplicatePath);
-        if (duplicatePlan.uuid) {
-          plansToSync.set(duplicatePlan.uuid, {
-            ...duplicatePlan,
-            filename: duplicatePath,
-          });
-        }
-      } catch (error) {
-        errors += 1;
-        warn(
-          `Failed to read duplicate plan file ${duplicatePath} during full sync: ${
-            error instanceof Error ? error.message : String(error)
-          }`
-        );
-      }
-    }
-  }
-
-  for (const plan of plansToSync.values()) {
-    if (!plan.uuid) {
-      continue;
-    }
-
-    try {
-      upsertPlan(db, projectId, {
-        ...toPlanUpsertInput(plan, plan.filename, allPlans.idToUuid),
-        forceOverwrite: options.force === true,
-      });
-      synced += 1;
-    } catch (error) {
-      errors += 1;
-      const label = plan.id ?? plan.uuid;
-      warn(
-        `Failed to sync plan ${label} during full sync: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
-    }
-  }
-
-  let pruned = 0;
-  if (options.prune) {
-    if (allPlans.erroredFiles.length > 0) {
-      return { synced, pruned, errors };
-    }
-
-    const uuidSet = new Set<string>(allPlans.uuidToId.keys());
-    const removeInTransaction = db.transaction(
-      (nextProjectId: number, nextPlanUuid: string): boolean => {
-        const didDeletePlan = deletePlan(db, nextPlanUuid);
-        removeAssignment(db, nextProjectId, nextPlanUuid);
-        return didDeletePlan;
-      }
-    );
-
-    const plansToDelete = getPlansNotInSet(db, projectId, uuidSet);
-    for (const plan of plansToDelete) {
-      try {
-        if (removeInTransaction.immediate(projectId, plan.uuid)) {
-          pruned += 1;
-        }
-      } catch (error) {
-        errors += 1;
-        warn(
-          `Failed to prune plan ${plan.uuid}: ${
-            error instanceof Error ? error.message : String(error)
-          }`
-        );
-      }
-    }
-  }
-
-  return { synced, pruned, errors };
 }

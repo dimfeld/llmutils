@@ -5,7 +5,7 @@ import * as path from 'node:path';
 
 import { ModuleMocker } from '../../testing.js';
 import { closeDatabaseForTesting } from '../db/database.js';
-import { clearPlanCache, writePlanFile } from '../plans.js';
+import { writePlanFile } from '../plans.js';
 import type { TimConfig } from '../configSchema.js';
 import type { WorkspaceCreationResult } from '../workspace/workspace_manager.js';
 
@@ -42,8 +42,6 @@ describe('handleWorkspaceAddCommand - plan claiming', () => {
   const repositoryRemoteUrl = 'https://example.com/test-repo.git';
 
   beforeEach(async () => {
-    clearPlanCache();
-
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-workspace-claim-test-'));
     repoDir = path.join(tempRoot, 'repo');
     tasksDir = path.join(repoDir, 'tasks');
@@ -188,7 +186,6 @@ describe('handleWorkspaceAddCommand - plan claiming', () => {
 
   afterEach(async () => {
     moduleMocker.clear();
-    clearPlanCache();
     closeDatabaseForTesting();
 
     if (originalEnv.XDG_CONFIG_HOME === undefined) {

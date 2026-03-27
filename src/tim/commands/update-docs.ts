@@ -6,7 +6,6 @@ import { getGitRoot } from '../../common/git.js';
 import { boldMarkdownHeaders, log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import type { TimConfig } from '../configSchema.js';
-import { resolveTasksDir } from '../configSchema.js';
 import {
   buildExecutorAndLog,
   DEFAULT_EXECUTOR,
@@ -171,17 +170,7 @@ export async function runUpdateDocs(
     effectiveConfig = configOrOptions as TimConfig;
   }
   const baseDir = resolvedBaseDir || (await getGitRoot()) || process.cwd();
-
-  // Build exclude list from config and automatically exclude tasks directory
   const excludePatterns = [...(effectiveConfig.updateDocs?.exclude ?? [])];
-
-  // Add tasks directory to exclude list if not using external storage
-  if (!effectiveConfig.isUsingExternalStorage) {
-    const tasksDir = await resolveTasksDir(effectiveConfig);
-    // Make the path relative to baseDir for clearer messaging
-    const relativeTasksDir = path.relative(baseDir, tasksDir);
-    excludePatterns.push(`Plan files in ${relativeTasksDir || tasksDir}`);
-  }
 
   // Build the prompt
   const prompt = buildUpdateDocsPrompt(planData, {

@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import { handleAddCommand } from './add.js';
-import { clearPlanCache, resolvePlanFromDb } from '../plans.js';
+import { resolvePlanFromDb } from '../plans.js';
 
 describe('tim add with details', () => {
   let tempDir: string;
@@ -28,8 +28,6 @@ describe('tim add with details', () => {
         },
       })
     );
-
-    clearPlanCache();
   });
 
   afterEach(async () => {

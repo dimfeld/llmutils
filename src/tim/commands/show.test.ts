@@ -4,7 +4,6 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import stripAnsi from 'strip-ansi';
 import { handleShowCommand, mcpGetPlan } from './show.js';
-import { clearPlanCache } from '../plans.js';
 import { ModuleMocker } from '../../testing.js';
 import type { GenerateModeRegistrationContext } from '../mcp/generate_mode.js';
 
@@ -39,7 +38,6 @@ describe('handleShowCommand', () => {
     warnSpy.mockClear();
 
     // Clear plan cache
-    clearPlanCache();
 
     // Create temporary directory
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-show-test-'));
@@ -377,7 +375,6 @@ describe('handleShowCommand', () => {
 
   test('finds next ready plan with --next flag', async () => {
     // Clear the plan cache before creating plans
-    clearPlanCache();
 
     // Create a simple pending plan with no dependencies
     const plan = {
@@ -902,7 +899,6 @@ describe('inverse relationships', () => {
     logSpy.mockClear();
     errorSpy.mockClear();
     warnSpy.mockClear();
-    clearPlanCache();
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-inverse-test-'));
     repoDir = path.join(tempDir, 'repo');

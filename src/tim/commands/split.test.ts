@@ -3,13 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import yaml from 'yaml';
-import {
-  clearPlanCache,
-  getMaxNumericPlanId,
-  readPlanFile,
-  resolvePlanFromDb,
-  writePlanFile,
-} from '../plans.js';
+import { getMaxNumericPlanId, readPlanFile, resolvePlanFromDb, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { ModuleMocker } from '../../testing.js';
 import { handleSplitCommand, parseTaskSpecifier } from './split.js';
@@ -25,8 +19,6 @@ describe('tim split - manual', () => {
   beforeEach(async () => {
     testDir = await mkdtemp(join(tmpdir(), 'tim-split-test-'));
     tasksDir = testDir;
-
-    clearPlanCache();
     closeDatabaseForTesting();
     clearPlanSyncContext();
     await Bun.write(join(testDir, '.tim.yml'), 'paths:\n  tasks: .\n');

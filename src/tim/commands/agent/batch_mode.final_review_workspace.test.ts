@@ -4,7 +4,6 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import yaml from 'yaml';
 import { ModuleMocker } from '../../../testing.js';
-import { clearPlanCache } from '../../plans.js';
 
 describe('executeBatchMode final review workspace', () => {
   let moduleMocker: ModuleMocker;
@@ -16,7 +15,6 @@ describe('executeBatchMode final review workspace', () => {
 
   beforeEach(async () => {
     moduleMocker = new ModuleMocker(import.meta);
-    clearPlanCache();
     handleReviewCommandSpy.mockClear();
     executorExecuteSpy.mockClear();
 
@@ -82,13 +80,18 @@ describe('executeBatchMode final review workspace', () => {
         const content = await fs.readFile(filePath, 'utf-8');
         return yaml.parse(content);
       }),
-      setPlanStatus: mock(async (filePath: string, status: string) => {
-        const content = await fs.readFile(filePath, 'utf-8');
-        const data = yaml.parse(content);
-        data.status = status;
-        data.updatedAt = new Date().toISOString();
-        await fs.writeFile(filePath, yaml.stringify(data));
-      }),
+      setPlanStatusById: mock(
+        async (_planId: number, status: string, _repoRoot: string, filePath?: string | null) => {
+          if (!filePath) {
+            throw new Error('Expected file path');
+          }
+          const content = await fs.readFile(filePath, 'utf-8');
+          const data = yaml.parse(content);
+          data.status = status;
+          data.updatedAt = new Date().toISOString();
+          await fs.writeFile(filePath, yaml.stringify(data));
+        }
+      ),
       writePlanFile: mock(async (filePath: string, data: any) => {
         await fs.writeFile(filePath, yaml.stringify(data));
       }),
@@ -130,7 +133,6 @@ describe('executeBatchMode final review workspace', () => {
 
   afterEach(async () => {
     moduleMocker.clear();
-    clearPlanCache();
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 

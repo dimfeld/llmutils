@@ -1,12 +1,8 @@
 import { stat } from 'node:fs/promises';
 import * as path from 'node:path';
-import { Glob } from 'bun';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import * as yaml from 'yaml';
 import { debugLog, warn } from '../logging.js';
-import { getGitRoot, getTrunkBranch, getUsingJj } from '../common/git.js';
-import { loadEffectiveConfig } from './configLoader.js';
-import { resolveTasksDir } from './configSchema.js';
 import {
   deletePlan,
   getPlanByPlanId,
@@ -20,7 +16,7 @@ import {
 import { getDatabase } from './db/database.js';
 import { toPlanUpsertInput } from './db/plan_sync.js';
 import { getOrCreateProject } from './db/project.js';
-import { resolvePlanPathContext } from './path_resolver.js';
+import { resolveProjectContext } from './plan_materialize.js';
 import { getMaterializedPlanPath } from './plan_materialize.js';
 import type { ProjectContext } from './plan_materialize.js';
 import {
@@ -28,12 +24,12 @@ import {
   phaseSchema,
   type PlanSchema,
   type PlanSchemaInput,
+  type PlanWithLegacyMetadata,
 } from './planSchema.js';
 import { planRowToSchemaInput } from './plans_db.js';
 import { getRepositoryIdentity } from './assignments/workspace_identifier.js';
 import { createModel } from '../common/model_factory.js';
 import { generateText } from 'ai';
-import { $ } from 'bun';
 import { ensureReferences } from './utils/references.js';
 
 export class NoFrontmatterError extends Error {
@@ -70,132 +66,6 @@ export type PlanSummary = {
     details: string;
   };
 };
-
-let cachedPlans = new Map<
-  string,
-  {
-    plans: Map<number, PlanSchema & { filename: string }>;
-    maxNumericId: number;
-    duplicates: Record<number, string[]>;
-    uuidToId: Map<string, number>;
-    idToUuid: Map<number, string>;
-    erroredFiles: string[];
-  }
->();
-
-/**
- * Clears the plan cache. This is primarily for testing purposes.
- */
-export function clearPlanCache(): void {
-  cachedPlans.clear();
-}
-
-export async function readAllPlans(
-  directory: string,
-  readCache = true
-): Promise<{
-  plans: Map<number, PlanSchema & { filename: string }>;
-  maxNumericId: number;
-  duplicates: Record<number, string[]>;
-  uuidToId: Map<string, number>;
-  idToUuid: Map<number, string>;
-  erroredFiles: string[];
-}> {
-  let existing = readCache ? cachedPlans.get(directory) : undefined;
-  if (existing) {
-    return existing;
-  }
-
-  const plans = new Map<number, PlanSchema & { filename: string }>();
-  const promises: Promise<void>[] = [];
-  let maxNumericId = 0;
-  const seenIds = new Map<number, string[]>();
-  const uuidToId = new Map<string, number>();
-  const idToUuid = new Map<number, string>();
-  const erroredFiles: string[] = [];
-
-  debugLog(`Starting to scan directory for plan files: ${directory}`);
-
-  async function readFile(fullPath: string) {
-    debugLog(`Reading plan file: ${fullPath}`);
-    try {
-      const plan = await readPlanFile(fullPath);
-
-      // Only add plans that have an ID. Legacy plan files would not.
-      if (!plan.id) {
-        return;
-      }
-
-      // Skip plans marked as not_tim
-      if (plan.not_tim) {
-        debugLog(`Skipping plan marked with not_tim: ${fullPath}`);
-        return;
-      }
-
-      debugLog(`Successfully parsed plan with ID: ${plan.id} from ${fullPath}`);
-
-      // Determine if the ID is numeric
-      let idKey = plan.id;
-      let summaryId = plan.id;
-      if (plan.id > maxNumericId) {
-        maxNumericId = plan.id;
-      }
-
-      // Track all files for each ID
-      if (seenIds.has(idKey)) {
-        seenIds.get(idKey)!.push(fullPath);
-      } else {
-        seenIds.set(idKey, [fullPath]);
-      }
-
-      const planWithFilename = {
-        ...plan,
-        id: summaryId, // Use the converted ID (numeric if it was a numeric string)
-        filename: fullPath,
-      };
-
-      plans.set(idKey, planWithFilename);
-
-      // Build UUID maps if plan has a UUID
-      if (plan.uuid) {
-        uuidToId.set(plan.uuid, idKey);
-        idToUuid.set(idKey, plan.uuid);
-      }
-    } catch (error) {
-      if (error instanceof NoFrontmatterError) {
-        debugLog(`Skipping file without frontmatter: ${fullPath}`);
-        return;
-      }
-      erroredFiles.push(fullPath);
-      if ((error as Error).name !== 'PlanFileError') {
-        // Log detailed error information
-        console.error(`Failed to read plan from ${fullPath}:`, error);
-      }
-    }
-  }
-
-  const glob = new Glob('**/*.{plan.md,yml,yaml}');
-  for await (const entry of glob.scan(directory)) {
-    const fullPath = join(directory, entry);
-    promises.push(readFile(fullPath));
-  }
-
-  // await scanDirectory(directory);
-  await Promise.all(promises);
-  debugLog(`Finished scanning directory. Found ${plans.size} plans with valid IDs`);
-
-  // Build duplicates object from seenIds - only include IDs that have more than one file
-  const duplicates: Record<number, string[]> = {};
-  for (const [id, files] of seenIds.entries()) {
-    if (files.length > 1) {
-      duplicates[id] = files;
-    }
-  }
-
-  const retVal = { plans, maxNumericId, duplicates, uuidToId, idToUuid, erroredFiles };
-  cachedPlans.set(directory, retVal);
-  return retVal;
-}
 
 /**
  * Get all plans that depend on this plan (inverse of dependencies)
@@ -237,14 +107,14 @@ export function getDiscoveredPlans(
 }
 
 /**
- * Gets the maximum numeric plan ID from the tasks directory.
- * @param tasksDir - The directory containing plan files
+ * Gets the maximum numeric plan ID for the repository containing the provided directory.
+ * @param searchDir - A directory inside the target repository
  * @returns The maximum numeric ID found, or 0 if none exist
  */
-export async function getMaxNumericPlanId(tasksDir: string): Promise<number> {
-  clearPlanCache();
-  const { maxNumericId } = await readAllPlans(tasksDir);
-  return maxNumericId;
+export async function getMaxNumericPlanId(searchDir: string): Promise<number> {
+  const repository = await getRepositoryIdentity({ cwd: searchDir });
+  const context = await resolveProjectContext(repository.gitRoot, repository);
+  return context.maxNumericId;
 }
 
 export interface ResolvedPlanFromDb {
@@ -381,9 +251,9 @@ export async function resolvePlanFromDb(
     const filenameCandidates =
       row.filename && row.filename.length > 0
         ? [
+            path.join(repoRoot, '.tim', 'plans', row.filename),
             row.filename,
             path.join(repoRoot, row.filename),
-            path.join(repoRoot, 'tasks', row.filename),
           ].filter((candidate, index, all) => all.indexOf(candidate) === index)
         : [];
     for (const candidate of filenameCandidates) {
@@ -400,209 +270,11 @@ export async function resolvePlanFromDb(
   };
 }
 
-/**
- * Resolves a plan argument which can be either a file path or a plan ID.
- * If the argument is a file path that exists, returns the absolute path.
- * If the argument looks like a plan ID, searches for a matching plan in the tasks directory.
- *
- * @param planArg - The plan file path or plan ID
- * @param configPath - Optional path to tim config file
- * @returns The resolved absolute file path
- * @throws Error if the plan cannot be found
- */
-export async function resolvePlanFile(planArg: string, configPath?: string): Promise<string> {
-  // First, check if it's a file path that exists
-  try {
-    const absolutePath = resolve(planArg);
-    await stat(absolutePath);
-    return absolutePath;
-  } catch {
-    // Not a valid file path, continue to check if it's a plan ID
-  }
-
-  // Get the tasks directory configuration
-  const config = await loadEffectiveConfig(configPath);
-  const tasksDir = await resolveTasksDir(config);
-
-  // If it's just a filename (no path separators), check in the tasks directory
-  if (!planArg.includes('/') && !planArg.includes('\\') && planArg.includes('.')) {
-    const potentialPath = path.join(tasksDir, planArg);
-    try {
-      await stat(potentialPath);
-      return potentialPath;
-    } catch {
-      // File doesn't exist in tasks directory
-    }
-  }
-
-  // If no extension provided, try with .plan.md extension first (default), then .yml
-  if (!planArg.includes('/') && !planArg.includes('\\') && !planArg.includes('.')) {
-    // Try with .plan.md extension first
-    const planMdPath = path.join(tasksDir, `${planArg}.plan.md`);
-    try {
-      await stat(planMdPath);
-      return planMdPath;
-    } catch {
-      // Try with .yml extension
-      const ymlPath = path.join(tasksDir, `${planArg}.yml`);
-      try {
-        await stat(ymlPath);
-        return ymlPath;
-      } catch {
-        // Neither exists, continue to ID lookup
-      }
-    }
-  }
-
-  // If the argument contains path separators, it's likely a file path
-  if (planArg.includes('/') || planArg.includes('\\')) {
-    // It was meant to be a file path but doesn't exist
-    throw new Error(`Plan file not found: ${planArg}`);
-  }
-
-  // Try to parse planArg as a number
-  const numericPlanArg = Number(planArg);
-
-  // Read all plans and search by ID
-  const { plans, duplicates } = await readAllPlans(tasksDir);
-
-  // Check if the requested plan ID is a duplicate
-  if (duplicates[numericPlanArg]) {
-    throw new Error(
-      `Plan ID ${numericPlanArg} is duplicated in multiple files. Please run 'tim renumber' to fix this issue.`
-    );
-  }
-
-  // If we successfully parsed as a number, try numeric lookup first
-  if (!isNaN(numericPlanArg)) {
-    const matchingPlan = plans.get(numericPlanArg);
-    if (matchingPlan) {
-      return matchingPlan.filename;
-    }
-  }
-
-  throw new Error(`No plan found with ID or file path: ${planArg}`);
-}
-
 export type PlanFilterOptions = {
   includePending?: boolean;
   includeInProgress?: boolean;
 };
 
-/**
- * Finds the next plan based on filter options.
- * By default finds pending plans only (for backward compatibility).
- *
- * A plan is ready if:
- * - Its status matches the filter options
- * - All its dependencies have status 'done'
- *
- * Plans are prioritized by:
- * 1. Status (in_progress > pending) when both are included
- * 2. Priority (urgent > high > medium > low > undefined)
- * 3. ID (alphabetically)
- *
- * @param directory - The directory to search for plans
- * @param options - Filter options for status types to include
- * @returns The highest priority plan matching criteria, or null if none found
- */
-export async function findNextPlan(
-  directory: string,
-  options: PlanFilterOptions = { includePending: true }
-): Promise<(PlanSchema & { filename: string }) | null> {
-  const { plans } = await readAllPlans(directory);
-
-  // Convert to array and filter based on options
-  let candidates = Array.from(plans.values()).filter((plan) => {
-    const status = plan.status || 'pending';
-
-    if (options.includeInProgress && status === 'in_progress') {
-      return true;
-    }
-    if (options.includePending && status === 'pending') {
-      return true;
-    }
-    return false;
-  });
-
-  // Check dependencies for each candidate
-  const readyCandidates = candidates.filter((plan) => {
-    const status = plan.status || 'pending';
-
-    if (plan.priority === 'maybe') {
-      return false;
-    }
-
-    // In-progress plans are always ready
-    if (status === 'in_progress') {
-      return true;
-    }
-
-    // For pending plans, check dependencies
-    if (!plan.dependencies || plan.dependencies.length === 0) {
-      // No dependencies, so it's ready
-      return true;
-    }
-
-    // Check if all dependencies are done
-    return plan.dependencies.every((depId) => {
-      // Try to get the dependency plan by string ID first
-      let depPlan = plans.get(depId);
-
-      // If not found and the dependency ID is a numeric string, try as a number
-      if (!depPlan && typeof depId === 'string' && /^\d+$/.test(depId)) {
-        depPlan = plans.get(parseInt(depId, 10));
-      }
-
-      return depPlan && depPlan.status === 'done';
-    });
-  });
-
-  if (readyCandidates.length === 0) {
-    return null;
-  }
-
-  // Sort by status first (if both types included), then priority, then by ID
-  readyCandidates.sort((a, b) => {
-    // Status order - in_progress comes first (only when both types are included)
-    if (options.includeInProgress && options.includePending) {
-      const aStatus = a.status || 'pending';
-      const bStatus = b.status || 'pending';
-
-      if (aStatus !== bStatus) {
-        // in_progress should come before pending
-        if (aStatus === 'in_progress') return -1;
-        if (bStatus === 'in_progress') return 1;
-      }
-    }
-
-    // Define priority order - higher number means higher priority
-    const priorityOrder: Record<string, number> = { urgent: 4, high: 3, medium: 2, low: 1 };
-    const aPriority = a.priority ? priorityOrder[a.priority] || 0 : 0;
-    const bPriority = b.priority ? priorityOrder[b.priority] || 0 : 0;
-
-    // Sort by priority descending (highest first)
-    if (aPriority !== bPriority) {
-      return bPriority - aPriority;
-    }
-
-    // If priorities are the same, sort by ID ascending
-    return a.id - b.id;
-  });
-
-  return readyCandidates[0];
-}
-
-/**
- * Collects all dependencies of a plan in topological order (dependencies first).
- * This ensures that when executing plans, dependencies are completed before their dependents.
- *
- * @param planId - The ID of the plan to collect dependencies for
- * @param allPlans - Map of all available plans
- * @param visited - Set of already visited plan IDs (to detect cycles)
- * @returns Array of plan summaries in execution order
- * @throws Error if a circular dependency is detected
- */
 /**
  * Checks if a plan is ready to be executed.
  * A plan is ready if:
@@ -708,7 +380,7 @@ export async function collectDependenciesInOrder(
  * function generates one and persists it via `writePlanFile()`, which also
  * updates the DB-first plan store.
  */
-export async function readPlanFile(filePath: string): Promise<PlanSchema> {
+export async function readPlanFile(filePath: string): Promise<PlanWithLegacyMetadata> {
   const absolutePath = resolve(filePath);
   const content = await Bun.file(absolutePath).text();
 
@@ -867,6 +539,14 @@ function cleanPlanForYaml(plan: PlanSchema): {
 
   delete cleanedPlan.container;
   delete cleanedPlan.progressNotes;
+  delete cleanedPlan.generatedBy;
+  delete cleanedPlan.rmfilter;
+  delete cleanedPlan.promptsGeneratedAt;
+  delete cleanedPlan.compactedAt;
+  delete cleanedPlan.statusDescription;
+  delete cleanedPlan.references;
+  delete cleanedPlan.project;
+  delete cleanedPlan.not_tim;
 
   if (cleanedPlan.epic === false) {
     delete cleanedPlan.epic;
@@ -893,14 +573,6 @@ function cleanPlanForYaml(plan: PlanSchema): {
     if (Array.isArray(cleanedPlan[field]) && (cleanedPlan[field] as unknown[]).length === 0) {
       delete cleanedPlan[field];
     }
-  }
-
-  if (
-    cleanedPlan.references &&
-    typeof cleanedPlan.references === 'object' &&
-    Object.keys(cleanedPlan.references).length === 0
-  ) {
-    delete cleanedPlan.references;
   }
 
   return { cleanedPlan, details };
@@ -1170,257 +842,6 @@ Respond with ONLY the filename, nothing else.`;
   }
 }
 
-/**
- * Get all issue URLs that have already been imported by reading existing plan files
- *
- * @param tasksDir - Directory containing plan files
- * @returns Set of issue URLs that are already imported
- */
-export async function getImportedIssueUrls(tasksDir: string): Promise<Set<string>> {
-  const importedUrls = new Set<string>();
-
-  try {
-    const { plans } = await readAllPlans(tasksDir);
-
-    for (const planSummary of plans.values()) {
-      try {
-        const planFile = await readPlanFile(planSummary.filename);
-        if (planFile.issue && Array.isArray(planFile.issue)) {
-          planFile.issue.forEach((url) => importedUrls.add(url));
-        }
-      } catch (err) {
-        // Skip files that can't be read
-        continue;
-      }
-    }
-  } catch (err) {
-    // If we can't read plans, just return empty set
-  }
-
-  return importedUrls;
-}
-
 export function isTaskDone(task: PlanSchema['tasks'][0]): boolean {
   return task.done;
-}
-
-/**
- * Gets plan files that exist only on the current branch (not on the trunk branch).
- * This is useful for finding plans created specifically for the current work.
- *
- * @param gitRoot - The git repository root
- * @param tasksDir - Directory containing plan files
- * @returns Array of plan file paths that are new on the current branch
- */
-export async function getNewPlanFilesOnBranch(
-  gitRoot: string,
-  tasksDir: string
-): Promise<string[]> {
-  const trunkBranch = await getTrunkBranch(gitRoot);
-  const isJj = await getUsingJj(gitRoot);
-
-  let newFiles: string[] = [];
-
-  if (isJj) {
-    // Use jj to find new files
-    const from = `latest(ancestors(${trunkBranch})&ancestors(@))`;
-    const output = await $`jj diff --from ${from} --types`.cwd(gitRoot).nothrow().text();
-
-    // Look for lines like "-F some/file.yml" which means file was added
-    const lines = output.split('\n');
-    for (const line of lines) {
-      if (line.startsWith('-F ')) {
-        const filePath = line.slice(3).trim();
-        if (filePath.match(/\.(plan\.md|yml|yaml)$/)) {
-          // Check if file is in tasks directory
-          const fullPath = path.join(gitRoot, filePath);
-          if (fullPath.startsWith(tasksDir)) {
-            newFiles.push(fullPath);
-          }
-        }
-      }
-    }
-  } else {
-    // Use git to find new files
-    const output = await $`git diff --name-status ${trunkBranch}`.cwd(gitRoot).nothrow().text();
-
-    // Look for lines like "A some/file.yml" which means file was added
-    const lines = output.split('\n');
-    for (const line of lines) {
-      if (line.startsWith('A\t')) {
-        const filePath = line.slice(2).trim();
-        if (filePath.match(/\.(plan\.md|yml|yaml)$/)) {
-          // Check if file is in tasks directory
-          const fullPath = path.join(gitRoot, filePath);
-          if (fullPath.startsWith(tasksDir)) {
-            newFiles.push(fullPath);
-          }
-        }
-      }
-    }
-  }
-
-  return newFiles;
-}
-
-/**
- * Gets plan files that have been modified on the current branch compared to trunk.
- * Returns only files that exist on both trunk and the current branch but have been changed.
- *
- * @param gitRoot - The root directory of the git/jj repository
- * @param tasksDir - The directory containing plan files
- * @returns Array of absolute paths to modified plan files
- */
-export async function getModifiedPlanFilesOnBranch(
-  gitRoot: string,
-  tasksDir: string
-): Promise<string[]> {
-  const trunkBranch = await getTrunkBranch(gitRoot);
-  const isJj = await getUsingJj(gitRoot);
-
-  let modifiedFiles: string[] = [];
-
-  if (isJj) {
-    // Use jj to find modified files
-    const from = `latest(ancestors(${trunkBranch})&ancestors(@))`;
-    const output = await $`jj diff --from ${from} --types`.cwd(gitRoot).nothrow().text();
-
-    // Look for lines like "FF some/file.yml" which means file was modified (exists before and after)
-    const lines = output.split('\n');
-    for (const line of lines) {
-      if (line.startsWith('FF ')) {
-        const filePath = line.slice(3).trim();
-        if (filePath.match(/\.(plan\.md|yml|yaml)$/)) {
-          // Check if file is in tasks directory
-          const fullPath = path.join(gitRoot, filePath);
-          if (fullPath.startsWith(tasksDir)) {
-            modifiedFiles.push(fullPath);
-          }
-        }
-      }
-    }
-  } else {
-    // Use git to find modified files
-    const output = await $`git diff --name-status ${trunkBranch}`.cwd(gitRoot).nothrow().text();
-
-    // Look for lines like "M some/file.yml" which means file was modified
-    const lines = output.split('\n');
-    for (const line of lines) {
-      if (line.startsWith('M\t')) {
-        const filePath = line.slice(2).trim();
-        if (filePath.match(/\.(plan\.md|yml|yaml)$/)) {
-          // Check if file is in tasks directory
-          const fullPath = path.join(gitRoot, filePath);
-          if (fullPath.startsWith(tasksDir)) {
-            modifiedFiles.push(fullPath);
-          }
-        }
-      }
-    }
-  }
-
-  return modifiedFiles;
-}
-
-/**
- * Finds plans that only exist on the current branch and selects the best candidate.
- * Plans are sorted by createdAt timestamp (oldest first), then by ID (lowest first).
- *
- * @param configPath - Optional path to tim config file
- * @returns The best plan candidate or null if none found
- */
-export async function findBranchSpecificPlan(
-  configPath?: string
-): Promise<(PlanSchema & { filename: string }) | null> {
-  const config = await loadEffectiveConfig(configPath);
-  const { gitRoot, tasksDir } = await resolvePlanPathContext(config);
-
-  // Get plan files that are new on this branch
-  const newPlanFiles = await getNewPlanFilesOnBranch(gitRoot, tasksDir);
-
-  if (newPlanFiles.length === 0) {
-    return null;
-  }
-
-  // Read and parse the plan files
-  const planCandidates: Array<PlanSchema & { filename: string }> = [];
-
-  for (const filePath of newPlanFiles) {
-    try {
-      const planData = await readPlanFile(filePath);
-      if (planData.id) {
-        planCandidates.push({
-          ...planData,
-          filename: filePath,
-        });
-      }
-    } catch (err) {
-      // Skip files that can't be parsed
-      debugLog(`Skipping unparseable plan file: ${filePath}`, err);
-    }
-  }
-
-  if (planCandidates.length === 0) {
-    return null;
-  }
-
-  // Sort by createdAt (oldest first), then by ID (lowest first)
-  planCandidates.sort((a, b) => {
-    // Compare by createdAt first if both have it
-    if (a.createdAt && b.createdAt) {
-      const aDate = new Date(a.createdAt);
-      const bDate = new Date(b.createdAt);
-      const dateComparison = aDate.getTime() - bDate.getTime();
-      if (dateComparison !== 0) {
-        return dateComparison;
-      }
-    } else if (a.createdAt && !b.createdAt) {
-      return -1; // Plans with createdAt come first
-    } else if (!a.createdAt && b.createdAt) {
-      return 1; // Plans with createdAt come first
-    }
-
-    // If createdAt is equal or both missing, compare by ID
-    return a.id - b.id;
-  });
-
-  return planCandidates[0];
-}
-
-/**
- * Finds a single plan that has been modified on the current branch.
- * Returns null if zero or more than one plan was modified.
- *
- * @param configPath - Optional path to tim config file
- * @returns The modified plan or null if zero or multiple plans were modified
- */
-export async function findSingleModifiedPlanOnBranch(
-  configPath?: string
-): Promise<(PlanSchema & { filename: string }) | null> {
-  const config = await loadEffectiveConfig(configPath);
-  const { gitRoot, tasksDir } = await resolvePlanPathContext(config);
-
-  // Get plan files that have been modified on this branch
-  const modifiedPlanFiles = await getModifiedPlanFilesOnBranch(gitRoot, tasksDir);
-
-  // Only proceed if exactly one plan was modified
-  if (modifiedPlanFiles.length !== 1) {
-    return null;
-  }
-
-  // Read and parse the single modified plan file
-  try {
-    const planData = await readPlanFile(modifiedPlanFiles[0]);
-    if (planData.id) {
-      return {
-        ...planData,
-        filename: modifiedPlanFiles[0],
-      };
-    }
-  } catch (err) {
-    // Skip file that can't be parsed
-    debugLog(`Skipping unparseable modified plan file: ${modifiedPlanFiles[0]}`, err);
-  }
-
-  return null;
 }

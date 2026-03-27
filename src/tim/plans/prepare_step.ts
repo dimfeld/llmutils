@@ -1,8 +1,10 @@
 import path from 'path';
-import { getGitRoot } from '../../common/git.js';
 import { findAdditionalDocs } from '../../common/additional_docs.js';
-import { resolveTasksDir, type TimConfig } from '../configSchema.js';
+import type { TimConfig } from '../configSchema.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { findSiblingPlans } from '../context_helpers.js';
+import { getLegacyAwareSearchDir, resolvePlanPathContext } from '../path_resolver.js';
+import { loadPlansFromDb } from '../plans_db.js';
 import { readPlanFile } from '../plans.js';
 import { findPendingTask } from './find_next.js';
 
@@ -46,18 +48,19 @@ export async function prepareNextStep(
   }
   const activeTask = result.task;
 
-  const gitRoot = await getGitRoot(baseDir);
+  const { gitRoot, repositoryId } = await getRepositoryIdentity({ cwd: baseDir });
+  const { configBaseDir } = await resolvePlanPathContext(config);
   let files: string[] = [];
 
   const promptParts: string[] = [];
 
   // Add current plan filename context
-  const root = await getGitRoot();
+  const root = gitRoot;
   const currentPlanFilename = path.relative(root, planFile);
   promptParts.push(`## Current Plan File: ${currentPlanFilename}\n`);
 
-  const tasksDir = await resolveTasksDir(config);
-  const { siblings, parent } = await findSiblingPlans(planData.id || 0, planData.parent, tasksDir);
+  const { plans } = loadPlansFromDb(getLegacyAwareSearchDir(gitRoot, configBaseDir), repositoryId);
+  const { siblings, parent } = findSiblingPlans(planData.id || 0, planData.parent, plans);
 
   let projectInfo = planData.project ?? parent;
   if (projectInfo?.goal) {

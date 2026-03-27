@@ -1,4 +1,3 @@
-import { resolveTasksDir } from '../configSchema.js';
 import { loadPlansFromDb } from '../plans_db.js';
 import { filterAndSortReadyPlans, formatReadyPlansAsJson } from '../ready_plans.js';
 import { normalizeTags } from '../utils/tags.js';
@@ -7,6 +6,7 @@ import type { ListReadyPlansArguments } from './schemas.js';
 import type { EnrichedReadyPlan } from '../ready_plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import { getLegacyAwareSearchDir } from '../path_resolver.js';
 
 type ReadyPlansResult = {
   count: number;
@@ -33,9 +33,15 @@ export async function listReadyPlansTool(
   context: ToolContext
 ): Promise<ToolResult<ReadyPlansResult>> {
   try {
-    const tasksDir = await resolveTasksDir(context.config);
     const repository = await getRepositoryIdentity({ cwd: context.gitRoot });
-    const plans = loadPlansFromDb(tasksDir, repository.repositoryId).plans;
+    const configBaseDir =
+      context.config.isUsingExternalStorage && context.config.externalRepositoryConfigDir
+        ? context.config.externalRepositoryConfigDir
+        : context.gitRoot;
+    const plans = loadPlansFromDb(
+      getLegacyAwareSearchDir(context.gitRoot, configBaseDir),
+      repository.repositoryId
+    ).plans;
 
     let readyPlans = filterAndSortReadyPlans(plans, {
       pendingOnly: args.pendingOnly ?? false,
@@ -64,9 +70,13 @@ export async function listReadyPlansTool(
       gitRoot: context.gitRoot,
     });
     const parsedOutput = JSON.parse(jsonOutput) as ReadyPlansResult;
+    for (const plan of parsedOutput.plans) {
+      plan.filename = '';
+    }
+    const redactedJsonOutput = JSON.stringify(parsedOutput, null, 2);
 
     return {
-      text: jsonOutput,
+      text: redactedJsonOutput,
       data: parsedOutput,
       message: `Found ${parsedOutput.count} ready plan${parsedOutput.count === 1 ? '' : 's'}`,
     };

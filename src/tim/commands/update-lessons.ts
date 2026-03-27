@@ -8,7 +8,6 @@ import { promptCheckbox } from '../../common/input.js';
 import { boldMarkdownHeaders, log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import type { TimConfig } from '../configSchema.js';
-import { resolveTasksDir } from '../configSchema.js';
 import {
   buildExecutorAndLog,
   DEFAULT_EXECUTOR,
@@ -264,14 +263,7 @@ export async function runUpdateLessons(
   }
 
   const baseDir = resolvedBaseDir || (await getGitRoot()) || process.cwd();
-
   const excludePatterns = [...(effectiveConfig.updateDocs?.exclude ?? [])];
-
-  if (!effectiveConfig.isUsingExternalStorage) {
-    const tasksDir = await resolveTasksDir(effectiveConfig);
-    const relativeTasksDir = path.relative(baseDir, tasksDir);
-    excludePatterns.push(`Plan files in ${relativeTasksDir || tasksDir}`);
-  }
 
   const prompt = buildUpdateLessonsPrompt(planData, lessonsLearned, {
     docsPaths: effectiveConfig.paths?.docs,

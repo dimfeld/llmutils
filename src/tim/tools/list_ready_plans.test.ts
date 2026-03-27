@@ -31,7 +31,6 @@ describe('listReadyPlansTool', () => {
 
     config = {
       ...getDefaultConfig(),
-      paths: { tasks: tasksDir },
     };
 
     context = {
@@ -98,7 +97,7 @@ describe('listReadyPlansTool', () => {
     expect(JSON.parse(result.text).plans[0].filename).toBe('');
   });
 
-  test('returns a relative filename when the backing file exists on disk', async () => {
+  test('omits filename details for ready plans output', async () => {
     const existingFile = path.join(tasksDir, '2-existing.plan.md');
     await fs.mkdir(tasksDir, { recursive: true });
     await fs.writeFile(existingFile, 'placeholder');
@@ -107,7 +106,7 @@ describe('listReadyPlansTool', () => {
       id: 2,
       title: 'File backed plan',
       priority: 'medium',
-      filename: path.basename(existingFile),
+      filename: path.join('tasks', path.basename(existingFile)),
       tasks: [],
     });
 
@@ -115,6 +114,6 @@ describe('listReadyPlansTool', () => {
     const plan = result.data?.plans.find((entry) => entry.id === 2);
 
     expect(plan).toBeDefined();
-    expect(plan?.filename).toBe(path.join('tasks', '2-existing.plan.md'));
+    expect(plan?.filename).toBe('');
   });
 });

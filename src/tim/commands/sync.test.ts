@@ -2,16 +2,18 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { ModuleMocker, clearAllTimCaches, stringifyPlanWithFrontmatter } from '../../testing.js';
+import { ModuleMocker, clearAllTimCaches } from '../../testing.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
-import { getPlanByPlanId, getPlansByProject, upsertPlan } from '../db/plan.js';
+import { getPlansByProject } from '../db/plan.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
-import { getOrCreateProject, getProject } from '../db/project.js';
-import { writePlanFile } from '../plans.js';
+import { getProject } from '../db/project.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import { materializePlan } from '../plan_materialize.js';
+import { readPlanFile, writePlanFile, writePlanToDb } from '../plans.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 const mockLog = mock(() => {});
+const mockWarn = mock(() => {});
 
 async function initializeGitRepository(repoDir: string): Promise<void> {
   await Bun.$`git init`.cwd(repoDir).quiet();
@@ -21,13 +23,11 @@ async function initializeGitRepository(repoDir: string): Promise<void> {
 describe('tim sync command', () => {
   let tempDir: string;
   let repoDir: string;
-  let tasksDir: string;
-  let configPath: string;
-  let originalXdgConfigHome: string | undefined;
+  let originalCwd: string;
 
   const makeCommand = () => ({
     parent: {
-      opts: () => ({ config: configPath }),
+      opts: () => ({}),
     },
   });
 
@@ -36,350 +36,316 @@ describe('tim sync command', () => {
     closeDatabaseForTesting();
     clearPlanSyncContext();
 
+    originalCwd = process.cwd();
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-sync-command-test-'));
     repoDir = path.join(tempDir, 'repo');
-    tasksDir = path.join(repoDir, 'tasks');
-    await fs.mkdir(tasksDir, { recursive: true });
-
-    configPath = path.join(repoDir, '.rmfilter', 'tim.yml');
-    await fs.mkdir(path.dirname(configPath), { recursive: true });
-    await fs.writeFile(configPath, `paths:\n  tasks: ${tasksDir}\n`);
-
+    await fs.mkdir(repoDir, { recursive: true });
     await initializeGitRepository(repoDir);
+    process.chdir(repoDir);
 
     mockLog.mockClear();
+    mockWarn.mockClear();
     await moduleMocker.mock('../../logging.js', () => ({
       log: mockLog,
-      warn: mock(() => {}),
+      warn: mockWarn,
       error: mock(() => {}),
       debugLog: mock(() => {}),
       writeStdout: mock(() => {}),
       writeStderr: mock(() => {}),
       sendStructured: mock(() => {}),
     }));
-
-    originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
-    process.env.XDG_CONFIG_HOME = path.join(tempDir, 'xdg');
   });
 
   afterEach(async () => {
+    process.chdir(originalCwd);
     clearAllTimCaches();
     closeDatabaseForTesting();
     clearPlanSyncContext();
-
     moduleMocker.clear();
-
-    if (originalXdgConfigHome === undefined) {
-      delete process.env.XDG_CONFIG_HOME;
-    } else {
-      process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
-    }
-
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  test('handleSyncCommand syncs plan files into SQLite', async () => {
-    await fs.writeFile(
-      path.join(tasksDir, '1-alpha.plan.md'),
-      stringifyPlanWithFrontmatter({
-        id: 1,
-        uuid: '11111111-1111-4111-8111-111111111111',
-        title: 'Alpha',
-        goal: 'Sync alpha',
-        details: 'Alpha details',
-        tasks: [{ title: 'alpha task', description: 'do alpha', done: false }],
-      })
-    );
-    await fs.writeFile(
-      path.join(tasksDir, '2-beta.plan.md'),
-      stringifyPlanWithFrontmatter({
-        id: 2,
-        uuid: '22222222-2222-4222-8222-222222222222',
-        title: 'Beta',
-        goal: 'Sync beta',
-        tasks: [],
-      })
-    );
-
-    const { handleSyncCommand } = await import('./sync.js');
-    await handleSyncCommand(undefined, {}, makeCommand() as any);
-
-    const repository = await getRepositoryIdentity();
-    const db = getDatabase();
-    const project = getProject(db, repository.repositoryId);
-
-    expect(project).not.toBeNull();
-    const plans = getPlansByProject(db, project!.id);
-    expect(plans).toHaveLength(2);
-    expect(plans.map((plan) => plan.uuid).sort()).toEqual([
-      '11111111-1111-4111-8111-111111111111',
-      '22222222-2222-4222-8222-222222222222',
-    ]);
-    expect(
-      plans.find((plan) => plan.uuid === '11111111-1111-4111-8111-111111111111')?.details
-    ).toBe('Alpha details');
-
-    expect(mockLog).toHaveBeenCalledWith('Synced 2 plans. Pruned 0 plans. 0 errors.');
-  });
-
-  test('handleSyncCommand --plan syncs only the requested plan', async () => {
-    await fs.writeFile(
-      path.join(tasksDir, '1-alpha.plan.md'),
-      stringifyPlanWithFrontmatter({
-        id: 1,
-        uuid: '11111111-1111-4111-8111-111111111111',
-        title: 'Alpha',
-        goal: 'Sync alpha',
-        tasks: [{ title: 'alpha task', description: 'do alpha', done: false }],
-      })
-    );
-    await fs.writeFile(
-      path.join(tasksDir, '2-beta.plan.md'),
-      stringifyPlanWithFrontmatter({
-        id: 2,
-        uuid: '22222222-2222-4222-8222-222222222222',
-        title: 'Beta',
-        goal: 'Sync beta',
-        tasks: [],
-      })
-    );
-
-    const { handleSyncCommand } = await import('./sync.js');
-    await handleSyncCommand(undefined, { plan: '1' }, makeCommand() as any);
-
-    const repository = await getRepositoryIdentity();
-    const db = getDatabase();
-    const project = getProject(db, repository.repositoryId);
-
-    expect(project).not.toBeNull();
-    const plans = getPlansByProject(db, project!.id);
-    expect(plans).toHaveLength(1);
-    expect(plans[0]?.uuid).toBe('11111111-1111-4111-8111-111111111111');
-
-    expect(mockLog).toHaveBeenCalledWith('Synced plan 1 (1-alpha.plan.md).');
-  });
-
-  test('handleSyncCommand --force bypasses stale updatedAt checks', async () => {
-    const planPath = path.join(tasksDir, '6-stale.plan.md');
-    const planUuid = '66666666-6666-4666-8666-666666666666';
-
-    await fs.writeFile(
-      planPath,
-      stringifyPlanWithFrontmatter({
-        id: 6,
-        uuid: planUuid,
-        title: 'Initial title',
-        goal: 'Initial goal',
-        updatedAt: '2026-01-01T00:00:00.000Z',
-        tasks: [],
-      })
-    );
-
-    const { handleSyncCommand } = await import('./sync.js');
-    await handleSyncCommand(undefined, { plan: '6' }, makeCommand() as any);
-
-    const repository = await getRepositoryIdentity();
-    const db = getDatabase();
-    const project = getProject(db, repository.repositoryId);
-    expect(project).not.toBeNull();
-
-    db.prepare('UPDATE plan SET updated_at = ? WHERE uuid = ?').run(
-      '2026-01-03T00:00:00.000Z',
-      planUuid
-    );
-
-    await fs.writeFile(
-      planPath,
-      stringifyPlanWithFrontmatter({
-        id: 6,
-        uuid: planUuid,
-        title: 'Stale update title',
-        goal: 'Stale goal',
-        updatedAt: '2026-01-02T00:00:00.000Z',
-        tasks: [],
-      })
-    );
-
-    await handleSyncCommand(undefined, { plan: '6' }, makeCommand() as any);
-    let plans = getPlansByProject(db, project!.id);
-    expect(plans.find((plan) => plan.uuid === planUuid)?.title).toBe('Initial title');
-
-    await handleSyncCommand(undefined, { plan: '6', force: true }, makeCommand() as any);
-    plans = getPlansByProject(db, project!.id);
-    expect(plans.find((plan) => plan.uuid === planUuid)?.title).toBe('Stale update title');
-  });
-
-  test('handleSyncCommand --plan also syncs referenced plans missing from DB', async () => {
-    const parentUuid = '77777777-7777-4777-8777-777777777777';
-    const childUuid = '88888888-8888-4888-8888-888888888888';
-
-    await fs.writeFile(
-      path.join(tasksDir, '7-parent.plan.md'),
-      stringifyPlanWithFrontmatter({
-        id: 7,
-        uuid: parentUuid,
-        title: 'Referenced parent',
-        goal: 'Should be auto-synced',
-        tasks: [],
-      })
-    );
-
-    await fs.writeFile(
-      path.join(tasksDir, '8-child.plan.md'),
-      stringifyPlanWithFrontmatter({
-        id: 8,
-        uuid: childUuid,
-        title: 'Child',
-        goal: 'Sync target',
-        parent: 7,
-        dependencies: [7],
-        references: {
-          '7': parentUuid,
-        },
-        tasks: [],
-      })
-    );
-
-    const { handleSyncCommand } = await import('./sync.js');
-    await handleSyncCommand(undefined, { plan: '8' }, makeCommand() as any);
-
-    const repository = await getRepositoryIdentity();
-    const db = getDatabase();
-    const project = getProject(db, repository.repositoryId);
-    expect(project).not.toBeNull();
-
-    const plans = getPlansByProject(db, project!.id);
-    expect(plans.map((plan) => plan.uuid).sort()).toEqual([parentUuid, childUuid]);
-  });
-
-  test('handleSyncCommand --prune removes SQLite plans not found on disk', async () => {
-    const keptUuid = '33333333-3333-4333-8333-333333333333';
-    const removedUuid = '44444444-4444-4444-8444-444444444444';
-
-    await fs.writeFile(
-      path.join(tasksDir, '3-keep.plan.md'),
-      stringifyPlanWithFrontmatter({
-        id: 3,
-        uuid: keptUuid,
-        title: 'Keep me',
-        goal: 'Stay in DB',
-        tasks: [],
-      })
-    );
-    const removedFilePath = path.join(tasksDir, '4-remove.plan.md');
-    await fs.writeFile(
-      removedFilePath,
-      stringifyPlanWithFrontmatter({
-        id: 4,
-        uuid: removedUuid,
-        title: 'Remove me',
-        goal: 'Will be pruned',
-        tasks: [],
-      })
-    );
-
-    const { handleSyncCommand } = await import('./sync.js');
-    await handleSyncCommand(undefined, {}, makeCommand() as any);
-
-    await fs.rm(removedFilePath, { force: true });
-
-    await handleSyncCommand(undefined, { prune: true }, makeCommand() as any);
-
-    const repository = await getRepositoryIdentity();
-    const db = getDatabase();
-    const project = getProject(db, repository.repositoryId);
-
-    expect(project).not.toBeNull();
-    const plans = getPlansByProject(db, project!.id);
-    expect(plans).toHaveLength(1);
-    expect(plans[0]?.uuid).toBe(keptUuid);
-
-    expect(mockLog).toHaveBeenCalledWith('Synced 1 plan. Pruned 1 plan. 0 errors.');
-  });
-
-  test('handleSyncCommand --dir uses repository identity from current git cwd', async () => {
-    const externalTasksDir = path.join(tempDir, 'external-tasks');
-    await fs.mkdir(externalTasksDir, { recursive: true });
-    await fs.writeFile(
-      path.join(externalTasksDir, '5-external.plan.md'),
-      stringifyPlanWithFrontmatter({
-        id: 5,
-        uuid: '55555555-5555-4555-8555-555555555555',
-        title: 'External',
-        goal: 'Sync from outside repo root',
-        tasks: [],
-      })
-    );
-
-    const previousCwd = process.cwd();
-    try {
-      process.chdir(repoDir);
-      const { handleSyncCommand } = await import('./sync.js');
-      await handleSyncCommand(undefined, { dir: externalTasksDir }, makeCommand() as any);
-
-      const repository = await getRepositoryIdentity();
-      const db = getDatabase();
-      const project = getProject(db, repository.repositoryId);
-      expect(project).not.toBeNull();
-
-      const plans = getPlansByProject(db, project!.id);
-      expect(plans.some((plan) => plan.uuid === '55555555-5555-4555-8555-555555555555')).toBe(true);
-    } finally {
-      process.chdir(previousCwd);
-    }
-  });
-
-  test('handleSyncCommand rejects combining --plan and --prune', async () => {
-    const { handleSyncCommand } = await import('./sync.js');
-    await expect(
-      handleSyncCommand(undefined, { plan: '1', prune: true }, makeCommand() as any)
-    ).rejects.toThrow('--prune cannot be used together with --plan');
-  });
-
-  test('handleSyncCommand positional planId syncs a materialized plan', async () => {
-    const { handleSyncCommand } = await import('./sync.js');
-    const repository = await getRepositoryIdentity({ cwd: repoDir });
-    const db = getDatabase();
-    const project = getOrCreateProject(db, repository.repositoryId, {
-      remoteUrl: repository.remoteUrl,
-      lastGitRoot: repository.gitRoot,
-    });
-
-    upsertPlan(db, project.id, {
-      uuid: '33333333-3333-4333-8333-333333333333',
-      planId: 3,
-      title: 'DB title',
-      goal: 'Sync through materialized file',
-      details: 'Before materialized edit',
-      filename: '3-primary.plan.md',
-      tasks: [],
-    });
-
-    const materializedDir = path.join(repoDir, '.tim', 'plans');
-    await fs.mkdir(materializedDir, { recursive: true });
-    const planPath = path.join(materializedDir, '3.plan.md');
-    await writePlanFile(
-      planPath,
+  test('syncs all materialized plans back into SQLite', async () => {
+    await writePlanToDb(
       {
-        id: 3,
-        uuid: '33333333-3333-4333-8333-333333333333',
-        title: 'Edited on disk',
-        goal: 'Sync through materialized file',
-        details: 'After materialized edit',
+        id: 1,
+        uuid: '11111111-1111-4111-8111-111111111111',
+        title: 'Alpha',
+        goal: 'Sync alpha',
+        details: 'Before edit',
         tasks: [],
+      },
+      { cwdForIdentity: repoDir }
+    );
+
+    const materializedPath = await materializePlan(1, repoDir);
+    const materializedPlan = await readPlanFile(materializedPath);
+    await writePlanFile(
+      materializedPath,
+      {
+        ...materializedPlan,
+        title: 'Alpha Edited',
+        details: 'After edit',
+        updatedAt: '2026-03-27T01:00:00.000Z',
       },
       { skipSync: true }
     );
 
-    const originalCwd = process.cwd();
-    try {
-      process.chdir(repoDir);
-      await handleSyncCommand('3', {}, makeCommand() as any);
-    } finally {
-      process.chdir(originalCwd);
-    }
+    const { handleSyncCommand } = await import('./sync.js');
+    await handleSyncCommand(undefined, {}, makeCommand() as any);
 
-    expect(getPlanByPlanId(db, project.id, 3)?.title).toBe('Edited on disk');
-    expect(mockLog).toHaveBeenCalledWith('Synced materialized plan 3.');
+    const repository = await getRepositoryIdentity({ cwd: repoDir });
+    const db = getDatabase();
+    const project = getProject(db, repository.repositoryId);
+    expect(project).not.toBeNull();
+    const plans = getPlansByProject(db, project!.id);
+    expect(plans).toHaveLength(1);
+    expect(plans[0]?.title).toBe('Alpha Edited');
+    expect(plans[0]?.details).toBe('After edit');
+    expect(mockLog).toHaveBeenCalledWith('Synced 1 materialized plan.');
+  });
+
+  test('reports zero synced plans when the materialized directory does not exist', async () => {
+    const { handleSyncCommand } = await import('./sync.js');
+
+    await handleSyncCommand(undefined, {}, makeCommand() as any);
+
+    expect(mockLog).toHaveBeenCalledWith('Synced 0 materialized plans.');
+  });
+
+  test('ignores non-plan files when syncing all materialized plans', async () => {
+    await writePlanToDb(
+      {
+        id: 1,
+        uuid: '11111111-1111-4111-8111-111111111111',
+        title: 'One',
+        goal: 'First plan',
+        details: 'Before one',
+        tasks: [],
+      },
+      { cwdForIdentity: repoDir }
+    );
+    await writePlanToDb(
+      {
+        id: 2,
+        uuid: '22222222-2222-4222-8222-222222222222',
+        title: 'Two',
+        goal: 'Second plan',
+        details: 'Before two',
+        tasks: [],
+      },
+      { cwdForIdentity: repoDir }
+    );
+
+    const firstPath = await materializePlan(1, repoDir);
+    const secondPath = await materializePlan(2, repoDir);
+
+    const firstPlan = await readPlanFile(firstPath);
+    await writePlanFile(
+      firstPath,
+      {
+        ...firstPlan,
+        details: 'After one',
+        updatedAt: '2026-03-27T03:00:00.000Z',
+      },
+      { skipSync: true }
+    );
+
+    const secondPlan = await readPlanFile(secondPath);
+    await writePlanFile(
+      secondPath,
+      {
+        ...secondPlan,
+        details: 'After two',
+        updatedAt: '2026-03-27T03:05:00.000Z',
+      },
+      { skipSync: true }
+    );
+
+    const materializedDir = path.join(repoDir, '.tim', 'plans');
+    await fs.writeFile(path.join(materializedDir, 'notes.txt'), 'ignore me', 'utf8');
+    await fs.writeFile(path.join(materializedDir, 'draft.plan.md'), 'ignore me too', 'utf8');
+    await fs.writeFile(path.join(materializedDir, '999.ref.md'), 'still ignore me', 'utf8');
+
+    const { handleSyncCommand } = await import('./sync.js');
+    await handleSyncCommand(undefined, {}, makeCommand() as any);
+
+    const repository = await getRepositoryIdentity({ cwd: repoDir });
+    const db = getDatabase();
+    const project = getProject(db, repository.repositoryId);
+    expect(project).not.toBeNull();
+    const plans = getPlansByProject(db, project!.id);
+    expect(plans.find((plan) => plan.plan_id === 1)?.details).toBe('After one');
+    expect(plans.find((plan) => plan.plan_id === 2)?.details).toBe('After two');
+    expect(mockLog).toHaveBeenCalledWith('Synced 2 materialized plans.');
+  });
+
+  test('syncs only the requested materialized plan when a plan ID is provided', async () => {
+    await writePlanToDb(
+      {
+        id: 1,
+        uuid: '11111111-1111-4111-8111-111111111111',
+        title: 'One',
+        goal: 'First plan',
+        details: 'Unchanged',
+        tasks: [],
+      },
+      { cwdForIdentity: repoDir }
+    );
+    await writePlanToDb(
+      {
+        id: 2,
+        uuid: '22222222-2222-4222-8222-222222222222',
+        title: 'Two',
+        goal: 'Second plan',
+        details: 'Before edit',
+        tasks: [],
+      },
+      { cwdForIdentity: repoDir }
+    );
+
+    await materializePlan(1, repoDir);
+    const materializedPath = await materializePlan(2, repoDir);
+    const materializedPlan = await readPlanFile(materializedPath);
+    await writePlanFile(
+      materializedPath,
+      {
+        ...materializedPlan,
+        details: 'After edit',
+        updatedAt: '2026-03-27T02:00:00.000Z',
+      },
+      { skipSync: true }
+    );
+
+    const { handleSyncCommand } = await import('./sync.js');
+    await handleSyncCommand('2', {}, makeCommand() as any);
+
+    const repository = await getRepositoryIdentity({ cwd: repoDir });
+    const db = getDatabase();
+    const project = getProject(db, repository.repositoryId);
+    expect(project).not.toBeNull();
+    const plans = getPlansByProject(db, project!.id);
+    expect(plans.find((plan) => plan.plan_id === 1)?.details).toBe('Unchanged');
+    expect(plans.find((plan) => plan.plan_id === 2)?.details).toBe('After edit');
+    expect(mockLog).toHaveBeenCalledWith('Synced materialized plan 2.');
+  });
+
+  test('syncs a single stale materialized plan when --force is used', async () => {
+    await writePlanToDb(
+      {
+        id: 1,
+        uuid: '11111111-1111-4111-8111-111111111111',
+        title: 'One',
+        goal: 'First plan',
+        details: 'Before edit',
+        tasks: [],
+      },
+      { cwdForIdentity: repoDir }
+    );
+    const materializedPath = await materializePlan(1, repoDir);
+    const materializedPlan = await readPlanFile(materializedPath);
+    await writePlanFile(
+      materializedPath,
+      {
+        ...materializedPlan,
+        details: 'After edit',
+        updatedAt: undefined,
+      },
+      { skipSync: true, skipUpdatedAt: true }
+    );
+
+    const { handleSyncCommand } = await import('./sync.js');
+
+    await handleSyncCommand('1', { force: true }, makeCommand() as any);
+
+    const repository = await getRepositoryIdentity({ cwd: repoDir });
+    const db = getDatabase();
+    const project = getProject(db, repository.repositoryId);
+    expect(project).not.toBeNull();
+    const plans = getPlansByProject(db, project!.id);
+    expect(plans.find((plan) => plan.plan_id === 1)?.details).toBe('After edit');
+    expect(mockWarn).not.toHaveBeenCalled();
+  });
+
+  test('bulk sync logs each plan with verbose and continues after per-file failures', async () => {
+    await writePlanToDb(
+      {
+        id: 1,
+        uuid: '11111111-1111-4111-8111-111111111111',
+        title: 'One',
+        goal: 'First plan',
+        details: 'Before one',
+        tasks: [],
+      },
+      { cwdForIdentity: repoDir }
+    );
+    await writePlanToDb(
+      {
+        id: 2,
+        uuid: '22222222-2222-4222-8222-222222222222',
+        title: 'Two',
+        goal: 'Second plan',
+        details: 'Before two',
+        tasks: [],
+      },
+      { cwdForIdentity: repoDir }
+    );
+
+    const firstPath = await materializePlan(1, repoDir);
+    const secondPath = await materializePlan(2, repoDir);
+
+    const firstPlan = await readPlanFile(firstPath);
+    await writePlanFile(
+      firstPath,
+      {
+        ...firstPlan,
+        details: 'After one',
+      },
+      { skipSync: true, skipUpdatedAt: true }
+    );
+    await fs.writeFile(
+      secondPath,
+      `---
+id: 2
+uuid: invalid-uuid
+title: Broken materialized plan
+goal: Broken materialized plan
+updatedAt: 2026-03-27T04:05:00.000Z
+tasks: []
+---
+`,
+      'utf8'
+    );
+
+    const { handleSyncCommand } = await import('./sync.js');
+    await expect(
+      handleSyncCommand(undefined, { verbose: true, force: true }, makeCommand() as any)
+    ).rejects.toThrow('Failed to sync 1 materialized plan');
+
+    const repository = await getRepositoryIdentity({ cwd: repoDir });
+    const db = getDatabase();
+    const project = getProject(db, repository.repositoryId);
+    expect(project).not.toBeNull();
+    const plans = getPlansByProject(db, project!.id);
+    expect(plans.find((plan) => plan.plan_id === 1)?.details).toBe('After one');
+    expect(plans.find((plan) => plan.plan_id === 2)?.details).toBe('Before two');
+    expect(
+      mockLog.mock.calls.some(
+        ([message]) =>
+          String(message).startsWith('Syncing ') &&
+          String(message).endsWith('/.tim/plans/1.plan.md')
+      )
+    ).toBe(true);
+    expect(
+      mockLog.mock.calls.some(
+        ([message]) =>
+          String(message).startsWith('Syncing ') &&
+          String(message).endsWith('/.tim/plans/2.plan.md')
+      )
+    ).toBe(true);
+    expect(
+      mockWarn.mock.calls.some(([message]) => String(message).includes('Failed to sync'))
+    ).toBe(true);
+    expect(mockLog).toHaveBeenCalledWith('Synced 1 materialized plan (1 error).');
   });
 });

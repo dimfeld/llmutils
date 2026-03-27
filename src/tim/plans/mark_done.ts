@@ -9,20 +9,18 @@ import { commitAll } from '../../common/process.js';
 import { boldMarkdownHeaders, log, warn } from '../../logging.js';
 import type { TimConfig } from '../configSchema.js';
 import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
-import { resolveConfiguredTasksPath } from '../path_resolver.js';
 import {
   resolveProjectContext,
   withPlanAutoSync,
   type ProjectContext,
 } from '../plan_materialize.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
-import { readPlanFile, resolvePlanFromDb, writePlanFile } from '../plans.js';
+import { resolvePlanFromDb, writePlanFile } from '../plans.js';
 import { checkAndMarkParentDone as checkAndMarkParentDoneShared } from './parent_cascade.js';
 import type { PlanSchema } from '../planSchema.js';
 import { type PendingTaskResult, findPendingTask, findNextActionableItem } from './find_next.js';
 import { removePlanAssignment } from '../assignments/remove_plan_assignment.js';
 import { resolveWritablePath } from './resolve_writable_path.js';
-import { mergeYamlPassthroughFields } from './yaml_passthrough.js';
 
 export async function markStepDone(
   planArg: string,
@@ -227,25 +225,11 @@ async function finalizeTaskMutation(
   config: TimConfig | undefined,
   output: string[]
 ): Promise<string> {
-  const tasksPath = config ? resolveConfiguredTasksPath(config, repoRoot) : undefined;
   planData.updatedAt = new Date().toISOString();
 
   try {
-    const excludePaths: string[] = [];
-    if (tasksPath) {
-      const relativeTasksPath = path.relative(repoRoot, tasksPath);
-      if (
-        relativeTasksPath &&
-        !relativeTasksPath.startsWith('..') &&
-        !path.isAbsolute(relativeTasksPath)
-      ) {
-        excludePaths.push(relativeTasksPath);
-      }
-    }
-
     const gitOptions: GetChangedFilesOptions = {
       baseBranch: planData.baseBranch,
-      excludePaths,
     };
     const changedFiles = await getChangedFilesOnBranch(repoRoot, gitOptions);
     if (changedFiles.length > 0) {
@@ -259,17 +243,6 @@ async function finalizeTaskMutation(
   const planComplete = !stillPending;
   if (planComplete) {
     planData.status = 'done';
-  }
-
-  const legacyPlanExists = outputPath
-    ? await Bun.file(outputPath)
-        .stat()
-        .then((stats) => stats.isFile())
-        .catch(() => false)
-    : false;
-  if (legacyPlanExists && outputPath) {
-    const filePlan = await readPlanFile(outputPath);
-    mergeYamlPassthroughFields(planData, filePlan);
   }
 
   await writePlanFile(outputPath, planData, { cwdForIdentity: repoRoot });
@@ -323,8 +296,5 @@ async function resolveWritablePathForPlan(
   repoRoot: string
 ): Promise<string | null> {
   const row = context.rows.find((candidate) => candidate.plan_id === planId);
-  const tasksDir = config
-    ? resolveConfiguredTasksPath(config, repoRoot)
-    : path.join(repoRoot, 'tasks');
-  return resolveWritablePath(planArg, row, tasksDir, repoRoot);
+  return resolveWritablePath(planArg, row, repoRoot, repoRoot);
 }

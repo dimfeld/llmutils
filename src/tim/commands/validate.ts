@@ -8,7 +8,7 @@ import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { createPlanSchemas, type PlanSchema } from '../planSchema.js';
 import { readPlanFile, writePlanFile, writePlanToDb } from '../plans.js';
-import { resolvePlanPathContext } from '../path_resolver.js';
+import { getLegacyAwareSearchDir, resolvePlanPathContext } from '../path_resolver.js';
 import { loadPlansFromDb } from '../plans_db.js';
 import {
   ensureReferences,
@@ -186,11 +186,11 @@ async function validatePlanFile(filePath: string): Promise<ValidationResult> {
 }
 
 async function loadValidationPlanState(
-  tasksDir: string,
+  searchDir: string,
   repositoryId: string,
   planFiles: string[]
 ): Promise<ValidationPlanState> {
-  const dbPlans = loadPlansFromDb(tasksDir, repositoryId).plans;
+  const dbPlans = loadPlansFromDb(searchDir, repositoryId).plans;
   const planMap = new Map<number, PlanSchema & { filename: string }>();
   const uuidToCurrentId = new Map<string, number>();
 
@@ -201,9 +201,7 @@ async function loadValidationPlanState(
     }
   }
 
-  for (const file of planFiles) {
-    const filePath = path.join(tasksDir, file);
-
+  for (const filePath of planFiles) {
     try {
       const plan = await readPlanFile(filePath);
       if (
@@ -243,6 +241,41 @@ async function loadValidationPlanState(
   }
 
   return { planMap, uuidToId, idToUuid };
+}
+
+async function findPlanFiles(
+  scanDir: string,
+  gitRoot: string,
+  options: { includeMaterialized: boolean }
+): Promise<string[]> {
+  const discoveredFiles = new Set<string>();
+
+  const addFilesFromDir = async (dir: string) => {
+    let entries: string[] = [];
+    try {
+      entries = await readdir(dir);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return;
+      }
+      throw error;
+    }
+
+    for (const entry of entries) {
+      if (entry.endsWith('.plan.md') || entry.endsWith('.yml') || entry.endsWith('.yaml')) {
+        discoveredFiles.add(path.join(dir, entry));
+      }
+    }
+  };
+
+  await addFilesFromDir(scanDir);
+
+  const materializedDir = path.join(gitRoot, '.tim', 'plans');
+  if (options.includeMaterialized && materializedDir !== scanDir) {
+    await addFilesFromDir(materializedDir);
+  }
+
+  return Array.from(discoveredFiles).sort();
 }
 
 function validateParentChildRelationships(
@@ -618,24 +651,18 @@ export async function handleValidateCommand(
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
   const pathContext = await resolvePlanPathContext(config);
+  const defaultScanDir = getLegacyAwareSearchDir(pathContext.gitRoot, pathContext.configBaseDir);
 
   // Determine directory to search
-  const tasksDir = options.dir || pathContext.tasksDir;
+  const searchDir = options.dir || defaultScanDir;
 
-  // Resolve repo identity from the directory being validated, not the config base dir
+  // Resolve repo identity from the actual scan directory.
   const identityCwd = options.dir || pathContext.configBaseDir;
   const repository = await getRepositoryIdentity({ cwd: identityCwd });
 
-  // Read all plan files (tasks dir may not exist for DB-only projects)
-  let files: string[] = [];
-  try {
-    files = await readdir(tasksDir);
-  } catch (e: any) {
-    if (e?.code !== 'ENOENT') throw e;
-  }
-  const planFiles = files.filter(
-    (file) => file.endsWith('.plan.md') || file.endsWith('.yml') || file.endsWith('.yaml')
-  );
+  const planFiles = await findPlanFiles(searchDir, pathContext.gitRoot, {
+    includeMaterialized: options.dir === undefined,
+  });
 
   // First pass: Load all plans to check for obsolete keys
   let planMap: Map<number, PlanSchema & { filename: string }> | null = null;
@@ -644,7 +671,11 @@ export async function handleValidateCommand(
   let dbOnlyPlanCount = 0;
 
   try {
-    const planResults = await loadValidationPlanState(tasksDir, repository.repositoryId, planFiles);
+    const planResults = await loadValidationPlanState(
+      searchDir,
+      repository.repositoryId,
+      planFiles
+    );
     planMap = planResults.planMap;
     dbOnlyPlanCount = Array.from(planMap.values()).filter((plan) =>
       isDbOnlyPlan(plan.filename)
@@ -656,7 +687,7 @@ export async function handleValidateCommand(
           dbOnlyPlanCount > 0
             ? ` and ${dbOnlyPlanCount} DB-only plan${dbOnlyPlanCount === 1 ? '' : 's'}`
             : ''
-        } in ${tasksDir}\n`
+        } in ${searchDir}\n`
       )
     );
 
@@ -689,7 +720,7 @@ export async function handleValidateCommand(
 
           // Reload plans to get the fixed data (prevents later operations from overwriting the fix)
           const reloadedPlans = await loadValidationPlanState(
-            tasksDir,
+            searchDir,
             repository.repositoryId,
             planFiles
           );
@@ -745,7 +776,7 @@ export async function handleValidateCommand(
 
           // Reload plans to get the new UUIDs
           const reloadedPlans = await loadValidationPlanState(
-            tasksDir,
+            searchDir,
             repository.repositoryId,
             planFiles
           );
@@ -765,7 +796,7 @@ export async function handleValidateCommand(
     } else {
       // Load UUID maps even if no missing UUIDs
       const planResults = await loadValidationPlanState(
-        tasksDir,
+        searchDir,
         repository.repositoryId,
         planFiles
       );
@@ -804,7 +835,7 @@ export async function handleValidateCommand(
 
           // Reload plans to get updated references
           const reloadedPlans = await loadValidationPlanState(
-            tasksDir,
+            searchDir,
             repository.repositoryId,
             planFiles
           );
@@ -823,9 +854,7 @@ export async function handleValidateCommand(
   }
 
   // Validate all files (after fixing obsolete keys if applicable)
-  const fileResults = await Promise.all(
-    planFiles.map((file) => validatePlanFile(path.join(tasksDir, file)))
-  );
+  const fileResults = await Promise.all(planFiles.map((filePath) => validatePlanFile(filePath)));
   const dbOnlyResults =
     planMap === null
       ? []
@@ -920,7 +949,7 @@ export async function handleValidateCommand(
           if (fixResult.fixedRelationships > 0) {
             // Reload plans to pick up the new dependencies
             const reloadedPlans = await loadValidationPlanState(
-              tasksDir,
+              searchDir,
               repository.repositoryId,
               planFiles
             );
@@ -976,7 +1005,7 @@ export async function handleValidateCommand(
           if (discoveredFixResult.cleared.length > 0) {
             // Reload plans to pick up the removed references
             const reloadedPlans = await loadValidationPlanState(
-              tasksDir,
+              searchDir,
               repository.repositoryId,
               planFiles
             );
@@ -1003,7 +1032,7 @@ export async function handleValidateCommand(
 
           // Reload plans one more time
           const reloadedPlans = await loadValidationPlanState(
-            tasksDir,
+            searchDir,
             repository.repositoryId,
             planFiles
           );

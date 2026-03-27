@@ -2,7 +2,7 @@ import path from 'node:path';
 import { withPlanAutoSync } from '../plan_materialize.js';
 import { resolvePlan } from '../plan_display.js';
 import { mergeTasksIntoPlan } from '../plan_merge.js';
-import { clearPlanCache, writePlanFile } from '../plans.js';
+import { writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import type { ToolContext, ToolResult } from './context.js';
 import type { GenerateTasksArguments } from './schemas.js';
@@ -11,7 +11,6 @@ export async function updatePlanTasksTool(
   args: GenerateTasksArguments,
   context: ToolContext
 ): Promise<ToolResult<{ path: string; taskCount: number }>> {
-  clearPlanCache();
   // Resolve plan to get its numeric ID for withPlanAutoSync
   const { plan: initialPlan } = await resolvePlan(args.plan, context);
   if (typeof initialPlan.id !== 'number') {

@@ -17,11 +17,9 @@ const basePlan: PlanSchema = {
   details: '# Overview\n\nExisting details\n\n## Research\n- Finding A',
   status: 'pending',
   priority: 'medium',
-  generatedBy: 'agent',
   createdAt: '2024-01-01T00:00:00.000Z',
   updatedAt: '2024-01-01T00:00:00.000Z',
   planGeneratedAt: '2024-01-01T00:00:00.000Z',
-  promptsGeneratedAt: '2024-01-01T00:00:00.000Z',
   dependencies: [7],
   tasks: [
     {

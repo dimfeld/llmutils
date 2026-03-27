@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { withPlanAutoSync } from '../plan_materialize.js';
 import { resolvePlan } from '../plan_display.js';
-import { clearPlanCache, writePlanFile } from '../plans.js';
+import { writePlanFile } from '../plans.js';
 import type { PlanSchema, TaskSchema } from '../planSchema.js';
 import { findTaskByTitle } from '../utils/task_operations.js';
 import type { ToolContext, ToolResult } from './context.js';
@@ -80,7 +80,6 @@ export async function addPlanTaskTool(
   args: AddPlanTaskArguments,
   context: ToolContext
 ): Promise<ToolResult<{ index: number }>> {
-  clearPlanCache();
   // Resolve plan to get its numeric ID for withPlanAutoSync
   const { plan: initialPlan } = await resolvePlan(args.plan, context);
   if (typeof initialPlan.id !== 'number') {
@@ -138,7 +137,6 @@ export async function removePlanTaskTool(
   args: RemovePlanTaskArguments,
   context: ToolContext
 ): Promise<ToolResult<{ index: number; shifted: number }>> {
-  clearPlanCache();
   // Resolve plan to get its numeric ID for withPlanAutoSync
   const { plan: initialPlan } = await resolvePlan(args.plan, context);
   if (typeof initialPlan.id !== 'number') {
@@ -201,7 +199,6 @@ export async function updatePlanTaskTool(
   args: UpdatePlanTaskArguments,
   context: ToolContext
 ): Promise<ToolResult<{ index: number }>> {
-  clearPlanCache();
   // Resolve plan to get its numeric ID for withPlanAutoSync
   const { plan: initialPlan } = await resolvePlan(args.plan, context);
   if (typeof initialPlan.id !== 'number') {

@@ -4,7 +4,6 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import * as yaml from 'yaml';
 import { ModuleMocker } from '../../testing.js';
-import { clearPlanCache } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import {
   getImplementerPrompt,
@@ -127,7 +126,6 @@ describe('subagent command - prompt construction and executor delegation', () =>
   };
 
   beforeEach(async () => {
-    clearPlanCache();
     capturedCodexPrompt = undefined;
     capturedCodexOptions = undefined;
     capturedClaudeSpawnArgs = undefined;
@@ -669,7 +667,6 @@ describe('subagent command - prompt construction and executor delegation', () =>
       ],
     };
     currentPlanData = structuredClone(donePlan);
-    clearPlanCache();
 
     const { handleSubagentCommand } = await import('./subagent.js');
 
@@ -1241,7 +1238,6 @@ describe('subagent command - permissions MCP integration', () => {
   };
 
   beforeEach(async () => {
-    clearPlanCache();
     capturedClaudeSpawnArgs = undefined;
     capturedPermissionsMcpSetupOptions = undefined;
     stdoutWriteCalls = [];
@@ -1599,7 +1595,6 @@ describe('subagent command - executeWithClaude error scenarios', () => {
   };
 
   beforeEach(async () => {
-    clearPlanCache();
     stdoutWriteCalls = [];
     currentPlanData = structuredClone(basePlan);
 
@@ -2041,7 +2036,6 @@ describe('subagent command - tunnel behavior', () => {
   }
 
   beforeEach(async () => {
-    clearPlanCache();
     stdoutWriteCalls = [];
     currentPlanData = structuredClone(basePlan);
 

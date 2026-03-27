@@ -1,30 +1,28 @@
 import * as path from 'path';
-import { readAllPlans } from './plans.js';
-import { resolveTasksDir } from './configSchema.js';
-import type { TimConfig } from './configSchema.js';
 import type { PlanSchema } from './planSchema.js';
-import { getGitRoot } from '../common/git.js';
+import type { PlanWithFilename } from './utils/hierarchy.js';
+import { loadPlansFromDb } from './plans_db.js';
+import { getRepositoryIdentity } from './assignments/workspace_identifier.js';
+import { getLegacyAwareSearchDir } from './path_resolver.js';
 import { warn } from '../logging.js';
 
 /**
  * Find sibling plans (plans with the same parent) and categorize them by status
  */
-export async function findSiblingPlans(
+export function findSiblingPlans(
   currentPlanId: number,
   parentId: number | undefined,
-  tasksDir: string
-): Promise<{
+  allPlans: Map<number, PlanWithFilename>
+): {
   siblings: {
     completed: Array<{ id: number; title: string; filename: string }>;
     pending: Array<{ id: number; title: string; filename: string }>;
   };
   parent: PlanSchema | undefined;
-}> {
+} {
   if (!parentId) {
     return { siblings: { completed: [], pending: [] }, parent: undefined };
   }
-
-  const { plans: allPlans } = await readAllPlans(tasksDir);
   const siblings = { completed: [], pending: [] } as {
     completed: Array<{ id: number; title: string; filename: string }>;
     pending: Array<{ id: number; title: string; filename: string }>;
@@ -66,7 +64,7 @@ interface PlanContextOptions {
   planData: PlanSchema;
   planFilePath: string;
   baseDir: string;
-  config: TimConfig;
+  configBaseDir?: string;
   includeCurrentPlanContext?: boolean;
 }
 
@@ -86,13 +84,20 @@ export function isURL(str: string): boolean {
  * Build parent plan context and sibling plans information for prompts
  */
 export async function buildPlanContextPrompt(options: PlanContextOptions): Promise<string> {
-  const { planData, planFilePath, baseDir, config, includeCurrentPlanContext = true } = options;
-  const root = await getGitRoot(baseDir);
+  const {
+    planData,
+    planFilePath,
+    baseDir,
+    configBaseDir,
+    includeCurrentPlanContext = true,
+  } = options;
+  const { gitRoot: root, repositoryId } = await getRepositoryIdentity({ cwd: baseDir });
+  const searchDir = getLegacyAwareSearchDir(root, configBaseDir);
   let contextPrompt = '';
 
   // Add current plan context if requested
   if (includeCurrentPlanContext) {
-    const currentPlanFilename = path.relative(root, planFilePath);
+    const currentPlanFilename = path.relative(searchDir, path.resolve(baseDir, planFilePath));
     contextPrompt += `## Current Plan Context\n\n`;
     contextPrompt += `**Current Plan File:** ${currentPlanFilename}\n`;
     contextPrompt += `**Current Plan Title:** ${planData.title || 'Untitled Plan'}\n\n`;
@@ -101,12 +106,11 @@ export async function buildPlanContextPrompt(options: PlanContextOptions): Promi
   // Add parent plan information if available
   if (planData.parent) {
     try {
-      const tasksDir = await resolveTasksDir(config);
-      const { plans: allPlans } = await readAllPlans(tasksDir);
+      const { plans: allPlans } = loadPlansFromDb(searchDir, repositoryId);
       const parentPlan = allPlans.get(planData.parent);
 
       if (parentPlan) {
-        const parentPlanFilename = path.relative(root, parentPlan.filename);
+        const parentPlanFilename = path.relative(searchDir, parentPlan.filename);
         contextPrompt += `## Parent Plan Context\n\n`;
         contextPrompt += `**Parent Plan File:** ${parentPlanFilename}\n`;
         contextPrompt += `**Parent Plan:** ${parentPlan.title || `Plan ${planData.parent}`} (ID: ${planData.parent})\n`;
@@ -132,7 +136,7 @@ export async function buildPlanContextPrompt(options: PlanContextOptions): Promi
         contextPrompt += `\n`;
 
         // Add sibling plans information
-        const { siblings } = await findSiblingPlans(planData.id || 0, planData.parent, tasksDir);
+        const { siblings } = findSiblingPlans(planData.id || 0, planData.parent, allPlans);
 
         if (siblings.completed.length > 0 || siblings.pending.length > 0) {
           contextPrompt += `## Sibling Plans (Same Parent)\n\n`;
@@ -141,7 +145,7 @@ export async function buildPlanContextPrompt(options: PlanContextOptions): Promi
           if (siblings.completed.length > 0) {
             contextPrompt += `### Completed Sibling Plans:\n`;
             siblings.completed.forEach((sibling) => {
-              contextPrompt += `- **${sibling.title}** (File: ${path.relative(root, sibling.filename)})\n`;
+              contextPrompt += `- **${sibling.title}** (File: ${path.relative(searchDir, sibling.filename)})\n`;
             });
             contextPrompt += `\n`;
           }
@@ -149,7 +153,7 @@ export async function buildPlanContextPrompt(options: PlanContextOptions): Promi
           if (siblings.pending.length > 0) {
             contextPrompt += `### Pending Sibling Plans:\n`;
             siblings.pending.forEach((sibling) => {
-              contextPrompt += `- **${sibling.title}** (File: ${path.relative(root, sibling.filename)})\n`;
+              contextPrompt += `- **${sibling.title}** (File: ${path.relative(searchDir, sibling.filename)})\n`;
             });
             contextPrompt += `\n`;
           }

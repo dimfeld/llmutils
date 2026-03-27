@@ -211,6 +211,7 @@ describe('resolvePlanFromDbOrSyncFile', () => {
     );
 
     process.chdir(hostRepo);
+    await resolvePlanFromDbOrSyncFile(path.join(importedTasksDir, '2.plan.md'), importedRepo);
 
     const resolved = await resolvePlanFromDbOrSyncFile(importedPlanFile, importedRepo);
 

@@ -3,7 +3,6 @@ import { relative, resolve as resolvePath } from 'node:path';
 import { getGitRoot } from '../../common/git.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { resolveTasksDir } from '../configSchema.js';
 import { removeAssignment } from '../db/assignment.js';
 import { getDatabase } from '../db/database.js';
 import { deletePlan, getPlanByPlanId, type PlanRow, upsertPlan } from '../db/plan.js';
@@ -14,11 +13,11 @@ import {
   resolveProjectContext,
   syncMaterializedPlan,
 } from '../plan_materialize.js';
+import { getLegacyAwareSearchDir } from '../path_resolver.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 import { readPlanFile, resolvePlanFromDb, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { resolveWritablePath } from '../plans/resolve_writable_path.js';
-import { mergeYamlPassthroughFields } from '../plans/yaml_passthrough.js';
 import { ensureReferences } from '../utils/references.js';
 import { loadPlansFromDb } from '../plans_db.js';
 import { log, warn } from '../../logging.js';
@@ -173,9 +172,8 @@ export async function handleMergeCommand(planFile: string, options: MergeOptions
   const globalOpts = command.parent.opts();
   const gitRoot = (await getGitRoot()) || process.cwd();
   const repoRoot = await resolveRepoRootForPlanArg(planFile, gitRoot, globalOpts.config);
-  const config = await loadEffectiveConfig(globalOpts.config);
-  const tasksDir = await resolveTasksDir(config);
-  const resolvedTasksDir = resolvePath(repoRoot, tasksDir);
+  await loadEffectiveConfig(globalOpts.config);
+  const resolvedTasksDir = repoRoot;
   const repository = await getRepositoryIdentity({ cwd: repoRoot });
   let context = await resolveProjectContext(repoRoot, repository);
   await syncMaterializedPlans(repoRoot, context.rows);
@@ -188,7 +186,10 @@ export async function handleMergeCommand(planFile: string, options: MergeOptions
     throw new Error('Main plan must have an ID');
   }
 
-  const { plans } = loadPlansFromDb(tasksDir, repository.repositoryId);
+  const { plans } = loadPlansFromDb(
+    getLegacyAwareSearchDir(repository.gitRoot, repoRoot),
+    repository.repositoryId
+  );
 
   // Find all direct children of the main plan and sort by ID for consistent ordering
   const allChildren = Array.from(plans.values())
@@ -466,7 +467,6 @@ export async function handleMergeCommand(planFile: string, options: MergeOptions
       if (planForFile.dependencies && planForFile.dependencies.length > 1) {
         planForFile.dependencies = [...planForFile.dependencies].sort((a, b) => a - b);
       }
-      mergeYamlPassthroughFields(planForFile, existingFile);
       await writePlanFile(outputPath, planForFile, {
         cwdForIdentity: repoRoot,
         context: refreshedContext,

@@ -1,8 +1,5 @@
 import { test, describe, expect } from 'bun:test';
-import * as fs from 'node:fs/promises';
-import * as os from 'node:os';
-import * as path from 'node:path';
-import { timConfigSchema, getDefaultConfig, resolveTasksDir } from './configSchema.js';
+import { timConfigSchema, getDefaultConfig } from './configSchema.js';
 
 describe('configSchema', () => {
   describe('issueTracker field', () => {
@@ -927,47 +924,6 @@ describe('configSchema', () => {
           },
         })
       ).toThrow();
-    });
-  });
-
-  describe('resolveTasksDir', () => {
-    test('uses external repository directory when external storage is active', async () => {
-      const externalDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-external-'));
-      try {
-        const config = {
-          ...getDefaultConfig(),
-          isUsingExternalStorage: true,
-          externalRepositoryConfigDir: externalDir,
-        } as const;
-
-        const tasksDir = await resolveTasksDir(config);
-        expect(tasksDir).toBe(path.join(externalDir, 'tasks'));
-        const stats = await fs.stat(tasksDir);
-        expect(stats.isDirectory()).toBe(true);
-      } finally {
-        await fs.rm(externalDir, { recursive: true, force: true });
-      }
-    });
-
-    test('resolves relative task paths against external directory when provided', async () => {
-      const externalDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-external-rel-'));
-      try {
-        const config = {
-          ...getDefaultConfig(),
-          isUsingExternalStorage: true,
-          externalRepositoryConfigDir: externalDir,
-          paths: {
-            tasks: 'plans',
-          },
-        } as const;
-
-        const tasksDir = await resolveTasksDir(config);
-        expect(tasksDir).toBe(path.join(externalDir, 'plans'));
-        const stats = await fs.stat(tasksDir);
-        expect(stats.isDirectory()).toBe(true);
-      } finally {
-        await fs.rm(externalDir, { recursive: true, force: true });
-      }
     });
   });
 });

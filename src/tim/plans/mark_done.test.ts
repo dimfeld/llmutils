@@ -5,7 +5,7 @@ import path from 'node:path';
 import { markStepDone, markTaskDone, setTaskDone } from './mark_done.js';
 import { closeDatabaseForTesting } from '../db/database.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
-import { clearPlanCache, readPlanFile, writePlanFile } from '../plans.js';
+import { readPlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 
 describe('markStepDone', () => {
@@ -15,7 +15,6 @@ describe('markStepDone', () => {
   beforeEach(async () => {
     closeDatabaseForTesting();
     clearPlanSyncContext();
-    clearPlanCache();
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
@@ -24,7 +23,6 @@ describe('markStepDone', () => {
   afterEach(async () => {
     closeDatabaseForTesting();
     clearPlanSyncContext();
-    clearPlanCache();
     if (tempDir) {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
@@ -124,7 +122,6 @@ describe('markTaskDone', () => {
   beforeEach(async () => {
     closeDatabaseForTesting();
     clearPlanSyncContext();
-    clearPlanCache();
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
@@ -133,7 +130,6 @@ describe('markTaskDone', () => {
   afterEach(async () => {
     closeDatabaseForTesting();
     clearPlanSyncContext();
-    clearPlanCache();
     if (tempDir) {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
@@ -202,7 +198,6 @@ describe('setTaskDone', () => {
   beforeEach(async () => {
     closeDatabaseForTesting();
     clearPlanSyncContext();
-    clearPlanCache();
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
@@ -211,7 +206,6 @@ describe('setTaskDone', () => {
   afterEach(async () => {
     closeDatabaseForTesting();
     clearPlanSyncContext();
-    clearPlanCache();
     if (tempDir) {
       await fs.rm(tempDir, { recursive: true, force: true });
     }

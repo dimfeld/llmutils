@@ -24,7 +24,6 @@ const mockTable = mock((data: any[]) => {
 
 // Now import the module being tested
 import { handleReadyCommand } from './ready.js';
-import { clearPlanCache } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 
 describe('handleReadyCommand', () => {
@@ -46,7 +45,6 @@ describe('handleReadyCommand', () => {
     mockTable.mockClear();
 
     // Clear plan cache
-    clearPlanCache();
 
     // Create temporary directory
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-ready-test-'));
@@ -1619,7 +1617,7 @@ describe('handleReadyCommand', () => {
     expect(output).not.toContain('Local Not Ready Plan');
   });
 
-  test('uses local plans when --local is passed even if DB state differs', async () => {
+  test('uses DB plans even when unsynced local files differ', async () => {
     await createPlan(
       {
         id: 31,
@@ -1654,11 +1652,11 @@ describe('handleReadyCommand', () => {
     );
 
     mockLog.mockClear();
-    await runReady({ local: true }, createCommand());
+    await runReady({}, createCommand());
 
     const output = mockLog.mock.calls.map((call) => call[0]).join('\n');
-    expect(output).toContain('No plans are currently ready to execute.');
-    expect(output).not.toContain('DB Ready Plan');
+    expect(output).toContain('DB Ready Plan');
+    expect(output).not.toContain('Local Not Ready Plan');
   });
 
   test('does not fall back to local plans when SQLite has no synced plans', async () => {

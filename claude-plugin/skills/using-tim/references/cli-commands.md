@@ -18,7 +18,7 @@ Complete reference for tim command-line interface.
 
 ### tim add
 
-Create a plan stub in the DB for later generation. No tasks directory or file is required.
+Create a plan stub in the DB for later generation.
 
 ```bash
 tim add "Plan title"
@@ -38,9 +38,6 @@ Generate detailed tasks for a plan interactively using Claude Code.
 ```bash
 # From existing stub plan
 tim generate 123
-
-# From plan file
-tim generate --plan tasks/description.md
 
 # Simple mode (skip research)
 tim generate 123 --simple
@@ -116,7 +113,6 @@ Display plan details.
 
 ```bash
 tim show 123
-tim show tasks/feature.yml
 
 # Output modes
 tim show 123 --short                   # Brief summary
@@ -208,9 +204,6 @@ Update plan metadata. Supports adding and removing most plan properties.
 tim set 123 --status in_progress
 tim set 123 --status done
 tim set 123 --priority high
-tim set 123 --status-description "Waiting on API review"
-tim set 123 --no-status-description    # Remove status description
-
 # Dependencies
 tim set 123 --depends-on 101 102       # Add dependencies
 tim set 123 --no-depends-on 101        # Remove a dependency
@@ -262,7 +255,6 @@ tim prompts generate-plan 123
 tim prompts generate-plan-simple --plan 123
 tim prompts plan-questions 123
 tim prompts load-plan 123
-tim prompts compact-plan 123
 ```
 
 ## Workspace Commands
@@ -377,10 +369,10 @@ tim pr unlink 123 org/repo#456
 Generate a PR description from a plan (migrated from `tim pr-description`, which remains as a hidden alias).
 
 ```bash
-tim pr description tasks/feature.yml
-tim pr description tasks/feature.yml --dry-run
-tim pr description tasks/feature.yml --create-pr
-tim pr description tasks/feature.yml --copy
+tim pr description 123
+tim pr description 123 --dry-run
+tim pr description 123 --create-pr
+tim pr description 123 --copy
 ```
 
 ## Utility Commands
@@ -411,17 +403,6 @@ Delete stale materialized plan files from `.tim/plans/`. Primary files are remov
 
 ```bash
 tim cleanup-materialized
-```
-
-### tim compact
-
-Summarize completed plan for archival.
-
-```bash
-tim compact 144
-tim compact 144 --dry-run
-tim compact 144 --yes
-tim compact 144 --age 14               # Minimum age in days
 ```
 
 ### tim cleanup
@@ -468,7 +449,7 @@ tim import                             # Interactive multi-select
 Split a plan into phases.
 
 ```bash
-tim split 123 --output-dir tasks/phases/
+tim split 123
 ```
 
 ### tim extract
@@ -476,19 +457,17 @@ tim split 123 --output-dir tasks/phases/
 Extract plan from text.
 
 ```bash
-tim extract --input description.txt --output tasks/plan.yml
+tim extract --input description.txt
 ```
 
 ### tim sync
 
-Sync plan files to the SQLite database. When given a plan ID, syncs a materialized `.tim/plans/<id>.plan.md` file back to the database. Without a plan ID, syncs all plan files from the tasks directory.
+Sync materialized plan files back to the SQLite database. When given a plan ID, syncs a single `.tim/plans/<id>.plan.md` file. Without a plan ID, scans `.tim/plans/` for all `*.plan.md` files and syncs them all.
 
 ```bash
-tim sync 123                           # Sync materialized plan back to DB
-tim sync                               # Sync all plans to DB
-tim sync --plan 123                    # Sync specific plan from tasks directory
-tim sync --prune                       # Also remove DB entries for deleted plans
-tim sync --dir tasks/                  # Sync from specific directory
+tim sync 123                           # Sync single materialized plan back to DB
+tim sync                               # Sync all materialized plans from .tim/plans/
+tim sync --verbose                     # Show detailed sync progress
 ```
 
 ### tim init

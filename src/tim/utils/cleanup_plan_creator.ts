@@ -5,12 +5,14 @@ import * as path from 'path';
 import chalk from 'chalk';
 import { log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { generateNumericPlanId, slugify } from '../id_utils.js';
-import { writePlanFile, readAllPlans } from '../plans.js';
+import { writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
+import { loadPlansFromDb } from '../plans_db.js';
 import { updatePlanProperties } from '../planPropertiesUpdater.js';
 import type { ReviewIssue } from '../formatters/review_formatter.js';
-import { resolvePlanPathContext } from '../path_resolver.js';
+import { getPlanStorageDir, resolvePlanPathContext } from '../path_resolver.js';
 
 export interface CleanupPlanOptions {
   title?: string;
@@ -45,10 +47,12 @@ export async function createCleanupPlan(
   const config = await loadEffectiveConfig(globalOpts.config);
 
   // Determine the target directory for the new plan file
-  const { tasksDir: targetDir } = await resolvePlanPathContext(config);
+  const { gitRoot, configBaseDir } = await resolvePlanPathContext(config);
+  const { repositoryId } = await getRepositoryIdentity({ cwd: gitRoot });
+  const planDir = getPlanStorageDir(gitRoot);
 
   // Load all plans to find the referenced plan and avoid race conditions
-  const { plans: allPlans } = await readAllPlans(targetDir);
+  const { plans: allPlans } = loadPlansFromDb(planDir, repositoryId);
 
   const referencedPlan = allPlans.get(referencedPlanId);
   if (!referencedPlan) {
@@ -65,14 +69,14 @@ export async function createCleanupPlan(
   const planTitle = options.title || `${planContext.title} - Cleanup`;
 
   // Generate a unique numeric plan ID
-  const planId = await generateNumericPlanId(targetDir);
+  const planId = await generateNumericPlanId(configBaseDir, { repoRoot: gitRoot });
 
   // Create filename using plan ID + slugified title
   const slugifiedTitle = slugify(planTitle);
   const filename = `${planId}-${slugifiedTitle}.plan.md`;
 
   // Construct the full path to the new plan file
-  const filePath = path.join(targetDir, filename);
+  const filePath = path.join(planDir, filename);
 
   // Aggregate changed files from the referenced plan and its completed children
   const filePaths = new Set<string>();
@@ -135,6 +139,10 @@ export async function createCleanupPlan(
     config
   );
 
+  // Write the cleanup plan first so the DB can resolve its numeric ID when
+  // the parent dependency list is persisted.
+  await writePlanFile(filePath, plan);
+
   // Update parent plan dependencies
   if (!referencedPlan.dependencies) {
     referencedPlan.dependencies = [];
@@ -147,16 +155,14 @@ export async function createCleanupPlan(
       referencedPlan.status = 'in_progress';
       log(chalk.yellow(`  Parent plan "${referencedPlan.title}" marked as in_progress`));
     }
-
-    // Write the updated parent plan
-    await writePlanFile(referencedPlan.filename, referencedPlan);
+    // Use writePlanFile to update both the file on disk and the DB.
+    // loadPlansFromDb now resolves files under .tim/plans, so the stored
+    // filename already points at the canonical write location.
+    await writePlanFile(referencedPlan.filename || path.join(planDir, `${referencedPlan.id}.plan.md`), referencedPlan);
     log(
       chalk.gray(`  Updated parent plan ${referencedPlan.id} to include dependency on ${planId}`)
     );
   }
-
-  // Write the cleanup plan to the new file
-  await writePlanFile(filePath, plan);
 
   return {
     planId,

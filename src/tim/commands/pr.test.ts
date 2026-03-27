@@ -345,7 +345,6 @@ describe('tim/commands/pr', () => {
       'https://github.com/example/repo/pull/201'
     );
     expect(mockLinkPlanToPr).toHaveBeenCalledWith(dbHandle, 'plan-248', 77);
-    expect(mockReadPlanFile).toHaveBeenCalledWith('/tmp/248.plan.md');
     expect(mockResolvePlanFromDb).toHaveBeenCalled();
     expect(mockWritePlanFile).toHaveBeenCalledWith(
       '/tmp/248.plan.md',
@@ -437,15 +436,6 @@ describe('tim/commands/pr', () => {
       status: 'in_progress',
       pullRequest: [],
     };
-    mockReadPlanFile.mockImplementationOnce(async () => ({
-      ...currentPersistedPlan,
-      title: 'Stale title from file',
-      generatedBy: 'tim generate',
-      rmfilter: {
-        include: ['src/tim/commands/pr.ts'],
-      },
-      pullRequest: [],
-    }));
     currentRefreshedStatuses.set(
       'https://github.com/example/repo/pull/201',
       createPrDetail(201, 'Linked PR', 'pending', 77)
@@ -458,17 +448,12 @@ describe('tim/commands/pr', () => {
       createNestedCommand()
     );
 
-    expect(mockReadPlanFile).toHaveBeenCalledWith('/tmp/248.plan.md');
     expect(mockResolvePlanFromDb).toHaveBeenCalled();
     expect(mockWritePlanFile).toHaveBeenCalledWith(
       '/tmp/248.plan.md',
       expect.objectContaining({
         title: 'Fresh plan from DB',
         status: 'in_progress',
-        generatedBy: 'tim generate',
-        rmfilter: {
-          include: ['src/tim/commands/pr.ts'],
-        },
         pullRequest: ['https://github.com/example/repo/pull/201'],
       }),
       { cwdForIdentity: '/tmp' }
@@ -520,8 +505,6 @@ describe('tim/commands/pr', () => {
       createNestedCommand()
     );
 
-    // Plan update uses the freshest DB-backed copy and merges YAML-only file fields when present.
-    expect(mockReadPlanFile).toHaveBeenCalledWith('/tmp/248.plan.md');
     expect(mockResolvePlanFromDb).toHaveBeenCalled();
     expect(mockWritePlanFile).toHaveBeenCalledWith(
       '/tmp/248.plan.md',
@@ -596,7 +579,6 @@ describe('tim/commands/pr', () => {
       createNestedCommand()
     );
 
-    expect(mockReadPlanFile).toHaveBeenCalledWith('/tmp/248.plan.md');
     expect(mockResolvePlanFromDb).toHaveBeenCalled();
     expect(mockWritePlanFile).toHaveBeenCalledWith(
       '/tmp/248.plan.md',
@@ -615,15 +597,8 @@ describe('tim/commands/pr', () => {
     currentPersistedPlan = {
       ...currentPersistedPlan,
       title: 'Fresh plan from DB',
-      generatedBy: 'tim generate',
       pullRequest: ['https://github.com/example/repo/pull/301'],
     };
-    mockReadPlanFile.mockImplementationOnce(async () => {
-      const error = new Error('missing file') as NodeJS.ErrnoException;
-      error.code = 'ENOENT';
-      throw error;
-    });
-
     await prModule.handlePrUnlinkCommand(
       '248',
       'https://github.com/example/repo/pull/301',
@@ -631,13 +606,11 @@ describe('tim/commands/pr', () => {
       createNestedCommand()
     );
 
-    expect(mockReadPlanFile).toHaveBeenCalledWith('/tmp/248.plan.md');
-    expect(mockResolvePlanFromDb).toHaveBeenCalledWith('plan-248', '/tmp');
+    expect(mockResolvePlanFromDb).toHaveBeenCalled();
     expect(mockWritePlanFile).toHaveBeenCalledWith(
       '/tmp/248.plan.md',
       expect.objectContaining({
         title: 'Fresh plan from DB',
-        generatedBy: 'tim generate',
         pullRequest: [],
       }),
       { cwdForIdentity: '/tmp' }

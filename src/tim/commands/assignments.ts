@@ -15,10 +15,10 @@ import {
 } from '../assignments/stale_detection.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { resolveTasksDir } from '../configSchema.js';
 import { getDatabase } from '../db/database.js';
 import { getProject } from '../db/project.js';
 import { formatWorkspacePath, getCombinedTitleFromSummary } from '../display_utils.js';
+import { getLegacyAwareSearchDir } from '../path_resolver.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 import type { PlanSchema } from '../planSchema.js';
 import { loadPlansFromDb } from '../plans_db.js';
@@ -62,14 +62,16 @@ async function loadAssignmentsContext(command: any): Promise<AssignmentsContext>
   const globalOpts = typeof rootCommand?.opts === 'function' ? rootCommand.opts() : {};
 
   const config = await loadEffectiveConfig(globalOpts?.config);
-  const tasksDir = await resolveTasksDir(config);
   const repoRoot = await resolveRepoRootForPlanArg('', process.cwd(), globalOpts?.config);
 
   const repository = await getRepositoryIdentity({ cwd: repoRoot });
 
   const assignments = loadAssignmentsFromDb(repository.repositoryId, repository.remoteUrl);
 
-  const { plans } = loadPlansFromDb(tasksDir, repository.repositoryId);
+  const { plans } = loadPlansFromDb(
+    getLegacyAwareSearchDir(repository.gitRoot, repoRoot),
+    repository.repositoryId
+  );
   const planLookup = new Map<string, PlanWithFilename>();
   for (const plan of plans.values()) {
     if (plan.uuid) {

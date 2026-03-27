@@ -328,7 +328,7 @@ tasks:
       expect(logOutput.join('\\n')).toContain('Removed 2 obsolete keys from 1 plan');
     });
 
-    test('should detect unknown keys in project section', async () => {
+    test('ignores legacy project sections after schema cleanup', async () => {
       const invalidPlan = `---
 id: 1
 goal: Phase goal
@@ -368,9 +368,8 @@ tasks: []
         process.exit = originalExit;
       }
 
-      expect(exitCode).toBe(1); // Should exit with error
-      expect(logOutput.join('\\n')).toContain('✗ 1 invalid');
-      expect(logOutput.join('\\n')).toContain('Unknown keys: project.unknownProjectKey');
+      expect(exitCode).toBeUndefined();
+      expect(logOutput.join('\\n')).toContain('✓ 1 valid');
     });
 
     test('should detect multiple unknown keys at different levels', async () => {
@@ -427,7 +426,6 @@ project:
       expect(output).toContain('unknownRoot1');
       expect(output).toContain('unknownRoot2');
       expect(output).toContain('tasks.0.unknownTask');
-      expect(output).toContain('project.unknownProject');
     });
   });
 

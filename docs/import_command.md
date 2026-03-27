@@ -1,12 +1,12 @@
 # tim import Command
 
-The `tim import` command allows you to import GitHub issues and create corresponding local plan files. This streamlines the process of turning feature requests and bug reports from GitHub into actionable development plans within the `tim` ecosystem.
+The `tim import` command allows you to import GitHub issues and create corresponding plans in the database. This streamlines the process of turning feature requests and bug reports from GitHub into actionable development plans within the `tim` ecosystem.
 
 ## Purpose
 
 The import command bridges the gap between issue tracking and implementation planning by:
 
-- Converting GitHub issues into structured plan files
+- Converting GitHub issues into structured plans
 - Providing a foundation for detailed task planning
 - Ensuring issue context is preserved for development work
 - Creating "stub" plans ready for further expansion with `tim generate`
@@ -38,7 +38,7 @@ In interactive mode, the command will:
 
 1. List all open issues for the current repository
 2. Allow you to select multiple issues using checkboxes
-3. Import each selected issue as a separate plan file
+3. Import each selected issue as a separate plan
 
 ## Key Features
 
@@ -88,8 +88,6 @@ tim import --issue https://github.com/dimfeld/llmutils/issues/42
 # Interactive mode to select multiple issues
 tim import
 
-# Import with custom output location
-tim import --issue 123 --output custom-tasks/feature-123.yml
 ```
 
 ## Integration with Existing Workflow

@@ -142,13 +142,8 @@ describe('timAgent notifications', () => {
       executeBatchMode: executeBatchModeSpy,
     }));
 
-    await moduleMocker.mock('../../utils/references.js', () => ({
-      ensureUuidsAndReferences: mock(async () => ({ errors: [] })),
-    }));
-
     await moduleMocker.mock('../../configSchema.js', () => ({
       getDefaultConfig: mock(() => mockConfig),
-      resolveTasksDir: mock(async () => tempDir),
     }));
   });
 
