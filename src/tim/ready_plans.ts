@@ -86,7 +86,7 @@ export function isReadyPlan<T extends PlanSchema>(
 
   return plan.dependencies.every((dependency) => {
     const dependencyPlan = getDependency(allPlans, dependency);
-    return dependencyPlan?.status === 'done';
+    return dependencyPlan?.status === 'done' || dependencyPlan?.status === 'cancelled';
   });
 }
 

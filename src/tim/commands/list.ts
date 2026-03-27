@@ -352,7 +352,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
       plan.dependencies?.some((dep) => {
         const numericDep = typeof dep === 'number' ? dep : Number(dep);
         const depPlan = enrichedPlans.get(numericDep);
-        return depPlan?.status !== 'done';
+        return depPlan?.status !== 'done' && depPlan?.status !== 'cancelled';
       });
 
     const statusDisplay = isReady ? 'ready' : isBlocked ? 'blocked' : actualStatus;

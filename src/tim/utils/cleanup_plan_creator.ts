@@ -158,7 +158,10 @@ export async function createCleanupPlan(
     // Use writePlanFile to update both the file on disk and the DB.
     // loadPlansFromDb now resolves files under .tim/plans, so the stored
     // filename already points at the canonical write location.
-    await writePlanFile(referencedPlan.filename || path.join(planDir, `${referencedPlan.id}.plan.md`), referencedPlan);
+    await writePlanFile(
+      referencedPlan.filename || path.join(planDir, `${referencedPlan.id}.plan.md`),
+      referencedPlan
+    );
     log(
       chalk.gray(`  Updated parent plan ${referencedPlan.id} to include dependency on ${planId}`)
     );

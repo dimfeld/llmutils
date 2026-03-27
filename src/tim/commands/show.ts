@@ -370,19 +370,23 @@ async function displayPlanInfo(
           const statusIcon =
             depPlan.status === 'done'
               ? '✓'
-              : depPlan.status === 'in_progress'
-                ? '⏳'
-                : depPlan.status === 'needs_review'
-                  ? '⚠'
-                  : '○';
+              : depPlan.status === 'cancelled'
+                ? '✗'
+                : depPlan.status === 'in_progress'
+                  ? '⏳'
+                  : depPlan.status === 'needs_review'
+                    ? '⚠'
+                    : '○';
           const statusColor =
             depPlan.status === 'done'
               ? chalk.green
-              : depPlan.status === 'in_progress'
-                ? chalk.yellow
-                : depPlan.status === 'needs_review'
+              : depPlan.status === 'cancelled'
+                ? chalk.strikethrough.gray
+                : depPlan.status === 'in_progress'
                   ? chalk.yellow
-                  : chalk.gray;
+                  : depPlan.status === 'needs_review'
+                    ? chalk.yellow
+                    : chalk.gray;
           log(
             `  ${statusIcon} ${chalk.cyan(depId)} - ${getCombinedTitleFromSummary(depPlan)} ${statusColor(`[${depPlan.status || 'pending'}]`)}`
           );

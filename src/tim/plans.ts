@@ -307,7 +307,7 @@ export function isPlanReady(
       depPlan = allPlans.get(parseInt(depId, 10));
     }
 
-    return depPlan && depPlan.status === 'done';
+    return depPlan && (depPlan.status === 'done' || depPlan.status === 'cancelled');
   });
 }
 

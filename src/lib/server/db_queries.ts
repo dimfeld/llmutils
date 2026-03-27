@@ -350,7 +350,10 @@ function computeDisplayStatus(
   if (!plan.epic && (plan.status === 'pending' || plan.status === 'in_progress')) {
     const hasUnresolvedDependency = dependencyRows.some((dependency) => {
       const dependencyPlan = planByUuid.get(dependency.depends_on_uuid);
-      return dependencyPlan == null || dependencyPlan.status !== 'done';
+      return (
+        dependencyPlan == null ||
+        (dependencyPlan.status !== 'done' && dependencyPlan.status !== 'cancelled')
+      );
     });
 
     if (hasUnresolvedDependency) {
@@ -529,7 +532,7 @@ function toDependencySummary(
     title: dependencyPlan?.title ?? null,
     status: dependencyPlan?.status ?? null,
     displayStatus,
-    isResolved: dependencyPlan?.status === 'done',
+    isResolved: dependencyPlan?.status === 'done' || dependencyPlan?.status === 'cancelled',
   };
 }
 

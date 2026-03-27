@@ -20,10 +20,7 @@ export async function resolveWritablePath(
   if (row) {
     const candidatePaths = path.isAbsolute(row.filename)
       ? [row.filename]
-      : [
-          path.join(baseDir, '.tim', 'plans', row.filename),
-          path.join(baseDir, row.filename),
-        ];
+      : [path.join(baseDir, '.tim', 'plans', row.filename), path.join(baseDir, row.filename)];
 
     for (const candidatePath of candidatePaths) {
       const candidateExists = await Bun.file(candidatePath)
