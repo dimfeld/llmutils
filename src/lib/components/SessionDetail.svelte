@@ -277,7 +277,8 @@
 
   <!-- Scrollable message list -->
   <div
-    class="h-0 min-h-0 flex-1 overflow-y-auto bg-gray-900 p-4 font-mono text-sm"
+    class="h-0 min-h-0 flex-1 overflow-y-auto bg-gray-900 p-4 font-mono text-sm focus:outline-none"
+    tabindex="0"
     bind:this={scrollContainer}
     onscroll={handleScroll}
     onscrollend={handleScrollEnd}
