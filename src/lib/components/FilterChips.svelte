@@ -71,6 +71,7 @@
         {isActive
         ? color + ' border-current'
         : 'border-border bg-background text-muted-foreground hover:bg-gray-50 dark:hover:bg-gray-800'}"
+      aria-pressed={isActive}
       onclick={() => onToggle(status)}
     >
       {label}

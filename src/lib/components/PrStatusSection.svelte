@@ -107,6 +107,7 @@
       onclick={handleRefresh}
       disabled={refreshing}
       class="rounded px-2 py-0.5 text-xs text-muted-foreground hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
+      aria-label={refreshing ? 'Refreshing PR status' : 'Refresh PR status'}
     >
       {refreshing ? 'Refreshing...' : 'Refresh'}
     </button>

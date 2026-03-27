@@ -10,6 +10,8 @@
   import { initSessionNotifications } from '$lib/stores/session_notifications.js';
   import { requestNotificationPermission } from '$lib/utils/browser_notifications.js';
   import { clearAppBadge, setAppBadge } from '$lib/utils/pwa_badge.js';
+  import { handleGlobalShortcuts } from '$lib/utils/keyboard_shortcuts.js';
+  import { projectUrl } from '$lib/stores/project.svelte.js';
   import { ModeWatcher, setMode, userPrefersMode } from 'mode-watcher';
   import Sun from '@lucide/svelte/icons/sun';
   import Moon from '@lucide/svelte/icons/moon';
@@ -39,6 +41,27 @@
       clearAppBadge();
     }
   });
+
+  const tabSlugs = ['sessions', 'active', 'plans'] as const;
+
+  function handleShortcuts(event: KeyboardEvent) {
+    handleGlobalShortcuts(event, {
+      focusSearch() {
+        const input = document.querySelector<HTMLElement>('[data-search-input]');
+        if (input) {
+          input.focus();
+          return true;
+        }
+        return false;
+      },
+      navigateTab(tabIndex: number) {
+        const slug = tabSlugs[tabIndex - 1];
+        if (slug) {
+          void goto(projectUrl(projectId, slug));
+        }
+      },
+    });
+  }
 
   function cycleMode() {
     const current = userPrefersMode.current;
@@ -83,9 +106,16 @@
 
 <ModeWatcher defaultMode="system" themeColors={{ dark: '#0c0a09', light: '#1f2937' }} />
 
+<svelte:window onkeydown={handleShortcuts} />
 <svelte:head><link rel="icon" href={resolve('/favicon.png')} /></svelte:head>
 
 <div class="flex h-screen min-h-screen flex-col bg-background">
+  <a
+    href="#main-content"
+    class="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-background focus:p-2 focus:text-foreground"
+  >
+    Skip to main content
+  </a>
   <header class="flex items-center justify-between bg-gray-800 px-4 py-2 dark:bg-gray-900">
     <a href={resolve('/')} class="text-lg font-semibold text-white">tim</a>
     <div class="flex items-center gap-2">

@@ -119,6 +119,11 @@ describe('PrStatusSection', () => {
     expect(body).toContain('Pull Requests');
   });
 
+  test('refresh button has aria-label', async () => {
+    const { body } = await renderSection({ prUrls: [], prStatuses: [] });
+    expect(body).toContain('aria-label="Refresh PR status"');
+  });
+
   test('renders invalid PR entries as a warning block', async () => {
     const { body } = await renderSection({
       prUrls: [],

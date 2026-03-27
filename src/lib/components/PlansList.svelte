@@ -173,11 +173,14 @@
     <input
       type="text"
       placeholder="Search plans..."
+      aria-label="Search plans"
+      data-search-input
       class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
       bind:value={searchQuery}
     />
     <div class="flex items-center gap-2">
       <select
+        aria-label="Sort plans"
         class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
         bind:value={sortOption}
       >
@@ -197,9 +200,13 @@
         <div class="border-b border-border">
           <button
             class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold tracking-wide text-muted-foreground uppercase hover:bg-gray-50 dark:hover:bg-gray-800"
+            aria-expanded={!isCollapsed}
+            aria-label="Toggle {statusGroupLabels[status]} group"
             onclick={() => toggleGroup(status)}
           >
-            <span class="transition-transform {isCollapsed ? '' : 'rotate-90'}">▶</span>
+            <span class="transition-transform {isCollapsed ? '' : 'rotate-90'}" aria-hidden="true"
+              >▶</span
+            >
             {statusGroupLabels[status]}
             <span class="font-normal text-muted-foreground/70">({group.length})</span>
           </button>

@@ -235,6 +235,50 @@ Each list component (`SessionList.svelte`, `PlansList.svelte`, active work `+lay
 
 Row components (`SessionRow`, `PlanRow`, `ActivePlanRow`) have `data-list-item-id` attributes for scroll targeting.
 
+### Global Keyboard Shortcuts
+
+The root layout (`+layout.svelte`) registers a `<svelte:window onkeydown>` handler for global keyboard shortcuts:
+
+| Shortcut   | Action                                  | Context                                                                                |
+| ---------- | --------------------------------------- | -------------------------------------------------------------------------------------- |
+| **Ctrl+/** | Focus the search input on the Plans tab | Suppressed when focus is in a text input, textarea, select, or contenteditable element |
+| **Ctrl+1** | Navigate to Sessions tab                | Always active, even in text inputs                                                     |
+| **Ctrl+2** | Navigate to Active Work tab             | Always active                                                                          |
+| **Ctrl+3** | Navigate to Plans tab                   | Always active                                                                          |
+
+Tab navigation uses `goto()` with `projectUrl()` to build the correct route for the current project context.
+
+The shortcut logic lives in `src/lib/utils/keyboard_shortcuts.ts`:
+
+- **`isTypingTarget(event)`** — Returns `true` if the event target is an `<input>`, `<textarea>`, `<select>`, or `[contenteditable]` element
+- **`handleGlobalShortcuts(event, callbacks)`** — Matches key combinations using `event.code` (physical key codes like `Slash`, `Digit1`) for locale independence, and calls the appropriate callback
+
+The search input in `PlansList.svelte` has a `data-search-input` attribute for targeting by the Ctrl+/ shortcut.
+
+## Accessibility (ARIA)
+
+Components use ARIA attributes to support screen readers and assistive technology:
+
+- **`PrStatusIndicator`**: The colored dot has `role="img"` and `aria-label` set to the status description (e.g. "PR checks passing") so screen readers announce status without relying on color alone.
+- **`FilterChips`**: Toggle buttons use `aria-pressed` to communicate active/inactive filter state.
+- **`SessionList` / `PlansList`**: Group collapse buttons have `aria-expanded` and descriptive `aria-label` (e.g. "Toggle Running group"). Decorative triangle indicators use `aria-hidden="true"`. The plans search input has `aria-label="Search plans"`.
+- **`TabNav`**: The `<nav>` element has `aria-label="Main navigation"`. Active tab links use `aria-current="page"`.
+- **`ProjectSidebar`**: The `<nav>` element has `aria-label="Project navigation"`. Selected project links use `aria-current="page"`.
+- **`SessionDetail`**: The header status dot has `role="img"` and `aria-label` set to the status text.
+- **`MessageInput`**: The textarea has `aria-label="Send input to session"`.
+- **`PrStatusSection`**: The icon-only refresh button has a dynamic `aria-label` that reflects the current state ("Refreshing PR status..." while loading, "Refresh PR status" otherwise).
+- **Skip-to-content link**: The root layout (`+layout.svelte`) includes a visually-hidden skip link as the first child, targeting `id="main-content"` on the content wrapper in the project layout (`projects/[projectId]/+layout.svelte`). Uses `sr-only focus:not-sr-only` Tailwind classes so it appears only on focus. The target element has `tabindex="-1"` for programmatic focusability.
+- **End-session confirmation** (`SessionDetail`): The inline confirmation bar has `role="alertdialog"` and `aria-label="Confirm end session"`. When opened, focus moves to the confirm button via `$effect` + `tick()`. Pressing Escape cancels the confirmation. On cancel, focus returns to the original "End Session" trigger button.
+
+### Guidelines for new components
+
+- Icon-only buttons must have `aria-label`.
+- Color-only indicators need `role="img"` and `aria-label` (or a `sr-only` text span).
+- Toggle buttons should use `aria-pressed`.
+- Collapse/expand controls should use `aria-expanded`.
+- Navigation landmarks (`<nav>`) should have `aria-label` to distinguish them. Active links use `aria-current="page"`.
+- Inline confirmation dialogs should use `role="alertdialog"`, move focus to the confirm button on open (via `$effect` + `tick()`), handle Escape to cancel, and return focus to the trigger element on dismissal.
+
 ## Plan Actions
 
 The plan detail view supports triggering CLI commands directly from the web UI. Two actions are available:

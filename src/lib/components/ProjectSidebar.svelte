@@ -25,12 +25,16 @@
   <div class="p-3 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
     Projects
   </div>
-  <nav class="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2">
+  <nav
+    class="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-2"
+    aria-label="Project navigation"
+  >
     <a
       href={resolve(projectUrl('all', currentTab))}
       class="rounded-md px-3 py-2 text-sm transition-colors {selectedProjectId === 'all'
         ? 'bg-blue-100 font-medium text-blue-900 dark:bg-blue-900/30 dark:text-blue-200'
         : 'text-foreground hover:bg-gray-100 dark:hover:bg-gray-800'}"
+      aria-current={selectedProjectId === 'all' ? 'page' : undefined}
     >
       All Projects
     </a>
@@ -41,6 +45,7 @@
         class="rounded-md px-3 py-2 text-sm transition-colors {isSelected
           ? 'bg-blue-100 font-medium text-blue-900 dark:bg-blue-900/30 dark:text-blue-200'
           : 'text-foreground hover:bg-gray-100 dark:hover:bg-gray-800'}"
+        aria-current={isSelected ? 'page' : undefined}
       >
         <div class="truncate">{projectDisplayName(project.repository_id, currentUsername)}</div>
         <div class="mt-0.5 text-xs text-muted-foreground">

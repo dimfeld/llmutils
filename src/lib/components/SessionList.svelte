@@ -68,9 +68,13 @@
         <button
           type="button"
           class="flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs font-semibold tracking-wide text-muted-foreground uppercase transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+          aria-expanded={!isCollapsed}
+          aria-label="Toggle {group.label} group"
           onclick={() => toggleGroup(group.groupKey)}
         >
-          <span class="text-[10px] text-muted-foreground/70">{isCollapsed ? '▶' : '▼'}</span>
+          <span class="text-[10px] text-muted-foreground/70" aria-hidden="true"
+            >{isCollapsed ? '▶' : '▼'}</span
+          >
           <span class="min-w-0 flex-1 truncate">{group.label}</span>
           <span class="shrink-0 text-[10px] font-normal text-muted-foreground/70">
             {group.sessions.length}

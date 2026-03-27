@@ -10,6 +10,7 @@
   import MessageInput from './MessageInput.svelte';
   import { afterNavigate } from '$app/navigation';
   import { page } from '$app/state';
+  import { tick } from 'svelte';
   import { getPlanTaskCounts } from '$lib/remote/plan_task_counts.remote.js';
   import { resolve } from '$app/paths';
 
@@ -21,6 +22,8 @@
   let isFirstScroll = $state(true);
   let autoScroll = $state(true);
   let confirmingEndSession = $state(false);
+  let endSessionTriggerButton: HTMLButtonElement | undefined = $state();
+  let confirmEndSessionButton: HTMLButtonElement | undefined = $state();
 
   afterNavigate(({ from, to }) => {
     if (from && to && from.url.pathname !== to.url.pathname) {
@@ -123,12 +126,23 @@
     }
   }
 
-  function handleRequestEndSession() {
+  async function handleRequestEndSession() {
     confirmingEndSession = true;
+    await tick();
+    confirmEndSessionButton?.focus();
   }
 
-  function handleCancelEndSession() {
+  async function handleCancelEndSession() {
     confirmingEndSession = false;
+    await tick();
+    endSessionTriggerButton?.focus();
+  }
+
+  function handleConfirmationKeydown(event: KeyboardEvent) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      void handleCancelEndSession();
+    }
   }
 
   async function handleConfirmEndSession() {
@@ -144,7 +158,11 @@
   <div class="shrink-0 border-b border-border px-4 py-3">
     <div class="flex items-start justify-between gap-3">
       <div class="flex min-w-0 items-center gap-3">
-        <span class="h-2.5 w-2.5 shrink-0 rounded-full {statusDotClass}"></span>
+        <span
+          class="h-2.5 w-2.5 shrink-0 rounded-full {statusDotClass}"
+          aria-label={statusText}
+          role="img"
+        ></span>
         <h2 class="truncate text-lg font-semibold text-foreground">
           {session.sessionInfo.command}
         </h2>
@@ -179,14 +197,20 @@
       <div class="flex shrink-0 items-center gap-2">
         {#if showEndSession}
           {#if confirmingEndSession}
+            <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
             <div
+              role="alertdialog"
+              aria-label="Confirm end session"
+              tabindex="-1"
               class="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-900 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-100"
+              onkeydown={handleConfirmationKeydown}
             >
               <span>End this running session?</span>
               <button
                 type="button"
                 class="rounded bg-red-600 px-2 py-1 font-medium text-white transition-colors hover:bg-red-700"
                 onclick={handleConfirmEndSession}
+                bind:this={confirmEndSessionButton}
               >
                 End Session
               </button>
@@ -203,6 +227,7 @@
               type="button"
               class="rounded border border-red-200 px-2 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-950/40"
               onclick={handleRequestEndSession}
+              bind:this={endSessionTriggerButton}
             >
               End Session
             </button>

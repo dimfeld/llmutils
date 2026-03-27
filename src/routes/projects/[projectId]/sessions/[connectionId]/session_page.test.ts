@@ -31,6 +31,21 @@ vi.mock('$lib/stores/session_state.svelte.js', () => ({
   useSessionManager: () => sessionManager,
 }));
 
+vi.mock('$lib/remote/plan_task_counts.remote.js', () => ({
+  getPlanTaskCounts: () => Promise.resolve(null),
+}));
+
+vi.mock('$app/paths', () => ({
+  resolve: (_path: string, params?: Record<string, string>) => {
+    if (!params) return _path;
+    let result = _path;
+    for (const [key, value] of Object.entries(params)) {
+      result = result.replace(`[${key}]`, value);
+    }
+    return result;
+  },
+}));
+
 import Page from './+page.svelte';
 
 function createSession(overrides: Partial<SessionData> = {}): SessionData {

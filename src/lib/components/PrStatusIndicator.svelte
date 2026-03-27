@@ -21,4 +21,5 @@
   let title = $derived(titleMap[status] ?? 'Unknown PR status');
 </script>
 
-<span class="inline-block h-2 w-2 rounded-full {colorClass}" {title}></span>
+<span class="inline-block h-2 w-2 rounded-full {colorClass}" {title} aria-label={title} role="img"
+></span>

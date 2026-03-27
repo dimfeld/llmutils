@@ -17,6 +17,6 @@
   selectedProjectId={data.projectId}
   currentUsername={data.currentUsername}
 />
-<div class="flex min-h-0 flex-1 overflow-hidden">
+<div id="main-content" tabindex="-1" class="flex min-h-0 flex-1 overflow-hidden focus:outline-none">
   {@render children()}
 </div>

@@ -39,4 +39,23 @@ describe('PrStatusIndicator', () => {
     expect(body).toContain('h-2');
     expect(body).toContain('w-2');
   });
+
+  test('has role="img" for screen readers', () => {
+    const { body } = renderIndicator('passing');
+    expect(body).toContain('role="img"');
+  });
+
+  test('has aria-label matching the title for each status', () => {
+    const statuses: { status: PrSummaryStatus; expected: string }[] = [
+      { status: 'passing', expected: 'PR checks passing' },
+      { status: 'failing', expected: 'PR checks failing' },
+      { status: 'pending', expected: 'PR checks pending' },
+      { status: 'none', expected: 'No PR status' },
+    ];
+
+    for (const { status, expected } of statuses) {
+      const { body } = renderIndicator(status);
+      expect(body).toContain(`aria-label="${expected}"`);
+    }
+  });
 });

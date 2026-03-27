@@ -20,21 +20,14 @@
     new Set(prompt.promptConfig.choices?.filter((c) => c.checked).map((c) => c.value) ?? [])
   );
 
-  let inputValue = $state('');
-  let selectedValue = $state<string | number | boolean>('');
-  let checkedValues = $state<Set<string | number | boolean>>(new Set());
+  let inputValue = $derived(defaultInputValue);
+  let selectedValue = $derived<string | number | boolean>(defaultSelectedValue);
+  let checkedValues = $derived<Set<string | number | boolean>>(new Set(defaultCheckedValues));
   let sending = $state(false);
-  let prefixWordIndex = $state(0);
 
   let displayCommand = $derived(extractCommandAfterCd(prompt.promptConfig.command ?? ''));
   let commandWords = $derived(displayCommand.split(/\s+/).filter((w) => w.length > 0));
-
-  $effect(() => {
-    inputValue = defaultInputValue;
-    selectedValue = defaultSelectedValue;
-    checkedValues = new Set(defaultCheckedValues);
-    prefixWordIndex = commandWords.length - 1;
-  });
+  let prefixWordIndex = $derived(commandWords.length - 1);
 
   async function respond(value: unknown) {
     if (sending) return;

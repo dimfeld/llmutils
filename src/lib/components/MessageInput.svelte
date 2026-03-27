@@ -40,6 +40,7 @@
       class="min-w-0 flex-1 resize-none overflow-hidden rounded border border-gray-600 bg-gray-900 px-3 py-1.5 text-sm text-gray-200 placeholder-gray-500 focus:border-blue-500 focus:outline-none"
       rows="1"
       placeholder="Send input to session..."
+      aria-label="Send input to session"
       style="field-sizing: content;"
       use:autofocusOnMount
       bind:this={textareaEl}
