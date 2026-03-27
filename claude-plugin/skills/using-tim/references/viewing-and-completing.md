@@ -5,6 +5,7 @@ Commands for viewing plan status and marking tasks/plans as complete.
 ## Contents
 
 - [Viewing Plans](#viewing-plans)
+- [Editing Plan Files](#editing-plan-files)
 - [Marking Tasks Done](#marking-tasks-done)
 - [Marking Plans Done](#marking-plans-done)
 
@@ -45,6 +46,23 @@ tim ready --tag backend
 tim ready --format table        # Table format
 tim ready --format json         # JSON output
 ```
+
+## Editing Plan Files
+
+Plans are stored in the database. To check out a plan as a markdown file for direct editing, use `tim materialize`. To write changes back to the database, use `tim sync`.
+
+```bash
+# Materialize a plan to .tim/plans/{id}.plan.md (also writes related plans as .ref.md context files)
+tim materialize 123
+
+# After editing the file, sync it back to the database
+tim sync 123
+
+# Sync all materialized plans back to the database
+tim sync
+```
+
+You can also use `tim edit 123` which materializes, opens in `$EDITOR`, syncs on close, and cleans up.
 
 ## Marking Tasks Done
 
