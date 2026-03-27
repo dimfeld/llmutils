@@ -1,7 +1,10 @@
 <script lang="ts">
   import TerminalIcon from '@lucide/svelte/icons/terminal';
   import AppWindow from '@lucide/svelte/icons/app-window';
+  import ClipboardCopy from '@lucide/svelte/icons/clipboard-copy';
+  import Download from '@lucide/svelte/icons/download';
   import { toast } from 'svelte-sonner';
+  import { exportSessionAsMarkdown, generateExportFilename } from '$lib/utils/session_export.js';
 
   import type { SessionData } from '$lib/types/session.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
@@ -158,6 +161,35 @@
       confirmingEndSession = false;
     }
   }
+
+  let hasMessages = $derived(session.messages.length > 0);
+
+  async function handleCopyTranscript() {
+    try {
+      const markdown = exportSessionAsMarkdown(session);
+      await navigator.clipboard.writeText(markdown);
+      toast.success('Copied to clipboard');
+    } catch (err) {
+      toast.error(`Failed to copy: ${(err as Error).message}`);
+    }
+  }
+
+  function handleDownloadTranscript() {
+    try {
+      const markdown = exportSessionAsMarkdown(session);
+      const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = generateExportFilename(session);
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch (err) {
+      toast.error(`Failed to download: ${(err as Error).message}`);
+    }
+  }
 </script>
 
 <div class="flex h-full min-h-0 w-full flex-col overflow-hidden">
@@ -240,6 +272,27 @@
             </button>
           {/if}
         {/if}
+
+        <button
+          type="button"
+          class="rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
+          onclick={handleCopyTranscript}
+          disabled={!hasMessages}
+          aria-label="Copy transcript to clipboard"
+          title="Copy transcript to clipboard"
+        >
+          <ClipboardCopy class="size-4" />
+        </button>
+        <button
+          type="button"
+          class="rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
+          onclick={handleDownloadTranscript}
+          disabled={!hasMessages}
+          aria-label="Download transcript"
+          title="Download transcript"
+        >
+          <Download class="size-4" />
+        </button>
 
         {#if session.sessionInfo.workspacePath}
           <button
