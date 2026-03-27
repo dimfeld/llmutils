@@ -24,6 +24,7 @@
   let confirmingEndSession = $state(false);
   let endSessionTriggerButton: HTMLButtonElement | undefined = $state();
   let confirmEndSessionButton: HTMLButtonElement | undefined = $state();
+  const FULLY_RENDERED_MESSAGE_COUNT = 20;
 
   afterNavigate(({ from, to }) => {
     if (from && to && from.url.pathname !== to.url.pathname) {
@@ -106,6 +107,12 @@
     session.sessionInfo.planUuid
       ? await getPlanTaskCounts({ planUuid: session.sessionInfo.planUuid })
       : null
+  );
+
+  // This ensures that we do layout on the final messages, which helps autoscroll to continue to work when adding new
+  // messages.
+  let fullRenderStartIndex = $derived(
+    Math.max(0, session.messages.length - FULLY_RENDERED_MESSAGE_COUNT)
   );
 
   function handleActivateTerminal() {
@@ -286,8 +293,8 @@
     {#if session.messages.length === 0}
       <p class="text-gray-500">No messages yet</p>
     {:else}
-      {#each session.messages as message (message.id)}
-        <SessionMessage {message} />
+      {#each session.messages as message, index (message.id)}
+        <SessionMessage {message} disableContentVisibility={index >= fullRenderStartIndex} />
       {/each}
     {/if}
   </div>

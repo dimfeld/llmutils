@@ -13,7 +13,13 @@
   } from './session_message_truncation.js';
   import ReviewResultDisplay from './ReviewResultDisplay.svelte';
 
-  let { message }: { message: DisplayMessage } = $props();
+  let {
+    message,
+    disableContentVisibility = false,
+  }: {
+    message: DisplayMessage;
+    disableContentVisibility?: boolean;
+  } = $props();
 
   let displayCategory: DisplayCategory | null = $derived(
     message.body.type === 'structured' ? getDisplayCategory(message.body.message) : null
@@ -37,6 +43,7 @@
 
   let expanded = $state(false);
   let kvExpanded = $state(false);
+  let contentVisibilityValue = $derived(disableContentVisibility ? undefined : 'auto');
 
   function getKeyValueTruncationState(value: string, expanded: boolean, isToolUse: boolean) {
     if (isToolUse) {
@@ -94,7 +101,11 @@
   let isToolUseValues = $derived(displayCategory === 'toolUse');
 </script>
 
-<div class="py-0.5 {colorClass}" style:content-visibility="auto">
+<div
+  class="py-0.5 {colorClass}"
+  style:content-visibility={contentVisibilityValue}
+  style:contain-intrinsic-block-size="auto 2rem"
+>
   <span class="mr-2 text-xs text-gray-400">{timeStr}</span>
   {#if message.body.type === 'structured' && message.body.message.type === 'review_result'}
     <ReviewResultDisplay message={message.body.message} />
