@@ -537,19 +537,6 @@ program
   });
 
 program
-  .command('merge <planFile>')
-  .description('Merge child plans into their parent plan. Can be a file path or plan ID.')
-  .option(
-    '--children <children...>',
-    'Specific child plan IDs or files to merge (defaults to all direct children)'
-  )
-  .option('--all', 'Merge all direct children (default behavior)')
-  .action(async (planFile, options, command) => {
-    const { handleMergeCommand } = await import('./commands/merge.js');
-    await handleMergeCommand(planFile, options, command).catch(handleCommandError);
-  });
-
-program
   .command('cleanup [files...]')
   .description('Remove end-of-line comments from changed files or specified files')
   .option(
@@ -980,22 +967,6 @@ program
   .action(async (options, command) => {
     const { handleValidateCommand } = await import('./commands/validate.js');
     await handleValidateCommand(options, command).catch(handleCommandError);
-  });
-
-program
-  .command('split <planArg>')
-  .description(
-    'Split a plan into smaller plans. Use --auto for LLM-based split, or --tasks/--select for manual modes.'
-  )
-  .option('--auto', 'Use LLM to split into phases (existing behavior)')
-  .option(
-    '--tasks <specifier>',
-    'Manually select tasks by index (1-based). Supports ranges and comma lists, e.g. 1-3,5'
-  )
-  .option('--select', 'Interactively choose tasks to split via a checkbox prompt')
-  .action(async (planArg, options, command) => {
-    const { handleSplitCommand } = await import('./commands/split.js');
-    await handleSplitCommand(planArg, options, command).catch(handleCommandError);
   });
 
 program

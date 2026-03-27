@@ -444,14 +444,6 @@ tim import --issue 123
 tim import                             # Interactive multi-select
 ```
 
-### tim split
-
-Split a plan into phases.
-
-```bash
-tim split 123
-```
-
 ### tim extract
 
 Extract plan from text.
