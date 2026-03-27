@@ -94,7 +94,7 @@
   let isToolUseValues = $derived(displayCategory === 'toolUse');
 </script>
 
-<div class="py-0.5 {colorClass}">
+<div class="py-0.5 {colorClass}" style:content-visibility="auto">
   <span class="mr-2 text-xs text-gray-400">{timeStr}</span>
   {#if message.body.type === 'structured' && message.body.message.type === 'review_result'}
     <ReviewResultDisplay message={message.body.message} />
