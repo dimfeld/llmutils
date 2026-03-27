@@ -788,36 +788,40 @@ describe('LifecycleManager', () => {
     expect(await readLines(logFile)).toEqual(['daemon-start', 'daemon-stop', 'daemon-term']);
   });
 
-  test('daemon shutdown sends SIGKILL after timeout when SIGTERM does not stop the process', async () => {
-    const pidFile = path.join(tempDir, 'stubborn.pid');
-    const manager = new LifecycleManager(
-      [
-        {
-          title: 'stubborn daemon',
-          command: await createStubbornDaemonCommand(
-            logFile,
-            pidFile,
-            'stubborn-start',
-            'stubborn-sigterm'
-          ),
-          mode: 'daemon',
-        },
-      ],
-      tempDir,
-      undefined
-    );
+  test.skipIf(!process.env.SLOW_TESTS)(
+    'daemon shutdown sends SIGKILL after timeout when SIGTERM does not stop the process',
+    async () => {
+      const pidFile = path.join(tempDir, 'stubborn.pid');
+      const manager = new LifecycleManager(
+        [
+          {
+            title: 'stubborn daemon',
+            command: await createStubbornDaemonCommand(
+              logFile,
+              pidFile,
+              'stubborn-start',
+              'stubborn-sigterm'
+            ),
+            mode: 'daemon',
+          },
+        ],
+        tempDir,
+        undefined
+      );
 
-    await manager.startup();
-    await waitForLine(logFile, 'stubborn-start');
-    const pid = Number.parseInt(await fs.readFile(pidFile, 'utf8'), 10);
+      await manager.startup();
+      await waitForLine(logFile, 'stubborn-start');
+      const pid = Number.parseInt(await fs.readFile(pidFile, 'utf8'), 10);
 
-    await manager.shutdown();
+      await manager.shutdown();
 
-    const events = await readLines(logFile);
-    expect(events).toContain('stubborn-start');
-    expect(events).toContain('stubborn-sigterm');
-    expect(processExists(pid)).toBeFalse();
-  }, 10000);
+      const events = await readLines(logFile);
+      expect(events).toContain('stubborn-start');
+      expect(events).toContain('stubborn-sigterm');
+      expect(processExists(pid)).toBeFalse();
+    },
+    10000
+  );
 
   test('warns when a running daemon exits unexpectedly later', async () => {
     const warnSpy = spyOn(logging, 'warn').mockImplementation(() => {});
