@@ -15,6 +15,7 @@ let currentDb: Database;
 let currentManager: SessionManager;
 const spawnGenerateProcessMock = vi.fn();
 const spawnAgentProcessMock = vi.fn();
+const spawnChatProcessMock = vi.fn();
 
 vi.mock('$lib/server/init.js', () => ({
   getServerContext: async () => ({
@@ -32,10 +33,12 @@ vi.mock('$lib/server/plan_actions.js', () => ({
     spawnGenerateProcessMock(...args),
   spawnAgentProcess: (...args: Parameters<typeof spawnAgentProcessMock>) =>
     spawnAgentProcessMock(...args),
+  spawnChatProcess: (...args: Parameters<typeof spawnChatProcessMock>) =>
+    spawnChatProcessMock(...args),
 }));
 
 import { isPlanLaunching, resetLaunchLockState, setLaunchLock } from '$lib/server/launch_lock.js';
-import { startAgent, startGenerate } from './plan_actions.remote.js';
+import { startAgent, startChat, startGenerate } from './plan_actions.remote.js';
 
 describe('plan remote actions', () => {
   let tempDir: string;
@@ -51,6 +54,7 @@ describe('plan remote actions', () => {
     currentManager = new SessionManager(currentDb);
     spawnGenerateProcessMock.mockReset();
     spawnAgentProcessMock.mockReset();
+    spawnChatProcessMock.mockReset();
 
     projectId = getOrCreateProject(currentDb, 'repo-plan-actions', {
       remoteUrl: 'https://example.com/repo-plan-actions.git',
@@ -764,6 +768,326 @@ describe('plan remote actions', () => {
         status: 'started',
         planId: 2014,
       });
+    });
+  });
+
+  describe('startChat', () => {
+    test('rejects missing plans', async () => {
+      await expect(
+        invokeCommand(startChat, { planUuid: 'missing-plan', executor: 'claude' })
+      ).rejects.toMatchObject({
+        status: 404,
+        body: { message: 'Plan not found' },
+      });
+    });
+
+    test('allows done, cancelled, and deferred plans', async () => {
+      seedPlan({ uuid: 'chat-plan-done', planId: 2101, status: 'done' });
+      seedPlan({ uuid: 'chat-plan-cancelled', planId: 2102, status: 'cancelled' });
+      seedPlan({ uuid: 'chat-plan-deferred', planId: 2103, status: 'deferred' });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      spawnChatProcessMock.mockResolvedValue({ success: true, planId: 2101 });
+
+      await expect(
+        invokeCommand(startChat, { planUuid: 'chat-plan-done', executor: 'claude' })
+      ).resolves.toEqual({
+        status: 'started',
+        planId: 2101,
+      });
+
+      spawnChatProcessMock.mockResolvedValue({ success: true, planId: 2102 });
+      await expect(
+        invokeCommand(startChat, { planUuid: 'chat-plan-cancelled', executor: 'claude' })
+      ).resolves.toEqual({
+        status: 'started',
+        planId: 2102,
+      });
+
+      spawnChatProcessMock.mockResolvedValue({ success: true, planId: 2103 });
+      await expect(
+        invokeCommand(startChat, { planUuid: 'chat-plan-deferred', executor: 'claude' })
+      ).resolves.toEqual({
+        status: 'started',
+        planId: 2103,
+      });
+
+      expect(spawnChatProcessMock).toHaveBeenNthCalledWith(
+        1,
+        2101,
+        '/tmp/primary-workspace',
+        'claude'
+      );
+      expect(spawnChatProcessMock).toHaveBeenNthCalledWith(
+        2,
+        2102,
+        '/tmp/primary-workspace',
+        'claude'
+      );
+      expect(spawnChatProcessMock).toHaveBeenNthCalledWith(
+        3,
+        2103,
+        '/tmp/primary-workspace',
+        'claude'
+      );
+    });
+
+    test('allows plans with tasks', async () => {
+      seedPlan({
+        uuid: 'chat-plan-with-tasks',
+        planId: 2104,
+        tasks: [{ title: 'Task', description: 'Pending', done: false }],
+      });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      spawnChatProcessMock.mockResolvedValue({ success: true, planId: 2104 });
+
+      await expect(
+        invokeCommand(startChat, { planUuid: 'chat-plan-with-tasks', executor: 'claude' })
+      ).resolves.toEqual({
+        status: 'started',
+        planId: 2104,
+      });
+      expect(spawnChatProcessMock).toHaveBeenCalledWith(2104, '/tmp/primary-workspace', 'claude');
+    });
+
+    test('allows plans without tasks', async () => {
+      seedPlan({ uuid: 'chat-plan-no-tasks', planId: 2105 });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      spawnChatProcessMock.mockResolvedValue({ success: true, planId: 2105 });
+
+      await expect(
+        invokeCommand(startChat, { planUuid: 'chat-plan-no-tasks', executor: 'claude' })
+      ).resolves.toEqual({
+        status: 'started',
+        planId: 2105,
+      });
+      expect(spawnChatProcessMock).toHaveBeenCalledWith(2105, '/tmp/primary-workspace', 'claude');
+    });
+
+    test.each([
+      ['agent', 'conn-chat-agent-running'],
+      ['generate', 'conn-chat-generate-running'],
+      ['chat', 'conn-chat-chat-running'],
+      ['review', 'conn-chat-review-running'],
+    ] as const)(
+      'returns already_running when a %s session exists on the same plan',
+      async (command, connectionId) => {
+        seedPlan({ uuid: `chat-plan-${command}-running`, planId: 2106 });
+        currentManager.handleWebSocketConnect(connectionId, () => {});
+        currentManager.handleWebSocketMessage(connectionId, {
+          type: 'session_info',
+          command,
+          interactive: true,
+          planId: 2106,
+          planUuid: `chat-plan-${command}-running`,
+          workspacePath: '/tmp/primary-workspace',
+        });
+
+        await expect(
+          invokeCommand(startChat, {
+            planUuid: `chat-plan-${command}-running`,
+            executor: 'claude',
+          })
+        ).resolves.toEqual({
+          status: 'already_running',
+          connectionId,
+        });
+        expect(spawnChatProcessMock).not.toHaveBeenCalled();
+      }
+    );
+
+    test('ignores offline sessions and starts a new process', async () => {
+      seedPlan({ uuid: 'chat-plan-offline-session', planId: 2107 });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      currentManager.handleWebSocketConnect('conn-chat-offline', () => {});
+      currentManager.handleWebSocketMessage('conn-chat-offline', {
+        type: 'session_info',
+        command: 'chat',
+        interactive: true,
+        planId: 2107,
+        planUuid: 'chat-plan-offline-session',
+        workspacePath: '/tmp/primary-workspace',
+      });
+      currentManager.handleWebSocketDisconnect('conn-chat-offline');
+      spawnChatProcessMock.mockResolvedValue({ success: true, planId: 2107 });
+
+      await expect(
+        invokeCommand(startChat, { planUuid: 'chat-plan-offline-session', executor: 'claude' })
+      ).resolves.toEqual({
+        status: 'started',
+        planId: 2107,
+      });
+      expect(spawnChatProcessMock).toHaveBeenCalledWith(2107, '/tmp/primary-workspace', 'claude');
+    });
+
+    test('rejects plans without a primary workspace', async () => {
+      seedPlan({ uuid: 'chat-plan-no-workspace', planId: 2108 });
+
+      await expect(
+        invokeCommand(startChat, { planUuid: 'chat-plan-no-workspace', executor: 'claude' })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Project does not have a primary workspace' },
+      });
+      expect(spawnChatProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('spawns tim chat from the primary workspace with the claude executor', async () => {
+      seedPlan({ uuid: 'chat-plan-claude', planId: 2109 });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      spawnChatProcessMock.mockResolvedValue({ success: true, planId: 2109 });
+
+      await expect(
+        invokeCommand(startChat, { planUuid: 'chat-plan-claude', executor: 'claude' })
+      ).resolves.toEqual({
+        status: 'started',
+        planId: 2109,
+      });
+      expect(spawnChatProcessMock).toHaveBeenCalledWith(2109, '/tmp/primary-workspace', 'claude');
+    });
+
+    test('spawns tim chat from the primary workspace with the codex executor', async () => {
+      seedPlan({ uuid: 'chat-plan-codex', planId: 2110 });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      spawnChatProcessMock.mockResolvedValue({ success: true, planId: 2110 });
+
+      await expect(
+        invokeCommand(startChat, { planUuid: 'chat-plan-codex', executor: 'codex' })
+      ).resolves.toEqual({
+        status: 'started',
+        planId: 2110,
+      });
+      expect(spawnChatProcessMock).toHaveBeenCalledWith(2110, '/tmp/primary-workspace', 'codex');
+    });
+
+    test('surfaces spawn failures', async () => {
+      seedPlan({ uuid: 'chat-plan-failure', planId: 2111 });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      spawnChatProcessMock.mockResolvedValue({
+        success: false,
+        error: 'tim chat failed to start',
+      });
+
+      await expect(
+        invokeCommand(startChat, { planUuid: 'chat-plan-failure', executor: 'claude' })
+      ).rejects.toMatchObject({
+        status: 500,
+        body: { message: 'tim chat failed to start' },
+      });
+      expect(isPlanLaunching('chat-plan-failure')).toBe(false);
+    });
+
+    test('prevents duplicate launches before any session registers', async () => {
+      seedPlan({ uuid: 'chat-plan-race', planId: 2112 });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+
+      let resolveSpawn: ((value: { success: true; planId: number }) => void) | undefined;
+      const spawnPromise = new Promise<{ success: true; planId: number }>((resolve) => {
+        resolveSpawn = resolve;
+      });
+      spawnChatProcessMock.mockReturnValue(spawnPromise);
+
+      const firstLaunch = invokeCommand(startChat, {
+        planUuid: 'chat-plan-race',
+        executor: 'claude',
+      });
+      const secondLaunch = invokeCommand(startChat, {
+        planUuid: 'chat-plan-race',
+        executor: 'claude',
+      });
+
+      await expect(secondLaunch).resolves.toEqual({
+        status: 'already_running',
+      });
+      expect(spawnChatProcessMock).toHaveBeenCalledTimes(1);
+
+      resolveSpawn?.({ success: true, planId: 2112 });
+
+      await expect(firstLaunch).resolves.toEqual({
+        status: 'started',
+        planId: 2112,
+      });
+    });
+
+    test('does not block on a session for a different plan UUID with the same numeric planId', async () => {
+      seedPlan({ uuid: 'chat-plan-project-a', planId: 2113, projectId });
+      seedPlan({ uuid: 'chat-plan-project-b', planId: 2113, projectId: secondProjectId });
+      recordWorkspace(currentDb, {
+        projectId: secondProjectId,
+        workspacePath: '/tmp/primary-workspace-b',
+        workspaceType: 'primary',
+      });
+      currentManager.handleWebSocketConnect('conn-other-project-chat', () => {});
+      currentManager.handleWebSocketMessage('conn-other-project-chat', {
+        type: 'session_info',
+        command: 'chat',
+        interactive: true,
+        planId: 2113,
+        planUuid: 'chat-plan-project-a',
+        workspacePath: '/tmp/primary-workspace',
+      });
+      spawnChatProcessMock.mockResolvedValue({ success: true, planId: 2113 });
+
+      await expect(
+        invokeCommand(startChat, { planUuid: 'chat-plan-project-b', executor: 'claude' })
+      ).resolves.toEqual({
+        status: 'started',
+        planId: 2113,
+      });
+      expect(spawnChatProcessMock).toHaveBeenCalledWith(2113, '/tmp/primary-workspace-b', 'claude');
+    });
+
+    test('launch lock does not block a different plan UUID with the same numeric planId', async () => {
+      seedPlan({ uuid: 'chat-plan-lock-a', planId: 2114, projectId });
+      seedPlan({ uuid: 'chat-plan-lock-b', planId: 2114, projectId: secondProjectId });
+      recordWorkspace(currentDb, {
+        projectId: secondProjectId,
+        workspacePath: '/tmp/primary-workspace-b',
+        workspaceType: 'primary',
+      });
+
+      setLaunchLock('chat-plan-lock-a');
+      spawnChatProcessMock.mockResolvedValue({ success: true, planId: 2114 });
+
+      await expect(
+        invokeCommand(startChat, { planUuid: 'chat-plan-lock-b', executor: 'claude' })
+      ).resolves.toEqual({
+        status: 'started',
+        planId: 2114,
+      });
+      expect(spawnChatProcessMock).toHaveBeenCalledWith(2114, '/tmp/primary-workspace-b', 'claude');
+      expect(isPlanLaunching('chat-plan-lock-a')).toBe(true);
     });
   });
 

@@ -84,3 +84,23 @@ export async function spawnAgentProcess(planId: number, cwd: string): Promise<Sp
     cwd
   );
 }
+
+export async function spawnChatProcess(
+  planId: number,
+  cwd: string,
+  executor: 'claude' | 'codex'
+): Promise<SpawnProcessResult> {
+  return spawnTimProcess(
+    planId,
+    [
+      'chat',
+      '--plan',
+      String(planId),
+      '--executor',
+      executor,
+      '--auto-workspace',
+      '--no-terminal-input',
+    ],
+    cwd
+  );
+}

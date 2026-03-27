@@ -295,7 +295,7 @@ Components use ARIA attributes to support screen readers and assistive technolog
 
 ## Plan Actions
 
-The plan detail view supports triggering CLI commands directly from the web UI. Two actions are available:
+The plan detail view supports triggering CLI commands directly from the web UI. Three actions are available:
 
 ### Open Terminal Button (`PlanDetail.svelte`)
 
@@ -303,19 +303,36 @@ An "Open Terminal" button (AppWindow icon) appears next to each workspace path i
 
 - **Generate**: For stub plans (no tasks) — spawns `tim generate` to flesh out the plan
 - **Run Agent**: For plans with incomplete tasks — spawns `tim agent` to execute the plan
+- **Chat**: For any plan regardless of status — spawns `tim chat` with an executor selection dialog
 
 ### Eligibility
 
 - **Generate** (`isPlanEligibleForGenerate`): Plan has no tasks and `displayStatus` is not `done`, `cancelled`, `deferred`, or `recently_done`.
 - **Agent** (`isPlanEligibleForAgent`): Plan is not `done`, `cancelled`, or `deferred`. If the plan has tasks, at least one must be incomplete (not all done). Plans without tasks are also eligible (simple/stub plans).
+- **Chat** (`isPlanEligibleForChat`): Any existing plan is eligible, including plans in terminal statuses (done, cancelled, deferred).
+
+### Executor Selection Dialog
+
+When launching a Chat session, a dialog opens to choose the executor:
+
+- **Claude** (claude_code executor) — blue themed button
+- **Codex** (codex_cli executor) — green themed button
+
+The dialog stays open with per-button spinners during launch. Dismissal is prevented while a launch is in flight.
 
 ### Button States
 
 - **Hidden**: Plan is ineligible for any action
-- **Generate / Run Agent**: Eligible, no active session → clickable
-- **Running...**: Active session exists for this plan (any command) → links to the session
+- **Generate / Run Agent / Chat**: Eligible, no active session → clickable
+- **Running...**: Active session exists for this plan (any command) → links to the session. Chat sessions use violet theming, generate uses blue, agent uses green.
 - **Starting**: Remote command call in flight → disabled with spinner
 - **Error**: Spawn failed → error message shown briefly
+
+### Button Layout by Plan State
+
+- **No tasks (stub plan, non-terminal)**: Generate is primary button; dropdown contains "Run Agent" and "Chat"
+- **Incomplete tasks (non-terminal)**: Run Agent is primary button; dropdown contains "Chat"
+- **All tasks complete OR terminal status**: Standalone "Chat" button (violet themed)
 
 **Duplicate prevention**: Both actions share command-agnostic duplicate detection — only one plan-scoped session (generate, agent, chat, review, or any other command publishing a `planUuid` in session info) can be active per plan at a time. All identity checks use the plan UUID (not numeric planId) for cross-project safety. Three layers of protection:
 
@@ -325,8 +342,8 @@ An "Open Terminal" button (AppWindow icon) appears next to each workspace path i
 
 ### Server-Side Infrastructure
 
-- **Remote commands** (`src/lib/remote/plan_actions.remote.ts`): `startGenerate` and `startAgent` are thin wrappers around `launchTimCommand()`, a shared helper that validates plan eligibility, checks for duplicate sessions (command-agnostic via UUID), resolves the primary workspace path, and calls the spawn handler. Both follow the same `command()` pattern as `session_actions.remote.ts`.
-- **Spawn handler** (`src/lib/server/plan_actions.ts`): `spawnTimProcess()` (internal) uses `Bun.spawn` with `{ detached: true }` to create a process that survives web server restarts (including HMR). Pipes stderr for ~500ms to detect early failures, then calls `.unref()`. Public wrappers `spawnGenerateProcess()` and `spawnAgentProcess()` pass the appropriate CLI args. The spawned process starts an embedded WebSocket server and writes a session info file; the discovery client detects and connects to it, making it appear as a new session.
+- **Remote commands** (`src/lib/remote/plan_actions.remote.ts`): `startGenerate`, `startAgent`, and `startChat` are thin wrappers around `launchTimCommand()`, a shared helper that validates plan eligibility, checks for duplicate sessions (command-agnostic via UUID), resolves the primary workspace path, and calls the spawn handler. All follow the same `command()` pattern as `session_actions.remote.ts`. `startChat` accepts an `executor` field (`'claude' | 'codex'`) which is passed through to the spawn function.
+- **Spawn handler** (`src/lib/server/plan_actions.ts`): `spawnTimProcess()` (internal) uses `Bun.spawn` with `{ detached: true }` to create a process that survives web server restarts (including HMR). Pipes stderr for ~500ms to detect early failures, then calls `.unref()`. Public wrappers `spawnGenerateProcess()`, `spawnAgentProcess()`, and `spawnChatProcess()` pass the appropriate CLI args. `spawnChatProcess` takes an additional `executor` parameter and uses `--plan <id>` (named option) rather than a positional argument. The spawned process starts an embedded WebSocket server and writes a session info file; the discovery client detects and connects to it, making it appear as a new session.
 - **Session lookup** (`SessionManager.hasActiveSessionForPlan(planUuid, command?)`): Checks whether an active session exists for a given plan UUID. The `command` parameter is optional — when omitted, matches any active session regardless of command type. Used without a command filter for duplicate prevention across all plan-scoped commands.
 - **Launch lock** (`src/lib/server/launch_lock.ts`): In-memory per-plan lock (keyed by UUID, stored on `globalThis` for HMR safety) bridging the gap between process spawn and WebSocket session registration. Exported as a separate module because SvelteKit remote function files can only export `command()` results. Subscribes to `SessionManager.subscribe('session:update')` to clear locks when sessions register.
 - **Primary workspace query** (`getPrimaryWorkspacePath()` in `db_queries.ts`): Resolves the primary workspace path for a project, used as the cwd for spawned processes.

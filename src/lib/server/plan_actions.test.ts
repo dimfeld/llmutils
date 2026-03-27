@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { spawnAgentProcess, spawnGenerateProcess } from './plan_actions.js';
+import { spawnAgentProcess, spawnChatProcess, spawnGenerateProcess } from './plan_actions.js';
 
 interface FakeSubprocess {
   exitCode: number | null;
@@ -179,6 +179,87 @@ describe('lib/server/plan_actions', () => {
     expect(result).toEqual({
       success: false,
       error: 'Failed to start tim agent: Error: spawn failed',
+    });
+  });
+
+  test('spawnChatProcess starts tim chat in detached mode and unrefs it after the early-exit window', async () => {
+    const proc = createFakeProcess({ exitCode: null });
+    const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+
+    const resultPromise = spawnChatProcess(189, '/tmp/primary-workspace', 'codex');
+    await vi.advanceTimersByTimeAsync(500);
+    const result = await resultPromise;
+
+    expect(spawnSpy).toHaveBeenCalledWith(
+      [
+        'tim',
+        'chat',
+        '--plan',
+        '189',
+        '--executor',
+        'codex',
+        '--auto-workspace',
+        '--no-terminal-input',
+      ],
+      expect.objectContaining({
+        cwd: '/tmp/primary-workspace',
+        env: process.env,
+        stdin: 'ignore',
+        stdout: 'ignore',
+        stderr: 'pipe',
+        detached: true,
+      })
+    );
+    expect(proc.unref).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ success: true, planId: 189 });
+  });
+
+  test('spawnChatProcess returns stderr when the process exits during the early-exit window', async () => {
+    const proc = createFakeProcess({
+      exitCode: 1,
+      stderrText: 'command not found',
+    });
+    vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+
+    const resultPromise = spawnChatProcess(190, '/tmp/primary-workspace', 'claude');
+    await vi.advanceTimersByTimeAsync(500);
+    const result = await resultPromise;
+
+    expect(proc.unref).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      success: false,
+      error: 'command not found',
+    });
+  });
+
+  test('spawnChatProcess falls back to the exit code when early exit has no stderr', async () => {
+    const proc = createFakeProcess({
+      exitCode: 127,
+      stderrText: '',
+    });
+    vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+
+    const resultPromise = spawnChatProcess(190, '/tmp/primary-workspace', 'claude');
+    await vi.advanceTimersByTimeAsync(500);
+    const result = await resultPromise;
+
+    expect(proc.unref).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      success: false,
+      error: 'tim chat exited early with code 127',
+    });
+  });
+
+  test('spawnChatProcess returns a spawn error when Bun.spawn throws', async () => {
+    vi.spyOn(Bun, 'spawn').mockImplementation(() => {
+      throw new Error('spawn failed');
+    });
+
+    const result = await spawnChatProcess(191, '/tmp/primary-workspace', 'claude');
+
+    expect(result).toEqual({
+      success: false,
+      error: 'Failed to start tim chat: Error: spawn failed',
     });
   });
 });

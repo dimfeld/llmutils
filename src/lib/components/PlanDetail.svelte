@@ -4,13 +4,14 @@
 
   import type { PlanDetail } from '$lib/server/db_queries.js';
   import { afterNavigate } from '$app/navigation';
-  import { startGenerate, startAgent } from '$lib/remote/plan_actions.remote.js';
+  import { startGenerate, startAgent, startChat } from '$lib/remote/plan_actions.remote.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import StatusBadge from './StatusBadge.svelte';
   import PriorityBadge from './PriorityBadge.svelte';
   import PrStatusSection from './PrStatusSection.svelte';
   import { ButtonGroup } from '$lib/components/ui/button-group/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
+  import * as Dialog from '$lib/components/ui/dialog/index.js';
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 
   let {
@@ -52,6 +53,8 @@
   let showAgentOnly = $derived(hasTasks && hasIncompleteTasks && !isIneligible);
   // Plans without tasks: show "Generate" as primary + "Run Agent" in dropdown
   let showGenerateWithAgent = $derived(!hasTasks && !isIneligible);
+  // All tasks complete or terminal status: show standalone Chat button
+  let showChatOnly = $derived(!showGenerateWithAgent && !showAgentOnly);
 
   // Active session detection is independent of eligibility so the "Running" link
   // remains visible even if the plan transitions to an ineligible status.
@@ -71,6 +74,8 @@
 
   let startingGenerate = $state(false);
   let startingAgent = $state(false);
+  let startingChat: 'claude' | 'codex' | false = $state(false);
+  let chatDialogOpen = $state(false);
   let startedSuccessfully = $state(false);
   let errorMessage: string | null = $state(null);
   let successMessage: { text: string; connectionId?: string } | null = $state(null);
@@ -79,6 +84,8 @@
     if (from && to && from.url.pathname !== to.url.pathname) {
       startingGenerate = false;
       startingAgent = false;
+      startingChat = false;
+      chatDialogOpen = false;
       startedSuccessfully = false;
       clearStartedTimeout();
       errorMessage = null;
@@ -136,7 +143,7 @@
     }
   }
 
-  let starting = $derived(startingGenerate || startingAgent);
+  let starting = $derived(startingGenerate || startingAgent || startingChat);
   let controlsDisabled = $derived(starting || startedSuccessfully);
 
   async function handleRunAgent() {
@@ -161,6 +168,29 @@
       errorMessage = `${err as Error}`;
     } finally {
       startingAgent = false;
+    }
+  }
+
+  async function handleChat(executor: 'claude' | 'codex') {
+    startingChat = executor;
+    errorMessage = null;
+    successMessage = null;
+    try {
+      const result = await startChat({ planUuid: plan.uuid, executor });
+      if (result.status === 'already_running') {
+        successMessage = {
+          text: 'A session is already running for this plan',
+          connectionId: result.connectionId,
+        };
+      } else {
+        successMessage = { text: 'Chat started' };
+      }
+      setStartedSuccessfully();
+    } catch (err) {
+      errorMessage = `${err as Error}`;
+    } finally {
+      startingChat = false;
+      chatDialogOpen = false;
     }
   }
 
@@ -208,13 +238,17 @@
           class="ml-auto inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-sm font-medium transition-colors
             {activeSession.command === 'agent'
             ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-900/60'
-            : 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-900/60'}"
+            : activeSession.command === 'chat'
+              ? 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/40 dark:text-violet-300 dark:hover:bg-violet-900/60'
+              : 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-900/60'}"
         >
           <span
             class="inline-block h-2 w-2 animate-pulse rounded-full {activeSession.command ===
             'agent'
               ? 'bg-emerald-500'
-              : 'bg-blue-500'}"
+              : activeSession.command === 'chat'
+                ? 'bg-violet-500'
+                : 'bg-blue-500'}"
           ></span>
           {activeSession.command === 'agent'
             ? 'Agent Running…'
@@ -223,21 +257,53 @@
               : `${activeSession.command.charAt(0).toUpperCase() + activeSession.command.slice(1)} Running…`}
         </a>
       {:else if showAgentOnly}
-        <Button
-          onclick={handleRunAgent}
-          disabled={controlsDisabled}
-          size="sm"
-          class="ml-auto bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600"
-        >
-          {#if startingAgent}
-            <span
-              class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
-            ></span>
-            Starting…
-          {:else}
-            Run Agent
-          {/if}
-        </Button>
+        <ButtonGroup class="ml-auto">
+          <Button
+            onclick={handleRunAgent}
+            disabled={controlsDisabled}
+            size="sm"
+            class="bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600"
+          >
+            {#if startingAgent}
+              <span
+                class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
+              ></span>
+              Starting…
+            {:else}
+              Run Agent
+            {/if}
+          </Button>
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger>
+              {#snippet child({ props })}
+                <Button
+                  {...props}
+                  disabled={controlsDisabled}
+                  size="icon-sm"
+                  aria-label="More plan actions"
+                  class="bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </Button>
+              {/snippet}
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Content align="end">
+              <DropdownMenu.Item onclick={() => (chatDialogOpen = true)}>Chat</DropdownMenu.Item>
+            </DropdownMenu.Content>
+          </DropdownMenu.Root>
+        </ButtonGroup>
       {:else if showGenerateWithAgent}
         <ButtonGroup class="ml-auto">
           <Button
@@ -283,9 +349,26 @@
             </DropdownMenu.Trigger>
             <DropdownMenu.Content align="end">
               <DropdownMenu.Item onclick={handleRunAgent}>Run Agent</DropdownMenu.Item>
+              <DropdownMenu.Item onclick={() => (chatDialogOpen = true)}>Chat</DropdownMenu.Item>
             </DropdownMenu.Content>
           </DropdownMenu.Root>
         </ButtonGroup>
+      {:else if showChatOnly}
+        <Button
+          onclick={() => (chatDialogOpen = true)}
+          disabled={controlsDisabled}
+          size="sm"
+          class="ml-auto bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600"
+        >
+          {#if startingChat}
+            <span
+              class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
+            ></span>
+            Starting…
+          {:else}
+            Chat
+          {/if}
+        </Button>
       {/if}
     </div>
 
@@ -470,3 +553,48 @@
     <div>Updated: {formatDate(plan.updatedAt)}</div>
   </div>
 </div>
+
+<Dialog.Root
+  open={chatDialogOpen}
+  onOpenChange={(open) => {
+    if (!open && startingChat) return;
+    chatDialogOpen = open;
+  }}
+>
+  <Dialog.Content class="sm:max-w-md">
+    <Dialog.Header>
+      <Dialog.Title>Start Chat Session</Dialog.Title>
+      <Dialog.Description>Choose which AI assistant to use</Dialog.Description>
+    </Dialog.Header>
+    <div class="flex gap-3 py-4">
+      <Button
+        onclick={() => handleChat('claude')}
+        class="flex-1 bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
+        disabled={!!startingChat}
+      >
+        {#if startingChat === 'claude'}
+          <span
+            class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
+          ></span>
+          Starting…
+        {:else}
+          Claude
+        {/if}
+      </Button>
+      <Button
+        onclick={() => handleChat('codex')}
+        class="flex-1 bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600"
+        disabled={!!startingChat}
+      >
+        {#if startingChat === 'codex'}
+          <span
+            class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
+          ></span>
+          Starting…
+        {:else}
+          Codex
+        {/if}
+      </Button>
+    </div>
+  </Dialog.Content>
+</Dialog.Root>
