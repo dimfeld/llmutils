@@ -410,8 +410,13 @@ const migrations: Migration[] = [
   {
     version: 11,
     up: `
-      ALTER TABLE pr_status ADD COLUMN author TEXT;
       ALTER TABLE pr_status ADD COLUMN requested_reviewers TEXT;
+    `,
+  },
+  {
+    version: 12,
+    up: `
+      ALTER TABLE pr_status ADD COLUMN author TEXT;
     `,
   },
 ];
