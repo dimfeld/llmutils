@@ -56,6 +56,15 @@ Use `tim workspace list`, `tim workspace add`, and `tim workspace update` to man
 
 PR status data (check runs, reviews, labels, merge state) is cached in the SQLite database and surfaced in the web interface. The CLI always force-refreshes from GitHub; the web UI uses stale-while-revalidate caching. Requires `GITHUB_TOKEN` environment variable for GitHub API access.
 
+### Project-Wide PR View
+
+The web interface supports a project-wide PR view that shows all open PRs for a project's GitHub repository that are relevant to the authenticated user (authored or reviewing). PRs are automatically linked to plans based on branch name matching. The GitHub username is resolved from the `githubUsername` config setting or via the GitHub API (cached in-memory).
+
+```yaml
+# tim.yml
+githubUsername: your-github-username # optional, avoids an API call
+```
+
 ## Lifecycle Commands
 
 Tim supports defining lifecycle commands that run automatically when starting and stopping agent sessions (`tim agent` / `tim run`). This is useful for managing dev servers, Docker containers, database migrations, and other setup/teardown tasks.
@@ -134,13 +143,14 @@ Each running process writes a JSON file at `~/.cache/tim/sessions/<pid>.json` co
 
 Tim includes a SvelteKit-based web interface for browsing and managing plans. The server-side layer uses lazy initialization to load the tim configuration, sync materialized plan files to the SQLite database, and serve enriched plan data with computed display statuses (e.g. blocked, recently done).
 
-The interface is organized around projects, with three tabs per project:
+The interface is organized around projects, with four tabs per project:
 
 - **Sessions** — real-time monitoring of tim agent processes with live message transcripts, prompt interaction (confirm/input/select/checkbox/prefix_select), and free-form user input.
 - **Active Work** — dashboard of current work per project showing workspaces (with Primary/Auto/Locked/Available status badges) and active plans (in_progress + blocked). Workspaces are filtered to "recently active" by default (locked, primary, or updated within 48 hours) with a toggle to show all. Clicking a plan shows full detail in the right pane.
+- **Pull Requests** — project-wide view of open GitHub PRs relevant to the user (authored or reviewing), with automatic plan-PR linking based on branch name matching, manual refresh, and PR detail with checks, reviews, and labels.
 - **Plans** — browse, filter, search, and inspect plans with two-column layout (list + detail), status/priority badges, collapsible status groups, and clickable dependency navigation
 
-Navigation uses route-based project selection at `/projects/{projectId}/{tab}`, with cookie persistence to remember the last-selected project. The home page redirects to the most recently used project. On all three tabs, pressing **Option+Down** (Alt+Down) / **Option+Up** (Alt+Up) navigates to the next/previous item in the list, respecting collapsed groups and active filters. Global keyboard shortcuts are also available: **Ctrl+/** focuses the search input on the Plans tab, and **Ctrl+1/2/3** switches between the Sessions, Active Work, and Plans tabs.
+Navigation uses route-based project selection at `/projects/{projectId}/{tab}`, with cookie persistence to remember the last-selected project. The home page redirects to the most recently used project. On all tabs, pressing **Option+Down** (Alt+Down) / **Option+Up** (Alt+Up) navigates to the next/previous item in the list, respecting collapsed groups and active filters. Global keyboard shortcuts are also available: **Ctrl+/** focuses the search input, and **Ctrl+1/2/3/4** switches between the Sessions, Active Work, Pull Requests, and Plans tabs.
 
 The web interface supports PWA installation, allowing it to be added to your desktop or mobile home screen and run as a standalone app without browser chrome. Static assets are cached by a service worker for faster loads, while API calls and real-time connections (SSE, WebSocket) always go through the network. When installed as a PWA, the app icon shows a badge dot whenever any session needs attention (active prompt or unhandled notification).
 

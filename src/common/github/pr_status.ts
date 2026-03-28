@@ -56,6 +56,7 @@ export interface PrStatusCheckRun {
 
 export interface PrFullStatus {
   number: number;
+  author: string | null;
   title: string;
   state: PrState;
   isDraft: boolean;
@@ -126,6 +127,7 @@ interface GraphQlCommitNode {
 
 interface GraphQlPullRequestFullStatus {
   number: number;
+  author: GraphQlActor | null;
   title: string;
   state: string;
   isDraft: boolean;
@@ -161,6 +163,9 @@ const fullStatusQuery = `
     repository(owner: $owner, name: $repo) {
       pullRequest(number: $prNumber) {
         number
+        author {
+          login
+        }
         title
         state
         isDraft
@@ -520,6 +525,7 @@ export async function fetchPrFullStatus(
 
   return {
     number: pullRequest.number,
+    author: pullRequest.author?.login ?? null,
     title: pullRequest.title,
     state: normalizePrState(pullRequest.state),
     isDraft: pullRequest.isDraft,

@@ -8,6 +8,7 @@ export interface PrStatusRow {
   owner: string;
   repo: string;
   pr_number: number;
+  author: string | null;
   title: string | null;
   state: string;
   draft: number;
@@ -15,6 +16,7 @@ export interface PrStatusRow {
   head_sha: string | null;
   base_branch: string | null;
   head_branch: string | null;
+  requested_reviewers: string | null;
   review_decision: string | null;
   check_rollup_state: string | null;
   merged_at: string | null;
@@ -81,6 +83,7 @@ export interface UpsertPrStatusInput {
   owner: string;
   repo: string;
   prNumber: number;
+  author?: string | null;
   title?: string | null;
   state: string;
   draft: boolean;
@@ -88,6 +91,7 @@ export interface UpsertPrStatusInput {
   headSha?: string | null;
   baseBranch?: string | null;
   headBranch?: string | null;
+  requestedReviewers?: string[] | null;
   reviewDecision?: string | null;
   checkRollupState?: string | null;
   mergedAt?: string | null;
@@ -110,6 +114,12 @@ export interface PlanWithLinkedPrs {
   planId: number;
   title: string | null;
   prUrls: string[];
+}
+
+export interface LinkedPlanSummary {
+  planUuid: string;
+  planId: number;
+  title: string | null;
 }
 
 function replaceCheckRuns(db: Database, prStatusId: number, checks: StoredPrCheckRunInput[]): void {
@@ -250,6 +260,7 @@ export function upsertPrStatus(db: Database, input: UpsertPrStatusInput): PrStat
           owner,
           repo,
           pr_number,
+          author,
           title,
           state,
           draft,
@@ -257,17 +268,19 @@ export function upsertPrStatus(db: Database, input: UpsertPrStatusInput): PrStat
           head_sha,
           base_branch,
           head_branch,
+          requested_reviewers,
           review_decision,
           check_rollup_state,
           merged_at,
           last_fetched_at,
           created_at,
           updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
         ON CONFLICT(pr_url) DO UPDATE SET
           owner = excluded.owner,
           repo = excluded.repo,
           pr_number = excluded.pr_number,
+          author = excluded.author,
           title = excluded.title,
           state = excluded.state,
           draft = excluded.draft,
@@ -275,6 +288,7 @@ export function upsertPrStatus(db: Database, input: UpsertPrStatusInput): PrStat
           head_sha = excluded.head_sha,
           base_branch = excluded.base_branch,
           head_branch = excluded.head_branch,
+          requested_reviewers = excluded.requested_reviewers,
           review_decision = excluded.review_decision,
           check_rollup_state = excluded.check_rollup_state,
           merged_at = excluded.merged_at,
@@ -286,6 +300,7 @@ export function upsertPrStatus(db: Database, input: UpsertPrStatusInput): PrStat
       nextInput.owner,
       nextInput.repo,
       nextInput.prNumber,
+      nextInput.author ?? null,
       nextInput.title ?? null,
       nextInput.state,
       nextInput.draft ? 1 : 0,
@@ -293,6 +308,7 @@ export function upsertPrStatus(db: Database, input: UpsertPrStatusInput): PrStat
       nextInput.headSha ?? null,
       nextInput.baseBranch ?? null,
       nextInput.headBranch ?? null,
+      JSON.stringify(nextInput.requestedReviewers ?? []),
       nextInput.reviewDecision ?? null,
       nextInput.checkRollupState ?? null,
       nextInput.mergedAt ?? null,
@@ -430,6 +446,79 @@ export function getPrStatusForPlan(
   return rows
     .map((row) => getDetailById(db, row.id))
     .filter((detail): detail is PrStatusDetail => detail !== null);
+}
+
+export function getPrStatusesForRepo(db: Database, owner: string, repo: string): PrStatusDetail[] {
+  const rows = db
+    .prepare(
+      `
+        SELECT ps.id
+        FROM pr_status ps
+        WHERE ps.owner = ?
+          AND ps.repo = ?
+          AND ps.state = 'open'
+        ORDER BY ps.pr_number, ps.id
+      `
+    )
+    .all(owner, repo) as Array<{ id: number }>;
+
+  return rows
+    .map((row) => getDetailById(db, row.id))
+    .filter((detail): detail is PrStatusDetail => detail !== null);
+}
+
+export function getLinkedPlansByPrUrl(
+  db: Database,
+  prUrls: string[]
+): Map<string, LinkedPlanSummary[]> {
+  const canonicalPrUrls = [
+    ...new Set(
+      prUrls
+        .map((prUrl) => tryCanonicalizePrUrl(prUrl))
+        .filter((prUrl): prUrl is string => prUrl !== null)
+    ),
+  ];
+  if (canonicalPrUrls.length === 0) {
+    return new Map();
+  }
+
+  const placeholders = canonicalPrUrls.map(() => '?').join(', ');
+  const rows = db
+    .prepare(
+      `
+        SELECT
+          ps.pr_url AS pr_url,
+          p.uuid AS plan_uuid,
+          p.plan_id AS plan_id,
+          p.title AS title
+        FROM pr_status ps
+        INNER JOIN plan_pr pp ON pp.pr_status_id = ps.id
+        INNER JOIN plan p ON p.uuid = pp.plan_uuid
+        WHERE ps.pr_url IN (${placeholders})
+        ORDER BY ps.pr_url, p.plan_id, p.uuid
+      `
+    )
+    .all(...canonicalPrUrls) as Array<{
+    pr_url: string;
+    plan_uuid: string;
+    plan_id: number;
+    title: string | null;
+  }>;
+
+  const linkedPlans = new Map<string, LinkedPlanSummary[]>();
+  for (const prUrl of canonicalPrUrls) {
+    linkedPlans.set(prUrl, []);
+  }
+
+  for (const row of rows) {
+    linkedPlans.get(row.pr_url)?.push({
+      planUuid: row.plan_uuid,
+      planId: row.plan_id,
+      title: row.title,
+    });
+  }
+
+  return linkedPlans;
 }
 
 export function linkPlanToPr(db: Database, planUuid: string, prStatusId: number): void {

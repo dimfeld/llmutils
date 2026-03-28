@@ -7,6 +7,8 @@ import * as path from 'node:path';
 import { DATABASE_FILENAME, openDatabase } from './database.js';
 import {
   cleanOrphanedPrStatus,
+  getLinkedPlansByPrUrl,
+  getPrStatusesForRepo,
   getPlansWithPrs,
   getPrStatusByUrl,
   getPrStatusByUrls,
@@ -62,6 +64,7 @@ describe('tim db/pr_status', () => {
       owner: 'example',
       repo: 'repo',
       prNumber: 101,
+      author: 'alice',
       title: 'Initial title',
       state: 'open',
       draft: false,
@@ -93,6 +96,8 @@ describe('tim db/pr_status', () => {
     });
 
     expect(created.status.pr_number).toBe(101);
+    expect(created.status.author).toBe('alice');
+    expect(created.status.requested_reviewers).toBe('[]');
     expect(created.status.created_at).toBeTruthy();
     expect(created.status.check_rollup_state).toBe('pending');
     expect(created.checks.map((check) => check.name)).toEqual(['test']);
@@ -105,6 +110,7 @@ describe('tim db/pr_status', () => {
       owner: 'example',
       repo: 'repo',
       prNumber: 101,
+      author: 'bob',
       title: 'Updated title',
       state: 'merged',
       draft: true,
@@ -112,6 +118,7 @@ describe('tim db/pr_status', () => {
       headSha: 'sha-2',
       baseBranch: 'release',
       headBranch: 'feature/b',
+      requestedReviewers: ['reviewer-2', 'reviewer-3'],
       reviewDecision: 'APPROVED',
       checkRollupState: 'success',
       mergedAt: '2026-03-20T00:15:00.000Z',
@@ -135,9 +142,11 @@ describe('tim db/pr_status', () => {
     });
 
     expect(updated.status.id).toBe(created.status.id);
+    expect(updated.status.author).toBe('bob');
     expect(updated.status.title).toBe('Updated title');
     expect(updated.status.state).toBe('merged');
     expect(updated.status.draft).toBe(1);
+    expect(updated.status.requested_reviewers).toBe('["reviewer-2","reviewer-3"]');
     expect(updated.status.review_decision).toBe('APPROVED');
     expect(updated.status.check_rollup_state).toBe('success');
     expect(updated.checks.map((check) => check.name)).toEqual(['lint']);
@@ -304,6 +313,107 @@ describe('tim db/pr_status', () => {
     expect(updated.checks.map((check) => check.source)).toEqual(['status_context']);
     expect(updated.reviews.map((review) => review.author)).toEqual(['alice']);
     expect(updated.labels.map((label) => label.name)).toEqual(['needs-work']);
+  });
+
+  test('getPrStatusesForRepo returns only open PRs for the requested repository', () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/301',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 301,
+      requestedReviewers: ['dimfeld'],
+      title: 'Open PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/302',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 302,
+      title: 'Closed PR',
+      state: 'closed',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/other/pull/303',
+      owner: 'example',
+      repo: 'other',
+      prNumber: 303,
+      title: 'Other repo PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    const results = getPrStatusesForRepo(db, 'example', 'repo');
+    expect(results.map((detail) => detail.status.pr_number)).toEqual([301]);
+    expect(results[0]?.status.requested_reviewers).toBe('["dimfeld"]');
+  });
+
+  test('getLinkedPlansByPrUrl returns linked plans keyed by canonical PR url', () => {
+    const pr1 = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/401',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 401,
+      title: 'Linked PR 1',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+    const pr2 = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/402',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 402,
+      title: 'Linked PR 2',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    linkPlanToPr(db, 'plan-1', pr1.status.id);
+    linkPlanToPr(db, 'plan-2', pr1.status.id);
+    linkPlanToPr(db, 'plan-2', pr2.status.id);
+
+    const links = getLinkedPlansByPrUrl(db, [
+      'https://github.com/example/repo/pulls/401?tab=checks',
+      'https://github.com/example/repo/pull/402',
+      'https://github.com/example/repo/issues/999',
+    ]);
+
+    expect(links.get('https://github.com/example/repo/pull/401')).toEqual([
+      { planUuid: 'plan-1', planId: 1, title: 'Plan 1' },
+      { planUuid: 'plan-2', planId: 2, title: 'Plan 2' },
+    ]);
+    expect(links.get('https://github.com/example/repo/pull/402')).toEqual([
+      { planUuid: 'plan-2', planId: 2, title: 'Plan 2' },
+    ]);
+    expect(links.has('https://github.com/example/repo/issues/999')).toBeFalse();
+  });
+
+  test('getLinkedPlansByPrUrl returns empty arrays for canonical PRs with no linked plans', () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/403',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 403,
+      title: 'Unlinked PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    const links = getLinkedPlansByPrUrl(db, [
+      'https://github.com/example/repo/pull/403',
+      'https://github.com/example/repo/pull/403?tab=checks',
+    ]);
+
+    expect(links.get('https://github.com/example/repo/pull/403')).toEqual([]);
+    expect(links.size).toBe(1);
   });
 
   test('getPlansWithPrs returns open PR links and respects project filter', () => {

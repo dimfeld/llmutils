@@ -1,6 +1,13 @@
-import { describe, expect, it, mock, beforeEach, spyOn } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn, test } from 'bun:test';
 import type { ReviewThreadNode, CommentNode, DiffLine } from './pull_requests.ts';
-import { parseDiff } from './pull_requests.ts';
+import {
+  parseDiff,
+  parseOwnerRepoFromRepositoryId,
+  partitionUserRelevantOpenPrs,
+} from './pull_requests.ts';
+import { ModuleMocker } from '../../testing.js';
+
+const moduleMocker = new ModuleMocker(import.meta);
 
 describe('selectReviewComments', () => {
   // Since mocking imports is complex in Bun, we'll test the logic by
@@ -301,6 +308,176 @@ describe('selectReviewComments', () => {
 
     expect(contextStart).toBe(25); // 28 - 3
     expect(contextEnd).toBe(33); // 30 + 3
+  });
+});
+
+describe('parseOwnerRepoFromRepositoryId', () => {
+  test('returns owner and repo from github-style repository id', () => {
+    expect(parseOwnerRepoFromRepositoryId('github.com__owner__repo')).toEqual({
+      owner: 'owner',
+      repo: 'repo',
+    });
+  });
+
+  test('returns null for non-GitHub repository ids', () => {
+    expect(parseOwnerRepoFromRepositoryId('gitlab.com__owner__repo')).toBeNull();
+    expect(parseOwnerRepoFromRepositoryId('bitbucket.org__owner__repo')).toBeNull();
+  });
+
+  test('returns null for invalid repository ids', () => {
+    expect(parseOwnerRepoFromRepositoryId('owner__repo')).toBeNull();
+    expect(parseOwnerRepoFromRepositoryId('')).toBeNull();
+    expect(parseOwnerRepoFromRepositoryId('github.com__owner__')).toBeNull();
+    expect(parseOwnerRepoFromRepositoryId('github.com____repo')).toBeNull();
+  });
+});
+
+describe('user-relevant open PR helpers', () => {
+  const originalGitHubToken = process.env.GITHUB_TOKEN;
+
+  afterEach(() => {
+    process.env.GITHUB_TOKEN = originalGitHubToken;
+    moduleMocker.clear();
+  });
+
+  test('partitionUserRelevantOpenPrs separates authored and requested-review PRs', () => {
+    const prs = [
+      {
+        number: 1,
+        title: 'Authored',
+        headRefName: 'feature/authored',
+        html_url: 'https://github.com/example/repo/pull/1',
+        user: { login: 'Dimfeld' },
+        requestedReviewers: [],
+      },
+      {
+        number: 2,
+        title: 'Review me',
+        headRefName: 'feature/review',
+        html_url: 'https://github.com/example/repo/pull/2',
+        user: { login: 'alice' },
+        requestedReviewers: [{ login: 'dimfeld' }],
+      },
+      {
+        number: 3,
+        title: 'Ignore me',
+        headRefName: 'feature/other',
+        html_url: 'https://github.com/example/repo/pull/3',
+        user: { login: 'bob' },
+        requestedReviewers: [{ login: 'carol' }],
+      },
+    ];
+
+    const result = partitionUserRelevantOpenPrs(prs, 'dimfeld');
+
+    expect(result.authored.map((pr) => pr.number)).toEqual([1]);
+    expect(result.reviewing.map((pr) => pr.number)).toEqual([2]);
+  });
+
+  test('partitionUserRelevantOpenPrs includes a PR in both groups when applicable', () => {
+    const prs = [
+      {
+        number: 7,
+        title: 'Dual role',
+        headRefName: 'feature/dual',
+        html_url: 'https://github.com/example/repo/pull/7',
+        user: { login: 'dimfeld' },
+        requestedReviewers: [{ login: 'Dimfeld' }],
+      },
+    ];
+
+    const result = partitionUserRelevantOpenPrs(prs, 'dimfeld');
+
+    expect(result.authored.map((pr) => pr.number)).toEqual([7]);
+    expect(result.reviewing.map((pr) => pr.number)).toEqual([7]);
+  });
+
+  test('fetchUserRelevantOpenPrs filters GitHub results by author and reviewer', async () => {
+    process.env.GITHUB_TOKEN = 'test-token';
+
+    const list = mock(async () => ({
+      data: [
+        {
+          number: 11,
+          title: 'Mine',
+          head: { ref: 'feature/mine' },
+          html_url: 'https://github.com/example/repo/pull/11',
+          user: { login: 'dimfeld' },
+          requested_reviewers: [],
+        },
+        {
+          number: 12,
+          title: 'Review request',
+          head: { ref: 'feature/review' },
+          html_url: 'https://github.com/example/repo/pull/12',
+          user: { login: 'alice' },
+          requested_reviewers: [{ login: 'dimfeld' }],
+        },
+      ],
+    }));
+
+    await moduleMocker.mock('./octokit.ts', () => ({
+      getOctokit: () => ({
+        rest: {
+          pulls: {
+            list,
+          },
+        },
+      }),
+    }));
+
+    const { fetchUserRelevantOpenPrs } = await import('./pull_requests.ts');
+    const result = await fetchUserRelevantOpenPrs('example', 'repo', 'dimfeld');
+
+    expect(list).toHaveBeenCalledWith({
+      owner: 'example',
+      repo: 'repo',
+      state: 'open',
+      per_page: 100,
+    });
+    expect(result.authored.map((pr) => pr.number)).toEqual([11]);
+    expect(result.reviewing.map((pr) => pr.number)).toEqual([12]);
+  });
+
+  test('fetchUserRelevantOpenPrs excludes unrelated PRs and tolerates missing requested reviewers', async () => {
+    process.env.GITHUB_TOKEN = 'test-token';
+
+    const list = mock(async () => ({
+      data: [
+        {
+          number: 21,
+          title: 'Mine and reviewing',
+          head: { ref: 'feature/mine' },
+          html_url: 'https://github.com/example/repo/pull/21',
+          user: { login: 'dimfeld' },
+          requested_reviewers: [{ login: 'dimfeld' }],
+        },
+        {
+          number: 22,
+          title: 'Ignore me',
+          head: { ref: 'feature/other' },
+          html_url: 'https://github.com/example/repo/pull/22',
+          user: { login: 'alice' },
+          requested_reviewers: undefined,
+        },
+      ],
+    }));
+
+    await moduleMocker.mock('./octokit.ts', () => ({
+      getOctokit: () => ({
+        rest: {
+          pulls: {
+            list,
+          },
+        },
+      }),
+    }));
+
+    const { fetchUserRelevantOpenPrs } = await import('./pull_requests.ts');
+    const result = await fetchUserRelevantOpenPrs('example', 'repo', 'dimfeld');
+
+    expect(result.authored.map((pr) => pr.number)).toEqual([21]);
+    expect(result.reviewing.map((pr) => pr.number)).toEqual([21]);
   });
 });
 

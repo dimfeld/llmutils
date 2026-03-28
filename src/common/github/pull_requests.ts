@@ -6,6 +6,7 @@ import { parsePrOrIssueNumber } from './identifiers.ts';
 import { getCurrentBranchName } from '../git.ts';
 import { getGitRepository } from '../git.js';
 import { getOctokit } from './octokit.js';
+import { normalizeGitHubUsername } from './user.js';
 
 export interface CommentAuthor {
   login: string;
@@ -46,6 +47,15 @@ export interface OpenPullRequest {
   headRefName: string;
   html_url: string;
   user: { login: string } | null;
+}
+
+export interface OpenPullRequestWithRequestedReviewers extends OpenPullRequest {
+  requestedReviewers: Array<{ login: string }>;
+}
+
+export interface UserRelevantOpenPullRequests {
+  authored: OpenPullRequest[];
+  reviewing: OpenPullRequest[];
 }
 
 export interface PullRequest {
@@ -103,6 +113,103 @@ export async function fetchOpenPullRequests(
     );
     throw err;
   }
+}
+
+export function parseOwnerRepoFromRepositoryId(
+  repositoryId: string
+): { owner: string; repo: string } | null {
+  const parts = repositoryId.split('__');
+  if (parts.length < 3) {
+    return null;
+  }
+
+  // Only support GitHub-hosted repositories
+  if (parts[0] !== 'github.com') {
+    return null;
+  }
+
+  const owner = parts.at(-2);
+  const repo = parts.at(-1);
+  if (!owner || !repo) {
+    return null;
+  }
+
+  return { owner, repo };
+}
+
+export function partitionUserRelevantOpenPrs(
+  prs: OpenPullRequestWithRequestedReviewers[],
+  username: string
+): UserRelevantOpenPullRequests {
+  const normalizedUsername = normalizeGitHubUsername(username);
+
+  const authored: OpenPullRequest[] = [];
+  const reviewing: OpenPullRequest[] = [];
+
+  for (const pr of prs) {
+    if (normalizeGitHubUsername(pr.user?.login ?? '') === normalizedUsername) {
+      authored.push(pr);
+    }
+
+    if (
+      pr.requestedReviewers.some(
+        (reviewer) => normalizeGitHubUsername(reviewer.login) === normalizedUsername
+      )
+    ) {
+      reviewing.push(pr);
+    }
+  }
+
+  return { authored, reviewing };
+}
+
+/** Fetches all open PRs for a repo with reviewer info included. */
+export async function fetchOpenPullRequestsWithReviewers(
+  owner: string,
+  repo: string
+): Promise<OpenPullRequestWithRequestedReviewers[]> {
+  if (!process.env.GITHUB_TOKEN) {
+    throw new Error('GITHUB_TOKEN environment variable is not set');
+  }
+
+  const octokit = getOctokit();
+
+  try {
+    const response = await octokit.rest.pulls.list({
+      owner,
+      repo,
+      state: 'open',
+      per_page: 100,
+    });
+
+    return response.data.map((pr) => ({
+      number: pr.number,
+      title: pr.title,
+      headRefName: pr.head.ref,
+      html_url: pr.html_url,
+      user: pr.user ? { login: pr.user.login } : null,
+      requestedReviewers: (pr.requested_reviewers ?? [])
+        .map((reviewer) =>
+          'login' in reviewer && reviewer.login ? { login: reviewer.login } : null
+        )
+        .filter((reviewer): reviewer is { login: string } => reviewer !== null),
+    }));
+  } catch (err) {
+    error(
+      `Failed to fetch open pull requests with reviewers for ${owner}/${repo}:`,
+      err instanceof Error ? err.message : String(err)
+    );
+    throw err;
+  }
+}
+
+export async function fetchUserRelevantOpenPrs(
+  owner: string,
+  repo: string,
+  username: string
+): Promise<UserRelevantOpenPullRequests> {
+  const openPrs = await fetchOpenPullRequestsWithReviewers(owner, repo);
+  return partitionUserRelevantOpenPrs(openPrs, username);
 }
 
 export async function fetchPullRequestAndComments(

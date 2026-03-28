@@ -42,7 +42,7 @@
     }
   });
 
-  const tabSlugs = ['sessions', 'active', 'plans'] as const;
+  const tabSlugs = ['sessions', 'active', 'prs', 'plans'] as const;
 
   function handleShortcuts(event: KeyboardEvent) {
     handleGlobalShortcuts(event, {

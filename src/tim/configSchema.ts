@@ -109,6 +109,8 @@ export type WorkspaceCreationConfig = z.infer<typeof workspaceCreationConfigSche
  */
 export const timConfigSchema = z
   .object({
+    /** GitHub username used for project-wide PR filtering. */
+    githubUsername: z.string().optional().describe('GitHub username for PR filtering'),
     /** Issue tracking service to use for import commands and issue-related operations. Defaults to 'github'. */
     issueTracker: z
       .enum(['github', 'linear'])

@@ -198,11 +198,20 @@ describe('handleGlobalShortcuts', () => {
     expect(event.preventDefault).not.toHaveBeenCalled();
   });
 
-  test('Ctrl+Digit4 does NOT trigger navigateTab', () => {
+  test('Ctrl+4 calls navigateTab with 4', () => {
     const navigateTab = vi.fn();
     const event = makeKeyEvent('Digit4', { ctrlKey: true });
     handleGlobalShortcuts(event, { navigateTab });
+    expect(navigateTab).toHaveBeenCalledWith(4);
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+  });
+
+  test('Ctrl+Digit5 does NOT trigger navigateTab', () => {
+    const navigateTab = vi.fn();
+    const event = makeKeyEvent('Digit5', { ctrlKey: true });
+    handleGlobalShortcuts(event, { navigateTab });
     expect(navigateTab).not.toHaveBeenCalled();
+    expect(event.preventDefault).not.toHaveBeenCalled();
   });
 
   test('does nothing when no callbacks provided', () => {

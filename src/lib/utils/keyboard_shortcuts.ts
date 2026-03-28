@@ -18,12 +18,13 @@ const TAB_MAP: Record<string, number> = {
   Digit1: 1,
   Digit2: 2,
   Digit3: 3,
+  Digit4: 4,
 };
 
 /**
  * Handles global keyboard shortcuts using physical key codes for locale independence.
  * - Ctrl+/ → focusSearch (suppressed in typing targets)
- * - Ctrl+1/2/3 → navigateTab (always active)
+ * - Ctrl+1/2/3/4 → navigateTab (always active)
  */
 export function handleGlobalShortcuts(event: KeyboardEvent, callbacks: ShortcutCallbacks): void {
   if (!event.ctrlKey) return;

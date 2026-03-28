@@ -407,6 +407,13 @@ const migrations: Migration[] = [
       CREATE INDEX idx_plan_parent_uuid ON plan(parent_uuid);
     `,
   },
+  {
+    version: 11,
+    up: `
+      ALTER TABLE pr_status ADD COLUMN author TEXT;
+      ALTER TABLE pr_status ADD COLUMN requested_reviewers TEXT;
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {

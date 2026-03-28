@@ -7,6 +7,7 @@
   const tabs = [
     { label: 'Sessions', slug: 'sessions' },
     { label: 'Active Work', slug: 'active' },
+    { label: 'Pull Requests', slug: 'prs' },
     { label: 'Plans', slug: 'plans' },
   ] as const;
 
