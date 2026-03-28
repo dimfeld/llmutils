@@ -147,12 +147,11 @@ describe('Hierarchical Linear Import', () => {
     }));
 
     await moduleMocker.mock('../../db/plan_sync.js', () => ({
-      toPlanUpsertInput: mock((plan: PlanSchema, filePath: string) => ({
+      toPlanUpsertInput: mock((plan: PlanSchema) => ({
         planId: plan.id,
         uuid: plan.uuid ?? `uuid-${plan.id}`,
         status: plan.status ?? 'pending',
         epic: false,
-        filename: path.basename(filePath),
         tasks: [],
         dependencyUuids: [],
         tags: [],

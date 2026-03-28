@@ -3,7 +3,6 @@ import type { ExecutePlanInfo } from '../types';
 import type { TimConfig } from '../../configSchema';
 import type { PlanSchema } from '../../planSchema';
 import type { DiffResult } from '../../incremental_review';
-import type { PlanWithFilename } from '../../utils/hierarchy';
 import { getRepositoryIdentity } from '../../assignments/workspace_identifier.js';
 import { getParentChain, getCompletedChildren } from '../../utils/hierarchy';
 import { generateDiffForReview } from '../../incremental_review';
@@ -18,8 +17,8 @@ import { warn } from '../../../logging';
 export type ReviewVerdict = 'ACCEPTABLE' | 'NEEDS_FIXES';
 
 export interface ReviewHierarchy {
-  parentChain: PlanWithFilename[];
-  completedChildren: PlanWithFilename[];
+  parentChain: PlanSchema[];
+  completedChildren: PlanSchema[];
 }
 
 export interface ExternalReviewOptions {
@@ -28,8 +27,8 @@ export interface ExternalReviewOptions {
   timConfig: TimConfig;
   model?: string;
   planData: PlanSchema;
-  parentChain?: PlanWithFilename[];
-  completedChildren?: PlanWithFilename[];
+  parentChain?: PlanSchema[];
+  completedChildren?: PlanSchema[];
   newlyCompletedTitles: string[];
   initiallyCompletedTitles: string[];
   initiallyPendingTitles: string[];
@@ -53,8 +52,8 @@ export async function loadReviewHierarchy(
   planFilePath: string,
   timConfig: TimConfig
 ): Promise<ReviewHierarchy> {
-  const parentChain: PlanWithFilename[] = [];
-  const completedChildren: PlanWithFilename[] = [];
+  const parentChain: PlanSchema[] = [];
+  const completedChildren: PlanSchema[] = [];
 
   if (!planData.id) {
     return { parentChain, completedChildren };
@@ -68,13 +67,8 @@ export async function loadReviewHierarchy(
     getLegacyAwareSearchDir(gitRoot, configBaseDir),
     repositoryId
   );
-  const planWithFilename: PlanWithFilename = {
-    ...planData,
-    filename: planFilePath,
-  };
-
   try {
-    parentChain.push(...getParentChain(planWithFilename, allPlans));
+    parentChain.push(...getParentChain(planData, allPlans));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     warn(`Warning: Could not load parent chain for review: ${message}`);

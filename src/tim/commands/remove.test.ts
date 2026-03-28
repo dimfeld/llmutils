@@ -11,6 +11,7 @@ import { getDatabase } from '../db/database.js';
 import { getPlanByUuid, upsertPlan } from '../db/plan.js';
 import { getOrCreateProject } from '../db/project.js';
 import { handleRemoveCommand } from './remove.js';
+import { getMaterializedPlanPath } from '../plan_materialize.js';
 import { readPlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 
@@ -53,7 +54,7 @@ describe('tim remove command', () => {
   });
 
   async function writePlan(id: number, overrides: Partial<PlanSchema> = {}): Promise<string> {
-    const filePath = path.join(tasksDir, `${id}.plan.md`);
+    const filePath = getMaterializedPlanPath(tempDir, id);
     const basePlan: PlanSchema = {
       id,
       uuid: crypto.randomUUID(),
@@ -115,7 +116,7 @@ describe('tim remove command', () => {
 
     await handleRemoveCommand(['1'], { force: true }, makeCommand());
 
-    await expect(fs.stat(path.join(tasksDir, '1.plan.md'))).rejects.toThrow();
+    await expect(fs.stat(getMaterializedPlanPath(tempDir, 1))).rejects.toThrow();
     const dependent = await readPlanFile(dependentPath);
     expect(dependent.dependencies).toEqual([3]);
     expect(dependent.references).toBeUndefined();
@@ -151,8 +152,8 @@ describe('tim remove command', () => {
 
     await handleRemoveCommand(['1', '2'], { force: true }, makeCommand());
 
-    await expect(fs.stat(path.join(tasksDir, '1.plan.md'))).rejects.toThrow();
-    await expect(fs.stat(path.join(tasksDir, '2.plan.md'))).rejects.toThrow();
+    await expect(fs.stat(getMaterializedPlanPath(tempDir, 1))).rejects.toThrow();
+    await expect(fs.stat(getMaterializedPlanPath(tempDir, 2))).rejects.toThrow();
 
     const remaining = await readPlanFile(remainingPath);
     expect(remaining.dependencies).toEqual([]);
@@ -166,8 +167,8 @@ describe('tim remove command', () => {
 
     await handleRemoveCommand(['1', '2'], {}, makeCommand());
 
-    await expect(fs.stat(path.join(tasksDir, '1.plan.md'))).rejects.toThrow();
-    await expect(fs.stat(path.join(tasksDir, '2.plan.md'))).rejects.toThrow();
+    await expect(fs.stat(getMaterializedPlanPath(tempDir, 1))).rejects.toThrow();
+    await expect(fs.stat(getMaterializedPlanPath(tempDir, 2))).rejects.toThrow();
   });
 
   test('removes a SQLite plan when no local file exists', async () => {
@@ -179,7 +180,6 @@ describe('tim remove command', () => {
       planId: 999,
       title: 'DB-only plan',
       goal: 'exists only in sqlite',
-      filename: '999.plan.md',
       status: 'pending',
       tasks: [],
       dependencyUuids: [],

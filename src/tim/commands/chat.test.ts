@@ -541,7 +541,6 @@ describe('handleChatCommand', () => {
     });
     expect(syncPlanToDbSpy).toHaveBeenCalledWith(
       expect.objectContaining({ id: 123 }),
-      '/repo-root/tasks/123-test.plan.md',
       expect.objectContaining({
         cwdForIdentity: '/repo-root/workspaces/task-123',
         force: true,

@@ -1,8 +1,8 @@
 import { describe, test, expect, beforeEach } from 'bun:test';
+import path from 'node:path';
 import { gatherPlanContext } from './context_gathering.js';
 import type { DiffResult } from '../incremental_review.js';
 import type { PlanSchema } from '../planSchema.js';
-import type { PlanWithFilename } from './hierarchy.js';
 
 interface MockDependencies {
   resolvePlanFromDbOrSyncFile: (
@@ -13,20 +13,11 @@ interface MockDependencies {
     plan: PlanSchema;
     planPath: string | null;
   }>;
-  loadPlansFromDb: (
-    searchDir: string,
-    repositoryId: string
-  ) => { plans: Map<number, PlanWithFilename> };
+  loadPlansFromDb: (searchDir: string, repositoryId: string) => { plans: Map<number, PlanSchema> };
   generateDiffForReview: (gitRoot: string, options?: any) => Promise<DiffResult>;
   getGitRoot: (cwd?: string) => Promise<string>;
-  getParentChain: (
-    plan: PlanWithFilename,
-    allPlans: Map<number, PlanWithFilename>
-  ) => PlanWithFilename[];
-  getCompletedChildren: (
-    planId: number,
-    allPlans: Map<number, PlanWithFilename>
-  ) => PlanWithFilename[];
+  getParentChain: (plan: PlanSchema, allPlans: Map<number, PlanSchema>) => PlanSchema[];
+  getCompletedChildren: (planId: number, allPlans: Map<number, PlanSchema>) => PlanSchema[];
   getIncrementalSummary: (gitRoot: string, planId: string, opts: any[]) => Promise<any>;
   resolveRepoRootForPlanArg: (
     planArg: string,
@@ -151,24 +142,24 @@ describe('gatherPlanContext', () => {
   });
 
   test('should load hierarchy from DB-backed plan map', async () => {
-    const parentPlan: PlanWithFilename = {
+    const parentPlan: PlanSchema = {
       id: 100,
       title: 'Parent Plan',
       goal: 'Parent goal',
-      filename: '/tmp/repo-root/.tim/plans/100.plan.md',
+      tasks: [],
     };
-    const completedChild: PlanWithFilename = {
+    const completedChild: PlanSchema = {
       id: 124,
       title: 'Completed Child',
       goal: 'Child goal',
       status: 'done',
       parent: 123,
-      filename: '/tmp/repo-root/.tim/plans/124.plan.md',
+      tasks: [],
     };
 
-    const allPlans = new Map<number, PlanWithFilename>();
+    const allPlans = new Map<number, PlanSchema>();
     allPlans.set(100, parentPlan);
-    allPlans.set(123, { ...basePlan, parent: 100, filename: planFile });
+    allPlans.set(123, { ...basePlan, parent: 100 });
     allPlans.set(124, completedChild);
 
     mockDeps.resolvePlanFromDbOrSyncFile = async () => ({
@@ -176,7 +167,7 @@ describe('gatherPlanContext', () => {
       planPath: planFile,
     });
     mockDeps.loadPlansFromDb = (searchDir, repositoryId) => {
-      expect(searchDir).toBe(repoRoot);
+      expect(searchDir).toBe(path.join(gitRoot, '.tim', 'plans'));
       expect(repositoryId).toBe('repo-id');
       return { plans: allPlans };
     };

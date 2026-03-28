@@ -122,7 +122,7 @@ export async function handleGenerateCommand(
     const label =
       latestPlan.id !== undefined && latestPlan.id !== null
         ? `${latestPlan.id} - ${title}`
-        : title || latestPlan.filename;
+        : title || 'Untitled plan';
 
     log(chalk.green(`Found latest plan: ${label}`));
 
@@ -230,7 +230,7 @@ export async function handleGenerateCommand(
           if (parsedPlan.uuid) {
             try {
               await autoClaimPlan(
-                { plan: { ...parsedPlan, filename: currentPlanFile }, uuid: parsedPlan.uuid },
+                { plan: parsedPlan, uuid: parsedPlan.uuid },
                 { cwdForIdentity: currentBaseDir }
               );
             } catch (err) {
@@ -332,7 +332,7 @@ export async function handleGenerateCommand(
           log(chalk.green('✓ Committed changes'));
         }
 
-        await syncPlanToDb(updatedPlan, currentPlanFile, {
+        await syncPlanToDb(updatedPlan, {
           cwdForIdentity: currentBaseDir,
           force: true,
           throwOnError: true,

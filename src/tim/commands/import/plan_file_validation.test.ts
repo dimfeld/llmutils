@@ -52,6 +52,7 @@ describe('Plan File Validation Tests', () => {
         const yamlContent = yaml.stringify(planData);
         const schemaLine =
           '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json\n';
+        await fs.mkdir(path.dirname(filePath), { recursive: true });
         await fs.writeFile(filePath, schemaLine + yamlContent);
         actualWrittenFiles.set(filePath, planData);
       }),

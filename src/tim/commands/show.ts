@@ -29,7 +29,8 @@ import { resolvePlan } from '../plan_display.js';
 import type { GenerateModeRegistrationContext, GetPlanArguments } from '../mcp/generate_mode.js';
 import { getLegacyAwareSearchDir, resolvePlanPathContext } from '../path_resolver.js';
 import { loadPlansFromDb } from '../plans_db.js';
-import { getParentChain, type PlanWithFilename } from '../utils/hierarchy.js';
+import { findPlanFileOnDisk } from '../plans/find_plan_file.js';
+import { getParentChain } from '../utils/hierarchy.js';
 import { getPlanTool } from '../tools/index.js';
 
 interface AssignmentDisplayInfo {
@@ -95,10 +96,10 @@ function getStatusIconAndColor(status: string | undefined): {
 }
 
 function applyAssignmentsToPlans(
-  plans: Map<number, PlanWithFilename>,
+  plans: Map<number, PlanSchema>,
   assignments: Record<string, AssignmentEntry>
-): Map<number, PlanWithFilename> {
-  const result = new Map<number, PlanWithFilename>();
+): Map<number, PlanSchema> {
+  const result = new Map<number, PlanSchema>();
 
   for (const [id, candidate] of plans.entries()) {
     const entry = candidate.uuid ? assignments[candidate.uuid] : undefined;
@@ -161,7 +162,7 @@ function getPlanDisplayLocation(plan: Pick<PlanSchema, 'id'>, planPath?: string 
 async function displayPlanInfo(
   plan: PlanSchema,
   resolvedPlanFile: string,
-  allPlans: Map<number, PlanSchema & { filename: string }>,
+  allPlans: Map<number, PlanSchema>,
   options: any,
   assignmentInfo: AssignmentDisplayInfo
 ): Promise<number> {
@@ -171,15 +172,7 @@ async function displayPlanInfo(
     ...plan,
     status: actualStatus,
   };
-  const isReady = plan.id
-    ? isPlanReady(
-        {
-          ...planForReady,
-          filename: resolvedPlanFile,
-        },
-        allPlans
-      )
-    : false;
+  const isReady = plan.id ? isPlanReady(planForReady, allPlans) : false;
   const statusDisplay = isReady ? 'ready' : actualStatus;
   const statusColor = isReady
     ? chalk.cyan
@@ -195,9 +188,7 @@ async function displayPlanInfo(
               ? chalk.yellow
               : chalk.white;
 
-  const planForChain =
-    (plan.id !== undefined ? allPlans.get(plan.id) : undefined) ??
-    ({ ...plan, filename: resolvedPlanFile } as PlanSchema & { filename: string });
+  const planForChain = (plan.id !== undefined ? allPlans.get(plan.id) : undefined) ?? plan;
   const parentChain = planForChain.parent ? getParentChain(planForChain, allPlans) : [];
   const epicChain = parentChain.filter((parent) => parent.epic);
   const epicSummary =
@@ -544,7 +535,7 @@ export async function handleShowCommand(planFile: string | undefined, options: a
     return getAssignmentEntriesByProject(db, project.id);
   };
 
-  const loadPlanCollection = (): Map<number, PlanWithFilename> =>
+  const loadPlanCollection = (): Map<number, PlanSchema> =>
     loadPlansFromDb(
       getLegacyAwareSearchDir(repository.gitRoot, pathContext.configBaseDir),
       repository.repositoryId
@@ -584,14 +575,17 @@ export async function handleShowCommand(planFile: string | undefined, options: a
     log(chalk.green(`Found ready plan: ${result.plan.id} - ${result.plan.title}`));
     selectedPlan = result.plan;
     selectedPlanId = result.plan.id;
-    resolvedPlanFile = fs.existsSync(result.plan.filename) ? result.plan.filename : undefined;
+    resolvedPlanFile =
+      typeof result.plan.id === 'number'
+        ? (findPlanFileOnDisk(result.plan.id, repository.gitRoot) ?? undefined)
+        : undefined;
   } else if (options.latest) {
     if (allPlans.size === 0) {
       log('No plans found in database.');
       return;
     }
 
-    const latestPlan = await findMostRecentlyUpdatedPlan(allPlans);
+    const latestPlan = await findMostRecentlyUpdatedPlan(allPlans, repository.gitRoot);
 
     if (!latestPlan) {
       log('No plans with updatedAt field found in database.');
@@ -602,12 +596,15 @@ export async function handleShowCommand(planFile: string | undefined, options: a
     const label =
       latestPlan.id !== undefined && latestPlan.id !== null
         ? `${latestPlan.id} - ${title}`
-        : title || latestPlan.filename;
+        : title || 'Untitled plan';
 
     log(chalk.green(`Found latest plan: ${label}`));
     selectedPlan = latestPlan;
     selectedPlanId = latestPlan.id;
-    resolvedPlanFile = fs.existsSync(latestPlan.filename) ? latestPlan.filename : undefined;
+    resolvedPlanFile =
+      typeof latestPlan.id === 'number'
+        ? (findPlanFileOnDisk(latestPlan.id, repository.gitRoot) ?? undefined)
+        : undefined;
   } else if (options.next || options.current) {
     const plan = findNextPlanFromCollection(allPlans, {
       includePending: true,
@@ -629,7 +626,10 @@ export async function handleShowCommand(planFile: string | undefined, options: a
     log(chalk.green(message));
     selectedPlan = plan;
     selectedPlanId = plan.id;
-    resolvedPlanFile = fs.existsSync(plan.filename) ? plan.filename : undefined;
+    resolvedPlanFile =
+      typeof plan.id === 'number'
+        ? (findPlanFileOnDisk(plan.id, repository.gitRoot) ?? undefined)
+        : undefined;
   } else {
     if (!planFile) {
       const currentBranch = await getCurrentBranchName();

@@ -25,6 +25,7 @@ import { debugLog, log } from '../../logging.js';
 import { ensureReferences } from '../utils/references.js';
 import { invertPlanIdToUuidMap, loadPlansFromDb, planRowForTransaction } from '../plans_db.js';
 import { toPlanUpsertInput } from '../db/plan_sync.js';
+import { findPlanFileOnDisk } from '../plans/find_plan_file.js';
 
 /**
  * Validates that a file path is safe and doesn't contain path traversal attacks.
@@ -59,25 +60,6 @@ function validateSafePath(filePath: string, baseDir: string): string | null {
   }
 }
 
-function resolvePlanFilename(filename: string, gitRoot: string, configBaseDir: string): string {
-  if (path.isAbsolute(filename)) {
-    return filename;
-  }
-
-  const searchDir = getLegacyAwareSearchDir(gitRoot, configBaseDir);
-
-  if (filename === path.basename(filename)) {
-    return path.join(searchDir, filename);
-  }
-
-  const searchDirCandidate = path.join(searchDir, filename);
-  if (fs.existsSync(searchDirCandidate)) {
-    return searchDirCandidate;
-  }
-
-  return path.join(configBaseDir, filename);
-}
-
 interface PlanToRenumber {
   filePath: string;
   currentId: number | undefined;
@@ -107,7 +89,7 @@ const TRUNK_BRANCHES = ['main', 'master'] as const;
 
 async function loadPlansForRenumbering(
   gitRoot: string,
-  configBaseDir: string,
+  _configBaseDir: string,
   repositoryId: string
 ): Promise<{
   allPlans: Map<string, Record<string, any>>;
@@ -117,6 +99,24 @@ async function loadPlansForRenumbering(
   const allPlans = new Map<string, Record<string, any>>();
   const planFiles: string[] = [];
   let maxNumericId = 0;
+  const seenPlanUuids = new Set<string>();
+  const materializedDir = path.join(gitRoot, '.tim', 'plans');
+
+  async function collectPlanFiles(dir: string): Promise<string[]> {
+    const results: string[] = [];
+    const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const entryPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        results.push(...(await collectPlanFiles(entryPath)));
+        continue;
+      }
+      if (entry.isFile() && entry.name.endsWith('.plan.md')) {
+        results.push(entryPath);
+      }
+    }
+    return results;
+  }
 
   const db = getDatabase();
   const project = getProject(db, repositoryId);
@@ -133,8 +133,46 @@ async function loadPlansForRenumbering(
   }
   const uuidToPlanId = invertPlanIdToUuidMap(idToUuid);
 
+  try {
+    const materializedFiles = await collectPlanFiles(materializedDir);
+    for (const absoluteFilename of materializedFiles) {
+      try {
+        const filePlan = await readPlanFile(absoluteFilename);
+        if (filePlan.not_tim) {
+          continue;
+        }
+
+        if (filePlan.uuid) {
+          seenPlanUuids.add(filePlan.uuid);
+        }
+
+        if (typeof filePlan.id === 'number') {
+          maxNumericId = Math.max(maxNumericId, filePlan.id);
+        }
+
+        allPlans.set(
+          absoluteFilename,
+          structuredClone({ ...filePlan, filename: absoluteFilename })
+        );
+        planFiles.push(absoluteFilename);
+      } catch (error) {
+        if (!(error instanceof NoFrontmatterError)) {
+          debugLog(`Skipping invalid plan file during renumber scan: ${absoluteFilename}`);
+        }
+      }
+    }
+  } catch {
+    // No materialized plans directory yet; DB-only plans are handled below.
+  }
+
   for (const row of rows) {
-    const absoluteFilename = resolvePlanFilename(row.filename, gitRoot, configBaseDir);
+    if (seenPlanUuids.has(row.uuid)) {
+      maxNumericId = Math.max(maxNumericId, row.plan_id);
+      continue;
+    }
+
+    const absoluteFilename =
+      findPlanFileOnDisk(row.plan_id, gitRoot) ?? getMaterializedPlanPath(gitRoot, row.plan_id);
     const fileExists = fs.existsSync(absoluteFilename);
     let plan = planRowForTransaction(row, uuidToPlanId);
     if (fileExists) {
@@ -207,7 +245,7 @@ function applyRenumberDbState(
     for (const [filePath, plan] of planEntries) {
       const filename = dbFilenames.get(filePath) ?? path.basename(filePath);
       upsertPlanInTransaction(db, project.id, {
-        ...toPlanUpsertInput(plan, filename, idToUuid),
+        ...toPlanUpsertInput(plan, idToUuid),
         forceOverwrite: true,
       });
     }
@@ -265,7 +303,6 @@ function snapshotOriginalDbState(
       reviewIssues: row.review_issues ? JSON.parse(row.review_issues) : null,
       parentUuid: row.parent_uuid,
       epic: row.epic === 1,
-      filename: row.filename,
       tasks: getPlanTasksByUuid(db, row.uuid).map((task) => ({
         title: task.title,
         description: task.description,

@@ -5,7 +5,6 @@ import { findMostRecentlyUpdatedPlan } from './prompts.js';
 import { loadPlansFromDb } from '../plans_db.js';
 import { isReadyPlan } from '../ready_plans.js';
 import type { PlanSchema } from '../planSchema.js';
-import type { PlanWithFilename } from '../utils/hierarchy.js';
 
 const PRIORITY_ORDER: Record<string, number> = {
   urgent: 5,
@@ -16,14 +15,14 @@ const PRIORITY_ORDER: Record<string, number> = {
 };
 
 export interface NextReadyDependencyResult {
-  plan: PlanWithFilename | null;
+  plan: PlanSchema | null;
   message: string;
 }
 
 export async function loadDbPlans(
   tasksDir: string,
   repoRoot: string
-): Promise<Map<number, PlanWithFilename>> {
+): Promise<Map<number, PlanSchema>> {
   const repository = await getRepositoryIdentity({ cwd: repoRoot });
   return loadPlansFromDb(
     getLegacyAwareSearchDir(repository.gitRoot, tasksDir),
@@ -34,7 +33,7 @@ export async function loadDbPlans(
 export async function findLatestPlanFromDb(
   tasksDir: string,
   repoRoot: string
-): Promise<PlanWithFilename | null> {
+): Promise<PlanSchema | null> {
   const plans = await loadDbPlans(tasksDir, repoRoot);
   if (plans.size === 0) {
     return null;
@@ -47,12 +46,12 @@ export async function findNextPlanFromDb(
   tasksDir: string,
   repoRoot: string,
   options: { includePending?: boolean; includeInProgress?: boolean } = { includePending: true }
-): Promise<PlanWithFilename | null> {
+): Promise<PlanSchema | null> {
   const plans = await loadDbPlans(tasksDir, repoRoot);
   return findNextPlanFromCollection(plans, options);
 }
 
-function getDirectDependencies(planId: number, plans: Map<number, PlanWithFilename>): number[] {
+function getDirectDependencies(planId: number, plans: Map<number, PlanSchema>): number[] {
   const dependencies = new Set<number>();
   const plan = plans.get(planId);
 
@@ -75,7 +74,7 @@ function getDirectDependencies(planId: number, plans: Map<number, PlanWithFilena
   return Array.from(dependencies);
 }
 
-function compareByPriorityAndId(a: PlanWithFilename, b: PlanWithFilename): number {
+function compareByPriorityAndId(a: PlanSchema, b: PlanSchema): number {
   const aPriority = a.priority ? PRIORITY_ORDER[a.priority] || 0 : 0;
   const bPriority = b.priority ? PRIORITY_ORDER[b.priority] || 0 : 0;
   if (aPriority !== bPriority) {
@@ -85,7 +84,7 @@ function compareByPriorityAndId(a: PlanWithFilename, b: PlanWithFilename): numbe
   return a.id - b.id;
 }
 
-function compareByStatusPriorityAndId(a: PlanWithFilename, b: PlanWithFilename): number {
+function compareByStatusPriorityAndId(a: PlanSchema, b: PlanSchema): number {
   const aStatus = a.status || 'pending';
   const bStatus = b.status || 'pending';
   if (aStatus !== bStatus) {
@@ -97,9 +96,9 @@ function compareByStatusPriorityAndId(a: PlanWithFilename, b: PlanWithFilename):
 }
 
 export function findNextPlanFromCollection(
-  plans: Map<number, PlanWithFilename>,
+  plans: Map<number, PlanSchema>,
   options: { includePending?: boolean; includeInProgress?: boolean } = { includePending: true }
-): PlanWithFilename | null {
+): PlanSchema | null {
   const includePending = options.includePending ?? false;
   const includeInProgress = options.includeInProgress ?? false;
 
@@ -131,7 +130,7 @@ export function findNextPlanFromCollection(
 
 export function findNextReadyDependencyFromCollection(
   parentPlanId: number,
-  plans: Map<number, PlanWithFilename>,
+  plans: Map<number, PlanSchema>,
   includeEmptyPlans = false
 ): NextReadyDependencyResult {
   debugLog(`[plan_discovery] Finding next ready dependency for plan ${parentPlanId}`);
@@ -170,7 +169,7 @@ export function findNextReadyDependencyFromCollection(
 
   const readyCandidates = Array.from(allDependencies)
     .map((id) => plans.get(id))
-    .filter((plan): plan is PlanWithFilename => Boolean(plan))
+    .filter((plan): plan is PlanSchema => Boolean(plan))
     .filter((plan) => {
       const status = plan.status || 'pending';
       if (status !== 'pending' && status !== 'in_progress') {
@@ -199,7 +198,7 @@ export function findNextReadyDependencyFromCollection(
 
   const allDependencyPlans = Array.from(allDependencies)
     .map((id) => plans.get(id))
-    .filter((plan): plan is PlanWithFilename => Boolean(plan));
+    .filter((plan): plan is PlanSchema => Boolean(plan));
 
   const blockedPlan = allDependencyPlans
     .filter((plan) => {

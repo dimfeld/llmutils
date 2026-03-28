@@ -260,7 +260,7 @@ describe('handleReleaseCommand', () => {
     const command = { parent: { opts: () => ({}) } };
     await handleReleaseCommand('1', { resetStatus: true }, command);
 
-    const refreshedPlan = await readPlanFile(path.join(tasksDir, '1-sample.plan.md'));
+    const { plan: refreshedPlan } = await resolvePlanFromDb('1', repoDir);
     expect(refreshedPlan.status).toBe('pending');
 
     expect(mockLog).toHaveBeenCalledWith(`✓ Reset status for plan 1 to pending`);
@@ -277,7 +277,6 @@ describe('handleReleaseCommand', () => {
         status: 'in_progress',
         details: '',
         tasks: [],
-        filename: '',
       },
       { cwdForIdentity: repoDir, skipUpdatedAt: true }
     );

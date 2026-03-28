@@ -5,7 +5,6 @@ import path from 'node:path';
 
 import type { PlanSchema } from './planSchema.js';
 import {
-  EnrichedReadyPlan,
   filterAndSortReadyPlans,
   formatReadyPlansAsJson,
   isReadyPlan,
@@ -190,14 +189,14 @@ describe('filterAndSortReadyPlans', () => {
 describe('formatReadyPlansAsJson', () => {
   it('formats plans with relative filenames', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ready-plans-test-'));
-    const existingFile = path.join(tempDir, 'tasks', '001.plan.yaml');
-    fs.mkdirSync(path.dirname(existingFile), { recursive: true });
-    fs.writeFileSync(existingFile, 'test');
+    const plansDir = path.join(tempDir, '.tim', 'plans');
+    const existingFile = path.join(plansDir, '1.plan.md');
+    fs.mkdirSync(plansDir, { recursive: true });
+    fs.writeFileSync(existingFile, '---\nid: 1\ntitle: Plan 1\ngoal: g\ntasks: []\n---\n');
 
-    const plans: Array<EnrichedReadyPlan> = [
+    const plans: PlanSchema[] = [
       {
         ...createPlan({ id: 1, priority: 'medium', tags: ['Frontend', 'backend'] }),
-        filename: existingFile,
       },
     ];
 
@@ -212,7 +211,7 @@ describe('formatReadyPlansAsJson', () => {
         priority: 'medium',
         taskCount: 1,
         completedTasks: 0,
-        filename: 'tasks/001.plan.yaml',
+        filename: '.tim/plans/1.plan.md',
         tags: ['backend', 'frontend'],
       });
     } finally {
@@ -224,10 +223,9 @@ describe('formatReadyPlansAsJson', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ready-plans-test-'));
 
     try {
-      const plans: Array<EnrichedReadyPlan> = [
+      const plans: PlanSchema[] = [
         {
           ...createPlan({ id: 2, priority: 'low' }),
-          filename: path.join(tempDir, 'missing.plan.md'),
         },
       ];
 

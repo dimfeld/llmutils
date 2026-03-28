@@ -26,18 +26,20 @@ import {
   isReadyPlan,
   sortReadyPlans,
 } from '../ready_plans.js';
-import type { EnrichedReadyPlan, ReadyPlanSortField } from '../ready_plans.js';
+import type { ReadyPlanSortField } from '../ready_plans.js';
 import { getGitRoot } from '../../common/git.js';
 import { getLegacyAwareSearchDir } from '../path_resolver.js';
+import { findPlanFileOnDisk } from '../plans/find_plan_file.js';
+import type { PlanSchema } from '../planSchema.js';
 import type {
   GenerateModeRegistrationContext,
   ListReadyPlansArguments,
 } from '../mcp/generate_mode.js';
-import { isUnderEpic, type PlanWithFilename } from '../utils/hierarchy.js';
+import { isUnderEpic } from '../utils/hierarchy.js';
 import { normalizeTags } from '../utils/tags.js';
 import { listReadyPlansTool } from '../tools/index.js';
 
-type ReadyPlan = EnrichedReadyPlan & {
+type ReadyPlan = PlanSchema & {
   assignmentEntry?: AssignmentEntry;
   assignedWorkspaces: string[];
   assignedUsers: string[];
@@ -47,6 +49,7 @@ type ReadyPlan = EnrichedReadyPlan & {
 
 interface ReadyDisplayContext {
   currentWorkspace: string | null;
+  repoRoot: string;
 }
 
 interface ReadyCommandOptions {
@@ -211,8 +214,10 @@ function displayListFormat(
 
     // File path in verbose mode
     if (verbose) {
-      if (plan.filename && fs.existsSync(plan.filename)) {
-        log(chalk.gray(`  File: ${plan.filename}`));
+      const planFile =
+        typeof plan.id === 'number' ? findPlanFileOnDisk(plan.id, context.repoRoot) : null;
+      if (planFile && fs.existsSync(planFile)) {
+        log(chalk.gray(`  File: ${planFile}`));
       }
     }
   }
@@ -351,7 +356,12 @@ async function displayJsonFormat(plans: ReadyPlan[], context: ReadyDisplayContex
       dependencies: plan.dependencies || [],
       assignedTo: plan.assignedTo,
       filename:
-        plan.filename && fs.existsSync(plan.filename) ? path.relative(gitRoot, plan.filename) : '',
+        typeof plan.id === 'number'
+          ? (() => {
+              const planFile = findPlanFileOnDisk(plan.id, gitRoot);
+              return planFile && fs.existsSync(planFile) ? path.relative(gitRoot, planFile) : '';
+            })()
+          : '',
       createdAt: plan.createdAt,
       updatedAt: plan.updatedAt,
       workspacePaths: plan.assignedWorkspaces,
@@ -415,7 +425,7 @@ export async function handleReadyCommand(options: ReadyCommandOptions, command: 
       : repository.gitRoot;
   const searchDir = getLegacyAwareSearchDir(repository.gitRoot, configBaseDir);
 
-  let rawPlans: Map<number, PlanWithFilename>;
+  let rawPlans: Map<number, PlanSchema>;
   ({ plans: rawPlans } = loadPlansFromDb(searchDir, repository.repositoryId));
 
   const assignmentsLookup = loadAssignmentsLookup(repository.repositoryId);
@@ -553,6 +563,7 @@ export async function handleReadyCommand(options: ReadyCommandOptions, command: 
 
   const context: ReadyDisplayContext = {
     currentWorkspace: repository.gitRoot,
+    repoRoot: repository.gitRoot,
   };
 
   const format = options.format || 'list';

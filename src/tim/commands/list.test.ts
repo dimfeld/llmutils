@@ -217,7 +217,7 @@ describe('handleListCommand', () => {
 
     expect(mockLog).toHaveBeenCalledTimes(1);
     expect(mockLog.mock.calls[0]?.[0]).toBe('No plans found in');
-    expect(String(mockLog.mock.calls[0]?.[1] ?? '')).toMatch(/\/tasks$/);
+    expect(String(mockLog.mock.calls[0]?.[1] ?? '')).toMatch(/\/\.tim\/plans$/);
     expect(mockTable).not.toHaveBeenCalled();
   });
 

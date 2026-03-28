@@ -1034,7 +1034,11 @@ describe('workspace add --reuse and --try-reuse', () => {
     } as any);
 
     const workspaceSyncCall = syncPlanToDbSpy.mock.calls.find(
-      (call) => call[1] === workspacePlanPath
+      (call) =>
+        call[0] &&
+        typeof call[0] === 'object' &&
+        'title' in call[0] &&
+        (call[0] as PlanSchema).title === 'Workspace Local Edits'
     );
     expect(workspaceSyncCall).toBeDefined();
     expect(workspaceSyncCall?.[0]).toMatchObject({
@@ -1043,7 +1047,7 @@ describe('workspace add --reuse and --try-reuse', () => {
       title: 'Workspace Local Edits',
       status: 'in_progress',
     });
-    expect(workspaceSyncCall?.[2]).toEqual({
+    expect(workspaceSyncCall?.[1]).toEqual({
       cwdForIdentity: mainRepoDir,
       throwOnError: true,
     });

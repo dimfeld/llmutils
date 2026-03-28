@@ -29,7 +29,6 @@ async function writeTestPlan(planPath: string, plan: any) {
     remoteUrl: repository.remoteUrl,
     lastGitRoot: repository.gitRoot,
   });
-  const relativeFilename = path.relative(repoRootForTest, planPath);
   return upsertPlan(db, project.id, {
     planId: planWithUuid.id,
     uuid: planWithUuid.uuid,
@@ -55,7 +54,6 @@ async function writeTestPlan(planPath: string, plan: any) {
     reviewIssues: planWithUuid.reviewIssues ?? null,
     parentUuid: null,
     epic: planWithUuid.epic === true,
-    filename: relativeFilename,
     tasks: (planWithUuid.tasks ?? []).map((task: any) => ({
       title: task.title,
       description: task.description ?? '',
@@ -75,7 +73,7 @@ describe('tim renumber', () => {
   beforeEach(async () => {
     tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'tim-renumber-test-'));
     repoRootForTest = tempDir;
-    tasksDir = path.join(tempDir, 'tasks');
+    tasksDir = path.join(tempDir, '.tim', 'plans');
     await fs.promises.mkdir(tasksDir, { recursive: true });
 
     // Mock getGitRoot to return the temp directory
@@ -93,7 +91,7 @@ describe('tim renumber', () => {
     }));
 
     // Create a config file
-    configPath = path.join(tempDir, '.tim.yml');
+    configPath = path.join(tempDir, '.tim.plan.md');
     await Bun.write(configPath, yaml.stringify({}));
   });
 
@@ -128,7 +126,7 @@ describe('tim renumber', () => {
     };
 
     // Use provided filename or default to id-based filename
-    const file = filename || `${id}.yml`;
+    const file = filename || `${id}.plan.md`;
     await writeTestPlan(path.join(tasksDir, file), plan);
   };
 
@@ -138,23 +136,23 @@ describe('tim renumber', () => {
     const newTime = new Date('2024-06-01').toISOString();
 
     // Create two plans with the same ID 1 but different filenames
-    await createPlan(1, 'Older plan', '1-old.yml', oldTime);
-    await createPlan(1, 'Newer plan', '1-new.yml', newTime);
+    await createPlan(1, 'Older plan', '1-old.plan.md', oldTime);
+    await createPlan(1, 'Newer plan', '1-new.plan.md', newTime);
 
     await handleRenumber({}, createMockCommand());
 
     // Check that files still exist
     const files = await fs.promises.readdir(tasksDir);
-    expect(files).toContain('1-old.yml');
-    expect(files).toContain('2-new.yml');
+    expect(files).toContain('1-old.plan.md');
+    expect(files).toContain('2-new.plan.md');
 
     // Check that IDs were updated correctly
-    const oldPlan = await readPlanFile(path.join(tasksDir, '1-old.yml'));
+    const oldPlan = await readPlanFile(path.join(tasksDir, '1-old.plan.md'));
     expect(oldPlan.id).toBe(1); // Older plan keeps ID 1
     expect(oldPlan.title).toBe('Older plan');
 
     // The plan file should be renamed since it started with the plan ID
-    const newPlan = await readPlanFile(path.join(tasksDir, '2-new.yml'));
+    const newPlan = await readPlanFile(path.join(tasksDir, '2-new.plan.md'));
     expect(newPlan.id).toBe(2); // Newer plan gets ID 2
     expect(newPlan.title).toBe('Newer plan');
   });
@@ -174,17 +172,17 @@ describe('tim renumber', () => {
       tasks: [],
     };
     // Write using writePlanFile to get consistent format
-    await writePlanFile(path.join(tasksDir, '123.yml'), plan, {
+    await writePlanFile(path.join(tasksDir, '123.plan.md'), plan, {
       cwdForIdentity: repoRootForTest,
     });
 
     // Read original file content
-    const originalContent = await Bun.file(path.join(tasksDir, '123.yml')).text();
+    const originalContent = await Bun.file(path.join(tasksDir, '123.plan.md')).text();
 
     await handleRenumber({ dryRun: true }, createMockCommand());
 
     // Verify the file content is unchanged
-    const contentAfter = await Bun.file(path.join(tasksDir, '123.yml')).text();
+    const contentAfter = await Bun.file(path.join(tasksDir, '123.plan.md')).text();
 
     // File content should be identical (no modifications in dry-run mode)
     expect(contentAfter).toBe(originalContent);
@@ -206,12 +204,12 @@ describe('tim renumber', () => {
       priority: 'medium',
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '999.yml'), plan);
+    await writeTestPlan(path.join(tasksDir, '999.plan.md'), plan);
 
     await handleRenumber({}, createMockCommand());
 
     // Should renumber successfully
-    const updatedPlan = await readPlanFile(path.join(tasksDir, '999.yml'));
+    const updatedPlan = await readPlanFile(path.join(tasksDir, '999.plan.md'));
     expect(updatedPlan.id).toBe(999);
     expect(updatedPlan.title).toBe('Plan without date');
   });
@@ -330,26 +328,26 @@ describe('tim renumber', () => {
     };
 
     // Write all plans with unique filenames
-    await writeTestPlan(path.join(tasksDir, '1-set1-parent.yml'), set1ParentPlan);
-    await writeTestPlan(path.join(tasksDir, '1-set1/2-plan1.yml'), set1Plan1);
-    await writeTestPlan(path.join(tasksDir, '1-set1/3-plan2.yml'), set1Plan2);
-    await writeTestPlan(path.join(tasksDir, '1-set1/4-plan3.yml'), set1Plan3);
-    await writeTestPlan(path.join(tasksDir, '1-set2-parent.yml'), set2ParentPlan);
-    await writeTestPlan(path.join(tasksDir, '1-set2/2-plan1.yml'), set2Plan1);
-    await writeTestPlan(path.join(tasksDir, '1-set2/3-plan2.yml'), set2Plan2);
-    await writeTestPlan(path.join(tasksDir, '1-set2/4-plan3.yml'), set2Plan3);
+    await writeTestPlan(path.join(tasksDir, '1-set1-parent.plan.md'), set1ParentPlan);
+    await writeTestPlan(path.join(tasksDir, '1-set1/2-plan1.plan.md'), set1Plan1);
+    await writeTestPlan(path.join(tasksDir, '1-set1/3-plan2.plan.md'), set1Plan2);
+    await writeTestPlan(path.join(tasksDir, '1-set1/4-plan3.plan.md'), set1Plan3);
+    await writeTestPlan(path.join(tasksDir, '1-set2-parent.plan.md'), set2ParentPlan);
+    await writeTestPlan(path.join(tasksDir, '1-set2/2-plan1.plan.md'), set2Plan1);
+    await writeTestPlan(path.join(tasksDir, '1-set2/3-plan2.plan.md'), set2Plan2);
+    await writeTestPlan(path.join(tasksDir, '1-set2/4-plan3.plan.md'), set2Plan3);
 
     await handleRenumber({}, createMockCommand());
 
     // Read all updated plans
-    const updatedSet1ParentPlan = await readPlanFile(path.join(tasksDir, '1-set1-parent.yml'));
-    const updatedSet1Plan1 = await readPlanFile(path.join(tasksDir, '1-set1/2-plan1.yml'));
-    const updatedSet1Plan2 = await readPlanFile(path.join(tasksDir, '1-set1/3-plan2.yml'));
-    const updatedSet1Plan3 = await readPlanFile(path.join(tasksDir, '1-set1/4-plan3.yml'));
-    const updatedSet2ParentPlan = await readPlanFile(path.join(tasksDir, '5-set2-parent.yml'));
-    const updatedSet2Plan1 = await readPlanFile(path.join(tasksDir, '5-set2/6-plan1.yml'));
-    const updatedSet2Plan2 = await readPlanFile(path.join(tasksDir, '5-set2/7-plan2.yml'));
-    const updatedSet2Plan3 = await readPlanFile(path.join(tasksDir, '5-set2/8-plan3.yml'));
+    const updatedSet1ParentPlan = await readPlanFile(path.join(tasksDir, '1-set1-parent.plan.md'));
+    const updatedSet1Plan1 = await readPlanFile(path.join(tasksDir, '1-set1/2-plan1.plan.md'));
+    const updatedSet1Plan2 = await readPlanFile(path.join(tasksDir, '1-set1/3-plan2.plan.md'));
+    const updatedSet1Plan3 = await readPlanFile(path.join(tasksDir, '1-set1/4-plan3.plan.md'));
+    const updatedSet2ParentPlan = await readPlanFile(path.join(tasksDir, '5-set2-parent.plan.md'));
+    const updatedSet2Plan1 = await readPlanFile(path.join(tasksDir, '5-set2/6-plan1.plan.md'));
+    const updatedSet2Plan2 = await readPlanFile(path.join(tasksDir, '5-set2/7-plan2.plan.md'));
+    const updatedSet2Plan3 = await readPlanFile(path.join(tasksDir, '5-set2/8-plan3.plan.md'));
 
     // First set should keep IDs 1, 2, 3, 4 (older timestamps)
     expect(updatedSet1ParentPlan.id).toBe(1);
@@ -388,23 +386,23 @@ describe('tim renumber', () => {
     const newTime = new Date('2024-06-01').toISOString();
 
     // Create two plans with the same ID 1
-    await createPlan(1, 'Older plan - should be renumbered', '1-old.yml', oldTime);
-    await createPlan(1, 'Newer plan - should keep ID', '1-new.yml', newTime);
+    await createPlan(1, 'Older plan - should be renumbered', '1-old.plan.md', oldTime);
+    await createPlan(1, 'Newer plan - should keep ID', '1-new.plan.md', newTime);
 
     // Use --keep to keep the newer plan (which would normally be renumbered)
-    await handleRenumber({ keep: ['1-new.yml'] }, createMockCommand());
+    await handleRenumber({ keep: ['1-new.plan.md'] }, createMockCommand());
 
     // Check that files were renamed correctly
     const files = await fs.promises.readdir(tasksDir);
-    expect(files).toContain('1-new.yml'); // Kept its name
-    expect(files).toContain('2-old.yml'); // Renamed
+    expect(files).toContain('1-new.plan.md'); // Kept its name
+    expect(files).toContain('2-old.plan.md'); // Renamed
 
     // Check that IDs were updated correctly
-    const newPlan = await readPlanFile(path.join(tasksDir, '1-new.yml'));
+    const newPlan = await readPlanFile(path.join(tasksDir, '1-new.plan.md'));
     expect(newPlan.id).toBe(1); // Newer plan keeps ID 1 due to preference
     expect(newPlan.title).toBe('Newer plan - should keep ID');
 
-    const oldPlan = await readPlanFile(path.join(tasksDir, '2-old.yml'));
+    const oldPlan = await readPlanFile(path.join(tasksDir, '2-old.plan.md'));
     expect(oldPlan.id).toBe(2); // Older plan gets renumbered despite being older
     expect(oldPlan.title).toBe('Older plan - should be renumbered');
   });
@@ -451,60 +449,60 @@ describe('tim renumber', () => {
       tasks: [],
     };
 
-    await writeTestPlan(path.join(tasksDir, '1-parent.yml'), parent);
-    await writeTestPlan(path.join(tasksDir, '2-child.yml'), child);
-    await writeTestPlan(path.join(tasksDir, '3-grandchild.yml'), grandchild);
-    await writeTestPlan(path.join(tasksDir, '1-conflicting.yml'), conflictingPlan);
+    await writeTestPlan(path.join(tasksDir, '1-parent.plan.md'), parent);
+    await writeTestPlan(path.join(tasksDir, '2-child.plan.md'), child);
+    await writeTestPlan(path.join(tasksDir, '3-grandchild.plan.md'), grandchild);
+    await writeTestPlan(path.join(tasksDir, '1-conflicting.plan.md'), conflictingPlan);
 
     // Prefer the parent, which should also protect its children
-    await handleRenumber({ keep: ['1-parent.yml'] }, createMockCommand());
+    await handleRenumber({ keep: ['1-parent.plan.md'] }, createMockCommand());
 
     // Parent should keep ID 1
-    const updatedParent = await readPlanFile(path.join(tasksDir, '1-parent.yml'));
+    const updatedParent = await readPlanFile(path.join(tasksDir, '1-parent.plan.md'));
     expect(updatedParent.id).toBe(1);
 
     // Child should keep ID 2 and parent reference should remain
-    const updatedChild = await readPlanFile(path.join(tasksDir, '2-child.yml'));
+    const updatedChild = await readPlanFile(path.join(tasksDir, '2-child.plan.md'));
     expect(updatedChild.id).toBe(2);
     expect(updatedChild.parent).toBe(1);
 
     // Grandchild should keep ID 3 and parent reference should remain
-    const updatedGrandchild = await readPlanFile(path.join(tasksDir, '3-grandchild.yml'));
+    const updatedGrandchild = await readPlanFile(path.join(tasksDir, '3-grandchild.plan.md'));
     expect(updatedGrandchild.id).toBe(3);
     expect(updatedGrandchild.parent).toBe(2);
 
     // Conflicting plan should be renumbered
-    const updatedConflictingPath = path.join(tasksDir, '4-conflicting.yml');
+    const updatedConflictingPath = path.join(tasksDir, '4-conflicting.plan.md');
     expect(fs.existsSync(updatedConflictingPath)).toBe(true);
     const updatedConflicting = await readPlanFile(updatedConflictingPath);
     expect(updatedConflicting.id).toBe(4);
 
     // Original conflicting file should be removed
-    expect(fs.existsSync(path.join(tasksDir, '1-conflicting.yml'))).toBe(false);
+    expect(fs.existsSync(path.join(tasksDir, '1-conflicting.plan.md'))).toBe(false);
   });
 
   test('handles multiple keep files', async () => {
     // Create multiple sets of conflicting plans
-    await createPlan(1, 'Plan A1', '1-a1.yml', new Date('2024-01-01').toISOString());
-    await createPlan(1, 'Plan B1', '1-b1.yml', new Date('2024-01-02').toISOString());
-    await createPlan(2, 'Plan A2', '2-a2.yml', new Date('2024-01-01').toISOString());
-    await createPlan(2, 'Plan B2', '2-b2.yml', new Date('2024-01-02').toISOString());
+    await createPlan(1, 'Plan A1', '1-a1.plan.md', new Date('2024-01-01').toISOString());
+    await createPlan(1, 'Plan B1', '1-b1.plan.md', new Date('2024-01-02').toISOString());
+    await createPlan(2, 'Plan A2', '2-a2.plan.md', new Date('2024-01-01').toISOString());
+    await createPlan(2, 'Plan B2', '2-b2.plan.md', new Date('2024-01-02').toISOString());
 
     // Prefer the B plans (newer ones)
-    await handleRenumber({ keep: ['1-b1.yml', '2-b2.yml'] }, createMockCommand());
+    await handleRenumber({ keep: ['1-b1.plan.md', '2-b2.plan.md'] }, createMockCommand());
 
     // B plans should keep their IDs
-    const b1 = await readPlanFile(path.join(tasksDir, '1-b1.yml'));
+    const b1 = await readPlanFile(path.join(tasksDir, '1-b1.plan.md'));
     expect(b1.id).toBe(1);
 
-    const b2 = await readPlanFile(path.join(tasksDir, '2-b2.yml'));
+    const b2 = await readPlanFile(path.join(tasksDir, '2-b2.plan.md'));
     expect(b2.id).toBe(2);
 
     // A plans should be renumbered
-    const a1 = await readPlanFile(path.join(tasksDir, '3-a1.yml'));
+    const a1 = await readPlanFile(path.join(tasksDir, '3-a1.plan.md'));
     expect(a1.id).toBe(3);
 
-    const a2 = await readPlanFile(path.join(tasksDir, '4-a2.yml'));
+    const a2 = await readPlanFile(path.join(tasksDir, '4-a2.plan.md'));
     expect(a2.id).toBe(4);
   });
 
@@ -512,19 +510,19 @@ describe('tim renumber', () => {
     const oldTime = new Date('2024-01-01').toISOString();
     const newTime = new Date('2024-06-01').toISOString();
 
-    await createPlan(1, 'Older plan', '1-old.yml', oldTime);
-    await createPlan(1, 'Newer plan', '1-new.yml', newTime);
+    await createPlan(1, 'Older plan', '1-old.plan.md', oldTime);
+    await createPlan(1, 'Newer plan', '1-new.plan.md', newTime);
 
     // Use absolute path for preference
-    const absolutePath = path.join(tasksDir, '1-new.yml');
+    const absolutePath = path.join(tasksDir, '1-new.plan.md');
     await handleRenumber({ keep: [absolutePath] }, createMockCommand());
 
     // Newer plan should keep ID 1
-    const newPlan = await readPlanFile(path.join(tasksDir, '1-new.yml'));
+    const newPlan = await readPlanFile(path.join(tasksDir, '1-new.plan.md'));
     expect(newPlan.id).toBe(1);
 
     // Older plan should be renumbered
-    const oldPlan = await readPlanFile(path.join(tasksDir, '2-old.yml'));
+    const oldPlan = await readPlanFile(path.join(tasksDir, '2-old.plan.md'));
     expect(oldPlan.id).toBe(2);
   });
 
@@ -534,25 +532,25 @@ describe('tim renumber', () => {
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: mock(async () => tempDir),
       getCurrentBranchName: mock(async () => 'feature-branch'),
-      getChangedFilesOnBranch: mock(async () => [path.join(tasksDir, '1-new.yml')]),
+      getChangedFilesOnBranch: mock(async () => [path.join(tasksDir, '1-new.plan.md')]),
     }));
 
     const oldTime = new Date('2024-01-01').toISOString();
     const newTime = new Date('2024-06-01').toISOString();
 
     // Create conflicting plans - the newer file is the one changed on the branch
-    await createPlan(1, 'Older plan', '1-old.yml', oldTime);
-    await createPlan(1, 'Newer plan - changed on branch', '1-new.yml', newTime);
+    await createPlan(1, 'Older plan', '1-old.plan.md', oldTime);
+    await createPlan(1, 'Newer plan - changed on branch', '1-new.plan.md', newTime);
 
     await handleRenumber({}, createMockCommand());
 
     // The older plan (unchanged on branch) should keep ID 1
-    const oldPlan = await readPlanFile(path.join(tasksDir, '1-old.yml'));
+    const oldPlan = await readPlanFile(path.join(tasksDir, '1-old.plan.md'));
     expect(oldPlan.id).toBe(1);
     expect(oldPlan.title).toBe('Older plan');
 
     // The newer plan (changed on branch) should be renumbered to 2
-    const newPlan = await readPlanFile(path.join(tasksDir, '2-new.yml'));
+    const newPlan = await readPlanFile(path.join(tasksDir, '2-new.plan.md'));
     expect(newPlan.id).toBe(2);
     expect(newPlan.title).toBe('Newer plan - changed on branch');
   });
@@ -569,18 +567,18 @@ describe('tim renumber', () => {
     const newTime = new Date('2024-06-01').toISOString();
 
     // Create conflicting plans
-    await createPlan(1, 'Older plan', '1-old.yml', oldTime);
-    await createPlan(1, 'Newer plan', '1-new.yml', newTime);
+    await createPlan(1, 'Older plan', '1-old.plan.md', oldTime);
+    await createPlan(1, 'Newer plan', '1-new.plan.md', newTime);
 
     await handleRenumber({}, createMockCommand());
 
     // Should use timestamp logic: older plan keeps ID 1
-    const oldPlan = await readPlanFile(path.join(tasksDir, '1-old.yml'));
+    const oldPlan = await readPlanFile(path.join(tasksDir, '1-old.plan.md'));
     expect(oldPlan.id).toBe(1);
     expect(oldPlan.title).toBe('Older plan');
 
     // Newer plan should be renumbered to 2
-    const newPlan = await readPlanFile(path.join(tasksDir, '2-new.yml'));
+    const newPlan = await readPlanFile(path.join(tasksDir, '2-new.plan.md'));
     expect(newPlan.id).toBe(2);
     expect(newPlan.title).toBe('Newer plan');
   });
@@ -590,26 +588,26 @@ describe('tim renumber', () => {
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: mock(async () => tempDir),
       getCurrentBranchName: mock(async () => 'feature-branch'),
-      getChangedFilesOnBranch: mock(async () => [path.join(tasksDir, '1-new.yml')]),
+      getChangedFilesOnBranch: mock(async () => [path.join(tasksDir, '1-new.plan.md')]),
     }));
 
     const oldTime = new Date('2024-01-01').toISOString();
     const newTime = new Date('2024-06-01').toISOString();
 
     // Create conflicting plans - the newer file is changed on branch
-    await createPlan(1, 'Older plan', '1-old.yml', oldTime);
-    await createPlan(1, 'Newer plan - changed on branch', '1-new.yml', newTime);
+    await createPlan(1, 'Older plan', '1-old.plan.md', oldTime);
+    await createPlan(1, 'Newer plan - changed on branch', '1-new.plan.md', newTime);
 
     // Use --keep to override branch-based preference, keeping the changed file
-    await handleRenumber({ keep: ['1-new.yml'] }, createMockCommand());
+    await handleRenumber({ keep: ['1-new.plan.md'] }, createMockCommand());
 
     // The newer plan should keep ID 1 due to explicit preference, even though it would normally be renumbered
-    const newPlan = await readPlanFile(path.join(tasksDir, '1-new.yml'));
+    const newPlan = await readPlanFile(path.join(tasksDir, '1-new.plan.md'));
     expect(newPlan.id).toBe(1);
     expect(newPlan.title).toBe('Newer plan - changed on branch');
 
     // The older plan should be renumbered
-    const oldPlan = await readPlanFile(path.join(tasksDir, '2-old.yml'));
+    const oldPlan = await readPlanFile(path.join(tasksDir, '2-old.plan.md'));
     expect(oldPlan.id).toBe(2);
     expect(oldPlan.title).toBe('Older plan');
   });
@@ -619,25 +617,25 @@ describe('tim renumber', () => {
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: mock(async () => tempDir),
       getCurrentBranchName: mock(async () => 'feature-branch'),
-      getChangedFilesOnBranch: mock(async () => [path.join(tasksDir, 'different-file.yml')]),
+      getChangedFilesOnBranch: mock(async () => [path.join(tasksDir, 'different-file.plan.md')]),
     }));
 
     const oldTime = new Date('2024-01-01').toISOString();
     const newTime = new Date('2024-06-01').toISOString();
 
     // Create conflicting plans - neither file was changed on the branch
-    await createPlan(1, 'Older plan', '1-old.yml', oldTime);
-    await createPlan(1, 'Newer plan', '1-new.yml', newTime);
+    await createPlan(1, 'Older plan', '1-old.plan.md', oldTime);
+    await createPlan(1, 'Newer plan', '1-new.plan.md', newTime);
 
     await handleRenumber({}, createMockCommand());
 
     // Should fall back to timestamp logic: older plan keeps ID 1
-    const oldPlan = await readPlanFile(path.join(tasksDir, '1-old.yml'));
+    const oldPlan = await readPlanFile(path.join(tasksDir, '1-old.plan.md'));
     expect(oldPlan.id).toBe(1);
     expect(oldPlan.title).toBe('Older plan');
 
     // Newer plan should be renumbered to 2
-    const newPlan = await readPlanFile(path.join(tasksDir, '2-new.yml'));
+    const newPlan = await readPlanFile(path.join(tasksDir, '2-new.plan.md'));
     expect(newPlan.id).toBe(2);
     expect(newPlan.title).toBe('Newer plan');
   });
@@ -656,19 +654,19 @@ describe('tim renumber', () => {
     const newTime = new Date('2024-06-01').toISOString();
 
     // Create conflicting plans
-    await createPlan(1, 'Older plan', '1-old.yml', oldTime);
-    await createPlan(1, 'Newer plan', '1-new.yml', newTime);
+    await createPlan(1, 'Older plan', '1-old.plan.md', oldTime);
+    await createPlan(1, 'Newer plan', '1-new.plan.md', newTime);
 
     // Should not throw and fall back to timestamp logic
     await handleRenumber({}, createMockCommand());
 
     // Should fall back to timestamp logic: older plan keeps ID 1
-    const oldPlan = await readPlanFile(path.join(tasksDir, '1-old.yml'));
+    const oldPlan = await readPlanFile(path.join(tasksDir, '1-old.plan.md'));
     expect(oldPlan.id).toBe(1);
     expect(oldPlan.title).toBe('Older plan');
 
     // Newer plan should be renumbered to 2
-    const newPlan = await readPlanFile(path.join(tasksDir, '2-new.yml'));
+    const newPlan = await readPlanFile(path.join(tasksDir, '2-new.plan.md'));
     expect(newPlan.id).toBe(2);
     expect(newPlan.title).toBe('Newer plan');
   });
@@ -679,8 +677,8 @@ describe('tim renumber', () => {
       getGitRoot: mock(async () => tempDir),
       getCurrentBranchName: mock(async () => 'feature-branch'),
       getChangedFilesOnBranch: mock(async () => [
-        path.join(tasksDir, '1-changed.yml'), // This one was changed on branch
-        // '1-unchanged.yml' was not changed on branch
+        path.join(tasksDir, '1-changed.plan.md'), // This one was changed on branch
+        // '1-unchanged.plan.md' was not changed on branch
       ]),
     }));
 
@@ -689,24 +687,24 @@ describe('tim renumber', () => {
     const middleTime = new Date('2024-03-01').toISOString();
 
     // Create three conflicting plans with ID 1
-    await createPlan(1, 'Unchanged plan - oldest', '1-unchanged.yml', oldTime);
-    await createPlan(1, 'Changed plan - newer', '1-changed.yml', newTime);
-    await createPlan(1, 'Another unchanged plan - middle time', '1-unchanged2.yml', middleTime);
+    await createPlan(1, 'Unchanged plan - oldest', '1-unchanged.plan.md', oldTime);
+    await createPlan(1, 'Changed plan - newer', '1-changed.plan.md', newTime);
+    await createPlan(1, 'Another unchanged plan - middle time', '1-unchanged2.plan.md', middleTime);
 
     await handleRenumber({}, createMockCommand());
 
     // The oldest unchanged plan should keep ID 1
-    const unchangedPlan = await readPlanFile(path.join(tasksDir, '1-unchanged.yml'));
+    const unchangedPlan = await readPlanFile(path.join(tasksDir, '1-unchanged.plan.md'));
     expect(unchangedPlan.id).toBe(1);
     expect(unchangedPlan.title).toBe('Unchanged plan - oldest');
 
     // The changed plan should be renumbered (even though it's newer)
-    const changedPlan = await readPlanFile(path.join(tasksDir, '2-changed.yml'));
+    const changedPlan = await readPlanFile(path.join(tasksDir, '2-changed.plan.md'));
     expect(changedPlan.id).toBe(2);
     expect(changedPlan.title).toBe('Changed plan - newer');
 
     // The other unchanged plan should also be renumbered (not the oldest unchanged)
-    const unchanged2Plan = await readPlanFile(path.join(tasksDir, '3-unchanged2.yml'));
+    const unchanged2Plan = await readPlanFile(path.join(tasksDir, '3-unchanged2.plan.md'));
     expect(unchanged2Plan.id).toBe(3);
     expect(unchanged2Plan.title).toBe('Another unchanged plan - middle time');
   });
@@ -717,9 +715,9 @@ describe('tim renumber', () => {
       getGitRoot: mock(async () => tempDir),
       getCurrentBranchName: mock(async () => 'feature-branch'),
       getChangedFilesOnBranch: mock(async () => [
-        path.join(tasksDir, '1-changed-old.yml'),
-        path.join(tasksDir, '1-changed-new.yml'),
-        path.join(tasksDir, '1-changed-newest.yml'),
+        path.join(tasksDir, '1-changed-old.plan.md'),
+        path.join(tasksDir, '1-changed-new.plan.md'),
+        path.join(tasksDir, '1-changed-newest.plan.md'),
       ]),
     }));
 
@@ -728,24 +726,24 @@ describe('tim renumber', () => {
     const newestTime = new Date('2024-12-01').toISOString();
 
     // Create three conflicting plans with ID 1, all changed on branch
-    await createPlan(1, 'Changed plan - oldest', '1-changed-old.yml', oldTime);
-    await createPlan(1, 'Changed plan - newer', '1-changed-new.yml', newTime);
-    await createPlan(1, 'Changed plan - newest', '1-changed-newest.yml', newestTime);
+    await createPlan(1, 'Changed plan - oldest', '1-changed-old.plan.md', oldTime);
+    await createPlan(1, 'Changed plan - newer', '1-changed-new.plan.md', newTime);
+    await createPlan(1, 'Changed plan - newest', '1-changed-newest.plan.md', newestTime);
 
     await handleRenumber({}, createMockCommand());
 
     // When all files are changed on branch, should fall back to timestamp logic
     // The oldest should keep ID 1
-    const oldPlan = await readPlanFile(path.join(tasksDir, '1-changed-old.yml'));
+    const oldPlan = await readPlanFile(path.join(tasksDir, '1-changed-old.plan.md'));
     expect(oldPlan.id).toBe(1);
     expect(oldPlan.title).toBe('Changed plan - oldest');
 
     // The other two should be renumbered
-    const newPlan = await readPlanFile(path.join(tasksDir, '2-changed-new.yml'));
+    const newPlan = await readPlanFile(path.join(tasksDir, '2-changed-new.plan.md'));
     expect(newPlan.id).toBe(2);
     expect(newPlan.title).toBe('Changed plan - newer');
 
-    const newestPlan = await readPlanFile(path.join(tasksDir, '3-changed-newest.yml'));
+    const newestPlan = await readPlanFile(path.join(tasksDir, '3-changed-newest.plan.md'));
     expect(newestPlan.id).toBe(3);
     expect(newestPlan.title).toBe('Changed plan - newest');
   });
@@ -756,8 +754,8 @@ describe('tim renumber', () => {
       getGitRoot: mock(async () => tempDir),
       getCurrentBranchName: mock(async () => 'feature-branch'),
       getChangedFilesOnBranch: mock(async () => [
-        path.join(tasksDir, '1-changed.yml'), // ID 1 conflict - changed
-        path.join(tasksDir, '3-changed.yml'), // ID 3 conflict - changed
+        path.join(tasksDir, '1-changed.plan.md'), // ID 1 conflict - changed
+        path.join(tasksDir, '3-changed.plan.md'), // ID 3 conflict - changed
       ]),
     }));
 
@@ -818,27 +816,27 @@ describe('tim renumber', () => {
       tasks: [],
     };
 
-    await writeTestPlan(path.join(tasksDir, '1-unchanged.yml'), plan1Unchanged);
-    await writeTestPlan(path.join(tasksDir, '1-changed.yml'), plan1Changed);
-    await writeTestPlan(path.join(tasksDir, '3-unchanged.yml'), plan3Unchanged);
-    await writeTestPlan(path.join(tasksDir, '3-changed.yml'), plan3Changed);
+    await writeTestPlan(path.join(tasksDir, '1-unchanged.plan.md'), plan1Unchanged);
+    await writeTestPlan(path.join(tasksDir, '1-changed.plan.md'), plan1Changed);
+    await writeTestPlan(path.join(tasksDir, '3-unchanged.plan.md'), plan3Unchanged);
+    await writeTestPlan(path.join(tasksDir, '3-changed.plan.md'), plan3Changed);
 
     await handleRenumber({}, createMockCommand());
 
     // Unchanged files should keep their original IDs
-    const unchangedPlan1 = await readPlanFile(path.join(tasksDir, '1-unchanged.yml'));
+    const unchangedPlan1 = await readPlanFile(path.join(tasksDir, '1-unchanged.plan.md'));
     expect(unchangedPlan1.id).toBe(1);
     expect(unchangedPlan1.dependencies).toEqual([3]); // Should still point to unchanged plan 3
 
-    const unchangedPlan3 = await readPlanFile(path.join(tasksDir, '3-unchanged.yml'));
+    const unchangedPlan3 = await readPlanFile(path.join(tasksDir, '3-unchanged.plan.md'));
     expect(unchangedPlan3.id).toBe(3);
 
     // Changed files should be renumbered to higher IDs
-    const changedPlan1 = await readPlanFile(path.join(tasksDir, '4-changed.yml'));
+    const changedPlan1 = await readPlanFile(path.join(tasksDir, '4-changed.plan.md'));
     expect(changedPlan1.id).toBe(4);
     expect(changedPlan1.dependencies).toEqual([5]); // Should point to the renumbered plan 3
 
-    const changedPlan3 = await readPlanFile(path.join(tasksDir, '5-changed.yml'));
+    const changedPlan3 = await readPlanFile(path.join(tasksDir, '5-changed.plan.md'));
     expect(changedPlan3.id).toBe(5);
   });
 
@@ -848,8 +846,8 @@ describe('tim renumber', () => {
       getGitRoot: mock(async () => tempDir),
       getCurrentBranchName: mock(async () => 'feature-branch'),
       getChangedFilesOnBranch: mock(async () => [
-        path.join(tasksDir, '1-changed.yml'),
-        path.join(tasksDir, '2-changed.yml'),
+        path.join(tasksDir, '1-changed.plan.md'),
+        path.join(tasksDir, '2-changed.plan.md'),
       ]),
     }));
 
@@ -857,29 +855,29 @@ describe('tim renumber', () => {
     const newTime = new Date('2024-06-01').toISOString();
 
     // Create two sets of conflicts
-    await createPlan(1, 'Plan 1 Unchanged', '1-unchanged.yml', oldTime);
-    await createPlan(1, 'Plan 1 Changed - should keep via flag', '1-changed.yml', newTime);
-    await createPlan(2, 'Plan 2 Unchanged', '2-unchanged.yml', oldTime);
-    await createPlan(2, 'Plan 2 Changed - should be renumbered', '2-changed.yml', newTime);
+    await createPlan(1, 'Plan 1 Unchanged', '1-unchanged.plan.md', oldTime);
+    await createPlan(1, 'Plan 1 Changed - should keep via flag', '1-changed.plan.md', newTime);
+    await createPlan(2, 'Plan 2 Unchanged', '2-unchanged.plan.md', oldTime);
+    await createPlan(2, 'Plan 2 Changed - should be renumbered', '2-changed.plan.md', newTime);
 
     // Use keep flag to prefer one of the changed files
-    await handleRenumber({ keep: ['1-changed.yml'] }, createMockCommand());
+    await handleRenumber({ keep: ['1-changed.plan.md'] }, createMockCommand());
 
     // The preferred changed file should keep its ID despite being changed on branch
-    const changedPlan1 = await readPlanFile(path.join(tasksDir, '1-changed.yml'));
+    const changedPlan1 = await readPlanFile(path.join(tasksDir, '1-changed.plan.md'));
     expect(changedPlan1.id).toBe(1);
     expect(changedPlan1.title).toBe('Plan 1 Changed - should keep via flag');
 
     // The unchanged file should be renumbered
-    const unchangedPlan1 = await readPlanFile(path.join(tasksDir, '3-unchanged.yml'));
+    const unchangedPlan1 = await readPlanFile(path.join(tasksDir, '3-unchanged.plan.md'));
     expect(unchangedPlan1.id).toBe(3);
 
     // For the second conflict, branch logic should apply normally
     // Unchanged file keeps ID 2, changed file gets renumbered
-    const unchangedPlan2 = await readPlanFile(path.join(tasksDir, '2-unchanged.yml'));
+    const unchangedPlan2 = await readPlanFile(path.join(tasksDir, '2-unchanged.plan.md'));
     expect(unchangedPlan2.id).toBe(2);
 
-    const changedPlan2 = await readPlanFile(path.join(tasksDir, '4-changed.yml'));
+    const changedPlan2 = await readPlanFile(path.join(tasksDir, '4-changed.plan.md'));
     expect(changedPlan2.id).toBe(4);
   });
 
@@ -887,7 +885,7 @@ describe('tim renumber', () => {
     // Mock git functions to simulate being on a feature branch with many changed files
     const changedFiles = [];
     for (let i = 1; i <= 50; i++) {
-      changedFiles.push(path.join(tasksDir, `${i}.yml`));
+      changedFiles.push(path.join(tasksDir, `${i}.plan.md`));
     }
 
     await moduleMocker.mock('../../common/git.js', () => ({
@@ -898,7 +896,7 @@ describe('tim renumber', () => {
 
     // Create many non-conflicting plans (all with unique IDs)
     for (let i = 1; i <= 50; i++) {
-      await createPlan(i, `Plan ${i}`, `${i}.yml`, new Date().toISOString());
+      await createPlan(i, `Plan ${i}`, `${i}.plan.md`, new Date().toISOString());
     }
 
     const startTime = Date.now();
@@ -910,7 +908,7 @@ describe('tim renumber', () => {
 
     // Verify no files were changed (no conflicts to resolve)
     for (let i = 1; i <= 50; i++) {
-      const plan = await readPlanFile(path.join(tasksDir, `${i}.yml`));
+      const plan = await readPlanFile(path.join(tasksDir, `${i}.plan.md`));
       expect(plan.id).toBe(i);
       expect(plan.title).toBe(`Plan ${i}`);
     }
@@ -919,7 +917,7 @@ describe('tim renumber', () => {
   test('hierarchy helper functions work correctly', async () => {
     // Create a simple hierarchy: parent (ID 10) -> child (ID 5)
     // This is disordered since parent ID > child ID
-    await createPlan(10, 'Parent Plan', '10-parent.yml');
+    await createPlan(10, 'Parent Plan', '10-parent.plan.md');
 
     const childPlan: PlanSchema = {
       id: 5,
@@ -933,7 +931,7 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '5-child.yml'), childPlan);
+    await writeTestPlan(path.join(tasksDir, '5-child.plan.md'), childPlan);
 
     // Create a grandchild (ID 3) -> depends on child (ID 5)
     const grandchildPlan: PlanSchema = {
@@ -949,7 +947,7 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '3-grandchild.yml'), grandchildPlan);
+    await writeTestPlan(path.join(tasksDir, '3-grandchild.plan.md'), grandchildPlan);
 
     // Mock the imported functions to test them independently
     const {
@@ -962,13 +960,13 @@ describe('tim renumber', () => {
 
     // Build allPlans map
     const allPlans = new Map();
-    const parentPlan = await readPlanFile(path.join(tasksDir, '10-parent.yml'));
-    const child = await readPlanFile(path.join(tasksDir, '5-child.yml'));
-    const grandchild = await readPlanFile(path.join(tasksDir, '3-grandchild.yml'));
+    const parentPlan = await readPlanFile(path.join(tasksDir, '10-parent.plan.md'));
+    const child = await readPlanFile(path.join(tasksDir, '5-child.plan.md'));
+    const grandchild = await readPlanFile(path.join(tasksDir, '3-grandchild.plan.md'));
 
-    allPlans.set(path.join(tasksDir, '10-parent.yml'), parentPlan);
-    allPlans.set(path.join(tasksDir, '5-child.yml'), child);
-    allPlans.set(path.join(tasksDir, '3-grandchild.yml'), grandchild);
+    allPlans.set(path.join(tasksDir, '10-parent.plan.md'), parentPlan);
+    allPlans.set(path.join(tasksDir, '5-child.plan.md'), child);
+    allPlans.set(path.join(tasksDir, '3-grandchild.plan.md'), grandchild);
 
     // Test buildParentChildHierarchy
     const hierarchy = buildParentChildHierarchy(allPlans);
@@ -1011,14 +1009,14 @@ describe('tim renumber', () => {
 
   test('single-plan family (no children) - helper functions', async () => {
     // Create a standalone plan with no children or parent
-    await createPlan(42, 'Standalone Plan', '42-standalone.yml');
+    await createPlan(42, 'Standalone Plan', '42-standalone.plan.md');
 
     const { buildParentChildHierarchy, findRootParent, findPlanFamily, findDisorderedFamilies } =
       await import('./renumber.js');
 
     const allPlans = new Map();
-    const standalonePlan = await readPlanFile(path.join(tasksDir, '42-standalone.yml'));
-    allPlans.set(path.join(tasksDir, '42-standalone.yml'), standalonePlan);
+    const standalonePlan = await readPlanFile(path.join(tasksDir, '42-standalone.plan.md'));
+    allPlans.set(path.join(tasksDir, '42-standalone.plan.md'), standalonePlan);
 
     // Test buildParentChildHierarchy - should have no entries for this plan
     const hierarchy = buildParentChildHierarchy(allPlans);
@@ -1039,7 +1037,7 @@ describe('tim renumber', () => {
 
   test('complex multi-level hierarchy (4+ levels) - helper functions', async () => {
     // Create a 4-level hierarchy with disorder: great-grandparent (20) -> grandparent (15) -> parent (10) -> child (5)
-    await createPlan(20, 'Great-Grandparent Plan', '20-great-grandparent.yml');
+    await createPlan(20, 'Great-Grandparent Plan', '20-great-grandparent.plan.md');
 
     const grandparentPlan: PlanSchema = {
       id: 15,
@@ -1053,7 +1051,7 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '15-grandparent.yml'), grandparentPlan);
+    await writeTestPlan(path.join(tasksDir, '15-grandparent.plan.md'), grandparentPlan);
 
     const parentPlan: PlanSchema = {
       id: 10,
@@ -1067,7 +1065,7 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '10-parent.yml'), parentPlan);
+    await writeTestPlan(path.join(tasksDir, '10-parent.plan.md'), parentPlan);
 
     const childPlan: PlanSchema = {
       id: 5,
@@ -1081,7 +1079,7 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '5-child.yml'), childPlan);
+    await writeTestPlan(path.join(tasksDir, '5-child.plan.md'), childPlan);
 
     const {
       buildParentChildHierarchy,
@@ -1092,15 +1090,17 @@ describe('tim renumber', () => {
     } = await import('./renumber.js');
 
     const allPlans = new Map();
-    const greatGrandparent = await readPlanFile(path.join(tasksDir, '20-great-grandparent.yml'));
-    const grandparent = await readPlanFile(path.join(tasksDir, '15-grandparent.yml'));
-    const parent = await readPlanFile(path.join(tasksDir, '10-parent.yml'));
-    const child = await readPlanFile(path.join(tasksDir, '5-child.yml'));
+    const greatGrandparent = await readPlanFile(
+      path.join(tasksDir, '20-great-grandparent.plan.md')
+    );
+    const grandparent = await readPlanFile(path.join(tasksDir, '15-grandparent.plan.md'));
+    const parent = await readPlanFile(path.join(tasksDir, '10-parent.plan.md'));
+    const child = await readPlanFile(path.join(tasksDir, '5-child.plan.md'));
 
-    allPlans.set(path.join(tasksDir, '20-great-grandparent.yml'), greatGrandparent);
-    allPlans.set(path.join(tasksDir, '15-grandparent.yml'), grandparent);
-    allPlans.set(path.join(tasksDir, '10-parent.yml'), parent);
-    allPlans.set(path.join(tasksDir, '5-child.yml'), child);
+    allPlans.set(path.join(tasksDir, '20-great-grandparent.plan.md'), greatGrandparent);
+    allPlans.set(path.join(tasksDir, '15-grandparent.plan.md'), grandparent);
+    allPlans.set(path.join(tasksDir, '10-parent.plan.md'), parent);
+    allPlans.set(path.join(tasksDir, '5-child.plan.md'), child);
 
     // Test buildParentChildHierarchy - should build 3 levels of parent-child relationships
     const hierarchy = buildParentChildHierarchy(allPlans);
@@ -1154,14 +1154,14 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '10-orphan.yml'), orphanPlan);
+    await writeTestPlan(path.join(tasksDir, '10-orphan.plan.md'), orphanPlan);
 
     const { buildParentChildHierarchy, findRootParent, findPlanFamily, findDisorderedFamilies } =
       await import('./renumber.js');
 
     const allPlans = new Map();
-    const orphan = await readPlanFile(path.join(tasksDir, '10-orphan.yml'));
-    allPlans.set(path.join(tasksDir, '10-orphan.yml'), orphan);
+    const orphan = await readPlanFile(path.join(tasksDir, '10-orphan.plan.md'));
+    allPlans.set(path.join(tasksDir, '10-orphan.plan.md'), orphan);
 
     // Test buildParentChildHierarchy - should NOT create entry for missing parent (only validates existing parents)
     const hierarchy = buildParentChildHierarchy(allPlans);
@@ -1195,7 +1195,7 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '10-parent.yml'), parentPlan);
+    await writeTestPlan(path.join(tasksDir, '10-parent.plan.md'), parentPlan);
 
     const childPlan: PlanSchema = {
       id: 5,
@@ -1210,7 +1210,7 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '5-child.yml'), childPlan);
+    await writeTestPlan(path.join(tasksDir, '5-child.plan.md'), childPlan);
 
     const {
       buildParentChildHierarchy,
@@ -1220,11 +1220,11 @@ describe('tim renumber', () => {
     } = await import('./renumber.js');
 
     const allPlans = new Map();
-    const parent = await readPlanFile(path.join(tasksDir, '10-parent.yml'));
-    const child = await readPlanFile(path.join(tasksDir, '5-child.yml'));
+    const parent = await readPlanFile(path.join(tasksDir, '10-parent.plan.md'));
+    const child = await readPlanFile(path.join(tasksDir, '5-child.plan.md'));
 
-    allPlans.set(path.join(tasksDir, '10-parent.yml'), parent);
-    allPlans.set(path.join(tasksDir, '5-child.yml'), child);
+    allPlans.set(path.join(tasksDir, '10-parent.plan.md'), parent);
+    allPlans.set(path.join(tasksDir, '5-child.plan.md'), child);
 
     const hierarchy = buildParentChildHierarchy(allPlans);
     const family = findPlanFamily(10, allPlans, hierarchy);
@@ -1246,7 +1246,7 @@ describe('tim renumber', () => {
 
   test('complex sibling dependency chains - helper functions', async () => {
     // Create parent with 3 children having complex dependency chain
-    await createPlan(15, 'Parent Plan', '15-parent.yml');
+    await createPlan(15, 'Parent Plan', '15-parent.plan.md');
 
     const child1Plan: PlanSchema = {
       id: 5,
@@ -1261,7 +1261,7 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '5-child1.yml'), child1Plan);
+    await writeTestPlan(path.join(tasksDir, '5-child1.plan.md'), child1Plan);
 
     const child2Plan: PlanSchema = {
       id: 8,
@@ -1276,7 +1276,7 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '8-child2.yml'), child2Plan);
+    await writeTestPlan(path.join(tasksDir, '8-child2.plan.md'), child2Plan);
 
     const child3Plan: PlanSchema = {
       id: 12,
@@ -1291,7 +1291,7 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '12-child3.yml'), child3Plan);
+    await writeTestPlan(path.join(tasksDir, '12-child3.plan.md'), child3Plan);
 
     const {
       buildParentChildHierarchy,
@@ -1301,15 +1301,15 @@ describe('tim renumber', () => {
     } = await import('./renumber.js');
 
     const allPlans = new Map();
-    const parent = await readPlanFile(path.join(tasksDir, '15-parent.yml'));
-    const child1 = await readPlanFile(path.join(tasksDir, '5-child1.yml'));
-    const child2 = await readPlanFile(path.join(tasksDir, '8-child2.yml'));
-    const child3 = await readPlanFile(path.join(tasksDir, '12-child3.yml'));
+    const parent = await readPlanFile(path.join(tasksDir, '15-parent.plan.md'));
+    const child1 = await readPlanFile(path.join(tasksDir, '5-child1.plan.md'));
+    const child2 = await readPlanFile(path.join(tasksDir, '8-child2.plan.md'));
+    const child3 = await readPlanFile(path.join(tasksDir, '12-child3.plan.md'));
 
-    allPlans.set(path.join(tasksDir, '15-parent.yml'), parent);
-    allPlans.set(path.join(tasksDir, '5-child1.yml'), child1);
-    allPlans.set(path.join(tasksDir, '8-child2.yml'), child2);
-    allPlans.set(path.join(tasksDir, '12-child3.yml'), child3);
+    allPlans.set(path.join(tasksDir, '15-parent.plan.md'), parent);
+    allPlans.set(path.join(tasksDir, '5-child1.plan.md'), child1);
+    allPlans.set(path.join(tasksDir, '8-child2.plan.md'), child2);
+    allPlans.set(path.join(tasksDir, '12-child3.plan.md'), child3);
 
     const hierarchy = buildParentChildHierarchy(allPlans);
     const family = findPlanFamily(15, allPlans, hierarchy);
@@ -1345,14 +1345,16 @@ describe('tim renumber', () => {
     const { reassignFamilyIds } = await import('./renumber.js');
 
     // Test single plan family (should return empty mapping)
-    const singleFamily = [{ plan: { id: 42, title: 'Single Plan' }, filePath: '/path/to/42.yml' }];
+    const singleFamily = [
+      { plan: { id: 42, title: 'Single Plan' }, filePath: '/path/to/42.plan.md' },
+    ];
     const singleMapping = reassignFamilyIds(singleFamily);
     expect(singleMapping.size).toBe(0);
 
     // Test two-plan family (parent-child swap)
     const twoFamily = [
-      { plan: { id: 10, title: 'Parent' }, filePath: '/path/to/parent.yml' },
-      { plan: { id: 5, title: 'Child' }, filePath: '/path/to/child.yml' },
+      { plan: { id: 10, title: 'Parent' }, filePath: '/path/to/parent.plan.md' },
+      { plan: { id: 5, title: 'Child' }, filePath: '/path/to/child.plan.md' },
     ];
     const twoMapping = reassignFamilyIds(twoFamily);
     expect(Array.from(twoMapping.entries())).toEqual([
@@ -1362,9 +1364,9 @@ describe('tim renumber', () => {
 
     // Test three-plan family with complex IDs
     const threeFamily = [
-      { plan: { id: 20, title: 'Root' }, filePath: '/path/to/root.yml' },
-      { plan: { id: 10, title: 'Middle' }, filePath: '/path/to/middle.yml' },
-      { plan: { id: 5, title: 'Leaf' }, filePath: '/path/to/leaf.yml' },
+      { plan: { id: 20, title: 'Root' }, filePath: '/path/to/root.plan.md' },
+      { plan: { id: 10, title: 'Middle' }, filePath: '/path/to/middle.plan.md' },
+      { plan: { id: 5, title: 'Leaf' }, filePath: '/path/to/leaf.plan.md' },
     ];
     const threeMapping = reassignFamilyIds(threeFamily);
     expect(Array.from(threeMapping.entries())).toEqual([
@@ -1375,10 +1377,10 @@ describe('tim renumber', () => {
 
     // Test that existing IDs are reused in sorted order
     const unorderedFamily = [
-      { plan: { id: 100, title: 'First in topological order' }, filePath: '/path/to/a.yml' },
-      { plan: { id: 15, title: 'Second in topological order' }, filePath: '/path/to/b.yml' },
-      { plan: { id: 3, title: 'Third in topological order' }, filePath: '/path/to/c.yml' },
-      { plan: { id: 42, title: 'Fourth in topological order' }, filePath: '/path/to/d.yml' },
+      { plan: { id: 100, title: 'First in topological order' }, filePath: '/path/to/a.plan.md' },
+      { plan: { id: 15, title: 'Second in topological order' }, filePath: '/path/to/b.plan.md' },
+      { plan: { id: 3, title: 'Third in topological order' }, filePath: '/path/to/c.plan.md' },
+      { plan: { id: 42, title: 'Fourth in topological order' }, filePath: '/path/to/d.plan.md' },
     ];
     const unorderedMapping = reassignFamilyIds(unorderedFamily);
     // Should assign sorted IDs [3, 15, 42, 100] to plans in topological order
@@ -1392,7 +1394,7 @@ describe('tim renumber', () => {
 
   test('cycle detection in topological sort', async () => {
     // Create a cycle: child1 depends on child2, child2 depends on child1
-    await createPlan(10, 'Parent Plan', '10-parent.yml');
+    await createPlan(10, 'Parent Plan', '10-parent.plan.md');
 
     const child1Plan: PlanSchema = {
       id: 5,
@@ -1407,7 +1409,7 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '5-child1.yml'), child1Plan);
+    await writeTestPlan(path.join(tasksDir, '5-child1.plan.md'), child1Plan);
 
     const child2Plan: PlanSchema = {
       id: 8,
@@ -1422,19 +1424,19 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '8-child2.yml'), child2Plan);
+    await writeTestPlan(path.join(tasksDir, '8-child2.plan.md'), child2Plan);
 
     const { buildParentChildHierarchy, findPlanFamily, topologicalSortFamily } =
       await import('./renumber.js');
 
     const allPlans = new Map();
-    const parent = await readPlanFile(path.join(tasksDir, '10-parent.yml'));
-    const child1 = await readPlanFile(path.join(tasksDir, '5-child1.yml'));
-    const child2 = await readPlanFile(path.join(tasksDir, '8-child2.yml'));
+    const parent = await readPlanFile(path.join(tasksDir, '10-parent.plan.md'));
+    const child1 = await readPlanFile(path.join(tasksDir, '5-child1.plan.md'));
+    const child2 = await readPlanFile(path.join(tasksDir, '8-child2.plan.md'));
 
-    allPlans.set(path.join(tasksDir, '10-parent.yml'), parent);
-    allPlans.set(path.join(tasksDir, '5-child1.yml'), child1);
-    allPlans.set(path.join(tasksDir, '8-child2.yml'), child2);
+    allPlans.set(path.join(tasksDir, '10-parent.plan.md'), parent);
+    allPlans.set(path.join(tasksDir, '5-child1.plan.md'), child1);
+    allPlans.set(path.join(tasksDir, '8-child2.plan.md'), child2);
 
     const hierarchy = buildParentChildHierarchy(allPlans);
     const family = findPlanFamily(10, allPlans, hierarchy);
@@ -1464,7 +1466,7 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '3-parent.yml'), parentPlan);
+    await writeTestPlan(path.join(tasksDir, '3-parent.plan.md'), parentPlan);
 
     const child1Plan: PlanSchema = {
       id: 1,
@@ -1478,7 +1480,7 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '1-child1.yml'), child1Plan);
+    await writeTestPlan(path.join(tasksDir, '1-child1.plan.md'), child1Plan);
 
     const child2Plan: PlanSchema = {
       id: 2,
@@ -1493,19 +1495,19 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '2-child2.yml'), child2Plan);
+    await writeTestPlan(path.join(tasksDir, '2-child2.plan.md'), child2Plan);
 
     const { buildParentChildHierarchy, findPlanFamily, topologicalSortFamily, reassignFamilyIds } =
       await import('./renumber.js');
 
     const allPlans = new Map();
-    const parent = await readPlanFile(path.join(tasksDir, '3-parent.yml'));
-    const child1 = await readPlanFile(path.join(tasksDir, '1-child1.yml'));
-    const child2 = await readPlanFile(path.join(tasksDir, '2-child2.yml'));
+    const parent = await readPlanFile(path.join(tasksDir, '3-parent.plan.md'));
+    const child1 = await readPlanFile(path.join(tasksDir, '1-child1.plan.md'));
+    const child2 = await readPlanFile(path.join(tasksDir, '2-child2.plan.md'));
 
-    allPlans.set(path.join(tasksDir, '3-parent.yml'), parent);
-    allPlans.set(path.join(tasksDir, '1-child1.yml'), child1);
-    allPlans.set(path.join(tasksDir, '2-child2.yml'), child2);
+    allPlans.set(path.join(tasksDir, '3-parent.plan.md'), parent);
+    allPlans.set(path.join(tasksDir, '1-child1.plan.md'), child1);
+    allPlans.set(path.join(tasksDir, '2-child2.plan.md'), child2);
 
     const hierarchy = buildParentChildHierarchy(allPlans);
     const family = findPlanFamily(3, allPlans, hierarchy);
@@ -1537,7 +1539,7 @@ describe('tim renumber', () => {
 
   test('debug hierarchical detection on simple case', async () => {
     // Create a disordered hierarchy: parent ID 10 has child with ID 5
-    await createPlan(10, 'Parent Plan', '10-parent.yml');
+    await createPlan(10, 'Parent Plan', '10-parent.plan.md');
 
     const childPlan: PlanSchema = {
       id: 5,
@@ -1551,7 +1553,7 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '5-child.yml'), childPlan);
+    await writeTestPlan(path.join(tasksDir, '5-child.plan.md'), childPlan);
 
     // Import the hierarchical helper functions
     const {
@@ -1564,11 +1566,11 @@ describe('tim renumber', () => {
 
     // Build allPlans map just like in the real code
     const allPlans = new Map<string, Record<string, any>>();
-    const parentPlan = await readPlanFile(path.join(tasksDir, '10-parent.yml'));
-    const child = await readPlanFile(path.join(tasksDir, '5-child.yml'));
+    const parentPlan = await readPlanFile(path.join(tasksDir, '10-parent.plan.md'));
+    const child = await readPlanFile(path.join(tasksDir, '5-child.plan.md'));
 
-    allPlans.set(path.join(tasksDir, '10-parent.yml'), parentPlan);
-    allPlans.set(path.join(tasksDir, '5-child.yml'), child);
+    allPlans.set(path.join(tasksDir, '10-parent.plan.md'), parentPlan);
+    allPlans.set(path.join(tasksDir, '5-child.plan.md'), child);
 
     // Test the hierarchical detection pipeline step by step
     const hierarchy = buildParentChildHierarchy(allPlans);
@@ -1594,7 +1596,7 @@ describe('tim renumber', () => {
 
   test('end-to-end hierarchical renumbering with parent-child inversion', async () => {
     // Create a disordered hierarchy: parent ID 10 has child with ID 5
-    await createPlan(10, 'Parent Plan', '10-parent.yml');
+    await createPlan(10, 'Parent Plan', '10-parent.plan.md');
 
     const childPlan: PlanSchema = {
       id: 5,
@@ -1608,15 +1610,15 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '5-child.yml'), childPlan);
+    await writeTestPlan(path.join(tasksDir, '5-child.plan.md'), childPlan);
 
     // Run hierarchical renumbering
     await handleRenumber({}, createMockCommand());
 
     // Verify the hierarchical renumbering worked correctly
     const files = await fs.promises.readdir(tasksDir);
-    const parentPlanAfter = await readPlanFile(path.join(tasksDir, '5-parent.yml'));
-    const childPlanAfter = await readPlanFile(path.join(tasksDir, '10-child.yml'));
+    const parentPlanAfter = await readPlanFile(path.join(tasksDir, '5-parent.plan.md'));
+    const childPlanAfter = await readPlanFile(path.join(tasksDir, '10-child.plan.md'));
 
     // After renumbering, parent should have lower ID than child
     // The IDs should be swapped: parent gets 5, child gets 10
@@ -1630,15 +1632,15 @@ describe('tim renumber', () => {
     expect(updatedChild.title).toBe('Child Plan');
 
     // Verify files were renamed correctly
-    expect(files).toContain('5-parent.yml');
-    expect(files).toContain('10-child.yml');
-    expect(files).not.toContain('10-parent.yml'); // Old filename should be gone
-    expect(files).not.toContain('5-child.yml'); // Old filename should be gone
+    expect(files).toContain('5-parent.plan.md');
+    expect(files).toContain('10-child.plan.md');
+    expect(files).not.toContain('10-parent.plan.md'); // Old filename should be gone
+    expect(files).not.toContain('5-child.plan.md'); // Old filename should be gone
   });
 
   test('end-to-end hierarchical renumbering with siblings and dependencies', async () => {
     // Create a disordered hierarchy with dependencies between siblings
-    await createPlan(15, 'Parent Plan', '15-parent.yml');
+    await createPlan(15, 'Parent Plan', '15-parent.plan.md');
 
     const child1Plan: PlanSchema = {
       id: 5,
@@ -1653,7 +1655,7 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '5-child1.yml'), child1Plan);
+    await writeTestPlan(path.join(tasksDir, '5-child1.plan.md'), child1Plan);
 
     const child2Plan: PlanSchema = {
       id: 8,
@@ -1668,7 +1670,7 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '8-child2.yml'), child2Plan);
+    await writeTestPlan(path.join(tasksDir, '8-child2.plan.md'), child2Plan);
 
     // Run hierarchical renumbering
     await handleRenumber({}, createMockCommand());
@@ -1677,9 +1679,9 @@ describe('tim renumber', () => {
 
     // After renumbering, should have parent (5), child1 (8), child2 (15)
     // Files should be renamed based on their new IDs
-    const updatedParent = await readPlanFile(path.join(tasksDir, '5-parent.yml'));
-    const updatedChild1 = await readPlanFile(path.join(tasksDir, '8-child1.yml'));
-    const updatedChild2 = await readPlanFile(path.join(tasksDir, '15-child2.yml'));
+    const updatedParent = await readPlanFile(path.join(tasksDir, '5-parent.plan.md'));
+    const updatedChild1 = await readPlanFile(path.join(tasksDir, '8-child1.plan.md'));
+    const updatedChild2 = await readPlanFile(path.join(tasksDir, '15-child2.plan.md'));
 
     expect(updatedParent.id).toBe(5);
     expect(updatedChild1.id).toBe(8);
@@ -1694,16 +1696,16 @@ describe('tim renumber', () => {
 
     // Verify files were renamed correctly
     const files = await fs.promises.readdir(tasksDir);
-    expect(files).toContain('5-parent.yml');
-    expect(files).toContain('8-child1.yml');
-    expect(files).toContain('15-child2.yml');
+    expect(files).toContain('5-parent.plan.md');
+    expect(files).toContain('8-child1.plan.md');
+    expect(files).toContain('15-child2.plan.md');
   });
 
   test('end-to-end hierarchical renumbering preserves non-disordered families', async () => {
     // Create one disordered family and one properly ordered family
 
     // Disordered family: parent (10) -> child (5)
-    await createPlan(10, 'Disordered Parent', '10-disordered-parent.yml');
+    await createPlan(10, 'Disordered Parent', '10-disordered-parent.plan.md');
     const disorderedChild: PlanSchema = {
       id: 5,
       title: 'Disordered Child',
@@ -1716,10 +1718,10 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '5-disordered-child.yml'), disorderedChild);
+    await writeTestPlan(path.join(tasksDir, '5-disordered-child.plan.md'), disorderedChild);
 
     // Properly ordered family: parent (20) -> child (30)
-    await createPlan(20, 'Ordered Parent', '20-ordered-parent.yml');
+    await createPlan(20, 'Ordered Parent', '20-ordered-parent.plan.md');
     const orderedChild: PlanSchema = {
       id: 30,
       title: 'Ordered Child',
@@ -1732,7 +1734,7 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '30-ordered-child.yml'), orderedChild);
+    await writeTestPlan(path.join(tasksDir, '30-ordered-child.plan.md'), orderedChild);
 
     // Run hierarchical renumbering
     await handleRenumber({}, createMockCommand());
@@ -1741,18 +1743,18 @@ describe('tim renumber', () => {
 
     // Disordered family should be reordered
     const updatedDisorderedParent = await readPlanFile(
-      path.join(tasksDir, '5-disordered-parent.yml')
+      path.join(tasksDir, '5-disordered-parent.plan.md')
     );
     const updatedDisorderedChild = await readPlanFile(
-      path.join(tasksDir, '10-disordered-child.yml')
+      path.join(tasksDir, '10-disordered-child.plan.md')
     );
     expect(updatedDisorderedParent.id).toBe(5);
     expect(updatedDisorderedChild.id).toBe(10);
     expect(updatedDisorderedChild.parent).toBe(5);
 
     // Properly ordered family should remain unchanged
-    const orderedParentAfter = await readPlanFile(path.join(tasksDir, '20-ordered-parent.yml'));
-    const orderedChildAfter = await readPlanFile(path.join(tasksDir, '30-ordered-child.yml'));
+    const orderedParentAfter = await readPlanFile(path.join(tasksDir, '20-ordered-parent.plan.md'));
+    const orderedChildAfter = await readPlanFile(path.join(tasksDir, '30-ordered-child.plan.md'));
     expect(orderedParentAfter.id).toBe(20);
     expect(orderedChildAfter.id).toBe(30);
     expect(orderedChildAfter.parent).toBe(20);
@@ -1760,7 +1762,7 @@ describe('tim renumber', () => {
 
   test('end-to-end hierarchical renumbering dry run mode', async () => {
     // Create a disordered hierarchy
-    await createPlan(10, 'Parent Plan', '10-parent.yml');
+    await createPlan(10, 'Parent Plan', '10-parent.plan.md');
 
     const childPlan: PlanSchema = {
       id: 5,
@@ -1774,7 +1776,7 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '5-child.yml'), childPlan);
+    await writeTestPlan(path.join(tasksDir, '5-child.plan.md'), childPlan);
 
     // Run in dry-run mode
     await handleRenumber({ dryRun: true }, createMockCommand());
@@ -1782,18 +1784,18 @@ describe('tim renumber', () => {
     const files4 = await fs.promises.readdir(tasksDir);
 
     // Files should remain unchanged
-    const parentAfter = await readPlanFile(path.join(tasksDir, '10-parent.yml'));
-    const childAfter = await readPlanFile(path.join(tasksDir, '5-child.yml'));
+    const parentAfter = await readPlanFile(path.join(tasksDir, '10-parent.plan.md'));
+    const childAfter = await readPlanFile(path.join(tasksDir, '5-child.plan.md'));
 
     expect(parentAfter.id).toBe(10); // Should not be changed
     expect(childAfter.id).toBe(5); // Should not be changed
     expect(childAfter.parent).toBe(10); // Should not be changed
 
     // Original files should still exist
-    expect(files4).toContain('10-parent.yml');
-    expect(files4).toContain('5-child.yml');
-    expect(files4).not.toContain('5-parent.yml'); // New files should not exist
-    expect(files4).not.toContain('10-child.yml');
+    expect(files4).toContain('10-parent.plan.md');
+    expect(files4).toContain('5-child.plan.md');
+    expect(files4).not.toContain('5-parent.plan.md'); // New files should not exist
+    expect(files4).not.toContain('10-child.plan.md');
   });
 
   // ======================================================================
@@ -1814,7 +1816,7 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '1-conflict-a.yml'), conflictPlan1);
+    await writeTestPlan(path.join(tasksDir, '1-conflict-a.plan.md'), conflictPlan1);
 
     const conflictPlan2: PlanSchema = {
       id: 1,
@@ -1827,7 +1829,7 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '1-conflict-b.yml'), conflictPlan2);
+    await writeTestPlan(path.join(tasksDir, '1-conflict-b.plan.md'), conflictPlan2);
 
     // Create a NON-CONFLICTING plan that depends on the plan that will be renumbered
     // This plan (ID 5) depends on the newer conflict plan (ID 1 -> becomes ID 2)
@@ -1843,22 +1845,22 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '5-dependent.yml'), dependentPlan);
+    await writeTestPlan(path.join(tasksDir, '5-dependent.plan.md'), dependentPlan);
 
     await handleRenumber({}, createMockCommand());
 
     // The older conflict plan should keep ID 1
-    const olderPlan = await readPlanFile(path.join(tasksDir, '1-conflict-a.yml'));
+    const olderPlan = await readPlanFile(path.join(tasksDir, '1-conflict-a.plan.md'));
     expect(olderPlan.id).toBe(1);
 
     // The newer conflict plan should be renumbered to ID 6 (max ID is 5, so next is 6)
-    const newerPlan = await readPlanFile(path.join(tasksDir, '6-conflict-b.yml'));
+    const newerPlan = await readPlanFile(path.join(tasksDir, '6-conflict-b.plan.md'));
     expect(newerPlan.id).toBe(6);
 
     // The dependent plan should keep its ID and its dependency should NOT be updated
     // because the dependent plan is not being renumbered, and it references the plan
     // that KEPT its ID (the older one with ID 1)
-    const dependent = await readPlanFile(path.join(tasksDir, '5-dependent.yml'));
+    const dependent = await readPlanFile(path.join(tasksDir, '5-dependent.plan.md'));
     expect(dependent.id).toBe(5); // Not renumbered
     expect(dependent.dependencies).toEqual([1]); // Still points to the plan that kept ID 1
   });
@@ -1876,7 +1878,7 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '10-a-parent.yml'), familyAParent);
+    await writeTestPlan(path.join(tasksDir, '10-a-parent.plan.md'), familyAParent);
 
     const familyAChild: PlanSchema = {
       id: 5,
@@ -1890,7 +1892,7 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '5-a-child.yml'), familyAChild);
+    await writeTestPlan(path.join(tasksDir, '5-a-child.plan.md'), familyAChild);
 
     // Create Family B: parent (20) -> child (25) - properly ordered, but child depends on Family A child
     const familyBParent: PlanSchema = {
@@ -1904,7 +1906,7 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '20-b-parent.yml'), familyBParent);
+    await writeTestPlan(path.join(tasksDir, '20-b-parent.plan.md'), familyBParent);
 
     const familyBChild: PlanSchema = {
       id: 25,
@@ -1919,20 +1921,20 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '25-b-child.yml'), familyBChild);
+    await writeTestPlan(path.join(tasksDir, '25-b-child.plan.md'), familyBChild);
 
     await handleRenumber({}, createMockCommand());
 
     // Family A should be reordered: parent gets 5, child gets 10
-    const aParent = await readPlanFile(path.join(tasksDir, '5-a-parent.yml'));
-    const aChild = await readPlanFile(path.join(tasksDir, '10-a-child.yml'));
+    const aParent = await readPlanFile(path.join(tasksDir, '5-a-parent.plan.md'));
+    const aChild = await readPlanFile(path.join(tasksDir, '10-a-child.plan.md'));
     expect(aParent.id).toBe(5);
     expect(aChild.id).toBe(10);
     expect(aChild.parent).toBe(5);
 
     // Family B should remain unchanged (already properly ordered)
-    const bParent = await readPlanFile(path.join(tasksDir, '20-b-parent.yml'));
-    const bChild = await readPlanFile(path.join(tasksDir, '25-b-child.yml'));
+    const bParent = await readPlanFile(path.join(tasksDir, '20-b-parent.plan.md'));
+    const bChild = await readPlanFile(path.join(tasksDir, '25-b-child.plan.md'));
     expect(bParent.id).toBe(20);
     expect(bChild.id).toBe(25);
 
@@ -1953,7 +1955,7 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '1-plan-a.yml'), plan1);
+    await writeTestPlan(path.join(tasksDir, '1-plan-a.plan.md'), plan1);
 
     const plan2: PlanSchema = {
       id: 1,
@@ -1966,7 +1968,7 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '1-plan-b.yml'), plan2);
+    await writeTestPlan(path.join(tasksDir, '1-plan-b.plan.md'), plan2);
 
     // Create a plan that depends on plan2 (the one that will be renumbered)
     const dependent: PlanSchema = {
@@ -1981,12 +1983,12 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '3-dependent.yml'), dependent);
+    await writeTestPlan(path.join(tasksDir, '3-dependent.plan.md'), dependent);
 
     await handleRenumber({}, createMockCommand());
 
     // Read the dependent plan
-    const dependentAfter = await readPlanFile(path.join(tasksDir, '3-dependent.yml'));
+    const dependentAfter = await readPlanFile(path.join(tasksDir, '3-dependent.plan.md'));
 
     // Legacy reference mappings are no longer written back to plan files.
     expect(dependentAfter.references).toBeUndefined();
@@ -2005,7 +2007,7 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '1-original-a.yml'), originalPlan);
+    await writeTestPlan(path.join(tasksDir, '1-original-a.plan.md'), originalPlan);
 
     const conflictPlan: PlanSchema = {
       id: 1,
@@ -2018,7 +2020,7 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '1-conflict.yml'), conflictPlan);
+    await writeTestPlan(path.join(tasksDir, '1-conflict.plan.md'), conflictPlan);
 
     // Create a plan discovered from the conflict plan
     const discoveredPlan: PlanSchema = {
@@ -2033,13 +2035,13 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '5-discovered.yml'), discoveredPlan);
+    await writeTestPlan(path.join(tasksDir, '5-discovered.plan.md'), discoveredPlan);
 
     await handleRenumber({}, createMockCommand());
 
     // The discovered plan's discoveredFrom should be updated if UUID tracking
     // determined it was discovered from the conflict plan (which got renumbered)
-    const discovered = await readPlanFile(path.join(tasksDir, '5-discovered.yml'));
+    const discovered = await readPlanFile(path.join(tasksDir, '5-discovered.plan.md'));
     expect(discovered.discoveredFrom).toBeDefined();
     // The exact value depends on UUID tracking, but it should be valid
   });
@@ -2057,7 +2059,7 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '1-parent-a.yml'), parent1);
+    await writeTestPlan(path.join(tasksDir, '1-parent-a.plan.md'), parent1);
 
     const parent2: PlanSchema = {
       id: 1,
@@ -2070,7 +2072,7 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '1-parent-b.yml'), parent2);
+    await writeTestPlan(path.join(tasksDir, '1-parent-b.plan.md'), parent2);
 
     // Create a child that references parent ID 1
     // Since this child is NOT being renumbered, its parent reference stays at 1
@@ -2087,22 +2089,22 @@ describe('tim renumber', () => {
       updatedAt: new Date().toISOString(),
       tasks: [],
     };
-    await writeTestPlan(path.join(tasksDir, '5-child.yml'), child);
+    await writeTestPlan(path.join(tasksDir, '5-child.plan.md'), child);
 
     await handleRenumber({}, createMockCommand());
 
     // Parent 1 should keep ID 1
-    const p1 = await readPlanFile(path.join(tasksDir, '1-parent-a.yml'));
+    const p1 = await readPlanFile(path.join(tasksDir, '1-parent-a.plan.md'));
     expect(p1.id).toBe(1);
 
     // Parent 2 should be renumbered to ID 6 (max ID is 5, so next is 6)
-    const p2 = await readPlanFile(path.join(tasksDir, '6-parent-b.yml'));
+    const p2 = await readPlanFile(path.join(tasksDir, '6-parent-b.plan.md'));
     expect(p2.id).toBe(6);
 
     // The child's parent reference should stay at 1
     // because the child is not being renumbered, so its reference stays pointing
     // to the plan that KEPT its ID (parent1 with ID 1)
-    const childAfter = await readPlanFile(path.join(tasksDir, '5-child.yml'));
+    const childAfter = await readPlanFile(path.join(tasksDir, '5-child.plan.md'));
     expect(childAfter.parent).toBe(1);
   });
 
@@ -2124,22 +2126,22 @@ describe('tim renumber', () => {
     });
 
     test('simple renumber when target ID does not exist', async () => {
-      await createPlan(5, 'Task to renumber', '5-task.yml');
-      await createPlan(10, 'Another task', '10-another.yml');
+      await createPlan(5, 'Task to renumber', '5-task.plan.md');
+      await createPlan(10, 'Another task', '10-another.plan.md');
 
       await handleRenumber({ from: 5, to: 7 }, createMockCommand());
 
       // Plan 5 should now be 7
-      expect(fs.existsSync(path.join(tasksDir, '7-task.yml'))).toBe(true);
-      const renamedPlan = await readPlanFile(path.join(tasksDir, '7-task.yml'));
+      expect(fs.existsSync(path.join(tasksDir, '7-task.plan.md'))).toBe(true);
+      const renamedPlan = await readPlanFile(path.join(tasksDir, '7-task.plan.md'));
       expect(renamedPlan.id).toBe(7);
 
       // Original file should be gone
-      expect(fs.existsSync(path.join(tasksDir, '5-task.yml'))).toBe(false);
+      expect(fs.existsSync(path.join(tasksDir, '5-task.plan.md'))).toBe(false);
     });
 
     test('refreshes materialized plan files after simple renumber', async () => {
-      await createPlan(5, 'Task to renumber', '5-task.yml');
+      await createPlan(5, 'Task to renumber', '5-task.plan.md');
 
       const oldMaterializedPath = await materializePlan(5, tempDir);
       expect(oldMaterializedPath).toBe(getMaterializedPlanPath(tempDir, 5));
@@ -2182,11 +2184,13 @@ describe('tim renumber', () => {
         tasks: [],
       };
 
-      await writeTestPlan(path.join(tasksDir, 'locked/5-parent.yml'), parentPlan);
-      await writeTestPlan(path.join(tasksDir, 'locked/nested/10-child.yml'), childPlan);
+      await writeTestPlan(path.join(tasksDir, 'locked/5-parent.plan.md'), parentPlan);
+      await writeTestPlan(path.join(tasksDir, 'locked/nested/10-child.plan.md'), childPlan);
 
-      const parentFromDisk = await readPlanFile(path.join(tasksDir, 'locked/5-parent.yml'));
-      const childFromDisk = await readPlanFile(path.join(tasksDir, 'locked/nested/10-child.yml'));
+      const parentFromDisk = await readPlanFile(path.join(tasksDir, 'locked/5-parent.plan.md'));
+      const childFromDisk = await readPlanFile(
+        path.join(tasksDir, 'locked/nested/10-child.plan.md')
+      );
       const repository = await getRepositoryIdentity({ cwd: repoRootForTest });
       const db = getDatabase();
       const project = getProject(db, repository.repositoryId);
@@ -2217,7 +2221,7 @@ describe('tim renumber', () => {
         reviewIssues: childFromDisk.reviewIssues ?? null,
         parentUuid: parentFromDisk.uuid!,
         epic: childFromDisk.epic === true,
-        filename: 'locked/nested/10-child.yml',
+        filename: 'locked/nested/10-child.plan.md',
         tasks: (childFromDisk.tasks ?? []).map((task) => ({
           title: task.title,
           description: task.description ?? '',
@@ -2241,49 +2245,47 @@ describe('tim renumber', () => {
       const parentRow = getPlanByUuid(db, parentFromDisk.uuid!);
       const childRow = getPlanByUuid(db, childFromDisk.uuid!);
       expect(parentRow?.plan_id).toBe(5);
-      expect(parentRow?.filename).toBe('tasks/locked/5-parent.yml');
       expect(childRow?.plan_id).toBe(10);
-      expect(childRow?.filename).toBe('locked/nested/10-child.yml');
       expect(childRow?.parent_uuid).toBe(parentFromDisk.uuid);
       expect(
         getPlanDependenciesByUuid(db, childFromDisk.uuid!).map((row) => row.depends_on_uuid)
       ).toEqual([parentFromDisk.uuid]);
 
       const childFileAfterFailure = await readPlanFile(
-        path.join(tasksDir, 'locked/nested/10-child.yml')
+        path.join(tasksDir, 'locked/nested/10-child.plan.md')
       );
       expect(childFileAfterFailure.parent).toBe(5);
       expect(childFileAfterFailure.dependencies).toEqual([5]);
-      expect(fs.existsSync(path.join(tasksDir, 'locked/7-parent.yml'))).toBe(false);
+      expect(fs.existsSync(path.join(tasksDir, 'locked/7-parent.plan.md'))).toBe(false);
     });
 
     test('swaps two plans when both IDs exist', async () => {
-      await createPlan(5, 'Task A', '5-task-a.yml');
-      await createPlan(10, 'Task B', '10-task-b.yml');
+      await createPlan(5, 'Task A', '5-task-a.plan.md');
+      await createPlan(10, 'Task B', '10-task-b.plan.md');
 
       await handleRenumber({ from: 5, to: 10 }, createMockCommand());
 
       // Plan 5 should now be at 10
-      const planA = await readPlanFile(path.join(tasksDir, '10-task-a.yml'));
+      const planA = await readPlanFile(path.join(tasksDir, '10-task-a.plan.md'));
       expect(planA.id).toBe(10);
       expect(planA.title).toBe('Task A');
 
       // Plan 10 should now be at 5
-      const planB = await readPlanFile(path.join(tasksDir, '5-task-b.yml'));
+      const planB = await readPlanFile(path.join(tasksDir, '5-task-b.plan.md'));
       expect(planB.id).toBe(5);
       expect(planB.title).toBe('Task B');
 
       // Original files should be gone
-      expect(fs.existsSync(path.join(tasksDir, '5-task-a.yml'))).toBe(false);
-      expect(fs.existsSync(path.join(tasksDir, '10-task-b.yml'))).toBe(false);
+      expect(fs.existsSync(path.join(tasksDir, '5-task-a.plan.md'))).toBe(false);
+      expect(fs.existsSync(path.join(tasksDir, '10-task-b.plan.md'))).toBe(false);
     });
 
     test('updates references when swapping plans', async () => {
-      await createPlan(5, 'Parent', '5-parent.yml');
-      await createPlan(10, 'Child of 5', '10-child.yml');
+      await createPlan(5, 'Parent', '5-parent.plan.md');
+      await createPlan(10, 'Child of 5', '10-child.plan.md');
 
       // Manually set parent relationship
-      const childPath = path.join(tasksDir, '10-child.yml');
+      const childPath = path.join(tasksDir, '10-child.plan.md');
       const childPlan = await readPlanFile(childPath);
       childPlan.parent = 5;
       await writePlanFile(childPath, childPlan, {
@@ -2296,7 +2298,7 @@ describe('tim renumber', () => {
 
       // The plan that was 10 (now 5) should still reference its parent
       // which is now at ID 10 (was 5)
-      const updatedChild = await readPlanFile(path.join(tasksDir, '5-child.yml'));
+      const updatedChild = await readPlanFile(path.join(tasksDir, '5-child.plan.md'));
       expect(updatedChild.id).toBe(5);
       expect(updatedChild.parent).toBe(10);
 
@@ -2305,21 +2307,21 @@ describe('tim renumber', () => {
     });
 
     test('--dry-run with swap operation', async () => {
-      await createPlan(5, 'Task A', '5-task-a.yml');
-      await createPlan(10, 'Task B', '10-task-b.yml');
+      await createPlan(5, 'Task A', '5-task-a.plan.md');
+      await createPlan(10, 'Task B', '10-task-b.plan.md');
 
       await handleRenumber({ from: 5, to: 10, dryRun: true }, createMockCommand());
 
       // Files should remain unchanged
-      const planA = await readPlanFile(path.join(tasksDir, '5-task-a.yml'));
+      const planA = await readPlanFile(path.join(tasksDir, '5-task-a.plan.md'));
       expect(planA.id).toBe(5);
 
-      const planB = await readPlanFile(path.join(tasksDir, '10-task-b.yml'));
+      const planB = await readPlanFile(path.join(tasksDir, '10-task-b.plan.md'));
       expect(planB.id).toBe(10);
     });
 
     test('throws error when --from plan does not exist', async () => {
-      await createPlan(10, 'Task B', '10-task-b.yml');
+      await createPlan(10, 'Task B', '10-task-b.plan.md');
 
       await expect(handleRenumber({ from: 999, to: 10 }, createMockCommand())).rejects.toThrow(
         'Plan with ID 999 not found'
@@ -2327,11 +2329,11 @@ describe('tim renumber', () => {
     });
 
     test('updates dependencies when swapping', async () => {
-      await createPlan(3, 'Dependency', '3-dep.yml');
-      await createPlan(5, 'Task with dep', '5-task.yml');
+      await createPlan(3, 'Dependency', '3-dep.plan.md');
+      await createPlan(5, 'Task with dep', '5-task.plan.md');
 
       // Set dependency
-      const taskPath = path.join(tasksDir, '5-task.yml');
+      const taskPath = path.join(tasksDir, '5-task.plan.md');
       const taskPlan = await readPlanFile(taskPath);
       taskPlan.dependencies = [3];
       await writePlanFile(taskPath, taskPlan, {
@@ -2343,22 +2345,22 @@ describe('tim renumber', () => {
       await handleRenumber({ from: 3, to: 5 }, createMockCommand());
 
       // The plan that was 5 (now 3) should have updated dependency
-      const updatedTask = await readPlanFile(path.join(tasksDir, '3-task.yml'));
+      const updatedTask = await readPlanFile(path.join(tasksDir, '3-task.plan.md'));
       expect(updatedTask.id).toBe(3);
       expect(updatedTask.dependencies).toContain(5); // Dependency is now at 5
     });
 
     test('--dry-run with simple renumber', async () => {
-      await createPlan(5, 'Task A', '5-task-a.yml');
+      await createPlan(5, 'Task A', '5-task-a.plan.md');
 
       await handleRenumber({ from: 5, to: 10, dryRun: true }, createMockCommand());
 
       // File should remain unchanged
-      const planA = await readPlanFile(path.join(tasksDir, '5-task-a.yml'));
+      const planA = await readPlanFile(path.join(tasksDir, '5-task-a.plan.md'));
       expect(planA.id).toBe(5);
 
       // New file should not exist
-      expect(fs.existsSync(path.join(tasksDir, '10-task-a.yml'))).toBe(false);
+      expect(fs.existsSync(path.join(tasksDir, '10-task-a.plan.md'))).toBe(false);
     });
   });
 });

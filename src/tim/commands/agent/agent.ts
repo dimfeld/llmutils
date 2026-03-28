@@ -158,7 +158,7 @@ export async function handleAgentCommand(
           title: result.plan.title,
         });
       } else {
-        log(chalk.green(`Found ready plan: ${result.plan.filename}`));
+        log(chalk.green(`Found ready plan: ${getCombinedTitleFromSummary(result.plan)}`));
       }
       resolvedPlanArg = String(result.plan.id);
       headlessPlanSummary = toHeadlessPlanSummary(result.plan);
@@ -181,7 +181,7 @@ export async function handleAgentCommand(
           title: getCombinedTitleFromSummary(latestPlan),
         });
       } else {
-        log(chalk.green(`Found latest plan: ${latestPlan.filename}`));
+        log(chalk.green(`Found latest plan: ${getCombinedTitleFromSummary(latestPlan)}`));
       }
       resolvedPlanArg = String(latestPlan.id);
       headlessPlanSummary = toHeadlessPlanSummary(latestPlan);
@@ -209,7 +209,7 @@ export async function handleAgentCommand(
           title: getCombinedTitleFromSummary(plan),
         });
       } else {
-        log(chalk.green(`Found plan: ${plan.filename}`));
+        log(chalk.green(`Found plan: ${getCombinedTitleFromSummary(plan)}`));
       }
       resolvedPlanArg = String(plan.id);
       headlessPlanSummary = toHeadlessPlanSummary(plan);
@@ -441,7 +441,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
       if (planData.uuid) {
         try {
           await autoClaimPlan(
-            { plan: { ...planData, filename: currentPlanFile }, uuid: planData.uuid },
+            { plan: planData, uuid: planData.uuid },
             { cwdForIdentity: currentBaseDir }
           );
         } catch (err) {
@@ -1184,7 +1184,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
     if (currentPlanFile && !isShuttingDown()) {
       try {
         const updatedPlan = await readPlanFile(currentPlanFile);
-        await syncPlanToDb(updatedPlan, currentPlanFile, {
+        await syncPlanToDb(updatedPlan, {
           cwdForIdentity: currentBaseDir,
           force: true,
           throwOnError: true,

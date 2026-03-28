@@ -12,7 +12,6 @@ import { getLegacyAwareSearchDir } from '../path_resolver.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 import { loadPlansFromDb } from '../plans_db.js';
 import { getParentChain, getCompletedChildren } from './hierarchy.js';
-import type { PlanWithFilename } from './hierarchy.js';
 import { generateDiffForReview, getIncrementalSummary } from '../incremental_review.js';
 import type { DiffResult } from '../incremental_review.js';
 import { getGitRoot } from '../../common/git.js';
@@ -31,9 +30,9 @@ export interface PlanContext {
   /** The resolved git root (derived from repoRoot) */
   gitRoot: string;
   /** Chain of parent plans from immediate parent to root */
-  parentChain: PlanWithFilename[];
+  parentChain: PlanSchema[];
   /** All completed child plans */
-  completedChildren: PlanWithFilename[];
+  completedChildren: PlanSchema[];
   /** Diff result containing changed files and content */
   diffResult: DiffResult;
   /** Incremental review summary if applicable */
@@ -116,8 +115,8 @@ export async function gatherPlanContext(
   // Use repoRoot for git operations so --config cross-repo invocations use the correct repository
   const gitRoot = await deps.getGitRoot(repoRoot);
 
-  let parentChain: PlanWithFilename[] = [];
-  let completedChildren: PlanWithFilename[] = [];
+  let parentChain: PlanSchema[] = [];
+  let completedChildren: PlanSchema[] = [];
 
   try {
     const { repositoryId } = await deps.getRepositoryIdentity({ cwd: repoRoot });
@@ -126,16 +125,10 @@ export async function gatherPlanContext(
       repositoryId
     );
 
-    // Add filename to the current plan for hierarchy compatibility
-    const planWithFilename: PlanWithFilename = {
-      ...planData,
-      filename: resolvedPlanFile,
-    };
-
     // Use hierarchy utilities to get parent chain
     if (planData.id) {
       try {
-        parentChain = deps.getParentChain(planWithFilename, allPlans);
+        parentChain = deps.getParentChain(planData, allPlans);
 
         if (parentChain.length > 0) {
           log(

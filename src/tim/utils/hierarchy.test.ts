@@ -8,8 +8,8 @@ import {
   hasCycleInParentChain,
   getRootPlans,
   isUnderEpic,
-  type PlanWithFilename,
 } from './hierarchy.js';
+import type { PlanSchema } from '../planSchema.js';
 
 // Helper function to create a plan for testing
 function createPlan(
@@ -17,7 +17,7 @@ function createPlan(
   title: string,
   status: 'pending' | 'in_progress' | 'done' | 'cancelled' = 'pending',
   parent?: number
-): PlanWithFilename {
+): PlanSchema {
   return {
     id,
     title,
@@ -25,7 +25,6 @@ function createPlan(
     parent,
     goal: `Goal for ${title}`,
     tasks: [],
-    filename: `plan-${id}.yml`,
   };
 }
 
@@ -373,13 +372,11 @@ describe('Hierarchy Utilities', () => {
 
   describe('Edge cases and robustness', () => {
     it('should handle plans with undefined IDs gracefully', () => {
-      const planWithoutId: PlanWithFilename = {
+      const planWithoutId = {
         title: 'Plan without ID',
         goal: 'Some goal',
         tasks: [],
-        filename: 'plan.yml',
-        // no id field
-      };
+      } as PlanSchema;
       const allPlans = new Map();
 
       // Should not crash
@@ -390,7 +387,7 @@ describe('Hierarchy Utilities', () => {
 
     it('should handle empty plans map', () => {
       const plan = createPlan(1, 'Plan');
-      const emptyPlans = new Map<number, PlanWithFilename>();
+      const emptyPlans = new Map<number, PlanSchema>();
 
       expect(getParentChain(plan, emptyPlans)).toEqual([]);
       expect(getAllChildren(1, emptyPlans)).toEqual([]);

@@ -154,7 +154,6 @@ async function resolveIdToUuidMap(
 
 export function toPlanUpsertInput(
   plan: PlanSchemaInput,
-  filePath: string | undefined,
   idToUuid?: Map<number, string>
 ): {
   planId: number;
@@ -181,7 +180,6 @@ export function toPlanUpsertInput(
   reviewIssues?: PlanSchema['reviewIssues'] | null;
   parentUuid?: string | null;
   epic: boolean;
-  filename: string;
   tasks: Array<{ title: string; description: string; done?: boolean }>;
   dependencyUuids: string[];
   tags: string[];
@@ -224,7 +222,6 @@ export function toPlanUpsertInput(
     reviewIssues: plan.reviewIssues ?? null,
     parentUuid,
     epic: plan.epic === true,
-    filename: filePath ? path.basename(filePath) : '',
     tasks: (plan.tasks ?? []).map((task) => ({
       title: task.title,
       description: task.description ?? '',
@@ -243,7 +240,6 @@ export function clearPlanSyncContext(): void {
 
 export async function syncPlanToDb(
   plan: PlanSchemaInput,
-  filePath: string,
   options: PlanSyncOptions = {}
 ): Promise<void> {
   if (!plan.uuid || typeof plan.id !== 'number') {
@@ -255,7 +251,7 @@ export async function syncPlanToDb(
     const idToUuid = await resolveIdToUuidMap(plan, context, options.idToUuid);
     const db = getDatabase();
     upsertPlan(db, context.projectId, {
-      ...toPlanUpsertInput(plan, filePath, idToUuid),
+      ...toPlanUpsertInput(plan, idToUuid),
       forceOverwrite: options.force === true,
     });
   } catch (error) {

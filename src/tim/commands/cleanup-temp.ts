@@ -9,6 +9,7 @@ import { removePlanFromDb } from '../db/plan_sync.js';
 import { getLegacyAwareSearchDir, resolvePlanPathContext } from '../path_resolver.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadPlansFromDb } from '../plans_db.js';
+import { findPlanFileOnDiskAsync } from '../plans/find_plan_file.js';
 
 export async function handleCleanupTempCommand(options: any, command: any) {
   const globalOpts = command.parent.opts();
@@ -43,26 +44,21 @@ export async function handleCleanupTempCommand(options: any, command: any) {
   for (const plan of tempPlans) {
     let canRemoveFromDb = false;
     let deletedFile = false;
+    const planFile =
+      typeof plan.id === 'number' ? await findPlanFileOnDiskAsync(plan.id, gitRoot) : null;
 
     try {
-      await fs.unlink(plan.filename);
-      canRemoveFromDb = true;
-      deletedFile = true;
-    } catch (err) {
-      const isMissingFile =
-        err &&
-        typeof err === 'object' &&
-        'code' in err &&
-        (err as NodeJS.ErrnoException).code === 'ENOENT';
-      if (isMissingFile) {
-        canRemoveFromDb = true;
-      } else {
-        log(
-          chalk.red('  ✗'),
-          `Failed to delete: ${plan.filename} (ID: ${plan.id})`,
-          chalk.gray(`- ${err as Error}`)
-        );
+      if (planFile) {
+        await fs.unlink(planFile);
+        deletedFile = true;
       }
+      canRemoveFromDb = true;
+    } catch (err) {
+      log(
+        chalk.red('  ✗'),
+        `Failed to delete: ${planFile ?? `plan ${plan.id}`}`,
+        chalk.gray(`- ${err as Error}`)
+      );
     }
 
     if (!canRemoveFromDb) {
@@ -73,7 +69,7 @@ export async function handleCleanupTempCommand(options: any, command: any) {
       await removePlanFromDb(plan.uuid, { baseDir: repository.gitRoot, throwOnError: true });
     } catch (error) {
       warn(
-        `Failed to remove plan ${plan.id ?? plan.uuid ?? plan.filename} from SQLite: ${
+        `Failed to remove plan ${plan.id ?? plan.uuid ?? plan.title ?? 'unknown'} from SQLite: ${
           error instanceof Error ? error.message : String(error)
         }`
       );
@@ -82,12 +78,9 @@ export async function handleCleanupTempCommand(options: any, command: any) {
 
     deletedCount++;
     if (deletedFile) {
-      log(chalk.green('  ✓'), `Deleted: ${plan.filename} (ID: ${plan.id}, Title: "${plan.title}")`);
+      log(chalk.green('  ✓'), `Deleted: ${planFile} (ID: ${plan.id}, Title: "${plan.title}")`);
     } else {
-      log(
-        chalk.green('  ✓'),
-        `Removed DB-only temp plan: ${plan.filename} (ID: ${plan.id}, Title: "${plan.title}")`
-      );
+      log(chalk.green('  ✓'), `Removed DB-only temp plan: ${plan.id} (Title: "${plan.title}")`);
     }
   }
 

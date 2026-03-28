@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test, mock } from 'bun:test';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import * as z from 'zod/v4';
 import { getDefaultConfig } from '../configSchema.js';
+import { getMaterializedPlanPath } from '../plan_materialize.js';
 import type { PlanSchema } from '../planSchema.js';
 import { writePlanFile, writePlanToDb, readPlanFile, getMaxNumericPlanId } from '../plans.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
@@ -153,9 +154,10 @@ describe('tim MCP generate mode helpers', () => {
   });
 
   test('loadResearchPrompt includes parent plan context when plan has a parent', async () => {
-    const parentPath = path.join(tmpDir, '99998-parent.plan.md');
-    const doneSiblingPath = path.join(tmpDir, '99997-done-sibling.plan.md');
-    const pendingSiblingPath = path.join(tmpDir, '99996-pending-sibling.plan.md');
+    const parentPath = getMaterializedPlanPath(tmpDir, 99998);
+    const doneSiblingPath = getMaterializedPlanPath(tmpDir, 99997);
+    const pendingSiblingPath = getMaterializedPlanPath(tmpDir, 99996);
+    await mkdir(path.dirname(parentPath), { recursive: true });
     await writePlanFile(parentPath, {
       ...basePlan,
       id: 99998,
@@ -195,17 +197,16 @@ describe('tim MCP generate mode helpers', () => {
     expect(messageText).toContain('Title: Test Plan');
     expect(messageText).toContain('# Sibling Plans');
     expect(messageText).toContain(
-      '- Pending Sibling (status: pending, path: 99996-pending-sibling.plan.md)'
+      '- Pending Sibling (status: pending, path: .tim/plans/99996.plan.md)'
     );
-    expect(messageText).toContain(
-      '- Done Sibling (status: done, path: 99997-done-sibling.plan.md)'
-    );
+    expect(messageText).toContain('- Done Sibling (status: done, path: .tim/plans/99997.plan.md)');
   });
 
   test('loadGeneratePrompt includes parent plan context when plan has a parent', async () => {
-    const parentPath = path.join(tmpDir, '99998-parent.plan.md');
-    const doneSiblingPath = path.join(tmpDir, '99997-done-sibling.plan.md');
-    const pendingSiblingPath = path.join(tmpDir, '99996-pending-sibling.plan.md');
+    const parentPath = getMaterializedPlanPath(tmpDir, 99998);
+    const doneSiblingPath = getMaterializedPlanPath(tmpDir, 99997);
+    const pendingSiblingPath = getMaterializedPlanPath(tmpDir, 99996);
+    await mkdir(path.dirname(parentPath), { recursive: true });
     await writePlanFile(parentPath, {
       ...basePlan,
       id: 99998,
@@ -241,11 +242,9 @@ describe('tim MCP generate mode helpers', () => {
     expect(messageText).toContain('Title: Test Plan');
     expect(messageText).toContain('# Sibling Plans');
     expect(messageText).toContain(
-      '- Pending Sibling (status: pending, path: 99996-pending-sibling.plan.md)'
+      '- Pending Sibling (status: pending, path: .tim/plans/99996.plan.md)'
     );
-    expect(messageText).toContain(
-      '- Done Sibling (status: done, path: 99997-done-sibling.plan.md)'
-    );
+    expect(messageText).toContain('- Done Sibling (status: done, path: .tim/plans/99997.plan.md)');
   });
 
   test('loadResearchPrompt includes DB-only parent and sibling context', async () => {
@@ -256,7 +255,6 @@ describe('tim MCP generate mode helpers', () => {
         title: 'Parent Plan',
         goal: 'Coordinate the broader feature',
         details: 'Parent-level context stored only in the DB.',
-        filename: '99998-parent.plan.md',
       },
       { cwdForIdentity: tmpDir }
     );
@@ -267,7 +265,6 @@ describe('tim MCP generate mode helpers', () => {
         title: 'Done Sibling',
         status: 'done',
         parent: 99998,
-        filename: '99997-done-sibling.plan.md',
       },
       { cwdForIdentity: tmpDir }
     );
@@ -278,7 +275,6 @@ describe('tim MCP generate mode helpers', () => {
         title: 'Pending Sibling',
         status: 'pending',
         parent: 99998,
-        filename: '99996-pending-sibling.plan.md',
       },
       { cwdForIdentity: tmpDir }
     );

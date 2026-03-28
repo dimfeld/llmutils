@@ -5,6 +5,7 @@ import { releasePlan } from '../assignments/release_plan.js';
 import { resolvePlanWithUuid } from '../assignments/uuid_lookup.js';
 import { getRepositoryIdentity, getUserIdentity } from '../assignments/workspace_identifier.js';
 import { writePlanFile } from '../plans.js';
+import { findPlanFileOnDiskAsync } from '../plans/find_plan_file.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 
 export interface ReleaseCommandOptions {
@@ -81,7 +82,9 @@ export async function handleReleaseCommand(
     if (originalStatus !== 'pending') {
       const repoRoot = await resolveRepoRootForPlanArg(planArg, process.cwd(), globalOpts.config);
       plan.status = 'pending';
-      await writePlanFile(plan.filename || null, plan, { cwdForIdentity: repoRoot });
+      const planFile =
+        typeof plan.id === 'number' ? await findPlanFileOnDiskAsync(plan.id, repoRoot) : null;
+      await writePlanFile(planFile || null, plan, { cwdForIdentity: repoRoot });
       log(`${chalk.green('✓')} Reset status for plan ${planLabel} to pending`);
     } else {
       log(`${chalk.yellow('•')} Plan ${planLabel} is already pending`);

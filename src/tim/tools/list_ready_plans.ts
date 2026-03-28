@@ -3,7 +3,6 @@ import { filterAndSortReadyPlans, formatReadyPlansAsJson } from '../ready_plans.
 import { normalizeTags } from '../utils/tags.js';
 import type { ToolContext, ToolResult } from './context.js';
 import type { ListReadyPlansArguments } from './schemas.js';
-import type { EnrichedReadyPlan } from '../ready_plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { getLegacyAwareSearchDir } from '../path_resolver.js';
@@ -66,13 +65,10 @@ export async function listReadyPlansTool(
       readyPlans = readyPlans.slice(0, args.limit);
     }
 
-    const jsonOutput = formatReadyPlansAsJson(readyPlans as Array<EnrichedReadyPlan<PlanSchema>>, {
+    const jsonOutput = formatReadyPlansAsJson(readyPlans as PlanSchema[], {
       gitRoot: context.gitRoot,
     });
     const parsedOutput = JSON.parse(jsonOutput) as ReadyPlansResult;
-    for (const plan of parsedOutput.plans) {
-      plan.filename = '';
-    }
     const redactedJsonOutput = JSON.stringify(parsedOutput, null, 2);
 
     return {

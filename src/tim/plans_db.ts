@@ -1,4 +1,3 @@
-import * as path from 'node:path';
 import { getDatabase } from './db/database.js';
 import {
   getPlanDependenciesByProject,
@@ -13,10 +12,9 @@ import {
 } from './db/plan.js';
 import { getProject } from './db/project.js';
 import type { PlanSchema, PlanSchemaInput } from './planSchema.js';
-import type { PlanWithFilename } from './utils/hierarchy.js';
 
 export interface PlansLoadResult {
-  plans: Map<number, PlanWithFilename>;
+  plans: Map<number, PlanSchema>;
   duplicates: Record<number, string[]>;
 }
 
@@ -114,7 +112,7 @@ export function invertPlanIdToUuidMap(idToUuid: Map<number, string>): Map<string
   return new Map(Array.from(idToUuid.entries(), ([planId, uuid]) => [uuid, planId]));
 }
 
-export function loadPlansFromDb(searchDir: string, repositoryId: string): PlansLoadResult {
+export function loadPlansFromDb(_searchDir: string, repositoryId: string): PlansLoadResult {
   const db = getDatabase();
   const project = getProject(db, repositoryId);
   if (!project) {
@@ -162,33 +160,29 @@ export function loadPlansFromDb(searchDir: string, repositoryId: string): PlansL
     dependencyUuidsByPlanUuid.set(dependencyRow.plan_uuid, list);
   }
 
-  const plans = new Map<number, PlanWithFilename>();
+  const plans = new Map<number, PlanSchema>();
   const seenIds = new Map<number, string[]>();
 
   for (const row of rows) {
-    const absoluteFilename = row.filename ? path.join(searchDir, row.filename) : '';
-    const existingPaths = seenIds.get(row.plan_id) ?? [];
-    existingPaths.push(absoluteFilename);
-    seenIds.set(row.plan_id, existingPaths);
+    const seenIdentifiers = seenIds.get(row.plan_id) ?? [];
+    seenIdentifiers.push(row.uuid);
+    seenIds.set(row.plan_id, seenIdentifiers);
 
-    const plan: PlanWithFilename = {
-      ...planRowToSchemaInput(
-        row,
-        tasksByPlanUuid.get(row.uuid) ?? [],
-        dependencyUuidsByPlanUuid.get(row.uuid) ?? [],
-        tagsByPlanUuid.get(row.uuid) ?? [],
-        planUuidToId
-      ),
-      filename: absoluteFilename,
-    };
+    const plan: PlanSchema = planRowToSchemaInput(
+      row,
+      tasksByPlanUuid.get(row.uuid) ?? [],
+      dependencyUuidsByPlanUuid.get(row.uuid) ?? [],
+      tagsByPlanUuid.get(row.uuid) ?? [],
+      planUuidToId
+    );
 
     plans.set(row.plan_id, plan);
   }
 
   const duplicates: Record<number, string[]> = {};
-  for (const [id, filePaths] of seenIds.entries()) {
-    if (filePaths.length > 1) {
-      duplicates[id] = filePaths;
+  for (const [id, identifiers] of seenIds.entries()) {
+    if (identifiers.length > 1) {
+      duplicates[id] = identifiers;
     }
   }
 

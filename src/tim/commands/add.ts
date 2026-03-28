@@ -208,7 +208,7 @@ export async function handleAddCommand(title: string[], options: any, command: a
 
   const writePlans = db.transaction(() => {
     upsertPlan(db, projectContext.projectId, {
-      ...toPlanUpsertInput(updatedNewPlan, `${planId}.plan.md`, idToUuid),
+      ...toPlanUpsertInput(updatedNewPlan, idToUuid),
       forceOverwrite: true,
     });
 
@@ -237,7 +237,7 @@ export async function handleAddCommand(title: string[], options: any, command: a
     });
 
     upsertPlan(db, projectContext.projectId, {
-      ...toPlanUpsertInput(referencedParent, parentRow.filename, idToUuid),
+      ...toPlanUpsertInput(referencedParent, idToUuid),
       forceOverwrite: true,
     });
   });

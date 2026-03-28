@@ -32,7 +32,7 @@ export interface NotificationInput {
   message: string;
   errorMessage?: string;
   cwd?: string;
-  plan?: PlanSchema & { filename?: string | undefined };
+  plan?: PlanSchema;
   planFile?: string;
   planId?: string;
   planSummary?: string;
@@ -48,9 +48,7 @@ export function buildNotificationPayload(input: NotificationInput): Notification
   const planId =
     input.planId ??
     (input.plan?.id !== undefined && input.plan?.id !== null ? String(input.plan.id) : '');
-  const planFile =
-    input.planFile ??
-    (input.plan && 'filename' in input.plan && input.plan.filename ? input.plan.filename : '');
+  const planFile = input.planFile ?? '';
 
   return {
     source: 'tim',

@@ -84,7 +84,6 @@ export interface EnrichedPlan {
   parentUuid: string | null;
   epic: boolean;
   simple: boolean;
-  filename: string;
   createdAt: string;
   updatedAt: string;
   pullRequests: string[];
@@ -442,7 +441,6 @@ function enrichPlansWithContext(
       parentUuid: plan.parent_uuid,
       epic: plan.epic === 1,
       simple,
-      filename: plan.filename,
       createdAt: plan.created_at,
       updatedAt: plan.updated_at,
       pullRequests: prUrlsByPlanUuid.get(plan.uuid) ?? [],

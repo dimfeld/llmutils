@@ -63,7 +63,7 @@ import type { WorkspaceType } from '../db/workspace.js';
 import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 import { loadPlansFromDb } from '../plans_db.js';
-import { materializePlan } from '../plan_materialize.js';
+import { getMaterializedPlanPath, materializePlan } from '../plan_materialize.js';
 import { getLegacyAwareSearchDir } from '../path_resolver.js';
 
 const PRIMARY_REMOTE_NAME = 'primary';
@@ -815,6 +815,42 @@ async function tryReuseExistingWorkspace(
       );
     };
 
+    const targetPlanFilePathInWorkspace =
+      options.planData?.id && options.resolvedPlanFilePath
+        ? getMaterializedPlanPath(workspace.workspacePath, options.planData.id)
+        : options.resolvedPlanFilePath
+          ? path.join(
+              workspace.workspacePath,
+              path.relative(options.mainRepoRoot, options.resolvedPlanFilePath)
+            )
+          : undefined;
+    let shouldCopyPlanIntoWorkspace = true;
+
+    if (
+      options.resolvedPlanFilePath &&
+      targetPlanFilePathInWorkspace &&
+      options.resolvedPlanFilePath !== targetPlanFilePathInWorkspace
+    ) {
+      const existingWorkspacePlan = await Bun.file(targetPlanFilePathInWorkspace)
+        .stat()
+        .then((stats) => stats.isFile())
+        .catch(() => false);
+      if (existingWorkspacePlan) {
+        try {
+          const existingPlan = await readPlanFile(targetPlanFilePathInWorkspace);
+          await syncPlanToDb(existingPlan, {
+            cwdForIdentity: options.mainRepoRoot,
+            throwOnError: true,
+          });
+        } catch (error) {
+          warn(
+            `Failed to sync existing workspace plan before overwrite: ${error as Error}. Skipping plan file copy to avoid data loss.`
+          );
+          shouldCopyPlanIntoWorkspace = false;
+        }
+      }
+    }
+
     let prepareResult: Awaited<ReturnType<typeof prepareExistingWorkspace>> | null = null;
     try {
       log(`Reusing existing workspace: ${workspace.workspacePath}`);
@@ -836,41 +872,19 @@ async function tryReuseExistingWorkspace(
         continue;
       }
 
-      let planFilePathInWorkspace = options.resolvedPlanFilePath
-        ? path.join(
-            workspace.workspacePath,
-            path.relative(options.mainRepoRoot, options.resolvedPlanFilePath)
-          )
-        : undefined;
+      let planFilePathInWorkspace = targetPlanFilePathInWorkspace;
 
       if (options.resolvedPlanFilePath && planFilePathInWorkspace) {
         try {
-          if (options.resolvedPlanFilePath !== planFilePathInWorkspace) {
-            // Sync any existing workspace plan edits back to DB before overwriting
-            const existingWorkspacePlan = await Bun.file(planFilePathInWorkspace)
-              .stat()
-              .then((stats) => stats.isFile())
-              .catch(() => false);
-            if (existingWorkspacePlan) {
-              try {
-                const existingPlan = await readPlanFile(planFilePathInWorkspace);
-                await syncPlanToDb(existingPlan, planFilePathInWorkspace, {
-                  cwdForIdentity: options.mainRepoRoot,
-                  throwOnError: true,
-                });
-              } catch (error) {
-                warn(
-                  `Failed to sync existing workspace plan before overwrite: ${error as Error}. Skipping plan file copy to avoid data loss.`
-                );
-                planFilePathInWorkspace = undefined;
-              }
-            }
-
-            if (planFilePathInWorkspace) {
-              const srcContent = await fs.readFile(options.resolvedPlanFilePath, 'utf8');
-              await fs.mkdir(path.dirname(planFilePathInWorkspace), { recursive: true });
-              await fs.writeFile(planFilePathInWorkspace, srcContent, 'utf8');
-            }
+          if (
+            shouldCopyPlanIntoWorkspace &&
+            options.resolvedPlanFilePath !== planFilePathInWorkspace
+          ) {
+            const srcContent = await fs.readFile(options.resolvedPlanFilePath, 'utf8');
+            await fs.mkdir(path.dirname(planFilePathInWorkspace), { recursive: true });
+            await fs.writeFile(planFilePathInWorkspace, srcContent, 'utf8');
+          } else if (!shouldCopyPlanIntoWorkspace) {
+            planFilePathInWorkspace = undefined;
           }
         } catch (error) {
           warn(`Failed to copy plan file into reused workspace: ${error as Error}`);
@@ -1136,7 +1150,7 @@ export async function handleWorkspaceAddCommand(
 
   // Import issue into workspace if --issue was provided
   let importedPlanFile: string | undefined;
-  let importedPlan: (PlanSchema & { filename: string }) | undefined;
+  let importedPlan: PlanSchema | undefined;
   if (issueInfo) {
     try {
       log(`Importing issue ${issueInfo.identifier} into workspace...`);
@@ -1168,10 +1182,7 @@ export async function handleWorkspaceAddCommand(
             workspace.path,
             workspace.path
           );
-          importedPlan = {
-            ...resolvedImportedPlan.plan,
-            filename: result.planPath,
-          };
+          importedPlan = resolvedImportedPlan.plan;
         }
       } else {
         warn(`Issue ${issueInfo.identifier} was already imported or import failed`);

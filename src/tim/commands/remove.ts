@@ -173,7 +173,7 @@ export async function handleRemoveCommand(
       }
       const { updatedPlan } = ensureReferences(plan, { planIdToUuid: idToUuid });
       upsertPlan(db, context.projectId, {
-        ...toPlanUpsertInput(updatedPlan, row.filename, idToUuid),
+        ...toPlanUpsertInput(updatedPlan, idToUuid),
         forceOverwrite: true,
       });
     }

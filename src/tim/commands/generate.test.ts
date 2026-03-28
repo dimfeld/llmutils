@@ -267,7 +267,6 @@ describe('handleGenerateCommand', () => {
     });
     expect(syncPlanToDbSpy).toHaveBeenCalledWith(
       expect.objectContaining({ id: 101 }),
-      planPath,
       expect.objectContaining({
         cwdForIdentity: tempDir,
         force: true,

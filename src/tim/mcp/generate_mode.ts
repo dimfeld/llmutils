@@ -15,6 +15,7 @@ import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { materializePlan } from '../plan_materialize.js';
 import { getLegacyAwareSearchDir } from '../path_resolver.js';
 import { loadPlansFromDb } from '../plans_db.js';
+import { findPlanFileOnDisk } from '../plans/find_plan_file.js';
 import { filterAndSortReadyPlans, formatReadyPlansAsJson } from '../ready_plans.js';
 import {
   addPlanTaskTool,
@@ -154,7 +155,10 @@ async function buildGeneratePromptContext(
         throw new Error(`Parent plan ${plan.parent} not found`);
       }
 
-      const parentPlanPath = fs.existsSync(parentPlan.filename) ? parentPlan.filename : null;
+      const parentPlanPath =
+        typeof parentPlan.id === 'number'
+          ? findPlanFileOnDisk(parentPlan.id, context.gitRoot)
+          : null;
       const parentContext = buildPlanContext(parentPlan, parentPlanPath, context);
       const siblingPlans = Array.from(plans.values())
         .filter((candidate) => candidate.id !== plan.id && candidate.parent === plan.parent)
@@ -167,8 +171,10 @@ async function buildGeneratePromptContext(
 ${siblingPlans
   .map((sibling) => {
     const siblingStatus = sibling.status || 'pending';
-    const relativePath = fs.existsSync(sibling.filename)
-      ? path.relative(context.gitRoot, sibling.filename) || sibling.filename
+    const siblingPath =
+      typeof sibling.id === 'number' ? findPlanFileOnDisk(sibling.id, context.gitRoot) : null;
+    const relativePath = siblingPath
+      ? path.relative(context.gitRoot, siblingPath) || siblingPath
       : null;
     const pathSuffix = relativePath ? `, path: ${relativePath}` : '';
     return `- ${sibling.title || `Plan ${sibling.id}`} (status: ${siblingStatus}${pathSuffix})`;
@@ -814,7 +820,8 @@ export function registerGenerateMode(
       });
 
       const enrichedPlans = readyPlans.map((plan) => {
-        const filename = plans.get(plan.id)?.filename;
+        const filename =
+          typeof plan.id === 'number' ? findPlanFileOnDisk(plan.id, context.gitRoot) : '';
         return {
           ...plan,
           filename: filename && fs.existsSync(filename) ? filename : '',

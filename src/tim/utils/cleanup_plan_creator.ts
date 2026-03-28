@@ -8,6 +8,7 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { generateNumericPlanId, slugify } from '../id_utils.js';
 import { writePlanFile } from '../plans.js';
+import { findPlanFileOnDisk } from '../plans/find_plan_file.js';
 import type { PlanSchema } from '../planSchema.js';
 import { loadPlansFromDb } from '../plans_db.js';
 import { updatePlanProperties } from '../planPropertiesUpdater.js';
@@ -155,11 +156,11 @@ export async function createCleanupPlan(
       referencedPlan.status = 'in_progress';
       log(chalk.yellow(`  Parent plan "${referencedPlan.title}" marked as in_progress`));
     }
-    // Use writePlanFile to update both the file on disk and the DB.
-    // loadPlansFromDb now resolves files under .tim/plans, so the stored
-    // filename already points at the canonical write location.
+    // Update the existing parent file when present; otherwise fall back to the
+    // canonical materialized location for DB-first plans.
     await writePlanFile(
-      referencedPlan.filename || path.join(planDir, `${referencedPlan.id}.plan.md`),
+      findPlanFileOnDisk(referencedPlan.id, gitRoot) ||
+        path.join(planDir, `${referencedPlan.id}.plan.md`),
       referencedPlan
     );
     log(

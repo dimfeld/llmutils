@@ -63,7 +63,6 @@ describe('tim db/plan_sync', () => {
 
   test('syncPlanToDb upserts plan metadata, tasks, and references', async () => {
     const config = buildTestConfig(tasksDir);
-    const planFile = path.join(tasksDir, '10-sample.plan.md');
     const plan = {
       id: 10,
       uuid: '11111111-1111-4111-8111-111111111111',
@@ -91,7 +90,7 @@ describe('tim db/plan_sync', () => {
       tasks: [{ title: 'task one', description: 'do task one', done: true }],
     };
 
-    await syncPlanToDb(plan, planFile, { config });
+    await syncPlanToDb(plan, { config });
 
     const repository = await getRepositoryIdentity({ cwd: repoDir });
     const db = getDatabase();
@@ -111,7 +110,6 @@ describe('tim db/plan_sync', () => {
     expect(savedPlan?.assigned_to).toBe('dimfeld');
     expect(savedPlan?.base_branch).toBe('main');
     expect(savedPlan?.parent_uuid).toBe('99999999-9999-4999-8999-999999999999');
-    expect(savedPlan?.filename).toBe('10-sample.plan.md');
     expect(savedPlan?.created_at).toBe('2026-02-09T08:00:00.000Z');
     expect(savedPlan?.updated_at).toBe('2026-02-10T12:34:56.000Z');
     expect(getPlanTagsByUuid(db, savedPlan!.uuid).map((row) => row.tag)).toEqual(['db', 'sync']);
@@ -126,7 +124,6 @@ describe('tim db/plan_sync', () => {
         goal: 'Skip this',
         tasks: [],
       },
-      path.join(tasksDir, 'no-uuid.plan.md'),
       { config: buildTestConfig(tasksDir) }
     );
 
@@ -137,7 +134,6 @@ describe('tim db/plan_sync', () => {
 
   test('syncPlanToDb clears branch when branch is unset', async () => {
     const config = buildTestConfig(tasksDir);
-    const planFile = path.join(tasksDir, '46-branch-sync.plan.md');
     const planUuid = '46464646-4646-4464-8464-464646464646';
 
     await syncPlanToDb(
@@ -149,7 +145,6 @@ describe('tim db/plan_sync', () => {
         branch: 'feature/branch-sync',
         tasks: [],
       },
-      planFile,
       { config }
     );
 
@@ -165,7 +160,6 @@ describe('tim db/plan_sync', () => {
         branch: undefined,
         tasks: [],
       },
-      planFile,
       { config }
     );
 
@@ -185,7 +179,6 @@ describe('tim db/plan_sync', () => {
         goal: 'To be deleted',
         tasks: [],
       },
-      path.join(tasksDir, '12-assigned.plan.md'),
       { config }
     );
 

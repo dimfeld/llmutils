@@ -101,7 +101,6 @@ describe('tim plan_materialize', () => {
       title: 'Parent plan',
       goal: 'Parent goal',
       details: 'Parent details',
-      filename: '1-parent.plan.md',
       tasks: [{ title: 'parent task', description: 'parent task', done: false }],
       tags: ['parent'],
     });
@@ -111,7 +110,6 @@ describe('tim plan_materialize', () => {
       title: 'Dependency plan',
       goal: 'Dependency goal',
       details: 'Dependency details',
-      filename: '2-dependency.plan.md',
       tasks: [{ title: 'dep task', description: 'dep task', done: true }],
       tags: ['dependency'],
     });
@@ -146,7 +144,6 @@ describe('tim plan_materialize', () => {
       ],
       parentUuid: '11111111-1111-4111-8111-111111111111',
       epic: false,
-      filename: '3-primary.plan.md',
       tasks: [
         { title: 'implement', description: 'build materialize flow', done: false },
         { title: 'verify', description: 'run tests', done: false },
@@ -161,7 +158,6 @@ describe('tim plan_materialize', () => {
       goal: 'Child goal',
       details: 'Child details',
       parentUuid: '33333333-3333-4333-8333-333333333333',
-      filename: '4-child.plan.md',
     });
     upsertPlan(db, project.id, {
       uuid: '55555555-5555-4555-8555-555555555555',
@@ -170,7 +166,6 @@ describe('tim plan_materialize', () => {
       goal: 'Sibling goal',
       details: 'Sibling details',
       parentUuid: '11111111-1111-4111-8111-111111111111',
-      filename: '5-sibling.plan.md',
     });
 
     return { db, project };
@@ -370,7 +365,6 @@ describe('tim plan_materialize', () => {
     const saved = getPlanByPlanId(db, project.id, 3);
     expect(saved?.title).toBe('Primary plan edited on disk');
     expect(saved?.details).toBe('Primary details updated from file');
-    expect(saved?.filename).toBe('3-primary.plan.md');
     expect(saved?.temp).toBe(0);
     expect(saved?.docs).toBe('["docs/primary.md","docs/edited.md"]');
     expect(saved?.changed_files).toBe(
@@ -676,7 +670,6 @@ describe('tim plan_materialize', () => {
         id: 999,
         uuid: '99999999-9999-4999-8999-999999999999',
         title: 'Orphaned materialized plan',
-        filename: '999.plan.md',
         tasks: [],
       },
       { skipDb: true }
@@ -817,7 +810,6 @@ describe('tim plan_materialize', () => {
       await handleSyncCommand('3', {}, {} as any);
       const syncedPlan = getPlanByPlanId(db, project.id, 3);
       expect(syncedPlan?.title).toBe('Edited via command flow');
-      expect(syncedPlan?.filename).toBe('3-primary.plan.md');
 
       db.prepare(
         'UPDATE plan SET status = ?, updated_at = ? WHERE project_id = ? AND plan_id = ?'
@@ -1007,7 +999,6 @@ describe('tim plan_materialize', () => {
       uuid: '66666666-6666-4666-8666-666666666666',
       planId: 3,
       title: 'Duplicate plan',
-      filename: '3-duplicate.plan.md',
     });
 
     expect(() => getPlanByPlanId(db, project.id, 3)).toThrow(

@@ -73,8 +73,8 @@ describe('notifications', () => {
     expect(payload.cwd).toBe('/repo');
     expect(payload.planId).toBe('42');
     expect(payload.planFile).toBe('/repo/tasks/42.plan.md');
-    expect(payload.planSummary).toBe('Project Alpha - Implement Feature');
-    expect(payload.planDescription).toBe('#123 Project Alpha - Implement Feature');
+    expect(payload.planSummary).toBe('Implement Feature');
+    expect(payload.planDescription).toBe('#123 Implement Feature');
   });
 
   test('suppresses notifications when env flag is set', async () => {

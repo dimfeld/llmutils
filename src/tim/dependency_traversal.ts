@@ -8,10 +8,7 @@ import type { PlanSchema } from './planSchema.js';
  * @param allPlans - Map of all available plans
  * @returns Array of plan IDs that are direct dependencies
  */
-export function getDirectDependencies(
-  planId: number,
-  allPlans: Map<number, PlanSchema & { filename: string }>
-): number[] {
+export function getDirectDependencies(planId: number, allPlans: Map<number, PlanSchema>): number[] {
   const directDeps = new Set<number>();
   const plan = allPlans.get(planId);
 

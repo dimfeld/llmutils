@@ -4,6 +4,7 @@ import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 interface Migration {
   version: number;
   up: string;
+  requiresFkOff?: boolean;
 }
 
 const migrations: Migration[] = [
@@ -153,9 +154,9 @@ const migrations: Migration[] = [
   },
   {
     version: 6,
+    requiresFkOff: true,
     // add needs_review to status
     up: `
-      PRAGMA foreign_keys = OFF;
       CREATE TABLE plan_new (
         uuid TEXT NOT NULL PRIMARY KEY,
         project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
@@ -232,7 +233,6 @@ const migrations: Migration[] = [
       CREATE INDEX idx_plan_project_id ON plan(project_id);
       CREATE INDEX idx_plan_project_plan_id ON plan(project_id, plan_id);
       CREATE INDEX idx_plan_parent_uuid ON plan(parent_uuid);
-      PRAGMA foreign_keys = ON;
     `,
   },
   {
@@ -313,6 +313,100 @@ const migrations: Migration[] = [
       ALTER TABLE plan ADD COLUMN review_issues TEXT;
     `,
   },
+  {
+    version: 10,
+    requiresFkOff: true,
+    up: `
+      CREATE TABLE plan_new (
+        uuid TEXT NOT NULL PRIMARY KEY,
+        project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+        plan_id INTEGER NOT NULL,
+        title TEXT,
+        goal TEXT,
+        details TEXT,
+        status TEXT NOT NULL DEFAULT 'pending'
+          CHECK(status IN ('pending', 'in_progress', 'done', 'cancelled', 'deferred', 'needs_review')),
+        priority TEXT
+          CHECK(priority IN ('low', 'medium', 'high', 'urgent', 'maybe') OR priority IS NULL),
+        branch TEXT,
+        simple INTEGER,
+        tdd INTEGER,
+        discovered_from INTEGER,
+        issue TEXT,
+        pull_request TEXT,
+        assigned_to TEXT,
+        base_branch TEXT,
+        temp INTEGER,
+        docs TEXT,
+        changed_files TEXT,
+        plan_generated_at TEXT,
+        review_issues TEXT,
+        parent_uuid TEXT,
+        epic INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC})
+      );
+      INSERT INTO plan_new (
+        uuid,
+        project_id,
+        plan_id,
+        title,
+        goal,
+        details,
+        status,
+        priority,
+        branch,
+        simple,
+        tdd,
+        discovered_from,
+        issue,
+        pull_request,
+        assigned_to,
+        base_branch,
+        temp,
+        docs,
+        changed_files,
+        plan_generated_at,
+        review_issues,
+        parent_uuid,
+        epic,
+        created_at,
+        updated_at
+      )
+      SELECT
+        uuid,
+        project_id,
+        plan_id,
+        title,
+        goal,
+        details,
+        status,
+        priority,
+        branch,
+        simple,
+        tdd,
+        discovered_from,
+        issue,
+        pull_request,
+        assigned_to,
+        base_branch,
+        temp,
+        docs,
+        changed_files,
+        plan_generated_at,
+        review_issues,
+        parent_uuid,
+        epic,
+        created_at,
+        updated_at
+      FROM plan;
+      DROP TABLE plan;
+      ALTER TABLE plan_new RENAME TO plan;
+      CREATE INDEX idx_plan_project_id ON plan(project_id);
+      CREATE INDEX idx_plan_project_plan_id ON plan(project_id, plan_id);
+      CREATE INDEX idx_plan_parent_uuid ON plan(parent_uuid);
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {
@@ -339,29 +433,48 @@ export function runMigrations(db: Database): void {
     db.run('ALTER TABLE schema_version ADD COLUMN import_completed INTEGER NOT NULL DEFAULT 0');
   }
 
-  db.transaction(() => {
-    let currentVersion = getCurrentVersion(db);
-    const importCompletedRow = db
-      .prepare('SELECT import_completed FROM schema_version ORDER BY rowid DESC LIMIT 1')
-      .get() as { import_completed?: number } | null;
-    const importCompleted = importCompletedRow?.import_completed ?? 0;
+  let currentVersion = getCurrentVersion(db);
+  const importCompletedRow = db
+    .prepare('SELECT import_completed FROM schema_version ORDER BY rowid DESC LIMIT 1')
+    .get() as { import_completed?: number } | null;
+  const importCompleted = importCompletedRow?.import_completed ?? 0;
 
-    for (const migration of migrations) {
-      if (migration.version <= currentVersion) {
-        continue;
+  const persistVersion = (version: number): void => {
+    db.run('DELETE FROM schema_version');
+    db.prepare('INSERT INTO schema_version (version, import_completed) VALUES (?, ?)').run(
+      version,
+      importCompleted
+    );
+  };
+
+  for (const migration of migrations) {
+    if (migration.version <= currentVersion) {
+      continue;
+    }
+
+    if (migration.requiresFkOff) {
+      db.run('PRAGMA foreign_keys = OFF');
+      try {
+        db.transaction(() => {
+          db.run(migration.up);
+          persistVersion(migration.version);
+        }).immediate();
+      } finally {
+        db.run('PRAGMA foreign_keys = ON');
       }
-
-      db.run(migration.up);
-      db.run('DELETE FROM schema_version');
-      db.prepare('INSERT INTO schema_version (version, import_completed) VALUES (?, ?)').run(
-        migration.version,
-        importCompleted
-      );
-      currentVersion = migration.version;
+    } else {
+      db.transaction(() => {
+        db.run(migration.up);
+        persistVersion(migration.version);
+      }).immediate();
     }
 
-    if (currentVersion === 0) {
+    currentVersion = migration.version;
+  }
+
+  if (currentVersion === 0) {
+    db.transaction(() => {
       db.prepare('INSERT INTO schema_version (version, import_completed) VALUES (0, 0)').run();
-    }
-  }).immediate();
+    }).immediate();
+  }
 }

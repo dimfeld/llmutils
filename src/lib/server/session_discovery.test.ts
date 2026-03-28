@@ -600,10 +600,18 @@ describe('lib/server/session_discovery', () => {
       expect.objectContaining({
         seq: 2,
         rawType: 'prompt_request',
-        category: 'lifecycle',
+        category: 'structured',
+        bodyType: 'structured',
         body: {
-          type: 'text',
-          text: 'Prompt requested: confirm | Continue integration flow?',
+          type: 'structured',
+          message: expect.objectContaining({
+            type: 'prompt_request',
+            requestId: 'req-integration',
+            promptType: 'confirm',
+            promptConfig: {
+              message: 'Continue integration flow?',
+            },
+          }),
         },
       }),
     ]);

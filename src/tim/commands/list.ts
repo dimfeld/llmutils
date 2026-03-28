@@ -20,10 +20,12 @@ import {
 import { getLegacyAwareSearchDir } from '../path_resolver.js';
 import { loadPlansFromDb } from '../plans_db.js';
 import { isPlanReady, isTaskDone } from '../plans.js';
-import { getParentChain, isUnderEpic, type PlanWithFilename } from '../utils/hierarchy.js';
+import { findPlanFileOnDisk } from '../plans/find_plan_file.js';
+import type { PlanSchema } from '../planSchema.js';
+import { getParentChain, isUnderEpic } from '../utils/hierarchy.js';
 import { normalizeTags } from '../utils/tags.js';
 
-type ListPlan = PlanWithFilename & {
+type ListPlan = PlanSchema & {
   assignmentEntry?: AssignmentEntry;
   assignedWorkspaces: string[];
   assignedUsers: string[];
@@ -101,7 +103,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
   const repository = await getRepositoryIdentity({ cwd: searchDir });
   const planSearchDir = getLegacyAwareSearchDir(repository.gitRoot, searchDir);
 
-  let plans: Map<number, PlanWithFilename>;
+  let plans: Map<number, PlanSchema>;
   let duplicates: Record<number, string[]>;
   ({ plans, duplicates } = loadPlansFromDb(planSearchDir, repository.repositoryId));
 
@@ -478,9 +480,13 @@ export async function handleListCommand(options: any, command: any, searchTerms?
 
     if (options.showFiles) {
       row.push(
-        plan.filename && fs.existsSync(plan.filename)
-          ? chalk.gray(path.relative(searchDir, plan.filename))
-          : ''
+        (() => {
+          const planFile =
+            typeof plan.id === 'number' ? findPlanFileOnDisk(plan.id, repository.gitRoot) : null;
+          return planFile && fs.existsSync(planFile)
+            ? chalk.gray(path.relative(searchDir, planFile))
+            : '';
+        })()
       );
     }
 
@@ -570,10 +576,9 @@ export async function handleListCommand(options: any, command: any, searchTerms?
     log(chalk.yellow.bold('⚠️  Duplicate plan IDs found:'));
     for (const duplicateId of duplicateIds) {
       log(chalk.yellow(`   - ID ${duplicateId}:`));
-      const filePaths = duplicates[duplicateId].sort((a, b) => a.localeCompare(b));
-      for (const filePath of filePaths) {
-        const relativePath = path.relative(searchDir, filePath);
-        log(chalk.gray(`     • ${relativePath}`));
+      const planIdentifiers = duplicates[duplicateId].sort((a, b) => a.localeCompare(b));
+      for (const planIdentifier of planIdentifiers) {
+        log(chalk.gray(`     • UUID ${planIdentifier}`));
       }
     }
     log('');

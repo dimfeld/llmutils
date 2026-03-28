@@ -150,8 +150,8 @@ export interface PhaseGenerationContext {
     docURLs?: string[]; // URLs from parent plan docs
   }; // Info from parent plan
   siblingPlansInfo?: {
-    completed: Array<{ id: number; title: string; filename: string }>;
-    pending: Array<{ id: number; title: string; filename: string }>;
+    completed: Array<{ id: number; title: string; file?: string }>;
+    pending: Array<{ id: number; title: string; file?: string }>;
   }; // Info about sibling plans (same parent)
   changedFilesFromDependencies: string[]; // Concatenated list of changedFiles from completed dependencies
   rmfilterArgsFromPlan: string[]; // rmfilter args from the original plan/request
@@ -477,7 +477,9 @@ ${context.changedFilesFromDependencies.join('\n')}
     if (context.siblingPlansInfo.completed.length > 0) {
       siblingPlansSection += `### Completed Related Plans:\n`;
       context.siblingPlansInfo.completed.forEach((sibling) => {
-        siblingPlansSection += `- **${sibling.title}** (File: ${path.basename(sibling.filename)})\n`;
+        siblingPlansSection += sibling.file
+          ? `- **${sibling.title}** (File: ${path.basename(sibling.file)})\n`
+          : `- **${sibling.title}**\n`;
       });
       siblingPlansSection += '\n';
     }
@@ -485,7 +487,9 @@ ${context.changedFilesFromDependencies.join('\n')}
     if (context.siblingPlansInfo.pending.length > 0) {
       siblingPlansSection += `### Pending Related Plans:\n`;
       context.siblingPlansInfo.pending.forEach((sibling) => {
-        siblingPlansSection += `- **${sibling.title}** (File: ${path.basename(sibling.filename)})\n`;
+        siblingPlansSection += sibling.file
+          ? `- **${sibling.title}** (File: ${path.basename(sibling.file)})\n`
+          : `- **${sibling.title}**\n`;
       });
       siblingPlansSection += '\n';
     }
@@ -1002,7 +1006,9 @@ ${context.changedFilesFromDependencies.join('\n')}
     if (context.siblingPlansInfo.completed.length > 0) {
       siblingPlansSection += `### Completed Related Plans:\n`;
       context.siblingPlansInfo.completed.forEach((sibling) => {
-        siblingPlansSection += `- **${sibling.title}** (File: ${path.basename(sibling.filename)})\n`;
+        siblingPlansSection += sibling.file
+          ? `- **${sibling.title}** (File: ${path.basename(sibling.file)})\n`
+          : `- **${sibling.title}**\n`;
       });
       siblingPlansSection += '\n';
     }
@@ -1010,7 +1016,9 @@ ${context.changedFilesFromDependencies.join('\n')}
     if (context.siblingPlansInfo.pending.length > 0) {
       siblingPlansSection += `### Pending Related Plans:\n`;
       context.siblingPlansInfo.pending.forEach((sibling) => {
-        siblingPlansSection += `- **${sibling.title}** (File: ${path.basename(sibling.filename)})\n`;
+        siblingPlansSection += sibling.file
+          ? `- **${sibling.title}** (File: ${path.basename(sibling.file)})\n`
+          : `- **${sibling.title}**\n`;
       });
       siblingPlansSection += '\n';
     }

@@ -1,7 +1,7 @@
-import fs from 'node:fs';
 import * as path from 'path';
 
 import type { PlanSchema } from './planSchema.js';
+import { findPlanFileOnDisk } from './plans/find_plan_file.js';
 import { isUnderEpic } from './utils/hierarchy.js';
 import { normalizeTags } from './utils/tags.js';
 
@@ -25,10 +25,6 @@ export interface ReadyPlanFilterOptions {
   reverse?: boolean;
   epicId?: number;
 }
-
-export type EnrichedReadyPlan<T extends PlanSchema = PlanSchema> = T & {
-  filename: string;
-};
 
 function getDependency<T>(plans: Map<number, T>, dependency: number | string): T | undefined {
   if (typeof dependency === 'number') {
@@ -200,33 +196,32 @@ export interface ReadyPlanJsonOptions {
 }
 
 export function formatReadyPlansAsJson<T extends PlanSchema>(
-  plans: Array<EnrichedReadyPlan<T>>,
+  plans: T[],
   options: ReadyPlanJsonOptions = {}
 ): string {
   const { gitRoot } = options;
   const result = {
     count: plans.length,
-    plans: plans.map((plan) => ({
-      id: plan.id,
-      title: plan.title || plan.goal || '',
-      goal: plan.goal || '',
-      priority: plan.priority,
-      status: plan.status,
-      taskCount: plan.tasks?.length ?? 0,
-      completedTasks: plan.tasks?.filter((task) => task.done).length ?? 0,
-      needsGenerate: (plan.tasks?.length ?? 0) === 0,
-      dependencies: plan.dependencies ?? [],
-      assignedTo: plan.assignedTo,
-      filename:
-        plan.filename && fs.existsSync(plan.filename)
-          ? gitRoot
-            ? path.relative(gitRoot, plan.filename)
-            : plan.filename
-          : '',
-      createdAt: plan.createdAt,
-      updatedAt: plan.updatedAt,
-      tags: normalizeTags(plan.tags),
-    })),
+    plans: plans.map((plan) => {
+      const resolvedPath = gitRoot ? findPlanFileOnDisk(plan.id, gitRoot) : null;
+
+      return {
+        id: plan.id,
+        title: plan.title || plan.goal || '',
+        goal: plan.goal || '',
+        priority: plan.priority,
+        status: plan.status,
+        taskCount: plan.tasks?.length ?? 0,
+        completedTasks: plan.tasks?.filter((task) => task.done).length ?? 0,
+        needsGenerate: (plan.tasks?.length ?? 0) === 0,
+        dependencies: plan.dependencies ?? [],
+        assignedTo: plan.assignedTo,
+        filename: resolvedPath ? path.relative(gitRoot!, resolvedPath) : '',
+        createdAt: plan.createdAt,
+        updatedAt: plan.updatedAt,
+        tags: normalizeTags(plan.tags),
+      };
+    }),
   };
 
   return JSON.stringify(result, null, 2);

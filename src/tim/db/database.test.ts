@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { Database } from 'bun:sqlite';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -10,9 +11,205 @@ import {
   openDatabase,
   DATABASE_FILENAME,
 } from './database.js';
+import { runMigrations } from './migrations.js';
 
 async function createTempDir(prefix: string): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), prefix));
+}
+
+function seedSchemaVersionNine(db: Database): void {
+  db.run('PRAGMA foreign_keys = ON');
+  db.exec(`
+    CREATE TABLE schema_version (
+      version INTEGER NOT NULL DEFAULT 0,
+      import_completed INTEGER NOT NULL DEFAULT 0
+    );
+    INSERT INTO schema_version (version, import_completed) VALUES (9, 1);
+
+    CREATE TABLE project (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      repository_id TEXT NOT NULL UNIQUE,
+      remote_url TEXT,
+      last_git_root TEXT,
+      external_config_path TEXT,
+      external_tasks_dir TEXT,
+      remote_label TEXT,
+      highest_plan_id INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE workspace (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+      task_id TEXT,
+      workspace_path TEXT NOT NULL UNIQUE,
+      original_plan_file_path TEXT,
+      branch TEXT,
+      name TEXT,
+      description TEXT,
+      plan_id TEXT,
+      plan_title TEXT,
+      workspace_type INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX idx_workspace_project_id ON workspace(project_id);
+
+    CREATE TABLE workspace_issue (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      workspace_id INTEGER NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+      issue_url TEXT NOT NULL,
+      UNIQUE(workspace_id, issue_url)
+    );
+
+    CREATE TABLE workspace_lock (
+      workspace_id INTEGER NOT NULL UNIQUE REFERENCES workspace(id) ON DELETE CASCADE,
+      lock_type TEXT NOT NULL CHECK(lock_type IN ('persistent', 'pid')),
+      pid INTEGER,
+      started_at TEXT NOT NULL,
+      hostname TEXT NOT NULL,
+      command TEXT NOT NULL
+    );
+
+    CREATE TABLE permission (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+      permission_type TEXT NOT NULL CHECK(permission_type IN ('allow', 'deny')),
+      pattern TEXT NOT NULL
+    );
+    CREATE INDEX idx_permission_project_id ON permission(project_id);
+
+    CREATE TABLE assignment (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+      plan_uuid TEXT NOT NULL,
+      plan_id INTEGER,
+      workspace_id INTEGER REFERENCES workspace(id) ON DELETE SET NULL,
+      claimed_by_user TEXT,
+      status TEXT,
+      assigned_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(project_id, plan_uuid)
+    );
+    CREATE INDEX idx_assignment_workspace_id ON assignment(workspace_id);
+
+    CREATE TABLE plan (
+      uuid TEXT NOT NULL PRIMARY KEY,
+      project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+      plan_id INTEGER NOT NULL,
+      title TEXT,
+      goal TEXT,
+      details TEXT,
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(status IN ('pending', 'in_progress', 'done', 'cancelled', 'deferred', 'needs_review')),
+      priority TEXT
+        CHECK(priority IN ('low', 'medium', 'high', 'urgent', 'maybe') OR priority IS NULL),
+      branch TEXT,
+      simple INTEGER,
+      tdd INTEGER,
+      discovered_from INTEGER,
+      issue TEXT,
+      pull_request TEXT,
+      assigned_to TEXT,
+      base_branch TEXT,
+      temp INTEGER,
+      docs TEXT,
+      changed_files TEXT,
+      plan_generated_at TEXT,
+      review_issues TEXT,
+      parent_uuid TEXT,
+      epic INTEGER NOT NULL DEFAULT 0,
+      filename TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX idx_plan_project_id ON plan(project_id);
+    CREATE INDEX idx_plan_project_plan_id ON plan(project_id, plan_id);
+    CREATE INDEX idx_plan_parent_uuid ON plan(parent_uuid);
+
+    CREATE TABLE plan_task (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      plan_uuid TEXT NOT NULL REFERENCES plan(uuid) ON DELETE CASCADE,
+      task_index INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      done INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(plan_uuid, task_index)
+    );
+    CREATE INDEX idx_plan_task_plan_uuid ON plan_task(plan_uuid);
+
+    CREATE TABLE plan_dependency (
+      plan_uuid TEXT NOT NULL REFERENCES plan(uuid) ON DELETE CASCADE,
+      depends_on_uuid TEXT NOT NULL,
+      PRIMARY KEY(plan_uuid, depends_on_uuid)
+    );
+
+    CREATE TABLE plan_tag (
+      plan_uuid TEXT NOT NULL REFERENCES plan(uuid) ON DELETE CASCADE,
+      tag TEXT NOT NULL,
+      PRIMARY KEY(plan_uuid, tag)
+    );
+    CREATE INDEX idx_plan_tag_plan_uuid ON plan_tag(plan_uuid);
+
+    CREATE TABLE pr_status (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pr_url TEXT NOT NULL UNIQUE,
+      owner TEXT NOT NULL,
+      repo TEXT NOT NULL,
+      pr_number INTEGER NOT NULL,
+      title TEXT,
+      state TEXT NOT NULL,
+      draft INTEGER NOT NULL DEFAULT 0,
+      mergeable TEXT,
+      head_sha TEXT,
+      base_branch TEXT,
+      head_branch TEXT,
+      review_decision TEXT,
+      check_rollup_state TEXT,
+      merged_at TEXT,
+      last_fetched_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE pr_check_run (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pr_status_id INTEGER NOT NULL REFERENCES pr_status(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      source TEXT NOT NULL,
+      status TEXT NOT NULL,
+      conclusion TEXT,
+      details_url TEXT,
+      started_at TEXT,
+      completed_at TEXT
+    );
+    CREATE INDEX idx_pr_check_run_pr_status_id ON pr_check_run(pr_status_id);
+
+    CREATE TABLE pr_review (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pr_status_id INTEGER NOT NULL REFERENCES pr_status(id) ON DELETE CASCADE,
+      author TEXT NOT NULL,
+      state TEXT NOT NULL,
+      submitted_at TEXT
+    );
+    CREATE INDEX idx_pr_review_pr_status_id ON pr_review(pr_status_id);
+
+    CREATE TABLE pr_label (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pr_status_id INTEGER NOT NULL REFERENCES pr_status(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      color TEXT
+    );
+    CREATE INDEX idx_pr_label_pr_status_id ON pr_label(pr_status_id);
+
+    CREATE TABLE plan_pr (
+      plan_uuid TEXT NOT NULL REFERENCES plan(uuid) ON DELETE CASCADE,
+      pr_status_id INTEGER NOT NULL REFERENCES pr_status(id) ON DELETE CASCADE,
+      PRIMARY KEY (plan_uuid, pr_status_id)
+    );
+    CREATE INDEX idx_plan_pr_pr_status_id ON plan_pr(pr_status_id);
+  `);
 }
 
 describe('tim db/database', () => {
@@ -58,7 +255,7 @@ describe('tim db/database', () => {
         []
       >('SELECT version, import_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(9);
+    expect(version?.version).toBe(10);
     expect(version?.import_completed).toBe(1);
 
     const tables = db
@@ -94,6 +291,7 @@ describe('tim db/database', () => {
     expect(planColumns).toContain('changed_files');
     expect(planColumns).toContain('plan_generated_at');
     expect(planColumns).toContain('review_issues');
+    expect(planColumns).not.toContain('filename');
 
     const indices = db
       .query<{ name: string }, []>(
@@ -126,7 +324,7 @@ describe('tim db/database', () => {
         []
       >('SELECT version, import_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(9);
+    expect(version?.version).toBe(10);
     expect(version?.import_completed).toBe(1);
     const versionRowCount = db2
       .query<{ count: number }, []>('SELECT count(*) as count FROM schema_version')
@@ -154,5 +352,138 @@ describe('tim db/database', () => {
   test('getDefaultDatabasePath resolves under tim config root', () => {
     process.env.XDG_CONFIG_HOME = tempDir;
     expect(getDefaultDatabasePath()).toBe(path.join(tempDir, 'tim', DATABASE_FILENAME));
+  });
+
+  test('runMigrations preserves child plan rows when upgrading from schema version 9 to 10', () => {
+    const dbPath = path.join(tempDir, DATABASE_FILENAME);
+    const db = new Database(dbPath);
+
+    try {
+      seedSchemaVersionNine(db);
+
+      db.prepare(
+        `INSERT INTO project (
+          id, repository_id, remote_url, last_git_root, external_config_path, external_tasks_dir,
+          remote_label, highest_plan_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        1,
+        'repo-1',
+        'https://github.com/example/repo',
+        '/tmp/repo',
+        null,
+        null,
+        null,
+        1,
+        '2026-01-01T00:00:00Z',
+        '2026-01-01T00:00:00Z'
+      );
+
+      db.prepare(
+        `INSERT INTO plan (
+          uuid, project_id, plan_id, title, goal, details, status, priority, branch, simple, tdd,
+          discovered_from, issue, pull_request, assigned_to, base_branch, temp, docs, changed_files,
+          plan_generated_at, review_issues, parent_uuid, epic, filename, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        'plan-1',
+        1,
+        289,
+        'Remove filename',
+        'Migrate schema',
+        'details',
+        'pending',
+        'medium',
+        null,
+        0,
+        0,
+        null,
+        null,
+        null,
+        null,
+        null,
+        0,
+        '[]',
+        '[]',
+        null,
+        null,
+        null,
+        0,
+        '289.plan.md',
+        '2026-01-01T00:00:00Z',
+        '2026-01-01T00:00:00Z'
+      );
+
+      db.prepare(
+        'INSERT INTO plan_task (plan_uuid, task_index, title, description, done) VALUES (?, ?, ?, ?, ?)'
+      ).run('plan-1', 0, 'task', 'desc', 0);
+      db.prepare('INSERT INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)').run(
+        'plan-1',
+        'dep-1'
+      );
+      db.prepare('INSERT INTO plan_tag (plan_uuid, tag) VALUES (?, ?)').run('plan-1', 'db');
+      db.prepare(
+        `INSERT INTO pr_status (
+          id, pr_url, owner, repo, pr_number, title, state, draft, mergeable, head_sha,
+          base_branch, head_branch, review_decision, check_rollup_state, merged_at,
+          last_fetched_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        1,
+        'https://github.com/example/repo/pull/1',
+        'example',
+        'repo',
+        1,
+        'PR title',
+        'open',
+        0,
+        'MERGEABLE',
+        'abc123',
+        'main',
+        'feature',
+        null,
+        'success',
+        null,
+        '2026-01-01T00:00:00Z',
+        '2026-01-01T00:00:00Z',
+        '2026-01-01T00:00:00Z'
+      );
+      db.prepare('INSERT INTO plan_pr (plan_uuid, pr_status_id) VALUES (?, ?)').run('plan-1', 1);
+
+      runMigrations(db);
+
+      const schemaVersion = db
+        .query<{ version: number }, []>('SELECT version FROM schema_version')
+        .get();
+      expect(schemaVersion?.version).toBe(10);
+
+      const planColumns = db
+        .query<{ name: string }, []>("PRAGMA table_info('plan')")
+        .all()
+        .map((row) => row.name);
+      expect(planColumns).not.toContain('filename');
+
+      const planCount = db.query<{ count: number }, []>('SELECT count(*) AS count FROM plan').get();
+      const taskCount = db
+        .query<{ count: number }, []>('SELECT count(*) AS count FROM plan_task')
+        .get();
+      const dependencyCount = db
+        .query<{ count: number }, []>('SELECT count(*) AS count FROM plan_dependency')
+        .get();
+      const tagCount = db
+        .query<{ count: number }, []>('SELECT count(*) AS count FROM plan_tag')
+        .get();
+      const planPrCount = db
+        .query<{ count: number }, []>('SELECT count(*) AS count FROM plan_pr')
+        .get();
+
+      expect(planCount?.count).toBe(1);
+      expect(taskCount?.count).toBe(1);
+      expect(dependencyCount?.count).toBe(1);
+      expect(tagCount?.count).toBe(1);
+      expect(planPrCount?.count).toBe(1);
+    } finally {
+      db.close(false);
+    }
   });
 });

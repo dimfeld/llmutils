@@ -42,11 +42,10 @@ import { toPlanUpsertInput } from '../../db/plan_sync.js';
 import { ensureReferences } from '../../utils/references.js';
 
 type HierarchicalImportMode = 'none' | 'separate' | 'merged';
-type PlanSnapshot = Map<number, PlanSchema & { filename: string }>;
+type PlanSnapshot = Map<number, PlanSchema>;
 type PendingImportedPlanWrite = {
   plan: PlanSchema;
   filePath: string | null;
-  dbPath: string;
 };
 
 async function refreshPlanSnapshot(repoRoot: string, planRoot: string): Promise<PlanSnapshot> {
@@ -86,7 +85,7 @@ async function writeImportedPlansToDbTransactionally(
   const writeTransaction = db.transaction(() => {
     for (const entry of preparedWrites) {
       upsertPlan(db, context.projectId, {
-        ...toPlanUpsertInput(entry.plan, entry.dbPath, idToUuid),
+        ...toPlanUpsertInput(entry.plan, idToUuid),
         forceOverwrite: true,
       });
     }
@@ -170,7 +169,7 @@ async function updateParentPlanDependencies(
 async function reserveImportedPlanStartId(
   repoRoot: string,
   count: number,
-  allPlans?: Map<number, PlanSchema & { filename: string }>
+  allPlans?: Map<number, PlanSchema>
 ): Promise<number> {
   const context = await resolveProjectContext(repoRoot);
   const planMapMaxId = Math.max(
@@ -195,9 +194,7 @@ async function reserveImportedPlanStartId(
   }
 }
 
-function getImportedIssueUrlsFromPlans(
-  allPlans: Map<number, PlanSchema & { filename: string }>
-): Set<string> {
+function getImportedIssueUrlsFromPlans(allPlans: Map<number, PlanSchema>): Set<string> {
   const importedUrls = new Set<string>();
   for (const plan of allPlans.values()) {
     for (const issueUrl of plan.issue ?? []) {
@@ -357,7 +354,7 @@ async function importHierarchicalIssue(
   repoRoot: string,
   issueTracker: IssueTrackerClient,
   options: any,
-  allPlans: Map<number, PlanSchema & { filename: string }>
+  allPlans: Map<number, PlanSchema>
 ): Promise<{ successCount: number; parentPlanId?: number; parentPlanPath?: string }> {
   log(`Importing issue hierarchically: ${issueSpecifier}`);
   let currentPlans = allPlans;
@@ -377,7 +374,7 @@ async function importHierarchicalIssue(
   const parentIssueUrl = hierarchicalData.parentIssue.issue.html_url;
 
   // Check if parent plan already exists
-  let existingParentPlan: (PlanSchema & { filename: string }) | undefined;
+  let existingParentPlan: PlanSchema | undefined;
 
   for (const plan of currentPlans.values()) {
     if (plan.issue && plan.issue.includes(parentIssueUrl)) {
@@ -470,7 +467,7 @@ async function importHierarchicalIssue(
     const childIssueUrl = child.issueData.issue.html_url;
 
     // Check if child already exists
-    let existingChildPlan: (PlanSchema & { filename: string }) | undefined;
+    let existingChildPlan: PlanSchema | undefined;
     for (const plan of currentPlans.values()) {
       if (plan.issue && plan.issue.includes(childIssueUrl)) {
         existingChildPlan = plan;
@@ -545,9 +542,6 @@ async function importHierarchicalIssue(
     childWrites.push({
       plan: childPlan,
       filePath: childPlanPath,
-      dbPath: childPlanPath
-        ? path.basename(childPlanPath)
-        : (existingChildPlan?.filename ?? `${childPlan.id}.plan.md`),
       existingChildPlan: Boolean(existingChildPlan),
     });
   }
@@ -564,9 +558,6 @@ async function importHierarchicalIssue(
     {
       plan: parentPlan,
       filePath: parentPlanPath,
-      dbPath: parentPlanPath
-        ? path.basename(parentPlanPath)
-        : (existingParentPlan?.filename ?? `${parentPlan.id}.plan.md`),
     },
   ];
   const persistedWrites = await writeImportedPlansToDbTransactionally(repoRoot, pendingWrites);
@@ -627,7 +618,7 @@ async function importHierarchicalIssueMerged(
   repoRoot: string,
   issueTracker: IssueTrackerClient,
   options: any,
-  allPlans: Map<number, PlanSchema & { filename: string }>
+  allPlans: Map<number, PlanSchema>
 ): Promise<{ successCount: number; parentPlanId?: number; parentPlanPath?: string }> {
   log(`Importing issue hierarchically into a single plan: ${issueSpecifier}`);
   const planDir = getPlanStorageDir(repoRoot);
@@ -643,7 +634,7 @@ async function importHierarchicalIssueMerged(
   );
   const parentIssueUrl = hierarchicalData.parentIssue.issue.html_url;
 
-  let existingParentPlan: (PlanSchema & { filename: string }) | undefined;
+  let existingParentPlan: PlanSchema | undefined;
   for (const plan of allPlans.values()) {
     if (plan.issue && plan.issue.includes(parentIssueUrl)) {
       existingParentPlan = plan;
@@ -753,7 +744,7 @@ export async function importSingleIssue(
   repoRoot: string,
   issueTracker: IssueTrackerClient,
   options: any,
-  allPlans: Map<number, PlanSchema & { filename: string }>,
+  allPlans: Map<number, PlanSchema>,
   withSubissues = false,
   withMergedSubissues = false
 ): Promise<{ success: boolean; planPath?: string }> {
@@ -787,7 +778,7 @@ export async function importSingleIssue(
   const issueUrl = data.issue.htmlUrl;
 
   // Check for existing plans
-  let existingPlan: (PlanSchema & { filename: string }) | undefined;
+  let existingPlan: PlanSchema | undefined;
   for (const plan of allPlans.values()) {
     if (plan.issue && plan.issue.includes(issueUrl)) {
       existingPlan = plan;

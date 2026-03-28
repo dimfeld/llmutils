@@ -30,6 +30,7 @@ import { planRowToSchemaInput } from './plans_db.js';
 import { getRepositoryIdentity } from './assignments/workspace_identifier.js';
 import { createModel } from '../common/model_factory.js';
 import { generateText } from 'ai';
+import { findPlanFileOnDiskAsync } from './plans/find_plan_file.js';
 import { ensureReferences } from './utils/references.js';
 
 export class NoFrontmatterError extends Error {
@@ -56,7 +57,6 @@ export type PlanSummary = {
   goal: string;
   createdAt?: string;
   updatedAt?: string;
-  filename: string;
   taskCount?: number;
   stepCount?: number;
   hasPrompts?: boolean;
@@ -73,10 +73,7 @@ export type PlanSummary = {
  * @param allPlans - Map of all plans
  * @returns Array of plans that list planId in their dependencies
  */
-export function getBlockedPlans(
-  planId: number,
-  allPlans: Map<number, PlanSchema & { filename: string }>
-): Array<PlanSchema & { filename: string }> {
+export function getBlockedPlans(planId: number, allPlans: Map<number, PlanSchema>): PlanSchema[] {
   return Array.from(allPlans.values()).filter((plan) => plan.dependencies?.includes(planId));
 }
 
@@ -86,10 +83,7 @@ export function getBlockedPlans(
  * @param allPlans - Map of all plans
  * @returns Array of plans that have planId as their parent
  */
-export function getChildPlans(
-  planId: number,
-  allPlans: Map<number, PlanSchema & { filename: string }>
-): Array<PlanSchema & { filename: string }> {
+export function getChildPlans(planId: number, allPlans: Map<number, PlanSchema>): PlanSchema[] {
   return Array.from(allPlans.values()).filter((plan) => plan.parent === planId);
 }
 
@@ -101,8 +95,8 @@ export function getChildPlans(
  */
 export function getDiscoveredPlans(
   planId: number,
-  allPlans: Map<number, PlanSchema & { filename: string }>
-): Array<PlanSchema & { filename: string }> {
+  allPlans: Map<number, PlanSchema>
+): PlanSchema[] {
   return Array.from(allPlans.values()).filter((plan) => plan.discoveredFrom === planId);
 }
 
@@ -125,7 +119,19 @@ export interface ResolvedPlanFromDb {
 interface ExistingPlanLookupOptions {
   context?: ProjectContext;
   cwdForIdentity?: string;
-  filename?: string;
+}
+
+async function getRowsForLookup(options?: ExistingPlanLookupOptions) {
+  const db = getDatabase();
+  const repository = await getRepositoryIdentity({
+    cwd: options?.cwdForIdentity ?? process.cwd(),
+  });
+  const projectId = getOrCreateProject(db, repository.repositoryId, {
+    remoteUrl: repository.remoteUrl,
+    lastGitRoot: repository.gitRoot,
+  }).id;
+
+  return getPlansByProject(db, projectId);
 }
 
 export function parsePlanIdentifier(planArg: string | number): { planId?: number; uuid?: string } {
@@ -241,7 +247,6 @@ export async function resolvePlanFromDb(
     };
   });
   const { row, plan } = readPlanSnapshot();
-  const materializedPath = getMaterializedPlanPath(repoRoot, row.plan_id);
   let planPath: string | null = null;
   const materializedDir = path.join(repoRoot, '.tim', 'plans') + path.sep;
   if (directPath && (await fileExists(directPath))) {
@@ -253,24 +258,8 @@ export async function resolvePlanFromDb(
       planPath = directPath;
     }
   }
-  if (!planPath && (await readMaterializedPlanRole(materializedPath)) === 'primary') {
-    planPath = materializedPath;
-  }
   if (!planPath) {
-    const filenameCandidates =
-      row.filename && row.filename.length > 0
-        ? [
-            path.join(repoRoot, '.tim', 'plans', row.filename),
-            row.filename,
-            path.join(repoRoot, row.filename),
-          ].filter((candidate, index, all) => all.indexOf(candidate) === index)
-        : [];
-    for (const candidate of filenameCandidates) {
-      if (await fileExists(candidate)) {
-        planPath = candidate;
-        break;
-      }
-    }
+    planPath = await findPlanFileOnDiskAsync(row.plan_id, repoRoot);
   }
 
   return {
@@ -290,10 +279,7 @@ export type PlanFilterOptions = {
  * - Its status is 'pending' (or not set)
  * - All its dependencies have status 'done'
  */
-export function isPlanReady(
-  plan: PlanSchema & { filename: string },
-  allPlans: Map<number, PlanSchema & { filename: string }>
-): boolean {
+export function isPlanReady(plan: PlanSchema, allPlans: Map<number, PlanSchema>): boolean {
   const status = plan.status || 'pending';
 
   // Only pending plans can be "ready"
@@ -322,9 +308,9 @@ export function isPlanReady(
 
 export async function collectDependenciesInOrder(
   planId: number,
-  allPlans: Map<number, PlanSchema & { filename: string }>,
+  allPlans: Map<number, PlanSchema>,
   visited: Set<number> = new Set()
-): Promise<(PlanSchema & { filename: string })[]> {
+): Promise<PlanSchema[]> {
   // Check for circular dependencies
   if (visited.has(planId)) {
     throw new Error(
@@ -340,7 +326,7 @@ export async function collectDependenciesInOrder(
   // Mark this plan as visited
   visited.add(planId);
 
-  const result: (PlanSchema & { filename: string })[] = [];
+  const result: PlanSchema[] = [];
 
   // First, collect all dependencies
   if (plan.dependencies && plan.dependencies.length > 0) {
@@ -508,14 +494,10 @@ function normalizeFancyQuotes(value: unknown, skipFields: Set<string> = new Set(
 }
 
 function validatePlanForWrite(
-  input: PlanSchemaInput & { filename?: string },
+  input: PlanSchemaInput,
   options?: { skipUpdatedAt?: boolean }
 ): PlanSchema {
-  const { filename: _, ...planWithoutFilename } = input;
-  const quotesNormalized = normalizeFancyQuotes(
-    planWithoutFilename,
-    new Set(['details'])
-  ) as PlanSchemaInput;
+  const quotesNormalized = normalizeFancyQuotes(input, new Set(['details'])) as PlanSchemaInput;
   const normalizedPlan = normalizeContainerToEpic(quotesNormalized);
   const result = phaseSchema.safeParse(normalizedPlan);
   if (!result.success) {
@@ -592,7 +574,6 @@ async function writeValidatedPlanToDb(
   options?: {
     context?: ProjectContext;
     cwdForIdentity?: string;
-    filename?: string;
   }
 ): Promise<PlanSchema> {
   const db = getDatabase();
@@ -617,7 +598,6 @@ async function writeValidatedPlanToDb(
   const { updatedPlan } = ensureReferences(plan, { planIdToUuid: idToUuid });
 
   const existingRow = getPlanByUuid(db, updatedPlan.uuid!);
-  const filename = options?.filename ?? existingRow?.filename;
   const legacyUuidlessRow =
     existingRow === null
       ? (projectContext?.rows ?? getPlansByProject(db, projectId)).find(
@@ -630,7 +610,7 @@ async function writeValidatedPlanToDb(
   }
 
   upsertPlan(db, projectId, {
-    ...toPlanUpsertInput(updatedPlan, filename, idToUuid),
+    ...toPlanUpsertInput(updatedPlan, idToUuid),
     forceOverwrite: true,
   });
 
@@ -638,59 +618,29 @@ async function writeValidatedPlanToDb(
 }
 
 async function findExistingPlanUuid(
-  input: PlanSchemaInput & { filename?: string },
+  input: PlanSchemaInput,
   options?: ExistingPlanLookupOptions
 ): Promise<string | undefined> {
   if (input.uuid) {
     return input.uuid;
   }
 
-  const db = getDatabase();
-  const projectContext = options?.context;
-  const repository =
-    projectContext?.repository ??
-    (await getRepositoryIdentity({ cwd: options?.cwdForIdentity ?? process.cwd() }));
-  const projectId =
-    projectContext?.projectId ??
-    getOrCreateProject(db, repository.repositoryId, {
-      remoteUrl: repository.remoteUrl,
-      lastGitRoot: repository.gitRoot,
-    }).id;
-
-  const candidateFilenames = new Set<string>();
-  if (options?.filename) {
-    candidateFilenames.add(path.basename(options.filename));
-  }
-  if (input.filename) {
-    candidateFilenames.add(path.basename(input.filename));
-  }
-
-  const rows = projectContext?.rows ?? getPlansByProject(db, projectId);
-  for (const candidateFilename of candidateFilenames) {
-    const row = rows.find((candidate) => path.basename(candidate.filename) === candidateFilename);
-    if (row) {
-      return row.uuid;
-    }
-  }
-
-  const row = rows.find((candidate) => candidate.plan_id === input.id);
-  return row?.uuid;
+  const rows = options?.context?.rows ?? (await getRowsForLookup(options));
+  return rows.find((candidate) => candidate.plan_id === input.id)?.uuid || undefined;
 }
 
 export async function writePlanToDb(
-  input: PlanSchemaInput & { filename?: string },
+  input: PlanSchemaInput,
   options?: {
     skipUpdatedAt?: boolean;
     cwdForIdentity?: string;
     context?: ProjectContext;
-    filename?: string;
   }
 ): Promise<PlanSchema> {
   const existingUuid = await findExistingPlanUuid(input, options);
   let plan = validatePlanForWrite(existingUuid ? { ...input, uuid: existingUuid } : input, options);
   return writeValidatedPlanToDb(plan, {
     ...options,
-    filename: options?.filename ?? input.filename,
   });
 }
 
@@ -703,7 +653,7 @@ export async function writePlanToDb(
  */
 export async function writePlanFile(
   filePath: string | null,
-  input: PlanSchemaInput & { filename?: string },
+  input: PlanSchemaInput,
   options?: {
     skipUpdatedAt?: boolean;
     skipFile?: boolean;
@@ -721,7 +671,6 @@ export async function writePlanFile(
     cwdForIdentity:
       options?.cwdForIdentity ?? (absolutePath ? path.dirname(absolutePath) : undefined),
     context: options?.context,
-    filename: input.filename ?? absolutePath ?? undefined,
   });
   let plan = validatePlanForWrite(existingUuid ? { ...input, uuid: existingUuid } : input, options);
   const skipDb = options?.skipDb ?? options?.skipSync ?? false;
@@ -732,7 +681,6 @@ export async function writePlanFile(
       cwdForIdentity:
         options?.cwdForIdentity ?? (absolutePath ? path.dirname(absolutePath) : undefined),
       context: options?.context,
-      filename: input.filename ?? (absolutePath ? path.basename(absolutePath) : undefined),
     });
   }
 

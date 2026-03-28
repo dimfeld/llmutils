@@ -59,7 +59,7 @@ describe('handleGenerateCommand auto-claim integration', () => {
       goal: 'Demo',
       tasks: [],
     });
-    await syncPlanToDb(await (await import('../plans.js')).readPlanFile(planPath), planPath, {
+    await syncPlanToDb(await (await import('../plans.js')).readPlanFile(planPath), {
       config: {
         paths: {
           tasks: tasksDir,

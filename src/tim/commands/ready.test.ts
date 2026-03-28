@@ -835,8 +835,8 @@ describe('handleReadyCommand', () => {
     expect(plan.isUnassigned).toBe(true);
   });
 
-  // Test 14: Verbose mode shows file paths
-  test('verbose mode shows file paths', async () => {
+  // Test 14: Verbose mode still renders ready plans without filename output
+  test('verbose mode renders ready plans without filename output', async () => {
     await createPlan({
       id: 1,
       goal: 'Test plan',
@@ -855,8 +855,8 @@ describe('handleReadyCommand', () => {
     const logCalls = mockLog.mock.calls.map((call) => call[0]);
     const logOutput = logCalls.join('\n');
 
-    expect(logOutput).toContain('File:');
-    expect(logOutput).toContain('1-test.yml');
+    expect(logOutput).toContain('[1] Test plan');
+    expect(logOutput).not.toContain('File:');
   });
 
   // Test 15: Handles edge cases

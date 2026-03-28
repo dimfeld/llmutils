@@ -11,7 +11,7 @@ describe('tim cleanup-temp command', () => {
   let tempDir: string;
   let tasksDir: string;
   let moduleMocker: ModuleMocker;
-  let currentPlans: Map<number, PlanSchema & { filename: string }>;
+  let currentPlans: Map<number, PlanSchema>;
   let removePlanFromDbMock: ReturnType<typeof mock>;
 
   beforeEach(async () => {
@@ -22,7 +22,7 @@ describe('tim cleanup-temp command', () => {
 
     // Create temporary directory structure
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-cleanup-temp-test-'));
-    tasksDir = path.join(tempDir, 'tasks');
+    tasksDir = path.join(tempDir, '.tim', 'plans');
     await fs.mkdir(tasksDir, { recursive: true });
 
     // Create config file that points to tasks directory
@@ -56,7 +56,7 @@ describe('tim cleanup-temp command', () => {
       loadEffectiveConfig: async () => ({ paths: { tasks: tasksDir } }),
     }));
     await moduleMocker.mock('../path_resolver.js', () => ({
-      resolvePlanPathContext: async () => ({ tasksDir }),
+      resolvePlanPathContext: async () => ({ tasksDir, gitRoot: tempDir, configBaseDir: tempDir }),
     }));
     await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
       getRepositoryIdentity: async () => ({
@@ -103,7 +103,6 @@ describe('tim cleanup-temp command', () => {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       tasks: [],
-      filename: path.join(tasksDir, '1-temp-plan.plan.md'),
     });
 
     // Create a permanent plan
@@ -131,7 +130,6 @@ describe('tim cleanup-temp command', () => {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       tasks: [],
-      filename: path.join(tasksDir, '2-permanent-plan.plan.md'),
     });
 
     // Create a plan without temp field (should be treated as false)
@@ -157,7 +155,6 @@ describe('tim cleanup-temp command', () => {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       tasks: [],
-      filename: path.join(tasksDir, '3-normal-plan.plan.md'),
     });
 
     const command = {
@@ -220,7 +217,6 @@ describe('tim cleanup-temp command', () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         tasks: [],
-        filename,
       });
     }
 
@@ -281,7 +277,6 @@ describe('tim cleanup-temp command', () => {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       tasks: [],
-      filename: path.join(tasksDir, '1-permanent-plan.plan.md'),
     });
 
     const command = {
@@ -309,6 +304,21 @@ describe('tim cleanup-temp command', () => {
       unlinkImpl: unlinkMock,
     });
 
+    const tempPlanPath = path.join(tasksDir, '1-temp-plan.plan.md');
+    await fs.writeFile(
+      tempPlanPath,
+      stringifyPlanWithFrontmatter({
+        id: 1,
+        title: 'Temp Plan',
+        goal: 'Test goal',
+        details: 'Test details',
+        status: 'pending',
+        temp: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        tasks: [],
+      } satisfies PlanSchema)
+    );
     currentPlans.set(1, {
       id: 1,
       title: 'Temp Plan',
@@ -319,7 +329,6 @@ describe('tim cleanup-temp command', () => {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       tasks: [],
-      filename: path.join(tasksDir, '1-temp-plan.plan.md'),
     });
 
     const command = {

@@ -25,6 +25,7 @@ import { invertPlanIdToUuidMap, planRowForTransaction } from '../plans_db.js';
 import { checkAndMarkParentDone } from '../plans/parent_cascade.js';
 import { resolveWritablePath } from '../plans/resolve_writable_path.js';
 import { ensureReferences } from '../utils/references.js';
+import { findPlanFileOnDiskAsync } from '../plans/find_plan_file.js';
 
 export interface SetOptions {
   planFile: string;
@@ -257,7 +258,7 @@ export async function handleSetCommand(
 
     const parentIds = [oldParentIdToUpdate, newParentIdToUpdate];
     const parentMaterializedIds = await collectMaterializedIds(repoRoot, parentIds);
-    const parentFileWrites = await collectLegacyFileWrites(context, tasksDir, parentIds);
+    const parentFileWrites = await collectLegacyFileWrites(context, repoRoot, parentIds);
 
     plan.updatedAt = new Date().toISOString();
     const db = getDatabase();
@@ -270,7 +271,7 @@ export async function handleSetCommand(
       }
       const { updatedPlan } = ensureReferences(plan, { planIdToUuid: idToUuid });
       upsertPlan(db, context.projectId, {
-        ...toPlanUpsertInput(updatedPlan, childRow.filename, idToUuid),
+        ...toPlanUpsertInput(updatedPlan, idToUuid),
         forceOverwrite: true,
       });
 
@@ -288,7 +289,7 @@ export async function handleSetCommand(
           planIdToUuid: idToUuid,
         });
         upsertPlan(db, context.projectId, {
-          ...toPlanUpsertInput(updatedOldParent, oldParentRow.filename, idToUuid),
+          ...toPlanUpsertInput(updatedOldParent, idToUuid),
           forceOverwrite: true,
         });
       }
@@ -310,7 +311,7 @@ export async function handleSetCommand(
           planIdToUuid: idToUuid,
         });
         upsertPlan(db, context.projectId, {
-          ...toPlanUpsertInput(updatedNewParent, newParentRow.filename, idToUuid),
+          ...toPlanUpsertInput(updatedNewParent, idToUuid),
           forceOverwrite: true,
         });
       }
@@ -440,24 +441,19 @@ async function collectMaterializedIds(
 
 async function collectLegacyFileWrites(
   context: ProjectContext,
-  tasksDir: string,
+  repoRoot: string,
   planIds: Array<number | undefined>
 ): Promise<Map<number, string>> {
   const result = new Map<number, string>();
-  const candidateBaseDirs = [tasksDir, path.dirname(tasksDir)].filter(
-    (value, index, all) => all.indexOf(value) === index
-  );
   for (const planId of planIds) {
     if (planId === undefined) {
       continue;
     }
-    const row = getRequiredPlanRow(context, planId);
-    const candidatePaths = path.isAbsolute(row.filename)
-      ? [row.filename]
-      : candidateBaseDirs.flatMap((baseDir) => [
-          path.join(baseDir, row.filename),
-          path.join(baseDir, 'tasks', row.filename),
-        ]);
+    const candidatePaths = [];
+    const resolvedPath = await findPlanFileOnDiskAsync(planId, repoRoot);
+    if (resolvedPath) {
+      candidatePaths.push(resolvedPath);
+    }
     for (const candidatePath of candidatePaths) {
       const exists = await Bun.file(candidatePath)
         .stat()

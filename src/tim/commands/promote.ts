@@ -127,14 +127,14 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
       for (const newPlan of newPlans) {
         const { updatedPlan } = ensureReferences(newPlan, { planIdToUuid: idToUuid });
         upsertPlan(db, context.projectId, {
-          ...toPlanUpsertInput(updatedPlan, `${newPlan.id}.plan.md`, idToUuid),
+          ...toPlanUpsertInput(updatedPlan, idToUuid),
           forceOverwrite: true,
         });
       }
 
       const { updatedPlan } = ensureReferences(updatedOriginalPlan, { planIdToUuid: idToUuid });
       upsertPlan(db, context.projectId, {
-        ...toPlanUpsertInput(updatedPlan, originalRow.filename, idToUuid),
+        ...toPlanUpsertInput(updatedPlan, idToUuid),
         forceOverwrite: true,
       });
     });

@@ -1,4 +1,4 @@
-import type { PlanSchemaWithFilename } from '../planSchema.js';
+import type { PlanSchema } from '../planSchema.js';
 import { claimPlan, type ClaimPlanResult } from './claim_plan.js';
 import { logClaimOutcome } from './claim_logging.js';
 import {
@@ -8,7 +8,7 @@ import {
 } from './workspace_identifier.js';
 
 export interface AutoClaimPlanInput {
-  plan: PlanSchemaWithFilename;
+  plan: PlanSchema;
   uuid: string;
 }
 

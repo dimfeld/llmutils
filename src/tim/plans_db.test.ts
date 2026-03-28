@@ -56,7 +56,6 @@ function createPlanRow(overrides: Partial<PlanRow> = {}): PlanRow {
     ]),
     parent_uuid: '22222222-2222-4222-8222-222222222222',
     epic: 1,
-    filename: '11-primary.plan.md',
     created_at: '2026-03-02T00:00:00.000Z',
     updated_at: '2026-03-03T00:00:00.000Z',
     ...overrides,
@@ -216,7 +215,6 @@ describe('tim plans_db', () => {
       uuid: '44444444-4444-4444-8444-444444444444',
       planId: 44,
       title: 'Parent',
-      filename: '44-parent.plan.md',
     });
 
     const row = createPlanRow({ parent_uuid: '44444444-4444-4444-8444-444444444444' });
@@ -251,13 +249,11 @@ describe('tim plans_db', () => {
       uuid: '99999999-9999-4999-8999-999999999999',
       planId: 99,
       title: 'Dependency plan',
-      filename: '99-dependency.plan.md',
     });
     upsertPlan(db, project.id, {
       uuid: '88888888-8888-4888-8888-888888888888',
       planId: 88,
       title: 'Parent plan',
-      filename: '88-parent.plan.md',
     });
     upsertPlan(db, project.id, {
       uuid: '77777777-7777-4777-8777-777777777777',
@@ -291,7 +287,6 @@ describe('tim plans_db', () => {
       ],
       parentUuid: '88888888-8888-4888-8888-888888888888',
       epic: true,
-      filename: '77-roundtrip.plan.md',
       tasks: [
         {
           title: 'Verify round-trip',
@@ -349,7 +344,6 @@ describe('tim plans_db', () => {
       ],
       createdAt: expect.any(String),
       updatedAt: expect.any(String),
-      filename: path.join(searchDir, '77-roundtrip.plan.md'),
     });
   });
 
@@ -385,7 +379,6 @@ describe('tim plans_db', () => {
         dependencies: [66],
         tasks: [],
       },
-      path.join(tasksDir, '44-materialization-fields.plan.md'),
       {
         config,
         idToUuid: new Map([
@@ -451,7 +444,6 @@ describe('tim plans_db', () => {
       uuid: '12121212-1212-4212-8212-121212121212',
       planId: 121,
       title: 'Fallback dependency',
-      filename: '121-fallback-dependency.plan.md',
     });
 
     const row = createPlanRow({ parent_uuid: null });

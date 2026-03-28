@@ -10,6 +10,8 @@ import { createPlanSchemas, type PlanSchema } from '../planSchema.js';
 import { readPlanFile, writePlanFile, writePlanToDb } from '../plans.js';
 import { getLegacyAwareSearchDir, resolvePlanPathContext } from '../path_resolver.js';
 import { loadPlansFromDb } from '../plans_db.js';
+import { findPlanFileOnDisk } from '../plans/find_plan_file.js';
+import { getMaterializedPlanPath } from '../plan_materialize.js';
 import {
   ensureReferences,
   verifyReferences,
@@ -123,15 +125,20 @@ async function writeValidationPlan(
   plan: PlanSchema & { filename: string },
   identityCwd: string
 ): Promise<void> {
+  const { filename, ...planWithoutFilename } = plan;
+
   if (isDbOnlyPlan(plan.filename)) {
-    await writePlanToDb(plan, {
+    await writePlanToDb(planWithoutFilename, {
       skipUpdatedAt: true,
       cwdForIdentity: identityCwd,
     });
     return;
   }
 
-  await writePlanFile(plan.filename, plan, { skipUpdatedAt: true, cwdForIdentity: identityCwd });
+  await writePlanFile(filename, planWithoutFilename, {
+    skipUpdatedAt: true,
+    cwdForIdentity: identityCwd,
+  });
 }
 
 async function validatePlanFile(filePath: string): Promise<ValidationResult> {
@@ -187,6 +194,7 @@ async function validatePlanFile(filePath: string): Promise<ValidationResult> {
 
 async function loadValidationPlanState(
   searchDir: string,
+  repoRoot: string,
   repositoryId: string,
   planFiles: string[]
 ): Promise<ValidationPlanState> {
@@ -195,7 +203,10 @@ async function loadValidationPlanState(
   const uuidToCurrentId = new Map<string, number>();
 
   for (const [planId, plan] of dbPlans.entries()) {
-    planMap.set(planId, plan);
+    planMap.set(planId, {
+      ...plan,
+      filename: findPlanFileOnDisk(planId, repoRoot) ?? getMaterializedPlanPath(repoRoot, planId),
+    });
     if (plan.uuid) {
       uuidToCurrentId.set(plan.uuid, planId);
     }
@@ -673,6 +684,7 @@ export async function handleValidateCommand(
   try {
     const planResults = await loadValidationPlanState(
       searchDir,
+      pathContext.gitRoot,
       repository.repositoryId,
       planFiles
     );
@@ -721,6 +733,7 @@ export async function handleValidateCommand(
           // Reload plans to get the fixed data (prevents later operations from overwriting the fix)
           const reloadedPlans = await loadValidationPlanState(
             searchDir,
+            pathContext.gitRoot,
             repository.repositoryId,
             planFiles
           );
@@ -777,6 +790,7 @@ export async function handleValidateCommand(
           // Reload plans to get the new UUIDs
           const reloadedPlans = await loadValidationPlanState(
             searchDir,
+            pathContext.gitRoot,
             repository.repositoryId,
             planFiles
           );
@@ -797,6 +811,7 @@ export async function handleValidateCommand(
       // Load UUID maps even if no missing UUIDs
       const planResults = await loadValidationPlanState(
         searchDir,
+        pathContext.gitRoot,
         repository.repositoryId,
         planFiles
       );
@@ -836,6 +851,7 @@ export async function handleValidateCommand(
           // Reload plans to get updated references
           const reloadedPlans = await loadValidationPlanState(
             searchDir,
+            pathContext.gitRoot,
             repository.repositoryId,
             planFiles
           );
@@ -950,6 +966,7 @@ export async function handleValidateCommand(
             // Reload plans to pick up the new dependencies
             const reloadedPlans = await loadValidationPlanState(
               searchDir,
+              pathContext.gitRoot,
               repository.repositoryId,
               planFiles
             );
@@ -1006,6 +1023,7 @@ export async function handleValidateCommand(
             // Reload plans to pick up the removed references
             const reloadedPlans = await loadValidationPlanState(
               searchDir,
+              pathContext.gitRoot,
               repository.repositoryId,
               planFiles
             );
@@ -1033,6 +1051,7 @@ export async function handleValidateCommand(
           // Reload plans one more time
           const reloadedPlans = await loadValidationPlanState(
             searchDir,
+            pathContext.gitRoot,
             repository.repositoryId,
             planFiles
           );

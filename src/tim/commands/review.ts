@@ -27,7 +27,6 @@ import type { ExecutorCommonOptions } from '../executors/types.js';
 import { getReviewerPrompt } from '../executors/claude_code/agent_prompts.js';
 import { sendNotification } from '../notifications.js';
 import type { PlanSchema } from '../planSchema.js';
-import type { PlanWithFilename } from '../utils/hierarchy.js';
 import { gatherPlanContext } from '../utils/context_gathering.js';
 import {
   createReviewResult,
@@ -697,7 +696,7 @@ async function handleReviewIssueActions(params: {
       executionPlanFile !== planRefForWrite || executionPlanFile === materializedPlanPath;
     if (shouldSyncEditedPlan) {
       const updatedPlan = await readPlanFile(executionPlanFile);
-      await syncPlanToDb(updatedPlan, executionPlanFile, {
+      await syncPlanToDb(updatedPlan, {
         cwdForIdentity: sharedExecutorOptions.baseDir,
         // force: true is intentional here because the executor just edited this file.
         force: true,
@@ -2055,8 +2054,8 @@ export function buildReviewPrompt(
   diffResult: DiffResult,
   includeDiff: boolean = false,
   useSubagents: boolean = false,
-  parentChain: PlanWithFilename[] = [],
-  completedChildren: PlanWithFilename[] = [],
+  parentChain: PlanSchema[] = [],
+  completedChildren: PlanSchema[] = [],
   customInstructions?: string,
   taskScopeNote?: string,
   additionalContext?: string,

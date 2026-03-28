@@ -58,7 +58,6 @@ describe('tim db/plan', () => {
       baseBranch: 'main',
       epic: true,
       tags: ['backend', 'sqlite'],
-      filename: '10-first.plan.md',
       tasks: [
         { title: 'task a', description: 'desc a', done: false },
         { title: 'task b', description: 'desc b', done: true },
@@ -114,7 +113,6 @@ describe('tim db/plan', () => {
       baseBranch: 'release',
       epic: false,
       tags: ['migration'],
-      filename: '20-updated.plan.md',
       tasks: [{ title: 'task c', description: 'desc c', done: false }],
       dependencyUuids: ['dep-3'],
     });
@@ -135,7 +133,6 @@ describe('tim db/plan', () => {
     expect(updated?.base_branch).toBe('release');
     expect(updated?.parent_uuid).toBeNull();
     expect(updated?.epic).toBe(0);
-    expect(updated?.filename).toBe('20-updated.plan.md');
     const updatedTags = getPlanTagsByUuid(db, 'plan-1');
     expect(updatedTags.map((row) => row.tag)).toEqual(['migration']);
 
@@ -156,7 +153,6 @@ describe('tim db/plan', () => {
     upsertPlan(db, projectId, {
       uuid: 'plan-tasks',
       planId: 11,
-      filename: '11.plan.md',
       tasks: [{ title: 'original', description: 'original', done: false }],
     });
 
@@ -175,7 +171,6 @@ describe('tim db/plan', () => {
     upsertPlan(db, projectId, {
       uuid: 'plan-deps',
       planId: 12,
-      filename: '12.plan.md',
       dependencyUuids: ['dep-a', 'dep-b'],
     });
 
@@ -190,9 +185,9 @@ describe('tim db/plan', () => {
   });
 
   test('getPlansByProject only returns plans for requested project', () => {
-    upsertPlan(db, projectId, { uuid: 'plan-a', planId: 1, filename: '1.plan.md' });
-    upsertPlan(db, projectId, { uuid: 'plan-b', planId: 2, filename: '2.plan.md' });
-    upsertPlan(db, otherProjectId, { uuid: 'plan-c', planId: 3, filename: '3.plan.md' });
+    upsertPlan(db, projectId, { uuid: 'plan-a', planId: 1 });
+    upsertPlan(db, projectId, { uuid: 'plan-b', planId: 2 });
+    upsertPlan(db, otherProjectId, { uuid: 'plan-c', planId: 3 });
 
     const plans = getPlansByProject(db, projectId);
     expect(plans.map((plan) => plan.uuid)).toEqual(['plan-a', 'plan-b']);
@@ -205,7 +200,6 @@ describe('tim db/plan', () => {
       uuid: 'plan-get',
       planId: 77,
       title: 'Lookup plan',
-      filename: '77.plan.md',
     });
 
     const found = getPlanByUuid(db, 'plan-get');
@@ -220,7 +214,6 @@ describe('tim db/plan', () => {
       planId: 78,
       title: 'Branch tracking plan',
       branch: 'feature/branch-a',
-      filename: '78.plan.md',
     });
 
     let found = getPlanByUuid(db, 'plan-branch');
@@ -232,7 +225,6 @@ describe('tim db/plan', () => {
       planId: 79,
       title: 'Branch tracking plan updated',
       branch: 'feature/branch-b',
-      filename: '79.plan.md',
     });
 
     found = getPlanByUuid(db, 'plan-branch');
@@ -243,7 +235,6 @@ describe('tim db/plan', () => {
       uuid: 'plan-branch',
       planId: 80,
       title: 'Branch tracking plan cleared',
-      filename: '80.plan.md',
     });
 
     found = getPlanByUuid(db, 'plan-branch');
@@ -252,7 +243,7 @@ describe('tim db/plan', () => {
   });
 
   test('getPlanTasksByUuid returns tasks ordered by task_index', () => {
-    upsertPlan(db, projectId, { uuid: 'plan-order', planId: 50, filename: '50.plan.md' });
+    upsertPlan(db, projectId, { uuid: 'plan-order', planId: 50 });
 
     db.prepare(
       'INSERT INTO plan_task (plan_uuid, task_index, title, description, done) VALUES (?, ?, ?, ?, ?)'
@@ -273,26 +264,22 @@ describe('tim db/plan', () => {
     upsertPlan(db, projectId, {
       uuid: 'plan-proj-a',
       planId: 101,
-      filename: '101.plan.md',
       tasks: [{ title: 'task-a', description: 'a', done: false }],
       dependencyUuids: ['dep-a'],
     });
     upsertPlan(db, projectId, {
       uuid: 'dep-a',
       planId: 100,
-      filename: '100.plan.md',
     });
     upsertPlan(db, otherProjectId, {
       uuid: 'plan-proj-b',
       planId: 201,
-      filename: '201.plan.md',
       tasks: [{ title: 'task-b', description: 'b', done: false }],
       dependencyUuids: ['dep-b'],
     });
     upsertPlan(db, otherProjectId, {
       uuid: 'dep-b',
       planId: 200,
-      filename: '200.plan.md',
     });
 
     const projectTasks = getPlanTasksByProject(db, projectId);
@@ -310,13 +297,11 @@ describe('tim db/plan', () => {
     upsertPlan(db, projectId, {
       uuid: 'plan-tag-a',
       planId: 301,
-      filename: '301.plan.md',
       tags: ['a', 'b'],
     });
     upsertPlan(db, otherProjectId, {
       uuid: 'plan-tag-b',
       planId: 302,
-      filename: '302.plan.md',
       tags: ['c'],
     });
 
@@ -331,7 +316,6 @@ describe('tim db/plan', () => {
     upsertPlan(db, projectId, {
       uuid: 'plan-delete',
       planId: 99,
-      filename: '99.plan.md',
       tasks: [{ title: 'task', description: 'task', done: false }],
       dependencyUuids: ['dep-x'],
     });
@@ -351,18 +335,18 @@ describe('tim db/plan', () => {
   });
 
   test('getPlansNotInSet finds prune candidates', () => {
-    upsertPlan(db, projectId, { uuid: 'plan-1', planId: 1, filename: '1.plan.md' });
-    upsertPlan(db, projectId, { uuid: 'plan-2', planId: 2, filename: '2.plan.md' });
-    upsertPlan(db, projectId, { uuid: 'plan-3', planId: 3, filename: '3.plan.md' });
+    upsertPlan(db, projectId, { uuid: 'plan-1', planId: 1 });
+    upsertPlan(db, projectId, { uuid: 'plan-2', planId: 2 });
+    upsertPlan(db, projectId, { uuid: 'plan-3', planId: 3 });
 
     const notInSet = getPlansNotInSet(db, projectId, new Set(['plan-2']));
     expect(notInSet.map((plan) => plan.uuid)).toEqual(['plan-1', 'plan-3']);
   });
 
   test('getPlansNotInSet with an empty set returns all project plans', () => {
-    upsertPlan(db, projectId, { uuid: 'plan-1', planId: 1, filename: '1.plan.md' });
-    upsertPlan(db, projectId, { uuid: 'plan-2', planId: 2, filename: '2.plan.md' });
-    upsertPlan(db, otherProjectId, { uuid: 'plan-3', planId: 3, filename: '3.plan.md' });
+    upsertPlan(db, projectId, { uuid: 'plan-1', planId: 1 });
+    upsertPlan(db, projectId, { uuid: 'plan-2', planId: 2 });
+    upsertPlan(db, otherProjectId, { uuid: 'plan-3', planId: 3 });
 
     const notInSet = getPlansNotInSet(db, projectId, new Set());
     expect(notInSet.map((plan) => plan.uuid)).toEqual(['plan-1', 'plan-2']);
@@ -376,13 +360,11 @@ describe('tim db/plan', () => {
       upsertPlan(db, projectId, {
         uuid: `plan-${i}`,
         planId: i,
-        filename: `${i}.plan.md`,
       });
     }
     upsertPlan(db, projectId, {
       uuid: keepUuid,
       planId: planCount + 1,
-      filename: `${planCount + 1}.plan.md`,
     });
 
     const uuidSet = new Set<string>(Array.from({ length: planCount }, (_, i) => `plan-${i}`));
@@ -398,7 +380,6 @@ describe('tim db/plan', () => {
       planId: 90,
       title: 'Current title',
       details: 'Current details',
-      filename: '90.plan.md',
       tasks: [{ title: 'current task', description: 'current', done: false }],
       dependencyUuids: ['dep-current'],
     });
@@ -413,7 +394,6 @@ describe('tim db/plan', () => {
       planId: 91,
       title: 'Stale title',
       details: 'Stale details',
-      filename: '91.plan.md',
       sourceUpdatedAt: '2026-01-01T00:00:00.000Z',
       tasks: [{ title: 'stale task', description: 'stale', done: true }],
       dependencyUuids: ['dep-stale'],
@@ -438,7 +418,6 @@ describe('tim db/plan', () => {
       planId: 92,
       title: 'Forced title',
       details: 'Forced details',
-      filename: '92.plan.md',
       sourceUpdatedAt: '2026-01-01T00:00:00.000Z',
       forceOverwrite: true,
       tasks: [{ title: 'forced task', description: 'forced', done: true }],

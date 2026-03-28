@@ -18,6 +18,14 @@ async function importFreshEnsurePlanInDb(suffix: string) {
   return import(`./ensure_plan_in_db.js?${suffix}-${Date.now()}`);
 }
 
+function normalizeTmpPath(p: string | null): string | null {
+  if (!p) {
+    return p;
+  }
+
+  return p.replace(/^\/private\/tmp\//, '/tmp/');
+}
+
 describe('resolvePlanFromDbOrSyncFile', () => {
   let tempDir: string;
   let repoRoot: string;
@@ -62,7 +70,7 @@ describe('resolvePlanFromDbOrSyncFile', () => {
     expect(resolved.plan.uuid).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
     );
-    expect(resolved.planPath).toBe(planFile);
+    expect(normalizeTmpPath(resolved.planPath)).toBe(normalizeTmpPath(await fs.realpath(planFile)));
 
     const dbResolved = await resolvePlanFromDb('1', repoRoot);
     expect(dbResolved.plan.uuid).toBe(resolved.plan.uuid);
@@ -83,7 +91,6 @@ describe('resolvePlanFromDbOrSyncFile', () => {
       title: 'Newer title from DB',
       status: 'in_progress',
       tasks: [],
-      filename: '1.plan.md',
       sourceUpdatedAt: '2026-03-26T12:00:00.000Z',
     });
 
@@ -127,7 +134,6 @@ describe('resolvePlanFromDbOrSyncFile', () => {
       title: 'Older title from DB',
       status: 'pending',
       tasks: [],
-      filename: '1.plan.md',
       sourceUpdatedAt: '2026-03-25T12:00:00.000Z',
     });
 
@@ -238,7 +244,6 @@ describe('resolvePlanFromDbOrSyncFile', () => {
       title: 'Authoritative title from DB',
       status: 'in_progress',
       tasks: [],
-      filename: '1.plan.md',
       sourceUpdatedAt: '2026-03-26T12:00:00.000Z',
     });
 
@@ -327,7 +332,9 @@ describe('resolvePlanFromDbOrSyncFile', () => {
       const resolved = await resolvePlanFromDbOrSyncFile(path.join('tasks', '1.plan.md'), repoRoot);
 
       expect(resolved.plan.id).toBe(1);
-      expect(resolved.planPath).toBe(planFile);
+      expect(normalizeTmpPath(resolved.planPath)).toBe(
+        normalizeTmpPath(await fs.realpath(planFile))
+      );
     } finally {
       process.chdir(originalCwd);
     }
@@ -362,7 +369,9 @@ describe('resolvePlanFromDbOrSyncFile', () => {
       );
 
       expect(resolved.plan.title).toBe('UUID-less plan');
-      expect(resolved.planPath).toBe(planFile);
+      expect(normalizeTmpPath(resolved.planPath)).toBe(
+        normalizeTmpPath(await fs.realpath(planFile))
+      );
     } finally {
       process.chdir(originalCwd);
     }
@@ -409,11 +418,13 @@ describe('resolvePlanFromDbOrSyncFile', () => {
       );
 
       expect(resolved.plan.title).toBe('Target repo plan');
-      expect(resolved.planPath).toBe(targetPlanPath);
+      expect(normalizeTmpPath(resolved.planPath)).toBe(
+        normalizeTmpPath(await fs.realpath(targetPlanPath))
+      );
 
       const dbResolved = await resolvePlanFromDb('1', targetRepo, { resolveDir: targetRepo });
       expect(dbResolved.plan.title).toBe('Target repo plan');
-      expect(dbResolved.planPath).toBe(targetPlanPath);
+      expect(dbResolved.planPath).toBeNull();
     } finally {
       process.chdir(originalCwd);
     }

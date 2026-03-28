@@ -26,7 +26,6 @@ export interface PlanRow {
   review_issues: string | null;
   parent_uuid: string | null;
   epic: number;
-  filename: string;
   created_at: string;
   updated_at: string;
 }
@@ -76,7 +75,6 @@ export interface UpsertPlanInput {
   reviewIssues?: PlanSchema['reviewIssues'] | null;
   parentUuid?: string | null;
   epic?: boolean;
-  filename: string;
   tasks?: Array<{
     title: string;
     description: string;
@@ -211,10 +209,9 @@ export function upsertPlanInTransaction(
       review_issues,
       parent_uuid,
       epic,
-      filename,
       created_at,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ${SQL_NOW_ISO_UTC}), COALESCE(?, ${SQL_NOW_ISO_UTC}))
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ${SQL_NOW_ISO_UTC}), COALESCE(?, ${SQL_NOW_ISO_UTC}))
     ON CONFLICT(uuid) DO UPDATE SET
       project_id = excluded.project_id,
       plan_id = excluded.plan_id,
@@ -238,7 +235,6 @@ export function upsertPlanInTransaction(
       review_issues = excluded.review_issues,
       parent_uuid = excluded.parent_uuid,
       epic = excluded.epic,
-      filename = excluded.filename,
       created_at = COALESCE(excluded.created_at, ${SQL_NOW_ISO_UTC}),
       updated_at = COALESCE(excluded.updated_at, ${SQL_NOW_ISO_UTC})
   `
@@ -266,7 +262,6 @@ export function upsertPlanInTransaction(
     input.reviewIssues ? JSON.stringify(input.reviewIssues) : null,
     input.parentUuid ?? null,
     input.epic ? 1 : 0,
-    input.filename,
     effectiveCreatedAt,
     effectiveUpdatedAt
   );

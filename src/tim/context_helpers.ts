@@ -1,9 +1,9 @@
 import * as path from 'path';
 import type { PlanSchema } from './planSchema.js';
-import type { PlanWithFilename } from './utils/hierarchy.js';
 import { loadPlansFromDb } from './plans_db.js';
 import { getRepositoryIdentity } from './assignments/workspace_identifier.js';
 import { getLegacyAwareSearchDir } from './path_resolver.js';
+import { findPlanFileOnDisk } from './plans/find_plan_file.js';
 import { warn } from '../logging.js';
 
 /**
@@ -12,11 +12,13 @@ import { warn } from '../logging.js';
 export function findSiblingPlans(
   currentPlanId: number,
   parentId: number | undefined,
-  allPlans: Map<number, PlanWithFilename>
+  allPlans: Map<number, PlanSchema>,
+  repoRoot: string,
+  searchDir: string
 ): {
   siblings: {
-    completed: Array<{ id: number; title: string; filename: string }>;
-    pending: Array<{ id: number; title: string; filename: string }>;
+    completed: Array<{ id: number; title: string; file?: string }>;
+    pending: Array<{ id: number; title: string; file?: string }>;
   };
   parent: PlanSchema | undefined;
 } {
@@ -24,8 +26,8 @@ export function findSiblingPlans(
     return { siblings: { completed: [], pending: [] }, parent: undefined };
   }
   const siblings = { completed: [], pending: [] } as {
-    completed: Array<{ id: number; title: string; filename: string }>;
-    pending: Array<{ id: number; title: string; filename: string }>;
+    completed: Array<{ id: number; title: string; file?: string }>;
+    pending: Array<{ id: number; title: string; file?: string }>;
   };
 
   for (const [id, plan] of allPlans) {
@@ -35,7 +37,13 @@ export function findSiblingPlans(
     const siblingInfo = {
       id,
       title: plan.title || `Plan ${id}`,
-      filename: plan.filename,
+      file:
+        typeof plan.id === 'number'
+          ? (() => {
+              const planFile = findPlanFileOnDisk(plan.id, repoRoot);
+              return planFile ? path.relative(searchDir, planFile) : undefined;
+            })()
+          : undefined,
     };
 
     if (plan.status === 'done') {
@@ -50,6 +58,19 @@ export function findSiblingPlans(
   siblings.pending.sort((a, b) => a.id - b.id);
 
   return { siblings, parent: allPlans.get(parentId) };
+}
+
+function formatPlanFileForPrompt(
+  plan: Pick<PlanSchema, 'id'>,
+  repoRoot: string,
+  searchDir: string
+): string | null {
+  if (typeof plan.id !== 'number') {
+    return null;
+  }
+
+  const planFile = findPlanFileOnDisk(plan.id, repoRoot);
+  return planFile ? path.relative(searchDir, planFile) : null;
 }
 
 interface ParentPlanInfo {
@@ -110,9 +131,11 @@ export async function buildPlanContextPrompt(options: PlanContextOptions): Promi
       const parentPlan = allPlans.get(planData.parent);
 
       if (parentPlan) {
-        const parentPlanFilename = path.relative(searchDir, parentPlan.filename);
         contextPrompt += `## Parent Plan Context\n\n`;
-        contextPrompt += `**Parent Plan File:** ${parentPlanFilename}\n`;
+        const parentPlanFile = formatPlanFileForPrompt(parentPlan, root, searchDir);
+        if (parentPlanFile) {
+          contextPrompt += `**Parent Plan File:** ${parentPlanFile}\n`;
+        }
         contextPrompt += `**Parent Plan:** ${parentPlan.title || `Plan ${planData.parent}`} (ID: ${planData.parent})\n`;
 
         if (parentPlan.goal) {
@@ -136,7 +159,13 @@ export async function buildPlanContextPrompt(options: PlanContextOptions): Promi
         contextPrompt += `\n`;
 
         // Add sibling plans information
-        const { siblings } = findSiblingPlans(planData.id || 0, planData.parent, allPlans);
+        const { siblings } = findSiblingPlans(
+          planData.id || 0,
+          planData.parent,
+          allPlans,
+          root,
+          searchDir
+        );
 
         if (siblings.completed.length > 0 || siblings.pending.length > 0) {
           contextPrompt += `## Sibling Plans (Same Parent)\n\n`;
@@ -145,7 +174,9 @@ export async function buildPlanContextPrompt(options: PlanContextOptions): Promi
           if (siblings.completed.length > 0) {
             contextPrompt += `### Completed Sibling Plans:\n`;
             siblings.completed.forEach((sibling) => {
-              contextPrompt += `- **${sibling.title}** (File: ${path.relative(searchDir, sibling.filename)})\n`;
+              contextPrompt += sibling.file
+                ? `- **${sibling.title}** (File: ${sibling.file})\n`
+                : `- **${sibling.title}**\n`;
             });
             contextPrompt += `\n`;
           }
@@ -153,7 +184,9 @@ export async function buildPlanContextPrompt(options: PlanContextOptions): Promi
           if (siblings.pending.length > 0) {
             contextPrompt += `### Pending Sibling Plans:\n`;
             siblings.pending.forEach((sibling) => {
-              contextPrompt += `- **${sibling.title}** (File: ${path.relative(searchDir, sibling.filename)})\n`;
+              contextPrompt += sibling.file
+                ? `- **${sibling.title}** (File: ${sibling.file})\n`
+                : `- **${sibling.title}**\n`;
             });
             contextPrompt += `\n`;
           }

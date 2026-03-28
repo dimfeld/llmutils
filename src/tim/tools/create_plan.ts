@@ -106,11 +106,8 @@ export async function createPlanTool(
   let parentStatusChanged = false;
   const idToUuid = new Map(projectContext.planIdToUuid).set(nextId, updatedPlan.uuid!);
   const writePlans = db.transaction(() => {
-    // Insert child plan
-    // Note: filename is a required DB column; using synthetic name for DB-only plans
-    // until the schema is updated to allow nullable filenames (plan 282)
     upsertPlan(db, projectContext.projectId, {
-      ...toPlanUpsertInput(updatedPlan, `${nextId}.plan.md`, idToUuid),
+      ...toPlanUpsertInput(updatedPlan, idToUuid),
       forceOverwrite: true,
     });
 
@@ -142,7 +139,7 @@ export async function createPlanTool(
     });
 
     upsertPlan(db, projectContext.projectId, {
-      ...toPlanUpsertInput(referencedParent, freshParentRow.filename, idToUuid),
+      ...toPlanUpsertInput(referencedParent, idToUuid),
       forceOverwrite: true,
     });
 

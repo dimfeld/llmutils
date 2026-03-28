@@ -191,7 +191,8 @@ describe('resolvePlan', () => {
     temporaryDirectories.push(tempDir);
     const tasksDir = join(tempDir, 'tasks');
     await mkdir(tasksDir, { recursive: true });
-    const planPath = join(tasksDir, '0300.plan.md');
+    const planPath = getMaterializedPlanPath(tasksDir, 300);
+    await mkdir(join(tasksDir, '.tim', 'plans'), { recursive: true });
     await writePlanFile(
       planPath,
       {

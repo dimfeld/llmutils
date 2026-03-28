@@ -914,7 +914,7 @@ describe('tim set command', () => {
 
     // Verify initial relationship
     let updatedChild = await readPlanFile(childPlanPath);
-    let updatedParent = await readPlanFile(parentPlanPath);
+    let updatedParent = (await resolvePlanFromDb('210', tempDir)).plan;
     expect(updatedChild.parent).toBe(210);
     expect(updatedParent.dependencies).toEqual([211]);
 
@@ -930,7 +930,7 @@ describe('tim set command', () => {
 
     // Verify no duplicate dependencies
     updatedChild = await readPlanFile(childPlanPath);
-    updatedParent = await readPlanFile(parentPlanPath);
+    updatedParent = (await resolvePlanFromDb('210', tempDir)).plan;
     expect(updatedChild.parent).toBe(210);
     expect(updatedParent.dependencies).toEqual([211]); // Should still be [211], not [211, 211]
   });

@@ -31,16 +31,10 @@ describe('validate command', () => {
 
   const seedPlanFileInDb = async (filePath: string) => {
     const plan = await readPlanFile(filePath);
-    await writePlanToDb(
-      {
-        ...plan,
-        filename: path.basename(filePath),
-      },
-      {
-        skipUpdatedAt: true,
-        cwdForIdentity: tempDir,
-      }
-    );
+    await writePlanToDb(plan, {
+      skipUpdatedAt: true,
+      cwdForIdentity: tempDir,
+    });
   };
 
   const seedDbPlan = async (input: {
@@ -49,7 +43,6 @@ describe('validate command', () => {
     title?: string;
     goal?: string | null;
     details?: string | null;
-    filename?: string;
     status?: string;
     parentUuid?: string | null;
     dependencyUuids?: string[];
@@ -68,7 +61,6 @@ describe('validate command', () => {
       goal: input.goal ?? `Goal ${input.id}`,
       details: input.details ?? `Details ${input.id}`,
       status: (input.status as any) ?? 'pending',
-      filename: input.filename ?? `${input.id}.plan.md`,
       parentUuid: input.parentUuid ?? null,
       dependencyUuids: input.dependencyUuids ?? [],
       tasks: input.tasks ?? [{ title: 'Task', description: 'Task details', done: false }],
@@ -1487,7 +1479,6 @@ Orphan plan body.`;
           details: 'Stored only in the DB',
           discoveredFrom: 999,
           tasks: [{ title: 'Task', description: 'Task details' }],
-          filename: '80.plan.md',
         },
         {
           skipUpdatedAt: true,
@@ -1536,7 +1527,6 @@ Orphan plan body.`;
           title: 'DB only valid plan',
           details: 'A valid plan that has not been materialized',
           tasks: [{ title: 'Task', description: 'Task details' }],
-          filename: '90.plan.md',
         },
         {
           skipUpdatedAt: true,
@@ -1558,7 +1548,6 @@ Orphan plan body.`;
       await seedDbPlan({
         id: 92,
         uuid: '',
-        filename: '92.plan.md',
       });
 
       const { exitCode, output } = await runValidate({ dir: tempDir });
@@ -1578,12 +1567,10 @@ Orphan plan body.`;
       await seedDbPlan({
         id: 93,
         uuid: parentUuid,
-        filename: '93.plan.md',
       });
       await seedDbPlan({
         id: 94,
         uuid: '33333333-3333-4333-8333-333333333333',
-        filename: '94.plan.md',
         parentUuid,
       });
 

@@ -100,11 +100,11 @@ describe('sessions/[connectionId]/+page.svelte', () => {
     expect(body).not.toContain('Loading...');
   });
 
-  test('renders the plan title as a link when planUuid is available', () => {
+  test('renders the plan title as a link when planUuid is available', async () => {
     sessionManager.initialized = true;
     sessionManager.sessions = new Map([['conn-1', createSession()]]);
 
-    const { body } = render(Page);
+    const { body } = await render(Page);
 
     expect(body).toContain('href="/projects/3/plans/plan-286"');
     expect(body).toContain('#286');

@@ -23,11 +23,9 @@ import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 import type { PlanSchema } from '../planSchema.js';
 import { loadPlansFromDb } from '../plans_db.js';
 
-type PlanWithFilename = PlanSchema & { filename: string };
-
 interface AssignmentsContext {
   assignments: AssignmentsFile;
-  planLookup: Map<string, PlanWithFilename>;
+  planLookup: Map<string, PlanSchema>;
   currentWorkspace: string;
   repositoryId: string;
   repositoryRemoteUrl: string | null;
@@ -72,7 +70,7 @@ async function loadAssignmentsContext(command: any): Promise<AssignmentsContext>
     getLegacyAwareSearchDir(repository.gitRoot, repoRoot),
     repository.repositoryId
   );
-  const planLookup = new Map<string, PlanWithFilename>();
+  const planLookup = new Map<string, PlanSchema>();
   for (const plan of plans.values()) {
     if (plan.uuid) {
       planLookup.set(plan.uuid, plan);
@@ -154,7 +152,7 @@ function formatIsoTimestamp(value: string): { display: string; timestamp: number
 
 function buildAssignmentDisplays(
   assignments: AssignmentsFile,
-  planLookup: Map<string, PlanWithFilename>,
+  planLookup: Map<string, PlanSchema>,
   currentWorkspace: string,
   staleTimeoutDays: number,
   referenceDate: Date = new Date()

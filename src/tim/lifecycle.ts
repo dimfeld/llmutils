@@ -22,7 +22,7 @@ function getShellCommand(command: string): string[] {
   return ['sh', '-c', command];
 }
 
-const DAEMON_STARTUP_CHECK_DELAY_MS = 75;
+const DAEMON_STARTUP_CHECK_DELAY_MS = 200;
 const DAEMON_SIGTERM_TIMEOUT_MS = 5000;
 const DAEMON_SIGKILL_WAIT_MS = 1000;
 const SHUTDOWN_COMMAND_TIMEOUT_MS = 30000;
@@ -195,7 +195,7 @@ export class LifecycleManager {
 
       try {
         if (mode === 'daemon') {
-          if (command.shutdown) {
+          if (command.shutdown && state.startupState === 'running') {
             state.intentionallyTerminated = true;
             log(`Running lifecycle shutdown command "${command.title}"...`);
             const exitCode = await this.runShellCommand(command, {
@@ -392,8 +392,7 @@ export class LifecycleManager {
       return false;
     }
 
-    await Bun.sleep(DAEMON_STARTUP_CHECK_DELAY_MS);
-    const exitCode = daemon.exitCode;
+    const exitCode = await this.raceWithTimeout(daemon.exited, DAEMON_STARTUP_CHECK_DELAY_MS, null);
     if (exitCode === null) {
       return false;
     }

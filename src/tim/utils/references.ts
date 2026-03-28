@@ -5,7 +5,6 @@ import { readPlanFile, writePlanFile, writePlanToDb } from '../plans.ts';
 
 type ReferenceLookupSource =
   | Map<number, PlanSchema>
-  | Map<number, PlanSchema & { filename: string }>
   | Map<number, string>
   | { planIdToUuid: Map<number, string> };
 
@@ -38,12 +37,14 @@ async function writePlanFix(
   plan: PlanSchema & { filename: string },
   options?: { skipUpdatedAt?: boolean; cwdForIdentity?: string }
 ): Promise<void> {
-  if (isExistingPlanFile(plan.filename)) {
-    await writePlanFile(plan.filename, plan, options);
+  const { filename, ...planWithoutFilename } = plan;
+
+  if (isExistingPlanFile(filename)) {
+    await writePlanFile(filename, planWithoutFilename, options);
     return;
   }
 
-  await writePlanToDb(plan, {
+  await writePlanToDb(planWithoutFilename, {
     skipUpdatedAt: options?.skipUpdatedAt,
     cwdForIdentity: options?.cwdForIdentity,
   });

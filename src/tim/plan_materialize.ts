@@ -21,7 +21,7 @@ import { getOrCreateProject } from './db/project.js';
 import { readPlanFile, writePlanFile } from './plans.js';
 import { planRowToSchemaInput } from './plans_db.js';
 
-const MATERIALIZED_DIR = path.join('.tim', 'plans');
+export const MATERIALIZED_DIR = path.join('.tim', 'plans');
 
 export function parsePlanId(planId: string): number {
   const parsed = Number(planId);
@@ -503,7 +503,7 @@ export async function syncMaterializedPlan(
     );
   }
 
-  await syncPlanToDb(plan, canonicalRow.filename, {
+  await syncPlanToDb(plan, {
     baseDir: repoRoot,
     cwdForIdentity: repoRoot,
     idToUuid: resolvedContext.planIdToUuid,

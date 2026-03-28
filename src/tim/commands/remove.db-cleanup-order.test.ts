@@ -10,6 +10,7 @@ import { getAssignment } from '../db/assignment.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { getPlanByUuid } from '../db/plan.js';
 import { getOrCreateProject } from '../db/project.js';
+import { getMaterializedPlanPath } from '../plan_materialize.js';
 import { writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { handleRemoveCommand } from './remove.js';
@@ -55,7 +56,7 @@ describe('tim remove command DB cleanup flow', () => {
   });
 
   async function writePlan(id: number, overrides: Partial<PlanSchema> = {}): Promise<string> {
-    const filePath = path.join(tasksDir, `${id}.plan.md`);
+    const filePath = getMaterializedPlanPath(tempDir, id);
     const basePlan: PlanSchema = {
       id,
       uuid: crypto.randomUUID(),

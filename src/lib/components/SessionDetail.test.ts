@@ -70,24 +70,24 @@ describe('SessionDetail', () => {
     sessionManager.endSession.mockReset();
   });
 
-  test('renders status dot with role="img" and aria-label for active session', () => {
+  test('renders status dot with role="img" and aria-label for active session', async () => {
     const session = createSession({ status: 'active' });
-    const { body } = render(SessionDetail, { props: { session } });
+    const { body } = await render(SessionDetail, { props: { session } });
 
     expect(body).toContain('role="img"');
     expect(body).toContain('aria-label="Active"');
   });
 
-  test('renders status dot with aria-label for offline session', () => {
+  test('renders status dot with aria-label for offline session', async () => {
     const session = createSession({ status: 'offline' });
-    const { body } = render(SessionDetail, { props: { session } });
+    const { body } = await render(SessionDetail, { props: { session } });
 
     expect(body).toContain('aria-label="Offline"');
   });
 
-  test('renders end-session trigger button for interactive active sessions', () => {
+  test('renders end-session trigger button for interactive active sessions', async () => {
     const session = createSession({ status: 'active' });
-    const { body } = render(SessionDetail, { props: { session } });
+    const { body } = await render(SessionDetail, { props: { session } });
 
     expect(body).toContain('End Session');
     // Confirmation dialog should NOT be present initially
@@ -95,14 +95,14 @@ describe('SessionDetail', () => {
     expect(body).not.toContain('End this running session?');
   });
 
-  test('does not show end-session button for offline sessions', () => {
+  test('does not show end-session button for offline sessions', async () => {
     const session = createSession({ status: 'offline' });
-    const { body } = render(SessionDetail, { props: { session } });
+    const { body } = await render(SessionDetail, { props: { session } });
 
     expect(body).not.toContain('End Session');
   });
 
-  test('renders message input with aria-label when session has active freeform prompt', () => {
+  test('renders message input with aria-label when session has active freeform prompt', async () => {
     const session = createSession({
       status: 'active',
       activePrompt: {
@@ -113,14 +113,14 @@ describe('SessionDetail', () => {
         },
       },
     });
-    const { body } = render(SessionDetail, { props: { session } });
+    const { body } = await render(SessionDetail, { props: { session } });
 
     expect(body).toContain('aria-label="Send input to session"');
   });
 
-  test('renders message input with aria-label for sessions with no active prompt', () => {
+  test('renders message input with aria-label for sessions with no active prompt', async () => {
     const session = createSession({ status: 'active' });
-    const { body } = render(SessionDetail, { props: { session } });
+    const { body } = await render(SessionDetail, { props: { session } });
 
     // Input area should still be present for interactive active sessions
     expect(body).toContain('aria-label="Send input to session"');

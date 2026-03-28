@@ -156,15 +156,9 @@ export interface LegacyPlanFileMetadata {
   compactedAt?: string;
   statusDescription?: string;
 }
-export type PlanSchemaWithFilename = PlanSchema & {
-  filename: string;
-};
 export type PlanWithLegacyMetadata = PlanSchema & LegacyPlanFileMetadata;
 export type TaskSchema = z.output<typeof defaultSchemas.taskSchema>;
 export type PlanSchemaInput = z.input<typeof phaseSchema>;
 export type PlanSchemaInputWithLegacyMetadata = PlanSchemaInput & LegacyPlanFileMetadata;
-export type PlanSchemaInputWithFilename = PlanSchemaInput & {
-  filename: string;
-};
 
 export type MultiPhasePlanSchema = z.infer<typeof multiPhasePlanSchema>;

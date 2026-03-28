@@ -52,8 +52,8 @@ describe('plans', () => {
   });
 
   test('relationship helpers find blocked, child, and discovered plans', () => {
-    const plans = new Map<number, PlanSchema & { filename: string }>([
-      [1, { id: 1, title: 'Parent', goal: 'g', tasks: [], filename: '1.plan.md' }],
+    const plans = new Map<number, PlanSchema>([
+      [1, { id: 1, title: 'Parent', goal: 'g', tasks: [] }],
       [
         2,
         {
@@ -62,10 +62,9 @@ describe('plans', () => {
           goal: 'g',
           dependencies: [1],
           tasks: [],
-          filename: '2.plan.md',
         },
       ],
-      [3, { id: 3, title: 'Child', goal: 'g', parent: 1, tasks: [], filename: '3.plan.md' }],
+      [3, { id: 3, title: 'Child', goal: 'g', parent: 1, tasks: [] }],
       [
         4,
         {
@@ -74,7 +73,6 @@ describe('plans', () => {
           goal: 'g',
           discoveredFrom: 1,
           tasks: [],
-          filename: '4.plan.md',
         },
       ],
     ]);

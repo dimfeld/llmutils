@@ -296,7 +296,7 @@ export async function handleChatCommand(
         if (currentPlanFile) {
           // force:true is correct here: the executor just wrote this file and it is authoritative
           const updatedPlan = await readPlanFile(currentPlanFile);
-          await syncPlanToDb(updatedPlan, currentPlanFile, {
+          await syncPlanToDb(updatedPlan, {
             cwdForIdentity: currentBaseDir,
             force: true,
             throwOnError: true,

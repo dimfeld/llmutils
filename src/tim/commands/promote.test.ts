@@ -124,7 +124,7 @@ describe('handlePromoteCommand', () => {
     await handlePromoteCommand(['1.2'], { config: configPath });
 
     // Read and verify the original plan was updated
-    const updatedOriginalPlan = await readPlanFile(path.join(tasksDir, '1.yml'));
+    const updatedOriginalPlan = (await resolvePlanFromDb('1', tempDir)).plan;
     expect(updatedOriginalPlan.tasks).toHaveLength(2);
     expect(updatedOriginalPlan.tasks![0].title).toBe('Set up database schema');
     expect(updatedOriginalPlan.tasks![1].title).toBe('Add password hashing');
@@ -162,7 +162,7 @@ describe('handlePromoteCommand', () => {
 
     await handlePromoteCommand(['1.1'], { config: configPath });
 
-    const updatedParent = await readPlanFile(path.join(tasksDir, '1.yml'));
+    const updatedParent = (await resolvePlanFromDb('1', tempDir)).plan;
     expect(updatedParent.dependencies).toHaveLength(1);
 
     const childPlan = (await resolvePlanFromDb(String(updatedParent.dependencies![0]!), tempDir))
@@ -215,7 +215,7 @@ describe('handlePromoteCommand', () => {
     // Promote tasks 2-4 (1.2-4)
     await handlePromoteCommand(['1.2-4'], { config: configPath });
 
-    const updatedOriginalPlan = await readPlanFile(path.join(tasksDir, '1.yml'));
+    const updatedOriginalPlan = (await resolvePlanFromDb('1', tempDir)).plan;
     expect(updatedOriginalPlan.dependencies).toHaveLength(3);
 
     const promotedPlans = await Promise.all(
@@ -289,7 +289,7 @@ describe('handlePromoteCommand', () => {
 
       await handlePromoteCommand(['1.1'], { config: config.resolvedConfigPath });
 
-      const updatedOriginalPlan = await readPlanFile(path.join(externalTasksDir, '1.yml'));
+      const updatedOriginalPlan = (await resolvePlanFromDb('1', tempDir)).plan;
       expect(updatedOriginalPlan.dependencies).toHaveLength(1);
 
       const promotedPlan = (
@@ -337,7 +337,7 @@ describe('handlePromoteCommand', () => {
     // Promote all tasks (1.1-3)
     await handlePromoteCommand(['1.1-3'], { config: configPath });
 
-    const updatedOriginalPlan = await readPlanFile(path.join(tasksDir, '1.yml'));
+    const updatedOriginalPlan = (await resolvePlanFromDb('1', tempDir)).plan;
     expect(updatedOriginalPlan.dependencies).toHaveLength(3);
 
     const promotedPlans = await Promise.all(
@@ -420,8 +420,8 @@ describe('handlePromoteCommand', () => {
     await handlePromoteCommand(['1.2', '2.1'], { config: configPath });
 
     // Read and verify both original plans were updated
-    const updatedPlan1 = await readPlanFile(path.join(tasksDir, '1.yml'));
-    const updatedPlan2 = await readPlanFile(path.join(tasksDir, '2.yml'));
+    const updatedPlan1 = (await resolvePlanFromDb('1', tempDir)).plan;
+    const updatedPlan2 = (await resolvePlanFromDb('2', tempDir)).plan;
 
     expect(updatedPlan1.dependencies).toHaveLength(1);
     expect(updatedPlan2.dependencies).toHaveLength(1);

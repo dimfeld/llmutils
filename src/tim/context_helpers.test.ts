@@ -5,8 +5,9 @@ import * as path from 'node:path';
 import { closeDatabaseForTesting } from './db/database.js';
 import { clearPlanSyncContext } from './db/plan_sync.js';
 import { findSiblingPlans, buildPlanContextPrompt } from './context_helpers.js';
-import { writePlanToDb } from './plans.js';
-import type { PlanWithFilename } from './utils/hierarchy.js';
+import { getMaterializedPlanPath } from './plan_materialize.js';
+import { writePlanFile } from './plans.js';
+import type { PlanSchema } from './planSchema.js';
 
 describe('context_helpers', () => {
   let tempDir: string;
@@ -43,8 +44,14 @@ describe('context_helpers', () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  test('findSiblingPlans sorts and categorizes siblings from the provided plan map', async () => {
-    const allPlans = new Map<number, PlanWithFilename>([
+  async function writeMaterializedPlan(plan: PlanSchema): Promise<string> {
+    const planPath = getMaterializedPlanPath(repoRoot, plan.id);
+    await writePlanFile(planPath, plan, { cwdForIdentity: repoRoot });
+    return planPath;
+  }
+
+  test('findSiblingPlans sorts, categorizes, and resolves sibling files from materialized plans', async () => {
+    const allPlans = new Map<number, PlanSchema>([
       [
         100,
         {
@@ -54,7 +61,6 @@ describe('context_helpers', () => {
           details: 'Details',
           status: 'in_progress',
           tasks: [],
-          filename: '/repo/tasks/100-parent.plan.md',
         },
       ],
       [
@@ -67,7 +73,6 @@ describe('context_helpers', () => {
           status: 'pending',
           parent: 100,
           tasks: [],
-          filename: '/repo/tasks/101-current.plan.md',
         },
       ],
       [
@@ -80,7 +85,6 @@ describe('context_helpers', () => {
           status: 'pending',
           parent: 100,
           tasks: [],
-          filename: '/repo/tasks/103-later.plan.md',
         },
       ],
       [
@@ -93,7 +97,6 @@ describe('context_helpers', () => {
           status: 'done',
           parent: 100,
           tasks: [],
-          filename: '/repo/tasks/102-done.plan.md',
         },
       ],
       [
@@ -106,76 +109,65 @@ describe('context_helpers', () => {
           status: 'in_progress',
           parent: 100,
           tasks: [],
-          filename: '/repo/tasks/099-earlier.plan.md',
         },
       ],
     ]);
 
-    const result = findSiblingPlans(101, 100, allPlans);
+    await writeMaterializedPlan(allPlans.get(100)!);
+    await writeMaterializedPlan(allPlans.get(101)!);
+    await writeMaterializedPlan(allPlans.get(102)!);
+    await writeMaterializedPlan(allPlans.get(103)!);
+    await writeMaterializedPlan(allPlans.get(99)!);
+
+    const result = findSiblingPlans(101, 100, allPlans, repoRoot, repoRoot);
 
     expect(result.parent?.id).toBe(100);
     expect(result.siblings.completed).toEqual([
-      { id: 102, title: 'Done Sibling', filename: '/repo/tasks/102-done.plan.md' },
+      { id: 102, title: 'Done Sibling', file: '.tim/plans/102.plan.md' },
     ]);
     expect(result.siblings.pending).toEqual([
-      { id: 99, title: 'Earlier Pending Sibling', filename: '/repo/tasks/099-earlier.plan.md' },
-      { id: 103, title: 'Later Pending Sibling', filename: '/repo/tasks/103-later.plan.md' },
+      { id: 99, title: 'Earlier Pending Sibling', file: '.tim/plans/99.plan.md' },
+      { id: 103, title: 'Later Pending Sibling', file: '.tim/plans/103.plan.md' },
     ]);
   });
 
   test('buildPlanContextPrompt reads parent and sibling context from DB-backed plans', async () => {
-    await writePlanToDb(
-      {
-        id: 100,
-        title: 'Parent Plan',
-        goal: 'Ship the feature set',
-        details: 'Parent details',
-        status: 'in_progress',
-        docs: ['https://example.com/parent-doc', 'docs/local.md'],
-        tasks: [],
-        filename: 'tasks/100-parent.plan.md',
-      },
-      { cwdForIdentity: repoRoot }
-    );
-    await writePlanToDb(
-      {
-        id: 101,
-        title: 'Current Plan',
-        goal: 'Implement the child work',
-        details: 'Current details',
-        status: 'pending',
-        parent: 100,
-        tasks: [],
-        filename: 'tasks/101-current.plan.md',
-      },
-      { cwdForIdentity: repoRoot }
-    );
-    await writePlanToDb(
-      {
-        id: 102,
-        title: 'Done Sibling',
-        goal: 'Sibling goal',
-        details: 'Sibling details',
-        status: 'done',
-        parent: 100,
-        tasks: [],
-        filename: 'tasks/102-done.plan.md',
-      },
-      { cwdForIdentity: repoRoot }
-    );
-    await writePlanToDb(
-      {
-        id: 103,
-        title: 'Pending Sibling',
-        goal: 'Sibling goal',
-        details: 'Sibling details',
-        status: 'pending',
-        parent: 100,
-        tasks: [],
-        filename: 'tasks/103-pending.plan.md',
-      },
-      { cwdForIdentity: repoRoot }
-    );
+    await writeMaterializedPlan({
+      id: 100,
+      title: 'Parent Plan',
+      goal: 'Ship the feature set',
+      details: 'Parent details',
+      status: 'in_progress',
+      docs: ['https://example.com/parent-doc', 'docs/local.md'],
+      tasks: [],
+    });
+    const currentPlanPath = await writeMaterializedPlan({
+      id: 101,
+      title: 'Current Plan',
+      goal: 'Implement the child work',
+      details: 'Current details',
+      status: 'pending',
+      parent: 100,
+      tasks: [],
+    });
+    await writeMaterializedPlan({
+      id: 102,
+      title: 'Done Sibling',
+      goal: 'Sibling goal',
+      details: 'Sibling details',
+      status: 'done',
+      parent: 100,
+      tasks: [],
+    });
+    await writeMaterializedPlan({
+      id: 103,
+      title: 'Pending Sibling',
+      goal: 'Sibling goal',
+      details: 'Sibling details',
+      status: 'pending',
+      parent: 100,
+      tasks: [],
+    });
 
     const context = await buildPlanContextPrompt({
       planData: {
@@ -187,21 +179,21 @@ describe('context_helpers', () => {
         parent: 100,
         tasks: [],
       },
-      planFilePath: path.join(repoRoot, 'tasks', '101-current.plan.md'),
+      planFilePath: currentPlanPath,
       baseDir: repoRoot,
     });
 
     expect(context).toContain('## Current Plan Context');
     expect(context).toContain('**Current Plan File:** ');
-    expect(context).toContain('101-current.plan.md');
-    expect(context).toContain('**Parent Plan File:** 100-parent.plan.md');
+    expect(context).toContain('.tim/plans/101.plan.md');
+    expect(context).toContain('**Parent Plan File:** 100.plan.md');
     expect(context).toContain('**Parent Plan:** Parent Plan (ID: 100)');
     expect(context).toContain('**Parent Goal:** Ship the feature set');
     expect(context).toContain('**Parent Documentation URLs:**');
     expect(context).toContain('- https://example.com/parent-doc');
     expect(context).toContain('### Completed Sibling Plans:');
-    expect(context).toContain('- **Done Sibling** (File: 102-done.plan.md)');
+    expect(context).toContain('- **Done Sibling** (File: 102.plan.md)');
     expect(context).toContain('### Pending Sibling Plans:');
-    expect(context).toContain('- **Pending Sibling** (File: 103-pending.plan.md)');
+    expect(context).toContain('- **Pending Sibling** (File: 103.plan.md)');
   });
 });

@@ -59,8 +59,15 @@ export async function prepareNextStep(
   const currentPlanFilename = path.relative(root, planFile);
   promptParts.push(`## Current Plan File: ${currentPlanFilename}\n`);
 
-  const { plans } = loadPlansFromDb(getLegacyAwareSearchDir(gitRoot, configBaseDir), repositoryId);
-  const { siblings, parent } = findSiblingPlans(planData.id || 0, planData.parent, plans);
+  const searchDir = getLegacyAwareSearchDir(gitRoot, configBaseDir);
+  const { plans } = loadPlansFromDb(searchDir, repositoryId);
+  const { siblings, parent } = findSiblingPlans(
+    planData.id || 0,
+    planData.parent,
+    plans,
+    root,
+    searchDir
+  );
 
   let projectInfo = planData.project ?? parent;
   if (projectInfo?.goal) {
@@ -94,7 +101,9 @@ export async function prepareNextStep(
         promptParts.push('### Completed Related Plans:');
         siblings.completed.forEach((sibling) => {
           promptParts.push(
-            `- **${sibling.title}** (File: ${path.relative(root, sibling.filename)})`
+            sibling.file
+              ? `- **${sibling.title}** (File: ${sibling.file})`
+              : `- **${sibling.title}**`
           );
         });
       }
@@ -103,7 +112,9 @@ export async function prepareNextStep(
         promptParts.push('\n### Pending Related Plans:');
         siblings.pending.forEach((sibling) => {
           promptParts.push(
-            `- **${sibling.title}** (File: ${path.relative(root, sibling.filename)})`
+            sibling.file
+              ? `- **${sibling.title}** (File: ${sibling.file})`
+              : `- **${sibling.title}**`
           );
         });
       }

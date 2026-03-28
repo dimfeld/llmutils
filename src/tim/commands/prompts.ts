@@ -16,6 +16,7 @@ import { findLatestPlanFromDb, findNextReadyDependencyFromDb } from './plan_disc
 import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 import type { PlanSchema } from '../planSchema.js';
+import { findPlanFileOnDiskAsync } from '../plans/find_plan_file.js';
 import * as fs from 'node:fs/promises';
 
 type PromptCommandOptions = {
@@ -165,8 +166,6 @@ function normalizePlanIdentifier(plan: string | undefined): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-export type PlanWithFilename = PlanSchema & { filename: string };
-
 const MIN_TIMESTAMP = Number.NEGATIVE_INFINITY;
 
 export function parseIsoTimestamp(value: string | undefined): number | undefined {
@@ -178,7 +177,7 @@ export function parseIsoTimestamp(value: string | undefined): number | undefined
   return Number.isNaN(parsed) ? undefined : parsed;
 }
 
-export async function getPlanTimestamp(plan: PlanWithFilename): Promise<number> {
+export async function getPlanTimestamp(plan: PlanSchema, repoRoot?: string): Promise<number> {
   const updatedAt = parseIsoTimestamp(plan.updatedAt);
   if (updatedAt !== undefined) {
     return updatedAt;
@@ -190,15 +189,23 @@ export async function getPlanTimestamp(plan: PlanWithFilename): Promise<number> 
   }
 
   try {
-    const fileStats = await fs.stat(plan.filename);
-    return fileStats.mtimeMs;
+    if (repoRoot && typeof plan.id === 'number') {
+      const planFile = await findPlanFileOnDiskAsync(plan.id, repoRoot);
+      if (planFile) {
+        const fileStats = await fs.stat(planFile);
+        return fileStats.mtimeMs;
+      }
+    }
   } catch {
-    return MIN_TIMESTAMP;
+    // fall through
   }
+
+  return MIN_TIMESTAMP;
 }
 
-export async function findMostRecentlyUpdatedPlan<T extends PlanWithFilename>(
-  plans: Map<number, T>
+export async function findMostRecentlyUpdatedPlan<T extends PlanSchema>(
+  plans: Map<number, T>,
+  repoRoot?: string
 ): Promise<T | null> {
   let latestPlan: T | null = null;
   let latestTimestamp = MIN_TIMESTAMP;
@@ -209,7 +216,7 @@ export async function findMostRecentlyUpdatedPlan<T extends PlanWithFilename>(
       continue;
     }
 
-    const timestamp = await getPlanTimestamp(candidate);
+    const timestamp = await getPlanTimestamp(candidate, repoRoot);
     if (timestamp > latestTimestamp) {
       latestTimestamp = timestamp;
       latestPlan = candidate;
@@ -350,7 +357,7 @@ export async function handlePromptsCommand(
     const label =
       latestPlan.id !== undefined && latestPlan.id !== null
         ? `${latestPlan.id} - ${title}`
-        : title || latestPlan.filename;
+        : title || 'Untitled plan';
 
     log(chalk.green(`Found latest plan: ${label}`));
 

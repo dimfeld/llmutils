@@ -1,11 +1,6 @@
 import type { PlanSchema } from '../planSchema.js';
 
 /**
- * A plan with its filename for hierarchy traversal
- */
-export type PlanWithFilename = PlanSchema & { filename: string };
-
-/**
  * Gets the chain of parent plans from immediate parent to root.
  * Returns an array of parent plans ordered from immediate parent to root.
  * Includes cycle detection to prevent infinite loops.
@@ -66,10 +61,7 @@ export function isUnderEpic<T extends PlanSchema>(
  * @param allPlans - Map of all plans keyed by ID
  * @returns Array of direct child plans sorted by ID
  */
-export function getDirectChildren(
-  planId: number,
-  allPlans: Map<number, PlanWithFilename>
-): PlanWithFilename[] {
+export function getDirectChildren(planId: number, allPlans: Map<number, PlanSchema>): PlanSchema[] {
   const children = Array.from(allPlans.values())
     .filter((plan) => plan.parent === planId)
     .sort((a, b) => (a.id || 0) - (b.id || 0));
@@ -86,11 +78,8 @@ export function getDirectChildren(
  * @param allPlans - Map of all plans keyed by ID
  * @returns Array of all descendant plans sorted by ID
  */
-export function getAllChildren(
-  planId: number,
-  allPlans: Map<number, PlanWithFilename>
-): PlanWithFilename[] {
-  const allChildren: PlanWithFilename[] = [];
+export function getAllChildren(planId: number, allPlans: Map<number, PlanSchema>): PlanSchema[] {
+  const allChildren: PlanSchema[] = [];
   const visited = new Set<number>();
   const queue: number[] = [planId];
 
@@ -134,8 +123,8 @@ export function getAllChildren(
  */
 export function getCompletedChildren(
   planId: number,
-  allPlans: Map<number, PlanWithFilename>
-): PlanWithFilename[] {
+  allPlans: Map<number, PlanSchema>
+): PlanSchema[] {
   const allChildren = getAllChildren(planId, allPlans);
   return allChildren.filter((plan) => plan.status === 'done');
 }
@@ -150,8 +139,8 @@ export function getCompletedChildren(
  */
 export function getPendingChildren(
   planId: number,
-  allPlans: Map<number, PlanWithFilename>
-): PlanWithFilename[] {
+  allPlans: Map<number, PlanSchema>
+): PlanSchema[] {
   const allChildren = getAllChildren(planId, allPlans);
   return allChildren.filter((plan) => plan.status === 'pending' || plan.status === 'in_progress');
 }
@@ -165,8 +154,8 @@ export function getPendingChildren(
  * @returns true if a cycle is detected, false otherwise
  */
 export function hasCycleInParentChain(
-  plan: PlanWithFilename,
-  allPlans: Map<number, PlanWithFilename>
+  plan: PlanSchema,
+  allPlans: Map<number, PlanSchema>
 ): boolean {
   const visited = new Set<number>();
   let currentPlan = plan;
@@ -195,7 +184,7 @@ export function hasCycleInParentChain(
  * @param allPlans - Map of all plans keyed by ID
  * @returns Array of root plans sorted by ID
  */
-export function getRootPlans(allPlans: Map<number, PlanWithFilename>): PlanWithFilename[] {
+export function getRootPlans(allPlans: Map<number, PlanSchema>): PlanSchema[] {
   return Array.from(allPlans.values())
     .filter((plan) => !plan.parent)
     .sort((a, b) => (a.id || 0) - (b.id || 0));
