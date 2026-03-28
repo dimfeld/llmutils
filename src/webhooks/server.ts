@@ -137,6 +137,8 @@ function buildServer(config: ReceiverConfig): ReturnType<typeof Bun.serve> {
         return jsonResponse({ ok: true });
       }
 
+      console.log(`[webhook_receiver] ${request.method} ${url.pathname}`);
+
       if (url.pathname === '/github/webhook' && request.method === 'POST') {
         const deliveryId = request.headers.get('x-github-delivery');
         const eventType = request.headers.get('x-github-event');
@@ -166,6 +168,10 @@ function buildServer(config: ReceiverConfig): ReturnType<typeof Bun.serve> {
           repositoryFullName: metadata.repositoryFullName,
           payloadJson: payloadText,
         });
+
+        console.log(
+          `[webhook_receiver] GitHub webhook: event=${eventType} action=${metadata.action ?? 'none'} repo=${metadata.repositoryFullName ?? 'unknown'} delivery=${deliveryId}`
+        );
 
         if (!result.inserted) {
           return jsonResponse({ status: 'duplicate', deliveryId });
