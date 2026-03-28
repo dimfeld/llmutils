@@ -225,12 +225,9 @@ function selectSessionCandidate(
   terminalIdentity: string | null
 ): SessionData | undefined {
   if (terminalIdentity) {
-    const exactMatch = candidates.find(
+    return candidates.find(
       (candidate) => getSessionTerminalIdentity(candidate) === terminalIdentity
     );
-    if (exactMatch) {
-      return exactMatch;
-    }
   }
 
   return candidates.length === 1 ? candidates[0] : undefined;
@@ -418,9 +415,6 @@ export class SessionManager {
         session.groupKey = sessionGroupKey(message.gitRemote, message.workspacePath);
         session.projectId = this.resolveProjectId(message.gitRemote);
 
-        // Reconcile with any existing notification session for the same group
-        this.reconcileNotificationSession(session);
-
         this.emit('session:update', { session: this.cloneSessionMetadata(session) });
         return;
       }
@@ -471,37 +465,6 @@ export class SessionManager {
     const now = new Date().toISOString();
     const groupKey = sessionGroupKey(payload.gitRemote, payload.workspacePath);
     const terminalIdentity = getPayloadTerminalIdentity(payload);
-    const activeCandidates = [...this.sessions.values()].filter(
-      (session) => session.status === 'active' && session.groupKey === groupKey
-    );
-    // Only merge notifications into active WS sessions, not offline ones.
-    // Offline sessions should not receive new notifications — create a notification session instead.
-    const websocketSession = selectSessionCandidate(activeCandidates, terminalIdentity);
-
-    if (websocketSession) {
-      const displayMessage: DisplayMessage = {
-        id: this.nextSyntheticMessageId(websocketSession.connectionId, 'notif'),
-        seq: NOTIFICATION_SEQ,
-        timestamp: now,
-        category: 'log',
-        bodyType: 'text',
-        body: {
-          type: 'text',
-          text: payload.message,
-        },
-        rawType: 'log',
-        triggersNotification: true,
-      };
-
-      websocketSession.messages.push(displayMessage);
-      this.trimSessionMessages(websocketSession, MAX_SESSION_MESSAGES);
-
-      this.emit('session:message', {
-        connectionId: websocketSession.connectionId,
-        message: { ...displayMessage },
-      });
-      return this.cloneSession(websocketSession);
-    }
 
     const notificationCandidates = [...this.sessions.values()].filter(
       (session) => session.status === 'notification' && session.groupKey === groupKey
@@ -731,36 +694,6 @@ export class SessionManager {
     this.projectIdByRemote = projectEntries;
 
     return this.projectIdByRemote;
-  }
-
-  private reconcileNotificationSession(session: SessionData): void {
-    const terminalIdentity = getSessionTerminalIdentity(session);
-    const notificationCandidates = [...this.sessions.values()].filter(
-      (candidate) => candidate.status === 'notification' && candidate.groupKey === session.groupKey
-    );
-    const notificationSession = selectSessionCandidate(notificationCandidates, terminalIdentity);
-
-    if (!notificationSession) {
-      return;
-    }
-
-    // Merge notification messages into the active session
-    session.messages.unshift(...notificationSession.messages);
-    this.trimSessionMessages(session, MAX_SESSION_MESSAGES);
-
-    // Emit session:message events for each merged message so SSE clients receive them
-    // (the session:update event uses metadata-only clone with empty messages array)
-    for (const message of notificationSession.messages) {
-      this.emit('session:message', {
-        connectionId: session.connectionId,
-        message: { ...message },
-      });
-    }
-
-    // Remove the notification session
-    this.sessions.delete(notificationSession.connectionId);
-    this.internals.delete(notificationSession.connectionId);
-    this.emit('session:dismissed', { connectionId: notificationSession.connectionId });
   }
 
   private handleStructuredSideEffects(

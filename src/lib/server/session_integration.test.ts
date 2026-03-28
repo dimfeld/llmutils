@@ -452,7 +452,7 @@ describe('session integration', () => {
     });
   });
 
-  test('routes notifications into an existing WebSocket session for the same workspace', () => {
+  test('keeps notifications separate from WebSocket sessions in the same workspace', () => {
     expect.hasAssertions();
 
     const { events, unsubscribe } = recordEvents(manager);
@@ -467,7 +467,7 @@ describe('session integration', () => {
     });
 
     const session = manager.handleHttpNotification({
-      message: 'Merged into live session',
+      message: 'Separate notification',
       workspacePath: '/tmp/notify/shared',
       gitRemote: 'git@github.com:tim/notify.git',
     });
@@ -475,35 +475,31 @@ describe('session integration', () => {
     const snapshot = manager.getSessionSnapshot();
     unsubscribe();
 
-    expect(session.connectionId).toBe('conn-notify-merge');
-    expect(snapshot.sessions).toHaveLength(1);
-    expect(snapshot.sessions[0].connectionId).toBe('conn-notify-merge');
-    expect(snapshot.sessions[0].messages).toHaveLength(1);
-    expect(snapshot.sessions[0].messages[0]).toMatchObject({
-      body: { type: 'text', text: 'Merged into live session' },
+    // Notification should be its own session, not merged into the WebSocket session
+    expect(session.connectionId).toBe('notification:github.com/tim/notify');
+    expect(session.status).toBe('notification');
+    expect(snapshot.sessions).toHaveLength(2);
+
+    const wsSession = snapshot.sessions.find((s) => s.connectionId === 'conn-notify-merge');
+    const notifSession = snapshot.sessions.find((s) => s.status === 'notification');
+    expect(wsSession).toBeDefined();
+    expect(wsSession!.messages).toHaveLength(0);
+    expect(notifSession).toBeDefined();
+    expect(notifSession!.messages).toHaveLength(1);
+    expect(notifSession!.messages[0]).toMatchObject({
+      body: { type: 'text', text: 'Separate notification' },
       rawType: 'log',
     });
-    expect(snapshot.sessions.some((entry) => entry.status === 'notification')).toBe(false);
+
     expect(events.map((event) => event.event)).toEqual([
       'session:new',
       'session:update',
+      'session:new',
       'session:message',
     ]);
-
-    const messageEvent = events[2];
-    expect(messageEvent.event).toBe('session:message');
-    if (messageEvent.event === 'session:message') {
-      expect(messageEvent.payload).toMatchObject({
-        connectionId: 'conn-notify-merge',
-        message: {
-          body: { type: 'text', text: 'Merged into live session' },
-          rawType: 'log',
-        },
-      });
-    }
   });
 
-  test('uses terminal identity to route and reconcile notifications for sessions in the same group', () => {
+  test('keeps notifications separate from WebSocket sessions even with terminal identity', () => {
     expect.hasAssertions();
 
     const workspacePath = '/tmp/shared-group';
@@ -567,29 +563,38 @@ describe('session integration', () => {
     const sessionB = snapshot.sessions.find((session) => session.connectionId === 'conn-b');
     const sessionC = snapshot.sessions.find((session) => session.connectionId === 'conn-c');
 
-    expect(sessionA?.messages.map((message) => message.body)).toContainEqual({
+    // WebSocket sessions should have no notification messages merged in
+    expect(sessionA?.messages).toHaveLength(0);
+    expect(sessionB?.messages).toHaveLength(0);
+    expect(sessionC?.messages).toHaveLength(0);
+
+    // Each notification should exist as its own separate session
+    const notifPaneA = snapshot.sessions.find(
+      (s) => s.connectionId === 'notification:github.com/tim/shared:wezterm:pane-a'
+    );
+    const notifPaneB = snapshot.sessions.find(
+      (s) => s.connectionId === 'notification:github.com/tim/shared:wezterm:pane-b'
+    );
+    const notifPaneC = snapshot.sessions.find(
+      (s) => s.connectionId === 'notification:github.com/tim/shared:wezterm:pane-c'
+    );
+    expect(notifPaneA?.messages.map((m) => m.body)).toContainEqual({
       type: 'text',
       text: 'for pane a',
     });
-    expect(sessionA?.messages.map((message) => message.body)).not.toContainEqual({
+    expect(notifPaneB?.messages.map((m) => m.body)).toContainEqual({
       type: 'text',
       text: 'for pane b',
     });
-    expect(sessionB?.messages.map((message) => message.body)).toContainEqual({
-      type: 'text',
-      text: 'for pane b',
-    });
-    expect(sessionB?.messages.map((message) => message.body)).not.toContainEqual({
-      type: 'text',
-      text: 'for pane a',
-    });
-    expect(sessionC?.messages.map((message) => message.body)).toContainEqual({
+    expect(notifPaneC?.messages.map((m) => m.body)).toContainEqual({
       type: 'text',
       text: 'queued for pane c',
     });
+
+    // Notification session for pane-c should still exist (not reconciled into conn-c)
     expect(
       snapshot.sessions.some((session) => session.connectionId === notificationSession.connectionId)
-    ).toBe(false);
+    ).toBe(true);
   });
 
   test('clears active prompts when the terminal answers them directly', () => {

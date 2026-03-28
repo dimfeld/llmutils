@@ -911,10 +911,21 @@ describe('lib/server/session_manager', () => {
       gitRemote: 'git@github.com:tim/notify.git',
     });
 
-    expect(notificationSession.connectionId).toBe('conn-1');
-    expect(manager.getSessionSnapshot().sessions).toHaveLength(1);
-    expect(manager.getSessionSnapshot().sessions[0]?.groupKey).toBe('github.com/tim/notify');
-    expect(manager.getSessionSnapshot().sessions[0]?.projectId).toBe(project.id);
+    expect(notificationSession.connectionId).toBe('notification:github.com/tim/notify');
+    expect(notificationSession.status).toBe('notification');
+    expect(manager.getSessionSnapshot().sessions).toHaveLength(2);
+
+    const wsSession = manager
+      .getSessionSnapshot()
+      .sessions.find((s) => s.connectionId === 'conn-1');
+    const notifSession = manager
+      .getSessionSnapshot()
+      .sessions.find((s) => s.connectionId === 'notification:github.com/tim/notify');
+    expect(wsSession?.groupKey).toBe('github.com/tim/notify');
+    expect(wsSession?.projectId).toBe(project.id);
+    expect(notifSession?.groupKey).toBe('github.com/tim/notify');
+    expect(notifSession?.projectId).toBe(project.id);
+    expect(notifSession?.messages).toHaveLength(1);
   });
 
   test('dismissSession only removes offline or notification sessions', () => {

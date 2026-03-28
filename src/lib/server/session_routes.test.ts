@@ -186,12 +186,13 @@ describe('lib/server/session_routes', () => {
     manager.dismissSession('conn-1');
 
     const receivedEvents = [];
-    for (let index = 0; index < 16; index += 1) {
+    for (let index = 0; index < 13; index += 1) {
       const event = await readSseEvent(reader!, decoder, streamState);
       expect(event).not.toBeNull();
       receivedEvents.push(event!);
     }
 
+    // Notification sessions stay separate from WebSocket sessions — no reconciliation
     expect(receivedEvents.map((event) => event.event)).toEqual([
       'session:sync-complete', // 0: initial snapshot fully delivered
       'session:new', // 1: notification session created
@@ -199,16 +200,13 @@ describe('lib/server/session_routes', () => {
       'session:update', // 3: second notification updates session
       'session:message', // 4: second notification message
       'session:new', // 5: WS conn-1 connected
-      'session:message', // 6: reconciled first notification
-      'session:message', // 7: reconciled second notification
-      'session:dismissed', // 8: notification session removed
-      'session:update', // 9: session_info metadata
-      'session:prompt', // 10: prompt_request
-      'session:message', // 11: prompt_request message
-      'session:prompt-cleared', // 12: prompt_answered clears prompt
-      'session:message', // 13: prompt_answered message
-      'session:disconnect', // 14: WS disconnect
-      'session:dismissed', // 15: dismiss conn-1
+      'session:update', // 6: session_info metadata
+      'session:prompt', // 7: prompt_request
+      'session:message', // 8: prompt_request message
+      'session:prompt-cleared', // 9: prompt_answered clears prompt
+      'session:message', // 10: prompt_answered message
+      'session:disconnect', // 11: WS disconnect
+      'session:dismissed', // 12: dismiss conn-1
     ]);
 
     expect(receivedEvents[0]).toEqual({
@@ -239,36 +237,7 @@ describe('lib/server/session_routes', () => {
         },
       },
     });
-    // Reconciled notification messages re-emitted on the WS session's connectionId
-    expect(receivedEvents[6]).toMatchObject({
-      data: {
-        connectionId: 'conn-1',
-        message: {
-          body: { text: 'First notification', type: 'text' },
-        },
-      },
-    });
-    expect(receivedEvents[7]).toMatchObject({
-      data: {
-        connectionId: 'conn-1',
-        message: {
-          body: { text: 'Second notification', type: 'text' },
-        },
-      },
-    });
-    expect(receivedEvents[8]).toEqual({
-      event: 'session:dismissed',
-      data: { connectionId: 'notification:example.com/repo' },
-    });
-    expect(receivedEvents[11]).toMatchObject({
-      data: {
-        connectionId: 'conn-1',
-        message: {
-          rawType: 'prompt_request',
-        },
-      },
-    });
-    expect(receivedEvents[10]).toEqual({
+    expect(receivedEvents[7]).toEqual({
       event: 'session:prompt',
       data: {
         connectionId: 'conn-1',
@@ -279,14 +248,22 @@ describe('lib/server/session_routes', () => {
         },
       },
     });
-    expect(receivedEvents[12]).toEqual({
+    expect(receivedEvents[8]).toMatchObject({
+      data: {
+        connectionId: 'conn-1',
+        message: {
+          rawType: 'prompt_request',
+        },
+      },
+    });
+    expect(receivedEvents[9]).toEqual({
       event: 'session:prompt-cleared',
       data: {
         connectionId: 'conn-1',
         requestId: 'req-1',
       },
     });
-    expect(receivedEvents[13]).toMatchObject({
+    expect(receivedEvents[10]).toMatchObject({
       event: 'session:message',
       data: {
         connectionId: 'conn-1',
@@ -295,7 +272,7 @@ describe('lib/server/session_routes', () => {
         },
       },
     });
-    expect(receivedEvents[14]).toMatchObject({
+    expect(receivedEvents[11]).toMatchObject({
       event: 'session:disconnect',
       data: {
         session: {
@@ -304,7 +281,7 @@ describe('lib/server/session_routes', () => {
         },
       },
     });
-    expect(receivedEvents[15]).toEqual({
+    expect(receivedEvents[12]).toEqual({
       event: 'session:dismissed',
       data: { connectionId: 'conn-1' },
     });
