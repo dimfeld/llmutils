@@ -36,7 +36,7 @@ import { singleLineWithPrefix, limitLines } from '../../../common/formatting.js'
 import { needArrayOrUndefined } from '../../../common/cli.js';
 import * as clipboard from '../../../common/clipboard.js';
 import { loadPlansFromDb } from '../../plans_db.js';
-import { resolveProjectContext } from '../../plan_materialize.js';
+import { ensureMaterializeDir, resolveProjectContext } from '../../plan_materialize.js';
 import { resolvePlanFromDb } from '../../plans.js';
 import { toPlanUpsertInput } from '../../db/plan_sync.js';
 import { ensureReferences } from '../../utils/references.js';
@@ -955,6 +955,7 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
   const config = await loadEffectiveConfig();
   const { gitRoot } = await resolvePlanPathContext(config);
   const planDir = getPlanStorageDir(gitRoot);
+  await ensureMaterializeDir(gitRoot);
 
   // Load all plans upfront for validation and dependency updates
   const repository = await getRepositoryIdentity({ cwd: gitRoot });
