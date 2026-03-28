@@ -65,6 +65,35 @@ The web interface supports a project-wide PR view that shows all open PRs for a 
 githubUsername: your-github-username # optional, avoids an API call
 ```
 
+### GitHub Webhook Receiver (separate ingress service)
+
+This repository includes a standalone Bun + SQLite webhook receiver at `src/webhooks/server.ts` that can run as a small internet-facing ingress service while keeping the main tim web app private.
+
+Start it with:
+
+```bash
+bun run webhook-receiver
+```
+
+Required environment variables:
+
+- `GITHUB_WEBHOOK_SECRET`: webhook secret used to validate `X-Hub-Signature-256`
+- `WEBHOOK_INTERNAL_API_TOKEN`: bearer token required for all non-public polling/ack routes
+
+Optional environment variables:
+
+- `WEBHOOK_RECEIVER_PORT` (default `8080`)
+- `WEBHOOK_RECEIVER_HOST` (default `0.0.0.0`)
+- `WEBHOOK_DB_PATH` (default `~/.cache/tim/webhook-receiver.sqlite`)
+- `WEBHOOK_REQUIRE_SECURE_INTERNAL_ROUTES` (default `true`)
+
+Routes:
+
+- `POST /github/webhook` (public): validates GitHub signature and stores deliveries idempotently by `X-GitHub-Delivery`
+- `GET /internal/events` (protected): bearer auth + secure transport required; supports `afterId`, `limit`, `includeAcked`
+- `POST /internal/events/ack` (protected): bearer auth + secure transport required; accepts `{ deliveryIds: string[] }`
+- `GET /healthz`: health check endpoint
+
 ## Lifecycle Commands
 
 Tim supports defining lifecycle commands that run automatically when starting and stopping agent sessions (`tim agent` / `tim run`). This is useful for managing dev servers, Docker containers, database migrations, and other setup/teardown tasks.

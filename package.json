@@ -22,7 +22,8 @@
     "test": "bun run test-cli && bun run test-web",
     "test-web": "bun --bun vitest run",
     "test-cli": "bun test",
-    "tim": "src/tim/tim.ts"
+    "tim": "src/tim/tim.ts",
+    "webhook-receiver": "bun run src/webhooks/server.ts"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
