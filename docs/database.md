@@ -63,7 +63,7 @@ Plan metadata, tasks, and dependencies are mirrored in SQLite alongside the YAML
 - `removePlanFromDb(planUuid, options?)`: Deletes plan and its assignment in a single transaction. Supports `throwOnError: true` to propagate DB deletion failures to the caller (used by `cleanup-temp` to keep the DB row intact when file deletion succeeds but DB deletion fails).
 - `clearPlanSyncContext()`: Resets cached context for testing.
 - DB sync failures are logged as warnings, never blocking plan file writes.
-- Stale write protection: when a plan includes `updatedAt`, upserts are skipped if that timestamp is older than the existing row's `updated_at`. `tim sync --force` and `syncMaterializedPlan(..., { force: true })` disable this guard. `withPlanAutoSync` always passes `force: true` to `syncMaterializedPlan` because the materialized file is the authoritative source in that context (agents may edit the file directly without updating `updatedAt`).
+- Stale write protection: when a plan includes `updatedAt`, upserts are skipped if that timestamp is older than the existing row's `updated_at`. `tim sync --force` disables this guard. All file→DB sync paths (including `syncMaterializedPlan` and `resolvePlanFromDbOrSyncFile`) rely on this guard — `force: true` is reserved for explicit user-initiated sync operations, never used in generic resolution or workspace reuse paths. **Important**: any sync path that modifies data must refresh `updatedAt` to a current timestamp before calling `upsertPlan()`, otherwise the stale-write guard may cause subsequent syncs to silently skip updates.
 
 **Context caching**: The sync module caches project context per git root to avoid repeated `getRepositoryIdentity()` calls. Concurrent context resolution for the same git root is deduplicated via a shared promise.
 
@@ -81,13 +81,22 @@ Plan materialization writes plan files from DB data to disk at well-known paths,
 
 **File layout**: All materialized plans live at `{repoRoot}/.tim/plans/{planId}.plan.md`. Each file contains a `materializedAs` YAML frontmatter field (`'primary' | 'reference'`) to distinguish explicitly materialized plans from related-plan snapshots. `ensureMaterializeDir()` creates the directory and writes a `.gitignore` with `*.plan.md` to prevent accidental commits.
 
+**Shadow copies**: When a primary plan is materialized, an identical hidden shadow copy is written alongside at `.tim/plans/.{planId}.plan.md.shadow`. The shadow records the exact state written during materialization and is used during sync to detect which fields the user actually changed (vs. round-tripped unchanged). Reference files do not get shadow copies. Shadow files use the same YAML+markdown format as plan files and are parsed by `readShadowPlanFile()` — a side-effect-free parser that avoids the UUID auto-generation behavior of `readPlanFile()`.
+
 **Core functions**:
 
-- `materializePlan(planId, repoRoot, options?)`: Queries plan from DB, converts via `planRowToSchemaInput()`, writes with `writePlanFile()` using `skipDb: true` and `materializedAs: 'primary'`. Returns the file path.
-- `materializeRelatedPlans(planId, repoRoot, options?)`: Materializes parent, children, siblings, and dependency plans as `.plan.md` files with `materializedAs: 'reference'`. Skips existing primary files to preserve user edits; overwrites existing reference files with fresh DB content.
-- `syncMaterializedPlan(planId, repoRoot)`: Skips reference files (they are read-only snapshots). For primary files, pre-validates UUID from raw file content, then reads materialized file via `readPlanFile()` and syncs to DB via `syncPlanToDb()` with `throwOnError: true`. Relies on the normal timestamp guard (no `force: true`) to prevent stale materialized files from overwriting newer DB state. Rejects materialized files missing `updatedAt` when the DB already has a valid timestamp for that plan.
+- `materializePlan(planId, repoRoot, options?)`: Queries plan from DB, converts via `planRowToSchemaInput()`, writes both the plan file and shadow copy using `generatePlanFileContent()` (a single serialization pass). Sets `materializedAs: 'primary'`. Returns the file path.
+- `materializeRelatedPlans(planId, repoRoot, options?)`: Materializes parent, children, siblings, and dependency plans as `.plan.md` files with `materializedAs: 'reference'`. Skips existing primary files to preserve user edits; overwrites existing reference files with fresh DB content. No shadow copies for references.
+- `syncMaterializedPlan(planId, repoRoot, options?)`: Skips reference files (they are read-only snapshots). For primary files: (1) reads shadow file if present, (2) reads current file, (3) uses `diffPlanFields()` to detect changed fields — skips DB sync if nothing changed, (4) if changes detected, reads current DB state and calls `mergePlanWithShadow()` to overlay only changed fields from the file onto the DB state, (5) syncs the merged result via `syncPlanToDb()`, (6) re-materializes the plan (updating both file and shadow to reflect merged DB state). When shadow is missing or corrupt, falls back to full-overwrite behavior. When `force: true`, bypasses merge and syncs the file plan directly. Options include `skipRematerialize` to avoid double re-materialization when called from `withPlanAutoSync()`.
 - `readMaterializedPlanRole(filePath)`: Side-effect-free frontmatter reader that returns the `materializedAs` role without triggering DB writes or UUID generation.
-- `withPlanAutoSync(planId, repoRoot, fn)`: Auto-sync wrapper for commands that modify plans while agents may be editing the materialized file. Syncs file→DB before `fn()`, re-materializes DB→file after. Uses try/finally with error suppression in the finally block to prevent re-materialization errors from masking `fn()` errors.
+- `withPlanAutoSync(planId, repoRoot, fn)`: Auto-sync wrapper for commands that modify plans while agents may be editing the materialized file. Syncs file→DB before `fn()` (with `skipRematerialize`), re-materializes DB→file after. Uses try/finally with error suppression in the finally block to prevent re-materialization errors from masking `fn()` errors.
+
+**Shadow diff and merge**:
+
+- `diffPlanFields(shadow, current)`: Compares all user-editable fields between shadow and current file plans using `Bun.deepEquals()`. Returns `{ changedFields: Set<string>, hasChanges: boolean }`. Compared fields: title, goal, details, status, priority, parent, branch, simple, tdd, discoveredFrom, assignedTo, baseBranch, temp, epic, planGeneratedAt, dependencies, issue, pullRequest, docs, changedFiles, tags, tasks, reviewIssues. Excludes: id, uuid, createdAt, updatedAt, materializedAs, references.
+- `mergePlanWithShadow(dbPlan, shadowPlan, filePlan)`: Starts from `dbPlan`, overlays only the fields that differ between `shadowPlan` and `filePlan`. This preserves DB-side changes (e.g., from web UI) to fields the user didn't edit in the file. When shadow is null, returns `filePlan` unchanged (full overwrite for backward compatibility).
+
+**Path helpers**: `getMaterializedPlanPath(repoRoot, planId)`, `getShadowPlanPath(repoRoot, planId)`, `getShadowPlanPathForFile(planFilePath)`.
 
 **CLI entry points**: `tim materialize <planId>` writes the working copy, `tim sync <planId>` syncs a single materialized file back to DB, `tim sync` (no args) scans `.tim/plans/` for all `*.plan.md` files and syncs them all (supports `--verbose` for progress output), and `tim cleanup-materialized` removes stale files.
 
@@ -95,7 +104,7 @@ Plan materialization writes plan files from DB data to disk at well-known paths,
 
 **UUID safety**: `syncMaterializedPlan()` extracts the UUID from raw file YAML before calling `readPlanFile()`, because `readPlanFile()` auto-generates UUIDs for files missing them (which would corrupt a materialized file with a wrong UUID).
 
-**`readPlanFile()` write side effect**: `readPlanFile()` is not a pure read operation. When a plan file is missing a UUID, it auto-generates one and persists it back to disk via `writePlanFile()`, which also triggers a DB insert. Callers expecting read-only behavior should be aware of this mutation.
+**`readPlanFile()` write side effect**: `readPlanFile()` is not a pure read operation. When a plan file is missing a UUID, it auto-generates one and persists it back to disk via `writePlanFile()`, which also triggers a DB insert. Callers that need read-only behavior (e.g., reading plan files for comparison or diffing) should use `readShadowPlanFile()` instead — it parses the same YAML+markdown format but has no side effects.
 
 ### DB-First Plan Resolution and Writing
 

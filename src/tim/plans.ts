@@ -569,6 +569,28 @@ function cleanPlanForYaml(plan: PlanSchema): {
   return { cleanedPlan, details };
 }
 
+export function generatePlanFileContent(plan: PlanSchema): string {
+  const { cleanedPlan, details } = cleanPlanForYaml(plan);
+
+  const schemaLine =
+    '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json';
+  const yamlContent = yaml.stringify(cleanedPlan);
+
+  let fullContent = '---\n';
+  fullContent += schemaLine + '\n';
+  fullContent += yamlContent;
+  fullContent += '---\n';
+
+  if (details) {
+    fullContent += '\n' + details;
+    if (!details.endsWith('\n')) {
+      fullContent += '\n';
+    }
+  }
+
+  return fullContent;
+}
+
 async function writeValidatedPlanToDb(
   plan: PlanSchema,
   options?: {
@@ -688,30 +710,7 @@ export async function writePlanFile(
     return;
   }
 
-  const { cleanedPlan, details } = cleanPlanForYaml(plan);
-
-  // The yaml-language-server schema line
-  const schemaLine =
-    '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json';
-
-  // Convert the plan (without details) to YAML with proper formatting
-  const yamlContent = yaml.stringify(cleanedPlan);
-
-  // Construct the front matter format
-  let fullContent = '---\n';
-  fullContent += schemaLine + '\n';
-  fullContent += yamlContent;
-  fullContent += '---\n';
-
-  // Add the details as the body if present
-  if (details) {
-    fullContent += '\n' + details;
-    if (!details.endsWith('\n')) {
-      fullContent += '\n';
-    }
-  }
-
-  await Bun.write(absolutePath, fullContent);
+  await Bun.write(absolutePath, generatePlanFileContent(plan));
 }
 
 /**

@@ -3,6 +3,7 @@ import { warn } from '../../logging.js';
 import { logSpawn } from '../../common/process.js';
 import {
   getMaterializedPlanPath,
+  getShadowPlanPath,
   materializePlan,
   syncMaterializedPlan,
 } from '../plan_materialize.js';
@@ -49,6 +50,7 @@ export async function editMaterializedPlan(
     }
     if (shouldDeleteMaterializedFile) {
       await rm(materializedPath, { force: true });
+      await rm(getShadowPlanPath(repoRoot, planId), { force: true });
     }
   } catch (error) {
     shouldDeleteMaterializedFile = false;

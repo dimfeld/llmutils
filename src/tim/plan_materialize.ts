@@ -18,7 +18,8 @@ import {
 } from './db/plan.js';
 import { syncPlanToDb } from './db/plan_sync.js';
 import { getOrCreateProject } from './db/project.js';
-import { readPlanFile, writePlanFile } from './plans.js';
+import { generatePlanFileContent, readPlanFile } from './plans.js';
+import { normalizeContainerToEpic, phaseSchema, type PlanSchema } from './planSchema.js';
 import { planRowToSchemaInput } from './plans_db.js';
 
 export const MATERIALIZED_DIR = path.join('.tim', 'plans');
@@ -44,6 +45,7 @@ export type ProjectContext = {
 type MaterializePlanOptions = {
   context?: ProjectContext;
   force?: boolean;
+  skipRematerialize?: boolean;
 };
 
 export type MaterializedPlanRole = 'primary' | 'reference';
@@ -52,6 +54,62 @@ type CleanupMaterializedPlansResult = {
   deletedPrimaryFiles: string[];
   deletedReferenceFiles: string[];
 };
+
+type EditablePlanField =
+  | 'title'
+  | 'goal'
+  | 'details'
+  | 'status'
+  | 'priority'
+  | 'parent'
+  | 'branch'
+  | 'simple'
+  | 'tdd'
+  | 'discoveredFrom'
+  | 'assignedTo'
+  | 'baseBranch'
+  | 'temp'
+  | 'epic'
+  | 'planGeneratedAt'
+  | 'dependencies'
+  | 'issue'
+  | 'pullRequest'
+  | 'docs'
+  | 'changedFiles'
+  | 'tags'
+  | 'tasks'
+  | 'reviewIssues';
+
+type PlanFieldDiff = {
+  changedFields: Set<EditablePlanField>;
+  hasChanges: boolean;
+};
+
+const EDITABLE_PLAN_FIELDS = [
+  'title',
+  'goal',
+  'details',
+  'status',
+  'priority',
+  'parent',
+  'branch',
+  'simple',
+  'tdd',
+  'discoveredFrom',
+  'assignedTo',
+  'baseBranch',
+  'temp',
+  'epic',
+  'planGeneratedAt',
+  'dependencies',
+  'issue',
+  'pullRequest',
+  'docs',
+  'changedFiles',
+  'tags',
+  'tasks',
+  'reviewIssues',
+] as const satisfies readonly EditablePlanField[];
 
 function buildPlanMaps(rows: PlanRow[]): {
   planIdToUuid: Map<number, string>;
@@ -112,22 +170,13 @@ async function materializePlanRow(
   uuidToPlanId: Map<string, number>,
   materializedAs: MaterializedPlanRole
 ): Promise<string> {
-  const db = getDatabase();
-  const tasks = getPlanTasksByUuid(db, row.uuid).map((task) => ({
-    title: task.title,
-    description: task.description,
-    done: task.done === 1,
-  }));
-  const dependencyUuids = getPlanDependenciesByUuid(db, row.uuid).map(
-    (dependency) => dependency.depends_on_uuid
-  );
-  const tags = getPlanTagsByUuid(db, row.uuid).map((tag) => tag.tag);
-  const plan = {
-    ...planRowToSchemaInput(row, tasks, dependencyUuids, tags, uuidToPlanId),
-    materializedAs,
-  };
+  const plan = getPlanSchemaFromRow(row, uuidToPlanId, materializedAs);
+  const content = generatePlanFileContent(plan);
 
-  await writePlanFile(targetPath, plan, { skipDb: true, skipUpdatedAt: true });
+  await Bun.write(targetPath, content);
+  if (materializedAs === 'primary') {
+    await Bun.write(getShadowPlanPathForFile(targetPath), content);
+  }
   return targetPath;
 }
 
@@ -177,6 +226,88 @@ function collectRelatedPlanRows(
 
 export function getMaterializedPlanPath(repoRoot: string, planId: number): string {
   return path.join(repoRoot, MATERIALIZED_DIR, `${planId}.plan.md`);
+}
+
+export function getShadowPlanPath(repoRoot: string, planId: number): string {
+  return path.join(repoRoot, MATERIALIZED_DIR, `.${planId}.plan.md.shadow`);
+}
+
+function getShadowPlanPathForFile(filePath: string): string {
+  return path.join(path.dirname(filePath), `.${path.basename(filePath)}.shadow`);
+}
+
+function parseShadowMaterializedFilename(filename: string): { planId: number } | null {
+  const match = /^\.(\d+)\.plan\.md\.shadow$/.exec(filename);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    planId: Number(match[1]),
+  };
+}
+
+function getPlanSchemaFromRow(
+  row: PlanRow,
+  uuidToPlanId: Map<string, number>,
+  materializedAs?: MaterializedPlanRole
+): PlanSchema {
+  const db = getDatabase();
+  const tasks = getPlanTasksByUuid(db, row.uuid).map((task) => ({
+    title: task.title,
+    description: task.description,
+    done: task.done === 1,
+  }));
+  const dependencyUuids = getPlanDependenciesByUuid(db, row.uuid).map(
+    (dependency) => dependency.depends_on_uuid
+  );
+  const tags = getPlanTagsByUuid(db, row.uuid).map((tag) => tag.tag);
+
+  return {
+    ...planRowToSchemaInput(row, tasks, dependencyUuids, tags, uuidToPlanId),
+    ...(materializedAs ? { materializedAs } : {}),
+  };
+}
+
+export function diffPlanFields(shadow: PlanSchema, current: PlanSchema): PlanFieldDiff {
+  const changedFields = new Set<EditablePlanField>();
+
+  for (const field of EDITABLE_PLAN_FIELDS) {
+    if (!Bun.deepEquals(shadow[field], current[field])) {
+      changedFields.add(field);
+    }
+  }
+
+  return {
+    changedFields,
+    hasChanges: changedFields.size > 0,
+  };
+}
+
+export function mergePlanWithShadow(
+  dbPlan: PlanSchema,
+  shadowPlan: PlanSchema | null,
+  filePlan: PlanSchema
+): PlanSchema {
+  if (!shadowPlan) {
+    return filePlan;
+  }
+
+  const { changedFields } = diffPlanFields(shadowPlan, filePlan);
+  if (changedFields.size === 0) {
+    return dbPlan;
+  }
+
+  const mergedPlan: PlanSchema = {
+    ...dbPlan,
+    materializedAs: filePlan.materializedAs ?? dbPlan.materializedAs,
+  };
+
+  for (const field of changedFields) {
+    mergedPlan[field] = filePlan[field] as never;
+  }
+
+  return mergedPlan;
 }
 
 export async function ensureMaterializeDir(repoRoot: string): Promise<string> {
@@ -465,6 +596,49 @@ async function validateMaterializedFileUuid(
   }
 }
 
+async function readShadowPlanFile(filePath: string): Promise<PlanSchema> {
+  const content = await Bun.file(filePath).text();
+
+  if (!content.startsWith('---\n')) {
+    throw new Error(`Shadow plan file ${filePath} has no frontmatter`);
+  }
+
+  const endDelimiterIndex = content.indexOf('\n---\n', 4);
+  if (endDelimiterIndex === -1) {
+    throw new Error(`Shadow plan file ${filePath} has no closing frontmatter delimiter`);
+  }
+
+  const frontMatter = content.substring(4, endDelimiterIndex);
+  const markdownBody = content.substring(endDelimiterIndex + 5).trim();
+  const parsed = yaml.parse(frontMatter, {
+    uniqueKeys: false,
+  });
+  const planData =
+    parsed && typeof parsed === 'object'
+      ? normalizeContainerToEpic(parsed as Record<string, unknown>)
+      : {};
+
+  if (markdownBody) {
+    if (planData.details) {
+      planData.details = `${planData.details}\n\n${markdownBody}`;
+    } else {
+      planData.details = markdownBody;
+    }
+  } else {
+    planData.details ??= '';
+  }
+
+  const result = phaseSchema.safeParse(planData);
+  if (!result.success) {
+    const errors = result.error.issues
+      .map((issue) => `  - ${issue.path.join('.')}: ${issue.message}`)
+      .join('\n');
+    throw new Error(`Invalid shadow plan file ${filePath}:\n${errors}`);
+  }
+
+  return normalizeContainerToEpic(result.data);
+}
+
 export async function syncMaterializedPlan(
   planId: number,
   repoRoot: string,
@@ -490,7 +664,29 @@ export async function syncMaterializedPlan(
   await validateMaterializedFileUuid(filePath, canonicalRow.uuid);
 
   const plan = await readPlanFile(filePath);
-  if (!options.force && !plan.updatedAt && canonicalRow.updated_at) {
+  const shadowPath = getShadowPlanPath(repoRoot, planId);
+  let shadowPlan: PlanSchema | null = null;
+  let shadowCorrupt = false;
+
+  try {
+    shadowPlan = await readShadowPlanFile(shadowPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      shadowCorrupt = true;
+      warn(
+        `Failed to parse shadow plan for ${planId} at ${shadowPath}. ` +
+          `Falling back to full file sync: ${error as Error}`
+      );
+    }
+  }
+
+  if (
+    !options.force &&
+    !plan.updatedAt &&
+    canonicalRow.updated_at &&
+    !shadowPlan &&
+    !shadowCorrupt
+  ) {
     warn(
       `Materialized plan ${planId} at ${filePath} is missing updatedAt. ` +
         `Skipping file→DB sync to protect newer DB state.`
@@ -503,16 +699,34 @@ export async function syncMaterializedPlan(
     );
   }
 
-  await syncPlanToDb(plan, {
+  const changes = shadowPlan ? diffPlanFields(shadowPlan, plan) : null;
+  if (!options.force && changes && !changes.hasChanges) {
+    if (!options.skipRematerialize) {
+      const freshContext = await resolveProjectContext(repoRoot, resolvedContext.repository);
+      await materializePlan(planId, repoRoot, { context: freshContext });
+      await refreshRelatedRefs(planId, repoRoot, freshContext);
+    }
+    return filePath;
+  }
+
+  const dbPlan = getPlanSchemaFromRow(canonicalRow, resolvedContext.uuidToPlanId);
+  const mergedPlan = options.force ? plan : mergePlanWithShadow(dbPlan, shadowPlan, plan);
+  if (options.force || !shadowPlan || changes?.hasChanges) {
+    mergedPlan.updatedAt = new Date().toISOString();
+  }
+  await syncPlanToDb(mergedPlan, {
     baseDir: repoRoot,
     cwdForIdentity: repoRoot,
     idToUuid: resolvedContext.planIdToUuid,
     throwOnError: true,
     force: options.force,
   });
-  // Re-resolve context after DB sync since plan data has changed
-  const freshContext = await resolveProjectContext(repoRoot, resolvedContext.repository);
-  await refreshRelatedRefs(planId, repoRoot, freshContext);
+
+  if (!options.skipRematerialize) {
+    const freshContext = await resolveProjectContext(repoRoot, resolvedContext.repository);
+    await materializePlan(planId, repoRoot, { context: freshContext });
+    await refreshRelatedRefs(planId, repoRoot, freshContext);
+  }
 
   return filePath;
 }
@@ -538,7 +752,7 @@ export async function withPlanAutoSync<T>(
     ? await resolveProjectContext(repoRoot, repository)
     : undefined;
   if (materializedExists) {
-    await syncMaterializedPlan(planId, repoRoot, { context, force: true });
+    await syncMaterializedPlan(planId, repoRoot, { context, skipRematerialize: true });
   }
 
   let fnError: unknown;
@@ -631,6 +845,11 @@ export async function cleanupMaterializedPlans(
         throw error;
       }
     });
+    await unlink(getShadowPlanPath(repoRoot, parsed.planId)).catch((error) => {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw error;
+      }
+    });
     deletedPrimaryFiles.push(entryPath);
     deletedPrimaryPlanIds.push(parsed.planId);
   }
@@ -682,6 +901,20 @@ export async function cleanupMaterializedPlans(
     throw error;
   });
   for (const entry of allRemainingEntries) {
+    const orphanedShadow = parseShadowMaterializedFilename(entry);
+    if (orphanedShadow) {
+      const primaryPath = getMaterializedPlanPath(repoRoot, orphanedShadow.planId);
+      const primaryRole = await readMaterializedPlanRole(primaryPath);
+      if (!primaryRole || primaryRole === 'reference') {
+        await unlink(path.join(materializedDir, entry)).catch((error) => {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+            throw error;
+          }
+        });
+      }
+      continue;
+    }
+
     const legacyMatch = /^(\d+)\.ref\.md$/.exec(entry);
     if (!legacyMatch) {
       continue;

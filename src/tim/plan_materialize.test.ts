@@ -19,6 +19,7 @@ import {
   cleanupMaterializedPlans,
   ensureMaterializeDir,
   getMaterializedPlanPath,
+  getShadowPlanPath,
   materializePlan,
   materializeRelatedPlans,
   resolveProjectContext,
@@ -212,6 +213,9 @@ describe('tim plan_materialize', () => {
     });
     expect(materializedPlan.tasks).toHaveLength(2);
     expect(materializedPlan.reviewIssues).toHaveLength(1);
+    expect(await fs.readFile(getShadowPlanPath(repoDir, 3), 'utf8')).toBe(
+      await fs.readFile(planPath, 'utf8')
+    );
 
     const refPaths = await materializeRelatedPlans(3, repoDir);
     expect(refPaths.sort()).toEqual(
@@ -236,6 +240,10 @@ describe('tim plan_materialize', () => {
     expect(childRef.materializedAs).toBe('reference');
     expect(siblingRef.parent).toBe(1);
     expect(siblingRef.materializedAs).toBe('reference');
+    for (const refPath of refPaths) {
+      const refPlan = await readPlanFile(refPath);
+      expect(await Bun.file(getShadowPlanPath(repoDir, refPlan.id)).exists()).toBe(false);
+    }
   });
 
   test('materializeRelatedPlans does not overwrite an existing primary materialized plan', async () => {
@@ -408,6 +416,216 @@ describe('tim plan_materialize', () => {
       temp: false,
       materializedAs: 'primary',
     });
+    expect(await fs.readFile(getShadowPlanPath(repoDir, 3), 'utf8')).toBe(
+      await fs.readFile(planPath, 'utf8')
+    );
+  });
+
+  test('syncMaterializedPlan skips DB writes when the materialized file is unchanged from its shadow', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+    const before = getPlanByPlanId(db, project.id, 3);
+
+    await syncMaterializedPlan(3, repoDir);
+
+    const after = getPlanByPlanId(db, project.id, 3);
+    expect(after).toEqual(before);
+    expect(await Bun.file(planPath).exists()).toBe(true);
+  });
+
+  test('syncMaterializedPlan with force=true still runs the DB sync path when the materialized file matches its shadow', async () => {
+    await seedProject();
+    await materializePlan(3, repoDir);
+
+    const planSyncModule = await import('./db/plan_sync.js');
+    const originalSyncPlanToDb = planSyncModule.syncPlanToDb;
+    const mockedSyncPlanToDb = mock(
+      async (
+        plan: Parameters<typeof planSyncModule.syncPlanToDb>[0],
+        options?: Parameters<typeof planSyncModule.syncPlanToDb>[1]
+      ) => originalSyncPlanToDb(plan, options)
+    );
+    await moduleMocker.mock('./db/plan_sync.js', () => ({
+      ...planSyncModule,
+      syncPlanToDb: mockedSyncPlanToDb,
+    }));
+
+    const { syncMaterializedPlan: syncMaterializedPlanFresh } =
+      await importFreshPlanMaterialize('force-no-change');
+    await syncMaterializedPlanFresh(3, repoDir, { force: true });
+
+    expect(mockedSyncPlanToDb).toHaveBeenCalledTimes(1);
+    expect(mockedSyncPlanToDb.mock.calls[0]?.[1]).toMatchObject({
+      force: true,
+      throwOnError: true,
+    });
+  });
+
+  test('syncMaterializedPlan re-materializes the primary file from DB state even when no file changes are detected', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    db.prepare(
+      'UPDATE plan SET priority = ?, updated_at = ? WHERE project_id = ? AND plan_id = ?'
+    ).run('urgent', '2026-03-27T00:00:00.000Z', project.id, 3);
+
+    await syncMaterializedPlan(3, repoDir);
+
+    const refreshedPlan = await readPlanFile(planPath);
+    expect(refreshedPlan.priority).toBe('urgent');
+    expect(await fs.readFile(getShadowPlanPath(repoDir, 3), 'utf8')).toBe(
+      await fs.readFile(planPath, 'utf8')
+    );
+  });
+
+  test('syncMaterializedPlan preserves DB-only changes for fields untouched in the materialized file', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    db.prepare(
+      'UPDATE plan SET status = ?, updated_at = ? WHERE project_id = ? AND plan_id = ?'
+    ).run('done', '2026-03-26T00:00:00.000Z', project.id, 3);
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.title = 'Title changed on disk only';
+    await writePlanFile(planPath, editedPlan, { skipSync: true });
+
+    await syncMaterializedPlan(3, repoDir);
+
+    const saved = getPlanByPlanId(db, project.id, 3);
+    expect(saved?.title).toBe('Title changed on disk only');
+    expect(saved?.status).toBe('done');
+
+    const rematerializedPlan = await readPlanFile(planPath);
+    expect(rematerializedPlan.title).toBe('Title changed on disk only');
+    expect(rematerializedPlan.status).toBe('done');
+  });
+
+  test('syncMaterializedPlan updates only the details field when only the markdown body changes', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    db.prepare(
+      'UPDATE plan SET status = ?, updated_at = ? WHERE project_id = ? AND plan_id = ?'
+    ).run('done', '2026-03-26T00:00:00.000Z', project.id, 3);
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.details = 'Primary details edited only in the markdown body';
+    await writePlanFile(planPath, editedPlan, { skipSync: true });
+
+    await syncMaterializedPlan(3, repoDir);
+
+    const saved = getPlanByPlanId(db, project.id, 3);
+    expect(saved?.details).toBe('Primary details edited only in the markdown body');
+    expect(saved?.status).toBe('done');
+    expect(saved?.title).toBe('Primary plan');
+    expect(saved?.goal).toBe('Primary goal');
+  });
+
+  test('syncMaterializedPlan updates tasks when only the task list changes', async () => {
+    const { db } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.tasks = [
+      { title: 'implement', description: 'build materialize flow', done: true },
+      { title: 'verify', description: 'run tests with updated expectations', done: false },
+      { title: 'document', description: 'capture task-only sync coverage', done: false },
+    ];
+    await writePlanFile(planPath, editedPlan, { skipSync: true });
+
+    await syncMaterializedPlan(3, repoDir);
+
+    const tasks = getPlanTasksByUuid(db, '33333333-3333-4333-8333-333333333333');
+    expect(
+      tasks.map((task) => ({
+        title: task.title,
+        description: task.description,
+        done: task.done === 1,
+      }))
+    ).toEqual(editedPlan.tasks);
+
+    const rematerializedPlan = await readPlanFile(planPath);
+    expect(rematerializedPlan.tasks).toEqual(editedPlan.tasks);
+  });
+
+  test('syncMaterializedPlan merges file and DB changes on different fields using the shadow baseline', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    db.prepare(
+      'UPDATE plan SET assigned_to = ?, updated_at = ? WHERE project_id = ? AND plan_id = ?'
+    ).run('web-user', '2026-03-26T00:00:00.000Z', project.id, 3);
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.details = 'Details updated from materialized file';
+    editedPlan.tasks = [
+      ...editedPlan.tasks,
+      { title: 'shadow merge', description: 'exercise merge behavior', done: false },
+    ];
+    await writePlanFile(planPath, editedPlan, { skipSync: true });
+
+    await syncMaterializedPlan(3, repoDir);
+
+    const saved = getPlanByPlanId(db, project.id, 3);
+    expect(saved?.assigned_to).toBe('web-user');
+    expect(saved?.details).toBe('Details updated from materialized file');
+    const tasks = getPlanTasksByUuid(db, '33333333-3333-4333-8333-333333333333');
+    expect(tasks.map((task) => task.title)).toContain('shadow merge');
+
+    const rematerializedPlan = await readPlanFile(planPath);
+    expect(rematerializedPlan.assignedTo).toBe('web-user');
+    expect(rematerializedPlan.details).toBe('Details updated from materialized file');
+    expect(rematerializedPlan.tasks.map((task) => task.title)).toContain('shadow merge');
+    expect(await fs.readFile(getShadowPlanPath(repoDir, 3), 'utf8')).toBe(
+      await fs.readFile(planPath, 'utf8')
+    );
+  });
+
+  test('syncMaterializedPlan falls back to full overwrite when the shadow file is missing', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+    await fs.unlink(getShadowPlanPath(repoDir, 3));
+
+    db.prepare(
+      'UPDATE plan SET status = ?, updated_at = ? WHERE project_id = ? AND plan_id = ?'
+    ).run('done', '2026-03-26T00:00:00.000Z', project.id, 3);
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.title = 'Fallback full overwrite title';
+    editedPlan.status = 'pending';
+    await writePlanFile(planPath, editedPlan, { skipSync: true });
+
+    await syncMaterializedPlan(3, repoDir);
+
+    const saved = getPlanByPlanId(db, project.id, 3);
+    expect(saved?.title).toBe('Fallback full overwrite title');
+    expect(saved?.status).toBe('pending');
+    expect(await Bun.file(getShadowPlanPath(repoDir, 3)).exists()).toBe(true);
+  });
+
+  test('syncMaterializedPlan falls back to full overwrite when the shadow file is malformed', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+    const shadowPath = getShadowPlanPath(repoDir, 3);
+    await fs.writeFile(shadowPath, '---\ntitle: [broken\n---\n', 'utf8');
+
+    db.prepare(
+      'UPDATE plan SET status = ?, updated_at = ? WHERE project_id = ? AND plan_id = ?'
+    ).run('done', '2026-03-27T00:00:00.000Z', project.id, 3);
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.title = 'Fallback from malformed shadow';
+    editedPlan.status = 'pending';
+    editedPlan.updatedAt = '2026-03-28T00:00:00.000Z';
+    await writePlanFile(planPath, editedPlan, { skipDb: true, skipUpdatedAt: true });
+
+    await syncMaterializedPlan(3, repoDir);
+
+    const saved = getPlanByPlanId(db, project.id, 3);
+    expect(saved?.title).toBe('Fallback from malformed shadow');
+    expect(saved?.status).toBe('pending');
+    expect(await fs.readFile(shadowPath, 'utf8')).toBe(await fs.readFile(planPath, 'utf8'));
   });
 
   test('withPlanAutoSync syncs file edits before DB changes and re-materializes after', async () => {
@@ -436,6 +654,9 @@ describe('tim plan_materialize', () => {
     const rematerializedPlan = await readPlanFile(planPath);
     expect(rematerializedPlan.title).toBe('Title from materialized file');
     expect(rematerializedPlan.status).toBe('done');
+    expect(await fs.readFile(getShadowPlanPath(repoDir, 3), 'utf8')).toBe(
+      await fs.readFile(planPath, 'utf8')
+    );
   });
 
   test('materializePlan throws when the plan does not exist in the repo project', async () => {
@@ -490,7 +711,7 @@ describe('tim plan_materialize', () => {
     expect(getPlanByPlanId(db, project.id, 3)?.uuid).toBe('33333333-3333-4333-8333-333333333333');
   });
 
-  test('syncMaterializedPlan does not overwrite newer DB state with a stale materialized file', async () => {
+  test('syncMaterializedPlan preserves newer DB state for untouched fields even when the materialized file has older timestamps', async () => {
     const { db, project } = await seedProject();
     const planPath = await materializePlan(3, repoDir);
 
@@ -500,15 +721,17 @@ describe('tim plan_materialize', () => {
     await writePlanFile(planPath, stalePlan, { skipDb: true, skipUpdatedAt: true });
 
     db.prepare(
-      'UPDATE plan SET title = ?, updated_at = ? WHERE project_id = ? AND plan_id = ?'
-    ).run('Newer title from DB', '2026-03-25T00:00:00.000Z', project.id, 3);
+      'UPDATE plan SET status = ?, updated_at = ? WHERE project_id = ? AND plan_id = ?'
+    ).run('done', '2026-03-25T00:00:00.000Z', project.id, 3);
 
     await syncMaterializedPlan(3, repoDir);
 
-    expect(getPlanByPlanId(db, project.id, 3)?.title).toBe('Newer title from DB');
+    const saved = getPlanByPlanId(db, project.id, 3);
+    expect(saved?.title).toBe('Older title from materialized file');
+    expect(saved?.status).toBe('done');
   });
 
-  test('syncMaterializedPlan skips file-to-DB sync when the materialized file is missing updatedAt', async () => {
+  test('syncMaterializedPlan still merges file edits when updatedAt is missing but a shadow file exists', async () => {
     const { db, project } = await seedProject();
     const planPath = await materializePlan(3, repoDir);
 
@@ -518,13 +741,15 @@ describe('tim plan_materialize', () => {
     await writePlanFile(planPath, stalePlan, { skipDb: true, skipUpdatedAt: true });
 
     db.prepare(
-      'UPDATE plan SET title = ?, updated_at = ? WHERE project_id = ? AND plan_id = ?'
-    ).run('Authoritative title from DB', '2026-03-25T00:00:00.000Z', project.id, 3);
+      'UPDATE plan SET status = ?, updated_at = ? WHERE project_id = ? AND plan_id = ?'
+    ).run('done', '2026-03-25T00:00:00.000Z', project.id, 3);
 
     const returnedPath = await syncMaterializedPlan(3, repoDir);
 
     expect(returnedPath).toBe(planPath);
-    expect(getPlanByPlanId(db, project.id, 3)?.title).toBe('Authoritative title from DB');
+    const saved = getPlanByPlanId(db, project.id, 3);
+    expect(saved?.title).toBe('Title from timestamp-less materialized file');
+    expect(saved?.status).toBe('done');
   });
 
   test('syncMaterializedPlan updates the DB when the materialized file is newer', async () => {
@@ -650,6 +875,7 @@ describe('tim plan_materialize', () => {
     expect(donePlan.title).toBe('Dependency plan');
     expect(donePlan.details).toBe('Dependency details');
     expect(await Bun.file(orphanRefPath).exists()).toBe(false);
+    expect(await Bun.file(getShadowPlanPath(repoDir, 2)).exists()).toBe(false);
     expect(getPlanByPlanId(db, project.id, 2)?.status).toBe('done');
   });
 
@@ -731,6 +957,7 @@ describe('tim plan_materialize', () => {
     const { db, project } = await seedProject();
 
     const planPath = await materializePlan(3, repoDir);
+    const shadowPath = getShadowPlanPath(repoDir, 3);
     const refPaths = await materializeRelatedPlans(3, repoDir);
     expect(refPaths).toHaveLength(4);
 
@@ -743,6 +970,7 @@ describe('tim plan_materialize', () => {
     expect(result.deletedPrimaryFiles).toEqual([planPath]);
     expect(result.deletedReferenceFiles.sort()).toEqual(refPaths.sort());
     expect(await Bun.file(planPath).exists()).toBe(false);
+    expect(await Bun.file(shadowPath).exists()).toBe(false);
     for (const refPath of refPaths) {
       expect(await Bun.file(refPath).exists()).toBe(false);
     }
@@ -768,6 +996,7 @@ describe('tim plan_materialize', () => {
     ).run('cancelled', '2026-03-24T00:00:00.000Z', project.id, 4);
 
     const realFs = await import('node:fs/promises');
+    const realUnlink = realFs.unlink;
     const mockedUnlink = mock(async (entryPath: string) => {
       if (entryPath === stalePlanPath) {
         const error = new Error('already removed') as NodeJS.ErrnoException;
@@ -775,7 +1004,7 @@ describe('tim plan_materialize', () => {
         throw error;
       }
 
-      await realFs.unlink(entryPath);
+      await realUnlink(entryPath);
     });
     await moduleMocker.mock('node:fs/promises', () => ({
       ...realFs,
@@ -790,7 +1019,7 @@ describe('tim plan_materialize', () => {
     expect(mockedUnlink).toHaveBeenCalledWith(stalePlanPath);
   });
 
-  test('withPlanAutoSync limits repository identity lookups to the wrapper and syncPlanToDb', async () => {
+  test('withPlanAutoSync limits repository identity lookups when sync sees no file changes', async () => {
     const { db, project } = await seedProject();
     await materializePlan(3, repoDir);
 
@@ -813,7 +1042,7 @@ describe('tim plan_materialize', () => {
       ).run('done', '2026-03-24T00:00:00.000Z', project.id, 3);
     });
 
-    expect(mockedGetRepositoryIdentity).toHaveBeenCalledTimes(2);
+    expect(mockedGetRepositoryIdentity).toHaveBeenCalledTimes(1);
   });
 
   test('materialize, sync, and cleanup-materialized command handlers work together', async () => {

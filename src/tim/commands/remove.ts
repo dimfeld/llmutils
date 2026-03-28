@@ -10,6 +10,8 @@ import { toPlanUpsertInput } from '../db/plan_sync.js';
 import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
 import {
   getMaterializedPlanPath,
+  getShadowPlanPath,
+  readMaterializedPlanRole,
   resolveProjectContext,
   syncMaterializedPlan,
 } from '../plan_materialize.js';
@@ -191,6 +193,12 @@ export async function handleRemoveCommand(
       skipDb: true,
       skipUpdatedAt: true,
     });
+    if (outputPath === getMaterializedPlanPath(repoRoot, planId)) {
+      const role = await readMaterializedPlanRole(outputPath);
+      if (role === 'primary') {
+        await Bun.write(getShadowPlanPath(repoRoot, planId), Bun.file(outputPath));
+      }
+    }
     log(
       chalk.gray(
         `Updated references in plan ${planId}${refreshedPlan.title ? ` (${refreshedPlan.title})` : ''}`
@@ -211,6 +219,13 @@ export async function handleRemoveCommand(
         throw error;
       }
     }
+  }
+
+  for (const target of targetResolutions) {
+    const shadowPath = getShadowPlanPath(repoRoot, target.plan.id);
+    await fs.unlink(shadowPath).catch((error) => {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    });
   }
 
   for (const target of targetResolutions) {
