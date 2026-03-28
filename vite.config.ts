@@ -34,6 +34,7 @@ export default defineConfig({
         test: {
           name: 'server',
           environment: 'node',
+          setupFiles: ['src/vitest-setup.ts'],
           include: ['src/lib/**/*.{test,spec}.{js,ts}', 'src/routes/**/*.{test,spec}.{js,ts}'],
           // exclude: ['src/**/*.svelte.{test,spec}.{js,ts}'],
         },
