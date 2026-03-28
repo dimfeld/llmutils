@@ -111,7 +111,12 @@
         </div>
         <div class="space-y-0.5 px-2 pb-2">
           {#each filteredReviewing as pr (pr.status.pr_number)}
-            <PrRow {pr} {projectId} selected={pr.status.pr_number === selectedPrNumber} />
+            <PrRow
+              {pr}
+              {projectId}
+              selected={pr.status.pr_number === selectedPrNumber}
+              showAuthor
+            />
           {/each}
         </div>
       </div>

@@ -13,10 +13,12 @@
     pr,
     projectId,
     selected = false,
+    showAuthor = false,
   }: {
     pr: EnrichedProjectPr;
     projectId: string;
     selected?: boolean;
+    showAuthor?: boolean;
   } = $props();
 </script>
 
@@ -65,7 +67,11 @@
       </span>
     {/if}
   </div>
-  <div class="mt-0.5 truncate font-mono text-xs text-muted-foreground/70">
-    {pr.status.head_branch}
+  <div class="mt-0.5 flex items-center gap-1.5 truncate text-xs text-muted-foreground/70">
+    {#if showAuthor && pr.status.author}
+      <span>{pr.status.author}</span>
+      <span class="text-muted-foreground/40">&middot;</span>
+    {/if}
+    <span class="truncate font-mono">{pr.status.head_branch}</span>
   </div>
 </a>
