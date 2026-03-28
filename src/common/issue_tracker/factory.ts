@@ -10,6 +10,7 @@ import { createGitHubClient } from './github.js';
 import { createLinearClient } from '../linear.js';
 import { loadEffectiveConfig } from '../../tim/configLoader.js';
 import { debugLog } from '../../logging.js';
+import { resolveGitHubToken } from '../github/token.js';
 import type { TimConfig } from '../../tim/configSchema.js';
 import type { IssueTrackerClient, IssueTrackerConfig, IssueTrackerRegistry } from './types.js';
 
@@ -32,7 +33,7 @@ export function getAvailableTrackers(): {
   available: Array<'github' | 'linear'>;
   unavailable: Array<'github' | 'linear'>;
 } {
-  const github = !!process.env.GITHUB_TOKEN;
+  const github = !!resolveGitHubToken();
   const linear = !!process.env.LINEAR_API_KEY;
 
   const available: Array<'github' | 'linear'> = [];
@@ -85,7 +86,8 @@ export async function getIssueTracker(config?: TimConfig): Promise<IssueTrackerC
   }
 
   // Get the appropriate API key
-  const apiKey = trackerType === 'github' ? process.env.GITHUB_TOKEN : process.env.LINEAR_API_KEY;
+  const apiKey =
+    trackerType === 'github' ? (resolveGitHubToken() ?? undefined) : process.env.LINEAR_API_KEY;
 
   // Create the tracker configuration
   const trackerConfig: IssueTrackerConfig = {

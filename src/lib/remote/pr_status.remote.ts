@@ -3,6 +3,7 @@ import { error } from '@sveltejs/kit';
 import * as z from 'zod';
 
 import { ensurePrStatusFresh, syncPlanPrLinks } from '$common/github/pr_status_service.js';
+import { resolveGitHubToken } from '$common/github/token.js';
 import { categorizePrUrls, parseJsonStringArray } from '$lib/server/db_queries.js';
 import { getServerContext } from '$lib/server/init.js';
 import { cleanOrphanedPrStatus, getPrStatusByUrl, getPrStatusForPlan } from '$tim/db/pr_status.js';
@@ -62,7 +63,7 @@ export const refreshPrStatus = command(planUuidSchema, async ({ planUuid }) => {
 
   const { valid: normalizedPrUrls, invalid: invalidPrUrls } = categorizePrUrls(prUrls);
 
-  if (!process.env.GITHUB_TOKEN) {
+  if (!resolveGitHubToken()) {
     // Sync junctions for already-cached PRs only (can't fetch new ones without token).
     // Always sync — even if cachedUrls is empty — to prune stale links from removed PRs.
     const cachedUrls = prUrls.filter((url) => getPrStatusByUrl(db, url) !== null);

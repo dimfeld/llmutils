@@ -3,6 +3,7 @@ import { error } from '@sveltejs/kit';
 import * as z from 'zod';
 
 import { parseOwnerRepoFromRepositoryId } from '$common/github/pull_requests.js';
+import { resolveGitHubToken } from '$common/github/token.js';
 import {
   refreshProjectPrs as refreshProjectPrsService,
   type ProjectPrLink,
@@ -98,7 +99,7 @@ async function resolveProjectRepo(projectId: string) {
 
 export const getProjectPrs = query(projectIdSchema, async ({ projectId }) => {
   const { db, config, ownerRepo } = await resolveProjectRepo(projectId);
-  const tokenConfigured = !!process.env.GITHUB_TOKEN;
+  const tokenConfigured = !!resolveGitHubToken();
 
   if (!ownerRepo) {
     return {
@@ -150,7 +151,7 @@ export const refreshProjectPrs = command(
       return { error: 'Project does not have a GitHub repository', newLinks: [] };
     }
 
-    if (!process.env.GITHUB_TOKEN) {
+    if (!resolveGitHubToken()) {
       return { error: 'GITHUB_TOKEN not configured', newLinks: [] };
     }
 

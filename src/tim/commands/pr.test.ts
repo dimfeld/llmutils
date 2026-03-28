@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 
 import { ModuleMocker } from '../../testing.js';
+import { clearGitHubTokenCache } from '../../common/github/token.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -101,9 +102,11 @@ describe('tim/commands/pr', () => {
     process.chdir(originalCwd);
     await fs.rm(tempDir, { recursive: true, force: true });
     moduleMocker.clear();
+    clearGitHubTokenCache();
   });
 
   beforeEach(() => {
+    clearGitHubTokenCache();
     logs = [];
     dbHandle = { name: 'db-handle' };
     currentPlan = {

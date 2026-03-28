@@ -7,6 +7,7 @@ import {
   parsePrOrIssueNumber,
 } from '../../common/github/identifiers.js';
 import { getGitRepository } from '../../common/git.js';
+import { resolveGitHubToken } from '../../common/github/token.js';
 import { fetchOpenPullRequests } from '../../common/github/pull_requests.js';
 import { refreshPrStatus, syncPlanPrLinks } from '../../common/github/pr_status_service.js';
 import { log } from '../../logging.js';
@@ -443,7 +444,7 @@ export async function handlePrStatusCommand(
     return;
   }
 
-  if (!process.env.GITHUB_TOKEN) {
+  if (!resolveGitHubToken()) {
     throw new Error('GITHUB_TOKEN environment variable is required for PR status commands');
   }
 
@@ -525,7 +526,7 @@ export async function handlePrLinkCommand(
   _options: Record<string, unknown>,
   command: RootCommandLike
 ): Promise<void> {
-  if (!process.env.GITHUB_TOKEN) {
+  if (!resolveGitHubToken()) {
     throw new Error('GITHUB_TOKEN environment variable is required for PR status commands');
   }
 

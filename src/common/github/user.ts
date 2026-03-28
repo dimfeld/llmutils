@@ -1,4 +1,5 @@
 import { getOctokit } from './octokit.js';
+import { resolveGitHubToken } from './token.js';
 
 export interface GitHubUsernameOptions {
   githubUsername?: string | null;
@@ -29,7 +30,7 @@ export async function getGitHubUsername(
     return options.githubUsername;
   }
 
-  if (!process.env.GITHUB_TOKEN) {
+  if (!resolveGitHubToken()) {
     return null;
   }
 

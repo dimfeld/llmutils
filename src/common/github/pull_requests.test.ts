@@ -6,6 +6,7 @@ import {
   partitionUserRelevantOpenPrs,
 } from './pull_requests.ts';
 import { ModuleMocker } from '../../testing.js';
+import { clearGitHubTokenCache } from './token.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -335,8 +336,13 @@ describe('parseOwnerRepoFromRepositoryId', () => {
 describe('user-relevant open PR helpers', () => {
   const originalGitHubToken = process.env.GITHUB_TOKEN;
 
+  beforeEach(() => {
+    clearGitHubTokenCache();
+  });
+
   afterEach(() => {
     process.env.GITHUB_TOKEN = originalGitHubToken;
+    clearGitHubTokenCache();
     moduleMocker.clear();
   });
 

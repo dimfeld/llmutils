@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { ModuleMocker } from '../../testing.js';
+import { clearGitHubTokenCache } from './token.js';
 
 const moduleMocker = new ModuleMocker(import.meta);
 
@@ -8,10 +9,12 @@ describe('common/github/user', () => {
 
   beforeEach(() => {
     process.env.GITHUB_TOKEN = 'test-token';
+    clearGitHubTokenCache();
   });
 
   afterEach(async () => {
     process.env.GITHUB_TOKEN = originalGitHubToken;
+    clearGitHubTokenCache();
     moduleMocker.clear();
 
     const { clearGitHubUsernameCache } = await import('./user.ts');

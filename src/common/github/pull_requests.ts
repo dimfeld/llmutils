@@ -6,6 +6,7 @@ import { parsePrOrIssueNumber } from './identifiers.ts';
 import { getCurrentBranchName } from '../git.ts';
 import { getGitRepository } from '../git.js';
 import { getOctokit } from './octokit.js';
+import { resolveGitHubToken } from './token.js';
 import { normalizeGitHubUsername } from './user.js';
 
 export interface CommentAuthor {
@@ -85,7 +86,7 @@ export async function fetchOpenPullRequests(
   owner: string,
   repo: string
 ): Promise<OpenPullRequest[]> {
-  if (!process.env.GITHUB_TOKEN) {
+  if (!resolveGitHubToken()) {
     throw new Error('GITHUB_TOKEN environment variable is not set');
   }
 
@@ -168,7 +169,7 @@ export async function fetchOpenPullRequestsWithReviewers(
   owner: string,
   repo: string
 ): Promise<OpenPullRequestWithRequestedReviewers[]> {
-  if (!process.env.GITHUB_TOKEN) {
+  if (!resolveGitHubToken()) {
     throw new Error('GITHUB_TOKEN environment variable is not set');
   }
 
@@ -581,7 +582,7 @@ export async function addReplyToReviewThread(
   pullRequestReviewThreadId: string,
   body: string
 ): Promise<boolean> {
-  const token = process.env.GITHUB_TOKEN;
+  const token = resolveGitHubToken();
   if (!token) {
     error('GITHUB_TOKEN is not set. Cannot post reply to review thread.');
     return false;

@@ -2,6 +2,7 @@ import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
 import { getIssueTracker, getAvailableTrackers } from './factory.js';
 import { GitHubIssueTrackerClient } from './github.js';
 import { ModuleMocker } from '../../testing.js';
+import { clearGitHubTokenCache } from '../github/token.js';
 
 describe('Issue Tracker Factory Integration', () => {
   const moduleMocker = new ModuleMocker(import.meta);
@@ -13,11 +14,13 @@ describe('Issue Tracker Factory Integration', () => {
     // Clear any API keys
     delete process.env.GITHUB_TOKEN;
     delete process.env.LINEAR_API_KEY;
+    clearGitHubTokenCache();
   });
 
   afterEach(() => {
     // Restore original environment
     process.env = originalEnv;
+    clearGitHubTokenCache();
     moduleMocker.clear();
   });
 

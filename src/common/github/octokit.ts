@@ -1,9 +1,10 @@
 import { Octokit } from 'octokit';
 import { debugLog } from '../../logging.js';
+import { resolveGitHubToken } from './token.js';
 
 export function getOctokit(): Octokit {
   const octokit = new Octokit({
-    auth: process.env.GITHUB_TOKEN,
+    auth: resolveGitHubToken(),
   });
 
   octokit.hook.wrap('request', async (request, options) => {

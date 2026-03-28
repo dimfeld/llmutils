@@ -5,6 +5,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { closeDatabaseForTesting } from './src/tim/db/database.ts';
+import { setGhFallbackDisabled } from './src/common/github/token.ts';
 
 // ensure tests never make accidental network calls via API keys.
 // We explicitly unset Google keys that trigger auto-marking logic in CodexCliExecutor.
@@ -22,6 +23,7 @@ for (const key of KEYS_TO_UNSET) {
   }
 }
 
+setGhFallbackDisabled(true);
 process.env.TIM_DATABASE_FILENAME = 'tim.test.db';
 process.env.TIM_NOTIFY_SUPPRESS = '1';
 process.env.TIM_NOTIFY_SUPPRESS_INNER = '1';

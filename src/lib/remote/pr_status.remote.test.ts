@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
+import { clearGitHubTokenCache } from '$common/github/token.js';
 
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
 import { upsertPlan } from '$tim/db/plan.js';
@@ -77,10 +78,12 @@ describe('pr_status remote functions', () => {
     syncPlanPrLinks.mockReset();
     ensurePrStatusFresh.mockReset();
     delete process.env.GITHUB_TOKEN;
+    clearGitHubTokenCache();
   });
 
   afterEach(() => {
     delete process.env.GITHUB_TOKEN;
+    clearGitHubTokenCache();
     currentDb.close(false);
   });
 

@@ -5,6 +5,7 @@ import {
   isTrackerAvailable,
   getDefaultTracker,
 } from './factory.js';
+import { clearGitHubTokenCache } from '../github/token.js';
 
 describe('Issue Tracker Factory', () => {
   const originalEnv = process.env;
@@ -15,11 +16,13 @@ describe('Issue Tracker Factory', () => {
     // Clear any API keys
     delete process.env.GITHUB_TOKEN;
     delete process.env.LINEAR_API_KEY;
+    clearGitHubTokenCache();
   });
 
   afterEach(() => {
     // Restore original environment
     process.env = originalEnv;
+    clearGitHubTokenCache();
   });
 
   describe('getAvailableTrackers', () => {
