@@ -1,3 +1,7 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { getTimCacheDir } from '$common/config_paths.js';
+
 const EARLY_EXIT_CHECK_DELAY_MS = 500;
 
 export interface SpawnProcessSuccess {
@@ -18,12 +22,24 @@ function waitForSpawnWindow(delayMs = EARLY_EXIT_CHECK_DELAY_MS): Promise<void> 
   });
 }
 
-async function readStderr(stderr: ReadableStream<Uint8Array> | null | undefined): Promise<string> {
-  if (!stderr) {
-    return '';
-  }
+function getLogDir(): string {
+  return path.join(getTimCacheDir(), 'logs');
+}
 
-  return (await new Response(stderr).text()).trim();
+interface LogFileInfo {
+  fd: number;
+  path: string;
+}
+
+function createLogFile(command: string, planId: number): LogFileInfo {
+  const logDir = getLogDir();
+  fs.mkdirSync(logDir, { recursive: true });
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `${command}-plan${planId}-${timestamp}.log`;
+  const logPath = path.join(logDir, filename);
+
+  return { fd: fs.openSync(logPath, 'a'), path: logPath };
 }
 
 async function spawnTimProcess(
@@ -32,36 +48,43 @@ async function spawnTimProcess(
   cwd: string
 ): Promise<SpawnProcessResult> {
   let proc: ReturnType<typeof Bun.spawn>;
+  let logFile: LogFileInfo | undefined;
 
   try {
+    const command = args[0];
+    logFile = createLogFile(command, planId);
+
     proc = Bun.spawn(['tim', ...args], {
       cwd,
       env: process.env,
       stdin: 'ignore',
-      stdout: 'ignore',
-      stderr: 'pipe',
+      stdout: logFile.fd,
+      stderr: logFile.fd,
       detached: true,
     });
   } catch (err) {
+    if (logFile) {
+      fs.closeSync(logFile.fd);
+    }
     return {
       success: false,
       error: `Failed to start tim ${args[0]}: ${err as Error}`,
     };
   }
 
+  // The child process owns the fd now, so we can close our copy.
+  fs.closeSync(logFile.fd);
+
   await waitForSpawnWindow();
 
   if (proc.exitCode !== null) {
-    const stderr = await readStderr(proc.stderr instanceof ReadableStream ? proc.stderr : null);
+    const logContents = fs.readFileSync(logFile.path, 'utf-8').trim();
     return {
       success: false,
-      error: stderr || `tim ${args[0]} exited early with code ${proc.exitCode}`,
+      error: logContents || `tim ${args[0]} exited early with code ${proc.exitCode}`,
     };
   }
 
-  if (proc.stderr instanceof ReadableStream) {
-    proc.stderr.cancel().catch(() => {});
-  }
   proc.unref();
   return { success: true, planId };
 }
