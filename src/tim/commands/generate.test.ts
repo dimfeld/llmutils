@@ -868,7 +868,7 @@ describe('handleGenerateCommand', () => {
     });
   });
 
-  test('skips redundant pre-execution origin sync after workspace setup already switched branches', async () => {
+  test('runs pre-execution sync whenever workspace round-trip setup returns a context', async () => {
     const planPath = await createStubPlan(123);
 
     setupWorkspaceSpy.mockResolvedValueOnce({
@@ -876,12 +876,13 @@ describe('handleGenerateCommand', () => {
       planFile: planPath,
       workspaceTaskId: 'ws-123',
       isNewWorkspace: false,
+      branchCreatedDuringSetup: true,
     });
     prepareWorkspaceRoundTripSpy.mockResolvedValueOnce({
       executionWorkspacePath: '/tmp/execution-workspace',
       primaryWorkspacePath: '/tmp/primary-workspace',
       refName: 'feature/test-branch',
-      syncTarget: 'origin',
+      branchCreatedDuringSetup: true,
     });
 
     mockExecutorExecute.mockImplementationOnce(async () => {
@@ -892,8 +893,18 @@ describe('handleGenerateCommand', () => {
 
     await handleGenerateCommand(undefined, { plan: planPath }, buildCommand());
 
-    expect(prepareWorkspaceRoundTripSpy).toHaveBeenCalledTimes(1);
-    expect(runPreExecutionWorkspaceSyncSpy).not.toHaveBeenCalled();
+    expect(prepareWorkspaceRoundTripSpy).toHaveBeenCalledWith({
+      workspacePath: '/tmp/execution-workspace',
+      workspaceSyncEnabled: true,
+      branchCreatedDuringSetup: true,
+    });
+    expect(runPreExecutionWorkspaceSyncSpy).toHaveBeenCalledTimes(1);
+    expect(runPreExecutionWorkspaceSyncSpy).toHaveBeenCalledWith({
+      executionWorkspacePath: '/tmp/execution-workspace',
+      primaryWorkspacePath: '/tmp/primary-workspace',
+      refName: 'feature/test-branch',
+      branchCreatedDuringSetup: true,
+    });
   });
 });
 

@@ -99,7 +99,7 @@ Each workspace has a type that controls how it participates in auto-selection:
 | Type       | DB Value | Description                                                                                                                  |
 | ---------- | -------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `standard` | 0        | Default type. Eligible for auto-selection only when no `auto` workspaces exist.                                              |
-| `primary`  | 1        | The main checkout used for branch creation and push targets. Never auto-selected.                                            |
+| `primary`  | 1        | The main checkout. Branches are pulled here from origin after execution. Never auto-selected.                                |
 | `auto`     | 2        | Dedicated pool for `--auto-workspace`. When any auto workspace exists, only auto workspaces are eligible for auto-selection. |
 
 ### Auto-Selection Behavior
@@ -180,10 +180,14 @@ tim workspace list --format json              # For programmatic use
 
 ## Workspace Creation Design Notes
 
-When creating a new workspace (`tim workspace add`), branch setup follows a two-phase approach:
+When creating a new workspace (`tim workspace add`), branch setup uses a deferred approach — branches are created locally in the execution workspace and only pushed to origin after the command produces actual filesystem changes:
 
-1. **Primary workspace**: The branch/bookmark is created in the primary workspace. For git, `git branch -f` is used; for jj, `jj bookmark set`. This makes branch creation idempotent — rerunning workspace creation for the same task reuses or updates the existing ref instead of failing.
-2. **New workspace**: The branch is pushed to origin from the primary workspace, then fetched and checked out in the new workspace clone.
+1. **Fetch and check**: The execution workspace fetches from origin to see if the branch already exists remotely.
+2. **Existing branch**: If the branch exists on the remote, it is checked out in the execution workspace.
+3. **New branch**: If the branch does not exist, a new local branch is created off the base branch directly in the execution workspace. No branch is created or pushed in the primary workspace during setup.
+4. **Post-execution sync**: After the command finishes, the workspace round-trip sync compares repository state before and after execution. If there are actual changes, the branch is pushed to origin and pulled into the primary workspace. If no changes were made (e.g. `tim generate` which only updates the DB), the push is skipped entirely. If the branch was newly created during setup and no changes were made, the local branch is deleted to avoid accumulating unused branches.
+
+All workspace sync uses origin as the intermediary — branches are always pushed to and pulled from origin rather than directly between workspaces.
 
 Plans are not copied as files during workspace creation. Instead, when commands like `tim agent`, `tim generate`, or `tim chat` run in a workspace, they materialize the plan from the DB into the workspace at `.tim/plans/{planId}.plan.md` via `setupWorkspace()`. This approach keeps the DB as the source of truth and avoids stale file copies. After the executor finishes editing the materialized file, changes are synced back to the DB.
 

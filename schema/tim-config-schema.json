@@ -541,21 +541,6 @@
         }
       }
     },
-    "workspaceSync": {
-      "description": "Configuration for workspace synchronization behavior",
-      "type": "object",
-      "properties": {
-        "pushTarget": {
-          "description": "Target for workspace sync. \"origin\" pushes to remote VCS; \"primary-workspace\" syncs with the tracked primary workspace.",
-          "type": "string",
-          "enum": [
-            "origin",
-            "primary-workspace"
-          ]
-        }
-      },
-      "additionalProperties": false
-    },
     "planning": {
       "type": "object",
       "properties": {

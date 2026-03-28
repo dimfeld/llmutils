@@ -95,7 +95,6 @@ describe('handleChatCommand', () => {
     loadEffectiveConfigSpy.mockImplementation(async () => ({
       defaultExecutor: undefined,
       terminalInput: true,
-      workspaceSync: { pushTarget: 'origin' },
     }));
     isTunnelActiveSpy.mockImplementation(() => false);
     getGitRootSpy.mockImplementation(async () => '/repo-root');
@@ -684,8 +683,7 @@ describe('handleChatCommand', () => {
     prepareWorkspaceRoundTripSpy.mockImplementationOnce(async () => {
       callOrder.push('prepare');
       return {
-        workspacePath: '/repo-root/workspaces/task-123',
-        syncTarget: 'primary',
+        executionWorkspacePath: '/repo-root/workspaces/task-123',
       } as any;
     });
     runPreExecutionWorkspaceSyncSpy.mockImplementationOnce(async () => {
@@ -706,12 +704,12 @@ describe('handleChatCommand', () => {
     expect(prepareWorkspaceRoundTripSpy).toHaveBeenCalledWith({
       workspacePath: '/repo-root/workspaces/task-123',
       workspaceSyncEnabled: true,
-      syncTarget: 'origin',
+      branchCreatedDuringSetup: undefined,
     });
     expect(runPreExecutionWorkspaceSyncSpy).toHaveBeenCalledTimes(1);
     expect(runPostExecutionWorkspaceSyncSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        workspacePath: '/repo-root/workspaces/task-123',
+        executionWorkspacePath: '/repo-root/workspaces/task-123',
       }),
       'workspace chat session'
     );
@@ -725,8 +723,7 @@ describe('handleChatCommand', () => {
     prepareWorkspaceRoundTripSpy.mockImplementationOnce(
       async () =>
         ({
-          workspacePath: '/repo-root/workspaces/task-123',
-          syncTarget: 'origin',
+          executionWorkspacePath: '/repo-root/workspaces/task-123',
         }) as any
     );
     mockExecutorExecute.mockImplementationOnce(async () => {

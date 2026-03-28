@@ -262,11 +262,11 @@ export async function handleChatCommand(
             roundTripContext = await prepareWorkspaceRoundTrip({
               workspacePath: currentBaseDir,
               workspaceSyncEnabled: options.workspaceSync !== false,
-              syncTarget: config.workspaceSync?.pushTarget ?? 'origin',
+              branchCreatedDuringSetup: workspaceResult.branchCreatedDuringSetup,
             });
           }
 
-          if (roundTripContext && roundTripContext.syncTarget !== 'origin') {
+          if (roundTripContext) {
             await runPreExecutionWorkspaceSync(roundTripContext);
           }
 

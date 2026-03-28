@@ -9,11 +9,13 @@ import { createWorkspace } from './workspace_manager.js';
 import type { TimConfig } from '../configSchema.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import type { WorkspaceType } from '../db/workspace.js';
+import type { PlanSchema } from '../planSchema.js';
 import {
   findWorkspaceInfosByRepositoryId,
   getWorkspaceInfoByPath,
   type WorkspaceInfo,
 } from './workspace_info.js';
+import type { Workspace } from './workspace_manager.js';
 
 export interface AutoSelectOptions {
   /** Whether to run in interactive mode (prompt for stale locks) */
@@ -28,11 +30,15 @@ export interface AutoSelectOptions {
   createBranch?: boolean;
   /** Base branch/revision to use for newly created workspaces */
   base?: string;
+  /** Branch name to use for newly created workspaces */
+  branchName?: string;
+  /** Plan metadata to record on newly created workspaces */
+  planData?: PlanSchema;
 }
 
 export interface SelectedWorkspace {
   /** The selected workspace info */
-  workspace: WorkspaceInfo;
+  workspace: WorkspaceInfo & Pick<Workspace, 'checkedOutRemoteBranch'>;
   /** Whether this is a newly created workspace */
   isNew: boolean;
   /** Whether a stale lock was cleared */
@@ -76,6 +82,8 @@ export class WorkspaceAutoSelector {
       preferredPlanUuid,
       createBranch,
       base,
+      branchName,
+      planData,
     } = options;
 
     // Get repository ID from current git repo
@@ -105,6 +113,8 @@ export class WorkspaceAutoSelector {
       const newWorkspace = await this.createNewWorkspace(taskId, planFilePath, {
         createBranch,
         base,
+        branchName,
+        planData,
         workspaceType: newWorkspaceType,
       });
       if (newWorkspace) {
@@ -190,6 +200,8 @@ export class WorkspaceAutoSelector {
     const newWorkspace = await this.createNewWorkspace(taskId, planFilePath, {
       createBranch,
       base,
+      branchName,
+      planData,
       workspaceType: newWorkspaceType,
     });
 
@@ -207,13 +219,15 @@ export class WorkspaceAutoSelector {
   private async createNewWorkspace(
     taskId: string,
     planFilePath: string | undefined,
-    options: Pick<AutoSelectOptions, 'createBranch' | 'base'> & {
+    options: Pick<AutoSelectOptions, 'createBranch' | 'base' | 'branchName' | 'planData'> & {
       workspaceType?: WorkspaceType;
     } = {}
-  ): Promise<WorkspaceInfo | null> {
+  ): Promise<(WorkspaceInfo & Pick<Workspace, 'checkedOutRemoteBranch'>) | null> {
     const workspace = await createWorkspace(this.mainRepoRoot, taskId, planFilePath, this.config, {
       ...(options.createBranch !== undefined && { createBranch: options.createBranch }),
       ...(options.base && { fromBranch: options.base }),
+      ...(options.branchName && { branchName: options.branchName }),
+      ...(options.planData && { planData: options.planData }),
       ...(options.workspaceType && { workspaceType: options.workspaceType }),
     });
 
@@ -221,7 +235,15 @@ export class WorkspaceAutoSelector {
       return null;
     }
 
-    return getWorkspaceInfoByPath(workspace.path);
+    const workspaceInfo = getWorkspaceInfoByPath(workspace.path);
+    if (!workspaceInfo) {
+      return null;
+    }
+
+    return {
+      ...workspaceInfo,
+      checkedOutRemoteBranch: workspace.checkedOutRemoteBranch,
+    };
   }
 
   /**

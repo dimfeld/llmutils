@@ -37,6 +37,14 @@ export interface WorkspaceSetupResult {
   planFile: string;
   workspaceTaskId?: string;
   isNewWorkspace?: boolean;
+  branchCreatedDuringSetup?: boolean;
+}
+
+interface ResolvedWorkspaceBranchContext {
+  planData?: PlanSchema;
+  branchName?: string;
+  baseBranch?: string;
+  canRetryWithoutBaseBranch: boolean;
 }
 
 function timestamp(): string {
@@ -57,6 +65,60 @@ async function getParentPlanBranch(
   return parentPlan.plan.branch;
 }
 
+async function resolveWorkspaceBranchContext(
+  options: Pick<WorkspaceSetupOptions, 'planId' | 'base'>,
+  currentBaseDir: string,
+  currentPlanFile: string | undefined,
+  config: TimConfig
+): Promise<ResolvedWorkspaceBranchContext> {
+  let planData: PlanSchema | undefined;
+  let branchName: string | undefined;
+  let baseBranch = options.base;
+  let canRetryWithoutBaseBranch = false;
+
+  if (currentPlanFile) {
+    try {
+      planData = await readPlanFile(currentPlanFile);
+    } catch (err) {
+      warn(
+        `Failed to generate branch name from plan file ${currentPlanFile}. Falling back to workspace task ID: ${err as Error}`
+      );
+    }
+  } else if (typeof options.planId === 'number') {
+    planData = (await resolvePlanFromDb(String(options.planId), currentBaseDir)).plan;
+  }
+
+  if (planData) {
+    try {
+      branchName = planData.branch ?? generateBranchNameFromPlan(planData);
+    } catch (err) {
+      const planLabel = currentPlanFile ?? `plan ${options.planId}`;
+      warn(
+        `Failed to generate branch name from ${planLabel}. Falling back to workspace task ID: ${err as Error}`
+      );
+    }
+
+    if (!baseBranch) {
+      baseBranch = planData.baseBranch;
+    }
+
+    if (!baseBranch) {
+      const parentBranch = await getParentPlanBranch(planData, config, currentBaseDir);
+      if (parentBranch) {
+        baseBranch = parentBranch;
+        canRetryWithoutBaseBranch = true;
+      }
+    }
+  }
+
+  return {
+    planData,
+    branchName,
+    baseBranch,
+    canRetryWithoutBaseBranch,
+  };
+}
+
 export async function setupWorkspace(
   options: WorkspaceSetupOptions,
   currentBaseDir: string,
@@ -68,6 +130,7 @@ export async function setupWorkspace(
   let planFile = currentPlanFile ?? '';
   let workspaceTaskId: string | undefined;
   let isNewWorkspace: boolean | undefined;
+  let branchCreatedDuringSetup: boolean | undefined;
   const copyExistingPlanFile = async (targetPlanFile: string): Promise<string> => {
     if (!currentPlanFile) {
       throw new Error('No source plan file available to copy into workspace.');
@@ -115,6 +178,13 @@ export async function setupWorkspace(
     !currentPlanFile && typeof options.planId !== 'number' && !options.base
       ? false
       : options.createBranch;
+  const branchContext = await resolveWorkspaceBranchContext(
+    options,
+    currentBaseDir,
+    currentPlanFile,
+    config
+  );
+  let createWorkspaceBaseBranch = branchContext.baseBranch;
 
   if (options.workspace || options.autoWorkspace) {
     let workspace: Workspace | null | undefined;
@@ -132,7 +202,9 @@ export async function setupWorkspace(
         interactive: !options.nonInteractive,
         preferNewWorkspace: options.newWorkspace,
         createBranch: effectiveCreateBranch,
-        base: options.base,
+        base: branchContext.baseBranch,
+        branchName: branchContext.branchName,
+        planData: branchContext.planData,
         ...(options.planUuid ? { preferredPlanUuid: options.planUuid } : {}),
       });
 
@@ -141,6 +213,7 @@ export async function setupWorkspace(
           path: selectedWorkspace.workspace.workspacePath,
           originalPlanFilePath: selectedWorkspace.workspace.originalPlanFilePath,
           taskId: selectedWorkspace.workspace.taskId,
+          checkedOutRemoteBranch: selectedWorkspace.workspace.checkedOutRemoteBranch,
         };
 
         if (selectedWorkspace.isNew) {
@@ -159,8 +232,19 @@ export async function setupWorkspace(
         log(`Creating workspace for task: ${options.workspace}`);
         workspace = await createWorkspace(baseDir, options.workspace, currentPlanFile, config, {
           ...(effectiveCreateBranch !== undefined && { createBranch: effectiveCreateBranch }),
-          ...(options.base && { fromBranch: options.base }),
+          ...(branchContext.branchName && { branchName: branchContext.branchName }),
+          ...(createWorkspaceBaseBranch && { fromBranch: createWorkspaceBaseBranch }),
+          ...(branchContext.planData && { planData: branchContext.planData }),
         });
+        if (!workspace && branchContext.canRetryWithoutBaseBranch) {
+          log('Retrying workspace creation without parent-derived base branch...');
+          createWorkspaceBaseBranch = undefined;
+          workspace = await createWorkspace(baseDir, options.workspace, currentPlanFile, config, {
+            ...(effectiveCreateBranch !== undefined && { createBranch: effectiveCreateBranch }),
+            ...(branchContext.branchName && { branchName: branchContext.branchName }),
+            ...(branchContext.planData && { planData: branchContext.planData }),
+          });
+        }
         isNewWorkspace = true;
       } else if (existingWorkspaces.length > 0) {
         let availableWorkspace = null;
@@ -194,8 +278,19 @@ export async function setupWorkspace(
         log(`Creating workspace for task: ${options.workspace}`);
         workspace = await createWorkspace(baseDir, options.workspace, currentPlanFile, config, {
           ...(effectiveCreateBranch !== undefined && { createBranch: effectiveCreateBranch }),
-          ...(options.base && { fromBranch: options.base }),
+          ...(branchContext.branchName && { branchName: branchContext.branchName }),
+          ...(createWorkspaceBaseBranch && { fromBranch: createWorkspaceBaseBranch }),
+          ...(branchContext.planData && { planData: branchContext.planData }),
         });
+        if (!workspace && branchContext.canRetryWithoutBaseBranch) {
+          log('Retrying workspace creation without parent-derived base branch...');
+          createWorkspaceBaseBranch = undefined;
+          workspace = await createWorkspace(baseDir, options.workspace, currentPlanFile, config, {
+            ...(effectiveCreateBranch !== undefined && { createBranch: effectiveCreateBranch }),
+            ...(branchContext.branchName && { branchName: branchContext.branchName }),
+            ...(branchContext.planData && { planData: branchContext.planData }),
+          });
+        }
         isNewWorkspace = true;
       }
     }
@@ -209,6 +304,11 @@ export async function setupWorkspace(
       workspaceTaskId = workspace.taskId;
       if (selectedWorkspace?.isNew !== undefined) {
         isNewWorkspace = selectedWorkspace.isNew;
+      }
+      if (isNewWorkspace) {
+        branchCreatedDuringSetup = Boolean(
+          effectiveCreateBranch && !workspace.checkedOutRemoteBranch
+        );
       }
 
       const relativePlanPath = currentPlanFile
@@ -257,47 +357,15 @@ export async function setupWorkspace(
           );
         }
 
-        let branchName = workspace.taskId;
-        let planData: PlanSchema | undefined;
-        let baseBranch = options.base;
-        let canRetryWithoutBaseBranch = false;
+        let branchName = branchContext.branchName ?? workspace.taskId;
+        const planData = branchContext.planData;
+        let baseBranch = branchContext.baseBranch;
+        const canRetryWithoutBaseBranch = branchContext.canRetryWithoutBaseBranch;
         const shouldCreateBranch = effectiveCreateBranch ?? true;
         const shouldPrepareWorkspaceBranch = Boolean(
-          currentPlanFile || typeof options.planId === 'number' || baseBranch
+          (currentPlanFile || typeof options.planId === 'number' || branchContext.baseBranch) &&
+          !(isNewWorkspace && effectiveCreateBranch)
         );
-        if (currentPlanFile) {
-          try {
-            planData = await readPlanFile(planFile);
-          } catch (err) {
-            warn(
-              `Failed to generate branch name from plan file ${planFile}. Falling back to workspace task ID: ${err as Error}`
-            );
-          }
-        } else if (typeof options.planId === 'number') {
-          planData = (await resolvePlanFromDb(String(options.planId), currentBaseDir)).plan;
-        }
-
-        if (planData) {
-          try {
-            branchName = planData.branch ?? generateBranchNameFromPlan(planData);
-          } catch (err) {
-            warn(
-              `Failed to generate branch name from plan file ${planFile}. Falling back to workspace task ID: ${err as Error}`
-            );
-          }
-
-          if (!baseBranch) {
-            baseBranch = planData.baseBranch;
-          }
-
-          if (!baseBranch) {
-            const parentBranch = await getParentPlanBranch(planData, config, currentBaseDir);
-            if (parentBranch) {
-              baseBranch = parentBranch;
-              canRetryWithoutBaseBranch = true;
-            }
-          }
-        }
 
         let reusedExistingBranch = false;
         if (shouldPrepareWorkspaceBranch) {
@@ -312,6 +380,7 @@ export async function setupWorkspace(
           });
 
           if (!prepareResult.success && canRetryWithoutBaseBranch) {
+            baseBranch = undefined;
             prepareResult = await prepareExistingWorkspace(workspace.path, {
               branchName,
               planFilePath: currentPlanFile ? planFile : undefined,
@@ -328,6 +397,7 @@ export async function setupWorkspace(
           }
 
           reusedExistingBranch = prepareResult.reusedExistingBranch ?? false;
+          branchCreatedDuringSetup = shouldCreateBranch && !reusedExistingBranch;
         }
 
         let planFileForUpdateCommands: string | undefined = planFile;
@@ -384,7 +454,13 @@ export async function setupWorkspace(
 
         log('---');
 
-        return { baseDir, planFile, workspaceTaskId, isNewWorkspace };
+        return {
+          baseDir,
+          planFile,
+          workspaceTaskId,
+          isNewWorkspace,
+          branchCreatedDuringSetup,
+        };
       } catch (err) {
         await WorkspaceLock.releaseLock(workspace.path, { force: true });
         throw err;
@@ -409,5 +485,11 @@ export async function setupWorkspace(
     await resolveMaterializedPlanForWorkspace(baseDir);
   }
 
-  return { baseDir, planFile, workspaceTaskId, isNewWorkspace };
+  return {
+    baseDir,
+    planFile,
+    workspaceTaskId,
+    isNewWorkspace,
+    branchCreatedDuringSetup,
+  };
 }

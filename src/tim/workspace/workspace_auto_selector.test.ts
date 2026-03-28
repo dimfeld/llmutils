@@ -264,6 +264,32 @@ describe('WorkspaceAutoSelector', () => {
     expect(result?.workspace.taskId).toBe('task-new');
   });
 
+  test('preserves checkedOutRemoteBranch when creating a new workspace', async () => {
+    const newWorkspacePath = path.join(testDir, 'workspace-remote-checkout');
+    const createWorkspaceSpy = spyOn(
+      await import('./workspace_manager.js'),
+      'createWorkspace'
+    ).mockImplementation(async () => {
+      await fs.mkdir(newWorkspacePath, { recursive: true });
+      await seedWorkspace('github.com/test/repo', newWorkspacePath, 'task-remote', 'task-remote');
+      return {
+        path: newWorkspacePath,
+        originalPlanFilePath: '/test/plan-remote.yml',
+        taskId: 'task-remote',
+        checkedOutRemoteBranch: true,
+      };
+    });
+
+    const result = await selector.selectWorkspace('task-remote', '/test/plan-remote.yml', {
+      interactive: false,
+      preferNewWorkspace: true,
+    });
+
+    expect(createWorkspaceSpy).toHaveBeenCalled();
+    expect(result?.isNew).toBe(true);
+    expect(result?.workspace.checkedOutRemoteBranch).toBe(true);
+  });
+
   test('selectWorkspace uses repository identity fallback when origin is missing', async () => {
     const repositoryId = 'local/jj-repo';
     getRepositoryIdentitySpy.mockResolvedValue({
@@ -486,6 +512,12 @@ describe('WorkspaceAutoSelector', () => {
       interactive: false,
       createBranch: true,
       base: 'develop',
+      branchName: 'feature/task-new',
+      planData: {
+        id: 42,
+        title: 'Auto-selected plan',
+        issue: ['APP-42'],
+      },
     });
 
     expect(createWorkspaceSpy).toHaveBeenCalledWith(
@@ -495,7 +527,13 @@ describe('WorkspaceAutoSelector', () => {
       config,
       {
         createBranch: true,
+        branchName: 'feature/task-new',
         fromBranch: 'develop',
+        planData: {
+          id: 42,
+          title: 'Auto-selected plan',
+          issue: ['APP-42'],
+        },
       }
     );
   });
