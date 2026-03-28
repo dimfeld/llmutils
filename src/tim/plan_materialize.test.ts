@@ -585,6 +585,35 @@ describe('tim plan_materialize', () => {
     expect(rematerializedPlan.status).toBe('done');
   });
 
+  test('withPlanAutoSync syncs file edits even when file updatedAt is older than DB', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    // Simulate an agent editing the file directly (e.g. with an Edit tool)
+    // without updating the updatedAt field. The file's updatedAt stays stale
+    // while the DB may have a newer timestamp from other operations.
+    const content = await fs.readFile(planPath, 'utf8');
+    const editedContent = content.replace(/title: .*/, 'title: Agent-edited title');
+    await fs.writeFile(planPath, editedContent);
+
+    // Advance the DB timestamp so it's newer than the file's stale updatedAt
+    db.prepare('UPDATE plan SET updated_at = ? WHERE project_id = ? AND plan_id = ?').run(
+      '2099-01-01T00:00:00.000Z',
+      project.id,
+      3
+    );
+
+    await withPlanAutoSync(3, repoDir, async () => {
+      // The file's edits should have been synced to DB despite the stale timestamp
+      const syncedRow = getPlanByPlanId(db, project.id, 3);
+      expect(syncedRow?.title).toBe('Agent-edited title');
+    });
+
+    // After re-materialization, the file should still reflect the agent's edit
+    const rematerializedPlan = await readPlanFile(planPath);
+    expect(rematerializedPlan.title).toBe('Agent-edited title');
+  });
+
   test('cleanupMaterializedPlans removes stale primary files and orphaned reference files', async () => {
     const { db, project } = await seedProject();
 

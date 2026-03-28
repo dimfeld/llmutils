@@ -508,6 +508,7 @@ export async function syncMaterializedPlan(
     cwdForIdentity: repoRoot,
     idToUuid: resolvedContext.planIdToUuid,
     throwOnError: true,
+    force: options.force,
   });
   // Re-resolve context after DB sync since plan data has changed
   const freshContext = await resolveProjectContext(repoRoot, resolvedContext.repository);
@@ -537,7 +538,7 @@ export async function withPlanAutoSync<T>(
     ? await resolveProjectContext(repoRoot, repository)
     : undefined;
   if (materializedExists) {
-    await syncMaterializedPlan(planId, repoRoot, { context });
+    await syncMaterializedPlan(planId, repoRoot, { context, force: true });
   }
 
   let fnError: unknown;

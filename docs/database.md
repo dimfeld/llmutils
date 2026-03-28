@@ -63,7 +63,7 @@ Plan metadata, tasks, and dependencies are mirrored in SQLite alongside the YAML
 - `removePlanFromDb(planUuid, options?)`: Deletes plan and its assignment in a single transaction. Supports `throwOnError: true` to propagate DB deletion failures to the caller (used by `cleanup-temp` to keep the DB row intact when file deletion succeeds but DB deletion fails).
 - `clearPlanSyncContext()`: Resets cached context for testing.
 - DB sync failures are logged as warnings, never blocking plan file writes.
-- Stale write protection: when a plan includes `updatedAt`, upserts are skipped if that timestamp is older than the existing row's `updated_at`. `tim sync --force` disables this guard. All file→DB sync paths (including `syncMaterializedPlan` and `resolvePlanFromDbOrSyncFile`) rely on this guard — `force: true` is reserved for explicit user-initiated sync operations, never used in generic resolution or workspace reuse paths.
+- Stale write protection: when a plan includes `updatedAt`, upserts are skipped if that timestamp is older than the existing row's `updated_at`. `tim sync --force` and `syncMaterializedPlan(..., { force: true })` disable this guard. `withPlanAutoSync` always passes `force: true` to `syncMaterializedPlan` because the materialized file is the authoritative source in that context (agents may edit the file directly without updating `updatedAt`).
 
 **Context caching**: The sync module caches project context per git root to avoid repeated `getRepositoryIdentity()` calls. Concurrent context resolution for the same git root is deduplicated via a shared promise.
 
