@@ -350,7 +350,7 @@ describe('setupWorkspace', () => {
     );
   });
 
-  test('syncs existing workspace materialized plans before re-materializing reused branches', async () => {
+  test('re-materializes plan from DB even when workspace has edits on reused branches', async () => {
     const existingWorkspacePath = path.join(tempDir, 'workspace-existing-db-plan-with-edits');
     await fs.mkdir(existingWorkspacePath, { recursive: true });
     await Bun.$`git init`.cwd(baseDir).quiet();
@@ -367,8 +367,8 @@ describe('setupWorkspace', () => {
         id: 46,
         uuid: '66666666-6666-4666-8666-666666666666',
         title: 'DB copy',
-        goal: 'Preserve workspace edits',
-        details: 'Initial DB content',
+        goal: 'DB version should win',
+        details: 'DB content is authoritative',
         status: 'pending',
         tasks: [],
       },
@@ -387,8 +387,8 @@ describe('setupWorkspace', () => {
         id: 46,
         uuid: '66666666-6666-4666-8666-666666666666',
         title: 'Workspace edited copy',
-        goal: 'Preserve workspace edits',
-        details: 'Workspace version should win during branch reuse',
+        goal: 'Old workspace edits',
+        details: 'Workspace version should be overwritten by DB',
         status: 'in_progress',
         tasks: [],
       },
@@ -416,11 +416,12 @@ describe('setupWorkspace', () => {
       'tim generate'
     );
 
-    expect(await fs.readFile(result.planFile, 'utf8')).toContain('Workspace edited copy');
+    // DB version should overwrite workspace edits during setup
+    expect(await fs.readFile(result.planFile, 'utf8')).toContain('DB copy');
     const resolved = await resolvePlanFromDb('46', baseDir);
-    expect(resolved.plan.title).toBe('Workspace edited copy');
-    expect(resolved.plan.details).toContain('Workspace version should win');
-    expect(resolved.plan.status).toBe('in_progress');
+    expect(resolved.plan.title).toBe('DB copy');
+    expect(resolved.plan.details).toContain('DB content is authoritative');
+    expect(resolved.plan.status).toBe('pending');
   });
 
   test('passes createBranch and base to auto-workspace selector', async () => {

@@ -6,11 +6,7 @@ import { error, log, sendStructured, warn } from '../../logging.js';
 import { generateBranchNameFromPlan } from '../commands/branch.js';
 import type { TimConfig } from '../configSchema.js';
 import { updateHeadlessSessionInfo } from '../headless.js';
-import {
-  getMaterializedPlanPath,
-  materializePlan,
-  syncMaterializedPlan,
-} from '../plan_materialize.js';
+import { materializePlan } from '../plan_materialize.js';
 import { readPlanFile, resolvePlanFromDb } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { WorkspaceAutoSelector } from './workspace_auto_selector.js';
@@ -335,34 +331,13 @@ export async function setupWorkspace(
         }
 
         let planFileForUpdateCommands: string | undefined = planFile;
-        if (reusedExistingBranch) {
-          // When reusing an existing branch, the plan file in the workspace
-          // is assumed to be more current than the one in the primary workspace.
-          // Use the workspace's version instead of overwriting it.
-          if (workspacePlanFile) {
-            planFile = workspacePlanFile;
-            log(`Using existing plan file in workspace: ${planFile}`);
-          } else if (typeof options.planId === 'number') {
-            const existingMaterializedPath = getMaterializedPlanPath(
-              workspace.path,
-              options.planId
-            );
-            const existingMaterializedFile = Bun.file(existingMaterializedPath);
-            if (await existingMaterializedFile.exists()) {
-              await syncMaterializedPlan(options.planId, workspace.path);
-            }
-            await resolveMaterializedPlanForWorkspace(workspace.path);
-          }
+        try {
+          await materializePlanIntoWorkspace();
           planFileForUpdateCommands = planFile;
-        } else {
-          try {
-            await materializePlanIntoWorkspace();
-            planFileForUpdateCommands = planFile;
-          } catch (err) {
-            error(`Failed to materialize plan into workspace: ${err as Error}`);
-            error('Continuing without workspace plan file for update commands.');
-            planFileForUpdateCommands = undefined;
-          }
+        } catch (err) {
+          error(`Failed to materialize plan into workspace: ${err as Error}`);
+          error('Continuing without workspace plan file for update commands.');
+          planFileForUpdateCommands = undefined;
         }
 
         const updateSuccess = await runWorkspaceUpdateCommands(
