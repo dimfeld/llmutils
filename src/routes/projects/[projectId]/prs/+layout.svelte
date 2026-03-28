@@ -1,21 +1,29 @@
 <script lang="ts">
+  import { afterNavigate } from '$app/navigation';
   import { page } from '$app/state';
   import PrList from '$lib/components/PrList.svelte';
   import { getProjectPrs, refreshProjectPrs } from '$lib/remote/project_prs.remote.js';
-  import type { Snippet } from 'svelte';
+  import type { LayoutProps } from './$types';
 
-  let { children }: { children: Snippet } = $props();
+  let { children, params }: LayoutProps = $props();
 
-  let projectId = $derived(page.params.projectId);
+  let projectId = $derived(params.projectId);
   let isAllProjects = $derived(projectId === 'all');
 
   let prData = $derived(!isAllProjects ? await getProjectPrs({ projectId }) : null);
   let selectedPrNumber = $derived(page.params.prNumber ? Number(page.params.prNumber) : null);
 
-  // Mutable $derived expressions auto-reset when projectId changes
-  let refreshError: string | null = $derived((projectId, null));
-  let refreshing: boolean = $derived((projectId, false));
-  let fetchedOnce: boolean = $derived((projectId, false));
+  let refreshError: string | null = $state(null);
+  let refreshing: boolean = $state(false);
+  let fetchedOnce: boolean = $state(false);
+
+  afterNavigate(({ from, to }) => {
+    if (from?.params?.projectId !== to?.params?.projectId) {
+      fetchedOnce = false;
+      refreshing = false;
+      refreshError = null;
+    }
+  });
 
   async function handleRefresh() {
     const currentProjectId = projectId;
@@ -50,11 +58,10 @@
     Select a project to view pull requests
   </div>
 {:else if prData}
-  {@const { authored, reviewing, tokenConfigured } = prData}
   <div class="flex h-full w-full">
     {#key projectId}
       <div class="w-96 shrink-0 border-r border-border">
-        {#if !tokenConfigured}
+        {#if !prData.tokenConfigured}
           <div class="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
             <p class="text-sm font-medium text-foreground">GitHub Token Required</p>
             <p class="text-xs text-muted-foreground">
@@ -96,7 +103,12 @@
             {/if}
             {#if hasResults}
               <div class="min-h-0 flex-1">
-                <PrList {authored} {reviewing} {projectId} {selectedPrNumber} />
+                <PrList
+                  authored={prData.authored}
+                  reviewing={prData.reviewing}
+                  {projectId}
+                  {selectedPrNumber}
+                />
               </div>
             {:else}
               <div
