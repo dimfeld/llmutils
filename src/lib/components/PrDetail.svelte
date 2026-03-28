@@ -121,7 +121,7 @@
 
   <!-- Check Runs -->
   {#if pr.checks.length > 0}
-    <details>
+    <details open>
       <summary
         class="cursor-pointer text-xs font-semibold tracking-wide text-muted-foreground uppercase hover:text-foreground"
       >
@@ -135,7 +135,7 @@
 
   <!-- Reviews -->
   {#if pr.reviews.length > 0}
-    <details>
+    <details open>
       <summary
         class="cursor-pointer text-xs font-semibold tracking-wide text-muted-foreground uppercase hover:text-foreground"
       >
