@@ -17,6 +17,8 @@ export interface EmbeddedServerHandle {
   port: number;
   connectedClients: ReadonlyMap<string, EmbeddedServerClient>;
   stop: () => void;
+  /** Wait for all WebSocket send buffers to drain (with timeout). */
+  drain: (timeoutMs?: number) => Promise<void>;
   broadcast: (message: HeadlessMessage) => void;
   broadcastRaw: (payload: string) => void;
   sendTo: (connectionId: string, message: HeadlessMessage) => boolean;
@@ -72,8 +74,11 @@ export function startEmbeddedServer(
     throw new Error(`Invalid port ${port}. Must be an integer between 0 and 65535.`);
   }
 
-  const sockets = new Map<string, { send: (payload: string) => unknown }>();
+  type BunServerWebSocket = import('bun').ServerWebSocket<WebSocketData>;
+  const sockets = new Map<string, BunServerWebSocket>();
   const connectedClients = new Map<string, EmbeddedServerClient>();
+  /** Resolvers waiting for drain events. */
+  const drainWaiters: Set<() => void> = new Set();
 
   const server = Bun.serve<WebSocketData>({
     port,
@@ -130,6 +135,12 @@ export function startEmbeddedServer(
         connectedClients.delete(connectionId);
         options.onDisconnect?.(connectionId);
       },
+      drain() {
+        for (const waiter of drainWaiters) {
+          waiter();
+        }
+        drainWaiters.clear();
+      },
     },
   });
 
@@ -137,10 +148,44 @@ export function startEmbeddedServer(
     throw new Error('Embedded server did not report a listening port');
   }
 
+  const DEFAULT_DRAIN_TIMEOUT_MS = 2000;
+
   return {
     port: server.port,
     connectedClients,
     stop: () => server.stop(true),
+    drain: (timeoutMs?: number) => {
+      // Check if any socket has backpressure
+      const hasBackpressure = () => {
+        for (const ws of sockets.values()) {
+          if (ws.getBufferedAmount() > 0) {
+            return true;
+          }
+        }
+        return false;
+      };
+
+      if (sockets.size === 0 || !hasBackpressure()) {
+        return Promise.resolve();
+      }
+
+      return new Promise<void>((resolve) => {
+        const timeout = setTimeout(() => {
+          drainWaiters.delete(onDrain);
+          resolve();
+        }, timeoutMs ?? DEFAULT_DRAIN_TIMEOUT_MS);
+
+        const onDrain = () => {
+          if (!hasBackpressure()) {
+            clearTimeout(timeout);
+            drainWaiters.delete(onDrain);
+            resolve();
+          }
+        };
+
+        drainWaiters.add(onDrain);
+      });
+    },
     broadcast: (message) => {
       const payload = JSON.stringify(message);
       for (const ws of sockets.values()) {

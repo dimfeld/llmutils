@@ -5,6 +5,7 @@ export const VALID_HEADLESS_TYPES = new Set<HeadlessMessage['type']>([
   'replay_start',
   'replay_end',
   'output',
+  'session_ended',
 ]);
 
 export const VALID_HEADLESS_SERVER_TYPES = new Set<HeadlessServerMessage['type']>([

@@ -460,6 +460,10 @@ export class SessionManager {
 
         return;
       }
+      case 'session_ended':
+        // The agent is shutting down gracefully. This message confirms all prior
+        // messages have been sent. The actual disconnect event will follow shortly.
+        return;
     }
   }
 

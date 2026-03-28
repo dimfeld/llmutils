@@ -14,6 +14,7 @@ describe('headless_message_utils', () => {
       'replay_start',
       'replay_end',
       'output',
+      'session_ended',
     ]);
     expect([...VALID_HEADLESS_SERVER_TYPES]).toEqual([
       'prompt_response',

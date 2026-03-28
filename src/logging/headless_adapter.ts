@@ -137,6 +137,12 @@ export class HeadlessAdapter implements LoggerAdapter {
   async destroy(): Promise<void> {
     this.destroyed = true;
     this.rejectAllPending();
+
+    if (this.sessionServer && this.sessionServer.connectedClients.size > 0) {
+      this.sessionServer.broadcast({ type: 'session_ended' });
+      await this.sessionServer.drain();
+    }
+
     this.stopSessionServer();
   }
 
