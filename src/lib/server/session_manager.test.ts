@@ -238,31 +238,79 @@ describe('lib/server/session_manager', () => {
     expect(debug).toBeNull();
   });
 
-  test('formatTunnelMessage marks non-tunnel agent_session_end messages as notification-worthy', () => {
-    const direct = formatTunnelMessage('conn-1', 1, {
-      type: 'structured',
-      message: {
-        type: 'agent_session_end',
-        timestamp: '2026-03-17T10:00:59.000Z',
-        success: true,
-        turns: 1,
+  test('formatTunnelMessage marks non-tunnel agent_session_end messages as notification-worthy only for interactive sessions', () => {
+    const chatSession = formatTunnelMessage(
+      'conn-1',
+      1,
+      {
+        type: 'structured',
+        message: {
+          type: 'agent_session_end',
+          timestamp: '2026-03-17T10:00:59.000Z',
+          success: true,
+          turns: 1,
+        },
       },
-    });
+      'chat'
+    );
 
-    const tunneled = formatTunnelMessage('conn-1', 2, {
-      type: 'structured',
-      message: {
-        type: 'agent_session_end',
-        timestamp: '2026-03-17T10:01:00.000Z',
-        success: true,
-        turns: 1,
-        transportSource: 'tunnel',
+    const generateSession = formatTunnelMessage(
+      'conn-1',
+      2,
+      {
+        type: 'structured',
+        message: {
+          type: 'agent_session_end',
+          timestamp: '2026-03-17T10:00:59.000Z',
+          success: true,
+          turns: 1,
+        },
       },
-    });
+      'generate'
+    );
 
-    expect(direct).toMatchObject({
+    const agentSession = formatTunnelMessage(
+      'conn-1',
+      3,
+      {
+        type: 'structured',
+        message: {
+          type: 'agent_session_end',
+          timestamp: '2026-03-17T10:00:59.000Z',
+          success: true,
+          turns: 1,
+        },
+      },
+      'agent'
+    );
+
+    const tunneled = formatTunnelMessage(
+      'conn-1',
+      4,
+      {
+        type: 'structured',
+        message: {
+          type: 'agent_session_end',
+          timestamp: '2026-03-17T10:01:00.000Z',
+          success: true,
+          turns: 1,
+          transportSource: 'tunnel',
+        },
+      },
+      'chat'
+    );
+
+    expect(chatSession).toMatchObject({
       rawType: 'agent_session_end',
       triggersNotification: true,
+    });
+    expect(generateSession).toMatchObject({
+      rawType: 'agent_session_end',
+      triggersNotification: true,
+    });
+    expect(agentSession).toMatchObject({
+      rawType: 'agent_session_end',
+      triggersNotification: false,
     });
     expect(tunneled).toMatchObject({
       rawType: 'agent_session_end',

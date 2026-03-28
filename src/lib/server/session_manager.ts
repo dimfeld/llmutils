@@ -236,7 +236,8 @@ function selectSessionCandidate(
 export function formatTunnelMessage(
   connectionId: string,
   seq: number,
-  message: TunnelMessage
+  message: TunnelMessage,
+  sessionCommand?: string
 ): DisplayMessage | null {
   switch (message.type) {
     case 'debug':
@@ -265,7 +266,9 @@ export function formatTunnelMessage(
           };
         }
         const triggersNotification =
-          structured.type === 'agent_session_end' && structured.transportSource !== 'tunnel';
+          structured.type === 'agent_session_end' &&
+          structured.transportSource !== 'tunnel' &&
+          (sessionCommand === 'chat' || sessionCommand === 'generate');
         const stripped = stripStructuredMessage(structured);
         return {
           id: `${connectionId}:${seq}`,
@@ -438,7 +441,12 @@ export class SessionManager {
         return;
       }
       case 'output': {
-        const displayMessage = formatTunnelMessage(connectionId, message.seq, message.message);
+        const displayMessage = formatTunnelMessage(
+          connectionId,
+          message.seq,
+          message.message,
+          session.sessionInfo.command
+        );
         if (displayMessage) {
           session.messages.push(displayMessage);
           this.trimSessionMessages(session, MAX_SESSION_MESSAGES);
