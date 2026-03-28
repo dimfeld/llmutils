@@ -5,6 +5,8 @@
     checkRollupToSummaryStatus,
     reviewDecisionBadgeColor,
     reviewDecisionLabel,
+    stateBadgeColor,
+    stateLabel,
   } from '$lib/utils/pr_display.js';
 
   let {
@@ -34,8 +36,19 @@
     </span>
   </div>
   <div class="mt-1 flex items-center gap-1.5">
-    <PrStatusIndicator status={checkRollupToSummaryStatus(pr.status.check_rollup_state)} />
-    {#if pr.status.review_decision}
+    <PrStatusIndicator
+      status={pr.status.draft ? 'none' : checkRollupToSummaryStatus(pr.status.check_rollup_state)}
+    />
+    {#if pr.status.draft}
+      <span
+        class="inline-flex items-center rounded-full px-1.5 py-0.5 text-xs leading-none font-medium {stateBadgeColor(
+          pr.status.state,
+          pr.status.draft
+        )}"
+      >
+        {stateLabel(pr.status.state, pr.status.draft)}
+      </span>
+    {:else if pr.status.review_decision}
       <span
         class="inline-flex items-center rounded-full px-1.5 py-0.5 text-xs leading-none font-medium {reviewDecisionBadgeColor(
           pr.status.review_decision
