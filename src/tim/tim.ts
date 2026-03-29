@@ -1339,6 +1339,17 @@ workspaceCommand
   });
 
 workspaceCommand
+  .command('register [path]')
+  .description('Register an existing directory as a workspace')
+  .option('--name <name>', 'Set a name for the workspace (also used as task ID)')
+  .option('--primary', 'Mark the workspace as primary')
+  .option('--auto', 'Mark the workspace as auto-selectable')
+  .action(async (target, options, command) => {
+    const { handleWorkspaceRegisterCommand } = await import('./commands/workspace.js');
+    await handleWorkspaceRegisterCommand(target, options, command).catch(handleCommandError);
+  });
+
+workspaceCommand
   .command('lock [workspaceIdentifier]')
   .description('Lock a workspace by task ID, directory, or current directory')
   .option('-a, --available', 'Lock the first available workspace for this repository')

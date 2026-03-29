@@ -26,7 +26,8 @@ import {
   prepareExistingWorkspace,
   runWorkspaceUpdateCommands,
 } from '../workspace/workspace_manager.js';
-import { deleteWorkspace } from '../db/workspace.js';
+import { deleteWorkspace, recordWorkspace } from '../db/workspace.js';
+import { getOrCreateProject } from '../db/project.js';
 import { getDatabase } from '../db/database.js';
 import { syncPlanToDb } from '../db/plan_sync.js';
 import {
@@ -2018,4 +2019,58 @@ export async function handleWorkspaceUpdateCommand(
     log(`  Plan ID: ${updated.planId}`);
   }
   log(`  Type: ${updated.workspaceType}`);
+}
+
+export async function handleWorkspaceRegisterCommand(
+  target: string | undefined,
+  options: {
+    name?: string;
+    primary?: boolean;
+    auto?: boolean;
+  },
+  command: Command
+) {
+  const workspaceType = resolveWorkspaceTypeOption(options);
+
+  // Resolve workspace path - either from argument or current directory
+  const workspacePath = target ? path.resolve(process.cwd(), target) : process.cwd();
+
+  if (!(await workspaceDirectoryExists(workspacePath))) {
+    throw new Error(`Directory does not exist: ${workspacePath}`);
+  }
+
+  // Check if already registered
+  const existing = getWorkspaceInfoByPath(workspacePath);
+  if (existing) {
+    throw new Error(
+      `Directory is already registered as a workspace (task ID: ${existing.taskId}).`
+    );
+  }
+
+  // Determine repository identity and current branch
+  const identity = await getRepositoryIdentity({ cwd: workspacePath });
+  const branch = await getCurrentBranchName(workspacePath);
+
+  const db = getDatabase();
+  const project = getOrCreateProject(db, identity.repositoryId, {
+    remoteUrl: identity.remoteUrl ?? undefined,
+  });
+
+  const taskId = options.name ?? generateAlphanumericId();
+
+  const row = recordWorkspace(db, {
+    projectId: project.id,
+    taskId,
+    workspacePath,
+    branch,
+    name: options.name ?? null,
+    workspaceType: workspaceType ?? 'standard',
+  });
+
+  log(chalk.green('✓ Workspace registered'));
+  log(`  Path: ${workspacePath}`);
+  log(`  Task ID: ${row.task_id}`);
+  log(`  Branch: ${branch ?? '(none)'}`);
+  log(`  Type: ${workspaceType ?? 'standard'}`);
+  console.log(workspacePath);
 }
