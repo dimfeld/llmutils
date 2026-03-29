@@ -177,7 +177,9 @@ describe('tim plan_materialize', () => {
 
     const materializeDir = await ensureMaterializeDir(repoDir);
     const infoExcludePath = path.join(repoDir, '.git', 'info', 'exclude');
-    expect(await fs.readFile(infoExcludePath, 'utf8')).toContain('.tim/plans\n');
+    const excludeContent = await fs.readFile(infoExcludePath, 'utf8');
+    expect(excludeContent).toContain('.tim/plans\n');
+    expect(excludeContent).toContain('.tim/logs\n');
     await expect(fs.access(path.join(materializeDir, '.gitignore'))).rejects.toMatchObject({
       code: 'ENOENT',
     });
@@ -304,9 +306,9 @@ describe('tim plan_materialize', () => {
     expect(refreshedDependencyPlan.materializedAs).toBe('reference');
   });
 
-  test('ensureMaterializeDir does not duplicate .tim/plans in .git/info/exclude', async () => {
+  test('ensureMaterializeDir does not duplicate .tim/plans or .tim/logs in .git/info/exclude', async () => {
     const infoExcludePath = path.join(repoDir, '.git', 'info', 'exclude');
-    await fs.appendFile(infoExcludePath, '\n.tim/plans\n');
+    await fs.appendFile(infoExcludePath, '\n.tim/plans\n.tim/logs\n');
 
     await ensureMaterializeDir(repoDir);
 
@@ -315,6 +317,7 @@ describe('tim plan_materialize', () => {
       .map((line) => line.trim())
       .filter(Boolean);
     expect(lines.filter((line) => line === '.tim/plans')).toHaveLength(1);
+    expect(lines.filter((line) => line === '.tim/logs')).toHaveLength(1);
   });
 
   test('ensureMaterializeDir skips updating .git/info/exclude when core.excludesfile already ignores .tim/plans', async () => {

@@ -23,6 +23,7 @@ import { normalizeContainerToEpic, phaseSchema, type PlanSchema } from './planSc
 import { planRowToSchemaInput } from './plans_db.js';
 
 export const MATERIALIZED_DIR = path.join('.tim', 'plans');
+const LOGS_DIR = path.join('.tim', 'logs');
 
 export function parsePlanId(planId: string): number {
   const parsed = Number(planId);
@@ -335,9 +336,10 @@ export async function ensureMaterializeDir(repoRoot: string): Promise<string> {
   }
 
   const existingLines = existingContent.split('\n').map((l) => l.trim());
-  if (!existingLines.includes(MATERIALIZED_DIR)) {
+  const dirsToExclude = [MATERIALIZED_DIR, LOGS_DIR].filter((d) => !existingLines.includes(d));
+  if (dirsToExclude.length > 0) {
     const suffix = existingContent && !existingContent.endsWith('\n') ? '\n' : '';
-    await writeFile(infoExcludePath, existingContent + suffix + MATERIALIZED_DIR + '\n');
+    await writeFile(infoExcludePath, existingContent + suffix + dirsToExclude.join('\n') + '\n');
   }
 
   return directory;
