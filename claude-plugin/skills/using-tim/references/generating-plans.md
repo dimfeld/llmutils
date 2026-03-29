@@ -8,6 +8,7 @@ the structured task data in the plan as well as .
 - [Creating a Plan Stub](#creating-a-plan-stub)
 - [Tool Schema Discovery](#tool-schema-discovery)
 - [Plan Management Tools](#plan-management-tools)
+- [File-Based Plan Editing](#file-based-plan-editing)
 
 ## Creating a Plan Stub
 
@@ -87,6 +88,23 @@ echo '{"plan": "123", "action": "update", "taskIndex": 2, "done": true}' | tim t
 # Remove a task
 echo '{"plan": "123", "action": "remove", "taskTitle": "New task"}' | tim tools manage-plan-task
 ```
+
+## File-Based Plan Editing
+
+For agents that prefer to edit plans using normal file-based tools (read/write/edit) instead of the JSON tool interface, use `tim materialize` and `tim sync`:
+
+```bash
+# Materialize a plan from the database to .tim/plans/<planId>.plan.md
+tim materialize 123
+
+# Edit the file with normal tools...
+# Then sync changes back to the database
+tim sync 123
+```
+
+`tim materialize` writes the plan to `.tim/plans/<planId>.plan.md` where it can be read and edited with standard file editing tools. After making changes, `tim sync` reads the file and writes the changes back to the database. Use `tim sync --force` if the file appears stale relative to the database.
+
+If no plan ID is given, `tim sync` scans all `.plan.md` files in `.tim/plans/` and syncs any that have been modified.
 
 ### list-ready-plans
 
