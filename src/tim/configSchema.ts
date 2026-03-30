@@ -28,9 +28,9 @@ export const postApplyCommandSchema = z.object({
 export const lifecycleCommandSchema = z.object({
   title: z.string(),
   command: z.string(),
-  mode: z.enum(['run', 'daemon']).optional(),
-  check: z.string().optional(),
-  shutdown: z.string().optional(),
+  mode: z.enum(['run', 'daemon']).optional().describe('Whether to run the command and wait for it to finish or run it in the background.'),
+  check: z.string().optional().describe('Command to check if a daemon mode lifecycle command has finished initializting'),
+  shutdown: z.string().optional().describe('Command to shutdown a daemon mode lifecycle command'),
   workingDirectory: z.string().optional(),
   env: z.record(z.string(), z.string()).optional(),
   allowFailure: z.boolean().optional(),
