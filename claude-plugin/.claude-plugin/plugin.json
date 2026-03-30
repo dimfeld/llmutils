@@ -1,6 +1,6 @@
 {
   "name": "tim",
-  "version": "1.0.5",
+  "version": "1.1.0",
   "description": "AI-powered project planning and execution with TIM",
   "author": {
     "name": "Daniel Imfeld",
@@ -8,5 +8,5 @@
   },
   "repository": "https://github.com/dimfeld/llmutils",
   "license": "MIT",
-  "keywords": ["planning", "project-management", "mcp", "automation"]
+  "keywords": ["planning", "project-management", "claude-code", "codex", "automation"]
 }
