@@ -547,6 +547,16 @@
     </div>
   {/if}
 
+  <!-- Details -->
+  {#if plan.details}
+    <div>
+      <h3 class="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+        Details
+      </h3>
+      <p class="whitespace-pre-wrap text-sm text-foreground">{plan.details}</p>
+    </div>
+  {/if}
+
   <!-- Timestamps -->
   <div class="space-y-1 text-xs text-muted-foreground">
     <div>Created: {formatDate(plan.createdAt)}</div>
