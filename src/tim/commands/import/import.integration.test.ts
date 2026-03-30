@@ -250,14 +250,13 @@ describe('handleImportCommand Integration Tests', () => {
     expect(writePlanFile).toHaveBeenCalled();
 
     const [filePath, planData] = (writePlanFile as any).mock.calls[0];
-    expect(filePath).toContain('-123-linear-issue-example.plan.md');
+    expect(filePath).toBeNull();
     expect(planData).toMatchObject({
       title: 'Linear Issue Example',
       issue: ['https://linear.app/team/issue/LIN-123'],
     });
-    expect(filePath).toContain(`${planData.id}-`);
 
-    expect(log).toHaveBeenCalledWith(expect.stringContaining(path.basename(filePath)));
+    expect(log).toHaveBeenCalledWith(expect.stringContaining(`Created plan ${planData.id}`));
   });
 
   test('should work with GitHub configuration', async () => {
@@ -294,14 +293,13 @@ describe('handleImportCommand Integration Tests', () => {
     expect(writePlanFile).toHaveBeenCalled();
 
     const [filePath, planData] = (writePlanFile as any).mock.calls[0];
-    expect(filePath).toContain('issue-456-github-issue-example.plan.md');
+    expect(filePath).toBeNull();
     expect(planData).toMatchObject({
       title: 'GitHub Issue Example',
       issue: ['https://github.com/owner/repo/issues/456'],
     });
-    expect(filePath).toContain(`${planData.id}-`);
 
-    expect(log).toHaveBeenCalledWith(expect.stringContaining(path.basename(filePath)));
+    expect(log).toHaveBeenCalledWith(expect.stringContaining(`Created plan ${planData.id}`));
   });
 
   test('should work with Linear in interactive mode', async () => {

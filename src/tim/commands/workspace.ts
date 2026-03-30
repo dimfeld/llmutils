@@ -1150,7 +1150,7 @@ export async function handleWorkspaceAddCommand(
   }
 
   // Import issue into workspace if --issue was provided
-  let importedPlanFile: string | undefined;
+  let importedPlanId: number | undefined;
   let importedPlan: PlanSchema | undefined;
   if (issueInfo) {
     try {
@@ -1176,10 +1176,10 @@ export async function handleWorkspaceAddCommand(
 
       if (result.success) {
         log(chalk.green(`✓ Issue ${issueInfo.identifier} imported successfully`));
-        importedPlanFile = result.planPath;
-        if (result.planPath) {
+        importedPlanId = result.planId;
+        if (result.planId) {
           const resolvedImportedPlan = await resolvePlanFromDbOrSyncFile(
-            result.planPath,
+            String(result.planId),
             workspace.path,
             workspace.path
           );
@@ -1257,8 +1257,8 @@ export async function handleWorkspaceAddCommand(
   if (workspace.planFilePathInWorkspace) {
     log(`  Plan file: ${path.relative(workspace.path, workspace.planFilePathInWorkspace)}`);
   }
-  if (importedPlanFile) {
-    log(`  Imported plan: ${path.relative(workspace.path, importedPlanFile)}`);
+  if (importedPlanId) {
+    log(`  Imported plan: ${importedPlanId}`);
   }
   log('');
   log('Next steps:');
@@ -1270,9 +1270,9 @@ export async function handleWorkspaceAddCommand(
     log(
       `     or tim edit ${path.basename(workspace.planFilePathInWorkspace || resolvedPlanFilePath)} to view the plan`
     );
-  } else if (importedPlanFile) {
-    log(`  2. tim agent ${path.basename(importedPlanFile)}`);
-    log(`     or tim edit ${path.basename(importedPlanFile)} to view the plan`);
+  } else if (importedPlanId) {
+    log(`  2. tim agent ${importedPlanId}`);
+    log(`     or tim edit ${importedPlanId} to view the plan`);
   } else {
     log('  2. Start working on your task');
   }

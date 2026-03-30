@@ -687,8 +687,9 @@ describe('handleImportCommand', () => {
     expect(persistedPlans).toHaveLength(1);
     expect(persistedPlans[0]?.title).toBe('Canonical issue updated');
     expect((writePlanFile as ReturnType<typeof mock>).mock.calls).toHaveLength(2);
-    expect((writePlanFile as ReturnType<typeof mock>).mock.calls[1]?.[0]).toBe(
-      (writePlanFile as ReturnType<typeof mock>).mock.calls[0]?.[0]
+    // Both calls should target the same plan (update, not duplicate)
+    expect((writePlanFile as ReturnType<typeof mock>).mock.calls[1]?.[1]?.id).toBe(
+      (writePlanFile as ReturnType<typeof mock>).mock.calls[0]?.[1]?.id
     );
   });
 
@@ -805,7 +806,7 @@ describe('handleImportCommand', () => {
     expect(writePlanFile).toHaveBeenCalled();
     const [filePath, planData] = (writePlanFile as any).mock.calls[0];
 
-    expect(path.basename(filePath)).toBe('6-issue-123-test-issue.plan.md');
+    expect(filePath).toBeNull();
     expect(planData).toMatchObject({
       id: 6, // maxId + 1
       title: 'Test Issue',
@@ -957,7 +958,7 @@ describe('handleImportCommand', () => {
       expect(writePlanFile).toHaveBeenCalled();
 
       const [filePath, planData] = (writePlanFile as any).mock.calls[0];
-      expect(path.basename(filePath)).toBe('6-issue-team-123-linear-issue.plan.md');
+      expect(filePath).toBeNull();
       expect(planData).toMatchObject({
         id: 6,
         title: 'Linear Issue',

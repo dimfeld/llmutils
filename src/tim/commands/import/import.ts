@@ -40,6 +40,7 @@ import { ensureMaterializeDir, resolveProjectContext } from '../../plan_material
 import { resolvePlanFromDb } from '../../plans.js';
 import { toPlanUpsertInput } from '../../db/plan_sync.js';
 import { ensureReferences } from '../../utils/references.js';
+import { editMaterializedPlan } from '../materialized_edit.js';
 
 type HierarchicalImportMode = 'none' | 'separate' | 'merged';
 type PlanSnapshot = Map<number, PlanSchema>;
@@ -158,8 +159,8 @@ async function updateParentPlanDependencies(
       log(chalk.yellow(`  Parent plan "${parentPlan.title}" marked as in_progress`));
     }
 
-    // Write the updated parent plan
-    await writePlanFile(planPath, parentPlan, { cwdForIdentity: repoRoot });
+    // Write the updated parent plan (DB only, no file)
+    await writePlanFile(planPath, parentPlan, { cwdForIdentity: repoRoot, skipFile: true });
     log(
       chalk.gray(`  Updated parent plan ${parentPlan.id} to include dependency on ${childPlanId}`)
     );
@@ -355,7 +356,7 @@ async function importHierarchicalIssue(
   issueTracker: IssueTrackerClient,
   options: any,
   allPlans: Map<number, PlanSchema>
-): Promise<{ successCount: number; parentPlanId?: number; parentPlanPath?: string }> {
+): Promise<{ successCount: number; parentPlanId?: number }> {
   log(`Importing issue hierarchically: ${issueSpecifier}`);
   let currentPlans = allPlans;
   const planDir = getPlanStorageDir(repoRoot);
@@ -566,31 +567,15 @@ async function importHierarchicalIssue(
   for (let i = 0; i < persistedChildWrites.length; i++) {
     const persistedChildWrite = persistedChildWrites[i];
     const existingChildPlan = childWrites[i]?.existingChildPlan ?? false;
-    await writePlanFile(persistedChildWrite.filePath, persistedChildWrite.plan, {
-      cwdForIdentity: repoRoot,
-      skipDb: true,
-    });
     successCount++;
-    currentPlans = await refreshPlanSnapshot(repoRoot, planDir);
 
-    log(
-      `${existingChildPlan ? 'Updated' : 'Created'} child plan: ${persistedChildWrite.filePath ?? `plan ${persistedChildWrite.plan.id}`}`
-    );
-    log(`Child Plan ID: ${persistedChildWrite.plan.id}`);
+    log(`${existingChildPlan ? 'Updated' : 'Created'} child plan ${persistedChildWrite.plan.id}`);
   }
 
   const persistedParentWrite = persistedWrites[persistedWrites.length - 1];
-  await writePlanFile(persistedParentWrite?.filePath ?? null, persistedParentWrite.plan, {
-    cwdForIdentity: repoRoot,
-    skipDb: true,
-  });
   successCount++;
-  currentPlans = await refreshPlanSnapshot(repoRoot, planDir);
 
-  log(
-    `${existingParentPlan ? 'Updated' : 'Created'} parent plan: ${persistedParentWrite.filePath ?? `plan ${persistedParentWrite.plan.id}`}`
-  );
-  log(`Parent Plan ID: ${persistedParentWrite.plan.id}`);
+  log(`${existingParentPlan ? 'Updated' : 'Created'} parent plan ${persistedParentWrite.plan.id}`);
   if (childPlanIds.length > 0) {
     log(
       `Created/updated ${childPlanIds.length} child plan(s) with IDs: ${childPlanIds.join(', ')}`
@@ -606,7 +591,6 @@ async function importHierarchicalIssue(
   return {
     successCount,
     parentPlanId: existingParentPlan?.id ?? parentPlanId,
-    parentPlanPath: persistedParentWrite.filePath ?? undefined,
   };
 }
 
@@ -619,7 +603,7 @@ async function importHierarchicalIssueMerged(
   issueTracker: IssueTrackerClient,
   options: any,
   allPlans: Map<number, PlanSchema>
-): Promise<{ successCount: number; parentPlanId?: number; parentPlanPath?: string }> {
+): Promise<{ successCount: number; parentPlanId?: number }> {
   log(`Importing issue hierarchically into a single plan: ${issueSpecifier}`);
   const planDir = getPlanStorageDir(repoRoot);
 
@@ -711,12 +695,9 @@ async function importHierarchicalIssueMerged(
     parentPlanPath = path.join(planDir, filename);
   }
 
-  await writePlanFile(parentPlanPath, parentPlan, { cwdForIdentity: repoRoot });
+  await writePlanFile(parentPlanPath, parentPlan, { cwdForIdentity: repoRoot, skipFile: true });
 
-  log(
-    `${existingParentPlan ? 'Updated' : 'Created'} merged plan: ${parentPlanPath ?? `plan ${parentPlan.id}`}`
-  );
-  log(`Plan ID: ${parentPlan.id}`);
+  log(`${existingParentPlan ? 'Updated' : 'Created'} merged plan ${parentPlan.id}`);
   if (hierarchicalData.childIssues.length > 0) {
     log(`Merged ${hierarchicalData.childIssues.length} subissue(s) into the parent plan.`);
   }
@@ -725,7 +706,7 @@ async function importHierarchicalIssueMerged(
     await updateParentPlanDependencies(repoRoot, Number(options.parent), parentPlanId);
   }
 
-  return { successCount: 1, parentPlanId, parentPlanPath: parentPlanPath ?? undefined };
+  return { successCount: 1, parentPlanId };
 }
 
 /**
@@ -747,7 +728,7 @@ export async function importSingleIssue(
   allPlans: Map<number, PlanSchema>,
   withSubissues = false,
   withMergedSubissues = false
-): Promise<{ success: boolean; planPath?: string }> {
+): Promise<{ success: boolean; planId?: number }> {
   const planDir = getPlanStorageDir(repoRoot);
 
   if (withMergedSubissues && issueTracker.fetchIssueWithChildren) {
@@ -758,7 +739,7 @@ export async function importSingleIssue(
       options,
       allPlans
     );
-    return { success: result.successCount > 0, planPath: result.parentPlanPath };
+    return { success: result.successCount > 0, planId: result.parentPlanId };
   }
 
   if (withSubissues && issueTracker.fetchIssueWithChildren) {
@@ -769,7 +750,7 @@ export async function importSingleIssue(
       options,
       allPlans
     );
-    return { success: result.successCount > 0, planPath: result.parentPlanPath };
+    return { success: result.successCount > 0, planId: result.parentPlanId };
   }
   log(`Importing issue: ${issueSpecifier}`);
 
@@ -823,7 +804,7 @@ export async function importSingleIssue(
 
     if (!titleChanged && !rmfilterChanged && !hasNewComments) {
       log(`No updates needed for plan ${currentPlan.id} - all content is already up to date.`);
-      return { success: true, planPath: fullPath ?? undefined };
+      return { success: true, planId: currentPlan.id };
     }
 
     // Build updated details
@@ -853,11 +834,10 @@ export async function importSingleIssue(
       updatedPlan.rmfilter = rmprOptions.rmfilter;
     }
 
-    // Write the updated plan
-    await writePlanFile(fullPath, updatedPlan, { cwdForIdentity: repoRoot });
+    // Write the updated plan (DB only, no file)
+    await writePlanFile(fullPath, updatedPlan, { cwdForIdentity: repoRoot, skipFile: true });
 
-    log(`Updated plan file: ${fullPath ?? `plan ${updatedPlan.id}`}`);
-    log(`Plan ID: ${currentPlan.id}`);
+    log(`Updated plan ${currentPlan.id}`);
     if (titleChanged) {
       log(`Updated title from "${currentPlan.title}" to "${data.issue.title}"`);
     }
@@ -868,7 +848,7 @@ export async function importSingleIssue(
       log(`Added ${newComments.length} new comment(s) to the plan.`);
     }
 
-    return { success: true, planPath: fullPath ?? undefined };
+    return { success: true, planId: currentPlan.id };
   }
 
   let issueData = await getInstructionsFromIssue(issueTracker, issueSpecifier, false);
@@ -882,28 +862,17 @@ export async function importSingleIssue(
   // Apply command-line options to the new plan
   applyCommandOptions(stubPlan, options);
 
-  // Generate filename from the suggested name but with .plan.md extension
-  const filenameSuffix = issueData.suggestedFileName.endsWith('.plan.md')
-    ? issueData.suggestedFileName
-    : issueData.suggestedFileName.endsWith('.md')
-      ? issueData.suggestedFileName.replace(/\.md$/, '.plan.md')
-      : `${issueData.suggestedFileName}.plan.md`;
-  const filename = `${newId}-${filenameSuffix}`;
+  // Write the plan to DB only (no file)
+  await writePlanFile(null, stubPlan, { cwdForIdentity: repoRoot });
 
-  const fullPath = path.join(planDir, filename);
-
-  // Write the stub plan file
-  await writePlanFile(fullPath, stubPlan);
-
-  log(`Created stub plan file: ${fullPath}`);
-  log(`Plan ID: ${newId}`);
+  log(`Created plan ${newId}`);
 
   // Update parent plan dependencies if parent option was provided
   if (options.parent !== undefined) {
     await updateParentPlanDependencies(repoRoot, Number(options.parent), newId);
   }
 
-  return { success: true, planPath: fullPath };
+  return { success: true, planId: newId };
 }
 
 function resolveHierarchicalImportMode(
@@ -1115,14 +1084,8 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
     }
 
     // Launch editor if --edit flag is provided
-    if (options.edit && result.planPath) {
-      const { logSpawn } = await import('../../../common/process.js');
-      const editor = process.env.EDITOR || 'nano';
-      log(`Opening ${result.planPath} in ${editor}...`);
-      const editorProcess = logSpawn([editor, result.planPath], {
-        stdio: ['inherit', 'inherit', 'inherit'],
-      });
-      await editorProcess.exited;
+    if (options.edit && result.planId) {
+      await editMaterializedPlan(result.planId, gitRoot, options.editor);
     }
   }
 }

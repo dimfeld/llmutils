@@ -48,14 +48,16 @@ describe('Linear Plan File Structure Tests', () => {
     }));
 
     await moduleMocker.mock('../../plans.js', () => ({
-      writePlanFile: mock(async (filePath: string, planData: any) => {
-        // Actually write the file to the filesystem for validation
-        const yamlContent = yaml.stringify(planData);
-        const schemaLine =
-          '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json\n';
-        await fs.mkdir(path.dirname(filePath), { recursive: true });
-        await fs.writeFile(filePath, schemaLine + yamlContent);
-        actualWrittenFiles.set(filePath, planData);
+      writePlanFile: mock(async (filePath: string | null, planData: any) => {
+        const key = filePath ?? `plan-${planData.id}`;
+        if (filePath) {
+          const yamlContent = yaml.stringify(planData);
+          const schemaLine =
+            '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json\n';
+          await fs.mkdir(path.dirname(filePath), { recursive: true });
+          await fs.writeFile(filePath, schemaLine + yamlContent);
+        }
+        actualWrittenFiles.set(key, planData);
       }),
       getMaxNumericPlanId: mock(() => Promise.resolve(0)),
       readPlanFile: mock(() => Promise.resolve({ issue: [] })),
@@ -186,10 +188,7 @@ describe('Linear Plan File Structure Tests', () => {
     // Verify a file was written
     expect(actualWrittenFiles.size).toBe(1);
 
-    const [filePath, planData] = actualWrittenFiles.entries().next().value;
-
-    // Verify file path follows expected convention
-    expect(filePath).toMatch(/team-struct-implement-new-feature-with-validation\.plan\.md$/);
+    const [, planData] = actualWrittenFiles.entries().next().value;
 
     // Verify the plan data structure
     expect(planData).toMatchObject({
@@ -212,16 +211,6 @@ describe('Linear Plan File Structure Tests', () => {
     // Verify timestamps are valid ISO strings
     expect(() => new Date(planData.createdAt)).not.toThrow();
     expect(() => new Date(planData.updatedAt)).not.toThrow();
-
-    // Verify the actual file can be read and parsed
-    const fileContent = await fs.readFile(filePath, 'utf-8');
-    expect(fileContent).toMatch(/^# yaml-language-server: \$schema=/);
-
-    // Extract and parse YAML content (skip schema comment line)
-    const yamlContent = fileContent.split('\n').slice(1).join('\n');
-    const parsedYaml = yaml.parse(yamlContent);
-
-    expect(parsedYaml).toEqual(planData);
   });
 
   test('should handle Linear issues with minimal data correctly', async () => {
@@ -287,7 +276,7 @@ describe('Linear Plan File Structure Tests', () => {
     await handleImportCommand('TEAM-MINIMAL');
 
     expect(actualWrittenFiles.size).toBe(1);
-    const [filePath, planData] = actualWrittenFiles.entries().next().value;
+    const [, planData] = actualWrittenFiles.entries().next().value;
 
     // Verify minimal plan structure
     expect(planData).toMatchObject({
@@ -304,13 +293,6 @@ describe('Linear Plan File Structure Tests', () => {
     // Verify optional fields are handled correctly
     expect(planData.priority).toBeUndefined();
     expect(planData.assignedTo).toBeUndefined();
-
-    // Verify the file is valid YAML
-    const fileContent = await fs.readFile(filePath, 'utf-8');
-    const yamlContent = fileContent.split('\n').slice(1).join('\n');
-    const parsedYaml = yaml.parse(yamlContent);
-
-    expect(parsedYaml).toEqual(planData);
   });
 
   test('should create plan with Linear-specific metadata preserved', async () => {
@@ -407,7 +389,7 @@ describe('Linear Plan File Structure Tests', () => {
     await handleImportCommand('TEAM-META');
 
     expect(actualWrittenFiles.size).toBe(1);
-    const [filePath, planData] = actualWrittenFiles.entries().next().value;
+    const [, planData] = actualWrittenFiles.entries().next().value;
 
     // Verify Linear metadata is preserved in plan
     expect(planData).toMatchObject({
@@ -428,14 +410,6 @@ describe('Linear Plan File Structure Tests', () => {
     expect(planData.details).toContain('**Assignees:** Dev One, Dev Two');
     expect(planData.details).toContain('**Reporter:** Security Team Lead');
     expect(planData.details).toContain('Compliance Officer');
-
-    // Verify the file structure is valid
-    const fileContent = await fs.readFile(filePath, 'utf-8');
-    expect(fileContent).toMatch(/^# yaml-language-server: \$schema=/);
-
-    const yamlContent = fileContent.split('\n').slice(1).join('\n');
-    const parsedYaml = yaml.parse(yamlContent);
-    expect(parsedYaml).toEqual(planData);
   });
 
   test('should handle large Linear issues with proper content truncation', async () => {
@@ -536,7 +510,7 @@ describe('Linear Plan File Structure Tests', () => {
     await handleImportCommand('TEAM-LARGE');
 
     expect(actualWrittenFiles.size).toBe(1);
-    const [filePath, planData] = actualWrittenFiles.entries().next().value;
+    const [, planData] = actualWrittenFiles.entries().next().value;
 
     // Verify large content is handled correctly
     expect(planData.details).toContain('Large Issue Description');
@@ -553,15 +527,8 @@ describe('Linear Plan File Structure Tests', () => {
       issue: ['https://linear.app/company/issue/TEAM-LARGE'],
     });
 
-    // Verify the file is still valid YAML despite large content
-    const fileContent = await fs.readFile(filePath, 'utf-8');
-    const yamlContent = fileContent.split('\n').slice(1).join('\n');
-
-    expect(() => yaml.parse(yamlContent)).not.toThrow();
-
-    const parsedYaml = yaml.parse(yamlContent);
-    expect(parsedYaml.title).toBe(planData.title);
-    expect(parsedYaml.details.length).toBeGreaterThan(1000); // Ensure large content is preserved
+    // Ensure large content is preserved
+    expect(planData.details.length).toBeGreaterThan(1000);
   });
 
   test('should generate valid plan URLs in expected format', async () => {
@@ -630,7 +597,7 @@ describe('Linear Plan File Structure Tests', () => {
     await handleImportCommand('TEAM-URL');
 
     expect(actualWrittenFiles.size).toBe(1);
-    const [filePath, planData] = actualWrittenFiles.entries().next().value;
+    const [, planData] = actualWrittenFiles.entries().next().value;
 
     // Verify the issue URL is properly formatted and valid
     expect(planData.issue).toHaveLength(1);
@@ -641,8 +608,5 @@ describe('Linear Plan File Structure Tests', () => {
 
     // Verify Linear URL pattern
     expect(planData.issue[0]).toMatch(/^https:\/\/linear\.app\/[^\/]+\/issue\/[A-Z]+-[0-9A-Z]+$/);
-
-    // Verify file path follows convention
-    expect(path.basename(filePath)).toMatch(/^\d+-team-url-url-format-validation-test\.plan\.md$/);
   });
 });

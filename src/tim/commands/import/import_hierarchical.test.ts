@@ -149,6 +149,7 @@ describe('Hierarchical Linear Import', () => {
     await moduleMocker.mock('../../db/plan_sync.js', () => ({
       toPlanUpsertInput: mock((plan: PlanSchema) => ({
         planId: plan.id,
+        title: plan.title,
         uuid: plan.uuid ?? `uuid-${plan.id}`,
         status: plan.status ?? 'pending',
         epic: false,
@@ -303,47 +304,24 @@ describe('Hierarchical Linear Import', () => {
       false
     );
 
-    // Should have written 3 files: 1 parent + 2 children
-    expect(writePlanFile).toHaveBeenCalledTimes(3);
-
-    const writeCalls = (writePlanFile as any).mock.calls;
-
-    // Check parent plan
-    const parentPlanCall = writeCalls.find(
-      (call: any) => call[1].title === 'Parent Issue - Auth System'
-    );
-    expect(parentPlanCall).toBeDefined();
-    expect(parentPlanCall[0]).toMatch(/6-issue-team-123-parent-issue-auth-system\.plan\.md$/);
-    expect(parentPlanCall[1]).toMatchObject({
-      id: 6,
-      title: 'Parent Issue - Auth System',
-      dependencies: [7, 8], // Child plan IDs
-    });
-
-    // Check child plans
-    const child1PlanCall = writeCalls.find(
-      (call: any) => call[1].title === 'Child Issue - Database Setup'
-    );
-    expect(child1PlanCall).toBeDefined();
-    expect(child1PlanCall[0]).toMatch(/7-issue-team-124-child-issue-database-setup\.plan\.md$/);
-    expect(child1PlanCall[1]).toMatchObject({
-      id: 7,
-      title: 'Child Issue - Database Setup',
-      parent: 6, // Parent plan ID
-    });
-
-    const child2PlanCall = writeCalls.find(
-      (call: any) => call[1].title === 'Child Issue - API Endpoints'
-    );
-    expect(child2PlanCall).toBeDefined();
-    expect(child2PlanCall[0]).toMatch(/8-issue-team-125-child-issue-api-endpoints\.plan\.md$/);
-    expect(child2PlanCall[1]).toMatchObject({
-      id: 8,
-      title: 'Child Issue - API Endpoints',
-      parent: 6, // Parent plan ID
-    });
+    // Plans are written to DB via writeImportedPlansToDbTransactionally, not writePlanFile
+    expect(writePlanFile).not.toHaveBeenCalled();
     expect(transactionImmediateSpy.mock.calls.length).toBeGreaterThan(0);
     expect(upsertPlanSpy).toHaveBeenCalledTimes(3);
+
+    // Verify the upsert calls contain the expected plan data
+    const upsertCalls = upsertPlanSpy.mock.calls.map((call: any) => call[2]);
+    const parentUpsert = upsertCalls.find((u: any) => u.title === 'Parent Issue - Auth System');
+    expect(parentUpsert).toBeDefined();
+    expect(parentUpsert.planId).toBe(6);
+
+    const child1Upsert = upsertCalls.find((u: any) => u.title === 'Child Issue - Database Setup');
+    expect(child1Upsert).toBeDefined();
+    expect(child1Upsert.planId).toBe(7);
+
+    const child2Upsert = upsertCalls.find((u: any) => u.title === 'Child Issue - API Endpoints');
+    expect(child2Upsert).toBeDefined();
+    expect(child2Upsert.planId).toBe(8);
   });
 
   test('does not write any files if the transactional DB batch fails', async () => {

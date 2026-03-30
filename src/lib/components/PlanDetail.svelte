@@ -553,7 +553,7 @@
       <h3 class="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
         Details
       </h3>
-      <p class="whitespace-pre-wrap text-sm text-foreground">{plan.details}</p>
+      <p class="text-sm whitespace-pre-wrap text-foreground">{plan.details}</p>
     </div>
   {/if}
 
