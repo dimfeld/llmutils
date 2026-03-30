@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 import { ModuleMocker } from '../../testing.js';
 
@@ -27,6 +30,8 @@ describe('runPostExecutionWorkspaceSync', () => {
   const findPrimaryWorkspaceForRepository = mock(() => null);
   const getWorkspaceInfoByPath = mock(() => null);
   const patchWorkspaceInfo = mock(() => ({}));
+  const readdirMock = mock(async () => []);
+  const rmMock = mock(async () => {});
 
   beforeEach(async () => {
     moduleMocker = new ModuleMocker(import.meta);
@@ -45,6 +50,8 @@ describe('runPostExecutionWorkspaceSync', () => {
     findPrimaryWorkspaceForRepository.mockClear();
     getWorkspaceInfoByPath.mockClear();
     patchWorkspaceInfo.mockClear();
+    readdirMock.mockClear();
+    rmMock.mockClear();
 
     commitAll.mockImplementation(async () => 1);
     logSpawn.mockImplementation(() => ({ exited: Promise.resolve(0), exitCode: 0 }));
@@ -69,6 +76,8 @@ describe('runPostExecutionWorkspaceSync', () => {
     findPrimaryWorkspaceForRepository.mockImplementation(() => null);
     getWorkspaceInfoByPath.mockImplementation(() => null);
     patchWorkspaceInfo.mockImplementation(() => ({}));
+    readdirMock.mockImplementation(async () => []);
+    rmMock.mockImplementation(async () => {});
 
     await moduleMocker.mock('../../common/process.js', () => ({
       commitAll,
@@ -98,6 +107,15 @@ describe('runPostExecutionWorkspaceSync', () => {
       getWorkspaceInfoByPath,
       findPrimaryWorkspaceForRepository,
       patchWorkspaceInfo,
+    }));
+
+    await moduleMocker.mock('../plan_materialize.js', () => ({
+      MATERIALIZED_DIR: '.tim/plans',
+    }));
+
+    await moduleMocker.mock('node:fs/promises', () => ({
+      readdir: readdirMock,
+      rm: rmMock,
     }));
 
     await moduleMocker.mock('../../logging.js', () => ({
@@ -144,6 +162,7 @@ describe('runPostExecutionWorkspaceSync', () => {
         checkoutJjBookmark: false,
       }
     );
+    expect(readdirMock).toHaveBeenCalledWith('/tmp/workspace/.tim/plans');
   });
 
   test('skips push and deletes a newly created empty jj branch', async () => {
@@ -458,11 +477,15 @@ describe('runPreExecutionWorkspaceSync', () => {
     diffHash: 'hash',
   }));
   const pullWorkspaceRefIfExists = mock(async () => true);
+  const readdirMock = mock(async () => []);
+  const rmMock = mock(async () => {});
 
   beforeEach(async () => {
     moduleMocker = new ModuleMocker(import.meta);
     captureRepositoryState.mockClear();
     pullWorkspaceRefIfExists.mockClear();
+    readdirMock.mockClear();
+    rmMock.mockClear();
 
     await moduleMocker.mock('../../common/git.js', () => ({
       captureRepositoryState,
@@ -498,6 +521,15 @@ describe('runPreExecutionWorkspaceSync', () => {
       patchWorkspaceInfo: mock(() => ({})),
     }));
 
+    await moduleMocker.mock('../plan_materialize.js', () => ({
+      MATERIALIZED_DIR: '.tim/plans',
+    }));
+
+    await moduleMocker.mock('node:fs/promises', () => ({
+      readdir: readdirMock,
+      rm: rmMock,
+    }));
+
     await moduleMocker.mock('../../logging.js', () => ({
       warn: mock(() => {}),
       log: mock(() => {}),
@@ -519,6 +551,7 @@ describe('runPreExecutionWorkspaceSync', () => {
 
     await runPreExecutionWorkspaceSync(context);
 
+    expect(readdirMock).toHaveBeenCalledWith('/tmp/workspace/.tim/plans');
     expect(pullWorkspaceRefIfExists).toHaveBeenCalledWith('/tmp/workspace', 'task-123', 'origin');
     expect(captureRepositoryState).toHaveBeenCalledWith('/tmp/workspace');
     expect(context.preExecutionState).toEqual({
@@ -547,6 +580,42 @@ describe('runPreExecutionWorkspaceSync', () => {
       statusOutput: '',
       diffHash: 'hash',
     });
+  });
+});
+
+describe('wipeMaterializedPlans', () => {
+  test('deletes materialized plan contents while preserving keep files and directory', async () => {
+    const workspaceDir = await mkdtemp(path.join(os.tmpdir(), 'workspace-roundtrip-'));
+    const plansDir = path.join(workspaceDir, '.tim', 'plans');
+    await mkdir(plansDir, { recursive: true });
+    await writeFile(path.join(plansDir, '1.plan.md'), 'primary');
+    await writeFile(path.join(plansDir, '.1.plan.md.shadow'), 'shadow');
+    await writeFile(path.join(plansDir, '2.plan.md'), 'reference');
+    await writeFile(path.join(plansDir, '1-tasks.json'), '{}');
+    await writeFile(path.join(plansDir, '.gitignore'), '*.plan.md');
+    await writeFile(path.join(plansDir, '.gitkeep'), '');
+
+    try {
+      const { wipeMaterializedPlans } = await import('./workspace_roundtrip.js');
+      await wipeMaterializedPlans(workspaceDir);
+
+      const remainingEntries = await readdir(plansDir);
+      expect(remainingEntries).toHaveLength(2);
+      expect(remainingEntries.sort()).toEqual(['.gitignore', '.gitkeep']);
+    } finally {
+      await rm(workspaceDir, { force: true, recursive: true });
+    }
+  });
+
+  test('ignores missing materialized plans directory', async () => {
+    const workspaceDir = await mkdtemp(path.join(os.tmpdir(), 'workspace-roundtrip-'));
+
+    try {
+      const { wipeMaterializedPlans } = await import('./workspace_roundtrip.js');
+      await expect(wipeMaterializedPlans(workspaceDir)).resolves.toBeUndefined();
+    } finally {
+      await rm(workspaceDir, { force: true, recursive: true });
+    }
   });
 });
 

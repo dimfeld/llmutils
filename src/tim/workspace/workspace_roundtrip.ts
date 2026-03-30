@@ -1,3 +1,5 @@
+import { readdir, rm } from 'node:fs/promises';
+import * as path from 'node:path';
 import {
   captureRepositoryState,
   compareRepositoryStates,
@@ -19,6 +21,8 @@ import {
   pushWorkspaceRefToRemote,
   setWorkspaceBookmarkToCurrent,
 } from '../commands/workspace.js';
+import { MATERIALIZED_DIR } from '../plan_materialize.js';
+import { warn } from '../../logging.js';
 
 export interface WorkspaceRoundTripContext {
   executionWorkspacePath: string;
@@ -74,6 +78,14 @@ export async function prepareWorkspaceRoundTrip(options: {
 export async function runPreExecutionWorkspaceSync(
   context: WorkspaceRoundTripContext
 ): Promise<void> {
+  try {
+    await wipeMaterializedPlans(context.executionWorkspacePath);
+  } catch (error) {
+    warn(
+      `Failed to wipe materialized plans before workspace sync in ${context.executionWorkspacePath}: ${error as Error}`
+    );
+  }
+
   if (!context.branchCreatedDuringSetup) {
     await pullWorkspaceRefIfExists(context.executionWorkspacePath, context.refName, 'origin');
   }
@@ -92,50 +104,80 @@ export async function runPostExecutionWorkspaceSync(
     ? compareRepositoryStates(context.preExecutionState, postExecutionState).hasDifferences
     : true;
 
-  if (!hasRepositoryChanges && !hasPendingChanges) {
-    if (context.branchCreatedDuringSetup) {
-      await deleteUnusedLocalBranch(context);
-    }
+  try {
+    if (!hasRepositoryChanges && !hasPendingChanges) {
+      if (context.branchCreatedDuringSetup) {
+        await deleteUnusedLocalBranch(context);
+      }
 
-    // Refresh the primary workspace from origin when we skip pushing on a reused branch,
-    // since pre-sync may have fast-forwarded the execution workspace from origin.
-    // Skip for newly created branches — the branch was never pushed, so there's nothing to pull.
-    if (context.primaryWorkspacePath && !context.branchCreatedDuringSetup) {
-      await pullWorkspaceRefIfExists(
-        context.primaryWorkspacePath,
-        context.refName,
-        'origin',
-        undefined,
-        {
-          checkoutJjBookmark: false,
-        }
+      // Refresh the primary workspace from origin when we skip pushing on a reused branch,
+      // since pre-sync may have fast-forwarded the execution workspace from origin.
+      // Skip for newly created branches — the branch was never pushed, so there's nothing to pull.
+      if (context.primaryWorkspacePath && !context.branchCreatedDuringSetup) {
+        await pullWorkspaceRefIfExists(
+          context.primaryWorkspacePath,
+          context.refName,
+          'origin',
+          undefined,
+          {
+            checkoutJjBookmark: false,
+          }
+        );
+      }
+    } else {
+      if (await getUsingJj(context.executionWorkspacePath)) {
+        await setWorkspaceBookmarkToCurrent(context.executionWorkspacePath, context.refName, '@-');
+      }
+
+      await pushWorkspaceRefToRemote({
+        workspacePath: context.executionWorkspacePath,
+        refName: context.refName,
+        remoteName: 'origin',
+        ensureJjBookmarkAtCurrent: false,
+      });
+
+      if (context.primaryWorkspacePath) {
+        await pullWorkspaceRefIfExists(
+          context.primaryWorkspacePath,
+          context.refName,
+          'origin',
+          undefined,
+          {
+            checkoutJjBookmark: false,
+          }
+        );
+      }
+    }
+  } finally {
+    try {
+      await wipeMaterializedPlans(context.executionWorkspacePath);
+    } catch (error) {
+      warn(
+        `Failed to wipe materialized plans after workspace sync in ${context.executionWorkspacePath}: ${error as Error}`
       );
     }
-    return;
+  }
+}
+
+export async function wipeMaterializedPlans(workspacePath: string): Promise<void> {
+  const materializedPlansPath = path.join(workspacePath, MATERIALIZED_DIR);
+
+  let entries: string[];
+  try {
+    entries = await readdir(materializedPlansPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return;
+    }
+
+    throw error;
   }
 
-  if (await getUsingJj(context.executionWorkspacePath)) {
-    await setWorkspaceBookmarkToCurrent(context.executionWorkspacePath, context.refName, '@-');
-  }
-
-  await pushWorkspaceRefToRemote({
-    workspacePath: context.executionWorkspacePath,
-    refName: context.refName,
-    remoteName: 'origin',
-    ensureJjBookmarkAtCurrent: false,
-  });
-
-  if (context.primaryWorkspacePath) {
-    await pullWorkspaceRefIfExists(
-      context.primaryWorkspacePath,
-      context.refName,
-      'origin',
-      undefined,
-      {
-        checkoutJjBookmark: false,
-      }
-    );
-  }
+  await Promise.all(
+    entries
+      .filter((entry) => entry !== '.gitignore' && entry !== '.gitkeep')
+      .map((entry) => rm(path.join(materializedPlansPath, entry), { force: true, recursive: true }))
+  );
 }
 
 async function deleteUnusedLocalBranch(context: WorkspaceRoundTripContext): Promise<void> {
