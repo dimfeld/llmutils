@@ -189,6 +189,21 @@ When creating a new workspace (`tim workspace add`), branch setup uses a deferre
 
 All workspace sync uses origin as the intermediary — branches are always pushed to and pulled from origin rather than directly between workspaces.
 
+### Stale Local-Only Branch Handling
+
+When preparing an existing workspace, if the target branch exists locally but **not** on the remote, it is treated as stale — typically from a prior run that failed before pushing. Instead of reusing such a branch (which may contain broken work on an outdated base):
+
+1. The stale local branch is deleted in the **execution workspace only** (never in the primary workspace).
+2. A new branch is created from the current base branch, ensuring a clean starting point.
+3. `reusedExistingBranch` is set to `false`, so `branchCreatedDuringSetup` is `true` — the workspace behaves identically to a fresh branch creation.
+
+This applies regardless of whether `reuseExistingBranch` is enabled. The `reuseExistingBranch` flag only causes reuse when the branch exists on the remote (indicating a successful prior push).
+
+**Safety guards:**
+
+- Stale-branch deletion is only performed when the fetch from origin succeeded (`fetchSucceeded`), ensuring offline mode or transient network failures don't cause valid branches to be mistakenly deleted.
+- In `hasSeparatePrimary` configurations, only the execution workspace's branch is cleaned up — the primary workspace's local copy is left untouched.
+
 Plans are not copied as files during workspace creation. Instead, when commands like `tim agent`, `tim generate`, or `tim chat` run in a workspace, they materialize the plan from the DB into the workspace at `.tim/plans/{planId}.plan.md` via `setupWorkspace()`. This approach keeps the DB as the source of truth and avoids stale file copies. After the executor finishes editing the materialized file, changes are synced back to the DB. The workspace roundtrip automatically wipes all materialized plan files from `.tim/plans/` (except `.gitignore`/`.gitkeep`) both at the start of pre-execution sync (to clean up leftovers from prior crashed runs) and at the end of post-execution sync (to prevent stale files from confusing subsequent runs on different plans).
 
 When reusing an existing workspace that already contains a plan file, the reuse path syncs the existing file back to the DB before overwriting it with the new materialized version. This prevents data loss from unsynced local edits made during a previous session. If the sync fails, the file copy is skipped (setting the workspace plan file path to `undefined`) rather than silently discarding the edits.

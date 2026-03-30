@@ -2,7 +2,11 @@ import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
-import { findUniqueBranchName, prepareExistingWorkspace } from './workspace_manager.js';
+import {
+  findUniqueBranchName,
+  findUniqueRemoteBranchName,
+  prepareExistingWorkspace,
+} from './workspace_manager.js';
 import { clearAllGitCaches } from '../../common/git.js';
 
 /**
@@ -47,11 +51,59 @@ async function cloneGitRepository(source: string, destination: string): Promise<
   expect(result.exitCode).toBe(0);
 }
 
+async function runJj(
+  dir: string,
+  args: string[]
+): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  const proc = Bun.spawn(['jj', ...args], {
+    cwd: dir,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+
+  const [exitCode, stdout, stderr] = await Promise.all([
+    proc.exited,
+    new Response(proc.stdout as ReadableStream).text(),
+    new Response(proc.stderr as ReadableStream).text(),
+  ]);
+
+  return { exitCode, stdout, stderr };
+}
+
+async function initJjRepository(dir: string): Promise<void> {
+  expect((await runJj(dir, ['git', 'init'])).exitCode).toBe(0);
+  await runJj(dir, ['config', 'set', '--repo', 'user.email', 'test@example.com']);
+  await runJj(dir, ['config', 'set', '--repo', 'user.name', 'Test User']);
+
+  await fs.writeFile(path.join(dir, 'README.md'), '# Test Jujutsu Repo\n');
+  expect((await runJj(dir, ['commit', '-m', 'Initial commit'])).exitCode).toBe(0);
+  expect((await runJj(dir, ['bookmark', 'set', '-r', '@-', 'main'])).exitCode).toBe(0);
+}
+
+async function cloneJjRepository(source: string, destination: string): Promise<void> {
+  await cloneGitRepository(source, destination);
+  await runJj(destination, ['git', 'init']);
+  await runJj(destination, ['config', 'set', '--repo', 'user.email', 'test@example.com']);
+  await runJj(destination, ['config', 'set', '--repo', 'user.name', 'Test User']);
+}
+
 /**
  * Helper to get current branch name
  */
 async function getCurrentBranch(dir: string): Promise<string> {
   const result = await runGit(dir, ['branch', '--show-current']);
+  return result.stdout.trim();
+}
+
+async function getCommitHash(dir: string, ref = 'HEAD'): Promise<string> {
+  const result = await runGit(dir, ['rev-parse', ref]);
+  expect(result.exitCode).toBe(0);
+  return result.stdout.trim();
+}
+
+async function getJjRevision(dir: string, revset = '@'): Promise<string> {
+  const result = await runJj(dir, ['log', '-r', revset, '--no-graph', '-T', 'commit_id ++ "\\n"']);
+  expect(result.exitCode).toBe(0);
   return result.stdout.trim();
 }
 
@@ -133,40 +185,7 @@ describe('findUniqueBranchName with Jujutsu', () => {
     hasJj = exitCode === 0;
 
     if (hasJj) {
-      // Initialize a jj repository
-      const jjInit = Bun.spawn(['jj', 'git', 'init'], {
-        cwd: tempDir,
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-      await jjInit.exited;
-
-      // Configure user.email and user.name for jj (required for commits)
-      const jjConfigEmail = Bun.spawn(
-        ['jj', 'config', 'set', '--repo', 'user.email', 'test@example.com'],
-        {
-          cwd: tempDir,
-          stdout: 'pipe',
-          stderr: 'pipe',
-        }
-      );
-      await jjConfigEmail.exited;
-
-      const jjConfigName = Bun.spawn(['jj', 'config', 'set', '--repo', 'user.name', 'Test User'], {
-        cwd: tempDir,
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-      await jjConfigName.exited;
-
-      // Create initial content
-      await fs.writeFile(path.join(tempDir, 'README.md'), '# Test Jujutsu Repo\n');
-      const jjCommit = Bun.spawn(['jj', 'commit', '-m', 'Initial commit'], {
-        cwd: tempDir,
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-      await jjCommit.exited;
+      await initJjRepository(tempDir);
     }
   });
 
@@ -279,8 +298,8 @@ describe('prepareExistingWorkspace', () => {
     expect(fileExists).toBe(true);
   });
 
-  test('auto-suffixes branch name when it already exists', async () => {
-    // Create a branch with the intended name
+  test('recreates a stale local-only branch with the original name', async () => {
+    // Create a local-only branch with the intended name
     await runGit(tempDir, ['checkout', '-b', 'task-456']);
     await runGit(tempDir, ['checkout', 'main']);
 
@@ -290,10 +309,10 @@ describe('prepareExistingWorkspace', () => {
     });
 
     expect(result.success).toBe(true);
-    expect(result.actualBranchName).toBe('task-456-2');
+    expect(result.actualBranchName).toBe('task-456');
 
     const currentBranch = await getCurrentBranch(tempDir);
-    expect(currentBranch).toBe('task-456-2');
+    expect(currentBranch).toBe('task-456');
   });
 
   test('missing remote skips fetch and continues', async () => {
@@ -357,8 +376,8 @@ describe('prepareExistingWorkspace', () => {
     expect(result.error).toContain('nonexistent-branch');
   });
 
-  test('handles existing branch by auto-suffixing', async () => {
-    // When a branch already exists, the function should auto-suffix the name
+  test('handles an existing local-only branch by recreating it', async () => {
+    // When only a stale local branch exists, the function should recreate it with the same name
 
     // Create the base branch
     await runGit(tempDir, ['checkout', '-b', 'test-branch-999']);
@@ -371,7 +390,7 @@ describe('prepareExistingWorkspace', () => {
     });
 
     expect(result.success).toBe(true);
-    expect(result.actualBranchName).toBe('test-branch-999-2');
+    expect(result.actualBranchName).toBe('test-branch-999');
   });
 
   test('handles branch creation failure with invalid branch name', async () => {
@@ -492,6 +511,7 @@ describe('prepareExistingWorkspace', () => {
       await fs.writeFile(path.join(tempDir, 'already-remote.txt'), 'remote branch content');
       await runGit(tempDir, ['add', '.']);
       await runGit(tempDir, ['commit', '-m', 'Add remote branch content']);
+      const remoteBranchCommit = await getCommitHash(tempDir);
       await runGit(tempDir, ['push', '-u', 'origin', 'already-remote']);
       await runGit(tempDir, ['checkout', 'main']);
 
@@ -516,6 +536,7 @@ describe('prepareExistingWorkspace', () => {
         reusedExistingBranch: true,
       });
       expect(await getCurrentBranch(workspaceDir)).toBe('already-remote');
+      expect(await getCommitHash(workspaceDir)).toBe(remoteBranchCommit);
       await expect(
         fs.readFile(path.join(workspaceDir, 'already-remote.txt'), 'utf-8')
       ).resolves.toBe('remote branch content');
@@ -569,7 +590,7 @@ describe('prepareExistingWorkspace', () => {
     }
   });
 
-  test('with a separate primary workspace, reuses an existing local execution branch when reuseExistingBranch is true', async () => {
+  test('with a separate primary workspace, preserves the primary local-only branch and recreates execution work on the original branch when reuseExistingBranch is true', async () => {
     const primaryDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-primary-local-reuse-'));
     const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-exec-local-reuse-'));
 
@@ -585,7 +606,16 @@ describe('prepareExistingWorkspace', () => {
       await fs.writeFile(path.join(workspaceDir, 'local-only.txt'), 'execution workspace branch');
       await runGit(workspaceDir, ['add', '.']);
       await runGit(workspaceDir, ['commit', '-m', 'Create local-only execution branch']);
+      const workspaceStaleCommit = await getCommitHash(workspaceDir);
       await runGit(workspaceDir, ['checkout', 'main']);
+      const workspaceMainCommit = await getCommitHash(workspaceDir);
+
+      await runGit(primaryDir, ['checkout', '-b', 'local-only-branch']);
+      await fs.writeFile(path.join(primaryDir, 'local-only.txt'), 'primary workspace branch');
+      await runGit(primaryDir, ['add', '.']);
+      await runGit(primaryDir, ['commit', '-m', 'Create primary local-only branch']);
+      const primaryBranchCommitBefore = await getCommitHash(primaryDir);
+      await runGit(primaryDir, ['checkout', 'main']);
 
       const result = await prepareExistingWorkspace(workspaceDir, {
         branchName: 'local-only-branch',
@@ -597,12 +627,73 @@ describe('prepareExistingWorkspace', () => {
       expect(result).toEqual({
         success: true,
         actualBranchName: 'local-only-branch',
-        reusedExistingBranch: true,
       });
+      expect(result.reusedExistingBranch).toBeFalsy();
       expect(await getCurrentBranch(workspaceDir)).toBe('local-only-branch');
-      await expect(fs.readFile(path.join(workspaceDir, 'local-only.txt'), 'utf-8')).resolves.toBe(
-        'execution workspace branch'
+      expect(await getCommitHash(workspaceDir)).toBe(workspaceMainCommit);
+      expect(await getCommitHash(workspaceDir, 'local-only-branch')).toBe(workspaceMainCommit);
+      expect(workspaceStaleCommit).not.toBe(workspaceMainCommit);
+      expect(await getCommitHash(primaryDir, 'local-only-branch')).toBe(primaryBranchCommitBefore);
+      expect(await branchExistsInRepo(primaryDir, 'local-only-branch')).toBe(true);
+      expect(await branchExistsInRepo(workspaceDir, 'local-only-branch')).toBe(true);
+      const inheritedFileExists = await fs
+        .access(path.join(workspaceDir, 'local-only.txt'))
+        .then(() => true)
+        .catch(() => false);
+      expect(inheritedFileExists).toBe(false);
+    } finally {
+      await fs.rm(primaryDir, { recursive: true, force: true });
+      await fs.rm(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
+  test('with a separate primary workspace, ignores a stale local-only branch that exists only in primary when reuseExistingBranch is true', async () => {
+    const primaryDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-primary-only-stale-'));
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-exec-only-stale-'));
+
+    try {
+      await cloneGitRepository(remoteDir, primaryDir);
+      await runGit(primaryDir, ['config', 'user.email', 'test@example.com']);
+      await runGit(primaryDir, ['config', 'user.name', 'Test User']);
+
+      await cloneGitRepository(remoteDir, workspaceDir);
+      await runGit(workspaceDir, ['config', 'user.email', 'test@example.com']);
+      await runGit(workspaceDir, ['config', 'user.name', 'Test User']);
+      const workspaceMainCommit = await getCommitHash(workspaceDir);
+
+      await runGit(primaryDir, ['checkout', '-b', 'primary-only-stale-branch']);
+      await fs.writeFile(path.join(primaryDir, 'primary-only.txt'), 'primary stale branch');
+      await runGit(primaryDir, ['add', '.']);
+      await runGit(primaryDir, ['commit', '-m', 'Create primary-only local branch']);
+      const primaryBranchCommitBefore = await getCommitHash(primaryDir);
+      await runGit(primaryDir, ['checkout', 'main']);
+
+      const result = await prepareExistingWorkspace(workspaceDir, {
+        branchName: 'primary-only-stale-branch',
+        createBranch: true,
+        reuseExistingBranch: true,
+        primaryWorkspacePath: primaryDir,
+      });
+
+      expect(result).toEqual({
+        success: true,
+        actualBranchName: 'primary-only-stale-branch',
+      });
+      expect(result.reusedExistingBranch).toBeFalsy();
+      expect(await getCurrentBranch(workspaceDir)).toBe('primary-only-stale-branch');
+      expect(await getCommitHash(workspaceDir)).toBe(workspaceMainCommit);
+      expect(await getCommitHash(workspaceDir, 'primary-only-stale-branch')).toBe(
+        workspaceMainCommit
       );
+      expect(await getCommitHash(primaryDir, 'primary-only-stale-branch')).toBe(
+        primaryBranchCommitBefore
+      );
+      expect(await branchExistsInRepo(primaryDir, 'primary-only-stale-branch')).toBe(true);
+      const inheritedFileExists = await fs
+        .access(path.join(workspaceDir, 'primary-only.txt'))
+        .then(() => true)
+        .catch(() => false);
+      expect(inheritedFileExists).toBe(false);
     } finally {
       await fs.rm(primaryDir, { recursive: true, force: true });
       await fs.rm(workspaceDir, { recursive: true, force: true });
@@ -728,7 +819,7 @@ describe('prepareExistingWorkspace', () => {
     }
   });
 
-  test('with a separate primary workspace, suffixes when the execution workspace already has a local-only branch and reuseExistingBranch is false', async () => {
+  test('with a separate primary workspace, recreates a local-only execution branch instead of suffixing when reuseExistingBranch is false', async () => {
     const primaryDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-primary-local-suffix-'));
     const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-exec-local-suffix-'));
 
@@ -744,7 +835,9 @@ describe('prepareExistingWorkspace', () => {
       await fs.writeFile(path.join(workspaceDir, 'local-only.txt'), 'execution workspace branch');
       await runGit(workspaceDir, ['add', '.']);
       await runGit(workspaceDir, ['commit', '-m', 'Create local-only execution branch']);
+      const staleWorkspaceCommit = await getCommitHash(workspaceDir);
       await runGit(workspaceDir, ['checkout', 'main']);
+      const workspaceMainCommit = await getCommitHash(workspaceDir);
 
       const result = await prepareExistingWorkspace(workspaceDir, {
         branchName: 'local-only-branch',
@@ -755,9 +848,14 @@ describe('prepareExistingWorkspace', () => {
 
       expect(result).toEqual({
         success: true,
-        actualBranchName: 'local-only-branch-2',
+        actualBranchName: 'local-only-branch',
       });
-      expect(await getCurrentBranch(workspaceDir)).toBe('local-only-branch-2');
+      expect(result.reusedExistingBranch).toBeFalsy();
+      expect(await getCurrentBranch(workspaceDir)).toBe('local-only-branch');
+      expect(await getCommitHash(workspaceDir)).toBe(workspaceMainCommit);
+      expect(await getCommitHash(workspaceDir, 'local-only-branch')).toBe(workspaceMainCommit);
+      expect(await branchExistsInRepo(workspaceDir, 'local-only-branch-2')).toBe(false);
+      expect(staleWorkspaceCommit).not.toBe(workspaceMainCommit);
       const inheritedFileExists = await fs
         .access(path.join(workspaceDir, 'local-only.txt'))
         .then(() => true)
@@ -803,9 +901,9 @@ describe('prepareExistingWorkspace', () => {
 
       expect(result).toEqual({
         success: true,
-        actualBranchName: 'local-only-branch-3',
+        actualBranchName: 'local-only-branch',
       });
-      expect(await getCurrentBranch(workspaceDir)).toBe('local-only-branch-3');
+      expect(await getCurrentBranch(workspaceDir)).toBe('local-only-branch');
     } finally {
       await fs.rm(primaryDir, { recursive: true, force: true });
       await fs.rm(workspaceDir, { recursive: true, force: true });
@@ -830,48 +928,7 @@ describe('prepareExistingWorkspace with Jujutsu', () => {
     hasJj = exitCode === 0;
 
     if (hasJj) {
-      // Initialize a jj repository
-      const jjInit = Bun.spawn(['jj', 'git', 'init'], {
-        cwd: tempDir,
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-      await jjInit.exited;
-
-      // Configure user.email and user.name for jj (required for commits)
-      const jjConfigEmail = Bun.spawn(
-        ['jj', 'config', 'set', '--repo', 'user.email', 'test@example.com'],
-        {
-          cwd: tempDir,
-          stdout: 'pipe',
-          stderr: 'pipe',
-        }
-      );
-      await jjConfigEmail.exited;
-
-      const jjConfigName = Bun.spawn(['jj', 'config', 'set', '--repo', 'user.name', 'Test User'], {
-        cwd: tempDir,
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-      await jjConfigName.exited;
-
-      // Create initial content
-      await fs.writeFile(path.join(tempDir, 'README.md'), '# Test Jujutsu Repo\n');
-      const jjCommit = Bun.spawn(['jj', 'commit', '-m', 'Initial commit'], {
-        cwd: tempDir,
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-      await jjCommit.exited;
-
-      // Set up main bookmark
-      const setMain = Bun.spawn(['jj', 'bookmark', 'set', 'main'], {
-        cwd: tempDir,
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-      await setMain.exited;
+      await initJjRepository(tempDir);
     }
   });
 
@@ -952,6 +1009,7 @@ describe('prepareExistingWorkspace with Jujutsu', () => {
       });
 
       expect(result.success).toBe(true);
+      // No remote configured, so local-only branch is not considered stale — it gets suffixed
       expect(result.actualBranchName).toBe('task-789-2');
     } finally {
       if (originalAllowOffline === undefined) {
@@ -1016,6 +1074,128 @@ describe('prepareExistingWorkspace with Jujutsu', () => {
       }
     }
   });
+
+  test('recreates a stale local-only bookmark from base when reuseExistingBranch is true (Jujutsu)', async () => {
+    if (!hasJj) {
+      console.log('Skipping Jujutsu test - jj not installed');
+      return;
+    }
+
+    const remoteDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-jj-remote-reuse-'));
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-jj-clone-reuse-'));
+
+    try {
+      expect((await runGit(remoteDir, ['init', '--bare', '--initial-branch=main'])).exitCode).toBe(
+        0
+      );
+      expect((await runJj(tempDir, ['git', 'remote', 'add', 'origin', remoteDir])).exitCode).toBe(
+        0
+      );
+      expect(
+        (await runJj(tempDir, ['git', 'push', '--remote', 'origin', '--bookmark', 'main'])).exitCode
+      ).toBe(0);
+
+      await cloneJjRepository(remoteDir, workspaceDir);
+      expect((await runJj(workspaceDir, ['git', 'fetch'])).exitCode).toBe(0);
+      expect((await runJj(workspaceDir, ['new', 'main'])).exitCode).toBe(0);
+      await fs.writeFile(path.join(workspaceDir, 'stale.txt'), 'stale jj work');
+      expect((await runJj(workspaceDir, ['commit', '-m', 'Stale local bookmark'])).exitCode).toBe(
+        0
+      );
+      expect(
+        (await runJj(workspaceDir, ['bookmark', 'set', '-r', '@-', 'stale-bookmark'])).exitCode
+      ).toBe(0);
+      const staleRevision = await getJjRevision(workspaceDir, 'stale-bookmark');
+      const mainRevision = await getJjRevision(workspaceDir, 'main');
+      expect(staleRevision).not.toBe(mainRevision);
+
+      const result = await prepareExistingWorkspace(workspaceDir, {
+        baseBranch: 'main',
+        branchName: 'stale-bookmark',
+        createBranch: true,
+        reuseExistingBranch: true,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.actualBranchName).toBe('stale-bookmark');
+      expect(result.reusedExistingBranch).toBeFalsy();
+      expect(await getJjRevision(workspaceDir, 'stale-bookmark')).toBe(
+        await getJjRevision(workspaceDir)
+      );
+      expect(await getJjRevision(workspaceDir, 'stale-bookmark')).not.toBe(staleRevision);
+      expect(await getJjRevision(workspaceDir, '@-')).toBe(mainRevision);
+
+      const staleFileExists = await fs
+        .access(path.join(workspaceDir, 'stale.txt'))
+        .then(() => true)
+        .catch(() => false);
+      expect(staleFileExists).toBe(false);
+    } finally {
+      await fs.rm(remoteDir, { recursive: true, force: true });
+      await fs.rm(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
+  test('recreates a stale local-only bookmark from base when reuseExistingBranch is false (Jujutsu)', async () => {
+    if (!hasJj) {
+      console.log('Skipping Jujutsu test - jj not installed');
+      return;
+    }
+
+    const remoteDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-jj-remote-no-reuse-'));
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-jj-clone-no-reuse-'));
+
+    try {
+      expect((await runGit(remoteDir, ['init', '--bare', '--initial-branch=main'])).exitCode).toBe(
+        0
+      );
+      expect((await runJj(tempDir, ['git', 'remote', 'add', 'origin', remoteDir])).exitCode).toBe(
+        0
+      );
+      expect(
+        (await runJj(tempDir, ['git', 'push', '--remote', 'origin', '--bookmark', 'main'])).exitCode
+      ).toBe(0);
+
+      await cloneJjRepository(remoteDir, workspaceDir);
+      expect((await runJj(workspaceDir, ['git', 'fetch'])).exitCode).toBe(0);
+      expect((await runJj(workspaceDir, ['new', 'main'])).exitCode).toBe(0);
+      await fs.writeFile(path.join(workspaceDir, 'stale.txt'), 'stale jj work');
+      expect((await runJj(workspaceDir, ['commit', '-m', 'Stale local bookmark'])).exitCode).toBe(
+        0
+      );
+      expect(
+        (await runJj(workspaceDir, ['bookmark', 'set', '-r', '@-', 'stale-bookmark'])).exitCode
+      ).toBe(0);
+      const staleRevision = await getJjRevision(workspaceDir, 'stale-bookmark');
+      const mainRevision = await getJjRevision(workspaceDir, 'main');
+      expect(staleRevision).not.toBe(mainRevision);
+
+      const result = await prepareExistingWorkspace(workspaceDir, {
+        baseBranch: 'main',
+        branchName: 'stale-bookmark',
+        createBranch: true,
+        reuseExistingBranch: false,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.actualBranchName).toBe('stale-bookmark');
+      expect(result.reusedExistingBranch).toBeFalsy();
+      expect(await getJjRevision(workspaceDir, 'stale-bookmark')).toBe(
+        await getJjRevision(workspaceDir)
+      );
+      expect(await getJjRevision(workspaceDir, 'stale-bookmark')).not.toBe(staleRevision);
+      expect(await getJjRevision(workspaceDir, '@-')).toBe(mainRevision);
+
+      const staleFileExists = await fs
+        .access(path.join(workspaceDir, 'stale.txt'))
+        .then(() => true)
+        .catch(() => false);
+      expect(staleFileExists).toBe(false);
+    } finally {
+      await fs.rm(remoteDir, { recursive: true, force: true });
+      await fs.rm(workspaceDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('reuseExistingBranch', () => {
@@ -1046,13 +1226,15 @@ describe('reuseExistingBranch', () => {
     }
   });
 
-  test('checks out existing local branch instead of creating new one', async () => {
-    // Create a branch with some work on it
+  test('recreates a stale local branch instead of reusing it', async () => {
+    // Create a local-only branch with some work on it
     await runGit(tempDir, ['checkout', '-b', 'my-plan-branch']);
     await fs.writeFile(path.join(tempDir, 'plan-work.txt'), 'work in progress');
     await runGit(tempDir, ['add', '.']);
     await runGit(tempDir, ['commit', '-m', 'Plan work']);
+    const staleCommit = await getCommitHash(tempDir);
     await runGit(tempDir, ['checkout', 'main']);
+    const mainCommit = await getCommitHash(tempDir);
 
     const result = await prepareExistingWorkspace(tempDir, {
       branchName: 'my-plan-branch',
@@ -1062,17 +1244,20 @@ describe('reuseExistingBranch', () => {
 
     expect(result.success).toBe(true);
     expect(result.actualBranchName).toBe('my-plan-branch');
-    expect(result.reusedExistingBranch).toBe(true);
+    expect(result.reusedExistingBranch).toBeFalsy();
 
     const currentBranch = await getCurrentBranch(tempDir);
     expect(currentBranch).toBe('my-plan-branch');
+    expect(await getCommitHash(tempDir)).toBe(mainCommit);
+    expect(await getCommitHash(tempDir, 'my-plan-branch')).toBe(mainCommit);
+    expect(staleCommit).not.toBe(mainCommit);
 
-    // Verify the branch content is preserved
+    // Verify the stale branch content is not preserved
     const fileExists = await fs
       .access(path.join(tempDir, 'plan-work.txt'))
       .then(() => true)
       .catch(() => false);
-    expect(fileExists).toBe(true);
+    expect(fileExists).toBe(false);
   });
 
   test('creates new branch with exact name when not local and not remote', async () => {
@@ -1118,10 +1303,15 @@ describe('reuseExistingBranch', () => {
     expect(currentBranch).toBe('remote-only-branch');
   });
 
-  test('does not reuse branch when reuseExistingBranch is false', async () => {
-    // Create a branch
+  test('recreates a stale local branch when reuseExistingBranch is false', async () => {
+    // Create a local-only branch
     await runGit(tempDir, ['checkout', '-b', 'existing-branch']);
+    await fs.writeFile(path.join(tempDir, 'stale.txt'), 'stale branch content');
+    await runGit(tempDir, ['add', '.']);
+    await runGit(tempDir, ['commit', '-m', 'Local-only stale work']);
+    const staleCommit = await getCommitHash(tempDir);
     await runGit(tempDir, ['checkout', 'main']);
+    const mainCommit = await getCommitHash(tempDir);
 
     const result = await prepareExistingWorkspace(tempDir, {
       branchName: 'existing-branch',
@@ -1130,8 +1320,17 @@ describe('reuseExistingBranch', () => {
     });
 
     expect(result.success).toBe(true);
-    // Should be suffixed (old behavior) since reuseExistingBranch is false
-    expect(result.actualBranchName).toBe('existing-branch-2');
+    expect(result.actualBranchName).toBe('existing-branch');
+    expect(await getCurrentBranch(tempDir)).toBe('existing-branch');
+    expect(await getCommitHash(tempDir)).toBe(mainCommit);
+    expect(await getCommitHash(tempDir, 'existing-branch')).toBe(mainCommit);
+    expect(await branchExistsInRepo(tempDir, 'existing-branch-2')).toBe(false);
+    expect(staleCommit).not.toBe(mainCommit);
+    const staleFileExists = await fs
+      .access(path.join(tempDir, 'stale.txt'))
+      .then(() => true)
+      .catch(() => false);
+    expect(staleFileExists).toBe(false);
   });
 
   test('pulls latest from remote when reusing existing branch', async () => {
@@ -1239,5 +1438,50 @@ describe('findUniqueBranchName with checkRemote', () => {
     // Without checkRemote, it should not detect the remote branch
     const name = await findUniqueBranchName(tempDir, 'remote-branch', false);
     expect(name).toBe('remote-branch');
+  });
+});
+
+describe('findUniqueRemoteBranchName', () => {
+  let tempDir: string;
+  let remoteDir: string;
+
+  beforeEach(async () => {
+    clearAllGitCaches();
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-unique-remote-only-test-'));
+    remoteDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-unique-remote-only-remote-'));
+
+    await runGit(remoteDir, ['init', '--bare']);
+    await initGitRepository(tempDir);
+    await runGit(tempDir, ['remote', 'add', 'origin', remoteDir]);
+    await runGit(tempDir, ['push', '-u', 'origin', 'main']);
+  });
+
+  afterEach(async () => {
+    clearAllGitCaches();
+    if (tempDir) {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+    if (remoteDir) {
+      await fs.rm(remoteDir, { recursive: true, force: true });
+    }
+  });
+
+  test('returns original name when no remote collision exists', async () => {
+    const name = await findUniqueRemoteBranchName(tempDir, 'fresh-remote-branch', false);
+    expect(name).toBe('fresh-remote-branch');
+  });
+
+  test('returns suffixed name when the remote branch exists', async () => {
+    await runGit(tempDir, ['checkout', '-b', 'remote-branch']);
+    await fs.writeFile(path.join(tempDir, 'file.txt'), 'content');
+    await runGit(tempDir, ['add', '.']);
+    await runGit(tempDir, ['commit', '-m', 'commit']);
+    await runGit(tempDir, ['push', '-u', 'origin', 'remote-branch']);
+    await runGit(tempDir, ['checkout', 'main']);
+    await runGit(tempDir, ['branch', '-D', 'remote-branch']);
+    await runGit(tempDir, ['fetch', 'origin']);
+
+    const name = await findUniqueRemoteBranchName(tempDir, 'remote-branch', false);
+    expect(name).toBe('remote-branch-2');
   });
 });
