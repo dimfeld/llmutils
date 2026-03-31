@@ -2,10 +2,10 @@ import { describe, it, expect, beforeEach, afterEach, jest, spyOn } from 'bun:te
 import * as glob from 'fast-glob';
 import * as os from 'node:os';
 import path from 'node:path';
-import { gatherDocsInternal } from './additional_docs';
-import type { MdcFile } from './mdc';
+import { gatherDocsInternal } from '../common/additional_docs';
+import type { MdcFile } from '../common/mdc';
 
-import { parseJjRename } from './additional_docs';
+import { parseJjRename } from '../common/additional_docs';
 
 // Helper to mock Bun.file().text()
 const mockFiles: Record<string, string> = {};

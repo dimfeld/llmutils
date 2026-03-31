@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, test, expect, beforeAll, afterAll, beforeEach, afterEach, mock } from 'bun:test';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -90,6 +90,11 @@ describe('subagent command - prompt construction and executor delegation', () =>
   let restoreBunStdin: (() => void) | null = null;
   let restoreIsTTY: (() => void) | null = null;
 
+  // Imported once in beforeAll after mocks are set up, reused across all tests.
+  let handleSubagentCommand: Awaited<
+    ReturnType<typeof import('./subagent.js')>
+  >['handleSubagentCommand'];
+
   // Track what gets passed to executors
   let capturedCodexPrompt: string | undefined;
   let capturedCodexOptions: Record<string, unknown> | undefined;
@@ -104,6 +109,12 @@ describe('subagent command - prompt construction and executor delegation', () =>
   // Track which custom instructions were requested
   let agentInstructionRequests: string[] = [];
   let customInstructionsMap: Record<string, string | undefined> = {};
+
+  // Per-test overrides: set these in a test to override the default mock behaviour
+  // without re-registering the entire mock (which is expensive).
+  let effectiveConfigOverride: any = null;
+  let captureProcessStdin: { write: ReturnType<typeof mock>; end: ReturnType<typeof mock> } | null =
+    null;
 
   const basePlan: PlanSchema = {
     id: 42,
@@ -125,39 +136,10 @@ describe('subagent command - prompt construction and executor delegation', () =>
     ],
   };
 
-  beforeEach(async () => {
-    capturedCodexPrompt = undefined;
-    capturedCodexOptions = undefined;
-    capturedClaudeSpawnArgs = undefined;
-    stdoutWriteCalls = [];
-    agentInstructionRequests = [];
-    customInstructionsMap = {};
-    currentPlanData = structuredClone(basePlan);
-    restoreBunStdin = null;
-    restoreIsTTY = null;
-
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-subagent-test-'));
-    tasksDir = path.join(tempDir, 'tasks');
-    await fs.mkdir(tasksDir, { recursive: true });
-
-    planFilePath = path.join(tasksDir, '42-test-plan.plan.md');
-    await writePlanFixture(planFilePath, basePlan);
-
-    // Capture Bun.write(Bun.stdout, ...) calls
-    originalBunWrite = Bun.write;
-    Bun.write = (async (dest: any, data: any) => {
-      if (dest === Bun.stdout) {
-        stdoutWriteCalls.push(typeof data === 'string' ? data : data.toString());
-        return (typeof data === 'string' ? data : data.toString()).length;
-      }
-      return originalBunWrite(dest, data);
-    }) as typeof Bun.write;
-    originalConsoleLog = console.log;
-    console.log = (...args: unknown[]) => {
-      stdoutWriteCalls.push(args.map((arg) => String(arg)).join(' '));
-    };
-
-    // Mock logging to suppress output
+  // Register all module mocks once for the entire describe block.
+  // Mock functions close over the outer variables so they pick up per-test
+  // state set in beforeEach without needing to re-register every test.
+  beforeAll(async () => {
     await moduleMocker.mock('../../logging.js', () => ({
       log: mock(() => {}),
       error: mock(() => {}),
@@ -165,17 +147,19 @@ describe('subagent command - prompt construction and executor delegation', () =>
       debugLog: mock(() => {}),
     }));
 
-    // Mock config loader - return minimal config
+    // effectiveConfigOverride lets individual tests swap in a different config
+    // without calling moduleMocker.mock() again.
     await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: mock(async () => ({
-        paths: { tasks: tasksDir },
-        models: {},
-        executors: {},
-        agents: {},
-      })),
+      loadEffectiveConfig: mock(async () =>
+        effectiveConfigOverride ?? {
+          paths: { tasks: tasksDir },
+          models: {},
+          executors: {},
+          agents: {},
+        }
+      ),
     }));
 
-    // Mock git root
     await moduleMocker.mock('../../common/git.js', () => ({
       getGitRoot: mock(async () => tempDir),
     }));
@@ -187,8 +171,6 @@ describe('subagent command - prompt construction and executor delegation', () =>
       })),
     }));
 
-    // Mock prompt_builder to return a controlled context string.
-    // This avoids filesystem dependencies from buildPlanContextPrompt.
     await moduleMocker.mock('../prompt_builder.js', () => ({
       buildExecutionPromptWithoutSteps: mock(
         async (opts: any) =>
@@ -196,19 +178,16 @@ describe('subagent command - prompt construction and executor delegation', () =>
       ),
     }));
 
-    // Mock tunnel client - no active tunnel in tests
     await moduleMocker.mock('../../logging/tunnel_client.js', () => ({
       isTunnelActive: mock(() => false),
     }));
 
-    // Mock tunnel server - don't actually create sockets
     await moduleMocker.mock('../../logging/tunnel_server.js', () => ({
       createTunnelServer: mock(async () => ({
         close: mock(() => {}),
       })),
     }));
 
-    // Mock codex runner - capture the prompt
     await moduleMocker.mock('../executors/codex_cli/codex_runner.js', () => ({
       executeCodexStep: mock(async (prompt: string, _cwd: string, _config: any, options?: any) => {
         capturedCodexPrompt = prompt;
@@ -217,7 +196,6 @@ describe('subagent command - prompt construction and executor delegation', () =>
       }),
     }));
 
-    // Mock agent helpers for loading custom instructions - track requests
     await moduleMocker.mock('../executors/codex_cli/agent_helpers.js', () => ({
       loadAgentInstructionsFor: mock(async (agent: string) => {
         agentInstructionRequests.push(agent);
@@ -225,7 +203,6 @@ describe('subagent command - prompt construction and executor delegation', () =>
       }),
     }));
 
-    // Mock shared permissions
     await moduleMocker.mock('../db/database.js', () => ({
       getDatabase: mock(() => ({}) as any),
     }));
@@ -240,7 +217,6 @@ describe('subagent command - prompt construction and executor delegation', () =>
       getRepositoryIdentity: mock(async () => ({ repositoryId: 'test-repo' })),
     }));
 
-    // Mock permissions MCP setup - default no-op (never triggered unless config enables it)
     await moduleMocker.mock('../executors/claude_code/permissions_mcp_setup.js', () => ({
       setupPermissionsMcp: mock(async () => ({
         mcpConfigFile: '/tmp/mock-mcp-config.json',
@@ -250,11 +226,11 @@ describe('subagent command - prompt construction and executor delegation', () =>
       })),
     }));
 
-    // Mock the process spawning for claude-code path
+    // captureProcessStdin lets a test intercept stdin write/end calls without
+    // re-registering this mock.
     await moduleMocker.mock('../../common/process.js', () => ({
       spawnWithStreamingIO: mock(async (args: string[], opts: any) => {
         capturedClaudeSpawnArgs = args;
-        // Simulate a result message so the code can extract it
         if (opts?.formatStdout) {
           const resultJson = JSON.stringify({
             type: 'result',
@@ -263,13 +239,14 @@ describe('subagent command - prompt construction and executor delegation', () =>
           });
           opts.formatStdout(resultJson + '\n');
         }
-        return createStreamingProcessMock();
+        return createStreamingProcessMock(
+          captureProcessStdin ? { stdin: captureProcessStdin } : undefined
+        );
       }),
       createLineSplitter: () => (input: string) => input.split('\n').filter(Boolean),
       sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
     }));
 
-    // Mock the format module to properly extract result text
     await moduleMocker.mock('../executors/claude_code/format.js', () => ({
       extractStructuredMessages: mock((results: any[]) => {
         return results
@@ -293,6 +270,49 @@ describe('subagent command - prompt construction and executor delegation', () =>
       resetToolUseCache: mock(() => {}),
     }));
 
+    // Import after mocks are installed so the module uses the mocked dependencies.
+    // Reusing across all tests avoids repeated re-evaluation (215ms each).
+    ({ handleSubagentCommand } = await import('./subagent.js'));
+  });
+
+  afterAll(() => {
+    moduleMocker.clear();
+  });
+
+  beforeEach(async () => {
+    capturedCodexPrompt = undefined;
+    capturedCodexOptions = undefined;
+    capturedClaudeSpawnArgs = undefined;
+    stdoutWriteCalls = [];
+    agentInstructionRequests = [];
+    customInstructionsMap = {};
+    currentPlanData = structuredClone(basePlan);
+    restoreBunStdin = null;
+    restoreIsTTY = null;
+    effectiveConfigOverride = null;
+    captureProcessStdin = null;
+
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-subagent-test-'));
+    tasksDir = path.join(tempDir, 'tasks');
+    await fs.mkdir(tasksDir, { recursive: true });
+
+    planFilePath = path.join(tasksDir, '42-test-plan.plan.md');
+    await writePlanFixture(planFilePath, basePlan);
+
+    // Capture Bun.write(Bun.stdout, ...) calls
+    originalBunWrite = Bun.write;
+    Bun.write = (async (dest: any, data: any) => {
+      if (dest === Bun.stdout) {
+        stdoutWriteCalls.push(typeof data === 'string' ? data : data.toString());
+        return (typeof data === 'string' ? data : data.toString()).length;
+      }
+      return originalBunWrite(dest, data);
+    }) as typeof Bun.write;
+    originalConsoleLog = console.log;
+    console.log = (...args: unknown[]) => {
+      stdoutWriteCalls.push(args.map((arg) => String(arg)).join(' '));
+    };
+
     // Keep stdin in TTY mode by default so most tests don't accidentally read stdin.
     restoreIsTTY = mockIsTTY(true);
   });
@@ -302,7 +322,6 @@ describe('subagent command - prompt construction and executor delegation', () =>
     restoreIsTTY?.();
     Bun.write = originalBunWrite;
     console.log = originalConsoleLog;
-    moduleMocker.clear();
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
@@ -747,21 +766,13 @@ describe('subagent command - prompt construction and executor delegation', () =>
   });
 
   test('uses subagents config model for claude subagent when CLI model is not set', async () => {
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: mock(async () => ({
-        paths: { tasks: tasksDir },
-        models: {},
-        executors: {},
-        subagents: {
-          implementer: {
-            model: {
-              claude: 'sonnet-4.6',
-            },
-          },
-        },
-        agents: {},
-      })),
-    }));
+    effectiveConfigOverride = {
+      paths: { tasks: tasksDir },
+      models: {},
+      executors: {},
+      subagents: { implementer: { model: { claude: 'sonnet-4.6' } } },
+      agents: {},
+    };
 
     const { handleSubagentCommand } = await import('./subagent.js');
 
@@ -774,22 +785,12 @@ describe('subagent command - prompt construction and executor delegation', () =>
   });
 
   test('uses legacy claude subagent model config as fallback', async () => {
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: mock(async () => ({
-        paths: { tasks: tasksDir },
-        models: {},
-        executors: {
-          'claude-code': {
-            agents: {
-              implementer: {
-                model: 'legacy-sonnet',
-              },
-            },
-          },
-        },
-        agents: {},
-      })),
-    }));
+    effectiveConfigOverride = {
+      paths: { tasks: tasksDir },
+      models: {},
+      executors: { 'claude-code': { agents: { implementer: { model: 'legacy-sonnet' } } } },
+      agents: {},
+    };
 
     const { handleSubagentCommand } = await import('./subagent.js');
 
@@ -802,21 +803,13 @@ describe('subagent command - prompt construction and executor delegation', () =>
   });
 
   test('uses subagents config model for codex subagent when CLI model is not set', async () => {
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: mock(async () => ({
-        paths: { tasks: tasksDir },
-        models: {},
-        executors: {},
-        subagents: {
-          implementer: {
-            model: {
-              codex: 'gpt-5-codex',
-            },
-          },
-        },
-        agents: {},
-      })),
-    }));
+    effectiveConfigOverride = {
+      paths: { tasks: tasksDir },
+      models: {},
+      executors: {},
+      subagents: { implementer: { model: { codex: 'gpt-5-codex' } } },
+      agents: {},
+    };
 
     const { handleSubagentCommand } = await import('./subagent.js');
 
@@ -830,21 +823,13 @@ describe('subagent command - prompt construction and executor delegation', () =>
   });
 
   test('CLI model overrides subagents config model', async () => {
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: mock(async () => ({
-        paths: { tasks: tasksDir },
-        models: {},
-        executors: {},
-        subagents: {
-          implementer: {
-            model: {
-              codex: 'gpt-5-codex',
-            },
-          },
-        },
-        agents: {},
-      })),
-    }));
+    effectiveConfigOverride = {
+      paths: { tasks: tasksDir },
+      models: {},
+      executors: {},
+      subagents: { implementer: { model: { codex: 'gpt-5-codex' } } },
+      agents: {},
+    };
 
     const { handleSubagentCommand } = await import('./subagent.js');
 
@@ -888,26 +873,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
   test('claude-code path writes prompt to stdin as stream-json line and closes stdin', async () => {
     const stdinWrite = mock((_value: string) => {});
     const stdinEnd = mock(async () => {});
-
-    await moduleMocker.mock('../../common/process.js', () => ({
-      spawnWithStreamingIO: mock(async (args: string[], opts: any) => {
-        capturedClaudeSpawnArgs = args;
-        if (opts?.formatStdout) {
-          const resultJson = JSON.stringify({
-            type: 'result',
-            subtype: 'success',
-            result: 'Claude execution complete.',
-          });
-          opts.formatStdout(resultJson + '\n');
-        }
-        return {
-          ...createStreamingProcessMock(),
-          stdin: { write: stdinWrite, end: stdinEnd },
-        };
-      }),
-      createLineSplitter: () => (input: string) => input.split('\n').filter(Boolean),
-      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
-    }));
+    captureProcessStdin = { write: stdinWrite, end: stdinEnd };
 
     const { handleSubagentCommand } = await import('./subagent.js');
 
@@ -946,19 +912,12 @@ describe('subagent command - prompt construction and executor delegation', () =>
   });
 
   test('claude-code path respects allowAllTools config', async () => {
-    // Re-mock config with allowAllTools
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: mock(async () => ({
-        paths: { tasks: tasksDir },
-        models: {},
-        executors: {
-          'claude-code': {
-            allowAllTools: true,
-          },
-        },
-        agents: {},
-      })),
-    }));
+    effectiveConfigOverride = {
+      paths: { tasks: tasksDir },
+      models: {},
+      executors: { 'claude-code': { allowAllTools: true } },
+      agents: {},
+    };
 
     const { handleSubagentCommand } = await import('./subagent.js');
 
@@ -970,18 +929,12 @@ describe('subagent command - prompt construction and executor delegation', () =>
   });
 
   test('claude-code path includes MCP config when configured', async () => {
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: mock(async () => ({
-        paths: { tasks: tasksDir },
-        models: {},
-        executors: {
-          'claude-code': {
-            mcpConfigFile: '/path/to/mcp-config.json',
-          },
-        },
-        agents: {},
-      })),
-    }));
+    effectiveConfigOverride = {
+      paths: { tasks: tasksDir },
+      models: {},
+      executors: { 'claude-code': { mcpConfigFile: '/path/to/mcp-config.json' } },
+      agents: {},
+    };
 
     const { handleSubagentCommand } = await import('./subagent.js');
 
