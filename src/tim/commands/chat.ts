@@ -29,6 +29,11 @@ import {
 } from '../workspace/workspace_roundtrip.js';
 
 const CHAT_COMPATIBLE_EXECUTORS = new Set([ClaudeCodeExecutorName, CodexCliExecutorName]);
+const MODEL_ALIASES = new Map<string, string>([
+  ['gpt5', 'gpt-5.4'],
+  ['mini', 'gpt-5.4-mini'],
+  ['spark', 'gpt-5.3-codex-spark'],
+]);
 const CHAT_EXECUTOR_ALIASES = new Map<string, string>([
   ['claude', ClaudeCodeExecutorName],
   [ClaudeCodeExecutorName, ClaudeCodeExecutorName],
@@ -90,6 +95,20 @@ function resolveChatExecutor(input: string | undefined): string | undefined {
   return CHAT_EXECUTOR_ALIASES.get(input.trim().toLowerCase());
 }
 
+function inferExecutorFromModel(model: string | undefined): string | undefined {
+  if (!model) {
+    return undefined;
+  }
+  const m = model.trim().toLowerCase();
+  if (m.includes('haiku') || m.includes('sonnet') || m.includes('opus')) {
+    return ClaudeCodeExecutorName;
+  }
+  if (m.startsWith('gpt')) {
+    return CodexCliExecutorName;
+  }
+  return undefined;
+}
+
 export async function resolveOptionalPromptText(
   promptText: string | undefined,
   options: { promptFile?: string; stdinIsTTY?: boolean; tunnelActive?: boolean },
@@ -133,8 +152,14 @@ export async function handleChatCommand(
     }
   }
 
+  const resolvedModel = options.model
+    ? (MODEL_ALIASES.get(options.model.trim().toLowerCase()) ?? options.model)
+    : undefined;
+
   const requestedExecutorRaw = options.executor ?? config.defaultExecutor;
-  const requestedExecutor = resolveChatExecutor(requestedExecutorRaw);
+  const requestedExecutor =
+    resolveChatExecutor(requestedExecutorRaw) ??
+    (options.executor === undefined ? inferExecutorFromModel(resolvedModel) : undefined);
   if (requestedExecutorRaw && !requestedExecutor) {
     const allowed = [...CHAT_EXECUTOR_ALIASES.keys()].join(', ');
     if (options.executor) {
@@ -179,7 +204,7 @@ export async function handleChatCommand(
 
   const sharedExecutorOptions: ExecutorCommonOptions = {
     baseDir: process.cwd(),
-    model: options.model,
+    model: resolvedModel,
     noninteractive: noninteractive ? true : undefined,
     terminalInput: terminalInputEnabled,
     closeTerminalInputOnResult: false,
