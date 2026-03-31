@@ -444,13 +444,7 @@ tim import --issue 123
 tim import                             # Interactive multi-select
 ```
 
-### tim extract
 
-Extract plan from text.
-
-```bash
-tim extract --input description.txt
-```
 
 ### tim sync
 

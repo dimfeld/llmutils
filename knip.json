@@ -1,0 +1,11 @@
+{
+  "entry": [
+    "src/tim/tim.ts!",
+    "src/tim/executors/claude_code/permissions_mcp.ts!",
+    "src/webhooks/server.ts!",
+    "src/rmfilter/rmfilter.ts!",
+    "scripts/*.ts!"
+  ],
+  "ignore": ["src/lib/components/ui/**"],
+  "ignoreExportsUsedInFile": true
+}

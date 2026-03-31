@@ -391,28 +391,7 @@ program
     await handleGenerateCommand(planArg, options, command).catch(handleCommandError);
   });
 
-program
-  .command('extract [inputFile]')
-  .description('Convert a Markdown project plan into YAML')
-  .option('-o, --output <outputFile>', 'Write result to a file instead of stdout')
-  .option(
-    '--plan <planFile>',
-    'The path of the original Markdown project description file. If set, tim will write the output to the same path, but with a .yml extension.'
-  )
-  .option(
-    '--project-id <id>',
-    'Specify a project ID for multi-phase plans. If not provided, the project ID will be inferred from the plan.'
-  )
-  .option(
-    '--issue <issue_number_or_url>',
-    'GitHub issue number or URL to associate with the project and use for naming.'
-  )
-  .option('--quiet', 'Suppress informational output')
-  .allowExcessArguments(true)
-  .action(async (inputFile, options) => {
-    const { handleExtractCommand } = await import('./commands/extract.js');
-    await handleExtractCommand(inputFile, options).catch(handleCommandError);
-  });
+
 
 program
   .command('add [title...]')

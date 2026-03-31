@@ -21,7 +21,7 @@ export interface StdinGuard {
   close(): void;
 }
 
-export function createStdinGuard(
+function createStdinGuard(
   stdin: StreamingProcess['stdin'],
   debugLog: (...args: unknown[]) => void
 ): StdinGuard {
