@@ -211,6 +211,16 @@
       minute: '2-digit',
     });
   }
+
+  let copiedId: string | null = $state(null);
+
+  async function copyToClipboard(text: string, id: string) {
+    await navigator.clipboard.writeText(text);
+    copiedId = id;
+    setTimeout(() => {
+      if (copiedId === id) copiedId = null;
+    }, 1500);
+  }
 </script>
 
 <div class="space-y-6 p-4">
@@ -433,7 +443,9 @@
       <Collapsible.Content>
         <ul class="mt-2 space-y-1.5">
           {#each plan.tasks as task (task.id)}
-            <li class="flex items-start gap-2 text-sm">
+            {@const taskCopyId = `task-${task.id}`}
+            {@const taskCopyText = task.description ? `${task.title}\n\n${task.description}` : task.title}
+            <li class="group flex items-start gap-2 text-sm">
               <span class="mt-0.5 shrink-0">
                 {#if task.done}
                   <span class="text-green-600 dark:text-green-400">✓</span>
@@ -441,7 +453,7 @@
                   <span class="text-gray-300 dark:text-gray-500">○</span>
                 {/if}
               </span>
-              <div class="min-w-0">
+              <div class="min-w-0 flex-1">
                 <span class={task.done ? 'text-muted-foreground' : 'text-foreground'}>
                   {task.title}
                 </span>
@@ -449,6 +461,19 @@
                   <p class="mt-0.5 text-xs text-muted-foreground">{task.description}</p>
                 {/if}
               </div>
+              <button
+                type="button"
+                onclick={() => copyToClipboard(taskCopyText, taskCopyId)}
+                class="mt-0.5 shrink-0 rounded p-0.5 text-muted-foreground transition-opacity hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800 {copiedId === taskCopyId ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}"
+                aria-label="Copy task"
+                title="Copy task"
+              >
+                {#if copiedId === taskCopyId}
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600 dark:text-green-400"><polyline points="20 6 9 17 4 12"/></svg>
+                {:else}
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                {/if}
+              </button>
             </li>
           {/each}
         </ul>
@@ -594,16 +619,37 @@
                 : issue.severity === 'minor'
                   ? 'text-yellow-700 dark:text-yellow-400'
                   : 'text-gray-500 dark:text-gray-400'}
-          <li class="rounded border-l-2 px-3 py-2 text-sm {severityClass}">
+          {@const issueCopyId = `issue-${i}`}
+          {@const issueCopyText = [
+            issue.file ? `${issue.file}${issue.line !== undefined ? `:${issue.line}` : ''}` : null,
+            issue.content,
+            issue.suggestion ? `Suggestion: ${issue.suggestion}` : null,
+          ]
+            .filter(Boolean)
+            .join('\n\n')}
+          <li class="group rounded border-l-2 px-3 py-2 text-sm {severityClass}">
             <div class="flex items-center gap-2">
               <span class="font-medium {severityTextClass}">{issue.severity}</span>
               <span class="text-muted-foreground">·</span>
               <span class="font-medium text-foreground">{issue.category}</span>
               {#if issue.file}
-                <span class="ml-auto font-mono text-xs text-muted-foreground">
+                <span class="font-mono text-xs text-muted-foreground">
                   {issue.file}{issue.line !== undefined ? `:${issue.line}` : ''}
                 </span>
               {/if}
+              <button
+                type="button"
+                onclick={() => copyToClipboard(issueCopyText, issueCopyId)}
+                class="ml-auto shrink-0 rounded p-0.5 text-muted-foreground transition-opacity hover:bg-black/10 hover:text-foreground dark:hover:bg-white/10 {copiedId === issueCopyId ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}"
+                aria-label="Copy issue"
+                title="Copy issue"
+              >
+                {#if copiedId === issueCopyId}
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600 dark:text-green-400"><polyline points="20 6 9 17 4 12"/></svg>
+                {:else}
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                {/if}
+              </button>
             </div>
             <p class="mt-1 text-foreground">{issue.content}</p>
             {#if issue.suggestion}
