@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite';
 
 import { deduplicatePrUrls } from '$common/github/identifiers.js';
 import { getAssignmentEntry, type AssignmentEntry } from '$tim/db/assignment.js';
+import type { PlanSchema } from '$tim/planSchema.js';
 import { getPrStatusForPlan, type PrStatusDetail } from '$tim/db/pr_status.js';
 import { normalizePlanStatus } from '$tim/plans/plan_state_utils.js';
 import { cleanStaleLocks, type WorkspaceLockRow } from '$tim/db/workspace_lock.js';
@@ -104,6 +105,7 @@ export interface PlanDetail extends EnrichedPlan {
   assignment: AssignmentEntry | null;
   parent: EnrichedPlanDependency | null;
   prStatuses: PrStatusDetail[];
+  reviewIssues: PlanSchema['reviewIssues'];
 }
 
 export interface EnrichedWorkspace {
@@ -805,11 +807,16 @@ export function getPlanDetail(db: Database, planUuid: string): PlanDetail | null
     : null;
   const prStatuses = getPrStatusForPlan(db, planUuid, enrichedPlan.pullRequests);
 
+  const reviewIssues: PlanSchema['reviewIssues'] = plan.review_issues
+    ? (JSON.parse(plan.review_issues) as PlanSchema['reviewIssues'])
+    : undefined;
+
   return {
     ...enrichedPlan,
     dependencies: dependencySummaries,
     assignment,
     parent,
     prStatuses,
+    reviewIssues,
   };
 }

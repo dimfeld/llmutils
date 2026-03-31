@@ -13,6 +13,7 @@
   import { Button } from '$lib/components/ui/button/index.js';
   import * as Dialog from '$lib/components/ui/dialog/index.js';
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+  import * as Collapsible from '$lib/components/ui/collapsible/index.js';
 
   let {
     plan,
@@ -47,6 +48,7 @@
   let isIneligible = $derived(INELIGIBLE_STATUSES.has(plan.displayStatus));
   let hasTasks = $derived(plan.tasks.length > 0);
   let hasIncompleteTasks = $derived(plan.taskCounts.done < plan.taskCounts.total);
+  let tasksOpen = $derived(plan.taskCounts.done < plan.taskCounts.total);
   let isBlocked = $derived(plan.displayStatus === 'blocked');
 
   // Plans with incomplete tasks: show single "Run Agent" button
@@ -405,32 +407,53 @@
 
   <!-- Tasks -->
   {#if plan.tasks.length > 0}
-    <div>
-      <h3 class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-        Tasks ({plan.taskCounts.done}/{plan.taskCounts.total})
-      </h3>
-      <ul class="space-y-1.5">
-        {#each plan.tasks as task (task.id)}
-          <li class="flex items-start gap-2 text-sm">
-            <span class="mt-0.5 shrink-0">
-              {#if task.done}
-                <span class="text-green-600 dark:text-green-400">✓</span>
-              {:else}
-                <span class="text-gray-300 dark:text-gray-500">○</span>
-              {/if}
-            </span>
-            <div class="min-w-0">
-              <span class={task.done ? 'text-muted-foreground' : 'text-foreground'}>
-                {task.title}
+    <Collapsible.Root bind:open={tasksOpen}>
+      <Collapsible.Trigger
+        class="flex w-full cursor-pointer items-center justify-between rounded px-0 py-0.5 text-muted-foreground transition-colors hover:text-foreground"
+        aria-label="Toggle tasks"
+      >
+        <h3 class="text-xs font-semibold tracking-wide uppercase">
+          Tasks ({plan.taskCounts.done}/{plan.taskCounts.total})
+        </h3>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          class="transition-transform {tasksOpen ? 'rotate-180' : ''}"
+        >
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </Collapsible.Trigger>
+      <Collapsible.Content>
+        <ul class="mt-2 space-y-1.5">
+          {#each plan.tasks as task (task.id)}
+            <li class="flex items-start gap-2 text-sm">
+              <span class="mt-0.5 shrink-0">
+                {#if task.done}
+                  <span class="text-green-600 dark:text-green-400">✓</span>
+                {:else}
+                  <span class="text-gray-300 dark:text-gray-500">○</span>
+                {/if}
               </span>
-              {#if task.description}
-                <p class="mt-0.5 text-xs text-muted-foreground">{task.description}</p>
-              {/if}
-            </div>
-          </li>
-        {/each}
-      </ul>
-    </div>
+              <div class="min-w-0">
+                <span class={task.done ? 'text-muted-foreground' : 'text-foreground'}>
+                  {task.title}
+                </span>
+                {#if task.description}
+                  <p class="mt-0.5 text-xs text-muted-foreground">{task.description}</p>
+                {/if}
+              </div>
+            </li>
+          {/each}
+        </ul>
+      </Collapsible.Content>
+    </Collapsible.Root>
   {/if}
 
   <!-- Dependencies -->
@@ -544,6 +567,54 @@
         Branch
       </h3>
       <code class="text-xs text-muted-foreground">{plan.branch}</code>
+    </div>
+  {/if}
+
+  <!-- Review Issues -->
+  {#if plan.reviewIssues && plan.reviewIssues.length > 0}
+    <div>
+      <h3 class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+        Review Issues ({plan.reviewIssues.length})
+      </h3>
+      <ul class="space-y-2">
+        {#each plan.reviewIssues as issue, i (i)}
+          {@const severityClass =
+            issue.severity === 'critical'
+              ? 'border-red-500 bg-red-50 dark:bg-red-950/30'
+              : issue.severity === 'major'
+                ? 'border-orange-400 bg-orange-50 dark:bg-orange-950/30'
+                : issue.severity === 'minor'
+                  ? 'border-yellow-400 bg-yellow-50 dark:bg-yellow-950/30'
+                  : 'border-gray-300 bg-gray-50 dark:bg-gray-800/30'}
+          {@const severityTextClass =
+            issue.severity === 'critical'
+              ? 'text-red-700 dark:text-red-400'
+              : issue.severity === 'major'
+                ? 'text-orange-700 dark:text-orange-400'
+                : issue.severity === 'minor'
+                  ? 'text-yellow-700 dark:text-yellow-400'
+                  : 'text-gray-500 dark:text-gray-400'}
+          <li class="rounded border-l-2 px-3 py-2 text-sm {severityClass}">
+            <div class="flex items-center gap-2">
+              <span class="font-medium {severityTextClass}">{issue.severity}</span>
+              <span class="text-muted-foreground">·</span>
+              <span class="font-medium text-foreground">{issue.category}</span>
+              {#if issue.file}
+                <span class="ml-auto font-mono text-xs text-muted-foreground">
+                  {issue.file}{issue.line !== undefined ? `:${issue.line}` : ''}
+                </span>
+              {/if}
+            </div>
+            <p class="mt-1 text-foreground">{issue.content}</p>
+            {#if issue.suggestion}
+              <p class="mt-1 text-xs text-muted-foreground">
+                <span class="font-medium text-green-700 dark:text-green-400">Suggestion:</span>
+                {issue.suggestion}
+              </p>
+            {/if}
+          </li>
+        {/each}
+      </ul>
     </div>
   {/if}
 

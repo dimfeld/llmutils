@@ -499,6 +499,45 @@ async function displayPlanInfo(
       });
     }
 
+    // Display review issues if present
+    if (plan.reviewIssues && plan.reviewIssues.length > 0) {
+      log('\n' + chalk.bold('Review Issues:'));
+      log('─'.repeat(60));
+
+      for (const issue of plan.reviewIssues) {
+        const severityColor =
+          issue.severity === 'critical'
+            ? chalk.red
+            : issue.severity === 'major'
+              ? chalk.magenta
+              : issue.severity === 'minor'
+                ? chalk.yellow
+                : chalk.gray;
+        const severityIcon =
+          issue.severity === 'critical'
+            ? '✗'
+            : issue.severity === 'major'
+              ? '⚠'
+              : issue.severity === 'minor'
+                ? '!'
+                : 'i';
+
+        const location = issue.file
+          ? issue.line !== undefined
+            ? `${issue.file}:${issue.line}`
+            : issue.file
+          : null;
+
+        log(
+          `\n${severityIcon} ${severityColor(`[${issue.severity}]`)} ${chalk.cyan(issue.category)}${location ? chalk.gray(` (${location})`) : ''}`
+        );
+        log(`  ${issue.content}`);
+        if (issue.suggestion) {
+          log(`  ${chalk.green('Suggestion:')} ${issue.suggestion}`);
+        }
+      }
+    }
+
     // Display rmfilter args if present
     if (plan.rmfilter && plan.rmfilter.length > 0) {
       log('\n' + chalk.bold('rmfilter Arguments:'));
