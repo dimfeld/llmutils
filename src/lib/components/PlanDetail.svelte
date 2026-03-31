@@ -444,7 +444,9 @@
         <ul class="mt-2 space-y-1.5">
           {#each plan.tasks as task (task.id)}
             {@const taskCopyId = `task-${task.id}`}
-            {@const taskCopyText = task.description ? `${task.title}\n\n${task.description}` : task.title}
+            {@const taskCopyText = task.description
+              ? `${task.title}\n\n${task.description}`
+              : task.title}
             <li class="group flex items-start gap-2 text-sm">
               <span class="mt-0.5 shrink-0">
                 {#if task.done}
@@ -464,14 +466,42 @@
               <button
                 type="button"
                 onclick={() => copyToClipboard(taskCopyText, taskCopyId)}
-                class="mt-0.5 shrink-0 rounded p-0.5 text-muted-foreground transition-opacity hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800 {copiedId === taskCopyId ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}"
+                class="mt-0.5 shrink-0 rounded p-0.5 text-muted-foreground transition-opacity hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800 {copiedId ===
+                taskCopyId
+                  ? 'opacity-100'
+                  : 'opacity-0 group-hover:opacity-100'}"
                 aria-label="Copy task"
                 title="Copy task"
               >
                 {#if copiedId === taskCopyId}
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600 dark:text-green-400"><polyline points="20 6 9 17 4 12"/></svg>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    class="text-green-600 dark:text-green-400"
+                    ><polyline points="20 6 9 17 4 12" /></svg
+                  >
                 {:else}
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    ><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path
+                      d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"
+                    /></svg
+                  >
                 {/if}
               </button>
             </li>
@@ -640,14 +670,42 @@
               <button
                 type="button"
                 onclick={() => copyToClipboard(issueCopyText, issueCopyId)}
-                class="ml-auto shrink-0 rounded p-0.5 text-muted-foreground transition-opacity hover:bg-black/10 hover:text-foreground dark:hover:bg-white/10 {copiedId === issueCopyId ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}"
+                class="ml-auto shrink-0 rounded p-0.5 text-muted-foreground transition-opacity hover:bg-black/10 hover:text-foreground dark:hover:bg-white/10 {copiedId ===
+                issueCopyId
+                  ? 'opacity-100'
+                  : 'opacity-0 group-hover:opacity-100'}"
                 aria-label="Copy issue"
                 title="Copy issue"
               >
                 {#if copiedId === issueCopyId}
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600 dark:text-green-400"><polyline points="20 6 9 17 4 12"/></svg>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    class="text-green-600 dark:text-green-400"
+                    ><polyline points="20 6 9 17 4 12" /></svg
+                  >
                 {:else}
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    ><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path
+                      d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"
+                    /></svg
+                  >
                 {/if}
               </button>
             </div>

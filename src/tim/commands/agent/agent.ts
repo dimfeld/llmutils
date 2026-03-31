@@ -6,6 +6,7 @@ import * as path from 'path';
 import * as fs from 'node:fs/promises';
 import { promptConfirm } from '../../../common/input.js';
 import { getGitRoot } from '../../../common/git.js';
+import { getLogDir } from '../../../common/config_paths.js';
 import { logSpawn } from '../../../common/process.js';
 import { CleanupRegistry } from '../../../common/cleanup_registry.js';
 import {
@@ -294,17 +295,12 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
     const initialPlanData = initialResolvedPlan.plan;
 
     if (options.log !== false) {
-      let logFilePath: string;
-      if (initialResolvedPlan.planPath) {
-        logFilePath = path.join(
-          path.parse(initialResolvedPlan.planPath).dir,
-          path.parse(initialResolvedPlan.planPath).name + '-agent-output.md'
-        );
-      } else {
-        const logDir = path.join(currentBaseDir, '.tim', 'logs');
-        await fs.mkdir(logDir, { recursive: true });
-        logFilePath = path.join(logDir, `plan-${initialPlanData.id ?? 'unknown'}-agent-output.md`);
-      }
+      const logDir = getLogDir();
+      await fs.mkdir(logDir, { recursive: true });
+      const logFilePath = path.join(
+        logDir,
+        `plan-${initialPlanData.id ?? 'unknown'}-agent-output.md`
+      );
       openLogFile(logFilePath);
     }
 

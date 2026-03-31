@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { getTimCacheDir } from '$common/config_paths.js';
+import { getLogDir } from '$common/config_paths.js';
 
 const EARLY_EXIT_CHECK_DELAY_MS = 500;
 
@@ -20,10 +20,6 @@ function waitForSpawnWindow(delayMs = EARLY_EXIT_CHECK_DELAY_MS): Promise<void> 
   return new Promise((resolve) => {
     setTimeout(resolve, delayMs);
   });
-}
-
-function getLogDir(): string {
-  return path.join(getTimCacheDir(), 'logs');
 }
 
 interface LogFileInfo {

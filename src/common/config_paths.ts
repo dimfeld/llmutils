@@ -28,3 +28,7 @@ export function getTimCacheDir(): string {
 
   return path.join(os.homedir(), '.cache', 'tim');
 }
+
+export function getLogDir(): string {
+  return path.join(getTimCacheDir(), 'logs');
+}
