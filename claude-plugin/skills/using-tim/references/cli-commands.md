@@ -444,8 +444,6 @@ tim import --issue 123
 tim import                             # Interactive multi-select
 ```
 
-
-
 ### tim sync
 
 Sync materialized plan files back to the SQLite database. When given a plan ID, syncs a single `.tim/plans/<id>.plan.md` file. Without a plan ID, scans `.tim/plans/` for all `*.plan.md` files and syncs them all.

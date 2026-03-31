@@ -1733,51 +1733,6 @@ describe('Helper Functions', () => {
       expect(nextId).toBeGreaterThan(42);
     });
   });
-
-  describe('generatePlanFilename', () => {
-    test('creates valid slugs from titles', async () => {
-      const { generatePlanFilename } = await import('../utils/filename.js');
-
-      expect(generatePlanFilename(1, 'Simple Title')).toBe('1-simple-title.plan.md');
-      expect(generatePlanFilename(42, 'Add Feature X')).toBe('42-add-feature-x.plan.md');
-      expect(generatePlanFilename(100, 'Fix Bug: Authentication Issues')).toBe(
-        '100-fix-bug-authentication-issues.plan.md'
-      );
-    });
-
-    test('handles special characters correctly', async () => {
-      const { generatePlanFilename } = await import('../utils/filename.js');
-
-      expect(generatePlanFilename(1, 'Test & Development')).toBe('1-test-development.plan.md');
-      expect(generatePlanFilename(2, 'API/V2 Migration')).toBe('2-api-v2-migration.plan.md');
-      expect(generatePlanFilename(3, 'Update @types/node')).toBe('3-update-types-node.plan.md');
-    });
-
-    test('truncates long titles to 50 characters', async () => {
-      const { generatePlanFilename } = await import('../utils/filename.js');
-
-      const longTitle =
-        'This is a very long title that should be truncated to fifty characters max';
-      const filename = generatePlanFilename(1, longTitle);
-      const slug = filename.replace('1-', '').replace('.plan.md', '');
-      expect(slug.length).toBeLessThanOrEqual(50);
-      expect(filename).toBe('1-this-is-a-very-long-title-that-should-be-truncated.plan.md');
-    });
-
-    test('removes leading and trailing dashes', async () => {
-      const { generatePlanFilename } = await import('../utils/filename.js');
-
-      expect(generatePlanFilename(1, '---Test---')).toBe('1-test.plan.md');
-      expect(generatePlanFilename(2, '!!!Important!!!')).toBe('2-important.plan.md');
-    });
-
-    test('handles empty-like titles', async () => {
-      const { generatePlanFilename } = await import('../utils/filename.js');
-
-      expect(generatePlanFilename(1, '!!!')).toBe('1-.plan.md');
-      expect(generatePlanFilename(2, '   ')).toBe('2-.plan.md');
-    });
-  });
 });
 
 describe('mcpCreatePlan', () => {

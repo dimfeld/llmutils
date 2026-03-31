@@ -14,7 +14,6 @@ export const modelPresets = {
     overeager: true,
   },
   grok: {
-    noArtifacts: true,
     defaultEditFormat: 'diff',
   },
   claude: {

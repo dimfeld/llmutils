@@ -60,16 +60,3 @@ export async function read(): Promise<string> {
     return await clipboard.read();
   }
 }
-
-export async function writeClipboardAndWait(prompt: string, contextContent: string) {
-  while (true) {
-    await clipboard.write(contextContent);
-    log(chalk.bold(prompt));
-    log('You may also press `c` to copy again.');
-    const pressed = await waitForEnter();
-
-    if (pressed !== 'c') {
-      break;
-    }
-  }
-}

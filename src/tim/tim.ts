@@ -391,8 +391,6 @@ program
     await handleGenerateCommand(planArg, options, command).catch(handleCommandError);
   });
 
-
-
 program
   .command('add [title...]')
   .description('Create a new plan stub file that can be filled with tasks using generate')

@@ -42,14 +42,6 @@ import * as clipboard from '../common/clipboard.js';
 import { grepFor } from '../common/file_finder.ts';
 import { Resolver } from './dependency_graph/resolve.ts';
 import { ImportWalker } from './dependency_graph/walk_imports.ts';
-import {
-  diffFilenameInsideFencePrompt,
-  diffFilenameOutsideFencePrompt,
-} from './editor/diff-editor/prompts.ts';
-import { noArtifacts } from './editor/fragments.ts';
-import { udiffPrompt } from './editor/udiff-simple/prompts.ts';
-import { generateWholeFilePrompt } from './editor/whole-file/prompts.ts';
-import { xmlFormatPrompt } from './editor/xml/prompt.ts';
 import { debugLog, error, log, warn } from '../logging.ts';
 import {
   buildExamplesTag,
@@ -563,9 +555,6 @@ const getGuidelinesTag = (
       `<guideline>Pay careful attention to the scope of the user's request. Do what they ask, but no more. Feel free to add and update tests though as appropriate.</guideline>`
     );
   }
-  if (modelSettings.noArtifacts) {
-    guidelines.push(`<guideline>${noArtifacts}</guideline>`);
-  }
 
   if (idCommand) {
     guidelines.push(`<guideline>${idCommand}</guideline>`);
@@ -772,12 +761,6 @@ export async function generateRmfilterOutput(
     examplesTag,
     docsTag,
     rulesTag,
-    editFormat === 'whole-xml' && notBare ? xmlFormatPrompt(modelSettings) : '',
-    editFormat === 'diff' && notBare ? diffFilenameInsideFencePrompt(modelSettings) : '',
-    editFormat === 'diff-orig' && notBare ? diffFilenameOutsideFencePrompt(modelSettings) : '',
-    editFormat === 'diff-fenced' && notBare ? diffFilenameInsideFencePrompt(modelSettings) : '',
-    editFormat === 'udiff-simple' && notBare ? udiffPrompt(modelSettings) : '',
-    editFormat === 'whole-file' && notBare ? generateWholeFilePrompt(modelSettings) : '',
     notBare ? getGuidelinesTag(modelSettings, idInstruction) : '',
     instructionsTag,
   ]
