@@ -436,23 +436,6 @@ export async function readPlanFile(filePath: string): Promise<PlanWithLegacyMeta
   }
 
   let plan: PlanSchema = normalizeContainerToEpic(result.data);
-
-  if (!plan.uuid) {
-    plan.uuid = crypto.randomUUID();
-    try {
-      // Skip updating the timestamp when adding UUID - this is a structural addition not a content change
-      await writePlanFile(absolutePath, plan, { skipUpdatedAt: true });
-    } catch (error) {
-      plan.uuid = undefined;
-      const message = `Failed to persist generated UUID for plan at ${absolutePath}`;
-      warn(`${message}: ${(error as Error).message}`);
-
-      const persistenceError = new Error(`${message}: ${(error as Error).message}`);
-      (persistenceError as Error & { cause?: unknown }).cause = error;
-      throw persistenceError;
-    }
-  }
-
   return plan;
 }
 

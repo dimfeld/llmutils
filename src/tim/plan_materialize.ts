@@ -348,7 +348,7 @@ export async function ensureMaterializeDir(repoRoot: string): Promise<string> {
 export async function materializePlan(
   planId: number,
   repoRoot: string,
-  options: MaterializePlanOptions = {}
+  options: { context?: ProjectContext } = {}
 ): Promise<string> {
   await ensureMaterializeDir(repoRoot);
 

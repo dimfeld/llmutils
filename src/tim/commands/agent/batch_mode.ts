@@ -16,6 +16,7 @@ import { runUpdateDocs } from '../update-docs.js';
 import { runUpdateLessons } from '../update-lessons.js';
 import { handleReviewCommand } from '../review.js';
 import { isShuttingDown } from '../../shutdown_state.js';
+import { materializePlan, syncMaterializedPlan } from '../../plan_materialize.js';
 
 const FAST_NOOP_BATCH_RETRY_MS = 5 * 60 * 1000;
 
@@ -109,6 +110,7 @@ export async function executeBatchMode(
     // Track initial state to determine whether to skip final review
     // We skip final review if we started with no tasks completed and finished in a single iteration
     const initialPlanData = await readPlanFile(currentPlanFile);
+    const planId = initialPlanData.id;
     const initialCompletedTaskCount = initialPlanData.tasks.filter((t) => t.done).length;
 
     // Batch mode: continue until no incomplete tasks remain
@@ -117,7 +119,11 @@ export async function executeBatchMode(
         break;
       }
 
-      // Read the current plan file to get updated state
+      // Sync plan file to DB and rematerialize from DB to pick up any changes
+      // (e.g. user edits made between iterations while at a prompt)
+      await syncMaterializedPlan(planId, baseDir);
+
+      // Read the (potentially rematerialized) plan file to get updated state
       const planData = await readPlanFile(currentPlanFile);
 
       // Check if status needs to be updated from 'pending' to 'in progress'
@@ -439,6 +445,11 @@ Available tasks:\n\n${taskDescriptions}`,
             // If tasks were appended, ask if user wants to continue
             if (reviewResult?.tasksAppended && reviewResult.tasksAppended > 0) {
               const planIdStr = updatedPlanData.id ? ` ${updatedPlanData.id}` : '';
+
+              // The user may edit the plan during the prompt below, so make sure the DB is up to date here.
+              // The review command handles this properly; this is just a safeguard.
+              await syncMaterializedPlan(updatedPlanData.id, baseDir, { skipRematerialize: true });
+
               let shouldContinue = false;
               if (!isShuttingDown()) {
                 shouldContinue = await promptConfirm({
@@ -446,6 +457,9 @@ Available tasks:\n\n${taskDescriptions}`,
                   default: true,
                 });
               }
+
+              // Rematerialize in case the user edited the plan while the prompt was open.
+              await materializePlan(updatedPlanData.id, baseDir);
 
               if (shouldContinue) {
                 continue; // Continue the loop to process new tasks
@@ -512,6 +526,9 @@ Available tasks:\n\n${taskDescriptions}`,
           break;
         }
 
+        // Sync plan file changes to DB before committing
+        await syncMaterializedPlan(updatedPlanData.id, baseDir);
+
         await commitAll(`Plan complete: ${planData.title}`, baseDir);
         if (summaryCollector) {
           await summaryCollector.trackFileChanges(baseDir);
@@ -522,6 +539,9 @@ Available tasks:\n\n${taskDescriptions}`,
         if (isShuttingDown()) {
           break;
         }
+
+        // Sync plan file changes to DB before committing
+        await syncMaterializedPlan(updatedPlanData.id, baseDir);
 
         await commitAll('Finish batch tasks iteration', baseDir);
         if (summaryCollector) {
