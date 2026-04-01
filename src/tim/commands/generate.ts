@@ -31,6 +31,7 @@ import type { GenerateModeRegistrationContext } from '../mcp/generate_mode.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
 import {
+  materializePlansForExecution,
   prepareWorkspaceRoundTrip,
   runPostExecutionWorkspaceSync,
   runPreExecutionWorkspaceSync,
@@ -223,6 +224,14 @@ export async function handleGenerateCommand(
 
         if (roundTripContext) {
           await runPreExecutionWorkspaceSync(roundTripContext);
+
+          const materializedPlanFile = await materializePlansForExecution(
+            currentBaseDir,
+            parsedPlan.id
+          );
+          if (materializedPlanFile) {
+            currentPlanFile = materializedPlanFile;
+          }
         }
 
         // Auto-claim the plan if enabled (before execution, matching agent pattern)

@@ -506,7 +506,7 @@ describe('runPreExecutionWorkspaceSync', () => {
 
     await runPreExecutionWorkspaceSync(context);
 
-    expect(mockReaddir).toHaveBeenCalledWith('/tmp/workspace/.tim/plans');
+    expect(mockReaddir).not.toHaveBeenCalled();
     expect(mockPullWorkspaceRefIfExists).toHaveBeenCalledWith(
       '/tmp/workspace',
       'task-123',

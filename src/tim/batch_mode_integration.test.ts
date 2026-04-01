@@ -123,9 +123,8 @@ describe('Batch Mode Integration Tests', () => {
       setupPermissionsMcp: mocks.setupPermissionsMcp,
     }));
     vi.doMock(runClaudeSubprocessPath, async (importOriginal) => {
-      const actual = await importOriginal<
-        typeof import('./executors/claude_code/run_claude_subprocess.js')
-      >();
+      const actual =
+        await importOriginal<typeof import('./executors/claude_code/run_claude_subprocess.js')>();
       return {
         ...actual,
         runClaudeSubprocess: mocks.runClaudeSubprocess,
@@ -136,9 +135,11 @@ describe('Batch Mode Integration Tests', () => {
     ({ buildExecutionPromptWithoutSteps } = await import('./prompt_builder.ts'));
 
     mocks.getGitRoot.mockResolvedValue(tempDir);
-    mocks.wrapWithOrchestration.mockImplementation((content: string, planId: string, options: any) => {
-      return `[ORCHESTRATED: ${planId}, batchMode: ${options.batchMode}] ${content}`;
-    });
+    mocks.wrapWithOrchestration.mockImplementation(
+      (content: string, planId: string, options: any) => {
+        return `[ORCHESTRATED: ${planId}, batchMode: ${options.batchMode}] ${content}`;
+      }
+    );
     mocks.wrapWithOrchestrationSimple.mockImplementation((content: string) => content);
     mocks.wrapWithOrchestrationTdd.mockImplementation((content: string) => content);
     mocks.spawnWithStreamingIO.mockResolvedValue({
@@ -163,7 +164,10 @@ describe('Batch Mode Integration Tests', () => {
       cleanup: vi.fn(),
     }));
     mocks.createLineSplitter.mockImplementation(() => (output: string) => output.split('\n'));
-    mocks.formatJsonMessage.mockImplementation((line: string) => ({ type: 'assistant', message: line }));
+    mocks.formatJsonMessage.mockImplementation((line: string) => ({
+      type: 'assistant',
+      message: line,
+    }));
     mocks.extractStructuredMessages.mockImplementation(() => []);
     mocks.resetToolUseCache.mockImplementation(() => {});
     mocks.getRepositoryIdentity.mockResolvedValue({

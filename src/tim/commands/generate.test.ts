@@ -56,6 +56,7 @@ vi.mock('../workspace/workspace_roundtrip.js', () => ({
   prepareWorkspaceRoundTrip: vi.fn(),
   runPreExecutionWorkspaceSync: vi.fn(),
   runPostExecutionWorkspaceSync: vi.fn(),
+  materializePlansForExecution: vi.fn(async () => undefined),
 }));
 
 vi.mock('../configLoader.js', () => ({

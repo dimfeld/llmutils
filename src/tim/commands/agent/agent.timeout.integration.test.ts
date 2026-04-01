@@ -61,6 +61,13 @@ vi.mock('../../executors/index.js', () => ({
   defaultModelForExecutor: vi.fn(() => 'test-model'),
 }));
 
+vi.mock('../../workspace/workspace_roundtrip.js', () => ({
+  prepareWorkspaceRoundTrip: vi.fn(async () => null),
+  runPostExecutionWorkspaceSync: vi.fn(async () => {}),
+  runPreExecutionWorkspaceSync: vi.fn(async () => {}),
+  materializePlansForExecution: vi.fn(async () => undefined),
+}));
+
 describe('tim agent integration (timeout simulation)', () => {
   let tasksDir: string;
   let configPath: string;

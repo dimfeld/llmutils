@@ -56,6 +56,7 @@ import {
 } from '../../workspace/workspace_info.js';
 import { setupWorkspace } from '../../workspace/workspace_setup.js';
 import {
+  materializePlansForExecution,
   prepareWorkspaceRoundTrip,
   runPostExecutionWorkspaceSync,
   runPreExecutionWorkspaceSync,
@@ -337,6 +338,14 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
 
     if (roundTripContext) {
       await runPreExecutionWorkspaceSync(roundTripContext);
+
+      const materializedPlanFile = await materializePlansForExecution(
+        currentBaseDir,
+        initialPlanData.id
+      );
+      if (materializedPlanFile) {
+        currentPlanFile = materializedPlanFile;
+      }
     }
 
     // Use orchestrator from CLI options, fallback to config defaultOrchestrator, or fallback to DEFAULT_EXECUTOR

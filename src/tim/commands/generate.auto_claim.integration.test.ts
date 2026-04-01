@@ -71,6 +71,7 @@ vi.mock('../workspace/workspace_roundtrip.js', () => ({
   prepareWorkspaceRoundTrip: vi.fn(async () => null),
   runPreExecutionWorkspaceSync: vi.fn(async () => {}),
   runPostExecutionWorkspaceSync: vi.fn(async () => {}),
+  materializePlansForExecution: vi.fn(async () => undefined),
 }));
 
 vi.mock('../workspace/workspace_info.js', () => ({

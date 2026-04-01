@@ -21,7 +21,7 @@ import {
   pushWorkspaceRefToRemote,
   setWorkspaceBookmarkToCurrent,
 } from '../commands/workspace.js';
-import { MATERIALIZED_DIR } from '../plan_materialize.js';
+import { MATERIALIZED_DIR, materializePlan, materializeRelatedPlans } from '../plan_materialize.js';
 import { warn } from '../../logging.js';
 
 export interface WorkspaceRoundTripContext {
@@ -78,19 +78,38 @@ export async function prepareWorkspaceRoundTrip(options: {
 export async function runPreExecutionWorkspaceSync(
   context: WorkspaceRoundTripContext
 ): Promise<void> {
-  try {
-    await wipeMaterializedPlans(context.executionWorkspacePath);
-  } catch (error) {
-    warn(
-      `Failed to wipe materialized plans before workspace sync in ${context.executionWorkspacePath}: ${error as Error}`
-    );
-  }
-
   if (!context.branchCreatedDuringSetup) {
     await pullWorkspaceRefIfExists(context.executionWorkspacePath, context.refName, 'origin');
   }
 
   context.preExecutionState = await captureRepositoryState(context.executionWorkspacePath);
+}
+
+/** Wipe stale materialized plans and re-materialize the active plan (with related plans)
+ * right before execution begins. This is independent of VCS operations — plans are
+ * DB-only and should always be freshly materialized from the database. */
+export async function materializePlansForExecution(
+  workspacePath: string,
+  planId: number | undefined
+): Promise<string | undefined> {
+  try {
+    await wipeMaterializedPlans(workspacePath);
+  } catch (error) {
+    warn(`Failed to wipe materialized plans in ${workspacePath}: ${error as Error}`);
+  }
+
+  if (planId == null) {
+    return undefined;
+  }
+
+  const planFile = await materializePlan(planId, workspacePath);
+  try {
+    await materializeRelatedPlans(planId, workspacePath);
+  } catch (error) {
+    warn(`Failed to materialize related plans for plan ${planId}: ${error as Error}`);
+  }
+
+  return planFile;
 }
 
 export async function runPostExecutionWorkspaceSync(

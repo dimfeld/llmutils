@@ -139,6 +139,13 @@ vi.mock('../../plans.js', () => {
   };
 });
 
+vi.mock('../../workspace/workspace_roundtrip.js', () => ({
+  prepareWorkspaceRoundTrip: vi.fn(async () => null),
+  runPostExecutionWorkspaceSync: vi.fn(async () => {}),
+  runPreExecutionWorkspaceSync: vi.fn(async () => {}),
+  materializePlansForExecution: vi.fn(async () => undefined),
+}));
+
 describe('timAgent - serial mode failure handling', () => {
   beforeEach(async () => {
     yielded = false;

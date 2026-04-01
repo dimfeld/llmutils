@@ -23,6 +23,7 @@ import {
 } from '../workspace/workspace_info.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
 import {
+  materializePlansForExecution,
   prepareWorkspaceRoundTrip,
   runPostExecutionWorkspaceSync,
   runPreExecutionWorkspaceSync,
@@ -293,6 +294,14 @@ export async function handleChatCommand(
 
           if (roundTripContext) {
             await runPreExecutionWorkspaceSync(roundTripContext);
+
+            const materializedPlanFile = await materializePlansForExecution(
+              currentBaseDir,
+              currentPlanData?.id
+            );
+            if (materializedPlanFile) {
+              currentPlanFile = materializedPlanFile;
+            }
           }
 
           if (currentPlanData) {

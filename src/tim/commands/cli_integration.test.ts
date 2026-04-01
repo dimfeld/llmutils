@@ -111,11 +111,7 @@ describe('CLI integration tests for parent-child relationships (internal handler
       const parentMaterialized = await materializePlan(1, tempDir);
       const childMaterialized = await materializePlan(2, tempDir);
 
-      await handleSetCommand(
-        childMaterialized,
-        { parent: 1 },
-        commandObj.parent.opts()
-      );
+      await handleSetCommand(childMaterialized, { parent: 1 }, commandObj.parent.opts());
 
       // Verify that the plans were created correctly by checking file contents
       const parentPlan = await readPlanFile(parentMaterialized);
@@ -177,16 +173,8 @@ describe('CLI integration tests for parent-child relationships (internal handler
       const grandparentMaterialized = await materializePlan(1, tempDir);
       const parentMaterialized = await materializePlan(2, tempDir);
       const childMaterialized = await materializePlan(3, tempDir);
-      await handleSetCommand(
-        parentMaterialized,
-        { parent: 1 },
-        commandObj.parent.opts()
-      );
-      await handleSetCommand(
-        childMaterialized,
-        { parent: 2 },
-        commandObj.parent.opts()
-      );
+      await handleSetCommand(parentMaterialized, { parent: 1 }, commandObj.parent.opts());
+      await handleSetCommand(childMaterialized, { parent: 2 }, commandObj.parent.opts());
 
       // Validate the initial hierarchy
       (console.log as any).mockClear();
