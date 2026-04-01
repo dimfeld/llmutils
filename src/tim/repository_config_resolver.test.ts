@@ -1,5 +1,5 @@
 import { $ } from 'bun';
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -9,15 +9,18 @@ import {
   fallbackRepositoryNameFromGitRoot,
   parseGitRemoteUrl,
 } from '../common/git_url_parser.js';
-import { ModuleMocker } from '../testing.js';
-import { RepositoryConfigResolver } from './repository_config_resolver.js';
+import { RepositoryConfigResolver } from './repository_config_resolver.ts';
 import {
   describeRemoteForLogging,
   readRepositoryStorageMetadata,
 } from './external_storage_utils.js';
 import { closeDatabaseForTesting } from './db/database.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
+vi.mock('../common/git.js', () => ({
+  getGitRoot: vi.fn(),
+}));
+
+import { getGitRoot } from '../common/git.js';
 
 describe('RepositoryConfigResolver', () => {
   let gitRoot: string;
@@ -30,16 +33,7 @@ describe('RepositoryConfigResolver', () => {
     fakeHomeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'resolver-home-'));
     originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
     process.env.XDG_CONFIG_HOME = path.join(fakeHomeDir, '.config');
-
-    const realOs = await import('node:os');
-    await moduleMocker.mock('node:os', () => ({
-      ...realOs,
-      homedir: () => fakeHomeDir,
-    }));
-
-    await moduleMocker.mock('../common/git.js', () => ({
-      getGitRoot: async () => gitRoot,
-    }));
+    vi.mocked(getGitRoot).mockResolvedValue(gitRoot);
   });
 
   afterEach(async () => {
@@ -49,7 +43,7 @@ describe('RepositoryConfigResolver', () => {
     } else {
       process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
     }
-    moduleMocker.clear();
+    vi.clearAllMocks();
     await fs.rm(gitRoot, { recursive: true, force: true });
     await fs.rm(fakeHomeDir, { recursive: true, force: true });
   });

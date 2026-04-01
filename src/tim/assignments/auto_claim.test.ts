@@ -1,12 +1,20 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { ModuleMocker } from '../../testing.js';
 import { closeDatabaseForTesting } from '../db/database.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
+const repositoryId = 'auto-claim-repo';
+const userName = 'integration-user';
+
+const getRepositoryIdentitySpy = vi.fn();
+const getUserIdentitySpy = vi.fn();
+
+vi.mock('./workspace_identifier.js', () => ({
+  getRepositoryIdentity: getRepositoryIdentitySpy,
+  getUserIdentity: getUserIdentitySpy,
+}));
 
 describe('autoClaimPlan', () => {
   let tempRoot: string;
@@ -18,9 +26,6 @@ describe('autoClaimPlan', () => {
   let disableAutoClaim: typeof import('./auto_claim.js').disableAutoClaim;
   let autoClaimPlan: typeof import('./auto_claim.js').autoClaimPlan;
   let isAutoClaimEnabled: typeof import('./auto_claim.js').isAutoClaimEnabled;
-
-  const repositoryId = 'auto-claim-repo';
-  const userName = 'integration-user';
 
   beforeEach(async () => {
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'auto-claim-test-'));
@@ -38,14 +43,12 @@ describe('autoClaimPlan', () => {
     process.env.XDG_CONFIG_HOME = configDir;
     delete process.env.APPDATA;
 
-    await moduleMocker.mock('./workspace_identifier.ts', () => ({
-      getRepositoryIdentity: async () => ({
-        repositoryId,
-        remoteUrl: 'https://example.com/demo.git',
-        gitRoot: repoDir,
-      }),
-      getUserIdentity: () => userName,
-    }));
+    getRepositoryIdentitySpy.mockResolvedValue({
+      repositoryId,
+      remoteUrl: 'https://example.com/demo.git',
+      gitRoot: repoDir,
+    });
+    getUserIdentitySpy.mockReturnValue(userName);
 
     ({ enableAutoClaim, disableAutoClaim, autoClaimPlan, isAutoClaimEnabled } =
       await import('./auto_claim.js'));
@@ -54,7 +57,7 @@ describe('autoClaimPlan', () => {
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     closeDatabaseForTesting();
 
     if (originalEnv.XDG_CONFIG_HOME === undefined) {

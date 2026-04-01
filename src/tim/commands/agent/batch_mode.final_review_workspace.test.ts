@@ -1,22 +1,112 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import yaml from 'yaml';
-import { ModuleMocker } from '../../../testing.js';
+
+const handleReviewCommandSpy = vi.fn(async () => ({ tasksAppended: 0 }));
+const executorExecuteSpy = vi.fn(async () => undefined);
+
+let statusCallCount = 0;
+
+vi.mock('../../../logging.js', () => ({
+  boldMarkdownHeaders: (value: string) => value,
+  error: vi.fn(() => {}),
+  log: vi.fn(() => {}),
+  sendStructured: vi.fn(() => {}),
+  warn: vi.fn(() => {}),
+}));
+
+vi.mock('../../../common/process.js', () => ({
+  commitAll: vi.fn(async () => 0),
+}));
+
+vi.mock('../../../common/git.js', () => ({
+  getWorkingCopyStatus: vi.fn(async () => {
+    statusCallCount += 1;
+    return statusCallCount === 1
+      ? { hasChanges: true, checkFailed: false, diffHash: 'before' }
+      : { hasChanges: true, checkFailed: false, diffHash: 'after' };
+  }),
+}));
+
+vi.mock('../../../common/input.js', () => ({
+  promptConfirm: vi.fn(async () => true),
+}));
+
+vi.mock('../../actions.js', () => ({
+  executePostApplyCommand: vi.fn(async () => true),
+}));
+
+vi.mock('../../plans.js', () => ({
+  readPlanFile: vi.fn(async (filePath: string) => {
+    const content = await fs.readFile(filePath, 'utf-8');
+    return yaml.parse(content);
+  }),
+  setPlanStatusById: vi.fn(
+    async (_planId: number, status: string, _repoRoot: string, filePath?: string | null) => {
+      if (!filePath) {
+        throw new Error('Expected file path');
+      }
+      const content = await fs.readFile(filePath, 'utf-8');
+      const data = yaml.parse(content);
+      data.status = status;
+      data.updatedAt = new Date().toISOString();
+      await fs.writeFile(filePath, yaml.stringify(data));
+    }
+  ),
+  writePlanFile: vi.fn(async (filePath: string, data: any) => {
+    await fs.writeFile(filePath, yaml.stringify(data));
+  }),
+  generatePlanFileContent: vi.fn(() => ''),
+}));
+
+vi.mock('../../plan_materialize.js', () => ({
+  materializePlan: vi.fn(async () => {}),
+  syncMaterializedPlan: vi.fn(async () => {}),
+}));
+
+vi.mock('../../plans/find_next.js', () => ({
+  getAllIncompleteTasks: (planData: any) =>
+    planData.tasks
+      .map((task: any, index: number) => ({ task, taskIndex: index }))
+      .filter(({ task }: any) => !task.done),
+}));
+
+vi.mock('../../prompt_builder.js', () => ({
+  buildExecutionPromptWithoutSteps: vi.fn(async () => 'batch prompt'),
+}));
+
+vi.mock('./parent_plans.js', () => ({
+  checkAndMarkParentDone: vi.fn(async () => undefined),
+  markParentInProgress: vi.fn(async () => undefined),
+}));
+
+vi.mock('./agent_helpers.js', () => ({
+  sendFailureReport: vi.fn(() => {}),
+  timestamp: () => '2026-03-19T00:00:00.000Z',
+}));
+
+vi.mock('../update-docs.js', () => ({
+  runUpdateDocs: vi.fn(async () => undefined),
+}));
+
+vi.mock('../update-lessons.js', () => ({
+  runUpdateLessons: vi.fn(async () => undefined),
+}));
+
+vi.mock('../review.js', () => ({
+  handleReviewCommand: handleReviewCommandSpy,
+}));
 
 describe('executeBatchMode final review workspace', () => {
-  let moduleMocker: ModuleMocker;
   let tempDir: string;
   let planFile: string;
 
-  const handleReviewCommandSpy = mock(async () => ({ tasksAppended: 0 }));
-  const executorExecuteSpy = mock(async () => undefined);
-
   beforeEach(async () => {
-    moduleMocker = new ModuleMocker(import.meta);
     handleReviewCommandSpy.mockClear();
     executorExecuteSpy.mockClear();
+    statusCallCount = 0;
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'batch-final-review-test-'));
     planFile = path.join(tempDir, 'plan.yml');
@@ -44,95 +134,10 @@ describe('executeBatchMode final review workspace', () => {
       updatedAt: new Date().toISOString(),
     };
     await fs.writeFile(planFile, yaml.stringify(plan));
-
-    await moduleMocker.mock('../../../logging.js', () => ({
-      boldMarkdownHeaders: (value: string) => value,
-      error: mock(() => {}),
-      log: mock(() => {}),
-      sendStructured: mock(() => {}),
-      warn: mock(() => {}),
-    }));
-
-    await moduleMocker.mock('../../../common/process.js', () => ({
-      commitAll: mock(async () => 0),
-    }));
-
-    let statusCallCount = 0;
-    await moduleMocker.mock('../../../common/git.js', () => ({
-      getWorkingCopyStatus: mock(async () => {
-        statusCallCount += 1;
-        return statusCallCount === 1
-          ? { hasChanges: true, checkFailed: false, diffHash: 'before' }
-          : { hasChanges: true, checkFailed: false, diffHash: 'after' };
-      }),
-    }));
-
-    await moduleMocker.mock('../../../common/input.js', () => ({
-      promptConfirm: mock(async () => true),
-    }));
-
-    await moduleMocker.mock('../../actions.js', () => ({
-      executePostApplyCommand: mock(async () => true),
-    }));
-
-    await moduleMocker.mock('../../plans.js', () => ({
-      readPlanFile: mock(async (filePath: string) => {
-        const content = await fs.readFile(filePath, 'utf-8');
-        return yaml.parse(content);
-      }),
-      setPlanStatusById: mock(
-        async (_planId: number, status: string, _repoRoot: string, filePath?: string | null) => {
-          if (!filePath) {
-            throw new Error('Expected file path');
-          }
-          const content = await fs.readFile(filePath, 'utf-8');
-          const data = yaml.parse(content);
-          data.status = status;
-          data.updatedAt = new Date().toISOString();
-          await fs.writeFile(filePath, yaml.stringify(data));
-        }
-      ),
-      writePlanFile: mock(async (filePath: string, data: any) => {
-        await fs.writeFile(filePath, yaml.stringify(data));
-      }),
-    }));
-
-    await moduleMocker.mock('../../plans/find_next.js', () => ({
-      getAllIncompleteTasks: (planData: any) =>
-        planData.tasks
-          .map((task: any, index: number) => ({ task, taskIndex: index }))
-          .filter(({ task }: any) => !task.done),
-    }));
-
-    await moduleMocker.mock('../../prompt_builder.js', () => ({
-      buildExecutionPromptWithoutSteps: mock(async () => 'batch prompt'),
-    }));
-
-    await moduleMocker.mock('./parent_plans.js', () => ({
-      checkAndMarkParentDone: mock(async () => undefined),
-      markParentInProgress: mock(async () => undefined),
-    }));
-
-    await moduleMocker.mock('./agent_helpers.js', () => ({
-      sendFailureReport: mock(() => {}),
-      timestamp: () => '2026-03-19T00:00:00.000Z',
-    }));
-
-    await moduleMocker.mock('../update-docs.js', () => ({
-      runUpdateDocs: mock(async () => undefined),
-    }));
-
-    await moduleMocker.mock('../update-lessons.js', () => ({
-      runUpdateLessons: mock(async () => undefined),
-    }));
-
-    await moduleMocker.mock('../review.js', () => ({
-      handleReviewCommand: handleReviewCommandSpy,
-    }));
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 

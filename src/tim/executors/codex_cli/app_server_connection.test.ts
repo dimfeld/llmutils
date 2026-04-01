@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
@@ -228,7 +228,7 @@ describe('CodexAppServerConnection', () => {
       }),
     });
 
-    expect(connection.isAlive).toBeTrue();
+    expect(connection.isAlive).toBe(true);
     const threadResult = await connection.threadStart({ cwd: '/repo/path', model: 'gpt-5' });
     expect(threadResult).toEqual(expect.objectContaining({ threadId: 'thread-1' }));
 
@@ -512,7 +512,7 @@ describe('CodexAppServerConnection', () => {
     });
 
     await expect(pending).rejects.toThrow(/exited unexpectedly/i);
-    expect(connection.isAlive).toBeFalse();
+    expect(connection.isAlive).toBe(false);
 
     await connection.close();
   });
@@ -544,6 +544,6 @@ describe('CodexAppServerConnection', () => {
 
     await Bun.sleep(25);
     const responses = await readJsonLines(mockServer.clientResponseLogPath);
-    expect(responses.some((line) => line.id === 901)).toBeFalse();
+    expect(responses.some((line) => line.id === 901)).toBe(false);
   });
 });

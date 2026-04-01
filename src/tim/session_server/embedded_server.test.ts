@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import type { HeadlessMessage, HeadlessServerMessage } from '../../logging/headless_protocol.js';
 import { startEmbeddedServer, type EmbeddedServerHandle } from './embedded_server.js';

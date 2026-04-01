@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test, vi } from 'vitest';
 import type { TimConfig } from '../configSchema.js';
 import { normalizeTags, validateTags } from './tags.js';
 

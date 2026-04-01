@@ -1,4 +1,4 @@
-import { test, expect } from 'bun:test';
+import { test, expect, vi } from 'vitest';
 import { wrapWithOrchestration } from './orchestrator_prompt.ts';
 
 test('wrapWithOrchestration integrates batch mode properly', () => {

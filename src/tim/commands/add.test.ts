@@ -1,11 +1,11 @@
 import { $ } from 'bun';
-import { afterEach, beforeEach, describe, expect, test, mock } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import yaml from 'yaml';
 import { resolvePlanFromDb, writePlanFile } from '../plans.js';
-import { ModuleMocker, clearAllTimCaches, stringifyPlanWithFrontmatter } from '../../testing.js';
+import { clearAllTimCaches, stringifyPlanWithFrontmatter } from '../../testing.js';
 import { getDefaultConfig } from '../configSchema.js';
 import { handleAddCommand } from './add.js';
 import { closeDatabaseForTesting } from '../db/database.js';
@@ -13,11 +13,30 @@ import { clearPlanSyncContext } from '../db/plan_sync.js';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+vi.mock('../configLoader.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../configLoader.js')>();
+  return { ...actual, loadEffectiveConfig: vi.fn() };
+});
+
+vi.mock('node:os', async (importOriginal) => {
+  const realOs = await importOriginal<typeof os>();
+  return {
+    ...realOs,
+    homedir: vi.fn(() => realOs.homedir()),
+  };
+});
+
+vi.mock('../../logging.js', () => ({
+  debugLog: vi.fn(),
+  error: vi.fn(),
+  log: vi.fn(),
+  warn: vi.fn(),
+}));
+
 describe('tim add command', () => {
   let tempDir: string;
   let tasksDir: string;
   let originalCwd: string;
-  const moduleMocker = new ModuleMocker(import.meta);
 
   beforeEach(async () => {
     clearAllTimCaches();
@@ -40,10 +59,28 @@ describe('tim add command', () => {
         },
       })
     );
+
+    // Reset mocks to default state
+    const configLoaderModule = await import('../configLoader.js');
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockReset();
+
+    const loggingModule = await import('../../logging.js');
+    vi.mocked(loggingModule.log)
+      .mockReset()
+      .mockImplementation(() => {});
+    vi.mocked(loggingModule.warn)
+      .mockReset()
+      .mockImplementation(() => {});
+    vi.mocked(loggingModule.error)
+      .mockReset()
+      .mockImplementation(() => {});
+    vi.mocked(loggingModule.debugLog)
+      .mockReset()
+      .mockImplementation(() => {});
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     clearAllTimCaches();
     closeDatabaseForTesting();
     clearPlanSyncContext();
@@ -177,9 +214,8 @@ describe('tim add command', () => {
       repositoryRemoteUrl: null,
     };
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: mock(async () => config),
-    }));
+    const configLoaderModule = await import('../configLoader.js');
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue(config as any);
 
     const command = {
       parent: {
@@ -516,21 +552,14 @@ describe('tim add command', () => {
     const remote =
       'https://user:super-secret-token@github.example.com/Owner/Repo.git?token=abc#frag';
 
-    const realOs = await import('node:os');
-    await moduleMocker.mock('node:os', () => ({
-      ...realOs,
-      homedir: () => fakeHomeDir,
-    }));
+    const osModule = await import('node:os');
+    vi.mocked(osModule.homedir).mockReturnValue(fakeHomeDir);
 
     const logMessages: string[] = [];
-    await moduleMocker.mock('../../logging.js', () => ({
-      debugLog: mock(() => {}),
-      error: mock(() => {}),
-      log: mock((message: string) => {
-        logMessages.push(message);
-      }),
-      warn: mock(() => {}),
-    }));
+    const loggingModule = await import('../../logging.js');
+    vi.mocked(loggingModule.log).mockImplementation((message: string) => {
+      logMessages.push(message);
+    });
 
     try {
       await $`git init`.cwd(repoDir).quiet();
@@ -598,6 +627,13 @@ describe('tim add command', () => {
       })
     );
     clearAllTimCaches();
+
+    // Mock the config loader to return our test config
+    const configLoaderModule = await import('../configLoader.js');
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+      paths: { tasks: tasksDir },
+      tags: { allowed: ['frontend'] },
+    } as any);
 
     const command = {
       parent: {

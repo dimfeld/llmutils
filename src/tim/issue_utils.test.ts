@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect, vi } from 'vitest';
 import { createStubPlanFromIssue } from './issue_utils.js';
 import type { IssueInstructionData } from './issue_utils.js';
 

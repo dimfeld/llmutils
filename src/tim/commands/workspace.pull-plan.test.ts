@@ -1,24 +1,42 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { ModuleMocker } from '../../testing.js';
+vi.mock('../../logging.js', () => ({
+  log: vi.fn(() => {}),
+  warn: vi.fn(() => {}),
+}));
+
+vi.mock('../../common/git.js', () => ({
+  getCurrentBranchName: vi.fn(async () => null),
+  getCurrentCommitHash: vi.fn(async () => null),
+  getCurrentJujutsuBranch: vi.fn(async () => null),
+  getGitRoot: vi.fn(async () => ''),
+  getUsingJj: vi.fn(async () => false),
+  hasUncommittedChanges: vi.fn(async () => false),
+  isInGitRepository: vi.fn(async () => true),
+}));
+
+vi.mock('../../common/process.js', () => ({
+  spawnAndLogOutput: vi.fn(async () => ({ exitCode: 0, stdout: '', stderr: '' })),
+}));
+
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { getOrCreateProject } from '../db/project.js';
 import { recordWorkspace } from '../db/workspace.js';
+import { getGitRoot, getUsingJj } from '../../common/git.js';
+import { spawnAndLogOutput } from '../../common/process.js';
 
-const logSpy = mock(() => {});
-const warnSpy = mock(() => {});
+const logSpy = vi.fn(() => {});
+const warnSpy = vi.fn(() => {});
 
 describe('workspace pull plan', () => {
-  let moduleMocker: ModuleMocker;
   let tempRoot: string;
   let originalEnv: { XDG_CONFIG_HOME?: string; APPDATA?: string };
   let processCalls: string[][];
 
   beforeEach(async () => {
-    moduleMocker = new ModuleMocker(import.meta);
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-pull-plan-test-'));
 
     originalEnv = {
@@ -31,24 +49,14 @@ describe('workspace pull plan', () => {
     closeDatabaseForTesting();
     processCalls = [];
 
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: logSpy,
-      warn: warnSpy,
-    }));
+    vi.clearAllMocks();
 
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getCurrentBranchName: mock(async () => null),
-      getCurrentCommitHash: mock(async () => null),
-      getCurrentJujutsuBranch: mock(async () => null),
-      getGitRoot: mock(async () => tempRoot),
-      getUsingJj: mock(async () => false),
-      hasUncommittedChanges: mock(async () => false),
-      isInGitRepository: mock(async () => true),
-    }));
+    vi.mocked(getGitRoot).mockResolvedValue(tempRoot);
+    vi.mocked(getUsingJj).mockResolvedValue(false);
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     closeDatabaseForTesting();
 
     if (originalEnv.XDG_CONFIG_HOME === undefined) {
@@ -63,36 +71,31 @@ describe('workspace pull plan', () => {
       process.env.APPDATA = originalEnv.APPDATA;
     }
 
-    logSpy.mockClear();
-    warnSpy.mockClear();
-
     await fs.rm(tempRoot, { recursive: true, force: true });
   });
 
   test('pullWorkspaceRefIfExists checks out and pulls when remote branch exists', async () => {
-    await moduleMocker.mock('../../common/process.js', () => ({
-      spawnAndLogOutput: mock(async (args: string[]) => {
-        processCalls.push(args);
+    vi.mocked(spawnAndLogOutput).mockImplementation(async (args: string[]) => {
+      processCalls.push(args);
 
-        if (args[0] === 'git' && args[1] === 'fetch') {
-          return { exitCode: 0, stdout: '', stderr: '' };
-        }
-
-        if (args[0] === 'git' && args[1] === 'rev-parse' && args[3] === 'refs/heads/feature/plan') {
-          return { exitCode: 1, stdout: '', stderr: '' };
-        }
-
-        if (
-          args[0] === 'git' &&
-          args[1] === 'rev-parse' &&
-          args[3] === 'refs/remotes/origin/feature/plan'
-        ) {
-          return { exitCode: 0, stdout: 'abc123', stderr: '' };
-        }
-
+      if (args[0] === 'git' && args[1] === 'fetch') {
         return { exitCode: 0, stdout: '', stderr: '' };
-      }),
-    }));
+      }
+
+      if (args[0] === 'git' && args[1] === 'rev-parse' && args[3] === 'refs/heads/feature/plan') {
+        return { exitCode: 1, stdout: '', stderr: '' };
+      }
+
+      if (
+        args[0] === 'git' &&
+        args[1] === 'rev-parse' &&
+        args[3] === 'refs/remotes/origin/feature/plan'
+      ) {
+        return { exitCode: 0, stdout: 'abc123', stderr: '' };
+      }
+
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
 
     const { pullWorkspaceRefIfExists } = await import('./workspace.js');
     const pulled = await pullWorkspaceRefIfExists(tempRoot, 'feature/plan', 'origin');
@@ -110,21 +113,19 @@ describe('workspace pull plan', () => {
   });
 
   test('pullWorkspaceRefIfExists returns false when branch is missing locally and remotely', async () => {
-    await moduleMocker.mock('../../common/process.js', () => ({
-      spawnAndLogOutput: mock(async (args: string[]) => {
-        processCalls.push(args);
+    vi.mocked(spawnAndLogOutput).mockImplementation(async (args: string[]) => {
+      processCalls.push(args);
 
-        if (args[0] === 'git' && args[1] === 'fetch') {
-          return { exitCode: 0, stdout: '', stderr: '' };
-        }
-
-        if (args[0] === 'git' && args[1] === 'rev-parse') {
-          return { exitCode: 1, stdout: '', stderr: '' };
-        }
-
+      if (args[0] === 'git' && args[1] === 'fetch') {
         return { exitCode: 0, stdout: '', stderr: '' };
-      }),
-    }));
+      }
+
+      if (args[0] === 'git' && args[1] === 'rev-parse') {
+        return { exitCode: 1, stdout: '', stderr: '' };
+      }
+
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
 
     const { pullWorkspaceRefIfExists } = await import('./workspace.js');
     const pulled = await pullWorkspaceRefIfExists(tempRoot, 'feature/missing', 'origin');
@@ -138,39 +139,29 @@ describe('workspace pull plan', () => {
   });
 
   test('pullWorkspaceRefIfExists uses jj new when pulling a jj bookmark', async () => {
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getCurrentBranchName: mock(async () => null),
-      getCurrentCommitHash: mock(async () => null),
-      getCurrentJujutsuBranch: mock(async () => null),
-      getGitRoot: mock(async () => tempRoot),
-      getUsingJj: mock(async () => true),
-      hasUncommittedChanges: mock(async () => false),
-      isInGitRepository: mock(async () => true),
-    }));
+    vi.mocked(getUsingJj).mockResolvedValue(true);
 
-    await moduleMocker.mock('../../common/process.js', () => ({
-      spawnAndLogOutput: mock(async (args: string[]) => {
-        processCalls.push(args);
+    vi.mocked(spawnAndLogOutput).mockImplementation(async (args: string[]) => {
+      processCalls.push(args);
 
-        if (args[0] === 'jj' && args[1] === 'git' && args[2] === 'fetch') {
-          return { exitCode: 0, stdout: '', stderr: '' };
-        }
-
-        if (args[0] === 'jj' && args[1] === 'bookmark' && args[2] === 'track') {
-          return { exitCode: 0, stdout: '', stderr: '' };
-        }
-
-        if (args[0] === 'jj' && args[1] === 'new' && args[2] === 'feature/plan') {
-          return { exitCode: 0, stdout: '', stderr: '' };
-        }
-
-        if (args[0] === 'jj' && args[1] === 'log') {
-          return { exitCode: 0, stdout: '', stderr: '' };
-        }
-
+      if (args[0] === 'jj' && args[1] === 'git' && args[2] === 'fetch') {
         return { exitCode: 0, stdout: '', stderr: '' };
-      }),
-    }));
+      }
+
+      if (args[0] === 'jj' && args[1] === 'bookmark' && args[2] === 'track') {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (args[0] === 'jj' && args[1] === 'new' && args[2] === 'feature/plan') {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (args[0] === 'jj' && args[1] === 'log') {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
 
     const { pullWorkspaceRefIfExists } = await import('./workspace.js');
     const pulled = await pullWorkspaceRefIfExists(tempRoot, 'feature/plan', 'origin');
@@ -204,31 +195,21 @@ describe('workspace pull plan', () => {
   });
 
   test('pullWorkspaceRefIfExists can refresh a jj bookmark without creating a new change', async () => {
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getCurrentBranchName: mock(async () => null),
-      getCurrentCommitHash: mock(async () => null),
-      getCurrentJujutsuBranch: mock(async () => null),
-      getGitRoot: mock(async () => tempRoot),
-      getUsingJj: mock(async () => true),
-      hasUncommittedChanges: mock(async () => false),
-      isInGitRepository: mock(async () => true),
-    }));
+    vi.mocked(getUsingJj).mockResolvedValue(true);
 
-    await moduleMocker.mock('../../common/process.js', () => ({
-      spawnAndLogOutput: mock(async (args: string[]) => {
-        processCalls.push(args);
+    vi.mocked(spawnAndLogOutput).mockImplementation(async (args: string[]) => {
+      processCalls.push(args);
 
-        if (args[0] === 'jj' && args[1] === 'git' && args[2] === 'fetch') {
-          return { exitCode: 0, stdout: '', stderr: '' };
-        }
-
-        if (args[0] === 'jj' && args[1] === 'bookmark' && args[2] === 'track') {
-          return { exitCode: 0, stdout: '', stderr: '' };
-        }
-
+      if (args[0] === 'jj' && args[1] === 'git' && args[2] === 'fetch') {
         return { exitCode: 0, stdout: '', stderr: '' };
-      }),
-    }));
+      }
+
+      if (args[0] === 'jj' && args[1] === 'bookmark' && args[2] === 'track') {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
 
     const { pullWorkspaceRefIfExists } = await import('./workspace.js');
     const pulled = await pullWorkspaceRefIfExists(tempRoot, 'feature/plan', 'origin', undefined, {
@@ -254,29 +235,27 @@ describe('workspace pull plan', () => {
   });
 
   test('handleWorkspacePullPlanCommand uses plan branch and pulls into workspace', async () => {
-    await moduleMocker.mock('../../common/process.js', () => ({
-      spawnAndLogOutput: mock(async (args: string[]) => {
-        processCalls.push(args);
+    vi.mocked(spawnAndLogOutput).mockImplementation(async (args: string[]) => {
+      processCalls.push(args);
 
-        if (args[0] === 'git' && args[1] === 'fetch') {
-          return { exitCode: 0, stdout: '', stderr: '' };
-        }
-
-        if (args[0] === 'git' && args[1] === 'rev-parse' && args[3] === 'refs/heads/feature/plan') {
-          return { exitCode: 0, stdout: 'abc123', stderr: '' };
-        }
-
-        if (
-          args[0] === 'git' &&
-          args[1] === 'rev-parse' &&
-          args[3] === 'refs/remotes/origin/feature/plan'
-        ) {
-          return { exitCode: 0, stdout: 'abc123', stderr: '' };
-        }
-
+      if (args[0] === 'git' && args[1] === 'fetch') {
         return { exitCode: 0, stdout: '', stderr: '' };
-      }),
-    }));
+      }
+
+      if (args[0] === 'git' && args[1] === 'rev-parse' && args[3] === 'refs/heads/feature/plan') {
+        return { exitCode: 0, stdout: 'abc123', stderr: '' };
+      }
+
+      if (
+        args[0] === 'git' &&
+        args[1] === 'rev-parse' &&
+        args[3] === 'refs/remotes/origin/feature/plan'
+      ) {
+        return { exitCode: 0, stdout: 'abc123', stderr: '' };
+      }
+
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
 
     const workspacePath = path.join(tempRoot, 'workspace');
     await fs.mkdir(workspacePath, { recursive: true });

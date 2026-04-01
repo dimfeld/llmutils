@@ -1,22 +1,37 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { ModuleMocker } from '../../testing.js';
 import { closeDatabaseForTesting } from '../db/database.js';
 import { readPlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { handleRemoveTaskCommand } from './remove-task.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
+vi.mock('../../logging.js', () => ({
+  log: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+}));
+
+vi.mock('../configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(),
+}));
+
+vi.mock('../utils/task_operations.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../utils/task_operations.js')>();
+  return {
+    ...actual,
+    selectTaskInteractive: vi.fn(),
+  };
+});
 
 describe('handleRemoveTaskCommand', () => {
   let tempDir: string;
   let planFile: string;
   let originalEnv: Partial<Record<string, string>>;
   let originalCwd: string;
-  const logSpy = mock(() => {});
-  const warnSpy = mock(() => {});
+  let logSpy: ReturnType<typeof vi.fn>;
+  let warnSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     originalCwd = process.cwd();
@@ -49,21 +64,23 @@ describe('handleRemoveTaskCommand', () => {
 
     await writePlanFile(planFile, plan, { cwdForIdentity: tempDir });
 
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: logSpy,
-      warn: warnSpy,
-      error: mock(() => {}),
-    }));
+    const loggingModule = await import('../../logging.js');
+    logSpy = vi.mocked(loggingModule.log);
+    warnSpy = vi.mocked(loggingModule.warn);
+    logSpy.mockReset().mockImplementation(() => {});
+    warnSpy.mockReset().mockImplementation(() => {});
+    vi.mocked(loggingModule.error)
+      .mockReset()
+      .mockImplementation(() => {});
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: { tasks: tempDir },
-      }),
-    }));
+    const configLoaderModule = await import('../configLoader.js');
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+      paths: { tasks: tempDir },
+    } as any);
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     closeDatabaseForTesting();
     process.chdir(originalCwd);
     if (originalEnv.XDG_CONFIG_HOME === undefined) {
@@ -112,14 +129,9 @@ describe('handleRemoveTaskCommand', () => {
   });
 
   test('removes task via interactive selection', async () => {
-    const selectSpy = mock(async () => 0);
-
-    const taskOperations = await import('../utils/task_operations.js');
-
-    await moduleMocker.mock('../utils/task_operations.js', () => ({
-      selectTaskInteractive: selectSpy,
-      findTaskByTitle: taskOperations.findTaskByTitle,
-    }));
+    const taskOperationsModule = await import('../utils/task_operations.js');
+    const selectSpy = vi.mocked(taskOperationsModule.selectTaskInteractive);
+    selectSpy.mockResolvedValue(0);
 
     await handleRemoveTaskCommand(
       planFile,

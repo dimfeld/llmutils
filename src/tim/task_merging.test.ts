@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test, vi } from 'vitest';
 import type { PlanSchema } from './planSchema.js';
 import { mergeTaskLists } from './plan_merge.js';
 

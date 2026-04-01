@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'bun:test';
+import { describe, it, expect, vi } from 'vitest';
 import {
   wrapWithOrchestration,
   wrapWithOrchestrationSimple,
@@ -81,7 +81,9 @@ describe('orchestrator_prompt failure protocol', () => {
     });
     expect(out).toContain('# Batch Task Processing Mode');
     expect(out).toContain('tim subagent verifier abc');
-    expect(out).toContain('bun run check');
+    expect(out).toContain('type checking');
+    expect(out).toContain('linting');
+    expect(out).toContain('project test suite');
     expect(out).toContain('@/plans/test.plan.md');
   });
 

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'bun:test';
+import { describe, it, expect, vi } from 'vitest';
 import {
   getImplementerPrompt,
   getTddTestsPrompt,
@@ -93,9 +93,9 @@ describe('agent_prompts failure protocol integration', () => {
 
   it('configures verifier prompt with verification commands and failure protocol', () => {
     const verifier = getVerifierAgentPrompt(context);
-    expect(verifier.prompt).toContain('bun run check');
-    expect(verifier.prompt).toContain('bun run lint');
-    expect(verifier.prompt).toContain('bun test');
+    expect(verifier.prompt).toContain('check');
+    expect(verifier.prompt).toContain('lint');
+    expect(verifier.prompt).toContain('test');
     expect(verifier.prompt).toContain('FAILED:');
   });
 

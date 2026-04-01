@@ -1,14 +1,25 @@
-import { vi, describe, test, expect, beforeEach, afterEach } from 'bun:test';
+import { vi, describe, test, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import type { PlanSchema } from '../planSchema.js';
-import { readPlanFile } from '../plans.js';
+import { readPlanFile, resolvePlanFromDb, writePlanFile } from '../plans.js';
+import { materializePlan } from '../plan_materialize.js';
 import { handleAddCommand } from './add.js';
 import { handleSetCommand } from './set.js';
 import { handleValidateCommand } from './validate.js';
-import { ModuleMocker } from '../../testing.js';
+import { clearAllTimCaches } from '../../testing.js';
+import { closeDatabaseForTesting } from '../db/database.js';
+import { clearPlanSyncContext } from '../db/plan_sync.js';
+
+vi.mock('../../common/git.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../common/git.js')>();
+  return {
+    ...actual,
+    getGitRoot: vi.fn(),
+  };
+});
 
 /**
  * Integration tests for parent-child relationship functionality in tim commands.
@@ -17,14 +28,16 @@ import { ModuleMocker } from '../../testing.js';
  * parent-child relationships across the add, set, and validate commands, ensuring
  * that bidirectional relationships are maintained automatically.
  */
-describe.skip('CLI integration tests for parent-child relationships (internal handlers)', () => {
+describe('CLI integration tests for parent-child relationships (internal handlers)', () => {
   let tempDir: string;
   let tasksDir: string;
   let configPath: string;
   let commandObj: any;
-  const moduleMocker = new ModuleMocker(import.meta);
 
   beforeEach(async () => {
+    clearAllTimCaches();
+    closeDatabaseForTesting();
+    clearPlanSyncContext();
     vi.spyOn(console, 'log').mockImplementation(() => {});
 
     // Create temporary directory structure
@@ -57,9 +70,8 @@ describe.skip('CLI integration tests for parent-child relationships (internal ha
     // Command object to pass config to handlers
     commandObj = { parent: { opts: () => ({ config: configPath }) } } as any;
 
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => tempDir,
-    }));
+    const gitModule = await import('../../common/git.js');
+    vi.mocked(gitModule.getGitRoot).mockResolvedValue(tempDir);
   });
 
   afterEach(async () => {
@@ -67,16 +79,15 @@ describe.skip('CLI integration tests for parent-child relationships (internal ha
     if (tempDir) {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
-    moduleMocker.clear();
+    clearAllTimCaches();
+    closeDatabaseForTesting();
+    clearPlanSyncContext();
+    vi.clearAllMocks();
   });
 
   async function createPlanFile(plan: PlanSchema & { filename: string }) {
-    const filePath = path.join(tasksDir, plan.filename);
-
-    // Create a proper plan object according to the schema
-    const schemaLine =
-      '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json\n';
-    const planData: any = {
+    const filePath = path.join(tempDir, plan.filename);
+    await writePlanFile(filePath, {
       id: plan.id,
       title: plan.title,
       goal: plan.goal || 'Test goal',
@@ -85,22 +96,10 @@ describe.skip('CLI integration tests for parent-child relationships (internal ha
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       tasks: plan.tasks || [],
-    };
-
-    // Only add optional fields if they exist
-    if (plan.dependencies && plan.dependencies.length > 0) {
-      planData.dependencies = plan.dependencies;
-    }
-    if (plan.parent !== undefined) {
-      planData.parent = plan.parent;
-    }
-    if (plan.priority) {
-      planData.priority = plan.priority;
-    }
-
-    // Write as YAML with schema comment
-    const yamlContent = schemaLine + yaml.stringify(planData);
-    await fs.writeFile(filePath, yamlContent, 'utf-8');
+      dependencies: plan.dependencies,
+      parent: plan.parent,
+      priority: plan.priority,
+    });
   }
 
   describe('parent-child relationship validation integration tests', () => {
@@ -109,23 +108,22 @@ describe.skip('CLI integration tests for parent-child relationships (internal ha
       await handleAddCommand(['Parent', 'Plan'], { priority: 'high' }, commandObj);
       await handleAddCommand(['Child', 'Plan'], {}, commandObj);
 
-      // Find child plan file path and set its parent
-      const childFile = (await fs.readdir(tasksDir)).find((f) =>
-        f.endsWith('-child-plan.plan.md')
-      )!;
+      const parentMaterialized = await materializePlan(1, tempDir);
+      const childMaterialized = await materializePlan(2, tempDir);
+
       await handleSetCommand(
-        path.join(tasksDir, childFile),
+        childMaterialized,
         { parent: 1 },
         commandObj.parent.opts()
       );
 
       // Verify that the plans were created correctly by checking file contents
-      const parentPlan = await readPlanFile(path.join(tasksDir, '1-parent-plan.plan.md'));
+      const parentPlan = await readPlanFile(parentMaterialized);
       expect(parentPlan.id).toBe(1);
       expect(parentPlan.title).toBe('Parent Plan');
       expect(parentPlan.dependencies).toContain(2);
 
-      const childPlan = await readPlanFile(path.join(tasksDir, '2-child-plan.plan.md'));
+      const childPlan = await readPlanFile(childMaterialized);
       expect(childPlan.id).toBe(2);
       expect(childPlan.title).toBe('Child Plan');
       expect(childPlan.parent).toBe(1);
@@ -145,14 +143,17 @@ describe.skip('CLI integration tests for parent-child relationships (internal ha
       await handleAddCommand(['Plan', 'One'], {}, commandObj);
       await handleAddCommand(['Plan', 'Two'], {}, commandObj);
 
+      const parentMaterialized = await materializePlan(1, tempDir);
+      const childMaterialized = await materializePlan(2, tempDir);
+
       // Use set command to establish parent-child relationship
-      await handleSetCommand('2', { parent: 1 }, commandObj.parent.opts());
+      await handleSetCommand(childMaterialized, { parent: 1 }, commandObj.parent.opts());
 
       // Verify the relationship was established by checking file contents
-      const parentPlan = await readPlanFile(path.join(tasksDir, '1-plan-one.plan.md'));
+      const parentPlan = await readPlanFile(parentMaterialized);
       expect(parentPlan.dependencies).toContain(2);
 
-      const childPlan = await readPlanFile(path.join(tasksDir, '2-plan-two.plan.md'));
+      const childPlan = await readPlanFile(childMaterialized);
       expect(childPlan.parent).toBe(1);
 
       // Run validate to ensure no inconsistencies
@@ -173,16 +174,16 @@ describe.skip('CLI integration tests for parent-child relationships (internal ha
       await handleAddCommand(['Child', 'Plan'], {}, commandObj);
 
       // Establish relationships via set command using filenames
-      const files = await fs.readdir(tasksDir);
-      const parentFile = files.find((f) => f.endsWith('-parent-plan.plan.md'))!;
-      const childFile = files.find((f) => f.endsWith('-child-plan.plan.md'))!;
+      const grandparentMaterialized = await materializePlan(1, tempDir);
+      const parentMaterialized = await materializePlan(2, tempDir);
+      const childMaterialized = await materializePlan(3, tempDir);
       await handleSetCommand(
-        path.join(tasksDir, parentFile),
+        parentMaterialized,
         { parent: 1 },
         commandObj.parent.opts()
       );
       await handleSetCommand(
-        path.join(tasksDir, childFile),
+        childMaterialized,
         { parent: 2 },
         commandObj.parent.opts()
       );
@@ -193,9 +194,9 @@ describe.skip('CLI integration tests for parent-child relationships (internal ha
       expect((console.log as any).mock.calls.flat().map(String).join('\n')).toContain('3 valid');
 
       // Verify initial structure by reading files
-      let grandparentPlan = await readPlanFile(path.join(tasksDir, '1-grandparent-plan.plan.md'));
-      let parentPlan = await readPlanFile(path.join(tasksDir, '2-parent-plan.plan.md'));
-      let childPlan = await readPlanFile(path.join(tasksDir, '3-child-plan.plan.md'));
+      let grandparentPlan = await readPlanFile(grandparentMaterialized);
+      let parentPlan = await readPlanFile(parentMaterialized);
+      let childPlan = await readPlanFile(childMaterialized);
 
       expect(grandparentPlan.dependencies).toContain(2);
       expect(parentPlan.parent).toBe(1);
@@ -206,9 +207,9 @@ describe.skip('CLI integration tests for parent-child relationships (internal ha
       await handleSetCommand('3', { parent: 1 }, commandObj.parent.opts());
 
       // Verify the parent change took effect
-      grandparentPlan = await readPlanFile(path.join(tasksDir, '1-grandparent-plan.plan.md'));
-      parentPlan = await readPlanFile(path.join(tasksDir, '2-parent-plan.plan.md'));
-      childPlan = await readPlanFile(path.join(tasksDir, '3-child-plan.plan.md'));
+      grandparentPlan = await readPlanFile(grandparentMaterialized);
+      parentPlan = await readPlanFile(parentMaterialized);
+      childPlan = await readPlanFile(childMaterialized);
 
       expect(grandparentPlan.dependencies).toContain(3); // Now includes child directly
       expect(parentPlan.dependencies || []).not.toContain(3); // Child removed from old parent
@@ -223,10 +224,11 @@ describe.skip('CLI integration tests for parent-child relationships (internal ha
 
       // Add another child to create multiple children for one parent
       await handleAddCommand(['Second', 'Child'], { parent: 1 }, commandObj);
+      const secondChildMaterialized = await materializePlan(4, tempDir);
 
       // Verify the new structure
-      grandparentPlan = await readPlanFile(path.join(tasksDir, '1-grandparent-plan.plan.md'));
-      const secondChildPlan = await readPlanFile(path.join(tasksDir, '4-second-child.plan.md'));
+      grandparentPlan = await readPlanFile(grandparentMaterialized);
+      const secondChildPlan = await readPlanFile(secondChildMaterialized);
 
       expect(grandparentPlan.dependencies).toContain(4); // Includes second child
       expect(secondChildPlan.parent).toBe(1); // Second child's parent is grandparent
@@ -244,7 +246,7 @@ describe.skip('CLI integration tests for parent-child relationships (internal ha
       await createPlanFile({
         id: 1,
         title: 'Parent Plan',
-        filename: '1-parent.yml',
+        filename: 'parent.plan.md',
         status: 'in_progress',
         dependencies: [], // Missing child dependency - this creates inconsistency
         tasks: [{ title: 'Parent task', description: 'Do parent work' }],
@@ -253,7 +255,7 @@ describe.skip('CLI integration tests for parent-child relationships (internal ha
       await createPlanFile({
         id: 2,
         title: 'Child Plan',
-        filename: '2-child.yml',
+        filename: 'child.plan.md',
         status: 'pending',
         parent: 1, // Has parent but parent doesn't have this in dependencies
         tasks: [{ title: 'Child task', description: 'Do child work' }],
@@ -264,7 +266,7 @@ describe.skip('CLI integration tests for parent-child relationships (internal ha
       const output = (console.log as any).mock.calls.flat().map(String).join('\n');
 
       // Should report finding inconsistencies and fixing them
-      expect(output).toContain('Validating 2 plan files');
+      expect(output).toContain('Validating 0 plan files and 2 DB-only plans');
       expect(output).toContain('Found 1 parent-child inconsistencies');
       expect(output).toContain('Parent plan 1 missing dependencies for child 2');
       expect(output).toContain('Auto-fixing parent-child relationships');
@@ -272,9 +274,9 @@ describe.skip('CLI integration tests for parent-child relationships (internal ha
       expect(output).toContain('1 parent-child relationships fixed');
       expect(output).toContain('2 valid');
 
-      // Verify that the parent plan was actually updated by reading the file
-      const parentPlan = await readPlanFile(path.join(tasksDir, '1-parent.yml'));
-      expect(parentPlan.dependencies).toContain(2);
+      // Verify that the parent plan was actually updated in the DB
+      const parentPlan = await resolvePlanFromDb('1', tempDir);
+      expect(parentPlan.plan.dependencies).toContain(2);
 
       // Run validate again to ensure there are no more inconsistencies
       (console.log as any).mockClear();

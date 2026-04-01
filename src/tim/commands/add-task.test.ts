@@ -1,15 +1,41 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { ModuleMocker, clearAllTimCaches } from '../../testing.js';
+import { clearAllTimCaches } from '../../testing.js';
 import { closeDatabaseForTesting } from '../db/database.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
 import { readPlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { handleAddTaskCommand } from './add-task.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
+vi.mock('../../logging.js', () => ({
+  log: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+}));
+
+vi.mock('../configLoader.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../configLoader.js')>()),
+  loadEffectiveConfig: vi.fn(),
+}));
+
+vi.mock('../../common/git.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../common/git.js')>()),
+  getGitRoot: vi.fn(),
+}));
+
+vi.mock('../utils/task_operations.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../utils/task_operations.js')>();
+  return {
+    ...actual,
+    promptForTaskInfo: vi.fn(),
+  };
+});
+
+vi.mock('@inquirer/prompts', () => ({
+  editor: vi.fn(),
+}));
 
 describe('handleAddTaskCommand', () => {
   let tempDir: string;
@@ -18,7 +44,7 @@ describe('handleAddTaskCommand', () => {
   let planUuid: string;
   let configPath: string;
   let command: any;
-  const logSpy = mock(() => {});
+  let logSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     clearAllTimCaches();
@@ -32,6 +58,15 @@ describe('handleAddTaskCommand', () => {
     planFile = path.join(tasksDir, '100-add-task.plan.md');
     planUuid = crypto.randomUUID();
     command = { parent: { opts: () => ({ config: configPath }) } };
+
+    // Set up mocks before creating the plan
+    const configLoaderModule = await import('../configLoader.js');
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+      paths: { tasks: tasksDir },
+    } as any);
+
+    const gitModule = await import('../../common/git.js');
+    vi.mocked(gitModule.getGitRoot).mockResolvedValue(tempDir);
 
     const plan: PlanSchema = {
       id: 100,
@@ -50,30 +85,23 @@ describe('handleAddTaskCommand', () => {
 
     await writePlanFile(planFile, plan);
 
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: logSpy,
-      warn: mock(() => {}),
-      error: mock(() => {}),
-    }));
-
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: { tasks: tasksDir },
-      }),
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => tempDir,
-    }));
+    const loggingModule = await import('../../logging.js');
+    logSpy = vi.mocked(loggingModule.log);
+    logSpy.mockReset().mockImplementation(() => {});
+    vi.mocked(loggingModule.warn)
+      .mockReset()
+      .mockImplementation(() => {});
+    vi.mocked(loggingModule.error)
+      .mockReset()
+      .mockImplementation(() => {});
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     clearAllTimCaches();
     closeDatabaseForTesting();
     clearPlanSyncContext();
     await fs.rm(tempDir, { recursive: true, force: true });
-    logSpy.mockReset();
   });
 
   test('adds a task using explicit options', async () => {
@@ -91,21 +119,19 @@ describe('handleAddTaskCommand', () => {
     const newTask = updated.tasks[1];
     expect(newTask?.title).toBe('Add logging');
     expect(newTask?.description).toBe('Introduce structured logging across modules');
-    expect(newTask?.done).toBeFalse();
+    expect(newTask?.done).toBeFalsy();
     expect(logSpy).toHaveBeenCalled();
   });
 
   test('adds a task interactively via prompt helper', async () => {
-    const promptSpy = mock(async () => ({
+    const taskOperationsModule = await import('../utils/task_operations.js');
+    const promptSpy = vi.mocked(taskOperationsModule.promptForTaskInfo);
+    promptSpy.mockResolvedValue({
       title: 'Interactive Task',
       description: 'Captured via prompts',
       files: ['src/app.ts'],
       docs: [],
-    }));
-
-    await moduleMocker.mock('../utils/task_operations.js', () => ({
-      promptForTaskInfo: promptSpy,
-    }));
+    });
 
     await handleAddTaskCommand(
       planFile,
@@ -124,11 +150,9 @@ describe('handleAddTaskCommand', () => {
   });
 
   test('uses editor when --editor flag provided', async () => {
-    const editorSpy = mock(async () => 'Description from editor');
-
-    await moduleMocker.mock('@inquirer/prompts', () => ({
-      editor: editorSpy,
-    }));
+    const promptsModule = await import('@inquirer/prompts');
+    const editorSpy = vi.mocked(promptsModule.editor);
+    editorSpy.mockResolvedValue('Description from editor');
 
     await handleAddTaskCommand(
       planFile,

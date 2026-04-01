@@ -1,11 +1,8 @@
-import { test, describe, expect, mock } from 'bun:test';
+import { test, describe, expect, vi } from 'vitest';
 import * as z from 'zod/v4';
 import { createExecutor, executors } from './build.ts';
 import type { TimConfig } from '../configSchema.ts';
 import type { ExecutorCommonOptions, ExecutorFactory, Executor } from './types.ts';
-import { ModuleMocker } from '../../testing.js';
-
-const moduleMocker = new ModuleMocker(import.meta);
 
 describe('createExecutor', () => {
   // Mock executor options schema

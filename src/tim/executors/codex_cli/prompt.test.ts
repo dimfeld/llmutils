@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'bun:test';
+import { describe, it, expect, vi } from 'vitest';
 import { buildCodexOrchestrationPrompt } from './prompt.ts';
 
 describe('buildCodexOrchestrationPrompt', () => {

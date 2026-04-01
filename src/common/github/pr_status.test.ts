@@ -1,15 +1,18 @@
-import { afterEach, describe, expect, mock, test } from 'bun:test';
-import { ModuleMocker } from '../../testing.js';
+import { afterEach, describe, expect, test, vi } from 'vitest';
+import * as octokitModule from './octokit.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
+// Mock the octokit module
+vi.mock('./octokit.js', () => ({
+  getOctokit: vi.fn(),
+}));
 
 describe('common/github/pr_status', () => {
   afterEach(() => {
-    moduleMocker.clear();
+    vi.restoreAllMocks();
   });
 
   test('fetchPrFullStatus normalizes checks, reviews, and labels', async () => {
-    const graphql = mock(async () => ({
+    const graphql = vi.fn(async () => ({
       repository: {
         pullRequest: {
           number: 42,
@@ -83,16 +86,16 @@ describe('common/github/pr_status', () => {
       },
     }));
 
-    await moduleMocker.mock('./octokit.js', () => ({
-      getOctokit: () => ({
-        graphql,
-      }),
-    }));
+    const mockGetOctokit = vi.mocked(octokitModule.getOctokit);
+    mockGetOctokit.mockReturnValue({
+      graphql,
+    });
 
     const { fetchPrFullStatus } = await import('./pr_status.ts');
     const result = await fetchPrFullStatus('owner', 'repo', 42);
 
     expect(result).toEqual({
+      author: null,
       number: 42,
       title: 'Add PR status monitoring',
       state: 'open',
@@ -146,7 +149,7 @@ describe('common/github/pr_status', () => {
   });
 
   test('fetchPrFullStatus keeps only the latest review per author', async () => {
-    const graphql = mock(async () => ({
+    const graphql = vi.fn(async () => ({
       repository: {
         pullRequest: {
           number: 49,
@@ -204,11 +207,10 @@ describe('common/github/pr_status', () => {
       },
     }));
 
-    await moduleMocker.mock('./octokit.js', () => ({
-      getOctokit: () => ({
-        graphql,
-      }),
-    }));
+    const mockGetOctokit = vi.mocked(octokitModule.getOctokit);
+    mockGetOctokit.mockReturnValue({
+      graphql,
+    });
 
     const { fetchPrFullStatus } = await import('./pr_status.ts');
 
@@ -229,12 +231,12 @@ describe('common/github/pr_status', () => {
   });
 
   test('warns and falls back for unknown enum values', async () => {
-    const warn = mock(() => {});
+    const warn = vi.fn(() => {});
     const originalWarn = console.warn;
     console.warn = warn;
 
     try {
-      const graphql = mock(async (_query: string, variables: { prNumber: number }) => {
+      const graphql = vi.fn(async (_query: string, variables: { prNumber: number }) => {
         if (variables.prNumber === 46) {
           return {
             repository: {
@@ -516,11 +518,10 @@ describe('common/github/pr_status', () => {
         };
       });
 
-      await moduleMocker.mock('./octokit.js', () => ({
-        getOctokit: () => ({
-          graphql,
-        }),
-      }));
+      const mockGetOctokit = vi.mocked(octokitModule.getOctokit);
+      mockGetOctokit.mockReturnValue({
+        graphql,
+      });
 
       const { fetchPrCheckStatus, fetchPrFullStatus } = await import('./pr_status.ts');
 
@@ -628,7 +629,7 @@ describe('common/github/pr_status', () => {
   });
 
   test('fetchPrCheckStatus returns lightweight normalized checks', async () => {
-    const graphql = mock(async () => ({
+    const graphql = vi.fn(async () => ({
       repository: {
         pullRequest: {
           commits: {
@@ -659,11 +660,10 @@ describe('common/github/pr_status', () => {
       },
     }));
 
-    await moduleMocker.mock('./octokit.js', () => ({
-      getOctokit: () => ({
-        graphql,
-      }),
-    }));
+    const mockGetOctokit = vi.mocked(octokitModule.getOctokit);
+    mockGetOctokit.mockReturnValue({
+      graphql,
+    });
 
     const { fetchPrCheckStatus } = await import('./pr_status.ts');
     const result = await fetchPrCheckStatus('owner', 'repo', 43);
@@ -685,7 +685,7 @@ describe('common/github/pr_status', () => {
   });
 
   test('fetchPrCheckStatus filters null check context nodes', async () => {
-    const graphql = mock(async () => ({
+    const graphql = vi.fn(async () => ({
       repository: {
         pullRequest: {
           commits: {
@@ -716,11 +716,10 @@ describe('common/github/pr_status', () => {
       },
     }));
 
-    await moduleMocker.mock('./octokit.js', () => ({
-      getOctokit: () => ({
-        graphql,
-      }),
-    }));
+    const mockGetOctokit = vi.mocked(octokitModule.getOctokit);
+    mockGetOctokit.mockReturnValue({
+      graphql,
+    });
 
     const { fetchPrCheckStatus } = await import('./pr_status.ts');
 
@@ -741,7 +740,7 @@ describe('common/github/pr_status', () => {
   });
 
   test('normalizes EXPECTED status contexts and handles missing check rollups', async () => {
-    const graphql = mock(async (_query: string, variables: { prNumber: number }) => {
+    const graphql = vi.fn(async (_query: string, variables: { prNumber: number }) => {
       if (variables.prNumber === 44) {
         return {
           repository: {
@@ -799,11 +798,10 @@ describe('common/github/pr_status', () => {
       };
     });
 
-    await moduleMocker.mock('./octokit.js', () => ({
-      getOctokit: () => ({
-        graphql,
-      }),
-    }));
+    const mockGetOctokit = vi.mocked(octokitModule.getOctokit);
+    mockGetOctokit.mockReturnValue({
+      graphql,
+    });
 
     const { fetchPrCheckStatus } = await import('./pr_status.ts');
 
@@ -838,15 +836,14 @@ describe('common/github/pr_status', () => {
   });
 
   test('throws when the requested PR is missing', async () => {
-    await moduleMocker.mock('./octokit.js', () => ({
-      getOctokit: () => ({
-        graphql: mock(async () => ({
-          repository: {
-            pullRequest: null,
-          },
-        })),
-      }),
-    }));
+    const mockGetOctokit = vi.mocked(octokitModule.getOctokit);
+    mockGetOctokit.mockReturnValue({
+      graphql: vi.fn(async () => ({
+        repository: {
+          pullRequest: null,
+        },
+      })),
+    });
 
     const { fetchPrFullStatus } = await import('./pr_status.ts');
 

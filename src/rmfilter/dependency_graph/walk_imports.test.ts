@@ -1,4 +1,4 @@
-import { expect, test, describe, afterAll, beforeAll } from 'bun:test';
+import { expect, test, describe, afterAll, beforeAll } from 'vitest';
 import * as path from 'node:path';
 import * as fs from 'fs/promises';
 import * as os from 'os';
@@ -8,7 +8,7 @@ import { Extractor } from '../treesitter/extract.ts';
 import { Resolver } from './resolve.ts';
 
 describe('getDefiningFiles', () => {
-  const rootDir = path.resolve(import.meta.dir, '../../..');
+  const rootDir = path.resolve(import.meta.dirname, '../../..');
 
   test('walk imports from walk_imports.ts', async () => {
     const walker = new ImportWalker(new Extractor(), await Resolver.new(rootDir));

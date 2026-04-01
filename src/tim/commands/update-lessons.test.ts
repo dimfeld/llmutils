@@ -1,8 +1,7 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'path';
-import { ModuleMocker } from '../../testing.js';
 import type { TimConfig } from '../configSchema.js';
 import type { PlanSchema } from '../planSchema.js';
 import { writePlanToDb } from '../plans.js';
@@ -13,8 +12,21 @@ import {
   runUpdateLessons,
 } from './update-lessons.js';
 
+vi.mock('../../common/input.js', () => ({
+  promptCheckbox: vi.fn(),
+}));
+
+vi.mock('../configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(),
+}));
+
+vi.mock('../executors/index.js', () => ({
+  buildExecutorAndLog: vi.fn(),
+  DEFAULT_EXECUTOR: 'codex-cli',
+  defaultModelForExecutor: vi.fn(() => 'test-model'),
+}));
+
 describe('update-lessons command', () => {
-  const moduleMocker = new ModuleMocker(import.meta);
   let tempDir: string;
   let otherDir: string;
   let planFile: string;
@@ -29,7 +41,7 @@ describe('update-lessons command', () => {
 
   afterEach(async () => {
     process.chdir(originalCwd);
-    moduleMocker.clear();
+    vi.clearAllMocks();
     await fs.rm(tempDir, { recursive: true, force: true });
     await fs.rm(otherDir, { recursive: true, force: true });
   });
@@ -260,28 +272,27 @@ notes: |
         { cwdForIdentity: tempDir }
       );
 
-      const executeSpy = mock(async () => undefined);
-      const buildExecutorAndLogSpy = mock((_executor: string, options: { baseDir: string }) => {
+      const executeSpy = vi.fn(async () => undefined);
+      const buildExecutorAndLogSpy = vi.fn((_executor: string, options: { baseDir: string }) => {
         expect(options.baseDir).toBe(tempDir);
         return { execute: executeSpy };
       });
 
-      await moduleMocker.mock('../../common/input.js', () => ({
-        promptCheckbox: async ({ choices }: { choices: Array<{ value: string }> }) =>
-          choices.map((choice) => choice.value),
-      }));
-      await moduleMocker.mock('../configLoader.js', () => ({
-        loadEffectiveConfig: async () => ({
-          defaultExecutor: 'codex-cli',
-          updateDocs: {},
-          isUsingExternalStorage: true,
-        }),
-      }));
-      await moduleMocker.mock('../executors/index.js', () => ({
-        buildExecutorAndLog: buildExecutorAndLogSpy,
-        DEFAULT_EXECUTOR: 'codex-cli',
-        defaultModelForExecutor: () => 'test-model',
-      }));
+      const inputModule = await import('../../common/input.js');
+      vi.mocked(inputModule.promptCheckbox).mockImplementation(
+        async ({ choices }: { choices: Array<{ value: string }> }) =>
+          choices.map((choice) => choice.value)
+      );
+
+      const configLoaderModule = await import('../configLoader.js');
+      vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+        defaultExecutor: 'codex-cli',
+        updateDocs: {},
+        isUsingExternalStorage: true,
+      } as any);
+
+      const executorsModule = await import('../executors/index.js');
+      vi.mocked(executorsModule.buildExecutorAndLog).mockImplementation(buildExecutorAndLogSpy);
 
       process.chdir(otherDir);
 
@@ -338,21 +349,20 @@ tasks: []
 `
       );
 
-      const executeSpy = mock(async () => undefined);
-      const buildExecutorAndLogSpy = mock((_executor: string, options: { baseDir: string }) => {
+      const executeSpy = vi.fn(async () => undefined);
+      const buildExecutorAndLogSpy = vi.fn((_executor: string, options: { baseDir: string }) => {
         expect(options.baseDir).toBe(tempDir);
         return { execute: executeSpy };
       });
 
-      await moduleMocker.mock('../../common/input.js', () => ({
-        promptCheckbox: async ({ choices }: { choices: Array<{ value: string }> }) =>
-          choices.map((choice) => choice.value),
-      }));
-      await moduleMocker.mock('../executors/index.js', () => ({
-        buildExecutorAndLog: buildExecutorAndLogSpy,
-        DEFAULT_EXECUTOR: 'codex-cli',
-        defaultModelForExecutor: () => 'test-model',
-      }));
+      const inputModule = await import('../../common/input.js');
+      vi.mocked(inputModule.promptCheckbox).mockImplementation(
+        async ({ choices }: { choices: Array<{ value: string }> }) =>
+          choices.map((choice) => choice.value)
+      );
+
+      const executorsModule = await import('../executors/index.js');
+      vi.mocked(executorsModule.buildExecutorAndLog).mockImplementation(buildExecutorAndLogSpy);
 
       process.chdir(otherDir);
 
@@ -389,21 +399,20 @@ tasks: []
         { cwdForIdentity: tempDir }
       );
 
-      const executeSpy = mock(async () => undefined);
-      const buildExecutorAndLogSpy = mock((_executor: string, options: { baseDir: string }) => {
+      const executeSpy = vi.fn(async () => undefined);
+      const buildExecutorAndLogSpy = vi.fn((_executor: string, options: { baseDir: string }) => {
         expect(options.baseDir).toBe(tempDir);
         return { execute: executeSpy };
       });
 
-      await moduleMocker.mock('../../common/input.js', () => ({
-        promptCheckbox: async ({ choices }: { choices: Array<{ value: string }> }) =>
-          choices.map((choice) => choice.value),
-      }));
-      await moduleMocker.mock('../executors/index.js', () => ({
-        buildExecutorAndLog: buildExecutorAndLogSpy,
-        DEFAULT_EXECUTOR: 'codex-cli',
-        defaultModelForExecutor: () => 'test-model',
-      }));
+      const inputModule = await import('../../common/input.js');
+      vi.mocked(inputModule.promptCheckbox).mockImplementation(
+        async ({ choices }: { choices: Array<{ value: string }> }) =>
+          choices.map((choice) => choice.value)
+      );
+
+      const executorsModule = await import('../executors/index.js');
+      vi.mocked(executorsModule.buildExecutorAndLog).mockImplementation(buildExecutorAndLogSpy);
 
       process.chdir(otherDir);
 

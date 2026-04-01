@@ -1,46 +1,166 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import { timAgent } from './agent.js';
-import { ModuleMocker } from '../../../testing.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
+// Common spies — declared with vi.hoisted() so they are available inside vi.mock() factories
+const {
+  logSpy,
+  warnSpy,
+  errorSpy,
+  openLogFileSpy,
+  closeLogFileSpy,
+  executorExecuteSpy,
+  buildExecutorAndLogSpy,
+  executeBatchModeSpy,
+  recordStartSpy,
+  recordEndSpy,
+  trackFilesSpy,
+  getSummarySpy,
+} = vi.hoisted(() => {
+  const executorExecuteSpy = vi.fn(async () => {});
+  return {
+    logSpy: vi.fn(() => {}),
+    warnSpy: vi.fn(() => {}),
+    errorSpy: vi.fn(() => {}),
+    openLogFileSpy: vi.fn(() => {}),
+    closeLogFileSpy: vi.fn(async () => {}),
+    executorExecuteSpy,
+    buildExecutorAndLogSpy: vi.fn(() => ({ execute: executorExecuteSpy, filePathPrefix: '' })),
+    executeBatchModeSpy: vi.fn(async () => {}),
+    recordStartSpy: vi.fn(() => {}),
+    recordEndSpy: vi.fn(() => {}),
+    trackFilesSpy: vi.fn(async () => {}),
+    getSummarySpy: vi.fn(() => ({
+      planId: '1',
+      planTitle: 'Test Plan',
+      planFilePath: '',
+      mode: 'batch',
+      startedAt: new Date().toISOString(),
+      endedAt: new Date().toISOString(),
+      durationMs: 0,
+      steps: [],
+      changedFiles: [],
+      errors: [],
+      metadata: { totalSteps: 0, failedSteps: 0 },
+    })),
+  };
+});
 
-// Common spies
-const logSpy = mock(() => {});
-const warnSpy = mock(() => {});
-const errorSpy = mock(() => {});
-const openLogFileSpy = mock(() => {});
-const closeLogFileSpy = mock(async () => {});
+let tempDir = '';
 
-// Executor mock
-const executorExecuteSpy = mock(async () => {});
-const buildExecutorAndLogSpy = mock(() => ({ execute: executorExecuteSpy, filePathPrefix: '' }));
-
-// Batch mode mock
-const executeBatchModeSpy = mock(async () => {});
-
-// Summary mocks (configured per test when needed)
-const recordStartSpy = mock(() => {});
-const recordEndSpy = mock(() => {});
-const trackFilesSpy = mock(async () => {});
-const getSummarySpy = mock(() => ({
-  planId: '1',
-  planTitle: 'Test Plan',
-  planFilePath: '',
-  mode: 'batch',
-  startedAt: new Date().toISOString(),
-  endedAt: new Date().toISOString(),
-  durationMs: 0,
-  steps: [],
-  changedFiles: [],
-  errors: [],
-  metadata: { totalSteps: 0, failedSteps: 0 },
+vi.mock('../../../logging.js', () => ({
+  log: logSpy,
+  warn: warnSpy,
+  error: errorSpy,
+  openLogFile: openLogFileSpy,
+  closeLogFile: closeLogFileSpy,
+  boldMarkdownHeaders: (s: string) => s,
+  debugLog: vi.fn(() => {}),
+  sendStructured: vi.fn(() => {}),
 }));
 
-let tempDir: string;
+vi.mock('../../../common/git.js', () => ({
+  getGitRoot: vi.fn(async () => tempDir),
+}));
+
+vi.mock('../../configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(async () => ({ models: { execution: 'm' } })),
+  loadGlobalConfigForNotifications: vi.fn(async () => ({})),
+}));
+
+vi.mock('../../executors/index.js', () => ({
+  buildExecutorAndLog: buildExecutorAndLogSpy,
+  DEFAULT_EXECUTOR: 'copy-only',
+  defaultModelForExecutor: vi.fn(() => 'm'),
+}));
+
+vi.mock('../../plans.js', () => {
+  class PlanNotFoundError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = 'PlanNotFoundError';
+    }
+  }
+  class NoFrontmatterError extends Error {
+    constructor(filePath: string) {
+      super(`File lacks frontmatter: ${filePath}`);
+      this.name = 'NoFrontmatterError';
+    }
+  }
+  return {
+    PlanNotFoundError,
+    NoFrontmatterError,
+    resolvePlanFile: vi.fn(async (p: string) => p),
+    readPlanFile: vi.fn(async (p: string) => {
+      const content = await fs.readFile(p, 'utf-8');
+      return yaml.parse(content.replace(/^#.*\n/, ''));
+    }),
+    writePlanFile: vi.fn(async (p: string, data: any) => {
+      const schemaComment =
+        '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json\n';
+      await fs.writeFile(p, schemaComment + yaml.stringify(data));
+    }),
+    generatePlanFileContent: vi.fn(() => ''),
+    resolvePlanFromDb: vi.fn(async () => ({
+      plan: { id: 1, title: 'Test Plan', status: 'pending', tasks: [] },
+      planPath: '',
+    })),
+    writePlanToDb: vi.fn(async () => {}),
+    setPlanStatus: vi.fn(async () => {}),
+    setPlanStatusById: vi.fn(async () => {}),
+    isTaskDone: vi.fn(() => false),
+  };
+});
+
+vi.mock('../../prompt_builder.js', () => ({
+  buildExecutionPromptWithoutSteps: vi.fn(async () => 'batch-context'),
+}));
+
+vi.mock('./batch_mode.js', () => ({
+  executeBatchMode: executeBatchModeSpy,
+}));
+
+vi.mock('../../summary/collector.js', () => {
+  class SummaryCollector {
+    constructor(_opts: any) {}
+    recordExecutionStart(...args: any[]) {
+      return recordStartSpy(...args);
+    }
+    recordExecutionEnd(...args: any[]) {
+      return recordEndSpy(...args);
+    }
+    trackFileChanges(...args: any[]) {
+      return trackFilesSpy(...args);
+    }
+    getExecutionSummary(...args: any[]) {
+      return getSummarySpy(...args);
+    }
+    addStepResult() {}
+    setBatchIterations() {}
+  }
+  return { SummaryCollector };
+});
+
+vi.mock('../../summary/display.js', () => ({
+  displayExecutionSummary: vi.fn(() => {}),
+  formatExecutionSummaryToLines: vi.fn((s: any) => [
+    `Execution Summary: ${s.planTitle}`,
+    `Steps: ${s.metadata?.totalSteps ?? 0}`,
+  ]),
+  writeOrDisplaySummary: vi.fn(async (summary: any, filePath?: string) => {
+    if (!filePath) return;
+    const lines = [
+      `${summary.planTitle}`,
+      '------------------------------------------------------------',
+      ...[`Execution Summary: ${summary.planTitle}`, `Steps: ${summary.metadata?.totalSteps ?? 0}`],
+    ];
+    await fs.writeFile(filePath, lines.join('\n'));
+  }),
+}));
+
 let planFile: string;
 
 async function writePlanWithTasks() {
@@ -79,87 +199,11 @@ describe('timAgent summary options', () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-summary-test-'));
     planFile = path.join(tempDir, 'plan.yml');
 
-    // Mocks
-    await moduleMocker.mock('../../../logging.js', () => ({
-      log: logSpy,
-      warn: warnSpy,
-      error: errorSpy,
-      openLogFile: openLogFileSpy,
-      closeLogFile: closeLogFileSpy,
-      boldMarkdownHeaders: (s: string) => s,
-    }));
-
-    await moduleMocker.mock('../../../common/git.js', () => ({
-      getGitRoot: mock(async () => tempDir),
-    }));
-
-    await moduleMocker.mock('../../configLoader.js', () => ({
-      loadEffectiveConfig: mock(async () => ({ models: { execution: 'm' } })),
-    }));
-
-    await moduleMocker.mock('../../executors/index.js', () => ({
-      buildExecutorAndLog: buildExecutorAndLogSpy,
-      DEFAULT_EXECUTOR: 'copy-only',
-      defaultModelForExecutor: mock(() => 'm'),
-    }));
-
-    await moduleMocker.mock('../../plans.js', () => ({
-      resolvePlanFile: mock(async (p: string) => p),
-      readPlanFile: mock(async (p: string) => {
-        const content = await fs.readFile(p, 'utf-8');
-        return yaml.parse(content.replace(/^#.*\n/, ''));
-      }),
-      writePlanFile: mock(async (p: string, data: any) => {
-        const schemaComment =
-          '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json\n';
-        await fs.writeFile(p, schemaComment + yaml.stringify(data));
-      }),
-    }));
-
-    await moduleMocker.mock('../../prompt_builder.js', () => ({
-      buildExecutionPromptWithoutSteps: mock(async () => 'batch-context'),
-    }));
-
-    await moduleMocker.mock('./batch_mode.js', () => ({
-      executeBatchMode: executeBatchModeSpy,
-    }));
-
-    await moduleMocker.mock('../../summary/collector.js', () => ({
-      SummaryCollector: mock(() => ({
-        recordExecutionStart: recordStartSpy,
-        recordExecutionEnd: recordEndSpy,
-        trackFileChanges: trackFilesSpy,
-        getExecutionSummary: getSummarySpy,
-        addStepResult: mock(() => {}),
-        setBatchIterations: mock(() => {}),
-      })),
-    }));
-
-    await moduleMocker.mock('../../summary/display.js', () => ({
-      displayExecutionSummary: mock(() => {}),
-      formatExecutionSummaryToLines: mock((s: any) => [
-        `Execution Summary: ${s.planTitle}`,
-        `Steps: ${s.metadata?.totalSteps ?? 0}`,
-      ]),
-      writeOrDisplaySummary: mock(async (summary: any, filePath?: string) => {
-        if (!filePath) return;
-        const lines = [
-          `${summary.planTitle}`,
-          '------------------------------------------------------------',
-          ...[
-            `Execution Summary: ${summary.planTitle}`,
-            `Steps: ${summary.metadata?.totalSteps ?? 0}`,
-          ],
-        ];
-        await fs.writeFile(filePath, lines.join('\n'));
-      }),
-    }));
-
     await writePlanWithTasks();
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     if (tempDir) await fs.rm(tempDir, { recursive: true, force: true });
     delete process.env.TIM_SUMMARY_ENABLED;
   });

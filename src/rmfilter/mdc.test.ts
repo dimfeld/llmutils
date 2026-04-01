@@ -1,10 +1,18 @@
-import { beforeEach, afterEach, describe, it, expect, vi } from 'bun:test';
+import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { parseMdcFile, findMdcFiles } from './mdc';
-import { filterMdcFiles, type MdcFile } from './mdc'; // Import filterMdcFiles and MdcFile type
-import { setDebug } from './utils'; // To potentially enable debug logging in tests
+import { parseMdcFile, findMdcFiles } from '../common/mdc';
+import { filterMdcFiles, type MdcFile } from '../common/mdc'; // Import filterMdcFiles and MdcFile type
+import { setDebug } from '../common/process_state'; // To potentially enable debug logging in tests
+
+vi.mock('node:os', async (importOriginal) => {
+  const realOs = await importOriginal<typeof import('node:os')>();
+  return {
+    ...realOs,
+    homedir: vi.fn(),
+  };
+});
 
 describe('MDC Utilities', () => {
   let tempDir: string;
@@ -142,7 +150,7 @@ Content with unquoted globs.
       fs.mkdirSync(mockHomeDir, { recursive: true });
 
       // Mock os.homedir()
-      vi.spyOn(os, 'homedir').mockReturnValue(mockHomeDir);
+      vi.mocked(os.homedir).mockReturnValue(mockHomeDir);
     });
 
     it('should find files in both project and user locations, including nested', async () => {

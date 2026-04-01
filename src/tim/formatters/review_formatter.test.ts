@@ -1,6 +1,6 @@
 // Tests for review result formatting utilities
 
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect, vi } from 'vitest';
 import {
   parseJsonReviewOutput,
   tryParseJsonReviewOutput,

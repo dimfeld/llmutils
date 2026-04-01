@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, vi } from 'vitest';
 import { HeadlessAdapter } from './headless_adapter.ts';
 import type { HeadlessMessage } from './headless_protocol.ts';
 import { createRecordingAdapter } from './test_helpers.ts';

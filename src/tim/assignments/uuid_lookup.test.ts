@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -113,7 +113,7 @@ describe('uuid_lookup utilities', () => {
     expect(result.plan.filename).toBe(planPath);
   });
 
-  test('resolvePlanWithUuid generates and persists missing UUIDs', async () => {
+  test('resolvePlanWithUuid rejects plans that are missing UUIDs', async () => {
     const planPath = path.join(tempDir, 'legacy.plan.md');
     await writePlanFile(planPath, {
       id: 101,
@@ -133,12 +133,11 @@ describe('uuid_lookup utilities', () => {
     const withoutUuid = initial.replace(/uuid:.*\n/, '');
     await fs.writeFile(planPath, withoutUuid, 'utf-8');
 
-    const result = await resolvePlanWithUuid(planPath);
-    expect(result.uuid).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    await expect(resolvePlanWithUuid(planPath)).rejects.toThrow(
+      `Plan ${planPath} does not have a UUID`
     );
 
     const reread = await readPlanFile(planPath);
-    expect(reread.uuid).toBe(result.uuid);
+    expect(reread.uuid).toBeUndefined();
   });
 });

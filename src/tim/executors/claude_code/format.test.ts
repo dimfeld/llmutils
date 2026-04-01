@@ -1,4 +1,4 @@
-import { test, describe, expect, beforeEach } from 'bun:test';
+import { test, describe, expect, beforeEach, vi } from 'vitest';
 import { formatJsonMessage, resetToolUseCache } from './format.ts';
 
 describe('formatJsonMessage', () => {
@@ -623,7 +623,7 @@ describe('formatJsonMessage', () => {
 
       const result = formatJsonMessage(message);
       expect(result.filePaths).toEqual(['/tmp/test.ts']);
-      expect(Array.isArray(result.structured)).toBeTrue();
+      expect(Array.isArray(result.structured)).toBe(true);
       expect(result.structured).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -662,7 +662,7 @@ describe('formatJsonMessage', () => {
       });
 
       const result = formatJsonMessage(message);
-      expect(Array.isArray(result.structured)).toBeTrue();
+      expect(Array.isArray(result.structured)).toBe(true);
       expect(result.structured).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -694,7 +694,7 @@ describe('formatJsonMessage', () => {
       });
 
       const result = formatJsonMessage(message);
-      expect(Array.isArray(result.structured)).toBeTrue();
+      expect(Array.isArray(result.structured)).toBe(true);
       expect(result.structured).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -730,7 +730,7 @@ describe('formatJsonMessage', () => {
       });
 
       const result = formatJsonMessage(message);
-      expect(Array.isArray(result.structured)).toBeTrue();
+      expect(Array.isArray(result.structured)).toBe(true);
       expect(result.structured).toEqual(
         expect.arrayContaining([
           expect.objectContaining({

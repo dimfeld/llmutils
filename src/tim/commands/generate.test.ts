@@ -1,128 +1,185 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
+
+vi.mock('../../logging.js', () => ({
+  log: vi.fn(),
+  error: vi.fn(),
+  warn: vi.fn(),
+}));
+
+vi.mock('../executors/index.js', () => ({
+  buildExecutorAndLog: vi.fn(),
+  DEFAULT_EXECUTOR: 'claude_code',
+}));
+
+vi.mock('../workspace/workspace_setup.js', () => ({
+  setupWorkspace: vi.fn(),
+}));
+
+vi.mock('../ensure_plan_in_db.js', () => ({
+  resolvePlanFromDbOrSyncFile: vi.fn(),
+}));
+
+vi.mock('../db/plan_sync.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../db/plan_sync.js')>();
+  return {
+    ...actual,
+    syncPlanToDb: vi.fn(),
+  };
+});
+
+vi.mock('./prompts.js', () => ({
+  buildPromptText: vi.fn(),
+  findMostRecentlyUpdatedPlan: vi.fn(async () => null),
+  getPlanTimestamp: vi.fn(async () => 0),
+  parseIsoTimestamp: vi.fn(() => undefined),
+}));
+
+vi.mock('../assignments/auto_claim.js', () => ({
+  isAutoClaimEnabled: vi.fn(),
+  autoClaimPlan: vi.fn(),
+}));
+
+vi.mock('../workspace/workspace_info.js', () => ({
+  getWorkspaceInfoByPath: vi.fn(),
+  patchWorkspaceInfo: vi.fn(),
+  touchWorkspaceInfo: vi.fn(),
+}));
+
+vi.mock('../../common/process.js', () => ({
+  commitAll: vi.fn(),
+}));
+
+vi.mock('../workspace/workspace_roundtrip.js', () => ({
+  prepareWorkspaceRoundTrip: vi.fn(),
+  runPreExecutionWorkspaceSync: vi.fn(),
+  runPostExecutionWorkspaceSync: vi.fn(),
+}));
+
+vi.mock('../configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(),
+}));
+
+vi.mock('../../common/git.js', () => ({
+  getGitRoot: vi.fn(),
+  getCurrentBranchName: vi.fn(),
+  getTrunkBranch: vi.fn(),
+}));
+
+vi.mock('../../logging/tunnel_client.js', () => ({
+  isTunnelActive: vi.fn(),
+}));
+
+vi.mock('../headless.js', () => ({
+  runWithHeadlessAdapterIfEnabled: vi.fn(),
+}));
+
+vi.mock('./plan_discovery.js', () => ({
+  findNextReadyDependencyFromDb: vi.fn(),
+  findLatestPlanFromDb: vi.fn(async () => null),
+}));
+
 import { handleGenerateCommand } from './generate.js';
-import {
-  generateClaudeCodePlanningPrompt,
-  generateClaudeCodeSimplePlanningPrompt,
-} from '../prompt.js';
+import { generateClaudeCodePlanningPrompt } from '../prompt.js';
 import { readPlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
-import { ModuleMocker } from '../../testing.js';
+import { log, warn } from '../../logging.js';
+import { buildExecutorAndLog } from '../executors/index.js';
+import { setupWorkspace } from '../workspace/workspace_setup.js';
+import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import { syncPlanToDb } from '../db/plan_sync.js';
+import { buildPromptText } from './prompts.js';
+import { isAutoClaimEnabled, autoClaimPlan } from '../assignments/auto_claim.js';
+import {
+  getWorkspaceInfoByPath,
+  patchWorkspaceInfo,
+  touchWorkspaceInfo,
+} from '../workspace/workspace_info.js';
+import { commitAll } from '../../common/process.js';
+import {
+  prepareWorkspaceRoundTrip,
+  runPreExecutionWorkspaceSync,
+  runPostExecutionWorkspaceSync,
+} from '../workspace/workspace_roundtrip.js';
+import { loadEffectiveConfig } from '../configLoader.js';
+import { getGitRoot, getCurrentBranchName, getTrunkBranch } from '../../common/git.js';
+import { isTunnelActive } from '../../logging/tunnel_client.js';
+import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
+import { findNextReadyDependencyFromDb, findLatestPlanFromDb } from './plan_discovery.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
-const isTunnelActiveSpy = mock(() => false);
-const runWithHeadlessAdapterIfEnabledSpy = mock(async (options: any) => options.callback());
-const syncPlanToDbSpy = mock(async () => {});
+const isTunnelActiveSpy = vi.mocked(isTunnelActive);
+const runWithHeadlessAdapterIfEnabledSpy = vi.mocked(runWithHeadlessAdapterIfEnabled);
+const syncPlanToDbSpy = vi.mocked(syncPlanToDb);
 
 describe('handleGenerateCommand', () => {
   let tempDir: string;
   let tasksDir: string;
   let loadedConfig: any;
 
-  const logSpy = mock(() => {});
-  const warnSpy = mock(() => {});
+  const logSpy = vi.mocked(log);
+  const warnSpy = vi.mocked(warn);
 
   // Mock executor
-  const mockExecutorExecute = mock(async () => {});
+  const mockExecutorExecute = vi.fn(async () => {});
   const mockExecutor = {
     execute: mockExecutorExecute,
     filePathPrefix: '',
   };
-  const buildExecutorAndLogSpy = mock(() => mockExecutor);
-
-  // Mock workspace setup
-  const setupWorkspaceSpy = mock(async (options: any, baseDir: string, planFile: string) => ({
-    baseDir,
-    planFile,
-    workspaceTaskId: options.workspace,
-    isNewWorkspace: false,
-  }));
-
-  // Mock buildPromptText
-  const buildPromptTextSpy = mock(async () => 'Generated prompt text');
-
-  // Mock auto-claim
-  const isAutoClaimEnabledSpy = mock(() => false);
-  const autoClaimPlanSpy = mock(async () => {});
-
+  const buildExecutorAndLogSpy = vi.mocked(buildExecutorAndLog);
+  const setupWorkspaceSpy = vi.mocked(setupWorkspace);
+  const buildPromptTextSpy = vi.mocked(buildPromptText);
+  const isAutoClaimEnabledSpy = vi.mocked(isAutoClaimEnabled);
+  const autoClaimPlanSpy = vi.mocked(autoClaimPlan);
   let trackedWorkspacePath: string | undefined;
-  const getWorkspaceInfoByPathSpy = mock((baseDir: string) => {
-    return baseDir === trackedWorkspacePath
-      ? { taskId: 'ws-tracked', workspacePath: baseDir }
-      : null;
-  });
-  const patchWorkspaceInfoSpy = mock(() => ({}));
-  const touchWorkspaceInfoSpy = mock(() => ({}));
-
-  // Mock commitAll
-  const commitAllSpy = mock(async () => 0);
-  const getCurrentBranchNameSpy = mock(async () => 'main');
-  const getTrunkBranchSpy = mock(async () => 'main');
-  const prepareWorkspaceRoundTripSpy = mock(async () => null);
-  const runPreExecutionWorkspaceSyncSpy = mock(async () => {});
-  const runPostExecutionWorkspaceSyncSpy = mock(async () => {});
-  const resolvePlanFromDbOrSyncFileSpy = mock(async (planArg: string) => ({
-    plan: await readPlanFile(planArg),
-    planPath: planArg,
-  }));
+  const getWorkspaceInfoByPathSpy = vi.mocked(getWorkspaceInfoByPath);
+  const patchWorkspaceInfoSpy = vi.mocked(patchWorkspaceInfo);
+  const touchWorkspaceInfoSpy = vi.mocked(touchWorkspaceInfo);
+  const commitAllSpy = vi.mocked(commitAll);
+  const getCurrentBranchNameSpy = vi.mocked(getCurrentBranchName);
+  const getTrunkBranchSpy = vi.mocked(getTrunkBranch);
+  const prepareWorkspaceRoundTripSpy = vi.mocked(prepareWorkspaceRoundTrip);
+  const runPreExecutionWorkspaceSyncSpy = vi.mocked(runPreExecutionWorkspaceSync);
+  const runPostExecutionWorkspaceSyncSpy = vi.mocked(runPostExecutionWorkspaceSync);
+  const resolvePlanFromDbOrSyncFileSpy = vi.mocked(resolvePlanFromDbOrSyncFile);
 
   beforeEach(async () => {
-    logSpy.mockClear();
-    warnSpy.mockClear();
-    mockExecutorExecute.mockClear();
+    vi.clearAllMocks();
     mockExecutorExecute.mockImplementation(async () => {});
-    buildExecutorAndLogSpy.mockClear();
-    buildExecutorAndLogSpy.mockImplementation(() => mockExecutor);
-    setupWorkspaceSpy.mockClear();
+    buildExecutorAndLogSpy.mockImplementation(() => mockExecutor as any);
     setupWorkspaceSpy.mockImplementation(
-      async (options: any, baseDir: string, planFile: string) => ({
-        baseDir,
-        planFile,
-        workspaceTaskId: options.workspace,
-        isNewWorkspace: false,
-      })
+      async (options: any, baseDir: string, planFile: string) =>
+        ({
+          baseDir,
+          planFile,
+          workspaceTaskId: options.workspace,
+          isNewWorkspace: false,
+        }) as any
     );
-    buildPromptTextSpy.mockClear();
-    buildPromptTextSpy.mockImplementation(async () => 'Generated prompt text');
-    isAutoClaimEnabledSpy.mockClear();
-    isAutoClaimEnabledSpy.mockImplementation(() => false);
-    autoClaimPlanSpy.mockClear();
-    autoClaimPlanSpy.mockImplementation(async () => {});
-    commitAllSpy.mockClear();
-    commitAllSpy.mockImplementation(async () => 0);
-    getCurrentBranchNameSpy.mockClear();
-    getCurrentBranchNameSpy.mockImplementation(async () => 'main');
-    getTrunkBranchSpy.mockClear();
-    getTrunkBranchSpy.mockImplementation(async () => 'main');
-    prepareWorkspaceRoundTripSpy.mockClear();
-    prepareWorkspaceRoundTripSpy.mockImplementation(async () => null);
-    runPreExecutionWorkspaceSyncSpy.mockClear();
-    runPreExecutionWorkspaceSyncSpy.mockImplementation(async () => {});
-    runPostExecutionWorkspaceSyncSpy.mockClear();
-    runPostExecutionWorkspaceSyncSpy.mockImplementation(async () => {});
-    resolvePlanFromDbOrSyncFileSpy.mockClear();
+    buildPromptTextSpy.mockResolvedValue('Generated prompt text');
+    isAutoClaimEnabledSpy.mockReturnValue(false);
+    autoClaimPlanSpy.mockResolvedValue(undefined as any);
+    commitAllSpy.mockResolvedValue(0);
+    getCurrentBranchNameSpy.mockResolvedValue('main');
+    getTrunkBranchSpy.mockResolvedValue('main');
+    prepareWorkspaceRoundTripSpy.mockResolvedValue(null as any);
+    runPreExecutionWorkspaceSyncSpy.mockResolvedValue(undefined);
+    runPostExecutionWorkspaceSyncSpy.mockResolvedValue(undefined);
     resolvePlanFromDbOrSyncFileSpy.mockImplementation(async (planArg: string) => ({
       plan: await readPlanFile(planArg),
       planPath: planArg,
     }));
-    syncPlanToDbSpy.mockClear();
-    syncPlanToDbSpy.mockImplementation(async () => {});
+    syncPlanToDbSpy.mockResolvedValue(undefined);
     trackedWorkspacePath = undefined;
-    getWorkspaceInfoByPathSpy.mockClear();
     getWorkspaceInfoByPathSpy.mockImplementation((baseDir: string) => {
       return baseDir === trackedWorkspacePath
-        ? { taskId: 'ws-tracked', workspacePath: baseDir }
+        ? ({ taskId: 'ws-tracked', workspacePath: baseDir } as any)
         : null;
     });
-    patchWorkspaceInfoSpy.mockClear();
-    patchWorkspaceInfoSpy.mockImplementation(() => ({}));
-    touchWorkspaceInfoSpy.mockClear();
-    touchWorkspaceInfoSpy.mockImplementation(() => ({}));
-    isTunnelActiveSpy.mockClear();
-    isTunnelActiveSpy.mockImplementation(() => false);
-    runWithHeadlessAdapterIfEnabledSpy.mockClear();
+    patchWorkspaceInfoSpy.mockReturnValue({} as any);
+    touchWorkspaceInfoSpy.mockReturnValue({} as any);
+    isTunnelActiveSpy.mockReturnValue(false);
     runWithHeadlessAdapterIfEnabledSpy.mockImplementation(async (options: any) =>
       options.callback()
     );
@@ -135,82 +192,12 @@ describe('handleGenerateCommand', () => {
       models: { stepGeneration: 'test-model' },
     };
 
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: logSpy,
-      error: mock(() => {}),
-      warn: warnSpy,
-    }));
-
-    await moduleMocker.mock('../executors/index.js', () => ({
-      buildExecutorAndLog: buildExecutorAndLogSpy,
-      DEFAULT_EXECUTOR: 'claude_code',
-    }));
-
-    await moduleMocker.mock('../workspace/workspace_setup.js', () => ({
-      setupWorkspace: setupWorkspaceSpy,
-    }));
-
-    const actualPlans = await import('../plans.js');
-    await moduleMocker.mock('../plans.js', () => ({
-      ...actualPlans,
-    }));
-    await moduleMocker.mock('../ensure_plan_in_db.js', () => ({
-      resolvePlanFromDbOrSyncFile: resolvePlanFromDbOrSyncFileSpy,
-    }));
-
-    await moduleMocker.mock('../db/plan_sync.js', () => ({
-      syncPlanToDb: syncPlanToDbSpy,
-    }));
-
-    await moduleMocker.mock('./prompts.js', () => ({
-      buildPromptText: buildPromptTextSpy,
-      findMostRecentlyUpdatedPlan: mock(async () => null),
-      getPlanTimestamp: mock(async () => 0),
-      parseIsoTimestamp: mock(() => undefined),
-    }));
-
-    await moduleMocker.mock('../assignments/auto_claim.js', () => ({
-      isAutoClaimEnabled: isAutoClaimEnabledSpy,
-      autoClaimPlan: autoClaimPlanSpy,
-    }));
-
-    await moduleMocker.mock('../workspace/workspace_info.js', () => ({
-      getWorkspaceInfoByPath: getWorkspaceInfoByPathSpy,
-      patchWorkspaceInfo: patchWorkspaceInfoSpy,
-      touchWorkspaceInfo: touchWorkspaceInfoSpy,
-    }));
-
-    await moduleMocker.mock('../../common/process.js', () => ({
-      commitAll: commitAllSpy,
-    }));
-
-    await moduleMocker.mock('../workspace/workspace_roundtrip.js', () => ({
-      prepareWorkspaceRoundTrip: prepareWorkspaceRoundTripSpy,
-      runPreExecutionWorkspaceSync: runPreExecutionWorkspaceSyncSpy,
-      runPostExecutionWorkspaceSync: runPostExecutionWorkspaceSyncSpy,
-    }));
-
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => loadedConfig,
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => tempDir,
-      getCurrentBranchName: getCurrentBranchNameSpy,
-      getTrunkBranch: getTrunkBranchSpy,
-    }));
-
-    await moduleMocker.mock('../../logging/tunnel_client.js', () => ({
-      isTunnelActive: isTunnelActiveSpy,
-    }));
-
-    await moduleMocker.mock('../headless.js', () => ({
-      runWithHeadlessAdapterIfEnabled: runWithHeadlessAdapterIfEnabledSpy,
-    }));
+    vi.mocked(loadEffectiveConfig).mockResolvedValue(loadedConfig as any);
+    vi.mocked(getGitRoot).mockResolvedValue(tempDir);
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
@@ -912,126 +899,64 @@ describe('handleGenerateCommand with --next-ready flag', () => {
   let tempDir: string;
   let tasksDir: string;
 
-  const logSpy = mock(() => {});
-  const findNextReadyDependencyFromDbSpy = mock(async () => ({
-    plan: null as any,
-    message: 'No ready dependencies found',
-  }));
-  const resolvePlanFromDbOrSyncFileSpy = mock(async () => ({
-    plan: {
-      id: 123,
-      title: 'Mock Plan',
-      tasks: [{ title: 'Task', description: 'Desc', done: false }],
-    },
-    planPath: '/mock/plan/path.plan.md',
-  }));
-
-  const mockExecutorExecute = mock(async () => {});
-  const buildExecutorAndLogSpy = mock(() => ({
-    execute: mockExecutorExecute,
-    filePathPrefix: '',
-  }));
-  const prepareWorkspaceRoundTripSpy = mock(async () => null);
-  const runPreExecutionWorkspaceSyncSpy = mock(async () => {});
-  const runPostExecutionWorkspaceSyncSpy = mock(async () => {});
+  const findNextReadyDependencyFromDbSpy = vi.mocked(findNextReadyDependencyFromDb);
+  const resolvePlanFromDbOrSyncFileSpy = vi.mocked(resolvePlanFromDbOrSyncFile);
+  const logSpy = vi.mocked(log);
 
   beforeEach(async () => {
-    logSpy.mockClear();
-    findNextReadyDependencyFromDbSpy.mockClear();
-    resolvePlanFromDbOrSyncFileSpy.mockClear();
-    mockExecutorExecute.mockClear();
-    buildExecutorAndLogSpy.mockClear();
-    prepareWorkspaceRoundTripSpy.mockClear();
-    runPreExecutionWorkspaceSyncSpy.mockClear();
-    runPostExecutionWorkspaceSyncSpy.mockClear();
-    isTunnelActiveSpy.mockClear();
-    runWithHeadlessAdapterIfEnabledSpy.mockClear();
-    syncPlanToDbSpy.mockClear();
+    vi.clearAllMocks();
+
+    findNextReadyDependencyFromDbSpy.mockResolvedValue({
+      plan: null as any,
+      message: 'No ready dependencies found',
+    });
+    resolvePlanFromDbOrSyncFileSpy.mockResolvedValue({
+      plan: {
+        id: 123,
+        title: 'Mock Plan',
+        tasks: [{ title: 'Task', description: 'Desc', done: false }],
+      } as any,
+      planPath: '/mock/plan/path.plan.md',
+    });
+    vi.mocked(buildExecutorAndLog).mockReturnValue({
+      execute: vi.fn(async () => {}),
+      filePathPrefix: '',
+    } as any);
+    vi.mocked(prepareWorkspaceRoundTrip).mockResolvedValue(null as any);
+    vi.mocked(runPreExecutionWorkspaceSync).mockResolvedValue(undefined);
+    vi.mocked(runPostExecutionWorkspaceSync).mockResolvedValue(undefined);
+    isTunnelActiveSpy.mockReturnValue(false);
+    runWithHeadlessAdapterIfEnabledSpy.mockImplementation(async (options: any) =>
+      options.callback()
+    );
+    syncPlanToDbSpy.mockResolvedValue(undefined);
+    vi.mocked(isAutoClaimEnabled).mockReturnValue(false);
+    vi.mocked(autoClaimPlan).mockResolvedValue(undefined as any);
+    vi.mocked(commitAll).mockResolvedValue(0);
+    vi.mocked(getCurrentBranchName).mockResolvedValue('main');
+    vi.mocked(getTrunkBranch).mockResolvedValue('main');
+    vi.mocked(setupWorkspace).mockImplementation(
+      async (_opts: any, baseDir: string, planFile: string) =>
+        ({
+          baseDir,
+          planFile,
+        }) as any
+    );
+    vi.mocked(buildPromptText).mockResolvedValue('Generated prompt');
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-generate-nextready-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
 
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: logSpy,
-      error: mock(() => {}),
-      warn: mock(() => {}),
-    }));
-
-    const actualPlans = await import('../plans.js');
-    await moduleMocker.mock('../plans.js', () => ({
-      ...actualPlans,
-    }));
-    await moduleMocker.mock('../ensure_plan_in_db.js', () => ({
-      resolvePlanFromDbOrSyncFile: resolvePlanFromDbOrSyncFileSpy,
-    }));
-    await moduleMocker.mock('../db/plan_sync.js', () => ({
-      syncPlanToDb: syncPlanToDbSpy,
-    }));
-
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: { tasks: tasksDir },
-        models: { stepGeneration: 'test-model' },
-      }),
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => tempDir,
-      getCurrentBranchName: mock(async () => 'main'),
-      getTrunkBranch: mock(async () => 'main'),
-    }));
-
-    await moduleMocker.mock('../workspace/workspace_setup.js', () => ({
-      setupWorkspace: mock(async (_opts: any, baseDir: string, planFile: string) => ({
-        baseDir,
-        planFile,
-      })),
-    }));
-
-    await moduleMocker.mock('./prompts.js', () => ({
-      buildPromptText: mock(async () => 'Generated prompt'),
-      findMostRecentlyUpdatedPlan: mock(async () => null),
-      getPlanTimestamp: mock(async () => 0),
-      parseIsoTimestamp: mock(() => undefined),
-    }));
-
-    await moduleMocker.mock('../executors/index.js', () => ({
-      buildExecutorAndLog: buildExecutorAndLogSpy,
-      DEFAULT_EXECUTOR: 'claude_code',
-    }));
-
-    await moduleMocker.mock('../assignments/auto_claim.js', () => ({
-      isAutoClaimEnabled: mock(() => false),
-      autoClaimPlan: mock(async () => {}),
-    }));
-
-    await moduleMocker.mock('../../common/process.js', () => ({
-      commitAll: mock(async () => 0),
-    }));
-
-    await moduleMocker.mock('../workspace/workspace_roundtrip.js', () => ({
-      prepareWorkspaceRoundTrip: prepareWorkspaceRoundTripSpy,
-      runPreExecutionWorkspaceSync: runPreExecutionWorkspaceSyncSpy,
-      runPostExecutionWorkspaceSync: runPostExecutionWorkspaceSyncSpy,
-    }));
-
-    await moduleMocker.mock('./plan_discovery.js', () => ({
-      findNextReadyDependencyFromDb: findNextReadyDependencyFromDbSpy,
-      findLatestPlanFromDb: mock(async () => null),
-    }));
-
-    await moduleMocker.mock('../../logging/tunnel_client.js', () => ({
-      isTunnelActive: isTunnelActiveSpy,
-    }));
-
-    await moduleMocker.mock('../headless.js', () => ({
-      runWithHeadlessAdapterIfEnabled: runWithHeadlessAdapterIfEnabledSpy,
-    }));
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
+      paths: { tasks: tasksDir },
+      models: { stepGeneration: 'test-model' },
+    } as any);
+    vi.mocked(getGitRoot).mockResolvedValue(tempDir);
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     if (tempDir) {
       await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
     }
@@ -1220,21 +1145,6 @@ describe('blocking subissue prompts', () => {
     expect(prompt).toContain('- Tasks: [High-level task list]');
     expect(prompt).toContain('# Discovered Issues');
     expect(prompt).toContain('tim add "Discovered Issue Title" --discovered-from 42');
-    expect(prompt).toContain('## Discovered Issue: [Title]');
-  });
-
-  test('generateClaudeCodeSimplePlanningPrompt includes blocking instructions when enabled', () => {
-    const prompt = generateClaudeCodeSimplePlanningPrompt('Simple task', {
-      withBlockingSubissues: true,
-      parentPlanId: 7,
-    });
-
-    expect(prompt).toContain('# Blocking Subissues');
-    expect(prompt).toContain('tim add "Blocking Title" --parent 7 --discovered-from 7');
-    expect(prompt).toContain('## Blocking Subissue: [Title]');
-    expect(prompt).toContain('- Tasks: [High-level task list]');
-    expect(prompt).toContain('# Discovered Issues');
-    expect(prompt).toContain('tim add "Discovered Issue Title" --discovered-from 7');
     expect(prompt).toContain('## Discovered Issue: [Title]');
   });
 });

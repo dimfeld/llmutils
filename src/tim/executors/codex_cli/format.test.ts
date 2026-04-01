@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
-import { createCodexStdoutFormatter, formatCodexJsonMessage } from './format.ts';
+import { describe, expect, test, vi } from 'vitest';
+import { createCodexStdoutFormatter, formatCodexJsonMessage } from './format.js';
 
 describe('codex formatter structured mapping', () => {
   test('maps thread.started to agent_session_start with thread id', () => {
@@ -229,7 +229,7 @@ describe('createCodexStdoutFormatter', () => {
     ].join('\n');
 
     const formatted = formatter.formatChunk(`${chunk}\n`);
-    expect(Array.isArray(formatted)).toBeTrue();
+    expect(Array.isArray(formatted)).toBe(true);
     expect(formatted).toHaveLength(2);
     expect((formatted as Array<{ type: string }>)[0].type).toBe('token_usage');
     expect((formatted as Array<{ type: string }>)[1].type).toBe('llm_response');

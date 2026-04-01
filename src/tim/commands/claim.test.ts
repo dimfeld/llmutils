@@ -1,16 +1,53 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { ModuleMocker } from '../../testing.js';
 import { getAssignment } from '../db/assignment.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { getOrCreateProject } from '../db/project.js';
 import { recordWorkspace } from '../db/workspace.js';
 import { writePlanFile } from '../plans.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
+vi.mock('../../logging.js', () => ({
+  log: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+}));
+
+vi.mock('chalk', () => ({
+  default: {
+    green: (v: string) => v,
+    yellow: (v: string) => v,
+    red: (v: string) => v,
+    bold: (v: string) => v,
+    dim: (v: string) => v,
+  },
+}));
+
+vi.mock('../configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(),
+}));
+
+vi.mock('../../common/git.js', () => ({
+  getGitRoot: vi.fn(),
+}));
+
+vi.mock('../assignments/workspace_identifier.ts', () => ({
+  getRepositoryIdentity: vi.fn(),
+  getCurrentWorkspacePath: vi.fn(),
+  getUserIdentity: vi.fn(),
+}));
+
+import { handleClaimCommand } from './claim.js';
+import { log as logFn, warn as warnFn, error as errorFn } from '../../logging.js';
+import { loadEffectiveConfig } from '../configLoader.js';
+import { getGitRoot } from '../../common/git.js';
+import {
+  getRepositoryIdentity,
+  getCurrentWorkspacePath,
+  getUserIdentity,
+} from '../assignments/workspace_identifier.ts';
 
 describe('handleClaimCommand', () => {
   let tempRoot: string;
@@ -20,13 +57,6 @@ describe('handleClaimCommand', () => {
   let currentWorkspacePath: string;
   let currentUser: string | null;
   let originalEnv: Partial<Record<string, string>>;
-
-  let mockLog: ReturnType<typeof mock>;
-  let mockWarn: ReturnType<typeof mock>;
-  let mockError: ReturnType<typeof mock>;
-  let getRepositoryIdentityMock: ReturnType<typeof mock>;
-
-  let handleClaimCommand: (planArg: string, options: any, command: any) => Promise<void>;
 
   const repositoryId = 'multi-user-demo';
   let currentRepositoryId: string;
@@ -68,53 +98,29 @@ describe('handleClaimCommand', () => {
     process.env.XDG_CONFIG_HOME = configDir;
     delete process.env.APPDATA;
 
-    mockLog = mock(() => {});
-    mockWarn = mock(() => {});
-    mockError = mock(() => {});
-    getRepositoryIdentityMock = mock(async (_options?: { cwd?: string }) => ({
+    vi.clearAllMocks();
+
+    vi.mocked(logFn).mockImplementation(() => {});
+    vi.mocked(warnFn).mockImplementation(() => {});
+    vi.mocked(errorFn).mockImplementation(() => {});
+
+    vi.mocked(getRepositoryIdentity).mockImplementation(async (_options?: { cwd?: string }) => ({
       repositoryId: currentRepositoryId,
       remoteUrl: 'https://example.com/repo.git',
       gitRoot: currentWorkspacePath,
     }));
 
-    const chalkMock = (value: string) => value;
+    vi.mocked(getCurrentWorkspacePath).mockImplementation(async () => currentWorkspacePath);
+    vi.mocked(getUserIdentity).mockImplementation(() => currentUser);
 
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: mockLog,
-      warn: mockWarn,
-      error: mockError,
-    }));
-
-    await moduleMocker.mock('chalk', () => ({
-      default: {
-        green: chalkMock,
-        yellow: chalkMock,
-        red: chalkMock,
-        bold: chalkMock,
-        dim: chalkMock,
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
+      paths: {
+        tasks: tasksDir,
       },
-    }));
+      isUsingExternalStorage: false,
+    } as any);
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: {
-          tasks: tasksDir,
-        },
-        isUsingExternalStorage: false,
-      }),
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => repoDir,
-    }));
-
-    await moduleMocker.mock('../assignments/workspace_identifier.ts', () => ({
-      getRepositoryIdentity: getRepositoryIdentityMock,
-      getCurrentWorkspacePath: async () => currentWorkspacePath,
-      getUserIdentity: () => currentUser,
-    }));
-
-    ({ handleClaimCommand } = await import('./claim.js'));
+    vi.mocked(getGitRoot).mockResolvedValue(repoDir);
 
     // Seed a default plan file that commands can resolve.
     await writePlanFile(path.join(tasksDir, '1-sample.plan.md'), {
@@ -128,7 +134,7 @@ describe('handleClaimCommand', () => {
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     closeDatabaseForTesting();
     if (originalEnv.XDG_CONFIG_HOME === undefined) {
       delete process.env.XDG_CONFIG_HOME;
@@ -155,8 +161,8 @@ describe('handleClaimCommand', () => {
     expect(entry?.plan_id).toBe(1);
     expect(entry?.claimed_by_user).toBe('alice');
 
-    expect(mockWarn).not.toHaveBeenCalled();
-    expect(mockLog).toHaveBeenCalledWith(
+    expect(vi.mocked(warnFn)).not.toHaveBeenCalled();
+    expect(vi.mocked(logFn)).toHaveBeenCalledWith(
       `✓ Claimed plan 1 in workspace ${currentWorkspacePath} (created assignment)`
     );
   });
@@ -176,8 +182,8 @@ describe('handleClaimCommand', () => {
     const command = { parent: { opts: () => ({}) } };
     await handleClaimCommand('1', {}, command);
 
-    mockLog.mockClear();
-    mockWarn.mockClear();
+    vi.mocked(logFn).mockClear();
+    vi.mocked(warnFn).mockClear();
 
     await handleClaimCommand('1', {}, command);
 
@@ -185,8 +191,8 @@ describe('handleClaimCommand', () => {
     expect(entry).toBeDefined();
     expect(entry?.claimed_by_user).toBe('alice');
 
-    expect(mockWarn).not.toHaveBeenCalled();
-    expect(mockLog).not.toHaveBeenCalled();
+    expect(vi.mocked(warnFn)).not.toHaveBeenCalled();
+    expect(vi.mocked(logFn)).not.toHaveBeenCalled();
   });
 
   test('claiming from a different workspace warns about reassignment', async () => {
@@ -194,8 +200,8 @@ describe('handleClaimCommand', () => {
     const command = { parent: { opts: () => ({}) } };
     await handleClaimCommand('1', {}, command);
 
-    mockLog.mockClear();
-    mockWarn.mockClear();
+    vi.mocked(logFn).mockClear();
+    vi.mocked(warnFn).mockClear();
 
     currentWorkspacePath = path.join(tempRoot, 'workspace-b');
     await fs.mkdir(currentWorkspacePath, { recursive: true });
@@ -206,10 +212,10 @@ describe('handleClaimCommand', () => {
     const entry = getAssignmentRow('11111111-1111-4111-8111-111111111111');
     expect(entry).toBeDefined();
 
-    expect(mockWarn).toHaveBeenCalledWith(
+    expect(vi.mocked(warnFn)).toHaveBeenCalledWith(
       `⚠ Plan was previously claimed in workspace ${repoDir} by user alice; reassigning to workspace ${currentWorkspacePath}`
     );
-    expect(mockLog).toHaveBeenCalledWith(
+    expect(vi.mocked(logFn)).toHaveBeenCalledWith(
       `✓ Claimed plan 1 in workspace ${currentWorkspacePath} (added workspace)`
     );
   });
@@ -219,8 +225,8 @@ describe('handleClaimCommand', () => {
     const command = { parent: { opts: () => ({}) } };
     await handleClaimCommand('1', {}, command);
 
-    mockLog.mockClear();
-    mockWarn.mockClear();
+    vi.mocked(logFn).mockClear();
+    vi.mocked(warnFn).mockClear();
 
     currentUser = 'bob';
 
@@ -230,10 +236,10 @@ describe('handleClaimCommand', () => {
     expect(entry).toBeDefined();
     expect(entry?.claimed_by_user).toBe('bob');
 
-    expect(mockWarn).toHaveBeenCalledWith(
+    expect(vi.mocked(warnFn)).toHaveBeenCalledWith(
       '⚠ Plan was previously claimed by user alice; reassigning to bob'
     );
-    expect(mockLog).toHaveBeenCalledWith(
+    expect(vi.mocked(logFn)).toHaveBeenCalledWith(
       `✓ Claimed plan 1 in workspace ${currentWorkspacePath} (added user bob)`
     );
   });
@@ -249,8 +255,8 @@ describe('handleClaimCommand', () => {
     expect(entry).toBeDefined();
     expect(entry?.claimed_by_user).toBeNull();
 
-    expect(mockWarn).not.toHaveBeenCalled();
-    expect(mockLog).toHaveBeenCalledWith(
+    expect(vi.mocked(warnFn)).not.toHaveBeenCalled();
+    expect(vi.mocked(logFn)).toHaveBeenCalledWith(
       `✓ Claimed plan 1 in workspace ${currentWorkspacePath} (created assignment)`
     );
   });
@@ -260,14 +266,14 @@ describe('handleClaimCommand', () => {
     const command = { parent: { opts: () => ({}) } };
     await handleClaimCommand('1', {}, command);
 
-    mockLog.mockClear();
-    mockWarn.mockClear();
+    vi.mocked(logFn).mockClear();
+    vi.mocked(warnFn).mockClear();
     currentUser = null;
 
     await handleClaimCommand('1', {}, command);
 
-    expect(mockWarn).not.toHaveBeenCalled();
-    expect(mockLog).not.toHaveBeenCalled();
+    expect(vi.mocked(warnFn)).not.toHaveBeenCalled();
+    expect(vi.mocked(logFn)).not.toHaveBeenCalled();
   });
 
   test('uses the resolved plan repo root for repository identity under --config', async () => {
@@ -289,6 +295,6 @@ describe('handleClaimCommand', () => {
     const command = { parent: { opts: () => ({ config: configPath }) } };
     await handleClaimCommand('1', {}, command);
 
-    expect(getRepositoryIdentityMock).toHaveBeenCalledWith({ cwd: configuredRepoDir });
+    expect(vi.mocked(getRepositoryIdentity)).toHaveBeenCalledWith({ cwd: configuredRepoDir });
   });
 });

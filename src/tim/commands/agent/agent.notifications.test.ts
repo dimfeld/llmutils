@@ -1,49 +1,129 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import { timAgent, handleAgentCommand } from './agent.js';
-import { ModuleMocker } from '../../../testing.js';
 import { getDefaultConfig as realGetDefaultConfig } from '../../configSchema.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
-
-const logSpy = mock(() => {});
-const warnSpy = mock(() => {});
-const errorSpy = mock(() => {});
-const openLogFileSpy = mock(() => {});
-const closeLogFileSpy = mock(async () => {});
-const spawnAndLogOutputSpy = mock(async () => ({
-  exitCode: 0,
-  stdout: '',
-  stderr: '',
-  signal: null,
-  killedByInactivity: false,
+const {
+  logSpy,
+  warnSpy,
+  errorSpy,
+  openLogFileSpy,
+  closeLogFileSpy,
+  spawnAndLogOutputSpy,
+  executeStubPlanSpy,
+  executeBatchModeSpy,
+  buildExecutorAndLogSpy,
+  findNextPlanFromDbSpy,
+  resolvePlanFromDbOrSyncFileSpy,
+  loadEffectiveConfigSpy,
+  loadGlobalConfigForNotificationsSpy,
+  getGitRootSpy,
+} = vi.hoisted(() => ({
+  logSpy: vi.fn(() => {}),
+  warnSpy: vi.fn(() => {}),
+  errorSpy: vi.fn(() => {}),
+  openLogFileSpy: vi.fn(() => {}),
+  closeLogFileSpy: vi.fn(async () => {}),
+  spawnAndLogOutputSpy: vi.fn(async () => ({
+    exitCode: 0,
+    stdout: '',
+    stderr: '',
+    signal: null,
+    killedByInactivity: false,
+  })),
+  executeStubPlanSpy: vi.fn(async () => ({})),
+  executeBatchModeSpy: vi.fn(async () => undefined),
+  buildExecutorAndLogSpy: vi.fn(() => ({ execute: vi.fn(async () => {}), filePathPrefix: '' })),
+  findNextPlanFromDbSpy: vi.fn(async () => undefined),
+  resolvePlanFromDbOrSyncFileSpy: vi.fn(async () => null as any),
+  loadEffectiveConfigSpy: vi.fn(async () => ({}) as any),
+  loadGlobalConfigForNotificationsSpy: vi.fn(async () => ({}) as any),
+  getGitRootSpy: vi.fn(async () => '/tmp'),
 }));
 
-const executeStubPlanSpy = mock(async () => ({}));
-const executeBatchModeSpy = mock(async () => undefined);
-const buildExecutorAndLogSpy = mock(() => ({ execute: mock(async () => {}), filePathPrefix: '' }));
-const findNextPlanFromDbSpy = mock(async () => undefined);
-const resolvePlanFromDbOrSyncFileSpy = mock(async (planArg: string) => {
-  const resolvedPath = path.resolve(planArg);
-  const content = await fs.readFile(resolvedPath, 'utf-8');
-  return {
-    plan: yaml.parse(content),
-    planPath: resolvedPath,
-  };
-});
-let loadEffectiveConfigSpy: ReturnType<typeof mock>;
-let loadGlobalConfigForNotificationsSpy: ReturnType<typeof mock>;
-
-let tempDir: string;
-let planFile: string;
 let mockConfig: {
   notifications?: { command: string };
   models: { execution: string };
   postApplyCommands: string[];
 };
+
+vi.mock('../../../logging.js', () => ({
+  log: logSpy,
+  warn: warnSpy,
+  error: errorSpy,
+  openLogFile: openLogFileSpy,
+  closeLogFile: closeLogFileSpy,
+  boldMarkdownHeaders: (s: string) => s,
+  debugLog: vi.fn(() => {}),
+  sendStructured: vi.fn(() => {}),
+  runWithLogger: vi.fn(async (_adapter: any, fn: () => any) => fn()),
+  writeStdout: vi.fn(() => {}),
+  writeStderr: vi.fn(() => {}),
+}));
+
+vi.mock('../../../common/git.js', () => ({
+  getGitRoot: getGitRootSpy,
+}));
+
+vi.mock('../../../common/process.js', () => ({
+  logSpawn: vi.fn(() => ({ exited: Promise.resolve(0) })),
+  spawnAndLogOutput: spawnAndLogOutputSpy,
+}));
+
+vi.mock('../../configLoader.js', () => ({
+  loadEffectiveConfig: loadEffectiveConfigSpy,
+  loadGlobalConfigForNotifications: loadGlobalConfigForNotificationsSpy,
+}));
+
+vi.mock('../../executors/index.js', () => ({
+  buildExecutorAndLog: buildExecutorAndLogSpy,
+  DEFAULT_EXECUTOR: 'copy-only',
+  defaultModelForExecutor: vi.fn(() => 'test-model'),
+}));
+
+vi.mock('../../plans.js', () => ({
+  readPlanFile: vi.fn(async (p: string) => {
+    const content = await fs.readFile(p, 'utf-8');
+    return yaml.parse(content);
+  }),
+  writePlanFile: vi.fn(async (p: string, data: any) => {
+    await fs.writeFile(p, yaml.stringify(data));
+  }),
+  generatePlanFileContent: vi.fn(() => ''),
+  resolvePlanFromDb: vi.fn(async () => ({
+    plan: { id: 1, title: 'P', status: 'pending', tasks: [] },
+    planPath: '/tmp/plan.yml',
+  })),
+}));
+
+vi.mock('../../ensure_plan_in_db.js', () => ({
+  resolvePlanFromDbOrSyncFile: resolvePlanFromDbOrSyncFileSpy,
+}));
+
+vi.mock('../plan_discovery.js', () => ({
+  findNextPlanFromDb: findNextPlanFromDbSpy,
+  findLatestPlanFromDb: vi.fn(async () => null),
+  findNextReadyDependencyFromDb: vi.fn(async () => ({ plan: null, message: '' })),
+  toHeadlessPlanSummary: vi.fn((plan: any) => plan),
+}));
+
+vi.mock('./stub_plan.js', () => ({
+  executeStubPlan: executeStubPlanSpy,
+}));
+
+vi.mock('./batch_mode.js', () => ({
+  executeBatchMode: executeBatchModeSpy,
+}));
+
+vi.mock('../../configSchema.js', () => ({
+  getDefaultConfig: vi.fn(() => mockConfig),
+}));
+
+let tempDir: string;
+let planFile: string;
 
 async function writePlan(tasks: any[] = []) {
   const plan = {
@@ -83,72 +163,25 @@ describe('timAgent notifications', () => {
       postApplyCommands: [],
     };
 
-    loadEffectiveConfigSpy = mock(async () => mockConfig);
-    loadGlobalConfigForNotificationsSpy = mock(async () => mockConfig);
+    loadEffectiveConfigSpy.mockImplementation(async () => mockConfig);
+    loadGlobalConfigForNotificationsSpy.mockImplementation(async () => mockConfig);
 
-    await moduleMocker.mock('../../../logging.js', () => ({
-      log: logSpy,
-      warn: warnSpy,
-      error: errorSpy,
-      openLogFile: openLogFileSpy,
-      closeLogFile: closeLogFileSpy,
-      boldMarkdownHeaders: (s: string) => s,
-      debugLog: mock(() => {}),
-    }));
+    // Update getGitRoot mock to use tempDir
+    getGitRootSpy.mockImplementation(async () => tempDir);
 
-    await moduleMocker.mock('../../../common/git.js', () => ({
-      getGitRoot: mock(async () => tempDir),
-    }));
-
-    await moduleMocker.mock('../../../common/process.js', () => ({
-      logSpawn: mock(() => ({ exited: Promise.resolve(0) })),
-      spawnAndLogOutput: spawnAndLogOutputSpy,
-    }));
-
-    await moduleMocker.mock('../../configLoader.js', () => ({
-      loadEffectiveConfig: loadEffectiveConfigSpy,
-      loadGlobalConfigForNotifications: loadGlobalConfigForNotificationsSpy,
-    }));
-
-    await moduleMocker.mock('../../executors/index.js', () => ({
-      buildExecutorAndLog: buildExecutorAndLogSpy,
-      DEFAULT_EXECUTOR: 'copy-only',
-      defaultModelForExecutor: mock(() => 'test-model'),
-    }));
-
-    await moduleMocker.mock('../../plans.js', () => ({
-      readPlanFile: mock(async (p: string) => {
-        const content = await fs.readFile(p, 'utf-8');
-        return yaml.parse(content);
-      }),
-      writePlanFile: mock(async (p: string, data: any) => {
-        await fs.writeFile(p, yaml.stringify(data));
-      }),
-    }));
-
-    await moduleMocker.mock('../../ensure_plan_in_db.js', () => ({
-      resolvePlanFromDbOrSyncFile: resolvePlanFromDbOrSyncFileSpy,
-    }));
-
-    await moduleMocker.mock('../plan_discovery.js', () => ({
-      findNextPlanFromDb: findNextPlanFromDbSpy,
-    }));
-
-    await moduleMocker.mock('./stub_plan.js', () => ({
-      executeStubPlan: executeStubPlanSpy,
-    }));
-
-    await moduleMocker.mock('./batch_mode.js', () => ({
-      executeBatchMode: executeBatchModeSpy,
-    }));
-
-    await moduleMocker.mock('../../configSchema.js', () => ({
-      getDefaultConfig: mock(() => mockConfig),
-    }));
+    // Update resolvePlanFromDbOrSyncFile to use current planFile
+    resolvePlanFromDbOrSyncFileSpy.mockImplementation(async (planArg: string) => {
+      const resolvedPath = path.resolve(planArg);
+      const content = await fs.readFile(resolvedPath, 'utf-8');
+      return {
+        plan: yaml.parse(content),
+        planPath: resolvedPath,
+      };
+    });
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     delete process.env.TIM_NOTIFY_SUPPRESS;
     await fs.rm(tempDir, { recursive: true, force: true });
   });
@@ -264,6 +297,7 @@ describe('timAgent notifications', () => {
       postApplyCommands: [],
     };
     delete mockConfig.notifications;
+    loadEffectiveConfigSpy.mockImplementation(async () => mockConfig);
 
     await timAgent(planFile, { log: false, summary: false }, {} as any);
 

@@ -1,13 +1,51 @@
-import { describe, test, expect, afterEach, mock } from 'bun:test';
+import { vi, describe, test, expect, afterEach } from 'vitest';
 import { ClaudeCodeExecutor } from './claude_code';
 import type { ExecutePlanInfo, ExecutorCommonOptions } from './types';
 import type { TimConfig } from '../configSchema';
-import { ModuleMocker } from '../../testing';
+import * as processModule from '../../common/process.ts';
+import * as gitModule from '../../common/git.ts';
+import * as formatModule from './claude_code/format.ts';
+import * as orchestratorPromptModule from './claude_code/orchestrator_prompt.ts';
+
+vi.mock('../../common/process.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../common/process.ts')>();
+  return {
+    ...actual,
+    spawnWithStreamingIO: vi.fn(),
+    spawnAndLogOutput: vi.fn(),
+    createLineSplitter: vi.fn(),
+  };
+});
+
+vi.mock('../../common/git.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../common/git.ts')>();
+  return {
+    ...actual,
+    getGitRoot: vi.fn(),
+  };
+});
+
+vi.mock('./claude_code/format.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./claude_code/format.ts')>();
+  return {
+    ...actual,
+    formatJsonMessage: vi.fn(),
+  };
+});
+
+vi.mock('./claude_code/orchestrator_prompt.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./claude_code/orchestrator_prompt.ts')>();
+  return {
+    ...actual,
+    wrapWithOrchestration: vi.fn(),
+    wrapWithOrchestrationSimple: vi.fn(),
+    wrapWithOrchestrationTdd: vi.fn(),
+  };
+});
 
 describe('ClaudeCodeExecutor model selection', () => {
-  const moduleMocker = new ModuleMocker(import.meta);
   afterEach(() => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
   });
 
   const mockSharedOptions: ExecutorCommonOptions = {
@@ -19,26 +57,41 @@ describe('ClaudeCodeExecutor model selection', () => {
     issueTracker: 'github' as const,
   };
 
+  function makeStreamingProcessMock() {
+    return Promise.resolve({
+      stdin: {
+        write: (_value: string) => {},
+        end: async () => {},
+      },
+      result: Promise.resolve({
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+        signal: null,
+        killedByInactivity: false,
+      }),
+      kill: (_signal?: NodeJS.Signals) => {},
+    });
+  }
+
   // removed this logic for now
   test.skip('automatically selects opus model for review mode when no model specified', async () => {
     let capturedArgs: string[] = [];
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: mock((args: string[]) => {
-        capturedArgs = args;
-        return Promise.resolve({ exitCode: 0 });
-      }),
-      createLineSplitter: mock(() => (output: string) => output.split('\n')),
-      debug: false,
-    }));
-
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
-    }));
-
-    await moduleMocker.mock('./claude_code/format.ts', () => ({
-      formatJsonMessage: mock((line: string) => ({ message: line })),
-    }));
+    vi.mocked(processModule.spawnWithStreamingIO).mockImplementation((args: string[]) => {
+      capturedArgs = args;
+      return makeStreamingProcessMock() as any;
+    });
+    vi.mocked(processModule.createLineSplitter).mockReturnValue(
+      (output: string) => output.split('\n') as any
+    );
+    vi.mocked(gitModule.getGitRoot).mockResolvedValue('/tmp/test-base');
+    vi.mocked(formatModule.formatJsonMessage).mockImplementation(
+      (line: string) =>
+        ({
+          message: line,
+        }) as any
+    );
 
     const executor = new ClaudeCodeExecutor(
       {
@@ -70,22 +123,20 @@ describe('ClaudeCodeExecutor model selection', () => {
   test.skip('automatically selects opus model for planning mode when no model specified', async () => {
     let capturedArgs: string[] = [];
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnAndLogOutput: mock((args: string[]) => {
-        capturedArgs = args;
-        return Promise.resolve({ exitCode: 0 });
-      }),
-      createLineSplitter: mock(() => (output: string) => output.split('\n')),
-      debug: false,
-    }));
-
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
-    }));
-
-    await moduleMocker.mock('./claude_code/format.ts', () => ({
-      formatJsonMessage: mock((line: string) => ({ message: line })),
-    }));
+    vi.mocked(processModule.spawnWithStreamingIO).mockImplementation((args: string[]) => {
+      capturedArgs = args;
+      return makeStreamingProcessMock() as any;
+    });
+    vi.mocked(processModule.createLineSplitter).mockReturnValue(
+      (output: string) => output.split('\n') as any
+    );
+    vi.mocked(gitModule.getGitRoot).mockResolvedValue('/tmp/test-base');
+    vi.mocked(formatModule.formatJsonMessage).mockImplementation(
+      (line: string) =>
+        ({
+          message: line,
+        }) as any
+    );
 
     const executor = new ClaudeCodeExecutor(
       {
@@ -116,39 +167,23 @@ describe('ClaudeCodeExecutor model selection', () => {
   test('uses default sonnet model for normal mode when no model specified', async () => {
     let capturedArgs: string[] = [];
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock((args: string[]) => {
-        capturedArgs = args;
-        return Promise.resolve({
-          stdin: {
-            write: (_value: string) => {},
-            end: async () => {},
-          },
-          result: Promise.resolve({
-            exitCode: 0,
-            stdout: '',
-            stderr: '',
-            signal: null,
-            killedByInactivity: false,
-          }),
-          kill: (_signal?: NodeJS.Signals) => {},
-        });
-      }),
-      createLineSplitter: mock(() => (output: string) => output.split('\n')),
-      debug: false,
-    }));
-
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
-    }));
-
-    await moduleMocker.mock('./claude_code/format.ts', () => ({
-      formatJsonMessage: mock((line: string) => ({ message: line })),
-    }));
-
-    await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
-      wrapWithOrchestration: mock((content: string) => content),
-    }));
+    vi.mocked(processModule.spawnWithStreamingIO).mockImplementation((args: string[]) => {
+      capturedArgs = args;
+      return makeStreamingProcessMock() as any;
+    });
+    vi.mocked(processModule.createLineSplitter).mockReturnValue(
+      (output: string) => output.split('\n') as any
+    );
+    vi.mocked(gitModule.getGitRoot).mockResolvedValue('/tmp/test-base');
+    vi.mocked(formatModule.formatJsonMessage).mockImplementation(
+      (line: string) =>
+        ({
+          message: line,
+        }) as any
+    );
+    vi.mocked(orchestratorPromptModule.wrapWithOrchestration).mockImplementation(
+      (content: string) => content
+    );
 
     const executor = new ClaudeCodeExecutor(
       {
@@ -179,35 +214,20 @@ describe('ClaudeCodeExecutor model selection', () => {
   test('respects explicitly specified model over automatic selection', async () => {
     let capturedArgs: string[] = [];
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock((args: string[]) => {
-        capturedArgs = args;
-        return Promise.resolve({
-          stdin: {
-            write: (_value: string) => {},
-            end: async () => {},
-          },
-          result: Promise.resolve({
-            exitCode: 0,
-            stdout: '',
-            stderr: '',
-            signal: null,
-            killedByInactivity: false,
-          }),
-          kill: (_signal?: NodeJS.Signals) => {},
-        });
-      }),
-      createLineSplitter: mock(() => (output: string) => output.split('\n')),
-      debug: false,
-    }));
-
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
-    }));
-
-    await moduleMocker.mock('./claude_code/format.ts', () => ({
-      formatJsonMessage: mock((line: string) => ({ message: line })),
-    }));
+    vi.mocked(processModule.spawnWithStreamingIO).mockImplementation((args: string[]) => {
+      capturedArgs = args;
+      return makeStreamingProcessMock() as any;
+    });
+    vi.mocked(processModule.createLineSplitter).mockReturnValue(
+      (output: string) => output.split('\n') as any
+    );
+    vi.mocked(gitModule.getGitRoot).mockResolvedValue('/tmp/test-base');
+    vi.mocked(formatModule.formatJsonMessage).mockImplementation(
+      (line: string) =>
+        ({
+          message: line,
+        }) as any
+    );
 
     const executorWithModel = new ClaudeCodeExecutor(
       {
@@ -238,39 +258,22 @@ describe('ClaudeCodeExecutor model selection', () => {
   test('invokes simple-mode orchestration without agent definitions (uses tim subagent instead)', async () => {
     let capturedArgs: string[] = [];
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock((args: string[]) => {
-        capturedArgs = args;
-        return Promise.resolve({
-          stdin: {
-            write: (_value: string) => {},
-            end: async () => {},
-          },
-          result: Promise.resolve({
-            exitCode: 0,
-            stdout: '',
-            stderr: '',
-            signal: null,
-            killedByInactivity: false,
-          }),
-          kill: (_signal?: NodeJS.Signals) => {},
-        });
-      }),
-      createLineSplitter: mock(() => (output: string) => output.split('\n')),
-      debug: false,
-    }));
+    vi.mocked(processModule.spawnWithStreamingIO).mockImplementation((args: string[]) => {
+      capturedArgs = args;
+      return makeStreamingProcessMock() as any;
+    });
+    vi.mocked(processModule.createLineSplitter).mockReturnValue(
+      (output: string) => output.split('\n') as any
+    );
+    vi.mocked(gitModule.getGitRoot).mockResolvedValue('/tmp/test-base');
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(() => Promise.resolve('/tmp/test-base')),
-    }));
-
-    const wrapSimple = mock(
+    const wrapSimple = vi.fn(
       (content: string, planId: string, opts: any) =>
         `${planId}:${String(opts?.planFilePath ?? '')}:${content}`
     );
-    await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
-      wrapWithOrchestrationSimple: wrapSimple,
-    }));
+    vi.mocked(orchestratorPromptModule.wrapWithOrchestrationSimple).mockImplementation(
+      wrapSimple as any
+    );
 
     const executor = new ClaudeCodeExecutor(
       {

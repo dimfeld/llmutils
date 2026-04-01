@@ -1,27 +1,45 @@
-import { describe, expect, test, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, expect, test, beforeEach, afterEach, vi } from 'vitest';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import yaml from 'yaml';
+import { clearAllTimCaches, stringifyPlanWithFrontmatter } from '../../testing.js';
+import { closeDatabaseForTesting } from '../db/database.js';
+import { clearPlanSyncContext } from '../db/plan_sync.js';
+
+vi.mock('../../logging.js', () => ({
+  debugLog: vi.fn(),
+  log: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+}));
+
+vi.mock('../db/assignment.js', () => ({
+  removeAssignment: vi.fn(() => true),
+}));
+
+vi.mock('../assignments/workspace_identifier.js', () => ({
+  getRepositoryIdentity: vi.fn(async () => ({
+    repositoryId: 'test-repo',
+    remoteUrl: null,
+    gitRoot: '',
+  })),
+}));
+
 import { readPlanFile, resolvePlanFromDb, writePlanFile } from '../plans.js';
 import { handleSetCommand } from './set.js';
 import type { PlanSchema } from '../planSchema.js';
 import type { TimConfig } from '../configSchema.js';
-import { ModuleMocker, clearAllTimCaches, stringifyPlanWithFrontmatter } from '../../testing.js';
-import { closeDatabaseForTesting } from '../db/database.js';
-import { clearPlanSyncContext } from '../db/plan_sync.js';
 import { materializePlan } from '../plan_materialize.js';
+import { log, warn, error } from '../../logging.js';
+import { removeAssignment } from '../db/assignment.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
-const logSpy = mock(() => {});
-const warnSpy = mock(() => {});
-const errorSpy = mock(() => {});
-const removeAssignmentSpy = mock(() => true);
-const getRepositoryIdentitySpy = mock(async () => ({
-  repositoryId: 'test-repo',
-  remoteUrl: null,
-  gitRoot: '',
-}));
+const logSpy = vi.mocked(log);
+const warnSpy = vi.mocked(warn);
+const errorSpy = vi.mocked(error);
+const removeAssignmentSpy = vi.mocked(removeAssignment);
+const getRepositoryIdentitySpy = vi.mocked(getRepositoryIdentity);
 
 describe('tim set command', () => {
   let tempDir: string;
@@ -30,15 +48,10 @@ describe('tim set command', () => {
   let configPath: string;
 
   beforeEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     clearAllTimCaches();
     closeDatabaseForTesting();
     clearPlanSyncContext();
-    logSpy.mockClear();
-    warnSpy.mockClear();
-    errorSpy.mockClear();
-    removeAssignmentSpy.mockClear();
-    getRepositoryIdentitySpy.mockClear();
 
     tempDir = await mkdtemp(path.join(tmpdir(), 'tim-set-test-'));
     tasksDir = path.join(tempDir, 'tasks');
@@ -60,23 +73,11 @@ describe('tim set command', () => {
       gitRoot: tempDir,
     });
 
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: logSpy,
-      warn: warnSpy,
-      error: errorSpy,
-    }));
-
-    await moduleMocker.mock('../db/assignment.js', () => ({
-      removeAssignment: removeAssignmentSpy,
-    }));
-
-    await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
-      getRepositoryIdentity: getRepositoryIdentitySpy,
-    }));
+    removeAssignmentSpy.mockReturnValue(true);
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     clearAllTimCaches();
     closeDatabaseForTesting();
     clearPlanSyncContext();

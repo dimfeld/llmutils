@@ -1,17 +1,20 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
-import { ModuleMocker } from '../testing.js';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { sendNotification } from './notifications.js';
 import type { TimConfig } from './configSchema.js';
+import { warn } from '../logging.js';
+import { spawnAndLogOutput } from '../common/process.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
+// Cast the imported functions to mocks
+const warnSpy = warn as ReturnType<typeof vi.fn>;
+const spawnSpy = spawnAndLogOutput as ReturnType<typeof vi.fn>;
 
-const warnSpy = mock(() => {});
-const spawnSpy = mock(async () => ({
-  exitCode: 0,
-  stdout: '',
-  stderr: '',
-  signal: null,
-  killedByInactivity: false,
+vi.mock('../logging.js', () => ({
+  warn: vi.fn(),
+  debugLog: vi.fn(),
+}));
+
+vi.mock('../common/process.js', () => ({
+  spawnAndLogOutput: vi.fn(),
 }));
 
 describe('notifications', () => {
@@ -20,18 +23,17 @@ describe('notifications', () => {
     spawnSpy.mockClear();
     delete process.env.TIM_NOTIFY_SUPPRESS;
 
-    await moduleMocker.mock('../logging.js', () => ({
-      warn: warnSpy,
-      debugLog: mock(() => {}),
-    }));
-
-    await moduleMocker.mock('../common/process.js', () => ({
-      spawnAndLogOutput: spawnSpy,
-    }));
+    // Set up default mock implementations
+    spawnSpy.mockResolvedValue({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      signal: null,
+      killedByInactivity: false,
+    });
   });
 
   afterEach(() => {
-    moduleMocker.clear();
     delete process.env.TIM_NOTIFY_SUPPRESS;
   });
 

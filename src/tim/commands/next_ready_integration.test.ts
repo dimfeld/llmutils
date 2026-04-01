@@ -1,31 +1,115 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
+import type { PlanSchema } from '../planSchema.js';
+
+vi.mock('../../logging.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    log: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+  };
+});
+
+vi.mock('../../common/git.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    getGitRoot: vi.fn(),
+  };
+});
+
+vi.mock('../configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(),
+}));
+
+vi.mock('../../common/clipboard.js', () => ({
+  write: vi.fn(async () => {}),
+  read: vi.fn(async () => 'clipboard content'),
+}));
+
+vi.mock('../../common/process.js', () => ({
+  logSpawn: vi.fn(() => ({ exited: Promise.resolve(0) })),
+  commitAll: vi.fn(async () => 0),
+}));
+
+vi.mock('../executors/index.js', () => ({
+  buildExecutorAndLog: vi.fn(() => ({
+    execute: vi.fn(async () => {}),
+    filePathPrefix: '',
+  })),
+  DEFAULT_EXECUTOR: 'claude_code',
+}));
+
+vi.mock('../workspace/workspace_setup.js', () => ({
+  setupWorkspace: vi.fn(async (_options: any, baseDir: string, planFile: string) => ({
+    baseDir,
+    planFile,
+  })),
+}));
+
+vi.mock('./prompts.js', () => ({
+  buildPromptText: vi.fn(async () => 'Generated prompt'),
+  findMostRecentlyUpdatedPlan: vi.fn(async () => null),
+  getPlanTimestamp: vi.fn(async () => 0),
+  parseIsoTimestamp: vi.fn(() => undefined),
+}));
+
+vi.mock('../assignments/auto_claim.js', () => ({
+  isAutoClaimEnabled: vi.fn(() => false),
+  autoClaimPlan: vi.fn(async () => {}),
+}));
+
+vi.mock('../workspace/workspace_roundtrip.js', () => ({
+  prepareWorkspaceRoundTrip: vi.fn(async () => null),
+  runPreExecutionWorkspaceSync: vi.fn(async () => {}),
+  runPostExecutionWorkspaceSync: vi.fn(async () => {}),
+}));
+
+vi.mock('../workspace/workspace_info.js', () => ({
+  getWorkspaceInfoByPath: vi.fn(() => null),
+  patchWorkspaceInfo: vi.fn(),
+  touchWorkspaceInfo: vi.fn(),
+}));
+
+vi.mock('../../logging/tunnel_client.js', () => ({
+  isTunnelActive: vi.fn(() => false),
+}));
+
+vi.mock('../headless.js', () => ({
+  runWithHeadlessAdapterIfEnabled: vi.fn(async (options: any) => options.callback()),
+}));
+
+vi.mock('../ensure_plan_in_db.js', () => ({
+  resolvePlanFromDbOrSyncFile: vi.fn(),
+}));
+
+vi.mock('../db/plan_sync.js', () => ({
+  syncPlanToDb: vi.fn(async () => {}),
+}));
+
 import { handleGenerateCommand } from './generate.js';
 import { handleAgentCommand } from './agent/agent.js';
-import type { PlanSchema } from '../planSchema.js';
-import { ModuleMocker } from '../../testing.js';
+import { log as logFn } from '../../logging.js';
+import { getGitRoot } from '../../common/git.js';
+import { loadEffectiveConfig } from '../configLoader.js';
+import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
+const logSpy = vi.mocked(logFn);
+const errorSpy = vi.mocked((await import('../../logging.js')).error);
+const warnSpy = vi.mocked((await import('../../logging.js')).warn);
 
 describe('--next-ready CLI flag integration tests', () => {
   let tempDir: string;
   let tasksDir: string;
 
-  // Mock functions
-  const logSpy = mock(() => {});
-  const errorSpy = mock(() => {});
-  const warnSpy = mock(() => {});
-
   beforeEach(async () => {
     // Clear mocks
-    logSpy.mockClear();
-    errorSpy.mockClear();
-    warnSpy.mockClear();
-
-    // Clear plan cache
+    vi.clearAllMocks();
 
     // Create temporary directory
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-next-ready-test-'));
@@ -33,32 +117,29 @@ describe('--next-ready CLI flag integration tests', () => {
     await fs.mkdir(tasksDir, { recursive: true });
 
     // Mock core modules
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: logSpy,
-      error: errorSpy,
-      warn: warnSpy,
-    }));
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
+      paths: {
+        tasks: tasksDir,
+      },
+      models: {
+        planning: 'test-model',
+        stepGeneration: 'test-model',
+      },
+    } as any);
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: {
-          tasks: tasksDir,
-        },
-        models: {
-          planning: 'test-model',
-          stepGeneration: 'test-model',
-        },
-      }),
-    }));
+    vi.mocked(getGitRoot).mockResolvedValue(tempDir);
 
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => tempDir,
-    }));
+    vi.mocked(resolvePlanFromDbOrSyncFile).mockImplementation(async (planArg: string) => {
+      const { readPlanFile } = await import('../plans.js');
+      return {
+        plan: await readPlanFile(planArg),
+        planPath: planArg,
+      };
+    });
   });
 
   afterEach(async () => {
-    // Clean up mocks
-    moduleMocker.clear();
+    vi.clearAllMocks();
 
     // Clean up
     if (tempDir) {
@@ -92,16 +173,6 @@ describe('--next-ready CLI flag integration tests', () => {
 
   describe('generate command with --next-ready', () => {
     test('should find and use next ready dependency', async () => {
-      // Mock required functions for generate command
-      await moduleMocker.mock('../../common/clipboard.js', () => ({
-        write: mock(async () => {}),
-        read: mock(async () => 'clipboard content'),
-      }));
-
-      await moduleMocker.mock('../../common/process.js', () => ({
-        logSpawn: mock(() => ({ exited: Promise.resolve(0) })),
-      }));
-
       // Create test plans
       await createPlanFile({
         id: 1,
@@ -155,12 +226,6 @@ describe('--next-ready CLI flag integration tests', () => {
     });
 
     test('should handle no ready dependencies gracefully', async () => {
-      // Mock required functions
-      await moduleMocker.mock('../../common/clipboard.js', () => ({
-        write: mock(async () => {}),
-        read: mock(async () => 'clipboard content'),
-      }));
-
       // Create parent plan with no ready dependencies
       await createPlanFile({
         id: 1,
@@ -209,12 +274,6 @@ describe('--next-ready CLI flag integration tests', () => {
     });
 
     test('should handle invalid parent plan ID gracefully', async () => {
-      // Mock required functions
-      await moduleMocker.mock('../../common/clipboard.js', () => ({
-        write: mock(async () => {}),
-        read: mock(async () => 'clipboard content'),
-      }));
-
       const options = {
         nextReady: '999', // Non-existent plan ID
         extract: false,
@@ -240,66 +299,6 @@ describe('--next-ready CLI flag integration tests', () => {
         call.some((arg) => arg && arg.toString().includes('Plan not found: 999'))
       );
       expect(hasNotFoundMessage).toBe(true);
-    });
-  });
-
-  describe.skip('agent command with --next-ready', () => {
-    test('should find next ready dependency and set up for execution', async () => {
-      // Create test plans
-      await createPlanFile({
-        id: 1,
-        title: 'Parent Plan',
-        filename: '1-parent.yml',
-        status: 'in_progress',
-        dependencies: [2],
-        tasks: [{ title: 'Parent task', description: 'Do parent work' }],
-      });
-
-      await createPlanFile({
-        id: 2,
-        title: 'Ready Dependency',
-        filename: '2-ready.yml',
-        status: 'pending',
-        tasks: [{ title: 'Ready task', description: 'Ready to execute' }],
-      });
-
-      const options = {
-        nextReady: '1',
-        parent: {
-          opts: () => ({}),
-        },
-      };
-
-      const globalOpts = {};
-
-      // This test will timeout because it tries to execute the agent,
-      // but we can verify the resolution logic works by checking for specific error handling
-      // or by mocking at a different level. For now, let's test that the function finds the plan.
-
-      let foundDependency = false;
-      let errorThrown = false;
-
-      try {
-        // We'll use a timeout to prevent the test from hanging
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Test timeout')), 1000)
-        );
-
-        const testPromise = handleAgentCommand('', options, globalOpts);
-
-        await Promise.race([testPromise, timeoutPromise]);
-      } catch (error) {
-        errorThrown = true;
-        // The error might be due to trying to execute the plan, which is expected
-        // We check if the function got far enough to find the dependency
-        const logCalls = logSpy.mock.calls;
-        foundDependency = logCalls.some((call) =>
-          call.some((arg) => arg && arg.toString().includes('Found ready dependency'))
-        );
-      }
-
-      // We should have found the dependency (evidenced by the log message)
-      expect(foundDependency).toBe(true);
     });
   });
 

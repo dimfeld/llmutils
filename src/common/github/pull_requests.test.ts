@@ -1,14 +1,17 @@
-import { afterEach, beforeEach, describe, expect, it, mock, spyOn, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, test, vi, spyOn } from 'vitest';
 import type { ReviewThreadNode, CommentNode, DiffLine } from './pull_requests.ts';
 import {
   parseDiff,
   parseOwnerRepoFromRepositoryId,
   partitionUserRelevantOpenPrs,
 } from './pull_requests.ts';
-import { ModuleMocker } from '../../testing.js';
 import { clearGitHubTokenCache } from './token.js';
+import * as octokitModule from './octokit.ts';
 
-const moduleMocker = new ModuleMocker(import.meta);
+// Mock the octokit module
+vi.mock('./octokit.ts', () => ({
+  getOctokit: vi.fn(),
+}));
 
 describe('selectReviewComments', () => {
   // Since mocking imports is complex in Bun, we'll test the logic by
@@ -343,7 +346,7 @@ describe('user-relevant open PR helpers', () => {
   afterEach(() => {
     process.env.GITHUB_TOKEN = originalGitHubToken;
     clearGitHubTokenCache();
-    moduleMocker.clear();
+    vi.restoreAllMocks();
   });
 
   test('partitionUserRelevantOpenPrs separates authored and requested-review PRs', () => {
@@ -401,7 +404,7 @@ describe('user-relevant open PR helpers', () => {
   test('fetchUserRelevantOpenPrs filters GitHub results by author and reviewer', async () => {
     process.env.GITHUB_TOKEN = 'test-token';
 
-    const list = mock(async () => ({
+    const list = vi.fn(async () => ({
       data: [
         {
           number: 11,
@@ -422,15 +425,14 @@ describe('user-relevant open PR helpers', () => {
       ],
     }));
 
-    await moduleMocker.mock('./octokit.ts', () => ({
-      getOctokit: () => ({
-        rest: {
-          pulls: {
-            list,
-          },
+    const mockGetOctokit = vi.mocked(octokitModule.getOctokit);
+    mockGetOctokit.mockReturnValue({
+      rest: {
+        pulls: {
+          list,
         },
-      }),
-    }));
+      },
+    });
 
     const { fetchUserRelevantOpenPrs } = await import('./pull_requests.ts');
     const result = await fetchUserRelevantOpenPrs('example', 'repo', 'dimfeld');
@@ -448,7 +450,7 @@ describe('user-relevant open PR helpers', () => {
   test('fetchUserRelevantOpenPrs excludes unrelated PRs and tolerates missing requested reviewers', async () => {
     process.env.GITHUB_TOKEN = 'test-token';
 
-    const list = mock(async () => ({
+    const list = vi.fn(async () => ({
       data: [
         {
           number: 21,
@@ -469,15 +471,14 @@ describe('user-relevant open PR helpers', () => {
       ],
     }));
 
-    await moduleMocker.mock('./octokit.ts', () => ({
-      getOctokit: () => ({
-        rest: {
-          pulls: {
-            list,
-          },
+    const mockGetOctokit = vi.mocked(octokitModule.getOctokit);
+    mockGetOctokit.mockReturnValue({
+      rest: {
+        pulls: {
+          list,
         },
-      }),
-    }));
+      },
+    });
 
     const { fetchUserRelevantOpenPrs } = await import('./pull_requests.ts');
     const result = await fetchUserRelevantOpenPrs('example', 'repo', 'dimfeld');

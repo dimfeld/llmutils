@@ -1,19 +1,37 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import yaml from 'yaml';
+import { stringifyPlanWithFrontmatter } from '../../testing.js';
+
+vi.mock('../../common/git.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../common/git.js')>();
+  return {
+    ...actual,
+    getGitRoot: vi.fn(),
+    getCurrentBranchName: vi.fn(),
+    getChangedFilesOnBranch: vi.fn(),
+  };
+});
+
+vi.mock('../../logging.js', () => ({
+  log: vi.fn(),
+  error: vi.fn(),
+  warn: vi.fn(),
+  debugLog: vi.fn(),
+}));
+
 import { handleRenumber } from './renumber.js';
 import { type PlanSchema } from '../planSchema.js';
 import { readPlanFile, writePlanFile } from '../plans.js';
-import { ModuleMocker, stringifyPlanWithFrontmatter } from '../../testing.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { getDatabase } from '../db/database.js';
 import { getPlanByUuid, getPlanDependenciesByUuid, upsertPlan } from '../db/plan.js';
 import { getOrCreateProject, getProject } from '../db/project.js';
 import { getMaterializedPlanPath, materializePlan } from '../plan_materialize.js';
+import { getGitRoot, getCurrentBranchName, getChangedFilesOnBranch } from '../../common/git.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
 let repoRootForTest = process.cwd();
 
 async function writeTestPlan(planPath: string, plan: any) {
@@ -77,18 +95,9 @@ describe('tim renumber', () => {
     await fs.promises.mkdir(tasksDir, { recursive: true });
 
     // Mock getGitRoot to return the temp directory
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => tempDir,
-      getCurrentBranchName: async () => null,
-      getChangedFilesOnBranch: async () => [],
-    }));
-
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: mock(() => {}),
-      error: mock(() => {}),
-      warn: mock(() => {}),
-      debugLog: mock(() => {}),
-    }));
+    vi.mocked(getGitRoot).mockResolvedValue(tempDir);
+    vi.mocked(getCurrentBranchName).mockResolvedValue(null);
+    vi.mocked(getChangedFilesOnBranch).mockResolvedValue([]);
 
     // Create a config file
     configPath = path.join(tempDir, '.tim.plan.md');
@@ -96,7 +105,7 @@ describe('tim renumber', () => {
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   });
 
@@ -529,11 +538,9 @@ describe('tim renumber', () => {
   // Branch-aware renumber tests
   test('renumbers plans changed on current feature branch when resolving conflicts', async () => {
     // Mock git functions to simulate being on a feature branch
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: mock(async () => tempDir),
-      getCurrentBranchName: mock(async () => 'feature-branch'),
-      getChangedFilesOnBranch: mock(async () => [path.join(tasksDir, '1-new.plan.md')]),
-    }));
+    vi.mocked(getGitRoot).mockResolvedValue(tempDir);
+    vi.mocked(getCurrentBranchName).mockResolvedValue('feature-branch');
+    vi.mocked(getChangedFilesOnBranch).mockResolvedValue([path.join(tasksDir, '1-new.plan.md')]);
 
     const oldTime = new Date('2024-01-01').toISOString();
     const newTime = new Date('2024-06-01').toISOString();
@@ -557,11 +564,9 @@ describe('tim renumber', () => {
 
   test('uses timestamp logic when on trunk branch (main)', async () => {
     // Mock git functions to simulate being on main branch
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: mock(async () => tempDir),
-      getCurrentBranchName: mock(async () => 'main'),
-      getChangedFilesOnBranch: mock(async () => []), // Not called when on trunk
-    }));
+    vi.mocked(getGitRoot).mockResolvedValue(tempDir);
+    vi.mocked(getCurrentBranchName).mockResolvedValue('main');
+    vi.mocked(getChangedFilesOnBranch).mockResolvedValue([]); // Not called when on trunk
 
     const oldTime = new Date('2024-01-01').toISOString();
     const newTime = new Date('2024-06-01').toISOString();
@@ -585,11 +590,9 @@ describe('tim renumber', () => {
 
   test('keep flag overrides branch-based preference', async () => {
     // Mock git functions to simulate being on a feature branch
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: mock(async () => tempDir),
-      getCurrentBranchName: mock(async () => 'feature-branch'),
-      getChangedFilesOnBranch: mock(async () => [path.join(tasksDir, '1-new.plan.md')]),
-    }));
+    vi.mocked(getGitRoot).mockResolvedValue(tempDir);
+    vi.mocked(getCurrentBranchName).mockResolvedValue('feature-branch');
+    vi.mocked(getChangedFilesOnBranch).mockResolvedValue([path.join(tasksDir, '1-new.plan.md')]);
 
     const oldTime = new Date('2024-01-01').toISOString();
     const newTime = new Date('2024-06-01').toISOString();
@@ -614,11 +617,11 @@ describe('tim renumber', () => {
 
   test('falls back to timestamp logic when no conflicting files were changed on branch', async () => {
     // Mock git functions to simulate being on a feature branch but no conflicting files changed
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: mock(async () => tempDir),
-      getCurrentBranchName: mock(async () => 'feature-branch'),
-      getChangedFilesOnBranch: mock(async () => [path.join(tasksDir, 'different-file.plan.md')]),
-    }));
+    vi.mocked(getGitRoot).mockResolvedValue(tempDir);
+    vi.mocked(getCurrentBranchName).mockResolvedValue('feature-branch');
+    vi.mocked(getChangedFilesOnBranch).mockResolvedValue([
+      path.join(tasksDir, 'different-file.plan.md'),
+    ]);
 
     const oldTime = new Date('2024-01-01').toISOString();
     const newTime = new Date('2024-06-01').toISOString();
@@ -642,13 +645,11 @@ describe('tim renumber', () => {
 
   test('handles errors when Git operations fail', async () => {
     // Mock git functions where getChangedFilesOnBranch throws an error
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: mock(async () => tempDir),
-      getCurrentBranchName: mock(async () => 'feature-branch'),
-      getChangedFilesOnBranch: mock(async () => {
-        throw new Error('Git operation failed');
-      }),
-    }));
+    vi.mocked(getGitRoot).mockResolvedValue(tempDir);
+    vi.mocked(getCurrentBranchName).mockResolvedValue('feature-branch');
+    vi.mocked(getChangedFilesOnBranch).mockImplementation(async () => {
+      throw new Error('Git operation failed');
+    });
 
     const oldTime = new Date('2024-01-01').toISOString();
     const newTime = new Date('2024-06-01').toISOString();
@@ -673,14 +674,12 @@ describe('tim renumber', () => {
 
   test('handles mixed scenario where some files are changed on branch and others are not', async () => {
     // Mock git functions to simulate being on a feature branch
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: mock(async () => tempDir),
-      getCurrentBranchName: mock(async () => 'feature-branch'),
-      getChangedFilesOnBranch: mock(async () => [
-        path.join(tasksDir, '1-changed.plan.md'), // This one was changed on branch
-        // '1-unchanged.plan.md' was not changed on branch
-      ]),
-    }));
+    vi.mocked(getGitRoot).mockResolvedValue(tempDir);
+    vi.mocked(getCurrentBranchName).mockResolvedValue('feature-branch');
+    vi.mocked(getChangedFilesOnBranch).mockResolvedValue([
+      path.join(tasksDir, '1-changed.plan.md'), // This one was changed on branch
+      // '1-unchanged.plan.md' was not changed on branch
+    ]);
 
     const oldTime = new Date('2024-01-01').toISOString();
     const newTime = new Date('2024-06-01').toISOString();
@@ -711,15 +710,13 @@ describe('tim renumber', () => {
 
   test('handles case where all conflicting files are changed on the branch', async () => {
     // Mock git functions to simulate being on a feature branch
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: mock(async () => tempDir),
-      getCurrentBranchName: mock(async () => 'feature-branch'),
-      getChangedFilesOnBranch: mock(async () => [
-        path.join(tasksDir, '1-changed-old.plan.md'),
-        path.join(tasksDir, '1-changed-new.plan.md'),
-        path.join(tasksDir, '1-changed-newest.plan.md'),
-      ]),
-    }));
+    vi.mocked(getGitRoot).mockResolvedValue(tempDir);
+    vi.mocked(getCurrentBranchName).mockResolvedValue('feature-branch');
+    vi.mocked(getChangedFilesOnBranch).mockResolvedValue([
+      path.join(tasksDir, '1-changed-old.plan.md'),
+      path.join(tasksDir, '1-changed-new.plan.md'),
+      path.join(tasksDir, '1-changed-newest.plan.md'),
+    ]);
 
     const oldTime = new Date('2024-01-01').toISOString();
     const newTime = new Date('2024-06-01').toISOString();
@@ -750,14 +747,12 @@ describe('tim renumber', () => {
 
   test('handles complex dependency updates with multiple conflict sets and branch logic', async () => {
     // Mock git functions to simulate being on a feature branch
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: mock(async () => tempDir),
-      getCurrentBranchName: mock(async () => 'feature-branch'),
-      getChangedFilesOnBranch: mock(async () => [
-        path.join(tasksDir, '1-changed.plan.md'), // ID 1 conflict - changed
-        path.join(tasksDir, '3-changed.plan.md'), // ID 3 conflict - changed
-      ]),
-    }));
+    vi.mocked(getGitRoot).mockResolvedValue(tempDir);
+    vi.mocked(getCurrentBranchName).mockResolvedValue('feature-branch');
+    vi.mocked(getChangedFilesOnBranch).mockResolvedValue([
+      path.join(tasksDir, '1-changed.plan.md'), // ID 1 conflict - changed
+      path.join(tasksDir, '3-changed.plan.md'), // ID 3 conflict - changed
+    ]);
 
     const oldTime = new Date('2024-01-01').toISOString();
     const newTime = new Date('2024-06-01').toISOString();
@@ -842,14 +837,12 @@ describe('tim renumber', () => {
 
   test('keep flag overrides branch logic with multiple conflict sets', async () => {
     // Mock git functions to simulate being on a feature branch
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: mock(async () => tempDir),
-      getCurrentBranchName: mock(async () => 'feature-branch'),
-      getChangedFilesOnBranch: mock(async () => [
-        path.join(tasksDir, '1-changed.plan.md'),
-        path.join(tasksDir, '2-changed.plan.md'),
-      ]),
-    }));
+    vi.mocked(getGitRoot).mockResolvedValue(tempDir);
+    vi.mocked(getCurrentBranchName).mockResolvedValue('feature-branch');
+    vi.mocked(getChangedFilesOnBranch).mockResolvedValue([
+      path.join(tasksDir, '1-changed.plan.md'),
+      path.join(tasksDir, '2-changed.plan.md'),
+    ]);
 
     const oldTime = new Date('2024-01-01').toISOString();
     const newTime = new Date('2024-06-01').toISOString();
@@ -888,11 +881,9 @@ describe('tim renumber', () => {
       changedFiles.push(path.join(tasksDir, `${i}.plan.md`));
     }
 
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: mock(async () => tempDir),
-      getCurrentBranchName: mock(async () => 'feature-branch'),
-      getChangedFilesOnBranch: mock(async () => changedFiles),
-    }));
+    vi.mocked(getGitRoot).mockResolvedValue(tempDir);
+    vi.mocked(getCurrentBranchName).mockResolvedValue('feature-branch');
+    vi.mocked(getChangedFilesOnBranch).mockResolvedValue(changedFiles);
 
     // Create many non-conflicting plans (all with unique IDs)
     for (let i = 1; i <= 50; i++) {

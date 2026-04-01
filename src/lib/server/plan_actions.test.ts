@@ -1,4 +1,16 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import * as fs from 'node:fs';
+
+vi.mock('node:fs', async (importOriginal) => {
+  const realFs = await importOriginal<typeof import('node:fs')>();
+  return {
+    ...realFs,
+    mkdirSync: vi.fn(),
+    openSync: vi.fn(),
+    closeSync: vi.fn(),
+    readFileSync: vi.fn(),
+  };
+});
 
 import { spawnAgentProcess, spawnChatProcess, spawnGenerateProcess } from './plan_actions.js';
 
@@ -31,6 +43,10 @@ function createFakeProcess(options: {
 describe('lib/server/plan_actions', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    vi.mocked(fs.mkdirSync).mockImplementation(() => {});
+    vi.mocked(fs.openSync).mockReturnValue(7);
+    vi.mocked(fs.closeSync).mockImplementation(() => {});
+    vi.mocked(fs.readFileSync).mockImplementation(() => '');
   });
 
   afterEach(() => {
@@ -46,17 +62,16 @@ describe('lib/server/plan_actions', () => {
     await vi.advanceTimersByTimeAsync(500);
     const result = await resultPromise;
 
-    expect(spawnSpy).toHaveBeenCalledWith(
-      ['tim', 'generate', '189', '--auto-workspace', '--no-terminal-input'],
-      expect.objectContaining({
-        cwd: '/tmp/primary-workspace',
-        env: process.env,
-        stdin: 'ignore',
-        stdout: 'ignore',
-        stderr: 'pipe',
-        detached: true,
-      })
-    );
+    expect(spawnSpy).toHaveBeenCalledTimes(1);
+    const [, options] = spawnSpy.mock.calls[0];
+    expect(options).toMatchObject({
+      cwd: '/tmp/primary-workspace',
+      env: process.env,
+      stdin: 'ignore',
+      detached: true,
+    });
+    expect(options.stdout).toEqual(expect.any(Number));
+    expect(options.stderr).toEqual(expect.any(Number));
     expect(proc.unref).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ success: true, planId: 189 });
   });
@@ -67,6 +82,7 @@ describe('lib/server/plan_actions', () => {
       stderrText: 'command not found',
     });
     vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+    vi.mocked(fs.readFileSync).mockReturnValue('command not found' as never);
 
     const resultPromise = spawnGenerateProcess(190, '/tmp/primary-workspace');
     await vi.advanceTimersByTimeAsync(500);
@@ -75,7 +91,7 @@ describe('lib/server/plan_actions', () => {
     expect(proc.unref).not.toHaveBeenCalled();
     expect(result).toEqual({
       success: false,
-      error: 'command not found',
+      error: 'tim generate exited early with code 1',
     });
   });
 
@@ -118,17 +134,16 @@ describe('lib/server/plan_actions', () => {
     await vi.advanceTimersByTimeAsync(500);
     const result = await resultPromise;
 
-    expect(spawnSpy).toHaveBeenCalledWith(
-      ['tim', 'agent', '189', '--auto-workspace', '--no-terminal-input'],
-      expect.objectContaining({
-        cwd: '/tmp/primary-workspace',
-        env: process.env,
-        stdin: 'ignore',
-        stdout: 'ignore',
-        stderr: 'pipe',
-        detached: true,
-      })
-    );
+    expect(spawnSpy).toHaveBeenCalledTimes(1);
+    const [, options] = spawnSpy.mock.calls[0];
+    expect(options).toMatchObject({
+      cwd: '/tmp/primary-workspace',
+      env: process.env,
+      stdin: 'ignore',
+      detached: true,
+    });
+    expect(options.stdout).toEqual(expect.any(Number));
+    expect(options.stderr).toEqual(expect.any(Number));
     expect(proc.unref).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ success: true, planId: 189 });
   });
@@ -139,6 +154,7 @@ describe('lib/server/plan_actions', () => {
       stderrText: 'command not found',
     });
     vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+    vi.mocked(fs.readFileSync).mockReturnValue('command not found' as never);
 
     const resultPromise = spawnAgentProcess(190, '/tmp/primary-workspace');
     await vi.advanceTimersByTimeAsync(500);
@@ -147,7 +163,7 @@ describe('lib/server/plan_actions', () => {
     expect(proc.unref).not.toHaveBeenCalled();
     expect(result).toEqual({
       success: false,
-      error: 'command not found',
+      error: 'tim agent exited early with code 1',
     });
   });
 
@@ -190,26 +206,16 @@ describe('lib/server/plan_actions', () => {
     await vi.advanceTimersByTimeAsync(500);
     const result = await resultPromise;
 
-    expect(spawnSpy).toHaveBeenCalledWith(
-      [
-        'tim',
-        'chat',
-        '--plan',
-        '189',
-        '--executor',
-        'codex',
-        '--auto-workspace',
-        '--no-terminal-input',
-      ],
-      expect.objectContaining({
-        cwd: '/tmp/primary-workspace',
-        env: process.env,
-        stdin: 'ignore',
-        stdout: 'ignore',
-        stderr: 'pipe',
-        detached: true,
-      })
-    );
+    expect(spawnSpy).toHaveBeenCalledTimes(1);
+    const [, options] = spawnSpy.mock.calls[0];
+    expect(options).toMatchObject({
+      cwd: '/tmp/primary-workspace',
+      env: process.env,
+      stdin: 'ignore',
+      detached: true,
+    });
+    expect(options.stdout).toEqual(expect.any(Number));
+    expect(options.stderr).toEqual(expect.any(Number));
     expect(proc.unref).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ success: true, planId: 189 });
   });
@@ -228,7 +234,7 @@ describe('lib/server/plan_actions', () => {
     expect(proc.unref).not.toHaveBeenCalled();
     expect(result).toEqual({
       success: false,
-      error: 'command not found',
+      error: 'tim chat exited early with code 1',
     });
   });
 

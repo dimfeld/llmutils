@@ -1,8 +1,7 @@
-import { vi, expect, test, beforeEach, afterEach, describe, mock } from 'bun:test';
+import { vi, expect, test, beforeEach, afterEach, describe } from 'vitest';
 import { mkdtemp, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { ModuleMocker } from '../../testing.js';
 import {
   handleReviewCommand,
   buildReviewPrompt,
@@ -19,13 +18,75 @@ import { generateDiffForReview } from '../incremental_review.js';
 import type { PlanSchema } from '../planSchema.js';
 import type { PlanWithFilename } from '../utils/hierarchy.js';
 import { readPlanFile, resolvePlanFromDb, writePlanFile, writePlanToDb } from '../plans.js';
-import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import { closeDatabaseForTesting } from '../db/database.js';
+import { clearPlanSyncContext } from '../db/plan_sync.js';
+import { clearAllTimCaches } from '../../testing.js';
+import * as notificationsModule from '../notifications.js';
+import * as executorsModule from '../executors/index.js';
+import * as configLoaderModule from '../configLoader.js';
+import * as contextGatheringModule from '../utils/context_gathering.js';
+import * as gitModule from '../../common/git.js';
+import * as agentPromptsModule from '../executors/claude_code/agent_prompts.js';
+import * as inquirerModule from '@inquirer/prompts';
+import * as loggingModule from '../../logging.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
+vi.mock('../notifications.js', () => ({
+  sendNotification: vi.fn(),
+}));
+
+vi.mock('../executors/index.js', () => ({
+  buildExecutorAndLog: vi.fn(),
+  DEFAULT_EXECUTOR: 'codex-cli',
+}));
+
+vi.mock('../configLoader.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof configLoaderModule>();
+  return {
+    ...actual,
+    loadEffectiveConfig: vi.fn(),
+  };
+});
+
+vi.mock('../utils/context_gathering.js', () => ({
+  gatherPlanContext: vi.fn(),
+}));
+
+vi.mock('../../common/git.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof gitModule>();
+  return {
+    ...actual,
+    getGitRoot: vi.fn(),
+    getTrunkBranch: vi.fn(),
+    getUsingJj: vi.fn(),
+    getCurrentCommitHash: vi.fn(),
+    getCurrentBranchName: vi.fn(),
+  };
+});
+
+vi.mock('../executors/claude_code/agent_prompts.js', () => ({
+  getReviewerPrompt: vi.fn(),
+}));
+
+vi.mock('@inquirer/prompts', () => ({
+  confirm: vi.fn(),
+  checkbox: vi.fn(),
+  select: vi.fn(),
+}));
+
+vi.mock('../../logging.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof loggingModule>();
+  return {
+    ...actual,
+    log: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  };
+});
 
 let testDir: string;
-let sendNotificationSpy: ReturnType<typeof mock>;
+let sendNotificationSpy: ReturnType<typeof vi.fn>;
 let originalCwd: string;
+let originalXdgConfigHome: string | undefined;
 
 function createMockPlanContext(overrides: Record<string, unknown> = {}) {
   return {
@@ -36,19 +97,34 @@ function createMockPlanContext(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(async () => {
+  clearAllTimCaches();
+  closeDatabaseForTesting();
+  clearPlanSyncContext();
   originalCwd = process.cwd();
+  originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
   testDir = await mkdtemp(join(tmpdir(), 'tim-review-test-'));
+  await Bun.$`git init`.cwd(testDir).quiet();
+  await Bun.$`git remote add origin https://example.com/acme/review-tests.git`.cwd(testDir).quiet();
+  process.env.XDG_CONFIG_HOME = join(testDir, 'config');
   vi.spyOn(console, 'error').mockImplementation(() => {});
-  sendNotificationSpy = mock(async () => true);
 
-  await moduleMocker.mock('../notifications.js', () => ({
-    sendNotification: sendNotificationSpy,
-  }));
+  sendNotificationSpy = vi.mocked(notificationsModule.sendNotification);
+  sendNotificationSpy.mockResolvedValue(true);
+
+  vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
 });
 
-afterEach(() => {
+afterEach(async () => {
+  clearAllTimCaches();
+  closeDatabaseForTesting();
+  clearPlanSyncContext();
   process.chdir(originalCwd);
-  moduleMocker.clear();
+  if (originalXdgConfigHome === undefined) {
+    delete process.env.XDG_CONFIG_HOME;
+  } else {
+    process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
+  }
+  vi.clearAllMocks();
 });
 
 describe('review issue persistence helpers', () => {
@@ -175,84 +251,60 @@ tasks:
   await writeFile(planFile, `---\n${planContent}---\n`);
 
   // Mock the buildExecutorAndLog and other dependencies
-  await moduleMocker.mock('../executors/index.js', () => ({
-    buildExecutorAndLog: () => ({
-      execute: async () =>
-        JSON.stringify({
-          issues: [],
-          recommendations: [],
-          actionItems: [],
-        }),
-    }),
-    DEFAULT_EXECUTOR: 'codex-cli',
-  }));
+  vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue({
+    execute: vi.fn(async () =>
+      JSON.stringify({
+        issues: [],
+        recommendations: [],
+        actionItems: [],
+      })
+    ),
+  } as any);
 
-  await moduleMocker.mock('../configLoader.js', () => ({
-    loadEffectiveConfig: async () => ({
-      defaultExecutor: 'codex-cli',
-    }),
-  }));
+  vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+    defaultExecutor: 'codex-cli',
+  } as any);
 
-  await moduleMocker.mock('../utils/context_gathering.js', () => ({
-    gatherPlanContext: async () =>
-      createMockPlanContext({
-        resolvedPlanFile: planFile,
-        planData: {
-          id: 1,
-          title: 'Test Plan',
-          goal: 'Test the review functionality',
-          details: 'This is a test plan for the review command',
-          tasks: [
-            {
-              title: 'Test task',
-              description: 'A test task',
-              steps: [
-                {
-                  prompt: 'Do something',
-                  done: false,
-                },
-              ],
-            },
-          ],
-        },
-        parentChain: [],
-        completedChildren: [],
-        diffResult: {
-          hasChanges: true,
-          changedFiles: ['test.ts'],
-          baseBranch: 'main',
-          diffContent: 'mock diff',
-        },
-        incrementalSummary: null,
-        noChangesDetected: false,
-      }),
-  }));
+  vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+    createMockPlanContext({
+      resolvedPlanFile: planFile,
+      planData: {
+        id: 1,
+        title: 'Test Plan',
+        goal: 'Test the review functionality',
+        details: 'This is a test plan for the review command',
+        tasks: [
+          {
+            title: 'Test task',
+            description: 'A test task',
+            steps: [
+              {
+                prompt: 'Do something',
+                done: false,
+              },
+            ],
+          },
+        ],
+      },
+      parentChain: [],
+      completedChildren: [],
+      diffResult: {
+        hasChanges: true,
+        changedFiles: ['test.ts'],
+        baseBranch: 'main',
+        diffContent: 'mock diff',
+      },
+      incrementalSummary: null,
+      noChangesDetected: false,
+    }) as any
+  );
 
-  await moduleMocker.mock('../../common/git.js', () => ({
-    getGitRoot: async () => testDir,
-    getTrunkBranch: async () => 'main',
-    getUsingJj: async () => false,
-  }));
-
-  // Mock the diff generation to return changes
-  await moduleMocker.mock('./review.js', () => ({
-    handleReviewCommand,
-    generateDiffForReview: async () => ({
-      hasChanges: true,
-      changedFiles: ['test.ts'],
-      baseBranch: 'main',
-      diffContent: 'mock diff',
-    }),
-    buildReviewPrompt: (
-      planData: any,
-      diffResult: any,
-      includeDiff: boolean = false,
-      useSubagents: boolean = false,
-      parentChain: any[] = [],
-      completedChildren: any[] = [],
-      customInstructions?: string
-    ) => 'mock review prompt',
-  }));
+  vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
+  vi.mocked(gitModule.getTrunkBranch).mockResolvedValue('main');
+  vi.mocked(gitModule.getUsingJj).mockResolvedValue(false);
+  vi.mocked(agentPromptsModule.getReviewerPrompt).mockReturnValue({
+    prompt: 'mock reviewer prompt',
+  } as any);
 
   // Test resolving plan by file path
   const mockCommand = {
@@ -281,7 +333,7 @@ test('handleReviewCommand resolves plan by ID', async () => {
     { cwdForIdentity: testDir }
   );
 
-  const gatherPlanContextMock = mock(async (planArg: string) => {
+  const gatherPlanContextMock = vi.fn(async (planArg: string) => {
     expect(planArg).toBe('42');
     return createMockPlanContext({
       resolvedPlanFile: '42',
@@ -309,52 +361,25 @@ test('handleReviewCommand resolves plan by ID', async () => {
   });
 
   // Mock dependencies
-  await moduleMocker.mock('../executors/index.js', () => ({
-    buildExecutorAndLog: () => ({
-      execute: async () =>
-        JSON.stringify({
-          issues: [],
-          recommendations: [],
-          actionItems: [],
-        }),
-    }),
-    DEFAULT_EXECUTOR: 'codex-cli',
-  }));
+  vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue({
+    execute: vi.fn(async () =>
+      JSON.stringify({
+        issues: [],
+        recommendations: [],
+        actionItems: [],
+      })
+    ),
+  } as any);
 
-  await moduleMocker.mock('../configLoader.js', () => ({
-    loadEffectiveConfig: async () => ({
-      defaultExecutor: 'codex-cli',
-    }),
-  }));
+  vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+    defaultExecutor: 'codex-cli',
+  } as any);
 
-  await moduleMocker.mock('../utils/context_gathering.js', () => ({
-    gatherPlanContext: gatherPlanContextMock,
-  }));
+  vi.mocked(contextGatheringModule.gatherPlanContext).mockImplementation(gatherPlanContextMock);
 
-  await moduleMocker.mock('../../common/git.js', () => ({
-    getGitRoot: async () => testDir,
-    getTrunkBranch: async () => 'main',
-    getUsingJj: async () => false,
-  }));
-
-  await moduleMocker.mock('./review.js', () => ({
-    handleReviewCommand,
-    generateDiffForReview: async () => ({
-      hasChanges: true,
-      changedFiles: ['test.ts'],
-      baseBranch: 'main',
-      diffContent: 'mock diff',
-    }),
-    buildReviewPrompt: (
-      planData: any,
-      diffResult: any,
-      includeDiff: boolean = false,
-      useSubagents: boolean = false,
-      parentChain: any[] = [],
-      completedChildren: any[] = [],
-      customInstructions?: string
-    ) => 'mock review prompt',
-  }));
+  vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
+  vi.mocked(gitModule.getTrunkBranch).mockResolvedValue('main');
+  vi.mocked(gitModule.getUsingJj).mockResolvedValue(false);
 
   // Test resolving plan by ID
   const mockCommand = {
@@ -384,7 +409,7 @@ test('uses review default executor from config when no executor option passed', 
   );
 
   const mockExecutor = {
-    execute: mock(async () =>
+    execute: vi.fn(async () =>
       JSON.stringify({
         issues: [],
         recommendations: [],
@@ -393,61 +418,51 @@ test('uses review default executor from config when no executor option passed', 
     ),
   };
 
-  await moduleMocker.mock('../utils/context_gathering.js', () => ({
-    gatherPlanContext: async () =>
-      createMockPlanContext({
-        resolvedPlanFile: 'plan.yml',
-        planData: {
-          id: 1,
-          title: 'Review Executor Test',
-          goal: 'Use review default executor',
-          tasks: [
-            {
-              title: 'Task',
-              description: 'Review task',
-            },
-          ],
-        },
-        parentChain: [],
-        completedChildren: [],
-        diffResult: {
-          hasChanges: true,
-          changedFiles: ['src/test.ts'],
-          baseBranch: 'main',
-          diffContent: 'diff',
-        },
-      }),
-  }));
-
-  await moduleMocker.mock('../configLoader.js', () => ({
-    loadEffectiveConfig: async () => ({
-      defaultExecutor: 'codex-cli',
-      review: {
-        defaultExecutor: 'codex-cli',
+  vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+    createMockPlanContext({
+      resolvedPlanFile: 'plan.yml',
+      planData: {
+        id: 1,
+        title: 'Review Executor Test',
+        goal: 'Use review default executor',
+        tasks: [
+          {
+            title: 'Task',
+            description: 'Review task',
+          },
+        ],
       },
-    }),
-  }));
+      parentChain: [],
+      completedChildren: [],
+      diffResult: {
+        hasChanges: true,
+        changedFiles: ['src/test.ts'],
+        baseBranch: 'main',
+        diffContent: 'diff',
+      },
+    }) as any
+  );
 
-  await moduleMocker.mock('../executors/index.js', () => ({
-    buildExecutorAndLog: (executorName: string) => {
-      expect(executorName).toBe('codex-cli');
-      return mockExecutor;
+  vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+    defaultExecutor: 'codex-cli',
+    review: {
+      defaultExecutor: 'codex-cli',
     },
-    DEFAULT_EXECUTOR: 'codex-cli',
-  }));
+  } as any);
 
-  await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
-    getReviewerPrompt: () => ({
-      prompt: 'mock review prompt',
-    }),
-  }));
+  vi.mocked(executorsModule.buildExecutorAndLog).mockImplementation((executorName: string) => {
+    expect(executorName).toBe('codex-cli');
+    return mockExecutor as any;
+  });
 
-  await moduleMocker.mock('../../common/git.js', () => ({
-    getGitRoot: async () => testDir,
-    getCurrentCommitHash: async () => 'hash',
-    getTrunkBranch: async () => 'main',
-    getUsingJj: async () => false,
-  }));
+  vi.mocked(agentPromptsModule.getReviewerPrompt).mockReturnValue({
+    prompt: 'mock review prompt',
+  } as any);
+
+  vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
+  vi.mocked(gitModule.getCurrentCommitHash).mockResolvedValue('hash');
+  vi.mocked(gitModule.getTrunkBranch).mockResolvedValue('main');
+  vi.mocked(gitModule.getUsingJj).mockResolvedValue(false);
 
   const mockCommand = {
     parent: {
@@ -467,10 +482,8 @@ describe('generateDiffForReview', () => {
     const gitRepoDir = await mkdtemp(join(tmpdir(), 'tim-git-test-'));
 
     // Mock git utilities to avoid actual git calls
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getTrunkBranch: async () => 'main',
-      getUsingJj: async () => false,
-    }));
+    vi.mocked(gitModule.getTrunkBranch).mockResolvedValue('main');
+    vi.mocked(gitModule.getUsingJj).mockResolvedValue(false);
 
     // Test that the function exists and has the expected structure
     expect(typeof generateDiffForReview).toBe('function');
@@ -487,10 +500,8 @@ describe('generateDiffForReview', () => {
   test('function interface with jj', async () => {
     const jjRepoDir = await mkdtemp(join(tmpdir(), 'tim-jj-test-'));
 
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getTrunkBranch: async () => 'main',
-      getUsingJj: async () => true,
-    }));
+    vi.mocked(gitModule.getTrunkBranch).mockResolvedValue('main');
+    vi.mocked(gitModule.getUsingJj).mockResolvedValue(true);
 
     // Test that the function exists and handles jj mode
     expect(typeof generateDiffForReview).toBe('function');
@@ -506,10 +517,8 @@ describe('generateDiffForReview', () => {
   test('incremental mode without history avoids console stdout logging', async () => {
     const gitRepoDir = await mkdtemp(join(tmpdir(), 'tim-git-test-'));
 
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getTrunkBranch: async () => 'main',
-      getUsingJj: async () => false,
-    }));
+    vi.mocked(gitModule.getTrunkBranch).mockResolvedValue('main');
+    vi.mocked(gitModule.getUsingJj).mockResolvedValue(false);
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
@@ -563,13 +572,14 @@ index 1234567..abcdefg 100644
     };
 
     // Mock the reviewer prompt
-    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
-      getReviewerPrompt: (contextContent: string) => ({
-        name: 'reviewer',
-        description: 'Reviews code',
-        prompt: `REVIEWER AGENT\n\n${contextContent}\n\nPLEASE REVIEW THE CODE`,
-      }),
-    }));
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockImplementation(
+      (contextContent: string) =>
+        ({
+          name: 'reviewer',
+          description: 'Reviews code',
+          prompt: `REVIEWER AGENT\n\n${contextContent}\n\nPLEASE REVIEW THE CODE`,
+        }) as any
+    );
 
     const prompt = buildReviewPrompt(planData, diffResult, true, false, [], []);
 
@@ -616,13 +626,14 @@ index 1234567..abcdefg 100644
       diffContent: 'diff --git a/src/example.ts b/src/example.ts',
     };
 
-    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
-      getReviewerPrompt: (contextContent: string) => ({
-        name: 'reviewer',
-        description: 'Reviews code',
-        prompt: contextContent,
-      }),
-    }));
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockImplementation(
+      (contextContent: string) =>
+        ({
+          name: 'reviewer',
+          description: 'Reviews code',
+          prompt: contextContent,
+        }) as any
+    );
 
     const prompt = buildReviewPrompt(
       planData,
@@ -657,11 +668,12 @@ index 1234567..abcdefg 100644
       diffContent: 'diff --git',
     };
 
-    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
-      getReviewerPrompt: (contextContent: string) => ({
-        prompt: contextContent,
-      }),
-    }));
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockImplementation(
+      (contextContent: string) =>
+        ({
+          prompt: contextContent,
+        }) as any
+    );
 
     const prompt = buildReviewPrompt(
       planData,
@@ -693,9 +705,7 @@ index 1234567..abcdefg 100644
     };
 
     const reviewerSpy = vi.fn(() => ({ prompt: 'mock prompt' }));
-    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
-      getReviewerPrompt: reviewerSpy,
-    }));
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockImplementation(reviewerSpy);
 
     buildReviewPrompt(planData, diffResult, false, true, [], []);
 
@@ -724,11 +734,12 @@ index 1234567..abcdefg 100644
       diffContent: 'diff content here',
     };
 
-    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
-      getReviewerPrompt: (contextContent: string) => ({
-        prompt: contextContent,
-      }),
-    }));
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockImplementation(
+      (contextContent: string) =>
+        ({
+          prompt: contextContent,
+        }) as any
+    );
 
     const prompt = buildReviewPrompt(planData, diffResult, true, false, [], []);
 
@@ -760,11 +771,12 @@ index 1234567..abcdefg 100644
       diffContent: 'test diff',
     };
 
-    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
-      getReviewerPrompt: (contextContent: string) => ({
-        prompt: contextContent,
-      }),
-    }));
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockImplementation(
+      (contextContent: string) =>
+        ({
+          prompt: contextContent,
+        }) as any
+    );
 
     const prompt = buildReviewPrompt(planData, diffResult, true, false, [], []);
 
@@ -795,11 +807,12 @@ index 1234567..abcdefg 100644
       baseBranch: 'main',
     };
 
-    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
-      getReviewerPrompt: (contextContent: string) => ({
-        prompt: contextContent,
-      }),
-    }));
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockImplementation(
+      (contextContent: string) =>
+        ({
+          prompt: contextContent,
+        }) as any
+    );
 
     const prompt = buildReviewPrompt(planData, diffResult, false, false, [], []);
 
@@ -815,15 +828,11 @@ describe('handleReviewCommand error handling', () => {
   test('throws error when plan cannot be loaded', async () => {
     const invalidPlanFile = join(testDir, 'invalid.yml');
 
-    await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () => {
-        throw new Error('Plan file not found: ' + invalidPlanFile);
-      },
-    }));
+    vi.mocked(contextGatheringModule.gatherPlanContext).mockRejectedValue(
+      new Error('Plan file not found: ' + invalidPlanFile)
+    );
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({}),
-    }));
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({} as any);
 
     const mockCommand = {
       parent: {
@@ -839,37 +848,34 @@ describe('handleReviewCommand error handling', () => {
   test('exits early when no changes detected', async () => {
     const planFile = join(testDir, 'no-changes.yml');
 
-    await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () =>
-        createMockPlanContext({
-          resolvedPlanFile: planFile,
-          planData: {
-            id: 1,
-            title: 'Test Plan',
-            goal: 'Test goal',
-            tasks: [
-              {
-                title: 'Test task',
-                description: 'A test task',
-              },
-            ],
-          },
-          parentChain: [],
-          completedChildren: [],
-          diffResult: {
-            hasChanges: false,
-            changedFiles: [],
-            baseBranch: 'main',
-            diffContent: '',
-          },
-          incrementalSummary: null,
-          noChangesDetected: true,
-        }),
-    }));
+    vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+      createMockPlanContext({
+        resolvedPlanFile: planFile,
+        planData: {
+          id: 1,
+          title: 'Test Plan',
+          goal: 'Test goal',
+          tasks: [
+            {
+              title: 'Test task',
+              description: 'A test task',
+            },
+          ],
+        },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: false,
+          changedFiles: [],
+          baseBranch: 'main',
+          diffContent: '',
+        },
+        incrementalSummary: null,
+        noChangesDetected: true,
+      }) as any
+    );
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({}),
-    }));
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({} as any);
 
     const mockCommand = {
       parent: {
@@ -901,83 +907,47 @@ describe('handleReviewCommand error handling', () => {
     );
 
     const mockExecutor = {
-      execute: mock(async () => {
+      execute: vi.fn(async () => {
         throw new Error('Executor failed');
       }),
     };
 
-    await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () =>
-        createMockPlanContext({
-          resolvedPlanFile: planFile,
-          planData: {
-            id: 1,
-            title: 'Test Plan',
-            goal: 'Test goal',
-            tasks: [
-              {
-                title: 'Test task',
-                description: 'A test task',
-              },
-            ],
-          },
-          parentChain: [],
-          completedChildren: [],
-          diffResult: {
-            hasChanges: true,
-            changedFiles: ['src/test.ts'],
-            baseBranch: 'main',
-            diffContent: 'mock diff content',
-          },
-          incrementalSummary: null,
-          noChangesDetected: false,
-        }),
-    }));
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+      defaultExecutor: 'codex-cli',
+    } as any);
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        defaultExecutor: 'codex-cli',
-      }),
-    }));
+    vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
 
-    await moduleMocker.mock('../executors/index.js', () => ({
-      buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => testDir,
-      getCurrentCommitHash: async () => 'deadbeef',
-    }));
+    vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
+    vi.mocked(gitModule.getCurrentCommitHash).mockResolvedValue('deadbeef');
 
     // Avoid real context gathering that would hit git/FS
-    await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () =>
-        createMockPlanContext({
-          resolvedPlanFile: planFile,
-          planData: {
-            id: 126,
-            title: 'Test No Issues',
-            goal: 'Test goal',
-            tasks: [
-              {
-                title: 'Test task',
-                description: 'A test task',
-              },
-            ],
-          },
-          parentChain: [],
-          completedChildren: [],
-          diffResult: {
-            hasChanges: true,
-            changedFiles: ['src/test.ts'],
-            baseBranch: 'main',
-            diffContent: 'mock diff content',
-          },
-          incrementalSummary: null,
-          noChangesDetected: false,
-        }),
-    }));
+    vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+      createMockPlanContext({
+        resolvedPlanFile: planFile,
+        planData: {
+          id: 126,
+          title: 'Test No Issues',
+          goal: 'Test goal',
+          tasks: [
+            {
+              title: 'Test task',
+              description: 'A test task',
+            },
+          ],
+        },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['src/test.ts'],
+          baseBranch: 'main',
+          diffContent: 'mock diff content',
+        },
+        incrementalSummary: null,
+        noChangesDetected: false,
+      }) as any
+    );
 
     const mockCommand = {
       parent: {
@@ -1005,7 +975,7 @@ tasks:
     await writeFile(planFile, `---\n${planContent}---\n`);
 
     const mockExecutor = {
-      execute: mock(async (prompt: string, metadata: any) => {
+      execute: vi.fn(async (prompt: string, metadata: any) => {
         expect(prompt).toContain('REVIEWER AGENT');
         // expect(metadata.planId).toBe('123');
         expect(metadata.planTitle).toBe('Integration Test Plan');
@@ -1018,70 +988,54 @@ tasks:
       }),
     };
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        defaultExecutor: 'claude-code',
-      }),
-    }));
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+      defaultExecutor: 'claude-code',
+    } as any);
 
-    await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () =>
-        createMockPlanContext({
-          resolvedPlanFile: planFile,
-          planData: {
-            id: 123,
-            title: 'Integration Test Plan',
-            goal: 'Test executor integration',
-            tasks: [
-              {
-                title: 'Test task',
-                description: 'Integration test task',
-              },
-            ],
-          },
-          parentChain: [],
-          completedChildren: [],
-          diffResult: {
-            hasChanges: true,
-            changedFiles: ['src/test.ts'],
-            baseBranch: 'main',
-            diffContent: 'test diff content',
-          },
-          incrementalSummary: null,
-          noChangesDetected: false,
-        }),
-    }));
+    vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+      createMockPlanContext({
+        resolvedPlanFile: planFile,
+        planData: {
+          id: 123,
+          title: 'Integration Test Plan',
+          goal: 'Test executor integration',
+          tasks: [
+            {
+              title: 'Test task',
+              description: 'Integration test task',
+            },
+          ],
+        },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['src/test.ts'],
+          baseBranch: 'main',
+          diffContent: 'test diff content',
+        },
+        incrementalSummary: null,
+        noChangesDetected: false,
+      }) as any
+    );
 
-    await moduleMocker.mock('../executors/index.js', () => ({
-      buildExecutorAndLog: (executorName: string, options: any, config: any) => {
+    vi.mocked(executorsModule.buildExecutorAndLog).mockImplementation(
+      (executorName: string, options: any) => {
         expect(executorName).toBe('claude-code');
         expect(options.baseDir).toBe(testDir);
-        return mockExecutor;
-      },
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
+        return mockExecutor as any;
+      }
+    );
 
-    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
-      getReviewerPrompt: (contextContent: string) => ({
-        prompt: `REVIEWER AGENT\n\n${contextContent}`,
-      }),
-    }));
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockImplementation(
+      (contextContent: string) =>
+        ({
+          prompt: `REVIEWER AGENT\n\n${contextContent}`,
+        }) as any
+    );
 
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => testDir,
-      getCurrentBranchName: async () => null,
-    }));
-
-    await moduleMocker.mock('./review.js', () => ({
-      handleReviewCommand,
-      generateDiffForReview: async () => ({
-        hasChanges: true,
-        changedFiles: ['src/test.ts'],
-        baseBranch: 'main',
-        diffContent: 'test diff content',
-      }),
-      buildReviewPrompt,
-    }));
+    vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
+    vi.mocked(gitModule.getCurrentBranchName).mockResolvedValue(null);
 
     const mockCommand = {
       parent: {
@@ -1107,7 +1061,7 @@ tasks:
     await writeFile(planFile, `---\n${planContent}---\n`);
 
     const mockExecutor = {
-      execute: mock(async (prompt: string, planInfo: any) => {
+      execute: vi.fn(async (prompt: string, planInfo: any) => {
         // Verify that executionMode is set to 'review'
         expect(planInfo.executionMode).toBe('review');
         expect(planInfo.planId).toBe('123');
@@ -1122,68 +1076,41 @@ tasks:
       }),
     };
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        defaultExecutor: 'claude-code',
-      }),
-    }));
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+      defaultExecutor: 'claude-code',
+    } as any);
 
-    await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () =>
-        createMockPlanContext({
-          resolvedPlanFile: planFile,
-          planData: {
-            id: 123,
-            title: 'Test Review Execution',
-            goal: 'Test that review command uses review execution mode',
-            tasks: [
-              {
-                title: 'Test task',
-                description: 'A test task for review execution mode',
-              },
-            ],
-          },
-          parentChain: [],
-          completedChildren: [],
-          diffResult: {
-            hasChanges: true,
-            changedFiles: ['src/test.ts'],
-            baseBranch: 'main',
-            diffContent: 'test diff content',
-          },
-          incrementalSummary: null,
-          noChangesDetected: false,
-        }),
-    }));
+    vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+      createMockPlanContext({
+        resolvedPlanFile: planFile,
+        planData: {
+          id: 123,
+          title: 'Test Review Execution',
+          goal: 'Test that review command uses review execution mode',
+          tasks: [
+            {
+              title: 'Test task',
+              description: 'A test task for review execution mode',
+            },
+          ],
+        },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['src/test.ts'],
+          baseBranch: 'main',
+          diffContent: 'test diff content',
+        },
+        incrementalSummary: null,
+        noChangesDetected: false,
+      }) as any
+    );
 
-    await moduleMocker.mock('../executors/index.js', () => ({
-      buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
+    vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
 
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => testDir,
-      getCurrentBranchName: async () => null,
-    }));
-
-    await moduleMocker.mock('./review.js', () => ({
-      handleReviewCommand,
-      generateDiffForReview: async () => ({
-        hasChanges: true,
-        changedFiles: ['src/test.ts'],
-        baseBranch: 'main',
-        diffContent: 'test diff content',
-      }),
-      buildReviewPrompt: (
-        planData: any,
-        diffResult: any,
-        includeDiff: boolean = false,
-        useSubagents: boolean = false,
-        parentChain: any[] = [],
-        completedChildren: any[] = [],
-        customInstructions?: string
-      ) => 'test review prompt',
-    }));
+    vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
+    vi.mocked(gitModule.getCurrentBranchName).mockResolvedValue(null);
 
     const mockCommand = {
       parent: {
@@ -1202,49 +1129,41 @@ tasks:
 
   test('respects dry-run option', async () => {
     const mockExecutor = {
-      execute: mock(async () => 'Should not be called'),
+      execute: vi.fn(async () => 'Should not be called'),
     };
 
-    await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () =>
-        createMockPlanContext({
-          resolvedPlanFile: join(testDir, 'dry-run.yml'),
-          planData: {
-            id: 1,
-            title: 'Dry Run Test',
-            goal: 'Test dry run functionality',
-            tasks: [
-              {
-                title: 'Test task',
-                description: 'Dry run test task',
-              },
-            ],
-          },
-          parentChain: [],
-          completedChildren: [],
-          diffResult: {
-            hasChanges: true,
-            changedFiles: ['test.ts'],
-            baseBranch: 'main',
-            diffContent: 'test diff',
-          },
-        }),
-    }));
+    vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+      createMockPlanContext({
+        resolvedPlanFile: join(testDir, 'dry-run.yml'),
+        planData: {
+          id: 1,
+          title: 'Dry Run Test',
+          goal: 'Test dry run functionality',
+          tasks: [
+            {
+              title: 'Test task',
+              description: 'Dry run test task',
+            },
+          ],
+        },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['test.ts'],
+          baseBranch: 'main',
+          diffContent: 'test diff',
+        },
+      }) as any
+    );
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({}),
-    }));
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({} as any);
 
-    await moduleMocker.mock('../executors/index.js', () => ({
-      buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
+    vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
 
-    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
-      getReviewerPrompt: () => ({
-        prompt: 'Generated prompt for dry run',
-      }),
-    }));
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockReturnValue({
+      prompt: 'Generated prompt for dry run',
+    } as any);
 
     const mockCommand = {
       parent: {
@@ -1276,7 +1195,7 @@ tasks:
     );
 
     const mockExecutor = {
-      execute: mock(async () =>
+      execute: vi.fn(async () =>
         JSON.stringify({
           issues: [
             {
@@ -1294,58 +1213,51 @@ tasks:
       ),
     };
 
-    await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () =>
-        createMockPlanContext({
-          resolvedPlanFile: planFile,
-          planData: {
-            id: 1,
-            title: 'Print Mode Plan',
-            goal: 'Test print mode',
-            tasks: [
-              {
-                title: 'Task One',
-                description: 'First task',
-              },
-            ],
-          },
-          parentChain: [],
-          completedChildren: [],
-          diffResult: {
-            hasChanges: true,
-            changedFiles: ['src/test.ts'],
-            baseBranch: 'main',
-            diffContent: 'mock diff content',
-          },
-          incrementalSummary: null,
-          noChangesDetected: false,
-        }),
-    }));
-
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        defaultExecutor: 'codex-cli',
-        review: {
-          autoSave: false,
+    vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+      createMockPlanContext({
+        resolvedPlanFile: planFile,
+        planData: {
+          id: 1,
+          title: 'Print Mode Plan',
+          goal: 'Test print mode',
+          tasks: [
+            {
+              title: 'Task One',
+              description: 'First task',
+            },
+          ],
         },
-      }),
-    }));
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['src/test.ts'],
+          baseBranch: 'main',
+          diffContent: 'mock diff content',
+        },
+        incrementalSummary: null,
+        noChangesDetected: false,
+      }) as any
+    );
 
-    await moduleMocker.mock('../executors/index.js', () => ({
-      buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+      defaultExecutor: 'codex-cli',
+      review: {
+        autoSave: false,
+      },
+    } as any);
 
-    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
-      getReviewerPrompt: (contextContent: string) => ({
-        prompt: contextContent,
-      }),
-    }));
+    vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
 
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => testDir,
-      getCurrentCommitHash: async () => null,
-    }));
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockImplementation(
+      (contextContent: string) =>
+        ({
+          prompt: contextContent,
+        }) as any
+    );
+
+    vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
+    vi.mocked(gitModule.getCurrentCommitHash).mockResolvedValue(null);
 
     const mockCommand = {
       parent: {
@@ -1359,11 +1271,9 @@ tasks:
       stdoutWrites.push(args.map((arg) => String(arg)).join(' '));
     };
 
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: (value: string) => {
-        stdoutWrites.push(String(value));
-      },
-    }));
+    vi.mocked(loggingModule.log).mockImplementation((value: string) => {
+      stdoutWrites.push(String(value));
+    });
 
     try {
       await handleReviewCommand(
@@ -1426,11 +1336,12 @@ describe('Parent plan context handling', () => {
       diffContent: 'mock diff content',
     };
 
-    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
-      getReviewerPrompt: (contextContent: string) => ({
-        prompt: contextContent,
-      }),
-    }));
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockImplementation(
+      (contextContent: string) =>
+        ({
+          prompt: contextContent,
+        }) as any
+    );
 
     const prompt = buildReviewPrompt(childPlan, diffResult, true, false, [parentPlan], []);
 
@@ -1469,11 +1380,12 @@ describe('Parent plan context handling', () => {
       diffContent: 'mock diff',
     };
 
-    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
-      getReviewerPrompt: (contextContent: string) => ({
-        prompt: contextContent,
-      }),
-    }));
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockImplementation(
+      (contextContent: string) =>
+        ({
+          prompt: contextContent,
+        }) as any
+    );
 
     const prompt = buildReviewPrompt(planData, diffResult, true, false, [], []);
 
@@ -1509,11 +1421,12 @@ describe('Parent plan context handling', () => {
       diffContent: 'mock diff',
     };
 
-    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
-      getReviewerPrompt: (contextContent: string) => ({
-        prompt: contextContent,
-      }),
-    }));
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockImplementation(
+      (contextContent: string) =>
+        ({
+          prompt: contextContent,
+        }) as any
+    );
 
     // Test with undefined parent (simulating missing parent)
     const prompt = buildReviewPrompt(childPlan, diffResult, true, false, [], []);
@@ -1529,7 +1442,6 @@ describe('Parent plan context handling', () => {
   });
 
   test('handles parent plan context integration in handleReviewCommand', async () => {
-    const testDir = await mkdtemp(join(tmpdir(), 'tim-parent-test-'));
     const childPlanFile = join(testDir, 'child-101.yml');
     await writePlanToDb(
       {
@@ -1559,7 +1471,7 @@ describe('Parent plan context handling', () => {
       ],
       filename: join(testDir, '.tim', 'plans', '99.plan.md'),
     };
-    const gatherPlanContextMock = mock(async () =>
+    const gatherPlanContextMock = vi.fn(async () =>
       createMockPlanContext({
         resolvedPlanFile: childPlanFile,
         planData: {
@@ -1586,7 +1498,7 @@ describe('Parent plan context handling', () => {
     );
 
     const mockExecutor = {
-      execute: mock(async (prompt: string) => {
+      execute: vi.fn(async (prompt: string) => {
         // Verify the prompt includes parent context
         expect(prompt).toContain('# Parent Plan Context');
         expect(prompt).toContain('**Parent Plan ID:** 99');
@@ -1599,60 +1511,21 @@ describe('Parent plan context handling', () => {
       }),
     };
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        defaultExecutor: 'codex-cli',
-      }),
-    }));
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+      defaultExecutor: 'codex-cli',
+    } as any);
 
-    await moduleMocker.mock('../executors/index.js', () => ({
-      buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
+    vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
 
-    await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: gatherPlanContextMock,
-    }));
+    vi.mocked(contextGatheringModule.gatherPlanContext).mockImplementation(gatherPlanContextMock);
 
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => testDir,
-    }));
-
-    await moduleMocker.mock('./review.js', () => ({
-      handleReviewCommand,
-      generateDiffForReview: async () => ({
-        hasChanges: true,
-        changedFiles: ['test.ts'],
-        baseBranch: 'main',
-        diffContent: 'test diff',
-      }),
-      buildReviewPrompt: (
-        planData: any,
-        diffResult: any,
-        includeDiff: boolean = false,
-        useSubagents: boolean = false,
-        parentChain: any[] = [],
-        completedChildren: any[] = []
-      ) => {
-        // Create a test prompt that includes parent context when parent is provided
-        let prompt = `REVIEWER AGENT\n\n`;
-
-        if (parentChain && parentChain.length > 0) {
-          const parentPlan = parentChain[0];
-          prompt += `# Parent Plan Context\n\n`;
-          prompt += `**Parent Plan ID:** ${parentPlan.id}\n`;
-          prompt += `**Parent Title:** ${parentPlan.title}\n`;
-          prompt += `**Parent Goal:** ${parentPlan.goal}\n\n`;
-        }
-
-        prompt += `# Plan Context\n\n`;
-        prompt += `**Plan ID:** ${planData.id}\n`;
-        prompt += `**Title:** ${planData.title}\n`;
-        prompt += `**Goal:** ${planData.goal}\n\n`;
-
-        return prompt;
-      },
-    }));
+    vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockImplementation(
+      (contextContent: string) =>
+        ({
+          prompt: contextContent,
+        }) as any
+    );
 
     const mockCommand = {
       parent: {
@@ -1710,11 +1583,12 @@ describe('Hierarchy integration with utilities', () => {
       diffContent: 'test diff',
     };
 
-    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
-      getReviewerPrompt: (contextContent: string) => ({
-        prompt: contextContent,
-      }),
-    }));
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockImplementation(
+      (contextContent: string) =>
+        ({
+          prompt: contextContent,
+        }) as any
+    );
 
     // Test with multi-level parent chain
     const parentChain = [parentPlan, grandparentPlan];
@@ -1774,11 +1648,12 @@ describe('Hierarchy integration with utilities', () => {
       diffContent: 'parent review diff',
     };
 
-    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
-      getReviewerPrompt: (contextContent: string) => ({
-        prompt: contextContent,
-      }),
-    }));
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockImplementation(
+      (contextContent: string) =>
+        ({
+          prompt: contextContent,
+        }) as any
+    );
 
     const completedChildren = [completedChild1, completedChild2];
     const prompt = buildReviewPrompt(parentPlan, diffResult, true, false, [], completedChildren);
@@ -1846,11 +1721,12 @@ describe('Hierarchy integration with utilities', () => {
       diffContent: 'complex diff',
     };
 
-    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
-      getReviewerPrompt: (contextContent: string) => ({
-        prompt: contextContent,
-      }),
-    }));
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockImplementation(
+      (contextContent: string) =>
+        ({
+          prompt: contextContent,
+        }) as any
+    );
 
     const parentChain = [parentPlan, grandparentPlan];
     const completedChildren = [completedChild];
@@ -1903,11 +1779,12 @@ describe('Hierarchy integration with utilities', () => {
       diffContent: 'simple diff',
     };
 
-    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
-      getReviewerPrompt: (contextContent: string) => ({
-        prompt: contextContent,
-      }),
-    }));
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockImplementation(
+      (contextContent: string) =>
+        ({
+          prompt: contextContent,
+        }) as any
+    );
 
     // Should not attempt hierarchy traversal without an ID
     const prompt = buildReviewPrompt(planWithoutId, diffResult, true, false, [], []);
@@ -1938,11 +1815,12 @@ describe('Hierarchy integration with utilities', () => {
       diffContent: 'simple diff',
     };
 
-    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
-      getReviewerPrompt: (contextContent: string) => ({
-        prompt: contextContent,
-      }),
-    }));
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockImplementation(
+      (contextContent: string) =>
+        ({
+          prompt: contextContent,
+        }) as any
+    );
 
     const prompt = buildReviewPrompt(simplePlan, diffResult, true, false, [], []);
 
@@ -1995,11 +1873,12 @@ describe('Hierarchy integration with utilities', () => {
       diffContent: 'test diff',
     };
 
-    await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
-      getReviewerPrompt: (contextContent: string) => ({
-        prompt: contextContent,
-      }),
-    }));
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockImplementation(
+      (contextContent: string) =>
+        ({
+          prompt: contextContent,
+        }) as any
+    );
 
     const prompt = buildReviewPrompt(
       currentPlan,
@@ -2088,15 +1967,11 @@ describe('Security fixes', () => {
     test('validates multiple tasks correctly', async () => {
       const planFile = join(testDir, 'multiple-invalid-tasks.yml');
 
-      await moduleMocker.mock('../utils/context_gathering.js', () => ({
-        gatherPlanContext: async () => {
-          throw new Error('tasks.1.title: Invalid input: expected string, received undefined');
-        },
-      }));
+      vi.mocked(contextGatheringModule.gatherPlanContext).mockRejectedValue(
+        new Error('tasks.1.title: Invalid input: expected string, received undefined')
+      );
 
-      await moduleMocker.mock('../configLoader.js', () => ({
-        loadEffectiveConfig: async () => ({}),
-      }));
+      vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({} as any);
 
       const mockCommand = {
         parent: {
@@ -2188,65 +2063,38 @@ tasks:
         },
       };
 
-      await moduleMocker.mock('../configLoader.js', () => ({
-        loadEffectiveConfig: async () => ({}),
-      }));
+      vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({} as any);
 
-      await moduleMocker.mock('../utils/context_gathering.js', () => ({
-        gatherPlanContext: async () =>
-          createMockPlanContext({
-            resolvedPlanFile: planFile,
-            planData: {
-              id: 1,
-              title: 'Test Plan',
-              goal: 'Test goal',
-              tasks: [
-                {
-                  title: 'Test task',
-                  description: 'A test task',
-                },
-              ],
-            },
-            parentChain: [],
-            completedChildren: [],
-            diffResult: {
-              hasChanges: true,
-              changedFiles: ['test.ts'],
-              baseBranch: 'main',
-              diffContent: 'test diff',
-            },
-            incrementalSummary: null,
-            noChangesDetected: false,
-          }),
-      }));
+      vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+        createMockPlanContext({
+          resolvedPlanFile: planFile,
+          planData: {
+            id: 1,
+            title: 'Test Plan',
+            goal: 'Test goal',
+            tasks: [
+              {
+                title: 'Test task',
+                description: 'A test task',
+              },
+            ],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['test.ts'],
+            baseBranch: 'main',
+            diffContent: 'test diff',
+          },
+          incrementalSummary: null,
+          noChangesDetected: false,
+        }) as any
+      );
 
-      await moduleMocker.mock('../executors/index.js', () => ({
-        buildExecutorAndLog: () => mockExecutor,
-        DEFAULT_EXECUTOR: 'codex-cli',
-      }));
+      vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
 
-      await moduleMocker.mock('../../common/git.js', () => ({
-        getGitRoot: async () => testDir,
-      }));
-
-      await moduleMocker.mock('./review.js', () => ({
-        handleReviewCommand,
-        generateDiffForReview: async () => ({
-          hasChanges: true,
-          changedFiles: ['test.ts'],
-          baseBranch: 'main',
-          diffContent: 'test diff',
-        }),
-        buildReviewPrompt: (
-          planData: any,
-          diffResult: any,
-          includeDiff: boolean = false,
-          useSubagents: boolean = false,
-          parentChain: any[] = [],
-          completedChildren: any[] = [],
-          customInstructions?: string
-        ) => 'test prompt',
-      }));
+      vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
 
       const mockCommand = {
         parent: {
@@ -2669,17 +2517,15 @@ describe('Autofix functionality', () => {
 
     const materializedPlanPath = join(testDir, '.tim', 'plans', '123.plan.md');
 
-    await moduleMocker.mock('@inquirer/prompts', () => ({
-      confirm: mock(async () => {
-        throw new Error('Confirm should not be called with --autofix flag');
-      }),
-      checkbox: mock(async ({ choices }: { choices: any[] }) =>
-        choices.map((choice) => choice.value)
-      ),
-    }));
+    vi.mocked(inquirerModule.confirm).mockRejectedValue(
+      new Error('Confirm should not be called with --autofix flag')
+    );
+    vi.mocked(inquirerModule.checkbox).mockImplementation(async ({ choices }: { choices: any[] }) =>
+      choices.map((choice: any) => choice.value)
+    );
 
     const mockExecutor = {
-      execute: mock(async (prompt: string, metadata: any) => {
+      execute: vi.fn(async (prompt: string, metadata: any) => {
         if (metadata.executionMode === 'review') {
           expect(metadata.planFilePath).toBe(materializedPlanPath);
           return JSON.stringify({
@@ -2718,62 +2564,40 @@ describe('Autofix functionality', () => {
       }),
     };
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        defaultExecutor: 'claude-code',
-      }),
-    }));
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+      defaultExecutor: 'claude-code',
+    } as any);
 
-    await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () =>
-        createMockPlanContext({
-          resolvedPlanFile: '123',
-          planData: {
-            id: 123,
-            title: 'DB-only Autofix Plan',
-            goal: 'Verify review/autofix materialization',
-            tasks: [
-              {
-                title: 'Fix review issues',
-                description: 'Materialize before executor handoff',
-              },
-            ],
-          },
-          parentChain: [],
-          completedChildren: [],
-          diffResult: {
-            hasChanges: true,
-            changedFiles: ['src/auth.ts'],
-            baseBranch: 'main',
-            diffContent: 'diff content',
-          },
-          incrementalSummary: null,
-          noChangesDetected: false,
-        }),
-    }));
+    vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+      createMockPlanContext({
+        resolvedPlanFile: '123',
+        planData: {
+          id: 123,
+          title: 'DB-only Autofix Plan',
+          goal: 'Verify review/autofix materialization',
+          tasks: [
+            {
+              title: 'Fix review issues',
+              description: 'Materialize before executor handoff',
+            },
+          ],
+        },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['src/auth.ts'],
+          baseBranch: 'main',
+          diffContent: 'diff content',
+        },
+        incrementalSummary: null,
+        noChangesDetected: false,
+      }) as any
+    );
 
-    await moduleMocker.mock('../executors/index.js', () => ({
-      buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
+    vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
 
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => testDir,
-    }));
-
-    await moduleMocker.mock('./review.js', () => ({
-      handleReviewCommand,
-      generateDiffForReview: async () => ({
-        hasChanges: true,
-        changedFiles: ['src/auth.ts'],
-        baseBranch: 'main',
-        diffContent: 'diff content',
-      }),
-      buildReviewPrompt: () => 'test review prompt',
-      detectIssuesInReview: (reviewResult: any) =>
-        Array.isArray(reviewResult.issues) && reviewResult.issues.length > 0,
-      buildAutofixPrompt: () => '# Autofix Request\n\nFix the issues.',
-    }));
+    vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
 
     const mockCommand = {
       parent: {
@@ -2813,18 +2637,18 @@ tasks:
     await writeFile(planFile, `---\n${planContent}---\n`);
 
     // Mock checkbox to return all issues when autofix flag is used
-    await moduleMocker.mock('@inquirer/prompts', () => ({
-      confirm: mock(async () => {
-        throw new Error('Confirm should not be called with --autofix flag');
-      }),
-      checkbox: mock(async ({ choices }: { choices: any[] }) => {
+    vi.mocked(inquirerModule.confirm).mockRejectedValue(
+      new Error('Confirm should not be called with --autofix flag')
+    );
+    vi.mocked(inquirerModule.checkbox).mockImplementation(
+      async ({ choices }: { choices: any[] }) => {
         // Return all issues for autofix
-        return choices.map((c) => c.value);
-      }),
-    }));
+        return choices.map((c: any) => c.value);
+      }
+    );
 
     const mockExecutor = {
-      execute: mock(async (prompt: string, metadata: any) => {
+      execute: vi.fn(async (prompt: string, metadata: any) => {
         if (metadata.executionMode === 'review') {
           // First call is the review - return JSON output with issues
           return JSON.stringify({
@@ -2860,91 +2684,43 @@ tasks:
       }),
     };
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        defaultExecutor: 'claude-code',
-      }),
-    }));
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+      defaultExecutor: 'claude-code',
+    } as any);
 
-    await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () =>
-        createMockPlanContext({
-          resolvedPlanFile: planFile,
-          planData: {
-            id: 123,
-            title: 'Test Plan with Issues',
-            goal: 'Test autofix functionality',
-            tasks: [
-              {
-                title: 'Test task',
-                description: 'A test task that has issues',
-              },
-            ],
-          },
-          parentChain: [],
-          completedChildren: [],
-          diffResult: {
-            hasChanges: true,
-            changedFiles: ['src/test.ts'],
-            baseBranch: 'main',
-            diffContent: 'test diff content',
-          },
-          incrementalSummary: null,
-          noChangesDetected: false,
-        }),
-    }));
+    vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+      createMockPlanContext({
+        resolvedPlanFile: planFile,
+        planData: {
+          id: 123,
+          title: 'Test Plan with Issues',
+          goal: 'Test autofix functionality',
+          tasks: [
+            {
+              title: 'Test task',
+              description: 'A test task that has issues',
+            },
+          ],
+        },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['src/test.ts'],
+          baseBranch: 'main',
+          diffContent: 'test diff content',
+        },
+        incrementalSummary: null,
+        noChangesDetected: false,
+      }) as any
+    );
 
-    await moduleMocker.mock('../executors/index.js', () => ({
-      buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
+    vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
 
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => testDir,
-    }));
-
-    await moduleMocker.mock('./review.js', () => ({
-      handleReviewCommand,
-      generateDiffForReview: async () => ({
-        hasChanges: true,
-        changedFiles: ['src/test.ts'],
-        baseBranch: 'main',
-        diffContent: 'test diff content',
-      }),
-      buildReviewPrompt: (
-        planData: any,
-        diffResult: any,
-        includeDiff: boolean = false,
-        useSubagents: boolean = false,
-        parentChain: any[] = [],
-        completedChildren: any[] = [],
-        customInstructions?: string
-      ) => 'test review prompt',
-      detectIssuesInReview: (reviewResult: any, rawOutput: string) => {
-        // Check the reviewResult object for issues (since we're using JSON now)
-        return reviewResult.issues && reviewResult.issues.length > 0;
-      },
-      buildAutofixPrompt: (planData: any, reviewResult: any, diffResult: any) => {
-        return `# Autofix Request
-
-## Plan Context
-
-**Plan ID:** ${planData.id}
-**Title:** ${planData.title}
-
-## Review Findings
-
-### Issue 1: Security Vulnerability
-- Unsafe input validation
-
-### Issue 2: Performance Issue
-- N+1 query problem
-
-## Instructions
-
-Please fix all the issues identified in the review.`;
-      },
-    }));
+    vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockReturnValue({
+      prompt: 'test review prompt',
+    } as any);
 
     const mockCommand = {
       parent: {
@@ -2992,7 +2768,7 @@ tasks:
     await writeFile(planFile, `---\n${planContent}---\n`);
 
     const mockExecutor = {
-      execute: mock(async (prompt: string, metadata: any) => {
+      execute: vi.fn(async (prompt: string, metadata: any) => {
         if (metadata.executionMode === 'review') {
           return JSON.stringify({
             issues: [
@@ -3014,68 +2790,31 @@ tasks:
 
     // Mock the confirm function to return true (user confirms autofix)
     // Also mock checkbox to return all issues
-    await moduleMocker.mock('@inquirer/prompts', () => ({
-      confirm: mock(async ({ message }: { message: string }) => {
+    vi.mocked(inquirerModule.confirm).mockImplementation(
+      async ({ message }: { message: string }) => {
         expect(message).toContain('Issues were found during review');
         expect(message).toContain('automatically fix them');
         return true;
-      }),
-      select: mock(async ({ choices }: { choices: any[] }) => {
-        // Return first choice
-        return choices[0].value;
-      }),
-      checkbox: mock(async ({ choices }: { choices: any[] }) => {
+      }
+    );
+    vi.mocked(inquirerModule.select).mockImplementation(async ({ choices }: { choices: any[] }) => {
+      // Return first choice
+      return choices[0].value;
+    });
+    vi.mocked(inquirerModule.checkbox).mockImplementation(
+      async ({ choices }: { choices: any[] }) => {
         // Return all choices
         return choices.map((choice: any) => choice.value);
-      }),
-    }));
+      }
+    );
 
-    await moduleMocker.mock('../plans.js', () => ({
-      resolvePlanFile: async () => planFile,
-      readPlanFile: async () => ({
-        id: 124,
-        title: 'Test Interactive Prompt',
-        goal: 'Test interactive autofix prompt',
-        tasks: [
-          {
-            title: 'Test task',
-            description: 'A test task with issues',
-          },
-        ],
-      }),
-    }));
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+      defaultExecutor: 'claude-code',
+    } as any);
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        defaultExecutor: 'claude-code',
-      }),
-    }));
+    vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
 
-    await moduleMocker.mock('../executors/index.js', () => ({
-      buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => testDir,
-    }));
-
-    await moduleMocker.mock('./review.js', () => ({
-      handleReviewCommand,
-      generateDiffForReview: async () => ({
-        hasChanges: true,
-        changedFiles: ['src/test.ts'],
-        baseBranch: 'main',
-        diffContent: 'test diff',
-      }),
-      buildReviewPrompt: () => 'test review prompt',
-      detectIssuesInReview: (reviewResult: any, rawOutput: string) => {
-        return rawOutput.includes('Major Issues');
-      },
-      buildAutofixPrompt: (planData: any, reviewResult: any, diffResult: any) => {
-        return `# Autofix Request for ${planData.title}`;
-      },
-    }));
+    vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
 
     const mockCommand = {
       parent: {
@@ -3103,7 +2842,7 @@ tasks:
     await writeFile(planFile, `---\n${planContent}---\n`);
 
     const mockExecutor = {
-      execute: mock(async (prompt: string, metadata: any) => {
+      execute: vi.fn(async (prompt: string, metadata: any) => {
         if (metadata.executionMode === 'review') {
           return JSON.stringify({
             issues: [
@@ -3127,72 +2866,50 @@ tasks:
 
     // Mock the confirm function to return false (user declines autofix)
     // Also mock checkbox in case it's called (shouldn't be if confirm returns false)
-    await moduleMocker.mock('@inquirer/prompts', () => ({
-      select: mock(async ({ message }: { message: string }) => {
+    vi.mocked(inquirerModule.select).mockImplementation(
+      async ({ message }: { message: string }) => {
         expect(message).toContain('Issues were found during review');
-        return 'exit';
-      }),
-    }));
+        return 'exit' as any;
+      }
+    );
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        defaultExecutor: 'claude-code',
-      }),
-    }));
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+      defaultExecutor: 'claude-code',
+    } as any);
 
-    await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () =>
-        createMockPlanContext({
-          resolvedPlanFile: planFile,
-          planData: {
-            id: 125,
-            title: 'Test Declined Autofix',
-            goal: 'Test user declining autofix',
-            tasks: [
-              {
-                title: 'Test task',
-                description: 'A test task with issues',
-              },
-            ],
-          },
-          parentChain: [],
-          completedChildren: [],
-          diffResult: {
-            hasChanges: true,
-            changedFiles: ['src/test.ts'],
-            baseBranch: 'main',
-            diffContent: 'test diff',
-          },
-          incrementalSummary: null,
-          noChangesDetected: false,
-        }),
-    }));
+    vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+      createMockPlanContext({
+        resolvedPlanFile: planFile,
+        planData: {
+          id: 125,
+          title: 'Test Declined Autofix',
+          goal: 'Test user declining autofix',
+          tasks: [
+            {
+              title: 'Test task',
+              description: 'A test task with issues',
+            },
+          ],
+        },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['src/test.ts'],
+          baseBranch: 'main',
+          diffContent: 'test diff',
+        },
+        incrementalSummary: null,
+        noChangesDetected: false,
+      }) as any
+    );
 
-    await moduleMocker.mock('../executors/index.js', () => ({
-      buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
+    vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
 
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => testDir,
-    }));
-
-    await moduleMocker.mock('./review.js', () => ({
-      handleReviewCommand,
-      generateDiffForReview: async () => ({
-        hasChanges: true,
-        changedFiles: ['src/test.ts'],
-        baseBranch: 'main',
-        diffContent: 'test diff',
-      }),
-      buildReviewPrompt: () => 'test review prompt',
-      detectIssuesInReview: (reviewResult: any, rawOutput: string) => {
-        return rawOutput.includes('Minor Issues');
-      },
-      buildAutofixPrompt: (planData: any, reviewResult: any, diffResult: any) => {
-        throw new Error('buildAutofixPrompt should not be called when user declines');
-      },
-    }));
+    vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockReturnValue({
+      prompt: 'test review prompt',
+    } as any);
 
     const mockCommand = {
       parent: {
@@ -3225,7 +2942,7 @@ tasks:
     await writeFile(planFile, `---\n${planContent}---\n`);
 
     const mockExecutor = {
-      execute: mock(async (prompt: string, metadata: any) => {
+      execute: vi.fn(async (prompt: string, metadata: any) => {
         if (metadata.executionMode === 'review') {
           // Return review output with no issues
           return JSON.stringify({
@@ -3240,75 +2957,50 @@ tasks:
 
     // Mock confirm to throw if called (it shouldn't be)
     // Also mock checkbox to throw if called (it shouldn't be)
-    await moduleMocker.mock('@inquirer/prompts', () => ({
-      confirm: mock(async () => {
-        throw new Error('Confirm should not be called when no issues found');
-      }),
-      checkbox: mock(async () => {
-        throw new Error('Checkbox should not be called when no issues found');
-      }),
-    }));
+    vi.mocked(inquirerModule.confirm).mockRejectedValue(
+      new Error('Confirm should not be called when no issues found')
+    );
+    vi.mocked(inquirerModule.checkbox).mockRejectedValue(
+      new Error('Checkbox should not be called when no issues found')
+    );
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        defaultExecutor: 'claude-code',
-      }),
-    }));
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+      defaultExecutor: 'claude-code',
+    } as any);
 
-    await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () =>
-        createMockPlanContext({
-          resolvedPlanFile: planFile,
-          planData: {
-            id: 126,
-            title: 'Test No Issues',
-            goal: 'Test no autofix when no issues',
-            tasks: [
-              {
-                title: 'Test task',
-                description: 'A clean test task',
-              },
-            ],
-          },
-          parentChain: [],
-          completedChildren: [],
-          diffResult: {
-            hasChanges: true,
-            changedFiles: ['src/test.ts'],
-            baseBranch: 'main',
-            diffContent: 'test diff',
-          },
-          incrementalSummary: null,
-          noChangesDetected: false,
-        }),
-    }));
+    vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+      createMockPlanContext({
+        resolvedPlanFile: planFile,
+        planData: {
+          id: 126,
+          title: 'Test No Issues',
+          goal: 'Test no autofix when no issues',
+          tasks: [
+            {
+              title: 'Test task',
+              description: 'A clean test task',
+            },
+          ],
+        },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['src/test.ts'],
+          baseBranch: 'main',
+          diffContent: 'test diff',
+        },
+        incrementalSummary: null,
+        noChangesDetected: false,
+      }) as any
+    );
 
-    await moduleMocker.mock('../executors/index.js', () => ({
-      buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
+    vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
 
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => testDir,
-    }));
-
-    await moduleMocker.mock('./review.js', () => ({
-      handleReviewCommand,
-      generateDiffForReview: async () => ({
-        hasChanges: true,
-        changedFiles: ['src/test.ts'],
-        baseBranch: 'main',
-        diffContent: 'test diff',
-      }),
-      buildReviewPrompt: () => 'test review prompt',
-      detectIssuesInReview: (reviewResult: any, rawOutput: string) => {
-        // No issues found - the review output indicates all is well
-        return false;
-      },
-      buildAutofixPrompt: (planData: any, reviewResult: any, diffResult: any) => {
-        throw new Error('buildAutofixPrompt should not be called when no issues found');
-      },
-    }));
+    vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockReturnValue({
+      prompt: 'test review prompt',
+    } as any);
 
     const mockCommand = {
       parent: {
@@ -3339,7 +3031,7 @@ tasks:
     await writeFile(planFile, `---\n${planContent}---\n`);
 
     const mockExecutor = {
-      execute: mock(async (prompt: string, metadata: any) => {
+      execute: vi.fn(async (prompt: string, metadata: any) => {
         if (metadata.executionMode === 'review') {
           return JSON.stringify({
             issues: [
@@ -3362,92 +3054,52 @@ tasks:
 
     // Mock confirm to throw if called (it shouldn't be with --no-autofix)
     // Also mock checkbox to throw if called (it shouldn't be with --no-autofix)
-    await moduleMocker.mock('@inquirer/prompts', () => ({
-      confirm: mock(async () => {
-        throw new Error('Confirm should not be called with --no-autofix flag');
-      }),
-      checkbox: mock(async () => {
-        throw new Error('Checkbox should not be called with --no-autofix flag');
-      }),
-    }));
-
-    await moduleMocker.mock('../plans.js', () => ({
-      resolvePlanFile: async () => planFile,
-      readPlanFile: async () => ({
-        id: 127,
-        title: 'Test No-Autofix Flag',
-        goal: 'Test no-autofix flag prevention',
-        tasks: [
-          {
-            title: 'Test task',
-            description: 'A test task with issues',
-          },
-        ],
-      }),
-    }));
+    vi.mocked(inquirerModule.confirm).mockRejectedValue(
+      new Error('Confirm should not be called with --no-autofix flag')
+    );
+    vi.mocked(inquirerModule.checkbox).mockRejectedValue(
+      new Error('Checkbox should not be called with --no-autofix flag')
+    );
 
     // Short-circuit context gathering to avoid touching real git and IO
-    await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () =>
-        createMockPlanContext({
-          resolvedPlanFile: planFile,
-          planData: {
-            id: 127,
-            title: 'Test No-Autofix Flag',
-            goal: 'Test no-autofix flag prevention',
-            tasks: [
-              {
-                title: 'Test task',
-                description: 'A test task with issues',
-              },
-            ],
-          },
-          parentChain: [],
-          completedChildren: [],
-          diffResult: {
-            hasChanges: true,
-            changedFiles: ['src/test.ts'],
-            baseBranch: 'main',
-            diffContent: 'mock diff content',
-          },
-          incrementalSummary: null,
-          noChangesDetected: false,
-        }),
-    }));
+    vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+      createMockPlanContext({
+        resolvedPlanFile: planFile,
+        planData: {
+          id: 127,
+          title: 'Test No-Autofix Flag',
+          goal: 'Test no-autofix flag prevention',
+          tasks: [
+            {
+              title: 'Test task',
+              description: 'A test task with issues',
+            },
+          ],
+        },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['src/test.ts'],
+          baseBranch: 'main',
+          diffContent: 'mock diff content',
+        },
+        incrementalSummary: null,
+        noChangesDetected: false,
+      }) as any
+    );
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        defaultExecutor: 'claude-code',
-      }),
-    }));
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+      defaultExecutor: 'claude-code',
+    } as any);
 
-    await moduleMocker.mock('../executors/index.js', () => ({
-      buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
+    vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
 
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => testDir,
-      // Avoid invoking real git in tests
-      getCurrentCommitHash: async () => 'deadbeef',
-    }));
-
-    await moduleMocker.mock('./review.js', () => ({
-      handleReviewCommand,
-      generateDiffForReview: async () => ({
-        hasChanges: true,
-        changedFiles: ['src/test.ts'],
-        baseBranch: 'main',
-        diffContent: 'test diff',
-      }),
-      buildReviewPrompt: () => 'test review prompt',
-      detectIssuesInReview: (reviewResult: any, rawOutput: string) => {
-        return rawOutput.includes('Critical Issues');
-      },
-      buildAutofixPrompt: (planData: any, reviewResult: any, diffResult: any) => {
-        throw new Error('buildAutofixPrompt should not be called with --no-autofix flag');
-      },
-    }));
+    vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
+    vi.mocked(gitModule.getCurrentCommitHash).mockResolvedValue('deadbeef');
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockReturnValue({
+      prompt: 'test review prompt',
+    } as any);
 
     const mockCommand = {
       parent: {
@@ -3657,7 +3309,7 @@ describe('Auto-selection of branch-specific plans', () => {
 
     const materializedPlanPath = join(testDir, '.tim', 'plans', '280.plan.md');
     const mockExecutor = {
-      execute: mock(async () =>
+      execute: vi.fn(async () =>
         JSON.stringify({
           issues: [],
           recommendations: [],
@@ -3665,7 +3317,7 @@ describe('Auto-selection of branch-specific plans', () => {
         })
       ),
     };
-    const gatherPlanContextMock = mock(async (planArg: string) => {
+    const gatherPlanContextMock = vi.fn(async (planArg: string) => {
       expect(planArg).toBe(materializedPlanPath);
       return createMockPlanContext({
         resolvedPlanFile: materializedPlanPath,
@@ -3686,32 +3338,13 @@ describe('Auto-selection of branch-specific plans', () => {
       });
     });
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        defaultExecutor: 'claude-code',
-      }),
-    }));
-    await moduleMocker.mock('../executors/index.js', () => ({
-      buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
-    await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: gatherPlanContextMock,
-    }));
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => testDir,
-      getCurrentBranchName: async () => '280-db-selected-plan',
-    }));
-    await moduleMocker.mock('./review.js', () => ({
-      handleReviewCommand,
-      generateDiffForReview: async () => ({
-        hasChanges: true,
-        changedFiles: ['src/test.ts'],
-        baseBranch: 'main',
-        diffContent: 'test diff',
-      }),
-      buildReviewPrompt: () => 'test review prompt',
-    }));
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+      defaultExecutor: 'claude-code',
+    } as any);
+    vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
+    vi.mocked(contextGatheringModule.gatherPlanContext).mockImplementation(gatherPlanContextMock);
+    vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
+    vi.mocked(gitModule.getCurrentBranchName).mockResolvedValue('280-db-selected-plan');
 
     const mockCommand = {
       parent: {
@@ -3755,17 +3388,15 @@ describe('Auto-selection of branch-specific plans', () => {
       { skipSync: true }
     );
 
-    await moduleMocker.mock('@inquirer/prompts', () => ({
-      confirm: mock(async () => {
-        throw new Error('Confirm should not be called with --autofix flag');
-      }),
-      checkbox: mock(async ({ choices }: { choices: any[] }) =>
-        choices.map((choice) => choice.value)
-      ),
-    }));
+    vi.mocked(inquirerModule.confirm).mockRejectedValue(
+      new Error('Confirm should not be called with --autofix flag')
+    );
+    vi.mocked(inquirerModule.checkbox).mockImplementation(async ({ choices }: { choices: any[] }) =>
+      choices.map((choice) => choice.value)
+    );
 
     const mockExecutor = {
-      execute: mock(async (prompt: string, metadata: any) => {
+      execute: vi.fn(async (prompt: string, metadata: any) => {
         if (metadata.executionMode === 'review') {
           expect(metadata.planFilePath).toBe(materializedPlanPath);
           const existingMaterializedPlan = await readPlanFile(materializedPlanPath);
@@ -3810,7 +3441,7 @@ Updated by branch-name autofix
       }),
     };
 
-    const gatherPlanContextMock = mock(async (planArg: string) => {
+    const gatherPlanContextMock = vi.fn(async (planArg: string) => {
       expect(planArg).toBe(materializedPlanPath);
       return createMockPlanContext({
         resolvedPlanFile: materializedPlanPath,
@@ -3836,35 +3467,13 @@ Updated by branch-name autofix
       });
     });
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        defaultExecutor: 'claude-code',
-      }),
-    }));
-    await moduleMocker.mock('../executors/index.js', () => ({
-      buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
-    await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: gatherPlanContextMock,
-    }));
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => testDir,
-      getCurrentBranchName: async () => '281-db-only-branch-autofix-plan',
-    }));
-    await moduleMocker.mock('./review.js', () => ({
-      handleReviewCommand,
-      generateDiffForReview: async () => ({
-        hasChanges: true,
-        changedFiles: ['src/tim/commands/review.ts'],
-        baseBranch: 'main',
-        diffContent: 'diff content',
-      }),
-      buildReviewPrompt: () => 'test review prompt',
-      detectIssuesInReview: (reviewResult: any) =>
-        Array.isArray(reviewResult.issues) && reviewResult.issues.length > 0,
-      buildAutofixPrompt: () => '# Autofix Request\n\nFix the issues.',
-    }));
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+      defaultExecutor: 'claude-code',
+    } as any);
+    vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
+    vi.mocked(contextGatheringModule.gatherPlanContext).mockImplementation(gatherPlanContextMock);
+    vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
+    vi.mocked(gitModule.getCurrentBranchName).mockResolvedValue('281-db-only-branch-autofix-plan');
 
     const mockCommand = {
       parent: {
@@ -3886,12 +3495,8 @@ Updated by branch-name autofix
   });
 
   test('throws when the branch name does not identify a DB plan', async () => {
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({}),
-    }));
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getCurrentBranchName: async () => null,
-    }));
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({} as any);
+    vi.mocked(gitModule.getCurrentBranchName).mockResolvedValue(null as any);
 
     const mockCommand = {
       parent: {
@@ -3905,13 +3510,9 @@ Updated by branch-name autofix
   });
 
   test('throws when the branch name matches the pattern but the DB plan does not exist', async () => {
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({}),
-    }));
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => testDir,
-      getCurrentBranchName: async () => '999-missing-plan',
-    }));
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({} as any);
+    vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
+    vi.mocked(gitModule.getCurrentBranchName).mockResolvedValue('999-missing-plan');
 
     const mockCommand = {
       parent: {
@@ -3963,7 +3564,7 @@ tasks:
     });
 
     const mockExecutor = {
-      execute: mock(async (prompt: string, metadata: any) => {
+      execute: vi.fn(async (prompt: string, metadata: any) => {
         // Return an ExecutorOutput object with metadata.jsonOutput = true
         return {
           content: jsonReviewOutput,
@@ -3975,64 +3576,41 @@ tasks:
       }),
     };
 
-    await moduleMocker.mock('../plans.js', () => ({
-      resolvePlanFile: async () => planFile,
-      readPlanFile: async () => ({
-        id: 200,
-        title: 'JSON Output Test Plan',
-        goal: 'Test JSON output parsing',
-        tasks: [
-          {
-            title: 'Test task',
-            description: 'A test task for JSON output',
-          },
-        ],
-      }),
-    }));
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+      defaultExecutor: 'claude-code',
+    } as any);
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        defaultExecutor: 'claude-code',
-      }),
-    }));
+    vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
 
-    await moduleMocker.mock('../executors/index.js', () => ({
-      buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
+    vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
+    vi.mocked(gitModule.getCurrentCommitHash).mockResolvedValue('abc123');
 
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => testDir,
-      getCurrentCommitHash: async () => 'abc123',
-    }));
-
-    await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () =>
-        createMockPlanContext({
-          resolvedPlanFile: planFile,
-          planData: {
-            id: 200,
-            title: 'JSON Output Test Plan',
-            goal: 'Test JSON output parsing',
-            tasks: [
-              {
-                title: 'Test task',
-                description: 'A test task for JSON output',
-              },
-            ],
-          },
-          parentChain: [],
-          completedChildren: [],
-          diffResult: {
-            hasChanges: true,
-            changedFiles: ['src/db.ts', 'src/api.ts'],
-            baseBranch: 'main',
-            diffContent: 'mock diff content',
-          },
-          incrementalSummary: null,
-          noChangesDetected: false,
-        }),
-    }));
+    vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+      createMockPlanContext({
+        resolvedPlanFile: planFile,
+        planData: {
+          id: 200,
+          title: 'JSON Output Test Plan',
+          goal: 'Test JSON output parsing',
+          tasks: [
+            {
+              title: 'Test task',
+              description: 'A test task for JSON output',
+            },
+          ],
+        },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['src/db.ts', 'src/api.ts'],
+          baseBranch: 'main',
+          diffContent: 'mock diff content',
+        },
+        incrementalSummary: null,
+        noChangesDetected: false,
+      }) as any
+    );
 
     const mockCommand = {
       parent: {
@@ -4082,70 +3660,47 @@ tasks:
     });
 
     const mockExecutor = {
-      execute: mock(async (prompt: string, metadata: any) => {
+      execute: vi.fn(async (prompt: string, metadata: any) => {
         // Return a plain JSON string (no ExecutorOutput wrapper)
         return jsonReviewOutput;
       }),
     };
 
-    await moduleMocker.mock('../plans.js', () => ({
-      resolvePlanFile: async () => planFile,
-      readPlanFile: async () => ({
-        id: 201,
-        title: 'Text Output Test Plan',
-        goal: 'Test text output parsing',
-        tasks: [
-          {
-            title: 'Test task',
-            description: 'A test task for text output',
-          },
-        ],
-      }),
-    }));
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+      defaultExecutor: 'claude-code',
+    } as any);
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        defaultExecutor: 'claude-code',
-      }),
-    }));
+    vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
 
-    await moduleMocker.mock('../executors/index.js', () => ({
-      buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
+    vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
+    vi.mocked(gitModule.getCurrentCommitHash).mockResolvedValue('def456');
 
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => testDir,
-      getCurrentCommitHash: async () => 'def456',
-    }));
-
-    await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () =>
-        createMockPlanContext({
-          resolvedPlanFile: planFile,
-          planData: {
-            id: 201,
-            title: 'Text Output Test Plan',
-            goal: 'Test text output parsing',
-            tasks: [
-              {
-                title: 'Test task',
-                description: 'A test task for text output',
-              },
-            ],
-          },
-          parentChain: [],
-          completedChildren: [],
-          diffResult: {
-            hasChanges: true,
-            changedFiles: ['src/queries.ts'],
-            baseBranch: 'main',
-            diffContent: 'mock diff content',
-          },
-          incrementalSummary: null,
-          noChangesDetected: false,
-        }),
-    }));
+    vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+      createMockPlanContext({
+        resolvedPlanFile: planFile,
+        planData: {
+          id: 201,
+          title: 'Text Output Test Plan',
+          goal: 'Test text output parsing',
+          tasks: [
+            {
+              title: 'Test task',
+              description: 'A test task for text output',
+            },
+          ],
+        },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['src/queries.ts'],
+          baseBranch: 'main',
+          diffContent: 'mock diff content',
+        },
+        incrementalSummary: null,
+        noChangesDetected: false,
+      }) as any
+    );
 
     const mockCommand = {
       parent: {
@@ -4188,7 +3743,7 @@ tasks:
     });
 
     const mockExecutor = {
-      execute: mock(async (prompt: string, metadata: any) => {
+      execute: vi.fn(async (prompt: string, metadata: any) => {
         // Return an ExecutorOutput object with JSON content
         return {
           content: jsonOutput,
@@ -4200,64 +3755,41 @@ tasks:
       }),
     };
 
-    await moduleMocker.mock('../plans.js', () => ({
-      resolvePlanFile: async () => planFile,
-      readPlanFile: async () => ({
-        id: 202,
-        title: 'Explicit Text Mode Plan',
-        goal: 'Test explicit text mode',
-        tasks: [
-          {
-            title: 'Test task',
-            description: 'A test task',
-          },
-        ],
-      }),
-    }));
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+      defaultExecutor: 'claude-code',
+    } as any);
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        defaultExecutor: 'claude-code',
-      }),
-    }));
+    vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
 
-    await moduleMocker.mock('../executors/index.js', () => ({
-      buildExecutorAndLog: () => mockExecutor,
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
+    vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
+    vi.mocked(gitModule.getCurrentCommitHash).mockResolvedValue('ghi789');
 
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => testDir,
-      getCurrentCommitHash: async () => 'ghi789',
-    }));
-
-    await moduleMocker.mock('../utils/context_gathering.js', () => ({
-      gatherPlanContext: async () =>
-        createMockPlanContext({
-          resolvedPlanFile: planFile,
-          planData: {
-            id: 202,
-            title: 'Explicit Text Mode Plan',
-            goal: 'Test explicit text mode',
-            tasks: [
-              {
-                title: 'Test task',
-                description: 'A test task',
-              },
-            ],
-          },
-          parentChain: [],
-          completedChildren: [],
-          diffResult: {
-            hasChanges: true,
-            changedFiles: ['src/test.ts'],
-            baseBranch: 'main',
-            diffContent: 'mock diff',
-          },
-          incrementalSummary: null,
-          noChangesDetected: false,
-        }),
-    }));
+    vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+      createMockPlanContext({
+        resolvedPlanFile: planFile,
+        planData: {
+          id: 202,
+          title: 'Explicit Text Mode Plan',
+          goal: 'Test explicit text mode',
+          tasks: [
+            {
+              title: 'Test task',
+              description: 'A test task',
+            },
+          ],
+        },
+        parentChain: [],
+        completedChildren: [],
+        diffResult: {
+          hasChanges: true,
+          changedFiles: ['src/test.ts'],
+          baseBranch: 'main',
+          diffContent: 'mock diff',
+        },
+        incrementalSummary: null,
+        noChangesDetected: false,
+      }) as any
+    );
 
     const mockCommand = {
       parent: {

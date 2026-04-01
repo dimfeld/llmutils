@@ -1,18 +1,44 @@
-import { describe, expect, test, beforeEach, afterEach, mock } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { ClaudeCodeExecutor } from './executors/claude_code.ts';
-import { buildExecutionPromptWithoutSteps } from './prompt_builder.ts';
 import type { ExecutePlanInfo, ExecutorCommonOptions } from './executors/types.ts';
 import type { PlanSchema } from './planSchema.ts';
 import type { TimConfig } from './configSchema.ts';
-import { ModuleMocker } from '../testing.js';
 import { closeDatabaseForTesting } from './db/database.js';
+
+const mocks = vi.hoisted(() => ({
+  getGitRoot: vi.fn(),
+  wrapWithOrchestration: vi.fn(),
+  wrapWithOrchestrationSimple: vi.fn(),
+  wrapWithOrchestrationTdd: vi.fn(),
+  spawnWithStreamingIO: vi.fn(),
+  executeWithTerminalInput: vi.fn(),
+  getRepositoryIdentity: vi.fn(),
+  getDatabase: vi.fn(),
+  getPermissions: vi.fn(),
+  getOrCreateProject: vi.fn(),
+  isTunnelActive: vi.fn(),
+  createTunnelServer: vi.fn(),
+  createPromptRequestHandler: vi.fn(),
+  resetToolUseCache: vi.fn(),
+  createLineSplitter: vi.fn(),
+  formatJsonMessage: vi.fn(),
+  extractStructuredMessages: vi.fn(),
+  log: vi.fn(),
+  error: vi.fn(),
+  warn: vi.fn(),
+  debugLog: vi.fn(),
+  sendStructured: vi.fn(),
+  setupPermissionsMcp: vi.fn(),
+  runClaudeSubprocess: vi.fn(),
+}));
+
+let ClaudeCodeExecutor: typeof import('./executors/claude_code.ts').ClaudeCodeExecutor;
+let buildExecutionPromptWithoutSteps: typeof import('./prompt_builder.ts').buildExecutionPromptWithoutSteps;
 
 describe('Batch Mode Integration Tests', () => {
   let tempDir: string;
-  let moduleMocker: ModuleMocker;
   let originalXdgConfigHome: string | undefined;
 
   const mockSharedOptions: ExecutorCommonOptions = {
@@ -28,15 +54,147 @@ describe('Batch Mode Integration Tests', () => {
   };
 
   beforeEach(async () => {
+    vi.clearAllMocks();
+    vi.resetModules();
     closeDatabaseForTesting();
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'batch-mode-integration-test-'));
     originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
     process.env.XDG_CONFIG_HOME = path.join(tempDir, '.config');
-    // Create a .git directory to make it a git repo
     await fs.mkdir(path.join(tempDir, '.git'), { recursive: true });
     await fs.mkdir(path.join(tempDir, 'tasks'), { recursive: true });
 
-    moduleMocker = new ModuleMocker(import.meta);
+    const runClaudeSubprocessPath = path.join(
+      import.meta.dirname,
+      'executors/claude_code/run_claude_subprocess.js'
+    );
+
+    vi.doMock('../common/git.ts', () => ({
+      getGitRoot: mocks.getGitRoot,
+    }));
+    vi.doMock('../common/process.ts', () => ({
+      createLineSplitter: mocks.createLineSplitter,
+      spawnWithStreamingIO: mocks.spawnWithStreamingIO,
+      debug: false,
+      quiet: false,
+    }));
+    vi.doMock('./executors/claude_code/orchestrator_prompt.ts', () => ({
+      wrapWithOrchestration: mocks.wrapWithOrchestration,
+      wrapWithOrchestrationSimple: mocks.wrapWithOrchestrationSimple,
+      wrapWithOrchestrationTdd: mocks.wrapWithOrchestrationTdd,
+    }));
+    vi.doMock('./executors/claude_code/format.ts', () => ({
+      formatJsonMessage: mocks.formatJsonMessage,
+      extractStructuredMessages: mocks.extractStructuredMessages,
+      resetToolUseCache: mocks.resetToolUseCache,
+    }));
+    vi.doMock('./executors/claude_code/terminal_input_lifecycle.ts', () => ({
+      executeWithTerminalInput: mocks.executeWithTerminalInput,
+    }));
+    vi.doMock('../logging/tunnel_client.js', () => ({
+      isTunnelActive: mocks.isTunnelActive,
+    }));
+    vi.doMock('../logging/tunnel_server.js', () => ({
+      createTunnelServer: mocks.createTunnelServer,
+    }));
+    vi.doMock('../logging/tunnel_prompt_handler.js', () => ({
+      createPromptRequestHandler: mocks.createPromptRequestHandler,
+    }));
+    vi.doMock('../assignments/workspace_identifier.js', () => ({
+      getRepositoryIdentity: mocks.getRepositoryIdentity,
+    }));
+    vi.doMock('../db/database.js', () => ({
+      getDatabase: mocks.getDatabase,
+    }));
+    vi.doMock('../db/permission.js', () => ({
+      getPermissions: mocks.getPermissions,
+    }));
+    vi.doMock('../db/project.js', () => ({
+      getOrCreateProject: mocks.getOrCreateProject,
+      addPermission: vi.fn(),
+    }));
+    vi.doMock('../logging.ts', () => ({
+      log: mocks.log,
+      error: mocks.error,
+      warn: mocks.warn,
+      debugLog: mocks.debugLog,
+      sendStructured: mocks.sendStructured,
+    }));
+    vi.doMock('./executors/claude_code/permissions_mcp_setup.js', () => ({
+      setupPermissionsMcp: mocks.setupPermissionsMcp,
+    }));
+    vi.doMock(runClaudeSubprocessPath, async (importOriginal) => {
+      const actual = await importOriginal<
+        typeof import('./executors/claude_code/run_claude_subprocess.js')
+      >();
+      return {
+        ...actual,
+        runClaudeSubprocess: mocks.runClaudeSubprocess,
+      };
+    });
+
+    ({ ClaudeCodeExecutor } = await import('./executors/claude_code.ts'));
+    ({ buildExecutionPromptWithoutSteps } = await import('./prompt_builder.ts'));
+
+    mocks.getGitRoot.mockResolvedValue(tempDir);
+    mocks.wrapWithOrchestration.mockImplementation((content: string, planId: string, options: any) => {
+      return `[ORCHESTRATED: ${planId}, batchMode: ${options.batchMode}] ${content}`;
+    });
+    mocks.wrapWithOrchestrationSimple.mockImplementation((content: string) => content);
+    mocks.wrapWithOrchestrationTdd.mockImplementation((content: string) => content);
+    mocks.spawnWithStreamingIO.mockResolvedValue({
+      stdin: {
+        write: vi.fn(),
+        end: vi.fn(),
+      },
+      kill: vi.fn(),
+      result: Promise.resolve({
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+        signal: null,
+        killedByInactivity: false,
+      }),
+    });
+    mocks.executeWithTerminalInput.mockImplementation((options: any) => ({
+      resultPromise: options.streaming.result,
+      onResultMessage: vi.fn(),
+      sendFollowUpMessage: vi.fn(),
+      closeStdin: vi.fn(),
+      cleanup: vi.fn(),
+    }));
+    mocks.createLineSplitter.mockImplementation(() => (output: string) => output.split('\n'));
+    mocks.formatJsonMessage.mockImplementation((line: string) => ({ type: 'assistant', message: line }));
+    mocks.extractStructuredMessages.mockImplementation(() => []);
+    mocks.resetToolUseCache.mockImplementation(() => {});
+    mocks.getRepositoryIdentity.mockResolvedValue({
+      cwd: tempDir,
+      gitRoot: tempDir,
+      repositoryId: 'repo-1',
+      remoteUrl: 'https://example.com/repo.git',
+    });
+    mocks.getDatabase.mockReturnValue({});
+    mocks.getPermissions.mockReturnValue({ allow: [] });
+    mocks.getOrCreateProject.mockReturnValue({ id: 1 });
+    mocks.isTunnelActive.mockReturnValue(false);
+    mocks.createTunnelServer.mockResolvedValue({ close: vi.fn() });
+    mocks.createPromptRequestHandler.mockReturnValue(vi.fn());
+    mocks.log.mockImplementation(() => {});
+    mocks.error.mockImplementation(() => {});
+    mocks.warn.mockImplementation(() => {});
+    mocks.debugLog.mockImplementation(() => {});
+    mocks.sendStructured.mockImplementation(() => {});
+    mocks.setupPermissionsMcp.mockResolvedValue({
+      mcpConfigFile: '/tmp/mock-mcp-config.json',
+      tempDir: '/tmp/mock-mcp-dir',
+      socketServer: { close: vi.fn() },
+      cleanup: vi.fn(async () => {}),
+    });
+    mocks.runClaudeSubprocess.mockResolvedValue({
+      seenResultMessage: true,
+      killedByTimeout: false,
+      exitCode: 0,
+      killedByInactivity: false,
+    });
   });
 
   afterEach(async () => {
@@ -47,60 +205,9 @@ describe('Batch Mode Integration Tests', () => {
       process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
     }
     await fs.rm(tempDir, { recursive: true, force: true });
-    moduleMocker.clear();
   });
 
   test('end-to-end batch mode functionality', async () => {
-    // Set up mocks for executor dependencies
-    await moduleMocker.mock('../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
-        // Invoke formatStdout to simulate output processing
-        if (opts && typeof opts.formatStdout === 'function') {
-          opts.formatStdout('{}\n');
-        }
-        return {
-          stdin: {
-            write: mock((_value: string) => {}),
-            end: mock(async () => {}),
-          },
-          result: Promise.resolve({
-            exitCode: 0,
-            stdout: '',
-            stderr: '',
-            signal: null,
-            killedByInactivity: false,
-          }),
-          kill: mock(() => {}),
-        };
-      }),
-      createLineSplitter: () => (s: string) => s.split('\n'),
-      debug: false,
-    }));
-
-    await moduleMocker.mock('../common/git.ts', () => ({
-      getGitRoot: mock(() => Promise.resolve(tempDir)),
-    }));
-
-    await moduleMocker.mock('./executors/claude_code/format.ts', () => ({
-      formatJsonMessage: mock((_line: string) => ({
-        type: 'result',
-        message: '',
-      })),
-      extractStructuredMessages: mock(() => []),
-      resetToolUseCache: mock(() => {}),
-    }));
-
-    const mockWrapWithOrchestration = mock((content: string, planId: string, options: any) => {
-      return `[ORCHESTRATED: ${planId}, batchMode: ${options.batchMode}] ${content}`;
-    });
-
-    await moduleMocker.mock('./executors/claude_code/orchestrator_prompt.ts', () => ({
-      wrapWithOrchestration: mockWrapWithOrchestration,
-      wrapWithOrchestrationSimple: mock((content: string) => content),
-      wrapWithOrchestrationTdd: mock((content: string) => content),
-    }));
-
-    // Create executor
     const executor = new ClaudeCodeExecutor(
       {
         allowedTools: [],
@@ -112,7 +219,6 @@ describe('Batch Mode Integration Tests', () => {
       mockConfig
     );
 
-    // Create plan file
     const planFilePath = path.join(tempDir, 'tasks', 'batch-test-plan.yml');
     const planContent = `title: Batch Processing Plan
 goal: Test batch mode functionality
@@ -125,7 +231,6 @@ tasks:
 `;
     await fs.writeFile(planFilePath, planContent);
 
-    // Create plan data
     const planData: PlanSchema = {
       title: 'Batch Processing Plan',
       goal: 'Test batch mode functionality',
@@ -136,16 +241,14 @@ tasks:
       ],
     };
 
-    // Create batch task
     const batchTask = {
       title: 'Batch Processing Implementation',
       description: 'Execute multiple tasks in batch mode',
       files: ['src/batch.ts', 'src/utils.ts'],
     };
 
-    // Build prompt with batch mode
     const prompt = await buildExecutionPromptWithoutSteps({
-      executor: executor,
+      executor,
       planData,
       planFilePath,
       baseDir: tempDir,
@@ -156,13 +259,11 @@ tasks:
       batchMode: true,
     });
 
-    // Verify prompt includes batch mode plan file reference
     expect(prompt).toContain('## Plan File');
     expect(prompt).toContain('tasks/batch-test-plan.yml: This is the plan file ');
     expect(prompt).toContain('## Remaining Tasks');
     expect(prompt).toContain('Execute multiple tasks in batch mode');
 
-    // Create plan info for batch mode
     const batchPlanInfo: ExecutePlanInfo = {
       planId: 'batch-123',
       planTitle: 'Batch Processing Plan',
@@ -171,11 +272,9 @@ tasks:
       executionMode: 'normal',
     };
 
-    // Execute with batch mode
     await executor.execute(prompt, batchPlanInfo);
 
-    // Verify orchestration was called with batch mode context
-    expect(mockWrapWithOrchestration).toHaveBeenCalledWith(
+    expect(mocks.wrapWithOrchestration).toHaveBeenCalledWith(
       expect.stringContaining(`@${planFilePath}\n\n`),
       'batch-123',
       expect.objectContaining({
@@ -184,8 +283,7 @@ tasks:
       })
     );
 
-    // Verify the content passed to orchestration includes the plan file reference
-    const [orchestratedContent] = mockWrapWithOrchestration.mock.calls[0];
+    const [orchestratedContent] = mocks.wrapWithOrchestration.mock.calls[0];
     expect(orchestratedContent).toMatch(
       new RegExp(`^@${planFilePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n\\n`)
     );
@@ -194,12 +292,7 @@ tasks:
   });
 
   test('batch mode detection works correctly in integration', async () => {
-    // Set up basic mocks
-    await moduleMocker.mock('../common/git.ts', () => ({
-      getGitRoot: mock(() => Promise.resolve(tempDir)),
-    }));
-
-    const mockExecutor = { execute: mock(async () => {}) };
+    const mockExecutor = { execute: vi.fn(async () => {}) };
 
     const planData: PlanSchema = {
       title: 'Integration Test Plan',
@@ -208,7 +301,6 @@ tasks:
       tasks: [],
     };
 
-    // Test different batch mode detection scenarios
     const testCases = [
       {
         name: 'title-based detection',
@@ -247,7 +339,7 @@ tasks:
         task: testCase.task,
         filePathPrefix: '@/',
         includeCurrentPlanContext: false,
-        batchMode: testCase.shouldDetectBatch, // Use explicit batch mode based on test expectation
+        batchMode: testCase.shouldDetectBatch,
       });
 
       expect(result).toContain('## Plan File');
@@ -255,12 +347,7 @@ tasks:
   });
 
   test('plan file path resolution works correctly', async () => {
-    // Set up git mock
-    await moduleMocker.mock('../common/git.ts', () => ({
-      getGitRoot: mock(() => Promise.resolve(tempDir)),
-    }));
-
-    const mockExecutor = { execute: mock(async () => {}) };
+    const mockExecutor = { execute: vi.fn(async () => {}) };
 
     const planData: PlanSchema = {
       title: 'Path Resolution Test',
@@ -274,7 +361,6 @@ tasks:
       description: 'Test path resolution',
     };
 
-    // Test absolute path
     const absolutePath = path.join(tempDir, 'nested', 'deep', 'plan.yml');
     await fs.mkdir(path.dirname(absolutePath), { recursive: true });
 
@@ -292,7 +378,6 @@ tasks:
 
     expect(absoluteResult).toContain('nested/deep/plan.yml: This is the plan file ');
 
-    // Test relative path
     const relativePath = 'tasks/relative-plan.yml';
 
     const relativeResult = await buildExecutionPromptWithoutSteps({
@@ -309,7 +394,6 @@ tasks:
 
     expect(relativeResult).toContain('tasks/relative-plan.yml: This is the plan file ');
 
-    // Test different prefixes
     const customPrefixResult = await buildExecutionPromptWithoutSteps({
       executor: mockExecutor,
       planData,
@@ -324,7 +408,6 @@ tasks:
 
     expect(customPrefixResult).toContain('custom-plan.yml: This is the plan file ');
 
-    // Test no prefix
     const noPrefixResult = await buildExecutionPromptWithoutSteps({
       executor: mockExecutor,
       planData,
@@ -332,7 +415,6 @@ tasks:
       baseDir: tempDir,
       config: mockConfig,
       task: batchTask,
-      // filePathPrefix intentionally omitted
       includeCurrentPlanContext: false,
       batchMode: true,
     });
@@ -341,54 +423,6 @@ tasks:
   });
 
   test('batch mode state isolation between executions', async () => {
-    // Set up mocks for executor
-    await moduleMocker.mock('../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
-        if (opts && typeof opts.formatStdout === 'function') {
-          opts.formatStdout('{}\n');
-        }
-        return {
-          stdin: {
-            write: mock((_value: string) => {}),
-            end: mock(async () => {}),
-          },
-          result: Promise.resolve({
-            exitCode: 0,
-            stdout: '',
-            stderr: '',
-            signal: null,
-            killedByInactivity: false,
-          }),
-          kill: mock(() => {}),
-        };
-      }),
-      createLineSplitter: () => (s: string) => s.split('\n'),
-      debug: false,
-    }));
-
-    await moduleMocker.mock('../common/git.ts', () => ({
-      getGitRoot: mock(() => Promise.resolve(tempDir)),
-    }));
-
-    await moduleMocker.mock('./executors/claude_code/format.ts', () => ({
-      formatJsonMessage: mock((_line: string) => ({
-        type: 'result',
-        message: '',
-      })),
-      extractStructuredMessages: mock(() => []),
-      resetToolUseCache: mock(() => {}),
-    }));
-
-    const mockWrapWithOrchestration = mock((content: string, planId: string, options: any) => {
-      return content; // Return content as-is to verify isolation
-    });
-
-    await moduleMocker.mock('./executors/claude_code/orchestrator_prompt.ts', () => ({
-      wrapWithOrchestration: mockWrapWithOrchestration,
-      wrapWithOrchestrationSimple: mock((content: string) => content),
-      wrapWithOrchestrationTdd: mock((content: string) => content),
-    }));
-
     const executor = new ClaudeCodeExecutor(
       {
         allowedTools: [],
@@ -400,7 +434,6 @@ tasks:
       mockConfig
     );
 
-    // First execution: batch mode
     const batchPlanInfo: ExecutePlanInfo = {
       planId: 'batch-001',
       planTitle: 'Batch Plan',
@@ -411,14 +444,12 @@ tasks:
 
     await executor.execute('batch content', batchPlanInfo);
 
-    // Verify batch mode execution
-    expect(mockWrapWithOrchestration).toHaveBeenCalledWith(
+    expect(mocks.wrapWithOrchestration).toHaveBeenCalledWith(
       expect.stringContaining('@'),
       'batch-001',
       expect.objectContaining({ batchMode: true })
     );
 
-    // Second execution: regular mode
     const regularPlanInfo: ExecutePlanInfo = {
       planId: 'regular-001',
       planTitle: 'Regular Plan',
@@ -429,14 +460,12 @@ tasks:
 
     await executor.execute('regular content', regularPlanInfo);
 
-    // Verify regular mode execution does not include @ prefix
-    expect(mockWrapWithOrchestration).toHaveBeenLastCalledWith(
-      'regular content', // Should not contain @ prefix
+    expect(mocks.wrapWithOrchestration).toHaveBeenLastCalledWith(
+      'regular content',
       'regular-001',
       expect.objectContaining({ batchMode: false })
     );
 
-    // Third execution: batch mode again
     const batchPlanInfo2: ExecutePlanInfo = {
       planId: 'batch-002',
       planTitle: 'Another Batch Plan',
@@ -447,26 +476,21 @@ tasks:
 
     await executor.execute('second batch content', batchPlanInfo2);
 
-    // Verify batch mode works again
-    expect(mockWrapWithOrchestration).toHaveBeenLastCalledWith(
+    expect(mocks.wrapWithOrchestration).toHaveBeenLastCalledWith(
       expect.stringContaining('@'),
       'batch-002',
       expect.objectContaining({ batchMode: true })
     );
 
-    // Verify all executions were independent
-    expect(mockWrapWithOrchestration).toHaveBeenCalledTimes(3);
+    expect(mocks.wrapWithOrchestration).toHaveBeenCalledTimes(3);
   });
 
   test('error handling in batch mode', async () => {
-    // Mock git root to throw error
-    await moduleMocker.mock('../common/git.ts', () => ({
-      getGitRoot: mock(() => {
-        throw new Error('Git repository not found');
-      }),
-    }));
+    mocks.getGitRoot.mockImplementationOnce(() => {
+      throw new Error('Git repository not found');
+    });
 
-    const mockExecutor = { execute: mock(async () => {}) };
+    const mockExecutor = { execute: vi.fn(async () => {}) };
 
     const planData: PlanSchema = {
       title: 'Error Test Plan',
@@ -480,7 +504,6 @@ tasks:
       description: 'Test error scenarios',
     };
 
-    // Should handle git root error gracefully by throwing
     await expect(
       buildExecutionPromptWithoutSteps({
         executor: mockExecutor,
@@ -497,14 +520,8 @@ tasks:
   });
 
   test('batch mode with complex plan structures', async () => {
-    // Set up mocks
-    await moduleMocker.mock('../common/git.ts', () => ({
-      getGitRoot: mock(() => Promise.resolve(tempDir)),
-    }));
+    const mockExecutor = { execute: vi.fn(async () => {}) };
 
-    const mockExecutor = { execute: mock(async () => {}) };
-
-    // Complex plan with project context
     const complexPlanData: PlanSchema = {
       title: 'Complex Batch Plan',
       goal: 'Phase Goal',
@@ -540,7 +557,6 @@ tasks:
       batchMode: true,
     });
 
-    // Verify all components are included
     expect(result).toContain('# Project Goal: Overall Project Goal');
     expect(result).toContain('# Current Phase Goal: Phase Goal');
     expect(result).toContain('## Remaining Tasks');

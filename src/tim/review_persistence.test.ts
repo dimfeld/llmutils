@@ -1,8 +1,7 @@
-import { expect, test, beforeEach, afterEach, describe, mock } from 'bun:test';
+import { expect, test, beforeEach, afterEach, describe, vi } from 'vitest';
 import { mkdtemp, writeFile, mkdir, readFile, stat, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { ModuleMocker } from '../testing.js';
 import {
   saveReviewResult,
   loadReviewHistory,
@@ -14,7 +13,10 @@ import {
   createReviewsDirectory,
 } from './review_persistence.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
+// Mock the bun module for git command tests
+vi.mock('bun', () => ({
+  $: vi.fn(),
+}));
 
 let testDir: string;
 
@@ -23,7 +25,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  moduleMocker.clear();
+  vi.clearAllMocks();
   try {
     await rm(testDir, { recursive: true, force: true });
   } catch {
@@ -258,16 +260,21 @@ describe('createGitNote', () => {
     const commitHash = 'abc123def456';
 
     // Mock the specific createGitNote function to return success
-    await moduleMocker.mock('./review_persistence.js', () => ({
+    const mockCreateGitNote = vi.fn(async () => true);
+
+    // Create a mock module that exports all the original functions but with our mocked createGitNote
+    const mockModule = {
       saveReviewResult,
       loadReviewHistory,
       loadReviewFile,
       createReviewsDirectory,
-      createGitNote: mock(async () => true), // Always return success for this test
-    }));
+      createGitNote: mockCreateGitNote,
+    };
 
-    const { createGitNote: mockedCreateGitNote } = await import('./review_persistence.js');
-    const result = await mockedCreateGitNote(gitRoot, commitHash, reviewSummary);
+    // Mock the module
+    vi.doMock('./review_persistence.js', () => mockModule);
+
+    const result = await mockCreateGitNote(gitRoot, commitHash, reviewSummary);
     expect(result).toBe(true);
   });
 
@@ -277,12 +284,10 @@ describe('createGitNote', () => {
     const commitHash = 'abc123';
 
     // Mock git command to fail
-    await moduleMocker.mock('bun', () => ({
-      $: mock(async () => ({
-        exitCode: 1,
-        stdout: '',
-        stderr: 'git notes command failed',
-      })),
+    vi.mocked(await import('bun')).$.mockImplementationOnce(async () => ({
+      exitCode: 1,
+      stdout: '',
+      stderr: 'git notes command failed',
     }));
 
     const result = await createGitNote(gitRoot, commitHash, reviewSummary);

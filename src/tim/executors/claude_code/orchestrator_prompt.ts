@@ -487,9 +487,9 @@ ${options.batchMode ? '3' : '2'}. **Verification Phase**
    - If command output is empty, read the output file you passed to \`--output-file\` and treat it as the subagent result.
    - In the input (\`--input\` or \`--input-file\`), direct the verifier to:
      - Ensure tests exist for new or changed behavior (adding tests if gaps remain)
-     - Run type checking (e.g. \`bun run check\`)
-     - Run linting (e.g. \`bun run lint\`)
-     - Run the project test suite (e.g. \`bun test\`)
+     - Run type checking
+     - Run linting
+     - Run the project test suite
      - Confirm all commands pass and summarize any failures
    - Include relevant context from the implementer's output in the input
    - If verification fails, return to the implementer with the issues found
@@ -660,7 +660,7 @@ ${buildReviewOutputCaptureGuidance(planId)}`;
    - In the input (\`--input\` or \`--input-file\`), include:
      - TDD tests output and implementation summary
      - Which tasks are in scope
-     - Required quality gates (\`bun run check\`, \`bun run lint\`, \`bun test\`)
+     - Required quality gates (check, lint, test, etc.)
    - Instruct verifier to confirm the implementation satisfies the previously written tests and report gaps`
     : `${verificationPhaseNumber}. **Testing Phase**
    - Run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}

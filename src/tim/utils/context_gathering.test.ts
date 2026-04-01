@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from 'bun:test';
+import { describe, test, expect, beforeEach, vi } from 'vitest';
 import path from 'node:path';
 import { gatherPlanContext } from './context_gathering.js';
 import type { DiffResult } from '../incremental_review.js';

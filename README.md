@@ -208,12 +208,6 @@ bun run format
 # Run the full test suite
 bun run test
 
-# Run CLI tests only
-bun run test-cli
-
-# Run web interface tests only
-bun run test-web
-
 # Install globally for development
 bun run dev-install
 ```

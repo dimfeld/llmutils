@@ -1,23 +1,34 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
-import { ModuleMocker } from '../testing.ts';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { getLinearClient, isLinearConfigured, clearLinearClientCache } from './linear_client.ts';
+
+// Mock the @linear/sdk module
+vi.mock('@linear/sdk', () => ({
+  LinearClient: vi.fn(),
+}));
+
+// Import the mocked constructor
+import { LinearClient } from '@linear/sdk';
+
+// Get the mocked constructor
+const mockLinearClientConstructor = vi.mocked(LinearClient);
 
 describe('Linear Client', () => {
   const originalEnv = process.env;
-  const moduleMocker = new ModuleMocker(import.meta);
 
   beforeEach(() => {
     // Reset environment to a clean state
     process.env = { ...originalEnv };
     // Clear any cached client instance
     clearLinearClientCache();
+    // Reset mocks
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
     // Restore original environment
     process.env = originalEnv;
-    // Clear any mocks
-    moduleMocker.clear();
+    // Restore mocks
+    vi.restoreAllMocks();
   });
 
   describe('isLinearConfigured', () => {
@@ -76,15 +87,13 @@ describe('Linear Client', () => {
       // Mock the LinearClient constructor
       const mockLinearClient = {
         apiKey: 'test-api-key',
-        testMethod: mock(() => 'mocked'),
+        testMethod: vi.fn(() => 'mocked'),
       };
 
-      await moduleMocker.mock('@linear/sdk', () => ({
-        LinearClient: mock(function (options: any) {
-          expect(options.apiKey).toBe('test-api-key');
-          return mockLinearClient;
-        }),
-      }));
+      mockLinearClientConstructor.mockImplementation(function (options: any) {
+        expect(options.apiKey).toBe('test-api-key');
+        return mockLinearClient;
+      });
 
       const client = getLinearClient();
       expect(client).toBe(mockLinearClient);
@@ -95,25 +104,21 @@ describe('Linear Client', () => {
 
       const mockLinearClient = {
         apiKey: 'test-api-key',
-        testMethod: mock(() => 'mocked'),
+        testMethod: vi.fn(() => 'mocked'),
       };
 
-      const LinearClientConstructor = mock(function (options: any) {
+      mockLinearClientConstructor.mockImplementation(function (options: any) {
         return mockLinearClient;
       });
 
-      await moduleMocker.mock('@linear/sdk', () => ({
-        LinearClient: LinearClientConstructor,
-      }));
-
       // First call should create the client
       const client1 = getLinearClient();
-      expect(LinearClientConstructor).toHaveBeenCalledTimes(1);
+      expect(mockLinearClientConstructor).toHaveBeenCalledTimes(1);
       expect(client1).toBe(mockLinearClient);
 
       // Second call should return the cached instance
       const client2 = getLinearClient();
-      expect(LinearClientConstructor).toHaveBeenCalledTimes(1); // Should not be called again
+      expect(mockLinearClientConstructor).toHaveBeenCalledTimes(1); // Should not be called again
       expect(client2).toBe(mockLinearClient);
       expect(client1).toBe(client2); // Same instance
     });
@@ -121,11 +126,9 @@ describe('Linear Client', () => {
     test('should handle LinearClient constructor errors gracefully', async () => {
       process.env.LINEAR_API_KEY = 'invalid-api-key';
 
-      await moduleMocker.mock('@linear/sdk', () => ({
-        LinearClient: mock(function (options: any) {
-          throw new Error('Invalid API key format');
-        }),
-      }));
+      mockLinearClientConstructor.mockImplementation(function (options: any) {
+        throw new Error('Invalid API key format');
+      });
 
       expect(() => getLinearClient()).toThrow(
         'Failed to initialize Linear client: Invalid API key format. ' +
@@ -136,11 +139,9 @@ describe('Linear Client', () => {
     test('should handle non-Error exceptions from LinearClient constructor', async () => {
       process.env.LINEAR_API_KEY = 'invalid-api-key';
 
-      await moduleMocker.mock('@linear/sdk', () => ({
-        LinearClient: mock(function (options: any) {
-          throw 'Some non-Error exception';
-        }),
-      }));
+      mockLinearClientConstructor.mockImplementation(function (options: any) {
+        throw 'Some non-Error exception';
+      });
 
       expect(() => getLinearClient()).toThrow(
         'Failed to initialize Linear client: Some non-Error exception. ' +
@@ -164,19 +165,15 @@ describe('Linear Client', () => {
       };
 
       let callCount = 0;
-      const LinearClientConstructor = mock(function (options: any) {
+      mockLinearClientConstructor.mockImplementation(function (options: any) {
         callCount++;
         return callCount === 1 ? mockLinearClient1 : mockLinearClient2;
       });
 
-      await moduleMocker.mock('@linear/sdk', () => ({
-        LinearClient: LinearClientConstructor,
-      }));
-
       // Get first client instance
       const client1 = getLinearClient();
       expect(client1).toBe(mockLinearClient1);
-      expect(LinearClientConstructor).toHaveBeenCalledTimes(1);
+      expect(mockLinearClientConstructor).toHaveBeenCalledTimes(1);
 
       // Clear cache
       clearLinearClientCache();
@@ -184,7 +181,7 @@ describe('Linear Client', () => {
       // Get client again - should create a new instance
       const client2 = getLinearClient();
       expect(client2).toBe(mockLinearClient2);
-      expect(LinearClientConstructor).toHaveBeenCalledTimes(2);
+      expect(mockLinearClientConstructor).toHaveBeenCalledTimes(2);
       expect(client1).not.toBe(client2);
     });
 
@@ -202,15 +199,11 @@ describe('Linear Client', () => {
       const mockClient1 = { apiKey: 'key1' };
       let constructorCallCount = 0;
 
-      const LinearClientConstructor = mock(function (options: any) {
+      mockLinearClientConstructor.mockImplementation(function (options: any) {
         constructorCallCount++;
         expect(options.apiKey).toBe(process.env.LINEAR_API_KEY);
         return constructorCallCount === 1 ? mockClient1 : { apiKey: options.apiKey };
       });
-
-      await moduleMocker.mock('@linear/sdk', () => ({
-        LinearClient: LinearClientConstructor,
-      }));
 
       const client1 = getLinearClient();
       expect(client1).toBe(mockClient1);
@@ -230,7 +223,7 @@ describe('Linear Client', () => {
       process.env.LINEAR_API_KEY = 'test-key-with-config';
 
       const mockClient = { configured: true };
-      const LinearClientConstructor = mock(function (options: any) {
+      mockLinearClientConstructor.mockImplementation(function (options: any) {
         // Verify the constructor receives the expected configuration structure
         expect(options).toEqual({
           apiKey: 'test-key-with-config',
@@ -238,13 +231,9 @@ describe('Linear Client', () => {
         return mockClient;
       });
 
-      await moduleMocker.mock('@linear/sdk', () => ({
-        LinearClient: LinearClientConstructor,
-      }));
-
       const client = getLinearClient();
       expect(client).toBe(mockClient);
-      expect(LinearClientConstructor).toHaveBeenCalledTimes(1);
+      expect(mockLinearClientConstructor).toHaveBeenCalledTimes(1);
     });
   });
 });

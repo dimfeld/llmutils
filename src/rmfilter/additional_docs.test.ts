@@ -1,5 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, jest, spyOn } from 'bun:test';
-import * as glob from 'fast-glob';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as os from 'node:os';
 import path from 'node:path';
 import { gatherDocsInternal } from '../common/additional_docs';
@@ -7,31 +6,43 @@ import type { MdcFile } from '../common/mdc';
 
 import { parseJjRename } from '../common/additional_docs';
 
+// Mock fast-glob module
+vi.mock('fast-glob', () => ({
+  glob: vi.fn(),
+}));
+
+const glob = await import('fast-glob');
+
 // Helper to mock Bun.file().text()
 const mockFiles: Record<string, string> = {};
 
+vi.mock(import('os'), async (importOriginal) => ({
+  ...((await importOriginal()) as typeof os),
+  homedir: vi.fn().mockReturnValue('/fake/home'),
+}));
+
 beforeEach(() => {
   // Reset mocks and mockFiles before each test
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   for (const key in mockFiles) {
     delete mockFiles[key];
   }
 
   // Mock Bun.file
-  jest.spyOn(Bun, 'file').mockImplementation((filePath: string | URL | Bun.PathLike) => {
+  vi.spyOn(Bun, 'file').mockImplementation((filePath: string | URL | Bun.PathLike) => {
     const normalizedPath = path.resolve(filePath.toString());
     // console.log(`Mock Bun.file called for: ${normalizedPath}`); // Debugging
     if (mockFiles[normalizedPath]) {
       return {
-        text: jest.fn().mockResolvedValue(mockFiles[normalizedPath]),
+        text: vi.fn().mockResolvedValue(mockFiles[normalizedPath]),
         // Add other BunFile methods if needed, mocked appropriately
-        exists: jest.fn().mockResolvedValue(true),
+        exists: vi.fn().mockResolvedValue(true),
         size: mockFiles[normalizedPath].length,
         type: 'text/plain',
-        arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(0)),
-        stream: jest.fn().mockReturnValue(new ReadableStream()),
-        slice: jest.fn(),
-        writer: jest.fn(),
+        arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(0)),
+        stream: vi.fn().mockReturnValue(new ReadableStream()),
+        slice: vi.fn(),
+        writer: vi.fn(),
         // Add any other methods/properties your code might use
       } as unknown as Bun.BunFile; // Type assertion needed for mocking
     } else {
@@ -41,21 +52,18 @@ beforeEach(() => {
       // console.error(`Mock Bun.file: File not found - ${normalizedPath}`); // Debugging
       // Mock methods to throw or return appropriate values for non-existent files
       return {
-        text: jest.fn().mockRejectedValue(error),
-        exists: jest.fn().mockResolvedValue(false),
+        text: vi.fn().mockRejectedValue(error),
+        exists: vi.fn().mockResolvedValue(false),
         size: 0,
         // ... other methods potentially returning errors or empty values
       } as unknown as Bun.BunFile;
     }
   });
-
-  // Mock os.homedir
-  jest.spyOn(os, 'homedir').mockReturnValue('/fake/home');
 });
 
 afterEach(() => {
   // Restore original Bun.file implementation
-  jest.restoreAllMocks();
+  vi.restoreAllMocks();
 });
 
 const baseDir = '/project/root';
@@ -63,7 +71,7 @@ const baseDir = '/project/root';
 describe('getAdditionalDocs', () => {
   // --- Manual --docs Tests ---
   it('should format a single --docs file correctly', async () => {
-    jest.spyOn(glob, 'glob').mockResolvedValue(['/project/root/manual_doc.md']);
+    vi.mocked(glob.glob).mockResolvedValue(['/project/root/manual_doc.md']);
     mockFiles['/project/root/manual_doc.md'] = 'Manual doc content.';
 
     const result = await gatherDocsInternal(baseDir, { docs: ['manual_doc.md'] });
@@ -75,7 +83,7 @@ describe('getAdditionalDocs', () => {
   });
 
   it('should format multiple --docs files correctly', async () => {
-    jest.spyOn(glob, 'glob').mockResolvedValue(['/project/root/doc1.md', '/project/root/doc2.md']);
+    vi.mocked(glob.glob).mockResolvedValue(['/project/root/doc1.md', '/project/root/doc2.md']);
     mockFiles['/project/root/doc1.md'] = 'Doc 1';
     mockFiles['/project/root/doc2.md'] = 'Doc 2';
 
@@ -88,7 +96,7 @@ describe('getAdditionalDocs', () => {
 
   // --- Manual --rules Tests ---
   it('should format a single --rules file correctly', async () => {
-    jest.spyOn(glob, 'glob').mockResolvedValue(['/project/root/manual_rule.txt']);
+    vi.mocked(glob.glob).mockResolvedValue(['/project/root/manual_rule.txt']);
     mockFiles['/project/root/manual_rule.txt'] = 'Manual rule content.';
 
     const result = await gatherDocsInternal(baseDir, { rules: ['manual_rule.txt'] });
@@ -100,9 +108,7 @@ describe('getAdditionalDocs', () => {
   });
 
   it('should format multiple --rules files correctly', async () => {
-    jest
-      .spyOn(glob, 'glob')
-      .mockResolvedValue(['/project/root/rule1.txt', '/project/root/rule2.txt']);
+    vi.mocked(glob.glob).mockResolvedValue(['/project/root/rule1.txt', '/project/root/rule2.txt']);
     mockFiles['/project/root/rule1.txt'] = 'Rule 1';
     mockFiles['/project/root/rule2.txt'] = 'Rule 2';
 
@@ -116,7 +122,7 @@ describe('getAdditionalDocs', () => {
   it('should include .cursorrules by default', async () => {
     const cursorRulesPath = path.join(baseDir, '.cursorrules');
     mockFiles[cursorRulesPath] = 'Cursor rule content.';
-    jest.spyOn(glob, 'glob').mockResolvedValue([]); // No manual --rules
+    vi.mocked(glob.glob).mockResolvedValue([]); // No manual --rules
 
     const result = await gatherDocsInternal(baseDir, {});
 
@@ -128,7 +134,7 @@ describe('getAdditionalDocs', () => {
   it('should omit .cursorrules when --omit-cursorrules is true', async () => {
     const cursorRulesPath = path.join(baseDir, '.cursorrules');
     mockFiles[cursorRulesPath] = 'Cursor rule content.';
-    jest.spyOn(glob, 'glob').mockResolvedValue([]); // No manual --rules
+    vi.mocked(glob.glob).mockResolvedValue([]); // No manual --rules
 
     const result = await gatherDocsInternal(baseDir, { 'omit-cursorrules': true });
 
@@ -201,7 +207,7 @@ describe('getAdditionalDocs', () => {
 
   // --- Combined Manual and MDC Tests ---
   it('should combine manual --docs and MDC docs', async () => {
-    jest.spyOn(glob, 'glob').mockResolvedValue(['/project/root/manual_doc.md']);
+    vi.mocked(glob.glob).mockResolvedValue(['/project/root/manual_doc.md']);
     mockFiles['/project/root/manual_doc.md'] = 'Manual doc.';
 
     const result = await gatherDocsInternal(baseDir, { docs: ['manual_doc.md'] }, [
@@ -220,7 +226,7 @@ describe('getAdditionalDocs', () => {
   it('should combine manual --rules, .cursorrules, and MDC rules', async () => {
     const cursorRulesPath = path.join(baseDir, '.cursorrules');
     mockFiles[cursorRulesPath] = 'Cursor rule.';
-    jest.spyOn(glob, 'glob').mockResolvedValue(['/project/root/manual_rule.txt']);
+    vi.mocked(glob.glob).mockResolvedValue(['/project/root/manual_rule.txt']);
     mockFiles['/project/root/manual_rule.txt'] = 'Manual rule.';
 
     const result = await gatherDocsInternal(baseDir, { rules: ['manual_rule.txt'] }, [mockMdcRule]);
@@ -236,7 +242,7 @@ describe('getAdditionalDocs', () => {
 
   // --- Empty/No Input Tests ---
   it('should return empty tags when no docs, rules, or MDCs are provided', async () => {
-    jest.spyOn(glob, 'glob').mockResolvedValue([]);
+    vi.mocked(glob.glob).mockResolvedValue([]);
     const result = await gatherDocsInternal(baseDir, {}, []);
     expect(result.docsTag).toBe('');
     expect(result.rulesTag).toBe('');
@@ -244,7 +250,7 @@ describe('getAdditionalDocs', () => {
   });
 
   it('should handle empty filteredMdcFiles array', async () => {
-    jest.spyOn(glob, 'glob').mockResolvedValue(['/project/root/manual_doc.md']);
+    vi.mocked(glob.glob).mockResolvedValue(['/project/root/manual_doc.md']);
     mockFiles['/project/root/manual_doc.md'] = 'Manual doc content.';
 
     const result = await gatherDocsInternal(baseDir, { docs: ['manual_doc.md'] }, []); // Pass empty array

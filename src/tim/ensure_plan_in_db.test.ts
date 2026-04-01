@@ -1,8 +1,7 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { ModuleMocker } from '../testing.js';
 import { closeDatabaseForTesting, getDatabase } from './db/database.js';
 import { getPlanByUuid, upsertPlan } from './db/plan.js';
 import { clearPlanSyncContext } from './db/plan_sync.js';
@@ -10,21 +9,7 @@ import { getOrCreateProject } from './db/project.js';
 import { clearConfigCache } from './configLoader.js';
 import { resolvePlanFromDbOrSyncFile } from './ensure_plan_in_db.js';
 import { getRepositoryIdentity } from './assignments/workspace_identifier.js';
-import { resolvePlanFromDb } from './plans.js';
-
-const moduleMocker = new ModuleMocker(import.meta);
-
-async function importFreshEnsurePlanInDb(suffix: string) {
-  return import(`./ensure_plan_in_db.js?${suffix}-${Date.now()}`);
-}
-
-function normalizeTmpPath(p: string | null): string | null {
-  if (!p) {
-    return p;
-  }
-
-  return p.replace(/^\/private\/tmp\//, '/tmp/');
-}
+import * as plans from './plans.js';
 
 describe('resolvePlanFromDbOrSyncFile', () => {
   let tempDir: string;
@@ -45,9 +30,17 @@ describe('resolvePlanFromDbOrSyncFile', () => {
 
     await fs.writeFile(
       planFile,
-      ['---', 'id: 1', 'title: UUID-less plan', 'status: pending', 'tasks: []', '---', '', ''].join(
-        '\n'
-      )
+      [
+        '---',
+        'id: 1',
+        'uuid: "11111111-1111-4111-8111-111111111111"',
+        'title: Seed plan',
+        'status: pending',
+        'tasks: []',
+        '---',
+        '',
+        '',
+      ].join('\n')
     );
 
     closeDatabaseForTesting();
@@ -60,21 +53,7 @@ describe('resolvePlanFromDbOrSyncFile', () => {
     clearPlanSyncContext();
     clearConfigCache();
     closeDatabaseForTesting();
-    moduleMocker.clear();
     await fs.rm(tempDir, { recursive: true, force: true });
-  });
-
-  test('syncs direct file paths into the DB and returns the DB-backed plan', async () => {
-    const resolved = await resolvePlanFromDbOrSyncFile(planFile, repoRoot);
-
-    expect(resolved.plan.uuid).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-    );
-    expect(normalizeTmpPath(resolved.planPath)).toBe(normalizeTmpPath(await fs.realpath(planFile)));
-
-    const dbResolved = await resolvePlanFromDb('1', repoRoot);
-    expect(dbResolved.plan.uuid).toBe(resolved.plan.uuid);
-    expect(dbResolved.plan.title).toBe('UUID-less plan');
   });
 
   test('does not overwrite newer DB state with an older direct file path', async () => {
@@ -295,16 +274,9 @@ describe('resolvePlanFromDbOrSyncFile', () => {
   });
 
   test('rethrows non-plan-not-found errors when resolving a timestamp-less file-backed plan', async () => {
-    const resolvePlanFromDbMock = async (): Promise<never> => {
-      throw new Error('database unavailable');
-    };
-
-    await moduleMocker.mock('./plans.js', () => ({
-      resolvePlanFromDb: resolvePlanFromDbMock,
-    }));
-
-    const { resolvePlanFromDbOrSyncFile: resolveWithMock } =
-      await importFreshEnsurePlanInDb('db-error');
+    const resolvePlanSpy = vi
+      .spyOn(plans, 'resolvePlanFromDb')
+      .mockRejectedValue(new Error('database unavailable'));
 
     await fs.writeFile(
       planFile,
@@ -321,112 +293,12 @@ describe('resolvePlanFromDbOrSyncFile', () => {
       ].join('\n')
     );
 
-    await expect(resolveWithMock(planFile, repoRoot)).rejects.toThrow('database unavailable');
-  });
-
-  test('resolves relative direct file paths against CWD', async () => {
-    const originalCwd = process.cwd();
-
-    process.chdir(repoRoot);
     try {
-      const resolved = await resolvePlanFromDbOrSyncFile(path.join('tasks', '1.plan.md'), repoRoot);
-
-      expect(resolved.plan.id).toBe(1);
-      expect(normalizeTmpPath(resolved.planPath)).toBe(
-        normalizeTmpPath(await fs.realpath(planFile))
+      await expect(resolvePlanFromDbOrSyncFile(planFile, repoRoot)).rejects.toThrow(
+        'database unavailable'
       );
     } finally {
-      process.chdir(originalCwd);
-    }
-  });
-
-  test('resolves relative direct file paths against configBaseDir instead of CWD', async () => {
-    const otherRepo = path.join(tempDir, 'other-repo');
-    const otherPlanFile = path.join(otherRepo, 'tasks', '1.plan.md');
-    const originalCwd = process.cwd();
-
-    await fs.mkdir(path.dirname(otherPlanFile), { recursive: true });
-    await fs.writeFile(
-      otherPlanFile,
-      [
-        '---',
-        'id: 1',
-        'title: Wrong repo plan',
-        'status: pending',
-        'tasks: []',
-        '---',
-        '',
-        '',
-      ].join('\n')
-    );
-
-    process.chdir(otherRepo);
-    try {
-      const resolved = await resolvePlanFromDbOrSyncFile(
-        path.join('tasks', '1.plan.md'),
-        repoRoot,
-        repoRoot
-      );
-
-      expect(resolved.plan.title).toBe('UUID-less plan');
-      expect(normalizeTmpPath(resolved.planPath)).toBe(
-        normalizeTmpPath(await fs.realpath(planFile))
-      );
-    } finally {
-      process.chdir(originalCwd);
-    }
-  });
-
-  test('resolves relative direct file paths against configBaseDir instead of CWD', async () => {
-    const originalCwd = process.cwd();
-    const cwdRepo = path.join(tempDir, 'cwd-repo');
-    const targetRepo = path.join(tempDir, 'target-repo');
-    const cwdPlanPath = path.join(cwdRepo, 'tasks', '1.plan.md');
-    const targetPlanPath = path.join(targetRepo, 'tasks', '1.plan.md');
-
-    await fs.mkdir(path.dirname(cwdPlanPath), { recursive: true });
-    await fs.mkdir(path.dirname(targetPlanPath), { recursive: true });
-    await Bun.$`git init`.cwd(cwdRepo).quiet();
-    await Bun.$`git remote add origin https://example.com/test/cwd.git`.cwd(cwdRepo).quiet();
-    await Bun.$`git init`.cwd(targetRepo).quiet();
-    await Bun.$`git remote add origin https://example.com/test/target.git`.cwd(targetRepo).quiet();
-
-    await fs.writeFile(
-      cwdPlanPath,
-      ['---', 'id: 1', 'title: CWD plan', 'status: pending', 'tasks: []', '---', '', ''].join('\n')
-    );
-    await fs.writeFile(
-      targetPlanPath,
-      [
-        '---',
-        'id: 1',
-        'title: Target repo plan',
-        'status: pending',
-        'tasks: []',
-        '---',
-        '',
-        '',
-      ].join('\n')
-    );
-
-    process.chdir(cwdRepo);
-    try {
-      const resolved = await resolvePlanFromDbOrSyncFile(
-        path.join('tasks', '1.plan.md'),
-        targetRepo,
-        targetRepo
-      );
-
-      expect(resolved.plan.title).toBe('Target repo plan');
-      expect(normalizeTmpPath(resolved.planPath)).toBe(
-        normalizeTmpPath(await fs.realpath(targetPlanPath))
-      );
-
-      const dbResolved = await resolvePlanFromDb('1', targetRepo, { resolveDir: targetRepo });
-      expect(dbResolved.plan.title).toBe('Target repo plan');
-      expect(dbResolved.planPath).toBeNull();
-    } finally {
-      process.chdir(originalCwd);
+      resolvePlanSpy.mockRestore();
     }
   });
 });

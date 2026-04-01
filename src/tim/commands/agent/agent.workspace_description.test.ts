@@ -1,9 +1,8 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
-import { ModuleMocker } from '../../../testing.js';
 import { closeDatabaseForTesting, getDatabase } from '../../db/database.js';
 import { getOrCreateProject } from '../../db/project.js';
 import {
@@ -15,34 +14,128 @@ import {
   setWorkspaceIssues,
 } from '../../db/workspace.js';
 
-describe('Agent workspace description auto-update', () => {
-  let moduleMocker: ModuleMocker;
-  let tempDir: string;
-  let tasksDir: string;
-  let planFile: string;
-  let workspaceDir: string;
-  let originalEnv: { XDG_CONFIG_HOME?: string; APPDATA?: string };
+let tempDir = '';
+let workspaceDir = '';
 
-  const logSpy = mock(() => {});
-  const warnSpy = mock(() => {});
-  const errorSpy = mock(() => {});
+const logSpy = vi.fn(() => {});
+const warnSpy = vi.fn(() => {});
+const errorSpy = vi.fn(() => {});
 
-  // Create a test executor that completes all tasks in one shot
-  class TestExecutor {
-    async execute(prompt: string, options: any) {
-      // Read and modify the plan file to mark all tasks done
+vi.mock('../../../logging.js', () => ({
+  log: logSpy,
+  error: errorSpy,
+  warn: warnSpy,
+  openLogFile: vi.fn(() => {}),
+  closeLogFile: vi.fn(async () => {}),
+  boldMarkdownHeaders: (text: string) => text,
+  debugLog: vi.fn(() => {}),
+  sendStructured: vi.fn(() => {}),
+}));
+
+vi.mock('../../configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(async () => ({
+    models: {},
+    postApplyCommands: [],
+  })),
+  loadGlobalConfigForNotifications: vi.fn(async () => ({})),
+}));
+
+vi.mock('../../../common/git.js', () => ({
+  getGitRoot: vi.fn(async () => workspaceDir),
+}));
+
+vi.mock('../../../common/process.js', () => ({
+  logSpawn: vi.fn(() => ({ exitCode: 0, exited: Promise.resolve(0) })),
+  commitAll: vi.fn(async () => 0),
+  spawnAndLogOutput: vi.fn(async () => ({
+    exitCode: 0,
+    stdout: '',
+    stderr: '',
+    signal: null,
+    killedByInactivity: false,
+  })),
+}));
+
+vi.mock('../../executors/index.js', () => ({
+  buildExecutorAndLog: vi.fn(() => ({
+    execute: vi.fn(async (_prompt: string, options: any) => {
+      // TestExecutor behavior inline - read and modify the plan file to mark all tasks done
       const { readPlanFile, writePlanFile } = await import('../../plans.js');
       const plan = await readPlanFile(options.planFilePath);
-      plan.tasks.forEach((task) => {
+      plan.tasks.forEach((task: any) => {
         task.done = true;
       });
       await writePlanFile(options.planFilePath, plan);
+    }),
+    filePathPrefix: '',
+  })),
+  DEFAULT_EXECUTOR: 'test-executor',
+  defaultModelForExecutor: vi.fn(() => 'test-model'),
+}));
+
+vi.mock('./batch_mode.js', () => ({
+  executeBatchMode: vi.fn(async () => undefined),
+}));
+
+vi.mock('../../summary/collector.js', () => ({
+  SummaryCollector: class {
+    recordExecutionStart = vi.fn(() => {});
+    addError = vi.fn(() => {});
+    addStepResult = vi.fn(() => {});
+    setBatchIterations = vi.fn(() => {});
+    recordExecutionEnd = vi.fn(() => {});
+    trackFileChanges = vi.fn(async () => {});
+    getExecutionSummary = vi.fn(() => ({}));
+  },
+}));
+
+vi.mock('../../summary/display.js', () => ({
+  writeOrDisplaySummary: vi.fn(async () => {}),
+  formatExecutionSummaryToLines: vi.fn(() => []),
+  displayExecutionSummary: vi.fn(() => {}),
+}));
+
+vi.mock('../../workspace/workspace_manager.js', () => ({
+  createWorkspace: vi.fn(async () => null),
+  runWorkspaceUpdateCommands: vi.fn(async () => {}),
+  prepareExistingWorkspace: vi.fn(async () => ({})),
+  findUniqueBranchName: vi.fn(async (base: string) => base),
+  findUniqueRemoteBranchName: vi.fn(async (base: string) => base),
+  deleteLocalBranch: vi.fn(async () => {}),
+  ensureJjRevisionHasDescription: vi.fn(async () => {}),
+}));
+
+vi.mock('../../workspace/workspace_auto_selector.js', () => ({
+  WorkspaceAutoSelector: vi.fn(() => ({
+    selectWorkspace: vi.fn(async () => null),
+  })),
+}));
+
+vi.mock('../../workspace/workspace_lock.js', () => {
+  class WorkspaceAlreadyLocked extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = 'WorkspaceAlreadyLocked';
     }
   }
+  return {
+    WorkspaceAlreadyLocked,
+    WorkspaceLock: {
+      getLockInfo: vi.fn(async () => null),
+      isLockStale: vi.fn(async () => false),
+      acquireLock: vi.fn(async () => ({ type: 'pid' })),
+      setupCleanupHandlers: vi.fn(() => {}),
+      releaseLock: vi.fn(async () => {}),
+    },
+  };
+});
+
+describe('Agent workspace description auto-update', () => {
+  let tasksDir: string;
+  let planFile: string;
+  let originalEnv: { XDG_CONFIG_HOME?: string; APPDATA?: string };
 
   beforeEach(async () => {
-    moduleMocker = new ModuleMocker(import.meta);
-
     // Create temp directories
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-ws-desc-test-'));
     tasksDir = path.join(tempDir, 'tasks');
@@ -86,84 +179,13 @@ describe('Agent workspace description auto-update', () => {
       workspacePath: workspaceDir,
     });
 
-    // Mock dependencies
-    await moduleMocker.mock('../../../logging.js', () => ({
-      log: logSpy,
-      error: errorSpy,
-      warn: warnSpy,
-      openLogFile: mock(() => {}),
-      closeLogFile: mock(async () => {}),
-      boldMarkdownHeaders: (text: string) => text,
-    }));
-
-    await moduleMocker.mock('../../configLoader.js', () => ({
-      loadEffectiveConfig: mock(async () => ({
-        models: {},
-        postApplyCommands: [],
-      })),
-    }));
-
-    await moduleMocker.mock('../../../common/git.js', () => ({
-      getGitRoot: mock(async () => workspaceDir),
-    }));
-
-    await moduleMocker.mock('../../../common/process.js', () => ({
-      logSpawn: mock(() => ({ exitCode: 0, exited: Promise.resolve(0) })),
-      commitAll: mock(async () => 0),
-    }));
-
-    await moduleMocker.mock('../../executors/index.js', () => ({
-      buildExecutorAndLog: mock(() => new TestExecutor()),
-      DEFAULT_EXECUTOR: 'test-executor',
-      defaultModelForExecutor: () => 'test-model',
-    }));
-
-    await moduleMocker.mock('./batch_mode.js', () => ({
-      executeBatchMode: mock(async () => undefined),
-    }));
-
-    await moduleMocker.mock('../../summary/collector.js', () => ({
-      SummaryCollector: class {
-        recordExecutionStart() {}
-        addError() {}
-        addStepResult() {}
-        setBatchIterations() {}
-        recordExecutionEnd() {}
-        async trackFileChanges() {}
-        getExecutionSummary() {
-          return {};
-        }
-      },
-    }));
-
-    await moduleMocker.mock('../../summary/display.js', () => ({
-      writeOrDisplaySummary: mock(async () => {}),
-    }));
-
-    // Mock workspace dependencies (not used when not using workspace options)
-    await moduleMocker.mock('../../workspace/workspace_manager.js', () => ({
-      createWorkspace: mock(async () => null),
-    }));
-
-    await moduleMocker.mock('../../workspace/workspace_auto_selector.js', () => ({
-      WorkspaceAutoSelector: mock(() => ({
-        selectWorkspace: mock(async () => null),
-      })),
-    }));
-
-    await moduleMocker.mock('../../workspace/workspace_lock.js', () => ({
-      WorkspaceLock: {
-        getLockInfo: mock(async () => null),
-        isLockStale: mock(async () => false),
-        acquireLock: mock(async () => ({ type: 'pid' })),
-        setupCleanupHandlers: mock(() => {}),
-        releaseLock: mock(async () => {}),
-      },
-    }));
+    logSpy.mockClear();
+    warnSpy.mockClear();
+    errorSpy.mockClear();
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     closeDatabaseForTesting();
     if (originalEnv.XDG_CONFIG_HOME === undefined) {
       delete process.env.XDG_CONFIG_HOME;
@@ -176,9 +198,6 @@ describe('Agent workspace description auto-update', () => {
       process.env.APPDATA = originalEnv.APPDATA;
     }
     await fs.rm(tempDir, { recursive: true, force: true });
-    logSpy.mockClear();
-    warnSpy.mockClear();
-    errorSpy.mockClear();
   });
 
   test('updates workspace description when running in a tracked workspace', async () => {
@@ -293,16 +312,17 @@ describe('Agent workspace description auto-update', () => {
   });
 
   test('warns but does not fail when workspace update fails', async () => {
-    await moduleMocker.mock('../../db/workspace.js', () => ({
-      patchWorkspace: mock(() => {
-        throw new Error('Simulated write failure');
-      }),
-    }));
+    // Make patchWorkspaceInfo throw for this test using spyOn
+    const workspaceInfo = await import('../../workspace/workspace_info.js');
+    const spy = vi.spyOn(workspaceInfo, 'patchWorkspaceInfo').mockImplementationOnce(() => {
+      throw new Error('Simulated write failure');
+    });
 
     const { timAgent } = await import('./agent.js');
 
     // Should not throw even though workspace update will fail
     await timAgent(planFile, { log: false } as any, {});
+    spy.mockRestore();
 
     // Verify warning was logged
     expect(warnSpy).toHaveBeenCalledWith(

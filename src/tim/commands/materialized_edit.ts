@@ -38,15 +38,14 @@ export async function editMaterializedPlan(
     const afterEditContent = await readFile(materializedPath, 'utf-8');
     if (afterEditContent !== beforeEditContent) {
       const editedPlan = await readPlanFile(materializedPath);
-      if (editedPlan.updatedAt === beforeEditUpdatedAt) {
-        editedPlan.updatedAt = new Date().toISOString();
-        await writePlanFile(materializedPath, editedPlan, {
-          skipDb: true,
-          skipUpdatedAt: true,
-        });
-      }
+      const editorChangedUpdatedAt = editedPlan.updatedAt !== beforeEditUpdatedAt;
 
-      await syncMaterializedPlan(planId, repoRoot);
+      await syncMaterializedPlan(planId, repoRoot, {
+        force: false,
+        skipRematerialize: true,
+        context: undefined,
+        preserveUpdatedAt: editorChangedUpdatedAt ? editedPlan.updatedAt : undefined,
+      });
     }
     if (shouldDeleteMaterializedFile) {
       await rm(materializedPath, { force: true });

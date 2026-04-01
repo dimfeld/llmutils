@@ -1,35 +1,159 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 
-import { ModuleMocker } from '../../../testing.js';
+const autoClaimPlanSpy = vi.fn(async () => ({ result: { persisted: true } }));
+const readPlanFileSpy = vi.fn(async () => ({
+  id: 7,
+  uuid: 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff',
+  title: 'Agent auto-claim plan',
+  goal: 'Demo',
+  details: '',
+  status: 'pending',
+  tasks: [
+    {
+      title: 'Task',
+      description: undefined,
+      steps: [],
+    },
+  ],
+}));
 
-const moduleMocker = new ModuleMocker(import.meta);
+let autoClaimEnabled = false;
+let tempRoot = '';
+
+vi.mock('../../../logging.js', () => ({
+  log: vi.fn(() => {}),
+  error: vi.fn(() => {}),
+  warn: vi.fn(() => {}),
+  openLogFile: vi.fn(() => {}),
+  closeLogFile: vi.fn(async () => {}),
+  debugLog: vi.fn(() => {}),
+  sendStructured: vi.fn(() => {}),
+  boldMarkdownHeaders: (s: string) => s,
+}));
+
+vi.mock('../../configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(async () => ({
+    paths: {
+      tasks: path.join(tempRoot, 'tasks'),
+    },
+  })),
+  loadGlobalConfigForNotifications: vi.fn(async () => ({})),
+}));
+
+vi.mock('../../plans.js', () => {
+  class PlanNotFoundError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = 'PlanNotFoundError';
+    }
+  }
+  class NoFrontmatterError extends Error {
+    constructor(filePath: string) {
+      super(`File lacks frontmatter: ${filePath}`);
+      this.name = 'NoFrontmatterError';
+    }
+  }
+  return {
+    PlanNotFoundError,
+    NoFrontmatterError,
+    resolvePlanFile: vi.fn(async () => ''),
+    readPlanFile: readPlanFileSpy,
+    writePlanFile: vi.fn(async () => {}),
+    generatePlanFileContent: vi.fn(() => ''),
+    resolvePlanFromDb: vi.fn(async () => ({
+      plan: { id: 7, title: 'P', status: 'pending', tasks: [] },
+      planPath: '',
+    })),
+    writePlanToDb: vi.fn(async () => {}),
+    getBlockedPlans: vi.fn(() => []),
+    getChildPlans: vi.fn(() => []),
+    getDiscoveredPlans: vi.fn(() => []),
+    getMaxNumericPlanId: vi.fn(async () => 0),
+    parsePlanIdentifier: vi.fn(() => ({})),
+    isPlanReady: vi.fn(() => true),
+    collectDependenciesInOrder: vi.fn(async () => []),
+    setPlanStatus: vi.fn(async () => {}),
+    setPlanStatusById: vi.fn(async () => {}),
+    generateSuggestedFilename: vi.fn(async () => 'plan.yml'),
+    isTaskDone: vi.fn(() => false),
+  };
+});
+
+vi.mock('../../plans/find_next.js', () => ({
+  findNextActionableItem: vi.fn(() => null),
+  getAllIncompleteTasks: vi.fn(() => []),
+  findPendingTask: vi.fn(() => null),
+}));
+
+vi.mock('../../plans/mark_done.js', () => ({
+  markStepDone: vi.fn(async () => ({})),
+  markTaskDone: vi.fn(async () => ({})),
+}));
+
+vi.mock('../../workspace/workspace_lock.js', () => {
+  class WorkspaceAlreadyLocked extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = 'WorkspaceAlreadyLocked';
+    }
+  }
+  return {
+    WorkspaceAlreadyLocked,
+    WorkspaceLock: {
+      acquireLock: vi.fn(async () => ({ type: 'persistent' })),
+      setupCleanupHandlers: vi.fn(() => {}),
+      releaseLock: vi.fn(async () => {}),
+      getLockInfo: vi.fn(async () => null),
+      isLockStale: vi.fn(async () => false),
+    },
+  };
+});
+
+vi.mock('../../executors/index.js', () => ({
+  buildExecutorAndLog: vi.fn(() => ({ execute: vi.fn(async () => ({})), filePathPrefix: '' })),
+  DEFAULT_EXECUTOR: 'mock-executor',
+  defaultModelForExecutor: () => 'mock-model',
+}));
+
+vi.mock('../../assignments/auto_claim.js', () => ({
+  autoClaimPlan: vi.fn(async (...args: unknown[]) => {
+    if (!autoClaimEnabled) {
+      throw new Error('autoClaimPlan invoked while disabled');
+    }
+    return autoClaimPlanSpy(...(args as any));
+  }),
+  enableAutoClaim: vi.fn(() => {
+    autoClaimEnabled = true;
+  }),
+  disableAutoClaim: vi.fn(() => {
+    autoClaimEnabled = false;
+  }),
+  isAutoClaimEnabled: vi.fn(() => autoClaimEnabled),
+}));
+
+vi.mock('../../plans/prepare_step.js', () => ({
+  prepareNextStep: vi.fn(async () => {}),
+}));
+
+vi.mock('../../prompt_builder.js', () => ({
+  buildExecutionPromptWithoutSteps: vi.fn(async () => 'prompt'),
+}));
+
+vi.mock('../../../common/git.js', () => ({
+  getGitRoot: vi.fn(async () => tempRoot),
+}));
+
+vi.mock('../plan_discovery.js', () => ({
+  findLatestPlanFromDb: vi.fn(async () => null),
+  findNextPlanFromDb: vi.fn(async () => null),
+  findNextReadyDependencyFromDb: vi.fn(async () => ({ plan: null, message: '' })),
+  toHeadlessPlanSummary: vi.fn(() => undefined),
+}));
 
 describe('timAgent auto-claim integration', () => {
-  const autoClaimPlanSpy = mock(async () => ({ result: { persisted: true } }));
-  const readPlanFileSpy = mock(async () => ({
-    id: 7,
-    uuid: 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff',
-    title: 'Agent auto-claim plan',
-    goal: 'Demo',
-    details: '',
-    status: 'pending',
-    tasks: [
-      {
-        title: 'Task',
-        description: undefined,
-        steps: [],
-      },
-    ],
-  }));
-
-  let timAgent: typeof import('./agent.js').timAgent;
-  let enableAutoClaim: () => void;
-  let disableAutoClaim: () => void;
-
-  let tempRoot: string;
   let planPath: string;
 
   beforeEach(async () => {
@@ -40,100 +164,17 @@ describe('timAgent auto-claim integration', () => {
 
     autoClaimPlanSpy.mockClear();
     readPlanFileSpy.mockClear();
-
-    await moduleMocker.mock('../../../logging.js', () => ({
-      log: mock(() => {}),
-      error: mock(() => {}),
-      warn: mock(() => {}),
-      openLogFile: mock(() => {}),
-      closeLogFile: mock(async () => {}),
-    }));
-
-    await moduleMocker.mock('../../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: {
-          tasks: path.join(tempRoot, 'tasks'),
-        },
-      }),
-    }));
-
-    await moduleMocker.mock('../../plans.js', () => ({
-      resolvePlanFile: mock(async () => planPath),
-      readPlanFile: readPlanFileSpy,
-      writePlanFile: mock(async () => {}),
-    }));
-
-    await moduleMocker.mock('../../plans/find_next.js', () => ({
-      findNextActionableItem: mock(() => null),
-    }));
-
-    await moduleMocker.mock('../../plans/mark_done.js', () => ({
-      markStepDone: mock(async () => ({})),
-      markTaskDone: mock(async () => ({})),
-    }));
-
-    await moduleMocker.mock('../../workspace/workspace_lock.js', () => ({
-      WorkspaceLock: {
-        acquireLock: mock(async () => ({ type: 'persistent' })),
-        setupCleanupHandlers: mock(() => {}),
-      },
-    }));
-
-    await moduleMocker.mock('../../executors/index.js', () => ({
-      buildExecutorAndLog: mock(() => ({ execute: mock(async () => ({})) })),
-      DEFAULT_EXECUTOR: 'mock-executor',
-      defaultModelForExecutor: () => 'mock-model',
-    }));
-
-    await moduleMocker.mock('../../assignments/auto_claim.js', () => {
-      let enabled = false;
-      return {
-        autoClaimPlan: mock(async (...args: unknown[]) => {
-          if (!enabled) {
-            throw new Error('autoClaimPlan invoked while disabled');
-          }
-          return autoClaimPlanSpy(...args);
-        }),
-        enableAutoClaim: () => {
-          enabled = true;
-        },
-        disableAutoClaim: () => {
-          enabled = false;
-        },
-        isAutoClaimEnabled: () => enabled,
-      };
-    });
-
-    await moduleMocker.mock('../../plans/prepare_step.js', () => ({
-      prepareNextStep: mock(async () => {}),
-    }));
-
-    await moduleMocker.mock('../../prompt_builder.js', () => ({
-      buildExecutionPromptWithoutSteps: mock(async () => 'prompt'),
-    }));
-
-    await moduleMocker.mock('../../../common/git.js', () => ({
-      getGitRoot: async () => tempRoot,
-    }));
-
-    await moduleMocker.mock('../plan_discovery.js', () => ({
-      findLatestPlanFromDb: mock(async () => null),
-      findNextPlanFromDb: mock(async () => null),
-      findNextReadyDependencyFromDb: mock(async () => ({ plan: null, message: '' })),
-      toHeadlessPlanSummary: mock(() => undefined),
-    }));
-
-    ({ timAgent } = await import('./agent.js'));
-    ({ enableAutoClaim, disableAutoClaim } = await import('../../assignments/auto_claim.js'));
-    disableAutoClaim();
+    autoClaimEnabled = false;
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     await fs.rm(tempRoot, { recursive: true, force: true });
   });
 
   test('calls autoClaimPlan when enabled', async () => {
+    const { timAgent } = await import('./agent.js');
+    const { enableAutoClaim } = await import('../../assignments/auto_claim.js');
     enableAutoClaim();
 
     await timAgent(planPath, { log: false, serialTasks: true, nonInteractive: true }, {});

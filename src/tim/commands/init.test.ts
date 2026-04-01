@@ -1,15 +1,26 @@
-import { afterEach, beforeEach, describe, expect, test, mock } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'path';
 import yaml from 'yaml';
+
+vi.mock('../../common/git.js', () => ({
+  getGitRoot: vi.fn(),
+}));
+
+vi.mock('@inquirer/prompts', () => ({
+  confirm: vi.fn(),
+  input: vi.fn(),
+  select: vi.fn(),
+}));
+
 import { handleInitCommand } from './init.js';
-import { ModuleMocker } from '../../testing.js';
+import { getGitRoot } from '../../common/git.js';
+import { confirm, input, select } from '@inquirer/prompts';
 
 describe('tim init command', () => {
   let tempDir: string;
   let originalCwd: string;
-  const moduleMocker = new ModuleMocker(import.meta);
 
   beforeEach(async () => {
     // Create temporary directory
@@ -20,9 +31,7 @@ describe('tim init command', () => {
     process.chdir(tempDir);
 
     // Mock git.js to return our temp directory as git root
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: mock(async () => tempDir),
-    }));
+    vi.mocked(getGitRoot).mockResolvedValue(tempDir);
   });
 
   afterEach(async () => {
@@ -33,7 +42,7 @@ describe('tim init command', () => {
     await fs.rm(tempDir, { recursive: true, force: true });
 
     // Clear module mocks
-    moduleMocker.clear();
+    vi.clearAllMocks();
   });
 
   test('creates configuration file in new repository with --yes flag', async () => {
@@ -96,11 +105,9 @@ describe('tim init command', () => {
     };
 
     // Mock inquirer to return false (don't overwrite)
-    await moduleMocker.mock('@inquirer/prompts', () => ({
-      confirm: mock(async () => false),
-      input: mock(async () => 'tasks'),
-      select: mock(async () => 'copy-only'),
-    }));
+    vi.mocked(confirm).mockResolvedValue(false);
+    vi.mocked(input).mockResolvedValue('tasks');
+    vi.mocked(select).mockResolvedValue('copy-only');
 
     await handleInitCommand({}, command);
 
@@ -202,12 +209,9 @@ describe('tim init command', () => {
   });
 
   test('interactive init no longer prompts for a plan files directory', async () => {
-    const inputSpy = mock(async () => 'npm run format');
-    await moduleMocker.mock('@inquirer/prompts', () => ({
-      input: inputSpy,
-      select: mock(async () => 'copy-only'),
-      confirm: mock(async () => true),
-    }));
+    const inputSpy = vi.mocked(input).mockResolvedValue('npm run format');
+    vi.mocked(select).mockResolvedValue('copy-only');
+    vi.mocked(confirm).mockResolvedValue(true);
 
     const command = {
       parent: {

@@ -1,42 +1,208 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import yaml from 'yaml';
-import { ModuleMocker } from '../../../testing.js';
 import { getDefaultConfig as realGetDefaultConfig } from '../../configSchema.js';
 
-describe('timAgent stub plan review continuation', () => {
-  let moduleMocker: ModuleMocker;
-  let tempDir: string;
-  let planFile: string;
+let tempDir = '';
+let planFile = '';
 
-  const promptConfirmSpy = mock(async () => true);
-  const executeStubPlanSpy = mock(async () => ({ tasksAppended: 0 }));
-  const executeBatchModeSpy = mock(async () => undefined);
-  const closeLogFileSpy = mock(async () => undefined);
-  const buildExecutorAndLogSpy = mock(() => ({ execute: mock(async () => undefined) }));
-  const resolvePlanFileSpy = mock(async (input: string) => input);
-  const loadEffectiveConfigSpy = mock(async () => ({
-    ...realGetDefaultConfig(),
-    models: { execution: 'test-model' },
-    postApplyCommands: [],
-  }));
+const promptConfirmSpy = vi.fn(async () => true);
+const executeStubPlanSpy = vi.fn(async () => ({ tasksAppended: 0 }));
+const executeBatchModeSpy = vi.fn(async () => undefined);
+const closeLogFileSpy = vi.fn(async () => undefined);
+const buildExecutorAndLogSpy = vi.fn(() => ({
+  execute: vi.fn(async () => undefined),
+  filePathPrefix: '',
+}));
+const resolvePlanFileSpy = vi.fn(async (input: string) => input);
+const loadEffectiveConfigSpy = vi.fn(async () => ({
+  ...realGetDefaultConfig(),
+  models: { execution: 'test-model' },
+  postApplyCommands: [],
+}));
 
-  async function writePlan(tasks: any[] = []) {
-    const plan = {
-      id: 242,
-      title: 'Stub Review Plan',
-      goal: 'Goal',
-      details: 'Details',
-      status: 'pending',
-      tasks,
-    };
-    await fs.writeFile(planFile, yaml.stringify(plan));
+vi.mock('../../../logging.js', () => ({
+  log: vi.fn(() => {}),
+  warn: vi.fn(() => {}),
+  error: vi.fn(() => {}),
+  openLogFile: vi.fn(() => {}),
+  closeLogFile: closeLogFileSpy,
+  boldMarkdownHeaders: (value: string) => value,
+  sendStructured: vi.fn(() => {}),
+  debugLog: vi.fn(() => {}),
+}));
+
+vi.mock('../../../common/input.js', () => ({
+  promptConfirm: promptConfirmSpy,
+  promptSelect: vi.fn(async () => ''),
+  promptInput: vi.fn(async () => ''),
+  promptCheckbox: vi.fn(async () => []),
+  promptPrefixSelect: vi.fn(async () => ({ prefix: '', value: '' })),
+  isPromptTimeoutError: vi.fn(() => false),
+}));
+
+vi.mock('../../../common/git.js', () => ({
+  getGitRoot: vi.fn(async () => tempDir),
+  getCurrentBranchName: vi.fn(async () => 'feature/test'),
+  getTrunkBranch: vi.fn(async () => 'main'),
+}));
+
+vi.mock('../../../common/process.js', () => ({
+  logSpawn: vi.fn(() => ({ exited: Promise.resolve(0) })),
+  spawnAndLogOutput: vi.fn(async () => ({
+    exitCode: 0,
+    stdout: '',
+    stderr: '',
+    signal: null,
+    killedByInactivity: false,
+  })),
+}));
+
+vi.mock('../../configLoader.js', () => ({
+  loadEffectiveConfig: loadEffectiveConfigSpy,
+  loadGlobalConfigForNotifications: vi.fn(async () => ({})),
+}));
+
+vi.mock('../../executors/index.js', () => ({
+  buildExecutorAndLog: buildExecutorAndLogSpy,
+  DEFAULT_EXECUTOR: 'copy-only',
+  defaultModelForExecutor: vi.fn(() => 'test-model'),
+}));
+
+vi.mock('../../plans.js', () => {
+  class PlanNotFoundError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = 'PlanNotFoundError';
+    }
   }
+  class NoFrontmatterError extends Error {
+    constructor(filePath: string) {
+      super(`File lacks frontmatter: ${filePath}`);
+      this.name = 'NoFrontmatterError';
+    }
+  }
+  return {
+    PlanNotFoundError,
+    NoFrontmatterError,
+    resolvePlanFile: resolvePlanFileSpy,
+    readPlanFile: vi.fn(async (filePath: string) => {
+      const { readFile } = await import('node:fs/promises');
+      const content = await readFile(filePath, 'utf-8');
+      const yaml = await import('yaml');
+      return yaml.default.parse(content);
+    }),
+    writePlanFile: vi.fn(async (filePath: string, data: any) => {
+      const { writeFile } = await import('node:fs/promises');
+      const yaml = await import('yaml');
+      await writeFile(filePath, yaml.default.stringify(data));
+    }),
+    generatePlanFileContent: vi.fn(() => ''),
+    resolvePlanFromDb: vi.fn(async () => ({
+      plan: { id: 1, title: 'P', status: 'pending', tasks: [] },
+      planPath: '',
+    })),
+    writePlanToDb: vi.fn(async () => {}),
+    setPlanStatus: vi.fn(async () => {}),
+    setPlanStatusById: vi.fn(async () => {}),
+    isTaskDone: vi.fn(() => false),
+    getBlockedPlans: vi.fn(() => []),
+    getChildPlans: vi.fn(() => []),
+    getDiscoveredPlans: vi.fn(() => []),
+    getMaxNumericPlanId: vi.fn(async () => 0),
+    parsePlanIdentifier: vi.fn(() => ({})),
+    isPlanReady: vi.fn(() => true),
+    collectDependenciesInOrder: vi.fn(async () => []),
+    generateSuggestedFilename: vi.fn(async () => 'plan.yml'),
+  };
+});
 
+vi.mock('./stub_plan.js', () => ({
+  executeStubPlan: executeStubPlanSpy,
+}));
+
+vi.mock('./batch_mode.js', () => ({
+  executeBatchMode: executeBatchModeSpy,
+}));
+
+vi.mock('../../summary/collector.js', () => ({
+  SummaryCollector: class {
+    recordExecutionStart = vi.fn(() => {});
+    addError = vi.fn(() => {});
+    addStepResult = vi.fn(() => {});
+    setBatchIterations = vi.fn(() => {});
+    recordExecutionEnd = vi.fn(() => {});
+    trackFileChanges = vi.fn(async () => {});
+    getExecutionSummary = vi.fn(() => ({}));
+  },
+}));
+
+vi.mock('../../summary/display.js', () => ({
+  writeOrDisplaySummary: vi.fn(async () => undefined),
+  formatExecutionSummaryToLines: vi.fn(() => []),
+  displayExecutionSummary: vi.fn(() => {}),
+}));
+
+vi.mock('../../workspace/workspace_setup.js', () => ({
+  setupWorkspace: vi.fn(async (_options: any, baseDir: string, currentPlanFile: string) => ({
+    baseDir,
+    planFile: currentPlanFile,
+  })),
+}));
+
+vi.mock('../../workspace/workspace_roundtrip.js', () => ({
+  prepareWorkspaceRoundTrip: vi.fn(async () => null),
+  runPostExecutionWorkspaceSync: vi.fn(async () => undefined),
+  runPreExecutionWorkspaceSync: vi.fn(async () => undefined),
+}));
+
+vi.mock('../../workspace/workspace_info.js', () => ({
+  getWorkspaceInfoByPath: vi.fn(() => null),
+  patchWorkspaceInfo: vi.fn(() => undefined),
+  touchWorkspaceInfo: vi.fn(() => undefined),
+}));
+
+vi.mock('../../assignments/auto_claim.js', () => ({
+  autoClaimPlan: vi.fn(async () => undefined),
+  isAutoClaimEnabled: vi.fn(() => false),
+  enableAutoClaim: vi.fn(() => {}),
+  disableAutoClaim: vi.fn(() => {}),
+}));
+
+vi.mock('../../notifications.js', () => ({
+  sendNotification: vi.fn(async () => true),
+}));
+
+vi.mock('../../headless.js', () => ({
+  runWithHeadlessAdapterIfEnabled: vi.fn(async ({ run }: { run: () => Promise<unknown> }) => run()),
+  createHeadlessAdapterForCommand: vi.fn(async () => null),
+  updateHeadlessSessionInfo: vi.fn(() => {}),
+  DEFAULT_HEADLESS_URL: 'ws://localhost:8123/tim-agent',
+  resolveHeadlessUrl: vi.fn(() => 'ws://localhost:8123/tim-agent'),
+  buildHeadlessSessionInfo: vi.fn(async () => ({})),
+  resetHeadlessWarningStateForTests: vi.fn(() => {}),
+}));
+
+vi.mock('../../../logging/tunnel_client.js', () => ({
+  isTunnelActive: vi.fn(() => false),
+}));
+
+async function writePlan(tasks: any[] = []) {
+  const plan = {
+    id: 242,
+    title: 'Stub Review Plan',
+    goal: 'Goal',
+    details: 'Details',
+    status: 'pending',
+    tasks,
+  };
+  await fs.writeFile(planFile, yaml.stringify(plan));
+}
+
+describe('timAgent stub plan review continuation', () => {
   beforeEach(async () => {
-    moduleMocker = new ModuleMocker(import.meta);
     promptConfirmSpy.mockClear();
     executeStubPlanSpy.mockClear();
     executeBatchModeSpy.mockClear();
@@ -48,123 +214,10 @@ describe('timAgent stub plan review continuation', () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-stub-review-test-'));
     planFile = path.join(tempDir, 'plan.yml');
     await writePlan();
-
-    await moduleMocker.mock('../../../logging.js', () => ({
-      log: mock(() => {}),
-      warn: mock(() => {}),
-      error: mock(() => {}),
-      openLogFile: mock(() => {}),
-      closeLogFile: closeLogFileSpy,
-      boldMarkdownHeaders: (value: string) => value,
-      sendStructured: mock(() => {}),
-    }));
-
-    await moduleMocker.mock('../../../common/input.js', () => ({
-      promptConfirm: promptConfirmSpy,
-    }));
-
-    await moduleMocker.mock('../../../common/git.js', () => ({
-      getGitRoot: mock(async () => tempDir),
-      getCurrentBranchName: mock(async () => 'feature/test'),
-      getTrunkBranch: mock(async () => 'main'),
-    }));
-
-    await moduleMocker.mock('../../../common/process.js', () => ({
-      logSpawn: mock(() => ({ exited: Promise.resolve(0) })),
-    }));
-
-    await moduleMocker.mock('../../configLoader.js', () => ({
-      loadEffectiveConfig: loadEffectiveConfigSpy,
-    }));
-
-    await moduleMocker.mock('../../configSchema.js', () => ({
-      getDefaultConfig: realGetDefaultConfig,
-    }));
-
-    await moduleMocker.mock('../../executors/index.js', () => ({
-      buildExecutorAndLog: buildExecutorAndLogSpy,
-      DEFAULT_EXECUTOR: 'copy-only',
-      defaultModelForExecutor: mock(() => 'test-model'),
-    }));
-
-    await moduleMocker.mock('../../plans.js', () => ({
-      resolvePlanFile: resolvePlanFileSpy,
-      readPlanFile: mock(async (filePath: string) => {
-        const content = await fs.readFile(filePath, 'utf-8');
-        return yaml.parse(content);
-      }),
-      writePlanFile: mock(async (filePath: string, data: any) => {
-        await fs.writeFile(filePath, yaml.stringify(data));
-      }),
-    }));
-
-    await moduleMocker.mock('./stub_plan.js', () => ({
-      executeStubPlan: executeStubPlanSpy,
-    }));
-
-    await moduleMocker.mock('./batch_mode.js', () => ({
-      executeBatchMode: executeBatchModeSpy,
-    }));
-
-    await moduleMocker.mock('../../summary/collector.js', () => ({
-      SummaryCollector: class {
-        recordExecutionStart() {}
-        addError() {}
-        addStepResult() {}
-        setBatchIterations() {}
-        recordExecutionEnd() {}
-        async trackFileChanges() {}
-        getExecutionSummary() {
-          return {};
-        }
-      },
-    }));
-
-    await moduleMocker.mock('../../summary/display.js', () => ({
-      writeOrDisplaySummary: mock(async () => undefined),
-    }));
-
-    await moduleMocker.mock('../../workspace/workspace_setup.js', () => ({
-      setupWorkspace: mock(async (_options: any, baseDir: string, currentPlanFile: string) => ({
-        baseDir,
-        planFile: currentPlanFile,
-      })),
-    }));
-
-    await moduleMocker.mock('../../workspace/workspace_roundtrip.js', () => ({
-      prepareWorkspaceRoundTrip: mock(async () => null),
-      runPostExecutionWorkspaceSync: mock(async () => undefined),
-      runPreExecutionWorkspaceSync: mock(async () => undefined),
-    }));
-
-    await moduleMocker.mock('../../workspace/workspace_info.js', () => ({
-      getWorkspaceInfoByPath: mock(() => null),
-      patchWorkspaceInfo: mock(() => undefined),
-      touchWorkspaceInfo: mock(() => undefined),
-    }));
-
-    await moduleMocker.mock('../../assignments/auto_claim.js', () => ({
-      autoClaimPlan: mock(async () => undefined),
-      isAutoClaimEnabled: mock(() => false),
-    }));
-
-    await moduleMocker.mock('../../notifications.js', () => ({
-      sendNotification: mock(async () => true),
-    }));
-
-    await moduleMocker.mock('../../headless.js', () => ({
-      runWithHeadlessAdapterIfEnabled: mock(async ({ run }: { run: () => Promise<unknown> }) =>
-        run()
-      ),
-    }));
-
-    await moduleMocker.mock('../../../logging/tunnel_client.js', () => ({
-      isTunnelActive: mock(() => false),
-    }));
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test, vi } from 'vitest';
 import { slugify } from './id_utils.js';
 
 describe('slugify', () => {
@@ -7,7 +7,7 @@ describe('slugify', () => {
       'This is an extremely long issue title that should definitely be truncated when creating the project ID to avoid excessively long directory names in the filesystem';
     const slugTitle = slugify(title);
     expect(slugTitle.length).toBeLessThanOrEqual(50);
-    expect(slugTitle).not.toEndWith('-');
+    expect(slugTitle).not.toMatch(/-$/);
   });
 
   test('slugifies custom project ID', () => {

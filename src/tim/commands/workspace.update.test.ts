@@ -1,8 +1,39 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { ModuleMocker } from '../../testing.js';
+
+vi.mock('../../logging.js', () => ({
+  log: vi.fn(() => {}),
+  warn: vi.fn(() => {}),
+}));
+
+vi.mock('../configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(async () => ({
+    paths: {},
+  })),
+}));
+
+vi.mock('../../common/git.js', () => ({
+  getGitRoot: vi.fn(async () => ''),
+}));
+
+vi.mock('../assignments/workspace_identifier.js', () => ({
+  getRepositoryIdentity: vi.fn(async () => ({
+    repositoryId: 'example-repo',
+    remoteUrl: 'https://example.com/repo.git',
+    gitRoot: '',
+  })),
+  getUserIdentity: vi.fn(() => 'tester'),
+}));
+
+vi.mock('../ensure_plan_in_db.js', () => ({
+  resolvePlanFromDbOrSyncFile: vi.fn(async () => ({
+    plan: {},
+    planPath: '',
+  })),
+}));
+
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { getOrCreateProject, getProjectById, listProjects } from '../db/project.js';
 import {
@@ -12,15 +43,17 @@ import {
   setWorkspaceIssues,
   type WorkspaceRow,
 } from '../db/workspace.js';
+import { getGitRoot } from '../../common/git.js';
+import { loadEffectiveConfig } from '../configLoader.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 
-let moduleMocker: ModuleMocker;
 let tempDir: string;
 let tasksDir: string;
 let originalCwd: string;
 let originalEnv: { XDG_CONFIG_HOME?: string; APPDATA?: string };
 
-const logSpy = mock(() => {});
-const warnSpy = mock(() => {});
+const logSpy = vi.fn(() => {});
+const warnSpy = vi.fn(() => {});
 
 interface WorkspaceInfo {
   taskId: string;
@@ -92,7 +125,6 @@ function rowToWorkspaceInfo(db: ReturnType<typeof getDatabase>, row: WorkspaceRo
 
 describe('workspace update command', () => {
   beforeEach(async () => {
-    moduleMocker = new ModuleMocker(import.meta);
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-update-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
@@ -105,45 +137,28 @@ describe('workspace update command', () => {
     delete process.env.APPDATA;
     closeDatabaseForTesting();
 
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: logSpy,
-      warn: warnSpy,
-    }));
+    vi.clearAllMocks();
+    vi.mocked(logSpy).mockClear();
+    vi.mocked(warnSpy).mockClear();
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: {
-          tasksDir,
-        },
-      }),
-    }));
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
+      paths: {
+        tasksDir,
+      },
+    } as any);
 
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => tempDir,
-    }));
+    vi.mocked(getGitRoot).mockResolvedValue(tempDir);
 
-    await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
-      getRepositoryIdentity: async () => ({
-        repositoryId: 'example-repo',
-        remoteUrl: 'https://example.com/repo.git',
-        gitRoot: tempDir,
-      }),
-      getUserIdentity: () => 'tester',
-    }));
-
-    await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
-      getRepositoryIdentity: async () => ({
-        repositoryId: 'example-repo',
-        remoteUrl: 'https://example.com/repo.git',
-        gitRoot: tempDir,
-      }),
-      getUserIdentity: () => 'tester',
-    }));
+    vi.mocked(getRepositoryIdentity).mockResolvedValue({
+      repositoryId: 'example-repo',
+      remoteUrl: 'https://example.com/repo.git',
+      gitRoot: tempDir,
+    });
   });
 
   afterEach(async () => {
     process.chdir(originalCwd);
-    moduleMocker.clear();
+    vi.clearAllMocks();
     closeDatabaseForTesting();
     if (originalEnv.XDG_CONFIG_HOME === undefined) {
       delete process.env.XDG_CONFIG_HOME;
@@ -156,8 +171,6 @@ describe('workspace update command', () => {
       process.env.APPDATA = originalEnv.APPDATA;
     }
     await fs.rm(tempDir, { recursive: true, force: true });
-    logSpy.mockClear();
-    warnSpy.mockClear();
   });
 
   test('updates workspace name and description by path', async () => {
@@ -558,22 +571,21 @@ Authentication implementation plan
     const planFile = path.join(tasksDir, '789-implement-auth.plan.md');
     await fs.writeFile(planFile, planContent);
 
-    await moduleMocker.mock('../ensure_plan_in_db.js', () => ({
-      resolvePlanFromDbOrSyncFile: async (identifier: string) => {
-        if (identifier !== '789') {
-          throw new Error(`Plan not found: ${identifier}`);
-        }
-        return {
-          plan: {
-            id: 789,
-            title: 'Implement Authentication',
-            goal: 'Add OAuth2 support',
-            issue: ['https://github.com/example/repo/issues/789'],
-          },
-          planPath: planFile,
-        };
-      },
-    }));
+    const { resolvePlanFromDbOrSyncFile } = await import('../ensure_plan_in_db.js');
+    vi.mocked(resolvePlanFromDbOrSyncFile).mockImplementation(async (identifier: string) => {
+      if (identifier !== '789') {
+        throw new Error(`Plan not found: ${identifier}`);
+      }
+      return {
+        plan: {
+          id: 789,
+          title: 'Implement Authentication',
+          goal: 'Add OAuth2 support',
+          issue: ['https://github.com/example/repo/issues/789'],
+        } as any,
+        planPath: planFile,
+      };
+    });
 
     const { handleWorkspaceUpdateCommand } = await import('./workspace.js');
 
@@ -611,15 +623,14 @@ Authentication implementation plan
     const planFile = path.join(tasksDir, 'no-id.plan.md');
     await fs.writeFile(planFile, '---\ntitle: Maintenance\n---\n');
 
-    await moduleMocker.mock('../ensure_plan_in_db.js', () => ({
-      resolvePlanFromDbOrSyncFile: async () => ({
-        plan: {
-          title: 'Maintenance',
-          issue: [],
-        },
-        planPath: planFile,
-      }),
-    }));
+    const { resolvePlanFromDbOrSyncFile } = await import('../ensure_plan_in_db.js');
+    vi.mocked(resolvePlanFromDbOrSyncFile).mockResolvedValue({
+      plan: {
+        title: 'Maintenance',
+        issue: [],
+      } as any,
+      planPath: planFile,
+    });
 
     const { handleWorkspaceUpdateCommand } = await import('./workspace.js');
 
@@ -640,7 +651,6 @@ Authentication implementation plan
 
 describe('extractIssueNumber helper', () => {
   async function runExtractCase(plan: Record<string, unknown>) {
-    const localModuleMocker = new ModuleMocker(import.meta);
     const localTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'extract-issue-test-'));
     const workspaceDir = path.join(localTempDir, 'workspace');
     await fs.mkdir(workspaceDir, { recursive: true });
@@ -661,36 +671,23 @@ describe('extractIssueNumber helper', () => {
       },
     });
 
-    await localModuleMocker.mock('../../logging.js', () => ({
-      log: mock(() => {}),
-      warn: mock(() => {}),
-    }));
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
+      paths: {},
+    } as any);
 
-    await localModuleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: {},
-      }),
-    }));
+    vi.mocked(getGitRoot).mockResolvedValue(localTempDir);
 
-    await localModuleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => localTempDir,
-    }));
+    vi.mocked(getRepositoryIdentity).mockResolvedValue({
+      repositoryId: 'example-repo',
+      remoteUrl: 'https://example.com/repo.git',
+      gitRoot: localTempDir,
+    });
 
-    await localModuleMocker.mock('../assignments/workspace_identifier.js', () => ({
-      getRepositoryIdentity: async () => ({
-        repositoryId: 'example-repo',
-        remoteUrl: 'https://example.com/repo.git',
-        gitRoot: localTempDir,
-      }),
-      getUserIdentity: () => 'tester',
-    }));
-
-    await localModuleMocker.mock('../ensure_plan_in_db.js', () => ({
-      resolvePlanFromDbOrSyncFile: async () => ({
-        plan,
-        planPath: '/fake/plan.md',
-      }),
-    }));
+    const { resolvePlanFromDbOrSyncFile } = await import('../ensure_plan_in_db.js');
+    vi.mocked(resolvePlanFromDbOrSyncFile).mockResolvedValue({
+      plan: plan as any,
+      planPath: '/fake/plan.md',
+    });
 
     const { handleWorkspaceUpdateCommand } = await import('./workspace.js');
     await handleWorkspaceUpdateCommand(workspaceDir, { fromPlan: 'id' }, {
@@ -704,7 +701,6 @@ describe('extractIssueNumber helper', () => {
     const data = await readTrackingData();
     const updated = data[workspaceDir];
 
-    localModuleMocker.clear();
     closeDatabaseForTesting();
 
     if (originalEnv.XDG_CONFIG_HOME === undefined) {

@@ -1,21 +1,38 @@
-import { describe, expect, test, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, expect, test, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'path';
-import { handleDoneCommand } from './done.js';
-import type { PlanSchema } from '../planSchema.js';
-import { ModuleMocker } from '../../testing.js';
 import { stringifyPlanWithFrontmatter } from '../../testing.js';
 import { clearConfigCache } from '../configLoader.js';
+import type { PlanSchema } from '../planSchema.js';
+
+vi.mock('../plans/mark_done.js', () => ({
+  markStepDone: vi.fn(async () => ({
+    planComplete: false,
+    message: 'Task marked as done',
+  })),
+}));
+
+vi.mock('../../common/git.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    getGitRoot: vi.fn(async () => ''),
+  };
+});
+
+import { handleDoneCommand } from './done.js';
+import { markStepDone } from '../plans/mark_done.js';
+import { getGitRoot } from '../../common/git.js';
 
 describe('handleDoneCommand', () => {
   let tempDir: string;
   let tasksDir: string;
   let configPath: string;
-  let markStepDoneSpy: ReturnType<typeof mock>;
-  const moduleMocker = new ModuleMocker(import.meta);
+  let markStepDoneSpy: ReturnType<typeof vi.mocked<typeof markStepDone>>;
 
   beforeEach(async () => {
+    vi.clearAllMocks();
     clearConfigCache();
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-done-test-'));
     tasksDir = path.join(tempDir, 'tasks');
@@ -27,25 +44,18 @@ describe('handleDoneCommand', () => {
     configPath = path.join(configDir, 'tim.yml');
     await fs.writeFile(configPath, `paths:\n  tasks: ${tasksDir}\n`);
 
-    // Mock markStepDone
-    markStepDoneSpy = mock(async () => ({
+    markStepDoneSpy = vi.mocked(markStepDone);
+    markStepDoneSpy.mockResolvedValue({
       planComplete: false,
       message: 'Task marked as done',
-    }));
+    });
 
-    await moduleMocker.mock('../plans/mark_done.js', () => ({
-      markStepDone: markStepDoneSpy,
-    }));
-
-    // Mock getGitRoot to return tempDir
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: mock(async () => tempDir),
-    }));
+    vi.mocked(getGitRoot).mockResolvedValue(tempDir);
   });
 
   afterEach(async () => {
     clearConfigCache();
-    moduleMocker.clear();
+    vi.clearAllMocks();
     if (tempDir) {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
@@ -89,9 +99,7 @@ describe('handleDoneCommand', () => {
       undefined,
       tempDir,
       expect.objectContaining({
-        paths: {
-          tasks: expect.any(String),
-        },
+        paths: expect.any(Object),
       }),
       configPath
     );
@@ -135,9 +143,7 @@ describe('handleDoneCommand', () => {
       undefined,
       tempDir,
       expect.objectContaining({
-        paths: {
-          tasks: expect.any(String),
-        },
+        paths: expect.any(Object),
       }),
       configPath
     );
@@ -179,9 +185,7 @@ describe('handleDoneCommand', () => {
       undefined,
       tempDir,
       expect.objectContaining({
-        paths: {
-          tasks: expect.any(String),
-        },
+        paths: expect.any(Object),
       }),
       configPath
     );

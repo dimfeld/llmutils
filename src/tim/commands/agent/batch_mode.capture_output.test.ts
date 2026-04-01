@@ -1,68 +1,116 @@
-import { describe, test, expect, mock, afterEach, beforeEach } from 'bun:test';
-import { ModuleMocker } from '../../../testing.js';
-import { executeBatchMode } from './batch_mode.js';
+import { describe, test, expect, vi, afterEach, beforeEach } from 'vitest';
+import * as fs from 'node:fs/promises';
+
+let incompleteCalls = 0;
+
+vi.mock('../../plans.js', () => {
+  class PlanNotFoundError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = 'PlanNotFoundError';
+    }
+  }
+  class NoFrontmatterError extends Error {
+    constructor(filePath: string) {
+      super(`File lacks frontmatter: ${filePath}`);
+      this.name = 'NoFrontmatterError';
+    }
+  }
+  return {
+    PlanNotFoundError,
+    NoFrontmatterError,
+    readPlanFile: vi.fn(async () => ({ id: 1, title: 'P', status: 'pending', tasks: [] })),
+    writePlanFile: vi.fn(async (_p: string, _data: any) => {}),
+    setPlanStatusById: vi.fn(async () => {}),
+    generatePlanFileContent: vi.fn(() => ''),
+    resolvePlanFromDb: vi.fn(async () => ({
+      plan: { id: 1, title: 'P', status: 'pending', tasks: [] },
+      planPath: '/tmp/plan.yml',
+    })),
+    writePlanToDb: vi.fn(async () => {}),
+    getBlockedPlans: vi.fn(() => []),
+    getChildPlans: vi.fn(() => []),
+    getDiscoveredPlans: vi.fn(() => []),
+    getMaxNumericPlanId: vi.fn(async () => 0),
+    parsePlanIdentifier: vi.fn(() => ({})),
+    isPlanReady: vi.fn(() => true),
+    collectDependenciesInOrder: vi.fn(async () => []),
+    setPlanStatus: vi.fn(async () => {}),
+    generateSuggestedFilename: vi.fn(async () => 'plan.yml'),
+    isTaskDone: vi.fn(() => false),
+  };
+});
+
+vi.mock('../../plans/find_next.js', () => ({
+  getAllIncompleteTasks: vi.fn(() => {
+    incompleteCalls += 1;
+    return incompleteCalls === 1
+      ? [
+          {
+            taskIndex: 0,
+            task: { title: 'T1', description: 'D1', steps: [{ prompt: 'p', done: false }] },
+          },
+        ]
+      : [];
+  }),
+  findPendingTask: vi.fn(() => null),
+  findNextActionableItem: vi.fn(() => null),
+}));
+
+vi.mock('../../prompt_builder.js', () => ({
+  buildExecutionPromptWithoutSteps: vi.fn(async () => 'BATCH PROMPT'),
+}));
+
+vi.mock('../../actions.js', () => ({
+  executePostApplyCommand: vi.fn(async () => true),
+}));
+
+vi.mock('../../../common/process.js', () => ({
+  commitAll: vi.fn(async () => 0),
+}));
+
+vi.mock('../../plan_materialize.js', () => ({
+  materializePlan: vi.fn(async () => {}),
+  syncMaterializedPlan: vi.fn(async () => {}),
+  getMaterializedPlanPath: vi.fn(() => '/tmp/plan.md'),
+  getShadowPlanPath: vi.fn(() => '/tmp/.plan.md.shadow'),
+  materializeRelatedPlans: vi.fn(async () => {}),
+  withPlanAutoSync: vi.fn(async (_id: any, _root: any, fn: () => any) => fn()),
+  resolveProjectContext: vi.fn(async () => ({
+    projectId: 1,
+    planRowsByPlanId: new Map(),
+    planRowsByUuid: new Map(),
+    maxNumericId: 0,
+  })),
+  readMaterializedPlanRole: vi.fn(async () => null),
+  MATERIALIZED_DIR: '.tim/plans',
+}));
 
 describe('executeBatchMode captureOutput integration', () => {
-  const moduleMocker = new ModuleMocker(import.meta);
-
-  const executorExecuteSpy = mock(async () => 'FINAL OUTPUT');
+  const executorExecuteSpy = vi.fn(async () => 'FINAL OUTPUT');
 
   // Simple stub SummaryCollector that captures calls without importing real code
   const summaryCollector = {
-    addStepResult: mock(() => {}),
-    addError: mock(() => {}),
-    setBatchIterations: mock(() => {}),
-    trackFileChanges: mock(async () => {}),
+    addStepResult: vi.fn(() => {}),
+    addError: vi.fn(() => {}),
+    setBatchIterations: vi.fn(() => {}),
+    trackFileChanges: vi.fn(async () => {}),
   } as any;
 
   beforeEach(() => {
+    incompleteCalls = 0;
     executorExecuteSpy.mockClear();
-    (summaryCollector.addStepResult as any).mockClear();
-    (summaryCollector.setBatchIterations as any).mockClear();
-    (summaryCollector.addError as any).mockClear?.();
-    (summaryCollector.trackFileChanges as any).mockClear();
+    summaryCollector.addStepResult.mockClear();
+    summaryCollector.setBatchIterations.mockClear();
+    summaryCollector.addError.mockClear();
+    summaryCollector.trackFileChanges.mockClear();
   });
 
   afterEach(() => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
   });
 
   test('passes captureOutput: "result" and records output when summaryCollector provided', async () => {
-    // Mock plans and helpers used by batch_mode
-    await moduleMocker.mock('../../plans.js', () => ({
-      readPlanFile: mock(async () => ({ id: 1, title: 'P', status: 'pending', tasks: [] })),
-      writePlanFile: mock(async (_p: string, _data: any) => {}),
-      setPlanStatusById: mock(async () => {}),
-    }));
-
-    // First call returns one incomplete task, second call returns none
-    let incompleteCalls = 0;
-    await moduleMocker.mock('../../plans/find_next.js', () => ({
-      getAllIncompleteTasks: mock(() => {
-        incompleteCalls += 1;
-        return incompleteCalls === 1
-          ? [
-              {
-                taskIndex: 0,
-                task: { title: 'T1', description: 'D1', steps: [{ prompt: 'p', done: false }] },
-              },
-            ]
-          : [];
-      }),
-    }));
-
-    await moduleMocker.mock('../../prompt_builder.js', () => ({
-      buildExecutionPromptWithoutSteps: mock(async () => 'BATCH PROMPT'),
-    }));
-
-    await moduleMocker.mock('../../actions.js', () => ({
-      executePostApplyCommand: mock(async () => true),
-    }));
-
-    await moduleMocker.mock('../../../common/process.js', () => ({
-      commitAll: mock(async () => 0),
-    }));
-
     const { executeBatchMode } = await import('./batch_mode.js');
 
     await executeBatchMode(
@@ -84,8 +132,8 @@ describe('executeBatchMode captureOutput integration', () => {
 
     // Verify the summary received the returned output
     expect(summaryCollector.addStepResult).toHaveBeenCalled();
-    const stepArg = (summaryCollector.addStepResult as any).mock.calls[0][0];
-    expect(stepArg.success).toBeTrue();
+    const stepArg = summaryCollector.addStepResult.mock.calls[0][0];
+    expect(stepArg.success).toBe(true);
     // Accept either legacy string or new normalized object
     const out = typeof stepArg.output === 'string' ? stepArg.output : stepArg.output?.content;
     expect(String(out)).toContain('FINAL OUTPUT');

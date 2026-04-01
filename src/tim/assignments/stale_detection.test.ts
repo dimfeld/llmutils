@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test, vi } from 'vitest';
 
 import type { AssignmentEntry } from '../db/assignment.js';
 import {

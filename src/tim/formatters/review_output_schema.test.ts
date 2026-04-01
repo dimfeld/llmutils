@@ -1,6 +1,6 @@
 // Tests for review output JSON schema generation
 
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect, vi } from 'vitest';
 import {
   ReviewSeveritySchema,
   ReviewCategorySchema,

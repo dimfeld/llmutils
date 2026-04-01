@@ -1,8 +1,8 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import * as fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { ModuleMocker, clearAllTimCaches } from '../../testing.js';
+import { clearAllTimCaches } from '../../testing.js';
 import { getDefaultConfig } from '../configSchema.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
@@ -27,7 +27,26 @@ import { mcpGetPlan } from './show.js';
 
 type RestoreFn = () => void;
 
-const moduleMocker = new ModuleMocker(import.meta);
+vi.mock('../configLoader.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../configLoader.js')>();
+  return {
+    ...actual,
+    loadEffectiveConfig: vi.fn(),
+  };
+});
+
+vi.mock('../path_resolver.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../path_resolver.js')>();
+  return {
+    ...actual,
+    resolvePlanPathContext: vi.fn(),
+  };
+});
+
+vi.mock('../../logging.js', () => ({
+  writeStdout: vi.fn(),
+  writeStderr: vi.fn(),
+}));
 
 describe('tim tools CLI handlers', () => {
   let tempDir: string;
@@ -65,26 +84,27 @@ describe('tim tools CLI handlers', () => {
     restoreBunStdin = null;
     restoreIsTTY = null;
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: mock(async () => config),
-    }));
+    const configLoaderModule = await import('../configLoader.js');
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue(config as any);
 
-    await moduleMocker.mock('../path_resolver.js', () => ({
-      resolvePlanPathContext: mock(async () => ({
-        gitRoot: tempDir,
-        tasksDir,
-        configBaseDir: tempDir,
-      })),
-    }));
+    const pathResolverModule = await import('../path_resolver.js');
+    vi.mocked(pathResolverModule.resolvePlanPathContext).mockResolvedValue({
+      gitRoot: tempDir,
+      tasksDir,
+      configBaseDir: tempDir,
+    } as any);
 
-    await moduleMocker.mock('../../logging.js', () => ({
-      writeStdout: mock((value: string) => {
+    const loggingModule = await import('../../logging.js');
+    vi.mocked(loggingModule.writeStdout)
+      .mockReset()
+      .mockImplementation((value: string) => {
         stdoutWrites.push(value);
-      }),
-      writeStderr: mock((value: string) => {
+      });
+    vi.mocked(loggingModule.writeStderr)
+      .mockReset()
+      .mockImplementation((value: string) => {
         stderrWrites.push(value);
-      }),
-    }));
+      });
 
     command = {
       parent: {
@@ -98,7 +118,7 @@ describe('tim tools CLI handlers', () => {
   afterEach(async () => {
     restoreBunStdin?.();
     restoreIsTTY?.();
-    moduleMocker.clear();
+    vi.clearAllMocks();
     clearAllTimCaches();
     closeDatabaseForTesting();
     if (originalEnv.XDG_CONFIG_HOME === undefined) {

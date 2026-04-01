@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test, vi } from 'vitest';
 import { findNextActionableItem, getAllIncompleteTasks } from './find_next.js';
 import type { PlanSchema } from '../planSchema.js';
 

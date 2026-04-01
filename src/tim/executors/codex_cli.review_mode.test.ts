@@ -1,40 +1,43 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
-import { ModuleMocker } from '../../testing.js';
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import * as os from 'os';
 
 describe('Codex CLI review mode', () => {
-  let moduleMocker: ModuleMocker;
+  const originalUseAppServer = process.env.CODEX_USE_APP_SERVER;
 
   beforeEach(() => {
-    moduleMocker = new ModuleMocker(import.meta);
     process.env.CODEX_USE_APP_SERVER = 'false';
+    vi.resetModules();
   });
 
   afterEach(() => {
-    moduleMocker.clear();
+    if (originalUseAppServer === undefined) {
+      delete process.env.CODEX_USE_APP_SERVER;
+    } else {
+      process.env.CODEX_USE_APP_SERVER = originalUseAppServer;
+    }
+    vi.clearAllMocks();
   });
 
   test('runs reviewer once and returns aggregated output', async () => {
     const logMessages: string[] = [];
 
-    await moduleMocker.mock('../../logging.ts', () => ({
-      log: mock((...args: any[]) => logMessages.push(args.map(String).join(' '))),
-      warn: mock(() => {}),
+    vi.doMock('../../logging.ts', () => ({
+      log: vi.fn((...args: any[]) => logMessages.push(args.map(String).join(' '))),
+      warn: vi.fn(() => {}),
     }));
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => '/tmp/repo-review'),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => '/tmp/repo-review'),
     }));
 
-    await moduleMocker.mock('./failure_detection.ts', () => ({
-      parseFailedReport: mock(() => ({ failed: false })),
+    vi.doMock('./failure_detection.ts', () => ({
+      parseFailedReport: vi.fn(() => ({ failed: false })),
     }));
 
-    const { executeReviewMode } = await import('./codex_cli/review_mode.ts');
+    const { executeReviewMode } = await import('./codex_cli/review_mode.js');
 
-    const reviewExecutor = mock(async () => 'REVIEW OUTPUT');
+    const reviewExecutor = vi.fn(async () => 'REVIEW OUTPUT');
 
     const planInfo = {
       planId: 'review-plan',
@@ -65,30 +68,30 @@ describe('Codex CLI review mode', () => {
     expect(result?.steps?.[0].body).toBe('REVIEW OUTPUT');
     expect(result?.metadata?.jsonOutput).toBe(true);
     expect(result?.metadata?.phase).toBe('review');
-    expect(logMessages.some((msg) => msg.includes('review-only mode'))).toBeTrue();
+    expect(logMessages.some((msg) => msg.includes('review-only mode'))).toBe(true);
   });
 
   test('marks review run as failed when the reviewer reports failure', async () => {
-    await moduleMocker.mock('../../logging.ts', () => ({
-      log: mock(() => {}),
-      warn: mock(() => {}),
+    vi.doMock('../../logging.ts', () => ({
+      log: vi.fn(() => {}),
+      warn: vi.fn(() => {}),
     }));
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => '/tmp/repo-review'),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => '/tmp/repo-review'),
     }));
 
-    await moduleMocker.mock('./failure_detection.ts', () => ({
-      parseFailedReport: mock(() => ({
+    vi.doMock('./failure_detection.ts', () => ({
+      parseFailedReport: vi.fn(() => ({
         failed: true,
         summary: 'failed',
         details: { requirements: '', problems: 'bad news' },
       })),
     }));
 
-    const { executeReviewMode } = await import('./codex_cli/review_mode.ts');
+    const { executeReviewMode } = await import('./codex_cli/review_mode.js');
 
-    const reviewExecutor = mock(async () => 'FAILED OUTPUT');
+    const reviewExecutor = vi.fn(async () => 'FAILED OUTPUT');
 
     const result = await executeReviewMode(
       'REVIEW PROMPT CONTENT',
@@ -105,7 +108,7 @@ describe('Codex CLI review mode', () => {
       { reviewExecutor }
     );
 
-    expect(result?.success).toBeFalse();
+    expect(result?.success).toBe(false);
     expect(result?.failureDetails?.sourceAgent).toBe('reviewer');
     expect(result?.failureDetails?.problems).toBe('bad news');
     expect(result?.content).toBe('FAILED OUTPUT');
@@ -113,41 +116,41 @@ describe('Codex CLI review mode', () => {
 });
 
 describe('Codex CLI executeCodexReviewWithSchema', () => {
-  let moduleMocker: ModuleMocker;
   const originalUseAppServer = process.env.CODEX_USE_APP_SERVER;
 
   beforeEach(() => {
-    moduleMocker = new ModuleMocker(import.meta);
+    vi.resetModules();
   });
 
   afterEach(() => {
-    moduleMocker.clear();
     if (originalUseAppServer === undefined) {
       delete process.env.CODEX_USE_APP_SERVER;
     } else {
       process.env.CODEX_USE_APP_SERVER = originalUseAppServer;
     }
+    vi.clearAllMocks();
   });
 
   test('creates temp file with JSON schema and passes it to executeCodexStep', async () => {
+    process.env.CODEX_USE_APP_SERVER = 'false';
     let capturedSchemaPath: string | undefined;
 
-    await moduleMocker.mock('../../logging.ts', () => ({
-      log: mock(() => {}),
-      warn: mock(() => {}),
+    vi.doMock('../../logging.ts', () => ({
+      log: vi.fn(() => {}),
+      warn: vi.fn(() => {}),
     }));
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => '/tmp/repo-review'),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => '/tmp/repo-review'),
     }));
 
-    await moduleMocker.mock('./failure_detection.ts', () => ({
-      parseFailedReport: mock(() => ({ failed: false })),
+    vi.doMock('./failure_detection.ts', () => ({
+      parseFailedReport: vi.fn(() => ({ failed: false })),
     }));
 
     // Mock executeCodexStep to capture the schema path
-    await moduleMocker.mock('./codex_cli/codex_runner.ts', () => ({
-      executeCodexStep: mock(
+    vi.doMock('./codex_cli/codex_runner.ts', () => ({
+      executeCodexStep: vi.fn(
         async (
           prompt: string,
           _cwd: string,
@@ -169,7 +172,7 @@ describe('Codex CLI executeCodexReviewWithSchema', () => {
       ),
     }));
 
-    const { executeReviewMode } = await import('./codex_cli/review_mode.ts');
+    const { executeReviewMode } = await import('./codex_cli/review_mode.js');
 
     const result = await executeReviewMode(
       'REVIEW PROMPT CONTENT',
@@ -197,21 +200,21 @@ describe('Codex CLI executeCodexReviewWithSchema', () => {
     process.env.CODEX_USE_APP_SERVER = 'false';
     let capturedSchemaPath: string | undefined;
 
-    await moduleMocker.mock('../../logging.ts', () => ({
-      log: mock(() => {}),
-      warn: mock(() => {}),
+    vi.doMock('../../logging.ts', () => ({
+      log: vi.fn(() => {}),
+      warn: vi.fn(() => {}),
     }));
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => '/tmp/repo-review'),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => '/tmp/repo-review'),
     }));
 
-    await moduleMocker.mock('./failure_detection.ts', () => ({
-      parseFailedReport: mock(() => ({ failed: false })),
+    vi.doMock('./failure_detection.ts', () => ({
+      parseFailedReport: vi.fn(() => ({ failed: false })),
     }));
 
-    await moduleMocker.mock('./codex_cli/codex_runner.ts', () => ({
-      executeCodexStep: mock(
+    vi.doMock('./codex_cli/codex_runner.ts', () => ({
+      executeCodexStep: vi.fn(
         async (
           _prompt: string,
           _cwd: string,
@@ -224,7 +227,7 @@ describe('Codex CLI executeCodexReviewWithSchema', () => {
       ),
     }));
 
-    const { executeReviewMode } = await import('./codex_cli/review_mode.ts');
+    const { executeReviewMode } = await import('./codex_cli/review_mode.js');
 
     await executeReviewMode(
       'REVIEW PROMPT CONTENT',
@@ -254,21 +257,21 @@ describe('Codex CLI executeCodexReviewWithSchema', () => {
     process.env.CODEX_USE_APP_SERVER = 'false';
     let capturedSchemaPath: string | undefined;
 
-    await moduleMocker.mock('../../logging.ts', () => ({
-      log: mock(() => {}),
-      warn: mock(() => {}),
+    vi.doMock('../../logging.ts', () => ({
+      log: vi.fn(() => {}),
+      warn: vi.fn(() => {}),
     }));
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => '/tmp/repo-review'),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => '/tmp/repo-review'),
     }));
 
-    await moduleMocker.mock('./failure_detection.ts', () => ({
-      parseFailedReport: mock(() => ({ failed: false })),
+    vi.doMock('./failure_detection.ts', () => ({
+      parseFailedReport: vi.fn(() => ({ failed: false })),
     }));
 
-    await moduleMocker.mock('./codex_cli/codex_runner.ts', () => ({
-      executeCodexStep: mock(
+    vi.doMock('./codex_cli/codex_runner.ts', () => ({
+      executeCodexStep: vi.fn(
         async (
           _prompt: string,
           _cwd: string,
@@ -281,7 +284,7 @@ describe('Codex CLI executeCodexReviewWithSchema', () => {
       ),
     }));
 
-    const { executeReviewMode } = await import('./codex_cli/review_mode.ts');
+    const { executeReviewMode } = await import('./codex_cli/review_mode.js');
 
     await expect(
       executeReviewMode(
@@ -312,21 +315,21 @@ describe('Codex CLI executeCodexReviewWithSchema', () => {
   test('passes timConfig to executeCodexStep', async () => {
     let capturedConfig: any;
 
-    await moduleMocker.mock('../../logging.ts', () => ({
-      log: mock(() => {}),
-      warn: mock(() => {}),
+    vi.doMock('../../logging.ts', () => ({
+      log: vi.fn(() => {}),
+      warn: vi.fn(() => {}),
     }));
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => '/tmp/repo-review'),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => '/tmp/repo-review'),
     }));
 
-    await moduleMocker.mock('./failure_detection.ts', () => ({
-      parseFailedReport: mock(() => ({ failed: false })),
+    vi.doMock('./failure_detection.ts', () => ({
+      parseFailedReport: vi.fn(() => ({ failed: false })),
     }));
 
-    await moduleMocker.mock('./codex_cli/codex_runner.ts', () => ({
-      executeCodexStep: mock(
+    vi.doMock('./codex_cli/codex_runner.ts', () => ({
+      executeCodexStep: vi.fn(
         async (_prompt: string, _cwd: string, config: any, _schemaPath?: string) => {
           capturedConfig = config;
           return JSON.stringify({ issues: [], recommendations: [], actionItems: [] });
@@ -334,7 +337,7 @@ describe('Codex CLI executeCodexReviewWithSchema', () => {
       ),
     }));
 
-    const { executeReviewMode } = await import('./codex_cli/review_mode.ts');
+    const { executeReviewMode } = await import('./codex_cli/review_mode.js');
 
     const testConfig = {
       isUsingExternalStorage: true,
@@ -359,24 +362,24 @@ describe('Codex CLI executeCodexReviewWithSchema', () => {
   });
 
   test('throws error when executeCodexStep returns empty output', async () => {
-    await moduleMocker.mock('../../logging.ts', () => ({
-      log: mock(() => {}),
-      warn: mock(() => {}),
+    vi.doMock('../../logging.ts', () => ({
+      log: vi.fn(() => {}),
+      warn: vi.fn(() => {}),
     }));
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => '/tmp/repo-review'),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => '/tmp/repo-review'),
     }));
 
-    await moduleMocker.mock('./failure_detection.ts', () => ({
-      parseFailedReport: mock(() => ({ failed: false })),
+    vi.doMock('./failure_detection.ts', () => ({
+      parseFailedReport: vi.fn(() => ({ failed: false })),
     }));
 
-    await moduleMocker.mock('./codex_cli/codex_runner.ts', () => ({
-      executeCodexStep: mock(async () => ''),
+    vi.doMock('./codex_cli/codex_runner.ts', () => ({
+      executeCodexStep: vi.fn(async () => ''),
     }));
 
-    const { executeReviewMode } = await import('./codex_cli/review_mode.ts');
+    const { executeReviewMode } = await import('./codex_cli/review_mode.js');
 
     // executeCodexStep returns empty string, which should be handled
     // The current implementation returns the empty string, so we test that
@@ -400,21 +403,21 @@ describe('Codex CLI executeCodexReviewWithSchema', () => {
   test('passes prompt to executeCodexStep', async () => {
     let capturedPrompt: string | undefined;
 
-    await moduleMocker.mock('../../logging.ts', () => ({
-      log: mock(() => {}),
-      warn: mock(() => {}),
+    vi.doMock('../../logging.ts', () => ({
+      log: vi.fn(() => {}),
+      warn: vi.fn(() => {}),
     }));
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => '/tmp/repo-review'),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => '/tmp/repo-review'),
     }));
 
-    await moduleMocker.mock('./failure_detection.ts', () => ({
-      parseFailedReport: mock(() => ({ failed: false })),
+    vi.doMock('./failure_detection.ts', () => ({
+      parseFailedReport: vi.fn(() => ({ failed: false })),
     }));
 
-    await moduleMocker.mock('./codex_cli/codex_runner.ts', () => ({
-      executeCodexStep: mock(
+    vi.doMock('./codex_cli/codex_runner.ts', () => ({
+      executeCodexStep: vi.fn(
         async (prompt: string, _cwd: string, _config: any, _schemaPath?: string) => {
           capturedPrompt = prompt;
           return JSON.stringify({ issues: [], recommendations: [], actionItems: [] });
@@ -422,7 +425,7 @@ describe('Codex CLI executeCodexReviewWithSchema', () => {
       ),
     }));
 
-    const { executeReviewMode } = await import('./codex_cli/review_mode.ts');
+    const { executeReviewMode } = await import('./codex_cli/review_mode.js');
 
     await executeReviewMode(
       'REVIEW PROMPT CONTENT',
@@ -443,29 +446,35 @@ describe('Codex CLI executeCodexReviewWithSchema', () => {
 
   test('skips schema temp file creation in app-server mode', async () => {
     delete process.env.CODEX_USE_APP_SERVER;
-    const mkdtempSpy = mock(fs.mkdtemp);
     let capturedOptions: { outputSchemaPath?: string; outputSchema?: Record<string, unknown> } = {};
+    let mkdtempCalled = false;
 
-    await moduleMocker.mock('../../logging.ts', () => ({
-      log: mock(() => {}),
-      warn: mock(() => {}),
+    vi.doMock('../../logging.ts', () => ({
+      log: vi.fn(() => {}),
+      warn: vi.fn(() => {}),
     }));
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => '/tmp/repo-review'),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => '/tmp/repo-review'),
     }));
 
-    await moduleMocker.mock('./failure_detection.ts', () => ({
-      parseFailedReport: mock(() => ({ failed: false })),
+    vi.doMock('./failure_detection.ts', () => ({
+      parseFailedReport: vi.fn(() => ({ failed: false })),
     }));
 
-    await moduleMocker.mock('fs/promises', () => ({
-      ...fs,
-      mkdtemp: mkdtempSpy,
-    }));
+    vi.doMock('fs/promises', async (importOriginal) => {
+      const actual = await importOriginal<typeof fs>();
+      return {
+        ...actual,
+        mkdtemp: vi.fn(async (...args: Parameters<typeof fs.mkdtemp>) => {
+          mkdtempCalled = true;
+          return actual.mkdtemp(...args);
+        }),
+      };
+    });
 
-    await moduleMocker.mock('./codex_cli/codex_runner.ts', () => ({
-      executeCodexStep: mock(
+    vi.doMock('./codex_cli/codex_runner.ts', () => ({
+      executeCodexStep: vi.fn(
         async (
           _prompt: string,
           _cwd: string,
@@ -478,7 +487,7 @@ describe('Codex CLI executeCodexReviewWithSchema', () => {
       ),
     }));
 
-    const { executeReviewMode } = await import('./codex_cli/review_mode.ts');
+    const { executeReviewMode } = await import('./codex_cli/review_mode.js');
 
     await executeReviewMode(
       'REVIEW PROMPT CONTENT',
@@ -494,7 +503,7 @@ describe('Codex CLI executeCodexReviewWithSchema', () => {
       {}
     );
 
-    expect(mkdtempSpy).not.toHaveBeenCalled();
+    expect(mkdtempCalled).toBe(false);
     expect(capturedOptions.outputSchemaPath).toBeUndefined();
     expect(capturedOptions.outputSchema).toBeDefined();
   });

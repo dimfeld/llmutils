@@ -3,12 +3,11 @@ import * as yaml from 'js-yaml';
 import { getTimConfigRoot } from '../common/config_paths.js';
 import { quiet } from '../common/process.js';
 import { debugLog, error, log, warn } from '../logging.js';
-import { describeRemoteForLogging } from './external_storage_utils.js';
 import { type TimConfig, timConfigSchema, getDefaultConfig } from './configSchema.js';
 import {
   RepositoryConfigResolver,
   type RepositoryConfigResolution,
-} from './repository_config_resolver.js';
+} from './repository_config_resolver.ts';
 
 /**
  * Deeply merges two TimConfig objects, with localConfig overriding mainConfig.

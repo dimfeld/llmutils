@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test, vi } from 'vitest';
 import { toStructuredReviewIssue, toStructuredReviewIssues } from './review_structured_message.js';
 
 describe('review structured message mapping', () => {

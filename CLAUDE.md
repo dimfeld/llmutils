@@ -28,8 +28,6 @@ bun run format
 
 # Run tests
 bun run test
-bun run test-cli path/to/specific/test.ts
-bun run test-web src/lib/server/session_manager.test.ts
 ```
 
 ## Repository Structure
@@ -187,7 +185,7 @@ See docs/testing.md for testing strategy
 ## Personal Workflow Notes
 
 - When making a change, always look for related tests that need to be updated or written as well
-- When you finish a change, run the tests using `bun test` and then fix any failures you find
+- When you finish a change, run the tests using `bun run test` and then fix any failures you find
 - **After adding a feature, update the README to include documentation about the feature**
 
 ## Review Notes

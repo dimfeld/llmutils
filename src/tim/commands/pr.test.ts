@@ -1,40 +1,112 @@
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { beforeAll, afterAll, beforeEach, describe, expect, vi, test } from 'vitest';
 
-import { ModuleMocker } from '../../testing.js';
 import { clearGitHubTokenCache } from '../../common/github/token.js';
-
-const moduleMocker = new ModuleMocker(import.meta);
 
 type AnyObject = Record<string, unknown>;
 
-const mockLog = mock((..._args: unknown[]) => {});
-const mockResolvePlan = mock(async (..._args: unknown[]) => ({
-  plan: {},
-  planPath: '',
+vi.mock('../../logging.js', () => ({
+  log: vi.fn((..._args: unknown[]) => {}),
 }));
-const mockGetWorkspaceInfoByPath = mock((_cwd: string) => null);
-const mockGetDatabase = mock(() => ({}));
-const mockRefreshPrStatus = mock(async (..._args: unknown[]) => ({}));
-const mockSyncPlanPrLinks = mock(async (..._args: unknown[]) => []);
-const mockCanonicalizePrUrl = mock((identifier: string) => identifier);
-const mockParsePrOrIssueNumber = mock(async (..._args: unknown[]) => null);
-// validatePrIdentifier is no longer directly called in pr.ts (validation is done inside canonicalizePrUrl)
-const mockValidatePrIdentifier = mock((_identifier: string) => {});
-const mockGetPrStatusByUrl = mock((_db: unknown, _prUrl: string) => null);
-const mockLinkPlanToPr = mock((_db: unknown, _planUuid: string, _prStatusId: number) => {});
-const mockUnlinkPlanFromPr = mock((_db: unknown, _planUuid: string, _prStatusId: number) => {});
-const mockCleanOrphanedPrStatus = mock((_db: unknown) => {});
-const mockFetchOpenPullRequests = mock(async (..._args: unknown[]) => []);
-const mockReadPlanFile = mock(async (..._args: unknown[]) => ({}));
-const mockResolvePlanFromDb = mock(async (..._args: unknown[]) => ({
-  plan: {},
-  planPath: '',
+
+vi.mock('../plan_display.js', () => ({
+  resolvePlan: vi.fn(async (..._args: unknown[]) => ({
+    plan: {},
+    planPath: '',
+  })),
 }));
-const mockWritePlanFile = mock(async (..._args: unknown[]) => {});
-const mockSyncPlanToDb = mock(async (..._args: unknown[]) => {});
+
+vi.mock('../workspace/workspace_info.js', () => ({
+  getWorkspaceInfoByPath: vi.fn((_cwd: string) => null),
+}));
+
+vi.mock('../db/database.js', () => ({
+  getDatabase: vi.fn(() => ({})),
+}));
+
+vi.mock('../../common/github/pr_status_service.js', () => ({
+  refreshPrStatus: vi.fn(async (..._args: unknown[]) => ({})),
+  syncPlanPrLinks: vi.fn(async (..._args: unknown[]) => []),
+}));
+
+vi.mock('../../common/github/pull_requests.js', () => ({
+  fetchOpenPullRequests: vi.fn(async (..._args: unknown[]) => []),
+}));
+
+vi.mock('../../common/github/identifiers.js', () => ({
+  canonicalizePrUrl: vi.fn((identifier: string) => identifier),
+  parsePrOrIssueNumber: vi.fn(async (..._args: unknown[]) => null),
+  validatePrIdentifier: vi.fn((_identifier: string) => {}),
+  deduplicatePrUrls: vi.fn((urls: string[]) => ({ valid: urls, invalid: [] })),
+}));
+
+vi.mock('../db/pr_status.js', () => ({
+  getPrStatusByUrl: vi.fn((_db: unknown, _prUrl: string) => null),
+  linkPlanToPr: vi.fn((_db: unknown, _planUuid: string, _prStatusId: number) => {}),
+  unlinkPlanFromPr: vi.fn((_db: unknown, _planUuid: string, _prStatusId: number) => {}),
+  cleanOrphanedPrStatus: vi.fn((_db: unknown) => {}),
+}));
+
+vi.mock('../plans.js', () => ({
+  readPlanFile: vi.fn(async (..._args: unknown[]) => ({})),
+  resolvePlanFromDb: vi.fn(async (..._args: unknown[]) => ({
+    plan: {},
+    planPath: '',
+  })),
+  writePlanFile: vi.fn(async (..._args: unknown[]) => {}),
+}));
+
+vi.mock('../db/plan_sync.js', () => ({
+  syncPlanToDb: vi.fn(async (..._args: unknown[]) => {}),
+}));
+
+import { log as mockLogFn } from '../../logging.js';
+import { resolvePlan as mockResolvePlanFn } from '../plan_display.js';
+import { getWorkspaceInfoByPath as mockGetWorkspaceInfoByPathFn } from '../workspace/workspace_info.js';
+import { getDatabase as mockGetDatabaseFn } from '../db/database.js';
+import {
+  refreshPrStatus as mockRefreshPrStatusFn,
+  syncPlanPrLinks as mockSyncPlanPrLinksFn,
+} from '../../common/github/pr_status_service.js';
+import { fetchOpenPullRequests as mockFetchOpenPullRequestsFn } from '../../common/github/pull_requests.js';
+import {
+  canonicalizePrUrl as mockCanonicalizePrUrlFn,
+  parsePrOrIssueNumber as mockParsePrOrIssueNumberFn,
+  validatePrIdentifier as mockValidatePrIdentifierFn,
+} from '../../common/github/identifiers.js';
+import {
+  getPrStatusByUrl as mockGetPrStatusByUrlFn,
+  linkPlanToPr as mockLinkPlanToPrFn,
+  unlinkPlanFromPr as mockUnlinkPlanFromPrFn,
+  cleanOrphanedPrStatus as mockCleanOrphanedPrStatusFn,
+} from '../db/pr_status.js';
+import {
+  readPlanFile as mockReadPlanFileFn,
+  resolvePlanFromDb as mockResolvePlanFromDbFn,
+  writePlanFile as mockWritePlanFileFn,
+} from '../plans.js';
+import { syncPlanToDb as mockSyncPlanToDbFn } from '../db/plan_sync.js';
+
+const mockLog = vi.mocked(mockLogFn);
+const mockResolvePlan = vi.mocked(mockResolvePlanFn);
+const mockGetWorkspaceInfoByPath = vi.mocked(mockGetWorkspaceInfoByPathFn);
+const mockGetDatabase = vi.mocked(mockGetDatabaseFn);
+const mockRefreshPrStatus = vi.mocked(mockRefreshPrStatusFn);
+const mockSyncPlanPrLinks = vi.mocked(mockSyncPlanPrLinksFn);
+const mockCanonicalizePrUrl = vi.mocked(mockCanonicalizePrUrlFn);
+const mockParsePrOrIssueNumber = vi.mocked(mockParsePrOrIssueNumberFn);
+const mockValidatePrIdentifier = vi.mocked(mockValidatePrIdentifierFn);
+const mockGetPrStatusByUrl = vi.mocked(mockGetPrStatusByUrlFn);
+const mockLinkPlanToPr = vi.mocked(mockLinkPlanToPrFn);
+const mockUnlinkPlanFromPr = vi.mocked(mockUnlinkPlanFromPrFn);
+const mockCleanOrphanedPrStatus = vi.mocked(mockCleanOrphanedPrStatusFn);
+const mockFetchOpenPullRequests = vi.mocked(mockFetchOpenPullRequestsFn);
+const mockReadPlanFile = vi.mocked(mockReadPlanFileFn);
+const mockResolvePlanFromDb = vi.mocked(mockResolvePlanFromDbFn);
+const mockWritePlanFile = vi.mocked(mockWritePlanFileFn);
+const mockSyncPlanToDb = vi.mocked(mockSyncPlanToDbFn);
 
 let logs: string[] = [];
 let dbHandle: AnyObject;
@@ -46,7 +118,10 @@ let currentSyncedStatuses: AnyObject[];
 let currentParsedIdentifier: AnyObject | null;
 let currentCachedDetail: AnyObject | null;
 let currentPersistedPlan: AnyObject;
-let prModule: typeof import('./pr.js');
+import { handlePrStatusCommand, handlePrLinkCommand, handlePrUnlinkCommand } from './pr.js';
+
+const handlePrCommand = { handlePrStatusCommand, handlePrLinkCommand, handlePrUnlinkCommand };
+
 let tempDir: string;
 let originalCwd: string;
 
@@ -55,58 +130,17 @@ describe('tim/commands/pr', () => {
     originalCwd = process.cwd();
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-pr-command-test-'));
     tempDir = await fs.realpath(tempDir);
-
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: mockLog,
-    }));
-    await moduleMocker.mock('../plan_display.js', () => ({
-      resolvePlan: mockResolvePlan,
-    }));
-    await moduleMocker.mock('../workspace/workspace_info.js', () => ({
-      getWorkspaceInfoByPath: mockGetWorkspaceInfoByPath,
-    }));
-    await moduleMocker.mock('../db/database.js', () => ({
-      getDatabase: mockGetDatabase,
-    }));
-    await moduleMocker.mock('../../common/github/pr_status_service.js', () => ({
-      refreshPrStatus: mockRefreshPrStatus,
-      syncPlanPrLinks: mockSyncPlanPrLinks,
-    }));
-    await moduleMocker.mock('../../common/github/pull_requests.js', () => ({
-      fetchOpenPullRequests: mockFetchOpenPullRequests,
-    }));
-    await moduleMocker.mock('../../common/github/identifiers.js', () => ({
-      canonicalizePrUrl: mockCanonicalizePrUrl,
-      parsePrOrIssueNumber: mockParsePrOrIssueNumber,
-      validatePrIdentifier: mockValidatePrIdentifier,
-    }));
-    await moduleMocker.mock('../db/pr_status.js', () => ({
-      getPrStatusByUrl: mockGetPrStatusByUrl,
-      linkPlanToPr: mockLinkPlanToPr,
-      unlinkPlanFromPr: mockUnlinkPlanFromPr,
-      cleanOrphanedPrStatus: mockCleanOrphanedPrStatus,
-    }));
-    await moduleMocker.mock('../plans.js', () => ({
-      readPlanFile: mockReadPlanFile,
-      resolvePlanFromDb: mockResolvePlanFromDb,
-      writePlanFile: mockWritePlanFile,
-    }));
-    await moduleMocker.mock('../db/plan_sync.js', () => ({
-      syncPlanToDb: mockSyncPlanToDb,
-    }));
-
-    prModule = await import('./pr.js');
   });
 
   afterAll(async () => {
     process.chdir(originalCwd);
     await fs.rm(tempDir, { recursive: true, force: true });
-    moduleMocker.clear();
     clearGitHubTokenCache();
   });
 
   beforeEach(() => {
     clearGitHubTokenCache();
+    vi.clearAllMocks();
     logs = [];
     dbHandle = { name: 'db-handle' };
     currentPlan = {
@@ -126,25 +160,6 @@ describe('tim/commands/pr', () => {
       pullRequest: [],
     };
     process.env.GITHUB_TOKEN = 'test-token';
-
-    mockLog.mockClear();
-    mockResolvePlan.mockClear();
-    mockGetWorkspaceInfoByPath.mockClear();
-    mockGetDatabase.mockClear();
-    mockRefreshPrStatus.mockClear();
-    mockSyncPlanPrLinks.mockClear();
-    mockCanonicalizePrUrl.mockClear();
-    mockParsePrOrIssueNumber.mockClear();
-    mockValidatePrIdentifier.mockClear();
-    mockGetPrStatusByUrl.mockClear();
-    mockLinkPlanToPr.mockClear();
-    mockUnlinkPlanFromPr.mockClear();
-    mockCleanOrphanedPrStatus.mockClear();
-    mockFetchOpenPullRequests.mockClear();
-    mockReadPlanFile.mockClear();
-    mockResolvePlanFromDb.mockClear();
-    mockWritePlanFile.mockClear();
-    mockSyncPlanToDb.mockClear();
 
     mockLog.mockImplementation((...args: unknown[]) => {
       logs.push(args.join(' '));
@@ -216,7 +231,7 @@ describe('tim/commands/pr', () => {
     currentRefreshedStatuses.set('https://github.com/example/repo/pull/101', detail101);
     currentRefreshedStatuses.set('https://github.com/example/repo/pull/102', detail102);
 
-    await prModule.handlePrStatusCommand(undefined, {}, createNestedCommand());
+    await handlePrCommand.handlePrStatusCommand(undefined, {}, createNestedCommand());
 
     expect(mockResolvePlan).toHaveBeenCalledWith('/tmp/248.plan.md', {
       gitRoot: '/tmp',
@@ -248,7 +263,7 @@ describe('tim/commands/pr', () => {
 
     process.chdir(nestedDir);
     try {
-      await prModule.handlePrStatusCommand(undefined, {}, createNestedCommand());
+      await handlePrCommand.handlePrStatusCommand(undefined, {}, createNestedCommand());
     } finally {
       process.chdir(originalCwd);
     }
@@ -265,7 +280,7 @@ describe('tim/commands/pr', () => {
   test('status reports when a plan has no linked pull requests', async () => {
     currentPlan.pullRequest = [];
 
-    await prModule.handlePrStatusCommand('248', {}, createNestedCommand());
+    await handlePrCommand.handlePrStatusCommand('248', {}, createNestedCommand());
 
     expect(mockSyncPlanPrLinks).not.toHaveBeenCalled();
     expect(logs).toContain('Plan 248 has no linked pull requests and no branch to look up.');
@@ -284,7 +299,7 @@ describe('tim/commands/pr', () => {
     currentRefreshedStatuses.set('https://github.com/example/repo/pull/402', detail402);
     currentRefreshedStatuses.set('https://github.com/example/repo/pull/403', detail403);
 
-    await prModule.handlePrStatusCommand('248', {}, createNestedCommand());
+    await handlePrCommand.handlePrStatusCommand('248', {}, createNestedCommand());
 
     expect(mockRefreshPrStatus).toHaveBeenCalledTimes(3);
     expect(logs.some((line) => line.includes('example/repo#401: Passing PR'))).toBe(true);
@@ -304,7 +319,7 @@ describe('tim/commands/pr', () => {
     currentRefreshedStatuses.set('https://github.com/example/repo/pull/501', detail501);
     // PR 502 is NOT in currentRefreshedStatuses, so refreshPrStatus will throw
 
-    await prModule.handlePrStatusCommand('248', {}, createNestedCommand());
+    await handlePrCommand.handlePrStatusCommand('248', {}, createNestedCommand());
 
     // Successful PR is displayed
     expect(logs.some((line) => line.includes('example/repo#501: Good PR'))).toBe(true);
@@ -329,7 +344,7 @@ describe('tim/commands/pr', () => {
       createPrDetail(201, 'Linked PR', 'pending', 77)
     );
 
-    await prModule.handlePrLinkCommand(
+    await handlePrCommand.handlePrLinkCommand(
       '248',
       'https://github.com/example/repo/pull/201',
       {},
@@ -378,7 +393,7 @@ describe('tim/commands/pr', () => {
       return identifier;
     });
 
-    await prModule.handlePrLinkCommand(
+    await handlePrCommand.handlePrLinkCommand(
       '248',
       'https://github.com/example/repo/pull/201',
       {},
@@ -413,7 +428,7 @@ describe('tim/commands/pr', () => {
       createPrDetail(201, 'Linked PR', 'pending', 77)
     );
 
-    await prModule.handlePrLinkCommand(
+    await handlePrCommand.handlePrLinkCommand(
       '248',
       'https://github.com/example/repo/pull/201',
       {},
@@ -444,7 +459,7 @@ describe('tim/commands/pr', () => {
       createPrDetail(201, 'Linked PR', 'pending', 77)
     );
 
-    await prModule.handlePrLinkCommand(
+    await handlePrCommand.handlePrLinkCommand(
       '248',
       'https://github.com/example/repo/pull/201',
       {},
@@ -467,7 +482,7 @@ describe('tim/commands/pr', () => {
     currentParsedIdentifier = null;
 
     await expect(
-      prModule.handlePrLinkCommand('248', 'not-a-pr', {}, createNestedCommand())
+      handlePrCommand.handlePrLinkCommand('248', 'not-a-pr', {}, createNestedCommand())
     ).rejects.toThrow(
       'No open PR found for branch "not-a-pr". Please specify a PR URL explicitly.'
     );
@@ -481,7 +496,7 @@ describe('tim/commands/pr', () => {
     currentParsedIdentifier = { owner: 'example', repo: 'repo', number: 201 };
 
     await expect(
-      prModule.handlePrLinkCommand(
+      handlePrCommand.handlePrLinkCommand(
         '248',
         'https://github.com/example/repo/issues/201',
         {},
@@ -501,7 +516,7 @@ describe('tim/commands/pr', () => {
       pullRequest: ['https://github.com/example/repo/pull/301'],
     };
 
-    await prModule.handlePrUnlinkCommand(
+    await handlePrCommand.handlePrUnlinkCommand(
       '248',
       'https://github.com/example/repo/pull/301',
       {},
@@ -541,7 +556,7 @@ describe('tim/commands/pr', () => {
       return identifier;
     });
 
-    await prModule.handlePrUnlinkCommand(
+    await handlePrCommand.handlePrUnlinkCommand(
       '248',
       'https://github.com/example/repo/pull/301',
       {},
@@ -575,7 +590,7 @@ describe('tim/commands/pr', () => {
       pullRequest: ['https://github.com/example/repo/pull/301'],
     };
 
-    await prModule.handlePrUnlinkCommand(
+    await handlePrCommand.handlePrUnlinkCommand(
       '248',
       'https://github.com/example/repo/pull/301',
       {},
@@ -602,7 +617,7 @@ describe('tim/commands/pr', () => {
       title: 'Fresh plan from DB',
       pullRequest: ['https://github.com/example/repo/pull/301'],
     };
-    await prModule.handlePrUnlinkCommand(
+    await handlePrCommand.handlePrUnlinkCommand(
       '248',
       'https://github.com/example/repo/pull/301',
       {},
@@ -625,7 +640,7 @@ describe('tim/commands/pr', () => {
     // Plan file has no PR URLs - the URL is only in the DB cache
     currentPersistedPlan = { ...currentPlan, pullRequest: [] };
 
-    await prModule.handlePrUnlinkCommand(
+    await handlePrCommand.handlePrUnlinkCommand(
       '248',
       'https://github.com/example/repo/pull/302',
       {},
@@ -643,7 +658,7 @@ describe('tim/commands/pr', () => {
     currentParsedIdentifier = { owner: 'example', repo: 'repo', number: 302 };
 
     await expect(
-      prModule.handlePrUnlinkCommand(
+      handlePrCommand.handlePrUnlinkCommand(
         '248',
         'https://github.com/example/repo/issues/302',
         {},
@@ -659,9 +674,9 @@ describe('tim/commands/pr', () => {
     delete process.env.GITHUB_TOKEN;
     currentPlan.pullRequest = ['https://github.com/example/repo/pull/101'];
 
-    await expect(prModule.handlePrStatusCommand('248', {}, createNestedCommand())).rejects.toThrow(
-      'GITHUB_TOKEN environment variable is required for PR status commands'
-    );
+    await expect(
+      handlePrCommand.handlePrStatusCommand('248', {}, createNestedCommand())
+    ).rejects.toThrow('GITHUB_TOKEN environment variable is required for PR status commands');
 
     // Plan is resolved first, then token is checked
     expect(mockResolvePlan).toHaveBeenCalled();
@@ -672,7 +687,7 @@ describe('tim/commands/pr', () => {
     delete process.env.GITHUB_TOKEN;
     currentPlan.pullRequest = [];
 
-    await prModule.handlePrStatusCommand('248', {}, createNestedCommand());
+    await handlePrCommand.handlePrStatusCommand('248', {}, createNestedCommand());
 
     expect(logs).toContain('Plan 248 has no linked pull requests and no branch to look up.');
   });
@@ -681,7 +696,7 @@ describe('tim/commands/pr', () => {
     delete process.env.GITHUB_TOKEN;
 
     await expect(
-      prModule.handlePrLinkCommand(
+      handlePrCommand.handlePrLinkCommand(
         '248',
         'https://github.com/example/repo/pull/201',
         {},
@@ -700,7 +715,7 @@ describe('tim/commands/pr', () => {
       pullRequest: ['https://github.com/example/repo/pull/999'],
     };
 
-    await prModule.handlePrUnlinkCommand(
+    await handlePrCommand.handlePrUnlinkCommand(
       '248',
       'https://github.com/example/repo/pull/999',
       {},
@@ -720,9 +735,9 @@ describe('tim/commands/pr', () => {
       throw new Error('Plan not found: 999');
     });
 
-    await expect(prModule.handlePrStatusCommand('999', {}, createNestedCommand())).rejects.toThrow(
-      'Plan not found: 999'
-    );
+    await expect(
+      handlePrCommand.handlePrStatusCommand('999', {}, createNestedCommand())
+    ).rejects.toThrow('Plan not found: 999');
 
     expect(mockSyncPlanPrLinks).not.toHaveBeenCalled();
   });

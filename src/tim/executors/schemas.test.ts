@@ -1,4 +1,4 @@
-import { test, describe, expect } from 'bun:test';
+import { test, describe, expect, vi } from 'vitest';
 import * as z from 'zod/v4';
 import {
   claudeCodeOptionsSchema,

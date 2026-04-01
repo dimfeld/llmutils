@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, afterAll, mock } from 'bun:test';
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi, mock } from 'vitest';
 import path from 'node:path';
 import { mkdtemp, rm, mkdir } from 'node:fs/promises';
 import { runWithLogger } from '../logging/adapter.ts';
@@ -13,49 +13,46 @@ import type { HeadlessMessage, HeadlessServerMessage } from '../logging/headless
 import { createRecordingAdapter } from '../logging/test_helpers.ts';
 import { ModuleMocker } from '../testing.js';
 
+// Mock the modules before importing
+vi.mock('@inquirer/prompts', () => ({
+  confirm: vi.fn(() => Promise.resolve(true)),
+  select: vi.fn(() => Promise.resolve('selected')),
+  input: vi.fn(() => Promise.resolve('typed')),
+  checkbox: vi.fn(() => Promise.resolve(['a', 'b'])),
+}));
+
+vi.mock('./input_pause_registry.js', () => ({
+  getActiveInputSource: vi.fn(() => undefined),
+}));
+
+vi.mock('./prefix_prompt.js', () => ({
+  runPrefixPrompt: vi.fn(() => Promise.resolve({ exact: false, command: 'git status' })),
+}));
+
 function createTestHeadlessAdapter(...args: ConstructorParameters<typeof HeadlessAdapter>) {
   const [sessionInfo, wrappedAdapter, options] = args;
   return new HeadlessAdapter(sessionInfo, wrappedAdapter, options);
 }
 
-// Mock the @inquirer/prompts module so tests don't require a TTY.
-// Uses ModuleMocker to preserve all original exports (e.g. `search`) and
-// restore them after our tests complete, preventing cross-file mock leaks.
-const moduleMocker = new ModuleMocker(import.meta);
-const mockConfirm = mock(() => Promise.resolve(true));
-const mockSelect = mock(() => Promise.resolve('selected'));
-const mockInput = mock(() => Promise.resolve('typed'));
-const mockCheckbox = mock(() => Promise.resolve(['a', 'b']));
-const mockRunPrefixPrompt = mock(() => Promise.resolve({ exact: false, command: 'git status' }));
-const pauseSpy = mock(() => {});
-const resumeSpy = mock(() => {});
-let activeTerminalReader:
-  | {
-      pause: () => void;
-      resume: () => void;
-    }
-  | undefined;
+// Import the modules we need to mock
+import { confirm, select, input, checkbox } from '@inquirer/prompts';
+import { getActiveInputSource } from './input_pause_registry.js';
+import { runPrefixPrompt } from './prefix_prompt.js';
 
-await moduleMocker.mock('@inquirer/prompts', () => ({
-  confirm: mockConfirm,
-  select: mockSelect,
-  input: mockInput,
-  checkbox: mockCheckbox,
-}));
-
-await moduleMocker.mock('./input_pause_registry.js', () => ({
-  getActiveInputSource: () => activeTerminalReader,
-}));
-await moduleMocker.mock('./prefix_prompt.js', () => ({
-  runPrefixPrompt: mockRunPrefixPrompt,
-}));
+// Get the mocked functions
+const mockConfirm = vi.mocked(confirm);
+const mockSelect = vi.mocked(select);
+const mockInput = vi.mocked(input);
+const mockCheckbox = vi.mocked(checkbox);
+const mockGetActiveInputSource = vi.mocked(getActiveInputSource);
+const mockRunPrefixPrompt = vi.mocked(runPrefixPrompt);
 
 // Import the wrapper AFTER mock setup.
 const { promptConfirm, promptSelect, promptInput, promptCheckbox, promptPrefixSelect } =
   await import('./input.ts');
 
 afterAll(() => {
-  moduleMocker.clear();
+  vi.clearAllMocks();
 });
 
 /** Helper to get the nth call args from a mock, bypassing strict tuple types. */
@@ -72,9 +69,7 @@ describe('prompt wrappers', () => {
     mockInput.mockReset();
     mockCheckbox.mockReset();
     mockRunPrefixPrompt.mockReset();
-    pauseSpy.mockReset();
-    resumeSpy.mockReset();
-    activeTerminalReader = undefined;
+    mockGetActiveInputSource.mockReset();
 
     mockConfirm.mockImplementation(() => Promise.resolve(true));
     mockSelect.mockImplementation(() => Promise.resolve('selected'));
@@ -83,6 +78,7 @@ describe('prompt wrappers', () => {
     mockRunPrefixPrompt.mockImplementation(() =>
       Promise.resolve({ exact: false, command: 'git status' })
     );
+    mockGetActiveInputSource.mockReturnValue(undefined);
   });
 
   describe('non-tunneled path (direct inquirer calls)', () => {
@@ -117,7 +113,9 @@ describe('prompt wrappers', () => {
     });
 
     it('pauses and resumes active terminal input reader around inquirer prompts', async () => {
-      activeTerminalReader = { pause: pauseSpy, resume: resumeSpy };
+      const pauseSpy = vi.fn();
+      const resumeSpy = vi.fn();
+      mockGetActiveInputSource.mockReturnValue({ pause: pauseSpy, resume: resumeSpy });
 
       await runWithLogger(createRecordingAdapter().adapter, () =>
         promptConfirm({ message: 'Continue?' })
@@ -131,7 +129,9 @@ describe('prompt wrappers', () => {
     });
 
     it('resumes terminal input reader when inquirer prompt throws', async () => {
-      activeTerminalReader = { pause: pauseSpy, resume: resumeSpy };
+      const pauseSpy = vi.fn();
+      const resumeSpy = vi.fn();
+      mockGetActiveInputSource.mockReturnValue({ pause: pauseSpy, resume: resumeSpy });
       mockConfirm.mockImplementation(() => Promise.reject(new Error('prompt failed')));
 
       await expect(
@@ -145,9 +145,12 @@ describe('prompt wrappers', () => {
     });
 
     it('resumes the paused reader reference even if the active reader is cleared', async () => {
-      activeTerminalReader = { pause: pauseSpy, resume: resumeSpy };
+      const pauseSpy = vi.fn();
+      const resumeSpy = vi.fn();
+      const reader = { pause: pauseSpy, resume: resumeSpy };
+      mockGetActiveInputSource.mockReturnValue(reader);
       mockConfirm.mockImplementation(async () => {
-        activeTerminalReader = undefined;
+        mockGetActiveInputSource.mockReturnValue(undefined);
         return true;
       });
 
@@ -160,7 +163,9 @@ describe('prompt wrappers', () => {
     });
 
     it('pauses and resumes active terminal input reader around select prompts', async () => {
-      activeTerminalReader = { pause: pauseSpy, resume: resumeSpy };
+      const pauseSpy = vi.fn();
+      const resumeSpy = vi.fn();
+      mockGetActiveInputSource.mockReturnValue({ pause: pauseSpy, resume: resumeSpy });
 
       await runWithLogger(createRecordingAdapter().adapter, () =>
         promptSelect({
@@ -177,7 +182,9 @@ describe('prompt wrappers', () => {
     });
 
     it('pauses and resumes active terminal input reader around input prompts', async () => {
-      activeTerminalReader = { pause: pauseSpy, resume: resumeSpy };
+      const pauseSpy = vi.fn();
+      const resumeSpy = vi.fn();
+      mockGetActiveInputSource.mockReturnValue({ pause: pauseSpy, resume: resumeSpy });
 
       await runWithLogger(createRecordingAdapter().adapter, () =>
         promptInput({ message: 'Name:' })
@@ -188,7 +195,9 @@ describe('prompt wrappers', () => {
     });
 
     it('pauses and resumes active terminal input reader around checkbox prompts', async () => {
-      activeTerminalReader = { pause: pauseSpy, resume: resumeSpy };
+      const pauseSpy = vi.fn();
+      const resumeSpy = vi.fn();
+      mockGetActiveInputSource.mockReturnValue({ pause: pauseSpy, resume: resumeSpy });
 
       await runWithLogger(createRecordingAdapter().adapter, () =>
         promptCheckbox({

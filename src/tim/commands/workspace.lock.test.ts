@@ -1,20 +1,49 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
+
+vi.mock('../../logging.js', () => ({
+  log: vi.fn(() => {}),
+  warn: vi.fn(() => {}),
+}));
+
+vi.mock('../configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(async () => ({
+    workspaceCreation: {
+      repositoryUrl: 'https://example.com/repo.git',
+      cloneLocation: '',
+    },
+  })),
+}));
+
+vi.mock('../../common/git.js', () => ({
+  getGitRoot: vi.fn(async () => ''),
+}));
+
+vi.mock('../assignments/workspace_identifier.js', () => ({
+  getRepositoryIdentity: vi.fn(async () => ({
+    repositoryId: 'example-repo',
+    remoteUrl: 'https://example.com/repo.git',
+    gitRoot: '',
+  })),
+  getUserIdentity: vi.fn(() => 'tester'),
+}));
+
 import { WorkspaceLock } from '../workspace/workspace_lock.js';
-import { ModuleMocker } from '../../testing.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { getOrCreateProject } from '../db/project.js';
 import { recordWorkspace } from '../db/workspace.js';
+import { loadEffectiveConfig } from '../configLoader.js';
+import { getGitRoot } from '../../common/git.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 
-let moduleMocker: ModuleMocker;
 let tempDir: string;
 let originalCwd: string;
 let originalHome: string | undefined;
 
-const logSpy = mock(() => {});
-const warnSpy = mock(() => {});
+const logSpy = vi.fn(() => {});
+const warnSpy = vi.fn(() => {});
 
 function seedWorkspace(
   workspacePath: string,
@@ -24,7 +53,7 @@ function seedWorkspace(
 ): void {
   const db = getDatabase();
   const project = getOrCreateProject(db, repositoryId);
-  const row = recordWorkspace(db, {
+  recordWorkspace(db, {
     projectId: project.id,
     workspacePath,
     taskId,
@@ -35,39 +64,28 @@ function seedWorkspace(
 
 describe('workspace lock/unlock commands', () => {
   beforeEach(async () => {
-    moduleMocker = new ModuleMocker(import.meta);
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-lock-cmd-test-'));
     originalCwd = process.cwd();
     originalHome = process.env.HOME;
     process.env.HOME = tempDir;
     closeDatabaseForTesting();
 
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: logSpy,
-      warn: warnSpy,
-    }));
+    vi.clearAllMocks();
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        workspaceCreation: {
-          repositoryUrl: 'https://example.com/repo.git',
-          cloneLocation: path.join(tempDir, 'clones'),
-        },
-      }),
-    }));
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
+      workspaceCreation: {
+        repositoryUrl: 'https://example.com/repo.git',
+        cloneLocation: path.join(tempDir, 'clones'),
+      },
+    } as any);
 
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => tempDir,
-    }));
+    vi.mocked(getGitRoot).mockResolvedValue(tempDir);
 
-    await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
-      getRepositoryIdentity: async () => ({
-        repositoryId: 'example-repo',
-        remoteUrl: 'https://example.com/repo.git',
-        gitRoot: tempDir,
-      }),
-      getUserIdentity: () => 'tester',
-    }));
+    vi.mocked(getRepositoryIdentity).mockResolvedValue({
+      repositoryId: 'example-repo',
+      remoteUrl: 'https://example.com/repo.git',
+      gitRoot: tempDir,
+    });
   });
 
   afterEach(async () => {
@@ -77,11 +95,9 @@ describe('workspace lock/unlock commands', () => {
     } else {
       process.env.HOME = originalHome;
     }
-    moduleMocker.clear();
+    vi.clearAllMocks();
     closeDatabaseForTesting();
     await fs.rm(tempDir, { recursive: true, force: true });
-    logSpy.mockClear();
-    warnSpy.mockClear();
   });
 
   test('locks current workspace directory by default', async () => {
@@ -162,22 +178,17 @@ describe('workspace lock/unlock commands', () => {
     const availableWorkspace = path.join(tempDir, 'workspace-no-origin');
     await fs.mkdir(availableWorkspace, { recursive: true });
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        workspaceCreation: {
-          cloneLocation: path.join(tempDir, 'clones'),
-        },
-      }),
-    }));
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
+      workspaceCreation: {
+        cloneLocation: path.join(tempDir, 'clones'),
+      },
+    } as any);
 
-    await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
-      getRepositoryIdentity: async () => ({
-        repositoryId: 'local-repo',
-        remoteUrl: null,
-        gitRoot: tempDir,
-      }),
-      getUserIdentity: () => 'tester',
-    }));
+    vi.mocked(getRepositoryIdentity).mockResolvedValue({
+      repositoryId: 'local-repo',
+      remoteUrl: null,
+      gitRoot: tempDir,
+    } as any);
 
     seedWorkspace(availableWorkspace, 'task-local', 'local-repo');
 

@@ -408,7 +408,7 @@ ${commitScopeGuidance}
 ## Verification Workflow
 1. Inspect git status and recent changes to identify files that require verification
 2. Ensure tests exist for new functionality; create or update tests when necessary before running suites
-3. Run the project's required commands (at minimum: \`bun run check\`, \`bun run lint\`, and \`bun test\`)
+3. Run the project's required commands (at minimum: check, lint, test)
 4. Capture command output. When a command fails, stop and analyze the failure. Provide a clear summary, the failing command, and suggested next steps for the implementer.
 5. After resolving issues, rerun the relevant commands to confirm they pass
 6. Provide a final summary stating which commands were executed, whether tests were added/updated, and the current repository status

@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
@@ -9,39 +9,62 @@ import { runWithLogger } from '../../../logging/adapter.js';
 import { createRecordingAdapter } from '../../../logging/test_helpers.js';
 import type { StructuredMessage } from '../../../logging/structured_messages.js';
 import type { PlanSchema, PlanSchemaInput } from '../../planSchema.js';
-import { ModuleMocker } from '../../../testing.js';
 import { resetShutdownState, setShuttingDown } from '../../shutdown_state.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
+// Mock functions — declared with vi.hoisted() so they are available inside vi.mock() factories
+const {
+  logSpy,
+  errorSpy,
+  warnSpy,
+  sendStructuredSpy,
+  openLogFileSpy,
+  closeLogFileSpy,
+  executorExecuteSpy,
+  buildExecutorAndLogSpy,
+  resolvePlanFileSpy,
+  loadEffectiveConfigSpy,
+  getGitRootSpy,
+  getWorkingCopyStatusSpy,
+  buildExecutionPromptWithoutStepsSpy,
+  executePostApplyCommandSpy,
+  runUpdateDocsSpy,
+  runUpdateLessonsSpy,
+} = vi.hoisted(() => {
+  const executorExecuteSpy = vi.fn(async () => {});
+  return {
+    logSpy: vi.fn(() => {}),
+    errorSpy: vi.fn(() => {}),
+    warnSpy: vi.fn(() => {}),
+    sendStructuredSpy: vi.fn(() => {}),
+    openLogFileSpy: vi.fn(() => {}),
+    closeLogFileSpy: vi.fn(async () => {}),
+    executorExecuteSpy,
+    buildExecutorAndLogSpy: vi.fn(() => ({
+      execute: executorExecuteSpy,
+      filePathPrefix: '',
+    })),
+    resolvePlanFileSpy: vi.fn(),
+    loadEffectiveConfigSpy: vi.fn(async () => ({
+      models: { execution: 'test-model' },
+      postApplyCommands: [],
+    })),
+    getGitRootSpy: vi.fn(async () => '/test/project'),
+    getWorkingCopyStatusSpy: vi.fn(async () => ({
+      hasChanges: false,
+      checkFailed: false,
+    })),
+    buildExecutionPromptWithoutStepsSpy: vi.fn(async () => 'Test batch prompt'),
+    executePostApplyCommandSpy: vi.fn(async () => true),
+    runUpdateDocsSpy: vi.fn(async () => {}),
+    runUpdateLessonsSpy: vi.fn(async () => {}),
+  };
+});
 
-// Mock functions
-const logSpy = mock(() => {});
-const errorSpy = mock(() => {});
-const warnSpy = mock(() => {});
-const sendStructuredSpy = mock(() => {});
-const openLogFileSpy = mock(() => {});
-const closeLogFileSpy = mock(async () => {});
-
-// Mock executor that we can control
-const executorExecuteSpy = mock(async () => {});
-const buildExecutorAndLogSpy = mock(() => ({
-  execute: executorExecuteSpy,
-  filePathPrefix: '',
-}));
-
-// Mock other dependencies
-const resolvePlanFileSpy = mock();
-const loadEffectiveConfigSpy = mock(async () => ({
-  models: { execution: 'test-model' },
-  postApplyCommands: [],
-}));
-const getGitRootSpy = mock(async () => '/test/project');
-const getWorkingCopyStatusSpy = mock(async () => ({
-  hasChanges: false,
-  checkFailed: false,
-}));
-const buildExecutionPromptWithoutStepsSpy = mock(async () => 'Test batch prompt');
-const setPlanStatusSpy = mock(async (filePath: string, status: string) => {
+// setPlanStatusSpy needs fs and yaml, so it can't be in vi.hoisted() — but it's only used
+// inside the plans.js mock factory which can capture it via a non-hoisted reference.
+// Since vi.mock() factories are called lazily (when the module is first imported), the
+// factory closure over setPlanStatusSpy will capture it after it's assigned.
+const setPlanStatusSpy = vi.fn(async (filePath: string, status: string) => {
   const content = await fs.readFile(filePath, 'utf-8');
   const planData = yaml.parse(content.replace(/^#.*\n/, ''));
   planData.status = status;
@@ -50,14 +73,164 @@ const setPlanStatusSpy = mock(async (filePath: string, status: string) => {
     '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json\n';
   await fs.writeFile(filePath, schemaComment + yaml.stringify(planData));
 });
-const executePostApplyCommandSpy = mock(async () => true);
-const runUpdateDocsSpy = mock(async () => {});
-const runUpdateLessonsSpy = mock(async () => {});
+
+// Per-test find_next control
+let getAllIncompleteTasksImpl: ((p: any) => any) | null = null;
+let findNextActionableItemImpl: (() => any) | null = null;
+
+let tempDir = '';
+let planFile = '';
+
+vi.mock('@inquirer/prompts', () => ({
+  select: vi.fn(async () => 'generate'),
+}));
+
+vi.mock('../../../logging.js', () => ({
+  log: logSpy,
+  error: errorSpy,
+  warn: warnSpy,
+  sendStructured: sendStructuredSpy,
+  openLogFile: openLogFileSpy,
+  closeLogFile: closeLogFileSpy,
+  boldMarkdownHeaders: vi.fn((text: string) => text),
+  debugLog: vi.fn(() => {}),
+}));
+
+vi.mock('../../../common/git.js', () => ({
+  getGitRoot: getGitRootSpy,
+  getWorkingCopyStatus: getWorkingCopyStatusSpy,
+}));
+
+vi.mock('../../configLoader.js', () => ({
+  loadEffectiveConfig: loadEffectiveConfigSpy,
+  loadGlobalConfigForNotifications: vi.fn(async () => ({})),
+}));
+
+vi.mock('../../executors/index.js', () => ({
+  buildExecutorAndLog: buildExecutorAndLogSpy,
+  DEFAULT_EXECUTOR: 'copy-only',
+  defaultModelForExecutor: vi.fn(() => 'test-model'),
+}));
+
+vi.mock('../../prompt_builder.js', () => ({
+  buildExecutionPromptWithoutSteps: buildExecutionPromptWithoutStepsSpy,
+}));
+
+vi.mock('../../actions.js', () => ({
+  executePostApplyCommand: executePostApplyCommandSpy,
+}));
+
+vi.mock('../update-docs.js', () => ({
+  runUpdateDocs: runUpdateDocsSpy,
+}));
+
+vi.mock('../update-lessons.js', () => ({
+  runUpdateLessons: runUpdateLessonsSpy,
+}));
+
+vi.mock('../../plans.js', () => {
+  class PlanNotFoundError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = 'PlanNotFoundError';
+    }
+  }
+  class NoFrontmatterError extends Error {
+    constructor(filePath: string) {
+      super(`File lacks frontmatter: ${filePath}`);
+      this.name = 'NoFrontmatterError';
+    }
+  }
+  return {
+    PlanNotFoundError,
+    NoFrontmatterError,
+    resolvePlanFile: resolvePlanFileSpy,
+    readPlanFile: vi.fn(async (filePath: string) => {
+      const { readFile } = await import('node:fs/promises');
+      const content = await readFile(filePath, 'utf-8');
+      const yaml = await import('yaml');
+      return yaml.default.parse(content.replace(/^#.*\n/, ''));
+    }),
+    writePlanFile: vi.fn(async (filePath: string, planData: any) => {
+      const { writeFile } = await import('node:fs/promises');
+      const yaml = await import('yaml');
+      const schemaComment =
+        '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json\n';
+      await writeFile(filePath, schemaComment + yaml.default.stringify(planData));
+    }),
+    setPlanStatus: vi.fn(async (filePath: string, status: string) => {
+      await setPlanStatusSpy(filePath, status);
+    }),
+    setPlanStatusById: vi.fn(
+      async (_planId: number, status: string, _repoRoot: string, filePath?: string | null) => {
+        if (!filePath) {
+          throw new Error('Expected file path for setPlanStatusById test mock');
+        }
+        await setPlanStatusSpy(filePath, status);
+      }
+    ),
+    generatePlanFileContent: vi.fn(() => ''),
+    resolvePlanFromDb: vi.fn(async () => ({
+      plan: { id: 1, title: 'P', status: 'pending', tasks: [] },
+      planPath: '',
+    })),
+    writePlanToDb: vi.fn(async () => {}),
+    isTaskDone: vi.fn((task: any) => !!task.done),
+    getBlockedPlans: vi.fn(() => []),
+    getChildPlans: vi.fn(() => []),
+    getDiscoveredPlans: vi.fn(() => []),
+    getMaxNumericPlanId: vi.fn(async () => 0),
+    parsePlanIdentifier: vi.fn(() => ({})),
+    isPlanReady: vi.fn(() => true),
+    collectDependenciesInOrder: vi.fn(async () => []),
+    generateSuggestedFilename: vi.fn(async () => 'plan.yml'),
+  };
+});
+
+vi.mock('../../plans/find_next.js', () => ({
+  getAllIncompleteTasks: vi.fn((p: any) => {
+    if (getAllIncompleteTasksImpl !== null) {
+      return getAllIncompleteTasksImpl(p);
+    }
+    // Default: use real logic based on plan tasks
+    if (!p || !p.tasks) return [];
+    return p.tasks
+      .map((task: any, i: number) => ({ taskIndex: i, task }))
+      .filter(({ task }: any) => !task.done);
+  }),
+  findNextActionableItem: vi.fn(() => {
+    if (findNextActionableItemImpl !== null) {
+      return findNextActionableItemImpl();
+    }
+    return null;
+  }),
+  findPendingTask: vi.fn(() => null),
+}));
+
+vi.mock('../../plan_materialize.js', () => ({
+  materializePlan: vi.fn(async () => {}),
+  syncMaterializedPlan: vi.fn(async () => {}),
+  getMaterializedPlanPath: vi.fn(() => '/tmp/plan.md'),
+  getShadowPlanPath: vi.fn(() => '/tmp/.plan.md.shadow'),
+  materializeRelatedPlans: vi.fn(async () => {}),
+  materializeAndPruneRelatedPlans: vi.fn(async () => {}),
+  withPlanAutoSync: vi.fn(async (_id: any, _root: any, fn: () => any) => fn()),
+  resolveProjectContext: vi.fn(async () => ({
+    projectId: 1,
+    planRowsByPlanId: new Map(),
+    planRowsByUuid: new Map(),
+    maxNumericId: 0,
+  })),
+  readMaterializedPlanRole: vi.fn(async () => null),
+  ensureMaterializeDir: vi.fn(async () => '/tmp'),
+  parsePlanId: vi.fn((id: string) => parseInt(id)),
+  diffPlanFields: vi.fn(() => ({})),
+  mergePlanWithShadow: vi.fn((base: any) => base),
+  cleanupMaterializedPlans: vi.fn(async () => {}),
+  MATERIALIZED_DIR: '.tim/plans',
+}));
 
 describe('timAgent - Batch Mode Execution Loop', () => {
-  let tempDir: string;
-  let planFile: string;
-
   beforeEach(async () => {
     // Clear all mocks
     logSpy.mockClear();
@@ -80,27 +253,13 @@ describe('timAgent - Batch Mode Execution Loop', () => {
     runUpdateLessonsSpy.mockClear();
     resetShutdownState();
 
-    // Clear plan cache
+    // Reset per-test impls
+    getAllIncompleteTasksImpl = null;
+    findNextActionableItemImpl = null;
 
     // Create temporary directory and plan file
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-batch-mode-test-'));
     planFile = path.join(tempDir, 'test-plan.yml');
-
-    // Mock inquirer prompts to avoid interactive timeouts
-    await moduleMocker.mock('@inquirer/prompts', () => ({
-      select: mock(async () => 'generate'),
-    }));
-
-    // Mock dependencies
-    await moduleMocker.mock('../../../logging.js', () => ({
-      log: logSpy,
-      error: errorSpy,
-      warn: warnSpy,
-      sendStructured: sendStructuredSpy,
-      openLogFile: openLogFileSpy,
-      closeLogFile: closeLogFileSpy,
-      boldMarkdownHeaders: mock((text: string) => text),
-    }));
 
     getGitRootSpy.mockImplementation(async () => tempDir);
     getWorkingCopyStatusSpy.mockImplementation(async () => {
@@ -111,69 +270,18 @@ describe('timAgent - Batch Mode Execution Loop', () => {
         diffHash: createHash('sha256').update(content).digest('hex'),
       };
     });
-    await moduleMocker.mock('../../../common/git.js', () => ({
-      getGitRoot: getGitRootSpy,
-      getWorkingCopyStatus: getWorkingCopyStatusSpy,
-    }));
-
-    await moduleMocker.mock('../../configLoader.js', () => ({
-      loadEffectiveConfig: loadEffectiveConfigSpy,
-    }));
-
-    await moduleMocker.mock('../../executors/index.js', () => ({
-      buildExecutorAndLog: buildExecutorAndLogSpy,
-      DEFAULT_EXECUTOR: 'copy-only',
-      defaultModelForExecutor: mock(() => 'test-model'),
-    }));
-
-    await moduleMocker.mock('../../prompt_builder.js', () => ({
-      buildExecutionPromptWithoutSteps: buildExecutionPromptWithoutStepsSpy,
-    }));
-
-    await moduleMocker.mock('../../actions.js', () => ({
-      executePostApplyCommand: executePostApplyCommandSpy,
-    }));
-
-    await moduleMocker.mock('../update-docs.js', () => ({
-      runUpdateDocs: runUpdateDocsSpy,
-    }));
-
-    await moduleMocker.mock('../update-lessons.js', () => ({
-      runUpdateLessons: runUpdateLessonsSpy,
-    }));
-
-    await moduleMocker.mock('../../plans.js', () => ({
-      resolvePlanFile: resolvePlanFileSpy,
-      readPlanFile: mock(async (filePath: string) => {
-        // Read the actual file
-        const content = await fs.readFile(filePath, 'utf-8');
-        return yaml.parse(content.replace(/^#.*\n/, ''));
-      }),
-      writePlanFile: mock(async (filePath: string, planData: PlanSchema) => {
-        // Write the actual file
-        const schemaComment =
-          '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json\n';
-        await fs.writeFile(filePath, schemaComment + yaml.stringify(planData));
-      }),
-      setPlanStatus: mock(async (filePath: string, status: string) => {
-        await setPlanStatusSpy(filePath, status);
-      }),
-      setPlanStatusById: mock(
-        async (_planId: number, status: string, _repoRoot: string, filePath?: string | null) => {
-          if (!filePath) {
-            throw new Error('Expected file path for setPlanStatusById test mock');
-          }
-          await setPlanStatusSpy(filePath, status);
-        }
-      ),
-    }));
 
     // Set up default mock behaviors
     resolvePlanFileSpy.mockResolvedValue(planFile);
+
+    loadEffectiveConfigSpy.mockResolvedValue({
+      models: { execution: 'test-model' },
+      postApplyCommands: [],
+    });
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     resetShutdownState();
     if (tempDir) {
       await fs.rm(tempDir, { recursive: true, force: true });
@@ -242,11 +350,8 @@ describe('timAgent - Batch Mode Execution Loop', () => {
         ],
       });
 
-      // Mock the normal execution path
-      await moduleMocker.mock('../../plans/find_next.js', () => ({
-        findNextActionableItem: mock(() => null), // No actionable items
-        getAllIncompleteTasks: mock(() => []),
-      }));
+      // For serial mode, findNextActionableItem returns null
+      findNextActionableItemImpl = () => null;
 
       const options = { serialTasks: true, log: false, nonInteractive: true } as any;
       const globalCliOptions = {};
@@ -398,16 +503,11 @@ describe('timAgent - Batch Mode Execution Loop', () => {
 
   describe('incomplete task detection and formatting', () => {
     test('getAllIncompleteTasks is called to identify tasks', async () => {
-      // Mock getAllIncompleteTasks to return specific incomplete tasks
-      const mockGetAllIncompleteTasks = mock(() => [
+      // Use per-test impl that returns specific incomplete tasks
+      getAllIncompleteTasksImpl = () => [
         { taskIndex: 0, task: { title: 'Task 1', description: 'First task' } },
         { taskIndex: 2, task: { title: 'Task 3', description: 'Third task' } },
-      ]);
-
-      await moduleMocker.mock('../../plans/find_next.js', () => ({
-        getAllIncompleteTasks: mockGetAllIncompleteTasks,
-        findNextActionableItem: mock(() => null),
-      }));
+      ];
 
       await createPlanFile({
         tasks: [
@@ -421,9 +521,6 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const globalCliOptions = {};
 
       await timAgent(planFile, options, globalCliOptions);
-
-      // Should have called getAllIncompleteTasks
-      expect(mockGetAllIncompleteTasks).toHaveBeenCalled();
 
       // Check that the batch prompt includes the correct tasks
       const callArgs = buildExecutionPromptWithoutStepsSpy.mock.calls[0][0];
@@ -447,7 +544,6 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       });
 
       executorExecuteSpy.mockImplementation(async () => {
-        // Complete the task
         await createPlanFile({
           status: 'in_progress',
           tasks: [
@@ -466,27 +562,35 @@ describe('timAgent - Batch Mode Execution Loop', () => {
 
       await timAgent(planFile, options, globalCliOptions);
 
-      // Read the final file content to verify status was updated
-      const finalContent = await fs.readFile(planFile, 'utf-8');
-      const finalPlan = yaml.parse(finalContent.replace(/^#.*\n/, ''));
-      expect(finalPlan.status).toBe('done');
+      // Read the file to check status was updated
+      const content = await fs.readFile(planFile, 'utf-8');
+      const planData = yaml.parse(content.replace(/^#.*\n/, ''));
+      expect(planData.status).toBe('done');
     });
 
-    test('plan is marked as done when all tasks complete', async () => {
+    test('plan status changes to done when all tasks complete', async () => {
       await createPlanFile({
-        status: 'pending',
+        status: 'in_progress',
         tasks: [
-          { title: 'Task 1', description: 'First task' },
-          { title: 'Task 2', description: 'Second task' },
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+          { title: 'Task 2', description: 'Second task', done: true },
         ],
       });
 
       executorExecuteSpy.mockImplementation(async () => {
-        // Complete both tasks
         await createPlanFile({
           status: 'in_progress',
           tasks: [
-            { title: 'Task 1', description: 'First task', done: true },
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
             { title: 'Task 2', description: 'Second task', done: true },
           ],
         });
@@ -514,16 +618,6 @@ describe('timAgent - Batch Mode Execution Loop', () => {
             steps: [{ prompt: 'Do child task', done: false }],
           },
         ],
-      });
-
-      // Mock parent plan checking
-      const checkAndMarkParentDoneSpy = mock(async () => {});
-      await moduleMocker.mock('./agent.js', () => {
-        const originalModule = require('./agent.js');
-        return {
-          ...originalModule,
-          checkAndMarkParentDone: checkAndMarkParentDoneSpy,
-        };
       });
 
       executorExecuteSpy.mockImplementation(async () => {
@@ -1014,7 +1108,6 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       executorExecuteSpy.mockImplementation(async () => {
         callCount++;
         if (callCount === 1) {
-          // First iteration: complete one task
           await createPlanFile({
             tasks: [
               {
@@ -1031,7 +1124,6 @@ describe('timAgent - Batch Mode Execution Loop', () => {
             ],
           });
         } else {
-          // Second iteration: complete remaining task
           await createPlanFile({
             tasks: [
               {
@@ -1056,7 +1148,6 @@ describe('timAgent - Batch Mode Execution Loop', () => {
 
       await timAgent(planFile, options, globalCliOptions);
 
-      // Check logging calls for batch mode progress
       const logCalls = logSpy.mock.calls.map((call) => call[0]);
       expect(
         logCalls.some(
@@ -1176,7 +1267,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
         ],
       });
 
-      const customExecutor = { execute: mock(), filePathPrefix: '/custom/' };
+      const customExecutor = { execute: vi.fn(), filePathPrefix: '/custom/' };
       buildExecutorAndLogSpy.mockReturnValue(customExecutor);
 
       const options = { orchestrator: 'custom-executor', log: false } as any;

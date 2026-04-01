@@ -1,6 +1,5 @@
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { GitHubIssueTrackerClient, createGitHubClient } from './github.js';
-import { ModuleMocker } from '../../testing.js';
 import type {
   IssueTrackerClient,
   IssueTrackerConfig,
@@ -10,8 +9,26 @@ import type {
   ParsedIssueIdentifier,
 } from './types.js';
 
+// Mock the GitHub modules
+vi.mock('../github/issues.js', () => ({
+  fetchIssueAndComments: vi.fn(),
+  fetchAllOpenIssues: vi.fn(),
+  parseGitHubIssueIdentifier: vi.fn(),
+}));
+
+vi.mock('../github/identifiers.js', () => ({
+  parsePrOrIssueNumber: vi.fn(),
+}));
+
+// Import mocked modules
+import {
+  fetchIssueAndComments,
+  fetchAllOpenIssues,
+  parseGitHubIssueIdentifier,
+} from '../github/issues.js';
+import { parsePrOrIssueNumber } from '../github/identifiers.js';
+
 describe('GitHubIssueTrackerClient', () => {
-  const moduleMocker = new ModuleMocker(import.meta);
   let client: GitHubIssueTrackerClient;
   let config: IssueTrackerConfig;
 
@@ -153,10 +170,14 @@ describe('GitHubIssueTrackerClient', () => {
       apiKey: 'ghp_test_token_12345',
     };
     client = new GitHubIssueTrackerClient(config);
+
+    // Reset all mocks
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
-    moduleMocker.clear();
+    vi.resetAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('constructor and basic properties', () => {
@@ -201,6 +222,8 @@ describe('GitHubIssueTrackerClient', () => {
 
   describe('parseIssueIdentifier', () => {
     test('should parse GitHub URLs correctly', () => {
+      const mockParseGitHubIssueIdentifier = vi.mocked(parseGitHubIssueIdentifier);
+
       const testCases = [
         {
           input: 'https://github.com/facebook/react/issues/123',
@@ -232,12 +255,15 @@ describe('GitHubIssueTrackerClient', () => {
       ];
 
       testCases.forEach(({ input, expected }) => {
+        mockParseGitHubIssueIdentifier.mockReturnValue(expected);
         const result = client.parseIssueIdentifier(input);
         expect(result).toEqual(expected);
       });
     });
 
     test('should parse short format identifiers', () => {
+      const mockParseGitHubIssueIdentifier = vi.mocked(parseGitHubIssueIdentifier);
+
       const testCases = [
         {
           input: 'owner/repo#123',
@@ -266,12 +292,15 @@ describe('GitHubIssueTrackerClient', () => {
       ];
 
       testCases.forEach(({ input, expected }) => {
+        mockParseGitHubIssueIdentifier.mockReturnValue(expected);
         const result = client.parseIssueIdentifier(input);
         expect(result).toEqual(expected);
       });
     });
 
     test('should parse alternative short format identifiers', () => {
+      const mockParseGitHubIssueIdentifier = vi.mocked(parseGitHubIssueIdentifier);
+
       const testCases = [
         {
           input: 'owner/repo/123',
@@ -292,21 +321,26 @@ describe('GitHubIssueTrackerClient', () => {
       ];
 
       testCases.forEach(({ input, expected }) => {
+        mockParseGitHubIssueIdentifier.mockReturnValue(expected);
         const result = client.parseIssueIdentifier(input);
         expect(result).toEqual(expected);
       });
     });
 
     test('should parse simple number identifiers', () => {
+      const mockParseGitHubIssueIdentifier = vi.mocked(parseGitHubIssueIdentifier);
       const testCases = ['123', '456', '1', '999999'];
 
       testCases.forEach((input) => {
+        const expected = { identifier: input };
+        mockParseGitHubIssueIdentifier.mockReturnValue(expected);
         const result = client.parseIssueIdentifier(input);
-        expect(result).toEqual({ identifier: input });
+        expect(result).toEqual(expected);
       });
     });
 
     test('should handle invalid formats gracefully', () => {
+      const mockParseGitHubIssueIdentifier = vi.mocked(parseGitHubIssueIdentifier);
       const invalidCases = [
         'invalid-format',
         'not/a#valid',
@@ -318,12 +352,15 @@ describe('GitHubIssueTrackerClient', () => {
       ];
 
       invalidCases.forEach((input) => {
+        mockParseGitHubIssueIdentifier.mockReturnValue(null);
         const result = client.parseIssueIdentifier(input);
         expect(result).toBeNull();
       });
     });
 
     test('should handle whitespace in input', () => {
+      const mockParseGitHubIssueIdentifier = vi.mocked(parseGitHubIssueIdentifier);
+
       const testCases = [
         {
           input: '  123  ',
@@ -340,6 +377,7 @@ describe('GitHubIssueTrackerClient', () => {
       ];
 
       testCases.forEach(({ input, expected }) => {
+        mockParseGitHubIssueIdentifier.mockReturnValue(expected);
         const result = client.parseIssueIdentifier(input);
         expect(result).toEqual(expected);
       });
@@ -349,20 +387,19 @@ describe('GitHubIssueTrackerClient', () => {
   describe('fetchIssue', () => {
     test('should successfully fetch issue with comments', async () => {
       // Mock the GitHub functions
-      await moduleMocker.mock('../github/issues.js', () => ({
-        fetchIssueAndComments: async () => ({
-          issue: mockIssue,
-          comments: mockComments,
-        }),
-      }));
+      const mockFetchIssueAndComments = vi.mocked(fetchIssueAndComments);
+      const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
 
-      await moduleMocker.mock('../github/identifiers.js', () => ({
-        parsePrOrIssueNumber: async () => ({
-          owner: 'owner',
-          repo: 'repo',
-          number: 42,
-        }),
-      }));
+      mockParsePrOrIssueNumber.mockResolvedValue({
+        owner: 'owner',
+        repo: 'repo',
+        number: 42,
+      });
+
+      mockFetchIssueAndComments.mockResolvedValue({
+        issue: mockIssue,
+        comments: mockComments,
+      });
 
       const result = await client.fetchIssue('42');
 
@@ -439,21 +476,19 @@ describe('GitHubIssueTrackerClient', () => {
 
     test('should handle issue with no body', async () => {
       const issueNoBody = { ...mockIssue, body: null };
+      const mockFetchIssueAndComments = vi.mocked(fetchIssueAndComments);
+      const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
 
-      await moduleMocker.mock('../github/issues.js', () => ({
-        fetchIssueAndComments: async () => ({
-          issue: issueNoBody,
-          comments: [],
-        }),
-      }));
+      mockParsePrOrIssueNumber.mockResolvedValue({
+        owner: 'owner',
+        repo: 'repo',
+        number: 42,
+      });
 
-      await moduleMocker.mock('../github/identifiers.js', () => ({
-        parsePrOrIssueNumber: async () => ({
-          owner: 'owner',
-          repo: 'repo',
-          number: 42,
-        }),
-      }));
+      mockFetchIssueAndComments.mockResolvedValue({
+        issue: issueNoBody,
+        comments: [],
+      });
 
       const result = await client.fetchIssue('42');
 
@@ -462,21 +497,19 @@ describe('GitHubIssueTrackerClient', () => {
 
     test('should handle issue with no user', async () => {
       const issueNoUser = { ...mockIssue, user: null };
+      const mockFetchIssueAndComments = vi.mocked(fetchIssueAndComments);
+      const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
 
-      await moduleMocker.mock('../github/issues.js', () => ({
-        fetchIssueAndComments: async () => ({
-          issue: issueNoUser,
-          comments: [],
-        }),
-      }));
+      mockParsePrOrIssueNumber.mockResolvedValue({
+        owner: 'owner',
+        repo: 'repo',
+        number: 42,
+      });
 
-      await moduleMocker.mock('../github/identifiers.js', () => ({
-        parsePrOrIssueNumber: async () => ({
-          owner: 'owner',
-          repo: 'repo',
-          number: 42,
-        }),
-      }));
+      mockFetchIssueAndComments.mockResolvedValue({
+        issue: issueNoUser,
+        comments: [],
+      });
 
       const result = await client.fetchIssue('42');
 
@@ -489,21 +522,19 @@ describe('GitHubIssueTrackerClient', () => {
         assignees: [],
         labels: [],
       };
+      const mockFetchIssueAndComments = vi.mocked(fetchIssueAndComments);
+      const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
 
-      await moduleMocker.mock('../github/issues.js', () => ({
-        fetchIssueAndComments: async () => ({
-          issue: issueEmptyArrays,
-          comments: [],
-        }),
-      }));
+      mockParsePrOrIssueNumber.mockResolvedValue({
+        owner: 'owner',
+        repo: 'repo',
+        number: 42,
+      });
 
-      await moduleMocker.mock('../github/identifiers.js', () => ({
-        parsePrOrIssueNumber: async () => ({
-          owner: 'owner',
-          repo: 'repo',
-          number: 42,
-        }),
-      }));
+      mockFetchIssueAndComments.mockResolvedValue({
+        issue: issueEmptyArrays,
+        comments: [],
+      });
 
       const result = await client.fetchIssue('42');
 
@@ -516,21 +547,19 @@ describe('GitHubIssueTrackerClient', () => {
         ...mockIssue,
         pull_request: { url: 'https://api.github.com/repos/owner/repo/pulls/42' },
       };
+      const mockFetchIssueAndComments = vi.mocked(fetchIssueAndComments);
+      const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
 
-      await moduleMocker.mock('../github/issues.js', () => ({
-        fetchIssueAndComments: async () => ({
-          issue: pullRequest,
-          comments: [],
-        }),
-      }));
+      mockParsePrOrIssueNumber.mockResolvedValue({
+        owner: 'owner',
+        repo: 'repo',
+        number: 42,
+      });
 
-      await moduleMocker.mock('../github/identifiers.js', () => ({
-        parsePrOrIssueNumber: async () => ({
-          owner: 'owner',
-          repo: 'repo',
-          number: 42,
-        }),
-      }));
+      mockFetchIssueAndComments.mockResolvedValue({
+        issue: pullRequest,
+        comments: [],
+      });
 
       const result = await client.fetchIssue('42');
 
@@ -538,9 +567,8 @@ describe('GitHubIssueTrackerClient', () => {
     });
 
     test('should handle invalid identifier', async () => {
-      await moduleMocker.mock('../github/identifiers.js', () => ({
-        parsePrOrIssueNumber: async () => null,
-      }));
+      const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
+      mockParsePrOrIssueNumber.mockResolvedValue(null);
 
       await expect(client.fetchIssue('invalid')).rejects.toThrow(
         'Invalid GitHub issue identifier: invalid'
@@ -548,19 +576,16 @@ describe('GitHubIssueTrackerClient', () => {
     });
 
     test('should handle GitHub API errors', async () => {
-      await moduleMocker.mock('../github/issues.js', () => ({
-        fetchIssueAndComments: async () => {
-          throw new Error('API rate limit exceeded');
-        },
-      }));
+      const mockFetchIssueAndComments = vi.mocked(fetchIssueAndComments);
+      const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
 
-      await moduleMocker.mock('../github/identifiers.js', () => ({
-        parsePrOrIssueNumber: async () => ({
-          owner: 'owner',
-          repo: 'repo',
-          number: 42,
-        }),
-      }));
+      mockParsePrOrIssueNumber.mockResolvedValue({
+        owner: 'owner',
+        repo: 'repo',
+        number: 42,
+      });
+
+      mockFetchIssueAndComments.mockRejectedValue(new Error('API rate limit exceeded'));
 
       await expect(client.fetchIssue('42')).rejects.toThrow(
         'Failed to fetch GitHub issue #42: API rate limit exceeded'
@@ -569,21 +594,19 @@ describe('GitHubIssueTrackerClient', () => {
 
     test('should handle comment with no body', async () => {
       const commentNoBody = { ...mockComments[0], body: null };
+      const mockFetchIssueAndComments = vi.mocked(fetchIssueAndComments);
+      const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
 
-      await moduleMocker.mock('../github/issues.js', () => ({
-        fetchIssueAndComments: async () => ({
-          issue: mockIssue,
-          comments: [commentNoBody],
-        }),
-      }));
+      mockParsePrOrIssueNumber.mockResolvedValue({
+        owner: 'owner',
+        repo: 'repo',
+        number: 42,
+      });
 
-      await moduleMocker.mock('../github/identifiers.js', () => ({
-        parsePrOrIssueNumber: async () => ({
-          owner: 'owner',
-          repo: 'repo',
-          number: 42,
-        }),
-      }));
+      mockFetchIssueAndComments.mockResolvedValue({
+        issue: mockIssue,
+        comments: [commentNoBody],
+      });
 
       const result = await client.fetchIssue('42');
 
@@ -592,21 +615,19 @@ describe('GitHubIssueTrackerClient', () => {
 
     test('should handle comment with no user', async () => {
       const commentNoUser = { ...mockComments[0], user: null };
+      const mockFetchIssueAndComments = vi.mocked(fetchIssueAndComments);
+      const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
 
-      await moduleMocker.mock('../github/issues.js', () => ({
-        fetchIssueAndComments: async () => ({
-          issue: mockIssue,
-          comments: [commentNoUser],
-        }),
-      }));
+      mockParsePrOrIssueNumber.mockResolvedValue({
+        owner: 'owner',
+        repo: 'repo',
+        number: 42,
+      });
 
-      await moduleMocker.mock('../github/identifiers.js', () => ({
-        parsePrOrIssueNumber: async () => ({
-          owner: 'owner',
-          repo: 'repo',
-          number: 42,
-        }),
-      }));
+      mockFetchIssueAndComments.mockResolvedValue({
+        issue: mockIssue,
+        comments: [commentNoUser],
+      });
 
       const result = await client.fetchIssue('42');
 
@@ -616,9 +637,8 @@ describe('GitHubIssueTrackerClient', () => {
 
   describe('fetchAllOpenIssues', () => {
     test('should successfully fetch all open issues', async () => {
-      await moduleMocker.mock('../github/issues.js', () => ({
-        fetchAllOpenIssues: async () => mockOpenIssues,
-      }));
+      const mockFetchAllOpenIssues = vi.mocked(fetchAllOpenIssues);
+      mockFetchAllOpenIssues.mockResolvedValue(mockOpenIssues);
 
       const result = await client.fetchAllOpenIssues();
 
@@ -643,9 +663,8 @@ describe('GitHubIssueTrackerClient', () => {
     });
 
     test('should handle empty issues list', async () => {
-      await moduleMocker.mock('../github/issues.js', () => ({
-        fetchAllOpenIssues: async () => [],
-      }));
+      const mockFetchAllOpenIssues = vi.mocked(fetchAllOpenIssues);
+      mockFetchAllOpenIssues.mockResolvedValue([]);
 
       const result = await client.fetchAllOpenIssues();
 
@@ -653,11 +672,8 @@ describe('GitHubIssueTrackerClient', () => {
     });
 
     test('should handle GitHub API errors', async () => {
-      await moduleMocker.mock('../github/issues.js', () => ({
-        fetchAllOpenIssues: async () => {
-          throw new Error('Repository not found');
-        },
-      }));
+      const mockFetchAllOpenIssues = vi.mocked(fetchAllOpenIssues);
+      mockFetchAllOpenIssues.mockRejectedValue(new Error('Repository not found'));
 
       await expect(client.fetchAllOpenIssues()).rejects.toThrow(
         'Failed to fetch open GitHub issues: Repository not found'
@@ -680,9 +696,8 @@ describe('GitHubIssueTrackerClient', () => {
         pull_request: null,
       };
 
-      await moduleMocker.mock('../github/issues.js', () => ({
-        fetchAllOpenIssues: async () => [minimalIssue],
-      }));
+      const mockFetchAllOpenIssues = vi.mocked(fetchAllOpenIssues);
+      mockFetchAllOpenIssues.mockResolvedValue([minimalIssue]);
 
       const result = await client.fetchAllOpenIssues();
 
@@ -699,21 +714,19 @@ describe('GitHubIssueTrackerClient', () => {
     test('should handle user without name (uses login as name)', async () => {
       const userNoName = { ...mockIssue.user, name: null };
       const issueUserNoName = { ...mockIssue, user: userNoName };
+      const mockFetchIssueAndComments = vi.mocked(fetchIssueAndComments);
+      const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
 
-      await moduleMocker.mock('../github/issues.js', () => ({
-        fetchIssueAndComments: async () => ({
-          issue: issueUserNoName,
-          comments: [],
-        }),
-      }));
+      mockParsePrOrIssueNumber.mockResolvedValue({
+        owner: 'owner',
+        repo: 'repo',
+        number: 42,
+      });
 
-      await moduleMocker.mock('../github/identifiers.js', () => ({
-        parsePrOrIssueNumber: async () => ({
-          owner: 'owner',
-          repo: 'repo',
-          number: 42,
-        }),
-      }));
+      mockFetchIssueAndComments.mockResolvedValue({
+        issue: issueUserNoName,
+        comments: [],
+      });
 
       const result = await client.fetchIssue('42');
 
@@ -726,21 +739,19 @@ describe('GitHubIssueTrackerClient', () => {
         ...mockIssue,
         labels: [labelNoColor],
       };
+      const mockFetchIssueAndComments = vi.mocked(fetchIssueAndComments);
+      const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
 
-      await moduleMocker.mock('../github/issues.js', () => ({
-        fetchIssueAndComments: async () => ({
-          issue: issueWithLabelNoColor,
-          comments: [],
-        }),
-      }));
+      mockParsePrOrIssueNumber.mockResolvedValue({
+        owner: 'owner',
+        repo: 'repo',
+        number: 42,
+      });
 
-      await moduleMocker.mock('../github/identifiers.js', () => ({
-        parsePrOrIssueNumber: async () => ({
-          owner: 'owner',
-          repo: 'repo',
-          number: 42,
-        }),
-      }));
+      mockFetchIssueAndComments.mockResolvedValue({
+        issue: issueWithLabelNoColor,
+        comments: [],
+      });
 
       const result = await client.fetchIssue('42');
 
@@ -774,21 +785,19 @@ describe('GitHubIssueTrackerClient', () => {
           },
         ],
       };
+      const mockFetchIssueAndComments = vi.mocked(fetchIssueAndComments);
+      const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
 
-      await moduleMocker.mock('../github/issues.js', () => ({
-        fetchIssueAndComments: async () => ({
-          issue: largeNumberIds,
-          comments: [],
-        }),
-      }));
+      mockParsePrOrIssueNumber.mockResolvedValue({
+        owner: 'owner',
+        repo: 'repo',
+        number: 42,
+      });
 
-      await moduleMocker.mock('../github/identifiers.js', () => ({
-        parsePrOrIssueNumber: async () => ({
-          owner: 'owner',
-          repo: 'repo',
-          number: 42,
-        }),
-      }));
+      mockFetchIssueAndComments.mockResolvedValue({
+        issue: largeNumberIds,
+        comments: [],
+      });
 
       const result = await client.fetchIssue('42');
 
@@ -802,19 +811,16 @@ describe('GitHubIssueTrackerClient', () => {
 
   describe('error handling', () => {
     test('should handle non-Error exceptions', async () => {
-      await moduleMocker.mock('../github/issues.js', () => ({
-        fetchIssueAndComments: async () => {
-          throw 'String error'; // Non-Error object
-        },
-      }));
+      const mockFetchIssueAndComments = vi.mocked(fetchIssueAndComments);
+      const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
 
-      await moduleMocker.mock('../github/identifiers.js', () => ({
-        parsePrOrIssueNumber: async () => ({
-          owner: 'owner',
-          repo: 'repo',
-          number: 42,
-        }),
-      }));
+      mockParsePrOrIssueNumber.mockResolvedValue({
+        owner: 'owner',
+        repo: 'repo',
+        number: 42,
+      });
+
+      mockFetchIssueAndComments.mockRejectedValue('String error'); // Non-Error object
 
       await expect(client.fetchIssue('42')).rejects.toThrow(
         'Failed to fetch GitHub issue #42: String error'
@@ -822,11 +828,8 @@ describe('GitHubIssueTrackerClient', () => {
     });
 
     test('should handle fetchAllOpenIssues with non-Error exceptions', async () => {
-      await moduleMocker.mock('../github/issues.js', () => ({
-        fetchAllOpenIssues: async () => {
-          throw { message: 'Object error', code: 404 }; // Non-Error object
-        },
-      }));
+      const mockFetchAllOpenIssues = vi.mocked(fetchAllOpenIssues);
+      mockFetchAllOpenIssues.mockRejectedValue({ message: 'Object error', code: 404 }); // Non-Error object
 
       await expect(client.fetchAllOpenIssues()).rejects.toThrow(
         'Failed to fetch open GitHub issues: [object Object]'

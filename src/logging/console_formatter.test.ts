@@ -1,13 +1,8 @@
-import { describe, expect, it } from 'bun:test';
-import { formatStructuredMessage, indentEveryLine } from './console_formatter.ts';
-import type { StructuredMessage } from './structured_messages.ts';
-
-function format(message: StructuredMessage): string {
-  return formatStructuredMessage(message);
-}
+import { describe, expect, it } from 'vitest';
+import { formatStructuredMessage as format, indentEveryLine } from './console_formatter.ts';
 
 describe('console_formatter', () => {
-  const timestamp = '2026-02-08T01:02:03.000Z';
+  const timestamp = '2026-02-08 01:02:03';
 
   it('formats lifecycle messages', () => {
     const start = format({

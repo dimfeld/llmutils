@@ -1,133 +1,135 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import { mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { ModuleMocker } from '../../testing.js';
+vi.mock('../../common/process.js', () => ({
+  commitAll: vi.fn(async () => 1),
+  logSpawn: vi.fn(() => ({ exited: Promise.resolve(0), exitCode: 0 })),
+}));
 
-describe('runPostExecutionWorkspaceSync', () => {
-  let moduleMocker: ModuleMocker;
-  const commitAll = mock(async () => 1);
-  const logSpawn = mock(() => ({ exited: Promise.resolve(0), exitCode: 0 }));
-  const getUsingJj = mock(async () => true);
-  const getTrunkBranch = mock(async () => 'main');
-  const captureRepositoryState = mock(async () => ({
+vi.mock('../../common/git.js', () => ({
+  captureRepositoryState: vi.fn(async () => ({
     commitHash: 'after',
     hasChanges: false,
     statusOutput: '',
     diffHash: 'after-hash',
-  }));
-  const compareRepositoryStates = mock(() => ({
+  })),
+  compareRepositoryStates: vi.fn(() => ({
     commitChanged: true,
     workingTreeChanged: false,
     hasDifferences: true,
-  }));
-  const hasUncommittedChanges = mock(async () => false);
-  const setWorkspaceBookmarkToCurrent = mock(async () => {});
-  const pushWorkspaceRefToRemote = mock(async () => {});
-  const pullWorkspaceRefIfExists = mock(async () => true);
-  const getRepositoryIdentity = mock(async () => ({ repositoryId: 'repo' }));
-  const findPrimaryWorkspaceForRepository = mock(() => null);
-  const getWorkspaceInfoByPath = mock(() => null);
-  const patchWorkspaceInfo = mock(() => ({}));
-  const readdirMock = mock(async () => []);
-  const rmMock = mock(async () => {});
+  })),
+  getUsingJj: vi.fn(async () => true),
+  getCurrentBranchName: vi.fn(async () => 'task-123'),
+  getTrunkBranch: vi.fn(async () => 'main'),
+  hasUncommittedChanges: vi.fn(async () => false),
+}));
 
-  beforeEach(async () => {
-    moduleMocker = new ModuleMocker(import.meta);
+vi.mock('../commands/workspace.js', () => ({
+  pullWorkspaceRefIfExists: vi.fn(async () => true),
+  pushWorkspaceRefToRemote: vi.fn(async () => {}),
+  setWorkspaceBookmarkToCurrent: vi.fn(async () => {}),
+}));
 
-    commitAll.mockClear();
-    logSpawn.mockClear();
-    getUsingJj.mockClear();
-    getTrunkBranch.mockClear();
-    captureRepositoryState.mockClear();
-    compareRepositoryStates.mockClear();
-    hasUncommittedChanges.mockClear();
-    setWorkspaceBookmarkToCurrent.mockClear();
-    pushWorkspaceRefToRemote.mockClear();
-    pullWorkspaceRefIfExists.mockClear();
-    getRepositoryIdentity.mockClear();
-    findPrimaryWorkspaceForRepository.mockClear();
-    getWorkspaceInfoByPath.mockClear();
-    patchWorkspaceInfo.mockClear();
-    readdirMock.mockClear();
-    rmMock.mockClear();
+vi.mock('../assignments/workspace_identifier.js', () => ({
+  getRepositoryIdentity: vi.fn(async () => ({ repositoryId: 'repo' })),
+}));
 
-    commitAll.mockImplementation(async () => 1);
-    logSpawn.mockImplementation(() => ({ exited: Promise.resolve(0), exitCode: 0 }));
-    getUsingJj.mockImplementation(async () => true);
-    getTrunkBranch.mockImplementation(async () => 'main');
-    captureRepositoryState.mockImplementation(async () => ({
+vi.mock('./workspace_info.js', () => ({
+  getWorkspaceInfoByPath: vi.fn(() => null),
+  findPrimaryWorkspaceForRepository: vi.fn(() => null),
+  patchWorkspaceInfo: vi.fn(() => ({})),
+}));
+
+vi.mock('../plan_materialize.js', () => ({
+  MATERIALIZED_DIR: '.tim/plans',
+}));
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return {
+    ...actual,
+    readdir: vi.fn(async () => []),
+    rm: vi.fn(async () => {}),
+  };
+});
+
+vi.mock('../../logging.js', () => ({
+  warn: vi.fn(() => {}),
+  log: vi.fn(() => {}),
+  error: vi.fn(() => {}),
+  sendStructured: vi.fn(() => {}),
+}));
+
+import { commitAll, logSpawn } from '../../common/process.js';
+import {
+  captureRepositoryState,
+  compareRepositoryStates,
+  getUsingJj,
+  getCurrentBranchName,
+  getTrunkBranch,
+  hasUncommittedChanges,
+} from '../../common/git.js';
+import {
+  pullWorkspaceRefIfExists,
+  pushWorkspaceRefToRemote,
+  setWorkspaceBookmarkToCurrent,
+} from '../commands/workspace.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import {
+  getWorkspaceInfoByPath,
+  findPrimaryWorkspaceForRepository,
+  patchWorkspaceInfo,
+} from './workspace_info.js';
+import { readdir as readdirMock, rm as rmMock } from 'node:fs/promises';
+
+describe('runPostExecutionWorkspaceSync', () => {
+  const mockCommitAll = vi.mocked(commitAll);
+  const mockLogSpawn = vi.mocked(logSpawn);
+  const mockGetUsingJj = vi.mocked(getUsingJj);
+  const mockGetTrunkBranch = vi.mocked(getTrunkBranch);
+  const mockCaptureRepositoryState = vi.mocked(captureRepositoryState);
+  const mockCompareRepositoryStates = vi.mocked(compareRepositoryStates);
+  const mockHasUncommittedChanges = vi.mocked(hasUncommittedChanges);
+  const mockSetWorkspaceBookmarkToCurrent = vi.mocked(setWorkspaceBookmarkToCurrent);
+  const mockPushWorkspaceRefToRemote = vi.mocked(pushWorkspaceRefToRemote);
+  const mockPullWorkspaceRefIfExists = vi.mocked(pullWorkspaceRefIfExists);
+  const mockGetRepositoryIdentity = vi.mocked(getRepositoryIdentity);
+  const mockFindPrimaryWorkspaceForRepository = vi.mocked(findPrimaryWorkspaceForRepository);
+  const mockGetWorkspaceInfoByPath = vi.mocked(getWorkspaceInfoByPath);
+  const mockPatchWorkspaceInfo = vi.mocked(patchWorkspaceInfo);
+  const mockReaddir = vi.mocked(readdirMock);
+  const mockRm = vi.mocked(rmMock);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    mockCommitAll.mockResolvedValue(1);
+    mockLogSpawn.mockReturnValue({ exited: Promise.resolve(0), exitCode: 0 } as any);
+    mockGetUsingJj.mockResolvedValue(true);
+    mockGetTrunkBranch.mockResolvedValue('main');
+    mockCaptureRepositoryState.mockResolvedValue({
       commitHash: 'after',
       hasChanges: false,
       statusOutput: '',
       diffHash: 'after-hash',
-    }));
-    compareRepositoryStates.mockImplementation(() => ({
+    });
+    mockCompareRepositoryStates.mockReturnValue({
       commitChanged: true,
       workingTreeChanged: false,
       hasDifferences: true,
-    }));
-    hasUncommittedChanges.mockImplementation(async () => false);
-    setWorkspaceBookmarkToCurrent.mockImplementation(async () => {});
-    pushWorkspaceRefToRemote.mockImplementation(async () => {});
-    pullWorkspaceRefIfExists.mockImplementation(async () => true);
-    getRepositoryIdentity.mockImplementation(async () => ({ repositoryId: 'repo' }));
-    findPrimaryWorkspaceForRepository.mockImplementation(() => null);
-    getWorkspaceInfoByPath.mockImplementation(() => null);
-    patchWorkspaceInfo.mockImplementation(() => ({}));
-    readdirMock.mockImplementation(async () => []);
-    rmMock.mockImplementation(async () => {});
-
-    await moduleMocker.mock('../../common/process.js', () => ({
-      commitAll,
-      logSpawn,
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      captureRepositoryState,
-      compareRepositoryStates,
-      getUsingJj,
-      getCurrentBranchName: mock(async () => 'task-123'),
-      getTrunkBranch,
-      hasUncommittedChanges,
-    }));
-
-    await moduleMocker.mock('../commands/workspace.js', () => ({
-      pullWorkspaceRefIfExists,
-      pushWorkspaceRefToRemote,
-      setWorkspaceBookmarkToCurrent,
-    }));
-
-    await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
-      getRepositoryIdentity,
-    }));
-
-    await moduleMocker.mock('./workspace_info.js', () => ({
-      getWorkspaceInfoByPath,
-      findPrimaryWorkspaceForRepository,
-      patchWorkspaceInfo,
-    }));
-
-    await moduleMocker.mock('../plan_materialize.js', () => ({
-      MATERIALIZED_DIR: '.tim/plans',
-    }));
-
-    await moduleMocker.mock('node:fs/promises', () => ({
-      readdir: readdirMock,
-      rm: rmMock,
-    }));
-
-    await moduleMocker.mock('../../logging.js', () => ({
-      warn: mock(() => {}),
-      log: mock(() => {}),
-      error: mock(() => {}),
-      sendStructured: mock(() => {}),
-    }));
-  });
-
-  afterEach(() => {
-    moduleMocker.clear();
+    });
+    mockHasUncommittedChanges.mockResolvedValue(false);
+    mockSetWorkspaceBookmarkToCurrent.mockResolvedValue(undefined);
+    mockPushWorkspaceRefToRemote.mockResolvedValue(undefined);
+    mockPullWorkspaceRefIfExists.mockResolvedValue(true);
+    mockGetRepositoryIdentity.mockResolvedValue({ repositoryId: 'repo' } as any);
+    mockFindPrimaryWorkspaceForRepository.mockReturnValue(null);
+    mockGetWorkspaceInfoByPath.mockReturnValue(null);
+    mockPatchWorkspaceInfo.mockReturnValue({} as any);
+    mockReaddir.mockResolvedValue([] as any);
+    mockRm.mockResolvedValue(undefined);
   });
 
   test('pushes to origin and refreshes the primary workspace when changes exist', async () => {
@@ -146,14 +148,18 @@ describe('runPostExecutionWorkspaceSync', () => {
       'sync workspace'
     );
 
-    expect(setWorkspaceBookmarkToCurrent).toHaveBeenCalledWith('/tmp/workspace', 'task-123', '@-');
-    expect(pushWorkspaceRefToRemote).toHaveBeenCalledWith({
+    expect(mockSetWorkspaceBookmarkToCurrent).toHaveBeenCalledWith(
+      '/tmp/workspace',
+      'task-123',
+      '@-'
+    );
+    expect(mockPushWorkspaceRefToRemote).toHaveBeenCalledWith({
       workspacePath: '/tmp/workspace',
       refName: 'task-123',
       remoteName: 'origin',
       ensureJjBookmarkAtCurrent: false,
     });
-    expect(pullWorkspaceRefIfExists).toHaveBeenCalledWith(
+    expect(mockPullWorkspaceRefIfExists).toHaveBeenCalledWith(
       '/tmp/primary',
       'task-123',
       'origin',
@@ -162,12 +168,12 @@ describe('runPostExecutionWorkspaceSync', () => {
         checkoutJjBookmark: false,
       }
     );
-    expect(readdirMock).toHaveBeenCalledWith('/tmp/workspace/.tim/plans');
+    expect(mockReaddir).toHaveBeenCalledWith('/tmp/workspace/.tim/plans');
   });
 
   test('skips push and deletes a newly created empty jj branch', async () => {
     const { runPostExecutionWorkspaceSync } = await import('./workspace_roundtrip.js');
-    compareRepositoryStates.mockReturnValue({
+    mockCompareRepositoryStates.mockReturnValue({
       commitChanged: false,
       workingTreeChanged: false,
       hasDifferences: false,
@@ -186,24 +192,24 @@ describe('runPostExecutionWorkspaceSync', () => {
       'sync workspace'
     );
 
-    expect(pushWorkspaceRefToRemote).not.toHaveBeenCalled();
-    expect(setWorkspaceBookmarkToCurrent).not.toHaveBeenCalled();
-    expect(logSpawn).toHaveBeenCalledWith(['jj', 'edit', 'main'], {
+    expect(mockPushWorkspaceRefToRemote).not.toHaveBeenCalled();
+    expect(mockSetWorkspaceBookmarkToCurrent).not.toHaveBeenCalled();
+    expect(mockLogSpawn).toHaveBeenCalledWith(['jj', 'edit', 'main'], {
       cwd: '/tmp/workspace',
       stdio: ['ignore', 'inherit', 'inherit'],
     });
-    expect(logSpawn).toHaveBeenCalledWith(['jj', 'bookmark', 'delete', 'task-123'], {
+    expect(mockLogSpawn).toHaveBeenCalledWith(['jj', 'bookmark', 'delete', 'task-123'], {
       cwd: '/tmp/workspace',
       stdio: ['ignore', 'inherit', 'inherit'],
     });
-    expect(patchWorkspaceInfo).toHaveBeenCalledWith('/tmp/workspace', { branch: '' });
-    expect(pullWorkspaceRefIfExists).not.toHaveBeenCalled();
+    expect(mockPatchWorkspaceInfo).toHaveBeenCalledWith('/tmp/workspace', { branch: '' });
+    expect(mockPullWorkspaceRefIfExists).not.toHaveBeenCalled();
   });
 
   test('skips push and deletes a newly created empty git branch', async () => {
     const { runPostExecutionWorkspaceSync } = await import('./workspace_roundtrip.js');
-    getUsingJj.mockReturnValue(Promise.resolve(false));
-    compareRepositoryStates.mockReturnValue({
+    mockGetUsingJj.mockResolvedValue(false);
+    mockCompareRepositoryStates.mockReturnValue({
       commitChanged: false,
       workingTreeChanged: false,
       hasDifferences: false,
@@ -222,23 +228,23 @@ describe('runPostExecutionWorkspaceSync', () => {
       'sync workspace'
     );
 
-    expect(pushWorkspaceRefToRemote).not.toHaveBeenCalled();
-    expect(setWorkspaceBookmarkToCurrent).not.toHaveBeenCalled();
-    expect(logSpawn).toHaveBeenCalledWith(['git', 'checkout', 'main'], {
+    expect(mockPushWorkspaceRefToRemote).not.toHaveBeenCalled();
+    expect(mockSetWorkspaceBookmarkToCurrent).not.toHaveBeenCalled();
+    expect(mockLogSpawn).toHaveBeenCalledWith(['git', 'checkout', 'main'], {
       cwd: '/tmp/workspace',
       stdio: ['ignore', 'inherit', 'inherit'],
     });
-    expect(logSpawn).toHaveBeenCalledWith(['git', 'branch', '-D', 'task-123'], {
+    expect(mockLogSpawn).toHaveBeenCalledWith(['git', 'branch', '-D', 'task-123'], {
       cwd: '/tmp/workspace',
       stdio: ['ignore', 'inherit', 'inherit'],
     });
-    expect(patchWorkspaceInfo).toHaveBeenCalledWith('/tmp/workspace', { branch: '' });
-    expect(pullWorkspaceRefIfExists).not.toHaveBeenCalled();
+    expect(mockPatchWorkspaceInfo).toHaveBeenCalledWith('/tmp/workspace', { branch: '' });
+    expect(mockPullWorkspaceRefIfExists).not.toHaveBeenCalled();
   });
 
   test('skips push without deleting when reusing an unchanged branch', async () => {
     const { runPostExecutionWorkspaceSync } = await import('./workspace_roundtrip.js');
-    compareRepositoryStates.mockReturnValue({
+    mockCompareRepositoryStates.mockReturnValue({
       commitChanged: false,
       workingTreeChanged: false,
       hasDifferences: false,
@@ -258,11 +264,11 @@ describe('runPostExecutionWorkspaceSync', () => {
       'sync workspace'
     );
 
-    expect(pushWorkspaceRefToRemote).not.toHaveBeenCalled();
-    expect(logSpawn).not.toHaveBeenCalled();
-    expect(patchWorkspaceInfo).not.toHaveBeenCalled();
+    expect(mockPushWorkspaceRefToRemote).not.toHaveBeenCalled();
+    expect(mockLogSpawn).not.toHaveBeenCalled();
+    expect(mockPatchWorkspaceInfo).not.toHaveBeenCalled();
     // Still refreshes the primary workspace from origin
-    expect(pullWorkspaceRefIfExists).toHaveBeenCalledWith(
+    expect(mockPullWorkspaceRefIfExists).toHaveBeenCalledWith(
       '/tmp/primary',
       'task-123',
       'origin',
@@ -290,14 +296,18 @@ describe('runPostExecutionWorkspaceSync', () => {
       'sync workspace'
     );
 
-    expect(setWorkspaceBookmarkToCurrent).toHaveBeenCalledWith('/tmp/workspace', 'task-123', '@-');
-    expect(pushWorkspaceRefToRemote).toHaveBeenCalledWith({
+    expect(mockSetWorkspaceBookmarkToCurrent).toHaveBeenCalledWith(
+      '/tmp/workspace',
+      'task-123',
+      '@-'
+    );
+    expect(mockPushWorkspaceRefToRemote).toHaveBeenCalledWith({
       workspacePath: '/tmp/workspace',
       refName: 'task-123',
       remoteName: 'origin',
       ensureJjBookmarkAtCurrent: false,
     });
-    expect(pullWorkspaceRefIfExists).toHaveBeenCalledWith(
+    expect(mockPullWorkspaceRefIfExists).toHaveBeenCalledWith(
       '/tmp/primary',
       'task-123',
       'origin',
@@ -306,18 +316,18 @@ describe('runPostExecutionWorkspaceSync', () => {
         checkoutJjBookmark: false,
       }
     );
-    expect(logSpawn).not.toHaveBeenCalled();
-    expect(patchWorkspaceInfo).not.toHaveBeenCalled();
+    expect(mockLogSpawn).not.toHaveBeenCalled();
+    expect(mockPatchWorkspaceInfo).not.toHaveBeenCalled();
   });
 
   test('still pushes when only uncommitted changes are present after execution', async () => {
     const { runPostExecutionWorkspaceSync } = await import('./workspace_roundtrip.js');
-    compareRepositoryStates.mockReturnValueOnce({
+    mockCompareRepositoryStates.mockReturnValueOnce({
       commitChanged: false,
       workingTreeChanged: false,
       hasDifferences: false,
     });
-    hasUncommittedChanges.mockResolvedValueOnce(true);
+    mockHasUncommittedChanges.mockResolvedValueOnce(true);
 
     await runPostExecutionWorkspaceSync(
       {
@@ -332,15 +342,15 @@ describe('runPostExecutionWorkspaceSync', () => {
       'sync workspace'
     );
 
-    expect(pushWorkspaceRefToRemote).toHaveBeenCalledWith({
+    expect(mockPushWorkspaceRefToRemote).toHaveBeenCalledWith({
       workspacePath: '/tmp/workspace',
       refName: 'task-123',
       remoteName: 'origin',
       ensureJjBookmarkAtCurrent: false,
     });
     // Verify no cleanup occurs when there are uncommitted changes
-    expect(logSpawn).not.toHaveBeenCalled();
-    expect(patchWorkspaceInfo).not.toHaveBeenCalled();
+    expect(mockLogSpawn).not.toHaveBeenCalled();
+    expect(mockPatchWorkspaceInfo).not.toHaveBeenCalled();
   });
 
   test('does not try to refresh origin when there is no primary workspace', async () => {
@@ -358,19 +368,19 @@ describe('runPostExecutionWorkspaceSync', () => {
       'sync workspace'
     );
 
-    expect(pullWorkspaceRefIfExists).not.toHaveBeenCalled();
+    expect(mockPullWorkspaceRefIfExists).not.toHaveBeenCalled();
   });
 
   test('throws and does not clear branch metadata when cleanup commands fail', async () => {
     const { runPostExecutionWorkspaceSync } = await import('./workspace_roundtrip.js');
-    getUsingJj.mockReturnValue(Promise.resolve(false));
-    compareRepositoryStates.mockReturnValue({
+    mockGetUsingJj.mockResolvedValue(false);
+    mockCompareRepositoryStates.mockReturnValue({
       commitChanged: false,
       workingTreeChanged: false,
       hasDifferences: false,
     });
     // Make git checkout fail
-    logSpawn.mockReturnValue({ exited: Promise.resolve(1), exitCode: 1 } as any);
+    mockLogSpawn.mockReturnValue({ exited: Promise.resolve(1), exitCode: 1 } as any);
 
     await expect(
       runPostExecutionWorkspaceSync(
@@ -387,19 +397,19 @@ describe('runPostExecutionWorkspaceSync', () => {
       )
     ).rejects.toThrow('Failed to checkout main for branch cleanup');
 
-    expect(patchWorkspaceInfo).not.toHaveBeenCalled();
+    expect(mockPatchWorkspaceInfo).not.toHaveBeenCalled();
   });
 
   test('throws when git branch delete fails after successful checkout', async () => {
     const { runPostExecutionWorkspaceSync } = await import('./workspace_roundtrip.js');
-    getUsingJj.mockReturnValue(Promise.resolve(false));
-    compareRepositoryStates.mockReturnValue({
+    mockGetUsingJj.mockResolvedValue(false);
+    mockCompareRepositoryStates.mockReturnValue({
       commitChanged: false,
       workingTreeChanged: false,
       hasDifferences: false,
     });
     // First call (checkout) succeeds, second call (branch -D) fails
-    logSpawn
+    mockLogSpawn
       .mockReturnValueOnce({ exited: Promise.resolve(0), exitCode: 0 } as any)
       .mockReturnValueOnce({ exited: Promise.resolve(1), exitCode: 1 } as any);
 
@@ -418,13 +428,13 @@ describe('runPostExecutionWorkspaceSync', () => {
       )
     ).rejects.toThrow('Failed to delete git branch task-123');
 
-    expect(patchWorkspaceInfo).not.toHaveBeenCalled();
+    expect(mockPatchWorkspaceInfo).not.toHaveBeenCalled();
   });
 
   test('skips cleanup when the branch to delete matches the restore branch', async () => {
     const { runPostExecutionWorkspaceSync } = await import('./workspace_roundtrip.js');
-    getUsingJj.mockReturnValue(Promise.resolve(false));
-    compareRepositoryStates.mockReturnValue({
+    mockGetUsingJj.mockResolvedValue(false);
+    mockCompareRepositoryStates.mockReturnValue({
       commitChanged: false,
       workingTreeChanged: false,
       hasDifferences: false,
@@ -443,8 +453,8 @@ describe('runPostExecutionWorkspaceSync', () => {
       'sync workspace'
     );
 
-    expect(logSpawn).not.toHaveBeenCalled();
-    expect(patchWorkspaceInfo).not.toHaveBeenCalled();
+    expect(mockLogSpawn).not.toHaveBeenCalled();
+    expect(mockPatchWorkspaceInfo).not.toHaveBeenCalled();
   });
 
   test('pushes to origin when preExecutionState is not set', async () => {
@@ -459,7 +469,7 @@ describe('runPostExecutionWorkspaceSync', () => {
       'sync workspace'
     );
 
-    expect(pushWorkspaceRefToRemote).toHaveBeenCalledWith({
+    expect(mockPushWorkspaceRefToRemote).toHaveBeenCalledWith({
       workspacePath: '/tmp/workspace',
       refName: 'task-123',
       remoteName: 'origin',
@@ -469,77 +479,22 @@ describe('runPostExecutionWorkspaceSync', () => {
 });
 
 describe('runPreExecutionWorkspaceSync', () => {
-  let moduleMocker: ModuleMocker;
-  const captureRepositoryState = mock(async () => ({
-    commitHash: 'after-pull',
-    hasChanges: false,
-    statusOutput: '',
-    diffHash: 'hash',
-  }));
-  const pullWorkspaceRefIfExists = mock(async () => true);
-  const readdirMock = mock(async () => []);
-  const rmMock = mock(async () => {});
+  const mockCaptureRepositoryState = vi.mocked(captureRepositoryState);
+  const mockPullWorkspaceRefIfExists = vi.mocked(pullWorkspaceRefIfExists);
+  const mockReaddir = vi.mocked(readdirMock);
+  const mockRm = vi.mocked(rmMock);
 
-  beforeEach(async () => {
-    moduleMocker = new ModuleMocker(import.meta);
-    captureRepositoryState.mockClear();
-    pullWorkspaceRefIfExists.mockClear();
-    readdirMock.mockClear();
-    rmMock.mockClear();
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      captureRepositoryState,
-      compareRepositoryStates: mock(() => ({
-        commitChanged: true,
-        workingTreeChanged: false,
-        hasDifferences: true,
-      })),
-      getCurrentBranchName: mock(async () => 'task-123'),
-      getTrunkBranch: mock(async () => 'main'),
-      getUsingJj: mock(async () => true),
-      hasUncommittedChanges: mock(async () => false),
-    }));
-
-    await moduleMocker.mock('../../common/process.js', () => ({
-      commitAll: mock(async () => 1),
-      logSpawn: mock(() => ({ exited: Promise.resolve(0), exitCode: 0 })),
-    }));
-
-    await moduleMocker.mock('../commands/workspace.js', () => ({
-      pullWorkspaceRefIfExists,
-      pushWorkspaceRefToRemote: mock(async () => {}),
-      setWorkspaceBookmarkToCurrent: mock(async () => {}),
-    }));
-
-    await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
-      getRepositoryIdentity: mock(async () => ({ repositoryId: 'repo' })),
-    }));
-
-    await moduleMocker.mock('./workspace_info.js', () => ({
-      getWorkspaceInfoByPath: mock(() => null),
-      findPrimaryWorkspaceForRepository: mock(() => null),
-      patchWorkspaceInfo: mock(() => ({})),
-    }));
-
-    await moduleMocker.mock('../plan_materialize.js', () => ({
-      MATERIALIZED_DIR: '.tim/plans',
-    }));
-
-    await moduleMocker.mock('node:fs/promises', () => ({
-      readdir: readdirMock,
-      rm: rmMock,
-    }));
-
-    await moduleMocker.mock('../../logging.js', () => ({
-      warn: mock(() => {}),
-      log: mock(() => {}),
-      error: mock(() => {}),
-      sendStructured: mock(() => {}),
-    }));
-  });
-
-  afterEach(() => {
-    moduleMocker.clear();
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCaptureRepositoryState.mockResolvedValue({
+      commitHash: 'after-pull',
+      hasChanges: false,
+      statusOutput: '',
+      diffHash: 'hash',
+    });
+    mockPullWorkspaceRefIfExists.mockResolvedValue(true);
+    mockReaddir.mockResolvedValue([] as any);
+    mockRm.mockResolvedValue(undefined);
   });
 
   test('pulls from origin and captures state after pull', async () => {
@@ -551,9 +506,13 @@ describe('runPreExecutionWorkspaceSync', () => {
 
     await runPreExecutionWorkspaceSync(context);
 
-    expect(readdirMock).toHaveBeenCalledWith('/tmp/workspace/.tim/plans');
-    expect(pullWorkspaceRefIfExists).toHaveBeenCalledWith('/tmp/workspace', 'task-123', 'origin');
-    expect(captureRepositoryState).toHaveBeenCalledWith('/tmp/workspace');
+    expect(mockReaddir).toHaveBeenCalledWith('/tmp/workspace/.tim/plans');
+    expect(mockPullWorkspaceRefIfExists).toHaveBeenCalledWith(
+      '/tmp/workspace',
+      'task-123',
+      'origin'
+    );
+    expect(mockCaptureRepositoryState).toHaveBeenCalledWith('/tmp/workspace');
     expect(context.preExecutionState).toEqual({
       commitHash: 'after-pull',
       hasChanges: false,
@@ -572,8 +531,8 @@ describe('runPreExecutionWorkspaceSync', () => {
 
     await runPreExecutionWorkspaceSync(context);
 
-    expect(pullWorkspaceRefIfExists).not.toHaveBeenCalled();
-    expect(captureRepositoryState).toHaveBeenCalledWith('/tmp/workspace');
+    expect(mockPullWorkspaceRefIfExists).not.toHaveBeenCalled();
+    expect(mockCaptureRepositoryState).toHaveBeenCalledWith('/tmp/workspace');
     expect(context.preExecutionState).toEqual({
       commitHash: 'after-pull',
       hasChanges: false,
@@ -595,106 +554,71 @@ describe('wipeMaterializedPlans', () => {
     await writeFile(path.join(plansDir, '.gitignore'), '*.plan.md');
     await writeFile(path.join(plansDir, '.gitkeep'), '');
 
+    // Restore real fs for this test
+    const { readdir: realReaddir, rm: realRm } =
+      await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+    vi.mocked(readdirMock).mockImplementation(realReaddir as any);
+    vi.mocked(rmMock).mockImplementation(realRm as any);
+
     try {
       const { wipeMaterializedPlans } = await import('./workspace_roundtrip.js');
       await wipeMaterializedPlans(workspaceDir);
 
-      const remainingEntries = await readdir(plansDir);
+      const remainingEntries = await realReaddir(plansDir);
       expect(remainingEntries).toHaveLength(2);
       expect(remainingEntries.sort()).toEqual(['.gitignore', '.gitkeep']);
     } finally {
-      await rm(workspaceDir, { force: true, recursive: true });
+      await realRm(workspaceDir, { force: true, recursive: true });
     }
   });
 
   test('ignores missing materialized plans directory', async () => {
-    const workspaceDir = await mkdtemp(path.join(os.tmpdir(), 'workspace-roundtrip-'));
+    const { mkdtemp: realMkdtemp, rm: realRm } =
+      await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+    const workspaceDir = await (realMkdtemp as typeof mkdtemp)(
+      path.join(os.tmpdir(), 'workspace-roundtrip-')
+    );
+
+    // Restore real fs for this test
+    const { readdir: realReaddir } =
+      await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+    vi.mocked(readdirMock).mockImplementation(realReaddir as any);
+    vi.mocked(rmMock).mockImplementation(realRm as any);
 
     try {
       const { wipeMaterializedPlans } = await import('./workspace_roundtrip.js');
       await expect(wipeMaterializedPlans(workspaceDir)).resolves.toBeUndefined();
     } finally {
-      await rm(workspaceDir, { force: true, recursive: true });
+      await (realRm as typeof rm)(workspaceDir, { force: true, recursive: true });
     }
   });
 });
 
 describe('prepareWorkspaceRoundTrip', () => {
-  let moduleMocker: ModuleMocker;
-  const getCurrentBranchName = mock(async () => 'task-123');
-  const getTrunkBranch = mock(async () => 'main');
-  const getRepositoryIdentity = mock(async () => ({ repositoryId: 'repo' }));
-  const findPrimaryWorkspaceForRepository = mock(() => null);
-  const getWorkspaceInfoByPath = mock(() => null);
+  const mockGetCurrentBranchName = vi.mocked(getCurrentBranchName);
+  const mockGetTrunkBranch = vi.mocked(getTrunkBranch);
+  const mockGetRepositoryIdentity = vi.mocked(getRepositoryIdentity);
+  const mockFindPrimaryWorkspaceForRepository = vi.mocked(findPrimaryWorkspaceForRepository);
+  const mockGetWorkspaceInfoByPath = vi.mocked(getWorkspaceInfoByPath);
 
-  beforeEach(async () => {
-    moduleMocker = new ModuleMocker(import.meta);
-    getCurrentBranchName.mockClear();
-    getTrunkBranch.mockClear();
-    getRepositoryIdentity.mockClear();
-    findPrimaryWorkspaceForRepository.mockClear();
-    getWorkspaceInfoByPath.mockClear();
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      captureRepositoryState: mock(async () => ({
-        commitHash: 'before',
-        hasChanges: false,
-        statusOutput: '',
-        diffHash: 'hash',
-      })),
-      compareRepositoryStates: mock(() => ({
-        commitChanged: true,
-        workingTreeChanged: false,
-        hasDifferences: true,
-      })),
-      getCurrentBranchName,
-      getTrunkBranch,
-      getUsingJj: mock(async () => true),
-      hasUncommittedChanges: mock(async () => false),
-    }));
-
-    await moduleMocker.mock('../../common/process.js', () => ({
-      commitAll: mock(async () => 1),
-      logSpawn: mock(() => ({ exited: Promise.resolve(0), exitCode: 0 })),
-    }));
-
-    await moduleMocker.mock('../commands/workspace.js', () => ({
-      pullWorkspaceRefIfExists: mock(async () => true),
-      pushWorkspaceRefToRemote: mock(async () => {}),
-      setWorkspaceBookmarkToCurrent: mock(async () => {}),
-    }));
-
-    await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
-      getRepositoryIdentity,
-    }));
-
-    await moduleMocker.mock('./workspace_info.js', () => ({
-      getWorkspaceInfoByPath,
-      findPrimaryWorkspaceForRepository,
-      patchWorkspaceInfo: mock(() => ({})),
-    }));
-
-    await moduleMocker.mock('../../logging.js', () => ({
-      warn: mock(() => {}),
-      log: mock(() => {}),
-      error: mock(() => {}),
-      sendStructured: mock(() => {}),
-    }));
-  });
-
-  afterEach(() => {
-    moduleMocker.clear();
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetCurrentBranchName.mockResolvedValue('task-123');
+    mockGetTrunkBranch.mockResolvedValue('main');
+    mockGetRepositoryIdentity.mockResolvedValue({ repositoryId: 'repo' } as any);
+    mockFindPrimaryWorkspaceForRepository.mockReturnValue(null);
+    mockGetWorkspaceInfoByPath.mockReturnValue(null);
   });
 
   test('includes the primary workspace in sync context when available', async () => {
-    getWorkspaceInfoByPath.mockReturnValue({
+    mockGetWorkspaceInfoByPath.mockReturnValue({
       workspaceType: 'standard',
       repositoryId: 'repo',
       branch: 'task-123',
-    });
-    findPrimaryWorkspaceForRepository.mockReturnValue({
+    } as any);
+    mockFindPrimaryWorkspaceForRepository.mockReturnValue({
       workspacePath: '/tmp/primary',
-    });
+    } as any);
 
     const { prepareWorkspaceRoundTrip } = await import('./workspace_roundtrip.js');
 
@@ -713,15 +637,15 @@ describe('prepareWorkspaceRoundTrip', () => {
   });
 
   test('returns null when the current branch is the trunk branch', async () => {
-    getCurrentBranchName.mockReturnValue(Promise.resolve('main'));
-    getWorkspaceInfoByPath.mockReturnValue({
+    mockGetCurrentBranchName.mockResolvedValue('main');
+    mockGetWorkspaceInfoByPath.mockReturnValue({
       workspaceType: 'standard',
       repositoryId: 'repo',
       branch: 'main',
-    });
-    findPrimaryWorkspaceForRepository.mockReturnValue({
+    } as any);
+    mockFindPrimaryWorkspaceForRepository.mockReturnValue({
       workspacePath: '/tmp/primary',
-    });
+    } as any);
 
     const { prepareWorkspaceRoundTrip } = await import('./workspace_roundtrip.js');
 

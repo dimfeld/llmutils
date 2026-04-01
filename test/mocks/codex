@@ -1,0 +1,10 @@
+#!/bin/bash
+
+echo "ERROR: Attempted to execute real Codex CLI during testing!"
+echo "This is a mock executable designed to prevent accidental real CLI execution."
+echo ""
+echo "If you're seeing this error, it means a test is trying to call the real 'codex' command."
+echo "Please check the test code to ensure it's properly mocked."
+echo ""
+echo "For testing purposes, you should mock the codex CLI or use test doubles."
+exit 1

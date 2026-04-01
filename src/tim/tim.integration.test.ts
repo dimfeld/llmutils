@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -9,19 +9,57 @@ import { handleAddCommand } from './commands/add.js';
 import { handleAddTaskCommand } from './commands/add-task.js';
 import { handleDoneCommand } from './commands/done.js';
 import { handleRemoveTaskCommand } from './commands/remove-task.js';
-import { ModuleMocker } from '../testing.js';
 import { materializePlan } from './plan_materialize.js';
 
 // Handlers that rely on mocked modules are imported dynamically in beforeEach
 let handleListCommand: any;
 let handleShowCommand: any;
 
+// Mock the logging module
+const { mockLog } = vi.hoisted(() => ({
+  mockLog: vi.fn(() => {}),
+}));
+
+// Import mocked modules for setup
+import { table } from 'table';
+import { getGitRoot, getCurrentBranchName } from '../common/git.js';
+
+vi.mock('../logging.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../logging.js')>();
+  return {
+    ...actual,
+    log: mockLog,
+    debugLog: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    info: vi.fn(),
+    debug: vi.fn(),
+  };
+});
+
+// Mock the table module
+vi.mock('table', () => ({
+  table: vi.fn((data: any[]) => data.map((row: any[]) => row.join('\t')).join('\n')),
+}));
+
+// Mock the git module
+vi.mock('../common/git.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../common/git.js')>();
+  return {
+    ...actual,
+    getGitRoot: vi.fn(),
+    getCurrentBranchName: vi.fn(),
+  };
+});
+
+// Helper to get typed mock
+const mockGetGitRoot = getGitRoot as ReturnType<typeof vi.fn>;
+const mockGetCurrentBranchName = getCurrentBranchName as ReturnType<typeof vi.fn>;
+
 describe('tim CLI integration tests (internal handlers)', () => {
   let tempDir: string;
   let tasksDir: string;
   let configPath: string;
-  const moduleMocker = new ModuleMocker(import.meta);
-  const mockLog = mock(() => {});
 
   beforeEach(async () => {
     // Clear plan cache
@@ -43,28 +81,24 @@ describe('tim CLI integration tests (internal handlers)', () => {
       })
     );
 
-    // Set up logging/table mocks and dynamically import handlers that use them
+    // Set up logging mocks and dynamically import handlers that use them
     mockLog.mockClear();
-    await moduleMocker.mock('../logging.js', () => ({
-      log: mockLog,
-      error: mockLog,
-      warn: mockLog,
-    }));
-    await moduleMocker.mock('table', () => ({
-      table: (data: any[]) => data.map((row: any[]) => row.join('\t')).join('\n'),
-    }));
-    await moduleMocker.mock('../common/git.js', () => ({
-      getGitRoot: async () => tempDir,
-      getCurrentBranchName: async () => null,
-    }));
-    ({ handleListCommand } = await import('./commands/list.js'));
-    ({ handleShowCommand } = await import('./commands/show.js'));
+
+    // Set up mock implementations
+    mockGetGitRoot.mockReturnValue(tempDir);
+    mockGetCurrentBranchName.mockReturnValue(null);
+
+    // Import handlers that rely on mocked modules
+    const listModule = await import('./commands/list.js');
+    const showModule = await import('./commands/show.js');
+    handleListCommand = listModule.handleListCommand;
+    handleShowCommand = showModule.handleShowCommand;
   });
 
   afterEach(async () => {
     // Clean up
     await fs.rm(tempDir, { recursive: true, force: true });
-    moduleMocker.clear();
+    vi.clearAllMocks();
   });
 
   test('tim add creates a new plan', async () => {
@@ -178,7 +212,7 @@ describe('tim CLI integration tests (internal handlers)', () => {
     const [task] = updatedPlan.tasks;
     expect(task?.title).toBe('Integration Task');
     expect(task?.description).toBe('Created via add-task integration test');
-    expect(task?.done).toBeFalse();
+    expect(task?.done).toBeFalsy();
     expect(typeof updatedPlan.updatedAt).toBe('string');
 
     const logOutput = mockLog.mock.calls.flat().join('\n');
@@ -269,7 +303,7 @@ describe('tim CLI integration tests (internal handlers)', () => {
 
     const logOutput = mockLog.mock.calls.flat().join('\n');
     expect(logOutput).toContain('Removed task "First Task"');
-    expect(logOutput).toContain('have shifted');
+    expect(logOutput).toContain('previously at index 1');
   });
 
   test('tim show --next finds next ready plan', async () => {

@@ -1,87 +1,145 @@
-import { describe, test, expect, mock, afterEach, beforeEach } from 'bun:test';
+import { describe, test, expect, vi, afterEach, beforeEach } from 'vitest';
 import { runWithLogger, type LoggerAdapter } from '../../../logging/adapter.js';
 import type { StructuredMessage } from '../../../logging/structured_messages.js';
-import { ModuleMocker } from '../../../testing.js';
 import { resetShutdownState, setShuttingDown } from '../../shutdown_state.js';
 
-describe('executeBatchMode stops on structured executor failure', () => {
-  const moduleMocker = new ModuleMocker(import.meta);
+let readCount = 0;
+let incompleteCalls = 0;
+let workingCopyCallCount = 0;
+let runUpdateDocsShutdown = false;
 
-  const commitAllSpy = mock(async () => 0);
-  const executePostApplyCommandSpy = mock(async () => true);
+const commitAllSpy = vi.fn(async () => 0);
+const executePostApplyCommandSpy = vi.fn(async () => true);
 
-  function createCaptureAdapter(structuredMessages: StructuredMessage[]): LoggerAdapter {
-    return {
-      log: () => {},
-      error: () => {},
-      warn: () => {},
-      writeStdout: () => {},
-      writeStderr: () => {},
-      debugLog: () => {},
-      sendStructured: (message: StructuredMessage) => {
-        structuredMessages.push(message);
-      },
-    };
+vi.mock('../../plans.js', () => {
+  class PlanNotFoundError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = 'PlanNotFoundError';
+    }
   }
+  class NoFrontmatterError extends Error {
+    constructor(filePath: string) {
+      super(`File lacks frontmatter: ${filePath}`);
+      this.name = 'NoFrontmatterError';
+    }
+  }
+  return {
+    PlanNotFoundError,
+    NoFrontmatterError,
+    readPlanFile: vi.fn(async () => ({
+      id: 1,
+      title: 'P',
+      status: readCount++ === 0 ? 'pending' : 'in_progress',
+      tasks: [{ title: 'T', steps: [{ prompt: 'p', done: false }] }],
+    })),
+    writePlanFile: vi.fn(async (_p: string, _data: any) => {}),
+    setPlanStatus: vi.fn(async () => {}),
+    generatePlanFileContent: vi.fn(() => ''),
+    resolvePlanFromDb: vi.fn(async () => ({
+      plan: { id: 1, title: 'P', status: 'pending', tasks: [] },
+      planPath: '',
+    })),
+    writePlanToDb: vi.fn(async () => {}),
+    setPlanStatusById: vi.fn(async () => {}),
+    isTaskDone: vi.fn(() => false),
+  };
+});
 
+vi.mock('../../plans/find_next.js', () => ({
+  getAllIncompleteTasks: vi.fn(() => {
+    incompleteCalls += 1;
+    return [
+      {
+        taskIndex: 0,
+        task: { title: 'T1', description: 'D1', steps: [{ prompt: 'p', done: false }] },
+      },
+    ];
+  }),
+  findPendingTask: vi.fn(() => null),
+  findNextActionableItem: vi.fn(() => null),
+}));
+
+vi.mock('../../prompt_builder.js', () => ({
+  buildExecutionPromptWithoutSteps: vi.fn(async () => 'BATCH PROMPT'),
+}));
+
+vi.mock('../../actions.js', () => ({
+  executePostApplyCommand: executePostApplyCommandSpy,
+}));
+
+vi.mock('../update-docs.js', () => ({
+  runUpdateDocs: vi.fn(async () => {
+    if (runUpdateDocsShutdown) {
+      setShuttingDown(130);
+    }
+  }),
+}));
+
+vi.mock('../../../common/process.js', () => ({
+  commitAll: commitAllSpy,
+}));
+
+vi.mock('../../../common/git.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../common/git.js')>();
+  return {
+    ...actual,
+    getWorkingCopyStatus: vi.fn(async () => ({
+      hasChanges: true,
+      checkFailed: false,
+      diffHash: `hash-${workingCopyCallCount++}`,
+    })),
+  };
+});
+
+vi.mock('../../plan_materialize.js', () => ({
+  materializePlan: vi.fn(async () => {}),
+  syncMaterializedPlan: vi.fn(async () => {}),
+  getMaterializedPlanPath: vi.fn(() => '/tmp/plan.md'),
+  getShadowPlanPath: vi.fn(() => '/tmp/.plan.md.shadow'),
+  materializeRelatedPlans: vi.fn(async () => {}),
+  withPlanAutoSync: vi.fn(async (_id: any, _root: any, fn: () => any) => fn()),
+  resolveProjectContext: vi.fn(async () => ({
+    projectId: 1,
+    planRowsByPlanId: new Map(),
+    planRowsByUuid: new Map(),
+    maxNumericId: 0,
+  })),
+  readMaterializedPlanRole: vi.fn(async () => null),
+  MATERIALIZED_DIR: '.tim/plans',
+}));
+
+function createCaptureAdapter(structuredMessages: StructuredMessage[]): LoggerAdapter {
+  return {
+    log: () => {},
+    error: () => {},
+    warn: () => {},
+    writeStdout: () => {},
+    writeStderr: () => {},
+    debugLog: () => {},
+    sendStructured: (message: StructuredMessage) => {
+      structuredMessages.push(message);
+    },
+  };
+}
+
+describe('executeBatchMode stops on structured executor failure', () => {
   beforeEach(() => {
+    readCount = 0;
+    incompleteCalls = 0;
+    workingCopyCallCount = 0;
+    runUpdateDocsShutdown = false;
     commitAllSpy.mockClear();
     executePostApplyCommandSpy.mockClear();
     resetShutdownState();
   });
 
   afterEach(() => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     resetShutdownState();
   });
 
   test('breaks after first iteration, prints details, records failed step, and throws', async () => {
-    // Mock plans and helpers used by batch_mode
-    let readCount = 0;
-    await moduleMocker.mock('../../plans.js', () => ({
-      readPlanFile: mock(async () => ({
-        id: 1,
-        title: 'P',
-        status: readCount++ === 0 ? 'pending' : 'in_progress',
-        tasks: [{ title: 'T', steps: [{ prompt: 'p', done: false }] }],
-      })),
-      writePlanFile: mock(async (_p: string, _data: any) => {}),
-      setPlanStatus: mock(async () => {}),
-    }));
-
-    // First call returns one incomplete task; subsequent calls would normally continue
-    let incompleteCalls = 0;
-    await moduleMocker.mock('../../plans/find_next.js', () => ({
-      getAllIncompleteTasks: mock(() => {
-        incompleteCalls += 1;
-        return incompleteCalls === 1
-          ? [
-              {
-                taskIndex: 0,
-                task: { title: 'T1', description: 'D1', steps: [{ prompt: 'p', done: false }] },
-              },
-            ]
-          : [
-              {
-                taskIndex: 0,
-                task: { title: 'T1', description: 'D1', steps: [{ prompt: 'p', done: false }] },
-              },
-            ];
-      }),
-    }));
-
-    await moduleMocker.mock('../../prompt_builder.js', () => ({
-      buildExecutionPromptWithoutSteps: mock(async () => 'BATCH PROMPT'),
-    }));
-
-    await moduleMocker.mock('../../actions.js', () => ({
-      executePostApplyCommand: executePostApplyCommandSpy,
-    }));
-
-    await moduleMocker.mock('../../../common/process.js', () => ({
-      commitAll: commitAllSpy,
-    }));
-
     const { SummaryCollector } = await import('../../summary/collector.js');
     const { formatExecutionSummaryToLines } = await import('../../summary/display.js');
     const { executeBatchMode } = await import('./batch_mode.js');
@@ -89,7 +147,7 @@ describe('executeBatchMode stops on structured executor failure', () => {
     // Executor that returns a structured failure
     const executor = {
       filePathPrefix: '',
-      execute: mock(async () => ({
+      execute: vi.fn(async () => ({
         content:
           'FAILED: Implementer reported a failure — Cannot proceed with changes' +
           '\n\nRequirements:\n- A' +
@@ -157,7 +215,7 @@ describe('executeBatchMode stops on structured executor failure', () => {
     // Summary contains one failed step with details
     const summary = collector.getExecutionSummary();
     expect(summary.steps.length).toBe(1);
-    expect(summary.steps[0].success).toBeFalse();
+    expect(summary.steps[0].success).toBe(false);
     expect(summary.steps[0].output?.failureDetails?.sourceAgent).toBe('implementer');
 
     // Rendered summary prominently includes FAILED details
@@ -168,72 +226,14 @@ describe('executeBatchMode stops on structured executor failure', () => {
   });
 
   test('does not run post-apply commands or commit after shutdown is requested during docs update', async () => {
-    let workingCopyCallCount = 0;
-    await moduleMocker.mock('../../../common/git.js', () => ({
-      getWorkingCopyStatus: mock(async () => ({
-        hasChanges: true,
-        checkFailed: false,
-        diffHash: `hash-${workingCopyCallCount++}`,
-      })),
-    }));
-
-    let readCount = 0;
-    await moduleMocker.mock('../../plans.js', () => ({
-      readPlanFile: mock(async () => ({
-        id: 1,
-        title: 'P',
-        status: readCount++ === 0 ? 'pending' : 'in_progress',
-        tasks: [{ title: 'T', steps: [{ prompt: 'p', done: false }] }],
-      })),
-      writePlanFile: mock(async (_p: string, _data: any) => {}),
-      setPlanStatus: mock(async () => {}),
-    }));
-
-    let incompleteCalls = 0;
-    await moduleMocker.mock('../../plans/find_next.js', () => ({
-      getAllIncompleteTasks: mock(() => {
-        incompleteCalls += 1;
-        return incompleteCalls === 1
-          ? [
-              {
-                taskIndex: 0,
-                task: { title: 'T1', description: 'D1', steps: [{ prompt: 'p', done: false }] },
-              },
-            ]
-          : [
-              {
-                taskIndex: 0,
-                task: { title: 'T1', description: 'D1', steps: [{ prompt: 'p', done: false }] },
-              },
-            ];
-      }),
-    }));
-
-    await moduleMocker.mock('../../prompt_builder.js', () => ({
-      buildExecutionPromptWithoutSteps: mock(async () => 'BATCH PROMPT'),
-    }));
-
-    await moduleMocker.mock('../../actions.js', () => ({
-      executePostApplyCommand: executePostApplyCommandSpy,
-    }));
-
-    const runUpdateDocsSpy = mock(async () => {
-      setShuttingDown(130);
-    });
-    await moduleMocker.mock('../update-docs.js', () => ({
-      runUpdateDocs: runUpdateDocsSpy,
-    }));
-
-    await moduleMocker.mock('../../../common/process.js', () => ({
-      commitAll: commitAllSpy,
-    }));
+    runUpdateDocsShutdown = true;
 
     const { SummaryCollector } = await import('../../summary/collector.js');
     const { executeBatchMode } = await import('./batch_mode.js');
 
     const executor = {
       filePathPrefix: '',
-      execute: mock(async () => ({
+      execute: vi.fn(async () => ({
         content: 'ok',
         success: true,
       })),
@@ -245,6 +245,8 @@ describe('executeBatchMode stops on structured executor failure', () => {
       planFilePath: '/tmp/plan.yml',
       mode: 'batch',
     });
+
+    const { runUpdateDocs } = await import('../update-docs.js');
 
     await runWithLogger(createCaptureAdapter([]), async () => {
       await executeBatchMode(
@@ -265,7 +267,7 @@ describe('executeBatchMode stops on structured executor failure', () => {
       );
     });
 
-    expect(runUpdateDocsSpy).toHaveBeenCalledTimes(1);
+    expect(runUpdateDocs).toHaveBeenCalledTimes(1);
     expect(executePostApplyCommandSpy).not.toHaveBeenCalled();
     expect(commitAllSpy).not.toHaveBeenCalled();
   });

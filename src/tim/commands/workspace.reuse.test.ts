@@ -1,15 +1,54 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
+
+vi.mock('../../logging.js', () => ({
+  log: vi.fn(() => {}),
+  warn: vi.fn(() => {}),
+  debugLog: vi.fn(() => {}),
+}));
+
+vi.mock('../configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(async () => ({})),
+}));
+
+vi.mock('../../common/git.js', () => ({
+  getGitRoot: vi.fn(async () => ''),
+  getCurrentBranchName: vi.fn(async () => 'main'),
+  getCurrentCommitHash: vi.fn(async () => null),
+  isInGitRepository: vi.fn(async () => true),
+  hasUncommittedChanges: vi.fn(async () => false),
+  getTrunkBranch: vi.fn(async () => 'main'),
+  getUsingJj: vi.fn(async () => false),
+  clearAllGitCaches: vi.fn(() => {}),
+}));
+
+vi.mock('../assignments/workspace_identifier.js', () => ({
+  getRepositoryIdentity: vi.fn(async () => ({
+    repositoryId: 'test-repo-id',
+    remoteUrl: '',
+    gitRoot: '',
+  })),
+  getUserIdentity: vi.fn(() => 'tester'),
+}));
+
 import { WorkspaceLock } from '../workspace/workspace_lock.js';
-import { ModuleMocker, stringifyPlanWithFrontmatter } from '../../testing.js';
+import { stringifyPlanWithFrontmatter } from '../../testing.js';
 import type { PlanSchema } from '../planSchema.js';
 import { clearAllGitCaches } from '../../common/git.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { getOrCreateProject, getProjectById, listProjects } from '../db/project.js';
 import { loadPlansFromDb } from '../plans_db.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import { log, warn } from '../../logging.js';
+import { loadEffectiveConfig } from '../configLoader.js';
+import {
+  getCurrentBranchName,
+  getCurrentCommitHash,
+  getGitRoot,
+  hasUncommittedChanges,
+} from '../../common/git.js';
 import {
   findWorkspacesByProjectId,
   getWorkspaceIssues,
@@ -18,15 +57,14 @@ import {
   type WorkspaceRow,
 } from '../db/workspace.js';
 
-let moduleMocker: ModuleMocker;
 let tempDir: string;
 let clonesDir: string;
 let mainRepoDir: string;
 let originalHome: string | undefined;
 let originalEnv: { XDG_CONFIG_HOME?: string; APPDATA?: string };
 
-const logSpy = mock(() => {});
-const warnSpy = mock(() => {});
+const logSpy = vi.mocked(log);
+const warnSpy = vi.mocked(warn);
 
 /**
  * Helper function to run git commands
@@ -193,7 +231,6 @@ describe('workspace add --reuse and --try-reuse', () => {
 
   beforeEach(async () => {
     clearAllGitCaches();
-    moduleMocker = new ModuleMocker(import.meta);
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-reuse-test-'));
     clonesDir = path.join(tempDir, 'clones');
     mainRepoDir = path.join(tempDir, 'main-repo');
@@ -220,59 +257,49 @@ describe('workspace add --reuse and --try-reuse', () => {
     // Create a tasks directory in the main repo
     await fs.mkdir(path.join(mainRepoDir, 'tasks'), { recursive: true });
 
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: logSpy,
-      warn: warnSpy,
-    }));
+    vi.clearAllMocks();
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: {
-          tasks: 'tasks',
-        },
-        workspaceCreation: {
-          repositoryUrl: bareRemoteDir,
-          cloneLocation: clonesDir,
-          createBranch: true,
-        },
-      }),
-    }));
+    // Set up mock implementations now that we have the real paths
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
+      paths: {
+        tasks: 'tasks',
+      },
+      workspaceCreation: {
+        repositoryUrl: bareRemoteDir,
+        cloneLocation: clonesDir,
+        createBranch: true,
+      },
+    } as any);
 
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => mainRepoDir,
-      getCurrentBranchName: async (cwd?: string) => {
-        if (cwd) {
-          const result = await runGit(cwd, ['branch', '--show-current']);
-          return result.stdout.trim() || 'main';
-        }
-        return 'main';
-      },
-      getCurrentCommitHash: async (cwd: string) => {
-        const result = await runGit(cwd, ['rev-parse', 'HEAD']);
-        return result.exitCode === 0 ? result.stdout.trim() : null;
-      },
-      isInGitRepository: async () => true,
-      hasUncommittedChanges: async (cwd: string) => {
-        // Check for actual uncommitted changes
-        const result = await runGit(cwd, ['status', '--porcelain']);
-        if (result.exitCode !== 0) {
-          throw new Error('Not a git repository');
-        }
-        return result.stdout.trim().length > 0;
-      },
-      getTrunkBranch: async () => 'main',
-      getUsingJj: async () => false,
-      clearAllGitCaches: () => {},
-    }));
+    vi.mocked(getGitRoot).mockResolvedValue(mainRepoDir);
 
-    await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
-      getRepositoryIdentity: async () => ({
-        repositoryId: 'test-repo-id',
-        remoteUrl: bareRemoteDir,
-        gitRoot: mainRepoDir,
-      }),
-      getUserIdentity: () => 'tester',
-    }));
+    vi.mocked(getCurrentBranchName).mockImplementation(async (cwd?: string) => {
+      if (cwd) {
+        const result = await runGit(cwd, ['branch', '--show-current']);
+        return result.stdout.trim() || 'main';
+      }
+      return 'main';
+    });
+
+    vi.mocked(getCurrentCommitHash).mockImplementation(async (cwd: string) => {
+      const result = await runGit(cwd, ['rev-parse', 'HEAD']);
+      return result.exitCode === 0 ? result.stdout.trim() : null;
+    });
+
+    vi.mocked(hasUncommittedChanges).mockImplementation(async (cwd: string) => {
+      // Check for actual uncommitted changes
+      const result = await runGit(cwd, ['status', '--porcelain']);
+      if (result.exitCode !== 0) {
+        throw new Error('Not a git repository');
+      }
+      return result.stdout.trim().length > 0;
+    });
+
+    vi.mocked(getRepositoryIdentity).mockResolvedValue({
+      repositoryId: 'test-repo-id',
+      remoteUrl: bareRemoteDir,
+      gitRoot: mainRepoDir,
+    });
   });
 
   afterEach(async () => {
@@ -282,7 +309,7 @@ describe('workspace add --reuse and --try-reuse', () => {
       process.env.HOME = originalHome;
     }
     clearAllGitCaches();
-    moduleMocker.clear();
+    vi.clearAllMocks();
     closeDatabaseForTesting();
 
     if (originalEnv.XDG_CONFIG_HOME === undefined) {
@@ -298,8 +325,6 @@ describe('workspace add --reuse and --try-reuse', () => {
     }
 
     await fs.rm(tempDir, { recursive: true, force: true });
-    logSpy.mockClear();
-    warnSpy.mockClear();
   });
 
   test('--reuse finds and reuses available workspace', async () => {
@@ -322,9 +347,7 @@ describe('workspace add --reuse and --try-reuse', () => {
     // Create a plan file
     const planPath = await createPlanFile(path.join(mainRepoDir, 'tasks'), 42, 'Test Plan');
 
-    const { handleWorkspaceAddCommand } = await import(
-      `./workspace.js?reuse-presync-${Date.now()}`
-    );
+    const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
     await handleWorkspaceAddCommand(planPath, { reuse: true }, {
       parent: {
@@ -633,28 +656,33 @@ describe('workspace add --reuse and --try-reuse', () => {
     };
     await writeTrackingData({ [brokenWorkspace]: workspaceEntry });
 
-    await moduleMocker.mock('../workspace/workspace_manager.js', () => ({
-      prepareExistingWorkspace: async () => ({
+    const workspaceManager = await import('../workspace/workspace_manager.js');
+    const prepareExistingWorkspaceSpy = vi
+      .spyOn(workspaceManager, 'prepareExistingWorkspace')
+      .mockResolvedValue({
         success: false,
         error: 'forced failure',
-      }),
-    }));
+      });
 
-    const { handleWorkspaceAddCommand } = await import('./workspace.js');
+    try {
+      const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
-    await expect(
-      handleWorkspaceAddCommand(undefined, { reuse: true }, {
-        parent: {
+      await expect(
+        handleWorkspaceAddCommand(undefined, { reuse: true }, {
           parent: {
-            opts: () => ({ config: undefined }),
+            parent: {
+              opts: () => ({ config: undefined }),
+            },
           },
-        },
-      } as any)
-    ).rejects.toThrow('No available workspace found for reuse');
+        } as any)
+      ).rejects.toThrow('No available workspace found for reuse');
 
-    const lockInfo = await WorkspaceLock.getLockInfo(brokenWorkspace);
-    expect(lockInfo).toBeNull();
-    expect(await getCurrentBranch(brokenWorkspace)).toBe('feature-restore');
+      const lockInfo = await WorkspaceLock.getLockInfo(brokenWorkspace);
+      expect(lockInfo).toBeNull();
+      expect(await getCurrentBranch(brokenWorkspace)).toBe('feature-restore');
+    } finally {
+      prepareExistingWorkspaceSpy.mockRestore();
+    }
   });
 
   test('reuses the workspace and copies the plan file', async () => {
@@ -933,44 +961,59 @@ describe('workspace add --reuse and --try-reuse', () => {
 
     let updateCommandPlanPath: string | undefined;
     let planExistedWhenUpdateRan = false;
-    await moduleMocker.mock('../workspace/workspace_manager.js', () => ({
-      prepareExistingWorkspace: async () => ({
+
+    const workspaceManager = await import('../workspace/workspace_manager.js');
+    const prepareExistingWorkspaceSpy = vi
+      .spyOn(workspaceManager, 'prepareExistingWorkspace')
+      .mockResolvedValue({
         success: true,
         actualBranchName: 'main',
-      }),
-      runWorkspaceUpdateCommands: async (
-        _workspacePath: string,
-        _config: unknown,
-        _taskId: string,
-        planFilePathInWorkspace?: string
-      ) => {
-        updateCommandPlanPath = planFilePathInWorkspace;
-        if (planFilePathInWorkspace) {
-          planExistedWhenUpdateRan = await fs
-            .access(planFilePathInWorkspace)
-            .then(() => true)
-            .catch(() => false);
+      });
+    const runWorkspaceUpdateCommandsSpy = vi
+      .spyOn(workspaceManager, 'runWorkspaceUpdateCommands')
+      .mockImplementation(
+        async (
+          _workspacePath: string,
+          _config: unknown,
+          _taskId: string,
+          planFilePathInWorkspace?: string
+        ) => {
+          updateCommandPlanPath = planFilePathInWorkspace;
+          if (planFilePathInWorkspace) {
+            planExistedWhenUpdateRan = await fs
+              .access(planFilePathInWorkspace)
+              .then(() => true)
+              .catch(() => false);
+          }
+          return true;
         }
-        return true;
-      },
-    }));
+      );
 
-    const planPath = await createPlanFile(path.join(mainRepoDir, 'tasks'), 62, 'Path Dedupe Test');
+    try {
+      const planPath = await createPlanFile(
+        path.join(mainRepoDir, 'tasks'),
+        62,
+        'Path Dedupe Test'
+      );
 
-    const { handleWorkspaceAddCommand } = await import('./workspace.js');
-    await handleWorkspaceAddCommand(planPath, { reuse: true }, {
-      parent: {
+      const { handleWorkspaceAddCommand } = await import('./workspace.js');
+      await handleWorkspaceAddCommand(planPath, { reuse: true }, {
         parent: {
-          opts: () => ({ config: undefined }),
+          parent: {
+            opts: () => ({ config: undefined }),
+          },
         },
-      },
-    } as any);
+      } as any);
 
-    const expectedPlanPath = path.join(existingWorkspace, '.tim', 'plans', '62.plan.md');
-    expect(updateCommandPlanPath).toBe(expectedPlanPath);
-    expect(planExistedWhenUpdateRan).toBe(true);
+      const expectedPlanPath = path.join(existingWorkspace, '.tim', 'plans', '62.plan.md');
+      expect(updateCommandPlanPath).toBe(expectedPlanPath);
+      expect(planExistedWhenUpdateRan).toBe(true);
 
-    await WorkspaceLock.releaseLock(existingWorkspace, { force: true });
+      await WorkspaceLock.releaseLock(existingWorkspace, { force: true });
+    } finally {
+      prepareExistingWorkspaceSpy.mockRestore();
+      runWorkspaceUpdateCommandsSpy.mockRestore();
+    }
   });
 
   test('syncs existing workspace plan edits before overwriting them during reuse', async () => {
@@ -1010,53 +1053,64 @@ describe('workspace add --reuse and --try-reuse', () => {
     );
     await runGit(existingWorkspace, ['add', '.']);
     await runGit(existingWorkspace, ['commit', '-m', 'Add existing workspace plan']);
-    const syncPlanToDbSpy = mock(async () => {});
-    const actualWorkspaceManager = await import('../workspace/workspace_manager.js');
-    await moduleMocker.mock('../db/plan_sync.js', () => ({
-      syncPlanToDb: syncPlanToDbSpy,
-    }));
-    await moduleMocker.mock('../workspace/workspace_manager.js', () => ({
-      ...actualWorkspaceManager,
-      prepareExistingWorkspace: async () => ({
+
+    const syncPlanToDbSpy = vi.fn(async () => {});
+
+    const planSyncModule = await import('../db/plan_sync.js');
+    const syncPlanToDbModuleSpy = vi
+      .spyOn(planSyncModule, 'syncPlanToDb')
+      .mockImplementation(syncPlanToDbSpy);
+
+    const workspaceManager = await import('../workspace/workspace_manager.js');
+    const prepareExistingWorkspaceSpy = vi
+      .spyOn(workspaceManager, 'prepareExistingWorkspace')
+      .mockResolvedValue({
         success: true,
         actualBranchName: 'main',
-      }),
-      runWorkspaceUpdateCommands: async () => true,
-    }));
+      });
+    const runWorkspaceUpdateCommandsSpy = vi
+      .spyOn(workspaceManager, 'runWorkspaceUpdateCommands')
+      .mockResolvedValue(true);
 
-    const { handleWorkspaceAddCommand } = await import(`./workspace.js?reuse-sync-${Date.now()}`);
-    await handleWorkspaceAddCommand(sourcePlanPath, { reuse: true }, {
-      parent: {
+    try {
+      const { handleWorkspaceAddCommand } = await import('./workspace.js');
+      await handleWorkspaceAddCommand(sourcePlanPath, { reuse: true }, {
         parent: {
-          opts: () => ({ config: undefined }),
+          parent: {
+            opts: () => ({ config: undefined }),
+          },
         },
-      },
-    } as any);
+      } as any);
 
-    const workspaceSyncCall = syncPlanToDbSpy.mock.calls.find(
-      (call) =>
-        call[0] &&
-        typeof call[0] === 'object' &&
-        'title' in call[0] &&
-        (call[0] as PlanSchema).title === 'Workspace Local Edits'
-    );
-    expect(workspaceSyncCall).toBeDefined();
-    expect(workspaceSyncCall?.[0]).toMatchObject({
-      id: 63,
-      uuid: '33333333-3333-4333-8333-333333333333',
-      title: 'Workspace Local Edits',
-      status: 'in_progress',
-    });
-    expect(workspaceSyncCall?.[1]).toEqual({
-      cwdForIdentity: mainRepoDir,
-      throwOnError: true,
-    });
+      const workspaceSyncCall = syncPlanToDbSpy.mock.calls.find(
+        (call) =>
+          call[0] &&
+          typeof call[0] === 'object' &&
+          'title' in call[0] &&
+          (call[0] as PlanSchema).title === 'Workspace Local Edits'
+      );
+      expect(workspaceSyncCall).toBeDefined();
+      expect(workspaceSyncCall?.[0]).toMatchObject({
+        id: 63,
+        uuid: '33333333-3333-4333-8333-333333333333',
+        title: 'Workspace Local Edits',
+        status: 'in_progress',
+      });
+      expect(workspaceSyncCall?.[1]).toEqual({
+        cwdForIdentity: mainRepoDir,
+        throwOnError: true,
+      });
 
-    const planInWorkspace = await fs.readFile(workspacePlanPath, 'utf8');
-    expect(planInWorkspace).toContain('title: Source Plan');
-    expect(planInWorkspace).not.toContain('title: Workspace Local Edits');
+      const planInWorkspace = await fs.readFile(workspacePlanPath, 'utf8');
+      expect(planInWorkspace).toContain('title: Source Plan');
+      expect(planInWorkspace).not.toContain('title: Workspace Local Edits');
 
-    await WorkspaceLock.releaseLock(existingWorkspace, { force: true });
+      await WorkspaceLock.releaseLock(existingWorkspace, { force: true });
+    } finally {
+      syncPlanToDbModuleSpy.mockRestore();
+      prepareExistingWorkspaceSpy.mockRestore();
+      runWorkspaceUpdateCommandsSpy.mockRestore();
+    }
   });
 
   test('skips branch creation when createBranch is false on reuse', async () => {
@@ -1093,430 +1147,6 @@ describe('workspace add --reuse and --try-reuse', () => {
 
     const trackingData = await readTrackingData();
     expect(trackingData[existingWorkspace].branch).toBe('main');
-
-    await WorkspaceLock.releaseLock(existingWorkspace, { force: true });
-  });
-
-  test('creates branch by default when createBranch is unset on reuse', async () => {
-    const existingWorkspace = path.join(clonesDir, 'reuse-default-branch-workspace');
-    await fs.mkdir(existingWorkspace, { recursive: true });
-    await initGitRepository(existingWorkspace, bareRemoteDir);
-    await runGit(existingWorkspace, ['fetch', 'origin']);
-    await runGit(existingWorkspace, ['reset', '--hard', 'origin/main']);
-
-    const workspaceEntry: WorkspaceInfo = {
-      taskId: 'reuse-default-branch-task',
-      workspacePath: existingWorkspace,
-      createdAt: new Date().toISOString(),
-      repositoryId: 'test-repo-id',
-      branch: 'old-branch',
-    };
-    await writeTrackingData({ [existingWorkspace]: workspaceEntry });
-
-    const { handleWorkspaceAddCommand } = await import('./workspace.js');
-
-    await handleWorkspaceAddCommand(undefined, { reuse: true, id: 'default-branch' }, {
-      parent: {
-        parent: {
-          opts: () => ({ config: undefined }),
-        },
-      },
-    } as any);
-
-    const branchList = await runGit(existingWorkspace, ['branch', '--list', 'default-branch']);
-    expect(branchList.stdout.trim()).toContain('default-branch');
-    expect(await getCurrentBranch(existingWorkspace)).toBe('default-branch');
-
-    const trackingData = await readTrackingData();
-    expect(trackingData[existingWorkspace].branch).toBe('default-branch');
-
-    await WorkspaceLock.releaseLock(existingWorkspace, { force: true });
-  });
-
-  test('throws when both --reuse and --try-reuse are passed to handler', async () => {
-    const existingWorkspace = path.join(clonesDir, 'mutex-test-workspace');
-    await fs.mkdir(existingWorkspace, { recursive: true });
-    await initGitRepository(existingWorkspace, bareRemoteDir);
-
-    const workspaceEntry: WorkspaceInfo = {
-      taskId: 'mutex-task',
-      workspacePath: existingWorkspace,
-      createdAt: new Date().toISOString(),
-      repositoryId: 'test-repo-id',
-    };
-    await writeTrackingData({ [existingWorkspace]: workspaceEntry });
-
-    const planPath = await createPlanFile(path.join(mainRepoDir, 'tasks'), 50, 'Mutex Test');
-
-    const { handleWorkspaceAddCommand } = await import('./workspace.js');
-
-    await expect(
-      handleWorkspaceAddCommand(planPath, { reuse: true, tryReuse: true }, {
-        parent: {
-          parent: {
-            opts: () => ({ config: undefined }),
-          },
-        },
-      } as any)
-    ).rejects.toThrow('Cannot use both --reuse and --try-reuse');
-  });
-
-  test('acquires lock on reused workspace', async () => {
-    // Create an existing workspace
-    const existingWorkspace = path.join(clonesDir, 'lock-test-workspace');
-    await fs.mkdir(existingWorkspace, { recursive: true });
-    await initGitRepository(existingWorkspace, bareRemoteDir);
-
-    // Register the workspace
-    const workspaceEntry: WorkspaceInfo = {
-      taskId: 'lock-task',
-      workspacePath: existingWorkspace,
-      createdAt: new Date().toISOString(),
-      repositoryId: 'test-repo-id',
-    };
-    await writeTrackingData({ [existingWorkspace]: workspaceEntry });
-
-    const planPath = await createPlanFile(path.join(mainRepoDir, 'tasks'), 51, 'Lock Test');
-
-    // Verify no lock before
-    const lockBefore = await WorkspaceLock.getLockInfo(existingWorkspace);
-    expect(lockBefore).toBeNull();
-
-    const { handleWorkspaceAddCommand } = await import('./workspace.js');
-
-    await handleWorkspaceAddCommand(planPath, { reuse: true }, {
-      parent: {
-        parent: {
-          opts: () => ({ config: undefined }),
-        },
-      },
-    } as any);
-
-    // Verify lock was acquired
-    const lockAfter = await WorkspaceLock.getLockInfo(existingWorkspace);
-    expect(lockAfter).not.toBeNull();
-    expect(lockAfter?.command).toContain('--reuse');
-
-    // Clean up lock
-    await WorkspaceLock.releaseLock(existingWorkspace, { force: true });
-  });
-
-  test('--try-reuse reuses when workspace available', async () => {
-    // Create an existing workspace
-    const existingWorkspace = path.join(clonesDir, 'try-reuse-success-workspace');
-    await fs.mkdir(existingWorkspace, { recursive: true });
-    await initGitRepository(existingWorkspace, bareRemoteDir);
-    await runGit(existingWorkspace, ['fetch', 'origin']);
-    await runGit(existingWorkspace, ['reset', '--hard', 'origin/main']);
-
-    // Register the workspace
-    const workspaceEntry: WorkspaceInfo = {
-      taskId: 'try-reuse-task',
-      workspacePath: existingWorkspace,
-      createdAt: new Date().toISOString(),
-      repositoryId: 'test-repo-id',
-    };
-    await writeTrackingData({ [existingWorkspace]: workspaceEntry });
-
-    const planPath = await createPlanFile(
-      path.join(mainRepoDir, 'tasks'),
-      52,
-      'Try Reuse Success Test'
-    );
-
-    const { handleWorkspaceAddCommand } = await import('./workspace.js');
-
-    await handleWorkspaceAddCommand(planPath, { tryReuse: true }, {
-      parent: {
-        parent: {
-          opts: () => ({ config: undefined }),
-        },
-      },
-    } as any);
-
-    // Verify workspace was reused
-    const logCalls = logSpy.mock.calls.map((call) => call[0]);
-    expect(logCalls.some((msg: string) => msg.includes('Reusing existing workspace'))).toBe(true);
-    expect(logCalls.some((msg: string) => msg.includes('reused successfully'))).toBe(true);
-
-    // Verify lock was acquired
-    const lockInfo = await WorkspaceLock.getLockInfo(existingWorkspace);
-    expect(lockInfo).not.toBeNull();
-
-    // Clean up lock
-    await WorkspaceLock.releaseLock(existingWorkspace, { force: true });
-  });
-
-  test('branch field is updated in metadata after reuse', async () => {
-    // Create an existing workspace
-    const existingWorkspace = path.join(clonesDir, 'branch-metadata-test');
-    await fs.mkdir(existingWorkspace, { recursive: true });
-    await initGitRepository(existingWorkspace, bareRemoteDir);
-
-    // Register the workspace with old branch
-    const workspaceEntry: WorkspaceInfo = {
-      taskId: 'branch-metadata-task',
-      workspacePath: existingWorkspace,
-      branch: 'old-branch-name',
-      createdAt: new Date().toISOString(),
-      repositoryId: 'test-repo-id',
-    };
-    await writeTrackingData({ [existingWorkspace]: workspaceEntry });
-
-    const planPath = await createPlanFile(
-      path.join(mainRepoDir, 'tasks'),
-      53,
-      'Branch Metadata Test'
-    );
-
-    const { handleWorkspaceAddCommand } = await import('./workspace.js');
-
-    await handleWorkspaceAddCommand(planPath, { reuse: true }, {
-      parent: {
-        parent: {
-          opts: () => ({ config: undefined }),
-        },
-      },
-    } as any);
-
-    // Verify the branch was updated in tracking data
-    const trackingData = await readTrackingData();
-    const updatedEntry = trackingData[existingWorkspace];
-
-    expect(updatedEntry.branch).not.toBe('old-branch-name');
-    expect(updatedEntry.branch).toMatch(/^task-53/);
-
-    // Verify the git branch matches
-    const currentBranch = await getCurrentBranch(existingWorkspace);
-    expect(currentBranch).toBe(updatedEntry.branch);
-
-    // Clean up lock
-    await WorkspaceLock.releaseLock(existingWorkspace, { force: true });
-  });
-
-  test('handles auto-suffix when branch already exists', async () => {
-    // Create an existing workspace with a branch named task-54
-    const existingWorkspace = path.join(clonesDir, 'auto-suffix-test');
-    await fs.mkdir(existingWorkspace, { recursive: true });
-    await initGitRepository(existingWorkspace, bareRemoteDir);
-
-    // Create the conflicting branch in the primary workspace (where branch name
-    // decisions are made) and push it so both repos can see it
-    await runGit(mainRepoDir, ['checkout', '-b', 'task-54']);
-    await runGit(mainRepoDir, ['checkout', 'main']);
-    await runGit(mainRepoDir, ['push', 'origin', 'task-54']);
-
-    // Register the workspace
-    const workspaceEntry: WorkspaceInfo = {
-      taskId: 'auto-suffix-task',
-      workspacePath: existingWorkspace,
-      createdAt: new Date().toISOString(),
-      repositoryId: 'test-repo-id',
-    };
-    await writeTrackingData({ [existingWorkspace]: workspaceEntry });
-
-    const planPath = await createPlanFile(path.join(mainRepoDir, 'tasks'), 54, 'Auto Suffix Test');
-
-    const { handleWorkspaceAddCommand } = await import('./workspace.js');
-
-    await handleWorkspaceAddCommand(planPath, { reuse: true }, {
-      parent: {
-        parent: {
-          opts: () => ({ config: undefined }),
-        },
-      },
-    } as any);
-
-    // Verify the branch was auto-suffixed
-    const currentBranch = await getCurrentBranch(existingWorkspace);
-    expect(currentBranch).toBe('task-54-2');
-
-    // Verify the metadata reflects the actual branch
-    const trackingData = await readTrackingData();
-    expect(trackingData[existingWorkspace].branch).toBe('task-54-2');
-
-    // Clean up lock
-    await WorkspaceLock.releaseLock(existingWorkspace, { force: true });
-  });
-
-  test('--issue option triggers issue import on reused workspace', async () => {
-    // Create an existing workspace
-    const existingWorkspace = path.join(clonesDir, 'issue-import-test-workspace');
-    await fs.mkdir(existingWorkspace, { recursive: true });
-    await initGitRepository(existingWorkspace, bareRemoteDir);
-
-    // Create tasks directory in the workspace
-    await fs.mkdir(path.join(existingWorkspace, 'tasks'), { recursive: true });
-
-    // Register the workspace
-    const workspaceEntry: WorkspaceInfo = {
-      taskId: 'issue-import-task',
-      workspacePath: existingWorkspace,
-      createdAt: new Date().toISOString(),
-      repositoryId: 'test-repo-id',
-    };
-    await writeTrackingData({ [existingWorkspace]: workspaceEntry });
-
-    // Mock the issue tracker factory
-    const mockIssueTracker = {
-      fetchIssue: mock(async () => ({
-        issue: {
-          id: 'issue-id',
-          number: 'TEST-123',
-          title: 'Test Issue Title',
-          body: 'Test issue description',
-          htmlUrl: 'https://example.com/TEST-123',
-          state: 'open',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        comments: [],
-      })),
-      type: 'github' as const,
-    };
-
-    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
-      getIssueTracker: async () => mockIssueTracker,
-      getAvailableTrackers: () => ({
-        github: true,
-        linear: false,
-        available: ['github' as const],
-        unavailable: ['linear' as const],
-      }),
-    }));
-
-    await moduleMocker.mock('./import/import.js', () => ({
-      importSingleIssue: async (_issue: string, repoRoot: string) => {
-        const plan: PlanSchema = {
-          id: 101,
-          title: 'Imported Issue Plan',
-          goal: 'Imported issue goal',
-          status: 'pending',
-          issue: ['https://example.com/TEST-123'],
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          tasks: [],
-        };
-
-        const tasksDir = path.join(repoRoot, '.tim', 'plans');
-        await fs.mkdir(tasksDir, { recursive: true });
-        const planPath = path.join(tasksDir, '101-imported.plan.md');
-        const planContent = stringifyPlanWithFrontmatter(plan);
-        await fs.writeFile(planPath, planContent);
-        return {
-          success: true,
-          planPath,
-        };
-      },
-    }));
-
-    const { handleWorkspaceAddCommand } = await import('./workspace.js');
-
-    // Call with --issue and --reuse options (no plan identifier)
-    await handleWorkspaceAddCommand(undefined, { reuse: true, issue: 'TEST-123' }, {
-      parent: {
-        parent: {
-          opts: () => ({ config: undefined }),
-        },
-      },
-    } as any);
-
-    // Verify the workspace was reused
-    const logCalls = logSpy.mock.calls.map((call) => call[0]);
-    expect(logCalls.some((msg: string) => msg.includes('Reusing existing workspace'))).toBe(true);
-
-    // Verify the issue import was triggered
-    expect(logCalls.some((msg: string) => msg.includes('Importing issue TEST-123'))).toBe(true);
-
-    const trackingData = await readTrackingData();
-    const updatedEntry = trackingData[existingWorkspace];
-    expect(updatedEntry).toBeDefined();
-
-    const repository = await getRepositoryIdentity({ cwd: existingWorkspace });
-    const { plans } = loadPlansFromDb(
-      path.join(existingWorkspace, 'tasks'),
-      repository.repositoryId
-    );
-    const importedPlan = plans.values().next().value;
-    expect(importedPlan).toBeDefined();
-
-    expect(updatedEntry.planId).toBe(String(importedPlan.id));
-    expect(updatedEntry.planTitle).toBe(importedPlan.title);
-    expect(updatedEntry.issueUrls).toEqual(importedPlan.issue);
-
-    // Verify lock was acquired
-    const lockInfo = await WorkspaceLock.getLockInfo(existingWorkspace);
-    expect(lockInfo).not.toBeNull();
-
-    // Clean up lock
-    await WorkspaceLock.releaseLock(existingWorkspace, { force: true });
-  });
-
-  test('clears stale plan metadata when issue reuse import fails', async () => {
-    const existingWorkspace = path.join(clonesDir, 'issue-metadata-clear');
-    await fs.mkdir(existingWorkspace, { recursive: true });
-    await initGitRepository(existingWorkspace, bareRemoteDir);
-
-    await fs.mkdir(path.join(existingWorkspace, 'tasks'), { recursive: true });
-
-    const workspaceEntry: WorkspaceInfo = {
-      taskId: 'issue-clear-task',
-      workspacePath: existingWorkspace,
-      createdAt: new Date().toISOString(),
-      repositoryId: 'test-repo-id',
-      planId: 'old-plan',
-      planTitle: 'Old Plan',
-      description: 'Old Description',
-      issueUrls: ['https://example.com/OLD-1'],
-    };
-    await writeTrackingData({ [existingWorkspace]: workspaceEntry });
-
-    await moduleMocker.mock('../../common/issue_tracker/factory.js', () => ({
-      getIssueTracker: async () => ({
-        fetchIssue: mock(async () => ({
-          issue: {
-            id: 'issue-id',
-            number: 'TEST-123',
-            title: 'Test Issue Title',
-            body: 'Test issue description',
-            htmlUrl: 'https://example.com/TEST-123',
-            state: 'open',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          },
-          comments: [],
-        })),
-        type: 'github' as const,
-      }),
-      getAvailableTrackers: () => ({
-        github: true,
-        linear: false,
-        available: ['github' as const],
-        unavailable: ['linear' as const],
-      }),
-    }));
-
-    await moduleMocker.mock('./import/import.js', () => ({
-      importSingleIssue: async () => false,
-    }));
-
-    const { handleWorkspaceAddCommand } = await import('./workspace.js');
-
-    await handleWorkspaceAddCommand(undefined, { reuse: true, issue: 'TEST-123' }, {
-      parent: {
-        parent: {
-          opts: () => ({ config: undefined }),
-        },
-      },
-    } as any);
-
-    const trackingData = await readTrackingData();
-    const updatedEntry = trackingData[existingWorkspace];
-
-    expect(updatedEntry.planId).toBeUndefined();
-    expect(updatedEntry.planTitle).toBeUndefined();
-    expect(updatedEntry.description).toBeUndefined();
-    expect(updatedEntry.issueUrls).toEqual(['TEST-123']);
 
     await WorkspaceLock.releaseLock(existingWorkspace, { force: true });
   });

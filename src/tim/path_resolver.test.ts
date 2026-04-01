@@ -1,33 +1,35 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { getDefaultConfig } from './configSchema.js';
+
+vi.mock('../common/git.js', () => ({
+  getGitRoot: vi.fn(),
+}));
+
+import { getGitRoot } from '../common/git.js';
 import {
   getLegacyAwareSearchDir,
   getPlanStorageDir,
   resolveConfiguredPath,
   resolvePlanPathContext,
 } from './path_resolver.js';
-import { getDefaultConfig } from './configSchema.js';
-import { ModuleMocker } from '../testing.js';
-
-const moduleMocker = new ModuleMocker(import.meta);
 
 describe('path_resolver helpers', () => {
   let gitRoot: string;
   let externalDir: string;
+  let mockGetGitRoot: ReturnType<typeof vi.mocked<typeof getGitRoot>>;
 
   beforeEach(async () => {
     gitRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'path-resolver-git-'));
     externalDir = await fs.mkdtemp(path.join(os.tmpdir(), 'path-resolver-external-'));
-
-    await moduleMocker.mock('../common/git.js', () => ({
-      getGitRoot: mock(async () => gitRoot),
-    }));
+    mockGetGitRoot = vi.mocked(getGitRoot);
+    mockGetGitRoot.mockResolvedValue(gitRoot);
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     await fs.rm(gitRoot, { recursive: true, force: true });
     await fs.rm(externalDir, { recursive: true, force: true });
   });

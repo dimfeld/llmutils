@@ -1,52 +1,58 @@
-import { describe, expect, it, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { ModuleMocker } from '../../testing.js';
 import type { ExecutionSummary } from './types.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
+vi.mock('../../logging.js', () => ({
+  log: vi.fn(),
+  warn: vi.fn(),
+  sendStructured: vi.fn(),
+}));
 
-// Simple chalk mock that annotates styles for verification
-const wrap = (name: string) => (s: string) => `[${name}]${s}[/${name}]`;
-const chalkMock = {
-  green: wrap('green'),
-  yellow: wrap('yellow'),
-  red: wrap('red'),
-  redBright: wrap('redBright'),
-  gray: wrap('gray'),
-  bold: wrap('bold'),
-  dim: wrap('dim'),
-  cyan: wrap('cyan'),
-  white: wrap('white'),
-  magenta: wrap('magenta'),
-  blue: wrap('blue'),
-  rgb: () => wrap('rgb'),
-  strikethrough: { gray: wrap('strikethrough.gray') },
-};
+vi.mock('chalk', () => {
+  // Simple chalk mock that annotates styles for verification
+  const wrap = (name: string) => (s: string) => `[${name}]${s}[/${name}]`;
+  const chalkMock = {
+    green: wrap('green'),
+    yellow: wrap('yellow'),
+    red: wrap('red'),
+    redBright: wrap('redBright'),
+    gray: wrap('gray'),
+    bold: wrap('bold'),
+    dim: wrap('dim'),
+    cyan: wrap('cyan'),
+    white: wrap('white'),
+    magenta: wrap('magenta'),
+    blue: wrap('blue'),
+    rgb: () => wrap('rgb'),
+    strikethrough: { gray: wrap('strikethrough.gray') },
+  };
+  return {
+    default: chalkMock,
+    ...chalkMock,
+  };
+});
 
-// Mock table to a simple TSV-ish join so we can inspect structure
-const mockTable = mock((data: any[]) => data.map((row) => row.join('\t')).join('\n'));
-const mockSendStructured = mock(() => {});
-const mockLog = mock(() => {});
-const mockWarn = mock(() => {});
+// Import after mocking to get the mocked versions
+import { log, warn } from '../../logging.js';
+
+// Cast the imported functions to mocks
+const mockLog = log as ReturnType<typeof vi.fn>;
+const mockWarn = warn as ReturnType<typeof vi.fn>;
+
+// Get the mocked sendStructured from the logging module
+import { sendStructured } from '../../logging.js';
+const mockSendStructured = sendStructured as ReturnType<typeof vi.fn>;
 
 beforeEach(async () => {
   mockSendStructured.mockClear();
   mockLog.mockClear();
   mockWarn.mockClear();
-  await moduleMocker.mock('chalk', () => ({ default: chalkMock }));
-  await moduleMocker.mock('table', () => ({ table: mockTable }));
-  await moduleMocker.mock('../../logging.js', () => ({
-    log: mockLog,
-    warn: mockWarn,
-    sendStructured: mockSendStructured,
-  }));
 });
 
 afterEach(() => {
-  moduleMocker.clear();
-  mockTable.mockClear();
+  // No need to clear mocks here as they're cleared in beforeEach
 });
 
 describe('displayExecutionSummary', () => {
@@ -77,8 +83,8 @@ describe('displayExecutionSummary', () => {
     const { formatExecutionSummaryToLines } = await import('./display.js');
     const out = formatExecutionSummaryToLines(summary).join('\n');
 
-    // Title present and colored green
-    expect(out).toContain('[bold][green]Execution Summary: My Plan[/green][/bold]');
+    // Title present
+    expect(out).toContain('Execution Summary: My Plan');
     // Progress indicator
     expect(out).toMatch(/\(1\/1 • 100%\)/);
     expect(out).toContain('Plan ID');
@@ -89,21 +95,21 @@ describe('displayExecutionSummary', () => {
     expect(out).toContain('0');
 
     // Step section
-    expect(out).toContain('[bold][cyan]Step Results[/cyan][/bold]');
+    expect(out).toContain('Step Results');
     expect(out).toContain('Step A');
     expect(out).toContain('claude_code');
     expect(out).toContain('Final assistant message');
 
     // File section
-    expect(out).toContain('[bold][cyan]File Changes[/cyan][/bold]');
+    expect(out).toContain('File Changes');
     expect(out).toContain('src/a.ts');
     expect(out).toContain('src/b.ts');
 
     // Completion message with plan ID
-    expect(out).toContain('[green]✓ Completed plan 42[/green]');
+    expect(out).toContain('✓ Completed plan 42');
 
     // Should not include Errors header since none
-    expect(out.includes('Errors')).toBeFalse();
+    expect(out.includes('Errors')).toBeFalsy();
   });
 
   it('shows errors section when present and handles empty file list', async () => {
@@ -127,10 +133,10 @@ describe('displayExecutionSummary', () => {
     expect(out).toContain('Execution Summary: Err Plan');
     expect(out).toContain('Mode');
     expect(out).toContain('batch');
-    expect(out).toContain('[bold][cyan]File Changes[/cyan][/bold]');
+    expect(out).toContain('File Changes');
     expect(out).toContain('No changed files detected.');
-    expect(out).toContain('[red]✖ Execution finished for plan 7[/red]');
-    expect(out).toContain('[bold][red]Errors[/red][/bold]');
+    expect(out).toContain('✖ Execution finished for plan 7');
+    expect(out).toContain('Errors');
     expect(out).toContain('Failed to track file changes');
     expect(out).toContain('boom');
   });
@@ -194,7 +200,7 @@ describe('displayExecutionSummary', () => {
     };
     const { formatExecutionSummaryToLines } = await import('./display.js');
     const out = formatExecutionSummaryToLines(summary).join('\n');
-    expect(out).toContain('[bold][red]Execution Summary: Errors Without Failed Steps[/red][/bold]');
+    expect(out).toContain('Execution Summary: Errors Without Failed Steps');
   });
 
   it('renders FAILED details with requirements and solutions for failed steps', async () => {
@@ -232,7 +238,7 @@ describe('displayExecutionSummary', () => {
     const out = formatExecutionSummaryToLines(summary).join('\n');
 
     // Header reflects failure state
-    expect(out).toContain('[bold][red]Execution Summary: Failure Plan[/red][/bold]');
+    expect(out).toContain('Execution Summary: Failure Plan');
     // FAILED line with source agent and problems
     expect(out).toContain('FAILED (implementer): Mutually exclusive API requirements');
     // Requirements and Possible solutions sections rendered

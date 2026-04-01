@@ -1,4 +1,4 @@
-import { test } from 'bun:test';
+import { test } from 'vitest';
 import { Extractor } from './extract.ts';
 import * as path from 'node:path';
 

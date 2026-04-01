@@ -1,15 +1,15 @@
-import { expect, test, mock, beforeEach, afterAll } from 'bun:test';
+import { expect, test, vi, beforeEach, afterAll } from 'vitest';
 import { EventEmitter } from 'events';
 import { waitForEnter, readStdinUntilTimeout } from './terminal';
 
 // Mock process.stdin
 const mockStdin = new EventEmitter() as (typeof process)['stdin'];
 // @ts-expect-error setting up bad mock
-mockStdin.setRawMode = mock(() => true);
+mockStdin.setRawMode = vi.fn(() => true);
 // @ts-expect-error setting up bad mock
-mockStdin.resume = mock(() => {});
+mockStdin.resume = vi.fn(() => {});
 // @ts-expect-error setting up bad mock
-mockStdin.pause = mock(() => {});
+mockStdin.pause = vi.fn(() => {});
 
 // Backup original stdin
 const originalStdin = process.stdin;
@@ -58,7 +58,7 @@ test('waitForEnter - any other key triggers stdin reading', async () => {
   // Mock setTimeout to execute immediately
   const originalSetTimeout = global.setTimeout;
   // @ts-expect-error gross mock
-  global.setTimeout = mock((fn) => {
+  global.setTimeout = vi.fn((fn) => {
     fn();
     return {} as any;
   });
@@ -96,7 +96,7 @@ test('readStdinUntilTimeout - basic functionality', async () => {
 
   // Mock the readStdinUntilTimeout function
   const originalFn = readStdinUntilTimeout;
-  (globalThis as any).readStdinUntilTimeout = mock((data: Buffer) => {
+  (globalThis as any).readStdinUntilTimeout = vi.fn((data: Buffer) => {
     resolveFn(data.toString());
     return Promise.resolve(data.toString());
   });
@@ -125,14 +125,14 @@ test('readStdinUntilTimeout - with additional data', async () => {
   // Mock stdin.on to capture the data handler
   // eslint-disable-next-line @typescript-eslint/unbound-method
   const originalOn = mockStdin.on;
-  mockStdin.on = mock((event, handler) => {
+  mockStdin.on = vi.fn((event, handler) => {
     if (event === 'data') dataHandler = handler;
     return mockStdin;
   });
 
   // Mock setTimeout
   const originalSetTimeout = global.setTimeout;
-  const mockSetTimeout = mock((fn: () => any) => {
+  const mockSetTimeout = vi.fn((fn: () => any) => {
     timeoutFn = fn;
     return 1 as any;
   });

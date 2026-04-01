@@ -1,23 +1,87 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import stripAnsi from 'strip-ansi';
 import { handleShowCommand, mcpGetPlan } from './show.js';
-import { ModuleMocker } from '../../testing.js';
 import type { GenerateModeRegistrationContext } from '../mcp/generate_mode.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
-
 // Mock console functions
-const logSpy = mock(() => {});
-const errorSpy = mock(() => {});
-const warnSpy = mock(() => {});
+let logSpy: ReturnType<typeof vi.fn>;
+let errorSpy: ReturnType<typeof vi.fn>;
+let warnSpy: ReturnType<typeof vi.fn>;
 const fakeDb = {
   transaction<T>(fn: () => T) {
     return fn;
   },
 };
+
+// Mock modules before imports
+vi.mock('../../logging.js', () => ({
+  log: vi.fn(),
+  error: vi.fn(),
+  warn: vi.fn(),
+}));
+
+vi.mock('../../common/git.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    getCurrentBranchName: vi.fn().mockResolvedValue(null),
+  };
+});
+
+vi.mock('../configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn().mockResolvedValue({
+    paths: {
+      tasks: '',
+    },
+  }),
+}));
+
+vi.mock('../assignments/workspace_identifier.ts', () => ({
+  getRepositoryIdentity: vi.fn().mockResolvedValue({
+    repositoryId: '',
+    remoteUrl: 'https://example.com/repo.git',
+    gitRoot: '',
+  }),
+}));
+
+vi.mock('../db/database.js', () => ({
+  getDatabase: vi.fn().mockReturnValue({} as any),
+}));
+
+vi.mock('../db/project.js', () => ({
+  getProject: vi.fn().mockReturnValue({ id: 1 }),
+  getOrCreateProject: vi.fn().mockReturnValue({ id: 1 }),
+}));
+
+vi.mock('../plans_db.js', () => ({
+  loadPlansFromDb: vi.fn().mockReturnValue({ plans: new Map(), duplicates: {} }),
+}));
+
+vi.mock('../plan_display.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    resolvePlan: vi.fn(),
+  };
+});
+
+vi.mock('../db/assignment.js', () => ({
+  getAssignmentEntriesByProject: vi.fn().mockReturnValue({}),
+}));
+
+// Now import the module being tested
+import { log, error, warn } from '../../logging.js';
+import { getCurrentBranchName, getGitRoot } from '../../common/git.js';
+import { loadEffectiveConfig } from '../configLoader.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import { getDatabase } from '../db/database.js';
+import { getProject, getOrCreateProject } from '../db/project.js';
+import { loadPlansFromDb } from '../plans_db.js';
+import { resolvePlan } from '../plan_display.js';
+import { getAssignmentEntriesByProject } from '../db/assignment.js';
 
 describe('handleShowCommand', () => {
   let tempDir: string;
@@ -32,12 +96,15 @@ describe('handleShowCommand', () => {
   let currentBranchName: string | null;
 
   beforeEach(async () => {
+    // Get properly typed mock instances
+    logSpy = vi.mocked(log);
+    errorSpy = vi.mocked(error);
+    warnSpy = vi.mocked(warn);
+
     // Clear mocks
     logSpy.mockClear();
     errorSpy.mockClear();
     warnSpy.mockClear();
-
-    // Clear plan cache
 
     // Create temporary directory
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-show-test-'));
@@ -52,68 +119,94 @@ describe('handleShowCommand', () => {
     dbPlanTags = [];
     currentBranchName = null;
 
-    // Mock modules
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: logSpy,
-      error: errorSpy,
-      warn: warnSpy,
-    }));
+    // Set up mock implementations
+    const mockGetCurrentBranchName = vi.mocked(getCurrentBranchName);
+    mockGetCurrentBranchName.mockImplementation(async () => currentBranchName);
 
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getCurrentBranchName: async () => currentBranchName,
-    }));
+    const mockLoadEffectiveConfig = vi.mocked(loadEffectiveConfig);
+    mockLoadEffectiveConfig.mockResolvedValue({
+      paths: {
+        tasks: tasksDir,
+      },
+    });
 
-    // Mock config loader
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: {
-          tasks: tasksDir,
-        },
-      }),
-    }));
+    const mockGetRepositoryIdentity = vi.mocked(getRepositoryIdentity);
+    mockGetRepositoryIdentity.mockResolvedValue({
+      repositoryId,
+      remoteUrl: 'https://example.com/repo.git',
+      gitRoot: repoDir,
+    });
 
-    await moduleMocker.mock('../assignments/workspace_identifier.ts', () => ({
-      getRepositoryIdentity: async () => ({
-        repositoryId,
-        remoteUrl: 'https://example.com/repo.git',
-        gitRoot: repoDir,
-      }),
-    }));
+    const mockGetDatabase = vi.mocked(getDatabase);
+    mockGetDatabase.mockReturnValue(fakeDb as any);
 
-    await moduleMocker.mock('../db/database.js', () => ({
-      getDatabase: () => fakeDb as any,
-    }));
-    await moduleMocker.mock('../db/project.js', () => ({
-      getProject: () => ({ id: 1 }),
-      getOrCreateProject: () => ({ id: 1 }),
-    }));
-    await moduleMocker.mock('../db/plan.js', () => ({
-      getPlansByProject: () => dbPlans,
-      getPlanTasksByProject: () => dbPlanTasks,
-      getPlanDependenciesByProject: () => dbPlanDependencies,
-      getPlanTagsByProject: () => dbPlanTags,
-      getPlanByPlanId: (_db: unknown, _projectId: number, planId: number) =>
-        dbPlans.find((plan) => plan.plan_id === planId) ?? null,
-      getPlanByUuid: (_db: unknown, uuid: string) =>
-        dbPlans.find((plan) => plan.uuid === uuid) ?? null,
-      getPlanTasksByUuid: (_db: unknown, uuid: string) =>
-        dbPlanTasks.filter((task) => task.plan_uuid === uuid),
-      getPlanDependenciesByUuid: (_db: unknown, uuid: string) =>
-        dbPlanDependencies.filter((dependency) => dependency.plan_uuid === uuid),
-      getPlanTagsByUuid: (_db: unknown, uuid: string) =>
-        dbPlanTags.filter((tag) => tag.plan_uuid === uuid),
-    }));
-    await moduleMocker.mock('../db/assignment.js', () => ({
-      getAssignmentEntriesByProject: () => assignmentsData,
-    }));
+    const mockGetProject = vi.mocked(getProject);
+    mockGetProject.mockReturnValue({ id: 1 });
+
+    const mockGetOrCreateProject = vi.mocked(getOrCreateProject);
+    mockGetOrCreateProject.mockReturnValue({ id: 1 });
+
+    const mockLoadPlansFromDb = vi.mocked(loadPlansFromDb);
+    mockLoadPlansFromDb.mockImplementation(() => {
+      const plans = new Map();
+      for (const plan of dbPlans) {
+        plans.set(plan.id, plan);
+      }
+      return { plans, duplicates: {} } as any;
+    });
+
+    const mockResolvePlan = vi.mocked(resolvePlan);
+    mockResolvePlan.mockImplementation(async (planArg: string, _context: any) => {
+      const parsedId = Number.parseInt(String(planArg), 10);
+      const rawPlan = dbPlans.find(
+        (candidate) => candidate.id === parsedId || candidate.plan_id === parsedId
+      );
+      const plan =
+        rawPlan && 'plan_id' in rawPlan
+          ? {
+              id: rawPlan.plan_id,
+              uuid: rawPlan.uuid,
+              title: rawPlan.title ?? undefined,
+              goal: rawPlan.goal ?? '',
+              details: rawPlan.details ?? '',
+              status: rawPlan.status ?? 'pending',
+              priority: rawPlan.priority ?? undefined,
+              epic: Boolean(rawPlan.epic),
+              simple: Boolean(rawPlan.simple),
+              tasks: dbPlanTasks
+                .filter((task) => task.plan_uuid === rawPlan.uuid)
+                .map((task) => ({
+                  title: task.title,
+                  description: task.description,
+                  done: Boolean(task.done),
+                })),
+              dependencies: dbPlanDependencies
+                .filter((dependency) => dependency.plan_uuid === rawPlan.uuid)
+                .map((dependency) => dependency.depends_on_uuid),
+              tags: dbPlanTags
+                .filter((tag) => tag.plan_uuid === rawPlan.uuid)
+                .map((tag) => tag.tag),
+              filename: rawPlan.filename,
+              createdAt: rawPlan.created_at,
+              updatedAt: rawPlan.updated_at ?? undefined,
+            }
+          : rawPlan;
+      if (!plan) {
+        const err = new Error(`No plan found in the database for identifier: ${planArg}`);
+        err.name = 'PlanNotFoundError';
+        throw err;
+      }
+      return { plan, planPath: path.join(tasksDir, `${plan.id}.plan.md`) };
+    });
+
+    const mockGetAssignmentEntriesByProject = vi.mocked(getAssignmentEntriesByProject);
+    mockGetAssignmentEntriesByProject.mockImplementation(() => assignmentsData);
   });
 
   afterEach(async () => {
-    // Clean up mocks
-    moduleMocker.clear();
-
     // Clean up
     await fs.rm(tempDir, { recursive: true, force: true });
+    vi.clearAllMocks();
   });
 
   function addDbPlan(plan: Record<string, any>) {
@@ -123,56 +216,36 @@ describe('handleShowCommand', () => {
 
     const uuid = typeof plan.uuid === 'string' ? plan.uuid : `plan-${plan.id}`;
     dbPlans.push({
+      ...plan,
+      id: plan.id,
       uuid,
-      project_id: 1,
-      plan_id: plan.id,
-      title: plan.title ?? null,
+      title: plan.title ?? undefined,
       goal: plan.goal ?? '',
       details: plan.details ?? '',
       status: plan.status ?? 'pending',
-      priority: plan.priority ?? null,
-      branch: plan.branch ?? null,
-      parent_uuid: typeof plan.parent === 'number' ? `plan-${plan.parent}` : null,
-      discovered_from: typeof plan.discoveredFrom === 'number' ? plan.discoveredFrom : null,
-      epic: plan.epic ? 1 : 0,
-      simple: plan.simple ? 1 : 0,
-      tdd: plan.tdd ? 1 : 0,
-      assigned_to: plan.assignedTo ?? null,
-      issue: plan.issue ? JSON.stringify(plan.issue) : null,
-      pull_request: plan.pullRequest ? JSON.stringify(plan.pullRequest) : null,
-      docs: plan.docs ? JSON.stringify(plan.docs) : null,
-      changed_files: plan.changedFiles ? JSON.stringify(plan.changedFiles) : null,
-      temp: plan.temp ? 1 : 0,
-      base_branch: plan.baseBranch ?? null,
-      review_issues: plan.reviewIssues ? JSON.stringify(plan.reviewIssues) : null,
-      plan_generated_at: plan.planGeneratedAt ?? null,
+      priority: plan.priority ?? undefined,
+      branch: plan.branch ?? undefined,
+      parent: plan.parent ?? undefined,
+      discoveredFrom: plan.discoveredFrom ?? undefined,
+      epic: Boolean(plan.epic),
+      simple: Boolean(plan.simple),
+      tdd: Boolean(plan.tdd),
+      assignedTo: plan.assignedTo ?? undefined,
+      issue: plan.issue ?? undefined,
+      pullRequest: plan.pullRequest ?? undefined,
+      docs: plan.docs ?? undefined,
+      changedFiles: plan.changedFiles ?? undefined,
+      temp: Boolean(plan.temp),
+      baseBranch: plan.baseBranch ?? undefined,
+      reviewIssues: plan.reviewIssues ?? undefined,
+      planGeneratedAt: plan.planGeneratedAt ?? undefined,
       filename: `${plan.id}.plan.md`,
-      created_at: plan.createdAt ?? '2026-01-01T00:00:00.000Z',
-      updated_at: plan.updatedAt ?? null,
+      createdAt: plan.createdAt ?? '2026-01-01T00:00:00.000Z',
+      updatedAt: plan.updatedAt ?? undefined,
+      tasks: plan.tasks ?? [],
+      dependencies: plan.dependencies ?? [],
+      tags: plan.tags ?? [],
     });
-
-    for (const task of plan.tasks ?? []) {
-      dbPlanTasks.push({
-        plan_uuid: uuid,
-        title: task.title ?? '',
-        description: task.description ?? '',
-        done: task.done ? 1 : 0,
-      });
-    }
-
-    for (const dependencyId of plan.dependencies ?? []) {
-      dbPlanDependencies.push({
-        plan_uuid: uuid,
-        depends_on_uuid: `plan-${dependencyId}`,
-      });
-    }
-
-    for (const tag of plan.tags ?? []) {
-      dbPlanTags.push({
-        plan_uuid: uuid,
-        tag,
-      });
-    }
   }
 
   test('shows plan details when given valid plan ID', async () => {
@@ -838,31 +911,33 @@ describe('mcpGetPlan', () => {
         },
       ];
 
-      await moduleMocker.mock('../assignments/workspace_identifier.ts', () => ({
-        getRepositoryIdentity: async () => ({
-          repositoryId: 'mcp-tests',
-          remoteUrl: 'https://example.com/repo.git',
-          gitRoot: tempDir,
-        }),
-      }));
-      await moduleMocker.mock('../db/database.js', () => ({
-        getDatabase: () => fakeDb as any,
-      }));
-      await moduleMocker.mock('../db/project.js', () => ({
-        getProject: () => ({ id: 1 }),
-        getOrCreateProject: () => ({ id: 1 }),
-      }));
-      await moduleMocker.mock('../db/plan.js', () => ({
-        getPlanByPlanId: (_db: unknown, _projectId: number, planId: number) =>
-          dbPlans.find((plan) => plan.plan_id === planId) ?? null,
-        getPlanByUuid: (_db: unknown, uuid: string) =>
-          dbPlans.find((plan) => plan.uuid === uuid) ?? null,
-        getPlansByProject: () => dbPlans,
-        getPlanTasksByUuid: (_db: unknown, uuid: string) =>
-          dbPlanTasks.filter((task) => task.plan_uuid === uuid),
-        getPlanDependenciesByUuid: () => [],
-        getPlanTagsByUuid: () => [],
-      }));
+      vi.mocked(getRepositoryIdentity).mockResolvedValue({
+        repositoryId: 'mcp-tests',
+        remoteUrl: 'https://example.com/repo.git',
+        gitRoot: tempDir,
+      });
+      vi.mocked(getDatabase).mockReturnValue(fakeDb as any);
+      vi.mocked(getProject).mockReturnValue({ id: 1 } as any);
+      vi.mocked(getOrCreateProject).mockReturnValue({ id: 1 } as any);
+      vi.mocked(resolvePlan).mockResolvedValue({
+        plan: {
+          id: 200,
+          uuid: 'plan-200',
+          title: 'MCP integration plan',
+          goal: 'Ensure MCP server shares logic',
+          details: 'Detailed info for MCP consumers.',
+          status: 'pending',
+          priority: 'high',
+          tasks: [
+            {
+              title: 'Refactor MCP server',
+              description: 'Move handlers into command modules',
+              done: false,
+            },
+          ],
+        },
+        planPath: null,
+      });
 
       const context: GenerateModeRegistrationContext = {
         config: {} as any,
@@ -880,7 +955,7 @@ describe('mcpGetPlan', () => {
       expect(result).toContain('Details:\nDetailed info for MCP consumers.');
       expect(result).toContain('### Existing Tasks');
     } finally {
-      moduleMocker.clear();
+      vi.clearAllMocks();
       await fs.rm(tempDir, { recursive: true, force: true });
     }
   });
@@ -909,58 +984,41 @@ describe('inverse relationships', () => {
     dbPlanDependencies = [];
     dbPlanTags = [];
 
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: logSpy,
-      error: errorSpy,
-      warn: warnSpy,
-    }));
-
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: {
-          tasks: tasksDir,
-        },
-      }),
-    }));
-
-    await moduleMocker.mock('../assignments/workspace_identifier.ts', () => ({
-      getRepositoryIdentity: async () => ({
-        repositoryId: 'test-repo',
-        remoteUrl: 'https://example.com/repo.git',
-        gitRoot: repoDir,
-      }),
-    }));
-
-    await moduleMocker.mock('../db/database.js', () => ({
-      getDatabase: () => fakeDb as any,
-    }));
-    await moduleMocker.mock('../db/project.js', () => ({
-      getProject: () => ({ id: 1 }),
-      getOrCreateProject: () => ({ id: 1 }),
-    }));
-    await moduleMocker.mock('../db/plan.js', () => ({
-      getPlansByProject: () => dbPlans,
-      getPlanTasksByProject: () => dbPlanTasks,
-      getPlanDependenciesByProject: () => dbPlanDependencies,
-      getPlanTagsByProject: () => dbPlanTags,
-      getPlanByPlanId: (_db: unknown, _projectId: number, planId: number) =>
-        dbPlans.find((plan) => plan.plan_id === planId) ?? null,
-      getPlanByUuid: (_db: unknown, uuid: string) =>
-        dbPlans.find((plan) => plan.uuid === uuid) ?? null,
-      getPlanTasksByUuid: (_db: unknown, uuid: string) =>
-        dbPlanTasks.filter((task) => task.plan_uuid === uuid),
-      getPlanDependenciesByUuid: (_db: unknown, uuid: string) =>
-        dbPlanDependencies.filter((dependency) => dependency.plan_uuid === uuid),
-      getPlanTagsByUuid: (_db: unknown, uuid: string) =>
-        dbPlanTags.filter((tag) => tag.plan_uuid === uuid),
-    }));
-    await moduleMocker.mock('../db/assignment.js', () => ({
-      getAssignmentEntriesByProject: () => ({}),
-    }));
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
+      paths: {
+        tasks: tasksDir,
+      },
+    } as any);
+    vi.mocked(getRepositoryIdentity).mockResolvedValue({
+      repositoryId: 'test-repo',
+      remoteUrl: 'https://example.com/repo.git',
+      gitRoot: repoDir,
+    });
+    vi.mocked(getDatabase).mockReturnValue(fakeDb as any);
+    vi.mocked(getProject).mockReturnValue({ id: 1 } as any);
+    vi.mocked(getOrCreateProject).mockReturnValue({ id: 1 } as any);
+    vi.mocked(getAssignmentEntriesByProject).mockReturnValue({});
+    vi.mocked(loadPlansFromDb).mockImplementation(() => {
+      const plans = new Map();
+      for (const plan of dbPlans) {
+        plans.set(plan.id, plan);
+      }
+      return { plans, duplicates: {} } as any;
+    });
+    vi.mocked(resolvePlan).mockImplementation(async (planArg: string) => {
+      const parsedId = Number.parseInt(String(planArg), 10);
+      const plan = dbPlans.find((candidate) => candidate.id === parsedId);
+      if (!plan) {
+        const err = new Error(`No plan found in the database for identifier: ${planArg}`);
+        err.name = 'PlanNotFoundError';
+        throw err;
+      }
+      return { plan, planPath: path.join(tasksDir, `${plan.id}.plan.md`) };
+    });
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
@@ -971,49 +1029,24 @@ describe('inverse relationships', () => {
 
     const uuid = typeof plan.uuid === 'string' ? plan.uuid : `plan-${plan.id}`;
     dbPlans.push({
+      ...plan,
+      id: plan.id,
       uuid,
-      project_id: 1,
-      plan_id: plan.id,
-      title: plan.title ?? null,
+      title: plan.title ?? undefined,
       goal: plan.goal ?? '',
       details: plan.details ?? '',
       status: plan.status ?? 'pending',
-      priority: plan.priority ?? null,
-      branch: null,
-      parent_uuid: typeof plan.parent === 'number' ? `plan-${plan.parent}` : null,
-      discovered_from: typeof plan.discoveredFrom === 'number' ? plan.discoveredFrom : null,
-      epic: plan.epic ? 1 : 0,
-      simple: 0,
-      tdd: 0,
-      assigned_to: null,
-      issue: null,
-      pull_request: null,
-      docs: null,
-      changed_files: null,
-      temp: 0,
-      base_branch: null,
-      review_issues: null,
-      plan_generated_at: null,
+      priority: plan.priority ?? undefined,
+      parent: plan.parent ?? undefined,
+      discoveredFrom: plan.discoveredFrom ?? undefined,
+      epic: Boolean(plan.epic),
+      tasks: plan.tasks ?? [],
+      dependencies: plan.dependencies ?? [],
+      tags: plan.tags ?? [],
       filename: `${plan.id}.plan.md`,
-      created_at: plan.createdAt ?? '2026-01-01T00:00:00.000Z',
-      updated_at: plan.updatedAt ?? null,
+      createdAt: plan.createdAt ?? '2026-01-01T00:00:00.000Z',
+      updatedAt: plan.updatedAt ?? undefined,
     });
-
-    for (const task of plan.tasks ?? []) {
-      dbPlanTasks.push({
-        plan_uuid: uuid,
-        title: task.title ?? '',
-        description: task.description ?? '',
-        done: task.done ? 1 : 0,
-      });
-    }
-
-    for (const dependencyId of plan.dependencies ?? []) {
-      dbPlanDependencies.push({
-        plan_uuid: uuid,
-        depends_on_uuid: `plan-${dependencyId}`,
-      });
-    }
   }
 
   test('displays blocked plans in full mode', async () => {

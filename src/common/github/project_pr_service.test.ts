@@ -1,10 +1,9 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Database } from 'bun:sqlite';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { ModuleMocker } from '../../testing.js';
 import { DATABASE_FILENAME, openDatabase } from '../../tim/db/database.js';
 import { upsertPlan } from '../../tim/db/plan.js';
 import { getOrCreateProject } from '../../tim/db/project.js';
@@ -14,11 +13,27 @@ import {
   upsertPrStatus,
 } from '../../tim/db/pr_status.js';
 import {
-  partitionUserRelevantOpenPrs,
   type OpenPullRequestWithRequestedReviewers,
+  fetchOpenPullRequestsWithReviewers,
 } from './pull_requests.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
+vi.mock('./pull_requests.js', () => ({
+  partitionUserRelevantOpenPrs: vi.fn(),
+  fetchOpenPullRequestsWithReviewers: vi.fn(),
+  parseOwnerRepoFromRepositoryId: vi.fn((id: string) => {
+    const parts = id.split('__');
+    if (parts[0] !== 'github.com') return null;
+    return { owner: parts[1]!, repo: parts[2]! };
+  }),
+  fetchOpenPullRequestsWithReviewers: vi.fn(),
+}));
+
+vi.mock('./pr_status.js', () => ({
+  fetchPrFullStatus: vi.fn(),
+}));
+
+import { partitionUserRelevantOpenPrs } from './pull_requests.js';
+import { fetchPrFullStatus } from './pr_status.js';
 
 function makePr(opts: {
   number: number;
@@ -91,7 +106,7 @@ describe('common/github/project_pr_service', () => {
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.restoreAllMocks();
     db.close(false);
     await fs.rm(tempDir, { recursive: true, force: true });
   });
@@ -108,7 +123,7 @@ describe('common/github/project_pr_service', () => {
   });
 
   test('refreshProjectPrs fetches, caches, groups, and auto-links project PRs', async () => {
-    const fetchOpenPullRequestsWithReviewers = mock(async () => [
+    vi.mocked(fetchOpenPullRequestsWithReviewers).mockImplementation(async () => [
       makePr({ number: 11, title: 'My PR', headRefName: 'feature/one', userLogin: 'dimfeld' }),
       makePr({
         number: 12,
@@ -125,33 +140,31 @@ describe('common/github/project_pr_service', () => {
       }),
     ]);
 
-    const fetchPrFullStatus = mock(async (_owner: string, _repo: string, prNumber: number) =>
-      makeFullStatus(prNumber, {
-        title: prNumber === 11 ? 'My PR' : prNumber === 12 ? 'Needs review' : 'Already reviewed',
-        headRefName:
-          prNumber === 11 ? 'feature/one' : prNumber === 12 ? 'feature/two' : 'feature/three',
-        reviewDecision: prNumber === 12 ? 'REVIEW_REQUIRED' : null,
-        reviews:
-          prNumber === 11
-            ? [{ author: 'dimfeld', state: 'COMMENTED', submittedAt: null }]
-            : prNumber === 12
-              ? [{ author: 'alice', state: 'COMMENTED', submittedAt: null }]
-              : [{ author: 'dimfeld', state: 'APPROVED', submittedAt: null }],
-      })
+    vi.mocked(partitionUserRelevantOpenPrs).mockImplementation((prs, username) => {
+      const normalizedUsername = username.toLowerCase();
+      const authored = prs.filter((pr) => pr.user?.login?.toLowerCase() === normalizedUsername);
+      const reviewing = prs.filter((pr) =>
+        pr.requestedReviewers?.some(
+          (reviewer: any) => reviewer.login?.toLowerCase() === normalizedUsername
+        )
+      );
+      return { authored, reviewing };
+    });
+    vi.mocked(fetchPrFullStatus).mockImplementation(
+      async (_owner: string, _repo: string, prNumber: number) =>
+        makeFullStatus(prNumber, {
+          title: prNumber === 11 ? 'My PR' : prNumber === 12 ? 'Needs review' : 'Already reviewed',
+          headRefName:
+            prNumber === 11 ? 'feature/one' : prNumber === 12 ? 'feature/two' : 'feature/three',
+          reviewDecision: prNumber === 12 ? 'REVIEW_REQUIRED' : null,
+          reviews:
+            prNumber === 11
+              ? [{ author: 'dimfeld', state: 'COMMENTED', submittedAt: null }]
+              : prNumber === 12
+                ? [{ author: 'alice', state: 'COMMENTED', submittedAt: null }]
+                : [{ author: 'dimfeld', state: 'APPROVED', submittedAt: null }],
+        })
     );
-
-    await moduleMocker.mock('./pull_requests.ts', () => ({
-      fetchOpenPullRequestsWithReviewers,
-      parseOwnerRepoFromRepositoryId: (id: string) => {
-        const parts = id.split('__');
-        if (parts[0] !== 'github.com') return null;
-        return { owner: parts[1]!, repo: parts[2]! };
-      },
-      partitionUserRelevantOpenPrs,
-    }));
-    await moduleMocker.mock('./pr_status.ts', () => ({
-      fetchPrFullStatus,
-    }));
 
     const { refreshProjectPrs } = await import('./project_pr_service.ts');
     const result = await refreshProjectPrs(db, projectId, 'dimfeld');
@@ -179,26 +192,21 @@ describe('common/github/project_pr_service', () => {
   });
 
   test('refreshProjectPrs excludes self-authored PRs from reviewing group', async () => {
-    const fetchOpenPullRequestsWithReviewers = mock(async () => [
+    vi.mocked(fetchOpenPullRequestsWithReviewers).mockImplementation(async () => [
       makePr({ number: 11, title: 'My PR', headRefName: 'feature/one', userLogin: 'dimfeld' }),
     ]);
-
-    const fetchPrFullStatus = mock(async () =>
+    vi.mocked(partitionUserRelevantOpenPrs).mockImplementation((prs, username) => {
+      // Return the PR as authored so it gets categorized correctly
+      // The function should exclude it from reviewing because it's self-authored
+      return { authored: prs, reviewing: [] };
+    });
+    vi.mocked(fetchPrFullStatus).mockImplementation(async () =>
       makeFullStatus(11, {
         title: 'My PR',
         headRefName: 'feature/one',
         reviews: [{ author: 'dimfeld', state: 'COMMENTED', submittedAt: '2026-01-01T00:00:00Z' }],
       })
     );
-
-    await moduleMocker.mock('./pull_requests.ts', () => ({
-      fetchOpenPullRequestsWithReviewers,
-      parseOwnerRepoFromRepositoryId: () => ({ owner: 'example', repo: 'repo' }),
-      partitionUserRelevantOpenPrs,
-    }));
-    await moduleMocker.mock('./pr_status.ts', () => ({
-      fetchPrFullStatus,
-    }));
 
     const { refreshProjectPrs } = await import('./project_pr_service.ts');
     const result = await refreshProjectPrs(db, projectId, 'dimfeld');
@@ -208,26 +216,20 @@ describe('common/github/project_pr_service', () => {
   });
 
   test('refreshProjectPrs includes reviewed-but-not-requested PRs in reviewing', async () => {
-    const fetchOpenPullRequestsWithReviewers = mock(async () => [
+    vi.mocked(fetchOpenPullRequestsWithReviewers).mockImplementation(async () => [
       makePr({ number: 14, title: 'Past review', headRefName: 'feature/past', userLogin: 'bob' }),
     ]);
-
-    const fetchPrFullStatus = mock(async () =>
+    vi.mocked(partitionUserRelevantOpenPrs).mockImplementation((prs, username) => {
+      // Return empty arrays so the function discovers the PR from reviews data
+      return { authored: [], reviewing: [] };
+    });
+    vi.mocked(fetchPrFullStatus).mockImplementation(async () =>
       makeFullStatus(14, {
         title: 'Past review',
         headRefName: 'feature/past',
         reviews: [{ author: 'dimfeld', state: 'APPROVED', submittedAt: '2026-01-01T00:00:00Z' }],
       })
     );
-
-    await moduleMocker.mock('./pull_requests.ts', () => ({
-      fetchOpenPullRequestsWithReviewers,
-      parseOwnerRepoFromRepositoryId: () => ({ owner: 'example', repo: 'repo' }),
-      partitionUserRelevantOpenPrs,
-    }));
-    await moduleMocker.mock('./pr_status.ts', () => ({
-      fetchPrFullStatus,
-    }));
 
     const { refreshProjectPrs } = await import('./project_pr_service.ts');
     const result = await refreshProjectPrs(db, projectId, 'dimfeld');
@@ -237,7 +239,7 @@ describe('common/github/project_pr_service', () => {
   });
 
   test('refreshProjectPrs excludes PRs with only PENDING reviews from reviewing', async () => {
-    const fetchOpenPullRequestsWithReviewers = mock(async () => [
+    vi.mocked(fetchOpenPullRequestsWithReviewers).mockImplementation(async () => [
       makePr({
         number: 15,
         title: 'Draft review',
@@ -245,23 +247,17 @@ describe('common/github/project_pr_service', () => {
         userLogin: 'carol',
       }),
     ]);
-
-    const fetchPrFullStatus = mock(async () =>
+    vi.mocked(partitionUserRelevantOpenPrs).mockImplementation((prs, username) => {
+      // Return empty arrays so the function discovers the PR from reviews data
+      return { authored: [], reviewing: [] };
+    });
+    vi.mocked(fetchPrFullStatus).mockImplementation(async () =>
       makeFullStatus(15, {
         title: 'Draft review',
         headRefName: 'feature/draft',
         reviews: [{ author: 'dimfeld', state: 'PENDING', submittedAt: null }],
       })
     );
-
-    await moduleMocker.mock('./pull_requests.ts', () => ({
-      fetchOpenPullRequestsWithReviewers,
-      parseOwnerRepoFromRepositoryId: () => ({ owner: 'example', repo: 'repo' }),
-      partitionUserRelevantOpenPrs,
-    }));
-    await moduleMocker.mock('./pr_status.ts', () => ({
-      fetchPrFullStatus,
-    }));
 
     const { refreshProjectPrs } = await import('./project_pr_service.ts');
     const result = await refreshProjectPrs(db, projectId, 'dimfeld');
@@ -271,25 +267,19 @@ describe('common/github/project_pr_service', () => {
   });
 
   test('refreshProjectPrs does not duplicate existing auto-links on subsequent refreshes', async () => {
-    const fetchOpenPullRequestsWithReviewers = mock(async () => [
+    vi.mocked(fetchOpenPullRequestsWithReviewers).mockImplementation(async () => [
       makePr({ number: 11, title: 'My PR', headRefName: 'feature/one', userLogin: 'dimfeld' }),
     ]);
-
-    const fetchPrFullStatus = mock(async () =>
+    vi.mocked(partitionUserRelevantOpenPrs).mockImplementation((prs, username) => {
+      // Return the PR as authored so it gets auto-linked
+      return { authored: prs, reviewing: [] };
+    });
+    vi.mocked(fetchPrFullStatus).mockImplementation(async () =>
       makeFullStatus(11, {
         title: 'My PR',
         headRefName: 'feature/one',
       })
     );
-
-    await moduleMocker.mock('./pull_requests.ts', () => ({
-      fetchOpenPullRequestsWithReviewers,
-      parseOwnerRepoFromRepositoryId: () => ({ owner: 'example', repo: 'repo' }),
-      partitionUserRelevantOpenPrs,
-    }));
-    await moduleMocker.mock('./pr_status.ts', () => ({
-      fetchPrFullStatus,
-    }));
 
     const { refreshProjectPrs } = await import('./project_pr_service.ts');
 
@@ -303,25 +293,30 @@ describe('common/github/project_pr_service', () => {
   });
 
   test('refreshProjectPrs closes cached open PRs that are no longer returned by GitHub', async () => {
-    const fetchOpenPullRequestsWithReviewers = mock(async () => [
+    const fetchOpenPullRequestsWithReviewers = vi.fn(async () => [
       makePr({ number: 11, title: 'Current PR', headRefName: 'feature/one', userLogin: 'dimfeld' }),
     ]);
 
-    const fetchPrFullStatus = mock(async () =>
+    const fetchPrFullStatus = vi.fn(async () =>
       makeFullStatus(11, {
         title: 'Current PR',
         headRefName: 'feature/one',
       })
     );
 
-    await moduleMocker.mock('./pull_requests.ts', () => ({
-      fetchOpenPullRequestsWithReviewers,
-      parseOwnerRepoFromRepositoryId: () => ({ owner: 'example', repo: 'repo' }),
-      partitionUserRelevantOpenPrs,
+    vi.mocked(fetchOpenPullRequestsWithReviewers).mockImplementation(async () => [
+      makePr({ number: 11, title: 'Current PR', headRefName: 'feature/one', userLogin: 'dimfeld' }),
+    ]);
+    vi.mocked(partitionUserRelevantOpenPrs).mockImplementation(() => ({
+      authored: [],
+      reviewing: [],
     }));
-    await moduleMocker.mock('./pr_status.ts', () => ({
-      fetchPrFullStatus,
-    }));
+    vi.mocked(fetchPrFullStatus).mockImplementation(async () =>
+      makeFullStatus(11, {
+        title: 'Current PR',
+        headRefName: 'feature/one',
+      })
+    );
 
     const existingLastFetchedAt = '2026-01-01T00:00:00.000Z';
     upsertPrStatus(db, {
@@ -348,29 +343,26 @@ describe('common/github/project_pr_service', () => {
   });
 
   test('refreshProjectPrs does not write partial results when one full-status fetch fails', async () => {
-    const fetchOpenPullRequestsWithReviewers = mock(async () => [
+    vi.mocked(fetchOpenPullRequestsWithReviewers).mockImplementation(async () => [
       makePr({ number: 11, title: 'My PR', headRefName: 'feature/one', userLogin: 'dimfeld' }),
       makePr({ number: 12, title: 'Broken PR', headRefName: 'feature/two', userLogin: 'alice' }),
     ]);
-
-    const fetchPrFullStatus = mock(async (_owner: string, _repo: string, prNumber: number) => {
-      if (prNumber === 12) {
-        throw new Error('status fetch failed');
-      }
-      return makeFullStatus(prNumber, {
-        title: 'My PR',
-        headRefName: 'feature/one',
-      });
+    vi.mocked(partitionUserRelevantOpenPrs).mockImplementation((prs, username) => {
+      // Return PR 11 as authored, PR 12 as not relevant
+      const authored = prs.filter((pr) => pr.number === 11);
+      return { authored, reviewing: [] };
     });
-
-    await moduleMocker.mock('./pull_requests.ts', () => ({
-      fetchOpenPullRequestsWithReviewers,
-      parseOwnerRepoFromRepositoryId: () => ({ owner: 'example', repo: 'repo' }),
-      partitionUserRelevantOpenPrs,
-    }));
-    await moduleMocker.mock('./pr_status.ts', () => ({
-      fetchPrFullStatus,
-    }));
+    vi.mocked(fetchPrFullStatus).mockImplementation(
+      async (_owner: string, _repo: string, prNumber: number) => {
+        if (prNumber === 12) {
+          throw new Error('status fetch failed');
+        }
+        return makeFullStatus(prNumber, {
+          title: 'My PR',
+          headRefName: 'feature/one',
+        });
+      }
+    );
 
     const { refreshProjectPrs } = await import('./project_pr_service.ts');
 

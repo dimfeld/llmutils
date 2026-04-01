@@ -1,18 +1,21 @@
-import { test, expect, mock, beforeEach, afterEach } from 'bun:test';
+import { test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { runPlanContextWithExecutor } from './agent_runner.ts';
 import type { TimConfig } from './configSchema.ts';
 import type { ExecutorCommonOptions } from './executors/types.ts';
-import { ModuleMocker } from '../testing.js';
-
-const moduleMocker = new ModuleMocker(import.meta);
 
 // Mock the dependencies
-const mockExecutor = {
-  execute: mock(() => Promise.resolve()),
-};
+vi.mock('./executors/index.js', () => ({
+  buildExecutorAndLog: vi.fn(),
+}));
 
-const mockBuildExecutorAndLog = mock(() => mockExecutor);
-const mockError = mock(() => {});
+vi.mock('../logging.js', () => ({
+  error: vi.fn(),
+}));
+
+// Mock executor
+const mockExecutor = {
+  execute: vi.fn(() => Promise.resolve()),
+};
 
 test('runPlanContextWithExecutor - successful execution', async () => {
   // Setup
@@ -27,18 +30,23 @@ test('runPlanContextWithExecutor - successful execution', async () => {
     models: { execution: 'test-model' },
   };
 
+  const { buildExecutorAndLog } = await import('./executors/index.js');
+  const { error } = await import('../logging.js');
+
+  vi.mocked(buildExecutorAndLog).mockReturnValue(mockExecutor);
+
   // Execute
   await runPlanContextWithExecutor(executorName, contextContent, commonOpts, timConfig);
 
   // Verify
-  expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(executorName, commonOpts, timConfig);
+  expect(vi.mocked(buildExecutorAndLog)).toHaveBeenCalledWith(executorName, commonOpts, timConfig);
   expect(mockExecutor.execute).toHaveBeenCalledWith(contextContent, {
     executionMode: 'normal',
     planId: 'standalone',
     planTitle: 'Standalone Execution',
     planFilePath: 'N/A',
   });
-  expect(mockError).not.toHaveBeenCalled();
+  expect(vi.mocked(error)).not.toHaveBeenCalled();
 });
 
 test('runPlanContextWithExecutor - buildExecutorAndLog throws error', async () => {
@@ -53,8 +61,11 @@ test('runPlanContextWithExecutor - buildExecutorAndLog throws error', async () =
     defaultExecutor: 'default-exec',
   };
 
+  const { buildExecutorAndLog } = await import('./executors/index.js');
+  const { error } = await import('../logging.js');
+
   const buildError = new Error('Failed to build executor');
-  mockBuildExecutorAndLog.mockImplementationOnce(() => {
+  vi.mocked(buildExecutorAndLog).mockImplementationOnce(() => {
     throw buildError;
   });
 
@@ -63,7 +74,7 @@ test('runPlanContextWithExecutor - buildExecutorAndLog throws error', async () =
     runPlanContextWithExecutor(executorName, contextContent, commonOpts, timConfig)
   ).rejects.toThrow('Failed to execute with executor failing-executor: Failed to build executor');
 
-  expect(mockError).toHaveBeenCalledWith(
+  expect(vi.mocked(error)).toHaveBeenCalledWith(
     'Failed to execute with executor failing-executor: Failed to build executor'
   );
 });
@@ -79,18 +90,21 @@ test('runPlanContextWithExecutor - executor.execute throws error', async () => {
     defaultExecutor: 'default-exec',
   };
 
+  const { buildExecutorAndLog } = await import('./executors/index.js');
+  const { error } = await import('../logging.js');
+
   const executeError = new Error('Execution failed');
   const failingExecutor = {
-    execute: mock(() => Promise.reject(executeError)),
+    execute: vi.fn(() => Promise.reject(executeError)),
   };
-  mockBuildExecutorAndLog.mockImplementationOnce(() => failingExecutor);
+  vi.mocked(buildExecutorAndLog).mockImplementationOnce(() => failingExecutor);
 
   // Execute and verify
   await expect(
     runPlanContextWithExecutor(executorName, contextContent, commonOpts, timConfig)
   ).rejects.toThrow('Failed to execute with executor test-executor: Execution failed');
 
-  expect(mockError).toHaveBeenCalledWith(
+  expect(vi.mocked(error)).toHaveBeenCalledWith(
     'Failed to execute with executor test-executor: Execution failed'
   );
   expect(failingExecutor.execute).toHaveBeenCalledWith(contextContent, {
@@ -123,11 +137,14 @@ test('runPlanContextWithExecutor - verifies parameter passing', async () => {
     ],
   };
 
+  const { buildExecutorAndLog } = await import('./executors/index.js');
+  vi.mocked(buildExecutorAndLog).mockReturnValue(mockExecutor);
+
   // Execute
   await runPlanContextWithExecutor(executorName, contextContent, commonOpts, timConfig);
 
   // Verify exact parameter passing
-  expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(executorName, commonOpts, timConfig);
+  expect(vi.mocked(buildExecutorAndLog)).toHaveBeenCalledWith(executorName, commonOpts, timConfig);
   expect(mockExecutor.execute).toHaveBeenCalledWith(contextContent, {
     executionMode: 'normal',
     planId: 'standalone',
@@ -138,25 +155,15 @@ test('runPlanContextWithExecutor - verifies parameter passing', async () => {
 
 beforeEach(async () => {
   // Reset all mocks before each test
-  mockBuildExecutorAndLog.mockClear();
-  mockExecutor.execute.mockClear();
-  mockError.mockClear();
+  vi.clearAllMocks();
 
   // Reset mock implementations to default behavior
-  mockBuildExecutorAndLog.mockImplementation(() => mockExecutor);
+  const { buildExecutorAndLog } = await import('./executors/index.js');
+  vi.mocked(buildExecutorAndLog).mockReturnValue(mockExecutor);
   mockExecutor.execute.mockImplementation(() => Promise.resolve());
-
-  // Mock modules
-  await moduleMocker.mock('./executors/index.js', () => ({
-    buildExecutorAndLog: mockBuildExecutorAndLog,
-  }));
-
-  await moduleMocker.mock('../logging.js', () => ({
-    error: mockError,
-  }));
 });
 
 afterEach(() => {
   // Clean up mocks
-  moduleMocker.clear();
+  vi.resetAllMocks();
 });

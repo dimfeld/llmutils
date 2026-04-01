@@ -1,14 +1,127 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { ModuleMocker } from '../../testing.js';
 import { closeDatabaseForTesting } from '../db/database.js';
 import { clearPlanSyncContext, syncPlanToDb } from '../db/plan_sync.js';
-import { writePlanFile } from '../plans.js';
+import { readPlanFile, writePlanFile } from '../plans.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
+let autoClaimEnabled = false;
+
+vi.mock('../../logging.js', () => ({
+  log: vi.fn(),
+  error: vi.fn(),
+  warn: vi.fn(),
+}));
+
+vi.mock('../configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(),
+}));
+
+vi.mock('../assignments/auto_claim.js', () => ({
+  autoClaimPlan: vi.fn(),
+  enableAutoClaim: vi.fn(() => {
+    autoClaimEnabled = true;
+  }),
+  disableAutoClaim: vi.fn(() => {
+    autoClaimEnabled = false;
+  }),
+  isAutoClaimEnabled: vi.fn(() => autoClaimEnabled),
+  isAutoClaimDisabled: vi.fn(() => !autoClaimEnabled),
+}));
+
+vi.mock('../../common/process.js', () => ({
+  commitAll: vi.fn(async () => 0),
+}));
+
+vi.mock('../../common/git.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    getGitRoot: vi.fn(),
+  };
+});
+
+vi.mock('../workspace/workspace_setup.js', () => ({
+  setupWorkspace: vi.fn(),
+}));
+
+vi.mock('./prompts.js', () => ({
+  buildPromptText: vi.fn(async () => 'Generated prompt text'),
+  findMostRecentlyUpdatedPlan: vi.fn(async () => null),
+  getPlanTimestamp: vi.fn(async () => 0),
+  parseIsoTimestamp: vi.fn(() => undefined),
+}));
+
+vi.mock('../executors/index.js', () => ({
+  buildExecutorAndLog: vi.fn(),
+  DEFAULT_EXECUTOR: 'claude_code',
+}));
+
+vi.mock('../plan_materialize.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../plan_materialize.js')>();
+  return {
+    ...actual,
+    syncMaterializedPlan: vi.fn(async () => {}),
+  };
+});
+
+vi.mock('../workspace/workspace_roundtrip.js', () => ({
+  prepareWorkspaceRoundTrip: vi.fn(async () => null),
+  runPreExecutionWorkspaceSync: vi.fn(async () => {}),
+  runPostExecutionWorkspaceSync: vi.fn(async () => {}),
+}));
+
+vi.mock('../workspace/workspace_info.js', () => ({
+  getWorkspaceInfoByPath: vi.fn(() => null),
+  patchWorkspaceInfo: vi.fn(),
+  touchWorkspaceInfo: vi.fn(),
+}));
+
+vi.mock('../../logging/tunnel_client.js', () => ({
+  isTunnelActive: vi.fn(() => false),
+}));
+
+vi.mock('../headless.js', () => ({
+  runWithHeadlessAdapterIfEnabled: vi.fn(async (options: any) => options.callback()),
+}));
+
+vi.mock('./plan_discovery.js', () => ({
+  findNextReadyDependencyFromDb: vi.fn(),
+  findLatestPlanFromDb: vi.fn(async () => null),
+}));
+
+vi.mock('../ensure_plan_in_db.js', () => ({
+  resolvePlanFromDbOrSyncFile: vi.fn().mockImplementation((planPath: string) =>
+    Promise.resolve({
+      plan: { id: 42, uuid: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' },
+      planPath,
+    })
+  ),
+}));
+
+vi.mock('../db/plan_sync.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../db/plan_sync.js')>();
+  return {
+    ...actual,
+  };
+});
+
+import { handleGenerateCommand } from './generate.js';
+import {
+  autoClaimPlan,
+  enableAutoClaim,
+  disableAutoClaim,
+  isAutoClaimEnabled,
+} from '../assignments/auto_claim.js';
+import { loadEffectiveConfig } from '../configLoader.js';
+import { getGitRoot } from '../../common/git.js';
+import { setupWorkspace } from '../workspace/workspace_setup.js';
+import { buildExecutorAndLog } from '../executors/index.js';
+
+// Set up the git root mock early so it's available during setup
+vi.mocked(getGitRoot).mockResolvedValue('');
 
 describe('handleGenerateCommand auto-claim integration', () => {
   let tempRoot: string;
@@ -16,11 +129,10 @@ describe('handleGenerateCommand auto-claim integration', () => {
   let planPath: string;
   let originalEnv: Partial<Record<'XDG_CONFIG_HOME' | 'APPDATA', string | undefined>>;
 
-  const autoClaimPlanSpy = mock(async () => ({ result: { persisted: true } }));
+  const autoClaimPlanSpy = vi.mocked(autoClaimPlan);
 
   // Mock executor - writes tasks to the plan file to simulate generation
-  const mockExecutorExecute = mock(async () => {
-    const { readPlanFile } = await import('../plans.js');
+  const mockExecutorExecute = vi.fn(async () => {
     const plan = await readPlanFile(planPath);
     plan.tasks = [{ title: 'Generated task', description: 'Auto-generated', done: false }];
     await writePlanFile(planPath, plan);
@@ -30,11 +142,9 @@ describe('handleGenerateCommand auto-claim integration', () => {
     filePathPrefix: '',
   };
 
-  let handleGenerateCommand: typeof import('./generate.js').handleGenerateCommand;
-  let enableAutoClaim: () => void;
-  let disableAutoClaim: () => void;
-
   beforeEach(async () => {
+    vi.clearAllMocks();
+    autoClaimEnabled = false;
     closeDatabaseForTesting();
     clearPlanSyncContext();
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-generate-auto-claim-'));
@@ -59,7 +169,7 @@ describe('handleGenerateCommand auto-claim integration', () => {
       goal: 'Demo',
       tasks: [],
     });
-    await syncPlanToDb(await (await import('../plans.js')).readPlanFile(planPath), {
+    await syncPlanToDb(await readPlanFile(planPath), {
       config: {
         paths: {
           tasks: tasksDir,
@@ -69,82 +179,39 @@ describe('handleGenerateCommand auto-claim integration', () => {
       cwdForIdentity: tempRoot,
     });
 
-    autoClaimPlanSpy.mockClear();
-    mockExecutorExecute.mockClear();
-
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: mock(() => {}),
-      error: mock(() => {}),
-      warn: mock(() => {}),
-    }));
-
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: {
-          tasks: tasksDir,
-        },
-        models: {},
-      }),
-    }));
-
-    await moduleMocker.mock('../assignments/auto_claim.js', () => {
-      let enabled = false;
-      return {
-        autoClaimPlan: mock(async (...args: unknown[]) => {
-          if (!enabled) {
-            throw new Error('autoClaimPlan invoked while disabled');
-          }
-          return autoClaimPlanSpy(...args);
-        }),
-        enableAutoClaim: () => {
-          enabled = true;
-        },
-        disableAutoClaim: () => {
-          enabled = false;
-        },
-        isAutoClaimEnabled: () => enabled,
-        isAutoClaimDisabled: () => !enabled,
-      };
+    autoClaimPlanSpy.mockResolvedValue({ result: { persisted: true } } as any);
+    mockExecutorExecute.mockImplementation(async () => {
+      const plan = await readPlanFile(planPath);
+      plan.tasks = [{ title: 'Generated task', description: 'Auto-generated', done: false }];
+      await writePlanFile(planPath, plan);
     });
 
-    await moduleMocker.mock('../../common/process.js', () => ({
-      commitAll: mock(async () => 0),
-    }));
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
+      paths: { tasks: tasksDir },
+      models: {},
+    } as any);
+    vi.mocked(getGitRoot).mockResolvedValue(tempRoot);
+    vi.mocked(setupWorkspace).mockImplementation(
+      async (_options: any, baseDir: string, planFile: string) =>
+        ({
+          baseDir,
+          planFile,
+        }) as any
+    );
+    vi.mocked(buildExecutorAndLog).mockReturnValue(mockExecutor as any);
+    vi.mocked(isAutoClaimEnabled).mockImplementation(() => autoClaimEnabled);
 
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: mock(async () => tempRoot),
-    }));
-
-    await moduleMocker.mock('../workspace/workspace_setup.js', () => ({
-      setupWorkspace: mock(async (_options: any, baseDir: string, planFile: string) => ({
-        baseDir,
-        planFile,
-      })),
-    }));
-
-    await moduleMocker.mock('./prompts.js', () => ({
-      buildPromptText: mock(async () => 'Generated prompt text'),
-      findMostRecentlyUpdatedPlan: mock(async () => null),
-      getPlanTimestamp: mock(async () => 0),
-      parseIsoTimestamp: mock(() => undefined),
-    }));
-
-    await moduleMocker.mock('../executors/index.js', () => ({
-      buildExecutorAndLog: mock(() => mockExecutor),
-      DEFAULT_EXECUTOR: 'claude_code',
-    }));
-
-    await moduleMocker.mock('../plan_materialize.js', () => ({
-      syncMaterializedPlan: mock(async () => {}),
-    }));
-
-    ({ handleGenerateCommand } = await import('./generate.js'));
-    ({ enableAutoClaim, disableAutoClaim } = await import('../assignments/auto_claim.js'));
-    disableAutoClaim();
+    // Restore enable/disable to update the module-level flag
+    vi.mocked(enableAutoClaim).mockImplementation(() => {
+      autoClaimEnabled = true;
+    });
+    vi.mocked(disableAutoClaim).mockImplementation(() => {
+      autoClaimEnabled = false;
+    });
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     closeDatabaseForTesting();
     clearPlanSyncContext();
     if (originalEnv.XDG_CONFIG_HOME === undefined) {

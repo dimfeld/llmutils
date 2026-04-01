@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'bun:test';
+import { describe, it, expect, vi } from 'vitest';
 import { getFixerPrompt } from './codex_cli/context_composition.ts';
 
 describe('codex_cli fixer prompt includes failure protocol', () => {

@@ -1,5 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { ModuleMocker } from '../../../testing.js';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 
 type NotificationHandler = (method: string, params: unknown) => void;
 type ServerRequestHandler = (method: string, id: number, params: unknown) => Promise<unknown>;
@@ -15,39 +14,38 @@ async function waitFor(condition: () => boolean, timeoutMs: number = 2000): Prom
 }
 
 interface Harness {
-  moduleMocker: ModuleMocker;
   executeCodexStepViaAppServer: (
     prompt: string,
     cwd: string,
     timConfig: Record<string, unknown>,
     options?: Record<string, unknown>
   ) => Promise<string>;
-  connectionCreateMock: ReturnType<typeof mock>;
+  connectionCreateMock: ReturnType<typeof vi.fn>;
   connection: {
     isAlive: boolean;
-    threadStart: ReturnType<typeof mock>;
-    turnStart: ReturnType<typeof mock>;
-    turnSteer: ReturnType<typeof mock>;
-    turnInterrupt: ReturnType<typeof mock>;
-    close: ReturnType<typeof mock>;
+    threadStart: ReturnType<typeof vi.fn>;
+    turnStart: ReturnType<typeof vi.fn>;
+    turnSteer: ReturnType<typeof vi.fn>;
+    turnInterrupt: ReturnType<typeof vi.fn>;
+    close: ReturnType<typeof vi.fn>;
   };
   formatter: {
-    handleNotification: ReturnType<typeof mock>;
-    getThreadId: ReturnType<typeof mock>;
-    getFinalAgentMessage: ReturnType<typeof mock>;
-    getFailedAgentMessage: ReturnType<typeof mock>;
+    handleNotification: ReturnType<typeof vi.fn>;
+    getThreadId: ReturnType<typeof vi.fn>;
+    getFinalAgentMessage: ReturnType<typeof vi.fn>;
+    getFailedAgentMessage: ReturnType<typeof vi.fn>;
   };
-  createApprovalHandlerMock: ReturnType<typeof mock>;
-  approvalHandler: ReturnType<typeof mock>;
-  isTunnelActiveMock: ReturnType<typeof mock>;
-  createTunnelServerMock: ReturnType<typeof mock>;
-  tunnelCloseMock: ReturnType<typeof mock>;
-  createPromptRequestHandlerMock: ReturnType<typeof mock>;
-  sendStructuredMock: ReturnType<typeof mock>;
-  warnMock: ReturnType<typeof mock>;
+  createApprovalHandlerMock: ReturnType<typeof vi.fn>;
+  approvalHandler: ReturnType<typeof vi.fn>;
+  isTunnelActiveMock: ReturnType<typeof vi.fn>;
+  createTunnelServerMock: ReturnType<typeof vi.fn>;
+  tunnelCloseMock: ReturnType<typeof vi.fn>;
+  createPromptRequestHandlerMock: ReturnType<typeof vi.fn>;
+  sendStructuredMock: ReturnType<typeof vi.fn>;
+  warnMock: ReturnType<typeof vi.fn>;
   loggerAdapter:
     | {
-        setUserInputHandler: ReturnType<typeof mock>;
+        setUserInputHandler: ReturnType<typeof vi.fn>;
       }
     | undefined;
   connectionCreateOptions: { current?: any };
@@ -63,8 +61,8 @@ async function createHarness(options?: {
   failedMessage?: string | undefined;
   terminalInputLines?: string[];
   loggerAdapterKind?: 'headless' | 'tunnel';
-}) {
-  const moduleMocker = new ModuleMocker(import.meta);
+}): Promise<Harness> {
+  vi.resetModules();
 
   const connectionCreateOptions: { current?: any } = {};
   const connectionHandlers: {
@@ -72,59 +70,59 @@ async function createHarness(options?: {
     onServerRequest?: ServerRequestHandler;
   } = {};
 
-  const tunnelCloseMock = mock(() => {});
-  const createTunnelServerMock = mock(async () => ({ close: tunnelCloseMock }));
-  const createPromptRequestHandlerMock = mock(() => mock(async () => ({ action: 'cancel' })));
-  const isTunnelActiveMock = mock(() => options?.tunnelActive ?? true);
+  const tunnelCloseMock = vi.fn();
+  const createTunnelServerMock = vi.fn(async () => ({ close: tunnelCloseMock }));
+  const createPromptRequestHandlerMock = vi.fn(() => vi.fn(async () => ({ action: 'cancel' })));
+  const isTunnelActiveMock = vi.fn(() => options?.tunnelActive ?? true);
 
-  const sendStructuredMock = mock(() => {});
-  const warnMock = mock(() => {});
+  const sendStructuredMock = vi.fn();
+  const warnMock = vi.fn();
   let loggerAdapter:
     | {
-        setUserInputHandler: ReturnType<typeof mock>;
+        setUserInputHandler: ReturnType<typeof vi.fn>;
       }
     | undefined;
 
   const formatter = {
-    handleNotification: mock(() => ({})),
-    getThreadId: mock(() => 'thread-from-formatter'),
-    getFinalAgentMessage: mock(() => options?.finalMessage ?? 'final agent message'),
-    getFailedAgentMessage: mock(() => options?.failedMessage),
+    handleNotification: vi.fn(() => ({})),
+    getThreadId: vi.fn(() => 'thread-from-formatter'),
+    getFinalAgentMessage: vi.fn(() => options?.finalMessage ?? 'final agent message'),
+    getFailedAgentMessage: vi.fn(() => options?.failedMessage),
   };
 
-  const approvalHandler = mock(async () => ({ decision: 'accept' as const }));
-  const createApprovalHandlerMock = mock(() => approvalHandler);
+  const approvalHandler = vi.fn(async () => ({ decision: 'accept' as const }));
+  const createApprovalHandlerMock = vi.fn(() => approvalHandler);
 
   const connection = {
     isAlive: true,
-    threadStart: mock(async () => ({ threadId: 'thread-1' })),
-    turnStart: mock(async () => ({ turnId: 'turn-1' })),
-    turnSteer: mock(async () => ({ turnId: 'turn-1' })),
-    turnInterrupt: mock(async () => {}),
-    close: mock(async () => {}),
+    threadStart: vi.fn(async () => ({ threadId: 'thread-1' })),
+    turnStart: vi.fn(async () => ({ turnId: 'turn-1' })),
+    turnSteer: vi.fn(async () => ({ turnId: 'turn-1' })),
+    turnInterrupt: vi.fn(async () => {}),
+    close: vi.fn(async () => {}),
   };
 
-  const connectionCreateMock = mock(async (createOptions: any) => {
+  const connectionCreateMock = vi.fn(async (createOptions: any) => {
     connectionCreateOptions.current = createOptions;
     connectionHandlers.onNotification = createOptions.onNotification;
     connectionHandlers.onServerRequest = createOptions.onServerRequest;
     return connection;
   });
 
-  await moduleMocker.mock('../../../logging.ts', () => ({
-    debugLog: mock(() => {}),
-    error: mock(() => {}),
-    log: mock(() => {}),
+  vi.doMock('../../../logging.ts', () => ({
+    debugLog: vi.fn(),
+    error: vi.fn(),
+    log: vi.fn(),
     sendStructured: sendStructuredMock,
     warn: warnMock,
   }));
 
   class MockHeadlessAdapter {
-    setUserInputHandler = mock(() => {});
+    setUserInputHandler = vi.fn();
   }
 
   class MockTunnelAdapter {
-    setUserInputHandler = mock(() => {});
+    setUserInputHandler = vi.fn();
   }
 
   if (options?.loggerAdapterKind === 'headless') {
@@ -133,46 +131,47 @@ async function createHarness(options?: {
     loggerAdapter = new MockTunnelAdapter();
   }
 
-  await moduleMocker.mock('../../../logging/adapter.js', () => ({
-    getLoggerAdapter: mock(() => loggerAdapter),
+  vi.doMock('../../../logging/adapter.js', () => ({
+    getLoggerAdapter: vi.fn(() => loggerAdapter),
   }));
 
-  await moduleMocker.mock('../../../logging/headless_adapter.js', () => ({
+  vi.doMock('../../../logging/headless_adapter.js', () => ({
     HeadlessAdapter: MockHeadlessAdapter,
   }));
 
-  await moduleMocker.mock('../../../logging/tunnel_client.js', () => ({
+  vi.doMock('../../../logging/tunnel_client.js', () => ({
     isTunnelActive: isTunnelActiveMock,
     TunnelAdapter: MockTunnelAdapter,
   }));
 
-  await moduleMocker.mock('../../../logging/tunnel_server.js', () => ({
+  vi.doMock('../../../logging/tunnel_server.js', () => ({
     createTunnelServer: createTunnelServerMock,
   }));
 
-  await moduleMocker.mock('../../../logging/tunnel_prompt_handler.js', () => ({
+  vi.doMock('../../../logging/tunnel_prompt_handler.js', () => ({
     createPromptRequestHandler: createPromptRequestHandlerMock,
   }));
 
-  await moduleMocker.mock('../../../logging/tunnel_protocol.js', () => ({
+  vi.doMock('../../../logging/tunnel_protocol.js', () => ({
     TIM_OUTPUT_SOCKET: 'TIM_OUTPUT_SOCKET',
   }));
 
-  await moduleMocker.mock('./app_server_connection.ts', () => ({
+  vi.doMock('./app_server_connection.ts', () => ({
     CodexAppServerConnection: {
       create: connectionCreateMock,
     },
   }));
 
-  await moduleMocker.mock('./app_server_approval.ts', () => ({
+  vi.doMock('./app_server_approval.ts', () => ({
     createApprovalHandler: createApprovalHandlerMock,
   }));
 
-  await moduleMocker.mock('./app_server_format.ts', () => ({
-    createAppServerFormatter: mock(() => formatter),
+  vi.doMock('./app_server_format.ts', () => ({
+    createAppServerFormatter: vi.fn(() => formatter),
   }));
 
-  await moduleMocker.mock('../claude_code/terminal_input.ts', () => ({
+  const terminalInputLines = options?.terminalInputLines ?? [];
+  vi.doMock('../claude_code/terminal_input.ts', () => ({
     TerminalInputReader: class {
       private readonly onLine: (line: string) => void;
       private readonly onCloseWhileActive: () => void;
@@ -185,7 +184,7 @@ async function createHarness(options?: {
       }
 
       start() {
-        for (const line of options?.terminalInputLines ?? []) {
+        for (const line of terminalInputLines) {
           this.onLine(line);
         }
         this.onCloseWhileActive();
@@ -196,10 +195,9 @@ async function createHarness(options?: {
     },
   }));
 
-  const mod = await import(`./app_server_runner.ts?test=${Date.now()}-${Math.random()}`);
+  const mod = await import('./app_server_runner.js');
 
   const harness: Harness = {
-    moduleMocker,
     executeCodexStepViaAppServer: mod.executeCodexStepViaAppServer,
     connectionCreateMock,
     connection,
@@ -240,6 +238,7 @@ describe('executeCodexStepViaAppServer', () => {
     } else {
       process.env.CODEX_OUTPUT_TIMEOUT_MS = originalOutputTimeout;
     }
+    vi.resetModules();
   });
 
   test('returns final agent message on successful turn completion', async () => {
@@ -262,8 +261,6 @@ describe('executeCodexStepViaAppServer', () => {
     expect(harness.connection.threadStart).toHaveBeenCalledTimes(1);
     expect(harness.connection.turnStart).toHaveBeenCalledTimes(1);
     expect(harness.connection.close).toHaveBeenCalledTimes(1);
-
-    harness.moduleMocker.clear();
   });
 
   test('treats thread idle status as fallback turn completion in chat sessions', async () => {
@@ -295,8 +292,6 @@ describe('executeCodexStepViaAppServer', () => {
     expect(output).toBe('final agent message');
     expect(harness.connection.turnStart).toHaveBeenCalledTimes(1);
     expect(harness.connection.close).toHaveBeenCalledTimes(1);
-
-    harness.moduleMocker.clear();
   });
 
   test('does not treat thread idle status as single-turn completion', async () => {
@@ -316,8 +311,6 @@ describe('executeCodexStepViaAppServer', () => {
     expect(harness.connection.turnStart).toHaveBeenCalledTimes(3);
     expect(harness.connection.turnInterrupt).toHaveBeenCalledTimes(3);
     expect(harness.connection.close).toHaveBeenCalledTimes(1);
-
-    harness.moduleMocker.clear();
   });
 
   test('interrupts on inactivity and retries with continue prompt', async () => {
@@ -358,8 +351,6 @@ describe('executeCodexStepViaAppServer', () => {
         input: [{ type: 'text', text: 'continue' }],
       })
     );
-
-    harness.moduleMocker.clear();
   });
 
   test('retries when turnStart hangs without yielding a turn id', async () => {
@@ -393,8 +384,6 @@ describe('executeCodexStepViaAppServer', () => {
         input: [{ type: 'text', text: 'continue' }],
       })
     );
-
-    harness.moduleMocker.clear();
   });
 
   test('retries when turn status is failed', async () => {
@@ -423,8 +412,6 @@ describe('executeCodexStepViaAppServer', () => {
         input: [{ type: 'text', text: 'continue' }],
       })
     );
-
-    harness.moduleMocker.clear();
   });
 
   test('throws after max retries are exhausted', async () => {
@@ -443,8 +430,6 @@ describe('executeCodexStepViaAppServer', () => {
 
     expect(harness.connection.turnStart).toHaveBeenCalledTimes(3);
     expect(harness.connection.close).toHaveBeenCalledTimes(1);
-
-    harness.moduleMocker.clear();
   });
 
   test('passes output schema through to turnStart', async () => {
@@ -468,8 +453,6 @@ describe('executeCodexStepViaAppServer', () => {
     expect(harness.connection.turnStart.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({ outputSchema })
     );
-
-    harness.moduleMocker.clear();
   });
 
   test('passes model through to threadStart and turnStart', async () => {
@@ -490,8 +473,6 @@ describe('executeCodexStepViaAppServer', () => {
     expect(harness.connection.turnStart.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({ model: 'gpt-5' })
     );
-
-    harness.moduleMocker.clear();
   });
 
   test('creates and cleans up tunnel server when tunnel is not active', async () => {
@@ -512,9 +493,7 @@ describe('executeCodexStepViaAppServer', () => {
     expect(harness.tunnelCloseMock).toHaveBeenCalledTimes(1);
 
     const createOptions = harness.connectionCreateOptions.current;
-    expect(createOptions?.env?.TIM_OUTPUT_SOCKET).toBeString();
-
-    harness.moduleMocker.clear();
+    expect(createOptions?.env?.TIM_OUTPUT_SOCKET).toEqual(expect.any(String));
   });
 
   test('wires approval handler into app-server connection', async () => {
@@ -536,8 +515,6 @@ describe('executeCodexStepViaAppServer', () => {
     });
 
     expect(harness.connectionCreateOptions.current?.onServerRequest).toBe(harness.approvalHandler);
-
-    harness.moduleMocker.clear();
   });
 
   test('includes external config directory in writable roots passed to approval handler', async () => {
@@ -559,8 +536,6 @@ describe('executeCodexStepViaAppServer', () => {
       sandboxAllowsFileWrites: true,
       writableRoots: ['/repo', '/shared-config'],
     });
-
-    harness.moduleMocker.clear();
   });
 
   test('uses turn/steer while a chat turn is active', async () => {
@@ -612,8 +587,6 @@ describe('executeCodexStepViaAppServer', () => {
         expectedTurnId: 'turn-1',
       })
     );
-
-    harness.moduleMocker.clear();
   });
 
   test('supports single-turn steering mode and exits after completion', async () => {
@@ -659,8 +632,6 @@ describe('executeCodexStepViaAppServer', () => {
         expectedTurnId: 'turn-subagent',
       })
     );
-
-    harness.moduleMocker.clear();
   });
 
   test('does not emit duplicate structured gui input messages in headless chat sessions', async () => {
@@ -696,7 +667,5 @@ describe('executeCodexStepViaAppServer', () => {
           call[0].content === 'gui input'
       )
     ).toBe(false);
-
-    harness.moduleMocker.clear();
   });
 });

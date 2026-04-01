@@ -1,5 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { ModuleMocker } from '../../../testing.js';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 
 const selectResponses: Array<string | Error> = [];
 const prefixResponses: Array<{ exact: boolean; command: string } | Error> = [];
@@ -8,66 +7,54 @@ const addPermissionCalls: Array<{
   argument?: { exact: boolean; command?: string };
 }> = [];
 
-const mockPromptSelect = mock(async () => {
-  const next = selectResponses.shift();
-  if (next instanceof Error) {
-    throw next;
-  }
-  if (typeof next !== 'string') {
-    throw new Error('No queued select response');
-  }
-  return next;
+vi.mock('../../../common/input.ts', () => ({
+  promptSelect: vi.fn(async () => {
+    const next = selectResponses.shift();
+    if (next instanceof Error) {
+      throw next;
+    }
+    if (typeof next !== 'string') {
+      throw new Error('No queued select response');
+    }
+    return next;
+  }),
+  promptPrefixSelect: vi.fn(async () => {
+    const next = prefixResponses.shift();
+    if (next instanceof Error) {
+      throw next;
+    }
+    if (!next) {
+      throw new Error('No queued prefix response');
+    }
+    return next;
+  }),
+  isPromptTimeoutError: vi.fn(() => false),
+}));
+
+vi.mock('../claude_code/permissions_mcp_setup.ts', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    addPermissionToFile: vi.fn(
+      async (toolName: string, argument?: { exact: boolean; command?: string }) => {
+        addPermissionCalls.push({ toolName, argument });
+      }
+    ),
+  };
 });
 
-const mockPromptPrefixSelect = mock(async () => {
-  const next = prefixResponses.shift();
-  if (next instanceof Error) {
-    throw next;
-  }
-  if (!next) {
-    throw new Error('No queued prefix response');
-  }
-  return next;
-});
-
-const moduleMocker = new ModuleMocker(import.meta);
-let createApprovalHandler: typeof import('./app_server_approval').createApprovalHandler;
-let AppServerRequestError: typeof import('./app_server_connection').AppServerRequestError;
+import { createApprovalHandler } from './app_server_approval.js';
+import { AppServerRequestError } from './app_server_connection.js';
+import { promptSelect, promptPrefixSelect } from '../../../common/input.js';
 
 const originalAllowAllTools = process.env.ALLOW_ALL_TOOLS;
-
-beforeAll(async () => {
-  await moduleMocker.mock('../../../common/input.ts', () => ({
-    promptSelect: mockPromptSelect,
-    promptPrefixSelect: mockPromptPrefixSelect,
-    isPromptTimeoutError: () => false,
-  }));
-
-  await moduleMocker.mock('../claude_code/permissions_mcp_setup.ts', () => {
-    return {
-      addPermissionToFile: async (
-        toolName: string,
-        argument?: { exact: boolean; command?: string }
-      ) => {
-        addPermissionCalls.push({ toolName, argument });
-      },
-    };
-  });
-
-  ({ createApprovalHandler } = await import('./app_server_approval'));
-  ({ AppServerRequestError } = await import('./app_server_connection'));
-});
-
-afterAll(() => {
-  moduleMocker.clear();
-});
 
 beforeEach(() => {
   selectResponses.length = 0;
   prefixResponses.length = 0;
   addPermissionCalls.length = 0;
-  mockPromptSelect.mockClear();
-  mockPromptPrefixSelect.mockClear();
+  vi.mocked(promptSelect).mockClear();
+  vi.mocked(promptPrefixSelect).mockClear();
   delete process.env.ALLOW_ALL_TOOLS;
 });
 
@@ -109,7 +96,7 @@ describe('createApprovalHandler', () => {
         },
       },
     });
-    expect(mockPromptSelect).not.toHaveBeenCalled();
+    expect(vi.mocked(promptSelect)).not.toHaveBeenCalled();
   });
 
   test('auto-approves commands matching allowed bash prefix', async () => {
@@ -122,7 +109,7 @@ describe('createApprovalHandler', () => {
     });
 
     expect(result).toEqual({ decision: 'accept' });
-    expect(mockPromptSelect).not.toHaveBeenCalled();
+    expect(vi.mocked(promptSelect)).not.toHaveBeenCalled();
   });
 
   test('auto-approves piped update-plan-tasks commands by suffix', async () => {
@@ -133,8 +120,8 @@ describe('createApprovalHandler', () => {
     });
 
     expect(result).toEqual({ decision: 'accept' });
-    expect(mockPromptSelect).not.toHaveBeenCalled();
-    expect(mockPromptPrefixSelect).not.toHaveBeenCalled();
+    expect(vi.mocked(promptSelect)).not.toHaveBeenCalled();
+    expect(vi.mocked(promptPrefixSelect)).not.toHaveBeenCalled();
   });
 
   test('auto-approves direct update-plan-tasks commands by suffix', async () => {
@@ -145,8 +132,8 @@ describe('createApprovalHandler', () => {
     });
 
     expect(result).toEqual({ decision: 'accept' });
-    expect(mockPromptSelect).not.toHaveBeenCalled();
-    expect(mockPromptPrefixSelect).not.toHaveBeenCalled();
+    expect(vi.mocked(promptSelect)).not.toHaveBeenCalled();
+    expect(vi.mocked(promptPrefixSelect)).not.toHaveBeenCalled();
   });
 
   test('auto-approves update-plan-tasks commands with trailing whitespace', async () => {
@@ -157,8 +144,8 @@ describe('createApprovalHandler', () => {
     });
 
     expect(result).toEqual({ decision: 'accept' });
-    expect(mockPromptSelect).not.toHaveBeenCalled();
-    expect(mockPromptPrefixSelect).not.toHaveBeenCalled();
+    expect(vi.mocked(promptSelect)).not.toHaveBeenCalled();
+    expect(vi.mocked(promptPrefixSelect)).not.toHaveBeenCalled();
   });
 
   test('still prompts for unrelated commands', async () => {
@@ -170,7 +157,7 @@ describe('createApprovalHandler', () => {
     });
 
     expect(result).toEqual({ decision: 'decline' });
-    expect(mockPromptSelect).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(promptSelect)).toHaveBeenCalledTimes(1);
   });
 
   test('declines unknown command when prompt returns decline', async () => {
@@ -182,7 +169,7 @@ describe('createApprovalHandler', () => {
     });
 
     expect(result).toEqual({ decision: 'decline' });
-    expect(mockPromptSelect).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(promptSelect)).toHaveBeenCalledTimes(1);
   });
 
   test('supports Allow for Session and then auto-approves matching prefix', async () => {
@@ -194,15 +181,15 @@ describe('createApprovalHandler', () => {
       command: 'git status',
     });
     expect(first).toEqual({ decision: 'accept', acceptSettings: { forSession: true } });
-    expect(mockPromptSelect).toHaveBeenCalledTimes(1);
-    expect(mockPromptPrefixSelect).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(promptSelect)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(promptPrefixSelect)).toHaveBeenCalledTimes(1);
 
     const second = await handler('item/commandExecution/requestApproval', 2, {
       command: 'git diff --name-only',
     });
     expect(second).toEqual({ decision: 'accept' });
-    expect(mockPromptSelect).toHaveBeenCalledTimes(1);
-    expect(mockPromptPrefixSelect).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(promptSelect)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(promptPrefixSelect)).toHaveBeenCalledTimes(1);
   });
 
   test('supports Always Allow and persists prefix for future auto-approval', async () => {
@@ -225,8 +212,8 @@ describe('createApprovalHandler', () => {
       command: 'npm install',
     });
     expect(second).toEqual({ decision: 'accept' });
-    expect(mockPromptSelect).toHaveBeenCalledTimes(1);
-    expect(mockPromptPrefixSelect).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(promptSelect)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(promptPrefixSelect)).toHaveBeenCalledTimes(1);
   });
 
   test('auto-approves file changes when sandbox allows writes', async () => {
@@ -236,7 +223,7 @@ describe('createApprovalHandler', () => {
     });
 
     expect(result).toEqual({ decision: 'accept' });
-    expect(mockPromptSelect).not.toHaveBeenCalled();
+    expect(vi.mocked(promptSelect)).not.toHaveBeenCalled();
   });
 
   test('prompts for file changes when sandbox does not allow writes', async () => {
@@ -247,7 +234,7 @@ describe('createApprovalHandler', () => {
     });
 
     expect(result).toEqual({ decision: 'accept' });
-    expect(mockPromptSelect).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(promptSelect)).toHaveBeenCalledTimes(1);
   });
 
   test('auto-grants requested filesystem writes that are already within writable roots', async () => {
@@ -273,7 +260,7 @@ describe('createApprovalHandler', () => {
         },
       },
     });
-    expect(mockPromptSelect).not.toHaveBeenCalled();
+    expect(vi.mocked(promptSelect)).not.toHaveBeenCalled();
   });
 
   test('returns only the already-granted subset when new permissions are declined', async () => {
@@ -299,7 +286,7 @@ describe('createApprovalHandler', () => {
         },
       },
     });
-    expect(mockPromptSelect).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(promptSelect)).toHaveBeenCalledTimes(1);
   });
 
   test('sticks granted permissions for later requests in the same turn', async () => {
@@ -340,7 +327,7 @@ describe('createApprovalHandler', () => {
         },
       },
     });
-    expect(mockPromptSelect).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(promptSelect)).toHaveBeenCalledTimes(1);
   });
 
   test('persists session-scoped permission grants across turns in the same thread', async () => {
@@ -382,7 +369,7 @@ describe('createApprovalHandler', () => {
         },
       },
     });
-    expect(mockPromptSelect).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(promptSelect)).toHaveBeenCalledTimes(1);
   });
 
   test('throws AppServerRequestError for unknown method', async () => {

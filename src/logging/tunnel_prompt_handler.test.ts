@@ -1,39 +1,41 @@
-import { describe, it, expect, beforeEach, afterAll, afterEach, mock } from 'bun:test';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { PromptRequestMessage } from './structured_messages.ts';
 import type { TunnelPromptResponseMessage } from './tunnel_protocol.ts';
-import { ModuleMocker } from '../testing.js';
 import { setActiveInputSource, type PausableInputSource } from '../common/input_pause_registry.js';
 
-// Mock the @inquirer/prompts module so tests don't require a TTY.
-// Uses ModuleMocker to preserve all original exports (e.g. `search`) and
-// restore them after our tests complete, preventing cross-file mock leaks.
-const moduleMocker = new ModuleMocker(import.meta);
-const mockConfirm = mock(() => Promise.resolve(true));
-const mockSelect = mock(() => Promise.resolve('selected'));
-const mockInput = mock(() => Promise.resolve('typed'));
-const mockCheckbox = mock(() => Promise.resolve(['a', 'b']));
-const mockRunPrefixPrompt = mock(() => Promise.resolve({ exact: false, command: 'git status' }));
-const mockSendStructured = mock(() => {});
+// Mock modules before importing the handler
+vi.mock('@inquirer/prompts', () => ({
+  confirm: vi.fn(() => Promise.resolve(true)),
+  select: vi.fn(() => Promise.resolve('selected')),
+  input: vi.fn(() => Promise.resolve('typed')),
+  checkbox: vi.fn(() => Promise.resolve(['a', 'b'])),
+}));
 
-await moduleMocker.mock('@inquirer/prompts', () => ({
-  confirm: mockConfirm,
-  select: mockSelect,
-  input: mockInput,
-  checkbox: mockCheckbox,
+vi.mock('../common/prefix_prompt.js', () => ({
+  runPrefixPrompt: vi.fn(() => Promise.resolve({ exact: false, command: 'git status' })),
 }));
-await moduleMocker.mock('../common/prefix_prompt.js', () => ({
-  runPrefixPrompt: mockRunPrefixPrompt,
-}));
-await moduleMocker.mock('../logging.js', () => ({
-  sendStructured: mockSendStructured,
+
+vi.mock('../logging.js', () => ({
+  sendStructured: vi.fn(() => {}),
 }));
 
 // Import the handler AFTER the mock is set up so it picks up the mocked module.
-const { createPromptRequestHandler } = await import('./tunnel_prompt_handler.ts');
+import { createPromptRequestHandler } from './tunnel_prompt_handler.ts';
+import {
+  confirm as mockConfirmFn,
+  select as mockSelectFn,
+  input as mockInputFn,
+  checkbox as mockCheckboxFn,
+} from '@inquirer/prompts';
+import { runPrefixPrompt as mockRunPrefixPromptFn } from '../common/prefix_prompt.js';
+import { sendStructured as mockSendStructuredFn } from '../logging.js';
 
-afterAll(() => {
-  moduleMocker.clear();
-});
+const mockConfirm = vi.mocked(mockConfirmFn);
+const mockSelect = vi.mocked(mockSelectFn);
+const mockInput = vi.mocked(mockInputFn);
+const mockCheckbox = vi.mocked(mockCheckboxFn);
+const mockRunPrefixPrompt = vi.mocked(mockRunPrefixPromptFn);
+const mockSendStructured = vi.mocked(mockSendStructuredFn);
 
 /** Helper to get the nth call args from a mock, bypassing strict tuple types. */
 function callArgs(fn: { mock: { calls: unknown[][] } }, callIndex: number): unknown[] {
@@ -66,12 +68,7 @@ function collectResponse(): {
 
 describe('tunnel_prompt_handler', () => {
   beforeEach(() => {
-    mockConfirm.mockReset();
-    mockSelect.mockReset();
-    mockInput.mockReset();
-    mockCheckbox.mockReset();
-    mockRunPrefixPrompt.mockReset();
-    mockSendStructured.mockReset();
+    vi.clearAllMocks();
 
     // Restore default mock implementations
     mockConfirm.mockImplementation(() => Promise.resolve(true));
@@ -459,8 +456,8 @@ describe('tunnel_prompt_handler', () => {
 
   describe('input source pause/resume', () => {
     it('pauses the active input source before prompt and resumes after', async () => {
-      const pauseSpy = mock(() => {});
-      const resumeSpy = mock(() => {});
+      const pauseSpy = vi.fn(() => {});
+      const resumeSpy = vi.fn(() => {});
       const source: PausableInputSource = { pause: pauseSpy, resume: resumeSpy };
       setActiveInputSource(source);
 
@@ -481,8 +478,8 @@ describe('tunnel_prompt_handler', () => {
     });
 
     it('resumes the same input source instance after prompt completes', async () => {
-      const pauseSpy = mock(() => {});
-      const resumeSpy = mock(() => {});
+      const pauseSpy = vi.fn(() => {});
+      const resumeSpy = vi.fn(() => {});
       const source: PausableInputSource = { pause: pauseSpy, resume: resumeSpy };
       setActiveInputSource(source);
 
@@ -492,8 +489,8 @@ describe('tunnel_prompt_handler', () => {
       mockInput.mockImplementation(() => {
         promptCalled = true;
         // Simulate the input source changing during the prompt
-        const otherResume = mock(() => {});
-        setActiveInputSource({ pause: mock(() => {}), resume: otherResume });
+        const otherResume = vi.fn(() => {});
+        setActiveInputSource({ pause: vi.fn(() => {}), resume: otherResume });
         return Promise.resolve('answer');
       });
 
@@ -514,8 +511,8 @@ describe('tunnel_prompt_handler', () => {
     });
 
     it('resumes the input source when the prompt throws', async () => {
-      const pauseSpy = mock(() => {});
-      const resumeSpy = mock(() => {});
+      const pauseSpy = vi.fn(() => {});
+      const resumeSpy = vi.fn(() => {});
       const source: PausableInputSource = { pause: pauseSpy, resume: resumeSpy };
       setActiveInputSource(source);
 
@@ -558,8 +555,8 @@ describe('tunnel_prompt_handler', () => {
     });
 
     it('resumes the input source even for unsupported prompt types', async () => {
-      const pauseSpy = mock(() => {});
-      const resumeSpy = mock(() => {});
+      const pauseSpy = vi.fn(() => {});
+      const resumeSpy = vi.fn(() => {});
       const source: PausableInputSource = { pause: pauseSpy, resume: resumeSpy };
       setActiveInputSource(source);
 

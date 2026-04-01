@@ -1,4 +1,4 @@
-import { test, expect, mock, describe } from 'bun:test';
+import { test, expect, vi, describe } from 'vitest';
 import { cleanComments } from './cleanup';
 import type { TimConfig } from './configSchema.ts';
 import type { PlanSchema } from './planSchema.ts';

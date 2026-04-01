@@ -1,8 +1,11 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { ModuleMocker } from '../../testing.js';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { clearGitHubTokenCache } from './token.js';
+import * as octokitModule from './octokit.ts';
 
-const moduleMocker = new ModuleMocker(import.meta);
+// Mock the octokit module
+vi.mock('./octokit.ts', () => ({
+  getOctokit: vi.fn(),
+}));
 
 describe('common/github/user', () => {
   const originalGitHubToken = process.env.GITHUB_TOKEN;
@@ -15,26 +18,25 @@ describe('common/github/user', () => {
   afterEach(async () => {
     process.env.GITHUB_TOKEN = originalGitHubToken;
     clearGitHubTokenCache();
-    moduleMocker.clear();
+    vi.restoreAllMocks();
 
     const { clearGitHubUsernameCache } = await import('./user.ts');
     clearGitHubUsernameCache();
   });
 
   test('returns configured username without calling GitHub', async () => {
-    const getAuthenticated = mock(async () => ({
+    const getAuthenticated = vi.fn(async () => ({
       data: { login: 'api-user' },
     }));
 
-    await moduleMocker.mock('./octokit.ts', () => ({
-      getOctokit: () => ({
-        rest: {
-          users: {
-            getAuthenticated,
-          },
+    const mockGetOctokit = vi.mocked(octokitModule.getOctokit);
+    mockGetOctokit.mockReturnValue({
+      rest: {
+        users: {
+          getAuthenticated,
         },
-      }),
-    }));
+      },
+    });
 
     const { getGitHubUsername } = await import('./user.ts');
     await expect(getGitHubUsername({ githubUsername: 'configured-user' })).resolves.toBe(
@@ -44,19 +46,18 @@ describe('common/github/user', () => {
   });
 
   test('caches authenticated username between calls', async () => {
-    const getAuthenticated = mock(async () => ({
+    const getAuthenticated = vi.fn(async () => ({
       data: { login: 'cached-user' },
     }));
 
-    await moduleMocker.mock('./octokit.ts', () => ({
-      getOctokit: () => ({
-        rest: {
-          users: {
-            getAuthenticated,
-          },
+    const mockGetOctokit = vi.mocked(octokitModule.getOctokit);
+    mockGetOctokit.mockReturnValue({
+      rest: {
+        users: {
+          getAuthenticated,
         },
-      }),
-    }));
+      },
+    });
 
     const { getGitHubUsername } = await import('./user.ts');
 
@@ -75,22 +76,21 @@ describe('common/github/user', () => {
 
   test('returns null on API failure without permanently caching', async () => {
     let shouldFail = true;
-    const getAuthenticated = mock(async () => {
+    const getAuthenticated = vi.fn(async () => {
       if (shouldFail) {
         throw new Error('GitHub is unavailable');
       }
       return { data: { login: 'recovered-user' } };
     });
 
-    await moduleMocker.mock('./octokit.ts', () => ({
-      getOctokit: () => ({
-        rest: {
-          users: {
-            getAuthenticated,
-          },
+    const mockGetOctokit = vi.mocked(octokitModule.getOctokit);
+    mockGetOctokit.mockReturnValue({
+      rest: {
+        users: {
+          getAuthenticated,
         },
-      }),
-    }));
+      },
+    });
 
     const { getGitHubUsername, clearGitHubUsernameCache } = await import('./user.ts');
 

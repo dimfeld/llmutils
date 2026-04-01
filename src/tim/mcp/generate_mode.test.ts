@@ -1,15 +1,16 @@
-import { afterEach, beforeEach, describe, expect, test, mock } from 'bun:test';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import * as z from 'zod/v4';
 import { getDefaultConfig } from '../configSchema.js';
 import { getMaterializedPlanPath } from '../plan_materialize.js';
 import type { PlanSchema } from '../planSchema.js';
-import { writePlanFile, writePlanToDb, readPlanFile, getMaxNumericPlanId } from '../plans.js';
+import { writePlanFile, writePlanToDb, readPlanFile } from '../plans.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadPlansFromDb } from '../plans_db.js';
-import { ModuleMocker, clearAllTimCaches } from '../../testing.js';
+import { clearAllTimCaches } from '../../testing.js';
+import { closeDatabaseForTesting } from '../db/database.js';
 import { resolvePlan } from '../plan_display.js';
 import {
   generateTasksParameters,
@@ -33,12 +34,48 @@ import { mcpGetPlan } from '../commands/show.js';
 import { mcpUpdatePlanTasks } from './generate_mode.js';
 import { mcpListReadyPlans } from '../commands/ready.js';
 
+// Mock the modules at the top level
+vi.mock('node:os', async (importOriginal) => {
+  const realOs = await importOriginal<typeof import('node:os')>();
+  return {
+    ...realOs,
+    homedir: vi.fn(),
+  };
+});
+
+vi.mock('../../common/git.js', () => ({
+  getGitRoot: vi.fn(),
+  clearAllGitCaches: vi.fn(),
+}));
+
+vi.mock('../id_utils.js', () => ({
+  generateNumericPlanId: vi.fn(),
+}));
+
+vi.mock('../assignments/workspace_identifier.js', () => ({
+  getRepositoryIdentity: vi.fn(async () => ({
+    repositoryId: 'repo-1',
+    remoteUrl: 'https://example.com/repo.git',
+    gitRoot: '/tmp/mock-workspace',
+  })),
+}));
+
+// Import the mocked modules
+import { homedir } from 'node:os';
+import { getGitRoot } from '../../common/git.js';
+import { generateNumericPlanId } from '../id_utils.js';
+
+const mockHomedir = vi.mocked(homedir);
+const mockGetGitRoot = vi.mocked(getGitRoot);
+const mockGetRepositoryIdentity = vi.mocked(getRepositoryIdentity);
+const mockGenerateNumericPlanId = vi.mocked(generateNumericPlanId);
+
 const basePlan: PlanSchema = {
   id: 99999,
   title: 'Test Plan',
   goal: 'Ship a high-quality feature',
   details: 'Initial details about the plan.',
-  status: 'pending' as const,
+  status: 'done' as const,
   priority: 'medium' as const,
   tasks: [],
 };
@@ -50,14 +87,36 @@ async function loadPlansForRepo(searchDir: string) {
 
 describe('tim MCP generate mode helpers', () => {
   let tmpDir: string;
+  let originalXdgConfigHome: string | undefined;
   let planPath: string;
   let context: GenerateModeRegistrationContext;
 
   beforeEach(async () => {
+    closeDatabaseForTesting();
+    originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
     tmpDir = await mkdtemp(path.join(os.tmpdir(), 'tim-mcp-'));
     await Bun.$`git init`.cwd(tmpDir).quiet();
+    process.env.XDG_CONFIG_HOME = path.join(tmpDir, '.config');
+    clearAllTimCaches();
+    mockGetGitRoot.mockResolvedValue(tmpDir);
+    mockGetRepositoryIdentity.mockResolvedValue({
+      repositoryId: `repo-${path.basename(tmpDir)}`,
+      remoteUrl: 'https://example.com/repo.git',
+      gitRoot: tmpDir,
+    });
     planPath = path.join(tmpDir, '99999-test.plan.md');
     await writePlanFile(planPath, basePlan);
+    mockGenerateNumericPlanId.mockImplementation(async () => {
+      const entries = await readdir(tmpDir);
+      let maxId = 0;
+      for (const entry of entries) {
+        const match = entry.match(/^(\d+)[^/]*\.plan\.md$/);
+        if (match) {
+          maxId = Math.max(maxId, Number(match[1]));
+        }
+      }
+      return maxId + 1;
+    });
 
     const config = getDefaultConfig();
     config.paths = { tasks: tmpDir };
@@ -70,7 +129,13 @@ describe('tim MCP generate mode helpers', () => {
   });
 
   afterEach(async () => {
+    closeDatabaseForTesting();
     await rm(tmpDir, { recursive: true, force: true });
+    if (originalXdgConfigHome === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
+    }
   });
 
   test('registerGenerateMode skips tools when disabled', () => {
@@ -398,7 +463,7 @@ describe('tim MCP generate mode helpers', () => {
     expect(result).toContain('Test Plan');
     expect(result).toContain('Ship a high-quality feature');
     expect(result).toContain('Initial details about the plan.');
-    expect(result).toContain('Status: pending');
+    expect(result).toContain('Status: done');
     expect(result).toContain('Priority: medium');
   });
 
@@ -585,8 +650,7 @@ describe('tim MCP generate mode helpers', () => {
     const task = updated.tasks[0];
     expect(task?.title).toBe('Investigate issue');
     expect(task?.description).toContain('Reproduce the bug');
-    expect(task?.done).toBeFalse();
-    // Note: steps, files, docs, and examples fields were removed from the task schema
+    expect(task?.done).toBeFalsy();
   });
 
   test('mcpManagePlanTask with action=remove deletes by title and reports shifts', async () => {
@@ -771,7 +835,7 @@ describe('tim MCP generate mode helpers', () => {
 
     const updated = await readPlanFile(planPath);
     expect(updated.tasks).toHaveLength(1);
-    expect(updated.tasks[0]?.done).toBeTrue();
+    expect(updated.tasks[0]?.done).toBeTruthy();
   });
 
   test('mcpManagePlanTask with action=update modifies multiple fields at once', async () => {
@@ -815,7 +879,7 @@ describe('tim MCP generate mode helpers', () => {
     expect(updated.tasks).toHaveLength(1);
     expect(updated.tasks[0]?.title).toBe('Updated Title');
     expect(updated.tasks[0]?.description).toBe('Updated description');
-    expect(updated.tasks[0]?.done).toBeTrue();
+    expect(updated.tasks[0]?.done).toBeTruthy();
   });
 
   test('mcpManagePlanTask with action=update errors when no update fields provided', async () => {
@@ -978,11 +1042,21 @@ describe('tim MCP generate mode helpers', () => {
 
 describe('mcpListReadyPlans', () => {
   let tmpDir: string;
+  let originalXdgConfigHome: string | undefined;
   let context: GenerateModeRegistrationContext;
 
   beforeEach(async () => {
+    closeDatabaseForTesting();
+    originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
     tmpDir = await mkdtemp(path.join(os.tmpdir(), 'tim-mcp-ready-'));
     await Bun.$`git init`.cwd(tmpDir).quiet();
+    process.env.XDG_CONFIG_HOME = path.join(tmpDir, '.config');
+    clearAllTimCaches();
+    mockGetRepositoryIdentity.mockResolvedValue({
+      repositoryId: `repo-${path.basename(tmpDir)}`,
+      remoteUrl: 'https://example.com/repo.git',
+      gitRoot: tmpDir,
+    });
 
     const config = getDefaultConfig();
     config.paths = { tasks: tmpDir };
@@ -995,7 +1069,13 @@ describe('mcpListReadyPlans', () => {
   });
 
   afterEach(async () => {
+    closeDatabaseForTesting();
     await rm(tmpDir, { recursive: true, force: true });
+    if (originalXdgConfigHome === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
+    }
   });
 
   // Helper function to create a plan
@@ -1648,7 +1728,6 @@ describe('mcpListReadyPlans', () => {
 describe('Helper Functions', () => {
   let tmpDir: string;
   let context: GenerateModeRegistrationContext;
-  const moduleMocker = new ModuleMocker(import.meta);
   const originalEnv: Partial<Record<string, string>> = {};
 
   beforeEach(async () => {
@@ -1664,16 +1743,24 @@ describe('Helper Functions', () => {
     process.env.XDG_CONFIG_HOME = fakeConfigDir;
     delete process.env.APPDATA;
 
-    const realOs = await import('node:os');
-    await moduleMocker.mock('node:os', () => ({
-      ...realOs,
-      homedir: () => path.join(tmpDir, 'home'),
-    }));
-
-    // Mock getGitRoot so getRepositoryIdentity uses the temp directory instead of real repo
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => tmpDir,
-    }));
+    mockHomedir.mockReturnValue(path.join(tmpDir, 'home'));
+    mockGetGitRoot.mockResolvedValue(tmpDir);
+    mockGetRepositoryIdentity.mockResolvedValue({
+      repositoryId: `repo-${path.basename(tmpDir)}`,
+      remoteUrl: 'https://example.com/repo.git',
+      gitRoot: tmpDir,
+    });
+    mockGenerateNumericPlanId.mockImplementation(async () => {
+      const entries = await readdir(tmpDir);
+      let maxId = 0;
+      for (const entry of entries) {
+        const match = entry.match(/^(\d+)[^/]*\.plan\.md$/);
+        if (match) {
+          maxId = Math.max(maxId, Number(match[1]));
+        }
+      }
+      return maxId + 1;
+    });
 
     const config = getDefaultConfig();
     config.paths = { tasks: tmpDir };
@@ -1686,7 +1773,7 @@ describe('Helper Functions', () => {
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.restoreAllMocks();
 
     if (originalEnv.XDG_CONFIG_HOME === undefined) {
       delete process.env.XDG_CONFIG_HOME;
@@ -1737,22 +1824,37 @@ describe('Helper Functions', () => {
 
 describe('mcpCreatePlan', () => {
   let tmpDir: string;
+  let originalXdgConfigHome: string | undefined;
   let context: GenerateModeRegistrationContext;
-  const moduleMocker = new ModuleMocker(import.meta);
 
   beforeEach(async () => {
     clearAllTimCaches();
-
-    // Mock generateNumericPlanId to use local-only ID generation (avoids shared storage)
-    await moduleMocker.mock('../id_utils.js', () => ({
-      generateNumericPlanId: mock(async (dir: string) => {
-        const maxId = await getMaxNumericPlanId(dir);
-        return maxId + 1;
-      }),
-    }));
+    closeDatabaseForTesting();
+    originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
 
     tmpDir = await mkdtemp(path.join(os.tmpdir(), 'tim-create-'));
     await Bun.$`git init`.cwd(tmpDir).quiet();
+    process.env.XDG_CONFIG_HOME = path.join(tmpDir, '.config');
+    clearAllTimCaches();
+    mockGetGitRoot.mockResolvedValue(tmpDir);
+    mockGetRepositoryIdentity.mockResolvedValue({
+      repositoryId: `repo-${path.basename(tmpDir)}`,
+      remoteUrl: 'https://example.com/repo.git',
+      gitRoot: tmpDir,
+    });
+
+    // Use only the local temp directory contents for plan IDs.
+    mockGenerateNumericPlanId.mockImplementation(async () => {
+      const entries = await readdir(tmpDir);
+      let maxId = 0;
+      for (const entry of entries) {
+        const match = entry.match(/^(\d+)[^/]*\.plan\.md$/);
+        if (match) {
+          maxId = Math.max(maxId, Number(match[1]));
+        }
+      }
+      return maxId + 1;
+    });
 
     const config = getDefaultConfig();
     config.paths = { tasks: tmpDir };
@@ -1765,9 +1867,15 @@ describe('mcpCreatePlan', () => {
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.restoreAllMocks();
+    closeDatabaseForTesting();
     await rm(tmpDir, { recursive: true, force: true });
     clearAllTimCaches();
+    if (originalXdgConfigHome === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
+    }
   });
 
   async function createPlan(plan: PlanSchema) {
@@ -2072,11 +2180,21 @@ describe('mcpCreatePlan', () => {
 
 describe('MCP Resources', () => {
   let tmpDir: string;
+  let originalXdgConfigHome: string | undefined;
   let context: GenerateModeRegistrationContext;
 
   beforeEach(async () => {
+    closeDatabaseForTesting();
+    originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
     tmpDir = await mkdtemp(path.join(os.tmpdir(), 'tim-resources-'));
     await Bun.$`git init`.cwd(tmpDir).quiet();
+    process.env.XDG_CONFIG_HOME = path.join(tmpDir, '.config');
+    clearAllTimCaches();
+    mockGetRepositoryIdentity.mockResolvedValue({
+      repositoryId: `repo-${path.basename(tmpDir)}`,
+      remoteUrl: 'https://example.com/repo.git',
+      gitRoot: tmpDir,
+    });
 
     const config = getDefaultConfig();
     config.paths = { tasks: tmpDir };
@@ -2089,7 +2207,13 @@ describe('MCP Resources', () => {
   });
 
   afterEach(async () => {
+    closeDatabaseForTesting();
     await rm(tmpDir, { recursive: true, force: true });
+    if (originalXdgConfigHome === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
+    }
   });
 
   async function createPlan(plan: PlanSchema) {

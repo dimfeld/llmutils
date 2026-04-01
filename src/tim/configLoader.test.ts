@@ -1,5 +1,5 @@
 import { $ } from 'bun';
-import { test, describe, expect, afterEach, beforeEach, mock } from 'bun:test';
+import { test, describe, expect, afterEach, beforeEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -11,18 +11,13 @@ import {
   loadEffectiveConfig,
   clearConfigCache,
 } from './configLoader.ts';
-import { ModuleMocker } from '../testing.js';
-
-const moduleMocker = new ModuleMocker(import.meta);
-
-// Silence logs during tests will be done in beforeEach
-import { type TimConfig, type WorkspaceCreationConfig } from './configSchema.js';
 import { DEFAULT_EXECUTOR } from './constants.js';
 import {
   deriveRepositoryName,
   fallbackRepositoryNameFromGitRoot,
   parseGitRemoteUrl,
 } from '../common/git_url_parser.js';
+import { getGitRoot } from '../common/git.js';
 
 // Since js-yaml isn't working in tests, we'll use yaml
 import yaml from 'yaml';
@@ -31,7 +26,6 @@ import yaml from 'yaml';
 let tempDir: string;
 let fakeHomeDir: string;
 let originalXdgConfigHome: string | undefined;
-let logSpy: ReturnType<typeof mock>;
 
 // Helper function to create a temporary directory structure for testing
 async function createTempTestDir() {
@@ -44,28 +38,57 @@ async function createTestFile(filePath: string, content: string) {
   await fs.writeFile(filePath, content, 'utf-8');
 }
 
-beforeEach(async () => {
-  // Mock js-yaml to use yaml package
-  await moduleMocker.mock('js-yaml', () => ({
-    load: (content: string) => yaml.parse(content),
-  }));
+// Mock js-yaml to use yaml package
+vi.mock('js-yaml', () => ({
+  load: (content: string) => yaml.parse(content),
+}));
 
-  // Mock logging
-  await moduleMocker.mock('../logging.js', () => ({
-    debugLog: mock(() => {}),
-    error: mock(() => {}),
-    log: (logSpy = mock(() => {})),
-    warn: mock(() => {}),
-  }));
+// Mock logging
+vi.mock('../logging.js', () => ({
+  debugLog: vi.fn(),
+  error: vi.fn(),
+  log: vi.fn(),
+  warn: vi.fn(),
+}));
+
+vi.mock(import('node:os'), async (importOriginal) => {
+  const realOs = await importOriginal();
+  return {
+    ...realOs,
+    homedir: vi.fn(() => {
+      throw new Error('mock not installed');
+    }),
+  };
+});
+
+// Mock git functions
+vi.mock(import('../common/git.js'), async (importOriginal) => ({
+  ...(await importOriginal()),
+  getGitRoot: vi.fn(() => Promise.reject('mock not installed')),
+}));
+
+import { debugLog, error, log, warn } from '../logging.js';
+
+// Cast the imported functions to mocks
+const mockDebugLog = vi.mocked(debugLog);
+const mockError = vi.mocked(error);
+const logSpy = vi.mocked(log);
+const mockWarn = vi.mocked(warn);
+
+beforeEach(async () => {
+  // Clear previous mock calls
+  mockDebugLog.mockClear();
+  mockError.mockClear();
+  logSpy.mockClear();
+  mockWarn.mockClear();
 
   // Create temporary directory for test files
   tempDir = await createTempTestDir();
+  vi.mocked(getGitRoot).mockResolvedValue(tempDir);
 });
 
 afterEach(async () => {
-  // Clean up mocks
-  moduleMocker.clear();
-
+  vi.resetAllMocks();
   // Clean up temporary directory
   if (tempDir) {
     await fs.rm(tempDir, { recursive: true, force: true });
@@ -88,22 +111,16 @@ describe('configLoader', () => {
     originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
     process.env.XDG_CONFIG_HOME = path.join(fakeHomeDir, '.config');
 
-    const realOs = await import('node:os');
-    await moduleMocker.mock('node:os', () => ({
-      ...realOs,
-      homedir: () => fakeHomeDir,
-    }));
-
-    // Mock the getGitRoot function to return our test directory
-    await moduleMocker.mock('../common/git.js', () => ({
-      getGitRoot: async () => testDir,
-    }));
+    // Set the mock variables
+    vi.mocked(os.homedir).mockReturnValue(fakeHomeDir);
+    vi.mocked(getGitRoot).mockResolvedValue(testDir);
 
     // Create test directories
     await fs.mkdir(configDir, { recursive: true });
   });
 
   afterEach(async () => {
+    vi.resetAllMocks();
     // Cleanup test directory
     await fs.rm(testDir, { recursive: true, force: true });
     if (fakeHomeDir) {
@@ -114,8 +131,6 @@ describe('configLoader', () => {
     } else {
       process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
     }
-    // Clear mocks after each test
-    moduleMocker.clear();
     // Clear the config cache again
     clearConfigCache();
   });

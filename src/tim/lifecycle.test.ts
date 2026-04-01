@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -361,7 +361,7 @@ describe('LifecycleManager', () => {
   });
 
   test('daemon exit with code 0 is treated as a startup failure and does not trigger shutdown', async () => {
-    const warnSpy = spyOn(logging, 'warn').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(logging, 'warn').mockImplementation(() => {});
 
     try {
       const manager = new LifecycleManager(
@@ -390,7 +390,7 @@ describe('LifecycleManager', () => {
   });
 
   test('daemon exit with code 0 respects allowFailure and still suppresses shutdown', async () => {
-    const warnSpy = spyOn(logging, 'warn').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(logging, 'warn').mockImplementation(() => {});
 
     try {
       const manager = new LifecycleManager(
@@ -818,20 +818,20 @@ describe('LifecycleManager', () => {
       const events = await readLines(logFile);
       expect(events).toContain('stubborn-start');
       expect(events).toContain('stubborn-sigterm');
-      expect(processExists(pid)).toBeFalse();
+      expect(processExists(pid)).toBeFalsy();
     },
     10000
   );
 
   test('warns when a running daemon exits unexpectedly later', async () => {
-    const warnSpy = spyOn(logging, 'warn').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(logging, 'warn').mockImplementation(() => {});
 
     try {
       const manager = new LifecycleManager(
         [
           {
             title: 'flaky daemon',
-            command: await createDelayedExitDaemonCommand(logFile, 12, 150, 'flaky-start'),
+            command: await createDelayedExitDaemonCommand(logFile, 12, 300, 'flaky-start'),
             mode: 'daemon',
             shutdown: appendLineCommand(logFile, 'flaky-stop'),
           },
@@ -842,7 +842,7 @@ describe('LifecycleManager', () => {
 
       await manager.startup();
       await waitForLine(logFile, 'flaky-start');
-      await Bun.sleep(300);
+      await Bun.sleep(450);
       await manager.shutdown();
 
       expect(warnSpy).toHaveBeenCalledWith(
@@ -854,14 +854,14 @@ describe('LifecycleManager', () => {
   });
 
   test('warns when a running daemon exits unexpectedly later with code 0', async () => {
-    const warnSpy = spyOn(logging, 'warn').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(logging, 'warn').mockImplementation(() => {});
 
     try {
       const manager = new LifecycleManager(
         [
           {
             title: 'clean-exit daemon',
-            command: await createDelayedExitDaemonCommand(logFile, 0, 150, 'clean-start'),
+            command: await createDelayedExitDaemonCommand(logFile, 0, 300, 'clean-start'),
             mode: 'daemon',
             shutdown: appendLineCommand(logFile, 'clean-stop'),
           },
@@ -872,7 +872,7 @@ describe('LifecycleManager', () => {
 
       await manager.startup();
       await waitForLine(logFile, 'clean-start');
-      await Bun.sleep(300);
+      await Bun.sleep(450);
       await manager.shutdown();
 
       expect(warnSpy).toHaveBeenCalledWith(
@@ -912,10 +912,10 @@ describe('LifecycleManager', () => {
     const childPid = Number.parseInt(await fs.readFile(childPidFile, 'utf8'), 10);
 
     await manager.shutdown();
-    await Bun.sleep(200);
+    await new Promise((resolve) => setTimeout(resolve, 200));
 
-    expect(processExists(launcherPid)).toBeFalse();
-    expect(processExists(childPid)).toBeFalse();
+    expect(processExists(launcherPid)).toBeFalsy();
+    expect(processExists(childPid)).toBeFalsy();
   }, 10000);
 
   test('shutdown continues after shutdown command failures and reports errors', async () => {
@@ -974,7 +974,7 @@ describe('LifecycleManager', () => {
     await expect(manager.shutdown()).rejects.toThrow('Lifecycle shutdown had 1 failure(s)');
 
     const hangingPid = Number.parseInt(await fs.readFile(hangingPidFile, 'utf8'), 10);
-    expect(processExists(hangingPid)).toBeFalse();
+    expect(processExists(hangingPid)).toBeFalsy();
     expect(await readLines(logFile)).toEqual([
       'before',
       'hanging-startup',
@@ -1011,10 +1011,10 @@ describe('LifecycleManager', () => {
 
     const launcherPid = Number.parseInt(await fs.readFile(launcherPidFile, 'utf8'), 10);
     const childPid = Number.parseInt(await fs.readFile(childPidFile, 'utf8'), 10);
-    await Bun.sleep(200);
+    await new Promise((resolve) => setTimeout(resolve, 200));
 
-    expect(processExists(launcherPid)).toBeFalse();
-    expect(processExists(childPid)).toBeFalse();
+    expect(processExists(launcherPid)).toBeFalsy();
+    expect(processExists(childPid)).toBeFalsy();
     expect(await readLines(logFile)).toEqual([
       'start',
       'shutdown-launcher-start',
@@ -1050,7 +1050,7 @@ describe('LifecycleManager', () => {
     await expect(shutdownPromise).rejects.toThrow('Lifecycle shutdown had 1 failure(s)');
 
     const hangingPid = Number.parseInt(await fs.readFile(hangingPidFile, 'utf8'), 10);
-    expect(processExists(hangingPid)).toBeFalse();
+    expect(processExists(hangingPid)).toBeFalsy();
     expect(await readLines(logFile)).toEqual(['start', 'shutdown-start']);
   }, 10000);
 
@@ -1086,10 +1086,10 @@ describe('LifecycleManager', () => {
 
     const launcherPid = Number.parseInt(await fs.readFile(launcherPidFile, 'utf8'), 10);
     const childPid = Number.parseInt(await fs.readFile(childPidFile, 'utf8'), 10);
-    await Bun.sleep(200);
+    await new Promise((resolve) => setTimeout(resolve, 200));
 
-    expect(processExists(launcherPid)).toBeFalse();
-    expect(processExists(childPid)).toBeFalse();
+    expect(processExists(launcherPid)).toBeFalsy();
+    expect(processExists(childPid)).toBeFalsy();
   }, 10000);
 
   test('killDaemons coordinates cleanly when it races the shutdown timeout', async () => {
@@ -1126,10 +1126,10 @@ describe('LifecycleManager', () => {
 
     const launcherPid = Number.parseInt(await fs.readFile(launcherPidFile, 'utf8'), 10);
     const childPid = Number.parseInt(await fs.readFile(childPidFile, 'utf8'), 10);
-    await Bun.sleep(200);
+    await new Promise((resolve) => setTimeout(resolve, 200));
 
-    expect(processExists(launcherPid)).toBeFalse();
-    expect(processExists(childPid)).toBeFalse();
+    expect(processExists(launcherPid)).toBeFalsy();
+    expect(processExists(childPid)).toBeFalsy();
   }, 10000);
 
   test('shutdown timeout override still allows normal shutdown commands to complete', async () => {
@@ -1164,7 +1164,7 @@ describe('LifecycleManager', () => {
       tempDir,
       undefined
     );
-    const tryKillProcessSpy = spyOn(manager as any, 'tryKillProcess').mockReturnValue(false);
+    const tryKillProcessSpy = vi.spyOn(manager as any, 'tryKillProcess').mockReturnValue(false);
 
     try {
       await manager.startup();
@@ -1254,7 +1254,7 @@ describe('LifecycleManager', () => {
     await manager.startup();
     await Bun.sleep(100);
     manager.killDaemons();
-    await Bun.sleep(200);
+    await new Promise((resolve) => setTimeout(resolve, 200));
 
     expect(await readLines(logFile)).toContain('daemon-term');
   });

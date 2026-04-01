@@ -1,30 +1,76 @@
-import { describe, test, expect, beforeEach, afterEach, afterAll, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
-import { ModuleMocker } from '../../testing.js';
 import { claimAssignment } from '../db/assignment.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { upsertPlan } from '../db/plan.js';
 import { getOrCreateProject } from '../db/project.js';
 import { recordWorkspace } from '../db/workspace.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
-
 // Mock logging functions
-const mockLog = mock(() => {});
-const mockError = mock(() => {});
-const mockWarn = mock(() => {});
+vi.mock('../../logging.js', () => ({
+  log: vi.fn(),
+  error: vi.fn(),
+  warn: vi.fn(),
+}));
 
-// Mock table to capture output
-const mockTable = mock((data: any[]) => {
-  return data.map((row) => row.join('\t')).join('\n');
+// Mock chalk to avoid ANSI codes in tests
+vi.mock('chalk', () => {
+  const chalkMock = (str: string) => str;
+  return {
+    default: {
+      green: chalkMock,
+      yellow: chalkMock,
+      red: chalkMock,
+      redBright: chalkMock,
+      gray: chalkMock,
+      bold: chalkMock,
+      dim: chalkMock,
+      cyan: chalkMock,
+      white: chalkMock,
+      magenta: chalkMock,
+      blue: chalkMock,
+      rgb: () => chalkMock,
+      strikethrough: {
+        gray: chalkMock,
+      },
+    },
+  };
 });
 
-// Now import the module being tested
+vi.mock('table', () => ({
+  table: vi.fn((data: any[]) => {
+    return data.map((row: any[]) => row.join('\t')).join('\n');
+  }),
+}));
+
+// Mock config loader
+vi.mock('../configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(),
+}));
+
+// Mock git helpers
+vi.mock('../../common/git.js', () => ({
+  getGitRoot: vi.fn(),
+}));
+
+vi.mock('../assignments/workspace_identifier.ts', () => ({
+  getRepositoryIdentity: vi.fn(),
+}));
+
 import { handleReadyCommand } from './ready.js';
 import type { PlanSchema } from '../planSchema.js';
+import { log as mockLogFn, error as mockErrorFn, warn as mockWarnFn } from '../../logging.js';
+import { loadEffectiveConfig } from '../configLoader.js';
+import { getGitRoot } from '../../common/git.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+
+const mockLog = vi.mocked(mockLogFn);
+const mockError = vi.mocked(mockErrorFn);
+const mockWarn = vi.mocked(mockWarnFn);
+const mockTable = vi.mocked((await import('table')).table);
 
 describe('handleReadyCommand', () => {
   let tempDir: string;
@@ -34,15 +80,11 @@ describe('handleReadyCommand', () => {
   let repositoryId: string;
   let assignmentsData: Record<string, any>;
   let originalEnv: Partial<Record<string, string>>;
-  let getRepositoryIdentityMock: ReturnType<typeof mock>;
   let currentConfigPath: string | undefined;
 
   beforeEach(async () => {
     // Clear mocks
-    mockLog.mockClear();
-    mockError.mockClear();
-    mockWarn.mockClear();
-    mockTable.mockClear();
+    vi.clearAllMocks();
 
     // Clear plan cache
 
@@ -63,66 +105,23 @@ describe('handleReadyCommand', () => {
     repositoryId = 'ready-tests';
     assignmentsData = {};
     currentConfigPath = undefined;
-    getRepositoryIdentityMock = mock(async (_options?: { cwd?: string }) => ({
+
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
+      paths: {
+        tasks: tasksDir,
+      },
+    } as any);
+    vi.mocked(getGitRoot).mockResolvedValue(repoDir);
+    vi.mocked(getRepositoryIdentity).mockResolvedValue({
       repositoryId,
       remoteUrl: 'https://example.com/repo.git',
       gitRoot: repoDir,
-    }));
-
-    // Set up mocks
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: mockLog,
-      error: mockError,
-      warn: mockWarn,
-    }));
-
-    // Mock chalk to avoid ANSI codes in tests
-    const chalkMock = (str: string) => str;
-    await moduleMocker.mock('chalk', () => ({
-      default: {
-        green: chalkMock,
-        yellow: chalkMock,
-        red: chalkMock,
-        redBright: chalkMock,
-        gray: chalkMock,
-        bold: chalkMock,
-        dim: chalkMock,
-        cyan: chalkMock,
-        white: chalkMock,
-        magenta: chalkMock,
-        blue: chalkMock,
-        rgb: () => chalkMock,
-        strikethrough: {
-          gray: chalkMock,
-        },
-      },
-    }));
-
-    await moduleMocker.mock('table', () => ({
-      table: mockTable,
-    }));
-
-    // Mock config loader
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: {
-          tasks: tasksDir,
-        },
-      }),
-    }));
-
-    // Mock git helpers
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => repoDir,
-    }));
-
-    await moduleMocker.mock('../assignments/workspace_identifier.ts', () => ({
-      getRepositoryIdentity: getRepositoryIdentityMock,
-    }));
+    });
   });
 
   afterEach(async () => {
     closeDatabaseForTesting();
+    vi.clearAllMocks();
     if (originalEnv.XDG_CONFIG_HOME === undefined) {
       delete process.env.XDG_CONFIG_HOME;
     } else {
@@ -135,10 +134,6 @@ describe('handleReadyCommand', () => {
     }
     // Clean up filesystem
     await fs.rm(tempDir, { recursive: true, force: true });
-  });
-
-  afterAll(() => {
-    moduleMocker.clear();
   });
 
   // Helper function to create command object
@@ -1825,6 +1820,6 @@ describe('handleReadyCommand', () => {
 
     await runReady({}, createCommand());
 
-    expect(getRepositoryIdentityMock).toHaveBeenCalledWith({ cwd: configRepo });
+    expect(vi.mocked(getRepositoryIdentity)).toHaveBeenCalledWith({ cwd: configRepo });
   });
 });

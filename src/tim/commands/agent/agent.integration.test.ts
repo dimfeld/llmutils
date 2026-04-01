@@ -1,24 +1,129 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { closeDatabaseForTesting } from '../../db/database.js';
 import { writePlanFile } from '../../plans.js';
-import { ModuleMocker } from '../../../testing.js';
 
-// We'll import timAgent dynamically after setting up mocks in tests
-let timAgent: any;
+let tempDir = '';
+let tasksDir = '';
+let configPath = '';
+let originalEnv: Partial<Record<string, string>> = {};
+
+const { mockLog, mockWarn } = vi.hoisted(() => ({
+  mockLog: vi.fn(() => {}),
+  mockWarn: vi.fn(() => {}),
+}));
+
+// Per-test controlled executor
+let executorExecuteImpl: () => Promise<any> = async () => ({ content: 'default output' });
+
+vi.mock('../../../logging.js', () => ({
+  log: mockLog,
+  warn: mockWarn,
+  error: mockLog,
+  boldMarkdownHeaders: (s: string) => s,
+  openLogFile: vi.fn(() => {}),
+  closeLogFile: vi.fn(async () => {}),
+  debugLog: vi.fn(() => {}),
+  sendStructured: vi.fn(() => {}),
+}));
+
+vi.mock('../../../common/git.js', () => ({
+  getGitRoot: vi.fn(async () => tempDir),
+  getCurrentCommitHash: vi.fn(async () => 'baseline-commit'),
+  getChangedFilesBetween: vi.fn(async () => ['tasks/123-test-plan.yml', 'src/example.ts']),
+  getChangedFilesOnBranch: vi.fn(async () => ['tasks/123-test-plan.yml']),
+  getWorkingCopyStatus: vi.fn(async () => ({
+    hasChanges: true,
+    checkFailed: false,
+    diffHash: 'hash-unique',
+  })),
+}));
+
+vi.mock('../../../common/process.js', () => ({
+  commitAll: vi.fn(async () => 0),
+  logSpawn: vi.fn(() => ({
+    exited: Promise.resolve(0),
+  })),
+  spawnAndLogOutput: vi.fn(async () => ({
+    exitCode: 0,
+    stdout: '',
+    stderr: '',
+    signal: null,
+    killedByInactivity: false,
+  })),
+}));
+
+vi.mock('../../workspace/workspace_lock.js', () => {
+  class WorkspaceAlreadyLocked extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = 'WorkspaceAlreadyLocked';
+    }
+  }
+  return {
+    WorkspaceAlreadyLocked,
+    WorkspaceLock: {
+      acquireLock: vi.fn(async () => ({ type: 'pid' })),
+      setupCleanupHandlers: vi.fn(() => {}),
+      releaseLock: vi.fn(async () => {}),
+      getLockInfo: vi.fn(async () => null),
+      isLockStale: vi.fn(async () => false),
+    },
+  };
+});
+
+vi.mock('../../plans/prepare_step.js', () => ({
+  prepareNextStep: vi.fn(async (_config: any, _planFile: string, _opts: any) => ({
+    prompt: 'Prepared prompt content',
+    promptFilePath: null,
+    taskIndex: 0,
+    stepIndex: 0,
+    numStepsSelected: 1,
+    rmfilterArgs: undefined,
+  })),
+}));
+
+vi.mock('../../plans/mark_done.js', () => ({
+  markStepDone: vi.fn(async () => ({ message: 'Step marked', planComplete: false })),
+  markTaskDone: vi.fn(async () => ({ message: 'Task marked', planComplete: false })),
+}));
+
+vi.mock('../../executors/index.js', () => ({
+  buildExecutorAndLog: vi.fn((_name: string, _opts: any, _config: any) => ({
+    filePathPrefix: '@/',
+    execute: vi.fn(async (...args: any[]) => executorExecuteImpl()),
+    prepareStepOptions: vi.fn(() => ({})),
+  })),
+  DEFAULT_EXECUTOR: 'codex-cli',
+  defaultModelForExecutor: vi.fn(() => 'mock-model'),
+}));
+
+vi.mock('../../plan_materialize.js', () => ({
+  materializePlan: vi.fn(async () => {}),
+  syncMaterializedPlan: vi.fn(async () => {}),
+  getMaterializedPlanPath: vi.fn(() => '/tmp/plan.md'),
+  getShadowPlanPath: vi.fn(() => '/tmp/.plan.md.shadow'),
+  materializeRelatedPlans: vi.fn(async () => {}),
+  materializeAndPruneRelatedPlans: vi.fn(async () => {}),
+  withPlanAutoSync: vi.fn(async (_id: any, _root: any, fn: () => any) => fn()),
+  resolveProjectContext: vi.fn(async () => ({
+    projectId: 1,
+    planRowsByPlanId: new Map(),
+    planRowsByUuid: new Map(),
+    maxNumericId: 0,
+  })),
+  readMaterializedPlanRole: vi.fn(async () => null),
+  ensureMaterializeDir: vi.fn(async () => '/tmp'),
+  parsePlanId: vi.fn((id: string) => parseInt(id)),
+  diffPlanFields: vi.fn(() => ({})),
+  mergePlanWithShadow: vi.fn((base: any) => base),
+  cleanupMaterializedPlans: vi.fn(async () => {}),
+  MATERIALIZED_DIR: '.tim/plans',
+}));
 
 describe('tim agent integration (execution summaries)', () => {
-  let tempDir: string;
-  let tasksDir: string;
-  let configPath: string;
-  let moduleMocker: ModuleMocker;
-  let originalEnv: Partial<Record<string, string>>;
-
-  const mockLog = mock(() => {});
-  const mockWarn = mock(() => {});
-
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-agent-integration-'));
     tasksDir = path.join(tempDir, 'tasks');
@@ -39,61 +144,11 @@ describe('tim agent integration (execution summaries)', () => {
     await fs.mkdir(path.dirname(configPath), { recursive: true });
     await fs.writeFile(configPath, 'paths:\n  tasks: tasks\n');
 
-    moduleMocker = new ModuleMocker(import.meta);
-
-    // Mock logging and summary display writing
     mockLog.mockClear();
     mockWarn.mockClear();
-    await moduleMocker.mock('../../../logging.js', () => ({
-      log: mockLog,
-      warn: mockWarn,
-      error: mockLog,
-      boldMarkdownHeaders: (s: string) => s,
-      openLogFile: mock(() => {}),
-      closeLogFile: mock(async () => {}),
-    }));
 
-    // Mock git root + change tracking to avoid real VCS
-    await moduleMocker.mock('../../../common/git.js', () => ({
-      getGitRoot: mock(async () => tempDir),
-      getCurrentCommitHash: mock(async () => 'baseline-commit'),
-      getChangedFilesBetween: mock(async () => ['tasks/123-test-plan.yml', 'src/example.ts']),
-      getChangedFilesOnBranch: mock(async () => ['tasks/123-test-plan.yml']),
-    }));
-
-    // Avoid actually committing in batch mode
-    await moduleMocker.mock('../../../common/process.js', () => ({
-      commitAll: mock(async () => 0),
-      logSpawn: mock(() => ({
-        exited: Promise.resolve(0),
-      })),
-    }));
-
-    // Prevent interactive prompts and workspace handling from interfering
-    await moduleMocker.mock('../../workspace/workspace_lock.js', () => ({
-      WorkspaceLock: {
-        acquireLock: mock(async () => ({ type: 'pid' })),
-        setupCleanupHandlers: mock(() => {}),
-      },
-    }));
-
-    // Mock prepareNextStep to return a direct prompt (no rmfilter)
-    await moduleMocker.mock('../../plans/prepare_step.js', () => ({
-      prepareNextStep: mock(async (_config: any, _planFile: string, _opts: any) => ({
-        prompt: 'Prepared prompt content',
-        promptFilePath: null,
-        taskIndex: 0,
-        stepIndex: 0,
-        numStepsSelected: 1,
-        rmfilterArgs: undefined,
-      })),
-    }));
-
-    // Mock step/task marking to avoid complex file mutations
-    await moduleMocker.mock('../../plans/mark_done.js', () => ({
-      markStepDone: mock(async () => ({ message: 'Step marked', planComplete: false })),
-      markTaskDone: mock(async () => ({ message: 'Task marked', planComplete: false })),
-    }));
+    // Reset per-test implementations
+    executorExecuteImpl = async () => ({ content: 'default output' });
   });
 
   afterEach(async () => {
@@ -109,7 +164,7 @@ describe('tim agent integration (execution summaries)', () => {
       process.env.APPDATA = originalEnv.APPDATA;
     }
     await fs.rm(tempDir, { recursive: true, force: true });
-    moduleMocker.clear();
+    vi.clearAllMocks();
   });
 
   async function writePlan(fileName: string, plan: any) {
@@ -136,18 +191,9 @@ describe('tim agent integration (execution summaries)', () => {
     };
     const planPath = await writePlan('123-test-plan.yml', plan);
 
-    // Mock executor factory to return a Claude-like executor that returns a final assistant message
-    await moduleMocker.mock('../../executors/index.js', () => ({
-      buildExecutorAndLog: mock((_name: string, _opts: any, _config: any) => ({
-        filePathPrefix: '@/',
-        execute: mock(async () => ({ content: 'This is the final orchestrator message.' })),
-        prepareStepOptions: mock(() => ({})),
-      })),
-      defaultModelForExecutor: mock(() => 'mock-model'),
-    }));
+    executorExecuteImpl = async () => ({ content: 'This is the final orchestrator message.' });
 
-    // Now import the agent handler with mocks applied
-    ({ timAgent } = await import('./agent.js'));
+    const { timAgent } = await import('./agent.js');
 
     const summaryFile = path.join(tempDir, 'out', 'summary.txt');
 
@@ -193,18 +239,11 @@ describe('tim agent integration (execution summaries)', () => {
     const planPath = await writePlan('321-test-plan.yml', plan);
 
     // First, have executor throw to simulate failure and ensure summary records it
-    await moduleMocker.mock('../../executors/index.js', () => ({
-      buildExecutorAndLog: mock((_name: string, _opts: any, _config: any) => ({
-        filePathPrefix: '@/',
-        execute: mock(async () => {
-          throw new Error('executor boom');
-        }),
-        prepareStepOptions: mock(() => ({})),
-      })),
-      defaultModelForExecutor: mock(() => 'mock-model'),
-    }));
+    executorExecuteImpl = async () => {
+      throw new Error('executor boom');
+    };
 
-    ({ timAgent } = await import('./agent.js'));
+    const { timAgent } = await import('./agent.js');
     const summaryFile = path.join(tempDir, 'out', 'summary2.txt');
 
     await expect(
@@ -230,25 +269,16 @@ describe('tim agent integration (execution summaries)', () => {
     expect(content).toContain('executor boom');
 
     // Now, run again with a Codex-like combined output to validate parsing
-    await moduleMocker.mock('../../executors/index.js', () => ({
-      buildExecutorAndLog: mock((_name: string, _opts: any, _config: any) => ({
-        filePathPrefix: '@/',
-        execute: mock(async () => ({
-          content: [
-            '=== Codex Implementer ===',
-            'Implementation details here',
-            '',
-            '=== Codex Reviewer ===',
-            'ACCEPTABLE',
-          ].join('\n'),
-        })),
-        prepareStepOptions: mock(() => ({})),
-      })),
-      defaultModelForExecutor: mock(() => 'mock-model'),
-    }));
+    executorExecuteImpl = async () => ({
+      content: [
+        '=== Codex Implementer ===',
+        'Implementation details here',
+        '',
+        '=== Codex Reviewer ===',
+        'ACCEPTABLE',
+      ].join('\n'),
+    });
 
-    // Re-import to ensure the latest mocks are used
-    ({ timAgent } = await import('./agent.js'));
     const summaryFile2 = path.join(tempDir, 'out', 'summary3.txt');
 
     await timAgent(
@@ -285,32 +315,25 @@ describe('tim agent integration (execution summaries)', () => {
     };
     const planPath = await writePlan('999-batch-plan.yml', plan);
 
-    // Toggle getAllIncompleteTasks to return tasks then an empty list (to finish after one iteration)
-    let callCount = 0;
-    await moduleMocker.mock('../../plans/find_next.js', () => ({
-      getAllIncompleteTasks: mock((_p: any) => {
-        callCount += 1;
-        if (callCount === 1) {
-          return [
-            { taskIndex: 0, task: { title: 'Simple Task A', done: false } },
-            { taskIndex: 1, task: { title: 'Simple Task B', done: false } },
-          ];
-        }
-        return [];
-      }),
-    }));
+    // Executor marks all tasks done after first call so batch loop terminates
+    executorExecuteImpl = async () => {
+      const { writePlanFile } = await import('../../plans.js');
+      await writePlanFile(planPath, {
+        id: 999,
+        title: 'Batch Mode Plan',
+        goal: 'Batch mode summary',
+        details: 'Capture batch iterations',
+        status: 'in_progress',
+        tasks: [
+          { title: 'Simple Task A', description: 'A', done: true, steps: [] },
+          { title: 'Simple Task B', description: 'B', done: true, steps: [] },
+        ],
+        updatedAt: new Date().toISOString(),
+      });
+      return { content: 'Batch output here' };
+    };
 
-    // Executor returns any string; parser handles it generically for Claude name too
-    await moduleMocker.mock('../../executors/index.js', () => ({
-      buildExecutorAndLog: mock((_name: string, _opts: any, _config: any) => ({
-        filePathPrefix: '@/',
-        execute: mock(async () => ({ content: 'Batch output here' })),
-        prepareStepOptions: mock(() => ({})),
-      })),
-      defaultModelForExecutor: mock(() => 'mock-model'),
-    }));
-
-    ({ timAgent } = await import('./agent.js'));
+    const { timAgent } = await import('./agent.js');
     const summaryFile = path.join(tempDir, 'out', 'batch-summary.txt');
 
     await timAgent(

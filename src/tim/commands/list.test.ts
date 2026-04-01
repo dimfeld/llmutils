@@ -1,25 +1,97 @@
-import { describe, test, expect, beforeEach, afterEach, afterAll, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, afterAll, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
-import { ModuleMocker } from '../../testing.js';
-
-const moduleMocker = new ModuleMocker(import.meta);
 
 // Mock logging functions
-const mockLog = mock(() => {});
-const mockError = mock(() => {});
-const mockWarn = mock(() => {});
+let mockLog: ReturnType<typeof vi.fn>;
+let mockError: ReturnType<typeof vi.fn>;
+let mockWarn: ReturnType<typeof vi.fn>;
 
 // Mock table to capture output
-const mockTable = mock((data: any[]) => {
-  return data.map((row) => row.join('\t')).join('\n');
+let mockTable: ReturnType<typeof vi.fn>;
+
+// Mock modules before imports
+vi.mock('../../logging.js', () => ({
+  log: vi.fn(),
+  error: vi.fn(),
+  warn: vi.fn(),
+}));
+
+// Mock chalk to avoid ANSI codes in tests
+vi.mock('chalk', () => {
+  const chalkMock = (str: string) => str;
+  return {
+    default: {
+      green: chalkMock,
+      yellow: chalkMock,
+      red: chalkMock,
+      redBright: chalkMock,
+      gray: chalkMock,
+      bold: chalkMock,
+      dim: chalkMock,
+      cyan: chalkMock,
+      white: chalkMock,
+      magenta: chalkMock,
+      blue: chalkMock,
+      rgb: () => chalkMock,
+      strikethrough: {
+        gray: chalkMock,
+      },
+    },
+  };
 });
+
+vi.mock('table', () => ({
+  table: vi.fn((data: any[]) => {
+    return data.map((row) => row.join('\t')).join('\n');
+  }),
+}));
+
+// Mock config loader
+vi.mock('../configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn().mockResolvedValue({
+    paths: {
+      tasks: '',
+    },
+  }),
+}));
+
+vi.mock('../assignments/workspace_identifier.ts', () => ({
+  getRepositoryIdentity: vi.fn().mockResolvedValue({
+    repositoryId: '',
+    remoteUrl: 'https://example.com/repo.git',
+    gitRoot: '',
+  }),
+  getUserIdentity: vi.fn(),
+}));
+
+vi.mock('../db/database.js', () => ({
+  getDatabase: vi.fn().mockReturnValue({} as any),
+}));
+
+vi.mock('../db/project.js', () => ({
+  getProject: vi.fn().mockReturnValue({ id: 1 }),
+}));
+
+vi.mock('../plans_db.js', () => ({
+  loadPlansFromDb: vi.fn().mockReturnValue({ plans: new Map(), duplicates: {} }),
+}));
+
+vi.mock('../db/assignment.js', () => ({
+  getAssignmentEntriesByProject: vi.fn().mockReturnValue({}),
+}));
 
 // Now import the module being tested
 import { handleListCommand } from './list.js';
 import type { PlanSchema } from '../planSchema.js';
+import { getRepositoryIdentity, getUserIdentity } from '../assignments/workspace_identifier.js';
+import { loadPlansFromDb } from '../plans_db.js';
+import { getAssignmentEntriesByProject } from '../db/assignment.js';
+import { loadEffectiveConfig } from '../configLoader.js';
+import { log, error, warn } from '../../logging.js';
+import { table } from 'table';
 
 describe('handleListCommand', () => {
   let tempDir: string;
@@ -34,13 +106,17 @@ describe('handleListCommand', () => {
   let dbPlanTags: any[];
 
   beforeEach(async () => {
+    // Get properly typed mock instances
+    mockLog = vi.mocked(log);
+    mockError = vi.mocked(error);
+    mockWarn = vi.mocked(warn);
+    mockTable = vi.mocked(table);
+
     // Clear mocks
     mockLog.mockClear();
     mockError.mockClear();
     mockWarn.mockClear();
     mockTable.mockClear();
-
-    // Clear plan cache
 
     // Create temporary directory
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-list-test-'));
@@ -54,139 +130,96 @@ describe('handleListCommand', () => {
     dbPlanTasks = [];
     dbPlanDependencies = [];
     dbPlanTags = [];
-    // Set up mocks immediately before imports
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: mockLog,
-      error: mockError,
-      warn: mockWarn,
-    }));
 
-    // Mock chalk to avoid ANSI codes in tests
-    const chalkMock = (str: string) => str;
-    await moduleMocker.mock('chalk', () => ({
-      default: {
-        green: chalkMock,
-        yellow: chalkMock,
-        red: chalkMock,
-        redBright: chalkMock,
-        gray: chalkMock,
-        bold: chalkMock,
-        dim: chalkMock,
-        cyan: chalkMock,
-        white: chalkMock,
-        magenta: chalkMock,
-        blue: chalkMock,
-        rgb: () => chalkMock,
-        strikethrough: {
-          gray: chalkMock,
-        },
+    // Set up mock implementations
+    const mockLoadEffectiveConfig = vi.mocked(loadEffectiveConfig);
+    mockLoadEffectiveConfig.mockResolvedValue({
+      paths: {
+        tasks: tasksDir,
       },
-    }));
+    });
 
-    await moduleMocker.mock('table', () => ({
-      table: mockTable,
-    }));
+    const mockGetRepositoryIdentity = vi.mocked(getRepositoryIdentity);
+    mockGetRepositoryIdentity.mockResolvedValue({
+      repositoryId,
+      remoteUrl: 'https://example.com/repo.git',
+      gitRoot: repoDir,
+    });
 
-    // Mock config loader
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: {
-          tasks: tasksDir,
-        },
-      }),
-    }));
+    const mockLoadPlansFromDb = vi.mocked(loadPlansFromDb);
+    mockLoadPlansFromDb.mockImplementation(() => {
+      const plans = new Map();
+      for (const rawPlan of dbPlans) {
+        const plan =
+          'plan_id' in rawPlan
+            ? {
+                id: rawPlan.plan_id,
+                uuid: rawPlan.uuid,
+                title: rawPlan.title ?? undefined,
+                goal: rawPlan.goal ?? '',
+                details: rawPlan.details ?? '',
+                status: rawPlan.status ?? 'pending',
+                priority: rawPlan.priority ?? undefined,
+                branch: rawPlan.branch ?? undefined,
+                parent: undefined,
+                epic: Boolean(rawPlan.epic),
+                simple: Boolean(rawPlan.simple),
+                tasks: (typeof dbPlanTasks !== 'undefined' ? dbPlanTasks : [])
+                  .filter((task: any) => task.plan_uuid === rawPlan.uuid)
+                  .map((task: any) => ({
+                    title: task.title,
+                    description: task.description,
+                    done: Boolean(task.done),
+                  })),
+                dependencies: (typeof dbPlanDependencies !== 'undefined' ? dbPlanDependencies : [])
+                  .filter((dep: any) => dep.plan_uuid === rawPlan.uuid)
+                  .map((dep: any) => dep.depends_on_uuid),
+                tags: (typeof dbPlanTags !== 'undefined' ? dbPlanTags : [])
+                  .filter((tag: any) => tag.plan_uuid === rawPlan.uuid)
+                  .map((tag: any) => tag.tag),
+                filename: rawPlan.filename,
+                createdAt: rawPlan.created_at,
+                updatedAt: rawPlan.updated_at ?? undefined,
+              }
+            : rawPlan;
+        plans.set(plan.id, plan);
+      }
+      return { plans, duplicates: {} } as any;
+    });
 
-    await moduleMocker.mock('../assignments/workspace_identifier.ts', () => ({
-      getRepositoryIdentity: async () => ({
-        repositoryId,
-        remoteUrl: 'https://example.com/repo.git',
-        gitRoot: repoDir,
-      }),
-      getUserIdentity: () => currentUser,
-    }));
+    const mockGetAssignmentEntriesByProject = vi.mocked(getAssignmentEntriesByProject);
+    mockGetAssignmentEntriesByProject.mockImplementation(() => assignmentsData);
 
-    await moduleMocker.mock('../db/database.js', () => ({
-      getDatabase: () => ({}) as any,
-    }));
-    await moduleMocker.mock('../db/project.js', () => ({
-      getProject: () => ({ id: 1 }),
-    }));
-    await moduleMocker.mock('../db/plan.js', () => ({
-      getPlansByProject: () => dbPlans,
-      getPlanTasksByProject: () => dbPlanTasks,
-      getPlanDependenciesByProject: () => dbPlanDependencies,
-      getPlanTagsByProject: () => dbPlanTags,
-      getPlanByUuid: (_db: unknown, uuid: string) =>
-        dbPlans.find((plan) => plan.uuid === uuid) ?? null,
-    }));
-    await moduleMocker.mock('../db/assignment.js', () => ({
-      getAssignmentEntriesByProject: () => assignmentsData,
-    }));
+    const mockGetUserIdentity = vi.mocked(getUserIdentity);
+    mockGetUserIdentity.mockImplementation(() => currentUser);
   });
 
   afterEach(async () => {
     // Clean up filesystem
     await fs.rm(tempDir, { recursive: true, force: true });
-  });
-
-  afterAll(() => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
   });
 
   function addDbPlan(plan: PlanSchema & { id: number; uuid?: string }) {
     const uuid = plan.uuid ?? `plan-${plan.id}`;
 
     dbPlans.push({
+      ...plan,
       uuid,
-      project_id: 1,
-      plan_id: plan.id,
-      title: plan.title ?? null,
+      id: plan.id,
+      filename: `${plan.id}.plan.md`,
+      title: plan.title ?? undefined,
       goal: plan.goal ?? '',
       details: plan.details ?? '',
       status: plan.status ?? 'pending',
-      priority: plan.priority ?? null,
-      branch: plan.branch ?? null,
-      parent_uuid: typeof plan.parent === 'number' ? `plan-${plan.parent}` : null,
-      discovered_from: typeof plan.discoveredFrom === 'number' ? plan.discoveredFrom : null,
-      epic: plan.epic ? 1 : 0,
-      simple: plan.simple ? 1 : 0,
-      tdd: plan.tdd ? 1 : 0,
-      assigned_to: plan.assignedTo ?? null,
-      issue: plan.issue ? JSON.stringify(plan.issue) : null,
-      pull_request: plan.pullRequest ? JSON.stringify(plan.pullRequest) : null,
-      docs: plan.docs ? JSON.stringify(plan.docs) : null,
-      changed_files: plan.changedFiles ? JSON.stringify(plan.changedFiles) : null,
-      temp: plan.temp ? 1 : 0,
-      base_branch: plan.baseBranch ?? null,
-      review_issues: plan.reviewIssues ? JSON.stringify(plan.reviewIssues) : null,
-      plan_generated_at: plan.planGeneratedAt ?? null,
-      filename: `${plan.id}.plan.md`,
-      created_at: plan.createdAt ?? '2026-01-01T00:00:00.000Z',
-      updated_at: plan.updatedAt ?? null,
+      priority: plan.priority ?? undefined,
+      tags: plan.tags ?? [],
+      dependencies: plan.dependencies ?? [],
+      tasks: plan.tasks ?? [],
+      assignedTo: plan.assignedTo ?? undefined,
+      createdAt: plan.createdAt ?? '2026-01-01T00:00:00.000Z',
+      updatedAt: plan.updatedAt ?? undefined,
     });
-
-    for (const task of plan.tasks ?? []) {
-      dbPlanTasks.push({
-        plan_uuid: uuid,
-        title: task.title ?? '',
-        description: task.description ?? '',
-        done: task.done ? 1 : 0,
-      });
-    }
-
-    for (const dependencyId of plan.dependencies ?? []) {
-      dbPlanDependencies.push({
-        plan_uuid: uuid,
-        depends_on_uuid: `plan-${dependencyId}`,
-      });
-    }
-
-    for (const tag of plan.tags ?? []) {
-      dbPlanTags.push({
-        plan_uuid: uuid,
-        tag,
-      });
-    }
   }
 
   async function createPlanFixture(
@@ -1760,9 +1793,4 @@ describe('handleListCommand', () => {
     const row = tableData[1];
     expect(row[tagsIndex]).toBe('frontend, urgent');
   });
-});
-
-// Clean up module-level mocks after all tests
-afterAll(() => {
-  moduleMocker.clear();
 });

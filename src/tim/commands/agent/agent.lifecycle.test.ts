@@ -1,39 +1,284 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { CleanupRegistry } from '../../../common/cleanup_registry.js';
 import { closeDatabaseForTesting } from '../../db/database.js';
 import { writePlanFile } from '../../plans.js';
-import { ModuleMocker } from '../../../testing.js';
 import { resetShutdownState, setShuttingDown } from '../../shutdown_state.js';
 
-describe('timAgent lifecycle integration', () => {
-  const moduleMocker = new ModuleMocker(import.meta);
-  let tempDir: string;
-  let planFile: string;
-  let originalEnv: Partial<Record<string, string>>;
-  let effectiveConfig: Record<string, unknown>;
-  const buildExecutorAndLogSpy = mock(() => ({
-    execute: mock(async () => ({ success: true })),
+let tempDir = '';
+let planFile = '';
+let effectiveConfig: Record<string, unknown> = {};
+
+// Per-test control vars
+let findNextActionableItemImpl: () => any = () => null;
+let executeBatchModeImpl: () => Promise<any> = async () => undefined;
+let prepareNextStepImpl: () => Promise<any> = async () => ({
+  prompt: 'CTX',
+  promptFilePath: undefined,
+  rmfilterArgs: undefined,
+  taskIndex: 0,
+  stepIndex: 0,
+  numStepsSelected: 1,
+});
+
+// summaryOrder is not used in vi.mock factories but is used in spy implementations below
+const summaryOrder: string[] = [];
+
+// Declare with vi.hoisted so they're available inside vi.mock() factory functions
+const {
+  buildExecutorAndLogSpy,
+  getWorkspaceInfoByPathSpy,
+  touchWorkspaceInfoSpy,
+  sendNotificationSpy,
+  closeLogFileSpy,
+  openLogFileSpy,
+  loadEffectiveConfigSpy,
+  markStepDoneSpy,
+  markTaskDoneSpy,
+  runUpdateDocsSpy,
+  runUpdateLessonsSpy,
+  executePostApplyCommandSpy,
+  trackFileChangesSpy,
+  writeOrDisplaySummarySpy,
+} = vi.hoisted(() => ({
+  buildExecutorAndLogSpy: vi.fn(() => ({
+    execute: vi.fn(async () => ({ success: true })),
     filePathPrefix: '',
-  }));
-  const getWorkspaceInfoByPathSpy = mock(() => ({
+  })),
+  getWorkspaceInfoByPathSpy: vi.fn(() => ({
     workspaceType: 'auto' as const,
-  }));
-  const touchWorkspaceInfoSpy = mock(() => {});
-  const sendNotificationSpy = mock(async () => {});
-  const closeLogFileSpy = mock(async () => {});
-  const openLogFileSpy = mock(() => {});
-  const loadEffectiveConfigSpy = mock(async () => effectiveConfig);
-  const markStepDoneSpy = mock(async () => ({ message: 'Step marked', planComplete: false }));
-  const markTaskDoneSpy = mock(async () => ({ message: 'Task marked', planComplete: false }));
-  const runUpdateDocsSpy = mock(async () => {});
-  const runUpdateLessonsSpy = mock(async () => {});
-  const executePostApplyCommandSpy = mock(async () => true);
-  const summaryOrder: string[] = [];
-  const trackFileChangesSpy = mock(async () => {});
-  const writeOrDisplaySummarySpy = mock(async () => {});
+  })),
+  touchWorkspaceInfoSpy: vi.fn(() => {}),
+  sendNotificationSpy: vi.fn(async () => {}),
+  closeLogFileSpy: vi.fn(async () => {}),
+  openLogFileSpy: vi.fn(() => {}),
+  loadEffectiveConfigSpy: vi.fn(async () => ({}) as Record<string, unknown>),
+  markStepDoneSpy: vi.fn(async () => ({ message: 'Step marked', planComplete: false })),
+  markTaskDoneSpy: vi.fn(async () => ({ message: 'Task marked', planComplete: false })),
+  runUpdateDocsSpy: vi.fn(async () => {}),
+  runUpdateLessonsSpy: vi.fn(async () => {}),
+  executePostApplyCommandSpy: vi.fn(async () => true),
+  trackFileChangesSpy: vi.fn(async () => {}),
+  writeOrDisplaySummarySpy: vi.fn(async () => {}),
+}));
+
+vi.mock('../../../logging.js', () => ({
+  boldMarkdownHeaders: (text: string) => text,
+  closeLogFile: vi.fn(async () => {
+    summaryOrder.push('close-log');
+    await closeLogFileSpy();
+  }),
+  error: vi.fn(() => {}),
+  log: vi.fn(() => {}),
+  openLogFile: openLogFileSpy,
+  sendStructured: vi.fn(() => {}),
+  warn: vi.fn(() => {}),
+  debugLog: vi.fn(() => {}),
+  writeStdout: vi.fn(() => {}),
+  writeStderr: vi.fn(() => {}),
+  runWithLogger: vi.fn(async (_adapter: any, fn: () => any) => fn()),
+}));
+
+vi.mock('../../../common/git.js', () => ({
+  getGitRoot: vi.fn(async () => tempDir),
+}));
+
+vi.mock('../../configLoader.js', () => ({
+  loadEffectiveConfig: loadEffectiveConfigSpy,
+  loadGlobalConfigForNotifications: vi.fn(async () => ({})),
+}));
+
+vi.mock('../../configSchema.js', () => ({
+  getDefaultConfig: vi.fn(() => ({})),
+}));
+
+vi.mock('../../executors/index.js', () => ({
+  buildExecutorAndLog: buildExecutorAndLogSpy,
+  DEFAULT_EXECUTOR: 'copy-only',
+  defaultModelForExecutor: vi.fn(() => undefined),
+}));
+
+vi.mock('../../workspace/workspace_setup.js', () => ({
+  setupWorkspace: vi.fn(async () => ({
+    baseDir: tempDir,
+    planFile,
+  })),
+}));
+
+vi.mock('../../workspace/workspace_info.js', () => ({
+  getWorkspaceInfoByPath: getWorkspaceInfoByPathSpy,
+  patchWorkspaceInfo: vi.fn(() => {}),
+  touchWorkspaceInfo: touchWorkspaceInfoSpy,
+}));
+
+vi.mock('../../workspace/workspace_roundtrip.js', () => ({
+  prepareWorkspaceRoundTrip: vi.fn(async () => null),
+  runPostExecutionWorkspaceSync: vi.fn(async () => {}),
+  runPreExecutionWorkspaceSync: vi.fn(async () => {}),
+}));
+
+vi.mock('../../summary/collector.js', () => {
+  class SummaryCollector {
+    constructor(_opts: any) {}
+    recordExecutionStart() {}
+    recordExecutionEnd() {
+      summaryOrder.push('record-end');
+    }
+    addStepResult() {}
+    addError() {}
+    async trackFileChanges() {
+      summaryOrder.push('track-files');
+      await trackFileChangesSpy();
+    }
+    getExecutionSummary() {
+      return {};
+    }
+    setBatchIterations() {}
+  }
+  return { SummaryCollector };
+});
+
+vi.mock('../../summary/display.js', () => ({
+  writeOrDisplaySummary: vi.fn(async () => {
+    summaryOrder.push('write-summary');
+    await writeOrDisplaySummarySpy();
+  }),
+  formatExecutionSummaryToLines: vi.fn(() => []),
+  displayExecutionSummary: vi.fn(() => {}),
+}));
+
+vi.mock('../../notifications.js', () => ({
+  sendNotification: sendNotificationSpy,
+}));
+
+vi.mock('../../plans/mark_done.js', () => ({
+  markStepDone: markStepDoneSpy,
+  markTaskDone: markTaskDoneSpy,
+}));
+
+vi.mock('../update-docs.js', () => ({
+  runUpdateDocs: runUpdateDocsSpy,
+}));
+
+vi.mock('../update-lessons.js', () => ({
+  runUpdateLessons: runUpdateLessonsSpy,
+}));
+
+vi.mock('../../actions.js', () => ({
+  executePostApplyCommand: executePostApplyCommandSpy,
+}));
+
+vi.mock('../../plans/find_next.js', () => ({
+  findNextActionableItem: vi.fn(() => findNextActionableItemImpl()),
+  getAllIncompleteTasks: vi.fn(() => []),
+  findPendingTask: vi.fn(() => null),
+}));
+
+vi.mock('./batch_mode.js', () => ({
+  executeBatchMode: vi.fn(async (...args: any[]) => executeBatchModeImpl()),
+}));
+
+vi.mock('../../plans/prepare_step.js', () => ({
+  prepareNextStep: vi.fn(async (...args: any[]) => prepareNextStepImpl()),
+}));
+
+vi.mock('../../ensure_plan_in_db.js', () => ({
+  resolvePlanFromDbOrSyncFile: vi.fn(async (planArg: string) => {
+    const nodePath = await import('node:path');
+    const { readPlanFile } = await import('../../plans.js');
+    const resolvedPath = nodePath.resolve(planArg);
+    const plan = await readPlanFile(resolvedPath);
+    return { plan, planPath: resolvedPath };
+  }),
+  isPlanNotFoundError: vi.fn(() => false),
+}));
+
+vi.mock('../../../logging/tunnel_client.js', () => ({
+  isTunnelActive: vi.fn(() => false),
+}));
+
+vi.mock('../../prompt_builder.js', () => ({
+  buildExecutionPromptWithoutSteps: vi.fn(async () => 'test prompt'),
+}));
+
+vi.mock('../../db/plan_sync.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../db/plan_sync.js')>();
+  return {
+    ...actual,
+    syncPlanToDb: vi.fn(async () => {}),
+  };
+});
+
+vi.mock('../../plan_materialize.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../plan_materialize.js')>();
+  return {
+    ...actual,
+    materializePlan: vi.fn(async () => {}),
+    syncMaterializedPlan: vi.fn(async () => {}),
+    getMaterializedPlanPath: vi.fn(() => '/tmp/plan.md'),
+    getShadowPlanPath: vi.fn(() => '/tmp/.plan.md.shadow'),
+    materializeRelatedPlans: vi.fn(async () => {}),
+    materializeAndPruneRelatedPlans: vi.fn(async () => {}),
+    withPlanAutoSync: vi.fn(async (_id: any, _root: any, fn: () => any) => fn()),
+    resolveProjectContext: vi.fn(async () => ({
+      projectId: 1,
+      planRowsByPlanId: new Map(),
+      planRowsByUuid: new Map(),
+      maxNumericId: 0,
+    })),
+    readMaterializedPlanRole: vi.fn(async () => null),
+    ensureMaterializeDir: vi.fn(async () => '/tmp'),
+    parsePlanId: vi.fn((id: string) => parseInt(id)),
+    diffPlanFields: vi.fn(() => ({})),
+    mergePlanWithShadow: vi.fn((base: any) => base),
+    cleanupMaterializedPlans: vi.fn(async () => {}),
+    MATERIALIZED_DIR: '.tim/plans',
+  };
+});
+
+vi.mock('../../assignments/auto_claim.js', () => ({
+  autoClaimPlan: vi.fn(async () => null),
+  isAutoClaimEnabled: vi.fn(() => false),
+}));
+
+vi.mock('../review.js', () => ({
+  handleReviewCommand: vi.fn(async () => {}),
+}));
+
+vi.mock('../plan_discovery.js', () => ({
+  findNextPlanFromDb: vi.fn(async () => null),
+  findLatestPlanFromDb: vi.fn(async () => null),
+  findNextReadyDependencyFromDb: vi.fn(async () => ({ plan: null, message: '' })),
+  toHeadlessPlanSummary: vi.fn((plan: any) => plan),
+}));
+
+vi.mock('../../headless.js', () => ({
+  runWithHeadlessAdapterIfEnabled: vi.fn(async (options: any) => options.callback()),
+  isTunnelActive: vi.fn(() => false),
+  toHeadlessPlanSummary: vi.fn((plan: any) => plan),
+  createHeadlessAdapterForCommand: vi.fn(async () => null),
+  updateHeadlessSessionInfo: vi.fn(() => {}),
+  buildHeadlessSessionInfo: vi.fn(async () => null),
+  resetHeadlessWarningStateForTests: vi.fn(() => {}),
+  resolveHeadlessUrl: vi.fn(() => 'ws://localhost:8123/tim-agent'),
+  DEFAULT_HEADLESS_URL: 'ws://localhost:8123/tim-agent',
+}));
+
+vi.mock('chalk', () => ({
+  default: {
+    green: (text: string) => text,
+    yellow: (text: string) => text,
+    gray: (text: string) => text,
+    bold: (text: string) => text,
+    red: (text: string) => text,
+    cyan: (text: string) => text,
+  },
+}));
+
+describe('timAgent lifecycle integration', () => {
+  let originalEnv: Partial<Record<string, string>>;
 
   beforeEach(async () => {
     CleanupRegistry['instance'] = undefined;
@@ -46,6 +291,7 @@ describe('timAgent lifecycle integration', () => {
     closeLogFileSpy.mockClear();
     openLogFileSpy.mockClear();
     loadEffectiveConfigSpy.mockClear();
+    loadEffectiveConfigSpy.mockImplementation(async () => effectiveConfig);
     markStepDoneSpy.mockClear();
     markTaskDoneSpy.mockClear();
     runUpdateDocsSpy.mockClear();
@@ -54,6 +300,18 @@ describe('timAgent lifecycle integration', () => {
     summaryOrder.length = 0;
     trackFileChangesSpy.mockClear();
     writeOrDisplaySummarySpy.mockClear();
+
+    // Reset per-test behavior
+    findNextActionableItemImpl = () => null;
+    executeBatchModeImpl = async () => undefined;
+    prepareNextStepImpl = async () => ({
+      prompt: 'CTX',
+      promptFilePath: undefined,
+      rmfilterArgs: undefined,
+      taskIndex: 0,
+      stepIndex: 0,
+      numStepsSelected: 1,
+    });
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-agent-lifecycle-'));
     const tasksDir = path.join(tempDir, 'tasks');
@@ -105,104 +363,11 @@ describe('timAgent lifecycle integration', () => {
       { cwdForIdentity: tempDir }
     );
 
-    await moduleMocker.mock('../../../logging.js', () => ({
-      boldMarkdownHeaders: (text: string) => text,
-      closeLogFile: mock(async () => {
-        summaryOrder.push('close-log');
-        await closeLogFileSpy();
-      }),
-      error: mock(() => {}),
-      log: mock(() => {}),
-      openLogFile: openLogFileSpy,
-      sendStructured: mock(() => {}),
-      warn: mock(() => {}),
-    }));
-
-    await moduleMocker.mock('../../../common/git.js', () => ({
-      getGitRoot: mock(async () => tempDir),
-    }));
-
-    await moduleMocker.mock('../../configLoader.js', () => ({
-      loadEffectiveConfig: loadEffectiveConfigSpy,
-    }));
-
-    await moduleMocker.mock('../../configSchema.js', () => ({
-      getDefaultConfig: () => ({}),
-    }));
-
-    await moduleMocker.mock('../../executors/index.js', () => ({
-      buildExecutorAndLog: buildExecutorAndLogSpy,
-      DEFAULT_EXECUTOR: 'copy-only',
-      defaultModelForExecutor: mock(() => undefined),
-    }));
-
-    await moduleMocker.mock('../../workspace/workspace_setup.js', () => ({
-      setupWorkspace: mock(async () => ({
-        baseDir: tempDir,
-        planFile,
-      })),
-    }));
-
-    await moduleMocker.mock('../../workspace/workspace_info.js', () => ({
-      getWorkspaceInfoByPath: getWorkspaceInfoByPathSpy,
-      patchWorkspaceInfo: mock(() => {}),
-      touchWorkspaceInfo: touchWorkspaceInfoSpy,
-    }));
-
-    await moduleMocker.mock('../../workspace/workspace_roundtrip.js', () => ({
-      prepareWorkspaceRoundTrip: mock(async () => null),
-      runPostExecutionWorkspaceSync: mock(async () => {}),
-      runPreExecutionWorkspaceSync: mock(async () => {}),
-    }));
-
-    await moduleMocker.mock('../../summary/collector.js', () => ({
-      SummaryCollector: class {
-        recordExecutionStart = mock(() => {});
-        recordExecutionEnd = mock(() => {
-          summaryOrder.push('record-end');
-        });
-        addStepResult = mock(() => {});
-        addError = mock(() => {});
-        trackFileChanges = mock(async () => {
-          summaryOrder.push('track-files');
-          await trackFileChangesSpy();
-        });
-        getExecutionSummary = mock(() => ({}));
-        constructor(_init: any) {}
-      },
-    }));
-
-    await moduleMocker.mock('../../summary/display.js', () => ({
-      writeOrDisplaySummary: mock(async () => {
-        summaryOrder.push('write-summary');
-        await writeOrDisplaySummarySpy();
-      }),
-    }));
-
-    await moduleMocker.mock('../../notifications.js', () => ({
-      sendNotification: sendNotificationSpy,
-    }));
-
-    await moduleMocker.mock('../../plans/mark_done.js', () => ({
-      markStepDone: markStepDoneSpy,
-      markTaskDone: markTaskDoneSpy,
-    }));
-
-    await moduleMocker.mock('../update-docs.js', () => ({
-      runUpdateDocs: runUpdateDocsSpy,
-    }));
-
-    await moduleMocker.mock('../update-lessons.js', () => ({
-      runUpdateLessons: runUpdateLessonsSpy,
-    }));
-
-    await moduleMocker.mock('../../actions.js', () => ({
-      executePostApplyCommand: executePostApplyCommandSpy,
-    }));
+    // workspace_setup mock uses module-level tempDir/planFile refs
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     resetShutdownState();
     CleanupRegistry['instance'] = undefined;
     closeDatabaseForTesting();
@@ -221,14 +386,10 @@ describe('timAgent lifecycle integration', () => {
 
   test('runs lifecycle startup and shutdown and exits with the captured signal code', async () => {
     // Simulate signal arriving DURING the execution loop (after startup)
-    // by having findNextActionableItem trigger the shutdown flag
-    await moduleMocker.mock('../../plans/find_next.js', () => ({
-      findNextActionableItem: mock(() => {
-        // Simulate SIGINT arriving during execution
-        setShuttingDown(130);
-        return null;
-      }),
-    }));
+    findNextActionableItemImpl = () => {
+      setShuttingDown(130);
+      return null;
+    };
 
     const originalExit = process.exit;
     process.exit = ((code?: number) => {
@@ -236,7 +397,7 @@ describe('timAgent lifecycle integration', () => {
     }) as typeof process.exit;
 
     try {
-      const { timAgent } = await import('./agent.ts');
+      const { timAgent } = await import('./agent.js');
 
       await expect(
         timAgent(planFile, { log: false, summary: false, serialTasks: true }, {})
@@ -266,11 +427,9 @@ describe('timAgent lifecycle integration', () => {
       expect(await fs.readFile(shutdownFile, 'utf-8')).toBe('stopped');
     });
 
-    await moduleMocker.mock('../../plans/find_next.js', () => ({
-      findNextActionableItem: mock(() => null),
-    }));
+    findNextActionableItemImpl = () => null;
 
-    const { timAgent } = await import('./agent.ts');
+    const { timAgent } = await import('./agent.js');
     await timAgent(planFile, { log: true, summary: true, serialTasks: true }, {});
 
     expect(await fs.readFile(shutdownFile, 'utf-8')).toBe('stopped');
@@ -278,11 +437,9 @@ describe('timAgent lifecycle integration', () => {
   });
 
   test('runs lifecycle shutdown for the batch mode execution path', async () => {
-    await moduleMocker.mock('./batch_mode.js', () => ({
-      executeBatchMode: mock(async () => undefined),
-    }));
+    executeBatchModeImpl = async () => undefined;
 
-    const { timAgent } = await import('./agent.ts');
+    const { timAgent } = await import('./agent.js');
     await timAgent(planFile, { log: false, summary: false }, {});
 
     expect(await fs.readFile(path.join(tempDir, 'lifecycle-startup.txt'), 'utf-8')).toBe('started');
@@ -298,11 +455,9 @@ describe('timAgent lifecycle integration', () => {
       expect(await fs.readFile(shutdownFile, 'utf-8')).toBe('stopped');
     });
 
-    await moduleMocker.mock('./batch_mode.js', () => ({
-      executeBatchMode: mock(async () => undefined),
-    }));
+    executeBatchModeImpl = async () => undefined;
 
-    const { timAgent } = await import('./agent.ts');
+    const { timAgent } = await import('./agent.js');
     await timAgent(planFile, { log: true, summary: true }, {});
 
     expect(await fs.readFile(shutdownFile, 'utf-8')).toBe('stopped');
@@ -313,9 +468,7 @@ describe('timAgent lifecycle integration', () => {
     // Set shutdown flag BEFORE timAgent starts
     setShuttingDown(130);
 
-    await moduleMocker.mock('../../plans/find_next.js', () => ({
-      findNextActionableItem: mock(() => null),
-    }));
+    findNextActionableItemImpl = () => null;
 
     const originalExit = process.exit;
     process.exit = ((code?: number) => {
@@ -323,7 +476,7 @@ describe('timAgent lifecycle integration', () => {
     }) as typeof process.exit;
 
     try {
-      const { timAgent } = await import('./agent.ts');
+      const { timAgent } = await import('./agent.js');
 
       await expect(
         timAgent(planFile, { log: false, summary: false, serialTasks: true }, {})
@@ -346,25 +499,17 @@ describe('timAgent lifecycle integration', () => {
       setShuttingDown(130);
     });
 
-    await moduleMocker.mock('../../plans/find_next.js', () => ({
-      findNextActionableItem: mock(() => ({
+    let itemReturned = false;
+    findNextActionableItemImpl = () => {
+      if (itemReturned) return null;
+      itemReturned = true;
+      return {
         type: 'step',
         taskIndex: 0,
         stepIndex: 0,
         task: { title: 'Task 1', description: 'Do the work', steps: [{ prompt: 'implement' }] },
-      })),
-    }));
-
-    await moduleMocker.mock('../../plans/prepare_step.js', () => ({
-      prepareNextStep: mock(async () => ({
-        prompt: 'CTX',
-        promptFilePath: undefined,
-        rmfilterArgs: undefined,
-        taskIndex: 0,
-        stepIndex: 0,
-        numStepsSelected: 1,
-      })),
-    }));
+      };
+    };
 
     const originalExit = process.exit;
     process.exit = ((code?: number) => {
@@ -372,7 +517,7 @@ describe('timAgent lifecycle integration', () => {
     }) as typeof process.exit;
 
     try {
-      const { timAgent } = await import('./agent.ts');
+      const { timAgent } = await import('./agent.js');
 
       await expect(
         timAgent(planFile, { log: false, summary: false, serialTasks: true }, {})
@@ -393,25 +538,17 @@ describe('timAgent lifecycle integration', () => {
       return true;
     });
 
-    await moduleMocker.mock('../../plans/find_next.js', () => ({
-      findNextActionableItem: mock(() => ({
+    let itemReturned = false;
+    findNextActionableItemImpl = () => {
+      if (itemReturned) return null;
+      itemReturned = true;
+      return {
         type: 'step',
         taskIndex: 0,
         stepIndex: 0,
         task: { title: 'Task 1', description: 'Do the work', steps: [{ prompt: 'implement' }] },
-      })),
-    }));
-
-    await moduleMocker.mock('../../plans/prepare_step.js', () => ({
-      prepareNextStep: mock(async () => ({
-        prompt: 'CTX',
-        promptFilePath: undefined,
-        rmfilterArgs: undefined,
-        taskIndex: 0,
-        stepIndex: 0,
-        numStepsSelected: 1,
-      })),
-    }));
+      };
+    };
 
     const originalExit = process.exit;
     process.exit = ((code?: number) => {
@@ -419,7 +556,7 @@ describe('timAgent lifecycle integration', () => {
     }) as typeof process.exit;
 
     try {
-      const { timAgent } = await import('./agent.ts');
+      const { timAgent } = await import('./agent.js');
 
       await expect(
         timAgent(planFile, { log: false, summary: false, serialTasks: true }, {})
@@ -438,13 +575,16 @@ describe('timAgent lifecycle integration', () => {
       setShuttingDown(130);
     });
 
-    await moduleMocker.mock('../../plans/find_next.js', () => ({
-      findNextActionableItem: mock(() => ({
+    let itemReturned = false;
+    findNextActionableItemImpl = () => {
+      if (itemReturned) return null;
+      itemReturned = true;
+      return {
         type: 'task',
         taskIndex: 0,
         task: { title: 'Task 1', description: 'Do the work', steps: [{ prompt: 'implement' }] },
-      })),
-    }));
+      };
+    };
 
     const originalExit = process.exit;
     process.exit = ((code?: number) => {
@@ -452,7 +592,7 @@ describe('timAgent lifecycle integration', () => {
     }) as typeof process.exit;
 
     try {
-      const { timAgent } = await import('./agent.ts');
+      const { timAgent } = await import('./agent.js');
 
       await expect(
         timAgent(planFile, { log: false, summary: false, serialTasks: true }, {})
@@ -472,25 +612,17 @@ describe('timAgent lifecycle integration', () => {
       return { message: 'Step marked', planComplete: true };
     });
 
-    await moduleMocker.mock('../../plans/find_next.js', () => ({
-      findNextActionableItem: mock(() => ({
+    let itemReturned = false;
+    findNextActionableItemImpl = () => {
+      if (itemReturned) return null;
+      itemReturned = true;
+      return {
         type: 'step',
         taskIndex: 0,
         stepIndex: 0,
         task: { title: 'Task 1', description: 'Do the work', steps: [{ prompt: 'implement' }] },
-      })),
-    }));
-
-    await moduleMocker.mock('../../plans/prepare_step.js', () => ({
-      prepareNextStep: mock(async () => ({
-        prompt: 'CTX',
-        promptFilePath: undefined,
-        rmfilterArgs: undefined,
-        taskIndex: 0,
-        stepIndex: 0,
-        numStepsSelected: 1,
-      })),
-    }));
+      };
+    };
 
     const originalExit = process.exit;
     process.exit = ((code?: number) => {
@@ -498,7 +630,7 @@ describe('timAgent lifecycle integration', () => {
     }) as typeof process.exit;
 
     try {
-      const { timAgent } = await import('./agent.ts');
+      const { timAgent } = await import('./agent.js');
 
       await expect(
         timAgent(

@@ -1,22 +1,48 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
-import { getMaxNumericPlanId, readPlanFile, resolvePlanFromDb } from '../plans.js';
-import type { PlanSchema } from '../planSchema.js';
-import { ModuleMocker } from '../../testing.js';
 import { getDefaultConfig } from '../configSchema.js';
 import { clearConfigCache } from '../configLoader.js';
-import { writePlanFile } from '../plans.js';
 import { closeDatabaseForTesting } from '../db/database.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
+vi.mock('../../logging.js', () => ({
+  log: vi.fn(),
+  error: vi.fn(),
+  warn: vi.fn(),
+  debugLog: vi.fn(),
+}));
+
+vi.mock('../configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(),
+  clearConfigCache: vi.fn(),
+}));
+
+vi.mock('../../common/git.js', () => ({
+  getGitRoot: vi.fn(),
+}));
+
+vi.mock('../id_utils.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../id_utils.js')>();
+  return {
+    ...actual,
+    generateNumericPlanId: vi.fn(),
+  };
+});
+
+import { getMaxNumericPlanId, readPlanFile, resolvePlanFromDb, writePlanFile } from '../plans.js';
+import type { PlanSchema } from '../planSchema.js';
+import { handlePromoteCommand } from './promote.js';
+import { log, error } from '../../logging.js';
+import { loadEffectiveConfig } from '../configLoader.js';
+import { getGitRoot } from '../../common/git.js';
+import { generateNumericPlanId } from '../id_utils.js';
 
 // Mock console functions
-const logSpy = mock(() => {});
-const errorSpy = mock(() => {});
+const logSpy = vi.mocked(log);
+const errorSpy = vi.mocked(error);
 
 describe('handlePromoteCommand', () => {
   let tempDir: string;
@@ -25,8 +51,7 @@ describe('handlePromoteCommand', () => {
 
   beforeEach(async () => {
     // Clear mocks
-    logSpy.mockClear();
-    errorSpy.mockClear();
+    vi.clearAllMocks();
 
     // Clear plan cache
     clearConfigCache();
@@ -42,35 +67,18 @@ describe('handlePromoteCommand', () => {
     await fs.mkdir(path.dirname(configPath), { recursive: true });
     await fs.writeFile(configPath, yaml.stringify({ paths: { tasks: tasksDir } }));
 
-    // Mock modules
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: logSpy,
-      error: errorSpy,
-      warn: mock(() => {}),
-      debugLog: mock(() => {}),
-    }));
-
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: mock(async () => ({
-        paths: { tasks: tasksDir },
-      })),
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: mock(async () => tempDir),
-    }));
-
-    // Mock generateNumericPlanId to use local-only ID generation (avoids shared storage)
-    await moduleMocker.mock('../id_utils.js', () => ({
-      generateNumericPlanId: mock(async (dir: string) => {
-        const maxId = await getMaxNumericPlanId(dir);
-        return maxId + 1;
-      }),
-    }));
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
+      paths: { tasks: tasksDir },
+    } as any);
+    vi.mocked(getGitRoot).mockResolvedValue(tempDir);
+    vi.mocked(generateNumericPlanId).mockImplementation(async (dir: string) => {
+      const maxId = await getMaxNumericPlanId(dir);
+      return maxId + 1;
+    });
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     clearConfigCache();
     closeDatabaseForTesting();
     clearPlanSyncContext();
@@ -85,13 +93,7 @@ describe('handlePromoteCommand', () => {
     return planPath;
   }
 
-  async function loadCommand() {
-    return import('./promote.js');
-  }
-
   test('should promote a single task to a new top-level plan', async () => {
-    const { handlePromoteCommand } = await loadCommand();
-
     // Create a sample plan with multiple tasks
     const originalPlan: PlanSchema = {
       id: 1,
@@ -143,8 +145,6 @@ describe('handlePromoteCommand', () => {
   });
 
   test('promoted plan carries over tags from original plan', async () => {
-    const { handlePromoteCommand } = await loadCommand();
-
     const originalPlan: PlanSchema = {
       id: 1,
       goal: 'Tagged parent',
@@ -172,8 +172,6 @@ describe('handlePromoteCommand', () => {
   });
 
   test('should promote a range of tasks to new top-level plans with chained dependencies', async () => {
-    const { handlePromoteCommand } = await loadCommand();
-
     // Create a sample plan with multiple tasks
     const originalPlan: PlanSchema = {
       id: 1,
@@ -246,8 +244,6 @@ describe('handlePromoteCommand', () => {
   });
 
   test('writes promoted plans to external storage when configured', async () => {
-    const { handlePromoteCommand } = await loadCommand();
-
     const externalBase = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-promote-external-'));
     const repositoryConfigDir = path.join(externalBase, 'repositories', 'example');
     const externalTasksDir = path.join(repositoryConfigDir, 'tasks');
@@ -263,9 +259,8 @@ describe('handlePromoteCommand', () => {
       repositoryRemoteUrl: null,
     };
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: mock(async () => config),
-    }));
+    const { loadEffectiveConfig } = await import('../configLoader.js');
+    vi.mocked(loadEffectiveConfig).mockResolvedValue(config);
 
     const originalTasksDir = tasksDir;
     tasksDir = externalTasksDir;
@@ -304,8 +299,6 @@ describe('handlePromoteCommand', () => {
   });
 
   test('should promote all tasks from a plan leaving empty tasks array', async () => {
-    const { handlePromoteCommand } = await loadCommand();
-
     // Create a sample plan with multiple tasks
     const originalPlan: PlanSchema = {
       id: 1,
@@ -370,8 +363,6 @@ describe('handlePromoteCommand', () => {
   });
 
   test('should promote tasks from multiple different plans in single command', async () => {
-    const { handlePromoteCommand } = await loadCommand();
-
     // Create two sample plans
     const plan1: PlanSchema = {
       id: 1,

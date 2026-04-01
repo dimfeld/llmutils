@@ -1,6 +1,5 @@
-import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Interface } from 'node:readline';
-import { ModuleMocker } from '../../../testing.ts';
 import {
   getActiveInputSource,
   setActiveInputSource,
@@ -56,17 +55,16 @@ class FakeReadline {
   }
 }
 
-const moduleMocker = new ModuleMocker(import.meta);
 const createdInterfaces: FakeReadline[] = [];
 const createInterfaceOptions: unknown[] = [];
-const createInterfaceMock = mock((options: unknown): Interface => {
+const createInterfaceMock = vi.fn((options: unknown): Interface => {
   const fake = new FakeReadline();
   createdInterfaces.push(fake);
   createInterfaceOptions.push(options);
   return fake as unknown as Interface;
 });
 
-await moduleMocker.mock('node:readline', () => ({
+vi.mock('node:readline', () => ({
   createInterface: createInterfaceMock,
 }));
 
@@ -105,9 +103,8 @@ describe('TerminalInputReader', () => {
     setTTY(false);
   });
 
-  afterAll(() => {
+  afterEach(() => {
     restoreTTYDescriptors();
-    moduleMocker.clear();
   });
 
   it('start is a no-op when stdin is not a TTY', () => {
@@ -231,7 +228,7 @@ describe('TerminalInputReader', () => {
 
   it('transitions to stopped when readline closes externally', () => {
     setTTY(true);
-    const onCloseWhileActive = mock(() => {});
+    const onCloseWhileActive = vi.fn(() => {});
     const reader = new TerminalInputReader({ onLine: () => {}, onCloseWhileActive });
     reader.start();
 
@@ -245,7 +242,7 @@ describe('TerminalInputReader', () => {
 
   it('does not invoke onCloseWhileActive during explicit stop or pause', () => {
     setTTY(true);
-    const onCloseWhileActive = mock(() => {});
+    const onCloseWhileActive = vi.fn(() => {});
     const reader = new TerminalInputReader({ onLine: () => {}, onCloseWhileActive });
     reader.start();
 
@@ -270,7 +267,7 @@ describe('TerminalInputReader', () => {
 
   it('invokes onLine for non-empty lines only', async () => {
     setTTY(true);
-    const onLine = mock(() => Promise.resolve());
+    const onLine = vi.fn(() => Promise.resolve());
     const reader = new TerminalInputReader({ onLine });
     reader.start();
 
@@ -287,7 +284,7 @@ describe('TerminalInputReader', () => {
 
   it('forwards readline SIGINT to process SIGINT handling', () => {
     setTTY(true);
-    const processKillSpy = mock(() => true);
+    const processKillSpy = vi.fn(() => true);
     const originalProcessKill = process.kill;
     process.kill = processKillSpy as typeof process.kill;
 
@@ -309,7 +306,7 @@ describe('TerminalInputReader', () => {
   it('forwards onLine errors to onError handler', async () => {
     setTTY(true);
     const expectedError = new Error('write failed');
-    const onError = mock(() => {});
+    const onError = vi.fn(() => {});
     const reader = new TerminalInputReader({
       onLine: () => Promise.reject(expectedError),
       onError,
@@ -327,7 +324,7 @@ describe('TerminalInputReader', () => {
 
   it('skips deferred onLine invocation after pausing before microtask runs', async () => {
     setTTY(true);
-    const onLine = mock(() => Promise.resolve());
+    const onLine = vi.fn(() => Promise.resolve());
     const reader = new TerminalInputReader({ onLine });
     reader.start();
 
@@ -343,7 +340,7 @@ describe('TerminalInputReader', () => {
 
   it('logs onLine errors to console.error when onError is omitted', async () => {
     setTTY(true);
-    const consoleErrorSpy = mock(() => {});
+    const consoleErrorSpy = vi.fn(() => {});
     const originalConsoleError = console.error;
     console.error = consoleErrorSpy as typeof console.error;
 
@@ -369,7 +366,7 @@ describe('TerminalInputReader', () => {
 
   it('stop does not pause stdin', () => {
     setTTY(true);
-    const pauseSpy = mock(() => {});
+    const pauseSpy = vi.fn(() => {});
     const originalPause = process.stdin.pause;
     process.stdin.pause = pauseSpy as typeof process.stdin.pause;
 

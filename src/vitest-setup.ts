@@ -1,4 +1,4 @@
-// Preload run before Bun tests.
+// Preload run before Vitest tests.
 
 import { afterAll, afterEach } from 'vitest';
 import * as os from 'os';

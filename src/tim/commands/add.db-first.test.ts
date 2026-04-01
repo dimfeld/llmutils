@@ -1,19 +1,26 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { ModuleMocker, clearAllTimCaches } from '../../testing.js';
+import { clearAllTimCaches } from '../../testing.js';
 import { closeDatabaseForTesting } from '../db/database.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
 import { resolvePlanFromDb, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { handleAddCommand } from './add.js';
 
+vi.mock('../../common/git.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    getGitRoot: vi.fn(),
+  };
+});
+
 describe('tim add DB-first command', () => {
   let tempDir: string;
   let tasksDir: string;
   let command: any;
-  const moduleMocker = new ModuleMocker(import.meta);
 
   beforeEach(async () => {
     clearAllTimCaches();
@@ -23,9 +30,7 @@ describe('tim add DB-first command', () => {
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
     await fs.writeFile(path.join(tempDir, '.tim.yml'), 'paths:\n  tasks: tasks\n');
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => tempDir,
-    }));
+    vi.mocked((await import('../../common/git.js')).getGitRoot).mockResolvedValue(tempDir);
     command = { parent: { opts: () => ({ config: path.join(tempDir, '.tim.yml') }) } };
   });
 
@@ -33,7 +38,7 @@ describe('tim add DB-first command', () => {
     clearAllTimCaches();
     closeDatabaseForTesting();
     clearPlanSyncContext();
-    moduleMocker.clear();
+    vi.clearAllMocks();
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 

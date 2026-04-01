@@ -1,14 +1,14 @@
-import { describe, expect, test, mock, beforeEach, afterEach } from 'bun:test';
+import { describe, expect, test, vi, beforeEach, afterEach } from 'vitest';
 import { osc52Copy, osc52Read } from './osc52';
 
 // skipped because of how they mess with the globals conflicts with other tests
 describe.skipIf(!process.env.TEST_OSC52)('osc52Copy', () => {
   const originalStdoutWrite = process.stdout.write.bind(process.stdout);
-  let stdoutWriteMock: ReturnType<typeof mock>;
+  let stdoutWriteMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     // Setup the mocks
-    stdoutWriteMock = mock(() => true);
+    stdoutWriteMock = vi.fn(() => true);
     process.stdout.write = stdoutWriteMock;
   });
 
@@ -68,7 +68,7 @@ describe.skipIf(!process.env.TEST_OSC52)('osc52Read', () => {
   const originalStdin = { ...process.stdin };
 
   // Mock variables
-  let stdoutWriteMock: ReturnType<typeof mock>;
+  let stdoutWriteMock: ReturnType<typeof vi.fn>;
   let setRawModeMock: ReturnType<typeof mock>;
   let resumeMock: ReturnType<typeof mock>;
   let pauseMock: ReturnType<typeof mock>;
@@ -81,7 +81,7 @@ describe.skipIf(!process.env.TEST_OSC52)('osc52Read', () => {
 
   beforeEach(() => {
     // Setup all mocks
-    stdoutWriteMock = mock(() => true);
+    stdoutWriteMock = vi.fn(() => true);
     setRawModeMock = mock(() => true);
     resumeMock = mock(() => process.stdin);
     pauseMock = mock(() => process.stdin);

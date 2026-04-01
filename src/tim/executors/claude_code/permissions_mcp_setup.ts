@@ -696,7 +696,12 @@ export async function setupPermissionsMcp(
 
   // Resolve the path to the permissions MCP script
   // Try .ts first (development), fall back to .js (compiled)
-  let permissionsMcpPath = path.resolve(import.meta.dir, './permissions_mcp.ts');
+  // Use import.meta.dir (Bun) or import.meta.dirname (Node.js v20+) or URL-based fallback
+  const currentDir =
+    (import.meta as { dir?: string; dirname?: string }).dir ??
+    (import.meta as { dirname?: string }).dirname ??
+    path.dirname(new URL(import.meta.url).pathname);
+  let permissionsMcpPath = path.resolve(currentDir, './permissions_mcp.ts');
   try {
     await fs.access(permissionsMcpPath);
   } catch {

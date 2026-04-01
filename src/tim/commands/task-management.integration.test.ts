@@ -1,8 +1,8 @@
-import { describe, test, beforeEach, afterEach, expect, mock } from 'bun:test';
+import { vi, describe, test, beforeEach, afterEach, expect } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { ModuleMocker, clearAllTimCaches } from '../../testing.js';
+import { clearAllTimCaches } from '../../testing.js';
 import { readPlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { resolvePlan } from '../plan_display.js';
@@ -19,15 +19,45 @@ import {
   removePlanTaskParameters,
   type GenerateModeRegistrationContext,
 } from '../mcp/generate_mode.js';
+import * as loggingModule from '../../logging.js';
+import * as configLoaderModule from '../configLoader.js';
+import * as gitModule from '../../common/git.js';
+import * as clipboardModule from '../../common/clipboard.js';
+
+vi.mock('../../logging.js', () => ({
+  log: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+}));
+
+vi.mock('../configLoader.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../configLoader.js')>();
+  return {
+    ...actual,
+    loadEffectiveConfig: vi.fn(),
+  };
+});
+
+vi.mock('../../common/git.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../common/git.js')>();
+  return {
+    ...actual,
+    getGitRoot: vi.fn(),
+  };
+});
+
+vi.mock('../../common/clipboard.js', () => ({
+  copy: vi.fn(),
+  isEnabled: vi.fn(),
+}));
 
 describe('task management integration workflows', () => {
   let tempDir: string;
   let tasksDir: string;
   let planFile: string;
   let command: any;
-  let moduleMocker: ModuleMocker;
-  let logSpy: ReturnType<typeof mock>;
-  let warnSpy: ReturnType<typeof mock>;
+  let logSpy: ReturnType<typeof vi.fn>;
+  let warnSpy: ReturnType<typeof vi.fn>;
   let mcpContext: GenerateModeRegistrationContext;
   let originalXdgConfigHome: string | undefined;
 
@@ -47,27 +77,20 @@ describe('task management integration workflows', () => {
       .quiet();
     planFile = path.join(tasksDir, 'task-mgmt.plan.md');
 
-    moduleMocker = new ModuleMocker(import.meta);
-    logSpy = mock(() => {});
-    warnSpy = mock(() => {});
+    logSpy = vi.mocked(loggingModule.log);
+    warnSpy = vi.mocked(loggingModule.warn);
+    logSpy.mockImplementation(() => {});
+    warnSpy.mockImplementation(() => {});
+    vi.mocked(loggingModule.error).mockImplementation(() => {});
 
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: logSpy,
-      warn: warnSpy,
-      error: mock(() => {}),
-    }));
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: { tasks: tasksDir },
-      }),
-    }));
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => tempDir,
-    }));
-    await moduleMocker.mock('../../common/clipboard.js', () => ({
-      copy: async () => {},
-      isEnabled: () => false,
-    }));
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+      paths: { tasks: tasksDir },
+    } as any);
+
+    vi.mocked(gitModule.getGitRoot).mockResolvedValue(tempDir);
+
+    vi.mocked(clipboardModule.copy).mockResolvedValue(undefined as any);
+    vi.mocked(clipboardModule.isEnabled).mockReturnValue(false);
 
     command = { parent: { opts: () => ({ config: path.join(tempDir, 'tim.yml') }) } };
 
@@ -84,15 +107,13 @@ describe('task management integration workflows', () => {
     clearAllTimCaches();
     closeDatabaseForTesting();
     clearPlanSyncContext();
-    moduleMocker.clear();
+    vi.clearAllMocks();
     if (originalXdgConfigHome === undefined) {
       delete process.env.XDG_CONFIG_HOME;
     } else {
       process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
     }
     await fs.rm(tempDir, { recursive: true, force: true });
-    logSpy.mockReset();
-    warnSpy.mockReset();
   });
 
   test('add-task followed by show displays the new task', async () => {
@@ -276,7 +297,7 @@ describe('task management integration workflows', () => {
     expect(afterAdd.tasks).toHaveLength(1);
     const addedTask = afterAdd.tasks[0];
     expect(addedTask?.title).toBe('Investigate outage');
-    expect(afterAdd.updatedAt).toBeString();
+    expect(afterAdd.updatedAt).toBeTypeOf('string');
 
     const addTimestamp = afterAdd.updatedAt;
 
@@ -289,7 +310,7 @@ describe('task management integration workflows', () => {
 
     const { plan: afterRemove } = await resolvePlan('404', { gitRoot: tempDir });
     expect(afterRemove.tasks).toHaveLength(0);
-    expect(afterRemove.updatedAt).toBeString();
+    expect(afterRemove.updatedAt).toBeTypeOf('string');
     if (addTimestamp) {
       const addTime = Date.parse(addTimestamp);
       const removeTime = Date.parse(afterRemove.updatedAt);

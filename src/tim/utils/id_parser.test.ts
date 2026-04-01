@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect, vi } from 'vitest';
 import { parseTaskIds } from './id_parser.js';
 
 describe('parseTaskIds', () => {

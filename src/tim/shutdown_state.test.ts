@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import {
   getSignalExitCode,
   isDeferSignalExit,

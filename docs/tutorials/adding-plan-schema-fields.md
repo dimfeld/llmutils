@@ -191,7 +191,7 @@ If the new field is user-editable (not internal metadata like `id`, `uuid`, `cre
 
 After making all the changes:
 
-1. Run the test suite: `bun test`
+1. Run the test suite: `bun run test`
 2. Run type checking: `bun run check`
 3. Run linting: `bun run lint`
 4. Format the code: `bun run format`

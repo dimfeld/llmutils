@@ -1,19 +1,27 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { ModuleMocker } from '../../testing.js';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import {
   findTaskByTitle,
   promptForTaskInfo,
   selectTaskInteractive,
   type Task,
 } from './task_operations.js';
+import { input, select, editor } from '@inquirer/prompts';
 
-const moduleMocker = new ModuleMocker(import.meta);
+vi.mock('@inquirer/prompts', () => ({
+  select: vi.fn(),
+  input: vi.fn(),
+  editor: vi.fn(),
+}));
+
+const selectSpy = vi.mocked(select);
+const inputSpy = vi.mocked(input);
+const editorSpy = vi.mocked(editor);
 
 describe('task_operations utilities', () => {
   let originalRows: number | undefined;
 
   beforeEach(() => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     originalRows = typeof process.stdout.rows === 'number' ? process.stdout.rows : undefined;
     Object.defineProperty(process.stdout, 'rows', {
       configurable: true,
@@ -23,7 +31,7 @@ describe('task_operations utilities', () => {
   });
 
   afterEach(() => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     if (originalRows === undefined) {
       delete (process.stdout as any).rows;
     } else {
@@ -58,10 +66,7 @@ describe('task_operations utilities', () => {
 
   describe('selectTaskInteractive', () => {
     test('returns selected index from prompt', async () => {
-      const selectSpy = mock(async () => 1);
-      await moduleMocker.mock('@inquirer/prompts', () => ({
-        select: selectSpy,
-      }));
+      selectSpy.mockResolvedValue(1);
 
       const tasks: Task[] = [
         { title: 'Task A', description: 'A', done: false },
@@ -88,19 +93,14 @@ describe('task_operations utilities', () => {
       };
 
       const inputQueue = [responses.title, responses.files];
-      const inputSpy = mock(async (opts: { message: string }) => {
+      inputSpy.mockImplementation(async (opts: { message: string }) => {
         if (opts.message.startsWith('Related docs')) {
           return responses.docs;
         }
         const value = inputQueue.shift();
         return value ?? '';
       });
-      const editorSpy = mock(async () => responses.description);
-
-      await moduleMocker.mock('@inquirer/prompts', () => ({
-        input: inputSpy,
-        editor: editorSpy,
-      }));
+      editorSpy.mockResolvedValue(responses.description);
 
       const result = await promptForTaskInfo();
       expect(result.title).toBe('New Feature');
@@ -109,19 +109,14 @@ describe('task_operations utilities', () => {
 
     test('throws when editor returns empty description', async () => {
       const inputQueue = ['Another Task', ''];
-      const inputSpy = mock(async (opts: { message: string }) => {
+      inputSpy.mockImplementation(async (opts: { message: string }) => {
         if (opts.message.startsWith('Related docs')) {
           return '';
         }
         const value = inputQueue.shift();
         return value ?? '';
       });
-      const editorSpy = mock(async () => '   ');
-
-      await moduleMocker.mock('@inquirer/prompts', () => ({
-        input: inputSpy,
-        editor: editorSpy,
-      }));
+      editorSpy.mockResolvedValue('   ');
 
       await expect(promptForTaskInfo()).rejects.toThrow('Task description cannot be empty.');
     });

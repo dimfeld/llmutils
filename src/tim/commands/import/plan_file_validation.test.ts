@@ -1,15 +1,109 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { handleImportCommand } from './import.js';
-import { ModuleMocker } from '../../../testing.js';
 import type { IssueTrackerClient, IssueWithComments } from '../../../common/issue_tracker/types.js';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
-import * as z from 'zod/v4';
 import { phaseSchema } from '../../planSchema.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
+vi.mock('../../../common/git.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../common/git.js')>();
+  return {
+    ...actual,
+    getGitRoot: vi.fn(),
+  };
+});
+
+vi.mock('../../../logging.js', () => ({
+  log: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+}));
+
+vi.mock('../../../common/comment_options.js', () => ({
+  parseCommandOptionsFromComment: vi.fn(),
+  combineRmprOptions: vi.fn(),
+}));
+
+vi.mock('../../../common/formatting.js', () => ({
+  singleLineWithPrefix: vi.fn(),
+  limitLines: vi.fn(),
+}));
+
+vi.mock('@inquirer/prompts', () => ({
+  checkbox: vi.fn(),
+}));
+
+vi.mock('../../plans.js', () => ({
+  writePlanFile: vi.fn(),
+  getMaxNumericPlanId: vi.fn(),
+  readPlanFile: vi.fn(),
+}));
+
+vi.mock('../../configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(),
+}));
+
+vi.mock('../../../common/issue_tracker/factory.js', () => ({
+  getIssueTracker: vi.fn(),
+}));
+
+vi.mock('../../issue_utils.js', () => ({
+  getInstructionsFromIssue: vi.fn(),
+  createStubPlanFromIssue: vi.fn(),
+}));
+
+vi.mock('../../plans_db.js', () => ({
+  loadPlansFromDb: vi.fn(),
+}));
+
+vi.mock('../../plan_materialize.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../plan_materialize.js')>();
+  return {
+    ...actual,
+    resolveProjectContext: vi.fn(),
+  };
+});
+
+vi.mock('../../assignments/workspace_identifier.js', () => ({
+  getRepositoryIdentity: vi.fn(),
+}));
+
+vi.mock('../../db/database.js', () => ({
+  getDatabase: vi.fn(),
+}));
+
+vi.mock('../../db/plan.js', () => ({
+  upsertPlan: vi.fn(),
+}));
+
+vi.mock('../../db/plan_sync.js', () => ({
+  toPlanUpsertInput: vi.fn(),
+}));
+
+vi.mock('../../utils/references.js', () => ({
+  ensureReferences: vi.fn(),
+}));
+
+import { getGitRoot } from '../../../common/git.js';
+import {
+  parseCommandOptionsFromComment,
+  combineRmprOptions,
+} from '../../../common/comment_options.js';
+import { singleLineWithPrefix, limitLines } from '../../../common/formatting.js';
+import { checkbox } from '@inquirer/prompts';
+import { writePlanFile, getMaxNumericPlanId, readPlanFile } from '../../plans.js';
+import { loadEffectiveConfig } from '../../configLoader.js';
+import { getIssueTracker } from '../../../common/issue_tracker/factory.js';
+import { getInstructionsFromIssue, createStubPlanFromIssue } from '../../issue_utils.js';
+import { loadPlansFromDb } from '../../plans_db.js';
+import { resolveProjectContext } from '../../plan_materialize.js';
+import { getRepositoryIdentity } from '../../assignments/workspace_identifier.js';
+import { getDatabase } from '../../db/database.js';
+import { upsertPlan } from '../../db/plan.js';
+import { toPlanUpsertInput } from '../../db/plan_sync.js';
+import { ensureReferences } from '../../utils/references.js';
 
 describe('Plan File Validation Tests', () => {
   let tempDir: string;
@@ -17,51 +111,81 @@ describe('Plan File Validation Tests', () => {
   let actualWrittenFiles: Map<string, any> = new Map();
 
   beforeEach(async () => {
+    vi.clearAllMocks();
+
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'plan-validation-test-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
     actualWrittenFiles.clear();
 
-    await moduleMocker.mock('../../../common/git.js', () => ({
-      getGitRoot: mock(() => Promise.resolve(tempDir)),
-    }));
+    vi.mocked(getGitRoot).mockResolvedValue(tempDir);
+    vi.mocked(parseCommandOptionsFromComment).mockReturnValue({ options: null });
+    vi.mocked(combineRmprOptions).mockReturnValue({ rmfilter: ['--include', '*.ts'] });
+    vi.mocked(singleLineWithPrefix).mockImplementation((prefix, text) => prefix + text);
+    vi.mocked(limitLines).mockImplementation((text) => text);
+    vi.mocked(checkbox).mockResolvedValue([]);
+    vi.mocked(getMaxNumericPlanId).mockResolvedValue(0);
+    vi.mocked(readPlanFile).mockResolvedValue({ issue: [] });
 
-    await moduleMocker.mock('../../../logging.js', () => ({
-      log: mock(),
-      warn: mock(),
-      error: mock(),
-    }));
+    vi.mocked(writePlanFile).mockImplementation(async (filePath: string | null, planData: any) => {
+      const key = filePath ?? `plan-${planData.id}`;
+      if (filePath) {
+        const yamlContent = yaml.stringify(planData);
+        const schemaLine =
+          '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json\n';
+        await fs.mkdir(path.dirname(filePath), { recursive: true });
+        await fs.writeFile(filePath, schemaLine + yamlContent);
+      }
+      actualWrittenFiles.set(key, planData);
+    });
 
-    await moduleMocker.mock('../../../common/comment_options.js', () => ({
-      parseCommandOptionsFromComment: mock(() => ({ options: null })),
-      combineRmprOptions: mock(() => ({ rmfilter: ['--include', '*.ts'] })),
+    // Set up DB mocks
+    vi.mocked(loadPlansFromDb).mockReturnValue({
+      plans: new Map(),
+      maxNumericId: 0,
+      duplicates: {},
+    });
+    vi.mocked(resolveProjectContext).mockResolvedValue({
+      projectId: 1,
+      maxNumericId: 0,
+      rows: [],
+      planIdToUuid: new Map(),
+      uuidToPlanId: new Map(),
+      duplicatePlanIds: new Set(),
+      repository: {
+        repositoryId: `test-repo-${tempDir}`,
+        remoteUrl: null,
+        gitRoot: tempDir,
+      },
+    });
+    vi.mocked(getRepositoryIdentity).mockResolvedValue({
+      repositoryId: `test-repo-${tempDir}`,
+      remoteUrl: null,
+      gitRoot: tempDir,
+    });
+    const transactionImmediateSpy = vi.fn((callback: () => void) => callback());
+    vi.mocked(getDatabase).mockReturnValue({
+      transaction: (callback: () => void) => {
+        const wrapped = () => callback();
+        (wrapped as any).immediate = () => transactionImmediateSpy(callback);
+        return wrapped;
+      },
+    } as any);
+    vi.mocked(upsertPlan).mockReturnValue({} as any);
+    vi.mocked(toPlanUpsertInput).mockImplementation((plan: any) => ({
+      planId: plan.id,
+      uuid: plan.uuid ?? `uuid-${plan.id}`,
+      status: plan.status ?? 'pending',
+      epic: false,
+      tasks: [],
+      dependencyUuids: [],
+      tags: [],
     }));
-
-    await moduleMocker.mock('../../../common/formatting.js', () => ({
-      singleLineWithPrefix: mock((prefix, text) => prefix + text),
-      limitLines: mock((text) => text),
-    }));
-
-    await moduleMocker.mock('@inquirer/prompts', () => ({
-      checkbox: mock(() => Promise.resolve([])),
-    }));
-
-    await moduleMocker.mock('../../plans.js', () => ({
-      writePlanFile: mock(async (filePath: string | null, planData: any) => {
-        // Store the plan data for validation
-        const key = filePath ?? `plan-${planData.id}`;
-        if (filePath) {
-          const yamlContent = yaml.stringify(planData);
-          const schemaLine =
-            '# yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-plan-schema.json\n';
-          await fs.mkdir(path.dirname(filePath), { recursive: true });
-          await fs.writeFile(filePath, schemaLine + yamlContent);
-        }
-        actualWrittenFiles.set(key, planData);
-      }),
-      getMaxNumericPlanId: mock(() => Promise.resolve(0)),
-      readPlanFile: mock(() => Promise.resolve({ issue: [] })),
-      getImportedIssueUrls: mock(() => Promise.resolve(new Set())),
+    vi.mocked(ensureReferences).mockImplementation((plan: any) => ({
+      updatedPlan: {
+        ...plan,
+        uuid: plan.uuid ?? `uuid-${plan.id}`,
+      },
     }));
   });
 
@@ -69,7 +193,6 @@ describe('Plan File Validation Tests', () => {
     if (tempDir) {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
-    await moduleMocker.clear();
   });
 
   test('should generate valid YAML structure for Linear issues', async () => {
@@ -90,60 +213,51 @@ describe('Plan File Validation Tests', () => {
     };
 
     const mockLinearClient: IssueTrackerClient = {
-      fetchIssue: mock(() => Promise.resolve(mockLinearIssue)),
-      fetchAllOpenIssues: mock(() => Promise.resolve([])),
-      parseIssueIdentifier: mock(() => ({ identifier: 'VALID-123' })),
-      getDisplayName: mock(() => 'Linear'),
-      getConfig: mock(() => ({ type: 'linear' })),
+      fetchIssue: vi.fn(() => Promise.resolve(mockLinearIssue)),
+      fetchAllOpenIssues: vi.fn(() => Promise.resolve([])),
+      parseIssueIdentifier: vi.fn(() => ({ identifier: 'VALID-123' })),
+      getDisplayName: vi.fn(() => 'Linear'),
+      getConfig: vi.fn(() => ({ type: 'linear' })),
     };
 
-    await moduleMocker.mock('../../configLoader.js', () => ({
-      loadEffectiveConfig: mock(() =>
-        Promise.resolve({
-          issueTracker: 'linear' as const,
-          paths: { tasks: 'tasks' },
-        })
-      ),
-    }));
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
+      issueTracker: 'linear' as const,
+      paths: { tasks: 'tasks' },
+    });
 
-    await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
-      getIssueTracker: mock(() => Promise.resolve(mockLinearClient)),
-    }));
+    vi.mocked(getIssueTracker).mockResolvedValue(mockLinearClient);
 
-    await moduleMocker.mock('../../issue_utils.js', () => ({
-      getInstructionsFromIssue: mock(() =>
-        Promise.resolve({
-          suggestedFileName: 'valid-123-schema-validation-test.md',
-          issue: {
-            title: 'Schema validation test',
-            html_url: 'https://linear.app/company/issue/VALID-123',
-            number: 'VALID-123',
-          },
-          plan: 'Test schema validation for Linear issues.',
-          rmprOptions: {
-            rmfilter: ['--include', '*.ts'],
-          },
-        })
-      ),
-      createStubPlanFromIssue: mock((issueData, id) => ({
-        id,
-        title: issueData.issue.title,
-        goal: `Validate: ${issueData.issue.title}`,
-        details: issueData.plan,
-        status: 'pending',
-        priority: 'medium',
-        issue: [issueData.issue.html_url],
-        tasks: [
-          {
-            title: 'Implement validation',
-            description: 'Add proper validation logic',
-            done: false,
-          },
-        ],
-        createdAt: new Date('2024-01-20T12:00:00.000Z').toISOString(),
-        updatedAt: new Date('2024-01-20T12:00:00.000Z').toISOString(),
-        rmfilter: issueData.rmprOptions?.rmfilter || [],
-      })),
+    vi.mocked(getInstructionsFromIssue).mockResolvedValue({
+      suggestedFileName: 'valid-123-schema-validation-test.md',
+      issue: {
+        title: 'Schema validation test',
+        html_url: 'https://linear.app/company/issue/VALID-123',
+        number: 'VALID-123',
+      },
+      plan: 'Test schema validation for Linear issues.',
+      rmprOptions: {
+        rmfilter: ['--include', '*.ts'],
+      },
+    });
+
+    vi.mocked(createStubPlanFromIssue).mockImplementation((issueData, id) => ({
+      id,
+      title: issueData.issue.title,
+      goal: `Validate: ${issueData.issue.title}`,
+      details: issueData.plan,
+      status: 'pending',
+      priority: 'medium',
+      issue: [issueData.issue.html_url],
+      tasks: [
+        {
+          title: 'Implement validation',
+          description: 'Add proper validation logic',
+          done: false,
+        },
+      ],
+      createdAt: new Date('2024-01-20T12:00:00.000Z').toISOString(),
+      updatedAt: new Date('2024-01-20T12:00:00.000Z').toISOString(),
+      rmfilter: issueData.rmprOptions?.rmfilter || [],
     }));
 
     await handleImportCommand('VALID-123');
@@ -197,61 +311,52 @@ describe('Plan File Validation Tests', () => {
     };
 
     const mockGitHubClient: IssueTrackerClient = {
-      fetchIssue: mock(() => Promise.resolve(mockGitHubIssue)),
-      fetchAllOpenIssues: mock(() => Promise.resolve([])),
-      parseIssueIdentifier: mock(() => ({ identifier: '123' })),
-      getDisplayName: mock(() => 'GitHub'),
-      getConfig: mock(() => ({ type: 'github' })),
+      fetchIssue: vi.fn(() => Promise.resolve(mockGitHubIssue)),
+      fetchAllOpenIssues: vi.fn(() => Promise.resolve([])),
+      parseIssueIdentifier: vi.fn(() => ({ identifier: '123' })),
+      getDisplayName: vi.fn(() => 'GitHub'),
+      getConfig: vi.fn(() => ({ type: 'github' })),
     };
 
-    await moduleMocker.mock('../../configLoader.js', () => ({
-      loadEffectiveConfig: mock(() =>
-        Promise.resolve({
-          issueTracker: 'github' as const,
-          paths: { tasks: 'tasks' },
-        })
-      ),
-    }));
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
+      issueTracker: 'github' as const,
+      paths: { tasks: 'tasks' },
+    });
 
-    await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
-      getIssueTracker: mock(() => Promise.resolve(mockGitHubClient)),
-    }));
+    vi.mocked(getIssueTracker).mockResolvedValue(mockGitHubClient);
 
-    await moduleMocker.mock('../../issue_utils.js', () => ({
-      getInstructionsFromIssue: mock(() =>
-        Promise.resolve({
-          suggestedFileName: 'issue-123-github-schema-validation-test.md',
-          issue: {
-            title: 'GitHub schema validation test',
-            html_url: 'https://github.com/owner/repo/issues/123',
-            number: 123,
-          },
-          plan: 'Test schema validation for GitHub issues.',
-          rmprOptions: {
-            rmfilter: ['--include', '*.js'],
-          },
-        })
-      ),
-      createStubPlanFromIssue: mock((issueData, id) => ({
-        id,
-        title: issueData.issue.title,
-        goal: `Validate: ${issueData.issue.title}`,
-        details: issueData.plan,
-        status: 'pending',
-        priority: 'high',
-        issue: [issueData.issue.html_url],
-        tasks: [
-          {
-            title: 'GitHub validation task',
-            description: 'Validate GitHub issue processing',
-            done: false,
-            files: ['src/validation.js'],
-          },
-        ],
-        createdAt: new Date('2024-01-20T12:00:00.000Z').toISOString(),
-        updatedAt: new Date('2024-01-20T12:00:00.000Z').toISOString(),
-        rmfilter: issueData.rmprOptions?.rmfilter || [],
-      })),
+    vi.mocked(getInstructionsFromIssue).mockResolvedValue({
+      suggestedFileName: 'issue-123-github-schema-validation-test.md',
+      issue: {
+        title: 'GitHub schema validation test',
+        html_url: 'https://github.com/owner/repo/issues/123',
+        number: 123,
+      },
+      plan: 'Test schema validation for GitHub issues.',
+      rmprOptions: {
+        rmfilter: ['--include', '*.js'],
+      },
+    });
+
+    vi.mocked(createStubPlanFromIssue).mockImplementation((issueData, id) => ({
+      id,
+      title: issueData.issue.title,
+      goal: `Validate: ${issueData.issue.title}`,
+      details: issueData.plan,
+      status: 'pending',
+      priority: 'high',
+      issue: [issueData.issue.html_url],
+      tasks: [
+        {
+          title: 'GitHub validation task',
+          description: 'Validate GitHub issue processing',
+          done: false,
+          files: ['src/validation.js'],
+        },
+      ],
+      createdAt: new Date('2024-01-20T12:00:00.000Z').toISOString(),
+      updatedAt: new Date('2024-01-20T12:00:00.000Z').toISOString(),
+      rmfilter: issueData.rmprOptions?.rmfilter || [],
     }));
 
     await handleImportCommand('123');
@@ -298,65 +403,56 @@ describe('Plan File Validation Tests', () => {
     };
 
     const mockLinearClient: IssueTrackerClient = {
-      fetchIssue: mock(() => Promise.resolve(mockEdgeCaseIssue)),
-      fetchAllOpenIssues: mock(() => Promise.resolve([])),
-      parseIssueIdentifier: mock(() => ({ identifier: 'EDGE-999' })),
-      getDisplayName: mock(() => 'Linear'),
-      getConfig: mock(() => ({ type: 'linear' })),
+      fetchIssue: vi.fn(() => Promise.resolve(mockEdgeCaseIssue)),
+      fetchAllOpenIssues: vi.fn(() => Promise.resolve([])),
+      parseIssueIdentifier: vi.fn(() => ({ identifier: 'EDGE-999' })),
+      getDisplayName: vi.fn(() => 'Linear'),
+      getConfig: vi.fn(() => ({ type: 'linear' })),
     };
 
-    await moduleMocker.mock('../../configLoader.js', () => ({
-      loadEffectiveConfig: mock(() =>
-        Promise.resolve({
-          issueTracker: 'linear' as const,
-          paths: { tasks: 'tasks' },
-        })
-      ),
-    }));
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
+      issueTracker: 'linear' as const,
+      paths: { tasks: 'tasks' },
+    });
 
-    await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
-      getIssueTracker: mock(() => Promise.resolve(mockLinearClient)),
-    }));
+    vi.mocked(getIssueTracker).mockResolvedValue(mockLinearClient);
 
-    await moduleMocker.mock('../../issue_utils.js', () => ({
-      getInstructionsFromIssue: mock(() =>
-        Promise.resolve({
-          suggestedFileName: 'edge-999-edge-case-test-with-special-characters.md',
-          issue: {
-            title: 'Edge case test with special characters: "quotes", \'apostrophes\', & symbols',
-            html_url: 'https://linear.app/company/issue/EDGE-999',
-            number: 'EDGE-999',
-          },
-          plan:
-            mockEdgeCaseIssue.issue.body +
-            '\n\n---\n\n**Comments:**\n\n> ' +
-            mockEdgeCaseIssue.comments[0].body.replace(/\n/g, '\n> ') +
-            '\n> — Special & Characters',
-          rmprOptions: {
-            rmfilter: ['--include', '*.ts', '--exclude', '**/*.spec.ts'],
-          },
-        })
-      ),
-      createStubPlanFromIssue: mock((issueData, id) => ({
-        id,
-        title: issueData.issue.title,
-        goal: `Handle: ${issueData.issue.title}`,
-        details: issueData.plan,
-        status: 'done', // Map from Linear's "Done" status
-        priority: 'low',
-        issue: [issueData.issue.html_url],
-        tasks: [
-          {
-            title: 'Task with "quotes"',
-            description: 'Description with special chars: @#$%^&*()',
-            done: true,
-            files: ['src/special-chars.ts', 'test/edge-case.test.ts'],
-          },
-        ],
-        createdAt: new Date('2024-01-20T12:00:00.000Z').toISOString(),
-        updatedAt: new Date('2024-01-20T12:00:00.000Z').toISOString(),
-        rmfilter: issueData.rmprOptions?.rmfilter || [],
-      })),
+    vi.mocked(getInstructionsFromIssue).mockResolvedValue({
+      suggestedFileName: 'edge-999-edge-case-test-with-special-characters.md',
+      issue: {
+        title: 'Edge case test with special characters: "quotes", \'apostrophes\', & symbols',
+        html_url: 'https://linear.app/company/issue/EDGE-999',
+        number: 'EDGE-999',
+      },
+      plan:
+        mockEdgeCaseIssue.issue.body +
+        '\n\n---\n\n**Comments:**\n\n> ' +
+        mockEdgeCaseIssue.comments[0].body.replace(/\n/g, '\n> ') +
+        '\n> — Special & Characters',
+      rmprOptions: {
+        rmfilter: ['--include', '*.ts', '--exclude', '**/*.spec.ts'],
+      },
+    });
+
+    vi.mocked(createStubPlanFromIssue).mockImplementation((issueData, id) => ({
+      id,
+      title: issueData.issue.title,
+      goal: `Handle: ${issueData.issue.title}`,
+      details: issueData.plan,
+      status: 'done', // Map from Linear's "Done" status
+      priority: 'low',
+      issue: [issueData.issue.html_url],
+      tasks: [
+        {
+          title: 'Task with "quotes"',
+          description: 'Description with special chars: @#$%^&*()',
+          done: true,
+          files: ['src/special-chars.ts', 'test/edge-case.test.ts'],
+        },
+      ],
+      createdAt: new Date('2024-01-20T12:00:00.000Z').toISOString(),
+      updatedAt: new Date('2024-01-20T12:00:00.000Z').toISOString(),
+      rmfilter: issueData.rmprOptions?.rmfilter || [],
     }));
 
     await handleImportCommand('EDGE-999');
@@ -400,72 +496,63 @@ describe('Plan File Validation Tests', () => {
     };
 
     const mockLinearClient: IssueTrackerClient = {
-      fetchIssue: mock(() => Promise.resolve(mockTypedIssue)),
-      fetchAllOpenIssues: mock(() => Promise.resolve([])),
-      parseIssueIdentifier: mock(() => ({ identifier: 'TYPES-123' })),
-      getDisplayName: mock(() => 'Linear'),
-      getConfig: mock(() => ({ type: 'linear' })),
+      fetchIssue: vi.fn(() => Promise.resolve(mockTypedIssue)),
+      fetchAllOpenIssues: vi.fn(() => Promise.resolve([])),
+      parseIssueIdentifier: vi.fn(() => ({ identifier: 'TYPES-123' })),
+      getDisplayName: vi.fn(() => 'Linear'),
+      getConfig: vi.fn(() => ({ type: 'linear' })),
     };
 
-    await moduleMocker.mock('../../configLoader.js', () => ({
-      loadEffectiveConfig: mock(() =>
-        Promise.resolve({
-          issueTracker: 'linear' as const,
-          paths: { tasks: 'tasks' },
-        })
-      ),
-    }));
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
+      issueTracker: 'linear' as const,
+      paths: { tasks: 'tasks' },
+    });
 
-    await moduleMocker.mock('../../../common/issue_tracker/factory.js', () => ({
-      getIssueTracker: mock(() => Promise.resolve(mockLinearClient)),
-    }));
+    vi.mocked(getIssueTracker).mockResolvedValue(mockLinearClient);
 
-    await moduleMocker.mock('../../issue_utils.js', () => ({
-      getInstructionsFromIssue: mock(() =>
-        Promise.resolve({
-          suggestedFileName: 'types-123-data-type-validation-test.md',
-          issue: {
-            title: 'Data type validation test',
-            html_url: 'https://linear.app/company/issue/TYPES-123',
-            number: 'TYPES-123',
-          },
-          plan: 'Test proper data type handling.',
-          rmprOptions: {
-            rmfilter: ['--include', '*.ts'],
-          },
-        })
-      ),
-      createStubPlanFromIssue: mock((issueData, id) => ({
-        id: 42, // number type
-        title: issueData.issue.title, // string type
-        goal: `Test: ${issueData.issue.title}`, // string type
-        details: issueData.plan, // string type
-        status: 'in_progress', // enum type
-        priority: 'urgent', // enum type
-        epic: false, // boolean type
-        dependencies: [1, 2, 3], // array of numbers
-        issue: [issueData.issue.html_url], // array of strings (URLs)
-        docs: ['doc1.md', 'doc2.md'], // array of strings
-        assignedTo: 'Team Lead', // string type
-        tasks: [
-          // array of objects
-          {
-            title: 'Task 1', // string
-            description: 'First task', // string
-            done: false, // boolean
-            files: ['file1.ts', 'file2.ts'], // array of strings
-            docs: ['task-doc.md'], // array of strings
-          },
-          {
-            title: 'Task 2',
-            description: 'Second task',
-            done: true,
-          },
-        ],
-        createdAt: new Date('2024-01-20T12:00:00.000Z').toISOString(), // ISO datetime string
-        updatedAt: new Date('2024-01-20T12:05:00.000Z').toISOString(), // ISO datetime string
-        rmfilter: issueData.rmprOptions?.rmfilter || [], // array of strings
-      })),
+    vi.mocked(getInstructionsFromIssue).mockResolvedValue({
+      suggestedFileName: 'types-123-data-type-validation-test.md',
+      issue: {
+        title: 'Data type validation test',
+        html_url: 'https://linear.app/company/issue/TYPES-123',
+        number: 'TYPES-123',
+      },
+      plan: 'Test proper data type handling.',
+      rmprOptions: {
+        rmfilter: ['--include', '*.ts'],
+      },
+    });
+
+    vi.mocked(createStubPlanFromIssue).mockImplementation((issueData, id) => ({
+      id: 42, // number type
+      title: issueData.issue.title, // string type
+      goal: `Test: ${issueData.issue.title}`, // string type
+      details: issueData.plan, // string type
+      status: 'in_progress', // enum type
+      priority: 'urgent', // enum type
+      epic: false, // boolean type
+      dependencies: [1, 2, 3], // array of numbers
+      issue: [issueData.issue.html_url], // array of strings (URLs)
+      docs: ['doc1.md', 'doc2.md'], // array of strings
+      assignedTo: 'Team Lead', // string type
+      tasks: [
+        // array of objects
+        {
+          title: 'Task 1', // string
+          description: 'First task', // string
+          done: false, // boolean
+          files: ['file1.ts', 'file2.ts'], // array of strings
+          docs: ['task-doc.md'], // array of strings
+        },
+        {
+          title: 'Task 2',
+          description: 'Second task',
+          done: true,
+        },
+      ],
+      createdAt: new Date('2024-01-20T12:00:00.000Z').toISOString(), // ISO datetime string
+      updatedAt: new Date('2024-01-20T12:05:00.000Z').toISOString(), // ISO datetime string
+      rmfilter: issueData.rmprOptions?.rmfilter || [], // array of strings
     }));
 
     await handleImportCommand('TYPES-123');

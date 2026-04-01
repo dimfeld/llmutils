@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
-import { extractCommandAfterCd } from './prefix_prompt';
+import { describe, expect, test, vi } from 'vitest';
+import { extractCommandAfterCd } from '../../../common/prefix_prompt_utils.ts';
 
 describe('extractCommandAfterCd', () => {
   test('extracts command after cd && pattern', () => {

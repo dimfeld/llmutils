@@ -1,12 +1,49 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { ModuleMocker } from '../../testing.js';
+
+vi.mock('../../logging.js', () => ({
+  log: vi.fn(() => {}),
+  warn: vi.fn(() => {}),
+  debugLog: vi.fn(() => {}),
+}));
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return {
+    ...actual,
+    stat: vi.fn(actual.stat),
+  };
+});
+
+vi.mock('../configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(async () => ({ paths: {} })),
+}));
+
+vi.mock('../../common/git.js', () => ({
+  getGitRoot: vi.fn(async () => ''),
+  getCurrentBranchName: vi.fn(async () => 'main'),
+  isInGitRepository: vi.fn(async () => true),
+}));
+
+vi.mock('../assignments/workspace_identifier.js', () => ({
+  getRepositoryIdentity: vi.fn(async () => ({
+    repositoryId: 'github.com/test/repo',
+    remoteUrl: 'https://github.com/test/repo.git',
+    gitRoot: '',
+  })),
+  getUserIdentity: vi.fn(() => 'tester'),
+}));
+
 import { WorkspaceLock } from '../workspace/workspace_lock.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { importAssignment } from '../db/assignment.js';
 import { getOrCreateProject, getProjectById, listProjects } from '../db/project.js';
+import { log, warn } from '../../logging.js';
+import { loadEffectiveConfig } from '../configLoader.js';
+import { getGitRoot, getCurrentBranchName, isInGitRepository } from '../../common/git.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import {
   findWorkspacesByProjectId,
   getWorkspaceIssues,
@@ -16,14 +53,10 @@ import {
   type WorkspaceRow,
 } from '../db/workspace.js';
 
-let moduleMocker: ModuleMocker;
 let tempDir: string;
 let originalCwd: string;
 let originalHome: string | undefined;
 let originalEnv: { XDG_CONFIG_HOME?: string; APPDATA?: string };
-
-const logSpy = mock(() => {});
-const warnSpy = mock(() => {});
 
 // Capture console.log output for testing
 let consoleOutput: string[] = [];
@@ -96,7 +129,6 @@ function readTrackingData(): Record<string, WorkspaceInfo> {
 
 describe('workspace list command', () => {
   beforeEach(async () => {
-    moduleMocker = new ModuleMocker(import.meta);
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-list-test-'));
     originalCwd = process.cwd();
     originalHome = process.env.HOME;
@@ -115,31 +147,17 @@ describe('workspace list command', () => {
       consoleOutput.push(args.map(String).join(' '));
     };
 
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: logSpy,
-      warn: warnSpy,
-    }));
+    vi.clearAllMocks();
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: {},
-      }),
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => tempDir,
-      getCurrentBranchName: async () => 'main',
-      isInGitRepository: async () => true,
-    }));
-
-    await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
-      getRepositoryIdentity: async () => ({
-        repositoryId: 'github.com/test/repo',
-        remoteUrl: 'https://github.com/test/repo.git',
-        gitRoot: tempDir,
-      }),
-      getUserIdentity: () => 'tester',
-    }));
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({ paths: {} } as any);
+    vi.mocked(getGitRoot).mockResolvedValue(tempDir);
+    vi.mocked(getCurrentBranchName).mockResolvedValue('main');
+    vi.mocked(isInGitRepository).mockResolvedValue(true);
+    vi.mocked(getRepositoryIdentity).mockResolvedValue({
+      repositoryId: 'github.com/test/repo',
+      remoteUrl: 'https://github.com/test/repo.git',
+      gitRoot: tempDir,
+    });
   });
 
   afterEach(async () => {
@@ -150,7 +168,7 @@ describe('workspace list command', () => {
       process.env.HOME = originalHome;
     }
     console.log = originalConsoleLog;
-    moduleMocker.clear();
+    vi.clearAllMocks();
     closeDatabaseForTesting();
     if (originalEnv.XDG_CONFIG_HOME === undefined) {
       delete process.env.XDG_CONFIG_HOME;
@@ -163,8 +181,6 @@ describe('workspace list command', () => {
       process.env.APPDATA = originalEnv.APPDATA;
     }
     await fs.rm(tempDir, { recursive: true, force: true });
-    logSpy.mockClear();
-    warnSpy.mockClear();
   });
 
   test('outputs empty JSON array when no workspaces exist', async () => {
@@ -356,7 +372,6 @@ describe('workspace list command', () => {
     await writeTrackingData({ [workspaceDir]: workspaceEntry });
 
     // Create an actual lock file to simulate a locked workspace
-    const { WorkspaceLock } = await import('../workspace/workspace_lock.js');
     await WorkspaceLock.acquireLock(workspaceDir, 'test command', { owner: 'test-user' });
 
     const { handleWorkspaceListCommand } = await import('./workspace.js');
@@ -601,14 +616,11 @@ describe('workspace list command', () => {
     const workspaceDir = path.join(tempDir, 'workspace-local');
     await fs.mkdir(workspaceDir, { recursive: true });
 
-    await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
-      getRepositoryIdentity: async () => ({
-        repositoryId: 'local-repo',
-        remoteUrl: null,
-        gitRoot: tempDir,
-      }),
-      getUserIdentity: () => 'tester',
-    }));
+    vi.mocked(getRepositoryIdentity).mockResolvedValue({
+      repositoryId: 'local-repo',
+      remoteUrl: null,
+      gitRoot: tempDir,
+    } as any);
 
     const workspaceEntry: WorkspaceInfo = {
       taskId: 'task-local',
@@ -847,32 +859,33 @@ describe('workspace list command', () => {
 
     await writeTrackingData({ [protectedDir]: entry });
 
-    const realFs = await import('node:fs/promises');
-    await moduleMocker.mock('node:fs/promises', () => ({
-      ...realFs,
-      stat: async (target: string) => {
-        if (target === protectedDir) {
-          const err = new Error('permission denied') as NodeJS.ErrnoException;
-          err.code = 'EACCES';
-          throw err;
-        }
-        return realFs.stat(target);
-      },
-    }));
+    const realStat = fs.stat;
+    vi.mocked(fs.stat).mockImplementation(async (target, ...args) => {
+      if (target === protectedDir) {
+        const err = new Error('permission denied') as NodeJS.ErrnoException;
+        err.code = 'EACCES';
+        throw err;
+      }
+      return (realStat as any)(target, ...args);
+    });
 
-    const { handleWorkspaceListCommand } = await import('./workspace.js');
+    try {
+      const { handleWorkspaceListCommand } = await import('./workspace.js');
 
-    await handleWorkspaceListCommand({ format: 'json', all: true }, {
-      parent: {
+      await handleWorkspaceListCommand({ format: 'json', all: true }, {
         parent: {
-          opts: () => ({ config: undefined }),
+          parent: {
+            opts: () => ({ config: undefined }),
+          },
         },
-      },
-    } as any);
+      } as any);
 
-    const trackingContent = readTrackingData();
-    expect(trackingContent[protectedDir]).toBeDefined();
-    expect(warnSpy).toHaveBeenCalled();
+      const trackingContent = readTrackingData();
+      expect(trackingContent[protectedDir]).toBeDefined();
+      expect(vi.mocked(warn)).toHaveBeenCalled();
+    } finally {
+      vi.mocked(fs.stat).mockReset();
+    }
   });
 
   test('--all flag cleans up stale entries from tracking file', async () => {
@@ -917,15 +930,15 @@ describe('workspace list command', () => {
     expect(trackingContent[deletedDir]).toBeUndefined();
 
     // Verify warn was called for the removed directory
-    expect(warnSpy).toHaveBeenCalled();
-    const warnCalls = warnSpy.mock.calls.map((call) => call[0]);
+    expect(vi.mocked(warn)).toHaveBeenCalled();
+    const warnCalls = vi.mocked(warn).mock.calls.map((call) => call[0]);
     expect(warnCalls.some((msg: string) => msg.includes(deletedDir))).toBe(true);
   });
 });
 
 describe('formatWorkspaceDescription', () => {
-  test('includes basename, name, description, branch, and issue refs', () => {
-    const { formatWorkspaceDescription } = require('./workspace.js');
+  test('includes basename, name, description, branch, and issue refs', async () => {
+    const { formatWorkspaceDescription } = await import('./workspace.js');
 
     const entry = {
       fullPath: '/home/user/workspaces/my-workspace',
@@ -946,8 +959,8 @@ describe('formatWorkspaceDescription', () => {
     expect(result).toContain('#42');
   });
 
-  test('deduplicates identical name and planTitle', () => {
-    const { formatWorkspaceDescription } = require('./workspace.js');
+  test('deduplicates identical name and planTitle', async () => {
+    const { formatWorkspaceDescription } = await import('./workspace.js');
 
     const entry = {
       fullPath: '/home/user/workspaces/task-123',
@@ -964,8 +977,8 @@ describe('formatWorkspaceDescription', () => {
     expect(matches).toHaveLength(1);
   });
 
-  test('deduplicates case-insensitively', () => {
-    const { formatWorkspaceDescription } = require('./workspace.js');
+  test('deduplicates case-insensitively', async () => {
+    const { formatWorkspaceDescription } = await import('./workspace.js');
 
     const entry = {
       fullPath: '/home/user/workspaces/task-456',
@@ -982,8 +995,8 @@ describe('formatWorkspaceDescription', () => {
     expect(result).not.toContain('FIX BUG');
   });
 
-  test('deduplicates description that is substring of name', () => {
-    const { formatWorkspaceDescription } = require('./workspace.js');
+  test('deduplicates description that is substring of name', async () => {
+    const { formatWorkspaceDescription } = await import('./workspace.js');
 
     const entry = {
       fullPath: '/home/user/workspaces/task-789',
@@ -1000,8 +1013,8 @@ describe('formatWorkspaceDescription', () => {
     expect(result).not.toMatch(/\| User Authentication\s*(\||$)/);
   });
 
-  test('skips issue refs already mentioned in description', () => {
-    const { formatWorkspaceDescription } = require('./workspace.js');
+  test('skips issue refs already mentioned in description', async () => {
+    const { formatWorkspaceDescription } = await import('./workspace.js');
 
     const entry = {
       fullPath: '/home/user/workspaces/task-100',
@@ -1018,8 +1031,8 @@ describe('formatWorkspaceDescription', () => {
     expect(matches).toHaveLength(1);
   });
 
-  test('handles minimal entry with only required fields', () => {
-    const { formatWorkspaceDescription } = require('./workspace.js');
+  test('handles minimal entry with only required fields', async () => {
+    const { formatWorkspaceDescription } = await import('./workspace.js');
 
     const entry = {
       fullPath: '/home/user/workspaces/minimal',
@@ -1032,8 +1045,8 @@ describe('formatWorkspaceDescription', () => {
     expect(result).toBe('minimal');
   });
 
-  test('handles entry with only basename and branch', () => {
-    const { formatWorkspaceDescription } = require('./workspace.js');
+  test('handles entry with only basename and branch', async () => {
+    const { formatWorkspaceDescription } = await import('./workspace.js');
 
     const entry = {
       fullPath: '/home/user/workspaces/basic',
@@ -1049,15 +1062,11 @@ describe('formatWorkspaceDescription', () => {
 });
 
 describe('workspace list outside git repository', () => {
-  let moduleMockerOutsideRepo: ModuleMocker;
   let tempDirOutsideRepo: string;
   let outsideEnv: { XDG_CONFIG_HOME?: string; APPDATA?: string };
   let consoleOutputOutsideRepo: string[] = [];
-  let logSpyOutsideRepo = mock(() => {});
-  let warnSpyOutsideRepo = mock(() => {});
 
   beforeEach(async () => {
-    moduleMockerOutsideRepo = new ModuleMocker(import.meta);
     tempDirOutsideRepo = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-outside-repo-test-'));
     outsideEnv = {
       XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
@@ -1073,15 +1082,12 @@ describe('workspace list outside git repository', () => {
       consoleOutputOutsideRepo.push(args.map(String).join(' '));
     };
 
-    await moduleMockerOutsideRepo.mock('../../logging.js', () => ({
-      log: logSpyOutsideRepo,
-      warn: warnSpyOutsideRepo,
-    }));
+    vi.clearAllMocks();
   });
 
   afterEach(async () => {
     console.log = originalConsoleLog;
-    moduleMockerOutsideRepo.clear();
+    vi.clearAllMocks();
     closeDatabaseForTesting();
     if (outsideEnv.XDG_CONFIG_HOME === undefined) {
       delete process.env.XDG_CONFIG_HOME;
@@ -1094,8 +1100,6 @@ describe('workspace list outside git repository', () => {
       process.env.APPDATA = outsideEnv.APPDATA;
     }
     await fs.rm(tempDirOutsideRepo, { recursive: true, force: true });
-    logSpyOutsideRepo.mockClear();
-    warnSpyOutsideRepo.mockClear();
   });
 
   test('automatically shows all workspaces when outside a git repository', async () => {
@@ -1125,23 +1129,19 @@ describe('workspace list outside git repository', () => {
     });
 
     // Mock isInGitRepository to return false (simulating being outside a git repo)
-    await moduleMockerOutsideRepo.mock('../../common/git.js', () => ({
-      getGitRoot: async () => tempDirOutsideRepo,
-      getCurrentBranchName: async () => null,
-      isInGitRepository: async () => false,
-    }));
+    vi.mocked(getGitRoot).mockResolvedValue(tempDirOutsideRepo);
+    vi.mocked(getCurrentBranchName).mockResolvedValue(null);
+    vi.mocked(isInGitRepository).mockResolvedValue(false);
 
-    await moduleMockerOutsideRepo.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async (_path: string, options?: { quiet?: boolean }) => {
+    vi.mocked(loadEffectiveConfig).mockImplementation(
+      async (_path: string, options?: { quiet?: boolean }) => {
         // Verify that quiet mode is enabled when outside git repo
         if (options?.quiet !== true) {
           throw new Error('Expected quiet: true when outside git repository');
         }
-        return {
-          paths: {},
-        };
-      },
-    }));
+        return { paths: {} } as any;
+      }
+    );
 
     const { handleWorkspaceListCommand } = await import('./workspace.js');
 
@@ -1178,22 +1178,18 @@ describe('workspace list outside git repository', () => {
 
     let loadEffectiveConfigCalled = false;
 
-    await moduleMockerOutsideRepo.mock('../../common/git.js', () => ({
-      getGitRoot: async () => tempDirOutsideRepo,
-      getCurrentBranchName: async () => null,
-      isInGitRepository: async () => false,
-    }));
+    vi.mocked(getGitRoot).mockResolvedValue(tempDirOutsideRepo);
+    vi.mocked(getCurrentBranchName).mockResolvedValue(null);
+    vi.mocked(isInGitRepository).mockResolvedValue(false);
 
-    await moduleMockerOutsideRepo.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async (_path: string, options?: { quiet?: boolean }) => {
+    vi.mocked(loadEffectiveConfig).mockImplementation(
+      async (_path: string, options?: { quiet?: boolean }) => {
         loadEffectiveConfigCalled = true;
         // The quiet option should be true when outside git repo
         expect(options?.quiet).toBe(true);
-        return {
-          paths: {},
-        };
-      },
-    }));
+        return { paths: {} } as any;
+      }
+    );
 
     const { handleWorkspaceListCommand } = await import('./workspace.js');
 
@@ -1207,7 +1203,7 @@ describe('workspace list outside git repository', () => {
 
     expect(loadEffectiveConfigCalled).toBe(true);
     // Verify that log was not called with the external storage message
-    const logCalls = logSpyOutsideRepo.mock.calls.map((call) => call[0]);
+    const logCalls = vi.mocked(log).mock.calls.map((call) => call[0]);
     const hasExternalStorageMessage = logCalls.some(
       (msg: string) => typeof msg === 'string' && msg.includes('Using external tim storage')
     );
@@ -1241,30 +1237,23 @@ describe('workspace list outside git repository', () => {
     });
 
     // Mock isInGitRepository to return true (inside a git repo)
-    await moduleMockerOutsideRepo.mock('../../common/git.js', () => ({
-      getGitRoot: async () => tempDirOutsideRepo,
-      getCurrentBranchName: async () => 'main',
-      isInGitRepository: async () => true,
-    }));
+    vi.mocked(getGitRoot).mockResolvedValue(tempDirOutsideRepo);
+    vi.mocked(getCurrentBranchName).mockResolvedValue('main');
+    vi.mocked(isInGitRepository).mockResolvedValue(true);
 
-    await moduleMockerOutsideRepo.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async (_path: string, options?: { quiet?: boolean }) => {
+    vi.mocked(loadEffectiveConfig).mockImplementation(
+      async (_path: string, options?: { quiet?: boolean }) => {
         // When inside git repo, quiet should be false (or undefined)
         expect(options?.quiet).toBeFalsy();
-        return {
-          paths: {},
-        };
-      },
-    }));
+        return { paths: {} } as any;
+      }
+    );
 
-    await moduleMockerOutsideRepo.mock('../assignments/workspace_identifier.js', () => ({
-      getRepositoryIdentity: async () => ({
-        repositoryId: 'github.com/test/repo1',
-        remoteUrl: 'https://github.com/test/repo1.git',
-        gitRoot: tempDirOutsideRepo,
-      }),
-      getUserIdentity: () => 'tester',
-    }));
+    vi.mocked(getRepositoryIdentity).mockResolvedValue({
+      repositoryId: 'github.com/test/repo1',
+      remoteUrl: 'https://github.com/test/repo1.git',
+      gitRoot: tempDirOutsideRepo,
+    });
 
     const { handleWorkspaceListCommand } = await import('./workspace.js');
 
@@ -1310,17 +1299,11 @@ describe('workspace list outside git repository', () => {
     });
 
     // Mock isInGitRepository to return true (inside a git repo)
-    await moduleMockerOutsideRepo.mock('../../common/git.js', () => ({
-      getGitRoot: async () => tempDirOutsideRepo,
-      getCurrentBranchName: async () => 'main',
-      isInGitRepository: async () => true,
-    }));
+    vi.mocked(getGitRoot).mockResolvedValue(tempDirOutsideRepo);
+    vi.mocked(getCurrentBranchName).mockResolvedValue('main');
+    vi.mocked(isInGitRepository).mockResolvedValue(true);
 
-    await moduleMockerOutsideRepo.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: {},
-      }),
-    }));
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({ paths: {} } as any);
 
     const { handleWorkspaceListCommand } = await import('./workspace.js');
 

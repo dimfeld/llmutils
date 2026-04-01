@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Database } from 'bun:sqlite';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
@@ -392,7 +392,7 @@ describe('tim db/pr_status', () => {
     expect(links.get('https://github.com/example/repo/pull/402')).toEqual([
       { planUuid: 'plan-2', planId: 2, title: 'Plan 2' },
     ]);
-    expect(links.has('https://github.com/example/repo/issues/999')).toBeFalse();
+    expect(links.has('https://github.com/example/repo/issues/999')).toBe(false);
   });
 
   test('getLinkedPlansByPrUrl returns empty arrays for canonical PRs with no linked plans', () => {

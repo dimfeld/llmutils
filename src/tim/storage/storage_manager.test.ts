@@ -1,9 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { ModuleMocker } from '../../testing.js';
 import { getDatabase } from '../db/database.js';
 import { getOrCreateProject } from '../db/project.js';
 import {
@@ -48,7 +47,6 @@ async function createStorageRepository(
 }
 
 describe('storage manager', () => {
-  const moduleMocker = new ModuleMocker(import.meta);
   let fakeHomeDir: string;
   let originalXdgConfigHome: string | undefined;
 
@@ -56,13 +54,8 @@ describe('storage manager', () => {
     closeDatabaseForTesting();
     fakeHomeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-storage-manager-'));
     originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
+    // Set XDG_CONFIG_HOME so getTimConfigRoot() resolves to our fake directory
     process.env.XDG_CONFIG_HOME = path.join(fakeHomeDir, '.config');
-
-    const realOs = await import('node:os');
-    await moduleMocker.mock('node:os', () => ({
-      ...realOs,
-      homedir: () => fakeHomeDir,
-    }));
   });
 
   afterEach(async () => {
@@ -72,7 +65,7 @@ describe('storage manager', () => {
     } else {
       process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
     }
-    moduleMocker.clear();
+    vi.clearAllMocks();
     await fs.rm(fakeHomeDir, { recursive: true, force: true });
   });
 

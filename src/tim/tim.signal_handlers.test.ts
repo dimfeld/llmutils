@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import { registerShutdownSignalHandlers } from './tim.ts';
 import {
   getSignalExitCode,
@@ -29,7 +29,7 @@ describe('registerShutdownSignalHandlers', () => {
   beforeEach(() => {
     resetShutdownState();
     exitCalls = [];
-    process.exit = mock((code?: number) => {
+    process.exit = vi.fn((code?: number) => {
       exitCalls.push(code ?? 0);
     }) as typeof process.exit;
   });
@@ -40,7 +40,7 @@ describe('registerShutdownSignalHandlers', () => {
   });
 
   test('registers exit and signal handlers', () => {
-    const cleanupRegistry = { executeAll: mock(() => {}) };
+    const cleanupRegistry = { executeAll: vi.fn(() => {}) };
     const fakeProcess = createFakeProcess();
 
     registerShutdownSignalHandlers(cleanupRegistry, fakeProcess);
@@ -54,7 +54,7 @@ describe('registerShutdownSignalHandlers', () => {
   });
 
   test('signal handlers call process.exit() immediately when deferSignalExit is false', () => {
-    const cleanupRegistry = { executeAll: mock(() => {}) };
+    const cleanupRegistry = { executeAll: vi.fn(() => {}) };
     const fakeProcess = createFakeProcess();
 
     registerShutdownSignalHandlers(cleanupRegistry, fakeProcess);
@@ -68,7 +68,7 @@ describe('registerShutdownSignalHandlers', () => {
   });
 
   test('signal handlers defer exit when deferSignalExit is true', () => {
-    const cleanupRegistry = { executeAll: mock(() => {}) };
+    const cleanupRegistry = { executeAll: vi.fn(() => {}) };
     const fakeProcess = createFakeProcess();
     setDeferSignalExit(true);
 
@@ -86,7 +86,7 @@ describe('registerShutdownSignalHandlers', () => {
   });
 
   test('second signal force-exits even when deferSignalExit is true', () => {
-    const cleanupRegistry = { executeAll: mock(() => {}) };
+    const cleanupRegistry = { executeAll: vi.fn(() => {}) };
     const fakeProcess = createFakeProcess();
     setDeferSignalExit(true);
 
@@ -100,7 +100,7 @@ describe('registerShutdownSignalHandlers', () => {
   });
 
   test('exit handler still runs cleanup after shutdown has already started', () => {
-    const cleanupRegistry = { executeAll: mock(() => {}) };
+    const cleanupRegistry = { executeAll: vi.fn(() => {}) };
     const fakeProcess = createFakeProcess();
     setDeferSignalExit(true);
 

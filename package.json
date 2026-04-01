@@ -19,9 +19,7 @@
     "dev-install": "bun run build && pnpm add -g file://$(pwd)",
     "format": "prettier --write --log-level warn .",
     "update-schemas": "scripts/update-json-schemas.ts",
-    "test": "bun run test-cli && bun run test-web",
-    "test-web": "bun --bun vitest run",
-    "test-cli": "bun test",
+    "test": "bun --bun vitest run",
     "tim": "src/tim/tim.ts",
     "webhook-receiver": "bun run src/webhooks/server.ts"
   },

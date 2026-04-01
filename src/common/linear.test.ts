@@ -1,11 +1,14 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
-import { ModuleMocker } from '../testing.ts';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { LinearIssueTrackerClient, createLinearClient } from './linear.ts';
 import type { IssueTrackerConfig } from './issue_tracker/types.ts';
+import * as linearClientModule from './linear_client.ts';
+
+// Mock the linear client module
+vi.mock('./linear_client.ts', () => ({
+  getLinearClient: vi.fn(),
+}));
 
 describe('LinearIssueTrackerClient', () => {
-  const moduleMocker = new ModuleMocker(import.meta);
-
   const mockConfig: IssueTrackerConfig = {
     type: 'linear',
     apiKey: 'test-linear-api-key',
@@ -14,10 +17,12 @@ describe('LinearIssueTrackerClient', () => {
   beforeEach(() => {
     // Mock environment for Linear client
     process.env.LINEAR_API_KEY = 'test-linear-api-key';
+    // Clear all mocks
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
-    moduleMocker.clear();
+    vi.restoreAllMocks();
   });
 
   describe('parseIssueIdentifier', () => {
@@ -86,15 +91,14 @@ describe('LinearIssueTrackerClient', () => {
       // Clear the environment variable
       delete process.env.LINEAR_API_KEY;
 
-      await moduleMocker.mock('./linear_client.ts', () => ({
-        getLinearClient: mock(() => {
-          throw new Error(
-            'LINEAR_API_KEY environment variable is not set. ' +
-              'Please set your Linear API key to use Linear integration. ' +
-              'You can obtain an API key from: https://linear.app/settings/api'
-          );
-        }),
-      }));
+      const mockGetLinearClient = vi.mocked(linearClientModule.getLinearClient);
+      mockGetLinearClient.mockImplementation(() => {
+        throw new Error(
+          'LINEAR_API_KEY environment variable is not set. ' +
+            'Please set your Linear API key to use Linear integration. ' +
+            'You can obtain an API key from: https://linear.app/settings/api'
+        );
+      });
 
       const client = new LinearIssueTrackerClient(mockConfig);
 
@@ -108,7 +112,7 @@ describe('LinearIssueTrackerClient', () => {
 
     test('fetches issue with comments successfully', async () => {
       const mockLinearClient = {
-        issue: mock(async (id: string) => ({
+        issue: vi.fn(async (id: string) => ({
           id: 'issue-uuid-123',
           identifier: 'TEAM-123',
           title: 'Test Issue',
@@ -126,7 +130,7 @@ describe('LinearIssueTrackerClient', () => {
             email: 'jane@example.com',
             avatarUrl: 'https://avatars.linear.app/user2',
           },
-          labels: mock(async () => ({
+          labels: vi.fn(async () => ({
             nodes: [
               { id: 'label-1', name: 'Bug', color: '#ff0000' },
               { id: 'label-2', name: 'High Priority', color: '#ffa500' },
@@ -136,7 +140,7 @@ describe('LinearIssueTrackerClient', () => {
           project: Promise.resolve(null),
           createdAt: new Date('2024-01-15T10:30:00Z'),
           updatedAt: new Date('2024-01-16T14:22:00Z'),
-          comments: mock(async () => ({
+          comments: vi.fn(async () => ({
             nodes: [
               {
                 id: 'comment-uuid-1',
@@ -165,9 +169,8 @@ describe('LinearIssueTrackerClient', () => {
         })),
       };
 
-      await moduleMocker.mock('./linear_client.ts', () => ({
-        getLinearClient: mock(() => mockLinearClient),
-      }));
+      const mockGetLinearClient = vi.mocked(linearClientModule.getLinearClient);
+      mockGetLinearClient.mockReturnValue(mockLinearClient);
 
       const client = new LinearIssueTrackerClient(mockConfig);
       const result = await client.fetchIssue('TEAM-123');
@@ -241,7 +244,7 @@ describe('LinearIssueTrackerClient', () => {
 
     test('handles issue with minimal data', async () => {
       const mockLinearClient = {
-        issue: mock(async (id: string) => ({
+        issue: vi.fn(async (id: string) => ({
           id: 'issue-uuid-456',
           identifier: 'TEAM-456',
           title: 'Minimal Issue',
@@ -249,18 +252,17 @@ describe('LinearIssueTrackerClient', () => {
           url: 'https://linear.app/company/issue/TEAM-456',
           creator: undefined,
           assignee: undefined,
-          labels: mock(async () => ({ nodes: [] })),
+          labels: vi.fn(async () => ({ nodes: [] })),
           state: Promise.resolve(undefined),
           project: Promise.resolve(null),
           createdAt: new Date('2024-01-01T00:00:00Z'),
           updatedAt: new Date('2024-01-01T00:00:00Z'),
-          comments: mock(async () => ({ nodes: [] })),
+          comments: vi.fn(async () => ({ nodes: [] })),
         })),
       };
 
-      await moduleMocker.mock('./linear_client.ts', () => ({
-        getLinearClient: mock(() => mockLinearClient),
-      }));
+      const mockGetLinearClient = vi.mocked(linearClientModule.getLinearClient);
+      mockGetLinearClient.mockReturnValue(mockLinearClient);
 
       const client = new LinearIssueTrackerClient(mockConfig);
       const result = await client.fetchIssue('TEAM-456');
@@ -286,7 +288,7 @@ describe('LinearIssueTrackerClient', () => {
 
     test('fetches issue with project data successfully', async () => {
       const mockLinearClient = {
-        issue: mock(async (id: string) => ({
+        issue: vi.fn(async (id: string) => ({
           id: 'issue-uuid-789',
           identifier: 'TEAM-789',
           title: 'Project Issue',
@@ -298,7 +300,7 @@ describe('LinearIssueTrackerClient', () => {
             email: 'john@example.com',
           },
           assignee: null,
-          labels: mock(async () => ({ nodes: [] })),
+          labels: vi.fn(async () => ({ nodes: [] })),
           state: Promise.resolve({ name: 'Todo' }),
           project: Promise.resolve({
             name: 'My Awesome Project',
@@ -306,13 +308,12 @@ describe('LinearIssueTrackerClient', () => {
           }),
           createdAt: new Date('2024-01-20T10:00:00Z'),
           updatedAt: new Date('2024-01-20T10:00:00Z'),
-          comments: mock(async () => ({ nodes: [] })),
+          comments: vi.fn(async () => ({ nodes: [] })),
         })),
       };
 
-      await moduleMocker.mock('./linear_client.ts', () => ({
-        getLinearClient: mock(() => mockLinearClient),
-      }));
+      const mockGetLinearClient = vi.mocked(linearClientModule.getLinearClient);
+      mockGetLinearClient.mockReturnValue(mockLinearClient);
 
       const client = new LinearIssueTrackerClient(mockConfig);
       const result = await client.fetchIssue('TEAM-789');
@@ -336,12 +337,11 @@ describe('LinearIssueTrackerClient', () => {
 
     test('throws error when issue not found', async () => {
       const mockLinearClient = {
-        issue: mock(async (id: string) => null),
+        issue: vi.fn(async (id: string) => null),
       };
 
-      await moduleMocker.mock('./linear_client.ts', () => ({
-        getLinearClient: mock(() => mockLinearClient),
-      }));
+      const mockGetLinearClient = vi.mocked(linearClientModule.getLinearClient);
+      mockGetLinearClient.mockReturnValue(mockLinearClient);
 
       const client = new LinearIssueTrackerClient(mockConfig);
 
@@ -351,14 +351,13 @@ describe('LinearIssueTrackerClient', () => {
 
     test('handles Linear SDK errors', async () => {
       const mockLinearClient = {
-        issue: mock(async (id: string) => {
+        issue: vi.fn(async (id: string) => {
           throw new Error('Linear API error');
         }),
       };
 
-      await moduleMocker.mock('./linear_client.ts', () => ({
-        getLinearClient: mock(() => mockLinearClient),
-      }));
+      const mockGetLinearClient = vi.mocked(linearClientModule.getLinearClient);
+      mockGetLinearClient.mockReturnValue(mockLinearClient);
 
       const client = new LinearIssueTrackerClient(mockConfig);
 
@@ -369,7 +368,7 @@ describe('LinearIssueTrackerClient', () => {
 
     test('accepts Linear URL as identifier', async () => {
       const mockLinearClient = {
-        issue: mock(async (id: string) => ({
+        issue: vi.fn(async (id: string) => ({
           id: 'issue-uuid-123',
           identifier: 'TEAM-123',
           title: 'URL Test Issue',
@@ -377,17 +376,16 @@ describe('LinearIssueTrackerClient', () => {
           url: 'https://linear.app/company/issue/TEAM-123',
           creator: undefined,
           assignee: undefined,
-          labels: mock(async () => ({ nodes: [] })),
+          labels: vi.fn(async () => ({ nodes: [] })),
           state: Promise.resolve({ name: 'Open' }),
           createdAt: new Date('2024-01-01T00:00:00Z'),
           updatedAt: new Date('2024-01-01T00:00:00Z'),
-          comments: mock(async () => ({ nodes: [] })),
+          comments: vi.fn(async () => ({ nodes: [] })),
         })),
       };
 
-      await moduleMocker.mock('./linear_client.ts', () => ({
-        getLinearClient: mock(() => mockLinearClient),
-      }));
+      const mockGetLinearClient = vi.mocked(linearClientModule.getLinearClient);
+      mockGetLinearClient.mockReturnValue(mockLinearClient);
 
       const client = new LinearIssueTrackerClient(mockConfig);
       const result = await client.fetchIssue('https://linear.app/company/issue/TEAM-123');
@@ -401,7 +399,7 @@ describe('LinearIssueTrackerClient', () => {
       const largeComment = 'B'.repeat(5000); // 5KB comment
 
       const mockLinearClient = {
-        issue: mock(async (id: string) => ({
+        issue: vi.fn(async (id: string) => ({
           id: 'issue-uuid-large',
           identifier: 'TEAM-999',
           title: 'Large Content Issue',
@@ -412,11 +410,11 @@ describe('LinearIssueTrackerClient', () => {
             name: 'User One',
           },
           assignee: undefined,
-          labels: mock(async () => ({ nodes: [] })),
+          labels: vi.fn(async () => ({ nodes: [] })),
           state: Promise.resolve({ name: 'Open' }),
           createdAt: new Date('2024-01-01T00:00:00Z'),
           updatedAt: new Date('2024-01-01T00:00:00Z'),
-          comments: mock(async () => ({
+          comments: vi.fn(async () => ({
             nodes: [
               {
                 id: 'comment-large',
@@ -433,9 +431,8 @@ describe('LinearIssueTrackerClient', () => {
         })),
       };
 
-      await moduleMocker.mock('./linear_client.ts', () => ({
-        getLinearClient: mock(() => mockLinearClient),
-      }));
+      const mockGetLinearClient = vi.mocked(linearClientModule.getLinearClient);
+      mockGetLinearClient.mockReturnValue(mockLinearClient);
 
       const client = new LinearIssueTrackerClient(mockConfig);
       const result = await client.fetchIssue('TEAM-999');
@@ -459,7 +456,7 @@ describe('LinearIssueTrackerClient', () => {
             url: 'https://linear.app/company/issue/TEAM-1',
             creator: undefined,
             assignee: undefined,
-            labels: mock(async () => ({ nodes: [] })),
+            labels: vi.fn(async () => ({ nodes: [] })),
             state: Promise.resolve({ name: 'In Progress' }),
             project: Promise.resolve(null),
             createdAt: new Date('2024-01-01T00:00:00Z'),
@@ -467,18 +464,17 @@ describe('LinearIssueTrackerClient', () => {
           },
         ],
         pageInfo: { hasNextPage: true },
-        fetchNext: mock(async () => {
+        fetchNext: vi.fn(async () => {
           throw new Error('Pagination failed');
         }),
       };
 
       const mockLinearClient = {
-        issues: mock(async (options: any) => mockFirstPage),
+        issues: vi.fn(async (options: any) => mockFirstPage),
       };
 
-      await moduleMocker.mock('./linear_client.ts', () => ({
-        getLinearClient: mock(() => mockLinearClient),
-      }));
+      const mockGetLinearClient = vi.mocked(linearClientModule.getLinearClient);
+      mockGetLinearClient.mockReturnValue(mockLinearClient);
 
       const client = new LinearIssueTrackerClient(mockConfig);
 
@@ -501,7 +497,7 @@ describe('LinearIssueTrackerClient', () => {
               name: 'Creator One',
             },
             assignee: undefined,
-            labels: mock(async () => ({ nodes: [] })),
+            labels: vi.fn(async () => ({ nodes: [] })),
             state: Promise.resolve({ name: 'In Progress' }),
             project: Promise.resolve(null),
             createdAt: new Date('2024-01-01T00:00:00Z'),
@@ -518,7 +514,7 @@ describe('LinearIssueTrackerClient', () => {
               id: 'user-2',
               name: 'Assignee Two',
             },
-            labels: mock(async () => ({
+            labels: vi.fn(async () => ({
               nodes: [{ id: 'label-1', name: 'Bug', color: '#ff0000' }],
             })),
             state: Promise.resolve({ name: 'Todo' }),
@@ -528,7 +524,7 @@ describe('LinearIssueTrackerClient', () => {
           },
         ],
         pageInfo: { hasNextPage: true },
-        fetchNext: mock(async () => mockSecondPage),
+        fetchNext: vi.fn(async () => mockSecondPage),
       };
 
       const mockSecondPage = {
@@ -544,7 +540,7 @@ describe('LinearIssueTrackerClient', () => {
               name: 'Creator Three',
             },
             assignee: undefined,
-            labels: mock(async () => ({ nodes: [] })),
+            labels: vi.fn(async () => ({ nodes: [] })),
             state: Promise.resolve({ name: 'Open' }),
             project: Promise.resolve(null),
             createdAt: new Date('2024-01-03T00:00:00Z'),
@@ -552,16 +548,15 @@ describe('LinearIssueTrackerClient', () => {
           },
         ],
         pageInfo: { hasNextPage: false },
-        fetchNext: mock(),
+        fetchNext: vi.fn(),
       };
 
       const mockLinearClient = {
-        issues: mock(async (options: any) => mockFirstPage),
+        issues: vi.fn(async (options: any) => mockFirstPage),
       };
 
-      await moduleMocker.mock('./linear_client.ts', () => ({
-        getLinearClient: mock(() => mockLinearClient),
-      }));
+      const mockGetLinearClient = vi.mocked(linearClientModule.getLinearClient);
+      mockGetLinearClient.mockReturnValue(mockLinearClient);
 
       const client = new LinearIssueTrackerClient(mockConfig);
       const result = await client.fetchAllOpenIssues();
@@ -631,16 +626,15 @@ describe('LinearIssueTrackerClient', () => {
       const mockEmptyConnection = {
         nodes: [],
         pageInfo: { hasNextPage: false },
-        fetchNext: mock(),
+        fetchNext: vi.fn(),
       };
 
       const mockLinearClient = {
-        issues: mock(async (options: any) => mockEmptyConnection),
+        issues: vi.fn(async (options: any) => mockEmptyConnection),
       };
 
-      await moduleMocker.mock('./linear_client.ts', () => ({
-        getLinearClient: mock(() => mockLinearClient),
-      }));
+      const mockGetLinearClient = vi.mocked(linearClientModule.getLinearClient);
+      mockGetLinearClient.mockReturnValue(mockLinearClient);
 
       const client = new LinearIssueTrackerClient(mockConfig);
       const result = await client.fetchAllOpenIssues();
@@ -651,14 +645,13 @@ describe('LinearIssueTrackerClient', () => {
 
     test('handles Linear SDK errors', async () => {
       const mockLinearClient = {
-        issues: mock(async () => {
+        issues: vi.fn(async () => {
           throw new Error('Linear API error');
         }),
       };
 
-      await moduleMocker.mock('./linear_client.ts', () => ({
-        getLinearClient: mock(() => mockLinearClient),
-      }));
+      const mockGetLinearClient = vi.mocked(linearClientModule.getLinearClient);
+      mockGetLinearClient.mockReturnValue(mockLinearClient);
 
       const client = new LinearIssueTrackerClient(mockConfig);
 

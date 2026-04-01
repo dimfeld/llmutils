@@ -1,16 +1,26 @@
-import { beforeEach, describe, expect, test, mock, afterEach } from 'bun:test';
+import { beforeEach, describe, expect, test, vi, afterEach } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { ModuleMocker } from '../../testing.js';
 import { writePlanFile } from '../plans.js';
 import { closeDatabaseForTesting } from '../db/database.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
 import { generateBranchNameFromPlan, handleBranchCommand } from './branch.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
-const logSpy = mock(() => {});
-const writeStdoutSpy = mock(() => {});
+vi.mock('../../logging.js', () => ({
+  log: vi.fn(),
+  writeStdout: vi.fn(),
+}));
+
+vi.mock('../configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(),
+}));
+
+import { log as logFn, writeStdout as writeStdoutFn } from '../../logging.js';
+import { loadEffectiveConfig } from '../configLoader.js';
+
+const logSpy = vi.mocked(logFn);
+const writeStdoutSpy = vi.mocked(writeStdoutFn);
 
 describe('generateBranchNameFromPlan', () => {
   test('uses id and slugified title when available', () => {
@@ -87,8 +97,7 @@ describe('handleBranchCommand', () => {
   let tasksDir: string;
 
   beforeEach(async () => {
-    logSpy.mockClear();
-    writeStdoutSpy.mockClear();
+    vi.clearAllMocks();
     closeDatabaseForTesting();
     clearPlanSyncContext();
 
@@ -98,22 +107,15 @@ describe('handleBranchCommand', () => {
     await fs.mkdir(tasksDir, { recursive: true });
     await fs.writeFile(path.join(repoDir, '.tim.yml'), 'paths:\n  tasks: tasks\n');
 
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: logSpy,
-      writeStdout: writeStdoutSpy,
-    }));
-
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: {
-          tasks: tasksDir,
-        },
-      }),
-    }));
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
+      paths: {
+        tasks: tasksDir,
+      },
+    } as any);
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     closeDatabaseForTesting();
     clearPlanSyncContext();
     await fs.rm(tempDir, { recursive: true, force: true });

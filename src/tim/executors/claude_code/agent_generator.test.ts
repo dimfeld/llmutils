@@ -1,30 +1,19 @@
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
-import * as fs from 'node:fs/promises';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as path from 'node:path';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { buildAgentsArgument, type AgentDefinition } from './agent_generator.ts';
-import { ModuleMocker } from '../../../testing.ts';
 
 describe('agent_generator', () => {
   let tempDir: string;
-  let agentsDir: string;
-  const moduleMocker = new ModuleMocker(import.meta);
 
   beforeEach(async () => {
     // Create a temporary directory for testing
     tempDir = await mkdtemp(path.join(tmpdir(), 'agent-generator-test-'));
-    agentsDir = path.join(tempDir, '.claude', 'agents');
-
-    // Mock getGitRoot to return our temp directory
-    await moduleMocker.mock('../../../common/git.ts', () => ({
-      getGitRoot: async () => tempDir,
-    }));
   });
 
   afterEach(async () => {
-    // Clean up
-    moduleMocker.clear();
+    vi.clearAllMocks();
     if (tempDir) {
       await rm(tempDir, { recursive: true, force: true });
     }

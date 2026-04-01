@@ -1,8 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach, mock, spyOn } from 'bun:test';
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import path from 'node:path';
-import { ModuleMocker } from '../../testing.js';
 import { handleReviewCommand } from './review.js';
 import { createTunnelServer, type TunnelServer } from '../../logging/tunnel_server.js';
 import { TIM_OUTPUT_SOCKET } from '../../logging/tunnel_protocol.js';
@@ -12,8 +11,57 @@ import type { LoggerAdapter } from '../../logging/adapter.js';
 import type { StructuredMessage } from '../../logging/structured_messages.js';
 import { closeDatabaseForTesting } from '../db/database.js';
 import { writePlanFile } from '../plans.js';
+import * as contextGatheringModule from '../utils/context_gathering.js';
+import * as configLoaderModule from '../configLoader.js';
+import * as executorsModule from '../executors/index.js';
+import * as agentPromptsModule from '../executors/claude_code/agent_prompts.js';
+import * as gitModule from '../../common/git.js';
+import * as notificationsModule from '../notifications.js';
+import * as loggingModule from '../../logging.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
+vi.mock('../notifications.js', () => ({
+  sendNotification: vi.fn(),
+}));
+
+vi.mock('../utils/context_gathering.js', () => ({
+  gatherPlanContext: vi.fn(),
+}));
+
+vi.mock('../configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(),
+  loadGlobalConfigForNotifications: vi.fn(),
+}));
+
+vi.mock('../executors/index.js', () => ({
+  buildExecutorAndLog: vi.fn(),
+  DEFAULT_EXECUTOR: 'codex-cli',
+}));
+
+vi.mock('../executors/claude_code/agent_prompts.js', () => ({
+  getReviewerPrompt: vi.fn(),
+}));
+
+vi.mock('../../common/git.js', () => ({
+  getGitRoot: vi.fn(),
+  getCurrentCommitHash: vi.fn(),
+  getTrunkBranch: vi.fn(),
+  getUsingJj: vi.fn(),
+  getCurrentBranchName: vi.fn(),
+}));
+
+vi.mock('../../logging.js', async (importOriginal) => {
+  const real = await importOriginal<typeof loggingModule>();
+  return {
+    ...real,
+    log: vi.fn(real.log),
+    warn: vi.fn(real.warn),
+    error: vi.fn(real.error),
+    writeStdout: vi.fn(real.writeStdout),
+    writeStderr: vi.fn(real.writeStderr),
+    sendStructured: vi.fn(real.sendStructured),
+    runWithLogger: vi.fn(real.runWithLogger),
+  };
+});
 
 let testDir: string;
 let originalTIMOutputSocket: string | undefined;
@@ -32,7 +80,7 @@ beforeEach(async () => {
   await Bun.$`git remote add origin https://example.com/acme/review-tunnel.git`
     .cwd(testDir)
     .quiet();
-  spyOn(console, 'error').mockImplementation(() => {});
+  vi.spyOn(console, 'error').mockImplementation(() => {});
   originalTIMOutputSocket = process.env[TIM_OUTPUT_SOCKET];
   originalTIMInteractive = process.env.TIM_INTERACTIVE;
   originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
@@ -41,13 +89,12 @@ beforeEach(async () => {
   delete process.env.APPDATA;
   closeDatabaseForTesting();
 
-  await moduleMocker.mock('../notifications.js', () => ({
-    sendNotification: mock(async () => true),
-  }));
+  vi.mocked(notificationsModule.sendNotification).mockResolvedValue(true);
+  vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
 });
 
 afterEach(async () => {
-  moduleMocker.clear();
+  vi.clearAllMocks();
   closeDatabaseForTesting();
   // Restore original env
   if (originalTIMOutputSocket === undefined) {
@@ -100,7 +147,7 @@ async function setupReviewCommandMocks(planFile: string) {
   );
 
   const mockExecutor = {
-    execute: mock(async () =>
+    execute: vi.fn(async () =>
       JSON.stringify({
         issues: [
           {
@@ -118,60 +165,52 @@ async function setupReviewCommandMocks(planFile: string) {
     ),
   };
 
-  await moduleMocker.mock('../utils/context_gathering.js', () => ({
-    gatherPlanContext: async () => ({
-      resolvedPlanFile: planFile,
-      planData: {
-        id: 1,
-        title: 'Tunnel Test Plan',
-        goal: 'Test tunnel behavior in review mode',
-        tasks: [
-          {
-            title: 'Task One',
-            description: 'First task',
-          },
-        ],
-      },
-      repoRoot: testDir,
-      gitRoot: testDir,
-      parentChain: [],
-      completedChildren: [],
-      diffResult: {
-        hasChanges: true,
-        changedFiles: ['src/test.ts'],
-        baseBranch: 'main',
-        diffContent: 'mock diff content',
-      },
-      incrementalSummary: null,
-      noChangesDetected: false,
-    }),
-  }));
+  vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue({
+    resolvedPlanFile: planFile,
+    planData: {
+      id: 1,
+      title: 'Tunnel Test Plan',
+      goal: 'Test tunnel behavior in review mode',
+      tasks: [
+        {
+          title: 'Task One',
+          description: 'First task',
+        },
+      ],
+    },
+    repoRoot: testDir,
+    gitRoot: testDir,
+    parentChain: [],
+    completedChildren: [],
+    diffResult: {
+      hasChanges: true,
+      changedFiles: ['src/test.ts'],
+      baseBranch: 'main',
+      diffContent: 'mock diff content',
+    },
+    incrementalSummary: null,
+    noChangesDetected: false,
+  } as any);
 
-  await moduleMocker.mock('../configLoader.js', () => ({
-    loadEffectiveConfig: async () => ({
-      defaultExecutor: 'codex-cli',
-      review: {
-        autoSave: false,
-      },
-    }),
-    loadGlobalConfigForNotifications: async () => ({}),
-  }));
+  vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+    defaultExecutor: 'codex-cli',
+    review: {
+      autoSave: false,
+    },
+  } as any);
+  vi.mocked(configLoaderModule.loadGlobalConfigForNotifications).mockResolvedValue({} as any);
 
-  await moduleMocker.mock('../executors/index.js', () => ({
-    buildExecutorAndLog: () => mockExecutor,
-    DEFAULT_EXECUTOR: 'codex-cli',
-  }));
+  vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
 
-  await moduleMocker.mock('../executors/claude_code/agent_prompts.js', () => ({
-    getReviewerPrompt: (contextContent: string) => ({
-      prompt: contextContent,
-    }),
-  }));
+  vi.mocked(agentPromptsModule.getReviewerPrompt).mockImplementation(
+    (contextContent: string) =>
+      ({
+        prompt: contextContent,
+      }) as any
+  );
 
-  await moduleMocker.mock('../../common/git.js', () => ({
-    getGitRoot: async () => testDir,
-    getCurrentCommitHash: async () => null,
-  }));
+  vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
+  vi.mocked(gitModule.getCurrentCommitHash).mockResolvedValue(null as any);
 
   return mockExecutor;
 }
@@ -203,18 +242,15 @@ describe('Review command tunnel integration', () => {
         stdoutWrites.push(args.map((arg) => String(arg)).join(' '));
       };
 
-      await moduleMocker.mock('../../logging.js', () => ({
-        log: (...args: any[]) => {
-          logCalls.push(args.map((a: any) => String(a)).join(' '));
-        },
-        warn: () => {},
-        runWithLogger,
-        writeStdout: () => {},
-        writeStderr: () => {},
-        sendStructured: (message: StructuredMessage) => {
-          structuredMessages.push(message);
-        },
-      }));
+      vi.mocked(loggingModule.log).mockImplementation((...args: any[]) => {
+        logCalls.push(args.map((a: any) => String(a)).join(' '));
+      });
+      vi.mocked(loggingModule.warn).mockImplementation(() => {});
+      vi.mocked(loggingModule.writeStdout).mockImplementation(() => {});
+      vi.mocked(loggingModule.writeStderr).mockImplementation(() => {});
+      vi.mocked(loggingModule.sendStructured).mockImplementation((message: StructuredMessage) => {
+        structuredMessages.push(message);
+      });
 
       // Set TIM_OUTPUT_SOCKET to make isTunnelActive() return true
       process.env[TIM_OUTPUT_SOCKET] = '/tmp/claude/fake-tunnel.sock';
@@ -267,16 +303,15 @@ describe('Review command tunnel integration', () => {
 
       const logCalls: string[] = [];
 
-      await moduleMocker.mock('../../logging.js', () => ({
-        log: (...args: any[]) => {
-          logCalls.push(args.map((a: any) => String(a)).join(' '));
-        },
-        warn: () => {},
-        runWithLogger,
-        writeStdout: () => {},
-        writeStderr: () => {},
-        sendStructured: (_message: StructuredMessage) => {},
-      }));
+      vi.mocked(loggingModule.log).mockImplementation((...args: any[]) => {
+        logCalls.push(args.map((a: any) => String(a)).join(' '));
+      });
+      vi.mocked(loggingModule.warn).mockImplementation(() => {});
+      vi.mocked(loggingModule.writeStdout).mockImplementation(() => {});
+      vi.mocked(loggingModule.writeStderr).mockImplementation(() => {});
+      vi.mocked(loggingModule.sendStructured).mockImplementation(
+        (_message: StructuredMessage) => {}
+      );
 
       // Make sure tunnel is NOT active
       delete process.env[TIM_OUTPUT_SOCKET];
@@ -330,18 +365,15 @@ describe('Review command tunnel integration', () => {
         stdoutWrites.push(args.map((arg) => String(arg)).join(' '));
       };
 
-      await moduleMocker.mock('../../logging.js', () => ({
-        log: (...args: any[]) => {
-          logCalls.push(args.map((a: any) => String(a)).join(' '));
-        },
-        warn: () => {},
-        runWithLogger,
-        writeStdout: () => {},
-        writeStderr: () => {},
-        sendStructured: (message: StructuredMessage) => {
-          structuredMessages.push(message);
-        },
-      }));
+      vi.mocked(loggingModule.log).mockImplementation((...args: any[]) => {
+        logCalls.push(args.map((a: any) => String(a)).join(' '));
+      });
+      vi.mocked(loggingModule.warn).mockImplementation(() => {});
+      vi.mocked(loggingModule.writeStdout).mockImplementation(() => {});
+      vi.mocked(loggingModule.writeStderr).mockImplementation(() => {});
+      vi.mocked(loggingModule.sendStructured).mockImplementation((message: StructuredMessage) => {
+        structuredMessages.push(message);
+      });
 
       // Tunnel active
       process.env[TIM_OUTPUT_SOCKET] = '/tmp/claude/fake-tunnel-dual.sock';
@@ -404,18 +436,15 @@ describe('Review command tunnel integration', () => {
         stdoutWrites.push(args.map((arg) => String(arg)).join(' '));
       };
 
-      await moduleMocker.mock('../../logging.js', () => ({
-        log: (...args: any[]) => {
-          logCalls.push(args.map((a: any) => String(a)).join(' '));
-        },
-        warn: () => {},
-        runWithLogger,
-        writeStdout: () => {},
-        writeStderr: () => {},
-        sendStructured: (message: StructuredMessage) => {
-          structuredMessages.push(message);
-        },
-      }));
+      vi.mocked(loggingModule.log).mockImplementation((...args: any[]) => {
+        logCalls.push(args.map((a: any) => String(a)).join(' '));
+      });
+      vi.mocked(loggingModule.warn).mockImplementation(() => {});
+      vi.mocked(loggingModule.writeStdout).mockImplementation(() => {});
+      vi.mocked(loggingModule.writeStderr).mockImplementation(() => {});
+      vi.mocked(loggingModule.sendStructured).mockImplementation((message: StructuredMessage) => {
+        structuredMessages.push(message);
+      });
 
       // Tunnel NOT active
       delete process.env[TIM_OUTPUT_SOCKET];
@@ -468,7 +497,7 @@ describe('Review command tunnel integration', () => {
 
       // Track stderr to verify the verbose logger (which redirects to stderr) is NOT installed
       const originalStderrWrite = process.stderr.write;
-      const stderrWriteMock = mock((...args: any[]) => {
+      const stderrWriteMock = vi.fn((...args: any[]) => {
         const data = typeof args[0] === 'string' ? args[0] : args[0]?.toString() || '';
         stderrWrites.push(data);
         return true;
@@ -488,18 +517,15 @@ describe('Review command tunnel integration', () => {
         stdoutWrites.push(args.map((arg) => String(arg)).join(' '));
       };
 
-      await moduleMocker.mock('../../logging.js', () => ({
-        log: (...args: any[]) => {
-          logCalls.push(args.map((a: any) => String(a)).join(' '));
-        },
-        warn: () => {},
-        runWithLogger,
-        writeStdout: () => {},
-        writeStderr: () => {},
-        sendStructured: (message: StructuredMessage) => {
-          structuredMessages.push(message);
-        },
-      }));
+      vi.mocked(loggingModule.log).mockImplementation((...args: any[]) => {
+        logCalls.push(args.map((a: any) => String(a)).join(' '));
+      });
+      vi.mocked(loggingModule.warn).mockImplementation(() => {});
+      vi.mocked(loggingModule.writeStdout).mockImplementation(() => {});
+      vi.mocked(loggingModule.writeStderr).mockImplementation(() => {});
+      vi.mocked(loggingModule.sendStructured).mockImplementation((message: StructuredMessage) => {
+        structuredMessages.push(message);
+      });
 
       // Tunnel active + verbose + print
       process.env[TIM_OUTPUT_SOCKET] = '/tmp/claude/fake-tunnel-verbose.sock';
@@ -562,18 +588,17 @@ describe('Review command tunnel integration', () => {
         return originalBunWrite(dest, data);
       }) as typeof Bun.write;
 
-      await moduleMocker.mock('../../logging.js', () => ({
-        log: (...args: any[]) => {
-          logCalls.push(args.map((a: any) => String(a)).join(' '));
-        },
-        warn: (...args: any[]) => {
-          logCalls.push('WARN: ' + args.map((a: any) => String(a)).join(' '));
-        },
-        runWithLogger,
-        writeStdout: () => {},
-        writeStderr: () => {},
-        sendStructured: (_message: StructuredMessage) => {},
-      }));
+      vi.mocked(loggingModule.log).mockImplementation((...args: any[]) => {
+        logCalls.push(args.map((a: any) => String(a)).join(' '));
+      });
+      vi.mocked(loggingModule.warn).mockImplementation((...args: any[]) => {
+        logCalls.push('WARN: ' + args.map((a: any) => String(a)).join(' '));
+      });
+      vi.mocked(loggingModule.writeStdout).mockImplementation(() => {});
+      vi.mocked(loggingModule.writeStderr).mockImplementation(() => {});
+      vi.mocked(loggingModule.sendStructured).mockImplementation(
+        (_message: StructuredMessage) => {}
+      );
 
       // Tunnel active + print mode
       process.env[TIM_OUTPUT_SOCKET] = '/tmp/claude/fake-tunnel-bypass.sock';
@@ -620,18 +645,20 @@ describe('Review command tunnel integration', () => {
 
       const capturedAdapters: LoggerAdapter[] = [];
 
-      await moduleMocker.mock('../../logging.js', () => ({
-        log: () => {},
-        warn: () => {},
-        runWithLogger: (adapter: LoggerAdapter, cb: () => any) => {
+      vi.mocked(loggingModule.log).mockImplementation(() => {});
+      vi.mocked(loggingModule.warn).mockImplementation(() => {});
+      vi.mocked(loggingModule.writeStdout).mockImplementation(() => {});
+      vi.mocked(loggingModule.writeStderr).mockImplementation(() => {});
+      vi.mocked(loggingModule.sendStructured).mockImplementation(
+        (_message: StructuredMessage) => {}
+      );
+      vi.mocked(loggingModule.runWithLogger).mockImplementation(
+        (adapter: LoggerAdapter, cb: () => any) => {
           capturedAdapters.push(adapter);
           // Execute the callback without the logger to avoid hanging
           return cb();
-        },
-        writeStdout: () => {},
-        writeStderr: () => {},
-        sendStructured: (_message: StructuredMessage) => {},
-      }));
+        }
+      );
 
       // Tunnel NOT active
       delete process.env[TIM_OUTPUT_SOCKET];
@@ -675,16 +702,15 @@ describe('Review command tunnel integration', () => {
 
       const logCalls: string[] = [];
 
-      await moduleMocker.mock('../../logging.js', () => ({
-        log: (...args: any[]) => {
-          logCalls.push(args.map((a: any) => String(a)).join(' '));
-        },
-        warn: () => {},
-        runWithLogger,
-        writeStdout: () => {},
-        writeStderr: () => {},
-        sendStructured: (_message: StructuredMessage) => {},
-      }));
+      vi.mocked(loggingModule.log).mockImplementation((...args: any[]) => {
+        logCalls.push(args.map((a: any) => String(a)).join(' '));
+      });
+      vi.mocked(loggingModule.warn).mockImplementation(() => {});
+      vi.mocked(loggingModule.writeStdout).mockImplementation(() => {});
+      vi.mocked(loggingModule.writeStderr).mockImplementation(() => {});
+      vi.mocked(loggingModule.sendStructured).mockImplementation(
+        (_message: StructuredMessage) => {}
+      );
 
       // Tunnel active but NOT print mode
       process.env[TIM_OUTPUT_SOCKET] = '/tmp/claude/fake-tunnel-noprint.sock';
@@ -721,12 +747,27 @@ describe('End-to-end tunnel review test with real socket', () => {
   let clientAdapter: TunnelAdapter | null = null;
   let e2eTestDir: string;
 
+  beforeEach(async () => {
+    // Restore the real logging implementations so the tunnel server can dispatch
+    // through the logger adapter stack set up by runWithLogger. Other tests in
+    // this file override log/warn/etc. with no-op implementations, and
+    // vi.clearAllMocks() does not restore them.
+    const realLogging = await vi.importActual<typeof loggingModule>('../../logging.js');
+    vi.mocked(loggingModule.log).mockImplementation(realLogging.log);
+    vi.mocked(loggingModule.warn).mockImplementation(realLogging.warn);
+    vi.mocked(loggingModule.error).mockImplementation(realLogging.error);
+    vi.mocked(loggingModule.writeStdout).mockImplementation(realLogging.writeStdout);
+    vi.mocked(loggingModule.writeStderr).mockImplementation(realLogging.writeStderr);
+    vi.mocked(loggingModule.sendStructured).mockImplementation(realLogging.sendStructured);
+    vi.mocked(loggingModule.runWithLogger).mockImplementation(realLogging.runWithLogger);
+  });
+
   afterEach(async () => {
     await clientAdapter?.destroy();
     clientAdapter = null;
     tunnelServer?.close();
     tunnelServer = null;
-    moduleMocker.clear();
+    vi.clearAllMocks();
     if (e2eTestDir) {
       await rm(e2eTestDir, { recursive: true, force: true });
     }

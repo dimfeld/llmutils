@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
+import { describe, expect, test, beforeEach, afterEach } from 'vitest';
 import { isSshSession } from './ssh_detection';
 
 describe.skipIf(!process.env.TEST_SSH_DETECTION)('isSshSession', () => {

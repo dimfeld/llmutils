@@ -1,15 +1,75 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { ModuleMocker } from '../../testing.js';
+vi.mock('../../logging.js', () => ({
+  log: vi.fn(() => {}),
+  warn: vi.fn(() => {}),
+  error: vi.fn(() => {}),
+}));
+
+vi.mock('chalk', () => ({
+  default: {
+    green: (value: string) => value,
+    yellow: (value: string) => value,
+    red: (value: string) => value,
+    bold: (value: string) => value,
+    dim: (value: string) => value,
+  },
+}));
+
+vi.mock('../../common/git.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../common/git.js')>();
+  return {
+    ...actual,
+    getGitRoot: vi.fn(async () => ''),
+  };
+});
+
+vi.mock('../configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(async () => ({})),
+}));
+
+vi.mock('../workspace/workspace_manager.js', () => ({
+  createWorkspace: vi.fn(async () => null),
+}));
+
+vi.mock('../assignments/claim_plan.js', () => ({
+  claimPlan: vi.fn(async () => ({
+    entry: { planId: 1, workspacePaths: [], users: [], assignedAt: '', updatedAt: '' },
+    created: true,
+    addedWorkspace: true,
+    addedUser: true,
+    warnings: [],
+    persisted: true,
+  })),
+}));
+
+vi.mock('../assignments/workspace_identifier.js', () => ({
+  getRepositoryIdentity: vi.fn(async () => ({
+    repositoryId: '',
+    remoteUrl: '',
+    gitRoot: '',
+  })),
+  getCurrentWorkspacePath: vi.fn(async () => ''),
+  getUserIdentity: vi.fn(() => null),
+}));
+
 import { closeDatabaseForTesting } from '../db/database.js';
 import { writePlanFile } from '../plans.js';
 import type { TimConfig } from '../configSchema.js';
 import type { WorkspaceCreationResult } from '../workspace/workspace_manager.js';
-
-const moduleMocker = new ModuleMocker(import.meta);
+import { log, warn, error } from '../../logging.js';
+import { getGitRoot } from '../../common/git.js';
+import { loadEffectiveConfig } from '../configLoader.js';
+import { createWorkspace } from '../workspace/workspace_manager.js';
+import { claimPlan } from '../assignments/claim_plan.js';
+import {
+  getRepositoryIdentity,
+  getCurrentWorkspacePath,
+  getUserIdentity,
+} from '../assignments/workspace_identifier.js';
 
 describe('handleWorkspaceAddCommand - plan claiming', () => {
   let tempRoot: string;
@@ -24,11 +84,11 @@ describe('handleWorkspaceAddCommand - plan claiming', () => {
     APPDATA?: string;
   };
 
-  let mockLog: ReturnType<typeof mock>;
-  let mockWarn: ReturnType<typeof mock>;
-  let mockError: ReturnType<typeof mock>;
-  let mockCreateWorkspace: ReturnType<typeof mock>;
-  let mockClaimPlan: ReturnType<typeof mock>;
+  let mockLog: ReturnType<typeof vi.mocked<typeof log>>;
+  let mockWarn: ReturnType<typeof vi.mocked<typeof warn>>;
+  let mockError: ReturnType<typeof vi.mocked<typeof error>>;
+  let mockCreateWorkspace: ReturnType<typeof vi.mocked<typeof createWorkspace>>;
+  let mockClaimPlan: ReturnType<typeof vi.mocked<typeof claimPlan>>;
 
   let handleWorkspaceAddCommand: (
     planIdentifier: string | undefined,
@@ -68,14 +128,18 @@ describe('handleWorkspaceAddCommand - plan claiming', () => {
     process.env.XDG_CONFIG_HOME = configDir;
     delete process.env.APPDATA;
 
-    mockLog = mock(() => {});
-    mockWarn = mock(() => {});
-    mockError = mock(() => {});
-
     createdWorkspacePath = path.join(workspacesDir, 'test-workspace');
 
+    mockLog = vi.mocked(log);
+    mockWarn = vi.mocked(warn);
+    mockError = vi.mocked(error);
+    mockCreateWorkspace = vi.mocked(createWorkspace);
+    mockClaimPlan = vi.mocked(claimPlan);
+
+    vi.clearAllMocks();
+
     // Mock createWorkspace to return a successful result
-    mockCreateWorkspace = mock(async (): Promise<WorkspaceCreationResult> => {
+    mockCreateWorkspace.mockImplementation(async (): Promise<WorkspaceCreationResult> => {
       // Create the workspace directory
       await fs.mkdir(createdWorkspacePath, { recursive: true });
       const gitDir = path.join(createdWorkspacePath, '.git');
@@ -90,7 +154,7 @@ describe('handleWorkspaceAddCommand - plan claiming', () => {
     });
 
     // Mock claimPlan to track calls
-    mockClaimPlan = mock(async () => ({
+    mockClaimPlan.mockResolvedValue({
       entry: {
         planId: 1,
         workspacePaths: [createdWorkspacePath],
@@ -103,29 +167,7 @@ describe('handleWorkspaceAddCommand - plan claiming', () => {
       addedUser: true,
       warnings: [],
       persisted: true,
-    }));
-
-    const chalkMock = (value: string) => value;
-
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: mockLog,
-      warn: mockWarn,
-      error: mockError,
-    }));
-
-    await moduleMocker.mock('chalk', () => ({
-      default: {
-        green: chalkMock,
-        yellow: chalkMock,
-        red: chalkMock,
-        bold: chalkMock,
-        dim: chalkMock,
-      },
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => repoDir,
-    }));
+    });
 
     const config: TimConfig = {
       paths: {
@@ -142,33 +184,20 @@ describe('handleWorkspaceAddCommand - plan claiming', () => {
       isUsingExternalStorage: false,
     };
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => config,
-    }));
-
-    // Mock workspace creation
-    await moduleMocker.mock('../workspace/workspace_manager.js', () => ({
-      createWorkspace: mockCreateWorkspace,
-    }));
-
-    // Mock claim plan
-    await moduleMocker.mock('../assignments/claim_plan.js', () => ({
-      claimPlan: mockClaimPlan,
-    }));
+    vi.mocked(loadEffectiveConfig).mockResolvedValue(config as any);
+    vi.mocked(getGitRoot).mockResolvedValue(repoDir);
 
     // Mock workspace identifier to return the created workspace path
-    await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
-      getRepositoryIdentity: async (options?: { cwd?: string }) => {
-        const workspacePath = options?.cwd ?? createdWorkspacePath;
-        return {
-          repositoryId,
-          remoteUrl: repositoryRemoteUrl,
-          gitRoot: workspacePath,
-        };
-      },
-      getCurrentWorkspacePath: async () => createdWorkspacePath,
-      getUserIdentity: () => currentUser,
-    }));
+    vi.mocked(getRepositoryIdentity).mockImplementation(async (options?: { cwd?: string }) => {
+      const workspacePath = options?.cwd ?? createdWorkspacePath;
+      return {
+        repositoryId,
+        remoteUrl: repositoryRemoteUrl,
+        gitRoot: workspacePath,
+      };
+    });
+    vi.mocked(getCurrentWorkspacePath).mockResolvedValue(createdWorkspacePath);
+    vi.mocked(getUserIdentity).mockReturnValue(currentUser);
 
     ({ handleWorkspaceAddCommand } = await import('./workspace.js'));
 
@@ -185,7 +214,7 @@ describe('handleWorkspaceAddCommand - plan claiming', () => {
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     closeDatabaseForTesting();
 
     if (originalEnv.XDG_CONFIG_HOME === undefined) {

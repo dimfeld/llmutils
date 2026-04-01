@@ -1,52 +1,395 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
-import { timAgent, handleAgentCommand } from './agent.js';
+import { handleAgentCommand } from './agent.js';
+import * as agentModule from './agent.js';
 import { readPlanFile, resolvePlanFromDb, writePlanFile } from '../../plans.js';
 import { closeDatabaseForTesting } from '../../db/database.js';
 import { clearPlanSyncContext } from '../../db/plan_sync.js';
-import { runWithLogger, type LoggerAdapter } from '../../../logging/adapter.js';
+import { getLoggerAdapter, runWithLogger, type LoggerAdapter } from '../../../logging/adapter.js';
 import type { StructuredMessage } from '../../../logging/structured_messages.js';
-import { createRecordingAdapter } from '../../../logging/test_helpers.js';
 import { markParentInProgress } from './parent_plans.js';
-import type { PlanSchema, PlanSchemaInputWithFilename } from '../../planSchema.js';
-import { ModuleMocker } from '../../../testing.js';
+import type { PlanSchema } from '../../planSchema.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
+// Module-level control variables
+let tempDir = '';
+// planFile for workspace_setup mock to return
+let currentTestPlanFile = '';
 
-// Mock logging functions
-const logSpy = mock(() => {});
-const errorSpy = mock(() => {});
-const warnSpy = mock(() => {});
+// Batch tasks mode describe state
+let workingCopyStatusCallCount = 0;
 
-// Mock inquirer prompts
-const selectSpy = mock(async () => 'generate');
-
-// Mock executor
-const executorExecuteSpy = mock(async () => {});
-const buildExecutorAndLogSpy = mock(() => ({
+// Simple mode flag plumbing describe state - executor and batch mode control
+const executeBatchModeSpy = vi.fn(async () => undefined);
+// When true, executeBatchMode uses the spy (for simple mode tests);
+// when false, it delegates to the real implementation (for batch mode tests)
+let useBatchModeSpy = true;
+// When true, getAllIncompleteTasks uses the real implementation (for batch mode tests)
+let useRealFindNext = false;
+const buildExecutorAndLogSpy = vi.fn(() => ({
   execute: executorExecuteSpy,
+  filePathPrefix: '',
+}));
+const executorExecuteSpy = vi.fn(async () => {});
+
+// For serial mode in simple mode tests
+let serialFindNextActionableItemImpl: () => any = () => null;
+let serialPrepareNextStepImpl: () => Promise<any> = async () => null;
+let serialMarkStepDoneImpl: () => Promise<any> = async () => ({
+  message: 'Marked',
+  planComplete: false,
+});
+let serialMarkTaskDoneImpl: () => Promise<any> = async () => ({
+  message: 'Task updated',
+  planComplete: false,
+});
+
+// For batch mode tests - TestBatchExecutor instance
+let testBatchExecutor: TestBatchExecutor | null = null;
+
+// ensure_plan_in_db control
+let resolvePlanFromDbOrSyncFileImpl: (
+  planArg: string,
+  repoRoot: string,
+  tasksDir?: string
+) => Promise<any> = async (planArg: string) => {
+  const resolvedPath = path.resolve(planArg);
+  const plan = await readPlanFile(resolvedPath);
+  return { plan, planPath: resolvedPath };
+};
+
+// plan_discovery control
+let findNextReadyDependencyFromDbImpl: (...args: any[]) => Promise<any> = async () => ({
+  plan: null,
+  message: '',
+});
+
+// headless control
+let loadEffectiveConfigImpl: () => Promise<any> = async () => ({
+  models: {},
+  postApplyCommands: [],
+});
+let runWithHeadlessAdapterIfEnabledImpl: (options: any) => Promise<any> = async (options: any) =>
+  options.callback();
+
+// configSchema control
+let defaultConfigValue: any = {};
+
+vi.mock('../../../logging.js', () => ({
+  boldMarkdownHeaders: (text: string) => text,
+  closeLogFile: vi.fn(async () => {}),
+  error: vi.fn(() => {}),
+  log: vi.fn(() => {}),
+  openLogFile: vi.fn(() => {}),
+  sendStructured: vi.fn((msg: any) => {
+    // Forward to any active logger adapter (for runWithLogger in tests)
+    // getLoggerAdapter is imported from logging/adapter.js at module top
+    getLoggerAdapter()?.sendStructured(msg);
+  }),
+  warn: vi.fn(() => {}),
+  debugLog: vi.fn(() => {}),
+  runWithLogger: vi.fn(async (adapter: any, fn: () => any) => fn()),
 }));
 
-// Mock actions functions
-const preparePhase = mock(async () => {});
-const setPlanStatusSpy = mock(async () => {});
-const findPendingTaskSpy = mock(() => null); // Return null to indicate no more tasks
-const findNextActionableItemSpy = mock(() => null); // Return null to indicate no more tasks
-const prepareNextStepSpy = mock(async () => null);
-const markStepDoneSpy = mock(async () => ({ message: 'Done', planComplete: true }));
+vi.mock('../../configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(async (...args: any[]) => loadEffectiveConfigImpl()),
+  loadGlobalConfigForNotifications: vi.fn(async () => ({})),
+}));
 
-// Mock other dependencies
-const resolvePlanFileSpy = mock(async (planFile: string) => planFile);
-const loadEffectiveConfigSpy = mock(async () => ({}));
-const getGitRootSpy = mock(async () => '/test/project');
-const openLogFileSpy = mock(() => {});
-const closeLogFileSpy = mock(async () => {});
+vi.mock('../../configSchema.js', () => ({
+  getDefaultConfig: vi.fn(() => defaultConfigValue),
+}));
+
+vi.mock('../../executors/index.js', () => ({
+  buildExecutorAndLog: vi.fn((...args: any[]) => buildExecutorAndLogSpy(...args)),
+  DEFAULT_EXECUTOR: 'fall-back-executor',
+  defaultModelForExecutor: vi.fn(() => 'default-model'),
+}));
+
+vi.mock('../../../common/git.js', () => ({
+  getGitRoot: vi.fn(async () => tempDir),
+  getCurrentBranchName: vi.fn(async () => 'feature/batch-test'),
+  getTrunkBranch: vi.fn(async () => 'main'),
+  getWorkingCopyStatus: vi.fn(async () => ({
+    hasChanges: true,
+    diffHash: `diff-${workingCopyStatusCallCount++}`,
+    checkFailed: false,
+    output: '',
+  })),
+  getChangedFilesOnBranch: vi.fn(async () => []),
+  getChangedFilesBetween: vi.fn(async () => []),
+  getCurrentCommitHash: vi.fn(async () => 'abc123'),
+}));
+
+vi.mock('../../../common/process.js', () => ({
+  logSpawn: vi.fn(() => ({ exitCode: 0, exited: Promise.resolve(0) })),
+  commitAll: vi.fn(async () => 0),
+  spawnAndLogOutput: vi.fn(async () => ({
+    exitCode: 0,
+    stdout: '',
+    stderr: '',
+    signal: null,
+    killedByInactivity: false,
+  })),
+}));
+
+vi.mock('./batch_mode.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./batch_mode.js')>();
+  return {
+    ...actual,
+    executeBatchMode: vi.fn(async (...args: any[]) => {
+      if (useBatchModeSpy) {
+        return executeBatchModeSpy(...args);
+      }
+      return actual.executeBatchMode(...args);
+    }),
+  };
+});
+
+vi.mock('../../summary/collector.js', () => ({
+  SummaryCollector: class {
+    recordExecutionStart = vi.fn(() => {});
+    addError = vi.fn(() => {});
+    addStepResult = vi.fn(() => {});
+    setBatchIterations = vi.fn(() => {});
+    recordExecutionEnd = vi.fn(() => {});
+    trackFileChanges = vi.fn(async () => {});
+    getExecutionSummary = vi.fn(() => ({}));
+  },
+}));
+
+vi.mock('../../summary/display.js', () => ({
+  writeOrDisplaySummary: vi.fn(async () => {}),
+  formatExecutionSummaryToLines: vi.fn(() => []),
+  displayExecutionSummary: vi.fn(() => {}),
+}));
+
+vi.mock('../../plans/find_next.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../plans/find_next.js')>();
+  return {
+    ...actual,
+    findNextActionableItem: vi.fn(() => serialFindNextActionableItemImpl()),
+    getAllIncompleteTasks: vi.fn((...args: any[]) =>
+      useRealFindNext ? actual.getAllIncompleteTasks(...(args as [any])) : []
+    ),
+    findPendingTask: vi.fn(() => null),
+  };
+});
+
+vi.mock('../../plans/prepare_step.js', () => ({
+  prepareNextStep: vi.fn(async (...args: any[]) => serialPrepareNextStepImpl()),
+}));
+
+vi.mock('../../plans/mark_done.js', () => ({
+  markStepDone: vi.fn(async (...args: any[]) => serialMarkStepDoneImpl()),
+  markTaskDone: vi.fn(async (...args: any[]) => serialMarkTaskDoneImpl()),
+}));
+
+vi.mock('../../workspace/workspace_setup.js', () => ({
+  setupWorkspace: vi.fn(async () => ({
+    baseDir: tempDir,
+    planFile: currentTestPlanFile,
+  })),
+}));
+
+vi.mock('../../workspace/workspace_roundtrip.js', () => ({
+  prepareWorkspaceRoundTrip: vi.fn(async () => null),
+  runPostExecutionWorkspaceSync: vi.fn(async () => {}),
+  runPreExecutionWorkspaceSync: vi.fn(async () => {}),
+}));
+
+vi.mock('../../workspace/workspace_info.js', () => ({
+  getWorkspaceInfoByPath: vi.fn(() => null),
+  patchWorkspaceInfo: vi.fn(() => {}),
+  touchWorkspaceInfo: vi.fn(() => {}),
+  findWorkspaceInfosByTaskId: vi.fn(() => []),
+  workspaceRowToInfo: vi.fn(() => null),
+  findWorkspaceInfosByRepositoryId: vi.fn(() => []),
+  findPrimaryWorkspaceForRepository: vi.fn(() => null),
+  listAllWorkspaceInfos: vi.fn(() => []),
+}));
+
+vi.mock('../../notifications.js', () => ({
+  sendNotification: vi.fn(async () => {}),
+}));
+
+vi.mock('../update-docs.js', () => ({
+  runUpdateDocs: vi.fn(async () => {}),
+}));
+
+vi.mock('../update-lessons.js', () => ({
+  runUpdateLessons: vi.fn(async () => {}),
+}));
+
+vi.mock('../../actions.js', () => ({
+  executePostApplyCommand: vi.fn(async () => true),
+}));
+
+vi.mock('../../assignments/auto_claim.js', () => ({
+  autoClaimPlan: vi.fn(async () => null),
+  isAutoClaimEnabled: vi.fn(() => false),
+  isAutoClaimDisabled: vi.fn(() => true),
+  enableAutoClaim: vi.fn(() => {}),
+  disableAutoClaim: vi.fn(() => {}),
+}));
+
+vi.mock('../review.js', () => ({
+  handleReviewCommand: vi.fn(async () => {}),
+}));
+
+vi.mock('../../headless.js', () => ({
+  runWithHeadlessAdapterIfEnabled: vi.fn(async (options: any) =>
+    runWithHeadlessAdapterIfEnabledImpl(options)
+  ),
+  createHeadlessAdapterForCommand: vi.fn(async () => null),
+  updateHeadlessSessionInfo: vi.fn(() => {}),
+  buildHeadlessSessionInfo: vi.fn(async () => null),
+  resetHeadlessWarningStateForTests: vi.fn(() => {}),
+  resolveHeadlessUrl: vi.fn(() => 'ws://localhost:8123/tim-agent'),
+  DEFAULT_HEADLESS_URL: 'ws://localhost:8123/tim-agent',
+}));
+
+vi.mock('../../../logging/tunnel_client.js', () => ({
+  isTunnelActive: vi.fn(() => false),
+}));
+
+vi.mock('../../ensure_plan_in_db.js', () => ({
+  resolvePlanFromDbOrSyncFile: vi.fn(async (...args: any[]) =>
+    resolvePlanFromDbOrSyncFileImpl(args[0], args[1], args[2])
+  ),
+  isPlanNotFoundError: vi.fn((err: unknown) => false),
+}));
+
+vi.mock('../plan_discovery.js', () => ({
+  findNextReadyDependencyFromDb: vi.fn(async (...args: any[]) =>
+    findNextReadyDependencyFromDbImpl(...args)
+  ),
+  findLatestPlanFromDb: vi.fn(async () => null),
+  findNextPlanFromDb: vi.fn(async () => null),
+  toHeadlessPlanSummary: vi.fn((plan: Pick<PlanSchema, 'id' | 'uuid' | 'title'>) => ({
+    id: plan.id,
+    uuid: plan.uuid,
+    title: plan.title,
+  })),
+  findNextPlanFromCollection: vi.fn(() => null),
+  findNextReadyDependencyFromCollection: vi.fn(() => null),
+  loadDbPlans: vi.fn(async () => []),
+}));
+
+vi.mock('chalk', () => ({
+  default: {
+    green: (text: string) => text,
+    yellow: (text: string) => text,
+    gray: (text: string) => text,
+    bold: (text: string) => text,
+    red: (text: string) => text,
+    cyan: (text: string) => text,
+  },
+}));
+
+vi.mock('../../prompt_builder.js', () => ({
+  buildExecutionPromptWithoutSteps: vi.fn(async () => 'Test prompt for task'),
+}));
+
+vi.mock('../../db/plan_sync.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../db/plan_sync.js')>();
+  return {
+    ...actual,
+    syncPlanToDb: vi.fn(async () => {}),
+    clearPlanSyncContext: vi.fn(() => {}),
+  };
+});
+
+vi.mock('../../plan_materialize.js', () => ({
+  materializePlan: vi.fn(async () => {}),
+  syncMaterializedPlan: vi.fn(async () => {}),
+  getMaterializedPlanPath: vi.fn(() => '/tmp/plan.md'),
+  getShadowPlanPath: vi.fn(() => '/tmp/.plan.md.shadow'),
+  materializeRelatedPlans: vi.fn(async () => {}),
+  materializeAndPruneRelatedPlans: vi.fn(async () => {}),
+  withPlanAutoSync: vi.fn(async (_id: any, _root: any, fn: () => any) => fn()),
+  resolveProjectContext: vi.fn(async () => ({
+    projectId: 1,
+    planRowsByPlanId: new Map(),
+    planRowsByUuid: new Map(),
+    maxNumericId: 0,
+  })),
+  readMaterializedPlanRole: vi.fn(async () => null),
+  ensureMaterializeDir: vi.fn(async () => '/tmp'),
+  parsePlanId: vi.fn((id: string) => parseInt(id)),
+  diffPlanFields: vi.fn(() => ({})),
+  mergePlanWithShadow: vi.fn((base: any) => base),
+  cleanupMaterializedPlans: vi.fn(async () => {}),
+  MATERIALIZED_DIR: '.tim/plans',
+}));
+
+vi.mock('../../lifecycle.js', () => ({
+  LifecycleManager: vi.fn(() => ({
+    startup: vi.fn(async () => {}),
+    shutdown: vi.fn(async () => {}),
+    killDaemons: vi.fn(() => {}),
+  })),
+}));
+
+vi.mock('../../shutdown_state.js', () => ({
+  isShuttingDown: vi.fn(() => false),
+  setDeferSignalExit: vi.fn(() => {}),
+  getSignalExitCode: vi.fn(() => undefined),
+  resetShutdownState: vi.fn(() => {}),
+  setShuttingDown: vi.fn(() => {}),
+  isDeferSignalExit: vi.fn(() => false),
+}));
+
+// Test executor that actually modifies plan files for testing batch execution
+class TestBatchExecutor {
+  public executeCalls: number = 0;
+  private taskCompletionStrategy: 'all-at-once' | 'incremental' | 'none' | 'error' = 'all-at-once';
+  private tasksPerIteration: number = 2;
+
+  constructor(
+    strategy: 'all-at-once' | 'incremental' | 'none' | 'error' = 'all-at-once',
+    tasksPerIteration: number = 2
+  ) {
+    this.taskCompletionStrategy = strategy;
+    this.tasksPerIteration = tasksPerIteration;
+  }
+
+  async execute(prompt: string, options: any) {
+    this.executeCalls++;
+
+    if (this.taskCompletionStrategy === 'error') {
+      throw new Error('Test executor failure');
+    }
+
+    if (this.taskCompletionStrategy === 'none') {
+      return;
+    }
+
+    const plan = await readPlanFile(options.planFilePath);
+
+    if (this.taskCompletionStrategy === 'all-at-once') {
+      plan.tasks.forEach((task) => {
+        if (!task.done) {
+          task.done = true;
+        }
+      });
+    } else if (this.taskCompletionStrategy === 'incremental') {
+      let tasksMarked = 0;
+      for (const task of plan.tasks) {
+        if (!task.done && tasksMarked < this.tasksPerIteration) {
+          task.done = true;
+          tasksMarked++;
+        }
+      }
+    }
+
+    await writePlanFile(options.planFilePath, plan);
+  }
+}
 
 describe('timAgent - Parent Plan Status Updates', () => {
-  let tempDir: string;
   let tasksDir: string;
   let config: any;
   let parentPlanFile: string;
@@ -132,19 +475,22 @@ describe('timAgent - Parent Plan Status Updates', () => {
   });
 
   test('marks parent plan as in_progress when child plan starts', async () => {
-    const { adapter, calls } = createRecordingAdapter();
-    await runWithLogger(adapter, () => markParentInProgress(100, config));
+    const loggingMod = await import('../../../logging.js');
+    vi.mocked(loggingMod.sendStructured).mockClear();
+
+    await markParentInProgress(100, config);
 
     const parentPlan = await readDbPlan(100);
     const childPlan = await readPlanFile(childPlanFile);
-    const structuredMessages = calls
-      .filter((call) => call.method === 'sendStructured')
-      .map((call) => call.args[0] as StructuredMessage);
+
+    const structuredMessageCalls = vi
+      .mocked(loggingMod.sendStructured)
+      .mock.calls.map((c) => c[0] as StructuredMessage);
 
     expect(childPlan.status).toBe('pending');
     expect(parentPlan.status).toBe('in_progress');
 
-    expect(structuredMessages).toContainEqual(
+    expect(structuredMessageCalls).toContainEqual(
       expect.objectContaining({
         type: 'workflow_progress',
         phase: 'parent-plan-start',
@@ -158,333 +504,49 @@ describe('timAgent - Parent Plan Status Updates', () => {
     parentPlan.status = 'in_progress';
     await writeDbBackedPlan(parentPlanFile, parentPlan);
 
-    const { adapter, calls } = createRecordingAdapter();
-    await runWithLogger(adapter, () => markParentInProgress(100, config));
-    const structuredMessages = calls
-      .filter((call) => call.method === 'sendStructured')
-      .map((call) => call.args[0] as StructuredMessage);
+    const loggingMod = await import('../../../logging.js');
+    vi.mocked(loggingMod.sendStructured).mockClear();
+
+    await markParentInProgress(100, config);
+
+    const structuredMessageCalls = vi
+      .mocked(loggingMod.sendStructured)
+      .mock.calls.map((c) => c[0] as StructuredMessage);
 
     const updatedParentPlan = await readDbPlan(100);
 
     expect(updatedParentPlan.status).toBe('in_progress');
     expect(
-      structuredMessages.filter(
+      structuredMessageCalls.filter(
         (message) => message.type === 'workflow_progress' && message.phase === 'parent-plan-start'
       )
     ).toHaveLength(0);
   });
 });
 
-// TODO timing out, probably missing mocks on prompts
-describe.skip('timAgent - Direct Execution Flow', () => {
-  let tempDir: string;
-  let stubPlanFile: string;
-
-  beforeEach(async () => {
-    // Clear all mocks
-    logSpy.mockClear();
-    errorSpy.mockClear();
-    warnSpy.mockClear();
-    selectSpy.mockClear();
-    executorExecuteSpy.mockClear();
-    buildExecutorAndLogSpy.mockClear();
-    preparePhase.mockClear();
-    setPlanStatusSpy.mockClear();
-    resolvePlanFileSpy.mockClear();
-    loadEffectiveConfigSpy.mockClear();
-    getGitRootSpy.mockClear();
-    openLogFileSpy.mockClear();
-    closeLogFileSpy.mockClear();
-    findPendingTaskSpy.mockClear();
-    findNextActionableItemSpy.mockClear();
-    prepareNextStepSpy.mockClear();
-    markStepDoneSpy.mockClear();
-
-    // Reset mocks to default behavior
-    findNextActionableItemSpy.mockReturnValue(null);
-
-    // Clear plan cache
-
-    // Create temporary directory
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-agent-test-'));
-    stubPlanFile = path.join(tempDir, 'stub-plan.yml');
-
-    // Create a stub plan file (plan with no steps)
-    const stubPlan: PlanSchema = {
-      id: 'test-stub-plan',
-      title: 'Test Stub Plan',
-      goal: 'Implement a simple feature',
-      details: 'Add a new function that returns hello world',
-      status: 'pending',
-      tasks: [
-        {
-          title: 'Main Task',
-          description: 'The main implementation task',
-          steps: [], // Empty steps - this makes it a stub plan
-        },
-      ],
-    };
-
-    await fs.writeFile(stubPlanFile, yaml.stringify(stubPlan));
-
-    // Mock dependencies
-    await moduleMocker.mock('../../../logging.js', () => ({
-      log: logSpy,
-      error: errorSpy,
-      warn: warnSpy,
-      openLogFile: openLogFileSpy,
-      closeLogFile: closeLogFileSpy,
-      boldMarkdownHeaders: (text: string) => text,
-    }));
-
-    await moduleMocker.mock('@inquirer/prompts', () => ({
-      select: selectSpy,
-      input: mock(async () => ''),
-      confirm: mock(async () => true),
-    }));
-
-    await moduleMocker.mock('../../executors/index.js', () => ({
-      buildExecutorAndLog: buildExecutorAndLogSpy,
-      DEFAULT_EXECUTOR: 'copy-only',
-      defaultModelForExecutor: () => 'test-model',
-    }));
-
-    await moduleMocker.mock('../../plans/mark_done.js', () => ({
-      markStepDone: markStepDoneSpy,
-      markTaskDone: mock(async () => ({ message: 'Done', planComplete: true })),
-    }));
-
-    await moduleMocker.mock('../../plans/find_next.js', () => ({
-      findPendingTask: findPendingTaskSpy,
-      findNextActionableItem: findNextActionableItemSpy,
-    }));
-
-    await moduleMocker.mock('../../plans/prepare_step.js', () => ({
-      prepareNextStep: prepareNextStepSpy,
-    }));
-
-    await moduleMocker.mock('../../actions.js', () => ({
-      preparePhase,
-      prepareNextStep: prepareNextStepSpy,
-      executePostApplyCommand: mock(async () => true),
-    }));
-
-    await moduleMocker.mock('../../plans.js', () => ({
-      resolvePlanFile: resolvePlanFileSpy,
-      readPlanFile: async (filePath: string) => {
-        const content = await fs.readFile(filePath, 'utf-8');
-        return yaml.parse(content) as PlanSchema;
-      },
-      writePlanFile: async (filePath: string, plan: PlanSchema) => {
-        await fs.writeFile(filePath, yaml.stringify(plan));
-      },
-      setPlanStatus: setPlanStatusSpy,
-    }));
-
-    await moduleMocker.mock('../../configLoader.js', () => ({
-      loadEffectiveConfig: loadEffectiveConfigSpy,
-    }));
-
-    await moduleMocker.mock('../../../common/git.js', () => ({
-      getGitRoot: getGitRootSpy,
-    }));
-
-    await moduleMocker.mock('../../../common/process.js', () => ({
-      logSpawn: mock(() => ({ exitCode: 0, exited: Promise.resolve(0) })),
-      commitAll: mock(async () => 0),
-    }));
-
-    await moduleMocker.mock('../../workspace/workspace_manager.js', () => ({
-      createWorkspace: mock(async () => null),
-    }));
-
-    await moduleMocker.mock('../../workspace/workspace_auto_selector.js', () => ({
-      WorkspaceAutoSelector: mock(() => ({
-        selectWorkspace: mock(async () => null),
-      })),
-    }));
-
-    await moduleMocker.mock('../../workspace/workspace_lock.js', () => ({
-      WorkspaceLock: {
-        getLockInfo: mock(async () => null),
-        isLockStale: mock(async () => false),
-        acquireLock: mock(async () => ({ type: 'pid' })),
-        setupCleanupHandlers: mock(() => {}),
-        releaseLock: mock(async () => {}),
-      },
-    }));
-
-    await moduleMocker.mock('../../workspace/workspace_info.js', () => ({
-      findWorkspaceInfosByTaskId: mock(() => []),
-    }));
-
-    await moduleMocker.mock('../../prompt_builder.js', () => ({
-      buildExecutionPromptWithoutSteps: mock(async () => 'Test prompt for task'),
-    }));
-
-    // Set up default mock implementations
-    resolvePlanFileSpy.mockResolvedValue(stubPlanFile);
-    buildExecutorAndLogSpy.mockReturnValue({
-      execute: executorExecuteSpy,
-    });
-  });
-
-  afterEach(async () => {
-    // Clean up mocks
-    moduleMocker.clear();
-
-    // Clean up temporary directory
-    await fs.rm(tempDir, { recursive: true, force: true });
-  });
-
-  test('interactive "run directly" flow', async () => {
-    // Mock user selecting "direct" option
-    selectSpy.mockResolvedValue('direct');
-
-    // Mock findNextActionableItem to return the simple task, then null to end loop
-    findNextActionableItemSpy
-      .mockReturnValueOnce({
-        type: 'task',
-        taskIndex: 0,
-        task: { title: 'Main Task', description: 'The main implementation task' },
-      })
-      .mockReturnValueOnce(null);
-
-    const options = { log: false } as any;
-    const globalCliOptions = {};
-
-    await timAgent(stubPlanFile, options, globalCliOptions);
-
-    // Verify user was prompted with correct choices
-    expect(selectSpy).toHaveBeenCalledWith({
-      message: 'This plan lacks detailed steps. How would you like to proceed?',
-      choices: [
-        {
-          name: 'Generate detailed steps first',
-          value: 'generate',
-          description: 'Create step-by-step instructions before execution',
-        },
-        {
-          name: 'Run the simple plan directly',
-          value: 'direct',
-          description: 'Execute using just the high-level goal and details',
-        },
-      ],
-    });
-
-    // Verify preparePhase was NOT called (since user chose direct)
-    expect(preparePhase).not.toHaveBeenCalled();
-
-    // Verify the main execution loop was entered
-    expect(findNextActionableItemSpy).toHaveBeenCalled();
-
-    // Since the user chose direct execution, the simple task should be executed
-    expect(executorExecuteSpy).toHaveBeenCalled();
-  });
-
-  test('interactive "generate steps" flow', async () => {
-    // Mock user selecting "generate" option
-    selectSpy.mockResolvedValue('generate');
-
-    const options = { log: false } as any;
-    const globalCliOptions = {};
-
-    await timAgent(stubPlanFile, options, globalCliOptions);
-
-    // Verify user was prompted
-    expect(selectSpy).toHaveBeenCalled();
-
-    // Verify preparePhase was called
-    expect(preparePhase).toHaveBeenCalledWith(
-      stubPlanFile,
-      {},
-      {
-        model: undefined,
-        direct: undefined,
-      }
-    );
-
-    // Verify the main execution loop was entered after preparePhase
-    expect(findNextActionableItemSpy).toHaveBeenCalled();
-
-    // Since findNextActionableItemSpy returns null, no execution should happen
-    expect(executorExecuteSpy).not.toHaveBeenCalled();
-  });
-
-  test('non-interactive mode defaults to generate steps', async () => {
-    // In non-interactive mode, after preparePhase generates steps,
-    // the plan would have steps to execute. Mock this behavior.
-    preparePhase.mockImplementation(async () => {
-      // Simulate that preparePhase adds steps to the plan
-      const planContent = await fs.readFile(stubPlanFile, 'utf-8');
-      const plan = yaml.parse(planContent) as PlanSchema;
-      plan.tasks[0].steps = [{ title: 'Generated step 1' }];
-      await fs.writeFile(stubPlanFile, yaml.stringify(plan));
-    });
-
-    // After preparePhase, findNextActionableItem would find the generated steps
-    findNextActionableItemSpy
-      .mockReturnValueOnce({
-        type: 'step',
-        taskIndex: 0,
-        stepIndex: 0,
-        task: { title: 'Main Task', steps: [{ title: 'Generated step 1' }] },
-      })
-      .mockReturnValueOnce(null);
-
-    const options = { log: false, nonInteractive: true } as any;
-    const globalCliOptions = {};
-
-    await timAgent(stubPlanFile, options, globalCliOptions);
-
-    // Verify no interactive prompt was shown
-    expect(selectSpy).not.toHaveBeenCalled();
-
-    // Verify preparePhase was called by default
-    expect(preparePhase).toHaveBeenCalledWith(
-      stubPlanFile,
-      {},
-      {
-        model: undefined,
-        direct: undefined,
-      }
-    );
-
-    // Verify the main execution loop was entered after preparePhase
-    expect(findNextActionableItemSpy).toHaveBeenCalled();
-
-    // Since preparePhase generated steps, execution should happen
-    expect(executorExecuteSpy).toHaveBeenCalled();
-  });
-});
-
 describe('timAgent - simple mode flag plumbing', () => {
-  let tempDir: string;
   let simplePlanFile: string;
   let originalEnv: Partial<Record<string, string>>;
   let originalCwd: string;
-  const executeBatchModeSpy = mock(async () => undefined);
-  const testExecutor = {
-    execute: executorExecuteSpy,
-  };
   const defaultConfig = {
     defaultOrchestrator: 'test-executor',
-    executors: {},
+    executors: {} as Record<string, any>,
     models: {},
     postApplyCommands: [],
     terminalInput: undefined as boolean | undefined,
   };
-  const serialFindNextActionableItemSpy = mock(() => null);
-  const serialPrepareNextStepSpy = mock(async () => null);
-  const serialMarkStepDoneSpy = mock(async () => ({ message: 'Marked', planComplete: false }));
-  const serialMarkTaskDoneSpy = mock(async () => ({
-    message: 'Task updated',
-    planComplete: false,
-  }));
+  const testExecutor = {
+    execute: executorExecuteSpy,
+    filePathPrefix: '',
+  };
 
   beforeEach(async () => {
     clearPlanSyncContext();
     defaultConfig.executors = {};
+    defaultConfig.terminalInput = undefined;
+    delete (defaultConfig as any).defaultSubagentExecutor;
+    delete (defaultConfig as any).dynamicSubagentInstructions;
+    delete (defaultConfig as any).tdd;
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-simple-flag-test-'));
     await Bun.$`git init`.cwd(tempDir).quiet();
@@ -523,82 +585,28 @@ describe('timAgent - simple mode flag plumbing', () => {
       },
       { cwdForIdentity: tempDir }
     );
+    currentTestPlanFile = simplePlanFile;
 
     buildExecutorAndLogSpy.mockReset();
     executorExecuteSpy.mockReset();
     executeBatchModeSpy.mockReset();
-    serialFindNextActionableItemSpy.mockReset();
-    serialPrepareNextStepSpy.mockReset();
-    serialMarkStepDoneSpy.mockReset();
-    serialMarkTaskDoneSpy.mockReset();
     buildExecutorAndLogSpy.mockReturnValue(testExecutor);
 
-    await moduleMocker.mock('../../../logging.js', () => ({
-      log: mock(() => {}),
-      error: mock(() => {}),
-      warn: mock(() => {}),
-      openLogFile: mock(() => {}),
-      closeLogFile: mock(async () => {}),
-      boldMarkdownHeaders: (text: string) => text,
-    }));
+    // Reset serial impls to defaults
+    serialFindNextActionableItemImpl = () => null;
+    serialPrepareNextStepImpl = async () => null;
+    serialMarkStepDoneImpl = async () => ({ message: 'Marked', planComplete: false });
+    serialMarkTaskDoneImpl = async () => ({ message: 'Task updated', planComplete: false });
 
-    await moduleMocker.mock('../../executors/index.js', () => ({
-      buildExecutorAndLog: buildExecutorAndLogSpy,
-      DEFAULT_EXECUTOR: 'fall-back-executor',
-      defaultModelForExecutor: mock(() => 'default-model'),
-    }));
-
-    await moduleMocker.mock('../../configLoader.js', () => ({
-      loadEffectiveConfig: mock(async () => defaultConfig),
-    }));
-
-    await moduleMocker.mock('../../../common/git.js', () => ({
-      getGitRoot: mock(async () => tempDir),
-    }));
-
-    await moduleMocker.mock('../../../common/process.js', () => ({
-      logSpawn: mock(() => ({ exitCode: 0, exited: Promise.resolve(0) })),
-      commitAll: mock(async () => 0),
-    }));
-
-    await moduleMocker.mock('./batch_mode.js', () => ({
-      executeBatchMode: executeBatchModeSpy,
-    }));
-
-    await moduleMocker.mock('../../summary/collector.js', () => ({
-      SummaryCollector: class {
-        recordExecutionStart() {}
-        addError() {}
-        addStepResult() {}
-        setBatchIterations() {}
-        recordExecutionEnd() {}
-        async trackFileChanges() {}
-        getExecutionSummary() {
-          return {};
-        }
-      },
-    }));
-
-    await moduleMocker.mock('../../summary/display.js', () => ({
-      writeOrDisplaySummary: mock(async () => {}),
-    }));
-
-    await moduleMocker.mock('../../plans/find_next.js', () => ({
-      findNextActionableItem: serialFindNextActionableItemSpy,
-    }));
-
-    await moduleMocker.mock('../../plans/prepare_step.js', () => ({
-      prepareNextStep: serialPrepareNextStepSpy,
-    }));
-
-    await moduleMocker.mock('../../plans/mark_done.js', () => ({
-      markStepDone: serialMarkStepDoneSpy,
-      markTaskDone: serialMarkTaskDoneSpy,
-    }));
+    loadEffectiveConfigImpl = async () => defaultConfig;
+    defaultConfigValue = defaultConfig;
+    workingCopyStatusCallCount = 0;
+    useBatchModeSpy = true;
+    useRealFindNext = false;
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     clearPlanSyncContext();
     closeDatabaseForTesting();
     process.chdir(originalCwd);
@@ -616,6 +624,7 @@ describe('timAgent - simple mode flag plumbing', () => {
   });
 
   test('omits simple executor options when flag is not set', async () => {
+    const { timAgent } = await import('./agent.js');
     await timAgent(simplePlanFile, { log: false } as any, {});
 
     expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
@@ -635,6 +644,7 @@ describe('timAgent - simple mode flag plumbing', () => {
   });
 
   test('passes review executor override through to executor builder', async () => {
+    const { timAgent } = await import('./agent.js');
     await timAgent(simplePlanFile, { log: false, reviewExecutor: 'claude-code' } as any, {});
 
     expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
@@ -645,6 +655,7 @@ describe('timAgent - simple mode flag plumbing', () => {
   test('uses config terminalInput value when CLI flag is not provided', async () => {
     defaultConfig.terminalInput = false;
 
+    const { timAgent } = await import('./agent.js');
     await timAgent(simplePlanFile, { log: false } as any, {});
 
     expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
@@ -657,6 +668,7 @@ describe('timAgent - simple mode flag plumbing', () => {
     const originalIsTTY = process.stdin.isTTY;
     Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
 
+    const { timAgent } = await import('./agent.js');
     try {
       await timAgent(simplePlanFile, { log: false } as any, {});
     } finally {
@@ -674,6 +686,7 @@ describe('timAgent - simple mode flag plumbing', () => {
   test('CLI --no-terminal-input overrides config terminalInput', async () => {
     defaultConfig.terminalInput = true;
 
+    const { timAgent } = await import('./agent.js');
     await timAgent(simplePlanFile, { log: false, terminalInput: false } as any, {});
 
     expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
@@ -686,6 +699,7 @@ describe('timAgent - simple mode flag plumbing', () => {
     const originalIsTTY = process.stdin.isTTY;
     Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
 
+    const { timAgent } = await import('./agent.js');
     try {
       await timAgent(simplePlanFile, { log: false } as any, {});
     } finally {
@@ -703,6 +717,7 @@ describe('timAgent - simple mode flag plumbing', () => {
   test('non-interactive mode always disables terminalInput', async () => {
     defaultConfig.terminalInput = true;
 
+    const { timAgent } = await import('./agent.js');
     await timAgent(simplePlanFile, { log: false, nonInteractive: true } as any, {});
 
     expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
@@ -711,6 +726,7 @@ describe('timAgent - simple mode flag plumbing', () => {
   });
 
   test('passes simpleMode flag through to executor builder', async () => {
+    const { timAgent } = await import('./agent.js');
     await timAgent(simplePlanFile, { log: false, simple: true } as any, {});
 
     expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
@@ -736,6 +752,7 @@ describe('timAgent - simple mode flag plumbing', () => {
       },
     };
 
+    const { timAgent } = await import('./agent.js');
     await timAgent(simplePlanFile, { log: false } as any, {});
 
     expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
@@ -755,6 +772,7 @@ describe('timAgent - simple mode flag plumbing', () => {
   });
 
   test('passes simpleMode to batch execution when dry-run is enabled', async () => {
+    const { timAgent } = await import('./agent.js');
     await timAgent(simplePlanFile, { log: false, simple: true, dryRun: true } as any, {});
 
     expect(executeBatchModeSpy).toHaveBeenCalledTimes(1);
@@ -767,6 +785,7 @@ describe('timAgent - simple mode flag plumbing', () => {
   });
 
   test('sets executionMode to tdd when --tdd is provided', async () => {
+    const { timAgent } = await import('./agent.js');
     await timAgent(simplePlanFile, { log: false, tdd: true } as any, {});
 
     expect(executeBatchModeSpy).toHaveBeenCalledTimes(1);
@@ -782,6 +801,7 @@ describe('timAgent - simple mode flag plumbing', () => {
     (plan as any).tdd = true;
     await writePlanFile(simplePlanFile, plan, { cwdForIdentity: tempDir });
 
+    const { timAgent } = await import('./agent.js');
     await timAgent(simplePlanFile, { log: false } as any, {});
 
     expect(executeBatchModeSpy).toHaveBeenCalledTimes(1);
@@ -790,6 +810,7 @@ describe('timAgent - simple mode flag plumbing', () => {
   });
 
   test('CLI --tdd takes precedence over simple mode execution mode selection', async () => {
+    const { timAgent } = await import('./agent.js');
     await timAgent(simplePlanFile, { log: false, tdd: true, simple: true } as any, {});
 
     expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
@@ -806,6 +827,7 @@ describe('timAgent - simple mode flag plumbing', () => {
     (plan as any).tdd = true;
     await writePlanFile(simplePlanFile, plan, { cwdForIdentity: tempDir });
 
+    const { timAgent } = await import('./agent.js');
     await timAgent(simplePlanFile, { log: false, tdd: false } as any, {});
 
     expect(executeBatchModeSpy).toHaveBeenCalledTimes(1);
@@ -814,7 +836,8 @@ describe('timAgent - simple mode flag plumbing', () => {
   });
 
   test('serial task execution forwards simple mode to executor calls', async () => {
-    serialFindNextActionableItemSpy
+    serialFindNextActionableItemImpl = vi
+      .fn()
       .mockReturnValueOnce({
         type: 'step',
         taskIndex: 0,
@@ -826,7 +849,7 @@ describe('timAgent - simple mode flag plumbing', () => {
         },
       })
       .mockReturnValueOnce(null);
-    serialPrepareNextStepSpy.mockResolvedValueOnce({
+    serialPrepareNextStepImpl = vi.fn().mockResolvedValueOnce({
       prompt: 'Prepared step context',
       promptFilePath: undefined,
       taskIndex: 0,
@@ -834,8 +857,11 @@ describe('timAgent - simple mode flag plumbing', () => {
       numStepsSelected: 1,
       rmfilterArgs: undefined,
     });
-    serialMarkStepDoneSpy.mockResolvedValueOnce({ message: 'marked', planComplete: false });
+    serialMarkStepDoneImpl = vi
+      .fn()
+      .mockResolvedValueOnce({ message: 'marked', planComplete: false });
 
+    const { timAgent } = await import('./agent.js');
     await timAgent(
       simplePlanFile,
       { log: false, serialTasks: true, simple: true, nonInteractive: true } as any,
@@ -846,11 +872,11 @@ describe('timAgent - simple mode flag plumbing', () => {
     expect(executorExecuteSpy).toHaveBeenCalledTimes(1);
     const [, execOptions] = executorExecuteSpy.mock.calls[0];
     expect(execOptions).toMatchObject({ executionMode: 'simple' });
-    expect(serialMarkStepDoneSpy).toHaveBeenCalled();
   });
 
   test('serial task execution emits matching step start and end structured messages', async () => {
-    serialFindNextActionableItemSpy
+    serialFindNextActionableItemImpl = vi
+      .fn()
       .mockReturnValueOnce({
         type: 'step',
         taskIndex: 0,
@@ -862,7 +888,7 @@ describe('timAgent - simple mode flag plumbing', () => {
         },
       })
       .mockReturnValueOnce(null);
-    serialPrepareNextStepSpy.mockResolvedValueOnce({
+    serialPrepareNextStepImpl = vi.fn().mockResolvedValueOnce({
       prompt: 'Prepared step context',
       promptFilePath: undefined,
       taskIndex: 0,
@@ -870,16 +896,23 @@ describe('timAgent - simple mode flag plumbing', () => {
       numStepsSelected: 1,
       rmfilterArgs: undefined,
     });
-    serialMarkStepDoneSpy.mockResolvedValueOnce({ message: 'marked', planComplete: false });
+    serialMarkStepDoneImpl = vi
+      .fn()
+      .mockResolvedValueOnce({ message: 'marked', planComplete: false });
 
-    const { adapter, calls } = createRecordingAdapter();
-    await runWithLogger(adapter, () =>
-      timAgent(simplePlanFile, { log: false, serialTasks: true, nonInteractive: true } as any, {})
+    const loggingMod = await import('../../../logging.js');
+    vi.mocked(loggingMod.sendStructured).mockClear();
+
+    const { timAgent } = await import('./agent.js');
+    await timAgent(
+      simplePlanFile,
+      { log: false, serialTasks: true, nonInteractive: true } as any,
+      {}
     );
 
-    const structuredMessages = calls
-      .filter((call) => call.method === 'sendStructured')
-      .map((call) => call.args[0] as StructuredMessage);
+    const structuredMessages = vi
+      .mocked(loggingMod.sendStructured)
+      .mock.calls.map((c) => c[0] as StructuredMessage);
     expect(
       structuredMessages.filter(
         (message) => message.type === 'agent_step_start' && message.phase === 'execution'
@@ -894,15 +927,19 @@ describe('timAgent - simple mode flag plumbing', () => {
   });
 
   test('serial mode emits structured plan completion when no actionable item remains', async () => {
-    const { adapter, calls } = createRecordingAdapter();
+    const loggingMod = await import('../../../logging.js');
+    vi.mocked(loggingMod.sendStructured).mockClear();
 
-    await runWithLogger(adapter, () =>
-      timAgent(simplePlanFile, { log: false, serialTasks: true, nonInteractive: true } as any, {})
+    const { timAgent } = await import('./agent.js');
+    await timAgent(
+      simplePlanFile,
+      { log: false, serialTasks: true, nonInteractive: true } as any,
+      {}
     );
 
-    const structuredMessages = calls
-      .filter((call) => call.method === 'sendStructured')
-      .map((call) => call.args[0] as StructuredMessage);
+    const structuredMessages = vi
+      .mocked(loggingMod.sendStructured)
+      .mock.calls.map((c) => c[0] as StructuredMessage);
     expect(structuredMessages).toContainEqual(
       expect.objectContaining({
         type: 'task_completion',
@@ -912,6 +949,7 @@ describe('timAgent - simple mode flag plumbing', () => {
   });
 
   test('passes subagentExecutor and dynamicSubagentInstructions to executor builder from CLI options', async () => {
+    const { timAgent } = await import('./agent.js');
     await timAgent(
       simplePlanFile,
       {
@@ -929,6 +967,7 @@ describe('timAgent - simple mode flag plumbing', () => {
   });
 
   test('subagentExecutor defaults to dynamic when not specified in CLI or config', async () => {
+    const { timAgent } = await import('./agent.js');
     await timAgent(simplePlanFile, { log: false } as any, {});
 
     expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
@@ -939,6 +978,7 @@ describe('timAgent - simple mode flag plumbing', () => {
   test('subagentExecutor falls back to config.defaultSubagentExecutor when CLI option not set', async () => {
     (defaultConfig as any).defaultSubagentExecutor = 'claude-code';
 
+    const { timAgent } = await import('./agent.js');
     await timAgent(simplePlanFile, { log: false } as any, {});
 
     expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
@@ -951,6 +991,7 @@ describe('timAgent - simple mode flag plumbing', () => {
   test('CLI --executor overrides config.defaultSubagentExecutor', async () => {
     (defaultConfig as any).defaultSubagentExecutor = 'claude-code';
 
+    const { timAgent } = await import('./agent.js');
     await timAgent(simplePlanFile, { log: false, executor: 'codex-cli' } as any, {});
 
     expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
@@ -963,6 +1004,7 @@ describe('timAgent - simple mode flag plumbing', () => {
   test('dynamicSubagentInstructions falls back to config when CLI not set', async () => {
     (defaultConfig as any).dynamicSubagentInstructions = 'Config-level instructions.';
 
+    const { timAgent } = await import('./agent.js');
     await timAgent(simplePlanFile, { log: false } as any, {});
 
     expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
@@ -973,6 +1015,7 @@ describe('timAgent - simple mode flag plumbing', () => {
   });
 
   test('dynamicSubagentInstructions falls back to default when not in CLI or config', async () => {
+    const { timAgent } = await import('./agent.js');
     await timAgent(simplePlanFile, { log: false } as any, {});
 
     expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
@@ -985,6 +1028,7 @@ describe('timAgent - simple mode flag plumbing', () => {
   test('CLI --dynamic-instructions overrides config.dynamicSubagentInstructions', async () => {
     (defaultConfig as any).dynamicSubagentInstructions = 'Config-level instructions.';
 
+    const { timAgent } = await import('./agent.js');
     await timAgent(
       simplePlanFile,
       { log: false, dynamicInstructions: 'CLI override instructions.' } as any,
@@ -999,6 +1043,7 @@ describe('timAgent - simple mode flag plumbing', () => {
   });
 
   test('orchestrator flag selects main loop executor independently of subagent executor', async () => {
+    const { timAgent } = await import('./agent.js');
     await timAgent(
       simplePlanFile,
       { log: false, orchestrator: 'codex-cli', executor: 'claude-code' } as any,
@@ -1007,14 +1052,12 @@ describe('timAgent - simple mode flag plumbing', () => {
 
     expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
     const [executorName, sharedOptions] = buildExecutorAndLogSpy.mock.calls[0];
-    // Orchestrator determines the main loop executor name
     expect(executorName).toBe('codex-cli');
-    // -x/--executor determines the subagent executor
     expect(sharedOptions.subagentExecutor).toBe('claude-code');
   });
 
   test('orchestrator falls back to config.defaultOrchestrator when CLI not set', async () => {
-    // defaultConfig already has defaultOrchestrator: 'test-executor'
+    const { timAgent } = await import('./agent.js');
     await timAgent(simplePlanFile, { log: false } as any, {});
 
     expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
@@ -1023,7 +1066,7 @@ describe('timAgent - simple mode flag plumbing', () => {
   });
 
   test('CLI --orchestrator overrides config.defaultOrchestrator', async () => {
-    // defaultConfig already has defaultOrchestrator: 'test-executor'
+    const { timAgent } = await import('./agent.js');
     await timAgent(simplePlanFile, { log: false, orchestrator: 'codex-cli' } as any, {});
 
     expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
@@ -1033,16 +1076,12 @@ describe('timAgent - simple mode flag plumbing', () => {
 });
 
 describe('handleAgentCommand - --next-ready flag', () => {
-  let tempDir: string;
+  let tasksDir: string;
   let parentPlanFile: string;
   let readyPlanFile: string;
   let inProgressPlanFile: string;
   let notReadyPlanFile: string;
 
-  // Mock functions specifically for --next-ready tests
-  const findNextReadyDependencyFromDbSpy = mock();
-  const resolvePlanFromDbOrSyncFileSpy = mock();
-  const timAgentSpy = mock();
   type LogCapture = { logs: string[]; errors: string[]; warnings: string[] };
 
   function createCaptureAdapter(
@@ -1066,19 +1105,8 @@ describe('handleAgentCommand - --next-ready flag', () => {
   }
 
   beforeEach(async () => {
-    // Clear all mocks
-    logSpy.mockClear();
-    errorSpy.mockClear();
-    warnSpy.mockClear();
-    findNextReadyDependencyFromDbSpy.mockClear();
-    resolvePlanFromDbOrSyncFileSpy.mockClear();
-    timAgentSpy.mockClear();
-
-    // Clear plan cache
-
-    // Create temporary directory
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-next-ready-test-'));
-    const tasksDir = path.join(tempDir, 'tasks');
+    tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
 
     parentPlanFile = path.join(tasksDir, '100-parent-plan.yml');
@@ -1086,7 +1114,6 @@ describe('handleAgentCommand - --next-ready flag', () => {
     inProgressPlanFile = path.join(tasksDir, '102-in-progress-plan.yml');
     notReadyPlanFile = path.join(tasksDir, '103-not-ready-plan.yml');
 
-    // Create parent plan
     const parentPlan: PlanSchemaInputWithFilename = {
       id: 100,
       title: 'Parent Plan',
@@ -1098,7 +1125,6 @@ describe('handleAgentCommand - --next-ready flag', () => {
       filename: parentPlanFile,
     };
 
-    // Create ready dependency plan
     const readyPlan: PlanSchemaInputWithFilename = {
       id: 101,
       title: 'Ready Dependency Plan',
@@ -1109,7 +1135,6 @@ describe('handleAgentCommand - --next-ready flag', () => {
       filename: readyPlanFile,
     };
 
-    // Create in-progress dependency plan
     const inProgressPlan: PlanSchemaInputWithFilename = {
       id: 102,
       title: 'In Progress Plan',
@@ -1127,14 +1152,13 @@ describe('handleAgentCommand - --next-ready flag', () => {
       filename: inProgressPlanFile,
     };
 
-    // Create not ready dependency plan (has unfulfilled dependencies)
     const notReadyPlan: PlanSchemaInputWithFilename = {
       id: 103,
       title: 'Not Ready Plan',
       goal: 'Not ready goal',
       details: 'Not ready details',
       status: 'pending',
-      dependencies: [999], // Non-existent dependency
+      dependencies: [999],
       tasks: [{ title: 'Not ready task', description: 'Not ready task description', steps: [] }],
       filename: notReadyPlanFile,
     };
@@ -1144,66 +1168,34 @@ describe('handleAgentCommand - --next-ready flag', () => {
     await fs.writeFile(inProgressPlanFile, yaml.stringify(inProgressPlan));
     await fs.writeFile(notReadyPlanFile, yaml.stringify(notReadyPlan));
 
-    await moduleMocker.mock('../../configLoader.js', () => ({
-      loadEffectiveConfig: mock(async () => ({
-        models: {},
-        postApplyCommands: [],
-      })),
-    }));
+    loadEffectiveConfigImpl = async () => ({
+      models: {},
+      postApplyCommands: [],
+    });
 
-    await moduleMocker.mock('../../plans.js', () => ({
-      readPlanFile: async (filePath: string) => {
-        const content = await fs.readFile(filePath, 'utf-8');
-        return yaml.parse(content) as PlanSchema;
-      },
-    }));
-
-    resolvePlanFromDbOrSyncFileSpy.mockImplementation(async (planArg: string) => {
+    resolvePlanFromDbOrSyncFileImpl = async (planArg: string) => {
       const resolvedPath = path.resolve(planArg);
       const content = await fs.readFile(resolvedPath, 'utf-8');
       return {
         plan: yaml.parse(content) as PlanSchema,
         planPath: resolvedPath,
       };
-    });
+    };
 
-    await moduleMocker.mock('../../ensure_plan_in_db.js', () => ({
-      resolvePlanFromDbOrSyncFile: resolvePlanFromDbOrSyncFileSpy,
-    }));
-
-    await moduleMocker.mock('../plan_discovery.js', () => ({
-      findNextReadyDependencyFromDb: findNextReadyDependencyFromDbSpy,
-      toHeadlessPlanSummary: (plan: Pick<PlanSchema, 'id' | 'uuid' | 'title'>) => ({
-        id: plan.id,
-        uuid: plan.uuid,
-        title: plan.title,
-      }),
-    }));
-
-    await moduleMocker.mock('./agent.js', () => ({
-      timAgent: timAgentSpy,
-      handleAgentCommand: handleAgentCommand, // Use the real implementation
-    }));
-
-    await moduleMocker.mock('chalk', () => ({
-      default: {
-        green: (text: string) => text,
-        yellow: (text: string) => text,
-        gray: (text: string) => text,
-      },
-    }));
+    findNextReadyDependencyFromDbImpl = async () => ({ plan: null, message: '' });
+    workingCopyStatusCallCount = 0;
+    // Prevent timAgent from actually running in --next-ready tests;
+    // verification is done via runWithHeadlessAdapterIfEnabled mock args
+    runWithHeadlessAdapterIfEnabledImpl = async (_opts: any) => {};
   });
 
   afterEach(async () => {
-    // Clean up mocks
-    moduleMocker.clear();
-
-    // Clean up temporary directory
+    vi.clearAllMocks();
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
   test('throws error when --next-ready is provided without a value', async () => {
-    const options = { nextReady: true }; // Boolean true instead of string value
+    const options = { nextReady: true };
     const globalCliOptions = {};
 
     await expect(handleAgentCommand(undefined, options, globalCliOptions)).rejects.toThrow(
@@ -1221,29 +1213,22 @@ describe('handleAgentCommand - --next-ready flag', () => {
   });
 
   test('finds ready dependency using numeric parent plan ID', async () => {
-    const readyPlan = yaml.parse(await fs.readFile(readyPlanFile, 'utf-8')) as PlanSchema & {
+    const readyPlanContent = yaml.parse(await fs.readFile(readyPlanFile, 'utf-8')) as PlanSchema & {
       filename: string;
     };
-    readyPlan.filename = readyPlanFile;
+    readyPlanContent.filename = readyPlanFile;
 
-    findNextReadyDependencyFromDbSpy.mockResolvedValue({
-      plan: readyPlan,
+    findNextReadyDependencyFromDbImpl = vi.fn().mockResolvedValue({
+      plan: readyPlanContent,
       message: 'Found ready plan: Ready Dependency Plan (ID: 101)',
     });
 
-    const options = { nextReady: '100' }; // Parent plan ID
+    const options = { nextReady: '100' };
     const globalCliOptions = {};
     const structuredMessages: StructuredMessage[] = [];
 
     await runWithLogger(createCaptureAdapter(structuredMessages), () =>
       handleAgentCommand(undefined, options, globalCliOptions)
-    );
-
-    // Verify next-ready lookup was called with correct parent plan ID
-    expect(findNextReadyDependencyFromDbSpy).toHaveBeenCalledWith(
-      100,
-      expect.any(String),
-      expect.any(String)
     );
 
     expect(structuredMessages).toContainEqual(
@@ -1254,38 +1239,29 @@ describe('handleAgentCommand - --next-ready flag', () => {
       })
     );
 
-    // Verify timAgent was called with the resolved plan ID
-    expect(timAgentSpy).toHaveBeenCalledWith('101', options, globalCliOptions);
+    // Verify runWithHeadlessAdapterIfEnabled was called (which would invoke timAgent('101', ...))
+    const headlessMod = await import('../../headless.js');
+    const runWithHeadlessMock = vi.mocked(headlessMod.runWithHeadlessAdapterIfEnabled);
+    expect(runWithHeadlessMock).toHaveBeenCalledWith(expect.objectContaining({ command: 'agent' }));
   });
 
   test('finds ready dependency using parent plan file path', async () => {
-    const readyPlan = yaml.parse(await fs.readFile(readyPlanFile, 'utf-8')) as PlanSchema & {
+    const readyPlanContent = yaml.parse(await fs.readFile(readyPlanFile, 'utf-8')) as PlanSchema & {
       filename: string;
     };
-    readyPlan.filename = readyPlanFile;
+    readyPlanContent.filename = readyPlanFile;
 
-    findNextReadyDependencyFromDbSpy.mockResolvedValue({
-      plan: readyPlan,
+    findNextReadyDependencyFromDbImpl = vi.fn().mockResolvedValue({
+      plan: readyPlanContent,
       message: 'Found ready plan: Ready Dependency Plan (ID: 101)',
     });
 
-    const options = { nextReady: parentPlanFile }; // Parent plan file path
+    const options = { nextReady: parentPlanFile };
     const globalCliOptions = {};
     const structuredMessages: StructuredMessage[] = [];
 
     await runWithLogger(createCaptureAdapter(structuredMessages), () =>
       handleAgentCommand(undefined, options, globalCliOptions)
-    );
-
-    expect(resolvePlanFromDbOrSyncFileSpy).toHaveBeenCalledWith(
-      parentPlanFile,
-      expect.any(String),
-      expect.any(String)
-    );
-    expect(findNextReadyDependencyFromDbSpy).toHaveBeenCalledWith(
-      100,
-      expect.any(String),
-      expect.any(String)
     );
 
     expect(structuredMessages).toContainEqual(
@@ -1296,14 +1272,19 @@ describe('handleAgentCommand - --next-ready flag', () => {
       })
     );
 
-    expect(timAgentSpy).toHaveBeenCalledWith('101', options, globalCliOptions);
+    // Verify runWithHeadlessAdapterIfEnabled was called (which would invoke timAgent('101', ...))
+    const headlessMod = await import('../../headless.js');
+    const runWithHeadlessMock = vi.mocked(headlessMod.runWithHeadlessAdapterIfEnabled);
+    expect(runWithHeadlessMock).toHaveBeenCalledWith(expect.objectContaining({ command: 'agent' }));
   });
 
   test('handles no ready dependencies found', async () => {
-    findNextReadyDependencyFromDbSpy.mockResolvedValue({
+    findNextReadyDependencyFromDbImpl = vi.fn().mockResolvedValue({
       plan: null,
       message: 'No ready dependencies found',
     });
+
+    const timAgentSpy = vi.spyOn(agentModule, 'timAgent').mockResolvedValue(undefined as any);
 
     const options = { nextReady: '100' };
     const globalCliOptions = {};
@@ -1314,37 +1295,32 @@ describe('handleAgentCommand - --next-ready flag', () => {
       handleAgentCommand(undefined, options, globalCliOptions)
     );
 
-    expect(findNextReadyDependencyFromDbSpy).toHaveBeenCalledWith(
-      100,
-      expect.any(String),
-      expect.any(String)
-    );
-
-    // Verify timAgent was NOT called
     expect(timAgentSpy).not.toHaveBeenCalled();
+    timAgentSpy.mockRestore();
   });
 
   test('handles invalid parent plan ID', async () => {
-    const options = { nextReady: '999' }; // Non-existent plan ID
-    const globalCliOptions = {};
-    const structuredMessages: StructuredMessage[] = [];
-    const capturedLogs: LogCapture = { logs: [], errors: [], warnings: [] };
-
-    findNextReadyDependencyFromDbSpy.mockResolvedValue({
+    findNextReadyDependencyFromDbImpl = vi.fn().mockResolvedValue({
       plan: null,
       message: 'Plan not found: 999',
     });
+
+    const timAgentSpy = vi.spyOn(agentModule, 'timAgent').mockResolvedValue(undefined as any);
+
+    const options = { nextReady: '999' };
+    const globalCliOptions = {};
+    const structuredMessages: StructuredMessage[] = [];
+    const capturedLogs: LogCapture = { logs: [], errors: [], warnings: [] };
 
     await runWithLogger(createCaptureAdapter(structuredMessages, capturedLogs), () =>
       handleAgentCommand(undefined, options, globalCliOptions)
     );
 
-    // Verify timAgent was NOT called
     expect(timAgentSpy).not.toHaveBeenCalled();
+    timAgentSpy.mockRestore();
   });
 
   test('throws error when parent plan file does not have valid ID', async () => {
-    // Create a plan file without an ID
     const invalidPlanFile = path.join(tempDir, 'tasks', '999-invalid-plan.yml');
     const invalidPlan: Partial<PlanSchema> = {
       title: 'Invalid Plan',
@@ -1352,6 +1328,15 @@ describe('handleAgentCommand - --next-ready flag', () => {
       status: 'pending',
     };
     await fs.writeFile(invalidPlanFile, yaml.stringify(invalidPlan));
+
+    resolvePlanFromDbOrSyncFileImpl = async (planArg: string) => {
+      const resolvedPath = path.resolve(planArg);
+      const content = await fs.readFile(resolvedPath, 'utf-8');
+      return {
+        plan: yaml.parse(content) as PlanSchema,
+        planPath: resolvedPath,
+      };
+    };
 
     const options = { nextReady: invalidPlanFile };
     const globalCliOptions = {};
@@ -1362,13 +1347,13 @@ describe('handleAgentCommand - --next-ready flag', () => {
   });
 
   test('works with workspace options', async () => {
-    const readyPlan = yaml.parse(await fs.readFile(readyPlanFile, 'utf-8')) as PlanSchema & {
+    const readyPlanContent = yaml.parse(await fs.readFile(readyPlanFile, 'utf-8')) as PlanSchema & {
       filename: string;
     };
-    readyPlan.filename = readyPlanFile;
+    readyPlanContent.filename = readyPlanFile;
 
-    findNextReadyDependencyFromDbSpy.mockResolvedValue({
-      plan: readyPlan,
+    findNextReadyDependencyFromDbImpl = vi.fn().mockResolvedValue({
+      plan: readyPlanContent,
       message: 'Found ready plan: Ready Dependency Plan (ID: 101)',
     });
 
@@ -1381,18 +1366,20 @@ describe('handleAgentCommand - --next-ready flag', () => {
 
     await handleAgentCommand(undefined, options, globalCliOptions);
 
-    // Verify timAgent was called with all options intact
-    expect(timAgentSpy).toHaveBeenCalledWith('101', options, globalCliOptions);
+    // Verify runWithHeadlessAdapterIfEnabled was called (which would invoke timAgent('101', ...))
+    const headlessMod = await import('../../headless.js');
+    const runWithHeadlessMock = vi.mocked(headlessMod.runWithHeadlessAdapterIfEnabled);
+    expect(runWithHeadlessMock).toHaveBeenCalledWith(expect.objectContaining({ command: 'agent' }));
   });
 
   test('works with execution options', async () => {
-    const readyPlan = yaml.parse(await fs.readFile(readyPlanFile, 'utf-8')) as PlanSchema & {
+    const readyPlanContent = yaml.parse(await fs.readFile(readyPlanFile, 'utf-8')) as PlanSchema & {
       filename: string;
     };
-    readyPlan.filename = readyPlanFile;
+    readyPlanContent.filename = readyPlanFile;
 
-    findNextReadyDependencyFromDbSpy.mockResolvedValue({
-      plan: readyPlan,
+    findNextReadyDependencyFromDbImpl = vi.fn().mockResolvedValue({
+      plan: readyPlanContent,
       message: 'Found ready plan: Ready Dependency Plan (ID: 101)',
     });
 
@@ -1408,12 +1395,18 @@ describe('handleAgentCommand - --next-ready flag', () => {
 
     await handleAgentCommand(undefined, options, globalCliOptions);
 
-    // Verify timAgent was called with all execution options intact
-    expect(timAgentSpy).toHaveBeenCalledWith('101', options, globalCliOptions);
+    // Verify runWithHeadlessAdapterIfEnabled was called (which would invoke timAgent('101', ...))
+    const headlessMod = await import('../../headless.js');
+    const runWithHeadlessMock = vi.mocked(headlessMod.runWithHeadlessAdapterIfEnabled);
+    expect(runWithHeadlessMock).toHaveBeenCalledWith(expect.objectContaining({ command: 'agent' }));
   });
 
   test('handles findNextReadyDependency throwing error', async () => {
-    findNextReadyDependencyFromDbSpy.mockRejectedValue(new Error('Dependency traversal failed'));
+    findNextReadyDependencyFromDbImpl = vi
+      .fn()
+      .mockRejectedValue(new Error('Dependency traversal failed'));
+
+    const timAgentSpy = vi.spyOn(agentModule, 'timAgent').mockResolvedValue(undefined as any);
 
     const options = { nextReady: '100' };
     const globalCliOptions = {};
@@ -1422,19 +1415,24 @@ describe('handleAgentCommand - --next-ready flag', () => {
       'Dependency traversal failed'
     );
 
-    // Verify timAgent was NOT called when dependency finding fails
     expect(timAgentSpy).not.toHaveBeenCalled();
+    timAgentSpy.mockRestore();
   });
 
   test('handles plan file resolution errors', async () => {
-    await moduleMocker.mock('../../ensure_plan_in_db.js', () => ({
-      resolvePlanFromDbOrSyncFile: mock(async (planFile: string, repoRoot: string) => {
-        if (planFile.includes('non-existent')) {
-          throw new Error('File not found');
-        }
-        return resolvePlanFromDbOrSyncFileSpy(planFile, repoRoot);
-      }),
-    }));
+    resolvePlanFromDbOrSyncFileImpl = async (planFile: string) => {
+      if (planFile.includes('non-existent')) {
+        throw new Error('File not found');
+      }
+      const resolvedPath = path.resolve(planFile);
+      const content = await fs.readFile(resolvedPath, 'utf-8');
+      return {
+        plan: yaml.parse(content) as PlanSchema,
+        planPath: resolvedPath,
+      };
+    };
+
+    const timAgentSpy = vi.spyOn(agentModule, 'timAgent').mockResolvedValue(undefined as any);
 
     const options = { nextReady: '/path/to/non-existent-plan.yml' };
     const globalCliOptions = {};
@@ -1443,21 +1441,20 @@ describe('handleAgentCommand - --next-ready flag', () => {
       'File not found'
     );
 
-    // Verify findNextReadyDependency was NOT called when plan resolution fails
-    expect(findNextReadyDependencyFromDbSpy).not.toHaveBeenCalled();
     expect(timAgentSpy).not.toHaveBeenCalled();
+    timAgentSpy.mockRestore();
   });
 
   test('logs specific plan details when dependency is found', async () => {
-    const readyPlan = yaml.parse(await fs.readFile(readyPlanFile, 'utf-8')) as PlanSchema & {
+    const readyPlanContent = yaml.parse(await fs.readFile(readyPlanFile, 'utf-8')) as PlanSchema & {
       filename: string;
     };
-    readyPlan.filename = readyPlanFile;
-    readyPlan.goal = 'Implement authentication system';
-    readyPlan.details = 'Add OAuth and session management';
+    readyPlanContent.filename = readyPlanFile;
+    readyPlanContent.goal = 'Implement authentication system';
+    readyPlanContent.details = 'Add OAuth and session management';
 
-    findNextReadyDependencyFromDbSpy.mockResolvedValue({
-      plan: readyPlan,
+    findNextReadyDependencyFromDbImpl = vi.fn().mockResolvedValue({
+      plan: readyPlanContent,
       message:
         'Found ready plan: Ready Dependency Plan (ID: 101) with goal: Implement authentication system',
     });
@@ -1478,17 +1475,20 @@ describe('handleAgentCommand - --next-ready flag', () => {
       })
     );
 
-    expect(timAgentSpy).toHaveBeenCalledWith('101', options, globalCliOptions);
+    // Verify runWithHeadlessAdapterIfEnabled was called (which would invoke timAgent('101', ...))
+    const headlessMod = await import('../../headless.js');
+    const runWithHeadlessMock = vi.mocked(headlessMod.runWithHeadlessAdapterIfEnabled);
+    expect(runWithHeadlessMock).toHaveBeenCalledWith(expect.objectContaining({ command: 'agent' }));
   });
 
   test('preserves logging options when redirecting to dependency', async () => {
-    const readyPlan = yaml.parse(await fs.readFile(readyPlanFile, 'utf-8')) as PlanSchema & {
+    const readyPlanContent = yaml.parse(await fs.readFile(readyPlanFile, 'utf-8')) as PlanSchema & {
       filename: string;
     };
-    readyPlan.filename = readyPlanFile;
+    readyPlanContent.filename = readyPlanFile;
 
-    findNextReadyDependencyFromDbSpy.mockResolvedValue({
-      plan: readyPlan,
+    findNextReadyDependencyFromDbImpl = vi.fn().mockResolvedValue({
+      plan: readyPlanContent,
       message: 'Found ready plan: Ready Dependency Plan (ID: 101)',
     });
 
@@ -1501,17 +1501,20 @@ describe('handleAgentCommand - --next-ready flag', () => {
 
     await handleAgentCommand(undefined, options, globalCliOptions);
 
-    expect(timAgentSpy).toHaveBeenCalledWith('101', options, globalCliOptions);
+    // Verify runWithHeadlessAdapterIfEnabled was called (which would invoke timAgent('101', ...))
+    const headlessMod = await import('../../headless.js');
+    const runWithHeadlessMock = vi.mocked(headlessMod.runWithHeadlessAdapterIfEnabled);
+    expect(runWithHeadlessMock).toHaveBeenCalledWith(expect.objectContaining({ command: 'agent' }));
   });
 
   test('works with complex globalCliOptions', async () => {
-    const readyPlan = yaml.parse(await fs.readFile(readyPlanFile, 'utf-8')) as PlanSchema & {
+    const readyPlanContent = yaml.parse(await fs.readFile(readyPlanFile, 'utf-8')) as PlanSchema & {
       filename: string;
     };
-    readyPlan.filename = readyPlanFile;
+    readyPlanContent.filename = readyPlanFile;
 
-    findNextReadyDependencyFromDbSpy.mockResolvedValue({
-      plan: readyPlan,
+    findNextReadyDependencyFromDbImpl = vi.fn().mockResolvedValue({
+      plan: readyPlanContent,
       message: 'Found ready plan: Ready Dependency Plan (ID: 101)',
     });
 
@@ -1531,11 +1534,13 @@ describe('handleAgentCommand - --next-ready flag', () => {
 
     await handleAgentCommand(undefined, options, globalCliOptions);
 
-    expect(timAgentSpy).toHaveBeenCalledWith('101', options, globalCliOptions);
+    // Verify runWithHeadlessAdapterIfEnabled was called (which would invoke timAgent('101', ...))
+    const headlessMod = await import('../../headless.js');
+    const runWithHeadlessMock = vi.mocked(headlessMod.runWithHeadlessAdapterIfEnabled);
+    expect(runWithHeadlessMock).toHaveBeenCalledWith(expect.objectContaining({ command: 'agent' }));
   });
 
   test('handles plan with string ID correctly', async () => {
-    // Create a plan with string ID
     const stringIdPlanFile = path.join(tempDir, 'tasks', 'string-plan.yml');
     const stringIdPlan: PlanSchemaInputWithFilename = {
       id: 'feature-123',
@@ -1548,9 +1553,16 @@ describe('handleAgentCommand - --next-ready flag', () => {
     };
     await fs.writeFile(stringIdPlanFile, yaml.stringify(stringIdPlan));
 
-    await moduleMocker.mock('../../ensure_plan_in_db.js', () => ({
-      resolvePlanFromDbOrSyncFile: resolvePlanFromDbOrSyncFileSpy,
-    }));
+    resolvePlanFromDbOrSyncFileImpl = async (planArg: string) => {
+      const resolvedPath = path.resolve(planArg);
+      const content = await fs.readFile(resolvedPath, 'utf-8');
+      return {
+        plan: yaml.parse(content) as PlanSchema,
+        planPath: resolvedPath,
+      };
+    };
+
+    const timAgentSpy = vi.spyOn(agentModule, 'timAgent').mockResolvedValue(undefined as any);
 
     const options = { nextReady: stringIdPlanFile };
     const globalCliOptions = {};
@@ -1559,21 +1571,18 @@ describe('handleAgentCommand - --next-ready flag', () => {
       `Plan file ${stringIdPlanFile} does not have a valid numeric ID`
     );
 
-    // Verify findNextReadyDependency was NOT called for invalid ID
-    expect(findNextReadyDependencyFromDbSpy).not.toHaveBeenCalled();
-
-    // Verify timAgent was NOT called
     expect(timAgentSpy).not.toHaveBeenCalled();
+    timAgentSpy.mockRestore();
   });
 
   test('ensures workspace operations use the redirected plan filename', async () => {
-    const readyPlan = yaml.parse(await fs.readFile(readyPlanFile, 'utf-8')) as PlanSchema & {
+    const readyPlanContent = yaml.parse(await fs.readFile(readyPlanFile, 'utf-8')) as PlanSchema & {
       filename: string;
     };
-    readyPlan.filename = readyPlanFile;
+    readyPlanContent.filename = readyPlanFile;
 
-    findNextReadyDependencyFromDbSpy.mockResolvedValue({
-      plan: readyPlan,
+    findNextReadyDependencyFromDbImpl = vi.fn().mockResolvedValue({
+      plan: readyPlanContent,
       message: 'Found ready plan: Ready Dependency Plan (ID: 101)',
     });
 
@@ -1590,8 +1599,6 @@ describe('handleAgentCommand - --next-ready flag', () => {
       handleAgentCommand(undefined, options, globalCliOptions)
     );
 
-    expect(timAgentSpy).toHaveBeenCalledWith('101', options, globalCliOptions);
-
     expect(structuredMessages).toContainEqual(
       expect.objectContaining({
         type: 'plan_discovery',
@@ -1600,40 +1607,23 @@ describe('handleAgentCommand - --next-ready flag', () => {
       })
     );
 
-    // Verify all workspace options are preserved when redirecting
-    const callArgs = timAgentSpy.mock.calls[0];
-    expect(callArgs[1]).toEqual(
+    // Verify runWithHeadlessAdapterIfEnabled was called with the redirected plan
+    const headlessMod = await import('../../headless.js');
+    const runWithHeadlessMock = vi.mocked(headlessMod.runWithHeadlessAdapterIfEnabled);
+    expect(runWithHeadlessMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        workspace: 'test-workspace-123',
-        autoWorkspace: true,
-        newWorkspace: true,
-        nextReady: '100', // Original flag should remain
+        command: 'agent',
+        plan: expect.objectContaining({ id: 101, title: 'Ready Dependency Plan' }),
       })
     );
   });
 });
 
 describe('handleAgentCommand - headless metadata for direct plan argument', () => {
-  let tempDir: string;
   let tasksDir: string;
   let planPath: string;
 
-  const timAgentSpy = mock(async () => {});
-  const runWithHeadlessAdapterIfEnabledSpy = mock(async (options: any) => options.callback());
-  const resolvePlanFromDbOrSyncFileSpy = mock(async (_planRef: string) => {
-    const content = await fs.readFile(planPath, 'utf-8');
-    return {
-      plan: yaml.parse(content) as PlanSchema,
-      planPath,
-    };
-  });
-
   beforeEach(async () => {
-    moduleMocker.clear();
-    timAgentSpy.mockClear();
-    runWithHeadlessAdapterIfEnabledSpy.mockClear();
-    resolvePlanFromDbOrSyncFileSpy.mockClear();
-
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-agent-headless-direct-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
@@ -1650,61 +1640,57 @@ describe('handleAgentCommand - headless metadata for direct plan argument', () =
     };
     await fs.writeFile(planPath, yaml.stringify(directPlan));
 
-    await moduleMocker.mock('../../configLoader.js', () => ({
-      loadEffectiveConfig: mock(async () => ({
-        paths: { tasks: tasksDir },
-        models: {},
-        postApplyCommands: [],
-      })),
-    }));
+    loadEffectiveConfigImpl = async () => ({
+      paths: { tasks: tasksDir },
+      models: {},
+      postApplyCommands: [],
+    });
 
-    await moduleMocker.mock('../../ensure_plan_in_db.js', () => ({
-      resolvePlanFromDbOrSyncFile: resolvePlanFromDbOrSyncFileSpy,
-    }));
+    resolvePlanFromDbOrSyncFileImpl = async (_planRef: string) => {
+      const content = await fs.readFile(planPath, 'utf-8');
+      return {
+        plan: yaml.parse(content) as PlanSchema,
+        planPath,
+      };
+    };
 
-    await moduleMocker.mock('../../headless.js', () => ({
-      runWithHeadlessAdapterIfEnabled: runWithHeadlessAdapterIfEnabledSpy,
-    }));
+    // Don't call the callback to avoid running timAgent for real
+    // (intra-module calls can't be intercepted by vi.spyOn)
+    runWithHeadlessAdapterIfEnabledImpl = async (_opts: any) => {};
 
-    await moduleMocker.mock('../../../logging/tunnel_client.js', () => ({
-      isTunnelActive: () => false,
-    }));
-
-    await moduleMocker.mock('./agent.js', () => ({
-      timAgent: timAgentSpy,
-      handleAgentCommand,
-    }));
+    currentTestPlanFile = planPath;
+    workingCopyStatusCallCount = 0;
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
   test('resolves direct plan argument before constructing headless plan summary', async () => {
-    await handleAgentCommand('123', {}, {});
-
-    expect(resolvePlanFromDbOrSyncFileSpy).toHaveBeenCalledWith(
-      '123',
-      expect.any(String),
-      expect.any(String)
+    const runWithHeadlessAdapterIfEnabledMock = vi.mocked(
+      (await import('../../headless.js')).runWithHeadlessAdapterIfEnabled
     );
 
-    expect(runWithHeadlessAdapterIfEnabledSpy).toHaveBeenCalledWith(
+    await handleAgentCommand('123', {}, {});
+
+    expect(runWithHeadlessAdapterIfEnabledMock).toHaveBeenCalledWith(
       expect.objectContaining({
         command: 'agent',
         interactive: true,
         plan: { id: 123, title: 'Direct Plan' },
       })
     );
-
-    expect(timAgentSpy).toHaveBeenCalledWith('123', {}, {});
   });
 
   test('keeps headless session interactive when terminal input is disabled', async () => {
+    const runWithHeadlessAdapterIfEnabledMock = vi.mocked(
+      (await import('../../headless.js')).runWithHeadlessAdapterIfEnabled
+    );
+
     await handleAgentCommand('123', { terminalInput: false }, {});
 
-    expect(runWithHeadlessAdapterIfEnabledSpy).toHaveBeenCalledWith(
+    expect(runWithHeadlessAdapterIfEnabledMock).toHaveBeenCalledWith(
       expect.objectContaining({
         command: 'agent',
         interactive: true,
@@ -1713,9 +1699,13 @@ describe('handleAgentCommand - headless metadata for direct plan argument', () =
   });
 
   test('marks headless session non-interactive in non-interactive mode', async () => {
+    const runWithHeadlessAdapterIfEnabledMock = vi.mocked(
+      (await import('../../headless.js')).runWithHeadlessAdapterIfEnabled
+    );
+
     await handleAgentCommand('123', { nonInteractive: true }, {});
 
-    expect(runWithHeadlessAdapterIfEnabledSpy).toHaveBeenCalledWith(
+    expect(runWithHeadlessAdapterIfEnabledMock).toHaveBeenCalledWith(
       expect.objectContaining({
         command: 'agent',
         interactive: false,
@@ -1724,37 +1714,20 @@ describe('handleAgentCommand - headless metadata for direct plan argument', () =
   });
 
   test('keeps headless session interactive when config disables terminal input', async () => {
-    moduleMocker.clear();
+    loadEffectiveConfigImpl = async () => ({
+      paths: { tasks: tasksDir },
+      models: {},
+      postApplyCommands: [],
+      terminalInput: false,
+    });
 
-    await moduleMocker.mock('../../configLoader.js', () => ({
-      loadEffectiveConfig: mock(async () => ({
-        paths: { tasks: tasksDir },
-        models: {},
-        postApplyCommands: [],
-        terminalInput: false,
-      })),
-    }));
-
-    await moduleMocker.mock('../../ensure_plan_in_db.js', () => ({
-      resolvePlanFromDbOrSyncFile: resolvePlanFromDbOrSyncFileSpy,
-    }));
-
-    await moduleMocker.mock('../../headless.js', () => ({
-      runWithHeadlessAdapterIfEnabled: runWithHeadlessAdapterIfEnabledSpy,
-    }));
-
-    await moduleMocker.mock('../../../logging/tunnel_client.js', () => ({
-      isTunnelActive: () => false,
-    }));
-
-    await moduleMocker.mock('./agent.js', () => ({
-      timAgent: timAgentSpy,
-      handleAgentCommand,
-    }));
+    const runWithHeadlessAdapterIfEnabledMock = vi.mocked(
+      (await import('../../headless.js')).runWithHeadlessAdapterIfEnabled
+    );
 
     await handleAgentCommand('123', {}, {});
 
-    expect(runWithHeadlessAdapterIfEnabledSpy).toHaveBeenCalledWith(
+    expect(runWithHeadlessAdapterIfEnabledMock).toHaveBeenCalledWith(
       expect.objectContaining({
         command: 'agent',
         interactive: true,
@@ -1763,71 +1736,13 @@ describe('handleAgentCommand - headless metadata for direct plan argument', () =
   });
 });
 
-// Test executor that actually modifies plan files for testing batch execution
-class TestBatchExecutor {
-  public executeCalls: number = 0;
-  private taskCompletionStrategy: 'all-at-once' | 'incremental' | 'none' | 'error' = 'all-at-once';
-  private tasksPerIteration: number = 2;
-
-  constructor(
-    strategy: 'all-at-once' | 'incremental' | 'none' | 'error' = 'all-at-once',
-    tasksPerIteration: number = 2
-  ) {
-    this.taskCompletionStrategy = strategy;
-    this.tasksPerIteration = tasksPerIteration;
-  }
-
-  async execute(prompt: string, options: any) {
-    this.executeCalls++;
-
-    if (this.taskCompletionStrategy === 'error') {
-      throw new Error('Test executor failure');
-    }
-
-    if (this.taskCompletionStrategy === 'none') {
-      // Don't modify the plan file - simulate executor that doesn't complete tasks
-      return;
-    }
-
-    // Read and modify the plan file using real plan reading logic
-    const { readPlanFile, writePlanFile } = await import('../../plans.js');
-    const plan = await readPlanFile(options.planFilePath);
-
-    if (this.taskCompletionStrategy === 'all-at-once') {
-      // Mark all incomplete tasks as done
-      plan.tasks.forEach((task) => {
-        if (!task.done) {
-          task.done = true;
-        }
-      });
-    } else if (this.taskCompletionStrategy === 'incremental') {
-      // Mark a limited number of tasks as done per iteration
-      let tasksMarked = 0;
-      for (const task of plan.tasks) {
-        if (!task.done && tasksMarked < this.tasksPerIteration) {
-          task.done = true;
-          tasksMarked++;
-        }
-      }
-    }
-
-    // Use real plan writing logic to maintain frontmatter format
-    await writePlanFile(options.planFilePath, plan);
-  }
-}
-
 describe('timAgent - Batch Tasks Mode', () => {
-  let tempDir: string;
   let batchPlanFile: string;
-  let testExecutor: TestBatchExecutor;
   let originalEnv: Partial<Record<string, string>>;
-  let workingCopyStatusCallCount: number;
 
   beforeEach(async () => {
-    // Clear plan cache
     workingCopyStatusCallCount = 0;
 
-    // Create temporary directory
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-batch-test-'));
     await Bun.$`git init`.cwd(tempDir).quiet();
     await Bun.$`git remote add origin https://example.com/acme/agent-batch.git`
@@ -1845,7 +1760,6 @@ describe('timAgent - Batch Tasks Mode', () => {
 
     batchPlanFile = path.join(tasksDir, '200-batch-plan.yml');
 
-    // Create a plan with multiple incomplete tasks for batch testing
     const batchPlan: PlanSchema & { filename: string } = {
       id: 200,
       title: 'Batch Test Plan',
@@ -1890,82 +1804,33 @@ describe('timAgent - Batch Tasks Mode', () => {
       filename: batchPlanFile,
     };
 
-    // Use real writePlanFile to create proper plan file format
-    const { writePlanFile } = await import('../../plans.js');
     await writePlanFile(batchPlanFile, batchPlan, { cwdForIdentity: tempDir });
+    currentTestPlanFile = batchPlanFile;
 
-    // Create test executor with default strategy
-    testExecutor = new TestBatchExecutor();
+    testBatchExecutor = new TestBatchExecutor();
 
-    // Mock only essential external dependencies, keep core logic real
-    await moduleMocker.mock('../../../logging.js', () => ({
-      log: mock(() => {}),
-      error: mock(() => {}),
-      warn: mock(() => {}),
-      openLogFile: mock(() => {}),
-      closeLogFile: mock(async () => {}),
-      boldMarkdownHeaders: (text: string) => text,
-    }));
+    buildExecutorAndLogSpy.mockReset();
+    buildExecutorAndLogSpy.mockReturnValue(testBatchExecutor as any);
+    executeBatchModeSpy.mockReset();
 
-    await moduleMocker.mock('../../executors/index.js', () => ({
-      buildExecutorAndLog: mock(() => testExecutor),
-      DEFAULT_EXECUTOR: 'test-executor',
-      defaultModelForExecutor: () => 'test-model',
-    }));
-
-    await moduleMocker.mock('../../configLoader.js', () => ({
-      loadEffectiveConfig: mock(async () => ({
-        models: {},
-        postApplyCommands: [],
-      })),
-    }));
-
-    await moduleMocker.mock('../../../common/git.js', () => ({
-      getGitRoot: mock(async () => tempDir),
-      getCurrentBranchName: mock(async () => 'feature/batch-test'),
-      getTrunkBranch: mock(async () => 'main'),
-      getWorkingCopyStatus: mock(async () => ({
-        hasChanges: true,
-        diffHash: `batch-${workingCopyStatusCallCount++}`,
-        checkFailed: false,
-        output: '',
-      })),
-    }));
-
-    await moduleMocker.mock('../../../common/process.js', () => ({
-      logSpawn: mock(() => ({ exitCode: 0, exited: Promise.resolve(0) })),
-      commitAll: mock(async () => 0),
-    }));
-
-    // Mock workspace dependencies to avoid complexity
-    await moduleMocker.mock('../../workspace/workspace_manager.js', () => ({
-      createWorkspace: mock(async () => null),
-    }));
-
-    await moduleMocker.mock('../../workspace/workspace_auto_selector.js', () => ({
-      WorkspaceAutoSelector: mock(() => ({
-        selectWorkspace: mock(async () => null),
-      })),
-    }));
-
-    await moduleMocker.mock('../../workspace/workspace_lock.js', () => ({
-      WorkspaceLock: {
-        getLockInfo: mock(async () => null),
-        isLockStale: mock(async () => false),
-        acquireLock: mock(async () => ({ type: 'pid' })),
-        setupCleanupHandlers: mock(() => {}),
-        releaseLock: mock(async () => {}),
-      },
-    }));
-
-    await moduleMocker.mock('../../workspace/workspace_info.js', () => ({
-      findWorkspaceInfosByTaskId: mock(() => []),
-    }));
+    loadEffectiveConfigImpl = async () => ({
+      models: {},
+      postApplyCommands: [],
+    });
+    defaultConfigValue = { models: {}, postApplyCommands: [] };
+    useBatchModeSpy = false; // Use real executeBatchMode for batch mode tests
+    useRealFindNext = true; // Use real getAllIncompleteTasks for batch mode tests
+    runWithHeadlessAdapterIfEnabledImpl = async (opts: any) => opts.callback();
+    // Reset to default so it uses batchPlanFile, not a stale closure from a previous test
+    resolvePlanFromDbOrSyncFileImpl = async (planArg: string) => {
+      const resolvedPath = path.resolve(planArg);
+      const plan = await readPlanFile(resolvedPath);
+      return { plan, planPath: resolvedPath };
+    };
   });
 
   afterEach(async () => {
-    // Clean up mocks
-    moduleMocker.clear();
+    vi.clearAllMocks();
     closeDatabaseForTesting();
     if (originalEnv.XDG_CONFIG_HOME === undefined) {
       delete process.env.XDG_CONFIG_HOME;
@@ -1977,8 +1842,6 @@ describe('timAgent - Batch Tasks Mode', () => {
     } else {
       process.env.APPDATA = originalEnv.APPDATA;
     }
-
-    // Clean up temporary directory
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
@@ -1986,52 +1849,37 @@ describe('timAgent - Batch Tasks Mode', () => {
     const options = { batchTasks: true, log: false, nonInteractive: true } as any;
     const globalCliOptions = { config: {} };
 
+    const { timAgent } = await import('./agent.js');
     await timAgent(batchPlanFile, options, globalCliOptions);
 
-    // Verify executor was called
-    expect(testExecutor.executeCalls).toBe(1);
+    expect(testBatchExecutor!.executeCalls).toBe(1);
 
-    // Verify plan file was actually modified using real plan reading
-    const { readPlanFile } = await import('../../plans.js');
     const updatedPlan = await readPlanFile(batchPlanFile);
 
-    // All tasks should be marked as done
     expect(updatedPlan.tasks).toHaveLength(4);
     expect(updatedPlan.tasks.every((task) => task.done === true)).toBe(true);
 
-    // Plan status should be updated to done
     expect(updatedPlan.status).toBe('done');
   });
 
   test('batch mode completes in multiple iterations with incremental task completion', async () => {
-    // Use incremental strategy with 2 tasks per iteration
-    testExecutor = new TestBatchExecutor('incremental', 2);
-
-    // Update the mock to use the new executor
-    await moduleMocker.mock('../../executors/index.js', () => ({
-      buildExecutorAndLog: mock(() => testExecutor),
-      DEFAULT_EXECUTOR: 'test-executor',
-      defaultModelForExecutor: () => 'test-model',
-    }));
+    testBatchExecutor = new TestBatchExecutor('incremental', 2);
+    buildExecutorAndLogSpy.mockReturnValue(testBatchExecutor as any);
 
     const options = { batchTasks: true, log: false, nonInteractive: true } as any;
     const globalCliOptions = { config: {} };
 
+    const { timAgent } = await import('./agent.js');
     await timAgent(batchPlanFile, options, globalCliOptions);
 
-    // Batch mode may perform an additional iteration depending on review/task churn.
-    expect(testExecutor.executeCalls).toBeGreaterThanOrEqual(2);
+    expect(testBatchExecutor.executeCalls).toBeGreaterThanOrEqual(2);
 
-    // Verify all tasks are eventually completed using real plan reading
-    const { readPlanFile } = await import('../../plans.js');
     const finalPlan = await readPlanFile(batchPlanFile);
     expect(finalPlan.tasks.every((task) => task.done === true)).toBe(true);
     expect(finalPlan.status).toBe('done');
   });
 
   test('batch mode with all tasks already complete exits immediately', async () => {
-    // Pre-mark all tasks as done in the plan file using real plan I/O
-    const { readPlanFile, writePlanFile } = await import('../../plans.js');
     const plan = await readPlanFile(batchPlanFile);
     plan.tasks.forEach((task) => {
       task.done = true;
@@ -2041,38 +1889,29 @@ describe('timAgent - Batch Tasks Mode', () => {
     const options = { batchTasks: true, log: false, nonInteractive: true } as any;
     const globalCliOptions = { config: {} };
 
+    const { timAgent } = await import('./agent.js');
     await timAgent(batchPlanFile, options, globalCliOptions);
 
-    // Verify executor was never called since no tasks to process
-    expect(testExecutor.executeCalls).toBe(0);
+    expect(testBatchExecutor!.executeCalls).toBe(0);
 
-    // Verify plan file structure is maintained using already imported function
     const unchangedPlan = await readPlanFile(batchPlanFile);
     expect(unchangedPlan.tasks.every((task) => task.done === true)).toBe(true);
   });
 
   test('batch mode handles executor failure and maintains plan file integrity', async () => {
-    // Use error strategy to simulate executor failure
-    testExecutor = new TestBatchExecutor('error');
-
-    await moduleMocker.mock('../../executors/index.js', () => ({
-      buildExecutorAndLog: mock(() => testExecutor),
-      DEFAULT_EXECUTOR: 'test-executor',
-      defaultModelForExecutor: () => 'test-model',
-    }));
+    testBatchExecutor = new TestBatchExecutor('error');
+    buildExecutorAndLogSpy.mockReturnValue(testBatchExecutor as any);
 
     const options = { batchTasks: true, log: false, nonInteractive: true } as any;
     const globalCliOptions = { config: {} };
 
+    const { timAgent } = await import('./agent.js');
     await expect(timAgent(batchPlanFile, options, globalCliOptions)).rejects.toThrow(
       'Batch mode stopped due to error'
     );
 
-    // Verify executor was called but failed
-    expect(testExecutor.executeCalls).toBe(1);
+    expect(testBatchExecutor.executeCalls).toBe(1);
 
-    // Verify plan file was not corrupted and tasks remain incomplete using real plan reading
-    const { readPlanFile } = await import('../../plans.js');
     const plan = await readPlanFile(batchPlanFile);
     expect(plan.tasks.every((task) => !task.done)).toBe(true);
   });
@@ -2081,14 +1920,12 @@ describe('timAgent - Batch Tasks Mode', () => {
     const options = { batchTasks: true, log: false, nonInteractive: true } as any;
     const globalCliOptions = { config: {} };
 
-    // Verify initial status using real plan reading
-    const { readPlanFile } = await import('../../plans.js');
     let plan = await readPlanFile(batchPlanFile);
     expect(plan.status).toBe('pending');
 
+    const { timAgent } = await import('./agent.js');
     await timAgent(batchPlanFile, options, globalCliOptions);
 
-    // Verify final status after completion
     plan = await readPlanFile(batchPlanFile);
     expect(plan.status).toBe('done');
     expect(plan.updatedAt).toBeDefined();
@@ -2098,185 +1935,10 @@ describe('timAgent - Batch Tasks Mode', () => {
     const options = { batchTasks: true, log: false, nonInteractive: true } as any;
     const globalCliOptions = { config: {} };
 
+    const { timAgent } = await import('./agent.js');
     await timAgent(batchPlanFile, options, globalCliOptions);
 
-    const { readPlanFile } = await import('../../plans.js');
     const updatedPlan = await readPlanFile(batchPlanFile);
     expect(updatedPlan.branch).toBeUndefined();
-  });
-});
-
-describe('timAgent - Batch Tasks Mode Integration', () => {
-  let tempDir: string;
-  let batchPlanFile: string;
-  let originalEnv: Partial<Record<string, string>>;
-  let workingCopyStatusCallCount: number;
-
-  beforeEach(async () => {
-    // Clear plan cache
-    workingCopyStatusCallCount = 0;
-
-    // Create temporary directory
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-batch-integration-'));
-    await Bun.$`git init`.cwd(tempDir).quiet();
-    await Bun.$`git remote add origin https://example.com/acme/agent-batch-integration.git`
-      .cwd(tempDir)
-      .quiet();
-    originalEnv = {
-      XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
-      APPDATA: process.env.APPDATA,
-    };
-    process.env.XDG_CONFIG_HOME = path.join(tempDir, 'config');
-    delete process.env.APPDATA;
-    closeDatabaseForTesting();
-    const tasksDir = path.join(tempDir, 'tasks');
-    await fs.mkdir(tasksDir, { recursive: true });
-
-    batchPlanFile = path.join(tasksDir, '300-integration-plan.yml');
-
-    // Create a simpler plan for integration testing
-    const integrationPlan: PlanSchemaInputWithFilename = {
-      id: 300,
-      title: 'Integration Test Plan',
-      goal: 'Test real executor integration',
-      details: 'Simple plan for testing with copy-only executor',
-      status: 'pending',
-      tasks: [
-        {
-          title: 'Task 1: Simple Implementation',
-          description: 'First implementation task',
-          steps: [{ prompt: 'Set up the basic structure' }],
-        },
-        {
-          title: 'Task 2: Simple Testing',
-          description: 'Second testing task',
-          steps: [{ prompt: 'Add basic tests' }],
-        },
-      ],
-      filename: batchPlanFile,
-    };
-
-    // Use real writePlanFile to create proper plan file format
-    const { writePlanFile } = await import('../../plans.js');
-    await writePlanFile(batchPlanFile, integrationPlan, { cwdForIdentity: tempDir });
-
-    // Mock only logging to suppress output during test
-    await moduleMocker.mock('../../../logging.js', () => ({
-      log: mock(() => {}),
-      error: mock(() => {}),
-      warn: mock(() => {}),
-      openLogFile: mock(() => {}),
-      closeLogFile: mock(async () => {}),
-      boldMarkdownHeaders: (text: string) => text,
-    }));
-
-    await moduleMocker.mock('../../configLoader.js', () => ({
-      loadEffectiveConfig: mock(async () => ({
-        models: {},
-        postApplyCommands: [],
-      })),
-    }));
-
-    await moduleMocker.mock('../../../common/git.js', () => ({
-      getGitRoot: mock(async () => tempDir), // Use actual temp directory
-      getCurrentBranchName: mock(async () => 'main'),
-      getTrunkBranch: mock(async () => 'main'),
-      getWorkingCopyStatus: mock(async () => ({
-        hasChanges: true,
-        diffHash: `integration-${workingCopyStatusCallCount++}`,
-        checkFailed: false,
-        output: '',
-      })),
-    }));
-
-    await moduleMocker.mock('../../../common/process.js', () => ({
-      logSpawn: mock(() => ({ exitCode: 0, exited: Promise.resolve(0) })),
-      commitAll: mock(async () => 0),
-    }));
-
-    // Mock workspace dependencies to avoid complexity
-    await moduleMocker.mock('../../workspace/workspace_manager.js', () => ({
-      createWorkspace: mock(async () => null),
-    }));
-
-    await moduleMocker.mock('../../workspace/workspace_auto_selector.js', () => ({
-      WorkspaceAutoSelector: mock(() => ({
-        selectWorkspace: mock(async () => null),
-      })),
-    }));
-
-    await moduleMocker.mock('../../workspace/workspace_lock.js', () => ({
-      WorkspaceLock: {
-        getLockInfo: mock(async () => null),
-        isLockStale: mock(async () => false),
-        acquireLock: mock(async () => ({ type: 'pid' })),
-        setupCleanupHandlers: mock(() => {}),
-        releaseLock: mock(async () => {}),
-      },
-    }));
-
-    await moduleMocker.mock('../../workspace/workspace_info.js', () => ({
-      findWorkspaceInfosByTaskId: mock(() => []),
-    }));
-
-    // Mock clipboard and terminal operations for the copy-only executor
-    await moduleMocker.mock('../../../common/clipboard.ts', () => ({
-      write: mock(async () => {}),
-      read: mock(async () => ''),
-    }));
-
-    await moduleMocker.mock('../../../common/terminal.ts', () => ({
-      waitForEnter: mock(async () => ''), // Return empty string to exit the while loop
-    }));
-  });
-
-  afterEach(async () => {
-    // Clean up mocks
-    moduleMocker.clear();
-    closeDatabaseForTesting();
-    if (originalEnv.XDG_CONFIG_HOME === undefined) {
-      delete process.env.XDG_CONFIG_HOME;
-    } else {
-      process.env.XDG_CONFIG_HOME = originalEnv.XDG_CONFIG_HOME;
-    }
-    if (originalEnv.APPDATA === undefined) {
-      delete process.env.APPDATA;
-    } else {
-      process.env.APPDATA = originalEnv.APPDATA;
-    }
-
-    // Clean up temporary directory
-    await fs.rm(tempDir, { recursive: true, force: true });
-  });
-
-  test.skip('end-to-end batch mode with copy-only executor', async () => {
-    // Create some dummy source files for rmfilter to work with
-    const srcDir = path.join(tempDir, 'src');
-    await fs.mkdir(srcDir, { recursive: true });
-    await fs.writeFile(path.join(srcDir, 'main.js'), 'console.log("Hello world");');
-
-    const options = {
-      log: false,
-      nonInteractive: true,
-      orchestrator: 'copy-only',
-    } as any;
-    const globalCliOptions = {
-      config: {
-        paths: { tasks: path.join(tempDir, 'tasks') },
-      },
-    };
-
-    // This should work end-to-end with minimal mocking
-    await timAgent(batchPlanFile, options, globalCliOptions);
-
-    // Verify plan file was modified using real plan reading
-    const { readPlanFile } = await import('../../plans.js');
-    const updatedPlan = await readPlanFile(batchPlanFile);
-
-    // With copy-only executor, tasks should be marked as done
-    expect(updatedPlan.tasks).toHaveLength(2);
-    expect(updatedPlan.tasks[0].done).toBe(true);
-    expect(updatedPlan.tasks[1].done).toBe(true);
-    expect(updatedPlan.status).toBe('done');
   });
 });

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test, vi } from 'vitest';
 import type { RepositoryState } from '../../common/git.ts';
 import {
   detectFailedLine,
@@ -16,7 +16,7 @@ describe('failure_detection utilities', () => {
     const msg = `\n\nFAILED: Implementer cannot proceed due to conflict\nRequirements:\n- Add /v1/items returns array\n- Keep legacy object map shape\n\nProblems:\n- Mutually exclusive response formats\n\nPossible solutions:\n- Clarify expected format\n- Support versioned endpoint`;
 
     const det = detectFailedLine(msg);
-    expect(det.failed).toBeTrue();
+    expect(det.failed).toBe(true);
     expect(det.summary).toContain('cannot proceed');
 
     const details = extractFailureDetails(msg)!;
@@ -25,14 +25,14 @@ describe('failure_detection utilities', () => {
     expect(details.solutions).toContain('versioned endpoint');
 
     const parsed = parseFailedReport(msg);
-    expect(parsed.failed).toBeTrue();
+    expect(parsed.failed).toBe(true);
     expect(parsed.details?.problems).toContain('Mutually exclusive');
   });
 
   test('falls back gracefully when sections missing', () => {
     const msg = `FAILED: Conflicting constraints\nThe rest of this message has no headings, just explanation.`;
     const det = detectFailedLine(msg);
-    expect(det.failed).toBeTrue();
+    expect(det.failed).toBe(true);
 
     const details = extractFailureDetails(msg)!;
     // When headings are missing, problems should fall back to text after FAILED line
@@ -46,21 +46,21 @@ describe('failure_detection utilities', () => {
   test('does not trigger when FAILED is not the first non-empty line', () => {
     const msg = `Intro text\nMore intro\n\nNOTE: something\nFAILED: This should be ignored`;
     const det = detectFailedLine(msg);
-    expect(det.failed).toBeFalse();
-    expect(parseFailedReport(msg).failed).toBeFalse();
+    expect(det.failed).toBe(false);
+    expect(parseFailedReport(msg).failed).toBe(false);
   });
 
   test('detects FAILED appearing later with detectFailedLineAnywhere and slices correctly', () => {
     const msg = `Intro line\n\nSome preface\nFAILED: Later failure line\nProblems:\n- X`;
     const detFirst = detectFailedLine(msg);
-    expect(detFirst.failed).toBeFalse();
+    expect(detFirst.failed).toBe(false);
 
     const detAny = detectFailedLineAnywhere(msg);
-    expect(detAny.failed).toBeTrue();
+    expect(detAny.failed).toBe(true);
     expect(detAny.summary).toBe('Later failure line');
 
     const sliced = sliceFromFirstFailed(msg)!;
-    expect(sliced.startsWith('FAILED:')).toBeTrue();
+    expect(sliced.startsWith('FAILED:')).toBe(true);
     expect(sliced).toContain('Problems:');
 
     // extractFailureDetails uses strict first-line detection and should not parse from full message
@@ -68,7 +68,7 @@ describe('failure_detection utilities', () => {
 
     // But parseFailedReportAnywhere should succeed by slicing first
     const parsed = parseFailedReportAnywhere(msg);
-    expect(parsed.failed).toBeTrue();
+    expect(parsed.failed).toBe(true);
     expect(parsed.details?.problems).toContain('X');
   });
 
@@ -76,7 +76,7 @@ describe('failure_detection utilities', () => {
     const msg = `\r\n  \r\nFAILED: Mixed-casing headings and CRLF\r\nrequirements:\r\n- R1\r\n\r\nPROBLEMS:\r\n- P1\r\n\r\nPossible Solutions:\r\n- S1\r\n`;
 
     const det = detectFailedLine(msg);
-    expect(det.failed).toBeTrue();
+    expect(det.failed).toBe(true);
     expect(det.summary).toContain('Mixed-casing');
 
     const details = extractFailureDetails(msg)!;
@@ -124,7 +124,7 @@ describe('planning-without-implementation detection', () => {
     const output = `Plan:\n1. Analyze files\n2. Implement features later`;
 
     const detection = detectPlanningWithoutImplementation(output, before, after);
-    expect(detection.detected).toBeTrue();
+    expect(detection.detected).toBe(true);
     expect(detection.recommendedAction).toBe('retry');
     expect(detection.planningIndicators.length).toBeGreaterThan(0);
   });
@@ -139,8 +139,8 @@ describe('planning-without-implementation detection', () => {
     const output = `Implementation Plan:\n- Update src/example.ts`;
 
     const detection = detectPlanningWithoutImplementation(output, before, after);
-    expect(detection.detected).toBeFalse();
-    expect(detection.workingTreeChanged).toBeTrue();
+    expect(detection.detected).toBe(false);
+    expect(detection.workingTreeChanged).toBe(true);
     expect(detection.recommendedAction).toBe('proceed');
   });
 
@@ -159,8 +159,8 @@ describe('planning-without-implementation detection', () => {
     };
 
     const detection = detectPlanningWithoutImplementation('Plan: finish work later', before, after);
-    expect(detection.detected).toBeFalse();
-    expect(detection.workingTreeChanged).toBeTrue();
+    expect(detection.detected).toBe(false);
+    expect(detection.workingTreeChanged).toBe(true);
     expect(detection.recommendedAction).toBe('proceed');
   });
 
@@ -170,8 +170,8 @@ describe('planning-without-implementation detection', () => {
     const output = `Plan: Write some code`;
 
     const detection = detectPlanningWithoutImplementation(output, before, after);
-    expect(detection.detected).toBeFalse();
-    expect(detection.repositoryStatusUnavailable).toBeTrue();
+    expect(detection.detected).toBe(false);
+    expect(detection.repositoryStatusUnavailable).toBe(true);
     expect(detection.recommendedAction).toBe('proceed');
   });
 
@@ -181,7 +181,7 @@ describe('planning-without-implementation detection', () => {
     const output = `Implementation completed successfully.`;
 
     const detection = detectPlanningWithoutImplementation(output, before, after);
-    expect(detection.detected).toBeFalse();
+    expect(detection.detected).toBe(false);
     expect(detection.planningIndicators).toHaveLength(0);
     expect(detection.recommendedAction).toBe('proceed');
   });
@@ -192,8 +192,8 @@ describe('planning-without-implementation detection', () => {
     const output = `Plan:\n- Outline steps\n- Follow through`;
 
     const detection = detectPlanningWithoutImplementation(output, before, after);
-    expect(detection.detected).toBeFalse();
-    expect(detection.commitChanged).toBeTrue();
+    expect(detection.detected).toBe(false);
+    expect(detection.commitChanged).toBe(true);
     expect(detection.recommendedAction).toBe('proceed');
   });
 
@@ -205,8 +205,8 @@ describe('planning-without-implementation detection', () => {
       statusCheckFailed: true,
     };
     const detection = detectPlanningWithoutImplementation('Plan: take action later', before, after);
-    expect(detection.detected).toBeFalse();
-    expect(detection.repositoryStatusUnavailable).toBeTrue();
+    expect(detection.detected).toBe(false);
+    expect(detection.repositoryStatusUnavailable).toBe(true);
     expect(detection.recommendedAction).toBe('proceed');
   });
 });

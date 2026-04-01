@@ -1,10 +1,33 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { clearAllGitCaches } from '../../common/git.js';
-import { ModuleMocker } from '../../testing.js';
+vi.mock('../../logging.js', () => ({
+  log: vi.fn(() => {}),
+  warn: vi.fn(() => {}),
+  debugLog: vi.fn(() => {}),
+}));
+
+vi.mock('../../common/git.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../common/git.js')>();
+  return {
+    ...actual,
+    getCurrentBranchName: vi.fn(actual.getCurrentBranchName),
+    getUsingJj: vi.fn(actual.getUsingJj),
+  };
+});
+
+vi.mock('../../common/process.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../common/process.js')>();
+  return {
+    ...actual,
+    spawnAndLogOutput: vi.fn(actual.spawnAndLogOutput),
+  };
+});
+
+import { clearAllGitCaches, getCurrentBranchName, getUsingJj } from '../../common/git.js';
+import { spawnAndLogOutput } from '../../common/process.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { getOrCreateProject } from '../db/project.js';
 import { recordWorkspace } from '../db/workspace.js';
@@ -92,18 +115,16 @@ function recordWorkspaceForRepo(input: {
   }
 }
 
-const logSpy = mock(() => {});
-const warnSpy = mock(() => {});
+const logSpy = vi.fn(() => {});
+const warnSpy = vi.fn(() => {});
 
 describe('handleWorkspacePushCommand', () => {
-  let moduleMocker: ModuleMocker;
   let tempRoot: string;
   let originalCwd: string;
   let originalEnv: { XDG_CONFIG_HOME?: string; APPDATA?: string };
 
   beforeEach(async () => {
     clearAllGitCaches();
-    moduleMocker = new ModuleMocker(import.meta);
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-push-test-'));
     originalCwd = process.cwd();
 
@@ -117,14 +138,17 @@ describe('handleWorkspacePushCommand', () => {
 
     closeDatabaseForTesting();
 
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: logSpy,
-      warn: warnSpy,
-    }));
+    // Restore real implementations (in case a previous test overrode them)
+    const realGit =
+      await vi.importActual<typeof import('../../common/git.js')>('../../common/git.js');
+    const realProcess =
+      await vi.importActual<typeof import('../../common/process.js')>('../../common/process.js');
+    vi.mocked(getCurrentBranchName).mockImplementation(realGit.getCurrentBranchName);
+    vi.mocked(getUsingJj).mockImplementation(realGit.getUsingJj);
+    vi.mocked(spawnAndLogOutput).mockImplementation(realProcess.spawnAndLogOutput);
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
     closeDatabaseForTesting();
     clearAllGitCaches();
 
@@ -140,8 +164,6 @@ describe('handleWorkspacePushCommand', () => {
       process.env.APPDATA = originalEnv.APPDATA;
     }
 
-    logSpy.mockClear();
-    warnSpy.mockClear();
     process.chdir(originalCwd);
 
     await fs.rm(tempRoot, { recursive: true, force: true });
@@ -385,29 +407,26 @@ describe('handleWorkspacePushCommand', () => {
 
     const processCalls: string[][] = [];
 
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getCurrentBranchName: mock(async () => 'feature/jj-match'),
-      getUsingJj: mock(async () => true),
-    }));
-    await moduleMocker.mock('../../common/process.js', () => ({
-      spawnAndLogOutput: mock(async (args: string[]) => {
-        processCalls.push(args);
+    // For this test we need to override the mocks specifically for jj mode
+    vi.mocked(getCurrentBranchName).mockResolvedValue('feature/jj-match');
+    vi.mocked(getUsingJj).mockResolvedValue(true);
+    vi.mocked(spawnAndLogOutput).mockImplementation(async (args: string[]) => {
+      processCalls.push(args);
 
-        if (args[0] === 'jj' && args[1] === 'git' && args[2] === 'remote' && args[3] === 'list') {
-          return {
-            exitCode: 0,
-            stdout: `origin /tmp/origin\nprimary ${primaryDir}\n`,
-            stderr: '',
-          };
-        }
-
+      if (args[0] === 'jj' && args[1] === 'git' && args[2] === 'remote' && args[3] === 'list') {
         return {
           exitCode: 0,
-          stdout: '',
+          stdout: `origin /tmp/origin\nprimary ${primaryDir}\n`,
           stderr: '',
         };
-      }),
-    }));
+      }
+
+      return {
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+      };
+    });
 
     const { handleWorkspacePushCommand } = await import('./workspace.js');
 

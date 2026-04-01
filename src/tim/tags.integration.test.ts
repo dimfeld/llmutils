@@ -1,9 +1,8 @@
-import { describe, test, beforeEach, afterEach, expect, mock } from 'bun:test';
+import { describe, test, beforeEach, afterEach, expect, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { ModuleMocker } from '../testing.js';
 import { handleAddCommand } from './commands/add.js';
 import { handleSetCommand } from './commands/set.js';
 import { mcpListReadyPlans } from './commands/ready.js';
@@ -12,51 +11,71 @@ import type { GenerateModeRegistrationContext } from './mcp/generate_mode.js';
 import { mcpCreatePlan } from './mcp/generate_mode.js';
 import { resolvePlanFromDb } from './plans.js';
 
+// Mock the modules that were previously mocked by ModuleMocker
+const { logSpy, warnSpy } = vi.hoisted(() => ({
+  logSpy: vi.fn(() => {}),
+  warnSpy: vi.fn(() => {}),
+}));
+
+vi.mock('../logging.js', () => ({
+  log: logSpy,
+  warn: warnSpy,
+  error: vi.fn(() => {}),
+}));
+
+vi.mock('./configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(),
+}));
+
+vi.mock('../common/git.js', () => ({
+  getGitRoot: vi.fn(),
+}));
+
+vi.mock('./assignments/workspace_identifier.js', () => ({
+  getRepositoryIdentity: vi.fn(),
+}));
+
+vi.mock('../common/clipboard.js', () => ({
+  copy: vi.fn(),
+  isEnabled: vi.fn(() => false),
+}));
+
+// Import mocked modules for setup
+import { loadEffectiveConfig } from './configLoader.js';
+import { getGitRoot } from '../common/git.js';
+import { getRepositoryIdentity } from './assignments/workspace_identifier.js';
+
 describe('tag workflows across CLI and MCP', () => {
   let tempDir: string;
   let tasksDir: string;
   let command: any;
-  let moduleMocker: ModuleMocker;
-  let logSpy: ReturnType<typeof mock>;
-  let warnSpy: ReturnType<typeof mock>;
   let mockConfig: TimConfig;
   let mcpContext: GenerateModeRegistrationContext;
+
+  // Helper to get typed mocks
+  const mockLoadEffectiveConfig = loadEffectiveConfig as ReturnType<typeof vi.fn>;
+  const mockGetGitRoot = getGitRoot as ReturnType<typeof vi.fn>;
+  const mockGetRepositoryIdentity = getRepositoryIdentity as ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tag-flow-'));
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
 
-    moduleMocker = new ModuleMocker(import.meta);
-    logSpy = mock(() => {});
-    warnSpy = mock(() => {});
+    // Reset mocks
+    logSpy.mockClear();
+    warnSpy.mockClear();
 
-    await moduleMocker.mock('../logging.js', () => ({
-      log: (...args: unknown[]) => logSpy(...args),
-      warn: (...args: unknown[]) => warnSpy(...args),
-      error: mock(() => {}),
-    }));
-
-    await moduleMocker.mock('./configLoader.js', () => ({
-      loadEffectiveConfig: async () => mockConfig,
-    }));
-
-    await moduleMocker.mock('../common/git.js', () => ({
-      getGitRoot: async () => tempDir,
-    }));
-
-    await moduleMocker.mock('./assignments/workspace_identifier.js', () => ({
-      getRepositoryIdentity: async () => ({
-        repositoryId: `test-repo-${path.basename(tempDir)}`,
-        remoteUrl: null,
-        gitRoot: tempDir,
-      }),
-    }));
-
-    await moduleMocker.mock('../common/clipboard.js', () => ({
-      copy: async () => {},
-      isEnabled: () => false,
-    }));
+    // Set up mock implementations
+    mockConfig = getDefaultConfig();
+    mockConfig.paths = { tasks: tasksDir };
+    mockLoadEffectiveConfig.mockResolvedValue(mockConfig);
+    mockGetGitRoot.mockResolvedValue(tempDir);
+    mockGetRepositoryIdentity.mockResolvedValue({
+      repositoryId: `test-repo-${path.basename(tempDir)}`,
+      remoteUrl: null,
+      gitRoot: tempDir,
+    });
 
     command = {
       parent: {
@@ -66,9 +85,6 @@ describe('tag workflows across CLI and MCP', () => {
       },
     };
 
-    mockConfig = getDefaultConfig();
-    mockConfig.paths = { tasks: tasksDir };
-
     mcpContext = {
       config: mockConfig,
       configPath: undefined,
@@ -77,7 +93,7 @@ describe('tag workflows across CLI and MCP', () => {
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     await fs.rm(tempDir, { recursive: true, force: true });
     logSpy.mockReset();
     warnSpy.mockReset();

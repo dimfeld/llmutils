@@ -1,28 +1,31 @@
-import { expect, test, mock, beforeEach, afterEach, afterAll } from 'bun:test';
-import { ModuleMocker } from '../testing.js';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
-const moduleMocker = new ModuleMocker(import.meta);
+const {
+  mockIsSshSession,
+  mockOsc52Copy,
+  mockOsc52Read,
+  mockClipboardRead,
+  mockClipboardWrite,
+  mockDebugLog,
+} = vi.hoisted(() => ({
+  mockIsSshSession: vi.fn(() => false),
+  mockOsc52Copy: vi.fn(async () => {}),
+  mockOsc52Read: vi.fn<() => Promise<string | null>>(async () => null),
+  mockClipboardRead: vi.fn(async () => 'clipboardy_text'),
+  mockClipboardWrite: vi.fn(async () => {}),
+  mockDebugLog: vi.fn((..._args: any[]) => {}),
+}));
 
-// Mock the modules before importing the functions that use them
-const mockIsSshSession = mock(() => false);
-const mockOsc52Copy = mock(async () => {});
-const mockOsc52Read = mock<() => Promise<string | null>>(async () => null);
-const mockClipboardRead = mock(async () => 'clipboardy_text');
-const mockClipboardWrite = mock(async () => {});
-const mockDebugLog = mock((...args: any[]) => {});
-
-// Setup mock modules
-await moduleMocker.mock('./ssh_detection.js', () => ({
+vi.mock('./ssh_detection.js', () => ({
   isSshSession: mockIsSshSession,
 }));
 
-await moduleMocker.mock('./osc52.js', () => ({
+vi.mock('./osc52.js', () => ({
   osc52Copy: mockOsc52Copy,
   osc52Read: mockOsc52Read,
 }));
 
-// Mock clipboardy module
-await moduleMocker.mock('clipboardy', () => ({
+vi.mock('clipboardy', () => ({
   default: {
     read: mockClipboardRead,
     write: mockClipboardWrite,
@@ -31,14 +34,16 @@ await moduleMocker.mock('clipboardy', () => ({
   write: mockClipboardWrite,
 }));
 
-await moduleMocker.mock('../logging.js', () => ({
-  debugLog: mockDebugLog,
-}));
+vi.mock('../logging.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../logging.js')>();
+  return {
+    ...actual,
+    debugLog: mockDebugLog,
+  };
+});
 
-// Import the functions to test after setting up the mocks
 import { read, write } from './clipboard';
 
-// Reset all mocks before each test
 beforeEach(() => {
   mockIsSshSession.mockReset();
   mockOsc52Copy.mockReset();
@@ -48,11 +53,10 @@ beforeEach(() => {
   mockDebugLog.mockReset();
 });
 
-afterAll(() => {
-  moduleMocker.clear();
+afterEach(() => {
+  vi.clearAllMocks();
 });
 
-// Tests for the write function
 test('write - SSH session, OSC52 success', async () => {
   mockIsSshSession.mockImplementation(() => true);
 
@@ -84,7 +88,6 @@ test('write - not SSH session', async () => {
   expect(mockOsc52Copy).not.toHaveBeenCalled();
 });
 
-// Tests for the read function
 test('read - SSH session, OSC52 success', async () => {
   mockIsSshSession.mockImplementation(() => true);
   mockOsc52Read.mockImplementationOnce(async () => 'osc_text');

@@ -1,9 +1,8 @@
-import { test, expect, describe, beforeEach, afterEach, mock, spyOn } from 'bun:test';
+import { test, expect, describe, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 
-import { ModuleMocker } from '../../testing.js';
 import { claimAssignment } from '../db/assignment.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { getOrCreateProject } from '../db/project.js';
@@ -13,14 +12,16 @@ import * as workspaceIdentifier from '../assignments/workspace_identifier.js';
 import { WorkspaceAutoSelector } from './workspace_auto_selector.js';
 import { WorkspaceLock } from './workspace_lock.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
+vi.mock('@inquirer/prompts', () => ({
+  confirm: vi.fn().mockResolvedValue(true),
+}));
 
 describe('WorkspaceAutoSelector', () => {
   let testDir: string;
   let configDir: string;
   let selector: WorkspaceAutoSelector;
   let config: TimConfig;
-  let getRepositoryIdentitySpy: ReturnType<typeof spyOn>;
+  let getRepositoryIdentitySpy: ReturnType<typeof vi.spyOn>;
   let originalEnv: { XDG_CONFIG_HOME?: string; APPDATA?: string };
 
   async function seedWorkspace(
@@ -73,18 +74,13 @@ describe('WorkspaceAutoSelector', () => {
     delete process.env.APPDATA;
     closeDatabaseForTesting();
 
-    await moduleMocker.mock('@inquirer/prompts', () => ({
-      confirm: mock(() => true),
-    }));
-
-    getRepositoryIdentitySpy = spyOn(
-      workspaceIdentifier,
-      'getRepositoryIdentity'
-    ).mockResolvedValue({
-      repositoryId: 'github.com/test/repo',
-      remoteUrl: 'https://github.com/test/repo.git',
-      gitRoot: testDir,
-    });
+    getRepositoryIdentitySpy = vi
+      .spyOn(workspaceIdentifier, 'getRepositoryIdentity')
+      .mockResolvedValue({
+        repositoryId: 'github.com/test/repo',
+        remoteUrl: 'https://github.com/test/repo.git',
+        gitRoot: testDir,
+      });
 
     config = {
       modelSettings: {
@@ -101,7 +97,7 @@ describe('WorkspaceAutoSelector', () => {
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     closeDatabaseForTesting();
 
     if (originalEnv.XDG_CONFIG_HOME === undefined) {
@@ -117,7 +113,7 @@ describe('WorkspaceAutoSelector', () => {
     }
 
     await fs.rm(testDir, { recursive: true, force: true });
-    mock.restore();
+    vi.restoreAllMocks();
   });
 
   test('selectWorkspace returns unlocked workspace when available', async () => {
@@ -129,21 +125,20 @@ describe('WorkspaceAutoSelector', () => {
     await seedWorkspace('github.com/test/repo', unlockedPath, 'task-1', 'task-1');
     await seedWorkspace('github.com/test/repo', lockedPath, 'task-2', 'task-2');
     await WorkspaceLock.acquireLock(lockedPath, 'tim agent');
-    const getLockInfoIncludingStaleSpy = spyOn(
-      WorkspaceLock,
-      'getLockInfoIncludingStale'
-    ).mockImplementation(async (workspacePath: string) => {
-      if (workspacePath === lockedPath) {
-        return {
-          type: 'persistent',
-          command: 'tim agent',
-          startedAt: new Date().toISOString(),
-          hostname: 'test-host',
-          version: 2,
-        };
-      }
-      return null;
-    });
+    const getLockInfoIncludingStaleSpy = vi
+      .spyOn(WorkspaceLock, 'getLockInfoIncludingStale')
+      .mockImplementation(async (workspacePath: string) => {
+        if (workspacePath === lockedPath) {
+          return {
+            type: 'persistent',
+            command: 'tim agent',
+            startedAt: new Date().toISOString(),
+            hostname: 'test-host',
+            version: 2,
+          };
+        }
+        return null;
+      });
 
     const result = await selector.selectWorkspace('task-3', '/test/plan3.yml', {
       interactive: false,
@@ -198,7 +193,7 @@ describe('WorkspaceAutoSelector', () => {
       "UPDATE workspace_lock SET started_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-25 hours') WHERE workspace_id = ?"
     ).run(staleWorkspace.id);
 
-    const clearStaleLockSpy = spyOn(WorkspaceLock, 'clearStaleLock');
+    const clearStaleLockSpy = vi.spyOn(WorkspaceLock, 'clearStaleLock');
     const result = await selector.selectWorkspace('task-next', '/test/plan-next.yml', {
       interactive: false,
     });
@@ -216,10 +211,9 @@ describe('WorkspaceAutoSelector', () => {
     await seedWorkspace('github.com/test/repo', lockedPath, 'task-locked', 'task-locked');
     await WorkspaceLock.acquireLock(lockedPath, 'manual lock');
 
-    const createWorkspaceSpy = spyOn(
-      await import('./workspace_manager.js'),
-      'createWorkspace'
-    ).mockResolvedValue(null);
+    const createWorkspaceSpy = vi
+      .spyOn(await import('./workspace_manager.js'), 'createWorkspace')
+      .mockResolvedValue(null);
 
     await selector.selectWorkspace('task-new', '/test/plan-new.yml', { interactive: false });
 
@@ -241,18 +235,17 @@ describe('WorkspaceAutoSelector', () => {
     );
 
     const newWorkspacePath = path.join(testDir, 'workspace-new');
-    const createWorkspaceSpy = spyOn(
-      await import('./workspace_manager.js'),
-      'createWorkspace'
-    ).mockImplementation(async () => {
-      await fs.mkdir(newWorkspacePath, { recursive: true });
-      await seedWorkspace('github.com/test/repo', newWorkspacePath, 'task-new', 'task-new');
-      return {
-        path: newWorkspacePath,
-        originalPlanFilePath: '/test/plan-new.yml',
-        taskId: 'task-new',
-      };
-    });
+    const createWorkspaceSpy = vi
+      .spyOn(await import('./workspace_manager.js'), 'createWorkspace')
+      .mockImplementation(async () => {
+        await fs.mkdir(newWorkspacePath, { recursive: true });
+        await seedWorkspace('github.com/test/repo', newWorkspacePath, 'task-new', 'task-new');
+        return {
+          path: newWorkspacePath,
+          originalPlanFilePath: '/test/plan-new.yml',
+          taskId: 'task-new',
+        };
+      });
 
     const result = await selector.selectWorkspace('task-new', '/test/plan-new.yml', {
       interactive: false,
@@ -266,19 +259,18 @@ describe('WorkspaceAutoSelector', () => {
 
   test('preserves checkedOutRemoteBranch when creating a new workspace', async () => {
     const newWorkspacePath = path.join(testDir, 'workspace-remote-checkout');
-    const createWorkspaceSpy = spyOn(
-      await import('./workspace_manager.js'),
-      'createWorkspace'
-    ).mockImplementation(async () => {
-      await fs.mkdir(newWorkspacePath, { recursive: true });
-      await seedWorkspace('github.com/test/repo', newWorkspacePath, 'task-remote', 'task-remote');
-      return {
-        path: newWorkspacePath,
-        originalPlanFilePath: '/test/plan-remote.yml',
-        taskId: 'task-remote',
-        checkedOutRemoteBranch: true,
-      };
-    });
+    const createWorkspaceSpy = vi
+      .spyOn(await import('./workspace_manager.js'), 'createWorkspace')
+      .mockImplementation(async () => {
+        await fs.mkdir(newWorkspacePath, { recursive: true });
+        await seedWorkspace('github.com/test/repo', newWorkspacePath, 'task-remote', 'task-remote');
+        return {
+          path: newWorkspacePath,
+          originalPlanFilePath: '/test/plan-remote.yml',
+          taskId: 'task-remote',
+          checkedOutRemoteBranch: true,
+        };
+      });
 
     const result = await selector.selectWorkspace('task-remote', '/test/plan-remote.yml', {
       interactive: false,
@@ -400,10 +392,9 @@ describe('WorkspaceAutoSelector', () => {
     await seedWorkspace('github.com/test/repo', lockedPath, 'task-locked', 'task-locked');
     await WorkspaceLock.acquireLock(lockedPath, 'tim agent');
 
-    const createWorkspaceSpy = spyOn(
-      await import('./workspace_manager.js'),
-      'createWorkspace'
-    ).mockResolvedValue(null);
+    const createWorkspaceSpy = vi
+      .spyOn(await import('./workspace_manager.js'), 'createWorkspace')
+      .mockResolvedValue(null);
 
     const result = await selector.selectWorkspace('task-new', '/test/plan-new.yml', {
       interactive: false,
@@ -479,10 +470,9 @@ describe('WorkspaceAutoSelector', () => {
     await seedWorkspace('github.com/test/repo', standardPath, 'task-standard', 'task-standard');
     await WorkspaceLock.acquireLock(autoPath, 'tim agent');
 
-    const createWorkspaceSpy = spyOn(
-      await import('./workspace_manager.js'),
-      'createWorkspace'
-    ).mockResolvedValue(null);
+    const createWorkspaceSpy = vi
+      .spyOn(await import('./workspace_manager.js'), 'createWorkspace')
+      .mockResolvedValue(null);
 
     await selector.selectWorkspace('task-new', '/test/plan-new.yml', {
       interactive: false,
@@ -503,10 +493,9 @@ describe('WorkspaceAutoSelector', () => {
     await seedWorkspace('github.com/test/repo', lockedPath, 'task-locked', 'task-locked');
     await WorkspaceLock.acquireLock(lockedPath, 'manual lock');
 
-    const createWorkspaceSpy = spyOn(
-      await import('./workspace_manager.js'),
-      'createWorkspace'
-    ).mockResolvedValue(null);
+    const createWorkspaceSpy = vi
+      .spyOn(await import('./workspace_manager.js'), 'createWorkspace')
+      .mockResolvedValue(null);
 
     await selector.selectWorkspace('task-new', '/test/plan-new.yml', {
       interactive: false,

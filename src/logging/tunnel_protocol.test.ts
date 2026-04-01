@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'bun:test';
+import { describe, it, expect, vi } from 'vitest';
 import { inspect } from 'node:util';
 import {
   TIM_OUTPUT_SOCKET,

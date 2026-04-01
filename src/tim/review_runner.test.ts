@@ -1,45 +1,37 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
-import { ModuleMocker } from '../testing.js';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Executor } from './executors/types.js';
+import { buildExecutorAndLog } from './executors/index.js';
+
+vi.mock('./executors/index.js', () => ({
+  buildExecutorAndLog: vi.fn(),
+  DEFAULT_EXECUTOR: 'codex-cli',
+}));
 
 describe('review_runner', () => {
-  let moduleMocker: ModuleMocker;
-
   beforeEach(() => {
-    moduleMocker = new ModuleMocker(import.meta);
-  });
-
-  afterEach(() => {
-    moduleMocker.clear();
+    vi.resetAllMocks();
   });
 
   test('prepareReviewExecutors uses executor metadata for prompt building', async () => {
     const claudeExecutor: Executor = {
-      execute: mock(async () => undefined),
-      prepareStepOptions: () => ({ rmfilter: false }),
+      execute: vi.fn(async () => undefined),
       supportsSubagents: true,
     };
 
     const codexExecutor: Executor = {
-      execute: mock(async () => undefined),
+      execute: vi.fn(async () => undefined),
     };
 
-    const buildExecutorAndLog = mock((name: string) =>
+    vi.mocked(buildExecutorAndLog).mockImplementation((name: string) =>
       name === 'claude-code' ? claudeExecutor : codexExecutor
     );
 
-    await moduleMocker.mock('./executors/index.js', () => ({
-      buildExecutorAndLog,
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
-
-    const { prepareReviewExecutors } = await import('./review_runner.js');
-
-    const buildPrompt = mock(
+    const buildPrompt = vi.fn(
       ({ executorName, includeDiff, useSubagents }) =>
         `${executorName}-${includeDiff}-${useSubagents}`
     );
 
+    const { prepareReviewExecutors } = await import('./review_runner.js');
     const prepared = await prepareReviewExecutors({
       executorSelection: 'both',
       config: { defaultExecutor: 'codex-cli' } as any,
@@ -101,27 +93,23 @@ describe('review_runner', () => {
     };
 
     const claudeExecutor: Executor = {
-      execute: mock(async () => JSON.stringify(claudeOutput)),
+      execute: vi.fn(async () => JSON.stringify(claudeOutput)),
     };
 
     const codexExecutor: Executor = {
-      execute: mock(async () => JSON.stringify(codexOutput)),
+      execute: vi.fn(async () => JSON.stringify(codexOutput)),
     };
 
-    await moduleMocker.mock('./executors/index.js', () => ({
-      buildExecutorAndLog: mock((name: string) =>
-        name === 'claude-code' ? claudeExecutor : codexExecutor
-      ),
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
+    vi.mocked(buildExecutorAndLog).mockImplementation((name: string) =>
+      name === 'claude-code' ? claudeExecutor : codexExecutor
+    );
 
     const { runReview } = await import('./review_runner.js');
-
     const result = await runReview({
       executorSelection: 'both',
       config: { defaultExecutor: 'codex-cli' } as any,
       sharedExecutorOptions: { baseDir: '/tmp' },
-      buildPrompt: mock(() => 'prompt'),
+      buildPrompt: vi.fn(() => 'prompt'),
       planInfo: {
         planId: '1',
         planTitle: 'Plan',
@@ -153,29 +141,25 @@ describe('review_runner', () => {
       actionItems: [],
     };
 
-    const claudeExecute = mock(async () => JSON.stringify(claudeOutput));
-    const codexExecute = mock(async () =>
+    const claudeExecute = vi.fn(async () => JSON.stringify(claudeOutput));
+    const codexExecute = vi.fn(async () =>
       JSON.stringify({ issues: [], recommendations: ['unused'], actionItems: [] })
     );
 
     const claudeExecutor: Executor = { execute: claudeExecute };
     const codexExecutor: Executor = { execute: codexExecute };
 
-    await moduleMocker.mock('./executors/index.js', () => ({
-      buildExecutorAndLog: mock((name: string) =>
-        name === 'claude-code' ? claudeExecutor : codexExecutor
-      ),
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
+    vi.mocked(buildExecutorAndLog).mockImplementation((name: string) =>
+      name === 'claude-code' ? claudeExecutor : codexExecutor
+    );
 
     const { runReview } = await import('./review_runner.js');
-
     const result = await runReview({
       executorSelection: 'both',
       serialBoth: true,
       config: { defaultExecutor: 'codex-cli' } as any,
       sharedExecutorOptions: { baseDir: '/tmp' },
-      buildPrompt: mock(() => 'prompt'),
+      buildPrompt: vi.fn(() => 'prompt'),
       planInfo: {
         planId: '9',
         planTitle: 'Serial Plan',
@@ -206,29 +190,25 @@ describe('review_runner', () => {
       actionItems: [],
     };
 
-    const claudeExecute = mock(async () => JSON.stringify(claudeOutput));
-    const codexExecute = mock(async () =>
+    const claudeExecute = vi.fn(async () => JSON.stringify(claudeOutput));
+    const codexExecute = vi.fn(async () =>
       JSON.stringify({ issues: [], recommendations: ['ok'], actionItems: [] })
     );
 
     const claudeExecutor: Executor = { execute: claudeExecute };
     const codexExecutor: Executor = { execute: codexExecute };
 
-    await moduleMocker.mock('./executors/index.js', () => ({
-      buildExecutorAndLog: mock((name: string) =>
-        name === 'claude-code' ? claudeExecutor : codexExecutor
-      ),
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
+    vi.mocked(buildExecutorAndLog).mockImplementation((name: string) =>
+      name === 'claude-code' ? claudeExecutor : codexExecutor
+    );
 
     const { runReview } = await import('./review_runner.js');
-
     const result = await runReview({
       executorSelection: 'both',
       serialBoth: true,
       config: { defaultExecutor: 'codex-cli' } as any,
       sharedExecutorOptions: { baseDir: '/tmp' },
-      buildPrompt: mock(() => 'prompt'),
+      buildPrompt: vi.fn(() => 'prompt'),
       planInfo: {
         planId: '10',
         planTitle: 'Serial Plan Info',
@@ -260,24 +240,20 @@ describe('review_runner', () => {
     };
 
     const executor: Executor = {
-      execute: mock(async () => ({
+      execute: vi.fn(async () => ({
         content: 'ignored',
         structuredOutput,
       })),
     };
 
-    await moduleMocker.mock('./executors/index.js', () => ({
-      buildExecutorAndLog: mock(() => executor),
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
+    vi.mocked(buildExecutorAndLog).mockImplementation((name: string) => executor);
 
     const { runReview } = await import('./review_runner.js');
-
     const result = await runReview({
       executorSelection: 'codex-cli',
       config: { defaultExecutor: 'codex-cli' } as any,
       sharedExecutorOptions: { baseDir: '/tmp' },
-      buildPrompt: mock(() => 'prompt'),
+      buildPrompt: vi.fn(() => 'prompt'),
       planInfo: {
         planId: '2',
         planTitle: 'Structured Plan',
@@ -298,29 +274,25 @@ describe('review_runner', () => {
     };
 
     const failingExecutor: Executor = {
-      execute: mock(async () => {
+      execute: vi.fn(async () => {
         throw new Error('boom');
       }),
     };
 
     const goodExecutor: Executor = {
-      execute: mock(async () => JSON.stringify(goodOutput)),
+      execute: vi.fn(async () => JSON.stringify(goodOutput)),
     };
 
-    await moduleMocker.mock('./executors/index.js', () => ({
-      buildExecutorAndLog: mock((name: string) =>
-        name === 'claude-code' ? failingExecutor : goodExecutor
-      ),
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
+    vi.mocked(buildExecutorAndLog).mockImplementation((name: string) =>
+      name === 'claude-code' ? failingExecutor : goodExecutor
+    );
 
     const { runReview } = await import('./review_runner.js');
-
     const result = await runReview({
       executorSelection: 'both',
       config: { defaultExecutor: 'codex-cli' } as any,
       sharedExecutorOptions: { baseDir: '/tmp' },
-      buildPrompt: mock(() => 'prompt'),
+      buildPrompt: vi.fn(() => 'prompt'),
       planInfo: {
         planId: '3',
         planTitle: 'Partial Plan',
@@ -338,32 +310,28 @@ describe('review_runner', () => {
 
   test('runReview throws when partial failures are disallowed', async () => {
     const failingExecutor: Executor = {
-      execute: mock(async () => {
+      execute: vi.fn(async () => {
         throw new Error('boom');
       }),
     };
 
     const goodExecutor: Executor = {
-      execute: mock(async () =>
+      execute: vi.fn(async () =>
         JSON.stringify({ issues: [], recommendations: [], actionItems: [] })
       ),
     };
 
-    await moduleMocker.mock('./executors/index.js', () => ({
-      buildExecutorAndLog: mock((name: string) =>
-        name === 'claude-code' ? failingExecutor : goodExecutor
-      ),
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
+    vi.mocked(buildExecutorAndLog).mockImplementation((name: string) =>
+      name === 'claude-code' ? failingExecutor : goodExecutor
+    );
 
     const { runReview } = await import('./review_runner.js');
-
     await expect(
       runReview({
         executorSelection: 'both',
         config: { defaultExecutor: 'codex-cli' } as any,
         sharedExecutorOptions: { baseDir: '/tmp' },
-        buildPrompt: mock(() => 'prompt'),
+        buildPrompt: vi.fn(() => 'prompt'),
         planInfo: {
           planId: '4',
           planTitle: 'Strict Plan',
@@ -377,12 +345,9 @@ describe('review_runner', () => {
   });
 
   test('resolveReviewExecutorSelection uses review defaults and rejects unsupported', async () => {
-    await moduleMocker.mock('./executors/index.js', () => ({
-      buildExecutorAndLog: mock(() => {
-        throw new Error('unexpected');
-      }),
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
+    vi.mocked(buildExecutorAndLog).mockImplementation((name: string) => {
+      throw new Error(`unexpected`);
+    });
 
     const { resolveReviewExecutorSelection } = await import('./review_runner.js');
 
@@ -412,7 +377,7 @@ describe('review_runner', () => {
     };
 
     const executor: Executor = {
-      execute: mock(async () => {
+      execute: vi.fn(async () => {
         attempts++;
         if (attempts === 1) {
           throw new Error('Claude review timed out after 30 minutes');
@@ -421,10 +386,7 @@ describe('review_runner', () => {
       }),
     };
 
-    await moduleMocker.mock('./executors/index.js', () => ({
-      buildExecutorAndLog: mock(() => executor),
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
+    vi.mocked(buildExecutorAndLog).mockImplementation((name: string) => executor);
 
     const { runReview } = await import('./review_runner.js');
 
@@ -432,7 +394,7 @@ describe('review_runner', () => {
       executorSelection: 'codex-cli',
       config: { defaultExecutor: 'codex-cli' } as any,
       sharedExecutorOptions: { baseDir: '/tmp' },
-      buildPrompt: mock(() => 'prompt'),
+      buildPrompt: vi.fn(() => 'prompt'),
       planInfo: {
         planId: '5',
         planTitle: 'Retry Plan',
@@ -452,16 +414,13 @@ describe('review_runner', () => {
     let attempts = 0;
 
     const executor: Executor = {
-      execute: mock(async () => {
+      execute: vi.fn(async () => {
         attempts++;
         throw new Error('Claude review timed out after 30 minutes');
       }),
     };
 
-    await moduleMocker.mock('./executors/index.js', () => ({
-      buildExecutorAndLog: mock(() => executor),
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
+    vi.mocked(buildExecutorAndLog).mockImplementation((name: string) => executor);
 
     const { runReview } = await import('./review_runner.js');
 
@@ -470,7 +429,7 @@ describe('review_runner', () => {
         executorSelection: 'codex-cli',
         config: { defaultExecutor: 'codex-cli' } as any,
         sharedExecutorOptions: { baseDir: '/tmp' },
-        buildPrompt: mock(() => 'prompt'),
+        buildPrompt: vi.fn(() => 'prompt'),
         planInfo: {
           planId: '6',
           planTitle: 'Max Retry Plan',
@@ -489,16 +448,13 @@ describe('review_runner', () => {
     let attempts = 0;
 
     const executor: Executor = {
-      execute: mock(async () => {
+      execute: vi.fn(async () => {
         attempts++;
         throw new Error('Some other error');
       }),
     };
 
-    await moduleMocker.mock('./executors/index.js', () => ({
-      buildExecutorAndLog: mock(() => executor),
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
+    vi.mocked(buildExecutorAndLog).mockImplementation((name: string) => executor);
 
     const { runReview } = await import('./review_runner.js');
 
@@ -507,7 +463,7 @@ describe('review_runner', () => {
         executorSelection: 'codex-cli',
         config: { defaultExecutor: 'codex-cli' } as any,
         sharedExecutorOptions: { baseDir: '/tmp' },
-        buildPrompt: mock(() => 'prompt'),
+        buildPrompt: vi.fn(() => 'prompt'),
         planInfo: {
           planId: '7',
           planTitle: 'No Retry Plan',
@@ -531,7 +487,7 @@ describe('review_runner', () => {
     };
 
     const executor: Executor = {
-      execute: mock(async () => {
+      execute: vi.fn(async () => {
         attempts++;
         if (attempts === 1) {
           // Codex uses "terminated after inactivity" in its error message
@@ -541,18 +497,14 @@ describe('review_runner', () => {
       }),
     };
 
-    await moduleMocker.mock('./executors/index.js', () => ({
-      buildExecutorAndLog: mock(() => executor),
-      DEFAULT_EXECUTOR: 'codex-cli',
-    }));
+    vi.mocked(buildExecutorAndLog).mockImplementation((name: string) => executor);
 
     const { runReview } = await import('./review_runner.js');
-
     const result = await runReview({
       executorSelection: 'codex-cli',
       config: { defaultExecutor: 'codex-cli' } as any,
       sharedExecutorOptions: { baseDir: '/tmp' },
-      buildPrompt: mock(() => 'prompt'),
+      buildPrompt: vi.fn(() => 'prompt'),
       planInfo: {
         planId: '8',
         planTitle: 'Codex Retry Plan',

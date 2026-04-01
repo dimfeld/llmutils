@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from 'bun:test';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
@@ -252,20 +252,20 @@ describe('Git Utilities', () => {
       await runGit(tempDir, ['commit', '-m', 'Initial commit']);
 
       const before = await captureRepositoryState(tempDir);
-      expect(before.hasChanges).toBeFalse();
+      expect(before.hasChanges).toBeFalsy();
       expect(before.statusOutput).toBeUndefined();
 
       await fs.writeFile(filePath, 'modified');
 
       const after = await captureRepositoryState(tempDir);
-      expect(after.hasChanges).toBeTrue();
+      expect(after.hasChanges).toBeTruthy();
       expect(after.statusOutput).toContain('example.txt');
-      expect(after.diffHash).toBeString();
+      expect(after.diffHash).toEqual(expect.any(String));
 
       const comparison = compareRepositoryStates(before, after);
-      expect(comparison.commitChanged).toBeFalse();
-      expect(comparison.workingTreeChanged).toBeTrue();
-      expect(comparison.hasDifferences).toBeTrue();
+      expect(comparison.commitChanged).toBeFalsy();
+      expect(comparison.workingTreeChanged).toBeTruthy();
+      expect(comparison.hasDifferences).toBeTruthy();
     });
 
     it('detects commit hash changes without working tree diffs', async () => {
@@ -290,18 +290,18 @@ describe('Git Utilities', () => {
       expect(afterCommit).not.toBeNull();
       expect(afterCommit).not.toBe(beforeCommit);
       const comparison = compareRepositoryStates(before, after);
-      expect(after.hasChanges).toBeFalse();
+      expect(after.hasChanges).toBeFalsy();
       expect(after.statusOutput).toBeUndefined();
       expect(after.diffHash).toBeUndefined();
-      expect(comparison.commitChanged).toBeTrue();
-      expect(comparison.workingTreeChanged).toBeFalse();
-      expect(comparison.hasDifferences).toBeTrue();
+      expect(comparison.commitChanged).toBeTruthy();
+      expect(comparison.workingTreeChanged).toBeFalsy();
+      expect(comparison.hasDifferences).toBeTruthy();
     });
 
     it('marks status as unavailable when repository status cannot be read', async () => {
       const state = await captureRepositoryState(tempDir);
-      expect(state.statusCheckFailed).toBeTrue();
-      expect(state.hasChanges).toBeFalse();
+      expect(state.statusCheckFailed).toBeTruthy();
+      expect(state.hasChanges).toBeFalsy();
       expect(state.diffHash).toBeUndefined();
     });
 
@@ -316,20 +316,20 @@ describe('Git Utilities', () => {
 
       await fs.writeFile(filePath, 'first dirty state');
       const before = await captureRepositoryState(tempDir);
-      expect(before.hasChanges).toBeTrue();
+      expect(before.hasChanges).toBeTruthy();
       expect(before.statusOutput).toContain('example.txt');
-      expect(before.diffHash).toBeString();
+      expect(before.diffHash).toEqual(expect.any(String));
 
       await fs.writeFile(filePath, 'second dirty state with actual edits');
       const after = await captureRepositoryState(tempDir);
-      expect(after.hasChanges).toBeTrue();
+      expect(after.hasChanges).toBeTruthy();
       expect(after.statusOutput).toBe(before.statusOutput);
       expect(after.diffHash).not.toBe(before.diffHash);
 
       const comparison = compareRepositoryStates(before, after);
-      expect(comparison.commitChanged).toBeFalse();
-      expect(comparison.workingTreeChanged).toBeTrue();
-      expect(comparison.hasDifferences).toBeTrue();
+      expect(comparison.commitChanged).toBeFalsy();
+      expect(comparison.workingTreeChanged).toBeTruthy();
+      expect(comparison.hasDifferences).toBeTruthy();
     });
 
     it('detects renames and deletions as working tree changes', async () => {
@@ -344,7 +344,7 @@ describe('Git Utilities', () => {
       await runGit(tempDir, ['commit', '-m', 'Initial commit']);
 
       const before = await captureRepositoryState(tempDir);
-      expect(before.hasChanges).toBeFalse();
+      expect(before.hasChanges).toBeFalsy();
 
       const subdir = path.join(tempDir, 'src');
       await fs.mkdir(subdir);
@@ -352,21 +352,21 @@ describe('Git Utilities', () => {
       await fs.rm(deletedFile);
 
       const after = await captureRepositoryState(tempDir);
-      expect(after.hasChanges).toBeTrue();
-      expect(after.statusOutput).toBeString();
+      expect(after.hasChanges).toBeTruthy();
+      expect(after.statusOutput).toEqual(expect.any(String));
       expect(after.statusOutput).toContain('->');
       expect(after.statusOutput).toContain('extra.txt');
 
       const comparison = compareRepositoryStates(before, after);
-      expect(comparison.workingTreeChanged).toBeTrue();
-      expect(comparison.hasDifferences).toBeTrue();
+      expect(comparison.workingTreeChanged).toBeTruthy();
+      expect(comparison.hasDifferences).toBeTruthy();
 
       const detection = detectPlanningWithoutImplementation(
         'Plan: reorganize files soon',
         before,
         after
       );
-      expect(detection.detected).toBeFalse();
+      expect(detection.detected).toBeFalsy();
       expect(detection.recommendedAction).toBe('proceed');
     });
   });

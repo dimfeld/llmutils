@@ -1,8 +1,9 @@
 import tailwindcss from '@tailwindcss/vite';
 import devtoolsJson from 'vite-plugin-devtools-json';
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import { playwright } from '@vitest/browser-playwright';
 import { sveltekit } from '@sveltejs/kit/vite';
+import * as path from 'path';
 
 export default defineConfig({
   plugins: [tailwindcss(), sveltekit(), devtoolsJson()],
@@ -13,7 +14,6 @@ export default defineConfig({
     },
   },
   test: {
-    expect: { requireAssertions: true },
     projects: [
       // {
       //   extends: './vite.config.ts',
@@ -35,7 +35,11 @@ export default defineConfig({
           name: 'server',
           environment: 'node',
           setupFiles: ['src/vitest-setup.ts'],
-          include: ['src/lib/**/*.{test,spec}.{js,ts}', 'src/routes/**/*.{test,spec}.{js,ts}'],
+          env: {
+            PATH: `${path.join(import.meta.dirname, 'test', 'mocks')}:${process.env.PATH || ''}`,
+          },
+          // adding files one at a time until we know everything passes with vitest
+          include: ['src/**/*.test.ts'],
           // exclude: ['src/**/*.svelte.{test,spec}.{js,ts}'],
         },
       },

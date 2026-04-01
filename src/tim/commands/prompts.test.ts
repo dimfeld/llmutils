@@ -1,60 +1,90 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { ModuleMocker } from '../../testing.js';
+import { beforeEach, describe, expect, vi, test } from 'vitest';
 
-const moduleMocker = new ModuleMocker(import.meta);
-
-const writeStdoutSpy = mock(() => {});
-const loadEffectiveConfigSpy = mock(async () => ({ paths: { tasks: '/tmp/tasks' } }));
-const resolvePlanPathContextSpy = mock(async () => ({
-  gitRoot: '/tmp/repo',
-  tasksDir: '/tmp/tasks',
+vi.mock('../../logging.js', () => ({
+  log: vi.fn(),
+  writeStdout: vi.fn(),
 }));
-const loadImplementPromptSpy = mock(async () => ({
-  messages: [
-    {
-      content: {
-        type: 'text',
-        text: 'implement prompt text',
-      },
-    },
-  ],
+
+vi.mock('../configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(),
+}));
+
+vi.mock('../path_resolver.js', () => ({
+  resolvePlanPathContext: vi.fn(),
+}));
+
+vi.mock('../mcp/generate_mode.js', () => ({
+  loadGeneratePrompt: vi.fn(() => {
+    throw new Error('unexpected call');
+  }),
+  loadImplementPrompt: vi.fn(() => {
+    throw new Error('unexpected call');
+  }),
+  loadPlanPrompt: vi.fn(() => {
+    throw new Error('unexpected call');
+  }),
+  loadQuestionsPrompt: vi.fn(() => {
+    throw new Error('unexpected call');
+  }),
+  loadResearchPrompt: vi.fn(() => {
+    throw new Error('unexpected call');
+  }),
 }));
 
 describe('handlePromptsCommand', () => {
+  let writeStdoutSpy: ReturnType<typeof vi.fn>;
+  let loadEffectiveConfigSpy: ReturnType<typeof vi.fn>;
+  let resolvePlanPathContextSpy: ReturnType<typeof vi.fn>;
+  let loadImplementPromptSpy: ReturnType<typeof vi.fn>;
+
   beforeEach(async () => {
-    writeStdoutSpy.mockClear();
-    loadEffectiveConfigSpy.mockClear();
-    resolvePlanPathContextSpy.mockClear();
-    loadImplementPromptSpy.mockClear();
+    const loggingModule = await import('../../logging.js');
+    writeStdoutSpy = vi.mocked(loggingModule.writeStdout);
+    writeStdoutSpy.mockReset().mockImplementation(() => {});
 
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: mock(() => {}),
-      writeStdout: writeStdoutSpy,
-    }));
+    const configLoaderModule = await import('../configLoader.js');
+    loadEffectiveConfigSpy = vi.mocked(configLoaderModule.loadEffectiveConfig);
+    loadEffectiveConfigSpy.mockReset().mockResolvedValue({ paths: { tasks: '/tmp/tasks' } } as any);
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: loadEffectiveConfigSpy,
-    }));
+    const pathResolverModule = await import('../path_resolver.js');
+    resolvePlanPathContextSpy = vi.mocked(pathResolverModule.resolvePlanPathContext);
+    resolvePlanPathContextSpy.mockReset().mockResolvedValue({
+      gitRoot: '/tmp/repo',
+      tasksDir: '/tmp/tasks',
+    });
 
-    await moduleMocker.mock('../path_resolver.js', () => ({
-      resolvePlanPathContext: resolvePlanPathContextSpy,
-    }));
-
-    await moduleMocker.mock('../mcp/generate_mode.js', () => ({
-      loadGeneratePrompt: mock(() => {
+    const mcpModule = await import('../mcp/generate_mode.js');
+    loadImplementPromptSpy = vi.mocked(mcpModule.loadImplementPrompt);
+    loadImplementPromptSpy.mockReset().mockResolvedValue({
+      messages: [
+        {
+          content: {
+            type: 'text',
+            text: 'implement prompt text',
+          },
+        },
+      ],
+    });
+    vi.mocked(mcpModule.loadGeneratePrompt)
+      .mockReset()
+      .mockImplementation(() => {
         throw new Error('unexpected call');
-      }),
-      loadImplementPrompt: loadImplementPromptSpy,
-      loadPlanPrompt: mock(() => {
+      });
+    vi.mocked(mcpModule.loadPlanPrompt)
+      .mockReset()
+      .mockImplementation(() => {
         throw new Error('unexpected call');
-      }),
-      loadQuestionsPrompt: mock(() => {
+      });
+    vi.mocked(mcpModule.loadQuestionsPrompt)
+      .mockReset()
+      .mockImplementation(() => {
         throw new Error('unexpected call');
-      }),
-      loadResearchPrompt: mock(() => {
+      });
+    vi.mocked(mcpModule.loadResearchPrompt)
+      .mockReset()
+      .mockImplementation(() => {
         throw new Error('unexpected call');
-      }),
-    }));
+      });
   });
 
   test('lists implement in available prompt names', async () => {

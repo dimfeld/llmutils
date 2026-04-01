@@ -1,18 +1,30 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { ModuleMocker } from '../../testing.js';
 import { writeRepositoryStorageMetadata } from '../external_storage_utils.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { getProject } from '../db/project.js';
 import { collectExternalStorageDirectories } from '../storage/storage_manager.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
+vi.mock('node:os', async (importOriginal) => {
+  const realOs = await importOriginal<typeof os>();
+  return {
+    ...realOs,
+    homedir: vi.fn(() => realOs.homedir()),
+  };
+});
 
-const mockLog = mock(() => {});
-const mockWarn = mock(() => {});
+vi.mock('../../logging.js', () => ({
+  log: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+}));
+
+vi.mock('@inquirer/prompts', () => ({
+  checkbox: vi.fn(),
+}));
 
 const STORAGE_BASE_SUBPATH = path.join('.config', 'tim', 'repositories');
 
@@ -47,27 +59,27 @@ async function createStorageRepository(
 describe('storage commands', () => {
   let fakeHomeDir: string;
   let originalXdgConfigHome: string | undefined;
+  let mockLog: ReturnType<typeof vi.fn>;
+  let mockWarn: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     closeDatabaseForTesting();
-    mockLog.mockClear();
-    mockWarn.mockClear();
 
     fakeHomeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-storage-cmd-'));
     originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
     process.env.XDG_CONFIG_HOME = path.join(fakeHomeDir, '.config');
 
-    const realOs = await import('node:os');
-    await moduleMocker.mock('node:os', () => ({
-      ...realOs,
-      homedir: () => fakeHomeDir,
-    }));
+    const osModule = await import('node:os');
+    vi.mocked(osModule.homedir).mockReturnValue(fakeHomeDir);
 
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: mockLog,
-      warn: mockWarn,
-      error: mockWarn,
-    }));
+    const loggingModule = await import('../../logging.js');
+    mockLog = vi.mocked(loggingModule.log);
+    mockWarn = vi.mocked(loggingModule.warn);
+    mockLog.mockReset().mockImplementation(() => {});
+    mockWarn.mockReset().mockImplementation(() => {});
+    vi.mocked(loggingModule.error)
+      .mockReset()
+      .mockImplementation(() => {});
   });
 
   afterEach(async () => {
@@ -77,7 +89,7 @@ describe('storage commands', () => {
     } else {
       process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
     }
-    moduleMocker.clear();
+    vi.clearAllMocks();
     await fs.rm(fakeHomeDir, { recursive: true, force: true });
   });
 
@@ -182,9 +194,8 @@ describe('storage commands', () => {
   test('handleStorageCleanCommand removes selected directories via prompt', async () => {
     await createStorageRepository(fakeHomeDir, 'alpha-repo');
 
-    await moduleMocker.mock('@inquirer/prompts', () => ({
-      checkbox: async () => ['alpha-repo'],
-    }));
+    const { checkbox } = await import('@inquirer/prompts');
+    vi.mocked(checkbox).mockResolvedValue(['alpha-repo']);
 
     const { handleStorageCleanCommand } = await import('./storage.js');
     await handleStorageCleanCommand(undefined, { force: true });

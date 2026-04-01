@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -10,7 +10,23 @@ import type { PlanSchema, PlanSchemaInput } from '../../planSchema.js';
 import type { TimConfig } from '../../configSchema.js';
 import { closeDatabaseForTesting } from '../../db/database.js';
 import { clearPlanSyncContext } from '../../db/plan_sync.js';
-import { ModuleMocker } from '../../../testing.js';
+
+const { removeAssignmentSpy, getRepositoryIdentitySpy } = vi.hoisted(() => ({
+  removeAssignmentSpy: vi.fn(() => true),
+  getRepositoryIdentitySpy: vi.fn(async () => ({
+    repositoryId: 'test-repo',
+    remoteUrl: null,
+    gitRoot: '',
+  })),
+}));
+
+vi.mock('../../db/assignment.js', () => ({
+  removeAssignment: removeAssignmentSpy,
+}));
+
+vi.mock('../../assignments/workspace_identifier.js', () => ({
+  getRepositoryIdentity: getRepositoryIdentitySpy,
+}));
 
 describe('Parent Plan Completion', () => {
   let tempDir: string;
@@ -18,13 +34,6 @@ describe('Parent Plan Completion', () => {
   let config: TimConfig;
   let originalEnv: Partial<Record<string, string>>;
   let originalCwd: string;
-  const moduleMocker = new ModuleMocker(import.meta);
-  const removeAssignmentSpy = mock(() => true);
-  const getRepositoryIdentitySpy = mock(async () => ({
-    repositoryId: 'test-repo',
-    remoteUrl: null,
-    gitRoot: '',
-  }));
 
   async function writeDbBackedPlan(planPath: string, plan: PlanSchema | PlanSchemaInput) {
     await writePlanFile(planPath, plan, {
@@ -69,18 +78,10 @@ describe('Parent Plan Completion', () => {
       remoteUrl: null,
       gitRoot: tempDir,
     });
-
-    await moduleMocker.mock('../../db/assignment.js', () => ({
-      removeAssignment: removeAssignmentSpy,
-    }));
-
-    await moduleMocker.mock('../../assignments/workspace_identifier.js', () => ({
-      getRepositoryIdentity: getRepositoryIdentitySpy,
-    }));
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     clearPlanSyncContext();
     closeDatabaseForTesting();
     process.chdir(originalCwd);

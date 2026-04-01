@@ -1,29 +1,31 @@
-import { describe, expect, it, mock, afterEach, beforeEach } from 'bun:test';
-import { ModuleMocker } from '../../testing.js';
+import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 import { SummaryCollector } from './collector.js';
+import * as gitModule from '../../common/git.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
+vi.mock('../../common/git.js', () => ({
+  getGitRoot: vi.fn(async (base?: string) => '/tmp/repo'),
+  getChangedFilesOnBranch: vi.fn(async (_root?: string) => ['src/only.ts']),
+  getCurrentCommitHash: vi.fn(async (_root?: string) => 'abc123'),
+  getChangedFilesBetween: vi.fn(async (_root?: string, _from?: string) => [
+    'src/file1.ts',
+    'src/dir/file2.ts',
+  ]),
+}));
 
-const mockGetGitRoot = mock(async (base?: string) => '/tmp/repo');
-const mockGetCurrentCommitHash = mock(async (_root?: string) => 'abc123');
-const mockGetChangedFilesBetween = mock(async (_root?: string, _from?: string) => [
-  'src/file1.ts',
-  'src/dir/file2.ts',
-]);
-const mockGetChangedFilesOnBranch = mock(async (_root?: string) => ['src/only.ts']);
+const mockGetGitRoot = vi.mocked(gitModule.getGitRoot);
+const mockGetCurrentCommitHash = vi.mocked(gitModule.getCurrentCommitHash);
+const mockGetChangedFilesBetween = vi.mocked(gitModule.getChangedFilesBetween);
+const mockGetChangedFilesOnBranch = vi.mocked(gitModule.getChangedFilesOnBranch);
 
 describe('SummaryCollector', () => {
-  beforeEach(async () => {
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: mockGetGitRoot,
-      getChangedFilesOnBranch: mockGetChangedFilesOnBranch,
-      getCurrentCommitHash: mockGetCurrentCommitHash,
-      getChangedFilesBetween: mockGetChangedFilesBetween,
-    }));
+  beforeEach(() => {
+    mockGetGitRoot.mockClear();
+    mockGetCurrentCommitHash.mockClear();
+    mockGetChangedFilesBetween.mockClear();
+    mockGetChangedFilesOnBranch.mockClear();
   });
 
   afterEach(() => {
-    moduleMocker.clear();
     mockGetGitRoot.mockReset();
     mockGetCurrentCommitHash.mockReset();
     mockGetChangedFilesBetween.mockReset();
@@ -64,7 +66,7 @@ describe('SummaryCollector', () => {
     expect(summary.steps.length).toBe(1);
     expect(summary.steps[0].title).toBe('Step 1');
     expect(summary.steps[0].executor).toBe('claude_code');
-    expect(summary.steps[0].success).toBeTrue();
+    expect(summary.steps[0].success).toBe(true);
     expect(summary.steps[0].output?.content).toContain('final message');
 
     expect(summary.errors.length).toBe(1);
@@ -198,6 +200,6 @@ describe('SummaryCollector', () => {
 
     await collector.trackFileChanges();
     const summary = collector.getExecutionSummary();
-    expect(summary.errors.some((e) => e.includes('Failed to track file changes'))).toBeTrue();
+    expect(summary.errors.some((e) => e.includes('Failed to track file changes'))).toBe(true);
   });
 });

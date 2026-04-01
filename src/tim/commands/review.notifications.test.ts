@@ -1,27 +1,102 @@
-import { describe, test, expect, beforeEach, afterEach, mock, spyOn } from 'bun:test';
+import { vi, describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { runWithLogger } from '../../logging.js';
 import { getLoggerAdapter, type LoggerAdapter } from '../../logging/adapter.js';
 import { HeadlessAdapter } from '../../logging/headless_adapter.js';
-import { ModuleMocker } from '../../testing.js';
 import { stringifyPlanWithFrontmatter } from '../../testing.js';
 import type { StructuredMessage } from '../../logging/structured_messages.js';
+import * as notificationsModule from '../notifications.js';
+import * as inputModule from '../../common/input.js';
+import * as configLoaderModule from '../configLoader.js';
+import * as gitModule from '../../common/git.js';
+import * as tunnelClientModule from '../../logging/tunnel_client.js';
+import * as contextGatheringModule from '../utils/context_gathering.js';
+import * as reviewRunnerModule from '../review_runner.js';
+import * as executorsModule from '../executors/index.js';
+import * as reviewFormatterModule from '../formatters/review_formatter.js';
+import * as incrementalReviewModule from '../incremental_review.js';
+import * as reviewPersistenceModule from '../review_persistence.js';
+import * as fileValidationModule from '../utils/file_validation.js';
+import * as cleanupPlanCreatorModule from '../utils/cleanup_plan_creator.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
+vi.mock('../notifications.js', () => ({
+  sendNotification: vi.fn(),
+}));
+
+vi.mock('../../common/input.js', () => ({
+  promptSelect: vi.fn(),
+  promptCheckbox: vi.fn(),
+}));
+
+vi.mock('../configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(),
+  loadGlobalConfigForNotifications: vi.fn(),
+}));
+
+vi.mock('../../common/git.js', () => ({
+  getGitRoot: vi.fn(),
+  getCurrentCommitHash: vi.fn(),
+  getTrunkBranch: vi.fn(),
+  getUsingJj: vi.fn(),
+  getCurrentBranchName: vi.fn(),
+}));
+
+vi.mock('../../logging/tunnel_client.js', () => ({
+  isTunnelActive: vi.fn(),
+}));
+
+vi.mock('../utils/context_gathering.js', () => ({
+  gatherPlanContext: vi.fn(),
+}));
+
+vi.mock('../review_runner.js', () => ({
+  runReview: vi.fn(),
+  prepareReviewExecutors: vi.fn(),
+}));
+
+vi.mock('../executors/index.js', () => ({
+  buildExecutorAndLog: vi.fn(),
+  DEFAULT_EXECUTOR: 'claude-code',
+}));
+
+vi.mock('../formatters/review_formatter.js', () => ({
+  createFormatter: vi.fn(),
+  createReviewResult: vi.fn(),
+}));
+
+vi.mock('../incremental_review.js', () => ({
+  storeLastReviewMetadata: vi.fn(),
+  getLastReviewMetadata: vi.fn(),
+  getIncrementalDiff: vi.fn(),
+}));
+
+vi.mock('../review_persistence.js', () => ({
+  saveReviewResult: vi.fn(),
+  createReviewsDirectory: vi.fn(),
+  createGitNote: vi.fn(),
+}));
+
+vi.mock('../utils/file_validation.js', () => ({
+  validateInstructionsFilePath: vi.fn(),
+}));
+
+vi.mock('../utils/cleanup_plan_creator.js', () => ({
+  createCleanupPlan: vi.fn(),
+}));
 
 let tempDir: string;
 let planFile: string;
-let sendNotificationSpy: ReturnType<typeof mock>;
-let runReviewSpy: ReturnType<typeof mock>;
-let gatherPlanContextSpy: ReturnType<typeof mock>;
-let selectSpy: ReturnType<typeof mock>;
-let checkboxSpy: ReturnType<typeof mock>;
-let loadEffectiveConfigSpy: ReturnType<typeof mock>;
-let loadGlobalConfigForNotificationsSpy: ReturnType<typeof mock>;
-let buildExecutorAndLogSpy: ReturnType<typeof mock>;
-let createCleanupPlanSpy: ReturnType<typeof mock>;
+let sendNotificationSpy: ReturnType<typeof vi.fn>;
+let runReviewSpy: ReturnType<typeof vi.fn>;
+let gatherPlanContextSpy: ReturnType<typeof vi.fn>;
+let selectSpy: ReturnType<typeof vi.fn>;
+let checkboxSpy: ReturnType<typeof vi.fn>;
+let loadEffectiveConfigSpy: ReturnType<typeof vi.fn>;
+let loadGlobalConfigForNotificationsSpy: ReturnType<typeof vi.fn>;
+let buildExecutorAndLogSpy: ReturnType<typeof vi.fn>;
+let createCleanupPlanSpy: ReturnType<typeof vi.fn>;
 
 const noOpAdapter: LoggerAdapter = {
   log: () => {},
@@ -84,8 +159,20 @@ beforeEach(async () => {
     })
   );
 
-  sendNotificationSpy = mock(async () => true);
-  runReviewSpy = mock(async () => ({
+  sendNotificationSpy = vi.mocked(notificationsModule.sendNotification);
+  runReviewSpy = vi.mocked(reviewRunnerModule.runReview);
+  gatherPlanContextSpy = vi.mocked(contextGatheringModule.gatherPlanContext);
+  selectSpy = vi.mocked(inputModule.promptSelect);
+  checkboxSpy = vi.mocked(inputModule.promptCheckbox);
+  loadEffectiveConfigSpy = vi.mocked(configLoaderModule.loadEffectiveConfig);
+  loadGlobalConfigForNotificationsSpy = vi.mocked(
+    configLoaderModule.loadGlobalConfigForNotifications
+  );
+  buildExecutorAndLogSpy = vi.mocked(executorsModule.buildExecutorAndLog);
+  createCleanupPlanSpy = vi.mocked(cleanupPlanCreatorModule.createCleanupPlan);
+
+  sendNotificationSpy.mockResolvedValue(true);
+  runReviewSpy.mockResolvedValue({
     reviewResult: {
       summary: { totalIssues: 0 },
       issues: [],
@@ -95,8 +182,8 @@ beforeEach(async () => {
     rawOutput: '',
     usedExecutors: ['claude-code'],
     warnings: [],
-  }));
-  gatherPlanContextSpy = mock(async () => ({
+  } as any);
+  gatherPlanContextSpy.mockResolvedValue({
     resolvedPlanFile: planFile,
     planData: { ...basePlan },
     repoRoot: tempDir,
@@ -105,96 +192,56 @@ beforeEach(async () => {
     completedChildren: [],
     diffResult: { ...baseDiff },
     noChangesDetected: false,
-  }));
-  selectSpy = mock(async () => 'exit');
-  checkboxSpy = mock(async () => []);
-  loadEffectiveConfigSpy = mock(async () => ({ notifications: { command: 'notify' } }));
-  loadGlobalConfigForNotificationsSpy = mock(async () => ({
+  } as any);
+  selectSpy.mockResolvedValue('exit' as any);
+  checkboxSpy.mockResolvedValue([] as any);
+  loadEffectiveConfigSpy.mockResolvedValue({ notifications: { command: 'notify' } } as any);
+  loadGlobalConfigForNotificationsSpy.mockResolvedValue({
     notifications: { command: 'notify' },
-  }));
-  buildExecutorAndLogSpy = mock(() => ({
-    execute: mock(async () => ({ content: 'autofix done', success: true })),
-  }));
-  createCleanupPlanSpy = mock(async () => ({
+  } as any);
+  buildExecutorAndLogSpy.mockReturnValue({
+    execute: vi.fn(async () => ({ content: 'autofix done', success: true })),
+  } as any);
+  createCleanupPlanSpy.mockResolvedValue({
     planId: 456,
     filePath: join(tempDir, 'tasks', '456-cleanup-plan.md'),
-  }));
+  } as any);
 
-  await moduleMocker.mock('../notifications.js', () => ({
-    sendNotification: sendNotificationSpy,
-  }));
+  vi.mocked(gitModule.getGitRoot).mockResolvedValue(tempDir);
+  vi.mocked(gitModule.getCurrentCommitHash).mockResolvedValue(undefined as any);
+  vi.mocked(gitModule.getTrunkBranch).mockResolvedValue('main');
+  vi.mocked(gitModule.getUsingJj).mockResolvedValue(false);
 
-  await moduleMocker.mock('../../common/input.js', () => ({
-    promptSelect: selectSpy,
-    promptCheckbox: checkboxSpy,
-  }));
+  vi.mocked(tunnelClientModule.isTunnelActive).mockReturnValue(false);
 
-  await moduleMocker.mock('../configLoader.js', () => ({
-    loadEffectiveConfig: loadEffectiveConfigSpy,
-    loadGlobalConfigForNotifications: loadGlobalConfigForNotificationsSpy,
-  }));
+  vi.mocked(reviewRunnerModule.prepareReviewExecutors).mockResolvedValue([] as any);
 
-  await moduleMocker.mock('../../common/git.js', () => ({
-    getGitRoot: mock(async () => tempDir),
-    getCurrentCommitHash: mock(async () => undefined),
-    getTrunkBranch: mock(async () => 'main'),
-    getUsingJj: mock(async () => false),
-  }));
+  vi.mocked(reviewFormatterModule.createFormatter).mockReturnValue({
+    format: () => 'formatted',
+    getFileExtension: () => '.md',
+  } as any);
+  vi.mocked(reviewFormatterModule.createReviewResult).mockImplementation((input: any) => input);
 
-  await moduleMocker.mock('../../logging/tunnel_client.js', () => ({
-    isTunnelActive: () => false,
-  }));
+  vi.mocked(incrementalReviewModule.storeLastReviewMetadata).mockResolvedValue(undefined);
+  vi.mocked(incrementalReviewModule.getLastReviewMetadata).mockResolvedValue(undefined);
+  vi.mocked(incrementalReviewModule.getIncrementalDiff).mockResolvedValue({
+    hasChanges: true,
+    changedFiles: [],
+    baseBranch: 'main',
+    diffContent: '',
+  } as any);
 
-  await moduleMocker.mock('../utils/context_gathering.js', () => ({
-    gatherPlanContext: gatherPlanContextSpy,
-  }));
+  vi.mocked(reviewPersistenceModule.saveReviewResult).mockResolvedValue('' as any);
+  vi.mocked(reviewPersistenceModule.createReviewsDirectory).mockResolvedValue('' as any);
+  vi.mocked(reviewPersistenceModule.createGitNote).mockResolvedValue(false);
 
-  await moduleMocker.mock('../review_runner.js', () => ({
-    runReview: runReviewSpy,
-    prepareReviewExecutors: mock(async () => []),
-  }));
-
-  await moduleMocker.mock('../executors/index.js', () => ({
-    buildExecutorAndLog: buildExecutorAndLogSpy,
-    DEFAULT_EXECUTOR: 'claude-code',
-  }));
-
-  await moduleMocker.mock('../formatters/review_formatter.js', () => ({
-    createFormatter: mock(() => ({
-      format: () => 'formatted',
-      getFileExtension: () => '.md',
-    })),
-    createReviewResult: (input: any) => input,
-  }));
-
-  await moduleMocker.mock('../incremental_review.js', () => ({
-    storeLastReviewMetadata: mock(async () => {}),
-    getLastReviewMetadata: mock(async () => undefined),
-    getIncrementalDiff: mock(async () => ({
-      hasChanges: true,
-      changedFiles: [],
-      baseBranch: 'main',
-      diffContent: '',
-    })),
-  }));
-
-  await moduleMocker.mock('../review_persistence.js', () => ({
-    saveReviewResult: mock(async () => ''),
-    createReviewsDirectory: mock(async () => ''),
-    createGitNote: mock(async () => false),
-  }));
-
-  await moduleMocker.mock('../utils/file_validation.js', () => ({
-    validateInstructionsFilePath: (input: string) => input,
-  }));
-
-  await moduleMocker.mock('../utils/cleanup_plan_creator.js', () => ({
-    createCleanupPlan: createCleanupPlanSpy,
-  }));
+  vi.mocked(fileValidationModule.validateInstructionsFilePath).mockImplementation(
+    (input: string) => input
+  );
 });
 
 afterEach(async () => {
-  moduleMocker.clear();
+  vi.clearAllMocks();
   delete process.env.TIM_INTERACTIVE;
 });
 
@@ -212,9 +259,7 @@ describe('review notifications', () => {
   });
 
   test('emits review_done when config load fails', async () => {
-    loadEffectiveConfigSpy.mockImplementationOnce(async () => {
-      throw new Error('config boom');
-    });
+    loadEffectiveConfigSpy.mockRejectedValueOnce(new Error('config boom'));
 
     const { handleReviewCommand } = await import('./review.js');
 
@@ -231,9 +276,7 @@ describe('review notifications', () => {
   });
 
   test('emits review_done when review fails', async () => {
-    runReviewSpy.mockImplementationOnce(async () => {
-      throw new Error('boom');
-    });
+    runReviewSpy.mockRejectedValueOnce(new Error('boom'));
 
     const { handleReviewCommand } = await import('./review.js');
 
@@ -251,9 +294,7 @@ describe('review notifications', () => {
   });
 
   test('emits review_done when plan context fails before review run', async () => {
-    gatherPlanContextSpy.mockImplementationOnce(async () => {
-      throw new Error('context boom');
-    });
+    gatherPlanContextSpy.mockRejectedValueOnce(new Error('context boom'));
 
     const { handleReviewCommand } = await import('./review.js');
 
@@ -271,7 +312,7 @@ describe('review notifications', () => {
   });
 
   test('skips notifications when no changes are detected (no-changes early return)', async () => {
-    gatherPlanContextSpy.mockImplementationOnce(async () => ({
+    gatherPlanContextSpy.mockResolvedValueOnce({
       resolvedPlanFile: planFile,
       planData: { ...basePlan },
       repoRoot: tempDir,
@@ -280,7 +321,7 @@ describe('review notifications', () => {
       completedChildren: [],
       diffResult: { ...baseDiff },
       noChangesDetected: true,
-    }));
+    } as any);
 
     const { handleReviewCommand } = await import('./review.js');
 
@@ -299,7 +340,7 @@ describe('review notifications', () => {
 
   test('does not create a second headless adapter when one is already active', async () => {
     const headlessModule = await import('../headless.js');
-    const createAdapterSpy = spyOn(headlessModule, 'createHeadlessAdapterForCommand');
+    const createAdapterSpy = vi.spyOn(headlessModule, 'createHeadlessAdapterForCommand');
     const { handleReviewCommand } = await import('./review.js');
     const existingHeadlessAdapter = new HeadlessAdapter({ command: 'agent' }, noOpAdapter);
 
@@ -315,7 +356,7 @@ describe('review notifications', () => {
   });
 
   test('creates and destroys a headless adapter in standalone mode', async () => {
-    const destroySpy = spyOn(HeadlessAdapter.prototype, 'destroy');
+    const destroySpy = vi.spyOn(HeadlessAdapter.prototype, 'destroy');
     gatherPlanContextSpy.mockImplementationOnce(async () => {
       expect(getLoggerAdapter()).toBeInstanceOf(HeadlessAdapter);
       return {
@@ -348,7 +389,7 @@ describe('review notifications', () => {
       return true;
     });
 
-    runReviewSpy.mockImplementationOnce(async () => ({
+    runReviewSpy.mockResolvedValueOnce({
       reviewResult: {
         summary: { totalIssues: 1 },
         issues: [
@@ -367,7 +408,7 @@ describe('review notifications', () => {
       rawOutput: 'issues were found',
       usedExecutors: ['claude-code'],
       warnings: [],
-    }));
+    } as any);
 
     const { handleReviewCommand } = await import('./review.js');
 
@@ -386,7 +427,7 @@ describe('review notifications', () => {
       return true;
     });
 
-    runReviewSpy.mockImplementationOnce(async () => ({
+    runReviewSpy.mockResolvedValueOnce({
       reviewResult: {
         summary: { totalIssues: 1 },
         issues: [
@@ -405,7 +446,7 @@ describe('review notifications', () => {
       rawOutput: 'issues were found',
       usedExecutors: ['claude-code'],
       warnings: [],
-    }));
+    } as any);
 
     const { handleReviewCommand } = await import('./review.js');
 
@@ -425,10 +466,10 @@ describe('review notifications', () => {
     });
     selectSpy.mockImplementation(async () => {
       events.push('select');
-      return 'exit';
+      return 'exit' as any;
     });
 
-    runReviewSpy.mockImplementationOnce(async () => ({
+    runReviewSpy.mockResolvedValueOnce({
       reviewResult: {
         summary: { totalIssues: 1 },
         issues: [
@@ -447,7 +488,7 @@ describe('review notifications', () => {
       rawOutput: 'issues were found',
       usedExecutors: ['claude-code'],
       warnings: [],
-    }));
+    } as any);
 
     const { handleReviewCommand } = await import('./review.js');
 
@@ -465,10 +506,10 @@ describe('review notifications', () => {
     });
     checkboxSpy.mockImplementation(async () => {
       events.push('checkbox');
-      return [];
+      return [] as any;
     });
 
-    runReviewSpy.mockImplementationOnce(async () => ({
+    runReviewSpy.mockResolvedValueOnce({
       reviewResult: {
         summary: { totalIssues: 1 },
         issues: [
@@ -487,7 +528,7 @@ describe('review notifications', () => {
       rawOutput: 'issues were found',
       usedExecutors: ['claude-code'],
       warnings: [],
-    }));
+    } as any);
 
     const { handleReviewCommand } = await import('./review.js');
 
@@ -501,7 +542,7 @@ describe('review notifications', () => {
     const { handleReviewCommand } = await import('./review.js');
     const structuredMessages: StructuredMessage[] = [];
 
-    runReviewSpy.mockImplementationOnce(async () => ({
+    runReviewSpy.mockResolvedValueOnce({
       reviewResult: {
         summary: { totalIssues: 0 },
         issues: [],
@@ -511,7 +552,7 @@ describe('review notifications', () => {
       rawOutput: '',
       usedExecutors: ['claude-code'],
       warnings: [],
-    }));
+    } as any);
 
     await runWithLogger(createStructuredCaptureAdapter(structuredMessages), () =>
       handleReviewCommand(planFile, { noSave: true, noAutofix: true }, mockCommand)
@@ -531,14 +572,14 @@ describe('review notifications', () => {
     );
     expect(
       structuredMessages.some((message) => (message as { type?: string }).type === 'review_verdict')
-    ).toBeFalse();
+    ).toBe(false);
   });
 
   test('maps review issues to structured review_result fields with expected coercions', async () => {
     const { handleReviewCommand } = await import('./review.js');
     const structuredMessages: StructuredMessage[] = [];
 
-    runReviewSpy.mockImplementationOnce(async () => ({
+    runReviewSpy.mockResolvedValueOnce({
       reviewResult: {
         summary: { totalIssues: 1 },
         issues: [
@@ -556,7 +597,7 @@ describe('review notifications', () => {
       rawOutput: '',
       usedExecutors: ['claude-code'],
       warnings: [],
-    }));
+    } as any);
 
     await runWithLogger(createStructuredCaptureAdapter(structuredMessages), () =>
       handleReviewCommand(planFile, { noSave: true, noAutofix: true }, mockCommand)
@@ -582,7 +623,7 @@ describe('review notifications', () => {
     ]);
     expect(
       structuredMessages.some((message) => (message as { type?: string }).type === 'review_verdict')
-    ).toBeFalse();
+    ).toBe(false);
   });
 
   test('emits structured input_required before action prompt selection', async () => {
@@ -601,9 +642,9 @@ describe('review notifications', () => {
 
     selectSpy.mockImplementationOnce(async () => {
       orderedEvents.push('select');
-      return 'exit';
+      return 'exit' as any;
     });
-    runReviewSpy.mockImplementationOnce(async () => ({
+    runReviewSpy.mockResolvedValueOnce({
       reviewResult: {
         summary: { totalIssues: 1 },
         issues: [{ severity: 'major', category: 'bug', content: 'Fix me' }],
@@ -613,7 +654,7 @@ describe('review notifications', () => {
       rawOutput: 'issues found',
       usedExecutors: ['claude-code'],
       warnings: [],
-    }));
+    } as any);
 
     await runWithLogger(adapter, () =>
       handleReviewCommand(planFile, { noSave: true }, mockCommand)
@@ -629,7 +670,7 @@ describe('review notifications', () => {
     const structuredMessages: StructuredMessage[] = [];
     const issue = { severity: 'major', category: 'bug', content: 'Autofix this', file: 'a.ts' };
 
-    checkboxSpy.mockImplementation(async () => [0]);
+    checkboxSpy.mockImplementation(async () => [0] as any);
     runReviewSpy.mockImplementation(async () => ({
       reviewResult: {
         summary: { totalIssues: 1 },

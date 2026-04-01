@@ -1,23 +1,33 @@
-import { afterEach, beforeEach, describe, test, expect } from 'bun:test';
+import { afterEach, beforeEach, describe, test, expect, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { slugify, timestamp } from './id_utils.js';
 import { closeDatabaseForTesting } from './db/database.js';
-import { ModuleMocker, stringifyPlanWithFrontmatter } from '../testing.js';
+import { stringifyPlanWithFrontmatter } from '../testing.js';
 import { writePlanFile } from './plans.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
+// Mock node:os module
+vi.mock('node:os', () => ({
+  default: vi.fn(),
+  homedir: vi.fn(),
+  tmpdir: vi.fn(() => '/tmp'),
+}));
+
+// Import mocked module after vi.mock
+import * as os from 'node:os';
 
 // These tests need isolated config directories for shared ID storage
 describe('generateNumericPlanId with shared storage', () => {
   let tempDir: string;
   let fakeConfigDir: string;
   const originalEnv: Partial<Record<string, string>> = {};
+  let mockOs: typeof os;
 
   beforeEach(async () => {
     closeDatabaseForTesting();
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-id-utils-test-'));
+    mockOs = vi.mocked(os);
+    mockOs.tmpdir.mockReturnValue('/tmp');
+    tempDir = await fs.mkdtemp(path.join(mockOs.tmpdir(), 'tim-id-utils-test-'));
     fakeConfigDir = path.join(tempDir, 'config');
     await fs.mkdir(fakeConfigDir, { recursive: true });
 
@@ -27,16 +37,12 @@ describe('generateNumericPlanId with shared storage', () => {
     process.env.XDG_CONFIG_HOME = fakeConfigDir;
     delete process.env.APPDATA;
 
-    const realOs = await import('node:os');
-    await moduleMocker.mock('node:os', () => ({
-      ...realOs,
-      homedir: () => path.join(tempDir, 'home'),
-    }));
+    mockOs.homedir.mockReturnValue(path.join(tempDir, 'home'));
   });
 
   afterEach(async () => {
     closeDatabaseForTesting();
-    moduleMocker.clear();
+    vi.clearAllMocks();
     if (originalEnv.XDG_CONFIG_HOME === undefined) {
       delete process.env.XDG_CONFIG_HOME;
     } else {
@@ -241,7 +247,7 @@ describe('slugify', () => {
     const result = slugify(text, 15);
     expect(result.length).toBeLessThanOrEqual(15);
     expect(result).toBe('this-is-a-test');
-    expect(result).not.toEndWith('-');
+    expect(result).not.toMatch(/-$/);
   });
 });
 

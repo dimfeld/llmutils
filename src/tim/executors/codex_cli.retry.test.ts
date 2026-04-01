@@ -1,14 +1,14 @@
-import { describe, test, expect, mock, beforeEach, afterEach } from 'bun:test';
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 import type { RepositoryState } from '../../common/git.ts';
-import { ModuleMocker } from '../../testing.js';
 
 const originalCodexUseAppServer = process.env.CODEX_USE_APP_SERVER;
 
 beforeEach(() => {
   process.env.CODEX_USE_APP_SERVER = 'false';
+  vi.resetModules();
 });
 
 afterEach(() => {
@@ -17,21 +17,16 @@ afterEach(() => {
   } else {
     process.env.CODEX_USE_APP_SERVER = originalCodexUseAppServer;
   }
+  vi.clearAllMocks();
 });
 
 describe('CodexCliExecutor implementer auto-retry', () => {
-  let moduleMocker: ModuleMocker;
   let logMessages: string[];
   let warnMessages: string[];
 
   beforeEach(() => {
-    moduleMocker = new ModuleMocker(import.meta);
     logMessages = [];
     warnMessages = [];
-  });
-
-  afterEach(() => {
-    moduleMocker.clear();
   });
 
   test('retries when initial git attempt only plans and succeeds once repo changes appear', async () => {
@@ -47,28 +42,33 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       },
     ];
 
-    const captureMock = mock(async () => {
+    const captureMock = vi.fn(async () => {
       const next = repoStates.shift();
       return next ?? repoStates[repoStates.length - 1];
     });
 
-    const logMock = mock((...args: any[]) => {
+    const logMock = vi.fn((...args: any[]) => {
       logMessages.push(args.map((a) => String(a)).join(' '));
     });
-    const warnMock = mock((...args: any[]) => {
+    const warnMock = vi.fn((...args: any[]) => {
       warnMessages.push(args.map((a) => String(a)).join(' '));
     });
 
-    await moduleMocker.mock('../../logging.ts', () => ({
+    vi.doMock('../../logging.ts', () => ({
       log: logMock,
       warn: warnMock,
-      error: mock(() => {}),
+      error: vi.fn(() => {}),
+      sendStructured: vi.fn(),
     }));
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
-      captureRepositoryState: captureMock,
-    }));
+    vi.doMock('../../common/git.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../common/git.js')>();
+      return {
+        ...actual,
+        getGitRoot: vi.fn(async () => tempDir),
+        captureRepositoryState: captureMock,
+      };
+    });
 
     const finals = [
       'Plan: I will handle the changes in a follow-up.',
@@ -77,7 +77,7 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       'Everything looks good.\nVERDICT: ACCEPTABLE',
     ];
 
-    await moduleMocker.mock('./codex_cli/format.ts', () => ({
+    vi.doMock('./codex_cli/format.ts', () => ({
       createCodexStdoutFormatter: () => {
         let final: string | undefined;
         return {
@@ -87,32 +87,34 @@ describe('CodexCliExecutor implementer auto-retry', () => {
           },
           getFinalAgentMessage: () => final,
           getFailedAgentMessage: () => undefined,
+          getThreadId: () => undefined,
+          getSessionId: () => undefined,
         };
       },
     }));
 
-    const spawnMock = mock(async (_args: string[], opts: any) => {
+    const spawnMock = vi.fn(async (_args: string[], opts: any) => {
       if (opts && typeof opts.formatStdout === 'function') {
         opts.formatStdout('ignored');
       }
       return { exitCode: 0, stdout: '', stderr: '' };
     });
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
+    vi.doMock('../../common/process.ts', () => ({
       spawnAndLogOutput: spawnMock,
     }));
 
-    await moduleMocker.mock('../plans.ts', () => ({
-      readPlanFile: mock(async () => ({
+    vi.doMock('../plans.ts', () => ({
+      readPlanFile: vi.fn(async () => ({
         id: 1,
         title: 'Retry Plan',
         tasks: [],
       })),
     }));
 
-    await moduleMocker.mock('./codex_cli/external_review.ts', () => ({
-      loadReviewHierarchy: mock(async () => ({ parentChain: [], completedChildren: [] })),
-      runExternalReviewForCodex: mock(async () => ({
+    vi.doMock('./codex_cli/external_review.ts', () => ({
+      loadReviewHierarchy: vi.fn(async () => ({ parentChain: [], completedChildren: [] })),
+      runExternalReviewForCodex: vi.fn(async () => ({
         verdict: 'ACCEPTABLE',
         formattedOutput: 'Review ok.\n\nVERDICT: ACCEPTABLE',
         fixInstructions: 'No issues',
@@ -122,7 +124,23 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       })),
     }));
 
-    const { CodexCliExecutor } = await import('./codex_cli.ts');
+    vi.doMock('../../../logging/tunnel_client.js', () => ({
+      isTunnelActive: vi.fn(() => false),
+    }));
+
+    vi.doMock('../../../logging/tunnel_server.js', () => ({
+      createTunnelServer: vi.fn(async () => ({ close: vi.fn() })),
+    }));
+
+    vi.doMock('../../../logging/tunnel_prompt_handler.js', () => ({
+      createPromptRequestHandler: vi.fn(() => vi.fn()),
+    }));
+
+    vi.doMock('../../../logging/tunnel_protocol.js', () => ({
+      TIM_OUTPUT_SOCKET: 'TIM_OUTPUT_SOCKET',
+    }));
+
+    const { CodexCliExecutor } = await import('./codex_cli.js');
     const executor = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
 
     await executor.execute('Context', {
@@ -139,17 +157,17 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       warnMessages.some((msg) =>
         msg.includes('produced planning output without repository changes')
       )
-    ).toBeTrue();
+    ).toBe(true);
     expect(
       logMessages.some((msg) =>
         msg.includes('Retrying implementer with more explicit instructions (attempt 2/4)')
       )
-    ).toBeTrue();
+    ).toBe(true);
     expect(
       logMessages.some((msg) =>
         msg.includes('produced repository changes after 1 planning-only attempt')
       )
-    ).toBeTrue();
+    ).toBe(true);
 
     await fs.rm(tempDir, { recursive: true, force: true });
   });
@@ -164,28 +182,33 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       { commitHash: 'jj@1', hasChanges: false, statusOutput: '', diffHash: undefined },
     ];
 
-    const captureMock = mock(async () => {
+    const captureMock = vi.fn(async () => {
       const next = repoStates.shift();
       return next ?? repoStates[repoStates.length - 1];
     });
 
-    const logMock = mock((...args: any[]) => {
+    const logMock = vi.fn((...args: any[]) => {
       logMessages.push(args.map((a) => String(a)).join(' '));
     });
-    const warnMock = mock((...args: any[]) => {
+    const warnMock = vi.fn((...args: any[]) => {
       warnMessages.push(args.map((a) => String(a)).join(' '));
     });
 
-    await moduleMocker.mock('../../logging.ts', () => ({
+    vi.doMock('../../logging.ts', () => ({
       log: logMock,
       warn: warnMock,
-      error: mock(() => {}),
+      error: vi.fn(() => {}),
+      sendStructured: vi.fn(),
     }));
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
-      captureRepositoryState: captureMock,
-    }));
+    vi.doMock('../../common/git.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../common/git.js')>();
+      return {
+        ...actual,
+        getGitRoot: vi.fn(async () => tempDir),
+        captureRepositoryState: captureMock,
+      };
+    });
 
     const finals = [
       '- Plan: make edits later',
@@ -196,7 +219,7 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       'Review done.\nVERDICT: ACCEPTABLE',
     ];
 
-    await moduleMocker.mock('./codex_cli/format.ts', () => ({
+    vi.doMock('./codex_cli/format.ts', () => ({
       createCodexStdoutFormatter: () => {
         let final: string | undefined;
         return {
@@ -206,32 +229,34 @@ describe('CodexCliExecutor implementer auto-retry', () => {
           },
           getFinalAgentMessage: () => final,
           getFailedAgentMessage: () => undefined,
+          getThreadId: () => undefined,
+          getSessionId: () => undefined,
         };
       },
     }));
 
-    const spawnMock = mock(async (_args: string[], opts: any) => {
+    const spawnMock = vi.fn(async (_args: string[], opts: any) => {
       if (opts && typeof opts.formatStdout === 'function') {
         opts.formatStdout('ignored');
       }
       return { exitCode: 0, stdout: '', stderr: '' };
     });
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
+    vi.doMock('../../common/process.ts', () => ({
       spawnAndLogOutput: spawnMock,
     }));
 
-    await moduleMocker.mock('../plans.ts', () => ({
-      readPlanFile: mock(async () => ({
+    vi.doMock('../plans.ts', () => ({
+      readPlanFile: vi.fn(async () => ({
         id: 2,
         title: 'JJ Plan',
         tasks: [],
       })),
     }));
 
-    await moduleMocker.mock('./codex_cli/external_review.ts', () => ({
-      loadReviewHierarchy: mock(async () => ({ parentChain: [], completedChildren: [] })),
-      runExternalReviewForCodex: mock(async () => ({
+    vi.doMock('./codex_cli/external_review.ts', () => ({
+      loadReviewHierarchy: vi.fn(async () => ({ parentChain: [], completedChildren: [] })),
+      runExternalReviewForCodex: vi.fn(async () => ({
         verdict: 'ACCEPTABLE',
         formattedOutput: 'Review ok.\n\nVERDICT: ACCEPTABLE',
         fixInstructions: 'No issues',
@@ -241,7 +266,23 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       })),
     }));
 
-    const { CodexCliExecutor } = await import('./codex_cli.ts');
+    vi.doMock('../../../logging/tunnel_client.js', () => ({
+      isTunnelActive: vi.fn(() => false),
+    }));
+
+    vi.doMock('../../../logging/tunnel_server.js', () => ({
+      createTunnelServer: vi.fn(async () => ({ close: vi.fn() })),
+    }));
+
+    vi.doMock('../../../logging/tunnel_prompt_handler.js', () => ({
+      createPromptRequestHandler: vi.fn(() => vi.fn()),
+    }));
+
+    vi.doMock('../../../logging/tunnel_protocol.js', () => ({
+      TIM_OUTPUT_SOCKET: 'TIM_OUTPUT_SOCKET',
+    }));
+
+    const { CodexCliExecutor } = await import('./codex_cli.js');
     const executor = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
 
     await executor.execute('Context', {
@@ -262,7 +303,7 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       warnMessages.some((msg) =>
         msg.includes('Implementer planned without executing changes after exhausting 4 attempts')
       )
-    ).toBeTrue();
+    ).toBe(true);
     expect(
       logMessages.filter((msg) =>
         msg.includes('Retrying implementer with more explicit instructions')
@@ -279,28 +320,33 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       { commitHash: 'git-sha3', hasChanges: false, statusCheckFailed: true },
     ];
 
-    const captureMock = mock(async () => {
+    const captureMock = vi.fn(async () => {
       const next = repoStates.shift();
       return next ?? repoStates[repoStates.length - 1];
     });
 
-    const logMock = mock((...args: any[]) => {
+    const logMock = vi.fn((...args: any[]) => {
       logMessages.push(args.map((a) => String(a)).join(' '));
     });
-    const warnMock = mock((...args: any[]) => {
+    const warnMock = vi.fn((...args: any[]) => {
       warnMessages.push(args.map((a) => String(a)).join(' '));
     });
 
-    await moduleMocker.mock('../../logging.ts', () => ({
+    vi.doMock('../../logging.ts', () => ({
       log: logMock,
       warn: warnMock,
-      error: mock(() => {}),
+      error: vi.fn(() => {}),
+      sendStructured: vi.fn(),
     }));
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
-      captureRepositoryState: captureMock,
-    }));
+    vi.doMock('../../common/git.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../common/git.js')>();
+      return {
+        ...actual,
+        getGitRoot: vi.fn(async () => tempDir),
+        captureRepositoryState: captureMock,
+      };
+    });
 
     const finals = [
       'Plan: gathering context before coding',
@@ -308,7 +354,7 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       'Review done.\nVERDICT: ACCEPTABLE',
     ];
 
-    await moduleMocker.mock('./codex_cli/format.ts', () => ({
+    vi.doMock('./codex_cli/format.ts', () => ({
       createCodexStdoutFormatter: () => {
         let final: string | undefined;
         return {
@@ -318,32 +364,34 @@ describe('CodexCliExecutor implementer auto-retry', () => {
           },
           getFinalAgentMessage: () => final,
           getFailedAgentMessage: () => undefined,
+          getThreadId: () => undefined,
+          getSessionId: () => undefined,
         };
       },
     }));
 
-    const spawnMock = mock(async (_args: string[], opts: any) => {
+    const spawnMock = vi.fn(async (_args: string[], opts: any) => {
       if (opts && typeof opts.formatStdout === 'function') {
         opts.formatStdout('ignored');
       }
       return { exitCode: 0, stdout: '', stderr: '' };
     });
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
+    vi.doMock('../../common/process.ts', () => ({
       spawnAndLogOutput: spawnMock,
     }));
 
-    await moduleMocker.mock('../plans.ts', () => ({
-      readPlanFile: mock(async () => ({
+    vi.doMock('../plans.ts', () => ({
+      readPlanFile: vi.fn(async () => ({
         id: 4,
         title: 'Unavailable Repo State',
         tasks: [],
       })),
     }));
 
-    await moduleMocker.mock('./codex_cli/external_review.ts', () => ({
-      loadReviewHierarchy: mock(async () => ({ parentChain: [], completedChildren: [] })),
-      runExternalReviewForCodex: mock(async () => ({
+    vi.doMock('./codex_cli/external_review.ts', () => ({
+      loadReviewHierarchy: vi.fn(async () => ({ parentChain: [], completedChildren: [] })),
+      runExternalReviewForCodex: vi.fn(async () => ({
         verdict: 'ACCEPTABLE',
         formattedOutput: 'Review ok.\n\nVERDICT: ACCEPTABLE',
         fixInstructions: 'No issues',
@@ -353,7 +401,23 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       })),
     }));
 
-    const { CodexCliExecutor } = await import('./codex_cli.ts');
+    vi.doMock('../../../logging/tunnel_client.js', () => ({
+      isTunnelActive: vi.fn(() => false),
+    }));
+
+    vi.doMock('../../../logging/tunnel_server.js', () => ({
+      createTunnelServer: vi.fn(async () => ({ close: vi.fn() })),
+    }));
+
+    vi.doMock('../../../logging/tunnel_prompt_handler.js', () => ({
+      createPromptRequestHandler: vi.fn(() => vi.fn()),
+    }));
+
+    vi.doMock('../../../logging/tunnel_protocol.js', () => ({
+      TIM_OUTPUT_SOCKET: 'TIM_OUTPUT_SOCKET',
+    }));
+
+    const { CodexCliExecutor } = await import('./codex_cli.js');
     const executor = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
 
     await executor.execute('Context', {
@@ -372,17 +436,17 @@ describe('CodexCliExecutor implementer auto-retry', () => {
           msg.includes('Could not verify repository state after implementer attempt 1/4') &&
           msg.includes('skipping planning-only detection for this attempt')
       )
-    ).toBeTrue();
+    ).toBe(true);
     expect(
       warnMessages.some((msg) =>
         msg.includes('produced planning output without repository changes')
       )
-    ).toBeFalse();
+    ).toBe(false);
     expect(
       logMessages.some((msg) =>
         msg.includes('Retrying implementer with more explicit instructions')
       )
-    ).toBeFalse();
+    ).toBe(false);
 
     await fs.rm(tempDir, { recursive: true, force: true });
   });
@@ -394,28 +458,33 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       { commitHash: 'git-sha11', hasChanges: false, statusOutput: '', diffHash: undefined },
     ];
 
-    const captureMock = mock(async () => {
+    const captureMock = vi.fn(async () => {
       const next = repoStates.shift();
       return next ?? repoStates[repoStates.length - 1];
     });
 
-    const logMock = mock((...args: any[]) => {
+    const logMock = vi.fn((...args: any[]) => {
       logMessages.push(args.map((a) => String(a)).join(' '));
     });
-    const warnMock = mock((...args: any[]) => {
+    const warnMock = vi.fn((...args: any[]) => {
       warnMessages.push(args.map((a) => String(a)).join(' '));
     });
 
-    await moduleMocker.mock('../../logging.ts', () => ({
+    vi.doMock('../../logging.ts', () => ({
       log: logMock,
       warn: warnMock,
-      error: mock(() => {}),
+      error: vi.fn(() => {}),
+      sendStructured: vi.fn(),
     }));
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
-      captureRepositoryState: captureMock,
-    }));
+    vi.doMock('../../common/git.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../common/git.js')>();
+      return {
+        ...actual,
+        getGitRoot: vi.fn(async () => tempDir),
+        captureRepositoryState: captureMock,
+      };
+    });
 
     const finals = [
       'Plan: I will apply these changes and have already committed them.',
@@ -423,7 +492,7 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       'Review looks good.\nVERDICT: ACCEPTABLE',
     ];
 
-    await moduleMocker.mock('./codex_cli/format.ts', () => ({
+    vi.doMock('./codex_cli/format.ts', () => ({
       createCodexStdoutFormatter: () => {
         let final: string | undefined;
         return {
@@ -433,32 +502,34 @@ describe('CodexCliExecutor implementer auto-retry', () => {
           },
           getFinalAgentMessage: () => final,
           getFailedAgentMessage: () => undefined,
+          getThreadId: () => undefined,
+          getSessionId: () => undefined,
         };
       },
     }));
 
-    const spawnMock = mock(async (_args: string[], opts: any) => {
+    const spawnMock = vi.fn(async (_args: string[], opts: any) => {
       if (opts && typeof opts.formatStdout === 'function') {
         opts.formatStdout('ignored');
       }
       return { exitCode: 0, stdout: '', stderr: '' };
     });
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
+    vi.doMock('../../common/process.ts', () => ({
       spawnAndLogOutput: spawnMock,
     }));
 
-    await moduleMocker.mock('../plans.ts', () => ({
-      readPlanFile: mock(async () => ({
+    vi.doMock('../plans.ts', () => ({
+      readPlanFile: vi.fn(async () => ({
         id: 5,
         title: 'Direct Commit Plan',
         tasks: [],
       })),
     }));
 
-    await moduleMocker.mock('./codex_cli/external_review.ts', () => ({
-      loadReviewHierarchy: mock(async () => ({ parentChain: [], completedChildren: [] })),
-      runExternalReviewForCodex: mock(async () => ({
+    vi.doMock('./codex_cli/external_review.ts', () => ({
+      loadReviewHierarchy: vi.fn(async () => ({ parentChain: [], completedChildren: [] })),
+      runExternalReviewForCodex: vi.fn(async () => ({
         verdict: 'ACCEPTABLE',
         formattedOutput: 'Review ok.\n\nVERDICT: ACCEPTABLE',
         fixInstructions: 'No issues',
@@ -468,7 +539,23 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       })),
     }));
 
-    const { CodexCliExecutor } = await import('./codex_cli.ts');
+    vi.doMock('../../../logging/tunnel_client.js', () => ({
+      isTunnelActive: vi.fn(() => false),
+    }));
+
+    vi.doMock('../../../logging/tunnel_server.js', () => ({
+      createTunnelServer: vi.fn(async () => ({ close: vi.fn() })),
+    }));
+
+    vi.doMock('../../../logging/tunnel_prompt_handler.js', () => ({
+      createPromptRequestHandler: vi.fn(() => vi.fn()),
+    }));
+
+    vi.doMock('../../../logging/tunnel_protocol.js', () => ({
+      TIM_OUTPUT_SOCKET: 'TIM_OUTPUT_SOCKET',
+    }));
+
+    const { CodexCliExecutor } = await import('./codex_cli.js');
     const executor = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
 
     await executor.execute('Context', {
@@ -485,12 +572,12 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       warnMessages.some((msg) =>
         msg.includes('produced planning output without repository changes')
       )
-    ).toBeFalse();
+    ).toBe(false);
     expect(
       logMessages.some((msg) =>
         msg.includes('Retrying implementer with more explicit instructions')
       )
-    ).toBeFalse();
+    ).toBe(false);
 
     await fs.rm(tempDir, { recursive: true, force: true });
   });
@@ -507,28 +594,33 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       },
     ];
 
-    const captureMock = mock(async () => {
+    const captureMock = vi.fn(async () => {
       const next = repoStates.shift();
       return next ?? repoStates[repoStates.length - 1];
     });
 
-    const logMock = mock((...args: any[]) => {
+    const logMock = vi.fn((...args: any[]) => {
       logMessages.push(args.map((a) => String(a)).join(' '));
     });
-    const warnMock = mock((...args: any[]) => {
+    const warnMock = vi.fn((...args: any[]) => {
       warnMessages.push(args.map((a) => String(a)).join(' '));
     });
 
-    await moduleMocker.mock('../../logging.ts', () => ({
+    vi.doMock('../../logging.ts', () => ({
       log: logMock,
       warn: warnMock,
-      error: mock(() => {}),
+      error: vi.fn(() => {}),
+      sendStructured: vi.fn(),
     }));
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
-      captureRepositoryState: captureMock,
-    }));
+    vi.doMock('../../common/git.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../common/git.js')>();
+      return {
+        ...actual,
+        getGitRoot: vi.fn(async () => tempDir),
+        captureRepositoryState: captureMock,
+      };
+    });
 
     const finals = [
       'Plan: coordinate with external changes later.',
@@ -536,7 +628,7 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       'Review done.\nVERDICT: ACCEPTABLE',
     ];
 
-    await moduleMocker.mock('./codex_cli/format.ts', () => ({
+    vi.doMock('./codex_cli/format.ts', () => ({
       createCodexStdoutFormatter: () => {
         let final: string | undefined;
         return {
@@ -546,32 +638,34 @@ describe('CodexCliExecutor implementer auto-retry', () => {
           },
           getFinalAgentMessage: () => final,
           getFailedAgentMessage: () => undefined,
+          getThreadId: () => undefined,
+          getSessionId: () => undefined,
         };
       },
     }));
 
-    const spawnMock = mock(async (_args: string[], opts: any) => {
+    const spawnMock = vi.fn(async (_args: string[], opts: any) => {
       if (opts && typeof opts.formatStdout === 'function') {
         opts.formatStdout('ignored');
       }
       return { exitCode: 0, stdout: '', stderr: '' };
     });
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
+    vi.doMock('../../common/process.ts', () => ({
       spawnAndLogOutput: spawnMock,
     }));
 
-    await moduleMocker.mock('../plans.ts', () => ({
-      readPlanFile: mock(async () => ({
+    vi.doMock('../plans.ts', () => ({
+      readPlanFile: vi.fn(async () => ({
         id: 6,
         title: 'Concurrent Changes Plan',
         tasks: [],
       })),
     }));
 
-    await moduleMocker.mock('./codex_cli/external_review.ts', () => ({
-      loadReviewHierarchy: mock(async () => ({ parentChain: [], completedChildren: [] })),
-      runExternalReviewForCodex: mock(async () => ({
+    vi.doMock('./codex_cli/external_review.ts', () => ({
+      loadReviewHierarchy: vi.fn(async () => ({ parentChain: [], completedChildren: [] })),
+      runExternalReviewForCodex: vi.fn(async () => ({
         verdict: 'ACCEPTABLE',
         formattedOutput: 'Review ok.\n\nVERDICT: ACCEPTABLE',
         fixInstructions: 'No issues',
@@ -581,7 +675,23 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       })),
     }));
 
-    const { CodexCliExecutor } = await import('./codex_cli.ts');
+    vi.doMock('../../../logging/tunnel_client.js', () => ({
+      isTunnelActive: vi.fn(() => false),
+    }));
+
+    vi.doMock('../../../logging/tunnel_server.js', () => ({
+      createTunnelServer: vi.fn(async () => ({ close: vi.fn() })),
+    }));
+
+    vi.doMock('../../../logging/tunnel_prompt_handler.js', () => ({
+      createPromptRequestHandler: vi.fn(() => vi.fn()),
+    }));
+
+    vi.doMock('../../../logging/tunnel_protocol.js', () => ({
+      TIM_OUTPUT_SOCKET: 'TIM_OUTPUT_SOCKET',
+    }));
+
+    const { CodexCliExecutor } = await import('./codex_cli.js');
     const executor = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
 
     await executor.execute('Context', {
@@ -598,12 +708,12 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       warnMessages.some((msg) =>
         msg.includes('produced planning output without repository changes')
       )
-    ).toBeFalse();
+    ).toBe(false);
     expect(
       logMessages.some((msg) =>
         msg.includes('Retrying implementer with more explicit instructions')
       )
-    ).toBeFalse();
+    ).toBe(false);
 
     await fs.rm(tempDir, { recursive: true, force: true });
   });
@@ -615,28 +725,33 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       { commitHash: 'git-sha2', hasChanges: false, statusOutput: '', diffHash: undefined },
     ];
 
-    const captureMock = mock(async () => {
+    const captureMock = vi.fn(async () => {
       const next = repoStates.shift();
       return next ?? repoStates[repoStates.length - 1];
     });
 
-    const logMock = mock((...args: any[]) => {
+    const logMock = vi.fn((...args: any[]) => {
       logMessages.push(args.map((a) => String(a)).join(' '));
     });
-    const warnMock = mock((...args: any[]) => {
+    const warnMock = vi.fn((...args: any[]) => {
       warnMessages.push(args.map((a) => String(a)).join(' '));
     });
 
-    await moduleMocker.mock('../../logging.ts', () => ({
+    vi.doMock('../../logging.ts', () => ({
       log: logMock,
       warn: warnMock,
-      error: mock(() => {}),
+      error: vi.fn(() => {}),
+      sendStructured: vi.fn(),
     }));
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
-      captureRepositoryState: captureMock,
-    }));
+    vi.doMock('../../common/git.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../common/git.js')>();
+      return {
+        ...actual,
+        getGitRoot: vi.fn(async () => tempDir),
+        captureRepositoryState: captureMock,
+      };
+    });
 
     const finals = [
       'Implementation done; see diff for details.',
@@ -644,7 +759,7 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       'Looks acceptable.\nVERDICT: ACCEPTABLE',
     ];
 
-    await moduleMocker.mock('./codex_cli/format.ts', () => ({
+    vi.doMock('./codex_cli/format.ts', () => ({
       createCodexStdoutFormatter: () => {
         let final: string | undefined;
         return {
@@ -654,32 +769,34 @@ describe('CodexCliExecutor implementer auto-retry', () => {
           },
           getFinalAgentMessage: () => final,
           getFailedAgentMessage: () => undefined,
+          getThreadId: () => undefined,
+          getSessionId: () => undefined,
         };
       },
     }));
 
-    const spawnMock = mock(async (_args: string[], opts: any) => {
+    const spawnMock = vi.fn(async (_args: string[], opts: any) => {
       if (opts && typeof opts.formatStdout === 'function') {
         opts.formatStdout('ignored');
       }
       return { exitCode: 0, stdout: '', stderr: '' };
     });
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
+    vi.doMock('../../common/process.ts', () => ({
       spawnAndLogOutput: spawnMock,
     }));
 
-    await moduleMocker.mock('../plans.ts', () => ({
-      readPlanFile: mock(async () => ({
+    vi.doMock('../plans.ts', () => ({
+      readPlanFile: vi.fn(async () => ({
         id: 3,
         title: 'No Plan Text',
         tasks: [],
       })),
     }));
 
-    await moduleMocker.mock('./codex_cli/external_review.ts', () => ({
-      loadReviewHierarchy: mock(async () => ({ parentChain: [], completedChildren: [] })),
-      runExternalReviewForCodex: mock(async () => ({
+    vi.doMock('./codex_cli/external_review.ts', () => ({
+      loadReviewHierarchy: vi.fn(async () => ({ parentChain: [], completedChildren: [] })),
+      runExternalReviewForCodex: vi.fn(async () => ({
         verdict: 'ACCEPTABLE',
         formattedOutput: 'Review ok.\n\nVERDICT: ACCEPTABLE',
         fixInstructions: 'No issues',
@@ -689,7 +806,23 @@ describe('CodexCliExecutor implementer auto-retry', () => {
       })),
     }));
 
-    const { CodexCliExecutor } = await import('./codex_cli.ts');
+    vi.doMock('../../../logging/tunnel_client.js', () => ({
+      isTunnelActive: vi.fn(() => false),
+    }));
+
+    vi.doMock('../../../logging/tunnel_server.js', () => ({
+      createTunnelServer: vi.fn(async () => ({ close: vi.fn() })),
+    }));
+
+    vi.doMock('../../../logging/tunnel_prompt_handler.js', () => ({
+      createPromptRequestHandler: vi.fn(() => vi.fn()),
+    }));
+
+    vi.doMock('../../../logging/tunnel_protocol.js', () => ({
+      TIM_OUTPUT_SOCKET: 'TIM_OUTPUT_SOCKET',
+    }));
+
+    const { CodexCliExecutor } = await import('./codex_cli.js');
     const executor = new CodexCliExecutor({}, { baseDir: tempDir }, {} as any);
 
     await executor.execute('Context', {
@@ -702,12 +835,12 @@ describe('CodexCliExecutor implementer auto-retry', () => {
 
     expect(spawnMock).toHaveBeenCalledTimes(2);
     expect(captureMock).toHaveBeenCalledTimes(2);
-    expect(warnMessages.some((msg) => msg.includes('produced planning output'))).toBeFalse();
+    expect(warnMessages.some((msg) => msg.includes('produced planning output'))).toBe(false);
     expect(
       logMessages.some((msg) =>
         msg.includes('Retrying implementer with more explicit instructions')
       )
-    ).toBeFalse();
+    ).toBe(false);
 
     await fs.rm(tempDir, { recursive: true, force: true });
   });

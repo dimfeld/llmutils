@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, vi } from 'vitest';
 import type { FileSink } from 'bun';
 import type { SpawnAndLogOutputResult, StreamingProcess } from '../../../common/process.ts';
 import {

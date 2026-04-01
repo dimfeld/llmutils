@@ -1,14 +1,13 @@
-import { describe, test, expect, afterEach, beforeEach, beforeAll, afterAll, mock } from 'bun:test';
+import { describe, test, expect, afterEach, beforeEach, vi } from 'vitest';
 import * as net from 'net';
 import * as path from 'path';
-import { ModuleMocker } from '../../../testing.js';
 
 const selectResponses: Array<string | Error> = [];
 const checkboxResponses: Array<string[] | Error> = [];
 const inputResponses: Array<string | Error> = [];
 const prefixPromptResponses: Array<{ exact: boolean; command: string } | Error> = [];
 
-const mockPromptSelect = mock(async () => {
+const mockPromptSelect = vi.fn(async () => {
   const next = selectResponses.shift();
   if (next instanceof Error) {
     throw next;
@@ -19,7 +18,7 @@ const mockPromptSelect = mock(async () => {
   return next;
 });
 
-const mockPromptCheckbox = mock(async () => {
+const mockPromptCheckbox = vi.fn(async () => {
   const next = checkboxResponses.shift();
   if (next instanceof Error) {
     throw next;
@@ -30,7 +29,7 @@ const mockPromptCheckbox = mock(async () => {
   return next;
 });
 
-const mockPromptInput = mock(async () => {
+const mockPromptInput = vi.fn(async () => {
   const next = inputResponses.shift();
   if (next instanceof Error) {
     throw next;
@@ -41,7 +40,7 @@ const mockPromptInput = mock(async () => {
   return next;
 });
 
-const mockPromptPrefixSelect = mock(async () => {
+const mockPromptPrefixSelect = vi.fn(async () => {
   const next = prefixPromptResponses.shift();
   if (next instanceof Error) {
     throw next;
@@ -52,26 +51,17 @@ const mockPromptPrefixSelect = mock(async () => {
   return next;
 });
 
-const moduleMocker = new ModuleMocker(import.meta);
-let setupPermissionsMcp: typeof import('./permissions_mcp_setup.js').setupPermissionsMcp;
+vi.mock('../../../common/input.js', () => ({
+  promptSelect: mockPromptSelect,
+  promptCheckbox: mockPromptCheckbox,
+  promptInput: mockPromptInput,
+  promptPrefixSelect: mockPromptPrefixSelect,
+  isPromptTimeoutError: (err: unknown) =>
+    err instanceof Error &&
+    (err.name === 'AbortPromptError' || err.message.startsWith('Prompt request timed out')),
+}));
 
-beforeAll(async () => {
-  await moduleMocker.mock('../../../common/input.js', () => ({
-    promptSelect: mockPromptSelect,
-    promptCheckbox: mockPromptCheckbox,
-    promptInput: mockPromptInput,
-    promptPrefixSelect: mockPromptPrefixSelect,
-    isPromptTimeoutError: (err: unknown) =>
-      err instanceof Error &&
-      (err.name === 'AbortPromptError' || err.message.startsWith('Prompt request timed out')),
-  }));
-
-  ({ setupPermissionsMcp } = await import('./permissions_mcp_setup.js'));
-});
-
-afterAll(() => {
-  moduleMocker.clear();
-});
+const { setupPermissionsMcp } = await import('./permissions_mcp_setup.js');
 
 describe('permissions socket server line buffering', () => {
   let cleanups: (() => Promise<void>)[] = [];

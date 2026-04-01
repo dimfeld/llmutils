@@ -15,7 +15,7 @@ function printUsage(): void {
 
 Examples:
   bun scripts/run-with-tunnel.ts -- tim chat
-  bun scripts/run-with-tunnel.ts -- bun test src/logging/tunnel_server.test.ts`);
+  bun scripts/run-with-tunnel.ts -- bun run test src/logging/tunnel_server.test.ts`);
 }
 
 function parseCommandArgs(argv: string[]): string[] {

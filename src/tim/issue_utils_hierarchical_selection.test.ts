@@ -1,10 +1,29 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { selectHierarchicalIssueComments } from './issue_utils.js';
-import { ModuleMocker } from '../testing.js';
 import type { IssueWithComments, IssueData } from '../common/issue_tracker/types.js';
-import { checkbox } from '@inquirer/prompts';
 
-const moduleMocker = new ModuleMocker(import.meta);
+// Mock the modules before importing
+vi.mock('console', () => ({
+  log: vi.fn(() => {}),
+}));
+
+vi.mock('../common/formatting.js', () => ({
+  singleLineWithPrefix: vi.fn((prefix: string, text: string) => prefix + text),
+  limitLines: vi.fn((text: string) => text),
+}));
+
+vi.mock('@inquirer/prompts', () => ({
+  checkbox: vi.fn(),
+}));
+
+// Import the mocked modules
+import { checkbox } from '@inquirer/prompts';
+import { singleLineWithPrefix, limitLines } from '../common/formatting.js';
+
+// Get the mocked functions
+const mockCheckbox = vi.mocked(checkbox);
+const mockSingleLineWithPrefix = vi.mocked(singleLineWithPrefix);
+const mockLimitLines = vi.mocked(limitLines);
 
 const mockParentIssue: IssueData = {
   id: 'TEAM-123',
@@ -61,16 +80,9 @@ const mockHierarchicalIssue: IssueWithComments = {
 };
 
 describe('selectHierarchicalIssueComments', () => {
-  beforeEach(async () => {
-    // Mock console.log to avoid test output noise
-    await moduleMocker.mock('console', () => ({
-      log: mock(() => {}),
-    }));
-
-    await moduleMocker.mock('../common/formatting.js', () => ({
-      singleLineWithPrefix: mock((prefix: string, text: string) => prefix + text),
-      limitLines: mock((text: string) => text),
-    }));
+  beforeEach(() => {
+    // Reset all mocks before each test
+    vi.clearAllMocks();
 
     // Mock process.stdout.rows
     Object.defineProperty(process.stdout, 'rows', {
@@ -79,33 +91,31 @@ describe('selectHierarchicalIssueComments', () => {
     });
   });
 
-  afterEach(async () => {
-    return moduleMocker.clear();
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   test('should allow user to select subset of subissues', async () => {
     // Mock checkbox to select only the first subissue, then select parent content
     let checkboxCallCount = 0;
-    await moduleMocker.mock('@inquirer/prompts', () => ({
-      checkbox: mock(() => {
-        checkboxCallCount++;
-        if (checkboxCallCount === 1) {
-          // First call: subissue selection (select only first child)
-          return Promise.resolve([0]); // Select only first child
-        } else {
-          // Second call: content selection (select parent body)
-          return Promise.resolve([1]); // Select parent body (index 1)
-        }
-      }),
-    }));
+    mockCheckbox.mockImplementation(() => {
+      checkboxCallCount++;
+      if (checkboxCallCount === 1) {
+        // First call: subissue selection (select only first child)
+        return Promise.resolve([0]); // Select only first child
+      } else {
+        // Second call: content selection (select parent body)
+        return Promise.resolve([1]); // Select parent body (index 1)
+      }
+    });
 
     const result = await selectHierarchicalIssueComments(mockHierarchicalIssue, true);
 
     // Should have been called twice
-    expect(checkbox).toHaveBeenCalledTimes(2);
+    expect(mockCheckbox).toHaveBeenCalledTimes(2);
 
     // First call should be for subissue selection
-    expect((checkbox as any).mock.calls[0][0]).toMatchObject({
+    expect(mockCheckbox.mock.calls[0][0]).toMatchObject({
       message: 'Select subissues to import for TEAM-123 - Parent Issue:',
       choices: [
         { name: 'TEAM-124: Child Issue 1', value: 0, checked: true },
@@ -122,23 +132,21 @@ describe('selectHierarchicalIssueComments', () => {
   test('should handle case where no subissues are selected', async () => {
     // Mock checkbox to select no subissues, then select parent content
     let checkboxCallCount = 0;
-    await moduleMocker.mock('@inquirer/prompts', () => ({
-      checkbox: mock(() => {
-        checkboxCallCount++;
-        if (checkboxCallCount === 1) {
-          // First call: subissue selection (select none)
-          return Promise.resolve([]);
-        } else {
-          // Second call: content selection (select parent body)
-          return Promise.resolve([1]); // Select parent body
-        }
-      }),
-    }));
+    mockCheckbox.mockImplementation(() => {
+      checkboxCallCount++;
+      if (checkboxCallCount === 1) {
+        // First call: subissue selection (select none)
+        return Promise.resolve([]);
+      } else {
+        // Second call: content selection (select parent body)
+        return Promise.resolve([1]); // Select parent body
+      }
+    });
 
     const result = await selectHierarchicalIssueComments(mockHierarchicalIssue, true);
 
     // Should still call content selection for parent
-    expect(checkbox).toHaveBeenCalledTimes(2);
+    expect(mockCheckbox).toHaveBeenCalledTimes(2);
 
     // Result should have no children content
     expect(result.childrenContent).toHaveLength(0);
@@ -152,14 +160,12 @@ describe('selectHierarchicalIssueComments', () => {
     };
 
     // Mock checkbox for content selection only
-    await moduleMocker.mock('@inquirer/prompts', () => ({
-      checkbox: mock(() => Promise.resolve([1])), // Select parent body
-    }));
+    mockCheckbox.mockImplementation(() => Promise.resolve([1])); // Select parent body
 
     const result = await selectHierarchicalIssueComments(issueWithNoChildren, true);
 
     // Should only be called once (for content selection)
-    expect(checkbox).toHaveBeenCalledTimes(1);
+    expect(mockCheckbox).toHaveBeenCalledTimes(1);
 
     // Result should have parent content but no children
     expect(result.parentContent).toHaveLength(1);
@@ -169,23 +175,21 @@ describe('selectHierarchicalIssueComments', () => {
   test('should update content selection message based on selected children', async () => {
     // Mock checkbox to select both subissues, then select content
     let checkboxCallCount = 0;
-    await moduleMocker.mock('@inquirer/prompts', () => ({
-      checkbox: mock(() => {
-        checkboxCallCount++;
-        if (checkboxCallCount === 1) {
-          // First call: select both subissues
-          return Promise.resolve([0, 1]);
-        } else {
-          // Second call: select some content
-          return Promise.resolve([1]);
-        }
-      }),
-    }));
+    mockCheckbox.mockImplementation(() => {
+      checkboxCallCount++;
+      if (checkboxCallCount === 1) {
+        // First call: select both subissues
+        return Promise.resolve([0, 1]);
+      } else {
+        // Second call: select some content
+        return Promise.resolve([1]);
+      }
+    });
 
     await selectHierarchicalIssueComments(mockHierarchicalIssue, true);
 
     // Check that the second call (content selection) has the correct message
-    expect((checkbox as any).mock.calls[1][0].message).toBe(
+    expect(mockCheckbox.mock.calls[1][0].message).toBe(
       'Select content from TEAM-123 - Parent Issue and 2 selected child issue(s)'
     );
   });

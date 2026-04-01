@@ -1,8 +1,8 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { ModuleMocker, clearAllTimCaches } from '../../testing.js';
+import { clearAllTimCaches } from '../../testing.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { getPlansByProject } from '../db/plan.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
@@ -11,9 +11,21 @@ import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { materializePlan } from '../plan_materialize.js';
 import { readPlanFile, writePlanFile, writePlanToDb } from '../plans.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
-const mockLog = mock(() => {});
-const mockWarn = mock(() => {});
+vi.mock('../../logging.js', () => ({
+  log: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debugLog: vi.fn(),
+  writeStdout: vi.fn(),
+  writeStderr: vi.fn(),
+  sendStructured: vi.fn(),
+}));
+
+import { handleSyncCommand } from './sync.js';
+import { log as mockLogFn, warn as mockWarnFn } from '../../logging.js';
+
+const mockLog = vi.mocked(mockLogFn);
+const mockWarn = vi.mocked(mockWarnFn);
 
 async function initializeGitRepository(repoDir: string): Promise<void> {
   await Bun.$`git init`.cwd(repoDir).quiet();
@@ -43,17 +55,7 @@ describe('tim sync command', () => {
     await initializeGitRepository(repoDir);
     process.chdir(repoDir);
 
-    mockLog.mockClear();
-    mockWarn.mockClear();
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: mockLog,
-      warn: mockWarn,
-      error: mock(() => {}),
-      debugLog: mock(() => {}),
-      writeStdout: mock(() => {}),
-      writeStderr: mock(() => {}),
-      sendStructured: mock(() => {}),
-    }));
+    vi.clearAllMocks();
   });
 
   afterEach(async () => {
@@ -61,7 +63,7 @@ describe('tim sync command', () => {
     clearAllTimCaches();
     closeDatabaseForTesting();
     clearPlanSyncContext();
-    moduleMocker.clear();
+    vi.clearAllMocks();
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
@@ -91,7 +93,6 @@ describe('tim sync command', () => {
       { skipSync: true }
     );
 
-    const { handleSyncCommand } = await import('./sync.js');
     await handleSyncCommand(undefined, {}, makeCommand() as any);
 
     const repository = await getRepositoryIdentity({ cwd: repoDir });
@@ -106,8 +107,6 @@ describe('tim sync command', () => {
   });
 
   test('reports zero synced plans when the materialized directory does not exist', async () => {
-    const { handleSyncCommand } = await import('./sync.js');
-
     await handleSyncCommand(undefined, {}, makeCommand() as any);
 
     expect(mockLog).toHaveBeenCalledWith('Synced 0 materialized plans.');
@@ -167,7 +166,6 @@ describe('tim sync command', () => {
     await fs.writeFile(path.join(materializedDir, 'draft.plan.md'), 'ignore me too', 'utf8');
     await fs.writeFile(path.join(materializedDir, '999.reference.md'), 'still ignore me', 'utf8');
 
-    const { handleSyncCommand } = await import('./sync.js');
     await handleSyncCommand(undefined, {}, makeCommand() as any);
 
     const repository = await getRepositoryIdentity({ cwd: repoDir });
@@ -217,7 +215,6 @@ describe('tim sync command', () => {
       { skipSync: true }
     );
 
-    const { handleSyncCommand } = await import('./sync.js');
     await handleSyncCommand('2', {}, makeCommand() as any);
 
     const repository = await getRepositoryIdentity({ cwd: repoDir });
@@ -253,8 +250,6 @@ describe('tim sync command', () => {
       },
       { skipSync: true, skipUpdatedAt: true }
     );
-
-    const { handleSyncCommand } = await import('./sync.js');
 
     await handleSyncCommand('1', { force: true }, makeCommand() as any);
 
@@ -317,7 +312,6 @@ tasks: []
       'utf8'
     );
 
-    const { handleSyncCommand } = await import('./sync.js');
     await expect(
       handleSyncCommand(undefined, { verbose: true, force: true }, makeCommand() as any)
     ).rejects.toThrow('Failed to sync 1 materialized plan');

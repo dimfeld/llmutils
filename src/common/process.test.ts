@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from 'bun:test';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
@@ -271,11 +271,11 @@ describe('process utilities', () => {
 
       const duration = Date.now() - start;
 
-      expect(result.killedByInactivity).toBeTrue();
+      expect(result.killedByInactivity).toBeTruthy();
       // Either signal or conventional exit code after SIGTERM
       expect(
         result.signal === 'SIGTERM' || result.exitCode === 143 || result.exitCode === 137
-      ).toBeTrue();
+      ).toBeTruthy();
       expect(duration).toBeLessThan(2000);
     });
 
@@ -313,7 +313,7 @@ describe('process utilities', () => {
       const result = await promise;
 
       // The process should have completed successfully, not been killed by inactivity
-      expect(result.killedByInactivity).toBeFalse();
+      expect(result.killedByInactivity).toBeFalsy();
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('start');
       expect(result.stdout).toContain('end');
@@ -344,10 +344,10 @@ describe('process utilities', () => {
       const result = await proc.result;
       const duration = Date.now() - start;
 
-      expect(result.killedByInactivity).toBeTrue();
+      expect(result.killedByInactivity).toBeTruthy();
       expect(
         result.signal === 'SIGTERM' || result.exitCode === 143 || result.exitCode === 137
-      ).toBeTrue();
+      ).toBeTruthy();
       expect(duration).toBeLessThan(2000);
     });
   });

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test, vi } from 'vitest';
 import { parseIssueInput } from './issue_utils.js';
 
 describe('parseIssueInput', () => {

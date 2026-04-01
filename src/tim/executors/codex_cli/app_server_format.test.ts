@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test, vi } from 'vitest';
 import { createAppServerFormatter } from './app_server_format';
 
 describe('createAppServerFormatter', () => {
@@ -129,7 +129,7 @@ describe('createAppServerFormatter', () => {
       },
     });
 
-    expect(message.failed).toBeTrue();
+    expect(message.failed).toBe(true);
     expect(formatter.getFailedAgentMessage()).toContain('FAILED: unable to proceed');
   });
 

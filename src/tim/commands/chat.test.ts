@@ -1,106 +1,131 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import type { TimConfig } from '../configSchema.js';
-import { ModuleMocker } from '../../testing.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
+vi.mock('../configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(),
+}));
+
+vi.mock('../headless.js', () => ({
+  runWithHeadlessAdapterIfEnabled: vi.fn(async (options: any) => options.callback()),
+  updateHeadlessSessionInfo: vi.fn(),
+}));
+
+vi.mock('../plan_repo_root.js', () => ({
+  resolveRepoRootForPlanArg: vi.fn(),
+}));
+
+vi.mock('../../common/git.js', () => ({
+  getGitRoot: vi.fn(),
+}));
+
+vi.mock('../../common/process.js', () => ({
+  commitAll: vi.fn(),
+}));
+
+vi.mock('../../logging.js', () => ({
+  warn: vi.fn(),
+}));
+
+vi.mock('../../logging/tunnel_client.js', () => ({
+  isTunnelActive: vi.fn(),
+}));
+
+vi.mock('../executors/index.js', () => ({
+  buildExecutorAndLog: vi.fn(),
+  DEFAULT_EXECUTOR: 'claude-code',
+}));
+
+vi.mock('../plans.js', () => ({
+  readPlanFile: vi.fn(),
+}));
+
+vi.mock('../ensure_plan_in_db.js', () => ({
+  resolvePlanFromDbOrSyncFile: vi.fn(),
+}));
+
+vi.mock('../db/plan_sync.js', () => ({
+  syncPlanToDb: vi.fn(),
+}));
+
+vi.mock('../display_utils.js', () => ({
+  buildDescriptionFromPlan: vi.fn(),
+  getCombinedTitleFromSummary: vi.fn(),
+}));
+
+vi.mock('../workspace/workspace_info.js', () => ({
+  getWorkspaceInfoByPath: vi.fn(),
+  patchWorkspaceInfo: vi.fn(),
+  touchWorkspaceInfo: vi.fn(),
+}));
+
+vi.mock('../workspace/workspace_setup.js', () => ({
+  setupWorkspace: vi.fn(),
+}));
+
+vi.mock('../workspace/workspace_roundtrip.js', () => ({
+  prepareWorkspaceRoundTrip: vi.fn(),
+  runPreExecutionWorkspaceSync: vi.fn(),
+  runPostExecutionWorkspaceSync: vi.fn(),
+}));
+
+vi.mock('./branch.js', () => ({
+  generateBranchNameFromPlan: vi.fn(),
+}));
+
+import { handleChatCommand, resolveOptionalPromptText } from './chat.js';
+import { loadEffectiveConfig } from '../configLoader.js';
+import { isTunnelActive } from '../../logging/tunnel_client.js';
+import { buildExecutorAndLog } from '../executors/index.js';
+import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
+import { getGitRoot } from '../../common/git.js';
+import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { commitAll } from '../../common/process.js';
+import { setupWorkspace } from '../workspace/workspace_setup.js';
+import {
+  prepareWorkspaceRoundTrip,
+  runPreExecutionWorkspaceSync,
+  runPostExecutionWorkspaceSync,
+} from '../workspace/workspace_roundtrip.js';
+import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import { readPlanFile } from '../plans.js';
+import { buildDescriptionFromPlan, getCombinedTitleFromSummary } from '../display_utils.js';
+import {
+  getWorkspaceInfoByPath,
+  patchWorkspaceInfo,
+  touchWorkspaceInfo,
+} from '../workspace/workspace_info.js';
+import { generateBranchNameFromPlan } from './branch.js';
+import { syncPlanToDb } from '../db/plan_sync.js';
+import { warn as warnFn } from '../../logging.js';
 
 describe('handleChatCommand', () => {
-  const loadEffectiveConfigSpy = mock(async () => ({
-    defaultExecutor: undefined,
-    terminalInput: true,
-  }));
-  const isTunnelActiveSpy = mock(() => false);
-  const mockExecutorExecute = mock(async () => {});
+  const mockExecutorExecute = vi.fn(async () => {});
   const mockExecutor = {
     execute: mockExecutorExecute,
     filePathPrefix: '',
   };
-  const buildExecutorAndLogSpy = mock(() => mockExecutor);
-  const runWithHeadlessAdapterIfEnabledSpy = mock(async (options: any) => options.callback());
-  const getGitRootSpy = mock(async () => '/repo-root');
-  const resolveRepoRootForPlanArgSpy = mock(async () => '/repo-root');
-  const commitAllSpy = mock(async () => 0);
-  const setupWorkspaceSpy = mock(async (_options: any, _baseDir: string, planFile?: string) => ({
-    baseDir: '/repo-root/workspaces/task-123',
-    planFile: planFile ?? '',
-    workspaceTaskId: 'task-123',
-    isNewWorkspace: false,
-  }));
-  const prepareWorkspaceRoundTripSpy = mock(async () => null);
-  const runPreExecutionWorkspaceSyncSpy = mock(async () => {});
-  const runPostExecutionWorkspaceSyncSpy = mock(async () => {});
-  const resolvePlanFromDbOrSyncFileSpy = mock(async () => ({
-    plan: {
-      id: 123,
-      uuid: '11111111-1111-4111-8111-111111111111',
-      title: 'Test plan',
-      status: 'pending',
-      priority: 'medium',
-      issue: ['https://example.com/issues/42'],
-      tasks: [],
-    },
-    planPath: '/repo-root/tasks/123-test.plan.md',
-  }));
-  const readPlanFileSpy = mock(async () => ({
-    id: 123,
-    uuid: '11111111-1111-4111-8111-111111111111',
-    title: 'Test plan',
-    status: 'pending',
-    priority: 'medium',
-    issue: ['https://example.com/issues/42'],
-    tasks: [],
-  }));
-  const buildDescriptionFromPlanSpy = mock(() => 'Plan description');
-  const getCombinedTitleFromSummarySpy = mock(() => 'Combined test plan');
-  const getWorkspaceInfoByPathSpy = mock(() => ({
-    taskId: 'task-123',
-    workspacePath: '/repo-root/workspaces/task-123',
-  }));
-  const patchWorkspaceInfoSpy = mock(() => {});
-  const touchWorkspaceInfoSpy = mock(() => {});
-  const generateBranchNameFromPlanSpy = mock(() => 'plan-derived-branch');
-  const warnSpy = mock(() => {});
-  const syncPlanToDbSpy = mock(async () => {});
 
   const originalStdinIsTTY = process.stdin.isTTY;
   const originalCodexUseAppServer = process.env.CODEX_USE_APP_SERVER;
   const originalCwd = process.cwd();
 
-  beforeEach(async () => {
-    moduleMocker.clear();
+  beforeEach(() => {
+    vi.clearAllMocks();
 
-    loadEffectiveConfigSpy.mockClear();
-    isTunnelActiveSpy.mockClear();
-    mockExecutorExecute.mockClear();
-    buildExecutorAndLogSpy.mockClear();
-    runWithHeadlessAdapterIfEnabledSpy.mockClear();
-    getGitRootSpy.mockClear();
-    resolveRepoRootForPlanArgSpy.mockClear();
-    commitAllSpy.mockClear();
-    setupWorkspaceSpy.mockClear();
-    prepareWorkspaceRoundTripSpy.mockClear();
-    runPreExecutionWorkspaceSyncSpy.mockClear();
-    runPostExecutionWorkspaceSyncSpy.mockClear();
-    resolvePlanFromDbOrSyncFileSpy.mockClear();
-    readPlanFileSpy.mockClear();
-    buildDescriptionFromPlanSpy.mockClear();
-    getCombinedTitleFromSummarySpy.mockClear();
-    getWorkspaceInfoByPathSpy.mockClear();
-    patchWorkspaceInfoSpy.mockClear();
-    touchWorkspaceInfoSpy.mockClear();
-    generateBranchNameFromPlanSpy.mockClear();
-    warnSpy.mockClear();
-    syncPlanToDbSpy.mockClear();
-
-    loadEffectiveConfigSpy.mockImplementation(async () => ({
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
       defaultExecutor: undefined,
       terminalInput: true,
-    }));
-    isTunnelActiveSpy.mockImplementation(() => false);
-    getGitRootSpy.mockImplementation(async () => '/repo-root');
-    resolveRepoRootForPlanArgSpy.mockImplementation(async () => '/repo-root');
-    commitAllSpy.mockImplementation(async () => 0);
-    setupWorkspaceSpy.mockImplementation(
+    } as any);
+
+    vi.mocked(isTunnelActive).mockReturnValue(false);
+    vi.mocked(buildExecutorAndLog).mockReturnValue(mockExecutor as any);
+    vi.mocked(runWithHeadlessAdapterIfEnabled).mockImplementation(async (options: any) =>
+      options.callback()
+    );
+    vi.mocked(getGitRoot).mockResolvedValue('/repo-root');
+    vi.mocked(resolveRepoRootForPlanArg).mockResolvedValue('/repo-root');
+    vi.mocked(commitAll).mockResolvedValue(0);
+    vi.mocked(setupWorkspace).mockImplementation(
       async (_options: any, _baseDir: string, planFile?: string) => ({
         baseDir: '/repo-root/workspaces/task-123',
         planFile: planFile ?? '',
@@ -108,14 +133,10 @@ describe('handleChatCommand', () => {
         isNewWorkspace: false,
       })
     );
-    prepareWorkspaceRoundTripSpy.mockImplementation(async () => null);
-    runPreExecutionWorkspaceSyncSpy.mockImplementation(async () => {});
-    runPostExecutionWorkspaceSyncSpy.mockImplementation(async () => {});
-    resolvePlanFromDbOrSyncFileSpy.mockImplementation(async () => ({
-      plan: await readPlanFileSpy(),
-      planPath: '/repo-root/tasks/123-test.plan.md',
-    }));
-    readPlanFileSpy.mockImplementation(async () => ({
+    vi.mocked(prepareWorkspaceRoundTrip).mockResolvedValue(null);
+    vi.mocked(runPreExecutionWorkspaceSync).mockResolvedValue(undefined);
+    vi.mocked(runPostExecutionWorkspaceSync).mockResolvedValue(undefined);
+    vi.mocked(readPlanFile).mockResolvedValue({
       id: 123,
       uuid: '11111111-1111-4111-8111-111111111111',
       title: 'Test plan',
@@ -123,95 +144,29 @@ describe('handleChatCommand', () => {
       priority: 'medium',
       issue: ['https://example.com/issues/42'],
       tasks: [],
+    } as any);
+    vi.mocked(resolvePlanFromDbOrSyncFile).mockImplementation(async () => ({
+      plan: await vi.mocked(readPlanFile)(''),
+      planPath: '/repo-root/tasks/123-test.plan.md',
     }));
-    buildDescriptionFromPlanSpy.mockImplementation(() => 'Plan description');
-    getCombinedTitleFromSummarySpy.mockImplementation(() => 'Combined test plan');
-    getWorkspaceInfoByPathSpy.mockImplementation(() => ({
+    vi.mocked(buildDescriptionFromPlan).mockReturnValue('Plan description');
+    vi.mocked(getCombinedTitleFromSummary).mockReturnValue('Combined test plan');
+    vi.mocked(getWorkspaceInfoByPath).mockReturnValue({
       taskId: 'task-123',
       workspacePath: '/repo-root/workspaces/task-123',
-    }));
-    patchWorkspaceInfoSpy.mockImplementation(() => {});
-    touchWorkspaceInfoSpy.mockImplementation(() => {});
-    generateBranchNameFromPlanSpy.mockImplementation(() => 'plan-derived-branch');
-    warnSpy.mockImplementation(() => {});
+    } as any);
+    vi.mocked(patchWorkspaceInfo).mockReturnValue(undefined);
+    vi.mocked(touchWorkspaceInfo).mockReturnValue(undefined);
+    vi.mocked(generateBranchNameFromPlan).mockReturnValue('plan-derived-branch');
+    vi.mocked(warnFn).mockReturnValue(undefined);
+    vi.mocked(syncPlanToDb).mockResolvedValue(undefined);
+
     delete process.env.CODEX_USE_APP_SERVER;
-
     Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
-
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: loadEffectiveConfigSpy,
-    }));
-
-    await moduleMocker.mock('../headless.js', () => ({
-      runWithHeadlessAdapterIfEnabled: runWithHeadlessAdapterIfEnabledSpy,
-      updateHeadlessSessionInfo: mock(() => {}),
-    }));
-
-    await moduleMocker.mock('../plan_repo_root.js', () => ({
-      resolveRepoRootForPlanArg: resolveRepoRootForPlanArgSpy,
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: getGitRootSpy,
-    }));
-
-    await moduleMocker.mock('../../common/process.js', () => ({
-      commitAll: commitAllSpy,
-    }));
-
-    await moduleMocker.mock('../../logging.js', () => ({
-      warn: warnSpy,
-    }));
-
-    await moduleMocker.mock('../../logging/tunnel_client.js', () => ({
-      isTunnelActive: isTunnelActiveSpy,
-    }));
-
-    await moduleMocker.mock('../executors/index.js', () => ({
-      buildExecutorAndLog: buildExecutorAndLogSpy,
-      DEFAULT_EXECUTOR: 'claude-code',
-    }));
-
-    await moduleMocker.mock('../plans.js', () => ({
-      readPlanFile: readPlanFileSpy,
-    }));
-
-    await moduleMocker.mock('../ensure_plan_in_db.js', () => ({
-      resolvePlanFromDbOrSyncFile: resolvePlanFromDbOrSyncFileSpy,
-    }));
-
-    await moduleMocker.mock('../db/plan_sync.js', () => ({
-      syncPlanToDb: syncPlanToDbSpy,
-    }));
-
-    await moduleMocker.mock('../display_utils.js', () => ({
-      buildDescriptionFromPlan: buildDescriptionFromPlanSpy,
-      getCombinedTitleFromSummary: getCombinedTitleFromSummarySpy,
-    }));
-
-    await moduleMocker.mock('../workspace/workspace_info.js', () => ({
-      getWorkspaceInfoByPath: getWorkspaceInfoByPathSpy,
-      patchWorkspaceInfo: patchWorkspaceInfoSpy,
-      touchWorkspaceInfo: touchWorkspaceInfoSpy,
-    }));
-
-    await moduleMocker.mock('../workspace/workspace_setup.js', () => ({
-      setupWorkspace: setupWorkspaceSpy,
-    }));
-
-    await moduleMocker.mock('../workspace/workspace_roundtrip.js', () => ({
-      prepareWorkspaceRoundTrip: prepareWorkspaceRoundTripSpy,
-      runPreExecutionWorkspaceSync: runPreExecutionWorkspaceSyncSpy,
-      runPostExecutionWorkspaceSync: runPostExecutionWorkspaceSyncSpy,
-    }));
-
-    await moduleMocker.mock('./branch.js', () => ({
-      generateBranchNameFromPlan: generateBranchNameFromPlanSpy,
-    }));
   });
 
   afterEach(() => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     Object.defineProperty(process.stdin, 'isTTY', {
       value: originalStdinIsTTY,
       configurable: true,
@@ -224,37 +179,31 @@ describe('handleChatCommand', () => {
   });
 
   test('defaults to claude-code executor and enables terminal input', async () => {
-    const { handleChatCommand } = await import('./chat.js');
-
     await handleChatCommand('Help me debug this', {}, {});
 
-    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
-    expect(buildExecutorAndLogSpy.mock.calls[0][0]).toBe('claude-code');
-    expect(buildExecutorAndLogSpy.mock.calls[0][1]).toMatchObject({
+    expect(vi.mocked(buildExecutorAndLog)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(buildExecutorAndLog).mock.calls[0][0]).toBe('claude-code');
+    expect(vi.mocked(buildExecutorAndLog).mock.calls[0][1]).toMatchObject({
       baseDir: originalCwd,
       terminalInput: true,
       closeTerminalInputOnResult: false,
       noninteractive: undefined,
     });
-    expect(setupWorkspaceSpy).not.toHaveBeenCalled();
-    expect(getGitRootSpy).not.toHaveBeenCalled();
+    expect(vi.mocked(setupWorkspace)).not.toHaveBeenCalled();
+    expect(vi.mocked(getGitRoot)).not.toHaveBeenCalled();
   });
 
   test('passes --model through to shared executor options for claude', async () => {
-    const { handleChatCommand } = await import('./chat.js');
-
     await handleChatCommand('Help me debug this', { model: 'sonnet' }, {});
 
-    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
-    expect(buildExecutorAndLogSpy.mock.calls[0][0]).toBe('claude-code');
-    expect(buildExecutorAndLogSpy.mock.calls[0][1]).toMatchObject({
+    expect(vi.mocked(buildExecutorAndLog)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(buildExecutorAndLog).mock.calls[0][0]).toBe('claude-code');
+    expect(vi.mocked(buildExecutorAndLog).mock.calls[0][1]).toMatchObject({
       model: 'sonnet',
     });
   });
 
   test('passes prompt through to executor in bare mode', async () => {
-    const { handleChatCommand } = await import('./chat.js');
-
     await handleChatCommand('Initial prompt', {}, {});
 
     expect(mockExecutorExecute).toHaveBeenCalledTimes(1);
@@ -268,8 +217,6 @@ describe('handleChatCommand', () => {
   });
 
   test('allows starting without an initial prompt when terminal input is enabled', async () => {
-    const { handleChatCommand } = await import('./chat.js');
-
     await handleChatCommand(undefined, {}, {});
 
     expect(mockExecutorExecute).toHaveBeenCalledTimes(1);
@@ -277,12 +224,10 @@ describe('handleChatCommand', () => {
   });
 
   test('wraps execution in the headless adapter with the chat command type', async () => {
-    const { handleChatCommand } = await import('./chat.js');
-
     await handleChatCommand('hello', {}, {});
 
-    expect(runWithHeadlessAdapterIfEnabledSpy).toHaveBeenCalledTimes(1);
-    expect(runWithHeadlessAdapterIfEnabledSpy.mock.calls[0][0]).toMatchObject({
+    expect(vi.mocked(runWithHeadlessAdapterIfEnabled)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(runWithHeadlessAdapterIfEnabled).mock.calls[0][0]).toMatchObject({
       enabled: true,
       command: 'chat',
       callback: expect.any(Function),
@@ -290,74 +235,66 @@ describe('handleChatCommand', () => {
   });
 
   test('disables headless adapter wrapping when tunnel is already active', async () => {
-    const { handleChatCommand } = await import('./chat.js');
-    isTunnelActiveSpy.mockImplementation(() => true);
+    vi.mocked(isTunnelActive).mockReturnValue(true);
 
     await handleChatCommand('hello', {}, {});
 
-    expect(runWithHeadlessAdapterIfEnabledSpy.mock.calls[0][0]).toMatchObject({
+    expect(vi.mocked(runWithHeadlessAdapterIfEnabled).mock.calls[0][0]).toMatchObject({
       enabled: false,
       command: 'chat',
     });
   });
 
   test('forces headless adapter wrapping when tunnel is active and --headless-adapter is set', async () => {
-    const { handleChatCommand } = await import('./chat.js');
-    isTunnelActiveSpy.mockImplementation(() => true);
+    vi.mocked(isTunnelActive).mockReturnValue(true);
 
     await handleChatCommand('hello', { headlessAdapter: true }, {});
 
-    expect(runWithHeadlessAdapterIfEnabledSpy.mock.calls[0][0]).toMatchObject({
+    expect(vi.mocked(runWithHeadlessAdapterIfEnabled).mock.calls[0][0]).toMatchObject({
       enabled: true,
       command: 'chat',
     });
   });
 
   test('throws when there is no prompt and non-interactive mode is enabled', async () => {
-    const { handleChatCommand } = await import('./chat.js');
-
     await expect(handleChatCommand(undefined, { nonInteractive: true }, {})).rejects.toThrow(
       'No input provided. Pass a prompt argument, --prompt-file, or stdin when running without terminal input.'
     );
 
-    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(0);
+    expect(vi.mocked(buildExecutorAndLog)).toHaveBeenCalledTimes(0);
     expect(mockExecutorExecute).toHaveBeenCalledTimes(0);
   });
 
   test('allows no prompt in non-interactive mode when tunnel forwarding is active', async () => {
-    const { handleChatCommand } = await import('./chat.js');
-    isTunnelActiveSpy.mockImplementation(() => true);
+    vi.mocked(isTunnelActive).mockReturnValue(true);
 
     await expect(
       handleChatCommand(undefined, { nonInteractive: true }, {})
     ).resolves.toBeUndefined();
 
-    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(buildExecutorAndLog)).toHaveBeenCalledTimes(1);
     expect(mockExecutorExecute).toHaveBeenCalledTimes(1);
     expect(mockExecutorExecute.mock.calls[0][0]).toBeUndefined();
   });
 
   test('rejects codex-cli without an explicit prompt when app-server mode is disabled', async () => {
     process.env.CODEX_USE_APP_SERVER = 'false';
-    const { handleChatCommand } = await import('./chat.js');
 
     await expect(handleChatCommand(undefined, { executor: 'codex-cli' }, {})).rejects.toThrow(
       'codex-cli requires an explicit prompt. Provide a prompt via argument, --prompt-file, or stdin.'
     );
 
-    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(0);
+    expect(vi.mocked(buildExecutorAndLog)).toHaveBeenCalledTimes(0);
     expect(mockExecutorExecute).toHaveBeenCalledTimes(0);
   });
 
   test('allows codex-cli without an explicit prompt when app-server mode is enabled', async () => {
-    const { handleChatCommand } = await import('./chat.js');
-
     await expect(
       handleChatCommand(undefined, { executor: 'codex-cli' }, {})
     ).resolves.toBeUndefined();
 
-    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
-    expect(buildExecutorAndLogSpy.mock.calls[0][1]).toMatchObject({
+    expect(vi.mocked(buildExecutorAndLog)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(buildExecutorAndLog).mock.calls[0][1]).toMatchObject({
       terminalInput: true,
       noninteractive: undefined,
     });
@@ -366,13 +303,11 @@ describe('handleChatCommand', () => {
   });
 
   test('accepts codex alias and keeps terminal input forwarding in default mode', async () => {
-    const { handleChatCommand } = await import('./chat.js');
-
     await handleChatCommand('Summarize this repository', { executor: 'codex' }, {});
 
-    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
-    expect(buildExecutorAndLogSpy.mock.calls[0][0]).toBe('codex-cli');
-    expect(buildExecutorAndLogSpy.mock.calls[0][1]).toMatchObject({
+    expect(vi.mocked(buildExecutorAndLog)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(buildExecutorAndLog).mock.calls[0][0]).toBe('codex-cli');
+    expect(vi.mocked(buildExecutorAndLog).mock.calls[0][1]).toMatchObject({
       terminalInput: true,
       noninteractive: undefined,
       closeTerminalInputOnResult: false,
@@ -382,21 +317,18 @@ describe('handleChatCommand', () => {
   });
 
   test('passes --model through to shared executor options for codex', async () => {
-    const { handleChatCommand } = await import('./chat.js');
-
     await handleChatCommand('Summarize this repository', { executor: 'codex', model: 'gpt-5' }, {});
 
-    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
-    expect(buildExecutorAndLogSpy.mock.calls[0][0]).toBe('codex-cli');
-    expect(buildExecutorAndLogSpy.mock.calls[0][1]).toMatchObject({
+    expect(vi.mocked(buildExecutorAndLog)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(buildExecutorAndLog).mock.calls[0][0]).toBe('codex-cli');
+    expect(vi.mocked(buildExecutorAndLog).mock.calls[0][1]).toMatchObject({
       model: 'gpt-5',
     });
   });
 
   test('rejects codex-cli when tunnel is active without an initial prompt and app-server is disabled', async () => {
     process.env.CODEX_USE_APP_SERVER = 'false';
-    const { handleChatCommand } = await import('./chat.js');
-    isTunnelActiveSpy.mockImplementation(() => true);
+    vi.mocked(isTunnelActive).mockReturnValue(true);
 
     await expect(
       handleChatCommand(undefined, { executor: 'codex-cli', nonInteractive: true }, {})
@@ -404,25 +336,23 @@ describe('handleChatCommand', () => {
       'codex-cli requires an explicit prompt. Provide a prompt via argument, --prompt-file, or stdin.'
     );
 
-    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(0);
+    expect(vi.mocked(buildExecutorAndLog)).toHaveBeenCalledTimes(0);
     expect(mockExecutorExecute).toHaveBeenCalledTimes(0);
   });
 
   test('uses configured default executor when provided', async () => {
-    loadEffectiveConfigSpy.mockImplementation(async () => ({
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
       defaultExecutor: 'codex-cli',
       terminalInput: true,
-    }));
-
-    const { handleChatCommand } = await import('./chat.js');
+    } as any);
 
     await expect(
       handleChatCommand('Prompt text', { nonInteractive: true }, {})
     ).resolves.toBeUndefined();
 
-    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
-    expect(buildExecutorAndLogSpy.mock.calls[0][0]).toBe('codex-cli');
-    expect(buildExecutorAndLogSpy.mock.calls[0][1]).toMatchObject({
+    expect(vi.mocked(buildExecutorAndLog)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(buildExecutorAndLog).mock.calls[0][0]).toBe('codex-cli');
+    expect(vi.mocked(buildExecutorAndLog).mock.calls[0][1]).toMatchObject({
       terminalInput: false,
       noninteractive: true,
       closeTerminalInputOnResult: false,
@@ -430,34 +360,32 @@ describe('handleChatCommand', () => {
   });
 
   test('throws when --executor is an incompatible executor', async () => {
-    const { handleChatCommand } = await import('./chat.js');
-
     await expect(handleChatCommand('hello', { executor: 'copy-only' }, {})).rejects.toThrow(
       "Executor 'copy-only' is not supported by 'tim chat'"
     );
 
-    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(0);
+    expect(vi.mocked(buildExecutorAndLog)).toHaveBeenCalledTimes(0);
     expect(mockExecutorExecute).toHaveBeenCalledTimes(0);
   });
 
   test('falls back to claude-code when config defaultExecutor is incompatible', async () => {
-    const warnSpy = mock(() => {});
     const originalWarn = console.warn;
-    console.warn = warnSpy;
+    const consolewarnSpy = vi.fn();
+    console.warn = consolewarnSpy;
 
-    loadEffectiveConfigSpy.mockImplementation(async () => ({
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
       defaultExecutor: 'copy-only',
       terminalInput: true,
-    }));
-
-    const { handleChatCommand } = await import('./chat.js');
+    } as any);
 
     await handleChatCommand('hello', {}, {});
 
-    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
-    expect(buildExecutorAndLogSpy.mock.calls[0][0]).toBe('claude-code');
-    expect(warnSpy).toHaveBeenCalledTimes(1);
-    expect(warnSpy.mock.calls[0][0]).toContain("defaultExecutor 'copy-only' is not supported");
+    expect(vi.mocked(buildExecutorAndLog)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(buildExecutorAndLog).mock.calls[0][0]).toBe('claude-code');
+    expect(consolewarnSpy).toHaveBeenCalledTimes(1);
+    expect(consolewarnSpy.mock.calls[0][0]).toContain(
+      "defaultExecutor 'copy-only' is not supported"
+    );
 
     console.warn = originalWarn;
   });
@@ -467,24 +395,22 @@ describe('handleChatCommand', () => {
       defaultExecutor: 'claude-code',
       terminalInput: true,
     };
-    loadEffectiveConfigSpy.mockImplementation(async () => config);
-
-    const { handleChatCommand } = await import('./chat.js');
+    vi.mocked(loadEffectiveConfig).mockResolvedValue(config as any);
 
     await handleChatCommand('hello', {}, {});
 
-    expect(runWithHeadlessAdapterIfEnabledSpy.mock.calls[0][0]).not.toHaveProperty('config');
+    expect(vi.mocked(runWithHeadlessAdapterIfEnabled).mock.calls[0][0]).not.toHaveProperty(
+      'config'
+    );
   });
 
   test('enters workspace mode and passes workspace options through setupWorkspace', async () => {
-    const { handleChatCommand } = await import('./chat.js');
-
     await handleChatCommand('hello', { workspace: 'task-123', nonInteractive: true }, {});
 
-    expect(resolveRepoRootForPlanArgSpy).toHaveBeenCalledTimes(1);
-    expect(getGitRootSpy).not.toHaveBeenCalled();
-    expect(setupWorkspaceSpy).toHaveBeenCalledTimes(1);
-    expect(setupWorkspaceSpy.mock.calls[0]).toEqual([
+    expect(vi.mocked(resolveRepoRootForPlanArg)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(getGitRoot)).not.toHaveBeenCalled();
+    expect(vi.mocked(setupWorkspace)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(setupWorkspace).mock.calls[0]).toEqual([
       {
         workspace: 'task-123',
         autoWorkspace: false,
@@ -504,41 +430,43 @@ describe('handleChatCommand', () => {
       }),
       'tim chat',
     ]);
-    expect(buildExecutorAndLogSpy.mock.calls[0][1]).toMatchObject({
+    expect(vi.mocked(buildExecutorAndLog).mock.calls[0][1]).toMatchObject({
       baseDir: '/repo-root/workspaces/task-123',
       noninteractive: true,
     });
   });
 
   test('resolves --plan and uses plan data for workspace setup and headless metadata', async () => {
-    const { handleChatCommand } = await import('./chat.js');
-
     await handleChatCommand('hello', { autoWorkspace: true, plan: '123' }, { config: 'tim.json' });
 
-    expect(resolveRepoRootForPlanArgSpy).toHaveBeenCalledTimes(1);
-    expect(resolvePlanFromDbOrSyncFileSpy).toHaveBeenCalledWith('123', '/repo-root', '/repo-root');
-    expect(generateBranchNameFromPlanSpy).toHaveBeenCalledTimes(1);
-    expect(setupWorkspaceSpy.mock.calls[0][0]).toMatchObject({
+    expect(vi.mocked(resolveRepoRootForPlanArg)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(resolvePlanFromDbOrSyncFile)).toHaveBeenCalledWith(
+      '123',
+      '/repo-root',
+      '/repo-root'
+    );
+    expect(vi.mocked(generateBranchNameFromPlan)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(setupWorkspace).mock.calls[0][0]).toMatchObject({
       autoWorkspace: true,
       planId: 123,
       planUuid: '11111111-1111-4111-8111-111111111111',
       createBranch: false,
       base: 'plan-derived-branch',
     });
-    expect(setupWorkspaceSpy.mock.calls[0][2]).toBe('/repo-root/tasks/123-test.plan.md');
-    expect(runWithHeadlessAdapterIfEnabledSpy.mock.calls[0][0]).toMatchObject({
+    expect(vi.mocked(setupWorkspace).mock.calls[0][2]).toBe('/repo-root/tasks/123-test.plan.md');
+    expect(vi.mocked(runWithHeadlessAdapterIfEnabled).mock.calls[0][0]).toMatchObject({
       plan: {
         id: 123,
         title: 'Test plan',
       },
     });
-    expect(patchWorkspaceInfoSpy).toHaveBeenCalledWith('/repo-root/workspaces/task-123', {
+    expect(vi.mocked(patchWorkspaceInfo)).toHaveBeenCalledWith('/repo-root/workspaces/task-123', {
       description: '123 - Plan description',
       planId: '123',
       planTitle: 'Combined test plan',
       issueUrls: ['https://example.com/issues/42'],
     });
-    expect(syncPlanToDbSpy).toHaveBeenCalledWith(
+    expect(vi.mocked(syncPlanToDb)).toHaveBeenCalledWith(
       expect.objectContaining({ id: 123 }),
       expect.objectContaining({
         cwdForIdentity: '/repo-root/workspaces/task-123',
@@ -549,25 +477,27 @@ describe('handleChatCommand', () => {
   });
 
   test('--plan alone implies auto-workspace selection and derives branch from plan', async () => {
-    const { handleChatCommand } = await import('./chat.js');
-
     await handleChatCommand('hello', { plan: '123' }, { config: 'tim.json' });
 
-    expect(setupWorkspaceSpy).toHaveBeenCalledTimes(1);
-    expect(setupWorkspaceSpy.mock.calls[0][0]).toMatchObject({
+    expect(vi.mocked(setupWorkspace)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(setupWorkspace).mock.calls[0][0]).toMatchObject({
       autoWorkspace: true,
       planId: 123,
       planUuid: '11111111-1111-4111-8111-111111111111',
       createBranch: false,
       base: 'plan-derived-branch',
     });
-    expect(resolvePlanFromDbOrSyncFileSpy).toHaveBeenCalledWith('123', '/repo-root', '/repo-root');
-    expect(generateBranchNameFromPlanSpy).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(resolvePlanFromDbOrSyncFile)).toHaveBeenCalledWith(
+      '123',
+      '/repo-root',
+      '/repo-root'
+    );
+    expect(vi.mocked(generateBranchNameFromPlan)).toHaveBeenCalledTimes(1);
   });
 
   test('uses config-derived repo root for workspace setup when --config targets another repo', async () => {
-    resolveRepoRootForPlanArgSpy.mockImplementation(async () => '/other-repo');
-    resolvePlanFromDbOrSyncFileSpy.mockImplementationOnce(async () => ({
+    vi.mocked(resolveRepoRootForPlanArg).mockResolvedValue('/other-repo');
+    vi.mocked(resolvePlanFromDbOrSyncFile).mockResolvedValueOnce({
       plan: {
         id: 123,
         uuid: '11111111-1111-4111-8111-111111111111',
@@ -575,19 +505,18 @@ describe('handleChatCommand', () => {
         status: 'pending',
         priority: 'medium',
         tasks: [],
-      },
+      } as any,
       planPath: '/other-repo/tasks/123-test.plan.md',
-    }));
-    const { handleChatCommand } = await import('./chat.js');
+    });
 
     await handleChatCommand('hello', { plan: '123' }, { config: '/other-repo/.tim.json' });
 
-    expect(resolvePlanFromDbOrSyncFileSpy).toHaveBeenCalledWith(
+    expect(vi.mocked(resolvePlanFromDbOrSyncFile)).toHaveBeenCalledWith(
       '123',
       '/other-repo',
       '/other-repo'
     );
-    expect(setupWorkspaceSpy).toHaveBeenCalledWith(
+    expect(vi.mocked(setupWorkspace)).toHaveBeenCalledWith(
       expect.anything(),
       '/other-repo',
       '/other-repo/tasks/123-test.plan.md',
@@ -597,7 +526,7 @@ describe('handleChatCommand', () => {
   });
 
   test('uses explicit branch from plan data without calling generateBranchNameFromPlan', async () => {
-    resolvePlanFromDbOrSyncFileSpy.mockImplementation(async () => ({
+    vi.mocked(resolvePlanFromDbOrSyncFile).mockResolvedValue({
       plan: {
         id: 123,
         uuid: '11111111-1111-4111-8111-111111111111',
@@ -606,70 +535,60 @@ describe('handleChatCommand', () => {
         status: 'pending',
         priority: 'medium',
         tasks: [],
-      },
+      } as any,
       planPath: '/repo-root/tasks/123-test.plan.md',
-    }));
-    const { handleChatCommand } = await import('./chat.js');
+    });
 
     await handleChatCommand('hello', { plan: '123' }, {});
 
-    expect(generateBranchNameFromPlanSpy).not.toHaveBeenCalled();
-    expect(setupWorkspaceSpy.mock.calls[0][0]).toMatchObject({
+    expect(vi.mocked(generateBranchNameFromPlan)).not.toHaveBeenCalled();
+    expect(vi.mocked(setupWorkspace).mock.calls[0][0]).toMatchObject({
       base: 'explicit-branch',
     });
   });
 
   test('passes --base through with createBranch disabled when no plan is provided', async () => {
-    const { handleChatCommand } = await import('./chat.js');
-
     await handleChatCommand('hello', { workspace: 'task-123', base: 'feature-branch' }, {});
 
-    expect(setupWorkspaceSpy.mock.calls[0][0]).toMatchObject({
+    expect(vi.mocked(setupWorkspace).mock.calls[0][0]).toMatchObject({
       workspace: 'task-123',
       base: 'feature-branch',
       createBranch: false,
       planUuid: undefined,
     });
-    expect(resolvePlanFromDbOrSyncFileSpy).not.toHaveBeenCalled();
+    expect(vi.mocked(resolvePlanFromDbOrSyncFile)).not.toHaveBeenCalled();
   });
 
   test('throws when --base is used without workspace options', async () => {
-    const { handleChatCommand } = await import('./chat.js');
-
     await expect(handleChatCommand('hello', { base: 'feature-branch' }, {})).rejects.toThrow(
       '--base requires a workspace option'
     );
 
-    expect(setupWorkspaceSpy).not.toHaveBeenCalled();
+    expect(vi.mocked(setupWorkspace)).not.toHaveBeenCalled();
   });
 
   test('throws when --commit is used without workspace options', async () => {
-    const { handleChatCommand } = await import('./chat.js');
-
     await expect(handleChatCommand('hello', { commit: true }, {})).rejects.toThrow(
       '--commit requires a workspace option'
     );
 
-    expect(setupWorkspaceSpy).not.toHaveBeenCalled();
+    expect(vi.mocked(setupWorkspace)).not.toHaveBeenCalled();
   });
 
   test('commits after execution when --commit is set', async () => {
-    const { handleChatCommand } = await import('./chat.js');
-
     await handleChatCommand('hello', { workspace: 'task-123', commit: true }, {});
 
     expect(mockExecutorExecute).toHaveBeenCalledTimes(1);
-    expect(commitAllSpy).toHaveBeenCalledTimes(1);
-    expect(commitAllSpy).toHaveBeenCalledWith(
+    expect(vi.mocked(commitAll)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(commitAll)).toHaveBeenCalledWith(
       'workspace chat session',
       '/repo-root/workspaces/task-123'
     );
   });
 
   test('runs workspace roundtrip hooks in order', async () => {
-    const { handleChatCommand } = await import('./chat.js');
     const callOrder: string[] = [];
-    setupWorkspaceSpy.mockImplementationOnce(
+    vi.mocked(setupWorkspace).mockImplementationOnce(
       async (_options: any, _baseDir: string, planFile?: string) => {
         callOrder.push('setup');
         return {
@@ -680,47 +599,46 @@ describe('handleChatCommand', () => {
         };
       }
     );
-    prepareWorkspaceRoundTripSpy.mockImplementationOnce(async () => {
+    vi.mocked(prepareWorkspaceRoundTrip).mockImplementationOnce(async () => {
       callOrder.push('prepare');
       return {
         executionWorkspacePath: '/repo-root/workspaces/task-123',
       } as any;
     });
-    runPreExecutionWorkspaceSyncSpy.mockImplementationOnce(async () => {
+    vi.mocked(runPreExecutionWorkspaceSync).mockImplementationOnce(async () => {
       callOrder.push('pre');
     });
     mockExecutorExecute.mockImplementationOnce(async () => {
       callOrder.push('execute');
     });
-    runPostExecutionWorkspaceSyncSpy.mockImplementationOnce(async () => {
+    vi.mocked(runPostExecutionWorkspaceSync).mockImplementationOnce(async () => {
       callOrder.push('post');
     });
-    touchWorkspaceInfoSpy.mockImplementationOnce(() => {
+    vi.mocked(touchWorkspaceInfo).mockImplementationOnce(() => {
       callOrder.push('touch');
     });
 
     await handleChatCommand('hello', { workspace: 'task-123' }, {});
 
-    expect(prepareWorkspaceRoundTripSpy).toHaveBeenCalledWith({
+    expect(vi.mocked(prepareWorkspaceRoundTrip)).toHaveBeenCalledWith({
       workspacePath: '/repo-root/workspaces/task-123',
       workspaceSyncEnabled: true,
       branchCreatedDuringSetup: undefined,
     });
-    expect(runPreExecutionWorkspaceSyncSpy).toHaveBeenCalledTimes(1);
-    expect(runPostExecutionWorkspaceSyncSpy).toHaveBeenCalledWith(
+    expect(vi.mocked(runPreExecutionWorkspaceSync)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(runPostExecutionWorkspaceSync)).toHaveBeenCalledWith(
       expect.objectContaining({
         executionWorkspacePath: '/repo-root/workspaces/task-123',
       }),
       'workspace chat session'
     );
-    expect(touchWorkspaceInfoSpy).toHaveBeenCalledWith('/repo-root/workspaces/task-123');
+    expect(vi.mocked(touchWorkspaceInfo)).toHaveBeenCalledWith('/repo-root/workspaces/task-123');
     expect(callOrder).toEqual(['setup', 'prepare', 'pre', 'execute', 'post', 'touch']);
   });
 
   test('still runs post-sync and touch cleanup when execution fails', async () => {
-    const { handleChatCommand } = await import('./chat.js');
     const executionFailure = new Error('executor failed');
-    prepareWorkspaceRoundTripSpy.mockImplementationOnce(
+    vi.mocked(prepareWorkspaceRoundTrip).mockImplementationOnce(
       async () =>
         ({
           executionWorkspacePath: '/repo-root/workspaces/task-123',
@@ -734,15 +652,14 @@ describe('handleChatCommand', () => {
       'executor failed'
     );
 
-    expect(runPostExecutionWorkspaceSyncSpy).toHaveBeenCalledTimes(1);
-    expect(touchWorkspaceInfoSpy).toHaveBeenCalledWith('/repo-root/workspaces/task-123');
+    expect(vi.mocked(runPostExecutionWorkspaceSync)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(touchWorkspaceInfo)).toHaveBeenCalledWith('/repo-root/workspaces/task-123');
   });
 });
 
 describe('resolveOptionalPromptText', () => {
   test('returns positional prompt with tty stdin', async () => {
-    const { resolveOptionalPromptText } = await import('./chat.js');
-    const readStdin = mock(async () => 'from-stdin');
+    const readStdin = vi.fn(async () => 'from-stdin');
 
     const prompt = await resolveOptionalPromptText(
       'from-arg',
@@ -757,8 +674,7 @@ describe('resolveOptionalPromptText', () => {
   });
 
   test('prefers positional prompt over stdin in non-tty mode when no prompt file is provided', async () => {
-    const { resolveOptionalPromptText } = await import('./chat.js');
-    const readStdin = mock(async () => 'from-stdin');
+    const readStdin = vi.fn(async () => 'from-stdin');
 
     const prompt = await resolveOptionalPromptText(
       'from-arg',
@@ -773,8 +689,7 @@ describe('resolveOptionalPromptText', () => {
   });
 
   test('reads stdin in non-tty mode when no positional prompt or prompt file is provided', async () => {
-    const { resolveOptionalPromptText } = await import('./chat.js');
-    const readStdin = mock(async () => 'from-stdin');
+    const readStdin = vi.fn(async () => 'from-stdin');
 
     const prompt = await resolveOptionalPromptText(
       undefined,
@@ -789,8 +704,7 @@ describe('resolveOptionalPromptText', () => {
   });
 
   test('skips stdin in non-tty mode when tunnel forwarding is active', async () => {
-    const { resolveOptionalPromptText } = await import('./chat.js');
-    const readStdin = mock(async () => 'from-stdin');
+    const readStdin = vi.fn(async () => 'from-stdin');
 
     const prompt = await resolveOptionalPromptText(
       undefined,
@@ -805,8 +719,6 @@ describe('resolveOptionalPromptText', () => {
   });
 
   test('prompt file overrides positional prompt', async () => {
-    const { resolveOptionalPromptText } = await import('./chat.js');
-
     const prompt = await resolveOptionalPromptText(
       'from-arg',
       { promptFile: 'prompt.txt', stdinIsTTY: false },
@@ -820,8 +732,6 @@ describe('resolveOptionalPromptText', () => {
   });
 
   test('returns undefined for whitespace-only prompt file and does not fall back to positional prompt', async () => {
-    const { resolveOptionalPromptText } = await import('./chat.js');
-
     const prompt = await resolveOptionalPromptText(
       'from-arg',
       { promptFile: 'prompt.txt', stdinIsTTY: true },

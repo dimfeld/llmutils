@@ -1,5 +1,4 @@
-import { describe, test, expect, mock, beforeEach, afterEach } from 'bun:test';
-import { ModuleMocker } from '../../../testing.js';
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const originalCodexUseAppServer = process.env.CODEX_USE_APP_SERVER;
 
@@ -13,22 +12,56 @@ afterEach(() => {
   } else {
     process.env.CODEX_USE_APP_SERVER = originalCodexUseAppServer;
   }
+  vi.clearAllMocks();
 });
 
+vi.mock('../../../common/process.ts', () => ({
+  spawnAndLogOutput: vi.fn(),
+}));
+
+vi.mock('../../../logging.ts', () => ({
+  error: vi.fn(),
+  warn: vi.fn(),
+  log: vi.fn(),
+  debugLog: vi.fn(),
+}));
+
+vi.mock('./format.ts', () => ({
+  createCodexStdoutFormatter: vi.fn(),
+}));
+
+vi.mock('./app_server_runner.ts', () => ({
+  executeCodexStepViaAppServer: vi.fn(),
+}));
+
+vi.mock('../../../logging/tunnel_client.js', () => ({
+  isTunnelActive: vi.fn(() => true),
+}));
+
+vi.mock('../../../logging/tunnel_server.js', () => ({
+  createTunnelServer: vi.fn(async () => ({ close: vi.fn() })),
+}));
+
+vi.mock('../../../logging/tunnel_prompt_handler.js', () => ({
+  createPromptRequestHandler: vi.fn(() => vi.fn()),
+}));
+
+vi.mock('../../../logging/tunnel_protocol.js', () => ({
+  TIM_OUTPUT_SOCKET: 'TIM_OUTPUT_SOCKET',
+}));
+
+import { spawnAndLogOutput } from '../../../common/process.js';
+import { createCodexStdoutFormatter } from './format.js';
+import { executeCodexStep } from './codex_runner.js';
+
 describe('executeCodexStep retries', () => {
-  let moduleMocker: ModuleMocker;
-
   beforeEach(() => {
-    moduleMocker = new ModuleMocker(import.meta);
-  });
-
-  afterEach(() => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
   });
 
   test('retries when codex exits non-zero and then succeeds', async () => {
     let attempts = 0;
-    const spawnMock = mock(async (_args: string[], opts: any) => {
+    vi.mocked(spawnAndLogOutput).mockImplementation(async (_args: string[], opts: any) => {
       if (opts?.formatStdout) {
         opts.formatStdout('chunk');
       }
@@ -38,74 +71,46 @@ describe('executeCodexStep retries', () => {
       return { exitCode, stdout: '', stderr: '', signal: null, killedByInactivity: false };
     });
 
-    await moduleMocker.mock('../../../common/process.ts', () => ({
-      spawnAndLogOutput: spawnMock,
-    }));
-
-    await moduleMocker.mock('../../../logging.ts', () => ({
-      error: mock(() => {}),
-      warn: mock(() => {}),
-      log: mock(() => {}),
-    }));
-
-    await moduleMocker.mock('./format.ts', () => ({
-      createCodexStdoutFormatter: () => ({
-        formatChunk: () => '',
-        getFinalAgentMessage: () => 'ok',
-        getFailedAgentMessage: () => undefined,
-        getThreadId: () => 'thread-123',
-        getSessionId: () => undefined,
-      }),
-    }));
-
-    const { executeCodexStep } = await import('./codex_runner.ts');
+    vi.mocked(createCodexStdoutFormatter).mockReturnValue({
+      formatChunk: () => '',
+      getFinalAgentMessage: () => 'ok',
+      getFailedAgentMessage: () => undefined,
+      getThreadId: () => 'thread-123',
+      getSessionId: () => undefined,
+    } as any);
 
     const output = await executeCodexStep('prompt', '/tmp', {} as any);
 
     expect(output).toBe('ok');
-    expect(spawnMock).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(spawnAndLogOutput)).toHaveBeenCalledTimes(2);
 
-    const firstArgs = spawnMock.mock.calls[0][0] as string[];
-    const secondArgs = spawnMock.mock.calls[1][0] as string[];
+    const firstArgs = vi.mocked(spawnAndLogOutput).mock.calls[0][0] as string[];
+    const secondArgs = vi.mocked(spawnAndLogOutput).mock.calls[1][0] as string[];
 
     expect(firstArgs.slice(-2)).toEqual(['--json', 'prompt']);
     expect(secondArgs.slice(-4)).toEqual(['--json', 'resume', 'thread-123', 'continue']);
   });
 
   test('stops after three failed attempts when codex keeps exiting', async () => {
-    const spawnMock = mock(async (_args: string[], opts: any) => {
+    vi.mocked(spawnAndLogOutput).mockImplementation(async (_args: string[], opts: any) => {
       if (opts?.formatStdout) {
         opts.formatStdout('chunk');
       }
       return { exitCode: 1, stdout: '', stderr: '', signal: null, killedByInactivity: false };
     });
 
-    await moduleMocker.mock('../../../common/process.ts', () => ({
-      spawnAndLogOutput: spawnMock,
-    }));
-
-    await moduleMocker.mock('../../../logging.ts', () => ({
-      error: mock(() => {}),
-      warn: mock(() => {}),
-      log: mock(() => {}),
-    }));
-
-    await moduleMocker.mock('./format.ts', () => ({
-      createCodexStdoutFormatter: () => ({
-        formatChunk: () => '',
-        getFinalAgentMessage: () => 'never-called',
-        getFailedAgentMessage: () => undefined,
-        getThreadId: () => 'thread-123',
-        getSessionId: () => undefined,
-      }),
-    }));
-
-    const { executeCodexStep } = await import('./codex_runner.ts');
+    vi.mocked(createCodexStdoutFormatter).mockReturnValue({
+      formatChunk: () => '',
+      getFinalAgentMessage: () => 'never-called',
+      getFailedAgentMessage: () => undefined,
+      getThreadId: () => 'thread-123',
+      getSessionId: () => undefined,
+    } as any);
 
     await expect(executeCodexStep('prompt', '/tmp', {} as any)).rejects.toThrow(
       /failed after 3 attempts/i
     );
 
-    expect(spawnMock).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(spawnAndLogOutput)).toHaveBeenCalledTimes(3);
   });
 });

@@ -1,23 +1,44 @@
-import { describe, expect, test, beforeEach, afterEach, mock, spyOn } from 'bun:test';
+import { describe, expect, test, beforeEach, afterEach, vi } from 'vitest';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
-import { ModuleMocker } from '../../testing.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
+vi.mock('node:os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:os')>();
+  return {
+    ...actual,
+    platform: vi.fn(() => 'linux'), // default mock
+  };
+});
 
-// Create mock functions
-const mockLog = mock((...args: any[]) => {});
-const mockDebugLog = mock((...args: any[]) => {});
-const mockSpawnAndLogOutput = mock(async () => ({ exitCode: 0, stdout: '', stderr: '' }));
+vi.mock('../../logging.js', () => ({
+  log: vi.fn(),
+  debugLog: vi.fn(),
+}));
 
-// Mock executePostApplyCommand function
-const mockExecutePostApplyCommand = mock(async () => true);
+vi.mock('../../common/process.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../common/process.js')>();
+  return {
+    ...actual,
+    spawnAndLogOutput: vi.fn(async () => ({ exitCode: 0, stdout: '', stderr: '' })),
+  };
+});
 
-// Import the module under test after all mocks are set up
+vi.mock('../actions.js', () => ({
+  executePostApplyCommand: vi.fn(async () => true),
+}));
+
 import { createWorkspace, prepareExistingWorkspace } from './workspace_manager.js';
 import { WorkspaceLock } from './workspace_lock.js';
 import type { TimConfig, TimConfigInput } from '../configSchema.js';
+import { log, debugLog } from '../../logging.js';
+import { spawnAndLogOutput } from '../../common/process.js';
+import { executePostApplyCommand } from '../actions.js';
+
+const mockLog = vi.mocked(log);
+const mockDebugLog = vi.mocked(debugLog);
+const mockSpawnAndLogOutput = vi.mocked(spawnAndLogOutput);
+const mockExecutePostApplyCommand = vi.mocked(executePostApplyCommand);
 
 describe('createWorkspace', () => {
   // Setup variables
@@ -33,36 +54,12 @@ describe('createWorkspace', () => {
     await fs.mkdir(mainRepoRoot, { recursive: true });
 
     // Reset all mocks
-    mockLog.mockReset();
-    mockDebugLog.mockReset();
-    mockSpawnAndLogOutput.mockReset();
-    mockExecutePostApplyCommand.mockReset();
+    vi.clearAllMocks();
     mockSpawnAndLogOutput.mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' });
     mockExecutePostApplyCommand.mockResolvedValue(true);
-
-    // Set up module mocks
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: mockLog,
-      debugLog: mockDebugLog,
-    }));
-
-    await moduleMocker.mock('../../common/process.js', () => {
-      const process = require('../../common/process.js');
-      return {
-        ...process,
-        spawnAndLogOutput: mockSpawnAndLogOutput,
-      };
-    });
-
-    await moduleMocker.mock('../actions.js', () => ({
-      executePostApplyCommand: mockExecutePostApplyCommand,
-    }));
   });
 
   afterEach(async () => {
-    // Clean up mocks
-    moduleMocker.clear();
-
     // Clean up the temporary directory
     if (testTempDir) {
       await fs.rm(testTempDir, { recursive: true, force: true });
@@ -733,16 +730,16 @@ describe('createWorkspace', () => {
       stderr: '',
     }));
 
-    const acquireLockSpy = spyOn(WorkspaceLock, 'acquireLock').mockResolvedValue({
+    const acquireLockSpy = vi.spyOn(WorkspaceLock, 'acquireLock').mockResolvedValue({
       type: 'persistent',
       command: `tim agent --workspace ${taskId}`,
       startedAt: new Date().toISOString(),
       hostname: 'test-host',
       version: 2,
     } as any);
-    const setupCleanupHandlersSpy = spyOn(WorkspaceLock, 'setupCleanupHandlers').mockImplementation(
-      () => {}
-    );
+    const setupCleanupHandlersSpy = vi
+      .spyOn(WorkspaceLock, 'setupCleanupHandlers')
+      .mockImplementation(() => {});
 
     // Execute with undefined plan file
     const result = await createWorkspace(mainRepoRoot, taskId, undefined, config, {
@@ -1592,7 +1589,7 @@ describe('createWorkspace', () => {
     await fs.mkdir(sourceDirectory, { recursive: true });
     await fs.writeFile(path.join(sourceDirectory, 'test.txt'), 'test content');
 
-    const platformSpy = spyOn(os, 'platform').mockReturnValue('darwin');
+    vi.mocked(os.platform).mockReturnValue('darwin');
 
     const config: TimConfig = {
       workspaceCreation: {
@@ -1634,7 +1631,7 @@ describe('createWorkspace', () => {
     const copiedContent = await fs.readFile(path.join(targetClonePath, 'test.txt'), 'utf-8');
     expect(copiedContent).toBe('test content');
 
-    platformSpy.mockRestore();
+    vi.mocked(os.platform).mockReset();
   });
 
   test('createWorkspace with missing source directory should fail', async () => {
@@ -2594,7 +2591,7 @@ describe('createWorkspace', () => {
     await fs.mkdir(sourceDirectory, { recursive: true });
     await fs.writeFile(path.join(sourceDirectory, 'tracked.txt'), 'tracked');
 
-    const platformSpy = spyOn(os, 'platform').mockReturnValue('darwin');
+    vi.mocked(os.platform).mockReturnValue('darwin');
 
     const config: TimConfig = {
       workspaceCreation: {
@@ -2644,7 +2641,7 @@ describe('createWorkspace', () => {
       createBranch: true,
     });
 
-    platformSpy.mockRestore();
+    vi.mocked(os.platform).mockReset();
 
     expect(result).not.toBeNull();
     expect(result?.checkedOutRemoteBranch).toBe(true);

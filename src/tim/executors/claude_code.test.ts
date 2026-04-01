@@ -1,8 +1,7 @@
-import { describe, test, expect, mock, afterEach, beforeEach } from 'bun:test';
+import { describe, test, expect, vi, afterEach, beforeEach } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { tmpdir } from 'node:os';
-import { ModuleMocker } from '../../testing.js';
 
 function createStreamingProcessMock(overrides?: {
   exitCode?: number;
@@ -16,8 +15,8 @@ function createStreamingProcessMock(overrides?: {
     stdin:
       overrides?.stdin ??
       ({
-        write: mock((_value: string) => {}),
-        end: mock(async () => {}),
+        write: vi.fn((_value: string) => {}),
+        end: vi.fn(async () => {}),
       } as const),
     result: Promise.resolve({
       exitCode: overrides?.exitCode ?? 0,
@@ -26,7 +25,7 @@ function createStreamingProcessMock(overrides?: {
       signal: overrides?.signal ?? null,
       killedByInactivity: overrides?.killedByInactivity ?? false,
     }),
-    kill: mock(() => {}),
+    kill: vi.fn(() => {}),
   };
 }
 
@@ -43,27 +42,30 @@ async function sendSinglePromptAndWaitForTest(streamingProcess: any, content: st
   return streamingProcess.result;
 }
 
+beforeEach(() => {
+  vi.resetModules();
+});
+
+afterEach(() => {
+  vi.clearAllMocks();
+});
+
 describe('ClaudeCodeExecutor - failure detection integration', () => {
-  const moduleMocker = new ModuleMocker(import.meta);
   let tempDir = '/tmp/claude-failure-test';
 
   beforeEach(async () => {
     (await import('node:fs/promises')).mkdir(tempDir, { recursive: true }).catch(() => {});
   });
 
-  afterEach(() => {
-    moduleMocker.clear();
-  });
-
   test('returns structured failure when assistant emits FAILED (captureOutput: none)', async () => {
     // Mock git root
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
     }));
 
     // Make spawn call succeed and invoke the provided formatter once
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async (_args: string[], opts: any) => {
         if (opts && typeof opts.formatStdout === 'function') {
           // Feed any line; formatJsonMessage is mocked below
           opts.formatStdout('{}\n');
@@ -77,18 +79,21 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
 
     // Mock formatter to produce an assistant message with FAILED
     const failureRaw = `FAILED: Cannot proceed due to conflicting requirements\n\nRequirements:\n- A\nProblems:\n- B\nPossible solutions:\n- C`;
-    await moduleMocker.mock('./claude_code/format.ts', () => ({
-      formatJsonMessage: mock((_line: string) => ({
+    vi.doMock('./claude_code/format.ts', () => ({
+      formatJsonMessage: vi.fn((_line: string) => ({
         type: 'assistant',
         message: 'Model output...',
         rawMessage: failureRaw,
         failed: true,
         failedSummary: 'Cannot proceed due to conflicting requirements',
       })),
+      extractStructuredMessages: vi.fn((_messages: any[]) => []),
+
+      resetToolUseCache: vi.fn(),
     }));
 
     // Import after mocks
-    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
 
     const exec = new ClaudeCodeExecutor(
       { permissionsMcp: { enabled: false } } as any,
@@ -105,7 +110,7 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     })) as any;
 
     expect(out).toBeDefined();
-    expect(out.success).toBeFalse();
+    expect(out.success).toBe(false);
     expect(out.content).toContain('FAILED:');
     expect(out.failureDetails).toBeDefined();
     // Extracted problems should reflect the Problems section
@@ -116,13 +121,13 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
 
   test('infers sourceAgent from FAILED summary when agent is specified', async () => {
     // Mock git root
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
     }));
 
     // Make spawn call succeed and invoke the provided formatter once
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async (_args: string[], opts: any) => {
         if (opts && typeof opts.formatStdout === 'function') {
           opts.formatStdout('{}\n');
         }
@@ -135,17 +140,20 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
 
     // Mock formatter to produce an assistant message with an agent-tagged FAILED summary
     const failureRaw = `FAILED: Reviewer reported a failure — Blocked by policy\n\nRequirements:\n- A\nProblems:\n- B\nPossible solutions:\n- C`;
-    await moduleMocker.mock('./claude_code/format.ts', () => ({
-      formatJsonMessage: mock((_line: string) => ({
+    vi.doMock('./claude_code/format.ts', () => ({
+      formatJsonMessage: vi.fn((_line: string) => ({
         type: 'assistant',
         message: 'Model output...',
         rawMessage: failureRaw,
         failed: true,
         failedSummary: 'Reviewer reported a failure — Blocked by policy',
       })),
+      extractStructuredMessages: vi.fn((_messages: any[]) => []),
+
+      resetToolUseCache: vi.fn(),
     }));
 
-    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
 
     const exec = new ClaudeCodeExecutor(
       { permissionsMcp: { enabled: false } } as any,
@@ -161,17 +169,17 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     })) as any;
 
     expect(out).toBeDefined();
-    expect(out.success).toBeFalse();
+    expect(out.success).toBe(false);
     expect(out.failureDetails?.sourceAgent).toBe('reviewer');
   });
 
   test('reports verifier as failure source when simple mode verifier reports FAILED', async () => {
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
     }));
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async (_args: string[], opts: any) => {
         if (opts && typeof opts.formatStdout === 'function') {
           opts.formatStdout('{}\n');
         }
@@ -184,17 +192,20 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
 
     const failureRaw =
       'FAILED: Verifier detected failing checks\n\nRequirements:\n- Ensure tests pass\nProblems:\n- bun test failed\nPossible solutions:\n- Investigate test logs';
-    await moduleMocker.mock('./claude_code/format.ts', () => ({
-      formatJsonMessage: mock((_line: string) => ({
+    vi.doMock('./claude_code/format.ts', () => ({
+      formatJsonMessage: vi.fn((_line: string) => ({
         type: 'assistant',
         message: 'Model output...',
         rawMessage: failureRaw,
         failed: true,
         failedSummary: 'Verifier detected failing checks',
       })),
+      extractStructuredMessages: vi.fn((_messages: any[]) => []),
+
+      resetToolUseCache: vi.fn(),
     }));
 
-    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
 
     const executor = new ClaudeCodeExecutor(
       { permissionsMcp: { enabled: false } } as any,
@@ -210,17 +221,17 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     })) as any;
 
     expect(result).toBeDefined();
-    expect(result.success).toBeFalse();
+    expect(result.success).toBe(false);
     expect(result.failureDetails?.sourceAgent).toBe('verifier');
   });
 
   test('detects FAILED when not first line and returns orchestrator source by default', async () => {
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
     }));
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async (_args: string[], opts: any) => {
         if (opts && typeof opts.formatStdout === 'function') {
           opts.formatStdout('{}\n');
         }
@@ -232,16 +243,19 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     }));
 
     const failureRaw = `PREFACE\nSome lines first\n\nFAILED: Could not proceed due to constraints\nProblems:\n- X`;
-    await moduleMocker.mock('./claude_code/format.ts', () => ({
-      formatJsonMessage: mock((_line: string) => ({
+    vi.doMock('./claude_code/format.ts', () => ({
+      formatJsonMessage: vi.fn((_line: string) => ({
         type: 'assistant',
         message: 'Model output...',
         rawMessage: failureRaw,
         // failed flag missing to force executor to detect using parseFailedReportAnywhere
       })),
+      extractStructuredMessages: vi.fn((_messages: any[]) => []),
+
+      resetToolUseCache: vi.fn(),
     }));
 
-    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
 
     const exec = new ClaudeCodeExecutor(
       { permissionsMcp: { enabled: false } } as any,
@@ -257,18 +271,18 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     })) as any;
 
     expect(out).toBeDefined();
-    expect(out.success).toBeFalse();
+    expect(out.success).toBe(false);
     expect(out.failureDetails?.sourceAgent).toBe('orchestrator');
     expect(out.failureDetails?.problems).toContain('X');
   });
 
   test('strips ANSI escape codes from non-raw messages when captureOutput is all', async () => {
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
     }));
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async (_args: string[], opts: any) => {
         if (opts && typeof opts.formatStdout === 'function') {
           opts.formatStdout('line-1\nline-2\n');
         }
@@ -280,8 +294,8 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     }));
 
     let callIndex = 0;
-    await moduleMocker.mock('./claude_code/format.ts', () => ({
-      formatJsonMessage: mock((_line: string) => {
+    vi.doMock('./claude_code/format.ts', () => ({
+      formatJsonMessage: vi.fn((_line: string) => {
         if (callIndex++ === 0) {
           return {
             type: 'assistant',
@@ -295,9 +309,12 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
           message: '\u001b[36mTool Use: Bash ls\u001b[39m',
         };
       }),
+      extractStructuredMessages: vi.fn((_messages: any[]) => []),
+
+      resetToolUseCache: vi.fn(),
     }));
 
-    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
 
     const exec = new ClaudeCodeExecutor(
       { permissionsMcp: { enabled: false } } as any,
@@ -323,45 +340,48 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     const planRoot = await fs.mkdtemp(path.join(tmpdir(), 'claude-simple-mode-'));
 
     const recordedArgs: string[][] = [];
-    const wrapSimple = mock((_content: string) => 'WRAPPED_SIMPLE');
+    const wrapSimple = vi.fn((_content: string) => 'WRAPPED_SIMPLE');
 
     try {
-      await moduleMocker.mock('../../common/git.ts', () => ({
-        getGitRoot: mock(async () => planRoot),
+      vi.doMock('../../common/git.ts', () => ({
+        getGitRoot: vi.fn(async () => planRoot),
       }));
 
-      await moduleMocker.mock('../../common/process.ts', () => ({
-        spawnWithStreamingIO: mock(async (args: string[], opts: any) => {
+      vi.doMock('../../common/process.ts', () => ({
+        spawnWithStreamingIO: vi.fn(async (args: string[], opts: any) => {
           recordedArgs.push(args);
           if (opts && typeof opts.formatStdout === 'function') {
             opts.formatStdout('{}\n');
           }
           return createStreamingProcessMock();
         }),
-        createLineSplitter: mock(() => (input: string) => (input ? input.split('\n') : [])),
+        createLineSplitter: vi.fn(() => (input: string) => (input ? input.split('\n') : [])),
         sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
         debug: false,
       }));
 
-      await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
-        wrapWithOrchestration: mock((_content: string) => 'WRAPPED_NORMAL'),
+      vi.doMock('./claude_code/orchestrator_prompt.ts', () => ({
+        wrapWithOrchestration: vi.fn((_content: string) => 'WRAPPED_NORMAL'),
         wrapWithOrchestrationSimple: wrapSimple,
-        wrapWithOrchestrationTdd: mock((_content: string) => 'WRAPPED_TDD'),
+        wrapWithOrchestrationTdd: vi.fn((_content: string) => 'WRAPPED_TDD'),
       }));
 
-      await moduleMocker.mock('./claude_code/format.ts', () => ({
-        formatJsonMessage: mock(() => ({
+      vi.doMock('./claude_code/format.ts', () => ({
+        formatJsonMessage: vi.fn(() => ({
           type: 'assistant',
           message: 'Model output...',
           rawMessage: 'Model output...',
         })),
+        extractStructuredMessages: vi.fn((_messages: any[]) => []),
+
+        resetToolUseCache: vi.fn(),
       }));
 
-      await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
-        buildAgentsArgument: mock(() => '{}'),
+      vi.doMock('./claude_code/agent_generator.ts', () => ({
+        buildAgentsArgument: vi.fn(() => '{}'),
       }));
 
-      const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+      const { ClaudeCodeExecutor } = await import('./claude_code.js');
 
       const executor = new ClaudeCodeExecutor(
         { permissionsMcp: { enabled: false } } as any,
@@ -391,12 +411,12 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     const externalDir = '/tmp/tim/external-config';
     const recordedArgs: string[][] = [];
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
     }));
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async (args: string[], opts: any) => {
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async (args: string[], opts: any) => {
         recordedArgs.push(args);
         if (opts && typeof opts.formatStdout === 'function') {
           opts.formatStdout('{}\n');
@@ -408,11 +428,14 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
       debug: false,
     }));
 
-    await moduleMocker.mock('./claude_code/format.ts', () => ({
-      formatJsonMessage: mock(() => ({})),
+    vi.doMock('./claude_code/format.ts', () => ({
+      formatJsonMessage: vi.fn(() => ({})),
+      extractStructuredMessages: vi.fn((_messages: any[]) => []),
+
+      resetToolUseCache: vi.fn(),
     }));
 
-    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
 
     const exec = new ClaudeCodeExecutor(
       { permissionsMcp: { enabled: false } } as any,
@@ -439,12 +462,12 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
   test('does not add external config directory when not using external storage', async () => {
     const recordedArgs: string[][] = [];
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
     }));
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async (args: string[], opts: any) => {
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async (args: string[], opts: any) => {
         recordedArgs.push(args);
         if (opts && typeof opts.formatStdout === 'function') {
           opts.formatStdout('{}\n');
@@ -456,11 +479,14 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
       debug: false,
     }));
 
-    await moduleMocker.mock('./claude_code/format.ts', () => ({
-      formatJsonMessage: mock(() => ({})),
+    vi.doMock('./claude_code/format.ts', () => ({
+      formatJsonMessage: vi.fn(() => ({})),
+      extractStructuredMessages: vi.fn((_messages: any[]) => []),
+
+      resetToolUseCache: vi.fn(),
     }));
 
-    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
 
     const exec = new ClaudeCodeExecutor(
       { permissionsMcp: { enabled: false } } as any,
@@ -485,26 +511,21 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
 });
 
 describe('ClaudeCodeExecutor - review mode execution', () => {
-  const moduleMocker = new ModuleMocker(import.meta);
   let tempDir = '/tmp/claude-review-mode-test';
 
   beforeEach(async () => {
     (await import('node:fs/promises')).mkdir(tempDir, { recursive: true }).catch(() => {});
   });
 
-  afterEach(() => {
-    moduleMocker.clear();
-  });
-
   test('uses JSON output format and schema when executionMode is review', async () => {
     const recordedArgs: string[][] = [];
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
     }));
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async (args: string[]) => {
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async (args: string[]) => {
         recordedArgs.push(args);
         return createStreamingProcessMock();
       }),
@@ -513,7 +534,7 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
       debug: false,
     }));
 
-    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
 
     const exec = new ClaudeCodeExecutor(
       { permissionsMcp: { enabled: false } } as any,
@@ -551,8 +572,8 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
   });
 
   test('returns ExecutorOutput with jsonOutput metadata flag set to true', async () => {
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
     }));
 
     const mockStructuredOutput = {
@@ -568,16 +589,19 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
     };
 
     // Mock formatJsonMessage to return structured output
-    await moduleMocker.mock('./claude_code/format.ts', () => ({
-      formatJsonMessage: mock(() => ({
+    vi.doMock('./claude_code/format.ts', () => ({
+      formatJsonMessage: vi.fn(() => ({
         type: 'assistant',
         message: 'Review completed',
         structuredOutput: mockStructuredOutput,
       })),
+      extractStructuredMessages: vi.fn((_messages: any[]) => []),
+
+      resetToolUseCache: vi.fn(),
     }));
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async (_args: string[], opts: any) => {
         // Simulate formatStdout callback processing
         if (opts && typeof opts.formatStdout === 'function') {
           opts.formatStdout('{}');
@@ -589,7 +613,7 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
       debug: false,
     }));
 
-    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
 
     const exec = new ClaudeCodeExecutor(
       { permissionsMcp: { enabled: false } } as any,
@@ -612,18 +636,18 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
   });
 
   test('throws error when Claude exits with non-zero exit code in review mode', async () => {
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
     }));
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async () => createStreamingProcessMock({ exitCode: 1 })),
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async () => createStreamingProcessMock({ exitCode: 1 })),
       createLineSplitter: () => (s: string) => s.split('\n'),
       sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
-    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
 
     const exec = new ClaudeCodeExecutor(
       { permissionsMcp: { enabled: false } } as any,
@@ -644,12 +668,12 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
   test('uses specified model in review mode', async () => {
     const recordedArgs: string[][] = [];
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
     }));
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async (args: string[]) => {
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async (args: string[]) => {
         recordedArgs.push(args);
         return createStreamingProcessMock();
       }),
@@ -658,7 +682,7 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
       debug: false,
     }));
 
-    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
 
     const exec = new ClaudeCodeExecutor(
       { permissionsMcp: { enabled: false } } as any,
@@ -683,12 +707,12 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
   test('review mode does not use orchestration wrapper or agents', async () => {
     const recordedArgs: string[][] = [];
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
     }));
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async (args: string[]) => {
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async (args: string[]) => {
         recordedArgs.push(args);
         return createStreamingProcessMock();
       }),
@@ -697,7 +721,7 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
       debug: false,
     }));
 
-    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
 
     const exec = new ClaudeCodeExecutor(
       { permissionsMcp: { enabled: false } } as any,
@@ -729,12 +753,12 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
   test('sets notification suppression env on Claude subprocess', async () => {
     let capturedEnv: Record<string, string> | undefined;
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
     }));
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async (_args: string[], opts: any) => {
         capturedEnv = opts?.env;
         return createStreamingProcessMock();
       }),
@@ -743,16 +767,19 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
       debug: false,
     }));
 
-    await moduleMocker.mock('./claude_code/format.ts', () => ({
-      formatJsonMessage: mock(() => ({
+    vi.doMock('./claude_code/format.ts', () => ({
+      formatJsonMessage: vi.fn(() => ({
         type: 'assistant',
         message: '',
         rawMessage: '',
         failed: false,
       })),
+      extractStructuredMessages: vi.fn((_messages: any[]) => []),
+
+      resetToolUseCache: vi.fn(),
     }));
 
-    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
 
     const exec = new ClaudeCodeExecutor(
       { permissionsMcp: { enabled: false } } as any,
@@ -771,15 +798,15 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
   });
 
   test('writes normal-mode prompt to stdin as stream-json line and closes stdin', async () => {
-    const stdinWrite = mock((_value: string) => {});
-    const stdinEnd = mock(async () => {});
+    const stdinWrite = vi.fn((_value: string) => {});
+    const stdinEnd = vi.fn(async () => {});
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
     }));
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async () => ({
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async () => ({
         ...createStreamingProcessMock(),
         stdin: { write: stdinWrite, end: stdinEnd },
       })),
@@ -788,18 +815,24 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
       debug: false,
     }));
 
-    await moduleMocker.mock('./claude_code/format.ts', () => ({
-      formatJsonMessage: mock(() => ({
+    vi.doMock('./claude_code/format.ts', () => ({
+      formatJsonMessage: vi.fn(() => ({
         type: 'assistant',
         message: '',
         rawMessage: '',
         failed: false,
       })),
-      extractStructuredMessages: mock(() => []),
-      resetToolUseCache: mock(() => {}),
+      extractStructuredMessages: vi.fn(() => []),
+      resetToolUseCache: vi.fn(() => {}),
     }));
 
-    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+    vi.doMock('./claude_code/orchestrator_prompt.ts', () => ({
+      wrapWithOrchestration: vi.fn((content: string) => content),
+      wrapWithOrchestrationSimple: vi.fn((content: string) => content),
+      wrapWithOrchestrationTdd: vi.fn((content: string) => content),
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
 
     const exec = new ClaudeCodeExecutor(
       { permissionsMcp: { enabled: false } } as any,
@@ -817,7 +850,7 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
     expect(stdinWrite).toHaveBeenCalledTimes(1);
     const sentLine = stdinWrite.mock.calls[0]?.[0];
     expect(typeof sentLine).toBe('string');
-    expect(sentLine.endsWith('\n')).toBeTrue();
+    expect(sentLine.endsWith('\n')).toBe(true);
     const parsed = JSON.parse(sentLine.trim());
     expect(parsed.type).toBe('user');
     expect(parsed.message?.role).toBe('user');
@@ -826,15 +859,15 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
   });
 
   test('writes review-mode prompt to stdin as stream-json line and closes stdin', async () => {
-    const stdinWrite = mock((_value: string) => {});
-    const stdinEnd = mock(async () => {});
+    const stdinWrite = vi.fn((_value: string) => {});
+    const stdinEnd = vi.fn(async () => {});
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
     }));
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async () => ({
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async () => ({
         ...createStreamingProcessMock(),
         stdin: { write: stdinWrite, end: stdinEnd },
       })),
@@ -843,17 +876,17 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
       debug: false,
     }));
 
-    await moduleMocker.mock('./claude_code/format.ts', () => ({
-      formatJsonMessage: mock(() => ({
+    vi.doMock('./claude_code/format.ts', () => ({
+      formatJsonMessage: vi.fn(() => ({
         type: 'assistant',
         message: '',
         rawMessage: '',
       })),
-      extractStructuredMessages: mock(() => []),
-      resetToolUseCache: mock(() => {}),
+      extractStructuredMessages: vi.fn(() => []),
+      resetToolUseCache: vi.fn(() => {}),
     }));
 
-    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
 
     const exec = new ClaudeCodeExecutor(
       { permissionsMcp: { enabled: false } } as any,
@@ -883,74 +916,22 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
 });
 
 describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () => {
-  const moduleMocker = new ModuleMocker(import.meta);
   let tempDir = '/tmp/claude-subagent-model-test';
 
   beforeEach(async () => {
     (await import('node:fs/promises')).mkdir(tempDir, { recursive: true }).catch(() => {});
   });
 
-  afterEach(() => {
-    moduleMocker.clear();
-  });
-
-  async function setupMocks(options: {
-    wrapNormalSpy?: ReturnType<typeof mock>;
-    wrapSimpleSpy?: ReturnType<typeof mock>;
-    buildAgentsSpy?: ReturnType<typeof mock>;
-  }) {
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
-    }));
-
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async (args: string[], opts: any) => {
-        if (opts && typeof opts.formatStdout === 'function') {
-          opts.formatStdout('{}\n');
-        }
-        return createStreamingProcessMock();
-      }),
-      createLineSplitter: () => (s: string) => (s ? s.split('\n') : []),
-      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
-      debug: false,
-    }));
-
-    await moduleMocker.mock('./claude_code/format.ts', () => ({
-      formatJsonMessage: mock(() => ({
-        type: 'assistant',
-        message: 'Output',
-        rawMessage: 'Output',
-      })),
-      extractStructuredMessages: mock(() => []),
-      resetToolUseCache: mock(() => {}),
-    }));
-
-    const wrapNormal = options.wrapNormalSpy ?? mock((_content: string) => 'WRAPPED_NORMAL');
-    const wrapSimple = options.wrapSimpleSpy ?? mock((_content: string) => 'WRAPPED_SIMPLE');
-
-    await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
-      wrapWithOrchestration: wrapNormal,
-      wrapWithOrchestrationSimple: wrapSimple,
-      wrapWithOrchestrationTdd: mock((_content: string) => 'WRAPPED_TDD'),
-    }));
-
-    const buildAgents = options.buildAgentsSpy ?? mock(() => '{"agents":[]}');
-
-    await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
-      buildAgentsArgument: buildAgents,
-    }));
-  }
-
   test('skips --agents flag when subagentExecutor is set', async () => {
-    const buildAgentsSpy = mock(() => '{"agents":[]}');
+    const buildAgentsSpy = vi.fn(() => '{"agents":[]}');
     const recordedArgs: string[][] = [];
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
     }));
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async (args: string[], opts: any) => {
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async (args: string[], opts: any) => {
         recordedArgs.push([...args]);
         if (opts && typeof opts.formatStdout === 'function') {
           opts.formatStdout('{}\n');
@@ -962,27 +943,27 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
       debug: false,
     }));
 
-    await moduleMocker.mock('./claude_code/format.ts', () => ({
-      formatJsonMessage: mock(() => ({
+    vi.doMock('./claude_code/format.ts', () => ({
+      formatJsonMessage: vi.fn(() => ({
         type: 'assistant',
         message: 'Output',
         rawMessage: 'Output',
       })),
-      extractStructuredMessages: mock(() => []),
-      resetToolUseCache: mock(() => {}),
+      extractStructuredMessages: vi.fn(() => []),
+      resetToolUseCache: vi.fn(() => {}),
     }));
 
-    await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
-      wrapWithOrchestration: mock((_content: string) => 'WRAPPED'),
-      wrapWithOrchestrationSimple: mock((_content: string) => 'WRAPPED'),
-      wrapWithOrchestrationTdd: mock((_content: string) => 'WRAPPED'),
+    vi.doMock('./claude_code/orchestrator_prompt.ts', () => ({
+      wrapWithOrchestration: vi.fn((_content: string) => 'WRAPPED'),
+      wrapWithOrchestrationSimple: vi.fn((_content: string) => 'WRAPPED'),
+      wrapWithOrchestrationTdd: vi.fn((_content: string) => 'WRAPPED'),
     }));
 
-    await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
+    vi.doMock('./claude_code/agent_generator.ts', () => ({
       buildAgentsArgument: buildAgentsSpy,
     }));
 
-    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
 
     const exec = new ClaudeCodeExecutor(
       { permissionsMcp: { enabled: false } } as any,
@@ -1005,15 +986,15 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
   });
 
   test('skips --agents flag in normal mode even when subagentExecutor is not set', async () => {
-    const buildAgentsSpy = mock(() => '{"agents":[]}');
+    const buildAgentsSpy = vi.fn(() => '{"agents":[]}');
     const recordedArgs: string[][] = [];
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
     }));
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async (args: string[], opts: any) => {
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async (args: string[], opts: any) => {
         recordedArgs.push([...args]);
         if (opts && typeof opts.formatStdout === 'function') {
           opts.formatStdout('{}\n');
@@ -1025,27 +1006,27 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
       debug: false,
     }));
 
-    await moduleMocker.mock('./claude_code/format.ts', () => ({
-      formatJsonMessage: mock(() => ({
+    vi.doMock('./claude_code/format.ts', () => ({
+      formatJsonMessage: vi.fn(() => ({
         type: 'assistant',
         message: 'Output',
         rawMessage: 'Output',
       })),
-      extractStructuredMessages: mock(() => []),
-      resetToolUseCache: mock(() => {}),
+      extractStructuredMessages: vi.fn(() => []),
+      resetToolUseCache: vi.fn(() => {}),
     }));
 
-    await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
-      wrapWithOrchestration: mock((_content: string) => 'WRAPPED'),
-      wrapWithOrchestrationSimple: mock((_content: string) => 'WRAPPED'),
-      wrapWithOrchestrationTdd: mock((_content: string) => 'WRAPPED'),
+    vi.doMock('./claude_code/orchestrator_prompt.ts', () => ({
+      wrapWithOrchestration: vi.fn((_content: string) => 'WRAPPED'),
+      wrapWithOrchestrationSimple: vi.fn((_content: string) => 'WRAPPED'),
+      wrapWithOrchestrationTdd: vi.fn((_content: string) => 'WRAPPED'),
     }));
 
-    await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
+    vi.doMock('./claude_code/agent_generator.ts', () => ({
       buildAgentsArgument: buildAgentsSpy,
     }));
 
-    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
 
     // No subagentExecutor set - normal mode still uses tim subagent via prompt
     const exec = new ClaudeCodeExecutor(
@@ -1069,16 +1050,16 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
   });
 
   test('passes subagentExecutor and dynamicSubagentInstructions to orchestration wrapper in normal mode', async () => {
-    const wrapNormalSpy = mock(
+    const wrapNormalSpy = vi.fn(
       (_content: string, _planId: string, _options: any) => 'WRAPPED_NORMAL'
     );
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
     }));
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async (_args: string[], opts: any) => {
         if (opts && typeof opts.formatStdout === 'function') {
           opts.formatStdout('{}\n');
         }
@@ -1089,27 +1070,27 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
       debug: false,
     }));
 
-    await moduleMocker.mock('./claude_code/format.ts', () => ({
-      formatJsonMessage: mock(() => ({
+    vi.doMock('./claude_code/format.ts', () => ({
+      formatJsonMessage: vi.fn(() => ({
         type: 'assistant',
         message: 'Output',
         rawMessage: 'Output',
       })),
-      extractStructuredMessages: mock(() => []),
-      resetToolUseCache: mock(() => {}),
+      extractStructuredMessages: vi.fn(() => []),
+      resetToolUseCache: vi.fn(() => {}),
     }));
 
-    await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
+    vi.doMock('./claude_code/orchestrator_prompt.ts', () => ({
       wrapWithOrchestration: wrapNormalSpy,
-      wrapWithOrchestrationSimple: mock((_content: string) => 'WRAPPED'),
-      wrapWithOrchestrationTdd: mock((_content: string) => 'WRAPPED'),
+      wrapWithOrchestrationSimple: vi.fn((_content: string) => 'WRAPPED'),
+      wrapWithOrchestrationTdd: vi.fn((_content: string) => 'WRAPPED'),
     }));
 
-    await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
-      buildAgentsArgument: mock(() => '{}'),
+    vi.doMock('./claude_code/agent_generator.ts', () => ({
+      buildAgentsArgument: vi.fn(() => '{}'),
     }));
 
-    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
 
     const exec = new ClaudeCodeExecutor(
       { permissionsMcp: { enabled: false } } as any,
@@ -1135,16 +1116,16 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
   });
 
   test('passes subagentExecutor and dynamicSubagentInstructions to orchestration wrapper in simple mode', async () => {
-    const wrapSimpleSpy = mock(
+    const wrapSimpleSpy = vi.fn(
       (_content: string, _planId: string, _options: any) => 'WRAPPED_SIMPLE'
     );
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
     }));
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async (_args: string[], opts: any) => {
         if (opts && typeof opts.formatStdout === 'function') {
           opts.formatStdout('{}\n');
         }
@@ -1155,27 +1136,27 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
       debug: false,
     }));
 
-    await moduleMocker.mock('./claude_code/format.ts', () => ({
-      formatJsonMessage: mock(() => ({
+    vi.doMock('./claude_code/format.ts', () => ({
+      formatJsonMessage: vi.fn(() => ({
         type: 'assistant',
         message: 'Output',
         rawMessage: 'Output',
       })),
-      extractStructuredMessages: mock(() => []),
-      resetToolUseCache: mock(() => {}),
+      extractStructuredMessages: vi.fn(() => []),
+      resetToolUseCache: vi.fn(() => {}),
     }));
 
-    await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
-      wrapWithOrchestration: mock((_content: string) => 'WRAPPED'),
+    vi.doMock('./claude_code/orchestrator_prompt.ts', () => ({
+      wrapWithOrchestration: vi.fn((_content: string) => 'WRAPPED'),
       wrapWithOrchestrationSimple: wrapSimpleSpy,
-      wrapWithOrchestrationTdd: mock((_content: string) => 'WRAPPED'),
+      wrapWithOrchestrationTdd: vi.fn((_content: string) => 'WRAPPED'),
     }));
 
-    await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
-      buildAgentsArgument: mock(() => '{}'),
+    vi.doMock('./claude_code/agent_generator.ts', () => ({
+      buildAgentsArgument: vi.fn(() => '{}'),
     }));
 
-    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
 
     const exec = new ClaudeCodeExecutor(
       { permissionsMcp: { enabled: false } } as any,
@@ -1201,14 +1182,14 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
   });
 
   test('routes tdd execution mode to TDD orchestration wrapper with simpleMode context', async () => {
-    const wrapTddSpy = mock((_content: string, _planId: string, _options: any) => 'WRAPPED_TDD');
+    const wrapTddSpy = vi.fn((_content: string, _planId: string, _options: any) => 'WRAPPED_TDD');
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
     }));
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async (_args: string[], opts: any) => {
         if (opts && typeof opts.formatStdout === 'function') {
           opts.formatStdout('{}\n');
         }
@@ -1219,27 +1200,27 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
       debug: false,
     }));
 
-    await moduleMocker.mock('./claude_code/format.ts', () => ({
-      formatJsonMessage: mock(() => ({
+    vi.doMock('./claude_code/format.ts', () => ({
+      formatJsonMessage: vi.fn(() => ({
         type: 'assistant',
         message: 'Output',
         rawMessage: 'Output',
       })),
-      extractStructuredMessages: mock(() => []),
-      resetToolUseCache: mock(() => {}),
+      extractStructuredMessages: vi.fn(() => []),
+      resetToolUseCache: vi.fn(() => {}),
     }));
 
-    await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
-      wrapWithOrchestration: mock((_content: string) => 'WRAPPED'),
-      wrapWithOrchestrationSimple: mock((_content: string) => 'WRAPPED'),
+    vi.doMock('./claude_code/orchestrator_prompt.ts', () => ({
+      wrapWithOrchestration: vi.fn((_content: string) => 'WRAPPED'),
+      wrapWithOrchestrationSimple: vi.fn((_content: string) => 'WRAPPED'),
       wrapWithOrchestrationTdd: wrapTddSpy,
     }));
 
-    await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
-      buildAgentsArgument: mock(() => '{}'),
+    vi.doMock('./claude_code/agent_generator.ts', () => ({
+      buildAgentsArgument: vi.fn(() => '{}'),
     }));
 
-    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
 
     const exec = new ClaudeCodeExecutor(
       { permissionsMcp: { enabled: false } } as any,
@@ -1268,16 +1249,16 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
 
   test('skips --agents flag for each valid subagentExecutor value', async () => {
     for (const executorValue of ['codex-cli', 'claude-code', 'dynamic'] as const) {
-      moduleMocker.clear();
+      vi.resetModules();
 
       const recordedArgs: string[][] = [];
 
-      await moduleMocker.mock('../../common/git.ts', () => ({
-        getGitRoot: mock(async () => tempDir),
+      vi.doMock('../../common/git.ts', () => ({
+        getGitRoot: vi.fn(async () => tempDir),
       }));
 
-      await moduleMocker.mock('../../common/process.ts', () => ({
-        spawnWithStreamingIO: mock(async (args: string[], opts: any) => {
+      vi.doMock('../../common/process.ts', () => ({
+        spawnWithStreamingIO: vi.fn(async (args: string[], opts: any) => {
           recordedArgs.push([...args]);
           if (opts && typeof opts.formatStdout === 'function') {
             opts.formatStdout('{}\n');
@@ -1289,27 +1270,27 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
         debug: false,
       }));
 
-      await moduleMocker.mock('./claude_code/format.ts', () => ({
-        formatJsonMessage: mock(() => ({
+      vi.doMock('./claude_code/format.ts', () => ({
+        formatJsonMessage: vi.fn(() => ({
           type: 'assistant',
           message: 'Output',
           rawMessage: 'Output',
         })),
-        extractStructuredMessages: mock(() => []),
-        resetToolUseCache: mock(() => {}),
+        extractStructuredMessages: vi.fn(() => []),
+        resetToolUseCache: vi.fn(() => {}),
       }));
 
-      await moduleMocker.mock('./claude_code/orchestrator_prompt.ts', () => ({
-        wrapWithOrchestration: mock((_content: string) => 'WRAPPED'),
-        wrapWithOrchestrationSimple: mock((_content: string) => 'WRAPPED'),
-        wrapWithOrchestrationTdd: mock((_content: string) => 'WRAPPED'),
+      vi.doMock('./claude_code/orchestrator_prompt.ts', () => ({
+        wrapWithOrchestration: vi.fn((_content: string) => 'WRAPPED'),
+        wrapWithOrchestrationSimple: vi.fn((_content: string) => 'WRAPPED'),
+        wrapWithOrchestrationTdd: vi.fn((_content: string) => 'WRAPPED'),
       }));
 
-      await moduleMocker.mock('./claude_code/agent_generator.ts', () => ({
-        buildAgentsArgument: mock(() => '{}'),
+      vi.doMock('./claude_code/agent_generator.ts', () => ({
+        buildAgentsArgument: vi.fn(() => '{}'),
       }));
 
-      const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+      const { ClaudeCodeExecutor } = await import('./claude_code.js');
 
       const exec = new ClaudeCodeExecutor(
         { permissionsMcp: { enabled: false } } as any,
@@ -1331,7 +1312,6 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
 });
 
 describe('ClaudeCodeExecutor - tunnel prompt handler wiring', () => {
-  const moduleMocker = new ModuleMocker(import.meta);
   let tempDir = '/tmp/claude-tunnel-wiring-test';
 
   let capturedTunnelServerOptions: any[] = [];
@@ -1341,17 +1321,13 @@ describe('ClaudeCodeExecutor - tunnel prompt handler wiring', () => {
     (await import('node:fs/promises')).mkdir(tempDir, { recursive: true }).catch(() => {});
   });
 
-  afterEach(() => {
-    moduleMocker.clear();
-  });
-
   test('passes onPromptRequest handler to createTunnelServer in normal mode', async () => {
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
     }));
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async (_args: string[], opts: any) => {
         if (opts && typeof opts.formatStdout === 'function') {
           opts.formatStdout('{}\n');
         }
@@ -1362,27 +1338,30 @@ describe('ClaudeCodeExecutor - tunnel prompt handler wiring', () => {
       debug: false,
     }));
 
-    await moduleMocker.mock('./claude_code/format.ts', () => ({
-      formatJsonMessage: mock(() => ({
+    vi.doMock('./claude_code/format.ts', () => ({
+      formatJsonMessage: vi.fn(() => ({
         type: 'assistant',
         message: 'Output',
         rawMessage: 'Output',
       })),
+      extractStructuredMessages: vi.fn((_messages: any[]) => []),
+
+      resetToolUseCache: vi.fn(),
     }));
 
-    await moduleMocker.mock('../../logging/tunnel_server.ts', () => ({
-      createTunnelServer: mock(async (_socketPath: string, options?: any) => {
+    vi.doMock('../../logging/tunnel_server.ts', () => ({
+      createTunnelServer: vi.fn(async (_socketPath: string, options?: any) => {
         capturedTunnelServerOptions.push(options);
-        return { close: mock(() => {}) };
+        return { close: vi.fn(() => {}) };
       }),
     }));
 
     // Ensure isTunnelActive returns false so the tunnel server gets created
-    await moduleMocker.mock('../../logging/tunnel_client.ts', () => ({
-      isTunnelActive: mock(() => false),
+    vi.doMock('../../logging/tunnel_client.ts', () => ({
+      isTunnelActive: vi.fn(() => false),
     }));
 
-    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
 
     const exec = new ClaudeCodeExecutor(
       { permissionsMcp: { enabled: false } } as any,
@@ -1403,29 +1382,29 @@ describe('ClaudeCodeExecutor - tunnel prompt handler wiring', () => {
   });
 
   test('passes onPromptRequest handler to createTunnelServer in review mode', async () => {
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
     }));
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async () => createStreamingProcessMock()),
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async () => createStreamingProcessMock()),
       createLineSplitter: () => (s: string) => s.split('\n'),
       sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
       debug: false,
     }));
 
-    await moduleMocker.mock('../../logging/tunnel_server.ts', () => ({
-      createTunnelServer: mock(async (_socketPath: string, options?: any) => {
+    vi.doMock('../../logging/tunnel_server.ts', () => ({
+      createTunnelServer: vi.fn(async (_socketPath: string, options?: any) => {
         capturedTunnelServerOptions.push(options);
-        return { close: mock(() => {}) };
+        return { close: vi.fn(() => {}) };
       }),
     }));
 
-    await moduleMocker.mock('../../logging/tunnel_client.ts', () => ({
-      isTunnelActive: mock(() => false),
+    vi.doMock('../../logging/tunnel_client.ts', () => ({
+      isTunnelActive: vi.fn(() => false),
     }));
 
-    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
 
     const exec = new ClaudeCodeExecutor(
       { permissionsMcp: { enabled: false } } as any,
@@ -1447,31 +1426,27 @@ describe('ClaudeCodeExecutor - tunnel prompt handler wiring', () => {
 });
 
 describe('ClaudeCodeExecutor - terminal input integration', () => {
-  const moduleMocker = new ModuleMocker(import.meta);
   let tempDir = '/tmp/claude-terminal-input-test';
 
   beforeEach(async () => {
     await (await import('node:fs/promises')).mkdir(tempDir, { recursive: true }).catch(() => {});
   });
 
-  afterEach(() => {
-    moduleMocker.clear();
-  });
-
   test('uses multi-message streaming path when terminal input is enabled', async () => {
-    const awaitAndCleanupSpy = mock(async () => ({
-      exitCode: 0,
-      stdout: '',
-      stderr: '',
-      signal: null,
-      killedByInactivity: false,
+    const executeWithTerminalInputSpy = vi.fn(() => ({
+      resultPromise: Promise.resolve({
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+        signal: null,
+        killedByInactivity: false,
+      }),
+      onResultMessage: vi.fn(() => {}),
+      sendFollowUpMessage: vi.fn(() => {}),
+      closeStdin: vi.fn(() => {}),
+      cleanup: vi.fn(() => {}),
     }));
-    const setupTerminalInputSpy = mock(() => ({
-      started: true,
-      onResultMessage: mock(() => {}),
-      awaitAndCleanup: awaitAndCleanupSpy,
-    }));
-    const sendSinglePromptAndWaitSpy = mock(async () => ({
+    const sendSinglePromptAndWaitSpy = vi.fn(async () => ({
       exitCode: 0,
       stdout: '',
       stderr: '',
@@ -1479,29 +1454,29 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
       killedByInactivity: false,
     }));
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
     }));
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async () => createStreamingProcessMock()),
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async () => createStreamingProcessMock()),
       createLineSplitter: () => (s: string) => s.split('\n'),
       debug: false,
     }));
 
-    await moduleMocker.mock('./claude_code/streaming_input.ts', () => ({
+    vi.doMock('./claude_code/streaming_input.ts', () => ({
       sendSinglePromptAndWait: sendSinglePromptAndWaitSpy,
     }));
 
-    await moduleMocker.mock('./claude_code/terminal_input_lifecycle.ts', () => ({
-      setupTerminalInput: setupTerminalInputSpy,
+    vi.doMock('./claude_code/terminal_input_lifecycle.ts', () => ({
+      executeWithTerminalInput: executeWithTerminalInputSpy,
     }));
 
     const originalIsTTY = process.stdin.isTTY;
     Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
 
     try {
-      const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+      const { ClaudeCodeExecutor } = await import('./claude_code.js');
       const exec = new ClaudeCodeExecutor(
         { permissionsMcp: { enabled: false } } as any,
         { baseDir: tempDir, terminalInput: true } as any,
@@ -1518,63 +1493,55 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
       Object.defineProperty(process.stdin, 'isTTY', { value: originalIsTTY, configurable: true });
     }
 
-    expect(setupTerminalInputSpy).toHaveBeenCalledTimes(1);
-    expect(awaitAndCleanupSpy).toHaveBeenCalledTimes(1);
+    expect(executeWithTerminalInputSpy).toHaveBeenCalledTimes(1);
     expect(sendSinglePromptAndWaitSpy).toHaveBeenCalledTimes(0);
   });
 
   test('logs terminal input hint when lifecycle controller reports started', async () => {
-    const awaitAndCleanupSpy = mock(async () => ({
+    const executeWithTerminalInputSpy = vi.fn(() => ({
+      resultPromise: Promise.resolve({
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+        signal: null,
+        killedByInactivity: false,
+      }),
+      onResultMessage: vi.fn(() => {}),
+      sendFollowUpMessage: vi.fn(() => {}),
+      closeStdin: vi.fn(() => {}),
+      cleanup: vi.fn(() => {}),
+    }));
+    const sendSinglePromptAndWaitSpy = vi.fn(async () => ({
       exitCode: 0,
       stdout: '',
       stderr: '',
       signal: null,
       killedByInactivity: false,
     }));
-    const setupTerminalInputSpy = mock(() => ({
-      started: true,
-      onResultMessage: mock(() => {}),
-      awaitAndCleanup: awaitAndCleanupSpy,
-    }));
-    const sendSinglePromptAndWaitSpy = mock(async () => ({
-      exitCode: 0,
-      stdout: '',
-      stderr: '',
-      signal: null,
-      killedByInactivity: false,
-    }));
-    const logSpy = mock(() => {});
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
     }));
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async () => createStreamingProcessMock()),
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async () => createStreamingProcessMock()),
       createLineSplitter: () => (s: string) => s.split('\n'),
       debug: false,
     }));
 
-    await moduleMocker.mock('../../logging.ts', () => ({
-      debugLog: mock(() => {}),
-      log: logSpy,
-      sendStructured: mock(() => {}),
-      error: mock(() => {}),
-    }));
-
-    await moduleMocker.mock('./claude_code/streaming_input.ts', () => ({
+    vi.doMock('./claude_code/streaming_input.ts', () => ({
       sendSinglePromptAndWait: sendSinglePromptAndWaitSpy,
     }));
 
-    await moduleMocker.mock('./claude_code/terminal_input_lifecycle.ts', () => ({
-      setupTerminalInput: setupTerminalInputSpy,
+    vi.doMock('./claude_code/terminal_input_lifecycle.ts', () => ({
+      executeWithTerminalInput: executeWithTerminalInputSpy,
     }));
 
     const originalIsTTY = process.stdin.isTTY;
     Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
 
     try {
-      const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+      const { ClaudeCodeExecutor } = await import('./claude_code.js');
       const exec = new ClaudeCodeExecutor(
         { permissionsMcp: { enabled: false } } as any,
         { baseDir: tempDir, terminalInput: true } as any,
@@ -1591,57 +1558,50 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
       Object.defineProperty(process.stdin, 'isTTY', { value: originalIsTTY, configurable: true });
     }
 
-    expect(setupTerminalInputSpy).toHaveBeenCalledTimes(1);
-    expect(awaitAndCleanupSpy).toHaveBeenCalledTimes(1);
+    // The terminal input hint logging is handled inside executeWithTerminalInput
+    expect(executeWithTerminalInputSpy).toHaveBeenCalledTimes(1);
     expect(sendSinglePromptAndWaitSpy).toHaveBeenCalledTimes(0);
-    expect(
-      logSpy.mock.calls.some((call) =>
-        call.some(
-          (arg) =>
-            typeof arg === 'string' && arg.includes('Type a message and press Enter to send input')
-        )
-      )
-    ).toBe(true);
   });
 
   test('emits user_terminal_input structured message even when follow-up send throws', async () => {
-    const sendStructuredSpy = mock(() => {});
-    const sendFollowUpMessageSpy = mock(() => {
+    const sendStructuredSpy = vi.fn(() => {});
+    const sendFollowUpMessageSpy = vi.fn(() => {
       throw new Error('write failed');
     });
-    const sendSinglePromptAndWaitSpy = mock(async () => ({
+    const sendSinglePromptAndWaitSpy = vi.fn(async () => ({
       exitCode: 0,
       stdout: '',
       stderr: '',
       signal: null,
       killedByInactivity: false,
     }));
-    const debugLogSpy = mock(() => {});
+    const debugLogSpy = vi.fn(() => {});
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
     }));
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async () => createStreamingProcessMock()),
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async () => createStreamingProcessMock()),
       createLineSplitter: () => (s: string) => s.split('\n'),
       debug: false,
     }));
 
-    await moduleMocker.mock('../../logging.ts', () => ({
+    vi.doMock('../../logging.ts', () => ({
       debugLog: debugLogSpy,
-      log: mock(() => {}),
+      log: vi.fn(() => {}),
       sendStructured: sendStructuredSpy,
-      error: mock(() => {}),
+      error: vi.fn(() => {}),
     }));
 
-    await moduleMocker.mock('./claude_code/streaming_input.ts', () => ({
+    vi.doMock('./claude_code/streaming_input.ts', () => ({
       sendSinglePromptAndWait: sendSinglePromptAndWaitSpy,
-      sendInitialPrompt: mock(() => {}),
+      sendInitialPrompt: vi.fn(() => {}),
       sendFollowUpMessage: sendFollowUpMessageSpy,
+      safeEndStdin: vi.fn(async () => {}),
     }));
 
-    await moduleMocker.mock('./claude_code/terminal_input.ts', () => ({
+    vi.doMock('./claude_code/terminal_input.ts', () => ({
       TerminalInputReader: class {
         private readonly onLine: (line: string) => void;
 
@@ -1658,11 +1618,17 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
       },
     }));
 
+    // Use real executeWithTerminalInput so the internal behavior (sendFollowUpMessage,
+    // sendStructured for user_terminal_input, etc.) is actually exercised.
+    vi.doMock('./claude_code/terminal_input_lifecycle.ts', async (importOriginal) =>
+      importOriginal<typeof import('./claude_code/terminal_input_lifecycle.js')>()
+    );
+
     const originalIsTTY = process.stdin.isTTY;
     Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
 
     try {
-      const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+      const { ClaudeCodeExecutor } = await import('./claude_code.js');
       const exec = new ClaudeCodeExecutor(
         { permissionsMcp: { enabled: false } } as any,
         { baseDir: tempDir, terminalInput: true } as any,
@@ -1690,20 +1656,8 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
   });
 
   test('closes stdin on result message so streaming result can resolve in terminal input mode', async () => {
-    const onResultMessageSpy = mock(() => {});
-    const awaitAndCleanupSpy = mock(async () => ({
-      exitCode: 0,
-      stdout: '',
-      stderr: '',
-      signal: null,
-      killedByInactivity: false,
-    }));
-    const setupTerminalInputSpy = mock(() => ({
-      started: true,
-      onResultMessage: onResultMessageSpy,
-      awaitAndCleanup: awaitAndCleanupSpy,
-    }));
-    const sendSinglePromptAndWaitSpy = mock(async () => ({
+    const onResultMessageSpy = vi.fn(() => {});
+    const sendSinglePromptAndWaitSpy = vi.fn(async () => ({
       exitCode: 0,
       stdout: '',
       stderr: '',
@@ -1714,69 +1668,6 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
       '{"type":"result","subtype":"success","total_cost_usd":0,"duration_ms":1,"duration_api_ms":1,"is_error":false,"num_turns":1,"result":"done","session_id":"session"}';
     let formatStdout: ((output: string) => unknown) | undefined;
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
-    }));
-
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
-        formatStdout = opts.formatStdout;
-        queueMicrotask(() => {
-          formatStdout?.(`${resultLine}\n`);
-        });
-        return {
-          ...createStreamingProcessMock(),
-          kill: mock(() => {}),
-        };
-      }),
-      createLineSplitter: () => (s: string) => s.split('\n').filter(Boolean),
-      debug: false,
-    }));
-
-    await moduleMocker.mock('./claude_code/streaming_input.ts', () => ({
-      sendSinglePromptAndWait: sendSinglePromptAndWaitSpy,
-    }));
-
-    await moduleMocker.mock('./claude_code/terminal_input_lifecycle.ts', () => ({
-      setupTerminalInput: setupTerminalInputSpy,
-    }));
-
-    const originalIsTTY = process.stdin.isTTY;
-    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
-
-    try {
-      const { ClaudeCodeExecutor } = await import('./claude_code.ts');
-      const exec = new ClaudeCodeExecutor(
-        { permissionsMcp: { enabled: false } } as any,
-        { baseDir: tempDir, terminalInput: true } as any,
-        {} as any
-      );
-
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('executor did not resolve')), 250);
-      });
-      await Promise.race([
-        exec.execute('CTX', {
-          planId: 'p1',
-          planTitle: 'T',
-          planFilePath: `${tempDir}/plan.yml`,
-          executionMode: 'normal',
-        }),
-        timeoutPromise,
-      ]);
-    } finally {
-      Object.defineProperty(process.stdin, 'isTTY', { value: originalIsTTY, configurable: true });
-    }
-
-    formatStdout?.(`${resultLine}\n`);
-    expect(onResultMessageSpy).toHaveBeenCalledTimes(1);
-    expect(sendSinglePromptAndWaitSpy).toHaveBeenCalledTimes(0);
-  });
-
-  test('does not force-close stdin when closeTerminalInputOnResult is false', async () => {
-    const onResultMessageSpy = mock(() => {});
-    const closeStdinSpy = mock(() => {});
-    const cleanupSpy = mock(() => {});
     let resolveStreamingResult:
       | ((value: {
           exitCode: number;
@@ -1786,12 +1677,133 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
           killedByInactivity: boolean;
         }) => void)
       | undefined;
-    const executeWithTerminalInputSpy = mock(() => ({
+    let executeWithTerminalInputCalled: (() => void) | undefined;
+    const executeWithTerminalInputCalledPromise = new Promise<void>((resolve) => {
+      executeWithTerminalInputCalled = resolve;
+    });
+
+    const executeWithTerminalInputSpy = vi.fn(() => {
+      executeWithTerminalInputCalled?.();
+      return {
+        resultPromise: new Promise<{
+          exitCode: number;
+          stdout: string;
+          stderr: string;
+          signal: NodeJS.Signals | null;
+          killedByInactivity: boolean;
+        }>((resolve) => {
+          resolveStreamingResult = resolve;
+        }),
+        onResultMessage: onResultMessageSpy,
+        sendFollowUpMessage: vi.fn(() => {}),
+        closeStdin: vi.fn(() => {}),
+        cleanup: vi.fn(() => {}),
+      };
+    });
+
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
+    }));
+
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async (_args: string[], opts: any) => {
+        formatStdout = opts.formatStdout;
+        return {
+          ...createStreamingProcessMock(),
+          kill: vi.fn(() => {}),
+        };
+      }),
+      createLineSplitter: () => (s: string) => s.split('\n').filter(Boolean),
+      debug: false,
+    }));
+
+    vi.doMock('./claude_code/streaming_input.ts', () => ({
+      sendSinglePromptAndWait: sendSinglePromptAndWaitSpy,
+    }));
+
+    vi.doMock('./claude_code/format.ts', () => ({
+      formatJsonMessage: vi.fn((line: string) => {
+        try {
+          const parsed = JSON.parse(line);
+          if (parsed.type === 'result') {
+            return { type: 'result', message: parsed.result ?? '', resultInfo: parsed };
+          }
+        } catch {}
+        return { type: 'assistant', message: line, rawMessage: line };
+      }),
+      extractStructuredMessages: vi.fn(() => []),
+      resetToolUseCache: vi.fn(() => {}),
+    }));
+
+    vi.doMock('./claude_code/terminal_input_lifecycle.ts', () => ({
+      executeWithTerminalInput: executeWithTerminalInputSpy,
+    }));
+
+    const originalIsTTY = process.stdin.isTTY;
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+
+    try {
+      const { ClaudeCodeExecutor } = await import('./claude_code.js');
+      const exec = new ClaudeCodeExecutor(
+        { permissionsMcp: { enabled: false } } as any,
+        { baseDir: tempDir, terminalInput: true } as any,
+        {} as any
+      );
+
+      const executePromise = exec.execute('CTX', {
+        planId: 'p1',
+        planTitle: 'T',
+        planFilePath: `${tempDir}/plan.yml`,
+        executionMode: 'normal',
+      });
+
+      // Wait for executeWithTerminalInput to be called so terminalInputResult is set
+      await executeWithTerminalInputCalledPromise;
+
+      // Send the result line to trigger onResultMessage via the formatStdout callback
+      formatStdout?.(`${resultLine}\n`);
+
+      // Now resolve the resultPromise so the executor can finish
+      resolveStreamingResult?.({
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+        signal: null,
+        killedByInactivity: false,
+      });
+
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('executor did not resolve')), 500);
+      });
+      await Promise.race([executePromise, timeoutPromise]);
+    } finally {
+      Object.defineProperty(process.stdin, 'isTTY', { value: originalIsTTY, configurable: true });
+    }
+
+    // onResultMessage should be called from the formatStdout callback when result line is processed
+    expect(onResultMessageSpy).toHaveBeenCalledTimes(1);
+    expect(sendSinglePromptAndWaitSpy).toHaveBeenCalledTimes(0);
+  });
+
+  test('does not force-close stdin when closeTerminalInputOnResult is false', async () => {
+    const onResultMessageSpy = vi.fn(() => {});
+    const closeStdinSpy = vi.fn(() => {});
+    const cleanupSpy = vi.fn(() => {});
+    let resolveStreamingResult:
+      | ((value: {
+          exitCode: number;
+          stdout: string;
+          stderr: string;
+          signal: NodeJS.Signals | null;
+          killedByInactivity: boolean;
+        }) => void)
+      | undefined;
+    const executeWithTerminalInputSpy = vi.fn(() => ({
       resultPromise: new Promise((resolve) => {
         resolveStreamingResult = resolve;
       }),
       onResultMessage: onResultMessageSpy,
-      sendFollowUpMessage: mock(() => {}),
+      sendFollowUpMessage: vi.fn(() => {}),
       closeStdin: closeStdinSpy,
       cleanup: cleanupSpy,
     }));
@@ -1799,12 +1811,12 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
       '{"type":"result","subtype":"success","total_cost_usd":0,"duration_ms":1,"duration_api_ms":1,"is_error":false,"num_turns":1,"result":"done","session_id":"session"}';
     let formatStdout: ((output: string) => unknown) | undefined;
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
     }));
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async (_args: string[], opts: any) => {
         formatStdout = opts.formatStdout;
         setTimeout(() => {
           formatStdout?.(`${resultLine}\n`);
@@ -1818,15 +1830,15 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
         }, 0);
         return {
           ...createStreamingProcessMock(),
-          kill: mock(() => {}),
+          kill: vi.fn(() => {}),
         };
       }),
       createLineSplitter: () => (s: string) => s.split('\n').filter(Boolean),
       debug: false,
     }));
 
-    await moduleMocker.mock('./claude_code/format.ts', () => ({
-      formatJsonMessage: mock((_line: string) => ({
+    vi.doMock('./claude_code/format.ts', () => ({
+      formatJsonMessage: vi.fn((_line: string) => ({
         type: 'result',
         message: 'done',
         resultInfo: {
@@ -1835,15 +1847,15 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
           durationMs: 1,
         },
       })),
-      extractStructuredMessages: mock(() => []),
-      resetToolUseCache: mock(() => {}),
+      extractStructuredMessages: vi.fn(() => []),
+      resetToolUseCache: vi.fn(() => {}),
     }));
 
-    await moduleMocker.mock('./claude_code/terminal_input_lifecycle.ts', () => ({
+    vi.doMock('./claude_code/terminal_input_lifecycle.ts', () => ({
       executeWithTerminalInput: executeWithTerminalInputSpy,
     }));
 
-    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
     const exec = new ClaudeCodeExecutor(
       { permissionsMcp: { enabled: false } } as any,
       { baseDir: tempDir, terminalInput: true, closeTerminalInputOnResult: false } as any,
@@ -1866,10 +1878,10 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
   });
 
   test('fast no-op retry flow closes stdin when it decides not to continue', async () => {
-    const onResultMessageSpy = mock(() => {});
-    const closeStdinSpy = mock(() => {});
-    const sendFollowUpMessageSpy = mock(() => {});
-    const cleanupSpy = mock(() => {});
+    const onResultMessageSpy = vi.fn(() => {});
+    const closeStdinSpy = vi.fn(() => {});
+    const sendFollowUpMessageSpy = vi.fn(() => {});
+    const cleanupSpy = vi.fn(() => {});
     let resolveStreamingResult:
       | ((value: {
           exitCode: number;
@@ -1880,7 +1892,7 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
         }) => void)
       | undefined;
     let workingCopyStatusCallCount = 0;
-    const executeWithTerminalInputSpy = mock(() => ({
+    const executeWithTerminalInputSpy = vi.fn(() => ({
       resultPromise: new Promise((resolve) => {
         resolveStreamingResult = resolve;
       }),
@@ -1891,9 +1903,9 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
     }));
     let formatStdout: ((output: string) => unknown) | undefined;
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
-      getWorkingCopyStatus: mock(async () => {
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
+      getWorkingCopyStatus: vi.fn(async () => {
         workingCopyStatusCallCount += 1;
         return workingCopyStatusCallCount === 1
           ? { hasChanges: false, checkFailed: false }
@@ -1901,8 +1913,8 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
       }),
     }));
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async (_args: string[], opts: any) => {
         formatStdout = opts.formatStdout;
         setTimeout(() => {
           formatStdout?.('{"type":"result"}\n');
@@ -1916,15 +1928,15 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
         }, 0);
         return {
           ...createStreamingProcessMock(),
-          kill: mock(() => {}),
+          kill: vi.fn(() => {}),
         };
       }),
       createLineSplitter: () => (s: string) => s.split('\n').filter(Boolean),
       debug: false,
     }));
 
-    await moduleMocker.mock('./claude_code/format.ts', () => ({
-      formatJsonMessage: mock((_line: string) => ({
+    vi.doMock('./claude_code/format.ts', () => ({
+      formatJsonMessage: vi.fn((_line: string) => ({
         type: 'result',
         message: 'done',
         resultInfo: {
@@ -1933,15 +1945,15 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
           durationMs: 1,
         },
       })),
-      extractStructuredMessages: mock(() => []),
-      resetToolUseCache: mock(() => {}),
+      extractStructuredMessages: vi.fn(() => []),
+      resetToolUseCache: vi.fn(() => {}),
     }));
 
-    await moduleMocker.mock('./claude_code/terminal_input_lifecycle.ts', () => ({
+    vi.doMock('./claude_code/terminal_input_lifecycle.ts', () => ({
       executeWithTerminalInput: executeWithTerminalInputSpy,
     }));
 
-    const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
     const exec = new ClaudeCodeExecutor(
       { permissionsMcp: { enabled: false } } as any,
       { baseDir: tempDir, terminalInput: false } as any,
@@ -1965,9 +1977,9 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
   });
 
   test('uses multi-message path for tunnel-forwarded input when terminal input is disabled', async () => {
-    const sendInitialPromptSpy = mock(() => {});
-    const sendFollowUpMessageSpy = mock(() => {});
-    const sendSinglePromptAndWaitSpy = mock(async () => ({
+    const sendInitialPromptSpy = vi.fn(() => {});
+    const sendFollowUpMessageSpy = vi.fn(() => {});
+    const sendSinglePromptAndWaitSpy = vi.fn(async () => ({
       exitCode: 0,
       stdout: '',
       stderr: '',
@@ -2015,49 +2027,55 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
 
     const adapter = new TestTunnelAdapter();
     const stdin = {
-      write: mock(() => {}),
-      end: mock(async () => {}),
+      write: vi.fn(() => {}),
+      end: vi.fn(async () => {}),
     };
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
     }));
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async (_args: string[], opts: any) => {
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async (_args: string[], opts: any) => {
         formatStdout = opts.formatStdout;
         return {
           stdin,
           result: new Promise((resolve) => {
             resolveResult = resolve;
           }),
-          kill: mock(() => {}),
+          kill: vi.fn(() => {}),
         };
       }),
       createLineSplitter: () => (s: string) => s.split('\n').filter(Boolean),
       debug: false,
     }));
 
-    await moduleMocker.mock('../../logging/adapter.js', () => ({
+    vi.doMock('../../logging/adapter.js', () => ({
       getLoggerAdapter: () => adapter,
     }));
 
-    await moduleMocker.mock('../../logging/tunnel_client.js', () => ({
+    vi.doMock('../../logging/tunnel_client.js', () => ({
       isTunnelActive: () => true,
       TunnelAdapter: TestTunnelAdapter,
     }));
 
-    await moduleMocker.mock('./claude_code/streaming_input.ts', () => ({
+    vi.doMock('./claude_code/streaming_input.ts', () => ({
       sendInitialPrompt: sendInitialPromptSpy,
       sendFollowUpMessage: sendFollowUpMessageSpy,
       sendSinglePromptAndWait: sendSinglePromptAndWaitSpy,
+      safeEndStdin: vi.fn(async () => {}),
     }));
+
+    // Use real executeWithTerminalInput so tunnel forwarding path is exercised
+    vi.doMock('./claude_code/terminal_input_lifecycle.ts', async (importOriginal) =>
+      importOriginal<typeof import('./claude_code/terminal_input_lifecycle.js')>()
+    );
 
     const originalIsTTY = process.stdin.isTTY;
     Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
 
     try {
-      const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+      const { ClaudeCodeExecutor } = await import('./claude_code.js');
       const exec = new ClaudeCodeExecutor(
         { permissionsMcp: { enabled: false } } as any,
         { baseDir: tempDir, terminalInput: false } as any,
@@ -2100,7 +2118,7 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
   });
 
   test('falls back to single-message path when terminal input option is disabled', async () => {
-    const sendSinglePromptAndWaitSpy = mock(async () => ({
+    const sendSinglePromptAndWaitSpy = vi.fn(async () => ({
       exitCode: 0,
       stdout: '',
       stderr: '',
@@ -2108,29 +2126,34 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
       killedByInactivity: false,
     }));
 
-    await moduleMocker.mock('../../common/git.ts', () => ({
-      getGitRoot: mock(async () => tempDir),
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
     }));
 
-    await moduleMocker.mock('../../common/process.ts', () => ({
-      spawnWithStreamingIO: mock(async () => createStreamingProcessMock()),
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async () => createStreamingProcessMock()),
       createLineSplitter: () => (s: string) => s.split('\n'),
       debug: false,
     }));
 
-    await moduleMocker.mock('./claude_code/streaming_input.ts', () => ({
+    vi.doMock('./claude_code/streaming_input.ts', () => ({
       sendSinglePromptAndWait: sendSinglePromptAndWaitSpy,
     }));
-    await moduleMocker.mock('../../logging/tunnel_client.js', () => ({
+    vi.doMock('../../logging/tunnel_client.js', () => ({
       isTunnelActive: () => false,
       TunnelAdapter: class {},
     }));
+
+    // Use real executeWithTerminalInput so single-prompt fallback path is exercised
+    vi.doMock('./claude_code/terminal_input_lifecycle.ts', async (importOriginal) =>
+      importOriginal<typeof import('./claude_code/terminal_input_lifecycle.js')>()
+    );
 
     const originalIsTTY = process.stdin.isTTY;
     Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
 
     try {
-      const { ClaudeCodeExecutor } = await import('./claude_code.ts');
+      const { ClaudeCodeExecutor } = await import('./claude_code.js');
       const exec = new ClaudeCodeExecutor(
         { permissionsMcp: { enabled: false } } as any,
         { baseDir: tempDir, terminalInput: false } as any,

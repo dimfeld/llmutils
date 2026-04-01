@@ -1,14 +1,22 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'path';
-import { ModuleMocker } from '../../testing.js';
 import type { PlanSchema } from '../planSchema.js';
 import { readPlanFile, writePlanFile, writePlanToDb } from '../plans.js';
 import { handleUpdateDocsCommand, runUpdateDocs } from './update-docs.js';
 
+vi.mock('../configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(),
+}));
+
+vi.mock('../executors/index.js', () => ({
+  buildExecutorAndLog: vi.fn(),
+  DEFAULT_EXECUTOR: 'codex-cli',
+  defaultModelForExecutor: vi.fn(() => 'test-model'),
+}));
+
 describe('update-docs command', () => {
-  const moduleMocker = new ModuleMocker(import.meta);
   let tempDir: string;
   let otherDir: string;
   let planFile: string;
@@ -23,7 +31,7 @@ describe('update-docs command', () => {
 
   afterEach(async () => {
     process.chdir(originalCwd);
-    moduleMocker.clear();
+    vi.clearAllMocks();
     await fs.rm(tempDir, { recursive: true, force: true });
     await fs.rm(otherDir, { recursive: true, force: true });
   });
@@ -136,24 +144,21 @@ describe('update-docs command', () => {
       { cwdForIdentity: tempDir }
     );
 
-    const executeSpy = mock(async () => undefined);
-    const buildExecutorAndLogSpy = mock((_executor: string, options: { baseDir: string }) => {
+    const executeSpy = vi.fn(async () => undefined);
+    const buildExecutorAndLogSpy = vi.fn((_executor: string, options: { baseDir: string }) => {
       expect(options.baseDir).toBe(tempDir);
       return { execute: executeSpy };
     });
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        defaultExecutor: 'codex-cli',
-        updateDocs: {},
-        isUsingExternalStorage: true,
-      }),
-    }));
-    await moduleMocker.mock('../executors/index.js', () => ({
-      buildExecutorAndLog: buildExecutorAndLogSpy,
-      DEFAULT_EXECUTOR: 'codex-cli',
-      defaultModelForExecutor: () => 'test-model',
-    }));
+    const configLoaderModule = await import('../configLoader.js');
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+      defaultExecutor: 'codex-cli',
+      updateDocs: {},
+      isUsingExternalStorage: true,
+    } as any);
+
+    const executorsModule = await import('../executors/index.js');
+    vi.mocked(executorsModule.buildExecutorAndLog).mockImplementation(buildExecutorAndLogSpy);
 
     process.chdir(otherDir);
 
@@ -181,17 +186,14 @@ describe('update-docs command', () => {
       tasks: [],
     });
 
-    const executeSpy = mock(async () => undefined);
-    const buildExecutorAndLogSpy = mock((_executor: string, options: { baseDir: string }) => {
+    const executeSpy = vi.fn(async () => undefined);
+    const buildExecutorAndLogSpy = vi.fn((_executor: string, options: { baseDir: string }) => {
       expect(options.baseDir).toBe(tempDir);
       return { execute: executeSpy };
     });
 
-    await moduleMocker.mock('../executors/index.js', () => ({
-      buildExecutorAndLog: buildExecutorAndLogSpy,
-      DEFAULT_EXECUTOR: 'codex-cli',
-      defaultModelForExecutor: () => 'test-model',
-    }));
+    const executorsModule = await import('../executors/index.js');
+    vi.mocked(executorsModule.buildExecutorAndLog).mockImplementation(buildExecutorAndLogSpy);
 
     process.chdir(otherDir);
 
@@ -223,17 +225,14 @@ describe('update-docs command', () => {
       { cwdForIdentity: tempDir }
     );
 
-    const executeSpy = mock(async () => undefined);
-    const buildExecutorAndLogSpy = mock((_executor: string, options: { baseDir: string }) => {
+    const executeSpy = vi.fn(async () => undefined);
+    const buildExecutorAndLogSpy = vi.fn((_executor: string, options: { baseDir: string }) => {
       expect(options.baseDir).toBe(tempDir);
       return { execute: executeSpy };
     });
 
-    await moduleMocker.mock('../executors/index.js', () => ({
-      buildExecutorAndLog: buildExecutorAndLogSpy,
-      DEFAULT_EXECUTOR: 'codex-cli',
-      defaultModelForExecutor: () => 'test-model',
-    }));
+    const executorsModule = await import('../executors/index.js');
+    vi.mocked(executorsModule.buildExecutorAndLog).mockImplementation(buildExecutorAndLogSpy);
 
     process.chdir(otherDir);
 

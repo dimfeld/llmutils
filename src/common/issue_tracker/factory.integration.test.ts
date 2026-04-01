@@ -1,11 +1,25 @@
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { getIssueTracker, getAvailableTrackers } from './factory.js';
 import { GitHubIssueTrackerClient } from './github.js';
-import { ModuleMocker } from '../../testing.js';
 import { clearGitHubTokenCache } from '../github/token.js';
 
+// Mock the modules before importing
+vi.mock('../../tim/configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(),
+}));
+
+vi.mock('../linear.js', () => ({
+  createLinearClient: vi.fn(),
+}));
+
+// Import the mocked modules
+import { loadEffectiveConfig } from '../../tim/configLoader.js';
+import { createLinearClient } from '../linear.js';
+
+const mockLoadEffectiveConfig = vi.mocked(loadEffectiveConfig);
+const mockCreateLinearClient = vi.mocked(createLinearClient);
+
 describe('Issue Tracker Factory Integration', () => {
-  const moduleMocker = new ModuleMocker(import.meta);
   const originalEnv = process.env;
 
   beforeEach(() => {
@@ -15,13 +29,15 @@ describe('Issue Tracker Factory Integration', () => {
     delete process.env.GITHUB_TOKEN;
     delete process.env.LINEAR_API_KEY;
     clearGitHubTokenCache();
+    // Reset mocks
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
     // Restore original environment
     process.env = originalEnv;
     clearGitHubTokenCache();
-    moduleMocker.clear();
+    vi.restoreAllMocks();
   });
 
   describe('getIssueTracker with real implementations', () => {
@@ -29,11 +45,9 @@ describe('Issue Tracker Factory Integration', () => {
       process.env.GITHUB_TOKEN = 'ghp_test_token';
 
       // Mock the config loader to return default config
-      await moduleMocker.mock('../../tim/configLoader.js', () => ({
-        loadEffectiveConfig: async () => ({
-          issueTracker: 'github',
-        }),
-      }));
+      mockLoadEffectiveConfig.mockResolvedValue({
+        issueTracker: 'github',
+      });
 
       const client = await getIssueTracker();
 
@@ -60,20 +74,18 @@ describe('Issue Tracker Factory Integration', () => {
       process.env.LINEAR_API_KEY = 'lin_test_key';
 
       // Mock the Linear client creation since we don't have it imported
-      await moduleMocker.mock('../linear.js', () => ({
-        createLinearClient: (config: any) => ({
-          getDisplayName: () => 'Linear',
-          getConfig: () => config,
-          async fetchIssue() {
-            return { issue: {} as any, comments: [] };
-          },
-          async fetchAllOpenIssues() {
-            return [];
-          },
-          parseIssueIdentifier() {
-            return null;
-          },
-        }),
+      mockCreateLinearClient.mockImplementation((config: any) => ({
+        getDisplayName: () => 'Linear',
+        getConfig: () => config,
+        async fetchIssue() {
+          return { issue: {} as any, comments: [] };
+        },
+        async fetchAllOpenIssues() {
+          return [];
+        },
+        parseIssueIdentifier() {
+          return null;
+        },
       }));
 
       const client = await getIssueTracker({
@@ -133,20 +145,18 @@ describe('Issue Tracker Factory Integration', () => {
       process.env.LINEAR_API_KEY = 'linear_key';
 
       // Mock the Linear client
-      await moduleMocker.mock('../linear.js', () => ({
-        createLinearClient: (config: any) => ({
-          getDisplayName: () => 'Linear',
-          getConfig: () => config,
-          async fetchIssue() {
-            return { issue: {} as any, comments: [] };
-          },
-          async fetchAllOpenIssues() {
-            return [];
-          },
-          parseIssueIdentifier() {
-            return null;
-          },
-        }),
+      mockCreateLinearClient.mockImplementation((config: any) => ({
+        getDisplayName: () => 'Linear',
+        getConfig: () => config,
+        async fetchIssue() {
+          return { issue: {} as any, comments: [] };
+        },
+        async fetchAllOpenIssues() {
+          return [];
+        },
+        parseIssueIdentifier() {
+          return null;
+        },
       }));
 
       const client2 = await getIssueTracker({ issueTracker: 'linear' });
@@ -270,12 +280,10 @@ describe('Issue Tracker Factory Integration', () => {
       process.env.GITHUB_TOKEN = 'github_token';
 
       // Mock config loader with specific configuration
-      await moduleMocker.mock('../../tim/configLoader.js', () => ({
-        loadEffectiveConfig: async () => ({
-          issueTracker: 'github',
-          otherConfigProperty: 'value',
-        }),
-      }));
+      mockLoadEffectiveConfig.mockResolvedValue({
+        issueTracker: 'github',
+        otherConfigProperty: 'value',
+      });
 
       const client = await getIssueTracker();
 
@@ -287,27 +295,21 @@ describe('Issue Tracker Factory Integration', () => {
       process.env.LINEAR_API_KEY = 'linear_token';
 
       // Mock config loader - this should NOT be called
-      await moduleMocker.mock('../../tim/configLoader.js', () => ({
-        loadEffectiveConfig: async () => {
-          throw new Error('Config loader should not be called');
-        },
-      }));
+      mockLoadEffectiveConfig.mockRejectedValue(new Error('Config loader should not be called'));
 
       // Mock Linear client
-      await moduleMocker.mock('../linear.js', () => ({
-        createLinearClient: (config: any) => ({
-          getDisplayName: () => 'Linear',
-          getConfig: () => config,
-          async fetchIssue() {
-            return { issue: {} as any, comments: [] };
-          },
-          async fetchAllOpenIssues() {
-            return [];
-          },
-          parseIssueIdentifier() {
-            return null;
-          },
-        }),
+      mockCreateLinearClient.mockImplementation((config: any) => ({
+        getDisplayName: () => 'Linear',
+        getConfig: () => config,
+        async fetchIssue() {
+          return { issue: {} as any, comments: [] };
+        },
+        async fetchAllOpenIssues() {
+          return [];
+        },
+        parseIssueIdentifier() {
+          return null;
+        },
       }));
 
       // Should use provided config, not call config loader
@@ -323,20 +325,18 @@ describe('Issue Tracker Factory Integration', () => {
       process.env.LINEAR_API_KEY = 'linear_token';
 
       // Mock Linear client
-      await moduleMocker.mock('../linear.js', () => ({
-        createLinearClient: (config: any) => ({
-          getDisplayName: () => 'Linear',
-          getConfig: () => config,
-          async fetchIssue() {
-            return { issue: {} as any, comments: [] };
-          },
-          async fetchAllOpenIssues() {
-            return [];
-          },
-          parseIssueIdentifier() {
-            return null;
-          },
-        }),
+      mockCreateLinearClient.mockImplementation((config: any) => ({
+        getDisplayName: () => 'Linear',
+        getConfig: () => config,
+        async fetchIssue() {
+          return { issue: {} as any, comments: [] };
+        },
+        async fetchAllOpenIssues() {
+          return [];
+        },
+        parseIssueIdentifier() {
+          return null;
+        },
       }));
 
       const clientPromises = [
@@ -368,20 +368,18 @@ describe('Issue Tracker Factory Integration', () => {
       process.env.LINEAR_API_KEY = 'linear_token';
 
       // Mock Linear client
-      await moduleMocker.mock('../linear.js', () => ({
-        createLinearClient: (config: any) => ({
-          getDisplayName: () => 'Linear',
-          getConfig: () => config,
-          async fetchIssue() {
-            return { issue: {} as any, comments: [] };
-          },
-          async fetchAllOpenIssues() {
-            return [];
-          },
-          parseIssueIdentifier() {
-            return null;
-          },
-        }),
+      mockCreateLinearClient.mockImplementation((config: any) => ({
+        getDisplayName: () => 'Linear',
+        getConfig: () => config,
+        async fetchIssue() {
+          return { issue: {} as any, comments: [] };
+        },
+        async fetchAllOpenIssues() {
+          return [];
+        },
+        parseIssueIdentifier() {
+          return null;
+        },
       }));
 
       const linearPromise = getIssueTracker({ issueTracker: 'linear' });

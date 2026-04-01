@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect, vi } from 'vitest';
 import { getDefaultAllowedTools, buildAllowedToolsList } from './run_claude_subprocess.ts';
 
 describe('getDefaultAllowedTools', () => {

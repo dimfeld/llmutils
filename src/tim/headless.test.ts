@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, mock, spyOn, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, vi, test } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -6,13 +6,16 @@ import { getLoggerAdapter, runWithLogger, type LoggerAdapter } from '../logging/
 import { HeadlessAdapter } from '../logging/headless_adapter.js';
 import type { HeadlessMessage } from '../logging/headless_protocol.js';
 import * as logging from '../logging.js';
-import { ModuleMocker } from '../testing.js';
 import type { StructuredMessage } from '../logging/structured_messages.js';
 import { listSessionInfoFiles } from './session_server/runtime_dir.js';
+import { getRepositoryIdentity } from './assignments/workspace_identifier.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
+// Mock the workspace_identifier module
+vi.mock('./assignments/workspace_identifier.js', () => ({
+  getRepositoryIdentity: vi.fn(),
+}));
 
-const getRepositoryIdentitySpy = mock(async () => ({
+const getRepositoryIdentitySpy = vi.fn(async () => ({
   repositoryId: 'owner/repo',
   remoteUrl: 'https://github.com/owner/repo.git',
   gitRoot: '/tmp/repo',
@@ -28,9 +31,8 @@ const originalXdgCacheHome = process.env.XDG_CACHE_HOME;
 let tempCacheDir: string | undefined;
 
 beforeAll(async () => {
-  await moduleMocker.mock('./assignments/workspace_identifier.js', () => ({
-    getRepositoryIdentity: getRepositoryIdentitySpy,
-  }));
+  // Set up the mock
+  vi.mocked(getRepositoryIdentity).mockImplementation(getRepositoryIdentitySpy);
 
   ({
     resolveHeadlessUrl,
@@ -63,7 +65,7 @@ afterEach(async () => {
 });
 
 afterAll(() => {
-  moduleMocker.clear();
+  vi.clearAllMocks();
 });
 
 async function waitFor(condition: () => boolean, timeoutMs: number = 4000): Promise<void> {
@@ -138,7 +140,7 @@ describe('resolveHeadlessUrl', () => {
   });
 
   test('warns once and falls back when configured URL is not ws:// or wss://', () => {
-    const warnSpy = spyOn(logging, 'warn');
+    const warnSpy = vi.spyOn(logging, 'warn');
     try {
       process.env.TIM_HEADLESS_URL = 'http://example.com/socket';
       expect(resolveHeadlessUrl({} as any)).toBe('ws://localhost:8123/tim-agent');
@@ -285,7 +287,7 @@ describe('runWithHeadlessAdapterIfEnabled', () => {
   };
 
   test('installs a headless adapter when enabled', async () => {
-    const destroySpy = spyOn(HeadlessAdapter.prototype, 'destroy');
+    const destroySpy = vi.spyOn(HeadlessAdapter.prototype, 'destroy');
     try {
       const activeAdapter = await runWithLogger(wrappedAdapter, () =>
         runWithHeadlessAdapterIfEnabled({
@@ -319,7 +321,7 @@ describe('runWithHeadlessAdapterIfEnabled', () => {
   });
 
   test('destroys the headless adapter when callback throws', async () => {
-    const destroySpy = spyOn(HeadlessAdapter.prototype, 'destroy');
+    const destroySpy = vi.spyOn(HeadlessAdapter.prototype, 'destroy');
     try {
       await expect(
         runWithHeadlessAdapterIfEnabled({
@@ -536,7 +538,7 @@ describe('updateHeadlessSessionInfo', () => {
   };
 
   test('calls updateSessionInfo when a headless adapter is the active logger', async () => {
-    const updateSpy = spyOn(HeadlessAdapter.prototype, 'updateSessionInfo');
+    const updateSpy = vi.spyOn(HeadlessAdapter.prototype, 'updateSessionInfo');
 
     try {
       await runWithLogger(wrappedAdapter, async () => {
@@ -562,7 +564,7 @@ describe('updateHeadlessSessionInfo', () => {
   });
 
   test('no-ops when the active logger is not a headless adapter', async () => {
-    const updateSpy = spyOn(HeadlessAdapter.prototype, 'updateSessionInfo');
+    const updateSpy = vi.spyOn(HeadlessAdapter.prototype, 'updateSessionInfo');
 
     try {
       await runWithLogger(wrappedAdapter, async () => {

@@ -1,16 +1,43 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { ModuleMocker } from '../../testing.js';
 import { claimAssignment, getAssignment } from '../db/assignment.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { getOrCreateProject } from '../db/project.js';
 import { recordWorkspace } from '../db/workspace.js';
 import { writePlanFile } from '../plans.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
+vi.mock('../../logging.js', () => ({
+  log: vi.fn(),
+  warn: vi.fn(),
+}));
+
+vi.mock('chalk', () => ({
+  default: {
+    green: (v: string) => v,
+    yellow: (v: string) => v,
+    gray: (v: string) => v,
+    cyan: (v: string) => v,
+  },
+}));
+
+vi.mock('@inquirer/prompts', () => ({
+  confirm: vi.fn(),
+}));
+
+vi.mock('../configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(),
+}));
+
+vi.mock('../../common/git.js', () => ({
+  getGitRoot: vi.fn(),
+}));
+
+vi.mock('../assignments/workspace_identifier.ts', () => ({
+  getRepositoryIdentity: vi.fn(),
+}));
 
 describe('assignments command handlers', () => {
   let tempRoot: string;
@@ -25,12 +52,13 @@ describe('assignments command handlers', () => {
   const planPathFragment = '1-sample.plan.md';
 
   let originalEnv: { XDG_CONFIG_HOME?: string; APPDATA?: string };
-  let logMock: ReturnType<typeof mock>;
-  let warnMock: ReturnType<typeof mock>;
-  let confirmMock: ReturnType<typeof mock>;
-  let getRepositoryIdentityMock: ReturnType<typeof mock>;
   let currentConfig: Record<string, unknown>;
   let currentConfigPath: string | undefined;
+
+  let logMock: ReturnType<typeof vi.fn>;
+  let warnMock: ReturnType<typeof vi.fn>;
+  let confirmMock: ReturnType<typeof vi.fn>;
+  let getRepositoryIdentityMock: ReturnType<typeof vi.fn>;
 
   let handleAssignmentsListCommand: (options: any, command: any) => Promise<void>;
   let handleAssignmentsCleanStaleCommand: (options: any, command: any) => Promise<void>;
@@ -100,50 +128,38 @@ describe('assignments command handlers', () => {
     process.env.XDG_CONFIG_HOME = configDir;
     delete process.env.APPDATA;
 
-    logMock = mock(() => {});
-    warnMock = mock(() => {});
-    confirmMock = mock(async () => true);
-    getRepositoryIdentityMock = mock(async (_options?: { cwd?: string }) => ({
-      repositoryId,
-      remoteUrl: repositoryRemoteUrl,
-      gitRoot: currentWorkspace,
-    }));
     currentConfig = {
       paths: { tasks: tasksDir },
     };
     currentConfigPath = undefined;
 
-    const chalkIdentity = (value: string) => value;
+    const loggingModule = await import('../../logging.js');
+    logMock = vi.mocked(loggingModule.log);
+    warnMock = vi.mocked(loggingModule.warn);
+    logMock.mockReset();
+    warnMock.mockReset();
+    logMock.mockImplementation(() => {});
+    warnMock.mockImplementation(() => {});
 
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: logMock,
-      warn: warnMock,
-    }));
+    const promptsModule = await import('@inquirer/prompts');
+    confirmMock = vi.mocked(promptsModule.confirm);
+    confirmMock.mockReset();
+    confirmMock.mockResolvedValue(true);
 
-    await moduleMocker.mock('chalk', () => ({
-      default: {
-        green: chalkIdentity,
-        yellow: chalkIdentity,
-        gray: chalkIdentity,
-        cyan: chalkIdentity,
-      },
-    }));
+    const configLoaderModule = await import('../configLoader.js');
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockImplementation(async () => currentConfig);
 
-    await moduleMocker.mock('@inquirer/prompts', () => ({
-      confirm: confirmMock,
-    }));
+    const gitModule = await import('../../common/git.js');
+    vi.mocked(gitModule.getGitRoot).mockResolvedValue(repoDir);
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => currentConfig,
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => repoDir,
-    }));
-
-    await moduleMocker.mock('../assignments/workspace_identifier.ts', () => ({
-      getRepositoryIdentity: getRepositoryIdentityMock,
-    }));
+    const workspaceIdentifierModule = await import('../assignments/workspace_identifier.ts');
+    getRepositoryIdentityMock = vi.mocked(workspaceIdentifierModule.getRepositoryIdentity);
+    getRepositoryIdentityMock.mockReset();
+    getRepositoryIdentityMock.mockResolvedValue({
+      repositoryId,
+      remoteUrl: repositoryRemoteUrl,
+      gitRoot: currentWorkspace,
+    });
 
     await writePlanFile(path.join(tasksDir, planPathFragment), {
       id: 1,
@@ -162,7 +178,7 @@ describe('assignments command handlers', () => {
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     closeDatabaseForTesting();
     if (originalEnv.XDG_CONFIG_HOME === undefined) {
       delete process.env.XDG_CONFIG_HOME;

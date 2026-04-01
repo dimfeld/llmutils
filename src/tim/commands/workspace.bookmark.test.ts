@@ -1,39 +1,40 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 
-import { ModuleMocker } from '../../testing.js';
+vi.mock('../../common/git.js', () => ({
+  getCurrentBranchName: vi.fn(async () => null),
+  getCurrentCommitHash: vi.fn(async () => null),
+  getCurrentJujutsuBranch: vi.fn(async () => null),
+  getGitRoot: vi.fn(async () => '/tmp/workspace'),
+  getJjBookmarkRevisionForWorkingCopy: vi.fn(async () => '@'),
+  getUsingJj: vi.fn(async () => true),
+  hasUncommittedChanges: vi.fn(async () => false),
+  isInGitRepository: vi.fn(async () => true),
+}));
+
+vi.mock('../../common/process.js', () => ({
+  spawnAndLogOutput: vi.fn(async () => ({ exitCode: 0, stdout: '', stderr: '' })),
+}));
+
+import { getJjBookmarkRevisionForWorkingCopy } from '../../common/git.js';
+import { spawnAndLogOutput } from '../../common/process.js';
 
 describe('setWorkspaceBookmarkToCurrent', () => {
-  let moduleMocker: ModuleMocker;
   let processCalls: string[][];
-  const getJjBookmarkRevisionForWorkingCopy = mock(async () => '@');
+  const mockGetJjBookmarkRevisionForWorkingCopy = vi.mocked(getJjBookmarkRevisionForWorkingCopy);
+  const mockSpawnAndLogOutput = vi.mocked(spawnAndLogOutput);
 
   beforeEach(async () => {
-    moduleMocker = new ModuleMocker(import.meta);
     processCalls = [];
-    getJjBookmarkRevisionForWorkingCopy.mockClear();
-    getJjBookmarkRevisionForWorkingCopy.mockResolvedValue('@');
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getCurrentBranchName: mock(async () => null),
-      getCurrentCommitHash: mock(async () => null),
-      getCurrentJujutsuBranch: mock(async () => null),
-      getGitRoot: mock(async () => '/tmp/workspace'),
-      getJjBookmarkRevisionForWorkingCopy,
-      getUsingJj: mock(async () => true),
-      hasUncommittedChanges: mock(async () => false),
-      isInGitRepository: mock(async () => true),
-    }));
-
-    await moduleMocker.mock('../../common/process.js', () => ({
-      spawnAndLogOutput: mock(async (args: string[]) => {
-        processCalls.push(args);
-        return { exitCode: 0, stdout: '', stderr: '' };
-      }),
-    }));
+    vi.clearAllMocks();
+    mockGetJjBookmarkRevisionForWorkingCopy.mockResolvedValue('@');
+    mockSpawnAndLogOutput.mockImplementation(async (args: string[]) => {
+      processCalls.push(args);
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
   });
 
   afterEach(() => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
   });
 
   test('sets bookmarks to the provided revision', async () => {
@@ -56,11 +57,11 @@ describe('setWorkspaceBookmarkToCurrent', () => {
 
   test('uses @- when jj status reports no working-copy changes', async () => {
     const { setWorkspaceBookmarkToCurrent } = await import('./workspace.js');
-    getJjBookmarkRevisionForWorkingCopy.mockResolvedValue('@-');
+    mockGetJjBookmarkRevisionForWorkingCopy.mockResolvedValue('@-');
 
     await setWorkspaceBookmarkToCurrent('/tmp/workspace', 'task-123');
 
-    expect(getJjBookmarkRevisionForWorkingCopy).toHaveBeenCalledWith('/tmp/workspace');
+    expect(mockGetJjBookmarkRevisionForWorkingCopy).toHaveBeenCalledWith('/tmp/workspace');
     expect(processCalls).toContainEqual([
       'jj',
       'log',

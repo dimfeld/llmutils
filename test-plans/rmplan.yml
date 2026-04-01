@@ -10,7 +10,7 @@ postApplyCommands:
   - title: Run type checking
     command: bun run check
   - title: Run tests
-    command: bun test
+    command: bun run test
     allowFailure: true
     hideOutputOnSuccess: true
 

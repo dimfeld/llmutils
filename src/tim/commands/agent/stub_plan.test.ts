@@ -1,23 +1,48 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { ModuleMocker } from '../../../testing.js';
 import { readPlanFile, writePlanFile } from '../../plans.js';
 import type { PlanSchema } from '../../planSchema.js';
 
+const handleReviewCommandSpy = vi.fn(async () => ({ tasksAppended: 2 }));
+const executorExecuteSpy = vi.fn(async () => undefined);
+const checkAndMarkParentDoneSpy = vi.fn(async () => undefined);
+const markParentInProgressSpy = vi.fn(async () => undefined);
+
+vi.mock('../../../logging.js', () => ({
+  log: vi.fn(() => {}),
+  warn: vi.fn(() => {}),
+  debugLog: vi.fn(() => {}),
+  boldMarkdownHeaders: (value: string) => value,
+}));
+
+vi.mock('../../../common/process.js', () => ({
+  commitAll: vi.fn(async () => 0),
+}));
+
+vi.mock('../../actions.js', () => ({
+  executePostApplyCommand: vi.fn(async () => true),
+}));
+
+vi.mock('../../prompt_builder.js', () => ({
+  buildExecutionPromptWithoutSteps: vi.fn(async () => 'stub prompt'),
+}));
+
+vi.mock('./parent_plans.js', () => ({
+  checkAndMarkParentDone: checkAndMarkParentDoneSpy,
+  markParentInProgress: markParentInProgressSpy,
+}));
+
+vi.mock('../review.js', () => ({
+  handleReviewCommand: handleReviewCommandSpy,
+}));
+
 describe('executeStubPlan', () => {
-  let moduleMocker: ModuleMocker;
   let tempDir: string;
   let planFile: string;
 
-  const handleReviewCommandSpy = mock(async () => ({ tasksAppended: 2 }));
-  const executorExecuteSpy = mock(async () => undefined);
-  const checkAndMarkParentDoneSpy = mock(async () => undefined);
-  const markParentInProgressSpy = mock(async () => undefined);
-
   beforeEach(async () => {
-    moduleMocker = new ModuleMocker(import.meta);
     handleReviewCommandSpy.mockClear();
     executorExecuteSpy.mockClear();
     checkAndMarkParentDoneSpy.mockClear();
@@ -40,37 +65,10 @@ describe('executeStubPlan', () => {
       updatedAt: new Date().toISOString(),
     };
     await writePlanFile(planFile, plan, { cwdForIdentity: tempDir });
-
-    await moduleMocker.mock('../../../logging.js', () => ({
-      log: mock(() => {}),
-      warn: mock(() => {}),
-      boldMarkdownHeaders: (value: string) => value,
-    }));
-
-    await moduleMocker.mock('../../../common/process.js', () => ({
-      commitAll: mock(async () => 0),
-    }));
-
-    await moduleMocker.mock('../../actions.js', () => ({
-      executePostApplyCommand: mock(async () => true),
-    }));
-
-    await moduleMocker.mock('../../prompt_builder.js', () => ({
-      buildExecutionPromptWithoutSteps: mock(async () => 'stub prompt'),
-    }));
-
-    await moduleMocker.mock('./parent_plans.js', () => ({
-      checkAndMarkParentDone: checkAndMarkParentDoneSpy,
-      markParentInProgress: markParentInProgressSpy,
-    }));
-
-    await moduleMocker.mock('../review.js', () => ({
-      handleReviewCommand: handleReviewCommandSpy,
-    }));
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 

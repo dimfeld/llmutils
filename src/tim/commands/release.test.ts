@@ -1,9 +1,8 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { ModuleMocker } from '../../testing.js';
 import { claimPlan } from '../assignments/claim_plan.js';
 import { getAssignment } from '../db/assignment.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
@@ -11,7 +10,45 @@ import { getOrCreateProject } from '../db/project.js';
 import { recordWorkspace } from '../db/workspace.js';
 import { readPlanFile, resolvePlanFromDb, writePlanFile, writePlanToDb } from '../plans.js';
 
-const moduleMocker = new ModuleMocker(import.meta);
+vi.mock('../../logging.js', () => ({
+  log: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+}));
+
+vi.mock('chalk', () => ({
+  default: {
+    green: (v: string) => v,
+    yellow: (v: string) => v,
+    red: (v: string) => v,
+    bold: (v: string) => v,
+    dim: (v: string) => v,
+  },
+}));
+
+vi.mock('../configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(),
+}));
+
+vi.mock('../../common/git.js', () => ({
+  getGitRoot: vi.fn(),
+}));
+
+vi.mock('../assignments/workspace_identifier.ts', () => ({
+  getRepositoryIdentity: vi.fn(),
+  getCurrentWorkspacePath: vi.fn(),
+  getUserIdentity: vi.fn(),
+}));
+
+import { handleReleaseCommand } from './release.js';
+import { log as logFn, warn as warnFn, error as errorFn } from '../../logging.js';
+import { loadEffectiveConfig } from '../configLoader.js';
+import { getGitRoot } from '../../common/git.js';
+import {
+  getRepositoryIdentity,
+  getCurrentWorkspacePath,
+  getUserIdentity,
+} from '../assignments/workspace_identifier.ts';
 
 describe('handleReleaseCommand', () => {
   let tempRoot: string;
@@ -22,13 +59,6 @@ describe('handleReleaseCommand', () => {
   let currentWorkspacePath: string;
   let currentUser: string | null;
   let originalEnv: Partial<Record<string, string>>;
-
-  let mockLog: ReturnType<typeof mock>;
-  let mockWarn: ReturnType<typeof mock>;
-  let mockError: ReturnType<typeof mock>;
-  let getRepositoryIdentityMock: ReturnType<typeof mock>;
-
-  let handleReleaseCommand: (planArg: string, options: any, command: any) => Promise<void>;
 
   const repositoryId = 'multi-user-demo';
   const planUuid = '33333333-3333-4333-8333-333333333333';
@@ -74,53 +104,29 @@ describe('handleReleaseCommand', () => {
     process.env.XDG_CONFIG_HOME = configDir;
     delete process.env.APPDATA;
 
-    mockLog = mock(() => {});
-    mockWarn = mock(() => {});
-    mockError = mock(() => {});
-    getRepositoryIdentityMock = mock(async (_options?: { cwd?: string }) => ({
+    vi.clearAllMocks();
+
+    vi.mocked(logFn).mockImplementation(() => {});
+    vi.mocked(warnFn).mockImplementation(() => {});
+    vi.mocked(errorFn).mockImplementation(() => {});
+
+    vi.mocked(getRepositoryIdentity).mockImplementation(async (_options?: { cwd?: string }) => ({
       repositoryId: currentRepositoryId,
       remoteUrl: repositoryRemoteUrl,
       gitRoot: currentWorkspacePath,
     }));
 
-    const chalkMock = (value: string) => value;
+    vi.mocked(getCurrentWorkspacePath).mockImplementation(async () => currentWorkspacePath);
+    vi.mocked(getUserIdentity).mockImplementation(() => currentUser);
 
-    await moduleMocker.mock('../../logging.js', () => ({
-      log: mockLog,
-      warn: mockWarn,
-      error: mockError,
-    }));
-
-    await moduleMocker.mock('chalk', () => ({
-      default: {
-        green: chalkMock,
-        yellow: chalkMock,
-        red: chalkMock,
-        bold: chalkMock,
-        dim: chalkMock,
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
+      paths: {
+        tasks: tasksDir,
       },
-    }));
+      isUsingExternalStorage: false,
+    } as any);
 
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({
-        paths: {
-          tasks: tasksDir,
-        },
-        isUsingExternalStorage: false,
-      }),
-    }));
-
-    await moduleMocker.mock('../../common/git.js', () => ({
-      getGitRoot: async () => repoDir,
-    }));
-
-    await moduleMocker.mock('../assignments/workspace_identifier.ts', () => ({
-      getRepositoryIdentity: getRepositoryIdentityMock,
-      getCurrentWorkspacePath: async () => currentWorkspacePath,
-      getUserIdentity: () => currentUser,
-    }));
-
-    ({ handleReleaseCommand } = await import('./release.js'));
+    vi.mocked(getGitRoot).mockResolvedValue(repoDir);
 
     await writePlanFile(path.join(tasksDir, '1-sample.plan.md'), {
       id: 1,
@@ -134,7 +140,7 @@ describe('handleReleaseCommand', () => {
   });
 
   afterEach(async () => {
-    moduleMocker.clear();
+    vi.clearAllMocks();
     closeDatabaseForTesting();
     if (originalEnv.XDG_CONFIG_HOME === undefined) {
       delete process.env.XDG_CONFIG_HOME;
@@ -170,8 +176,8 @@ describe('handleReleaseCommand', () => {
 
     expect(getAssignmentRow(planUuid)).toBeNull();
 
-    expect(mockWarn).not.toHaveBeenCalled();
-    expect(mockLog).toHaveBeenCalledWith(
+    expect(vi.mocked(warnFn)).not.toHaveBeenCalled();
+    expect(vi.mocked(logFn)).toHaveBeenCalledWith(
       `✓ Released plan 1 from workspace ${currentWorkspacePath} (removed workspace, removed user ${currentUser})`
     );
   });
@@ -182,8 +188,8 @@ describe('handleReleaseCommand', () => {
 
     expect(getAssignmentRow(planUuid)).toBeNull();
 
-    expect(mockWarn).not.toHaveBeenCalled();
-    expect(mockLog).toHaveBeenCalledWith('• Plan 1 has no assignments to release');
+    expect(vi.mocked(warnFn)).not.toHaveBeenCalled();
+    expect(vi.mocked(logFn)).toHaveBeenCalledWith('• Plan 1 has no assignments to release');
   });
 
   test('releasing from non-owning workspace keeps assignment unchanged', async () => {
@@ -197,8 +203,8 @@ describe('handleReleaseCommand', () => {
     expect(entry).toBeDefined();
     expect(entry?.claimed_by_user).toBe('bob');
 
-    expect(mockWarn).not.toHaveBeenCalled();
-    expect(mockLog).toHaveBeenCalledWith(
+    expect(vi.mocked(warnFn)).not.toHaveBeenCalled();
+    expect(vi.mocked(logFn)).toHaveBeenCalledWith(
       `• Plan 1 is not claimed in workspace ${currentWorkspacePath}`
     );
   });
@@ -214,8 +220,8 @@ describe('handleReleaseCommand', () => {
     expect(entry).toBeDefined();
     expect(entry?.claimed_by_user).toBe(currentUser);
 
-    expect(mockWarn).not.toHaveBeenCalled();
-    expect(mockLog).toHaveBeenCalledWith(
+    expect(vi.mocked(warnFn)).not.toHaveBeenCalled();
+    expect(vi.mocked(logFn)).toHaveBeenCalledWith(
       `• Plan 1 is not claimed in workspace ${currentWorkspacePath}`
     );
   });
@@ -230,8 +236,8 @@ describe('handleReleaseCommand', () => {
     expect(entry).toBeDefined();
     expect(entry?.claimed_by_user).toBe('bob');
 
-    expect(mockWarn).not.toHaveBeenCalled();
-    expect(mockLog).toHaveBeenCalledWith(
+    expect(vi.mocked(warnFn)).not.toHaveBeenCalled();
+    expect(vi.mocked(logFn)).toHaveBeenCalledWith(
       `• Plan 1 is not claimed in workspace ${currentWorkspacePath}`
     );
   });
@@ -248,8 +254,8 @@ describe('handleReleaseCommand', () => {
     expect(entry?.workspace_id).toBeNull();
     expect(entry?.claimed_by_user).toBe('bob');
 
-    expect(mockWarn).toHaveBeenCalledWith(`⚠ Plan remains claimed by other users: bob`);
-    expect(mockLog).toHaveBeenCalledWith(
+    expect(vi.mocked(warnFn)).toHaveBeenCalledWith(`⚠ Plan remains claimed by other users: bob`);
+    expect(vi.mocked(logFn)).toHaveBeenCalledWith(
       `✓ Updated assignment for plan 1 in workspace ${currentWorkspacePath} (removed workspace)`
     );
   });
@@ -263,7 +269,7 @@ describe('handleReleaseCommand', () => {
     const { plan: refreshedPlan } = await resolvePlanFromDb('1', repoDir);
     expect(refreshedPlan.status).toBe('pending');
 
-    expect(mockLog).toHaveBeenCalledWith(`✓ Reset status for plan 1 to pending`);
+    expect(vi.mocked(logFn)).toHaveBeenCalledWith(`✓ Reset status for plan 1 to pending`);
   });
 
   test('reset status flag updates DB-only plans without trying to write the cwd', async () => {
@@ -289,7 +295,7 @@ describe('handleReleaseCommand', () => {
     expect(plan.status).toBe('pending');
     expect(planPath).toBeNull();
 
-    expect(mockLog).toHaveBeenCalledWith(`✓ Reset status for plan 1 to pending`);
+    expect(vi.mocked(logFn)).toHaveBeenCalledWith(`✓ Reset status for plan 1 to pending`);
   });
 
   test('uses the resolved plan repo root for repository identity under --config', async () => {
@@ -312,6 +318,6 @@ describe('handleReleaseCommand', () => {
     const command = { parent: { opts: () => ({ config: configPath }) } };
     await handleReleaseCommand('1', {}, command);
 
-    expect(getRepositoryIdentityMock).toHaveBeenCalledWith({ cwd: configuredRepoDir });
+    expect(vi.mocked(getRepositoryIdentity)).toHaveBeenCalledWith({ cwd: configuredRepoDir });
   });
 });

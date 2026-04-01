@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, vi } from 'vitest';
 import { CleanupRegistry } from './cleanup_registry.ts';
 
 describe('CleanupRegistry', () => {
@@ -15,7 +15,7 @@ describe('CleanupRegistry', () => {
 
   test('should register a handler and return unregister function', () => {
     const registry = CleanupRegistry.getInstance();
-    const handler = mock(() => {});
+    const handler = vi.fn(() => {});
 
     const unregister = registry.register(handler);
     expect(typeof unregister).toBe('function');
@@ -23,9 +23,9 @@ describe('CleanupRegistry', () => {
 
   test('should execute all registered handlers', () => {
     const registry = CleanupRegistry.getInstance();
-    const handler1 = mock(() => {});
-    const handler2 = mock(() => {});
-    const handler3 = mock(() => {});
+    const handler1 = vi.fn(() => {});
+    const handler2 = vi.fn(() => {});
+    const handler3 = vi.fn(() => {});
 
     registry.register(handler1);
     registry.register(handler2);
@@ -40,8 +40,8 @@ describe('CleanupRegistry', () => {
 
   test('should unregister handlers', () => {
     const registry = CleanupRegistry.getInstance();
-    const handler1 = mock(() => {});
-    const handler2 = mock(() => {});
+    const handler1 = vi.fn(() => {});
+    const handler2 = vi.fn(() => {});
 
     const unregister1 = registry.register(handler1);
     registry.register(handler2);
@@ -56,10 +56,10 @@ describe('CleanupRegistry', () => {
   test('should handle errors during cleanup execution', () => {
     const registry = CleanupRegistry.getInstance();
     const errorMessage = 'Cleanup failed';
-    const failingHandler = mock(() => {
+    const failingHandler = vi.fn(() => {
       throw new Error(errorMessage);
     });
-    const successfulHandler = mock(() => {});
+    const successfulHandler = vi.fn(() => {});
 
     registry.register(failingHandler);
     registry.register(successfulHandler);
@@ -74,7 +74,7 @@ describe('CleanupRegistry', () => {
 
   test('should clear registry after executeAll', () => {
     const registry = CleanupRegistry.getInstance();
-    const handler = mock(() => {});
+    const handler = vi.fn(() => {});
 
     registry.register(handler);
     registry.executeAll();
@@ -89,7 +89,7 @@ describe('CleanupRegistry', () => {
 
   test('should run cleanup functions only once', () => {
     const registry = CleanupRegistry.getInstance();
-    const handler = mock(() => {});
+    const handler = vi.fn(() => {});
 
     const unregister = registry.register(handler);
 
@@ -109,9 +109,9 @@ describe('CleanupRegistry', () => {
     const registry = CleanupRegistry.getInstance();
     const executionOrder: number[] = [];
 
-    const handler1 = mock(() => executionOrder.push(1));
-    const handler2 = mock(() => executionOrder.push(2));
-    const handler3 = mock(() => executionOrder.push(3));
+    const handler1 = vi.fn(() => executionOrder.push(1));
+    const handler2 = vi.fn(() => executionOrder.push(2));
+    const handler3 = vi.fn(() => executionOrder.push(3));
 
     registry.register(handler1);
     registry.register(handler2);
@@ -174,7 +174,7 @@ describe('CleanupRegistry', () => {
 
   test('executeAllAsync should continue when a handler throws', async () => {
     const registry = CleanupRegistry.getInstance();
-    const successHandler = mock(() => {});
+    const successHandler = vi.fn(() => {});
 
     registry.register(async () => {
       throw new Error('failure');

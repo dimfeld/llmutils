@@ -1,24 +1,74 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import yaml from 'yaml';
-import { ModuleMocker, stringifyPlanWithFrontmatter } from '../../testing.js';
+import { stringifyPlanWithFrontmatter } from '../../testing.js';
 import { clearConfigCache } from '../configLoader.js';
 import type { PlanSchema } from '../planSchema.js';
+
+let currentPlans: Map<number, PlanSchema>;
+let removePlanFromDbMock: ReturnType<typeof vi.fn>;
+let unlinkImpl: ((p: string) => Promise<void>) | undefined;
+
+vi.mock('../configLoader.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../configLoader.js')>();
+  return {
+    ...actual,
+    loadEffectiveConfig: vi.fn(),
+  };
+});
+
+vi.mock('../path_resolver.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../path_resolver.js')>();
+  return {
+    ...actual,
+    resolvePlanPathContext: vi.fn(),
+  };
+});
+
+vi.mock('../assignments/workspace_identifier.js', () => ({
+  getRepositoryIdentity: vi.fn(),
+}));
+
+vi.mock('../plans_db.js', () => ({
+  loadPlansFromDb: vi.fn(),
+}));
+
+vi.mock('../db/plan_sync.js', () => ({
+  removePlanFromDb: vi.fn(),
+}));
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return {
+    ...actual,
+    unlink: vi.fn(async (p: string) => {
+      if (unlinkImpl) {
+        return unlinkImpl(p);
+      }
+      return actual.unlink(p);
+    }),
+  };
+});
+
+import { handleCleanupTempCommand } from './cleanup-temp.js';
+import { loadEffectiveConfig } from '../configLoader.js';
+import { resolvePlanPathContext } from '../path_resolver.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import { loadPlansFromDb } from '../plans_db.js';
+import { removePlanFromDb } from '../db/plan_sync.js';
 
 describe('tim cleanup-temp command', () => {
   let tempDir: string;
   let tasksDir: string;
-  let moduleMocker: ModuleMocker;
-  let currentPlans: Map<number, PlanSchema>;
-  let removePlanFromDbMock: ReturnType<typeof mock>;
 
   beforeEach(async () => {
     clearConfigCache();
-    moduleMocker = new ModuleMocker(import.meta);
+    vi.clearAllMocks();
+    unlinkImpl = undefined;
     currentPlans = new Map();
-    removePlanFromDbMock = mock(async () => {});
+    removePlanFromDbMock = vi.mocked(removePlanFromDb);
 
     // Create temporary directory structure
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-cleanup-temp-test-'));
@@ -36,48 +86,31 @@ describe('tim cleanup-temp command', () => {
         },
       })
     );
+
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({ paths: { tasks: tasksDir } } as any);
+    vi.mocked(resolvePlanPathContext).mockResolvedValue({
+      tasksDir,
+      gitRoot: tempDir,
+      configBaseDir: tempDir,
+    } as any);
+    vi.mocked(getRepositoryIdentity).mockResolvedValue({
+      repositoryId: `test-repo-${tempDir}`,
+      remoteUrl: null,
+      gitRoot: tempDir,
+    });
+    vi.mocked(loadPlansFromDb).mockReturnValue({ plans: currentPlans, duplicates: {} } as any);
+    removePlanFromDbMock.mockResolvedValue(undefined);
   });
 
   afterEach(async () => {
     clearConfigCache();
-    moduleMocker.clear();
+    vi.clearAllMocks();
 
     // Clean up temporary directory
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  async function loadCommand(options?: { unlinkImpl?: (path: string) => Promise<void> }) {
-    if (options?.unlinkImpl) {
-      await moduleMocker.mock('node:fs/promises', () => ({
-        unlink: options.unlinkImpl,
-      }));
-    }
-    await moduleMocker.mock('../configLoader.js', () => ({
-      loadEffectiveConfig: async () => ({ paths: { tasks: tasksDir } }),
-    }));
-    await moduleMocker.mock('../path_resolver.js', () => ({
-      resolvePlanPathContext: async () => ({ tasksDir, gitRoot: tempDir, configBaseDir: tempDir }),
-    }));
-    await moduleMocker.mock('../assignments/workspace_identifier.js', () => ({
-      getRepositoryIdentity: async () => ({
-        repositoryId: `test-repo-${tempDir}`,
-        remoteUrl: null,
-        gitRoot: tempDir,
-      }),
-    }));
-    await moduleMocker.mock('../plans_db.js', () => ({
-      loadPlansFromDb: () => ({ plans: currentPlans, duplicates: {} }),
-    }));
-    await moduleMocker.mock('../db/plan_sync.js', () => ({
-      removePlanFromDb: removePlanFromDbMock,
-    }));
-
-    return import('./cleanup-temp.js');
-  }
-
   test('deletes only plans with temp: true', async () => {
-    const { handleCleanupTempCommand } = await loadCommand();
-
     // Create a temporary plan
     await fs.writeFile(
       path.join(tasksDir, '1-temp-plan.plan.md'),
@@ -188,8 +221,6 @@ describe('tim cleanup-temp command', () => {
   });
 
   test('deletes multiple temporary plans', async () => {
-    const { handleCleanupTempCommand } = await loadCommand();
-
     // Create multiple temporary plans
     for (let i = 1; i <= 3; i++) {
       const filename = path.join(tasksDir, `${i}-temp-plan-${i}.plan.md`);
@@ -239,8 +270,6 @@ describe('tim cleanup-temp command', () => {
   });
 
   test('handles empty directory gracefully', async () => {
-    const { handleCleanupTempCommand } = await loadCommand();
-
     const command = {
       parent: {
         opts: () => ({ config: path.join(tempDir, '.rmfilter', 'tim.yml') }),
@@ -252,8 +281,6 @@ describe('tim cleanup-temp command', () => {
   });
 
   test('handles directory with no temp plans', async () => {
-    const { handleCleanupTempCommand } = await loadCommand();
-
     // Create only permanent plans
     await fs.writeFile(
       path.join(tasksDir, '1-permanent-plan.plan.md'),
@@ -297,12 +324,9 @@ describe('tim cleanup-temp command', () => {
 
   test('keeps the DB row when unlink fails with a real error', async () => {
     const unlinkError = Object.assign(new Error('permission denied'), { code: 'EACCES' });
-    const unlinkMock = mock(async () => {
+    unlinkImpl = async () => {
       throw unlinkError;
-    });
-    const { handleCleanupTempCommand } = await loadCommand({
-      unlinkImpl: unlinkMock,
-    });
+    };
 
     const tempPlanPath = path.join(tasksDir, '1-temp-plan.plan.md');
     await fs.writeFile(
@@ -339,13 +363,12 @@ describe('tim cleanup-temp command', () => {
 
     await handleCleanupTempCommand({}, command);
 
-    expect(unlinkMock).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(fs.unlink)).toHaveBeenCalledTimes(1);
     expect(removePlanFromDbMock).not.toHaveBeenCalled();
   });
 
   test('removes the DB row when the backing file is already missing', async () => {
     const missingPath = path.join(tasksDir, '1-missing-temp.plan.md');
-    const { handleCleanupTempCommand } = await loadCommand();
 
     currentPlans.set(1, {
       id: 1,
@@ -378,12 +401,10 @@ describe('tim cleanup-temp command', () => {
 
   test('removes DB-only temp plans even when no file was materialized', async () => {
     const dbOnlyPath = path.join(tasksDir, '2-db-only-temp.plan.md');
-    const { handleCleanupTempCommand } = await loadCommand({
-      unlinkImpl: async () => {
-        const err = Object.assign(new Error('missing'), { code: 'ENOENT' });
-        throw err;
-      },
-    });
+    unlinkImpl = async () => {
+      const err = Object.assign(new Error('missing'), { code: 'ENOENT' });
+      throw err;
+    };
 
     currentPlans.set(2, {
       id: 2,

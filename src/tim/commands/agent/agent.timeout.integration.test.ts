@@ -1,38 +1,85 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
-import { ModuleMocker } from '../../../testing.js';
 
-// We'll import timAgent lazily after setting up module mocks
-let timAgent: typeof import('./agent.js').timAgent;
+let tempDir = '';
+const logSink = vi.fn(() => {});
+
+// Declare with vi.hoisted so they're available inside vi.mock() factory functions
+const { executorExecuteSpy } = vi.hoisted(() => ({
+  executorExecuteSpy: vi.fn(async () => {
+    throw new Error('permission prompt timeout');
+  }),
+}));
+
+vi.mock('../../../logging.js', () => ({
+  log: logSink,
+  error: logSink,
+  warn: logSink,
+  boldMarkdownHeaders: (s: string) => s,
+  openLogFile: vi.fn(() => {}),
+  closeLogFile: vi.fn(async () => {}),
+  debugLog: vi.fn(() => {}),
+  sendStructured: vi.fn(() => {}),
+  writeStdout: vi.fn(() => {}),
+  writeStderr: vi.fn(() => {}),
+  runWithLogger: vi.fn(async (_adapter: any, fn: () => any) => fn()),
+}));
+
+vi.mock('../../../common/git.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../common/git.js')>();
+  return {
+    ...actual,
+    getGitRoot: vi.fn(async () => tempDir),
+  };
+});
+
+vi.mock('../../../logging/tunnel_client.js', () => ({
+  isTunnelActive: vi.fn(() => false),
+}));
+
+vi.mock('../../headless.js', () => ({
+  runWithHeadlessAdapterIfEnabled: vi.fn(async (options: any) => options.callback()),
+  isTunnelActive: vi.fn(() => false),
+  toHeadlessPlanSummary: vi.fn((plan: any) => plan),
+  createHeadlessAdapterForCommand: vi.fn(async () => null),
+  updateHeadlessSessionInfo: vi.fn(() => {}),
+  buildHeadlessSessionInfo: vi.fn(async () => null),
+  resetHeadlessWarningStateForTests: vi.fn(() => {}),
+  resolveHeadlessUrl: vi.fn(() => 'ws://localhost:8123/tim-agent'),
+  DEFAULT_HEADLESS_URL: 'ws://localhost:8123/tim-agent',
+}));
+
+vi.mock('../../executors/index.js', () => ({
+  buildExecutorAndLog: vi.fn(() => ({
+    execute: executorExecuteSpy,
+    filePathPrefix: '',
+  })),
+  DEFAULT_EXECUTOR: 'copy-only',
+  defaultModelForExecutor: vi.fn(() => 'test-model'),
+}));
 
 describe('tim agent integration (timeout simulation)', () => {
-  let tempDir: string;
   let tasksDir: string;
   let configPath: string;
-  let originalCwd: string;
-  let moduleMocker: ModuleMocker;
-  const logSink = mock(() => {});
 
   beforeEach(async () => {
-    originalCwd = process.cwd();
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-agent-timeout-'));
-    process.chdir(tempDir);
     tasksDir = path.join(tempDir, 'tasks');
     await fs.mkdir(tasksDir, { recursive: true });
 
     // Initialize a real git repo for file-change tracking
-    await Bun.spawn(['git', 'init', '-b', 'main'], { cwd: tempDir }).exited;
-    await Bun.spawn(['git', 'config', 'user.email', 'test@example.com'], { cwd: tempDir }).exited;
-    await Bun.spawn(['git', 'config', 'user.name', 'Test User'], { cwd: tempDir }).exited;
+    await Bun.$`git init -b main`.cwd(tempDir).quiet();
+    await Bun.$`git config user.email test@example.com`.cwd(tempDir).quiet();
+    await Bun.$`git config user.name "Test User"`.cwd(tempDir).quiet();
 
     // Seed a tracked file for file-change tracking
     await fs.mkdir(path.join(tempDir, 'src'), { recursive: true });
     await fs.writeFile(path.join(tempDir, 'src', 'foo.txt'), 'initial\n');
-    await Bun.spawn(['git', 'add', '.'], { cwd: tempDir }).exited;
-    await Bun.spawn(['git', 'commit', '-m', 'Initial commit'], { cwd: tempDir }).exited;
+    await Bun.$`git add .`.cwd(tempDir).quiet();
+    await Bun.$`git commit -m "Initial commit"`.cwd(tempDir).quiet();
 
     // Create config file
     configPath = path.join(tempDir, '.rmfilter', 'tim.yml');
@@ -45,29 +92,16 @@ describe('tim agent integration (timeout simulation)', () => {
       'utf8'
     );
 
-    // Mock logging to keep output quiet and deterministic
-    moduleMocker = new ModuleMocker(import.meta);
-    await moduleMocker.mock('../../../logging.js', () => ({
-      log: logSink,
-      error: logSink,
-      warn: logSink,
-      boldMarkdownHeaders: (s: string) => s,
-      openLogFile: () => {},
-      closeLogFile: async () => {},
-    }));
-
-    // Ensure git root resolves to our temp directory
-    await moduleMocker.mock('../../../common/git.js', () => ({
-      getGitRoot: mock(async () => tempDir),
-      getUsingJj: mock(async () => false),
-    }));
+    logSink.mockReset();
+    executorExecuteSpy.mockReset();
+    executorExecuteSpy.mockImplementation(async () => {
+      throw new Error('permission prompt timeout');
+    });
   });
 
   afterEach(async () => {
-    process.chdir(originalCwd);
     await fs.rm(tempDir, { recursive: true, force: true });
-    moduleMocker.clear();
-    logSink.mockReset();
+    vi.clearAllMocks();
   });
 
   test('captures failed step and error message when executor times out', async () => {
@@ -94,28 +128,13 @@ describe('tim agent integration (timeout simulation)', () => {
     }
     await fs.writeFile(planPath, planContent, 'utf8');
 
-    // Register a stub executor that throws a timeout-like error
-    {
-      const { executors } = await import('../../executors/build.ts');
-      const { z } = await import('zod/v4');
-      class StubTimeoutExecutor {
-        static name = 'stub-timeout';
-        static description = 'Stub executor that simulates a timeout';
-        static optionsSchema = z.object({});
-        async execute(): Promise<string> {
-          throw new Error('permission prompt timeout');
-        }
-      }
-      executors.set(StubTimeoutExecutor.name, StubTimeoutExecutor as any);
-    }
-
-    ({ timAgent } = await import('./agent.js'));
+    const { timAgent } = await import('./agent.js');
 
     const summaryOut = path.join(tempDir, 'out', 'timeout-summary.txt');
     await expect(
       timAgent(
         planPath,
-        { orchestrator: 'stub-timeout', serialTasks: true, summaryFile: summaryOut, model: 'auto' },
+        { serialTasks: true, summaryFile: summaryOut, model: 'auto', log: false },
         { config: configPath }
       )
     ).rejects.toBeInstanceOf(Error);

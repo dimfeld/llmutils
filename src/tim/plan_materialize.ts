@@ -47,6 +47,7 @@ type MaterializePlanOptions = {
   context?: ProjectContext;
   force?: boolean;
   skipRematerialize?: boolean;
+  preserveUpdatedAt?: string;
 };
 
 export type MaterializedPlanRole = 'primary' | 'reference';
@@ -714,7 +715,11 @@ export async function syncMaterializedPlan(
   const dbPlan = getPlanSchemaFromRow(canonicalRow, resolvedContext.uuidToPlanId);
   const mergedPlan = options.force ? plan : mergePlanWithShadow(dbPlan, shadowPlan, plan);
   if (options.force || !shadowPlan || changes?.hasChanges) {
-    mergedPlan.updatedAt = new Date().toISOString();
+    if (options.preserveUpdatedAt) {
+      mergedPlan.updatedAt = options.preserveUpdatedAt;
+    } else {
+      mergedPlan.updatedAt = new Date().toISOString();
+    }
   }
   await syncPlanToDb(mergedPlan, {
     baseDir: repoRoot,
