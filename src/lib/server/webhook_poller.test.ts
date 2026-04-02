@@ -108,6 +108,11 @@ describe('lib/server/webhook_poller', () => {
       process.env.TIM_WEBHOOK_POLL_INTERVAL = '30';
       expect(getWebhookPollIntervalMs()).toBe(30_000);
     });
+
+    test('clamps values above 86400 seconds to prevent timer overflow', () => {
+      process.env.TIM_WEBHOOK_POLL_INTERVAL = '3000000';
+      expect(getWebhookPollIntervalMs()).toBe(86_400_000);
+    });
   });
 
   test('isWebhookPollingEnabled requires poll interval, webhook server URL, and API token', () => {

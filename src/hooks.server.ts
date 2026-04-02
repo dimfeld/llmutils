@@ -72,7 +72,7 @@ export const init: ServerInit = async () => {
   const existingServer = getWebSocketServerHandle();
   const existingDiscoveryClient = getSessionDiscoveryClient();
   const existingWebhookPoller = getWebhookPoller();
-  if (existingServer && existingDiscoveryClient && existingWebhookPoller) {
+  if (existingServer && existingDiscoveryClient) {
     return;
   }
 

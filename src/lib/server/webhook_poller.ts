@@ -6,6 +6,7 @@ import { getWebhookInternalApiToken, getWebhookServerUrl } from '$common/github/
 import type { WebhookPollerHandle } from './session_context.js';
 
 const MIN_POLL_INTERVAL_SECONDS = 5;
+const MAX_POLL_INTERVAL_SECONDS = 86_400; // 24 hours — prevents 32-bit timer overflow
 const INITIAL_POLL_DELAY_MS = 15_000;
 
 export function getWebhookPollIntervalMs(): number | null {
@@ -22,7 +23,11 @@ export function getWebhookPollIntervalMs(): number | null {
     return null;
   }
 
-  return Math.max(parsedInterval, MIN_POLL_INTERVAL_SECONDS) * 1000;
+  const clampedInterval = Math.min(
+    Math.max(parsedInterval, MIN_POLL_INTERVAL_SECONDS),
+    MAX_POLL_INTERVAL_SECONDS
+  );
+  return clampedInterval * 1000;
 }
 
 export function isWebhookPollingEnabled(): boolean {
