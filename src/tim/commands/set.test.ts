@@ -178,6 +178,25 @@ describe('tim set command', () => {
     expect(callArgs[2]).toBe(updatedPlan.uuid);
   });
 
+  test('removes assignments when status set to needs_review', async () => {
+    const planPath = await createTestPlan(117);
+
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        status: 'needs_review',
+      },
+      globalOpts
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.status).toBe('needs_review');
+    expect(removeAssignmentSpy).toHaveBeenCalledTimes(1);
+    const [callArgs] = removeAssignmentSpy.mock.calls;
+    expect(callArgs[2]).toBe(updatedPlan.uuid);
+  });
+
   test('logs warning when assignment removal fails', async () => {
     const planPath = await createTestPlan(113);
     removeAssignmentSpy.mockImplementationOnce(() => {
@@ -230,7 +249,7 @@ describe('tim set command', () => {
 
     expect(updatedLastChild.status).toBe('cancelled');
     expect(doneChild.status).toBe('done');
-    expect(updatedParent.status).toBe('done');
+    expect(updatedParent.status).toBe('needs_review');
   });
 
   test('should add dependencies', async () => {

@@ -107,4 +107,34 @@ describe('cleanup_plan_creator', () => {
     expect(updatedParent.status).toBe('in_progress');
     expect(updatedParent.dependencies).toContain(result.planId);
   });
+
+  test('createCleanupPlan reopens needs_review parents to in_progress', async () => {
+    await writePlanToDb(
+      {
+        id: 20,
+        title: 'Needs Review Parent',
+        goal: 'Return to active work when cleanup is needed',
+        details: 'Parent details',
+        status: 'needs_review',
+        changedFiles: ['src/parent.ts'],
+        tasks: [],
+        filename: '20-parent.plan.md',
+      },
+      { cwdForIdentity: repoRoot }
+    );
+
+    const result = await createCleanupPlan(20, [
+      {
+        id: 'issue-1',
+        severity: 'major',
+        category: 'bug',
+        content: 'Follow up after review',
+        file: 'src/parent.ts',
+      },
+    ]);
+
+    const updatedParent = (await resolvePlanFromDb('20', repoRoot)).plan;
+    expect(updatedParent.status).toBe('in_progress');
+    expect(updatedParent.dependencies).toContain(result.planId);
+  });
 });

@@ -26,6 +26,7 @@ function isPlanEligibleForGenerate(
     plan != null &&
     plan.tasks.length === 0 &&
     plan.status !== 'done' &&
+    plan.status !== 'needs_review' &&
     plan.status !== 'cancelled' &&
     plan.status !== 'deferred'
   );
@@ -35,6 +36,7 @@ function isPlanEligibleForAgent(plan: ReturnType<typeof getPlanDetail>): plan is
   if (
     plan == null ||
     plan.status === 'done' ||
+    plan.status === 'needs_review' ||
     plan.status === 'cancelled' ||
     plan.status === 'deferred'
   ) {

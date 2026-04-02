@@ -7,6 +7,7 @@ import {
   buildReviewPrompt,
   detectIssuesInReview,
   buildAutofixPrompt,
+  reopenParentForAppendedReviewTasks,
   sanitizeBranchName,
   validateFocusAreas,
   resolveReviewTaskScope,
@@ -25,6 +26,7 @@ import * as notificationsModule from '../notifications.js';
 import * as executorsModule from '../executors/index.js';
 import * as configLoaderModule from '../configLoader.js';
 import * as contextGatheringModule from '../utils/context_gathering.js';
+import * as inputModule from '../../common/input.js';
 import * as gitModule from '../../common/git.js';
 import * as agentPromptsModule from '../executors/claude_code/agent_prompts.js';
 import * as inquirerModule from '@inquirer/prompts';
@@ -49,6 +51,11 @@ vi.mock('../configLoader.js', async (importOriginal) => {
 
 vi.mock('../utils/context_gathering.js', () => ({
   gatherPlanContext: vi.fn(),
+}));
+
+vi.mock('../../common/input.js', () => ({
+  promptSelect: vi.fn(),
+  promptCheckbox: vi.fn(),
 }));
 
 vi.mock('../../common/git.js', async (importOriginal) => {
@@ -87,6 +94,9 @@ let testDir: string;
 let sendNotificationSpy: ReturnType<typeof vi.fn>;
 let originalCwd: string;
 let originalXdgConfigHome: string | undefined;
+let originalTimInteractive: string | undefined;
+let promptSelectSpy: ReturnType<typeof vi.fn>;
+let promptCheckboxSpy: ReturnType<typeof vi.fn>;
 
 function createMockPlanContext(overrides: Record<string, unknown> = {}) {
   return {
@@ -102,14 +112,20 @@ beforeEach(async () => {
   clearPlanSyncContext();
   originalCwd = process.cwd();
   originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
+  originalTimInteractive = process.env.TIM_INTERACTIVE;
   testDir = await mkdtemp(join(tmpdir(), 'tim-review-test-'));
   await Bun.$`git init`.cwd(testDir).quiet();
   await Bun.$`git remote add origin https://example.com/acme/review-tests.git`.cwd(testDir).quiet();
   process.env.XDG_CONFIG_HOME = join(testDir, 'config');
+  process.env.TIM_INTERACTIVE = '1';
   vi.spyOn(console, 'error').mockImplementation(() => {});
 
   sendNotificationSpy = vi.mocked(notificationsModule.sendNotification);
   sendNotificationSpy.mockResolvedValue(true);
+  promptSelectSpy = vi.mocked(inputModule.promptSelect);
+  promptCheckboxSpy = vi.mocked(inputModule.promptCheckbox);
+  promptSelectSpy.mockResolvedValue('exit-manually-resolved' as any);
+  promptCheckboxSpy.mockResolvedValue([] as any);
 
   vi.mocked(gitModule.getGitRoot).mockResolvedValue(testDir);
 });
@@ -123,6 +139,11 @@ afterEach(async () => {
     delete process.env.XDG_CONFIG_HOME;
   } else {
     process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
+  }
+  if (originalTimInteractive === undefined) {
+    delete process.env.TIM_INTERACTIVE;
+  } else {
+    process.env.TIM_INTERACTIVE = originalTimInteractive;
   }
   vi.clearAllMocks();
 });
@@ -2498,6 +2519,93 @@ describe('Custom review instructions', () => {
 });
 
 describe('Autofix functionality', () => {
+  test('reopens a needs_review parent after appending review issues to a reopened child', async () => {
+    process.chdir(testDir);
+    await writePlanToDb(
+      {
+        id: 300,
+        title: 'Review Parent',
+        goal: 'Track parent state',
+        details: 'Parent details',
+        status: 'needs_review',
+        tasks: [],
+      },
+      { cwdForIdentity: testDir }
+    );
+    await writePlanToDb(
+      {
+        id: 301,
+        title: 'Review Child',
+        goal: 'Append review issues',
+        details: 'Child details',
+        status: 'needs_review',
+        parent: 300,
+        tasks: [],
+      },
+      { cwdForIdentity: testDir }
+    );
+    await reopenParentForAppendedReviewTasks(
+      {
+        parent: 300,
+        status: 'needs_review',
+      },
+      undefined
+    );
+
+    const updatedParent = (await resolvePlanFromDb('300', testDir)).plan;
+    expect(updatedParent.status).toBe('in_progress');
+  });
+
+  test('reopens a done parent after appending review issues to a reopened child', async () => {
+    process.chdir(testDir);
+    await writePlanToDb(
+      {
+        id: 302,
+        title: 'Done Parent',
+        goal: 'Track parent state',
+        details: 'Parent details',
+        status: 'done',
+        tasks: [],
+      },
+      { cwdForIdentity: testDir }
+    );
+    await reopenParentForAppendedReviewTasks(
+      {
+        parent: 302,
+        status: 'done',
+      },
+      undefined
+    );
+
+    const updatedParent = (await resolvePlanFromDb('302', testDir)).plan;
+    expect(updatedParent.status).toBe('in_progress');
+  });
+
+  test('does not reopen the parent when the child was already in_progress', async () => {
+    process.chdir(testDir);
+    await writePlanToDb(
+      {
+        id: 303,
+        title: 'In Progress Parent',
+        goal: 'Track parent state',
+        details: 'Parent details',
+        status: 'needs_review',
+        tasks: [],
+      },
+      { cwdForIdentity: testDir }
+    );
+    await reopenParentForAppendedReviewTasks(
+      {
+        parent: 303,
+        status: 'in_progress',
+      },
+      undefined
+    );
+
+    const updatedParent = (await resolvePlanFromDb('303', testDir)).plan;
+    expect(updatedParent.status).toBe('needs_review');
+  });
+
   test('materializes DB-only plans before review and autofix execution', async () => {
     process.chdir(testDir);
     await writePlanToDb(

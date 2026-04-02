@@ -4,7 +4,7 @@ import { deduplicatePrUrls } from '$common/github/identifiers.js';
 import { getAssignmentEntry, type AssignmentEntry } from '$tim/db/assignment.js';
 import type { PlanSchema } from '$tim/planSchema.js';
 import { getPrStatusForPlan, type PrStatusDetail } from '$tim/db/pr_status.js';
-import { normalizePlanStatus } from '$tim/plans/plan_state_utils.js';
+import { isWorkCompleteStatus, normalizePlanStatus } from '$tim/plans/plan_state_utils.js';
 import { cleanStaleLocks, type WorkspaceLockRow } from '$tim/db/workspace_lock.js';
 import {
   getPlanByUuid,
@@ -351,10 +351,7 @@ function computeDisplayStatus(
   if (!plan.epic && (plan.status === 'pending' || plan.status === 'in_progress')) {
     const hasUnresolvedDependency = dependencyRows.some((dependency) => {
       const dependencyPlan = planByUuid.get(dependency.depends_on_uuid);
-      return (
-        dependencyPlan == null ||
-        (dependencyPlan.status !== 'done' && dependencyPlan.status !== 'cancelled')
-      );
+      return dependencyPlan == null || !isWorkCompleteStatus(dependencyPlan.status);
     });
 
     if (hasUnresolvedDependency) {
@@ -532,7 +529,7 @@ function toDependencySummary(
     title: dependencyPlan?.title ?? null,
     status: dependencyPlan?.status ?? null,
     displayStatus,
-    isResolved: dependencyPlan?.status === 'done' || dependencyPlan?.status === 'cancelled',
+    isResolved: isWorkCompleteStatus(dependencyPlan?.status),
   };
 }
 

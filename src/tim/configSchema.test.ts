@@ -926,4 +926,25 @@ describe('configSchema', () => {
       ).toThrow();
     });
   });
+
+  describe('planAutocompleteStatus field', () => {
+    test('should accept "needs_review" value', () => {
+      const result = timConfigSchema.parse({ planAutocompleteStatus: 'needs_review' });
+      expect(result.planAutocompleteStatus).toBe('needs_review');
+    });
+
+    test('should accept "done" value', () => {
+      const result = timConfigSchema.parse({ planAutocompleteStatus: 'done' });
+      expect(result.planAutocompleteStatus).toBe('done');
+    });
+
+    test('should be undefined when not specified', () => {
+      const result = timConfigSchema.parse({});
+      expect(result.planAutocompleteStatus).toBeUndefined();
+    });
+
+    test('should reject invalid values', () => {
+      expect(() => timConfigSchema.parse({ planAutocompleteStatus: 'invalid' })).toThrow();
+    });
+  });
 });

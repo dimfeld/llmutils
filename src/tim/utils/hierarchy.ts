@@ -115,7 +115,8 @@ export function getAllChildren(planId: number, allPlans: Map<number, PlanSchema>
 
 /**
  * Gets all completed children of a plan (recursive).
- * Filters getAllChildren to only include plans with status === 'done'.
+ * Filters getAllChildren to only include plans that contribute completed implementation
+ * context to review flows: status === 'done' or status === 'needs_review'.
  *
  * @param planId - The ID of the plan to get completed children for
  * @param allPlans - Map of all plans keyed by ID
@@ -126,7 +127,7 @@ export function getCompletedChildren(
   allPlans: Map<number, PlanSchema>
 ): PlanSchema[] {
   const allChildren = getAllChildren(planId, allPlans);
-  return allChildren.filter((plan) => plan.status === 'done');
+  return allChildren.filter((plan) => plan.status === 'done' || plan.status === 'needs_review');
 }
 
 /**

@@ -65,7 +65,7 @@ describe('lib/server/plans_browser', () => {
     ]);
   });
 
-  test('getActiveWorkData returns workspaces plus in-progress, blocked, and recently_done plans', () => {
+  test('getActiveWorkData returns workspaces plus in-progress, needs_review, blocked, and recently_done plans', () => {
     const timestamp = daysAgo(2);
 
     upsertPlan(db, projectId, {
@@ -93,12 +93,23 @@ describe('lib/server/plans_browser', () => {
     });
 
     upsertPlan(db, projectId, {
+      uuid: 'needs-review-plan',
+      planId: 406,
+      title: 'Needs review plan',
+      status: 'needs_review',
+      priority: 'high',
+      filename: '406-needs-review.plan.md',
+      sourceCreatedAt: timestamp,
+      sourceUpdatedAt: timestamp,
+    });
+
+    upsertPlan(db, projectId, {
       uuid: 'recently-done-plan',
-      planId: 405,
+      planId: 407,
       title: 'Recently done plan',
       status: 'done',
       priority: 'medium',
-      filename: '405-recently-done.plan.md',
+      filename: '407-recently-done.plan.md',
       sourceCreatedAt: timestamp,
       sourceUpdatedAt: timestamp,
     });
@@ -110,9 +121,10 @@ describe('lib/server/plans_browser', () => {
     ]);
     expect(result.activePlans.map((plan) => [plan.planId, plan.displayStatus])).toEqual([
       [402, 'in_progress'],
+      [406, 'needs_review'],
       [404, 'blocked'],
       [401, 'recently_done'],
-      [405, 'recently_done'],
+      [407, 'recently_done'],
     ]);
 
     // planNumberToUuid includes all plans, not just active ones
@@ -120,7 +132,8 @@ describe('lib/server/plans_browser', () => {
     expect(result.planNumberToUuid[`${projectId}:402`]).toBe('feature-plan');
     expect(result.planNumberToUuid[`${projectId}:403`]).toBe('active-open-dependency');
     expect(result.planNumberToUuid[`${projectId}:404`]).toBe('blocked-plan');
-    expect(result.planNumberToUuid[`${projectId}:405`]).toBe('recently-done-plan');
+    expect(result.planNumberToUuid[`${projectId}:406`]).toBe('needs-review-plan');
+    expect(result.planNumberToUuid[`${projectId}:407`]).toBe('recently-done-plan');
   });
 
   test('epic plans with unresolved dependencies show as in_progress not blocked', () => {

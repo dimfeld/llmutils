@@ -48,14 +48,15 @@ export function getActiveWorkData(db: Database, projectId: string): ActiveWorkDa
       .filter(
         (plan) =>
           plan.displayStatus === 'in_progress' ||
+          plan.displayStatus === 'needs_review' ||
           plan.displayStatus === 'blocked' ||
           plan.displayStatus === 'recently_done'
       )
       .sort((a, b) => {
-        const order = { in_progress: 0, blocked: 1, recently_done: 2 };
+        const order = { in_progress: 0, needs_review: 1, blocked: 2, recently_done: 3 };
         return (
-          (order[a.displayStatus as keyof typeof order] ?? 3) -
-          (order[b.displayStatus as keyof typeof order] ?? 3)
+          (order[a.displayStatus as keyof typeof order] ?? 4) -
+          (order[b.displayStatus as keyof typeof order] ?? 4)
         );
       }),
     planNumberToUuid,

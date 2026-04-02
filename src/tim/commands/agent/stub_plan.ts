@@ -7,6 +7,8 @@ import { setPlanStatusById, writePlanFile } from '../../plans.js';
 import type { PlanSchema } from '../../planSchema.js';
 import { buildExecutionPromptWithoutSteps } from '../../prompt_builder.js';
 import { isShuttingDown } from '../../shutdown_state.js';
+import { getCompletionStatus } from '../../plans/plan_state_utils.js';
+import { removePlanAssignment } from '../../assignments/remove_plan_assignment.js';
 import { checkAndMarkParentDone, markParentInProgress } from './parent_plans.js';
 import { handleReviewCommand } from '../review.js';
 
@@ -114,13 +116,9 @@ export async function executeStubPlan({
   if (typeof planData.id !== 'number') {
     throw new Error('Stub plan is missing a numeric plan ID');
   }
-  await setPlanStatusById(planData.id, 'done', baseDir, planFilePath);
+  const completionStatus = getCompletionStatus(config);
+  await setPlanStatusById(planData.id, completionStatus, baseDir, planFilePath);
   log('Plan executed directly and marked as complete!');
-
-  // Check if parent plan should be marked done
-  if (planData.parent && !isShuttingDown()) {
-    await checkAndMarkParentDone(planData.parent, config, baseDir);
-  }
 
   // Run final review if enabled
   if (isShuttingDown()) {
@@ -149,6 +147,15 @@ export async function executeStubPlan({
       warn(`Final review failed: ${err as Error}`);
       // Don't fail the agent - plan execution succeeded
     }
+  }
+
+  if (completionStatus === 'done') {
+    await removePlanAssignment(planData, baseDir);
+  }
+
+  // Check if parent plan should be marked done only after review confirms the child stayed complete.
+  if (planData.parent && !isShuttingDown()) {
+    await checkAndMarkParentDone(planData.parent, config, baseDir);
   }
 
   // Check if commit was requested

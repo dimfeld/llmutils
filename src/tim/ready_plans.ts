@@ -2,6 +2,7 @@ import * as path from 'path';
 
 import type { PlanSchema } from './planSchema.js';
 import { findPlanFileOnDisk } from './plans/find_plan_file.js';
+import { isWorkComplete } from './plans/plan_state_utils.js';
 import { isUnderEpic } from './utils/hierarchy.js';
 import { normalizeTags } from './utils/tags.js';
 
@@ -43,7 +44,7 @@ function getDependency<T>(plans: Map<number, T>, dependency: number | string): T
  *
  * A plan is considered ready if:
  * 1. It has the correct status (pending or in_progress)
- * 2. All its dependencies are complete (status === 'done')
+ * 2. All its dependencies are work-complete (for example 'done' or 'needs_review')
  *
  * IMPORTANT: Unlike findNextReadyDependency and dependency_traversal which are used for
  * hierarchical workflows and skip plans without tasks, this function is used by the
@@ -82,7 +83,7 @@ export function isReadyPlan<T extends PlanSchema>(
 
   return plan.dependencies.every((dependency) => {
     const dependencyPlan = getDependency(allPlans, dependency);
-    return dependencyPlan?.status === 'done' || dependencyPlan?.status === 'cancelled';
+    return dependencyPlan != null && isWorkComplete(dependencyPlan);
   });
 }
 

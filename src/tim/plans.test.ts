@@ -3,9 +3,11 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
+  collectDependenciesInOrder,
   getBlockedPlans,
   getChildPlans,
   getDiscoveredPlans,
+  isPlanReady,
   parsePlanIdentifier,
   readPlanFile,
   resolvePlanFromDb,
@@ -80,6 +82,66 @@ describe('plans', () => {
     expect(getBlockedPlans(1, plans).map((plan) => plan.id)).toEqual([2]);
     expect(getChildPlans(1, plans).map((plan) => plan.id)).toEqual([3]);
     expect(getDiscoveredPlans(1, plans).map((plan) => plan.id)).toEqual([4]);
+  });
+
+  test('isPlanReady treats needs_review dependencies as ready', () => {
+    const plans = new Map<number, PlanSchema>([
+      [
+        1,
+        {
+          id: 1,
+          title: 'Ready once review starts',
+          goal: 'g',
+          status: 'pending',
+          dependencies: [2, 3],
+          tasks: [],
+        },
+      ],
+      [2, { id: 2, title: 'Reviewed dependency', goal: 'g', status: 'needs_review', tasks: [] }],
+      [3, { id: 3, title: 'Done dependency', goal: 'g', status: 'done', tasks: [] }],
+    ]);
+
+    expect(isPlanReady(plans.get(1)!, plans)).toBe(true);
+  });
+
+  test('collectDependenciesInOrder skips needs_review dependencies like done dependencies', async () => {
+    const plans = new Map<number, PlanSchema>([
+      [
+        1,
+        {
+          id: 1,
+          title: 'Parent',
+          goal: 'g',
+          status: 'pending',
+          dependencies: [2, 3],
+          tasks: [],
+        },
+      ],
+      [
+        2,
+        {
+          id: 2,
+          title: 'Needs review dependency',
+          goal: 'g',
+          status: 'needs_review',
+          tasks: [],
+        },
+      ],
+      [
+        3,
+        {
+          id: 3,
+          title: 'Pending dependency',
+          goal: 'g',
+          status: 'pending',
+          tasks: [],
+        },
+      ],
+    ]);
+
+    const ordered = await collectDependenciesInOrder(1, plans);
+
+    expect(ordered.map((plan) => plan.id)).toEqual([3, 1]);
   });
 
   test('resolvePlanFromDb returns the materialized path when present', async () => {

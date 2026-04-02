@@ -43,7 +43,13 @@
     }
   }
 
-  const INELIGIBLE_STATUSES = new Set(['done', 'cancelled', 'deferred', 'recently_done']);
+  const INELIGIBLE_STATUSES = new Set([
+    'done',
+    'needs_review',
+    'cancelled',
+    'deferred',
+    'recently_done',
+  ]);
 
   let isIneligible = $derived(INELIGIBLE_STATUSES.has(plan.displayStatus));
   let hasTasks = $derived(plan.tasks.length > 0);

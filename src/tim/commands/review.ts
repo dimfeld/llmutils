@@ -597,6 +597,7 @@ async function handleReviewIssueActions(params: {
       log(chalk.yellow('No review issues available to append as tasks.'));
     } else {
       try {
+        const originalStatus = planData.status;
         const appendedCount = await appendIssuesToPlanTasks(
           planRefForWrite,
           issuesToAppend,
@@ -606,6 +607,10 @@ async function handleReviewIssueActions(params: {
         actionCompleted = true;
 
         if (appendedCount > 0) {
+          await reopenParentForAppendedReviewTasks(
+            { parent: planData.parent, status: originalStatus },
+            globalOpts.config
+          );
           const plural = appendedCount === 1 ? '' : 's';
           log(
             chalk.green(
@@ -1835,13 +1840,38 @@ async function appendIssuesToPlanTasks(
   }
 
   if (appendedCount > 0) {
-    if (planData.status === 'done') {
+    if (planData.status === 'done' || planData.status === 'needs_review') {
       planData.status = 'in_progress';
     }
     await writePlanFile(planPath, planData, { cwdForIdentity: repoRoot });
   }
 
   return appendedCount;
+}
+
+export async function reopenParentForAppendedReviewTasks(
+  planData: Pick<PlanSchema, 'parent' | 'status'>,
+  configPath?: string
+): Promise<void> {
+  if (!planData.parent || (planData.status !== 'done' && planData.status !== 'needs_review')) {
+    return;
+  }
+
+  const { plan: parentPlan, repoRoot: parentRepoRoot } = await resolveReviewPlanForWrite(
+    String(planData.parent),
+    configPath
+  );
+  if (parentPlan.status !== 'done' && parentPlan.status !== 'needs_review') {
+    return;
+  }
+
+  parentPlan.status = 'in_progress';
+  const parentPlanPath = await ensureReviewPlanFilePath(
+    String(planData.parent),
+    parentPlan,
+    parentRepoRoot
+  );
+  await writePlanFile(parentPlanPath, parentPlan, { cwdForIdentity: parentRepoRoot });
 }
 
 async function resolveReviewPlanForWrite(

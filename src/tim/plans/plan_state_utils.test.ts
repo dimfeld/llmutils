@@ -1,5 +1,6 @@
-import { describe, expect, test, vi } from 'vitest';
+import { describe, expect, test } from 'vitest';
 import {
+  getCompletionStatus,
   isPlanPending,
   isPlanInProgress,
   isPlanDone,
@@ -7,6 +8,8 @@ import {
   isPlanDeferred,
   isPlanActionable,
   isPlanComplete,
+  isWorkComplete,
+  isWorkCompleteStatus,
   getStatusDisplayName,
   isValidPlanStatus,
   normalizePlanStatus,
@@ -232,8 +235,8 @@ describe('plan state utilities', () => {
       expect(isPlanComplete(plan)).toBe(true);
     });
 
-    test('returns false for actionable statuses', () => {
-      const statuses = ['pending', 'in_progress'] as const;
+    test('returns false for non-complete statuses', () => {
+      const statuses = ['pending', 'in_progress', 'needs_review'] as const;
       for (const status of statuses) {
         const plan: PlanSchema = {
           id: 1,
@@ -255,6 +258,69 @@ describe('plan state utilities', () => {
     });
   });
 
+  describe('isWorkComplete', () => {
+    test('returns true for work-complete statuses', () => {
+      const statuses = ['done', 'cancelled', 'deferred', 'needs_review'] as const;
+      for (const status of statuses) {
+        const plan: PlanSchema = {
+          id: 1,
+          goal: 'Test goal',
+          status,
+          tasks: [],
+        };
+        expect(isWorkComplete(plan)).toBe(true);
+      }
+    });
+
+    test('returns false for active statuses', () => {
+      const statuses = ['pending', 'in_progress'] as const;
+      for (const status of statuses) {
+        const plan: PlanSchema = {
+          id: 1,
+          goal: 'Test goal',
+          status,
+          tasks: [],
+        };
+        expect(isWorkComplete(plan)).toBe(false);
+      }
+    });
+  });
+
+  describe('isWorkCompleteStatus', () => {
+    test('returns true for work-complete status strings', () => {
+      const statuses = ['done', 'cancelled', 'needs_review'] as const;
+      for (const status of statuses) {
+        expect(isWorkCompleteStatus(status)).toBe(true);
+      }
+    });
+
+    test('returns false for incomplete or unknown status strings', () => {
+      const statuses = [
+        'pending',
+        'in_progress',
+        'deferred',
+        '',
+        'claimed',
+        null,
+        undefined,
+      ] as const;
+      for (const status of statuses) {
+        expect(isWorkCompleteStatus(status)).toBe(false);
+      }
+    });
+  });
+
+  describe('getCompletionStatus', () => {
+    test('defaults to needs_review', () => {
+      expect(getCompletionStatus({})).toBe('needs_review');
+    });
+
+    test('returns configured auto-complete status', () => {
+      expect(getCompletionStatus({ planAutocompleteStatus: 'done' })).toBe('done');
+      expect(getCompletionStatus({ planAutocompleteStatus: 'needs_review' })).toBe('needs_review');
+    });
+  });
+
   describe('getStatusDisplayName', () => {
     test('returns correct display names for all statuses', () => {
       expect(getStatusDisplayName('pending')).toBe('Pending');
@@ -262,6 +328,7 @@ describe('plan state utilities', () => {
       expect(getStatusDisplayName('done')).toBe('Done');
       expect(getStatusDisplayName('cancelled')).toBe('Cancelled');
       expect(getStatusDisplayName('deferred')).toBe('Deferred');
+      expect(getStatusDisplayName('needs_review')).toBe('Needs Review');
     });
 
     test('returns Pending for undefined status', () => {
@@ -271,7 +338,14 @@ describe('plan state utilities', () => {
 
   describe('isValidPlanStatus', () => {
     test('returns true for all valid statuses', () => {
-      const validStatuses = ['pending', 'in_progress', 'done', 'cancelled', 'deferred'];
+      const validStatuses = [
+        'pending',
+        'in_progress',
+        'done',
+        'cancelled',
+        'deferred',
+        'needs_review',
+      ];
       for (const status of validStatuses) {
         expect(isValidPlanStatus(status)).toBe(true);
       }
@@ -294,6 +368,7 @@ describe('plan state utilities', () => {
     test('returns status for valid values', () => {
       expect(normalizePlanStatus('pending')).toBe('pending');
       expect(normalizePlanStatus('in_progress')).toBe('in_progress');
+      expect(normalizePlanStatus('needs_review')).toBe('needs_review');
     });
 
     test('returns undefined for invalid values', () => {

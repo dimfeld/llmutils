@@ -58,6 +58,16 @@ describe('isReadyPlan', () => {
     expect(result).toBe(true);
   });
 
+  it('treats needs_review dependencies as complete', () => {
+    const plans = new Map<number, PlanSchema>();
+    const dependency = createPlan({ id: 2, status: 'needs_review' });
+    plans.set(1, createPlan({ id: 1, dependencies: [2] }));
+    plans.set(2, dependency);
+
+    const result = isReadyPlan(plans.get(1)!, plans, false);
+    expect(result).toBe(true);
+  });
+
   it('returns false when dependencies are incomplete', () => {
     const plans = new Map<number, PlanSchema>();
     const dependency = createPlan({ id: 2, status: 'pending' });

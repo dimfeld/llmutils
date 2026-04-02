@@ -230,21 +230,27 @@ describe('Hierarchy Utilities', () => {
   });
 
   describe('getCompletedChildren', () => {
-    it('should return only children with status "done"', () => {
+    it('should return only done and needs_review children', () => {
       const parent = createPlan(1, 'Parent');
       const completedChild = createPlan(2, 'Completed Child', 'done', 1);
+      const needsReviewChild = createPlan(5, 'Needs Review Child', 'needs_review', 1);
       const pendingChild = createPlan(3, 'Pending Child', 'pending', 1);
       const inProgressChild = createPlan(4, 'In Progress Child', 'in_progress', 1);
+      const cancelledChild = createPlan(6, 'Cancelled Child', 'cancelled', 1);
+      const deferredChild = createPlan(7, 'Deferred Child', 'deferred', 1);
       const allPlans = new Map([
         [1, parent],
         [2, completedChild],
         [3, pendingChild],
         [4, inProgressChild],
+        [5, needsReviewChild],
+        [6, cancelledChild],
+        [7, deferredChild],
       ]);
 
       const completedChildren = getCompletedChildren(1, allPlans);
-      expect(completedChildren).toHaveLength(1);
-      expect(completedChildren[0]).toEqual(completedChild);
+      expect(completedChildren).toHaveLength(2);
+      expect(completedChildren.map((c) => c.id).sort()).toEqual([2, 5]);
     });
 
     it('should include completed grandchildren', () => {

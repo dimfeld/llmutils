@@ -196,4 +196,70 @@ describe('context_helpers', () => {
     expect(context).toContain('### Pending Sibling Plans:');
     expect(context).toContain('- **Pending Sibling** (File: 103.plan.md)');
   });
+
+  test('findSiblingPlans treats needs_review siblings as completed', async () => {
+    const allPlans = new Map<number, PlanSchema>([
+      [
+        100,
+        {
+          id: 100,
+          title: 'Parent Plan',
+          goal: 'Goal',
+          details: 'Details',
+          status: 'in_progress',
+          tasks: [],
+        },
+      ],
+      [
+        101,
+        {
+          id: 101,
+          title: 'Current Plan',
+          goal: 'Goal',
+          details: 'Details',
+          status: 'pending',
+          parent: 100,
+          tasks: [],
+        },
+      ],
+      [
+        102,
+        {
+          id: 102,
+          title: 'Needs Review Sibling',
+          goal: 'Goal',
+          details: 'Details',
+          status: 'needs_review',
+          parent: 100,
+          tasks: [],
+        },
+      ],
+      [
+        103,
+        {
+          id: 103,
+          title: 'Pending Sibling',
+          goal: 'Goal',
+          details: 'Details',
+          status: 'pending',
+          parent: 100,
+          tasks: [],
+        },
+      ],
+    ]);
+
+    await writeMaterializedPlan(allPlans.get(100)!);
+    await writeMaterializedPlan(allPlans.get(101)!);
+    await writeMaterializedPlan(allPlans.get(102)!);
+    await writeMaterializedPlan(allPlans.get(103)!);
+
+    const result = findSiblingPlans(101, 100, allPlans, repoRoot, repoRoot);
+
+    expect(result.siblings.completed).toEqual([
+      { id: 102, title: 'Needs Review Sibling', file: '.tim/plans/102.plan.md' },
+    ]);
+    expect(result.siblings.pending).toEqual([
+      { id: 103, title: 'Pending Sibling', file: '.tim/plans/103.plan.md' },
+    ]);
+  });
 });

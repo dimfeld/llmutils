@@ -64,14 +64,45 @@ export function isPlanActionable(plan: PlanSchema): boolean {
 }
 
 /**
- * Checks if a plan is complete (either 'done', 'cancelled', or 'deferred').
- * Complete plans are those that no longer need work.
+ * Checks if a plan lifecycle is fully complete (either 'done', 'cancelled', or 'deferred').
+ * This intentionally does not include 'needs_review'; use isWorkComplete() when a plan should
+ * stop blocking dependents or stop receiving active work.
  * @param plan - The plan to check
  * @returns true if the plan status is 'done', 'cancelled', or 'deferred'
  */
 export function isPlanComplete(plan: PlanSchema): boolean {
   const status = plan.status;
   return status === 'done' || status === 'cancelled' || status === 'deferred';
+}
+
+/**
+ * Checks if implementation work is complete and the plan should no longer block dependents or
+ * have active work performed on it. Unlike isPlanComplete(), this includes 'needs_review'.
+ * @param plan - The plan to check
+ * @returns true if the plan status is 'done', 'cancelled', or 'needs_review'
+ */
+export function isWorkComplete(plan: Pick<PlanSchema, 'status'>): boolean {
+  return isWorkCompleteStatus(plan.status);
+}
+
+/**
+ * Status-string variant of isWorkComplete() for DB rows and other raw status sources.
+ * @param status - The raw status value to check
+ * @returns true if the status is 'done', 'cancelled', or 'needs_review'
+ */
+export function isWorkCompleteStatus(status: string | null | undefined): boolean {
+  return status === 'done' || status === 'cancelled' || status === 'needs_review';
+}
+
+/**
+ * Gets the status to use when plan work is auto-completed.
+ * @param config - Partial config containing the optional auto-complete target
+ * @returns The configured completion status, defaulting to 'needs_review'
+ */
+export function getCompletionStatus(config: {
+  planAutocompleteStatus?: 'needs_review' | 'done';
+}): PlanStatus {
+  return config.planAutocompleteStatus ?? 'needs_review';
 }
 
 /**

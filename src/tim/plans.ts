@@ -31,6 +31,7 @@ import { getRepositoryIdentity } from './assignments/workspace_identifier.js';
 import { createModel } from '../common/model_factory.js';
 import { generateText } from 'ai';
 import { findPlanFileOnDiskAsync } from './plans/find_plan_file.js';
+import { isWorkComplete } from './plans/plan_state_utils.js';
 import { ensureReferences } from './utils/references.js';
 
 export class NoFrontmatterError extends Error {
@@ -277,7 +278,7 @@ export type PlanFilterOptions = {
  * Checks if a plan is ready to be executed.
  * A plan is ready if:
  * - Its status is 'pending' (or not set)
- * - All its dependencies have status 'done'
+ * - All its dependencies are work-complete
  */
 export function isPlanReady(plan: PlanSchema, allPlans: Map<number, PlanSchema>): boolean {
   const status = plan.status || 'pending';
@@ -292,7 +293,7 @@ export function isPlanReady(plan: PlanSchema, allPlans: Map<number, PlanSchema>)
     return true;
   }
 
-  // Check if all dependencies are done
+  // Check if all dependencies are work-complete
   return plan.dependencies.every((depId) => {
     // Try to get the dependency plan by string ID first
     let depPlan = allPlans.get(depId);
@@ -302,7 +303,7 @@ export function isPlanReady(plan: PlanSchema, allPlans: Map<number, PlanSchema>)
       depPlan = allPlans.get(parseInt(depId, 10));
     }
 
-    return depPlan && (depPlan.status === 'done' || depPlan.status === 'cancelled');
+    return depPlan != null && isWorkComplete(depPlan);
   });
 }
 
@@ -336,8 +337,8 @@ export async function collectDependenciesInOrder(
         throw new Error(`Dependency not found: ${depId} (required by ${planId})`);
       }
 
-      // Skip dependencies that are already done
-      if (depPlan.status === 'done') {
+      // Skip dependencies that are already work-complete
+      if (isWorkComplete(depPlan)) {
         continue;
       }
 
@@ -353,8 +354,8 @@ export async function collectDependenciesInOrder(
     }
   }
 
-  // Finally, add the current plan itself (if not done)
-  if (plan.status !== 'done' && !result.some((p) => p.id === plan.id)) {
+  // Finally, add the current plan itself if it still needs work
+  if (!isWorkComplete(plan) && !result.some((p) => p.id === plan.id)) {
     result.push(plan);
   }
 
@@ -716,6 +717,8 @@ export async function setPlanStatus(
   debugLog(`Updated plan status in ${planFilePath} to ${newStatus}`);
 }
 
+/** Low-level status write. Callers are responsible for completion side effects
+ * (assignment removal, parent cascade) when setting terminal statuses. */
 export async function setPlanStatusById(
   planId: number,
   newStatus: PlanSchema['status'],

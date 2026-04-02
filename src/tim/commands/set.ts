@@ -90,7 +90,13 @@ export async function handleSetCommand(
       modified = true;
       log(`Updated status to ${options.status}`);
 
-      if (plan.uuid && (plan.status === 'done' || plan.status === 'cancelled')) {
+      // Explicit `tim set --status` removes assignments for terminal-ish statuses.
+      // Auto-completion (mark_done.ts) preserves assignments for needs_review
+      // so the reviewer knows which workspace worked on the plan.
+      if (
+        plan.uuid &&
+        (plan.status === 'done' || plan.status === 'needs_review' || plan.status === 'cancelled')
+      ) {
         shouldRemoveAssignment = true;
       }
     }
@@ -310,7 +316,7 @@ export async function handleSetCommand(
         const dependencies = new Set(newParentPlan.dependencies ?? []);
         dependencies.add(plan.id);
         newParentPlan.dependencies = [...dependencies];
-        if (newParentPlan.status === 'done') {
+        if (newParentPlan.status === 'done' || newParentPlan.status === 'needs_review') {
           newParentPlan.status = 'in_progress';
         }
         newParentPlan.updatedAt = new Date().toISOString();
@@ -378,6 +384,7 @@ export async function handleSetCommand(
     const shouldCheckParentCompletion =
       Boolean(refreshedPlanWithReferences.parent) &&
       (refreshedPlanWithReferences.status === 'done' ||
+        refreshedPlanWithReferences.status === 'needs_review' ||
         refreshedPlanWithReferences.status === 'cancelled');
     if (shouldCheckParentCompletion && refreshedPlanWithReferences.parent) {
       await checkAndMarkParentDone(refreshedPlanWithReferences.parent, config, {

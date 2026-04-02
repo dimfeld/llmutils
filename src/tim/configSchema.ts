@@ -165,6 +165,10 @@ export const timConfigSchema = z
           .describe('Number of days after which plan assignments are considered stale'),
       })
       .optional(),
+    planAutocompleteStatus: z
+      .enum(['needs_review', 'done'])
+      .optional()
+      .describe('Target status for automatic plan completion transitions'),
     tags: z
       .object({
         allowed: z

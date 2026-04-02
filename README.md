@@ -45,6 +45,21 @@ Use `tim workspace list`, `tim workspace add`, and `tim workspace update` to man
 
 `tim workspace add [planIdentifier] [--primary | --auto]` sets the initial type for a new workspace, and `tim workspace update <id> [--primary | --no-primary | --auto | --no-auto]` changes it later. When at least one `auto` workspace exists, commands such as `tim agent --auto-workspace` and `tim generate --auto-workspace` only choose from `auto` workspaces; otherwise they fall back to any non-`primary` workspace. See [`docs/multi-workspace-workflow.md`](docs/multi-workspace-workflow.md) for the full workflow.
 
+## Plan Auto-Completion Status
+
+When all tasks in a plan are completed (via `tim done`, agent batch mode, or stub plans), the plan transitions to `needs_review` by default instead of `done`. This gives you a chance to review completed work before marking it fully done. Parent plans also auto-complete to `needs_review` when all children reach a work-complete state (`done`, `needs_review`, `cancelled`, or `deferred`).
+
+Plans in `needs_review` satisfy dependency requirements, so downstream plans are not blocked. Workspace assignments and locks are preserved for `needs_review` plans and only released when the plan reaches `done` (whether via `tim set`, auto-completion with `planAutocompleteStatus: done`, or agent-driven completion).
+
+To skip the review step and go directly to `done`, set the `planAutocompleteStatus` config option:
+
+```yaml
+# tim.yml
+planAutocompleteStatus: done # default: needs_review
+```
+
+Explicit status changes via `tim set <id> --status done` always go directly to `done` regardless of this setting.
+
 ## PR Status Monitoring
 
 `tim pr` is a subcommand namespace for GitHub PR operations:

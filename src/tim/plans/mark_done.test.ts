@@ -2,17 +2,23 @@ import { describe, expect, test, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { removePlanAssignment } from '../assignments/remove_plan_assignment.js';
 import { markStepDone, markTaskDone, setTaskDone } from './mark_done.js';
 import { closeDatabaseForTesting } from '../db/database.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
 import { readPlanFile, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 
+vi.mock('../assignments/remove_plan_assignment.js', () => ({
+  removePlanAssignment: vi.fn(async () => {}),
+}));
+
 describe('markStepDone', () => {
   let tempDir: string;
   let tasksDir: string;
 
   beforeEach(async () => {
+    vi.clearAllMocks();
     closeDatabaseForTesting();
     clearPlanSyncContext();
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-test-'));
@@ -83,10 +89,60 @@ describe('markStepDone', () => {
     const result = await markStepDone(planPath, {}, undefined, tempDir, {});
 
     expect(result.planComplete).toBe(true);
+    expect(result.status).toBe('needs_review');
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.status).toBe('needs_review');
+    expect(updatedPlan.tasks[0].done).toBe(true);
+  });
+
+  test('uses done when configured as the autocomplete status', async () => {
+    const plan: PlanSchema = {
+      id: 1,
+      title: 'Test Plan',
+      goal: 'Test goal',
+      details: 'Test details',
+      status: 'in_progress',
+      tasks: [{ title: 'Task 1', description: 'Do task', done: false }],
+    };
+
+    const planPath = path.join(tasksDir, '1.yml');
+    await writePlanFile(planPath, plan);
+
+    const result = await markStepDone(planPath, {}, undefined, tempDir, {
+      planAutocompleteStatus: 'done',
+    } as any);
+
+    expect(result.planComplete).toBe(true);
+    expect(result.status).toBe('done');
 
     const updatedPlan = await readPlanFile(planPath);
     expect(updatedPlan.status).toBe('done');
-    expect(updatedPlan.tasks[0].done).toBe(true);
+  });
+
+  test('preserves assignment removal until the plan reaches done', async () => {
+    const plan: PlanSchema = {
+      id: 1,
+      title: 'Assignment Preservation Plan',
+      goal: 'Verify assignment removal timing',
+      details: 'Test details',
+      status: 'in_progress',
+      tasks: [{ title: 'Task 1', description: 'Do task', done: false }],
+    };
+
+    const planPath = path.join(tasksDir, '1.yml');
+    await writePlanFile(planPath, plan);
+
+    await markStepDone(planPath, {}, undefined, tempDir, {});
+    expect(removePlanAssignment).not.toHaveBeenCalled();
+
+    (removePlanAssignment as ReturnType<typeof vi.fn>).mockClear();
+
+    await writePlanFile(planPath, plan);
+    await markStepDone(planPath, {}, undefined, tempDir, {
+      planAutocompleteStatus: 'done',
+    } as any);
+    expect(removePlanAssignment).toHaveBeenCalledTimes(1);
   });
 
   test('handles plan with no pending tasks', async () => {
@@ -112,6 +168,42 @@ describe('markStepDone', () => {
 
     expect(result.planComplete).toBe(true);
     expect(result.message).toBe('All tasks in the plan are already done.');
+    expect(result.status).toBe('done');
+  });
+
+  test('auto-completes a stale plan when all tasks are already done', async () => {
+    const plan: PlanSchema = {
+      id: 1,
+      title: 'Stale Plan',
+      goal: 'Test goal',
+      details: 'Test details',
+      status: 'pending',
+      tasks: [
+        {
+          title: 'Task 1',
+          description: 'Already done',
+          done: true,
+        },
+        {
+          title: 'Task 2',
+          description: 'Also done',
+          done: true,
+        },
+      ],
+    };
+
+    const planPath = path.join(tasksDir, '1.yml');
+    await writePlanFile(planPath, plan);
+
+    const result = await markStepDone(planPath, {}, undefined, tempDir, {});
+
+    expect(result.planComplete).toBe(true);
+    expect(result.status).toBe('needs_review');
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.status).toBe('needs_review');
+    expect(updatedPlan.tasks.every((task) => task.done)).toBe(true);
+    expect(removePlanAssignment).not.toHaveBeenCalled();
   });
 });
 
@@ -165,6 +257,40 @@ describe('markTaskDone', () => {
 
     const updatedPlan = await readPlanFile(planPath);
     expect(updatedPlan.tasks[0].done).toBe(false);
+    expect(updatedPlan.tasks[1].done).toBe(true);
+  });
+
+  test('auto-completes a stale plan when the targeted final task is already done', async () => {
+    const plan: PlanSchema = {
+      id: 1,
+      title: 'Stale Final Task Plan',
+      goal: 'Test goal',
+      details: 'Test details',
+      status: 'in_progress',
+      tasks: [
+        {
+          title: 'Task 1',
+          description: 'Already done',
+          done: true,
+        },
+        {
+          title: 'Task 2',
+          description: 'Final done task',
+          done: true,
+        },
+      ],
+    };
+
+    const planPath = path.join(tasksDir, '1.yml');
+    await writePlanFile(planPath, plan);
+
+    const result = await markTaskDone(planPath, 1, {}, tempDir, {});
+
+    expect(result.planComplete).toBe(true);
+    expect(result.status).toBe('needs_review');
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.status).toBe('needs_review');
     expect(updatedPlan.tasks[1].done).toBe(true);
   });
 

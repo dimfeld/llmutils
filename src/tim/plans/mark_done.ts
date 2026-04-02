@@ -21,6 +21,13 @@ import type { PlanSchema } from '../planSchema.js';
 import { type PendingTaskResult, findPendingTask, findNextActionableItem } from './find_next.js';
 import { removePlanAssignment } from '../assignments/remove_plan_assignment.js';
 import { resolveWritablePath } from './resolve_writable_path.js';
+import { getCompletionStatus, isWorkComplete } from './plan_state_utils.js';
+
+type MarkDoneResult = {
+  planComplete: boolean;
+  message: string;
+  status?: PlanSchema['status'];
+};
 
 export async function markStepDone(
   planArg: string,
@@ -29,7 +36,7 @@ export async function markStepDone(
   baseDir?: string,
   config?: TimConfig,
   configPath?: string
-): Promise<{ planComplete: boolean; message: string }> {
+): Promise<MarkDoneResult> {
   const repoRoot = await resolveRepoRootForPlanArg(
     planArg,
     (await getGitRoot(baseDir)) || baseDir,
@@ -66,7 +73,27 @@ export async function markStepDone(
     }
 
     if (!pending) {
-      return { planComplete: true, message: 'All tasks in the plan are already done.' };
+      if (shouldFinalizeCompletedPlan(planData)) {
+        const message = await finalizeTaskMutation(
+          planData,
+          outputPath,
+          repoRoot,
+          options,
+          config,
+          ['All tasks in the plan are already done.']
+        );
+        return {
+          planComplete: isWorkComplete(planData),
+          message,
+          status: planData.status,
+        };
+      }
+
+      return {
+        planComplete: true,
+        message: 'All tasks in the plan are already done.',
+        status: planData.status,
+      };
     }
 
     const { task } = pending;
@@ -78,8 +105,9 @@ export async function markStepDone(
       ...(task.description ? [`\n${task.description}`] : []),
     ]);
     return {
-      planComplete: planData.status === 'done',
+      planComplete: isWorkComplete(planData),
       message,
+      status: planData.status,
     };
   });
 }
@@ -91,7 +119,7 @@ export async function markTaskDone(
   baseDir?: string,
   config?: TimConfig,
   configPath?: string
-): Promise<{ planComplete: boolean; message: string }> {
+): Promise<MarkDoneResult> {
   const repoRoot = await resolveRepoRootForPlanArg(
     planArg,
     (await getGitRoot(baseDir)) || baseDir,
@@ -118,7 +146,27 @@ export async function markTaskDone(
 
     const task = planData.tasks[taskIndex];
     if (task.done) {
-      return { planComplete: false, message: `Task "${task.title}" is already marked as done.` };
+      if (shouldFinalizeCompletedPlan(planData)) {
+        const message = await finalizeTaskMutation(
+          planData,
+          outputPath,
+          repoRoot,
+          options,
+          config,
+          [task.title, ...(task.description ? [`\n${task.description}`] : [])]
+        );
+        return {
+          planComplete: isWorkComplete(planData),
+          message,
+          status: planData.status,
+        };
+      }
+
+      return {
+        planComplete: false,
+        message: `Task "${task.title}" is already marked as done.`,
+        status: planData.status,
+      };
     }
 
     task.done = true;
@@ -129,8 +177,9 @@ export async function markTaskDone(
       ...(task.description ? [`\n${task.description}`] : []),
     ]);
     return {
-      planComplete: planData.status === 'done',
+      planComplete: isWorkComplete(planData),
       message,
+      status: planData.status,
     };
   });
 }
@@ -141,7 +190,7 @@ export async function setTaskDone(
   baseDir?: string,
   config?: TimConfig,
   configPath?: string
-): Promise<{ planComplete: boolean; message: string }> {
+): Promise<MarkDoneResult> {
   const repoRoot = await resolveRepoRootForPlanArg(
     planArg,
     (await getGitRoot(baseDir)) || baseDir,
@@ -200,7 +249,27 @@ export async function setTaskDone(
     }
 
     if (task.done) {
-      return { planComplete: false, message: `Task "${task.title}" is already marked as done.` };
+      if (shouldFinalizeCompletedPlan(planData)) {
+        const message = await finalizeTaskMutation(
+          planData,
+          outputPath,
+          repoRoot,
+          options,
+          config,
+          [task.title, ...(task.description ? [`\n${task.description}`] : [])]
+        );
+        return {
+          planComplete: isWorkComplete(planData),
+          message,
+          status: planData.status,
+        };
+      }
+
+      return {
+        planComplete: false,
+        message: `Task "${task.title}" is already marked as done.`,
+        status: planData.status,
+      };
     }
 
     task.done = true;
@@ -211,10 +280,15 @@ export async function setTaskDone(
       ...(task.description ? [`\n${task.description}`] : []),
     ]);
     return {
-      planComplete: planData.status === 'done',
+      planComplete: isWorkComplete(planData),
       message,
+      status: planData.status,
     };
   });
+}
+
+function shouldFinalizeCompletedPlan(planData: PlanSchema): boolean {
+  return !findNextActionableItem(planData) && !isWorkComplete(planData);
 }
 
 async function finalizeTaskMutation(
@@ -242,12 +316,12 @@ async function finalizeTaskMutation(
   const stillPending = findNextActionableItem(planData);
   const planComplete = !stillPending;
   if (planComplete) {
-    planData.status = 'done';
+    planData.status = getCompletionStatus(config ?? {});
   }
 
   await writePlanFile(outputPath, planData, { cwdForIdentity: repoRoot });
 
-  if (planComplete) {
+  if (planData.status === 'done') {
     await removePlanAssignment(planData, repoRoot);
   }
 
@@ -261,9 +335,16 @@ async function finalizeTaskMutation(
   if (planComplete && planData.parent && config) {
     try {
       const parentPlan = await checkAndMarkParentDone(planData.parent, config, repoRoot);
-      if (parentPlan && parentPlan.status === 'done' && options.commit) {
+      if (
+        parentPlan &&
+        (parentPlan.status === 'done' || parentPlan.status === 'needs_review') &&
+        options.commit
+      ) {
         const title = parentPlan.title ? ` "${parentPlan.title}"` : '';
-        await commitAll(`Mark plan${title} as done (ID: ${parentPlan.id})`, repoRoot);
+        await commitAll(
+          `Mark plan${title} as ${parentPlan.status} (ID: ${parentPlan.id})`,
+          repoRoot
+        );
       }
     } catch (err) {
       warn(`Failed to check parent plan: ${err instanceof Error ? err.message : String(err)}`);

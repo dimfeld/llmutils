@@ -86,11 +86,11 @@ tim release docs-uuid --reset-status
 
 ## Troubleshooting
 
-| Symptom                                     | Explanation                                                                    | Resolution                                                                                            |
-| ------------------------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
-| `auto-claim` warnings in tests or scripts   | Auto-claim is disabled unless the CLI enables it.                              | Import `enableAutoClaim()` from `src/tim/assignments/auto_claim.js` if you need it in custom tooling. |
-| Claims point to stale workspaces            | The workspace was deleted or renamed.                                          | Run `tim assignments clean-stale` or release the plan manually.                                       |
-| Plan still appears claimed after completion | tim removes assignments when plan status transitions to `done` or `cancelled`. | Verify the plan reached the correct status; re-run `tim release <plan>` if necessary.                 |
+| Symptom                                     | Explanation                                                                                                                                            | Resolution                                                                                            |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `auto-claim` warnings in tests or scripts   | Auto-claim is disabled unless the CLI enables it.                                                                                                      | Import `enableAutoClaim()` from `src/tim/assignments/auto_claim.js` if you need it in custom tooling. |
+| Claims point to stale workspaces            | The workspace was deleted or renamed.                                                                                                                  | Run `tim assignments clean-stale` or release the plan manually.                                       |
+| Plan still appears claimed after completion | tim removes assignments when plan status transitions to `done` or `cancelled`. Plans in `needs_review` preserve their assignments and workspace locks. | Verify the plan reached the correct status; re-run `tim release <plan>` if necessary.                 |
 
 ## Workspace Types
 

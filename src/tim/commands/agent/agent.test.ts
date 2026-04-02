@@ -1860,7 +1860,7 @@ describe('timAgent - Batch Tasks Mode', () => {
     expect(updatedPlan.tasks).toHaveLength(4);
     expect(updatedPlan.tasks.every((task) => task.done === true)).toBe(true);
 
-    expect(updatedPlan.status).toBe('done');
+    expect(updatedPlan.status).toBe('needs_review');
   });
 
   test('batch mode completes in multiple iterations with incremental task completion', async () => {
@@ -1877,7 +1877,7 @@ describe('timAgent - Batch Tasks Mode', () => {
 
     const finalPlan = await readPlanFile(batchPlanFile);
     expect(finalPlan.tasks.every((task) => task.done === true)).toBe(true);
-    expect(finalPlan.status).toBe('done');
+    expect(finalPlan.status).toBe('needs_review');
   });
 
   test('batch mode with all tasks already complete exits immediately', async () => {
@@ -1917,7 +1917,7 @@ describe('timAgent - Batch Tasks Mode', () => {
     expect(plan.tasks.every((task) => !task.done)).toBe(true);
   });
 
-  test('batch mode correctly updates plan status from pending to in_progress to done', async () => {
+  test('batch mode correctly updates plan status from pending to in_progress to needs_review', async () => {
     const options = { batchTasks: true, log: false, nonInteractive: true } as any;
     const globalCliOptions = { config: {} };
 
@@ -1928,7 +1928,7 @@ describe('timAgent - Batch Tasks Mode', () => {
     await timAgent(batchPlanFile, options, globalCliOptions);
 
     plan = await readPlanFile(batchPlanFile);
-    expect(plan.status).toBe('done');
+    expect(plan.status).toBe('needs_review');
     expect(plan.updatedAt).toBeDefined();
   });
 

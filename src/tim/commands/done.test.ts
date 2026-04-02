@@ -5,6 +5,7 @@ import path from 'path';
 import { stringifyPlanWithFrontmatter } from '../../testing.js';
 import { clearConfigCache } from '../configLoader.js';
 import type { PlanSchema } from '../planSchema.js';
+import { WorkspaceLock } from '../workspace/workspace_lock.js';
 
 vi.mock('../plans/mark_done.js', () => ({
   markStepDone: vi.fn(async () => ({
@@ -21,6 +22,13 @@ vi.mock('../../common/git.js', async (importOriginal) => {
   };
 });
 
+vi.mock('../workspace/workspace_lock.js', () => ({
+  WorkspaceLock: {
+    getLockInfo: vi.fn(async () => null),
+    releaseLock: vi.fn(async () => false),
+  },
+}));
+
 import { handleDoneCommand } from './done.js';
 import { markStepDone } from '../plans/mark_done.js';
 import { getGitRoot } from '../../common/git.js';
@@ -30,6 +38,8 @@ describe('handleDoneCommand', () => {
   let tasksDir: string;
   let configPath: string;
   let markStepDoneSpy: ReturnType<typeof vi.mocked<typeof markStepDone>>;
+  let getLockInfoSpy: ReturnType<typeof vi.mocked<typeof WorkspaceLock.getLockInfo>>;
+  let releaseLockSpy: ReturnType<typeof vi.mocked<typeof WorkspaceLock.releaseLock>>;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -49,6 +59,8 @@ describe('handleDoneCommand', () => {
       planComplete: false,
       message: 'Task marked as done',
     });
+    getLockInfoSpy = vi.mocked(WorkspaceLock.getLockInfo);
+    releaseLockSpy = vi.mocked(WorkspaceLock.releaseLock);
 
     vi.mocked(getGitRoot).mockResolvedValue(tempDir);
   });
@@ -189,5 +201,49 @@ describe('handleDoneCommand', () => {
       }),
       configPath
     );
+  });
+
+  test('does not release workspace lock for needs_review completion', async () => {
+    markStepDoneSpy.mockResolvedValue({
+      planComplete: true,
+      message: 'Task marked as done',
+      status: 'needs_review',
+    });
+
+    await handleDoneCommand(
+      '1',
+      {},
+      {
+        parent: {
+          opts: () => ({ config: configPath }),
+        },
+      }
+    );
+
+    expect(getLockInfoSpy).not.toHaveBeenCalled();
+    expect(releaseLockSpy).not.toHaveBeenCalled();
+  });
+
+  test('releases workspace lock for done completion', async () => {
+    markStepDoneSpy.mockResolvedValue({
+      planComplete: true,
+      message: 'Task marked as done',
+      status: 'done',
+    });
+    getLockInfoSpy.mockResolvedValueOnce({ type: 'pid' } as any);
+    releaseLockSpy.mockResolvedValueOnce(true);
+
+    await handleDoneCommand(
+      '1',
+      {},
+      {
+        parent: {
+          opts: () => ({ config: configPath }),
+        },
+      }
+    );
+
+    expect(getLockInfoSpy).toHaveBeenCalledWith(tempDir);
+    expect(releaseLockSpy).toHaveBeenCalledWith(tempDir);
   });
 });

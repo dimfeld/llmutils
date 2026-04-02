@@ -141,7 +141,7 @@ export async function handleAddCommand(title: string[], options: any, command: a
     for (const childRow of projectContext.rows) {
       if (
         childRow.parent_uuid === referencedPlan.uuid &&
-        childRow.status === 'done' &&
+        (childRow.status === 'done' || childRow.status === 'needs_review') &&
         childRow.changed_files
       ) {
         for (const file of JSON.parse(childRow.changed_files) as string[]) {
@@ -230,7 +230,10 @@ export async function handleAddCommand(title: string[], options: any, command: a
       ...freshParent,
       dependencies: [...(freshParent.dependencies ?? []), planId],
       updatedAt: new Date().toISOString(),
-      status: freshParent.status === 'done' ? 'in_progress' : freshParent.status,
+      status:
+        freshParent.status === 'done' || freshParent.status === 'needs_review'
+          ? 'in_progress'
+          : freshParent.status,
     };
     const { updatedPlan: referencedParent } = ensureReferences(updatedParent, {
       planIdToUuid: idToUuid,
@@ -258,7 +261,7 @@ export async function handleAddCommand(title: string[], options: any, command: a
 
   if (parentPlan) {
     log(chalk.gray(`  Updated parent plan ${parentPlan.id} to include dependency on ${planId}`));
-    if (parentPlan.status === 'done') {
+    if (parentPlan.status === 'done' || parentPlan.status === 'needs_review') {
       log(chalk.yellow(`  Parent plan "${parentPlan.title}" marked as in_progress`));
     }
   }

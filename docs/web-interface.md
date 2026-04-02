@@ -60,7 +60,7 @@ src/routes/projects/[projectId]/active/
 ### Data Flow
 
 - `getWorkspacesForProject(db, projectId?)` in `db_queries.ts` — LEFT JOINs `workspace` with `workspace_lock`, calls `cleanStaleLocks(db)` first, returns `EnrichedWorkspace[]` with `isRecentlyActive` computed flag
-- `getActiveWorkData(db, projectId)` in `plans_browser.ts` — combines workspace data with plans filtered to `displayStatus === 'in_progress' || 'blocked'`
+- `getActiveWorkData(db, projectId)` in `plans_browser.ts` — combines workspace data with plans filtered to `displayStatus === 'in_progress' || 'needs_review' || 'blocked'`
 - "Recently active" criteria: workspace is locked, is primary, is auto, or has `updated_at` within 48 hours (`RECENTLY_ACTIVE_WINDOW_MS`)
 
 ### Components
@@ -307,8 +307,8 @@ An "Open Terminal" button (AppWindow icon) appears next to each workspace path i
 
 ### Eligibility
 
-- **Generate** (`isPlanEligibleForGenerate`): Plan has no tasks and `displayStatus` is not `done`, `cancelled`, `deferred`, or `recently_done`.
-- **Agent** (`isPlanEligibleForAgent`): Plan is not `done`, `cancelled`, or `deferred`. If the plan has tasks, at least one must be incomplete (not all done). Plans without tasks are also eligible (simple/stub plans).
+- **Generate** (`isPlanEligibleForGenerate`): Plan has no tasks and `displayStatus` is not `done`, `needs_review`, `cancelled`, or `recently_done`.
+- **Agent** (`isPlanEligibleForAgent`): Plan is not `done`, `needs_review`, or `cancelled`. If the plan has tasks, at least one must be incomplete (not all done). Plans without tasks are also eligible (simple/stub plans).
 - **Chat** (`isPlanEligibleForChat`): Any existing plan is eligible, including plans in terminal statuses (done, cancelled, deferred).
 
 ### Executor Selection Dialog

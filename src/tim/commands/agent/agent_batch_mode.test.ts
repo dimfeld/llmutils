@@ -10,6 +10,7 @@ import { createRecordingAdapter } from '../../../logging/test_helpers.js';
 import type { StructuredMessage } from '../../../logging/structured_messages.js';
 import type { PlanSchema, PlanSchemaInput } from '../../planSchema.js';
 import { resetShutdownState, setShuttingDown } from '../../shutdown_state.js';
+import { removePlanAssignment } from '../../assignments/remove_plan_assignment.js';
 
 // Mock functions — declared with vi.hoisted() so they are available inside vi.mock() factories
 const {
@@ -29,6 +30,8 @@ const {
   executePostApplyCommandSpy,
   runUpdateDocsSpy,
   runUpdateLessonsSpy,
+  handleReviewCommandSpy,
+  promptConfirmSpy,
 } = vi.hoisted(() => {
   const executorExecuteSpy = vi.fn(async () => {});
   return {
@@ -57,6 +60,8 @@ const {
     executePostApplyCommandSpy: vi.fn(async () => true),
     runUpdateDocsSpy: vi.fn(async () => {}),
     runUpdateLessonsSpy: vi.fn(async () => {}),
+    handleReviewCommandSpy: vi.fn(async () => ({ tasksAppended: 0 })),
+    promptConfirmSpy: vi.fn(async () => false),
   };
 });
 
@@ -83,6 +88,10 @@ let planFile = '';
 
 vi.mock('@inquirer/prompts', () => ({
   select: vi.fn(async () => 'generate'),
+}));
+
+vi.mock('../../../common/input.js', () => ({
+  promptConfirm: promptConfirmSpy,
 }));
 
 vi.mock('../../../logging.js', () => ({
@@ -120,12 +129,20 @@ vi.mock('../../actions.js', () => ({
   executePostApplyCommand: executePostApplyCommandSpy,
 }));
 
+vi.mock('../../assignments/remove_plan_assignment.js', () => ({
+  removePlanAssignment: vi.fn(async () => {}),
+}));
+
 vi.mock('../update-docs.js', () => ({
   runUpdateDocs: runUpdateDocsSpy,
 }));
 
 vi.mock('../update-lessons.js', () => ({
   runUpdateLessons: runUpdateLessonsSpy,
+}));
+
+vi.mock('../review.js', () => ({
+  handleReviewCommand: handleReviewCommandSpy,
 }));
 
 vi.mock('../../plans.js', () => {
@@ -251,6 +268,10 @@ describe('timAgent - Batch Mode Execution Loop', () => {
     executePostApplyCommandSpy.mockResolvedValue(true);
     runUpdateDocsSpy.mockClear();
     runUpdateLessonsSpy.mockClear();
+    handleReviewCommandSpy.mockClear();
+    promptConfirmSpy.mockClear();
+    promptConfirmSpy.mockResolvedValue(false);
+    (removePlanAssignment as ReturnType<typeof vi.fn>).mockClear();
     resetShutdownState();
 
     // Reset per-test impls
@@ -565,10 +586,10 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       // Read the file to check status was updated
       const content = await fs.readFile(planFile, 'utf-8');
       const planData = yaml.parse(content.replace(/^#.*\n/, ''));
-      expect(planData.status).toBe('done');
+      expect(planData.status).toBe('needs_review');
     });
 
-    test('plan status changes to done when all tasks complete', async () => {
+    test('plan status changes to needs_review when all tasks complete', async () => {
       await createPlanFile({
         status: 'in_progress',
         tasks: [
@@ -601,10 +622,121 @@ describe('timAgent - Batch Mode Execution Loop', () => {
 
       await timAgent(planFile, options, globalCliOptions);
 
-      // Read the final file content to verify status was updated to done
+      // Read the final file content to verify status was updated to needs_review
+      const finalContent = await fs.readFile(planFile, 'utf-8');
+      const finalPlan = yaml.parse(finalContent.replace(/^#.*\n/, ''));
+      expect(finalPlan.status).toBe('needs_review');
+      expect(removePlanAssignment).not.toHaveBeenCalled();
+    });
+
+    test('planAutocompleteStatus=done removes assignment when batch mode completes', async () => {
+      await createPlanFile({
+        status: 'in_progress',
+        uuid: 'plan-uuid-1',
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        planAutocompleteStatus: 'done',
+      });
+
+      executorExecuteSpy.mockImplementation(async () => {
+        await createPlanFile({
+          status: 'in_progress',
+          uuid: 'plan-uuid-1',
+          tasks: [
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
+        });
+      });
+
+      const options = { log: false, nonInteractive: true } as any;
+      const globalCliOptions = {};
+
+      await timAgent(planFile, options, globalCliOptions);
+
       const finalContent = await fs.readFile(planFile, 'utf-8');
       const finalPlan = yaml.parse(finalContent.replace(/^#.*\n/, ''));
       expect(finalPlan.status).toBe('done');
+      expect(removePlanAssignment).toHaveBeenCalledTimes(1);
+      expect(removePlanAssignment).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 1, uuid: 'plan-uuid-1' }),
+        tempDir
+      );
+    });
+
+    test('planAutocompleteStatus=done keeps assignment when final review reopens the plan', async () => {
+      await createPlanFile({
+        status: 'in_progress',
+        uuid: 'plan-uuid-1',
+        tasks: [
+          {
+            title: 'Already Complete',
+            description: 'Keeps final review enabled',
+            done: true,
+            steps: [{ prompt: 'done', done: true }],
+          },
+          {
+            title: 'Task 2',
+            description: 'Second task',
+            steps: [{ prompt: 'Do task 2', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        planAutocompleteStatus: 'done',
+      });
+      handleReviewCommandSpy.mockResolvedValueOnce({ tasksAppended: 2 });
+      promptConfirmSpy.mockResolvedValueOnce(false);
+
+      executorExecuteSpy.mockImplementation(async () => {
+        await createPlanFile({
+          status: 'in_progress',
+          uuid: 'plan-uuid-1',
+          tasks: [
+            {
+              title: 'Already Complete',
+              description: 'Keeps final review enabled',
+              done: true,
+              steps: [{ prompt: 'done', done: true }],
+            },
+            {
+              title: 'Task 2',
+              description: 'Second task',
+              steps: [{ prompt: 'Do task 2', done: true }],
+              done: true,
+            },
+          ],
+        });
+      });
+
+      const options = { log: false, nonInteractive: true } as any;
+      const globalCliOptions = {};
+
+      await timAgent(planFile, options, globalCliOptions);
+
+      const finalContent = await fs.readFile(planFile, 'utf-8');
+      const finalPlan = yaml.parse(finalContent.replace(/^#.*\n/, ''));
+      expect(finalPlan.status).toBe('in_progress');
+      expect(handleReviewCommandSpy).toHaveBeenCalledTimes(1);
+      expect(promptConfirmSpy).toHaveBeenCalledTimes(1);
+      expect(removePlanAssignment).not.toHaveBeenCalled();
     });
 
     test('parent plan status is updated when child completes', async () => {
@@ -641,10 +773,10 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       await timAgent(planFile, options, globalCliOptions);
 
       // Parent checking happens through the setPlanStatus function in our mocks
-      // Verify the plan was marked as done (which would trigger parent updates)
+      // Verify the plan was marked as needs_review (which would trigger parent updates)
       const finalContent = await fs.readFile(planFile, 'utf-8');
       const finalPlan = yaml.parse(finalContent.replace(/^#.*\n/, ''));
-      expect(finalPlan.status).toBe('done');
+      expect(finalPlan.status).toBe('needs_review');
     });
   });
 

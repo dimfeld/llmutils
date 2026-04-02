@@ -111,6 +111,19 @@ describe('plan_discovery collection helpers', () => {
     expect(result.message).toContain('All dependencies complete');
   });
 
+  test('findNextReadyDependencyFromCollection returns the parent when all dependencies are needs_review', () => {
+    const plans = new Map<number, PlanWithFilename>([
+      [10, makePlan(10, { dependencies: [1, 2] })],
+      [1, makePlan(1, { status: 'needs_review' })],
+      [2, makePlan(2, { status: 'needs_review' })],
+    ]);
+
+    const result = findNextReadyDependencyFromCollection(10, plans, false);
+
+    expect(result.plan?.id).toBe(10);
+    expect(result.message).toContain('All dependencies complete');
+  });
+
   test('findNextReadyDependencyFromCollection handles cycles and prefers in-progress before priority', () => {
     const plans = new Map<number, PlanWithFilename>([
       [10, makePlan(10, { dependencies: [1, 2] })],
@@ -122,6 +135,17 @@ describe('plan_discovery collection helpers', () => {
     const result = findNextReadyDependencyFromCollection(10, plans, false);
 
     expect(result.plan?.id).toBe(2);
+  });
+
+  test('findNextReadyDependencyFromCollection does not return a needs_review parent with no dependencies', () => {
+    const plans = new Map<number, PlanWithFilename>([
+      [10, makePlan(10, { status: 'needs_review', dependencies: [] })],
+    ]);
+
+    const result = findNextReadyDependencyFromCollection(10, plans, false);
+
+    expect(result.plan).toBeNull();
+    expect(result.message).toBe('No ready dependencies found.');
   });
 
   test('findNextReadyDependencyFromCollection includes child plans during traversal', () => {
@@ -175,6 +199,19 @@ describe('plan_discovery collection helpers', () => {
     const result = findNextReadyDependencyFromCollection(10, plans, false);
 
     expect(result.plan?.id).toBe(2);
+  });
+
+  test('findNextReadyDependencyFromCollection skips needs_review plans when selecting actionable candidates', () => {
+    const plans = new Map<number, PlanWithFilename>([
+      [10, makePlan(10, { dependencies: [1, 2] })],
+      [1, makePlan(1, { status: 'needs_review', priority: 'urgent' })],
+      [2, makePlan(2, { status: 'pending', priority: 'low' })],
+    ]);
+
+    const result = findNextReadyDependencyFromCollection(10, plans, false);
+
+    expect(result.plan?.id).toBe(2);
+    expect(result.plan?.status).toBe('pending');
   });
 
   test('findNextReadyDependencyFromCollection reports blocked dependencies when their own prerequisites are unmet', () => {
@@ -329,5 +366,26 @@ describe('plan_discovery DB wrappers', () => {
 
     expect(result.plan?.id).toBe(2);
     expect(result.message).toContain('Found ready dependency');
+  });
+
+  test('findNextReadyDependencyFromDb skips needs_review plans and returns the parent when dependencies are work-complete', async () => {
+    await createDbPlan({
+      id: 1,
+      title: 'Needs review dependency',
+      status: 'needs_review',
+      tasks: [],
+    });
+    await createDbPlan({
+      id: 10,
+      title: 'Parent Plan',
+      status: 'pending',
+      tasks: [{ title: 'Parent task', description: 'Do it', done: false }],
+      dependencies: [1],
+    });
+
+    const result = await findNextReadyDependencyFromDb(10, tasksDir, repoDir, false);
+
+    expect(result.plan?.id).toBe(10);
+    expect(result.message).toContain('All dependencies complete');
   });
 });

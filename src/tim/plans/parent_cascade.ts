@@ -12,6 +12,7 @@ import {
 import type { PlanSchema } from '../planSchema.js';
 import { writePlanFile } from '../plans.js';
 import { planRowForTransaction } from '../plans_db.js';
+import { getCompletionStatus, isWorkCompleteStatus } from './plan_state_utils.js';
 
 type ParentCascadeOptions = {
   baseDir?: string;
@@ -59,14 +60,17 @@ export async function checkAndMarkParentDone(
     }
 
     const parentPlan = planRowForTransaction(parentRow, context.uuidToPlanId);
-    if (parentPlan.status === 'done' || parentPlan.status === 'cancelled') {
+    if (
+      parentPlan.status === 'done' ||
+      parentPlan.status === 'cancelled' ||
+      parentPlan.status === 'needs_review' ||
+      parentPlan.status === 'deferred'
+    ) {
       return undefined;
     }
 
     const childRows = getPlansByParentUuid(db, context.projectId, parentRow.uuid);
-    const allChildrenDone = childRows.every(
-      (row) => row.status === 'done' || row.status === 'cancelled'
-    );
+    const allChildrenDone = childRows.every((row) => isWorkCompleteStatus(row.status));
 
     if (!(allChildrenDone && childRows.length > 0 && parentPlan.epic)) {
       return parentPlan;
@@ -80,7 +84,7 @@ export async function checkAndMarkParentDone(
 
     const updatedParent: PlanSchema = {
       ...parentPlan,
-      status: 'done',
+      status: getCompletionStatus(config),
       updatedAt: new Date().toISOString(),
       changedFiles:
         allChangedFiles.size > 0 ? Array.from(allChangedFiles).sort() : parentPlan.changedFiles,
@@ -92,8 +96,10 @@ export async function checkAndMarkParentDone(
     return updatedParent;
   });
 
-  if (result && result.status === 'done') {
-    await removePlanAssignment(result, options.baseDir);
+  if (result && (result.status === 'done' || result.status === 'needs_review')) {
+    if (result.status === 'done') {
+      await removePlanAssignment(result, options.baseDir);
+    }
     await options.onParentMarkedDone?.(result);
 
     if (result.parent) {

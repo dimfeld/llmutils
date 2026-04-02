@@ -97,11 +97,18 @@ describe('plan remote actions', () => {
     });
   });
 
-  test('startGenerate rejects stub plans that are already done, cancelled, or deferred', async () => {
+  test('startGenerate rejects stub plans that are already needs_review, done, cancelled, or deferred', async () => {
+    seedPlan({ uuid: 'plan-needs-review', planId: 1890, status: 'needs_review' });
     seedPlan({ uuid: 'plan-done', planId: 1891, status: 'done' });
     seedPlan({ uuid: 'plan-cancelled', planId: 1892, status: 'cancelled' });
     seedPlan({ uuid: 'plan-deferred', planId: 1893, status: 'deferred' });
 
+    await expect(
+      invokeCommand(startGenerate, { planUuid: 'plan-needs-review' })
+    ).rejects.toMatchObject({
+      status: 400,
+      body: { message: 'Plan is not eligible for generate' },
+    });
     await expect(invokeCommand(startGenerate, { planUuid: 'plan-done' })).rejects.toMatchObject({
       status: 400,
       body: { message: 'Plan is not eligible for generate' },
@@ -318,11 +325,18 @@ describe('plan remote actions', () => {
       });
     });
 
-    test('rejects done, cancelled, or deferred plans', async () => {
+    test('rejects needs_review, done, cancelled, or deferred plans', async () => {
+      seedPlan({ uuid: 'agent-plan-needs-review', planId: 2000, status: 'needs_review' });
       seedPlan({ uuid: 'agent-plan-done', planId: 2001, status: 'done' });
       seedPlan({ uuid: 'agent-plan-cancelled', planId: 2002, status: 'cancelled' });
       seedPlan({ uuid: 'agent-plan-deferred', planId: 2003, status: 'deferred' });
 
+      await expect(
+        invokeCommand(startAgent, { planUuid: 'agent-plan-needs-review' })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Plan is not eligible for agent' },
+      });
       await expect(
         invokeCommand(startAgent, { planUuid: 'agent-plan-done' })
       ).rejects.toMatchObject({
@@ -1095,7 +1109,7 @@ describe('plan remote actions', () => {
     uuid: string;
     planId: number;
     projectId?: number;
-    status?: 'pending' | 'done' | 'cancelled' | 'deferred';
+    status?: 'pending' | 'needs_review' | 'done' | 'cancelled' | 'deferred';
     tasks?: Array<{ title: string; description: string; done?: boolean }>;
   }): void {
     upsertPlan(currentDb, options.projectId ?? projectId, {

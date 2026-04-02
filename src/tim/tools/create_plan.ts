@@ -104,6 +104,7 @@ export async function createPlanTool(
   // Atomically insert child and update parent in a single DB transaction
   let parentUpdated = false;
   let parentStatusChanged = false;
+  let parentOldStatus: string | undefined;
   const idToUuid = new Map(projectContext.planIdToUuid).set(nextId, updatedPlan.uuid!);
   const writePlans = db.transaction(() => {
     upsertPlan(db, projectContext.projectId, {
@@ -132,7 +133,10 @@ export async function createPlanTool(
       ...freshParentResolved,
       dependencies: [...(freshParentResolved.dependencies ?? []), nextId],
       updatedAt: new Date().toISOString(),
-      status: freshParentResolved.status === 'done' ? 'in_progress' : freshParentResolved.status,
+      status:
+        freshParentResolved.status === 'done' || freshParentResolved.status === 'needs_review'
+          ? 'in_progress'
+          : freshParentResolved.status,
     };
     const { updatedPlan: referencedParent } = ensureReferences(updatedParent, {
       planIdToUuid: idToUuid,
@@ -144,7 +148,9 @@ export async function createPlanTool(
     });
 
     parentUpdated = true;
-    parentStatusChanged = freshParentResolved.status === 'done';
+    parentOldStatus = freshParentResolved.status;
+    parentStatusChanged =
+      freshParentResolved.status === 'done' || freshParentResolved.status === 'needs_review';
   });
   writePlans.immediate();
 
@@ -166,7 +172,7 @@ export async function createPlanTool(
     if (parentStatusChanged) {
       context.log?.info('Parent plan status changed', {
         parentId: parentPlan!.id,
-        oldStatus: 'done',
+        oldStatus: parentOldStatus ?? 'done',
         newStatus: 'in_progress',
       });
     }

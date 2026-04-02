@@ -99,7 +99,7 @@ describe('Parent Plan Completion', () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  test('marks parent plan as done when all children complete', async () => {
+  test('marks parent plan as needs_review when all children complete', async () => {
     // Create parent plan
     const parentPlan: PlanSchema = {
       id: 1,
@@ -169,15 +169,15 @@ describe('Parent Plan Completion', () => {
     // Mark child 2 steps as done
     await markStepDone(child2Path, { steps: 2 }, { taskIndex: 0, stepIndex: 0 }, tempDir, config);
 
-    // Parent should now be done
+    // Parent should now be needs_review
     parent = await readDbPlan(1);
-    expect(parent.status).toBe('done');
+    expect(parent.status).toBe('needs_review');
     expect(parent.changedFiles).toContain('file1.ts');
     expect(parent.changedFiles).toContain('file2.ts');
     expect(parent.changedFiles).toContain('file3.ts');
   });
 
-  test('removes parent assignment when agent check completes epic plan', async () => {
+  test('keeps parent assignment when agent check completes epic plan into needs_review', async () => {
     const parentPlan: PlanSchema = {
       id: 1,
       title: 'Parent Plan',
@@ -215,10 +215,8 @@ describe('Parent Plan Completion', () => {
     await agentCheckAndMarkParentDone(1, config, tempDir);
 
     const parent = await readDbPlan(1);
-    expect(parent.status).toBe('done');
-
-    const removalUuids = removeAssignmentSpy.mock.calls.map((args) => args[2]);
-    expect(removalUuids).toContain(parent.uuid);
+    expect(parent.status).toBe('needs_review');
+    expect(removeAssignmentSpy).not.toHaveBeenCalled();
   });
 
   test('agent check treats cancelled children as complete for parent completion', async () => {
@@ -264,10 +262,8 @@ describe('Parent Plan Completion', () => {
     await agentCheckAndMarkParentDone(1, config, tempDir);
 
     const parent = await readDbPlan(1);
-    expect(parent.status).toBe('done');
-
-    const removalUuids = removeAssignmentSpy.mock.calls.map((args) => args[2]);
-    expect(removalUuids).toContain(parent.uuid);
+    expect(parent.status).toBe('needs_review');
+    expect(removeAssignmentSpy).not.toHaveBeenCalled();
   });
 
   test('agent check keeps cancelled parent cancelled when all children are complete', async () => {
@@ -359,7 +355,7 @@ describe('Parent Plan Completion', () => {
     expect(parent.status).toBe('in_progress');
   });
 
-  test('handles nested parent completion', async () => {
+  test('handles nested parent completion into needs_review', async () => {
     // Create grandparent plan
     const grandparentPlan: PlanSchema = {
       id: 1,
@@ -413,12 +409,12 @@ describe('Parent Plan Completion', () => {
     // Mark child task as done
     await markTaskDone(childPath, 0, { commit: false }, tempDir, config);
 
-    // Both parent and grandparent should be done
+    // Both parent and grandparent should be needs_review
     const parent = await readDbPlan(2);
-    expect(parent.status).toBe('done');
+    expect(parent.status).toBe('needs_review');
 
     const grandparent = await readDbPlan(1);
-    expect(grandparent.status).toBe('done');
+    expect(grandparent.status).toBe('needs_review');
     expect(grandparent.changedFiles).toContain('file1.ts');
   });
 

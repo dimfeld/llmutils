@@ -154,7 +154,7 @@ async function updateParentPlanDependencies(
     parentPlan.dependencies.push(childPlanId);
     parentPlan.updatedAt = new Date().toISOString();
 
-    if (parentPlan.status === 'done') {
+    if (parentPlan.status === 'done' || parentPlan.status === 'needs_review') {
       parentPlan.status = 'in_progress';
       log(chalk.yellow(`  Parent plan "${parentPlan.title}" marked as in_progress`));
     }

@@ -17,6 +17,8 @@ import { runUpdateLessons } from '../update-lessons.js';
 import { handleReviewCommand } from '../review.js';
 import { isShuttingDown } from '../../shutdown_state.js';
 import { materializePlan, syncMaterializedPlan } from '../../plan_materialize.js';
+import { getCompletionStatus } from '../../plans/plan_state_utils.js';
+import { removePlanAssignment } from '../../assignments/remove_plan_assignment.js';
 
 const FAST_NOOP_BATCH_RETRY_MS = 5 * 60 * 1000;
 
@@ -385,7 +387,8 @@ Available tasks:\n\n${taskDescriptions}`,
           throw new Error(`Batch mode plan is missing a numeric ID: ${currentPlanFile}`);
         }
 
-        await setPlanStatusById(updatedPlanData.id, 'done', baseDir, currentPlanFile);
+        const completionStatus = getCompletionStatus(config);
+        await setPlanStatusById(updatedPlanData.id, completionStatus, baseDir, currentPlanFile);
 
         // Update docs if configured for after-completion mode
         if (updateDocsMode === 'after-completion') {
@@ -468,6 +471,7 @@ Available tasks:\n\n${taskDescriptions}`,
               // New tasks were appended but execution is not continuing,
               // so the plan is no longer complete.
               planStillCompleteAfterReview = false;
+              await setPlanStatusById(updatedPlanData.id, 'in_progress', baseDir, currentPlanFile);
             }
           } catch (err) {
             warn(`Final review failed: ${err as Error}`);
@@ -477,6 +481,10 @@ Available tasks:\n\n${taskDescriptions}`,
 
         if (isShuttingDown()) {
           break;
+        }
+
+        if (completionStatus === 'done' && planStillCompleteAfterReview) {
+          await removePlanAssignment(updatedPlanData, baseDir);
         }
 
         if (planStillCompleteAfterReview && (config.updateDocs?.applyLessons || applyLessons)) {
@@ -518,7 +526,7 @@ Available tasks:\n\n${taskDescriptions}`,
         }
 
         // Handle parent plan updates similar to existing logic
-        if (updatedPlanData.parent && !isShuttingDown()) {
+        if (updatedPlanData.parent && !isShuttingDown() && planStillCompleteAfterReview) {
           await checkAndMarkParentDone(updatedPlanData.parent, config, baseDir);
         }
 

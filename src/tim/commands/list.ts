@@ -21,6 +21,7 @@ import { getLegacyAwareSearchDir } from '../path_resolver.js';
 import { loadPlansFromDb } from '../plans_db.js';
 import { isPlanReady, isTaskDone } from '../plans.js';
 import { findPlanFileOnDisk } from '../plans/find_plan_file.js';
+import { isWorkComplete } from '../plans/plan_state_utils.js';
 import type { PlanSchema } from '../planSchema.js';
 import { getParentChain, isUnderEpic } from '../utils/hierarchy.js';
 import { normalizeTags } from '../utils/tags.js';
@@ -348,13 +349,13 @@ export async function handleListCommand(options: any, command: any, searchTerms?
     const actualStatus = plan.status || 'pending';
     const isReady = isPlanReady(plan, enrichedPlans);
 
-    // Check if plan is blocked (has dependencies that are not all done)
+    // Check if plan is blocked (has dependencies that are not all work-complete)
     const isBlocked =
       actualStatus === 'pending' &&
       plan.dependencies?.some((dep) => {
         const numericDep = typeof dep === 'number' ? dep : Number(dep);
         const depPlan = enrichedPlans.get(numericDep);
-        return depPlan?.status !== 'done' && depPlan?.status !== 'cancelled';
+        return depPlan == null || !isWorkComplete(depPlan);
       });
 
     const statusDisplay = isReady ? 'ready' : isBlocked ? 'blocked' : actualStatus;

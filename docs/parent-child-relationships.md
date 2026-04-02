@@ -24,7 +24,7 @@ All tim commands work together to maintain consistency:
 
 ### Automatic Parent Completion
 
-When all child plans of a parent reach a terminal state (`done` or `cancelled`), the parent plan is automatically marked as `done`. This applies consistently across both the CLI (`tim done`) and agent execution paths. A cancelled parent is preserved — completing the last child will not overwrite a parent that was explicitly cancelled.
+When all child plans of a parent reach a work-complete state (`done`, `needs_review`, or `cancelled`), the parent plan is automatically transitioned. By default, the parent is set to `needs_review`; if the `planAutocompleteStatus` config option is set to `done`, the parent is set directly to `done` instead. This applies consistently across both the CLI (`tim done`) and agent execution paths. A cancelled or deferred parent is preserved — completing the last child will not overwrite a parent that was explicitly cancelled or deferred.
 
 **Implementation note**: Parent completion is handled by a single consolidated implementation in `src/tim/plans/parent_cascade.ts`. Both `checkAndMarkParentDone()` and `markParentInProgress()` use DB queries (`getPlansByParentUuid()`) to find children and check their statuses, rather than scanning plan files. The functions accept `ParentCascadeOptions` with callbacks for logging, allowing CLI and agent code to provide different output. Parent completion checks must run _after_ writing the child's updated status to the DB.
 

@@ -32,7 +32,7 @@ When you run a command with `--next-ready <parentPlanId>`, tim:
 4. **Checks readiness criteria** for each candidate:
    - Plans with `maybe` priority are excluded (considered optional)
    - Plans must have defined tasks (not just stubs)
-   - For `pending` plans: all dependencies must be marked as `done`
+   - For `pending` plans: all dependencies must have a work-complete status (`done`, `needs_review`, or `cancelled`)
    - For `in_progress` plans: immediately actionable (someone is already working on it)
 5. **Sorts candidates** by priority: status (`in_progress` > `pending`), then priority level (`urgent` > `high` > `medium` > `low` > `maybe`), then by plan ID (ascending)
 6. **Returns the first candidate** from the sorted list
@@ -44,7 +44,7 @@ A plan is considered "ready" when:
 - **Status**: Must be `pending` (ready to start) or `in_progress` (actively being worked on)
 - **Priority**: Must not be `maybe` (which indicates optional/deferred work)
 - **Tasks**: Must have actual implementation tasks defined (not just a stub plan)
-- **Dependencies**: All dependency plans must have `status: done`
+- **Dependencies**: All dependency plans must have a work-complete status (`done`, `needs_review`, or `cancelled`)
 
 ### Error Handling and Feedback
 

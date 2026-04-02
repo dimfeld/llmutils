@@ -3,6 +3,7 @@ import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { getLegacyAwareSearchDir } from '../path_resolver.js';
 import { findMostRecentlyUpdatedPlan } from './prompts.js';
 import { loadPlansFromDb } from '../plans_db.js';
+import { isWorkComplete } from '../plans/plan_state_utils.js';
 import { isReadyPlan } from '../ready_plans.js';
 import type { PlanSchema } from '../planSchema.js';
 
@@ -160,7 +161,7 @@ export function findNextReadyDependencyFromCollection(
     queue.push(...getDirectDependencies(currentId, plans));
   }
 
-  if (allDependencies.size === 0 && parentPlan.status !== 'done') {
+  if (allDependencies.size === 0 && !isWorkComplete(parentPlan)) {
     return {
       plan: parentPlan,
       message: 'No dependencies - ready to work on this plan',
@@ -214,7 +215,7 @@ export function findNextReadyDependencyFromCollection(
     };
   }
 
-  if (parentPlan.status !== 'done') {
+  if (!isWorkComplete(parentPlan)) {
     return {
       plan: parentPlan,
       message: 'All dependencies complete - ready to work on this plan',

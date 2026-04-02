@@ -24,7 +24,7 @@ export async function handleDoneCommand(planFile: string, options: any, command:
   );
 
   // If plan is complete and we're in a workspace, release the lock
-  if (result.planComplete) {
+  if (result.planComplete && result.status === 'done') {
     try {
       const lockInfo = await WorkspaceLock.getLockInfo(gitRoot);
 

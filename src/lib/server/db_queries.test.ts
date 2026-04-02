@@ -63,11 +63,11 @@ describe('lib/server/db_queries', () => {
 
     expect(projects).toHaveLength(2);
     expect(primaryProject).toMatchObject({
-      planCount: 13,
-      activePlanCount: 10,
+      planCount: 14,
+      activePlanCount: 11,
       statusCounts: {
         pending: 2,
-        in_progress: 7,
+        in_progress: 8,
         needs_review: 1,
         done: 3,
         cancelled: 0,
@@ -129,6 +129,33 @@ describe('lib/server/db_queries', () => {
     expect(pendingPlan?.displayStatus).toBe('pending');
     expect(needsReviewPlan).toBeDefined();
     expect(needsReviewPlan?.displayStatus).toBe('needs_review');
+  });
+
+  test('getPlansForProject treats needs_review dependencies as resolved', () => {
+    const plans = getPlansForProject(db, projectId);
+    const dependentPlan = plans.find((plan) => plan.uuid === 'plan-depends-on-review');
+
+    expect(dependentPlan).toBeDefined();
+    expect(dependentPlan?.status).toBe('in_progress');
+    expect(dependentPlan?.displayStatus).toBe('in_progress');
+    expect(dependentPlan?.dependencyUuids).toEqual(['plan-review']);
+  });
+
+  test('getPlanDetail treats needs_review dependencies as resolved', () => {
+    const detail = getPlanDetail(db, 'plan-depends-on-review');
+
+    expect(detail).not.toBeNull();
+    expect(detail?.displayStatus).toBe('in_progress');
+    expect(detail?.dependencies).toEqual([
+      expect.objectContaining({
+        uuid: 'plan-review',
+        planId: 106,
+        title: 'Needs review plan',
+        status: 'needs_review',
+        displayStatus: 'needs_review',
+        isResolved: true,
+      }),
+    ]);
   });
 
   test('getPlansForProject parses PR metadata and computes PR summary statuses in bulk', () => {
@@ -657,6 +684,7 @@ describe('lib/server/db_queries', () => {
       [projectId, 'plan-depends-on-blocked'],
       [projectId, 'plan-missing-dependency'],
       [projectId, 'plan-stale-assignment'],
+      [projectId, 'plan-depends-on-review'],
       [otherProjectId, 'other-done'],
       [otherProjectId, 'other-cancelled'],
       [otherProjectId, 'other-pending'],
@@ -1026,6 +1054,19 @@ function seedPrimaryProject(db: Database, projectId: number): void {
     sourceCreatedAt: oldTimestamp,
     sourceUpdatedAt: recentTimestamp,
     dependencyUuids: ['plan-parent'],
+  });
+
+  upsertPlan(db, projectId, {
+    uuid: 'plan-depends-on-review',
+    planId: 114,
+    title: 'Plan depending on review',
+    goal: 'Should stay in progress when dependency needs review',
+    status: 'in_progress',
+    priority: 'medium',
+    filename: '114-depends-on-review.plan.md',
+    sourceCreatedAt: oldTimestamp,
+    sourceUpdatedAt: recentTimestamp,
+    dependencyUuids: ['plan-review'],
   });
 
   upsertPlan(db, projectId, {

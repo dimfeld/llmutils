@@ -154,10 +154,10 @@ export async function handleGenerateCommand(
     return;
   }
 
-  if (parsedPlan.status === 'done') {
+  if (parsedPlan.status === 'done' || parsedPlan.status === 'needs_review') {
     warn(
       chalk.yellow(
-        '⚠️  Warning: This plan is already marked as "done". You may have typed the wrong plan ID.'
+        `⚠️  Warning: This plan is already marked as "${parsedPlan.status}". You may have typed the wrong plan ID.`
       )
     );
   }

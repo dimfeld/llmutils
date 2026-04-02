@@ -91,7 +91,7 @@ export async function createCleanupPlan(
   for (const childPlan of allPlans.values()) {
     if (
       childPlan.parent === referencedPlan.id &&
-      childPlan.status === 'done' &&
+      (childPlan.status === 'done' || childPlan.status === 'needs_review') &&
       childPlan.changedFiles
     ) {
       childPlan.changedFiles.forEach((file) => filePaths.add(file));
@@ -152,7 +152,7 @@ export async function createCleanupPlan(
     referencedPlan.dependencies.push(planId);
     referencedPlan.updatedAt = new Date().toISOString();
 
-    if (referencedPlan.status === 'done') {
+    if (referencedPlan.status === 'done' || referencedPlan.status === 'needs_review') {
       referencedPlan.status = 'in_progress';
       log(chalk.yellow(`  Parent plan "${referencedPlan.title}" marked as in_progress`));
     }
