@@ -60,24 +60,19 @@ export const init: ServerInit = async () => {
   const existingPromise = getSessionInitPromise();
   if (existingPromise) {
     await existingPromise;
+    // Handle poller state changes during HMR re-init.
+    const existingPoller = getWebhookPoller();
+    if (existingPoller && !isWebhookPollingEnabled()) {
+      existingPoller.stop();
+      setWebhookPoller(null);
+    }
     return;
   }
 
   const existingServer = getWebSocketServerHandle();
   const existingDiscoveryClient = getSessionDiscoveryClient();
   const existingWebhookPoller = getWebhookPoller();
-
-  // If polling was disabled since last init (HMR), stop the stale poller.
-  if (existingWebhookPoller && !isWebhookPollingEnabled()) {
-    existingWebhookPoller.stop();
-    setWebhookPoller(null);
-  }
-
-  if (
-    existingServer &&
-    existingDiscoveryClient &&
-    (!isWebhookPollingEnabled() || existingWebhookPoller)
-  ) {
+  if (existingServer && existingDiscoveryClient && existingWebhookPoller) {
     return;
   }
 

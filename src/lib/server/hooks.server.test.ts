@@ -292,8 +292,6 @@ describe('hooks.server init', () => {
 
   test('init stops a stale webhook poller on HMR re-init when polling is disabled', async () => {
     const stalePoller = { stop: vi.fn() };
-    const reusedServerHandle = { port: 8123, stop: vi.fn() };
-    const reusedDiscoveryClient = { start: vi.fn(), stop: vi.fn() };
     const isWebhookPollingEnabled = vi.fn().mockReturnValue(false);
     const startWebhookPoller = vi.fn();
 
@@ -303,8 +301,9 @@ describe('hooks.server init', () => {
     }));
 
     const sessionContext = await import('./session_context.js');
-    sessionContext.setWebSocketServerHandle(reusedServerHandle as any);
-    sessionContext.setSessionDiscoveryClient(reusedDiscoveryClient as any);
+    // Simulate a previously successful init — initPromise is set and resolved.
+    const fakeManager = {} as any;
+    sessionContext.setSessionInitPromise(Promise.resolve(fakeManager));
     sessionContext.setWebhookPoller(stalePoller);
 
     const hooks = await import('../../hooks.server.js');

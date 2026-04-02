@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite';
 
 import { formatWebhookIngestErrors, ingestWebhookEvents } from '$common/github/webhook_ingest.js';
-import { getWebhookServerUrl } from '$common/github/webhook_client.js';
+import { getWebhookInternalApiToken, getWebhookServerUrl } from '$common/github/webhook_client.js';
 
 import type { WebhookPollerHandle } from './session_context.js';
 
@@ -26,12 +26,16 @@ export function getWebhookPollIntervalMs(): number | null {
 }
 
 export function isWebhookPollingEnabled(): boolean {
-  return Boolean(getWebhookPollIntervalMs()) && Boolean(getWebhookServerUrl());
+  return (
+    Boolean(getWebhookPollIntervalMs()) &&
+    Boolean(getWebhookServerUrl()) &&
+    Boolean(getWebhookInternalApiToken())
+  );
 }
 
 export function startWebhookPoller(db: Database): WebhookPollerHandle | null {
   const pollIntervalMs = getWebhookPollIntervalMs();
-  if (!pollIntervalMs || !getWebhookServerUrl()) {
+  if (!pollIntervalMs || !getWebhookServerUrl() || !getWebhookInternalApiToken()) {
     return null;
   }
 
@@ -65,6 +69,7 @@ export function startWebhookPoller(db: Database): WebhookPollerHandle | null {
     intervalTimer = setInterval(() => {
       void runIngest();
     }, pollIntervalMs);
+    intervalTimer.unref?.();
   }, INITIAL_POLL_DELAY_MS);
 
   initialDelayTimer.unref?.();

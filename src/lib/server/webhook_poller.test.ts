@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   ingestWebhookEvents: vi.fn<(...args: unknown[]) => Promise<{ errors: string[] }>>(),
   formatWebhookIngestErrors: vi.fn<(errors: string[]) => string | undefined>(),
   getWebhookServerUrl: vi.fn<() => string | null>(),
+  getWebhookInternalApiToken: vi.fn<() => string | null>(),
 }));
 
 vi.mock('$common/github/webhook_ingest.js', () => ({
@@ -14,6 +15,7 @@ vi.mock('$common/github/webhook_ingest.js', () => ({
 
 vi.mock('$common/github/webhook_client.js', () => ({
   getWebhookServerUrl: mocks.getWebhookServerUrl,
+  getWebhookInternalApiToken: mocks.getWebhookInternalApiToken,
 }));
 
 import {
@@ -39,6 +41,7 @@ function createDeferred<T>(): {
 describe('lib/server/webhook_poller', () => {
   const originalPollInterval = process.env.TIM_WEBHOOK_POLL_INTERVAL;
   const originalServerUrl = process.env.TIM_WEBHOOK_SERVER_URL;
+  const originalApiToken = process.env.WEBHOOK_INTERNAL_API_TOKEN;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -46,10 +49,14 @@ describe('lib/server/webhook_poller', () => {
 
     delete process.env.TIM_WEBHOOK_POLL_INTERVAL;
     delete process.env.TIM_WEBHOOK_SERVER_URL;
+    delete process.env.WEBHOOK_INTERNAL_API_TOKEN;
 
     mocks.ingestWebhookEvents.mockResolvedValue({ errors: [] });
     mocks.formatWebhookIngestErrors.mockReturnValue(undefined);
     mocks.getWebhookServerUrl.mockImplementation(() => process.env.TIM_WEBHOOK_SERVER_URL ?? null);
+    mocks.getWebhookInternalApiToken.mockImplementation(
+      () => process.env.WEBHOOK_INTERNAL_API_TOKEN ?? null
+    );
   });
 
   afterEach(() => {
@@ -65,6 +72,12 @@ describe('lib/server/webhook_poller', () => {
       delete process.env.TIM_WEBHOOK_SERVER_URL;
     } else {
       process.env.TIM_WEBHOOK_SERVER_URL = originalServerUrl;
+    }
+
+    if (originalApiToken === undefined) {
+      delete process.env.WEBHOOK_INTERNAL_API_TOKEN;
+    } else {
+      process.env.WEBHOOK_INTERNAL_API_TOKEN = originalApiToken;
     }
   });
 
@@ -97,18 +110,22 @@ describe('lib/server/webhook_poller', () => {
     });
   });
 
-  test('isWebhookPollingEnabled requires both the poll interval and webhook server URL', () => {
+  test('isWebhookPollingEnabled requires poll interval, webhook server URL, and API token', () => {
     expect(isWebhookPollingEnabled()).toBe(false);
 
     process.env.TIM_WEBHOOK_POLL_INTERVAL = '30';
     expect(isWebhookPollingEnabled()).toBe(false);
 
     process.env.TIM_WEBHOOK_SERVER_URL = 'https://webhooks.example.com';
+    expect(isWebhookPollingEnabled()).toBe(false);
+
+    process.env.WEBHOOK_INTERNAL_API_TOKEN = 'test-token';
     expect(isWebhookPollingEnabled()).toBe(true);
   });
 
   test('startWebhookPoller returns null without TIM_WEBHOOK_POLL_INTERVAL', () => {
     process.env.TIM_WEBHOOK_SERVER_URL = 'https://webhooks.example.com';
+    process.env.WEBHOOK_INTERNAL_API_TOKEN = 'test-token';
 
     expect(startWebhookPoller(null as Database)).toBeNull();
     expect(mocks.ingestWebhookEvents).not.toHaveBeenCalled();
@@ -116,6 +133,15 @@ describe('lib/server/webhook_poller', () => {
 
   test('startWebhookPoller returns null without TIM_WEBHOOK_SERVER_URL', () => {
     process.env.TIM_WEBHOOK_POLL_INTERVAL = '30';
+    process.env.WEBHOOK_INTERNAL_API_TOKEN = 'test-token';
+
+    expect(startWebhookPoller(null as Database)).toBeNull();
+    expect(mocks.ingestWebhookEvents).not.toHaveBeenCalled();
+  });
+
+  test('startWebhookPoller returns null without WEBHOOK_INTERNAL_API_TOKEN', () => {
+    process.env.TIM_WEBHOOK_POLL_INTERVAL = '30';
+    process.env.TIM_WEBHOOK_SERVER_URL = 'https://webhooks.example.com';
 
     expect(startWebhookPoller(null as Database)).toBeNull();
     expect(mocks.ingestWebhookEvents).not.toHaveBeenCalled();
@@ -124,6 +150,7 @@ describe('lib/server/webhook_poller', () => {
   test('polling starts after the initial delay and continues on the configured interval', async () => {
     process.env.TIM_WEBHOOK_POLL_INTERVAL = '30';
     process.env.TIM_WEBHOOK_SERVER_URL = 'https://webhooks.example.com';
+    process.env.WEBHOOK_INTERNAL_API_TOKEN = 'test-token';
 
     const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
     const handle = startWebhookPoller(null as Database);
@@ -149,6 +176,7 @@ describe('lib/server/webhook_poller', () => {
   test('minimum interval clamping applies to scheduled polling', async () => {
     process.env.TIM_WEBHOOK_POLL_INTERVAL = '1';
     process.env.TIM_WEBHOOK_SERVER_URL = 'https://webhooks.example.com';
+    process.env.WEBHOOK_INTERNAL_API_TOKEN = 'test-token';
 
     const handle = startWebhookPoller(null as Database);
 
@@ -167,6 +195,7 @@ describe('lib/server/webhook_poller', () => {
   test('concurrency guard skips overlapping poll cycles', async () => {
     process.env.TIM_WEBHOOK_POLL_INTERVAL = '5';
     process.env.TIM_WEBHOOK_SERVER_URL = 'https://webhooks.example.com';
+    process.env.WEBHOOK_INTERNAL_API_TOKEN = 'test-token';
 
     const firstRun = createDeferred<{ errors: string[] }>();
     mocks.ingestWebhookEvents
@@ -193,6 +222,7 @@ describe('lib/server/webhook_poller', () => {
   test('ingestion errors are logged and do not stop future polls', async () => {
     process.env.TIM_WEBHOOK_POLL_INTERVAL = '5';
     process.env.TIM_WEBHOOK_SERVER_URL = 'https://webhooks.example.com';
+    process.env.WEBHOOK_INTERNAL_API_TOKEN = 'test-token';
 
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     mocks.ingestWebhookEvents.mockRejectedValueOnce(new Error('boom')).mockResolvedValue({
@@ -214,6 +244,7 @@ describe('lib/server/webhook_poller', () => {
   test('formatted ingestion errors are logged as warnings', async () => {
     process.env.TIM_WEBHOOK_POLL_INTERVAL = '5';
     process.env.TIM_WEBHOOK_SERVER_URL = 'https://webhooks.example.com';
+    process.env.WEBHOOK_INTERNAL_API_TOKEN = 'test-token';
 
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     mocks.ingestWebhookEvents.mockResolvedValue({ errors: ['bad event'] });
@@ -232,6 +263,7 @@ describe('lib/server/webhook_poller', () => {
   test('stop clears the initial timeout and the polling interval', async () => {
     process.env.TIM_WEBHOOK_POLL_INTERVAL = '5';
     process.env.TIM_WEBHOOK_SERVER_URL = 'https://webhooks.example.com';
+    process.env.WEBHOOK_INTERNAL_API_TOKEN = 'test-token';
 
     const handleBeforeStart = startWebhookPoller(null as Database);
     handleBeforeStart?.stop();
