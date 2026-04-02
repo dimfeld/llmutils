@@ -363,15 +363,13 @@ export class SessionManager {
     this.senders.set(connectionId, sendToAgent);
     this.internals.set(connectionId, { deferredPromptEvent: null, nextNotificationId: 0 });
 
-    if (this.sseSubscriberCount > 0) {
-      try {
-        sendToAgent({
-          type: 'notification_subscribers_changed',
-          hasSubscribers: true,
-        });
-      } catch {
-        // Ignore initial sync failures; normal disconnect cleanup will follow.
-      }
+    try {
+      sendToAgent({
+        type: 'notification_subscribers_changed',
+        hasSubscribers: this.sseSubscriberCount > 0,
+      });
+    } catch {
+      // Ignore initial sync failures; normal disconnect cleanup will follow.
     }
 
     this.emit('session:new', { session: this.cloneSessionMetadata(session) });

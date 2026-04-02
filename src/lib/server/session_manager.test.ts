@@ -1136,7 +1136,13 @@ describe('lib/server/session_manager', () => {
       activePrompt: null,
     });
     expect(earlyResponse).toBe('no_prompt');
-    expect(sender).not.toHaveBeenCalled();
+    // Sender should only have received the initial subscriber status on connect,
+    // NOT a prompt_response during replay
+    expect(sender).toHaveBeenCalledTimes(1);
+    expect(sender).toHaveBeenCalledWith({
+      type: 'notification_subscribers_changed',
+      hasSubscribers: false,
+    });
     expect(finalSnapshot.sessions[0]).toMatchObject({
       isReplaying: false,
       activePrompt: {
@@ -1181,29 +1187,41 @@ describe('lib/server/session_manager', () => {
     manager.handleWebSocketConnect('conn-1', senderA);
     manager.handleWebSocketConnect('conn-2', senderB);
 
+    // Both agents receive initial false on connect
+    expect(senderA).toHaveBeenNthCalledWith(1, {
+      type: 'notification_subscribers_changed',
+      hasSubscribers: false,
+    });
+    expect(senderB).toHaveBeenNthCalledWith(1, {
+      type: 'notification_subscribers_changed',
+      hasSubscribers: false,
+    });
+
     manager.registerSSESubscriber();
     manager.registerSSESubscriber();
     manager.unregisterSSESubscriber();
     manager.unregisterSSESubscriber();
 
-    expect(senderA).toHaveBeenNthCalledWith(1, {
-      type: 'notification_subscribers_changed',
-      hasSubscribers: true,
-    });
-    expect(senderB).toHaveBeenNthCalledWith(1, {
-      type: 'notification_subscribers_changed',
-      hasSubscribers: true,
-    });
+    // 0→1 transition broadcasts true
     expect(senderA).toHaveBeenNthCalledWith(2, {
       type: 'notification_subscribers_changed',
-      hasSubscribers: false,
+      hasSubscribers: true,
     });
     expect(senderB).toHaveBeenNthCalledWith(2, {
       type: 'notification_subscribers_changed',
+      hasSubscribers: true,
+    });
+    // 1→0 transition broadcasts false
+    expect(senderA).toHaveBeenNthCalledWith(3, {
+      type: 'notification_subscribers_changed',
       hasSubscribers: false,
     });
-    expect(senderA).toHaveBeenCalledTimes(2);
-    expect(senderB).toHaveBeenCalledTimes(2);
+    expect(senderB).toHaveBeenNthCalledWith(3, {
+      type: 'notification_subscribers_changed',
+      hasSubscribers: false,
+    });
+    expect(senderA).toHaveBeenCalledTimes(3);
+    expect(senderB).toHaveBeenCalledTimes(3);
   });
 
   test('sends current notification subscriber status to newly connected agents', () => {
@@ -1215,6 +1233,31 @@ describe('lib/server/session_manager', () => {
     expect(sender).toHaveBeenCalledWith({
       type: 'notification_subscribers_changed',
       hasSubscribers: true,
+    });
+  });
+
+  test('sends false subscriber status on reconnect after subscribers dropped', () => {
+    // Agent connects while SSE subscriber exists
+    manager.registerSSESubscriber();
+    const sender = vi.fn<(message: HeadlessServerMessage) => void>();
+    manager.handleWebSocketConnect('conn-1', sender);
+
+    expect(sender).toHaveBeenCalledWith({
+      type: 'notification_subscribers_changed',
+      hasSubscribers: true,
+    });
+
+    // Discovery disconnects, SSE subscriber drops
+    manager.handleWebSocketDisconnect('conn-1');
+    manager.unregisterSSESubscriber();
+
+    // Agent reconnects - should receive false, not be left with stale true
+    const newSender = vi.fn<(message: HeadlessServerMessage) => void>();
+    manager.handleWebSocketConnect('conn-1', newSender);
+
+    expect(newSender).toHaveBeenCalledWith({
+      type: 'notification_subscribers_changed',
+      hasSubscribers: false,
     });
   });
 
