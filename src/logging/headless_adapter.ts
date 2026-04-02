@@ -57,6 +57,7 @@ export class HeadlessAdapter implements LoggerAdapter {
   private pendingPrompts: Map<string, PendingPromptRequest> = new Map();
   private userInputHandler?: (content: string) => void;
   private endSessionHandler?: () => void;
+  private hasBrowserNotificationSubscribers = false;
 
   constructor(
     sessionInfo: HeadlessSessionInfo,
@@ -138,6 +139,10 @@ export class HeadlessAdapter implements LoggerAdapter {
     return (this.sessionServer?.connectedClients.size ?? 0) > 0;
   }
 
+  hasNotificationSubscribers(): boolean {
+    return this.hasBrowserNotificationSubscribers;
+  }
+
   async destroy(): Promise<void> {
     this.destroyed = true;
     this.rejectAllPending();
@@ -192,6 +197,9 @@ export class HeadlessAdapter implements LoggerAdapter {
         } catch (err) {
           this.wrappedAdapter.warn(`Headless end session handler error: ${err as Error}`);
         }
+        break;
+      case 'notification_subscribers_changed':
+        this.hasBrowserNotificationSubscribers = message.hasSubscribers;
         break;
     }
   }

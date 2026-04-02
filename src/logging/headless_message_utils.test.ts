@@ -20,6 +20,7 @@ describe('headless_message_utils', () => {
       'prompt_response',
       'user_input',
       'end_session',
+      'notification_subscribers_changed',
     ]);
   });
 
@@ -65,12 +66,25 @@ describe('headless_message_utils', () => {
     expect(parseHeadlessServerMessage(JSON.stringify({ type: 'end_session' }))).toEqual({
       type: 'end_session',
     });
+    expect(
+      parseHeadlessServerMessage(
+        JSON.stringify({ type: 'notification_subscribers_changed', hasSubscribers: true })
+      )
+    ).toEqual({
+      type: 'notification_subscribers_changed',
+      hasSubscribers: true,
+    });
 
     expect(
       parseHeadlessServerMessage(JSON.stringify({ type: 'prompt_response', value: 'missing-id' }))
     ).toBeNull();
     expect(
       parseHeadlessServerMessage(JSON.stringify({ type: 'user_input', content: 123 }))
+    ).toBeNull();
+    expect(
+      parseHeadlessServerMessage(
+        JSON.stringify({ type: 'notification_subscribers_changed', hasSubscribers: 'yes' })
+      )
     ).toBeNull();
     expect(parseHeadlessServerMessage(JSON.stringify({ type: 'output' }))).toBeNull();
   });

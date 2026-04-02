@@ -1175,6 +1175,49 @@ describe('lib/server/session_manager', () => {
     });
   });
 
+  test('broadcasts notification subscriber changes to connected agents', () => {
+    const senderA = vi.fn<(message: HeadlessServerMessage) => void>();
+    const senderB = vi.fn<(message: HeadlessServerMessage) => void>();
+    manager.handleWebSocketConnect('conn-1', senderA);
+    manager.handleWebSocketConnect('conn-2', senderB);
+
+    manager.registerSSESubscriber();
+    manager.registerSSESubscriber();
+    manager.unregisterSSESubscriber();
+    manager.unregisterSSESubscriber();
+
+    expect(senderA).toHaveBeenNthCalledWith(1, {
+      type: 'notification_subscribers_changed',
+      hasSubscribers: true,
+    });
+    expect(senderB).toHaveBeenNthCalledWith(1, {
+      type: 'notification_subscribers_changed',
+      hasSubscribers: true,
+    });
+    expect(senderA).toHaveBeenNthCalledWith(2, {
+      type: 'notification_subscribers_changed',
+      hasSubscribers: false,
+    });
+    expect(senderB).toHaveBeenNthCalledWith(2, {
+      type: 'notification_subscribers_changed',
+      hasSubscribers: false,
+    });
+    expect(senderA).toHaveBeenCalledTimes(2);
+    expect(senderB).toHaveBeenCalledTimes(2);
+  });
+
+  test('sends current notification subscriber status to newly connected agents', () => {
+    manager.registerSSESubscriber();
+
+    const sender = vi.fn<(message: HeadlessServerMessage) => void>();
+    manager.handleWebSocketConnect('conn-1', sender);
+
+    expect(sender).toHaveBeenCalledWith({
+      type: 'notification_subscribers_changed',
+      hasSubscribers: true,
+    });
+  });
+
   test('getSessionSnapshot returns sessions sorted by connection time and cloned from internal state', () => {
     manager.handleWebSocketConnect('conn-1', vi.fn());
     vi.setSystemTime(new Date('2026-03-17T10:00:02.000Z'));

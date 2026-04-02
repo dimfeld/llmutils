@@ -88,10 +88,7 @@ export async function sendNotification(
   }
 
   const loggerAdapter = getLoggerAdapter();
-  if (
-    loggerAdapter instanceof HeadlessAdapter &&
-    loggerAdapter.hasConnectedClients()
-  ) {
+  if (loggerAdapter instanceof HeadlessAdapter && loggerAdapter.hasNotificationSubscribers()) {
     debugLog('Notification suppressed: web UI client connected.');
     return false;
   }

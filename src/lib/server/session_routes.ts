@@ -30,6 +30,7 @@ export function createSessionEventsResponse(
         }
 
         closed = true;
+        manager.unregisterSSESubscriber();
         unsubscribe();
         signal?.removeEventListener('abort', onAbort);
 
@@ -69,6 +70,7 @@ export function createSessionEventsResponse(
           buffered.push({ event: eventName, data: payload });
         }
       });
+      manager.registerSSESubscriber();
 
       // Handle already-aborted requests immediately
       if (signal?.aborted) {

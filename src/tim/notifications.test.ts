@@ -240,14 +240,14 @@ describe('notifications', () => {
     expect(args[2]).toBe(`${homeDir}/scripts/notify.sh`);
   });
 
-  test('suppresses notifications when headless adapter has connected clients', async () => {
+  test('suppresses notifications when headless adapter has notification subscribers', async () => {
     const config = {
       notifications: {
         command: 'notify',
       },
     } as TimConfig;
     const headlessAdapter = new HeadlessAdapter({} as any);
-    vi.spyOn(headlessAdapter, 'hasConnectedClients').mockReturnValue(true);
+    vi.spyOn(headlessAdapter, 'hasNotificationSubscribers').mockReturnValue(true);
     getLoggerAdapterSpy.mockReturnValue(headlessAdapter);
 
     const ok = await sendNotification(config, {
@@ -264,14 +264,14 @@ describe('notifications', () => {
     expect(spawnSpy).not.toHaveBeenCalled();
   });
 
-  test('sends notifications when headless adapter has no connected clients', async () => {
+  test('sends notifications when headless adapter has no notification subscribers', async () => {
     const config = {
       notifications: {
         command: 'notify',
       },
     } as TimConfig;
     const headlessAdapter = new HeadlessAdapter({} as any);
-    vi.spyOn(headlessAdapter, 'hasConnectedClients').mockReturnValue(false);
+    vi.spyOn(headlessAdapter, 'hasNotificationSubscribers').mockReturnValue(false);
     getLoggerAdapterSpy.mockReturnValue(headlessAdapter);
 
     const ok = await sendNotification(config, {
