@@ -14,8 +14,11 @@ export function getWebhookPollIntervalMs(): number | null {
     return null;
   }
 
+  if (!/^\d+$/.test(rawInterval)) {
+    return null;
+  }
   const parsedInterval = Number.parseInt(rawInterval, 10);
-  if (!Number.isFinite(parsedInterval) || parsedInterval <= 0) {
+  if (parsedInterval <= 0) {
     return null;
   }
 

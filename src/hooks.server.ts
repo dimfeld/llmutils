@@ -66,6 +66,13 @@ export const init: ServerInit = async () => {
   const existingServer = getWebSocketServerHandle();
   const existingDiscoveryClient = getSessionDiscoveryClient();
   const existingWebhookPoller = getWebhookPoller();
+
+  // If polling was disabled since last init (HMR), stop the stale poller.
+  if (existingWebhookPoller && !isWebhookPollingEnabled()) {
+    existingWebhookPoller.stop();
+    setWebhookPoller(null);
+  }
+
   if (
     existingServer &&
     existingDiscoveryClient &&

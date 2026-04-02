@@ -9,6 +9,7 @@ describe('hooks.server init', () => {
     (sessionContext.setSessionManager as unknown as (manager: null) => void)(null);
     (sessionContext.setWebSocketServerHandle as unknown as (server: null) => void)(null);
     sessionContext.setSessionDiscoveryClient(null);
+    sessionContext.setWebhookPoller(null);
     sessionContext.setSessionInitPromise(null);
     const globalState = globalThis as typeof globalThis & {
       [sessionShutdownKey]?: { cleanup: (() => void) | null };
@@ -22,6 +23,7 @@ describe('hooks.server init', () => {
     (sessionContext.setSessionManager as unknown as (manager: null) => void)(null);
     (sessionContext.setWebSocketServerHandle as unknown as (server: null) => void)(null);
     sessionContext.setSessionDiscoveryClient(null);
+    sessionContext.setWebhookPoller(null);
     sessionContext.setSessionInitPromise(null);
     const globalState = globalThis as typeof globalThis & {
       [sessionShutdownKey]?: { cleanup: (() => void) | null };
@@ -32,6 +34,7 @@ describe('hooks.server init', () => {
     vi.clearAllMocks();
     vi.doUnmock('$lib/server/init.js');
     vi.doUnmock('$lib/server/session_discovery.js');
+    vi.doUnmock('$lib/server/webhook_poller.js');
     vi.doUnmock('$lib/server/ws_server.js');
   });
 
@@ -169,5 +172,147 @@ describe('hooks.server init', () => {
     expect(sessionContext.getWebSocketServerHandle()).toBe(reusedServerHandle);
     expect(sessionContext.getSessionDiscoveryClient()).toBeNull();
     expect(sessionContext.getSessionInitPromise()).toBeNull();
+  });
+
+  test('init stores the webhook poller when webhook polling is enabled', async () => {
+    const config = { headless: { url: 'ws://localhost:8123/tim-agent' } };
+    const db = { fake: true };
+    const getServerContext = vi.fn().mockResolvedValue({ config, db });
+    const serverHandle = { port: 8123, stop: vi.fn() };
+    const startWebSocketServer = vi.fn().mockReturnValue(serverHandle);
+    const pollerHandle = { stop: vi.fn() };
+    const startWebhookPoller = vi.fn().mockReturnValue(pollerHandle);
+    const isWebhookPollingEnabled = vi.fn().mockReturnValue(true);
+
+    vi.doMock('$lib/server/init.js', () => ({ getServerContext }));
+    vi.doMock('$lib/server/ws_server.js', async () => {
+      const actual = await vi.importActual<typeof import('./ws_server.js')>('./ws_server.js');
+      return {
+        ...actual,
+        startWebSocketServer,
+      };
+    });
+    vi.doMock('$lib/server/webhook_poller.js', () => ({
+      isWebhookPollingEnabled,
+      startWebhookPoller,
+    }));
+
+    const hooks = await import('../../hooks.server.js');
+    const sessionContext = await import('./session_context.js');
+
+    await hooks.init();
+
+    expect(startWebhookPoller).toHaveBeenCalledTimes(1);
+    expect(startWebhookPoller).toHaveBeenCalledWith(db);
+    expect(sessionContext.getWebhookPoller()).toBe(pollerHandle);
+  });
+
+  test('process shutdown stops the webhook poller', async () => {
+    const config = { headless: { url: 'ws://localhost:8123/tim-agent' } };
+    const db = { fake: true };
+    const getServerContext = vi.fn().mockResolvedValue({ config, db });
+    const serverHandle = { port: 8123, stop: vi.fn() };
+    const startWebSocketServer = vi.fn().mockReturnValue(serverHandle);
+    const pollerHandle = { stop: vi.fn() };
+    const startWebhookPoller = vi.fn().mockReturnValue(pollerHandle);
+    const isWebhookPollingEnabled = vi.fn().mockReturnValue(true);
+    const onSpy = vi.spyOn(process, 'on');
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+
+    vi.doMock('$lib/server/init.js', () => ({ getServerContext }));
+    vi.doMock('$lib/server/ws_server.js', async () => {
+      const actual = await vi.importActual<typeof import('./ws_server.js')>('./ws_server.js');
+      return {
+        ...actual,
+        startWebSocketServer,
+      };
+    });
+    vi.doMock('$lib/server/webhook_poller.js', () => ({
+      isWebhookPollingEnabled,
+      startWebhookPoller,
+    }));
+
+    const hooks = await import('../../hooks.server.js');
+
+    await hooks.init();
+
+    const sigtermHandler = onSpy.mock.calls.find(([signal]) => signal === 'SIGTERM')?.[1];
+    expect(sigtermHandler).toEqual(expect.any(Function));
+
+    (sigtermHandler as () => void)();
+
+    expect(pollerHandle.stop).toHaveBeenCalledTimes(1);
+    expect(exitSpy).toHaveBeenCalledWith(0);
+  });
+
+  test('init failure stops a webhook poller created during that attempt', async () => {
+    const config = { headless: { url: 'ws://localhost:8123/tim-agent' } };
+    const db = { fake: true };
+    const getServerContext = vi.fn().mockResolvedValue({ config, db });
+    const serverHandle = { port: 8123, stop: vi.fn() };
+    const startWebSocketServer = vi.fn().mockReturnValue(serverHandle);
+    const pollerHandle = { stop: vi.fn() };
+    const startWebhookPoller = vi.fn().mockReturnValue(pollerHandle);
+    const isWebhookPollingEnabled = vi.fn().mockReturnValue(true);
+    const failingDiscoveryClient = {
+      start: vi.fn().mockRejectedValue(new Error('discovery boom')),
+      stop: vi.fn(),
+    };
+
+    vi.doMock('$lib/server/init.js', () => ({ getServerContext }));
+    vi.doMock('$lib/server/ws_server.js', async () => {
+      const actual = await vi.importActual<typeof import('./ws_server.js')>('./ws_server.js');
+      return {
+        ...actual,
+        startWebSocketServer,
+      };
+    });
+    class FailingSessionDiscoveryClient {
+      constructor() {
+        return failingDiscoveryClient;
+      }
+    }
+
+    vi.doMock('$lib/server/session_discovery.js', () => ({
+      SessionDiscoveryClient: FailingSessionDiscoveryClient,
+    }));
+    vi.doMock('$lib/server/webhook_poller.js', () => ({
+      isWebhookPollingEnabled,
+      startWebhookPoller,
+    }));
+
+    const hooks = await import('../../hooks.server.js');
+    const sessionContext = await import('./session_context.js');
+
+    await expect(hooks.init()).rejects.toThrow('discovery boom');
+
+    expect(pollerHandle.stop).toHaveBeenCalledTimes(1);
+    expect(sessionContext.getWebhookPoller()).toBeNull();
+  });
+
+  test('init stops a stale webhook poller on HMR re-init when polling is disabled', async () => {
+    const stalePoller = { stop: vi.fn() };
+    const reusedServerHandle = { port: 8123, stop: vi.fn() };
+    const reusedDiscoveryClient = { start: vi.fn(), stop: vi.fn() };
+    const isWebhookPollingEnabled = vi.fn().mockReturnValue(false);
+    const startWebhookPoller = vi.fn();
+
+    vi.doMock('$lib/server/webhook_poller.js', () => ({
+      isWebhookPollingEnabled,
+      startWebhookPoller,
+    }));
+
+    const sessionContext = await import('./session_context.js');
+    sessionContext.setWebSocketServerHandle(reusedServerHandle as any);
+    sessionContext.setSessionDiscoveryClient(reusedDiscoveryClient as any);
+    sessionContext.setWebhookPoller(stalePoller);
+
+    const hooks = await import('../../hooks.server.js');
+
+    await hooks.init();
+
+    expect(stalePoller.stop).toHaveBeenCalledTimes(1);
+    expect(startWebhookPoller).not.toHaveBeenCalled();
+    expect(sessionContext.getWebhookPoller()).toBeNull();
   });
 });

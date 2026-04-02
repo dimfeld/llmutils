@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   ingestWebhookEvents: vi.fn<(...args: unknown[]) => Promise<{ errors: string[] }>>(),
-  formatWebhookIngestErrors: vi.fn<(errors: string[]) => string | null>(),
+  formatWebhookIngestErrors: vi.fn<(errors: string[]) => string | undefined>(),
   getWebhookServerUrl: vi.fn<() => string | null>(),
 }));
 
@@ -48,7 +48,7 @@ describe('lib/server/webhook_poller', () => {
     delete process.env.TIM_WEBHOOK_SERVER_URL;
 
     mocks.ingestWebhookEvents.mockResolvedValue({ errors: [] });
-    mocks.formatWebhookIngestErrors.mockReturnValue(null);
+    mocks.formatWebhookIngestErrors.mockReturnValue(undefined);
     mocks.getWebhookServerUrl.mockImplementation(() => process.env.TIM_WEBHOOK_SERVER_URL ?? null);
   });
 
@@ -79,6 +79,12 @@ describe('lib/server/webhook_poller', () => {
       expect(getWebhookPollIntervalMs()).toBeNull();
 
       process.env.TIM_WEBHOOK_POLL_INTERVAL = '-3';
+      expect(getWebhookPollIntervalMs()).toBeNull();
+
+      process.env.TIM_WEBHOOK_POLL_INTERVAL = '5s';
+      expect(getWebhookPollIntervalMs()).toBeNull();
+
+      process.env.TIM_WEBHOOK_POLL_INTERVAL = '5.5';
       expect(getWebhookPollIntervalMs()).toBeNull();
     });
 
