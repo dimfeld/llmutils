@@ -805,6 +805,14 @@ export async function handleShowCommand(planFile: string | undefined, options: a
 
   log('');
 
+  if (displayedPlan.id) {
+    log(
+      chalk.gray(
+        `Tip: Use ${chalk.white(`tim materialize ${displayedPlan.id}`)} to write this plan to a file for editing`
+      )
+    );
+  }
+
   if (options.copyDetails && displayedPlan.details) {
     await clipboard.write(displayedPlan.details);
     log(chalk.green(`Copied details to clipboard`));

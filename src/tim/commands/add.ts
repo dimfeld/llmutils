@@ -250,6 +250,11 @@ export async function handleAddCommand(title: string[], options: any, command: a
 
   log(chalk.green('\u2713 Created plan stub:'), `plan ${planId}`);
   log(`  Next step: Add plan detail and run the generate process.`);
+  log(
+    chalk.gray(
+      `  Tip: Use ${chalk.white(`tim materialize ${planId}`)} to write this plan to a file for editing`
+    )
+  );
 
   if (parentPlan) {
     log(chalk.gray(`  Updated parent plan ${parentPlan.id} to include dependency on ${planId}`));

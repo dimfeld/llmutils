@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+import chalk from 'chalk';
 import { log } from '../../logging.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import {
@@ -21,4 +22,7 @@ export async function handleMaterializeCommand(
   await materializeAndPruneRelatedPlans(planId, repository.gitRoot, context);
 
   log(planPath);
+  log(
+    `\nEdit the file, then run ${chalk.white(`tim sync ${planIdArg}`)} to save changes back to the database`
+  );
 }

@@ -49,6 +49,7 @@ export interface SetOptions {
   epic?: boolean;
   noEpic?: boolean;
   simple?: boolean;
+  details?: string;
 }
 
 export async function handleSetCommand(
@@ -249,6 +250,12 @@ export async function handleSetCommand(
       plan.simple = options.simple;
       modified = true;
       log(`Set simple to ${options.simple}`);
+    }
+
+    if (options.details !== undefined) {
+      plan.details = options.details;
+      modified = true;
+      log(`Updated details`);
     }
 
     if (!modified) {

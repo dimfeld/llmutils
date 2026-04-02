@@ -1031,6 +1031,7 @@ program
   .option('--no-epic', 'Mark the plan as not an epic')
   .option('--simple', 'Mark the plan as simple')
   .option('--no-simple', 'Mark the plan as not simple')
+  .option('--details <text>', 'Replace the entire details field with the given text')
   .action(async (planFile, options, command) => {
     const { handleSetCommand } = await import('./commands/set.js');
     const rawArgs = command.rawArgs ?? [];
