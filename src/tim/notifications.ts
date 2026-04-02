@@ -2,6 +2,8 @@ import * as path from 'node:path';
 import { expandTilde } from '../common/fs.js';
 import { getGitRoot } from '../common/git.js';
 import { spawnAndLogOutput } from '../common/process.js';
+import { getLoggerAdapter } from '../logging/adapter.js';
+import { HeadlessAdapter } from '../logging/headless_adapter.js';
 import { debugLog, warn } from '../logging.js';
 import type { NotificationCommand, TimConfig } from './configSchema.js';
 import { buildDescriptionFromPlan, getCombinedTitleFromSummary } from './display_utils.js';
@@ -82,6 +84,15 @@ export async function sendNotification(
   const notificationConfig = config.notifications;
   if (!notificationsEnabled(notificationConfig)) {
     debugLog('Notification suppressed or not configured.');
+    return false;
+  }
+
+  const loggerAdapter = getLoggerAdapter();
+  if (
+    loggerAdapter instanceof HeadlessAdapter &&
+    loggerAdapter.hasConnectedClients()
+  ) {
+    debugLog('Notification suppressed: web UI client connected.');
     return false;
   }
 
