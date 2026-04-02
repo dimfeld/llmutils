@@ -8,13 +8,16 @@ import {
   getSessionInitPromise,
   getSessionManager,
   getWebSocketServerHandle,
+  getWebhookPoller,
   setSessionDiscoveryClient,
   setSessionInitPromise,
   setSessionManager,
   setWebSocketServerHandle,
+  setWebhookPoller,
 } from '$lib/server/session_context.js';
 import { SessionDiscoveryClient } from '$lib/server/session_discovery.js';
 import { SessionManager } from '$lib/server/session_manager.js';
+import { isWebhookPollingEnabled, startWebhookPoller } from '$lib/server/webhook_poller.js';
 import { startWebSocketServer } from '$lib/server/ws_server.js';
 
 interface SessionShutdownState {
@@ -62,7 +65,12 @@ export const init: ServerInit = async () => {
 
   const existingServer = getWebSocketServerHandle();
   const existingDiscoveryClient = getSessionDiscoveryClient();
-  if (existingServer && existingDiscoveryClient) {
+  const existingWebhookPoller = getWebhookPoller();
+  if (
+    existingServer &&
+    existingDiscoveryClient &&
+    (!isWebhookPollingEnabled() || existingWebhookPoller)
+  ) {
     return;
   }
 
@@ -70,6 +78,7 @@ export const init: ServerInit = async () => {
     manager: false,
     server: false,
     discoveryClient: false,
+    webhookPoller: false,
   };
 
   const initPromise = (async () => {
@@ -77,6 +86,7 @@ export const init: ServerInit = async () => {
     const sessionManager = existingServer ? getSessionManager() : new SessionManager(db);
     const serverHandle = existingServer ?? startWebSocketServer(sessionManager, config);
     const discoveryClient = existingDiscoveryClient ?? new SessionDiscoveryClient(sessionManager);
+    const webhookPoller = existingWebhookPoller ?? startWebhookPoller(db);
 
     // Store references before await so they are tracked for cleanup on failure.
     if (!existingServer) {
@@ -89,10 +99,15 @@ export const init: ServerInit = async () => {
       createdResources.discoveryClient = true;
       setSessionDiscoveryClient(discoveryClient);
     }
+    if (!existingWebhookPoller && webhookPoller) {
+      createdResources.webhookPoller = true;
+      setWebhookPoller(webhookPoller);
+    }
 
     await discoveryClient.start();
 
     registerShutdownHandlers(() => {
+      webhookPoller?.stop();
       discoveryClient.stop();
       serverHandle.stop();
     });
@@ -105,6 +120,13 @@ export const init: ServerInit = async () => {
       if (discoveryClient) {
         discoveryClient.stop();
         setSessionDiscoveryClient(null);
+      }
+    }
+    if (createdResources.webhookPoller) {
+      const webhookPoller = getWebhookPoller();
+      if (webhookPoller) {
+        webhookPoller.stop();
+        setWebhookPoller(null);
       }
     }
     if (createdResources.server) {

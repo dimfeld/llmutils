@@ -2,10 +2,15 @@ import type { SessionManager } from './session_manager.js';
 import type { SessionDiscoveryClient } from './session_discovery.js';
 import type { WebSocketServerHandle } from './ws_server.js';
 
+export interface WebhookPollerHandle {
+  stop: () => void;
+}
+
 interface SessionContextState {
   manager: SessionManager | null;
   server: WebSocketServerHandle | null;
   discoveryClient: SessionDiscoveryClient | null;
+  webhookPoller: WebhookPollerHandle | null;
   initPromise: Promise<SessionManager> | null;
 }
 
@@ -20,6 +25,7 @@ function getState(): SessionContextState {
     manager: null,
     server: null,
     discoveryClient: null,
+    webhookPoller: null,
     initPromise: null,
   };
 
@@ -53,6 +59,14 @@ export function getSessionDiscoveryClient(): SessionDiscoveryClient | null {
 
 export function setSessionDiscoveryClient(discoveryClient: SessionDiscoveryClient | null): void {
   getState().discoveryClient = discoveryClient;
+}
+
+export function getWebhookPoller(): WebhookPollerHandle | null {
+  return getState().webhookPoller;
+}
+
+export function setWebhookPoller(webhookPoller: WebhookPollerHandle | null): void {
+  getState().webhookPoller = webhookPoller;
 }
 
 export function getSessionInitPromise(): Promise<SessionManager> | null {

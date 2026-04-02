@@ -77,6 +77,8 @@ When connected to the GitHub Webhook Receiver (see below), tim can ingest PR sta
 
 Set `TIM_WEBHOOK_SERVER_URL` to the webhook receiver's base URL (e.g., `http://localhost:8080`) and ensure `WEBHOOK_INTERNAL_API_TOKEN` is set to the same token used by the receiver.
 
+Set `TIM_WEBHOOK_POLL_INTERVAL` to enable periodic webhook ingestion in the web server. The value is in seconds, values below `5` are clamped to `5`, polling starts after a `15` second initial delay, and it only runs when `TIM_WEBHOOK_SERVER_URL` is also configured.
+
 Supported webhook event types:
 
 - **`pull_request`**: Creates/updates PR status, labels, requested reviewers. Auto-links PRs to plans by branch name.
