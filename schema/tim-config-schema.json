@@ -3,6 +3,10 @@
   "description": "Repository-level configuration for tim",
   "type": "object",
   "properties": {
+    "githubUsername": {
+      "description": "GitHub username for PR filtering",
+      "type": "string"
+    },
     "issueTracker": {
       "description": "Issue tracking service to use for import commands and issue-related operations",
       "type": "string",
@@ -90,6 +94,7 @@
                 "type": "string"
               },
               "mode": {
+                "description": "Whether to run the command and wait for it to finish or run it in the background.",
                 "type": "string",
                 "enum": [
                   "run",
@@ -97,9 +102,11 @@
                 ]
               },
               "check": {
+                "description": "Command to check if a daemon mode lifecycle command has finished initializting",
                 "type": "string"
               },
               "shutdown": {
+                "description": "Command to shutdown a daemon mode lifecycle command",
                 "type": "string"
               },
               "workingDirectory": {
@@ -171,6 +178,14 @@
           "maximum": 9007199254740991
         }
       }
+    },
+    "planAutocompleteStatus": {
+      "description": "Target status for automatic plan completion transitions",
+      "type": "string",
+      "enum": [
+        "needs_review",
+        "done"
+      ]
     },
     "tags": {
       "description": "Configuration for plan tags, including allowlists",
