@@ -23,6 +23,7 @@ export function createSessionEventsResponse(
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       let closed = false;
+      let sseRegistered = false;
 
       const close = (skipControllerClose = false) => {
         if (closed) {
@@ -30,6 +31,9 @@ export function createSessionEventsResponse(
         }
 
         closed = true;
+        if (sseRegistered) {
+          manager.unregisterSSESubscriber();
+        }
         unsubscribe();
         signal?.removeEventListener('abort', onAbort);
 
@@ -69,12 +73,14 @@ export function createSessionEventsResponse(
           buffered.push({ event: eventName, data: payload });
         }
       });
-
       // Handle already-aborted requests immediately
       if (signal?.aborted) {
         close();
         return;
       }
+
+      manager.registerSSESubscriber();
+      sseRegistered = true;
 
       const snapshot: SessionSnapshot = manager.getSessionSnapshot();
       send('session:list', snapshot);

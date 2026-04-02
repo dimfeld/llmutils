@@ -138,7 +138,7 @@ The sessions system uses a discovery-based architecture where the web GUI discov
 
 - **WebSocket server** (`src/lib/server/ws_server.ts`): Listens on port 8123 (configurable via `TIM_WS_PORT` env var or `headless.url` config). Accepts HTTP POST notifications at `/messages`. It remains in place for notifications and future features, but not for agent session connections. Message parsing uses shared utilities from `src/logging/headless_message_utils.ts`.
 - **Session discovery client** (`src/lib/server/session_discovery.ts`): Watches the session directory, manages WebSocket client connections to discovered agent processes, and feeds messages into SessionManager via `handleWebSocketConnect/Message/Disconnect`. Uses the session info file's `sessionId` as the `connectionId` for SessionManager. Session registration is gated on validated `session_info` (sessionId must match PID file); reconnections to existing offline sessions buffer messages until `replay_end` to protect existing session history.
-- **Session manager** (`src/lib/server/session_manager.ts`): Central state management singleton. Tracks active/offline/notification sessions, passes structured messages through to the client as-is (category set to `'structured'`), handles replay buffering, prompt tracking, and project resolution from DB. Display category computation (lifecycle, llmOutput, toolUse, etc.) is done client-side via `src/lib/utils/message_formatting.ts`.
+- **Session manager** (`src/lib/server/session_manager.ts`): Central state management singleton. Tracks active/offline/notification sessions, passes structured messages through to the client as-is (category set to `'structured'`), handles replay buffering, prompt tracking, and project resolution from DB. Display category computation (lifecycle, llmOutput, toolUse, etc.) is done client-side via `src/lib/utils/message_formatting.ts`. Also tracks SSE subscriber count via `registerSSESubscriber()`/`unregisterSSESubscriber()` and broadcasts `notification_subscribers_changed` messages to all connected agents when the count crosses the 0↔1 boundary, enabling agents to suppress duplicate command-based notifications when the web UI is open. Newly connected agents receive the current subscriber status immediately on WebSocket connect.
 - **Session context** (`src/lib/server/session_context.ts`): HMR-safe singleton (uses `Symbol.for`) exposing `getSessionManager()`, `getWsConnections()`, and `getSessionDiscoveryClient()` / `setSessionDiscoveryClient()` for use by SSE and API routes.
 - **Server init** (`src/hooks.server.ts`): Starts the WebSocket server and session discovery client on SvelteKit boot via the `init` export.
 
@@ -167,6 +167,16 @@ The sessions system uses a discovery-based architecture where the web GUI discov
 - Client-side `formatStructuredMessage()` in `src/lib/utils/message_formatting.ts` has a default case returning a generic text fallback for unknown structured message types. `SessionMessage.svelte` wraps `formatStructuredMessage()` calls in try/catch for graceful degradation on malformed payloads. `ReviewResultDisplay.svelte` validates input arrays and issue entries independently.
 - Browser notifications (`session_notifications.ts`): `extractMessageText()` handles structured message bodies via `formatStructuredMessage()`, so events like `agent_session_end` trigger notifications correctly even though they arrive as structured bodies rather than text.
 
+### Notification Suppression
+
+When the web UI has active SSE subscribers (i.e., a browser tab is open), agent-side command-based notifications (`sendNotification()` in `src/tim/notifications.ts`) are automatically suppressed to prevent duplicate notifications. The mechanism works as follows:
+
+1. **SSE subscriber tracking**: `SessionManager` tracks the number of active SSE connections. When the count crosses the 0↔1 boundary, it broadcasts a `notification_subscribers_changed` message (with `hasSubscribers: boolean`) to all connected agents via their WebSocket connections.
+2. **Agent-side handling**: `HeadlessAdapter` receives the message and updates its `_hasNotificationSubscribers` flag. On WebSocket disconnect, the flag resets to `false`.
+3. **Suppression check**: `sendNotification()` checks `hasNotificationSubscribers()` on the current `HeadlessAdapter` (via `getLoggerAdapter()`) and skips the notification command when the web UI is actively listening.
+
+This is distinct from `hasConnectedClients()`, which counts raw WebSocket connections (including the server-side session discovery client) and is still used for `session_ended` broadcast in `destroy()`.
+
 ### Notification Sessions
 
 HTTP POST to `/messages` on port 8123 creates lightweight "notification" sessions (capped at 200 messages). When a WebSocket session later connects with the same group key (normalized gitRemote + workspacePath), the notification session is reconciled into the full session. Remote URLs are normalized via `parseGitRemoteUrl().fullName` to canonicalize equivalent remote formats (HTTPS vs SSH, with/without `.git` suffix) into the same group key.
@@ -175,7 +185,7 @@ HTTP POST to `/messages` on port 8123 creates lightweight "notification" session
 
 Browser clients receive real-time updates via SSE and interact with sessions through remote `command()` functions:
 
-- **SSE endpoint** (`src/routes/api/sessions/events/+server.ts`): `GET` returns a `ReadableStream` with SSE headers. On connect, sends `session:list` snapshot, replays any buffered events, then sends `session:sync-complete` to signal that initial state is fully loaded. After sync, streams live events (`session:new`, `session:update`, `session:disconnect`, `session:message`, `session:prompt`, `session:prompt-cleared`, `session:dismissed`). Uses subscribe-before-snapshot pattern with buffering to avoid lost-event race conditions.
+- **SSE endpoint** (`src/routes/api/sessions/events/+server.ts`): `GET` returns a `ReadableStream` with SSE headers. On connect, calls `registerSSESubscriber()` and sends `session:list` snapshot, replays any buffered events, then sends `session:sync-complete` to signal that initial state is fully loaded. After sync, streams live events (`session:new`, `session:update`, `session:disconnect`, `session:message`, `session:prompt`, `session:prompt-cleared`, `session:dismissed`). Uses subscribe-before-snapshot pattern with buffering to avoid lost-event race conditions. On stream teardown, calls `unregisterSSESubscriber()` to update agent notification suppression state.
 
 #### SSE Implementation Gotchas
 

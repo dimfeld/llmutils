@@ -3,10 +3,13 @@ import { sendNotification } from './notifications.js';
 import type { TimConfig } from './configSchema.js';
 import { warn } from '../logging.js';
 import { spawnAndLogOutput } from '../common/process.js';
+import { getLoggerAdapter } from '../logging/adapter.js';
+import { HeadlessAdapter } from '../logging/headless_adapter.js';
 
 // Cast the imported functions to mocks
 const warnSpy = warn as ReturnType<typeof vi.fn>;
 const spawnSpy = spawnAndLogOutput as ReturnType<typeof vi.fn>;
+const getLoggerAdapterSpy = getLoggerAdapter as ReturnType<typeof vi.fn>;
 
 vi.mock('../logging.js', () => ({
   warn: vi.fn(),
@@ -17,10 +20,15 @@ vi.mock('../common/process.js', () => ({
   spawnAndLogOutput: vi.fn(),
 }));
 
+vi.mock('../logging/adapter.js', () => ({
+  getLoggerAdapter: vi.fn(),
+}));
+
 describe('notifications', () => {
   beforeEach(async () => {
     warnSpy.mockClear();
     spawnSpy.mockClear();
+    getLoggerAdapterSpy.mockReset();
     delete process.env.TIM_NOTIFY_SUPPRESS;
 
     // Set up default mock implementations
@@ -31,6 +39,7 @@ describe('notifications', () => {
       signal: null,
       killedByInactivity: false,
     });
+    getLoggerAdapterSpy.mockReturnValue(undefined);
   });
 
   afterEach(() => {
@@ -229,5 +238,83 @@ describe('notifications', () => {
     // The command should have tilde expanded
     const homeDir = process.env.HOME || '';
     expect(args[2]).toBe(`${homeDir}/scripts/notify.sh`);
+  });
+
+  test('suppresses notifications when headless adapter has notification subscribers', async () => {
+    const config = {
+      notifications: {
+        command: 'notify',
+      },
+    } as TimConfig;
+    const headlessAdapter = new HeadlessAdapter({} as any);
+    vi.spyOn(headlessAdapter, 'hasNotificationSubscribers').mockReturnValue(true);
+    getLoggerAdapterSpy.mockReturnValue(headlessAdapter);
+
+    const ok = await sendNotification(config, {
+      command: 'agent',
+      event: 'agent_done',
+      status: 'success',
+      message: 'done',
+      cwd: '/repo',
+      planId: '1',
+      planFile: '/repo/tasks/1.plan.md',
+    });
+
+    expect(ok).toBe(false);
+    expect(spawnSpy).not.toHaveBeenCalled();
+  });
+
+  test('sends notifications when headless adapter has no notification subscribers', async () => {
+    const config = {
+      notifications: {
+        command: 'notify',
+      },
+    } as TimConfig;
+    const headlessAdapter = new HeadlessAdapter({} as any);
+    vi.spyOn(headlessAdapter, 'hasNotificationSubscribers').mockReturnValue(false);
+    getLoggerAdapterSpy.mockReturnValue(headlessAdapter);
+
+    const ok = await sendNotification(config, {
+      command: 'agent',
+      event: 'agent_done',
+      status: 'success',
+      message: 'done',
+      cwd: '/repo',
+      planId: '1',
+      planFile: '/repo/tasks/1.plan.md',
+    });
+
+    expect(ok).toBe(true);
+    expect(spawnSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test('sends notifications when no headless adapter is active', async () => {
+    const config = {
+      notifications: {
+        command: 'notify',
+      },
+    } as TimConfig;
+    getLoggerAdapterSpy.mockReturnValue({
+      log: vi.fn(),
+      error: vi.fn(),
+      warn: vi.fn(),
+      writeStdout: vi.fn(),
+      writeStderr: vi.fn(),
+      debugLog: vi.fn(),
+      sendStructured: vi.fn(),
+    });
+
+    const ok = await sendNotification(config, {
+      command: 'agent',
+      event: 'agent_done',
+      status: 'success',
+      message: 'done',
+      cwd: '/repo',
+      planId: '1',
+      planFile: '/repo/tasks/1.plan.md',
+    });
+
+    expect(ok).toBe(true);
+    expect(spawnSpy).toHaveBeenCalledTimes(1);
   });
 });

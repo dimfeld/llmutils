@@ -61,8 +61,15 @@ export interface HeadlessEndSessionServerMessage {
   type: 'end_session';
 }
 
+/** Server→client message: browser notification subscriber status update. */
+export interface HeadlessNotificationSubscribersMessage {
+  type: 'notification_subscribers_changed';
+  hasSubscribers: boolean;
+}
+
 /** Discriminated union of all server→client messages over the headless websocket. */
 export type HeadlessServerMessage =
   | HeadlessPromptResponseServerMessage
   | HeadlessUserInputServerMessage
-  | HeadlessEndSessionServerMessage;
+  | HeadlessEndSessionServerMessage
+  | HeadlessNotificationSubscribersMessage;

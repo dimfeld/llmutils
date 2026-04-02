@@ -338,6 +338,7 @@ export class SessionManager {
   private readonly senders = new Map<string, AgentSender>();
   private readonly internals = new Map<string, SessionInternals>();
   private projectIdByRemote: Map<string, number> | null = null;
+  private sseSubscriberCount = 0;
 
   constructor(private readonly db: Database) {
     this.eventEmitter.setMaxListeners(0);
@@ -361,6 +362,16 @@ export class SessionManager {
     this.sessions.set(connectionId, session);
     this.senders.set(connectionId, sendToAgent);
     this.internals.set(connectionId, { deferredPromptEvent: null, nextNotificationId: 0 });
+
+    try {
+      sendToAgent({
+        type: 'notification_subscribers_changed',
+        hasSubscribers: this.sseSubscriberCount > 0,
+      });
+    } catch {
+      // Ignore initial sync failures; normal disconnect cleanup will follow.
+    }
+
     this.emit('session:new', { session: this.cloneSessionMetadata(session) });
 
     return this.cloneSession(session);
@@ -580,6 +591,20 @@ export class SessionManager {
     return this.trySend(connectionId, { type: 'end_session' });
   }
 
+  registerSSESubscriber(): void {
+    this.sseSubscriberCount += 1;
+    if (this.sseSubscriberCount === 1) {
+      this.broadcastNotificationSubscribers(true);
+    }
+  }
+
+  unregisterSSESubscriber(): void {
+    this.sseSubscriberCount = Math.max(0, this.sseSubscriberCount - 1);
+    if (this.sseSubscriberCount === 0) {
+      this.broadcastNotificationSubscribers(false);
+    }
+  }
+
   private trySend(connectionId: string, message: HeadlessServerMessage): boolean {
     const sender = this.senders.get(connectionId);
     if (!sender) {
@@ -666,6 +691,21 @@ export class SessionManager {
 
   private emit<T extends SessionEventName>(eventName: T, payload: SessionManagerEvents[T]): void {
     this.eventEmitter.emit(eventName, payload);
+  }
+
+  private broadcastNotificationSubscribers(hasSubscribers: boolean): void {
+    const message: HeadlessServerMessage = {
+      type: 'notification_subscribers_changed',
+      hasSubscribers,
+    };
+
+    for (const [connectionId, sender] of this.senders) {
+      try {
+        sender(message);
+      } catch {
+        this.senders.delete(connectionId);
+      }
+    }
   }
 
   private resolveProjectId(gitRemote?: string | null): number | null {

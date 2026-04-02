@@ -74,6 +74,8 @@ describe('lib/server/session_routes', () => {
   });
 
   test('createSessionEventsResponse sends initial snapshot and forwards session events', async () => {
+    const registerSpy = vi.spyOn(manager, 'registerSSESubscriber');
+    const unregisterSpy = vi.spyOn(manager, 'unregisterSSESubscriber');
     const abortController = new AbortController();
     const response = createSessionEventsResponse(manager, abortController.signal);
     const reader = response.body?.getReader();
@@ -96,6 +98,7 @@ describe('lib/server/session_routes', () => {
       event: 'session:sync-complete',
       data: {},
     });
+    expect(registerSpy).toHaveBeenCalledTimes(1);
 
     manager.handleHttpNotification({
       gitRemote: 'git@example.com:repo.git',
@@ -115,6 +118,7 @@ describe('lib/server/session_routes', () => {
 
     abortController.abort();
     await reader!.cancel();
+    expect(unregisterSpy).toHaveBeenCalledTimes(1);
   });
 
   test('createSessionEventsResponse forwards every session event type and cleans up subscriptions', async () => {
