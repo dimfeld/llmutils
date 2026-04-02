@@ -56,6 +56,17 @@ function enrichProjectPrs(
   }));
 }
 
+function sortProjectPrsByPrNumberDesc(prs: EnrichedProjectPr[]): EnrichedProjectPr[] {
+  return [...prs].sort((left, right) => {
+    const prNumberComparison = right.status.pr_number - left.status.pr_number;
+    if (prNumberComparison !== 0) {
+      return prNumberComparison;
+    }
+
+    return left.projectId - right.projectId;
+  });
+}
+
 function getLatestSubmittedReviewAt(pr: PrStatusDetail, username: string): string | null {
   const normalizedUsername = normalizeGitHubUsername(username);
   let latest: string | null = null;
@@ -122,7 +133,12 @@ function partitionProjectPrs(
   prs: EnrichedProjectPr[],
   username: string | null
 ): { authored: EnrichedProjectPr[]; reviewing: EnrichedProjectPr[] } {
-  return partitionCachedProjectPrs(prs, username);
+  const partitioned = partitionCachedProjectPrs(prs, username);
+
+  return {
+    authored: sortProjectPrsByPrNumberDesc(partitioned.authored),
+    reviewing: sortProjectPrsByPrNumberDesc(partitioned.reviewing),
+  };
 }
 
 async function getAllProjectPrsData() {
@@ -356,7 +372,7 @@ export const getProjectPrs = query(projectIdSchema, async ({ projectId }) => {
   }
 
   return {
-    ...partitionCachedProjectPrs(enrichedPrs, username),
+    ...partitionProjectPrs(enrichedPrs, username),
     username,
     hasData: true,
     tokenConfigured,

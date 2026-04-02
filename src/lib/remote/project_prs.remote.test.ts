@@ -223,6 +223,7 @@ describe('project_prs remote functions', () => {
       author: 'dimfeld',
       lastFetchedAt: '2026-03-30T10:00:00.000Z',
     });
+
     upsertPrStatus(currentDb, {
       prUrl: 'https://github.com/example/other-repo/pull/23',
       owner: 'example',
@@ -243,9 +244,38 @@ describe('project_prs remote functions', () => {
     expect(result.authored.map((pr) => pr.projectId).sort((a, b) => a - b)).toEqual(
       [projectId, otherProjectId].sort((a, b) => a - b)
     );
-    expect(result.authored.map((pr) => pr.status.pr_number).sort((a, b) => a - b)).toEqual([
-      17, 23,
-    ]);
+    expect(result.authored.map((pr) => pr.status.pr_number)).toEqual([23, 17]);
+  });
+
+  test('getProjectPrs sorts a single project by PR number descending', async () => {
+    upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/17',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 17,
+      title: 'First project PR',
+      state: 'open',
+      draft: false,
+      author: 'dimfeld',
+      lastFetchedAt: '2026-03-30T10:00:00.000Z',
+    });
+    upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/23',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 23,
+      title: 'Second project PR',
+      state: 'open',
+      draft: false,
+      author: 'dimfeld',
+      lastFetchedAt: '2026-03-30T10:00:00.000Z',
+    });
+
+    const { getProjectPrs } = await import('./project_prs.remote.js');
+    const result = await invokeQuery(getProjectPrs, { projectId: String(projectId) });
+
+    expect(result.hasData).toBe(true);
+    expect(result.authored.map((pr) => pr.status.pr_number)).toEqual([23, 17]);
   });
 
   test('refreshProjectPrs falls back to refreshing all projects when projectId is all', async () => {
