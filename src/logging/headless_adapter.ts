@@ -79,6 +79,11 @@ export class HeadlessAdapter implements LoggerAdapter {
         bearerToken: options.bearerToken,
         onConnect: (connectionId) => this.sendReplayToServerClient(connectionId),
         onMessage: (_connectionId, message) => this.handleServerMessage(message),
+        onDisconnect: () => {
+          if (!this.hasConnectedClients()) {
+            this.hasBrowserNotificationSubscribers = false;
+          }
+        },
       });
       this.writeSessionInfoFile();
     }

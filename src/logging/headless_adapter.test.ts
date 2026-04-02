@@ -329,6 +329,27 @@ describe('HeadlessAdapter', () => {
     await adapter.destroy();
   });
 
+  it('resets notification subscribers when all clients disconnect', async () => {
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = createTestHeadlessAdapter({ command: 'agent' }, wrapped);
+    const port = (adapter as any).sessionServer.port as number;
+    const ws = await openWebSocket(`ws://127.0.0.1:${port}/tim-agent`);
+
+    ws.send(
+      JSON.stringify({
+        type: 'notification_subscribers_changed',
+        hasSubscribers: true,
+      } satisfies HeadlessServerMessage)
+    );
+    await waitFor(() => adapter.hasNotificationSubscribers());
+
+    // Disconnect without sending hasSubscribers: false
+    ws.close();
+    await waitFor(() => !adapter.hasNotificationSubscribers());
+
+    await adapter.destroy();
+  });
+
   it('honors maxBufferBytes by trimming replay history', async () => {
     const { adapter: wrapped } = createRecordingAdapter();
     const adapter = createTestHeadlessAdapter({ command: 'agent' }, wrapped, {
