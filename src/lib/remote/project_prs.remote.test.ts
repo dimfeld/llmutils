@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
 import { getOrCreateProject } from '$tim/db/project.js';
-import { upsertPrStatus } from '$tim/db/pr_status.js';
+import { upsertPrReviewRequestByReviewer, upsertPrStatus } from '$tim/db/pr_status.js';
 import { invokeCommand, invokeQuery } from '$lib/test-utils/invoke_command.js';
 
 let currentDb: Database;
@@ -175,6 +175,39 @@ describe('project_prs remote functions', () => {
     expect(result.reviewing).toEqual([]);
     expect(result.authored).toHaveLength(1);
     expect(result.authored[0]?.status.pr_url).toBe('https://github.com/example/repo/pull/17');
+  });
+
+  test('getProjectPrs marks PRs with a review requested after the current user last reviewed', async () => {
+    const created = upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/18',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 18,
+      title: 'Webhook cached PR',
+      state: 'open',
+      draft: false,
+      author: 'someone-else',
+      lastFetchedAt: '2026-03-30T10:00:00.000Z',
+      reviews: [
+        {
+          author: 'dimfeld',
+          state: 'APPROVED',
+          submittedAt: '2026-03-30T10:10:00.000Z',
+        },
+      ],
+    });
+    upsertPrReviewRequestByReviewer(currentDb, created.status.id, {
+      reviewer: 'dimfeld',
+      action: 'requested',
+      eventAt: '2026-03-30T11:00:00.000Z',
+    });
+
+    const { getProjectPrs } = await import('./project_prs.remote.js');
+    const result = await invokeQuery(getProjectPrs, { projectId: String(projectId) });
+
+    expect(result.reviewing).toHaveLength(1);
+    expect(result.reviewing[0]?.status.pr_number).toBe(18);
+    expect(result.reviewing[0]?.currentUserReviewRequestLabel).toBe('Review Requested');
   });
 
   test('getProjectPrs aggregates all project PRs when projectId is all', async () => {

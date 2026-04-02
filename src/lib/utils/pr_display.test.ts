@@ -89,7 +89,7 @@ describe('reviewDecision display helpers', () => {
   test('maps review decisions to badge colors', () => {
     expect(reviewDecisionBadgeColor('APPROVED')).toContain('bg-green-100');
     expect(reviewDecisionBadgeColor('CHANGES_REQUESTED')).toContain('bg-red-100');
-    expect(reviewDecisionBadgeColor('REVIEW_REQUIRED')).toContain('bg-yellow-100');
+    expect(reviewDecisionBadgeColor('REVIEW_REQUIRED')).toContain('bg-gray-100');
     expect(reviewDecisionBadgeColor(null)).toContain('bg-gray-100');
   });
 

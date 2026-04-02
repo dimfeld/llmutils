@@ -476,6 +476,21 @@ const migrations: Migration[] = [
       ALTER TABLE pr_status ADD COLUMN pr_updated_at TEXT;
     `,
   },
+  {
+    version: 14,
+    up: `
+      CREATE TABLE pr_review_request (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pr_status_id INTEGER NOT NULL REFERENCES pr_status(id) ON DELETE CASCADE,
+        reviewer TEXT NOT NULL,
+        last_event_at TEXT NOT NULL,
+        requested_at TEXT,
+        removed_at TEXT
+      );
+      CREATE UNIQUE INDEX idx_pr_review_request_unique ON pr_review_request(pr_status_id, reviewer);
+      CREATE INDEX idx_pr_review_request_pr_status_id ON pr_review_request(pr_status_id);
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {

@@ -27,6 +27,7 @@ const projectIdSchema = z.object({
 export interface EnrichedProjectPr extends PrStatusDetail {
   linkedPlans: LinkedPlanSummary[];
   projectId: number;
+  currentUserReviewRequestLabel: string | null;
 }
 
 interface RefreshResult {
@@ -44,13 +45,77 @@ interface ResolvedProjectRepoContext {
 function enrichProjectPrs(
   projectId: number,
   prs: PrStatusDetail[],
-  linkedPlansByPrUrl: Map<string, LinkedPlanSummary[]>
+  linkedPlansByPrUrl: Map<string, LinkedPlanSummary[]>,
+  username: string | null
 ): EnrichedProjectPr[] {
   return prs.map((pr) => ({
     ...pr,
     projectId,
     linkedPlans: linkedPlansByPrUrl.get(pr.status.pr_url) ?? [],
+    currentUserReviewRequestLabel: getCurrentUserReviewRequestLabel(pr, username),
   }));
+}
+
+function getLatestSubmittedReviewAt(pr: PrStatusDetail, username: string): string | null {
+  const normalizedUsername = normalizeGitHubUsername(username);
+  let latest: string | null = null;
+
+  for (const review of pr.reviews) {
+    if (review.state === 'PENDING') {
+      continue;
+    }
+    if (normalizeGitHubUsername(review.author) !== normalizedUsername) {
+      continue;
+    }
+    if (review.submitted_at == null) {
+      continue;
+    }
+    if (latest === null || review.submitted_at > latest) {
+      latest = review.submitted_at;
+    }
+  }
+
+  return latest;
+}
+
+function getCurrentUserReviewRequestLabel(
+  pr: PrStatusDetail,
+  username: string | null
+): string | null {
+  if (!username) {
+    return null;
+  }
+
+  const normalizedUsername = normalizeGitHubUsername(username);
+  const request = pr.reviewRequests.find(
+    (row) => normalizeGitHubUsername(row.reviewer) === normalizedUsername
+  );
+  const lastReviewAt = getLatestSubmittedReviewAt(pr, username);
+  if (!request) {
+    const snapshotRequested = parseRequestedReviewers(pr.status.requested_reviewers).some(
+      (reviewer) => normalizeGitHubUsername(reviewer) === normalizedUsername
+    );
+    if (snapshotRequested && lastReviewAt === null) {
+      return 'Review Requested';
+    }
+    return null;
+  }
+
+  if (request.requested_at === null) {
+    return null;
+  }
+
+  const isCurrentlyRequested =
+    request.removed_at === null || request.requested_at > request.removed_at;
+  if (!isCurrentlyRequested) {
+    return null;
+  }
+
+  if (lastReviewAt === null) {
+    return 'Review Requested';
+  }
+
+  return request.requested_at > lastReviewAt ? 'Review Requested' : null;
 }
 
 function partitionProjectPrs(
@@ -84,7 +149,8 @@ async function getAllProjectPrsData() {
       ...enrichProjectPrs(
         project.id,
         prs,
-        new Map(projectPrUrls.map((url) => [url, [] as LinkedPlanSummary[]]))
+        new Map(projectPrUrls.map((url) => [url, [] as LinkedPlanSummary[]])),
+        username
       )
     );
   }
@@ -271,24 +337,23 @@ export const getProjectPrs = query(projectIdSchema, async ({ projectId }) => {
 
   const { owner, repo } = ownerRepo;
   const prs = getPrStatusesForRepo(db, owner, repo);
+  const username = await getGitHubUsername({ githubUsername: config.githubUsername });
   const linkedPlansByPrUrl = getLinkedPlansByPrUrl(
     db,
     prs.map((pr) => pr.status.pr_url)
   );
-  const enrichedPrs = enrichProjectPrs(Number(projectId), prs, linkedPlansByPrUrl);
+  const enrichedPrs = enrichProjectPrs(Number(projectId), prs, linkedPlansByPrUrl, username);
 
   if (enrichedPrs.length === 0) {
     return {
       authored: [] as EnrichedProjectPr[],
       reviewing: [] as EnrichedProjectPr[],
-      username: null,
+      username,
       hasData: false,
       tokenConfigured,
       webhookConfigured,
     };
   }
-
-  const username = await getGitHubUsername({ githubUsername: config.githubUsername });
 
   return {
     ...partitionCachedProjectPrs(enrichedPrs, username),

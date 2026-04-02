@@ -11,6 +11,7 @@ import {
   recomputeCheckRollupState,
   upsertPrCheckRunByName,
   upsertPrReviewByAuthor,
+  upsertPrReviewRequestByReviewer,
   upsertPrStatusMetadata,
 } from '../../tim/db/pr_status.js';
 
@@ -53,6 +54,7 @@ interface ParsedPullRequestPayload {
     updatedAt: string | null;
     labels: Array<{ name: string; color: string | null }>;
     requestedReviewers: string[];
+    requestedReviewerLogin: string | null;
   };
 }
 
@@ -141,6 +143,15 @@ function parseRequestedReviewers(requestedReviewers: unknown): string[] {
   });
 }
 
+function parseRequestedReviewer(requestedReviewer: unknown): string | null {
+  if (!requestedReviewer || typeof requestedReviewer !== 'object') {
+    return null;
+  }
+
+  const login = (requestedReviewer as { login?: unknown }).login;
+  return typeof login === 'string' ? login : null;
+}
+
 function parsePullRequestPayload(payload: unknown): ParsedPullRequestPayload | null {
   const repository = parseRepository(payload);
   if (!repository || !payload || typeof payload !== 'object') {
@@ -165,6 +176,7 @@ function parsePullRequestPayload(payload: unknown): ParsedPullRequestPayload | n
   const mergedAt = (pullRequest as { merged_at?: unknown }).merged_at;
   const updatedAt = (pullRequest as { updated_at?: unknown }).updated_at;
   const title = (pullRequest as { title?: unknown }).title;
+  const requestedReviewer = (pullRequest as { requested_reviewer?: unknown }).requested_reviewer;
 
   return {
     action:
@@ -199,6 +211,7 @@ function parsePullRequestPayload(payload: unknown): ParsedPullRequestPayload | n
       requestedReviewers: parseRequestedReviewers(
         (pullRequest as { requested_reviewers?: unknown }).requested_reviewers
       ),
+      requestedReviewerLogin: parseRequestedReviewer(requestedReviewer),
     },
   };
 }
@@ -317,6 +330,7 @@ export function handlePullRequestEvent(
       );
       const existing = getPrStatusByRepoAndNumber(db, nextOwner, nextRepo, pullRequest.number);
       const previousHeadSha = existing?.head_sha ?? null;
+      let reviewRequestChanged = false;
       const nextDetail = upsertPrStatusMetadata(db, {
         prUrl,
         owner: nextOwner,
@@ -343,6 +357,23 @@ export function handlePullRequestEvent(
         throw new Error(`Failed to load PR status detail for ${prUrl}`);
       }
 
+      const eventTime = pullRequest.updatedAt ?? getNowIsoString();
+      if (parsed.action === 'review_requested' && pullRequest.requestedReviewerLogin) {
+        reviewRequestChanged =
+          upsertPrReviewRequestByReviewer(db, nextDetail.status.id, {
+            reviewer: pullRequest.requestedReviewerLogin,
+            action: 'requested',
+            eventAt: eventTime,
+          }) || reviewRequestChanged;
+      } else if (parsed.action === 'review_request_removed' && pullRequest.requestedReviewerLogin) {
+        reviewRequestChanged =
+          upsertPrReviewRequestByReviewer(db, nextDetail.status.id, {
+            reviewer: pullRequest.requestedReviewerLogin,
+            action: 'removed',
+            eventAt: eventTime,
+          }) || reviewRequestChanged;
+      }
+
       const headShaChanged =
         nextDetail.changed &&
         previousHeadSha !== null &&
@@ -367,7 +398,7 @@ export function handlePullRequestEvent(
         }
       }
 
-      return { updated: nextDetail.changed, isNewRow: !existing };
+      return { updated: nextDetail.changed || reviewRequestChanged, isNewRow: !existing };
     })
     .immediate(owner, repo);
 

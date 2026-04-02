@@ -11,6 +11,7 @@ import {
   getPrStatusByUrl,
   recomputeCheckRollupState,
   upsertPrCheckRunByName,
+  upsertPrReviewRequestByReviewer,
   upsertPrStatus,
   upsertPrStatusMetadata,
 } from '../../tim/db/pr_status.js';
@@ -81,6 +82,57 @@ describe('common/github/webhook_event_handlers', () => {
         .prepare('SELECT plan_uuid, source FROM plan_pr WHERE pr_status_id = ?')
         .all(detail!.status.id)
     ).toEqual([{ plan_uuid: 'plan-1', source: 'auto' }]);
+  });
+
+  test('handlePullRequestEvent records review request history for requested reviewers', () => {
+    handlePullRequestEvent(db, {
+      action: 'review_requested',
+      repository: { full_name: 'example/repo' },
+      pull_request: {
+        number: 49,
+        title: 'Webhook PR',
+        state: 'open',
+        draft: false,
+        merged_at: null,
+        user: { login: 'alice' },
+        head: { sha: 'sha-49', ref: 'feature/webhook' },
+        base: { ref: 'main' },
+        labels: [],
+        requested_reviewers: [{ login: 'bob' }],
+        requested_reviewer: { login: 'bob' },
+        updated_at: '2026-03-30T12:00:00.000Z',
+      },
+    });
+
+    handlePullRequestEvent(db, {
+      action: 'review_request_removed',
+      repository: { full_name: 'example/repo' },
+      pull_request: {
+        number: 49,
+        title: 'Webhook PR',
+        state: 'open',
+        draft: false,
+        merged_at: null,
+        user: { login: 'alice' },
+        head: { sha: 'sha-49', ref: 'feature/webhook' },
+        base: { ref: 'main' },
+        labels: [],
+        requested_reviewers: [],
+        requested_reviewer: { login: 'bob' },
+        updated_at: '2026-03-30T13:00:00.000Z',
+      },
+    });
+
+    const detail = getPrStatusByUrl(db, 'https://github.com/example/repo/pull/49');
+    expect(detail?.status.requested_reviewers).toBe('[]');
+    expect(detail?.reviewRequests).toEqual([
+      expect.objectContaining({
+        reviewer: 'bob',
+        requested_at: '2026-03-30T12:00:00.000Z',
+        removed_at: '2026-03-30T13:00:00.000Z',
+        last_event_at: '2026-03-30T13:00:00.000Z',
+      }),
+    ]);
   });
 
   test('handlePullRequestEvent returns refresh target for opened PRs', () => {
@@ -319,6 +371,52 @@ describe('common/github/webhook_event_handlers', () => {
       expect.objectContaining({
         author: 'reviewer-3',
         state: 'DISMISSED',
+        submitted_at: '2026-03-30T11:00:00.000Z',
+      }),
+    ]);
+  });
+
+  test('handlePullRequestReviewEvent preserves review request history when reviews arrive later', () => {
+    const created = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/50',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 50,
+      title: 'Existing PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+    upsertPrReviewRequestByReviewer(db, created.status.id, {
+      reviewer: 'reviewer-5',
+      action: 'requested',
+      eventAt: '2026-03-30T10:00:00.000Z',
+    });
+
+    const result = handlePullRequestReviewEvent(db, {
+      repository: { full_name: 'example/repo' },
+      pull_request: { number: 50 },
+      review: {
+        state: 'approved',
+        submitted_at: '2026-03-30T11:00:00.000Z',
+        user: { login: 'reviewer-5' },
+      },
+    });
+
+    const detail = getPrStatusByUrl(db, 'https://github.com/example/repo/pull/50');
+    expect(result.updated).toBe(true);
+    expect(detail?.reviewRequests).toEqual([
+      expect.objectContaining({
+        reviewer: 'reviewer-5',
+        requested_at: '2026-03-30T10:00:00.000Z',
+        removed_at: null,
+        last_event_at: '2026-03-30T10:00:00.000Z',
+      }),
+    ]);
+    expect(detail?.reviews).toEqual([
+      expect.objectContaining({
+        author: 'reviewer-5',
+        state: 'APPROVED',
         submitted_at: '2026-03-30T11:00:00.000Z',
       }),
     ]);

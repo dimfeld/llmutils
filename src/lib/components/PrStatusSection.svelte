@@ -10,6 +10,8 @@
     checksBadgeColor,
     checksLabel,
     labelStyle,
+    reviewDecisionBadgeColor,
+    reviewDecisionLabel,
   } from '$lib/utils/pr_display.js';
   import PrCheckRunList from './PrCheckRunList.svelte';
   import PrReviewList from './PrReviewList.svelte';
@@ -134,20 +136,11 @@
           </span>
           {#if pr.status.review_decision}
             <span
-              class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
-                {pr.status.review_decision === 'APPROVED'
-                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
-                : pr.status.review_decision === 'CHANGES_REQUESTED'
-                  ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
-                  : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'}"
+              class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {reviewDecisionBadgeColor(
+                pr.status.review_decision
+              )}"
             >
-              {pr.status.review_decision === 'APPROVED'
-                ? 'Approved'
-                : pr.status.review_decision === 'CHANGES_REQUESTED'
-                  ? 'Changes Requested'
-                  : pr.status.review_decision === 'REVIEW_REQUIRED'
-                    ? 'Review Required'
-                    : pr.status.review_decision}
+              {reviewDecisionLabel(pr.status.review_decision)}
             </span>
           {/if}
           {#if pr.status.mergeable === 'CONFLICTING'}

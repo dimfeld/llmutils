@@ -47,6 +47,15 @@ export interface PrReviewRow {
   submitted_at: string | null;
 }
 
+export interface PrReviewRequestRow {
+  id: number;
+  pr_status_id: number;
+  reviewer: string;
+  requested_at: string | null;
+  removed_at: string | null;
+  last_event_at: string;
+}
+
 export interface PrLabelRow {
   id: number;
   pr_status_id: number;
@@ -76,6 +85,12 @@ export interface StoredPrReviewInput {
   author: string;
   state: string;
   submittedAt?: string | null;
+}
+
+export interface StoredPrReviewRequestInput {
+  reviewer: string;
+  action: 'requested' | 'removed';
+  eventAt: string;
 }
 
 export interface StoredPrLabelInput {
@@ -114,6 +129,7 @@ export interface PrStatusDetail {
   status: PrStatusRow;
   checks: PrCheckRunRow[];
   reviews: PrReviewRow[];
+  reviewRequests: PrReviewRequestRow[];
   labels: PrLabelRow[];
 }
 
@@ -257,6 +273,16 @@ function getDetailById(db: Database, prStatusId: number): PrStatusDetail | null 
       `
     )
     .all(prStatusId) as PrReviewRow[];
+  const reviewRequests = db
+    .prepare(
+      `
+        SELECT *
+        FROM pr_review_request
+        WHERE pr_status_id = ?
+        ORDER BY reviewer, id
+      `
+    )
+    .all(prStatusId) as PrReviewRequestRow[];
   const labels = db
     .prepare(
       `
@@ -272,6 +298,7 @@ function getDetailById(db: Database, prStatusId: number): PrStatusDetail | null 
     status,
     checks,
     reviews,
+    reviewRequests,
     labels,
   };
 }
@@ -677,6 +704,51 @@ export function upsertPrReviewByAuthor(
     `
     )
     .run(prStatusId, input.author, input.state, input.submittedAt ?? null);
+
+  return result.changes > 0;
+}
+
+export function upsertPrReviewRequestByReviewer(
+  db: Database,
+  prStatusId: number,
+  input: StoredPrReviewRequestInput
+): boolean {
+  const result = db
+    .prepare(
+      `
+      INSERT INTO pr_review_request (
+        pr_status_id,
+        reviewer,
+        last_event_at,
+        requested_at,
+        removed_at
+      ) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(pr_status_id, reviewer) DO UPDATE SET
+        requested_at = CASE
+          WHEN excluded.last_event_at >= pr_review_request.last_event_at AND excluded.requested_at IS NOT NULL
+            THEN excluded.requested_at
+          ELSE pr_review_request.requested_at
+        END,
+        removed_at = CASE
+          WHEN excluded.last_event_at >= pr_review_request.last_event_at AND excluded.removed_at IS NOT NULL
+            THEN excluded.removed_at
+          ELSE pr_review_request.removed_at
+        END,
+        last_event_at = CASE
+          WHEN excluded.last_event_at >= pr_review_request.last_event_at
+            THEN excluded.last_event_at
+          ELSE pr_review_request.last_event_at
+        END
+      WHERE excluded.last_event_at >= pr_review_request.last_event_at
+    `
+    )
+    .run(
+      prStatusId,
+      input.reviewer,
+      input.eventAt,
+      input.action === 'requested' ? input.eventAt : null,
+      input.action === 'removed' ? input.eventAt : null
+    );
 
   return result.changes > 0;
 }

@@ -12,8 +12,10 @@ function createPr(prNumber: number, title: string) {
       head_branch: `feature/${prNumber}`,
     },
     linkedPlans: [],
+    currentUserReviewRequestLabel: null,
     checks: [],
     reviews: [],
+    reviewRequests: [],
     labels: [],
   };
 }

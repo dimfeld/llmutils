@@ -84,6 +84,7 @@ function makePrDetail(
     status?: Partial<PrStatusRow>;
     checks?: PrCheckRunRow[];
     reviews?: PrReviewRow[];
+    reviewRequests?: PrStatusDetail['reviewRequests'];
     labels?: PrLabelRow[];
   } = {}
 ): PrStatusDetail {
@@ -91,6 +92,7 @@ function makePrDetail(
     status: makePrStatus(overrides.status),
     checks: overrides.checks ?? [],
     reviews: overrides.reviews ?? [],
+    reviewRequests: overrides.reviewRequests ?? [],
     labels: overrides.labels ?? [],
   };
 }

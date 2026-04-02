@@ -56,6 +56,12 @@
         >
           {stateLabel(pr.status.state, pr.status.draft)}
         </span>
+      {:else if pr.currentUserReviewRequestLabel}
+        <span
+          class="inline-flex items-center rounded-full bg-yellow-100 px-1.5 py-0.5 text-xs leading-none font-medium text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
+        >
+          {pr.currentUserReviewRequestLabel}
+        </span>
       {:else if pr.status.review_decision}
         <span
           class="inline-flex items-center rounded-full px-1.5 py-0.5 text-xs leading-none font-medium {reviewDecisionBadgeColor(

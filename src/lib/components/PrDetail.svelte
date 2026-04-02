@@ -56,7 +56,13 @@
     >
       {checksLabel(pr.status.check_rollup_state)}
     </span>
-    {#if pr.status.review_decision}
+    {#if pr.currentUserReviewRequestLabel}
+      <span
+        class="inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
+      >
+        {pr.currentUserReviewRequestLabel}
+      </span>
+    {:else if pr.status.review_decision}
       <span
         class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {reviewDecisionBadgeColor(
           pr.status.review_decision

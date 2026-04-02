@@ -326,7 +326,7 @@ describe('tim db/database', () => {
         []
       >('SELECT version, import_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(15);
+    expect(version?.version).toBe(14);
     expect(version?.import_completed).toBe(1);
 
     const tables = db
@@ -350,6 +350,7 @@ describe('tim db/database', () => {
     expect(tables).toContain('pr_status');
     expect(tables).toContain('pr_check_run');
     expect(tables).toContain('pr_review');
+    expect(tables).toContain('pr_review_request');
     expect(tables).toContain('pr_label');
     expect(tables).toContain('plan_pr');
     expect(tables).toContain('webhook_log');
@@ -383,6 +384,8 @@ describe('tim db/database', () => {
     expect(indices).toContain('idx_webhook_log_repo_id');
     expect(indices).toContain('idx_pr_check_run_unique');
     expect(indices).toContain('idx_pr_review_unique');
+    expect(indices).toContain('idx_pr_review_request_unique');
+    expect(indices).toContain('idx_pr_review_request_pr_status_id');
 
     db.close(false);
   });
@@ -400,7 +403,7 @@ describe('tim db/database', () => {
         []
       >('SELECT version, import_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(15);
+    expect(version?.version).toBe(14);
     expect(version?.import_completed).toBe(1);
     const versionRowCount = db2
       .query<{ count: number }, []>('SELECT count(*) as count FROM schema_version')
@@ -531,7 +534,7 @@ describe('tim db/database', () => {
       const schemaVersion = db
         .query<{ version: number }, []>('SELECT version FROM schema_version')
         .get();
-      expect(schemaVersion?.version).toBe(15);
+      expect(schemaVersion?.version).toBe(14);
 
       const planColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('plan')")
@@ -570,7 +573,7 @@ describe('tim db/database', () => {
     }
   });
 
-  test('runMigrations upgrades schema version 12 to 15, deduping PR child rows and seeding webhook cursor', () => {
+  test('runMigrations upgrades schema version 12 to 14, deduping PR child rows and seeding webhook cursor', () => {
     const dbPath = path.join(tempDir, DATABASE_FILENAME);
     const db = new Database(dbPath);
 
@@ -648,7 +651,7 @@ describe('tim db/database', () => {
           []
         >('SELECT version FROM schema_version ORDER BY rowid DESC LIMIT 1')
         .get();
-      expect(schemaVersion?.version).toBe(15);
+      expect(schemaVersion?.version).toBe(14);
 
       const checkRows = db
         .query<
@@ -710,6 +713,12 @@ describe('tim db/database', () => {
         .all()
         .map((row) => row.name);
       expect(prStatusColumns).toContain('pr_updated_at');
+      expect(
+        db
+          .query<{ name: string }, []>("PRAGMA table_info('pr_review_request')")
+          .all()
+          .map((row) => row.name)
+      ).toEqual(['id', 'pr_status_id', 'reviewer', 'last_event_at', 'requested_at', 'removed_at']);
 
       const checkRunIndexColumns = db
         .query<{ name: string }, []>("PRAGMA index_info('idx_pr_check_run_unique')")
