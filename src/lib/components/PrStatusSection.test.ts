@@ -11,9 +11,12 @@ import type {
 import PrStatusSection from './PrStatusSection.svelte';
 
 const mockGetPrStatus = vi.fn();
+const mockRefreshPrStatus = vi.fn();
+const mockFullRefreshPrStatus = vi.fn();
 vi.mock('$lib/remote/pr_status.remote.js', () => ({
   getPrStatus: (...args: unknown[]) => mockGetPrStatus(...args),
-  refreshPrStatus: vi.fn().mockResolvedValue({ error: undefined }),
+  refreshPrStatus: (...args: unknown[]) => mockRefreshPrStatus(...args),
+  fullRefreshPrStatus: (...args: unknown[]) => mockFullRefreshPrStatus(...args),
 }));
 
 function makePrStatus(overrides: Partial<PrStatusRow> = {}): PrStatusRow {
@@ -103,6 +106,7 @@ async function renderSection(props: {
       prUrls: props.prUrls,
       invalidPrUrls: props.invalidPrUrls ?? [],
       prStatuses: props.prStatuses,
+      tokenConfigured: true,
     })
   );
 
@@ -114,6 +118,38 @@ async function renderSection(props: {
 }
 
 describe('PrStatusSection', () => {
+  test('renders refresh and full-refresh controls', async () => {
+    mockRefreshPrStatus.mockResolvedValue({ error: undefined });
+    mockFullRefreshPrStatus.mockResolvedValue({ error: undefined });
+
+    const { body } = await renderSection({ prUrls: [], prStatuses: [] });
+
+    expect(body).toContain('aria-label="Refresh PR status"');
+    expect(body).toContain('aria-label="Fully refresh PR status from GitHub"');
+    expect(body).toContain('Full Refresh');
+  });
+
+  test('hides the full-refresh control when no GitHub token is configured', async () => {
+    mockGetPrStatus.mockReturnValue(
+      Promise.resolve({
+        prUrls: [],
+        invalidPrUrls: [],
+        prStatuses: [],
+        tokenConfigured: false,
+      })
+    );
+
+    const { body } = await render(PrStatusSection, {
+      props: {
+        planUuid: 'plan-uuid-1',
+      },
+    });
+
+    expect(body).toContain('aria-label="Refresh PR status"');
+    expect(body).not.toContain('aria-label="Fully refresh PR status from GitHub"');
+    expect(body).not.toContain('Full Refresh');
+  });
+
   test('renders "Pull Requests" heading', async () => {
     const { body } = await renderSection({ prUrls: [], prStatuses: [] });
     expect(body).toContain('Pull Requests');
@@ -373,6 +409,24 @@ describe('PrStatusSection', () => {
     expect(body).toContain('Known PR');
     // Uncached PR shows raw URL
     expect(body).toContain(uncachedUrl);
+  });
+
+  test('renders webhook-only PR statuses even when the plan has no explicit pull_request URLs', async () => {
+    const detail = makePrDetail({
+      status: {
+        pr_url: 'https://github.com/owner/repo/pull/77',
+        pr_number: 77,
+        title: 'Webhook PR',
+      },
+    });
+
+    const { body } = await renderSection({
+      prUrls: [],
+      prStatuses: [detail],
+    });
+
+    expect(body).toContain('#77');
+    expect(body).toContain('Webhook PR');
   });
 
   test('does not render check runs section when there are no checks', async () => {

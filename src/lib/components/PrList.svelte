@@ -1,6 +1,5 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { page } from '$app/state';
   import type { EnrichedProjectPr } from '$lib/remote/project_prs.remote.js';
   import {
     isListNavEvent,
@@ -12,11 +11,13 @@
   let {
     authored,
     reviewing,
+    username,
     projectId,
     selectedPrNumber,
   }: {
     authored: EnrichedProjectPr[];
     reviewing: EnrichedProjectPr[];
+    username: string | null;
     projectId: string;
     selectedPrNumber: number | null;
   } = $props();
@@ -90,7 +91,7 @@
         <div
           class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold tracking-wide text-muted-foreground uppercase"
         >
-          My PRs
+          {username ? 'My PRs' : 'All Pull Requests'}
           <span class="font-normal text-muted-foreground/70">({filteredAuthored.length})</span>
         </div>
         <div class="space-y-0.5 px-2 pb-2">

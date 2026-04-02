@@ -138,6 +138,10 @@ export function parseOwnerRepoFromRepositoryId(
   return { owner, repo };
 }
 
+export function constructGitHubRepositoryId(owner: string, repo: string): string {
+  return `github.com__${owner}__${repo}`;
+}
+
 export function partitionUserRelevantOpenPrs(
   prs: OpenPullRequestWithRequestedReviewers[],
   username: string

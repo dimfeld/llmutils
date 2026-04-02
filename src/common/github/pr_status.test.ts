@@ -97,6 +97,7 @@ describe('common/github/pr_status', () => {
     expect(result).toEqual({
       author: null,
       number: 42,
+      author: null,
       title: 'Add PR status monitoring',
       state: 'open',
       isDraft: false,
@@ -850,5 +851,28 @@ describe('common/github/pr_status', () => {
     await expect(fetchPrFullStatus('owner', 'repo', 99)).rejects.toThrow(
       'Pull request owner/repo#99 not found'
     );
+  });
+
+  test('fetchPrMergeableAndReviewDecision normalizes targeted fields', async () => {
+    const graphql = mock(async () => ({
+      repository: {
+        pullRequest: {
+          mergeable: 'CONFLICTING',
+          reviewDecision: 'CHANGES_REQUESTED',
+        },
+      },
+    }));
+
+    await moduleMocker.mock('./octokit.js', () => ({
+      getOctokit: () => ({
+        graphql,
+      }),
+    }));
+
+    const { fetchPrMergeableAndReviewDecision } = await import('./pr_status.ts');
+    await expect(fetchPrMergeableAndReviewDecision('owner', 'repo', 77)).resolves.toEqual({
+      mergeable: 'CONFLICTING',
+      reviewDecision: 'CHANGES_REQUESTED',
+    });
   });
 });

@@ -804,4 +804,87 @@ describe('common/github/pr_status_service', () => {
     expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/216')).toBeNull();
     expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/217')).toBeNull();
   });
+
+  test('syncPlanPrLinks only removes explicit links and preserves auto-linked rows', async () => {
+    const explicitDetail = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/230',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 230,
+      title: 'Explicit PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: new Date().toISOString(),
+    });
+    const autoDetail = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/231',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 231,
+      title: 'Auto PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: new Date().toISOString(),
+    });
+
+    db.prepare(
+      "INSERT INTO plan_pr (plan_uuid, pr_status_id, source) VALUES (?, ?, 'explicit')"
+    ).run('plan-service', explicitDetail.status.id);
+    db.prepare("INSERT INTO plan_pr (plan_uuid, pr_status_id, source) VALUES (?, ?, 'auto')").run(
+      'plan-service',
+      autoDetail.status.id
+    );
+
+    await moduleMocker.mock('./identifiers.ts', () =>
+      makeIdentifiersMock(async () => ({ owner: 'example', repo: 'repo', number: 230 }))
+    );
+    await moduleMocker.mock('./pr_status.ts', () => ({
+      fetchPrFullStatus: mock(),
+      fetchPrCheckStatus: mock(),
+    }));
+
+    const { syncPlanPrLinks } = await import('./pr_status_service.ts');
+    await syncPlanPrLinks(db, 'plan-service', []);
+
+    expect(getPrStatusForPlan(db, 'plan-service').map((detail) => detail.status.pr_url)).toEqual([
+      'https://github.com/example/repo/pull/231',
+    ]);
+  });
+  test('fetchAndUpdatePrMergeableStatus updates targeted fields for an existing PR row', async () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/301',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 301,
+      title: 'Webhook-created PR',
+      state: 'open',
+      draft: false,
+      mergeable: null,
+      reviewDecision: null,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      checks: [{ name: 'existing-check', source: 'check_run', status: 'pending' }],
+      reviews: [{ author: 'alice', state: 'COMMENTED', submittedAt: '2026-03-20T00:10:00.000Z' }],
+    });
+
+    const fetchPrMergeableAndReviewDecision = mock(async () => ({
+      mergeable: 'MERGEABLE' as const,
+      reviewDecision: 'APPROVED' as const,
+    }));
+
+    await moduleMocker.mock('./pr_status.ts', () => ({
+      fetchPrFullStatus: mock(),
+      fetchPrCheckStatus: mock(),
+      fetchPrMergeableAndReviewDecision,
+    }));
+
+    const { fetchAndUpdatePrMergeableStatus } = await import('./pr_status_service.ts');
+    await fetchAndUpdatePrMergeableStatus(db, 'example', 'repo', 301);
+
+    const detail = getPrStatusByUrl(db, 'https://github.com/example/repo/pull/301');
+    expect(fetchPrMergeableAndReviewDecision).toHaveBeenCalledWith('example', 'repo', 301);
+    expect(detail?.status.mergeable).toBe('MERGEABLE');
+    expect(detail?.status.review_decision).toBe('APPROVED');
+    expect(detail?.checks.map((check) => check.name)).toEqual(['existing-check']);
+    expect(detail?.reviews.map((review) => review.author)).toEqual(['alice']);
+  });
 });

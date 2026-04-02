@@ -218,7 +218,7 @@ export async function refreshProjectPrs(
     // Auto-link PRs to plans based on branch name matching
     const branchMatches = getProjectPlanBranchMatches(db, projectId);
     const existingLinkQuery = db.prepare(
-      'SELECT 1 FROM plan_pr WHERE plan_uuid = ? AND pr_status_id = ?'
+      "SELECT 1 FROM plan_pr WHERE plan_uuid = ? AND pr_status_id = ? AND source = 'auto'"
     );
     const newLinks: ProjectPrLink[] = [];
 
@@ -242,7 +242,7 @@ export async function refreshProjectPrs(
           continue;
         }
 
-        linkPlanToPr(db, match.planUuid, detail.status.id);
+        linkPlanToPr(db, match.planUuid, detail.status.id, 'auto');
         newLinks.push({
           prUrl: detail.status.pr_url,
           planId: match.planId,

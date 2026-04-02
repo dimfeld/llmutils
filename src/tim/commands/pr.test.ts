@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { beforeAll, afterAll, beforeEach, describe, expect, vi, test } from 'vitest';
 
 import { clearGitHubTokenCache } from '../../common/github/token.js';
+import { handlePrStatusCommand, handlePrLinkCommand, handlePrUnlinkCommand } from './pr.js';
 
 type AnyObject = Record<string, unknown>;
 
@@ -28,7 +29,22 @@ vi.mock('../db/database.js', () => ({
 
 vi.mock('../../common/github/pr_status_service.js', () => ({
   refreshPrStatus: vi.fn(async (..._args: unknown[]) => ({})),
+  ensurePrStatusFresh: vi.fn(async (..._args: unknown[]) => ({})),
   syncPlanPrLinks: vi.fn(async (..._args: unknown[]) => []),
+}));
+
+vi.mock('../../common/github/webhook_client.js', () => ({
+  getWebhookServerUrl: vi.fn(() => null),
+}));
+
+vi.mock('../../common/github/webhook_ingest.js', () => ({
+  ingestWebhookEvents: vi.fn(async (..._args: unknown[]) => ({
+    eventsIngested: 0,
+    prsUpdated: [],
+    errors: [],
+  })),
+  formatWebhookIngestErrors: (errors: string[]) =>
+    errors.length > 0 ? `Webhook ingestion had issues: ${errors.join('; ')}` : undefined,
 }));
 
 vi.mock('../../common/github/pull_requests.js', () => ({
@@ -44,6 +60,7 @@ vi.mock('../../common/github/identifiers.js', () => ({
 
 vi.mock('../db/pr_status.js', () => ({
   getPrStatusByUrl: vi.fn((_db: unknown, _prUrl: string) => null),
+  getPrStatusForPlan: vi.fn((_db: unknown, _planUuid: string, _prUrls?: string[]) => []),
   linkPlanToPr: vi.fn((_db: unknown, _planUuid: string, _prStatusId: number) => {}),
   unlinkPlanFromPr: vi.fn((_db: unknown, _planUuid: string, _prStatusId: number) => {}),
   cleanOrphanedPrStatus: vi.fn((_db: unknown) => {}),
@@ -68,8 +85,11 @@ import { getWorkspaceInfoByPath as mockGetWorkspaceInfoByPathFn } from '../works
 import { getDatabase as mockGetDatabaseFn } from '../db/database.js';
 import {
   refreshPrStatus as mockRefreshPrStatusFn,
+  ensurePrStatusFresh as mockEnsurePrStatusFreshFn,
   syncPlanPrLinks as mockSyncPlanPrLinksFn,
 } from '../../common/github/pr_status_service.js';
+import { getWebhookServerUrl as mockGetWebhookServerUrlFn } from '../../common/github/webhook_client.js';
+import { ingestWebhookEvents as mockIngestWebhookEventsFn } from '../../common/github/webhook_ingest.js';
 import { fetchOpenPullRequests as mockFetchOpenPullRequestsFn } from '../../common/github/pull_requests.js';
 import {
   canonicalizePrUrl as mockCanonicalizePrUrlFn,
@@ -78,6 +98,7 @@ import {
 } from '../../common/github/identifiers.js';
 import {
   getPrStatusByUrl as mockGetPrStatusByUrlFn,
+  getPrStatusForPlan as mockGetPrStatusForPlanFn,
   linkPlanToPr as mockLinkPlanToPrFn,
   unlinkPlanFromPr as mockUnlinkPlanFromPrFn,
   cleanOrphanedPrStatus as mockCleanOrphanedPrStatusFn,
@@ -94,11 +115,15 @@ const mockResolvePlan = vi.mocked(mockResolvePlanFn);
 const mockGetWorkspaceInfoByPath = vi.mocked(mockGetWorkspaceInfoByPathFn);
 const mockGetDatabase = vi.mocked(mockGetDatabaseFn);
 const mockRefreshPrStatus = vi.mocked(mockRefreshPrStatusFn);
+const mockEnsurePrStatusFresh = vi.mocked(mockEnsurePrStatusFreshFn);
 const mockSyncPlanPrLinks = vi.mocked(mockSyncPlanPrLinksFn);
+const mockGetWebhookServerUrl = vi.mocked(mockGetWebhookServerUrlFn);
+const mockIngestWebhookEvents = vi.mocked(mockIngestWebhookEventsFn);
 const mockCanonicalizePrUrl = vi.mocked(mockCanonicalizePrUrlFn);
 const mockParsePrOrIssueNumber = vi.mocked(mockParsePrOrIssueNumberFn);
 const mockValidatePrIdentifier = vi.mocked(mockValidatePrIdentifierFn);
 const mockGetPrStatusByUrl = vi.mocked(mockGetPrStatusByUrlFn);
+const mockGetPrStatusForPlan = vi.mocked(mockGetPrStatusForPlanFn);
 const mockLinkPlanToPr = vi.mocked(mockLinkPlanToPrFn);
 const mockUnlinkPlanFromPr = vi.mocked(mockUnlinkPlanFromPrFn);
 const mockCleanOrphanedPrStatus = vi.mocked(mockCleanOrphanedPrStatusFn);
@@ -117,11 +142,13 @@ let currentRefreshedStatuses: Map<string, AnyObject>;
 let currentSyncedStatuses: AnyObject[];
 let currentParsedIdentifier: AnyObject | null;
 let currentCachedDetail: AnyObject | null;
+let currentAutoLinkedDetails: AnyObject[];
 let currentPersistedPlan: AnyObject;
-import { handlePrStatusCommand, handlePrLinkCommand, handlePrUnlinkCommand } from './pr.js';
 
 const handlePrCommand = { handlePrStatusCommand, handlePrLinkCommand, handlePrUnlinkCommand };
 
+let currentWebhookServerUrl: string | null;
+let prModule: typeof import('./pr.js');
 let tempDir: string;
 let originalCwd: string;
 
@@ -130,6 +157,7 @@ describe('tim/commands/pr', () => {
     originalCwd = process.cwd();
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-pr-command-test-'));
     tempDir = await fs.realpath(tempDir);
+    prModule = await import('./pr.js');
   });
 
   afterAll(async () => {
@@ -155,12 +183,36 @@ describe('tim/commands/pr', () => {
     currentSyncedStatuses = [];
     currentParsedIdentifier = null;
     currentCachedDetail = null;
+    currentAutoLinkedDetails = [];
+    currentWebhookServerUrl = null;
     currentPersistedPlan = {
       ...currentPlan,
       pullRequest: [],
     };
     process.env.GITHUB_TOKEN = 'test-token';
 
+    mockLog.mockClear();
+    mockResolvePlan.mockClear();
+    mockGetWorkspaceInfoByPath.mockClear();
+    mockGetDatabase.mockClear();
+    mockRefreshPrStatus.mockClear();
+    mockEnsurePrStatusFresh.mockClear();
+    mockSyncPlanPrLinks.mockClear();
+    mockGetWebhookServerUrl.mockClear();
+    mockIngestWebhookEvents.mockClear();
+    mockCanonicalizePrUrl.mockClear();
+    mockParsePrOrIssueNumber.mockClear();
+    mockValidatePrIdentifier.mockClear();
+    mockGetPrStatusByUrl.mockClear();
+    mockGetPrStatusForPlan.mockClear();
+    mockLinkPlanToPr.mockClear();
+    mockUnlinkPlanFromPr.mockClear();
+    mockCleanOrphanedPrStatus.mockClear();
+    mockFetchOpenPullRequests.mockClear();
+    mockReadPlanFile.mockClear();
+    mockResolvePlanFromDb.mockClear();
+    mockWritePlanFile.mockClear();
+    mockSyncPlanToDb.mockClear();
     mockLog.mockImplementation((...args: unknown[]) => {
       logs.push(args.join(' '));
     });
@@ -177,7 +229,20 @@ describe('tim/commands/pr', () => {
       }
       return detail;
     });
+    mockEnsurePrStatusFresh.mockImplementation(async (_db: unknown, prUrl: string) => {
+      const detail = currentRefreshedStatuses.get(prUrl);
+      if (!detail) {
+        throw new Error(`Unexpected PR URL in test: ${prUrl}`);
+      }
+      return detail;
+    });
     mockSyncPlanPrLinks.mockImplementation(async () => currentSyncedStatuses);
+    mockGetWebhookServerUrl.mockImplementation(() => currentWebhookServerUrl);
+    mockIngestWebhookEvents.mockImplementation(async () => ({
+      eventsIngested: 0,
+      prsUpdated: [],
+      errors: [],
+    }));
     mockCanonicalizePrUrl.mockImplementation((identifier: string) => {
       // Mimic real canonicalizePrUrl: reject non-PR GitHub URLs
       try {
@@ -202,7 +267,12 @@ describe('tim/commands/pr', () => {
     });
     mockParsePrOrIssueNumber.mockImplementation(async () => currentParsedIdentifier);
     mockValidatePrIdentifier.mockImplementation(() => {});
-    mockGetPrStatusByUrl.mockImplementation(() => currentCachedDetail);
+    mockGetPrStatusByUrl.mockImplementation((_db: unknown, prUrl: string) => {
+      // Check per-URL map first, then fall back to single cached detail
+      const fromMap = currentRefreshedStatuses.get(prUrl);
+      return fromMap ?? currentCachedDetail;
+    });
+    mockGetPrStatusForPlan.mockImplementation(() => currentAutoLinkedDetails);
     mockLinkPlanToPr.mockImplementation(() => {});
     mockUnlinkPlanFromPr.mockImplementation(() => {});
     mockCleanOrphanedPrStatus.mockImplementation(() => {});
@@ -286,6 +356,58 @@ describe('tim/commands/pr', () => {
     expect(logs).toContain('Plan 248 has no linked pull requests and no branch to look up.');
   });
 
+  test('status uses webhook auto-linked PRs from the plan_pr junction when the plan file has none', async () => {
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+    currentPlan.pullRequest = [];
+    currentAutoLinkedDetails = [createPrDetail(605, 'Auto-linked PR', 'success')];
+    currentRefreshedStatuses.set(
+      'https://github.com/example/repo/pull/605',
+      createPrDetail(605, 'Auto-linked PR', 'success')
+    );
+
+    await prModule.handlePrStatusCommand('248', {}, createNestedCommand());
+
+    expect(mockGetPrStatusForPlan).toHaveBeenCalledWith(dbHandle, 'plan-248', []);
+    expect(mockGetPrStatusByUrl).toHaveBeenCalledWith(
+      dbHandle,
+      'https://github.com/example/repo/pull/605'
+    );
+    expect(mockSyncPlanPrLinks).toHaveBeenCalledWith(dbHandle, 'plan-248', []);
+    expect(mockEnsurePrStatusFresh).not.toHaveBeenCalled();
+    expect(logs.some((line) => line.includes('example/repo#605: Auto-linked PR'))).toBe(true);
+  });
+
+  test('status refreshes explicit and auto-linked PRs together in webhook mode while syncing only explicit links', async () => {
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+    currentPlan.pullRequest = ['https://github.com/example/repo/pull/611'];
+    currentAutoLinkedDetails = [createPrDetail(612, 'Auto-linked PR', 'success')];
+    currentRefreshedStatuses.set(
+      'https://github.com/example/repo/pull/611',
+      createPrDetail(611, 'Explicit PR', 'success')
+    );
+    currentRefreshedStatuses.set(
+      'https://github.com/example/repo/pull/612',
+      createPrDetail(612, 'Auto-linked PR', 'success')
+    );
+
+    await prModule.handlePrStatusCommand('248', {}, createNestedCommand());
+
+    expect(mockGetPrStatusForPlan).toHaveBeenCalledWith(dbHandle, 'plan-248', []);
+    expect(mockGetPrStatusByUrl).toHaveBeenCalledWith(
+      dbHandle,
+      'https://github.com/example/repo/pull/611'
+    );
+    expect(mockGetPrStatusByUrl).toHaveBeenCalledWith(
+      dbHandle,
+      'https://github.com/example/repo/pull/612'
+    );
+    expect(mockSyncPlanPrLinks).toHaveBeenCalledWith(dbHandle, 'plan-248', [
+      'https://github.com/example/repo/pull/611',
+    ]);
+    expect(logs.some((line) => line.includes('example/repo#611: Explicit PR'))).toBe(true);
+    expect(logs.some((line) => line.includes('example/repo#612: Auto-linked PR'))).toBe(true);
+  });
+
   test('status logs passing, failing, and pending PR states', async () => {
     currentPlan.pullRequest = [
       'https://github.com/example/repo/pull/401',
@@ -308,6 +430,195 @@ describe('tim/commands/pr', () => {
     expect(logs.some((line) => line.includes('Merge readiness: failing checks'))).toBe(true);
     expect(logs.some((line) => line.includes('example/repo#403: Pending PR'))).toBe(true);
     expect(logs.some((line) => line.includes('Merge readiness: checks pending'))).toBe(true);
+  });
+
+  test('status uses webhook ingestion and cached data when configured', async () => {
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+    currentPlan.pullRequest = ['https://github.com/example/repo/pull/601'];
+    currentRefreshedStatuses.set(
+      'https://github.com/example/repo/pull/601',
+      createPrDetail(601, 'Webhook PR', 'success')
+    );
+
+    await prModule.handlePrStatusCommand('248', {}, createNestedCommand());
+
+    expect(mockIngestWebhookEvents).toHaveBeenCalledWith(dbHandle);
+    expect(mockGetPrStatusByUrl).toHaveBeenCalledWith(
+      dbHandle,
+      'https://github.com/example/repo/pull/601'
+    );
+    expect(mockEnsurePrStatusFresh).not.toHaveBeenCalled();
+    expect(mockRefreshPrStatus).not.toHaveBeenCalled();
+  });
+
+  test('status logs webhook ingestion warnings when the ingest result contains errors', async () => {
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+    currentPlan.pullRequest = ['https://github.com/example/repo/pull/601'];
+    currentRefreshedStatuses.set(
+      'https://github.com/example/repo/pull/601',
+      createPrDetail(601, 'Webhook PR', 'success')
+    );
+    mockIngestWebhookEvents.mockImplementation(async () => ({
+      eventsIngested: 1,
+      prsUpdated: [],
+      errors: ['follow-up refresh failed'],
+    }));
+
+    await prModule.handlePrStatusCommand('248', {}, createNestedCommand());
+
+    expect(
+      logs.some((line) => line.includes('Webhook ingestion had issues: follow-up refresh failed'))
+    ).toBe(true);
+  });
+
+  test('status keeps webhook mode API-free during junction sync even when GITHUB_TOKEN is set', async () => {
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+    currentPlan.pullRequest = [
+      'https://github.com/example/repo/pull/611',
+      'https://github.com/example/repo/pull/612',
+    ];
+    currentRefreshedStatuses.set(
+      'https://github.com/example/repo/pull/611',
+      createPrDetail(611, 'Cached PR', 'success')
+    );
+
+    await prModule.handlePrStatusCommand('248', {}, createNestedCommand());
+
+    expect(mockSyncPlanPrLinks).toHaveBeenCalledWith(dbHandle, 'plan-248', [
+      'https://github.com/example/repo/pull/611',
+    ]);
+    expect(mockRefreshPrStatus).not.toHaveBeenCalled();
+    expect(mockEnsurePrStatusFresh).not.toHaveBeenCalled();
+  });
+
+  test('status uses cached webhook data without requiring GITHUB_TOKEN', async () => {
+    delete process.env.GITHUB_TOKEN;
+    clearGitHubTokenCache();
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+    currentPlan.pullRequest = ['https://github.com/example/repo/pull/603'];
+    currentCachedDetail = createPrDetail(603, 'Cached Webhook PR', 'success');
+
+    await prModule.handlePrStatusCommand('248', {}, createNestedCommand());
+
+    expect(mockIngestWebhookEvents).toHaveBeenCalledWith(dbHandle);
+    expect(mockGetPrStatusByUrl).toHaveBeenCalledWith(
+      dbHandle,
+      'https://github.com/example/repo/pull/603'
+    );
+    expect(mockEnsurePrStatusFresh).not.toHaveBeenCalled();
+    expect(mockRefreshPrStatus).not.toHaveBeenCalled();
+    expect(mockSyncPlanPrLinks).toHaveBeenCalledWith(dbHandle, 'plan-248', [
+      'https://github.com/example/repo/pull/603',
+    ]);
+    expect(logs.some((line) => line.includes('example/repo#603: Cached Webhook PR'))).toBe(true);
+  });
+
+  test('status webhook mode prunes stale explicit junction rows when the plan has no explicit PRs', async () => {
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+    currentPlan.pullRequest = [];
+    currentAutoLinkedDetails = [createPrDetail(710, 'Auto-linked Only PR', 'success')];
+    currentRefreshedStatuses.set(
+      'https://github.com/example/repo/pull/710',
+      createPrDetail(710, 'Auto-linked Only PR', 'success')
+    );
+
+    await prModule.handlePrStatusCommand('248', {}, createNestedCommand());
+
+    expect(mockSyncPlanPrLinks).toHaveBeenCalledWith(dbHandle, 'plan-248', []);
+    expect(mockGetPrStatusForPlan).toHaveBeenCalledWith(dbHandle, 'plan-248', []);
+    expect(mockCleanOrphanedPrStatus).toHaveBeenCalledWith(dbHandle);
+  });
+
+  test('status reports missing cached webhook data when no token is available', async () => {
+    delete process.env.GITHUB_TOKEN;
+    clearGitHubTokenCache();
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+    currentPlan.pullRequest = ['https://github.com/example/repo/pull/604'];
+    currentCachedDetail = null;
+
+    await expect(prModule.handlePrStatusCommand('248', {}, createNestedCommand())).rejects.toThrow(
+      'Failed to fetch status for all linked pull requests'
+    );
+
+    expect(mockGetPrStatusByUrl).toHaveBeenCalledWith(
+      dbHandle,
+      'https://github.com/example/repo/pull/604'
+    );
+    expect(
+      logs.some((line) =>
+        line.includes(
+          'Failed to fetch status for https://github.com/example/repo/pull/604: No cached data available'
+        )
+      )
+    ).toBe(true);
+  });
+
+  test('status force-refresh bypasses webhook ingestion even when configured', async () => {
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+    currentPlan.pullRequest = ['https://github.com/example/repo/pull/602'];
+    currentRefreshedStatuses.set(
+      'https://github.com/example/repo/pull/602',
+      createPrDetail(602, 'Force Refresh PR', 'success')
+    );
+
+    await prModule.handlePrStatusCommand('248', { forceRefresh: true }, createNestedCommand());
+
+    expect(mockIngestWebhookEvents).not.toHaveBeenCalled();
+    expect(mockEnsurePrStatusFresh).not.toHaveBeenCalled();
+    expect(mockRefreshPrStatus).toHaveBeenCalledWith(
+      dbHandle,
+      'https://github.com/example/repo/pull/602'
+    );
+  });
+
+  test('status force-refresh uses auto-linked junction PRs when the plan has no explicit pull requests', async () => {
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+    currentPlan.pullRequest = [];
+    currentAutoLinkedDetails = [createPrDetail(605, 'Webhook Auto-linked PR', 'success')];
+    currentRefreshedStatuses.set(
+      'https://github.com/example/repo/pull/605',
+      createPrDetail(605, 'Webhook Auto-linked PR', 'success')
+    );
+
+    await prModule.handlePrStatusCommand('248', { forceRefresh: true }, createNestedCommand());
+
+    expect(mockIngestWebhookEvents).not.toHaveBeenCalled();
+    expect(mockGetPrStatusForPlan).toHaveBeenCalledWith(dbHandle, 'plan-248', []);
+    expect(mockRefreshPrStatus).toHaveBeenCalledWith(
+      dbHandle,
+      'https://github.com/example/repo/pull/605'
+    );
+    expect(logs.some((line) => line.includes('example/repo#605: Webhook Auto-linked PR'))).toBe(
+      true
+    );
+  });
+
+  test('status force-refresh uses the union of explicit and auto-linked PRs', async () => {
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+    currentPlan.pullRequest = ['https://github.com/example/repo/pull/701'];
+    currentAutoLinkedDetails = [createPrDetail(702, 'Webhook Auto-linked PR', 'success')];
+    currentRefreshedStatuses.set(
+      'https://github.com/example/repo/pull/701',
+      createPrDetail(701, 'Explicit PR', 'success')
+    );
+    currentRefreshedStatuses.set(
+      'https://github.com/example/repo/pull/702',
+      createPrDetail(702, 'Webhook Auto-linked PR', 'success')
+    );
+
+    await prModule.handlePrStatusCommand('248', { forceRefresh: true }, createNestedCommand());
+
+    expect(mockRefreshPrStatus).toHaveBeenCalledWith(
+      dbHandle,
+      'https://github.com/example/repo/pull/701'
+    );
+    expect(mockRefreshPrStatus).toHaveBeenCalledWith(
+      dbHandle,
+      'https://github.com/example/repo/pull/702'
+    );
+    expect(mockSyncPlanPrLinks).toHaveBeenCalledWith(dbHandle, 'plan-248', [
+      'https://github.com/example/repo/pull/701',
+    ]);
   });
 
   test('status shows partial results when some PR fetches fail', async () => {
@@ -670,8 +981,9 @@ describe('tim/commands/pr', () => {
     expect(mockUnlinkPlanFromPr).not.toHaveBeenCalled();
   });
 
-  test('status requires GITHUB_TOKEN when plan has PRs', async () => {
+  test('status requires GITHUB_TOKEN when plan has PRs and webhook mode is disabled', async () => {
     delete process.env.GITHUB_TOKEN;
+    clearGitHubTokenCache();
     currentPlan.pullRequest = ['https://github.com/example/repo/pull/101'];
 
     await expect(

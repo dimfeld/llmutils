@@ -7,6 +7,11 @@ import {
   parsePrOrIssueNumber,
 } from '../../common/github/identifiers.js';
 import { getGitRepository } from '../../common/git.js';
+import { getWebhookServerUrl } from '../../common/github/webhook_client.js';
+import {
+  formatWebhookIngestErrors,
+  ingestWebhookEvents,
+} from '../../common/github/webhook_ingest.js';
 import { resolveGitHubToken } from '../../common/github/token.js';
 import { fetchOpenPullRequests } from '../../common/github/pull_requests.js';
 import { refreshPrStatus, syncPlanPrLinks } from '../../common/github/pr_status_service.js';
@@ -14,6 +19,7 @@ import { log } from '../../logging.js';
 import { getDatabase } from '../db/database.js';
 import {
   cleanOrphanedPrStatus,
+  getPrStatusForPlan,
   getPrStatusByUrl,
   linkPlanToPr,
   unlinkPlanFromPr,
@@ -33,6 +39,10 @@ interface RootCommandLike {
   opts?: () => {
     config?: string;
   };
+}
+
+interface PrStatusCommandOptions {
+  forceRefresh?: boolean;
 }
 
 function getRootOptions(command: RootCommandLike | undefined): { config?: string } {
@@ -97,6 +107,13 @@ function requirePlanUuid(plan: PlanSchema, planPath: string): string {
   }
 
   return plan.uuid;
+}
+
+function logWebhookIngestWarnings(errors: string[]): void {
+  const message = formatWebhookIngestErrors(errors);
+  if (message) {
+    log(chalk.yellow(message));
+  }
 }
 
 /** Update pullRequest URLs in the plan file. Returns true if the file was modified. */
@@ -433,24 +450,56 @@ function logPrStatus(detail: PrStatusDetail): void {
 
 export async function handlePrStatusCommand(
   planId: string | undefined,
-  _options: Record<string, unknown>,
+  options: Record<string, unknown>,
   command: RootCommandLike
 ): Promise<void> {
   const { plan, planPath, repoRoot } = await resolvePlanForCommand(planId, command);
   let prUrls = plan.pullRequest ?? [];
+  const explicitPrUrls = [...prUrls];
+  const { forceRefresh = false } = options as PrStatusCommandOptions;
+  const webhookServerUrl = getWebhookServerUrl();
+  const useWebhookFirst = Boolean(webhookServerUrl) && !forceRefresh;
+  const hasGitHubToken = Boolean(resolveGitHubToken());
+  const db = getDatabase();
+
+  // Ingest webhook events early so auto-linked PRs are available for junction checks
+  if (useWebhookFirst) {
+    const ingestResult = await ingestWebhookEvents(db);
+    logWebhookIngestWarnings(ingestResult.errors);
+
+    if (plan.uuid) {
+      const cachedExplicitUrls = explicitPrUrls.filter((url) => getPrStatusByUrl(db, url) !== null);
+      try {
+        await syncPlanPrLinks(db, plan.uuid, cachedExplicitUrls);
+      } catch (err) {
+        log(chalk.yellow(`Warning: failed to sync PR cache junctions: ${(err as Error).message}`));
+      }
+      cleanOrphanedPrStatus(db);
+    }
+  }
+
+  if (plan.uuid) {
+    const autoLinkedPrUrls = getPrStatusForPlan(db, plan.uuid, []).map(
+      (detail) => detail.status.pr_url
+    );
+    if (autoLinkedPrUrls.length > 0) {
+      prUrls = [...new Set([...prUrls, ...autoLinkedPrUrls])];
+    }
+  }
 
   if (prUrls.length === 0 && !plan.branch) {
     log(`Plan ${plan.id} has no linked pull requests and no branch to look up.`);
     return;
   }
 
-  if (!resolveGitHubToken()) {
+  if (!useWebhookFirst && !hasGitHubToken) {
     throw new Error('GITHUB_TOKEN environment variable is required for PR status commands');
   }
 
-  // If no PRs linked, try to find one from the plan's branch
-  if (prUrls.length === 0 && plan.branch) {
-    const foundUrl = await findPrUrlForBranch(plan.branch);
+  // If no PRs linked, try to find one from the plan's branch via GitHub API
+  // Skip in webhook mode (auto-linking is handled by webhook event handlers)
+  if (prUrls.length === 0 && plan.branch && !useWebhookFirst) {
+    const foundUrl = hasGitHubToken ? await findPrUrlForBranch(plan.branch) : null;
     if (foundUrl) {
       // Auto-link the discovered PR to the plan
       const planUuid = plan.uuid;
@@ -459,15 +508,22 @@ export async function handlePrStatusCommand(
         return normalized.includes(foundUrl) ? normalized : [...normalized, foundUrl];
       });
       if (planUuid) {
-        const db = getDatabase();
         const detail = await refreshPrStatus(db, foundUrl);
         linkPlanToPr(db, planUuid, detail.status.id);
       }
       prUrls = [foundUrl];
     }
+
+    if (prUrls.length === 0) {
+      log(`Plan ${plan.id} has no linked pull requests.`);
+      return;
+    }
   }
 
-  const db = getDatabase();
+  if (prUrls.length === 0) {
+    log(`Plan ${plan.id} has no linked pull requests.`);
+    return;
+  }
 
   // Canonicalize and deduplicate PR URLs before fetching
   const { valid: uniquePrUrls, invalid: invalidUrls } = deduplicatePrUrls(prUrls);
@@ -475,13 +531,23 @@ export async function handlePrStatusCommand(
     log(chalk.yellow(`Warning: skipping invalid PR URL: ${url}`));
   }
 
-  // Force-refresh all PRs from GitHub (CLI always fetches fresh data)
   const details: PrStatusDetail[] = [];
   const successfulUrls: string[] = [];
   const errors: Array<{ url: string; error: Error }> = [];
   for (const prUrl of uniquePrUrls) {
     try {
-      const detail = await refreshPrStatus(db, prUrl);
+      let detail: PrStatusDetail;
+      if (useWebhookFirst) {
+        // In webhook mode, read from DB cache (webhook ingestion already ran above)
+        const cached = getPrStatusByUrl(db, prUrl);
+        if (!cached) {
+          errors.push({ url: prUrl, error: new Error('No cached data available') });
+          continue;
+        }
+        detail = cached;
+      } else {
+        detail = await refreshPrStatus(db, prUrl);
+      }
       details.push(detail);
       successfulUrls.push(prUrl);
     } catch (err) {
@@ -499,15 +565,16 @@ export async function handlePrStatusCommand(
     log(chalk.red(`Failed to fetch status for ${url}: ${error.message}`));
   }
 
-  // Sync plan_pr junctions (best-effort, skip if no UUID).
-  // Try full prUrls first to preserve links for previously-cached PRs that failed to refresh.
-  // If that fails (uncached PR can't be fetched), fall back to just successful URLs.
-  if (plan.uuid) {
+  // Sync explicit plan_pr junctions after GitHub-refresh mode fetches (best-effort, skip if no UUID).
+  // Try full explicit URLs first to preserve links for previously-cached PRs that failed to refresh.
+  // If that fails (uncached PR can't be fetched), fall back to just successful explicit URLs.
+  if (plan.uuid && !useWebhookFirst) {
+    const successfulExplicitUrls = explicitPrUrls.filter((url) => successfulUrls.includes(url));
     try {
-      await syncPlanPrLinks(db, plan.uuid, prUrls);
+      await syncPlanPrLinks(db, plan.uuid, explicitPrUrls);
     } catch {
       try {
-        await syncPlanPrLinks(db, plan.uuid, successfulUrls);
+        await syncPlanPrLinks(db, plan.uuid, successfulExplicitUrls);
       } catch (err) {
         log(chalk.yellow(`Warning: failed to sync PR cache junctions: ${(err as Error).message}`));
       }

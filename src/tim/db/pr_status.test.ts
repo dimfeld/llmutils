@@ -7,16 +7,23 @@ import * as path from 'node:path';
 import { DATABASE_FILENAME, openDatabase } from './database.js';
 import {
   cleanOrphanedPrStatus,
+  getKnownRepoFullNames,
   getLinkedPlansByPrUrl,
+  getPrStatusByRepoAndNumber,
   getPrStatusesForRepo,
   getPlansWithPrs,
   getPrStatusByUrl,
   getPrStatusByUrls,
   getPrStatusForPlan,
   linkPlanToPr,
+  recomputeCheckRollupState,
   unlinkPlanFromPr,
   updatePrCheckRuns,
+  updatePrMergeableAndReviewDecision,
+  upsertPrCheckRunByName,
+  upsertPrReviewByAuthor,
   upsertPrStatus,
+  upsertPrStatusMetadata,
 } from './pr_status.js';
 import { upsertPlan } from './plan.js';
 import { getOrCreateProject } from './project.js';
@@ -155,6 +162,204 @@ describe('tim db/pr_status', () => {
     expect(updated.labels.map((label) => label.name)).toEqual(['frontend']);
   });
 
+  test('upsertPrStatusMetadata updates PR fields and labels without replacing checks or reviews', () => {
+    const created = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/150',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 150,
+      author: 'alice',
+      title: 'Initial title',
+      state: 'open',
+      draft: false,
+      mergeable: 'MERGEABLE',
+      reviewDecision: 'REVIEW_REQUIRED',
+      checkRollupState: 'pending',
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      checks: [{ name: 'test', source: 'check_run', status: 'pending' }],
+      reviews: [{ author: 'reviewer', state: 'COMMENTED', submittedAt: '2026-03-20T00:01:00Z' }],
+      labels: [{ name: 'old-label', color: '111111' }],
+    });
+
+    const updated = upsertPrStatusMetadata(db, {
+      prUrl: created.status.pr_url,
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 150,
+      author: 'bob',
+      title: 'Updated title',
+      state: 'closed',
+      draft: true,
+      mergeable: created.status.mergeable,
+      reviewDecision: created.status.review_decision,
+      checkRollupState: created.status.check_rollup_state,
+      requestedReviewers: ['reviewer-2'],
+      mergedAt: null,
+      lastFetchedAt: '2026-03-21T00:00:00.000Z',
+      labels: [{ name: 'new-label', color: '222222' }],
+    });
+
+    expect(updated.status.id).toBe(created.status.id);
+    expect(updated.status.author).toBe('bob');
+    expect(updated.status.title).toBe('Updated title');
+    expect(updated.status.state).toBe('closed');
+    expect(updated.status.requested_reviewers).toBe('["reviewer-2"]');
+    expect(updated.checks.map((check) => check.name)).toEqual(['test']);
+    expect(updated.reviews.map((review) => review.author)).toEqual(['reviewer']);
+    expect(updated.labels.map((label) => label.name)).toEqual(['new-label']);
+  });
+
+  test('upsertPrStatusMetadata preserves targeted fields when null metadata is provided', () => {
+    const created = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/152',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 152,
+      author: 'alice',
+      title: 'Existing metadata',
+      state: 'open',
+      draft: false,
+      mergeable: 'MERGEABLE',
+      reviewDecision: 'APPROVED',
+      checkRollupState: 'success',
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      labels: [{ name: 'old-label', color: '111111' }],
+    });
+
+    const updated = upsertPrStatusMetadata(db, {
+      prUrl: created.status.pr_url,
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 152,
+      author: 'bob',
+      title: 'Updated metadata',
+      state: 'closed',
+      draft: true,
+      mergeable: null,
+      reviewDecision: null,
+      checkRollupState: null,
+      requestedReviewers: ['reviewer-2'],
+      mergedAt: null,
+      lastFetchedAt: '2026-03-21T00:00:00.000Z',
+      labels: [{ name: 'new-label', color: '222222' }],
+    });
+
+    expect(updated.status.mergeable).toBe('MERGEABLE');
+    expect(updated.status.review_decision).toBe('APPROVED');
+    expect(updated.status.check_rollup_state).toBe('success');
+    expect(updated.status.author).toBe('bob');
+    expect(updated.labels.map((label) => label.name)).toEqual(['new-label']);
+  });
+
+  test('upsertPrStatusMetadata ignores stale PR metadata updates based on prUpdatedAt', () => {
+    const created = upsertPrStatusMetadata(db, {
+      prUrl: 'https://github.com/example/repo/pull/153',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 153,
+      author: 'alice',
+      title: 'Newest metadata',
+      state: 'open',
+      draft: false,
+      headSha: 'sha-new',
+      requestedReviewers: ['reviewer-1'],
+      mergedAt: null,
+      prUpdatedAt: '2026-03-22T00:00:00.000Z',
+      lastFetchedAt: '2026-03-22T00:00:00.000Z',
+      labels: [{ name: 'new-label', color: '222222' }],
+    });
+
+    const staleAttempt = upsertPrStatusMetadata(db, {
+      prUrl: created.status.pr_url,
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 153,
+      author: 'bob',
+      title: 'Stale metadata',
+      state: 'closed',
+      draft: true,
+      headSha: 'sha-old',
+      requestedReviewers: ['reviewer-2'],
+      mergedAt: '2026-03-20T00:00:00.000Z',
+      prUpdatedAt: '2026-03-21T00:00:00.000Z',
+      lastFetchedAt: '2026-03-23T00:00:00.000Z',
+      labels: [{ name: 'stale-label', color: '333333' }],
+    });
+
+    expect(staleAttempt.status.author).toBe('alice');
+    expect(staleAttempt.status.title).toBe('Newest metadata');
+    expect(staleAttempt.status.state).toBe('open');
+    expect(staleAttempt.status.head_sha).toBe('sha-new');
+    expect(staleAttempt.status.pr_updated_at).toBe('2026-03-22T00:00:00.000Z');
+    expect(staleAttempt.labels.map((label) => label.name)).toEqual(['new-label']);
+  });
+
+  test('upsertPrStatus preserves existing pr_updated_at during full GitHub refreshes', () => {
+    upsertPrStatusMetadata(db, {
+      prUrl: 'https://github.com/example/repo/pull/154',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 154,
+      author: 'alice',
+      title: 'Webhook metadata',
+      state: 'open',
+      draft: false,
+      prUpdatedAt: '2026-03-22T00:00:00.000Z',
+      lastFetchedAt: '2026-03-22T00:00:00.000Z',
+      labels: [{ name: 'webhook', color: '222222' }],
+    });
+
+    const refreshed = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/154',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 154,
+      author: 'alice',
+      title: 'GitHub refresh',
+      state: 'open',
+      draft: false,
+      mergeable: 'MERGEABLE',
+      reviewDecision: 'APPROVED',
+      checkRollupState: 'success',
+      lastFetchedAt: '2026-03-23T00:00:00.000Z',
+      labels: [{ name: 'github', color: '333333' }],
+    });
+
+    expect(refreshed.status.pr_updated_at).toBe('2026-03-22T00:00:00.000Z');
+  });
+
+  test('updatePrMergeableAndReviewDecision updates targeted fields without touching existing child rows', () => {
+    const created = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/151',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 151,
+      title: 'Targeted refresh PR',
+      state: 'open',
+      draft: false,
+      mergeable: null,
+      reviewDecision: null,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      checks: [{ name: 'test', source: 'check_run', status: 'pending' }],
+      reviews: [{ author: 'reviewer', state: 'COMMENTED', submittedAt: '2026-03-20T00:01:00Z' }],
+      labels: [{ name: 'label', color: 'abcdef' }],
+    });
+
+    const updated = updatePrMergeableAndReviewDecision(
+      db,
+      created.status.id,
+      'CONFLICTING',
+      'CHANGES_REQUESTED',
+      '2026-03-21T00:00:00.000Z'
+    );
+
+    expect(updated.status.mergeable).toBe('CONFLICTING');
+    expect(updated.status.review_decision).toBe('CHANGES_REQUESTED');
+    expect(updated.checks.map((check) => check.name)).toEqual(['test']);
+    expect(updated.reviews.map((review) => review.author)).toEqual(['reviewer']);
+    expect(updated.labels.map((label) => label.name)).toEqual(['label']);
+  });
+
   test('getPrStatusForPlan, linkPlanToPr, and unlinkPlanFromPr manage plan links', () => {
     const detail = upsertPrStatus(db, {
       prUrl: 'https://github.com/example/repo/pull/102',
@@ -174,9 +379,12 @@ describe('tim db/pr_status', () => {
     expect(planStatuses).toHaveLength(1);
     expect(planStatuses[0]?.status.pr_url).toBe('https://github.com/example/repo/pull/102');
 
+    linkPlanToPr(db, 'plan-1', detail.status.id, 'auto');
+    // unlinkPlanFromPr only removes explicit rows; auto-linked row persists
     unlinkPlanFromPr(db, 'plan-1', detail.status.id);
     planStatuses = getPrStatusForPlan(db, 'plan-1');
-    expect(planStatuses).toHaveLength(0);
+    expect(planStatuses).toHaveLength(1);
+    expect(planStatuses[0]?.status.pr_url).toBe('https://github.com/example/repo/pull/102');
   });
 
   test('getPrStatusByUrls and getPrStatusForPlan fall back to cached rows by URL when plan_pr is missing', () => {
@@ -248,6 +456,80 @@ describe('tim db/pr_status', () => {
     ).toEqual([]);
   });
 
+  test('getPrStatusForPlan treats an explicit empty URL list as auto-links only', () => {
+    const detail = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/1024',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 1024,
+      title: 'Webhook auto-linked PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    linkPlanToPr(db, 'plan-1', detail.status.id, 'auto');
+
+    expect(getPrStatusForPlan(db, 'plan-1', []).map((row) => row.status.pr_url)).toEqual([
+      'https://github.com/example/repo/pull/1024',
+    ]);
+  });
+
+  test('getPrStatusForPlan includes auto-linked rows alongside explicit plan URLs', () => {
+    const explicitDetail = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/1025',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 1025,
+      title: 'Explicit PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+    const autoDetail = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/1026',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 1026,
+      title: 'Auto PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    linkPlanToPr(db, 'plan-1', explicitDetail.status.id);
+    linkPlanToPr(db, 'plan-1', autoDetail.status.id, 'auto');
+
+    expect(
+      getPrStatusForPlan(db, 'plan-1', ['https://github.com/example/repo/pull/1025']).map(
+        (detail) => detail.status.pr_url
+      )
+    ).toEqual([
+      'https://github.com/example/repo/pull/1025',
+      'https://github.com/example/repo/pull/1026',
+    ]);
+  });
+
+  test('getPrStatusForPlan de-duplicates rows when explicit and auto links coexist', () => {
+    const detail = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/1027',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 1027,
+      title: 'Dual source PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    linkPlanToPr(db, 'plan-1', detail.status.id, 'explicit');
+    linkPlanToPr(db, 'plan-1', detail.status.id, 'auto');
+
+    expect(getPrStatusForPlan(db, 'plan-1').map((row) => row.status.pr_url)).toEqual([
+      'https://github.com/example/repo/pull/1027',
+    ]);
+  });
+
   test('getPrStatusByUrl returns stored check rollup state and check source fields', () => {
     upsertPrStatus(db, {
       prUrl: 'https://github.com/example/repo/pull/1021',
@@ -281,6 +563,473 @@ describe('tim db/pr_status', () => {
         conclusion: 'error',
       }),
     ]);
+  });
+
+  test('getPrStatusByRepoAndNumber returns the stored row for a repo and PR number', () => {
+    const detail = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/1040',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 1040,
+      title: 'Repo lookup PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    expect(getPrStatusByRepoAndNumber(db, 'example', 'repo', 1040)).toMatchObject({
+      id: detail.status.id,
+      pr_url: 'https://github.com/example/repo/pull/1040',
+    });
+    expect(getPrStatusByRepoAndNumber(db, 'example', 'repo', 9999)).toBeNull();
+  });
+
+  test('upsertPrCheckRunByName replaces an existing check row for the same PR and name', () => {
+    const detail = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/1041',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 1041,
+      title: 'Check upsert PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    upsertPrCheckRunByName(db, detail.status.id, {
+      name: 'tests',
+      source: 'check_run',
+      status: 'queued',
+      conclusion: null,
+    });
+    upsertPrCheckRunByName(db, detail.status.id, {
+      name: 'tests',
+      source: 'check_run',
+      status: 'completed',
+      conclusion: 'success',
+      detailsUrl: 'https://example.com/checks/1041',
+    });
+
+    const refreshed = getPrStatusByUrl(db, detail.status.pr_url);
+    expect(refreshed?.checks).toHaveLength(1);
+    expect(refreshed?.checks[0]).toMatchObject({
+      name: 'tests',
+      status: 'completed',
+      conclusion: 'success',
+      details_url: 'https://example.com/checks/1041',
+    });
+  });
+
+  test('upsertPrCheckRunByName is idempotent for repeated payloads', () => {
+    const detail = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/1141',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 1141,
+      title: 'Check idempotency PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    const input = {
+      name: 'tests',
+      source: 'check_run' as const,
+      status: 'completed',
+      conclusion: 'success',
+      detailsUrl: 'https://example.com/checks/1141',
+    };
+
+    upsertPrCheckRunByName(db, detail.status.id, input);
+    upsertPrCheckRunByName(db, detail.status.id, input);
+
+    const refreshed = getPrStatusByUrl(db, detail.status.pr_url);
+    expect(refreshed?.checks).toHaveLength(1);
+    expect(refreshed?.checks[0]).toMatchObject({
+      name: 'tests',
+      status: 'completed',
+      conclusion: 'success',
+      details_url: 'https://example.com/checks/1141',
+    });
+  });
+
+  test('upsertPrCheckRunByName keeps distinct rows for the same name when the sources differ', () => {
+    const detail = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/1142',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 1142,
+      title: 'Mixed source checks PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    upsertPrCheckRunByName(db, detail.status.id, {
+      name: 'tests',
+      source: 'check_run',
+      status: 'completed',
+      conclusion: 'success',
+      detailsUrl: 'https://example.com/check-runs/1142',
+    });
+    upsertPrCheckRunByName(db, detail.status.id, {
+      name: 'tests',
+      source: 'status_context',
+      status: 'completed',
+      conclusion: 'failure',
+      detailsUrl: 'https://example.com/status-context/1142',
+    });
+
+    const refreshed = getPrStatusByUrl(db, detail.status.pr_url);
+    expect(refreshed?.checks).toHaveLength(2);
+    expect(refreshed?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'tests',
+          source: 'check_run',
+          conclusion: 'success',
+          details_url: 'https://example.com/check-runs/1142',
+        }),
+        expect.objectContaining({
+          name: 'tests',
+          source: 'status_context',
+          conclusion: 'failure',
+          details_url: 'https://example.com/status-context/1142',
+        }),
+      ])
+    );
+  });
+
+  test('upsertPrCheckRunByName does not let a pending payload overwrite a completed check', () => {
+    const detail = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/1241',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 1241,
+      title: 'Monotonic checks PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    upsertPrCheckRunByName(db, detail.status.id, {
+      name: 'tests',
+      source: 'check_run',
+      status: 'completed',
+      conclusion: 'success',
+      detailsUrl: 'https://example.com/checks/final',
+      startedAt: '2026-03-20T00:01:00.000Z',
+      completedAt: '2026-03-20T00:02:00.000Z',
+    });
+    upsertPrCheckRunByName(db, detail.status.id, {
+      name: 'tests',
+      source: 'check_run',
+      status: 'in_progress',
+      conclusion: null,
+      detailsUrl: 'https://example.com/checks/stale',
+      startedAt: '2026-03-20T00:00:30.000Z',
+      completedAt: null,
+    });
+
+    const refreshed = getPrStatusByUrl(db, detail.status.pr_url);
+    expect(refreshed?.checks).toHaveLength(1);
+    expect(refreshed?.checks[0]).toMatchObject({
+      name: 'tests',
+      status: 'completed',
+      conclusion: 'success',
+      details_url: 'https://example.com/checks/final',
+      started_at: '2026-03-20T00:01:00.000Z',
+      completed_at: '2026-03-20T00:02:00.000Z',
+    });
+  });
+
+  test('upsertPrCheckRunByName allows a genuine re-run to replace a completed check with a new in-progress run', () => {
+    const detail = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/1243',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 1243,
+      title: 'Rerun checks PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    upsertPrCheckRunByName(db, detail.status.id, {
+      name: 'tests',
+      source: 'check_run',
+      status: 'completed',
+      conclusion: 'success',
+      detailsUrl: 'https://example.com/checks/final',
+      startedAt: '2026-03-20T00:01:00.000Z',
+      completedAt: '2026-03-20T00:02:00.000Z',
+    });
+    upsertPrCheckRunByName(db, detail.status.id, {
+      name: 'tests',
+      source: 'check_run',
+      status: 'queued',
+      conclusion: null,
+      detailsUrl: 'https://example.com/checks/rerun',
+      startedAt: '2026-03-20T00:03:00.000Z',
+      completedAt: null,
+    });
+
+    const refreshed = getPrStatusByUrl(db, detail.status.pr_url);
+    expect(refreshed?.checks).toHaveLength(1);
+    expect(refreshed?.checks[0]).toMatchObject({
+      name: 'tests',
+      status: 'queued',
+      conclusion: null,
+      details_url: 'https://example.com/checks/rerun',
+      started_at: '2026-03-20T00:03:00.000Z',
+      completed_at: null,
+    });
+  });
+
+  test('upsertPrReviewByAuthor replaces an existing review row for the same author', () => {
+    const detail = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/1042',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 1042,
+      title: 'Review upsert PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    expect(
+      upsertPrReviewByAuthor(db, detail.status.id, {
+        author: 'reviewer',
+        state: 'COMMENTED',
+        submittedAt: '2026-03-20T00:01:00.000Z',
+      })
+    ).toBe(true);
+    expect(
+      upsertPrReviewByAuthor(db, detail.status.id, {
+        author: 'reviewer',
+        state: 'APPROVED',
+        submittedAt: '2026-03-20T00:02:00.000Z',
+      })
+    ).toBe(true);
+
+    const refreshed = getPrStatusByUrl(db, detail.status.pr_url);
+    expect(refreshed?.reviews).toHaveLength(1);
+    expect(refreshed?.reviews[0]).toMatchObject({
+      author: 'reviewer',
+      state: 'APPROVED',
+      submitted_at: '2026-03-20T00:02:00.000Z',
+    });
+  });
+
+  test('upsertPrReviewByAuthor is idempotent for repeated payloads', () => {
+    const detail = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/1142',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 1142,
+      title: 'Review idempotency PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    const input = {
+      author: 'reviewer',
+      state: 'APPROVED',
+      submittedAt: '2026-03-20T00:02:00.000Z',
+    };
+
+    expect(upsertPrReviewByAuthor(db, detail.status.id, input)).toBe(true);
+    expect(upsertPrReviewByAuthor(db, detail.status.id, input)).toBe(true);
+
+    const refreshed = getPrStatusByUrl(db, detail.status.pr_url);
+    expect(refreshed?.reviews).toHaveLength(1);
+    expect(refreshed?.reviews[0]).toMatchObject({
+      author: 'reviewer',
+      state: 'APPROVED',
+      submitted_at: '2026-03-20T00:02:00.000Z',
+    });
+  });
+
+  test('upsertPrReviewByAuthor does not let an older review overwrite a newer one', () => {
+    const detail = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/1242',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 1242,
+      title: 'Monotonic reviews PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    expect(
+      upsertPrReviewByAuthor(db, detail.status.id, {
+        author: 'reviewer',
+        state: 'APPROVED',
+        submittedAt: '2026-03-20T00:02:00.000Z',
+      })
+    ).toBe(true);
+    expect(
+      upsertPrReviewByAuthor(db, detail.status.id, {
+        author: 'reviewer',
+        state: 'COMMENTED',
+        submittedAt: '2026-03-20T00:01:00.000Z',
+      })
+    ).toBe(false);
+
+    const refreshed = getPrStatusByUrl(db, detail.status.pr_url);
+    expect(refreshed?.reviews).toHaveLength(1);
+    expect(refreshed?.reviews[0]).toMatchObject({
+      author: 'reviewer',
+      state: 'APPROVED',
+      submitted_at: '2026-03-20T00:02:00.000Z',
+    });
+  });
+
+  test('recomputeCheckRollupState applies failure, pending, success, and empty rollup rules', () => {
+    const detail = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/1043',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 1043,
+      title: 'Rollup PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    expect(recomputeCheckRollupState(db, detail.status.id)).toBeNull();
+
+    upsertPrCheckRunByName(db, detail.status.id, {
+      name: 'lint',
+      source: 'check_run',
+      status: 'completed',
+      conclusion: 'success',
+    });
+    expect(recomputeCheckRollupState(db, detail.status.id)).toBe('success');
+
+    upsertPrCheckRunByName(db, detail.status.id, {
+      name: 'tests',
+      source: 'check_run',
+      status: 'pending',
+      conclusion: null,
+    });
+    expect(recomputeCheckRollupState(db, detail.status.id)).toBe('pending');
+
+    upsertPrCheckRunByName(db, detail.status.id, {
+      name: 'tests',
+      source: 'check_run',
+      status: 'completed',
+      conclusion: 'failure',
+    });
+    expect(recomputeCheckRollupState(db, detail.status.id)).toBe('failure');
+    expect(getPrStatusByUrl(db, detail.status.pr_url)?.status.check_rollup_state).toBe('failure');
+  });
+
+  test('recomputeCheckRollupState prefers failure over success and pending over success', () => {
+    const failureDetail = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/1143',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 1143,
+      title: 'Failure precedence PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    upsertPrCheckRunByName(db, failureDetail.status.id, {
+      name: 'lint',
+      source: 'check_run',
+      status: 'completed',
+      conclusion: 'success',
+    });
+    upsertPrCheckRunByName(db, failureDetail.status.id, {
+      name: 'tests',
+      source: 'check_run',
+      status: 'completed',
+      conclusion: 'failure',
+    });
+    expect(recomputeCheckRollupState(db, failureDetail.status.id)).toBe('failure');
+
+    const pendingDetail = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/1243',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 1243,
+      title: 'Pending precedence PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    upsertPrCheckRunByName(db, pendingDetail.status.id, {
+      name: 'lint',
+      source: 'check_run',
+      status: 'completed',
+      conclusion: 'success',
+    });
+    upsertPrCheckRunByName(db, pendingDetail.status.id, {
+      name: 'tests',
+      source: 'check_run',
+      status: 'queued',
+      conclusion: null,
+    });
+    expect(recomputeCheckRollupState(db, pendingDetail.status.id)).toBe('pending');
+  });
+
+  test('recomputeCheckRollupState treats neutral, skipped, and cancelled checks as non-blocking success', () => {
+    const detail = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/1343',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 1343,
+      title: 'Non-blocking checks PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    upsertPrCheckRunByName(db, detail.status.id, {
+      name: 'docs',
+      source: 'check_run',
+      status: 'completed',
+      conclusion: 'neutral',
+    });
+    upsertPrCheckRunByName(db, detail.status.id, {
+      name: 'format',
+      source: 'check_run',
+      status: 'completed',
+      conclusion: 'skipped',
+    });
+    upsertPrCheckRunByName(db, detail.status.id, {
+      name: 'optional-lint',
+      source: 'check_run',
+      status: 'completed',
+      conclusion: 'cancelled',
+    });
+
+    expect(recomputeCheckRollupState(db, detail.status.id)).toBe('success');
+    expect(getPrStatusByUrl(db, detail.status.pr_url)?.status.check_rollup_state).toBe('success');
+  });
+
+  test('getKnownRepoFullNames returns parsed GitHub repository names from project rows', () => {
+    getOrCreateProject(db, 'github.com__example__repo');
+    getOrCreateProject(db, 'github.com__example__other-repo');
+    getOrCreateProject(db, 'gitlab.com__example__ignored-repo');
+
+    expect([...getKnownRepoFullNames(db)].sort()).toEqual(['example/other-repo', 'example/repo']);
+  });
+
+  test('getKnownRepoFullNames ignores malformed and non-github repository ids', () => {
+    getOrCreateProject(db, '');
+    getOrCreateProject(db, 'github.com__example__repo');
+    getOrCreateProject(db, 'github.com__missing-repo-segment');
+    getOrCreateProject(db, 'gitlab.com__example__repo');
+
+    expect([...getKnownRepoFullNames(db)]).toEqual(['example/repo']);
   });
 
   test('updatePrCheckRuns replaces only check rows and updates fetch timestamp', () => {
@@ -414,6 +1163,26 @@ describe('tim db/pr_status', () => {
 
     expect(links.get('https://github.com/example/repo/pull/403')).toEqual([]);
     expect(links.size).toBe(1);
+  });
+
+  test('getLinkedPlansByPrUrl de-duplicates plans when explicit and auto links coexist', () => {
+    const pr = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/404',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 404,
+      title: 'Dual source plan link',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    linkPlanToPr(db, 'plan-1', pr.status.id, 'explicit');
+    linkPlanToPr(db, 'plan-1', pr.status.id, 'auto');
+
+    expect(getLinkedPlansByPrUrl(db, [pr.status.pr_url]).get(pr.status.pr_url)).toEqual([
+      { planUuid: 'plan-1', planId: 1, title: 'Plan 1' },
+    ]);
   });
 
   test('getPlansWithPrs returns open PR links and respects project filter', () => {
@@ -579,6 +1348,66 @@ describe('tim db/pr_status', () => {
     linkPlanToPr(db, 'plan-1', openPr.status.id);
 
     expect(getPlansWithPrs(db)).toEqual([]);
+  });
+
+  test('getPlansWithPrs keeps auto-linked rows when plan has no explicit pull_request values', () => {
+    const openPr = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/208',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 208,
+      title: 'Auto-linked open PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    linkPlanToPr(db, 'plan-1', openPr.status.id, 'auto');
+
+    expect(getPlansWithPrs(db)).toEqual([
+      {
+        uuid: 'plan-1',
+        projectId,
+        planId: 1,
+        title: 'Plan 1',
+        prUrls: ['https://github.com/example/repo/pull/208'],
+      },
+    ]);
+  });
+
+  test('getPlansWithPrs de-duplicates PR URLs when explicit and auto links coexist', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-1',
+      planId: 1,
+      title: 'Plan 1',
+      filename: '1.plan.md',
+      status: 'in_progress',
+      pullRequest: ['https://github.com/example/repo/pull/209'],
+    });
+
+    const openPr = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/209',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 209,
+      title: 'Dual source open PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    linkPlanToPr(db, 'plan-1', openPr.status.id, 'explicit');
+    linkPlanToPr(db, 'plan-1', openPr.status.id, 'auto');
+
+    expect(getPlansWithPrs(db)).toEqual([
+      {
+        uuid: 'plan-1',
+        projectId,
+        planId: 1,
+        title: 'Plan 1',
+        prUrls: ['https://github.com/example/repo/pull/209'],
+      },
+    ]);
   });
 
   test('cleanOrphanedPrStatus removes unlinked PR status rows', () => {

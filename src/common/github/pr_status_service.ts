@@ -1,8 +1,14 @@
 import type { Database } from 'bun:sqlite';
 import { canonicalizePrUrl, parsePrOrIssueNumber } from './identifiers.js';
-import { fetchPrCheckStatus, fetchPrFullStatus } from './pr_status.js';
+import {
+  fetchPrCheckStatus,
+  fetchPrFullStatus,
+  fetchPrMergeableAndReviewDecision,
+} from './pr_status.js';
 import {
   getPrStatusByUrl,
+  getPrStatusByRepoAndNumber,
+  updatePrMergeableAndReviewDecision,
   updatePrCheckRuns,
   upsertPrStatus,
   type PrStatusDetail,
@@ -120,6 +126,27 @@ export async function ensurePrStatusFresh(
   return refreshPrStatus(db, canonicalPrUrl);
 }
 
+export async function fetchAndUpdatePrMergeableStatus(
+  db: Database,
+  owner: string,
+  repo: string,
+  prNumber: number
+): Promise<void> {
+  const existing = getPrStatusByRepoAndNumber(db, owner, repo, prNumber);
+  if (!existing) {
+    return;
+  }
+
+  const mergeableStatus = await fetchPrMergeableAndReviewDecision(owner, repo, prNumber);
+  updatePrMergeableAndReviewDecision(
+    db,
+    existing.id,
+    mergeableStatus.mergeable,
+    mergeableStatus.reviewDecision,
+    getNowIsoString()
+  );
+}
+
 // plan_pr rows are populated lazily by the service layer when PR status is viewed or refreshed
 // (web UI API endpoint, CLI commands). We intentionally do not populate plan_pr during synchronous
 // plan file -> DB sync because fetching GitHub data is async and should not be on the critical path
@@ -205,7 +232,8 @@ export async function syncPlanPrLinks(
           `SELECT ps.id, ps.pr_url
          FROM plan_pr pp
          INNER JOIN pr_status ps ON ps.id = pp.pr_status_id
-         WHERE pp.plan_uuid = ?`
+         WHERE pp.plan_uuid = ?
+           AND pp.source = 'explicit'`
         )
         .all(nextPlanUuid) as Array<{ id: number; pr_url: string }>;
 
@@ -213,16 +241,15 @@ export async function syncPlanPrLinks(
       const desiredUrls = new Set(nextPrUrls);
       for (const linked of existingLinked) {
         if (!desiredUrls.has(linked.pr_url)) {
-          db.prepare('DELETE FROM plan_pr WHERE plan_uuid = ? AND pr_status_id = ?').run(
-            nextPlanUuid,
-            linked.id
-          );
+          db.prepare(
+            "DELETE FROM plan_pr WHERE plan_uuid = ? AND pr_status_id = ? AND source = 'explicit'"
+          ).run(nextPlanUuid, linked.id);
         }
       }
 
       // Add links for all desired PRs
       const insertLink = db.prepare(
-        `INSERT OR IGNORE INTO plan_pr (plan_uuid, pr_status_id) VALUES (?, ?)`
+        "INSERT OR IGNORE INTO plan_pr (plan_uuid, pr_status_id, source) VALUES (?, ?, 'explicit')"
       );
 
       const details: PrStatusDetail[] = [];

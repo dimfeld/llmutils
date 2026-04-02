@@ -39,6 +39,8 @@
 
 - `ON CONFLICT DO UPDATE SET col = excluded.col` will overwrite existing values with whatever was passed — including `NULL` when the caller provides sparse input. Use `COALESCE(excluded.col, col)` for columns that should preserve their existing value when the new value is null. This is especially important for `recordWorkspace`-style functions that may be called from multiple processes with different subsets of fields populated.
 - When calling `getOrCreateProject()` followed by `updateProject()`, compare existing field values against the new values before updating. Skipping the update when all fields match avoids unnecessary `updated_at` timestamp bumps that make projects appear modified when they weren't.
+- When adding a provenance/source column to a junction table, include it in the primary key so both sources can coexist for the same entity pair. `INSERT OR IGNORE` with a single-column key won't allow inserting a second row with a different source — the first source wins silently.
+- Multi-step DB mutations (e.g., upsert + clear child rows + update related rows) should be wrapped in a single transaction for atomicity, even if each individual statement seems independent. This prevents partial state from being visible to concurrent readers or from persisting if a later step fails.
 
 ### Plan SQLite Sync
 
@@ -222,21 +224,30 @@ PR status data from GitHub is cached in SQLite for display in the web UI and CLI
 **Tables**:
 
 - `pr_status`: Core PR record keyed by `pr_url` (UNIQUE). Stores state (open/closed/merged), draft flag, mergeable status, review decision, head/base branches, SHA, and `last_fetched_at` for cache freshness.
-- `pr_check_run`: Individual CI check runs per PR (name, status, conclusion, details URL). `source` column distinguishes `check_run` vs `status_context` (GitHub's two check APIs).
-- `pr_review`: Individual reviews per PR (author, state, submitted_at).
+- `pr_check_run`: Individual CI check runs per PR (name, status, conclusion, details URL). `source` column distinguishes `check_run` vs `status_context` (GitHub's two check APIs). UNIQUE constraint on `(pr_status_id, name, source)` so both check sources can coexist with the same display name (migration v15).
+- `pr_review`: Individual reviews per PR (author, state, submitted_at). UNIQUE constraint on `(pr_status_id, author)` for upsert support (migration v13).
 - `pr_label`: Labels per PR (name, color).
-- `plan_pr`: Junction table linking `plan.uuid` to `pr_status.id`. Both sides have CASCADE deletes.
+- `plan_pr`: Junction table linking `plan.uuid` to `pr_status.id` with a `source` column (`'explicit'` or `'auto'`). Composite PK on `(plan_uuid, pr_status_id, source)` allows both explicit (user-specified) and auto (webhook branch-matched) links to coexist for the same plan/PR pair. Both sides have CASCADE deletes.
 
 **CRUD module** (`src/tim/db/pr_status.ts`):
 
-- `upsertPrStatus(db, data)`: INSERT ON CONFLICT(pr_url) DO UPDATE, replaces child rows (check runs, reviews, labels) in the same transaction
+- `upsertPrStatus(db, data)`: INSERT ON CONFLICT(pr_url) DO UPDATE, replaces child rows (check runs, reviews, labels) in the same transaction. Used by full API refreshes.
+- `upsertPrStatusMetadata(db, data)`: Metadata-only upsert that updates PR fields and labels without destroying existing checks/reviews. Uses `pr_updated_at` monotonic guard (SQL WHERE clause rejects older timestamps) to prevent out-of-order webhook events from rolling back metadata. Uses `COALESCE` for `mergeable`/`review_decision`/`check_rollup_state` to prevent race conditions with concurrent targeted API calls. Returns `{ detail, changed }` so callers can gate side-effects (e.g., check clearing on `synchronize`) on whether the update actually applied. Full API refreshes preserve `pr_updated_at` via COALESCE to maintain webhook out-of-order protection.
 - `getPrStatusByUrl(db, prUrl)`: Returns `PrStatusDetail` (status + checks + reviews + labels)
-- `getPrStatusForPlan(db, planUuid, prUrls?)`: All PR statuses linked to a plan. When `prUrls` (from plan's `pull_request` field) are provided, queries `pr_status` directly by canonicalized URL — bypassing `plan_pr` junctions which may be stale or unpopulated. Falls back to `plan_pr` join only when `prUrls` is not provided. Uses `tryCanonicalizePrUrl()` to safely skip malformed URLs without crashing.
+- `getPrStatusForPlan(db, planUuid, prUrls?)`: All PR statuses linked to a plan. When `prUrls` are provided, queries `pr_status` directly by canonicalized URL and also includes auto-linked PRs from `plan_pr` (source `'auto'`), returning the union. Falls back to `plan_pr` join only when `prUrls` is not provided. Uses `tryCanonicalizePrUrl()` to safely skip malformed URLs without crashing.
 - `getPrStatusesForRepo(db, owner, repo)`: All open `pr_status` rows matching owner/repo, with joined checks/reviews/labels as `PrStatusDetail[]`. Used by the project-wide PR view.
 - `getLinkedPlansByPrUrl(db, prUrls)`: Returns `Map<string, { planUuid, planId, title }[]>` — for each PR URL, the plans linked via `plan_pr` junction. Used to enrich the project PR list with linked plan info.
-- `linkPlanToPr(db, planUuid, prStatusId)` / `unlinkPlanFromPr`: Manage plan-PR junction
+- `linkPlanToPr(db, planUuid, prStatusId, source?)` / `unlinkPlanFromPr`: Manage plan-PR junction. `linkPlanToPr` accepts optional `source` param (`'explicit'` default, `'auto'` for webhook branch matches). `unlinkPlanFromPr` only removes `source = 'explicit'` rows; auto-linked rows persist independently.
 - `getPlansWithPrs(db, projectId?)`: Plans with linked PRs in active statuses (pending, in_progress, needs_review). Canonicalizes plan `pull_request` URLs in TypeScript before matching against `pr_status.pr_url`. Filters stale `plan_pr` junction rows against the current plan's `pull_request` contents — if a plan's `pull_request` field is NULL or empty, any existing `plan_pr` junctions for that plan are excluded from results rather than treated as authoritative.
 - `cleanOrphanedPrStatus(db)`: Removes `pr_status` records not referenced by any plan's `pull_request` URLs or `plan_pr` links. Canonicalizes plan URLs in TypeScript before comparison.
+
+**Granular upsert helpers** (added in migration v13 for webhook-based incremental updates):
+
+- `getPrStatusByRepoAndNumber(db, owner, repo, prNumber)`: Look up a PR by repo + number (used by webhook event handlers to find existing PR records).
+- `upsertPrCheckRunByName(db, prStatusId, input)`: INSERT OR REPLACE by `(pr_status_id, name, source)` — updates individual check runs without replacing all runs for the PR. Monotonic: completed checks can't be reverted by pending events; older completed events can't overwrite newer ones (compared by `completed_at`). Re-triggered checks (`started_at > completed_at`) can overwrite completed state.
+- `upsertPrReviewByAuthor(db, prStatusId, input)`: INSERT OR REPLACE by `(pr_status_id, author)` — updates individual reviews, keeping latest per author. Monotonic: older reviews can't overwrite newer ones (compared by `submitted_at`). Returns boolean indicating whether the update applied.
+- `recomputeCheckRollupState(db, prStatusId)`: Queries all `pr_check_run` rows for a PR and computes rollup state. Logic: any `failure`/`error`/`timed_out`/`startup_failure` → `'failure'`; any `pending`/`in_progress`/`queued`/`waiting`/`requested` → `'pending'`; all `success` → `'success'`; `neutral`/`skipped`/`cancelled` are non-blocking; empty → `null`. Completed checks with unrecognized conclusions are treated as pending (safe default).
+- `getKnownRepoFullNames(db)`: Queries all projects and parses `repository_id` using `parseOwnerRepoFromRepositoryId()` to return `Set<string>` of `owner/repo` names. Used to filter webhook events to known repos.
 
 **GraphQL enum normalization** (`src/common/github/pr_status.ts`): All normalizers (`normalizePrState`, `normalizeCheckStatus`, `normalizeCheckConclusion`, `normalizeReviewDecision`, `normalizeReviewState`, `normalizeMergeableState`, etc.) gracefully degrade with `console.warn` + sensible fallback for unknown values instead of throwing. GraphQL response types are widened to `string` so TypeScript recognizes default branches as reachable. This prevents the entire status fetch from failing if GitHub adds a new enum value. **Casing convention**: check-related normalizers (`normalizePrState`, `normalizeCheckStatus`, `normalizeCheckConclusion`, `normalizeCheckRollupState`) return lowercase values; review/merge-related normalizers (`normalizeReviewDecision`, `normalizeReviewState`, `normalizeMergeableState`) return UPPERCASE values to match GitHub's GraphQL schema conventions for those fields.
 
@@ -245,7 +256,7 @@ PR status data from GitHub is cached in SQLite for display in the web UI and CLI
 - `refreshPrStatus(db, prUrl)`: Canonicalizes the URL, fetches full status via GraphQL, upserts to DB
 - `refreshPrCheckStatus(db, prUrl)`: Lightweight checks-only refresh. Validates the identifier via `canonicalizePrUrl()` before any cache lookup or API call.
 - `ensurePrStatusFresh(db, prUrl, maxAgeMs)`: Stale-while-revalidate — returns cached if fresh, refreshes otherwise
-- `syncPlanPrLinks(db, planUuid, prUrls)`: Atomic sync of plan-PR junction. All GitHub fetches complete before any DB writes; all upserts + link changes happen in one transaction. Orphan cleanup is the caller's responsibility.
+- `syncPlanPrLinks(db, planUuid, prUrls)`: Atomic sync of plan-PR junction for `source = 'explicit'` rows only. Auto-linked rows are independently managed by webhook event handlers. All GitHub fetches complete before any DB writes; all upserts + link changes happen in one transaction. Orphan cleanup is the caller's responsibility.
 
 **URL canonicalization** (`src/common/github/identifiers.ts`):
 
@@ -253,6 +264,42 @@ PR status data from GitHub is cached in SQLite for display in the web UI and CLI
 - `tryCanonicalizePrUrl(identifier)`: Non-throwing variant that returns `null` for invalid URLs. Used in read paths (e.g., `getPrStatusForPlan`, `getPrSummaryStatusByPlanUuid`) to avoid crashing page loads on malformed plan data.
 - `validatePrIdentifier(identifier)`: Enforces GitHub host + `/pull/` path + numeric PR number for URL-form identifiers. Rejects issue URLs and other non-PR GitHub URLs.
 - `deduplicatePrUrls(urls, options?)`: Canonicalizes and deduplicates a list of PR URLs. Optionally warns on invalid entries via `onInvalid` callback. Used by CLI commands and API endpoints to normalize input before processing.
+
+### Webhook Log
+
+Webhook events from the GitHub webhook ingestion server are stored locally for processing and audit. The schema (migration v13) provides cursor-based tracking for incremental event consumption.
+
+**Tables**:
+
+- `webhook_log`: Local copy of ingested webhook events. Columns: `id` (auto-increment), `delivery_id` (TEXT NOT NULL UNIQUE), `event_type`, `action`, `repository_full_name`, `payload_json`, `received_at` (from webhook server), `ingested_at` (local timestamp). Index on `(repository_full_name, id)`. Events for unknown repos are stored but not applied to PR status.
+- `webhook_cursor`: Single-row table tracking ingestion position. Columns: `id` (CHECK id=1), `last_event_id` (INTEGER NOT NULL DEFAULT 0), `updated_at`. Initialized with default row `(1, 0, <now>)` in migration.
+
+**CRUD module** (`src/tim/db/webhook_log.ts`):
+
+- `insertWebhookLogEntry(db, entry)`: INSERT OR IGNORE by `delivery_id` — skips duplicates. Returns `{ inserted: boolean }`.
+- `getWebhookCursor(db)`: Returns `last_event_id` from the single cursor row.
+- `updateWebhookCursor(db, lastEventId)`: Updates the cursor row with a new event ID and timestamp.
+- `pruneOldWebhookLogs(db, maxAgeDays?)`: Deletes entries where `ingested_at` is older than `maxAgeDays` (default 30).
+
+**Webhook client** (`src/common/github/webhook_client.ts`): Fetches events from the webhook server's `/internal/events` endpoint. Uses `TIM_WEBHOOK_SERVER_URL` and `WEBHOOK_INTERNAL_API_TOKEN` env vars. Connection errors return empty array with warning; HTTP errors are thrown. Defines a local `WebhookEvent` interface (decoupled from `src/webhooks/`).
+
+**Event handlers** (`src/common/github/webhook_event_handlers.ts`): Three handlers that parse webhook payloads and apply incremental updates to PR status tables:
+
+- `handlePullRequestEvent(db, payload, knownRepos)`: Filters by known repos, upserts `pr_status` metadata and labels (via `upsertPrStatusMetadata()`), updates `requested_reviewers`, detects merged state (`closed` + `merged_at`), auto-links to plans by branch name (inside the main transaction boundary for atomicity), and uses `constructGitHubRepositoryId()` for consistent repository ID construction. Returns deferred `Promise` for targeted `mergeable`/`review_decision` API fetch.
+- `handlePullRequestReviewEvent(db, payload, knownRepos)`: Looks up existing `pr_status` by repo+number, upserts review by author. Returns deferred `Promise` for targeted `review_decision` API fetch only for states that affect `review_decision` (APPROVED, CHANGES_REQUESTED, DISMISSED — COMMENTED reviews skip the API call). Skips if PR not in DB.
+- `handleCheckRunEvent(db, payload, knownRepos)`: For each PR in `check_run.pull_requests[]`, looks up `pr_status`, upserts check run by name and recomputes `check_rollup_state` within a single transaction (preventing stale rollup from concurrent events). Skips unknown PRs.
+
+All handlers return `HandlerResult` with `prUrls` (affected), `updated` flag, and `deferredApiCalls` (promises for async API fetches).
+
+**Targeted API fetch** (`src/common/github/pr_status_service.ts`): `fetchAndUpdatePrMergeableStatus(db, prUrl, owner, repo, prNumber)` calls `fetchPrMergeableAndReviewDecision()` (lightweight GraphQL query for just `mergeable` and `reviewDecision`) and updates the `pr_status` row. Used by webhook event handlers to backfill fields not available in webhook payloads.
+
+**Ingestion orchestrator** (`src/common/github/webhook_ingest.ts`): `ingestWebhookEvents(db)` is the main entry point for webhook-based PR status updates. Flow: read cursor → fetch events from webhook server → insert into `webhook_log` (dedup by `delivery_id`) → dispatch to event handlers by `eventType` → collect and run deferred API calls via `Promise.allSettled` → advance cursor → prune old log entries. Returns `IngestResult` with `eventsIngested` (newly processed only), `prsUpdated`, and `errors` (including missing `WEBHOOK_INTERNAL_API_TOKEN`, per-event parse/handler failures, and deferred API call failures with `owner/repo#number` context for debugging). Returns early with empty result if `TIM_WEBHOOK_SERVER_URL` is not set. All callers (web remote commands, CLI) inspect `IngestResult.errors` and surface non-empty errors as warnings via `formatWebhookIngestErrors()` shared helper.
+
+**Refresh paths**: All PR refresh entry points use a webhook-first approach when `TIM_WEBHOOK_SERVER_URL` is set:
+
+- **Web — project PRs** (`src/lib/remote/project_prs.remote.ts`): `refreshProjectPrs` calls `ingestWebhookEvents(db)` then returns cached data without running `refreshProjectPrsService()` (which handles marking stale PRs as closed). This means PRs that never received a webhook close event won't be detected as stale — the "Full Refresh from GitHub API" button addresses this. `fullRefreshProjectPrs` always calls `refreshProjectPrsService()` (direct GitHub API) as an escape hatch.
+- **Web — plan PR status** (`src/lib/remote/pr_status.remote.ts`): `refreshPrStatus` calls `ingestWebhookEvents(db)` first, then pre-filters explicit PR URLs to only those already cached in the DB before calling `syncPlanPrLinks` — this prevents webhook mode from triggering GitHub API fetches for uncached URLs. PRs not yet seen via webhooks are reported as warnings. Falls back to direct GitHub API refresh when webhooks are not configured. When a plan has no PR URLs, always syncs junction links to prune stale rows (even in webhook mode). `fullRefreshPrStatus` bypasses webhooks entirely and uses `refreshPrStatus()` (unconditional API call) rather than `ensurePrStatusFresh()`, ensuring a true full refresh from GitHub regardless of `last_fetched_at` — the plan-level equivalent of `fullRefreshProjectPrs`.
+- **CLI — `tim pr status`** (`src/tim/commands/pr.ts`): Calls `ingestWebhookEvents(db)` before displaying PR data when configured. In webhook mode, calls `syncPlanPrLinks` with only already-cached explicit URLs (never triggers GitHub API fetch) to keep the junction table consistent with the plan file. `--force-refresh` flag bypasses webhooks and fetches directly from GitHub API. When `TIM_WEBHOOK_SERVER_URL` is not set, preserves existing direct-API behavior.
 
 ### Web Query Helpers
 

@@ -9,6 +9,7 @@ import { upsertPlan } from '../../tim/db/plan.js';
 import { getOrCreateProject } from '../../tim/db/project.js';
 import {
   getLinkedPlansByPrUrl,
+  linkPlanToPr,
   getPrStatusesForRepo,
   upsertPrStatus,
 } from '../../tim/db/pr_status.js';
@@ -340,6 +341,57 @@ describe('common/github/project_pr_service', () => {
     expect(
       getPrStatusesForRepo(db, 'example', 'repo').map((detail) => detail.status.pr_number)
     ).toEqual([11]);
+  });
+
+  test('refreshProjectPrs still creates an auto-link when an explicit row already exists', async () => {
+    const explicitDetail = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/11',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 11,
+      title: 'My PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+    linkPlanToPr(db, 'plan-1', explicitDetail.status.id, 'explicit');
+
+    const fetchOpenPullRequestsWithReviewers = mock(async () => [
+      makePr({ number: 11, title: 'My PR', headRefName: 'feature/one', userLogin: 'dimfeld' }),
+    ]);
+    const fetchPrFullStatus = mock(async () =>
+      makeFullStatus(11, {
+        title: 'My PR',
+        headRefName: 'feature/one',
+      })
+    );
+
+    await moduleMocker.mock('./pull_requests.ts', () => ({
+      fetchOpenPullRequestsWithReviewers,
+      parseOwnerRepoFromRepositoryId: () => ({ owner: 'example', repo: 'repo' }),
+      partitionUserRelevantOpenPrs,
+    }));
+    await moduleMocker.mock('./pr_status.ts', () => ({
+      fetchPrFullStatus,
+    }));
+
+    const { refreshProjectPrs } = await import('./project_pr_service.ts');
+    const result = await refreshProjectPrs(db, projectId, 'dimfeld');
+
+    expect(result.newLinks).toEqual([
+      { prUrl: 'https://github.com/example/repo/pull/11', planId: 1 },
+    ]);
+    expect(
+      db
+        .prepare(
+          `SELECT source
+           FROM plan_pr
+           WHERE plan_uuid = ? AND pr_status_id = ?
+           ORDER BY source`
+        )
+        .all('plan-1', explicitDetail.status.id)
+        .map((row) => (row as { source: string }).source)
+    ).toEqual(['auto', 'explicit']);
   });
 
   test('refreshProjectPrs does not write partial results when one full-status fetch fails', async () => {

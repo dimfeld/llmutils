@@ -419,6 +419,63 @@ const migrations: Migration[] = [
       ALTER TABLE pr_status ADD COLUMN author TEXT;
     `,
   },
+  {
+    version: 13,
+    up: `
+      CREATE TABLE webhook_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        delivery_id TEXT NOT NULL UNIQUE,
+        event_type TEXT NOT NULL,
+        action TEXT,
+        repository_full_name TEXT,
+        payload_json TEXT NOT NULL,
+        received_at TEXT NOT NULL,
+        ingested_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC})
+      );
+      CREATE INDEX idx_webhook_log_repo_id ON webhook_log(repository_full_name, id);
+
+      CREATE TABLE webhook_cursor (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        last_event_id INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+      );
+      INSERT INTO webhook_cursor (id, last_event_id, updated_at)
+      VALUES (1, 0, ${SQL_NOW_ISO_UTC});
+
+      DELETE FROM pr_check_run
+      WHERE id NOT IN (
+        SELECT MAX(id)
+        FROM pr_check_run
+        GROUP BY pr_status_id, name
+      );
+      DROP INDEX IF EXISTS idx_pr_check_run_unique;
+      CREATE UNIQUE INDEX idx_pr_check_run_unique ON pr_check_run(pr_status_id, name, source);
+
+      DELETE FROM pr_review
+      WHERE id NOT IN (
+        SELECT MAX(id)
+        FROM pr_review
+        GROUP BY pr_status_id, author
+      );
+      DROP INDEX IF EXISTS idx_pr_review_unique;
+      CREATE UNIQUE INDEX idx_pr_review_unique ON pr_review(pr_status_id, author);
+
+      CREATE TABLE plan_pr_new (
+        plan_uuid TEXT NOT NULL REFERENCES plan(uuid) ON DELETE CASCADE,
+        pr_status_id INTEGER NOT NULL REFERENCES pr_status(id) ON DELETE CASCADE,
+        source TEXT NOT NULL DEFAULT 'explicit'
+          CHECK(source IN ('explicit', 'auto')),
+        PRIMARY KEY (plan_uuid, pr_status_id, source)
+      );
+      INSERT INTO plan_pr_new (plan_uuid, pr_status_id, source)
+      SELECT plan_uuid, pr_status_id, 'explicit'
+      FROM plan_pr;
+      DROP TABLE plan_pr;
+      ALTER TABLE plan_pr_new RENAME TO plan_pr;
+      CREATE INDEX idx_plan_pr_pr_status_id ON plan_pr(pr_status_id);
+      ALTER TABLE pr_status ADD COLUMN pr_updated_at TEXT;
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {

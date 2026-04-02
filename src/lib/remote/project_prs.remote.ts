@@ -2,6 +2,8 @@ import { command, query } from '$app/server';
 import { error } from '@sveltejs/kit';
 import * as z from 'zod';
 
+import { formatWebhookIngestErrors, ingestWebhookEvents } from '$common/github/webhook_ingest.js';
+import { getWebhookServerUrl } from '$common/github/webhook_client.js';
 import { parseOwnerRepoFromRepositoryId } from '$common/github/pull_requests.js';
 import { resolveGitHubToken } from '$common/github/token.js';
 import {
@@ -31,6 +33,45 @@ interface RefreshResult {
   newLinks: ProjectPrLink[];
 }
 
+interface ResolvedProjectRepoContext {
+  db: Awaited<ReturnType<typeof getServerContext>>['db'];
+  config: Awaited<ReturnType<typeof getServerContext>>['config'];
+  parsedProjectId: number;
+  ownerRepo: ReturnType<typeof parseOwnerRepoFromRepositoryId>;
+}
+
+async function refreshProjectPrsFromGitHub(
+  projectId: string,
+  resolvedContext?: ResolvedProjectRepoContext
+): Promise<RefreshResult> {
+  const { db, config, parsedProjectId, ownerRepo } =
+    resolvedContext ?? (await resolveProjectRepo(projectId));
+
+  if (!ownerRepo) {
+    return { error: 'Project does not have a GitHub repository', newLinks: [] };
+  }
+
+  if (!resolveGitHubToken()) {
+    return { error: 'GITHUB_TOKEN not configured', newLinks: [] };
+  }
+
+  const username = await getGitHubUsername({ githubUsername: config.githubUsername });
+  if (!username) {
+    return { error: 'Could not resolve GitHub username', newLinks: [] };
+  }
+
+  try {
+    const result = await refreshProjectPrsService(db, parsedProjectId, username);
+    getProjectPrs({ projectId }).refresh();
+    return { newLinks: result.newLinks };
+  } catch (err) {
+    return {
+      error: `GitHub API error: ${err instanceof Error ? err.message : String(err)}`,
+      newLinks: [],
+    };
+  }
+}
+
 function parseRequestedReviewers(requestedReviewers: string | null): string[] {
   if (!requestedReviewers) {
     return [];
@@ -52,7 +93,7 @@ function partitionCachedProjectPrs(
 ): { authored: EnrichedProjectPr[]; reviewing: EnrichedProjectPr[] } {
   if (!username) {
     return {
-      authored: [],
+      authored: [...prs],
       reviewing: [],
     };
   }
@@ -100,6 +141,7 @@ async function resolveProjectRepo(projectId: string) {
 export const getProjectPrs = query(projectIdSchema, async ({ projectId }) => {
   const { db, config, ownerRepo } = await resolveProjectRepo(projectId);
   const tokenConfigured = !!resolveGitHubToken();
+  const webhookConfigured = !!getWebhookServerUrl();
 
   if (!ownerRepo) {
     return {
@@ -108,6 +150,7 @@ export const getProjectPrs = query(projectIdSchema, async ({ projectId }) => {
       username: null,
       hasData: false,
       tokenConfigured,
+      webhookConfigured,
     };
   }
 
@@ -129,6 +172,7 @@ export const getProjectPrs = query(projectIdSchema, async ({ projectId }) => {
       username: null,
       hasData: false,
       tokenConfigured,
+      webhookConfigured,
     };
   }
 
@@ -139,36 +183,44 @@ export const getProjectPrs = query(projectIdSchema, async ({ projectId }) => {
     username,
     hasData: true,
     tokenConfigured,
+    webhookConfigured,
   };
 });
 
 export const refreshProjectPrs = command(
   projectIdSchema,
   async ({ projectId }): Promise<RefreshResult> => {
-    const { db, config, parsedProjectId, ownerRepo } = await resolveProjectRepo(projectId);
+    const resolvedContext = await resolveProjectRepo(projectId);
+    const { db, ownerRepo } = resolvedContext;
 
-    if (!ownerRepo) {
-      return { error: 'Project does not have a GitHub repository', newLinks: [] };
+    if (getWebhookServerUrl()) {
+      if (!ownerRepo) {
+        return { error: 'Project does not have a GitHub repository', newLinks: [] };
+      }
+
+      // Webhook refresh only ingests new events into the local cache.
+      // It does not run refreshProjectPrsService(), so stale-PR cleanup such as
+      // marking missing PRs closed is left to the Full Refresh from GitHub action.
+      try {
+        const ingestResult = await ingestWebhookEvents(db);
+        const ingestError = formatWebhookIngestErrors(ingestResult.errors);
+        getProjectPrs({ projectId }).refresh();
+        return ingestError ? { error: ingestError, newLinks: [] } : { newLinks: [] };
+      } catch (err) {
+        return {
+          error: `Webhook ingestion failed: ${err instanceof Error ? err.message : String(err)}`,
+          newLinks: [],
+        };
+      }
     }
 
-    if (!resolveGitHubToken()) {
-      return { error: 'GITHUB_TOKEN not configured', newLinks: [] };
-    }
+    return refreshProjectPrsFromGitHub(projectId, resolvedContext);
+  }
+);
 
-    const username = await getGitHubUsername({ githubUsername: config.githubUsername });
-    if (!username) {
-      return { error: 'Could not resolve GitHub username', newLinks: [] };
-    }
-
-    try {
-      const result = await refreshProjectPrsService(db, parsedProjectId, username);
-      getProjectPrs({ projectId }).refresh();
-      return { newLinks: result.newLinks };
-    } catch (err) {
-      return {
-        error: `GitHub API error: ${err instanceof Error ? err.message : String(err)}`,
-        newLinks: [],
-      };
-    }
+export const fullRefreshProjectPrs = command(
+  projectIdSchema,
+  async ({ projectId }): Promise<RefreshResult> => {
+    return refreshProjectPrsFromGitHub(projectId);
   }
 );

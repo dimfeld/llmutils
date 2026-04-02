@@ -82,12 +82,26 @@ The workspace detail view (`/projects/[projectId]/active/workspace/[workspaceId]
 
 ## PR Status
 
-PR status data is fetched and refreshed via remote functions in `src/lib/remote/pr_status.remote.ts`:
+### Design Guidelines
 
-### Remote Functions
+- **Escape-hatch buttons must be reachable from ALL states**: When adding a manual fallback action (e.g., "Full Refresh from GitHub API"), ensure it's visible in initial/empty/error states — not just the populated state. Users most need the escape hatch when the normal path has failed or hasn't populated data yet.
+- **Distinguish fatal errors from non-fatal warnings**: API responses that conflate errors and warnings degrade UX by blocking state transitions (like `fetchedOnce`) on non-fatal issues. Return errors and warnings in separate fields so UI can show warnings without preventing the page from rendering cached data.
 
-- **`getPrStatus`** (`query`): Returns cached PR status for the plan from the DB. Response: `{ prUrls: string[], invalidPrUrls: string[], prStatuses: PrStatusDetail[] }`. Non-URL entries and non-PR URLs from the plan's `pull_request` field are returned in `invalidPrUrls` rather than silently dropped.
-- **`refreshPrStatus`** (`command`): Syncs `plan_pr` junction links from the plan's `pullRequest` field, then refreshes each PR from GitHub using `Promise.allSettled` for per-PR partial failure tolerance. Handles missing `GITHUB_TOKEN` gracefully (syncs links from cached URLs only). Only accepts PR URLs (not issue URLs), validated by `validatePrIdentifier()`. Returns `{ error?: string }` — the actual data is delivered by calling `getPrStatus({ planUuid }).refresh()` before returning, which causes subscribed clients to re-fetch the query automatically.
+### Plan-Level PR Status
+
+PR status data for individual plans is fetched and refreshed via remote functions in `src/lib/remote/pr_status.remote.ts`:
+
+- **`getPrStatus`** (`query`): Returns cached PR status for the plan from the DB. Response: `{ prUrls: string[], invalidPrUrls: string[], prStatuses: PrStatusDetail[], tokenConfigured: boolean }`. `prStatuses` includes the union of explicit PR URLs and auto-linked (webhook branch-matched) PRs from the `plan_pr` junction table. Non-URL entries and non-PR URLs from the plan's `pull_request` field are returned in `invalidPrUrls` rather than silently dropped. `tokenConfigured` gates the Full Refresh button visibility.
+- **`refreshPrStatus`** (`command`): Webhook-first when `TIM_WEBHOOK_SERVER_URL` is set — ingests webhook events, then pre-filters explicit PR URLs to only those already cached in the DB before syncing junction links, preventing any GitHub API fetches. PRs not yet seen via webhooks are reported as "not yet available from webhooks". When webhooks are not configured, syncs `plan_pr` explicit junction links and refreshes each PR from GitHub using `Promise.allSettled` for per-PR partial failure tolerance. Handles missing `GITHUB_TOKEN` gracefully (syncs links from cached URLs only). Returns `{ error?: string }` — the actual data is delivered by calling `getPrStatus({ planUuid }).refresh()` before returning, which causes subscribed clients to re-fetch the query automatically. When a plan has no PR URLs, always calls `syncPlanPrLinks(db, uuid, [])` to prune stale explicit rows (even in webhook mode); auto-linked rows are preserved. Refresh paths build the effective PR URL set from the union of explicit URLs and auto-linked junction rows.
+- **`fullRefreshPrStatus`** (`command`): Escape hatch that bypasses webhook ingestion and refreshes plan PR status directly from the GitHub API. Mirrors the pattern used by `fullRefreshProjectPrs`. Triggered by the "Full Refresh" button in `PrStatusSection`, which is visible in both the populated state and the initial empty/error CTA state.
+
+### Project-Level PR View
+
+Project-wide PR data is managed via remote functions in `src/lib/remote/project_prs.remote.ts`:
+
+- **`getProjectPrs`** (`query`): Returns cached PR statuses for the project's GitHub repository, partitioned into `authored` and `reviewing` groups by the authenticated GitHub user. Response includes `tokenConfigured` and `webhookConfigured` flags used to gate UI elements.
+- **`refreshProjectPrs`** (`command`): Webhook-first when `TIM_WEBHOOK_SERVER_URL` is set — calls `ingestWebhookEvents(db)` then refreshes the query from cache. When webhooks are not configured, falls back to `refreshProjectPrsService()` which fetches all open PRs from the GitHub API directly.
+- **`fullRefreshProjectPrs`** (`command`): Escape hatch that always calls `refreshProjectPrsService()` (direct GitHub API) regardless of webhook configuration. Triggered by the "Full Refresh from GitHub API" button in the web UI, which is only shown when `tokenConfigured` is true.
 
 ### Data Flow
 
@@ -97,7 +111,7 @@ PR status data is fetched and refreshed via remote functions in `src/lib/remote/
 
 ### Components
 
-- **`PrStatusSection.svelte`** — PR detail section rendered inside `PlanDetail`. Takes only `planUuid` as a prop and fetches its own data via the `getPrStatus` query. For each linked PR: title as GitHub link, state badge (open/merged/closed/draft), checks summary badge (passing/failing/pending), review decision, labels as colored chips. Expandable sub-sections for individual check runs and reviews. Renders warning banners for invalid PR entries (non-URL strings, issue URLs). Triggers `refreshPrStatus` command on mount which refreshes data from GitHub and updates the query automatically.
+- **`PrStatusSection.svelte`** — PR detail section rendered inside `PlanDetail`. Takes only `planUuid` as a prop and fetches its own data via the `getPrStatus` query. For each linked PR: title as GitHub link, state badge (open/merged/closed/draft), checks summary badge (passing/failing/pending), review decision, labels as colored chips. Expandable sub-sections for individual check runs and reviews. Renders warning banners for invalid PR entries (non-URL strings, issue URLs). Triggers `refreshPrStatus` command on mount which refreshes data (via webhooks or GitHub API depending on configuration) and updates the query automatically. Includes a "Full Refresh from GitHub API" button (visible when `tokenConfigured` is true) that calls `fullRefreshPrStatus` to bypass webhooks — shown in both the populated header and the initial empty/error CTA state.
 - **`PrCheckRunList.svelte`** — Expandable list of individual CI check runs within a PR. Shows name, status/conclusion with color coding, link to details URL. Handles both CheckRun and StatusContext source types.
 - **`PrReviewList.svelte`** — Expandable list of PR reviews. Shows reviewer name, review state (approved/changes requested/commented/pending/dismissed) with appropriate styling.
 - **`PrStatusIndicator.svelte`** — Compact colored dot badge for plan list views showing overall PR health. Green = all checks passing, red = any failing, yellow = pending, gray = no status data. Used in `PlanRow.svelte` and `ActivePlanRow.svelte` when `pullRequests.length > 0`. Status derived from `EnrichedPlan.prSummaryStatus`.

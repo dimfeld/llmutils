@@ -1202,6 +1202,7 @@ const prCommand = program.command('pr').description('GitHub PR commands');
 prCommand
   .command('status [planId]')
   .description('Fetch and display GitHub PR status for a plan')
+  .option('--force-refresh', 'Bypass webhooks and fetch directly from GitHub API')
   .action(async (planId, options, command) => {
     const { handlePrStatusCommand } = await import('./commands/pr.js');
     await handlePrStatusCommand(planId, options, command).catch(handleCommandError);

@@ -158,6 +158,17 @@ interface CheckStatusGraphQlResponse {
   } | null;
 }
 
+interface GraphQlPullRequestMergeableStatus {
+  mergeable: string | null;
+  reviewDecision: string | null;
+}
+
+interface MergeableStatusGraphQlResponse {
+  repository: {
+    pullRequest: GraphQlPullRequestMergeableStatus | null;
+  } | null;
+}
+
 const fullStatusQuery = `
   query GetPrFullStatus($owner: String!, $repo: String!, $prNumber: Int!) {
     repository(owner: $owner, name: $repo) {
@@ -255,6 +266,17 @@ const checkStatusQuery = `
             }
           }
         }
+      }
+    }
+  }
+`;
+
+const mergeableStatusQuery = `
+  query GetPrMergeableStatus($owner: String!, $repo: String!, $prNumber: Int!) {
+    repository(owner: $owner, name: $repo) {
+      pullRequest(number: $prNumber) {
+        mergeable
+        reviewDecision
       }
     }
   }
@@ -564,4 +586,29 @@ export async function fetchPrCheckStatus(
   }
 
   return normalizeChecks(pullRequest.commits);
+}
+
+export async function fetchPrMergeableAndReviewDecision(
+  owner: string,
+  repo: string,
+  prNumber: number
+): Promise<{ mergeable: PrMergeableState; reviewDecision: PrReviewDecision }> {
+  const response = await getOctokit().graphql<MergeableStatusGraphQlResponse>(
+    mergeableStatusQuery,
+    {
+      owner,
+      repo,
+      prNumber,
+    }
+  );
+
+  const pullRequest = response.repository?.pullRequest;
+  if (!pullRequest) {
+    throw new Error(`Pull request ${owner}/${repo}#${prNumber} not found`);
+  }
+
+  return {
+    mergeable: normalizeMergeableState(pullRequest.mergeable),
+    reviewDecision: normalizeReviewDecision(pullRequest.reviewDecision),
+  };
 }

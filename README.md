@@ -64,12 +64,28 @@ Explicit status changes via `tim set <id> --status done` always go directly to `
 
 `tim pr` is a subcommand namespace for GitHub PR operations:
 
-- `tim pr status [planId]` — Fetch and display PR status for a plan (checks, reviews, merge readiness) with color-coded terminal output. Resolves the plan from a positional argument or the current workspace plan (walks parent directories to find the workspace root).
+- `tim pr status [planId]` — Fetch and display PR status for a plan (checks, reviews, merge readiness) with color-coded terminal output. Resolves the plan from a positional argument or the current workspace plan (walks parent directories to find the workspace root). When `TIM_WEBHOOK_SERVER_URL` is set, ingests webhook events first (webhook-first mode); use `--force-refresh` to bypass webhooks and fetch directly from the GitHub API.
 - `tim pr link <planId> <prUrl>` — Link a PR to a plan. Validates the PR exists on GitHub, rejects non-PR URLs (e.g. issue URLs), and canonicalizes the URL before updating the plan file.
 - `tim pr unlink <planId> <prUrl>` — Remove a PR link from a plan.
 - `tim pr description <planFile>` — Generate a PR description from a plan (migrated from the former `tim pr-description` command, which remains as a hidden alias for backwards compatibility).
 
-PR status data (check runs, reviews, labels, merge state) is cached in the SQLite database and surfaced in the web interface. The CLI always force-refreshes from GitHub; the web UI uses stale-while-revalidate caching. Requires `GITHUB_TOKEN` environment variable for GitHub API access.
+PR status data (check runs, reviews, labels, merge state) is cached in the SQLite database and surfaced in the web interface. When `TIM_WEBHOOK_SERVER_URL` is configured, both the CLI and web UI use webhook-first refresh (ingesting from the webhook server before displaying data). When not configured, the CLI refreshes directly from GitHub and the web UI uses stale-while-revalidate caching. Requires `GITHUB_TOKEN` environment variable for direct GitHub API access.
+
+### Webhook-Based PR Updates
+
+When connected to the GitHub Webhook Receiver (see below), tim can ingest PR status updates incrementally from webhook events instead of polling the GitHub API directly. This is the preferred approach as it's faster and avoids API rate limits.
+
+Set `TIM_WEBHOOK_SERVER_URL` to the webhook receiver's base URL (e.g., `http://localhost:8080`) and ensure `WEBHOOK_INTERNAL_API_TOKEN` is set to the same token used by the receiver.
+
+Supported webhook event types:
+
+- **`pull_request`**: Creates/updates PR status, labels, requested reviewers. Auto-links PRs to plans by branch name.
+- **`pull_request_review`**: Updates review state per author.
+- **`check_run`**: Updates individual check runs and recomputes the check rollup state.
+
+Fields not available in webhooks (`mergeable`, `review_decision`) are fetched via targeted lightweight API calls triggered by relevant events (only for review states that affect `review_decision`: APPROVED, CHANGES_REQUESTED, DISMISSED). Events for repositories not associated with any tim project are logged but not applied.
+
+**Known limitation**: In webhook mode, the project-level refresh does not run the full `refreshProjectPrsService()` cleanup, so PRs that were closed without a webhook event (e.g., due to webhook server downtime) won't be detected as stale until a manual "Full Refresh from GitHub API" is triggered from the web UI or CLI (`--force-refresh`). Full refresh is available at both the project level and the individual plan level.
 
 ### Project-Wide PR View
 
@@ -191,7 +207,7 @@ The interface is organized around projects, with four tabs per project:
 
 - **Sessions** — real-time monitoring of tim agent processes with live message transcripts, prompt interaction (confirm/input/select/checkbox/prefix_select), and free-form user input.
 - **Active Work** — dashboard of current work per project showing workspaces (with Primary/Auto/Locked/Available status badges) and active plans (in_progress + blocked). Workspaces are filtered to "recently active" by default (locked, primary, or updated within 48 hours) with a toggle to show all. Clicking a plan shows full detail in the right pane.
-- **Pull Requests** — project-wide view of open GitHub PRs relevant to the user (authored or reviewing), with automatic plan-PR linking based on branch name matching, manual refresh, and PR detail with checks, reviews, and labels.
+- **Pull Requests** — project-wide view of open GitHub PRs relevant to the user (authored or reviewing), with automatic plan-PR linking based on branch name matching, webhook-first refresh (when configured), and PR detail with checks, reviews, and labels. A "Full Refresh from GitHub API" button provides an escape hatch when webhook data is stale or missing.
 - **Plans** — browse, filter, search, and inspect plans with two-column layout (list + detail), status/priority badges, collapsible status groups, and clickable dependency navigation
 
 Navigation uses route-based project selection at `/projects/{projectId}/{tab}`, with cookie persistence to remember the last-selected project. The home page redirects to the most recently used project. On all tabs, pressing **Option+Down** (Alt+Down) / **Option+Up** (Alt+Up) navigates to the next/previous item in the list, respecting collapsed groups and active filters. Global keyboard shortcuts are also available: **Ctrl+/** focuses the search input, and **Ctrl+1/2/3/4** switches between the Sessions, Active Work, Pull Requests, and Plans tabs.

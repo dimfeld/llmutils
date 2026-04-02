@@ -12,8 +12,11 @@ import { getOrCreateProject } from '$tim/db/project.js';
 import { invokeCommand, invokeQuery } from '$lib/test-utils/invoke_command.js';
 
 let currentDb: Database;
+let currentWebhookServerUrl: string | null = null;
 const syncPlanPrLinks = vi.fn();
 const ensurePrStatusFresh = vi.fn();
+const refreshPrStatusFromApi = vi.fn();
+const ingestWebhookEvents = vi.fn();
 
 vi.mock('$lib/server/init.js', () => ({
   getServerContext: async () => ({
@@ -25,6 +28,17 @@ vi.mock('$lib/server/init.js', () => ({
 vi.mock('$common/github/pr_status_service.js', () => ({
   syncPlanPrLinks,
   ensurePrStatusFresh,
+  refreshPrStatus: refreshPrStatusFromApi,
+}));
+
+vi.mock('$common/github/webhook_client.js', () => ({
+  getWebhookServerUrl: () => currentWebhookServerUrl,
+}));
+
+vi.mock('$common/github/webhook_ingest.js', () => ({
+  ingestWebhookEvents,
+  formatWebhookIngestErrors: (errors: string[]) =>
+    errors.length > 0 ? `Webhook ingestion had issues: ${errors.join('; ')}` : undefined,
 }));
 
 describe('pr_status remote functions', () => {
@@ -77,6 +91,14 @@ describe('pr_status remote functions', () => {
 
     syncPlanPrLinks.mockReset();
     ensurePrStatusFresh.mockReset();
+    refreshPrStatusFromApi.mockReset();
+    ingestWebhookEvents.mockReset();
+    currentWebhookServerUrl = null;
+    ingestWebhookEvents.mockResolvedValue({
+      eventsIngested: 0,
+      prsUpdated: [],
+      errors: [],
+    });
     delete process.env.GITHUB_TOKEN;
     clearGitHubTokenCache();
   });
@@ -99,6 +121,7 @@ describe('pr_status remote functions', () => {
     expect(payload).toMatchObject({
       prUrls: ['https://github.com/example/repo/pull/1', 'https://github.com/example/repo/pull/2'],
       invalidPrUrls: [],
+      tokenConfigured: false,
     });
     expect(payload.prStatuses).toHaveLength(1);
     expect(payload.prStatuses[0]).toMatchObject({
@@ -152,7 +175,58 @@ describe('pr_status remote functions', () => {
       prUrls: [],
       invalidPrUrls: ['https://github.com/example/repo/issues/3'],
       prStatuses: [],
+      tokenConfigured: false,
     });
+  });
+
+  test('getPrStatus falls back to webhook auto-linked junction rows when the plan has no pull_request values', async () => {
+    const junctionOnlyPr = upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/9',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 9,
+      title: 'Webhook-linked PR',
+      state: 'open',
+      draft: false,
+      checkRollupState: 'success',
+      lastFetchedAt: new Date().toISOString(),
+    });
+    linkPlanToPr(currentDb, 'plan-without-prs', junctionOnlyPr.status.id, 'auto');
+
+    const { getPrStatus } = await import('./pr_status.remote.js');
+    const payload = await invokeQuery(getPrStatus, { planUuid: 'plan-without-prs' });
+
+    expect(payload.prUrls).toEqual([]);
+    expect(payload.invalidPrUrls).toEqual([]);
+    expect(payload.prStatuses).toHaveLength(1);
+    expect(payload.prStatuses[0]?.status.pr_url).toBe('https://github.com/example/repo/pull/9');
+  });
+
+  test('getPrStatus includes webhook auto-linked rows alongside explicit plan URLs', async () => {
+    const autoLinkedPr = upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/10',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 10,
+      title: 'Webhook-linked PR',
+      state: 'open',
+      draft: false,
+      checkRollupState: 'success',
+      lastFetchedAt: new Date().toISOString(),
+    });
+    linkPlanToPr(currentDb, 'plan-with-prs', autoLinkedPr.status.id, 'auto');
+
+    const { getPrStatus } = await import('./pr_status.remote.js');
+    const payload = await invokeQuery(getPrStatus, { planUuid: 'plan-with-prs' });
+
+    expect(payload.prUrls).toEqual([
+      'https://github.com/example/repo/pull/1',
+      'https://github.com/example/repo/pull/2',
+    ]);
+    expect(payload.prStatuses.map((detail) => detail.status.pr_url)).toEqual([
+      'https://github.com/example/repo/pull/1',
+      'https://github.com/example/repo/pull/10',
+    ]);
   });
 
   test('refreshPrStatus throws 404 for an unknown plan', async () => {
@@ -169,7 +243,7 @@ describe('pr_status remote functions', () => {
     expect(ensurePrStatusFresh).not.toHaveBeenCalled();
   });
 
-  test('refreshPrStatus returns error when GITHUB_TOKEN is not configured', async () => {
+  test('refreshPrStatus returns error when GITHUB_TOKEN is not configured and webhook mode is disabled', async () => {
     const { refreshPrStatus } = await import('./pr_status.remote.js');
 
     const result = await invokeCommand(refreshPrStatus, { planUuid: 'plan-with-prs' });
@@ -182,13 +256,35 @@ describe('pr_status remote functions', () => {
     expect(result.error).toBe('GITHUB_TOKEN not configured');
   });
 
-  test('refreshPrStatus without GITHUB_TOKEN ignores cached-link sync races', async () => {
+  test('refreshPrStatus without GITHUB_TOKEN ignores cached-link sync races when webhook mode is disabled', async () => {
     syncPlanPrLinks.mockRejectedValueOnce(new Error('cache entry disappeared'));
     const { refreshPrStatus } = await import('./pr_status.remote.js');
 
     const result = await invokeCommand(refreshPrStatus, { planUuid: 'plan-with-prs' });
 
     expect(result.error).toBe('GITHUB_TOKEN not configured');
+  });
+
+  test('refreshPrStatus does not report token error when webhook mode is enabled', async () => {
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+    // Cache PR 2 so there are no uncached URLs
+    upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/2',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 2,
+      title: 'Cached PR 2',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: new Date().toISOString(),
+    });
+    const { refreshPrStatus } = await import('./pr_status.remote.js');
+
+    const result = await invokeCommand(refreshPrStatus, { planUuid: 'plan-with-prs' });
+
+    expect(ingestWebhookEvents).toHaveBeenCalledWith(currentDb);
+    expect(ensurePrStatusFresh).not.toHaveBeenCalled();
+    expect(result.error).toBeUndefined();
   });
 
   test('refreshPrStatus syncs links and refreshes each PR when GITHUB_TOKEN is configured', async () => {
@@ -219,6 +315,92 @@ describe('pr_status remote functions', () => {
     ]);
     expect(ensurePrStatusFresh).toHaveBeenCalledTimes(2);
     expect(result.error).toBeUndefined();
+  });
+
+  test('refreshPrStatus ingests webhook events and uses cached data when configured', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+
+    const { refreshPrStatus } = await import('./pr_status.remote.js');
+    const result = await invokeCommand(refreshPrStatus, { planUuid: 'plan-with-prs' });
+
+    expect(ingestWebhookEvents).toHaveBeenCalledWith(currentDb);
+    // In webhook mode, should NOT call ensurePrStatusFresh (that's for the GitHub API path)
+    expect(ensurePrStatusFresh).not.toHaveBeenCalled();
+    // PR 2 is not cached, so should report it as not yet available
+    expect(result.error).toContain('Not yet available from webhooks');
+  });
+
+  test('refreshPrStatus in webhook mode syncs only cached explicit URLs and reports uncached mixed-source PRs', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+
+    const autoLinkedPr = upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/10',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 10,
+      title: 'Webhook-linked PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: new Date().toISOString(),
+    });
+    linkPlanToPr(currentDb, 'plan-with-prs', autoLinkedPr.status.id, 'auto');
+
+    const { refreshPrStatus } = await import('./pr_status.remote.js');
+    const result = await invokeCommand(refreshPrStatus, { planUuid: 'plan-with-prs' });
+
+    expect(syncPlanPrLinks).toHaveBeenCalledWith(currentDb, 'plan-with-prs', [
+      'https://github.com/example/repo/pull/1',
+    ]);
+    expect(result.error).toContain(
+      'Not yet available from webhooks: https://github.com/example/repo/pull/2'
+    );
+    expect(result.error).not.toContain('https://github.com/example/repo/pull/10');
+  });
+
+  test('refreshPrStatus in webhook mode only syncs cached explicit URLs', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+
+    const { refreshPrStatus } = await import('./pr_status.remote.js');
+    await invokeCommand(refreshPrStatus, { planUuid: 'plan-with-prs' });
+
+    expect(syncPlanPrLinks).toHaveBeenCalledTimes(1);
+    expect(syncPlanPrLinks).toHaveBeenCalledWith(currentDb, 'plan-with-prs', [
+      'https://github.com/example/repo/pull/1',
+    ]);
+    expect(ensurePrStatusFresh).not.toHaveBeenCalled();
+  });
+
+  test('refreshPrStatus surfaces non-throwing webhook ingestion errors', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+    ingestWebhookEvents.mockResolvedValueOnce({
+      eventsIngested: 1,
+      prsUpdated: [],
+      errors: ['missed review refresh'],
+    });
+
+    const { refreshPrStatus } = await import('./pr_status.remote.js');
+    const result = await invokeCommand(refreshPrStatus, { planUuid: 'plan-with-prs' });
+
+    expect(result.error).toContain('Webhook ingestion had issues');
+    expect(result.error).toContain('missed review refresh');
+    expect(result.error).toContain('Not yet available from webhooks');
+  });
+
+  test('refreshPrStatus returns error when webhook ingestion fails', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+    ingestWebhookEvents.mockRejectedValueOnce(new Error('webhook offline'));
+
+    const { refreshPrStatus } = await import('./pr_status.remote.js');
+    const result = await invokeCommand(refreshPrStatus, { planUuid: 'plan-with-prs' });
+
+    expect(result.error).toContain('Webhook ingestion failed');
+    expect(result.error).toContain('webhook offline');
+    expect(ensurePrStatusFresh).not.toHaveBeenCalled();
   });
 
   test('refreshPrStatus reports errors for failed refreshes', async () => {
@@ -281,6 +463,180 @@ describe('pr_status remote functions', () => {
     expect(result.error).toBeUndefined();
     expect(syncPlanPrLinks).toHaveBeenCalledWith(expect.anything(), 'plan-without-prs', []);
     expect(ensurePrStatusFresh).not.toHaveBeenCalled();
+  });
+
+  test('refreshPrStatus preserves webhook-linked plan_pr rows when the plan has no pull_request values in webhook mode', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+    const webhookOnlyPr = upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/77',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 77,
+      title: 'Webhook-linked PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: new Date().toISOString(),
+    });
+    linkPlanToPr(currentDb, 'plan-without-prs', webhookOnlyPr.status.id, 'auto');
+    const { refreshPrStatus } = await import('./pr_status.remote.js');
+
+    const result = await invokeCommand(refreshPrStatus, { planUuid: 'plan-without-prs' });
+
+    expect(result.error).toBeUndefined();
+    expect(syncPlanPrLinks).toHaveBeenCalledWith(expect.anything(), 'plan-without-prs', []);
+    expect(ensurePrStatusFresh).not.toHaveBeenCalled();
+    const payload = await invokeQuery((await import('./pr_status.remote.js')).getPrStatus, {
+      planUuid: 'plan-without-prs',
+    });
+    expect(payload.prStatuses).toHaveLength(1);
+    expect(payload.prStatuses[0]?.status.pr_url).toBe('https://github.com/example/repo/pull/77');
+  });
+
+  test('fullRefreshPrStatus refreshes webhook-linked plan_pr rows through the GitHub API path when there are no explicit pull_request URLs', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    const webhookOnlyPr = upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/88',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 88,
+      title: 'Webhook-linked PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: new Date().toISOString(),
+    });
+    linkPlanToPr(currentDb, 'plan-without-prs', webhookOnlyPr.status.id, 'auto');
+    syncPlanPrLinks.mockResolvedValue([]);
+    refreshPrStatusFromApi.mockResolvedValue({
+      status: {
+        id: webhookOnlyPr.status.id,
+        pr_url: 'https://github.com/example/repo/pull/88',
+        title: 'Webhook-linked PR',
+      },
+      checks: [],
+      reviews: [],
+      labels: [],
+    });
+
+    const { fullRefreshPrStatus, getPrStatus } = await import('./pr_status.remote.js');
+    const result = await invokeCommand(fullRefreshPrStatus, { planUuid: 'plan-without-prs' });
+
+    expect(result.error).toBeUndefined();
+    expect(syncPlanPrLinks).toHaveBeenCalledWith(expect.anything(), 'plan-without-prs', []);
+    expect(refreshPrStatusFromApi).toHaveBeenCalledWith(
+      expect.anything(),
+      'https://github.com/example/repo/pull/88'
+    );
+    expect(ensurePrStatusFresh).not.toHaveBeenCalled();
+
+    const payload = await invokeQuery(getPrStatus, { planUuid: 'plan-without-prs' });
+    expect(payload.prStatuses).toHaveLength(1);
+    expect(payload.prStatuses[0]?.status.pr_url).toBe('https://github.com/example/repo/pull/88');
+  });
+
+  test('fullRefreshPrStatus refreshes explicit and auto-linked PRs together but only syncs explicit links', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    const autoLinkedPr = upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/10',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 10,
+      title: 'Webhook-linked PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: new Date().toISOString(),
+    });
+    linkPlanToPr(currentDb, 'plan-with-prs', autoLinkedPr.status.id, 'auto');
+    syncPlanPrLinks.mockResolvedValue([]);
+    refreshPrStatusFromApi
+      .mockResolvedValueOnce({
+        status: {
+          id: 1,
+          pr_url: 'https://github.com/example/repo/pull/1',
+          title: 'PR One',
+        },
+        checks: [],
+        reviews: [],
+        labels: [],
+      })
+      .mockResolvedValueOnce({
+        status: {
+          id: 2,
+          pr_url: 'https://github.com/example/repo/pull/2',
+          title: 'PR Two',
+        },
+        checks: [],
+        reviews: [],
+        labels: [],
+      })
+      .mockResolvedValueOnce({
+        status: {
+          id: autoLinkedPr.status.id,
+          pr_url: 'https://github.com/example/repo/pull/10',
+          title: 'Webhook-linked PR',
+        },
+        checks: [],
+        reviews: [],
+        labels: [],
+      });
+
+    const { fullRefreshPrStatus } = await import('./pr_status.remote.js');
+    const result = await invokeCommand(fullRefreshPrStatus, { planUuid: 'plan-with-prs' });
+
+    expect(result.error).toBeUndefined();
+    expect(syncPlanPrLinks).toHaveBeenCalledWith(currentDb, 'plan-with-prs', [
+      'https://github.com/example/repo/pull/1',
+      'https://github.com/example/repo/pull/2',
+    ]);
+    expect(refreshPrStatusFromApi).toHaveBeenCalledTimes(3);
+    expect(refreshPrStatusFromApi).toHaveBeenNthCalledWith(
+      1,
+      currentDb,
+      'https://github.com/example/repo/pull/1'
+    );
+    expect(refreshPrStatusFromApi).toHaveBeenNthCalledWith(
+      2,
+      currentDb,
+      'https://github.com/example/repo/pull/2'
+    );
+    expect(refreshPrStatusFromApi).toHaveBeenNthCalledWith(
+      3,
+      currentDb,
+      'https://github.com/example/repo/pull/10'
+    );
+  });
+
+  test('fullRefreshPrStatus bypasses webhook ingestion and calls the GitHub API path', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+    syncPlanPrLinks.mockResolvedValue([]);
+    refreshPrStatusFromApi
+      .mockResolvedValueOnce({
+        status: {
+          id: 1,
+          pr_url: 'https://github.com/example/repo/pull/1',
+          title: 'PR One',
+        },
+      })
+      .mockResolvedValueOnce({
+        status: {
+          id: 2,
+          pr_url: 'https://github.com/example/repo/pull/2',
+          title: 'PR Two',
+        },
+      });
+
+    const { fullRefreshPrStatus } = await import('./pr_status.remote.js');
+    const result = await invokeCommand(fullRefreshPrStatus, { planUuid: 'plan-with-prs' });
+
+    expect(ingestWebhookEvents).not.toHaveBeenCalled();
+    expect(syncPlanPrLinks).toHaveBeenCalledWith(expect.anything(), 'plan-with-prs', [
+      'https://github.com/example/repo/pull/1',
+      'https://github.com/example/repo/pull/2',
+    ]);
+    expect(refreshPrStatusFromApi).toHaveBeenCalledTimes(2);
+    expect(ensurePrStatusFresh).not.toHaveBeenCalled();
+    expect(result.error).toBeUndefined();
   });
 
   test('refreshPrStatus reports invalid PR entries as errors', async () => {

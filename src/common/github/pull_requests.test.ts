@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, test, vi, spyOn } from 'vitest';
 import type { ReviewThreadNode, CommentNode, DiffLine } from './pull_requests.ts';
 import {
+  constructGitHubRepositoryId,
   parseDiff,
   parseOwnerRepoFromRepositoryId,
   partitionUserRelevantOpenPrs,
@@ -333,6 +334,12 @@ describe('parseOwnerRepoFromRepositoryId', () => {
     expect(parseOwnerRepoFromRepositoryId('')).toBeNull();
     expect(parseOwnerRepoFromRepositoryId('github.com__owner__')).toBeNull();
     expect(parseOwnerRepoFromRepositoryId('github.com____repo')).toBeNull();
+  });
+});
+
+describe('constructGitHubRepositoryId', () => {
+  test('returns the canonical github repository id format', () => {
+    expect(constructGitHubRepositoryId('owner', 'repo')).toBe('github.com__owner__repo');
   });
 });
 

@@ -212,6 +212,77 @@ function seedSchemaVersionNine(db: Database): void {
   `);
 }
 
+function seedSchemaVersionTwelve(db: Database): void {
+  db.run('PRAGMA foreign_keys = ON');
+  db.exec(`
+    CREATE TABLE schema_version (
+      version INTEGER NOT NULL DEFAULT 0,
+      import_completed INTEGER NOT NULL DEFAULT 0
+    );
+    INSERT INTO schema_version (version, import_completed) VALUES (12, 1);
+
+    CREATE TABLE pr_status (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pr_url TEXT NOT NULL UNIQUE,
+      owner TEXT NOT NULL,
+      repo TEXT NOT NULL,
+      pr_number INTEGER NOT NULL,
+      author TEXT,
+      title TEXT,
+      state TEXT NOT NULL,
+      draft INTEGER NOT NULL DEFAULT 0,
+      mergeable TEXT,
+      head_sha TEXT,
+      base_branch TEXT,
+      head_branch TEXT,
+      requested_reviewers TEXT,
+      review_decision TEXT,
+      check_rollup_state TEXT,
+      merged_at TEXT,
+      last_fetched_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE pr_check_run (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pr_status_id INTEGER NOT NULL REFERENCES pr_status(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      source TEXT NOT NULL,
+      status TEXT NOT NULL,
+      conclusion TEXT,
+      details_url TEXT,
+      started_at TEXT,
+      completed_at TEXT
+    );
+    CREATE INDEX idx_pr_check_run_pr_status_id ON pr_check_run(pr_status_id);
+
+    CREATE TABLE pr_review (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pr_status_id INTEGER NOT NULL REFERENCES pr_status(id) ON DELETE CASCADE,
+      author TEXT NOT NULL,
+      state TEXT NOT NULL,
+      submitted_at TEXT
+    );
+    CREATE INDEX idx_pr_review_pr_status_id ON pr_review(pr_status_id);
+
+    CREATE TABLE plan (
+      uuid TEXT NOT NULL PRIMARY KEY,
+      project_id INTEGER NOT NULL,
+      plan_id INTEGER NOT NULL,
+      title TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      pull_request TEXT
+    );
+
+    CREATE TABLE plan_pr (
+      plan_uuid TEXT NOT NULL REFERENCES plan(uuid) ON DELETE CASCADE,
+      pr_status_id INTEGER NOT NULL REFERENCES pr_status(id) ON DELETE CASCADE,
+      PRIMARY KEY (plan_uuid, pr_status_id)
+    );
+  `);
+}
+
 describe('tim db/database', () => {
   let tempDir: string;
   const originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
@@ -255,7 +326,7 @@ describe('tim db/database', () => {
         []
       >('SELECT version, import_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(12);
+    expect(version?.version).toBe(15);
     expect(version?.import_completed).toBe(1);
 
     const tables = db
@@ -281,6 +352,8 @@ describe('tim db/database', () => {
     expect(tables).toContain('pr_review');
     expect(tables).toContain('pr_label');
     expect(tables).toContain('plan_pr');
+    expect(tables).toContain('webhook_log');
+    expect(tables).toContain('webhook_cursor');
 
     const planColumns = db
       .query<{ name: string }, []>("PRAGMA table_info('plan')")
@@ -307,6 +380,9 @@ describe('tim db/database', () => {
     expect(indices).toContain('idx_plan_parent_uuid');
     expect(indices).toContain('idx_plan_task_plan_uuid');
     expect(indices).toContain('idx_plan_tag_plan_uuid');
+    expect(indices).toContain('idx_webhook_log_repo_id');
+    expect(indices).toContain('idx_pr_check_run_unique');
+    expect(indices).toContain('idx_pr_review_unique');
 
     db.close(false);
   });
@@ -324,7 +400,7 @@ describe('tim db/database', () => {
         []
       >('SELECT version, import_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(12);
+    expect(version?.version).toBe(15);
     expect(version?.import_completed).toBe(1);
     const versionRowCount = db2
       .query<{ count: number }, []>('SELECT count(*) as count FROM schema_version')
@@ -455,7 +531,7 @@ describe('tim db/database', () => {
       const schemaVersion = db
         .query<{ version: number }, []>('SELECT version FROM schema_version')
         .get();
-      expect(schemaVersion?.version).toBe(12);
+      expect(schemaVersion?.version).toBe(15);
 
       const planColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('plan')")
@@ -476,12 +552,170 @@ describe('tim db/database', () => {
       const planPrCount = db
         .query<{ count: number }, []>('SELECT count(*) AS count FROM plan_pr')
         .get();
+      const webhookCursor = db
+        .query<
+          { last_event_id: number },
+          []
+        >('SELECT last_event_id FROM webhook_cursor WHERE id = 1')
+        .get();
 
       expect(planCount?.count).toBe(1);
       expect(taskCount?.count).toBe(1);
       expect(dependencyCount?.count).toBe(1);
       expect(tagCount?.count).toBe(1);
       expect(planPrCount?.count).toBe(1);
+      expect(webhookCursor?.last_event_id).toBe(0);
+    } finally {
+      db.close(false);
+    }
+  });
+
+  test('runMigrations upgrades schema version 12 to 15, deduping PR child rows and seeding webhook cursor', () => {
+    const dbPath = path.join(tempDir, DATABASE_FILENAME);
+    const db = new Database(dbPath);
+
+    try {
+      seedSchemaVersionTwelve(db);
+
+      db.prepare(
+        `
+          INSERT INTO pr_status (
+            id, pr_url, owner, repo, pr_number, author, title, state, draft, mergeable,
+            head_sha, base_branch, head_branch, requested_reviewers, review_decision,
+            check_rollup_state, merged_at, last_fetched_at, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `
+      ).run(
+        1,
+        'https://github.com/example/repo/pull/1',
+        'example',
+        'repo',
+        1,
+        'alice',
+        'Test PR',
+        'open',
+        0,
+        null,
+        'sha',
+        'main',
+        'feature',
+        '[]',
+        null,
+        null,
+        null,
+        '2026-03-20T00:00:00Z',
+        '2026-03-20T00:00:00Z',
+        '2026-03-20T00:00:00Z'
+      );
+
+      db.prepare(
+        `
+          INSERT INTO pr_check_run (
+            pr_status_id, name, source, status, conclusion, details_url, started_at, completed_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `
+      ).run(1, 'tests', 'check_run', 'queued', null, null, null, null);
+      db.prepare(
+        `
+          INSERT INTO pr_check_run (
+            pr_status_id, name, source, status, conclusion, details_url, started_at, completed_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `
+      ).run(1, 'tests', 'check_run', 'completed', 'success', null, null, null);
+
+      db.prepare(
+        `
+          INSERT INTO pr_review (pr_status_id, author, state, submitted_at)
+          VALUES (?, ?, ?, ?)
+        `
+      ).run(1, 'reviewer', 'COMMENTED', '2026-03-20T00:01:00Z');
+      db.prepare(
+        `
+          INSERT INTO pr_review (pr_status_id, author, state, submitted_at)
+          VALUES (?, ?, ?, ?)
+        `
+      ).run(1, 'reviewer', 'APPROVED', '2026-03-20T00:02:00Z');
+      db.prepare(
+        `INSERT INTO plan (uuid, project_id, plan_id, title, status) VALUES (?, ?, ?, ?, ?)`
+      ).run('plan-1', 1, 1, 'Plan 1', 'pending');
+      db.prepare('INSERT INTO plan_pr (plan_uuid, pr_status_id) VALUES (?, ?)').run('plan-1', 1);
+
+      runMigrations(db);
+
+      const schemaVersion = db
+        .query<
+          { version: number },
+          []
+        >('SELECT version FROM schema_version ORDER BY rowid DESC LIMIT 1')
+        .get();
+      expect(schemaVersion?.version).toBe(15);
+
+      const checkRows = db
+        .query<
+          { count: number },
+          []
+        >("SELECT count(*) AS count FROM pr_check_run WHERE pr_status_id = 1 AND name = 'tests'")
+        .get();
+      expect(checkRows?.count).toBe(1);
+
+      // Verify the latest (completed/success) row survived, not the older queued one
+      const survivingCheck = db
+        .query<
+          { status: string; conclusion: string | null },
+          []
+        >("SELECT status, conclusion FROM pr_check_run WHERE pr_status_id = 1 AND name = 'tests'")
+        .get();
+      expect(survivingCheck?.status).toBe('completed');
+      expect(survivingCheck?.conclusion).toBe('success');
+
+      const reviewRows = db
+        .query<
+          { count: number },
+          []
+        >("SELECT count(*) AS count FROM pr_review WHERE pr_status_id = 1 AND author = 'reviewer'")
+        .get();
+      expect(reviewRows?.count).toBe(1);
+
+      // Verify the latest (APPROVED) review survived, not the older COMMENTED one
+      const survivingReview = db
+        .query<
+          { state: string },
+          []
+        >("SELECT state FROM pr_review WHERE pr_status_id = 1 AND author = 'reviewer'")
+        .get();
+      expect(survivingReview?.state).toBe('APPROVED');
+
+      const cursorRow = db
+        .query<
+          { id: number; last_event_id: number },
+          []
+        >('SELECT id, last_event_id FROM webhook_cursor')
+        .get();
+      expect(cursorRow).toEqual({ id: 1, last_event_id: 0 });
+
+      db.prepare("INSERT INTO plan_pr (plan_uuid, pr_status_id, source) VALUES (?, ?, 'auto')").run(
+        'plan-1',
+        1
+      );
+      const planPrRows = db
+        .query<
+          { source: string },
+          []
+        >("SELECT source FROM plan_pr WHERE plan_uuid = 'plan-1' AND pr_status_id = 1 ORDER BY source")
+        .all();
+      expect(planPrRows).toEqual([{ source: 'auto' }, { source: 'explicit' }]);
+
+      const prStatusColumns = db
+        .query<{ name: string }, []>("PRAGMA table_info('pr_status')")
+        .all()
+        .map((row) => row.name);
+      expect(prStatusColumns).toContain('pr_updated_at');
+
+      const checkRunIndexColumns = db
+        .query<{ name: string }, []>("PRAGMA index_info('idx_pr_check_run_unique')")
+        .all()
+        .map((row) => row.name);
+      expect(checkRunIndexColumns).toEqual(['pr_status_id', 'name', 'source']);
     } finally {
       db.close(false);
     }
