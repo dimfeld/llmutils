@@ -53,6 +53,13 @@ describe('agent_prompts failure protocol integration', () => {
     expect(def.prompt).toContain('implemented but does not meet requirements is a CRITICAL issue');
   });
 
+  it('requires project-root-relative file paths in reviewer findings', () => {
+    const def = getReviewerPrompt(context);
+    expect(def.prompt).toContain(
+      'When you reference files in your findings, use file paths relative to the project root. Do not use absolute paths.'
+    );
+  });
+
   it('directs implementer to report progress to orchestrator', () => {
     const def = getImplementerPrompt(context, '42');
     expect(def.prompt).toContain('Progress Reporting');

@@ -521,6 +521,8 @@ The plan file tasks may not be marked as done in the plan file, because they are
 
 Any functionality that is implemented but does not meet requirements is a CRITICAL issue, even if it appears to work.
 
+When you reference files in your findings, use file paths relative to the project root. Do not use absolute paths.
+
 ### Code Correctness (HIGH PRIORITY)
 - Logic errors or incorrect algorithms
 - Race conditions or concurrency issues
