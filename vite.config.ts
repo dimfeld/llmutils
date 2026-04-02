@@ -40,6 +40,7 @@ export default defineConfig({
           },
           // adding files one at a time until we know everything passes with vitest
           include: ['src/**/*.test.ts'],
+          exclude: ['src/rmfilter/**/*.test.ts'],
           // exclude: ['src/**/*.svelte.{test,spec}.{js,ts}'],
         },
       },

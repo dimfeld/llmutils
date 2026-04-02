@@ -9,6 +9,7 @@
   "scripts": {
     "check": "tsc --noEmit -p ../../tsconfig.build.json",
     "format": "prettier --write --log-level warn .",
+    "test": "bun --bun vitest run",
     "rmfilter": "src/rmfilter/rmfilter.ts"
   },
   "devDependencies": {
