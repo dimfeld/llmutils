@@ -5,6 +5,7 @@ import PrList from './PrList.svelte';
 
 function createPr(prNumber: number, title: string) {
   return {
+    projectId: 123,
     status: {
       pr_number: prNumber,
       title,
@@ -24,8 +25,7 @@ describe('PrList', () => {
         authored: [createPr(1, 'Webhook cached PR')],
         reviewing: [],
         username: null,
-        projectId: '123',
-        selectedPrNumber: null,
+        selectedPrKey: null,
       },
     });
 

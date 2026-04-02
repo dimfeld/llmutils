@@ -7,15 +7,34 @@
     getProjectPrs,
     refreshProjectPrs,
   } from '$lib/remote/project_prs.remote.js';
+  import { projectDisplayName } from '$lib/stores/project.svelte.js';
   import type { LayoutProps } from './$types';
 
-  let { children, params }: LayoutProps = $props();
+  let { children, data }: LayoutProps = $props();
 
-  let projectId = $derived(params.projectId);
+  let projectId = $derived(data.projectId);
   let isAllProjects = $derived(projectId === 'all');
-
-  let prData = $derived(!isAllProjects ? await getProjectPrs({ projectId }) : null);
+  let prData = $derived(await getProjectPrs({ projectId }));
   let selectedPrNumber = $derived(page.params.prNumber ? Number(page.params.prNumber) : null);
+  let selectedPrKey = $derived.by(() => {
+    if (selectedPrNumber == null || !prData) {
+      return null;
+    }
+
+    const selectedPr = [...prData.authored, ...prData.reviewing].find(
+      (pr) => pr.status.pr_number === selectedPrNumber
+    );
+    return selectedPr ? `${selectedPr.projectId}:${selectedPr.status.pr_number}` : null;
+  });
+  let projectNamesById = $derived.by(() => {
+    if (!isAllProjects) return {};
+
+    const map: Record<number, string> = {};
+    for (const project of data.projects) {
+      map[project.id] = projectDisplayName(project.repository_id, data.currentUsername);
+    }
+    return map;
+  });
 
   let refreshError: string | null = $state(null);
   let refreshing: boolean = $state(false);
@@ -68,11 +87,7 @@
   );
 </script>
 
-{#if isAllProjects}
-  <div class="flex h-full w-full items-center justify-center p-8 text-sm text-muted-foreground">
-    Select a project to view pull requests
-  </div>
-{:else if prData}
+{#if prData}
   <div class="flex h-full w-full">
     {#key projectId}
       <div class="w-96 shrink-0 border-r border-border">
@@ -95,7 +110,7 @@
               >
                 {refreshing ? 'Fetching...' : 'Fetch Pull Requests'}
               </button>
-              {#if prData.tokenConfigured}
+              {#if prData.tokenConfigured && !isAllProjects}
                 <button
                   onclick={handleFullRefresh}
                   disabled={refreshing}
@@ -119,7 +134,7 @@
                 Pull Requests
               </span>
               <div class="flex items-center gap-1.5">
-                {#if prData.tokenConfigured}
+                {#if prData.tokenConfigured && !isAllProjects}
                   <button
                     onclick={handleFullRefresh}
                     disabled={refreshing}
@@ -150,8 +165,8 @@
                   authored={prData.authored}
                   reviewing={prData.reviewing}
                   username={prData.username}
-                  {projectId}
-                  {selectedPrNumber}
+                  projectNames={isAllProjects ? projectNamesById : undefined}
+                  {selectedPrKey}
                 />
               </div>
             {:else}

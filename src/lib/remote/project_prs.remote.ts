@@ -12,7 +12,7 @@ import {
 } from '$common/github/project_pr_service.js';
 import { getGitHubUsername, normalizeGitHubUsername } from '$common/github/user.js';
 import { getServerContext } from '$lib/server/init.js';
-import { getProjectById } from '$tim/db/project.js';
+import { getProjectById, listProjects } from '$tim/db/project.js';
 import {
   getLinkedPlansByPrUrl,
   getPrStatusesForRepo,
@@ -21,11 +21,12 @@ import {
 } from '$tim/db/pr_status.js';
 
 const projectIdSchema = z.object({
-  projectId: z.string().regex(/^\d+$/),
+  projectId: z.string().regex(/^(\d+|all)$/),
 });
 
 export interface EnrichedProjectPr extends PrStatusDetail {
   linkedPlans: LinkedPlanSummary[];
+  projectId: number;
 }
 
 interface RefreshResult {
@@ -38,6 +39,80 @@ interface ResolvedProjectRepoContext {
   config: Awaited<ReturnType<typeof getServerContext>>['config'];
   parsedProjectId: number;
   ownerRepo: ReturnType<typeof parseOwnerRepoFromRepositoryId>;
+}
+
+function enrichProjectPrs(
+  projectId: number,
+  prs: PrStatusDetail[],
+  linkedPlansByPrUrl: Map<string, LinkedPlanSummary[]>
+): EnrichedProjectPr[] {
+  return prs.map((pr) => ({
+    ...pr,
+    projectId,
+    linkedPlans: linkedPlansByPrUrl.get(pr.status.pr_url) ?? [],
+  }));
+}
+
+function partitionProjectPrs(
+  prs: EnrichedProjectPr[],
+  username: string | null
+): { authored: EnrichedProjectPr[]; reviewing: EnrichedProjectPr[] } {
+  return partitionCachedProjectPrs(prs, username);
+}
+
+async function getAllProjectPrsData() {
+  const { db, config } = await getServerContext();
+  const tokenConfigured = !!resolveGitHubToken();
+  const webhookConfigured = !!getWebhookServerUrl();
+  const username = await getGitHubUsername({ githubUsername: config.githubUsername });
+
+  const allProjectPrs: EnrichedProjectPr[] = [];
+  const prUrls: string[] = [];
+
+  for (const project of listProjects(db)) {
+    const ownerRepo = parseOwnerRepoFromRepositoryId(project.repository_id);
+    if (!ownerRepo) {
+      continue;
+    }
+
+    const { owner, repo } = ownerRepo;
+    const prs = getPrStatusesForRepo(db, owner, repo);
+    const projectPrUrls = prs.map((pr) => pr.status.pr_url);
+    prUrls.push(...projectPrUrls);
+
+    allProjectPrs.push(
+      ...enrichProjectPrs(
+        project.id,
+        prs,
+        new Map(projectPrUrls.map((url) => [url, [] as LinkedPlanSummary[]]))
+      )
+    );
+  }
+
+  if (allProjectPrs.length === 0) {
+    return {
+      authored: [] as EnrichedProjectPr[],
+      reviewing: [] as EnrichedProjectPr[],
+      username,
+      hasData: false,
+      tokenConfigured,
+      webhookConfigured,
+    };
+  }
+
+  const linkedPlansByPrUrl = getLinkedPlansByPrUrl(db, prUrls);
+  const enrichedPrs = allProjectPrs.map((pr) => ({
+    ...pr,
+    linkedPlans: linkedPlansByPrUrl.get(pr.status.pr_url) ?? [],
+  }));
+
+  return {
+    ...partitionProjectPrs(enrichedPrs, username),
+    username,
+    hasData: true,
+    tokenConfigured,
+    webhookConfigured,
+  };
 }
 
 async function refreshProjectPrsFromGitHub(
@@ -70,6 +145,42 @@ async function refreshProjectPrsFromGitHub(
       newLinks: [],
     };
   }
+}
+
+async function refreshAllProjectPrsFromGitHub(): Promise<RefreshResult> {
+  const { db, config } = await getServerContext();
+  const token = resolveGitHubToken();
+  if (!token) {
+    return { error: 'GITHUB_TOKEN not configured', newLinks: [] };
+  }
+
+  const username = await getGitHubUsername({ githubUsername: config.githubUsername });
+  if (!username) {
+    return { error: 'Could not resolve GitHub username', newLinks: [] };
+  }
+
+  const newLinks: ProjectPrLink[] = [];
+  for (const project of listProjects(db)) {
+    const ownerRepo = parseOwnerRepoFromRepositoryId(project.repository_id);
+    if (!ownerRepo) {
+      continue;
+    }
+
+    try {
+      const result = await refreshProjectPrsService(db, project.id, username);
+      newLinks.push(...result.newLinks);
+    } catch (err) {
+      return {
+        error: `GitHub API error refreshing project ${project.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+        newLinks: [],
+      };
+    }
+  }
+
+  getProjectPrs({ projectId: 'all' }).refresh();
+  return { newLinks };
 }
 
 function parseRequestedReviewers(requestedReviewers: string | null): string[] {
@@ -139,6 +250,10 @@ async function resolveProjectRepo(projectId: string) {
 }
 
 export const getProjectPrs = query(projectIdSchema, async ({ projectId }) => {
+  if (projectId === 'all') {
+    return getAllProjectPrsData();
+  }
+
   const { db, config, ownerRepo } = await resolveProjectRepo(projectId);
   const tokenConfigured = !!resolveGitHubToken();
   const webhookConfigured = !!getWebhookServerUrl();
@@ -160,10 +275,7 @@ export const getProjectPrs = query(projectIdSchema, async ({ projectId }) => {
     db,
     prs.map((pr) => pr.status.pr_url)
   );
-  const enrichedPrs: EnrichedProjectPr[] = prs.map((pr) => ({
-    ...pr,
-    linkedPlans: linkedPlansByPrUrl.get(pr.status.pr_url) ?? [],
-  }));
+  const enrichedPrs = enrichProjectPrs(Number(projectId), prs, linkedPlansByPrUrl);
 
   if (enrichedPrs.length === 0) {
     return {
@@ -190,6 +302,26 @@ export const getProjectPrs = query(projectIdSchema, async ({ projectId }) => {
 export const refreshProjectPrs = command(
   projectIdSchema,
   async ({ projectId }): Promise<RefreshResult> => {
+    if (projectId === 'all') {
+      const { db } = await getServerContext();
+
+      if (getWebhookServerUrl()) {
+        try {
+          const ingestResult = await ingestWebhookEvents(db);
+          const ingestError = formatWebhookIngestErrors(ingestResult.errors);
+          getProjectPrs({ projectId }).refresh();
+          return ingestError ? { error: ingestError, newLinks: [] } : { newLinks: [] };
+        } catch (err) {
+          return {
+            error: `Webhook ingestion failed: ${err instanceof Error ? err.message : String(err)}`,
+            newLinks: [],
+          };
+        }
+      }
+
+      return refreshAllProjectPrsFromGitHub();
+    }
+
     const resolvedContext = await resolveProjectRepo(projectId);
     const { db, ownerRepo } = resolvedContext;
 
@@ -221,6 +353,10 @@ export const refreshProjectPrs = command(
 export const fullRefreshProjectPrs = command(
   projectIdSchema,
   async ({ projectId }): Promise<RefreshResult> => {
+    if (projectId === 'all') {
+      return refreshAllProjectPrsFromGitHub();
+    }
+
     return refreshProjectPrsFromGitHub(projectId);
   }
 );

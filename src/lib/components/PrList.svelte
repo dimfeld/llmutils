@@ -12,14 +12,14 @@
     authored,
     reviewing,
     username,
-    projectId,
-    selectedPrNumber,
+    projectNames,
+    selectedPrKey,
   }: {
     authored: EnrichedProjectPr[];
     reviewing: EnrichedProjectPr[];
     username: string | null;
-    projectId: string;
-    selectedPrNumber: number | null;
+    projectNames?: Record<number, string>;
+    selectedPrKey: string | null;
   } = $props();
 
   let searchQuery = $state('');
@@ -49,10 +49,10 @@
   let visiblePrNumbers = $derived.by(() => {
     const ids: string[] = [];
     for (const pr of filteredAuthored) {
-      ids.push(String(pr.status.pr_number));
+      ids.push(`${pr.projectId}:${pr.status.pr_number}`);
     }
     for (const pr of filteredReviewing) {
-      ids.push(String(pr.status.pr_number));
+      ids.push(`${pr.projectId}:${pr.status.pr_number}`);
     }
     return ids;
   });
@@ -63,11 +63,18 @@
 
     event.preventDefault();
 
-    const currentId = selectedPrNumber != null ? String(selectedPrNumber) : null;
+    const currentId = selectedPrKey;
     const nextId = getAdjacentItem(visiblePrNumbers, currentId, direction);
     if (!nextId) return;
 
-    void goto(`/projects/${projectId}/prs/${nextId}`).then(() => scrollListItemIntoView(nextId));
+    const nextPr =
+      filteredAuthored.find((pr) => `${pr.projectId}:${pr.status.pr_number}` === nextId) ??
+      filteredReviewing.find((pr) => `${pr.projectId}:${pr.status.pr_number}` === nextId);
+    if (!nextPr) return;
+
+    void goto(`/projects/${nextPr.projectId}/prs/${nextPr.status.pr_number}`).then(() =>
+      scrollListItemIntoView(nextId)
+    );
   }
 </script>
 
@@ -95,8 +102,15 @@
           <span class="font-normal text-muted-foreground/70">({filteredAuthored.length})</span>
         </div>
         <div class="space-y-0.5 px-2 pb-2">
-          {#each filteredAuthored as pr (pr.status.pr_number)}
-            <PrRow {pr} {projectId} selected={pr.status.pr_number === selectedPrNumber} />
+          {#each filteredAuthored as pr (`${pr.projectId}:${pr.status.pr_number}`)}
+            {@const itemId = `${pr.projectId}:${pr.status.pr_number}`}
+            <PrRow
+              {pr}
+              href="/projects/{pr.projectId}/prs/{pr.status.pr_number}"
+              {itemId}
+              projectName={projectNames?.[pr.projectId]}
+              selected={itemId === selectedPrKey}
+            />
           {/each}
         </div>
       </div>
@@ -111,11 +125,14 @@
           <span class="font-normal text-muted-foreground/70">({filteredReviewing.length})</span>
         </div>
         <div class="space-y-0.5 px-2 pb-2">
-          {#each filteredReviewing as pr (pr.status.pr_number)}
+          {#each filteredReviewing as pr (`${pr.projectId}:${pr.status.pr_number}`)}
+            {@const itemId = `${pr.projectId}:${pr.status.pr_number}`}
             <PrRow
               {pr}
-              {projectId}
-              selected={pr.status.pr_number === selectedPrNumber}
+              href="/projects/{pr.projectId}/prs/{pr.status.pr_number}"
+              {itemId}
+              projectName={projectNames?.[pr.projectId]}
+              selected={itemId === selectedPrKey}
               showAuthor
             />
           {/each}

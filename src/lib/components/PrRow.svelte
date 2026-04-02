@@ -11,20 +11,24 @@
 
   let {
     pr,
-    projectId,
+    href,
+    itemId,
+    projectName,
     selected = false,
     showAuthor = false,
   }: {
     pr: EnrichedProjectPr;
-    projectId: string;
+    href: string;
+    itemId: string;
+    projectName?: string;
     selected?: boolean;
     showAuthor?: boolean;
   } = $props();
 </script>
 
 <a
-  href="/projects/{projectId}/prs/{pr.status.pr_number}"
-  data-list-item-id={String(pr.status.pr_number)}
+  {href}
+  data-list-item-id={itemId}
   data-sveltekit-preload-data
   class="block w-full rounded-md px-3 py-2 text-left transition-colors
     {selected
@@ -68,6 +72,10 @@
     {/if}
   </div>
   <div class="mt-0.5 flex items-center gap-1.5 truncate text-xs text-muted-foreground/70">
+    {#if projectName}
+      <span class="truncate">{projectName}</span>
+      <span class="text-muted-foreground/40">&middot;</span>
+    {/if}
     {#if showAuthor && pr.status.author}
       <span>{pr.status.author}</span>
       <span class="text-muted-foreground/40">&middot;</span>

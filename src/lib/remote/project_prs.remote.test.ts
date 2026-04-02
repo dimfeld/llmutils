@@ -176,4 +176,54 @@ describe('project_prs remote functions', () => {
     expect(result.authored).toHaveLength(1);
     expect(result.authored[0]?.status.pr_url).toBe('https://github.com/example/repo/pull/17');
   });
+
+  test('getProjectPrs aggregates all project PRs when projectId is all', async () => {
+    const otherProjectId = getOrCreateProject(currentDb, 'github.com__example__other-repo').id;
+    upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/17',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 17,
+      title: 'First project PR',
+      state: 'open',
+      draft: false,
+      author: 'dimfeld',
+      lastFetchedAt: '2026-03-30T10:00:00.000Z',
+    });
+    upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/other-repo/pull/23',
+      owner: 'example',
+      repo: 'other-repo',
+      prNumber: 23,
+      title: 'Second project PR',
+      state: 'open',
+      draft: false,
+      author: 'dimfeld',
+      lastFetchedAt: '2026-03-30T10:00:00.000Z',
+    });
+
+    const { getProjectPrs } = await import('./project_prs.remote.js');
+    const result = await invokeQuery(getProjectPrs, { projectId: 'all' });
+
+    expect(result.hasData).toBe(true);
+    expect(result.authored).toHaveLength(2);
+    expect(result.authored.map((pr) => pr.projectId).sort((a, b) => a - b)).toEqual(
+      [projectId, otherProjectId].sort((a, b) => a - b)
+    );
+    expect(result.authored.map((pr) => pr.status.pr_number).sort((a, b) => a - b)).toEqual([
+      17, 23,
+    ]);
+  });
+
+  test('refreshProjectPrs falls back to refreshing all projects when projectId is all', async () => {
+    const otherProjectId = getOrCreateProject(currentDb, 'github.com__example__other-repo').id;
+    const { refreshProjectPrs } = await import('./project_prs.remote.js');
+
+    const result = await invokeCommand(refreshProjectPrs, { projectId: 'all' });
+
+    expect(result).toEqual({ newLinks: [] });
+    expect(refreshProjectPrsService).toHaveBeenCalledTimes(2);
+    expect(refreshProjectPrsService).toHaveBeenCalledWith(currentDb, projectId, 'dimfeld');
+    expect(refreshProjectPrsService).toHaveBeenCalledWith(currentDb, otherProjectId, 'dimfeld');
+  });
 });

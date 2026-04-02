@@ -39,8 +39,10 @@ describe('projects/[projectId]/prs/+layout.svelte', () => {
     const { body } = await render(PrsLayout, {
       props: {
         children: () => '',
-        params: {
+        data: {
           projectId: '12',
+          currentUsername: 'dimfeld',
+          projects: [],
         },
       },
     });
@@ -48,5 +50,31 @@ describe('projects/[projectId]/prs/+layout.svelte', () => {
     expect(body).toContain('Fetch Pull Requests');
     expect(body).toContain('Full Refresh');
     expect(body).toContain('aria-label="Fully refresh pull requests from GitHub"');
+  });
+
+  test('hides full refresh when all projects is selected', async () => {
+    mockGetProjectPrs.mockResolvedValue({
+      authored: [],
+      reviewing: [],
+      username: null,
+      hasData: false,
+      tokenConfigured: true,
+      webhookConfigured: true,
+    });
+
+    const { body } = await render(PrsLayout, {
+      props: {
+        children: () => '',
+        data: {
+          projectId: 'all',
+          currentUsername: 'dimfeld',
+          projects: [{ id: 1, repository_id: 'github.com__example__repo' }],
+        },
+      },
+    });
+
+    expect(body).toContain('Fetch Pull Requests');
+    expect(body).not.toContain('Full Refresh');
+    expect(body).not.toContain('aria-label="Fully refresh pull requests from GitHub"');
   });
 });
