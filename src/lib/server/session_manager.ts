@@ -102,6 +102,7 @@ export interface SessionData {
   sessionInfo: HeadlessSessionInfo;
   status: SessionStatus;
   projectId: number | null;
+  planContent: string | null;
   messages: DisplayMessage[];
   activePrompt: ActivePrompt | null;
   isReplaying: boolean;
@@ -129,6 +130,7 @@ export interface SessionManagerEvents {
   'session:update': { session: SessionData };
   'session:disconnect': { session: SessionData };
   'session:message': { connectionId: string; message: DisplayMessage };
+  'session:plan-content': { connectionId: string; planContent: string };
   'session:prompt': { connectionId: string; prompt: ActivePrompt };
   'session:prompt-cleared': { connectionId: string; requestId: string };
   'session:dismissed': { connectionId: string };
@@ -149,6 +151,7 @@ const SESSION_EVENT_NAMES: SessionEventName[] = [
   'session:update',
   'session:disconnect',
   'session:message',
+  'session:plan-content',
   'session:prompt',
   'session:prompt-cleared',
   'session:dismissed',
@@ -353,6 +356,7 @@ export class SessionManager {
       sessionInfo: { command: 'unknown' },
       status: 'active',
       projectId: null,
+      planContent: null,
       messages: [],
       activePrompt: null,
       isReplaying: false,
@@ -453,6 +457,13 @@ export class SessionManager {
         }
         return;
       }
+      case 'plan_content':
+        session.planContent = message.content;
+        this.emit('session:plan-content', {
+          connectionId,
+          planContent: message.content,
+        });
+        return;
       case 'output': {
         const displayMessage = formatTunnelMessage(
           connectionId,
@@ -511,6 +522,7 @@ export class SessionManager {
         sessionInfo,
         status: 'notification',
         projectId: this.resolveProjectId(payload.gitRemote),
+        planContent: null,
         messages: [],
         activePrompt: null,
         isReplaying: false,

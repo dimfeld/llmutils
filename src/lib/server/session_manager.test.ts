@@ -467,11 +467,13 @@ describe('lib/server/session_manager', () => {
     const onNew = vi.fn();
     const onUpdate = vi.fn();
     const onMessage = vi.fn();
+    const onPlanContent = vi.fn();
     const onDisconnect = vi.fn();
 
     manager.subscribe('session:new', onNew);
     manager.subscribe('session:update', onUpdate);
     manager.subscribe('session:message', onMessage);
+    manager.subscribe('session:plan-content', onPlanContent);
     manager.subscribe('session:disconnect', onDisconnect);
 
     manager.handleWebSocketConnect('conn-1', vi.fn());
@@ -486,6 +488,10 @@ describe('lib/server/session_manager', () => {
       gitRemote: 'https://example.com/repo-1.git',
       terminalPaneId: '12',
       terminalType: 'wezterm',
+    });
+    manager.handleWebSocketMessage('conn-1', {
+      type: 'plan_content',
+      content: '# live plan body',
     });
     manager.handleWebSocketMessage('conn-1', {
       type: 'output',
@@ -537,6 +543,10 @@ describe('lib/server/session_manager', () => {
         }),
       })
     );
+    expect(onPlanContent).toHaveBeenCalledWith({
+      connectionId: 'conn-1',
+      planContent: '# live plan body',
+    });
     expect(onDisconnect).toHaveBeenCalledWith(
       expect.objectContaining({
         session: expect.objectContaining({
@@ -554,6 +564,7 @@ describe('lib/server/session_manager', () => {
     expect(snapshot.sessions[0]).toMatchObject({
       connectionId: 'conn-1',
       projectId: project.id,
+      planContent: '# live plan body',
       sessionInfo: expect.objectContaining({
         sessionId: 'session-conn-1',
       }),

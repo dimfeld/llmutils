@@ -56,6 +56,7 @@ function createSession(overrides: Partial<SessionData> = {}): SessionData {
     },
     status: overrides.status ?? 'active',
     projectId: overrides.projectId ?? 3,
+    planContent: overrides.planContent ?? null,
     messages: overrides.messages ?? [],
     activePrompt: overrides.activePrompt ?? null,
     isReplaying: overrides.isReplaying ?? false,
@@ -124,5 +125,48 @@ describe('SessionDetail', () => {
 
     // Input area should still be present for interactive active sessions
     expect(body).toContain('aria-label="Send input to session"');
+  });
+
+  test('renders the plan split pane with placeholder when the session has a plan but no content yet', async () => {
+    const session = createSession({
+      sessionInfo: {
+        planId: 302,
+      },
+      planContent: null,
+    });
+    const { body } = await render(SessionDetail, { props: { session } });
+
+    expect(body).toContain('Waiting for plan content...');
+    expect(body).toContain('flex-col lg:flex-row');
+    expect(body).toContain('lg:w-1/2');
+  });
+
+  test('renders streamed plan content when the session has a plan', async () => {
+    const session = createSession({
+      sessionInfo: {
+        planId: 302,
+      },
+      planContent: '## Current Plan\n\n- Task 1',
+    });
+    const { body } = await render(SessionDetail, { props: { session } });
+
+    expect(body).toContain('<span class="plan-heading">## Current Plan</span>');
+    expect(body).toContain('plan-list-item');
+    expect(body).toContain('Task 1');
+    expect(body).not.toContain('Waiting for plan content...');
+  });
+
+  test('does not render the plan split pane when the session has no plan id', async () => {
+    const session = createSession({
+      sessionInfo: {
+        planId: undefined,
+      },
+      planContent: '## Should not be shown in a plan pane',
+    });
+    const { body } = await render(SessionDetail, { props: { session } });
+
+    expect(body).not.toContain('class="flex min-h-0 flex-1 flex-row"');
+    expect(body).not.toContain('class="w-1/2 min-w-0 border-r border-border"');
+    expect(body).not.toContain('Waiting for plan content...');
   });
 });

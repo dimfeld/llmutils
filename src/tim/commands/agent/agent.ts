@@ -9,6 +9,8 @@ import { getGitRoot } from '../../../common/git.js';
 import { getLogDir } from '../../../common/config_paths.js';
 import { logSpawn } from '../../../common/process.js';
 import { CleanupRegistry } from '../../../common/cleanup_registry.js';
+import { getLoggerAdapter } from '../../../logging/adapter.js';
+import { HeadlessAdapter } from '../../../logging/headless_adapter.js';
 import {
   boldMarkdownHeaders,
   closeLogFile,
@@ -34,6 +36,7 @@ import { readPlanFile, writePlanFile } from '../../plans.js';
 import { findNextActionableItem } from '../../plans/find_next.js';
 import { markStepDone, markTaskDone } from '../../plans/mark_done.js';
 import { prepareNextStep } from '../../plans/prepare_step.js';
+import { watchPlanFile } from '../../plan_file_watcher.js';
 import { buildExecutionPromptWithoutSteps } from '../../prompt_builder.js';
 import { buildDescriptionFromPlan } from '../../display_utils.js';
 import { executeBatchMode } from './batch_mode.js';
@@ -273,6 +276,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
   let summaryEnabled = false;
   let summaryFilePath: string | undefined;
   let summaryCollector!: SummaryCollector;
+  let planWatcher: ReturnType<typeof watchPlanFile> | undefined;
   const recordFailure = (err: unknown): void => {
     if (failureReason) return;
     if (err instanceof Error) {
@@ -386,6 +390,13 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
       );
       unregisterLifecycleCleanup = cleanupRegistry.register(() => lifecycleManager?.killDaemons());
       await lifecycleManager.startup();
+    }
+
+    const loggerAdapter = getLoggerAdapter();
+    if (currentPlanFile && loggerAdapter instanceof HeadlessAdapter) {
+      planWatcher = watchPlanFile(currentPlanFile, (content) => {
+        loggerAdapter.sendPlanContent(content);
+      });
     }
 
     // Check if plan has simple field set and respect it
@@ -1185,6 +1196,9 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
     executionError = failureReason ?? (err instanceof Error ? err : new Error(String(err)));
     throw err;
   } finally {
+    await planWatcher?.closeAndFlush();
+    planWatcher = undefined;
+
     let workspaceSyncError: Error | undefined;
     if (currentPlanFile && !isShuttingDown()) {
       try {

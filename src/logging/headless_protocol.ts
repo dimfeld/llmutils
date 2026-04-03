@@ -31,6 +31,11 @@ export interface HeadlessReplayEndMessage {
   type: 'replay_end';
 }
 
+export interface HeadlessPlanContentMessage {
+  type: 'plan_content';
+  content: string;
+}
+
 export interface HeadlessSessionEndedMessage {
   type: 'session_ended';
 }
@@ -40,6 +45,7 @@ export type HeadlessMessage =
   | HeadlessOutputMessage
   | HeadlessReplayStartMessage
   | HeadlessReplayEndMessage
+  | HeadlessPlanContentMessage
   | HeadlessSessionEndedMessage;
 
 /** Server→client message: response to a prompt_request. */

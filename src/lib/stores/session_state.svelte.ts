@@ -335,6 +335,7 @@ export class SessionManager {
       'session:update',
       'session:disconnect',
       'session:message',
+      'session:plan-content',
       'session:prompt',
       'session:prompt-cleared',
       'session:dismissed',

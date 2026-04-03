@@ -99,6 +99,16 @@ export function applySessionEvent<TEventName extends SessionClientEventName>(
       }
       break;
     }
+    case 'session:plan-content': {
+      const session = state.sessions.get(event.payload.connectionId);
+      if (session) {
+        state.sessions.set(event.payload.connectionId, {
+          ...session,
+          planContent: event.payload.planContent,
+        });
+      }
+      break;
+    }
     case 'session:prompt': {
       const session = state.sessions.get(event.payload.connectionId);
       if (session) {

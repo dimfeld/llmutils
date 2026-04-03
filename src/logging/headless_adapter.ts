@@ -2,6 +2,7 @@ import type { LoggerAdapter } from './adapter.js';
 import { ConsoleAdapter } from './console.js';
 import type {
   HeadlessOutputMessage,
+  HeadlessPlanContentMessage,
   HeadlessServerMessage,
   HeadlessSessionInfo,
 } from './headless_protocol.js';
@@ -54,6 +55,7 @@ export class HeadlessAdapter implements LoggerAdapter {
   private historyOutputBytes = 0;
   private destroyed = false;
   private nextOutputSequence = 1;
+  private latestPlanContent: string | null = null;
   private pendingPrompts: Map<string, PendingPromptRequest> = new Map();
   private userInputHandler?: (content: string) => void;
   private endSessionHandler?: () => void;
@@ -126,6 +128,19 @@ export class HeadlessAdapter implements LoggerAdapter {
   sendStructured(message: StructuredMessage): void {
     this.wrappedAdapter.sendStructured(message);
     this.enqueueTunnelMessage({ type: 'structured', message });
+  }
+
+  sendPlanContent(content: string): void {
+    this.latestPlanContent = content;
+    if (this.destroyed || !this.sessionServer) {
+      return;
+    }
+
+    const message: HeadlessPlanContentMessage = {
+      type: 'plan_content',
+      content,
+    };
+    this.sessionServer.broadcast(message);
   }
 
   destroySync(): void {
@@ -296,6 +311,12 @@ export class HeadlessAdapter implements LoggerAdapter {
       type: 'session_info',
       sessionId: this.serverSessionId,
     });
+    if (this.latestPlanContent != null) {
+      server.sendTo(connectionId, {
+        type: 'plan_content',
+        content: this.latestPlanContent,
+      });
+    }
     server.sendTo(connectionId, { type: 'replay_start' });
     for (const entry of this.history) {
       server.sendToRaw(connectionId, entry.payload);

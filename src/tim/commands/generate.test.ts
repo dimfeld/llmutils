@@ -77,6 +77,10 @@ vi.mock('../headless.js', () => ({
   runWithHeadlessAdapterIfEnabled: vi.fn(),
 }));
 
+vi.mock('../plan_file_watcher.js', () => ({
+  watchPlanFile: vi.fn(() => ({ close: vi.fn(), closeAndFlush: vi.fn() })),
+}));
+
 vi.mock('./plan_discovery.js', () => ({
   findNextReadyDependencyFromDb: vi.fn(),
   findLatestPlanFromDb: vi.fn(async () => null),
@@ -108,11 +112,15 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { getGitRoot, getCurrentBranchName, getTrunkBranch } from '../../common/git.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
+import * as adapterModule from '../../logging/adapter.js';
+import { HeadlessAdapter } from '../../logging/headless_adapter.js';
+import { watchPlanFile } from '../plan_file_watcher.js';
 import { findNextReadyDependencyFromDb, findLatestPlanFromDb } from './plan_discovery.js';
 
 const isTunnelActiveSpy = vi.mocked(isTunnelActive);
 const runWithHeadlessAdapterIfEnabledSpy = vi.mocked(runWithHeadlessAdapterIfEnabled);
 const syncPlanToDbSpy = vi.mocked(syncPlanToDb);
+const watchPlanFileSpy = vi.mocked(watchPlanFile);
 
 describe('handleGenerateCommand', () => {
   let tempDir: string;
@@ -172,6 +180,7 @@ describe('handleGenerateCommand', () => {
       planPath: planArg,
     }));
     syncPlanToDbSpy.mockResolvedValue(undefined);
+    watchPlanFileSpy.mockReturnValue({ close: vi.fn(), closeAndFlush: vi.fn() });
     trackedWorkspacePath = undefined;
     getWorkspaceInfoByPathSpy.mockImplementation((baseDir: string) => {
       return baseDir === trackedWorkspacePath
@@ -835,6 +844,27 @@ describe('handleGenerateCommand', () => {
       command: 'generate',
       plan: { id: 121, title: 'Test Plan' },
     });
+  });
+
+  test('starts and closes the plan watcher when a headless adapter is active', async () => {
+    const planPath = await createStubPlan(111);
+    const closeAndFlushSpy = vi.fn();
+    watchPlanFileSpy.mockReturnValue({ close: vi.fn(), closeAndFlush: closeAndFlushSpy });
+    const headlessAdapter = Object.assign(Object.create(HeadlessAdapter.prototype), {
+      sendPlanContent: vi.fn(),
+    }) as HeadlessAdapter;
+    const getLoggerAdapterSpy = vi
+      .spyOn(adapterModule, 'getLoggerAdapter')
+      .mockReturnValue(headlessAdapter);
+
+    try {
+      await handleGenerateCommand(undefined, { plan: planPath }, buildCommand());
+    } finally {
+      getLoggerAdapterSpy.mockRestore();
+    }
+
+    expect(watchPlanFileSpy).toHaveBeenCalledWith(planPath, expect.any(Function));
+    expect(closeAndFlushSpy).toHaveBeenCalledTimes(1);
   });
 
   test('disables headless adapter when tunnel is active', async () => {
