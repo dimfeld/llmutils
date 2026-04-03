@@ -97,6 +97,50 @@ tim done 123
 tim done 123 --commit                  # Commit changes
 ```
 
+### tim review
+
+Analyze code changes on current branch against plan requirements using a reviewer agent. Uses a multi-phase pipeline: first an analysis phase produces a review guide (`.tim/tmp/review-guide-{planId}.md`), then the structured review phase references that guide to produce JSON results with issues, recommendations, and action items.
+
+If no plan is specified, automatically selects the oldest plan that exists only on this branch.
+
+```bash
+tim review 123
+tim review                                 # Auto-detect plan from branch
+
+# Executor selection
+tim review 123 --executor claude-code
+tim review 123 --executor codex-cli
+tim review 123 --executor both             # Both run review in parallel
+
+# Output
+tim review 123 --dry-run                   # Print prompt without executing
+tim review 123 --print                     # Output JSON results non-interactively
+tim review 123 --format json               # json, markdown, or terminal
+tim review 123 --output-file results.json  # Save to file
+tim review 123 --save                      # Save to .rmfilter/reviews/
+
+# Scoping
+tim review 123 --task-index 1 3            # Review specific tasks (1-based)
+tim review 123 --task-title "Task name"    # Review specific tasks by title
+tim review 123 --focus "security,perf"     # Focus areas
+tim review 123 --base main                 # Base branch for diff
+tim review 123 --incremental               # Only changes since last review
+tim review 123 --since <commit>            # Changes since specific commit
+
+# Custom instructions
+tim review 123 --instructions "Check for..."
+tim review 123 --instructions-file review-notes.md
+
+# Autofix
+tim review 123 --autofix                   # Auto-fix issues found
+tim review 123 --autofix-all               # Fix all without prompting
+tim review 123 --no-autofix                # Disable autofix
+
+# Saved issues
+tim review 123 --issues                    # Act on previously saved issues
+tim review 123 --save-issues               # Save issues to plan file
+```
+
 ### tim edit
 
 Open a plan in `$EDITOR`. Materializes the plan from DB to `.tim/plans/{planId}.plan.md`, opens the editor, syncs changes back to DB on close, then cleans up the temporary file.
