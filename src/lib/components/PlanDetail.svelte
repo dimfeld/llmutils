@@ -123,6 +123,7 @@
 
   async function handleClearReviewIssues() {
     if (reviewIssueSubmitting !== null) return;
+    if (!confirm('Clear all review issues? This cannot be undone.')) return;
     reviewIssueSubmitting = 'clear';
     try {
       await clearReviewIssues({ planUuid: plan.uuid });
@@ -742,24 +743,11 @@
                   type="button"
                   onclick={() => handleConvertToTask(i)}
                   disabled={reviewIssueSubmitting !== null}
-                  class="rounded p-0.5 text-muted-foreground transition-opacity hover:bg-blue-100 hover:text-blue-700 disabled:opacity-50 dark:hover:bg-blue-950/50 dark:hover:text-blue-400 {reviewIssueSubmitting ===
-                  i
-                    ? 'opacity-100'
-                    : 'opacity-0 group-hover:opacity-100'}"
+                  class="rounded px-1 py-0.5 text-xs text-muted-foreground hover:bg-blue-100 hover:text-blue-700 disabled:opacity-50 dark:hover:bg-blue-950/50 dark:hover:text-blue-400"
                   aria-label="Convert to task"
                   title="Convert to task"
                 >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="12"
-                    height="12"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"><path d="M12 5v14" /><path d="m19 12-7 7-7-7" /></svg
-                  >
+                  {reviewIssueSubmitting === i ? '...' : '→ Task'}
                 </button>
                 <button
                   type="button"
@@ -806,10 +794,7 @@
                   type="button"
                   onclick={() => handleRemoveReviewIssue(i)}
                   disabled={reviewIssueSubmitting !== null}
-                  class="rounded p-0.5 text-muted-foreground transition-opacity hover:bg-red-100 hover:text-red-700 disabled:opacity-50 dark:hover:bg-red-950/50 dark:hover:text-red-400 {reviewIssueSubmitting ===
-                  i
-                    ? 'opacity-100'
-                    : 'opacity-0 group-hover:opacity-100'}"
+                  class="rounded p-0.5 text-muted-foreground hover:bg-red-100 hover:text-red-700 disabled:opacity-50 dark:hover:bg-red-950/50 dark:hover:text-red-400"
                   aria-label="Dismiss issue"
                   title="Dismiss issue"
                 >

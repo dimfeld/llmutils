@@ -432,7 +432,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
     const executor = options.simple
       ? buildExecutorAndLog(executorName, sharedExecutorOptions, config, { simpleMode: true })
       : buildExecutorAndLog(executorName, sharedExecutorOptions, config);
-    const isNonInteractiveReview = !terminalInputEnabled;
+    const isNonInteractiveReview = terminalInputEnabled === false;
     const executionMode: 'normal' | 'simple' | 'tdd' = tddModeEnabled
       ? 'tdd'
       : simpleModeEnabled

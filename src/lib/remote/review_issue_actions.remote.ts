@@ -68,18 +68,6 @@ export const convertReviewIssueToTask = command(
     const newTask = createTaskFromIssue(issue);
 
     const existingTasks = getPlanTasksByUuid(db, planUuid);
-    const existingTitles = new Set(existingTasks.map((t) => t.title));
-
-    if (existingTitles.has(newTask.title)) {
-      // Task already exists, just remove the issue
-      issues.splice(issueIndex, 1);
-      db.prepare(
-        `UPDATE plan SET review_issues = ?, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
-      ).run(issues.length > 0 ? JSON.stringify(issues) : null, planUuid);
-      return;
-    }
-
-    // Remove the issue and add the task in a transaction
     issues.splice(issueIndex, 1);
     const nextIndex = existingTasks.length;
 
