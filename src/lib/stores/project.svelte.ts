@@ -3,12 +3,20 @@ import type { Cookies } from '@sveltejs/kit';
 const COOKIE_NAME = 'tim_last_project';
 
 export function setLastProjectId(cookies: Cookies, id: number | string): void {
-  cookies.set(COOKIE_NAME, String(id), {
-    path: '/',
-    httpOnly: true,
-    maxAge: 60 * 60 * 24 * 365,
-    sameSite: 'lax',
-  });
+  try {
+    cookies.set(COOKIE_NAME, String(id), {
+      path: '/',
+      httpOnly: true,
+      maxAge: 60 * 60 * 24 * 365,
+      sameSite: 'lax',
+    });
+  } catch (e) {
+    // sometimes we call this from a layout load function but the page may have redirected
+    if ((e as Error).message.includes('after the response has been')) {
+      return;
+    }
+    throw e;
+  }
 }
 
 export function getLastProjectId(cookies: Cookies): string | null {
