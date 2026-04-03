@@ -36,6 +36,6 @@ export const updateProjectSetting = command(
       error(400, `Invalid value for setting "${setting}": ${result.error.message}`);
     }
 
-    setProjectSetting(db, projectId, setting, value);
+    setProjectSetting(db, projectId, setting, result.data);
   }
 );

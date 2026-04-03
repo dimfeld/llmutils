@@ -205,12 +205,13 @@ Each running process writes a JSON file at `~/.cache/tim/sessions/<pid>.json` co
 
 Tim includes a SvelteKit-based web interface for browsing and managing plans. The server-side layer uses lazy initialization to load the tim configuration, sync materialized plan files to the SQLite database, and serve enriched plan data with computed display statuses (e.g. blocked, recently done).
 
-The interface is organized around projects, with four tabs per project:
+The interface is organized around projects, with tabs per project:
 
 - **Sessions** — real-time monitoring of tim agent processes with live message transcripts, prompt interaction (confirm/input/select/checkbox/prefix_select), and free-form user input.
 - **Active Work** — dashboard of current work per project showing workspaces (with Primary/Auto/Locked/Available status badges) and active plans (in_progress + blocked). Workspaces are filtered to "recently active" by default (locked, primary, or updated within 48 hours) with a toggle to show all. Clicking a plan shows full detail in the right pane.
 - **Pull Requests** — project-wide view of open GitHub PRs relevant to the user (authored or reviewing), with automatic plan-PR linking based on branch name matching, webhook-first refresh (when configured), and PR detail with checks, reviews, and labels. A "Full Refresh from GitHub API" button provides an escape hatch when webhook data is stale or missing.
 - **Plans** — browse, filter, search, and inspect plans with two-column layout (list + detail), status/priority badges, collapsible status groups, and clickable dependency navigation
+- **Settings** — per-project settings stored in the database (only shown for individual projects, not the "all projects" view). Currently supports a "Featured" toggle that controls sidebar grouping — featured projects appear in the main sidebar list, while non-featured projects are grouped in a collapsible "Other Projects" section at the bottom. Projects default to featured when no setting exists.
 
 Navigation uses route-based project selection at `/projects/{projectId}/{tab}`, with cookie persistence to remember the last-selected project. The home page redirects to the most recently used project. On all tabs, pressing **Option+Down** (Alt+Down) / **Option+Up** (Alt+Up) navigates to the next/previous item in the list, respecting collapsed groups and active filters. Global keyboard shortcuts are also available: **Ctrl+/** focuses the search input, and **Ctrl+1/2/3/4** switches between the Sessions, Active Work, Pull Requests, and Plans tabs.
 

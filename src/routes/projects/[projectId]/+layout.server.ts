@@ -23,8 +23,8 @@ export const load: LayoutServerLoad = async ({ params, cookies, parent, url }) =
 
     currentProject = projects.find((p) => p.id === numId) ?? null;
     if (!currentProject) {
-      // Project may exist but have zero plans (excluded from sidebar list).
-      // Fall back to a direct DB lookup so routes like /settings remain accessible.
+      // Project may not be in the parent layout data yet.
+      // Fall back to a direct DB lookup so the route remains accessible.
       const { db } = await getServerContext();
       const dbProject = getProjectById(db, numId);
       if (!dbProject) {
