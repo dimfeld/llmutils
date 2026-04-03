@@ -118,9 +118,11 @@ export async function runExternalReviewForCodex(
   const buildPrompt = ({
     includeDiff,
     useSubagents,
+    reviewGuidePath,
   }: {
     includeDiff: boolean;
     useSubagents: boolean;
+    reviewGuidePath?: string;
   }) =>
     buildReviewPrompt(
       scopedPlanData,
@@ -133,7 +135,8 @@ export async function runExternalReviewForCodex(
       taskScopeNote,
       executionContext,
       undefined,
-      options.previousResponse
+      options.previousResponse,
+      reviewGuidePath
     );
 
   const planInfo = buildPlanInfoForReview(

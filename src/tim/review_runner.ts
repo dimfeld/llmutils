@@ -23,6 +23,7 @@ export type ReviewPromptBuilder = (options: {
   executorName: ReviewExecutorName;
   includeDiff: boolean;
   useSubagents: boolean;
+  reviewGuidePath?: string;
 }) => string;
 
 export interface ReviewPlanInfo {

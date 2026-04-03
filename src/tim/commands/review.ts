@@ -1144,7 +1144,7 @@ export async function handleReviewCommand(
         return;
       }
 
-      const buildPrompt: ReviewPromptBuilder = ({ includeDiff, useSubagents }) =>
+      const buildPrompt: ReviewPromptBuilder = ({ includeDiff, useSubagents, reviewGuidePath }) =>
         buildReviewPrompt(
           scopedPlanData,
           diffResult,
@@ -1156,7 +1156,8 @@ export async function handleReviewCommand(
           taskScopeNote,
           undefined,
           remainingTasks,
-          previousReviewResponse
+          previousReviewResponse,
+          reviewGuidePath
         );
 
       // Execute the review
@@ -2089,8 +2090,139 @@ export function buildReviewPrompt(
   taskScopeNote?: string,
   additionalContext?: string,
   remainingTasks?: RemainingTask[],
-  previousReviewResponse?: string
+  previousReviewResponse?: string,
+  reviewGuidePath?: string
 ): string {
+  const { parentContext, childrenContext, planContext, changedFilesSection, hasSpecificTasks } =
+    buildReviewPromptSections(planData, diffResult, includeDiff, parentChain, completedChildren, {
+      taskScopeNote,
+      remainingTasks,
+    });
+
+  const reviewGuideSection = buildReviewGuideSection(reviewGuidePath);
+  const planScope = hasSpecificTasks ? ' of the specified tasks' : '';
+
+  // Combine everything into the final prompt
+  const contextContent = [
+    ...parentContext,
+    ...childrenContext,
+    ...planContext,
+    ``,
+    ...changedFilesSection,
+    ``,
+    ...(additionalContext?.trim() ? [additionalContext.trim(), ``] : []),
+    ...(previousReviewResponse?.trim()
+      ? [
+          `# Previous Fixer Response`,
+          ``,
+          `We just ran a round of fixing in response to a previous review. The final output from the fixing work is below. Please conduct a general review${planScope}, taking this fixer output into account:`,
+          ``,
+          previousReviewResponse.trim(),
+          ``,
+        ]
+      : []),
+    ...reviewGuideSection,
+    `# Review Instructions`,
+    ``,
+    `Please review the code changes above in the context of the plan requirements. Focus on:`,
+    `1. **Compliance with Plan Requirements:** Do the changes fulfill the goals and tasks outlined in the plan?`,
+    `2. **Code Quality:** Look for bugs, logic errors, security issues, and performance problems`,
+    `3. **Implementation Completeness:** Are all required features implemented according to the plan?`,
+    `4. **Error Handling:** Are edge cases and error conditions properly handled?`,
+    `5. **Testing:** Are the changes adequately tested?`,
+    ``,
+    `**Pre-existing Issues:** If you notice concerns in code that was not modified by these changes, they may still be worth noting. However, any pre-existing issues MUST be labeled as "info" severity. Only issues introduced or affected by the current changes should receive higher severity ratings.`,
+    ``,
+  ].join('\n');
+
+  // Use the reviewer agent template with our context and custom instructions
+  const reviewerPromptWithContext = getReviewerPrompt(
+    contextContent,
+    planData.id,
+    customInstructions,
+    undefined,
+    useSubagents
+  );
+
+  return reviewerPromptWithContext.prompt;
+}
+
+export function getReviewGuidePath(planId: string | number): string {
+  return join('.tim', 'tmp', `review-guide-${planId}.md`);
+}
+
+export async function buildAnalysisPrompt(
+  planData: PlanSchema,
+  diffResult: DiffResult,
+  gitRoot: string,
+  parentChain: PlanSchema[] = [],
+  completedChildren: PlanSchema[] = [],
+  taskScopeNote?: string,
+  remainingTasks?: RemainingTask[]
+): Promise<string> {
+  const { parentContext, childrenContext, planContext, changedFilesSection } =
+    buildReviewPromptSections(planData, diffResult, false, parentChain, completedChildren, {
+      taskScopeNote,
+      remainingTasks,
+    });
+
+  const reviewGuidePath = getReviewGuidePath(planData.id ?? 'unknown');
+  const absoluteReviewGuidePath = join(gitRoot, reviewGuidePath);
+  const usingJj = await getUsingJj(gitRoot);
+  const diffCommand = usingJj
+    ? `jj diff -f 'heads(::@ & ::${diffResult.baseBranch})' <filename>`
+    : `git diff $(git merge-base ${diffResult.baseBranch} HEAD) -- <filename>`;
+
+  return [
+    `This branch contains a pull request that has been implemented by another engineer. I now need to review those changes.`,
+    ``,
+    `Before writing the guide, use parallel subagents to analyze the code changes and surrounding files. Every changed file must be covered by exactly one logical section in your guide.`,
+    ``,
+    ...parentContext,
+    ...childrenContext,
+    ...planContext,
+    ``,
+    ...changedFilesSection,
+    ``,
+    `# Analysis Instructions`,
+    ``,
+    `1. Read the relevant tasks from the plan context above and analyze the changed files plus any nearby files needed to understand the implementation.`,
+    `2. For each changed file, inspect its diff with \`${diffCommand}\`.`,
+    `3. Ignore comments starting with \`AI:\` or \`AI_COMMENT_START\`; those are pending review notes, not implementation context.`,
+    `4. Group the changes into logical sections, preferably by functional area. Every changed file must appear in one of the sections.`,
+    `5. For each section, list the changed files, other related files you inspected, and explain how that section maps back to the plan tasks under review.`,
+    `6. Call out which files or edits are major parts of the change versus perfunctory follow-on edits such as type updates, field renames, or wiring changes.`,
+    `7. Write a step-by-step markdown review guide that will help a reviewer walk through the branch in an efficient order.`,
+    ``,
+    `# Output Requirements`,
+    ``,
+    `Write the markdown guide to \`${reviewGuidePath}\` from the repository root.`,
+    `Absolute path for reference: \`${absoluteReviewGuidePath}\`.`,
+    `Do not commit the guide.`,
+    `The guide should use markdown section headers and should be detailed enough that a reviewer can understand the purpose of each area before opening the files.`,
+    ``,
+    `After writing the file, stop. Do not produce a JSON review in this phase.`,
+    ``,
+  ].join('\n');
+}
+
+function buildReviewPromptSections(
+  planData: PlanSchema,
+  diffResult: DiffResult,
+  includeDiff: boolean,
+  parentChain: PlanSchema[],
+  completedChildren: PlanSchema[],
+  options: {
+    taskScopeNote?: string;
+    remainingTasks?: RemainingTask[];
+  }
+): {
+  parentContext: string[];
+  childrenContext: string[];
+  planContext: string[];
+  changedFilesSection: string[];
+  hasSpecificTasks: boolean;
+} {
   // Build parent plan context section if available
   const parentContext: string[] = [];
   if (parentChain.length > 0) {
@@ -2166,13 +2298,13 @@ export function buildReviewPrompt(
     planContext.push(`**Details:**`, planData.details, ``);
   }
 
-  if (taskScopeNote) {
-    planContext.push(`**Review Scope:** ${taskScopeNote}`, ``);
+  if (options.taskScopeNote) {
+    planContext.push(`**Review Scope:** ${options.taskScopeNote}`, ``);
   }
 
-  if (remainingTasks && remainingTasks.length > 0) {
+  if (options.remainingTasks && options.remainingTasks.length > 0) {
     planContext.push(`**Remaining Unfinished Tasks:**`);
-    for (const task of remainingTasks) {
+    for (const task of options.remainingTasks) {
       planContext.push(`- ${task.index}. ${task.title}`);
     }
     planContext.push(
@@ -2182,7 +2314,7 @@ export function buildReviewPrompt(
     );
   }
 
-  const hasSpecificTasks = planData.tasks?.length;
+  const hasSpecificTasks = Boolean(planData.tasks?.length);
   if (hasSpecificTasks) {
     planContext.push(`**Tasks:**`);
     planData.tasks.forEach((task, index) => {
@@ -2213,50 +2345,27 @@ export function buildReviewPrompt(
     changedFilesSection.push(``, `**Full Diff:**`, ``, '```diff', diffResult.diffContent, '```');
   }
 
-  const planScope = hasSpecificTasks ? ' of the specified tasks' : '';
+  return {
+    parentContext,
+    childrenContext,
+    planContext,
+    changedFilesSection,
+    hasSpecificTasks,
+  };
+}
 
-  // Combine everything into the final prompt
-  const contextContent = [
-    ...parentContext,
-    ...childrenContext,
-    ...planContext,
-    ``,
-    ...changedFilesSection,
-    ``,
-    ...(additionalContext?.trim() ? [additionalContext.trim(), ``] : []),
-    ...(previousReviewResponse?.trim()
-      ? [
-          `# Previous Fixer Response`,
-          ``,
-          `We just ran a round of fixing in response to a previous review. The final output from the fixing work is below. Please conduct a general review${planScope}, taking this fixer output into account:`,
-          ``,
-          previousReviewResponse.trim(),
-          ``,
-        ]
-      : []),
-    `# Review Instructions`,
-    ``,
-    `Please review the code changes above in the context of the plan requirements. Focus on:`,
-    `1. **Compliance with Plan Requirements:** Do the changes fulfill the goals and tasks outlined in the plan?`,
-    `2. **Code Quality:** Look for bugs, logic errors, security issues, and performance problems`,
-    `3. **Implementation Completeness:** Are all required features implemented according to the plan?`,
-    `4. **Error Handling:** Are edge cases and error conditions properly handled?`,
-    `5. **Testing:** Are the changes adequately tested?`,
-    ``,
-    `**Pre-existing Issues:** If you notice concerns in code that was not modified by these changes, they may still be worth noting. However, any pre-existing issues MUST be labeled as "info" severity. Only issues introduced or affected by the current changes should receive higher severity ratings.`,
-    ``,
-  ].join('\n');
+function buildReviewGuideSection(reviewGuidePath?: string): string[] {
+  if (!reviewGuidePath?.trim()) {
+    return [];
+  }
 
-  // Use the reviewer agent template with our context and custom instructions
-  const reviewerPromptWithContext = getReviewerPrompt(
-    contextContent,
-    planData.id,
-    customInstructions,
-    undefined,
-    useSubagents
-  );
-
-  return reviewerPromptWithContext.prompt;
+  return [
+    `# Review Guide`,
+    ``,
+    `Read the review guide at \`${reviewGuidePath}\` before reviewing the code.`,
+    `Use that guide as the organizational framework for your review so your analysis follows the functional areas and walkthrough order captured there.`,
+    ``,
+  ];
 }
 
 /**

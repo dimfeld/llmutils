@@ -4,7 +4,9 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   handleReviewCommand,
+  buildAnalysisPrompt,
   buildReviewPrompt,
+  getReviewGuidePath,
   detectIssuesInReview,
   buildAutofixPrompt,
   reopenParentForAppendedReviewTasks,
@@ -708,6 +710,111 @@ index 1234567..abcdefg 100644
     );
 
     expect(prompt).toContain('**Review Scope:** Scoped to selected tasks.');
+  });
+
+  test('includes review guide instructions when provided', async () => {
+    const planData: PlanSchema = {
+      id: 55,
+      title: 'Guide-Aware Review',
+      goal: 'Use the guide',
+      tasks: [],
+    };
+
+    const diffResult = {
+      hasChanges: true,
+      changedFiles: ['src/file.ts'],
+      baseBranch: 'main',
+      diffContent: 'diff --git',
+    };
+
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockImplementation(
+      (contextContent: string) =>
+        ({
+          prompt: contextContent,
+        }) as any
+    );
+
+    const prompt = buildReviewPrompt(
+      planData,
+      diffResult,
+      false,
+      false,
+      [],
+      [],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      '.tim/tmp/review-guide-55.md'
+    );
+
+    expect(prompt).toContain('# Review Guide');
+    expect(prompt).toContain('`.tim/tmp/review-guide-55.md`');
+    expect(prompt).toContain('organizational framework');
+  });
+
+  test('builds deterministic review guide path', () => {
+    expect(getReviewGuidePath(123)).toBe(join('.tim', 'tmp', 'review-guide-123.md'));
+  });
+
+  test('builds analysis prompt for jj repositories', async () => {
+    vi.mocked(gitModule.getUsingJj).mockResolvedValue(true);
+
+    const planData: PlanSchema = {
+      id: 308,
+      title: 'Improve review agent',
+      goal: 'Produce a useful guide',
+      details: 'Review agent details',
+      tasks: [{ title: 'Analyze review flow', description: 'Inspect it', done: false }],
+    };
+
+    const diffResult = {
+      hasChanges: true,
+      changedFiles: ['src/tim/review_runner.ts', 'src/tim/commands/review.ts'],
+      baseBranch: 'main',
+      diffContent: 'diff --git',
+    };
+
+    const prompt = await buildAnalysisPrompt(
+      planData,
+      diffResult,
+      '/repo/root',
+      [],
+      [],
+      'Scoped to current review tasks.',
+      [{ index: 3, title: 'Update tests' }]
+    );
+
+    expect(prompt).toContain('use parallel subagents');
+    expect(prompt).toContain("jj diff -f 'heads(::@ & ::main)' <filename>");
+    expect(prompt).toContain('Ignore comments starting with `AI:` or `AI_COMMENT_START`');
+    expect(prompt).toContain('`.tim/tmp/review-guide-308.md`');
+    expect(prompt).toContain('`/repo/root/.tim/tmp/review-guide-308.md`');
+    expect(prompt).toContain('Review Scope:** Scoped to current review tasks.');
+    expect(prompt).toContain('Remaining Unfinished Tasks');
+  });
+
+  test('builds analysis prompt for git repositories', async () => {
+    vi.mocked(gitModule.getUsingJj).mockResolvedValue(false);
+
+    const planData: PlanSchema = {
+      id: 99,
+      title: 'Git review',
+      goal: 'Use git diff',
+      tasks: [],
+    };
+
+    const diffResult = {
+      hasChanges: true,
+      changedFiles: ['src/file.ts'],
+      baseBranch: 'develop',
+      diffContent: 'diff --git',
+    };
+
+    const prompt = await buildAnalysisPrompt(planData, diffResult, '/repo/root');
+
+    expect(prompt).toContain('git diff $(git merge-base develop HEAD) -- <filename>');
   });
 
   test('passes useSubagents flag to reviewer prompt', async () => {
