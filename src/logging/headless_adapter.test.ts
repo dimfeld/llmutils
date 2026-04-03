@@ -139,6 +139,7 @@ describe('HeadlessAdapter', () => {
 
     adapter.log('before-connect-1');
     adapter.log('before-connect-2');
+    adapter.sendPlanContent('# latest plan');
 
     const port = (adapter as any).sessionServer.port as number;
     const ws = await openWebSocket(`ws://127.0.0.1:${port}/tim-agent`);
@@ -161,10 +162,11 @@ describe('HeadlessAdapter', () => {
       gitRemote: 'git@example.com:repo.git',
       sessionId: expect.any(String),
     });
-    expect(messages[1]).toEqual({ type: 'replay_start' });
-    expect(messages[2]).toMatchObject({ type: 'output', seq: 1 });
-    expect(messages[3]).toMatchObject({ type: 'output', seq: 2 });
-    expect(messages[4]).toEqual({ type: 'replay_end' });
+    expect(messages[1]).toEqual({ type: 'plan_content', content: '# latest plan' });
+    expect(messages[2]).toEqual({ type: 'replay_start' });
+    expect(messages[3]).toMatchObject({ type: 'output', seq: 1 });
+    expect(messages[4]).toMatchObject({ type: 'output', seq: 2 });
+    expect(messages[5]).toEqual({ type: 'replay_end' });
 
     ws.close();
     await adapter.destroy();
@@ -218,6 +220,35 @@ describe('HeadlessAdapter', () => {
       workspacePath: '/tmp/updated',
       gitRemote: 'example.com/updated',
       sessionId: expect.any(String),
+    });
+
+    ws.close();
+    await adapter.destroy();
+  });
+
+  it('broadcasts live plan content updates to embedded-server clients', async () => {
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = createTestHeadlessAdapter({ command: 'agent' }, wrapped);
+
+    const port = (adapter as any).sessionServer.port as number;
+    const ws = await openWebSocket(`ws://127.0.0.1:${port}/tim-agent`);
+    const messages: HeadlessMessage[] = [];
+    ws.addEventListener('message', (event) => {
+      const parsed = parseMessage(event.data as string);
+      if (parsed) {
+        messages.push(parsed);
+      }
+    });
+    await waitFor(() => messages.some((message) => message.type === 'replay_end'));
+    messages.length = 0;
+
+    adapter.sendPlanContent('## updated plan');
+
+    await waitFor(() => messages.some((message) => message.type === 'plan_content'));
+
+    expect(messages).toContainEqual({
+      type: 'plan_content',
+      content: '## updated plan',
     });
 
     ws.close();

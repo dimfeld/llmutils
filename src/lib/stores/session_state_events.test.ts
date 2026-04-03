@@ -45,6 +45,7 @@ function createSession(connectionId = 'conn-1'): SessionData {
     },
     status: 'active',
     projectId: null,
+    planContent: null,
     messages: [
       createMessage({ id: `${connectionId}-0`, body: { type: 'text', text: 'existing' } }),
     ],
@@ -320,6 +321,25 @@ describe('applySessionEvent', () => {
 
     const updated = state.sessions.get(session.connectionId);
     expect(updated?.activePrompt).toEqual(prompt);
+  });
+
+  test('session:plan-content updates the session without disturbing messages', () => {
+    const session = createSession();
+    const previousMessages = session.messages;
+    const state = createState(session);
+
+    applySessionEvent(
+      'session:plan-content',
+      {
+        connectionId: session.connectionId,
+        planContent: '# current plan',
+      },
+      state
+    );
+
+    const updated = state.sessions.get(session.connectionId);
+    expect(updated?.planContent).toBe('# current plan');
+    expect(updated?.messages).toBe(previousMessages);
   });
 
   test('session:prompt-cleared only clears the matching prompt', () => {

@@ -13,6 +13,7 @@ describe('headless_message_utils', () => {
       'session_info',
       'replay_start',
       'replay_end',
+      'plan_content',
       'output',
       'session_ended',
     ]);
@@ -33,6 +34,13 @@ describe('headless_message_utils', () => {
     });
 
     expect(
+      parseHeadlessMessage(JSON.stringify({ type: 'plan_content', content: '# body' }))
+    ).toEqual({
+      type: 'plan_content',
+      content: '# body',
+    });
+
+    expect(
       parseHeadlessMessage(JSON.stringify({ type: 'output', seq: 1, message: { type: 'stdout' } }))
     ).toEqual({
       type: 'output',
@@ -41,6 +49,7 @@ describe('headless_message_utils', () => {
     });
 
     expect(parseHeadlessMessage(JSON.stringify({ type: 'output', message: {} }))).toBeNull();
+    expect(parseHeadlessMessage(JSON.stringify({ type: 'plan_content', content: 123 }))).toBeNull();
     expect(parseHeadlessMessage(JSON.stringify({ type: 'unknown' }))).toBeNull();
     expect(parseHeadlessMessage('not-json')).toBeNull();
   });

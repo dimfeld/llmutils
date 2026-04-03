@@ -140,6 +140,7 @@ export interface SessionData {
   sessionInfo: HeadlessSessionInfo;
   status: SessionStatus;
   projectId: number | null;
+  planContent: string | null;
   messages: DisplayMessage[];
   activePrompt: ActivePrompt | null;
   isReplaying: boolean;
@@ -177,6 +178,11 @@ export interface SessionMessageEvent {
   message: DisplayMessage;
 }
 
+export interface SessionPlanContentEvent {
+  connectionId: string;
+  planContent: string;
+}
+
 export interface SessionPromptEvent {
   connectionId: string;
   prompt: ActivePrompt;
@@ -205,6 +211,7 @@ export interface SessionClientEventMap {
   'session:update': SessionUpdateEvent;
   'session:disconnect': SessionDisconnectEvent;
   'session:message': SessionMessageEvent;
+  'session:plan-content': SessionPlanContentEvent;
   'session:prompt': SessionPromptEvent;
   'session:prompt-cleared': SessionPromptClearedEvent;
   'session:dismissed': SessionDismissedEvent;

@@ -4,6 +4,7 @@ export const VALID_HEADLESS_TYPES = new Set<HeadlessMessage['type']>([
   'session_info',
   'replay_start',
   'replay_end',
+  'plan_content',
   'output',
   'session_ended',
 ]);
@@ -45,6 +46,10 @@ export function parseHeadlessMessage(payload: string): HeadlessMessage | null {
     parsed.type === 'output' &&
     (typeof parsed.seq !== 'number' || !('message' in parsed) || parsed.message == null)
   ) {
+    return null;
+  }
+
+  if (parsed.type === 'plan_content' && typeof parsed.content !== 'string') {
     return null;
   }
 
