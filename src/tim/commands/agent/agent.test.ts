@@ -949,6 +949,146 @@ describe('timAgent - simple mode flag plumbing', () => {
     );
   });
 
+  test('serial final review saves issues and marks plan needs_review when terminal input is disabled', async () => {
+    await writePlanFile(
+      simplePlanFile,
+      {
+        id: 123,
+        title: 'Simple Flag Plan',
+        goal: 'Exercise executor plumbing',
+        details: 'Ensure simple flag flows through to executor builder',
+        status: 'in_progress',
+        tasks: [
+          {
+            title: 'Completed Task',
+            description: 'Already finished before the final pass',
+            done: true,
+            steps: [{ prompt: 'Done already', done: true }],
+          },
+          {
+            title: 'Task 2',
+            description: 'The last remaining task',
+            done: false,
+            steps: [],
+          },
+        ],
+      },
+      { cwdForIdentity: tempDir }
+    );
+
+    serialFindNextActionableItemImpl = vi
+      .fn()
+      .mockReturnValueOnce({
+        type: 'task',
+        taskIndex: 1,
+        task: {
+          title: 'Task 2',
+          description: 'The last remaining task',
+          steps: [],
+        },
+      })
+      .mockReturnValueOnce(null);
+    serialMarkTaskDoneImpl = vi.fn(async () => {
+      const plan = await readPlanFile(simplePlanFile);
+      plan.tasks[1]!.done = true;
+      plan.status = 'done';
+      await writePlanFile(simplePlanFile, plan, { cwdForIdentity: tempDir });
+      return { message: 'Task updated', planComplete: true };
+    });
+
+    const reviewModule = await import('../review.js');
+    vi.mocked(reviewModule.handleReviewCommand).mockResolvedValueOnce({
+      tasksAppended: 0,
+      issuesSaved: 2,
+    });
+
+    const { timAgent } = await import('./agent.js');
+    await timAgent(
+      simplePlanFile,
+      { log: false, serialTasks: true, terminalInput: false } as any,
+      {}
+    );
+
+    const updatedPlan = await readPlanFile(simplePlanFile);
+
+    expect(reviewModule.handleReviewCommand).toHaveBeenCalledWith(
+      simplePlanFile,
+      { cwd: tempDir, saveIssues: true, noAutofix: true },
+      expect.any(Object)
+    );
+    expect(updatedPlan.status).toBe('needs_review');
+  });
+
+  test('serial final review preserves completion when no issues are saved in terminal-input-disabled mode', async () => {
+    await writePlanFile(
+      simplePlanFile,
+      {
+        id: 123,
+        title: 'Simple Flag Plan',
+        goal: 'Exercise executor plumbing',
+        details: 'Ensure simple flag flows through to executor builder',
+        status: 'in_progress',
+        tasks: [
+          {
+            title: 'Completed Task',
+            description: 'Already finished before the final pass',
+            done: true,
+            steps: [{ prompt: 'Done already', done: true }],
+          },
+          {
+            title: 'Task 2',
+            description: 'The last remaining task',
+            done: false,
+            steps: [],
+          },
+        ],
+      },
+      { cwdForIdentity: tempDir }
+    );
+
+    serialFindNextActionableItemImpl = vi
+      .fn()
+      .mockReturnValueOnce({
+        type: 'task',
+        taskIndex: 1,
+        task: {
+          title: 'Task 2',
+          description: 'The last remaining task',
+          steps: [],
+        },
+      })
+      .mockReturnValueOnce(null);
+    serialMarkTaskDoneImpl = vi.fn(async () => {
+      const plan = await readPlanFile(simplePlanFile);
+      plan.tasks[1]!.done = true;
+      plan.status = 'done';
+      await writePlanFile(simplePlanFile, plan, { cwdForIdentity: tempDir });
+      return { message: 'Task updated', planComplete: true };
+    });
+
+    const reviewModule = await import('../review.js');
+    vi.mocked(reviewModule.handleReviewCommand).mockResolvedValueOnce({
+      tasksAppended: 0,
+      issuesSaved: 0,
+    });
+
+    const { timAgent } = await import('./agent.js');
+    await timAgent(
+      simplePlanFile,
+      { log: false, serialTasks: true, terminalInput: false } as any,
+      {}
+    );
+
+    const updatedPlan = await readPlanFile(simplePlanFile);
+
+    expect(reviewModule.handleReviewCommand).toHaveBeenCalledWith(
+      simplePlanFile,
+      { cwd: tempDir, saveIssues: true, noAutofix: true },
+      expect.any(Object)
+    );
+    expect(updatedPlan.status).toBe('done');
+  });
+
   test('passes subagentExecutor and dynamicSubagentInstructions to executor builder from CLI options', async () => {
     const { timAgent } = await import('./agent.js');
     await timAgent(
