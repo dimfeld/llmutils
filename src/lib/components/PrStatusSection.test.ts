@@ -7,6 +7,9 @@ import type {
   PrCheckRunRow,
   PrReviewRow,
   PrLabelRow,
+  PrReviewThreadDetail,
+  PrReviewThreadRow,
+  PrReviewThreadCommentRow,
 } from '$tim/db/pr_status.js';
 import PrStatusSection from './PrStatusSection.svelte';
 
@@ -93,6 +96,7 @@ function makePrDetail(
     reviews?: PrReviewRow[];
     reviewRequests?: PrStatusDetail['reviewRequests'];
     labels?: PrLabelRow[];
+    reviewThreads?: PrReviewThreadDetail[];
   } = {}
 ): PrStatusDetail {
   return {
@@ -101,6 +105,62 @@ function makePrDetail(
     reviews: overrides.reviews ?? [],
     reviewRequests: overrides.reviewRequests ?? [],
     labels: overrides.labels ?? [],
+    reviewThreads: overrides.reviewThreads,
+  };
+}
+
+function makeReviewThreadRow(overrides: Partial<PrReviewThreadRow> = {}): PrReviewThreadRow {
+  return {
+    id: 1,
+    pr_status_id: 1,
+    thread_id: 'thread-1',
+    path: 'src/example.ts',
+    line: 42,
+    original_line: 42,
+    original_start_line: null,
+    start_line: null,
+    diff_side: 'RIGHT',
+    start_diff_side: null,
+    is_resolved: 0,
+    is_outdated: 0,
+    subject_type: 'LINE',
+    ...overrides,
+  };
+}
+
+function makeReviewThreadComment(
+  overrides: Partial<PrReviewThreadCommentRow> = {}
+): PrReviewThreadCommentRow {
+  return {
+    id: 1,
+    review_thread_id: 1,
+    comment_id: 'comment-1',
+    database_id: 1234,
+    author: 'reviewer1',
+    body: 'Please rename this.',
+    diff_hunk: '@@ -42,1 +42,1 @@',
+    state: 'COMMENTED',
+    created_at: '2026-03-18T10:05:00.000Z',
+    ...overrides,
+  };
+}
+
+function makeReviewThreadDetail(
+  overrides: {
+    thread?: Partial<PrReviewThreadRow>;
+    comments?: PrReviewThreadCommentRow[];
+  } = {}
+): PrReviewThreadDetail {
+  const thread = makeReviewThreadRow(overrides.thread);
+  return {
+    thread,
+    comments: overrides.comments ?? [
+      makeReviewThreadComment({
+        review_thread_id: thread.id,
+        id: thread.id,
+        database_id: 1234 + thread.id,
+      }),
+    ],
   };
 }
 
@@ -461,6 +521,48 @@ describe('PrStatusSection', () => {
     });
 
     expect(body).not.toContain('review');
+  });
+
+  test('renders review threads section with unresolved count and GitHub links', async () => {
+    const detail = makePrDetail({
+      reviewThreads: [
+        makeReviewThreadDetail({
+          thread: { id: 1, thread_id: 'thread-1', path: 'src/b.ts', line: 7, is_resolved: 1 },
+          comments: [makeReviewThreadComment({ id: 1, review_thread_id: 1, database_id: 7001 })],
+        }),
+        makeReviewThreadDetail({
+          thread: {
+            id: 2,
+            thread_id: 'thread-2',
+            path: 'src/a.ts',
+            line: 3,
+            is_resolved: 0,
+            is_outdated: 1,
+          },
+          comments: [
+            makeReviewThreadComment({
+              id: 2,
+              review_thread_id: 2,
+              database_id: 7002,
+              author: 'alice',
+              body: 'This is outdated but still visible.',
+            }),
+          ],
+        }),
+      ],
+    });
+    const { body } = await renderSection({
+      prUrls: [detail.status.pr_url],
+      prStatuses: [detail],
+    });
+
+    expect(body).toContain('2 review threads');
+    expect(body).toContain('(1 unresolved)');
+    expect(body).toContain('Resolved');
+    expect(body).toContain('Outdated');
+    expect(body).toContain('href="https://github.com/owner/repo/pull/42#discussion_r7002"');
+    expect(body).toContain('src/a.ts:3');
+    expect(body).toContain('Copy');
   });
 
   test('renders check run details URL as link', async () => {

@@ -491,6 +491,44 @@ const migrations: Migration[] = [
       CREATE INDEX idx_pr_review_request_pr_status_id ON pr_review_request(pr_status_id);
     `,
   },
+  {
+    version: 15,
+    up: `
+      CREATE TABLE pr_review_thread (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pr_status_id INTEGER NOT NULL REFERENCES pr_status(id) ON DELETE CASCADE,
+        thread_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        line INTEGER,
+        original_line INTEGER,
+        original_start_line INTEGER,
+        start_line INTEGER,
+        diff_side TEXT,
+        start_diff_side TEXT,
+        is_resolved INTEGER NOT NULL DEFAULT 0,
+        is_outdated INTEGER NOT NULL DEFAULT 0,
+        subject_type TEXT
+      );
+      CREATE UNIQUE INDEX idx_pr_review_thread_unique ON pr_review_thread(pr_status_id, thread_id);
+      CREATE INDEX idx_pr_review_thread_pr_status_id ON pr_review_thread(pr_status_id);
+
+      CREATE TABLE pr_review_thread_comment (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        review_thread_id INTEGER NOT NULL REFERENCES pr_review_thread(id) ON DELETE CASCADE,
+        comment_id TEXT NOT NULL,
+        database_id INTEGER,
+        author TEXT,
+        body TEXT,
+        diff_hunk TEXT,
+        state TEXT,
+        created_at TEXT
+      );
+      CREATE UNIQUE INDEX idx_pr_review_thread_comment_unique
+        ON pr_review_thread_comment(review_thread_id, comment_id);
+      CREATE INDEX idx_pr_review_thread_comment_thread_id
+        ON pr_review_thread_comment(review_thread_id);
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {

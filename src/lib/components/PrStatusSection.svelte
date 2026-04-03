@@ -18,6 +18,7 @@
   } from '$lib/utils/pr_display.js';
   import PrCheckRunList from './PrCheckRunList.svelte';
   import PrReviewList from './PrReviewList.svelte';
+  import PrReviewThreadList from './PrReviewThreadList.svelte';
 
   let { planUuid }: { planUuid: string } = $props();
   const sessionManager = useSessionManager();
@@ -209,6 +210,26 @@
             </summary>
             <div class="mt-1.5 pl-2">
               <PrReviewList reviews={pr.reviews} />
+            </div>
+          </details>
+        {/if}
+
+        <!-- Expandable Review Threads -->
+        {#if pr.reviewThreads?.length}
+          {@const unresolvedCount = pr.reviewThreads.filter((t) => !t.thread.is_resolved).length}
+          <details class="mt-2">
+            <summary
+              class="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground"
+            >
+              {pr.reviewThreads.length} review thread{pr.reviewThreads.length === 1 ? '' : 's'}
+              {#if unresolvedCount > 0}
+                <span class="text-amber-600 dark:text-amber-400">
+                  ({unresolvedCount} unresolved)
+                </span>
+              {/if}
+            </summary>
+            <div class="mt-1.5 pl-2">
+              <PrReviewThreadList threads={pr.reviewThreads} prUrl={pr.status.pr_url} />
             </div>
           </details>
         {/if}

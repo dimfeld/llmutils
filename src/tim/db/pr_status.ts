@@ -63,6 +63,34 @@ export interface PrLabelRow {
   color: string | null;
 }
 
+export interface PrReviewThreadRow {
+  id: number;
+  pr_status_id: number;
+  thread_id: string;
+  path: string;
+  line: number | null;
+  original_line: number | null;
+  original_start_line: number | null;
+  start_line: number | null;
+  diff_side: string | null;
+  start_diff_side: string | null;
+  is_resolved: number;
+  is_outdated: number;
+  subject_type: string | null;
+}
+
+export interface PrReviewThreadCommentRow {
+  id: number;
+  review_thread_id: number;
+  comment_id: string;
+  database_id: number | null;
+  author: string | null;
+  body: string | null;
+  diff_hunk: string | null;
+  state: string | null;
+  created_at: string | null;
+}
+
 export interface PlanPrRow {
   plan_uuid: string;
   pr_status_id: number;
@@ -98,6 +126,31 @@ export interface StoredPrLabelInput {
   color?: string | null;
 }
 
+export interface StoredPrReviewThreadCommentInput {
+  commentId: string;
+  databaseId?: number | null;
+  author?: string | null;
+  body?: string | null;
+  diffHunk?: string | null;
+  state?: string | null;
+  createdAt?: string | null;
+}
+
+export interface StoredPrReviewThreadInput {
+  threadId: string;
+  path: string;
+  line?: number | null;
+  originalLine?: number | null;
+  originalStartLine?: number | null;
+  startLine?: number | null;
+  diffSide?: string | null;
+  startDiffSide?: string | null;
+  isResolved: boolean;
+  isOutdated: boolean;
+  subjectType?: string | null;
+  comments: StoredPrReviewThreadCommentInput[];
+}
+
 export interface UpsertPrStatusInput {
   prUrl: string;
   owner: string;
@@ -119,9 +172,13 @@ export interface UpsertPrStatusInput {
   checks?: StoredPrCheckRunInput[];
   reviews?: StoredPrReviewInput[];
   labels?: StoredPrLabelInput[];
+  reviewThreads?: StoredPrReviewThreadInput[];
 }
 
-export type UpsertPrStatusMetadataInput = Omit<UpsertPrStatusInput, 'checks' | 'reviews'> & {
+export type UpsertPrStatusMetadataInput = Omit<
+  UpsertPrStatusInput,
+  'checks' | 'reviews' | 'reviewThreads'
+> & {
   prUpdatedAt?: string | null;
 };
 
@@ -131,6 +188,12 @@ export interface PrStatusDetail {
   reviews: PrReviewRow[];
   reviewRequests: PrReviewRequestRow[];
   labels: PrLabelRow[];
+  reviewThreads?: PrReviewThreadDetail[];
+}
+
+export interface PrReviewThreadDetail {
+  thread: PrReviewThreadRow;
+  comments: PrReviewThreadCommentRow[];
 }
 
 export interface PlanWithLinkedPrs {
@@ -244,7 +307,87 @@ function replaceLabels(db: Database, prStatusId: number, labels: StoredPrLabelIn
   }
 }
 
-function getDetailById(db: Database, prStatusId: number): PrStatusDetail | null {
+function replaceReviewThreads(
+  db: Database,
+  prStatusId: number,
+  threads: StoredPrReviewThreadInput[]
+): void {
+  db.prepare('DELETE FROM pr_review_thread WHERE pr_status_id = ?').run(prStatusId);
+
+  if (threads.length === 0) {
+    return;
+  }
+
+  const insertThread = db.prepare(
+    `
+      INSERT INTO pr_review_thread (
+        pr_status_id,
+        thread_id,
+        path,
+        line,
+        original_line,
+        original_start_line,
+        start_line,
+        diff_side,
+        start_diff_side,
+        is_resolved,
+        is_outdated,
+        subject_type
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `
+  );
+  const insertComment = db.prepare(
+    `
+      INSERT INTO pr_review_thread_comment (
+        review_thread_id,
+        comment_id,
+        database_id,
+        author,
+        body,
+        diff_hunk,
+        state,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `
+  );
+
+  for (const thread of threads) {
+    const result = insertThread.run(
+      prStatusId,
+      thread.threadId,
+      thread.path,
+      thread.line ?? null,
+      thread.originalLine ?? null,
+      thread.originalStartLine ?? null,
+      thread.startLine ?? null,
+      thread.diffSide ?? null,
+      thread.startDiffSide ?? null,
+      thread.isResolved ? 1 : 0,
+      thread.isOutdated ? 1 : 0,
+      thread.subjectType ?? null
+    );
+    const reviewThreadId = Number(result.lastInsertRowid);
+
+    for (const comment of thread.comments) {
+      insertComment.run(
+        reviewThreadId,
+        comment.commentId,
+        comment.databaseId ?? null,
+        comment.author ?? null,
+        comment.body ?? null,
+        comment.diffHunk ?? null,
+        comment.state ?? null,
+        comment.createdAt ?? null
+      );
+    }
+  }
+}
+
+function getDetailById(
+  db: Database,
+  prStatusId: number,
+  options?: { includeReviewThreads?: boolean }
+): PrStatusDetail | null {
   const status =
     (db.prepare('SELECT * FROM pr_status WHERE id = ?').get(prStatusId) as PrStatusRow | null) ??
     null;
@@ -294,12 +437,58 @@ function getDetailById(db: Database, prStatusId: number): PrStatusDetail | null 
     )
     .all(prStatusId) as PrLabelRow[];
 
+  let reviewThreads: PrReviewThreadDetail[] | undefined;
+  if (options?.includeReviewThreads) {
+    const threadRows = db
+      .prepare(
+        `
+          SELECT *
+          FROM pr_review_thread
+          WHERE pr_status_id = ?
+          ORDER BY path, line, original_line, start_line, id
+        `
+      )
+      .all(prStatusId) as PrReviewThreadRow[];
+
+    const threadIds = threadRows.map((thread) => thread.id);
+    const commentsByThreadId = new Map<number, PrReviewThreadCommentRow[]>();
+
+    if (threadIds.length > 0) {
+      const placeholders = threadIds.map(() => '?').join(', ');
+      const commentRows = db
+        .prepare(
+          `
+            SELECT *
+            FROM pr_review_thread_comment
+            WHERE review_thread_id IN (${placeholders})
+            ORDER BY review_thread_id, created_at, id
+          `
+        )
+        .all(...threadIds) as PrReviewThreadCommentRow[];
+
+      for (const comment of commentRows) {
+        const comments = commentsByThreadId.get(comment.review_thread_id);
+        if (comments) {
+          comments.push(comment);
+        } else {
+          commentsByThreadId.set(comment.review_thread_id, [comment]);
+        }
+      }
+    }
+
+    reviewThreads = threadRows.map((thread) => ({
+      thread,
+      comments: commentsByThreadId.get(thread.id) ?? [],
+    }));
+  }
+
   return {
     status,
     checks,
     reviews,
     reviewRequests,
     labels,
+    reviewThreads,
   };
 }
 
@@ -381,8 +570,13 @@ export function upsertPrStatus(db: Database, input: UpsertPrStatusInput): PrStat
     replaceCheckRuns(db, row.id, nextInput.checks ?? []);
     replaceReviews(db, row.id, nextInput.reviews ?? []);
     replaceLabels(db, row.id, nextInput.labels ?? []);
+    if (nextInput.reviewThreads !== undefined) {
+      replaceReviewThreads(db, row.id, nextInput.reviewThreads);
+    }
 
-    const detail = getDetailById(db, row.id);
+    const detail = getDetailById(db, row.id, {
+      includeReviewThreads: nextInput.reviewThreads !== undefined,
+    });
     if (!detail) {
       throw new Error(`Failed to load PR status detail for ${nextInput.prUrl}`);
     }
@@ -534,7 +728,11 @@ export function updatePrCheckRuns(
   return updateInTransaction.immediate(prStatusId, checks, checkRollupState, lastFetchedAt);
 }
 
-export function getPrStatusByUrl(db: Database, prUrl: string): PrStatusDetail | null {
+export function getPrStatusByUrl(
+  db: Database,
+  prUrl: string,
+  options?: { includeReviewThreads?: boolean }
+): PrStatusDetail | null {
   const canonicalPrUrl = tryCanonicalizePrUrl(prUrl);
   if (canonicalPrUrl === null) {
     return null;
@@ -548,7 +746,7 @@ export function getPrStatusByUrl(db: Database, prUrl: string): PrStatusDetail | 
     return null;
   }
 
-  return getDetailById(db, row.id);
+  return getDetailById(db, row.id, options);
 }
 
 export function updatePrMergeableAndReviewDecision(
@@ -609,7 +807,11 @@ export function getPrStatusByRepoAndNumber(
   );
 }
 
-export function getPrStatusByUrls(db: Database, prUrls: string[]): PrStatusDetail[] {
+export function getPrStatusByUrls(
+  db: Database,
+  prUrls: string[],
+  options?: { includeReviewThreads?: boolean }
+): PrStatusDetail[] {
   const canonicalPrUrls = [
     ...new Set(
       prUrls
@@ -634,7 +836,7 @@ export function getPrStatusByUrls(db: Database, prUrls: string[]): PrStatusDetai
     .all(...canonicalPrUrls) as Array<{ id: number }>;
 
   return rows
-    .map((row) => getDetailById(db, row.id))
+    .map((row) => getDetailById(db, row.id, options))
     .filter((detail): detail is PrStatusDetail => detail !== null);
 }
 
@@ -863,7 +1065,8 @@ export function getKnownRepoFullNames(db: Database): Set<string> {
 export function getPrStatusForPlan(
   db: Database,
   planUuid: string,
-  prUrls?: string[]
+  prUrls?: string[],
+  options?: { includeReviewThreads?: boolean }
 ): PrStatusDetail[] {
   const loadLinkedDetails = (source?: PlanPrSource): PrStatusDetail[] => {
     const sourceClause = source ? 'AND pp.source = ?' : '';
@@ -881,7 +1084,7 @@ export function getPrStatusForPlan(
       .all(...(source ? [planUuid, source] : [planUuid])) as Array<{ id: number }>;
 
     return rows
-      .map((row) => getDetailById(db, row.id))
+      .map((row) => getDetailById(db, row.id, options))
       .filter((detail): detail is PrStatusDetail => detail !== null);
   };
 
@@ -890,7 +1093,7 @@ export function getPrStatusForPlan(
       return loadLinkedDetails('auto');
     }
 
-    const explicitDetails = getPrStatusByUrls(db, prUrls);
+    const explicitDetails = getPrStatusByUrls(db, prUrls, options);
     const seenPrUrls = new Set(explicitDetails.map((detail) => detail.status.pr_url));
     const autoDetails = loadLinkedDetails('auto').filter(
       (detail) => !seenPrUrls.has(detail.status.pr_url)
@@ -902,7 +1105,12 @@ export function getPrStatusForPlan(
   return loadLinkedDetails();
 }
 
-export function getPrStatusesForRepo(db: Database, owner: string, repo: string): PrStatusDetail[] {
+export function getPrStatusesForRepo(
+  db: Database,
+  owner: string,
+  repo: string,
+  options?: { includeReviewThreads?: boolean }
+): PrStatusDetail[] {
   const rows = db
     .prepare(
       `
@@ -917,7 +1125,7 @@ export function getPrStatusesForRepo(db: Database, owner: string, repo: string):
     .all(owner, repo) as Array<{ id: number }>;
 
   return rows
-    .map((row) => getDetailById(db, row.id))
+    .map((row) => getDetailById(db, row.id, options))
     .filter((detail): detail is PrStatusDetail => detail !== null);
 }
 

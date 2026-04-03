@@ -4,6 +4,7 @@ import {
   checkRollupToSummaryStatus,
   checksBadgeColor,
   checksLabel,
+  formatReviewCommentForClipboard,
   labelStyle,
   reviewDecisionBadgeColor,
   reviewDecisionLabel,
@@ -99,5 +100,28 @@ describe('reviewDecision display helpers', () => {
     expect(reviewDecisionLabel('REVIEW_REQUIRED')).toBe('Review Required');
     expect(reviewDecisionLabel('DISMISSED')).toBe('DISMISSED');
     expect(reviewDecisionLabel(null)).toBe('');
+  });
+});
+
+describe('formatReviewCommentForClipboard', () => {
+  test('formats a review comment with file context and diff hunk', () => {
+    expect(
+      formatReviewCommentForClipboard(
+        'src/example.ts',
+        42,
+        'reviewer',
+        false,
+        'Please rename this.',
+        '@@ -42,1 +42,1 @@'
+      )
+    ).toBe(
+      'src/example.ts:42\n\n@reviewer (unresolved):\nPlease rename this.\n\nDiff context:\n@@ -42,1 +42,1 @@'
+    );
+  });
+
+  test('falls back cleanly when line, author, and diff hunk are missing', () => {
+    expect(formatReviewCommentForClipboard('src/example.ts', null, null, true, null)).toBe(
+      'src/example.ts\n\nUnknown (resolved):\n'
+    );
   });
 });

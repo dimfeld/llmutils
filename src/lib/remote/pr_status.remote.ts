@@ -137,7 +137,7 @@ export const getPrStatus = query(planUuidSchema, async ({ planUuid }) => {
   const { valid: prUrls, invalid: invalidPrUrls } = categorizePrUrls(
     parseJsonStringArray(plan.pull_request)
   );
-  const prStatuses = getPrStatusForPlan(db, plan.uuid, prUrls);
+  const prStatuses = getPrStatusForPlan(db, plan.uuid, prUrls, { includeReviewThreads: true });
 
   return {
     prUrls,

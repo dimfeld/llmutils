@@ -95,6 +95,25 @@ export function reviewDecisionLabel(decision: string | null): string {
   }
 }
 
+export function formatReviewCommentForClipboard(
+  path: string,
+  line: number | null,
+  author: string | null,
+  isResolved: boolean,
+  body: string | null,
+  diffHunk?: string | null
+): string {
+  const location = line ? `${path}:${line}` : path;
+  const status = isResolved ? 'resolved' : 'unresolved';
+  const authorStr = author ? `@${author}` : 'Unknown';
+
+  let text = `${location}\n\n${authorStr} (${status}):\n${body ?? ''}`;
+  if (diffHunk) {
+    text += `\n\nDiff context:\n${diffHunk}`;
+  }
+  return text;
+}
+
 export function checkRollupToSummaryStatus(rollupState: string | null): PrSummaryStatus {
   switch (rollupState) {
     case 'success':

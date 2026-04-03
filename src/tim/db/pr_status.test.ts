@@ -360,6 +360,303 @@ describe('tim db/pr_status', () => {
     expect(updated.labels.map((label) => label.name)).toEqual(['label']);
   });
 
+  test('upsertPrStatus persists and reloads review threads when requested', () => {
+    const created = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/160',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 160,
+      title: 'Review thread PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      reviewThreads: [
+        {
+          threadId: 'thread-1',
+          path: 'src/a.ts',
+          line: 12,
+          originalLine: 10,
+          originalStartLine: 8,
+          startLine: 11,
+          diffSide: 'RIGHT',
+          startDiffSide: 'RIGHT',
+          isResolved: false,
+          isOutdated: false,
+          subjectType: 'LINE',
+          comments: [
+            {
+              commentId: 'comment-1',
+              databaseId: 1001,
+              author: 'reviewer-a',
+              body: 'Please rename this.',
+              diffHunk: '@@ -1,1 +1,1 @@',
+              state: 'SUBMITTED',
+              createdAt: '2026-03-20T00:01:00.000Z',
+            },
+            {
+              commentId: 'comment-2',
+              databaseId: 1002,
+              author: 'author-a',
+              body: 'Done.',
+              diffHunk: '@@ -1,1 +1,1 @@',
+              state: 'SUBMITTED',
+              createdAt: '2026-03-20T00:02:00.000Z',
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(created.reviewThreads).toHaveLength(1);
+    expect(created.reviewThreads?.[0]?.thread.path).toBe('src/a.ts');
+    expect(created.reviewThreads?.[0]?.thread.line).toBe(12);
+    expect(created.reviewThreads?.[0]?.comments.map((comment) => comment.comment_id)).toEqual([
+      'comment-1',
+      'comment-2',
+    ]);
+
+    const withThreads = getPrStatusForPlan(db, 'plan-1', undefined, {
+      includeReviewThreads: true,
+    });
+    expect(withThreads).toEqual([]);
+
+    linkPlanToPr(db, 'plan-1', created.status.id);
+    const linked = getPrStatusForPlan(db, 'plan-1', undefined, {
+      includeReviewThreads: true,
+    });
+    expect(linked[0]?.reviewThreads).toHaveLength(1);
+    expect(linked[0]?.reviewThreads?.[0]?.comments[0]?.database_id).toBe(1001);
+
+    const withoutThreads = getPrStatusByUrl(db, created.status.pr_url);
+    expect(withoutThreads?.reviewThreads).toBeUndefined();
+  });
+
+  test('upsertPrStatus replaces, preserves, and clears review threads based on input presence', () => {
+    const created = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/161',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 161,
+      title: 'Replace review threads PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      reviewThreads: [
+        {
+          threadId: 'thread-old',
+          path: 'src/old.ts',
+          line: 4,
+          isResolved: false,
+          isOutdated: false,
+          comments: [{ commentId: 'comment-old', body: 'Old comment' }],
+        },
+      ],
+    });
+
+    const replaced = upsertPrStatus(db, {
+      prUrl: created.status.pr_url,
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 161,
+      title: 'Replace review threads PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-21T00:00:00.000Z',
+      reviewThreads: [
+        {
+          threadId: 'thread-new',
+          path: 'src/new.ts',
+          line: 8,
+          isResolved: true,
+          isOutdated: false,
+          comments: [{ commentId: 'comment-new', body: 'New comment' }],
+        },
+      ],
+    });
+
+    expect(replaced.reviewThreads?.map((thread) => thread.thread.thread_id)).toEqual([
+      'thread-new',
+    ]);
+    expect(replaced.reviewThreads?.[0]?.comments.map((comment) => comment.comment_id)).toEqual([
+      'comment-new',
+    ]);
+
+    upsertPrStatus(db, {
+      prUrl: created.status.pr_url,
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 161,
+      title: 'Replace review threads PR',
+      state: 'closed',
+      draft: false,
+      lastFetchedAt: '2026-03-22T00:00:00.000Z',
+    });
+
+    const preserved = getPrStatusForPlan(db, 'plan-1', [created.status.pr_url], {
+      includeReviewThreads: true,
+    });
+    expect(preserved[0]?.reviewThreads?.map((thread) => thread.thread.thread_id)).toEqual([
+      'thread-new',
+    ]);
+
+    const cleared = upsertPrStatus(db, {
+      prUrl: created.status.pr_url,
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 161,
+      title: 'Replace review threads PR',
+      state: 'closed',
+      draft: false,
+      lastFetchedAt: '2026-03-23T00:00:00.000Z',
+      reviewThreads: [],
+    });
+    expect(cleared.reviewThreads).toEqual([]);
+  });
+
+  test('review thread queries include multiple threads with nested comments in sorted order', () => {
+    const created = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/1611',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 1611,
+      title: 'Multiple review threads PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      reviewThreads: [
+        {
+          threadId: 'thread-b',
+          path: 'src/z-last.ts',
+          line: 30,
+          originalLine: 29,
+          isResolved: true,
+          isOutdated: false,
+          comments: [
+            {
+              commentId: 'comment-b1',
+              databaseId: 2101,
+              author: 'reviewer-b',
+              body: 'Second thread first comment',
+              createdAt: '2026-03-20T00:03:00.000Z',
+            },
+            {
+              commentId: 'comment-b2',
+              databaseId: 2102,
+              author: 'author-b',
+              body: 'Second thread second comment',
+              createdAt: '2026-03-20T00:04:00.000Z',
+            },
+          ],
+        },
+        {
+          threadId: 'thread-a',
+          path: 'src/a-first.ts',
+          line: 12,
+          originalLine: 11,
+          isResolved: false,
+          isOutdated: true,
+          comments: [
+            {
+              commentId: 'comment-a1',
+              databaseId: 1101,
+              author: 'reviewer-a',
+              body: 'First thread first comment',
+              createdAt: '2026-03-20T00:01:00.000Z',
+            },
+            {
+              commentId: 'comment-a2',
+              databaseId: 1102,
+              author: 'author-a',
+              body: 'First thread second comment',
+              createdAt: '2026-03-20T00:02:00.000Z',
+            },
+          ],
+        },
+      ],
+    });
+
+    linkPlanToPr(db, 'plan-1', created.status.id);
+
+    const planDetails = getPrStatusForPlan(db, 'plan-1', undefined, {
+      includeReviewThreads: true,
+    });
+    expect(planDetails).toHaveLength(1);
+    expect(planDetails[0]?.reviewThreads?.map((thread) => thread.thread.path)).toEqual([
+      'src/a-first.ts',
+      'src/z-last.ts',
+    ]);
+    expect(
+      planDetails[0]?.reviewThreads?.[0]?.comments.map((comment) => comment.comment_id)
+    ).toEqual(['comment-a1', 'comment-a2']);
+    expect(
+      planDetails[0]?.reviewThreads?.[1]?.comments.map((comment) => comment.comment_id)
+    ).toEqual(['comment-b1', 'comment-b2']);
+
+    const byUrls = getPrStatusByUrls(db, [created.status.pr_url], {
+      includeReviewThreads: true,
+    });
+    expect(byUrls).toHaveLength(1);
+    expect(byUrls[0]?.reviewThreads?.map((thread) => thread.thread.thread_id)).toEqual([
+      'thread-a',
+      'thread-b',
+    ]);
+
+    const withoutThreads = getPrStatusForPlan(db, 'plan-1');
+    expect(withoutThreads[0]?.reviewThreads).toBeUndefined();
+  });
+
+  test('review threads cascade delete with pr_status rows', () => {
+    const created = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/162',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 162,
+      title: 'Cascade review threads PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      reviewThreads: [
+        {
+          threadId: 'thread-cascade',
+          path: 'src/cascade.ts',
+          isResolved: false,
+          isOutdated: false,
+          comments: [{ commentId: 'comment-cascade', body: 'Cascade me' }],
+        },
+      ],
+    });
+
+    expect(
+      db
+        .prepare('SELECT COUNT(*) AS count FROM pr_review_thread WHERE pr_status_id = ?')
+        .get(created.status.id)
+    ).toEqual({ count: 1 });
+    expect(
+      db
+        .prepare(
+          `
+            SELECT COUNT(*) AS count
+            FROM pr_review_thread_comment
+            WHERE review_thread_id IN (
+              SELECT id FROM pr_review_thread WHERE pr_status_id = ?
+            )
+          `
+        )
+        .get(created.status.id)
+    ).toEqual({ count: 1 });
+
+    db.prepare('DELETE FROM pr_status WHERE id = ?').run(created.status.id);
+
+    expect(
+      db
+        .prepare('SELECT COUNT(*) AS count FROM pr_review_thread WHERE pr_status_id = ?')
+        .get(created.status.id)
+    ).toEqual({ count: 0 });
+    expect(db.prepare('SELECT COUNT(*) AS count FROM pr_review_thread_comment').get()).toEqual({
+      count: 0,
+    });
+  });
+
   test('getPrStatusForPlan, linkPlanToPr, and unlinkPlanFromPr manage plan links', () => {
     const detail = upsertPrStatus(db, {
       prUrl: 'https://github.com/example/repo/pull/102',

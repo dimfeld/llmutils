@@ -1,3 +1,7 @@
+import type {
+  StoredPrReviewThreadCommentInput,
+  StoredPrReviewThreadInput,
+} from '../../tim/db/pr_status.js';
 import { getOctokit } from './octokit.js';
 
 // Casing convention:
@@ -169,6 +173,63 @@ interface MergeableStatusGraphQlResponse {
   } | null;
 }
 
+interface GraphQlReviewThreadCommentNode {
+  id: string;
+  databaseId: number | null;
+  body: string | null;
+  diffHunk: string | null;
+  state: string | null;
+  createdAt: string | null;
+  author: GraphQlActor | null;
+}
+
+interface GraphQlReviewThreadNode {
+  id: string;
+  isResolved: boolean;
+  isOutdated: boolean;
+  line: number | null;
+  originalLine: number | null;
+  originalStartLine: number | null;
+  path: string;
+  diffSide: string | null;
+  startDiffSide: string | null;
+  startLine: number | null;
+  subjectType: string | null;
+  comments: {
+    pageInfo: {
+      hasNextPage: boolean;
+      endCursor: string | null;
+    };
+    nodes: Array<GraphQlReviewThreadCommentNode | null> | null;
+  };
+}
+
+interface ReviewThreadsGraphQlResponse {
+  repository: {
+    pullRequest: {
+      reviewThreads: {
+        pageInfo: {
+          hasNextPage: boolean;
+          endCursor: string | null;
+        };
+        nodes: Array<GraphQlReviewThreadNode | null> | null;
+      };
+    } | null;
+  } | null;
+}
+
+interface ReviewThreadCommentsGraphQlResponse {
+  node: {
+    comments: {
+      pageInfo: {
+        hasNextPage: boolean;
+        endCursor: string | null;
+      };
+      nodes: Array<GraphQlReviewThreadCommentNode | null> | null;
+    };
+  } | null;
+}
+
 const fullStatusQuery = `
   query GetPrFullStatus($owner: String!, $repo: String!, $prNumber: Int!) {
     repository(owner: $owner, name: $repo) {
@@ -277,6 +338,82 @@ const mergeableStatusQuery = `
       pullRequest(number: $prNumber) {
         mergeable
         reviewDecision
+      }
+    }
+  }
+`;
+
+const reviewThreadsQuery = `
+  query GetPrReviewThreads(
+    $owner: String!,
+    $repo: String!,
+    $prNumber: Int!,
+    $threadsCursor: String
+  ) {
+    repository(owner: $owner, name: $repo) {
+      pullRequest(number: $prNumber) {
+        reviewThreads(first: 50, after: $threadsCursor) {
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+          nodes {
+            id
+            isResolved
+            isOutdated
+            line
+            originalLine
+            originalStartLine
+            path
+            diffSide
+            startDiffSide
+            startLine
+            subjectType
+            comments(first: 100) {
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+              nodes {
+                id
+                databaseId
+                body
+                diffHunk
+                state
+                createdAt
+                author {
+                  login
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+const reviewThreadCommentsQuery = `
+  query GetPrReviewThreadComments($threadId: ID!, $commentsCursor: String) {
+    node(id: $threadId) {
+      ... on PullRequestReviewThread {
+        comments(first: 100, after: $commentsCursor) {
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+          nodes {
+            id
+            databaseId
+            body
+            diffHunk
+            state
+            createdAt
+            author {
+              login
+            }
+          }
+        }
       }
     }
   }
@@ -516,6 +653,64 @@ function dedupeReviewsByLatestAuthorReview(reviews: PrStatusReview[]): PrStatusR
   return reviews.filter((review) => latestReviewByAuthor.get(review.author) === review);
 }
 
+function normalizeMultilineText(value: string | null): string | null {
+  return value?.replaceAll(/\r\n|\r/g, '\n') ?? null;
+}
+
+function normalizeReviewThreadComment(
+  comment: GraphQlReviewThreadCommentNode
+): StoredPrReviewThreadCommentInput {
+  return {
+    commentId: comment.id,
+    databaseId: comment.databaseId,
+    author: comment.author?.login ?? null,
+    body: normalizeMultilineText(comment.body),
+    diffHunk: comment.diffHunk,
+    state: comment.state,
+    createdAt: comment.createdAt,
+  };
+}
+
+async function fetchAllReviewThreadComments(
+  threadId: string,
+  afterCursor?: string | null
+): Promise<StoredPrReviewThreadCommentInput[]> {
+  let commentsCursor: string | null = afterCursor ?? null;
+  const comments: StoredPrReviewThreadCommentInput[] = [];
+
+  while (true) {
+    const response: ReviewThreadCommentsGraphQlResponse = await getOctokit().graphql(
+      reviewThreadCommentsQuery,
+      {
+        threadId,
+        commentsCursor,
+      }
+    );
+
+    const threadNode = response.node;
+    const connection = threadNode?.comments;
+    if (!connection) {
+      throw new Error(`Review thread ${threadId} not found`);
+    }
+
+    comments.push(
+      ...(connection.nodes ?? [])
+        .filter(
+          (
+            comment: GraphQlReviewThreadCommentNode | null
+          ): comment is GraphQlReviewThreadCommentNode => comment !== null
+        )
+        .map(normalizeReviewThreadComment)
+    );
+
+    if (!connection.pageInfo.hasNextPage) {
+      return comments;
+    }
+
+    commentsCursor = connection.pageInfo.endCursor;
+  }
+}
+
 export async function fetchPrFullStatus(
   owner: string,
   repo: string,
@@ -586,6 +781,66 @@ export async function fetchPrCheckStatus(
   }
 
   return normalizeChecks(pullRequest.commits);
+}
+
+export async function fetchPrReviewThreads(
+  owner: string,
+  repo: string,
+  prNumber: number
+): Promise<StoredPrReviewThreadInput[]> {
+  const reviewThreads: StoredPrReviewThreadInput[] = [];
+  let threadsCursor: string | null = null;
+
+  while (true) {
+    const response: ReviewThreadsGraphQlResponse = await getOctokit().graphql(reviewThreadsQuery, {
+      owner,
+      repo,
+      prNumber,
+      threadsCursor,
+    });
+
+    const repository = response.repository;
+    const pullRequest = repository?.pullRequest;
+    if (!pullRequest) {
+      throw new Error(`Pull request ${owner}/${repo}#${prNumber} not found`);
+    }
+
+    for (const thread of (pullRequest.reviewThreads.nodes ?? []).filter(
+      (node: GraphQlReviewThreadNode | null): node is GraphQlReviewThreadNode => node !== null
+    )) {
+      const initialComments = (thread.comments.nodes ?? [])
+        .filter(
+          (
+            comment: GraphQlReviewThreadCommentNode | null
+          ): comment is GraphQlReviewThreadCommentNode => comment !== null
+        )
+        .map(normalizeReviewThreadComment);
+      const additionalComments = thread.comments.pageInfo.hasNextPage
+        ? await fetchAllReviewThreadComments(thread.id, thread.comments.pageInfo.endCursor)
+        : [];
+
+      reviewThreads.push({
+        threadId: thread.id,
+        path: thread.path,
+        line: thread.line,
+        originalLine: thread.originalLine,
+        originalStartLine: thread.originalStartLine,
+        startLine: thread.startLine,
+        diffSide: thread.diffSide,
+        startDiffSide: thread.startDiffSide,
+        isResolved: thread.isResolved,
+        isOutdated: thread.isOutdated,
+        subjectType: thread.subjectType,
+        comments: [...initialComments, ...additionalComments],
+      });
+    }
+
+    if (!pullRequest.reviewThreads.pageInfo.hasNextPage) {
+      return reviewThreads;
+    }
+
+    threadsCursor = pullRequest.reviewThreads.pageInfo.endCursor;
+  }
 }
 
 export async function fetchPrMergeableAndReviewDecision(

@@ -20,6 +20,8 @@ vi.mock('../../common/github/identifiers.ts', () => ({
 vi.mock('../../common/github/pr_status.ts', () => ({
   fetchPrFullStatus: vi.fn(),
   fetchPrCheckStatus: vi.fn(),
+  fetchPrMergeableAndReviewDecision: vi.fn(),
+  fetchPrReviewThreads: vi.fn(),
 }));
 
 // Import mocked modules
@@ -29,7 +31,12 @@ import {
   validatePrIdentifier,
   tryCanonicalizePrUrl,
 } from '../../common/github/identifiers.ts';
-import { fetchPrFullStatus, fetchPrCheckStatus } from '../../common/github/pr_status.ts';
+import {
+  fetchPrCheckStatus,
+  fetchPrFullStatus,
+  fetchPrMergeableAndReviewDecision,
+  fetchPrReviewThreads,
+} from '../../common/github/pr_status.ts';
 
 function makeIdentifiersMock(
   parsePrOrIssueNumberImpl: (...args: unknown[]) => unknown,
@@ -76,6 +83,7 @@ describe('common/github/pr_status_service', () => {
 
   test('refreshPrStatus fetches and caches a full PR record', async () => {
     const mockFetchPrFullStatus = vi.mocked(fetchPrFullStatus);
+    const mockFetchPrReviewThreads = vi.mocked(fetchPrReviewThreads);
     const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
     const mockCanonicalizePrUrl = vi.mocked(canonicalizePrUrl);
     const mockTryCanonicalizePrUrl = vi.mocked(tryCanonicalizePrUrl);
@@ -106,6 +114,7 @@ describe('common/github/pr_status_service', () => {
       ],
       checkRollupState: 'success' as const,
     });
+    mockFetchPrReviewThreads.mockResolvedValue([]);
 
     mockParsePrOrIssueNumber.mockResolvedValue({ owner: 'example', repo: 'repo', number: 201 });
     mockCanonicalizePrUrl.mockReturnValue('https://github.com/example/repo/pull/201');
@@ -122,8 +131,128 @@ describe('common/github/pr_status_service', () => {
     );
   });
 
+  test('refreshPrStatus persists review threads when the GitHub fetch succeeds', async () => {
+    const mockFetchPrFullStatus = vi.mocked(fetchPrFullStatus);
+    const mockFetchPrReviewThreads = vi.mocked(fetchPrReviewThreads);
+    const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
+    const mockCanonicalizePrUrl = vi.mocked(canonicalizePrUrl);
+
+    mockFetchPrFullStatus.mockResolvedValue({
+      number: 207,
+      title: 'Threaded PR',
+      state: 'open' as const,
+      isDraft: false,
+      mergeable: 'MERGEABLE' as const,
+      mergedAt: null,
+      headSha: 'thread-sha',
+      baseRefName: 'main',
+      headRefName: 'feature/threaded',
+      reviewDecision: 'CHANGES_REQUESTED' as const,
+      labels: [],
+      reviews: [],
+      checks: [],
+      checkRollupState: 'failure' as const,
+    });
+    mockFetchPrReviewThreads.mockResolvedValue([
+      {
+        threadId: 'thread-1',
+        path: 'src/example.ts',
+        line: 42,
+        isResolved: false,
+        isOutdated: false,
+        comments: [
+          {
+            commentId: 'comment-1',
+            databaseId: 401,
+            author: 'reviewer',
+            body: 'Please rename this.',
+            diffHunk: '@@ -42,1 +42,1 @@',
+            state: 'COMMENTED',
+            createdAt: '2026-03-20T00:20:00.000Z',
+          },
+        ],
+      },
+    ]);
+    mockParsePrOrIssueNumber.mockResolvedValue({ owner: 'example', repo: 'repo', number: 207 });
+    mockCanonicalizePrUrl.mockReturnValue('https://github.com/example/repo/pull/207');
+
+    const { refreshPrStatus } = await import('./pr_status_service.ts');
+    const result = await refreshPrStatus(db, 'https://github.com/example/repo/pull/207');
+
+    expect(fetchPrReviewThreads).toHaveBeenCalledWith('example', 'repo', 207);
+    expect(result.reviewThreads).toHaveLength(1);
+    expect(result.reviewThreads?.[0]?.thread.path).toBe('src/example.ts');
+    expect(result.reviewThreads?.[0]?.comments[0]?.database_id).toBe(401);
+  });
+
+  test('refreshPrStatus preserves cached review threads when review thread fetch fails', async () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/208',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 208,
+      title: 'Cached review thread PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      reviewThreads: [
+        {
+          threadId: 'cached-thread',
+          path: 'src/cached.ts',
+          line: 7,
+          isResolved: false,
+          isOutdated: false,
+          comments: [{ commentId: 'cached-comment', body: 'Keep me cached.' }],
+        },
+      ],
+    });
+
+    const mockFetchPrFullStatus = vi.mocked(fetchPrFullStatus);
+    const mockFetchPrReviewThreads = vi.mocked(fetchPrReviewThreads);
+    const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
+    const mockCanonicalizePrUrl = vi.mocked(canonicalizePrUrl);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    mockFetchPrFullStatus.mockResolvedValue({
+      number: 208,
+      title: 'Cached review thread PR',
+      state: 'open' as const,
+      isDraft: false,
+      mergeable: 'MERGEABLE' as const,
+      mergedAt: null,
+      headSha: 'cached-thread-sha',
+      baseRefName: 'main',
+      headRefName: 'feature/cached-thread',
+      reviewDecision: null,
+      labels: [],
+      reviews: [],
+      checks: [],
+      checkRollupState: 'success' as const,
+    });
+    mockFetchPrReviewThreads.mockRejectedValue(new Error('thread fetch failed'));
+    mockParsePrOrIssueNumber.mockResolvedValue({ owner: 'example', repo: 'repo', number: 208 });
+    mockCanonicalizePrUrl.mockReturnValue('https://github.com/example/repo/pull/208');
+
+    const { refreshPrStatus } = await import('./pr_status_service.ts');
+    await refreshPrStatus(db, 'https://github.com/example/repo/pull/208');
+
+    expect(warnSpy).toHaveBeenCalled();
+    expect(
+      getPrStatusByUrl(db, 'https://github.com/example/repo/pull/208', {
+        includeReviewThreads: true,
+      })?.reviewThreads
+    ).toHaveLength(1);
+    expect(
+      getPrStatusByUrl(db, 'https://github.com/example/repo/pull/208', {
+        includeReviewThreads: true,
+      })?.reviewThreads?.[0]?.thread.thread_id
+    ).toBe('cached-thread');
+    warnSpy.mockRestore();
+  });
+
   test('refreshPrStatus uses the real URL canonicalization path before caching', async () => {
     const mockFetchPrFullStatus = vi.mocked(fetchPrFullStatus);
+    const mockFetchPrReviewThreads = vi.mocked(fetchPrReviewThreads);
     const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
     const mockCanonicalizePrUrl = vi.mocked(canonicalizePrUrl);
     const mockTryCanonicalizePrUrl = vi.mocked(tryCanonicalizePrUrl);
@@ -144,6 +273,7 @@ describe('common/github/pr_status_service', () => {
       checks: [],
       checkRollupState: 'success' as const,
     });
+    mockFetchPrReviewThreads.mockResolvedValue([]);
 
     mockParsePrOrIssueNumber.mockResolvedValue({ owner: 'example', repo: 'repo', number: 219 });
     mockCanonicalizePrUrl.mockReturnValue('https://github.com/example/repo/pull/219');
@@ -318,6 +448,7 @@ describe('common/github/pr_status_service', () => {
     });
 
     const mockFetchPrFullStatus = vi.mocked(fetchPrFullStatus);
+    const mockFetchPrReviewThreads = vi.mocked(fetchPrReviewThreads);
     const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
     const mockCanonicalizePrUrl = vi.mocked(canonicalizePrUrl);
     const mockTryCanonicalizePrUrl = vi.mocked(tryCanonicalizePrUrl);
@@ -338,6 +469,7 @@ describe('common/github/pr_status_service', () => {
       checks: [],
       checkRollupState: 'success' as const,
     });
+    mockFetchPrReviewThreads.mockResolvedValue([]);
 
     mockParsePrOrIssueNumber.mockResolvedValue({ owner: 'example', repo: 'repo', number: 204 });
     mockCanonicalizePrUrl.mockReturnValue('https://github.com/example/repo/pull/204');
@@ -364,6 +496,7 @@ describe('common/github/pr_status_service', () => {
     });
 
     const mockFetchPrFullStatus = vi.mocked(fetchPrFullStatus);
+    const mockFetchPrReviewThreads = vi.mocked(fetchPrReviewThreads);
     const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
     const mockCanonicalizePrUrl = vi.mocked(canonicalizePrUrl);
     const mockTryCanonicalizePrUrl = vi.mocked(tryCanonicalizePrUrl);
@@ -384,6 +517,7 @@ describe('common/github/pr_status_service', () => {
       checks: [],
       checkRollupState: null,
     });
+    mockFetchPrReviewThreads.mockResolvedValue([]);
 
     mockParsePrOrIssueNumber.mockResolvedValue({ owner: 'example', repo: 'repo', number: 208 });
     mockCanonicalizePrUrl.mockReturnValue('https://github.com/example/repo/pull/208');
@@ -835,14 +969,6 @@ describe('common/github/pr_status_service', () => {
       autoDetail.status.id
     );
 
-    await moduleMocker.mock('./identifiers.ts', () =>
-      makeIdentifiersMock(async () => ({ owner: 'example', repo: 'repo', number: 230 }))
-    );
-    await moduleMocker.mock('./pr_status.ts', () => ({
-      fetchPrFullStatus: mock(),
-      fetchPrCheckStatus: mock(),
-    }));
-
     const { syncPlanPrLinks } = await import('./pr_status_service.ts');
     await syncPlanPrLinks(db, 'plan-service', []);
 
@@ -866,22 +992,17 @@ describe('common/github/pr_status_service', () => {
       reviews: [{ author: 'alice', state: 'COMMENTED', submittedAt: '2026-03-20T00:10:00.000Z' }],
     });
 
-    const fetchPrMergeableAndReviewDecision = mock(async () => ({
+    const mockFetchPrMergeableAndReviewDecision = vi.mocked(fetchPrMergeableAndReviewDecision);
+    mockFetchPrMergeableAndReviewDecision.mockResolvedValue({
       mergeable: 'MERGEABLE' as const,
       reviewDecision: 'APPROVED' as const,
-    }));
-
-    await moduleMocker.mock('./pr_status.ts', () => ({
-      fetchPrFullStatus: mock(),
-      fetchPrCheckStatus: mock(),
-      fetchPrMergeableAndReviewDecision,
-    }));
+    });
 
     const { fetchAndUpdatePrMergeableStatus } = await import('./pr_status_service.ts');
     await fetchAndUpdatePrMergeableStatus(db, 'example', 'repo', 301);
 
     const detail = getPrStatusByUrl(db, 'https://github.com/example/repo/pull/301');
-    expect(fetchPrMergeableAndReviewDecision).toHaveBeenCalledWith('example', 'repo', 301);
+    expect(mockFetchPrMergeableAndReviewDecision).toHaveBeenCalledWith('example', 'repo', 301);
     expect(detail?.status.mergeable).toBe('MERGEABLE');
     expect(detail?.status.review_decision).toBe('APPROVED');
     expect(detail?.checks.map((check) => check.name)).toEqual(['existing-check']);

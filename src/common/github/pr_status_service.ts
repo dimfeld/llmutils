@@ -4,6 +4,7 @@ import {
   fetchPrCheckStatus,
   fetchPrFullStatus,
   fetchPrMergeableAndReviewDecision,
+  fetchPrReviewThreads,
 } from './pr_status.js';
 import {
   getPrStatusByUrl,
@@ -30,7 +31,23 @@ export async function refreshPrStatus(db: Database, prUrl: string): Promise<PrSt
     throw new Error(`Invalid GitHub pull request identifier: ${canonicalPrUrl}`);
   }
 
-  const fullStatus = await fetchPrFullStatus(parsed.owner, parsed.repo, parsed.number);
+  const [fullStatusResult, reviewThreadsResult] = await Promise.allSettled([
+    fetchPrFullStatus(parsed.owner, parsed.repo, parsed.number),
+    fetchPrReviewThreads(parsed.owner, parsed.repo, parsed.number),
+  ]);
+
+  if (fullStatusResult.status !== 'fulfilled') {
+    throw fullStatusResult.reason;
+  }
+
+  if (reviewThreadsResult.status === 'rejected') {
+    console.warn(
+      `[pr_status] Failed to fetch review threads for ${canonicalPrUrl}:`,
+      reviewThreadsResult.reason
+    );
+  }
+
+  const fullStatus = fullStatusResult.value;
   return upsertPrStatus(db, {
     prUrl: canonicalPrUrl,
     owner: parsed.owner,
@@ -66,6 +83,8 @@ export async function refreshPrStatus(db: Database, prUrl: string): Promise<PrSt
       name: label.name,
       color: label.color,
     })),
+    reviewThreads:
+      reviewThreadsResult.status === 'fulfilled' ? reviewThreadsResult.value : undefined,
   });
 }
 
