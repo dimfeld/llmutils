@@ -89,6 +89,14 @@ export async function markStepDone(
         };
       }
 
+      if (planData.tasks.length === 0) {
+        return {
+          planComplete: false,
+          message: 'Plan has no tasks.',
+          status: planData.status,
+        };
+      }
+
       return {
         planComplete: true,
         message: 'All tasks in the plan are already done.',
@@ -288,7 +296,7 @@ export async function setTaskDone(
 }
 
 function shouldFinalizeCompletedPlan(planData: PlanSchema): boolean {
-  return !findNextActionableItem(planData) && !isWorkComplete(planData);
+  return planData.tasks.length > 0 && !findNextActionableItem(planData) && !isWorkComplete(planData);
 }
 
 async function finalizeTaskMutation(
@@ -314,7 +322,7 @@ async function finalizeTaskMutation(
   }
 
   const stillPending = findNextActionableItem(planData);
-  const planComplete = !stillPending;
+  const planComplete = planData.tasks.length > 0 && !stillPending;
   if (planComplete) {
     planData.status = getCompletionStatus(config ?? {});
   }

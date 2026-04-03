@@ -145,6 +145,28 @@ describe('markStepDone', () => {
     expect(removePlanAssignment).toHaveBeenCalledTimes(1);
   });
 
+  test('does not auto-complete an in_progress plan with no tasks', async () => {
+    const plan: PlanSchema = {
+      id: 1,
+      title: 'Test Plan',
+      goal: 'Test goal',
+      details: 'Test details',
+      status: 'in_progress',
+      tasks: [],
+    };
+
+    const planPath = path.join(tasksDir, '1.yml');
+    await writePlanFile(planPath, plan);
+
+    const result = await markStepDone(planPath, {}, undefined, tempDir, {});
+
+    expect(result.planComplete).toBe(false);
+    expect(result.status).toBe('in_progress');
+
+    const savedPlan = await readPlanFile(planPath);
+    expect(savedPlan.status).toBe('in_progress');
+  });
+
   test('handles plan with no pending tasks', async () => {
     const plan: PlanSchema = {
       id: 1,
