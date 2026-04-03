@@ -8,7 +8,15 @@
 
   let { data }: { data: PageData } = $props();
 
-  let featured = $derived((data.settings.featured as boolean) ?? true);
+  let serverFeatured = $derived((data.settings.featured as boolean) ?? true);
+  let featured = $state(true);
+
+  // Reset form state when server data changes (navigation or invalidation)
+  $effect(() => {
+    featured = serverFeatured;
+  });
+
+  let hasChanges = $derived(featured !== serverFeatured);
 
   let submitting = $state(false);
   let errorMessage: string | null = $state(null);
@@ -61,7 +69,7 @@
     </div>
 
     <div class="flex items-center gap-3">
-      <Button disabled={submitting} onclick={handleSave}>
+      <Button disabled={submitting || !hasChanges} onclick={handleSave}>
         {submitting ? 'Saving...' : 'Save Settings'}
       </Button>
       {#if errorMessage}

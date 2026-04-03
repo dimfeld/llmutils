@@ -1,5 +1,7 @@
 import { redirect } from '@sveltejs/kit';
+import { getServerContext } from '$lib/server/init.js';
 import { setLastProjectId } from '$lib/stores/project.svelte.js';
+import { getProjectById } from '$tim/db/project.js';
 import type { LayoutServerLoad } from './$types';
 
 export const load: LayoutServerLoad = async ({ params, cookies, parent, url }) => {
@@ -21,7 +23,13 @@ export const load: LayoutServerLoad = async ({ params, cookies, parent, url }) =
 
     currentProject = projects.find((p) => p.id === numId) ?? null;
     if (!currentProject) {
-      redirect(302, `/projects/all/${tab}`);
+      // Project may exist but have zero plans (excluded from sidebar list).
+      // Fall back to a direct DB lookup so routes like /settings remain accessible.
+      const { db } = await getServerContext();
+      const dbProject = getProjectById(db, numId);
+      if (!dbProject) {
+        redirect(302, `/projects/all/${tab}`);
+      }
     }
 
     projectId = numId;

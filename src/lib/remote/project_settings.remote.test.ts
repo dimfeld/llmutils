@@ -93,6 +93,21 @@ describe('project settings remote actions', () => {
     });
   });
 
+  test('rejects unknown setting names', async () => {
+    await expect(
+      invokeCommand(updateProjectSetting, {
+        projectId,
+        setting: 'nonexistent',
+        value: true,
+      })
+    ).rejects.toMatchObject({
+      status: 400,
+      body: {
+        message: 'Unknown setting: "nonexistent"',
+      },
+    });
+  });
+
   test('rejects non-boolean values for the featured setting', async () => {
     await expect(
       invokeCommand(updateProjectSetting, {

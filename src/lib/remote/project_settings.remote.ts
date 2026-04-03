@@ -27,11 +27,13 @@ export const updateProjectSetting = command(
     }
 
     const settingSchema = settingValueSchemas[setting];
-    if (settingSchema) {
-      const result = settingSchema.safeParse(value);
-      if (!result.success) {
-        error(400, `Invalid value for setting "${setting}": ${result.error.message}`);
-      }
+    if (!settingSchema) {
+      error(400, `Unknown setting: "${setting}"`);
+    }
+
+    const result = settingSchema.safeParse(value);
+    if (!result.success) {
+      error(400, `Invalid value for setting "${setting}": ${result.error.message}`);
     }
 
     setProjectSetting(db, projectId, setting, value);
