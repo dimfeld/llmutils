@@ -255,6 +255,36 @@ describe('HeadlessAdapter', () => {
     await adapter.destroy();
   });
 
+  it('replays only the latest plan content to newly connected clients', async () => {
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = createTestHeadlessAdapter({ command: 'agent' }, wrapped);
+
+    adapter.sendPlanContent('# first version');
+    adapter.sendPlanContent('# second version');
+
+    const port = (adapter as any).sessionServer.port as number;
+    const ws = await openWebSocket(`ws://127.0.0.1:${port}/tim-agent`);
+    const messages: HeadlessMessage[] = [];
+    ws.addEventListener('message', (event) => {
+      const parsed = parseMessage(event.data as string);
+      if (parsed) {
+        messages.push(parsed);
+      }
+    });
+
+    await waitFor(() => messages.some((message) => message.type === 'replay_end'));
+
+    expect(messages.filter((message) => message.type === 'plan_content')).toEqual([
+      {
+        type: 'plan_content',
+        content: '# second version',
+      },
+    ]);
+
+    ws.close();
+    await adapter.destroy();
+  });
+
   it('writes session metadata including planUuid and sessionId to the session file', async () => {
     const { adapter: wrapped } = createRecordingAdapter();
     const adapter = createTestHeadlessAdapter(

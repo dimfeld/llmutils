@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { watchPlanFile } from './plan_file_watcher.js';
+import { stripPlanFrontmatter, watchPlanFile } from './plan_file_watcher.js';
 
 async function waitFor(condition: () => boolean, timeoutMs = 4000): Promise<void> {
   const startedAt = Date.now();
@@ -93,5 +93,26 @@ describe('watchPlanFile', () => {
     await new Promise((resolve) => setTimeout(resolve, 500));
 
     expect(contents).toEqual(['first']);
+  });
+
+  test('returns trimmed content when frontmatter is missing or incomplete', () => {
+    expect(stripPlanFrontmatter('\n# Body\n\nText\n')).toBe('# Body\n\nText');
+    expect(stripPlanFrontmatter(['---', 'id: 302', 'title: Missing end'].join('\n'))).toBe(
+      '---\nid: 302\ntitle: Missing end'
+    );
+  });
+
+  test('returns an inert watcher when the plan file does not exist yet', async () => {
+    const planPath = path.join(tempDir, 'missing.plan.md');
+    const contents: string[] = [];
+
+    const watcher = watchPlanFile(planPath, (content) => {
+      contents.push(content);
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 350));
+
+    expect(contents).toEqual([]);
+    expect(() => watcher.close()).not.toThrow();
   });
 });
