@@ -2363,7 +2363,7 @@ function buildReviewGuideSection(reviewGuidePath?: string): string[] {
     `# Review Guide`,
     ``,
     `Read the review guide at \`${reviewGuidePath}\` before reviewing the code.`,
-    `Use that guide as the organizational framework for your review so your analysis follows the functional areas and walkthrough order captured there.`,
+    `The guide groups changes by functional area. Use that guide as the organizational framework for your review so your analysis follows the functional areas and walkthrough order captured there.`,
     ``,
   ];
 }

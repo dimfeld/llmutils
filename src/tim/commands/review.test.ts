@@ -871,6 +871,28 @@ index 1234567..abcdefg 100644
     expect(prompt).toContain('git diff $(git merge-base develop HEAD) -- <filename>');
   });
 
+  test('builds analysis prompt with undefined planId using unknown fallback', async () => {
+    vi.mocked(gitModule.getUsingJj).mockResolvedValue(false);
+
+    const planData: PlanSchema = {
+      id: undefined as any,
+      title: 'No ID plan',
+      goal: 'Test fallback',
+      tasks: [],
+    };
+
+    const diffResult = {
+      hasChanges: true,
+      changedFiles: ['src/file.ts'],
+      baseBranch: 'main',
+      diffContent: 'diff --git',
+    };
+
+    const prompt = await buildAnalysisPrompt(planData, diffResult, '/repo/root');
+
+    expect(prompt).toContain('review-guide-unknown.md');
+  });
+
   test('passes useSubagents flag to reviewer prompt', async () => {
     const planData: PlanSchema = {
       id: 99,
