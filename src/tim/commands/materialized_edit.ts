@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import { readFile, rm } from 'node:fs/promises';
-import { promptConfirm } from '../../common/input.js';
+import { isPromptTimeoutError, promptConfirm } from '../../common/input.js';
 import { logSpawn } from '../../common/process.js';
 import { error, warn } from '../../logging.js';
 import {
@@ -89,8 +89,17 @@ export async function editMaterializedPlan(
             message: 'Would you like to edit the file again to fix these issues?',
             default: true,
           });
-        } catch {
-          // Treat any prompt failure (timeout, Ctrl+C, non-TTY) as decline
+        } catch (promptError) {
+          // Treat cancellation (Ctrl+C, ExitPromptError) and timeouts as decline.
+          // Unexpected prompt transport failures should propagate.
+          if (
+            isPromptTimeoutError(promptError) ||
+            (promptError instanceof Error && promptError.name === 'ExitPromptError')
+          ) {
+            // User cancelled — treat as decline
+          } else {
+            throw promptError;
+          }
         }
 
         if (!shouldReEdit) {

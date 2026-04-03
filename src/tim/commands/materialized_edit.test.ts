@@ -22,9 +22,13 @@ const mockState = vi.hoisted(() => ({
   syncHook: undefined as undefined | ((...args: any[]) => Promise<unknown> | unknown),
 }));
 
-vi.mock('../../common/input.js', () => ({
-  promptConfirm: mockState.promptConfirm,
-}));
+vi.mock('../../common/input.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../common/input.js')>();
+  return {
+    ...actual,
+    promptConfirm: mockState.promptConfirm,
+  };
+});
 
 vi.mock('../../common/process.js', () => ({
   logSpawn: vi.fn((cmd: string[]) => {
@@ -136,6 +140,17 @@ describe('materialized edit retry flow', () => {
     expect(isUserFixableParseError('not an error')).toBe(false);
   });
 
+  test('does nothing when editor exits without changes', async () => {
+    mockState.editorBehavior = async () => {
+      // Editor exits without modifying the file
+    };
+
+    await editMaterializedPlan(12, tempDir, 'test-editor');
+
+    expect(mockState.promptConfirm).not.toHaveBeenCalled();
+    await expect(Bun.file(getMaterializedPlanPath(tempDir, 12)).exists()).resolves.toBe(false);
+  });
+
   test('syncs a successful edit without prompting again', async () => {
     mockState.editorBehavior = async (editedPath) => {
       const plan = await readPlanFile(editedPath);
@@ -208,7 +223,7 @@ describe('materialized edit retry flow', () => {
     );
   });
 
-  test('treats prompt rejection as decline and preserves file with original error', async () => {
+  test('treats prompt cancellation as decline and preserves file with original error', async () => {
     const exitPromptError = new Error('Prompt was cancelled');
     exitPromptError.name = 'ExitPromptError';
     mockState.promptConfirm.mockRejectedValueOnce(exitPromptError);
@@ -221,6 +236,19 @@ describe('materialized edit retry flow', () => {
     expect(err.name).toBe('YAMLParseError');
     expect(mockState.promptConfirm).toHaveBeenCalledTimes(1);
     await expect(Bun.file(getMaterializedPlanPath(tempDir, 12)).exists()).resolves.toBe(true);
+  });
+
+  test('propagates unexpected prompt transport errors instead of swallowing them', async () => {
+    const transportError = new Error('Tunnel connection lost');
+    mockState.promptConfirm.mockRejectedValueOnce(transportError);
+    mockState.editorBehavior = async (editedPath) => {
+      await Bun.write(editedPath, '---\ntitle: [broken\n---\n');
+    };
+
+    await expect(editMaterializedPlan(12, tempDir, 'test-editor')).rejects.toThrow(
+      'Tunnel connection lost'
+    );
+    expect(mockState.promptConfirm).toHaveBeenCalledTimes(1);
   });
 
   test('retries after NoFrontmatterError when user accepts re-edit', async () => {
