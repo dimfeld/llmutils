@@ -6,11 +6,7 @@ export interface ProjectSetting {
   value: string;
 }
 
-export function getProjectSetting(
-  db: Database,
-  projectId: number,
-  setting: string
-): unknown {
+export function getProjectSetting(db: Database, projectId: number, setting: string): unknown {
   const row = db
     .prepare('SELECT value FROM project_setting WHERE project_id = ? AND setting = ?')
     .get(projectId, setting) as Pick<ProjectSetting, 'value'> | null;

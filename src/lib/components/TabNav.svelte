@@ -32,4 +32,16 @@
       {tab.label}
     </a>
   {/each}
+  {#if projectId !== 'all'}
+    {@const active = isActive('settings')}
+    <a
+      href={projectUrl(projectId, 'settings')}
+      class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors {active
+        ? 'bg-white/20 text-white'
+        : 'text-gray-300 hover:bg-white/10 hover:text-white'}"
+      aria-current={active ? 'page' : undefined}
+    >
+      Settings
+    </a>
+  {/if}
 </nav>
