@@ -219,7 +219,7 @@ describe('materialized edit retry flow', () => {
       .map((call) => call.map(String).join(' '))
       .join('\n');
     expect(warningOutput).toContain(
-      `Failed to sync edited plan 12. Edited file kept at ${materializedPath}`
+      `Failed to process edited plan 12. Edited file kept at ${materializedPath}`
     );
   });
 

@@ -64,24 +64,15 @@ export async function editMaterializedPlan(
         break;
       }
 
+      // Parse the edited file — any error here is user-fixable (bad YAML, missing
+      // frontmatter, schema validation). Errors from syncMaterializedPlan are NOT
+      // user-fixable and should propagate immediately.
+      let editedPlan;
       try {
-        const editedPlan = await readPlanFile(materializedPath);
-        const editorChangedUpdatedAt = editedPlan.updatedAt !== beforeEditUpdatedAt;
-
-        await syncMaterializedPlan(planId, repoRoot, {
-          force: false,
-          skipRematerialize: true,
-          context: undefined,
-          preserveUpdatedAt: editorChangedUpdatedAt ? editedPlan.updatedAt : undefined,
-        });
-        break;
-      } catch (errorToHandle) {
-        if (!isUserFixableParseError(errorToHandle)) {
-          throw errorToHandle;
-        }
-
+        editedPlan = await readPlanFile(materializedPath);
+      } catch (parseError) {
         error(chalk.red(`Failed to parse edited plan ${planId}:`));
-        error(chalk.red((errorToHandle as Error).message));
+        error(chalk.red((parseError as Error).message));
 
         let shouldReEdit = false;
         try {
@@ -104,9 +95,20 @@ export async function editMaterializedPlan(
 
         if (!shouldReEdit) {
           shouldDeleteMaterializedFile = false;
-          throw errorToHandle;
+          throw parseError;
         }
+        continue;
       }
+
+      const editorChangedUpdatedAt = editedPlan.updatedAt !== beforeEditUpdatedAt;
+
+      await syncMaterializedPlan(planId, repoRoot, {
+        force: false,
+        skipRematerialize: true,
+        context: undefined,
+        preserveUpdatedAt: editorChangedUpdatedAt ? editedPlan.updatedAt : undefined,
+      });
+      break;
     }
 
     if (shouldDeleteMaterializedFile) {
@@ -115,7 +117,7 @@ export async function editMaterializedPlan(
     }
   } catch (error) {
     shouldDeleteMaterializedFile = false;
-    warn(`Failed to sync edited plan ${planId}. Edited file kept at ${materializedPath}`);
+    warn(`Failed to process edited plan ${planId}. Edited file kept at ${materializedPath}`);
     throw error;
   }
 }
