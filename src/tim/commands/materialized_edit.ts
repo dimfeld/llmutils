@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import { readFile, rm } from 'node:fs/promises';
-import { isPromptTimeoutError, promptConfirm } from '../../common/input.js';
+import { promptConfirm } from '../../common/input.js';
 import { logSpawn } from '../../common/process.js';
 import { error, warn } from '../../logging.js';
 import {
@@ -17,7 +17,7 @@ async function openEditor(materializedPath: string, selectedEditor: string): Pro
   });
   await editorProcess.exited;
   if (typeof editorProcess.exitCode === 'number' && editorProcess.exitCode !== 0) {
-    throw new Error(`Editor exited with code ${editorProcess.exitCode ?? 'unknown'}`);
+    throw new Error(`Editor exited with code ${editorProcess.exitCode}`);
   }
 }
 
@@ -89,10 +89,8 @@ export async function editMaterializedPlan(
             message: 'Would you like to edit the file again to fix these issues?',
             default: true,
           });
-        } catch (promptError) {
-          if (!isPromptTimeoutError(promptError)) {
-            throw promptError;
-          }
+        } catch {
+          // Treat any prompt failure (timeout, Ctrl+C, non-TTY) as decline
         }
 
         if (!shouldReEdit) {

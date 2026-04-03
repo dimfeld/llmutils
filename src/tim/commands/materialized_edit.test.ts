@@ -16,9 +16,6 @@ const mockState = vi.hoisted(() => ({
     | undefined
     | ((editedPath: string, attempt: number) => Promise<void> | void),
   promptConfirm: vi.fn(async () => true),
-  isPromptTimeoutError: vi.fn((error: unknown) => {
-    return error instanceof Error && error.name === 'AbortPromptError';
-  }),
   warn: vi.fn(),
   error: vi.fn(),
   log: vi.fn(),
@@ -27,7 +24,6 @@ const mockState = vi.hoisted(() => ({
 
 vi.mock('../../common/input.js', () => ({
   promptConfirm: mockState.promptConfirm,
-  isPromptTimeoutError: mockState.isPromptTimeoutError,
 }));
 
 vi.mock('../../common/process.js', () => ({
@@ -111,7 +107,6 @@ describe('materialized edit retry flow', () => {
     mockState.syncHook = undefined;
     mockState.promptConfirm.mockReset();
     mockState.promptConfirm.mockResolvedValue(true);
-    mockState.isPromptTimeoutError.mockClear();
     mockState.warn.mockClear();
     mockState.error.mockClear();
     mockState.log.mockClear();
@@ -211,6 +206,48 @@ describe('materialized edit retry flow', () => {
     expect(warningOutput).toContain(
       `Failed to sync edited plan 12. Edited file kept at ${materializedPath}`
     );
+  });
+
+  test('treats prompt rejection as decline and preserves file with original error', async () => {
+    const exitPromptError = new Error('Prompt was cancelled');
+    exitPromptError.name = 'ExitPromptError';
+    mockState.promptConfirm.mockRejectedValueOnce(exitPromptError);
+    mockState.editorBehavior = async (editedPath) => {
+      await Bun.write(editedPath, '---\ntitle: [broken\n---\n');
+    };
+
+    const err = await editMaterializedPlan(12, tempDir, 'test-editor').catch((e) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.name).toBe('YAMLParseError');
+    expect(mockState.promptConfirm).toHaveBeenCalledTimes(1);
+    await expect(Bun.file(getMaterializedPlanPath(tempDir, 12)).exists()).resolves.toBe(true);
+  });
+
+  test('retries after NoFrontmatterError when user accepts re-edit', async () => {
+    mockState.promptConfirm.mockResolvedValueOnce(true);
+    mockState.editorBehavior = async (editedPath, attempt) => {
+      if (attempt === 1) {
+        await Bun.write(editedPath, 'no frontmatter here, just text');
+        return;
+      }
+      await writePlanFile(
+        editedPath,
+        { ...basePlan, details: 'Fixed after NoFrontmatterError' },
+        { skipDb: true, skipUpdatedAt: true }
+      );
+    };
+
+    await editMaterializedPlan(12, tempDir, 'test-editor');
+
+    const resolved = await resolvePlanFromDb('12', tempDir);
+    expect(resolved.plan.details).toBe('Fixed after NoFrontmatterError');
+    expect(mockState.promptConfirm).toHaveBeenCalledTimes(1);
+
+    const errorOutput = stripAnsi(
+      mockState.error.mock.calls.map((call) => call.map(String).join(' ')).join('\n')
+    );
+    expect(errorOutput).toContain('Failed to parse edited plan 12');
+    expect(errorOutput).toContain('lacks frontmatter');
   });
 
   test('does not prompt again for non-parse sync errors', async () => {
