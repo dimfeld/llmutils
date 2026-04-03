@@ -564,4 +564,89 @@ describe('review_runner', () => {
     expect(result.usedExecutors).toEqual(['claude-code']);
     expect(result.reviewResult.recommendations).toEqual(['claude-only']);
   });
+
+  test('runReview retries Claude resume review once on timeout and succeeds', async () => {
+    let attempts = 0;
+
+    const executor: Executor = {
+      execute: vi.fn(async () => {
+        throw new Error('should not use plain execute');
+      }),
+      executeAnalysisPhase: vi.fn(async () => ({ sessionId: 'session-claude' })),
+      executeReviewModeWithResume: vi.fn(async () => {
+        attempts++;
+        if (attempts === 1) {
+          throw new Error('Claude review timed out after 30 minutes');
+        }
+        return JSON.stringify({
+          issues: [],
+          recommendations: ['claude resume retry success'],
+          actionItems: [],
+        });
+      }),
+    };
+
+    vi.mocked(buildExecutorAndLog).mockImplementation(() => executor);
+
+    const { runReview } = await import('./review_runner.js');
+    const result = await runReview({
+      executorSelection: 'claude-code',
+      config: { defaultExecutor: 'codex-cli' } as any,
+      sharedExecutorOptions: { baseDir: '/tmp' },
+      buildPrompt: vi.fn(() => 'prompt'),
+      buildAnalysisPrompt: vi.fn(async () => 'analysis'),
+      planInfo: {
+        planId: '11',
+        planTitle: 'Claude Resume Retry Plan',
+        planFilePath: '/tmp/plan.yml',
+        baseBranch: 'main',
+        changedFiles: [],
+      },
+    });
+
+    expect(attempts).toBe(2);
+    expect(executor.executeAnalysisPhase).toHaveBeenCalledTimes(1);
+    expect(executor.executeReviewModeWithResume).toHaveBeenCalledTimes(2);
+    expect(result.usedExecutors).toEqual(['claude-code']);
+    expect(result.reviewResult.recommendations).toEqual(['claude resume retry success']);
+    expect(unlink).toHaveBeenLastCalledWith('/tmp/review-runner-tests/.tim/tmp/review-guide-11.md');
+  });
+
+  test('runReview cleans up review guide when review execution fails after analysis', async () => {
+    const executor: Executor = {
+      execute: vi.fn(async () => {
+        throw new Error('should not use plain execute');
+      }),
+      executeAnalysisPhase: vi.fn(async () => ({ sessionId: 'session-claude' })),
+      executeReviewModeWithResume: vi.fn(async () => {
+        throw new Error('resume review failed');
+      }),
+    };
+
+    vi.mocked(buildExecutorAndLog).mockImplementation(() => executor);
+
+    const { runReview } = await import('./review_runner.js');
+
+    await expect(
+      runReview({
+        executorSelection: 'claude-code',
+        config: { defaultExecutor: 'codex-cli' } as any,
+        sharedExecutorOptions: { baseDir: '/tmp' },
+        buildPrompt: vi.fn(() => 'prompt'),
+        buildAnalysisPrompt: vi.fn(async () => 'analysis'),
+        planInfo: {
+          planId: '12',
+          planTitle: 'Cleanup Failure Plan',
+          planFilePath: '/tmp/plan.yml',
+          baseBranch: 'main',
+          changedFiles: [],
+        },
+      })
+    ).rejects.toThrow(/resume review failed/);
+
+    expect(executor.executeAnalysisPhase).toHaveBeenCalledTimes(1);
+    expect(executor.executeReviewModeWithResume).toHaveBeenCalledTimes(1);
+    expect(unlink).toHaveBeenCalledWith('/tmp/review-runner-tests/.tim/tmp/review-guide-12.md');
+    expect(unlink).toHaveBeenCalledTimes(2);
+  });
 });
