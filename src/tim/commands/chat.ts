@@ -354,7 +354,7 @@ export async function handleChatCommand(
       } catch (err) {
         executionError = err;
       } finally {
-        planWatcher?.close();
+        await planWatcher?.closeAndFlush();
         planWatcher = undefined;
 
         let roundTripError: unknown;

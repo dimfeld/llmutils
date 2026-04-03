@@ -70,7 +70,7 @@ vi.mock('../workspace/workspace_roundtrip.js', () => ({
 }));
 
 vi.mock('../plan_file_watcher.js', () => ({
-  watchPlanFile: vi.fn(() => ({ close: vi.fn() })),
+  watchPlanFile: vi.fn(() => ({ close: vi.fn(), closeAndFlush: vi.fn() })),
 }));
 
 vi.mock('./branch.js', () => ({
@@ -169,7 +169,7 @@ describe('handleChatCommand', () => {
     vi.mocked(generateBranchNameFromPlan).mockReturnValue('plan-derived-branch');
     vi.mocked(warnFn).mockReturnValue(undefined);
     vi.mocked(syncPlanToDb).mockResolvedValue(undefined);
-    watchPlanFileSpy.mockReturnValue({ close: vi.fn() });
+    watchPlanFileSpy.mockReturnValue({ close: vi.fn(), closeAndFlush: vi.fn() });
 
     delete process.env.CODEX_USE_APP_SERVER;
     Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
@@ -415,8 +415,8 @@ describe('handleChatCommand', () => {
   });
 
   test('starts and closes the plan watcher when a headless adapter is active', async () => {
-    const closeSpy = vi.fn();
-    watchPlanFileSpy.mockReturnValue({ close: closeSpy });
+    const closeAndFlushSpy = vi.fn();
+    watchPlanFileSpy.mockReturnValue({ close: vi.fn(), closeAndFlush: closeAndFlushSpy });
     const headlessAdapter = Object.assign(Object.create(HeadlessAdapter.prototype), {
       sendPlanContent: vi.fn(),
     }) as HeadlessAdapter;
@@ -434,7 +434,7 @@ describe('handleChatCommand', () => {
       '/repo-root/tasks/123-test.plan.md',
       expect.any(Function)
     );
-    expect(closeSpy).toHaveBeenCalledTimes(1);
+    expect(closeAndFlushSpy).toHaveBeenCalledTimes(1);
   });
 
   test('enters workspace mode and passes workspace options through setupWorkspace', async () => {

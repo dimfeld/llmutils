@@ -6,21 +6,25 @@ import { warn } from '../logging.js';
 const PLAN_WATCH_DEBOUNCE_MS = 300;
 
 export interface PlanFileWatcher {
+  /** Stop watching and emit any final content synchronously if possible. */
   close(): void;
+  /** Stop watching and emit final content asynchronously to ensure it's delivered. */
+  closeAndFlush(): Promise<void>;
 }
 
 export function stripPlanFrontmatter(content: string): string | null {
-  if (!content.startsWith('---\n')) {
-    return content.trim();
+  const normalized = content.replaceAll('\r\n', '\n');
+  if (!normalized.startsWith('---\n')) {
+    return normalized.trim();
   }
 
-  const endDelimiterIndex = content.indexOf('\n---\n', 4);
+  const endDelimiterIndex = normalized.indexOf('\n---\n', 4);
   if (endDelimiterIndex === -1) {
     // Incomplete frontmatter (e.g. mid-write) — skip this update
     return null;
   }
 
-  return content.substring(endDelimiterIndex + 5).trim();
+  return normalized.substring(endDelimiterIndex + 5).trim();
 }
 
 export function watchPlanFile(
@@ -89,20 +93,36 @@ export function watchPlanFile(
       close() {
         closed = true;
       },
+      async closeAndFlush() {
+        closed = true;
+      },
     };
   }
 
   void emitCurrentContent();
 
+  function stopWatcher(): void {
+    closed = true;
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+    watcher?.close();
+    watcher = null;
+  }
+
   return {
     close() {
-      closed = true;
+      stopWatcher();
+    },
+    async closeAndFlush() {
       if (debounceTimer) {
         clearTimeout(debounceTimer);
         debounceTimer = null;
       }
-      watcher?.close();
-      watcher = null;
+      // Emit final content before closing
+      await emitCurrentContent();
+      stopWatcher();
     },
   };
 }

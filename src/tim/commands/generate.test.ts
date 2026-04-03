@@ -78,7 +78,7 @@ vi.mock('../headless.js', () => ({
 }));
 
 vi.mock('../plan_file_watcher.js', () => ({
-  watchPlanFile: vi.fn(() => ({ close: vi.fn() })),
+  watchPlanFile: vi.fn(() => ({ close: vi.fn(), closeAndFlush: vi.fn() })),
 }));
 
 vi.mock('./plan_discovery.js', () => ({
@@ -180,7 +180,7 @@ describe('handleGenerateCommand', () => {
       planPath: planArg,
     }));
     syncPlanToDbSpy.mockResolvedValue(undefined);
-    watchPlanFileSpy.mockReturnValue({ close: vi.fn() });
+    watchPlanFileSpy.mockReturnValue({ close: vi.fn(), closeAndFlush: vi.fn() });
     trackedWorkspacePath = undefined;
     getWorkspaceInfoByPathSpy.mockImplementation((baseDir: string) => {
       return baseDir === trackedWorkspacePath
@@ -848,8 +848,8 @@ describe('handleGenerateCommand', () => {
 
   test('starts and closes the plan watcher when a headless adapter is active', async () => {
     const planPath = await createStubPlan(111);
-    const closeSpy = vi.fn();
-    watchPlanFileSpy.mockReturnValue({ close: closeSpy });
+    const closeAndFlushSpy = vi.fn();
+    watchPlanFileSpy.mockReturnValue({ close: vi.fn(), closeAndFlush: closeAndFlushSpy });
     const headlessAdapter = Object.assign(Object.create(HeadlessAdapter.prototype), {
       sendPlanContent: vi.fn(),
     }) as HeadlessAdapter;
@@ -864,7 +864,7 @@ describe('handleGenerateCommand', () => {
     }
 
     expect(watchPlanFileSpy).toHaveBeenCalledWith(planPath, expect.any(Function));
-    expect(closeSpy).toHaveBeenCalledTimes(1);
+    expect(closeAndFlushSpy).toHaveBeenCalledTimes(1);
   });
 
   test('disables headless adapter when tunnel is active', async () => {

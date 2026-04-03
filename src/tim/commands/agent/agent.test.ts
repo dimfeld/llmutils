@@ -205,7 +205,7 @@ vi.mock('../../workspace/workspace_roundtrip.js', () => ({
 }));
 
 vi.mock('../../plan_file_watcher.js', () => ({
-  watchPlanFile: vi.fn(() => ({ close: vi.fn() })),
+  watchPlanFile: vi.fn(() => ({ close: vi.fn(), closeAndFlush: vi.fn() })),
 }));
 
 vi.mock('../../workspace/workspace_info.js', () => ({
@@ -599,7 +599,7 @@ describe('timAgent - simple mode flag plumbing', () => {
     buildExecutorAndLogSpy.mockReset();
     executorExecuteSpy.mockReset();
     executeBatchModeSpy.mockReset();
-    watchPlanFileSpy.mockReturnValue({ close: vi.fn() });
+    watchPlanFileSpy.mockReturnValue({ close: vi.fn(), closeAndFlush: vi.fn() });
     buildExecutorAndLogSpy.mockReturnValue(testExecutor);
 
     // Reset serial impls to defaults
@@ -756,8 +756,8 @@ describe('timAgent - simple mode flag plumbing', () => {
   });
 
   test('starts and closes the plan watcher when a headless adapter is active', async () => {
-    const closeSpy = vi.fn();
-    watchPlanFileSpy.mockReturnValue({ close: closeSpy });
+    const closeAndFlushSpy = vi.fn();
+    watchPlanFileSpy.mockReturnValue({ close: vi.fn(), closeAndFlush: closeAndFlushSpy });
     const headlessAdapter = Object.assign(Object.create(HeadlessAdapter.prototype), {
       sendPlanContent: vi.fn(),
     }) as HeadlessAdapter;
@@ -773,7 +773,7 @@ describe('timAgent - simple mode flag plumbing', () => {
     }
 
     expect(watchPlanFileSpy).toHaveBeenCalledWith(simplePlanFile, expect.any(Function));
-    expect(closeSpy).toHaveBeenCalledTimes(1);
+    expect(closeAndFlushSpy).toHaveBeenCalledTimes(1);
   });
 
   test('enables simpleMode when configured on executor', async () => {

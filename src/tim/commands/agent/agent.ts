@@ -1196,7 +1196,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
     executionError = failureReason ?? (err instanceof Error ? err : new Error(String(err)));
     throw err;
   } finally {
-    planWatcher?.close();
+    await planWatcher?.closeAndFlush();
     planWatcher = undefined;
 
     let workspaceSyncError: Error | undefined;

@@ -360,7 +360,7 @@ export async function handleGenerateCommand(
       } catch (err) {
         generationError = err;
       } finally {
-        planWatcher?.close();
+        await planWatcher?.closeAndFlush();
         planWatcher = undefined;
 
         let roundTripError: unknown;
