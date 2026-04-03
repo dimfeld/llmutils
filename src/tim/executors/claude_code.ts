@@ -465,7 +465,10 @@ export class ClaudeCodeExecutor implements Executor {
     }
   }
 
+  private reviewToolsPrepared = false;
+
   private async prepareReviewAllowedTools(): Promise<void> {
+    if (this.reviewToolsPrepared) return;
     const sharedPermissions = await this.loadSharedPermissions();
     const allowedTools = buildAllowedToolsList({
       includeDefaultTools: this.options.includeDefaultTools,
@@ -474,6 +477,7 @@ export class ClaudeCodeExecutor implements Executor {
       sharedPermissions,
     });
     this.parseAllowedTools(allowedTools);
+    this.reviewToolsPrepared = true;
   }
 
   private static readonly REVIEW_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
@@ -499,6 +503,7 @@ export class ClaudeCodeExecutor implements Executor {
       log(
         `${label} was killed by inactivity timeout, but completed successfully (result message seen)`
       );
+      return;
     }
 
     if (result.exitCode !== 0 && !result.seenResultMessage) {
@@ -509,7 +514,7 @@ export class ClaudeCodeExecutor implements Executor {
       log(
         `${label} exited with code ${result.exitCode}, but completed successfully (result message seen)`
       );
-    } else {
+    } else if (result.seenResultMessage) {
       log(`${label} output captured.`);
     }
   }
