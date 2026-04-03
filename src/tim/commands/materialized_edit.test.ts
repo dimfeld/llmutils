@@ -147,11 +147,13 @@ describe('materialized edit retry flow', () => {
     const noFrontmatter = new NoFrontmatterError('/tmp/plan.md');
     const planFileError = Object.assign(new Error('bad schema'), { name: 'PlanFileError' });
     const yamlParseError = Object.assign(new Error('bad yaml'), { name: 'YAMLParseError' });
+    const yamlReferenceError = new ReferenceError('Aliased anchor not found: missing');
     const genericError = new Error('uuid mismatch');
 
     expect(isUserFixableParseError(noFrontmatter)).toBe(true);
     expect(isUserFixableParseError(planFileError)).toBe(true);
     expect(isUserFixableParseError(yamlParseError)).toBe(true);
+    expect(isUserFixableParseError(yamlReferenceError)).toBe(true);
     expect(isUserFixableParseError(genericError)).toBe(false);
     expect(isUserFixableParseError('not an error')).toBe(false);
   });
@@ -254,17 +256,18 @@ describe('materialized edit retry flow', () => {
     await expect(Bun.file(getMaterializedPlanPath(tempDir, 12)).exists()).resolves.toBe(true);
   });
 
-  test('propagates unexpected prompt transport errors instead of swallowing them', async () => {
+  test('treats prompt transport errors as decline and surfaces the parse error', async () => {
     const transportError = new Error('Tunnel connection lost');
     mockState.promptConfirm.mockRejectedValueOnce(transportError);
     mockState.editorBehavior = async (editedPath) => {
       await Bun.write(editedPath, '---\ntitle: [broken\n---\n');
     };
 
-    await expect(editMaterializedPlan(12, tempDir, 'test-editor')).rejects.toThrow(
-      'Tunnel connection lost'
-    );
+    const err = await editMaterializedPlan(12, tempDir, 'test-editor').catch((e) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.name).toBe('YAMLParseError');
     expect(mockState.promptConfirm).toHaveBeenCalledTimes(1);
+    await expect(Bun.file(getMaterializedPlanPath(tempDir, 12)).exists()).resolves.toBe(true);
   });
 
   test('retries after NoFrontmatterError when user accepts re-edit', async () => {
@@ -311,10 +314,10 @@ describe('materialized edit retry flow', () => {
   });
 
   test('does not prompt for non-parse errors from readPlanFile (e.g. filesystem errors)', async () => {
-    let firstCall = true;
+    let callCount = 0;
     mockState.readPlanFileHook = async (filePath: string) => {
-      if (firstCall) {
-        firstCall = false;
+      callCount++;
+      if (callCount <= 1) {
         // Let the initial pre-edit read succeed using the real implementation
         const { readPlanFile: realRead } =
           await vi.importActual<typeof import('../plans.js')>('../plans.js');
@@ -325,10 +328,10 @@ describe('materialized edit retry flow', () => {
       err.code = 'EACCES';
       throw err;
     };
+    // Write content directly without calling the mocked readPlanFile
     mockState.editorBehavior = async (editedPath) => {
-      const plan = await readPlanFile(editedPath);
-      plan.details = 'Triggers read failure';
-      await writePlanFile(editedPath, plan, { skipDb: true, skipUpdatedAt: true });
+      const content = await Bun.file(editedPath).text();
+      await Bun.write(editedPath, content.replace('Original details', 'Modified details'));
     };
 
     await expect(editMaterializedPlan(12, tempDir, 'test-editor')).rejects.toThrow(

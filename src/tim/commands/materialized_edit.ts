@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import { readFile, rm } from 'node:fs/promises';
-import { isPromptTimeoutError, promptConfirm } from '../../common/input.js';
+import { promptConfirm } from '../../common/input.js';
 import { logSpawn } from '../../common/process.js';
 import { error, warn } from '../../logging.js';
 import {
@@ -34,7 +34,8 @@ export function isUserFixableParseError(error: unknown): boolean {
     error.name === 'PlanFileError' ||
     error.name === 'YAMLParseError' ||
     error.name === 'YAMLSemanticError' ||
-    error.name === 'YAMLSyntaxError'
+    error.name === 'YAMLSyntaxError' ||
+    error.name === 'ReferenceError'
   );
 }
 
@@ -83,17 +84,9 @@ export async function editMaterializedPlan(
             message: 'Would you like to edit the file again to fix these issues?',
             default: true,
           });
-        } catch (promptError) {
-          // Treat cancellation (Ctrl+C, ExitPromptError) and timeouts as decline.
-          // Unexpected prompt transport failures should propagate.
-          if (
-            isPromptTimeoutError(promptError) ||
-            (promptError instanceof Error && promptError.name === 'ExitPromptError')
-          ) {
-            // User cancelled — treat as decline
-          } else {
-            throw promptError;
-          }
+        } catch {
+          // Any prompt failure (cancellation, timeout, non-TTY, transport error)
+          // is treated as decline — preserve the file and surface the parse error.
         }
 
         if (!shouldReEdit) {
