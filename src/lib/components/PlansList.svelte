@@ -8,6 +8,7 @@
     getAdjacentItem,
     scrollListItemIntoView,
   } from '$lib/utils/keyboard_nav.js';
+  import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import FilterChips from './FilterChips.svelte';
   import PlanRow from './PlanRow.svelte';
 
@@ -22,6 +23,17 @@
   } = $props();
 
   let projectId = $derived(page.params.projectId);
+
+  const sessionManager = useSessionManager();
+  let activePlanSessions = $derived.by(() => {
+    const map = new Map<string, string>();
+    for (const session of sessionManager.sessions.values()) {
+      if (session.status === 'active' && session.sessionInfo.planUuid) {
+        map.set(session.sessionInfo.planUuid, session.sessionInfo.command);
+      }
+    }
+    return map;
+  });
 
   let searchQuery = $state('');
   let sortOption = $state<'updated' | 'planId' | 'priority'>('updated');
@@ -209,6 +221,7 @@
                   selected={plan.uuid === selectedPlanUuid}
                   href="/projects/{projectId}/plans/{plan.uuid}"
                   projectName={projectNames?.[plan.projectId]}
+                  activeSessionCommand={activePlanSessions.get(plan.uuid)}
                 />
               {/each}
             </div>

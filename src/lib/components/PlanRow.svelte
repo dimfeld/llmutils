@@ -9,12 +9,20 @@
     selected = false,
     href,
     projectName,
+    activeSessionCommand,
   }: {
     plan: EnrichedPlan;
     selected?: boolean;
     href: string;
     projectName?: string;
+    activeSessionCommand?: string;
   } = $props();
+
+  const sessionBadgeLabel: Record<string, string> = {
+    agent: 'Agent',
+    generate: 'Generating',
+    chat: 'Chat',
+  };
 </script>
 
 <a
@@ -38,6 +46,13 @@
     <span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
       {plan.title ?? 'Untitled'}
     </span>
+    {#if activeSessionCommand}
+      <span
+        class="shrink-0 rounded-full bg-emerald-100 px-1.5 py-0.5 text-xs leading-none font-medium text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+      >
+        {sessionBadgeLabel[activeSessionCommand] ?? activeSessionCommand}
+      </span>
+    {/if}
   </div>
   {#if projectName}
     <div class="mt-0.5 truncate text-xs text-muted-foreground">{projectName}</div>
