@@ -1,6 +1,4 @@
 import { commitAll } from '../../../common/process.js';
-import { getLoggerAdapter } from '../../../logging/adapter.js';
-import { HeadlessAdapter } from '../../../logging/headless_adapter.js';
 import { boldMarkdownHeaders, log, warn } from '../../../logging.js';
 import { executePostApplyCommand } from '../../actions.js';
 import { type TimConfig } from '../../configSchema.js';
@@ -30,6 +28,7 @@ export async function executeStubPlan({
   executionMode = 'normal',
   finalReview,
   configPath,
+  terminalInput,
 }: {
   config: TimConfig;
   baseDir: string;
@@ -41,6 +40,7 @@ export async function executeStubPlan({
   executionMode?: 'normal' | 'simple' | 'tdd';
   finalReview?: boolean;
   configPath?: string;
+  terminalInput?: boolean;
 }): Promise<StubPlanExecutionResult> {
   // Update plan status to in_progress
   if (!isShuttingDown()) {
@@ -129,18 +129,20 @@ export async function executeStubPlan({
   }
 
   if (finalReview !== false) {
-    const isHeadlessReview = getLoggerAdapter() instanceof HeadlessAdapter;
+    const isNonInteractiveReview = terminalInput === false;
     log(boldMarkdownHeaders('\n## Running Final Review\n'));
     try {
       const reviewResult = await handleReviewCommand(
         planFilePath,
-        isHeadlessReview ? { cwd: baseDir, saveIssues: true, noAutofix: true } : { cwd: baseDir },
+        isNonInteractiveReview
+          ? { cwd: baseDir, saveIssues: true, noAutofix: true }
+          : { cwd: baseDir },
         {
           parent: { opts: () => ({ config: configPath }) },
         }
       );
 
-      if (isHeadlessReview && (reviewResult.issuesSaved ?? 0) > 0) {
+      if (isNonInteractiveReview && (reviewResult.issuesSaved ?? 0) > 0) {
         if (isShuttingDown()) {
           return {};
         }

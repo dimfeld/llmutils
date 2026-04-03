@@ -9,8 +9,6 @@ import { getGitRoot } from '../../../common/git.js';
 import { getLogDir } from '../../../common/config_paths.js';
 import { logSpawn } from '../../../common/process.js';
 import { CleanupRegistry } from '../../../common/cleanup_registry.js';
-import { getLoggerAdapter } from '../../../logging/adapter.js';
-import { HeadlessAdapter } from '../../../logging/headless_adapter.js';
 import {
   boldMarkdownHeaders,
   closeLogFile,
@@ -519,9 +517,8 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
           executionMode,
           finalReview: options.finalReview,
           configPath: globalCliOptions.config,
+          terminalInput: terminalInputEnabled,
         });
-
-        const isHeadlessReview = getLoggerAdapter() instanceof HeadlessAdapter;
 
         if (stubResult.tasksAppended && stubResult.tasksAppended > 0) {
           const updatedPlanData = await readPlanFile(currentPlanFile);
@@ -532,7 +529,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
               default: true,
             });
           }
-        } else if (isHeadlessReview && (stubResult.issuesSaved ?? 0) > 0) {
+        } else if (!terminalInputEnabled && (stubResult.issuesSaved ?? 0) > 0) {
           continueAfterStubPlan = false;
         }
       } catch (err) {
@@ -565,6 +562,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
             applyLessons: options.applyLessons,
             finalReview: options.finalReview,
             configPath: globalCliOptions.config,
+            terminalInput: terminalInputEnabled,
           },
           summaryEnabled ? summaryCollector : undefined
         );
@@ -829,7 +827,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
               options.finalReview === false || (initialCompletedTaskCount === 0 && stepCount === 1);
             let planStillCompleteAfterReview = true;
             if (!shouldSkipFinalReview) {
-              const isHeadlessReview = getLoggerAdapter() instanceof HeadlessAdapter;
+              const isNonInteractiveReview = !terminalInputEnabled;
               sendStructured({
                 type: 'workflow_progress',
                 timestamp: timestamp(),
@@ -839,7 +837,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
               try {
                 const reviewResult = await handleReviewCommand(
                   currentPlanFile,
-                  isHeadlessReview
+                  isNonInteractiveReview
                     ? { cwd: currentBaseDir, saveIssues: true, noAutofix: true }
                     : { cwd: currentBaseDir },
                   {
@@ -847,7 +845,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
                   }
                 );
 
-                if (isHeadlessReview && (reviewResult?.issuesSaved ?? 0) > 0) {
+                if (isNonInteractiveReview && (reviewResult?.issuesSaved ?? 0) > 0) {
                   const updatedPlanData = await readPlanFile(currentPlanFile);
                   if (typeof updatedPlanData.id === 'number') {
                     await setPlanStatusById(

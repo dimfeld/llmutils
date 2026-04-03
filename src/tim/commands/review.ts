@@ -499,7 +499,6 @@ async function handleReviewIssueActions(params: {
   let issuesToSaveForLater: ReviewIssue[] | null = null;
   let autofixExecutorName: ReviewExecutorName | null = reviewExecutorName;
   let appendedTaskCount = 0;
-  let issuesSavedCount = 0;
   let actionCompleted = false;
   let skipNotification = false;
 

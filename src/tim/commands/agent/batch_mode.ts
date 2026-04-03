@@ -1,8 +1,6 @@
 import { commitAll } from '../../../common/process.js';
 import { getWorkingCopyStatus, type WorkingCopyStatus } from '../../../common/git.js';
 import { promptConfirm } from '../../../common/input.js';
-import { getLoggerAdapter } from '../../../logging/adapter.js';
-import { HeadlessAdapter } from '../../../logging/headless_adapter.js';
 import { boldMarkdownHeaders, error, log, sendStructured, warn } from '../../../logging.js';
 import chalk from 'chalk';
 import { executePostApplyCommand } from '../../actions.js';
@@ -61,6 +59,7 @@ export async function executeBatchMode(
     applyLessons = false,
     finalReview,
     configPath,
+    terminalInput,
   }: {
     currentPlanFile: string;
     config: TimConfig;
@@ -74,6 +73,7 @@ export async function executeBatchMode(
     applyLessons?: boolean;
     finalReview?: boolean;
     configPath?: string;
+    terminalInput?: boolean;
   },
   summaryCollector?: SummaryCollector
 ) {
@@ -432,7 +432,7 @@ Available tasks:\n\n${taskDescriptions}`,
           finalReview === false || (initialCompletedTaskCount === 0 && iteration === 1);
         let planStillCompleteAfterReview = true;
         if (!shouldSkipFinalReview) {
-          const isHeadlessReview = getLoggerAdapter() instanceof HeadlessAdapter;
+          const isNonInteractiveReview = terminalInput === false;
           sendStructured({
             type: 'workflow_progress',
             timestamp: timestamp(),
@@ -442,7 +442,7 @@ Available tasks:\n\n${taskDescriptions}`,
           try {
             const reviewResult = await handleReviewCommand(
               currentPlanFile,
-              isHeadlessReview
+              isNonInteractiveReview
                 ? { cwd: baseDir, saveIssues: true, noAutofix: true }
                 : { cwd: baseDir },
               {
@@ -450,7 +450,7 @@ Available tasks:\n\n${taskDescriptions}`,
               }
             );
 
-            if (isHeadlessReview && (reviewResult?.issuesSaved ?? 0) > 0) {
+            if (isNonInteractiveReview && (reviewResult?.issuesSaved ?? 0) > 0) {
               planStillCompleteAfterReview = false;
               await setPlanStatusById(updatedPlanData.id, 'needs_review', baseDir, currentPlanFile);
             } else if (reviewResult?.tasksAppended && reviewResult.tasksAppended > 0) {
