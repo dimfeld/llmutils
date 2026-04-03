@@ -101,6 +101,8 @@ tim done 123 --commit                  # Commit changes
 
 Open a plan in `$EDITOR`. Materializes the plan from DB to `.tim/plans/{planId}.plan.md`, opens the editor, syncs changes back to DB on close, then cleans up the temporary file.
 
+If the edited file has invalid frontmatter (bad YAML syntax, missing required fields, or schema validation errors), the error is displayed and the user is prompted to re-edit the file. Declining preserves the file on disk for manual fixing later.
+
 ```bash
 tim edit 123
 ```

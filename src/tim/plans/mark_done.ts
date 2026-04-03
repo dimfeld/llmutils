@@ -296,7 +296,9 @@ export async function setTaskDone(
 }
 
 function shouldFinalizeCompletedPlan(planData: PlanSchema): boolean {
-  return planData.tasks.length > 0 && !findNextActionableItem(planData) && !isWorkComplete(planData);
+  return (
+    planData.tasks.length > 0 && !findNextActionableItem(planData) && !isWorkComplete(planData)
+  );
 }
 
 async function finalizeTaskMutation(
