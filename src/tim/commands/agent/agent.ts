@@ -432,6 +432,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
     const executor = options.simple
       ? buildExecutorAndLog(executorName, sharedExecutorOptions, config, { simpleMode: true })
       : buildExecutorAndLog(executorName, sharedExecutorOptions, config);
+    const isNonInteractiveReview = !terminalInputEnabled;
     const executionMode: 'normal' | 'simple' | 'tdd' = tddModeEnabled
       ? 'tdd'
       : simpleModeEnabled
@@ -529,7 +530,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
               default: true,
             });
           }
-        } else if (!terminalInputEnabled && (stubResult.issuesSaved ?? 0) > 0) {
+        } else if (isNonInteractiveReview && (stubResult.issuesSaved ?? 0) > 0) {
           continueAfterStubPlan = false;
         }
       } catch (err) {
@@ -827,7 +828,6 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
               options.finalReview === false || (initialCompletedTaskCount === 0 && stepCount === 1);
             let planStillCompleteAfterReview = true;
             if (!shouldSkipFinalReview) {
-              const isNonInteractiveReview = !terminalInputEnabled;
               sendStructured({
                 type: 'workflow_progress',
                 timestamp: timestamp(),

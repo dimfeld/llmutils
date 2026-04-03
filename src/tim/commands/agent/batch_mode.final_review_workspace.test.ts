@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import yaml from 'yaml';
+import { promptConfirm } from '../../../common/input.js';
 
 const handleReviewCommandSpy = vi.fn(async () => ({ tasksAppended: 0 }));
 const executorExecuteSpy = vi.fn(async () => undefined);
@@ -202,5 +203,6 @@ describe('executeBatchMode final review workspace', () => {
       expect.any(Object)
     );
     expect(updatedPlan.status).toBe('needs_review');
+    expect(promptConfirm).not.toHaveBeenCalled();
   });
 });
