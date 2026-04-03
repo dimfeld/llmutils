@@ -10,7 +10,7 @@ export function getProjectSetting(
   db: Database,
   projectId: number,
   setting: string
-): unknown | null {
+): unknown {
   const row = db
     .prepare('SELECT value FROM project_setting WHERE project_id = ? AND setting = ?')
     .get(projectId, setting) as Pick<ProjectSetting, 'value'> | null;
@@ -41,6 +41,10 @@ export function setProjectSetting(
   setting: string,
   value: unknown
 ): void {
+  if (value === undefined) {
+    throw new Error('Cannot set a project setting to undefined. Use deleteProjectSetting instead.');
+  }
+
   const setInTransaction = db.transaction(
     (nextProjectId: number, nextSetting: string, nextValue: unknown): void => {
       db.prepare(
