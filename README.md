@@ -98,6 +98,14 @@ The web interface supports a project-wide PR view that shows all open PRs for a 
 githubUsername: your-github-username # optional, avoids an API call
 ```
 
+### Project Settings
+
+The web interface includes a per-project Settings tab at `/projects/[projectId]/settings` for configuring project-level preferences stored in the database. The settings tab is not shown for the "all projects" view.
+
+Available settings:
+
+- **Featured** (default: on): Controls whether the project appears in the main sidebar list or is grouped in a collapsed "Other Projects" section at the bottom.
+
 ### GitHub Webhook Receiver (separate ingress service)
 
 This repository includes a standalone Bun + SQLite webhook receiver at `src/webhooks/server.ts` that can run as a small internet-facing ingress service while keeping the main tim web app private.
