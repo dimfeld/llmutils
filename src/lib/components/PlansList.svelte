@@ -2,6 +2,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import type { EnrichedPlan, PlanDisplayStatus } from '$lib/server/db_queries.js';
+  import { STATUS_ORDER } from '$lib/utils/plan_status.js';
   import {
     isListNavEvent,
     getAdjacentItem,
@@ -26,17 +27,7 @@
   let sortOption = $state<'updated' | 'planId' | 'priority'>('updated');
   let activeFilters = $state<PlanDisplayStatus[]>([]);
 
-  const statusOrder: PlanDisplayStatus[] = [
-    'needs_review',
-    'in_progress',
-    'ready',
-    'pending',
-    'recently_done',
-    'blocked',
-    'done',
-    'cancelled',
-    'deferred',
-  ];
+  const statusOrder = STATUS_ORDER;
 
   const statusGroupLabels: Record<PlanDisplayStatus, string> = {
     in_progress: 'In Progress',

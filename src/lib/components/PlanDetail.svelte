@@ -3,6 +3,7 @@
   import { toast } from 'svelte-sonner';
 
   import type { PlanDetail } from '$lib/server/db_queries.js';
+  import { STATUS_ORDER_MAP } from '$lib/utils/plan_status.js';
   import { afterNavigate } from '$app/navigation';
   import { startGenerate, startAgent, startChat } from '$lib/remote/plan_actions.remote.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
@@ -201,6 +202,14 @@
       chatDialogOpen = false;
     }
   }
+
+  let sortedDependencies = $derived(
+    [...plan.dependencies].sort((a, b) => {
+      const aOrder = a.displayStatus ? (STATUS_ORDER_MAP[a.displayStatus] ?? 99) : 99;
+      const bOrder = b.displayStatus ? (STATUS_ORDER_MAP[b.displayStatus] ?? 99) : 99;
+      return aOrder - bOrder;
+    })
+  );
 
   function planUrl(uuid: string, depProjectId?: number | null): string {
     const pid = depProjectId ?? projectId;
@@ -524,7 +533,7 @@
         Dependencies
       </h3>
       <ul class="space-y-1">
-        {#each plan.dependencies as dep (dep.uuid)}
+        {#each sortedDependencies as dep (dep.uuid)}
           <li class="flex items-center gap-2 text-sm">
             <a
               href={planUrl(dep.uuid, dep.projectId)}
