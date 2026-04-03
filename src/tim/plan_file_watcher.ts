@@ -1,8 +1,10 @@
 import { watch, type FSWatcher } from 'node:fs';
+import path from 'node:path';
 
 import { warn } from '../logging.js';
 
 const PLAN_WATCH_DEBOUNCE_MS = 300;
+const PLAN_WATCH_POLL_MS = 300;
 
 export interface PlanFileWatcher {
   close(): void;
@@ -26,8 +28,11 @@ export function watchPlanFile(
   filePath: string,
   onContent: (content: string) => void
 ): PlanFileWatcher {
+  const parentDir = path.dirname(filePath);
+  const targetBasename = path.basename(filePath);
   let watcher: FSWatcher | null = null;
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
   let closed = false;
   let lastContent: string | null = null;
 
@@ -70,20 +75,28 @@ export function watchPlanFile(
   }
 
   try {
-    watcher = watch(filePath, () => {
+    watcher = watch(parentDir, (_eventType, filename) => {
+      if (filename !== null && path.basename(String(filename)) !== targetBasename) {
+        return;
+      }
+
       scheduleEmit();
     });
     watcher.on('error', (err) => {
       warn(`Plan file watcher error for ${filePath}: ${err as Error}`);
     });
   } catch (err) {
-    warn(`Failed to watch plan file ${filePath}: ${err as Error}`);
+    warn(`Failed to watch plan file ${filePath} via ${parentDir}: ${err as Error}`);
     return {
       close() {
         closed = true;
       },
     };
   }
+
+  pollTimer = setInterval(() => {
+    void emitCurrentContent();
+  }, PLAN_WATCH_POLL_MS);
 
   void emitCurrentContent();
 
@@ -93,6 +106,10 @@ export function watchPlanFile(
       if (debounceTimer) {
         clearTimeout(debounceTimer);
         debounceTimer = null;
+      }
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
       }
       watcher?.close();
       watcher = null;

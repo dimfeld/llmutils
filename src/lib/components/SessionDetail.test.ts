@@ -150,8 +150,8 @@ describe('SessionDetail', () => {
     });
     const { body } = await render(SessionDetail, { props: { session } });
 
-    expect(body).toContain('## Current Plan');
-    expect(body).toContain('- Task 1');
+    expect(body).toContain('<h2>Current Plan</h2>');
+    expect(body).toContain('<li>Task 1</li>');
     expect(body).not.toContain('Waiting for plan content...');
   });
 

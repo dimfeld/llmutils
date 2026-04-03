@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
@@ -93,6 +93,32 @@ describe('watchPlanFile', () => {
     await new Promise((resolve) => setTimeout(resolve, 500));
 
     expect(contents).toEqual(['first']);
+  });
+
+  test('keeps emitting after atomic-save replacement via rename', async () => {
+    const planPath = path.join(tempDir, '302.plan.md');
+    await writeFile(planPath, ['---', 'id: 302', '---', '', 'first'].join('\n'));
+
+    const contents: string[] = [];
+    const watcher = watchPlanFile(planPath, (content) => {
+      contents.push(content);
+    });
+
+    await waitFor(() => contents.length === 1);
+
+    const replacementPath = path.join(tempDir, '302.plan.md.tmp');
+    await writeFile(replacementPath, ['---', 'id: 302', '---', '', 'second'].join('\n'));
+    await rename(replacementPath, planPath);
+
+    await waitFor(() => contents.length === 2);
+    expect(contents[1]).toBe('second');
+
+    await writeFile(planPath, ['---', 'id: 302', '---', '', 'third'].join('\n'));
+
+    await waitFor(() => contents.length === 3);
+    expect(contents[2]).toBe('third');
+
+    watcher.close();
   });
 
   test('returns trimmed content when frontmatter is absent', () => {
