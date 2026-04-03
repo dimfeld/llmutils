@@ -1203,7 +1203,6 @@ export async function handleReviewCommand(
         const runReviewCall = () =>
           runReview({
             executorSelection: options.executor,
-            serialBoth: options.serialBoth,
             config,
             sharedExecutorOptions,
             buildPrompt,

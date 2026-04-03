@@ -12,7 +12,7 @@ describe('review_runner', () => {
     vi.resetAllMocks();
   });
 
-  test('prepareReviewExecutors uses executor metadata for prompt building', async () => {
+  test('prepareReviewExecutors always enables subagents in review prompts', async () => {
     const claudeExecutor: Executor = {
       execute: vi.fn(async () => undefined),
       supportsSubagents: true,
@@ -49,7 +49,7 @@ describe('review_runner', () => {
     expect(buildPrompt).toHaveBeenCalledWith({
       executorName: 'codex-cli',
       includeDiff: false,
-      useSubagents: false,
+      useSubagents: true,
     });
   });
 
@@ -123,104 +123,6 @@ describe('review_runner', () => {
     expect(issueContents).toEqual(['Issue A', 'Issue B', 'Issue C']);
     expect(result.reviewResult.recommendations).toEqual(['Claude rec', 'Codex rec']);
     expect(result.reviewResult.actionItems).toEqual(['Claude action', 'Codex action']);
-  });
-
-  test('runReview serializes both executors and skips codex on blocking Claude issues', async () => {
-    const claudeOutput = {
-      issues: [
-        {
-          severity: 'major',
-          category: 'bug',
-          content: 'Blocking issue',
-          file: 'a.ts',
-          line: '1',
-          suggestion: 'Fix it',
-        },
-      ],
-      recommendations: [],
-      actionItems: [],
-    };
-
-    const claudeExecute = vi.fn(async () => JSON.stringify(claudeOutput));
-    const codexExecute = vi.fn(async () =>
-      JSON.stringify({ issues: [], recommendations: ['unused'], actionItems: [] })
-    );
-
-    const claudeExecutor: Executor = { execute: claudeExecute };
-    const codexExecutor: Executor = { execute: codexExecute };
-
-    vi.mocked(buildExecutorAndLog).mockImplementation((name: string) =>
-      name === 'claude-code' ? claudeExecutor : codexExecutor
-    );
-
-    const { runReview } = await import('./review_runner.js');
-    const result = await runReview({
-      executorSelection: 'both',
-      serialBoth: true,
-      config: { defaultExecutor: 'codex-cli' } as any,
-      sharedExecutorOptions: { baseDir: '/tmp' },
-      buildPrompt: vi.fn(() => 'prompt'),
-      planInfo: {
-        planId: '9',
-        planTitle: 'Serial Plan',
-        planFilePath: '/tmp/plan.yml',
-        baseBranch: 'main',
-        changedFiles: [],
-      },
-    });
-
-    expect(result.usedExecutors).toEqual(['claude-code']);
-    expect(claudeExecute).toHaveBeenCalledTimes(1);
-    expect(codexExecute).toHaveBeenCalledTimes(0);
-  });
-
-  test('runReview serializes both executors and runs codex on info-only Claude issues', async () => {
-    const claudeOutput = {
-      issues: [
-        {
-          severity: 'info',
-          category: 'other',
-          content: 'Info only',
-          file: 'a.ts',
-          line: '1',
-          suggestion: 'Optional',
-        },
-      ],
-      recommendations: [],
-      actionItems: [],
-    };
-
-    const claudeExecute = vi.fn(async () => JSON.stringify(claudeOutput));
-    const codexExecute = vi.fn(async () =>
-      JSON.stringify({ issues: [], recommendations: ['ok'], actionItems: [] })
-    );
-
-    const claudeExecutor: Executor = { execute: claudeExecute };
-    const codexExecutor: Executor = { execute: codexExecute };
-
-    vi.mocked(buildExecutorAndLog).mockImplementation((name: string) =>
-      name === 'claude-code' ? claudeExecutor : codexExecutor
-    );
-
-    const { runReview } = await import('./review_runner.js');
-    const result = await runReview({
-      executorSelection: 'both',
-      serialBoth: true,
-      config: { defaultExecutor: 'codex-cli' } as any,
-      sharedExecutorOptions: { baseDir: '/tmp' },
-      buildPrompt: vi.fn(() => 'prompt'),
-      planInfo: {
-        planId: '10',
-        planTitle: 'Serial Plan Info',
-        planFilePath: '/tmp/plan.yml',
-        baseBranch: 'main',
-        changedFiles: [],
-      },
-    });
-
-    expect(result.usedExecutors).toEqual(['claude-code', 'codex-cli']);
-    expect(claudeExecute).toHaveBeenCalledTimes(1);
-    expect(codexExecute).toHaveBeenCalledTimes(1);
   });
 
   test('runReview preserves structured output from executor', async () => {

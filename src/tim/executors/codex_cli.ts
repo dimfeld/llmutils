@@ -4,7 +4,7 @@ import type { TimConfig } from '../configSchema';
 import { CodexCliExecutorName, codexCliOptionsSchema } from './schemas.js';
 import { executeNormalMode } from './codex_cli/normal_mode';
 import { executeSimpleMode } from './codex_cli/simple_mode';
-import { executeReviewMode } from './codex_cli/review_mode';
+import { executeAnalysisMode, executeReviewMode } from './codex_cli/review_mode';
 import { executeBareMode } from './codex_cli/bare_mode';
 import { parseReviewerVerdict } from './codex_cli/verdict_parser';
 
@@ -23,12 +23,24 @@ export class CodexCliExecutor implements Executor {
     execution: 'auto',
     answerPr: 'auto',
   };
+  static supportsSubagents = true;
+  readonly supportsSubagents = true;
 
   constructor(
     public options: CodexCliExecutorOptions,
     public sharedOptions: ExecutorCommonOptions,
     public timConfig: TimConfig
   ) {}
+
+  async executeAnalysisPhase(contextContent: string, planInfo: ExecutePlanInfo): Promise<void> {
+    return executeAnalysisMode(
+      contextContent,
+      planInfo,
+      this.sharedOptions.baseDir,
+      this.sharedOptions.model,
+      this.timConfig
+    );
+  }
 
   async execute(
     contextContent: string | undefined,

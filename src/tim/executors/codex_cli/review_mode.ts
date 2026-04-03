@@ -74,6 +74,29 @@ export async function executeReviewMode(
 // 30-minute timeout for review mode
 const REVIEW_TIMEOUT_MS = 30 * 60 * 1000;
 
+export async function executeAnalysisMode(
+  contextContent: string,
+  planInfo: ExecutePlanInfo,
+  baseDir: string,
+  model: string | undefined,
+  timConfig: TimConfig
+): Promise<void> {
+  const gitRoot = await getGitRoot(baseDir);
+
+  log('Running Codex analysis step for review guide generation...');
+
+  const codexOptions = timConfig.executors?.[CodexCliExecutorName];
+  const reasoningLevel: CodexReasoningLevel = planInfo.isTaskScoped
+    ? (codexOptions?.reasoning?.scopedReview ?? 'medium')
+    : (codexOptions?.reasoning?.fullReview ?? 'high');
+
+  await executeCodexStep(contextContent, gitRoot, timConfig, {
+    model,
+    inactivityTimeoutMs: REVIEW_TIMEOUT_MS,
+    reasoningLevel,
+  });
+}
+
 /**
  * Executes a Codex review step with JSON schema for structured output.
  * Writes the schema to a temporary file and passes it via --output-schema flag.

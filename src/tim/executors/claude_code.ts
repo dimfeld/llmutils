@@ -13,6 +13,7 @@ import {
   extractStructuredMessages,
   formatJsonMessage,
   resetToolUseCache,
+  type FormattedClaudeMessage,
 } from './claude_code/format.ts';
 import { claudeCodeOptionsSchema, ClaudeCodeExecutorName } from './schemas.js';
 import chalk from 'chalk';
@@ -464,20 +465,7 @@ export class ClaudeCodeExecutor implements Executor {
     }
   }
 
-  /**
-   * Executes a review-mode prompt using structured JSON output.
-   * This bypasses the full orchestration workflow and uses Claude's JSON schema
-   * output format for reliable parsing of review results.
-   */
-  private async executeReviewMode(
-    contextContent: string,
-    planInfo: ExecutePlanInfo
-  ): Promise<import('./types').ExecutorOutput> {
-    const gitRoot = await getGitRoot(this.sharedOptions.baseDir);
-
-    log('Running Claude in review mode with JSON schema output...');
-
-    // Parse allowedTools into efficient lookup structure for auto-approval
+  private async prepareReviewAllowedTools(): Promise<void> {
     const sharedPermissions = await this.loadSharedPermissions();
     const allowedTools = buildAllowedToolsList({
       includeDefaultTools: this.options.includeDefaultTools,
@@ -486,39 +474,15 @@ export class ClaudeCodeExecutor implements Executor {
       sharedPermissions,
     });
     this.parseAllowedTools(allowedTools);
+  }
 
-    const jsonSchema = getReviewOutputJsonSchemaString();
-    let capturedOutput: object | undefined;
-
-    const reviewTimeoutMs = 30 * 60 * 1000; // 30 minutes
-    const result = await runClaudeSubprocess({
-      prompt: contextContent + '\n\nBe sure to provide the structured output with your response',
-      cwd: gitRoot,
-      claudeCodeOptions: this.options,
-      noninteractive: this.sharedOptions.noninteractive ?? false,
-      terminalInput: this.sharedOptions.terminalInput,
-      model: this.sharedOptions.model,
-      label: 'review',
-      inactivityTimeoutMs: reviewTimeoutMs,
-      extraArgs: ['--json-schema', jsonSchema],
-      extraAccessDirs:
-        this.timConfig.isUsingExternalStorage && this.timConfig.externalRepositoryConfigDir
-          ? [this.timConfig.externalRepositoryConfigDir]
-          : undefined,
-      trackedFiles: this.trackedFiles,
-      logModelSelection: true,
-      processFormattedMessages: (messages) => {
-        for (const r of messages) {
-          if (r.structuredOutput) {
-            if (typeof r.structuredOutput === 'string') {
-              capturedOutput = JSON.parse(r.structuredOutput);
-            } else {
-              capturedOutput = r.structuredOutput as object;
-            }
-          }
-        }
-      },
-    });
+  private handleClaudeReviewResult(result: {
+    exitCode: number;
+    killedByTimeout: boolean;
+    killedByInactivity: boolean;
+    seenResultMessage: boolean;
+  }): void {
+    const reviewTimeoutMs = 30 * 60 * 1000;
 
     if ((result.killedByTimeout || result.killedByInactivity) && !result.seenResultMessage) {
       throw new Error(
@@ -543,12 +507,138 @@ export class ClaudeCodeExecutor implements Executor {
     } else {
       log('Claude review output captured.');
     }
+  }
+
+  private extractClaudeSessionId(messages: FormattedClaudeMessage[]): string | undefined {
+    for (const message of messages) {
+      const structuredMessages = Array.isArray(message.structured)
+        ? message.structured
+        : message.structured
+          ? [message.structured]
+          : [];
+
+      for (const structured of structuredMessages) {
+        if (structured.type === 'agent_session_end') {
+          return structured.sessionId;
+        }
+      }
+    }
+
+    return undefined;
+  }
+
+  public async executeAnalysisPhase(
+    contextContent: string,
+    _planInfo: ExecutePlanInfo
+  ): Promise<{ sessionId: string }> {
+    const gitRoot = await getGitRoot(this.sharedOptions.baseDir);
+
+    log('Running Claude analysis step for review guide generation...');
+
+    await this.prepareReviewAllowedTools();
+
+    let capturedSessionId: string | undefined;
+    const reviewTimeoutMs = 30 * 60 * 1000;
+    const result = await runClaudeSubprocess({
+      prompt: contextContent,
+      cwd: gitRoot,
+      claudeCodeOptions: this.options,
+      noninteractive: this.sharedOptions.noninteractive ?? false,
+      terminalInput: this.sharedOptions.terminalInput,
+      model: this.sharedOptions.model,
+      label: 'review-analysis',
+      inactivityTimeoutMs: reviewTimeoutMs,
+      extraAccessDirs:
+        this.timConfig.isUsingExternalStorage && this.timConfig.externalRepositoryConfigDir
+          ? [this.timConfig.externalRepositoryConfigDir]
+          : undefined,
+      trackedFiles: this.trackedFiles,
+      logModelSelection: true,
+      processFormattedMessages: (messages) => {
+        capturedSessionId ||= this.extractClaudeSessionId(messages);
+      },
+    });
+
+    this.handleClaudeReviewResult(result);
+
+    if (!capturedSessionId) {
+      throw new Error('Claude analysis completed without returning a session id.');
+    }
+
+    return { sessionId: capturedSessionId };
+  }
+
+  /**
+   * Executes a review-mode prompt using structured JSON output.
+   * This bypasses the full orchestration workflow and uses Claude's JSON schema
+   * output format for reliable parsing of review results.
+   */
+  private async executeReviewModeInternal(
+    contextContent: string,
+    _planInfo: ExecutePlanInfo,
+    extraArgs?: string[]
+  ): Promise<import('./types').ExecutorOutput> {
+    const gitRoot = await getGitRoot(this.sharedOptions.baseDir);
+
+    log('Running Claude in review mode with JSON schema output...');
+
+    await this.prepareReviewAllowedTools();
+
+    const jsonSchema = getReviewOutputJsonSchemaString();
+    let capturedOutput: object | undefined;
+
+    const reviewTimeoutMs = 30 * 60 * 1000; // 30 minutes
+    const result = await runClaudeSubprocess({
+      prompt: contextContent + '\n\nBe sure to provide the structured output with your response',
+      cwd: gitRoot,
+      claudeCodeOptions: this.options,
+      noninteractive: this.sharedOptions.noninteractive ?? false,
+      terminalInput: this.sharedOptions.terminalInput,
+      model: this.sharedOptions.model,
+      label: 'review',
+      inactivityTimeoutMs: reviewTimeoutMs,
+      extraArgs: [...(extraArgs ?? []), '--json-schema', jsonSchema],
+      extraAccessDirs:
+        this.timConfig.isUsingExternalStorage && this.timConfig.externalRepositoryConfigDir
+          ? [this.timConfig.externalRepositoryConfigDir]
+          : undefined,
+      trackedFiles: this.trackedFiles,
+      logModelSelection: true,
+      processFormattedMessages: (messages) => {
+        for (const r of messages) {
+          if (r.structuredOutput) {
+            if (typeof r.structuredOutput === 'string') {
+              capturedOutput = JSON.parse(r.structuredOutput);
+            } else {
+              capturedOutput = r.structuredOutput as object;
+            }
+          }
+        }
+      },
+    });
+
+    this.handleClaudeReviewResult(result);
 
     return {
       content: '',
       structuredOutput: capturedOutput,
       metadata: { phase: 'review', jsonOutput: true },
     };
+  }
+
+  public async executeReviewMode(
+    contextContent: string,
+    planInfo: ExecutePlanInfo
+  ): Promise<import('./types').ExecutorOutput> {
+    return this.executeReviewModeInternal(contextContent, planInfo);
+  }
+
+  public async executeReviewModeWithResume(
+    contextContent: string,
+    planInfo: ExecutePlanInfo,
+    sessionId: string
+  ): Promise<import('./types').ExecutorOutput> {
+    return this.executeReviewModeInternal(contextContent, planInfo, ['--resume', sessionId]);
   }
 
   async execute(
