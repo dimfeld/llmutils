@@ -541,7 +541,7 @@ describe('handleListCommand', () => {
     expect(tableData[1][0]).toBe(3); // Only the done plan
   });
 
-  test('shows only pending and in_progress plans by default', async () => {
+  test('shows pending, in_progress, and needs_review plans by default', async () => {
     // Create test plans
     const plans = [
       {
@@ -574,6 +574,20 @@ describe('handleListCommand', () => {
       },
       {
         id: 3,
+        title: 'Needs Review Plan',
+        goal: 'Needs review',
+        details: 'Details',
+        status: 'needs_review',
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'Do task',
+            steps: [{ prompt: 'Do step', done: false }],
+          },
+        ],
+      },
+      {
+        id: 4,
         title: 'Done Plan',
         goal: 'Test done',
         details: 'Details',
@@ -604,13 +618,14 @@ describe('handleListCommand', () => {
     expect(mockTable).toHaveBeenCalled();
     const tableData = mockTable.mock.calls[0][0];
 
-    // Header + 2 plans (pending and in_progress) = 3 rows
-    expect(tableData).toHaveLength(3);
+    // Header + 3 plans (pending, in_progress, and needs_review) = 4 rows
+    expect(tableData).toHaveLength(4);
 
     const planIds = tableData.slice(1).map((row) => row[0]);
     expect(planIds).toContain(1);
     expect(planIds).toContain(2);
-    expect(planIds).not.toContain(3);
+    expect(planIds).toContain(3);
+    expect(planIds).not.toContain(4);
   });
 
   test('filters by ready status', async () => {

@@ -241,8 +241,8 @@ export async function handleListCommand(options: any, command: any, searchTerms?
       // Use explicitly specified statuses
       statusesToShow = new Set(options.status);
     } else {
-      // Default: show pending and in_progress
-      statusesToShow = new Set(['pending', 'in_progress']);
+      // Default: show pending, in_progress, and needs_review
+      statusesToShow = new Set(['pending', 'in_progress', 'needs_review']);
     }
 
     // Filter plans
