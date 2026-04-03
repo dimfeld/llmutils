@@ -2,7 +2,8 @@ import type { Database } from 'bun:sqlite';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  ingestWebhookEvents: vi.fn<(...args: unknown[]) => Promise<{ errors: string[] }>>(),
+  ingestWebhookEvents:
+    vi.fn<(...args: unknown[]) => Promise<{ prsUpdated: string[]; errors: string[] }>>(),
   formatWebhookIngestErrors: vi.fn<(errors: string[]) => string | undefined>(),
   getWebhookServerUrl: vi.fn<() => string | null>(),
   getWebhookInternalApiToken: vi.fn<() => string | null>(),
@@ -51,7 +52,7 @@ describe('lib/server/webhook_poller', () => {
     delete process.env.TIM_WEBHOOK_SERVER_URL;
     delete process.env.WEBHOOK_INTERNAL_API_TOKEN;
 
-    mocks.ingestWebhookEvents.mockResolvedValue({ errors: [] });
+    mocks.ingestWebhookEvents.mockResolvedValue({ prsUpdated: [], errors: [] });
     mocks.formatWebhookIngestErrors.mockReturnValue(undefined);
     mocks.getWebhookServerUrl.mockImplementation(() => process.env.TIM_WEBHOOK_SERVER_URL ?? null);
     mocks.getWebhookInternalApiToken.mockImplementation(
@@ -205,7 +206,7 @@ describe('lib/server/webhook_poller', () => {
     const firstRun = createDeferred<{ errors: string[] }>();
     mocks.ingestWebhookEvents
       .mockReturnValueOnce(firstRun.promise)
-      .mockResolvedValue({ errors: [] });
+      .mockResolvedValue({ prsUpdated: [], errors: [] });
 
     const handle = startWebhookPoller(null as Database);
 
@@ -215,7 +216,7 @@ describe('lib/server/webhook_poller', () => {
     await vi.advanceTimersByTimeAsync(5_000);
     expect(mocks.ingestWebhookEvents).toHaveBeenCalledTimes(1);
 
-    firstRun.resolve({ errors: [] });
+    firstRun.resolve({ prsUpdated: [], errors: [] });
     await Promise.resolve();
 
     await vi.advanceTimersByTimeAsync(5_000);
@@ -230,9 +231,9 @@ describe('lib/server/webhook_poller', () => {
     process.env.WEBHOOK_INTERNAL_API_TOKEN = 'test-token';
 
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    mocks.ingestWebhookEvents.mockRejectedValueOnce(new Error('boom')).mockResolvedValue({
-      errors: [],
-    });
+    mocks.ingestWebhookEvents
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValue({ prsUpdated: [], errors: [] });
 
     const handle = startWebhookPoller(null as Database);
 
@@ -252,7 +253,7 @@ describe('lib/server/webhook_poller', () => {
     process.env.WEBHOOK_INTERNAL_API_TOKEN = 'test-token';
 
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    mocks.ingestWebhookEvents.mockResolvedValue({ errors: ['bad event'] });
+    mocks.ingestWebhookEvents.mockResolvedValue({ prsUpdated: [], errors: ['bad event'] });
     mocks.formatWebhookIngestErrors.mockReturnValue('bad event');
 
     const handle = startWebhookPoller(null as Database);
@@ -285,5 +286,28 @@ describe('lib/server/webhook_poller', () => {
 
     await vi.advanceTimersByTimeAsync(30_000);
     expect(mocks.ingestWebhookEvents).toHaveBeenCalledTimes(1);
+  });
+
+  test('poller invokes the PR update callback when ingestion reports changed PRs', async () => {
+    process.env.TIM_WEBHOOK_POLL_INTERVAL = '5';
+    process.env.TIM_WEBHOOK_SERVER_URL = 'https://webhooks.example.com';
+    process.env.WEBHOOK_INTERNAL_API_TOKEN = 'test-token';
+
+    const onPrUpdated = vi.fn();
+    mocks.ingestWebhookEvents.mockResolvedValue({
+      prsUpdated: ['https://github.com/example/repo/pull/17'],
+      errors: [],
+    });
+
+    const handle = startWebhookPoller(null as Database, { onPrUpdated });
+
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    expect(onPrUpdated).toHaveBeenCalledWith({
+      prsUpdated: ['https://github.com/example/repo/pull/17'],
+      errors: [],
+    });
+
+    handle?.stop();
   });
 });

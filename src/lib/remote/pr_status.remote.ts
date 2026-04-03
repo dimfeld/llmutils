@@ -12,6 +12,8 @@ import { resolveGitHubToken } from '$common/github/token.js';
 import { getWebhookServerUrl } from '$common/github/webhook_client.js';
 import { categorizePrUrls, parseJsonStringArray } from '$lib/server/db_queries.js';
 import { getServerContext } from '$lib/server/init.js';
+import { emitPrUpdatesForIngestResult } from '$lib/server/pr_event_utils.js';
+import { getSessionManager } from '$lib/server/session_context.js';
 import { cleanOrphanedPrStatus, getPrStatusByUrl, getPrStatusForPlan } from '$tim/db/pr_status.js';
 import { getPlanByUuid } from '$tim/db/plan.js';
 
@@ -157,6 +159,11 @@ export const refreshPrStatus = command(planUuidSchema, async ({ planUuid }) => {
   if (webhookServerUrl) {
     try {
       const ingestResult = await ingestWebhookEvents(db);
+      try {
+        emitPrUpdatesForIngestResult(db, ingestResult, getSessionManager());
+      } catch (err) {
+        console.warn('[pr_status] Failed to emit PR update event', err);
+      }
       webhookRefreshError = formatWebhookIngestErrors(ingestResult.errors);
     } catch (err) {
       cleanOrphanedPrStatus(db);

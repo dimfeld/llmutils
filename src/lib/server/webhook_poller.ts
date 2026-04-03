@@ -1,6 +1,10 @@
 import type { Database } from 'bun:sqlite';
 
-import { formatWebhookIngestErrors, ingestWebhookEvents } from '$common/github/webhook_ingest.js';
+import {
+  formatWebhookIngestErrors,
+  ingestWebhookEvents,
+  type IngestResult,
+} from '$common/github/webhook_ingest.js';
 import { getWebhookInternalApiToken, getWebhookServerUrl } from '$common/github/webhook_client.js';
 
 import type { WebhookPollerHandle } from './session_context.js';
@@ -8,6 +12,10 @@ import type { WebhookPollerHandle } from './session_context.js';
 const MIN_POLL_INTERVAL_SECONDS = 5;
 const MAX_POLL_INTERVAL_SECONDS = 86_400; // 24 hours — prevents 32-bit timer overflow
 const INITIAL_POLL_DELAY_MS = 15_000;
+
+interface StartWebhookPollerOptions {
+  onPrUpdated?: (result: IngestResult) => void;
+}
 
 export function getWebhookPollIntervalMs(): number | null {
   const rawInterval = process.env.TIM_WEBHOOK_POLL_INTERVAL;
@@ -38,7 +46,10 @@ export function isWebhookPollingEnabled(): boolean {
   );
 }
 
-export function startWebhookPoller(db: Database): WebhookPollerHandle | null {
+export function startWebhookPoller(
+  db: Database,
+  options: StartWebhookPollerOptions = {}
+): WebhookPollerHandle | null {
   const pollIntervalMs = getWebhookPollIntervalMs();
   if (!pollIntervalMs || !getWebhookServerUrl() || !getWebhookInternalApiToken()) {
     return null;
@@ -60,6 +71,9 @@ export function startWebhookPoller(db: Database): WebhookPollerHandle | null {
       const formattedErrors = formatWebhookIngestErrors(result.errors);
       if (formattedErrors) {
         console.warn(`[webhook_poller] ${formattedErrors}`);
+      }
+      if (result.prsUpdated.length > 0) {
+        options.onPrUpdated?.(result);
       }
     } catch (error) {
       console.error('[webhook_poller] Polling failed', error);

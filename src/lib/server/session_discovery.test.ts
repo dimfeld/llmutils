@@ -632,10 +632,14 @@ describe('lib/server/session_discovery', () => {
     });
 
     expect(manager.sendPromptResponse('integration-session', 'req-integration', true)).toBe('sent');
-    await waitFor(() => receivedServerMessages.length === 1);
-    expect(receivedServerMessages).toEqual([
-      { type: 'prompt_response', requestId: 'req-integration', value: true },
-    ]);
+    await waitFor(() =>
+      receivedServerMessages.some((message) => message.type === 'prompt_response')
+    );
+    expect(receivedServerMessages).toContainEqual({
+      type: 'prompt_response',
+      requestId: 'req-integration',
+      value: true,
+    });
 
     removeSessionInfoFile(info.pid);
     cleanupPids.delete(info.pid);

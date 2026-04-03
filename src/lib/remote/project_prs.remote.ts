@@ -12,6 +12,8 @@ import {
 } from '$common/github/project_pr_service.js';
 import { getGitHubUsername, normalizeGitHubUsername } from '$common/github/user.js';
 import { getServerContext } from '$lib/server/init.js';
+import { emitPrUpdatesForIngestResult } from '$lib/server/pr_event_utils.js';
+import { getSessionManager } from '$lib/server/session_context.js';
 import { getProjectById, listProjects } from '$tim/db/project.js';
 import {
   getLinkedPlansByPrUrl,
@@ -389,6 +391,11 @@ export const refreshProjectPrs = command(
       if (getWebhookServerUrl()) {
         try {
           const ingestResult = await ingestWebhookEvents(db);
+          try {
+            emitPrUpdatesForIngestResult(db, ingestResult, getSessionManager());
+          } catch (err) {
+            console.warn('[project_prs] Failed to emit PR update event', err);
+          }
           const ingestError = formatWebhookIngestErrors(ingestResult.errors);
           getProjectPrs({ projectId }).refresh();
           return ingestError ? { error: ingestError, newLinks: [] } : { newLinks: [] };
@@ -416,6 +423,11 @@ export const refreshProjectPrs = command(
       // marking missing PRs closed is left to the Full Refresh from GitHub action.
       try {
         const ingestResult = await ingestWebhookEvents(db);
+        try {
+          emitPrUpdatesForIngestResult(db, ingestResult, getSessionManager());
+        } catch {
+          // SSE emission is best-effort; don't fail the refresh
+        }
         const ingestError = formatWebhookIngestErrors(ingestResult.errors);
         getProjectPrs({ projectId }).refresh();
         return ingestError ? { error: ingestError, newLinks: [] } : { newLinks: [] };

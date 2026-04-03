@@ -1,9 +1,12 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import {
     fullRefreshPrStatus,
     getPrStatus,
     refreshPrStatus,
   } from '$lib/remote/pr_status.remote.js';
+  import { useSessionManager } from '$lib/stores/session_state.svelte.js';
+  import { hasRelevantPrUpdate } from '$lib/utils/pr_update_events.js';
   import {
     stateBadgeColor,
     stateLabel,
@@ -17,6 +20,7 @@
   import PrReviewList from './PrReviewList.svelte';
 
   let { planUuid }: { planUuid: string } = $props();
+  const sessionManager = useSessionManager();
 
   let prData = $derived(await getPrStatus({ planUuid }));
   let prUrls = $derived(prData.prUrls);
@@ -51,6 +55,21 @@
       refreshing = false;
     }
   }
+
+  onMount(() => {
+    return sessionManager.onEvent((eventName, event) => {
+      if (eventName !== 'pr:updated') {
+        return;
+      }
+
+      const allPrUrls = [...prData.prUrls, ...prData.prStatuses.map((pr) => pr.status.pr_url)];
+      if (!hasRelevantPrUpdate(event, allPrUrls)) {
+        return;
+      }
+
+      getPrStatus({ planUuid }).refresh();
+    });
+  });
 </script>
 
 <div>

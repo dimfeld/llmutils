@@ -203,7 +203,12 @@ describe('hooks.server init', () => {
     await hooks.init();
 
     expect(startWebhookPoller).toHaveBeenCalledTimes(1);
-    expect(startWebhookPoller).toHaveBeenCalledWith(db);
+    expect(startWebhookPoller).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        onPrUpdated: expect.any(Function),
+      })
+    );
     expect(sessionContext.getWebhookPoller()).toBe(pollerHandle);
   });
 

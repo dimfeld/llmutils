@@ -125,5 +125,8 @@ export function applySessionEvent<TEventName extends SessionClientEventName>(
       }
       break;
     }
+    case 'pr:updated': {
+      break;
+    }
   }
 }

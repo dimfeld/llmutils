@@ -4,6 +4,9 @@ import { describe, expect, test, vi } from 'vitest';
 import PrsLayout from './+layout.svelte';
 
 const mockGetProjectPrs = vi.fn();
+const sessionManager = {
+  onEvent: vi.fn(() => () => {}),
+};
 
 vi.mock('$app/navigation', () => ({
   afterNavigate: vi.fn(),
@@ -17,6 +20,10 @@ vi.mock('$app/state', () => ({
 
 vi.mock('$lib/components/PrList.svelte', () => ({
   default: () => '',
+}));
+
+vi.mock('$lib/stores/session_state.svelte.js', () => ({
+  useSessionManager: () => sessionManager,
 }));
 
 vi.mock('$lib/remote/project_prs.remote.js', () => ({

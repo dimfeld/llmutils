@@ -262,7 +262,10 @@ describe('session integration', () => {
     unsubscribe();
 
     expect(sendResult).toBe('sent');
-    expect(sentMessages).toEqual([{ type: 'prompt_response', requestId: 'req-1', value: 'safe' }]);
+    expect(sentMessages).toEqual([
+      { type: 'notification_subscribers_changed', hasSubscribers: false },
+      { type: 'prompt_response', requestId: 'req-1', value: 'safe' },
+    ]);
     expect(events.map((event) => event.event)).toEqual([
       'session:new',
       'session:update',
@@ -907,6 +910,7 @@ describe('session integration', () => {
     });
 
     expect(sentMessages).toEqual([
+      { type: 'notification_subscribers_changed', hasSubscribers: false },
       { type: 'prompt_response', requestId: 'req-routes', value: true },
       { type: 'user_input', content: 'continue' },
     ]);
@@ -935,5 +939,27 @@ describe('session integration', () => {
         .getSessionSnapshot()
         .sessions.some((session) => session.connectionId === notificationSession.connectionId)
     ).toBe(false);
+  });
+
+  test('SSE stream forwards pr:updated events to connected browsers', async () => {
+    const response = createSessionEventsResponse(manager);
+    const reader = response.body?.getReader();
+    expect(reader).toBeDefined();
+    const sseReader = createSseReader(reader!);
+
+    expect(await sseReader.readEvent()).toMatchObject({ event: 'session:list' });
+    expect(await sseReader.readEvent()).toMatchObject({ event: 'session:sync-complete' });
+
+    manager.emitPrUpdate(['https://github.com/example/repo/pull/17'], [12]);
+
+    expect(await sseReader.readEvent()).toEqual({
+      event: 'pr:updated',
+      data: {
+        prUrls: ['https://github.com/example/repo/pull/17'],
+        projectIds: [12],
+      },
+    });
+
+    await reader?.cancel();
   });
 });

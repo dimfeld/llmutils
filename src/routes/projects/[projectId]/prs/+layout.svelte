@@ -1,6 +1,7 @@
 <script lang="ts">
   import { afterNavigate } from '$app/navigation';
   import { page } from '$app/state';
+  import { onMount } from 'svelte';
   import PrList from '$lib/components/PrList.svelte';
   import {
     fullRefreshProjectPrs,
@@ -8,9 +9,12 @@
     refreshProjectPrs,
   } from '$lib/remote/project_prs.remote.js';
   import { projectDisplayName } from '$lib/stores/project.svelte.js';
+  import { useSessionManager } from '$lib/stores/session_state.svelte.js';
+  import { shouldRefreshProjectPrs } from '$lib/utils/pr_update_events.js';
   import type { LayoutProps } from './$types';
 
   let { children, data }: LayoutProps = $props();
+  const sessionManager = useSessionManager();
 
   let projectId = $derived(data.projectId);
   let isAllProjects = $derived(projectId === 'all');
@@ -80,6 +84,20 @@
       }
     }
   }
+
+  onMount(() => {
+    return sessionManager.onEvent((eventName, event) => {
+      if (eventName !== 'pr:updated') {
+        return;
+      }
+
+      if (!shouldRefreshProjectPrs(event, projectId)) {
+        return;
+      }
+
+      getProjectPrs({ projectId }).refresh();
+    });
+  });
 
   let showFetchCta = $derived(!prData?.hasData && !fetchedOnce);
   let hasResults = $derived(

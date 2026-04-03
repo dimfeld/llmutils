@@ -318,6 +318,21 @@ describe('lib/server/session_manager', () => {
     });
   });
 
+  test('emitPrUpdate publishes pr:updated event and skips empty prUrls', () => {
+    const listener = vi.fn();
+    manager.subscribe('pr:updated', listener);
+
+    manager.emitPrUpdate(['https://github.com/example/repo/pull/17'], [12]);
+
+    expect(listener).toHaveBeenCalledWith({
+      prUrls: ['https://github.com/example/repo/pull/17'],
+      projectIds: [12],
+    });
+
+    manager.emitPrUpdate([], [12]);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
   test('formatTunnelMessage passes through unknown structured message types as structured body', () => {
     const message = formatTunnelMessage('conn-1', 9, {
       type: 'structured',

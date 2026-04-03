@@ -17,6 +17,8 @@ const syncPlanPrLinks = vi.fn();
 const ensurePrStatusFresh = vi.fn();
 const refreshPrStatusFromApi = vi.fn();
 const ingestWebhookEvents = vi.fn();
+const mockEmitPrUpdatesForIngestResult = vi.fn();
+const mockSessionManager = { emitPrUpdate: vi.fn() };
 
 vi.mock('$lib/server/init.js', () => ({
   getServerContext: async () => ({
@@ -39,6 +41,14 @@ vi.mock('$common/github/webhook_ingest.js', () => ({
   ingestWebhookEvents,
   formatWebhookIngestErrors: (errors: string[]) =>
     errors.length > 0 ? `Webhook ingestion had issues: ${errors.join('; ')}` : undefined,
+}));
+
+vi.mock('$lib/server/pr_event_utils.js', () => ({
+  emitPrUpdatesForIngestResult: mockEmitPrUpdatesForIngestResult,
+}));
+
+vi.mock('$lib/server/session_context.js', () => ({
+  getSessionManager: () => mockSessionManager,
 }));
 
 describe('pr_status remote functions', () => {
@@ -93,6 +103,8 @@ describe('pr_status remote functions', () => {
     ensurePrStatusFresh.mockReset();
     refreshPrStatusFromApi.mockReset();
     ingestWebhookEvents.mockReset();
+    mockEmitPrUpdatesForIngestResult.mockReset();
+    mockSessionManager.emitPrUpdate.mockReset();
     currentWebhookServerUrl = null;
     ingestWebhookEvents.mockResolvedValue({
       eventsIngested: 0,
@@ -130,6 +142,27 @@ describe('pr_status remote functions', () => {
         title: 'Cached PR',
       },
     });
+  });
+
+  test('refreshPrStatus emits PR update events after webhook ingestion', async () => {
+    currentWebhookServerUrl = 'https://webhooks.example.com';
+    ingestWebhookEvents.mockResolvedValueOnce({
+      eventsIngested: 1,
+      prsUpdated: ['https://github.com/example/repo/pull/1'],
+      errors: [],
+    });
+
+    const { refreshPrStatus } = await import('./pr_status.remote.js');
+
+    await invokeCommand(refreshPrStatus, { planUuid: 'plan-with-prs' });
+
+    expect(mockEmitPrUpdatesForIngestResult).toHaveBeenCalledWith(
+      currentDb,
+      expect.objectContaining({
+        prsUpdated: ['https://github.com/example/repo/pull/1'],
+      }),
+      mockSessionManager
+    );
   });
 
   test('getPrStatus returns cached PR status matched directly from plan URLs when plan_pr is missing', async () => {

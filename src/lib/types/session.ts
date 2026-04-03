@@ -193,6 +193,11 @@ export interface SessionDismissedEvent {
 
 export interface SessionSyncCompleteEvent {}
 
+export interface PrUpdatedEvent {
+  prUrls: string[];
+  projectIds: number[];
+}
+
 export interface SessionClientEventMap {
   'session:list': SessionListEvent;
   'session:sync-complete': SessionSyncCompleteEvent;
@@ -203,6 +208,7 @@ export interface SessionClientEventMap {
   'session:prompt': SessionPromptEvent;
   'session:prompt-cleared': SessionPromptClearedEvent;
   'session:dismissed': SessionDismissedEvent;
+  'pr:updated': PrUpdatedEvent;
 }
 
 export type SessionClientEventName = keyof SessionClientEventMap;

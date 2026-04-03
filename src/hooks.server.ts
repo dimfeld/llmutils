@@ -3,6 +3,7 @@ import process from 'node:process';
 import type { Handle, ServerInit } from '@sveltejs/kit';
 
 import { getServerContext } from '$lib/server/init.js';
+import { emitPrUpdatesForIngestResult } from '$lib/server/pr_event_utils.js';
 import {
   getSessionDiscoveryClient,
   getSessionInitPromise,
@@ -88,7 +89,17 @@ export const init: ServerInit = async () => {
     const sessionManager = existingServer ? getSessionManager() : new SessionManager(db);
     const serverHandle = existingServer ?? startWebSocketServer(sessionManager, config);
     const discoveryClient = existingDiscoveryClient ?? new SessionDiscoveryClient(sessionManager);
-    const webhookPoller = existingWebhookPoller ?? startWebhookPoller(db);
+    const webhookPoller =
+      existingWebhookPoller ??
+      startWebhookPoller(db, {
+        onPrUpdated: (result) => {
+          try {
+            emitPrUpdatesForIngestResult(db, result, sessionManager);
+          } catch (err) {
+            console.warn('[webhook_poller] Failed to emit PR update event', err);
+          }
+        },
+      });
 
     // Store references before await so they are tracked for cleanup on failure.
     if (!existingServer) {

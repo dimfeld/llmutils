@@ -353,4 +353,22 @@ describe('applySessionEvent', () => {
     expect(state.sessions.has(session.connectionId)).toBe(false);
     expect(state.getSelectedSessionId()).toBeNull();
   });
+
+  test('pr:updated leaves the session store unchanged', () => {
+    const session = createSession();
+    const state = createState(session);
+
+    applySessionEvent(
+      'pr:updated',
+      {
+        prUrls: ['https://github.com/example/repo/pull/1'],
+        projectIds: [12],
+      },
+      state
+    );
+
+    expect(state.sessions.get(session.connectionId)).toBe(session);
+    expect(state.getSelectedSessionId()).toBe(session.connectionId);
+    expect(state.getInitialized()).toBe(false);
+  });
 });

@@ -338,6 +338,7 @@ export class SessionManager {
       'session:prompt',
       'session:prompt-cleared',
       'session:dismissed',
+      'pr:updated',
     ];
 
     for (const eventType of eventTypes) {

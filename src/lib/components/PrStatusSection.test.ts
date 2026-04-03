@@ -13,10 +13,17 @@ import PrStatusSection from './PrStatusSection.svelte';
 const mockGetPrStatus = vi.fn();
 const mockRefreshPrStatus = vi.fn();
 const mockFullRefreshPrStatus = vi.fn();
+const sessionManager = {
+  onEvent: vi.fn(() => () => {}),
+};
 vi.mock('$lib/remote/pr_status.remote.js', () => ({
   getPrStatus: (...args: unknown[]) => mockGetPrStatus(...args),
   refreshPrStatus: (...args: unknown[]) => mockRefreshPrStatus(...args),
   fullRefreshPrStatus: (...args: unknown[]) => mockFullRefreshPrStatus(...args),
+}));
+
+vi.mock('$lib/stores/session_state.svelte.js', () => ({
+  useSessionManager: () => sessionManager,
 }));
 
 function makePrStatus(overrides: Partial<PrStatusRow> = {}): PrStatusRow {
@@ -120,6 +127,11 @@ async function renderSection(props: {
 }
 
 describe('PrStatusSection', () => {
+  test('renders with the session manager available for client-side PR subscriptions', async () => {
+    const { body } = await renderSection({ prUrls: [], prStatuses: [] });
+    expect(body).toContain('Pull Requests');
+  });
+
   test('renders refresh and full-refresh controls', async () => {
     mockRefreshPrStatus.mockResolvedValue({ error: undefined });
     mockFullRefreshPrStatus.mockResolvedValue({ error: undefined });

@@ -132,6 +132,7 @@ export interface SessionManagerEvents {
   'session:prompt': { connectionId: string; prompt: ActivePrompt };
   'session:prompt-cleared': { connectionId: string; requestId: string };
   'session:dismissed': { connectionId: string };
+  'pr:updated': { prUrls: string[]; projectIds: number[] };
 }
 
 type SessionEventName = keyof SessionManagerEvents;
@@ -151,6 +152,7 @@ const SESSION_EVENT_NAMES: SessionEventName[] = [
   'session:prompt',
   'session:prompt-cleared',
   'session:dismissed',
+  'pr:updated',
 ];
 
 const NOTIFICATION_SEQ = 0;
@@ -687,6 +689,18 @@ export class SessionManager {
 
   unsubscribe<T extends SessionEventName>(eventName: T, listener: SessionEventListener<T>): void {
     this.eventEmitter.off(eventName, listener);
+  }
+
+  hasPrUpdateListeners(): boolean {
+    return this.eventEmitter.listenerCount('pr:updated') > 0;
+  }
+
+  emitPrUpdate(prUrls: string[], projectIds: number[]): void {
+    if (prUrls.length === 0) {
+      return;
+    }
+
+    this.emit('pr:updated', { prUrls, projectIds });
   }
 
   private emit<T extends SessionEventName>(eventName: T, payload: SessionManagerEvents[T]): void {

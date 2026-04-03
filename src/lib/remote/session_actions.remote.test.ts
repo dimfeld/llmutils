@@ -118,7 +118,10 @@ describe('session remote actions', () => {
       value: true,
     });
 
-    expect(sentMessages).toEqual([{ requestId: 'req-1', type: 'prompt_response', value: true }]);
+    expect(sentMessages).toEqual([
+      { type: 'notification_subscribers_changed', hasSubscribers: false },
+      { requestId: 'req-1', type: 'prompt_response', value: true },
+    ]);
   });
 
   test('sendSessionPromptResponse rejects invalid input shapes', async () => {
@@ -154,7 +157,10 @@ describe('session remote actions', () => {
       content: 'continue',
     });
 
-    expect(sentMessages).toEqual([{ content: 'continue', type: 'user_input' }]);
+    expect(sentMessages).toEqual([
+      { type: 'notification_subscribers_changed', hasSubscribers: false },
+      { content: 'continue', type: 'user_input' },
+    ]);
   });
 
   test('sendSessionUserInput rejects malformed values', async () => {
@@ -180,7 +186,10 @@ describe('session remote actions', () => {
 
     await invokeCommand(endSession, { connectionId });
 
-    expect(sentMessages).toEqual([{ type: 'end_session' }]);
+    expect(sentMessages).toEqual([
+      { type: 'notification_subscribers_changed', hasSubscribers: false },
+      { type: 'end_session' },
+    ]);
   });
 
   test('openTerminal validates input and forwards directory with configured terminal app', async () => {
@@ -264,6 +273,7 @@ describe('session remote actions', () => {
     });
 
     expect(sentMessages).toEqual([
+      { type: 'notification_subscribers_changed', hasSubscribers: false },
       {
         type: 'prompt_response',
         requestId: 'req-prefix-1',

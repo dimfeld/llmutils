@@ -18,6 +18,8 @@ const { ingestWebhookEvents, refreshProjectPrsService, getGitHubUsername, resolv
     getGitHubUsername: vi.fn(),
     resolveGitHubToken: vi.fn(),
   }));
+const mockEmitPrUpdatesForIngestResult = vi.fn();
+const mockSessionManager = { emitPrUpdate: vi.fn() };
 
 vi.mock('$lib/server/init.js', () => ({
   getServerContext: async () => ({
@@ -38,6 +40,14 @@ vi.mock('$common/github/webhook_ingest.js', () => ({
 
 vi.mock('$common/github/project_pr_service.js', () => ({
   refreshProjectPrs: refreshProjectPrsService,
+}));
+
+vi.mock('$lib/server/pr_event_utils.js', () => ({
+  emitPrUpdatesForIngestResult: mockEmitPrUpdatesForIngestResult,
+}));
+
+vi.mock('$lib/server/session_context.js', () => ({
+  getSessionManager: () => mockSessionManager,
 }));
 
 vi.mock('$common/github/user.js', () => ({
@@ -66,6 +76,8 @@ describe('project_prs remote functions', () => {
     refreshProjectPrsService.mockReset();
     getGitHubUsername.mockReset();
     resolveGitHubToken.mockReset();
+    mockEmitPrUpdatesForIngestResult.mockReset();
+    mockSessionManager.emitPrUpdate.mockReset();
 
     ingestWebhookEvents.mockResolvedValue({
       eventsIngested: 1,
@@ -93,6 +105,11 @@ describe('project_prs remote functions', () => {
     const result = await invokeCommand(refreshProjectPrs, { projectId: String(projectId) });
 
     expect(ingestWebhookEvents).toHaveBeenCalledWith(currentDb);
+    expect(mockEmitPrUpdatesForIngestResult).toHaveBeenCalledWith(
+      currentDb,
+      expect.objectContaining({ prsUpdated: [] }),
+      mockSessionManager
+    );
     expect(refreshProjectPrsService).not.toHaveBeenCalled();
     expect(result).toEqual({ newLinks: [] });
   });

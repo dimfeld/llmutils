@@ -111,10 +111,25 @@ Project-wide PR data is managed via remote functions in `src/lib/remote/project_
 
 ### Components
 
-- **`PrStatusSection.svelte`** — PR detail section rendered inside `PlanDetail`. Takes only `planUuid` as a prop and fetches its own data via the `getPrStatus` query. For each linked PR: title as GitHub link, state badge (open/merged/closed/draft), checks summary badge (passing/failing/pending), review decision, labels as colored chips. Expandable sub-sections for individual check runs and reviews. Renders warning banners for invalid PR entries (non-URL strings, issue URLs). Triggers `refreshPrStatus` command on mount which refreshes data (via webhooks or GitHub API depending on configuration) and updates the query automatically. Includes a "Full Refresh from GitHub API" button (visible when `tokenConfigured` is true) that calls `fullRefreshPrStatus` to bypass webhooks — shown in both the populated header and the initial empty/error CTA state.
+- **`PrStatusSection.svelte`** — PR detail section rendered inside `PlanDetail`. Takes only `planUuid` as a prop and fetches its own data via the `getPrStatus` query. For each linked PR: title as GitHub link, state badge (open/merged/closed/draft), checks summary badge (passing/failing/pending), review decision, labels as colored chips. Expandable sub-sections for individual check runs and reviews. Renders warning banners for invalid PR entries (non-URL strings, issue URLs). Triggers `refreshPrStatus` command on mount which refreshes data (via webhooks or GitHub API depending on configuration) and updates the query automatically. Subscribes to `pr:updated` SSE events via `useSessionManager().onEvent()` in `onMount`; auto-refreshes when the event's `prUrls` overlap with the component's explicit PR URLs or auto-linked PR URLs from `prStatuses`. Includes a "Full Refresh from GitHub API" button (visible when `tokenConfigured` is true) that calls `fullRefreshPrStatus` to bypass webhooks — shown in both the populated header and the initial empty/error CTA state.
 - **`PrCheckRunList.svelte`** — Expandable list of individual CI check runs within a PR. Shows name, status/conclusion with color coding, link to details URL. Handles both CheckRun and StatusContext source types.
 - **`PrReviewList.svelte`** — Expandable list of PR reviews. Shows reviewer name, review state (approved/changes requested/commented/pending/dismissed) with appropriate styling.
 - **`PrStatusIndicator.svelte`** — Compact colored dot badge for plan list views showing overall PR health. Green = all checks passing, red = any failing, yellow = pending, gray = no status data. Used in `PlanRow.svelte` and `ActivePlanRow.svelte` when `pullRequests.length > 0`. Status derived from `EnrichedPlan.prSummaryStatus`.
+
+### Push-Based PR Updates via SSE
+
+PR data is automatically pushed to connected browsers via `pr:updated` SSE events, eliminating the need for manual refresh in most cases.
+
+**Server-side flow**: After webhook ingestion (both periodic polling and manual refresh), `emitPrUpdatesForIngestResult()` from `src/lib/server/pr_event_utils.ts` derives affected project IDs from PR URLs (via `getProjectIdsForPrUrls()`, which parses owner/repo, constructs repository IDs, and queries the project table) and calls `sessionManager.emitPrUpdate(prUrls, projectIds)`. The emission is guarded by `eventEmitter.listenerCount('pr:updated')` to skip DB lookups when no SSE clients are connected. SSE emission failures are logged with `console.warn` but don't fail the parent operation.
+
+**Client-side handling**: Components subscribe via `useSessionManager().onEvent()` in `onMount` and check for relevant overlap:
+
+- **`PrStatusSection`** checks if the event's `prUrls` overlap with its explicit PR URLs or auto-linked PR URLs from `prStatuses`, then calls `getPrStatus({ planUuid }).refresh()`.
+- **`/prs/+layout.svelte`** checks if `event.projectIds` includes the current `projectId` (or always refreshes for "all" projects), then calls `getProjectPrs({ projectId }).refresh()`.
+
+Shared overlap utilities live in `src/lib/utils/pr_update_events.ts`: `hasRelevantPrUpdate()` for URL set intersection and `shouldRefreshProjectPrs()` for project ID matching.
+
+**Design note**: `eventEmitter.listenerCount('pr:updated')` is used instead of `sseSubscriberCount` to guard DB lookups, because `sseSubscriberCount` is incremented after event subscriptions are attached in `createSessionEventsResponse()`, creating a race window where events could be dropped during SSE setup.
 
 ## Plan Task Counts
 
@@ -185,7 +200,7 @@ HTTP POST to `/messages` on port 8123 creates lightweight "notification" session
 
 Browser clients receive real-time updates via SSE and interact with sessions through remote `command()` functions:
 
-- **SSE endpoint** (`src/routes/api/sessions/events/+server.ts`): `GET` returns a `ReadableStream` with SSE headers. On connect, calls `registerSSESubscriber()` and sends `session:list` snapshot, replays any buffered events, then sends `session:sync-complete` to signal that initial state is fully loaded. After sync, streams live events (`session:new`, `session:update`, `session:disconnect`, `session:message`, `session:prompt`, `session:prompt-cleared`, `session:dismissed`). Uses subscribe-before-snapshot pattern with buffering to avoid lost-event race conditions. On stream teardown, calls `unregisterSSESubscriber()` to update agent notification suppression state.
+- **SSE endpoint** (`src/routes/api/sessions/events/+server.ts`): `GET` returns a `ReadableStream` with SSE headers. On connect, calls `registerSSESubscriber()` and sends `session:list` snapshot, replays any buffered events, then sends `session:sync-complete` to signal that initial state is fully loaded. After sync, streams live events (`session:new`, `session:update`, `session:disconnect`, `session:message`, `session:prompt`, `session:prompt-cleared`, `session:dismissed`, `pr:updated`). Uses subscribe-before-snapshot pattern with buffering to avoid lost-event race conditions. On stream teardown, calls `unregisterSSESubscriber()` to update agent notification suppression state.
 
 #### SSE Implementation Gotchas
 
@@ -210,7 +225,7 @@ Browser clients receive real-time updates via SSE and interact with sessions thr
 - SSE subscribes before taking snapshot to avoid lost-event race window, with event buffering during snapshot delivery
 - `sendPromptResponse` validates requestId against activePrompt and clears prompt on success — prevents duplicate responses from multiple browser tabs
 - SSE enqueue calls are wrapped in try/catch for resilience against closed streams
-- **Webhook poller** (`src/lib/server/webhook_poller.ts`): Periodic ingestion of webhook events via `ingestWebhookEvents(db)`. Enabled by `TIM_WEBHOOK_POLL_INTERVAL` env var (seconds, minimum 5, clamped to max 86400). First poll is delayed 15 seconds after startup to avoid churn during HMR reloads. Uses an in-flight guard to skip overlapping ticks. Requires `TIM_WEBHOOK_SERVER_URL` and `WEBHOOK_INTERNAL_API_TOKEN` to also be set. Returns `null` (no-op) when not configured.
+- **Webhook poller** (`src/lib/server/webhook_poller.ts`): Periodic ingestion of webhook events via `ingestWebhookEvents(db)`. Enabled by `TIM_WEBHOOK_POLL_INTERVAL` env var (seconds, minimum 5, clamped to max 86400). First poll is delayed 15 seconds after startup to avoid churn during HMR reloads. Uses an in-flight guard to skip overlapping ticks. Requires `TIM_WEBHOOK_SERVER_URL` and `WEBHOOK_INTERNAL_API_TOKEN` to also be set. Returns `null` (no-op) when not configured. Accepts an `onPrUpdated` callback invoked after successful ingestion with non-empty `prsUpdated`; wired in `hooks.server.ts` to emit `pr:updated` SSE events via `emitPrUpdatesForIngestResult()` from `src/lib/server/pr_event_utils.ts`.
 - **Shutdown**: `hooks.server.ts` registers SIGTERM/SIGINT handlers that stop the webhook poller, discovery client, and WebSocket server, then call `process.exit(0)` for clean production shutdown. HMR-safe cleanup uses `Symbol.for` singleton pattern. Custom signal handlers suppress default Node.js termination, so explicit `process.exit()` is required.
 
 ### Client-Side Session Store
