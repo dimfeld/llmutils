@@ -88,12 +88,14 @@ export const convertReviewIssueToTask = command(
 export const clearReviewIssues = command(planUuidSchema, async ({ planUuid }) => {
   const { db } = await getServerContext();
 
-  const plan = getPlanByUuid(db, planUuid);
-  if (!plan) {
-    error(404, 'Plan not found');
-  }
+  db.transaction(() => {
+    const plan = getPlanByUuid(db, planUuid);
+    if (!plan) {
+      error(404, 'Plan not found');
+    }
 
-  db.prepare(
-    `UPDATE plan SET review_issues = NULL, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
-  ).run(planUuid);
+    db.prepare(
+      `UPDATE plan SET review_issues = NULL, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
+    ).run(planUuid);
+  }).immediate();
 });
