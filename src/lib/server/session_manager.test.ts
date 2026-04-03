@@ -78,11 +78,11 @@ describe('lib/server/session_manager', () => {
         changes: [{ path: 'src/file.ts', kind: 'updated' }],
         status: 'completed',
       },
-      { type: 'command_exec', timestamp, command: 'bun test', cwd: '/repo' },
+      { type: 'command_exec', timestamp, command: 'bun run test', cwd: '/repo' },
       {
         type: 'command_result',
         timestamp,
-        command: 'bun test',
+        command: 'bun run test',
         cwd: '/repo',
         exitCode: 0,
         stdout: 'ok',

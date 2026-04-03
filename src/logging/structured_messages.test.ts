@@ -41,7 +41,7 @@ describe('structured_messages', () => {
       { type: 'file_write', timestamp, path: 'src/a.ts', lineCount: 3 },
       { type: 'file_edit', timestamp, path: 'src/a.ts', diff: '@@' },
       { type: 'file_change_summary', timestamp, changes: [{ path: 'src/a.ts', kind: 'updated' }] },
-      { type: 'command_exec', timestamp, command: 'bun test' },
+      { type: 'command_exec', timestamp, command: 'bun run test' },
       { type: 'command_result', timestamp, exitCode: 0 },
       { type: 'review_start', timestamp, executor: 'codex' },
       {
@@ -98,7 +98,7 @@ describe('structured_messages', () => {
     const message: StructuredMessage = {
       type: 'command_result',
       timestamp: '2026-02-08T00:00:00.000Z',
-      command: 'bun test',
+      command: 'bun run test',
       exitCode: 0,
       stdout: 'ok',
     };

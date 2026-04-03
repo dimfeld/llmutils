@@ -42,7 +42,7 @@ describe('message_formatting', () => {
       [{ type: 'file_write', path: 'a.ts', lineCount: 1 }, 'fileChange'],
       [{ type: 'file_edit', path: 'a.ts', diff: '+ test' }, 'fileChange'],
       [{ type: 'file_change_summary', changes: [] }, 'fileChange'],
-      [{ type: 'command_exec', command: 'bun test' }, 'command'],
+      [{ type: 'command_exec', command: 'bun run test' }, 'command'],
       [{ type: 'command_result', exitCode: 0 }, 'command'],
       [{ type: 'llm_status', status: 'running' }, 'progress'],
       [{ type: 'todo_update', items: [] }, 'progress'],

@@ -1,6 +1,4 @@
 [test]
-preload = ["./test-preload.ts"]
-# Ignore sveltekit tests which need to run in vitest
-# eventually we'll just move everything to vitest so we can run all tests at once.
-pathIgnorePatterns = ["src/lib/**", "src/routes/**"]
+# Don't run any regular tests, user should be using `bun run test`
+pathIgnorePatterns = ["src/**"]
 

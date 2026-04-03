@@ -24,7 +24,7 @@ describe('codex formatter structured mapping', () => {
         type: 'item.completed',
         item: {
           item_type: 'command_execution',
-          command: 'bun test',
+          command: 'bun run test',
           cwd: '/repo',
           exit_code: 2,
           stdout: 'ok',
@@ -37,7 +37,7 @@ describe('codex formatter structured mapping', () => {
     expect(result.structured).toEqual(
       expect.objectContaining({
         type: 'command_result',
-        command: 'bun test',
+        command: 'bun run test',
         exitCode: 2,
         stdout: 'ok',
         stderr: 'fail',

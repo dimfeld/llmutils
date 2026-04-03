@@ -191,7 +191,7 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     }));
 
     const failureRaw =
-      'FAILED: Verifier detected failing checks\n\nRequirements:\n- Ensure tests pass\nProblems:\n- bun test failed\nPossible solutions:\n- Investigate test logs';
+      'FAILED: Verifier detected failing checks\n\nRequirements:\n- Ensure tests pass\nProblems:\n- bun run test failed\nPossible solutions:\n- Investigate test logs';
     vi.doMock('./claude_code/format.ts', () => ({
       formatJsonMessage: vi.fn((_line: string) => ({
         type: 'assistant',

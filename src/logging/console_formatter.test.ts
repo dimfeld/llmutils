@@ -115,23 +115,23 @@ describe('console_formatter', () => {
     expect(fileChangeSummary).toContain('b.ts');
     expect(fileChangeSummary).toContain('c.ts');
 
-    const commandExec = format({ type: 'command_exec', timestamp, command: 'bun test' });
+    const commandExec = format({ type: 'command_exec', timestamp, command: 'bun run test' });
     expect(commandExec).toContain('Exec Begin');
-    expect(commandExec).toContain('bun test');
+    expect(commandExec).toContain('bun run test');
 
     const commandResult = format({
       type: 'command_result',
       timestamp,
-      command: 'bun test',
+      command: 'bun run test',
       cwd: '/tmp/project',
       exitCode: 1,
       stderr: 'fail',
     });
     expect(commandResult).toContain('Exit Code: 1');
-    expect(commandResult).toContain('bun test');
+    expect(commandResult).toContain('bun run test');
     expect(commandResult).toContain('/tmp/project');
     expect(commandResult).toContain('fail');
-    expect(commandResult.match(/bun test/g)?.length).toBe(1);
+    expect(commandResult.match(/bun run test/g)?.length).toBe(1);
   });
 
   it('formats review and workflow messages', () => {
@@ -347,7 +347,7 @@ describe('console_formatter', () => {
     const result = format({
       type: 'command_result',
       timestamp,
-      command: 'bun test',
+      command: 'bun run test',
       exitCode: 0,
       stdout: longStdout,
       stderr: longStderr,

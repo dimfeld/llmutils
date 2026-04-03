@@ -37,7 +37,7 @@ describe('structured_message_builders', () => {
 
   test('builds command_result payload with trimmed text', () => {
     const message = buildCommandResult(timestamp, {
-      command: ' bun test ',
+      command: ' bun run test ',
       exitCode: 1,
       stdout: ' ok ',
       stderr: ' fail ',
@@ -46,7 +46,7 @@ describe('structured_message_builders', () => {
     expect(message).toEqual({
       type: 'command_result',
       timestamp,
-      command: 'bun test',
+      command: 'bun run test',
       exitCode: 1,
       stdout: 'ok',
       stderr: 'fail',

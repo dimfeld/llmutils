@@ -30,7 +30,7 @@ bun run format
 bun run test
 ```
 
-Use `bun run test` for repository test runs. Do not use `bun test` directly.
+Use `bun run test` for repository test runs. Do not use `bun test` directly since it runs the wrong test runner.
 
 ## Repository Structure
 
