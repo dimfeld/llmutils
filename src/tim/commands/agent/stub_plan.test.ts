@@ -106,6 +106,35 @@ describe('executeStubPlan', () => {
     expect(removePlanAssignment).not.toHaveBeenCalled();
   });
 
+  test('saves review issues and exits when terminalInput is false after final review', async () => {
+    handleReviewCommandSpy.mockResolvedValueOnce({ tasksAppended: 0, issuesSaved: 2 });
+
+    const { executeStubPlan } = await import('./stub_plan.js');
+
+    const result = await executeStubPlan({
+      config: { postApplyCommands: [], planAutocompleteStatus: 'done' } as any,
+      baseDir: tempDir,
+      planFilePath: planFile,
+      planData: await readPlanFile(planFile),
+      executor: { execute: executorExecuteSpy, filePathPrefix: '' } as any,
+      commit: false,
+      finalReview: true,
+      terminalInput: false,
+    });
+
+    const updatedPlan = await readPlanFile(planFile);
+
+    expect(result).toEqual({ issuesSaved: 2 });
+    expect(handleReviewCommandSpy).toHaveBeenCalledWith(
+      planFile,
+      { cwd: tempDir, saveIssues: true, noAutofix: true },
+      expect.any(Object)
+    );
+    expect(updatedPlan.status).toBe('needs_review');
+    expect(checkAndMarkParentDoneSpy).not.toHaveBeenCalled();
+    expect(removePlanAssignment).not.toHaveBeenCalled();
+  });
+
   test('marks stub plans as needs_review by default after execution', async () => {
     const { executeStubPlan } = await import('./stub_plan.js');
 

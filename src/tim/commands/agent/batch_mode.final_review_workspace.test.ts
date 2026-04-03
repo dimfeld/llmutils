@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import yaml from 'yaml';
+import { promptConfirm } from '../../../common/input.js';
 
 const handleReviewCommandSpy = vi.fn(async () => ({ tasksAppended: 0 }));
 const executorExecuteSpy = vi.fn(async () => undefined);
@@ -168,5 +169,40 @@ describe('executeBatchMode final review workspace', () => {
       { cwd: tempDir },
       expect.any(Object)
     );
+  });
+
+  test('saves review issues and leaves the plan in needs_review when terminalInput is false', async () => {
+    handleReviewCommandSpy.mockResolvedValueOnce({ tasksAppended: 0, issuesSaved: 2 });
+
+    executorExecuteSpy.mockImplementationOnce(async () => {
+      const content = await fs.readFile(planFile, 'utf-8');
+      const data = yaml.parse(content);
+      data.tasks[1].done = true;
+      data.tasks[1].steps[0].done = true;
+      data.updatedAt = new Date().toISOString();
+      await fs.writeFile(planFile, yaml.stringify(data));
+    });
+
+    const { executeBatchMode } = await import('./batch_mode.js');
+
+    await executeBatchMode({
+      currentPlanFile: planFile,
+      config: { postApplyCommands: [], planAutocompleteStatus: 'done' } as any,
+      executor: { execute: executorExecuteSpy, filePathPrefix: '' } as any,
+      baseDir: tempDir,
+      finalReview: true,
+      configPath: '/tmp/test-config.yml',
+      terminalInput: false,
+    });
+
+    const updatedPlan = yaml.parse(await fs.readFile(planFile, 'utf-8'));
+
+    expect(handleReviewCommandSpy).toHaveBeenCalledWith(
+      planFile,
+      { cwd: tempDir, saveIssues: true, noAutofix: true },
+      expect.any(Object)
+    );
+    expect(updatedPlan.status).toBe('needs_review');
+    expect(promptConfirm).not.toHaveBeenCalled();
   });
 });

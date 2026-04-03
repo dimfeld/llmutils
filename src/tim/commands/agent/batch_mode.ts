@@ -59,6 +59,7 @@ export async function executeBatchMode(
     applyLessons = false,
     finalReview,
     configPath,
+    terminalInput,
   }: {
     currentPlanFile: string;
     config: TimConfig;
@@ -72,6 +73,7 @@ export async function executeBatchMode(
     applyLessons?: boolean;
     finalReview?: boolean;
     configPath?: string;
+    terminalInput?: boolean;
   },
   summaryCollector?: SummaryCollector
 ) {
@@ -430,6 +432,7 @@ Available tasks:\n\n${taskDescriptions}`,
           finalReview === false || (initialCompletedTaskCount === 0 && iteration === 1);
         let planStillCompleteAfterReview = true;
         if (!shouldSkipFinalReview) {
+          const isNonInteractiveReview = terminalInput === false;
           sendStructured({
             type: 'workflow_progress',
             timestamp: timestamp(),
@@ -439,14 +442,19 @@ Available tasks:\n\n${taskDescriptions}`,
           try {
             const reviewResult = await handleReviewCommand(
               currentPlanFile,
-              { cwd: baseDir },
+              isNonInteractiveReview
+                ? { cwd: baseDir, saveIssues: true, noAutofix: true }
+                : { cwd: baseDir },
               {
                 parent: { opts: () => ({ config: configPath }) },
               }
             );
 
-            // If tasks were appended, ask if user wants to continue
-            if (reviewResult?.tasksAppended && reviewResult.tasksAppended > 0) {
+            if (isNonInteractiveReview && (reviewResult?.issuesSaved ?? 0) > 0) {
+              planStillCompleteAfterReview = false;
+              await setPlanStatusById(updatedPlanData.id, 'needs_review', baseDir, currentPlanFile);
+            } else if (reviewResult?.tasksAppended && reviewResult.tasksAppended > 0) {
+              // If tasks were appended, ask if user wants to continue
               const planIdStr = updatedPlanData.id ? ` ${updatedPlanData.id}` : '';
 
               // The user may edit the plan during the prompt below, so make sure the DB is up to date here.

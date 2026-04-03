@@ -14,6 +14,7 @@ import { handleReviewCommand } from '../review.js';
 
 export interface StubPlanExecutionResult {
   tasksAppended?: number;
+  issuesSaved?: number;
 }
 
 export async function executeStubPlan({
@@ -27,6 +28,7 @@ export async function executeStubPlan({
   executionMode = 'normal',
   finalReview,
   configPath,
+  terminalInput,
 }: {
   config: TimConfig;
   baseDir: string;
@@ -38,6 +40,7 @@ export async function executeStubPlan({
   executionMode?: 'normal' | 'simple' | 'tdd';
   finalReview?: boolean;
   configPath?: string;
+  terminalInput?: boolean;
 }): Promise<StubPlanExecutionResult> {
   // Update plan status to in_progress
   if (!isShuttingDown()) {
@@ -126,15 +129,26 @@ export async function executeStubPlan({
   }
 
   if (finalReview !== false) {
+    const isNonInteractiveReview = terminalInput === false;
     log(boldMarkdownHeaders('\n## Running Final Review\n'));
     try {
       const reviewResult = await handleReviewCommand(
         planFilePath,
-        { cwd: baseDir },
+        isNonInteractiveReview
+          ? { cwd: baseDir, saveIssues: true, noAutofix: true }
+          : { cwd: baseDir },
         {
           parent: { opts: () => ({ config: configPath }) },
         }
       );
+
+      if (isNonInteractiveReview && (reviewResult.issuesSaved ?? 0) > 0) {
+        if (isShuttingDown()) {
+          return {};
+        }
+        await setPlanStatusById(planData.id, 'needs_review', baseDir, planFilePath);
+        return { issuesSaved: reviewResult.issuesSaved };
+      }
 
       if (reviewResult.tasksAppended > 0) {
         if (isShuttingDown()) {

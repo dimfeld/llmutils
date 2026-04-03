@@ -4,8 +4,13 @@
 
   import type { PlanDetail } from '$lib/server/db_queries.js';
   import { STATUS_ORDER_MAP } from '$lib/utils/plan_status.js';
-  import { afterNavigate } from '$app/navigation';
+  import { afterNavigate, invalidateAll } from '$app/navigation';
   import { startGenerate, startAgent, startChat } from '$lib/remote/plan_actions.remote.js';
+  import {
+    removeReviewIssue,
+    convertReviewIssueToTask,
+    clearReviewIssues,
+  } from '$lib/remote/review_issue_actions.remote.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import StatusBadge from './StatusBadge.svelte';
   import PriorityBadge from './PriorityBadge.svelte';
@@ -88,6 +93,47 @@
   let startedSuccessfully = $state(false);
   let errorMessage: string | null = $state(null);
   let successMessage: { text: string; connectionId?: string } | null = $state(null);
+  let reviewIssueSubmitting: number | 'clear' | null = $state(null);
+
+  async function handleRemoveReviewIssue(index: number) {
+    if (reviewIssueSubmitting !== null) return;
+    reviewIssueSubmitting = index;
+    try {
+      await removeReviewIssue({ planUuid: plan.uuid, issueIndex: index });
+      await invalidateAll();
+    } catch (err) {
+      toast.error(`Failed to remove issue: ${(err as Error).message}`);
+    } finally {
+      reviewIssueSubmitting = null;
+    }
+  }
+
+  async function handleConvertToTask(index: number) {
+    if (reviewIssueSubmitting !== null) return;
+    reviewIssueSubmitting = index;
+    try {
+      await convertReviewIssueToTask({ planUuid: plan.uuid, issueIndex: index });
+      await invalidateAll();
+    } catch (err) {
+      toast.error(`Failed to convert issue to task: ${(err as Error).message}`);
+    } finally {
+      reviewIssueSubmitting = null;
+    }
+  }
+
+  async function handleClearReviewIssues() {
+    if (reviewIssueSubmitting !== null) return;
+    if (!confirm('Clear all review issues? This cannot be undone.')) return;
+    reviewIssueSubmitting = 'clear';
+    try {
+      await clearReviewIssues({ planUuid: plan.uuid });
+      await invalidateAll();
+    } catch (err) {
+      toast.error(`Failed to clear issues: ${(err as Error).message}`);
+    } finally {
+      reviewIssueSubmitting = null;
+    }
+  }
 
   afterNavigate(({ from, to }) => {
     if (from && to && from.url.pathname !== to.url.pathname) {
@@ -96,6 +142,7 @@
       startingChat = false;
       chatDialogOpen = false;
       startedSuccessfully = false;
+      reviewIssueSubmitting = null;
       clearStartedTimeout();
       errorMessage = null;
       successMessage = null;
@@ -643,9 +690,19 @@
   <!-- Review Issues -->
   {#if plan.reviewIssues && plan.reviewIssues.length > 0}
     <div>
-      <h3 class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-        Review Issues ({plan.reviewIssues.length})
-      </h3>
+      <div class="mb-2 flex items-center justify-between">
+        <h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+          Review Issues ({plan.reviewIssues.length})
+        </h3>
+        <button
+          type="button"
+          onclick={handleClearReviewIssues}
+          disabled={reviewIssueSubmitting !== null}
+          class="rounded px-2 py-0.5 text-xs text-muted-foreground hover:bg-red-100 hover:text-red-700 disabled:opacity-50 dark:hover:bg-red-950/50 dark:hover:text-red-400"
+        >
+          {reviewIssueSubmitting === 'clear' ? 'Clearing...' : 'Clear All'}
+        </button>
+      </div>
       <ul class="space-y-2">
         {#each plan.reviewIssues as issue, i (i)}
           {@const severityClass =
@@ -682,17 +739,66 @@
                   {issue.file}{issue.line !== undefined ? `:${issue.line}` : ''}
                 </span>
               {/if}
-              <button
-                type="button"
-                onclick={() => copyToClipboard(issueCopyText, issueCopyId)}
-                class="ml-auto shrink-0 rounded p-0.5 text-muted-foreground transition-opacity hover:bg-black/10 hover:text-foreground dark:hover:bg-white/10 {copiedId ===
-                issueCopyId
-                  ? 'opacity-100'
-                  : 'opacity-0 group-hover:opacity-100'}"
-                aria-label="Copy issue"
-                title="Copy issue"
-              >
-                {#if copiedId === issueCopyId}
+              <div class="ml-auto flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  onclick={() => handleConvertToTask(i)}
+                  disabled={reviewIssueSubmitting !== null}
+                  class="rounded px-1 py-0.5 text-xs text-muted-foreground hover:bg-blue-100 hover:text-blue-700 disabled:opacity-50 dark:hover:bg-blue-950/50 dark:hover:text-blue-400"
+                  aria-label="Convert to task"
+                  title="Convert to task"
+                >
+                  {reviewIssueSubmitting === i ? '...' : '→ Task'}
+                </button>
+                <button
+                  type="button"
+                  onclick={() => copyToClipboard(issueCopyText, issueCopyId)}
+                  class="rounded p-0.5 text-muted-foreground transition-opacity hover:bg-black/10 hover:text-foreground dark:hover:bg-white/10 {copiedId ===
+                  issueCopyId
+                    ? 'opacity-100'
+                    : 'opacity-0 group-hover:opacity-100'}"
+                  aria-label="Copy issue"
+                  title="Copy issue"
+                >
+                  {#if copiedId === issueCopyId}
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      class="text-green-600 dark:text-green-400"
+                      ><polyline points="20 6 9 17 4 12" /></svg
+                    >
+                  {:else}
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      ><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path
+                        d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"
+                      /></svg
+                    >
+                  {/if}
+                </button>
+                <button
+                  type="button"
+                  onclick={() => handleRemoveReviewIssue(i)}
+                  disabled={reviewIssueSubmitting !== null}
+                  class="rounded p-0.5 text-muted-foreground hover:bg-red-100 hover:text-red-700 disabled:opacity-50 dark:hover:bg-red-950/50 dark:hover:text-red-400"
+                  aria-label="Dismiss issue"
+                  title="Dismiss issue"
+                >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     width="12"
@@ -702,27 +808,10 @@
                     stroke="currentColor"
                     stroke-width="2"
                     stroke-linecap="round"
-                    stroke-linejoin="round"
-                    class="text-green-600 dark:text-green-400"
-                    ><polyline points="20 6 9 17 4 12" /></svg
+                    stroke-linejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg
                   >
-                {:else}
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="12"
-                    height="12"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    ><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path
-                      d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"
-                    /></svg
-                  >
-                {/if}
-              </button>
+                </button>
+              </div>
             </div>
             <p class="mt-1 text-foreground">{issue.content}</p>
             {#if issue.suggestion}

@@ -907,6 +907,7 @@ describe('handleReviewCommand error handling', () => {
     // Should complete without error but not call executor
     await expect(handleReviewCommand(planFile, {}, mockCommand)).resolves.toEqual({
       tasksAppended: 0,
+      issuesSaved: 0,
     });
   });
 

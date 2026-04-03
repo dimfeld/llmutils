@@ -60,6 +60,8 @@ planAutocompleteStatus: done # default: needs_review
 
 Explicit status changes via `tim set <id> --status done` always go directly to `done` regardless of this setting.
 
+When the agent is launched from the web UI (with `--no-terminal-input`), the final review always exits automatically after completion. If the review found issues, they are saved as `reviewIssues` on the plan and the status is set to `needs_review`. The user can then triage review issues from the web UI and re-run the agent to continue.
+
 ## PR Status Monitoring
 
 `tim pr` is a subcommand namespace for GitHub PR operations:
@@ -210,7 +212,7 @@ The interface is organized around projects, with four tabs per project:
 - **Sessions** — real-time monitoring of tim agent processes with live message transcripts, prompt interaction (confirm/input/select/checkbox/prefix_select), and free-form user input. For plan-associated sessions (generate, agent, chat), a split-pane view shows the live plan file content alongside the message stream, updating in real-time as the agent modifies the plan.
 - **Active Work** — dashboard of current work per project showing workspaces (with Primary/Auto/Locked/Available status badges) and active plans (in_progress + blocked). Workspaces are filtered to "recently active" by default (locked, primary, or updated within 48 hours) with a toggle to show all. Clicking a plan shows full detail in the right pane.
 - **Pull Requests** — project-wide view of open GitHub PRs relevant to the user (authored or reviewing), with automatic plan-PR linking based on branch name matching, webhook-first refresh (when configured), and PR detail with checks, reviews, and labels. A "Full Refresh from GitHub API" button provides an escape hatch when webhook data is stale or missing.
-- **Plans** — browse, filter, search, and inspect plans with two-column layout (list + detail), status/priority badges, collapsible status groups, and clickable dependency navigation
+- **Plans** — browse, filter, search, and inspect plans with two-column layout (list + detail), status/priority badges, collapsible status groups, and clickable dependency navigation. Review issues on a plan can be managed directly: dismiss individual issues, convert them into plan tasks, or clear all issues at once.
 
 Navigation uses route-based project selection at `/projects/{projectId}/{tab}`, with cookie persistence to remember the last-selected project. The home page redirects to the most recently used project. On all tabs, pressing **Option+Down** (Alt+Down) / **Option+Up** (Alt+Up) navigates to the next/previous item in the list, respecting collapsed groups and active filters. Global keyboard shortcuts are also available: **Ctrl+/** focuses the search input, and **Ctrl+1/2/3/4** switches between the Sessions, Active Work, Pull Requests, and Plans tabs.
 

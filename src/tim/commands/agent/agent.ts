@@ -32,7 +32,7 @@ import {
 } from '../../executors/index.js';
 import type { ExecutorCommonOptions } from '../../executors/types.js';
 import type { PlanSchema } from '../../planSchema.js';
-import { readPlanFile, writePlanFile } from '../../plans.js';
+import { readPlanFile, setPlanStatusById, writePlanFile } from '../../plans.js';
 import { findNextActionableItem } from '../../plans/find_next.js';
 import { markStepDone, markTaskDone } from '../../plans/mark_done.js';
 import { prepareNextStep } from '../../plans/prepare_step.js';
@@ -443,6 +443,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
     const executor = options.simple
       ? buildExecutorAndLog(executorName, sharedExecutorOptions, config, { simpleMode: true })
       : buildExecutorAndLog(executorName, sharedExecutorOptions, config);
+    const isNonInteractiveReview = terminalInputEnabled === false;
     const executionMode: 'normal' | 'simple' | 'tdd' = tddModeEnabled
       ? 'tdd'
       : simpleModeEnabled
@@ -528,6 +529,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
           executionMode,
           finalReview: options.finalReview,
           configPath: globalCliOptions.config,
+          terminalInput: terminalInputEnabled,
         });
 
         if (stubResult.tasksAppended && stubResult.tasksAppended > 0) {
@@ -539,6 +541,8 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
               default: true,
             });
           }
+        } else if (isNonInteractiveReview && (stubResult.issuesSaved ?? 0) > 0) {
+          continueAfterStubPlan = false;
         }
       } catch (err) {
         error('Direct execution failed:', err);
@@ -570,6 +574,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
             applyLessons: options.applyLessons,
             finalReview: options.finalReview,
             configPath: globalCliOptions.config,
+            terminalInput: terminalInputEnabled,
           },
           summaryEnabled ? summaryCollector : undefined
         );
@@ -843,14 +848,31 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
               try {
                 const reviewResult = await handleReviewCommand(
                   currentPlanFile,
-                  { cwd: currentBaseDir },
+                  isNonInteractiveReview
+                    ? { cwd: currentBaseDir, saveIssues: true, noAutofix: true }
+                    : { cwd: currentBaseDir },
                   {
                     parent: { opts: () => ({ config: globalCliOptions.config }) },
                   }
                 );
 
-                // If tasks were appended, ask if user wants to continue
-                if (reviewResult?.tasksAppended && reviewResult.tasksAppended > 0) {
+                if (isNonInteractiveReview && (reviewResult?.issuesSaved ?? 0) > 0) {
+                  const updatedPlanData = await readPlanFile(currentPlanFile);
+                  if (typeof updatedPlanData.id === 'number') {
+                    await setPlanStatusById(
+                      updatedPlanData.id,
+                      'needs_review',
+                      currentBaseDir,
+                      currentPlanFile
+                    );
+                  } else {
+                    warn(
+                      `Review issues saved but plan has no numeric ID — status not updated to needs_review`
+                    );
+                  }
+                  planStillCompleteAfterReview = false;
+                } else if (reviewResult?.tasksAppended && reviewResult.tasksAppended > 0) {
+                  // If tasks were appended, ask if user wants to continue
                   // Read the updated plan to get the plan ID
                   const updatedPlanData = await readPlanFile(currentPlanFile);
                   const planIdStr = updatedPlanData.id ? ` ${updatedPlanData.id}` : '';
