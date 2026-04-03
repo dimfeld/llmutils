@@ -7,7 +7,7 @@
 </script>
 
 <div class="flex h-full min-h-0 flex-col overflow-y-auto bg-gray-900 p-4 text-sm text-gray-200">
-  {#if renderedContent !== null}
+  {#if renderedContent}
     <pre
       class="plan-content font-mono leading-6"
       aria-label="Plan content">{@html renderedContent}</pre>

@@ -38,14 +38,10 @@ export function watchPlanFile(
   let closed = false;
   let lastContent: string | null = null;
 
-  async function emitCurrentContent(): Promise<void> {
-    if (closed) {
-      return;
-    }
-
+  async function readAndEmit(): Promise<void> {
     try {
       const nextContent = stripPlanFrontmatter(await Bun.file(filePath).text());
-      if (closed || nextContent === null || nextContent === lastContent) {
+      if (nextContent === null || nextContent === lastContent) {
         return;
       }
 
@@ -59,6 +55,13 @@ export function watchPlanFile(
 
       warn(`Failed to read watched plan file ${filePath}: ${err as Error}`);
     }
+  }
+
+  async function emitCurrentContent(): Promise<void> {
+    if (closed) {
+      return;
+    }
+    await readAndEmit();
   }
 
   function scheduleEmit(): void {
@@ -116,13 +119,10 @@ export function watchPlanFile(
       stopWatcher();
     },
     async closeAndFlush() {
-      if (debounceTimer) {
-        clearTimeout(debounceTimer);
-        debounceTimer = null;
-      }
-      // Emit final content before closing
-      await emitCurrentContent();
+      // Stop the watcher first to prevent concurrent emissions
       stopWatcher();
+      // Then do one final read to capture any pending content
+      await readAndEmit();
     },
   };
 }

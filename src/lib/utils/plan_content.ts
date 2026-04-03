@@ -9,10 +9,17 @@ function escapeHtml(value: string): string {
 
 /** Apply inline color spans for bold and inline code within an already-escaped line. */
 function applyInlineSpans(escaped: string): string {
-  // Inline code: `text` → <span class="plan-inline-code">`text`</span>
-  escaped = escaped.replace(/`([^`]+)`/g, '<span class="plan-inline-code">`$1`</span>');
+  // Extract code spans first to protect them from bold formatting
+  const codeSpans: string[] = [];
+  escaped = escaped.replace(/`([^`]+)`/g, (_match, inner) => {
+    const index = codeSpans.length;
+    codeSpans.push(`<span class="plan-inline-code">\`${inner}\`</span>`);
+    return `\x00CODE${index}\x00`;
+  });
   // Bold: **text** → <span class="plan-bold">**text**</span>
   escaped = escaped.replace(/\*\*([^*]+)\*\*/g, '<span class="plan-bold">**$1**</span>');
+  // Restore code spans
+  escaped = escaped.replace(/\x00CODE(\d+)\x00/g, (_match, index) => codeSpans[Number(index)]);
   return escaped;
 }
 

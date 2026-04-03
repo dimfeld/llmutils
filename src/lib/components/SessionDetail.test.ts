@@ -137,8 +137,8 @@ describe('SessionDetail', () => {
     const { body } = await render(SessionDetail, { props: { session } });
 
     expect(body).toContain('Waiting for plan content...');
-    expect(body).toContain('class="flex min-h-0 flex-1 flex-row"');
-    expect(body).toContain('class="w-1/2 min-w-0 border-r border-border"');
+    expect(body).toContain('flex-col lg:flex-row');
+    expect(body).toContain('lg:w-1/2');
   });
 
   test('renders streamed plan content when the session has a plan', async () => {

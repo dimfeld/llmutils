@@ -364,11 +364,14 @@
   {/snippet}
 
   {#if showPlanPane}
-    <div class="flex min-h-0 flex-1 flex-row">
-      <div class="w-1/2 min-w-0 border-r border-border">
+    <div class="flex min-h-0 flex-1 flex-col lg:flex-row">
+      <div
+        class="min-h-0 min-w-0 border-b border-border lg:w-1/2 lg:border-r lg:border-b-0"
+        style="flex: 1 1 0%;"
+      >
         <PlanContentPane content={session.planContent} />
       </div>
-      <div class="flex w-1/2 min-w-0 flex-col">
+      <div class="flex min-h-0 min-w-0 flex-col lg:w-1/2" style="flex: 1 1 0%;">
         {@render messagesPane()}
       </div>
     </div>
