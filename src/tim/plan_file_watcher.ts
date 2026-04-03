@@ -8,14 +8,15 @@ export interface PlanFileWatcher {
   close(): void;
 }
 
-export function stripPlanFrontmatter(content: string): string {
+export function stripPlanFrontmatter(content: string): string | null {
   if (!content.startsWith('---\n')) {
     return content.trim();
   }
 
   const endDelimiterIndex = content.indexOf('\n---\n', 4);
   if (endDelimiterIndex === -1) {
-    return content.trim();
+    // Incomplete frontmatter (e.g. mid-write) — skip this update
+    return null;
   }
 
   return content.substring(endDelimiterIndex + 5).trim();
@@ -37,7 +38,7 @@ export function watchPlanFile(
 
     try {
       const nextContent = stripPlanFrontmatter(await Bun.file(filePath).text());
-      if (closed || nextContent === lastContent) {
+      if (closed || nextContent === null || nextContent === lastContent) {
         return;
       }
 

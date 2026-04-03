@@ -95,11 +95,12 @@ describe('watchPlanFile', () => {
     expect(contents).toEqual(['first']);
   });
 
-  test('returns trimmed content when frontmatter is missing or incomplete', () => {
+  test('returns trimmed content when frontmatter is absent', () => {
     expect(stripPlanFrontmatter('\n# Body\n\nText\n')).toBe('# Body\n\nText');
-    expect(stripPlanFrontmatter(['---', 'id: 302', 'title: Missing end'].join('\n'))).toBe(
-      '---\nid: 302\ntitle: Missing end'
-    );
+  });
+
+  test('returns null for incomplete frontmatter (mid-write)', () => {
+    expect(stripPlanFrontmatter(['---', 'id: 302', 'title: Missing end'].join('\n'))).toBeNull();
   });
 
   test('returns an inert watcher when the plan file does not exist yet', async () => {
