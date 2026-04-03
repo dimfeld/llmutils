@@ -27,8 +27,8 @@
   let activeFilters = $state<PlanDisplayStatus[]>([]);
 
   const statusOrder: PlanDisplayStatus[] = [
-    'in_progress',
     'needs_review',
+    'in_progress',
     'ready',
     'pending',
     'recently_done',

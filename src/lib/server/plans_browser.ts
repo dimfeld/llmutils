@@ -53,7 +53,7 @@ export function getActiveWorkData(db: Database, projectId: string): ActiveWorkDa
           plan.displayStatus === 'recently_done'
       )
       .sort((a, b) => {
-        const order = { in_progress: 0, needs_review: 1, blocked: 2, recently_done: 3 };
+        const order = { needs_review: 0, in_progress: 1, blocked: 2, recently_done: 3 };
         return (
           (order[a.displayStatus as keyof typeof order] ?? 4) -
           (order[b.displayStatus as keyof typeof order] ?? 4)
