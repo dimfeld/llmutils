@@ -4,7 +4,6 @@ import path from 'node:path';
 import { warn } from '../logging.js';
 
 const PLAN_WATCH_DEBOUNCE_MS = 300;
-const PLAN_WATCH_POLL_MS = 300;
 
 export interface PlanFileWatcher {
   close(): void;
@@ -32,7 +31,6 @@ export function watchPlanFile(
   const targetBasename = path.basename(filePath);
   let watcher: FSWatcher | null = null;
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-  let pollTimer: ReturnType<typeof setInterval> | null = null;
   let closed = false;
   let lastContent: string | null = null;
 
@@ -94,10 +92,6 @@ export function watchPlanFile(
     };
   }
 
-  pollTimer = setInterval(() => {
-    void emitCurrentContent();
-  }, PLAN_WATCH_POLL_MS);
-
   void emitCurrentContent();
 
   return {
@@ -106,10 +100,6 @@ export function watchPlanFile(
       if (debounceTimer) {
         clearTimeout(debounceTimer);
         debounceTimer = null;
-      }
-      if (pollTimer) {
-        clearInterval(pollTimer);
-        pollTimer = null;
       }
       watcher?.close();
       watcher = null;
