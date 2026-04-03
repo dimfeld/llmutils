@@ -51,6 +51,7 @@ export interface ProjectWithMetadata extends Project {
   planCount: number;
   activePlanCount: number;
   statusCounts: ProjectPlanStatusCounts;
+  featured: boolean;
 }
 
 export interface EnrichedPlanTask {
@@ -553,6 +554,14 @@ export function getProjectsWithMetadata(db: Database): ProjectWithMetadata[] {
     }
   }
 
+  const featuredRows = db
+    .prepare("SELECT project_id, value FROM project_setting WHERE setting = 'featured'")
+    .all() as Array<{ project_id: number; value: string }>;
+  const featuredByProject = new Map<number, boolean>();
+  for (const row of featuredRows) {
+    featuredByProject.set(row.project_id, JSON.parse(row.value) === true);
+  }
+
   return projects.flatMap((project) => {
     const counts = countsByProject.get(project.id);
     if (!counts) {
@@ -575,6 +584,7 @@ export function getProjectsWithMetadata(db: Database): ProjectWithMetadata[] {
         activePlanCount:
           statusCounts.pending + statusCounts.in_progress + statusCounts.needs_review,
         statusCounts,
+        featured: featuredByProject.get(project.id) ?? true,
       },
     ];
   });

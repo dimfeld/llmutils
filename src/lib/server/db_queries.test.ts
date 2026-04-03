@@ -9,6 +9,7 @@ import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
 import { upsertPlan } from '$tim/db/plan.js';
 import { linkPlanToPr, upsertPrStatus } from '$tim/db/pr_status.js';
 import { getOrCreateProject } from '$tim/db/project.js';
+import { setProjectSetting } from '$tim/db/project_settings.js';
 import { patchWorkspace, recordWorkspace } from '$tim/db/workspace.js';
 import { acquireWorkspaceLock, getWorkspaceLock } from '$tim/db/workspace_lock.js';
 
@@ -98,6 +99,24 @@ describe('lib/server/db_queries', () => {
 
     expect(projects.map((project) => project.id)).toEqual([projectId, otherProjectId]);
     expect(projects.find((project) => project.id === emptyProjectId)).toBeUndefined();
+  });
+
+  test('getProjectsWithMetadata defaults featured to true when no setting exists', () => {
+    const projects = getProjectsWithMetadata(db);
+    for (const project of projects) {
+      expect(project.featured).toBe(true);
+    }
+  });
+
+  test('getProjectsWithMetadata respects featured setting from project_setting table', () => {
+    setProjectSetting(db, projectId, 'featured', false);
+
+    const projects = getProjectsWithMetadata(db);
+    const primary = projects.find((p) => p.id === projectId);
+    const secondary = projects.find((p) => p.id === otherProjectId);
+
+    expect(primary?.featured).toBe(false);
+    expect(secondary?.featured).toBe(true);
   });
 
   test('getPlansForProject computes blocked display status for unresolved dependencies', () => {
