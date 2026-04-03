@@ -1,13 +1,42 @@
+import chalk from 'chalk';
 import { readFile, rm } from 'node:fs/promises';
-import { warn } from '../../logging.js';
+import { isPromptTimeoutError, promptConfirm } from '../../common/input.js';
 import { logSpawn } from '../../common/process.js';
+import { error, warn } from '../../logging.js';
 import {
   getMaterializedPlanPath,
   getShadowPlanPath,
   materializePlan,
   syncMaterializedPlan,
 } from '../plan_materialize.js';
-import { readPlanFile, writePlanFile } from '../plans.js';
+import { NoFrontmatterError, readPlanFile } from '../plans.js';
+
+async function openEditor(materializedPath: string, selectedEditor: string): Promise<void> {
+  const editorProcess = logSpawn([selectedEditor, materializedPath], {
+    stdio: ['inherit', 'inherit', 'inherit'],
+  });
+  await editorProcess.exited;
+  if (typeof editorProcess.exitCode === 'number' && editorProcess.exitCode !== 0) {
+    throw new Error(`Editor exited with code ${editorProcess.exitCode ?? 'unknown'}`);
+  }
+}
+
+export function isUserFixableParseError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  if (error instanceof NoFrontmatterError) {
+    return true;
+  }
+
+  return (
+    error.name === 'PlanFileError' ||
+    error.name === 'YAMLParseError' ||
+    error.name === 'YAMLSemanticError' ||
+    error.name === 'YAMLSyntaxError'
+  );
+}
 
 export async function editMaterializedPlan(
   planId: number,
@@ -25,28 +54,54 @@ export async function editMaterializedPlan(
   const beforeEditUpdatedAt = beforeEditPlan.updatedAt;
   const beforeEditContent = await readFile(materializedPath, 'utf-8');
 
-  const editorProcess = logSpawn([selectedEditor, materializedPath], {
-    stdio: ['inherit', 'inherit', 'inherit'],
-  });
-  await editorProcess.exited;
-  if (typeof editorProcess.exitCode === 'number' && editorProcess.exitCode !== 0) {
-    throw new Error(`Editor exited with code ${editorProcess.exitCode ?? 'unknown'}`);
-  }
-
   let shouldDeleteMaterializedFile = !existedBeforeEdit;
   try {
-    const afterEditContent = await readFile(materializedPath, 'utf-8');
-    if (afterEditContent !== beforeEditContent) {
-      const editedPlan = await readPlanFile(materializedPath);
-      const editorChangedUpdatedAt = editedPlan.updatedAt !== beforeEditUpdatedAt;
+    while (true) {
+      await openEditor(materializedPath, selectedEditor);
 
-      await syncMaterializedPlan(planId, repoRoot, {
-        force: false,
-        skipRematerialize: true,
-        context: undefined,
-        preserveUpdatedAt: editorChangedUpdatedAt ? editedPlan.updatedAt : undefined,
-      });
+      const afterEditContent = await readFile(materializedPath, 'utf-8');
+      if (afterEditContent === beforeEditContent) {
+        break;
+      }
+
+      try {
+        const editedPlan = await readPlanFile(materializedPath);
+        const editorChangedUpdatedAt = editedPlan.updatedAt !== beforeEditUpdatedAt;
+
+        await syncMaterializedPlan(planId, repoRoot, {
+          force: false,
+          skipRematerialize: true,
+          context: undefined,
+          preserveUpdatedAt: editorChangedUpdatedAt ? editedPlan.updatedAt : undefined,
+        });
+        break;
+      } catch (errorToHandle) {
+        if (!isUserFixableParseError(errorToHandle)) {
+          throw errorToHandle;
+        }
+
+        error(chalk.red(`Failed to parse edited plan ${planId}:`));
+        error(chalk.red((errorToHandle as Error).message));
+
+        let shouldReEdit = false;
+        try {
+          shouldReEdit = await promptConfirm({
+            message: 'Would you like to edit the file again to fix these issues?',
+            default: true,
+          });
+        } catch (promptError) {
+          if (!isPromptTimeoutError(promptError)) {
+            throw promptError;
+          }
+        }
+
+        if (!shouldReEdit) {
+          shouldDeleteMaterializedFile = false;
+          throw errorToHandle;
+        }
+      }
     }
+
     if (shouldDeleteMaterializedFile) {
       await rm(materializedPath, { force: true });
       await rm(getShadowPlanPath(repoRoot, planId), { force: true });
