@@ -854,6 +854,10 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
                       currentBaseDir,
                       currentPlanFile
                     );
+                  } else {
+                    warn(
+                      `Review issues saved but plan has no numeric ID — status not updated to needs_review`
+                    );
                   }
                   planStillCompleteAfterReview = false;
                 } else if (reviewResult?.tasksAppended && reviewResult.tasksAppended > 0) {

@@ -703,7 +703,7 @@
         </button>
       </div>
       <ul class="space-y-2">
-        {#each plan.reviewIssues as issue, i (i)}
+        {#each plan.reviewIssues as issue, i (`${issue.severity}-${issue.category}-${issue.content}`)}
           {@const severityClass =
             issue.severity === 'critical'
               ? 'border-red-500 bg-red-50 dark:bg-red-950/30'

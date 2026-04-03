@@ -32,28 +32,7 @@ const issueIndexSchema = z.object({
 export const removeReviewIssue = command(issueIndexSchema, async ({ planUuid, issueIndex }) => {
   const { db } = await getServerContext();
 
-  const plan = getPlanByUuid(db, planUuid);
-  if (!plan) {
-    error(404, 'Plan not found');
-  }
-
-  const issues = getReviewIssues(plan.review_issues);
-  if (issueIndex >= issues.length) {
-    error(400, 'Issue index out of range');
-  }
-
-  issues.splice(issueIndex, 1);
-
-  db.prepare(
-    `UPDATE plan SET review_issues = ?, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
-  ).run(issues.length > 0 ? JSON.stringify(issues) : null, planUuid);
-});
-
-export const convertReviewIssueToTask = command(
-  issueIndexSchema,
-  async ({ planUuid, issueIndex }) => {
-    const { db } = await getServerContext();
-
+  db.transaction(() => {
     const plan = getPlanByUuid(db, planUuid);
     if (!plan) {
       error(404, 'Plan not found');
@@ -64,14 +43,37 @@ export const convertReviewIssueToTask = command(
       error(400, 'Issue index out of range');
     }
 
-    const issue = issues[issueIndex];
-    const newTask = createTaskFromIssue(issue);
-
-    const existingTasks = getPlanTasksByUuid(db, planUuid);
     issues.splice(issueIndex, 1);
-    const nextIndex = existingTasks.length;
+
+    db.prepare(
+      `UPDATE plan SET review_issues = ?, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
+    ).run(issues.length > 0 ? JSON.stringify(issues) : null, planUuid);
+  }).immediate();
+});
+
+export const convertReviewIssueToTask = command(
+  issueIndexSchema,
+  async ({ planUuid, issueIndex }) => {
+    const { db } = await getServerContext();
 
     db.transaction(() => {
+      const plan = getPlanByUuid(db, planUuid);
+      if (!plan) {
+        error(404, 'Plan not found');
+      }
+
+      const issues = getReviewIssues(plan.review_issues);
+      if (issueIndex >= issues.length) {
+        error(400, 'Issue index out of range');
+      }
+
+      const issue = issues[issueIndex];
+      const newTask = createTaskFromIssue(issue);
+
+      const existingTasks = getPlanTasksByUuid(db, planUuid);
+      issues.splice(issueIndex, 1);
+      const nextIndex = existingTasks.length;
+
       db.prepare(
         `UPDATE plan SET review_issues = ?, status = 'in_progress', updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
       ).run(issues.length > 0 ? JSON.stringify(issues) : null, planUuid);
