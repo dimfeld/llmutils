@@ -1,5 +1,7 @@
 import * as path from 'node:path';
 import { commitAll } from '../../common/process.js';
+import { getLoggerAdapter } from '../../logging/adapter.js';
+import { HeadlessAdapter } from '../../logging/headless_adapter.js';
 import { warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { syncPlanToDb } from '../db/plan_sync.js';
@@ -12,6 +14,7 @@ import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../executors/index.js';
 import { ClaudeCodeExecutorName, CodexCliExecutorName } from '../executors/schemas.js';
 import { isCodexAppServerEnabled } from '../executors/codex_cli/app_server_mode.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
+import { watchPlanFile } from '../plan_file_watcher.js';
 import { readPlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { generateBranchNameFromPlan } from './branch.js';
@@ -217,6 +220,7 @@ export async function handleChatCommand(
   let touchedWorkspacePath: string | null = null;
   let roundTripContext: Awaited<ReturnType<typeof prepareWorkspaceRoundTrip>> = null;
   let executionError: unknown;
+  let planWatcher: ReturnType<typeof watchPlanFile> | undefined;
 
   // Resolve repo root from config/plan arg once, for both plan resolution and workspace setup
   const configRepoRoot = await resolveRepoRootForPlanArg(
@@ -320,6 +324,13 @@ export async function handleChatCommand(
         const promptForExecution =
           executorName === CodexCliExecutorName && codexAppServerEnabled ? (prompt ?? '') : prompt;
 
+        const loggerAdapter = getLoggerAdapter();
+        if (currentPlanFile && loggerAdapter instanceof HeadlessAdapter) {
+          planWatcher = watchPlanFile(currentPlanFile, (content) => {
+            loggerAdapter.sendPlanContent(content);
+          });
+        }
+
         await executor.execute(promptForExecution, {
           planId: currentPlanData?.id ? String(currentPlanData.id) : 'chat',
           planTitle: currentPlanData?.title || 'Chat Session',
@@ -343,6 +354,9 @@ export async function handleChatCommand(
       } catch (err) {
         executionError = err;
       } finally {
+        planWatcher?.close();
+        planWatcher = undefined;
+
         let roundTripError: unknown;
         // Post-sync always runs when workspace roundtrip is active (matching generate/agent).
         // It commits and pushes as part of the workspace lifecycle, independent of --commit.

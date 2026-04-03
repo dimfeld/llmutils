@@ -69,15 +69,22 @@ vi.mock('../workspace/workspace_roundtrip.js', () => ({
   materializePlansForExecution: vi.fn(async () => undefined),
 }));
 
+vi.mock('../plan_file_watcher.js', () => ({
+  watchPlanFile: vi.fn(() => ({ close: vi.fn() })),
+}));
+
 vi.mock('./branch.js', () => ({
   generateBranchNameFromPlan: vi.fn(),
 }));
 
 import { handleChatCommand, resolveOptionalPromptText } from './chat.js';
+import * as adapterModule from '../../logging/adapter.js';
+import { HeadlessAdapter } from '../../logging/headless_adapter.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { buildExecutorAndLog } from '../executors/index.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
+import { watchPlanFile } from '../plan_file_watcher.js';
 import { getGitRoot } from '../../common/git.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 import { commitAll } from '../../common/process.js';
@@ -100,6 +107,7 @@ import { syncPlanToDb } from '../db/plan_sync.js';
 import { warn as warnFn } from '../../logging.js';
 
 describe('handleChatCommand', () => {
+  const watchPlanFileSpy = vi.mocked(watchPlanFile);
   const mockExecutorExecute = vi.fn(async () => {});
   const mockExecutor = {
     execute: mockExecutorExecute,
@@ -161,6 +169,7 @@ describe('handleChatCommand', () => {
     vi.mocked(generateBranchNameFromPlan).mockReturnValue('plan-derived-branch');
     vi.mocked(warnFn).mockReturnValue(undefined);
     vi.mocked(syncPlanToDb).mockResolvedValue(undefined);
+    watchPlanFileSpy.mockReturnValue({ close: vi.fn() });
 
     delete process.env.CODEX_USE_APP_SERVER;
     Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
@@ -403,6 +412,29 @@ describe('handleChatCommand', () => {
     expect(vi.mocked(runWithHeadlessAdapterIfEnabled).mock.calls[0][0]).not.toHaveProperty(
       'config'
     );
+  });
+
+  test('starts and closes the plan watcher when a headless adapter is active', async () => {
+    const closeSpy = vi.fn();
+    watchPlanFileSpy.mockReturnValue({ close: closeSpy });
+    const headlessAdapter = Object.assign(Object.create(HeadlessAdapter.prototype), {
+      sendPlanContent: vi.fn(),
+    }) as HeadlessAdapter;
+    const getLoggerAdapterSpy = vi
+      .spyOn(adapterModule, 'getLoggerAdapter')
+      .mockReturnValue(headlessAdapter);
+
+    try {
+      await handleChatCommand('hello', { plan: '123' }, {});
+    } finally {
+      getLoggerAdapterSpy.mockRestore();
+    }
+
+    expect(watchPlanFileSpy).toHaveBeenCalledWith(
+      '/repo-root/tasks/123-test.plan.md',
+      expect.any(Function)
+    );
+    expect(closeSpy).toHaveBeenCalledTimes(1);
   });
 
   test('enters workspace mode and passes workspace options through setupWorkspace', async () => {

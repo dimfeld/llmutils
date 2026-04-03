@@ -8,6 +8,9 @@ import * as agentModule from './agent.js';
 import { readPlanFile, resolvePlanFromDb, writePlanFile } from '../../plans.js';
 import { closeDatabaseForTesting } from '../../db/database.js';
 import { clearPlanSyncContext } from '../../db/plan_sync.js';
+import { HeadlessAdapter } from '../../../logging/headless_adapter.js';
+import { watchPlanFile } from '../../plan_file_watcher.js';
+import * as adapterModule from '../../../logging/adapter.js';
 import { getLoggerAdapter, runWithLogger, type LoggerAdapter } from '../../../logging/adapter.js';
 import type { StructuredMessage } from '../../../logging/structured_messages.js';
 import { markParentInProgress } from './parent_plans.js';
@@ -199,6 +202,10 @@ vi.mock('../../workspace/workspace_roundtrip.js', () => ({
   runPostExecutionWorkspaceSync: vi.fn(async () => {}),
   runPreExecutionWorkspaceSync: vi.fn(async () => {}),
   materializePlansForExecution: vi.fn(async () => undefined),
+}));
+
+vi.mock('../../plan_file_watcher.js', () => ({
+  watchPlanFile: vi.fn(() => ({ close: vi.fn() })),
 }));
 
 vi.mock('../../workspace/workspace_info.js', () => ({
@@ -529,6 +536,7 @@ describe('timAgent - simple mode flag plumbing', () => {
   let simplePlanFile: string;
   let originalEnv: Partial<Record<string, string>>;
   let originalCwd: string;
+  const watchPlanFileSpy = vi.mocked(watchPlanFile);
   const defaultConfig = {
     defaultOrchestrator: 'test-executor',
     executors: {} as Record<string, any>,
@@ -591,6 +599,7 @@ describe('timAgent - simple mode flag plumbing', () => {
     buildExecutorAndLogSpy.mockReset();
     executorExecuteSpy.mockReset();
     executeBatchModeSpy.mockReset();
+    watchPlanFileSpy.mockReturnValue({ close: vi.fn() });
     buildExecutorAndLogSpy.mockReturnValue(testExecutor);
 
     // Reset serial impls to defaults
@@ -744,6 +753,27 @@ describe('timAgent - simple mode flag plumbing', () => {
     expect(executeBatchModeSpy).toHaveBeenCalledTimes(1);
     const [batchOptions] = executeBatchModeSpy.mock.calls[0];
     expect(batchOptions).toMatchObject({ executor: testExecutor, executionMode: 'simple' });
+  });
+
+  test('starts and closes the plan watcher when a headless adapter is active', async () => {
+    const closeSpy = vi.fn();
+    watchPlanFileSpy.mockReturnValue({ close: closeSpy });
+    const headlessAdapter = Object.assign(Object.create(HeadlessAdapter.prototype), {
+      sendPlanContent: vi.fn(),
+    }) as HeadlessAdapter;
+    const getLoggerAdapterSpy = vi
+      .spyOn(adapterModule, 'getLoggerAdapter')
+      .mockReturnValue(headlessAdapter as any);
+
+    try {
+      const { timAgent } = await import('./agent.js');
+      await timAgent(simplePlanFile, { log: false } as any, {});
+    } finally {
+      getLoggerAdapterSpy.mockRestore();
+    }
+
+    expect(watchPlanFileSpy).toHaveBeenCalledWith(simplePlanFile, expect.any(Function));
+    expect(closeSpy).toHaveBeenCalledTimes(1);
   });
 
   test('enables simpleMode when configured on executor', async () => {

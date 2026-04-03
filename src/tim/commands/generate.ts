@@ -5,11 +5,14 @@ import chalk from 'chalk';
 import * as path from 'node:path';
 import { getCurrentBranchName, getGitRoot, getTrunkBranch } from '../../common/git.js';
 import { commitAll } from '../../common/process.js';
+import { getLoggerAdapter } from '../../logging/adapter.js';
+import { HeadlessAdapter } from '../../logging/headless_adapter.js';
 import { log, warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { syncPlanToDb } from '../db/plan_sync.js';
 import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
 import { resolvePlanPathContext } from '../path_resolver.js';
+import { watchPlanFile } from '../plan_file_watcher.js';
 import { readPlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import {
@@ -179,6 +182,7 @@ export async function handleGenerateCommand(
   let touchedWorkspacePath: string | null = null;
   let roundTripContext: Awaited<ReturnType<typeof prepareWorkspaceRoundTrip>> = null;
   let generationError: unknown;
+  let planWatcher: ReturnType<typeof watchPlanFile> | undefined;
 
   await runWithHeadlessAdapterIfEnabled({
     enabled: !isTunnelActive(),
@@ -301,6 +305,13 @@ export async function handleGenerateCommand(
 
         log(chalk.blue('🤖 Running plan generation with executor...'));
 
+        const loggerAdapter = getLoggerAdapter();
+        if (currentPlanFile && loggerAdapter instanceof HeadlessAdapter) {
+          planWatcher = watchPlanFile(currentPlanFile, (content) => {
+            loggerAdapter.sendPlanContent(content);
+          });
+        }
+
         // Execute the prompt
         await executor.execute(singlePrompt, {
           planId: String(currentPlanId ?? 'generate'),
@@ -349,6 +360,9 @@ export async function handleGenerateCommand(
       } catch (err) {
         generationError = err;
       } finally {
+        planWatcher?.close();
+        planWatcher = undefined;
+
         let roundTripError: unknown;
         if (roundTripContext) {
           try {
