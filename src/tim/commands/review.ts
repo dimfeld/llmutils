@@ -54,7 +54,6 @@ import { access, constants } from 'node:fs/promises';
 import { statSync } from 'node:fs';
 import { validateInstructionsFilePath } from '../utils/file_validation.js';
 import {
-  prepareReviewExecutors,
   resolveReviewExecutorSelection,
   runReview,
   type ReviewExecutorName,

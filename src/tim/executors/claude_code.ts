@@ -554,6 +554,7 @@ export class ClaudeCodeExecutor implements Executor {
       model: this.sharedOptions.model,
       label: 'review-analysis',
       inactivityTimeoutMs: ClaudeCodeExecutor.REVIEW_TIMEOUT_MS,
+      enableSessionPersistence: true,
       extraAccessDirs:
         this.timConfig.isUsingExternalStorage && this.timConfig.externalRepositoryConfigDir
           ? [this.timConfig.externalRepositoryConfigDir]

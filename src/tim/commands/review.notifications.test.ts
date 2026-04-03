@@ -54,6 +54,7 @@ vi.mock('../utils/context_gathering.js', () => ({
 vi.mock('../review_runner.js', () => ({
   runReview: vi.fn(),
   prepareReviewExecutors: vi.fn(),
+  resolveReviewExecutorSelection: vi.fn().mockReturnValue('claude-code'),
 }));
 
 vi.mock('../executors/index.js', () => ({

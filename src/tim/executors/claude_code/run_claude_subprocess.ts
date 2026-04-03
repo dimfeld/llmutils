@@ -189,6 +189,13 @@ export interface RunClaudeSubprocessOptions {
 
   /** Whether to log model selection. Defaults to false. */
   logModelSelection?: boolean;
+
+  /**
+   * When true, omit --no-session-persistence so the session can be resumed
+   * via --resume in a subsequent invocation. Required for the multi-phase
+   * review pipeline where the analysis phase session is resumed for review.
+   */
+  enableSessionPersistence?: boolean;
 }
 
 export interface RunClaudeSubprocessResult {
@@ -316,7 +323,9 @@ export async function runClaudeSubprocess(
   let terminalInputResult: ReturnType<typeof executeWithTerminalInput> | undefined;
 
   try {
-    const args = ['claude', '--no-session-persistence'];
+    const args = options.enableSessionPersistence
+      ? ['claude']
+      : ['claude', '--no-session-persistence'];
 
     // Add MCP config: permissions MCP takes priority, then user's mcpConfigFile
     if (isPermissionsMcpEnabled && permissionsMcpConfigFile) {
