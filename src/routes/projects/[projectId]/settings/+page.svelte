@@ -9,12 +9,7 @@
   let { data }: { data: PageData } = $props();
 
   let serverFeatured = $derived((data.settings.featured as boolean) ?? true);
-  let featured = $state(true);
-
-  // Reset form state when server data changes (navigation or invalidation)
-  $effect(() => {
-    featured = serverFeatured;
-  });
+  let featured = $derived(serverFeatured);
 
   let hasChanges = $derived(featured !== serverFeatured);
 
@@ -29,13 +24,14 @@
   });
 
   async function handleSave() {
-    if (!data.currentProject) return;
+    const numericProjectId = Number(data.projectId);
+    if (Number.isNaN(numericProjectId)) return;
 
     submitting = true;
     errorMessage = null;
     try {
       await updateProjectSetting({
-        projectId: data.currentProject.id,
+        projectId: numericProjectId,
         setting: 'featured',
         value: featured,
       });

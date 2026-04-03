@@ -22,6 +22,9 @@
 
   let featuredProjects = $derived(projects.filter((p) => p.featured));
   let unfeaturedProjects = $derived(projects.filter((p) => !p.featured));
+  let selectedIsUnfeatured = $derived(
+    unfeaturedProjects.some((p) => String(p.id) === selectedProjectId)
+  );
 </script>
 
 {#snippet projectLink(project: ProjectWithMetadata)}
@@ -61,7 +64,7 @@
       {@render projectLink(project)}
     {/each}
     {#if unfeaturedProjects.length > 0}
-      <details class="mt-2">
+      <details class="mt-2" open={selectedIsUnfeatured}>
         <summary
           class="cursor-pointer rounded-md px-3 py-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase select-none hover:bg-gray-100 dark:hover:bg-gray-800"
         >

@@ -12,9 +12,7 @@
   ];
 
   let tabs = $derived(
-    projectId !== 'all'
-      ? [...baseTabs, { label: 'Settings', slug: 'settings' }]
-      : baseTabs
+    projectId !== 'all' ? [...baseTabs, { label: 'Settings', slug: 'settings' }] : baseTabs
   );
 
   let pathname = $derived(page.url.pathname);
