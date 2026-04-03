@@ -104,6 +104,8 @@ Prefer to use [keyed each blocks](references/each.md) — this improves performa
 
 > [!NOTE] The key _must_ uniquely identify the object. Do not use the index as a key.
 
+Keys are most important when the list can change — items being added, removed, or reordered. If the list is relatively static, or if there is no convenient unique identifier for each item, it is fine to omit the key entirely.
+
 Avoid destructuring if you need to mutate the item (with something like `bind:value={item.count}`, for example).
 
 ## Using JavaScript variables in CSS
