@@ -151,6 +151,11 @@ describe('review_runner', () => {
     expect(buildAnalysisPrompt).toHaveBeenCalledTimes(1);
     expect(claudeExecutor.executeAnalysisPhase).toHaveBeenCalledTimes(1);
     expect(claudeExecutor.executeReviewModeWithResume).toHaveBeenCalledTimes(1);
+    expect(claudeExecutor.executeReviewModeWithResume).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      'session-1'
+    );
     expect(codexExecutor.execute).toHaveBeenCalledTimes(1);
     expect(buildPrompt).toHaveBeenCalledWith({
       executorName: 'claude-code',
@@ -551,6 +556,11 @@ describe('review_runner', () => {
 
     expect(executor.executeAnalysisPhase).toHaveBeenCalledTimes(1);
     expect(executor.executeReviewModeWithResume).toHaveBeenCalledTimes(1);
+    expect(executor.executeReviewModeWithResume).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      'session-claude'
+    );
     expect(result.usedExecutors).toEqual(['claude-code']);
     expect(result.reviewResult.recommendations).toEqual(['claude-only']);
   });

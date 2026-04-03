@@ -55,6 +55,7 @@ import { statSync } from 'node:fs';
 import { validateInstructionsFilePath } from '../utils/file_validation.js';
 import {
   prepareReviewExecutors,
+  resolveReviewExecutorSelection,
   runReview,
   type ReviewExecutorName,
   type ReviewPromptBuilder,
@@ -1176,24 +1177,21 @@ export async function handleReviewCommand(
       if (options.dryRun) {
         const reviewGuidePath = getReviewGuidePath(scopedPlanData.id ?? 'unknown');
         const analysisPrompt = await buildAnalysisPromptCallback();
-        const prepared = await prepareReviewExecutors({
-          executorSelection: options.executor,
-          config,
-          sharedExecutorOptions,
-          buildPrompt,
-        });
+        const selection = resolveReviewExecutorSelection(options.executor, config);
+        const executorNames =
+          selection === 'both' ? (['claude-code', 'codex-cli'] as const) : [selection];
 
         log(chalk.cyan('\n## Dry Run - Analysis Phase Prompt\n'));
         log(analysisPrompt);
 
         log(chalk.cyan('\n## Dry Run - Generated Review Prompt\n'));
-        for (const preparedExecutor of prepared) {
-          if (prepared.length > 1) {
-            log(chalk.cyan(`\n### Executor: ${preparedExecutor.name}\n`));
+        for (const executorName of executorNames) {
+          if (executorNames.length > 1) {
+            log(chalk.cyan(`\n### Executor: ${executorName}\n`));
           }
           log(
             buildPrompt({
-              executorName: preparedExecutor.name,
+              executorName,
               includeDiff: false,
               useSubagents: true,
               reviewGuidePath,

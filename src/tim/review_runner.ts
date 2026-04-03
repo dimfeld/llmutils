@@ -298,11 +298,11 @@ export async function runReview(options: ReviewRunOptions): Promise<ReviewRunRes
     const sessionId = analysisResult.sessionId;
 
     const preparedExecutors = executorNames.map((executorName) => {
-      const executor = buildExecutorAndLog(
-        executorName,
-        options.sharedExecutorOptions,
-        options.config
-      );
+      // Reuse the analysis executor for Claude to avoid duplicate construction
+      const executor =
+        executorName === analysisExecutorName
+          ? analysisExecutor
+          : buildExecutorAndLog(executorName, options.sharedExecutorOptions, options.config);
       const prompt = options.buildPrompt({
         executorName,
         includeDiff: false,
