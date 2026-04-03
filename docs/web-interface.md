@@ -29,6 +29,7 @@ When broadening server-side behavior (e.g. making a check command-agnostic inste
 ### Routing Gotchas
 
 - SvelteKit's `resolve()` from `$app/paths` enforces typed route parameters — it won't accept dynamic/computed path segments. Use `base` from `$app/paths` + template literals for dynamic paths.
+- SvelteKit reserves filenames starting with `+` in route directories (e.g., `+page.svelte`, `+server.ts`). Test files must not use the `+` prefix — name them without it (e.g., `page.server.test.ts` instead of `+page.server.test.ts`).
 
 ## Architecture
 
