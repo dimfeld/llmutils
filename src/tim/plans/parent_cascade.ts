@@ -12,6 +12,7 @@ import {
 import type { PlanSchema } from '../planSchema.js';
 import { writePlanFile } from '../plans.js';
 import { planRowForTransaction } from '../plans_db.js';
+import { findNextActionableItem } from './find_next.js';
 import { getCompletionStatus, isWorkCompleteStatus } from './plan_state_utils.js';
 
 type ParentCascadeOptions = {
@@ -71,8 +72,9 @@ export async function checkAndMarkParentDone(
 
     const childRows = getPlansByParentUuid(db, context.projectId, parentRow.uuid);
     const allChildrenDone = childRows.every((row) => isWorkCompleteStatus(row.status));
+    const hasUnfinishedTasks = findNextActionableItem(parentPlan) !== null;
 
-    if (!(allChildrenDone && childRows.length > 0 && parentPlan.epic)) {
+    if (!(allChildrenDone && childRows.length > 0 && parentPlan.epic) || hasUnfinishedTasks) {
       return parentPlan;
     }
 

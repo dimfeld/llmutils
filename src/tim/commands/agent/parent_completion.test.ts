@@ -418,6 +418,54 @@ describe('Parent Plan Completion', () => {
     expect(grandparent.changedFiles).toContain('file1.ts');
   });
 
+  test('does not mark parent as done if parent has unfinished tasks even when all children are complete', async () => {
+    const parentPlan: PlanSchema = {
+      id: 1,
+      title: 'Parent Plan',
+      goal: 'Parent goal',
+      details: 'Parent details',
+      status: 'in_progress',
+      tasks: [
+        {
+          title: 'Parent Task',
+          description: 'Unfinished task on the parent',
+          files: [],
+          done: false,
+        },
+      ],
+      epic: true,
+      updatedAt: new Date().toISOString(),
+    };
+    const parentPath = path.join(tasksDir, '1.yaml');
+    await writeDbBackedPlan(parentPath, parentPlan);
+
+    const childPlan: PlanSchemaInput = {
+      id: 2,
+      title: 'Child Plan',
+      goal: 'Child goal',
+      details: 'Child details',
+      status: 'in_progress',
+      parent: 1,
+      tasks: [
+        {
+          title: 'Child Task',
+          description: 'Task description',
+          files: [],
+        },
+      ],
+      updatedAt: new Date().toISOString(),
+    };
+    const childPath = path.join(tasksDir, '2.yaml');
+    await writeDbBackedPlan(childPath, childPlan);
+
+    // Mark child as done — all children complete, but parent has an unfinished task
+    await markTaskDone(childPath, 0, { commit: false }, tempDir, config);
+
+    // Parent should still be in_progress because it has an unfinished task
+    const parent = await readDbPlan(1);
+    expect(parent.status).toBe('in_progress');
+  });
+
   test('does not mark parent as done if some children are incomplete', async () => {
     // Create parent plan
     const parentPlan: PlanSchema = {
