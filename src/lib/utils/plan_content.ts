@@ -7,124 +7,95 @@ function escapeHtml(value: string): string {
     .replaceAll("'", '&#39;');
 }
 
-function applyInlineMarkdown(text: string): string {
-  let html = escapeHtml(text);
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2">$1</a>');
-  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,;!?]|$)/g, '$1<em>$2</em>');
-  html = html.replace(/(^|[\s(])_([^_\n]+)_(?=[\s).,;!?]|$)/g, '$1<em>$2</em>');
-  return html;
+/** Apply inline color spans for bold and inline code within an already-escaped line. */
+function applyInlineSpans(escaped: string): string {
+  // Inline code: `text` → <span class="plan-inline-code">`text`</span>
+  escaped = escaped.replace(/`([^`]+)`/g, '<span class="plan-inline-code">`$1`</span>');
+  // Bold: **text** → <span class="plan-bold">**text**</span>
+  escaped = escaped.replace(/\*\*([^*]+)\*\*/g, '<span class="plan-bold">**$1**</span>');
+  return escaped;
 }
 
-function renderParagraph(lines: string[]): string {
-  return `<p>${applyInlineMarkdown(lines.join(' '))}</p>`;
-}
-
-function renderList(items: string[]): string {
-  return `<ul>${items.map((item) => `<li>${applyInlineMarkdown(item)}</li>`).join('')}</ul>`;
-}
-
-function renderHeading(level: number, text: string): string {
-  return `<h${level}>${applyInlineMarkdown(text.trim())}</h${level}>`;
-}
-
-function renderCodeBlock(language: string | null, lines: string[]): string {
-  const languageAttribute = language ? ` data-language="${escapeHtml(language)}"` : '';
-  return `<pre${languageAttribute}><code>${escapeHtml(lines.join('\n'))}</code></pre>`;
-}
-
+/**
+ * Render plan content as HTML suitable for use inside a <pre> tag.
+ *
+ * The output preserves ALL original whitespace and line breaks exactly.
+ * Color spans are added around markdown elements for styling, but removing
+ * all CSS/spans produces identical text to the original input.
+ */
 export function renderPlanContentHtml(content: string): string {
-  const normalizedContent = content.replaceAll('\r\n', '\n').trim();
-  if (!normalizedContent) {
+  const normalizedContent = content.replaceAll('\r\n', '\n');
+  if (!normalizedContent.trim()) {
     return '';
   }
 
   const lines = normalizedContent.split('\n');
-  const htmlParts: string[] = [];
-  let paragraphLines: string[] = [];
-  let listItems: string[] = [];
-  let codeFenceLines: string[] = [];
-  let codeFenceLanguage: string | null = null;
-
-  function flushParagraph(): void {
-    if (paragraphLines.length === 0) {
-      return;
-    }
-
-    htmlParts.push(renderParagraph(paragraphLines));
-    paragraphLines = [];
-  }
-
-  function flushList(): void {
-    if (listItems.length === 0) {
-      return;
-    }
-
-    htmlParts.push(renderList(listItems));
-    listItems = [];
-  }
-
-  function flushCodeFence(): void {
-    if (codeFenceLanguage === null) {
-      return;
-    }
-
-    htmlParts.push(renderCodeBlock(codeFenceLanguage, codeFenceLines));
-    codeFenceLines = [];
-    codeFenceLanguage = null;
-  }
+  const outputLines: string[] = [];
+  let inCodeFence = false;
 
   for (const line of lines) {
-    const codeFenceMatch = line.match(/^```([\w-]+)?\s*$/);
-    if (codeFenceMatch) {
-      flushParagraph();
-      flushList();
+    const codeFenceMatch = line.match(/^(\s*```[\w-]*\s*)$/);
 
-      if (codeFenceLanguage !== null) {
-        flushCodeFence();
+    if (codeFenceMatch) {
+      const escaped = escapeHtml(line);
+      if (inCodeFence) {
+        // Closing fence
+        outputLines.push(`<span class="plan-code-fence">${escaped}</span>`);
+        inCodeFence = false;
       } else {
-        codeFenceLanguage = codeFenceMatch[1] ?? '';
+        // Opening fence
+        outputLines.push(`<span class="plan-code-fence">${escaped}</span>`);
+        inCodeFence = true;
       }
       continue;
     }
 
-    if (codeFenceLanguage !== null) {
-      codeFenceLines.push(line);
+    if (inCodeFence) {
+      outputLines.push(`<span class="plan-code">${escapeHtml(line)}</span>`);
       continue;
     }
 
-    if (line.trim() === '') {
-      flushParagraph();
-      flushList();
-      continue;
-    }
-
-    const headingMatch = line.match(/^(#{1,6})\s+(.*)$/);
+    // Headings: lines starting with #
+    const headingMatch = line.match(/^(#{1,6}\s+.*)$/);
     if (headingMatch) {
-      flushParagraph();
-      flushList();
-      htmlParts.push(renderHeading(headingMatch[1].length, headingMatch[2]));
+      outputLines.push(`<span class="plan-heading">${applyInlineSpans(escapeHtml(line))}</span>`);
       continue;
     }
 
-    const listMatch = line.match(/^[-*+]\s+(.*)$/);
-    if (listMatch) {
-      flushParagraph();
-      listItems.push(listMatch[1]);
+    // Unordered list items: lines starting with -, *, +
+    const unorderedListMatch = line.match(/^(\s*)([-*+])(\s+)(.*)/);
+    if (unorderedListMatch) {
+      const [, indent, marker, spacing, rest] = unorderedListMatch;
+      const escapedIndent = escapeHtml(indent);
+      const escapedMarker = escapeHtml(marker);
+      const escapedSpacing = escapeHtml(spacing);
+      const escapedRest = applyInlineSpans(escapeHtml(rest));
+      outputLines.push(
+        `<span class="plan-list-item">${escapedIndent}<span class="plan-list-marker">${escapedMarker}</span>${escapedSpacing}${escapedRest}</span>`
+      );
       continue;
     }
 
-    flushList();
-    paragraphLines.push(line.trim());
+    // Numbered list items: lines starting with digits followed by . or )
+    const numberedListMatch = line.match(/^(\s*)(\d+[.)]\s+)(.*)/);
+    if (numberedListMatch) {
+      const [, indent, marker, rest] = numberedListMatch;
+      const escapedIndent = escapeHtml(indent);
+      const escapedMarker = escapeHtml(marker);
+      const escapedRest = applyInlineSpans(escapeHtml(rest));
+      outputLines.push(
+        `<span class="plan-list-item">${escapedIndent}<span class="plan-list-marker">${escapedMarker}</span>${escapedRest}</span>`
+      );
+      continue;
+    }
+
+    // Regular line: apply inline spans only
+    if (line.trim() === '') {
+      outputLines.push('');
+    } else {
+      outputLines.push(applyInlineSpans(escapeHtml(line)));
+    }
   }
 
-  flushParagraph();
-  flushList();
-
-  if (codeFenceLanguage !== null) {
-    flushCodeFence();
-  }
-
-  return htmlParts.join('');
+  return outputLines.join('\n');
 }
