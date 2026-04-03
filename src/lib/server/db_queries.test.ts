@@ -89,7 +89,7 @@ describe('lib/server/db_queries', () => {
     });
   });
 
-  test('getProjectsWithMetadata excludes projects with zero total plans', () => {
+  test('getProjectsWithMetadata includes projects with zero plans', () => {
     const emptyProjectId = getOrCreateProject(db, 'repo-web-empty', {
       remoteUrl: 'https://example.com/repo-web-empty.git',
       lastGitRoot: '/tmp/repo-web-empty',
@@ -97,8 +97,15 @@ describe('lib/server/db_queries', () => {
 
     const projects = getProjectsWithMetadata(db);
 
-    expect(projects.map((project) => project.id)).toEqual([projectId, otherProjectId]);
-    expect(projects.find((project) => project.id === emptyProjectId)).toBeUndefined();
+    expect(projects.map((project) => project.id)).toEqual([
+      projectId,
+      otherProjectId,
+      emptyProjectId,
+    ]);
+    const emptyProject = projects.find((project) => project.id === emptyProjectId);
+    expect(emptyProject).toBeDefined();
+    expect(emptyProject!.planCount).toBe(0);
+    expect(emptyProject!.activePlanCount).toBe(0);
   });
 
   test('getProjectsWithMetadata defaults featured to true when no setting exists', () => {

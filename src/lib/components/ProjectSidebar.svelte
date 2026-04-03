@@ -20,6 +20,8 @@
     return parts[3] ?? 'plans';
   });
 
+  // Settings tab is per-project only, so "All Projects" should never link to it
+  let allProjectsTab = $derived(currentTab === 'settings' ? 'sessions' : currentTab);
   let featuredProjects = $derived(projects.filter((p) => p.featured));
   let unfeaturedProjects = $derived(projects.filter((p) => !p.featured));
   let selectedIsUnfeatured = $derived(
@@ -52,7 +54,7 @@
     aria-label="Project navigation"
   >
     <a
-      href={resolve(projectUrl('all', currentTab))}
+      href={resolve(projectUrl('all', allProjectsTab))}
       class="rounded-md px-3 py-2 text-sm transition-colors {selectedProjectId === 'all'
         ? 'bg-blue-100 font-medium text-blue-900 dark:bg-blue-900/30 dark:text-blue-200'
         : 'text-foreground hover:bg-gray-100 dark:hover:bg-gray-800'}"

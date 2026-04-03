@@ -562,31 +562,27 @@ export function getProjectsWithMetadata(db: Database): ProjectWithMetadata[] {
     featuredByProject.set(row.project_id, JSON.parse(row.value) === true);
   }
 
-  return projects.flatMap((project) => {
+  return projects.map((project) => {
     const counts = countsByProject.get(project.id);
-    if (!counts) {
-      return [];
-    }
 
-    const statusCounts = {
-      pending: counts.pending,
-      in_progress: counts.in_progress,
-      needs_review: counts.needs_review,
-      done: counts.done,
-      cancelled: counts.cancelled,
-      deferred: counts.deferred,
+    const statusCounts = counts
+      ? {
+          pending: counts.pending,
+          in_progress: counts.in_progress,
+          needs_review: counts.needs_review,
+          done: counts.done,
+          cancelled: counts.cancelled,
+          deferred: counts.deferred,
+        }
+      : createEmptyStatusCounts();
+
+    return {
+      ...project,
+      planCount: counts?.total ?? 0,
+      activePlanCount: statusCounts.pending + statusCounts.in_progress + statusCounts.needs_review,
+      statusCounts,
+      featured: featuredByProject.get(project.id) ?? true,
     };
-
-    return [
-      {
-        ...project,
-        planCount: counts.total,
-        activePlanCount:
-          statusCounts.pending + statusCounts.in_progress + statusCounts.needs_review,
-        statusCounts,
-        featured: featuredByProject.get(project.id) ?? true,
-      },
-    ];
   });
 }
 
