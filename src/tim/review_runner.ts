@@ -2,6 +2,7 @@ import type { TimConfig } from './configSchema.js';
 import type { ExecutorCommonOptions, Executor } from './executors/types.js';
 import { buildExecutorAndLog, DEFAULT_EXECUTOR } from './executors/index.js';
 import { getParentExecutor, type TimExecutorType } from '../common/process.js';
+import { getGitRoot } from '../common/git.js';
 import {
   createReviewResult,
   parseJsonReviewOutput,
@@ -14,6 +15,9 @@ import {
   type ReviewIssueOutput,
 } from './formatters/review_output_schema.js';
 import { log } from '../logging.js';
+import { getReviewGuidePath } from './review_guide.js';
+import { mkdir, unlink } from 'node:fs/promises';
+import { join } from 'node:path';
 
 export const REVIEW_EXECUTOR_NAMES = ['claude-code', 'codex-cli'] as const;
 export type ReviewExecutorName = (typeof REVIEW_EXECUTOR_NAMES)[number];
@@ -25,6 +29,8 @@ export type ReviewPromptBuilder = (options: {
   useSubagents: boolean;
   reviewGuidePath?: string;
 }) => string;
+
+export type AnalysisPromptBuilder = () => Promise<string>;
 
 export interface ReviewPlanInfo {
   planId: string;
@@ -50,6 +56,7 @@ export interface PrepareReviewExecutorsOptions {
 }
 
 export interface ReviewRunOptions extends PrepareReviewExecutorsOptions {
+  buildAnalysisPrompt: AnalysisPromptBuilder;
   planInfo: ReviewPlanInfo;
   allowPartialFailures?: boolean;
 }
@@ -172,16 +179,164 @@ async function executeWithRetry(
   return { name: prepared.name, error: new Error('Max retry attempts exceeded') };
 }
 
+function createExecutePlanInfo(planInfo: ReviewPlanInfo) {
+  return {
+    planId: planInfo.planId,
+    planTitle: planInfo.planTitle,
+    planFilePath: planInfo.planFilePath,
+    captureOutput: 'result' as const,
+    executionMode: 'review' as const,
+    isTaskScoped: planInfo.isTaskScoped,
+  };
+}
+
+async function executeAnalysisPhase(
+  executorName: ReviewExecutorName,
+  executor: Executor,
+  prompt: string,
+  planInfo: ReviewPlanInfo
+): Promise<{ sessionId?: string }> {
+  if (!executor.executeAnalysisPhase) {
+    log(
+      `Review executor '${executorName}' does not expose analysis mode; skipping analysis phase.`
+    );
+    return {};
+  }
+
+  const result = await executor.executeAnalysisPhase(prompt, createExecutePlanInfo(planInfo));
+  if (
+    executorName === 'claude-code' &&
+    (!result || typeof result !== 'object' || !('sessionId' in result) || !result.sessionId)
+  ) {
+    throw new Error('Claude review analysis completed without a session id.');
+  }
+
+  return result && typeof result === 'object' && 'sessionId' in result
+    ? { sessionId: result.sessionId }
+    : {};
+}
+
+async function executeClaudeReviewWithResume(
+  prompt: string,
+  executor: Executor,
+  planInfo: ReviewPlanInfo,
+  sessionId: string
+): Promise<
+  { name: ReviewExecutorName; rawOutput: string } | { name: ReviewExecutorName; error: unknown }
+> {
+  const maxAttempts = MAX_TIMEOUT_RETRIES + 1;
+
+  if (!executor.executeReviewModeWithResume) {
+    return executeWithRetry(
+      {
+        name: 'claude-code',
+        executor,
+        prompt,
+      },
+      planInfo
+    );
+  }
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const executorOutput = await executor.executeReviewModeWithResume(
+        prompt,
+        createExecutePlanInfo(planInfo),
+        sessionId
+      );
+
+      log(`claude-code review finished`);
+      const rawOutput = normalizeReviewOutput(executorOutput);
+      return { name: 'claude-code', rawOutput };
+    } catch (error) {
+      if (isTimeoutError(error) && attempt < maxAttempts) {
+        log(`claude-code review timed out, retrying (attempt ${attempt + 1}/${maxAttempts})...`);
+        continue;
+      }
+      return { name: 'claude-code', error };
+    }
+  }
+
+  return { name: 'claude-code', error: new Error('Max retry attempts exceeded') };
+}
+
 export async function runReview(options: ReviewRunOptions): Promise<ReviewRunResult> {
-  const preparedExecutors = await prepareReviewExecutors(options);
+  const selection = resolveReviewExecutorSelection(options.executorSelection, options.config);
+  const executorNames = selection === 'both' ? [...REVIEW_EXECUTOR_NAMES] : [selection];
   const warnings: string[] = [];
   const executorOutputs: Partial<Record<ReviewExecutorName, string>> = {};
-  const executionResults = await Promise.all(
-    preparedExecutors.map((prepared) => executeWithRetry(prepared, options.planInfo))
-  );
+  const gitRoot = await getGitRoot(options.sharedExecutorOptions.baseDir);
+  const reviewGuidePath = getReviewGuidePath(options.planInfo.planId);
+  const reviewGuideAbsolutePath = join(gitRoot, reviewGuidePath);
+
+  await mkdir(join(gitRoot, '.tim', 'tmp'), { recursive: true });
+  await unlink(reviewGuideAbsolutePath).catch(() => {});
+
+  let executionResults:
+    | Array<
+        | { name: ReviewExecutorName; rawOutput: string }
+        | { name: ReviewExecutorName; error: unknown }
+      >
+    | undefined;
+
+  try {
+    const analysisExecutorName: ReviewExecutorName = executorNames.includes('claude-code')
+      ? 'claude-code'
+      : 'codex-cli';
+    const analysisExecutor = buildExecutorAndLog(
+      analysisExecutorName,
+      options.sharedExecutorOptions,
+      options.config
+    );
+    const analysisPrompt = await options.buildAnalysisPrompt();
+    const analysisResult = await executeAnalysisPhase(
+      analysisExecutorName,
+      analysisExecutor,
+      analysisPrompt,
+      options.planInfo
+    );
+    const sessionId = analysisResult.sessionId;
+
+    const preparedExecutors = executorNames.map((executorName) => {
+      const executor = buildExecutorAndLog(
+        executorName,
+        options.sharedExecutorOptions,
+        options.config
+      );
+      const prompt = options.buildPrompt({
+        executorName,
+        includeDiff: false,
+        useSubagents: true,
+        reviewGuidePath,
+      });
+
+      return {
+        name: executorName,
+        executor,
+        prompt,
+      } satisfies PreparedReviewExecutor;
+    });
+
+    executionResults = await Promise.all(
+      preparedExecutors.map((prepared) => {
+        if (prepared.name === 'claude-code' && sessionId) {
+          return executeClaudeReviewWithResume(
+            prepared.prompt,
+            prepared.executor,
+            options.planInfo,
+            sessionId
+          );
+        }
+
+        return executeWithRetry(prepared, options.planInfo);
+      })
+    );
+  } finally {
+    await unlink(reviewGuideAbsolutePath).catch(() => {});
+  }
 
   // Process results and parse outputs
-  const results = executionResults.map((result) => {
+  const results = (executionResults ?? []).map((result) => {
     if ('error' in result) {
       return result;
     }

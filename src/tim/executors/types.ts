@@ -149,6 +149,23 @@ export interface Executor {
   filePathPrefix?: string;
 
   /**
+   * Optional analysis phase used by multi-step review flows to generate a review guide.
+   */
+  executeAnalysisPhase?: (
+    contextContent: string,
+    planInfo: ExecutePlanInfo
+  ) => Promise<{ sessionId: string } | void>;
+
+  /**
+   * Optional review entry point for executors that can resume a prior analysis session.
+   */
+  executeReviewModeWithResume?: (
+    contextContent: string,
+    planInfo: ExecutePlanInfo,
+    sessionId: string
+  ) => Promise<ExecutorOutput>;
+
+  /**
    * The asynchronous function that executes the generated context.
    * @param contextContent - The string content for execution (output from `rmfilter` or direct prompt).
    * Can be undefined for interactive bare-mode sessions that start without an initial message.

@@ -6,7 +6,7 @@ import type { DiffResult } from '../../incremental_review';
 import { getRepositoryIdentity } from '../../assignments/workspace_identifier.js';
 import { getParentChain, getCompletedChildren } from '../../utils/hierarchy';
 import { generateDiffForReview } from '../../incremental_review';
-import { buildReviewPrompt } from '../../commands/review';
+import { buildAnalysisPrompt, buildReviewPrompt } from '../../commands/review';
 import { getLegacyAwareSearchDir, resolvePlanPathContext } from '../../path_resolver.js';
 import { loadPlansFromDb } from '../../plans_db.js';
 import { runReview } from '../../review_runner';
@@ -138,6 +138,15 @@ export async function runExternalReviewForCodex(
       options.previousResponse,
       reviewGuidePath
     );
+  const buildAnalysisPromptCallback = () =>
+    buildAnalysisPrompt(
+      scopedPlanData,
+      diffResult,
+      options.gitRoot,
+      parentChain,
+      completedChildren,
+      taskScopeNote
+    );
 
   const planInfo = buildPlanInfoForReview(
     options.planInfo,
@@ -154,6 +163,7 @@ export async function runExternalReviewForCodex(
       model: options.model,
     },
     buildPrompt,
+    buildAnalysisPrompt: buildAnalysisPromptCallback,
     planInfo,
     allowPartialFailures: true,
   });

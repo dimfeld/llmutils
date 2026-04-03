@@ -68,6 +68,8 @@ import { syncPlanToDb } from '../db/plan_sync.js';
 import which from 'which';
 import { getMaterializedPlanPath, materializePlan } from '../plan_materialize.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { getReviewGuidePath } from '../review_guide.js';
+export { getReviewGuidePath } from '../review_guide.js';
 const FIX_EXECUTOR_COMMANDS = {
   'claude-code': 'claude',
   'codex-cli': 'codex',
@@ -1159,9 +1161,21 @@ export async function handleReviewCommand(
           previousReviewResponse,
           reviewGuidePath
         );
+      const buildAnalysisPromptCallback = () =>
+        buildAnalysisPrompt(
+          scopedPlanData,
+          diffResult,
+          gitRoot,
+          parentChain,
+          completedChildren,
+          taskScopeNote,
+          remainingTasks
+        );
 
       // Execute the review
       if (options.dryRun) {
+        const reviewGuidePath = getReviewGuidePath(scopedPlanData.id ?? 'unknown');
+        const analysisPrompt = await buildAnalysisPromptCallback();
         const prepared = await prepareReviewExecutors({
           executorSelection: options.executor,
           config,
@@ -1169,12 +1183,22 @@ export async function handleReviewCommand(
           buildPrompt,
         });
 
+        log(chalk.cyan('\n## Dry Run - Analysis Phase Prompt\n'));
+        log(analysisPrompt);
+
         log(chalk.cyan('\n## Dry Run - Generated Review Prompt\n'));
         for (const preparedExecutor of prepared) {
           if (prepared.length > 1) {
             log(chalk.cyan(`\n### Executor: ${preparedExecutor.name}\n`));
           }
-          log(preparedExecutor.prompt);
+          log(
+            buildPrompt({
+              executorName: preparedExecutor.name,
+              includeDiff: false,
+              useSubagents: true,
+              reviewGuidePath,
+            })
+          );
         }
         log('\n--dry-run mode: Would execute the above prompt');
         skipNotification = true;
@@ -1207,6 +1231,7 @@ export async function handleReviewCommand(
             config,
             sharedExecutorOptions,
             buildPrompt,
+            buildAnalysisPrompt: buildAnalysisPromptCallback,
             planInfo,
           });
 
@@ -2145,10 +2170,6 @@ export function buildReviewPrompt(
   );
 
   return reviewerPromptWithContext.prompt;
-}
-
-export function getReviewGuidePath(planId: string | number): string {
-  return join('.tim', 'tmp', `review-guide-${planId}.md`);
 }
 
 export async function buildAnalysisPrompt(

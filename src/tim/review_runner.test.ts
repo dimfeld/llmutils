@@ -1,25 +1,43 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Executor } from './executors/types.js';
 import { buildExecutorAndLog } from './executors/index.js';
+import { getGitRoot } from '../common/git.js';
+import { mkdir, unlink } from 'node:fs/promises';
 
 vi.mock('./executors/index.js', () => ({
   buildExecutorAndLog: vi.fn(),
   DEFAULT_EXECUTOR: 'codex-cli',
 }));
 
+vi.mock('../common/git.js', () => ({
+  getGitRoot: vi.fn(),
+}));
+
+vi.mock('node:fs/promises', () => ({
+  mkdir: vi.fn(async () => undefined),
+  unlink: vi.fn(async () => undefined),
+}));
+
 describe('review_runner', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    vi.mocked(getGitRoot).mockResolvedValue('/tmp/review-runner-tests');
   });
 
   test('prepareReviewExecutors always enables subagents in review prompts', async () => {
     const claudeExecutor: Executor = {
       execute: vi.fn(async () => undefined),
       supportsSubagents: true,
+      executeAnalysisPhase: vi.fn(async () => ({ sessionId: 'session-1' })),
+      executeReviewModeWithResume: vi.fn(async () => ({
+        content: '',
+        structuredOutput: { issues: [], recommendations: [], actionItems: [] },
+      })),
     };
 
     const codexExecutor: Executor = {
       execute: vi.fn(async () => undefined),
+      executeAnalysisPhase: vi.fn(async () => undefined),
     };
 
     vi.mocked(buildExecutorAndLog).mockImplementation((name: string) =>
@@ -94,11 +112,17 @@ describe('review_runner', () => {
 
     const claudeExecutor: Executor = {
       execute: vi.fn(async () => JSON.stringify(claudeOutput)),
+      executeAnalysisPhase: vi.fn(async () => ({ sessionId: 'session-1' })),
+      executeReviewModeWithResume: vi.fn(async () => JSON.stringify(claudeOutput)),
     };
 
     const codexExecutor: Executor = {
       execute: vi.fn(async () => JSON.stringify(codexOutput)),
+      executeAnalysisPhase: vi.fn(async () => undefined),
     };
+
+    const buildPrompt = vi.fn(() => 'prompt');
+    const buildAnalysisPrompt = vi.fn(async () => 'analysis-prompt');
 
     vi.mocked(buildExecutorAndLog).mockImplementation((name: string) =>
       name === 'claude-code' ? claudeExecutor : codexExecutor
@@ -109,7 +133,8 @@ describe('review_runner', () => {
       executorSelection: 'both',
       config: { defaultExecutor: 'codex-cli' } as any,
       sharedExecutorOptions: { baseDir: '/tmp' },
-      buildPrompt: vi.fn(() => 'prompt'),
+      buildPrompt,
+      buildAnalysisPrompt,
       planInfo: {
         planId: '1',
         planTitle: 'Plan',
@@ -123,6 +148,24 @@ describe('review_runner', () => {
     expect(issueContents).toEqual(['Issue A', 'Issue B', 'Issue C']);
     expect(result.reviewResult.recommendations).toEqual(['Claude rec', 'Codex rec']);
     expect(result.reviewResult.actionItems).toEqual(['Claude action', 'Codex action']);
+    expect(buildAnalysisPrompt).toHaveBeenCalledTimes(1);
+    expect(claudeExecutor.executeAnalysisPhase).toHaveBeenCalledTimes(1);
+    expect(claudeExecutor.executeReviewModeWithResume).toHaveBeenCalledTimes(1);
+    expect(codexExecutor.execute).toHaveBeenCalledTimes(1);
+    expect(buildPrompt).toHaveBeenCalledWith({
+      executorName: 'claude-code',
+      includeDiff: false,
+      useSubagents: true,
+      reviewGuidePath: '.tim/tmp/review-guide-1.md',
+    });
+    expect(buildPrompt).toHaveBeenCalledWith({
+      executorName: 'codex-cli',
+      includeDiff: false,
+      useSubagents: true,
+      reviewGuidePath: '.tim/tmp/review-guide-1.md',
+    });
+    expect(mkdir).toHaveBeenCalledWith('/tmp/review-runner-tests/.tim/tmp', { recursive: true });
+    expect(unlink).toHaveBeenCalledWith('/tmp/review-runner-tests/.tim/tmp/review-guide-1.md');
   });
 
   test('runReview preserves structured output from executor', async () => {
@@ -146,6 +189,7 @@ describe('review_runner', () => {
         content: 'ignored',
         structuredOutput,
       })),
+      executeAnalysisPhase: vi.fn(async () => undefined),
     };
 
     vi.mocked(buildExecutorAndLog).mockImplementation((name: string) => executor);
@@ -156,6 +200,7 @@ describe('review_runner', () => {
       config: { defaultExecutor: 'codex-cli' } as any,
       sharedExecutorOptions: { baseDir: '/tmp' },
       buildPrompt: vi.fn(() => 'prompt'),
+      buildAnalysisPrompt: vi.fn(async () => 'analysis'),
       planInfo: {
         planId: '2',
         planTitle: 'Structured Plan',
@@ -179,10 +224,15 @@ describe('review_runner', () => {
       execute: vi.fn(async () => {
         throw new Error('boom');
       }),
+      executeAnalysisPhase: vi.fn(async () => ({ sessionId: 'session-1' })),
+      executeReviewModeWithResume: vi.fn(async () => {
+        throw new Error('boom');
+      }),
     };
 
     const goodExecutor: Executor = {
       execute: vi.fn(async () => JSON.stringify(goodOutput)),
+      executeAnalysisPhase: vi.fn(async () => undefined),
     };
 
     vi.mocked(buildExecutorAndLog).mockImplementation((name: string) =>
@@ -195,6 +245,7 @@ describe('review_runner', () => {
       config: { defaultExecutor: 'codex-cli' } as any,
       sharedExecutorOptions: { baseDir: '/tmp' },
       buildPrompt: vi.fn(() => 'prompt'),
+      buildAnalysisPrompt: vi.fn(async () => 'analysis'),
       planInfo: {
         planId: '3',
         planTitle: 'Partial Plan',
@@ -215,12 +266,17 @@ describe('review_runner', () => {
       execute: vi.fn(async () => {
         throw new Error('boom');
       }),
+      executeAnalysisPhase: vi.fn(async () => ({ sessionId: 'session-1' })),
+      executeReviewModeWithResume: vi.fn(async () => {
+        throw new Error('boom');
+      }),
     };
 
     const goodExecutor: Executor = {
       execute: vi.fn(async () =>
         JSON.stringify({ issues: [], recommendations: [], actionItems: [] })
       ),
+      executeAnalysisPhase: vi.fn(async () => undefined),
     };
 
     vi.mocked(buildExecutorAndLog).mockImplementation((name: string) =>
@@ -234,6 +290,7 @@ describe('review_runner', () => {
         config: { defaultExecutor: 'codex-cli' } as any,
         sharedExecutorOptions: { baseDir: '/tmp' },
         buildPrompt: vi.fn(() => 'prompt'),
+        buildAnalysisPrompt: vi.fn(async () => 'analysis'),
         planInfo: {
           planId: '4',
           planTitle: 'Strict Plan',
@@ -286,6 +343,7 @@ describe('review_runner', () => {
         }
         return JSON.stringify(goodOutput);
       }),
+      executeAnalysisPhase: vi.fn(async () => undefined),
     };
 
     vi.mocked(buildExecutorAndLog).mockImplementation((name: string) => executor);
@@ -297,6 +355,7 @@ describe('review_runner', () => {
       config: { defaultExecutor: 'codex-cli' } as any,
       sharedExecutorOptions: { baseDir: '/tmp' },
       buildPrompt: vi.fn(() => 'prompt'),
+      buildAnalysisPrompt: vi.fn(async () => 'analysis'),
       planInfo: {
         planId: '5',
         planTitle: 'Retry Plan',
@@ -320,6 +379,7 @@ describe('review_runner', () => {
         attempts++;
         throw new Error('Claude review timed out after 30 minutes');
       }),
+      executeAnalysisPhase: vi.fn(async () => undefined),
     };
 
     vi.mocked(buildExecutorAndLog).mockImplementation((name: string) => executor);
@@ -332,6 +392,7 @@ describe('review_runner', () => {
         config: { defaultExecutor: 'codex-cli' } as any,
         sharedExecutorOptions: { baseDir: '/tmp' },
         buildPrompt: vi.fn(() => 'prompt'),
+        buildAnalysisPrompt: vi.fn(async () => 'analysis'),
         planInfo: {
           planId: '6',
           planTitle: 'Max Retry Plan',
@@ -354,6 +415,7 @@ describe('review_runner', () => {
         attempts++;
         throw new Error('Some other error');
       }),
+      executeAnalysisPhase: vi.fn(async () => undefined),
     };
 
     vi.mocked(buildExecutorAndLog).mockImplementation((name: string) => executor);
@@ -366,6 +428,7 @@ describe('review_runner', () => {
         config: { defaultExecutor: 'codex-cli' } as any,
         sharedExecutorOptions: { baseDir: '/tmp' },
         buildPrompt: vi.fn(() => 'prompt'),
+        buildAnalysisPrompt: vi.fn(async () => 'analysis'),
         planInfo: {
           planId: '7',
           planTitle: 'No Retry Plan',
@@ -397,6 +460,7 @@ describe('review_runner', () => {
         }
         return JSON.stringify(goodOutput);
       }),
+      executeAnalysisPhase: vi.fn(async () => undefined),
     };
 
     vi.mocked(buildExecutorAndLog).mockImplementation((name: string) => executor);
@@ -407,6 +471,7 @@ describe('review_runner', () => {
       config: { defaultExecutor: 'codex-cli' } as any,
       sharedExecutorOptions: { baseDir: '/tmp' },
       buildPrompt: vi.fn(() => 'prompt'),
+      buildAnalysisPrompt: vi.fn(async () => 'analysis'),
       planInfo: {
         planId: '8',
         planTitle: 'Codex Retry Plan',
@@ -419,5 +484,74 @@ describe('review_runner', () => {
     expect(attempts).toBe(2);
     expect(result.usedExecutors).toEqual(['codex-cli']);
     expect(result.reviewResult.recommendations).toEqual(['codex retry success']);
+  });
+
+  test('runReview fails when analysis phase fails before review execution', async () => {
+    const executor: Executor = {
+      execute: vi.fn(async () =>
+        JSON.stringify({ issues: [], recommendations: [], actionItems: [] })
+      ),
+      executeAnalysisPhase: vi.fn(async () => {
+        throw new Error('analysis failed');
+      }),
+    };
+
+    vi.mocked(buildExecutorAndLog).mockImplementation(() => executor);
+
+    const { runReview } = await import('./review_runner.js');
+
+    await expect(
+      runReview({
+        executorSelection: 'codex-cli',
+        config: { defaultExecutor: 'codex-cli' } as any,
+        sharedExecutorOptions: { baseDir: '/tmp' },
+        buildPrompt: vi.fn(() => 'prompt'),
+        buildAnalysisPrompt: vi.fn(async () => 'analysis'),
+        planInfo: {
+          planId: '9',
+          planTitle: 'Analysis Failure Plan',
+          planFilePath: '/tmp/plan.yml',
+          baseBranch: 'main',
+          changedFiles: [],
+        },
+      })
+    ).rejects.toThrow(/analysis failed/);
+
+    expect(executor.execute).not.toHaveBeenCalled();
+  });
+
+  test('runReview uses Claude analysis and resume for claude-only execution', async () => {
+    const executor: Executor = {
+      execute: vi.fn(async () => {
+        throw new Error('should not use plain execute');
+      }),
+      executeAnalysisPhase: vi.fn(async () => ({ sessionId: 'session-claude' })),
+      executeReviewModeWithResume: vi.fn(async () =>
+        JSON.stringify({ issues: [], recommendations: ['claude-only'], actionItems: [] })
+      ),
+    };
+
+    vi.mocked(buildExecutorAndLog).mockImplementation(() => executor);
+
+    const { runReview } = await import('./review_runner.js');
+    const result = await runReview({
+      executorSelection: 'claude-code',
+      config: { defaultExecutor: 'codex-cli' } as any,
+      sharedExecutorOptions: { baseDir: '/tmp' },
+      buildPrompt: vi.fn(() => 'prompt'),
+      buildAnalysisPrompt: vi.fn(async () => 'analysis'),
+      planInfo: {
+        planId: '10',
+        planTitle: 'Claude Only Plan',
+        planFilePath: '/tmp/plan.yml',
+        baseBranch: 'main',
+        changedFiles: [],
+      },
+    });
+
+    expect(executor.executeAnalysisPhase).toHaveBeenCalledTimes(1);
+    expect(executor.executeReviewModeWithResume).toHaveBeenCalledTimes(1);
+    expect(result.usedExecutors).toEqual(['claude-code']);
+    expect(result.reviewResult.recommendations).toEqual(['claude-only']);
   });
 });
