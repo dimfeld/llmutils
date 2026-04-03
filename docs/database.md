@@ -304,11 +304,26 @@ All handlers return `HandlerResult` with `prUrls` (affected), `updated` flag, an
 - **Web — plan PR status** (`src/lib/remote/pr_status.remote.ts`): `refreshPrStatus` calls `ingestWebhookEvents(db)` first, then pre-filters explicit PR URLs to only those already cached in the DB before calling `syncPlanPrLinks` — this prevents webhook mode from triggering GitHub API fetches for uncached URLs. PRs not yet seen via webhooks are reported as warnings. Falls back to direct GitHub API refresh when webhooks are not configured. When a plan has no PR URLs, always syncs junction links to prune stale rows (even in webhook mode). `fullRefreshPrStatus` bypasses webhooks entirely and uses `refreshPrStatus()` (unconditional API call) rather than `ensurePrStatusFresh()`, ensuring a true full refresh from GitHub regardless of `last_fetched_at` — the plan-level equivalent of `fullRefreshProjectPrs`.
 - **CLI — `tim pr status`** (`src/tim/commands/pr.ts`): Calls `ingestWebhookEvents(db)` before displaying PR data when configured. In webhook mode, calls `syncPlanPrLinks` with only already-cached explicit URLs (never triggers GitHub API fetch) to keep the junction table consistent with the plan file. `--force-refresh` flag bypasses webhooks and fetches directly from GitHub API. When `TIM_WEBHOOK_SERVER_URL` is not set, preserves existing direct-API behavior.
 
+### Project Settings
+
+Per-project key-value settings stored in the database (migration v16). Used by the web UI for project-level configuration that doesn't belong in YAML config files.
+
+**Table**:
+
+- `project_setting`: Composite PK `(project_id, setting)`. Columns: `project_id` (INTEGER NOT NULL, FK to `project(id)` ON DELETE CASCADE), `setting` (TEXT NOT NULL), `value` (TEXT NOT NULL, JSON-encoded).
+
+**CRUD module** (`src/tim/db/project_settings.ts`):
+
+- `getProjectSetting(db, projectId, setting)`: Returns parsed JSON value or `null` if not set.
+- `getProjectSettings(db, projectId)`: Returns `Record<string, unknown>` of all settings for a project.
+- `setProjectSetting(db, projectId, setting, value)`: INSERT OR REPLACE with `JSON.stringify(value)`.
+- `deleteProjectSetting(db, projectId, setting)`: Returns boolean indicating whether the setting existed.
+
 ### Web Query Helpers
 
 `src/lib/server/db_queries.ts` provides enriched read-only queries for the SvelteKit web interface, layered on top of the CRUD functions in `src/tim/db/plan.ts`:
 
-- **`getProjectsWithMetadata(db)`**: Lists projects with plan counts by status using a single aggregate SQL query (avoids N+1)
+- **`getProjectsWithMetadata(db)`**: Lists projects with plan counts by status using a single aggregate SQL query (avoids N+1). Includes `featured` boolean from `project_setting` (defaults to `true`). Includes all projects regardless of plan count
 - **`getPlansForProject(db, projectId?)`**: Returns enriched plan objects with tasks, tags, dependency UUIDs, computed display status, task completion counts, `pullRequests`/`issues` (parsed from JSON string columns), and `prSummaryStatus` (`'passing' | 'failing' | 'pending' | 'none'`). The `prSummaryStatus` is computed by canonicalizing each plan's `pull_request` URLs and matching them directly against `pr_status.pr_url` — not via `plan_pr` junctions — so cached status is shown even before junction links are populated. Neutral/cancelled/skipped check states map to `'passing'`; plans with PRs but no check data at all get `'none'`. When `projectId` is omitted, queries all projects with unfiltered SQL.
 - **`getPlanDetail(db, planUuid)`**: Single plan with full dependency details (titles, statuses, resolved flag), parent info, assignment data, and `prStatuses: PrStatusDetail[]` (full PR data with nested check runs, reviews, labels). PR statuses are loaded by canonicalizing the plan's `pull_request` URLs and querying `pr_status` directly, falling back to `plan_pr` join only when URLs aren't available. Uses targeted single-plan queries (not full project bundle) and loads transitive dependency plans for accurate display status computation. Assignment is fetched via `getAssignmentEntry` (single lookup) with status overridden from the live plan row to avoid stale assignment data.
 

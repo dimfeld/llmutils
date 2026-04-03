@@ -19,7 +19,31 @@
     // URL: /projects/{id}/{tab}
     return parts[3] ?? 'plans';
   });
+
+  // Settings tab is per-project only, so "All Projects" should never link to it
+  let allProjectsTab = $derived(currentTab === 'settings' ? 'sessions' : currentTab);
+  let featuredProjects = $derived(projects.filter((p) => p.featured && p.planCount > 0));
+  let unfeaturedProjects = $derived(projects.filter((p) => !p.featured && p.planCount > 0));
+  let selectedIsUnfeatured = $derived(
+    unfeaturedProjects.some((p) => String(p.id) === selectedProjectId)
+  );
 </script>
+
+{#snippet projectLink(project: ProjectWithMetadata)}
+  {@const isSelected = selectedProjectId === String(project.id)}
+  <a
+    href={resolve(projectUrl(project.id, currentTab))}
+    class="rounded-md px-3 py-2 text-sm transition-colors {isSelected
+      ? 'bg-blue-100 font-medium text-blue-900 dark:bg-blue-900/30 dark:text-blue-200'
+      : 'text-foreground hover:bg-gray-100 dark:hover:bg-gray-800'}"
+    aria-current={isSelected ? 'page' : undefined}
+  >
+    <div class="truncate">{projectDisplayName(project.repository_id, currentUsername)}</div>
+    <div class="mt-0.5 text-xs text-muted-foreground">
+      {project.activePlanCount} active / {project.planCount} total
+    </div>
+  </a>
+{/snippet}
 
 <aside class="flex w-56 shrink-0 flex-col border-r border-border bg-background">
   <div class="p-3 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
@@ -30,7 +54,7 @@
     aria-label="Project navigation"
   >
     <a
-      href={resolve(projectUrl('all', currentTab))}
+      href={resolve(projectUrl('all', allProjectsTab))}
       class="rounded-md px-3 py-2 text-sm transition-colors {selectedProjectId === 'all'
         ? 'bg-blue-100 font-medium text-blue-900 dark:bg-blue-900/30 dark:text-blue-200'
         : 'text-foreground hover:bg-gray-100 dark:hover:bg-gray-800'}"
@@ -38,20 +62,22 @@
     >
       All Projects
     </a>
-    {#each projects as project (project.id)}
-      {@const isSelected = selectedProjectId === String(project.id)}
-      <a
-        href={resolve(projectUrl(project.id, currentTab))}
-        class="rounded-md px-3 py-2 text-sm transition-colors {isSelected
-          ? 'bg-blue-100 font-medium text-blue-900 dark:bg-blue-900/30 dark:text-blue-200'
-          : 'text-foreground hover:bg-gray-100 dark:hover:bg-gray-800'}"
-        aria-current={isSelected ? 'page' : undefined}
-      >
-        <div class="truncate">{projectDisplayName(project.repository_id, currentUsername)}</div>
-        <div class="mt-0.5 text-xs text-muted-foreground">
-          {project.activePlanCount} active / {project.planCount} total
-        </div>
-      </a>
+    {#each featuredProjects as project (project.id)}
+      {@render projectLink(project)}
     {/each}
+    {#if unfeaturedProjects.length > 0}
+      <details class="mt-2" open={selectedIsUnfeatured}>
+        <summary
+          class="cursor-pointer rounded-md px-3 py-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase select-none hover:bg-gray-100 dark:hover:bg-gray-800"
+        >
+          Other Projects
+        </summary>
+        <div class="mt-0.5 flex flex-col gap-0.5">
+          {#each unfeaturedProjects as project (project.id)}
+            {@render projectLink(project)}
+          {/each}
+        </div>
+      </details>
+    {/if}
   </nav>
 </aside>

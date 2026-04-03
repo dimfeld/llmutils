@@ -326,7 +326,7 @@ describe('tim db/database', () => {
         []
       >('SELECT version, import_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(15);
+    expect(version?.version).toBe(16);
     expect(version?.import_completed).toBe(1);
 
     const tables = db
@@ -403,7 +403,7 @@ describe('tim db/database', () => {
         []
       >('SELECT version, import_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(15);
+    expect(version?.version).toBe(16);
     expect(version?.import_completed).toBe(1);
     const versionRowCount = db2
       .query<{ count: number }, []>('SELECT count(*) as count FROM schema_version')
@@ -534,7 +534,7 @@ describe('tim db/database', () => {
       const schemaVersion = db
         .query<{ version: number }, []>('SELECT version FROM schema_version')
         .get();
-      expect(schemaVersion?.version).toBe(15);
+      expect(schemaVersion?.version).toBe(16);
 
       const planColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('plan')")
@@ -573,7 +573,7 @@ describe('tim db/database', () => {
     }
   });
 
-  test('runMigrations upgrades schema version 12 to 15, deduping PR child rows and seeding webhook cursor', () => {
+  test('runMigrations upgrades schema version 12 to 16, deduping PR child rows and seeding webhook cursor', () => {
     const dbPath = path.join(tempDir, DATABASE_FILENAME);
     const db = new Database(dbPath);
 
@@ -651,7 +651,7 @@ describe('tim db/database', () => {
           []
         >('SELECT version FROM schema_version ORDER BY rowid DESC LIMIT 1')
         .get();
-      expect(schemaVersion?.version).toBe(15);
+      expect(schemaVersion?.version).toBe(16);
 
       const checkRows = db
         .query<

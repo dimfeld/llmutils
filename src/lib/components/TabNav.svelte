@@ -4,12 +4,16 @@
 
   let { projectId }: { projectId: string } = $props();
 
-  const tabs = [
+  const baseTabs = [
     { label: 'Sessions', slug: 'sessions' },
     { label: 'Active Work', slug: 'active' },
     { label: 'Pull Requests', slug: 'prs' },
     { label: 'Plans', slug: 'plans' },
-  ] as const;
+  ];
+
+  let tabs = $derived(
+    projectId !== 'all' ? [...baseTabs, { label: 'Settings', slug: 'settings' }] : baseTabs
+  );
 
   let pathname = $derived(page.url.pathname);
 

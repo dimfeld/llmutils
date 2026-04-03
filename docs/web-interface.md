@@ -29,11 +29,12 @@ When broadening server-side behavior (e.g. making a check command-agnostic inste
 ### Routing Gotchas
 
 - SvelteKit's `resolve()` from `$app/paths` enforces typed route parameters — it won't accept dynamic/computed path segments. Use `base` from `$app/paths` + template literals for dynamic paths.
+- SvelteKit reserves filenames starting with `+` in route directories (e.g., `+page.svelte`, `+server.ts`). Test files must not use the `+` prefix — name them without it (e.g., `page.server.test.ts` instead of `+page.server.test.ts`).
 
 ## Architecture
 
 - Route structure: `/projects/[projectId]/{tab}` where `projectId` is a numeric ID or `all`
-- Tabs: `sessions`, `active`, `plans`
+- Tabs: `sessions`, `active`, `plans`, `settings` (settings tab hidden for `all` pseudo-project)
 - `src/lib/server/plans_browser.ts` is the abstraction layer between route handlers and `db_queries.ts`
 - Display statuses (`blocked`, `recently_done`) are computed server-side in `db_queries.ts`, not stored in DB
 - Cookie-based project persistence: `src/lib/stores/project.svelte.ts` manages the last-selected project ID (httpOnly cookie, server-read only)
@@ -137,6 +138,27 @@ Shared overlap utilities live in `src/lib/utils/pr_update_events.ts`: `hasReleva
 Task completion counts are fetched via a remote query in `src/lib/remote/plan_task_counts.remote.ts`:
 
 - **`getPlanTaskCounts`** (`query`): Returns `{ done, total }` task counts for a plan by UUID. Used by `SessionDetail` to display task progress (e.g. "3/5 completed") in the session header.
+
+## Project Settings
+
+The Settings tab (`/projects/[projectId]/settings`) allows configuring per-project settings stored in the database. The tab is hidden for the `all` pseudo-project since settings are per-project.
+
+### Route Structure
+
+- `+page.server.ts`: Loads current settings via `getProjectSettings()`. Redirects to `/projects/all/sessions` if projectId is `all`.
+- `+page.svelte`: Form with toggle controls for each known setting. Tracks dirty state and submits changed settings via the `updateProjectSetting` remote command.
+
+### Remote Command
+
+`src/lib/remote/project_settings.remote.ts` provides `updateProjectSetting`, which validates setting names against a `settingValueSchemas` registry and rejects unknown settings. Takes `{ projectId, setting, value }`.
+
+### Available Settings
+
+- **Featured** (boolean, default `true`): Controls whether the project appears in the main sidebar list or is grouped in a collapsed "Other Projects" section at the bottom. The `ProjectSidebar` component splits projects into featured and non-featured groups using `$derived`. The "Other Projects" section auto-opens when the selected project is non-featured.
+
+### Sidebar Integration
+
+`getProjectsWithMetadata()` in `db_queries.ts` loads the `featured` setting for each project, adding a `featured: boolean` field to `ProjectWithMetadata` (defaults to `true`). The sidebar's "All Projects" link falls back to the `sessions` tab when the current tab is `settings`, since the `all` pseudo-project has no settings route.
 
 ## Sessions Tab
 

@@ -529,6 +529,17 @@ const migrations: Migration[] = [
         ON pr_review_thread_comment(review_thread_id);
     `,
   },
+  {
+    version: 16,
+    up: `
+      CREATE TABLE project_setting (
+        project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+        setting TEXT NOT NULL,
+        value TEXT NOT NULL,
+        PRIMARY KEY (project_id, setting)
+      );
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {

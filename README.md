@@ -100,6 +100,14 @@ The web interface supports a project-wide PR view that shows all open PRs for a 
 githubUsername: your-github-username # optional, avoids an API call
 ```
 
+### Project Settings
+
+The web interface includes a per-project Settings tab at `/projects/[projectId]/settings` for configuring project-level preferences stored in the database. The settings tab is not shown for the "all projects" view.
+
+Available settings:
+
+- **Featured** (default: on): Controls whether the project appears in the main sidebar list or is grouped in a collapsed "Other Projects" section at the bottom.
+
 ### GitHub Webhook Receiver (separate ingress service)
 
 This repository includes a standalone Bun + SQLite webhook receiver at `src/webhooks/server.ts` that can run as a small internet-facing ingress service while keeping the main tim web app private.
@@ -207,12 +215,13 @@ Each running process writes a JSON file at `~/.cache/tim/sessions/<pid>.json` co
 
 Tim includes a SvelteKit-based web interface for browsing and managing plans. The server-side layer uses lazy initialization to load the tim configuration, sync materialized plan files to the SQLite database, and serve enriched plan data with computed display statuses (e.g. blocked, recently done).
 
-The interface is organized around projects, with four tabs per project:
+The interface is organized around projects, with tabs per project:
 
 - **Sessions** — real-time monitoring of tim agent processes with live message transcripts, prompt interaction (confirm/input/select/checkbox/prefix_select), and free-form user input. For plan-associated sessions (generate, agent, chat), a split-pane view shows the live plan file content alongside the message stream, updating in real-time as the agent modifies the plan.
 - **Active Work** — dashboard of current work per project showing workspaces (with Primary/Auto/Locked/Available status badges) and active plans (in_progress + blocked). Workspaces are filtered to "recently active" by default (locked, primary, or updated within 48 hours) with a toggle to show all. Clicking a plan shows full detail in the right pane.
 - **Pull Requests** — project-wide view of open GitHub PRs relevant to the user (authored or reviewing), with automatic plan-PR linking based on branch name matching, webhook-first refresh (when configured), and PR detail with checks, reviews, and labels. A "Full Refresh from GitHub API" button provides an escape hatch when webhook data is stale or missing.
 - **Plans** — browse, filter, search, and inspect plans with two-column layout (list + detail), status/priority badges, collapsible status groups, and clickable dependency navigation. Review issues on a plan can be managed directly: dismiss individual issues, convert them into plan tasks, or clear all issues at once.
+- **Settings** — per-project settings stored in the database (only shown for individual projects, not the "all projects" view). Currently supports a "Featured" toggle that controls sidebar grouping — featured projects appear in the main sidebar list, while non-featured projects are grouped in a collapsible "Other Projects" section at the bottom. Projects default to featured when no setting exists.
 
 Navigation uses route-based project selection at `/projects/{projectId}/{tab}`, with cookie persistence to remember the last-selected project. The home page redirects to the most recently used project. On all tabs, pressing **Option+Down** (Alt+Down) / **Option+Up** (Alt+Up) navigates to the next/previous item in the list, respecting collapsed groups and active filters. Global keyboard shortcuts are also available: **Ctrl+/** focuses the search input, and **Ctrl+1/2/3/4** switches between the Sessions, Active Work, Pull Requests, and Plans tabs.
 
