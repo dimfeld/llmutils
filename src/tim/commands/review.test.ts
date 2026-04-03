@@ -758,6 +758,35 @@ index 1234567..abcdefg 100644
     expect(getReviewGuidePath(123)).toBe(join('.tim', 'tmp', 'review-guide-123.md'));
   });
 
+  test('buildReviewPrompt omits review guide section when no guide path is provided', () => {
+    const planData: PlanSchema = {
+      id: 12,
+      title: 'Review without guide',
+      goal: 'Verify legacy prompt behavior',
+      tasks: [],
+    };
+
+    const diffResult = {
+      hasChanges: true,
+      changedFiles: ['src/example.ts'],
+      baseBranch: 'main',
+      diffContent: 'diff --git',
+    };
+
+    vi.mocked(agentPromptsModule.getReviewerPrompt).mockImplementation(
+      (contextContent: string) =>
+        ({
+          prompt: contextContent,
+        }) as any
+    );
+
+    const prompt = buildReviewPrompt(planData, diffResult);
+
+    expect(prompt).not.toContain('# Review Guide');
+    expect(prompt).not.toContain('organizational framework');
+    expect(prompt).toContain('# Review Instructions');
+  });
+
   test('builds analysis prompt for jj repositories', async () => {
     vi.mocked(gitModule.getUsingJj).mockResolvedValue(true);
 
@@ -776,12 +805,31 @@ index 1234567..abcdefg 100644
       diffContent: 'diff --git',
     };
 
+    const parentChain: PlanSchema[] = [
+      {
+        id: 101,
+        title: 'Parent review work',
+        goal: 'Coordinate review improvements',
+        details: 'Parent details',
+        tasks: [],
+      },
+    ];
+    const completedChildren: PlanSchema[] = [
+      {
+        id: 102,
+        title: 'Finished child work',
+        goal: 'Land supporting changes',
+        details: 'Child details',
+        tasks: [],
+      },
+    ];
+
     const prompt = await buildAnalysisPrompt(
       planData,
       diffResult,
       '/repo/root',
-      [],
-      [],
+      parentChain,
+      completedChildren,
       'Scoped to current review tasks.',
       [{ index: 3, title: 'Update tests' }]
     );
@@ -791,6 +839,12 @@ index 1234567..abcdefg 100644
     expect(prompt).toContain('Ignore comments starting with `AI:` or `AI_COMMENT_START`');
     expect(prompt).toContain('`.tim/tmp/review-guide-308.md`');
     expect(prompt).toContain('`/repo/root/.tim/tmp/review-guide-308.md`');
+    expect(prompt).toContain('# Parent Plan Context');
+    expect(prompt).toContain('**Parent Plan ID:** 101');
+    expect(prompt).toContain('# Completed Child Plans');
+    expect(prompt).toContain('**Child Plan ID:** 102');
+    expect(prompt).toContain('**Changed Files (2):**');
+    expect(prompt).toContain('- src/tim/review_runner.ts');
     expect(prompt).toContain('Review Scope:** Scoped to current review tasks.');
     expect(prompt).toContain('Remaining Unfinished Tasks');
   });
