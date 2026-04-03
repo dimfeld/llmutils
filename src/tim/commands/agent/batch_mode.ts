@@ -1,6 +1,8 @@
 import { commitAll } from '../../../common/process.js';
 import { getWorkingCopyStatus, type WorkingCopyStatus } from '../../../common/git.js';
 import { promptConfirm } from '../../../common/input.js';
+import { getLoggerAdapter } from '../../../logging/adapter.js';
+import { HeadlessAdapter } from '../../../logging/headless_adapter.js';
 import { boldMarkdownHeaders, error, log, sendStructured, warn } from '../../../logging.js';
 import chalk from 'chalk';
 import { executePostApplyCommand } from '../../actions.js';
@@ -430,6 +432,7 @@ Available tasks:\n\n${taskDescriptions}`,
           finalReview === false || (initialCompletedTaskCount === 0 && iteration === 1);
         let planStillCompleteAfterReview = true;
         if (!shouldSkipFinalReview) {
+          const isHeadlessReview = getLoggerAdapter() instanceof HeadlessAdapter;
           sendStructured({
             type: 'workflow_progress',
             timestamp: timestamp(),
@@ -439,14 +442,19 @@ Available tasks:\n\n${taskDescriptions}`,
           try {
             const reviewResult = await handleReviewCommand(
               currentPlanFile,
-              { cwd: baseDir },
+              isHeadlessReview
+                ? { cwd: baseDir, saveIssues: true, noAutofix: true }
+                : { cwd: baseDir },
               {
                 parent: { opts: () => ({ config: configPath }) },
               }
             );
 
-            // If tasks were appended, ask if user wants to continue
-            if (reviewResult?.tasksAppended && reviewResult.tasksAppended > 0) {
+            if (isHeadlessReview && (reviewResult?.issuesSaved ?? 0) > 0) {
+              planStillCompleteAfterReview = false;
+              await setPlanStatusById(updatedPlanData.id, 'needs_review', baseDir, currentPlanFile);
+            } else if (reviewResult?.tasksAppended && reviewResult.tasksAppended > 0) {
+              // If tasks were appended, ask if user wants to continue
               const planIdStr = updatedPlanData.id ? ` ${updatedPlanData.id}` : '';
 
               // The user may edit the plan during the prompt below, so make sure the DB is up to date here.

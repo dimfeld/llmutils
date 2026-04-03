@@ -9,6 +9,8 @@ import { getGitRoot } from '../../../common/git.js';
 import { getLogDir } from '../../../common/config_paths.js';
 import { logSpawn } from '../../../common/process.js';
 import { CleanupRegistry } from '../../../common/cleanup_registry.js';
+import { getLoggerAdapter } from '../../../logging/adapter.js';
+import { HeadlessAdapter } from '../../../logging/headless_adapter.js';
 import {
   boldMarkdownHeaders,
   closeLogFile,
@@ -30,7 +32,7 @@ import {
 } from '../../executors/index.js';
 import type { ExecutorCommonOptions } from '../../executors/types.js';
 import type { PlanSchema } from '../../planSchema.js';
-import { readPlanFile, writePlanFile } from '../../plans.js';
+import { readPlanFile, setPlanStatusById, writePlanFile } from '../../plans.js';
 import { findNextActionableItem } from '../../plans/find_next.js';
 import { markStepDone, markTaskDone } from '../../plans/mark_done.js';
 import { prepareNextStep } from '../../plans/prepare_step.js';
@@ -519,6 +521,8 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
           configPath: globalCliOptions.config,
         });
 
+        const isHeadlessReview = getLoggerAdapter() instanceof HeadlessAdapter;
+
         if (stubResult.tasksAppended && stubResult.tasksAppended > 0) {
           const updatedPlanData = await readPlanFile(currentPlanFile);
           const planIdStr = updatedPlanData.id ? ` ${updatedPlanData.id}` : '';
@@ -528,6 +532,8 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
               default: true,
             });
           }
+        } else if (isHeadlessReview && (stubResult.issuesSaved ?? 0) > 0) {
+          continueAfterStubPlan = false;
         }
       } catch (err) {
         error('Direct execution failed:', err);
@@ -823,6 +829,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
               options.finalReview === false || (initialCompletedTaskCount === 0 && stepCount === 1);
             let planStillCompleteAfterReview = true;
             if (!shouldSkipFinalReview) {
+              const isHeadlessReview = getLoggerAdapter() instanceof HeadlessAdapter;
               sendStructured({
                 type: 'workflow_progress',
                 timestamp: timestamp(),
@@ -832,14 +839,27 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
               try {
                 const reviewResult = await handleReviewCommand(
                   currentPlanFile,
-                  { cwd: currentBaseDir },
+                  isHeadlessReview
+                    ? { cwd: currentBaseDir, saveIssues: true, noAutofix: true }
+                    : { cwd: currentBaseDir },
                   {
                     parent: { opts: () => ({ config: globalCliOptions.config }) },
                   }
                 );
 
-                // If tasks were appended, ask if user wants to continue
-                if (reviewResult?.tasksAppended && reviewResult.tasksAppended > 0) {
+                if (isHeadlessReview && (reviewResult?.issuesSaved ?? 0) > 0) {
+                  const updatedPlanData = await readPlanFile(currentPlanFile);
+                  if (typeof updatedPlanData.id === 'number') {
+                    await setPlanStatusById(
+                      updatedPlanData.id,
+                      'needs_review',
+                      currentBaseDir,
+                      currentPlanFile
+                    );
+                  }
+                  planStillCompleteAfterReview = false;
+                } else if (reviewResult?.tasksAppended && reviewResult.tasksAppended > 0) {
+                  // If tasks were appended, ask if user wants to continue
                   // Read the updated plan to get the plan ID
                   const updatedPlanData = await readPlanFile(currentPlanFile);
                   const planIdStr = updatedPlanData.id ? ` ${updatedPlanData.id}` : '';

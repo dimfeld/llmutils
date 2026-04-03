@@ -6,6 +6,9 @@ import yaml from 'yaml';
 
 const handleReviewCommandSpy = vi.fn(async () => ({ tasksAppended: 0 }));
 const executorExecuteSpy = vi.fn(async () => undefined);
+let currentLoggerAdapter: unknown = null;
+
+class MockHeadlessAdapter {}
 
 let statusCallCount = 0;
 
@@ -15,6 +18,14 @@ vi.mock('../../../logging.js', () => ({
   log: vi.fn(() => {}),
   sendStructured: vi.fn(() => {}),
   warn: vi.fn(() => {}),
+}));
+
+vi.mock('../../../logging/adapter.js', () => ({
+  getLoggerAdapter: vi.fn(() => currentLoggerAdapter),
+}));
+
+vi.mock('../../../logging/headless_adapter.js', () => ({
+  HeadlessAdapter: MockHeadlessAdapter,
 }));
 
 vi.mock('../../../common/process.js', () => ({
@@ -107,6 +118,7 @@ describe('executeBatchMode final review workspace', () => {
     handleReviewCommandSpy.mockClear();
     executorExecuteSpy.mockClear();
     statusCallCount = 0;
+    currentLoggerAdapter = null;
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'batch-final-review-test-'));
     planFile = path.join(tempDir, 'plan.yml');
@@ -168,5 +180,39 @@ describe('executeBatchMode final review workspace', () => {
       { cwd: tempDir },
       expect.any(Object)
     );
+  });
+
+  test('saves review issues and leaves the plan in needs_review in headless mode', async () => {
+    currentLoggerAdapter = new MockHeadlessAdapter();
+    handleReviewCommandSpy.mockResolvedValueOnce({ tasksAppended: 0, issuesSaved: 2 });
+
+    executorExecuteSpy.mockImplementationOnce(async () => {
+      const content = await fs.readFile(planFile, 'utf-8');
+      const data = yaml.parse(content);
+      data.tasks[1].done = true;
+      data.tasks[1].steps[0].done = true;
+      data.updatedAt = new Date().toISOString();
+      await fs.writeFile(planFile, yaml.stringify(data));
+    });
+
+    const { executeBatchMode } = await import('./batch_mode.js');
+
+    await executeBatchMode({
+      currentPlanFile: planFile,
+      config: { postApplyCommands: [], planAutocompleteStatus: 'done' } as any,
+      executor: { execute: executorExecuteSpy, filePathPrefix: '' } as any,
+      baseDir: tempDir,
+      finalReview: true,
+      configPath: '/tmp/test-config.yml',
+    });
+
+    const updatedPlan = yaml.parse(await fs.readFile(planFile, 'utf-8'));
+
+    expect(handleReviewCommandSpy).toHaveBeenCalledWith(
+      planFile,
+      { cwd: tempDir, saveIssues: true, noAutofix: true },
+      expect.any(Object)
+    );
+    expect(updatedPlan.status).toBe('needs_review');
   });
 });

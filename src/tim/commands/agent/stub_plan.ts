@@ -1,4 +1,6 @@
 import { commitAll } from '../../../common/process.js';
+import { getLoggerAdapter } from '../../../logging/adapter.js';
+import { HeadlessAdapter } from '../../../logging/headless_adapter.js';
 import { boldMarkdownHeaders, log, warn } from '../../../logging.js';
 import { executePostApplyCommand } from '../../actions.js';
 import { type TimConfig } from '../../configSchema.js';
@@ -14,6 +16,7 @@ import { handleReviewCommand } from '../review.js';
 
 export interface StubPlanExecutionResult {
   tasksAppended?: number;
+  issuesSaved?: number;
 }
 
 export async function executeStubPlan({
@@ -126,15 +129,24 @@ export async function executeStubPlan({
   }
 
   if (finalReview !== false) {
+    const isHeadlessReview = getLoggerAdapter() instanceof HeadlessAdapter;
     log(boldMarkdownHeaders('\n## Running Final Review\n'));
     try {
       const reviewResult = await handleReviewCommand(
         planFilePath,
-        { cwd: baseDir },
+        isHeadlessReview ? { cwd: baseDir, saveIssues: true, noAutofix: true } : { cwd: baseDir },
         {
           parent: { opts: () => ({ config: configPath }) },
         }
       );
+
+      if (isHeadlessReview && (reviewResult.issuesSaved ?? 0) > 0) {
+        if (isShuttingDown()) {
+          return {};
+        }
+        await setPlanStatusById(planData.id, 'needs_review', baseDir, planFilePath);
+        return { issuesSaved: reviewResult.issuesSaved };
+      }
 
       if (reviewResult.tasksAppended > 0) {
         if (isShuttingDown()) {

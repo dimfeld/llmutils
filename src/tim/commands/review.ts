@@ -89,6 +89,8 @@ import { createCleanupPlan, type CleanupPlanOptions } from '../utils/cleanup_pla
 export interface ReviewCommandResult {
   /** Number of tasks appended to the plan from review issues */
   tasksAppended: number;
+  /** Number of issues saved to reviewIssues for later triage */
+  issuesSaved?: number;
 }
 
 /**
@@ -497,6 +499,7 @@ async function handleReviewIssueActions(params: {
   let issuesToSaveForLater: ReviewIssue[] | null = null;
   let autofixExecutorName: ReviewExecutorName | null = reviewExecutorName;
   let appendedTaskCount = 0;
+  let issuesSavedCount = 0;
   let actionCompleted = false;
   let skipNotification = false;
 
@@ -767,6 +770,7 @@ export async function handleReviewCommand(
   let notifyCwd = '';
   let skipNotification = false;
   let appendedTaskCount = 0;
+  let issuesSavedCount = 0;
   let headlessAdapter: HeadlessAdapter | undefined;
   const notifyReviewDone = async (
     message: string,
@@ -1310,6 +1314,7 @@ export async function handleReviewCommand(
             !actionResult.savedIssuesForLater
           ) {
             await saveReviewIssuesToPlan(contextPlanFile, reviewResult.issues, globalOpts.config);
+            issuesSavedCount = reviewResult.issues.length;
             skipNotification = true;
             reviewLog(
               chalk.green(
@@ -1487,7 +1492,7 @@ export async function handleReviewCommand(
     }
   }
 
-  return { tasksAppended: appendedTaskCount };
+  return { tasksAppended: appendedTaskCount, issuesSaved: issuesSavedCount };
 }
 
 export function sanitizeBranchName(branch: string): string {
@@ -1763,7 +1768,7 @@ type PlanTask = PlanSchema['tasks'][number];
 /** A task with its original 1-based index preserved when filtering */
 type PlanTaskWithIndex = PlanTask & { originalIndex?: number };
 
-function buildTaskTitleFromIssue(issue: ReviewIssue): string {
+export function buildTaskTitleFromIssue(issue: ReviewIssue): string {
   // Normalize whitespace and get content as a single string
   const normalized = issue.content.replace(/\s+/g, ' ').trim();
 
@@ -1778,7 +1783,7 @@ function buildTaskTitleFromIssue(issue: ReviewIssue): string {
   return `Address Review Feedback: ${firstSentence}`;
 }
 
-function createTaskFromIssue(issue: ReviewIssue): PlanTask {
+export function createTaskFromIssue(issue: ReviewIssue): PlanTask {
   const title = buildTaskTitleFromIssue(issue);
 
   const descriptionSegments: string[] = [];

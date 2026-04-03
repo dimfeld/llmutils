@@ -10,12 +10,23 @@ const handleReviewCommandSpy = vi.fn(async () => ({ tasksAppended: 2 }));
 const executorExecuteSpy = vi.fn(async () => undefined);
 const checkAndMarkParentDoneSpy = vi.fn(async () => undefined);
 const markParentInProgressSpy = vi.fn(async () => undefined);
+let currentLoggerAdapter: unknown = null;
+
+class MockHeadlessAdapter {}
 
 vi.mock('../../../logging.js', () => ({
   log: vi.fn(() => {}),
   warn: vi.fn(() => {}),
   debugLog: vi.fn(() => {}),
   boldMarkdownHeaders: (value: string) => value,
+}));
+
+vi.mock('../../../logging/adapter.js', () => ({
+  getLoggerAdapter: vi.fn(() => currentLoggerAdapter),
+}));
+
+vi.mock('../../../logging/headless_adapter.js', () => ({
+  HeadlessAdapter: MockHeadlessAdapter,
 }));
 
 vi.mock('../../../common/process.js', () => ({
@@ -52,6 +63,7 @@ describe('executeStubPlan', () => {
     executorExecuteSpy.mockClear();
     checkAndMarkParentDoneSpy.mockClear();
     markParentInProgressSpy.mockClear();
+    currentLoggerAdapter = null;
     (removePlanAssignment as ReturnType<typeof vi.fn>).mockClear();
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'stub-plan-test-'));
@@ -102,6 +114,35 @@ describe('executeStubPlan', () => {
     );
     expect(updatedPlan.status).toBe('in_progress');
     expect(executorExecuteSpy).toHaveBeenCalledTimes(1);
+    expect(checkAndMarkParentDoneSpy).not.toHaveBeenCalled();
+    expect(removePlanAssignment).not.toHaveBeenCalled();
+  });
+
+  test('saves review issues and exits in headless mode after final review', async () => {
+    currentLoggerAdapter = new MockHeadlessAdapter();
+    handleReviewCommandSpy.mockResolvedValueOnce({ tasksAppended: 0, issuesSaved: 2 });
+
+    const { executeStubPlan } = await import('./stub_plan.js');
+
+    const result = await executeStubPlan({
+      config: { postApplyCommands: [], planAutocompleteStatus: 'done' } as any,
+      baseDir: tempDir,
+      planFilePath: planFile,
+      planData: await readPlanFile(planFile),
+      executor: { execute: executorExecuteSpy, filePathPrefix: '' } as any,
+      commit: false,
+      finalReview: true,
+    });
+
+    const updatedPlan = await readPlanFile(planFile);
+
+    expect(result).toEqual({ issuesSaved: 2 });
+    expect(handleReviewCommandSpy).toHaveBeenCalledWith(
+      planFile,
+      { cwd: tempDir, saveIssues: true, noAutofix: true },
+      expect.any(Object)
+    );
+    expect(updatedPlan.status).toBe('needs_review');
     expect(checkAndMarkParentDoneSpy).not.toHaveBeenCalled();
     expect(removePlanAssignment).not.toHaveBeenCalled();
   });
