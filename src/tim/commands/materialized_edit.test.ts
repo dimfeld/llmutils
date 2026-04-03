@@ -148,12 +148,14 @@ describe('materialized edit retry flow', () => {
     const planFileError = Object.assign(new Error('bad schema'), { name: 'PlanFileError' });
     const yamlParseError = Object.assign(new Error('bad yaml'), { name: 'YAMLParseError' });
     const yamlReferenceError = new ReferenceError('Aliased anchor not found: missing');
+    const unrelatedReferenceError = new ReferenceError('x is not defined');
     const genericError = new Error('uuid mismatch');
 
     expect(isUserFixableParseError(noFrontmatter)).toBe(true);
     expect(isUserFixableParseError(planFileError)).toBe(true);
     expect(isUserFixableParseError(yamlParseError)).toBe(true);
     expect(isUserFixableParseError(yamlReferenceError)).toBe(true);
+    expect(isUserFixableParseError(unrelatedReferenceError)).toBe(false);
     expect(isUserFixableParseError(genericError)).toBe(false);
     expect(isUserFixableParseError('not an error')).toBe(false);
   });

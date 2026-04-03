@@ -35,7 +35,7 @@ export function isUserFixableParseError(error: unknown): boolean {
     error.name === 'YAMLParseError' ||
     error.name === 'YAMLSemanticError' ||
     error.name === 'YAMLSyntaxError' ||
-    error.name === 'ReferenceError'
+    (error instanceof ReferenceError && /alias|anchor/i.test(error.message))
   );
 }
 
