@@ -476,40 +476,47 @@ export class ClaudeCodeExecutor implements Executor {
     this.parseAllowedTools(allowedTools);
   }
 
-  private handleClaudeReviewResult(result: {
-    exitCode: number;
-    killedByTimeout: boolean;
-    killedByInactivity: boolean;
-    seenResultMessage: boolean;
-  }): void {
-    const reviewTimeoutMs = 30 * 60 * 1000;
+  private static readonly REVIEW_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
+  private handleClaudeReviewResult(
+    result: {
+      exitCode: number;
+      killedByTimeout: boolean;
+      killedByInactivity: boolean;
+      seenResultMessage: boolean;
+    },
+    phase: 'review' | 'analysis' = 'review'
+  ): void {
+    const label = phase === 'analysis' ? 'Claude analysis' : 'Claude review';
 
     if ((result.killedByTimeout || result.killedByInactivity) && !result.seenResultMessage) {
       throw new Error(
-        `Claude review timed out after ${Math.round(reviewTimeoutMs / 60000)} minutes`
+        `${label} timed out after ${Math.round(ClaudeCodeExecutor.REVIEW_TIMEOUT_MS / 60000)} minutes`
       );
     }
 
     if ((result.killedByTimeout || result.killedByInactivity) && result.seenResultMessage) {
       log(
-        `Claude review was killed by inactivity timeout, but completed successfully (result message seen)`
+        `${label} was killed by inactivity timeout, but completed successfully (result message seen)`
       );
     }
 
     if (result.exitCode !== 0 && !result.seenResultMessage) {
-      throw new Error(`Claude review exited with non-zero exit code: ${result.exitCode}`);
+      throw new Error(`${label} exited with non-zero exit code: ${result.exitCode}`);
     }
 
     if (result.exitCode !== 0 && result.seenResultMessage) {
       log(
-        `Claude review exited with code ${result.exitCode}, but completed successfully (result message seen)`
+        `${label} exited with code ${result.exitCode}, but completed successfully (result message seen)`
       );
     } else {
-      log('Claude review output captured.');
+      log(`${label} output captured.`);
     }
   }
 
-  private extractClaudeSessionId(messages: FormattedClaudeMessage[]): string | undefined {
+  private extractClaudeSessionEnd(
+    messages: FormattedClaudeMessage[]
+  ): { sessionId?: string; success: boolean } | undefined {
     for (const message of messages) {
       const structuredMessages = Array.isArray(message.structured)
         ? message.structured
@@ -519,7 +526,7 @@ export class ClaudeCodeExecutor implements Executor {
 
       for (const structured of structuredMessages) {
         if (structured.type === 'agent_session_end') {
-          return structured.sessionId;
+          return { sessionId: structured.sessionId, success: structured.success };
         }
       }
     }
@@ -537,8 +544,7 @@ export class ClaudeCodeExecutor implements Executor {
 
     await this.prepareReviewAllowedTools();
 
-    let capturedSessionId: string | undefined;
-    const reviewTimeoutMs = 30 * 60 * 1000;
+    let sessionEnd: { sessionId?: string; success: boolean } | undefined;
     const result = await runClaudeSubprocess({
       prompt: contextContent,
       cwd: gitRoot,
@@ -547,7 +553,7 @@ export class ClaudeCodeExecutor implements Executor {
       terminalInput: this.sharedOptions.terminalInput,
       model: this.sharedOptions.model,
       label: 'review-analysis',
-      inactivityTimeoutMs: reviewTimeoutMs,
+      inactivityTimeoutMs: ClaudeCodeExecutor.REVIEW_TIMEOUT_MS,
       extraAccessDirs:
         this.timConfig.isUsingExternalStorage && this.timConfig.externalRepositoryConfigDir
           ? [this.timConfig.externalRepositoryConfigDir]
@@ -555,17 +561,21 @@ export class ClaudeCodeExecutor implements Executor {
       trackedFiles: this.trackedFiles,
       logModelSelection: true,
       processFormattedMessages: (messages) => {
-        capturedSessionId ||= this.extractClaudeSessionId(messages);
+        sessionEnd ||= this.extractClaudeSessionEnd(messages);
       },
     });
 
-    this.handleClaudeReviewResult(result);
+    this.handleClaudeReviewResult(result, 'analysis');
 
-    if (!capturedSessionId) {
+    if (!sessionEnd?.success) {
+      throw new Error('Claude analysis phase did not complete successfully.');
+    }
+
+    if (!sessionEnd.sessionId) {
       throw new Error('Claude analysis completed without returning a session id.');
     }
 
-    return { sessionId: capturedSessionId };
+    return { sessionId: sessionEnd.sessionId };
   }
 
   /**
@@ -587,7 +597,6 @@ export class ClaudeCodeExecutor implements Executor {
     const jsonSchema = getReviewOutputJsonSchemaString();
     let capturedOutput: object | undefined;
 
-    const reviewTimeoutMs = 30 * 60 * 1000; // 30 minutes
     const result = await runClaudeSubprocess({
       prompt: contextContent + '\n\nBe sure to provide the structured output with your response',
       cwd: gitRoot,
@@ -596,7 +605,7 @@ export class ClaudeCodeExecutor implements Executor {
       terminalInput: this.sharedOptions.terminalInput,
       model: this.sharedOptions.model,
       label: 'review',
-      inactivityTimeoutMs: reviewTimeoutMs,
+      inactivityTimeoutMs: ClaudeCodeExecutor.REVIEW_TIMEOUT_MS,
       extraArgs: [...(extraArgs ?? []), '--json-schema', jsonSchema],
       extraAccessDirs:
         this.timConfig.isUsingExternalStorage && this.timConfig.externalRepositoryConfigDir

@@ -90,11 +90,18 @@ export async function executeAnalysisMode(
     ? (codexOptions?.reasoning?.scopedReview ?? 'medium')
     : (codexOptions?.reasoning?.fullReview ?? 'high');
 
-  await executeCodexStep(contextContent, gitRoot, timConfig, {
+  const output = await executeCodexStep(contextContent, gitRoot, timConfig, {
     model,
     inactivityTimeoutMs: REVIEW_TIMEOUT_MS,
     reasoningLevel,
   });
+
+  const parsed = parseFailedReport(output);
+  if (parsed.failed) {
+    throw new Error(
+      `Codex analysis phase failed: ${parsed.summary || 'FAILED'}${parsed.details?.problems ? ` — ${parsed.details.problems}` : ''}`
+    );
+  }
 }
 
 /**
