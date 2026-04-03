@@ -64,13 +64,16 @@ export async function editMaterializedPlan(
         break;
       }
 
-      // Parse the edited file — any error here is user-fixable (bad YAML, missing
-      // frontmatter, schema validation). Errors from syncMaterializedPlan are NOT
-      // user-fixable and should propagate immediately.
       let editedPlan;
       try {
         editedPlan = await readPlanFile(materializedPath);
       } catch (parseError) {
+        // Only offer re-edit for parse errors (bad YAML, missing frontmatter,
+        // schema validation). I/O errors should propagate immediately.
+        if (!isUserFixableParseError(parseError)) {
+          throw parseError;
+        }
+
         error(chalk.red(`Failed to parse edited plan ${planId}:`));
         error(chalk.red((parseError as Error).message));
 

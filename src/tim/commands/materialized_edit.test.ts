@@ -20,6 +20,7 @@ const mockState = vi.hoisted(() => ({
   error: vi.fn(),
   log: vi.fn(),
   syncHook: undefined as undefined | ((...args: any[]) => Promise<unknown> | unknown),
+  readPlanFileHook: undefined as undefined | ((path: string) => Promise<unknown> | unknown),
 }));
 
 vi.mock('../../common/input.js', async (importOriginal) => {
@@ -52,6 +53,19 @@ vi.mock('../../logging.js', async (importOriginal) => {
     error: mockState.error,
     log: mockState.log,
     debugLog: vi.fn(),
+  };
+});
+
+vi.mock('../plans.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../plans.js')>();
+  return {
+    ...actual,
+    readPlanFile: vi.fn(async (...args: any[]) => {
+      if (mockState.readPlanFileHook) {
+        return await mockState.readPlanFileHook(args[0]);
+      }
+      return await actual.readPlanFile(...args);
+    }),
   };
 });
 
@@ -109,6 +123,7 @@ describe('materialized edit retry flow', () => {
     mockState.attempt = 0;
     mockState.editorBehavior = undefined;
     mockState.syncHook = undefined;
+    mockState.readPlanFileHook = undefined;
     mockState.promptConfirm.mockReset();
     mockState.promptConfirm.mockResolvedValue(true);
     mockState.warn.mockClear();
@@ -124,6 +139,7 @@ describe('materialized edit retry flow', () => {
     mockState.attempt = 0;
     mockState.editorBehavior = undefined;
     mockState.syncHook = undefined;
+    mockState.readPlanFileHook = undefined;
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
@@ -292,5 +308,52 @@ describe('materialized edit retry flow', () => {
 
     expect(mockState.promptConfirm).not.toHaveBeenCalled();
     await expect(Bun.file(getMaterializedPlanPath(tempDir, 12)).exists()).resolves.toBe(true);
+  });
+
+  test('does not prompt for non-parse errors from readPlanFile (e.g. filesystem errors)', async () => {
+    let firstCall = true;
+    mockState.readPlanFileHook = async (filePath: string) => {
+      if (firstCall) {
+        firstCall = false;
+        // Let the initial pre-edit read succeed using the real implementation
+        const { readPlanFile: realRead } =
+          await vi.importActual<typeof import('../plans.js')>('../plans.js');
+        return realRead(filePath);
+      }
+      // Simulate a filesystem error on the post-edit read
+      const err = new Error('EACCES: permission denied') as NodeJS.ErrnoException;
+      err.code = 'EACCES';
+      throw err;
+    };
+    mockState.editorBehavior = async (editedPath) => {
+      const plan = await readPlanFile(editedPath);
+      plan.details = 'Triggers read failure';
+      await writePlanFile(editedPath, plan, { skipDb: true, skipUpdatedAt: true });
+    };
+
+    await expect(editMaterializedPlan(12, tempDir, 'test-editor')).rejects.toThrow(
+      'EACCES: permission denied'
+    );
+    expect(mockState.promptConfirm).not.toHaveBeenCalled();
+  });
+
+  test('exits cleanly when user reverts all changes during retry', async () => {
+    let originalContent: string;
+    mockState.promptConfirm.mockResolvedValueOnce(true);
+    mockState.editorBehavior = async (editedPath, attempt) => {
+      if (attempt === 1) {
+        originalContent = await fs.readFile(editedPath, 'utf-8');
+        await Bun.write(editedPath, '---\ntitle: [broken\n---\n');
+        return;
+      }
+      // Second attempt: revert to original content
+      await Bun.write(editedPath, originalContent!);
+    };
+
+    await editMaterializedPlan(12, tempDir, 'test-editor');
+
+    // Should have prompted once, then exited cleanly without sync
+    expect(mockState.promptConfirm).toHaveBeenCalledTimes(1);
+    await expect(Bun.file(getMaterializedPlanPath(tempDir, 12)).exists()).resolves.toBe(false);
   });
 });
