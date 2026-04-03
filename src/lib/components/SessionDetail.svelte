@@ -11,6 +11,7 @@
   import SessionMessage from './SessionMessage.svelte';
   import PromptRenderer from './PromptRenderer.svelte';
   import MessageInput from './MessageInput.svelte';
+  import PlanContentPane from './PlanContentPane.svelte';
   import { afterNavigate } from '$app/navigation';
   import { page } from '$app/state';
   import { tick } from 'svelte';
@@ -162,6 +163,7 @@
     }
   }
 
+  let showPlanPane = $derived(session.sessionInfo.planId != null);
   let hasMessages = $derived(session.messages.length > 0);
 
   async function handleCopyTranscript() {
@@ -326,36 +328,51 @@
     {/if}
   </div>
 
-  <!-- Prompt area (fixed above messages) -->
-  {#if !session.isReplaying && session.activePrompt}
-    <div class="max-h-1/2 overflow-y-auto">
-      {#key session.activePrompt.requestId}
-        <PromptRenderer prompt={session.activePrompt} connectionId={session.connectionId} />
-      {/key}
-    </div>
-  {/if}
-
-  <!-- Scrollable message list -->
-  <div
-    class="h-0 min-h-0 flex-1 overflow-y-auto bg-gray-900 p-4 font-mono text-sm focus:outline-none"
-    tabindex="0"
-    bind:this={scrollContainer}
-    onscroll={handleScroll}
-    onscrollend={handleScrollEnd}
-  >
-    {#if session.messages.length === 0}
-      <p class="text-gray-500">No messages yet</p>
-    {:else}
-      {#each session.messages as message, index (message.id)}
-        <SessionMessage {message} disableContentVisibility={index >= fullRenderStartIndex} />
-      {/each}
+  {#snippet messagesPane()}
+    <!-- Prompt area (fixed above messages) -->
+    {#if !session.isReplaying && session.activePrompt}
+      <div class="max-h-1/2 overflow-y-auto">
+        {#key session.activePrompt.requestId}
+          <PromptRenderer prompt={session.activePrompt} connectionId={session.connectionId} />
+        {/key}
+      </div>
     {/if}
-  </div>
 
-  <!-- Message input bar (hidden when offline or non-interactive) -->
-  {#if showInput}
-    <div class="shrink-0">
-      <MessageInput connectionId={session.connectionId} />
+    <!-- Scrollable message list -->
+    <div
+      class="h-0 min-h-0 flex-1 overflow-y-auto bg-gray-900 p-4 font-mono text-sm focus:outline-none"
+      tabindex="0"
+      bind:this={scrollContainer}
+      onscroll={handleScroll}
+      onscrollend={handleScrollEnd}
+    >
+      {#if session.messages.length === 0}
+        <p class="text-gray-500">No messages yet</p>
+      {:else}
+        {#each session.messages as message, index (message.id)}
+          <SessionMessage {message} disableContentVisibility={index >= fullRenderStartIndex} />
+        {/each}
+      {/if}
     </div>
+
+    <!-- Message input bar (hidden when offline or non-interactive) -->
+    {#if showInput}
+      <div class="shrink-0">
+        <MessageInput connectionId={session.connectionId} />
+      </div>
+    {/if}
+  {/snippet}
+
+  {#if showPlanPane}
+    <div class="flex min-h-0 flex-1 flex-row">
+      <div class="w-1/2 min-w-0 border-r border-border">
+        <PlanContentPane content={session.planContent} />
+      </div>
+      <div class="flex w-1/2 min-w-0 flex-col">
+        {@render messagesPane()}
+      </div>
+    </div>
+  {:else}
+    {@render messagesPane()}
   {/if}
 </div>
