@@ -6,10 +6,14 @@ import { getServerContext } from '$lib/server/init.js';
 import { getProjectById } from '$tim/db/project.js';
 import { setProjectSetting } from '$tim/db/project_settings.js';
 
+const settingValueSchemas: Record<string, z.ZodType> = {
+  featured: z.boolean(),
+};
+
 const updateSettingSchema = z.object({
   projectId: z.number().int().positive(),
   setting: z.string().min(1),
-  value: z.unknown(),
+  value: z.unknown().refine((v) => v !== undefined, 'Value must not be undefined'),
 });
 
 export const updateProjectSetting = command(
@@ -20,6 +24,14 @@ export const updateProjectSetting = command(
     const project = getProjectById(db, projectId);
     if (!project) {
       error(404, 'Project not found');
+    }
+
+    const settingSchema = settingValueSchemas[setting];
+    if (settingSchema) {
+      const result = settingSchema.safeParse(value);
+      if (!result.success) {
+        error(400, `Invalid value for setting "${setting}": ${result.error.message}`);
+      }
     }
 
     setProjectSetting(db, projectId, setting, value);

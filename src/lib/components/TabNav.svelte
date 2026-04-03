@@ -4,12 +4,18 @@
 
   let { projectId }: { projectId: string } = $props();
 
-  const tabs = [
+  const baseTabs = [
     { label: 'Sessions', slug: 'sessions' },
     { label: 'Active Work', slug: 'active' },
     { label: 'Pull Requests', slug: 'prs' },
     { label: 'Plans', slug: 'plans' },
-  ] as const;
+  ];
+
+  let tabs = $derived(
+    projectId !== 'all'
+      ? [...baseTabs, { label: 'Settings', slug: 'settings' }]
+      : baseTabs
+  );
 
   let pathname = $derived(page.url.pathname);
 
@@ -32,16 +38,4 @@
       {tab.label}
     </a>
   {/each}
-  {#if projectId !== 'all'}
-    {@const active = isActive('settings')}
-    <a
-      href={projectUrl(projectId, 'settings')}
-      class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors {active
-        ? 'bg-white/20 text-white'
-        : 'text-gray-300 hover:bg-white/10 hover:text-white'}"
-      aria-current={active ? 'page' : undefined}
-    >
-      Settings
-    </a>
-  {/if}
 </nav>

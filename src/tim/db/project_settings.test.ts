@@ -87,6 +87,11 @@ describe('tim db/project_settings', () => {
     expect(getProjectSettings(db, secondProject.id)).toEqual({ featured: true });
   });
 
+  test('setProjectSetting throws on undefined value', () => {
+    const project = getOrCreateProject(db, 'repo-1');
+    expect(() => setProjectSetting(db, project.id, 'featured', undefined)).toThrow();
+  });
+
   test('project setting rows are deleted when the parent project is deleted', () => {
     const project = getOrCreateProject(db, 'repo-1');
     setProjectSetting(db, project.id, 'featured', false);
