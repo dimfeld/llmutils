@@ -389,6 +389,20 @@ The dialog stays open with per-button spinners during launch. Dismissal is preve
 - **Launch lock** (`src/lib/server/launch_lock.ts`): In-memory per-plan lock (keyed by UUID, stored on `globalThis` for HMR safety) bridging the gap between process spawn and WebSocket session registration. Exported as a separate module because SvelteKit remote function files can only export `command()` results. Subscribes to `SessionManager.subscribe('session:update')` to clear locks when sessions register.
 - **Primary workspace query** (`getPrimaryWorkspacePath()` in `db_queries.ts`): Resolves the primary workspace path for a project, used as the cwd for spawned processes.
 
+## Review Issue Management
+
+When the agent runs its final review in non-interactive mode (e.g. launched from the web UI with `--no-terminal-input`), any found issues are saved as `reviewIssues` on the plan and the plan status is set to `needs_review`. The agent exits automatically without prompting.
+
+The `PlanDetail` component displays review issues with per-issue action buttons and a bulk action:
+
+- **Dismiss** (X button): Removes a single review issue by index via `removeReviewIssue`
+- **Convert to Task** (arrow button): Converts the issue into a plan task (using `createTaskFromIssue` from review.ts) and removes it from `reviewIssues`, setting plan status to `in_progress` via `convertReviewIssueToTask`
+- **Clear All** (header button): Removes all review issues via `clearReviewIssues`, with a confirmation dialog
+
+All mutations use `invalidateAll()` to refresh the page after completion.
+
+- **Remote commands** (`src/lib/remote/review_issue_actions.remote.ts`): `removeReviewIssue`, `convertReviewIssueToTask`, and `clearReviewIssues` are `command()` exports. Each reads the plan by UUID, parses `reviewIssues` JSON, applies the mutation within `db.transaction().immediate()`, and writes back. `convertReviewIssueToTask` also appends a new task and sets `status = 'in_progress'`.
+
 ## Dark Mode
 
 The web interface supports light, dark, and system-preference color modes using the `mode-watcher` package.
