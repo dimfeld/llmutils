@@ -27,20 +27,6 @@ function buildInputFileRandomizationGuidance(planId: string): string {
 - You can also pipe input to stdin and use \`--input-file -\`.`;
 }
 
-function buildResearchContextGuidance(planId: string, reviewCommand?: string): string {
-  const reviewerLine = reviewCommand
-    ? `When invoking \`${reviewCommand}\`, also pass your research and any relevant context via \`--input-file <paths...>\` so the reviewer has the full picture of what was intended and why. Use the same randomized filename approach for any reviewer input files you create.`
-    : '';
-
-  return `Before invoking a subagent, write a research context file that includes everything you have learned so far that is relevant to the subagent's work. This saves the subagent from needing to repeat your exploration. The file should contain:
-- Relevant code snippets or file locations you discovered
-- Architectural decisions or patterns you identified
-- Dependencies, constraints, or gotchas you found
-- Any analysis of the existing codebase that informs the implementation
-
-Write this research to a file with a randomized, plan-scoped name (for example, \`/tmp/tim-${planId}-research-XXXXXX.md\`) and reference it in the subagent's \`--input-file\`, along with your task-specific instructions. Update the file as you learn more across iterations.
-${reviewerLine}`;
-}
 
 export function progressSectionGuidance(
   planFilePath?: string,
@@ -261,7 +247,7 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
   const reviewPhase = `${options.batchMode ? '4' : '3'}. **Review Phase**
    - Run \`${reviewCommand}\` using the Bash tool.
    - Always include \`--output-file\` with a plan-specific temp file path for this command.
-   - Pass your research context file and any relevant notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why.
+   - Pass any relevant notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why. On subsequent review runs, also include a list of any issues from prior review output that you determined were not relevant or acceptable to leave as-is, so the reviewer knows not to flag them again.
    - If command output is empty, read the output file you passed to \`--output-file\` and treat it as the review result.
    - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
 ${buildFinalBatchReviewGuidance(reviewCommand, options)}
@@ -279,6 +265,7 @@ ${options.batchMode ? '6' : '5'}. **Iteration**
 - Return to step ${options.batchMode ? '2' : '1'} when substantial code changes are required.
 - After implementing straightforward follow-up changes, run the relevant targeted checks yourself. If the entire set of changes is trivial and guaranteed to not introduce any bugs (e.g. just wording changes), you may skip re-running \`${reviewCommand}\`. If in doubt, run another review; even simple changes can sometimes have unintended downstream effects.
 - If the review still flags an issue that was supposedly just fixed, trust the review — the fix was incomplete or incorrect. Investigate the issue again rather than dismissing the feedback.
+- **Review run limit**: Allow at most 3 review runs per task batch. If issues remain unresolved after 3 review cycles, add a note to the plan describing the outstanding issues, then proceed — the final review pass will catch them again.
 - Continue this loop until all tests pass, the implementation is satisfactory, and any required final full-plan batch review is clean`;
 
   return `## Workflow Instructions
@@ -327,10 +314,6 @@ function buildImportantGuidelines(planId: string, options: OrchestrationOptions)
 - ${INPUT_COMBINATION_GUIDANCE}
 - Include relevant context from previous subagent responses when invoking the next subagent.
 - ${buildInputFileRandomizationGuidance(planId)}
-
-## Sharing Research with Subagents
-
-${buildResearchContextGuidance(planId, reviewCommand)}
 
 ## Plan Documentation During Implementation
 
@@ -527,10 +510,6 @@ ${options.batchMode ? '5' : '4'}. **Iteration**
       : ''
   }
 
-## Sharing Research with Subagents
-
-${buildResearchContextGuidance(planId)}
-
 ## Plan Documentation During Implementation
 
 If you or a subagent discover that the plan needs to change during implementation (e.g. the approach needs to differ, tasks need to be split/reordered, or new tasks are discovered):
@@ -675,7 +654,7 @@ ${buildReviewOutputCaptureGuidance(planId)}`;
 ${options.batchMode ? '5' : '4'}. **Review Phase**
    - Run \`${reviewCommand}\` using the Bash tool.
    - Always include \`--output-file\` with a plan-specific temp file path for this command.
-   - Pass your research context file and any relevant notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why.
+   - Pass any relevant notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why. On subsequent review runs, also include a list of any issues from prior review output that you determined were not relevant or acceptable to leave as-is, so the reviewer knows not to flag them again.
    - If command output is empty, read the output file you passed to \`--output-file\` and treat it as the review result.
    - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
 ${buildFinalBatchReviewGuidance(reviewCommand, options)}
@@ -721,6 +700,7 @@ ${iterationPhaseNumber}. **Iteration**
 - Return to step ${options.batchMode ? '2' : '1'} when substantial code changes are required.
 - After each fix iteration, run relevant targeted checks before moving forward.${reviewIterationGuidance}
 - If the review still flags an issue that was supposedly just fixed, trust the review — the fix was incomplete or incorrect. Investigate the issue again rather than dismissing the feedback.
+- **Review run limit**: Allow at most 3 review runs per task batch. If issues remain unresolved after 3 review cycles, add a note to the plan describing the outstanding issues, then proceed — the final review pass will catch them again.
 - Keep TDD order intact for each iteration, including any final full-plan batch review before stopping`;
 
   const failureProtocol = `
@@ -764,10 +744,6 @@ ${reviewFollowupGuidance}
 - Subagents can read all pending tasks; explicitly tell them which ones are in scope for this batch.`
       : ''
   }
-
-## Sharing Research with Subagents
-
-${buildResearchContextGuidance(planId)}
 
 ## Plan Documentation During Implementation
 

@@ -179,7 +179,6 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).toContain('--input-file -');
       expect(out).toContain('include the plan ID plus an extra random suffix');
       expect(out).toContain('/tmp/tim-42-<purpose>-XXXXXX.md');
-      expect(out).toContain('/tmp/tim-42-research-XXXXXX.md');
     });
 
     it('includes output-file fallback guidance for subagent and review commands', () => {
@@ -242,7 +241,6 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).toContain('--input-file');
       expect(out).toContain('include the plan ID plus an extra random suffix');
       expect(out).toContain('/tmp/tim-55-<purpose>-XXXXXX.md');
-      expect(out).toContain('/tmp/tim-55-research-XXXXXX.md');
     });
 
     it('includes fixed -x flag when subagentExecutor is claude-code', () => {
@@ -356,7 +354,6 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).toContain('If command output is empty, read the output file');
       expect(out).toContain('include the plan ID plus an extra random suffix');
       expect(out).toContain('/tmp/tim-74-<purpose>-XXXXXX.md');
-      expect(out).toContain('/tmp/tim-74-research-XXXXXX.md');
     });
   });
 
