@@ -27,7 +27,6 @@ function buildInputFileRandomizationGuidance(planId: string): string {
 - You can also pipe input to stdin and use \`--input-file -\`.`;
 }
 
-
 export function progressSectionGuidance(
   planFilePath?: string,
   options?: { useAtPrefix?: boolean }

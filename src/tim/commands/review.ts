@@ -65,6 +65,11 @@ import { timestamp } from './agent/agent_helpers.js';
 import { resolveOrchestratorInput } from '../utils/orchestrator_input.js';
 import { loadAgentInstructionsFor } from '../executors/codex_cli/agent_helpers.js';
 import { syncPlanToDb } from '../db/plan_sync.js';
+import {
+  deleteBatchReviewCache,
+  readBatchReviewCache,
+  writeBatchReviewCache,
+} from '../batch_review_cache.js';
 import which from 'which';
 import { getMaterializedPlanPath, materializePlan } from '../plan_materialize.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
@@ -1087,6 +1092,18 @@ export async function handleReviewCommand(
         taskIndex: options.taskIndex,
         taskTitle: options.taskTitle,
       });
+      const resolvedTaskIndexes = getResolvedTaskIndexesForScope(scopedPlanData, isScoped);
+      let previousReviewContext: string | undefined;
+      try {
+        previousReviewContext = await loadPreviousReviewContext(
+          gitRoot,
+          planData,
+          resolvedTaskIndexes,
+          taskScopeNote
+        );
+      } catch (cacheErr) {
+        reviewLog(chalk.yellow(`Warning: Could not read batch review cache: ${cacheErr as Error}`));
+      }
       let executablePlanFilePromise: Promise<string> | undefined;
       const getExecutablePlanFile = () => {
         executablePlanFilePromise ??= ensureReviewPlanFilePath(contextPlanFile, planData, repoRoot);
@@ -1157,7 +1174,7 @@ export async function handleReviewCommand(
           completedChildren,
           customInstructions,
           taskScopeNote,
-          undefined,
+          previousReviewContext,
           remainingTasks,
           previousReviewResponse
         );
@@ -1257,9 +1274,30 @@ export async function handleReviewCommand(
         );
         const formattedOutput = formatter.format(reviewResult, formatterOptions);
         const hasIssues = detectIssuesInReview(reviewResult, rawOutput);
+        const currentCommitHash = (await getCurrentCommitHash(gitRoot)) ?? 'unknown';
 
         if (!hasIssues && planData.reviewIssues) {
           await clearSavedReviewIssues(contextPlanFile, globalOpts.config);
+        }
+
+        try {
+          const cacheKey = getPlanCacheKey(planData);
+          if (cacheKey !== 'unknown') {
+            if (hasIssues) {
+              await writeBatchReviewCache(gitRoot, cacheKey, resolvedTaskIndexes, {
+                gitSha: currentCommitHash,
+                issues: reviewResult.issues,
+                timestamp: new Date().toISOString(),
+                planId: cacheKey,
+              });
+            } else {
+              await deleteBatchReviewCache(gitRoot, cacheKey, resolvedTaskIndexes);
+            }
+          }
+        } catch (cacheErr) {
+          reviewLog(
+            chalk.yellow(`Warning: Could not update batch review cache: ${cacheErr as Error}`)
+          );
         }
 
         sendStructured({
@@ -1332,9 +1370,8 @@ export async function handleReviewCommand(
         if (shouldSave) {
           try {
             const reviewsDir = await createReviewsDirectory(gitRoot);
-            const currentCommitHash = await getCurrentCommitHash(gitRoot);
 
-            if (currentCommitHash) {
+            if (currentCommitHash !== 'unknown') {
               const metadata: ReviewMetadata = {
                 planId: planData.id?.toString() ?? 'unknown',
                 planTitle: planData.title ?? 'Untitled Plan',
@@ -1767,6 +1804,91 @@ type PlanTask = PlanSchema['tasks'][number];
 /** A task with its original 1-based index preserved when filtering */
 type PlanTaskWithIndex = PlanTask & { originalIndex?: number };
 
+export function getResolvedTaskIndexesForScope(
+  scopedPlanData: PlanSchema,
+  isScoped: boolean
+): number[] | undefined {
+  if (!isScoped) {
+    return undefined;
+  }
+
+  const resolvedTaskIndexes =
+    scopedPlanData.tasks
+      ?.map((task) => (task as PlanTaskWithIndex).originalIndex)
+      .filter((taskIndex): taskIndex is number => taskIndex != null) ?? [];
+
+  return resolvedTaskIndexes.length > 0 ? resolvedTaskIndexes : undefined;
+}
+
+export function formatReviewIssueForPrompt(issue: ReviewIssue, index: number): string {
+  const location = issue.file
+    ? issue.line
+      ? `${issue.file}:${issue.line}`
+      : issue.file
+    : 'No file specified';
+
+  const parts = [
+    `${index}. [${issue.severity.toUpperCase()}] ${issue.category}`,
+    `Location: ${location}`,
+    `Issue: ${issue.content.trim()}`,
+  ];
+
+  if (issue.suggestion?.trim()) {
+    parts.push(`Suggestion: ${issue.suggestion.trim()}`);
+  }
+
+  return parts.join('\n');
+}
+
+export function formatPreviousReviewContext(
+  gitSha: string,
+  issues: ReviewIssue[],
+  taskScopeNote?: string
+): string {
+  const scopeLine = taskScopeNote
+    ? `This prior review covered the same scoped tasks: ${taskScopeNote}`
+    : `This prior review covered the full plan.`;
+  const issueLines = issues.map((issue, index) => formatReviewIssueForPrompt(issue, index + 1));
+
+  return [
+    `# Previous Review Results`,
+    ``,
+    `This was the result of the previous review round.`,
+    `Previous review Git SHA: ${gitSha}`,
+    scopeLine,
+    `Use that SHA to judge what changed since the prior review before raising new concerns.`,
+    ``,
+    `Prior issues:`,
+    ``,
+    ...issueLines.flatMap((issue) => [issue, ``]),
+    `## Instructions for this review`,
+    ``,
+    `- Focus on resolution of the existing issues and any new issues caused by the most recent work.`,
+    `- Issues are expected to have been fixed or intentionally ignored as not relevant.`,
+    `- Do a perfunctory check if an issue appears to have been addressed, and verify the fix is correct.`,
+    `- Do not provide review issues that contradict the previous review's findings.`,
+  ]
+    .join('\n')
+    .trim();
+}
+
+function getPlanCacheKey(planData: PlanSchema): string {
+  return planData.id?.toString() ?? planData.uuid ?? 'unknown';
+}
+
+async function loadPreviousReviewContext(
+  gitRoot: string,
+  planData: PlanSchema,
+  resolvedTaskIndexes: number[] | undefined,
+  taskScopeNote?: string
+): Promise<string | undefined> {
+  const cacheKey = getPlanCacheKey(planData);
+  if (cacheKey === 'unknown') return undefined;
+  const cache = await readBatchReviewCache(gitRoot, cacheKey, resolvedTaskIndexes);
+  if (!cache) return undefined;
+  return formatPreviousReviewContext(cache.gitSha, cache.issues, taskScopeNote);
+}
+
 export function buildTaskTitleFromIssue(issue: ReviewIssue): string {
   // Normalize whitespace and get content as a single string
   const normalized = issue.content.replace(/\s+/g, ' ').trim();
@@ -2061,11 +2183,26 @@ export async function buildReviewPromptFromOptions(
   const {
     planData: scopedPlanData,
     taskScopeNote,
+    isScoped,
     remainingTasks,
   } = resolveReviewTaskScope(planData, {
     taskIndex: options.taskIndex,
     taskTitle: options.taskTitle,
   });
+
+  // Load previous batch review cache for prompt context
+  const resolvedTaskIndexes = getResolvedTaskIndexesForScope(scopedPlanData, isScoped);
+  let previousReviewContext: string | undefined;
+  try {
+    previousReviewContext = await loadPreviousReviewContext(
+      gitRoot,
+      planData,
+      resolvedTaskIndexes,
+      taskScopeNote
+    );
+  } catch {
+    // Best-effort: skip cache context if read fails
+  }
 
   // Build and return the prompt
   return buildReviewPrompt(
@@ -2077,7 +2214,7 @@ export async function buildReviewPromptFromOptions(
     completedChildren,
     customInstructions,
     taskScopeNote,
-    undefined,
+    previousReviewContext,
     remainingTasks,
     previousReviewResponse
   );

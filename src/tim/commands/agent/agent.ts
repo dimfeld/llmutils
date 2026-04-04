@@ -73,6 +73,7 @@ import {
   toHeadlessPlanSummary,
 } from '../plan_discovery.js';
 import { resolvePlanFromDbOrSyncFile } from '../../ensure_plan_in_db.js';
+import { clearTmpDir } from '../../batch_review_cache.js';
 
 export async function handleAgentCommand(
   planFile: string | undefined,
@@ -331,6 +332,8 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
     currentBaseDir = workspaceResult.baseDir;
     currentPlanFile = workspaceResult.planFile;
     touchedWorkspacePath = currentBaseDir;
+
+    await clearTmpDir(currentBaseDir);
 
     if (path.resolve(currentBaseDir) !== path.resolve(originalBaseDir)) {
       roundTripContext = await prepareWorkspaceRoundTrip({

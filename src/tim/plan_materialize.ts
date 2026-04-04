@@ -23,6 +23,7 @@ import { normalizeContainerToEpic, phaseSchema, type PlanSchema } from './planSc
 import { planRowToSchemaInput } from './plans_db.js';
 
 export const MATERIALIZED_DIR = path.join('.tim', 'plans');
+export const TMP_DIR = path.join('.tim', 'tmp');
 const LOGS_DIR = path.join('.tim', 'logs');
 
 export function parsePlanId(planId: string): number {
@@ -316,14 +317,6 @@ export async function ensureMaterializeDir(repoRoot: string): Promise<string> {
   const directory = path.join(repoRoot, MATERIALIZED_DIR);
   await mkdir(directory, { recursive: true });
 
-  const plansDirIsIgnored = await isIgnoredByGitSharedExcludes(
-    repoRoot,
-    path.join(MATERIALIZED_DIR, '__tim_materialize_probe__')
-  );
-  if (plansDirIsIgnored) {
-    return directory;
-  }
-
   const infoExcludePath = await getGitInfoExcludePath(repoRoot);
   if (!infoExcludePath) {
     return directory;
@@ -337,7 +330,19 @@ export async function ensureMaterializeDir(repoRoot: string): Promise<string> {
   }
 
   const existingLines = existingContent.split('\n').map((l) => l.trim());
-  const dirsToExclude = [MATERIALIZED_DIR, LOGS_DIR].filter((d) => !existingLines.includes(d));
+  const managedDirs = [MATERIALIZED_DIR, LOGS_DIR, TMP_DIR];
+  const sharedIgnoreMatches = await Promise.all(
+    managedDirs.map(async (managedDir) => {
+      const isIgnored = await isIgnoredByGitSharedExcludes(
+        repoRoot,
+        path.join(managedDir, '__tim_materialize_probe__')
+      );
+      return { managedDir, isIgnored };
+    })
+  );
+  const dirsToExclude = sharedIgnoreMatches
+    .filter(({ managedDir, isIgnored }) => !isIgnored && !existingLines.includes(managedDir))
+    .map(({ managedDir }) => managedDir);
   if (dirsToExclude.length > 0) {
     const suffix = existingContent && !existingContent.endsWith('\n') ? '\n' : '';
     await writeFile(infoExcludePath, existingContent + suffix + dirsToExclude.join('\n') + '\n');

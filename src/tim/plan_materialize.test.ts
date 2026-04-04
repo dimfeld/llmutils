@@ -314,7 +314,7 @@ describe('tim plan_materialize', () => {
     expect(lines.filter((line) => line === '.tim/logs')).toHaveLength(1);
   });
 
-  test('ensureMaterializeDir skips updating .git/info/exclude when core.excludesfile already ignores .tim/plans', async () => {
+  test('ensureMaterializeDir only adds dirs not already covered by core.excludesfile', async () => {
     const globalExcludePath = path.join(tempDir, 'global-gitignore');
     await fs.writeFile(globalExcludePath, '.tim/plans\n', 'utf8');
     await Bun.$`git config core.excludesfile ${globalExcludePath}`.cwd(repoDir).quiet();
@@ -324,7 +324,11 @@ describe('tim plan_materialize', () => {
     const materializeDir = await ensureMaterializeDir(repoDir);
 
     expect(materializeDir).toBe(path.join(repoDir, '.tim', 'plans'));
-    expect(await fs.readFile(infoExcludePath, 'utf8')).toBe(before);
+    // .tim/plans is globally excluded so it should not be added, but .tim/logs and .tim/tmp should be
+    const after = await fs.readFile(infoExcludePath, 'utf8');
+    expect(after).not.toContain('.tim/plans');
+    expect(after).toContain('.tim/logs');
+    expect(after).toContain('.tim/tmp');
     await expect(fs.access(path.join(materializeDir, '.gitignore'))).rejects.toMatchObject({
       code: 'ENOENT',
     });
