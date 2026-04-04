@@ -370,7 +370,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
     const dynamicSubagentInstructions =
       options.dynamicInstructions ||
       config.dynamicSubagentInstructions ||
-      'Prefer claude-code for UI tasks, codex-cli for everything else.';
+      'Prefer claude-code for UI tasks, codex-cli for everything else. When you use one for the implementer, prefer to use the other for the tester.';
 
     // Check if the plan needs preparation
     const planData = await readPlanFile(currentPlanFile);
