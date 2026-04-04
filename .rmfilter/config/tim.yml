@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=../../schema/tim-config-schema.json
 
 defaultExecutor: claude-code
-planAutocompleteStatus: done
+planAutocompleteStatus: needs_review
 postApplyCommands:
   - title: Format JS
     command: bun run format
