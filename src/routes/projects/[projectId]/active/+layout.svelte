@@ -1,29 +1,28 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import WorkspaceRow from '$lib/components/WorkspaceRow.svelte';
-  import ActivePlanRow from '$lib/components/ActivePlanRow.svelte';
+  import { onMount } from 'svelte';
   import { projectDisplayName } from '$lib/stores/project.svelte.js';
+  import { useSessionManager } from '$lib/stores/session_state.svelte.js';
+  import { getActionablePrs } from '$lib/remote/dashboard.remote.js';
+  import { shouldRefreshProjectPrs } from '$lib/utils/pr_update_events.js';
   import {
-    isListNavEvent,
-    getAdjacentItem,
-    scrollListItemIntoView,
-  } from '$lib/utils/keyboard_nav.js';
-  import type { Snippet } from 'svelte';
+    deriveAttentionItems,
+    deriveRunningNowSessions,
+    deriveReadyToStartPlans,
+  } from '$lib/utils/dashboard_attention.js';
+  import DashboardSection from '$lib/components/DashboardSection.svelte';
+  import NeedsAttentionCard from '$lib/components/NeedsAttentionCard.svelte';
+  import PrAttentionCard from '$lib/components/PrAttentionCard.svelte';
+  import RunningNowRow from '$lib/components/RunningNowRow.svelte';
+  import ReadyToStartRow from '$lib/components/ReadyToStartRow.svelte';
   import type { LayoutData } from './$types';
 
-  let {
-    data,
-    children,
-  }: {
-    data: LayoutData;
-    children: Snippet;
-  } = $props();
+  let { data }: { data: LayoutData } = $props();
 
-  // Persists across project switches (no {#key})
-  let showAllWorkspaces = $state(false);
+  const sessionManager = useSessionManager();
 
-  let showProject = $derived(data.projectId === 'all');
+  let projectId = $derived(page.params.projectId);
+  let showProject = $derived(projectId === 'all');
 
   let projectNamesById = $derived.by(() => {
     if (!showProject) return {};
@@ -34,101 +33,96 @@
     return map;
   });
 
-  let filteredWorkspaces = $derived(
-    showAllWorkspaces ? data.workspaces : data.workspaces.filter((w) => w.isRecentlyActive)
+  let actionablePrs = $derived(await getActionablePrs({ projectId }));
+
+  let attentionItems = $derived(
+    deriveAttentionItems(data.plans, sessionManager.sessions.values(), actionablePrs)
+  );
+  let attentionCount = $derived(attentionItems.planItems.length + attentionItems.prItems.length);
+
+  let runningSessions = $derived(
+    deriveRunningNowSessions(sessionManager.sessions.values(), projectId)
   );
 
-  let selectedPlanUuid = $derived(page.params.planId ?? null);
-  let selectedWorkspaceId = $derived(
-    page.params.workspaceId ? Number(page.params.workspaceId) : null
+  let readyPlans = $derived(deriveReadyToStartPlans(data.plans, sessionManager.sessions.values()));
+
+  let allEmpty = $derived(
+    attentionCount === 0 && runningSessions.length === 0 && readyPlans.length === 0
   );
-  let projectId = $derived(page.params.projectId);
 
-  let activePlanUuids = $derived(data.activePlans.map((p) => p.uuid));
-
-  function handleKeydown(event: KeyboardEvent) {
-    const direction = isListNavEvent(event);
-    if (!direction) return;
-
-    event.preventDefault();
-
-    const nextId = getAdjacentItem(activePlanUuids, selectedPlanUuid, direction);
-    if (!nextId) return;
-
-    void goto(`/projects/${projectId}/active/${nextId}`).then(() => scrollListItemIntoView(nextId));
-  }
-
-  function workspacePlanHref(wsProjectId: number, planId: string | null): string | null {
-    if (!planId) return null;
-    const uuid = data.planNumberToUuid[`${wsProjectId}:${planId}`];
-    if (!uuid) return null;
-    return `/projects/${projectId}/active/${uuid}`;
-  }
+  // Subscribe to PR update events to refresh actionable PR data when available
+  onMount(() => {
+    return sessionManager.onEvent((eventName, event) => {
+      if (eventName !== 'pr:updated') return;
+      if (!shouldRefreshProjectPrs(event, projectId)) return;
+      getActionablePrs({ projectId }).refresh();
+    });
+  });
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
-
-<div class="flex h-full w-full">
-  <!-- Left pane: workspaces + active plans -->
-  <div class="w-96 shrink-0 overflow-y-auto border-r border-border">
-    <!-- Workspaces section -->
-    <div class="border-b border-border p-3">
-      <div class="mb-2 flex items-center justify-between">
-        <h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-          Workspaces
-        </h3>
-        <button
-          class="rounded px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
-          onclick={() => (showAllWorkspaces = !showAllWorkspaces)}
-        >
-          {showAllWorkspaces ? 'Recently Active' : 'Show All'}
-        </button>
+<div class="h-full overflow-y-auto">
+  <div class="mx-auto max-w-3xl space-y-4 p-4">
+    {#if allEmpty && sessionManager.initialized}
+      <div class="flex flex-col items-center justify-center py-16">
+        <p class="text-lg font-medium text-muted-foreground">All clear</p>
+        <p class="mt-1 text-sm text-muted-foreground">No items need attention right now.</p>
       </div>
-
-      {#if filteredWorkspaces.length === 0}
-        <p class="py-4 text-center text-sm text-muted-foreground">
-          {showAllWorkspaces ? 'No workspaces found' : 'No recently active workspaces'}
-        </p>
-      {:else}
-        <div class="flex flex-col gap-1.5">
-          {#each filteredWorkspaces as workspace (workspace.id)}
-            <WorkspaceRow
-              {workspace}
-              projectName={showProject ? projectNamesById[workspace.projectId] : undefined}
-              planHref={workspacePlanHref(workspace.projectId, workspace.planId)}
-              href="/projects/{projectId}/active/workspace/{workspace.id}"
-              selected={workspace.id === selectedWorkspaceId}
+    {:else}
+      {#if attentionCount > 0}
+        <DashboardSection title="Needs Attention" count={attentionCount}>
+          {#each attentionItems.planItems as item (item.planUuid)}
+            <NeedsAttentionCard
+              {item}
+              {projectId}
+              projectName={showProject ? projectNamesById[item.projectId] : undefined}
             />
           {/each}
-        </div>
+          {#if attentionItems.prItems.length > 0}
+            {#if attentionItems.planItems.length > 0}
+              <div class="my-1 border-t border-border/50"></div>
+            {/if}
+            <p class="px-1 text-xs text-muted-foreground">Pull Requests</p>
+            {#each attentionItems.prItems as item (item.actionablePr.prUrl)}
+              <PrAttentionCard
+                {item}
+                projectName={showProject
+                  ? projectNamesById[item.actionablePr.projectId]
+                  : undefined}
+              />
+            {/each}
+          {/if}
+        </DashboardSection>
       {/if}
-    </div>
 
-    <!-- Active plans section -->
-    <div class="p-3">
-      <h3 class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-        Active Plans
-      </h3>
+      {#if runningSessions.length > 0}
+        <DashboardSection title="Running Now" count={runningSessions.length}>
+          {#each runningSessions as session (session.connectionId)}
+            <RunningNowRow
+              {session}
+              {projectId}
+              projectName={showProject && session.projectId
+                ? projectNamesById[session.projectId]
+                : undefined}
+            />
+          {/each}
+        </DashboardSection>
+      {/if}
 
-      {#if data.activePlans.length === 0}
-        <p class="py-4 text-center text-sm text-muted-foreground">No active plans</p>
-      {:else}
-        <div class="flex flex-col gap-0.5">
-          {#each data.activePlans as plan (plan.uuid)}
-            <ActivePlanRow
+      {#if readyPlans.length > 0}
+        <DashboardSection title="Ready to Start" count={readyPlans.length}>
+          {#each readyPlans as plan (plan.uuid)}
+            <ReadyToStartRow
               {plan}
-              selected={plan.uuid === selectedPlanUuid}
-              href="/projects/{projectId}/active/{plan.uuid}"
+              {projectId}
               projectName={showProject ? projectNamesById[plan.projectId] : undefined}
             />
           {/each}
-        </div>
+        </DashboardSection>
       {/if}
-    </div>
-  </div>
 
-  <!-- Right pane: workspace or plan detail (child route) -->
-  <div class="flex-1 overflow-y-auto">
-    {@render children()}
+      {#if !sessionManager.initialized}
+        <p class="py-2 text-center text-xs text-muted-foreground">Connecting to sessions...</p>
+      {/if}
+    {/if}
   </div>
 </div>

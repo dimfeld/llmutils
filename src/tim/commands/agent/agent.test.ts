@@ -1192,7 +1192,7 @@ describe('timAgent - simple mode flag plumbing', () => {
     expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
     const [, sharedOptions] = buildExecutorAndLogSpy.mock.calls[0];
     expect(sharedOptions.dynamicSubagentInstructions).toBe(
-      'Prefer claude-code for UI tasks, codex-cli for everything else.'
+      'Prefer claude-code for UI tasks, codex-cli for everything else. When you use one for the implementer, prefer to use the other for the tester.'
     );
   });
 

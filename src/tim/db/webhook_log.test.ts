@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import type { Database } from 'bun:sqlite';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';

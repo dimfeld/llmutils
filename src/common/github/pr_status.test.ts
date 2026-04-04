@@ -854,7 +854,7 @@ describe('common/github/pr_status', () => {
   });
 
   test('fetchPrMergeableAndReviewDecision normalizes targeted fields', async () => {
-    const graphql = mock(async () => ({
+    const graphql = vi.fn(async () => ({
       repository: {
         pullRequest: {
           mergeable: 'CONFLICTING',
@@ -863,11 +863,10 @@ describe('common/github/pr_status', () => {
       },
     }));
 
-    await moduleMocker.mock('./octokit.js', () => ({
-      getOctokit: () => ({
-        graphql,
-      }),
-    }));
+    const mockGetOctokit = vi.mocked(octokitModule.getOctokit);
+    mockGetOctokit.mockReturnValue({
+      graphql,
+    });
 
     const { fetchPrMergeableAndReviewDecision } = await import('./pr_status.ts');
     await expect(fetchPrMergeableAndReviewDecision('owner', 'repo', 77)).resolves.toEqual({

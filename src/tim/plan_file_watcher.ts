@@ -1,4 +1,5 @@
 import { watch, type FSWatcher } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { warn } from '../logging.js';
@@ -35,12 +36,13 @@ export function watchPlanFile(
   const targetBasename = path.basename(filePath);
   let watcher: FSWatcher | null = null;
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
   let closed = false;
   let lastContent: string | null = null;
 
   async function readAndEmit(): Promise<void> {
     try {
-      const nextContent = stripPlanFrontmatter(await Bun.file(filePath).text());
+      const nextContent = stripPlanFrontmatter(await readFile(filePath, 'utf8'));
       if (nextContent === null || nextContent === lastContent) {
         return;
       }
@@ -103,12 +105,19 @@ export function watchPlanFile(
   }
 
   void emitCurrentContent();
+  pollTimer = setInterval(() => {
+    scheduleEmit();
+  }, PLAN_WATCH_DEBOUNCE_MS);
 
   function stopWatcher(): void {
     closed = true;
     if (debounceTimer) {
       clearTimeout(debounceTimer);
       debounceTimer = null;
+    }
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
     }
     watcher?.close();
     watcher = null;

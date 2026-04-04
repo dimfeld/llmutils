@@ -10,7 +10,7 @@ import { upsertPlan } from '$tim/db/plan.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import { recordWorkspace } from '$tim/db/workspace.js';
 
-import { getActiveWorkData, getPlanDetailRouteData, getPlansPageData } from './plans_browser.js';
+import { getDashboardData, getPlanDetailRouteData, getPlansPageData } from './plans_browser.js';
 
 describe('lib/server/plans_browser', () => {
   let tempDir: string;
@@ -65,31 +65,39 @@ describe('lib/server/plans_browser', () => {
     ]);
   });
 
-  test('getActiveWorkData returns workspaces plus in-progress, needs_review, blocked, and recently_done plans', () => {
-    const timestamp = daysAgo(2);
+  test('getDashboardData returns all non-terminal plans and includes recently_done plans', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'pending-plan',
+      planId: 403,
+      title: 'Pending plan',
+      status: 'pending',
+      priority: 'medium',
+      filename: '403-pending.plan.md',
+      sourceCreatedAt: daysAgo(2),
+      sourceUpdatedAt: daysAgo(2),
+    });
 
     upsertPlan(db, projectId, {
-      uuid: 'active-open-dependency',
-      planId: 403,
+      uuid: 'open-dependency',
+      planId: 404,
       title: 'Open dependency',
       status: 'pending',
       priority: 'medium',
-      filename: '403-open-dependency.plan.md',
-      sourceCreatedAt: timestamp,
-      sourceUpdatedAt: timestamp,
+      filename: '404-open-dependency.plan.md',
+      sourceCreatedAt: daysAgo(2),
+      sourceUpdatedAt: daysAgo(2),
     });
 
     upsertPlan(db, projectId, {
       uuid: 'blocked-plan',
-      planId: 404,
+      planId: 405,
       title: 'Blocked plan',
-      goal: 'Should appear in active work',
       status: 'in_progress',
-      priority: 'urgent',
-      filename: '404-blocked.plan.md',
-      sourceCreatedAt: timestamp,
-      sourceUpdatedAt: timestamp,
-      dependencyUuids: ['active-open-dependency'],
+      priority: 'high',
+      filename: '405-blocked.plan.md',
+      sourceCreatedAt: daysAgo(2),
+      sourceUpdatedAt: daysAgo(2),
+      dependencyUuids: ['open-dependency'],
     });
 
     upsertPlan(db, projectId, {
@@ -99,101 +107,139 @@ describe('lib/server/plans_browser', () => {
       status: 'needs_review',
       priority: 'high',
       filename: '406-needs-review.plan.md',
-      sourceCreatedAt: timestamp,
-      sourceUpdatedAt: timestamp,
+      sourceCreatedAt: daysAgo(2),
+      sourceUpdatedAt: daysAgo(2),
+    });
+
+    upsertPlan(db, projectId, {
+      uuid: 'ready-prereq',
+      planId: 407,
+      title: 'Ready prerequisite',
+      status: 'done',
+      priority: 'low',
+      filename: '407-ready-prereq.plan.md',
+      sourceCreatedAt: daysAgo(20),
+      sourceUpdatedAt: daysAgo(20),
+    });
+
+    upsertPlan(db, projectId, {
+      uuid: 'ready-plan',
+      planId: 408,
+      title: 'Ready plan',
+      status: 'pending',
+      priority: 'urgent',
+      filename: '408-ready.plan.md',
+      sourceCreatedAt: daysAgo(2),
+      sourceUpdatedAt: daysAgo(2),
+      dependencyUuids: ['ready-prereq'],
     });
 
     upsertPlan(db, projectId, {
       uuid: 'recently-done-plan',
-      planId: 407,
+      planId: 409,
       title: 'Recently done plan',
       status: 'done',
       priority: 'medium',
-      filename: '407-recently-done.plan.md',
-      sourceCreatedAt: timestamp,
-      sourceUpdatedAt: timestamp,
+      filename: '409-recently-done.plan.md',
+      sourceCreatedAt: daysAgo(2),
+      sourceUpdatedAt: daysAgo(2),
     });
 
-    const result = getActiveWorkData(db, String(projectId));
-
-    expect(result.workspaces.map((workspace) => workspace.workspacePath)).toEqual([
-      '/tmp/workspaces/feature-plan',
-    ]);
-    expect(result.activePlans.map((plan) => [plan.planId, plan.displayStatus])).toEqual([
-      [402, 'in_progress'],
-      [406, 'needs_review'],
-      [404, 'blocked'],
-      [401, 'recently_done'],
-      [407, 'recently_done'],
-    ]);
-
-    // planNumberToUuid includes all plans, not just active ones
-    expect(result.planNumberToUuid[`${projectId}:401`]).toBe('dependency-done');
-    expect(result.planNumberToUuid[`${projectId}:402`]).toBe('feature-plan');
-    expect(result.planNumberToUuid[`${projectId}:403`]).toBe('active-open-dependency');
-    expect(result.planNumberToUuid[`${projectId}:404`]).toBe('blocked-plan');
-    expect(result.planNumberToUuid[`${projectId}:406`]).toBe('needs-review-plan');
-    expect(result.planNumberToUuid[`${projectId}:407`]).toBe('recently-done-plan');
-  });
-
-  test('epic plans with unresolved dependencies show as in_progress not blocked', () => {
-    const timestamp = daysAgo(2);
-
     upsertPlan(db, projectId, {
-      uuid: 'epic-child-pending',
-      planId: 406,
-      title: 'Epic child pending',
-      status: 'pending',
+      uuid: 'old-done-plan',
+      planId: 410,
+      title: 'Old done plan',
+      status: 'done',
       priority: 'medium',
-      filename: '406-epic-child.plan.md',
-      sourceCreatedAt: timestamp,
-      sourceUpdatedAt: timestamp,
+      filename: '410-old-done.plan.md',
+      sourceCreatedAt: daysAgo(20),
+      sourceUpdatedAt: daysAgo(20),
     });
 
     upsertPlan(db, projectId, {
-      uuid: 'epic-plan',
-      planId: 407,
-      title: 'Epic plan',
-      status: 'in_progress',
-      priority: 'high',
-      epic: true,
-      filename: '407-epic.plan.md',
-      sourceCreatedAt: timestamp,
-      sourceUpdatedAt: timestamp,
-      dependencyUuids: ['epic-child-pending'],
+      uuid: 'cancelled-plan',
+      planId: 411,
+      title: 'Cancelled plan',
+      status: 'cancelled',
+      priority: 'low',
+      filename: '411-cancelled.plan.md',
+      sourceCreatedAt: daysAgo(2),
+      sourceUpdatedAt: daysAgo(2),
     });
 
-    const result = getActiveWorkData(db, String(projectId));
+    upsertPlan(db, projectId, {
+      uuid: 'deferred-plan',
+      planId: 412,
+      title: 'Deferred plan',
+      status: 'deferred',
+      priority: 'low',
+      filename: '412-deferred.plan.md',
+      sourceCreatedAt: daysAgo(2),
+      sourceUpdatedAt: daysAgo(2),
+    });
 
-    const epicPlan = result.activePlans.find((p) => p.uuid === 'epic-plan');
-    expect(epicPlan).toBeDefined();
-    expect(epicPlan!.displayStatus).toBe('in_progress');
+    const result = getDashboardData(db, String(projectId));
+
+    expect(result.plans.map((plan) => [plan.planId, plan.displayStatus])).toEqual([
+      [401, 'recently_done'],
+      [402, 'in_progress'],
+      [403, 'pending'],
+      [404, 'pending'],
+      [405, 'blocked'],
+      [406, 'needs_review'],
+      [408, 'pending'],
+      [409, 'recently_done'],
+    ]);
+
+    expect(result.plans.some((plan) => plan.uuid === 'old-done-plan')).toBe(false);
+    expect(result.plans.some((plan) => plan.uuid === 'cancelled-plan')).toBe(false);
+    expect(result.plans.some((plan) => plan.uuid === 'deferred-plan')).toBe(false);
+
+    expect(result.planNumberToUuid[`${projectId}:401`]).toBe('dependency-done');
+    expect(result.planNumberToUuid[`${projectId}:408`]).toBe('ready-plan');
+    expect(result.planNumberToUuid[`${projectId}:409`]).toBe('recently-done-plan');
+    expect(result.planNumberToUuid[`${projectId}:410`]).toBe('old-done-plan');
+    expect(result.planNumberToUuid[`${projectId}:411`]).toBe('cancelled-plan');
+    expect(result.planNumberToUuid[`${projectId}:412`]).toBe('deferred-plan');
   });
 
-  test('getActiveWorkData supports all-project mode', () => {
-    const otherWorkspace = recordWorkspace(db, {
-      projectId: otherProjectId,
-      taskId: 'task-other-project-plan',
-      workspacePath: '/tmp/workspaces/other-project-plan',
-      branch: 'feature/other-project-plan',
-      planId: '501',
-      planTitle: 'Other project plan',
+  test('getDashboardData supports all-project mode', () => {
+    upsertPlan(db, otherProjectId, {
+      uuid: 'other-project-done-recent',
+      planId: 502,
+      title: 'Other project recently done',
+      status: 'done',
+      priority: 'medium',
+      filename: '502-other-project-recent.plan.md',
+      sourceCreatedAt: daysAgo(2),
+      sourceUpdatedAt: daysAgo(2),
     });
 
-    claimAssignment(db, otherProjectId, 'other-project-plan', 501, otherWorkspace.id, 'bob');
+    upsertPlan(db, otherProjectId, {
+      uuid: 'other-project-deferred',
+      planId: 503,
+      title: 'Other project deferred',
+      status: 'deferred',
+      priority: 'low',
+      filename: '503-other-project-deferred.plan.md',
+      sourceCreatedAt: daysAgo(2),
+      sourceUpdatedAt: daysAgo(2),
+    });
 
-    const result = getActiveWorkData(db, 'all');
+    const result = getDashboardData(db, 'all');
 
-    expect(result.workspaces.map((workspace) => workspace.projectId)).toEqual(
-      expect.arrayContaining([projectId, otherProjectId])
-    );
-    expect(
-      result.activePlans.map((plan) => [plan.projectId, plan.uuid, plan.displayStatus])
-    ).toEqual([
+    expect(result.plans.map((plan) => [plan.projectId, plan.uuid, plan.displayStatus])).toEqual([
+      [projectId, 'dependency-done', 'recently_done'],
       [projectId, 'feature-plan', 'in_progress'],
       [otherProjectId, 'other-project-plan', 'blocked'],
-      [projectId, 'dependency-done', 'recently_done'],
+      [otherProjectId, 'other-project-done-recent', 'recently_done'],
     ]);
+
+    expect(result.planNumberToUuid[`${projectId}:401`]).toBe('dependency-done');
+    expect(result.planNumberToUuid[`${projectId}:402`]).toBe('feature-plan');
+    expect(result.planNumberToUuid[`${otherProjectId}:501`]).toBe('other-project-plan');
+    expect(result.planNumberToUuid[`${otherProjectId}:502`]).toBe('other-project-done-recent');
+    expect(result.planNumberToUuid[`${otherProjectId}:503`]).toBe('other-project-deferred');
   });
 
   describe('getPlanDetailRouteData', () => {

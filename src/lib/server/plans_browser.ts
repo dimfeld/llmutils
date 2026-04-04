@@ -2,22 +2,13 @@ import type { Database } from 'bun:sqlite';
 
 import {
   getPlanDetail,
-  getWorkspacesForProject,
   getPlansForProject,
   type PlanDetail,
   type EnrichedPlan,
-  type EnrichedWorkspace,
 } from './db_queries.js';
 
 export interface PlansPageData {
   plans: EnrichedPlan[];
-}
-
-export interface ActiveWorkData {
-  workspaces: EnrichedWorkspace[];
-  activePlans: EnrichedPlan[];
-  /** Map of "projectId:planNumber" -> planUuid for linking workspace assigned plans. */
-  planNumberToUuid: Record<string, string>;
 }
 
 export interface PlanDetailRouteResult {
@@ -33,41 +24,31 @@ export function getPlansPageData(db: Database, projectId: string): PlansPageData
   };
 }
 
-export function getActiveWorkData(db: Database, projectId: string): ActiveWorkData {
+export interface DashboardData {
+  plans: EnrichedPlan[];
+  /** Map of "projectId:planNumber" -> planUuid for linking workspace assigned plans. */
+  planNumberToUuid: Record<string, string>;
+}
+
+const TERMINAL_STATUSES = new Set(['done', 'cancelled', 'deferred']);
+
+export function getDashboardData(db: Database, projectId: string): DashboardData {
   const numericProjectId = projectId === 'all' ? undefined : Number(projectId);
   const allPlans = getPlansForProject(db, numericProjectId);
 
   const planNumberToUuid: Record<string, string> = {};
+  const plans: EnrichedPlan[] = [];
+
   for (const plan of allPlans) {
     planNumberToUuid[`${plan.projectId}:${plan.planId}`] = plan.uuid;
+    if (!TERMINAL_STATUSES.has(plan.status) || plan.displayStatus === 'recently_done') {
+      plans.push(plan);
+    }
   }
 
-  return {
-    workspaces: getWorkspacesForProject(db, numericProjectId),
-    activePlans: allPlans
-      .filter(
-        (plan) =>
-          plan.displayStatus === 'in_progress' ||
-          plan.displayStatus === 'needs_review' ||
-          plan.displayStatus === 'blocked' ||
-          plan.displayStatus === 'recently_done'
-      )
-      .sort((a, b) => {
-        const order = { needs_review: 0, in_progress: 1, blocked: 2, recently_done: 3 };
-        return (
-          (order[a.displayStatus as keyof typeof order] ?? 4) -
-          (order[b.displayStatus as keyof typeof order] ?? 4)
-        );
-      }),
-    planNumberToUuid,
-  };
+  return { plans, planNumberToUuid };
 }
 
-/**
- * Load plan detail for the routed detail page.
- * Returns the plan detail and an optional redirect URL if the plan belongs to a different project.
- * Returns null if the plan is not found.
- */
 export function getPlanDetailRouteData(
   db: Database,
   planUuid: string,

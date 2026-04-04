@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 
 describe('common/github/webhook_client', () => {
   const originalFetch = globalThis.fetch;
@@ -8,7 +8,7 @@ describe('common/github/webhook_client', () => {
   });
 
   test('fetchWebhookEvents returns parsed events from the webhook server', async () => {
-    const fetchMock = mock(
+    const fetchMock = vi.fn(
       async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
         expect(String(input)).toBe(
           'https://webhooks.example.com/internal/events?afterId=25&limit=50&includeAcked=true'
@@ -56,7 +56,7 @@ describe('common/github/webhook_client', () => {
   });
 
   test('fetchWebhookEvents accepts snake_case webhook payloads', async () => {
-    globalThis.fetch = mock(
+    globalThis.fetch = vi.fn(
       async () =>
         new Response(
           JSON.stringify({
@@ -92,7 +92,7 @@ describe('common/github/webhook_client', () => {
   });
 
   test('fetchWebhookEvents returns an empty array for an empty events payload and omits unset params', async () => {
-    const fetchMock = mock(
+    const fetchMock = vi.fn(
       async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
         expect(String(input)).toBe(
           'https://webhooks.example.com/internal/events?includeAcked=true'
@@ -113,10 +113,10 @@ describe('common/github/webhook_client', () => {
   });
 
   test('fetchWebhookEvents returns an empty array on connection failure', async () => {
-    globalThis.fetch = mock(async () => {
+    globalThis.fetch = vi.fn(async () => {
       throw new TypeError('fetch failed: connect ECONNREFUSED');
     }) as typeof fetch;
-    const warnMock = mock(() => {});
+    const warnMock = vi.fn(() => {});
     const originalWarn = console.warn;
     console.warn = warnMock;
 
@@ -132,7 +132,7 @@ describe('common/github/webhook_client', () => {
   });
 
   test('fetchWebhookEvents throws on non-OK HTTP response', async () => {
-    globalThis.fetch = mock(
+    globalThis.fetch = vi.fn(
       async () => new Response('Unauthorized', { status: 401, statusText: 'Unauthorized' })
     ) as typeof fetch;
 
@@ -143,7 +143,7 @@ describe('common/github/webhook_client', () => {
   });
 
   test('fetchWebhookEvents preserves path prefix in base URL', async () => {
-    const fetchMock = mock(async (input: string | URL | Request): Promise<Response> => {
+    const fetchMock = vi.fn(async (input: string | URL | Request): Promise<Response> => {
       expect(String(input)).toContain('/webhooks/internal/events');
       return new Response(JSON.stringify({ events: [] }));
     });

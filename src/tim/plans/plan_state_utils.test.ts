@@ -260,7 +260,7 @@ describe('plan state utilities', () => {
 
   describe('isWorkComplete', () => {
     test('returns true for work-complete statuses', () => {
-      const statuses = ['done', 'cancelled', 'deferred', 'needs_review'] as const;
+      const statuses = ['done', 'cancelled', 'needs_review'] as const;
       for (const status of statuses) {
         const plan: PlanSchema = {
           id: 1,
@@ -273,7 +273,7 @@ describe('plan state utilities', () => {
     });
 
     test('returns false for active statuses', () => {
-      const statuses = ['pending', 'in_progress'] as const;
+      const statuses = ['pending', 'in_progress', 'deferred'] as const;
       for (const status of statuses) {
         const plan: PlanSchema = {
           id: 1,

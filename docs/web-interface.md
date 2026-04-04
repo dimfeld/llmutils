@@ -41,45 +41,54 @@ When broadening server-side behavior (e.g. making a check command-agnostic inste
 
 ## Active Work Tab
 
-The Active Work tab (`/projects/[projectId]/active`) provides a dashboard of current work per project with a split-pane layout.
+The Active Work tab (`/projects/[projectId]/active`) is a single-page scrollable dashboard with three sections: Needs Attention, Running Now, and Ready to Start. Each section is collapsible with a count badge and hidden when empty. An "All clear" message appears when all sections are empty.
 
 ### Route Structure
 
 ```
 src/routes/projects/[projectId]/active/
-├── +layout.server.ts       # Loads workspaces + active plans via getActiveWorkData()
-├── +layout.svelte          # Split-pane: left sidebar (workspaces + plans list), right detail area
-├── +page.svelte            # Empty state: "Select a workspace or plan to view details"
-├── [planId]/
-│   ├── +page.server.ts     # Loads plan detail via getPlanDetailRouteData(tab: 'plans')
-│   └── +page.svelte        # Renders PlanDetail component
-└── workspace/[workspaceId]/
-    ├── +page.server.ts     # Loads workspace detail via getWorkspaceDetail(), validates ownership
-    └── +page.svelte        # Workspace detail with lock/unlock actions
+├── +layout.server.ts       # Loads plans via getDashboardData()
+└── +layout.svelte          # Scrollable dashboard with three stacked sections
 ```
 
-### Data Flow
+### Data Loading
 
-- `getWorkspacesForProject(db, projectId?)` in `db_queries.ts` — LEFT JOINs `workspace` with `workspace_lock`, calls `cleanStaleLocks(db)` first, returns `EnrichedWorkspace[]` with `isRecentlyActive` computed flag
-- `getActiveWorkData(db, projectId)` in `plans_browser.ts` — combines workspace data with plans filtered to `displayStatus === 'in_progress' || 'needs_review' || 'blocked'`
-- "Recently active" criteria: workspace is locked, is primary, is auto, or has `updated_at` within 48 hours (`RECENTLY_ACTIVE_WINDOW_MS`)
+`getDashboardData(db, projectId)` in `plans_browser.ts` returns `{ plans: EnrichedPlan[], planNumberToUuid }` — all non-terminal plans for the project. Does not load workspaces since the dashboard doesn't have a workspace section.
+
+Actionable PR data is loaded client-side via `getActionablePrs` query in `src/lib/remote/dashboard.remote.ts`. Returns `ActionablePr[]` covering user's own PRs (ready to merge, checks failing, changes requested) and others' PRs where user has a pending review request. Each PR includes linked plan context when available. Classification logic is in `src/lib/utils/pr_actionability.ts` as pure functions. The query reads from cached DB data (does not require `GITHUB_TOKEN` at query time).
+
+### Attention Derivation
+
+`src/lib/utils/dashboard_attention.ts` provides pure functions to derive dashboard items from plans, sessions, and PR data:
+
+- `deriveAttentionItems(plans, sessions, actionablePrs)` — assembles plan + PR attention items
+- `deriveRunningNowSessions(sessions, projectId)` — filters active agent/generate/chat sessions, sorted by `connectedAt` most recent first
+- `deriveReadyToStartPlans(plans, sessions)` — filters ready non-epic plans with no active session, sorted by priority (urgent > high > medium > low > maybe)
+
+Key types:
+
+- `PlanAttentionItem` — groups multiple reasons per plan: `waiting_for_input`, `needs_review`, `agent_finished`. Agent finished = offline session linked to `in_progress` plan still in session manager memory (restricted to agent/generate/chat commands).
+- `PrAttentionItem` — per-PR: `ready_to_merge`, `checks_failing`, `changes_requested`, `review_requested`.
+- `ActionablePr` — type for PR actionability data (defined here for the remote query to import).
+
+### Dashboard Layout
+
+The layout (`+layout.svelte`) combines server-loaded plan data with client-side session state from `useSessionManager()`. Sections are derived reactively using `$derived`:
+
+- **Needs Attention**: Plan items (waiting for input, needs review, agent finished) and PR items (ready to merge, checks failing, changes requested, review requested) in separate subsections with a divider
+- **Running Now**: Active agent/generate/chat sessions with plan title, workspace, elapsed time, command badge. Clicking selects the session and navigates to Sessions tab
+- **Ready to Start**: Ready plans sorted by priority with inline "Run Agent" button (handles `already_running`, tracks launched plan UUID)
+
+Server data renders immediately. A subtle "Connecting to sessions..." indicator shows while SSE initializes (`initialized` flag). Subscribes to `pr:updated` SSE events for PR data refresh.
 
 ### Components
 
-- `WorkspaceBadge.svelte` — pill badge for workspace status: Primary (blue), Auto (green), Locked (amber), Available (gray)
-- `WorkspaceRow.svelte` — clickable card-style row showing workspace name/path, branch chip, assigned plan link, status badge, lock command info, optional project name. Accepts `href` and `selected` props; when `href` is set, renders as an `<a>` tag with preload and inner plan links render as plain text to avoid nested anchors
-- `ActivePlanRow.svelte` — plan row with plan #, title, goal (truncated), status/priority badges, and relative timestamp
+- `DashboardSection.svelte` — collapsible section with count badge, `▶`/`▼` toggle, Svelte 5 snippet-based content area. `defaultCollapsed` is a one-time initializer, not a live prop. Callers are responsible for not rendering when the section is empty
+- `NeedsAttentionCard.svelte` — plan attention card with plan ID, title, reason badges (Waiting for input, Needs review, Agent finished), and View Session action button. Uses `<a>` for plan navigation + separate `<button>` for actions (no nested interactive elements). Shows project name when `projectId = 'all'`
+- `PrAttentionCard.svelte` — PR attention card with PR title/repo as primary identity, action reason badge, check status, linked plan as secondary context. Opens GitHub URL on click
+- `RunningNowRow.svelte` — compact row with command type badge, plan title, workspace name, elapsed time. Selects session before navigating to Sessions tab
+- `ReadyToStartRow.svelte` — plan row with priority badge and inline "Run Agent" button using `startAgent()` from `plan_actions.remote.ts`. Handles launch lock with loading/launched state (30-second success timeout pattern). Tracks launched plan UUID so state resets when list reorders
 - `src/lib/utils/time.ts` — `formatRelativeTime()` helper for human-readable relative timestamps
-
-### Workspace Detail & Lock/Unlock
-
-The workspace detail view (`/projects/[projectId]/active/workspace/[workspaceId]`) displays full workspace info (name, path, branch, type, assigned plan, description) and lock status with management actions.
-
-- **Query**: `getWorkspaceDetail(db, workspaceId)` in `db_queries.ts` returns a `WorkspaceDetail` type extending `EnrichedWorkspace` with `description`, `createdAt`, and `lockStartedAt` fields
-- **Remote commands** (`src/lib/remote/workspace_actions.remote.ts`): `lockWorkspace` and `unlockWorkspace` are `command()` exports. `lockWorkspace` acquires a persistent lock (`lockType: 'persistent'`, `command: 'web: manual lock'`). `unlockWorkspace` force-releases any lock (`force: true`). Both call `invalidateAll()` after mutation to keep the sidebar in sync
-- **PID lock safety**: When unlocking a PID-locked workspace, a confirmation dialog warns that a process is actively using the workspace (shows PID, command, hostname) before proceeding with force-release
-- **Route validation**: Workspace ID is validated with strict regex (`/^\d+$/`); workspace ownership is checked against the current project (redirects to owning project if mismatched, matching plan detail route behavior)
-- **Navigation**: Clicking a workspace row in the sidebar navigates to the detail view; selecting a workspace visually deselects any selected plan and vice versa. Uses `afterNavigate` to reset transient UI state (submitting flags, error messages) when navigating between workspaces
 
 ## PR Status
 

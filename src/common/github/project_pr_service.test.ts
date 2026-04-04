@@ -20,7 +20,6 @@ import {
 
 vi.mock('./pull_requests.js', () => ({
   partitionUserRelevantOpenPrs: vi.fn(),
-  fetchOpenPullRequestsWithReviewers: vi.fn(),
   parseOwnerRepoFromRepositoryId: vi.fn((id: string) => {
     const parts = id.split('__');
     if (parts[0] !== 'github.com') return null;
@@ -356,24 +355,30 @@ describe('common/github/project_pr_service', () => {
     });
     linkPlanToPr(db, 'plan-1', explicitDetail.status.id, 'explicit');
 
-    const fetchOpenPullRequestsWithReviewers = mock(async () => [
+    const fetchOpenPullRequestsWithReviewersMock = vi.fn(async () => [
       makePr({ number: 11, title: 'My PR', headRefName: 'feature/one', userLogin: 'dimfeld' }),
     ]);
-    const fetchPrFullStatus = mock(async () =>
+    const fetchPrFullStatusMock = vi.fn(async () =>
       makeFullStatus(11, {
         title: 'My PR',
         headRefName: 'feature/one',
       })
     );
 
-    await moduleMocker.mock('./pull_requests.ts', () => ({
-      fetchOpenPullRequestsWithReviewers,
-      parseOwnerRepoFromRepositoryId: () => ({ owner: 'example', repo: 'repo' }),
-      partitionUserRelevantOpenPrs,
-    }));
-    await moduleMocker.mock('./pr_status.ts', () => ({
-      fetchPrFullStatus,
-    }));
+    vi.mocked(fetchOpenPullRequestsWithReviewers).mockImplementation(
+      fetchOpenPullRequestsWithReviewersMock
+    );
+    vi.mocked(partitionUserRelevantOpenPrs).mockImplementation((prs, username) => {
+      const normalizedUsername = username.toLowerCase();
+      const authored = prs.filter((pr) => pr.user?.login?.toLowerCase() === normalizedUsername);
+      const reviewing = prs.filter((pr) =>
+        pr.requestedReviewers?.some(
+          (reviewer: any) => reviewer.login?.toLowerCase() === normalizedUsername
+        )
+      );
+      return { authored, reviewing };
+    });
+    vi.mocked(fetchPrFullStatus).mockImplementation(fetchPrFullStatusMock);
 
     const { refreshProjectPrs } = await import('./project_pr_service.ts');
     const result = await refreshProjectPrs(db, projectId, 'dimfeld');
