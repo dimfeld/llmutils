@@ -109,10 +109,17 @@ export async function handleRebaseCommand(
   const isJj = await getUsingJj(baseDir);
   const trunkBranch = await getTrunkBranch(baseDir);
 
-  console.log(`Checking out ${branchName}...`);
-  const checkedOut = await pullWorkspaceRefIfExists(baseDir, branchName, 'origin', currentPlanFile);
-  if (!checkedOut) {
-    throw new Error(`Branch "${branchName}" does not exist locally or on origin.`);
+  if (!workspaceMode) {
+    console.log(`Checking out ${branchName}...`);
+    const checkedOut = await pullWorkspaceRefIfExists(
+      baseDir,
+      branchName,
+      'origin',
+      currentPlanFile
+    );
+    if (!checkedOut) {
+      throw new Error(`Branch "${branchName}" does not exist locally or on origin.`);
+    }
   }
 
   const beforeRevision = await getRebaseTargetRevision(baseDir, branchName, isJj);
@@ -222,6 +229,9 @@ async function hasJujutsuConflicts(baseDir: string): Promise<boolean> {
     cwd: baseDir,
     quiet: true,
   });
+  if (result.exitCode !== 0 && result.stdout.trim().length === 0) {
+    throw new Error(`Failed to check jj conflicts: ${result.stderr || result.stdout}`);
+  }
   return result.stdout.trim().length > 0;
 }
 
@@ -313,15 +323,7 @@ async function resolveRebaseConflicts(options: {
     executorError = error;
   }
 
-  const conflictsRemain = options.isJj
-    ? await hasJujutsuConflicts(options.baseDir)
-    : await isGitRebaseInProgress(options.baseDir);
-
-  if (
-    !options.isJj &&
-    (executorError || conflictsRemain) &&
-    (await isGitRebaseInProgress(options.baseDir))
-  ) {
+  if (!options.isJj && executorError && (await isGitRebaseInProgress(options.baseDir))) {
     await abortGitRebase(options.baseDir);
   }
 
@@ -329,8 +331,14 @@ async function resolveRebaseConflicts(options: {
     throw executorError;
   }
 
+  const conflictsRemain = options.isJj
+    ? await hasJujutsuConflicts(options.baseDir)
+    : await isGitRebaseInProgress(options.baseDir);
+
   if (conflictsRemain) {
-    throw new Error('Conflicts remain after the executor session finished.');
+    throw new Error(
+      'Conflicts remain after the executor session finished. Please resolve them manually.'
+    );
   }
 }
 
