@@ -123,3 +123,11 @@ export async function spawnChatProcess(
     cwd
   );
 }
+
+export async function spawnRebaseProcess(planId: number, cwd: string): Promise<SpawnProcessResult> {
+  return spawnTimProcess(
+    planId,
+    ['rebase', String(planId), '--auto-workspace', '--no-terminal-input'],
+    cwd
+  );
+}

@@ -5,7 +5,12 @@
   import type { PlanDetail } from '$lib/server/db_queries.js';
   import { STATUS_ORDER_MAP } from '$lib/utils/plan_status.js';
   import { afterNavigate, invalidateAll } from '$app/navigation';
-  import { startGenerate, startAgent, startChat } from '$lib/remote/plan_actions.remote.js';
+  import {
+    startGenerate,
+    startAgent,
+    startChat,
+    startRebase,
+  } from '$lib/remote/plan_actions.remote.js';
   import {
     removeReviewIssue,
     convertReviewIssueToTask,
@@ -86,8 +91,12 @@
     return null;
   });
 
+  const REBASE_ELIGIBLE_STATUSES = new Set(['in_progress', 'needs_review', 'done']);
+  let isEligibleForRebase = $derived(REBASE_ELIGIBLE_STATUSES.has(plan.status));
+
   let startingGenerate = $state(false);
   let startingAgent = $state(false);
+  let startingRebase = $state(false);
   let startingChat: 'claude' | 'codex' | false = $state(false);
   let chatDialogOpen = $state(false);
   let startedSuccessfully = $state(false);
@@ -139,6 +148,7 @@
     if (from && to && from.url.pathname !== to.url.pathname) {
       startingGenerate = false;
       startingAgent = false;
+      startingRebase = false;
       startingChat = false;
       chatDialogOpen = false;
       startedSuccessfully = false;
@@ -199,7 +209,7 @@
     }
   }
 
-  let starting = $derived(startingGenerate || startingAgent || startingChat);
+  let starting = $derived(startingGenerate || startingAgent || startingRebase || startingChat);
   let controlsDisabled = $derived(starting || startedSuccessfully);
 
   async function handleRunAgent() {
@@ -224,6 +234,28 @@
       errorMessage = `${err as Error}`;
     } finally {
       startingAgent = false;
+    }
+  }
+
+  async function handleRebase() {
+    startingRebase = true;
+    errorMessage = null;
+    successMessage = null;
+    try {
+      const result = await startRebase({ planUuid: plan.uuid });
+      if (result.status === 'already_running') {
+        successMessage = {
+          text: 'A session is already running for this plan',
+          connectionId: result.connectionId,
+        };
+      } else {
+        successMessage = { text: 'Rebase started' };
+      }
+      setStartedSuccessfully();
+    } catch (err) {
+      errorMessage = `${err as Error}`;
+    } finally {
+      startingRebase = false;
     }
   }
 
@@ -375,6 +407,14 @@
             </DropdownMenu.Trigger>
             <DropdownMenu.Content align="end">
               <DropdownMenu.Item onclick={() => (chatDialogOpen = true)}>Chat</DropdownMenu.Item>
+              {#if isEligibleForRebase}
+                <DropdownMenu.Item
+                  onclick={handleRebase}
+                  disabled={controlsDisabled || startingRebase}
+                >
+                  {startingRebase ? 'Starting Rebase…' : 'Rebase'}
+                </DropdownMenu.Item>
+              {/if}
             </DropdownMenu.Content>
           </DropdownMenu.Root>
         </ButtonGroup>
@@ -424,25 +464,88 @@
             <DropdownMenu.Content align="end">
               <DropdownMenu.Item onclick={handleRunAgent}>Run Agent</DropdownMenu.Item>
               <DropdownMenu.Item onclick={() => (chatDialogOpen = true)}>Chat</DropdownMenu.Item>
+              {#if isEligibleForRebase}
+                <DropdownMenu.Item
+                  onclick={handleRebase}
+                  disabled={controlsDisabled || startingRebase}
+                >
+                  {startingRebase ? 'Starting Rebase…' : 'Rebase'}
+                </DropdownMenu.Item>
+              {/if}
             </DropdownMenu.Content>
           </DropdownMenu.Root>
         </ButtonGroup>
       {:else if showChatOnly}
-        <Button
-          onclick={() => (chatDialogOpen = true)}
-          disabled={controlsDisabled}
-          size="sm"
-          class="ml-auto bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600"
-        >
-          {#if startingChat}
-            <span
-              class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
-            ></span>
-            Starting…
-          {:else}
-            Chat
-          {/if}
-        </Button>
+        {#if isEligibleForRebase}
+          <ButtonGroup class="ml-auto">
+            <Button
+              onclick={() => (chatDialogOpen = true)}
+              disabled={controlsDisabled}
+              size="sm"
+              class="bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600"
+            >
+              {#if startingChat}
+                <span
+                  class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
+                ></span>
+                Starting…
+              {:else}
+                Chat
+              {/if}
+            </Button>
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger>
+                {#snippet child({ props })}
+                  <Button
+                    {...props}
+                    disabled={controlsDisabled}
+                    size="icon-sm"
+                    aria-label="More plan actions"
+                    class="bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="m6 9 6 6 6-6" />
+                    </svg>
+                  </Button>
+                {/snippet}
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Content align="end">
+                <DropdownMenu.Item
+                  onclick={handleRebase}
+                  disabled={controlsDisabled || startingRebase}
+                >
+                  {startingRebase ? 'Starting Rebase…' : 'Rebase'}
+                </DropdownMenu.Item>
+              </DropdownMenu.Content>
+            </DropdownMenu.Root>
+          </ButtonGroup>
+        {:else}
+          <Button
+            onclick={() => (chatDialogOpen = true)}
+            disabled={controlsDisabled}
+            size="sm"
+            class="ml-auto bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600"
+          >
+            {#if startingChat}
+              <span
+                class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
+              ></span>
+              Starting…
+            {:else}
+              Chat
+            {/if}
+          </Button>
+        {/if}
       {/if}
     </div>
 

@@ -10,6 +10,7 @@ import {
   spawnAgentProcess,
   spawnChatProcess,
   spawnGenerateProcess,
+  spawnRebaseProcess,
 } from '$lib/server/plan_actions.js';
 import { getSessionManager } from '$lib/server/session_context.js';
 
@@ -146,5 +147,24 @@ export const startChat = command(startChatSchema, async ({ planUuid, executor })
     isPlanEligibleForChat,
     'Plan is not eligible for chat',
     (planId, cwd) => spawnChatProcess(planId, cwd, executor)
+  );
+});
+
+const REBASE_ELIGIBLE_STATUSES = new Set(['in_progress', 'needs_review', 'done']);
+
+function isPlanEligibleForRebase(plan: ReturnType<typeof getPlanDetail>): plan is PlanDetailResult {
+  return plan != null && REBASE_ELIGIBLE_STATUSES.has(plan.status);
+}
+
+const startRebaseSchema = z.object({
+  planUuid: z.string().min(1),
+});
+
+export const startRebase = command(startRebaseSchema, async ({ planUuid }) => {
+  return launchTimCommand(
+    planUuid,
+    isPlanEligibleForRebase,
+    'Plan is not eligible for rebase',
+    spawnRebaseProcess
   );
 });
