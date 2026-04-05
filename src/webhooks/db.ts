@@ -143,10 +143,14 @@ export class WebhookEventStore {
   }
 
   public pruneOldEvents(): number {
-    const deletedCount = this.db.prepare(`
+    const deletedCount = this.db
+      .prepare(
+        `
       DELETE FROM webhook_event
       WHERE received_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-1 month')
-    `).run().changes;
+    `
+      )
+      .run().changes;
 
     // Update the in-memory timestamp
     this.lastPrunedAt = Date.now();
