@@ -190,6 +190,19 @@ function setupOutputProcessing(
     }
   };
 
+  // Forward termination signals to the child process so that killing the parent also kills children.
+  const forwardSignal = (signal: NodeJS.Signals) => {
+    try {
+      proc.kill(signal);
+    } catch {
+      // Process may have already exited
+    }
+  };
+  const handleForwardSigterm = () => forwardSignal('SIGTERM');
+  const handleForwardSigint = () => forwardSignal('SIGINT');
+  process.on('SIGTERM', handleForwardSigterm);
+  process.on('SIGINT', handleForwardSigint);
+
   // Handle process suspension (Ctrl+Z) and resumption
   const handleSuspend = () => {
     debugLog('Process suspended, clearing inactivity timer');
@@ -296,7 +309,11 @@ function setupOutputProcessing(
     } finally {
       clearInactivityTimer();
 
-      // Clean up signal listeners
+      // Clean up signal forwarding listeners
+      process.off('SIGTERM', handleForwardSigterm);
+      process.off('SIGINT', handleForwardSigint);
+
+      // Clean up suspension listeners
       if (inactivityTimeoutMs) {
         process.off('SIGTSTP', handleSuspend);
         process.off('SIGCONT', handleResume);
