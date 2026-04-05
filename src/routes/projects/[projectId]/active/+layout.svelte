@@ -15,9 +15,9 @@
   import PrAttentionCard from '$lib/components/PrAttentionCard.svelte';
   import RunningNowRow from '$lib/components/RunningNowRow.svelte';
   import ReadyToStartRow from '$lib/components/ReadyToStartRow.svelte';
-  import type { LayoutData } from './$types';
+  import type { LayoutProps } from './$types';
 
-  let { data }: { data: LayoutData } = $props();
+  let { data, children }: LayoutProps = $props();
 
   const sessionManager = useSessionManager();
 
@@ -126,3 +126,5 @@
     {/if}
   </div>
 </div>
+
+{@render children()}

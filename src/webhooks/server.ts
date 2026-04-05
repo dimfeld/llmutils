@@ -173,6 +173,18 @@ function buildServer(config: ReceiverConfig): ReturnType<typeof Bun.serve> {
           `[webhook_receiver] GitHub webhook: event=${eventType} action=${metadata.action ?? 'none'} repo=${metadata.repositoryFullName ?? 'unknown'} delivery=${deliveryId}`
         );
 
+        // Trigger pruning if needed (check daily, delete entries older than 1 month)
+        if (store.shouldPruneOldEvents()) {
+          try {
+            const deletedCount = store.pruneOldEvents();
+            if (deletedCount > 0) {
+              console.log(`[webhook_receiver] Pruned ${deletedCount} old webhook entries`);
+            }
+          } catch (err) {
+            console.error('[webhook_receiver] Failed to prune old webhook entries:', err);
+          }
+        }
+
         if (!result.inserted) {
           return jsonResponse({ status: 'duplicate', deliveryId });
         }

@@ -27,6 +27,7 @@ export interface NewWebhookEventInput {
 
 export class WebhookEventStore {
   private readonly db: Database;
+  private lastPrunedAt: number | null = null;
 
   constructor(dbPath: string) {
     mkdirSync(dirname(dbPath), { recursive: true });
@@ -130,6 +131,27 @@ export class WebhookEventStore {
     `);
     const result = statement.run(...deliveryIds);
     return result.changes;
+  }
+
+  public shouldPruneOldEvents(): boolean {
+    if (!this.lastPrunedAt) {
+      return true; // Never pruned before
+    }
+
+    const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+    return this.lastPrunedAt < oneDayAgo;
+  }
+
+  public pruneOldEvents(): number {
+    const deletedCount = this.db.prepare(`
+      DELETE FROM webhook_event
+      WHERE received_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-1 month')
+    `).run().changes;
+
+    // Update the in-memory timestamp
+    this.lastPrunedAt = Date.now();
+
+    return deletedCount;
   }
 
   public close(): void {
