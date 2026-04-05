@@ -109,27 +109,21 @@ export async function handleRebaseCommand(
   const isJj = await getUsingJj(baseDir);
   const trunkBranch = await getTrunkBranch(baseDir);
 
-  console.log(`Fetching from origin for ${branchName}...`);
-  await fetchFromOrigin(baseDir, isJj);
-
-  const localBranchPresent = await branchExists(baseDir, branchName, isJj);
-  const remoteBranchPresent = await remoteBranchExists(baseDir, branchName, isJj);
-  if (!localBranchPresent && !remoteBranchPresent) {
-    throw new Error(`Branch "${branchName}" does not exist locally or on origin.`);
-  }
-
   console.log(`Checking out ${branchName}...`);
   const checkedOut = await pullWorkspaceRefIfExists(baseDir, branchName, 'origin', currentPlanFile);
   if (!checkedOut) {
-    throw new Error(`Failed to check out branch "${branchName}".`);
+    throw new Error(`Branch "${branchName}" does not exist locally or on origin.`);
   }
 
-  const beforeCommit = await getCurrentCommitHash(baseDir);
+  const beforeRevision = await getRebaseTargetRevision(baseDir, branchName, isJj);
+  const rebaseTarget = isJj ? trunkBranch : `origin/${trunkBranch}`;
 
-  console.log(`Rebasing ${branchName} onto ${trunkBranch}...`);
+  console.log(`Rebasing ${branchName} onto ${rebaseTarget}...`);
   const rebaseResult = isJj
-    ? await spawnAndLogOutput(['jj', 'rebase', '-d', trunkBranch], { cwd: baseDir })
-    : await spawnAndLogOutput(['git', 'rebase', trunkBranch], { cwd: baseDir });
+    ? await spawnAndLogOutput(['jj', 'rebase', '-b', branchName, '-d', trunkBranch], {
+        cwd: baseDir,
+      })
+    : await spawnAndLogOutput(['git', 'rebase', rebaseTarget], { cwd: baseDir });
 
   if (!isJj && rebaseResult.exitCode !== 0 && !(await isGitRebaseInProgress(baseDir))) {
     throw new Error(`Git rebase failed: ${rebaseResult.stderr || rebaseResult.stdout}`);
@@ -158,9 +152,9 @@ export async function handleRebaseCommand(
     });
   }
 
-  const afterCommit = await getCurrentCommitHash(baseDir);
+  const afterCommit = await getRebaseTargetRevision(baseDir, branchName, isJj);
   const changed =
-    beforeCommit === null || afterCommit === null ? true : beforeCommit !== afterCommit;
+    beforeRevision === null || afterCommit === null ? true : beforeRevision !== afterCommit;
 
   if (!changed) {
     console.log(`Branch ${branchName} is already up to date with ${trunkBranch}.`);
@@ -223,81 +217,41 @@ async function resolveRebasePlan(
   };
 }
 
-async function fetchFromOrigin(baseDir: string, isJj: boolean): Promise<void> {
-  const result = isJj
-    ? await spawnAndLogOutput(['jj', 'git', 'fetch'], { cwd: baseDir })
-    : await spawnAndLogOutput(['git', 'fetch', 'origin'], { cwd: baseDir });
-
-  if (result.exitCode !== 0) {
-    const vcsName = isJj ? 'Jujutsu' : 'Git';
-    throw new Error(`${vcsName} fetch failed: ${result.stderr || result.stdout}`);
-  }
+async function hasJujutsuConflicts(baseDir: string): Promise<boolean> {
+  const result = await spawnAndLogOutput(['jj', 'resolve', '--list'], {
+    cwd: baseDir,
+    quiet: true,
+  });
+  return result.stdout.trim().length > 0;
 }
 
-async function branchExists(baseDir: string, branchName: string, isJj: boolean): Promise<boolean> {
-  if (isJj) {
-    const result = await spawnAndLogOutput(['jj', 'bookmark', 'list'], {
-      cwd: baseDir,
-      quiet: true,
-    });
-    if (result.exitCode !== 0) {
-      return false;
-    }
-
-    return result.stdout.split('\n').some((line) => line.split(/[\s:]/)[0] === branchName);
-  }
-
-  const result = await spawnAndLogOutput(
-    ['git', 'rev-parse', '--verify', `refs/heads/${branchName}`],
-    {
-      cwd: baseDir,
-      quiet: true,
-    }
-  );
-  return result.exitCode === 0;
-}
-
-async function remoteBranchExists(
+async function getRebaseTargetRevision(
   baseDir: string,
   branchName: string,
-  isJj: boolean,
-  remoteName = 'origin'
-): Promise<boolean> {
-  if (isJj) {
-    const result = await spawnAndLogOutput(['jj', 'bookmark', 'list', '--all'], {
-      cwd: baseDir,
-      quiet: true,
-    });
-    if (result.exitCode !== 0) {
-      return false;
-    }
-
-    return result.stdout
-      .split('\n')
-      .some((line) => line.split(/[\s:]/)[0] === `${branchName}@${remoteName}`);
+  isJj: boolean
+): Promise<string | null> {
+  if (!isJj) {
+    return getCurrentCommitHash(baseDir);
   }
 
+  return getBookmarkCommitHash(baseDir, branchName);
+}
+
+async function getBookmarkCommitHash(baseDir: string, branchName: string): Promise<string | null> {
   const result = await spawnAndLogOutput(
-    ['git', 'rev-parse', '--verify', `refs/remotes/${remoteName}/${branchName}`],
+    ['jj', 'log', '-r', branchName, '--no-graph', '-T', 'commit_id'],
     {
       cwd: baseDir,
       quiet: true,
     }
   );
-  return result.exitCode === 0;
-}
 
-async function hasJujutsuConflicts(baseDir: string): Promise<boolean> {
-  const result = await spawnAndLogOutput(['jj', 'status'], { cwd: baseDir, quiet: true });
   if (result.exitCode !== 0) {
-    throw new Error(`Failed to check jj status: ${result.stderr || result.stdout}`);
+    return null;
   }
 
-  return statusOutputHasConflicts(result.stdout);
-}
-
-function statusOutputHasConflicts(statusOutput: string): boolean {
-  return /\bconflict\b/i.test(statusOutput);
+  const commitId = result.stdout.trim();
+  return commitId.length > 0 ? commitId : null;
 }
 
 async function isGitRebaseInProgress(baseDir: string): Promise<boolean> {
