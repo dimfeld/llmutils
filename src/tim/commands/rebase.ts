@@ -85,6 +85,7 @@ export async function handleRebaseCommand(
   let baseDir = resolved.repoRoot;
   let currentPlanFile = resolved.planFile;
 
+  let workspaceHandledBranch = false;
   if (workspaceMode) {
     const workspaceResult = await setupWorkspace(
       {
@@ -102,6 +103,8 @@ export async function handleRebaseCommand(
       config,
       'tim rebase'
     );
+    workspaceHandledBranch =
+      path.resolve(workspaceResult.baseDir) !== path.resolve(resolved.repoRoot);
     baseDir = workspaceResult.baseDir;
     currentPlanFile = workspaceResult.planFile;
   }
@@ -109,7 +112,7 @@ export async function handleRebaseCommand(
   const isJj = await getUsingJj(baseDir);
   const trunkBranch = await getTrunkBranch(baseDir);
 
-  if (!workspaceMode) {
+  if (!workspaceHandledBranch) {
     console.log(`Checking out ${branchName}...`);
     const checkedOut = await pullWorkspaceRefIfExists(
       baseDir,
@@ -324,7 +327,12 @@ async function resolveRebaseConflicts(options: {
   }
 
   if (!options.isJj && executorError && (await isGitRebaseInProgress(options.baseDir))) {
-    await abortGitRebase(options.baseDir);
+    try {
+      await abortGitRebase(options.baseDir);
+    } catch (abortError) {
+      console.error(`Original executor error: ${executorError as Error}`);
+      throw abortError;
+    }
   }
 
   if (executorError) {
