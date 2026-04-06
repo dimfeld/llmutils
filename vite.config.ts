@@ -14,6 +14,7 @@ export default defineConfig({
     },
   },
   test: {
+    silent: 'passed-only',
     projects: [
       // {
       //   extends: './vite.config.ts',

@@ -17,6 +17,12 @@ export async function invokeCommand<TArg, TResult>(
       state: {
         allows_commands: true,
         handleValidationError: ({ issues }: { issues: unknown }) => issues,
+        remote: {
+          refreshes: [],
+        },
+        validated: {
+          get: () => new Set(),
+        },
         transport: {},
       } as never,
     },
@@ -41,6 +47,11 @@ export async function invokeQuery<TArg, TResult>(
         allows_queries: true,
         handleValidationError: ({ issues }: { issues: unknown }) => issues,
         transport: {},
+        remote: {
+          validated: {
+            get: () => new Set(),
+          },
+        },
       } as never,
     },
     () => fn(arg as TArg)
