@@ -22,7 +22,7 @@ const INPUT_COMBINATION_GUIDANCE =
 function buildInputFileRandomizationGuidance(planId: string): string {
   return `- If input is large (roughly over 50KB), write it to a temporary file in a temp directory (for example, \`/tmp\` or a \`mktemp\` path) and pass \`--input-file <paths...>\` instead of \`--input\`.
 - When you create an input file for a subagent or reviewer, include the plan ID plus an extra random suffix in the filename so repeated runs on the same plan do not collide with earlier files.
-- Recommended pattern: \`/tmp/tim-${planId}-<purpose>-XXXXXX.md\`.
+- Recommended pattern: \`/tmp/tim-${planId}-<purpose>-$(Date.now() % 100000).md\`.
 - Always explicitly pass the full path instead of using "$TMPDIR/filename".
 - You can also pipe input to stdin and use \`--input-file -\`.`;
 }
@@ -151,14 +151,14 @@ function buildSubagentOutputCaptureGuidance(planId: string): string {
   return `Output capture requirement for every \`tim subagent\` run:
 - Always pass \`--output-file <path>\` and use the full path, not $TMPDIR/<filename>
 - Use a temp-dir file name that includes the plan ID and agent name to avoid collisions with other concurrent agents/projects.
-- Recommended pattern: tim-${planId}-<agent>-output-XXXXXX.txt.
+- Recommended pattern: tim-${planId}-<agent>-output-$(Date.now() % 100000).txt.
 - If the command returns no stdout/stderr output, immediately read the \`--output-file\` path and use that as the subagent output.`;
 }
 
 function buildReviewOutputCaptureGuidance(planId: string): string {
   return `Output capture requirement for every \`tim review\` run:
 - Always pass \`--output-file <path>\` and use the full path, not $TMPDIR/<filename>
-- Use a temp-dir file name that includes the plan ID (for example tim-${planId}-review-output-XXXXXX.txt) to avoid collisions with other concurrent agents/projects.
+- Use a temp-dir file name that includes the plan ID (for example tim-${planId}-review-output-$(Date.now() % 100000).txt) to avoid collisions with other concurrent agents/projects.
 - If the command returns no stdout/stderr output, immediately read the \`--output-file\` path and use that as the review output.`;
 }
 
