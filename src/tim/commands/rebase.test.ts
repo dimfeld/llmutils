@@ -63,7 +63,9 @@ async function runGit(
   ]);
 
   if (!options?.allowFailure && exitCode !== 0) {
-    throw new Error(`git ${args.join(' ')} failed (${exitCode}): ${stderr.trim() || stdout.trim()}`);
+    throw new Error(
+      `git ${args.join(' ')} failed (${exitCode}): ${stderr.trim() || stdout.trim()}`
+    );
   }
 
   return { exitCode, stdout, stderr };
@@ -99,7 +101,11 @@ async function fetchOrigin(cwd: string): Promise<void> {
   await runGit(cwd, ['fetch', 'origin']);
 }
 
-async function isAncestor(cwd: string, ancestorRef: string, descendantRef: string): Promise<boolean> {
+async function isAncestor(
+  cwd: string,
+  ancestorRef: string,
+  descendantRef: string
+): Promise<boolean> {
   const result = await runGit(cwd, ['merge-base', '--is-ancestor', ancestorRef, descendantRef], {
     allowFailure: true,
   });
@@ -143,7 +149,9 @@ async function createTestRepo(options?: {
   await writeTrackedFile(upstreamDir, 'shared.txt', 'base\n');
   await commitAll(upstreamDir, 'initial commit');
   await runGit(upstreamDir, ['push', '-u', 'origin', 'main'], { allowFailure: true });
-  await runGit(upstreamDir, ['branch', '--set-upstream-to=origin/main', 'main'], { allowFailure: true });
+  await runGit(upstreamDir, ['branch', '--set-upstream-to=origin/main', 'main'], {
+    allowFailure: true,
+  });
   await runGit(upstreamDir, ['push', '-u', 'origin', 'main']);
 
   await runGit(tempRoot, ['clone', originDir, workDir]);

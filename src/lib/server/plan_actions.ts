@@ -74,6 +74,10 @@ async function spawnTimProcess(
   await waitForSpawnWindow();
 
   if (proc.exitCode !== null) {
+    // exitCode 0 means the command completed successfully (e.g. a fast rebase with no conflicts).
+    if (proc.exitCode === 0) {
+      return { success: true, planId };
+    }
     const logContents = fs.readFileSync(logFile.path, 'utf-8').trim();
     return {
       success: false,

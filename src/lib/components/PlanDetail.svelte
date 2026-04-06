@@ -408,10 +408,7 @@
             <DropdownMenu.Content align="end">
               <DropdownMenu.Item onclick={() => (chatDialogOpen = true)}>Chat</DropdownMenu.Item>
               {#if isEligibleForRebase}
-                <DropdownMenu.Item
-                  onclick={handleRebase}
-                  disabled={controlsDisabled}
-                >
+                <DropdownMenu.Item onclick={handleRebase} disabled={controlsDisabled}>
                   {startingRebase ? 'Starting Rebase…' : 'Rebase'}
                 </DropdownMenu.Item>
               {/if}
@@ -465,10 +462,7 @@
               <DropdownMenu.Item onclick={handleRunAgent}>Run Agent</DropdownMenu.Item>
               <DropdownMenu.Item onclick={() => (chatDialogOpen = true)}>Chat</DropdownMenu.Item>
               {#if isEligibleForRebase}
-                <DropdownMenu.Item
-                  onclick={handleRebase}
-                  disabled={controlsDisabled}
-                >
+                <DropdownMenu.Item onclick={handleRebase} disabled={controlsDisabled}>
                   {startingRebase ? 'Starting Rebase…' : 'Rebase'}
                 </DropdownMenu.Item>
               {/if}
@@ -520,10 +514,7 @@
                 {/snippet}
               </DropdownMenu.Trigger>
               <DropdownMenu.Content align="end">
-                <DropdownMenu.Item
-                  onclick={handleRebase}
-                  disabled={controlsDisabled}
-                >
+                <DropdownMenu.Item onclick={handleRebase} disabled={controlsDisabled}>
                   {startingRebase ? 'Starting Rebase…' : 'Rebase'}
                 </DropdownMenu.Item>
               </DropdownMenu.Content>

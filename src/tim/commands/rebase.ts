@@ -85,7 +85,6 @@ export async function handleRebaseCommand(
   let baseDir = resolved.repoRoot;
   let currentPlanFile = resolved.planFile;
 
-  let workspaceHandledBranch = false;
   if (workspaceMode) {
     const workspaceResult = await setupWorkspace(
       {
@@ -103,8 +102,6 @@ export async function handleRebaseCommand(
       config,
       'tim rebase'
     );
-    workspaceHandledBranch =
-      path.resolve(workspaceResult.baseDir) !== path.resolve(resolved.repoRoot);
     baseDir = workspaceResult.baseDir;
     currentPlanFile = workspaceResult.planFile;
   }
@@ -112,17 +109,12 @@ export async function handleRebaseCommand(
   const isJj = await getUsingJj(baseDir);
   const trunkBranch = await getTrunkBranch(baseDir);
 
-  if (!workspaceHandledBranch) {
-    console.log(`Checking out ${branchName}...`);
-    const checkedOut = await pullWorkspaceRefIfExists(
-      baseDir,
-      branchName,
-      'origin',
-      currentPlanFile
-    );
-    if (!checkedOut) {
-      throw new Error(`Branch "${branchName}" does not exist locally or on origin.`);
-    }
+  // Always pull the branch to ensure it's at the latest remote state.
+  // For workspace mode, copy-based clones may have a stale branch.
+  console.log(`Checking out ${branchName}...`);
+  const checkedOut = await pullWorkspaceRefIfExists(baseDir, branchName, 'origin', currentPlanFile);
+  if (!checkedOut) {
+    throw new Error(`Branch "${branchName}" does not exist locally or on origin.`);
   }
 
   const beforeRevision = await getRebaseTargetRevision(baseDir, branchName, isJj);
@@ -160,6 +152,14 @@ export async function handleRebaseCommand(
       configTerminalInput: config.terminalInput,
       config,
     });
+
+    // Verify the branch is actually rebased onto trunk (not silently aborted).
+    const isRebased = await isBranchRebasedOnto(baseDir, branchName, rebaseTarget, isJj);
+    if (!isRebased) {
+      throw new Error(
+        `Rebase appears to have been aborted or backed out. Branch "${branchName}" is not based on ${rebaseTarget}.`
+      );
+    }
   }
 
   const afterCommit = await getRebaseTargetRevision(baseDir, branchName, isJj);
@@ -368,6 +368,30 @@ async function abortGitRebase(baseDir: string): Promise<void> {
   if (result.exitCode !== 0) {
     throw new Error(`Failed to abort git rebase: ${result.stderr || result.stdout}`);
   }
+}
+
+async function isBranchRebasedOnto(
+  baseDir: string,
+  branchName: string,
+  target: string,
+  isJj: boolean
+): Promise<boolean> {
+  if (isJj) {
+    // Check if the target is an ancestor of the branch using ancestors() revset
+    const result = await spawnAndLogOutput(
+      ['jj', 'log', '-r', `${target} & ancestors(${branchName})`, '--no-graph', '-T', 'commit_id'],
+      { cwd: baseDir, quiet: true }
+    );
+    // If the target commit appears in the ancestors of the branch, the rebase succeeded
+    return result.exitCode === 0 && result.stdout.trim().length > 0;
+  }
+
+  // For Git, check if rebaseTarget is an ancestor of HEAD
+  const result = await spawnAndLogOutput(['git', 'merge-base', '--is-ancestor', target, 'HEAD'], {
+    cwd: baseDir,
+    quiet: true,
+  });
+  return result.exitCode === 0;
 }
 
 async function remoteBranchExistsGit(baseDir: string, branchName: string): Promise<boolean> {
