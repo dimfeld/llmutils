@@ -10,6 +10,8 @@
   {#if renderedContent}
     <pre
       class="plan-content font-mono leading-6"
+      tabindex="0"
+      role="region"
       aria-label="Plan content">{@html renderedContent}</pre>
   {:else}
     <p class="text-gray-500">Waiting for plan content...</p>
@@ -21,6 +23,13 @@
     margin: 0;
     white-space: pre-wrap;
     word-break: break-word;
+    outline: none;
+  }
+
+  .plan-content:focus-visible {
+    outline: 2px solid rgb(99 102 241);
+    outline-offset: 2px;
+    border-radius: 0.25rem;
   }
 
   .plan-content :global(.plan-heading) {

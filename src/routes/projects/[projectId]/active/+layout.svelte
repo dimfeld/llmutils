@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { page } from '$app/state';
   import { onMount } from 'svelte';
   import { projectDisplayName } from '$lib/stores/project.svelte.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
@@ -17,11 +16,11 @@
   import ReadyToStartRow from '$lib/components/ReadyToStartRow.svelte';
   import type { LayoutProps } from './$types';
 
-  let { data, children }: LayoutProps = $props();
+  let { data, children, params }: LayoutProps = $props();
 
   const sessionManager = useSessionManager();
 
-  let projectId = $derived(page.params.projectId);
+  let projectId = $derived(params.projectId);
   let showProject = $derived(projectId === 'all');
 
   let projectNamesById = $derived.by(() => {
