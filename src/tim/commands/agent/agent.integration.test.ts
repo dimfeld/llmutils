@@ -29,7 +29,8 @@ vi.mock('../../../logging.js', () => ({
   sendStructured: vi.fn(() => {}),
 }));
 
-vi.mock('../../../common/git.js', () => ({
+vi.mock('../../../common/git.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../common/git.js')>()),
   getGitRoot: vi.fn(async () => tempDir),
   getCurrentCommitHash: vi.fn(async () => 'baseline-commit'),
   getChangedFilesBetween: vi.fn(async () => ['tasks/123-test-plan.yml', 'src/example.ts']),
@@ -100,7 +101,8 @@ vi.mock('../../executors/index.js', () => ({
   defaultModelForExecutor: vi.fn(() => 'mock-model'),
 }));
 
-vi.mock('../../plan_materialize.js', () => ({
+vi.mock('../../plan_materialize.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../plan_materialize.js')>()),
   materializePlan: vi.fn(async () => {}),
   syncMaterializedPlan: vi.fn(async () => {}),
   getMaterializedPlanPath: vi.fn(() => '/tmp/plan.md'),

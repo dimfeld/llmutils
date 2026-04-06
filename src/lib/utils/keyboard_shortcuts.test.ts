@@ -60,6 +60,60 @@ describe('isTypingTarget', () => {
 });
 
 describe('handleGlobalShortcuts', () => {
+  test('Cmd+K calls openCommandBar with current-project scope', () => {
+    const openCommandBar = vi.fn();
+    const event = makeKeyEvent('KeyK', { metaKey: true });
+
+    handleGlobalShortcuts(event, { openCommandBar });
+
+    expect(openCommandBar).toHaveBeenCalledWith(false);
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+  });
+
+  test('Ctrl+K calls openCommandBar with current-project scope', () => {
+    const openCommandBar = vi.fn();
+    const event = makeKeyEvent('KeyK', { ctrlKey: true });
+
+    handleGlobalShortcuts(event, { openCommandBar });
+
+    expect(openCommandBar).toHaveBeenCalledWith(false);
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+  });
+
+  test('Cmd+Shift+K calls openCommandBar with all-project scope', () => {
+    const openCommandBar = vi.fn();
+    const event = makeKeyEvent('KeyK', { metaKey: true, shiftKey: true });
+
+    handleGlobalShortcuts(event, { openCommandBar });
+
+    expect(openCommandBar).toHaveBeenCalledWith(true);
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+  });
+
+  test('Ctrl+Shift+K calls openCommandBar with all-project scope', () => {
+    const openCommandBar = vi.fn();
+    const event = makeKeyEvent('KeyK', { ctrlKey: true, shiftKey: true });
+
+    handleGlobalShortcuts(event, { openCommandBar });
+
+    expect(openCommandBar).toHaveBeenCalledWith(true);
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+  });
+
+  test('Cmd+K does not fire in typing targets', () => {
+    const openCommandBar = vi.fn();
+    const event = makeKeyEvent(
+      'KeyK',
+      { metaKey: true },
+      { tagName: 'INPUT', isContentEditable: false }
+    );
+
+    handleGlobalShortcuts(event, { openCommandBar });
+
+    expect(openCommandBar).not.toHaveBeenCalled();
+    expect(event.preventDefault).not.toHaveBeenCalled();
+  });
+
   test('Ctrl+/ calls focusSearch and prevents default when it returns true', () => {
     const focusSearch = vi.fn(() => true);
     const event = makeKeyEvent('Slash', { ctrlKey: true });

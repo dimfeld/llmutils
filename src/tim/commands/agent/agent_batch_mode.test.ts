@@ -105,7 +105,8 @@ vi.mock('../../../logging.js', () => ({
   debugLog: vi.fn(() => {}),
 }));
 
-vi.mock('../../../common/git.js', () => ({
+vi.mock('../../../common/git.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../common/git.js')>()),
   getGitRoot: getGitRootSpy,
   getWorkingCopyStatus: getWorkingCopyStatusSpy,
 }));
@@ -224,7 +225,8 @@ vi.mock('../../plans/find_next.js', () => ({
   findPendingTask: vi.fn(() => null),
 }));
 
-vi.mock('../../plan_materialize.js', () => ({
+vi.mock('../../plan_materialize.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../plan_materialize.js')>()),
   materializePlan: vi.fn(async () => {}),
   syncMaterializedPlan: vi.fn(async () => {}),
   getMaterializedPlanPath: vi.fn(() => '/tmp/plan.md'),

@@ -110,7 +110,8 @@ vi.mock('../../summary/display.js', () => ({
   writeOrDisplaySummary: vi.fn(async () => {}),
 }));
 
-vi.mock('../../../common/git.js', () => ({
+vi.mock('../../../common/git.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../common/git.js')>()),
   getGitRoot: vi.fn(async () => '/tmp/repo'),
 }));
 
