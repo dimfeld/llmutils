@@ -8,10 +8,12 @@
     plan,
     projectId,
     projectName,
+    selected = false,
   }: {
     plan: EnrichedPlan;
     projectId: string;
     projectName?: string;
+    selected?: boolean;
   } = $props();
 
   let launchedPlanUuid: string | null = $state(null);
@@ -58,11 +60,13 @@
     }
   }
 
-  let planHref = $derived(`/projects/${projectId}/plans/${plan.uuid}`);
+  let planHref = $derived(`/projects/${projectId}/active/plan/${plan.uuid}`);
 </script>
 
 <div
-  class="flex w-full items-center gap-2 rounded-md px-3 py-2 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
+  class="flex w-full items-center gap-2 rounded-md px-3 py-2 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800 {selected
+    ? 'bg-gray-100 dark:bg-gray-800'
+    : ''}"
 >
   <a href={planHref} class="flex min-w-0 flex-1 items-center gap-2" data-sveltekit-preload-data>
     <span class="shrink-0 text-xs font-medium text-muted-foreground">#{plan.planId}</span>

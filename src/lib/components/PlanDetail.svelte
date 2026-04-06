@@ -5,7 +5,12 @@
   import type { PlanDetail } from '$lib/server/db_queries.js';
   import { STATUS_ORDER_MAP } from '$lib/utils/plan_status.js';
   import { afterNavigate, invalidateAll } from '$app/navigation';
-  import { startGenerate, startAgent, startChat, openInEditor } from '$lib/remote/plan_actions.remote.js';
+  import {
+    startGenerate,
+    startAgent,
+    startChat,
+    openInEditor,
+  } from '$lib/remote/plan_actions.remote.js';
   import {
     removeReviewIssue,
     convertReviewIssueToTask,
@@ -482,12 +487,7 @@
         </div>
       {/if}
       {#if openInEditorEnabled && activeSession}
-        <Button
-          onclick={handleOpenInEditor}
-          disabled={openingInEditor}
-          size="sm"
-          variant="outline"
-        >
+        <Button onclick={handleOpenInEditor} disabled={openingInEditor} size="sm" variant="outline">
           {openingInEditor ? 'Opening…' : 'Open in Editor'}
         </Button>
       {/if}
@@ -782,7 +782,9 @@
               <span class="text-muted-foreground">·</span>
               <span class="font-medium text-foreground">{issue.category}</span>
               {#if issue.source}
-                <span class="rounded bg-purple-100 px-1 py-0.5 text-xs text-purple-700 dark:bg-purple-950/50 dark:text-purple-400">
+                <span
+                  class="rounded bg-purple-100 px-1 py-0.5 text-xs text-purple-700 dark:bg-purple-950/50 dark:text-purple-400"
+                >
                   {issue.source === 'claude-code' ? 'Claude' : 'Codex'}
                 </span>
               {/if}

@@ -7,10 +7,12 @@
     item,
     projectId,
     projectName,
+    selected = false,
   }: {
     item: PlanAttentionItem;
     projectId: string;
     projectName?: string;
+    selected?: boolean;
   } = $props();
 
   const sessionManager = useSessionManager();
@@ -32,7 +34,7 @@
 
   let waitingForInputReason = $derived(item.reasons.find((r) => r.type === 'waiting_for_input'));
 
-  let planHref = $derived(`/projects/${projectId}/plans/${item.planUuid}`);
+  let planHref = $derived(`/projects/${projectId}/active/plan/${item.planUuid}`);
 
   function navigateToSession(event: MouseEvent) {
     event.preventDefault();
@@ -45,7 +47,9 @@
 </script>
 
 <div
-  class="flex w-full items-center gap-2 rounded-md px-3 py-2 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
+  class="flex w-full items-center gap-2 rounded-md px-3 py-2 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800 {selected
+    ? 'bg-gray-100 dark:bg-gray-800'
+    : ''}"
 >
   <a href={planHref} class="min-w-0 flex-1" data-sveltekit-preload-data>
     <div class="flex items-center gap-2">

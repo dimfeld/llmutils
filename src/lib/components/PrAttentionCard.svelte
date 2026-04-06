@@ -1,12 +1,15 @@
 <script lang="ts">
+  import ExternalLink from '@lucide/svelte/icons/external-link';
   import type { PrAttentionItem } from '$lib/utils/dashboard_attention.js';
 
   let {
     item,
     projectName,
+    selected = false,
   }: {
     item: PrAttentionItem;
     projectName?: string;
+    selected?: boolean;
   } = $props();
 
   let pr = $derived(item.actionablePr);
@@ -40,45 +43,57 @@
   };
 
   let checkDotColor = $derived(checkStatusColors[pr.checkStatus] ?? 'bg-gray-400');
+  let prHref = $derived(`/projects/${pr.projectId}/active/pr/${pr.prNumber}`);
 </script>
 
-<a
-  href={pr.prUrl}
-  target="_blank"
-  rel="noopener noreferrer"
-  class="block w-full rounded-md px-3 py-2 text-left transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
+<div
+  class="flex w-full items-center gap-2 rounded-md px-3 py-2 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800 {selected
+    ? 'bg-gray-100 dark:bg-gray-800'
+    : ''}"
 >
-  <div class="flex items-center gap-2">
-    <span class="shrink-0 text-xs font-medium text-muted-foreground">
-      {pr.owner}/{pr.repo}#{pr.prNumber}
-    </span>
-    <span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-      {pr.title ?? 'Untitled PR'}
-    </span>
-    <span
-      class="inline-block h-2 w-2 shrink-0 rounded-full {checkDotColor}"
-      title="Checks: {pr.checkStatus}"
-    ></span>
-  </div>
-  {#if projectName || pr.linkedPlanTitle}
-    <div class="mt-0.5 truncate text-xs text-muted-foreground">
-      {#if projectName}{projectName}{/if}
-      {#if projectName && pr.linkedPlanTitle}
-        &middot;
-      {/if}
-      {#if pr.linkedPlanTitle}Plan #{pr.linkedPlanId}: {pr.linkedPlanTitle}{/if}
-    </div>
-  {/if}
-  <div class="mt-1 flex items-center gap-1.5">
-    {#if reasonStyle}
-      <span
-        class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {reasonStyle.classes}"
-      >
-        {reasonStyle.label}
+  <a href={prHref} class="min-w-0 flex-1">
+    <div class="flex items-center gap-2">
+      <span class="shrink-0 text-xs font-medium text-muted-foreground">
+        {pr.owner}/{pr.repo}#{pr.prNumber}
       </span>
+      <span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+        {pr.title ?? 'Untitled PR'}
+      </span>
+      <span
+        class="inline-block h-2 w-2 shrink-0 rounded-full {checkDotColor}"
+        title="Checks: {pr.checkStatus}"
+      ></span>
+    </div>
+    {#if projectName || pr.linkedPlanTitle}
+      <div class="mt-0.5 truncate text-xs text-muted-foreground">
+        {#if projectName}{projectName}{/if}
+        {#if projectName && pr.linkedPlanTitle}
+          &middot;
+        {/if}
+        {#if pr.linkedPlanTitle}Plan #{pr.linkedPlanId}: {pr.linkedPlanTitle}{/if}
+      </div>
     {/if}
-    {#if pr.author}
-      <span class="text-xs text-muted-foreground">by {pr.author}</span>
-    {/if}
-  </div>
-</a>
+    <div class="mt-1 flex items-center gap-1.5">
+      {#if reasonStyle}
+        <span
+          class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {reasonStyle.classes}"
+        >
+          {reasonStyle.label}
+        </span>
+      {/if}
+      {#if pr.author}
+        <span class="text-xs text-muted-foreground">by {pr.author}</span>
+      {/if}
+    </div>
+  </a>
+  <a
+    href={pr.prUrl}
+    target="_blank"
+    rel="noopener noreferrer"
+    class="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-gray-200 hover:text-foreground dark:hover:bg-gray-700"
+    title="Open on GitHub"
+    onclick={(e) => e.stopPropagation()}
+  >
+    <ExternalLink class="size-3.5" />
+  </a>
+</div>

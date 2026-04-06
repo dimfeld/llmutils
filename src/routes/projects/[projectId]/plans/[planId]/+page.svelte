@@ -16,4 +16,9 @@
   let projectId = $derived(page.params.projectId);
 </script>
 
-<PlanDetail plan={data.planDetail} {projectId} {projectName} openInEditorEnabled={data.openInEditorEnabled} />
+<PlanDetail
+  plan={data.planDetail}
+  {projectId}
+  {projectName}
+  openInEditorEnabled={data.openInEditorEnabled}
+/>
