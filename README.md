@@ -137,6 +137,30 @@ Routes:
 - `POST /internal/events/ack` (protected): bearer auth + secure transport required; accepts `{ deliveryIds: string[] }`
 - `GET /healthz`: health check endpoint
 
+## Tim Rebase
+
+`tim rebase <planId>` updates a plan's feature branch to be on top of the latest main/trunk branch. It supports both Git and Jujutsu repositories and handles conflict resolution automatically via the executor system.
+
+The command:
+
+1. Resolves the plan's branch (from the `branch` field or calculated from the plan title)
+2. Fetches the latest from origin and ensures the local branch is up to date
+3. Rebases the branch onto the trunk branch (auto-detected via `getTrunkBranch()`)
+4. If conflicts arise, lazily launches an LLM executor in bare mode with VCS-specific conflict resolution prompts
+5. Verifies conflicts are resolved after the executor session (errors if not; aborts the rebase for Git)
+6. Force-pushes the rebased branch back to origin (`--force-with-lease` for Git, native for Jujutsu)
+
+```bash
+tim rebase 123                                # Rebase plan 123's branch
+tim rebase --current                          # Rebase the current plan's branch
+tim rebase --next                             # Rebase the next ready plan's branch
+tim rebase 123 --no-push                      # Rebase without pushing
+tim rebase 123 --executor claude-code         # Specify executor for conflict resolution
+tim rebase 123 --auto-workspace               # Use auto-workspace (web UI mode)
+```
+
+The web interface also provides a **Rebase** button on the plan detail page for plans in `in_progress`, `needs_review`, or `done` states.
+
 ## Lifecycle Commands
 
 Tim supports defining lifecycle commands that run automatically when starting and stopping agent sessions (`tim agent` / `tim run`). This is useful for managing dev servers, Docker containers, database migrations, and other setup/teardown tasks.
