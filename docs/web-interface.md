@@ -326,14 +326,14 @@ Row components (`SessionRow`, `PlanRow`, `ActivePlanRow`) have `data-list-item-i
 
 The root layout (`+layout.svelte`) registers a `<svelte:window onkeydown>` handler for global keyboard shortcuts:
 
-| Shortcut             | Action                                            | Context                                                                                |
-| -------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| **Cmd+K / Ctrl+K**   | Open command bar scoped to current project        | Always active, even in text inputs                                                     |
-| **Cmd+Shift+K / Ctrl+Shift+K** | Open command bar searching all projects | Always active; when on "All Projects", behaves same as Cmd+K                           |
-| **Ctrl+/**           | Focus the search input on the Plans tab           | Suppressed when focus is in a text input, textarea, select, or contenteditable element |
-| **Ctrl+1**           | Navigate to Sessions tab                          | Always active, even in text inputs                                                     |
-| **Ctrl+2**           | Navigate to Active Work tab                       | Always active                                                                          |
-| **Ctrl+3**           | Navigate to Plans tab                             | Always active                                                                          |
+| Shortcut                       | Action                                     | Context                                                                                |
+| ------------------------------ | ------------------------------------------ | -------------------------------------------------------------------------------------- |
+| **Cmd+K / Ctrl+K**             | Open command bar scoped to current project | Always active, even in text inputs                                                     |
+| **Cmd+Shift+K / Ctrl+Shift+K** | Open command bar searching all projects    | Always active; when on "All Projects", behaves same as Cmd+K                           |
+| **Ctrl+/**                     | Focus the search input on the Plans tab    | Suppressed when focus is in a text input, textarea, select, or contenteditable element |
+| **Ctrl+1**                     | Navigate to Sessions tab                   | Always active, even in text inputs                                                     |
+| **Ctrl+2**                     | Navigate to Active Work tab                | Always active                                                                          |
+| **Ctrl+3**                     | Navigate to Plans tab                      | Always active                                                                          |
 
 Tab navigation uses `goto()` with `projectUrl()` to build the correct route for the current project context.
 
