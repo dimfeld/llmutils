@@ -24,7 +24,6 @@
 
   let searchQuery = $state('');
   let debouncedQuery = $state('');
-  let isServerSearching = $state(false);
 
   // Debounce the search query for server calls
   $effect(() => {
@@ -39,20 +38,18 @@
     return () => clearTimeout(timer);
   });
 
-  // Server search for plans and PRs
-  let serverResults = $derived.by(() => {
-    if (!debouncedQuery) return null;
-    isServerSearching = true;
-    return searchCommandBar({
-      query: debouncedQuery,
-      projectId: !allProjects && projectId !== 'all' ? Number.parseInt(projectId, 10) : undefined,
-    }).then((result) => {
-      isServerSearching = false;
-      return result;
-    });
-  });
-
-  let resolvedResults = $derived(serverResults ? await serverResults : null);
+  // Server search for plans and PRs using the standard $derived(await) pattern.
+  // Svelte holds the previous value while the new promise is pending, which avoids
+  // race conditions between overlapping requests.
+  let serverResults = $derived(
+    debouncedQuery
+      ? await searchCommandBar({
+          query: debouncedQuery,
+          projectId:
+            !allProjects && projectId !== 'all' ? Number.parseInt(projectId, 10) : undefined,
+        })
+      : null
+  );
 
   // Client-side session filtering
   let filteredSessions = $derived.by(() => {
@@ -62,12 +59,12 @@
   let navItems = $derived(getNavigationItems(projectId, searchQuery));
 
   let hasSearchQuery = $derived(searchQuery.trim().length > 0);
-  let isLoading = $derived(
-    (hasSearchQuery && debouncedQuery !== searchQuery.trim()) || isServerSearching
-  );
+  // Show loading during debounce delay. During server request, Svelte holds the
+  // previous results, so the UI stays responsive without a separate loading flag.
+  let isDebouncing = $derived(hasSearchQuery && debouncedQuery !== searchQuery.trim());
 
-  let plans = $derived(resolvedResults?.plans ?? []);
-  let prs = $derived(resolvedResults?.prs ?? []);
+  let plans = $derived(serverResults?.plans ?? []);
+  let prs = $derived(serverResults?.prs ?? []);
 
   let hasResults = $derived(
     navItems.length > 0 || plans.length > 0 || prs.length > 0 || filteredSessions.length > 0
@@ -101,11 +98,11 @@
 >
   <Command.Input bind:value={searchQuery} placeholder="Search..." />
   <Command.List>
-    {#if isLoading}
+    {#if isDebouncing}
       <Command.Loading>Searching...</Command.Loading>
     {/if}
 
-    {#if !hasResults && hasSearchQuery && !isLoading}
+    {#if !hasResults && hasSearchQuery && !isDebouncing}
       <Command.Empty>No results found.</Command.Empty>
     {/if}
 

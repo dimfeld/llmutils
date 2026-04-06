@@ -29,7 +29,6 @@ const TAB_MAP: Record<string, number> = {
  */
 export function handleGlobalShortcuts(event: KeyboardEvent, callbacks: ShortcutCallbacks): void {
   if (event.code === 'KeyK' && (event.metaKey || event.ctrlKey) && !event.altKey) {
-    if (isTypingTarget(event)) return;
     if (!callbacks.openCommandBar) return;
 
     event.preventDefault();

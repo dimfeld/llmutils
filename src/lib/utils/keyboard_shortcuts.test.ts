@@ -100,7 +100,7 @@ describe('handleGlobalShortcuts', () => {
     expect(event.preventDefault).toHaveBeenCalledOnce();
   });
 
-  test('Cmd+K does not fire in typing targets', () => {
+  test('Cmd+K fires even in typing targets (globally available)', () => {
     const openCommandBar = vi.fn();
     const event = makeKeyEvent(
       'KeyK',
@@ -110,8 +110,8 @@ describe('handleGlobalShortcuts', () => {
 
     handleGlobalShortcuts(event, { openCommandBar });
 
-    expect(openCommandBar).not.toHaveBeenCalled();
-    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(openCommandBar).toHaveBeenCalledWith(false);
+    expect(event.preventDefault).toHaveBeenCalledOnce();
   });
 
   test('Ctrl+/ calls focusSearch and prevents default when it returns true', () => {

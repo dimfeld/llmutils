@@ -57,12 +57,3 @@ export function filterSessions(
 export function formatStatus(status: string): string {
   return status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
-
-export async function navigateToSelection(
-  url: string,
-  close: () => void,
-  navigate: (url: string) => Promise<unknown> | unknown
-): Promise<void> {
-  close();
-  await navigate(url);
-}

@@ -24,12 +24,7 @@ vi.mock('$lib/remote/command_bar_search.remote.js', () => ({
 }));
 
 import CommandBar from './CommandBar.svelte';
-import {
-  filterSessions,
-  formatStatus,
-  getNavigationItems,
-  navigateToSelection,
-} from './command_bar_utils.js';
+import { filterSessions, formatStatus, getNavigationItems } from './command_bar_utils.js';
 
 function createSession(overrides: Partial<SessionData> = {}): SessionData {
   return {
@@ -133,21 +128,5 @@ describe('command_bar_utils', () => {
   test('formats snake case statuses for display', () => {
     expect(formatStatus('in_progress')).toBe('In Progress');
     expect(formatStatus('needs_review')).toBe('Needs Review');
-  });
-
-  test('navigateToSelection closes first and then navigates', async () => {
-    const events: string[] = [];
-    const close = vi.fn(() => {
-      events.push('close');
-    });
-    goto.mockImplementation(async (url: string) => {
-      events.push(`goto:${url}`);
-    });
-
-    await navigateToSelection('/projects/3/plans/309', close, goto);
-
-    expect(close).toHaveBeenCalledOnce();
-    expect(goto).toHaveBeenCalledWith('/projects/3/plans/309');
-    expect(events).toEqual(['close', 'goto:/projects/3/plans/309']);
   });
 });

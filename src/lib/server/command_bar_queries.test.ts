@@ -231,6 +231,24 @@ describe('command_bar_queries', () => {
       expect(results).toHaveLength(2);
       expect(results.map((plan) => plan.planId)).toEqual([49, 48]);
     });
+
+    test('treats LIKE wildcards as literal characters', () => {
+      upsertPlan(db, projectId, {
+        uuid: 'plan-percent',
+        planId: 200,
+        title: 'Fix 100% coverage',
+        status: 'pending',
+      });
+
+      // '%' should match literally, not as a wildcard
+      const percentResults = searchPlans(db, '100%');
+      expect(percentResults).toHaveLength(1);
+      expect(percentResults[0].title).toBe('Fix 100% coverage');
+
+      // '_' should not match as single-char wildcard
+      const underscoreResults = searchPlans(db, 'F_x');
+      expect(underscoreResults).toHaveLength(0);
+    });
   });
 
   describe('searchPrs', () => {
