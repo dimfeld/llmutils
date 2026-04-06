@@ -362,7 +362,38 @@ describe('handleRebaseCommand', () => {
     ).rejects.toThrow('Conflicts remain after the executor session finished');
 
     expect(buildExecutorAndLog).toHaveBeenCalledTimes(1);
+    expect(executorExecute).toHaveBeenCalledWith(
+      expect.stringContaining('git rebase --continue'),
+      expect.objectContaining({
+        executionMode: 'bare',
+      })
+    );
     expect(await isRebaseInProgress(repo.workDir)).toBe(true);
+  });
+
+  test('pushes a local-only branch even when rebasing onto the latest main is a no-op', async () => {
+    const repo = await createTestRepo({ advanceMain: 'none', pushFeature: false });
+    tempDirs.push(repo.tempRoot);
+    const localOnlyBranch = 'local-only-noop-branch';
+
+    await runGit(repo.workDir, ['checkout', 'main']);
+    await runGit(repo.workDir, ['checkout', '-b', localOnlyBranch]);
+    mockPlanForRepo(
+      repo.workDir,
+      buildPlan({
+        branch: localOnlyBranch,
+      })
+    );
+
+    process.chdir(repo.workDir);
+    const beforeLocalHead = await getLocalHead(repo.workDir);
+    expect(await getRemoteRef(repo.originDir, localOnlyBranch)).toBeNull();
+
+    await handleRebaseCommand('263', {}, { parent: { opts: () => ({}) } } as any);
+
+    expect(await getLocalHead(repo.workDir)).toBe(beforeLocalHead);
+    expect(await getRemoteRef(repo.originDir, localOnlyBranch)).toBe(beforeLocalHead);
+    expect(buildExecutorAndLog).not.toHaveBeenCalled();
   });
 
   test('throws when the plan branch does not exist locally or on origin', async () => {

@@ -166,14 +166,24 @@ export async function handleRebaseCommand(
   const changed =
     beforeRevision === null || afterCommit === null ? true : beforeRevision !== afterCommit;
 
-  if (!changed) {
-    console.log(`Branch ${branchName} is already up to date with ${trunkBranch}.`);
+  if (options.push === false) {
+    console.log('Skipping push because --no-push was provided.');
+    if (!changed) {
+      console.log(`Branch ${branchName} is already up to date with ${trunkBranch}.`);
+    }
     return;
   }
 
-  if (options.push === false) {
-    console.log('Skipping push because --no-push was provided.');
-    return;
+  if (!changed) {
+    // Even if the rebase was a no-op, the branch may not be on the remote yet.
+    const hasRemote = isJj
+      ? await remoteBranchExistsJj(baseDir, branchName)
+      : await remoteBranchExistsGit(baseDir, branchName);
+    if (hasRemote) {
+      console.log(`Branch ${branchName} is already up to date with ${trunkBranch}.`);
+      return;
+    }
+    console.log(`Branch ${branchName} is up to date with ${trunkBranch} but not yet pushed.`);
   }
 
   console.log(`Pushing ${branchName}...`);
@@ -232,9 +242,8 @@ async function hasJujutsuConflicts(baseDir: string): Promise<boolean> {
     cwd: baseDir,
     quiet: true,
   });
-  if (result.exitCode !== 0 && result.stdout.trim().length === 0) {
-    throw new Error(`Failed to check jj conflicts: ${result.stderr || result.stdout}`);
-  }
+  // jj resolve --list exits non-zero when there are no conflicts,
+  // so we simply check if stdout has content (conflict info).
   return result.stdout.trim().length > 0;
 }
 
@@ -359,6 +368,22 @@ async function abortGitRebase(baseDir: string): Promise<void> {
   if (result.exitCode !== 0) {
     throw new Error(`Failed to abort git rebase: ${result.stderr || result.stdout}`);
   }
+}
+
+async function remoteBranchExistsGit(baseDir: string, branchName: string): Promise<boolean> {
+  const result = await spawnAndLogOutput(
+    ['git', 'rev-parse', '--verify', `refs/remotes/origin/${branchName}`],
+    { cwd: baseDir, quiet: true }
+  );
+  return result.exitCode === 0;
+}
+
+async function remoteBranchExistsJj(baseDir: string, branchName: string): Promise<boolean> {
+  const result = await spawnAndLogOutput(
+    ['jj', 'log', '-r', `${branchName}@origin`, '--no-graph', '-T', 'commit_id'],
+    { cwd: baseDir, quiet: true }
+  );
+  return result.exitCode === 0 && result.stdout.trim().length > 0;
 }
 
 async function pushRebasedBranch(

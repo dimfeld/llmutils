@@ -410,7 +410,7 @@
               {#if isEligibleForRebase}
                 <DropdownMenu.Item
                   onclick={handleRebase}
-                  disabled={controlsDisabled || startingRebase}
+                  disabled={controlsDisabled}
                 >
                   {startingRebase ? 'Starting Rebase…' : 'Rebase'}
                 </DropdownMenu.Item>
@@ -467,7 +467,7 @@
               {#if isEligibleForRebase}
                 <DropdownMenu.Item
                   onclick={handleRebase}
-                  disabled={controlsDisabled || startingRebase}
+                  disabled={controlsDisabled}
                 >
                   {startingRebase ? 'Starting Rebase…' : 'Rebase'}
                 </DropdownMenu.Item>
@@ -522,7 +522,7 @@
               <DropdownMenu.Content align="end">
                 <DropdownMenu.Item
                   onclick={handleRebase}
-                  disabled={controlsDisabled || startingRebase}
+                  disabled={controlsDisabled}
                 >
                   {startingRebase ? 'Starting Rebase…' : 'Rebase'}
                 </DropdownMenu.Item>
