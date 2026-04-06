@@ -3,10 +3,12 @@ import * as path from 'node:path';
 import type { Command } from 'commander';
 import { spawnAndLogOutput } from '../../common/process.js';
 import { getCurrentCommitHash, getGitRoot, getTrunkBranch, getUsingJj } from '../../common/git.js';
+import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
 import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../executors/index.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
+import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 import type { PlanSchema } from '../planSchema.js';
 import { generateBranchNameFromPlan } from './branch.js';
@@ -82,113 +84,130 @@ export async function handleRebaseCommand(
     options.autoWorkspace === true ||
     options.newWorkspace === true;
 
-  let baseDir = resolved.repoRoot;
-  let currentPlanFile = resolved.planFile;
+  await runWithHeadlessAdapterIfEnabled({
+    enabled: !isTunnelActive(),
+    command: 'rebase',
+    interactive: options.terminalInput !== false,
+    plan: {
+      id: resolved.plan.id,
+      uuid: resolved.plan.uuid,
+      title: resolved.plan.title,
+    },
+    callback: async () => {
+      let baseDir = resolved.repoRoot;
+      let currentPlanFile = resolved.planFile;
 
-  if (workspaceMode) {
-    const workspaceResult = await setupWorkspace(
-      {
-        workspace: options.workspace,
-        autoWorkspace: options.autoWorkspace,
-        newWorkspace: options.newWorkspace,
-        createBranch: false,
-        planId: resolved.plan.id,
-        planUuid: resolved.plan.uuid,
-        base: branchName,
-        allowPrimaryWorkspaceWhenLocked: true,
-      },
-      baseDir,
-      currentPlanFile || undefined,
-      config,
-      'tim rebase'
-    );
-    baseDir = workspaceResult.baseDir;
-    currentPlanFile = workspaceResult.planFile;
-  }
+      if (workspaceMode) {
+        const workspaceResult = await setupWorkspace(
+          {
+            workspace: options.workspace,
+            autoWorkspace: options.autoWorkspace,
+            newWorkspace: options.newWorkspace,
+            createBranch: false,
+            planId: resolved.plan.id,
+            planUuid: resolved.plan.uuid,
+            base: branchName,
+            allowPrimaryWorkspaceWhenLocked: true,
+          },
+          baseDir,
+          currentPlanFile || undefined,
+          config,
+          'tim rebase'
+        );
+        baseDir = workspaceResult.baseDir;
+        currentPlanFile = workspaceResult.planFile;
+      }
 
-  const isJj = await getUsingJj(baseDir);
-  const trunkBranch = await getTrunkBranch(baseDir);
+      const isJj = await getUsingJj(baseDir);
+      const trunkBranch = await getTrunkBranch(baseDir);
 
-  // Always pull the branch to ensure it's at the latest remote state.
-  // For workspace mode, copy-based clones may have a stale branch.
-  console.log(`Checking out ${branchName}...`);
-  const checkedOut = await pullWorkspaceRefIfExists(baseDir, branchName, 'origin', currentPlanFile);
-  if (!checkedOut) {
-    throw new Error(`Branch "${branchName}" does not exist locally or on origin.`);
-  }
-
-  const beforeRevision = await getRebaseTargetRevision(baseDir, branchName, isJj);
-  const rebaseTarget = isJj ? trunkBranch : `origin/${trunkBranch}`;
-
-  console.log(`Rebasing ${branchName} onto ${rebaseTarget}...`);
-  const rebaseResult = isJj
-    ? await spawnAndLogOutput(['jj', 'rebase', '-b', branchName, '-d', trunkBranch], {
-        cwd: baseDir,
-      })
-    : await spawnAndLogOutput(['git', 'rebase', rebaseTarget], { cwd: baseDir });
-
-  if (!isJj && rebaseResult.exitCode !== 0 && !(await isGitRebaseInProgress(baseDir))) {
-    throw new Error(`Git rebase failed: ${rebaseResult.stderr || rebaseResult.stdout}`);
-  }
-
-  if (isJj && rebaseResult.exitCode !== 0) {
-    throw new Error(`Jujutsu rebase failed: ${rebaseResult.stderr || rebaseResult.stdout}`);
-  }
-
-  const conflictsDetected = isJj
-    ? await hasJujutsuConflicts(baseDir)
-    : await isGitRebaseInProgress(baseDir);
-
-  if (conflictsDetected) {
-    console.log('Conflicts detected. Launching executor to resolve them...');
-    await resolveRebaseConflicts({
-      baseDir,
-      plan: resolved.plan,
-      planFilePath: currentPlanFile,
-      isJj,
-      executorName: options.executor ?? config.defaultExecutor ?? DEFAULT_EXECUTOR,
-      model: options.model,
-      terminalInput: options.terminalInput,
-      configTerminalInput: config.terminalInput,
-      config,
-    });
-
-    // Verify the branch is actually rebased onto trunk (not silently aborted).
-    const isRebased = await isBranchRebasedOnto(baseDir, branchName, rebaseTarget, isJj);
-    if (!isRebased) {
-      throw new Error(
-        `Rebase appears to have been aborted or backed out. Branch "${branchName}" is not based on ${rebaseTarget}.`
+      // Always pull the branch to ensure it's at the latest remote state.
+      // For workspace mode, copy-based clones may have a stale branch.
+      console.log(`Checking out ${branchName}...`);
+      const checkedOut = await pullWorkspaceRefIfExists(
+        baseDir,
+        branchName,
+        'origin',
+        currentPlanFile
       );
-    }
-  }
+      if (!checkedOut) {
+        throw new Error(`Branch "${branchName}" does not exist locally or on origin.`);
+      }
 
-  const afterCommit = await getRebaseTargetRevision(baseDir, branchName, isJj);
-  const changed =
-    beforeRevision === null || afterCommit === null ? true : beforeRevision !== afterCommit;
+      const beforeRevision = await getRebaseTargetRevision(baseDir, branchName, isJj);
+      const rebaseTarget = isJj ? trunkBranch : `origin/${trunkBranch}`;
 
-  if (options.push === false) {
-    console.log('Skipping push because --no-push was provided.');
-    if (!changed) {
-      console.log(`Branch ${branchName} is already up to date with ${trunkBranch}.`);
-    }
-    return;
-  }
+      console.log(`Rebasing ${branchName} onto ${rebaseTarget}...`);
+      const rebaseResult = isJj
+        ? await spawnAndLogOutput(['jj', 'rebase', '-b', branchName, '-d', trunkBranch], {
+            cwd: baseDir,
+          })
+        : await spawnAndLogOutput(['git', 'rebase', rebaseTarget], { cwd: baseDir });
 
-  if (!changed) {
-    // Even if the rebase was a no-op, the branch may not be on the remote yet.
-    const hasRemote = isJj
-      ? await remoteBranchExistsJj(baseDir, branchName)
-      : await remoteBranchExistsGit(baseDir, branchName);
-    if (hasRemote) {
-      console.log(`Branch ${branchName} is already up to date with ${trunkBranch}.`);
-      return;
-    }
-    console.log(`Branch ${branchName} is up to date with ${trunkBranch} but not yet pushed.`);
-  }
+      if (!isJj && rebaseResult.exitCode !== 0 && !(await isGitRebaseInProgress(baseDir))) {
+        throw new Error(`Git rebase failed: ${rebaseResult.stderr || rebaseResult.stdout}`);
+      }
 
-  console.log(`Pushing ${branchName}...`);
-  await pushRebasedBranch(baseDir, branchName, isJj);
-  console.log(`Successfully rebased ${branchName} onto ${trunkBranch}.`);
+      if (isJj && rebaseResult.exitCode !== 0) {
+        throw new Error(`Jujutsu rebase failed: ${rebaseResult.stderr || rebaseResult.stdout}`);
+      }
+
+      const conflictsDetected = isJj
+        ? await hasJujutsuConflicts(baseDir)
+        : await isGitRebaseInProgress(baseDir);
+
+      if (conflictsDetected) {
+        console.log('Conflicts detected. Launching executor to resolve them...');
+        await resolveRebaseConflicts({
+          baseDir,
+          plan: resolved.plan,
+          planFilePath: currentPlanFile,
+          isJj,
+          executorName: options.executor ?? config.defaultExecutor ?? DEFAULT_EXECUTOR,
+          model: options.model,
+          terminalInput: options.terminalInput,
+          configTerminalInput: config.terminalInput,
+          config,
+        });
+
+        // Verify the branch is actually rebased onto trunk (not silently aborted).
+        const isRebased = await isBranchRebasedOnto(baseDir, branchName, rebaseTarget, isJj);
+        if (!isRebased) {
+          throw new Error(
+            `Rebase appears to have been aborted or backed out. Branch "${branchName}" is not based on ${rebaseTarget}.`
+          );
+        }
+      }
+
+      const afterCommit = await getRebaseTargetRevision(baseDir, branchName, isJj);
+      const changed =
+        beforeRevision === null || afterCommit === null ? true : beforeRevision !== afterCommit;
+
+      if (options.push === false) {
+        console.log('Skipping push because --no-push was provided.');
+        if (!changed) {
+          console.log(`Branch ${branchName} is already up to date with ${trunkBranch}.`);
+        }
+        return;
+      }
+
+      if (!changed) {
+        // Even if the rebase was a no-op, the branch may not be on the remote yet.
+        const hasRemote = isJj
+          ? await remoteBranchExistsJj(baseDir, branchName)
+          : await remoteBranchExistsGit(baseDir, branchName);
+        if (hasRemote) {
+          console.log(`Branch ${branchName} is already up to date with ${trunkBranch}.`);
+          return;
+        }
+        console.log(`Branch ${branchName} is up to date with ${trunkBranch} but not yet pushed.`);
+      }
+
+      console.log(`Pushing ${branchName}...`);
+      await pushRebasedBranch(baseDir, branchName, isJj);
+      console.log(`Successfully rebased ${branchName} onto ${trunkBranch}.`);
+    },
+  });
 }
 
 async function resolveRebasePlan(
