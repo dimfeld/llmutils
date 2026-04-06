@@ -10,10 +10,12 @@
     session,
     projectId,
     projectName,
+    hasNotification = false,
   }: {
     session: RunningSession;
     projectId: string;
     projectName?: string;
+    hasNotification?: boolean;
   } = $props();
 
   let elapsed = $derived(formatRelativeTime(session.connectedAt));
@@ -46,6 +48,9 @@
   class="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
   onclick={navigateToSession}
 >
+  {#if hasNotification}
+    <span class="h-2 w-2 shrink-0 rounded-full bg-blue-500" title="Unread notification"></span>
+  {/if}
   <span
     class="inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium {commandClass}"
   >

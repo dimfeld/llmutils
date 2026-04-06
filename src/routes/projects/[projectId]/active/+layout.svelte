@@ -38,10 +38,29 @@
 
   let actionablePrs = $derived(await getActionablePrs({ projectId }));
 
-  let attentionItems = $derived(
-    deriveAttentionItems(data.plans, sessionManager.sessions.values(), actionablePrs)
+  let numericProjectId = $derived(projectId === 'all' ? null : Number(projectId));
+
+  let notificationSessions = $derived(
+    sessionManager.sessionsWithNotification
+      .filter((s) => numericProjectId === null || s.projectId === numericProjectId)
+      .map((s) => ({
+        connectionId: s.connectionId,
+        planUuid: s.sessionInfo.planUuid ?? null,
+        planId: s.sessionInfo.planId ?? null,
+        planTitle: s.sessionInfo.planTitle ?? null,
+        workspacePath: s.sessionInfo.workspacePath ?? null,
+        command: s.sessionInfo.command,
+        connectedAt: s.connectedAt,
+        projectId: s.projectId,
+      }))
   );
-  let attentionCount = $derived(attentionItems.planItems.length + attentionItems.prItems.length);
+
+  let attentionItems = $derived(
+    deriveAttentionItems(data.plans, sessionManager.sessions.values(), actionablePrs, notificationSessions)
+  );
+  let attentionCount = $derived(
+    attentionItems.planItems.length + attentionItems.prItems.length + attentionItems.sessionItems.length
+  );
 
   let runningSessions = $derived(
     deriveRunningNowSessions(sessionManager.sessions.values(), projectId)
@@ -82,8 +101,24 @@
                 selected={selectedPlanUuid === item.planUuid}
               />
             {/each}
-            {#if attentionItems.prItems.length > 0}
+            {#if attentionItems.sessionItems.length > 0}
               {#if attentionItems.planItems.length > 0}
+                <div class="my-1 border-t border-border/50"></div>
+              {/if}
+              <p class="px-1 text-xs text-muted-foreground">Notifications</p>
+              {#each attentionItems.sessionItems as session (session.connectionId)}
+                <RunningNowRow
+                  {session}
+                  {projectId}
+                  hasNotification={true}
+                  projectName={showProject && session.projectId
+                    ? projectNamesById[session.projectId]
+                    : undefined}
+                />
+              {/each}
+            {/if}
+            {#if attentionItems.prItems.length > 0}
+              {#if attentionItems.planItems.length > 0 || attentionItems.sessionItems.length > 0}
                 <div class="my-1 border-t border-border/50"></div>
               {/if}
               <p class="px-1 text-xs text-muted-foreground">Pull Requests</p>

@@ -46,7 +46,7 @@ export function classifyOwnPr(pr: PrStatusDetail): ClassifiedPr | null {
     return { actionReason: 'ready_to_merge', checkStatus };
   }
 
-  return null;
+  return { actionReason: 'open', checkStatus };
 }
 
 function parseRequestedReviewers(requestedReviewers: string | null): string[] {

@@ -31,6 +31,10 @@
       label: 'Review requested',
       classes: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300',
     },
+    open: {
+      label: 'Open',
+      classes: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+    },
   };
 
   let reasonStyle = $derived(reasonStyles[pr.actionReason]);

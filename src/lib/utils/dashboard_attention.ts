@@ -10,7 +10,12 @@ export interface ActionablePr {
   owner: string;
   repo: string;
   author: string | null;
-  actionReason: 'ready_to_merge' | 'checks_failing' | 'changes_requested' | 'review_requested';
+  actionReason:
+    | 'ready_to_merge'
+    | 'checks_failing'
+    | 'changes_requested'
+    | 'review_requested'
+    | 'open';
   checkStatus: 'passing' | 'failing' | 'pending' | 'none';
   linkedPlanId: number | null;
   linkedPlanUuid: string | null;
@@ -44,6 +49,7 @@ export type AttentionItem = PlanAttentionItem | PrAttentionItem;
 export interface AttentionItems {
   planItems: PlanAttentionItem[];
   prItems: PrAttentionItem[];
+  sessionItems: RunningSession[];
 }
 
 // --- Running now types ---
@@ -66,7 +72,8 @@ const AGENT_COMMANDS = new Set(['agent', 'generate', 'chat']);
 export function deriveAttentionItems(
   plans: EnrichedPlan[],
   sessions: Iterable<SessionData>,
-  actionablePrs: ActionablePr[]
+  actionablePrs: ActionablePr[],
+  notificationSessions: RunningSession[] = []
 ): AttentionItems {
   // Index sessions by planUuid for fast lookup
   const sessionsByPlanUuid = new Map<string, SessionData[]>();
@@ -131,7 +138,7 @@ export function deriveAttentionItems(
     actionablePr: pr,
   }));
 
-  return { planItems, prItems };
+  return { planItems, prItems, sessionItems: notificationSessions };
 }
 
 export function deriveRunningNowSessions(

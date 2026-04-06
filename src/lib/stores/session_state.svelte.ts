@@ -170,6 +170,16 @@ export class SessionManager {
     return this.unreadNotifications.get(session.connectionId) === true;
   }
 
+  sessionsWithNotification = $derived.by(() => {
+    const result: SessionData[] = [];
+    for (const session of this.sessions.values()) {
+      if (session.status === 'active' && this.unreadNotifications.get(session.connectionId)) {
+        result.push(session);
+      }
+    }
+    return result;
+  });
+
   setCurrentProjectId(id: string | null): void {
     this.currentProjectId = id;
   }
