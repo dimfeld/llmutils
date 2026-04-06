@@ -339,9 +339,10 @@ export function getPlansByParentUuid(
 }
 
 export function setPlanBranch(db: Database, planUuid: string, branch: string): void {
-  db.prepare(
-    `UPDATE plan SET branch = ?, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
-  ).run(branch, planUuid);
+  db.prepare(`UPDATE plan SET branch = ?, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`).run(
+    branch,
+    planUuid
+  );
 }
 
 export function getPlanByPlanId(db: Database, projectId: number, planId: number): PlanRow | null {

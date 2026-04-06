@@ -56,10 +56,17 @@
   );
 
   let attentionItems = $derived(
-    deriveAttentionItems(data.plans, sessionManager.sessions.values(), actionablePrs, notificationSessions)
+    deriveAttentionItems(
+      data.plans,
+      sessionManager.sessions.values(),
+      actionablePrs,
+      notificationSessions
+    )
   );
   let attentionCount = $derived(
-    attentionItems.planItems.length + attentionItems.prItems.length + attentionItems.sessionItems.length
+    attentionItems.planItems.length +
+      attentionItems.prItems.length +
+      attentionItems.sessionItems.length
   );
 
   let runningSessions = $derived(

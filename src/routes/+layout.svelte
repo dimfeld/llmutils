@@ -1,18 +1,18 @@
 <script lang="ts">
-  import { resolve } from '$app/paths';
   import { onMount } from 'svelte';
   import './layout.css';
   import TabNav from '$lib/components/TabNav.svelte';
   import { page } from '$app/state';
   import type { Snippet } from 'svelte';
   import { goto } from '$app/navigation';
+  import { resolve } from '$app/paths';
   import { setSessionManager } from '$lib/stores/session_state.svelte.js';
   import { setUIState } from '$lib/stores/ui_state.svelte.js';
   import { initSessionNotifications } from '$lib/stores/session_notifications.js';
   import { requestNotificationPermission } from '$lib/utils/browser_notifications.js';
   import { clearAppBadge, setAppBadge } from '$lib/utils/pwa_badge.js';
   import { handleGlobalShortcuts } from '$lib/utils/keyboard_shortcuts.js';
-  import { projectUrl } from '$lib/stores/project.svelte.js';
+  import { getSidebarOrderedProjects, projectUrl } from '$lib/stores/project.svelte.js';
   import { registerDismissedSessionCleanup } from '$lib/stores/ui_state_cleanup.js';
   import CommandBar from '$lib/components/CommandBar.svelte';
   import { ModeWatcher, setMode, userPrefersMode } from 'mode-watcher';
@@ -73,6 +73,24 @@
       openCommandBar(allProjects: boolean) {
         commandBarAllProjects = allProjects || projectId === 'all';
         commandBarOpen = true;
+      },
+      navigateProject(projectIndex: number) {
+        // Mirror ProjectSidebar: only projects with plans, featured first then unfeatured
+        // Settings tab isn't valid for other projects, fall back to sessions
+        const currentTab = page.url.pathname.split('/')[3] ?? 'sessions';
+        const tab =
+          currentTab === 'settings' || !tabSlugs.includes(currentTab as (typeof tabSlugs)[number])
+            ? 'sessions'
+            : currentTab;
+        // Cmd+1 = all projects, Cmd+2..9 = projects in sidebar order
+        if (projectIndex === 1) {
+          void goto(resolve(projectUrl('all', tab)));
+        } else {
+          const project = getSidebarOrderedProjects(data.projects)[projectIndex - 2];
+          if (project) {
+            void goto(resolve(projectUrl(String(project.id), tab)));
+          }
+        }
       },
     });
   }

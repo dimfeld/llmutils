@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { resolve } from '$app/paths';
   import { page } from '$app/state';
   import PanelLeftClose from '@lucide/svelte/icons/panel-left-close';
   import PanelLeftOpen from '@lucide/svelte/icons/panel-left-open';
@@ -8,6 +7,7 @@
     getContrastTextColor,
     getProjectAbbreviation,
     getProjectColor,
+    getSidebarOrderedProjects,
     projectDisplayName,
     projectUrl,
   } from '$lib/stores/project.svelte.js';
@@ -32,8 +32,9 @@
   });
 
   let allProjectsTab = $derived(currentTab === 'settings' ? 'sessions' : currentTab);
-  let featuredProjects = $derived(projects.filter((p) => p.featured && p.planCount > 0));
-  let unfeaturedProjects = $derived(projects.filter((p) => !p.featured && p.planCount > 0));
+  let orderedProjects = $derived(getSidebarOrderedProjects(projects));
+  let featuredProjects = $derived(orderedProjects.filter((p) => p.featured));
+  let unfeaturedProjects = $derived(orderedProjects.filter((p) => !p.featured));
   let selectedIsUnfeatured = $derived(
     unfeaturedProjects.some((p) => String(p.id) === selectedProjectId)
   );
@@ -86,11 +87,11 @@
     </button>
 
     <nav
-      class="flex flex-1 flex-col items-center gap-1.5 overflow-y-auto"
+      class="flex flex-1 flex-col items-center gap-1.5 overflow-y-auto pt-1"
       aria-label="Project navigation"
     >
       {@render avatarButton({
-        href: resolve(projectUrl('all', allProjectsTab)),
+        href: projectUrl('all', allProjectsTab),
         abbrev: 'ALL',
         color: '#64748b',
         isSelected: selectedProjectId === 'all',
@@ -99,7 +100,7 @@
 
       {#each featuredProjects as project (project.id)}
         {@render avatarButton({
-          href: resolve(projectUrl(project.id, currentTab)),
+          href: projectUrl(project.id, currentTab),
           abbrev: getAbbrev(project),
           color: getColor(project),
           isSelected: selectedProjectId === String(project.id),
@@ -111,7 +112,7 @@
         <div class="my-1 w-6 border-t border-border"></div>
         {#each unfeaturedProjects as project (project.id)}
           {@render avatarButton({
-            href: resolve(projectUrl(project.id, currentTab)),
+            href: projectUrl(project.id, currentTab),
             abbrev: getAbbrev(project),
             color: getColor(project),
             isSelected: selectedProjectId === String(project.id),
@@ -125,7 +126,7 @@
   {#snippet projectLink(project: ProjectWithMetadata)}
     {@const isSelected = selectedProjectId === String(project.id)}
     <a
-      href={resolve(projectUrl(project.id, currentTab))}
+      href={projectUrl(project.id, currentTab)}
       class="rounded-md px-3 py-2 text-sm transition-colors {isSelected
         ? 'bg-blue-100 font-medium text-blue-900 dark:bg-blue-900/30 dark:text-blue-200'
         : 'text-foreground hover:bg-gray-100 dark:hover:bg-gray-800'}"
@@ -158,7 +159,7 @@
       aria-label="Project navigation"
     >
       <a
-        href={resolve(projectUrl('all', allProjectsTab))}
+        href={projectUrl('all', allProjectsTab)}
         class="rounded-md px-3 py-2 text-sm transition-colors {selectedProjectId === 'all'
           ? 'bg-blue-100 font-medium text-blue-900 dark:bg-blue-900/30 dark:text-blue-200'
           : 'text-foreground hover:bg-gray-100 dark:hover:bg-gray-800'}"

@@ -1,4 +1,5 @@
 import type { Cookies } from '@sveltejs/kit';
+import type { ProjectWithMetadata } from '$lib/server/db_queries.js';
 
 const COOKIE_NAME = 'tim_last_project';
 
@@ -25,6 +26,17 @@ export function getLastProjectId(cookies: Cookies): string | null {
 
 export function projectUrl(projectId: number | string, tab: string): string {
   return `/projects/${projectId}/${tab}`;
+}
+
+/**
+ * Returns projects in sidebar display order: featured first, then unfeatured,
+ * both filtered to only include projects with at least one plan.
+ * Matches the ordering used by ProjectSidebar.
+ */
+export function getSidebarOrderedProjects(projects: ProjectWithMetadata[]): ProjectWithMetadata[] {
+  const featured = projects.filter((p) => p.featured && p.planCount > 0);
+  const unfeatured = projects.filter((p) => !p.featured && p.planCount > 0);
+  return [...featured, ...unfeatured];
 }
 
 export function projectAvatarName(repositoryId: string | null): string {
