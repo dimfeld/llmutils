@@ -64,40 +64,44 @@
 </script>
 
 <div
-  class="flex w-full items-center gap-2 rounded-md px-3 py-2 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800 {selected
+  class="flex w-full flex-col rounded-md px-3 py-2 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800 {selected
     ? 'bg-gray-100 dark:bg-gray-800'
     : ''}"
 >
-  <a href={planHref} class="flex min-w-0 flex-1 items-center gap-2" data-sveltekit-preload-data>
-    <span class="shrink-0 text-xs font-medium text-muted-foreground">#{plan.planId}</span>
-    <span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-      {plan.title ?? 'Untitled'}
-    </span>
-  </a>
-  {#if projectName}
-    <span class="shrink-0 truncate text-xs text-muted-foreground">{projectName}</span>
-  {/if}
-  <PriorityBadge priority={plan.priority} />
-  {#if launchError}
-    <button
-      type="button"
-      class="shrink-0 rounded bg-red-600 px-2 py-0.5 text-xs font-medium text-white transition-colors hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-600"
-      onclick={handleRunAgent}
-    >
-      Retry
-    </button>
-  {:else if launched && launchStatus === 'already_running'}
-    <span class="shrink-0 text-xs text-muted-foreground">Already running</span>
-  {:else if launched}
-    <span class="shrink-0 text-xs text-green-600 dark:text-green-400">Started</span>
-  {:else}
-    <button
-      type="button"
-      class="shrink-0 rounded bg-blue-600 px-2 py-0.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50 dark:bg-blue-700 dark:hover:bg-blue-600"
-      disabled={launching}
-      onclick={handleRunAgent}
-    >
-      {launching ? 'Starting...' : 'Run Agent'}
-    </button>
-  {/if}
+  <div class="flex w-full items-center gap-2">
+    <a href={planHref} class="flex min-w-0 flex-1 items-center gap-2" data-sveltekit-preload-data>
+      <span class="shrink-0 text-xs font-medium text-muted-foreground">#{plan.planId}</span>
+      <span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+        {plan.title ?? 'Untitled'}
+      </span>
+    </a>
+    {#if launchError}
+      <button
+        type="button"
+        class="shrink-0 rounded bg-red-600 px-2 py-0.5 text-xs font-medium text-white transition-colors hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-600"
+        onclick={handleRunAgent}
+      >
+        Retry
+      </button>
+    {:else if launched && launchStatus === 'already_running'}
+      <span class="shrink-0 text-xs text-muted-foreground">Already running</span>
+    {:else if launched}
+      <span class="shrink-0 text-xs text-green-600 dark:text-green-400">Started</span>
+    {:else}
+      <button
+        type="button"
+        class="shrink-0 rounded bg-blue-600 px-2 py-0.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50 dark:bg-blue-700 dark:hover:bg-blue-600"
+        disabled={launching}
+        onclick={handleRunAgent}
+      >
+        {launching ? 'Starting...' : 'Run Agent'}
+      </button>
+    {/if}
+  </div>
+  <div class="mt-0.5 flex items-center gap-2 pl-7">
+    <PriorityBadge priority={plan.priority} />
+    {#if projectName}
+      <span class="truncate text-xs text-muted-foreground">{projectName}</span>
+    {/if}
+  </div>
 </div>

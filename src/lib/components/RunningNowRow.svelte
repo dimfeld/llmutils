@@ -45,32 +45,36 @@
 
 <button
   type="button"
-  class="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
+  class="flex w-full flex-col rounded-md px-3 py-1.5 text-left transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
   onclick={navigateToSession}
 >
-  {#if hasNotification}
-    <span class="h-2 w-2 shrink-0 rounded-full bg-blue-500" title="Unread notification"></span>
-  {/if}
-  <span
-    class="inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium {commandClass}"
-  >
-    {session.command}
-  </span>
-  {#if session.planTitle}
-    <span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-      {#if session.planId}
-        <span class="text-xs text-muted-foreground">#{session.planId}</span>
-      {/if}
-      {session.planTitle}
+  <div class="flex w-full items-center gap-2">
+    {#if hasNotification}
+      <span class="h-2 w-2 shrink-0 rounded-full bg-blue-500" title="Unread notification"></span>
+    {/if}
+    <span
+      class="inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium {commandClass}"
+    >
+      {session.command}
     </span>
-  {:else}
-    <span class="min-w-0 flex-1 truncate text-sm text-muted-foreground italic">No plan</span>
-  {/if}
-  {#if projectName}
-    <span class="shrink-0 truncate text-xs text-muted-foreground">{projectName}</span>
-  {/if}
-  {#if workspaceName}
-    <span class="shrink-0 truncate text-xs text-muted-foreground">{workspaceName}</span>
-  {/if}
-  <span class="shrink-0 text-xs text-muted-foreground">started {elapsed}</span>
+    {#if session.planTitle}
+      <span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+        {#if session.planId}
+          <span class="text-xs text-muted-foreground">#{session.planId}</span>
+        {/if}
+        {session.planTitle}
+      </span>
+    {:else}
+      <span class="min-w-0 flex-1 truncate text-sm text-muted-foreground italic">No plan</span>
+    {/if}
+  </div>
+  <div class="mt-0.5 flex items-center gap-2 pl-6 text-xs text-muted-foreground">
+    {#if projectName}
+      <span class="truncate">{projectName}</span>
+    {/if}
+    {#if workspaceName}
+      <span class="shrink-0">{workspaceName}</span>
+    {/if}
+    <span class="shrink-0">started {elapsed}</span>
+  </div>
 </button>
