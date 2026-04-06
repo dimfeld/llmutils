@@ -8,7 +8,7 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
 import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../executors/index.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
-import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
+import { runWithHeadlessAdapterIfEnabled, updateHeadlessSessionInfo } from '../headless.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 import type { PlanSchema } from '../planSchema.js';
 import { generateBranchNameFromPlan } from './branch.js';
@@ -116,6 +116,7 @@ export async function handleRebaseCommand(
         );
         baseDir = workspaceResult.baseDir;
         currentPlanFile = workspaceResult.planFile;
+        updateHeadlessSessionInfo({ workspacePath: baseDir });
       }
 
       const isJj = await getUsingJj(baseDir);

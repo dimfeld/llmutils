@@ -108,6 +108,12 @@ async function launchTimCommand(
     error(500, result.error);
   }
 
+  // If the process already exited successfully (e.g. fast no-conflict rebase),
+  // clear the launch lock immediately since no session:update event will fire.
+  if (result.earlyExit) {
+    clearLaunchLock(plan.uuid);
+  }
+
   return {
     status: 'started',
     planId: result.planId,

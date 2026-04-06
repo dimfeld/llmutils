@@ -7,6 +7,8 @@ const EARLY_EXIT_CHECK_DELAY_MS = 500;
 export interface SpawnProcessSuccess {
   success: true;
   planId: number;
+  /** True when the process exited with code 0 within the early-exit check window. */
+  earlyExit?: boolean;
 }
 
 export interface SpawnProcessFailure {
@@ -76,7 +78,7 @@ async function spawnTimProcess(
   if (proc.exitCode !== null) {
     // exitCode 0 means the command completed successfully (e.g. a fast rebase with no conflicts).
     if (proc.exitCode === 0) {
-      return { success: true, planId };
+      return { success: true, planId, earlyExit: true };
     }
     const logContents = fs.readFileSync(logFile.path, 'utf-8').trim();
     return {
