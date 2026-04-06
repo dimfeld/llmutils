@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import type { Command } from 'commander';
 import { spawnAndLogOutput } from '../../common/process.js';
 import { getCurrentCommitHash, getGitRoot, getTrunkBranch, getUsingJj } from '../../common/git.js';
+import { log, error as logError } from '../../logging.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
@@ -124,7 +125,7 @@ export async function handleRebaseCommand(
 
       // Always pull the branch to ensure it's at the latest remote state.
       // For workspace mode, copy-based clones may have a stale branch.
-      console.log(`Checking out ${branchName}...`);
+      log(`Checking out ${branchName}...`);
       const checkedOut = await pullWorkspaceRefIfExists(
         baseDir,
         branchName,
@@ -138,7 +139,7 @@ export async function handleRebaseCommand(
       const beforeRevision = await getRebaseTargetRevision(baseDir, branchName, isJj);
       const rebaseTarget = isJj ? trunkBranch : `origin/${trunkBranch}`;
 
-      console.log(`Rebasing ${branchName} onto ${rebaseTarget}...`);
+      log(`Rebasing ${branchName} onto ${rebaseTarget}...`);
       const rebaseResult = isJj
         ? await spawnAndLogOutput(['jj', 'rebase', '-b', branchName, '-d', trunkBranch], {
             cwd: baseDir,
@@ -158,7 +159,7 @@ export async function handleRebaseCommand(
         : await isGitRebaseInProgress(baseDir);
 
       if (conflictsDetected) {
-        console.log('Conflicts detected. Launching executor to resolve them...');
+        log('Conflicts detected. Launching executor to resolve them...');
         await resolveRebaseConflicts({
           baseDir,
           plan: resolved.plan,
@@ -185,9 +186,9 @@ export async function handleRebaseCommand(
         beforeRevision === null || afterCommit === null ? true : beforeRevision !== afterCommit;
 
       if (options.push === false) {
-        console.log('Skipping push because --no-push was provided.');
+        log('Skipping push because --no-push was provided.');
         if (!changed) {
-          console.log(`Branch ${branchName} is already up to date with ${trunkBranch}.`);
+          log(`Branch ${branchName} is already up to date with ${trunkBranch}.`);
         }
         return;
       }
@@ -198,15 +199,15 @@ export async function handleRebaseCommand(
           ? await remoteBranchExistsJj(baseDir, branchName)
           : await remoteBranchExistsGit(baseDir, branchName);
         if (hasRemote) {
-          console.log(`Branch ${branchName} is already up to date with ${trunkBranch}.`);
+          log(`Branch ${branchName} is already up to date with ${trunkBranch}.`);
           return;
         }
-        console.log(`Branch ${branchName} is up to date with ${trunkBranch} but not yet pushed.`);
+        log(`Branch ${branchName} is up to date with ${trunkBranch} but not yet pushed.`);
       }
 
-      console.log(`Pushing ${branchName}...`);
+      log(`Pushing ${branchName}...`);
       await pushRebasedBranch(baseDir, branchName, isJj);
-      console.log(`Successfully rebased ${branchName} onto ${trunkBranch}.`);
+      log(`Successfully rebased ${branchName} onto ${trunkBranch}.`);
     },
   });
 }
@@ -359,7 +360,7 @@ async function resolveRebaseConflicts(options: {
     try {
       await abortGitRebase(options.baseDir);
     } catch (abortError) {
-      console.error(`Original executor error: ${executorError as Error}`);
+      logError(`Original executor error: ${executorError as Error}`);
       throw abortError;
     }
   }
