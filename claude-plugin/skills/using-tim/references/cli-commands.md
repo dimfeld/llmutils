@@ -11,6 +11,7 @@ Complete reference for tim command-line interface.
 - [Workspace Commands](#workspace-commands)
 - [Assignment Commands](#assignment-commands)
 - [PR Commands](#pr-commands)
+- [Branch Commands](#branch-commands)
 - [Utility Commands](#utility-commands)
 - [Common Workflows](#common-workflows)
 
@@ -376,6 +377,36 @@ tim pr description 123 --dry-run
 tim pr description 123 --create-pr
 tim pr description 123 --copy
 ```
+
+## Branch Commands
+
+### tim rebase
+
+Rebase a plan's branch onto the latest main/trunk branch. Supports both Git and Jujutsu repositories. If conflicts are detected, launches an LLM executor in bare mode with VCS-specific conflict resolution prompts.
+
+```bash
+# Rebase a specific plan's branch
+tim rebase 123
+
+# Plan discovery
+tim rebase --current                          # Current plan
+tim rebase --next                             # Next ready plan
+
+# Executor options (only used if conflicts arise)
+tim rebase 123 --executor claude-code
+tim rebase 123 --model claude-sonnet-4-5-20250514
+
+# Skip push after rebase
+tim rebase 123 --no-push
+
+# Workspace integration (used by web UI)
+tim rebase 123 --auto-workspace
+tim rebase 123 --workspace feature-xyz
+tim rebase 123 --new-workspace
+tim rebase 123 --no-terminal-input            # Disable interactive input
+```
+
+The branch is resolved from the plan's `branch` field, falling back to the calculated branch name via `generateBranchNameFromPlan()`. The trunk branch is auto-detected via `getTrunkBranch()`. After a successful rebase, the branch is force-pushed to origin (`--force-with-lease` for Git). For Git, if the executor fails mid-rebase, `git rebase --abort` is run to clean up.
 
 ## Utility Commands
 

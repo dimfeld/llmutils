@@ -853,6 +853,29 @@ program
   });
 
 program
+  .command('rebase [planFile]')
+  .description('Rebase a plan branch onto the latest main/trunk branch')
+  .option('--current', 'Use the current plan')
+  .option('--next', 'Use the next ready plan')
+  .option('-x, --executor <name>', 'Executor to use for conflict resolution')
+  .option('-m, --model <model>', 'Model to use for conflict resolution')
+  .option('--no-push', 'Skip pushing after rebase')
+  .option('--no-terminal-input', 'Disable terminal input forwarding')
+  .option('-w, --workspace <workspace>', 'Workspace to use')
+  .option(
+    '--aw, --auto-workspace',
+    'Automatically select an available workspace or create a new one'
+  )
+  .option(
+    '--nw, --new-workspace',
+    'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
+  )
+  .action(async (planFile, options, command) => {
+    const { handleRebaseCommand } = await import('./commands/rebase.js');
+    await handleRebaseCommand(planFile, options, command).catch(handleCommandError);
+  });
+
+program
   .command('edit <planArg>')
   .description('Open a plan file in your editor. Can be a file path or plan ID.')
   .option('--editor <editor>', 'Editor to use (defaults to $EDITOR or nano)')

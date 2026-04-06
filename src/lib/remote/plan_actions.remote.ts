@@ -10,6 +10,7 @@ import {
   spawnAgentProcess,
   spawnChatProcess,
   spawnGenerateProcess,
+  spawnRebaseProcess,
 } from '$lib/server/plan_actions.js';
 import { getSessionManager } from '$lib/server/session_context.js';
 import { openTerminalWithCommand } from '$lib/server/terminal_control.js';
@@ -108,6 +109,12 @@ async function launchTimCommand(
     error(500, result.error);
   }
 
+  // If the process already exited successfully (e.g. fast no-conflict rebase),
+  // clear the launch lock immediately since no session:update event will fire.
+  if (result.earlyExit) {
+    clearLaunchLock(plan.uuid);
+  }
+
   return {
     status: 'started',
     planId: result.planId,
@@ -175,5 +182,24 @@ export const openInEditor = command(openInEditorSchema, async ({ planUuid }) => 
     primaryWorkspacePath,
     ['tim', 'edit', String(plan.planId)],
     config.terminalApp
+  );
+});
+
+const REBASE_ELIGIBLE_STATUSES = new Set(['in_progress', 'needs_review', 'done']);
+
+function isPlanEligibleForRebase(plan: ReturnType<typeof getPlanDetail>): plan is PlanDetailResult {
+  return plan != null && REBASE_ELIGIBLE_STATUSES.has(plan.status);
+}
+
+const startRebaseSchema = z.object({
+  planUuid: z.string().min(1),
+});
+
+export const startRebase = command(startRebaseSchema, async ({ planUuid }) => {
+  return launchTimCommand(
+    planUuid,
+    isPlanEligibleForRebase,
+    'Plan is not eligible for rebase',
+    spawnRebaseProcess
   );
 });

@@ -16,6 +16,7 @@ let currentManager: SessionManager;
 const spawnGenerateProcessMock = vi.fn();
 const spawnAgentProcessMock = vi.fn();
 const spawnChatProcessMock = vi.fn();
+const spawnRebaseProcessMock = vi.fn();
 
 vi.mock('$lib/server/init.js', () => ({
   getServerContext: async () => ({
@@ -35,10 +36,12 @@ vi.mock('$lib/server/plan_actions.js', () => ({
     spawnAgentProcessMock(...args),
   spawnChatProcess: (...args: Parameters<typeof spawnChatProcessMock>) =>
     spawnChatProcessMock(...args),
+  spawnRebaseProcess: (...args: Parameters<typeof spawnRebaseProcessMock>) =>
+    spawnRebaseProcessMock(...args),
 }));
 
 import { isPlanLaunching, resetLaunchLockState, setLaunchLock } from '$lib/server/launch_lock.js';
-import { startAgent, startChat, startGenerate } from './plan_actions.remote.js';
+import { startAgent, startChat, startGenerate, startRebase } from './plan_actions.remote.js';
 
 describe('plan remote actions', () => {
   let tempDir: string;
@@ -55,6 +58,7 @@ describe('plan remote actions', () => {
     spawnGenerateProcessMock.mockReset();
     spawnAgentProcessMock.mockReset();
     spawnChatProcessMock.mockReset();
+    spawnRebaseProcessMock.mockReset();
 
     projectId = getOrCreateProject(currentDb, 'repo-plan-actions', {
       remoteUrl: 'https://example.com/repo-plan-actions.git',
@@ -1105,11 +1109,216 @@ describe('plan remote actions', () => {
     });
   });
 
+  describe('startRebase', () => {
+    test('rejects missing plans', async () => {
+      await expect(invokeCommand(startRebase, { planUuid: 'missing-plan' })).rejects.toMatchObject({
+        status: 404,
+        body: { message: 'Plan not found' },
+      });
+    });
+
+    test('rejects plans with ineligible statuses (pending, cancelled, deferred)', async () => {
+      seedPlan({ uuid: 'rebase-plan-pending', planId: 3000, status: 'pending' });
+      seedPlan({ uuid: 'rebase-plan-cancelled', planId: 3001, status: 'cancelled' });
+      seedPlan({ uuid: 'rebase-plan-deferred', planId: 3002, status: 'deferred' });
+
+      await expect(
+        invokeCommand(startRebase, { planUuid: 'rebase-plan-pending' })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Plan is not eligible for rebase' },
+      });
+      await expect(
+        invokeCommand(startRebase, { planUuid: 'rebase-plan-cancelled' })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Plan is not eligible for rebase' },
+      });
+      await expect(
+        invokeCommand(startRebase, { planUuid: 'rebase-plan-deferred' })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Plan is not eligible for rebase' },
+      });
+      expect(spawnRebaseProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('allows in_progress, needs_review, and done plans', async () => {
+      seedPlan({ uuid: 'rebase-plan-in-progress', planId: 3003, status: 'in_progress' });
+      seedPlan({ uuid: 'rebase-plan-needs-review', planId: 3004, status: 'needs_review' });
+      seedPlan({ uuid: 'rebase-plan-done', planId: 3005, status: 'done' });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+
+      spawnRebaseProcessMock.mockResolvedValue({ success: true, planId: 3003 });
+      await expect(
+        invokeCommand(startRebase, { planUuid: 'rebase-plan-in-progress' })
+      ).resolves.toEqual({ status: 'started', planId: 3003 });
+
+      spawnRebaseProcessMock.mockResolvedValue({ success: true, planId: 3004 });
+      await expect(
+        invokeCommand(startRebase, { planUuid: 'rebase-plan-needs-review' })
+      ).resolves.toEqual({ status: 'started', planId: 3004 });
+
+      spawnRebaseProcessMock.mockResolvedValue({ success: true, planId: 3005 });
+      await expect(invokeCommand(startRebase, { planUuid: 'rebase-plan-done' })).resolves.toEqual({
+        status: 'started',
+        planId: 3005,
+      });
+
+      expect(spawnRebaseProcessMock).toHaveBeenCalledTimes(3);
+    });
+
+    test('returns already_running when a session exists on the same plan', async () => {
+      seedPlan({ uuid: 'rebase-plan-running', planId: 3006, status: 'needs_review' });
+      currentManager.handleWebSocketConnect('conn-rebase-running', () => {});
+      currentManager.handleWebSocketMessage('conn-rebase-running', {
+        type: 'session_info',
+        command: 'rebase',
+        interactive: true,
+        planId: 3006,
+        planUuid: 'rebase-plan-running',
+        workspacePath: '/tmp/primary-workspace',
+      });
+
+      await expect(
+        invokeCommand(startRebase, { planUuid: 'rebase-plan-running' })
+      ).resolves.toEqual({
+        status: 'already_running',
+        connectionId: 'conn-rebase-running',
+      });
+      expect(spawnRebaseProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('rejects plans without a primary workspace', async () => {
+      seedPlan({ uuid: 'rebase-plan-no-workspace', planId: 3007, status: 'done' });
+
+      await expect(
+        invokeCommand(startRebase, { planUuid: 'rebase-plan-no-workspace' })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Project does not have a primary workspace' },
+      });
+      expect(spawnRebaseProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('spawns tim rebase from the primary workspace', async () => {
+      seedPlan({ uuid: 'rebase-plan-start', planId: 3008, status: 'needs_review' });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      spawnRebaseProcessMock.mockResolvedValue({ success: true, planId: 3008 });
+
+      await expect(invokeCommand(startRebase, { planUuid: 'rebase-plan-start' })).resolves.toEqual({
+        status: 'started',
+        planId: 3008,
+      });
+      expect(spawnRebaseProcessMock).toHaveBeenCalledWith(3008, '/tmp/primary-workspace');
+    });
+
+    test('surfaces spawn failures', async () => {
+      seedPlan({ uuid: 'rebase-plan-failure', planId: 3009, status: 'done' });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      spawnRebaseProcessMock.mockResolvedValue({
+        success: false,
+        error: 'tim rebase failed to start',
+      });
+
+      await expect(
+        invokeCommand(startRebase, { planUuid: 'rebase-plan-failure' })
+      ).rejects.toMatchObject({
+        status: 500,
+        body: { message: 'tim rebase failed to start' },
+      });
+      expect(isPlanLaunching('rebase-plan-failure')).toBe(false);
+    });
+
+    test('clears launch lock immediately when earlyExit is true', async () => {
+      seedPlan({ uuid: 'rebase-plan-early-exit', planId: 3010, status: 'needs_review' });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      spawnRebaseProcessMock.mockResolvedValue({
+        success: true,
+        planId: 3010,
+        earlyExit: true,
+      });
+
+      await expect(
+        invokeCommand(startRebase, { planUuid: 'rebase-plan-early-exit' })
+      ).resolves.toEqual({ status: 'started', planId: 3010 });
+
+      // Launch lock should be cleared immediately since earlyExit is true
+      expect(isPlanLaunching('rebase-plan-early-exit')).toBe(false);
+    });
+
+    test('launch lock remains when earlyExit is not set', async () => {
+      seedPlan({ uuid: 'rebase-plan-no-early-exit', planId: 3011, status: 'needs_review' });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      spawnRebaseProcessMock.mockResolvedValue({
+        success: true,
+        planId: 3011,
+      });
+
+      await expect(
+        invokeCommand(startRebase, { planUuid: 'rebase-plan-no-early-exit' })
+      ).resolves.toEqual({ status: 'started', planId: 3011 });
+
+      // Launch lock should remain since there was no early exit
+      expect(isPlanLaunching('rebase-plan-no-early-exit')).toBe(true);
+    });
+
+    test('prevents duplicate launches before any session registers', async () => {
+      seedPlan({ uuid: 'rebase-plan-race', planId: 3012, status: 'done' });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+
+      let resolveSpawn: ((value: { success: true; planId: number }) => void) | undefined;
+      const spawnPromise = new Promise<{ success: true; planId: number }>((resolve) => {
+        resolveSpawn = resolve;
+      });
+      spawnRebaseProcessMock.mockReturnValue(spawnPromise);
+
+      const firstLaunch = invokeCommand(startRebase, { planUuid: 'rebase-plan-race' });
+      const secondLaunch = invokeCommand(startRebase, { planUuid: 'rebase-plan-race' });
+
+      await expect(secondLaunch).resolves.toEqual({
+        status: 'already_running',
+      });
+      expect(spawnRebaseProcessMock).toHaveBeenCalledTimes(1);
+
+      resolveSpawn?.({ success: true, planId: 3012 });
+
+      await expect(firstLaunch).resolves.toEqual({
+        status: 'started',
+        planId: 3012,
+      });
+    });
+  });
+
   function seedPlan(options: {
     uuid: string;
     planId: number;
     projectId?: number;
-    status?: 'pending' | 'needs_review' | 'done' | 'cancelled' | 'deferred';
+    status?: 'pending' | 'in_progress' | 'needs_review' | 'done' | 'cancelled' | 'deferred';
     tasks?: Array<{ title: string; description: string; done?: boolean }>;
   }): void {
     upsertPlan(currentDb, options.projectId ?? projectId, {

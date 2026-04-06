@@ -408,7 +408,7 @@ Components use ARIA attributes to support screen readers and assistive technolog
 
 ## Plan Actions
 
-The plan detail view supports triggering CLI commands directly from the web UI. Three actions are available:
+The plan detail view supports triggering CLI commands directly from the web UI. Four actions are available:
 
 ### Open Terminal Button (`PlanDetail.svelte`)
 
@@ -417,12 +417,14 @@ An "Open Terminal" button (AppWindow icon) appears next to each workspace path i
 - **Generate**: For stub plans (no tasks) — spawns `tim generate` to flesh out the plan
 - **Run Agent**: For plans with incomplete tasks — spawns `tim agent` to execute the plan
 - **Chat**: For any plan regardless of status — spawns `tim chat` with an executor selection dialog
+- **Rebase**: For plans with a branch — spawns `tim rebase` to update the branch onto the latest trunk
 
 ### Eligibility
 
 - **Generate** (`isPlanEligibleForGenerate`): Plan has no tasks and `displayStatus` is not `done`, `needs_review`, `cancelled`, or `recently_done`.
 - **Agent** (`isPlanEligibleForAgent`): Plan is not `done`, `needs_review`, or `cancelled`. If the plan has tasks, at least one must be incomplete (not all done). Plans without tasks are also eligible (simple/stub plans).
 - **Chat** (`isPlanEligibleForChat`): Any existing plan is eligible, including plans in terminal statuses (done, cancelled, deferred).
+- **Rebase** (`isPlanEligibleForRebase`): Plan status must be `in_progress`, `needs_review`, or `done` (states where a branch is expected to exist).
 
 ### Executor Selection Dialog
 
@@ -455,8 +457,8 @@ The dialog stays open with per-button spinners during launch. Dismissal is preve
 
 ### Server-Side Infrastructure
 
-- **Remote commands** (`src/lib/remote/plan_actions.remote.ts`): `startGenerate`, `startAgent`, and `startChat` are thin wrappers around `launchTimCommand()`, a shared helper that validates plan eligibility, checks for duplicate sessions (command-agnostic via UUID), resolves the primary workspace path, and calls the spawn handler. All follow the same `command()` pattern as `session_actions.remote.ts`. `startChat` accepts an `executor` field (`'claude' | 'codex'`) which is passed through to the spawn function.
-- **Spawn handler** (`src/lib/server/plan_actions.ts`): `spawnTimProcess()` (internal) uses `Bun.spawn` with `{ detached: true }` to create a process that survives web server restarts (including HMR). Pipes stderr for ~500ms to detect early failures, then calls `.unref()`. Public wrappers `spawnGenerateProcess()`, `spawnAgentProcess()`, and `spawnChatProcess()` pass the appropriate CLI args. `spawnChatProcess` takes an additional `executor` parameter and uses `--plan <id>` (named option) rather than a positional argument. The spawned process starts an embedded WebSocket server and writes a session info file; the discovery client detects and connects to it, making it appear as a new session.
+- **Remote commands** (`src/lib/remote/plan_actions.remote.ts`): `startGenerate`, `startAgent`, `startChat`, and `startRebase` are thin wrappers around `launchTimCommand()`, a shared helper that validates plan eligibility, checks for duplicate sessions (command-agnostic via UUID), resolves the primary workspace path, and calls the spawn handler. All follow the same `command()` pattern as `session_actions.remote.ts`. `startChat` accepts an `executor` field (`'claude' | 'codex'`) which is passed through to the spawn function.
+- **Spawn handler** (`src/lib/server/plan_actions.ts`): `spawnTimProcess()` (internal) uses `Bun.spawn` with `{ detached: true }` to create a process that survives web server restarts (including HMR). Pipes stderr for ~500ms to detect early failures, then calls `.unref()`. Public wrappers `spawnGenerateProcess()`, `spawnAgentProcess()`, `spawnChatProcess()`, and `spawnRebaseProcess()` pass the appropriate CLI args. `spawnChatProcess` takes an additional `executor` parameter and uses `--plan <id>` (named option) rather than a positional argument. The spawned process starts an embedded WebSocket server and writes a session info file; the discovery client detects and connects to it, making it appear as a new session.
 - **Session lookup** (`SessionManager.hasActiveSessionForPlan(planUuid, command?)`): Checks whether an active session exists for a given plan UUID. The `command` parameter is optional — when omitted, matches any active session regardless of command type. Used without a command filter for duplicate prevention across all plan-scoped commands.
 - **Launch lock** (`src/lib/server/launch_lock.ts`): In-memory per-plan lock (keyed by UUID, stored on `globalThis` for HMR safety) bridging the gap between process spawn and WebSocket session registration. Exported as a separate module because SvelteKit remote function files can only export `command()` results. Subscribes to `SessionManager.subscribe('session:update')` to clear locks when sessions register.
 - **Primary workspace query** (`getPrimaryWorkspacePath()` in `db_queries.ts`): Resolves the primary workspace path for a project, used as the cwd for spawned processes.
