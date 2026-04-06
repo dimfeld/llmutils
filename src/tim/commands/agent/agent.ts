@@ -5,7 +5,7 @@ import chalk from 'chalk';
 import * as path from 'path';
 import * as fs from 'node:fs/promises';
 import { promptConfirm } from '../../../common/input.js';
-import { getGitRoot } from '../../../common/git.js';
+import { getCurrentBranchName, getGitRoot, getTrunkBranch } from '../../../common/git.js';
 import { getLogDir } from '../../../common/config_paths.js';
 import { logSpawn } from '../../../common/process.js';
 import { CleanupRegistry } from '../../../common/cleanup_registry.js';
@@ -23,6 +23,8 @@ import {
 import { executePostApplyCommand } from '../../actions.js';
 import { loadEffectiveConfig, loadGlobalConfigForNotifications } from '../../configLoader.js';
 import { getDefaultConfig } from '../../configSchema.js';
+import { getDatabase } from '../../db/database.js';
+import { setPlanBranch } from '../../db/plan.js';
 import { syncPlanToDb } from '../../db/plan_sync.js';
 import { getCombinedTitleFromSummary } from '../../display_utils.js';
 import {
@@ -382,6 +384,22 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
     // Update workspace description from plan data (if running in a tracked workspace)
     if (!isShuttingDown()) {
       await updateWorkspaceDescriptionFromPlan(currentBaseDir, planData, config);
+    }
+
+    // Record the current branch on the plan so PR auto-linking can match it.
+    // Only record non-trunk branches; skip if shutting down or plan has no UUID.
+    if (!isShuttingDown() && planData.uuid) {
+      try {
+        const [currentBranch, trunkBranch] = await Promise.all([
+          getCurrentBranchName(currentBaseDir),
+          getTrunkBranch(currentBaseDir),
+        ]);
+        if (currentBranch && currentBranch !== trunkBranch) {
+          setPlanBranch(getDatabase(), planData.uuid, currentBranch);
+        }
+      } catch (err) {
+        warn(`Failed to record branch on plan: ${err as Error}`);
+      }
     }
 
     if (config.lifecycle?.commands && config.lifecycle.commands.length > 0 && !isShuttingDown()) {
