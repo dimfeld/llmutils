@@ -12,7 +12,12 @@ vi.mock('node:fs', async (importOriginal) => {
   };
 });
 
-import { spawnAgentProcess, spawnChatProcess, spawnGenerateProcess } from './plan_actions.js';
+import {
+  spawnAgentProcess,
+  spawnChatProcess,
+  spawnGenerateProcess,
+  spawnRebaseProcess,
+} from './plan_actions.js';
 
 interface FakeSubprocess {
   exitCode: number | null;
@@ -266,6 +271,68 @@ describe('lib/server/plan_actions', () => {
     expect(result).toEqual({
       success: false,
       error: 'Failed to start tim chat: Error: spawn failed',
+    });
+  });
+
+  test('spawnRebaseProcess starts tim rebase in detached mode and unrefs it after the early-exit window', async () => {
+    const proc = createFakeProcess({ exitCode: null });
+    const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+
+    const resultPromise = spawnRebaseProcess(200, '/tmp/primary-workspace');
+    await vi.advanceTimersByTimeAsync(500);
+    const result = await resultPromise;
+
+    expect(spawnSpy).toHaveBeenCalledTimes(1);
+    const [args, options] = spawnSpy.mock.calls[0];
+    expect(args).toEqual(['tim', 'rebase', '200', '--auto-workspace', '--no-terminal-input']);
+    expect(options).toMatchObject({
+      cwd: '/tmp/primary-workspace',
+      env: process.env,
+      stdin: 'ignore',
+      detached: true,
+    });
+    expect(proc.unref).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ success: true, planId: 200 });
+  });
+
+  test('spawnRebaseProcess returns earlyExit true when process exits with code 0 during the early-exit window', async () => {
+    const proc = createFakeProcess({ exitCode: 0 });
+    vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+
+    const resultPromise = spawnRebaseProcess(201, '/tmp/primary-workspace');
+    await vi.advanceTimersByTimeAsync(500);
+    const result = await resultPromise;
+
+    expect(result).toEqual({ success: true, planId: 201, earlyExit: true });
+  });
+
+  test('spawnRebaseProcess returns error when the process exits with non-zero during the early-exit window', async () => {
+    const proc = createFakeProcess({
+      exitCode: 1,
+    });
+    vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+
+    const resultPromise = spawnRebaseProcess(202, '/tmp/primary-workspace');
+    await vi.advanceTimersByTimeAsync(500);
+    const result = await resultPromise;
+
+    expect(proc.unref).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      success: false,
+      error: 'tim rebase exited early with code 1',
+    });
+  });
+
+  test('spawnRebaseProcess returns a spawn error when Bun.spawn throws', async () => {
+    vi.spyOn(Bun, 'spawn').mockImplementation(() => {
+      throw new Error('spawn failed');
+    });
+
+    const result = await spawnRebaseProcess(203, '/tmp/primary-workspace');
+
+    expect(result).toEqual({
+      success: false,
+      error: 'Failed to start tim rebase: Error: spawn failed',
     });
   });
 });

@@ -21,6 +21,18 @@ vi.mock('../plan_repo_root.js', () => ({
   resolveRepoRootForPlanArg: vi.fn(),
 }));
 
+const runWithHeadlessAdapterIfEnabledMock = vi.fn(
+  async ({ callback }: { callback: () => Promise<void> }) => {
+    return callback();
+  }
+);
+
+vi.mock('../headless.js', () => ({
+  runWithHeadlessAdapterIfEnabled: (opts: unknown) =>
+    runWithHeadlessAdapterIfEnabledMock(opts as never),
+  updateHeadlessSessionInfo: vi.fn(),
+}));
+
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
 import { buildExecutorAndLog } from '../executors/index.js';
@@ -435,5 +447,30 @@ describe('handleRebaseCommand', () => {
     await expect(
       handleRebaseCommand(undefined, {}, { parent: { opts: () => ({}) } } as any)
     ).rejects.toThrow('Please provide a plan file or use --next/--current to find a plan.');
+  });
+
+  test('wraps execution in runWithHeadlessAdapterIfEnabled with plan metadata', async () => {
+    const repo = await createTestRepo({ advanceMain: 'safe' });
+    tempDirs.push(repo.tempRoot);
+    const plan = buildPlan({
+      branch: repo.featureBranch,
+    });
+    mockPlanForRepo(repo.workDir, plan);
+
+    process.chdir(repo.workDir);
+
+    await handleRebaseCommand('263', {}, { parent: { opts: () => ({}) } } as any);
+
+    expect(runWithHeadlessAdapterIfEnabledMock).toHaveBeenCalledTimes(1);
+    const callArgs = runWithHeadlessAdapterIfEnabledMock.mock.calls[0][0];
+    expect(callArgs).toMatchObject({
+      command: 'rebase',
+      plan: {
+        id: 263,
+        uuid: 'plan-263',
+        title: 'Update a plan branch to latest main',
+      },
+    });
+    expect(typeof callArgs.callback).toBe('function');
   });
 });
