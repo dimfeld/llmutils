@@ -88,6 +88,33 @@ export const ReviewOutputSchema = z
       'and actionable items to address the findings.'
   );
 
+export const PostProcessedReviewOutputIssueSchema = z
+  .object({
+    ...ReviewIssueOutputSchema.shape,
+    source: z
+      .enum(['claude-code', 'codex-cli'])
+      .optional()
+      .describe('The agent that generated this issue.'),
+  })
+  .describe(
+    'A single issue found during code review, optionally with the agent that generated it.'
+  );
+
+export const PostProcessedReviewOutputSchema = z
+  .object({
+    ...ReviewOutputSchema.shape,
+    issues: z
+      .array(PostProcessedReviewOutputIssueSchema)
+      .describe(
+        'Array of all issues found during the review. Each issue should have a severity, category, ' +
+          'and clear description. Include file paths and line numbers when the issue is localized to specific code.'
+      ),
+  })
+  .describe(
+    'Structured output from a code review. Contains issues found, general recommendations, ' +
+      'and actionable items to address the findings.'
+  );
+
 /**
  * TypeScript types inferred from the schemas.
  */

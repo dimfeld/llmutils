@@ -1,4 +1,5 @@
 import * as z from 'zod/v4';
+import { PostProcessedReviewOutputIssueSchema } from './formatters/review_output_schema';
 
 export const prioritySchema = z.enum(['low', 'medium', 'high', 'urgent', 'maybe']);
 export type Priority = z.infer<typeof prioritySchema>;
@@ -94,9 +95,8 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
     reviewIssues: z
       .array(
         objectFactory({
-          severity: z.enum(['critical', 'major', 'minor', 'info']),
+          ...PostProcessedReviewOutputIssueSchema.shape,
           category: z.string(),
-          content: z.string(),
           file: z.string().optional(),
           line: z.union([z.number(), z.string()]).optional(),
           suggestion: z.string().optional(),

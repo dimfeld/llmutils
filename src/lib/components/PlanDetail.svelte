@@ -734,6 +734,11 @@
               <span class="font-medium {severityTextClass}">{issue.severity}</span>
               <span class="text-muted-foreground">·</span>
               <span class="font-medium text-foreground">{issue.category}</span>
+              {#if issue.source}
+                <span class="rounded bg-purple-100 px-1 py-0.5 text-xs text-purple-700 dark:bg-purple-950/50 dark:text-purple-400">
+                  {issue.source === 'claude-code' ? 'Claude' : 'Codex'}
+                </span>
+              {/if}
               {#if issue.file}
                 <span class="font-mono text-xs text-muted-foreground">
                   {issue.file}{issue.line !== undefined ? `:${issue.line}` : ''}

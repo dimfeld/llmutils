@@ -3,7 +3,7 @@
 
 import chalk from 'chalk';
 import { table } from 'table';
-import { ReviewOutputSchema } from './review_output_schema.js';
+import { PostProcessedReviewOutputSchema, ReviewOutputSchema } from './review_output_schema.js';
 
 export type ReviewSeverity = 'critical' | 'major' | 'minor' | 'info';
 
@@ -15,6 +15,7 @@ export interface ReviewIssue {
   file?: string;
   line?: number | string;
   suggestion?: string;
+  source?: 'claude-code' | 'codex-cli';
 }
 
 export interface ReviewSummary {
@@ -168,6 +169,11 @@ export function formatSeverityGroupedIssuesForTerminal(
       sections.push(`${index + 1}. ${color(issue.content, chalk.bold)}`);
       sections.push(`   Category: ${color(issue.category, chalk.cyan)}`);
 
+      if (issue.source) {
+        const sourceLabel = issue.source === 'claude-code' ? 'Claude' : 'Codex';
+        sections.push(`   Source: ${color(sourceLabel, chalk.magenta)}`);
+      }
+
       if (issue.file) {
         const line = issue.line != null ? String(issue.line) : '';
         const fileLocation = `${issue.file}${line ? `:${line}` : ''}`;
@@ -272,8 +278,9 @@ export function parseJsonReviewOutput(jsonString: string | object): ParsedReview
     };
   }
 
-  // Validate against the schema
-  const validation = ReviewOutputSchema.safeParse(parsed);
+  // Validate against the schema. We use the post processed schema since
+  // we may be taking in output that was merged from two runs.
+  const validation = PostProcessedReviewOutputSchema.safeParse(parsed);
   if (!validation.success) {
     const errorMessages = validation.error.issues
       .map((issue) => `${issue.path.join('.')}: ${issue.message}`)

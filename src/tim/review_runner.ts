@@ -324,7 +324,9 @@ function formatReviewExecutorError(name: ReviewExecutorName, error: unknown): st
 function mergeReviewOutputs(
   results: Array<{ name: ReviewExecutorName; parsed: ReturnType<typeof parseJsonReviewOutput> }>
 ): ReviewOutput {
-  const issues: ReviewIssue[] = results.flatMap((result) => result.parsed.issues);
+  const issues: ReviewIssue[] = results.flatMap((result) =>
+    result.parsed.issues.map((issue) => ({ ...issue, source: result.name }))
+  );
   const recommendations = results.flatMap((result) => result.parsed.recommendations);
   const actionItems = results.flatMap((result) => result.parsed.actionItems);
 
