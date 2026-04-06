@@ -26,6 +26,10 @@ function normalizeSearchQuery(query: string): string {
   return query.trim();
 }
 
+function escapeLikePattern(query: string): string {
+  return query.replace(/[%_\\]/g, '\\$&');
+}
+
 function parseExactInteger(query: string): number | null {
   if (!/^\d+$/.test(query)) {
     return null;
@@ -47,11 +51,11 @@ export function searchPlans(
   }
 
   const exactPlanId = parseExactInteger(normalizedQuery);
-  const likePattern = `%${normalizedQuery}%`;
+  const likePattern = `%${escapeLikePattern(normalizedQuery)}%`;
   const values: Array<number | string> = [likePattern];
   const whereClauses = [
     `(
-      (COALESCE(p.title, '') LIKE ? AND p.status NOT IN ('${TERMINAL_PLAN_STATUSES[0]}', '${TERMINAL_PLAN_STATUSES[1]}', '${TERMINAL_PLAN_STATUSES[2]}'))
+      (COALESCE(p.title, '') LIKE ? ESCAPE '\\' AND p.status NOT IN ('${TERMINAL_PLAN_STATUSES[0]}', '${TERMINAL_PLAN_STATUSES[1]}', '${TERMINAL_PLAN_STATUSES[2]}'))
       ${exactPlanId === null ? '' : 'OR p.plan_id = ?'}
     )`,
   ];
@@ -99,10 +103,10 @@ export function searchPrs(
   }
 
   const exactPrNumber = parseExactInteger(normalizedQuery);
-  const likePattern = `%${normalizedQuery}%`;
+  const likePattern = `%${escapeLikePattern(normalizedQuery)}%`;
   const values: Array<number | string> = [likePattern];
   const whereClauses = [
-    `(COALESCE(ps.title, '') LIKE ?${exactPrNumber === null ? '' : ' OR ps.pr_number = ?'})`,
+    `(COALESCE(ps.title, '') LIKE ? ESCAPE '\\'${exactPrNumber === null ? '' : ' OR ps.pr_number = ?'})`,
   ];
 
   if (exactPrNumber !== null) {
@@ -125,7 +129,7 @@ export function searchPrs(
           ps.title AS title,
           ps.owner AS owner,
           ps.repo AS repo,
-          COALESCE(MIN(linked_plan.project_id), repo_project.id) AS projectId
+          COALESCE(repo_project.id, MIN(linked_plan.project_id)) AS projectId
         FROM pr_status ps
         LEFT JOIN plan_pr pp ON pp.pr_status_id = ps.id
         LEFT JOIN plan linked_plan ON linked_plan.uuid = pp.plan_uuid
@@ -133,6 +137,7 @@ export function searchPrs(
           ON repo_project.repository_id = ('github.com__' || ps.owner || '__' || ps.repo)
         WHERE ${whereClauses.join(' AND ')}
         GROUP BY ps.id, repo_project.id
+        HAVING projectId IS NOT NULL
         ORDER BY
           CASE WHEN ${exactPrNumber === null ? '0' : 'ps.pr_number = ?'} THEN 0 ELSE 1 END,
           ps.pr_number DESC
