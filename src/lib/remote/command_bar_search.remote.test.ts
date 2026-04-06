@@ -83,23 +83,24 @@ describe('command_bar_search remote function', () => {
   test('returns plans and PRs for a scoped project search', async () => {
     const { searchCommandBar } = await import('./command_bar_search.remote.js');
 
-    await expect(invokeQuery(searchCommandBar, { query: 'Command palette', projectId })).resolves
-      .toEqual({
-        plans: [
-          expect.objectContaining({
-            uuid: 'plan-command-bar',
-            planId: 42,
-            projectId,
-          }),
-        ],
-        prs: [
-          expect.objectContaining({
-            pr_url: 'https://github.com/no-project/misc/pull/102',
-            pr_number: 102,
-            projectId,
-          }),
-        ],
-      });
+    await expect(
+      invokeQuery(searchCommandBar, { query: 'Command palette', projectId })
+    ).resolves.toEqual({
+      plans: [
+        expect.objectContaining({
+          uuid: 'plan-command-bar',
+          planId: 42,
+          projectId,
+        }),
+      ],
+      prs: [
+        expect.objectContaining({
+          pr_url: 'https://github.com/no-project/misc/pull/102',
+          pr_number: 102,
+          projectId,
+        }),
+      ],
+    });
   });
 
   test('searches across all projects when projectId is omitted', async () => {

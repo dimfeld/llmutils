@@ -12,6 +12,7 @@
   import { clearAppBadge, setAppBadge } from '$lib/utils/pwa_badge.js';
   import { handleGlobalShortcuts } from '$lib/utils/keyboard_shortcuts.js';
   import { projectUrl } from '$lib/stores/project.svelte.js';
+  import CommandBar from '$lib/components/CommandBar.svelte';
   import { ModeWatcher, setMode, userPrefersMode } from 'mode-watcher';
   import Sun from '@lucide/svelte/icons/sun';
   import Moon from '@lucide/svelte/icons/moon';
@@ -24,6 +25,9 @@
 
   // Use the route param as source of truth; fall back to cookie-based lastProjectId
   let projectId = $derived(page.params.projectId ?? data.lastProjectId);
+
+  let commandBarOpen = $state(false);
+  let commandBarAllProjects = $state(false);
 
   // Keep session store in sync with project context
   $effect(() => {
@@ -59,6 +63,10 @@
         if (slug) {
           void goto(projectUrl(projectId, slug));
         }
+      },
+      openCommandBar(allProjects: boolean) {
+        commandBarAllProjects = allProjects || projectId === 'all';
+        commandBarOpen = true;
       },
     });
   }
@@ -146,5 +154,6 @@
     {@render children()}
   </main>
 
+  <CommandBar bind:open={commandBarOpen} {projectId} allProjects={commandBarAllProjects} />
   <Toaster />
 </div>

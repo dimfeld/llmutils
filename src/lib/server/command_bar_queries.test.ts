@@ -268,8 +268,7 @@ describe('command_bar_queries', () => {
       ]);
 
       expect(searchPrs(db, 'Command palette', projectId).map((pr) => pr.pr_number)).toEqual([
-        102,
-        101,
+        102, 101,
       ]);
       expect(searchPrs(db, 'Command palette', otherProjectId).map((pr) => pr.pr_number)).toEqual([
         103,

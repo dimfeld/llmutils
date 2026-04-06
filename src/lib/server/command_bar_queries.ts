@@ -88,7 +88,9 @@ export function searchPlans(
         LIMIT ?
       `
     )
-    .all(...(exactPlanId === null ? values : [...values.slice(0, -1), exactPlanId, values.at(-1)!]));
+    .all(
+      ...(exactPlanId === null ? values : [...values.slice(0, -1), exactPlanId, values.at(-1)!])
+    );
 }
 
 export function searchPrs(
@@ -144,5 +146,7 @@ export function searchPrs(
         LIMIT ?
       `
     )
-    .all(...(exactPrNumber === null ? values : [...values.slice(0, -1), exactPrNumber, values.at(-1)!]));
+    .all(
+      ...(exactPrNumber === null ? values : [...values.slice(0, -1), exactPrNumber, values.at(-1)!])
+    );
 }
