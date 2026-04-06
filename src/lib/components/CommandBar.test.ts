@@ -106,18 +106,28 @@ describe('command_bar_utils', () => {
         sessionInfo: { command: 'agent', planTitle: 'Command bar work', planId: 311 },
       }),
       createSession({
-        connectionId: 'command-match',
+        connectionId: 'notification-session',
+        status: 'notification' as SessionData['status'],
         projectId: 3,
-        sessionInfo: { command: 'review-command', planTitle: 'Another task', planId: 312 },
+        sessionInfo: { command: 'agent', planTitle: 'Command bar work', planId: 313 },
       }),
     ];
 
-    expect(filterSessions(sessions, 'command bar', '3', false).map((session) => session.connectionId))
-      .toEqual(['match-plan']);
-    expect(filterSessions(sessions, 'review-command', '3', false).map((session) => session.connectionId))
-      .toEqual(['command-match']);
-    expect(filterSessions(sessions, '311', '3', true).map((session) => session.connectionId))
-      .toEqual(['wrong-project']);
+    // Matches by plan title, excludes offline and wrong-project sessions
+    expect(filterSessions(sessions, 'command bar', '3', false).map((s) => s.connectionId)).toEqual([
+      'match-plan',
+    ]);
+    // Does NOT match by command text - only plan title and plan ID
+    expect(filterSessions(sessions, 'agent', '3', false).map((s) => s.connectionId)).toEqual([]);
+    // Matches by exact plan ID in all-projects mode
+    expect(filterSessions(sessions, '311', '3', true).map((s) => s.connectionId)).toEqual([
+      'wrong-project',
+    ]);
+    // Notification sessions are excluded (only active status allowed), but cross-project matches included in allProjects
+    expect(filterSessions(sessions, 'command bar', '3', true).map((s) => s.connectionId)).toEqual([
+      'match-plan',
+      'wrong-project',
+    ]);
   });
 
   test('formats snake case statuses for display', () => {

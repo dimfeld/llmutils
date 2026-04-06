@@ -7,7 +7,6 @@
   import {
     formatStatus,
     getNavigationItems,
-    navigateToSelection,
     filterSessions,
   } from '$lib/components/command_bar_utils.js';
 
@@ -24,42 +23,36 @@
   const sessionManager = useSessionManager();
 
   let searchQuery = $state('');
-  let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   let debouncedQuery = $state('');
-
-  // Reset search query when dialog opens/closes
-  let prevOpen = $state(false);
-  $effect(() => {
-    if (open && !prevOpen) {
-      searchQuery = '';
-      debouncedQuery = '';
-    }
-    prevOpen = open;
-  });
+  let isServerSearching = $state(false);
 
   // Debounce the search query for server calls
   $effect(() => {
     const q = searchQuery;
-    clearTimeout(debounceTimer);
     if (!q.trim()) {
       debouncedQuery = '';
       return;
     }
-    debounceTimer = setTimeout(() => {
+    const timer = setTimeout(() => {
       debouncedQuery = q.trim();
     }, 200);
+    return () => clearTimeout(timer);
   });
 
   // Server search for plans and PRs
-  let serverResults = $derived(
-    debouncedQuery
-      ? await searchCommandBar({
-          query: debouncedQuery,
-          projectId:
-            !allProjects && projectId !== 'all' ? Number.parseInt(projectId, 10) : undefined,
-        })
-      : null
-  );
+  let serverResults = $derived.by(() => {
+    if (!debouncedQuery) return null;
+    isServerSearching = true;
+    return searchCommandBar({
+      query: debouncedQuery,
+      projectId: !allProjects && projectId !== 'all' ? Number.parseInt(projectId, 10) : undefined,
+    }).then((result) => {
+      isServerSearching = false;
+      return result;
+    });
+  });
+
+  let resolvedResults = $derived(serverResults ? await serverResults : null);
 
   // Client-side session filtering
   let filteredSessions = $derived.by(() => {
@@ -69,10 +62,12 @@
   let navItems = $derived(getNavigationItems(projectId, searchQuery));
 
   let hasSearchQuery = $derived(searchQuery.trim().length > 0);
-  let isLoading = $derived(hasSearchQuery && debouncedQuery !== searchQuery.trim());
+  let isLoading = $derived(
+    (hasSearchQuery && debouncedQuery !== searchQuery.trim()) || isServerSearching
+  );
 
-  let plans = $derived(serverResults?.plans ?? []);
-  let prs = $derived(serverResults?.prs ?? []);
+  let plans = $derived(resolvedResults?.plans ?? []);
+  let prs = $derived(resolvedResults?.prs ?? []);
 
   let hasResults = $derived(
     navItems.length > 0 || plans.length > 0 || prs.length > 0 || filteredSessions.length > 0
@@ -85,9 +80,15 @@
   }
 
   function selectAndClose(url: string) {
-    void navigateToSelection(url, () => {
-      open = false;
-    }, goto);
+    open = false;
+    void goto(url);
+  }
+
+  function handleOpenChange(isOpen: boolean) {
+    if (isOpen) {
+      searchQuery = '';
+      debouncedQuery = '';
+    }
   }
 </script>
 
@@ -96,6 +97,7 @@
   shouldFilter={false}
   title="Command Bar"
   description="Search for pages, plans, PRs, and sessions"
+  onOpenChange={handleOpenChange}
 >
   <Command.Input bind:value={searchQuery} placeholder="Search..." />
   <Command.List>
@@ -103,7 +105,7 @@
       <Command.Loading>Searching...</Command.Loading>
     {/if}
 
-    {#if !hasResults && hasSearchQuery}
+    {#if !hasResults && hasSearchQuery && !isLoading}
       <Command.Empty>No results found.</Command.Empty>
     {/if}
 
@@ -183,7 +185,7 @@
             value="session-{session.connectionId}"
             onSelect={() =>
               selectAndClose(
-                `/projects/${session.projectId ?? projectId}/sessions?session=${session.connectionId}`
+                `/projects/${session.projectId ?? projectId}/sessions/${encodeURIComponent(session.connectionId)}`
               )}
           >
             <span class="flex items-center gap-2">

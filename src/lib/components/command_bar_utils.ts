@@ -37,17 +37,16 @@ export function filterSessions(
 
   const results: SessionData[] = [];
   for (const session of sessions) {
-    if (session.status === 'offline') continue;
+    if (session.status !== 'active') continue;
 
     if (!allProjects && projectId !== 'all' && session.projectId !== Number(projectId)) {
       continue;
     }
 
     const planTitle = session.sessionInfo.planTitle?.toLowerCase() ?? '';
-    const command = session.sessionInfo.command?.toLowerCase() ?? '';
     const planId = session.sessionInfo.planId ? String(session.sessionInfo.planId) : '';
 
-    if (planTitle.includes(q) || command.includes(q) || planId === q) {
+    if (planTitle.includes(q) || planId === q) {
       results.push(session);
     }
   }
