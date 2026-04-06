@@ -28,7 +28,11 @@ vi.mock('../actions.js', () => ({
   executePostApplyCommand: vi.fn(async () => true),
 }));
 
-import { createWorkspace, prepareExistingWorkspace } from './workspace_manager.js';
+import {
+  createWorkspace,
+  findUniqueBranchName,
+  prepareExistingWorkspace,
+} from './workspace_manager.js';
 import { WorkspaceLock } from './workspace_lock.js';
 import type { TimConfig, TimConfigInput } from '../configSchema.js';
 import { log, debugLog } from '../../logging.js';
@@ -2966,5 +2970,131 @@ describe('createWorkspace', () => {
     const workspaceInfo = getWorkspaceInfoByPath(targetClonePath);
     expect(workspaceInfo).not.toBeNull();
     expect(workspaceInfo!.description).toBe('#456 Implement New Feature');
+  });
+});
+
+describe('findUniqueBranchName jj remoteBranchExists parsing', () => {
+  let testTempDir: string;
+  let workspacePath: string;
+
+  beforeEach(async () => {
+    testTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-jj-remote-parse-test-'));
+    workspacePath = path.join(testTempDir, 'workspace');
+    await fs.mkdir(path.join(workspacePath, '.jj'), { recursive: true });
+    vi.clearAllMocks();
+  });
+
+  afterEach(async () => {
+    if (testTempDir) {
+      await fs.rm(testTempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('detects remote branch from new multi-line jj bookmark list format', async () => {
+    const branchName = '237-web-notifications-support';
+    mockSpawnAndLogOutput.mockImplementation(async (cmd: string[]) => {
+      // branchExists: jj bookmark list (no --all)
+      if (cmd[0] === 'jj' && cmd[1] === 'bookmark' && cmd[2] === 'list' && cmd[3] !== '--all') {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+      // remoteBranchExists: jj bookmark list --all <branchName>
+      if (
+        cmd[0] === 'jj' &&
+        cmd[1] === 'bookmark' &&
+        cmd[2] === 'list' &&
+        cmd[3] === '--all' &&
+        cmd[4] === branchName
+      ) {
+        return {
+          exitCode: 0,
+          stdout: [
+            `${branchName}: vuvvqvnx 9c0c96da Add browser notification support for session prompts`,
+            `  @git: vuvvqvnx 9c0c96da Add browser notification support for session prompts`,
+            `  @origin: vuvvqvnx 9c0c96da Add browser notification support for session prompts`,
+          ].join('\n'),
+          stderr: '',
+        };
+      }
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    const result = await findUniqueBranchName(workspacePath, branchName, true, {
+      checkRemote: true,
+    });
+    expect(result).toBe(`${branchName}-2`);
+  });
+
+  test('detects remote branch from old single-line jj bookmark list format (branch@origin)', async () => {
+    const branchName = 'my-feature';
+    mockSpawnAndLogOutput.mockImplementation(async (cmd: string[]) => {
+      if (cmd[0] === 'jj' && cmd[1] === 'bookmark' && cmd[2] === 'list' && cmd[3] !== '--all') {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+      if (
+        cmd[0] === 'jj' &&
+        cmd[1] === 'bookmark' &&
+        cmd[2] === 'list' &&
+        cmd[3] === '--all' &&
+        cmd[4] === branchName
+      ) {
+        return {
+          exitCode: 0,
+          stdout: `${branchName}@origin: abc123 Some commit message`,
+          stderr: '',
+        };
+      }
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    const result = await findUniqueBranchName(workspacePath, branchName, true, {
+      checkRemote: true,
+    });
+    expect(result).toBe(`${branchName}-2`);
+  });
+
+  test('returns original name when branch only exists on @git but not @origin', async () => {
+    const branchName = 'git-only-branch';
+    mockSpawnAndLogOutput.mockImplementation(async (cmd: string[]) => {
+      if (cmd[0] === 'jj' && cmd[1] === 'bookmark' && cmd[2] === 'list' && cmd[3] !== '--all') {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+      if (
+        cmd[0] === 'jj' &&
+        cmd[1] === 'bookmark' &&
+        cmd[2] === 'list' &&
+        cmd[3] === '--all' &&
+        cmd[4] === branchName
+      ) {
+        return {
+          exitCode: 0,
+          stdout: [
+            `${branchName}: vuvvqvnx 9c0c96da Some commit`,
+            `  @git: vuvvqvnx 9c0c96da Some commit`,
+          ].join('\n'),
+          stderr: '',
+        };
+      }
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    const result = await findUniqueBranchName(workspacePath, branchName, true, {
+      checkRemote: true,
+    });
+    expect(result).toBe(branchName);
+  });
+
+  test('returns original name when jj bookmark list --all returns empty', async () => {
+    const branchName = 'no-remote-branch';
+    mockSpawnAndLogOutput.mockImplementation(async (cmd: string[]) => {
+      if (cmd[0] === 'jj' && cmd[1] === 'bookmark' && cmd[2] === 'list') {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    const result = await findUniqueBranchName(workspacePath, branchName, true, {
+      checkRemote: true,
+    });
+    expect(result).toBe(branchName);
   });
 });

@@ -1225,7 +1225,7 @@ async function remoteBranchExists(
   remoteName = 'origin'
 ): Promise<boolean> {
   if (isJj) {
-    const result = await spawnAndLogOutput(['jj', 'bookmark', 'list', '--all'], {
+    const result = await spawnAndLogOutput(['jj', 'bookmark', 'list', '--all', branchName], {
       cwd: workspacePath,
       quiet: true,
     });
@@ -1234,8 +1234,12 @@ async function remoteBranchExists(
     }
     const lines = result.stdout.split('\n');
     for (const line of lines) {
-      const name = line.split(/[\s:]/)[0];
+      const name = line.trimStart().split(/[\s:]/)[0];
       if (name === `${branchName}@${remoteName}`) {
+        return true;
+      }
+
+      if (name === `@${remoteName}`) {
         return true;
       }
     }
