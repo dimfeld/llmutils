@@ -42,7 +42,7 @@
   // Svelte holds the previous value while the new promise is pending, which avoids
   // race conditions between overlapping requests.
   let serverResults = $derived(
-    debouncedQuery
+    open && debouncedQuery
       ? await searchCommandBar({
           query: debouncedQuery,
           projectId:
@@ -81,11 +81,9 @@
     void goto(url);
   }
 
-  function handleOpenChange(isOpen: boolean) {
-    if (isOpen) {
-      searchQuery = '';
-      debouncedQuery = '';
-    }
+  function handleOpenChange(_isOpen: boolean) {
+    searchQuery = '';
+    debouncedQuery = '';
   }
 </script>
 
@@ -123,7 +121,7 @@
       <Command.Group heading="Plans">
         {#each plans as plan (plan.uuid)}
           <Command.Item
-            value="plan-{plan.planId}"
+            value="plan-{plan.uuid}"
             onSelect={() => selectAndClose(`/projects/${plan.projectId}/plans/${plan.planId}`)}
           >
             <span class="flex items-center gap-2">
@@ -151,7 +149,7 @@
       <Command.Group heading="Pull Requests">
         {#each prs as pr (pr.pr_url)}
           <Command.Item
-            value="pr-{pr.pr_number}"
+            value="pr-{pr.pr_url}"
             onSelect={() => selectAndClose(`/projects/${pr.projectId}/prs/${pr.pr_number}`)}
           >
             <span class="flex items-center gap-2">
