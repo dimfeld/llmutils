@@ -37,7 +37,8 @@ vi.mock('../../configLoader.js', () => ({
 
 let workingCopyCallCount = 0;
 
-vi.mock('../../../common/git.js', () => ({
+vi.mock('../../../common/git.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../common/git.js')>()),
   getGitRoot: vi.fn(async () => tempDir),
   getChangedFilesOnBranch: vi.fn(async () => ['src/a.ts']),
   getCurrentCommitHash: vi.fn(async () => 'rev-0'),
@@ -123,7 +124,8 @@ vi.mock('../../prompt_builder.js', () => ({
   buildExecutionPromptWithoutSteps: vi.fn(async () => 'BATCH PROMPT'),
 }));
 
-vi.mock('../../plan_materialize.js', () => ({
+vi.mock('../../plan_materialize.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../plan_materialize.js')>()),
   materializePlan: vi.fn(async () => {}),
   syncMaterializedPlan: vi.fn(async () => {}),
   getMaterializedPlanPath: vi.fn(() => '/tmp/plan.md'),

@@ -111,7 +111,8 @@ vi.mock('../../executors/index.js', () => ({
   defaultModelForExecutor: vi.fn(() => 'default-model'),
 }));
 
-vi.mock('../../../common/git.js', () => ({
+vi.mock('../../../common/git.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../common/git.js')>()),
   getGitRoot: vi.fn(async () => tempDir),
   getCurrentBranchName: vi.fn(async () => 'feature/batch-test'),
   getTrunkBranch: vi.fn(async () => 'main'),
@@ -310,7 +311,8 @@ vi.mock('../../db/plan_sync.js', async (importOriginal) => {
   };
 });
 
-vi.mock('../../plan_materialize.js', () => ({
+vi.mock('../../plan_materialize.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../plan_materialize.js')>()),
   materializePlan: vi.fn(async () => {}),
   syncMaterializedPlan: vi.fn(async () => {}),
   getMaterializedPlanPath: vi.fn(() => '/tmp/plan.md'),

@@ -69,7 +69,8 @@ vi.mock('../../../common/process.js', () => ({
   commitAll: vi.fn(async () => 0),
 }));
 
-vi.mock('../../plan_materialize.js', () => ({
+vi.mock('../../plan_materialize.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../plan_materialize.js')>()),
   materializePlan: vi.fn(async () => {}),
   syncMaterializedPlan: vi.fn(async () => {}),
   getMaterializedPlanPath: vi.fn(() => '/tmp/plan.md'),

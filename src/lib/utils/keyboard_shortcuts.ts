@@ -2,6 +2,7 @@ export interface ShortcutCallbacks {
   /** Return true if focus was successfully moved; preventDefault is only called when true. */
   focusSearch?: () => boolean;
   navigateTab?: (tabIndex: number) => void;
+  openCommandBar?: (allProjects: boolean) => void;
 }
 
 /** Returns true if the event target is a text-entry element where Ctrl+/ would type a character. */
@@ -27,6 +28,14 @@ const TAB_MAP: Record<string, number> = {
  * - Ctrl+1/2/3/4 → navigateTab (always active)
  */
 export function handleGlobalShortcuts(event: KeyboardEvent, callbacks: ShortcutCallbacks): void {
+  if (event.code === 'KeyK' && (event.metaKey || event.ctrlKey) && !event.altKey) {
+    if (!callbacks.openCommandBar) return;
+
+    event.preventDefault();
+    callbacks.openCommandBar(event.shiftKey);
+    return;
+  }
+
   if (!event.ctrlKey) return;
   if (event.metaKey || event.altKey) return;
 

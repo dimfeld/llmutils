@@ -43,7 +43,8 @@ vi.mock('../../../common/input.js', () => ({
   isPromptTimeoutError: vi.fn(() => false),
 }));
 
-vi.mock('../../../common/git.js', () => ({
+vi.mock('../../../common/git.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../common/git.js')>()),
   getGitRoot: vi.fn(async () => tempDir),
   getCurrentBranchName: vi.fn(async () => 'feature/test'),
   getTrunkBranch: vi.fn(async () => 'main'),

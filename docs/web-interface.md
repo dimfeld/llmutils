@@ -326,12 +326,14 @@ Row components (`SessionRow`, `PlanRow`, `ActivePlanRow`) have `data-list-item-i
 
 The root layout (`+layout.svelte`) registers a `<svelte:window onkeydown>` handler for global keyboard shortcuts:
 
-| Shortcut   | Action                                  | Context                                                                                |
-| ---------- | --------------------------------------- | -------------------------------------------------------------------------------------- |
-| **Ctrl+/** | Focus the search input on the Plans tab | Suppressed when focus is in a text input, textarea, select, or contenteditable element |
-| **Ctrl+1** | Navigate to Sessions tab                | Always active, even in text inputs                                                     |
-| **Ctrl+2** | Navigate to Active Work tab             | Always active                                                                          |
-| **Ctrl+3** | Navigate to Plans tab                   | Always active                                                                          |
+| Shortcut                       | Action                                     | Context                                                                                |
+| ------------------------------ | ------------------------------------------ | -------------------------------------------------------------------------------------- |
+| **Cmd+K / Ctrl+K**             | Open command bar scoped to current project | Always active, even in text inputs                                                     |
+| **Cmd+Shift+K / Ctrl+Shift+K** | Open command bar searching all projects    | Always active; when on "All Projects", behaves same as Cmd+K                           |
+| **Ctrl+/**                     | Focus the search input on the Plans tab    | Suppressed when focus is in a text input, textarea, select, or contenteditable element |
+| **Ctrl+1**                     | Navigate to Sessions tab                   | Always active, even in text inputs                                                     |
+| **Ctrl+2**                     | Navigate to Active Work tab                | Always active                                                                          |
+| **Ctrl+3**                     | Navigate to Plans tab                      | Always active                                                                          |
 
 Tab navigation uses `goto()` with `projectUrl()` to build the correct route for the current project context.
 
@@ -341,6 +343,44 @@ The shortcut logic lives in `src/lib/utils/keyboard_shortcuts.ts`:
 - **`handleGlobalShortcuts(event, callbacks)`** — Matches key combinations using `event.code` (physical key codes like `Slash`, `Digit1`) for locale independence, and calls the appropriate callback
 
 The search input in `PlansList.svelte` has a `data-search-input` attribute for targeting by the Ctrl+/ shortcut.
+
+## Command Bar
+
+A global command bar (`Cmd+K` / `Ctrl+K`) provides quick navigation to any destination in the app. The user types a search query and sees matching results organized by category.
+
+### Shortcuts
+
+- **Cmd+K / Ctrl+K**: Open command bar scoped to current project
+- **Cmd+Shift+K / Ctrl+Shift+K**: Open command bar searching all projects
+- When on "All Projects", both shortcuts force all-projects mode
+
+### Component
+
+`src/lib/components/CommandBar.svelte` uses `Command.Dialog` from the existing `bits-ui` command component (`src/lib/components/ui/command/`). Props: `bind:open`, `projectId`, `allProjects`.
+
+Result groups:
+
+- **Navigation**: Static tab items (Sessions, Active Work, Pull Requests, Plans) filtered client-side. Shown when query is empty or matches.
+- **Plans**: Server-side search results via `searchCommandBar` remote query. Shows plan ID, title, status badge. In all-projects mode, shows project name. Only shown when query is non-empty.
+- **Pull Requests**: Server-side search results. Shows PR number, title, repo. In all-projects mode, shows project name. Only shown when query is non-empty.
+- **Sessions**: Client-side filtered from `SessionManager` (active sessions only). Shows plan title and command. Only shown when query is non-empty.
+
+### Hybrid Filtering
+
+Navigation items use the built-in Command component client-side filtering (instant). Plans and PRs use a debounced (~200ms) server-side search via `src/lib/remote/command_bar_search.remote.ts`. Sessions are filtered client-side from the in-memory session store. The Command component's `shouldFilter` is set to `false` to allow server-controlled results for plans/PRs; navigation items are filtered manually in `src/lib/components/command_bar_utils.ts`.
+
+### Server Search
+
+`src/lib/remote/command_bar_search.remote.ts` provides the `searchCommandBar` query. Accepts `query` string and optional `projectId`. DB query helpers in `src/lib/server/command_bar_queries.ts`:
+
+- **`searchPlans(db, query, projectId?, limit?)`**: Searches by title (LIKE) and exact planId match. Terminal-status plans (done/cancelled/deferred) only returned on exact planId match. Results ordered with exact ID matches first.
+- **`searchPrs(db, query, projectId?, limit?)`**: Searches by title (LIKE) and exact pr_number match. Joins through `plan_pr` and `project` tables to resolve `projectId`. Results limited to PRs with a resolvable project.
+
+Both functions limit to 10 results per category by default.
+
+### Item Selection
+
+On selecting an item, the command bar calls `goto(targetUrl)` and closes. Plans and PRs always navigate to their owning project context (e.g., `/projects/5/plans/42`), regardless of the current project. Sessions navigate to `/projects/{projectId}/sessions?session={connectionId}`.
 
 ## Accessibility (ARIA)
 

@@ -1,4 +1,5 @@
-import { watch, type FSWatcher } from 'node:fs';
+import { watch, watchFile, unwatchFile, type FSWatcher } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { warn } from '../logging.js';
@@ -40,7 +41,7 @@ export function watchPlanFile(
 
   async function readAndEmit(): Promise<void> {
     try {
-      const nextContent = stripPlanFrontmatter(await Bun.file(filePath).text());
+      const nextContent = stripPlanFrontmatter(await readFile(filePath, 'utf8'));
       if (nextContent === null || nextContent === lastContent) {
         return;
       }
@@ -92,15 +93,11 @@ export function watchPlanFile(
     });
   } catch (err) {
     warn(`Failed to watch plan file ${filePath} via ${parentDir}: ${err as Error}`);
-    return {
-      close() {
-        closed = true;
-      },
-      async closeAndFlush() {
-        closed = true;
-      },
-    };
   }
+
+  watchFile(filePath, { interval: 100 }, () => {
+    scheduleEmit();
+  });
 
   void emitCurrentContent();
 
@@ -112,6 +109,7 @@ export function watchPlanFile(
     }
     watcher?.close();
     watcher = null;
+    unwatchFile(filePath);
   }
 
   return {

@@ -64,7 +64,8 @@ vi.mock('../../../logging.js', () => ({
   writeStderr: vi.fn(() => {}),
 }));
 
-vi.mock('../../../common/git.js', () => ({
+vi.mock('../../../common/git.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../common/git.js')>()),
   getGitRoot: getGitRootSpy,
 }));
 
