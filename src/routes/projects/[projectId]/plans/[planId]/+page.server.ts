@@ -15,5 +15,8 @@ export const load: PageServerLoad = async ({ params }) => {
     redirect(302, result.redirectTo);
   }
 
-  return { planDetail: result.planDetail };
+  return {
+    planDetail: result.planDetail,
+    openInEditorEnabled: Boolean(process.env.TIM_ENABLE_OPEN_IN_EDITOR),
+  };
 };

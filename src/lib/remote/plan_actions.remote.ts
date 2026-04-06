@@ -12,6 +12,7 @@ import {
   spawnGenerateProcess,
 } from '$lib/server/plan_actions.js';
 import { getSessionManager } from '$lib/server/session_context.js';
+import { openTerminalWithCommand } from '$lib/server/terminal_control.js';
 
 type PlanDetailResult = NonNullable<ReturnType<typeof getPlanDetail>>;
 
@@ -146,5 +147,33 @@ export const startChat = command(startChatSchema, async ({ planUuid, executor })
     isPlanEligibleForChat,
     'Plan is not eligible for chat',
     (planId, cwd) => spawnChatProcess(planId, cwd, executor)
+  );
+});
+
+const openInEditorSchema = z.object({
+  planUuid: z.string().min(1),
+});
+
+export const openInEditor = command(openInEditorSchema, async ({ planUuid }) => {
+  if (!process.env.TIM_ENABLE_OPEN_IN_EDITOR) {
+    error(403, 'Open in editor is not enabled');
+  }
+
+  const { db, config } = await getServerContext();
+  const plan = getPlanDetail(db, planUuid);
+
+  if (!plan) {
+    error(404, 'Plan not found');
+  }
+
+  const primaryWorkspacePath = getPrimaryWorkspacePath(db, plan.projectId);
+  if (!primaryWorkspacePath) {
+    error(400, 'Project does not have a primary workspace');
+  }
+
+  await openTerminalWithCommand(
+    primaryWorkspacePath,
+    ['tim', 'edit', String(plan.planId)],
+    config.terminalApp
   );
 });

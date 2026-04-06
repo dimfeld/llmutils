@@ -5,7 +5,7 @@
   import type { PlanDetail } from '$lib/server/db_queries.js';
   import { STATUS_ORDER_MAP } from '$lib/utils/plan_status.js';
   import { afterNavigate, invalidateAll } from '$app/navigation';
-  import { startGenerate, startAgent, startChat } from '$lib/remote/plan_actions.remote.js';
+  import { startGenerate, startAgent, startChat, openInEditor } from '$lib/remote/plan_actions.remote.js';
   import {
     removeReviewIssue,
     convertReviewIssueToTask,
@@ -26,16 +26,31 @@
     projectId,
     projectName,
     tab = 'plans',
+    openInEditorEnabled = false,
   }: {
     plan: PlanDetail;
     projectId: string;
     projectName?: string;
     tab?: string;
+    openInEditorEnabled?: boolean;
   } = $props();
 
   const sessionManager = useSessionManager();
 
   let openingTerminalPath: string | null = $state(null);
+  let openingInEditor = $state(false);
+
+  async function handleOpenInEditor() {
+    if (openingInEditor) return;
+    openingInEditor = true;
+    try {
+      await openInEditor({ planUuid: plan.uuid });
+    } catch (err) {
+      toast.error(`Failed to open in editor: ${(err as Error).message}`);
+    } finally {
+      openingInEditor = false;
+    }
+  }
 
   async function handleOpenTerminal(wsPath: string) {
     if (openingTerminalPath) return;
@@ -375,6 +390,11 @@
             </DropdownMenu.Trigger>
             <DropdownMenu.Content align="end">
               <DropdownMenu.Item onclick={() => (chatDialogOpen = true)}>Chat</DropdownMenu.Item>
+              {#if openInEditorEnabled}
+                <DropdownMenu.Item onclick={handleOpenInEditor} disabled={openingInEditor}>
+                  {openingInEditor ? 'Opening…' : 'Open in Editor'}
+                </DropdownMenu.Item>
+              {/if}
             </DropdownMenu.Content>
           </DropdownMenu.Root>
         </ButtonGroup>
@@ -424,24 +444,51 @@
             <DropdownMenu.Content align="end">
               <DropdownMenu.Item onclick={handleRunAgent}>Run Agent</DropdownMenu.Item>
               <DropdownMenu.Item onclick={() => (chatDialogOpen = true)}>Chat</DropdownMenu.Item>
+              {#if openInEditorEnabled}
+                <DropdownMenu.Item onclick={handleOpenInEditor} disabled={openingInEditor}>
+                  {openingInEditor ? 'Opening…' : 'Open in Editor'}
+                </DropdownMenu.Item>
+              {/if}
             </DropdownMenu.Content>
           </DropdownMenu.Root>
         </ButtonGroup>
       {:else if showChatOnly}
-        <Button
-          onclick={() => (chatDialogOpen = true)}
-          disabled={controlsDisabled}
-          size="sm"
-          class="ml-auto bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600"
-        >
-          {#if startingChat}
-            <span
-              class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
-            ></span>
-            Starting…
-          {:else}
-            Chat
+        <div class="ml-auto flex items-center gap-2">
+          {#if openInEditorEnabled}
+            <Button
+              onclick={handleOpenInEditor}
+              disabled={openingInEditor}
+              size="sm"
+              variant="outline"
+            >
+              {openingInEditor ? 'Opening…' : 'Open in Editor'}
+            </Button>
           {/if}
+          <Button
+            onclick={() => (chatDialogOpen = true)}
+            disabled={controlsDisabled}
+            size="sm"
+            class="bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600"
+          >
+            {#if startingChat}
+              <span
+                class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
+              ></span>
+              Starting…
+            {:else}
+              Chat
+            {/if}
+          </Button>
+        </div>
+      {/if}
+      {#if openInEditorEnabled && activeSession}
+        <Button
+          onclick={handleOpenInEditor}
+          disabled={openingInEditor}
+          size="sm"
+          variant="outline"
+        >
+          {openingInEditor ? 'Opening…' : 'Open in Editor'}
         </Button>
       {/if}
     </div>

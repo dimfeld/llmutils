@@ -157,6 +157,52 @@ export async function openTerminalInDirectory(
   }
 }
 
+export async function openTerminalWithCommand(
+  directory: string,
+  command: string[],
+  terminalApp?: string,
+  deps: TerminalControlDeps = DEFAULT_TERMINAL_CONTROL_DEPS
+): Promise<void> {
+  if (!(await deps.directoryExists(directory))) {
+    throw new Error(`Directory does not exist: ${directory}`);
+  }
+
+  if (deps.platform !== 'darwin') {
+    throw new Error('Opening terminal windows is only supported on macOS');
+  }
+
+  const app = terminalApp?.trim() || 'WezTerm';
+  const isWezterm = app.toLowerCase() === 'wezterm';
+
+  if (isWezterm) {
+    const weztermPath = await resolveWeztermPath(deps);
+    const result = await deps.spawnAndLogOutput(
+      [weztermPath, 'start', '--cwd', directory, '--', ...command],
+      { quiet: true }
+    );
+    if (result.exitCode !== 0) {
+      throw new Error(result.stderr.trim() || 'Failed to open terminal with WezTerm');
+    }
+  } else {
+    // For macOS Terminal.app and iTerm2, use osascript to run the command
+    const shellCmd = `cd ${JSON.stringify(directory)} && ${command.map((a) => JSON.stringify(a)).join(' ')}`;
+    const isIterm = app.toLowerCase().includes('iterm');
+    const script = isIterm
+      ? `tell application "iTerm2"
+           create window with default profile command "bash -c ${JSON.stringify(shellCmd)}"
+         end tell`
+      : `tell application "Terminal"
+           activate
+           do script ${JSON.stringify(shellCmd)}
+         end tell`;
+
+    const result = await deps.spawnAndLogOutput(['osascript', '-e', script], { quiet: true });
+    if (result.exitCode !== 0) {
+      throw new Error(result.stderr.trim() || `Failed to open terminal with ${app}`);
+    }
+  }
+}
+
 export async function focusTerminalPane(
   target: TerminalSessionTarget,
   deps: TerminalControlDeps = DEFAULT_TERMINAL_CONTROL_DEPS
