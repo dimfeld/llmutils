@@ -4,7 +4,12 @@
   import { projectUrl } from '$lib/stores/project.svelte.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import { searchCommandBar } from '$lib/remote/command_bar_search.remote.js';
-  import type { SessionData } from '$lib/types/session.js';
+  import {
+    formatStatus,
+    getNavigationItems,
+    navigateToSelection,
+    filterSessions,
+  } from '$lib/components/command_bar_utils.js';
 
   let {
     open = $bindable(false),
@@ -58,57 +63,10 @@
 
   // Client-side session filtering
   let filteredSessions = $derived.by(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return [];
-
-    const results: (SessionData & { displayProjectName?: string })[] = [];
-    for (const session of sessionManager.sessions.values()) {
-      if (session.status === 'offline') continue;
-
-      // If scoped to a specific project, filter
-      if (!allProjects && projectId !== 'all' && session.projectId !== Number(projectId)) {
-        continue;
-      }
-
-      const planTitle = session.sessionInfo.planTitle?.toLowerCase() ?? '';
-      const command = session.sessionInfo.command?.toLowerCase() ?? '';
-      const planId = session.sessionInfo.planId ? String(session.sessionInfo.planId) : '';
-
-      if (planTitle.includes(q) || command.includes(q) || planId === q) {
-        results.push(session);
-      }
-    }
-    return results;
+    return filterSessions(sessionManager.sessions.values(), searchQuery, projectId, allProjects);
   });
 
-  // Client-side navigation item filtering
-  interface NavItem {
-    label: string;
-    slug: string;
-    keywords: string;
-  }
-
-  const allNavItems: NavItem[] = [
-    { label: 'Sessions', slug: 'sessions', keywords: 'sessions agents running' },
-    { label: 'Active Work', slug: 'active', keywords: 'active work dashboard attention' },
-    { label: 'Pull Requests', slug: 'prs', keywords: 'pull requests prs github' },
-    { label: 'Plans', slug: 'plans', keywords: 'plans list browse' },
-    { label: 'Settings', slug: 'settings', keywords: 'settings configuration' },
-  ];
-
-  let navItems = $derived.by(() => {
-    let items = allNavItems;
-    if (projectId === 'all') {
-      items = items.filter((item) => item.slug !== 'settings');
-    }
-
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return items;
-
-    return items.filter(
-      (item) => item.label.toLowerCase().includes(q) || item.keywords.includes(q)
-    );
-  });
+  let navItems = $derived(getNavigationItems(projectId, searchQuery));
 
   let hasSearchQuery = $derived(searchQuery.trim().length > 0);
   let isLoading = $derived(hasSearchQuery && debouncedQuery !== searchQuery.trim());
@@ -127,12 +85,9 @@
   }
 
   function selectAndClose(url: string) {
-    open = false;
-    void goto(url);
-  }
-
-  function formatStatus(status: string): string {
-    return status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+    void navigateToSelection(url, () => {
+      open = false;
+    }, goto);
   }
 </script>
 
