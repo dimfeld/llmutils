@@ -110,7 +110,7 @@ function createSession(overrides: Partial<SessionData> = {}): SessionData {
     projectId: overrides.projectId ?? null,
     planContent: overrides.planContent ?? null,
     messages: overrides.messages ?? [],
-    activePrompt: overrides.activePrompt ?? null,
+    activePrompts: overrides.activePrompts ?? [],
     isReplaying: overrides.isReplaying ?? false,
     groupKey: overrides.groupKey ?? '/tmp/ws',
     connectedAt: overrides.connectedAt ?? '2026-03-18T10:00:00.000Z',
@@ -231,36 +231,48 @@ describe('session_notifications', () => {
   });
 
   test('uses question when header is missing and message when both header and question are missing', () => {
-    const manager = new SessionManager();
-    manager.initialized = true;
-    manager.sessions.set('conn-1', createSession());
-    const { hasFocus } = installDomMocks();
-    hasFocus.mockReturnValue(false);
-    const cleanup = initSessionNotifications(manager, vi.fn());
-
-    emitEvent(manager, 'session:prompt', {
-      connectionId: 'conn-1',
-      prompt: createPrompt({
-        promptConfig: {
-          question: 'Question text',
-          message: 'Fallback message',
-        },
-      }),
+    const promptWithQuestion = createPrompt({
+      promptConfig: {
+        question: 'Question text',
+        message: 'Fallback message',
+      },
     });
-    emitEvent(manager, 'session:prompt', {
-      connectionId: 'conn-1',
-      prompt: createPrompt({
-        requestId: 'prompt-2',
-        promptConfig: {
-          message: 'Fallback message',
-        },
-      }),
+    const promptWithMessageOnly = createPrompt({
+      requestId: 'prompt-2',
+      promptConfig: {
+        message: 'Fallback message',
+      },
     });
 
+    // Test question fallback
+    const manager1 = new SessionManager();
+    manager1.initialized = true;
+    manager1.sessions.set('conn-1', createSession({ activePrompts: [promptWithQuestion] }));
+    const mocks1 = installDomMocks();
+    mocks1.hasFocus.mockReturnValue(false);
+    const cleanup1 = initSessionNotifications(manager1, vi.fn());
+    emitEvent(manager1, 'session:prompt', {
+      connectionId: 'conn-1',
+      prompt: promptWithQuestion,
+    });
     expect(MockNotification.instances[0]?.body).toBe('Question text');
-    expect(MockNotification.instances[1]?.body).toBe('Fallback message');
+    cleanup1();
 
-    cleanup();
+    MockNotification.instances = [];
+
+    // Test message fallback
+    const manager2 = new SessionManager();
+    manager2.initialized = true;
+    manager2.sessions.set('conn-1', createSession({ activePrompts: [promptWithMessageOnly] }));
+    const mocks2 = installDomMocks();
+    mocks2.hasFocus.mockReturnValue(false);
+    const cleanup2 = initSessionNotifications(manager2, vi.fn());
+    emitEvent(manager2, 'session:prompt', {
+      connectionId: 'conn-1',
+      prompt: promptWithMessageOnly,
+    });
+    expect(MockNotification.instances[0]?.body).toBe('Fallback message');
+    cleanup2();
   });
 
   test('does not show a prompt notification while the document is focused', () => {
@@ -585,7 +597,7 @@ describe('session_notifications', () => {
       connectionId: 'notif-1',
       status: 'notification',
       messages: [seededMessage],
-      activePrompt: createPrompt(),
+      activePrompts: [createPrompt()],
     });
 
     emitEvent(manager, 'session:list', {
@@ -633,19 +645,55 @@ describe('session_notifications', () => {
       sessions: [
         createSession({
           connectionId: 'prompt-cleared',
-          activePrompt: null,
+          activePrompts: [],
         }),
         createSession({
           connectionId: 'still-active',
-          activePrompt: createPrompt({ requestId: 'prompt-still-active' }),
+          activePrompts: [createPrompt({ requestId: 'prompt-still-active' })],
         }),
       ],
     });
 
     expect(getActiveNotificationTags()).toEqual(new Set(['session:still-active']));
-    expect(MockNotification.instances[0]?.closed).toBe(true);
-    expect(MockNotification.instances[1]?.closed).toBe(true);
-    expect(MockNotification.instances[2]?.closed).toBe(false);
+    expect(MockNotification.instances[0]?.closed).toBe(true); // missing-conn
+    expect(MockNotification.instances[1]?.closed).toBe(true); // prompt-cleared
+    // still-active gets refreshed: old notification closed, new one created
+    expect(MockNotification.instances[2]?.closed).toBe(true);
+    expect(MockNotification.instances[3]?.closed).toBe(false);
+
+    cleanup();
+  });
+
+  test('session:list refreshes notification to current oldest prompt after reconnect', () => {
+    const promptA = createPrompt({ requestId: 'prompt-a', promptConfig: { message: 'Prompt A' } });
+    const promptB = createPrompt({ requestId: 'prompt-b', promptConfig: { message: 'Prompt B' } });
+    const manager = new SessionManager();
+    manager.initialized = true;
+    manager.sessions.set('conn-1', createSession({ activePrompts: [promptA, promptB] }));
+    const { hasFocus } = installDomMocks();
+    hasFocus.mockReturnValue(false);
+    const cleanup = initSessionNotifications(manager, vi.fn());
+
+    // Show initial prompt notification for prompt A
+    emitEvent(manager, 'session:prompt', { connectionId: 'conn-1', prompt: promptA });
+    expect(MockNotification.instances).toHaveLength(1);
+    expect(MockNotification.instances[0]?.body).toBe('Prompt A');
+
+    // Simulate disconnect/reconnect: A was resolved elsewhere, only B remains
+    emitEvent(manager, 'session:list', {
+      sessions: [
+        createSession({
+          connectionId: 'conn-1',
+          activePrompts: [promptB],
+        }),
+      ],
+    });
+
+    // Notification should be refreshed to show prompt B
+    expect(MockNotification.instances).toHaveLength(2);
+    expect(MockNotification.instances[0]?.closed).toBe(true); // old one closed
+    expect(MockNotification.instances[1]?.body).toBe('Prompt B');
+    expect(MockNotification.instances[1]?.closed).toBe(false);
 
     cleanup();
   });
@@ -699,6 +747,44 @@ describe('session_notifications', () => {
     });
 
     expect(MockNotification.instances[0]?.closed).toBe(true);
+
+    cleanup();
+  });
+
+  test('prompt-cleared keeps notification when other prompts remain and refreshes to oldest', () => {
+    const promptA = createPrompt({ requestId: 'prompt-a', promptConfig: { message: 'First?' } });
+    const promptB = createPrompt({ requestId: 'prompt-b', promptConfig: { message: 'Second?' } });
+    const manager = new SessionManager();
+    manager.initialized = true;
+    const session = createSession({ activePrompts: [promptA, promptB] });
+    manager.sessions.set('conn-1', session);
+    const { hasFocus } = installDomMocks();
+    hasFocus.mockReturnValue(false);
+    const cleanup = initSessionNotifications(manager, vi.fn());
+
+    // Emit first prompt event
+    emitEvent(manager, 'session:prompt', { connectionId: 'conn-1', prompt: promptA });
+    expect(MockNotification.instances).toHaveLength(1);
+    expect(MockNotification.instances[0]?.body).toBe('First?');
+
+    // Emit second prompt event - replaces notification with oldest (still promptA)
+    emitEvent(manager, 'session:prompt', { connectionId: 'conn-1', prompt: promptB });
+    expect(MockNotification.instances).toHaveLength(2);
+    expect(MockNotification.instances[1]?.body).toBe('First?');
+
+    // Clear prompt B (not the oldest) - session still has prompt A
+    session.activePrompts = [promptA];
+    emitEvent(manager, 'session:prompt-cleared', { connectionId: 'conn-1', requestId: 'prompt-b' });
+
+    // A refreshed notification should appear showing the oldest prompt
+    expect(MockNotification.instances).toHaveLength(3);
+    expect(MockNotification.instances[2]?.body).toBe('First?');
+    expect(MockNotification.instances[2]?.closed).toBe(false);
+
+    // Now clear the last prompt - notification should close
+    session.activePrompts = [];
+    emitEvent(manager, 'session:prompt-cleared', { connectionId: 'conn-1', requestId: 'prompt-a' });
+    expect(MockNotification.instances[2]?.closed).toBe(true);
 
     cleanup();
   });

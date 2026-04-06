@@ -568,7 +568,7 @@ describe('lib/server/session_discovery', () => {
         manager.getSessionSnapshot().sessions.length === 1 &&
         session?.status === 'active' &&
         session.isReplaying === false &&
-        session.activePrompt?.requestId === 'req-integration' &&
+        session.activePrompts?.[0]?.requestId === 'req-integration' &&
         session.messages.length === 2
       );
     });
@@ -585,10 +585,12 @@ describe('lib/server/session_discovery', () => {
         planUuid: 'plan-uuid-223',
         workspacePath: '/tmp/integration-workspace',
       }),
-      activePrompt: expect.objectContaining({
-        requestId: 'req-integration',
-        promptType: 'confirm',
-      }),
+      activePrompts: [
+        expect.objectContaining({
+          requestId: 'req-integration',
+          promptType: 'confirm',
+        }),
+      ],
     });
     expect(replayedSession?.messages).toEqual([
       expect.objectContaining({

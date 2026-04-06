@@ -44,7 +44,7 @@ function createSession(overrides: Partial<SessionData> = {}): SessionData {
     projectId: overrides.projectId ?? null,
     planContent: overrides.planContent ?? null,
     messages: overrides.messages ?? [],
-    activePrompt: overrides.activePrompt ?? null,
+    activePrompts: overrides.activePrompts ?? [],
     isReplaying: overrides.isReplaying ?? false,
     groupKey: overrides.groupKey ?? '/tmp/ws',
     connectedAt: overrides.connectedAt ?? '2026-03-18T10:00:00.000Z',
@@ -156,11 +156,13 @@ describe('SessionManager.needsAttention', () => {
     manager.sessions.set(
       'conn-1',
       createSession({
-        activePrompt: {
-          requestId: 'prompt-1',
-          promptType: 'confirm',
-          promptConfig: { message: 'Continue?' },
-        },
+        activePrompts: [
+          {
+            requestId: 'prompt-1',
+            promptType: 'confirm',
+            promptConfig: { message: 'Continue?' },
+          },
+        ],
       })
     );
 

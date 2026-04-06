@@ -28,7 +28,7 @@ function createSession(overrides: Partial<SessionData> = {}): SessionData {
     projectId: overrides.projectId ?? null,
     planContent: overrides.planContent ?? null,
     messages: overrides.messages ?? [],
-    activePrompt: overrides.activePrompt ?? null,
+    activePrompts: overrides.activePrompts ?? [],
     isReplaying: overrides.isReplaying ?? false,
     groupKey: overrides.groupKey ?? '/tmp/ws',
     connectedAt: overrides.connectedAt ?? '2026-03-18T10:00:00.000Z',
@@ -44,7 +44,8 @@ describe('SessionRow', () => {
     sessionManager.activateTerminalPane.mockReset();
     sessionManager.hasSessionAttention.mockReset();
     sessionManager.hasSessionAttention.mockImplementation(
-      (session: SessionData) => session.activePrompt != null || session.status === 'notification'
+      (session: SessionData) =>
+        session.activePrompts.length > 0 || session.status === 'notification'
     );
   });
 
@@ -107,11 +108,13 @@ describe('SessionRow', () => {
     const { body } = render(SessionRow, {
       props: {
         session: createSession({
-          activePrompt: {
-            requestId: 'prompt-1',
-            promptType: 'confirm',
-            promptConfig: { message: 'Continue?' },
-          },
+          activePrompts: [
+            {
+              requestId: 'prompt-1',
+              promptType: 'confirm',
+              promptConfig: { message: 'Continue?' },
+            },
+          ],
         }),
         href: '/projects/1/sessions/conn-1',
       },

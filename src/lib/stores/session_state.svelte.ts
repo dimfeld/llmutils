@@ -163,7 +163,7 @@ export class SessionManager {
   }
 
   hasSessionAttention(session: SessionData): boolean {
-    if (session.activePrompt) {
+    if (session.activePrompts.length > 0) {
       return true;
     }
 

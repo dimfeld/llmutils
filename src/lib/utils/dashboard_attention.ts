@@ -89,11 +89,12 @@ export function deriveAttentionItems(
 
     // Check for active sessions waiting for input
     for (const session of planSessions) {
-      if (session.status === 'active' && session.activePrompt) {
+      const activePrompt = session.activePrompts[0];
+      if (session.status === 'active' && activePrompt) {
         reasons.push({
           type: 'waiting_for_input',
           sessionId: session.connectionId,
-          promptType: session.activePrompt.promptType,
+          promptType: activePrompt.promptType,
         });
       }
     }

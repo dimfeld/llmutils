@@ -731,7 +731,7 @@ describe('lib/server/session_manager', () => {
     expect(onUpdate).toHaveBeenCalledTimes(2);
     expect(replaySnapshot.sessions[0]).toMatchObject({
       isReplaying: true,
-      activePrompt: null,
+      activePrompts: [],
       messages: [
         expect.objectContaining({ seq: 1 }),
         expect.objectContaining({ seq: 2, rawType: 'prompt_request' }),
@@ -739,10 +739,12 @@ describe('lib/server/session_manager', () => {
     });
     expect(finalSnapshot.sessions[0]).toMatchObject({
       isReplaying: false,
-      activePrompt: {
-        requestId: 'req-1',
-        promptType: 'confirm',
-      },
+      activePrompts: [
+        {
+          requestId: 'req-1',
+          promptType: 'confirm',
+        },
+      ],
       messages: [
         expect.objectContaining({ seq: 1 }),
         expect.objectContaining({ seq: 2 }),
@@ -815,7 +817,7 @@ describe('lib/server/session_manager', () => {
       connectionId: 'conn-1',
       requestId: 'req-2',
     });
-    expect(session.activePrompt).toBeNull();
+    expect(session.activePrompts).toEqual([]);
   });
 
   test('clears active prompt and emits prompt-cleared when prompt is cancelled', () => {
@@ -858,7 +860,7 @@ describe('lib/server/session_manager', () => {
       connectionId: 'conn-1',
       requestId: 'req-cancelled',
     });
-    expect(session.activePrompt).toBeNull();
+    expect(session.activePrompts).toEqual([]);
   });
 
   test('creates and updates notification-only sessions', () => {
@@ -1109,7 +1111,7 @@ describe('lib/server/session_manager', () => {
     // Correct requestId should succeed and clear the prompt
     const sentPrompt = manager.sendPromptResponse('conn-1', 'req-1', { approved: true });
     expect(sentPrompt).toBe('sent');
-    expect(manager.getSessionSnapshot().sessions[0].activePrompt).toBeNull();
+    expect(manager.getSessionSnapshot().sessions[0].activePrompts).toEqual([]);
 
     // Sending again after prompt cleared should fail
     const afterClear = manager.sendPromptResponse('conn-1', 'req-1', true);
@@ -1159,7 +1161,7 @@ describe('lib/server/session_manager', () => {
 
     expect(replaySnapshot.sessions[0]).toMatchObject({
       isReplaying: true,
-      activePrompt: null,
+      activePrompts: [],
     });
     expect(earlyResponse).toBe('no_prompt');
     // Sender should only have received the initial subscriber status on connect,
@@ -1171,11 +1173,318 @@ describe('lib/server/session_manager', () => {
     });
     expect(finalSnapshot.sessions[0]).toMatchObject({
       isReplaying: false,
-      activePrompt: {
-        requestId: 'req-replay',
-        promptType: 'confirm',
+      activePrompts: [
+        {
+          requestId: 'req-replay',
+          promptType: 'confirm',
+        },
+      ],
+    });
+  });
+
+  test('multiple concurrent prompts accumulate in the activePrompts array', () => {
+    const onPrompt = vi.fn();
+    manager.subscribe('session:prompt', onPrompt);
+
+    manager.handleWebSocketConnect('conn-1', vi.fn());
+    manager.handleWebSocketMessage('conn-1', {
+      type: 'output',
+      seq: 1,
+      message: {
+        type: 'structured',
+        message: {
+          type: 'prompt_request',
+          timestamp: '2026-03-17T10:00:01.000Z',
+          requestId: 'req-a',
+          promptType: 'confirm',
+          promptConfig: { message: 'First?' },
+        },
       },
     });
+    manager.handleWebSocketMessage('conn-1', {
+      type: 'output',
+      seq: 2,
+      message: {
+        type: 'structured',
+        message: {
+          type: 'prompt_request',
+          timestamp: '2026-03-17T10:00:02.000Z',
+          requestId: 'req-b',
+          promptType: 'input',
+          promptConfig: { message: 'Second?' },
+        },
+      },
+    });
+    manager.handleWebSocketMessage('conn-1', {
+      type: 'output',
+      seq: 3,
+      message: {
+        type: 'structured',
+        message: {
+          type: 'prompt_request',
+          timestamp: '2026-03-17T10:00:03.000Z',
+          requestId: 'req-c',
+          promptType: 'confirm',
+          promptConfig: { message: 'Third?' },
+        },
+      },
+    });
+
+    const session = manager.getSessionSnapshot().sessions[0];
+    expect(session.activePrompts).toHaveLength(3);
+    expect(session.activePrompts.map((p) => p.requestId)).toEqual(['req-a', 'req-b', 'req-c']);
+    expect(onPrompt).toHaveBeenCalledTimes(3);
+  });
+
+  test('answering one prompt removes only that prompt, others remain', () => {
+    const onPromptCleared = vi.fn();
+    manager.subscribe('session:prompt-cleared', onPromptCleared);
+
+    manager.handleWebSocketConnect('conn-1', vi.fn());
+    // Create two prompts
+    manager.handleWebSocketMessage('conn-1', {
+      type: 'output',
+      seq: 1,
+      message: {
+        type: 'structured',
+        message: {
+          type: 'prompt_request',
+          timestamp: '2026-03-17T10:00:01.000Z',
+          requestId: 'req-1',
+          promptType: 'confirm',
+          promptConfig: { message: 'First?' },
+        },
+      },
+    });
+    manager.handleWebSocketMessage('conn-1', {
+      type: 'output',
+      seq: 2,
+      message: {
+        type: 'structured',
+        message: {
+          type: 'prompt_request',
+          timestamp: '2026-03-17T10:00:02.000Z',
+          requestId: 'req-2',
+          promptType: 'input',
+          promptConfig: { message: 'Second?' },
+        },
+      },
+    });
+
+    // Answer just the first prompt
+    manager.handleWebSocketMessage('conn-1', {
+      type: 'output',
+      seq: 3,
+      message: {
+        type: 'structured',
+        message: {
+          type: 'prompt_answered',
+          timestamp: '2026-03-17T10:00:03.000Z',
+          requestId: 'req-1',
+          promptType: 'confirm',
+          value: true,
+          source: 'terminal',
+        },
+      },
+    });
+
+    const session = manager.getSessionSnapshot().sessions[0];
+    expect(session.activePrompts).toHaveLength(1);
+    expect(session.activePrompts[0].requestId).toBe('req-2');
+    expect(onPromptCleared).toHaveBeenCalledWith({
+      connectionId: 'conn-1',
+      requestId: 'req-1',
+    });
+  });
+
+  test('cancelling one prompt removes only that prompt, others remain', () => {
+    manager.handleWebSocketConnect('conn-1', vi.fn());
+    manager.handleWebSocketMessage('conn-1', {
+      type: 'output',
+      seq: 1,
+      message: {
+        type: 'structured',
+        message: {
+          type: 'prompt_request',
+          timestamp: '2026-03-17T10:00:01.000Z',
+          requestId: 'req-1',
+          promptType: 'confirm',
+          promptConfig: { message: 'First?' },
+        },
+      },
+    });
+    manager.handleWebSocketMessage('conn-1', {
+      type: 'output',
+      seq: 2,
+      message: {
+        type: 'structured',
+        message: {
+          type: 'prompt_request',
+          timestamp: '2026-03-17T10:00:02.000Z',
+          requestId: 'req-2',
+          promptType: 'confirm',
+          promptConfig: { message: 'Second?' },
+        },
+      },
+    });
+
+    // Cancel only the first
+    manager.handleWebSocketMessage('conn-1', {
+      type: 'output',
+      seq: 3,
+      message: {
+        type: 'structured',
+        message: {
+          type: 'prompt_cancelled',
+          timestamp: '2026-03-17T10:00:03.000Z',
+          requestId: 'req-1',
+        },
+      },
+    });
+
+    const session = manager.getSessionSnapshot().sessions[0];
+    expect(session.activePrompts).toHaveLength(1);
+    expect(session.activePrompts[0].requestId).toBe('req-2');
+  });
+
+  test('sendPromptResponse finds correct prompt by requestId regardless of position', () => {
+    const sender = vi.fn<(message: HeadlessServerMessage) => void>();
+    manager.handleWebSocketConnect('conn-1', sender);
+    manager.handleWebSocketMessage('conn-1', {
+      type: 'session_info',
+      command: 'agent',
+      interactive: true,
+      workspacePath: '/tmp/ws',
+    });
+
+    // Create three prompts
+    for (const id of ['req-1', 'req-2', 'req-3']) {
+      manager.handleWebSocketMessage('conn-1', {
+        type: 'output',
+        seq: parseInt(id.slice(-1)),
+        message: {
+          type: 'structured',
+          message: {
+            type: 'prompt_request',
+            timestamp: '2026-03-17T10:00:00.000Z',
+            requestId: id,
+            promptType: 'confirm',
+            promptConfig: { message: `Prompt ${id}?` },
+          },
+        },
+      });
+    }
+
+    // Answer the middle one
+    const result = manager.sendPromptResponse('conn-1', 'req-2', true);
+    expect(result).toBe('sent');
+
+    const session = manager.getSessionSnapshot().sessions[0];
+    expect(session.activePrompts).toHaveLength(2);
+    expect(session.activePrompts.map((p) => p.requestId)).toEqual(['req-1', 'req-3']);
+  });
+
+  test('disconnect silently clears all active prompts without individual cleared events', () => {
+    const onPromptCleared = vi.fn();
+    manager.subscribe('session:prompt-cleared', onPromptCleared);
+
+    manager.handleWebSocketConnect('conn-1', vi.fn());
+    manager.handleWebSocketMessage('conn-1', {
+      type: 'output',
+      seq: 1,
+      message: {
+        type: 'structured',
+        message: {
+          type: 'prompt_request',
+          timestamp: '2026-03-17T10:00:01.000Z',
+          requestId: 'req-1',
+          promptType: 'confirm',
+          promptConfig: { message: 'First?' },
+        },
+      },
+    });
+    manager.handleWebSocketMessage('conn-1', {
+      type: 'output',
+      seq: 2,
+      message: {
+        type: 'structured',
+        message: {
+          type: 'prompt_request',
+          timestamp: '2026-03-17T10:00:02.000Z',
+          requestId: 'req-2',
+          promptType: 'confirm',
+          promptConfig: { message: 'Second?' },
+        },
+      },
+    });
+
+    onPromptCleared.mockClear();
+    manager.handleWebSocketDisconnect('conn-1');
+
+    // No individual prompt-cleared events on disconnect
+    expect(onPromptCleared).not.toHaveBeenCalled();
+
+    const session = manager.getSessionSnapshot().sessions[0];
+    expect(session.activePrompts).toEqual([]);
+  });
+
+  test('replay defers multiple prompts and emits all on replay_end', () => {
+    const onPrompt = vi.fn();
+    manager.subscribe('session:prompt', onPrompt);
+
+    manager.handleWebSocketConnect('conn-1', vi.fn());
+    manager.handleWebSocketMessage('conn-1', { type: 'replay_start' });
+
+    // Two prompts during replay
+    manager.handleWebSocketMessage('conn-1', {
+      type: 'output',
+      seq: 1,
+      message: {
+        type: 'structured',
+        message: {
+          type: 'prompt_request',
+          timestamp: '2026-03-17T10:00:01.000Z',
+          requestId: 'req-a',
+          promptType: 'confirm',
+          promptConfig: { message: 'First?' },
+        },
+      },
+    });
+    manager.handleWebSocketMessage('conn-1', {
+      type: 'output',
+      seq: 2,
+      message: {
+        type: 'structured',
+        message: {
+          type: 'prompt_request',
+          timestamp: '2026-03-17T10:00:02.000Z',
+          requestId: 'req-b',
+          promptType: 'input',
+          promptConfig: { message: 'Second?' },
+        },
+      },
+    });
+
+    // During replay, no prompts emitted and activePrompts is empty in snapshot
+    expect(onPrompt).not.toHaveBeenCalled();
+    expect(manager.getSessionSnapshot().sessions[0].activePrompts).toEqual([]);
+
+    manager.handleWebSocketMessage('conn-1', { type: 'replay_end' });
+
+    // After replay ends, both prompts emitted and present in activePrompts
+    expect(onPrompt).toHaveBeenCalledTimes(2);
+    expect(onPrompt).toHaveBeenNthCalledWith(1, {
+      connectionId: 'conn-1',
+      prompt: expect.objectContaining({ requestId: 'req-a' }),
+    });
+    expect(onPrompt).toHaveBeenNthCalledWith(2, {
+      connectionId: 'conn-1',
+      prompt: expect.objectContaining({ requestId: 'req-b' }),
+    });
+
+    const session = manager.getSessionSnapshot().sessions[0];
+    expect(session.activePrompts).toHaveLength(2);
+    expect(session.activePrompts.map((p) => p.requestId)).toEqual(['req-a', 'req-b']);
   });
 
   test('sendUserInput delegates to the registered sender', () => {

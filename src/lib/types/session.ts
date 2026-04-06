@@ -142,7 +142,7 @@ export interface SessionData {
   projectId: number | null;
   planContent: string | null;
   messages: DisplayMessage[];
-  activePrompt: ActivePrompt | null;
+  activePrompts: ActivePrompt[];
   isReplaying: boolean;
   groupKey: string;
   connectedAt: string;

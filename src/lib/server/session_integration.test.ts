@@ -252,10 +252,12 @@ describe('session integration', () => {
       },
     });
 
-    expect(manager.getSessionSnapshot().sessions[0].activePrompt).toMatchObject({
-      requestId: 'req-1',
-      promptType: 'select',
-    });
+    expect(manager.getSessionSnapshot().sessions[0].activePrompts).toEqual([
+      expect.objectContaining({
+        requestId: 'req-1',
+        promptType: 'select',
+      }),
+    ]);
 
     const sendResult = manager.sendPromptResponse('conn-prompt', 'req-1', 'safe');
     const snapshot = manager.getSessionSnapshot();
@@ -289,7 +291,7 @@ describe('session integration', () => {
       });
     }
 
-    expect(snapshot.sessions[0].activePrompt).toBeNull();
+    expect(snapshot.sessions[0].activePrompts).toEqual([]);
   });
 
   test('ignores malformed prompt side effects while still recording the structured messages', () => {
@@ -374,11 +376,13 @@ describe('session integration', () => {
       'session:message',
       'session:message',
     ]);
-    expect(snapshot.sessions[0].activePrompt).toMatchObject({
-      requestId: 'req-valid',
-      promptType: 'confirm',
-      promptConfig: { message: 'Continue?' },
-    });
+    expect(snapshot.sessions[0].activePrompts).toEqual([
+      expect.objectContaining({
+        requestId: 'req-valid',
+        promptType: 'confirm',
+        promptConfig: { message: 'Continue?' },
+      }),
+    ]);
     expect(snapshot.sessions[0].messages.map((message) => message.seq)).toEqual([1, 2, 3, 4]);
     expect(snapshot.sessions[0].messages[1]).toMatchObject({
       rawType: 'prompt_answered',
@@ -646,7 +650,7 @@ describe('session integration', () => {
     const snapshot = manager.getSessionSnapshot();
     unsubscribe();
 
-    expect(snapshot.sessions[0].activePrompt).toBeNull();
+    expect(snapshot.sessions[0].activePrompts).toEqual([]);
     expect(events.map((event) => event.event)).toEqual([
       'session:new',
       'session:update',

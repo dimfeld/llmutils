@@ -165,6 +165,8 @@
 
   let showPlanPane = $derived(session.sessionInfo.planId != null);
   let hasMessages = $derived(session.messages.length > 0);
+  let activePrompt = $derived(session.activePrompts[0] ?? null);
+  let queuedPromptCount = $derived(Math.max(0, session.activePrompts.length - 1));
 
   async function handleCopyTranscript() {
     try {
@@ -330,10 +332,15 @@
 
   {#snippet messagesPane()}
     <!-- Prompt area (fixed above messages) -->
-    {#if !session.isReplaying && session.activePrompt}
+    {#if !session.isReplaying && activePrompt}
       <div class="max-h-1/2 overflow-y-auto">
-        {#key session.activePrompt.requestId}
-          <PromptRenderer prompt={session.activePrompt} connectionId={session.connectionId} />
+        {#if queuedPromptCount > 0}
+          <div class="border-b border-border bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
+            {queuedPromptCount} more pending
+          </div>
+        {/if}
+        {#key activePrompt.requestId}
+          <PromptRenderer prompt={activePrompt} connectionId={session.connectionId} />
         {/key}
       </div>
     {/if}

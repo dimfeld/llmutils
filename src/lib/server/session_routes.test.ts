@@ -335,7 +335,7 @@ describe('lib/server/session_routes', () => {
           expect.objectContaining({
             connectionId: 'conn-replay',
             isReplaying: true,
-            activePrompt: null,
+            activePrompts: [],
           }),
         ],
       },

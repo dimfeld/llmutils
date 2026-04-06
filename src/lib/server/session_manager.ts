@@ -104,7 +104,7 @@ export interface SessionData {
   projectId: number | null;
   planContent: string | null;
   messages: DisplayMessage[];
-  activePrompt: ActivePrompt | null;
+  activePrompts: ActivePrompt[];
   isReplaying: boolean;
   groupKey: string;
   connectedAt: string;
@@ -142,7 +142,7 @@ type SessionEventListener<T extends SessionEventName> = (payload: SessionManager
 type AgentSender = (message: HeadlessServerMessage) => void;
 
 interface SessionInternals {
-  deferredPromptEvent: ActivePrompt | null;
+  deferredPromptEvents: ActivePrompt[];
   nextNotificationId: number;
 }
 
@@ -358,7 +358,7 @@ export class SessionManager {
       projectId: null,
       planContent: null,
       messages: [],
-      activePrompt: null,
+      activePrompts: [],
       isReplaying: false,
       groupKey: sessionGroupKey(),
       connectedAt,
@@ -367,7 +367,7 @@ export class SessionManager {
 
     this.sessions.set(connectionId, session);
     this.senders.set(connectionId, sendToAgent);
-    this.internals.set(connectionId, { deferredPromptEvent: null, nextNotificationId: 0 });
+    this.internals.set(connectionId, { deferredPromptEvents: [], nextNotificationId: 0 });
 
     try {
       sendToAgent({
@@ -390,24 +390,17 @@ export class SessionManager {
       return null;
     }
 
-    const hadPrompt = session.activePrompt != null;
-    const clearedRequestId = session.activePrompt?.requestId;
-
     session.status = 'offline';
     session.disconnectedAt = new Date().toISOString();
     session.isReplaying = false;
-    session.activePrompt = null;
+    session.activePrompts = [];
 
     const internals = this.internals.get(connectionId);
     if (internals) {
-      internals.deferredPromptEvent = null;
+      internals.deferredPromptEvents = [];
     }
 
     this.emit('session:disconnect', { session: this.cloneSessionMetadata(session) });
-
-    if (hadPrompt && clearedRequestId) {
-      this.emit('session:prompt-cleared', { connectionId, requestId: clearedRequestId });
-    }
 
     return this.cloneSession(session);
   }
@@ -440,21 +433,23 @@ export class SessionManager {
       }
       case 'replay_start':
         session.isReplaying = true;
-        this.internals.get(connectionId)!.deferredPromptEvent = null;
+        this.internals.get(connectionId)!.deferredPromptEvents = [];
         this.emit('session:update', { session: this.cloneSessionMetadata(session) });
         return;
       case 'replay_end': {
         session.isReplaying = false;
+        const deferredPrompts = this.internals.get(connectionId)?.deferredPromptEvents ?? [];
+        // Emit session:update first with empty activePrompts, then emit session:prompt
+        // for each deferred prompt so the client builds the queue incrementally without duplication.
         this.emit('session:update', { session: this.cloneSessionMetadata(session) });
-        const deferredPrompt = this.internals.get(connectionId)?.deferredPromptEvent;
-        if (deferredPrompt) {
-          session.activePrompt = { ...deferredPrompt };
+        for (const deferredPrompt of deferredPrompts) {
+          session.activePrompts.push(cloneActivePrompt(deferredPrompt));
           this.emit('session:prompt', {
             connectionId,
-            prompt: { ...deferredPrompt },
+            prompt: cloneActivePrompt(deferredPrompt),
           });
-          this.internals.get(connectionId)!.deferredPromptEvent = null;
         }
+        this.internals.get(connectionId)!.deferredPromptEvents = [];
         return;
       }
       case 'plan_content':
@@ -524,7 +519,7 @@ export class SessionManager {
         projectId: this.resolveProjectId(payload.gitRemote),
         planContent: null,
         messages: [],
-        activePrompt: null,
+        activePrompts: [],
         isReplaying: false,
         groupKey,
         connectedAt: now,
@@ -537,7 +532,7 @@ export class SessionManager {
     session.groupKey = groupKey;
     const existingInternals = this.internals.get(connectionId);
     if (!existingInternals) {
-      this.internals.set(connectionId, { deferredPromptEvent: null, nextNotificationId: 0 });
+      this.internals.set(connectionId, { deferredPromptEvents: [], nextNotificationId: 0 });
     }
 
     const displayMessage: DisplayMessage = {
@@ -575,7 +570,10 @@ export class SessionManager {
       return 'no_session';
     }
 
-    if (!session.activePrompt || session.activePrompt.requestId !== requestId) {
+    const prompt = session.activePrompts.find(
+      (activePrompt) => activePrompt.requestId === requestId
+    );
+    if (!prompt) {
       return 'no_prompt';
     }
 
@@ -586,7 +584,9 @@ export class SessionManager {
     });
 
     if (sent) {
-      session.activePrompt = null;
+      session.activePrompts = session.activePrompts.filter(
+        (activePrompt) => activePrompt.requestId !== requestId
+      );
       this.emit('session:prompt-cleared', { connectionId, requestId });
       return 'sent';
     }
@@ -784,14 +784,6 @@ export class SessionManager {
         return;
       }
 
-      // Clear previous prompt if one was still active
-      if (session.activePrompt && !session.isReplaying) {
-        this.emit('session:prompt-cleared', {
-          connectionId,
-          requestId: session.activePrompt.requestId,
-        });
-      }
-
       const prompt: ActivePrompt = {
         requestId: message.requestId,
         promptType: message.promptType,
@@ -802,11 +794,11 @@ export class SessionManager {
       if (session.isReplaying) {
         const internals = this.internals.get(connectionId);
         if (internals) {
-          internals.deferredPromptEvent = prompt;
+          internals.deferredPromptEvents.push(prompt);
         }
       } else {
-        session.activePrompt = prompt;
-        this.emit('session:prompt', { connectionId, prompt: { ...prompt } });
+        session.activePrompts = [...session.activePrompts, prompt];
+        this.emit('session:prompt', { connectionId, prompt: cloneActivePrompt(prompt) });
       }
       return;
     }
@@ -817,19 +809,20 @@ export class SessionManager {
       }
 
       const requestId = message.requestId;
-      let cleared = false;
-
-      // Only clear prompt state if the answered requestId matches the active prompt
-      // A stale answer for a previous prompt should not clear a newer prompt
-      if (session.activePrompt?.requestId === requestId) {
-        session.activePrompt = null;
-        cleared = true;
-      }
+      const previousPromptCount = session.activePrompts.length;
       const internals = this.internals.get(connectionId);
-      if (internals?.deferredPromptEvent?.requestId === requestId) {
-        internals.deferredPromptEvent = null;
-        cleared = true;
+      const previousDeferredPromptCount = internals?.deferredPromptEvents.length ?? 0;
+      session.activePrompts = session.activePrompts.filter(
+        (activePrompt) => activePrompt.requestId !== requestId
+      );
+      if (internals) {
+        internals.deferredPromptEvents = internals.deferredPromptEvents.filter(
+          (deferredPrompt) => deferredPrompt.requestId !== requestId
+        );
       }
+      const cleared =
+        session.activePrompts.length !== previousPromptCount ||
+        (internals?.deferredPromptEvents.length ?? 0) !== previousDeferredPromptCount;
 
       if (cleared && !session.isReplaying) {
         this.emit('session:prompt-cleared', { connectionId, requestId });
@@ -838,18 +831,24 @@ export class SessionManager {
     }
 
     if (message.type === 'prompt_cancelled') {
+      if (typeof message.requestId !== 'string') {
+        return;
+      }
       const requestId = message.requestId;
-      let cleared = false;
-
-      if (session.activePrompt?.requestId === requestId) {
-        session.activePrompt = null;
-        cleared = true;
-      }
+      const previousPromptCount = session.activePrompts.length;
       const internals = this.internals.get(connectionId);
-      if (internals?.deferredPromptEvent?.requestId === requestId) {
-        internals.deferredPromptEvent = null;
-        cleared = true;
+      const previousDeferredPromptCount = internals?.deferredPromptEvents.length ?? 0;
+      session.activePrompts = session.activePrompts.filter(
+        (activePrompt) => activePrompt.requestId !== requestId
+      );
+      if (internals) {
+        internals.deferredPromptEvents = internals.deferredPromptEvents.filter(
+          (deferredPrompt) => deferredPrompt.requestId !== requestId
+        );
       }
+      const cleared =
+        session.activePrompts.length !== previousPromptCount ||
+        (internals?.deferredPromptEvents.length ?? 0) !== previousDeferredPromptCount;
 
       if (cleared && !session.isReplaying) {
         this.emit('session:prompt-cleared', { connectionId, requestId });
@@ -883,18 +882,7 @@ export class SessionManager {
       ...session,
       sessionInfo: { ...session.sessionInfo },
       messages: messages.map((message) => ({ ...message, body: cloneBody(message.body) })),
-      activePrompt:
-        !session.isReplaying && session.activePrompt
-          ? {
-              ...session.activePrompt,
-              promptConfig: {
-                ...session.activePrompt.promptConfig,
-                choices: session.activePrompt.promptConfig.choices?.map((choice) => ({
-                  ...choice,
-                })),
-              },
-            }
-          : null,
+      activePrompts: !session.isReplaying ? session.activePrompts.map(cloneActivePrompt) : [],
     };
   }
 
@@ -904,20 +892,19 @@ export class SessionManager {
       ...session,
       sessionInfo: { ...session.sessionInfo },
       messages: [],
-      activePrompt:
-        !session.isReplaying && session.activePrompt
-          ? {
-              ...session.activePrompt,
-              promptConfig: {
-                ...session.activePrompt.promptConfig,
-                choices: session.activePrompt.promptConfig.choices?.map((choice) => ({
-                  ...choice,
-                })),
-              },
-            }
-          : null,
+      activePrompts: !session.isReplaying ? session.activePrompts.map(cloneActivePrompt) : [],
     };
   }
+}
+
+function cloneActivePrompt(prompt: ActivePrompt): ActivePrompt {
+  return {
+    ...prompt,
+    promptConfig: {
+      ...prompt.promptConfig,
+      choices: prompt.promptConfig.choices?.map((choice) => ({ ...choice })),
+    },
+  };
 }
 
 function cloneBody(body: DisplayMessageBody): DisplayMessageBody {

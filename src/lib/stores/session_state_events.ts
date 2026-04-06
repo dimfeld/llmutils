@@ -115,16 +115,21 @@ export function applySessionEvent<TEventName extends SessionClientEventName>(
         // Re-set to trigger SvelteMap reactivity
         state.sessions.set(event.payload.connectionId, {
           ...session,
-          activePrompt: event.payload.prompt,
+          activePrompts: [...session.activePrompts, event.payload.prompt],
         });
       }
       break;
     }
     case 'session:prompt-cleared': {
       const session = state.sessions.get(event.payload.connectionId);
-      if (session && session.activePrompt?.requestId === event.payload.requestId) {
+      if (session) {
         // Re-set to trigger SvelteMap reactivity
-        state.sessions.set(event.payload.connectionId, { ...session, activePrompt: null });
+        state.sessions.set(event.payload.connectionId, {
+          ...session,
+          activePrompts: session.activePrompts.filter(
+            (prompt) => prompt.requestId !== event.payload.requestId
+          ),
+        });
       }
       break;
     }

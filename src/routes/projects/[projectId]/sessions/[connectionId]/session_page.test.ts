@@ -64,7 +64,7 @@ function createSession(overrides: Partial<SessionData> = {}): SessionData {
     projectId: overrides.projectId ?? 3,
     planContent: overrides.planContent ?? null,
     messages: overrides.messages ?? [],
-    activePrompt: overrides.activePrompt ?? null,
+    activePrompts: overrides.activePrompts ?? [],
     isReplaying: overrides.isReplaying ?? false,
     groupKey: overrides.groupKey ?? 'github.com/tim/test',
     connectedAt: overrides.connectedAt ?? '2026-03-25T10:00:00.000Z',

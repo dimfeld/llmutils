@@ -49,7 +49,7 @@ function createSession(connectionId = 'conn-1'): SessionData {
     messages: [
       createMessage({ id: `${connectionId}-0`, body: { type: 'text', text: 'existing' } }),
     ],
-    activePrompt: null,
+    activePrompts: [],
     isReplaying: false,
     groupKey: '/tmp/ws',
     connectedAt: '2026-03-17T10:00:00.000Z',
@@ -238,7 +238,7 @@ describe('applySessionEvent', () => {
         session: {
           ...session,
           status: 'offline',
-          activePrompt: null,
+          activePrompts: [],
           messages: [],
           disconnectedAt: '2026-03-17T10:05:00.000Z',
         },
@@ -320,7 +320,7 @@ describe('applySessionEvent', () => {
     applySessionEvent('session:prompt', { connectionId: session.connectionId, prompt }, state);
 
     const updated = state.sessions.get(session.connectionId);
-    expect(updated?.activePrompt).toEqual(prompt);
+    expect(updated?.activePrompts).toEqual([prompt]);
   });
 
   test('session:plan-content updates the session without disturbing messages', () => {
@@ -344,7 +344,7 @@ describe('applySessionEvent', () => {
 
   test('session:prompt-cleared only clears the matching prompt', () => {
     const session = createSession();
-    session.activePrompt = createPrompt({ requestId: 'prompt-keep' });
+    session.activePrompts = [createPrompt({ requestId: 'prompt-keep' })];
     const state = createState(session);
 
     applySessionEvent(
@@ -353,7 +353,10 @@ describe('applySessionEvent', () => {
       state
     );
 
-    expect(state.sessions.get(session.connectionId)?.activePrompt?.requestId).toBe('prompt-keep');
+    expect(state.sessions.get(session.connectionId)?.activePrompts).toHaveLength(1);
+    expect(state.sessions.get(session.connectionId)?.activePrompts[0]?.requestId).toBe(
+      'prompt-keep'
+    );
 
     applySessionEvent(
       'session:prompt-cleared',
@@ -361,7 +364,61 @@ describe('applySessionEvent', () => {
       state
     );
 
-    expect(state.sessions.get(session.connectionId)?.activePrompt).toBeNull();
+    expect(state.sessions.get(session.connectionId)?.activePrompts).toEqual([]);
+  });
+
+  test('session:prompt accumulates multiple prompts in the array', () => {
+    const session = createSession();
+    const state = createState(session);
+    const prompt1 = createPrompt({ requestId: 'prompt-1' });
+    const prompt2 = createPrompt({ requestId: 'prompt-2', promptType: 'input' });
+
+    applySessionEvent(
+      'session:prompt',
+      { connectionId: session.connectionId, prompt: prompt1 },
+      state
+    );
+    applySessionEvent(
+      'session:prompt',
+      { connectionId: session.connectionId, prompt: prompt2 },
+      state
+    );
+
+    const updated = state.sessions.get(session.connectionId);
+    expect(updated?.activePrompts).toEqual([prompt1, prompt2]);
+  });
+
+  test('session:prompt-cleared removes only the matching prompt from the array', () => {
+    const session = createSession();
+    const prompt1 = createPrompt({ requestId: 'prompt-1' });
+    const prompt2 = createPrompt({ requestId: 'prompt-2' });
+    const prompt3 = createPrompt({ requestId: 'prompt-3' });
+    session.activePrompts = [prompt1, prompt2, prompt3];
+    const state = createState(session);
+
+    applySessionEvent(
+      'session:prompt-cleared',
+      { connectionId: session.connectionId, requestId: 'prompt-2' },
+      state
+    );
+
+    const updated = state.sessions.get(session.connectionId);
+    expect(updated?.activePrompts).toEqual([prompt1, prompt3]);
+  });
+
+  test('session:prompt-cleared is idempotent for unknown requestId', () => {
+    const session = createSession();
+    const prompt1 = createPrompt({ requestId: 'prompt-1' });
+    session.activePrompts = [prompt1];
+    const state = createState(session);
+
+    applySessionEvent(
+      'session:prompt-cleared',
+      { connectionId: session.connectionId, requestId: 'nonexistent' },
+      state
+    );
+
+    expect(state.sessions.get(session.connectionId)?.activePrompts).toEqual([prompt1]);
   });
 
   test('session:dismissed deletes the session and clears the selection', () => {

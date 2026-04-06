@@ -194,7 +194,7 @@ The sessions system uses a discovery-based architecture where the web GUI discov
 - Incoming agent messages follow the headless protocol: `session_info` → `replay_start` → historical messages → `replay_end` → live messages
 - **Dynamic session info updates**: The headless adapter can re-send `session_info` after initial handshake (e.g., after workspace switching in `setupWorkspace()`). The server handler is idempotent — it replaces `session.sessionInfo`, recomputes `groupKey` and `projectId`, and emits `session:update`. The web UI re-groups the session automatically via reactive `sessionGroups`.
 - Messages during replay (`replay_start`..`replay_end`) are added to the session's message list but NOT emitted as SSE events
-- **Replay prompt suppression**: Prompts received during replay are deferred to internal state (`deferredPromptEvent` in `SessionInternals`) rather than stored in `session.activePrompt`. On `replay_end`, any deferred prompt is promoted to the active prompt and emitted. `getSessionSnapshot()` and `cloneSession()` strip `activePrompt` while `isReplaying` is true. `sendPromptResponse()` rejects during replay as a safety guard.
+- **Replay prompt suppression**: Prompts received during replay are deferred to internal state (`deferredPromptEvents` array in `SessionInternals`) rather than stored in `session.activePrompts`. On `replay_end`, all deferred prompts are promoted to active prompts and emitted individually. `getSessionSnapshot()` and `cloneSession()` strip `activePrompts` while `isReplaying` is true. `sendPromptResponse()` rejects during replay as a safety guard.
 - Each message becomes a `DisplayMessage`. Structured messages are passed through with `body: { type: 'structured', message: StructuredMessagePayload }` and `category: 'structured'`. The client computes display categories and formatting via `src/lib/utils/message_formatting.ts`. Non-structured TunnelMessages (log/error/warn/stdout/stderr) retain server-side formatting into text/monospaced body types with `category: 'log' | 'error'`.
 - Debug tunnel messages are suppressed
 - `MessageCategory` on the wire is simplified to `'log' | 'error' | 'structured'`. The richer display categories (lifecycle, llmOutput, toolUse, fileChange, command, progress, error, userInput) are computed client-side from the structured message's `type` field via `getDisplayCategory()`.
@@ -255,7 +255,7 @@ Browser clients receive real-time updates via SSE and interact with sessions thr
 - Port 8123 conflicts with macOS tim-gui — only one should run at a time
 - Vite HMR may restart the discovery client during dev; it reconnects to discovered agents on restart
 - SSE subscribes before taking snapshot to avoid lost-event race window, with event buffering during snapshot delivery
-- `sendPromptResponse` validates requestId against activePrompt and clears prompt on success — prevents duplicate responses from multiple browser tabs
+- `sendPromptResponse` validates requestId against the `activePrompts` array and removes the matched prompt on success — prevents duplicate responses from multiple browser tabs. Multiple prompts can be active simultaneously (e.g., from concurrent subagents); the UI shows the oldest first
 - SSE enqueue calls are wrapped in try/catch for resilience against closed streams
 - **Webhook poller** (`src/lib/server/webhook_poller.ts`): Periodic ingestion of webhook events via `ingestWebhookEvents(db)`. Enabled by `TIM_WEBHOOK_POLL_INTERVAL` env var (seconds, minimum 5, clamped to max 86400). First poll is delayed 15 seconds after startup to avoid churn during HMR reloads. Uses an in-flight guard to skip overlapping ticks. Requires `TIM_WEBHOOK_SERVER_URL` and `WEBHOOK_INTERNAL_API_TOKEN` to also be set. Returns `null` (no-op) when not configured. Accepts an `onPrUpdated` callback invoked after successful ingestion with non-empty `prsUpdated`; wired in `hooks.server.ts` to emit `pr:updated` SSE events via `emitPrUpdatesForIngestResult()` from `src/lib/server/pr_event_utils.ts`.
 - **Shutdown**: `hooks.server.ts` registers SIGTERM/SIGINT handlers that stop the webhook poller, discovery client, and WebSocket server, then call `process.exit(0)` for clean production shutdown. HMR-safe cleanup uses `Symbol.for` singleton pattern. Custom signal handlers suppress default Node.js termination, so explicit `process.exit()` is required.
@@ -531,7 +531,7 @@ The web interface is installable as a Progressive Web App, allowing it to run as
 
 When installed as a PWA, the app icon displays a badge dot whenever any session needs user attention. This uses the Badging API (`navigator.setAppBadge()` / `navigator.clearAppBadge()`).
 
-- **Badge shown**: At least one session has `activePrompt !== null` (waiting for user input) or `status === 'notification'` (unhandled notification)
+- **Badge shown**: At least one session has `activePrompts.length > 0` (waiting for user input) or `status === 'notification'` (unhandled notification)
 - **Badge cleared**: No sessions need attention
 - `SessionManager.needsAttention` is a `$derived` property that reactively computes attention state across all sessions
 - A `$effect` in the root layout calls the badge API whenever `needsAttention` changes

@@ -1,5 +1,6 @@
 import { resolve } from '$app/paths';
 import type {
+  ActivePrompt,
   SessionClientEvent,
   SessionClientEventMap,
   SessionClientEventName,
@@ -42,8 +43,8 @@ function buildSessionTitle(
   return prefix;
 }
 
-function buildPromptBody(event: SessionPromptEvent): string {
-  const config = event.prompt.promptConfig;
+function buildPromptBody(prompt: ActivePrompt): string {
+  const config = prompt.promptConfig;
   return config.header || config.question || config.message;
 }
 
@@ -96,9 +97,20 @@ export function initSessionNotifications(
             continue;
           }
           const session = event.payload.sessions.find((s) => s.connectionId === connectionId);
-          if (session && !session.activePrompt) {
+          if (session && session.activePrompts.length === 0) {
             // Session exists but prompt was cleared while disconnected
             closeNotification(tag);
+          } else if (session && session.activePrompts.length > 0 && !document.hasFocus()) {
+            // Refresh notification to reflect current oldest prompt
+            showBrowserNotification({
+              title: buildSessionTitle(sessionManager, connectionId, 'Prompt'),
+              body: buildPromptBody(session.activePrompts[0]),
+              tag,
+              onClick: () => {
+                window.focus();
+                navigate(sessionUrl(session.projectId ?? null, connectionId));
+              },
+            });
           }
         }
         break;
@@ -106,9 +118,11 @@ export function initSessionNotifications(
       case 'session:prompt': {
         if (document.hasFocus() || !sessionManager.initialized) break;
         const session = sessionManager.sessions.get(event.payload.connectionId);
+        // Always show the oldest (first) prompt since that's what the UI renders
+        const oldestPrompt = session?.activePrompts[0] ?? event.payload.prompt;
         showBrowserNotification({
           title: buildSessionTitle(sessionManager, event.payload.connectionId, 'Prompt'),
-          body: buildPromptBody(event.payload),
+          body: buildPromptBody(oldestPrompt),
           tag: notificationTag(event.payload.connectionId),
           onClick: () => {
             window.focus();
@@ -138,7 +152,22 @@ export function initSessionNotifications(
         break;
       }
       case 'session:prompt-cleared': {
-        closeNotification(notificationTag(event.payload.connectionId));
+        const clearedSession = sessionManager.sessions.get(event.payload.connectionId);
+        if (!clearedSession || clearedSession.activePrompts.length === 0) {
+          closeNotification(notificationTag(event.payload.connectionId));
+        } else if (!document.hasFocus()) {
+          // Refresh notification to show the current oldest prompt
+          const nextPrompt = clearedSession.activePrompts[0];
+          showBrowserNotification({
+            title: buildSessionTitle(sessionManager, event.payload.connectionId, 'Prompt'),
+            body: buildPromptBody(nextPrompt),
+            tag: notificationTag(event.payload.connectionId),
+            onClick: () => {
+              window.focus();
+              navigate(sessionUrl(clearedSession.projectId ?? null, event.payload.connectionId));
+            },
+          });
+        }
         break;
       }
       case 'session:disconnect': {

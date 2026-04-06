@@ -45,7 +45,7 @@ function makeSession(overrides: Partial<SessionData> & { connectionId: string })
     projectId: 1,
     planContent: null,
     messages: [],
-    activePrompt: null,
+    activePrompts: [],
     isReplaying: false,
     groupKey: 'group',
     connectedAt: '2026-01-01T00:00:00Z',
@@ -83,11 +83,13 @@ describe('deriveAttentionItems', () => {
     const session = makeSession({
       connectionId: 'sess-1',
       sessionInfo: { command: 'agent', planUuid: 'plan-1' },
-      activePrompt: {
-        requestId: 'req-1',
-        promptType: 'confirm',
-        promptConfig: { message: 'Continue?' },
-      },
+      activePrompts: [
+        {
+          requestId: 'req-1',
+          promptType: 'confirm',
+          promptConfig: { message: 'Continue?' },
+        },
+      ],
     });
 
     const result = deriveAttentionItems([plan], [session], []);
@@ -137,11 +139,13 @@ describe('deriveAttentionItems', () => {
     const activeSession = makeSession({
       connectionId: 'sess-1',
       sessionInfo: { command: 'agent', planUuid: 'plan-1' },
-      activePrompt: {
-        requestId: 'req-1',
-        promptType: 'input',
-        promptConfig: { message: 'Enter value' },
-      },
+      activePrompts: [
+        {
+          requestId: 'req-1',
+          promptType: 'input',
+          promptConfig: { message: 'Enter value' },
+        },
+      ],
     });
     const offlineSession = makeSession({
       connectionId: 'sess-2',
@@ -201,7 +205,7 @@ describe('deriveAttentionItems', () => {
     const session = makeSession({
       connectionId: 'sess-1',
       sessionInfo: { command: 'agent', planUuid: 'plan-1' },
-      activePrompt: null,
+      activePrompts: [],
     });
 
     const result = deriveAttentionItems([plan], [session], []);

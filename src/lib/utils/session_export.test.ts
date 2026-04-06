@@ -39,7 +39,7 @@ function makeSession(overrides: Partial<SessionData> = {}): SessionData {
     status: 'active',
     projectId: 1,
     messages: [],
-    activePrompt: null,
+    activePrompts: [],
     isReplaying: false,
     groupKey: 'test',
     connectedAt: '2026-03-15T10:00:00.000Z',
