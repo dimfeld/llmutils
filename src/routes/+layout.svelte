@@ -7,11 +7,13 @@
   import type { Snippet } from 'svelte';
   import { goto } from '$app/navigation';
   import { setSessionManager } from '$lib/stores/session_state.svelte.js';
+  import { setUIState } from '$lib/stores/ui_state.svelte.js';
   import { initSessionNotifications } from '$lib/stores/session_notifications.js';
   import { requestNotificationPermission } from '$lib/utils/browser_notifications.js';
   import { clearAppBadge, setAppBadge } from '$lib/utils/pwa_badge.js';
   import { handleGlobalShortcuts } from '$lib/utils/keyboard_shortcuts.js';
   import { projectUrl } from '$lib/stores/project.svelte.js';
+  import { registerDismissedSessionCleanup } from '$lib/stores/ui_state_cleanup.js';
   import CommandBar from '$lib/components/CommandBar.svelte';
   import { ModeWatcher, setMode, userPrefersMode } from 'mode-watcher';
   import Sun from '@lucide/svelte/icons/sun';
@@ -22,6 +24,10 @@
 
   let { data, children }: { data: LayoutData; children: Snippet } = $props();
   const sessionManager = setSessionManager();
+  const uiState = setUIState(data.sidebarCollapsed);
+
+  // Clean up UI state when a session is dismissed
+  const removeEventListener = registerDismissedSessionCleanup(sessionManager, uiState);
 
   // Use the route param as source of truth; fall back to cookie-based lastProjectId
   let projectId = $derived(page.params.projectId ?? data.lastProjectId);
@@ -105,6 +111,7 @@
     const cleanupNotifications = initSessionNotifications(sessionManager, (url) => goto(url));
     return () => {
       removeControllerChangeListener?.();
+      removeEventListener();
       cleanupNotifications();
       clearAppBadge();
       sessionManager.disconnect();

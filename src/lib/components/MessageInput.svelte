@@ -1,11 +1,14 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
+  import { useUIState } from '$lib/stores/ui_state.svelte.js';
+  import { getMessageDraft, persistMessageDraft, sendMessageDraft } from './message_input.js';
 
   let { connectionId }: { connectionId: string } = $props();
   const sessionManager = useSessionManager();
+  const uiState = useUIState();
 
-  let content = $state('');
+  let content = $derived(getMessageDraft(uiState, connectionId));
   let sending = $state(false);
   let textareaEl: HTMLTextAreaElement;
 
@@ -13,12 +16,16 @@
     node.focus();
   }
 
+  function handleInput(e: Event) {
+    const value = (e.target as HTMLTextAreaElement).value;
+    persistMessageDraft(uiState, connectionId, value);
+  }
+
   async function send() {
     if (!content.trim() || sending) return;
     sending = true;
     try {
-      const ok = await sessionManager.sendUserInput(connectionId, content);
-      if (ok) content = '';
+      await sendMessageDraft(sessionManager, uiState, connectionId, content);
     } finally {
       sending = false;
       await tick();
@@ -44,8 +51,9 @@
       style="field-sizing: content;"
       use:autofocusOnMount
       bind:this={textareaEl}
-      bind:value={content}
+      value={content}
       disabled={sending}
+      oninput={handleInput}
       onkeydown={handleKeydown}
     ></textarea>
     <button

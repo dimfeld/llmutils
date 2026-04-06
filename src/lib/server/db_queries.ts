@@ -52,6 +52,8 @@ export interface ProjectWithMetadata extends Project {
   activePlanCount: number;
   statusCounts: ProjectPlanStatusCounts;
   featured: boolean;
+  abbreviation?: string;
+  color?: string;
 }
 
 export interface EnrichedPlanTask {
@@ -554,16 +556,24 @@ export function getProjectsWithMetadata(db: Database): ProjectWithMetadata[] {
     }
   }
 
-  const featuredRows = db
-    .prepare("SELECT project_id, value FROM project_setting WHERE setting = 'featured'")
-    .all() as Array<{ project_id: number; value: string }>;
-  const featuredByProject = new Map<number, boolean>();
-  for (const row of featuredRows) {
-    featuredByProject.set(row.project_id, JSON.parse(row.value) === true);
+  const settingRows = db
+    .prepare(
+      "SELECT project_id, setting, value FROM project_setting WHERE setting IN ('featured', 'abbreviation', 'color')"
+    )
+    .all() as Array<{ project_id: number; setting: string; value: string }>;
+  const settingsByProject = new Map<number, Map<string, string>>();
+  for (const row of settingRows) {
+    let map = settingsByProject.get(row.project_id);
+    if (!map) {
+      map = new Map();
+      settingsByProject.set(row.project_id, map);
+    }
+    map.set(row.setting, row.value);
   }
 
   return projects.map((project) => {
     const counts = countsByProject.get(project.id);
+    const settings = settingsByProject.get(project.id);
 
     const statusCounts = counts
       ? {
@@ -576,12 +586,18 @@ export function getProjectsWithMetadata(db: Database): ProjectWithMetadata[] {
         }
       : createEmptyStatusCounts();
 
+    const featuredRaw = settings?.get('featured');
+    const abbreviationRaw = settings?.get('abbreviation');
+    const colorRaw = settings?.get('color');
+
     return {
       ...project,
       planCount: counts?.total ?? 0,
       activePlanCount: statusCounts.pending + statusCounts.in_progress + statusCounts.needs_review,
       statusCounts,
-      featured: featuredByProject.get(project.id) ?? true,
+      featured: featuredRaw != null ? JSON.parse(featuredRaw) === true : true,
+      abbreviation: abbreviationRaw != null ? (JSON.parse(abbreviationRaw) as string) : undefined,
+      color: colorRaw != null ? (JSON.parse(colorRaw) as string) : undefined,
     };
   });
 }

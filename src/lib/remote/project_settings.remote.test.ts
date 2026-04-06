@@ -18,7 +18,7 @@ vi.mock('$lib/server/init.js', () => ({
   }),
 }));
 
-import { updateProjectSetting } from './project_settings.remote.js';
+import { updateProjectSetting, updateProjectSettings } from './project_settings.remote.js';
 
 describe('project settings remote actions', () => {
   let tempDir: string;
@@ -121,5 +121,186 @@ describe('project settings remote actions', () => {
         message: expect.stringContaining('Invalid value for setting "featured"'),
       },
     });
+  });
+
+  test('successfully sets an abbreviation setting', async () => {
+    await expect(
+      invokeCommand(updateProjectSetting, { projectId, setting: 'abbreviation', value: 'AB' })
+    ).resolves.toBeUndefined();
+
+    expect(getProjectSetting(currentDb, projectId, 'abbreviation')).toBe('AB');
+  });
+
+  test('rejects abbreviation longer than 4 characters', async () => {
+    await expect(
+      invokeCommand(updateProjectSetting, {
+        projectId,
+        setting: 'abbreviation',
+        value: 'ABCDE',
+      })
+    ).rejects.toMatchObject({
+      status: 400,
+      body: {
+        message: expect.stringContaining('Invalid value for setting "abbreviation"'),
+      },
+    });
+  });
+
+  test('rejects non-string abbreviation', async () => {
+    await expect(
+      invokeCommand(updateProjectSetting, {
+        projectId,
+        setting: 'abbreviation',
+        value: 123,
+      })
+    ).rejects.toMatchObject({
+      status: 400,
+      body: {
+        message: expect.stringContaining('Invalid value for setting "abbreviation"'),
+      },
+    });
+  });
+
+  test('successfully sets a color setting', async () => {
+    await expect(
+      invokeCommand(updateProjectSetting, { projectId, setting: 'color', value: '#e74c3c' })
+    ).resolves.toBeUndefined();
+
+    expect(getProjectSetting(currentDb, projectId, 'color')).toBe('#e74c3c');
+  });
+
+  test('rejects invalid color values', async () => {
+    await expect(
+      invokeCommand(updateProjectSetting, {
+        projectId,
+        setting: 'color',
+        value: '#ffffff',
+      })
+    ).rejects.toMatchObject({
+      status: 400,
+      body: {
+        message: expect.stringContaining('Invalid value for setting "color"'),
+      },
+    });
+  });
+
+  test('rejects non-string color values', async () => {
+    await expect(
+      invokeCommand(updateProjectSetting, {
+        projectId,
+        setting: 'color',
+        value: true,
+      })
+    ).rejects.toMatchObject({
+      status: 400,
+      body: {
+        message: expect.stringContaining('Invalid value for setting "color"'),
+      },
+    });
+  });
+
+  test('empty string clears a setting back to default', async () => {
+    // Set a color first
+    await invokeCommand(updateProjectSetting, {
+      projectId,
+      setting: 'color',
+      value: '#e74c3c',
+    });
+    expect(getProjectSetting(currentDb, projectId, 'color')).toBe('#e74c3c');
+
+    // Clear it with empty string
+    await expect(
+      invokeCommand(updateProjectSetting, { projectId, setting: 'color', value: '' })
+    ).resolves.toBeUndefined();
+
+    expect(getProjectSetting(currentDb, projectId, 'color')).toBeNull();
+  });
+
+  test('whitespace-only abbreviation clears to default', async () => {
+    await invokeCommand(updateProjectSetting, {
+      projectId,
+      setting: 'abbreviation',
+      value: 'AB',
+    });
+    expect(getProjectSetting(currentDb, projectId, 'abbreviation')).toBe('AB');
+
+    await expect(
+      invokeCommand(updateProjectSetting, { projectId, setting: 'abbreviation', value: '   ' })
+    ).resolves.toBeUndefined();
+
+    expect(getProjectSetting(currentDb, projectId, 'abbreviation')).toBeNull();
+  });
+
+  test('trims whitespace from abbreviation before saving', async () => {
+    await expect(
+      invokeCommand(updateProjectSetting, { projectId, setting: 'abbreviation', value: ' AB ' })
+    ).resolves.toBeUndefined();
+
+    expect(getProjectSetting(currentDb, projectId, 'abbreviation')).toBe('AB');
+  });
+
+  test('empty string clears abbreviation setting', async () => {
+    await invokeCommand(updateProjectSetting, {
+      projectId,
+      setting: 'abbreviation',
+      value: 'AB',
+    });
+    expect(getProjectSetting(currentDb, projectId, 'abbreviation')).toBe('AB');
+
+    await expect(
+      invokeCommand(updateProjectSetting, { projectId, setting: 'abbreviation', value: '' })
+    ).resolves.toBeUndefined();
+
+    expect(getProjectSetting(currentDb, projectId, 'abbreviation')).toBeNull();
+  });
+
+  test('successfully applies multiple settings in one batch', async () => {
+    await expect(
+      invokeCommand(updateProjectSettings, {
+        projectId,
+        settings: [
+          { setting: 'featured', value: false },
+          { setting: 'abbreviation', value: ' AB ' },
+          { setting: 'color', value: '#e74c3c' },
+        ],
+      })
+    ).resolves.toBeUndefined();
+
+    expect(getProjectSetting(currentDb, projectId, 'featured')).toBe(false);
+    expect(getProjectSetting(currentDb, projectId, 'abbreviation')).toBe('AB');
+    expect(getProjectSetting(currentDb, projectId, 'color')).toBe('#e74c3c');
+  });
+
+  test('rejects a batch before writing any settings when one value is invalid', async () => {
+    await invokeCommand(updateProjectSetting, {
+      projectId,
+      setting: 'featured',
+      value: true,
+    });
+    await invokeCommand(updateProjectSetting, {
+      projectId,
+      setting: 'color',
+      value: '#e74c3c',
+    });
+
+    await expect(
+      invokeCommand(updateProjectSettings, {
+        projectId,
+        settings: [
+          { setting: 'featured', value: false },
+          { setting: 'abbreviation', value: 'ABCDE' },
+          { setting: 'color', value: '' },
+        ],
+      })
+    ).rejects.toMatchObject({
+      status: 400,
+      body: {
+        message: expect.stringContaining('Invalid value for setting "abbreviation"'),
+      },
+    });
+
+    expect(getProjectSetting(currentDb, projectId, 'featured')).toBe(true);
+    expect(getProjectSetting(currentDb, projectId, 'abbreviation')).toBeNull();
+    expect(getProjectSetting(currentDb, projectId, 'color')).toBe('#e74c3c');
   });
 });

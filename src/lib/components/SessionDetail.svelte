@@ -3,15 +3,19 @@
   import AppWindow from '@lucide/svelte/icons/app-window';
   import ClipboardCopy from '@lucide/svelte/icons/clipboard-copy';
   import Download from '@lucide/svelte/icons/download';
+  import PanelRightClose from '@lucide/svelte/icons/panel-right-close';
+  import PanelRightOpen from '@lucide/svelte/icons/panel-right-open';
   import { toast } from 'svelte-sonner';
   import { exportSessionAsMarkdown, generateExportFilename } from '$lib/utils/session_export.js';
 
   import type { SessionData } from '$lib/types/session.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
+  import { useUIState } from '$lib/stores/ui_state.svelte.js';
   import SessionMessage from './SessionMessage.svelte';
   import PromptRenderer from './PromptRenderer.svelte';
   import MessageInput from './MessageInput.svelte';
   import PlanContentPane from './PlanContentPane.svelte';
+  import { isPlanPaneCollapsed, togglePlanPane } from './session_detail_state.js';
   import { afterNavigate } from '$app/navigation';
   import { page } from '$app/state';
   import { tick } from 'svelte';
@@ -20,6 +24,7 @@
 
   let { session }: { session: SessionData } = $props();
   const sessionManager = useSessionManager();
+  const uiState = useUIState();
 
   let scrollContainer: HTMLDivElement | undefined = $state();
   let isProgrammaticallyScrolled = $state(false);
@@ -164,6 +169,11 @@
   }
 
   let showPlanPane = $derived(session.sessionInfo.planId != null);
+  let planPaneCollapsed = $derived(isPlanPaneCollapsed(uiState, session.connectionId));
+
+  function handleTogglePlanPane() {
+    togglePlanPane(uiState, session.connectionId, planPaneCollapsed);
+  }
   let hasMessages = $derived(session.messages.length > 0);
   let activePrompt = $derived(session.activePrompts[0] ?? null);
   let queuedPromptCount = $derived(Math.max(0, session.activePrompts.length - 1));
@@ -321,6 +331,21 @@
             <TerminalIcon class="size-4" />
           </button>
         {/if}
+        {#if showPlanPane}
+          <button
+            type="button"
+            class="rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
+            onclick={handleTogglePlanPane}
+            aria-label={planPaneCollapsed ? 'Show plan pane' : 'Hide plan pane'}
+            title={planPaneCollapsed ? 'Show plan pane' : 'Hide plan pane'}
+          >
+            {#if planPaneCollapsed}
+              <PanelRightOpen class="size-4" />
+            {:else}
+              <PanelRightClose class="size-4" />
+            {/if}
+          </button>
+        {/if}
       </div>
     </div>
     {#if session.sessionInfo.workspacePath}
@@ -370,7 +395,7 @@
     {/if}
   {/snippet}
 
-  {#if showPlanPane}
+  {#if showPlanPane && !planPaneCollapsed}
     <div class="flex min-h-0 flex-1 flex-col lg:flex-row">
       <div class="flex min-h-0 min-w-0 flex-col lg:w-1/2" style="flex: 1 1 0%;">
         {@render messagesPane()}

@@ -2,17 +2,20 @@ import * as os from 'node:os';
 import { getServerContext } from '$lib/server/init.js';
 import { getProjectsWithMetadata } from '$lib/server/db_queries.js';
 import { getLastProjectId } from '$lib/stores/project.svelte.js';
+import { getSidebarCollapsed } from '$lib/stores/ui_state.svelte.js';
 import type { LayoutServerLoad } from './$types';
 
 export const load: LayoutServerLoad = async ({ cookies }) => {
   const { db } = await getServerContext();
   const projects = getProjectsWithMetadata(db);
   const lastProjectId = getLastProjectId(cookies);
+  const sidebarCollapsed = getSidebarCollapsed(cookies);
   const currentUsername = process.env.USER ?? os.userInfo().username;
 
   return {
     currentUsername,
     projects,
     lastProjectId: lastProjectId ?? (projects.length > 0 ? String(projects[0].id) : 'all'),
+    sidebarCollapsed,
   };
 };

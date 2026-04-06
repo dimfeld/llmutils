@@ -126,6 +126,20 @@ describe('lib/server/db_queries', () => {
     expect(secondary?.featured).toBe(true);
   });
 
+  test('getProjectsWithMetadata includes abbreviation and color settings when present', () => {
+    setProjectSetting(db, projectId, 'abbreviation', 'RW');
+    setProjectSetting(db, projectId, 'color', '#3498db');
+
+    const projects = getProjectsWithMetadata(db);
+    const primary = projects.find((p) => p.id === projectId);
+    const secondary = projects.find((p) => p.id === otherProjectId);
+
+    expect(primary?.abbreviation).toBe('RW');
+    expect(primary?.color).toBe('#3498db');
+    expect(secondary?.abbreviation).toBeUndefined();
+    expect(secondary?.color).toBeUndefined();
+  });
+
   test('getPlansForProject computes blocked display status for unresolved dependencies', () => {
     const plans = getPlansForProject(db, projectId);
     const blockedPlan = plans.find((plan) => plan.uuid === 'plan-blocked');

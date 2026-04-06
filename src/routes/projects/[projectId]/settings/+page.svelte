@@ -1,17 +1,38 @@
 <script lang="ts">
   import { invalidateAll, afterNavigate } from '$app/navigation';
-  import { updateProjectSetting } from '$lib/remote/project_settings.remote.js';
+  import { updateProjectSettings } from '$lib/remote/project_settings.remote.js';
+  import {
+    getContrastTextColor,
+    getProjectAbbreviation,
+    getProjectColor,
+    projectDisplayName,
+    PROJECT_COLOR_PALETTE,
+  } from '$lib/stores/project.svelte.js';
   import { Switch } from '$lib/components/ui/switch/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
+  import { Input } from '$lib/components/ui/input/index.js';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
 
-  let serverFeatured = $derived((data.settings.featured as boolean) ?? true);
-  let featured = $derived(serverFeatured);
+  let displayName = $derived(
+    projectDisplayName(data.currentProject?.repository_id ?? null, data.currentUsername)
+  );
+  let autoAbbreviation = $derived(getProjectAbbreviation(displayName));
+  let autoColor = $derived(getProjectColor(displayName));
 
-  let hasChanges = $derived(featured !== serverFeatured);
+  let serverFeatured = $derived((data.settings.featured as boolean) ?? true);
+  let serverAbbreviation = $derived((data.settings.abbreviation as string | undefined) ?? '');
+  let serverColor = $derived((data.settings.color as string | undefined) ?? '');
+
+  let featured = $derived(serverFeatured);
+  let abbreviation = $derived(serverAbbreviation);
+  let color = $derived(serverColor);
+
+  let hasChanges = $derived(
+    featured !== serverFeatured || abbreviation !== serverAbbreviation || color !== serverColor
+  );
 
   let submitting = $state(false);
   let errorMessage: string | null = $state(null);
@@ -30,11 +51,21 @@
     submitting = true;
     errorMessage = null;
     try {
-      await updateProjectSetting({
-        projectId: numericProjectId,
-        setting: 'featured',
-        value: featured,
-      });
+      const updates: Array<{ setting: string; value: unknown }> = [];
+
+      if (featured !== serverFeatured) {
+        updates.push({ setting: 'featured', value: featured });
+      }
+      if (abbreviation !== serverAbbreviation) {
+        updates.push({ setting: 'abbreviation', value: abbreviation });
+      }
+      if (color !== serverColor) {
+        updates.push({ setting: 'color', value: color });
+      }
+
+      if (updates.length === 0) return;
+
+      await updateProjectSettings({ projectId: numericProjectId, settings: updates });
       await invalidateAll();
     } catch (err) {
       errorMessage = (err as Error).message || 'Failed to save settings';
@@ -61,6 +92,66 @@
           </p>
         </div>
         <Switch id="featured-toggle" bind:checked={featured} />
+      </div>
+    </div>
+
+    <div class="rounded-lg border border-border p-4">
+      <div class="space-y-3">
+        <div>
+          <Label for="abbreviation-input" class="text-sm font-medium text-foreground"
+            >Sidebar Abbreviation</Label
+          >
+          <p class="text-sm text-muted-foreground">
+            Short label (up to 4 characters) shown in the collapsed sidebar. Defaults to "{autoAbbreviation}".
+          </p>
+        </div>
+        <Input
+          id="abbreviation-input"
+          maxlength={4}
+          placeholder={autoAbbreviation}
+          bind:value={abbreviation}
+          class="w-32"
+        />
+      </div>
+    </div>
+
+    <div class="rounded-lg border border-border p-4">
+      <div class="space-y-3">
+        <div>
+          <Label class="text-sm font-medium text-foreground">Sidebar Color</Label>
+          <p class="text-sm text-muted-foreground">
+            Avatar color in the collapsed sidebar. Defaults to the automatically assigned color.
+          </p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button
+            type="button"
+            class="flex h-8 w-8 items-center justify-center rounded-md border-2 text-xs font-medium {color ===
+            ''
+              ? 'border-blue-500'
+              : 'border-transparent hover:border-gray-400'}"
+            style="background-color: {autoColor}; color: {getContrastTextColor(autoColor)};"
+            title="Default (auto-assigned)"
+            aria-label="Default (auto-assigned)"
+            aria-pressed={color === ''}
+            onclick={() => (color = '')}
+          >
+            A
+          </button>
+          {#each PROJECT_COLOR_PALETTE as paletteColor}
+            <button
+              type="button"
+              class="h-8 w-8 rounded-md border-2 {color === paletteColor
+                ? 'border-blue-500'
+                : 'border-transparent hover:border-gray-400'}"
+              style="background-color: {paletteColor};"
+              title={paletteColor}
+              aria-label="Color {paletteColor}"
+              aria-pressed={color === paletteColor}
+              onclick={() => (color = paletteColor)}
+            ></button>
+          {/each}
+        </div>
       </div>
     </div>
 

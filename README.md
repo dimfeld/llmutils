@@ -107,6 +107,8 @@ The web interface includes a per-project Settings tab at `/projects/[projectId]/
 Available settings:
 
 - **Featured** (default: on): Controls whether the project appears in the main sidebar list or is grouped in a collapsed "Other Projects" section at the bottom.
+- **Abbreviation** (string, max 4 chars): Custom abbreviation for the project avatar in collapsed sidebar mode. Overrides the auto-generated abbreviation. Leave empty to use the default.
+- **Color** (palette enum): Custom avatar background color for collapsed sidebar mode. Overrides the auto-generated color based on the project name hash.
 
 ### GitHub Webhook Receiver (separate ingress service)
 
@@ -241,11 +243,13 @@ Tim includes a SvelteKit-based web interface for browsing and managing plans. Th
 
 The interface is organized around projects, with tabs per project:
 
-- **Sessions** — real-time monitoring of tim agent processes with live message transcripts, prompt interaction (confirm/input/select/checkbox/prefix_select), and free-form user input. For plan-associated sessions (generate, agent, chat), a split-pane view shows the live plan file content alongside the message stream, updating in real-time as the agent modifies the plan.
+- **Sessions** — real-time monitoring of tim agent processes with live message transcripts, prompt interaction (confirm/input/select/checkbox/prefix_select), and free-form user input. For plan-associated sessions (generate, agent, chat), a split-pane view shows the live plan file content alongside the message stream, updating in real-time as the agent modifies the plan. The plan pane can be collapsed to give the message stream full width. Unsent message drafts are preserved per-session when navigating between sessions.
 - **Active Work** — single-page scrollable dashboard with three sections: **Needs Attention** (plans waiting for input, needing review, or with actionable PRs), **Running Now** (active agent/generate/chat sessions with plan context), and **Ready to Start** (unblocked plans sorted by priority with inline "Run Agent" button). Sections are collapsible with count badges and hidden when empty.
 - **Pull Requests** — project-wide view of open GitHub PRs relevant to the user (authored or reviewing), with automatic plan-PR linking based on branch name matching, webhook-first refresh (when configured), and PR detail with checks, reviews, and labels. A "Full Refresh from GitHub API" button provides an escape hatch when webhook data is stale or missing.
 - **Plans** — browse, filter, search, and inspect plans with two-column layout (list + detail), status/priority badges, collapsible status groups, and clickable dependency navigation. Review issues on a plan can be managed directly: dismiss individual issues, convert them into plan tasks, or clear all issues at once.
-- **Settings** — per-project settings stored in the database (only shown for individual projects, not the "all projects" view). Currently supports a "Featured" toggle that controls sidebar grouping — featured projects appear in the main sidebar list, while non-featured projects are grouped in a collapsible "Other Projects" section at the bottom. Projects default to featured when no setting exists.
+- **Settings** — per-project settings stored in the database (only shown for individual projects, not the "all projects" view). Supports a "Featured" toggle that controls sidebar grouping, a custom abbreviation for the collapsed sidebar avatar, and a color override for the avatar background.
+
+The project sidebar defaults to a compact collapsed mode showing colored avatar buttons with two-letter abbreviations per project. Clicking an avatar navigates to that project. A toggle expands the sidebar to show full project names and plan counts. The collapse state is persisted across page loads.
 
 Navigation uses route-based project selection at `/projects/{projectId}/{tab}`, with cookie persistence to remember the last-selected project. The home page redirects to the most recently used project. On all tabs, pressing **Option+Down** (Alt+Down) / **Option+Up** (Alt+Up) navigates to the next/previous item in the list, respecting collapsed groups and active filters. Global keyboard shortcuts are also available: **Ctrl+/** focuses the search input, and **Ctrl+1/2/3/4** switches between the Sessions, Active Work, Pull Requests, and Plans tabs.
 

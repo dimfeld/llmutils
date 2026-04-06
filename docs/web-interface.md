@@ -164,10 +164,24 @@ The Settings tab (`/projects/[projectId]/settings`) allows configuring per-proje
 ### Available Settings
 
 - **Featured** (boolean, default `true`): Controls whether the project appears in the main sidebar list or is grouped in a collapsed "Other Projects" section at the bottom. The `ProjectSidebar` component splits projects into featured and non-featured groups using `$derived`. The "Other Projects" section auto-opens when the selected project is non-featured.
+- **Abbreviation** (string, max 4 chars): Custom abbreviation for the project avatar in collapsed sidebar mode. Overrides the auto-generated abbreviation from `getProjectAbbreviation()`. Setting to empty string clears the override.
+- **Color** (enum from `PROJECT_COLOR_PALETTE`): Custom avatar background color for collapsed sidebar mode. Overrides the auto-generated color from `getProjectColor()`. Setting to empty string clears the override.
 
 ### Sidebar Integration
 
-`getProjectsWithMetadata()` in `db_queries.ts` loads the `featured` setting for each project, adding a `featured: boolean` field to `ProjectWithMetadata` (defaults to `true`). The sidebar's "All Projects" link falls back to the `sessions` tab when the current tab is `settings`, since the `all` pseudo-project has no settings route.
+`getProjectsWithMetadata()` in `db_queries.ts` loads the `featured`, `abbreviation`, and `color` settings for each project, adding them as fields on `ProjectWithMetadata` (`featured: boolean` defaults to `true`; `abbreviation?: string` and `color?: string` are optional). The sidebar's "All Projects" link falls back to the `sessions` tab when the current tab is `settings`, since the `all` pseudo-project has no settings route.
+
+### Collapsible Sidebar
+
+The `ProjectSidebar` component supports two modes controlled by `sidebarCollapsed` from `UIStateStore` (default: collapsed):
+
+- **Collapsed mode** (~48px wide): Column of colored rounded-square avatar buttons with 2-letter abbreviation text. "All Projects" shows "ALL". Each project uses custom abbreviation/color from settings if set, otherwise auto-generates via `getProjectAbbreviation()` / `getProjectColor()` from `src/lib/stores/project.svelte.ts`. Selected project has blue highlight. Featured and unfeatured projects separated by a thin divider. Toggle button (chevron) at top expands.
+- **Expanded mode** (w-56): Full sidebar with project names, plan counts, and attention indicators. Collapse toggle in the "Projects" header row.
+
+Auto-generation utilities in `src/lib/stores/project.svelte.ts`:
+
+- **`getProjectAbbreviation(displayName)`**: Splits on spaces, dashes, underscores, dots; takes first letter of first two words (uppercase). For `owner/repo` format, owner is first word. Single word → first two letters.
+- **`getProjectColor(displayName)`**: Hashes display name to an index into `PROJECT_COLOR_PALETTE` (predefined hex colors that work on light and dark backgrounds). Deterministic.
 
 ## Sessions Tab
 
@@ -275,15 +289,23 @@ Browser clients receive real-time updates via SSE and interact with sessions thr
 - **SvelteMap reactivity**: SvelteMap only tracks `.set()`/`.delete()`/`.clear()` — after mutating nested properties on stored objects, the entry must be re-set to trigger reactivity.
 - **Per-project session memory**: `lastSelectedSessionIds` tracks the last-viewed session per project route. When the user navigates away from a session detail and returns to the Sessions tab, the empty-state page (`sessions/+page.svelte`) redirects to the remembered session if it still exists. Uses `replaceState: true` to avoid back-button loops. On session dismissal or SSE reconnect, falls back to the most recently connected remaining session via `findMostRecentSessionId()`. Stale entries (sessions no longer in the sessions map) are pruned during fallback.
 
+### UI State Store
+
+`src/lib/stores/ui_state.svelte.ts` is a client-side store managing transient UI preferences that persist across route navigation but reset on page refresh. Initialized in root `+layout.svelte` alongside SessionManager, accessed via Svelte context (`setUIState()` / `useUIState()`).
+
+- **Session-scoped state** (keyed by `connectionId`): `planPaneCollapsed` (boolean), `messageDraft` (string). Accessed via `getSessionState(connectionId)` / `setSessionState(connectionId, patch)`.
+- **Global state**: `sidebarCollapsed` (boolean, default true) — persisted via cookie for SSR-safe hydration. Read server-side in `+layout.server.ts` via `getSidebarCollapsed(cookies)`, written client-side via `document.cookie`. Toggled via `toggleSidebar()`.
+- **Cleanup**: `clearSessionState(connectionId)` removes all state for a session. Wired to `session:dismissed` SSE events via an `onEvent` callback in root layout. Cleanup logic extracted to `src/lib/stores/ui_state_cleanup.ts` for testability.
+
 ### UI Components
 
 - **`SessionList.svelte`** — Grouped session sidebar (left pane, w-96). Groups are collapsible by project. Shows all sessions regardless of selected project.
 - **`SessionRow.svelte`** — Individual session entry with status indicator dot (green=active, gray=offline, blue=notification), command name, plan title/ID, dismiss button for offline/notification sessions, a terminal icon when the session includes WezTerm pane metadata, and an "Open Terminal" button (AppWindow icon) that opens a new terminal window in the session's workspace directory (visible on hover when `workspacePath` exists).
-- **`SessionDetail.svelte`** — Message transcript view with session header (command, plan, workspace, status), optional terminal activation button for WezTerm-backed sessions, "Open Terminal" button (AppWindow icon, always visible when `workspacePath` exists) that opens a new terminal in the workspace directory, End Session button with inline confirmation for active sessions, export buttons (copy to clipboard, download as markdown), scrollable message list, fixed-position prompt area above messages, conditional message input bar. Plan title in the header is a clickable link to the plan detail page. When the plan has tasks, shows task completion counts (X/Y done) fetched via the `getPlanTaskCounts` remote query. Uses `{#key connectionId}` for remount on session switch. Auto-scroll is scroll-position-based: active when at bottom, disabled when user scrolls up, resumes on scroll to bottom. When the session has an associated plan (`sessionInfo.planId != null`), the view splits into two panes below the header: left pane shows live plan content via `PlanContentPane`, right pane shows the message stream. The split is side-by-side on `lg+` screens and stacked vertically on smaller screens.
+- **`SessionDetail.svelte`** — Message transcript view with session header (command, plan, workspace, status), optional terminal activation button for WezTerm-backed sessions, "Open Terminal" button (AppWindow icon, always visible when `workspacePath` exists) that opens a new terminal in the workspace directory, End Session button with inline confirmation for active sessions, export buttons (copy to clipboard, download as markdown), scrollable message list, fixed-position prompt area above messages, conditional message input bar. Plan title in the header is a clickable link to the plan detail page. When the plan has tasks, shows task completion counts (X/Y done) fetched via the `getPlanTaskCounts` remote query. Uses `{#key connectionId}` for remount on session switch. Auto-scroll is scroll-position-based: active when at bottom, disabled when user scrolls up, resumes on scroll to bottom. When the session has an associated plan (`sessionInfo.planId != null`), the view splits into two panes below the header: left pane shows the message stream, right pane shows live plan content via `PlanContentPane`. The split is side-by-side on `lg+` screens and stacked vertically on smaller screens. A toggle button (PanelRightOpen/PanelRightClose icon) in the header collapses/expands the plan content pane — when collapsed, the messages pane takes full width. Collapse state persists across session navigation via `UIStateStore`. Toggle logic extracted to `src/lib/components/session_detail_state.ts` for testability.
 - **`PlanContentPane.svelte`** — Renders live plan file content for plan-associated sessions. Accepts `content: string | null` prop. Shows "Waiting for plan content..." placeholder when null. When present, renders the markdown body (YAML frontmatter already stripped agent-side) as preformatted text in a scrollable `<pre>` container with line-by-line span-based colorizing for markdown elements (headers, code blocks, bold, inline code, list markers). No auto-scroll — user controls scroll position. Content updates arrive via `session:plan-content` SSE events and persist in session snapshots across reconnects.
 - **`SessionMessage.svelte`** — Renders messages by body type: text (colored by category), monospaced (preformatted code blocks), todoList (items with status icons), fileChanges (paths with +/~/- indicators), keyValuePairs (structured metadata table), structured (raw structured message data formatted client-side via `formatStructuredMessage()`, with dedicated components for specific types like `ReviewResultDisplay`). Long content truncated with expandable reveal.
 - **`PromptRenderer.svelte`** — Renders by prompt type: confirm (Yes/No buttons with default highlighted), input (text field with submit), select (radio group), checkbox (checkbox group), prefix_select (clickable word segments for bash command prefix authorization — selected words highlighted in accent color, remaining dimmed; "Submit Prefix" and "Allow Exact Command" buttons). Uses `{#key requestId}` for state reset. Shows header/question fields from promptConfig when present. Falls back to raw JSON display for unsupported types.
-- **`MessageInput.svelte`** — Text input with Enter to send, Shift+Enter for newlines. Hidden (not disabled) when session is offline or non-interactive.
+- **`MessageInput.svelte`** — Text input with Enter to send, Shift+Enter for newlines. Hidden (not disabled) when session is offline or non-interactive. Saves unsent text per-session via `UIStateStore` on every keystroke (`oninput` handler, not `$effect`). Restores draft when returning to a session. Draft cleared on successful send. Draft logic extracted to `src/lib/components/message_input.ts` for testability.
 - **Category colors** (`src/lib/utils/session_colors.ts`): Maps `DisplayCategory` values to Tailwind color classes — lifecycle=green, llmOutput=green, toolUse=cyan, fileChange=cyan, command=cyan, progress=blue, error=red, log=gray, userInput=orange. For structured messages, the display category is computed client-side via `getDisplayCategory()` from `src/lib/utils/message_formatting.ts`.
 
 ### Session Export
@@ -390,7 +412,7 @@ Components use ARIA attributes to support screen readers and assistive technolog
 - **`FilterChips`**: Toggle buttons use `aria-pressed` to communicate active/inactive filter state.
 - **`SessionList` / `PlansList`**: Group collapse buttons have `aria-expanded` and descriptive `aria-label` (e.g. "Toggle Running group"). Decorative triangle indicators use `aria-hidden="true"`. The plans search input has `aria-label="Search plans"`.
 - **`TabNav`**: The `<nav>` element has `aria-label="Main navigation"`. Active tab links use `aria-current="page"`.
-- **`ProjectSidebar`**: The `<nav>` element has `aria-label="Project navigation"`. Selected project links use `aria-current="page"`.
+- **`ProjectSidebar`**: The `<nav>` element has `aria-label="Project navigation"`. Selected project links use `aria-current="page"`. Sidebar toggle buttons have `aria-label` descriptions.
 - **`SessionDetail`**: The header status dot has `role="img"` and `aria-label` set to the status text.
 - **`MessageInput`**: The textarea has `aria-label="Send input to session"`.
 - **`PrStatusSection`**: The icon-only refresh button has a dynamic `aria-label` that reflects the current state ("Refreshing PR status..." while loading, "Refresh PR status" otherwise).
