@@ -65,6 +65,7 @@ import { timestamp } from './agent/agent_helpers.js';
 import { resolveOrchestratorInput } from '../utils/orchestrator_input.js';
 import { loadAgentInstructionsFor } from '../executors/codex_cli/agent_helpers.js';
 import { syncPlanToDb } from '../db/plan_sync.js';
+import type { PrReviewThreadDetail } from '../db/pr_status.js';
 import {
   deleteBatchReviewCache,
   readBatchReviewCache,
@@ -1933,6 +1934,52 @@ export function createTaskFromIssue(issue: ReviewIssue): PlanTask {
   };
 
   return task;
+}
+
+export function getReviewThreadDisplayLine(thread: PrReviewThreadDetail): number | null {
+  return (
+    thread.thread.line ??
+    thread.thread.original_line ??
+    thread.thread.start_line ??
+    thread.thread.original_start_line
+  );
+}
+
+export function createTaskFromReviewThread(thread: PrReviewThreadDetail, prUrl: string): PlanTask {
+  const displayLine = getReviewThreadDisplayLine(thread);
+  const location =
+    displayLine != null ? `${thread.thread.path}:${displayLine}` : thread.thread.path;
+
+  const title = `Address review: ${location}`;
+
+  const descriptionSegments: string[] = [];
+  const commentBodies = thread.comments
+    .map((comment) => comment.body?.trim() ?? '')
+    .filter((body) => body.length > 0);
+
+  if (commentBodies.length > 0) {
+    descriptionSegments.push(commentBodies.join('\n\n'));
+  } else {
+    descriptionSegments.push(`Address the unresolved review feedback in ${location}.`);
+  }
+
+  const diffHunk = thread.comments.find((comment) => comment.diff_hunk?.trim())?.diff_hunk?.trim();
+  if (diffHunk) {
+    descriptionSegments.push('', `Diff context:\n${diffHunk}`);
+  }
+
+  const databaseId = thread.comments.find((comment) => comment.database_id != null)?.database_id;
+  if (databaseId != null) {
+    descriptionSegments.push('', `GitHub discussion: ${prUrl}#discussion_r${databaseId}`);
+  } else {
+    descriptionSegments.push('', `Pull request: ${prUrl}`);
+  }
+
+  return {
+    title,
+    description: descriptionSegments.join('\n').trim(),
+    done: false,
+  };
 }
 
 async function appendIssuesToPlanTasks(

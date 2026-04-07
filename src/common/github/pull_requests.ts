@@ -624,3 +624,45 @@ export async function addReplyToReviewThread(
     return false;
   }
 }
+
+/**
+ * Resolves a pull request review thread
+ * @param threadId The GraphQL node ID of the review thread to resolve
+ * @returns Promise that resolves to true if the thread was resolved successfully, false otherwise
+ */
+export async function resolveReviewThread(threadId: string): Promise<boolean> {
+  const token = resolveGitHubToken();
+  if (!token) {
+    error('GITHUB_TOKEN is not set. Cannot resolve review thread.');
+    return false;
+  }
+
+  const octokit = getOctokit();
+
+  const mutation = `
+    mutation ResolveReviewThread($threadId: ID!) {
+      resolveReviewThread(input: { threadId: $threadId }) {
+        thread {
+          isResolved
+        }
+      }
+    }
+  `;
+
+  try {
+    const response: {
+      resolveReviewThread: { thread: { isResolved: boolean } };
+    } = await octokit.graphql(mutation, { threadId });
+    const resolved = response.resolveReviewThread?.thread?.isResolved === true;
+    if (resolved) {
+      debugLog(`Successfully resolved review thread ${threadId}`);
+    } else {
+      warn(`resolveReviewThread mutation returned isResolved=false for thread ${threadId}`);
+    }
+    return resolved;
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    warn(`Failed to resolve review thread ${threadId}: ${errorMessage}`);
+    return false;
+  }
+}

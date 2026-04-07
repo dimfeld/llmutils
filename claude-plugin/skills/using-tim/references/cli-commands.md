@@ -378,6 +378,35 @@ tim pr description 123 --create-pr
 tim pr description 123 --copy
 ```
 
+### tim pr fix
+
+Fix unresolved PR review threads by spawning an agent session. The agent receives review thread context (file paths, line numbers, diff hunks, comment bodies) and uses `tim pr reply` and `tim pr resolve` to respond to and resolve threads after making code changes.
+
+```bash
+tim pr fix 123                                 # Interactive thread selection
+tim pr fix 123 --all                           # Fix all unresolved threads
+tim pr fix 123 --executor claude-code          # Specify executor
+tim pr fix 123 --model claude-sonnet-4-5-20250514  # Model override
+tim pr fix 123 --auto-workspace                # Auto-select workspace
+tim pr fix 123 --all --no-terminal-input       # Non-interactive (web UI mode)
+```
+
+### tim pr reply
+
+Post a reply to a PR review thread via the GitHub API. Primarily used by agents during `tim pr fix` execution.
+
+```bash
+tim pr reply <threadId> "Your reply message"
+```
+
+### tim pr resolve
+
+Resolve a PR review thread via the GitHub API. Primarily used by agents during `tim pr fix` execution.
+
+```bash
+tim pr resolve <threadId>
+```
+
 ## Branch Commands
 
 ### tim rebase

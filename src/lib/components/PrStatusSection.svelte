@@ -1,10 +1,16 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { toast } from 'svelte-sonner';
   import {
     fullRefreshPrStatus,
     getPrStatus,
     refreshPrStatus,
   } from '$lib/remote/pr_status.remote.js';
+  import { startFixThreads } from '$lib/remote/review_thread_actions.remote.js';
+  import {
+    getFixButtonState,
+    getFixStartResultState,
+  } from '$lib/components/pr_fix_launch_state.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import { hasRelevantPrUpdate } from '$lib/utils/pr_update_events.js';
   import {
@@ -31,8 +37,76 @@
   let effectivePrs = $derived(prData.prStatuses);
   let uncachedUrls = $derived(prUrls.filter((url) => !statusByUrl.has(url)));
 
+  let hasUnresolvedThreads = $derived(
+    effectivePrs.some((pr) => pr.reviewThreads?.some((rt) => !rt.thread.is_resolved)) ?? false
+  );
+
+  let sessionActiveForPlan = $derived.by(() => {
+    for (const session of sessionManager.sessions.values()) {
+      if (session.status === 'active' && session.sessionInfo.planUuid === planUuid) {
+        return true;
+      }
+    }
+    return false;
+  });
+
   let refreshError = $state<string | null>(null);
   let refreshing = $state(false);
+  let fixStarting = $state(false);
+  let fixLaunched = $state(false);
+  let fixButtonState = $derived(
+    getFixButtonState({ refreshing, fixStarting, fixLaunched, sessionActiveForPlan })
+  );
+
+  // Reset fixLaunched when session discovery catches up or plan changes
+  $effect(() => {
+    if (sessionActiveForPlan && fixLaunched) {
+      fixLaunched = false;
+    }
+  });
+
+  // Reset launch state when navigating to a different plan
+  $effect(() => {
+    // Reading planUuid registers the dependency
+    void planUuid;
+    fixLaunched = false;
+    fixStarting = false;
+  });
+
+  // Timeout fallback: if no session appears within 30s, reset fixLaunched
+  $effect(() => {
+    if (!fixLaunched) return;
+    const timer = setTimeout(() => {
+      fixLaunched = false;
+    }, 30_000);
+    return () => clearTimeout(timer);
+  });
+
+  async function handleStartFix() {
+    if (fixStarting || fixLaunched || sessionActiveForPlan) {
+      return;
+    }
+    const requestPlanUuid = planUuid;
+    fixStarting = true;
+    refreshError = null;
+    try {
+      const result = await startFixThreads({ planUuid: requestPlanUuid });
+      if (planUuid !== requestPlanUuid) return;
+      const fixResultState = getFixStartResultState(result.status);
+      fixLaunched = fixResultState.fixLaunched;
+      refreshError = fixResultState.message;
+      if (fixResultState.fixLaunched) {
+        toast.success('Agent started');
+      }
+    } catch (err) {
+      if (planUuid !== requestPlanUuid) return;
+      refreshError = `Failed to start fix: ${err}`;
+    } finally {
+      if (planUuid === requestPlanUuid) {
+        fixStarting = false;
+      }
+    }
+  }
 
   async function handleRefresh() {
     await runRefresh(refreshPrStatus);
@@ -79,6 +153,16 @@
       Pull Requests
     </h3>
     <div class="flex items-center gap-1.5">
+      {#if hasUnresolvedThreads}
+        <button
+          onclick={handleStartFix}
+          disabled={fixButtonState.disabled}
+          class="rounded px-2 py-0.5 text-xs text-amber-700 hover:bg-amber-50 hover:text-amber-900 disabled:opacity-50 dark:text-amber-400 dark:hover:bg-amber-950/30 dark:hover:text-amber-300"
+          aria-label="Fix all unresolved review threads"
+        >
+          {fixButtonState.label}
+        </button>
+      {/if}
       {#if tokenConfigured}
         <button
           onclick={handleFullRefresh}
@@ -229,7 +313,7 @@
               {/if}
             </summary>
             <div class="mt-1.5 pl-2">
-              <PrReviewThreadList threads={pr.reviewThreads} prUrl={pr.status.pr_url} />
+              <PrReviewThreadList threads={pr.reviewThreads} prUrl={pr.status.pr_url} {planUuid} />
             </div>
           </details>
         {/if}

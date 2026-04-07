@@ -4,7 +4,15 @@ import * as path from 'node:path';
 import { beforeAll, afterAll, beforeEach, describe, expect, vi, test } from 'vitest';
 
 import { clearGitHubTokenCache } from '../../common/github/token.js';
-import { handlePrStatusCommand, handlePrLinkCommand, handlePrUnlinkCommand } from './pr.js';
+import {
+  buildReviewThreadFixPrompt,
+  handlePrFixCommand,
+  handlePrStatusCommand,
+  handlePrLinkCommand,
+  handlePrReplyCommand,
+  handlePrResolveCommand,
+  handlePrUnlinkCommand,
+} from './pr.js';
 
 type AnyObject = Record<string, unknown>;
 
@@ -48,7 +56,13 @@ vi.mock('../../common/github/webhook_ingest.js', () => ({
 }));
 
 vi.mock('../../common/github/pull_requests.js', () => ({
+  addReplyToReviewThread: vi.fn(async (..._args: unknown[]) => true),
   fetchOpenPullRequests: vi.fn(async (..._args: unknown[]) => []),
+  resolveReviewThread: vi.fn(async (..._args: unknown[]) => true),
+}));
+
+vi.mock('../../common/input.js', () => ({
+  promptCheckbox: vi.fn(),
 }));
 
 vi.mock('../../common/github/identifiers.js', () => ({
@@ -56,6 +70,10 @@ vi.mock('../../common/github/identifiers.js', () => ({
   parsePrOrIssueNumber: vi.fn(async (..._args: unknown[]) => null),
   validatePrIdentifier: vi.fn((_identifier: string) => {}),
   deduplicatePrUrls: vi.fn((urls: string[]) => ({ valid: urls, invalid: [] })),
+}));
+
+vi.mock('./agent/agent.js', () => ({
+  timAgent: vi.fn(async (..._args: unknown[]) => {}),
 }));
 
 vi.mock('../db/pr_status.js', () => ({
@@ -90,9 +108,15 @@ import {
 } from '../../common/github/pr_status_service.js';
 import { getWebhookServerUrl as mockGetWebhookServerUrlFn } from '../../common/github/webhook_client.js';
 import { ingestWebhookEvents as mockIngestWebhookEventsFn } from '../../common/github/webhook_ingest.js';
-import { fetchOpenPullRequests as mockFetchOpenPullRequestsFn } from '../../common/github/pull_requests.js';
+import {
+  addReplyToReviewThread as mockAddReplyToReviewThreadFn,
+  fetchOpenPullRequests as mockFetchOpenPullRequestsFn,
+  resolveReviewThread as mockResolveReviewThreadFn,
+} from '../../common/github/pull_requests.js';
+import { promptCheckbox as mockPromptCheckboxFn } from '../../common/input.js';
 import {
   canonicalizePrUrl as mockCanonicalizePrUrlFn,
+  deduplicatePrUrls as mockDeduplicatePrUrlsFn,
   parsePrOrIssueNumber as mockParsePrOrIssueNumberFn,
   validatePrIdentifier as mockValidatePrIdentifierFn,
 } from '../../common/github/identifiers.js';
@@ -109,6 +133,7 @@ import {
   writePlanFile as mockWritePlanFileFn,
 } from '../plans.js';
 import { syncPlanToDb as mockSyncPlanToDbFn } from '../db/plan_sync.js';
+import { timAgent as mockTimAgentFn } from './agent/agent.js';
 
 const mockLog = vi.mocked(mockLogFn);
 const mockResolvePlan = vi.mocked(mockResolvePlanFn);
@@ -120,6 +145,7 @@ const mockSyncPlanPrLinks = vi.mocked(mockSyncPlanPrLinksFn);
 const mockGetWebhookServerUrl = vi.mocked(mockGetWebhookServerUrlFn);
 const mockIngestWebhookEvents = vi.mocked(mockIngestWebhookEventsFn);
 const mockCanonicalizePrUrl = vi.mocked(mockCanonicalizePrUrlFn);
+const mockDeduplicatePrUrls = vi.mocked(mockDeduplicatePrUrlsFn);
 const mockParsePrOrIssueNumber = vi.mocked(mockParsePrOrIssueNumberFn);
 const mockValidatePrIdentifier = vi.mocked(mockValidatePrIdentifierFn);
 const mockGetPrStatusByUrl = vi.mocked(mockGetPrStatusByUrlFn);
@@ -127,11 +153,15 @@ const mockGetPrStatusForPlan = vi.mocked(mockGetPrStatusForPlanFn);
 const mockLinkPlanToPr = vi.mocked(mockLinkPlanToPrFn);
 const mockUnlinkPlanFromPr = vi.mocked(mockUnlinkPlanFromPrFn);
 const mockCleanOrphanedPrStatus = vi.mocked(mockCleanOrphanedPrStatusFn);
+const mockAddReplyToReviewThread = vi.mocked(mockAddReplyToReviewThreadFn);
 const mockFetchOpenPullRequests = vi.mocked(mockFetchOpenPullRequestsFn);
+const mockResolveReviewThread = vi.mocked(mockResolveReviewThreadFn);
+const mockPromptCheckbox = vi.mocked(mockPromptCheckboxFn);
 const mockReadPlanFile = vi.mocked(mockReadPlanFileFn);
 const mockResolvePlanFromDb = vi.mocked(mockResolvePlanFromDbFn);
 const mockWritePlanFile = vi.mocked(mockWritePlanFileFn);
 const mockSyncPlanToDb = vi.mocked(mockSyncPlanToDbFn);
+const mockTimAgent = vi.mocked(mockTimAgentFn);
 
 let logs: string[] = [];
 let dbHandle: AnyObject;
@@ -145,12 +175,19 @@ let currentCachedDetail: AnyObject | null;
 let currentAutoLinkedDetails: AnyObject[];
 let currentPersistedPlan: AnyObject;
 
-const handlePrCommand = { handlePrStatusCommand, handlePrLinkCommand, handlePrUnlinkCommand };
+const handlePrCommand = {
+  handlePrStatusCommand,
+  handlePrLinkCommand,
+  handlePrReplyCommand,
+  handlePrResolveCommand,
+  handlePrUnlinkCommand,
+};
 
 let currentWebhookServerUrl: string | null;
 let prModule: typeof import('./pr.js');
 let tempDir: string;
 let originalCwd: string;
+let originalStdinIsTTY: boolean | undefined;
 
 describe('tim/commands/pr', () => {
   beforeAll(async () => {
@@ -164,9 +201,18 @@ describe('tim/commands/pr', () => {
     process.chdir(originalCwd);
     await fs.rm(tempDir, { recursive: true, force: true });
     clearGitHubTokenCache();
+    Object.defineProperty(process.stdin, 'isTTY', {
+      value: originalStdinIsTTY,
+      configurable: true,
+    });
   });
 
   beforeEach(() => {
+    originalStdinIsTTY = process.stdin.isTTY;
+    Object.defineProperty(process.stdin, 'isTTY', {
+      value: true,
+      configurable: true,
+    });
     clearGitHubTokenCache();
     vi.clearAllMocks();
     logs = [];
@@ -201,6 +247,7 @@ describe('tim/commands/pr', () => {
     mockGetWebhookServerUrl.mockClear();
     mockIngestWebhookEvents.mockClear();
     mockCanonicalizePrUrl.mockClear();
+    mockDeduplicatePrUrls.mockClear();
     mockParsePrOrIssueNumber.mockClear();
     mockValidatePrIdentifier.mockClear();
     mockGetPrStatusByUrl.mockClear();
@@ -208,11 +255,15 @@ describe('tim/commands/pr', () => {
     mockLinkPlanToPr.mockClear();
     mockUnlinkPlanFromPr.mockClear();
     mockCleanOrphanedPrStatus.mockClear();
+    mockAddReplyToReviewThread.mockClear();
     mockFetchOpenPullRequests.mockClear();
+    mockResolveReviewThread.mockClear();
+    mockPromptCheckbox.mockClear();
     mockReadPlanFile.mockClear();
     mockResolvePlanFromDb.mockClear();
     mockWritePlanFile.mockClear();
     mockSyncPlanToDb.mockClear();
+    mockTimAgent.mockClear();
     mockLog.mockImplementation((...args: unknown[]) => {
       logs.push(args.join(' '));
     });
@@ -267,6 +318,7 @@ describe('tim/commands/pr', () => {
     });
     mockParsePrOrIssueNumber.mockImplementation(async () => currentParsedIdentifier);
     mockValidatePrIdentifier.mockImplementation(() => {});
+    mockDeduplicatePrUrls.mockImplementation((urls: string[]) => ({ valid: urls, invalid: [] }));
     mockGetPrStatusByUrl.mockImplementation((_db: unknown, prUrl: string) => {
       // Check per-URL map first, then fall back to single cached detail
       const fromMap = currentRefreshedStatuses.get(prUrl);
@@ -276,7 +328,10 @@ describe('tim/commands/pr', () => {
     mockLinkPlanToPr.mockImplementation(() => {});
     mockUnlinkPlanFromPr.mockImplementation(() => {});
     mockCleanOrphanedPrStatus.mockImplementation(() => {});
+    mockAddReplyToReviewThread.mockImplementation(async () => true);
     mockFetchOpenPullRequests.mockImplementation(async () => []);
+    mockResolveReviewThread.mockImplementation(async () => true);
+    mockPromptCheckbox.mockResolvedValue([]);
     mockReadPlanFile.mockImplementation(async () => currentPersistedPlan);
     mockResolvePlanFromDb.mockImplementation(async () => ({
       plan: currentPersistedPlan,
@@ -286,6 +341,7 @@ describe('tim/commands/pr', () => {
       currentPersistedPlan = plan as AnyObject;
     });
     mockSyncPlanToDb.mockImplementation(async () => {});
+    mockTimAgent.mockImplementation(async () => {});
   });
 
   test('status resolves the current workspace plan and syncs each linked PR atomically', async () => {
@@ -1053,6 +1109,568 @@ describe('tim/commands/pr', () => {
 
     expect(mockSyncPlanPrLinks).not.toHaveBeenCalled();
   });
+
+  test('reply posts to the GitHub review thread and logs success', async () => {
+    await handlePrCommand.handlePrReplyCommand('thread-123', 'Fixed this');
+
+    expect(mockAddReplyToReviewThread).toHaveBeenCalledWith('thread-123', 'Fixed this');
+    expect(logs.some((line) => line.includes('Replied to review thread thread-123'))).toBe(true);
+  });
+
+  test('reply throws when posting to the GitHub review thread fails', async () => {
+    mockAddReplyToReviewThread.mockResolvedValueOnce(false);
+
+    await expect(handlePrCommand.handlePrReplyCommand('thread-123', 'Fixed this')).rejects.toThrow(
+      'Failed to reply to review thread thread-123'
+    );
+  });
+
+  test('resolve resolves the GitHub review thread and logs success', async () => {
+    await handlePrCommand.handlePrResolveCommand('thread-456');
+
+    expect(mockResolveReviewThread).toHaveBeenCalledWith('thread-456');
+    expect(logs.some((line) => line.includes('Resolved review thread thread-456'))).toBe(true);
+  });
+
+  test('resolve throws when resolving the GitHub review thread fails', async () => {
+    mockResolveReviewThread.mockResolvedValueOnce(false);
+
+    await expect(handlePrCommand.handlePrResolveCommand('thread-456')).rejects.toThrow(
+      'Failed to resolve review thread thread-456'
+    );
+  });
+
+  test('buildReviewThreadFixPrompt includes plan context and review thread details', () => {
+    const prompt = buildReviewThreadFixPrompt(
+      {
+        id: 251,
+        title: 'Review Comment Actions',
+        goal: 'Automatically address unresolved review feedback',
+        details: 'Keep PR review workflows inside tim.',
+      } as any,
+      [
+        {
+          prUrl: 'https://github.com/example/repo/pull/123',
+          thread: createReviewThreadDetail({
+            threadId: 'thread-123',
+            path: 'src/auth.ts',
+            line: 42,
+            comments: [
+              {
+                author: 'alice',
+                body: 'This logic needs a null check.',
+                diff_hunk: '@@ -40,3 +40,4 @@',
+              },
+              {
+                author: 'bob',
+                body: 'Please add a test too.',
+              },
+            ],
+          }),
+        },
+      ]
+    );
+
+    expect(prompt).toContain('## Plan Context');
+    expect(prompt).toContain('**Plan ID:** 251');
+    expect(prompt).toContain('**Title:** Review Comment Actions');
+    expect(prompt).toContain('**Goal:** Automatically address unresolved review feedback');
+    expect(prompt).toContain('### Thread 1: src/auth.ts:42');
+    expect(prompt).toContain('**PR URL:** https://github.com/example/repo/pull/123');
+    expect(prompt).toContain('**Thread ID:** thread-123');
+    expect(prompt).toContain('```diff');
+    expect(prompt).toContain('- alice: This logic needs a null check.');
+    expect(prompt).toContain('- bob: Please add a test too.');
+    expect(prompt).toContain('tim pr reply <Thread ID> "explanation of fix"');
+    expect(prompt).toContain('tim pr resolve <Thread ID>');
+  });
+
+  test('buildReviewThreadFixPrompt handles empty thread lists', () => {
+    const prompt = buildReviewThreadFixPrompt(
+      {
+        id: 251,
+        title: 'Review Comment Actions',
+      } as any,
+      []
+    );
+
+    expect(prompt).toContain('## Review Threads to Fix');
+    expect(prompt).toContain('No review threads were selected.');
+  });
+
+  test('pr fix returns early when there are no unresolved review threads', async () => {
+    currentAutoLinkedDetails = [
+      {
+        ...createPrDetail(701, 'Explicit PR', 'success'),
+        reviewThreads: [
+          createReviewThreadDetail({
+            threadId: 'thread-resolved',
+            path: 'src/auth.ts',
+            line: 10,
+            isResolved: 1,
+          }),
+        ],
+      },
+    ];
+
+    await handlePrFixCommand('248', {}, createNestedCommand());
+
+    expect(mockPromptCheckbox).not.toHaveBeenCalled();
+    expect(mockTimAgent).not.toHaveBeenCalled();
+    expect(logs).toContain('Plan 248 has no unresolved PR review threads.');
+  });
+
+  test('pr fix prompts for thread selection in interactive mode and forwards selected context', async () => {
+    currentAutoLinkedDetails = [
+      {
+        ...createPrDetail(701, 'Explicit PR', 'success'),
+        reviewThreads: [
+          createReviewThreadDetail({
+            threadId: 'thread-1',
+            path: 'src/auth.ts',
+            line: 42,
+            comments: [{ body: 'Add a null check.', diff_hunk: '@@ -40,2 +40,4 @@' }],
+          }),
+          createReviewThreadDetail({
+            threadId: 'thread-2',
+            path: 'src/user.ts',
+            line: 88,
+            comments: [{ body: 'Handle the empty state.' }],
+          }),
+        ],
+      },
+    ];
+    mockPromptCheckbox.mockResolvedValueOnce([1]);
+
+    await handlePrFixCommand(
+      '248',
+      { executor: 'codex-cli', model: 'gpt-5.4', terminalInput: true },
+      createNestedCommand()
+    );
+
+    expect(mockPromptCheckbox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Select review threads to fix:',
+        choices: expect.arrayContaining([
+          expect.objectContaining({
+            name: 'src/auth.ts:42 - "Add a null check"',
+            value: 0,
+            description: expect.stringContaining('Diff context:\n@@ -40,2 +40,4 @@'),
+            checked: true,
+          }),
+          expect.objectContaining({
+            name: 'src/user.ts:88 - "Handle the empty state"',
+            value: 1,
+            checked: true,
+          }),
+        ]),
+      })
+    );
+    expect(mockTimAgent).toHaveBeenCalledWith(
+      '248',
+      expect.objectContaining({
+        orchestrator: 'codex-cli',
+        model: 'gpt-5.4',
+        reviewThreadContext: expect.stringContaining('### Thread 1: src/user.ts:88'),
+      }),
+      { config: '/tmp/tim.yml' }
+    );
+    // executor should NOT leak through — it would be misinterpreted as sub-agent executor
+    expect(mockTimAgent.mock.calls[0]?.[1]).not.toHaveProperty('executor');
+    expect(String(mockTimAgent.mock.calls[0]?.[1]?.reviewThreadContext ?? '')).not.toContain(
+      'src/auth.ts:42'
+    );
+  });
+
+  test('pr fix uses all unresolved threads without prompting in non-interactive mode', async () => {
+    currentAutoLinkedDetails = [
+      {
+        ...createPrDetail(701, 'Explicit PR', 'success'),
+        reviewThreads: [
+          createReviewThreadDetail({
+            threadId: 'thread-1',
+            path: 'src/auth.ts',
+            line: 42,
+            comments: [{ body: 'Add a null check.' }],
+          }),
+        ],
+      },
+    ];
+
+    await handlePrFixCommand('248', { nonInteractive: true }, createNestedCommand());
+
+    expect(mockPromptCheckbox).not.toHaveBeenCalled();
+    expect(mockTimAgent).toHaveBeenCalledWith(
+      '248',
+      expect.objectContaining({
+        nonInteractive: true,
+        reviewThreadContext: expect.stringContaining('src/auth.ts:42'),
+      }),
+      { config: '/tmp/tim.yml' }
+    );
+  });
+
+  test('pr fix skips prompting when --all flag is set', async () => {
+    currentAutoLinkedDetails = [
+      {
+        ...createPrDetail(701, 'Explicit PR', 'success'),
+        reviewThreads: [
+          createReviewThreadDetail({
+            threadId: 'thread-1',
+            path: 'src/auth.ts',
+            line: 42,
+            comments: [{ body: 'Add a null check.' }],
+          }),
+          createReviewThreadDetail({
+            threadId: 'thread-2',
+            path: 'src/user.ts',
+            line: 10,
+            comments: [{ body: 'Missing validation.' }],
+          }),
+        ],
+      },
+    ];
+
+    await handlePrFixCommand('248', { all: true }, createNestedCommand());
+
+    expect(mockPromptCheckbox).not.toHaveBeenCalled();
+    const context = String(mockTimAgent.mock.calls[0]?.[1]?.reviewThreadContext ?? '');
+    expect(context).toContain('src/auth.ts:42');
+    expect(context).toContain('src/user.ts:10');
+  });
+
+  test('pr fix requires GITHUB_TOKEN', async () => {
+    delete process.env.GITHUB_TOKEN;
+    clearGitHubTokenCache();
+
+    await expect(handlePrFixCommand('248', {}, createNestedCommand())).rejects.toThrow(
+      'GITHUB_TOKEN environment variable is required'
+    );
+
+    expect(mockResolvePlan).not.toHaveBeenCalled();
+    expect(mockTimAgent).not.toHaveBeenCalled();
+  });
+
+  test('pr fix filters out resolved threads and only passes unresolved ones', async () => {
+    currentAutoLinkedDetails = [
+      {
+        ...createPrDetail(701, 'Explicit PR', 'success'),
+        reviewThreads: [
+          createReviewThreadDetail({
+            threadId: 'thread-resolved',
+            path: 'src/old.ts',
+            line: 5,
+            isResolved: 1,
+            comments: [{ body: 'Already fixed.' }],
+          }),
+          createReviewThreadDetail({
+            threadId: 'thread-unresolved',
+            path: 'src/new.ts',
+            line: 20,
+            comments: [{ body: 'Needs fix.' }],
+          }),
+        ],
+      },
+    ];
+
+    await handlePrFixCommand('248', { all: true }, createNestedCommand());
+
+    const context = String(mockTimAgent.mock.calls[0]?.[1]?.reviewThreadContext ?? '');
+    expect(context).toContain('src/new.ts:20');
+    expect(context).not.toContain('src/old.ts:5');
+    expect(context).not.toContain('thread-resolved');
+  });
+
+  test('pr fix returns early when user deselects all threads in interactive mode', async () => {
+    currentAutoLinkedDetails = [
+      {
+        ...createPrDetail(701, 'Explicit PR', 'success'),
+        reviewThreads: [
+          createReviewThreadDetail({
+            threadId: 'thread-1',
+            path: 'src/auth.ts',
+            line: 42,
+            comments: [{ body: 'Fix this.' }],
+          }),
+        ],
+      },
+    ];
+    mockPromptCheckbox.mockResolvedValueOnce([]);
+
+    await handlePrFixCommand('248', {}, createNestedCommand());
+
+    expect(mockPromptCheckbox).toHaveBeenCalled();
+    expect(mockTimAgent).not.toHaveBeenCalled();
+    expect(logs).toContain('No review threads selected for fixing.');
+  });
+
+  test('pr fix collects unresolved threads from multiple PRs', async () => {
+    currentAutoLinkedDetails = [
+      {
+        ...createPrDetail(701, 'PR One', 'success'),
+        reviewThreads: [
+          createReviewThreadDetail({
+            threadId: 'thread-pr1',
+            path: 'src/auth.ts',
+            line: 10,
+            comments: [{ body: 'Fix auth.' }],
+          }),
+        ],
+      },
+      {
+        ...createPrDetail(702, 'PR Two', 'success'),
+        reviewThreads: [
+          createReviewThreadDetail({
+            threadId: 'thread-pr2',
+            path: 'src/user.ts',
+            line: 20,
+            comments: [{ body: 'Fix user.' }],
+          }),
+        ],
+      },
+    ];
+
+    await handlePrFixCommand('248', { all: true }, createNestedCommand());
+
+    const context = String(mockTimAgent.mock.calls[0]?.[1]?.reviewThreadContext ?? '');
+    expect(context).toContain('src/auth.ts:10');
+    expect(context).toContain('src/user.ts:20');
+    expect(context).toContain('https://github.com/example/repo/pull/701');
+    expect(context).toContain('https://github.com/example/repo/pull/702');
+  });
+
+  test('pr fix skips prompting when terminalInput is false', async () => {
+    currentAutoLinkedDetails = [
+      {
+        ...createPrDetail(701, 'PR', 'success'),
+        reviewThreads: [
+          createReviewThreadDetail({
+            threadId: 'thread-1',
+            path: 'src/auth.ts',
+            line: 42,
+            comments: [{ body: 'Fix.' }],
+          }),
+        ],
+      },
+    ];
+
+    await handlePrFixCommand('248', { terminalInput: false }, createNestedCommand());
+
+    expect(mockPromptCheckbox).not.toHaveBeenCalled();
+    expect(mockTimAgent).toHaveBeenCalled();
+  });
+
+  test('pr fix canonicalizes explicit plan PR URLs before looking up cached status rows', async () => {
+    currentPlan.pullRequest = ['https://github.com/example/repo/pulls/701?tab=checks'];
+    mockDeduplicatePrUrls.mockReturnValueOnce({
+      valid: ['https://github.com/example/repo/pull/701'],
+      invalid: [],
+    });
+    currentAutoLinkedDetails = [
+      {
+        ...createPrDetail(701, 'Explicit PR', 'success'),
+        reviewThreads: [
+          createReviewThreadDetail({
+            threadId: 'thread-canonical',
+            path: 'src/auth.ts',
+            line: 42,
+            comments: [{ body: 'Fix this path.' }],
+          }),
+        ],
+      },
+    ];
+
+    await handlePrFixCommand('248', { all: true }, createNestedCommand());
+
+    expect(mockDeduplicatePrUrls).toHaveBeenCalledWith([
+      'https://github.com/example/repo/pulls/701?tab=checks',
+    ]);
+    expect(mockGetPrStatusForPlan).toHaveBeenCalledWith(
+      dbHandle,
+      'plan-248',
+      ['https://github.com/example/repo/pull/701'],
+      expect.objectContaining({ includeReviewThreads: true })
+    );
+    expect(mockTimAgent).toHaveBeenCalled();
+  });
+
+  test('pr fix preserves explicit orchestrator when no --executor value is provided', async () => {
+    currentAutoLinkedDetails = [
+      {
+        ...createPrDetail(701, 'PR', 'success'),
+        reviewThreads: [
+          createReviewThreadDetail({
+            threadId: 'thread-1',
+            path: 'src/auth.ts',
+            line: 42,
+            comments: [{ body: 'Fix.' }],
+          }),
+        ],
+      },
+    ];
+
+    await handlePrFixCommand(
+      '248',
+      { all: true, orchestrator: 'claude-code' },
+      createNestedCommand()
+    );
+
+    expect(mockTimAgent).toHaveBeenCalledWith(
+      '248',
+      expect.objectContaining({
+        orchestrator: 'claude-code',
+      }),
+      { config: '/tmp/tim.yml' }
+    );
+  });
+
+  test('buildReviewThreadFixPrompt uses path only when no line numbers exist', () => {
+    const prompt = buildReviewThreadFixPrompt({ id: 1, title: 'Test' } as any, [
+      {
+        prUrl: 'https://github.com/example/repo/pull/1',
+        thread: createReviewThreadDetail({
+          threadId: 'thread-no-line',
+          path: 'src/config.ts',
+          line: null,
+          originalLine: null,
+          startLine: null,
+          originalStartLine: null,
+          comments: [{ body: 'Missing export.' }],
+        }),
+      },
+    ]);
+
+    expect(prompt).toContain('### Thread 1: src/config.ts');
+    expect(prompt).not.toContain('src/config.ts:');
+    expect(prompt).not.toContain('**Line:**');
+  });
+
+  test('buildReviewThreadFixPrompt falls back to original_line when line is null', () => {
+    const prompt = buildReviewThreadFixPrompt({ id: 1, title: 'Test' } as any, [
+      {
+        prUrl: 'https://github.com/example/repo/pull/1',
+        thread: createReviewThreadDetail({
+          threadId: 'thread-orig-line',
+          path: 'src/utils.ts',
+          line: null,
+          originalLine: 55,
+          comments: [{ body: 'Check this.' }],
+        }),
+      },
+    ]);
+
+    expect(prompt).toContain('### Thread 1: src/utils.ts:55');
+    expect(prompt).toContain('**Line:** 55');
+  });
+
+  test('buildReviewThreadFixPrompt falls back to start_line when line and original_line are null', () => {
+    const prompt = buildReviewThreadFixPrompt({ id: 1, title: 'Test' } as any, [
+      {
+        prUrl: 'https://github.com/example/repo/pull/1',
+        thread: createReviewThreadDetail({
+          threadId: 'thread-start-line',
+          path: 'src/index.ts',
+          line: null,
+          originalLine: null,
+          startLine: 30,
+          comments: [{ body: 'Refactor this.' }],
+        }),
+      },
+    ]);
+
+    expect(prompt).toContain('### Thread 1: src/index.ts:30');
+  });
+
+  test('buildReviewThreadFixPrompt shows no comments message when thread has none', () => {
+    const prompt = buildReviewThreadFixPrompt({ id: 1, title: 'Test' } as any, [
+      {
+        prUrl: 'https://github.com/example/repo/pull/1',
+        thread: createReviewThreadDetail({
+          threadId: 'thread-no-comments',
+          path: 'src/empty.ts',
+          line: 1,
+          comments: [],
+        }),
+      },
+    ]);
+
+    expect(prompt).toContain('No comment bodies were captured for this thread.');
+  });
+
+  test('buildReviewThreadFixPrompt omits diff hunk section when not present', () => {
+    const prompt = buildReviewThreadFixPrompt({ id: 1, title: 'Test' } as any, [
+      {
+        prUrl: 'https://github.com/example/repo/pull/1',
+        thread: createReviewThreadDetail({
+          threadId: 'thread-no-hunk',
+          path: 'src/no_hunk.ts',
+          line: 5,
+          comments: [{ body: 'Review comment.' }],
+        }),
+      },
+    ]);
+
+    expect(prompt).not.toContain('```diff');
+    expect(prompt).not.toContain('**Diff Hunk:**');
+  });
+
+  test('buildReviewThreadFixPrompt omits goal line for plan without goal', () => {
+    const prompt = buildReviewThreadFixPrompt({ id: 1, title: 'Test', goal: undefined } as any, []);
+
+    expect(prompt).toContain('**Goal:** No goal provided');
+  });
+
+  test('buildReviewThreadFixPrompt omits details section for plan without details', () => {
+    const prompt = buildReviewThreadFixPrompt(
+      { id: 1, title: 'Test', details: undefined } as any,
+      []
+    );
+
+    expect(prompt).not.toContain('**Details:**');
+  });
+
+  test('buildReviewThreadFixPrompt includes multiple threads from different PRs', () => {
+    const prompt = buildReviewThreadFixPrompt({ id: 1, title: 'Multi-PR Test' } as any, [
+      {
+        prUrl: 'https://github.com/example/repo/pull/10',
+        thread: createReviewThreadDetail({
+          threadId: 'thread-a',
+          path: 'src/a.ts',
+          line: 1,
+          comments: [{ body: 'Fix A.' }],
+        }),
+      },
+      {
+        prUrl: 'https://github.com/example/repo/pull/20',
+        thread: createReviewThreadDetail({
+          threadId: 'thread-b',
+          path: 'src/b.ts',
+          line: 2,
+          comments: [{ body: 'Fix B.' }],
+        }),
+      },
+    ]);
+
+    expect(prompt).toContain('### Thread 1: src/a.ts:1');
+    expect(prompt).toContain('**PR URL:** https://github.com/example/repo/pull/10');
+    expect(prompt).toContain('### Thread 2: src/b.ts:2');
+    expect(prompt).toContain('**PR URL:** https://github.com/example/repo/pull/20');
+    expect(prompt).toContain('**Thread ID:** thread-a');
+    expect(prompt).toContain('**Thread ID:** thread-b');
+  });
+
+  test('resolve updates local DB cache after successful GitHub mutation', async () => {
+    const mockDb = { run: vi.fn() };
+    mockGetDatabase.mockReturnValue(mockDb as any);
+
+    await handlePrCommand.handlePrResolveCommand('thread-789');
+
+    expect(mockResolveReviewThread).toHaveBeenCalledWith('thread-789');
+    expect(mockDb.run).toHaveBeenCalledWith(
+      'UPDATE pr_review_thread SET is_resolved = 1 WHERE thread_id = ?',
+      ['thread-789']
+    );
+  });
 });
 
 function createNestedCommand(): { parent: { parent: { opts: () => { config: string } } } } {
@@ -1120,5 +1738,49 @@ function createPrDetail(
       },
     ],
     labels: [],
+  };
+}
+
+function createReviewThreadDetail(options: {
+  threadId: string;
+  path: string;
+  line?: number | null;
+  originalLine?: number | null;
+  startLine?: number | null;
+  originalStartLine?: number | null;
+  isResolved?: number;
+  comments?: Array<{
+    author?: string | null;
+    body?: string | null;
+    diff_hunk?: string | null;
+  }>;
+}): AnyObject {
+  return {
+    thread: {
+      id: 1,
+      pr_status_id: 701,
+      thread_id: options.threadId,
+      path: options.path,
+      line: options.line ?? null,
+      original_line: options.originalLine ?? null,
+      original_start_line: options.originalStartLine ?? null,
+      start_line: options.startLine ?? null,
+      diff_side: 'RIGHT',
+      start_diff_side: null,
+      is_resolved: options.isResolved ?? 0,
+      is_outdated: 0,
+      subject_type: 'LINE',
+    },
+    comments: (options.comments ?? []).map((comment, index) => ({
+      id: index + 1,
+      review_thread_id: 1,
+      comment_id: `comment-${index + 1}`,
+      database_id: 1000 + index,
+      author: comment.author ?? 'reviewer',
+      body: comment.body ?? null,
+      diff_hunk: comment.diff_hunk ?? null,
+      state: null,
+      created_at: '2026-03-20T00:00:00.000Z',
+    })),
   };
 }

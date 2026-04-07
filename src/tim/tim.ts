@@ -463,7 +463,6 @@ program
     await handlePromoteCommand(taskIds, options).catch(handleCommandError);
   });
 
-
 program
   .command('update-docs [planFile]')
   .description('Update documentation based on completed plan work. Can be a file path or plan ID.')
@@ -1235,6 +1234,36 @@ prCommand
   .action(async (planId, prUrl, options, command) => {
     const { handlePrUnlinkCommand } = await import('./commands/pr.js');
     await handlePrUnlinkCommand(planId, prUrl, options, command).catch(handleCommandError);
+  });
+
+prCommand
+  .command('reply <threadId> <body...>')
+  .description('Reply to a GitHub PR review thread')
+  .action(async (threadId, body) => {
+    const { handlePrReplyCommand } = await import('./commands/pr.js');
+    await handlePrReplyCommand(threadId, body.join(' ')).catch(handleCommandError);
+  });
+
+prCommand
+  .command('resolve <threadId>')
+  .description('Resolve a GitHub PR review thread')
+  .action(async (threadId) => {
+    const { handlePrResolveCommand } = await import('./commands/pr.js');
+    await handlePrResolveCommand(threadId).catch(handleCommandError);
+  });
+
+prCommand
+  .command('fix <planId>')
+  .description('Fix unresolved PR review threads using an AI agent')
+  .option('-x, --executor <name>', 'The executor to use')
+  .option('-m, --model <model>', 'Model override')
+  .option('--all', 'Fix all unresolved threads without prompting')
+  .option('--aw, --auto-workspace', 'Auto-select or create a workspace')
+  .option('--non-interactive', 'No user prompts')
+  .option('--no-terminal-input', 'Disable terminal input')
+  .action(async (planId, options, command) => {
+    const { handlePrFixCommand } = await import('./commands/pr.js');
+    await handlePrFixCommand(planId, options, command).catch(handleCommandError);
   });
 
 function registerPrDescriptionCommand(

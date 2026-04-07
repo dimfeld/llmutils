@@ -60,6 +60,7 @@ export async function executeBatchMode(
     finalReview,
     configPath,
     terminalInput,
+    reviewThreadContext,
   }: {
     currentPlanFile: string;
     config: TimConfig;
@@ -74,6 +75,7 @@ export async function executeBatchMode(
     finalReview?: boolean;
     configPath?: string;
     terminalInput?: boolean;
+    reviewThreadContext?: string;
   },
   summaryCollector?: SummaryCollector
 ) {
@@ -199,9 +201,14 @@ Available tasks:\n\n${taskDescriptions}`,
         batchMode: true,
       });
 
+      let finalPrompt = batchPrompt;
+      if (reviewThreadContext) {
+        finalPrompt = reviewThreadContext + '\n\n' + finalPrompt;
+      }
+
       if (dryRun) {
         log(boldMarkdownHeaders('\n## Batch Mode Dry Run - Generated Prompt\n'));
-        log(batchPrompt);
+        log(finalPrompt);
         log('\n--dry-run mode: Would execute the above prompt');
         break;
       }
@@ -222,7 +229,7 @@ Available tasks:\n\n${taskDescriptions}`,
           stepNumber: iteration + 1,
         });
         const start = Date.now();
-        const output = await executor.execute(batchPrompt, {
+        const output = await executor.execute(finalPrompt, {
           planId: planData.id?.toString() ?? 'unknown',
           planTitle: planData.title ?? 'Untitled Plan',
           planFilePath: currentPlanFile,
