@@ -39,6 +39,16 @@ function getTrackerDisplayName(trackerType: 'github' | 'linear'): string {
   return trackerType === 'linear' ? 'Linear' : 'GitHub';
 }
 
+function normalizeSelectionIndexes(indexes: number[], maxIndex: number): number[] {
+  if (maxIndex < 0) {
+    return [];
+  }
+
+  return [...new Set(indexes)]
+    .filter((index) => Number.isInteger(index) && index >= 0 && index <= maxIndex)
+    .sort((a, b) => a - b);
+}
+
 function extractSelectedContent(issueData: IssueWithComments, selectedIndexes: number[]): string[] {
   const sortedUniqueIndexes = [...new Set(selectedIndexes)].sort((a, b) => a - b);
   const content: string[] = [];
@@ -159,15 +169,6 @@ export async function createPlansFromIssue(
   const repoRoot = project.last_git_root;
 
   const children = issueData.children ?? [];
-  const normalizeSelectionIndexes = (indexes: number[], maxIndex: number): number[] => {
-    if (maxIndex < 0) {
-      return [];
-    }
-
-    return [...new Set(indexes)]
-      .filter((index) => Number.isInteger(index) && index >= 0 && index <= maxIndex)
-      .sort((a, b) => a - b);
-  };
   const normalizedParentContent = normalizeSelectionIndexes(
     selectedContent.selectedParentContent,
     issueData.comments.length
@@ -185,21 +186,32 @@ export async function createPlansFromIssue(
     ])
   );
 
-  if (mode === 'single' && normalizedParentContent.length === 0) {
-    throw new Error('Select at least one parent content item to import.');
+  const parentExtracted = extractSelectedContent(issueData, normalizedParentContent);
+
+  if (mode === 'single' && parentExtracted.length === 0) {
+    throw new Error('Select at least one parent content item with non-empty text to import.');
   }
 
   if (mode !== 'single') {
-    const hasSelectedChildContent = selectedChildIndices.some(
-      (index) => (normalizedChildContent[index] ?? []).length > 0
-    );
-    if (normalizedParentContent.length === 0 && !hasSelectedChildContent) {
+    const childExtracted = new Map<number, string[]>();
+    for (const childIndex of selectedChildIndices) {
+      const extracted = extractSelectedContent(
+        children[childIndex],
+        normalizedChildContent[childIndex] ?? []
+      );
+      childExtracted.set(childIndex, extracted);
+    }
+
+    const hasAnyContent =
+      parentExtracted.length > 0 ||
+      [...childExtracted.values()].some((content) => content.length > 0);
+    if (!hasAnyContent) {
       throw new Error('Select at least one parent or subissue content item to import.');
     }
     for (const childIndex of selectedChildIndices) {
-      if ((normalizedChildContent[childIndex] ?? []).length === 0) {
+      if ((childExtracted.get(childIndex) ?? []).length === 0) {
         throw new Error(
-          `Selected subissue ${children[childIndex].issue.number} has no content selected.`
+          `Selected subissue ${children[childIndex].issue.number} has no non-empty content selected.`
         );
       }
     }
