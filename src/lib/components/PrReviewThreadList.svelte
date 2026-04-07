@@ -1,9 +1,16 @@
 <script lang="ts">
+  import { invalidateAll } from '$app/navigation';
+  import { toast } from 'svelte-sonner';
   import type { PrReviewThreadDetail } from '$tim/db/pr_status.js';
+  import { convertThreadToTask } from '$lib/remote/review_thread_actions.remote.js';
   import { formatReviewCommentForClipboard } from '$lib/utils/pr_display.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
 
-  let { threads, prUrl }: { threads: PrReviewThreadDetail[]; prUrl: string } = $props();
+  let {
+    threads,
+    prUrl,
+    planUuid,
+  }: { threads: PrReviewThreadDetail[]; prUrl: string; planUuid: string } = $props();
 
   let sortedThreads = $derived(
     [...threads].sort((a, b) => {
@@ -36,6 +43,7 @@
   }
 
   let copyFeedback = $state<{ id: number; status: 'copied' | 'failed' } | null>(null);
+  let threadActionSubmitting = $state<string | null>(null);
 
   async function copyComment(
     comment: PrReviewThreadDetail['comments'][number],
@@ -60,6 +68,26 @@
     setTimeout(() => {
       if (copyFeedback?.id === comment.id) copyFeedback = null;
     }, 2000);
+  }
+
+  async function handleConvertToTask(thread: PrReviewThreadDetail) {
+    if (threadActionSubmitting !== null) {
+      return;
+    }
+
+    threadActionSubmitting = thread.thread.thread_id;
+    try {
+      await convertThreadToTask({
+        planUuid,
+        prStatusId: thread.thread.pr_status_id,
+        threadId: thread.thread.thread_id,
+      });
+      await invalidateAll();
+    } catch (err) {
+      toast.error(`Failed to convert thread to task: ${(err as Error).message}`);
+    } finally {
+      threadActionSubmitting = null;
+    }
   }
 </script>
 
@@ -100,6 +128,20 @@
         <span class="ml-auto text-muted-foreground">
           {thread.comments.length} comment{thread.comments.length === 1 ? '' : 's'}
         </span>
+        {#if !isResolved}
+          <button
+            class="rounded px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
+            onclick={async (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              await handleConvertToTask(thread);
+            }}
+            disabled={threadActionSubmitting !== null}
+            type="button"
+          >
+            {threadActionSubmitting === thread.thread.thread_id ? 'Converting...' : 'Convert to Task'}
+          </button>
+        {/if}
       </summary>
 
       <div class="border-t border-gray-200 dark:border-gray-700">
@@ -120,6 +162,7 @@
                   class="ml-auto rounded px-1.5 py-0.5 text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-gray-100 focus-visible:opacity-100 dark:hover:bg-gray-800"
                   onclick={() => copyComment(comment, thread)}
                   title="Copy comment with file context"
+                  disabled={threadActionSubmitting !== null}
                 >
                   {#if copyFeedback?.id === comment.id}
                     {copyFeedback.status === 'copied' ? 'Copied!' : 'Failed'}
