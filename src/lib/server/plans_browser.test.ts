@@ -307,7 +307,13 @@ describe('lib/server/plans_browser', () => {
 
       // With mode='never' and applyLessons=false, needsFinishExecutor should be false
       const configNever = { updateDocs: { mode: 'never', applyLessons: false } } as TimConfig;
-      const resultNever = getPlanDetailRouteData(db, 'feature-plan', String(projectId), 'plans', configNever);
+      const resultNever = getPlanDetailRouteData(
+        db,
+        'feature-plan',
+        String(projectId),
+        'plans',
+        configNever
+      );
 
       expect(resultNever).not.toBeNull();
       expect(resultNever!.planDetail.needsFinishExecutor).toBe(false);

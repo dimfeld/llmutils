@@ -262,7 +262,7 @@ describe('deriveAttentionItems', () => {
         needsFinishExecutor: true,
         docsUpdatedAt: null,
         lessonsAppliedAt: null,
-      }),
+      })
     );
   });
 

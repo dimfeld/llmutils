@@ -48,6 +48,7 @@ vi.mock('$lib/server/plan_actions.js', () => ({
 
 import { isPlanLaunching, resetLaunchLockState, setLaunchLock } from '$lib/server/launch_lock.js';
 import {
+  finishPlanQuick,
   startAgent,
   startChat,
   startFinish,
@@ -1468,6 +1469,104 @@ describe('plan remote actions', () => {
         body: { message: 'Project does not have a primary workspace' },
       });
       expect(spawnFinishProcessMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('finishPlanQuick', () => {
+    test('rejects missing plans', async () => {
+      await expect(
+        invokeCommand(finishPlanQuick, { planUuid: 'missing-plan' })
+      ).rejects.toMatchObject({
+        status: 404,
+        body: { message: 'Plan not found' },
+      });
+    });
+
+    test('rejects in_progress plans', async () => {
+      seedPlan({ uuid: 'quick-finish-in-progress', planId: 5000, status: 'in_progress' });
+
+      await expect(
+        invokeCommand(finishPlanQuick, { planUuid: 'quick-finish-in-progress' })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Plan is not eligible for finish' },
+      });
+    });
+
+    test('rejects plans where needsFinishExecutor is true', async () => {
+      seedPlan({
+        uuid: 'quick-finish-needs-executor',
+        planId: 5001,
+        status: 'needs_review',
+      });
+
+      await expect(
+        invokeCommand(finishPlanQuick, { planUuid: 'quick-finish-needs-executor' })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Plan requires executor work — use startFinish instead' },
+      });
+    });
+
+    test('successfully updates needs_review plan to done when no executor work needed', async () => {
+      seedPlan({
+        uuid: 'quick-finish-needs-review',
+        planId: 5002,
+        status: 'needs_review',
+        docsUpdatedAt: '2026-02-01T00:00:00.000Z',
+        lessonsAppliedAt: '2026-02-02T00:00:00.000Z',
+      });
+
+      await invokeCommand(finishPlanQuick, { planUuid: 'quick-finish-needs-review' });
+
+      const row = currentDb
+        .prepare('SELECT status FROM plan WHERE uuid = ?')
+        .get('quick-finish-needs-review') as { status: string };
+      expect(row.status).toBe('done');
+    });
+
+    test('successfully updates done plan status when no executor work needed', async () => {
+      seedPlan({
+        uuid: 'quick-finish-done',
+        planId: 5003,
+        status: 'done',
+        docsUpdatedAt: '2026-02-01T00:00:00.000Z',
+        lessonsAppliedAt: '2026-02-02T00:00:00.000Z',
+      });
+
+      await expect(
+        invokeCommand(finishPlanQuick, { planUuid: 'quick-finish-done' })
+      ).resolves.toEqual({ status: 'done' });
+    });
+
+    test('returns { status: "done" } on success', async () => {
+      seedPlan({
+        uuid: 'quick-finish-return',
+        planId: 5004,
+        status: 'needs_review',
+        docsUpdatedAt: '2026-02-01T00:00:00.000Z',
+        lessonsAppliedAt: '2026-02-02T00:00:00.000Z',
+      });
+
+      const result = await invokeCommand(finishPlanQuick, { planUuid: 'quick-finish-return' });
+      expect(result).toEqual({ status: 'done' });
+    });
+
+    test('removes assignment after finishing', async () => {
+      seedPlan({
+        uuid: 'quick-finish-assignment',
+        planId: 5005,
+        status: 'needs_review',
+        docsUpdatedAt: '2026-02-01T00:00:00.000Z',
+        lessonsAppliedAt: '2026-02-02T00:00:00.000Z',
+      });
+
+      claimAssignment(currentDb, projectId, 'quick-finish-assignment', 5005);
+      expect(getAssignment(currentDb, projectId, 'quick-finish-assignment')).not.toBeNull();
+
+      await invokeCommand(finishPlanQuick, { planUuid: 'quick-finish-assignment' });
+
+      expect(getAssignment(currentDb, projectId, 'quick-finish-assignment')).toBeNull();
     });
   });
 
