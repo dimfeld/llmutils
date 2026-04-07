@@ -1567,6 +1567,31 @@ describe('plan remote actions', () => {
       });
     });
 
+    test('allows quick finish for taskless epics regardless of status or finish executor needs', async () => {
+      seedPlan({
+        uuid: 'quick-finish-taskless-epic',
+        planId: 5007,
+        status: 'pending',
+        epic: true,
+        tasks: [],
+        docsUpdatedAt: null,
+        lessonsAppliedAt: null,
+      });
+
+      await expect(
+        invokeCommand(finishPlanQuick, { planUuid: 'quick-finish-taskless-epic' })
+      ).resolves.toEqual({ status: 'done' });
+
+      expect(writePlanFileMock).toHaveBeenCalledWith(
+        '/tmp/resolved/5007.plan.md',
+        expect.objectContaining({
+          status: 'done',
+          updatedAt: expect.any(String),
+        }),
+        { cwdForIdentity: '/tmp/repo-plan-actions' }
+      );
+    });
+
     test('rejects plans where needsFinishExecutor is true', async () => {
       seedPlan({
         uuid: 'quick-finish-needs-executor',
@@ -1673,6 +1698,7 @@ describe('plan remote actions', () => {
     planId: number;
     projectId?: number;
     status?: 'pending' | 'in_progress' | 'needs_review' | 'done' | 'cancelled' | 'deferred';
+    epic?: boolean;
     tasks?: Array<{ title: string; description: string; done?: boolean }>;
     docsUpdatedAt?: string | null;
     lessonsAppliedAt?: string | null;
@@ -1683,6 +1709,7 @@ describe('plan remote actions', () => {
       title: `Plan ${options.planId}`,
       status: options.status ?? 'pending',
       priority: 'medium',
+      epic: options.epic ?? false,
       filename: `${options.planId}.plan.md`,
       tasks: options.tasks,
       sourceDocsUpdatedAt: options.docsUpdatedAt,

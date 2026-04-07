@@ -31,6 +31,10 @@ import { resolvePlanFromDb, writePlanFile } from '$tim/plans.js';
 
 type PlanDetailResult = NonNullable<ReturnType<typeof getPlanDetail>>;
 
+function isTasklessEpic(plan: Pick<PlanDetailResult, 'epic' | 'tasks'>): boolean {
+  return plan.epic === true && plan.tasks.length === 0;
+}
+
 const startGenerateSchema = z.object({
   planUuid: z.string().min(1),
 });
@@ -236,6 +240,7 @@ export const startRebase = command(startRebaseSchema, async ({ planUuid }) => {
 
 function isPlanEligibleForFinish(plan: ReturnType<typeof getPlanDetail>): plan is PlanDetailResult {
   if (plan == null) return false;
+  if (isTasklessEpic(plan)) return false;
   if (plan.status === 'needs_review') return true;
   if (plan.status === 'done') {
     // Use the server-computed needsFinishExecutor which accounts for config
@@ -281,7 +286,9 @@ export const finishPlanQuick = command(finishPlanQuickSchema, async ({ planUuid 
     error(404, 'Plan not found');
   }
 
-  if (plan.status !== 'needs_review' && plan.status !== 'done') {
+  const tasklessEpic = isTasklessEpic(plan);
+
+  if (!tasklessEpic && plan.status !== 'needs_review' && plan.status !== 'done') {
     error(400, 'Plan is not eligible for finish');
   }
 
@@ -291,7 +298,7 @@ export const finishPlanQuick = command(finishPlanQuickSchema, async ({ planUuid 
     plan.lessonsAppliedAt ?? null,
     projectConfig
   );
-  if (needsExecutor) {
+  if (!tasklessEpic && needsExecutor) {
     error(400, 'Plan requires executor work — use startFinish instead');
   }
 

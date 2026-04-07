@@ -15,6 +15,8 @@ vi.mock('$lib/remote/plan_actions.remote.js', () => ({
   startAgent: vi.fn(),
   startChat: vi.fn(),
   startRebase: vi.fn(),
+  startFinish: vi.fn(),
+  finishPlanQuick: vi.fn(),
   openInEditor: vi.fn(),
 }));
 
@@ -98,6 +100,9 @@ function makePlanDetail(overrides: Partial<PlanDetail> = {}): PlanDetail {
     invalidPrUrls: [],
     issues: [],
     prSummaryStatus: 'none',
+    docsUpdatedAt: null,
+    lessonsAppliedAt: null,
+    needsFinishExecutor: false,
     tags: [],
     dependencyUuids: [],
     tasks: [],
@@ -122,5 +127,23 @@ describe('PlanDetail', () => {
 
     expect(body).toContain('href="/projects/123/prs/42"');
     expect(body).toContain('View PR #42');
+  });
+
+  test('shows Finish for a taskless epic outside needs_review', () => {
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail({
+          status: 'pending',
+          displayStatus: 'pending',
+          epic: true,
+          tasks: [],
+          taskCounts: { done: 0, total: 0 },
+        }),
+        projectId: '123',
+      },
+    });
+
+    expect(body).toContain('Finish');
+    expect(body).not.toContain('Generate');
   });
 });

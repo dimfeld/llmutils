@@ -84,16 +84,19 @@
 
   let isIneligible = $derived(INELIGIBLE_STATUSES.has(plan.displayStatus));
   let hasTasks = $derived(plan.tasks.length > 0);
+  let isTasklessEpic = $derived(plan.epic && !hasTasks);
   let hasIncompleteTasks = $derived(plan.taskCounts.done < plan.taskCounts.total);
   let tasksOpen = $derived(plan.taskCounts.done < plan.taskCounts.total);
   let isBlocked = $derived(plan.displayStatus === 'blocked');
   let linkedPr = $derived(plan.prStatuses[0] ?? null);
 
-  // needs_review plans: show "Finish" as primary button
-  let showFinish = $derived(plan.displayStatus === 'needs_review');
+  // needs_review plans and taskless epics: show "Finish" as primary button
+  let showFinish = $derived(plan.displayStatus === 'needs_review' || isTasklessEpic);
   // done plans with pending finalization work: show "Finish" in dropdown
   // Use raw status (not displayStatus) since recently-done plans render as 'recently_done'
-  let showFinishInDropdown = $derived(plan.status === 'done' && plan.needsFinishExecutor);
+  let showFinishInDropdown = $derived(
+    !isTasklessEpic && plan.status === 'done' && plan.needsFinishExecutor
+  );
 
   // Plans with incomplete tasks: show single "Run Agent" button
   let showAgentOnly = $derived(hasTasks && hasIncompleteTasks && !isIneligible && !showFinish);
@@ -343,7 +346,9 @@
     successMessage = null;
     try {
       let finishAction: 'start' | 'quick' | 'none' = 'none';
-      if (plan.status === 'needs_review') {
+      if (isTasklessEpic) {
+        finishAction = 'quick';
+      } else if (plan.status === 'needs_review') {
         finishAction = plan.needsFinishExecutor ? 'start' : 'quick';
       } else if (plan.status === 'done' && plan.needsFinishExecutor) {
         finishAction = 'start';
