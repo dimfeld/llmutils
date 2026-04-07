@@ -92,6 +92,8 @@ export interface EnrichedPlan {
   invalidPrUrls: string[];
   issues: string[];
   prSummaryStatus: PrSummaryStatus;
+  docsUpdatedAt: string | null;
+  lessonsAppliedAt: string | null;
   tags: string[];
   dependencyUuids: string[];
   tasks: EnrichedPlanTask[];
@@ -445,6 +447,8 @@ function enrichPlansWithContext(
       updatedAt: plan.updated_at,
       pullRequests: prUrlsByPlanUuid.get(plan.uuid) ?? [],
       invalidPrUrls: categorizedPrUrlsByPlanUuid.get(plan.uuid)?.invalid ?? [],
+      docsUpdatedAt: plan.docs_updated_at,
+      lessonsAppliedAt: plan.lessons_applied_at,
       issues: parseJsonStringArray(plan.issue),
       prSummaryStatus: prSummaryStatusByPlanUuid.get(plan.uuid) ?? 'none',
       tags: tagsByPlanUuid.get(plan.uuid) ?? [],

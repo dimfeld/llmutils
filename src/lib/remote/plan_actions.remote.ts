@@ -9,6 +9,7 @@ import {
   type SpawnProcessResult,
   spawnAgentProcess,
   spawnChatProcess,
+  spawnFinishProcess,
   spawnGenerateProcess,
   spawnRebaseProcess,
 } from '$lib/server/plan_actions.js';
@@ -202,4 +203,51 @@ export const startRebase = command(startRebaseSchema, async ({ planUuid }) => {
     'Plan is not eligible for rebase',
     spawnRebaseProcess
   );
+});
+
+function isPlanEligibleForFinish(plan: ReturnType<typeof getPlanDetail>): plan is PlanDetailResult {
+  if (plan == null) return false;
+  if (plan.status === 'needs_review') return true;
+  if (plan.status === 'done') {
+    return plan.docsUpdatedAt === null || plan.lessonsAppliedAt === null;
+  }
+  return false;
+}
+
+const startFinishSchema = z.object({
+  planUuid: z.string().min(1),
+});
+
+export const startFinish = command(startFinishSchema, async ({ planUuid }) => {
+  return launchTimCommand(
+    planUuid,
+    isPlanEligibleForFinish,
+    'Plan is not eligible for finish',
+    spawnFinishProcess
+  );
+});
+
+const finishPlanQuickSchema = z.object({
+  planUuid: z.string().min(1),
+});
+
+export const finishPlanQuick = command(finishPlanQuickSchema, async ({ planUuid }) => {
+  const { db } = await getServerContext();
+  const plan = getPlanDetail(db, planUuid);
+
+  if (!plan) {
+    error(404, 'Plan not found');
+  }
+
+  if (plan.status !== 'needs_review' && plan.status !== 'done') {
+    error(400, 'Plan is not eligible for quick finish');
+  }
+
+  db.prepare('UPDATE plan SET status = ?, updated_at = ? WHERE uuid = ?').run(
+    'done',
+    new Date().toISOString(),
+    planUuid
+  );
+
+  return { status: 'done' as const };
 });

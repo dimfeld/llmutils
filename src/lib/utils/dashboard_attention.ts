@@ -31,6 +31,8 @@ export interface PlanAttentionItem {
   planId: number;
   planTitle: string | null;
   projectId: number;
+  docsUpdatedAt: string | null;
+  lessonsAppliedAt: string | null;
   reasons: PlanAttentionReason[];
 }
 
@@ -121,6 +123,8 @@ export function deriveAttentionItems(
         planId: plan.planId,
         planTitle: plan.title,
         projectId: plan.projectId,
+        docsUpdatedAt: plan.docsUpdatedAt,
+        lessonsAppliedAt: plan.lessonsAppliedAt,
         reasons,
       });
     }
