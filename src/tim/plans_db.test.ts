@@ -44,6 +44,8 @@ function createPlanRow(overrides: Partial<PlanRow> = {}): PlanRow {
     docs: JSON.stringify(['docs/one.md', 'docs/two.md']),
     changed_files: JSON.stringify(['src/a.ts', 'src/b.ts']),
     plan_generated_at: '2026-03-01T00:00:00.000Z',
+    docs_updated_at: '2026-03-04T00:00:00.000Z',
+    lessons_applied_at: '2026-03-05T00:00:00.000Z',
     review_issues: JSON.stringify([
       {
         severity: 'major',
@@ -124,6 +126,8 @@ describe('tim plans_db', () => {
       docs: ['docs/one.md', 'docs/two.md'],
       changedFiles: ['src/a.ts', 'src/b.ts'],
       planGeneratedAt: '2026-03-01T00:00:00.000Z',
+      docsUpdatedAt: '2026-03-04T00:00:00.000Z',
+      lessonsAppliedAt: '2026-03-05T00:00:00.000Z',
       reviewIssues: [
         {
           severity: 'major',
@@ -161,6 +165,8 @@ describe('tim plans_db', () => {
       docs: null,
       changed_files: null,
       plan_generated_at: null,
+      docs_updated_at: null,
+      lessons_applied_at: null,
       review_issues: null,
       parent_uuid: null,
       epic: 0,
@@ -189,6 +195,8 @@ describe('tim plans_db', () => {
       docs: undefined,
       changedFiles: undefined,
       planGeneratedAt: undefined,
+      docsUpdatedAt: undefined,
+      lessonsAppliedAt: undefined,
       reviewIssues: undefined,
       parent: undefined,
       dependencies: [],
@@ -236,6 +244,8 @@ describe('tim plans_db', () => {
     expect(columnNames).toContain('docs');
     expect(columnNames).toContain('changed_files');
     expect(columnNames).toContain('plan_generated_at');
+    expect(columnNames).toContain('docs_updated_at');
+    expect(columnNames).toContain('lessons_applied_at');
     expect(columnNames).toContain('review_issues');
   });
 

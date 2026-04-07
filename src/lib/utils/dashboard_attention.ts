@@ -37,6 +37,9 @@ export interface PlanAttentionItem {
   planTitle: string | null;
   projectId: number;
   epic: boolean;
+  docsUpdatedAt: string | null;
+  lessonsAppliedAt: string | null;
+  needsFinishExecutor: boolean;
   reasons: PlanAttentionReason[];
 }
 
@@ -130,6 +133,9 @@ export function deriveAttentionItems(
         planTitle: plan.title,
         projectId: plan.projectId,
         epic: plan.epic,
+        docsUpdatedAt: plan.docsUpdatedAt,
+        lessonsAppliedAt: plan.lessonsAppliedAt,
+        needsFinishExecutor: plan.needsFinishExecutor,
         reasons,
       });
     }

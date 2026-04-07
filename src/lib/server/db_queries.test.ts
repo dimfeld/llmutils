@@ -14,6 +14,7 @@ import { patchWorkspace, recordWorkspace } from '$tim/db/workspace.js';
 import { acquireWorkspaceLock, getWorkspaceLock } from '$tim/db/workspace_lock.js';
 
 import {
+  computeNeedsFinishExecutor,
   getPlanDetail,
   getPlansForProject,
   getPrimaryWorkspacePath,
@@ -169,6 +170,37 @@ describe('lib/server/db_queries', () => {
     expect(pendingPlan?.displayStatus).toBe('pending');
     expect(needsReviewPlan).toBeDefined();
     expect(needsReviewPlan?.displayStatus).toBe('needs_review');
+  });
+
+  test('getPlansForProject and getPlanDetail include finish-tracking timestamps', () => {
+    const docsUpdatedAt = '2026-02-03T04:05:06.000Z';
+    const lessonsAppliedAt = '2026-02-04T05:06:07.000Z';
+    upsertPlan(db, projectId, {
+      uuid: 'plan-finish-tracking',
+      planId: 115,
+      title: 'Plan with finish tracking',
+      status: 'done',
+      priority: 'medium',
+      filename: '115-finish-tracking.plan.md',
+      sourceCreatedAt: daysAgo(10),
+      sourceUpdatedAt: daysAgo(1),
+      sourceDocsUpdatedAt: docsUpdatedAt,
+      sourceLessonsAppliedAt: lessonsAppliedAt,
+    });
+
+    const plan = getPlansForProject(db, projectId).find(
+      (entry) => entry.uuid === 'plan-finish-tracking'
+    );
+    expect(plan).toMatchObject({
+      docsUpdatedAt,
+      lessonsAppliedAt,
+    });
+
+    const detail = getPlanDetail(db, 'plan-finish-tracking');
+    expect(detail).toMatchObject({
+      docsUpdatedAt,
+      lessonsAppliedAt,
+    });
   });
 
   test('getPlansForProject treats needs_review dependencies as resolved', () => {
@@ -1265,3 +1297,68 @@ function recentTimestamp(): string {
 function setWorkspaceUpdatedAt(db: Database, workspaceId: number, updatedAt: string): void {
   db.prepare('UPDATE workspace SET updated_at = ? WHERE id = ?').run(updatedAt, workspaceId);
 }
+
+describe('computeNeedsFinishExecutor', () => {
+  const SOME_TIMESTAMP = '2026-01-15T10:00:00.000Z';
+
+  test('returns true when docsUpdatedAt is null and mode is after-completion', () => {
+    expect(
+      computeNeedsFinishExecutor(null, SOME_TIMESTAMP, { updateDocsMode: 'after-completion' })
+    ).toBe(true);
+  });
+
+  test('returns true when docsUpdatedAt is null and mode is after-iteration', () => {
+    expect(
+      computeNeedsFinishExecutor(null, SOME_TIMESTAMP, { updateDocsMode: 'after-iteration' })
+    ).toBe(true);
+  });
+
+  test('returns false when docsUpdatedAt is null and mode is never', () => {
+    expect(computeNeedsFinishExecutor(null, SOME_TIMESTAMP, { updateDocsMode: 'never' })).toBe(
+      false
+    );
+  });
+
+  test('returns false when docsUpdatedAt is null and mode is undefined (defaults to never)', () => {
+    expect(computeNeedsFinishExecutor(null, SOME_TIMESTAMP, {})).toBe(false);
+  });
+
+  test('returns true when lessonsAppliedAt is null and applyLessons is true', () => {
+    expect(computeNeedsFinishExecutor(SOME_TIMESTAMP, null, { applyLessons: true })).toBe(true);
+  });
+
+  test('returns false when lessonsAppliedAt is null and applyLessons is false', () => {
+    expect(computeNeedsFinishExecutor(SOME_TIMESTAMP, null, { applyLessons: false })).toBe(false);
+  });
+
+  test('returns false when lessonsAppliedAt is null and applyLessons is undefined', () => {
+    expect(computeNeedsFinishExecutor(SOME_TIMESTAMP, null, {})).toBe(false);
+  });
+
+  test('returns false when both timestamps are set regardless of config', () => {
+    expect(
+      computeNeedsFinishExecutor(SOME_TIMESTAMP, SOME_TIMESTAMP, {
+        updateDocsMode: 'after-completion',
+        applyLessons: true,
+      })
+    ).toBe(false);
+  });
+
+  test('returns true when both timestamps are null with active config', () => {
+    expect(
+      computeNeedsFinishExecutor(null, null, {
+        updateDocsMode: 'after-completion',
+        applyLessons: true,
+      })
+    ).toBe(true);
+  });
+
+  test('returns false when docsUpdatedAt is set and lessonsAppliedAt is set', () => {
+    expect(
+      computeNeedsFinishExecutor(SOME_TIMESTAMP, SOME_TIMESTAMP, {
+        updateDocsMode: 'never',
+        applyLessons: false,
+      })
+    ).toBe(false);
+  });
+});

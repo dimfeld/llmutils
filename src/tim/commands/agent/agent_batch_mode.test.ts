@@ -59,7 +59,7 @@ const {
     buildExecutionPromptWithoutStepsSpy: vi.fn(async () => 'Test batch prompt'),
     executePostApplyCommandSpy: vi.fn(async () => true),
     runUpdateDocsSpy: vi.fn(async () => {}),
-    runUpdateLessonsSpy: vi.fn(async () => {}),
+    runUpdateLessonsSpy: vi.fn(async () => true),
     handleReviewCommandSpy: vi.fn(async () => ({ tasksAppended: 0 })),
     promptConfirmSpy: vi.fn(async () => false),
   };
@@ -1342,6 +1342,258 @@ describe('timAgent - Batch Mode Execution Loop', () => {
             typeof call === 'string' && call.includes('All tasks completed, marking plan as done')
         )
       ).toBe(true);
+    });
+  });
+
+  describe('finalization timestamps and manual mode', () => {
+    test('docsUpdatedAt is set after successful runUpdateDocs in after-completion mode', async () => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        updateDocs: { mode: 'after-completion' },
+      });
+
+      executorExecuteSpy.mockImplementation(async () => {
+        await createPlanFile({
+          tasks: [
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
+        });
+      });
+
+      const options = { log: false, nonInteractive: true, finalReview: false } as any;
+      const globalCliOptions = {};
+
+      await timAgent(planFile, options, globalCliOptions);
+
+      expect(runUpdateDocsSpy).toHaveBeenCalledTimes(1);
+
+      const finalContent = await fs.readFile(planFile, 'utf-8');
+      const finalPlan = yaml.parse(finalContent.replace(/^#.*\n/, ''));
+      expect(finalPlan.docsUpdatedAt).toBeDefined();
+      expect(new Date(finalPlan.docsUpdatedAt).toISOString()).toBe(finalPlan.docsUpdatedAt);
+    });
+
+    test('docsUpdatedAt is set after successful runUpdateDocs in after-iteration mode', async () => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+          {
+            title: 'Task 2',
+            description: 'Second task',
+            steps: [{ prompt: 'Do task 2', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        updateDocs: { mode: 'after-iteration' },
+      });
+
+      let callCount = 0;
+      executorExecuteSpy.mockImplementation(async () => {
+        callCount++;
+        if (callCount === 1) {
+          await createPlanFile({
+            tasks: [
+              {
+                title: 'Task 1',
+                description: 'First task',
+                steps: [{ prompt: 'Do task 1', done: true }],
+                done: true,
+              },
+              {
+                title: 'Task 2',
+                description: 'Second task',
+                steps: [{ prompt: 'Do task 2', done: false }],
+              },
+            ],
+          });
+        } else {
+          await createPlanFile({
+            tasks: [
+              {
+                title: 'Task 1',
+                description: 'First task',
+                steps: [{ prompt: 'Do task 1', done: true }],
+                done: true,
+              },
+              {
+                title: 'Task 2',
+                description: 'Second task',
+                steps: [{ prompt: 'Do task 2', done: true }],
+                done: true,
+              },
+            ],
+          });
+        }
+      });
+
+      const options = { log: false, nonInteractive: true, finalReview: false } as any;
+      const globalCliOptions = {};
+
+      await timAgent(planFile, options, globalCliOptions);
+
+      expect(runUpdateDocsSpy).toHaveBeenCalled();
+
+      const finalContent = await fs.readFile(planFile, 'utf-8');
+      const finalPlan = yaml.parse(finalContent.replace(/^#.*\n/, ''));
+      expect(finalPlan.docsUpdatedAt).toBeDefined();
+      expect(new Date(finalPlan.docsUpdatedAt).toISOString()).toBe(finalPlan.docsUpdatedAt);
+    });
+
+    test('lessonsAppliedAt is set when runUpdateLessons returns true', async () => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        updateDocs: { mode: 'never', applyLessons: true },
+      });
+
+      runUpdateLessonsSpy.mockResolvedValue(true);
+
+      executorExecuteSpy.mockImplementation(async () => {
+        await createPlanFile({
+          tasks: [
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
+        });
+      });
+
+      const options = { log: false, nonInteractive: true, finalReview: false } as any;
+      const globalCliOptions = {};
+
+      await timAgent(planFile, options, globalCliOptions);
+
+      expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
+
+      const finalContent = await fs.readFile(planFile, 'utf-8');
+      const finalPlan = yaml.parse(finalContent.replace(/^#.*\n/, ''));
+      expect(finalPlan.lessonsAppliedAt).toBeDefined();
+      expect(new Date(finalPlan.lessonsAppliedAt).toISOString()).toBe(finalPlan.lessonsAppliedAt);
+    });
+
+    test('lessonsAppliedAt is NOT set when runUpdateLessons returns false', async () => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        updateDocs: { mode: 'never', applyLessons: true },
+      });
+
+      runUpdateLessonsSpy.mockResolvedValue(false);
+
+      executorExecuteSpy.mockImplementation(async () => {
+        await createPlanFile({
+          tasks: [
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
+        });
+      });
+
+      const options = { log: false, nonInteractive: true, finalReview: false } as any;
+      const globalCliOptions = {};
+
+      await timAgent(planFile, options, globalCliOptions);
+
+      expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
+
+      const finalContent = await fs.readFile(planFile, 'utf-8');
+      const finalPlan = yaml.parse(finalContent.replace(/^#.*\n/, ''));
+      expect(finalPlan.lessonsAppliedAt).toBeUndefined();
+    });
+
+    test('manual mode skips both docs and lessons', async () => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        updateDocs: { mode: 'manual', applyLessons: true },
+      });
+
+      executorExecuteSpy.mockImplementation(async () => {
+        await createPlanFile({
+          tasks: [
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
+        });
+      });
+
+      const options = { log: false, nonInteractive: true, finalReview: false } as any;
+      const globalCliOptions = {};
+
+      await timAgent(planFile, options, globalCliOptions);
+
+      expect(runUpdateDocsSpy).not.toHaveBeenCalled();
+      expect(runUpdateLessonsSpy).not.toHaveBeenCalled();
+
+      const finalContent = await fs.readFile(planFile, 'utf-8');
+      const finalPlan = yaml.parse(finalContent.replace(/^#.*\n/, ''));
+      expect(finalPlan.docsUpdatedAt).toBeUndefined();
+      expect(finalPlan.lessonsAppliedAt).toBeUndefined();
     });
   });
 

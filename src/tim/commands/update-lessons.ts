@@ -202,12 +202,16 @@ export async function runUpdateLessons(
         model?: string;
         baseDir?: string;
         configPath?: string;
+        nonInteractive?: boolean;
+        terminalInput?: boolean;
       },
   maybeOptions?: {
     executor?: string;
     model?: string;
     baseDir?: string;
     configPath?: string;
+    nonInteractive?: boolean;
+    terminalInput?: boolean;
   }
 ): Promise<boolean> {
   const options = maybeOptions ?? (configOrOptions as NonNullable<typeof maybeOptions>);
@@ -245,14 +249,20 @@ export async function runUpdateLessons(
 
   const items = parseLessonItems(lessonsLearned);
   if (items.length > 0) {
-    const selected = await promptCheckbox({
-      message: 'Select lessons to apply:',
-      choices: items.map((item) => ({
-        name: item,
-        value: item,
-        checked: true,
-      })),
-    });
+    let selected: string[];
+    if (options.nonInteractive || options.terminalInput === false) {
+      // In non-interactive or no-terminal-input mode, auto-select all lessons
+      selected = items;
+    } else {
+      selected = await promptCheckbox({
+        message: 'Select lessons to apply:',
+        choices: items.map((item) => ({
+          name: item,
+          value: item,
+          checked: true,
+        })),
+      });
+    }
 
     if (selected.length === 0) {
       log('No lessons selected. Skipping lessons documentation update.');
@@ -286,6 +296,8 @@ export async function runUpdateLessons(
   const sharedExecutorOptions: ExecutorCommonOptions = {
     baseDir,
     model,
+    noninteractive: options.nonInteractive ? true : undefined,
+    terminalInput: options.terminalInput,
   };
 
   const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, effectiveConfig);

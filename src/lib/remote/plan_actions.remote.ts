@@ -2,18 +2,32 @@ import { command } from '$app/server';
 import { error } from '@sveltejs/kit';
 import * as z from 'zod';
 
-import { getPrimaryWorkspacePath, getPlanDetail } from '$lib/server/db_queries.js';
+import type { Database } from 'bun:sqlite';
+import {
+  computeNeedsFinishExecutor,
+  getPrimaryWorkspacePath,
+  getPlanDetail,
+  type FinishConfig,
+} from '$lib/server/db_queries.js';
 import { getServerContext } from '$lib/server/init.js';
 import { clearLaunchLock, isPlanLaunching, setLaunchLock } from '$lib/server/launch_lock.js';
 import {
   type SpawnProcessResult,
   spawnAgentProcess,
   spawnChatProcess,
+  spawnFinishProcess,
   spawnGenerateProcess,
   spawnRebaseProcess,
 } from '$lib/server/plan_actions.js';
 import { getSessionManager } from '$lib/server/session_context.js';
 import { openTerminalWithCommand } from '$lib/server/terminal_control.js';
+import { removePlanAssignment } from '$tim/assignments/remove_plan_assignment.js';
+import { loadEffectiveConfig } from '$tim/configLoader.js';
+import { getPlanByUuid } from '$tim/db/plan.js';
+import { getProjectById } from '$tim/db/project.js';
+import { withPlanAutoSync } from '$tim/plan_materialize.js';
+import { checkAndMarkParentDone } from '$tim/plans/parent_cascade.js';
+import { resolvePlanFromDb, writePlanFile } from '$tim/plans.js';
 
 type PlanDetailResult = NonNullable<ReturnType<typeof getPlanDetail>>;
 
@@ -60,12 +74,13 @@ async function launchTimCommand(
   planUuid: string,
   eligibilityCheck: (plan: ReturnType<typeof getPlanDetail>) => plan is PlanDetailResult,
   eligibilityError: string,
-  spawnProcess: (planId: number, cwd: string) => Promise<SpawnProcessResult>
+  spawnProcess: (planId: number, cwd: string) => Promise<SpawnProcessResult>,
+  finishConfigOverride?: FinishConfig
 ): Promise<
   { status: 'started'; planId: number } | { status: 'already_running'; connectionId?: string }
 > {
   const { db } = await getServerContext();
-  const plan = getPlanDetail(db, planUuid);
+  const plan = getPlanDetail(db, planUuid, finishConfigOverride);
 
   if (!plan) {
     error(404, 'Plan not found');
@@ -118,6 +133,21 @@ async function launchTimCommand(
   return {
     status: 'started',
     planId: result.planId,
+  };
+}
+
+async function loadProjectFinishConfig(db: Database, projectId: number): Promise<FinishConfig> {
+  const project = getProjectById(db, projectId);
+  if (!project?.last_git_root) {
+    // Without a known git root, we can't resolve the repo-level config.
+    // Default conservatively: assume docs/lessons may be needed so the UI
+    // never silently skips required finalization work.
+    return { updateDocsMode: 'after-completion', applyLessons: true };
+  }
+  const config = await loadEffectiveConfig(undefined, { cwd: project.last_git_root });
+  return {
+    updateDocsMode: config.updateDocs?.mode,
+    applyLessons: config.updateDocs?.applyLessons,
   };
 }
 
@@ -202,4 +232,87 @@ export const startRebase = command(startRebaseSchema, async ({ planUuid }) => {
     'Plan is not eligible for rebase',
     spawnRebaseProcess
   );
+});
+
+function isPlanEligibleForFinish(plan: ReturnType<typeof getPlanDetail>): plan is PlanDetailResult {
+  if (plan == null) return false;
+  if (plan.status === 'needs_review') return true;
+  if (plan.status === 'done') {
+    // Use the server-computed needsFinishExecutor which accounts for config
+    return plan.needsFinishExecutor;
+  }
+  return false;
+}
+
+const startFinishSchema = z.object({
+  planUuid: z.string().min(1),
+});
+
+export const startFinish = command(startFinishSchema, async ({ planUuid }) => {
+  const { db } = await getServerContext();
+  const planRow = getPlanByUuid(db, planUuid);
+  if (!planRow) {
+    error(404, 'Plan not found');
+  }
+  const finishConfig = await loadProjectFinishConfig(db, planRow.project_id);
+
+  return launchTimCommand(
+    planUuid,
+    isPlanEligibleForFinish,
+    'Plan is not eligible for finish',
+    spawnFinishProcess,
+    finishConfig
+  );
+});
+
+const finishPlanQuickSchema = z.object({
+  planUuid: z.string().min(1),
+});
+
+/**
+ * Finish a plan without spawning a process — just sets status to done.
+ * Used when no executor work is needed (docs/lessons already done or disabled).
+ */
+export const finishPlanQuick = command(finishPlanQuickSchema, async ({ planUuid }) => {
+  const { db } = await getServerContext();
+  const plan = getPlanDetail(db, planUuid);
+
+  if (!plan) {
+    error(404, 'Plan not found');
+  }
+
+  if (plan.status !== 'needs_review' && plan.status !== 'done') {
+    error(400, 'Plan is not eligible for finish');
+  }
+
+  const projectConfig = await loadProjectFinishConfig(db, plan.projectId);
+  const needsExecutor = computeNeedsFinishExecutor(
+    plan.docsUpdatedAt ?? null,
+    plan.lessonsAppliedAt ?? null,
+    projectConfig
+  );
+  if (needsExecutor) {
+    error(400, 'Plan requires executor work — use startFinish instead');
+  }
+
+  const project = getProjectById(db, plan.projectId);
+  const repoRoot = project?.last_git_root ?? process.cwd();
+  const effectiveConfig = await loadEffectiveConfig(undefined, { cwd: repoRoot });
+
+  // Use withPlanAutoSync to merge any user edits from the materialized plan file
+  // before writing the status change, avoiding silent data loss.
+  await withPlanAutoSync(plan.planId, repoRoot, async () => {
+    const resolved = await resolvePlanFromDb(plan.planId, repoRoot);
+    const planData = resolved.plan;
+    planData.status = 'done';
+    planData.updatedAt = new Date().toISOString();
+    await writePlanFile(resolved.planPath ?? null, planData, { cwdForIdentity: repoRoot });
+
+    await removePlanAssignment(planData, repoRoot);
+    if (planData.parent) {
+      await checkAndMarkParentDone(planData.parent, effectiveConfig, { baseDir: repoRoot });
+    }
+  });
+
+  return { status: 'done' as const };
 });

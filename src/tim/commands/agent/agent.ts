@@ -472,7 +472,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
         : 'normal';
 
     // Determine updateDocs mode: CLI option overrides config
-    const updateDocsMode: 'never' | 'after-iteration' | 'after-completion' =
+    const updateDocsMode: 'never' | 'after-iteration' | 'after-completion' | 'manual' =
       options.updateDocs || config.updateDocs?.mode || 'never';
 
     if (isAutoClaimEnabled() && !isShuttingDown()) {
@@ -784,7 +784,12 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
               model: config.updateDocs?.model,
               baseDir: currentBaseDir,
               justCompletedTaskIndices: [actionableItem.taskIndex],
+              nonInteractive: noninteractive,
+              terminalInput: terminalInputEnabled,
             });
+            const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
+            updatedPlanForTimestamp.docsUpdatedAt = new Date().toISOString();
+            await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
           } catch (err) {
             error('Failed to update documentation:', err);
             // Don't stop execution for documentation update failures
@@ -835,7 +840,12 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
                   executor: config.updateDocs?.executor,
                   model: config.updateDocs?.model,
                   baseDir: currentBaseDir,
+                  nonInteractive: noninteractive,
+                  terminalInput: terminalInputEnabled,
                 });
+                const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
+                updatedPlanForTimestamp.docsUpdatedAt = new Date().toISOString();
+                await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
               } catch (err) {
                 error('Failed to update documentation:', err);
                 // Don't stop execution for documentation update failures
@@ -928,16 +938,24 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
 
             if (
               planStillCompleteAfterReview &&
+              updateDocsMode !== 'manual' &&
               (config.updateDocs?.applyLessons || options.applyLessons)
             ) {
               if (isShuttingDown()) break;
 
               try {
-                await runUpdateLessons(currentPlanFile, config, {
+                const applied = await runUpdateLessons(currentPlanFile, config, {
                   executor: config.updateDocs?.executor,
                   model: config.updateDocs?.model,
                   baseDir: currentBaseDir,
+                  nonInteractive: noninteractive,
+                  terminalInput: terminalInputEnabled,
                 });
+                if (applied) {
+                  const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
+                  updatedPlanForTimestamp.lessonsAppliedAt = new Date().toISOString();
+                  await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
+                }
               } catch (err) {
                 error('Failed to apply lessons learned:', err as Error);
                 // Don't stop execution for lessons update failures
@@ -1129,7 +1147,12 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
             model: config.updateDocs?.model,
             baseDir: currentBaseDir,
             justCompletedTaskIndices: [taskIndex],
+            nonInteractive: noninteractive,
+            terminalInput: terminalInputEnabled,
           });
+          const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
+          updatedPlanForTimestamp.docsUpdatedAt = new Date().toISOString();
+          await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
         } catch (err) {
           error('Failed to update documentation:', err);
           // Don't stop execution for documentation update failures
@@ -1178,7 +1201,12 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
                 executor: config.updateDocs?.executor,
                 model: config.updateDocs?.model,
                 baseDir: currentBaseDir,
+                nonInteractive: noninteractive,
+                terminalInput: terminalInputEnabled,
               });
+              const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
+              updatedPlanForTimestamp.docsUpdatedAt = new Date().toISOString();
+              await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
             } catch (err) {
               error('Failed to update documentation:', err);
               // Don't stop execution for documentation update failures
@@ -1200,15 +1228,25 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
             }
           }
 
-          if (config.updateDocs?.applyLessons || options.applyLessons) {
+          if (
+            updateDocsMode !== 'manual' &&
+            (config.updateDocs?.applyLessons || options.applyLessons)
+          ) {
             if (isShuttingDown()) break;
 
             try {
-              await runUpdateLessons(currentPlanFile, config, {
+              const applied = await runUpdateLessons(currentPlanFile, config, {
                 executor: config.updateDocs?.executor,
                 model: config.updateDocs?.model,
                 baseDir: currentBaseDir,
+                nonInteractive: noninteractive,
+                terminalInput: terminalInputEnabled,
               });
+              if (applied) {
+                const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
+                updatedPlanForTimestamp.lessonsAppliedAt = new Date().toISOString();
+                await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
+              }
             } catch (err) {
               error('Failed to apply lessons learned:', err as Error);
               // Don't stop execution for lessons update failures

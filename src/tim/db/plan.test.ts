@@ -438,4 +438,45 @@ describe('tim db/plan', () => {
       .all('plan-stale-check') as Array<{ depends_on_uuid: string }>;
     expect(deps.map((entry) => entry.depends_on_uuid)).toEqual(['dep-forced']);
   });
+
+  test('upsertPlan stores and updates docsUpdatedAt and lessonsAppliedAt', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-finish-fields',
+      planId: 500,
+      title: 'Finish fields plan',
+      sourceDocsUpdatedAt: '2026-03-01T10:00:00.000Z',
+      sourceLessonsAppliedAt: '2026-03-02T12:00:00.000Z',
+    });
+
+    let found = getPlanByUuid(db, 'plan-finish-fields');
+    expect(found).not.toBeNull();
+    expect(found?.docs_updated_at).toBe('2026-03-01T10:00:00.000Z');
+    expect(found?.lessons_applied_at).toBe('2026-03-02T12:00:00.000Z');
+
+    // Update with new values
+    upsertPlan(db, projectId, {
+      uuid: 'plan-finish-fields',
+      planId: 500,
+      title: 'Finish fields plan updated',
+      sourceDocsUpdatedAt: '2026-04-01T10:00:00.000Z',
+      sourceLessonsAppliedAt: null,
+    });
+
+    found = getPlanByUuid(db, 'plan-finish-fields');
+    expect(found?.docs_updated_at).toBe('2026-04-01T10:00:00.000Z');
+    expect(found?.lessons_applied_at).toBeNull();
+  });
+
+  test('upsertPlan defaults docsUpdatedAt and lessonsAppliedAt to null', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-no-finish-fields',
+      planId: 501,
+      title: 'No finish fields',
+    });
+
+    const found = getPlanByUuid(db, 'plan-no-finish-fields');
+    expect(found).not.toBeNull();
+    expect(found?.docs_updated_at).toBeNull();
+    expect(found?.lessons_applied_at).toBeNull();
+  });
 });

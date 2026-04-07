@@ -5,7 +5,7 @@ import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params }) => {
   const { db } = await getServerContext();
-  const result = getPlanDetailRouteData(db, params.planId, params.projectId);
+  const result = await getPlanDetailRouteData(db, params.planId, params.projectId, 'plans');
 
   if (!result) {
     error(404, 'Plan not found');

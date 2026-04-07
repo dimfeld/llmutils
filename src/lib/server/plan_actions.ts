@@ -147,3 +147,11 @@ export async function spawnPrFixProcess(planId: number, cwd: string): Promise<Sp
     cwd
   );
 }
+
+export async function spawnFinishProcess(planId: number, cwd: string): Promise<SpawnProcessResult> {
+  return spawnTimProcess(
+    planId,
+    ['finish', String(planId), '--auto-workspace', '--no-terminal-input'],
+    cwd
+  );
+}

@@ -141,6 +141,8 @@ export async function runUpdateDocs(
         baseDir?: string;
         configPath?: string;
         justCompletedTaskIndices?: number[];
+        nonInteractive?: boolean;
+        terminalInput?: boolean;
       },
   maybeOptions?: {
     executor?: string;
@@ -148,6 +150,8 @@ export async function runUpdateDocs(
     baseDir?: string;
     configPath?: string;
     justCompletedTaskIndices?: number[];
+    nonInteractive?: boolean;
+    terminalInput?: boolean;
   }
 ): Promise<void> {
   const options = maybeOptions ?? (configOrOptions as NonNullable<typeof maybeOptions>);
@@ -196,6 +200,8 @@ export async function runUpdateDocs(
   const sharedExecutorOptions: ExecutorCommonOptions = {
     baseDir,
     model,
+    noninteractive: options.nonInteractive ? true : undefined,
+    terminalInput: options.terminalInput,
   };
 
   const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, effectiveConfig);

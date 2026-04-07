@@ -1,5 +1,8 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { toast } from 'svelte-sonner';
+  import { startFinish, finishPlanQuick } from '$lib/remote/plan_actions.remote.js';
+  import { invalidateAll } from '$app/navigation';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import type { PlanAttentionItem } from '$lib/utils/dashboard_attention.js';
 
@@ -33,8 +36,11 @@
   };
 
   let waitingForInputReason = $derived(item.reasons.find((r) => r.type === 'waiting_for_input'));
+  let hasNeedsReview = $derived(item.reasons.some((r) => r.type === 'needs_review'));
 
   let planHref = $derived(`/projects/${projectId}/active/plan/${item.planUuid}`);
+
+  let startingFinish = $state(false);
 
   function navigateToSession(event: MouseEvent) {
     event.preventDefault();
@@ -42,6 +48,25 @@
     if (waitingForInputReason && waitingForInputReason.type === 'waiting_for_input') {
       sessionManager.selectSession(waitingForInputReason.sessionId, projectId);
       void goto(`/projects/${projectId}/sessions`);
+    }
+  }
+
+  async function handleFinish(event: MouseEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (startingFinish) return;
+    startingFinish = true;
+    try {
+      if (item.needsFinishExecutor) {
+        await startFinish({ planUuid: item.planUuid });
+      } else {
+        await finishPlanQuick({ planUuid: item.planUuid });
+        await invalidateAll();
+      }
+    } catch (err) {
+      toast.error(`Failed to start finish: ${(err as Error).message}`);
+    } finally {
+      startingFinish = false;
     }
   }
 </script>
@@ -88,6 +113,16 @@
       onclick={navigateToSession}
     >
       View Session
+    </button>
+  {/if}
+  {#if hasNeedsReview}
+    <button
+      type="button"
+      class="shrink-0 rounded bg-orange-600 px-2 py-0.5 text-xs font-medium text-white transition-colors hover:bg-orange-700 dark:bg-orange-700 dark:hover:bg-orange-600"
+      onclick={handleFinish}
+      disabled={startingFinish}
+    >
+      {startingFinish ? 'Starting…' : 'Finish'}
     </button>
   {/if}
 </div>

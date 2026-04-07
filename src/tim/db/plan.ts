@@ -24,6 +24,8 @@ export interface PlanRow {
   changed_files: string | null;
   plan_generated_at: string | null;
   review_issues: string | null;
+  docs_updated_at: string | null;
+  lessons_applied_at: string | null;
   parent_uuid: string | null;
   epic: number;
   created_at: string;
@@ -57,6 +59,8 @@ export interface UpsertPlanInput {
   details?: string | null;
   sourceCreatedAt?: string | null;
   sourceUpdatedAt?: string | null;
+  sourceDocsUpdatedAt?: string | null;
+  sourceLessonsAppliedAt?: string | null;
   forceOverwrite?: boolean;
   status?: PlanSchema['status'];
   priority?: 'low' | 'medium' | 'high' | 'urgent' | 'maybe' | null;
@@ -207,11 +211,13 @@ export function upsertPlanInTransaction(
       changed_files,
       plan_generated_at,
       review_issues,
+      docs_updated_at,
+      lessons_applied_at,
       parent_uuid,
       epic,
       created_at,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ${SQL_NOW_ISO_UTC}), COALESCE(?, ${SQL_NOW_ISO_UTC}))
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ${SQL_NOW_ISO_UTC}), COALESCE(?, ${SQL_NOW_ISO_UTC}))
     ON CONFLICT(uuid) DO UPDATE SET
       project_id = excluded.project_id,
       plan_id = excluded.plan_id,
@@ -233,6 +239,8 @@ export function upsertPlanInTransaction(
       changed_files = excluded.changed_files,
       plan_generated_at = excluded.plan_generated_at,
       review_issues = excluded.review_issues,
+      docs_updated_at = excluded.docs_updated_at,
+      lessons_applied_at = excluded.lessons_applied_at,
       parent_uuid = excluded.parent_uuid,
       epic = excluded.epic,
       created_at = COALESCE(excluded.created_at, ${SQL_NOW_ISO_UTC}),
@@ -260,6 +268,8 @@ export function upsertPlanInTransaction(
     input.changedFiles ? JSON.stringify(input.changedFiles) : null,
     input.planGeneratedAt ?? null,
     input.reviewIssues ? JSON.stringify(input.reviewIssues) : null,
+    input.sourceDocsUpdatedAt ?? null,
+    input.sourceLessonsAppliedAt ?? null,
     input.parentUuid ?? null,
     input.epic ? 1 : 0,
     effectiveCreatedAt,

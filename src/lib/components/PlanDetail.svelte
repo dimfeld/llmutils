@@ -12,6 +12,8 @@
     startAgent,
     startChat,
     startRebase,
+    startFinish,
+    finishPlanQuick,
     openInEditor,
   } from '$lib/remote/plan_actions.remote.js';
   import {
@@ -87,12 +89,18 @@
   let isBlocked = $derived(plan.displayStatus === 'blocked');
   let linkedPr = $derived(plan.prStatuses[0] ?? null);
 
+  // needs_review plans: show "Finish" as primary button
+  let showFinish = $derived(plan.displayStatus === 'needs_review');
+  // done plans with pending finalization work: show "Finish" in dropdown
+  // Use raw status (not displayStatus) since recently-done plans render as 'recently_done'
+  let showFinishInDropdown = $derived(plan.status === 'done' && plan.needsFinishExecutor);
+
   // Plans with incomplete tasks: show single "Run Agent" button
-  let showAgentOnly = $derived(hasTasks && hasIncompleteTasks && !isIneligible);
+  let showAgentOnly = $derived(hasTasks && hasIncompleteTasks && !isIneligible && !showFinish);
   // Plans without tasks: show "Generate" as primary + "Run Agent" in dropdown
-  let showGenerateWithAgent = $derived(!hasTasks && !isIneligible);
+  let showGenerateWithAgent = $derived(!hasTasks && !isIneligible && !showFinish);
   // All tasks complete or terminal status: show standalone Chat button
-  let showChatOnly = $derived(!showGenerateWithAgent && !showAgentOnly);
+  let showChatOnly = $derived(!showGenerateWithAgent && !showAgentOnly && !showFinish);
 
   // Active session detection is independent of eligibility so the "Running" link
   // remains visible even if the plan transitions to an ineligible status.
@@ -117,6 +125,7 @@
   let startingAgent = $state(false);
   let startingRebase = $state(false);
   let startingChat: 'claude' | 'codex' | false = $state(false);
+  let startingFinish = $state(false);
   let chatDialogOpen = $state(false);
   let startedSuccessfully = $state(false);
   let errorMessage: string | null = $state(null);
@@ -169,6 +178,7 @@
       startingAgent = false;
       startingRebase = false;
       startingChat = false;
+      startingFinish = false;
       chatDialogOpen = false;
       startedSuccessfully = false;
       reviewIssueSubmitting = null;
@@ -228,7 +238,9 @@
     }
   }
 
-  let starting = $derived(startingGenerate || startingAgent || startingRebase || startingChat);
+  let starting = $derived(
+    startingGenerate || startingAgent || startingRebase || startingChat || startingFinish
+  );
   let controlsDisabled = $derived(starting || startedSuccessfully);
 
   async function handleRunAgent() {
@@ -325,6 +337,44 @@
       : []
   );
 
+  async function handleFinish() {
+    startingFinish = true;
+    errorMessage = null;
+    successMessage = null;
+    try {
+      let finishAction: 'start' | 'quick' | 'none' = 'none';
+      if (plan.status === 'needs_review') {
+        finishAction = plan.needsFinishExecutor ? 'start' : 'quick';
+      } else if (plan.status === 'done' && plan.needsFinishExecutor) {
+        finishAction = 'start';
+      }
+
+      if (finishAction === 'start') {
+        const result = await startFinish({ planUuid: plan.uuid });
+        if (result.status === 'already_running') {
+          successMessage = {
+            text: 'A session is already running for this plan',
+            connectionId: result.connectionId,
+          };
+        } else {
+          successMessage = { text: 'Finish started' };
+        }
+      } else if (finishAction === 'quick') {
+        await finishPlanQuick({ planUuid: plan.uuid });
+        successMessage = { text: 'Plan marked as done' };
+      } else {
+        throw new Error('Plan is not eligible for finish');
+      }
+      setStartedSuccessfully();
+      await invalidateAll();
+    } catch (err) {
+      errorMessage = `${err as Error}`;
+    } finally {
+      startingFinish = false;
+    }
+  }
+
+
   let sortedDependencies = $derived(
     [...plan.dependencies].sort((a, b) => {
       const aOrder = a.displayStatus ? (STATUS_ORDER_MAP[a.displayStatus] ?? 99) : 99;
@@ -405,6 +455,64 @@
               ? 'Generating…'
               : `${activeSession.command.charAt(0).toUpperCase() + activeSession.command.slice(1)} Running…`}
         </a>
+      {:else if showFinish}
+        <ButtonGroup class="ml-auto">
+          <Button
+            onclick={handleFinish}
+            disabled={controlsDisabled}
+            size="sm"
+            class="bg-amber-600 text-white hover:bg-amber-700 dark:bg-amber-500 dark:hover:bg-amber-600"
+          >
+            {#if startingFinish}
+              <span
+                class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
+              ></span>
+              Starting…
+            {:else}
+              Finish
+            {/if}
+          </Button>
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger>
+              {#snippet child({ props })}
+                <Button
+                  {...props}
+                  disabled={controlsDisabled}
+                  size="icon-sm"
+                  aria-label="More plan actions"
+                  class="bg-amber-600 text-white hover:bg-amber-700 dark:bg-amber-500 dark:hover:bg-amber-600"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </Button>
+              {/snippet}
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Content align="end">
+              <DropdownMenu.Item onclick={() => (chatDialogOpen = true)}>Chat</DropdownMenu.Item>
+              {#if openInEditorEnabled}
+                <DropdownMenu.Item onclick={handleOpenInEditor} disabled={openingInEditor}>
+                  {openingInEditor ? 'Opening…' : 'Open in Editor'}
+                </DropdownMenu.Item>
+              {/if}
+              {#if isEligibleForRebase}
+                <DropdownMenu.Item onclick={handleRebase} disabled={controlsDisabled}>
+                  {startingRebase ? 'Starting Rebase…' : 'Rebase'}
+                </DropdownMenu.Item>
+              {/if}
+            </DropdownMenu.Content>
+          </DropdownMenu.Root>
+        </ButtonGroup>
       {:else if showAgentOnly}
         <ButtonGroup class="ml-auto">
           <Button
@@ -580,6 +688,61 @@
                 <DropdownMenu.Content align="end">
                   <DropdownMenu.Item onclick={handleRebase} disabled={controlsDisabled}>
                     {startingRebase ? 'Starting Rebase…' : 'Rebase'}
+                  </DropdownMenu.Item>
+                  {#if showFinishInDropdown}
+                    <DropdownMenu.Item onclick={handleFinish} disabled={controlsDisabled}>
+                      {startingFinish ? 'Starting Finish…' : 'Finish'}
+                    </DropdownMenu.Item>
+                  {/if}
+                </DropdownMenu.Content>
+              </DropdownMenu.Root>
+            </ButtonGroup>
+          {:else if showFinishInDropdown}
+            <ButtonGroup>
+              <Button
+                onclick={() => (chatDialogOpen = true)}
+                disabled={controlsDisabled}
+                size="sm"
+                class="bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600"
+              >
+                {#if startingChat}
+                  <span
+                    class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
+                  ></span>
+                  Starting…
+                {:else}
+                  Chat
+                {/if}
+              </Button>
+              <DropdownMenu.Root>
+                <DropdownMenu.Trigger>
+                  {#snippet child({ props })}
+                    <Button
+                      {...props}
+                      disabled={controlsDisabled}
+                      size="icon-sm"
+                      aria-label="More plan actions"
+                      class="bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="m6 9 6 6 6-6" />
+                      </svg>
+                    </Button>
+                  {/snippet}
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Content align="end">
+                  <DropdownMenu.Item onclick={handleFinish} disabled={controlsDisabled}>
+                    {startingFinish ? 'Starting Finish…' : 'Finish'}
                   </DropdownMenu.Item>
                 </DropdownMenu.Content>
               </DropdownMenu.Root>

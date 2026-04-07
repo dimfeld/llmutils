@@ -24,7 +24,10 @@ function makePlan(overrides: Partial<EnrichedPlan> & { uuid: string }): Enriched
     simple: false,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
+    docsUpdatedAt: null,
+    lessonsAppliedAt: null,
     pullRequests: [],
+    needsFinishExecutor: false,
     invalidPrUrls: [],
     issues: [],
     prSummaryStatus: 'none',
@@ -118,6 +121,26 @@ describe('deriveAttentionItems', () => {
     expect(result.planItems).toHaveLength(1);
     expect(result.planItems[0].epic).toBe(true);
   });
+
+  test('includes finish-tracking timestamps on needs_review attention items', () => {
+    const plan = makePlan({
+      uuid: 'plan-1',
+      displayStatus: 'needs_review',
+      docsUpdatedAt: '2026-01-02T00:00:00Z',
+      lessonsAppliedAt: null,
+    });
+
+    const result = deriveAttentionItems([plan], [], []);
+    expect(result.planItems).toEqual([
+      expect.objectContaining({
+        planUuid: 'plan-1',
+        docsUpdatedAt: '2026-01-02T00:00:00Z',
+        lessonsAppliedAt: null,
+        reasons: [{ type: 'needs_review' }],
+      }),
+    ]);
+  });
+
 
   test('detects agent_finished from offline session + in_progress plan', () => {
     const plan = makePlan({ uuid: 'plan-1', displayStatus: 'in_progress' });
@@ -233,6 +256,27 @@ describe('deriveAttentionItems', () => {
     const result = deriveAttentionItems([], [], [pr]);
     expect(result.prItems).toHaveLength(1);
     expect(result.prItems[0]).toEqual({ kind: 'pr', actionablePr: pr });
+  });
+
+  test('propagates needsFinishExecutor with finish-tracking timestamps', () => {
+    const plan = makePlan({
+      uuid: 'plan-finish',
+      displayStatus: 'needs_review',
+      needsFinishExecutor: true,
+      docsUpdatedAt: null,
+      lessonsAppliedAt: null,
+    });
+
+    const result = deriveAttentionItems([plan], [], []);
+    expect(result.planItems).toHaveLength(1);
+    expect(result.planItems[0]).toEqual(
+      expect.objectContaining({
+        planUuid: 'plan-finish',
+        needsFinishExecutor: true,
+        docsUpdatedAt: null,
+        lessonsAppliedAt: null,
+      })
+    );
   });
 
   test('handles sessions without planUuid gracefully', () => {

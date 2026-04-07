@@ -70,7 +70,7 @@ export async function executeBatchMode(
     maxSteps?: number;
     executorName?: string;
     executionMode?: 'normal' | 'simple' | 'tdd';
-    updateDocsMode?: 'never' | 'after-iteration' | 'after-completion';
+    updateDocsMode?: 'never' | 'after-iteration' | 'after-completion' | 'manual';
     applyLessons?: boolean;
     finalReview?: boolean;
     configPath?: string;
@@ -358,7 +358,11 @@ Available tasks:\n\n${taskDescriptions}`,
             model: config.updateDocs?.model,
             baseDir,
             justCompletedTaskIndices,
+            terminalInput,
           });
+          const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
+          updatedPlanForTimestamp.docsUpdatedAt = new Date().toISOString();
+          await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
         } catch (err) {
           error('Failed to update documentation:', err);
           // Don't stop execution for documentation update failures
@@ -410,7 +414,11 @@ Available tasks:\n\n${taskDescriptions}`,
               executor: config.updateDocs?.executor,
               model: config.updateDocs?.model,
               baseDir,
+              terminalInput,
             });
+            const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
+            updatedPlanForTimestamp.docsUpdatedAt = new Date().toISOString();
+            await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
           } catch (err) {
             error('Failed to update documentation:', err);
             // Don't stop execution for documentation update failures
@@ -502,17 +510,27 @@ Available tasks:\n\n${taskDescriptions}`,
           await removePlanAssignment(updatedPlanData, baseDir);
         }
 
-        if (planStillCompleteAfterReview && (config.updateDocs?.applyLessons || applyLessons)) {
+        if (
+          planStillCompleteAfterReview &&
+          updateDocsMode !== 'manual' &&
+          (config.updateDocs?.applyLessons || applyLessons)
+        ) {
           if (isShuttingDown()) {
             break;
           }
 
           try {
-            await runUpdateLessons(currentPlanFile, config, {
+            const applied = await runUpdateLessons(currentPlanFile, config, {
               executor: config.updateDocs?.executor,
               model: config.updateDocs?.model,
               baseDir,
+              terminalInput,
             });
+            if (applied) {
+              const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
+              updatedPlanForTimestamp.lessonsAppliedAt = new Date().toISOString();
+              await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
+            }
           } catch (err) {
             error('Failed to apply lessons learned:', err as Error);
             // Don't stop execution for lessons update failures
