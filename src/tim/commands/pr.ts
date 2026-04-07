@@ -716,7 +716,7 @@ export async function handlePrFixCommand(
   const { plan, planPath } = await resolvePlanForCommand(planId, command);
   const planUuid = requirePlanUuid(plan, planPath ?? `plan ${plan.id}`);
   const db = getDatabase();
-  const prUrls = plan.pullRequest?.length ? plan.pullRequest : undefined;
+  const prUrls = plan.pullRequest?.length ? deduplicatePrUrls(plan.pullRequest).valid : undefined;
   const prStatuses = getPrStatusForPlan(db, planUuid, prUrls, {
     includeReviewThreads: true,
   });
@@ -772,7 +772,18 @@ export async function handlePrFixCommand(
 
   const fixPrompt = buildReviewThreadFixPrompt(plan, selectedThreads);
   const { timAgent } = await import('./agent/agent.js');
-  await timAgent(planId, { ...options, reviewThreadContext: fixPrompt }, getRootOptions(command));
+  const fixOptions = {
+    ...options,
+    orchestrator:
+      (typeof options.executor === 'string' && options.executor.trim().length > 0
+        ? options.executor
+        : undefined) ??
+      (typeof options.orchestrator === 'string' && options.orchestrator.trim().length > 0
+        ? options.orchestrator
+        : undefined),
+    reviewThreadContext: fixPrompt,
+  };
+  await timAgent(planId, fixOptions, getRootOptions(command));
 }
 
 export async function handlePrLinkCommand(

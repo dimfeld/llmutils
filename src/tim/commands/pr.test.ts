@@ -116,6 +116,7 @@ import {
 import { promptCheckbox as mockPromptCheckboxFn } from '../../common/input.js';
 import {
   canonicalizePrUrl as mockCanonicalizePrUrlFn,
+  deduplicatePrUrls as mockDeduplicatePrUrlsFn,
   parsePrOrIssueNumber as mockParsePrOrIssueNumberFn,
   validatePrIdentifier as mockValidatePrIdentifierFn,
 } from '../../common/github/identifiers.js';
@@ -144,6 +145,7 @@ const mockSyncPlanPrLinks = vi.mocked(mockSyncPlanPrLinksFn);
 const mockGetWebhookServerUrl = vi.mocked(mockGetWebhookServerUrlFn);
 const mockIngestWebhookEvents = vi.mocked(mockIngestWebhookEventsFn);
 const mockCanonicalizePrUrl = vi.mocked(mockCanonicalizePrUrlFn);
+const mockDeduplicatePrUrls = vi.mocked(mockDeduplicatePrUrlsFn);
 const mockParsePrOrIssueNumber = vi.mocked(mockParsePrOrIssueNumberFn);
 const mockValidatePrIdentifier = vi.mocked(mockValidatePrIdentifierFn);
 const mockGetPrStatusByUrl = vi.mocked(mockGetPrStatusByUrlFn);
@@ -245,6 +247,7 @@ describe('tim/commands/pr', () => {
     mockGetWebhookServerUrl.mockClear();
     mockIngestWebhookEvents.mockClear();
     mockCanonicalizePrUrl.mockClear();
+    mockDeduplicatePrUrls.mockClear();
     mockParsePrOrIssueNumber.mockClear();
     mockValidatePrIdentifier.mockClear();
     mockGetPrStatusByUrl.mockClear();
@@ -315,6 +318,7 @@ describe('tim/commands/pr', () => {
     });
     mockParsePrOrIssueNumber.mockImplementation(async () => currentParsedIdentifier);
     mockValidatePrIdentifier.mockImplementation(() => {});
+    mockDeduplicatePrUrls.mockImplementation((urls: string[]) => ({ valid: urls, invalid: [] }));
     mockGetPrStatusByUrl.mockImplementation((_db: unknown, prUrl: string) => {
       // Check per-URL map first, then fall back to single cached detail
       const fromMap = currentRefreshedStatuses.get(prUrl);
@@ -1240,7 +1244,7 @@ describe('tim/commands/pr', () => {
 
     await handlePrFixCommand(
       '248',
-      { orchestrator: 'codex-cli', model: 'gpt-5.4', terminalInput: true },
+      { executor: 'codex-cli', model: 'gpt-5.4', terminalInput: true },
       createNestedCommand()
     );
 
@@ -1265,6 +1269,7 @@ describe('tim/commands/pr', () => {
     expect(mockTimAgent).toHaveBeenCalledWith(
       '248',
       expect.objectContaining({
+        executor: 'codex-cli',
         orchestrator: 'codex-cli',
         model: 'gpt-5.4',
         reviewThreadContext: expect.stringContaining('### Thread 1: src/user.ts:88'),
@@ -1452,6 +1457,70 @@ describe('tim/commands/pr', () => {
 
     expect(mockPromptCheckbox).not.toHaveBeenCalled();
     expect(mockTimAgent).toHaveBeenCalled();
+  });
+
+  test('pr fix canonicalizes explicit plan PR URLs before looking up cached status rows', async () => {
+    currentPlan.pullRequest = ['https://github.com/example/repo/pulls/701?tab=checks'];
+    mockDeduplicatePrUrls.mockReturnValueOnce({
+      valid: ['https://github.com/example/repo/pull/701'],
+      invalid: [],
+    });
+    currentAutoLinkedDetails = [
+      {
+        ...createPrDetail(701, 'Explicit PR', 'success'),
+        reviewThreads: [
+          createReviewThreadDetail({
+            threadId: 'thread-canonical',
+            path: 'src/auth.ts',
+            line: 42,
+            comments: [{ body: 'Fix this path.' }],
+          }),
+        ],
+      },
+    ];
+
+    await handlePrFixCommand('248', { all: true }, createNestedCommand());
+
+    expect(mockDeduplicatePrUrls).toHaveBeenCalledWith([
+      'https://github.com/example/repo/pulls/701?tab=checks',
+    ]);
+    expect(mockGetPrStatusForPlan).toHaveBeenCalledWith(
+      dbHandle,
+      'plan-248',
+      ['https://github.com/example/repo/pull/701'],
+      expect.objectContaining({ includeReviewThreads: true })
+    );
+    expect(mockTimAgent).toHaveBeenCalled();
+  });
+
+  test('pr fix preserves explicit orchestrator when no --executor value is provided', async () => {
+    currentAutoLinkedDetails = [
+      {
+        ...createPrDetail(701, 'PR', 'success'),
+        reviewThreads: [
+          createReviewThreadDetail({
+            threadId: 'thread-1',
+            path: 'src/auth.ts',
+            line: 42,
+            comments: [{ body: 'Fix.' }],
+          }),
+        ],
+      },
+    ];
+
+    await handlePrFixCommand(
+      '248',
+      { all: true, orchestrator: 'claude-code' },
+      createNestedCommand()
+    );
+
+    expect(mockTimAgent).toHaveBeenCalledWith(
+      '248',
+      expect.objectContaining({
+        orchestrator: 'claude-code',
+      }),
+      { config: '/tmp/tim.yml' }
+    );
   });
 
   test('buildReviewThreadFixPrompt uses path only when no line numbers exist', () => {

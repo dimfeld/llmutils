@@ -6,6 +6,7 @@
     refreshPrStatus,
   } from '$lib/remote/pr_status.remote.js';
   import { startFixThreads } from '$lib/remote/review_thread_actions.remote.js';
+  import { getFixButtonState, getFixStartResultState } from '$lib/components/pr_fix_launch_state.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import { hasRelevantPrUpdate } from '$lib/utils/pr_update_events.js';
   import {
@@ -48,15 +49,28 @@
   let refreshError = $state<string | null>(null);
   let refreshing = $state(false);
   let fixStarting = $state(false);
+  let fixLaunched = $state(false);
+  let fixButtonState = $derived(
+    getFixButtonState({ refreshing, fixStarting, fixLaunched, sessionActiveForPlan })
+  );
+
+  $effect(() => {
+    if (sessionActiveForPlan && fixLaunched) {
+      fixLaunched = false;
+    }
+  });
 
   async function handleStartFix() {
+    if (fixStarting || fixLaunched || sessionActiveForPlan) {
+      return;
+    }
     fixStarting = true;
     refreshError = null;
     try {
       const result = await startFixThreads({ planUuid });
-      if (result.status === 'already_running') {
-        refreshError = 'A session is already running for this plan';
-      }
+      const fixResultState = getFixStartResultState(result.status);
+      fixLaunched = fixResultState.fixLaunched;
+      refreshError = fixResultState.message;
     } catch (err) {
       refreshError = `Failed to start fix: ${err}`;
     } finally {
@@ -112,17 +126,11 @@
       {#if hasUnresolvedThreads}
         <button
           onclick={handleStartFix}
-          disabled={refreshing || fixStarting || sessionActiveForPlan}
+          disabled={fixButtonState.disabled}
           class="rounded px-2 py-0.5 text-xs text-amber-700 hover:bg-amber-50 hover:text-amber-900 disabled:opacity-50 dark:text-amber-400 dark:hover:bg-amber-950/30 dark:hover:text-amber-300"
           aria-label="Fix all unresolved review threads"
         >
-          {#if fixStarting}
-            Starting...
-          {:else if sessionActiveForPlan}
-            Session Active
-          {:else}
-            Fix Unresolved
-          {/if}
+          {fixButtonState.label}
         </button>
       {/if}
       {#if tokenConfigured}
