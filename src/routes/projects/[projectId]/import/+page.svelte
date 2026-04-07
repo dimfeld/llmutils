@@ -34,7 +34,7 @@
   let fetchError: string | null = $state(null);
 
   // Step 2 state
-  let fetchedResult: FetchedIssue | null = $state(null);
+  let fetchedResult: FetchedIssue | null = $state.raw(null);
   let step = $derived(fetchedResult ? 2 : 1);
   let importing = $state(false);
   let importError: string | null = $state(null);
@@ -49,14 +49,17 @@
   function initSelectionState(result: FetchedIssue) {
     const issueData = result.issueData;
     const contentCount = 1 + issueData.comments.length;
-    // Body checked by default, comments unchecked
-    parentContentChecked = Array.from({ length: contentCount }, (_, i) => i === 0);
+    // Body checked by default only if it has content, comments unchecked
+    parentContentChecked = Array.from(
+      { length: contentCount },
+      (_, i) => i === 0 && hasContent(issueData.issue.body)
+    );
 
     const children = issueData.children ?? [];
     childSelected = children.map(() => true);
     childContentChecked = children.map((child) => {
       const childCount = 1 + child.comments.length;
-      return Array.from({ length: childCount }, (_, i) => i === 0);
+      return Array.from({ length: childCount }, (_, i) => i === 0 && hasContent(child.issue.body));
     });
   }
 

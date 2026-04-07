@@ -217,6 +217,24 @@ describe('issue_import server helpers', () => {
       );
     });
 
+    test('passes owner/repo#123 format directly to tracker', async () => {
+      vi.mocked(parseIssueInput).mockReturnValue(null);
+      vi.mocked(tracker.fetchIssue).mockResolvedValue(makeIssue(123, 'Qualified'));
+
+      await fetchIssueForImport('owner/repo#123', 'single', '/tmp/repo');
+
+      expect(tracker.fetchIssue).toHaveBeenCalledWith('owner/repo#123');
+    });
+
+    test('expands #123 format with repo context', async () => {
+      vi.mocked(parseIssueInput).mockReturnValue(null);
+      vi.mocked(tracker.fetchIssue).mockResolvedValue(makeIssue(123, 'Hash ref'));
+
+      await fetchIssueForImport('#123', 'single', '/tmp/repo');
+
+      expect(tracker.fetchIssue).toHaveBeenCalledWith('owner/repo#123');
+    });
+
     test('throws when configured tracker is unavailable', async () => {
       vi.mocked(loadEffectiveConfig).mockResolvedValue({ issueTracker: 'linear' } as never);
       vi.mocked(getAvailableTrackers).mockReturnValue({
@@ -304,6 +322,14 @@ describe('issue_import server helpers', () => {
         id: 100,
         dependencies: [101, 102],
       });
+
+      // Child plans should not have rmprOptions (matching CLI behavior)
+      const childCalls = vi.mocked(createStubPlanFromIssue).mock.calls.filter(
+        (call) => call[1] !== 100 // exclude parent plan
+      );
+      for (const call of childCalls) {
+        expect(call[0].rmprOptions).toBeNull();
+      }
     });
 
     test('creates merged parent details and issue links in merged mode', async () => {

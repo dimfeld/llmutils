@@ -50,10 +50,11 @@ function normalizeSelectionIndexes(indexes: number[], maxIndex: number): number[
 }
 
 function extractSelectedContent(issueData: IssueWithComments, selectedIndexes: number[]): string[] {
-  const sortedUniqueIndexes = [...new Set(selectedIndexes)].sort((a, b) => a - b);
+  // Callers always pass indexes through normalizeSelectionIndexes first,
+  // which already deduplicates and sorts.
   const content: string[] = [];
 
-  for (const index of sortedUniqueIndexes) {
+  for (const index of selectedIndexes) {
     if (index === 0) {
       const body = issueData.issue.body?.trim();
       if (body) {
@@ -78,7 +79,8 @@ function buildSuggestedFileName(issueData: IssueWithComments): string {
 
 function getIssueInstructionData(
   issueData: IssueWithComments,
-  selectedContentIndexes: number[]
+  selectedContentIndexes: number[],
+  options?: { skipRmprOptions?: boolean }
 ): IssueInstructionData {
   const selectedContent = extractSelectedContent(issueData, selectedContentIndexes);
   return {
@@ -88,7 +90,7 @@ function getIssueInstructionData(
       html_url: issueData.issue.htmlUrl,
     },
     plan: selectedContent.join('\n\n'),
-    rmprOptions: getRmprOptions(issueData),
+    rmprOptions: options?.skipRmprOptions ? null : getRmprOptions(issueData),
   };
 }
 
@@ -125,7 +127,14 @@ export async function fetchIssueForImport(
 
   const trimmedIdentifier = identifier.trim();
   const parsedInput = parseIssueInput(trimmedIdentifier);
-  if (!parsedInput) {
+
+  // parseIssueInput doesn't handle GitHub-specific formats like owner/repo#123 or #123.
+  // Pass those through directly to the tracker which can parse them.
+  const isGitHubQualifiedRef =
+    trackerType === 'github' && /^[^/]+\/[^/]+#\d+$/.test(trimmedIdentifier);
+  const isGitHubHashRef = trackerType === 'github' && /^#\d+$/.test(trimmedIdentifier);
+
+  if (!parsedInput && !isGitHubQualifiedRef && !isGitHubHashRef) {
     throw new Error(
       'Invalid issue identifier. Enter an issue ID, issue URL, or branch name containing the issue ID.'
     );
@@ -134,10 +143,24 @@ export async function fetchIssueForImport(
   const issueTracker = await getIssueTracker(config);
   const supportsHierarchical = Boolean(issueTracker.fetchIssueWithChildren);
 
-  let trackerIdentifier = parsedInput.isBranchName ? parsedInput.identifier : trimmedIdentifier;
-  if (trackerType === 'github' && /^\d+$/.test(trackerIdentifier)) {
+  let trackerIdentifier: string;
+  if (isGitHubQualifiedRef) {
+    trackerIdentifier = trimmedIdentifier;
+  } else if (isGitHubHashRef) {
     const repository = await getGitRepository(gitRoot);
-    trackerIdentifier = `${repository}#${trackerIdentifier}`;
+    trackerIdentifier = `${repository}${trimmedIdentifier}`;
+  } else if (parsedInput!.isBranchName) {
+    trackerIdentifier = parsedInput!.identifier;
+    if (trackerType === 'github' && /^\d+$/.test(trackerIdentifier)) {
+      const repository = await getGitRepository(gitRoot);
+      trackerIdentifier = `${repository}#${trackerIdentifier}`;
+    }
+  } else {
+    trackerIdentifier = trimmedIdentifier;
+    if (trackerType === 'github' && /^\d+$/.test(trackerIdentifier)) {
+      const repository = await getGitRepository(gitRoot);
+      trackerIdentifier = `${repository}#${trackerIdentifier}`;
+    }
   }
 
   const issueData =
@@ -241,7 +264,8 @@ export async function createPlansFromIssue(
       childIds.push(childPlanId);
       const childInstruction = getIssueInstructionData(
         childIssue,
-        normalizedChildContent[childIssueIndex] ?? []
+        normalizedChildContent[childIssueIndex] ?? [],
+        { skipRmprOptions: true }
       );
       const childPlan = createStubPlanFromIssue(childInstruction, childPlanId);
       childPlan.parent = parentPlanId;
