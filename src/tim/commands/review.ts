@@ -1936,7 +1936,7 @@ export function createTaskFromIssue(issue: ReviewIssue): PlanTask {
   return task;
 }
 
-function getReviewThreadDisplayLine(thread: PrReviewThreadDetail): number | null {
+export function getReviewThreadDisplayLine(thread: PrReviewThreadDetail): number | null {
   return (
     thread.thread.line ??
     thread.thread.original_line ??

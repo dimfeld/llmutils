@@ -1177,8 +1177,8 @@ describe('tim/commands/pr', () => {
     expect(prompt).toContain('```diff');
     expect(prompt).toContain('- alice: This logic needs a null check.');
     expect(prompt).toContain('- bob: Please add a test too.');
-    expect(prompt).toContain('tim pr reply <threadId> "explanation of fix"');
-    expect(prompt).toContain('tim pr resolve <threadId>');
+    expect(prompt).toContain('tim pr reply <Thread ID> "explanation of fix"');
+    expect(prompt).toContain('tim pr resolve <Thread ID>');
   });
 
   test('buildReviewThreadFixPrompt handles empty thread lists', () => {
@@ -1240,7 +1240,7 @@ describe('tim/commands/pr', () => {
 
     await handlePrFixCommand(
       '248',
-      { executor: 'codex-cli', model: 'gpt-5.4', terminalInput: true },
+      { orchestrator: 'codex-cli', model: 'gpt-5.4', terminalInput: true },
       createNestedCommand()
     );
 
@@ -1265,7 +1265,7 @@ describe('tim/commands/pr', () => {
     expect(mockTimAgent).toHaveBeenCalledWith(
       '248',
       expect.objectContaining({
-        executor: 'codex-cli',
+        orchestrator: 'codex-cli',
         model: 'gpt-5.4',
         reviewThreadContext: expect.stringContaining('### Thread 1: src/user.ts:88'),
       }),

@@ -35,6 +35,7 @@ import {
   type PrStatusRow,
 } from '../db/pr_status.js';
 import { resolvePlan } from '../plan_display.js';
+import { getReviewThreadDisplayLine } from './review.js';
 import type { PlanSchema } from '../planSchema.js';
 import { resolvePlanFromDb, writePlanFile } from '../plans.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
@@ -51,27 +52,13 @@ interface PrStatusCommandOptions {
   forceRefresh?: boolean;
 }
 
-function getReviewThreadDisplayLine(thread: PrReviewThreadDetail): number | null {
-  return (
-    thread.thread.line ??
-    thread.thread.original_line ??
-    thread.thread.start_line ??
-    thread.thread.original_start_line
-  );
-}
-
 function getFirstThreadSentence(thread: PrReviewThreadDetail): string {
   const firstComment = thread.comments[0]?.body?.trim() ?? '';
   return firstComment.split(/[.\n]/)[0]?.trim().slice(0, 80) ?? '';
 }
 
 function isPrFixInteractive(options: Record<string, unknown>): boolean {
-  return (
-    process.env.TIM_INTERACTIVE !== '0' &&
-    process.stdin.isTTY === true &&
-    options.terminalInput !== false &&
-    options.nonInteractive !== true
-  );
+  return options.terminalInput !== false && options.nonInteractive !== true;
 }
 
 function getRootOptions(command: RootCommandLike | undefined): { config?: string } {
@@ -706,8 +693,9 @@ export function buildReviewThreadFixPrompt(
     '',
     'Fix each issue described in the review threads above.',
     'Focus on the specific files and lines mentioned, but make any adjacent changes needed for a correct fix.',
-    'After fixing each thread, run `tim pr reply <threadId> "explanation of fix"` with a concise explanation.',
-    'Then run `tim pr resolve <threadId>` to mark that thread resolved on GitHub.',
+    'After fixing each thread, use the Thread ID shown in that thread\'s section to run:',
+    '  `tim pr reply <Thread ID> "explanation of fix"` — with a concise explanation of what you changed',
+    '  `tim pr resolve <Thread ID>` — to mark the thread resolved on GitHub',
     'Do not skip the reply or resolve steps for any thread you addressed.'
   );
 
