@@ -1179,7 +1179,7 @@ async function branchExists(
 ): Promise<boolean> {
   if (isJj) {
     // For jj, check if the bookmark exists
-    const result = await spawnAndLogOutput(['jj', 'bookmark', 'list'], {
+    const result = await spawnAndLogOutput(['jj', 'bookmark', 'list', branchName], {
       cwd: workspacePath,
       quiet: true,
     });
@@ -1706,6 +1706,15 @@ export async function prepareExistingWorkspace(
           cwd: workspacePath,
           quiet: true,
         });
+
+        // In case the bookmark is conflicted, set it to the origin version
+        await spawnAndLogOutput(
+          ['jj', 'bookmark', 'set', options.branchName, '-r', `${options.branchName}@origin`],
+          {
+            cwd: workspacePath,
+            quiet: true,
+          }
+        );
 
         const editResult = await spawnAndLogOutput(['jj', 'new', options.branchName], {
           cwd: workspacePath,
