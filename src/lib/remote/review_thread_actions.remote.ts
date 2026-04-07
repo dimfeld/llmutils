@@ -182,31 +182,32 @@ export const resolveThread = command(resolveThreadSchema, async ({ prStatusId, t
   return { success: true };
 });
 
-export const replyToThread = command(replyToThreadSchema, async ({ prStatusId, threadId, body }) => {
-  const { db, config } = await getServerContext();
-  const threadRow = db
-    .prepare(
-      `
+export const replyToThread = command(
+  replyToThreadSchema,
+  async ({ prStatusId, threadId, body }) => {
+    const { db, config } = await getServerContext();
+    const threadRow = db
+      .prepare(
+        `
         SELECT id
         FROM pr_review_thread
         WHERE pr_status_id = ? AND thread_id = ?
       `
-    )
-    .get(prStatusId, threadId) as Pick<PrReviewThreadRow, 'id'> | null;
-  if (!threadRow) {
-    error(404, 'Review thread not found');
-  }
+      )
+      .get(prStatusId, threadId) as Pick<PrReviewThreadRow, 'id'> | null;
+    if (!threadRow) {
+      error(404, 'Review thread not found');
+    }
 
-  const success = await addReplyToReviewThread(threadId, body);
-  if (success) {
-    const author =
-      (await getGitHubUsername({ githubUsername: config.githubUsername })) || 'You';
+    const success = await addReplyToReviewThread(threadId, body);
+    if (success) {
+      const author = (await getGitHubUsername({ githubUsername: config.githubUsername })) || 'You';
 
-    // Use a subquery to re-resolve the thread row by stable key, in case a
-    // concurrent refresh replaced the thread rows while the GitHub call was in-flight.
-    const inserted = db
-      .prepare(
-        `
+      // Use a subquery to re-resolve the thread row by stable key, in case a
+      // concurrent refresh replaced the thread rows while the GitHub call was in-flight.
+      const inserted = db
+        .prepare(
+          `
         INSERT INTO pr_review_thread_comment (
           review_thread_id,
           comment_id,
@@ -221,24 +222,25 @@ export const replyToThread = command(replyToThreadSchema, async ({ prStatusId, t
         FROM pr_review_thread
         WHERE pr_status_id = ? AND thread_id = ?
       `
-      )
-      .run(
-        `local-reply-${crypto.randomUUID()}`,
-        null,
-        author,
-        body,
-        null,
-        'SUBMITTED',
-        new Date().toISOString(),
-        prStatusId,
-        threadId
-      );
+        )
+        .run(
+          `local-reply-${crypto.randomUUID()}`,
+          null,
+          author,
+          body,
+          null,
+          'SUBMITTED',
+          new Date().toISOString(),
+          prStatusId,
+          threadId
+        );
 
-    if (inserted.changes === 0) {
-      // Thread row disappeared during the GitHub call (concurrent refresh).
-      // The reply was posted to GitHub successfully; it will appear on next refresh.
+      if (inserted.changes === 0) {
+        // Thread row disappeared during the GitHub call (concurrent refresh).
+        // The reply was posted to GitHub successfully; it will appear on next refresh.
+      }
     }
-  }
 
-  return { success };
-});
+    return { success };
+  }
+);
