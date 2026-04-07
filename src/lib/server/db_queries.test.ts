@@ -157,6 +157,37 @@ describe('lib/server/db_queries', () => {
     expect(needsReviewPlan?.displayStatus).toBe('needs_review');
   });
 
+  test('getPlansForProject and getPlanDetail include finish-tracking timestamps', () => {
+    const docsUpdatedAt = '2026-02-03T04:05:06.000Z';
+    const lessonsAppliedAt = '2026-02-04T05:06:07.000Z';
+    upsertPlan(db, projectId, {
+      uuid: 'plan-finish-tracking',
+      planId: 115,
+      title: 'Plan with finish tracking',
+      status: 'done',
+      priority: 'medium',
+      filename: '115-finish-tracking.plan.md',
+      sourceCreatedAt: daysAgo(10),
+      sourceUpdatedAt: daysAgo(1),
+      sourceDocsUpdatedAt: docsUpdatedAt,
+      sourceLessonsAppliedAt: lessonsAppliedAt,
+    });
+
+    const plan = getPlansForProject(db, projectId).find(
+      (entry) => entry.uuid === 'plan-finish-tracking'
+    );
+    expect(plan).toMatchObject({
+      docsUpdatedAt,
+      lessonsAppliedAt,
+    });
+
+    const detail = getPlanDetail(db, 'plan-finish-tracking');
+    expect(detail).toMatchObject({
+      docsUpdatedAt,
+      lessonsAppliedAt,
+    });
+  });
+
   test('getPlansForProject treats needs_review dependencies as resolved', () => {
     const plans = getPlansForProject(db, projectId);
     const dependentPlan = plans.find((plan) => plan.uuid === 'plan-depends-on-review');

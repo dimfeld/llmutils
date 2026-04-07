@@ -15,6 +15,7 @@ vi.mock('node:fs', async (importOriginal) => {
 import {
   spawnAgentProcess,
   spawnChatProcess,
+  spawnFinishProcess,
   spawnGenerateProcess,
   spawnRebaseProcess,
 } from './plan_actions.js';
@@ -334,5 +335,26 @@ describe('lib/server/plan_actions', () => {
       success: false,
       error: 'Failed to start tim rebase: Error: spawn failed',
     });
+  });
+
+  test('spawnFinishProcess starts tim finish in detached mode and unrefs it after the early-exit window', async () => {
+    const proc = createFakeProcess({ exitCode: null });
+    const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+
+    const resultPromise = spawnFinishProcess(204, '/tmp/primary-workspace');
+    await vi.advanceTimersByTimeAsync(500);
+    const result = await resultPromise;
+
+    expect(spawnSpy).toHaveBeenCalledTimes(1);
+    const [args, options] = spawnSpy.mock.calls[0];
+    expect(args).toEqual(['tim', 'finish', '204', '--auto-workspace', '--no-terminal-input']);
+    expect(options).toMatchObject({
+      cwd: '/tmp/primary-workspace',
+      env: process.env,
+      stdin: 'ignore',
+      detached: true,
+    });
+    expect(proc.unref).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ success: true, planId: 204 });
   });
 });

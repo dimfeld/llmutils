@@ -24,6 +24,8 @@ function makePlan(overrides: Partial<EnrichedPlan> & { uuid: string }): Enriched
     simple: false,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
+    docsUpdatedAt: null,
+    lessonsAppliedAt: null,
     pullRequests: [],
     invalidPrUrls: [],
     issues: [],
@@ -105,6 +107,25 @@ describe('deriveAttentionItems', () => {
     const result = deriveAttentionItems([plan], [], []);
     expect(result.planItems).toHaveLength(1);
     expect(result.planItems[0].reasons).toEqual([{ type: 'needs_review' }]);
+  });
+
+  test('includes finish-tracking timestamps on needs_review attention items', () => {
+    const plan = makePlan({
+      uuid: 'plan-1',
+      displayStatus: 'needs_review',
+      docsUpdatedAt: '2026-01-02T00:00:00Z',
+      lessonsAppliedAt: null,
+    });
+
+    const result = deriveAttentionItems([plan], [], []);
+    expect(result.planItems).toEqual([
+      expect.objectContaining({
+        planUuid: 'plan-1',
+        docsUpdatedAt: '2026-01-02T00:00:00Z',
+        lessonsAppliedAt: null,
+        reasons: [{ type: 'needs_review' }],
+      }),
+    ]);
   });
 
   test('detects agent_finished from offline session + in_progress plan', () => {
