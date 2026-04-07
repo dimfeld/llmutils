@@ -5,6 +5,8 @@ import { beforeAll, afterAll, beforeEach, describe, expect, vi, test } from 'vit
 
 import { clearGitHubTokenCache } from '../../common/github/token.js';
 import {
+  buildReviewThreadFixPrompt,
+  handlePrFixCommand,
   handlePrStatusCommand,
   handlePrLinkCommand,
   handlePrReplyCommand,
@@ -59,11 +61,19 @@ vi.mock('../../common/github/pull_requests.js', () => ({
   resolveReviewThread: vi.fn(async (..._args: unknown[]) => true),
 }));
 
+vi.mock('../../common/input.js', () => ({
+  promptCheckbox: vi.fn(),
+}));
+
 vi.mock('../../common/github/identifiers.js', () => ({
   canonicalizePrUrl: vi.fn((identifier: string) => identifier),
   parsePrOrIssueNumber: vi.fn(async (..._args: unknown[]) => null),
   validatePrIdentifier: vi.fn((_identifier: string) => {}),
   deduplicatePrUrls: vi.fn((urls: string[]) => ({ valid: urls, invalid: [] })),
+}));
+
+vi.mock('./agent/agent.js', () => ({
+  timAgent: vi.fn(async (..._args: unknown[]) => {}),
 }));
 
 vi.mock('../db/pr_status.js', () => ({
@@ -103,6 +113,7 @@ import {
   fetchOpenPullRequests as mockFetchOpenPullRequestsFn,
   resolveReviewThread as mockResolveReviewThreadFn,
 } from '../../common/github/pull_requests.js';
+import { promptCheckbox as mockPromptCheckboxFn } from '../../common/input.js';
 import {
   canonicalizePrUrl as mockCanonicalizePrUrlFn,
   parsePrOrIssueNumber as mockParsePrOrIssueNumberFn,
@@ -121,6 +132,7 @@ import {
   writePlanFile as mockWritePlanFileFn,
 } from '../plans.js';
 import { syncPlanToDb as mockSyncPlanToDbFn } from '../db/plan_sync.js';
+import { timAgent as mockTimAgentFn } from './agent/agent.js';
 
 const mockLog = vi.mocked(mockLogFn);
 const mockResolvePlan = vi.mocked(mockResolvePlanFn);
@@ -142,10 +154,12 @@ const mockCleanOrphanedPrStatus = vi.mocked(mockCleanOrphanedPrStatusFn);
 const mockAddReplyToReviewThread = vi.mocked(mockAddReplyToReviewThreadFn);
 const mockFetchOpenPullRequests = vi.mocked(mockFetchOpenPullRequestsFn);
 const mockResolveReviewThread = vi.mocked(mockResolveReviewThreadFn);
+const mockPromptCheckbox = vi.mocked(mockPromptCheckboxFn);
 const mockReadPlanFile = vi.mocked(mockReadPlanFileFn);
 const mockResolvePlanFromDb = vi.mocked(mockResolvePlanFromDbFn);
 const mockWritePlanFile = vi.mocked(mockWritePlanFileFn);
 const mockSyncPlanToDb = vi.mocked(mockSyncPlanToDbFn);
+const mockTimAgent = vi.mocked(mockTimAgentFn);
 
 let logs: string[] = [];
 let dbHandle: AnyObject;
@@ -171,6 +185,7 @@ let currentWebhookServerUrl: string | null;
 let prModule: typeof import('./pr.js');
 let tempDir: string;
 let originalCwd: string;
+let originalStdinIsTTY: boolean | undefined;
 
 describe('tim/commands/pr', () => {
   beforeAll(async () => {
@@ -184,9 +199,18 @@ describe('tim/commands/pr', () => {
     process.chdir(originalCwd);
     await fs.rm(tempDir, { recursive: true, force: true });
     clearGitHubTokenCache();
+    Object.defineProperty(process.stdin, 'isTTY', {
+      value: originalStdinIsTTY,
+      configurable: true,
+    });
   });
 
   beforeEach(() => {
+    originalStdinIsTTY = process.stdin.isTTY;
+    Object.defineProperty(process.stdin, 'isTTY', {
+      value: true,
+      configurable: true,
+    });
     clearGitHubTokenCache();
     vi.clearAllMocks();
     logs = [];
@@ -231,10 +255,12 @@ describe('tim/commands/pr', () => {
     mockAddReplyToReviewThread.mockClear();
     mockFetchOpenPullRequests.mockClear();
     mockResolveReviewThread.mockClear();
+    mockPromptCheckbox.mockClear();
     mockReadPlanFile.mockClear();
     mockResolvePlanFromDb.mockClear();
     mockWritePlanFile.mockClear();
     mockSyncPlanToDb.mockClear();
+    mockTimAgent.mockClear();
     mockLog.mockImplementation((...args: unknown[]) => {
       logs.push(args.join(' '));
     });
@@ -301,6 +327,7 @@ describe('tim/commands/pr', () => {
     mockAddReplyToReviewThread.mockImplementation(async () => true);
     mockFetchOpenPullRequests.mockImplementation(async () => []);
     mockResolveReviewThread.mockImplementation(async () => true);
+    mockPromptCheckbox.mockResolvedValue([]);
     mockReadPlanFile.mockImplementation(async () => currentPersistedPlan);
     mockResolvePlanFromDb.mockImplementation(async () => ({
       plan: currentPersistedPlan,
@@ -310,6 +337,7 @@ describe('tim/commands/pr', () => {
       currentPersistedPlan = plan as AnyObject;
     });
     mockSyncPlanToDb.mockImplementation(async () => {});
+    mockTimAgent.mockImplementation(async () => {});
   });
 
   test('status resolves the current workspace plan and syncs each linked PR atomically', async () => {
@@ -1107,6 +1135,174 @@ describe('tim/commands/pr', () => {
       'Failed to resolve review thread thread-456'
     );
   });
+
+  test('buildReviewThreadFixPrompt includes plan context and review thread details', () => {
+    const prompt = buildReviewThreadFixPrompt(
+      {
+        id: 251,
+        title: 'Review Comment Actions',
+        goal: 'Automatically address unresolved review feedback',
+        details: 'Keep PR review workflows inside tim.',
+      } as any,
+      [
+        {
+          prUrl: 'https://github.com/example/repo/pull/123',
+          thread: createReviewThreadDetail({
+            threadId: 'thread-123',
+            path: 'src/auth.ts',
+            line: 42,
+            comments: [
+              {
+                author: 'alice',
+                body: 'This logic needs a null check.',
+                diff_hunk: '@@ -40,3 +40,4 @@',
+              },
+              {
+                author: 'bob',
+                body: 'Please add a test too.',
+              },
+            ],
+          }),
+        },
+      ]
+    );
+
+    expect(prompt).toContain('## Plan Context');
+    expect(prompt).toContain('**Plan ID:** 251');
+    expect(prompt).toContain('**Title:** Review Comment Actions');
+    expect(prompt).toContain('**Goal:** Automatically address unresolved review feedback');
+    expect(prompt).toContain('### Thread 1: src/auth.ts:42');
+    expect(prompt).toContain('**PR URL:** https://github.com/example/repo/pull/123');
+    expect(prompt).toContain('**Thread ID:** thread-123');
+    expect(prompt).toContain('```diff');
+    expect(prompt).toContain('- alice: This logic needs a null check.');
+    expect(prompt).toContain('- bob: Please add a test too.');
+    expect(prompt).toContain('tim pr reply <threadId> "explanation of fix"');
+    expect(prompt).toContain('tim pr resolve <threadId>');
+  });
+
+  test('buildReviewThreadFixPrompt handles empty thread lists', () => {
+    const prompt = buildReviewThreadFixPrompt(
+      {
+        id: 251,
+        title: 'Review Comment Actions',
+      } as any,
+      []
+    );
+
+    expect(prompt).toContain('## Review Threads to Fix');
+    expect(prompt).toContain('No review threads were selected.');
+  });
+
+  test('pr fix returns early when there are no unresolved review threads', async () => {
+    currentAutoLinkedDetails = [
+      {
+        ...createPrDetail(701, 'Explicit PR', 'success'),
+        reviewThreads: [
+          createReviewThreadDetail({
+            threadId: 'thread-resolved',
+            path: 'src/auth.ts',
+            line: 10,
+            isResolved: 1,
+          }),
+        ],
+      },
+    ];
+
+    await handlePrFixCommand('248', {}, createNestedCommand());
+
+    expect(mockPromptCheckbox).not.toHaveBeenCalled();
+    expect(mockTimAgent).not.toHaveBeenCalled();
+    expect(logs).toContain('Plan 248 has no unresolved PR review threads.');
+  });
+
+  test('pr fix prompts for thread selection in interactive mode and forwards selected context', async () => {
+    currentAutoLinkedDetails = [
+      {
+        ...createPrDetail(701, 'Explicit PR', 'success'),
+        reviewThreads: [
+          createReviewThreadDetail({
+            threadId: 'thread-1',
+            path: 'src/auth.ts',
+            line: 42,
+            comments: [{ body: 'Add a null check.', diff_hunk: '@@ -40,2 +40,4 @@' }],
+          }),
+          createReviewThreadDetail({
+            threadId: 'thread-2',
+            path: 'src/user.ts',
+            line: 88,
+            comments: [{ body: 'Handle the empty state.' }],
+          }),
+        ],
+      },
+    ];
+    mockPromptCheckbox.mockResolvedValueOnce([1]);
+
+    await handlePrFixCommand(
+      '248',
+      { executor: 'codex-cli', model: 'gpt-5.4', terminalInput: true },
+      createNestedCommand()
+    );
+
+    expect(mockPromptCheckbox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Select review threads to fix:',
+        choices: expect.arrayContaining([
+          expect.objectContaining({
+            name: 'src/auth.ts:42 - "Add a null check"',
+            value: 0,
+            description: expect.stringContaining('Diff context:\n@@ -40,2 +40,4 @@'),
+            checked: true,
+          }),
+          expect.objectContaining({
+            name: 'src/user.ts:88 - "Handle the empty state"',
+            value: 1,
+            checked: true,
+          }),
+        ]),
+      })
+    );
+    expect(mockTimAgent).toHaveBeenCalledWith(
+      '248',
+      expect.objectContaining({
+        executor: 'codex-cli',
+        model: 'gpt-5.4',
+        reviewThreadContext: expect.stringContaining('### Thread 1: src/user.ts:88'),
+      }),
+      { config: '/tmp/tim.yml' }
+    );
+    expect(String(mockTimAgent.mock.calls[0]?.[1]?.reviewThreadContext ?? '')).not.toContain(
+      'src/auth.ts:42'
+    );
+  });
+
+  test('pr fix uses all unresolved threads without prompting in non-interactive mode', async () => {
+    currentAutoLinkedDetails = [
+      {
+        ...createPrDetail(701, 'Explicit PR', 'success'),
+        reviewThreads: [
+          createReviewThreadDetail({
+            threadId: 'thread-1',
+            path: 'src/auth.ts',
+            line: 42,
+            comments: [{ body: 'Add a null check.' }],
+          }),
+        ],
+      },
+    ];
+
+    await handlePrFixCommand('248', { nonInteractive: true }, createNestedCommand());
+
+    expect(mockPromptCheckbox).not.toHaveBeenCalled();
+    expect(mockTimAgent).toHaveBeenCalledWith(
+      '248',
+      expect.objectContaining({
+        nonInteractive: true,
+        reviewThreadContext: expect.stringContaining('src/auth.ts:42'),
+      }),
+      { config: '/tmp/tim.yml' }
+    );
+  });
 });
 
 function createNestedCommand(): { parent: { parent: { opts: () => { config: string } } } } {
@@ -1174,5 +1370,49 @@ function createPrDetail(
       },
     ],
     labels: [],
+  };
+}
+
+function createReviewThreadDetail(options: {
+  threadId: string;
+  path: string;
+  line?: number | null;
+  originalLine?: number | null;
+  startLine?: number | null;
+  originalStartLine?: number | null;
+  isResolved?: number;
+  comments?: Array<{
+    author?: string | null;
+    body?: string | null;
+    diff_hunk?: string | null;
+  }>;
+}): AnyObject {
+  return {
+    thread: {
+      id: 1,
+      pr_status_id: 701,
+      thread_id: options.threadId,
+      path: options.path,
+      line: options.line ?? null,
+      original_line: options.originalLine ?? null,
+      original_start_line: options.originalStartLine ?? null,
+      start_line: options.startLine ?? null,
+      diff_side: 'RIGHT',
+      start_diff_side: null,
+      is_resolved: options.isResolved ?? 0,
+      is_outdated: 0,
+      subject_type: 'LINE',
+    },
+    comments: (options.comments ?? []).map((comment, index) => ({
+      id: index + 1,
+      review_thread_id: 1,
+      comment_id: `comment-${index + 1}`,
+      database_id: 1000 + index,
+      author: comment.author ?? 'reviewer',
+      body: comment.body ?? null,
+      diff_hunk: comment.diff_hunk ?? null,
+      state: null,
+      created_at: '2026-03-20T00:00:00.000Z',
+    })),
   };
 }

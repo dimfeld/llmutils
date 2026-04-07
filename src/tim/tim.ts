@@ -1252,6 +1252,20 @@ prCommand
     await handlePrResolveCommand(threadId).catch(handleCommandError);
   });
 
+prCommand
+  .command('fix <planId>')
+  .description('Fix unresolved PR review threads using an AI agent')
+  .option('-x, --executor <name>', 'The executor to use')
+  .option('-m, --model <model>', 'Model override')
+  .option('--all', 'Fix all unresolved threads without prompting')
+  .option('--aw, --auto-workspace', 'Auto-select or create a workspace')
+  .option('--non-interactive', 'No user prompts')
+  .option('--no-terminal-input', 'Disable terminal input')
+  .action(async (planId, options, command) => {
+    const { handlePrFixCommand } = await import('./commands/pr.js');
+    await handlePrFixCommand(planId, options, command).catch(handleCommandError);
+  });
+
 function registerPrDescriptionCommand(
   targetCommand: Command,
   signature: string,

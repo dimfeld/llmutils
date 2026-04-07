@@ -18,6 +18,7 @@ import {
   fetchOpenPullRequests,
   resolveReviewThread,
 } from '../../common/github/pull_requests.js';
+import { promptCheckbox } from '../../common/input.js';
 import { refreshPrStatus, syncPlanPrLinks } from '../../common/github/pr_status_service.js';
 import { log } from '../../logging.js';
 import { getDatabase } from '../db/database.js';
@@ -28,6 +29,7 @@ import {
   linkPlanToPr,
   unlinkPlanFromPr,
   type PrCheckRunRow,
+  type PrReviewThreadDetail,
   type PrReviewRow,
   type PrStatusDetail,
   type PrStatusRow,
@@ -47,6 +49,29 @@ interface RootCommandLike {
 
 interface PrStatusCommandOptions {
   forceRefresh?: boolean;
+}
+
+function getReviewThreadDisplayLine(thread: PrReviewThreadDetail): number | null {
+  return (
+    thread.thread.line ??
+    thread.thread.original_line ??
+    thread.thread.start_line ??
+    thread.thread.original_start_line
+  );
+}
+
+function getFirstThreadSentence(thread: PrReviewThreadDetail): string {
+  const firstComment = thread.comments[0]?.body?.trim() ?? '';
+  return firstComment.split(/[.\n]/)[0]?.trim().slice(0, 80) ?? '';
+}
+
+function isPrFixInteractive(options: Record<string, unknown>): boolean {
+  return (
+    process.env.TIM_INTERACTIVE !== '0' &&
+    process.stdin.isTTY === true &&
+    options.terminalInput !== false &&
+    options.nonInteractive !== true
+  );
 }
 
 function getRootOptions(command: RootCommandLike | undefined): { config?: string } {
@@ -617,6 +642,144 @@ export async function handlePrResolveCommand(threadId: string): Promise<void> {
   }
 
   log(chalk.green(`Resolved review thread ${threadId}`));
+}
+
+export function buildReviewThreadFixPrompt(
+  planData: PlanSchema,
+  threads: Array<{ thread: PrReviewThreadDetail; prUrl: string }>
+): string {
+  const prompt = [
+    '# Review Thread Fix Request',
+    '',
+    '## Plan Context',
+    '',
+    `**Plan ID:** ${planData.id}`,
+    `**Title:** ${planData.title}`,
+    `**Goal:** ${planData.goal ?? 'No goal provided'}`,
+    '',
+  ];
+
+  if (planData.details) {
+    prompt.push('**Details:**', planData.details, '');
+  }
+
+  prompt.push('## Review Threads to Fix', '');
+
+  if (threads.length === 0) {
+    prompt.push('No review threads were selected.', '');
+  } else {
+    for (const [index, { thread, prUrl }] of threads.entries()) {
+      const displayLine = getReviewThreadDisplayLine(thread);
+      const location =
+        displayLine != null ? `${thread.thread.path}:${displayLine}` : thread.thread.path;
+
+      prompt.push(`### Thread ${index + 1}: ${location}`);
+      prompt.push(`**PR URL:** ${prUrl}`);
+      prompt.push(`**Thread ID:** ${thread.thread.thread_id}`);
+      prompt.push(`**File:** ${thread.thread.path}`);
+      if (displayLine != null) {
+        prompt.push(`**Line:** ${displayLine}`);
+      }
+
+      const diffHunk = thread.comments[0]?.diff_hunk?.trim();
+      if (diffHunk) {
+        prompt.push('', '**Diff Hunk:**', '```diff', diffHunk, '```');
+      }
+
+      if (thread.comments.length > 0) {
+        prompt.push('', '**Comments:**');
+        for (const comment of thread.comments) {
+          prompt.push(
+            `- ${comment.author ?? 'unknown'}: ${(comment.body?.trim() || '(no body)').trim()}`
+          );
+        }
+      } else {
+        prompt.push('', '**Comments:**', '- No comment bodies were captured for this thread.');
+      }
+
+      prompt.push('');
+    }
+  }
+
+  prompt.push(
+    '## Instructions',
+    '',
+    'Fix each issue described in the review threads above.',
+    'Focus on the specific files and lines mentioned, but make any adjacent changes needed for a correct fix.',
+    'After fixing each thread, run `tim pr reply <threadId> "explanation of fix"` with a concise explanation.',
+    'Then run `tim pr resolve <threadId>` to mark that thread resolved on GitHub.',
+    'Do not skip the reply or resolve steps for any thread you addressed.'
+  );
+
+  return prompt.join('\n');
+}
+
+export async function handlePrFixCommand(
+  planId: string,
+  options: Record<string, unknown>,
+  command: RootCommandLike
+): Promise<void> {
+  if (!resolveGitHubToken()) {
+    throw new Error('GITHUB_TOKEN environment variable is required for PR status commands');
+  }
+
+  const { plan, planPath } = await resolvePlanForCommand(planId, command);
+  const planUuid = requirePlanUuid(plan, planPath ?? `plan ${plan.id}`);
+  const db = getDatabase();
+  const prStatuses = getPrStatusForPlan(db, planUuid, undefined, { includeReviewThreads: true });
+
+  const unresolvedThreads: Array<{ thread: PrReviewThreadDetail; prUrl: string }> = [];
+  for (const prStatus of prStatuses) {
+    for (const reviewThread of prStatus.reviewThreads ?? []) {
+      if (!reviewThread.thread.is_resolved) {
+        unresolvedThreads.push({ thread: reviewThread, prUrl: prStatus.status.pr_url });
+      }
+    }
+  }
+
+  if (unresolvedThreads.length === 0) {
+    log(`Plan ${plan.id} has no unresolved PR review threads.`);
+    return;
+  }
+
+  let selectedThreads = unresolvedThreads;
+  if (options.all !== true && isPrFixInteractive(options)) {
+    const selectedIndexes = await promptCheckbox({
+      message: 'Select review threads to fix:',
+      choices: unresolvedThreads.map((entry, index) => {
+        const line = getReviewThreadDisplayLine(entry.thread);
+        const location =
+          line != null ? `${entry.thread.thread.path}:${line}` : entry.thread.thread.path;
+        const firstSentence = getFirstThreadSentence(entry.thread);
+        const diffHunk = entry.thread.comments[0]?.diff_hunk?.trim();
+        const commentBodies = entry.thread.comments
+          .map((comment) => comment.body?.trim())
+          .filter((body): body is string => Boolean(body));
+        return {
+          name: `${location} - "${firstSentence || 'No comment summary'}"`,
+          value: index,
+          description: [...commentBodies, ...(diffHunk ? [`Diff context:\n${diffHunk}`] : [])].join(
+            '\n---\n'
+          ),
+          checked: true,
+        };
+      }),
+      pageSize: 15,
+    });
+
+    selectedThreads = selectedIndexes
+      .map((index) => unresolvedThreads[index])
+      .filter((entry): entry is (typeof unresolvedThreads)[number] => entry != null);
+  }
+
+  if (selectedThreads.length === 0) {
+    log('No review threads selected for fixing.');
+    return;
+  }
+
+  const fixPrompt = buildReviewThreadFixPrompt(plan, selectedThreads);
+  const { timAgent } = await import('./agent/agent.js');
+  await timAgent(planId, { ...options, reviewThreadContext: fixPrompt }, getRootOptions(command));
 }
 
 export async function handlePrLinkCommand(
