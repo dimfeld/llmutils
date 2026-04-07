@@ -298,6 +298,30 @@
     }
   }
 
+  const SEVERITY_ORDER: Record<string, number> = { critical: 0, major: 1, minor: 2, info: 3 };
+
+  function parseLineStart(line: number | string | undefined): number {
+    if (line === undefined) return Infinity;
+    if (typeof line === 'number') return line;
+    return parseInt(line, 10) || Infinity;
+  }
+
+  let sortedReviewIssues = $derived(
+    plan.reviewIssues
+      ? plan.reviewIssues
+          .map((issue, originalIndex) => ({ issue, originalIndex }))
+          .sort((a, b) => {
+            const sevDiff =
+              (SEVERITY_ORDER[a.issue.severity] ?? 99) - (SEVERITY_ORDER[b.issue.severity] ?? 99);
+            if (sevDiff !== 0) return sevDiff;
+            const fileA = a.issue.file ?? '';
+            const fileB = b.issue.file ?? '';
+            if (fileA !== fileB) return fileA.localeCompare(fileB);
+            return parseLineStart(a.issue.line) - parseLineStart(b.issue.line);
+          })
+      : []
+  );
+
   let sortedDependencies = $derived(
     [...plan.dependencies].sort((a, b) => {
       const aOrder = a.displayStatus ? (STATUS_ORDER_MAP[a.displayStatus] ?? 99) : 99;
@@ -841,7 +865,7 @@
         </button>
       </div>
       <ul class="space-y-2">
-        {#each plan.reviewIssues as issue, i (i)}
+        {#each sortedReviewIssues as { issue, originalIndex } (originalIndex)}
           {@const severityClass =
             issue.severity === 'critical'
               ? 'border-red-500 bg-red-50 dark:bg-red-950/30'
@@ -858,7 +882,7 @@
                 : issue.severity === 'minor'
                   ? 'text-yellow-700 dark:text-yellow-400'
                   : 'text-gray-500 dark:text-gray-400'}
-          {@const issueCopyId = `issue-${i}`}
+          {@const issueCopyId = `issue-${originalIndex}`}
           {@const issueCopyText = [
             issue.file ? `${issue.file}${issue.line !== undefined ? `:${issue.line}` : ''}` : null,
             issue.content,
@@ -886,13 +910,13 @@
               <div class="ml-auto flex shrink-0 items-center gap-1">
                 <button
                   type="button"
-                  onclick={() => handleConvertToTask(i)}
+                  onclick={() => handleConvertToTask(originalIndex)}
                   disabled={reviewIssueSubmitting !== null}
                   class="rounded px-1 py-0.5 text-xs text-muted-foreground hover:bg-blue-100 hover:text-blue-700 disabled:opacity-50 dark:hover:bg-blue-950/50 dark:hover:text-blue-400"
                   aria-label="Convert to task"
                   title="Convert to task"
                 >
-                  {reviewIssueSubmitting === i ? '...' : '→ Task'}
+                  {reviewIssueSubmitting === originalIndex ? '...' : '→ Task'}
                 </button>
                 <button
                   type="button"
@@ -937,7 +961,7 @@
                 </button>
                 <button
                   type="button"
-                  onclick={() => handleRemoveReviewIssue(i)}
+                  onclick={() => handleRemoveReviewIssue(originalIndex)}
                   disabled={reviewIssueSubmitting !== null}
                   class="rounded p-0.5 text-muted-foreground hover:bg-red-100 hover:text-red-700 disabled:opacity-50 dark:hover:bg-red-950/50 dark:hover:text-red-400"
                   aria-label="Dismiss issue"
