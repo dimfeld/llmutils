@@ -79,9 +79,7 @@ describe('convertThreadToTask', () => {
     // Link PR to plan
     if (options.createPlanPrLink !== false) {
       currentDb
-        .prepare(
-          `INSERT INTO plan_pr (plan_uuid, pr_status_id, source) VALUES (?, ?, 'explicit')`
-        )
+        .prepare(`INSERT INTO plan_pr (plan_uuid, pr_status_id, source) VALUES (?, ?, 'explicit')`)
         .run(options.planUuid, prStatus.status.id);
     }
 

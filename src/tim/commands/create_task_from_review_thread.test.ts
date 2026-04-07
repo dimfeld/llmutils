@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'vitest';
-import type { PrReviewThreadDetail, PrReviewThreadRow, PrReviewThreadCommentRow } from '../db/pr_status.js';
+import type {
+  PrReviewThreadDetail,
+  PrReviewThreadRow,
+  PrReviewThreadCommentRow,
+} from '../db/pr_status.js';
 import { createTaskFromReviewThread } from './review.js';
 
 function makeThread(overrides: Partial<PrReviewThreadRow> = {}): PrReviewThreadRow {
@@ -72,7 +76,12 @@ describe('createTaskFromReviewThread', () => {
 
   test('falls back to original_start_line as last resort', () => {
     const detail: PrReviewThreadDetail = {
-      thread: makeThread({ line: null, original_line: null, start_line: null, original_start_line: 20 }),
+      thread: makeThread({
+        line: null,
+        original_line: null,
+        start_line: null,
+        original_start_line: 20,
+      }),
       comments: [makeComment()],
     };
 
@@ -158,9 +167,7 @@ describe('createTaskFromReviewThread', () => {
     };
 
     const task = createTaskFromReviewThread(detail, PR_URL);
-    expect(task.description).toContain(
-      `GitHub discussion: ${PR_URL}#discussion_r98765`
-    );
+    expect(task.description).toContain(`GitHub discussion: ${PR_URL}#discussion_r98765`);
   });
 
   test('falls back to PR link when no database_id available', () => {
@@ -192,10 +199,7 @@ describe('createTaskFromReviewThread', () => {
   test('uses first comment with database_id for the link', () => {
     const detail: PrReviewThreadDetail = {
       thread: makeThread({ line: 42 }),
-      comments: [
-        makeComment({ database_id: null }),
-        makeComment({ id: 2, database_id: 55555 }),
-      ],
+      comments: [makeComment({ database_id: null }), makeComment({ id: 2, database_id: 55555 })],
     };
 
     const task = createTaskFromReviewThread(detail, PR_URL);

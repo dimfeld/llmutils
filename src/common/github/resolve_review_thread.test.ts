@@ -56,6 +56,21 @@ describe('resolveReviewThread', () => {
     expect(variables).toEqual({ threadId: 'PRRT_abc123' });
   });
 
+  test('returns false when mutation response has isResolved=false', async () => {
+    process.env.GITHUB_TOKEN = 'test-token';
+    clearGitHubTokenCache();
+
+    const mockGraphql = vi.fn().mockResolvedValue({
+      resolveReviewThread: {
+        thread: { isResolved: false },
+      },
+    });
+    vi.mocked(octokitModule.getOctokit).mockReturnValue({ graphql: mockGraphql } as never);
+
+    const result = await resolveReviewThread('PRRT_noop');
+    expect(result).toBe(false);
+  });
+
   test('returns false when graphql mutation throws', async () => {
     process.env.GITHUB_TOKEN = 'test-token';
     clearGitHubTokenCache();

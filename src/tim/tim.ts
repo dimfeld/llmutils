@@ -463,7 +463,6 @@ program
     await handlePromoteCommand(taskIds, options).catch(handleCommandError);
   });
 
-
 program
   .command('update-docs [planFile]')
   .description('Update documentation based on completed plan work. Can be a file path or plan ID.')

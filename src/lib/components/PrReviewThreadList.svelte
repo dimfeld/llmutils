@@ -140,7 +140,9 @@
             disabled={threadActionSubmitting !== null}
             type="button"
           >
-            {threadActionSubmitting === thread.thread.thread_id ? 'Converting...' : 'Convert to Task'}
+            {threadActionSubmitting === thread.thread.thread_id
+              ? 'Converting...'
+              : 'Convert to Task'}
           </button>
         {/if}
       </summary>

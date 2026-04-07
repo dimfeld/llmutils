@@ -11,6 +11,7 @@ import type {
   PrReviewThreadRow,
 } from '$tim/db/pr_status.js';
 import { SQL_NOW_ISO_UTC } from '$tim/db/sql_utils.js';
+import { tryCanonicalizePrUrl } from '$common/github/identifiers.js';
 
 const convertThreadToTaskSchema = z.object({
   planUuid: z.string().min(1),
@@ -35,13 +36,15 @@ export const convertThreadToTask = command(
         .get(planUuid, prStatusId);
       if (!planPrLink) {
         // Fallback: check if the PR URL is in the plan's pull_request field
-        const prRow = db
-          .prepare(`SELECT pr_url FROM pr_status WHERE id = ?`)
-          .get(prStatusId) as { pr_url: string } | null;
+        const prRow = db.prepare(`SELECT pr_url FROM pr_status WHERE id = ?`).get(prStatusId) as {
+          pr_url: string;
+        } | null;
         if (!prRow) {
           error(404, 'PR is not linked to this plan');
         }
-        const planPrUrls: string[] = plan.pull_request ? JSON.parse(plan.pull_request) : [];
+        const planPrUrls: (string | null)[] = (
+          plan.pull_request ? JSON.parse(plan.pull_request) : []
+        ).map((url: string) => tryCanonicalizePrUrl(url));
         if (!planPrUrls.includes(prRow.pr_url)) {
           error(404, 'PR is not linked to this plan');
         }
