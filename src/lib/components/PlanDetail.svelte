@@ -6,6 +6,7 @@
 
   import type { PlanDetail } from '$lib/server/db_queries.js';
   import { STATUS_ORDER_MAP } from '$lib/utils/plan_status.js';
+  import { renderPlanContentHtml } from '$lib/utils/plan_content.js';
   import { afterNavigate, invalidateAll } from '$app/navigation';
   import {
     startGenerate,
@@ -1041,12 +1042,16 @@
                 </button>
               </div>
             </div>
-            <p class="mt-1 text-foreground">{issue.content}</p>
+            <pre
+              class="plan-detail-content mt-1 whitespace-pre-wrap font-sans text-foreground"
+            >{@html renderPlanContentHtml(issue.content)}</pre>
             {#if issue.suggestion}
-              <p class="mt-1 text-xs text-muted-foreground">
+              <div class="mt-1 text-xs text-muted-foreground">
                 <span class="font-medium text-green-700 dark:text-green-400">Suggestion:</span>
-                {issue.suggestion}
-              </p>
+                <pre
+                  class="plan-detail-content mt-0.5 whitespace-pre-wrap font-sans text-xs text-muted-foreground"
+                >{@html renderPlanContentHtml(issue.suggestion)}</pre>
+              </div>
             {/if}
           </li>
         {/each}
@@ -1060,7 +1065,9 @@
       <h3 class="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
         Details
       </h3>
-      <p class="text-sm whitespace-pre-wrap text-foreground">{plan.details}</p>
+      <pre
+        class="plan-detail-content text-sm whitespace-pre-wrap text-foreground font-sans"
+      >{@html renderPlanContentHtml(plan.details ?? '')}</pre>
     </div>
   {/if}
 
@@ -1115,3 +1122,48 @@
     </div>
   </Dialog.Content>
 </Dialog.Root>
+
+<style>
+  .plan-detail-content {
+    margin: 0;
+    word-break: break-word;
+    outline: none;
+  }
+
+  .plan-detail-content :global(.plan-heading) {
+    font-weight: 700;
+    color: hsl(var(--foreground));
+  }
+
+  .plan-detail-content :global(.plan-bold) {
+    font-weight: 700;
+  }
+
+  .plan-detail-content :global(.plan-inline-code) {
+    background: rgb(0 0 0 / 0.06);
+    border-radius: 0.25rem;
+    font-family: ui-monospace, monospace;
+    font-size: 0.9em;
+    padding: 0.05rem 0.3rem;
+    color: hsl(var(--foreground));
+  }
+
+  :global(.dark) .plan-detail-content :global(.plan-inline-code) {
+    background: rgb(255 255 255 / 0.08);
+  }
+
+  .plan-detail-content :global(.plan-code-fence) {
+    color: hsl(var(--muted-foreground));
+    font-family: ui-monospace, monospace;
+    font-size: 0.9em;
+  }
+
+  .plan-detail-content :global(.plan-code) {
+    font-family: ui-monospace, monospace;
+    font-size: 0.9em;
+  }
+
+  .plan-detail-content :global(.plan-list-marker) {
+    color: hsl(var(--muted-foreground));
+  }
+</style>
