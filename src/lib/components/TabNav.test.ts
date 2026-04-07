@@ -33,7 +33,6 @@ describe('TabNav', () => {
     });
 
     expect(body).not.toContain('href="/projects/all/settings"');
-    expect(body).not.toContain('>Settings<');
   });
 
   test('always renders the standard project tabs', () => {

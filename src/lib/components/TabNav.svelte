@@ -39,9 +39,7 @@
       <span class="relative inline-flex items-start">
         {tab.label}
         {#if tab.slug === 'sessions' && showSessionsAttentionDot}
-          <span
-            class="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-blue-400 ring-2 ring-gray-800 dark:ring-gray-900"
-            aria-hidden="true"
+          <span class="absolute -top-1 -right-2 h-2 w-2 rounded-full bg-blue-400" aria-hidden="true"
           ></span>
         {/if}
       </span>
