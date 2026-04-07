@@ -69,6 +69,7 @@ When the agent is launched from the web UI (with `--no-terminal-input`), the fin
 The command tracks two fields on the plan: `docsUpdatedAt` (when documentation was last updated) and `lessonsAppliedAt` (when lessons learned were last applied). It only runs whichever steps haven't been done yet, so re-running finish on a partially finalized plan picks up where it left off.
 
 The decision logic:
+
 - **Docs needed**: `docsUpdatedAt` is null AND `updateDocs.mode` is not `never`
 - **Lessons needed**: `lessonsAppliedAt` is null AND `applyLessons` is true
 - If either step is needed, the command sets up a workspace and headless adapter (like `tim agent`)
@@ -90,7 +91,7 @@ The `updateDocs.mode` config option accepts a `manual` value. When set to `manua
 ```yaml
 # tim.yml
 updateDocs:
-  mode: manual  # defer docs and lessons to `tim finish`
+  mode: manual # defer docs and lessons to `tim finish`
 ```
 
 The `manual` mode overrides `applyLessons` in the agent context — both docs and lessons are skipped. The `applyLessons` setting still controls whether lessons run during `tim finish`.
