@@ -265,6 +265,7 @@ ${options.batchMode ? '6' : '5'}. **Iteration**
 - After implementing straightforward follow-up changes, run the relevant targeted checks yourself. If the entire set of changes is trivial and guaranteed to not introduce any bugs (e.g. just wording changes), you may skip re-running \`${reviewCommand}\`. If in doubt, run another review; even simple changes can sometimes have unintended downstream effects.
 - If the review still flags an issue that was supposedly just fixed, trust the review — the fix was incomplete or incorrect. Investigate the issue again rather than dismissing the feedback.
 - **Review run limit**: Allow at most 3 or 4 review runs per task batch. On the final review cycle, you MUST still fix all critical and major issues — even if they appear to be pre-existing or from earlier tasks. Do not dismiss issues as "known gaps", "pre-existing", or "out of scope for this task." If an issue is truly impossible to fix (genuinely conflicting requirements, missing external dependencies), use the Failure Protocol below. Otherwise, implement the fix.
+- If you have reached the review run limit for the batch and there is still feedback worth addressing later, add follow-up plan tasks for each remaining issue using: \`tim add-task ${planId} --title "Address review feedback: <title>" --description "description including file, line etc."\`.
 - Continue this loop until all tests pass, the implementation is satisfactory, and any required final full-plan batch review is clean`;
 
   return `## Workflow Instructions
@@ -700,6 +701,7 @@ ${iterationPhaseNumber}. **Iteration**
 - After each fix iteration, run relevant targeted checks before moving forward.${reviewIterationGuidance}
 - If the review still flags an issue that was supposedly just fixed, trust the review — the fix was incomplete or incorrect. Investigate the issue again rather than dismissing the feedback.
 - **Review run limit**: Allow at most 3 or 4 review runs per task batch. On the final review cycle, you MUST still fix all critical and major issues — even if they appear to be pre-existing or from earlier tasks. Do not dismiss issues as "known gaps", "pre-existing", or "out of scope for this task." If an issue is truly impossible to fix (genuinely conflicting requirements, missing external dependencies), use the Failure Protocol below. Otherwise, implement the fix.
+- If you have reached the review run limit for the batch and there is still feedback worth addressing later, add follow-up plan tasks for each remaining issue using: \`tim add-task ${planId} --title "Address review feedback: <title>" --description "description including file, line etc."\`.
 - Keep TDD order intact for each iteration, including any final full-plan batch review before stopping`;
 
   const failureProtocol = `
