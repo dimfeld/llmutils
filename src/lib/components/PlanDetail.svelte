@@ -1,6 +1,7 @@
 <script lang="ts">
   import AppWindow from '@lucide/svelte/icons/app-window';
   import Copy from '@lucide/svelte/icons/copy';
+  import ExternalLink from '@lucide/svelte/icons/external-link';
   import { toast } from 'svelte-sonner';
 
   import type { PlanDetail } from '$lib/server/db_queries.js';
@@ -84,6 +85,7 @@
   let hasIncompleteTasks = $derived(plan.taskCounts.done < plan.taskCounts.total);
   let tasksOpen = $derived(plan.taskCounts.done < plan.taskCounts.total);
   let isBlocked = $derived(plan.displayStatus === 'blocked');
+  let linkedPr = $derived(plan.prStatuses[0] ?? null);
 
   // Plans with incomplete tasks: show single "Run Agent" button
   let showAgentOnly = $derived(hasTasks && hasIncompleteTasks && !isIneligible);
@@ -856,6 +858,16 @@
         <code class="text-xs">{plan.branch}</code>
         <Copy class="h-3 w-3 shrink-0" />
       </button>
+      {#if linkedPr}
+        <a
+          href="/projects/{projectId}/prs/{linkedPr.status.pr_number}"
+          class="mt-1 inline-flex items-center gap-1 text-xs text-blue-600 hover:underline dark:text-blue-400"
+          title={`View pull request #${linkedPr.status.pr_number}`}
+        >
+          View PR #{linkedPr.status.pr_number}
+          <ExternalLink class="size-3.5 shrink-0" />
+        </a>
+      {/if}
     </div>
   {/if}
 
