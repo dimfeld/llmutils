@@ -1303,6 +1303,325 @@ describe('tim/commands/pr', () => {
       { config: '/tmp/tim.yml' }
     );
   });
+
+  test('pr fix skips prompting when --all flag is set', async () => {
+    currentAutoLinkedDetails = [
+      {
+        ...createPrDetail(701, 'Explicit PR', 'success'),
+        reviewThreads: [
+          createReviewThreadDetail({
+            threadId: 'thread-1',
+            path: 'src/auth.ts',
+            line: 42,
+            comments: [{ body: 'Add a null check.' }],
+          }),
+          createReviewThreadDetail({
+            threadId: 'thread-2',
+            path: 'src/user.ts',
+            line: 10,
+            comments: [{ body: 'Missing validation.' }],
+          }),
+        ],
+      },
+    ];
+
+    await handlePrFixCommand('248', { all: true }, createNestedCommand());
+
+    expect(mockPromptCheckbox).not.toHaveBeenCalled();
+    const context = String(mockTimAgent.mock.calls[0]?.[1]?.reviewThreadContext ?? '');
+    expect(context).toContain('src/auth.ts:42');
+    expect(context).toContain('src/user.ts:10');
+  });
+
+  test('pr fix requires GITHUB_TOKEN', async () => {
+    delete process.env.GITHUB_TOKEN;
+    clearGitHubTokenCache();
+
+    await expect(handlePrFixCommand('248', {}, createNestedCommand())).rejects.toThrow(
+      'GITHUB_TOKEN environment variable is required'
+    );
+
+    expect(mockResolvePlan).not.toHaveBeenCalled();
+    expect(mockTimAgent).not.toHaveBeenCalled();
+  });
+
+  test('pr fix filters out resolved threads and only passes unresolved ones', async () => {
+    currentAutoLinkedDetails = [
+      {
+        ...createPrDetail(701, 'Explicit PR', 'success'),
+        reviewThreads: [
+          createReviewThreadDetail({
+            threadId: 'thread-resolved',
+            path: 'src/old.ts',
+            line: 5,
+            isResolved: 1,
+            comments: [{ body: 'Already fixed.' }],
+          }),
+          createReviewThreadDetail({
+            threadId: 'thread-unresolved',
+            path: 'src/new.ts',
+            line: 20,
+            comments: [{ body: 'Needs fix.' }],
+          }),
+        ],
+      },
+    ];
+
+    await handlePrFixCommand('248', { all: true }, createNestedCommand());
+
+    const context = String(mockTimAgent.mock.calls[0]?.[1]?.reviewThreadContext ?? '');
+    expect(context).toContain('src/new.ts:20');
+    expect(context).not.toContain('src/old.ts:5');
+    expect(context).not.toContain('thread-resolved');
+  });
+
+  test('pr fix returns early when user deselects all threads in interactive mode', async () => {
+    currentAutoLinkedDetails = [
+      {
+        ...createPrDetail(701, 'Explicit PR', 'success'),
+        reviewThreads: [
+          createReviewThreadDetail({
+            threadId: 'thread-1',
+            path: 'src/auth.ts',
+            line: 42,
+            comments: [{ body: 'Fix this.' }],
+          }),
+        ],
+      },
+    ];
+    mockPromptCheckbox.mockResolvedValueOnce([]);
+
+    await handlePrFixCommand('248', {}, createNestedCommand());
+
+    expect(mockPromptCheckbox).toHaveBeenCalled();
+    expect(mockTimAgent).not.toHaveBeenCalled();
+    expect(logs).toContain('No review threads selected for fixing.');
+  });
+
+  test('pr fix collects unresolved threads from multiple PRs', async () => {
+    currentAutoLinkedDetails = [
+      {
+        ...createPrDetail(701, 'PR One', 'success'),
+        reviewThreads: [
+          createReviewThreadDetail({
+            threadId: 'thread-pr1',
+            path: 'src/auth.ts',
+            line: 10,
+            comments: [{ body: 'Fix auth.' }],
+          }),
+        ],
+      },
+      {
+        ...createPrDetail(702, 'PR Two', 'success'),
+        reviewThreads: [
+          createReviewThreadDetail({
+            threadId: 'thread-pr2',
+            path: 'src/user.ts',
+            line: 20,
+            comments: [{ body: 'Fix user.' }],
+          }),
+        ],
+      },
+    ];
+
+    await handlePrFixCommand('248', { all: true }, createNestedCommand());
+
+    const context = String(mockTimAgent.mock.calls[0]?.[1]?.reviewThreadContext ?? '');
+    expect(context).toContain('src/auth.ts:10');
+    expect(context).toContain('src/user.ts:20');
+    expect(context).toContain('https://github.com/example/repo/pull/701');
+    expect(context).toContain('https://github.com/example/repo/pull/702');
+  });
+
+  test('pr fix skips prompting when terminalInput is false', async () => {
+    currentAutoLinkedDetails = [
+      {
+        ...createPrDetail(701, 'PR', 'success'),
+        reviewThreads: [
+          createReviewThreadDetail({
+            threadId: 'thread-1',
+            path: 'src/auth.ts',
+            line: 42,
+            comments: [{ body: 'Fix.' }],
+          }),
+        ],
+      },
+    ];
+
+    await handlePrFixCommand('248', { terminalInput: false }, createNestedCommand());
+
+    expect(mockPromptCheckbox).not.toHaveBeenCalled();
+    expect(mockTimAgent).toHaveBeenCalled();
+  });
+
+  test('buildReviewThreadFixPrompt uses path only when no line numbers exist', () => {
+    const prompt = buildReviewThreadFixPrompt(
+      { id: 1, title: 'Test' } as any,
+      [
+        {
+          prUrl: 'https://github.com/example/repo/pull/1',
+          thread: createReviewThreadDetail({
+            threadId: 'thread-no-line',
+            path: 'src/config.ts',
+            line: null,
+            originalLine: null,
+            startLine: null,
+            originalStartLine: null,
+            comments: [{ body: 'Missing export.' }],
+          }),
+        },
+      ]
+    );
+
+    expect(prompt).toContain('### Thread 1: src/config.ts');
+    expect(prompt).not.toContain('src/config.ts:');
+    expect(prompt).not.toContain('**Line:**');
+  });
+
+  test('buildReviewThreadFixPrompt falls back to original_line when line is null', () => {
+    const prompt = buildReviewThreadFixPrompt(
+      { id: 1, title: 'Test' } as any,
+      [
+        {
+          prUrl: 'https://github.com/example/repo/pull/1',
+          thread: createReviewThreadDetail({
+            threadId: 'thread-orig-line',
+            path: 'src/utils.ts',
+            line: null,
+            originalLine: 55,
+            comments: [{ body: 'Check this.' }],
+          }),
+        },
+      ]
+    );
+
+    expect(prompt).toContain('### Thread 1: src/utils.ts:55');
+    expect(prompt).toContain('**Line:** 55');
+  });
+
+  test('buildReviewThreadFixPrompt falls back to start_line when line and original_line are null', () => {
+    const prompt = buildReviewThreadFixPrompt(
+      { id: 1, title: 'Test' } as any,
+      [
+        {
+          prUrl: 'https://github.com/example/repo/pull/1',
+          thread: createReviewThreadDetail({
+            threadId: 'thread-start-line',
+            path: 'src/index.ts',
+            line: null,
+            originalLine: null,
+            startLine: 30,
+            comments: [{ body: 'Refactor this.' }],
+          }),
+        },
+      ]
+    );
+
+    expect(prompt).toContain('### Thread 1: src/index.ts:30');
+  });
+
+  test('buildReviewThreadFixPrompt shows no comments message when thread has none', () => {
+    const prompt = buildReviewThreadFixPrompt(
+      { id: 1, title: 'Test' } as any,
+      [
+        {
+          prUrl: 'https://github.com/example/repo/pull/1',
+          thread: createReviewThreadDetail({
+            threadId: 'thread-no-comments',
+            path: 'src/empty.ts',
+            line: 1,
+            comments: [],
+          }),
+        },
+      ]
+    );
+
+    expect(prompt).toContain('No comment bodies were captured for this thread.');
+  });
+
+  test('buildReviewThreadFixPrompt omits diff hunk section when not present', () => {
+    const prompt = buildReviewThreadFixPrompt(
+      { id: 1, title: 'Test' } as any,
+      [
+        {
+          prUrl: 'https://github.com/example/repo/pull/1',
+          thread: createReviewThreadDetail({
+            threadId: 'thread-no-hunk',
+            path: 'src/no_hunk.ts',
+            line: 5,
+            comments: [{ body: 'Review comment.' }],
+          }),
+        },
+      ]
+    );
+
+    expect(prompt).not.toContain('```diff');
+    expect(prompt).not.toContain('**Diff Hunk:**');
+  });
+
+  test('buildReviewThreadFixPrompt omits goal line for plan without goal', () => {
+    const prompt = buildReviewThreadFixPrompt(
+      { id: 1, title: 'Test', goal: undefined } as any,
+      []
+    );
+
+    expect(prompt).toContain('**Goal:** No goal provided');
+  });
+
+  test('buildReviewThreadFixPrompt omits details section for plan without details', () => {
+    const prompt = buildReviewThreadFixPrompt(
+      { id: 1, title: 'Test', details: undefined } as any,
+      []
+    );
+
+    expect(prompt).not.toContain('**Details:**');
+  });
+
+  test('buildReviewThreadFixPrompt includes multiple threads from different PRs', () => {
+    const prompt = buildReviewThreadFixPrompt(
+      { id: 1, title: 'Multi-PR Test' } as any,
+      [
+        {
+          prUrl: 'https://github.com/example/repo/pull/10',
+          thread: createReviewThreadDetail({
+            threadId: 'thread-a',
+            path: 'src/a.ts',
+            line: 1,
+            comments: [{ body: 'Fix A.' }],
+          }),
+        },
+        {
+          prUrl: 'https://github.com/example/repo/pull/20',
+          thread: createReviewThreadDetail({
+            threadId: 'thread-b',
+            path: 'src/b.ts',
+            line: 2,
+            comments: [{ body: 'Fix B.' }],
+          }),
+        },
+      ]
+    );
+
+    expect(prompt).toContain('### Thread 1: src/a.ts:1');
+    expect(prompt).toContain('**PR URL:** https://github.com/example/repo/pull/10');
+    expect(prompt).toContain('### Thread 2: src/b.ts:2');
+    expect(prompt).toContain('**PR URL:** https://github.com/example/repo/pull/20');
+    expect(prompt).toContain('**Thread ID:** thread-a');
+    expect(prompt).toContain('**Thread ID:** thread-b');
+  });
+
+  test('resolve updates local DB cache after successful GitHub mutation', async () => {
+    const mockDb = { run: vi.fn() };
+    mockGetDatabase.mockReturnValue(mockDb as any);
+
+    await handlePrCommand.handlePrResolveCommand('thread-789');
+
+    expect(mockResolveReviewThread).toHaveBeenCalledWith('thread-789');
+    expect(mockDb.run).toHaveBeenCalledWith(
+      'UPDATE pr_review_thread SET is_resolved = 1 WHERE thread_id = ?',
+      ['thread-789']
+    );
+  });
 });
 
 function createNestedCommand(): { parent: { parent: { opts: () => { config: string } } } } {
