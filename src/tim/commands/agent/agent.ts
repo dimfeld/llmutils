@@ -454,7 +454,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
         : 'normal';
 
     // Determine updateDocs mode: CLI option overrides config
-    const updateDocsMode: 'never' | 'after-iteration' | 'after-completion' =
+    const updateDocsMode: 'never' | 'after-iteration' | 'after-completion' | 'manual' =
       options.updateDocs || config.updateDocs?.mode || 'never';
 
     if (isAutoClaimEnabled() && !isShuttingDown()) {

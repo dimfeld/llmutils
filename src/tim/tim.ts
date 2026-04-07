@@ -475,6 +475,40 @@ program
   });
 
 program
+  .command('finish <plan>')
+  .description(
+    'Run any remaining documentation and lessons finalization steps, then mark the plan done.'
+  )
+  .option('-x, --executor <name>', 'The executor to use for finalization steps')
+  .option('-m, --model <model>', 'Model to use for the executor')
+  .option(
+    '-w, --workspace <id>',
+    'ID for the task, used for workspace naming and tracking. If provided, a new workspace will be created.'
+  )
+  .option(
+    '--aw, --auto-workspace',
+    'Automatically select an available workspace or create a new one'
+  )
+  .option(
+    '--nw, --new-workspace',
+    'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
+  )
+  .option('--base <ref>', 'Base branch or revision to checkout in workspace')
+  .option('--no-workspace-sync', 'Disable automatic workspace round-trip sync')
+  .option('--non-interactive', 'Do not prompt for user input (e.g., when clearing stale locks)')
+  .option('--no-terminal-input', 'Disable terminal input forwarding during finalization')
+  .option(
+    '--require-workspace',
+    'Fail if workspace creation is requested but fails (default: true)',
+    true
+  )
+  .option('--apply-lessons', 'Apply lessons learned to documentation after plan completion')
+  .action(async (planArg, options, command) => {
+    const { handleFinishCommand } = await import('./commands/finish.js');
+    await handleFinishCommand(planArg, options, command).catch(handleCommandError);
+  });
+
+program
   .command('update-docs [planFile]')
   .description('Update documentation based on completed plan work. Can be a file path or plan ID.')
   .option('-x, --executor <name>', 'The executor to use for documentation updates')

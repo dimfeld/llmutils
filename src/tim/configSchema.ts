@@ -525,7 +525,7 @@ export const timConfigSchema = z
          * - 'after-completion': Update docs only when the entire plan is complete
          */
         mode: z
-          .enum(['never', 'after-iteration', 'after-completion'])
+          .enum(['never', 'after-iteration', 'after-completion', 'manual'])
           .optional()
           .describe('When to automatically update docs during agent execution'),
         /** Model to use for documentation updates */

@@ -215,6 +215,17 @@ describe('buildHeadlessSessionInfo', () => {
     });
   });
 
+  test('supports finish as a session command', async () => {
+    const info = await buildHeadlessSessionInfo('finish', false, {
+      id: 43,
+      title: 'finalize plan',
+    });
+
+    expect(info.command).toBe('finish');
+    expect(info.planId).toBe(43);
+    expect(info.planTitle).toBe('finalize plan');
+  });
+
   test('includes terminal metadata when WEZTERM_PANE is set', async () => {
     process.env.WEZTERM_PANE = '12';
 

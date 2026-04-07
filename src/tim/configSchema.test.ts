@@ -130,6 +130,18 @@ describe('configSchema', () => {
     });
   });
 
+  describe('updateDocs.mode', () => {
+    test('accepts manual mode', () => {
+      const result = timConfigSchema.parse({
+        updateDocs: {
+          mode: 'manual' as const,
+        },
+      });
+
+      expect(result.updateDocs?.mode).toBe('manual');
+    });
+  });
+
   describe('getDefaultConfig', () => {
     test('should include issueTracker with default value "github"', () => {
       const defaultConfig = getDefaultConfig();

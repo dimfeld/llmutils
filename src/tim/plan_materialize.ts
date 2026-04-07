@@ -74,6 +74,8 @@ type EditablePlanField =
   | 'temp'
   | 'epic'
   | 'planGeneratedAt'
+  | 'docsUpdatedAt'
+  | 'lessonsAppliedAt'
   | 'dependencies'
   | 'issue'
   | 'pullRequest'
@@ -104,6 +106,8 @@ const EDITABLE_PLAN_FIELDS = [
   'temp',
   'epic',
   'planGeneratedAt',
+  'docsUpdatedAt',
+  'lessonsAppliedAt',
   'dependencies',
   'issue',
   'pullRequest',

@@ -69,7 +69,7 @@ export async function executeBatchMode(
     maxSteps?: number;
     executorName?: string;
     executionMode?: 'normal' | 'simple' | 'tdd';
-    updateDocsMode?: 'never' | 'after-iteration' | 'after-completion';
+    updateDocsMode?: 'never' | 'after-iteration' | 'after-completion' | 'manual';
     applyLessons?: boolean;
     finalReview?: boolean;
     configPath?: string;

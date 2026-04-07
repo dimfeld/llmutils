@@ -84,6 +84,8 @@ export function planRowToSchemaInput(
     docs: parseOptionalStringArray(row.docs),
     changedFiles: parseOptionalStringArray(row.changed_files),
     planGeneratedAt: row.plan_generated_at ?? undefined,
+    docsUpdatedAt: row.docs_updated_at ?? undefined,
+    lessonsAppliedAt: row.lessons_applied_at ?? undefined,
     reviewIssues: parseOptionalReviewIssues(row.review_issues),
     parent,
     dependencies,

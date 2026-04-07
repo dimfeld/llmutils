@@ -540,6 +540,13 @@ const migrations: Migration[] = [
       );
     `,
   },
+  {
+    version: 17,
+    up: `
+      ALTER TABLE plan ADD COLUMN docs_updated_at TEXT;
+      ALTER TABLE plan ADD COLUMN lessons_applied_at TEXT;
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {
