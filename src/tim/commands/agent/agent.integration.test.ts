@@ -357,4 +357,60 @@ describe('tim agent integration (execution summaries)', () => {
     expect(content).toContain('Step Results');
     expect(content).toContain('Batch Iteration 1');
   });
+
+  test('reviewThreadContext is prepended to the executor prompt', async () => {
+    const plan = {
+      id: 789,
+      title: 'Test Plan (Review Thread Context)',
+      goal: 'Verify review thread context injection',
+      details: 'Context should be prepended',
+      status: 'pending',
+      tasks: [
+        {
+          title: 'Task 1',
+          description: 'Fix review feedback',
+          done: false,
+          steps: [{ prompt: 'Fix the code', done: false }],
+        },
+      ],
+    };
+    const planPath = await writePlan('789-test-plan.yml', plan);
+
+    executorExecuteImpl = async () => ({ content: 'done' });
+
+    const { timAgent } = await import('./agent.js');
+    const { buildExecutorAndLog } = await import('../../executors/index.js');
+    const mockedBuild = vi.mocked(buildExecutorAndLog);
+    mockedBuild.mockClear();
+
+    const reviewContext = '## Review Thread Context\nFix the bug in auth.ts:42';
+
+    await timAgent(
+      planPath,
+      {
+        serialTasks: true,
+        nonInteractive: true,
+        log: false,
+        orchestrator: 'claude_code',
+        steps: '1',
+        reviewThreadContext: reviewContext,
+      },
+      { config: configPath }
+    );
+
+    // buildExecutorAndLog was called, get the executor mock it returned
+    expect(mockedBuild).toHaveBeenCalled();
+    const executor = mockedBuild.mock.results[0].value;
+    const executeMock = vi.mocked(executor.execute);
+
+    // The first argument to execute() should start with the review thread context
+    expect(executeMock).toHaveBeenCalled();
+    const passedContext = executeMock.mock.calls[0][0];
+    expect(passedContext).toContain(reviewContext);
+    // The review context should come before the plan's goal in the prompt
+    expect(passedContext).toContain('Verify review thread context injection');
+    expect(passedContext.indexOf(reviewContext)).toBeLessThan(
+      passedContext.indexOf('Verify review thread context injection')
+    );
+  });
 });

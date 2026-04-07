@@ -663,7 +663,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
         });
 
         // Build the prompt for the simple task using the unified function
-        const taskPrompt = await buildExecutionPromptWithoutSteps({
+        let taskPrompt = await buildExecutionPromptWithoutSteps({
           executor,
           planData,
           planFilePath: currentPlanFile,
@@ -676,6 +676,10 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
           filePathPrefix: executor.filePathPrefix,
           includeCurrentPlanContext: false, // Don't include current plan context since it's already in project context
         });
+
+        if (options.reviewThreadContext) {
+          taskPrompt = options.reviewThreadContext + '\n\n' + taskPrompt;
+        }
 
         if (options.dryRun) {
           log(boldMarkdownHeaders('\n## Dry Run - Generated Prompt\n'));
@@ -1020,9 +1024,6 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
         message: 'Using direct prompt as context',
       });
       contextContent = stepPreparationResult.prompt;
-      if (options.reviewThreadContext) {
-        contextContent = options.reviewThreadContext + '\n\n' + contextContent;
-      }
       log(contextContent);
 
       if (options.dryRun) {
