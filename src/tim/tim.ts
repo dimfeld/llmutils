@@ -463,16 +463,6 @@ program
     await handlePromoteCommand(taskIds, options).catch(handleCommandError);
   });
 
-program
-  .command('done <planFile>')
-  .description('Mark the next step/task in a plan YAML as done. Can be a file path or plan ID.')
-  .option('--steps <steps>', 'Number of steps to mark as done', '1')
-  .option('--task', 'Mark all steps in the current task as done')
-  .option('--commit', 'Commit changes to jj/git')
-  .action(async (planFile, options, command) => {
-    const { handleDoneCommand } = await import('./commands/done.js');
-    await handleDoneCommand(planFile, options, command).catch(handleCommandError);
-  });
 
 program
   .command('update-docs [planFile]')
