@@ -437,352 +437,329 @@
       <StatusBadge status={plan.displayStatus} />
       <PriorityBadge priority={plan.priority} />
 
-      {#if activeSession}
-        <a
-          href="/projects/{projectId}/sessions/{activeSession.connectionId}"
-          class="ml-auto inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-sm font-medium transition-colors
-            {activeSession.command === 'agent'
-            ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-900/60'
-            : activeSession.command === 'chat'
-              ? 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/40 dark:text-violet-300 dark:hover:bg-violet-900/60'
-            : activeSession.command === 'finish'
-              ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/60'
-              : 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-900/60'}"
-        >
-          <span
-            class="inline-block h-2 w-2 animate-pulse rounded-full {activeSession.command ===
-            'agent'
-              ? 'bg-emerald-500'
+      <div class="ml-auto flex items-center gap-2">
+        {#if openInEditorEnabled}
+          <Button onclick={handleOpenInEditor} disabled={openingInEditor} size="sm" variant="outline">
+            {openingInEditor ? 'Opening…' : 'Open in Editor'}
+          </Button>
+        {/if}
+        {#if activeSession}
+          <a
+            href="/projects/{projectId}/sessions/{activeSession.connectionId}"
+            class="inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-sm font-medium transition-colors
+              {activeSession.command === 'agent'
+              ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-900/60'
               : activeSession.command === 'chat'
-                ? 'bg-violet-500'
-                : activeSession.command === 'finish'
-                  ? 'bg-amber-500'
-                  : 'bg-blue-500'}"
-          ></span>
-          {activeSession.command === 'agent'
-            ? 'Agent Running...'
-            : activeSession.command === 'generate'
-              ? 'Generating...'
+                ? 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/40 dark:text-violet-300 dark:hover:bg-violet-900/60'
               : activeSession.command === 'finish'
-                ? 'Finishing...'
-                : `${activeSession.command.charAt(0).toUpperCase() + activeSession.command.slice(1)} Running...`}
-        </a>
-      {:else if showFinish}
-        <ButtonGroup class="ml-auto">
-          <Button
-            onclick={handleFinish}
-            disabled={controlsDisabled}
-            size="sm"
-            class="bg-amber-600 text-white hover:bg-amber-700 dark:bg-amber-500 dark:hover:bg-amber-600"
+                ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/60'
+                : 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-900/60'}"
           >
-            {#if startingFinish}
-              <span
-                class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
-              ></span>
-              Starting…
-            {:else}
-              Finish
-            {/if}
-          </Button>
-          <DropdownMenu.Root>
-            <DropdownMenu.Trigger>
-              {#snippet child({ props })}
-                <Button
-                  {...props}
-                  disabled={controlsDisabled}
-                  size="icon-sm"
-                  aria-label="More plan actions"
-                  class="bg-amber-600 text-white hover:bg-amber-700 dark:bg-amber-500 dark:hover:bg-amber-600"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <path d="m6 9 6 6 6-6" />
-                  </svg>
-                </Button>
-              {/snippet}
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Content align="end">
-              <DropdownMenu.Item onclick={() => (chatDialogOpen = true)}>Chat</DropdownMenu.Item>
-              {#if openInEditorEnabled}
-                <DropdownMenu.Item onclick={handleOpenInEditor} disabled={openingInEditor}>
-                  {openingInEditor ? 'Opening…' : 'Open in Editor'}
-                </DropdownMenu.Item>
-              {/if}
-              {#if isEligibleForRebase}
-                <DropdownMenu.Item onclick={handleRebase} disabled={controlsDisabled}>
-                  {startingRebase ? 'Starting Rebase…' : 'Rebase'}
-                </DropdownMenu.Item>
-              {/if}
-            </DropdownMenu.Content>
-          </DropdownMenu.Root>
-        </ButtonGroup>
-      {:else if showAgentOnly}
-        <ButtonGroup class="ml-auto">
-          <Button
-            onclick={handleRunAgent}
-            disabled={controlsDisabled}
-            size="sm"
-            class="bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600"
-          >
-            {#if startingAgent}
-              <span
-                class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
-              ></span>
-              Starting…
-            {:else}
-              Run Agent
-            {/if}
-          </Button>
-          <DropdownMenu.Root>
-            <DropdownMenu.Trigger>
-              {#snippet child({ props })}
-                <Button
-                  {...props}
-                  disabled={controlsDisabled}
-                  size="icon-sm"
-                  aria-label="More plan actions"
-                  class="bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <path d="m6 9 6 6 6-6" />
-                  </svg>
-                </Button>
-              {/snippet}
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Content align="end">
-              <DropdownMenu.Item onclick={() => (chatDialogOpen = true)}>Chat</DropdownMenu.Item>
-              {#if openInEditorEnabled}
-                <DropdownMenu.Item onclick={handleOpenInEditor} disabled={openingInEditor}>
-                  {openingInEditor ? 'Opening…' : 'Open in Editor'}
-                </DropdownMenu.Item>
-              {/if}
-              {#if isEligibleForRebase}
-                <DropdownMenu.Item onclick={handleRebase} disabled={controlsDisabled}>
-                  {startingRebase ? 'Starting Rebase…' : 'Rebase'}
-                </DropdownMenu.Item>
-              {/if}
-            </DropdownMenu.Content>
-          </DropdownMenu.Root>
-        </ButtonGroup>
-      {:else if showGenerateWithAgent}
-        <ButtonGroup class="ml-auto">
-          <Button
-            onclick={handleGenerate}
-            disabled={controlsDisabled}
-            size="sm"
-            class="bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
-          >
-            {#if startingGenerate}
-              <span
-                class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
-              ></span>
-              Starting…
-            {:else}
-              Generate
-            {/if}
-          </Button>
-          <DropdownMenu.Root>
-            <DropdownMenu.Trigger>
-              {#snippet child({ props })}
-                <Button
-                  {...props}
-                  disabled={controlsDisabled}
-                  size="icon-sm"
-                  aria-label="More plan actions"
-                  class="bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <path d="m6 9 6 6 6-6" />
-                  </svg>
-                </Button>
-              {/snippet}
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Content align="end">
-              <DropdownMenu.Item onclick={handleRunAgent}>Run Agent</DropdownMenu.Item>
-              <DropdownMenu.Item onclick={() => (chatDialogOpen = true)}>Chat</DropdownMenu.Item>
-              {#if openInEditorEnabled}
-                <DropdownMenu.Item onclick={handleOpenInEditor} disabled={openingInEditor}>
-                  {openingInEditor ? 'Opening…' : 'Open in Editor'}
-                </DropdownMenu.Item>
-              {/if}
-              {#if isEligibleForRebase}
-                <DropdownMenu.Item onclick={handleRebase} disabled={controlsDisabled}>
-                  {startingRebase ? 'Starting Rebase…' : 'Rebase'}
-                </DropdownMenu.Item>
-              {/if}
-            </DropdownMenu.Content>
-          </DropdownMenu.Root>
-        </ButtonGroup>
-      {:else if showChatOnly}
-        <div class="ml-auto flex items-center gap-2">
-          {#if openInEditorEnabled}
+            <span
+              class="inline-block h-2 w-2 animate-pulse rounded-full {activeSession.command ===
+              'agent'
+                ? 'bg-emerald-500'
+                : activeSession.command === 'chat'
+                  ? 'bg-violet-500'
+                  : activeSession.command === 'finish'
+                    ? 'bg-amber-500'
+                    : 'bg-blue-500'}"
+            ></span>
+            {activeSession.command === 'agent'
+              ? 'Agent Running...'
+              : activeSession.command === 'generate'
+                ? 'Generating...'
+                : activeSession.command === 'finish'
+                  ? 'Finishing...'
+                  : `${activeSession.command.charAt(0).toUpperCase() + activeSession.command.slice(1)} Running...`}
+          </a>
+        {:else if showFinish}
+          <ButtonGroup>
             <Button
-              onclick={handleOpenInEditor}
-              disabled={openingInEditor}
-              size="sm"
-              variant="outline"
-            >
-              {openingInEditor ? 'Opening…' : 'Open in Editor'}
-            </Button>
-          {/if}
-          {#if isEligibleForRebase}
-            <ButtonGroup>
-              <Button
-                onclick={() => (chatDialogOpen = true)}
-                disabled={controlsDisabled}
-                size="sm"
-                class="bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600"
-              >
-                {#if startingChat}
-                  <span
-                    class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
-                  ></span>
-                  Starting…
-                {:else}
-                  Chat
-                {/if}
-              </Button>
-              <DropdownMenu.Root>
-                <DropdownMenu.Trigger>
-                  {#snippet child({ props })}
-                    <Button
-                      {...props}
-                      disabled={controlsDisabled}
-                      size="icon-sm"
-                      aria-label="More plan actions"
-                      class="bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600"
-                    >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      >
-                        <path d="m6 9 6 6 6-6" />
-                      </svg>
-                    </Button>
-                  {/snippet}
-                </DropdownMenu.Trigger>
-                <DropdownMenu.Content align="end">
-                  <DropdownMenu.Item onclick={handleRebase} disabled={controlsDisabled}>
-                    {startingRebase ? 'Starting Rebase…' : 'Rebase'}
-                  </DropdownMenu.Item>
-                  {#if showFinishInDropdown}
-                    <DropdownMenu.Item onclick={handleFinish} disabled={controlsDisabled}>
-                      {startingFinish ? 'Starting Finish…' : 'Finish'}
-                    </DropdownMenu.Item>
-                  {/if}
-                </DropdownMenu.Content>
-              </DropdownMenu.Root>
-            </ButtonGroup>
-          {:else if showFinishInDropdown}
-            <ButtonGroup>
-              <Button
-                onclick={() => (chatDialogOpen = true)}
-                disabled={controlsDisabled}
-                size="sm"
-                class="bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600"
-              >
-                {#if startingChat}
-                  <span
-                    class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
-                  ></span>
-                  Starting…
-                {:else}
-                  Chat
-                {/if}
-              </Button>
-              <DropdownMenu.Root>
-                <DropdownMenu.Trigger>
-                  {#snippet child({ props })}
-                    <Button
-                      {...props}
-                      disabled={controlsDisabled}
-                      size="icon-sm"
-                      aria-label="More plan actions"
-                      class="bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600"
-                    >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      >
-                        <path d="m6 9 6 6 6-6" />
-                      </svg>
-                    </Button>
-                  {/snippet}
-                </DropdownMenu.Trigger>
-                <DropdownMenu.Content align="end">
-                  <DropdownMenu.Item onclick={handleFinish} disabled={controlsDisabled}>
-                    {startingFinish ? 'Starting Finish…' : 'Finish'}
-                  </DropdownMenu.Item>
-                </DropdownMenu.Content>
-              </DropdownMenu.Root>
-            </ButtonGroup>
-          {:else}
-            <Button
-              onclick={() => (chatDialogOpen = true)}
+              onclick={handleFinish}
               disabled={controlsDisabled}
               size="sm"
-              class="bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600"
+              class="bg-amber-600 text-white hover:bg-amber-700 dark:bg-amber-500 dark:hover:bg-amber-600"
             >
-              {#if startingChat}
+              {#if startingFinish}
                 <span
                   class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
                 ></span>
                 Starting…
               {:else}
-                Chat
+                Finish
               {/if}
             </Button>
-          {/if}
-        </div>
-      {/if}
-      {#if openInEditorEnabled && activeSession}
-        <Button onclick={handleOpenInEditor} disabled={openingInEditor} size="sm" variant="outline">
-          {openingInEditor ? 'Opening…' : 'Open in Editor'}
-        </Button>
-      {/if}
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger>
+                {#snippet child({ props })}
+                  <Button
+                    {...props}
+                    disabled={controlsDisabled}
+                    size="icon-sm"
+                    aria-label="More plan actions"
+                    class="bg-amber-600 text-white hover:bg-amber-700 dark:bg-amber-500 dark:hover:bg-amber-600"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="m6 9 6 6 6-6" />
+                    </svg>
+                  </Button>
+                {/snippet}
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Content align="end">
+                <DropdownMenu.Item onclick={() => (chatDialogOpen = true)}>Chat</DropdownMenu.Item>
+                {#if isEligibleForRebase}
+                  <DropdownMenu.Item onclick={handleRebase} disabled={controlsDisabled}>
+                    {startingRebase ? 'Starting Rebase…' : 'Rebase'}
+                  </DropdownMenu.Item>
+                {/if}
+              </DropdownMenu.Content>
+            </DropdownMenu.Root>
+          </ButtonGroup>
+        {:else if showAgentOnly}
+          <ButtonGroup>
+            <Button
+              onclick={handleRunAgent}
+              disabled={controlsDisabled}
+              size="sm"
+              class="bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600"
+            >
+              {#if startingAgent}
+                <span
+                  class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
+                ></span>
+                Starting…
+              {:else}
+                Run Agent
+              {/if}
+            </Button>
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger>
+                {#snippet child({ props })}
+                  <Button
+                    {...props}
+                    disabled={controlsDisabled}
+                    size="icon-sm"
+                    aria-label="More plan actions"
+                    class="bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="m6 9 6 6 6-6" />
+                    </svg>
+                  </Button>
+                {/snippet}
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Content align="end">
+                <DropdownMenu.Item onclick={() => (chatDialogOpen = true)}>Chat</DropdownMenu.Item>
+                {#if isEligibleForRebase}
+                  <DropdownMenu.Item onclick={handleRebase} disabled={controlsDisabled}>
+                    {startingRebase ? 'Starting Rebase…' : 'Rebase'}
+                  </DropdownMenu.Item>
+                {/if}
+              </DropdownMenu.Content>
+            </DropdownMenu.Root>
+          </ButtonGroup>
+        {:else if showGenerateWithAgent}
+          <ButtonGroup>
+            <Button
+              onclick={handleGenerate}
+              disabled={controlsDisabled}
+              size="sm"
+              class="bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
+            >
+              {#if startingGenerate}
+                <span
+                  class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
+                ></span>
+                Starting…
+              {:else}
+                Generate
+              {/if}
+            </Button>
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger>
+                {#snippet child({ props })}
+                  <Button
+                    {...props}
+                    disabled={controlsDisabled}
+                    size="icon-sm"
+                    aria-label="More plan actions"
+                    class="bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="m6 9 6 6 6-6" />
+                    </svg>
+                  </Button>
+                {/snippet}
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Content align="end">
+                <DropdownMenu.Item onclick={handleRunAgent}>Run Agent</DropdownMenu.Item>
+                <DropdownMenu.Item onclick={() => (chatDialogOpen = true)}>Chat</DropdownMenu.Item>
+                {#if isEligibleForRebase}
+                  <DropdownMenu.Item onclick={handleRebase} disabled={controlsDisabled}>
+                    {startingRebase ? 'Starting Rebase…' : 'Rebase'}
+                  </DropdownMenu.Item>
+                {/if}
+              </DropdownMenu.Content>
+            </DropdownMenu.Root>
+          </ButtonGroup>
+        {:else if showChatOnly}
+          <div class="flex items-center gap-2">
+            {#if isEligibleForRebase}
+              <ButtonGroup>
+                <Button
+                  onclick={() => (chatDialogOpen = true)}
+                  disabled={controlsDisabled}
+                  size="sm"
+                  class="bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600"
+                >
+                  {#if startingChat}
+                    <span
+                      class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
+                    ></span>
+                    Starting…
+                  {:else}
+                    Chat
+                  {/if}
+                </Button>
+                <DropdownMenu.Root>
+                  <DropdownMenu.Trigger>
+                    {#snippet child({ props })}
+                      <Button
+                        {...props}
+                        disabled={controlsDisabled}
+                        size="icon-sm"
+                        aria-label="More plan actions"
+                        class="bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </Button>
+                    {/snippet}
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Content align="end">
+                    <DropdownMenu.Item onclick={handleRebase} disabled={controlsDisabled}>
+                      {startingRebase ? 'Starting Rebase…' : 'Rebase'}
+                    </DropdownMenu.Item>
+                    {#if showFinishInDropdown}
+                      <DropdownMenu.Item onclick={handleFinish} disabled={controlsDisabled}>
+                        {startingFinish ? 'Starting Finish…' : 'Finish'}
+                      </DropdownMenu.Item>
+                    {/if}
+                  </DropdownMenu.Content>
+                </DropdownMenu.Root>
+              </ButtonGroup>
+            {:else if showFinishInDropdown}
+              <ButtonGroup>
+                <Button
+                  onclick={() => (chatDialogOpen = true)}
+                  disabled={controlsDisabled}
+                  size="sm"
+                  class="bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600"
+                >
+                  {#if startingChat}
+                    <span
+                      class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
+                    ></span>
+                    Starting…
+                  {:else}
+                    Chat
+                  {/if}
+                </Button>
+                <DropdownMenu.Root>
+                  <DropdownMenu.Trigger>
+                    {#snippet child({ props })}
+                      <Button
+                        {...props}
+                        disabled={controlsDisabled}
+                        size="icon-sm"
+                        aria-label="More plan actions"
+                        class="bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        >
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </Button>
+                    {/snippet}
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Content align="end">
+                    <DropdownMenu.Item onclick={handleFinish} disabled={controlsDisabled}>
+                      {startingFinish ? 'Starting Finish…' : 'Finish'}
+                    </DropdownMenu.Item>
+                  </DropdownMenu.Content>
+                </DropdownMenu.Root>
+              </ButtonGroup>
+            {:else}
+              <Button
+                onclick={() => (chatDialogOpen = true)}
+                disabled={controlsDisabled}
+                size="sm"
+                class="bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600"
+              >
+                {#if startingChat}
+                  <span
+                    class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
+                  ></span>
+                  Starting…
+                {:else}
+                  Chat
+                {/if}
+              </Button>
+            {/if}
+          </div>
+        {/if}
+      </div>
     </div>
 
     {#if errorMessage}
