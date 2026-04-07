@@ -17,7 +17,7 @@ agents:
   implementer:
     instructions: docs/implementer-instructions.md
 updateDocs:
-  mode: after-completion
+  mode: manual
   applyLessons: true
   exclude:
     - CHANGELOG and similar documents
