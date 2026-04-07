@@ -55,7 +55,13 @@ vi.mock('./terminal_input.ts', () => ({
   },
 }));
 
-const { setupTerminalInput } = await import('./terminal_input_lifecycle.ts');
+vi.mock('../../../logging/adapter.js', () => ({
+  getLoggerAdapter: () => ({}),
+}));
+
+const { executeWithTerminalInput, setupTerminalInput } = await import(
+  './terminal_input_lifecycle.ts'
+);
 
 function makeStreaming(
   overrides: Partial<{ stdinEnd: () => Promise<void> }> = {}
@@ -397,5 +403,60 @@ describe('terminal_input_lifecycle', () => {
 
     expect(startCalls).toBe(2);
     expect(stopCalls).toBe(2);
+  });
+
+  it('SIGTERM tears down an active executor session immediately', async () => {
+    const listeners = new Map<string, (...args: any[]) => unknown>();
+    const onSpy = vi.spyOn(process, 'on').mockImplementation(((event: string, listener: any) => {
+      listeners.set(event, listener);
+      return process;
+    }) as typeof process.on);
+    const offSpy = vi.spyOn(process, 'off').mockImplementation(((event: string) => {
+      listeners.delete(event);
+      return process;
+    }) as typeof process.off);
+
+    const stdinEndSpy = vi.fn(async () => {});
+    const killSpy = vi.fn(() => {});
+    const stopSpy = vi.fn(() => {});
+
+    mockSendInitialPrompt.mockImplementation(vi.fn(() => {}));
+    mockSendFollowUpMessage.mockImplementation(vi.fn(() => {}));
+
+    mockTerminalInputReaderFactory = (_options: TerminalInputReaderOptions) => ({
+      start: () => true,
+      stop: () => {
+        stopSpy();
+      },
+    });
+
+    const streaming = makeStreaming({ stdinEnd: stdinEndSpy });
+    (streaming as any).kill = killSpy;
+
+    const controller = executeWithTerminalInput({
+      streaming,
+      prompt: 'initial prompt',
+      sendStructured: vi.fn(() => {}),
+      debugLog: vi.fn(() => {}),
+      errorLog: vi.fn(() => {}),
+      log: vi.fn(() => {}),
+      label: 'Claude',
+      terminalInputEnabled: true,
+      tunnelForwardingEnabled: false,
+    });
+
+    const sigtermHandler = listeners.get('SIGTERM');
+    expect(sigtermHandler).toEqual(expect.any(Function));
+
+    sigtermHandler?.();
+
+    expect(stopSpy).toHaveBeenCalled();
+    expect(stdinEndSpy).toHaveBeenCalledTimes(1);
+    expect(killSpy).toHaveBeenCalledWith('SIGTERM');
+
+    controller.cleanup();
+
+    expect(offSpy).toHaveBeenCalledWith('SIGTERM', expect.any(Function));
+    expect(onSpy).toHaveBeenCalledWith('SIGTERM', expect.any(Function));
   });
 });

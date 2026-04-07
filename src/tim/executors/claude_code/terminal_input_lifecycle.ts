@@ -178,6 +178,25 @@ export function executeWithTerminalInput(
   // Single shared guard for stdin lifecycle, used across all three paths
   // (terminal input, tunnel forwarding, single prompt) and the tunnel handler.
   const stdinGuard = createStdinGuard(streaming.stdin, debugLog);
+  let terminalInputController: TerminalInputController | undefined;
+  let handleProcessSigterm: (() => void) | undefined;
+
+  const stopActiveSessionForShutdown = () => {
+    if (terminalInputController) {
+      terminalInputController.onResultMessage();
+    } else {
+      stdinGuard.close();
+    }
+
+    // The parent process may already be forwarding SIGTERM to the child, but
+    // this keeps shutdown immediate when the active executor session is still live.
+    streaming.kill('SIGTERM');
+  };
+
+  handleProcessSigterm = () => {
+    stopActiveSessionForShutdown();
+  };
+  process.on('SIGTERM', handleProcessSigterm);
 
   // Wire tunnel user input handler if running as a tunnel client
   let clearTunnelUserInputHandler = (): void => {};
@@ -251,7 +270,6 @@ export function executeWithTerminalInput(
   const headlessForwardingEnabled = loggerAdapter instanceof HeadlessAdapter;
 
   // onResultMessage is called by the formatStdout callback when a result message is detected
-  let terminalInputController: TerminalInputController | undefined;
   const onResultMessage = (): void => {
     if (!closeOnResultMessage) {
       return;
@@ -331,6 +349,10 @@ export function executeWithTerminalInput(
       clearHeadlessUserInputHandler();
       if (loggerAdapter instanceof HeadlessAdapter) {
         loggerAdapter.setEndSessionHandler(undefined);
+      }
+      if (handleProcessSigterm) {
+        process.off('SIGTERM', handleProcessSigterm);
+        handleProcessSigterm = undefined;
       }
     },
   };
