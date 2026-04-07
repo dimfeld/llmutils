@@ -2,6 +2,7 @@
   import { onDestroy } from 'svelte';
   import type { EnrichedPlan } from '$lib/server/db_queries.js';
   import { startAgent } from '$lib/remote/plan_actions.remote.js';
+  import StatusBadge from './StatusBadge.svelte';
   import PriorityBadge from './PriorityBadge.svelte';
 
   let {
@@ -99,6 +100,9 @@
     {/if}
   </div>
   <div class="mt-0.5 flex items-center gap-2 pl-7">
+    {#if plan.status === 'pending' || plan.status === 'in_progress'}
+      <StatusBadge status={plan.status} />
+    {/if}
     <PriorityBadge priority={plan.priority} />
     {#if projectName}
       <span class="truncate text-xs text-muted-foreground">{projectName}</span>

@@ -410,8 +410,7 @@ describe('deriveReadyToStartPlans', () => {
     ];
 
     const result = deriveReadyToStartPlans(plans, []);
-    expect(result).toHaveLength(1);
-    expect(result[0].uuid).toBe('ready-1');
+    expect(result.map((plan) => plan.uuid)).toEqual(['ready-1', 'in-progress-1']);
   });
 
   test('excludes epics', () => {
@@ -422,6 +421,36 @@ describe('deriveReadyToStartPlans', () => {
 
   test('excludes plans with active sessions', () => {
     const plan = makePlan({ uuid: 'plan-1', displayStatus: 'ready' });
+    const session = makeSession({
+      connectionId: 'sess-1',
+      sessionInfo: { command: 'agent', planUuid: 'plan-1' },
+    });
+
+    expect(deriveReadyToStartPlans([plan], [session])).toEqual([]);
+  });
+
+  test('includes in_progress plans without active sessions', () => {
+    const plan = makePlan({ uuid: 'plan-1', displayStatus: 'in_progress' });
+
+    const result = deriveReadyToStartPlans([plan], []);
+    expect(result).toHaveLength(1);
+    expect(result[0].uuid).toBe('plan-1');
+  });
+
+  test('includes raw in_progress plans even when displayStatus is blocked', () => {
+    const plan = makePlan({
+      uuid: 'plan-1',
+      status: 'in_progress',
+      displayStatus: 'blocked',
+    });
+
+    const result = deriveReadyToStartPlans([plan], []);
+    expect(result).toHaveLength(1);
+    expect(result[0].uuid).toBe('plan-1');
+  });
+
+  test('excludes in_progress plans with active sessions', () => {
+    const plan = makePlan({ uuid: 'plan-1', displayStatus: 'in_progress' });
     const session = makeSession({
       connectionId: 'sess-1',
       sessionInfo: { command: 'agent', planUuid: 'plan-1' },

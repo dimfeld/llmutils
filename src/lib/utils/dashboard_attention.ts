@@ -201,7 +201,10 @@ export function deriveReadyToStartPlans(
 
   return plans
     .filter(
-      (plan) => plan.displayStatus === 'ready' && !plan.epic && !activePlanUuids.has(plan.uuid)
+      (plan) =>
+        (plan.displayStatus === 'ready' || plan.displayStatus === 'in_progress') &&
+        !activePlanUuids.has(plan.uuid) &&
+        !plan.epic
     )
     .sort((a, b) => {
       const aPriority = a.priority ? (PRIORITY_ORDER[a.priority] ?? 0) : 0;

@@ -74,6 +74,7 @@
   );
 
   let readyPlans = $derived(deriveReadyToStartPlans(data.plans, sessionManager.sessions.values()));
+  $inspect(readyPlans);
 
   let allEmpty = $derived(
     attentionCount === 0 && runningSessions.length === 0 && readyPlans.length === 0
