@@ -131,14 +131,31 @@ describe('configSchema', () => {
   });
 
   describe('updateDocs.mode', () => {
-    test('accepts manual mode', () => {
-      const result = timConfigSchema.parse({
-        updateDocs: {
-          mode: 'manual' as const,
-        },
-      });
+    test('accepts all valid modes', () => {
+      for (const mode of ['never', 'after-iteration', 'after-completion', 'manual'] as const) {
+        const result = timConfigSchema.parse({
+          updateDocs: { mode },
+        });
+        expect(result.updateDocs?.mode).toBe(mode);
+      }
+    });
 
-      expect(result.updateDocs?.mode).toBe('manual');
+    test('rejects invalid mode values', () => {
+      expect(() =>
+        timConfigSchema.parse({ updateDocs: { mode: 'invalid' } })
+      ).toThrow();
+    });
+
+    test('accepts applyLessons boolean', () => {
+      const result = timConfigSchema.parse({
+        updateDocs: { applyLessons: true },
+      });
+      expect(result.updateDocs?.applyLessons).toBe(true);
+    });
+
+    test('mode is optional', () => {
+      const result = timConfigSchema.parse({ updateDocs: {} });
+      expect(result.updateDocs?.mode).toBeUndefined();
     });
   });
 

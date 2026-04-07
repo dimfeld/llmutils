@@ -293,4 +293,159 @@ describe('finish command', () => {
       'Plan 314 is not ready to finish.'
     );
   });
+
+  test('rejects in_progress plans with incomplete tasks', async () => {
+    resolvePlanFromDbOrSyncFileSpy.mockResolvedValue({
+      plan: {
+        ...basePlan,
+        status: 'in_progress',
+        tasks: [
+          { title: 'done task', description: 'done', done: true },
+          { title: 'not done', description: 'not done', done: false },
+        ],
+      },
+      planPath: '/repo/.tim/plans/314.plan.md',
+    } as any);
+
+    await expect(handleFinishCommand('314', {}, buildCommand())).rejects.toThrow(
+      'Plan 314 is not ready to finish.'
+    );
+  });
+
+  test('accepts in_progress plans with all tasks complete', async () => {
+    resolvePlanFromDbOrSyncFileSpy.mockResolvedValue({
+      plan: {
+        ...basePlan,
+        status: 'in_progress',
+        tasks: [
+          { title: 'done1', description: 'd1', done: true },
+          { title: 'done2', description: 'd2', done: true },
+        ],
+      },
+      planPath: '/repo/.tim/plans/314.plan.md',
+    } as any);
+
+    await handleFinishCommand('314', {}, buildCommand());
+
+    expect(writePlanFileSpy).toHaveBeenCalledWith(
+      '/repo/.tim/plans/314.plan.md',
+      expect.objectContaining({ status: 'done' }),
+      { cwdForIdentity: '/repo' }
+    );
+  });
+
+  test('throws when no plan argument is provided', async () => {
+    await expect(handleFinishCommand(undefined, {}, buildCommand())).rejects.toThrow(
+      'A plan ID or file path is required.'
+    );
+  });
+
+  test('does not set lessonsAppliedAt when runUpdateLessons returns false', async () => {
+    runUpdateLessonsSpy.mockResolvedValue(false);
+    loadEffectiveConfigSpy.mockResolvedValue({
+      updateDocs: {
+        mode: 'never',
+        applyLessons: true,
+      },
+    } as any);
+
+    await handleFinishCommand('314', {}, buildCommand());
+
+    expect(runUpdateLessonsSpy).toHaveBeenCalled();
+    expect(writePlanFileSpy).toHaveBeenCalled();
+    const writtenPlan = writePlanFileSpy.mock.calls[0]![1];
+    expect(writtenPlan.status).toBe('done');
+    expect(writtenPlan.lessonsAppliedAt).toBeUndefined();
+  });
+
+  test('sets docsUpdatedAt even when lessons fail', async () => {
+    runUpdateLessonsSpy.mockRejectedValue(new Error('lessons failed'));
+
+    await handleFinishCommand('314', {}, buildCommand());
+
+    expect(writePlanFileSpy).toHaveBeenCalledWith(
+      '/repo/.tim/plans/314.plan.md',
+      expect.objectContaining({
+        status: 'done',
+        docsUpdatedAt: expect.any(String),
+      }),
+      { cwdForIdentity: '/repo' }
+    );
+  });
+
+  test('sets lessonsAppliedAt even when docs fail', async () => {
+    runUpdateDocsSpy.mockRejectedValue(new Error('docs failed'));
+
+    await handleFinishCommand('314', {}, buildCommand());
+
+    expect(writePlanFileSpy).toHaveBeenCalledWith(
+      '/repo/.tim/plans/314.plan.md',
+      expect.objectContaining({
+        status: 'done',
+        lessonsAppliedAt: expect.any(String),
+      }),
+      { cwdForIdentity: '/repo' }
+    );
+  });
+
+  describe('getFinishRequirements edge cases', () => {
+    test('applyLessons CLI option overrides config', () => {
+      expect(
+        getFinishRequirements(
+          { docsUpdatedAt: undefined, lessonsAppliedAt: undefined } as any,
+          { updateDocs: { mode: 'never', applyLessons: false } },
+          { applyLessons: true }
+        )
+      ).toEqual({
+        needsDocs: false,
+        needsLessons: true,
+        needsExecutor: true,
+      });
+    });
+
+    test('already-set timestamps are skipped even with permissive config', () => {
+      expect(
+        getFinishRequirements(
+          {
+            docsUpdatedAt: '2026-04-01T00:00:00.000Z',
+            lessonsAppliedAt: '2026-04-02T00:00:00.000Z',
+          } as any,
+          { updateDocs: { mode: 'after-completion', applyLessons: true } },
+          { applyLessons: true }
+        )
+      ).toEqual({
+        needsDocs: false,
+        needsLessons: false,
+        needsExecutor: false,
+      });
+    });
+
+    test('manual mode still requires docs in finish context', () => {
+      expect(
+        getFinishRequirements(
+          { docsUpdatedAt: undefined, lessonsAppliedAt: undefined } as any,
+          { updateDocs: { mode: 'manual', applyLessons: true } },
+          {}
+        )
+      ).toEqual({
+        needsDocs: true,
+        needsLessons: true,
+        needsExecutor: true,
+      });
+    });
+  });
+
+  describe('isPlanReadyToFinish edge cases', () => {
+    test('rejects cancelled plans', () => {
+      expect(isPlanReadyToFinish({ status: 'cancelled', tasks: [] } as any)).toBe(false);
+    });
+
+    test('rejects deferred plans', () => {
+      expect(isPlanReadyToFinish({ status: 'deferred', tasks: [] } as any)).toBe(false);
+    });
+
+    test('rejects in_progress plans with no tasks', () => {
+      expect(isPlanReadyToFinish({ status: 'in_progress', tasks: [] } as any)).toBe(false);
+    });
+  });
 });
