@@ -143,7 +143,6 @@ export async function handleFinishCommand(
             newWorkspace: options.newWorkspace,
             nonInteractive: options.nonInteractive,
             requireWorkspace: options.requireWorkspace,
-            createBranch: false,
             planId: plan.id,
             planUuid: plan.uuid,
             base: options.base,
