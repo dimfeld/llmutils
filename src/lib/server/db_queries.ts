@@ -377,7 +377,7 @@ interface EnrichmentContext {
   enrichedPlans: EnrichedPlan[];
 }
 
-interface FinishConfig {
+export interface FinishConfig {
   updateDocsMode?: string;
   applyLessons?: boolean;
 }
