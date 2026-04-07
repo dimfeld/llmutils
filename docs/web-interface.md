@@ -16,11 +16,16 @@ Module-scoped state in SvelteKit server modules is **not** HMR-safe — dev-serv
 
 When broadening server-side behavior (e.g. making a check command-agnostic instead of filtering to specific commands), update all corresponding client-side logic to match. Otherwise the UI will be inconsistent with what the server enforces — for example, a client filtering sessions to `['generate', 'agent']` while the server blocks launches for any command type.
 
+### CLI Code Reuse in Server Context
+
+When reusing code originally written for CLI (same `process.cwd()` as the project), check for implicit cwd dependencies like `getGitRepository()`. These functions silently resolve to the wrong directory in the web server process. Always pass an explicit `cwd` or `gitRoot` (typically from the project's `last_git_root` in the DB) to any function that might resolve paths relative to the working directory.
+
 ### Reactivity Gotchas (Svelte 5)
 
 - `$derived(() => { ... })` wraps the **function object itself**, not the return value. For multi-statement derivations, use `$derived.by(() => { ... })`.
 - SvelteKit **reuses page components** across param-only navigations — local `$state` persists across route changes. Use `afterNavigate` to reset `$state` when needed, though best is to use a "writable derived" when possible.
 - Setting a reactive variable that controls a `disabled` attribute doesn't immediately update the DOM. You must `await tick()` before interacting with the element if the interaction depends on the updated DOM state (e.g., focusing a previously-disabled textarea after setting `sending = false`).
+- **Hidden items with tracked selection state**: When hiding empty content items in the UI but tracking selection by index (e.g., checkbox arrays), ensure the default checked state matches visibility. An item that is hidden but defaults to checked creates an invisible selection that can block form submission or produce unexpected import results. Default `checked` to `true` only when the item has visible content.
 
 ### HTML & Component Gotchas
 
@@ -30,6 +35,7 @@ When broadening server-side behavior (e.g. making a check command-agnostic inste
 
 - SvelteKit's `resolve()` from `$app/paths` enforces typed route parameters — it won't accept dynamic/computed path segments. Use `base` from `$app/paths` + template literals for dynamic paths.
 - SvelteKit reserves filenames starting with `+` in route directories (e.g., `+page.svelte`, `+server.ts`). Test files must not use the `+` prefix — name them without it (e.g., `page.server.test.ts` instead of `+page.server.test.ts`).
+- **Handle parent layout null fallbacks in child routes**: When a parent layout has a documented fallback path (e.g., DB lookup returning `currentProject = null`), child routes that depend on that data must handle the null case with their own DB lookup rather than assuming the parent always provides it. This commonly arises with `currentProject` in project-scoped routes.
 
 ## Architecture
 
@@ -484,6 +490,73 @@ The dialog stays open with per-button spinners during launch. Dismissal is preve
 - **Session lookup** (`SessionManager.hasActiveSessionForPlan(planUuid, command?)`): Checks whether an active session exists for a given plan UUID. The `command` parameter is optional — when omitted, matches any active session regardless of command type. Used without a command filter for duplicate prevention across all plan-scoped commands.
 - **Launch lock** (`src/lib/server/launch_lock.ts`): In-memory per-plan lock (keyed by UUID, stored on `globalThis` for HMR safety) bridging the gap between process spawn and WebSocket session registration. Exported as a separate module because SvelteKit remote function files can only export `command()` results. Subscribes to `SessionManager.subscribe('session:update')` to clear locks when sessions register.
 - **Primary workspace query** (`getPrimaryWorkspacePath()` in `db_queries.ts`): Resolves the primary workspace path for a project, used as the cwd for spawned processes.
+
+## Issue Import
+
+The web interface provides a two-step wizard for importing issues from configured issue trackers (GitHub or Linear) into tim plans. This mirrors the CLI `tim import` command but with a visual content selection UI.
+
+### Route Structure
+
+```
+src/routes/projects/[projectId]/import/
+├── +page.server.ts       # Loads tracker config, validates project, checks capabilities
+└── +page.svelte          # Two-step wizard: identifier input → content selection
+```
+
+The import route is only accessible for specific projects (not the `all` pseudo-project). The server load function reads the effective config from the project's `last_git_root` to determine tracker availability and capabilities.
+
+### Entry Point
+
+An "Import Issue" link button appears in the plans layout sidebar (`+layout.svelte`) when `issueTrackerAvailable` is true and the project is not `all`. The `issueTrackerAvailable` flag is computed in `plans/+layout.server.ts` using `getIssueTrackerStatus()` from `src/lib/server/issue_import.ts`.
+
+### Wizard Flow
+
+**Step 1 — Issue Identifier:**
+- Text input for issue ID, URL, or branch name
+- Radio group for import mode: "Single issue", "With subissues (separate plans)", "With subissues (merged into one plan)"
+- Subissue modes are hidden when the tracker doesn't support hierarchical fetching (e.g. GitHub)
+- "Fetch Issue" button calls the `fetchIssueForImport` query with loading spinner and error display
+
+**Step 2 — Content Selection:**
+- Displays fetched issue title and metadata
+- For single mode: checkboxes for issue body (checked by default when non-empty) + each comment (unchecked by default)
+- For separate/merged mode: combined tree view with parent content, then each subissue as a top-level checkbox (checked by default) with nested body + comment checkboxes. Unchecking a subissue hides its content
+- "Import" button calls the `importIssue` command
+- On success: redirects to `/projects/[projectId]/plans/[newPlanUuid]`
+
+### Design Principle: Delegate Parsing to the Tracker
+
+Don't enumerate tracker-specific identifier formats (e.g., `owner/repo#123`, `TEAM-123`) in the web layer — let the tracker's own parser handle them. Adding special-case validation creates a maintenance burden and risks the web being narrower than what the tracker actually accepts.
+
+### Duplicate Detection
+
+The web import reuses the CLI's duplicate-detection behavior. When importing an issue whose URL already exists as a plan, the existing plan is updated instead of creating a duplicate. This uses `getImportedIssueUrlsFromPlans()` from `src/tim/commands/import/import_helpers.ts`.
+
+### Remote Functions
+
+`src/lib/remote/issue_import.remote.ts` provides:
+
+- **`checkIssueTrackerStatus`** (`query`): Returns tracker availability, type, display name, and hierarchical support for a project
+- **`fetchIssueForImport`** (`query`): Takes identifier string, mode, and projectId. Fetches issue data from the configured tracker API. Returns `IssueWithComments` data for the selection UI
+- **`importIssue`** (`command`): Takes already-fetched issue data, selected content indices, and import mode. Creates plans transactionally and returns the parent plan UUID for redirect
+
+### Server-Side Logic
+
+`src/lib/server/issue_import.ts` contains:
+
+- **`getIssueTrackerStatus(gitRoot)`**: Checks tracker configuration and capabilities
+- **`fetchIssueForImport(identifier, mode, gitRoot)`**: Parses identifier, creates tracker client via factory, fetches issue (with or without children)
+- **`createPlansFromIssue(projectId, issueData, mode, selectedContent)`**: Reserves plan IDs, builds plans via `createStubPlanFromIssue()`, writes to DB via `writeImportedPlansToDbTransactionally()`. Handles all three modes (single, separate, merged) with proper parent-child relationships and dependencies
+
+### Shared Import Helpers
+
+Core import logic is extracted into `src/tim/commands/import/import_helpers.ts` for reuse by both CLI and web:
+
+- `writeImportedPlansToDbTransactionally()` — Atomic DB write for imported plans
+- `reserveImportedPlanStartId()` — Plan ID reservation
+- `getImportedIssueUrlsFromPlans()` — Duplicate detection via issue URL lookup
+- `applyCommandOptions()` — CLI option application
+- `PendingImportedPlanWrite` type
 
 ## Review Issue Management
 

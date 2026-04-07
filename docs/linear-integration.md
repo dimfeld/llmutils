@@ -80,7 +80,7 @@ tim import https://linear.app/mycompany/issue/TEAM-123/implement-user-authentica
 
 ### Issue Import
 
-Import Linear issues as tim plans:
+Import Linear issues as tim plans via the CLI or the web interface:
 
 ```bash
 # Import a specific Linear issue
@@ -90,12 +90,16 @@ tim import TEAM-123
 tim import
 ```
 
-**Interactive Mode Features:**
+**CLI Interactive Mode Features:**
 
 - Browse all open Linear issues in your workspace
 - Multi-select issues using space bar
 - Filter by team, status, or assignee
 - Bulk import with automatic duplicate detection
+
+**Web UI Import:**
+
+The web interface also supports importing Linear issues at `/projects/[projectId]/import/`. An "Import Issue" button appears on the Plans tab when Linear is configured. The web import supports all three modes (single, separate subissues, merged subissues) with visual content selection via checkboxes. Linear's hierarchical issue support (sub-issues) is fully available in the web UI.
 
 ### Plan Generation
 

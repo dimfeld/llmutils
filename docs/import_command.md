@@ -1,12 +1,14 @@
 # tim import Command
 
-The `tim import` command allows you to import GitHub issues and create corresponding plans in the database. This streamlines the process of turning feature requests and bug reports from GitHub into actionable development plans within the `tim` ecosystem.
+The `tim import` command allows you to import issues from configured issue trackers (GitHub or Linear) and create corresponding plans in the database. This streamlines the process of turning feature requests and bug reports into actionable development plans within the `tim` ecosystem.
+
+Issue import is also available from the **web interface** — see the "Web UI Import" section below for details.
 
 ## Purpose
 
 The import command bridges the gap between issue tracking and implementation planning by:
 
-- Converting GitHub issues into structured plans
+- Converting issues from GitHub or Linear into structured plans
 - Providing a foundation for detailed task planning
 - Ensuring issue context is preserved for development work
 - Creating "stub" plans ready for further expansion with `tim generate`
@@ -99,11 +101,21 @@ The import command is designed to work seamlessly with the existing tim workflow
 3. **Execute**: Use `tim agent` to automatically implement, or use `tim show` to view and execute manually
 4. **Track**: Use `tim done` to mark progress and commit changes
 
+## Web UI Import
+
+The web interface provides the same import functionality through a visual two-step wizard at `/projects/[projectId]/import/`. An "Import Issue" button appears on the Plans tab when an issue tracker is configured for the project.
+
+**Step 1:** Enter an issue identifier (ID, URL, or branch name) and select an import mode (single, separate subissues, or merged subissues).
+
+**Step 2:** Select which content to include via checkboxes (issue body, comments, subissues), then import.
+
+The web import shares core logic with the CLI via extracted helpers in `src/tim/commands/import/import_helpers.ts`. It supports the same duplicate detection, hierarchical imports, and content selection. See `docs/web-interface.md` for full details on the web import flow.
+
 ## Requirements
 
-- GitHub token set in the `GITHUB_TOKEN` environment variable
-- Current working directory must be within a Git repository
-- Issues must be accessible with the provided GitHub token
+- Issue tracker API token set in the environment (`GITHUB_TOKEN` for GitHub, `LINEAR_API_KEY` for Linear)
+- Current working directory must be within a Git repository (CLI) or project must have a `last_git_root` (web UI)
+- Issues must be accessible with the provided token
 
 ## Output Format
 
