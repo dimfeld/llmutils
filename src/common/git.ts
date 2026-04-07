@@ -251,21 +251,29 @@ export async function getCurrentGitBranch(cwd?: string): Promise<string | null> 
 }
 
 /**
- * Gets the current commit hash from the repository
+ * Gets the current commit hash from the repository.
+ *
+ * If actualCommitted is true (default), then for jj repositories we get @- to represent the
+ * stable actual work committed. If false, we return @ which is useful if we need to return
+ * to the same spot we were at before.
  */
-export async function getCurrentCommitHash(gitRoot: string): Promise<string | null> {
+export async function getCurrentCommitHash(
+  gitRoot: string,
+  actualCommitted = true
+): Promise<string | null> {
   try {
     const usingJjForRoot = await Bun.file(path.join(gitRoot, '.jj'))
       .stat()
       .then((s) => s.isDirectory())
       .catch(() => false);
 
-    if (usingJjForRoot) {
+    if (usingJjForRoot && !actualCommitted) {
       const result = await $`jj log -r @ --no-graph -T commit_id`.cwd(gitRoot).nothrow().quiet();
       if (result.exitCode === 0) {
         return result.stdout.toString().trim();
       }
     } else {
+      // On jj, using git rev-parse HEAD also works to get the actual committed hash
       const result = await $`git rev-parse HEAD`.cwd(gitRoot).nothrow().quiet();
       if (result.exitCode === 0) {
         return result.stdout.toString().trim();
@@ -295,7 +303,7 @@ export interface RepositoryStateComparison {
 export async function captureRepositoryState(gitRoot: string): Promise<RepositoryState> {
   try {
     const [commitHash, status] = await Promise.all([
-      getCurrentCommitHash(gitRoot),
+      getCurrentCommitHash(gitRoot, false),
       getWorkingCopyStatus(gitRoot),
     ]);
 

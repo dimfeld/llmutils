@@ -1274,7 +1274,7 @@ export async function handleReviewCommand(
         );
         const formattedOutput = formatter.format(reviewResult, formatterOptions);
         const hasIssues = detectIssuesInReview(reviewResult, rawOutput);
-        const currentCommitHash = (await getCurrentCommitHash(gitRoot)) ?? 'unknown';
+        const currentCommitHash = (await getCurrentCommitHash(gitRoot, true)) ?? 'unknown';
 
         if (!hasIssues && planData.reviewIssues) {
           await clearSavedReviewIssues(contextPlanFile, globalOpts.config);

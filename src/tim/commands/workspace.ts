@@ -660,7 +660,7 @@ async function captureWorkspaceRestoreState(
       .catch(() => false);
     const [branch, commit] = await Promise.all([
       isJj ? getCurrentJujutsuBranch(workspacePath) : getCurrentBranchName(workspacePath),
-      getCurrentCommitHash(gitRoot),
+      getCurrentCommitHash(gitRoot, false),
     ]);
 
     return { branch, commit, isJj };
