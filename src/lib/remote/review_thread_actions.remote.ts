@@ -3,7 +3,11 @@ import { error } from '@sveltejs/kit';
 import * as z from 'zod';
 
 import { getServerContext } from '$lib/server/init.js';
-import { getPrimaryWorkspacePath } from '$lib/server/db_queries.js';
+import {
+  categorizePrUrls,
+  getPrimaryWorkspacePath,
+  parseJsonStringArray,
+} from '$lib/server/db_queries.js';
 import { clearLaunchLock, isPlanLaunching, setLaunchLock } from '$lib/server/launch_lock.js';
 import { spawnPrFixProcess } from '$lib/server/plan_actions.js';
 import { getSessionManager } from '$lib/server/session_context.js';
@@ -262,8 +266,15 @@ export const startFixThreads = command(startFixThreadsSchema, async ({ planUuid 
     error(404, 'Plan not found');
   }
 
-  // Check for unresolved review threads
-  const prStatuses = getPrStatusForPlan(db, planUuid, undefined, { includeReviewThreads: true });
+  // Include explicit PR URLs so fallback-linked PRs are found
+  const explicitPrUrls = parseJsonStringArray(plan.pull_request);
+  const { valid: validPrUrls } = categorizePrUrls(explicitPrUrls);
+  const prStatuses = getPrStatusForPlan(
+    db,
+    planUuid,
+    validPrUrls.length > 0 ? validPrUrls : undefined,
+    { includeReviewThreads: true }
+  );
   const hasUnresolvedThreads = prStatuses.some((ps) =>
     ps.reviewThreads?.some((rt) => !rt.thread.is_resolved)
   );

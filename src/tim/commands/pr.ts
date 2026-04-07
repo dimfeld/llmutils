@@ -624,8 +624,10 @@ export async function handlePrResolveCommand(threadId: string): Promise<void> {
   try {
     const db = getDatabase();
     db.run('UPDATE pr_review_thread SET is_resolved = 1 WHERE thread_id = ?', [threadId]);
-  } catch {
-    // Best-effort cache update; the resolve itself succeeded
+  } catch (err) {
+    log(
+      chalk.yellow(`Warning: Failed to update local DB cache for resolved thread: ${err as Error}`)
+    );
   }
 
   log(chalk.green(`Resolved review thread ${threadId}`));
@@ -693,7 +695,7 @@ export function buildReviewThreadFixPrompt(
     '',
     'Fix each issue described in the review threads above.',
     'Focus on the specific files and lines mentioned, but make any adjacent changes needed for a correct fix.',
-    'After fixing each thread, use the Thread ID shown in that thread\'s section to run:',
+    "After fixing each thread, use the Thread ID shown in that thread's section to run:",
     '  `tim pr reply <Thread ID> "explanation of fix"` — with a concise explanation of what you changed',
     '  `tim pr resolve <Thread ID>` — to mark the thread resolved on GitHub',
     'Do not skip the reply or resolve steps for any thread you addressed.'
@@ -714,7 +716,10 @@ export async function handlePrFixCommand(
   const { plan, planPath } = await resolvePlanForCommand(planId, command);
   const planUuid = requirePlanUuid(plan, planPath ?? `plan ${plan.id}`);
   const db = getDatabase();
-  const prStatuses = getPrStatusForPlan(db, planUuid, undefined, { includeReviewThreads: true });
+  const prUrls = plan.pullRequest?.length ? plan.pullRequest : undefined;
+  const prStatuses = getPrStatusForPlan(db, planUuid, prUrls, {
+    includeReviewThreads: true,
+  });
 
   const unresolvedThreads: Array<{ thread: PrReviewThreadDetail; prUrl: string }> = [];
   for (const prStatus of prStatuses) {

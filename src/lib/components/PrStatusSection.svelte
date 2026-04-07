@@ -51,8 +51,12 @@
 
   async function handleStartFix() {
     fixStarting = true;
+    refreshError = null;
     try {
-      await startFixThreads({ planUuid });
+      const result = await startFixThreads({ planUuid });
+      if (result.status === 'already_running') {
+        refreshError = 'A session is already running for this plan';
+      }
     } catch (err) {
       refreshError = `Failed to start fix: ${err}`;
     } finally {

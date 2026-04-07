@@ -33,12 +33,17 @@ const { addReplyToReviewThreadMock, resolveReviewThreadMock } = vi.hoisted(() =>
 }));
 
 const { spawnPrFixProcessMock } = vi.hoisted(() => ({
-  spawnPrFixProcessMock: vi.fn<(planId: number, cwd: string) => Promise<{
-    success: boolean;
-    planId?: number;
-    error?: string;
-    earlyExit?: boolean;
-  }>>(),
+  spawnPrFixProcessMock: vi.fn<
+    (
+      planId: number,
+      cwd: string
+    ) => Promise<{
+      success: boolean;
+      planId?: number;
+      error?: string;
+      earlyExit?: boolean;
+    }>
+  >(),
 }));
 
 vi.mock('$common/github/pull_requests.js', () => ({
@@ -922,12 +927,12 @@ describe('startFixThreads', () => {
   });
 
   test('rejects missing plans', async () => {
-    await expect(invokeCommand(startFixThreads, { planUuid: 'missing-plan' })).rejects.toMatchObject(
-      {
-        status: 404,
-        body: { message: 'Plan not found' },
-      }
-    );
+    await expect(
+      invokeCommand(startFixThreads, { planUuid: 'missing-plan' })
+    ).rejects.toMatchObject({
+      status: 404,
+      body: { message: 'Plan not found' },
+    });
   });
 
   test('rejects plans with no unresolved review threads', async () => {
