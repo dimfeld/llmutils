@@ -4,6 +4,7 @@ import * as z from 'zod';
 
 import { getServerContext } from '$lib/server/init.js';
 import { addReplyToReviewThread, resolveReviewThread } from '$common/github/pull_requests.js';
+import { getGitHubUsername } from '$common/github/user.js';
 import { createTaskFromReviewThread } from '$tim/commands/review.js';
 import { getPlanByUuid } from '$tim/db/plan.js';
 import type {
@@ -198,8 +199,14 @@ export const replyToThread = command(replyToThreadSchema, async ({ prStatusId, t
 
   const success = await addReplyToReviewThread(threadId, body);
   if (success) {
-    db.prepare(
-      `
+    const author =
+      (await getGitHubUsername({ githubUsername: config.githubUsername })) || 'You';
+
+    // Use a subquery to re-resolve the thread row by stable key, in case a
+    // concurrent refresh replaced the thread rows while the GitHub call was in-flight.
+    const inserted = db
+      .prepare(
+        `
         INSERT INTO pr_review_thread_comment (
           review_thread_id,
           comment_id,
@@ -209,18 +216,28 @@ export const replyToThread = command(replyToThreadSchema, async ({ prStatusId, t
           diff_hunk,
           state,
           created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        )
+        SELECT id, ?, ?, ?, ?, ?, ?, ?
+        FROM pr_review_thread
+        WHERE pr_status_id = ? AND thread_id = ?
       `
-    ).run(
-      threadRow.id,
-      `local-reply-${crypto.randomUUID()}`,
-      null,
-      config.githubUsername?.trim() || 'You',
-      body,
-      null,
-      'SUBMITTED',
-      new Date().toISOString()
-    );
+      )
+      .run(
+        `local-reply-${crypto.randomUUID()}`,
+        null,
+        author,
+        body,
+        null,
+        'SUBMITTED',
+        new Date().toISOString(),
+        prStatusId,
+        threadId
+      );
+
+    if (inserted.changes === 0) {
+      // Thread row disappeared during the GitHub call (concurrent refresh).
+      // The reply was posted to GitHub successfully; it will appear on next refresh.
+    }
   }
 
   return { success };
