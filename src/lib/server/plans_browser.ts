@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite';
 
 import { loadEffectiveConfig } from '$tim/configLoader.js';
+import { getPlanByUuid } from '$tim/db/plan.js';
 import { getProjectById, listProjects } from '$tim/db/project.js';
 import {
   getPlanDetail,
@@ -115,12 +116,13 @@ export async function getPlanDetailRouteData(
   routeProjectId: string,
   tab: string = 'plans'
 ): Promise<PlanDetailRouteResult | null> {
-  const detailWithoutFinishConfig = getPlanDetail(db, planUuid);
-  if (!detailWithoutFinishConfig) {
+  // Lightweight lookup to get project_id without full enrichment
+  const planRow = getPlanByUuid(db, planUuid);
+  if (!planRow) {
     return null;
   }
 
-  const finishConfig = await loadFinishConfigForProject(db, detailWithoutFinishConfig.projectId);
+  const finishConfig = await loadFinishConfigForProject(db, planRow.project_id);
   const detail = getPlanDetail(db, planUuid, finishConfig);
   if (!detail) {
     return null;

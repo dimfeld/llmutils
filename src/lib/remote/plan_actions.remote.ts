@@ -78,15 +78,8 @@ async function launchTimCommand(
 ): Promise<
   { status: 'started'; planId: number } | { status: 'already_running'; connectionId?: string }
 > {
-  const { db, config } = await getServerContext();
-  const finishConfig = finishConfigOverride ?? {
-    updateDocsMode: config.updateDocs?.mode,
-    applyLessons: config.updateDocs?.applyLessons,
-  };
-  const plan = getPlanDetail(db, planUuid, {
-    updateDocsMode: finishConfig.updateDocsMode,
-    applyLessons: finishConfig.applyLessons,
-  });
+  const { db } = await getServerContext();
+  const plan = getPlanDetail(db, planUuid, finishConfigOverride);
 
   if (!plan) {
     error(404, 'Plan not found');
@@ -302,6 +295,9 @@ export const finishPlanQuick = command(finishPlanQuickSchema, async ({ planUuid 
   const planData = resolved.plan;
   const effectiveConfig = await loadEffectiveConfig(undefined, { cwd: repoRoot });
 
+  // Note: We use writePlanFile directly (not withPlanAutoSync) since this only runs when
+  // no executor work is needed — the plan is at a terminal-ish state (needs_review/done)
+  // so unsaved file edits are unlikely and the risk of overwriting is minimal.
   planData.status = 'done';
   planData.updatedAt = new Date().toISOString();
   await writePlanFile(resolved.planPath ?? null, planData, { cwdForIdentity: repoRoot });
