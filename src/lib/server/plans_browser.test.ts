@@ -2,18 +2,19 @@ import type { Database } from 'bun:sqlite';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { claimAssignment } from '$tim/db/assignment.js';
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
 import { upsertPlan } from '$tim/db/plan.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import { recordWorkspace } from '$tim/db/workspace.js';
-
-import type { TimConfig } from '$tim/configSchema.js';
+import { loadEffectiveConfig } from '$tim/configLoader.js';
 import { getDashboardData, getPlanDetailRouteData, getPlansPageData } from './plans_browser.js';
 
-const emptyConfig = {} as TimConfig;
+vi.mock('$tim/configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(async () => ({})),
+}));
 
 describe('lib/server/plans_browser', () => {
   let tempDir: string;
@@ -39,6 +40,16 @@ describe('lib/server/plans_browser', () => {
     }).id;
 
     seedProjects(db, projectId, otherProjectId);
+
+    vi.mocked(loadEffectiveConfig).mockImplementation(async (_overridePath, options) => {
+      if (options?.cwd === '/tmp/repo-plans-browser-1') {
+        return { updateDocs: { mode: 'after-completion', applyLessons: true } } as any;
+      }
+      if (options?.cwd === '/tmp/repo-plans-browser-2') {
+        return { updateDocs: { mode: 'never', applyLessons: false } } as any;
+      }
+      return {};
+    });
   });
 
   afterEach(() => {
@@ -49,8 +60,8 @@ describe('lib/server/plans_browser', () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  test('getPlansPageData returns plans for a specific project id', () => {
-    const result = getPlansPageData(db, String(projectId), emptyConfig);
+  test('getPlansPageData returns plans for a specific project id', async () => {
+    const result = await getPlansPageData(db, String(projectId));
 
     expect(result.plans.map((plan) => [plan.projectId, plan.uuid])).toEqual([
       [projectId, 'dependency-done'],
@@ -58,8 +69,8 @@ describe('lib/server/plans_browser', () => {
     ]);
   });
 
-  test('getPlansPageData returns plans across projects in all-project mode', () => {
-    const result = getPlansPageData(db, 'all', emptyConfig);
+  test('getPlansPageData returns plans across projects in all-project mode', async () => {
+    const result = await getPlansPageData(db, 'all');
 
     expect(result.plans.map((plan) => [plan.projectId, plan.uuid])).toEqual([
       [projectId, 'dependency-done'],
@@ -68,7 +79,7 @@ describe('lib/server/plans_browser', () => {
     ]);
   });
 
-  test('getDashboardData returns all non-terminal plans and includes recently_done plans', () => {
+  test('getDashboardData returns all non-terminal plans and includes recently_done plans', async () => {
     upsertPlan(db, projectId, {
       uuid: 'pending-plan',
       planId: 403,
@@ -181,7 +192,7 @@ describe('lib/server/plans_browser', () => {
       sourceUpdatedAt: daysAgo(2),
     });
 
-    const result = getDashboardData(db, String(projectId), emptyConfig);
+    const result = await getDashboardData(db, String(projectId));
 
     expect(result.plans.map((plan) => [plan.planId, plan.displayStatus])).toEqual([
       [401, 'recently_done'],
@@ -206,7 +217,7 @@ describe('lib/server/plans_browser', () => {
     expect(result.planNumberToUuid[`${projectId}:412`]).toBe('deferred-plan');
   });
 
-  test('getDashboardData supports all-project mode', () => {
+  test('getDashboardData supports all-project mode', async () => {
     upsertPlan(db, otherProjectId, {
       uuid: 'other-project-done-recent',
       planId: 502,
@@ -229,7 +240,7 @@ describe('lib/server/plans_browser', () => {
       sourceUpdatedAt: daysAgo(2),
     });
 
-    const result = getDashboardData(db, 'all', emptyConfig);
+    const result = await getDashboardData(db, 'all');
 
     expect(result.plans.map((plan) => [plan.projectId, plan.uuid, plan.displayStatus])).toEqual([
       [projectId, 'dependency-done', 'recently_done'],
@@ -246,8 +257,8 @@ describe('lib/server/plans_browser', () => {
   });
 
   describe('getPlanDetailRouteData', () => {
-    test('returns plan detail when accessed under the owning project', () => {
-      const result = getPlanDetailRouteData(db, 'feature-plan', String(projectId));
+    test('returns plan detail when accessed under the owning project', async () => {
+      const result = await getPlanDetailRouteData(db, 'feature-plan', String(projectId));
 
       expect(result).not.toBeNull();
       expect(result!.redirectTo).toBeUndefined();
@@ -268,55 +279,52 @@ describe('lib/server/plans_browser', () => {
       });
     });
 
-    test('returns plan detail without redirect under "all" project route', () => {
-      const result = getPlanDetailRouteData(db, 'feature-plan', 'all');
+    test('returns plan detail without redirect under "all" project route', async () => {
+      const result = await getPlanDetailRouteData(db, 'feature-plan', 'all');
 
       expect(result).not.toBeNull();
       expect(result!.redirectTo).toBeUndefined();
       expect(result!.planDetail.uuid).toBe('feature-plan');
     });
 
-    test('returns redirect URL when accessed under a different project', () => {
-      const result = getPlanDetailRouteData(db, 'other-project-plan', String(projectId));
+    test('returns redirect URL when accessed under a different project', async () => {
+      const result = await getPlanDetailRouteData(db, 'other-project-plan', String(projectId));
 
       expect(result).not.toBeNull();
       expect(result!.redirectTo).toBe(`/projects/${otherProjectId}/plans/other-project-plan`);
       expect(result!.planDetail.projectId).toBe(otherProjectId);
     });
 
-    test('returns redirect URL with active tab when tab is active', () => {
-      const result = getPlanDetailRouteData(db, 'other-project-plan', String(projectId), 'active');
+    test('returns redirect URL with active tab when tab is active', async () => {
+      const result = await getPlanDetailRouteData(
+        db,
+        'other-project-plan',
+        String(projectId),
+        'active'
+      );
 
       expect(result).not.toBeNull();
       expect(result!.redirectTo).toBe(`/projects/${otherProjectId}/active/other-project-plan`);
     });
 
-    test('returns null for an unknown plan', () => {
-      expect(getPlanDetailRouteData(db, 'missing-plan', String(projectId))).toBeNull();
+    test('returns null for an unknown plan', async () => {
+      await expect(
+        getPlanDetailRouteData(db, 'missing-plan', String(projectId))
+      ).resolves.toBeNull();
     });
 
-    test('passes config to getPlanDetail and computes needsFinishExecutor', () => {
-      // The 'feature-plan' is seeded with no docsUpdatedAt/lessonsAppliedAt (null by default)
-      // With a config that has updateDocs.mode = 'after-completion' and applyLessons = true,
-      // needsFinishExecutor should be true
-      const config = { updateDocs: { mode: 'after-completion', applyLessons: true } } as TimConfig;
-      const result = getPlanDetailRouteData(db, 'feature-plan', String(projectId), 'plans', config);
-
+    test('uses per-project effective config to compute needsFinishExecutor', async () => {
+      const result = await getPlanDetailRouteData(db, 'feature-plan', String(projectId), 'plans');
       expect(result).not.toBeNull();
       expect(result!.planDetail.needsFinishExecutor).toBe(true);
-
-      // With mode='never' and applyLessons=false, needsFinishExecutor should be false
-      const configNever = { updateDocs: { mode: 'never', applyLessons: false } } as TimConfig;
-      const resultNever = getPlanDetailRouteData(
+      const otherResult = await getPlanDetailRouteData(
         db,
-        'feature-plan',
-        String(projectId),
-        'plans',
-        configNever
+        'other-project-plan',
+        String(otherProjectId),
+        'plans'
       );
-
-      expect(resultNever).not.toBeNull();
-      expect(resultNever!.planDetail.needsFinishExecutor).toBe(false);
+      expect(otherResult).not.toBeNull();
+      expect(otherResult!.planDetail.needsFinishExecutor).toBe(false);
     });
   });
 });

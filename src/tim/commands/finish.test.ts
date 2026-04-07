@@ -361,30 +361,34 @@ describe('finish command', () => {
     expect(writtenPlan.lessonsAppliedAt).toBeUndefined();
   });
 
-  test('sets docsUpdatedAt even when lessons fail', async () => {
+  test('throws when lessons fail but still persists docsUpdatedAt without marking done', async () => {
     runUpdateLessonsSpy.mockRejectedValue(new Error('lessons failed'));
 
-    await handleFinishCommand('314', {}, buildCommand());
+    await expect(handleFinishCommand('314', {}, buildCommand())).rejects.toThrow(
+      'Failed to finalize plan 314'
+    );
 
     expect(writePlanFileSpy).toHaveBeenCalledWith(
       '/repo/.tim/plans/314.plan.md',
       expect.objectContaining({
-        status: 'done',
+        status: 'needs_review',
         docsUpdatedAt: expect.any(String),
       }),
       { cwdForIdentity: '/repo' }
     );
   });
 
-  test('sets lessonsAppliedAt even when docs fail', async () => {
+  test('throws when docs fail but still persists lessonsAppliedAt without marking done', async () => {
     runUpdateDocsSpy.mockRejectedValue(new Error('docs failed'));
 
-    await handleFinishCommand('314', {}, buildCommand());
+    await expect(handleFinishCommand('314', {}, buildCommand())).rejects.toThrow(
+      'Failed to finalize plan 314'
+    );
 
     expect(writePlanFileSpy).toHaveBeenCalledWith(
       '/repo/.tim/plans/314.plan.md',
       expect.objectContaining({
-        status: 'done',
+        status: 'needs_review',
         lessonsAppliedAt: expect.any(String),
       }),
       { cwdForIdentity: '/repo' }

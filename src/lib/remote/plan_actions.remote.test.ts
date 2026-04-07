@@ -19,6 +19,11 @@ const spawnAgentProcessMock = vi.fn();
 const spawnChatProcessMock = vi.fn();
 const spawnRebaseProcessMock = vi.fn();
 const spawnFinishProcessMock = vi.fn();
+const loadEffectiveConfigMock = vi.fn();
+const resolvePlanFromDbMock = vi.fn();
+const writePlanFileMock = vi.fn();
+const checkAndMarkParentDoneMock = vi.fn();
+const removePlanAssignmentMock = vi.fn();
 
 vi.mock('$lib/server/init.js', () => ({
   getServerContext: async () => ({
@@ -44,6 +49,27 @@ vi.mock('$lib/server/plan_actions.js', () => ({
     spawnRebaseProcessMock(...args),
   spawnFinishProcess: (...args: Parameters<typeof spawnFinishProcessMock>) =>
     spawnFinishProcessMock(...args),
+}));
+
+vi.mock('$tim/configLoader.js', () => ({
+  loadEffectiveConfig: (...args: Parameters<typeof loadEffectiveConfigMock>) =>
+    loadEffectiveConfigMock(...args),
+}));
+
+vi.mock('$tim/plans.js', () => ({
+  resolvePlanFromDb: (...args: Parameters<typeof resolvePlanFromDbMock>) =>
+    resolvePlanFromDbMock(...args),
+  writePlanFile: (...args: Parameters<typeof writePlanFileMock>) => writePlanFileMock(...args),
+}));
+
+vi.mock('$tim/plans/parent_cascade.js', () => ({
+  checkAndMarkParentDone: (...args: Parameters<typeof checkAndMarkParentDoneMock>) =>
+    checkAndMarkParentDoneMock(...args),
+}));
+
+vi.mock('$tim/assignments/remove_plan_assignment.js', () => ({
+  removePlanAssignment: (...args: Parameters<typeof removePlanAssignmentMock>) =>
+    removePlanAssignmentMock(...args),
 }));
 
 import { isPlanLaunching, resetLaunchLockState, setLaunchLock } from '$lib/server/launch_lock.js';
@@ -73,6 +99,11 @@ describe('plan remote actions', () => {
     spawnChatProcessMock.mockReset();
     spawnRebaseProcessMock.mockReset();
     spawnFinishProcessMock.mockReset();
+    loadEffectiveConfigMock.mockReset();
+    resolvePlanFromDbMock.mockReset();
+    writePlanFileMock.mockReset();
+    checkAndMarkParentDoneMock.mockReset();
+    removePlanAssignmentMock.mockReset();
 
     projectId = getOrCreateProject(currentDb, 'repo-plan-actions', {
       remoteUrl: 'https://example.com/repo-plan-actions.git',
@@ -82,6 +113,30 @@ describe('plan remote actions', () => {
       remoteUrl: 'https://example.com/repo-plan-actions-2.git',
       lastGitRoot: '/tmp/repo-plan-actions-2',
     }).id;
+
+    loadEffectiveConfigMock.mockImplementation(async (_overridePath, options) => {
+      if (options?.cwd === '/tmp/repo-plan-actions' || options?.cwd === undefined) {
+        return { updateDocs: { mode: 'after-completion', applyLessons: true } };
+      }
+      if (options?.cwd === '/tmp/repo-plan-actions-2') {
+        return { updateDocs: { mode: 'never', applyLessons: false } };
+      }
+      return {};
+    });
+    resolvePlanFromDbMock.mockImplementation(async (planId: number) => ({
+      plan: {
+        id: planId,
+        uuid: `resolved-${planId}`,
+        title: `Plan ${planId}`,
+        status: 'needs_review',
+        priority: 'medium',
+        tasks: [],
+      },
+      planPath: `/tmp/resolved/${planId}.plan.md`,
+    }));
+    writePlanFileMock.mockResolvedValue(undefined);
+    checkAndMarkParentDoneMock.mockResolvedValue(undefined);
+    removePlanAssignmentMock.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -1420,6 +1475,25 @@ describe('plan remote actions', () => {
       expect(spawnFinishProcessMock).not.toHaveBeenCalled();
     });
 
+    test('uses per-project config for eligibility', async () => {
+      seedPlan({
+        uuid: 'finish-plan-project2-missing-docs',
+        planId: 4007,
+        projectId: secondProjectId,
+        status: 'done',
+        docsUpdatedAt: null,
+        lessonsAppliedAt: null,
+      });
+
+      await expect(
+        invokeCommand(startFinish, { planUuid: 'finish-plan-project2-missing-docs' })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Plan is not eligible for finish' },
+      });
+      expect(spawnFinishProcessMock).not.toHaveBeenCalled();
+    });
+
     test('rejects in-progress plans even when finish work is pending', async () => {
       seedPlan({
         uuid: 'finish-plan-in-progress',
@@ -1508,7 +1582,7 @@ describe('plan remote actions', () => {
       });
     });
 
-    test('successfully updates needs_review plan to done when no executor work needed', async () => {
+    test('persists done status through writePlanFile when no executor work is needed', async () => {
       seedPlan({
         uuid: 'quick-finish-needs-review',
         planId: 5002,
@@ -1519,10 +1593,15 @@ describe('plan remote actions', () => {
 
       await invokeCommand(finishPlanQuick, { planUuid: 'quick-finish-needs-review' });
 
-      const row = currentDb
-        .prepare('SELECT status FROM plan WHERE uuid = ?')
-        .get('quick-finish-needs-review') as { status: string };
-      expect(row.status).toBe('done');
+      expect(resolvePlanFromDbMock).toHaveBeenCalledWith(5002, '/tmp/repo-plan-actions');
+      expect(writePlanFileMock).toHaveBeenCalledWith(
+        '/tmp/resolved/5002.plan.md',
+        expect.objectContaining({
+          status: 'done',
+          updatedAt: expect.any(String),
+        }),
+        { cwdForIdentity: '/tmp/repo-plan-actions' }
+      );
     });
 
     test('successfully updates done plan status when no executor work needed', async () => {
@@ -1552,7 +1631,7 @@ describe('plan remote actions', () => {
       expect(result).toEqual({ status: 'done' });
     });
 
-    test('removes assignment after finishing', async () => {
+    test('runs completion side effects after finishing', async () => {
       seedPlan({
         uuid: 'quick-finish-assignment',
         planId: 5005,
@@ -1566,7 +1645,26 @@ describe('plan remote actions', () => {
 
       await invokeCommand(finishPlanQuick, { planUuid: 'quick-finish-assignment' });
 
-      expect(getAssignment(currentDb, projectId, 'quick-finish-assignment')).toBeNull();
+      expect(removePlanAssignmentMock).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'done' }),
+        '/tmp/repo-plan-actions'
+      );
+      expect(checkAndMarkParentDoneMock).not.toHaveBeenCalled();
+    });
+
+    test('uses per-project config for quick-finish eligibility', async () => {
+      seedPlan({
+        uuid: 'quick-finish-project2-missing-docs',
+        planId: 5006,
+        projectId: secondProjectId,
+        status: 'needs_review',
+        docsUpdatedAt: null,
+        lessonsAppliedAt: null,
+      });
+
+      await expect(
+        invokeCommand(finishPlanQuick, { planUuid: 'quick-finish-project2-missing-docs' })
+      ).resolves.toEqual({ status: 'done' });
     });
   });
 

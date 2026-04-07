@@ -70,12 +70,15 @@ export function isPlanReadyToFinish(plan: Pick<PlanSchema, 'status' | 'tasks'>):
   );
 }
 
-async function persistFinishedPlan(
+async function persistPlan(
   plan: PlanSchema,
   planFile: string | null,
-  repoRoot: string
+  repoRoot: string,
+  options: { markDone: boolean }
 ): Promise<void> {
-  plan.status = 'done';
+  if (options.markDone) {
+    plan.status = 'done';
+  }
   plan.updatedAt = new Date().toISOString();
   await writePlanFile(planFile, plan, { cwdForIdentity: repoRoot });
 }
@@ -105,7 +108,7 @@ export async function handleFinishCommand(
   const initialPlanPath = resolvedPlan.planPath ?? null;
 
   if (!requirements.needsExecutor) {
-    await persistFinishedPlan(plan, initialPlanPath, repoRoot);
+    await persistPlan(plan, initialPlanPath, repoRoot, { markDone: true });
     await removePlanAssignment(plan, repoRoot);
     if (plan.parent) {
       await checkAndMarkParentDone(plan.parent, config, { baseDir: repoRoot });
@@ -194,6 +197,7 @@ export async function handleFinishCommand(
         terminalInput: terminalInputEnabled,
       };
 
+      let docsError: unknown = null;
       if (requirements.needsDocs) {
         try {
           await runUpdateDocs(finishTarget, config, runOptions);
@@ -202,9 +206,11 @@ export async function handleFinishCommand(
           warn(
             `Documentation update failed for plan ${plan.id ?? planArg}: ${error instanceof Error ? error.message : String(error)}`
           );
+          docsError = error;
         }
       }
 
+      let lessonsError: unknown = null;
       if (requirements.needsLessons) {
         try {
           const applied = await runUpdateLessons(finishTarget, config, runOptions);
@@ -215,17 +221,36 @@ export async function handleFinishCommand(
           warn(
             `Lessons update failed for plan ${plan.id ?? planArg}: ${error instanceof Error ? error.message : String(error)}`
           );
+          lessonsError = error;
         }
       }
 
-      await persistFinishedPlan(plan, currentPlanFile || null, repoRoot);
-      await removePlanAssignment(plan, currentBaseDir);
-      if (plan.parent) {
-        await checkAndMarkParentDone(plan.parent, config, { baseDir: currentBaseDir });
+      const failedSteps: string[] = [];
+      if (docsError) {
+        failedSteps.push('documentation update');
+      }
+      if (lessonsError) {
+        failedSteps.push('lessons update');
+      }
+      const hasFailures = failedSteps.length > 0;
+
+      await persistPlan(plan, currentPlanFile || null, repoRoot, { markDone: !hasFailures });
+
+      if (!hasFailures) {
+        await removePlanAssignment(plan, currentBaseDir);
+        if (plan.parent) {
+          await checkAndMarkParentDone(plan.parent, config, { baseDir: currentBaseDir });
+        }
       }
 
       if (roundTripContext) {
         await runPostExecutionWorkspaceSync(roundTripContext, 'finish plan finalization');
+      }
+
+      if (hasFailures) {
+        throw new Error(
+          `Failed to finalize plan ${plan.id ?? planArg}: ${failedSteps.join(' and ')} failed.`
+        );
       }
     },
   });

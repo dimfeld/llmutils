@@ -1,18 +1,56 @@
 import type { Database } from 'bun:sqlite';
 
-import type { TimConfig } from '$tim/configSchema.js';
+import { loadEffectiveConfig } from '$tim/configLoader.js';
+import { getProjectById, listProjects } from '$tim/db/project.js';
 import {
   getPlanDetail,
   getPlansForProject,
+  type FinishConfig,
   type PlanDetail,
   type EnrichedPlan,
 } from './db_queries.js';
 
-function toFinishConfig(config: TimConfig) {
+async function loadFinishConfigForProject(db: Database, projectId: number): Promise<FinishConfig> {
+  const project = getProjectById(db, projectId);
+  const cwd = project?.last_git_root ?? undefined;
+  const config = await loadEffectiveConfig(undefined, { cwd });
   return {
     updateDocsMode: config.updateDocs?.mode,
     applyLessons: config.updateDocs?.applyLessons,
   };
+}
+
+async function loadFinishConfigForProjects(
+  db: Database,
+  projectIds: number[]
+): Promise<Map<number, FinishConfig>> {
+  const uniqueProjectIds = [...new Set(projectIds)];
+  const gitRootToProjectIds = new Map<string, number[]>();
+  for (const projectId of uniqueProjectIds) {
+    const project = getProjectById(db, projectId);
+    const gitRoot = project?.last_git_root ?? '__default__';
+    const grouped = gitRootToProjectIds.get(gitRoot);
+    if (grouped) {
+      grouped.push(projectId);
+    } else {
+      gitRootToProjectIds.set(gitRoot, [projectId]);
+    }
+  }
+
+  const configByProjectId = new Map<number, FinishConfig>();
+  for (const [gitRoot, groupedProjectIds] of gitRootToProjectIds) {
+    const cwd = gitRoot === '__default__' ? undefined : gitRoot;
+    const config = await loadEffectiveConfig(undefined, { cwd });
+    const finishConfig: FinishConfig = {
+      updateDocsMode: config.updateDocs?.mode,
+      applyLessons: config.updateDocs?.applyLessons,
+    };
+    for (const projectId of groupedProjectIds) {
+      configByProjectId.set(projectId, finishConfig);
+    }
+  }
+
+  return configByProjectId;
 }
 
 export interface PlansPageData {
@@ -24,15 +62,18 @@ export interface PlanDetailRouteResult {
   redirectTo?: string;
 }
 
-export function getPlansPageData(
-  db: Database,
-  projectId: string,
-  config: TimConfig
-): PlansPageData {
+export async function getPlansPageData(db: Database, projectId: string): Promise<PlansPageData> {
   const numericProjectId = projectId === 'all' ? undefined : Number(projectId);
+  const projectFinishConfig =
+    numericProjectId === undefined
+      ? await loadFinishConfigForProjects(
+          db,
+          listProjects(db).map((project) => project.id)
+        )
+      : await loadFinishConfigForProject(db, numericProjectId);
 
   return {
-    plans: getPlansForProject(db, numericProjectId, toFinishConfig(config)),
+    plans: getPlansForProject(db, numericProjectId, projectFinishConfig),
   };
 }
 
@@ -44,13 +85,16 @@ export interface DashboardData {
 
 const TERMINAL_STATUSES = new Set(['done', 'cancelled', 'deferred']);
 
-export function getDashboardData(
-  db: Database,
-  projectId: string,
-  config: TimConfig
-): DashboardData {
+export async function getDashboardData(db: Database, projectId: string): Promise<DashboardData> {
   const numericProjectId = projectId === 'all' ? undefined : Number(projectId);
-  const allPlans = getPlansForProject(db, numericProjectId, toFinishConfig(config));
+  const projectFinishConfig =
+    numericProjectId === undefined
+      ? await loadFinishConfigForProjects(
+          db,
+          listProjects(db).map((project) => project.id)
+        )
+      : await loadFinishConfigForProject(db, numericProjectId);
+  const allPlans = getPlansForProject(db, numericProjectId, projectFinishConfig);
 
   const planNumberToUuid: Record<string, string> = {};
   const plans: EnrichedPlan[] = [];
@@ -65,14 +109,19 @@ export function getDashboardData(
   return { plans, planNumberToUuid };
 }
 
-export function getPlanDetailRouteData(
+export async function getPlanDetailRouteData(
   db: Database,
   planUuid: string,
   routeProjectId: string,
-  tab: string = 'plans',
-  config?: TimConfig
-): PlanDetailRouteResult | null {
-  const detail = getPlanDetail(db, planUuid, config ? toFinishConfig(config) : undefined);
+  tab: string = 'plans'
+): Promise<PlanDetailRouteResult | null> {
+  const detailWithoutFinishConfig = getPlanDetail(db, planUuid);
+  if (!detailWithoutFinishConfig) {
+    return null;
+  }
+
+  const finishConfig = await loadFinishConfigForProject(db, detailWithoutFinishConfig.projectId);
+  const detail = getPlanDetail(db, planUuid, finishConfig);
   if (!detail) {
     return null;
   }

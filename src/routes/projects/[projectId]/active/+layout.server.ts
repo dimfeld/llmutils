@@ -4,7 +4,7 @@ import type { LayoutServerLoad } from './$types';
 
 export const load: LayoutServerLoad = async ({ parent }) => {
   const { projectId } = await parent();
-  const { db, config } = await getServerContext();
+  const { db } = await getServerContext();
 
-  return getDashboardData(db, projectId, config);
+  return getDashboardData(db, projectId);
 };

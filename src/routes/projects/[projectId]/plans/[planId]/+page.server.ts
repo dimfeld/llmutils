@@ -4,8 +4,8 @@ import { getPlanDetailRouteData } from '$lib/server/plans_browser.js';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params }) => {
-  const { db, config } = await getServerContext();
-  const result = getPlanDetailRouteData(db, params.planId, params.projectId, 'plans', config);
+  const { db } = await getServerContext();
+  const result = await getPlanDetailRouteData(db, params.planId, params.projectId, 'plans');
 
   if (!result) {
     error(404, 'Plan not found');

@@ -2,8 +2,13 @@ import { command } from '$app/server';
 import { error } from '@sveltejs/kit';
 import * as z from 'zod';
 
-import { getPrimaryWorkspacePath, getPlanDetail } from '$lib/server/db_queries.js';
-import { removeAssignment } from '$tim/db/assignment.js';
+import type { Database } from 'bun:sqlite';
+import {
+  computeNeedsFinishExecutor,
+  getPrimaryWorkspacePath,
+  getPlanDetail,
+  type FinishConfig,
+} from '$lib/server/db_queries.js';
 import { getServerContext } from '$lib/server/init.js';
 import { clearLaunchLock, isPlanLaunching, setLaunchLock } from '$lib/server/launch_lock.js';
 import {
@@ -16,6 +21,12 @@ import {
 } from '$lib/server/plan_actions.js';
 import { getSessionManager } from '$lib/server/session_context.js';
 import { openTerminalWithCommand } from '$lib/server/terminal_control.js';
+import { removePlanAssignment } from '$tim/assignments/remove_plan_assignment.js';
+import { loadEffectiveConfig } from '$tim/configLoader.js';
+import { getPlanByUuid } from '$tim/db/plan.js';
+import { getProjectById } from '$tim/db/project.js';
+import { checkAndMarkParentDone } from '$tim/plans/parent_cascade.js';
+import { resolvePlanFromDb, writePlanFile } from '$tim/plans.js';
 
 type PlanDetailResult = NonNullable<ReturnType<typeof getPlanDetail>>;
 
@@ -62,14 +73,19 @@ async function launchTimCommand(
   planUuid: string,
   eligibilityCheck: (plan: ReturnType<typeof getPlanDetail>) => plan is PlanDetailResult,
   eligibilityError: string,
-  spawnProcess: (planId: number, cwd: string) => Promise<SpawnProcessResult>
+  spawnProcess: (planId: number, cwd: string) => Promise<SpawnProcessResult>,
+  finishConfigOverride?: FinishConfig
 ): Promise<
   { status: 'started'; planId: number } | { status: 'already_running'; connectionId?: string }
 > {
   const { db, config } = await getServerContext();
-  const plan = getPlanDetail(db, planUuid, {
+  const finishConfig = finishConfigOverride ?? {
     updateDocsMode: config.updateDocs?.mode,
     applyLessons: config.updateDocs?.applyLessons,
+  };
+  const plan = getPlanDetail(db, planUuid, {
+    updateDocsMode: finishConfig.updateDocsMode,
+    applyLessons: finishConfig.applyLessons,
   });
 
   if (!plan) {
@@ -123,6 +139,16 @@ async function launchTimCommand(
   return {
     status: 'started',
     planId: result.planId,
+  };
+}
+
+async function loadProjectFinishConfig(db: Database, projectId: number): Promise<FinishConfig> {
+  const project = getProjectById(db, projectId);
+  const cwd = project?.last_git_root ?? undefined;
+  const config = await loadEffectiveConfig(undefined, { cwd });
+  return {
+    updateDocsMode: config.updateDocs?.mode,
+    applyLessons: config.updateDocs?.applyLessons,
   };
 }
 
@@ -224,11 +250,19 @@ const startFinishSchema = z.object({
 });
 
 export const startFinish = command(startFinishSchema, async ({ planUuid }) => {
+  const { db } = await getServerContext();
+  const planRow = getPlanByUuid(db, planUuid);
+  if (!planRow) {
+    error(404, 'Plan not found');
+  }
+  const finishConfig = await loadProjectFinishConfig(db, planRow.project_id);
+
   return launchTimCommand(
     planUuid,
     isPlanEligibleForFinish,
     'Plan is not eligible for finish',
-    spawnFinishProcess
+    spawnFinishProcess,
+    finishConfig
   );
 });
 
@@ -241,11 +275,8 @@ const finishPlanQuickSchema = z.object({
  * Used when no executor work is needed (docs/lessons already done or disabled).
  */
 export const finishPlanQuick = command(finishPlanQuickSchema, async ({ planUuid }) => {
-  const { db, config } = await getServerContext();
-  const plan = getPlanDetail(db, planUuid, {
-    updateDocsMode: config.updateDocs?.mode,
-    applyLessons: config.updateDocs?.applyLessons,
-  });
+  const { db } = await getServerContext();
+  const plan = getPlanDetail(db, planUuid);
 
   if (!plan) {
     error(404, 'Plan not found');
@@ -255,19 +286,30 @@ export const finishPlanQuick = command(finishPlanQuickSchema, async ({ planUuid 
     error(400, 'Plan is not eligible for finish');
   }
 
-  // Refuse if executor work is actually needed
-  if (plan.needsFinishExecutor) {
+  const projectConfig = await loadProjectFinishConfig(db, plan.projectId);
+  const needsExecutor = computeNeedsFinishExecutor(
+    plan.docsUpdatedAt ?? null,
+    plan.lessonsAppliedAt ?? null,
+    projectConfig
+  );
+  if (needsExecutor) {
     error(400, 'Plan requires executor work — use startFinish instead');
   }
 
-  db.prepare('UPDATE plan SET status = ?, updated_at = ? WHERE uuid = ?').run(
-    'done',
-    new Date().toISOString(),
-    planUuid
-  );
+  const project = getProjectById(db, plan.projectId);
+  const repoRoot = project?.last_git_root ?? process.cwd();
+  const resolved = await resolvePlanFromDb(plan.planId, repoRoot);
+  const planData = resolved.plan;
+  const effectiveConfig = await loadEffectiveConfig(undefined, { cwd: repoRoot });
 
-  // Clean up assignment since the plan is now done
-  removeAssignment(db, plan.projectId, planUuid);
+  planData.status = 'done';
+  planData.updatedAt = new Date().toISOString();
+  await writePlanFile(resolved.planPath ?? null, planData, { cwdForIdentity: repoRoot });
+
+  await removePlanAssignment(planData, repoRoot);
+  if (planData.parent) {
+    await checkAndMarkParentDone(planData.parent, effectiveConfig, { baseDir: repoRoot });
+  }
 
   return { status: 'done' as const };
 });

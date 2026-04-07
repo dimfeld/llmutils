@@ -382,6 +382,8 @@ export interface FinishConfig {
   applyLessons?: boolean;
 }
 
+type FinishConfigInput = FinishConfig | Map<number, FinishConfig>;
+
 export function computeNeedsFinishExecutor(
   docsUpdatedAt: string | null,
   lessonsAppliedAt: string | null,
@@ -397,7 +399,7 @@ function enrichPlansWithContext(
   db: Database,
   bundle: PlanQueryBundle,
   now = Date.now(),
-  finishConfig: FinishConfig = {}
+  finishConfig: FinishConfigInput = {}
 ): EnrichmentContext {
   const tasksByPlanUuid = groupByPlanUuid(bundle.tasks);
   const dependenciesByPlanUuid = groupByPlanUuid(bundle.dependencies);
@@ -442,6 +444,8 @@ function enrichPlansWithContext(
     const dependencyRows = dependenciesByPlanUuid.get(plan.uuid) ?? [];
     const doneTaskCount = tasks.filter((task) => task.done).length;
     const simple = plan.simple === 1;
+    const planFinishConfig =
+      finishConfig instanceof Map ? (finishConfig.get(plan.project_id) ?? {}) : finishConfig;
 
     let displayStatus = computeDisplayStatus(plan, dependencyRows, planByUuid, now);
     if (displayStatus === 'pending' && (tasks.length > 0 || simple)) {
@@ -471,7 +475,7 @@ function enrichPlansWithContext(
       needsFinishExecutor: computeNeedsFinishExecutor(
         plan.docs_updated_at,
         plan.lessons_applied_at,
-        finishConfig
+        planFinishConfig
       ),
       issues: parseJsonStringArray(plan.issue),
       prSummaryStatus: prSummaryStatusByPlanUuid.get(plan.uuid) ?? 'none',
@@ -617,7 +621,7 @@ export function getProjectsWithMetadata(db: Database): ProjectWithMetadata[] {
 export function getPlansForProject(
   db: Database,
   projectId?: number,
-  finishConfig?: FinishConfig
+  finishConfig?: FinishConfigInput
 ): EnrichedPlan[] {
   const bundle =
     projectId === undefined ? getAllProjectBundle(db) : getProjectBundle(db, projectId);
@@ -788,7 +792,7 @@ export function getPrimaryWorkspacePath(db: Database, projectId: number): string
 export function getPlanDetail(
   db: Database,
   planUuid: string,
-  finishConfig?: FinishConfig
+  finishConfig?: FinishConfigInput
 ): PlanDetail | null {
   const plan = getPlanByUuid(db, planUuid);
   if (!plan) {
