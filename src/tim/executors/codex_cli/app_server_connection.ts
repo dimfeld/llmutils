@@ -1,5 +1,6 @@
 import type { FileSink } from 'bun';
 import { createLineSplitter } from '../../../common/process';
+import { buildWorkspaceCommandEnv } from '../../../common/env.js';
 import { debugLog, writeStderr } from '../../../logging';
 
 type JsonRpcId = number | string;
@@ -165,7 +166,11 @@ export class CodexAppServerConnection {
   }
 
   static async create(options: ConnectionOptions): Promise<CodexAppServerConnection> {
-    const connection = new CodexAppServerConnection(options);
+    const env = await buildWorkspaceCommandEnv(options.cwd, options.env);
+    const connection = new CodexAppServerConnection({
+      ...options,
+      env,
+    });
     try {
       await connection.initialize();
     } catch (err) {

@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { error, log, warn, writeStderr, writeStdout } from '../logging.js';
+import { buildWorkspaceCommandEnv } from '../common/env.js';
 import type { LifecycleCommand } from './configSchema.js';
 import type { WorkspaceType } from './db/workspace.js';
 import { isShuttingDown } from './shutdown_state.js';
@@ -19,7 +20,7 @@ interface LifecycleCommandState {
 }
 
 function getShellCommand(command: string): string[] {
-  return ['sh', '-c', command];
+  return ['zsh', '-lc', command];
 }
 
 const DAEMON_STARTUP_CHECK_DELAY_MS = 200;
@@ -110,7 +111,7 @@ export class LifecycleManager {
         log(`Starting lifecycle daemon "${command.title}"...`);
         let daemon: Bun.Subprocess<'ignore', 'pipe', 'pipe'>;
         try {
-          daemon = this.spawnDaemon(command);
+          daemon = await this.spawnDaemon(command);
         } catch (err) {
           state.startupState = 'failed';
           if (command.allowFailure) {
@@ -363,14 +364,14 @@ export class LifecycleManager {
       : this.baseDir;
   }
 
-  private spawnDaemon(command: LifecycleCommand): LifecycleSubprocess {
-    const proc = Bun.spawn(getShellCommand(command.command), {
+  private async spawnDaemon(command: LifecycleCommand): Promise<LifecycleSubprocess> {
+    const shellCommand = getShellCommand(command.command);
+    log(`> ${shellCommand.join(' ')}`);
+    const env = await buildWorkspaceCommandEnv(this.baseDir, command.env);
+    const proc = Bun.spawn(shellCommand, {
       cwd: this.resolveCwd(command),
       detached: true,
-      env: {
-        ...process.env,
-        ...(command.env ?? {}),
-      },
+      env,
       // Process-group signaling here uses Unix semantics. tim does not target Windows.
       // Lifecycle hooks are fully automated and must not compete with the agent loop for stdin.
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -410,13 +411,13 @@ export class LifecycleManager {
       trackAsShutdown?: boolean;
     }
   ): Promise<number> {
-    const proc = Bun.spawn(getShellCommand(command.command), {
+    const shellCommand = getShellCommand(command.command);
+    log(`> ${shellCommand.join(' ')}`);
+    const env = await buildWorkspaceCommandEnv(this.baseDir, commandConfig.env);
+    const proc = Bun.spawn(shellCommand, {
       cwd: this.resolveCwd(commandConfig),
       detached: command.trackAsShutdown ? true : undefined,
-      env: {
-        ...process.env,
-        ...(commandConfig.env ?? {}),
-      },
+      env,
       // Lifecycle hooks are fully automated and must not compete with the agent loop for stdin.
       stdio: ['ignore', 'pipe', 'pipe'],
     });

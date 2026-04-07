@@ -241,7 +241,6 @@ export async function executeCodexStepViaAppServer(
     connection = await CodexAppServerConnection.create({
       cwd,
       env: {
-        ...process.env,
         TIM_EXECUTOR: 'codex',
         AGENT: process.env.AGENT || '1',
         TIM_NOTIFY_SUPPRESS: '1',

@@ -324,7 +324,6 @@ async function executeClaudePrompt(
     const result = await spawnAndLogOutput(args, {
       cwd: options.cwd,
       env: {
-        ...process.env,
         TIM_EXECUTOR: 'claude',
         TIM_NOTIFY_SUPPRESS: '1',
         TMPDIR: '/tmp/claude/',
@@ -439,7 +438,6 @@ async function executeCodexPrompt(
     const result = await spawnAndLogOutput(args, {
       cwd: options.cwd,
       env: {
-        ...process.env,
         TIM_EXECUTOR: 'codex',
         AGENT: process.env.AGENT || '1',
         TIM_NOTIFY_SUPPRESS: '1',

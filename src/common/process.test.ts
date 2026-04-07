@@ -235,6 +235,50 @@ describe('process utilities', () => {
       }
     });
 
+    it('loads .env from cwd and applies it over inherited environment values', async () => {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'test-spawn-env-'));
+      const originalShared = process.env.LLMUTILS_TEST_SHARED_VAR;
+      process.env.LLMUTILS_TEST_SHARED_VAR = 'from-process';
+
+      try {
+        await fs.writeFile(path.join(tempDir, '.env'), 'LLMUTILS_TEST_SHARED_VAR=from-workspace\n');
+        const result = await spawnAndLogOutput(['sh', '-lc', 'printf %s "$LLMUTILS_TEST_SHARED_VAR"'], {
+          cwd: tempDir,
+          quiet: true,
+        });
+
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toBe('from-workspace');
+      } finally {
+        if (originalShared === undefined) {
+          delete process.env.LLMUTILS_TEST_SHARED_VAR;
+        } else {
+          process.env.LLMUTILS_TEST_SHARED_VAR = originalShared;
+        }
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    it('keeps explicit env overrides above workspace .env values', async () => {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'test-spawn-env-override-'));
+
+      try {
+        await fs.writeFile(path.join(tempDir, '.env'), 'LLMUTILS_TEST_SHARED_VAR=from-workspace\n');
+        const result = await spawnAndLogOutput(['sh', '-lc', 'printf %s "$LLMUTILS_TEST_SHARED_VAR"'], {
+          cwd: tempDir,
+          env: {
+            LLMUTILS_TEST_SHARED_VAR: 'from-explicit-override',
+          },
+          quiet: true,
+        });
+
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toBe('from-explicit-override');
+      } finally {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
+    });
+
     it('should format stdout when formatStdout is provided', async () => {
       const result = await spawnAndLogOutput(['echo', 'hello'], {
         formatStdout: (output) => output.toUpperCase(),

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { getLogDir } from '$common/config_paths.js';
+import { buildWorkspaceCommandEnv } from '$common/env.js';
 
 const EARLY_EXIT_CHECK_DELAY_MS = 500;
 
@@ -51,10 +52,11 @@ async function spawnTimProcess(
   try {
     const command = args[0];
     logFile = createLogFile(command, planId);
+    const env = await buildWorkspaceCommandEnv(cwd);
 
     proc = Bun.spawn(['tim', ...args], {
       cwd,
-      env: process.env,
+      env,
       stdin: 'ignore',
       stdout: logFile.fd,
       stderr: logFile.fd,

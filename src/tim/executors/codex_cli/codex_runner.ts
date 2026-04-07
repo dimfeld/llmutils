@@ -135,7 +135,6 @@ export async function executeCodexStep(
       const result = await spawnAndLogOutput(attemptArgs, {
         cwd,
         env: {
-          ...process.env,
           TIM_EXECUTOR: 'codex',
           AGENT: process.env.AGENT || '1',
           TIM_NOTIFY_SUPPRESS: '1',

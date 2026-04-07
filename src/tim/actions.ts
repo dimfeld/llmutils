@@ -1,4 +1,5 @@
 import path from 'path';
+import { buildWorkspaceCommandEnv } from '../common/env.js';
 import { getGitRoot } from '../common/git.js';
 import { boldMarkdownHeaders, error, log, warn, writeStderr, writeStdout } from '../logging.js';
 import { type PostApplyCommand } from './configSchema.js';
@@ -46,10 +47,7 @@ export async function executePostApplyCommand(
     ? path.resolve(effectiveGitRoot, commandConfig.workingDirectory)
     : effectiveGitRoot;
 
-  const env = {
-    ...process.env,
-    ...(commandConfig.env || {}),
-  };
+  const env = await buildWorkspaceCommandEnv(cwd, commandConfig.env);
 
   if (printLog) {
     log(boldMarkdownHeaders(`\nRunning post-apply command: "${commandConfig.title}"...`));

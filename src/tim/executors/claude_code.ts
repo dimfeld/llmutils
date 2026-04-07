@@ -758,7 +758,6 @@ export class ClaudeCodeExecutor implements Executor {
       resetToolUseCache();
       const streaming = await spawnWithStreamingIO(args, {
         env: {
-          ...process.env,
           CLAUDECODE: '',
           TIM_EXECUTOR: 'claude',
           TIM_NOTIFY_SUPPRESS: '1',

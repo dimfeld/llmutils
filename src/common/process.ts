@@ -20,6 +20,7 @@ import { debugLog, log, sendStructured, writeStderr, writeStdout } from '../logg
 import { getUsingJj, hasUncommittedChanges } from './git.js';
 import { debug, quiet, setDebug, setQuiet } from './process_state.js';
 import type { StructuredMessage } from '../logging/structured_messages.js';
+import { buildWorkspaceCommandEnv } from './env.js';
 export { debug, quiet, setDebug, setQuiet };
 
 /** The type of executor that may have spawned this process */
@@ -334,9 +335,10 @@ export async function spawnWithStreamingIO(
   options?: SpawnAndLogOutputOptions
 ): Promise<StreamingProcess> {
   debugLog('Running', cmd, options);
+  const env = await buildWorkspaceCommandEnv(options?.cwd, options?.env);
   const proc = Bun.spawn(cmd, {
     cwd: options?.cwd,
-    env: options?.env,
+    env,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 
@@ -364,9 +366,10 @@ export async function spawnAndLogOutput(
   }
 
   debugLog('Running', cmd, options);
+  const env = await buildWorkspaceCommandEnv(options?.cwd, options?.env);
   const proc = Bun.spawn(cmd, {
     cwd: options?.cwd,
-    env: options?.env,
+    env,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
