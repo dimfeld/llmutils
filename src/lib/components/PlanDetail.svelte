@@ -359,13 +359,14 @@
         } else {
           successMessage = { text: 'Finish started' };
         }
+        setStartedSuccessfully();
       } else if (finishAction === 'quick') {
         await finishPlanQuick({ planUuid: plan.uuid });
         successMessage = { text: 'Plan marked as done' };
+        // For quick finish, don't set startedSuccessfully since there's no session
       } else {
         throw new Error('Plan is not eligible for finish');
       }
-      setStartedSuccessfully();
       await invalidateAll();
     } catch (err) {
       errorMessage = `${err as Error}`;
@@ -439,6 +440,8 @@
             ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-900/60'
             : activeSession.command === 'chat'
               ? 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/40 dark:text-violet-300 dark:hover:bg-violet-900/60'
+            : activeSession.command === 'finish'
+              ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/60'
               : 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-900/60'}"
         >
           <span
@@ -447,13 +450,17 @@
               ? 'bg-emerald-500'
               : activeSession.command === 'chat'
                 ? 'bg-violet-500'
-                : 'bg-blue-500'}"
+                : activeSession.command === 'finish'
+                  ? 'bg-amber-500'
+                  : 'bg-blue-500'}"
           ></span>
           {activeSession.command === 'agent'
-            ? 'Agent Running…'
+            ? 'Agent Running...'
             : activeSession.command === 'generate'
-              ? 'Generating…'
-              : `${activeSession.command.charAt(0).toUpperCase() + activeSession.command.slice(1)} Running…`}
+              ? 'Generating...'
+              : activeSession.command === 'finish'
+                ? 'Finishing...'
+                : `${activeSession.command.charAt(0).toUpperCase() + activeSession.command.slice(1)} Running...`}
         </a>
       {:else if showFinish}
         <ButtonGroup class="ml-auto">
