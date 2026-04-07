@@ -762,6 +762,9 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
               baseDir: currentBaseDir,
               justCompletedTaskIndices: [actionableItem.taskIndex],
             });
+            const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
+            updatedPlanForTimestamp.docsUpdatedAt = new Date().toISOString();
+            await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
           } catch (err) {
             error('Failed to update documentation:', err);
             // Don't stop execution for documentation update failures
@@ -813,6 +816,9 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
                   model: config.updateDocs?.model,
                   baseDir: currentBaseDir,
                 });
+                const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
+                updatedPlanForTimestamp.docsUpdatedAt = new Date().toISOString();
+                await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
               } catch (err) {
                 error('Failed to update documentation:', err);
                 // Don't stop execution for documentation update failures
@@ -905,6 +911,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
 
             if (
               planStillCompleteAfterReview &&
+              updateDocsMode !== 'manual' &&
               (config.updateDocs?.applyLessons || options.applyLessons)
             ) {
               if (isShuttingDown()) break;
@@ -915,6 +922,9 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
                   model: config.updateDocs?.model,
                   baseDir: currentBaseDir,
                 });
+                const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
+                updatedPlanForTimestamp.lessonsAppliedAt = new Date().toISOString();
+                await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
               } catch (err) {
                 error('Failed to apply lessons learned:', err as Error);
                 // Don't stop execution for lessons update failures
@@ -1104,6 +1114,9 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
             baseDir: currentBaseDir,
             justCompletedTaskIndices: [taskIndex],
           });
+          const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
+          updatedPlanForTimestamp.docsUpdatedAt = new Date().toISOString();
+          await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
         } catch (err) {
           error('Failed to update documentation:', err);
           // Don't stop execution for documentation update failures
@@ -1153,6 +1166,9 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
                 model: config.updateDocs?.model,
                 baseDir: currentBaseDir,
               });
+              const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
+              updatedPlanForTimestamp.docsUpdatedAt = new Date().toISOString();
+              await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
             } catch (err) {
               error('Failed to update documentation:', err);
               // Don't stop execution for documentation update failures
@@ -1174,7 +1190,10 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
             }
           }
 
-          if (config.updateDocs?.applyLessons || options.applyLessons) {
+          if (
+            updateDocsMode !== 'manual' &&
+            (config.updateDocs?.applyLessons || options.applyLessons)
+          ) {
             if (isShuttingDown()) break;
 
             try {
@@ -1183,6 +1202,9 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
                 model: config.updateDocs?.model,
                 baseDir: currentBaseDir,
               });
+              const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
+              updatedPlanForTimestamp.lessonsAppliedAt = new Date().toISOString();
+              await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
             } catch (err) {
               error('Failed to apply lessons learned:', err as Error);
               // Don't stop execution for lessons update failures
