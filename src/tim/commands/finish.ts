@@ -109,12 +109,6 @@ export async function handleFinishCommand(
 
   let currentBaseDir = repoRoot;
   let currentPlanFile = initialPlanPath ?? '';
-
-  // When there's no existing plan file but we need executor work, materialize from DB
-  if (!currentPlanFile && plan.id != null) {
-    currentPlanFile = await materializePlan(plan.id, repoRoot);
-  }
-
   let roundTripContext: Awaited<ReturnType<typeof prepareWorkspaceRoundTrip>> = null;
 
   await runWithHeadlessAdapterIfEnabled({
@@ -171,6 +165,11 @@ export async function handleFinishCommand(
             currentPlanFile = materializedPlanFile;
           }
         }
+      }
+
+      // When there's no plan file (DB-only plan, no workspace), materialize from DB
+      if (!currentPlanFile && plan.id != null) {
+        currentPlanFile = await materializePlan(plan.id, currentBaseDir);
       }
 
       const finishTarget = currentPlanFile || String(plan.id ?? planArg);

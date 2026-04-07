@@ -43,6 +43,10 @@ vi.mock('../workspace/workspace_roundtrip.js', () => ({
   materializePlansForExecution: vi.fn(async () => undefined),
 }));
 
+vi.mock('../plan_materialize.js', () => ({
+  materializePlan: vi.fn(),
+}));
+
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
@@ -58,6 +62,7 @@ import {
   runPostExecutionWorkspaceSync,
   runPreExecutionWorkspaceSync,
 } from '../workspace/workspace_roundtrip.js';
+import { materializePlan } from '../plan_materialize.js';
 import { getFinishRequirements, handleFinishCommand, isPlanReadyToFinish } from './finish.js';
 
 describe('finish command', () => {
@@ -70,6 +75,7 @@ describe('finish command', () => {
   const runUpdateDocsSpy = vi.mocked(runUpdateDocs);
   const runUpdateLessonsSpy = vi.mocked(runUpdateLessons);
   const setupWorkspaceSpy = vi.mocked(setupWorkspace);
+  const materializePlanSpy = vi.mocked(materializePlan);
   const prepareWorkspaceRoundTripSpy = vi.mocked(prepareWorkspaceRoundTrip);
   const runPreExecutionWorkspaceSyncSpy = vi.mocked(runPreExecutionWorkspaceSync);
   const runPostExecutionWorkspaceSyncSpy = vi.mocked(runPostExecutionWorkspaceSync);
@@ -119,6 +125,7 @@ describe('finish command', () => {
     runPreExecutionWorkspaceSyncSpy.mockResolvedValue(undefined);
     runPostExecutionWorkspaceSyncSpy.mockResolvedValue(undefined);
     materializePlansForExecutionSpy.mockResolvedValue(undefined);
+    materializePlanSpy.mockResolvedValue('/repo/.tim/plans/314.plan.md');
     writePlanFileSpy.mockResolvedValue(undefined);
   });
 
@@ -429,6 +436,51 @@ describe('finish command', () => {
         needsExecutor: true,
       });
     });
+  });
+
+  test('materializes plan from DB when planPath is null and executor work needed', async () => {
+    resolvePlanFromDbOrSyncFileSpy.mockResolvedValue({
+      plan: { ...basePlan },
+      planPath: null,
+    } as any);
+    materializePlanSpy.mockResolvedValue('/repo/.tim/plans/314.plan.md');
+
+    await handleFinishCommand('314', {}, buildCommand());
+
+    expect(materializePlanSpy).toHaveBeenCalledWith(314, '/repo');
+    // Verify the materialized path was used for docs/lessons execution
+    expect(runUpdateDocsSpy).toHaveBeenCalledWith(
+      '/repo/.tim/plans/314.plan.md',
+      expect.anything(),
+      expect.anything()
+    );
+    // Verify the materialized path was used for persistence
+    expect(writePlanFileSpy).toHaveBeenCalledWith(
+      '/repo/.tim/plans/314.plan.md',
+      expect.objectContaining({ status: 'done' }),
+      expect.anything()
+    );
+  });
+
+  test('does not materialize plan from DB when planPath is null and no executor work needed', async () => {
+    resolvePlanFromDbOrSyncFileSpy.mockResolvedValue({
+      plan: {
+        ...basePlan,
+        docsUpdatedAt: '2026-01-01T00:00:00.000Z',
+        lessonsAppliedAt: '2026-01-01T00:00:00.000Z',
+      },
+      planPath: null,
+    } as any);
+
+    await handleFinishCommand('314', {}, buildCommand());
+
+    expect(materializePlanSpy).not.toHaveBeenCalled();
+    // persistFinishedPlan is called with null planPath
+    expect(writePlanFileSpy).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({ status: 'done' }),
+      expect.anything()
+    );
   });
 
   describe('isPlanReadyToFinish edge cases', () => {

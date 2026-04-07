@@ -250,8 +250,8 @@ export async function runUpdateLessons(
   const items = parseLessonItems(lessonsLearned);
   if (items.length > 0) {
     let selected: string[];
-    if (options.nonInteractive) {
-      // In non-interactive mode, auto-select all lessons
+    if (options.nonInteractive || options.terminalInput === false) {
+      // In non-interactive or no-terminal-input mode, auto-select all lessons
       selected = items;
     } else {
       selected = await promptCheckbox({
