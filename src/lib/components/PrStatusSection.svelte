@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { toast } from 'svelte-sonner';
   import {
     fullRefreshPrStatus,
     getPrStatus,
@@ -54,9 +55,31 @@
     getFixButtonState({ refreshing, fixStarting, fixLaunched, sessionActiveForPlan })
   );
 
+  // Reset fixLaunched when session discovery catches up or plan changes
   $effect(() => {
     if (sessionActiveForPlan && fixLaunched) {
       fixLaunched = false;
+    }
+  });
+
+  // Reset launch state when navigating to a different plan
+  $effect(() => {
+    // Reading planUuid registers the dependency
+    void planUuid;
+    fixLaunched = false;
+    fixStarting = false;
+  });
+
+  // Timeout fallback: if no session appears within 30s, reset fixLaunched
+  let fixLaunchTimeout: ReturnType<typeof setTimeout> | null = null;
+  $effect(() => {
+    if (fixLaunched) {
+      fixLaunchTimeout = setTimeout(() => {
+        fixLaunched = false;
+      }, 30_000);
+    } else if (fixLaunchTimeout) {
+      clearTimeout(fixLaunchTimeout);
+      fixLaunchTimeout = null;
     }
   });
 
@@ -71,6 +94,9 @@
       const fixResultState = getFixStartResultState(result.status);
       fixLaunched = fixResultState.fixLaunched;
       refreshError = fixResultState.message;
+      if (fixResultState.fixLaunched) {
+        toast.success('Agent started');
+      }
     } catch (err) {
       refreshError = `Failed to start fix: ${err}`;
     } finally {

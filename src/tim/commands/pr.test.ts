@@ -1269,13 +1269,14 @@ describe('tim/commands/pr', () => {
     expect(mockTimAgent).toHaveBeenCalledWith(
       '248',
       expect.objectContaining({
-        executor: 'codex-cli',
         orchestrator: 'codex-cli',
         model: 'gpt-5.4',
         reviewThreadContext: expect.stringContaining('### Thread 1: src/user.ts:88'),
       }),
       { config: '/tmp/tim.yml' }
     );
+    // executor should NOT leak through — it would be misinterpreted as sub-agent executor
+    expect(mockTimAgent.mock.calls[0]?.[1]).not.toHaveProperty('executor');
     expect(String(mockTimAgent.mock.calls[0]?.[1]?.reviewThreadContext ?? '')).not.toContain(
       'src/auth.ts:42'
     );

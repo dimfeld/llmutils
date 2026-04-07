@@ -1947,7 +1947,8 @@ export function getReviewThreadDisplayLine(thread: PrReviewThreadDetail): number
 
 export function createTaskFromReviewThread(thread: PrReviewThreadDetail, prUrl: string): PlanTask {
   const displayLine = getReviewThreadDisplayLine(thread);
-  const location = displayLine ? `${thread.thread.path}:${displayLine}` : thread.thread.path;
+  const location =
+    displayLine != null ? `${thread.thread.path}:${displayLine}` : thread.thread.path;
 
   const title = `Address review: ${location}`;
 

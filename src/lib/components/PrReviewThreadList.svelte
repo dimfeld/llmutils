@@ -39,7 +39,7 @@
 
   function locationLabel(thread: PrReviewThreadDetail): string {
     const line = displayLine(thread);
-    return line ? `${thread.thread.path}:${line}` : thread.thread.path;
+    return line != null ? `${thread.thread.path}:${line}` : thread.thread.path;
   }
 
   function threadDiffHunk(thread: PrReviewThreadDetail): string | null {

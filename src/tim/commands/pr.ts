@@ -716,7 +716,10 @@ export async function handlePrFixCommand(
   const { plan, planPath } = await resolvePlanForCommand(planId, command);
   const planUuid = requirePlanUuid(plan, planPath ?? `plan ${plan.id}`);
   const db = getDatabase();
-  const prUrls = plan.pullRequest?.length ? deduplicatePrUrls(plan.pullRequest).valid : undefined;
+  const dedupedUrls = plan.pullRequest?.length
+    ? deduplicatePrUrls(plan.pullRequest).valid
+    : undefined;
+  const prUrls = dedupedUrls?.length ? dedupedUrls : undefined;
   const prStatuses = getPrStatusForPlan(db, planUuid, prUrls, {
     includeReviewThreads: true,
   });
@@ -772,8 +775,9 @@ export async function handlePrFixCommand(
 
   const fixPrompt = buildReviewThreadFixPrompt(plan, selectedThreads);
   const { timAgent } = await import('./agent/agent.js');
+  const { executor: _executor, ...restOptions } = options;
   const fixOptions = {
-    ...options,
+    ...restOptions,
     orchestrator:
       (typeof options.executor === 'string' && options.executor.trim().length > 0
         ? options.executor
