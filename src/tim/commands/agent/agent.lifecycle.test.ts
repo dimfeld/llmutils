@@ -58,7 +58,7 @@ const {
   markStepDoneSpy: vi.fn(async () => ({ message: 'Step marked', planComplete: false })),
   markTaskDoneSpy: vi.fn(async () => ({ message: 'Task marked', planComplete: false })),
   runUpdateDocsSpy: vi.fn(async () => {}),
-  runUpdateLessonsSpy: vi.fn(async () => {}),
+  runUpdateLessonsSpy: vi.fn(async () => true),
   executePostApplyCommandSpy: vi.fn(async () => true),
   trackFileChangesSpy: vi.fn(async () => {}),
   writeOrDisplaySummarySpy: vi.fn(async () => {}),
@@ -938,6 +938,41 @@ describe('timAgent lifecycle integration', () => {
     expect(new Date(updatedPlan.lessonsAppliedAt!).toISOString()).toBe(
       updatedPlan.lessonsAppliedAt
     );
+  });
+
+  test('lessonsAppliedAt is NOT set when runUpdateLessons returns false', async () => {
+    effectiveConfig.updateDocs = { mode: 'after-completion', applyLessons: true };
+
+    runUpdateLessonsSpy.mockImplementationOnce(async () => false);
+
+    markStepDoneSpy.mockImplementationOnce(async () => ({
+      message: 'Step marked',
+      planComplete: true,
+    }));
+
+    let itemReturned = false;
+    findNextActionableItemImpl = () => {
+      if (itemReturned) return null;
+      itemReturned = true;
+      return {
+        type: 'step',
+        taskIndex: 0,
+        stepIndex: 0,
+        task: { title: 'Task 1', description: 'Do the work', steps: [{ prompt: 'implement' }] },
+      };
+    };
+
+    const { timAgent } = await import('./agent.js');
+    await timAgent(
+      planFile,
+      { log: false, summary: false, serialTasks: true, finalReview: false },
+      {}
+    );
+
+    expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
+
+    const updatedPlan = await readPlanFile(planFile);
+    expect(updatedPlan.lessonsAppliedAt).toBeUndefined();
   });
 
   test('manual mode with applyLessons CLI flag still skips lessons', async () => {

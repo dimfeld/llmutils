@@ -917,14 +917,16 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
               if (isShuttingDown()) break;
 
               try {
-                await runUpdateLessons(currentPlanFile, config, {
+                const applied = await runUpdateLessons(currentPlanFile, config, {
                   executor: config.updateDocs?.executor,
                   model: config.updateDocs?.model,
                   baseDir: currentBaseDir,
                 });
-                const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
-                updatedPlanForTimestamp.lessonsAppliedAt = new Date().toISOString();
-                await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
+                if (applied) {
+                  const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
+                  updatedPlanForTimestamp.lessonsAppliedAt = new Date().toISOString();
+                  await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
+                }
               } catch (err) {
                 error('Failed to apply lessons learned:', err as Error);
                 // Don't stop execution for lessons update failures
@@ -1197,14 +1199,16 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
             if (isShuttingDown()) break;
 
             try {
-              await runUpdateLessons(currentPlanFile, config, {
+              const applied = await runUpdateLessons(currentPlanFile, config, {
                 executor: config.updateDocs?.executor,
                 model: config.updateDocs?.model,
                 baseDir: currentBaseDir,
               });
-              const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
-              updatedPlanForTimestamp.lessonsAppliedAt = new Date().toISOString();
-              await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
+              if (applied) {
+                const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
+                updatedPlanForTimestamp.lessonsAppliedAt = new Date().toISOString();
+                await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
+              }
             } catch (err) {
               error('Failed to apply lessons learned:', err as Error);
               // Don't stop execution for lessons update failures

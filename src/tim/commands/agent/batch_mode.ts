@@ -352,6 +352,9 @@ Available tasks:\n\n${taskDescriptions}`,
             baseDir,
             justCompletedTaskIndices,
           });
+          const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
+          updatedPlanForTimestamp.docsUpdatedAt = new Date().toISOString();
+          await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
         } catch (err) {
           error('Failed to update documentation:', err);
           // Don't stop execution for documentation update failures
@@ -404,6 +407,9 @@ Available tasks:\n\n${taskDescriptions}`,
               model: config.updateDocs?.model,
               baseDir,
             });
+            const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
+            updatedPlanForTimestamp.docsUpdatedAt = new Date().toISOString();
+            await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
           } catch (err) {
             error('Failed to update documentation:', err);
             // Don't stop execution for documentation update failures
@@ -495,17 +501,26 @@ Available tasks:\n\n${taskDescriptions}`,
           await removePlanAssignment(updatedPlanData, baseDir);
         }
 
-        if (planStillCompleteAfterReview && (config.updateDocs?.applyLessons || applyLessons)) {
+        if (
+          planStillCompleteAfterReview &&
+          updateDocsMode !== 'manual' &&
+          (config.updateDocs?.applyLessons || applyLessons)
+        ) {
           if (isShuttingDown()) {
             break;
           }
 
           try {
-            await runUpdateLessons(currentPlanFile, config, {
+            const applied = await runUpdateLessons(currentPlanFile, config, {
               executor: config.updateDocs?.executor,
               model: config.updateDocs?.model,
               baseDir,
             });
+            if (applied) {
+              const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
+              updatedPlanForTimestamp.lessonsAppliedAt = new Date().toISOString();
+              await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
+            }
           } catch (err) {
             error('Failed to apply lessons learned:', err as Error);
             // Don't stop execution for lessons update failures
