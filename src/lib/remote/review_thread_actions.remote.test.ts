@@ -627,6 +627,72 @@ describe('resolveThread', () => {
       body: { message: 'Review thread not found' },
     });
   });
+
+  test('propagates error when GitHub API throws', async () => {
+    const { prStatusId } = seedPlanWithThread({
+      projectId,
+      planUuid: 'plan-resolve-thread-throw',
+      planId: 312,
+      thread: {
+        threadId: 'PRRT_resolve_throw',
+        path: 'src/throw.ts',
+        line: 5,
+        isResolved: false,
+        isOutdated: false,
+        comments: [],
+      },
+    });
+    resolveReviewThreadMock.mockRejectedValue(new Error('GitHub API rate limit exceeded'));
+
+    await expect(
+      invokeCommand(resolveThread, {
+        prStatusId,
+        threadId: 'PRRT_resolve_throw',
+      })
+    ).rejects.toThrow('GitHub API rate limit exceeded');
+
+    // Local cache should remain unchanged
+    expect(
+      currentDb
+        .prepare(
+          `SELECT is_resolved FROM pr_review_thread WHERE pr_status_id = ? AND thread_id = ?`
+        )
+        .get(prStatusId, 'PRRT_resolve_throw')
+    ).toEqual({ is_resolved: 0 });
+  });
+
+  test('resolves an already-resolved thread idempotently', async () => {
+    const { prStatusId } = seedPlanWithThread({
+      projectId,
+      planUuid: 'plan-resolve-already-resolved',
+      planId: 313,
+      thread: {
+        threadId: 'PRRT_already_resolved',
+        path: 'src/already.ts',
+        line: 3,
+        isResolved: true,
+        isOutdated: false,
+        comments: [],
+      },
+    });
+    resolveReviewThreadMock.mockResolvedValue(true);
+
+    await expect(
+      invokeCommand(resolveThread, {
+        prStatusId,
+        threadId: 'PRRT_already_resolved',
+      })
+    ).resolves.toEqual({ success: true });
+
+    expect(resolveReviewThreadMock).toHaveBeenCalledWith('PRRT_already_resolved');
+    expect(
+      currentDb
+        .prepare(
+          `SELECT is_resolved FROM pr_review_thread WHERE pr_status_id = ? AND thread_id = ?`
+        )
+        .get(prStatusId, 'PRRT_already_resolved')
+    ).toEqual({ is_resolved: 1 });
+  });
 });
 
 describe('replyToThread', () => {
@@ -660,5 +726,16 @@ describe('replyToThread', () => {
         body: 'Attempted reply.',
       })
     ).resolves.toEqual({ success: false });
+  });
+
+  test('propagates error when GitHub API throws', async () => {
+    addReplyToReviewThreadMock.mockRejectedValue(new Error('Network error'));
+
+    await expect(
+      invokeCommand(replyToThread, {
+        threadId: 'PRRT_reply_throw',
+        body: 'Will not arrive.',
+      })
+    ).rejects.toThrow('Network error');
   });
 });
