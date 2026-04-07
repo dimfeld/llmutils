@@ -33,7 +33,11 @@ vi.mock('$lib/stores/session_state.svelte.js', () => ({
 
 vi.mock('$lib/stores/ui_state.svelte.js', () => ({
   useUIState: () => ({
-    getSessionState: () => ({ planPaneCollapsed: false, messageDraft: '' }),
+    getSessionState: () => ({
+      planPaneCollapsed: false,
+      messageDraft: '',
+      endSessionUsed: false,
+    }),
     setSessionState: vi.fn(),
   }),
 }));

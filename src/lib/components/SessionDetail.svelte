@@ -15,7 +15,12 @@
   import PromptRenderer from './PromptRenderer.svelte';
   import MessageInput from './MessageInput.svelte';
   import PlanContentPane from './PlanContentPane.svelte';
-  import { isPlanPaneCollapsed, togglePlanPane } from './session_detail_state.js';
+  import {
+    hasUsedEndSession,
+    isPlanPaneCollapsed,
+    markEndSessionUsed,
+    togglePlanPane,
+  } from './session_detail_state.js';
   import { afterNavigate } from '$app/navigation';
   import { page } from '$app/state';
   import { tick } from 'svelte';
@@ -102,6 +107,7 @@
     session.sessionInfo.terminalType === 'wezterm' && Boolean(session.sessionInfo.terminalPaneId)
   );
   let showEndSession = $derived(session.status === 'active');
+  let endSessionUsed = $derived(hasUsedEndSession(uiState, session.connectionId));
 
   let planLink = $derived.by(() => {
     const uuid = session.sessionInfo.planUuid;
@@ -164,6 +170,9 @@
   async function handleConfirmEndSession() {
     const ended = await sessionManager.endSession(session.connectionId);
     if (ended) {
+      if (!endSessionUsed) {
+        markEndSessionUsed(uiState, session.connectionId);
+      }
       confirmingEndSession = false;
     }
   }
@@ -253,19 +262,23 @@
             <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
             <div
               role="alertdialog"
-              aria-label="Confirm end session"
+              aria-label={endSessionUsed ? 'Confirm SIGTERM' : 'Confirm end session'}
               tabindex="-1"
               class="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-900 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-100"
               onkeydown={handleConfirmationKeydown}
             >
-              <span>End this running session?</span>
+              <span>
+                {endSessionUsed
+                  ? 'Send SIGTERM to this running session?'
+                  : 'End this running session?'}
+              </span>
               <button
                 type="button"
                 class="rounded bg-red-600 px-2 py-1 font-medium text-white transition-colors hover:bg-red-700"
                 onclick={handleConfirmEndSession}
                 bind:this={confirmEndSessionButton}
               >
-                End Session
+                {endSessionUsed ? 'Send SIGTERM' : 'End Session'}
               </button>
               <button
                 type="button"

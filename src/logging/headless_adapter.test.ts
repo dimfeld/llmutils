@@ -345,6 +345,8 @@ describe('HeadlessAdapter', () => {
 
     ws.send(JSON.stringify({ type: 'end_session' } satisfies HeadlessServerMessage));
     await waitFor(() => endSessionCount === 1);
+    ws.send(JSON.stringify({ type: 'end_session' } satisfies HeadlessServerMessage));
+    await waitFor(() => endSessionCount === 2);
 
     expect(calls).toContainEqual({
       method: 'sendStructured',

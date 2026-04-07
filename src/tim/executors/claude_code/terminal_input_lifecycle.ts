@@ -204,6 +204,8 @@ export function executeWithTerminalInput(
   let clearHeadlessUserInputHandler = (): void => {};
   if (loggerAdapter instanceof HeadlessAdapter) {
     let headlessHandlerActive = true;
+    // The first GUI end-session request closes stdin; any later request escalates to SIGTERM.
+    let endSessionRequested = false;
     loggerAdapter.setUserInputHandler((content) => {
       if (!headlessHandlerActive || stdinGuard.isClosed) {
         return;
@@ -231,15 +233,16 @@ export function executeWithTerminalInput(
       clearTunnelUserInputHandler();
       clearHeadlessUserInputHandler();
 
-      if (terminalInputController) {
-        terminalInputController.onResultMessage();
-      } else if (!stdinGuard.isClosed) {
-        stdinGuard.close();
-      } else {
+      if (endSessionRequested || stdinGuard.isClosed) {
         streaming.kill('SIGTERM');
+      } else {
+        endSessionRequested = true;
+        if (terminalInputController) {
+          terminalInputController.onResultMessage();
+        } else {
+          stdinGuard.close();
+        }
       }
-
-      loggerAdapter.setEndSessionHandler(undefined);
     });
   }
 

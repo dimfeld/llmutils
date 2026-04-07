@@ -14,7 +14,11 @@ const { sessionManager, uiState } = vi.hoisted(() => ({
     acknowledgeSessionAttention: vi.fn(),
   },
   uiState: {
-    getSessionState: vi.fn(() => ({ planPaneCollapsed: false, messageDraft: '' })),
+    getSessionState: vi.fn(() => ({
+      planPaneCollapsed: false,
+      messageDraft: '',
+      endSessionUsed: false,
+    })),
     setSessionState: vi.fn(),
   },
 }));
@@ -80,7 +84,11 @@ describe('SessionDetail', () => {
   beforeEach(() => {
     sessionManager.endSession.mockReset();
     uiState.getSessionState.mockReset();
-    uiState.getSessionState.mockReturnValue({ planPaneCollapsed: false, messageDraft: '' });
+    uiState.getSessionState.mockReturnValue({
+      planPaneCollapsed: false,
+      messageDraft: '',
+      endSessionUsed: false,
+    });
     uiState.setSessionState.mockReset();
   });
 
@@ -188,7 +196,11 @@ describe('SessionDetail', () => {
   });
 
   test('renders messages full width when the stored UI state collapses the plan pane', async () => {
-    uiState.getSessionState.mockReturnValue({ planPaneCollapsed: true, messageDraft: '' });
+    uiState.getSessionState.mockReturnValue({
+      planPaneCollapsed: true,
+      messageDraft: '',
+      endSessionUsed: false,
+    });
     const session = createSession({
       sessionInfo: {
         planId: 302,

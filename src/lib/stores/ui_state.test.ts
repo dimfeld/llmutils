@@ -26,7 +26,11 @@ describe('UIStateStore', () => {
     test('returns default state for unknown connectionId', () => {
       const store = new UIStateStore();
       const state = store.getSessionState('unknown');
-      expect(state).toEqual({ planPaneCollapsed: false, messageDraft: '' });
+      expect(state).toEqual({
+        planPaneCollapsed: false,
+        messageDraft: '',
+        endSessionUsed: false,
+      });
     });
 
     test('setSessionState stores and retrieves state', () => {
@@ -35,6 +39,7 @@ describe('UIStateStore', () => {
       expect(store.getSessionState('conn-1')).toEqual({
         planPaneCollapsed: true,
         messageDraft: '',
+        endSessionUsed: false,
       });
     });
 
@@ -45,6 +50,7 @@ describe('UIStateStore', () => {
       expect(store.getSessionState('conn-1')).toEqual({
         planPaneCollapsed: true,
         messageDraft: 'hello',
+        endSessionUsed: false,
       });
     });
 
@@ -55,6 +61,7 @@ describe('UIStateStore', () => {
       expect(store.getSessionState('conn-1')).toEqual({
         planPaneCollapsed: false,
         messageDraft: '',
+        endSessionUsed: false,
       });
     });
 
@@ -71,10 +78,12 @@ describe('UIStateStore', () => {
       expect(store.getSessionState('conn-1')).toEqual({
         planPaneCollapsed: true,
         messageDraft: 'first',
+        endSessionUsed: false,
       });
       expect(store.getSessionState('conn-2')).toEqual({
         planPaneCollapsed: false,
         messageDraft: 'second',
+        endSessionUsed: false,
       });
     });
   });
