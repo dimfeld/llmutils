@@ -596,6 +596,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
             finalReview: options.finalReview,
             configPath: globalCliOptions.config,
             terminalInput: terminalInputEnabled,
+            reviewThreadContext: options.reviewThreadContext,
           },
           summaryEnabled ? summaryCollector : undefined
         );
@@ -1024,6 +1025,9 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
         message: 'Using direct prompt as context',
       });
       contextContent = stepPreparationResult.prompt;
+      if (options.reviewThreadContext) {
+        contextContent = options.reviewThreadContext + '\n\n' + contextContent;
+      }
       log(contextContent);
 
       if (options.dryRun) {

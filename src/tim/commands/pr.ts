@@ -608,6 +608,14 @@ export async function handlePrResolveCommand(threadId: string): Promise<void> {
     throw new Error(`Failed to resolve review thread ${threadId}`);
   }
 
+  // Update local DB cache to match GitHub state
+  try {
+    const db = getDatabase();
+    db.run('UPDATE pr_review_thread SET is_resolved = 1 WHERE thread_id = ?', [threadId]);
+  } catch {
+    // Best-effort cache update; the resolve itself succeeded
+  }
+
   log(chalk.green(`Resolved review thread ${threadId}`));
 }
 

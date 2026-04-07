@@ -1237,11 +1237,11 @@ prCommand
   });
 
 prCommand
-  .command('reply <threadId> <body>')
+  .command('reply <threadId> <body...>')
   .description('Reply to a GitHub PR review thread')
   .action(async (threadId, body) => {
     const { handlePrReplyCommand } = await import('./commands/pr.js');
-    await handlePrReplyCommand(threadId, body).catch(handleCommandError);
+    await handlePrReplyCommand(threadId, body.join(' ')).catch(handleCommandError);
   });
 
 prCommand
