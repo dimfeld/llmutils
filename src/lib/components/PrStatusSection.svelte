@@ -7,7 +7,10 @@
     refreshPrStatus,
   } from '$lib/remote/pr_status.remote.js';
   import { startFixThreads } from '$lib/remote/review_thread_actions.remote.js';
-  import { getFixButtonState, getFixStartResultState } from '$lib/components/pr_fix_launch_state.js';
+  import {
+    getFixButtonState,
+    getFixStartResultState,
+  } from '$lib/components/pr_fix_launch_state.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import { hasRelevantPrUpdate } from '$lib/utils/pr_update_events.js';
   import {
@@ -71,26 +74,24 @@
   });
 
   // Timeout fallback: if no session appears within 30s, reset fixLaunched
-  let fixLaunchTimeout: ReturnType<typeof setTimeout> | null = null;
   $effect(() => {
-    if (fixLaunched) {
-      fixLaunchTimeout = setTimeout(() => {
-        fixLaunched = false;
-      }, 30_000);
-    } else if (fixLaunchTimeout) {
-      clearTimeout(fixLaunchTimeout);
-      fixLaunchTimeout = null;
-    }
+    if (!fixLaunched) return;
+    const timer = setTimeout(() => {
+      fixLaunched = false;
+    }, 30_000);
+    return () => clearTimeout(timer);
   });
 
   async function handleStartFix() {
     if (fixStarting || fixLaunched || sessionActiveForPlan) {
       return;
     }
+    const requestPlanUuid = planUuid;
     fixStarting = true;
     refreshError = null;
     try {
-      const result = await startFixThreads({ planUuid });
+      const result = await startFixThreads({ planUuid: requestPlanUuid });
+      if (planUuid !== requestPlanUuid) return;
       const fixResultState = getFixStartResultState(result.status);
       fixLaunched = fixResultState.fixLaunched;
       refreshError = fixResultState.message;
@@ -98,9 +99,12 @@
         toast.success('Agent started');
       }
     } catch (err) {
+      if (planUuid !== requestPlanUuid) return;
       refreshError = `Failed to start fix: ${err}`;
     } finally {
-      fixStarting = false;
+      if (planUuid === requestPlanUuid) {
+        fixStarting = false;
+      }
     }
   }
 

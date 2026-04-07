@@ -36,9 +36,10 @@ export function getFixButtonState({
   };
 }
 
-export function getFixStartResultState(
-  status: 'started' | 'already_running'
-): { fixLaunched: boolean; message: string | null } {
+export function getFixStartResultState(status: 'started' | 'already_running'): {
+  fixLaunched: boolean;
+  message: string | null;
+} {
   if (status === 'already_running') {
     return { fixLaunched: false, message: ALREADY_RUNNING_MESSAGE };
   }
