@@ -108,6 +108,96 @@
   // All tasks complete or terminal status: show standalone Chat button
   let showChatOnly = $derived(!showGenerateWithAgent && !showAgentOnly && !showFinish);
 
+  interface ActionItem {
+    label: string;
+    startingLabel: string;
+    onclick: () => void;
+    colorClass: string;
+    starting: boolean;
+  }
+
+  let actionConfig = $derived.by(() => {
+    const chatItem: ActionItem = {
+      label: 'Chat',
+      startingLabel: 'Starting…',
+      onclick: () => (chatDialogOpen = true),
+      colorClass:
+        'bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600',
+      starting: !!startingChat,
+    };
+    const agentItem: ActionItem = {
+      label: 'Run Agent',
+      startingLabel: 'Starting…',
+      onclick: handleRunAgent,
+      colorClass:
+        'bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600',
+      starting: startingAgent,
+    };
+    const generateItem: ActionItem = {
+      label: 'Generate',
+      startingLabel: 'Starting…',
+      onclick: handleGenerate,
+      colorClass:
+        'bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600',
+      starting: startingGenerate,
+    };
+    const finishItem: ActionItem = {
+      label: 'Finish',
+      startingLabel: 'Starting…',
+      onclick: () => handleFinish(true),
+      colorClass:
+        'bg-amber-600 text-white hover:bg-amber-700 dark:bg-amber-500 dark:hover:bg-amber-600',
+      starting: startingFinish,
+    };
+    const rebaseItem: ActionItem = {
+      label: 'Rebase',
+      startingLabel: 'Starting Rebase…',
+      onclick: handleRebase,
+      colorClass: '',
+      starting: startingRebase,
+    };
+    const finishNoMarkDoneItem: ActionItem = {
+      label: 'Update Docs',
+      startingLabel: 'Starting Updating Docs…',
+      onclick: () => handleFinish(false),
+      colorClass: '',
+      starting: startingFinish,
+    };
+
+    let primary: ActionItem;
+    let menuItems: ActionItem[] = [];
+
+    if (showFinish) {
+      primary = finishItem;
+      menuItems.push(chatItem);
+      if (isEligibleForRebase) menuItems.push(rebaseItem);
+      if (plan.needsFinishExecutor) {
+        menuItems.push(finishNoMarkDoneItem);
+      }
+    } else if (showAgentOnly) {
+      primary = agentItem;
+      menuItems.push(chatItem);
+      if (isEligibleForRebase) menuItems.push(rebaseItem);
+    } else if (showGenerateWithAgent) {
+      primary = generateItem;
+      menuItems.push(agentItem);
+      menuItems.push(chatItem);
+      if (isEligibleForRebase) menuItems.push(rebaseItem);
+    } else {
+      // showChatOnly
+      primary = chatItem;
+      if (isEligibleForRebase) menuItems.push(rebaseItem);
+      if (showFinishInDropdown) {
+        menuItems.push(finishItem);
+        if (plan.needsFinishExecutor) {
+          menuItems.push(finishNoMarkDoneItem);
+        }
+      }
+    }
+
+    return { primary, menuItems };
+  });
+
   // Active session detection is independent of eligibility so the "Running" link
   // remains visible even if the plan transitions to an ineligible status.
   // Matches any active session on the plan (command-agnostic), consistent with
@@ -366,9 +456,7 @@
           };
         } else {
           successMessage = {
-            text: markDone
-              ? 'Finish started'
-              : 'Finish started without marking done',
+            text: markDone ? 'Finish started' : 'Finish started without marking done',
           };
         }
         setStartedSuccessfully();
@@ -386,7 +474,6 @@
       startingFinish = false;
     }
   }
-
 
   let sortedDependencies = $derived(
     [...plan.dependencies].sort((a, b) => {
@@ -446,7 +533,12 @@
 
       <div class="ml-auto flex items-center gap-2">
         {#if openInEditorEnabled}
-          <Button onclick={handleOpenInEditor} disabled={openingInEditor} size="sm" variant="outline">
+          <Button
+            onclick={handleOpenInEditor}
+            disabled={openingInEditor}
+            size="sm"
+            variant="outline"
+          >
             {openingInEditor ? 'Opening…' : 'Open in Editor'}
           </Button>
         {/if}
@@ -458,9 +550,9 @@
               ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-900/60'
               : activeSession.command === 'chat'
                 ? 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/40 dark:text-violet-300 dark:hover:bg-violet-900/60'
-              : activeSession.command === 'finish'
-                ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/60'
-                : 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-900/60'}"
+                : activeSession.command === 'finish'
+                  ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/60'
+                  : 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-900/60'}"
           >
             <span
               class="inline-block h-2 w-2 animate-pulse rounded-full {activeSession.command ===
@@ -480,302 +572,77 @@
                   ? 'Finishing...'
                   : `${activeSession.command.charAt(0).toUpperCase() + activeSession.command.slice(1)} Running...`}
           </a>
-        {:else if showFinish}
-          <ButtonGroup>
-            <Button
-              onclick={handleFinish}
-              disabled={controlsDisabled}
-              size="sm"
-              class="bg-amber-600 text-white hover:bg-amber-700 dark:bg-amber-500 dark:hover:bg-amber-600"
-            >
-              {#if startingFinish}
-                <span
-                  class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
-                ></span>
-                Starting…
-              {:else}
-                Finish
-              {/if}
-            </Button>
-            <DropdownMenu.Root>
-              <DropdownMenu.Trigger>
-                {#snippet child({ props })}
-                  <Button
-                    {...props}
-                    disabled={controlsDisabled}
-                    size="icon-sm"
-                    aria-label="More plan actions"
-                    class="bg-amber-600 text-white hover:bg-amber-700 dark:bg-amber-500 dark:hover:bg-amber-600"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
-                      <path d="m6 9 6 6 6-6" />
-                    </svg>
-                  </Button>
-                {/snippet}
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Content align="end">
-                <DropdownMenu.Item onclick={() => (chatDialogOpen = true)}>Chat</DropdownMenu.Item>
-                {#if isEligibleForRebase}
-                  <DropdownMenu.Item onclick={handleRebase} disabled={controlsDisabled}>
-                    {startingRebase ? 'Starting Rebase…' : 'Rebase'}
-                  </DropdownMenu.Item>
-                {/if}
-              </DropdownMenu.Content>
-            </DropdownMenu.Root>
-          </ButtonGroup>
-        {:else if showAgentOnly}
-          <ButtonGroup>
-            <Button
-              onclick={handleRunAgent}
-              disabled={controlsDisabled}
-              size="sm"
-              class="bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600"
-            >
-              {#if startingAgent}
-                <span
-                  class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
-                ></span>
-                Starting…
-              {:else}
-                Run Agent
-              {/if}
-            </Button>
-            <DropdownMenu.Root>
-              <DropdownMenu.Trigger>
-                {#snippet child({ props })}
-                  <Button
-                    {...props}
-                    disabled={controlsDisabled}
-                    size="icon-sm"
-                    aria-label="More plan actions"
-                    class="bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
-                      <path d="m6 9 6 6 6-6" />
-                    </svg>
-                  </Button>
-                {/snippet}
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Content align="end">
-                <DropdownMenu.Item onclick={() => (chatDialogOpen = true)}>Chat</DropdownMenu.Item>
-                {#if isEligibleForRebase}
-                  <DropdownMenu.Item onclick={handleRebase} disabled={controlsDisabled}>
-                    {startingRebase ? 'Starting Rebase…' : 'Rebase'}
-                  </DropdownMenu.Item>
-                {/if}
-                {#if showFinishCommand}
-                  <DropdownMenu.Item onclick={() => handleFinish(false)} disabled={controlsDisabled}>
-                    {startingFinish ? 'Starting Finish without marking done…' : 'Finish without marking done'}
-                  </DropdownMenu.Item>
-                {/if}
-              </DropdownMenu.Content>
-            </DropdownMenu.Root>
-          </ButtonGroup>
-        {:else if showGenerateWithAgent}
-          <ButtonGroup>
-            <Button
-              onclick={handleGenerate}
-              disabled={controlsDisabled}
-              size="sm"
-              class="bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
-            >
-              {#if startingGenerate}
-                <span
-                  class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
-                ></span>
-                Starting…
-              {:else}
-                Generate
-              {/if}
-            </Button>
-            <DropdownMenu.Root>
-              <DropdownMenu.Trigger>
-                {#snippet child({ props })}
-                  <Button
-                    {...props}
-                    disabled={controlsDisabled}
-                    size="icon-sm"
-                    aria-label="More plan actions"
-                    class="bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    >
-                      <path d="m6 9 6 6 6-6" />
-                    </svg>
-                  </Button>
-                {/snippet}
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Content align="end">
-                <DropdownMenu.Item onclick={handleRunAgent}>Run Agent</DropdownMenu.Item>
-                <DropdownMenu.Item onclick={() => (chatDialogOpen = true)}>Chat</DropdownMenu.Item>
-                {#if isEligibleForRebase}
-                  <DropdownMenu.Item onclick={handleRebase} disabled={controlsDisabled}>
-                    {startingRebase ? 'Starting Rebase…' : 'Rebase'}
-                  </DropdownMenu.Item>
-                {/if}
-              </DropdownMenu.Content>
-            </DropdownMenu.Root>
-          </ButtonGroup>
-        {:else if showChatOnly}
-          <div class="flex items-center gap-2">
-            {#if isEligibleForRebase}
-              <ButtonGroup>
-                <Button
-                  onclick={() => (chatDialogOpen = true)}
-                  disabled={controlsDisabled}
-                  size="sm"
-                  class="bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600"
-                >
-                  {#if startingChat}
-                    <span
-                      class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
-                    ></span>
-                    Starting…
-                  {:else}
-                    Chat
-                  {/if}
-                </Button>
-                <DropdownMenu.Root>
-                  <DropdownMenu.Trigger>
-                    {#snippet child({ props })}
-                      <Button
-                        {...props}
-                        disabled={controlsDisabled}
-                        size="icon-sm"
-                        aria-label="More plan actions"
-                        class="bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600"
-                      >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="16"
-                          height="16"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="2"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                        >
-                          <path d="m6 9 6 6 6-6" />
-                        </svg>
-                      </Button>
-                    {/snippet}
-                  </DropdownMenu.Trigger>
-                  <DropdownMenu.Content align="end">
-                    <DropdownMenu.Item onclick={handleRebase} disabled={controlsDisabled}>
-                      {startingRebase ? 'Starting Rebase…' : 'Rebase'}
-                    </DropdownMenu.Item>
-                    {#if showFinishInDropdown}
-                      <DropdownMenu.Item onclick={handleFinish} disabled={controlsDisabled}>
-                        {startingFinish ? 'Starting Finish…' : 'Finish'}
-                      </DropdownMenu.Item>
-                      <DropdownMenu.Item onclick={() => handleFinish(false)} disabled={controlsDisabled}>
-                        {startingFinish ? 'Starting Finish without marking done…' : 'Finish without marking done'}
-                      </DropdownMenu.Item>
-                    {/if}
-                  </DropdownMenu.Content>
-                </DropdownMenu.Root>
-              </ButtonGroup>
-            {:else if showFinishInDropdown}
-              <ButtonGroup>
-                <Button
-                  onclick={() => (chatDialogOpen = true)}
-                  disabled={controlsDisabled}
-                  size="sm"
-                  class="bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600"
-                >
-                  {#if startingChat}
-                    <span
-                      class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
-                    ></span>
-                    Starting…
-                  {:else}
-                    Chat
-                  {/if}
-                </Button>
-                <DropdownMenu.Root>
-                  <DropdownMenu.Trigger>
-                    {#snippet child({ props })}
-                      <Button
-                        {...props}
-                        disabled={controlsDisabled}
-                        size="icon-sm"
-                        aria-label="More plan actions"
-                        class="bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600"
-                      >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="16"
-                          height="16"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          stroke-width="2"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                        >
-                          <path d="m6 9 6 6 6-6" />
-                        </svg>
-                      </Button>
-                    {/snippet}
-                  </DropdownMenu.Trigger>
-                  <DropdownMenu.Content align="end">
-                    <DropdownMenu.Item onclick={handleFinish} disabled={controlsDisabled}>
-                      {startingFinish ? 'Starting Finish…' : 'Finish'}
-                    </DropdownMenu.Item>
-                    <DropdownMenu.Item onclick={() => handleFinish(false)} disabled={controlsDisabled}>
-                      {startingFinish ? 'Starting Finish without marking done…' : 'Finish without marking done'}
-                    </DropdownMenu.Item>
-                  </DropdownMenu.Content>
-                </DropdownMenu.Root>
-              </ButtonGroup>
-            {:else}
+        {:else}
+          {@const { primary, menuItems } = actionConfig}
+          {#if menuItems.length > 0}
+            <ButtonGroup>
               <Button
-                onclick={() => (chatDialogOpen = true)}
+                onclick={primary.onclick}
                 disabled={controlsDisabled}
                 size="sm"
-                class="bg-violet-600 text-white hover:bg-violet-700 dark:bg-violet-500 dark:hover:bg-violet-600"
+                class={primary.colorClass}
               >
-                {#if startingChat}
+                {#if primary.starting}
                   <span
                     class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
                   ></span>
-                  Starting…
+                  {primary.startingLabel}
                 {:else}
-                  Chat
+                  {primary.label}
                 {/if}
               </Button>
-            {/if}
-          </div>
+              <DropdownMenu.Root>
+                <DropdownMenu.Trigger>
+                  {#snippet child({ props })}
+                    <Button
+                      {...props}
+                      disabled={controlsDisabled}
+                      size="icon-sm"
+                      aria-label="More plan actions"
+                      class={primary.colorClass}
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="m6 9 6 6 6-6" />
+                      </svg>
+                    </Button>
+                  {/snippet}
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Content align="end">
+                  {#each menuItems as item}
+                    <DropdownMenu.Item onclick={item.onclick} disabled={controlsDisabled}>
+                      {item.starting ? item.startingLabel : item.label}
+                    </DropdownMenu.Item>
+                  {/each}
+                </DropdownMenu.Content>
+              </DropdownMenu.Root>
+            </ButtonGroup>
+          {:else}
+            <Button
+              onclick={primary.onclick}
+              disabled={controlsDisabled}
+              size="sm"
+              class={primary.colorClass}
+            >
+              {#if primary.starting}
+                <span
+                  class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
+                ></span>
+                {primary.startingLabel}
+              {:else}
+                {primary.label}
+              {/if}
+            </Button>
+          {/if}
         {/if}
       </div>
     </div>
@@ -1018,7 +885,7 @@
         Branch
       </h3>
       <button
-        class="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+        class="flex cursor-pointer items-center gap-1 text-muted-foreground transition-colors hover:text-foreground"
         onclick={() => {
           navigator.clipboard.writeText(plan.branch!);
           toast.success('Branch name copied');

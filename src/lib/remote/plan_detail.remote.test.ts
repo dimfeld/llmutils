@@ -60,9 +60,7 @@ describe('plan_detail remote function', () => {
   test('loads per-project finish config before returning plan detail', async () => {
     const { getPlanDetail } = await import('./plan_detail.remote.js');
 
-    await expect(
-      invokeQuery(getPlanDetail, { planUuid })
-    ).resolves.toMatchObject({
+    await expect(invokeQuery(getPlanDetail, { planUuid })).resolves.toMatchObject({
       plan: {
         uuid: planUuid,
         needsFinishExecutor: true,

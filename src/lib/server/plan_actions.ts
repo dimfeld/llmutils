@@ -156,9 +156,5 @@ export async function spawnFinishProcess(
   const finishArgs = ['finish', String(planId)];
   finishArgs.push(markDone ? '--mark-done' : '--no-mark-done');
   finishArgs.push('--auto-workspace', '--no-terminal-input');
-  return spawnTimProcess(
-    planId,
-    finishArgs,
-    cwd
-  );
+  return spawnTimProcess(planId, finishArgs, cwd);
 }

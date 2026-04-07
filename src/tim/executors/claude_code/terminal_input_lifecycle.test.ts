@@ -59,9 +59,8 @@ vi.mock('../../../logging/adapter.js', () => ({
   getLoggerAdapter: () => ({}),
 }));
 
-const { executeWithTerminalInput, setupTerminalInput } = await import(
-  './terminal_input_lifecycle.ts'
-);
+const { executeWithTerminalInput, setupTerminalInput } =
+  await import('./terminal_input_lifecycle.ts');
 
 function makeStreaming(
   overrides: Partial<{ stdinEnd: () => Promise<void> }> = {}

@@ -63,9 +63,7 @@ export function getFinishRequirements(
   };
 }
 
-export function isPlanReadyToFinish(
-  plan: Pick<PlanSchema, 'status' | 'tasks' | 'epic'>
-): boolean {
+export function isPlanReadyToFinish(plan: Pick<PlanSchema, 'status' | 'tasks' | 'epic'>): boolean {
   if (isTasklessEpic(plan)) {
     return true;
   }

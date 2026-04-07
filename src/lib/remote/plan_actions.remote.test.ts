@@ -1406,11 +1406,7 @@ describe('plan remote actions', () => {
         status: 'started',
         planId: 4000,
       });
-      expect(spawnFinishProcessMock).toHaveBeenCalledWith(
-        4000,
-        '/tmp/primary-workspace',
-        true
-      );
+      expect(spawnFinishProcessMock).toHaveBeenCalledWith(4000, '/tmp/primary-workspace', true);
     });
 
     test('allows done plans when documentation has not been updated', async () => {
@@ -1434,11 +1430,7 @@ describe('plan remote actions', () => {
         status: 'started',
         planId: 4001,
       });
-      expect(spawnFinishProcessMock).toHaveBeenCalledWith(
-        4001,
-        '/tmp/primary-workspace',
-        true
-      );
+      expect(spawnFinishProcessMock).toHaveBeenCalledWith(4001, '/tmp/primary-workspace', true);
     });
 
     test('allows done plans when lessons have not been applied', async () => {
@@ -1462,11 +1454,7 @@ describe('plan remote actions', () => {
         status: 'started',
         planId: 4002,
       });
-      expect(spawnFinishProcessMock).toHaveBeenCalledWith(
-        4002,
-        '/tmp/primary-workspace',
-        true
-      );
+      expect(spawnFinishProcessMock).toHaveBeenCalledWith(4002, '/tmp/primary-workspace', true);
     });
 
     test('can start finish without marking the plan done', async () => {
@@ -1488,11 +1476,7 @@ describe('plan remote actions', () => {
         status: 'started',
         planId: 4008,
       });
-      expect(spawnFinishProcessMock).toHaveBeenCalledWith(
-        4008,
-        '/tmp/primary-workspace',
-        false
-      );
+      expect(spawnFinishProcessMock).toHaveBeenCalledWith(4008, '/tmp/primary-workspace', false);
     });
 
     test('rejects done plans when both finish-tracking timestamps are present', async () => {

@@ -466,8 +466,8 @@ program
   });
 
 program
-.command('finish <plan>')
-.description(
+  .command('finish <plan>')
+  .description(
     'Run any remaining documentation and lessons finalization steps, then mark the plan done by default.'
   )
   .option('-x, --executor <name>', 'The executor to use for finalization steps')
