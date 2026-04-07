@@ -870,7 +870,8 @@
           "enum": [
             "never",
             "after-iteration",
-            "after-completion"
+            "after-completion",
+            "manual"
           ]
         },
         "model": {

@@ -141,6 +141,16 @@
       "format": "date-time",
       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
     },
+    "docsUpdatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+    },
+    "lessonsAppliedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+    },
     "materializedAs": {
       "type": "string",
       "enum": [
@@ -195,6 +205,7 @@
         "type": "object",
         "properties": {
           "severity": {
+            "description": "Severity level of the issue. critical: Security vulnerabilities, data loss risks, or system-breaking bugs. major: Significant bugs, performance problems, or logic errors. minor: Code quality issues, style violations, or minor bugs. info: Suggestions, notes, or informational observations.",
             "type": "string",
             "enum": [
               "critical",
@@ -207,6 +218,7 @@
             "type": "string"
           },
           "content": {
+            "description": "A clear description of the issue found. Include relevant context and why this is a problem. If you have already generated an explanation for this issue, include the entire thing here even if it overlaps with other fields.",
             "type": "string"
           },
           "file": {
@@ -224,6 +236,14 @@
           },
           "suggestion": {
             "type": "string"
+          },
+          "source": {
+            "description": "The agent that generated this issue.",
+            "type": "string",
+            "enum": [
+              "claude-code",
+              "codex-cli"
+            ]
           }
         },
         "required": [
