@@ -8,10 +8,13 @@ import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
 import { getPlanByUuid, getPlanTasksByUuid, upsertPlan } from '$tim/db/plan.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import { upsertPrStatus, type StoredPrReviewThreadInput } from '$tim/db/pr_status.js';
+import { recordWorkspace } from '$tim/db/workspace.js';
 import type { PlanSchema } from '$tim/planSchema.js';
+import { SessionManager } from '$lib/server/session_manager.js';
 import { invokeCommand } from '$lib/test-utils/invoke_command.js';
 
 let currentDb: Database;
+let currentManager: SessionManager;
 
 vi.mock('$lib/server/init.js', () => ({
   getServerContext: async () => ({
@@ -20,9 +23,22 @@ vi.mock('$lib/server/init.js', () => ({
   }),
 }));
 
+vi.mock('$lib/server/session_context.js', () => ({
+  getSessionManager: () => currentManager,
+}));
+
 const { addReplyToReviewThreadMock, resolveReviewThreadMock } = vi.hoisted(() => ({
   addReplyToReviewThreadMock: vi.fn<(threadId: string, body: string) => Promise<boolean>>(),
   resolveReviewThreadMock: vi.fn<(threadId: string) => Promise<boolean>>(),
+}));
+
+const { spawnPrFixProcessMock } = vi.hoisted(() => ({
+  spawnPrFixProcessMock: vi.fn<(planId: number, cwd: string) => Promise<{
+    success: boolean;
+    planId?: number;
+    error?: string;
+    earlyExit?: boolean;
+  }>>(),
 }));
 
 vi.mock('$common/github/pull_requests.js', () => ({
@@ -30,11 +46,18 @@ vi.mock('$common/github/pull_requests.js', () => ({
   resolveReviewThread: resolveReviewThreadMock,
 }));
 
+vi.mock('$lib/server/plan_actions.js', () => ({
+  spawnPrFixProcess: (...args: Parameters<typeof spawnPrFixProcessMock>) =>
+    spawnPrFixProcessMock(...args),
+}));
+
 import {
   convertThreadToTask,
   replyToThread,
   resolveThread,
+  startFixThreads,
 } from './review_thread_actions.remote.js';
+import { isPlanLaunching, resetLaunchLockState, setLaunchLock } from '$lib/server/launch_lock.js';
 
 function seedPlanWithThread(options: {
   projectId: number;
@@ -89,12 +112,15 @@ describe('convertThreadToTask', () => {
 
   beforeEach(() => {
     currentDb = openDatabase(path.join(tempDir, `${crypto.randomUUID()}-${DATABASE_FILENAME}`));
+    currentManager = new SessionManager(currentDb);
     projectId = getOrCreateProject(currentDb, 'repo-review-thread-actions').id;
     addReplyToReviewThreadMock.mockReset();
     resolveReviewThreadMock.mockReset();
+    spawnPrFixProcessMock.mockReset();
   });
 
   afterEach(() => {
+    resetLaunchLockState();
     currentDb.close(false);
   });
 
@@ -866,5 +892,151 @@ describe('replyToThread', () => {
       body: { message: 'Review thread not found' },
     });
     expect(addReplyToReviewThreadMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('startFixThreads', () => {
+  let tempDir: string;
+  let projectId: number;
+
+  beforeAll(async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-review-thread-start-fix-test-'));
+  });
+
+  beforeEach(() => {
+    currentDb = openDatabase(path.join(tempDir, `${crypto.randomUUID()}-${DATABASE_FILENAME}`));
+    currentManager = new SessionManager(currentDb);
+    projectId = getOrCreateProject(currentDb, 'repo-review-thread-start-fix').id;
+    addReplyToReviewThreadMock.mockReset();
+    resolveReviewThreadMock.mockReset();
+    spawnPrFixProcessMock.mockReset();
+  });
+
+  afterEach(() => {
+    resetLaunchLockState();
+    currentDb.close(false);
+  });
+
+  afterAll(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  test('rejects missing plans', async () => {
+    await expect(invokeCommand(startFixThreads, { planUuid: 'missing-plan' })).rejects.toMatchObject(
+      {
+        status: 404,
+        body: { message: 'Plan not found' },
+      }
+    );
+  });
+
+  test('rejects plans with no unresolved review threads', async () => {
+    seedPlanWithThread({
+      projectId,
+      planUuid: 'plan-no-unresolved',
+      planId: 400,
+      thread: {
+        threadId: 'PRRT_resolved_only',
+        path: 'src/resolved.ts',
+        line: 9,
+        isResolved: true,
+        isOutdated: false,
+        comments: [{ commentId: 'IC_resolved_only', body: 'Already done.', state: 'SUBMITTED' }],
+      },
+    });
+
+    await expect(
+      invokeCommand(startFixThreads, { planUuid: 'plan-no-unresolved' })
+    ).rejects.toMatchObject({
+      status: 400,
+      body: { message: 'No unresolved review threads to fix' },
+    });
+  });
+
+  test('returns already_running when a session is active for the plan', async () => {
+    seedPlanWithThread({
+      projectId,
+      planUuid: 'plan-active-session',
+      planId: 401,
+      thread: {
+        threadId: 'PRRT_active',
+        path: 'src/active.ts',
+        line: 12,
+        isResolved: false,
+        isOutdated: false,
+        comments: [{ commentId: 'IC_active', body: 'Needs a fix.', state: 'SUBMITTED' }],
+      },
+    });
+    currentManager.handleWebSocketConnect('conn-fix', () => {});
+    currentManager.handleWebSocketMessage('conn-fix', {
+      type: 'session_info',
+      command: 'agent',
+      interactive: true,
+      planId: 401,
+      planUuid: 'plan-active-session',
+      workspacePath: '/tmp/primary-workspace',
+    });
+
+    await expect(
+      invokeCommand(startFixThreads, { planUuid: 'plan-active-session' })
+    ).resolves.toEqual({
+      status: 'already_running',
+      connectionId: 'conn-fix',
+    });
+    expect(spawnPrFixProcessMock).not.toHaveBeenCalled();
+  });
+
+  test('returns already_running when a launch lock already exists', async () => {
+    seedPlanWithThread({
+      projectId,
+      planUuid: 'plan-launch-locked',
+      planId: 402,
+      thread: {
+        threadId: 'PRRT_locked',
+        path: 'src/locked.ts',
+        line: 6,
+        isResolved: false,
+        isOutdated: false,
+        comments: [{ commentId: 'IC_locked', body: 'Fix me.', state: 'SUBMITTED' }],
+      },
+    });
+    setLaunchLock('plan-launch-locked');
+
+    await expect(
+      invokeCommand(startFixThreads, { planUuid: 'plan-launch-locked' })
+    ).resolves.toEqual({
+      status: 'already_running',
+    });
+    expect(spawnPrFixProcessMock).not.toHaveBeenCalled();
+  });
+
+  test('spawns tim pr fix in the primary workspace when unresolved threads exist', async () => {
+    seedPlanWithThread({
+      projectId,
+      planUuid: 'plan-start-fix',
+      planId: 403,
+      thread: {
+        threadId: 'PRRT_fix_me',
+        path: 'src/fix.ts',
+        line: 19,
+        isResolved: false,
+        isOutdated: false,
+        comments: [{ commentId: 'IC_fix_me', body: 'Needs fixing.', state: 'SUBMITTED' }],
+      },
+    });
+    recordWorkspace(currentDb, {
+      projectId,
+      workspacePath: '/tmp/primary-workspace',
+      workspaceType: 'primary',
+    });
+    spawnPrFixProcessMock.mockResolvedValue({ success: true, planId: 403 });
+
+    await expect(invokeCommand(startFixThreads, { planUuid: 'plan-start-fix' })).resolves.toEqual({
+      status: 'started',
+      planId: 403,
+    });
+
+    expect(spawnPrFixProcessMock).toHaveBeenCalledWith(403, '/tmp/primary-workspace');
+    expect(isPlanLaunching('plan-start-fix')).toBe(true);
   });
 });

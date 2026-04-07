@@ -1,5 +1,5 @@
 import { render } from 'svelte/server';
-import { describe, expect, test, vi } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 import type {
   PrStatusDetail,
@@ -16,13 +16,18 @@ import PrStatusSection from './PrStatusSection.svelte';
 const mockGetPrStatus = vi.fn();
 const mockRefreshPrStatus = vi.fn();
 const mockFullRefreshPrStatus = vi.fn();
+const mockStartFixThreads = vi.fn();
 const sessionManager = {
+  sessions: new Map<string, { status: string; sessionInfo: { planUuid?: string } }>(),
   onEvent: vi.fn(() => () => {}),
 };
 vi.mock('$lib/remote/pr_status.remote.js', () => ({
   getPrStatus: (...args: unknown[]) => mockGetPrStatus(...args),
   refreshPrStatus: (...args: unknown[]) => mockRefreshPrStatus(...args),
   fullRefreshPrStatus: (...args: unknown[]) => mockFullRefreshPrStatus(...args),
+}));
+vi.mock('$lib/remote/review_thread_actions.remote.js', () => ({
+  startFixThreads: (...args: unknown[]) => mockStartFixThreads(...args),
 }));
 
 vi.mock('$lib/stores/session_state.svelte.js', () => ({
@@ -187,6 +192,11 @@ async function renderSection(props: {
 }
 
 describe('PrStatusSection', () => {
+  beforeEach(() => {
+    sessionManager.sessions.clear();
+    mockStartFixThreads.mockReset();
+  });
+
   test('renders with the session manager available for client-side PR subscriptions', async () => {
     const { body } = await renderSection({ prUrls: [], prStatuses: [] });
     expect(body).toContain('Pull Requests');
@@ -564,6 +574,7 @@ describe('PrStatusSection', () => {
     expect(body).toContain('src/a.ts:3');
     expect(body).toContain('Copy');
     expect(body).toContain('Convert to Task');
+    expect(body).toContain('Fix Unresolved');
   });
 
   test('passes planUuid through to the review thread list actions', async () => {
@@ -588,6 +599,61 @@ describe('PrStatusSection', () => {
     });
 
     expect(body).toContain('Convert to Task');
+    expect(body).toContain('Fix Unresolved');
+  });
+
+  test('hides the Fix Unresolved button when there are no unresolved review threads', async () => {
+    const detail = makePrDetail({
+      reviewThreads: [
+        makeReviewThreadDetail({
+          thread: {
+            id: 10,
+            thread_id: 'thread-resolved-only',
+            path: 'src/resolved-only.ts',
+            line: 4,
+            is_resolved: 1,
+          },
+        }),
+      ],
+    });
+
+    const { body } = await renderSection({
+      prUrls: [detail.status.pr_url],
+      prStatuses: [detail],
+    });
+
+    expect(body).not.toContain('Fix Unresolved');
+  });
+
+  test('renders Fix Unresolved as disabled with Session Active label when the plan already has an active session', async () => {
+    sessionManager.sessions.set('conn-active', {
+      status: 'active',
+      sessionInfo: { planUuid: 'plan-active' },
+    });
+
+    const detail = makePrDetail({
+      reviewThreads: [
+        makeReviewThreadDetail({
+          thread: {
+            id: 11,
+            thread_id: 'thread-active',
+            path: 'src/active.ts',
+            line: 21,
+            is_resolved: 0,
+          },
+        }),
+      ],
+    });
+
+    const { body } = await renderSection({
+      planUuid: 'plan-active',
+      prUrls: [detail.status.pr_url],
+      prStatuses: [detail],
+    });
+
+    expect(body).toContain('Session Active');
+    expect(body).toContain('aria-label="Fix all unresolved review threads"');
+    expect(body).toContain('<button disabled=""');
   });
 
   test('renders check run details URL as link', async () => {
