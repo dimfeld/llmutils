@@ -89,7 +89,8 @@
   // needs_review plans: show "Finish" as primary button
   let showFinish = $derived(plan.displayStatus === 'needs_review');
   // done plans with pending finalization work: show "Finish" in dropdown
-  let showFinishInDropdown = $derived(plan.displayStatus === 'done' && plan.needsFinishExecutor);
+  // Use raw status (not displayStatus) since recently-done plans render as 'recently_done'
+  let showFinishInDropdown = $derived(plan.status === 'done' && plan.needsFinishExecutor);
 
   // Plans with incomplete tasks: show single "Run Agent" button
   let showAgentOnly = $derived(hasTasks && hasIncompleteTasks && !isIneligible && !showFinish);

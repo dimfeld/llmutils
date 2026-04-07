@@ -382,7 +382,7 @@ interface FinishConfig {
   applyLessons?: boolean;
 }
 
-function computeNeedsFinishExecutor(
+export function computeNeedsFinishExecutor(
   docsUpdatedAt: string | null,
   lessonsAppliedAt: string | null,
   finishConfig: FinishConfig

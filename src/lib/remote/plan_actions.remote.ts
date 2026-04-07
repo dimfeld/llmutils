@@ -3,6 +3,7 @@ import { error } from '@sveltejs/kit';
 import * as z from 'zod';
 
 import { getPrimaryWorkspacePath, getPlanDetail } from '$lib/server/db_queries.js';
+import { removeAssignment } from '$tim/db/assignment.js';
 import { getServerContext } from '$lib/server/init.js';
 import { clearLaunchLock, isPlanLaunching, setLaunchLock } from '$lib/server/launch_lock.js';
 import {
@@ -264,6 +265,9 @@ export const finishPlanQuick = command(finishPlanQuickSchema, async ({ planUuid 
     new Date().toISOString(),
     planUuid
   );
+
+  // Clean up assignment since the plan is now done
+  removeAssignment(db, plan.projectId, planUuid);
 
   return { status: 'done' as const };
 });

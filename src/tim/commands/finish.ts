@@ -9,6 +9,8 @@ import type { PlanSchema } from '../planSchema.js';
 import { writePlanFile } from '../plans.js';
 import { materializePlan } from '../plan_materialize.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
+import { removePlanAssignment } from '../assignments/remove_plan_assignment.js';
+import { checkAndMarkParentDone } from '../plans/parent_cascade.js';
 import { runUpdateDocs } from './update-docs.js';
 import { runUpdateLessons } from './update-lessons.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
@@ -104,6 +106,10 @@ export async function handleFinishCommand(
 
   if (!requirements.needsExecutor) {
     await persistFinishedPlan(plan, initialPlanPath, repoRoot);
+    await removePlanAssignment(plan, repoRoot);
+    if (plan.parent) {
+      await checkAndMarkParentDone(plan.parent, config, { baseDir: repoRoot });
+    }
     return;
   }
 
@@ -213,6 +219,10 @@ export async function handleFinishCommand(
       }
 
       await persistFinishedPlan(plan, currentPlanFile || null, repoRoot);
+      await removePlanAssignment(plan, currentBaseDir);
+      if (plan.parent) {
+        await checkAndMarkParentDone(plan.parent, config, { baseDir: currentBaseDir });
+      }
 
       if (roundTripContext) {
         await runPostExecutionWorkspaceSync(roundTripContext, 'finish plan finalization');

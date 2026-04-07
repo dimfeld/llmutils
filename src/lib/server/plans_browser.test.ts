@@ -294,6 +294,24 @@ describe('lib/server/plans_browser', () => {
     test('returns null for an unknown plan', () => {
       expect(getPlanDetailRouteData(db, 'missing-plan', String(projectId))).toBeNull();
     });
+
+    test('passes config to getPlanDetail and computes needsFinishExecutor', () => {
+      // The 'feature-plan' is seeded with no docsUpdatedAt/lessonsAppliedAt (null by default)
+      // With a config that has updateDocs.mode = 'after-completion' and applyLessons = true,
+      // needsFinishExecutor should be true
+      const config = { updateDocs: { mode: 'after-completion', applyLessons: true } } as TimConfig;
+      const result = getPlanDetailRouteData(db, 'feature-plan', String(projectId), 'plans', config);
+
+      expect(result).not.toBeNull();
+      expect(result!.planDetail.needsFinishExecutor).toBe(true);
+
+      // With mode='never' and applyLessons=false, needsFinishExecutor should be false
+      const configNever = { updateDocs: { mode: 'never', applyLessons: false } } as TimConfig;
+      const resultNever = getPlanDetailRouteData(db, 'feature-plan', String(projectId), 'plans', configNever);
+
+      expect(resultNever).not.toBeNull();
+      expect(resultNever!.planDetail.needsFinishExecutor).toBe(false);
+    });
   });
 });
 
