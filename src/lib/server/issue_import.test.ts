@@ -705,6 +705,353 @@ describe('issue_import server helpers', () => {
         createPlansFromIssue(7, makeIssue(1, 'Parent'), 'single', defaultSelectedContent())
       ).rejects.toThrow('Project does not have a git root configured');
     });
+
+    // --- Single mode duplicate detection edge cases ---
+
+    test('updates existing single plan when only title changed', async () => {
+      const issueData = makeIssue(1, 'New Title', {
+        body: 'Same body',
+        htmlUrl: 'https://tracker.test/issues/1',
+      });
+      const existingPlan: PlanSchema = {
+        id: 41,
+        uuid: 'uuid-existing-41',
+        title: 'Old Title',
+        goal: 'goal',
+        details: 'Same body',
+        status: 'pending',
+        issue: ['https://tracker.test/issues/1'],
+        tasks: [],
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      };
+      vi.mocked(loadPlansFromDb).mockReturnValue({
+        plans: new Map([[41, existingPlan]]),
+        duplicates: {},
+      });
+      vi.mocked(resolvePlanFromDb).mockResolvedValue({ plan: existingPlan, planPath: null });
+
+      const result = await createPlansFromIssue(7, issueData, 'single', {
+        selectedParentContent: [0],
+        selectedChildIndices: [],
+        selectedChildContent: {},
+      });
+
+      expect(result).toEqual({ planUuid: 'uuid-existing-41' });
+      expect(writeImportedPlansToDbTransactionally).toHaveBeenCalledTimes(1);
+      const pendingWrites = vi.mocked(writeImportedPlansToDbTransactionally).mock.calls[0]?.[1];
+      expect(pendingWrites?.[0]?.plan).toMatchObject({ id: 41, title: 'New Title' });
+    });
+
+    test('updates existing single plan when existing details are empty and new content arrives', async () => {
+      const issueData = makeIssue(1, 'Parent', {
+        body: 'New content',
+        htmlUrl: 'https://tracker.test/issues/1',
+      });
+      const existingPlan: PlanSchema = {
+        id: 41,
+        uuid: 'uuid-existing-41',
+        title: 'Parent',
+        goal: 'goal',
+        details: undefined,
+        status: 'pending',
+        issue: ['https://tracker.test/issues/1'],
+        tasks: [],
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      };
+      vi.mocked(loadPlansFromDb).mockReturnValue({
+        plans: new Map([[41, existingPlan]]),
+        duplicates: {},
+      });
+      vi.mocked(resolvePlanFromDb).mockResolvedValue({ plan: existingPlan, planPath: null });
+
+      const result = await createPlansFromIssue(7, issueData, 'single', {
+        selectedParentContent: [0],
+        selectedChildIndices: [],
+        selectedChildContent: {},
+      });
+
+      expect(result).toEqual({ planUuid: 'uuid-existing-41' });
+      expect(writeImportedPlansToDbTransactionally).toHaveBeenCalledTimes(1);
+      const pendingWrites = vi.mocked(writeImportedPlansToDbTransactionally).mock.calls[0]?.[1];
+      expect(pendingWrites?.[0]?.plan.details).toContain('New content');
+    });
+
+    test('throws validation error even for existing single plan when all selected content is empty', async () => {
+      // Validation happens before duplicate detection — empty content throws
+      // regardless of whether a matching plan already exists.
+      const issueData = makeIssue(1, 'Parent', {
+        body: '',
+        htmlUrl: 'https://tracker.test/issues/1',
+      });
+      const existingPlan: PlanSchema = {
+        id: 41,
+        uuid: 'uuid-existing-41',
+        title: 'Parent',
+        goal: 'goal',
+        details: undefined,
+        status: 'pending',
+        issue: ['https://tracker.test/issues/1'],
+        tasks: [],
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      };
+      vi.mocked(loadPlansFromDb).mockReturnValue({
+        plans: new Map([[41, existingPlan]]),
+        duplicates: {},
+      });
+
+      await expect(
+        createPlansFromIssue(7, issueData, 'single', {
+          selectedParentContent: [0],
+          selectedChildIndices: [],
+          selectedChildContent: {},
+        })
+      ).rejects.toThrow('Select at least one parent content item');
+    });
+
+    // --- Separate mode duplicate detection edge cases ---
+
+    test('does not call reserveImportedPlanStartId when all plans already exist in separate mode', async () => {
+      const childA = makeIssue(2, 'Child A', {
+        body: 'Child A body',
+        htmlUrl: 'https://tracker.test/issues/2',
+      });
+      const parentIssue = makeIssue(1, 'Parent', {
+        body: 'Parent body',
+        children: [childA],
+        htmlUrl: 'https://tracker.test/issues/1',
+      });
+      const existingParent: PlanSchema = {
+        id: 100,
+        uuid: 'uuid-parent',
+        title: 'Parent',
+        goal: 'goal',
+        details: 'Parent body',
+        status: 'pending',
+        issue: ['https://tracker.test/issues/1'],
+        dependencies: [101],
+        tasks: [],
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      };
+      const existingChildA: PlanSchema = {
+        id: 101,
+        uuid: 'uuid-child-a',
+        title: 'Child A',
+        goal: 'goal',
+        details: 'Child A body',
+        status: 'pending',
+        issue: ['https://tracker.test/issues/2'],
+        parent: 100,
+        tasks: [],
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      };
+      vi.mocked(loadPlansFromDb).mockReturnValue({
+        plans: new Map([
+          [100, existingParent],
+          [101, existingChildA],
+        ]),
+        duplicates: {},
+      });
+      vi.mocked(resolvePlanFromDb).mockImplementation(async (planArg) => {
+        if (String(planArg) === '100') return { plan: existingParent, planPath: null };
+        if (String(planArg) === '101') return { plan: existingChildA, planPath: null };
+        throw new Error(`Unexpected: ${String(planArg)}`);
+      });
+
+      await createPlansFromIssue(7, parentIssue, 'separate', {
+        selectedParentContent: [0],
+        selectedChildIndices: [0],
+        selectedChildContent: { 0: [0] },
+      });
+
+      expect(reserveImportedPlanStartId).not.toHaveBeenCalled();
+      expect(writeImportedPlansToDbTransactionally).toHaveBeenCalledTimes(1);
+      const pendingWrites = vi.mocked(writeImportedPlansToDbTransactionally).mock.calls[0]?.[1];
+      // All 3 plans written: child (existing), parent (existing with merged deps)
+      expect(pendingWrites).toHaveLength(2);
+    });
+
+    test('creates new children when parent exists but children are new in separate mode', async () => {
+      const childA = makeIssue(2, 'Child A new', {
+        body: 'Child A body',
+        htmlUrl: 'https://tracker.test/issues/2',
+      });
+      const parentIssue = makeIssue(1, 'Parent', {
+        body: 'Parent body',
+        children: [childA],
+        htmlUrl: 'https://tracker.test/issues/1',
+      });
+      const existingParent: PlanSchema = {
+        id: 100,
+        uuid: 'uuid-parent',
+        title: 'Parent',
+        goal: 'goal',
+        details: 'Parent body',
+        status: 'pending',
+        issue: ['https://tracker.test/issues/1'],
+        dependencies: [],
+        tasks: [],
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      };
+      vi.mocked(loadPlansFromDb).mockReturnValue({
+        plans: new Map([[100, existingParent]]),
+        duplicates: {},
+      });
+      vi.mocked(resolvePlanFromDb).mockResolvedValue({ plan: existingParent, planPath: null });
+      vi.mocked(reserveImportedPlanStartId).mockResolvedValue(200);
+
+      const result = await createPlansFromIssue(7, parentIssue, 'separate', {
+        selectedParentContent: [0],
+        selectedChildIndices: [0],
+        selectedChildContent: { 0: [0] },
+      });
+
+      expect(result).toEqual({ planUuid: 'uuid-parent' });
+      // Only 1 new plan (the child), since parent already exists
+      expect(reserveImportedPlanStartId).toHaveBeenCalledWith('/tmp/repo', 1);
+      const pendingWrites = vi.mocked(writeImportedPlansToDbTransactionally).mock.calls[0]?.[1];
+      expect(pendingWrites).toHaveLength(2); // child + parent
+      const childWrite = pendingWrites?.find((w) => w.plan.id === 200);
+      expect(childWrite?.plan).toMatchObject({ parent: 100 });
+      const parentWrite = pendingWrites?.find((w) => w.plan.id === 100);
+      expect(parentWrite?.plan.dependencies).toContain(200);
+    });
+
+    test('creates new parent when children exist but parent is new in separate mode', async () => {
+      const childA = makeIssue(2, 'Child A', {
+        body: 'Child A body',
+        htmlUrl: 'https://tracker.test/issues/2',
+      });
+      const parentIssue = makeIssue(1, 'Parent new', {
+        body: 'Parent body',
+        children: [childA],
+        htmlUrl: 'https://tracker.test/issues/1',
+      });
+      const existingChildA: PlanSchema = {
+        id: 101,
+        uuid: 'uuid-child-a',
+        title: 'Child A',
+        goal: 'goal',
+        details: 'Child A body',
+        status: 'pending',
+        issue: ['https://tracker.test/issues/2'],
+        tasks: [],
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      };
+      vi.mocked(loadPlansFromDb).mockReturnValue({
+        plans: new Map([[101, existingChildA]]),
+        duplicates: {},
+      });
+      vi.mocked(resolvePlanFromDb).mockResolvedValue({ plan: existingChildA, planPath: null });
+      vi.mocked(reserveImportedPlanStartId).mockResolvedValue(200);
+
+      const result = await createPlansFromIssue(7, parentIssue, 'separate', {
+        selectedParentContent: [0],
+        selectedChildIndices: [0],
+        selectedChildContent: { 0: [0] },
+      });
+
+      // Only 1 new plan (the parent)
+      expect(reserveImportedPlanStartId).toHaveBeenCalledWith('/tmp/repo', 1);
+      const pendingWrites = vi.mocked(writeImportedPlansToDbTransactionally).mock.calls[0]?.[1];
+      expect(pendingWrites).toHaveLength(2); // existing child + new parent
+      const parentWrite = pendingWrites?.find((w) => w.plan.id === 200);
+      expect(parentWrite?.plan.dependencies).toContain(101);
+      expect(result).toEqual({ planUuid: expect.stringContaining('uuid') });
+    });
+
+    // --- Merged mode duplicate detection edge cases ---
+
+    test('deduplicates issue URLs when re-importing the same child URLs in merged mode', async () => {
+      const child = makeIssue(2, 'Child', {
+        body: 'Child body',
+        htmlUrl: 'https://tracker.test/issues/2',
+      });
+      const parentIssue = makeIssue(1, 'Parent', {
+        body: 'Parent body',
+        children: [child],
+        htmlUrl: 'https://tracker.test/issues/1',
+      });
+      const existingParent: PlanSchema = {
+        id: 50,
+        uuid: 'uuid-parent-50',
+        title: 'Parent',
+        goal: 'goal',
+        details: 'Parent body',
+        status: 'pending',
+        // Both URLs already present
+        issue: ['https://tracker.test/issues/1', 'https://tracker.test/issues/2'],
+        tasks: [],
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      };
+      vi.mocked(loadPlansFromDb).mockReturnValue({
+        plans: new Map([[50, existingParent]]),
+        duplicates: {},
+      });
+      vi.mocked(resolvePlanFromDb).mockResolvedValue({ plan: existingParent, planPath: null });
+
+      await createPlansFromIssue(7, parentIssue, 'merged', {
+        selectedParentContent: [0],
+        selectedChildIndices: [0],
+        selectedChildContent: { 0: [0] },
+      });
+
+      const pendingWrites = vi.mocked(writeImportedPlansToDbTransactionally).mock.calls[0]?.[1];
+      // Issue URLs should not be duplicated
+      expect(pendingWrites?.[0]?.plan.issue).toEqual([
+        'https://tracker.test/issues/1',
+        'https://tracker.test/issues/2',
+      ]);
+    });
+
+    test('always writes existing merged plan even when no new segments are added', async () => {
+      const child = makeIssue(2, 'Child', {
+        body: 'Child body',
+        htmlUrl: 'https://tracker.test/issues/2',
+      });
+      const parentIssue = makeIssue(1, 'Parent', {
+        body: 'Parent body',
+        children: [child],
+        htmlUrl: 'https://tracker.test/issues/1',
+      });
+      // Existing plan already has all content
+      const existingDetails =
+        'Parent body\n\n## Subissue 2: Child\n\nChild body';
+      const existingParent: PlanSchema = {
+        id: 50,
+        uuid: 'uuid-parent-50',
+        title: 'Parent',
+        goal: 'goal',
+        details: existingDetails,
+        status: 'pending',
+        issue: ['https://tracker.test/issues/1', 'https://tracker.test/issues/2'],
+        tasks: [],
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      };
+      vi.mocked(loadPlansFromDb).mockReturnValue({
+        plans: new Map([[50, existingParent]]),
+        duplicates: {},
+      });
+      vi.mocked(resolvePlanFromDb).mockResolvedValue({ plan: existingParent, planPath: null });
+
+      const result = await createPlansFromIssue(7, parentIssue, 'merged', {
+        selectedParentContent: [0],
+        selectedChildIndices: [0],
+        selectedChildContent: { 0: [0] },
+      });
+
+      // Merged mode always writes (unlike single mode which short-circuits)
+      expect(result).toEqual({ planUuid: 'uuid-parent-50' });
+      expect(writeImportedPlansToDbTransactionally).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('getIssueTrackerStatus', () => {
