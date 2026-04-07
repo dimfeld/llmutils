@@ -1,0 +1,180 @@
+import { beforeEach, describe, expect, test, vi } from 'vitest';
+
+import type { PlanSchema } from '../../planSchema.js';
+import type { PendingImportedPlanWrite } from './import_helpers.js';
+
+vi.mock('../../db/database.js', () => ({
+  getDatabase: vi.fn(),
+}));
+
+vi.mock('../../db/plan.js', () => ({
+  upsertPlan: vi.fn(),
+}));
+
+vi.mock('../../db/plan_sync.js', () => ({
+  toPlanUpsertInput: vi.fn(),
+}));
+
+vi.mock('../../db/project.js', () => ({
+  reserveNextPlanId: vi.fn(),
+}));
+
+vi.mock('../../utils/references.js', () => ({
+  ensureReferences: vi.fn(),
+}));
+
+vi.mock('../../plan_materialize.js', () => ({
+  resolveProjectContext: vi.fn(),
+}));
+
+import { getDatabase } from '../../db/database.js';
+import { upsertPlan } from '../../db/plan.js';
+import { toPlanUpsertInput } from '../../db/plan_sync.js';
+import { reserveNextPlanId } from '../../db/project.js';
+import { ensureReferences } from '../../utils/references.js';
+import { resolveProjectContext } from '../../plan_materialize.js';
+import {
+  getImportedIssueUrlsFromPlans,
+  reserveImportedPlanStartId,
+  writeImportedPlansToDbTransactionally,
+} from './import_helpers.js';
+
+function makePlan(id: number, overrides?: Partial<PlanSchema>): PlanSchema {
+  return {
+    id,
+    title: `Plan ${id}`,
+    goal: `Goal ${id}`,
+    details: `Details ${id}`,
+    status: 'pending',
+    issue: [],
+    tasks: [],
+    createdAt: '2024-01-01T00:00:00.000Z',
+    updatedAt: '2024-01-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+describe('import_helpers', () => {
+  const transactionImmediate = vi.fn();
+  const transaction = vi.fn();
+  const mockDb = { transaction } as never;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getDatabase).mockReturnValue(mockDb);
+
+    transaction.mockImplementation((fn: () => void) => {
+      transactionImmediate.mockImplementation(() => fn());
+      return { immediate: transactionImmediate };
+    });
+
+    vi.mocked(resolveProjectContext).mockResolvedValue({
+      projectId: 10,
+      maxNumericId: 5,
+      planIdToUuid: new Map<number, string>([[1, 'uuid-1']]),
+      uuidToPlanId: new Map<string, number>([['uuid-1', 1]]),
+      rows: [],
+      repository: {
+        repositoryId: 'repo-id',
+        gitRoot: '/tmp/repo',
+        remoteUrl: 'https://example.test/repo.git',
+      },
+    } as never);
+
+    vi.mocked(ensureReferences).mockImplementation((plan: PlanSchema) => ({ updatedPlan: plan }));
+    vi.mocked(toPlanUpsertInput).mockImplementation((plan) => ({
+      planId: plan.id,
+      uuid: plan.uuid ?? `uuid-${plan.id}`,
+      filename: `${plan.id}.plan.md`,
+      status: plan.status ?? 'pending',
+      title: plan.title ?? `Plan ${plan.id}`,
+      tasks: [],
+      dependencyUuids: [],
+      tags: [],
+    }));
+    vi.mocked(upsertPlan).mockReturnValue({} as never);
+    vi.mocked(reserveNextPlanId).mockReturnValue({ startId: 50 } as never);
+  });
+
+  test('writeImportedPlansToDbTransactionally returns empty array for no writes', async () => {
+    const result = await writeImportedPlansToDbTransactionally('/tmp/repo', []);
+
+    expect(result).toEqual([]);
+    expect(resolveProjectContext).not.toHaveBeenCalled();
+    expect(upsertPlan).not.toHaveBeenCalled();
+  });
+
+  test('writeImportedPlansToDbTransactionally resolves uuids, references, and writes transactionally', async () => {
+    const randomUuidSpy = vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('uuid-random');
+    const pendingWrites: PendingImportedPlanWrite[] = [
+      { plan: makePlan(1), filePath: null },
+      { plan: makePlan(2), filePath: null },
+    ];
+
+    const result = await writeImportedPlansToDbTransactionally('/tmp/repo', pendingWrites);
+
+    expect(result[0]?.plan.uuid).toBe('uuid-1');
+    expect(result[1]?.plan.uuid).toBe('uuid-random');
+    expect(ensureReferences).toHaveBeenCalledTimes(2);
+    expect(upsertPlan).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(toPlanUpsertInput).mock.calls[0]?.[1]).toEqual(
+      expect.any(Map<number, string>)
+    );
+    expect(vi.mocked(upsertPlan).mock.calls[0]?.[2]).toMatchObject({
+      forceOverwrite: true,
+    });
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(transactionImmediate).toHaveBeenCalledTimes(1);
+
+    randomUuidSpy.mockRestore();
+  });
+
+  test('writeImportedPlansToDbTransactionally throws when an imported plan id is missing', async () => {
+    await expect(
+      writeImportedPlansToDbTransactionally('/tmp/repo', [
+        { plan: { ...makePlan(1), id: undefined } as never, filePath: null },
+      ])
+    ).rejects.toThrow('Imported plans must have numeric IDs before writing to the database');
+  });
+
+  test('reserveImportedPlanStartId computes baseline max id from context and plan map', async () => {
+    const plans = new Map<number, PlanSchema>([
+      [1, makePlan(1)],
+      [25, makePlan(25)],
+    ]);
+
+    const startId = await reserveImportedPlanStartId('/tmp/repo', 3, plans);
+
+    expect(reserveNextPlanId).toHaveBeenCalledWith(
+      mockDb,
+      'repo-id',
+      25,
+      3,
+      'https://example.test/repo.git'
+    );
+    expect(startId).toBe(50);
+  });
+
+  test('reserveImportedPlanStartId falls back to max+1 when reservation throws', async () => {
+    vi.mocked(reserveNextPlanId).mockImplementation(() => {
+      throw new Error('db down');
+    });
+    const plans = new Map<number, PlanSchema>([[9, makePlan(9)]]);
+
+    const startId = await reserveImportedPlanStartId('/tmp/repo', 1, plans);
+
+    expect(startId).toBe(10);
+  });
+
+  test('getImportedIssueUrlsFromPlans deduplicates issue urls', () => {
+    const plans = new Map<number, PlanSchema>([
+      [1, makePlan(1, { issue: ['https://issue/1', 'https://issue/2'] })],
+      [2, makePlan(2, { issue: ['https://issue/2', 'https://issue/3'] })],
+      [3, makePlan(3)],
+    ]);
+
+    const urls = getImportedIssueUrlsFromPlans(plans);
+
+    expect([...urls].sort()).toEqual(['https://issue/1', 'https://issue/2', 'https://issue/3']);
+  });
+});
