@@ -8,9 +8,6 @@ import { error, log, warn } from '../../../logging.js';
 import { getIssueTracker } from '../../../common/issue_tracker/factory.js';
 import type { IssueWithComments, IssueTrackerClient } from '../../../common/issue_tracker/types.js';
 import { getRepositoryIdentity } from '../../assignments/workspace_identifier.js';
-import { getDatabase } from '../../db/database.js';
-import { upsertPlan } from '../../db/plan.js';
-import { reserveNextPlanId } from '../../db/project.js';
 import { writePlanFile } from '../../plans.js';
 import { loadEffectiveConfig } from '../../configLoader.js';
 import { getPlanStorageDir, resolvePlanPathContext } from '../../path_resolver.js';
@@ -33,102 +30,26 @@ import {
   type RmprOptions,
 } from '../../../common/comment_options.js';
 import { singleLineWithPrefix, limitLines } from '../../../common/formatting.js';
-import { needArrayOrUndefined } from '../../../common/cli.js';
 import * as clipboard from '../../../common/clipboard.js';
 import { loadPlansFromDb } from '../../plans_db.js';
 import { ensureMaterializeDir, resolveProjectContext } from '../../plan_materialize.js';
 import { resolvePlanFromDb } from '../../plans.js';
-import { toPlanUpsertInput } from '../../db/plan_sync.js';
-import { ensureReferences } from '../../utils/references.js';
 import { editMaterializedPlan } from '../materialized_edit.js';
+import {
+  applyCommandOptions,
+  getImportedIssueUrlsFromPlans,
+  reserveImportedPlanStartId,
+  type PendingImportedPlanWrite,
+  writeImportedPlansToDbTransactionally,
+} from './import_helpers.js';
 
 type HierarchicalImportMode = 'none' | 'separate' | 'merged';
 type PlanSnapshot = Map<number, PlanSchema>;
-type PendingImportedPlanWrite = {
-  plan: PlanSchema;
-  filePath: string | null;
-};
 
 async function refreshPlanSnapshot(repoRoot: string, planRoot: string): Promise<PlanSnapshot> {
   const repository = await getRepositoryIdentity({ cwd: repoRoot });
   return loadPlansFromDb(planRoot || getPlanStorageDir(repository.gitRoot), repository.repositoryId)
     .plans;
-}
-
-async function writeImportedPlansToDbTransactionally(
-  repoRoot: string,
-  pendingWrites: PendingImportedPlanWrite[]
-): Promise<PendingImportedPlanWrite[]> {
-  if (pendingWrites.length === 0) {
-    return [];
-  }
-
-  const context = await resolveProjectContext(repoRoot);
-  const db = getDatabase();
-  const idToUuid = new Map(context.planIdToUuid);
-  const preparedWrites = pendingWrites.map((entry) => {
-    const nextPlan = structuredClone(entry.plan);
-    if (typeof nextPlan.id !== 'number') {
-      throw new Error('Imported plans must have numeric IDs before writing to the database');
-    }
-
-    if (!nextPlan.uuid) {
-      nextPlan.uuid = idToUuid.get(nextPlan.id) ?? crypto.randomUUID();
-    }
-    idToUuid.set(nextPlan.id, nextPlan.uuid);
-
-    return {
-      ...entry,
-      plan: ensureReferences(nextPlan, { planIdToUuid: idToUuid }).updatedPlan,
-    };
-  });
-
-  const writeTransaction = db.transaction(() => {
-    for (const entry of preparedWrites) {
-      upsertPlan(db, context.projectId, {
-        ...toPlanUpsertInput(entry.plan, idToUuid),
-        forceOverwrite: true,
-      });
-    }
-  });
-  writeTransaction.immediate();
-
-  return preparedWrites;
-}
-
-/**
- * Apply command-line options to a plan
- *
- * @param plan - The plan to apply options to
- * @param options - The command-line options
- */
-function applyCommandOptions(plan: PlanSchema, options: any): void {
-  if (options.priority) {
-    plan.priority = options.priority;
-  }
-
-  if (options.status) {
-    plan.status = options.status;
-  }
-
-  if (options.temp) {
-    plan.temp = true;
-  }
-
-  if (options.parent !== undefined) {
-    plan.parent = Number(options.parent);
-  }
-
-  if (options.dependsOn) {
-    const deps = needArrayOrUndefined(options.dependsOn);
-    if (deps) {
-      plan.dependencies = deps;
-    }
-  }
-
-  if (options.assign) {
-    plan.assignedTo = options.assign;
-  }
 }
 
 /**
@@ -165,44 +86,6 @@ async function updateParentPlanDependencies(
       chalk.gray(`  Updated parent plan ${parentPlan.id} to include dependency on ${childPlanId}`)
     );
   }
-}
-
-async function reserveImportedPlanStartId(
-  repoRoot: string,
-  count: number,
-  allPlans?: Map<number, PlanSchema>
-): Promise<number> {
-  const context = await resolveProjectContext(repoRoot);
-  const planMapMaxId = Math.max(
-    0,
-    ...Array.from(allPlans?.values() ?? [])
-      .map((plan) => plan.id ?? 0)
-      .filter((planId) => typeof planId === 'number')
-  );
-  try {
-    const db = getDatabase();
-    const baselineMaxId = Math.max(context.maxNumericId, planMapMaxId);
-    const result = reserveNextPlanId(
-      db,
-      context.repository.repositoryId,
-      baselineMaxId,
-      count,
-      context.repository.remoteUrl
-    );
-    return result.startId;
-  } catch {
-    return Math.max(context.maxNumericId, planMapMaxId) + 1;
-  }
-}
-
-function getImportedIssueUrlsFromPlans(allPlans: Map<number, PlanSchema>): Set<string> {
-  const importedUrls = new Set<string>();
-  for (const plan of allPlans.values()) {
-    for (const issueUrl of plan.issue ?? []) {
-      importedUrls.add(issueUrl);
-    }
-  }
-  return importedUrls;
 }
 
 /**

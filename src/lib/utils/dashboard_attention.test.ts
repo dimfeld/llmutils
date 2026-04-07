@@ -141,7 +141,6 @@ describe('deriveAttentionItems', () => {
     ]);
   });
 
-
   test('detects agent_finished from offline session + in_progress plan', () => {
     const plan = makePlan({ uuid: 'plan-1', displayStatus: 'in_progress' });
     const session = makeSession({

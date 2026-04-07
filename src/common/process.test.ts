@@ -242,10 +242,13 @@ describe('process utilities', () => {
 
       try {
         await fs.writeFile(path.join(tempDir, '.env'), 'LLMUTILS_TEST_SHARED_VAR=from-workspace\n');
-        const result = await spawnAndLogOutput(['sh', '-lc', 'printf %s "$LLMUTILS_TEST_SHARED_VAR"'], {
-          cwd: tempDir,
-          quiet: true,
-        });
+        const result = await spawnAndLogOutput(
+          ['sh', '-lc', 'printf %s "$LLMUTILS_TEST_SHARED_VAR"'],
+          {
+            cwd: tempDir,
+            quiet: true,
+          }
+        );
 
         expect(result.exitCode).toBe(0);
         expect(result.stdout).toBe('from-workspace');
@@ -264,13 +267,16 @@ describe('process utilities', () => {
 
       try {
         await fs.writeFile(path.join(tempDir, '.env'), 'LLMUTILS_TEST_SHARED_VAR=from-workspace\n');
-        const result = await spawnAndLogOutput(['sh', '-lc', 'printf %s "$LLMUTILS_TEST_SHARED_VAR"'], {
-          cwd: tempDir,
-          env: {
-            LLMUTILS_TEST_SHARED_VAR: 'from-explicit-override',
-          },
-          quiet: true,
-        });
+        const result = await spawnAndLogOutput(
+          ['sh', '-lc', 'printf %s "$LLMUTILS_TEST_SHARED_VAR"'],
+          {
+            cwd: tempDir,
+            env: {
+              LLMUTILS_TEST_SHARED_VAR: 'from-explicit-override',
+            },
+            quiet: true,
+          }
+        );
 
         expect(result.exitCode).toBe(0);
         expect(result.stdout).toBe('from-explicit-override');

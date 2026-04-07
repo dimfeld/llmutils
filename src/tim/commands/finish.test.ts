@@ -530,9 +530,7 @@ describe('finish command', () => {
     });
 
     test('accepts taskless epics regardless of status', () => {
-      expect(isPlanReadyToFinish({ status: 'pending', epic: true, tasks: [] } as any)).toBe(
-        true
-      );
+      expect(isPlanReadyToFinish({ status: 'pending', epic: true, tasks: [] } as any)).toBe(true);
       expect(isPlanReadyToFinish({ status: 'in_progress', epic: true, tasks: [] } as any)).toBe(
         true
       );

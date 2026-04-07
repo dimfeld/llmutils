@@ -380,7 +380,6 @@
     }
   }
 
-
   let sortedDependencies = $derived(
     [...plan.dependencies].sort((a, b) => {
       const aOrder = a.displayStatus ? (STATUS_ORDER_MAP[a.displayStatus] ?? 99) : 99;
@@ -445,9 +444,9 @@
             ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-900/60'
             : activeSession.command === 'chat'
               ? 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/40 dark:text-violet-300 dark:hover:bg-violet-900/60'
-            : activeSession.command === 'finish'
-              ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/60'
-              : 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-900/60'}"
+              : activeSession.command === 'finish'
+                ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/60'
+                : 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-900/60'}"
         >
           <span
             class="inline-block h-2 w-2 animate-pulse rounded-full {activeSession.command ===
@@ -1023,7 +1022,7 @@
         Branch
       </h3>
       <button
-        class="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+        class="flex cursor-pointer items-center gap-1 text-muted-foreground transition-colors hover:text-foreground"
         onclick={() => {
           navigator.clipboard.writeText(plan.branch!);
           toast.success('Branch name copied');
