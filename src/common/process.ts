@@ -360,13 +360,14 @@ export async function spawnAndLogOutput(
 ): Promise<SpawnAndLogOutputResult> {
   if (options?.stdin !== undefined) {
     const streaming = await spawnWithStreamingIO(cmd, options);
-    streaming.stdin.write(options.stdin);
+    void streaming.stdin.write(options.stdin);
     await streaming.stdin.end();
     return streaming.result;
   }
 
   debugLog('Running', cmd, options);
   const env = await buildWorkspaceCommandEnv(options?.cwd, options?.env);
+  log(`> ${cmd.join(' ')}`);
   const proc = Bun.spawn(cmd, {
     cwd: options?.cwd,
     env,
