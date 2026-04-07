@@ -91,8 +91,8 @@ export const convertThreadToTask = command(
       ).run(planUuid, nextIndex, newTask.title, newTask.description ?? '');
 
       db.prepare(
-        `UPDATE plan SET status = 'in_progress', updated_at = ${SQL_NOW_ISO_UTC} WHERE id = ? AND status != 'in_progress'`
-      ).run(plan.id);
+        `UPDATE plan SET status = 'in_progress', updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ? AND status != 'in_progress'`
+      ).run(planUuid);
     }).immediate();
   }
 );
