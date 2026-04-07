@@ -124,16 +124,29 @@ function findPlanByIssueUrl(
   issueUrl: string,
   matchMode: IssueUrlMatchMode
 ): PlanSchema | undefined {
+  if (matchMode === 'primary') {
+    for (const plan of plans.values()) {
+      if ((plan.issue ?? [])[0] === issueUrl) {
+        return plan;
+      }
+    }
+    return undefined;
+  }
+
+  // 'any' mode: prefer a primary match, fall back to secondary match.
+  // This prevents merged parent plans (which store child URLs) from being
+  // chosen over a dedicated plan for that child issue.
+  let secondaryMatch: PlanSchema | undefined;
   for (const plan of plans.values()) {
     const issueUrls = plan.issue ?? [];
-    if (matchMode === 'primary' && issueUrls[0] === issueUrl) {
+    if (issueUrls[0] === issueUrl) {
       return plan;
     }
-    if (matchMode === 'any' && issueUrls.includes(issueUrl)) {
-      return plan;
+    if (!secondaryMatch && issueUrls.includes(issueUrl)) {
+      secondaryMatch = plan;
     }
   }
-  return undefined;
+  return secondaryMatch;
 }
 
 function appendMissingSegments(

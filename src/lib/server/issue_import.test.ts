@@ -1099,6 +1099,108 @@ describe('issue_import server helpers', () => {
         200
       );
     });
+
+    test('separate mode does not match merged parent by child issue URL', async () => {
+      const parentIssue = makeIssue(10, 'Parent', {
+        body: 'Parent body',
+        htmlUrl: 'https://tracker.test/issues/10',
+        children: [
+          makeIssue(2, 'Child', {
+            body: 'Child body',
+            htmlUrl: 'https://tracker.test/issues/2',
+          }),
+        ],
+      });
+      const mergedParentPlan: PlanSchema = {
+        id: 50,
+        uuid: 'uuid-merged-parent',
+        title: 'Old merged parent',
+        goal: 'goal',
+        details: 'Merged details',
+        status: 'pending',
+        issue: ['https://tracker.test/issues/1', 'https://tracker.test/issues/2'],
+        tasks: [],
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      };
+      vi.mocked(loadPlansFromDb).mockReturnValue({
+        plans: new Map([[50, mergedParentPlan]]),
+        duplicates: {},
+      });
+      vi.mocked(reserveImportedPlanStartId).mockResolvedValue(200);
+      vi.mocked(writeImportedPlansToDbTransactionally).mockResolvedValue([
+        { plan: { id: 201, uuid: 'uuid-child-201' } as never, filePath: null },
+        { plan: { id: 200, uuid: 'uuid-parent-200' } as never, filePath: null },
+      ]);
+
+      const result = await createPlansFromIssue(7, parentIssue, 'separate', {
+        selectedParentContent: [0],
+        selectedChildIndices: [0],
+        selectedChildContent: { 0: [0] },
+      });
+
+      // Should create new plans, not match the merged parent
+      expect(result).toEqual({ planUuid: 'uuid-parent-200' });
+      expect(reserveImportedPlanStartId).toHaveBeenCalledWith('/tmp/repo', 2);
+      expect(resolvePlanFromDb).not.toHaveBeenCalled();
+    });
+
+    test('merged mode prefers primary-URL plan over merged parent with same URL', async () => {
+      const parentIssue = makeIssue(2, 'Child as parent', {
+        body: 'Child body',
+        htmlUrl: 'https://tracker.test/issues/2',
+      });
+      // A merged parent that contains this URL as a secondary entry
+      const mergedParentPlan: PlanSchema = {
+        id: 50,
+        uuid: 'uuid-merged-parent',
+        title: 'Old merged parent',
+        goal: 'goal',
+        details: 'Merged details',
+        status: 'pending',
+        issue: ['https://tracker.test/issues/1', 'https://tracker.test/issues/2'],
+        tasks: [],
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      };
+      // A dedicated plan for issue 2 (primary URL match)
+      const dedicatedPlan: PlanSchema = {
+        id: 60,
+        uuid: 'uuid-dedicated-child',
+        title: 'Dedicated child plan',
+        goal: 'goal',
+        details: 'Existing child details',
+        status: 'pending',
+        issue: ['https://tracker.test/issues/2'],
+        tasks: [],
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      };
+      vi.mocked(loadPlansFromDb).mockReturnValue({
+        plans: new Map([
+          [50, mergedParentPlan],
+          [60, dedicatedPlan],
+        ]),
+        duplicates: {},
+      });
+      vi.mocked(resolvePlanFromDb).mockResolvedValue({
+        plan: dedicatedPlan,
+        planPath: null,
+      });
+      vi.mocked(writeImportedPlansToDbTransactionally).mockResolvedValue([
+        { plan: { id: 60, uuid: 'uuid-dedicated-child' } as never, filePath: null },
+      ]);
+
+      const result = await createPlansFromIssue(7, parentIssue, 'merged', {
+        selectedParentContent: [0],
+        selectedChildIndices: [],
+        selectedChildContent: {},
+      });
+
+      // Should update the dedicated plan, not the merged parent
+      expect(result).toEqual({ planUuid: 'uuid-dedicated-child' });
+      expect(resolvePlanFromDb).toHaveBeenCalledWith('60', '/tmp/repo');
+    });
   });
 
   describe('getIssueTrackerStatus', () => {
