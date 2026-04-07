@@ -778,10 +778,8 @@ describe('issue_import server helpers', () => {
       expect(pendingWrites?.[0]?.plan.details).toContain('New content');
     });
 
-    test('throws validation error even for existing single plan when all selected content is empty', async () => {
-      // Validation happens before duplicate detection — empty content throws
-      // regardless of whether a matching plan already exists.
-      const issueData = makeIssue(1, 'Parent', {
+    test('allows metadata-only updates for existing single plan even when selected content is empty', async () => {
+      const issueData = makeIssue(1, 'Parent renamed', {
         body: '',
         htmlUrl: 'https://tracker.test/issues/1',
       });
@@ -790,7 +788,7 @@ describe('issue_import server helpers', () => {
         uuid: 'uuid-existing-41',
         title: 'Parent',
         goal: 'goal',
-        details: undefined,
+        details: '',
         status: 'pending',
         issue: ['https://tracker.test/issues/1'],
         tasks: [],
@@ -801,14 +799,21 @@ describe('issue_import server helpers', () => {
         plans: new Map([[41, existingPlan]]),
         duplicates: {},
       });
+      vi.mocked(resolvePlanFromDb).mockResolvedValue({ plan: existingPlan, planPath: null });
 
-      await expect(
-        createPlansFromIssue(7, issueData, 'single', {
-          selectedParentContent: [0],
-          selectedChildIndices: [],
-          selectedChildContent: {},
-        })
-      ).rejects.toThrow('Select at least one parent content item');
+      const result = await createPlansFromIssue(7, issueData, 'single', {
+        selectedParentContent: [0],
+        selectedChildIndices: [],
+        selectedChildContent: {},
+      });
+
+      expect(result).toEqual({ planUuid: 'uuid-existing-41' });
+      expect(writeImportedPlansToDbTransactionally).toHaveBeenCalledTimes(1);
+      const pendingWrites = vi.mocked(writeImportedPlansToDbTransactionally).mock.calls[0]?.[1];
+      expect(pendingWrites?.[0]?.plan).toMatchObject({
+        id: 41,
+        title: 'Parent renamed',
+      });
     });
 
     // --- Separate mode duplicate detection edge cases ---
@@ -869,10 +874,7 @@ describe('issue_import server helpers', () => {
       });
 
       expect(reserveImportedPlanStartId).not.toHaveBeenCalled();
-      expect(writeImportedPlansToDbTransactionally).toHaveBeenCalledTimes(1);
-      const pendingWrites = vi.mocked(writeImportedPlansToDbTransactionally).mock.calls[0]?.[1];
-      // All 3 plans written: child (existing), parent (existing with merged deps)
-      expect(pendingWrites).toHaveLength(2);
+      expect(writeImportedPlansToDbTransactionally).not.toHaveBeenCalled();
     });
 
     test('creates new children when parent exists but children are new in separate mode', async () => {
@@ -1011,7 +1013,7 @@ describe('issue_import server helpers', () => {
       ]);
     });
 
-    test('always writes existing merged plan even when no new segments are added', async () => {
+    test('does not write existing merged plan when no title/content/url changes are found', async () => {
       const child = makeIssue(2, 'Child', {
         body: 'Child body',
         htmlUrl: 'https://tracker.test/issues/2',
@@ -1048,9 +1050,54 @@ describe('issue_import server helpers', () => {
         selectedChildContent: { 0: [0] },
       });
 
-      // Merged mode always writes (unlike single mode which short-circuits)
       expect(result).toEqual({ planUuid: 'uuid-parent-50' });
-      expect(writeImportedPlansToDbTransactionally).toHaveBeenCalledTimes(1);
+      expect(writeImportedPlansToDbTransactionally).not.toHaveBeenCalled();
+    });
+
+    test('single mode does not match merged parent by child issue URL', async () => {
+      const issueData = makeIssue(2, 'Child imported directly', {
+        body: 'Child body',
+        htmlUrl: 'https://tracker.test/issues/2',
+      });
+      const mergedParentPlan: PlanSchema = {
+        id: 50,
+        uuid: 'uuid-merged-parent',
+        title: 'Merged parent',
+        goal: 'goal',
+        details: 'Merged details',
+        status: 'pending',
+        issue: ['https://tracker.test/issues/1', 'https://tracker.test/issues/2'],
+        tasks: [],
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      };
+      vi.mocked(loadPlansFromDb).mockReturnValue({
+        plans: new Map([[50, mergedParentPlan]]),
+        duplicates: {},
+      });
+      vi.mocked(reserveImportedPlanStartId).mockResolvedValue(200);
+      vi.mocked(writeImportedPlansToDbTransactionally).mockResolvedValue([
+        {
+          plan: { id: 200, uuid: 'uuid-new-child' } as never,
+          filePath: null,
+        },
+      ]);
+
+      const result = await createPlansFromIssue(7, issueData, 'single', {
+        selectedParentContent: [0],
+        selectedChildIndices: [],
+        selectedChildContent: {},
+      });
+
+      expect(result).toEqual({ planUuid: 'uuid-new-child' });
+      expect(reserveImportedPlanStartId).toHaveBeenCalledWith('/tmp/repo', 1);
+      expect(resolvePlanFromDb).not.toHaveBeenCalled();
+      expect(createStubPlanFromIssue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          issue: expect.objectContaining({ html_url: 'https://tracker.test/issues/2' }),
+        }),
+        200
+      );
     });
   });
 

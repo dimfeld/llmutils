@@ -117,12 +117,19 @@ function getRmprOptions(issueData: IssueWithComments): RmprOptions | null {
   return rmprOptions;
 }
 
+type IssueUrlMatchMode = 'primary' | 'any';
+
 function findPlanByIssueUrl(
   plans: Map<number, PlanSchema>,
-  issueUrl: string
+  issueUrl: string,
+  matchMode: IssueUrlMatchMode
 ): PlanSchema | undefined {
   for (const plan of plans.values()) {
-    if (plan.issue?.includes(issueUrl)) {
+    const issueUrls = plan.issue ?? [];
+    if (matchMode === 'primary' && issueUrls[0] === issueUrl) {
+      return plan;
+    }
+    if (matchMode === 'any' && issueUrls.includes(issueUrl)) {
       return plan;
     }
   }
@@ -246,41 +253,13 @@ export async function createPlansFromIssue(
 
   const parentExtracted = extractSelectedContent(issueData, normalizedParentContent);
 
-  if (mode === 'single' && parentExtracted.length === 0) {
-    throw new Error('Select at least one parent content item with non-empty text to import.');
-  }
-
-  if (mode !== 'single') {
-    const childExtracted = new Map<number, string[]>();
-    for (const childIndex of selectedChildIndices) {
-      const extracted = extractSelectedContent(
-        children[childIndex],
-        normalizedChildContent[childIndex] ?? []
-      );
-      childExtracted.set(childIndex, extracted);
-    }
-
-    const hasAnyContent =
-      parentExtracted.length > 0 ||
-      [...childExtracted.values()].some((content) => content.length > 0);
-    if (!hasAnyContent) {
-      throw new Error('Select at least one parent or subissue content item to import.');
-    }
-    for (const childIndex of selectedChildIndices) {
-      if ((childExtracted.get(childIndex) ?? []).length === 0) {
-        throw new Error(
-          `Selected subissue ${children[childIndex].issue.number} has no non-empty content selected.`
-        );
-      }
-    }
-  }
-
   const pendingWrites: PendingImportedPlanWrite[] = [];
   let parentPlanId = 0;
 
   if (mode === 'single' || selectedChildIndices.length === 0) {
     const parentIssueUrl = issueData.issue.htmlUrl;
-    const existingParentPlan = findPlanByIssueUrl(allPlans, parentIssueUrl);
+    const matchMode: IssueUrlMatchMode = mode === 'merged' ? 'any' : 'primary';
+    const existingParentPlan = findPlanByIssueUrl(allPlans, parentIssueUrl, matchMode);
     const parentInstruction = getIssueInstructionData(issueData, normalizedParentContent);
     if (existingParentPlan) {
       const resolvedParentPlan = await resolvePlanFromDb(String(existingParentPlan.id), repoRoot);
@@ -314,41 +293,87 @@ export async function createPlansFromIssue(
       }
       pendingWrites.push({ plan: updatedPlan, filePath: null });
     } else {
+      if (parentExtracted.length === 0) {
+        throw new Error('Select at least one parent content item with non-empty text to import.');
+      }
       parentPlanId = await reserveImportedPlanStartId(repoRoot, 1);
       const parentPlan = createStubPlanFromIssue(parentInstruction, parentPlanId);
       pendingWrites.push({ plan: parentPlan, filePath: null });
     }
   } else if (mode === 'separate') {
     const parentIssueUrl = issueData.issue.htmlUrl;
-    const existingParentPlan = findPlanByIssueUrl(allPlans, parentIssueUrl);
+    const existingParentPlan = findPlanByIssueUrl(allPlans, parentIssueUrl, 'primary');
     const parentInstruction = getIssueInstructionData(issueData, normalizedParentContent);
-    const existingChildren = selectedChildIndices.map((index) =>
-      findPlanByIssueUrl(allPlans, children[index].issue.htmlUrl)
+    const existingChildren = new Map<number, PlanSchema | undefined>();
+    const childExtracted = new Map<number, string[]>();
+    for (const childIndex of selectedChildIndices) {
+      existingChildren.set(
+        childIndex,
+        findPlanByIssueUrl(allPlans, children[childIndex].issue.htmlUrl, 'primary')
+      );
+      const extracted = extractSelectedContent(
+        children[childIndex],
+        normalizedChildContent[childIndex] ?? []
+      );
+      childExtracted.set(childIndex, extracted);
+    }
+    const hasAnyContent =
+      parentExtracted.length > 0 ||
+      [...childExtracted.values()].some((content) => content.length > 0);
+    const needsNewPlans =
+      !existingParentPlan ||
+      selectedChildIndices.some((index) => !existingChildren.get(index));
+    if (needsNewPlans && !hasAnyContent) {
+      throw new Error('Select at least one parent or subissue content item to import.');
+    }
+    for (const childIndex of selectedChildIndices) {
+      const existingChildPlan = existingChildren.get(childIndex);
+      if (!existingChildPlan && (childExtracted.get(childIndex) ?? []).length === 0) {
+        throw new Error(
+          `Selected subissue ${children[childIndex].issue.number} has no non-empty content selected.`
+        );
+      }
+    }
+
+    const existingChildPlans = selectedChildIndices.map((index) =>
+      existingChildren.get(index)
     );
     const newPlansCount =
-      (existingParentPlan ? 0 : 1) + existingChildren.filter((plan) => !plan).length;
+      (existingParentPlan ? 0 : 1) + existingChildPlans.filter((plan) => !plan).length;
     const startId =
       newPlansCount > 0 ? await reserveImportedPlanStartId(repoRoot, newPlansCount) : 0;
     let nextPlanId = startId;
 
     let parentPlan: PlanSchema;
+    let shouldWriteParent = false;
     if (existingParentPlan) {
       const resolvedParentPlan = await resolvePlanFromDb(String(existingParentPlan.id), repoRoot);
       const currentParentPlan = resolvedParentPlan.plan;
       parentPlanId = currentParentPlan.id;
-      const { details: updatedDetails } = appendMissingSegments(currentParentPlan.details, [
+      const { details: updatedDetails, newSegments } = appendMissingSegments(currentParentPlan.details, [
         parentInstruction.plan.trim(),
       ]);
-      parentPlan = {
-        ...currentParentPlan,
-        title: issueData.issue.title,
-        details: updatedDetails,
-        updatedAt: new Date().toISOString(),
-      };
+      const titleChanged = currentParentPlan.title !== issueData.issue.title;
+      const hasNewContent = newSegments.length > 0;
+      shouldWriteParent = titleChanged || hasNewContent;
+      if (shouldWriteParent) {
+        parentPlan = {
+          ...currentParentPlan,
+          title: issueData.issue.title,
+          details: updatedDetails,
+          updatedAt: new Date().toISOString(),
+        };
+      } else {
+        parentPlan = currentParentPlan;
+      }
     } else {
+      if (parentExtracted.length === 0) {
+        throw new Error('Select at least one parent or subissue content item to import.');
+      }
       parentPlanId = nextPlanId;
       nextPlanId++;
       parentPlan = createStubPlanFromIssue(parentInstruction, parentPlanId);
+      shouldWriteParent = true;
     }
 
     const childIds: number[] = [];
@@ -360,40 +385,72 @@ export async function createPlansFromIssue(
         normalizedChildContent[childIssueIndex] ?? [],
         { skipRmprOptions: true }
       );
-      const existingChildPlan = existingChildren[index];
+      const existingChildPlan = existingChildPlans[index];
       let childPlan: PlanSchema;
       let childPlanId: number;
+      let shouldWriteChild = false;
 
       if (existingChildPlan) {
         const resolvedChildPlan = await resolvePlanFromDb(String(existingChildPlan.id), repoRoot);
         const currentChildPlan = resolvedChildPlan.plan;
         childPlanId = currentChildPlan.id;
-        const { details: updatedDetails } = appendMissingSegments(currentChildPlan.details, [
+        const { details: updatedDetails, newSegments } = appendMissingSegments(currentChildPlan.details, [
           childInstruction.plan.trim(),
         ]);
-        childPlan = {
-          ...currentChildPlan,
-          title: childIssue.issue.title,
-          details: updatedDetails,
-          parent: parentPlanId,
-          updatedAt: new Date().toISOString(),
-        };
+        const titleChanged = currentChildPlan.title !== childIssue.issue.title;
+        const hasNewContent = newSegments.length > 0;
+        const parentChanged = currentChildPlan.parent !== parentPlanId;
+        shouldWriteChild = titleChanged || hasNewContent || parentChanged;
+        if (shouldWriteChild) {
+          childPlan = {
+            ...currentChildPlan,
+            title: childIssue.issue.title,
+            details: updatedDetails,
+            parent: parentPlanId,
+            updatedAt: new Date().toISOString(),
+          };
+        } else {
+          childPlan = currentChildPlan;
+        }
       } else {
         childPlanId = nextPlanId;
         nextPlanId++;
         childPlan = createStubPlanFromIssue(childInstruction, childPlanId);
         childPlan.parent = parentPlanId;
+        shouldWriteChild = true;
       }
 
       childIds.push(childPlanId);
-      pendingWrites.push({ plan: childPlan, filePath: null });
+      if (shouldWriteChild) {
+        pendingWrites.push({ plan: childPlan, filePath: null });
+      }
     }
 
-    parentPlan.dependencies = [...new Set([...(parentPlan.dependencies ?? []), ...childIds])];
-    pendingWrites.push({ plan: parentPlan, filePath: null });
+    const originalDependencies = parentPlan.dependencies ?? [];
+    const updatedDependencies = [...new Set([...originalDependencies, ...childIds])];
+    const dependenciesChanged =
+      updatedDependencies.length !== originalDependencies.length ||
+      updatedDependencies.some((dependencyId, index) => dependencyId !== originalDependencies[index]);
+    if (dependenciesChanged) {
+      shouldWriteParent = true;
+      parentPlan = {
+        ...parentPlan,
+        dependencies: updatedDependencies,
+        updatedAt: new Date().toISOString(),
+      };
+    } else if (shouldWriteParent) {
+      parentPlan = {
+        ...parentPlan,
+        dependencies: updatedDependencies,
+      };
+    }
+
+    if (shouldWriteParent) {
+      pendingWrites.push({ plan: parentPlan, filePath: null });
+    }
   } else {
     const parentIssueUrl = issueData.issue.htmlUrl;
-    const existingParentPlan = findPlanByIssueUrl(allPlans, parentIssueUrl);
+    const existingParentPlan = findPlanByIssueUrl(allPlans, parentIssueUrl, 'any');
     const parentInstruction = getIssueInstructionData(issueData, normalizedParentContent);
     const mergedDetailsSegments: string[] = [];
     if (parentInstruction.plan.trim()) {
@@ -420,26 +477,49 @@ export async function createPlansFromIssue(
       const resolvedParentPlan = await resolvePlanFromDb(String(existingParentPlan.id), repoRoot);
       const currentParentPlan = resolvedParentPlan.plan;
       parentPlanId = currentParentPlan.id;
-      const { details: updatedDetails } = appendMissingSegments(
+      const { details: updatedDetails, newSegments } = appendMissingSegments(
         currentParentPlan.details,
         mergedDetailsSegments
       );
+      const updatedIssueUrls = [...new Set([...(currentParentPlan.issue ?? []), ...mergedIssueUrls])];
+      const issueUrlsChanged =
+        updatedIssueUrls.length !== (currentParentPlan.issue ?? []).length ||
+        updatedIssueUrls.some((url, index) => url !== (currentParentPlan.issue ?? [])[index]);
+      const titleChanged = currentParentPlan.title !== issueData.issue.title;
+      const hasNewContent = newSegments.length > 0;
+      if (!titleChanged && !hasNewContent && !issueUrlsChanged) {
+        if (!currentParentPlan.uuid) {
+          throw new Error('Failed to determine imported plan UUID');
+        }
+        return { planUuid: currentParentPlan.uuid };
+      }
 
       const parentPlan: PlanSchema = {
         ...currentParentPlan,
         title: issueData.issue.title,
         details: updatedDetails,
-        issue: [...new Set([...(currentParentPlan.issue ?? []), ...mergedIssueUrls])],
+        issue: updatedIssueUrls,
         updatedAt: new Date().toISOString(),
       };
       pendingWrites.push({ plan: parentPlan, filePath: null });
     } else {
+      if (mergedDetailsSegments.length === 0) {
+        throw new Error('Select at least one parent or subissue content item to import.');
+      }
       parentPlanId = await reserveImportedPlanStartId(repoRoot, 1);
       const parentPlan = createStubPlanFromIssue(parentInstruction, parentPlanId);
       parentPlan.details = mergedDetailsSegments.join('\n\n');
       parentPlan.issue = [...mergedIssueUrls];
       pendingWrites.push({ plan: parentPlan, filePath: null });
     }
+  }
+
+  if (pendingWrites.length === 0) {
+    const existingParentPlan = allPlans.get(parentPlanId);
+    if (!existingParentPlan?.uuid) {
+      throw new Error('Failed to determine imported plan UUID');
+    }
+    return { planUuid: existingParentPlan.uuid };
   }
 
   const persistedWrites = await writeImportedPlansToDbTransactionally(repoRoot, pendingWrites);
