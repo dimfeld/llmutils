@@ -227,27 +227,3 @@ export const startFinish = command(startFinishSchema, async ({ planUuid }) => {
   );
 });
 
-const finishPlanQuickSchema = z.object({
-  planUuid: z.string().min(1),
-});
-
-export const finishPlanQuick = command(finishPlanQuickSchema, async ({ planUuid }) => {
-  const { db } = await getServerContext();
-  const plan = getPlanDetail(db, planUuid);
-
-  if (!plan) {
-    error(404, 'Plan not found');
-  }
-
-  if (plan.status !== 'needs_review' && plan.status !== 'done') {
-    error(400, 'Plan is not eligible for quick finish');
-  }
-
-  db.prepare('UPDATE plan SET status = ?, updated_at = ? WHERE uuid = ?').run(
-    'done',
-    new Date().toISOString(),
-    planUuid
-  );
-
-  return { status: 'done' as const };
-});

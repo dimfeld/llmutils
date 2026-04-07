@@ -11,7 +11,6 @@
     startChat,
     startRebase,
     startFinish,
-    finishPlanQuick,
     openInEditor,
   } from '$lib/remote/plan_actions.remote.js';
   import {
@@ -327,22 +326,6 @@
         successMessage = { text: 'Finish started' };
       }
       setStartedSuccessfully();
-    } catch (err) {
-      errorMessage = `${err as Error}`;
-    } finally {
-      startingFinish = false;
-    }
-  }
-
-  async function handleFinishQuick() {
-    startingFinish = true;
-    errorMessage = null;
-    successMessage = null;
-    try {
-      await finishPlanQuick({ planUuid: plan.uuid });
-      successMessage = { text: 'Plan marked as done' };
-      setStartedSuccessfully();
-      await invalidateAll();
     } catch (err) {
       errorMessage = `${err as Error}`;
     } finally {
