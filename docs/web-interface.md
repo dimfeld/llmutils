@@ -485,6 +485,69 @@ The dialog stays open with per-button spinners during launch. Dismissal is preve
 - **Launch lock** (`src/lib/server/launch_lock.ts`): In-memory per-plan lock (keyed by UUID, stored on `globalThis` for HMR safety) bridging the gap between process spawn and WebSocket session registration. Exported as a separate module because SvelteKit remote function files can only export `command()` results. Subscribes to `SessionManager.subscribe('session:update')` to clear locks when sessions register.
 - **Primary workspace query** (`getPrimaryWorkspacePath()` in `db_queries.ts`): Resolves the primary workspace path for a project, used as the cwd for spawned processes.
 
+## Issue Import
+
+The web interface provides a two-step wizard for importing issues from configured issue trackers (GitHub or Linear) into tim plans. This mirrors the CLI `tim import` command but with a visual content selection UI.
+
+### Route Structure
+
+```
+src/routes/projects/[projectId]/import/
+├── +page.server.ts       # Loads tracker config, validates project, checks capabilities
+└── +page.svelte          # Two-step wizard: identifier input → content selection
+```
+
+The import route is only accessible for specific projects (not the `all` pseudo-project). The server load function reads the effective config from the project's `last_git_root` to determine tracker availability and capabilities.
+
+### Entry Point
+
+An "Import Issue" link button appears in the plans layout sidebar (`+layout.svelte`) when `issueTrackerAvailable` is true and the project is not `all`. The `issueTrackerAvailable` flag is computed in `plans/+layout.server.ts` using `getIssueTrackerStatus()` from `src/lib/server/issue_import.ts`.
+
+### Wizard Flow
+
+**Step 1 — Issue Identifier:**
+- Text input for issue ID, URL, or branch name
+- Radio group for import mode: "Single issue", "With subissues (separate plans)", "With subissues (merged into one plan)"
+- Subissue modes are hidden when the tracker doesn't support hierarchical fetching (e.g. GitHub)
+- "Fetch Issue" button calls the `fetchIssueForImport` query with loading spinner and error display
+
+**Step 2 — Content Selection:**
+- Displays fetched issue title and metadata
+- For single mode: checkboxes for issue body (checked by default when non-empty) + each comment (unchecked by default)
+- For separate/merged mode: combined tree view with parent content, then each subissue as a top-level checkbox (checked by default) with nested body + comment checkboxes. Unchecking a subissue hides its content
+- "Import" button calls the `importIssue` command
+- On success: redirects to `/projects/[projectId]/plans/[newPlanUuid]`
+
+### Duplicate Detection
+
+The web import reuses the CLI's duplicate-detection behavior. When importing an issue whose URL already exists as a plan, the existing plan is updated instead of creating a duplicate. This uses `getImportedIssueUrlsFromPlans()` from `src/tim/commands/import/import_helpers.ts`.
+
+### Remote Functions
+
+`src/lib/remote/issue_import.remote.ts` provides:
+
+- **`checkIssueTrackerStatus`** (`query`): Returns tracker availability, type, display name, and hierarchical support for a project
+- **`fetchIssueForImport`** (`query`): Takes identifier string, mode, and projectId. Fetches issue data from the configured tracker API. Returns `IssueWithComments` data for the selection UI
+- **`importIssue`** (`command`): Takes already-fetched issue data, selected content indices, and import mode. Creates plans transactionally and returns the parent plan UUID for redirect
+
+### Server-Side Logic
+
+`src/lib/server/issue_import.ts` contains:
+
+- **`getIssueTrackerStatus(gitRoot)`**: Checks tracker configuration and capabilities
+- **`fetchIssueForImport(identifier, mode, gitRoot)`**: Parses identifier, creates tracker client via factory, fetches issue (with or without children)
+- **`createPlansFromIssue(projectId, issueData, mode, selectedContent)`**: Reserves plan IDs, builds plans via `createStubPlanFromIssue()`, writes to DB via `writeImportedPlansToDbTransactionally()`. Handles all three modes (single, separate, merged) with proper parent-child relationships and dependencies
+
+### Shared Import Helpers
+
+Core import logic is extracted into `src/tim/commands/import/import_helpers.ts` for reuse by both CLI and web:
+
+- `writeImportedPlansToDbTransactionally()` — Atomic DB write for imported plans
+- `reserveImportedPlanStartId()` — Plan ID reservation
+- `getImportedIssueUrlsFromPlans()` — Duplicate detection via issue URL lookup
+- `applyCommandOptions()` — CLI option application
+- `PendingImportedPlanWrite` type
+
 ## Review Issue Management
 
 When the agent runs its final review in non-interactive mode (e.g. launched from the web UI with `--no-terminal-input`), any found issues are saved as `reviewIssues` on the plan and the plan status is set to `needs_review`. The agent exits automatically without prompting.
