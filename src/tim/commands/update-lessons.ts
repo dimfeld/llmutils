@@ -249,14 +249,20 @@ export async function runUpdateLessons(
 
   const items = parseLessonItems(lessonsLearned);
   if (items.length > 0) {
-    const selected = await promptCheckbox({
-      message: 'Select lessons to apply:',
-      choices: items.map((item) => ({
-        name: item,
-        value: item,
-        checked: true,
-      })),
-    });
+    let selected: string[];
+    if (options.nonInteractive) {
+      // In non-interactive mode, auto-select all lessons
+      selected = items;
+    } else {
+      selected = await promptCheckbox({
+        message: 'Select lessons to apply:',
+        choices: items.map((item) => ({
+          name: item,
+          value: item,
+          checked: true,
+        })),
+      });
+    }
 
     if (selected.length === 0) {
       log('No lessons selected. Skipping lessons documentation update.');

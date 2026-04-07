@@ -7,6 +7,7 @@ import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 import type { PlanSchema } from '../planSchema.js';
 import { writePlanFile } from '../plans.js';
+import { materializePlan } from '../plan_materialize.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { runUpdateDocs } from './update-docs.js';
 import { runUpdateLessons } from './update-lessons.js';
@@ -108,6 +109,12 @@ export async function handleFinishCommand(
 
   let currentBaseDir = repoRoot;
   let currentPlanFile = initialPlanPath ?? '';
+
+  // When there's no existing plan file but we need executor work, materialize from DB
+  if (!currentPlanFile && plan.id != null) {
+    currentPlanFile = await materializePlan(plan.id, repoRoot);
+  }
+
   let roundTripContext: Awaited<ReturnType<typeof prepareWorkspaceRoundTrip>> = null;
 
   await runWithHeadlessAdapterIfEnabled({
@@ -169,7 +176,10 @@ export async function handleFinishCommand(
       const finishTarget = currentPlanFile || String(plan.id ?? planArg);
       const nonInteractive = options.nonInteractive === true;
       const terminalInputEnabled =
-        !nonInteractive && process.stdin.isTTY === true && options.terminalInput !== false;
+        !nonInteractive &&
+        process.stdin.isTTY === true &&
+        options.terminalInput !== false &&
+        config.terminalInput !== false;
       const runOptions = {
         executor: options.executor,
         model: options.model,
