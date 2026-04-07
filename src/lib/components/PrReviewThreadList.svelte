@@ -170,6 +170,7 @@
     threadActionSubmitting = { threadId: thread.thread.thread_id, action: 'reply' };
     try {
       const result = await replyToThread({
+        prStatusId: thread.thread.pr_status_id,
         threadId: thread.thread.thread_id,
         body,
       });

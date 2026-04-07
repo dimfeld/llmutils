@@ -26,6 +26,7 @@ const resolveThreadSchema = z.object({
 });
 
 const replyToThreadSchema = z.object({
+  prStatusId: z.number().int(),
   threadId: z.string().min(1),
   body: z.string().trim().min(1),
 });
@@ -147,38 +148,80 @@ export const convertThreadToTask = command(
 
 export const resolveThread = command(resolveThreadSchema, async ({ prStatusId, threadId }) => {
   const { db } = await getServerContext();
+  const threadRow = db
+    .prepare(
+      `
+        SELECT id, is_resolved
+        FROM pr_review_thread
+        WHERE pr_status_id = ? AND thread_id = ?
+      `
+    )
+    .get(prStatusId, threadId) as Pick<PrReviewThreadRow, 'id' | 'is_resolved'> | null;
+  if (!threadRow) {
+    error(404, 'Review thread not found');
+  }
+
+  if (threadRow.is_resolved) {
+    return { success: true };
+  }
+
   const success = await resolveReviewThread(threadId);
   if (!success) {
     return { success: false };
   }
 
-  db.transaction(() => {
-    const threadExists = db
-      .prepare(
-        `
-          SELECT 1
-          FROM pr_review_thread
-          WHERE pr_status_id = ? AND thread_id = ?
-        `
-      )
-      .get(prStatusId, threadId);
-    if (!threadExists) {
-      error(404, 'Review thread not found');
-    }
-
-    db.prepare(
-      `
-        UPDATE pr_review_thread
-        SET is_resolved = 1
-        WHERE pr_status_id = ? AND thread_id = ?
-      `
-    ).run(prStatusId, threadId);
-  }).immediate();
+  db.prepare(
+    `
+      UPDATE pr_review_thread
+      SET is_resolved = 1
+      WHERE pr_status_id = ? AND thread_id = ?
+    `
+  ).run(prStatusId, threadId);
 
   return { success: true };
 });
 
-export const replyToThread = command(replyToThreadSchema, async ({ threadId, body }) => {
+export const replyToThread = command(replyToThreadSchema, async ({ prStatusId, threadId, body }) => {
+  const { db, config } = await getServerContext();
+  const threadRow = db
+    .prepare(
+      `
+        SELECT id
+        FROM pr_review_thread
+        WHERE pr_status_id = ? AND thread_id = ?
+      `
+    )
+    .get(prStatusId, threadId) as Pick<PrReviewThreadRow, 'id'> | null;
+  if (!threadRow) {
+    error(404, 'Review thread not found');
+  }
+
   const success = await addReplyToReviewThread(threadId, body);
+  if (success) {
+    db.prepare(
+      `
+        INSERT INTO pr_review_thread_comment (
+          review_thread_id,
+          comment_id,
+          database_id,
+          author,
+          body,
+          diff_hunk,
+          state,
+          created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      threadRow.id,
+      `local-reply-${crypto.randomUUID()}`,
+      null,
+      config.githubUsername?.trim() || 'You',
+      body,
+      null,
+      'SUBMITTED',
+      new Date().toISOString()
+    );
+  }
+
   return { success };
 });

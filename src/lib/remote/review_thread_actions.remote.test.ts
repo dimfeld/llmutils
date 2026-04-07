@@ -15,7 +15,7 @@ let currentDb: Database;
 
 vi.mock('$lib/server/init.js', () => ({
   getServerContext: async () => ({
-    config: {} as never,
+    config: { githubUsername: 'configured-user' } as never,
     db: currentDb,
   }),
 }));
@@ -598,7 +598,7 @@ describe('resolveThread', () => {
     ).toEqual({ is_resolved: 0 });
   });
 
-  test('rejects missing local review thread after GitHub resolve succeeds', async () => {
+  test('rejects missing local review thread before calling GitHub', async () => {
     const { prStatusId } = seedPlanWithThread({
       projectId,
       planUuid: 'plan-resolve-thread-missing',
@@ -626,6 +626,7 @@ describe('resolveThread', () => {
       status: 404,
       body: { message: 'Review thread not found' },
     });
+    expect(resolveReviewThreadMock).not.toHaveBeenCalled();
   });
 
   test('propagates error when GitHub API throws', async () => {
@@ -661,7 +662,7 @@ describe('resolveThread', () => {
     ).toEqual({ is_resolved: 0 });
   });
 
-  test('resolves an already-resolved thread idempotently', async () => {
+  test('resolves an already-resolved thread idempotently without calling GitHub', async () => {
     const { prStatusId } = seedPlanWithThread({
       projectId,
       planUuid: 'plan-resolve-already-resolved',
@@ -684,7 +685,7 @@ describe('resolveThread', () => {
       })
     ).resolves.toEqual({ success: true });
 
-    expect(resolveReviewThreadMock).toHaveBeenCalledWith('PRRT_already_resolved');
+    expect(resolveReviewThreadMock).not.toHaveBeenCalled();
     expect(
       currentDb
         .prepare(
@@ -696,16 +697,47 @@ describe('resolveThread', () => {
 });
 
 describe('replyToThread', () => {
+  let tempDir: string;
+  let projectId: number;
+
+  beforeAll(async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-review-thread-reply-remote-test-'));
+  });
+
   beforeEach(() => {
+    currentDb = openDatabase(path.join(tempDir, `${crypto.randomUUID()}-${DATABASE_FILENAME}`));
+    projectId = getOrCreateProject(currentDb, 'repo-review-thread-reply').id;
     addReplyToReviewThreadMock.mockReset();
     resolveReviewThreadMock.mockReset();
   });
 
+  afterEach(() => {
+    currentDb.close(false);
+  });
+
+  afterAll(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
   test('posts a reply to the GitHub review thread', async () => {
+    const { prStatusId } = seedPlanWithThread({
+      projectId,
+      planUuid: 'plan-reply-thread',
+      planId: 314,
+      thread: {
+        threadId: 'PRRT_reply_me',
+        path: 'src/reply.ts',
+        line: 4,
+        isResolved: false,
+        isOutdated: false,
+        comments: [],
+      },
+    });
     addReplyToReviewThreadMock.mockResolvedValue(true);
 
     await expect(
       invokeCommand(replyToThread, {
+        prStatusId,
         threadId: 'PRRT_reply_me',
         body: 'Fixed in the latest commit.',
       })
@@ -715,27 +747,124 @@ describe('replyToThread', () => {
       'PRRT_reply_me',
       'Fixed in the latest commit.'
     );
+    expect(
+      currentDb
+        .prepare(
+          `
+            SELECT author, body, state, diff_hunk, database_id
+            FROM pr_review_thread_comment
+            WHERE review_thread_id = (
+              SELECT id
+              FROM pr_review_thread
+              WHERE pr_status_id = ? AND thread_id = ?
+            )
+            ORDER BY id DESC
+            LIMIT 1
+          `
+        )
+        .get(prStatusId, 'PRRT_reply_me')
+    ).toEqual({
+      author: 'configured-user',
+      body: 'Fixed in the latest commit.',
+      state: 'SUBMITTED',
+      diff_hunk: null,
+      database_id: null,
+    });
   });
 
   test('returns success false when GitHub reply fails', async () => {
+    const { prStatusId } = seedPlanWithThread({
+      projectId,
+      planUuid: 'plan-reply-thread-fail',
+      planId: 315,
+      thread: {
+        threadId: 'PRRT_reply_fail',
+        path: 'src/reply-fail.ts',
+        line: 8,
+        isResolved: false,
+        isOutdated: false,
+        comments: [],
+      },
+    });
     addReplyToReviewThreadMock.mockResolvedValue(false);
 
     await expect(
       invokeCommand(replyToThread, {
+        prStatusId,
         threadId: 'PRRT_reply_fail',
         body: 'Attempted reply.',
       })
     ).resolves.toEqual({ success: false });
+    expect(
+      currentDb
+        .prepare(
+          `
+            SELECT COUNT(*) as count
+            FROM pr_review_thread_comment
+            WHERE review_thread_id = (
+              SELECT id
+              FROM pr_review_thread
+              WHERE pr_status_id = ? AND thread_id = ?
+            )
+          `
+        )
+        .get(prStatusId, 'PRRT_reply_fail')
+    ).toEqual({ count: 0 });
   });
 
   test('propagates error when GitHub API throws', async () => {
+    const { prStatusId } = seedPlanWithThread({
+      projectId,
+      planUuid: 'plan-reply-thread-throw',
+      planId: 316,
+      thread: {
+        threadId: 'PRRT_reply_throw',
+        path: 'src/reply-throw.ts',
+        line: 12,
+        isResolved: false,
+        isOutdated: false,
+        comments: [],
+      },
+    });
     addReplyToReviewThreadMock.mockRejectedValue(new Error('Network error'));
 
     await expect(
       invokeCommand(replyToThread, {
+        prStatusId,
         threadId: 'PRRT_reply_throw',
         body: 'Will not arrive.',
       })
     ).rejects.toThrow('Network error');
+  });
+
+  test('rejects reply when the local review thread is missing', async () => {
+    const { prStatusId } = seedPlanWithThread({
+      projectId,
+      planUuid: 'plan-reply-thread-missing',
+      planId: 317,
+      thread: {
+        threadId: 'PRRT_reply_missing',
+        path: 'src/reply-missing.ts',
+        line: 18,
+        isResolved: false,
+        isOutdated: false,
+        comments: [],
+      },
+    });
+    currentDb
+      .prepare(`DELETE FROM pr_review_thread WHERE pr_status_id = ? AND thread_id = ?`)
+      .run(prStatusId, 'PRRT_reply_missing');
+
+    await expect(
+      invokeCommand(replyToThread, {
+        prStatusId,
+        threadId: 'PRRT_reply_missing',
+        body: 'No matching local thread.',
+      })
+    ).rejects.toMatchObject({
+      status: 404,
+      body: { message: 'Review thread not found' },
+    });
+    expect(addReplyToReviewThreadMock).not.toHaveBeenCalled();
   });
 });
