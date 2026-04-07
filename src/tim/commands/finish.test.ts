@@ -58,11 +58,7 @@ import {
   runPostExecutionWorkspaceSync,
   runPreExecutionWorkspaceSync,
 } from '../workspace/workspace_roundtrip.js';
-import {
-  getFinishRequirements,
-  handleFinishCommand,
-  isPlanReadyToFinish,
-} from './finish.js';
+import { getFinishRequirements, handleFinishCommand, isPlanReadyToFinish } from './finish.js';
 
 describe('finish command', () => {
   const loadEffectiveConfigSpy = vi.mocked(loadEffectiveConfig);

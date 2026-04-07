@@ -523,6 +523,7 @@ export const timConfigSchema = z
          * - 'never': Don't automatically update docs (default)
          * - 'after-iteration': Update docs after each agent loop iteration
          * - 'after-completion': Update docs only when the entire plan is complete
+         * - 'manual': Skip docs and lessons in agent; use 'tim finish' to run them
          */
         mode: z
           .enum(['never', 'after-iteration', 'after-completion', 'manual'])

@@ -154,11 +154,9 @@ export async function handleFinishCommand(
             workspaceSyncEnabled: options.workspaceSync !== false,
             branchCreatedDuringSetup: workspaceResult.branchCreatedDuringSetup,
           });
+        }
 
-          if (!roundTripContext) {
-            throw new Error('Workspace round-trip setup did not return a sync context.');
-          }
-
+        if (roundTripContext) {
           await runPreExecutionWorkspaceSync(roundTripContext);
 
           const materializedPlanFile = await materializePlansForExecution(currentBaseDir, plan.id);
@@ -169,11 +167,16 @@ export async function handleFinishCommand(
       }
 
       const finishTarget = currentPlanFile || String(plan.id ?? planArg);
+      const nonInteractive = options.nonInteractive === true;
+      const terminalInputEnabled =
+        !nonInteractive && process.stdin.isTTY === true && options.terminalInput !== false;
       const runOptions = {
         executor: options.executor,
         model: options.model,
         baseDir: currentBaseDir,
         configPath: globalOpts.config,
+        nonInteractive,
+        terminalInput: terminalInputEnabled,
       };
 
       if (requirements.needsDocs) {

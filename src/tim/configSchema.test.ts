@@ -141,9 +141,7 @@ describe('configSchema', () => {
     });
 
     test('rejects invalid mode values', () => {
-      expect(() =>
-        timConfigSchema.parse({ updateDocs: { mode: 'invalid' } })
-      ).toThrow();
+      expect(() => timConfigSchema.parse({ updateDocs: { mode: 'invalid' } })).toThrow();
     });
 
     test('accepts applyLessons boolean', () => {

@@ -202,12 +202,16 @@ export async function runUpdateLessons(
         model?: string;
         baseDir?: string;
         configPath?: string;
+        nonInteractive?: boolean;
+        terminalInput?: boolean;
       },
   maybeOptions?: {
     executor?: string;
     model?: string;
     baseDir?: string;
     configPath?: string;
+    nonInteractive?: boolean;
+    terminalInput?: boolean;
   }
 ): Promise<boolean> {
   const options = maybeOptions ?? (configOrOptions as NonNullable<typeof maybeOptions>);
@@ -286,6 +290,8 @@ export async function runUpdateLessons(
   const sharedExecutorOptions: ExecutorCommonOptions = {
     baseDir,
     model,
+    noninteractive: options.nonInteractive ? true : undefined,
+    terminalInput: options.terminalInput,
   };
 
   const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, effectiveConfig);
