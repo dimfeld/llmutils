@@ -11,6 +11,7 @@
     startChat,
     startRebase,
     startFinish,
+    finishPlanQuick,
     openInEditor,
   } from '$lib/remote/plan_actions.remote.js';
   import {
@@ -88,10 +89,7 @@
   // needs_review plans: show "Finish" as primary button
   let showFinish = $derived(plan.displayStatus === 'needs_review');
   // done plans with pending finalization work: show "Finish" in dropdown
-  let hasPendingFinalizationWork = $derived(
-    plan.docsUpdatedAt === null || plan.lessonsAppliedAt === null
-  );
-  let showFinishInDropdown = $derived(plan.displayStatus === 'done' && hasPendingFinalizationWork);
+  let showFinishInDropdown = $derived(plan.displayStatus === 'done' && plan.needsFinishExecutor);
 
   // Plans with incomplete tasks: show single "Run Agent" button
   let showAgentOnly = $derived(hasTasks && hasIncompleteTasks && !isIneligible && !showFinish);
@@ -316,16 +314,22 @@
     errorMessage = null;
     successMessage = null;
     try {
-      const result = await startFinish({ planUuid: plan.uuid });
-      if (result.status === 'already_running') {
-        successMessage = {
-          text: 'A session is already running for this plan',
-          connectionId: result.connectionId,
-        };
+      if (plan.needsFinishExecutor) {
+        const result = await startFinish({ planUuid: plan.uuid });
+        if (result.status === 'already_running') {
+          successMessage = {
+            text: 'A session is already running for this plan',
+            connectionId: result.connectionId,
+          };
+        } else {
+          successMessage = { text: 'Finish started' };
+        }
       } else {
-        successMessage = { text: 'Finish started' };
+        await finishPlanQuick({ planUuid: plan.uuid });
+        successMessage = { text: 'Plan marked as done' };
       }
       setStartedSuccessfully();
+      await invalidateAll();
     } catch (err) {
       errorMessage = `${err as Error}`;
     } finally {

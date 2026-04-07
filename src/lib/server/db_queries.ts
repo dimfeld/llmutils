@@ -94,6 +94,8 @@ export interface EnrichedPlan {
   prSummaryStatus: PrSummaryStatus;
   docsUpdatedAt: string | null;
   lessonsAppliedAt: string | null;
+  /** Whether the finish command would need to spawn an executor for this plan. */
+  needsFinishExecutor: boolean;
   tags: string[];
   dependencyUuids: string[];
   tasks: EnrichedPlanTask[];
@@ -375,10 +377,27 @@ interface EnrichmentContext {
   enrichedPlans: EnrichedPlan[];
 }
 
+interface FinishConfig {
+  updateDocsMode?: string;
+  applyLessons?: boolean;
+}
+
+function computeNeedsFinishExecutor(
+  docsUpdatedAt: string | null,
+  lessonsAppliedAt: string | null,
+  finishConfig: FinishConfig
+): boolean {
+  const mode = finishConfig.updateDocsMode ?? 'never';
+  const needsDocs = docsUpdatedAt === null && mode !== 'never';
+  const needsLessons = lessonsAppliedAt === null && finishConfig.applyLessons === true;
+  return needsDocs || needsLessons;
+}
+
 function enrichPlansWithContext(
   db: Database,
   bundle: PlanQueryBundle,
-  now = Date.now()
+  now = Date.now(),
+  finishConfig: FinishConfig = {}
 ): EnrichmentContext {
   const tasksByPlanUuid = groupByPlanUuid(bundle.tasks);
   const dependenciesByPlanUuid = groupByPlanUuid(bundle.dependencies);
@@ -449,6 +468,11 @@ function enrichPlansWithContext(
       invalidPrUrls: categorizedPrUrlsByPlanUuid.get(plan.uuid)?.invalid ?? [],
       docsUpdatedAt: plan.docs_updated_at,
       lessonsAppliedAt: plan.lessons_applied_at,
+      needsFinishExecutor: computeNeedsFinishExecutor(
+        plan.docs_updated_at,
+        plan.lessons_applied_at,
+        finishConfig
+      ),
       issues: parseJsonStringArray(plan.issue),
       prSummaryStatus: prSummaryStatusByPlanUuid.get(plan.uuid) ?? 'none',
       tags: tagsByPlanUuid.get(plan.uuid) ?? [],
@@ -590,10 +614,14 @@ export function getProjectsWithMetadata(db: Database): ProjectWithMetadata[] {
   });
 }
 
-export function getPlansForProject(db: Database, projectId?: number): EnrichedPlan[] {
+export function getPlansForProject(
+  db: Database,
+  projectId?: number,
+  finishConfig?: FinishConfig
+): EnrichedPlan[] {
   const bundle =
     projectId === undefined ? getAllProjectBundle(db) : getProjectBundle(db, projectId);
-  return enrichPlansWithContext(db, bundle).enrichedPlans;
+  return enrichPlansWithContext(db, bundle, Date.now(), finishConfig).enrichedPlans;
 }
 
 interface WorkspaceQueryRow extends WorkspaceRow {
@@ -757,7 +785,11 @@ export function getPrimaryWorkspacePath(db: Database, projectId: number): string
   return row?.workspace_path ?? null;
 }
 
-export function getPlanDetail(db: Database, planUuid: string): PlanDetail | null {
+export function getPlanDetail(
+  db: Database,
+  planUuid: string,
+  finishConfig?: FinishConfig
+): PlanDetail | null {
   const plan = getPlanByUuid(db, planUuid);
   if (!plan) {
     return null;
@@ -785,12 +817,17 @@ export function getPlanDetail(db: Database, planUuid: string): PlanDetail | null
     db,
     referencedDependencyRows.map((dependency) => dependency.depends_on_uuid)
   );
-  const { planByUuid, dependenciesByPlanUuid, enrichedPlans } = enrichPlansWithContext(db, {
-    plans: [plan, ...referencedPlans, ...transitiveDependencyPlans],
-    tasks,
-    dependencies: [...dependencies, ...referencedDependencyRows],
-    tags,
-  });
+  const { planByUuid, dependenciesByPlanUuid, enrichedPlans } = enrichPlansWithContext(
+    db,
+    {
+      plans: [plan, ...referencedPlans, ...transitiveDependencyPlans],
+      tasks,
+      dependencies: [...dependencies, ...referencedDependencyRows],
+      tags,
+    },
+    Date.now(),
+    finishConfig
+  );
   const enrichedPlan = enrichedPlans[0] ?? null;
   if (!enrichedPlan || enrichedPlan.uuid !== planUuid) {
     return null;

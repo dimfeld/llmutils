@@ -33,6 +33,7 @@ export interface PlanAttentionItem {
   projectId: number;
   docsUpdatedAt: string | null;
   lessonsAppliedAt: string | null;
+  needsFinishExecutor: boolean;
   reasons: PlanAttentionReason[];
 }
 
@@ -125,6 +126,7 @@ export function deriveAttentionItems(
         projectId: plan.projectId,
         docsUpdatedAt: plan.docsUpdatedAt,
         lessonsAppliedAt: plan.lessonsAppliedAt,
+        needsFinishExecutor: plan.needsFinishExecutor,
         reasons,
       });
     }

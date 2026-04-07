@@ -1,7 +1,8 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { toast } from 'svelte-sonner';
-  import { startFinish } from '$lib/remote/plan_actions.remote.js';
+  import { startFinish, finishPlanQuick } from '$lib/remote/plan_actions.remote.js';
+  import { invalidateAll } from '$app/navigation';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import type { PlanAttentionItem } from '$lib/utils/dashboard_attention.js';
 
@@ -56,7 +57,12 @@
     if (startingFinish) return;
     startingFinish = true;
     try {
-      await startFinish({ planUuid: item.planUuid });
+      if (item.needsFinishExecutor) {
+        await startFinish({ planUuid: item.planUuid });
+      } else {
+        await finishPlanQuick({ planUuid: item.planUuid });
+        await invalidateAll();
+      }
     } catch (err) {
       toast.error(`Failed to start finish: ${(err as Error).message}`);
     } finally {

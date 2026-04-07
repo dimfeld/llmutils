@@ -21,7 +21,9 @@ const spawnFinishProcessMock = vi.fn();
 
 vi.mock('$lib/server/init.js', () => ({
   getServerContext: async () => ({
-    config: {} as never,
+    config: {
+      updateDocs: { mode: 'after-completion', applyLessons: true },
+    } as never,
     db: currentDb,
   }),
 }));
@@ -44,7 +46,13 @@ vi.mock('$lib/server/plan_actions.js', () => ({
 }));
 
 import { isPlanLaunching, resetLaunchLockState, setLaunchLock } from '$lib/server/launch_lock.js';
-import { startAgent, startChat, startFinish, startGenerate, startRebase } from './plan_actions.remote.js';
+import {
+  startAgent,
+  startChat,
+  startFinish,
+  startGenerate,
+  startRebase,
+} from './plan_actions.remote.js';
 
 describe('plan remote actions', () => {
   let tempDir: string;

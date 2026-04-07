@@ -65,8 +65,11 @@ async function launchTimCommand(
 ): Promise<
   { status: 'started'; planId: number } | { status: 'already_running'; connectionId?: string }
 > {
-  const { db } = await getServerContext();
-  const plan = getPlanDetail(db, planUuid);
+  const { db, config } = await getServerContext();
+  const plan = getPlanDetail(db, planUuid, {
+    updateDocsMode: config.updateDocs?.mode,
+    applyLessons: config.updateDocs?.applyLessons,
+  });
 
   if (!plan) {
     error(404, 'Plan not found');
@@ -209,7 +212,8 @@ function isPlanEligibleForFinish(plan: ReturnType<typeof getPlanDetail>): plan i
   if (plan == null) return false;
   if (plan.status === 'needs_review') return true;
   if (plan.status === 'done') {
-    return plan.docsUpdatedAt === null || plan.lessonsAppliedAt === null;
+    // Use the server-computed needsFinishExecutor which accounts for config
+    return plan.needsFinishExecutor;
   }
   return false;
 }
@@ -227,3 +231,39 @@ export const startFinish = command(startFinishSchema, async ({ planUuid }) => {
   );
 });
 
+const finishPlanQuickSchema = z.object({
+  planUuid: z.string().min(1),
+});
+
+/**
+ * Finish a plan without spawning a process — just sets status to done.
+ * Used when no executor work is needed (docs/lessons already done or disabled).
+ */
+export const finishPlanQuick = command(finishPlanQuickSchema, async ({ planUuid }) => {
+  const { db, config } = await getServerContext();
+  const plan = getPlanDetail(db, planUuid, {
+    updateDocsMode: config.updateDocs?.mode,
+    applyLessons: config.updateDocs?.applyLessons,
+  });
+
+  if (!plan) {
+    error(404, 'Plan not found');
+  }
+
+  if (plan.status !== 'needs_review' && plan.status !== 'done') {
+    error(400, 'Plan is not eligible for finish');
+  }
+
+  // Refuse if executor work is actually needed
+  if (plan.needsFinishExecutor) {
+    error(400, 'Plan requires executor work — use startFinish instead');
+  }
+
+  db.prepare('UPDATE plan SET status = ?, updated_at = ? WHERE uuid = ?').run(
+    'done',
+    new Date().toISOString(),
+    planUuid
+  );
+
+  return { status: 'done' as const };
+});

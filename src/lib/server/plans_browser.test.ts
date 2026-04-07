@@ -10,7 +10,10 @@ import { upsertPlan } from '$tim/db/plan.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import { recordWorkspace } from '$tim/db/workspace.js';
 
+import type { TimConfig } from '$tim/configSchema.js';
 import { getDashboardData, getPlanDetailRouteData, getPlansPageData } from './plans_browser.js';
+
+const emptyConfig = {} as TimConfig;
 
 describe('lib/server/plans_browser', () => {
   let tempDir: string;
@@ -47,7 +50,7 @@ describe('lib/server/plans_browser', () => {
   });
 
   test('getPlansPageData returns plans for a specific project id', () => {
-    const result = getPlansPageData(db, String(projectId));
+    const result = getPlansPageData(db, String(projectId), emptyConfig);
 
     expect(result.plans.map((plan) => [plan.projectId, plan.uuid])).toEqual([
       [projectId, 'dependency-done'],
@@ -56,7 +59,7 @@ describe('lib/server/plans_browser', () => {
   });
 
   test('getPlansPageData returns plans across projects in all-project mode', () => {
-    const result = getPlansPageData(db, 'all');
+    const result = getPlansPageData(db, 'all', emptyConfig);
 
     expect(result.plans.map((plan) => [plan.projectId, plan.uuid])).toEqual([
       [projectId, 'dependency-done'],
@@ -178,7 +181,7 @@ describe('lib/server/plans_browser', () => {
       sourceUpdatedAt: daysAgo(2),
     });
 
-    const result = getDashboardData(db, String(projectId));
+    const result = getDashboardData(db, String(projectId), emptyConfig);
 
     expect(result.plans.map((plan) => [plan.planId, plan.displayStatus])).toEqual([
       [401, 'recently_done'],
@@ -226,7 +229,7 @@ describe('lib/server/plans_browser', () => {
       sourceUpdatedAt: daysAgo(2),
     });
 
-    const result = getDashboardData(db, 'all');
+    const result = getDashboardData(db, 'all', emptyConfig);
 
     expect(result.plans.map((plan) => [plan.projectId, plan.uuid, plan.displayStatus])).toEqual([
       [projectId, 'dependency-done', 'recently_done'],
