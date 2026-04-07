@@ -1121,6 +1121,8 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
             model: config.updateDocs?.model,
             baseDir: currentBaseDir,
             justCompletedTaskIndices: [taskIndex],
+            nonInteractive: noninteractive,
+            terminalInput: terminalInputEnabled,
           });
           const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
           updatedPlanForTimestamp.docsUpdatedAt = new Date().toISOString();
