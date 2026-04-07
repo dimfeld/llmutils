@@ -1,5 +1,6 @@
 <script lang="ts">
   import AppWindow from '@lucide/svelte/icons/app-window';
+  import Copy from '@lucide/svelte/icons/copy';
   import { toast } from 'svelte-sonner';
 
   import type { PlanDetail } from '$lib/server/db_queries.js';
@@ -844,7 +845,17 @@
       <h3 class="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
         Branch
       </h3>
-      <code class="text-xs text-muted-foreground">{plan.branch}</code>
+      <button
+        class="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+        onclick={() => {
+          navigator.clipboard.writeText(plan.branch!);
+          toast.success('Branch name copied');
+        }}
+        title="Copy branch name"
+      >
+        <code class="text-xs">{plan.branch}</code>
+        <Copy class="h-3 w-3 shrink-0" />
+      </button>
     </div>
   {/if}
 
