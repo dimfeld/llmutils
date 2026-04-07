@@ -58,12 +58,13 @@
     startingFinish = true;
     try {
       if (item.needsFinishExecutor) {
-        await startFinish({ planUuid: item.planUuid });
+        await startFinish({ planUuid: item.planUuid, markDone: false });
       } else {
         await finishPlanQuick({ planUuid: item.planUuid });
         await invalidateAll();
       }
     } catch (err) {
+      console.log(err);
       toast.error(`Failed to start finish: ${(err as Error).message}`);
     } finally {
       startingFinish = false;
@@ -118,11 +119,15 @@
   {#if hasNeedsReview}
     <button
       type="button"
-      class="shrink-0 rounded bg-orange-600 px-2 py-0.5 text-xs font-medium text-white transition-colors hover:bg-orange-700 dark:bg-orange-700 dark:hover:bg-orange-600"
+      class="shrink-0 rounded bg-green-600 px-2 py-0.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700 dark:bg-green-700 dark:hover:bg-emerald-600"
       onclick={handleFinish}
       disabled={startingFinish}
     >
-      {startingFinish ? 'Starting…' : 'Finish'}
+      {#if item.needsFinishExecutor}
+        Update Docs
+      {:else}
+        {startingFinish ? 'Starting…' : 'Finish'}
+      {/if}
     </button>
   {/if}
 </div>

@@ -90,24 +90,6 @@
   let tasksOpen = $derived(plan.taskCounts.done < plan.taskCounts.total);
   let isBlocked = $derived(plan.displayStatus === 'blocked');
   let linkedPr = $derived(plan.prStatuses[0] ?? null);
-  let showFinishCommand = $derived(
-    (plan.status === 'needs_review' || plan.status === 'done') && plan.needsFinishExecutor
-  );
-
-  // needs_review plans and taskless epics: show "Finish" as primary button
-  let showFinish = $derived(plan.displayStatus === 'needs_review' || isTasklessEpic);
-  // done plans with pending finalization work: show "Finish" in dropdown
-  // Use raw status (not displayStatus) since recently-done plans render as 'recently_done'
-  let showFinishInDropdown = $derived(
-    !isTasklessEpic && plan.status === 'done' && plan.needsFinishExecutor
-  );
-
-  // Plans with incomplete tasks: show single "Run Agent" button
-  let showAgentOnly = $derived(hasTasks && hasIncompleteTasks && !isIneligible && !showFinish);
-  // Plans without tasks: show "Generate" as primary + "Run Agent" in dropdown
-  let showGenerateWithAgent = $derived(!hasTasks && !isIneligible && !showFinish);
-  // All tasks complete or terminal status: show standalone Chat button
-  let showChatOnly = $derived(!showGenerateWithAgent && !showAgentOnly && !showFinish);
 
   interface ActionItem {
     label: string;
@@ -118,6 +100,19 @@
   }
 
   let actionConfig = $derived.by(() => {
+    // needs_review plans and taskless epics: show "Finish" as primary button
+    let showFinish = plan.displayStatus === 'needs_review' || isTasklessEpic;
+
+    // Plans with incomplete tasks: show single "Run Agent" button
+    let showAgentOnly = hasTasks && hasIncompleteTasks && !isIneligible && !showFinish;
+    // Plans without tasks: show "Generate" as primary + "Run Agent" in dropdown
+    let showGenerateWithAgent = !hasTasks && !isIneligible && !showFinish;
+
+    // done plans with pending finalization work: show "Finish" in dropdown
+    // Use raw status (not displayStatus) since recently-done plans render as 'recently_done'
+    let showFinishInDropdown =
+      !isTasklessEpic && plan.status === 'done' && plan.needsFinishExecutor;
+
     const chatItem: ActionItem = {
       label: 'Chat',
       startingLabel: 'Starting…',
@@ -169,11 +164,11 @@
     let menuItems: ActionItem[] = [];
 
     if (showFinish) {
-      primary = finishItem;
+      primary = finishNoMarkDoneItem;
       menuItems.push(chatItem);
       if (isEligibleForRebase) menuItems.push(rebaseItem);
       if (plan.needsFinishExecutor) {
-        menuItems.push(finishNoMarkDoneItem);
+        menuItems.push(finishItem);
       }
     } else if (showAgentOnly) {
       primary = agentItem;
@@ -189,10 +184,10 @@
       primary = chatItem;
       if (isEligibleForRebase) menuItems.push(rebaseItem);
       if (showFinishInDropdown) {
-        menuItems.push(finishItem);
         if (plan.needsFinishExecutor) {
           menuItems.push(finishNoMarkDoneItem);
         }
+        menuItems.push(finishItem);
       }
     }
 
