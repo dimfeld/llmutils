@@ -20,7 +20,64 @@ vi.mock('$lib/server/init.js', () => ({
   }),
 }));
 
-import { convertThreadToTask } from './review_thread_actions.remote.js';
+const { addReplyToReviewThreadMock, resolveReviewThreadMock } = vi.hoisted(() => ({
+  addReplyToReviewThreadMock: vi.fn<(threadId: string, body: string) => Promise<boolean>>(),
+  resolveReviewThreadMock: vi.fn<(threadId: string) => Promise<boolean>>(),
+}));
+
+vi.mock('$common/github/pull_requests.js', () => ({
+  addReplyToReviewThread: addReplyToReviewThreadMock,
+  resolveReviewThread: resolveReviewThreadMock,
+}));
+
+import {
+  convertThreadToTask,
+  replyToThread,
+  resolveThread,
+} from './review_thread_actions.remote.js';
+
+function seedPlanWithThread(options: {
+  projectId: number;
+  planUuid: string;
+  planId: number;
+  status?: PlanSchema['status'];
+  tasks?: Array<{ title: string; description: string; done?: boolean }>;
+  thread: StoredPrReviewThreadInput;
+  pullRequest?: string[];
+  createPlanPrLink?: boolean;
+}) {
+  const prUrl = options.pullRequest?.[0] ?? 'https://github.com/owner/repo/pull/42';
+
+  upsertPlan(currentDb, options.projectId, {
+    uuid: options.planUuid,
+    planId: options.planId,
+    title: `Plan ${options.planId}`,
+    goal: 'Test plan',
+    details: 'Test fixture',
+    status: options.status ?? 'pending',
+    tasks: options.tasks ?? [],
+    pullRequest: options.pullRequest,
+  });
+
+  const prStatus = upsertPrStatus(currentDb, {
+    prUrl,
+    owner: 'owner',
+    repo: 'repo',
+    prNumber: 42,
+    state: 'OPEN',
+    draft: false,
+    lastFetchedAt: new Date().toISOString(),
+    reviewThreads: [options.thread],
+  });
+
+  if (options.createPlanPrLink !== false) {
+    currentDb
+      .prepare(`INSERT INTO plan_pr (plan_uuid, pr_status_id, source) VALUES (?, ?, 'explicit')`)
+      .run(options.planUuid, prStatus.status.id);
+  }
+
+  return { prStatusId: prStatus.status.id };
+}
 
 describe('convertThreadToTask', () => {
   let tempDir: string;
@@ -33,6 +90,8 @@ describe('convertThreadToTask', () => {
   beforeEach(() => {
     currentDb = openDatabase(path.join(tempDir, `${crypto.randomUUID()}-${DATABASE_FILENAME}`));
     projectId = getOrCreateProject(currentDb, 'repo-review-thread-actions').id;
+    addReplyToReviewThreadMock.mockReset();
+    resolveReviewThreadMock.mockReset();
   });
 
   afterEach(() => {
@@ -42,49 +101,6 @@ describe('convertThreadToTask', () => {
   afterAll(async () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
-
-  function seedPlanWithThread(options: {
-    planUuid: string;
-    planId: number;
-    status?: PlanSchema['status'];
-    tasks?: Array<{ title: string; description: string; done?: boolean }>;
-    thread: StoredPrReviewThreadInput;
-    pullRequest?: string[];
-    createPlanPrLink?: boolean;
-  }) {
-    const prUrl = options.pullRequest?.[0] ?? 'https://github.com/owner/repo/pull/42';
-
-    upsertPlan(currentDb, projectId, {
-      uuid: options.planUuid,
-      planId: options.planId,
-      title: `Plan ${options.planId}`,
-      goal: 'Test plan',
-      details: 'Test fixture',
-      status: options.status ?? 'pending',
-      tasks: options.tasks ?? [],
-      pullRequest: options.pullRequest,
-    });
-
-    const prStatus = upsertPrStatus(currentDb, {
-      prUrl,
-      owner: 'owner',
-      repo: 'repo',
-      prNumber: 42,
-      state: 'OPEN',
-      draft: false,
-      lastFetchedAt: new Date().toISOString(),
-      reviewThreads: [options.thread],
-    });
-
-    // Link PR to plan
-    if (options.createPlanPrLink !== false) {
-      currentDb
-        .prepare(`INSERT INTO plan_pr (plan_uuid, pr_status_id, source) VALUES (?, ?, 'explicit')`)
-        .run(options.planUuid, prStatus.status.id);
-    }
-
-    return { prStatusId: prStatus.status.id };
-  }
 
   test('converts a review thread to a task and marks plan in_progress', async () => {
     const thread: StoredPrReviewThreadInput = {
@@ -107,6 +123,7 @@ describe('convertThreadToTask', () => {
     };
 
     const { prStatusId } = seedPlanWithThread({
+      projectId,
       planUuid: 'plan-thread-convert',
       planId: 300,
       status: 'needs_review',
@@ -149,6 +166,7 @@ describe('convertThreadToTask', () => {
     };
 
     const { prStatusId } = seedPlanWithThread({
+      projectId,
       planUuid: 'plan-thread-append',
       planId: 301,
       tasks: [
@@ -186,6 +204,7 @@ describe('convertThreadToTask', () => {
 
   test('rejects missing thread', async () => {
     const { prStatusId } = seedPlanWithThread({
+      projectId,
       planUuid: 'plan-no-thread',
       planId: 302,
       thread: {
@@ -278,6 +297,7 @@ describe('convertThreadToTask', () => {
     };
 
     const { prStatusId } = seedPlanWithThread({
+      projectId,
       planUuid: 'plan-duplicate-thread',
       planId: 305,
       thread,
@@ -308,6 +328,7 @@ describe('convertThreadToTask', () => {
   test('allows conversion via plan pull_request fallback without a plan_pr row', async () => {
     const prUrl = 'https://github.com/owner/repo/pull/142';
     const { prStatusId } = seedPlanWithThread({
+      projectId,
       planUuid: 'plan-pull-request-fallback',
       planId: 306,
       pullRequest: [prUrl],
@@ -343,6 +364,7 @@ describe('convertThreadToTask', () => {
 
   test('rejects resolved thread conversion', async () => {
     const { prStatusId } = seedPlanWithThread({
+      projectId,
       planUuid: 'plan-resolved-thread',
       planId: 307,
       thread: {
@@ -406,6 +428,7 @@ describe('convertThreadToTask', () => {
     };
 
     const { prStatusId } = seedPlanWithThread({
+      projectId,
       planUuid: 'plan-source-marker-duplicate',
       planId: 308,
       thread: firstThread,
@@ -469,6 +492,7 @@ describe('convertThreadToTask', () => {
     };
 
     const { prStatusId } = seedPlanWithThread({
+      projectId,
       planUuid: 'plan-already-progress',
       planId: 303,
       status: 'in_progress',
@@ -483,5 +507,158 @@ describe('convertThreadToTask', () => {
 
     const plan = getPlanByUuid(currentDb, 'plan-already-progress');
     expect(plan?.status).toBe('in_progress');
+  });
+});
+
+describe('resolveThread', () => {
+  let tempDir: string;
+  let projectId: number;
+
+  beforeAll(async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-review-thread-resolve-remote-test-'));
+  });
+
+  beforeEach(() => {
+    currentDb = openDatabase(path.join(tempDir, `${crypto.randomUUID()}-${DATABASE_FILENAME}`));
+    projectId = getOrCreateProject(currentDb, 'repo-review-thread-resolve').id;
+    addReplyToReviewThreadMock.mockReset();
+    resolveReviewThreadMock.mockReset();
+  });
+
+  afterEach(() => {
+    currentDb.close(false);
+  });
+
+  afterAll(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  test('resolves a thread and updates the local cache row', async () => {
+    const { prStatusId } = seedPlanWithThread({
+      projectId,
+      planUuid: 'plan-resolve-thread',
+      planId: 309,
+      thread: {
+        threadId: 'PRRT_resolve_me',
+        path: 'src/resolve.ts',
+        line: 11,
+        isResolved: false,
+        isOutdated: false,
+        comments: [],
+      },
+    });
+    resolveReviewThreadMock.mockResolvedValue(true);
+
+    await expect(
+      invokeCommand(resolveThread, {
+        prStatusId,
+        threadId: 'PRRT_resolve_me',
+      })
+    ).resolves.toEqual({ success: true });
+
+    expect(resolveReviewThreadMock).toHaveBeenCalledWith('PRRT_resolve_me');
+    expect(
+      currentDb
+        .prepare(
+          `SELECT is_resolved FROM pr_review_thread WHERE pr_status_id = ? AND thread_id = ?`
+        )
+        .get(prStatusId, 'PRRT_resolve_me')
+    ).toEqual({ is_resolved: 1 });
+  });
+
+  test('returns success false when GitHub resolve fails', async () => {
+    const { prStatusId } = seedPlanWithThread({
+      projectId,
+      planUuid: 'plan-resolve-thread-fail',
+      planId: 310,
+      thread: {
+        threadId: 'PRRT_resolve_fail',
+        path: 'src/resolve-fail.ts',
+        line: 14,
+        isResolved: false,
+        isOutdated: false,
+        comments: [],
+      },
+    });
+    resolveReviewThreadMock.mockResolvedValue(false);
+
+    await expect(
+      invokeCommand(resolveThread, {
+        prStatusId,
+        threadId: 'PRRT_resolve_fail',
+      })
+    ).resolves.toEqual({ success: false });
+
+    expect(
+      currentDb
+        .prepare(
+          `SELECT is_resolved FROM pr_review_thread WHERE pr_status_id = ? AND thread_id = ?`
+        )
+        .get(prStatusId, 'PRRT_resolve_fail')
+    ).toEqual({ is_resolved: 0 });
+  });
+
+  test('rejects missing local review thread after GitHub resolve succeeds', async () => {
+    const { prStatusId } = seedPlanWithThread({
+      projectId,
+      planUuid: 'plan-resolve-thread-missing',
+      planId: 311,
+      thread: {
+        threadId: 'PRRT_resolve_missing',
+        path: 'src/missing.ts',
+        line: 20,
+        isResolved: false,
+        isOutdated: false,
+        comments: [],
+      },
+    });
+    currentDb
+      .prepare(`DELETE FROM pr_review_thread WHERE pr_status_id = ? AND thread_id = ?`)
+      .run(prStatusId, 'PRRT_resolve_missing');
+    resolveReviewThreadMock.mockResolvedValue(true);
+
+    await expect(
+      invokeCommand(resolveThread, {
+        prStatusId,
+        threadId: 'PRRT_resolve_missing',
+      })
+    ).rejects.toMatchObject({
+      status: 404,
+      body: { message: 'Review thread not found' },
+    });
+  });
+});
+
+describe('replyToThread', () => {
+  beforeEach(() => {
+    addReplyToReviewThreadMock.mockReset();
+    resolveReviewThreadMock.mockReset();
+  });
+
+  test('posts a reply to the GitHub review thread', async () => {
+    addReplyToReviewThreadMock.mockResolvedValue(true);
+
+    await expect(
+      invokeCommand(replyToThread, {
+        threadId: 'PRRT_reply_me',
+        body: 'Fixed in the latest commit.',
+      })
+    ).resolves.toEqual({ success: true });
+
+    expect(addReplyToReviewThreadMock).toHaveBeenCalledWith(
+      'PRRT_reply_me',
+      'Fixed in the latest commit.'
+    );
+  });
+
+  test('returns success false when GitHub reply fails', async () => {
+    addReplyToReviewThreadMock.mockResolvedValue(false);
+
+    await expect(
+      invokeCommand(replyToThread, {
+        threadId: 'PRRT_reply_fail',
+        body: 'Attempted reply.',
+      })
+    ).resolves.toEqual({ success: false });
   });
 });

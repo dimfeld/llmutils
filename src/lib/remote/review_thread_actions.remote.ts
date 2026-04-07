@@ -3,6 +3,7 @@ import { error } from '@sveltejs/kit';
 import * as z from 'zod';
 
 import { getServerContext } from '$lib/server/init.js';
+import { addReplyToReviewThread, resolveReviewThread } from '$common/github/pull_requests.js';
 import { createTaskFromReviewThread } from '$tim/commands/review.js';
 import { getPlanByUuid } from '$tim/db/plan.js';
 import type {
@@ -17,6 +18,16 @@ const convertThreadToTaskSchema = z.object({
   planUuid: z.string().min(1),
   prStatusId: z.number().int(),
   threadId: z.string().min(1),
+});
+
+const resolveThreadSchema = z.object({
+  prStatusId: z.number().int(),
+  threadId: z.string().min(1),
+});
+
+const replyToThreadSchema = z.object({
+  threadId: z.string().min(1),
+  body: z.string().trim().min(1),
 });
 
 export const convertThreadToTask = command(
@@ -133,3 +144,41 @@ export const convertThreadToTask = command(
     }).immediate();
   }
 );
+
+export const resolveThread = command(resolveThreadSchema, async ({ prStatusId, threadId }) => {
+  const { db } = await getServerContext();
+  const success = await resolveReviewThread(threadId);
+  if (!success) {
+    return { success: false };
+  }
+
+  db.transaction(() => {
+    const threadExists = db
+      .prepare(
+        `
+          SELECT 1
+          FROM pr_review_thread
+          WHERE pr_status_id = ? AND thread_id = ?
+        `
+      )
+      .get(prStatusId, threadId);
+    if (!threadExists) {
+      error(404, 'Review thread not found');
+    }
+
+    db.prepare(
+      `
+        UPDATE pr_review_thread
+        SET is_resolved = 1
+        WHERE pr_status_id = ? AND thread_id = ?
+      `
+    ).run(prStatusId, threadId);
+  }).immediate();
+
+  return { success: true };
+});
+
+export const replyToThread = command(replyToThreadSchema, async ({ threadId, body }) => {
+  const success = await addReplyToReviewThread(threadId, body);
+  return { success };
+});

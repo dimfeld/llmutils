@@ -77,7 +77,7 @@ describe('PrReviewThreadList', () => {
     expect(body).toContain('Resolved');
   });
 
-  test('renders Convert to Task only for unresolved threads', async () => {
+  test('renders unresolved thread actions only for unresolved threads', async () => {
     const { body } = await render(PrReviewThreadList, {
       props: {
         prUrl: 'https://github.com/owner/repo/pull/42',
@@ -90,10 +90,14 @@ describe('PrReviewThreadList', () => {
     });
 
     expect(body).toContain('Convert to Task');
+    expect(body).toContain('>Resolve<');
+    expect(body).toContain('>Reply<');
     expect(body.match(/Convert to Task/g) ?? []).toHaveLength(1);
+    expect(body.match(/>Resolve</g) ?? []).toHaveLength(1);
+    expect(body.match(/>Reply</g) ?? []).toHaveLength(1);
   });
 
-  test('does not render Convert to Task when all threads are resolved', async () => {
+  test('does not render unresolved thread actions when all threads are resolved', async () => {
     const { body } = await render(PrReviewThreadList, {
       props: {
         prUrl: 'https://github.com/owner/repo/pull/42',
@@ -106,5 +110,21 @@ describe('PrReviewThreadList', () => {
     });
 
     expect(body).not.toContain('Convert to Task');
+    expect(body).not.toContain('>Resolve<');
+    expect(body).not.toContain('>Reply<');
+    expect(body).not.toContain('Reply to review thread');
+  });
+
+  test('does not render the reply form by default', async () => {
+    const { body } = await render(PrReviewThreadList, {
+      props: {
+        prUrl: 'https://github.com/owner/repo/pull/42',
+        planUuid: 'plan-uuid-1',
+        threads: [makeThread({ id: 1, is_resolved: 0 })],
+      },
+    });
+
+    expect(body).not.toContain('<textarea');
+    expect(body).not.toContain('Send');
   });
 });
