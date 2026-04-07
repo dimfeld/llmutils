@@ -93,8 +93,8 @@ export async function handleFinishCommand(
   }
 
   const globalOpts = command.parent.opts();
-  const config = await loadEffectiveConfig(globalOpts.config);
   const repoRoot = await resolveRepoRootForPlanArg(planArg, process.cwd(), globalOpts.config);
+  const config = await loadEffectiveConfig(globalOpts.config, { cwd: repoRoot });
   const resolvedPlan = await resolvePlanFromDbOrSyncFile(planArg, repoRoot, repoRoot);
   const plan = resolvedPlan.plan;
 
@@ -197,60 +197,69 @@ export async function handleFinishCommand(
         terminalInput: terminalInputEnabled,
       };
 
-      let docsError: unknown = null;
-      if (requirements.needsDocs) {
-        try {
-          await runUpdateDocs(finishTarget, config, runOptions);
-          plan.docsUpdatedAt = new Date().toISOString();
-        } catch (error) {
-          warn(
-            `Documentation update failed for plan ${plan.id ?? planArg}: ${error instanceof Error ? error.message : String(error)}`
-          );
-          docsError = error;
-        }
-      }
-
-      let lessonsError: unknown = null;
-      if (requirements.needsLessons) {
-        try {
-          const applied = await runUpdateLessons(finishTarget, config, runOptions);
-          if (applied) {
-            plan.lessonsAppliedAt = new Date().toISOString();
+      let executionError: unknown = null;
+      try {
+        let docsError: unknown = null;
+        if (requirements.needsDocs) {
+          try {
+            await runUpdateDocs(finishTarget, config, runOptions);
+            plan.docsUpdatedAt = new Date().toISOString();
+          } catch (error) {
+            warn(
+              `Documentation update failed for plan ${plan.id ?? planArg}: ${error instanceof Error ? error.message : String(error)}`
+            );
+            docsError = error;
           }
-        } catch (error) {
-          warn(
-            `Lessons update failed for plan ${plan.id ?? planArg}: ${error instanceof Error ? error.message : String(error)}`
+        }
+
+        let lessonsError: unknown = null;
+        if (requirements.needsLessons) {
+          try {
+            const applied = await runUpdateLessons(finishTarget, config, runOptions);
+            if (applied) {
+              plan.lessonsAppliedAt = new Date().toISOString();
+            }
+          } catch (error) {
+            warn(
+              `Lessons update failed for plan ${plan.id ?? planArg}: ${error instanceof Error ? error.message : String(error)}`
+            );
+            lessonsError = error;
+          }
+        }
+
+        const failedSteps: string[] = [];
+        if (docsError) {
+          failedSteps.push('documentation update');
+        }
+        if (lessonsError) {
+          failedSteps.push('lessons update');
+        }
+        const hasFailures = failedSteps.length > 0;
+
+        await persistPlan(plan, currentPlanFile || null, repoRoot, { markDone: !hasFailures });
+
+        if (!hasFailures) {
+          await removePlanAssignment(plan, currentBaseDir);
+          if (plan.parent) {
+            await checkAndMarkParentDone(plan.parent, config, { baseDir: currentBaseDir });
+          }
+        }
+
+        if (hasFailures) {
+          executionError = new Error(
+            `Failed to finalize plan ${plan.id ?? planArg}: ${failedSteps.join(' and ')} failed.`
           );
-          lessonsError = error;
+        }
+      } catch (error) {
+        executionError = error;
+      } finally {
+        if (roundTripContext) {
+          await runPostExecutionWorkspaceSync(roundTripContext, 'finish plan finalization');
         }
       }
 
-      const failedSteps: string[] = [];
-      if (docsError) {
-        failedSteps.push('documentation update');
-      }
-      if (lessonsError) {
-        failedSteps.push('lessons update');
-      }
-      const hasFailures = failedSteps.length > 0;
-
-      await persistPlan(plan, currentPlanFile || null, repoRoot, { markDone: !hasFailures });
-
-      if (!hasFailures) {
-        await removePlanAssignment(plan, currentBaseDir);
-        if (plan.parent) {
-          await checkAndMarkParentDone(plan.parent, config, { baseDir: currentBaseDir });
-        }
-      }
-
-      if (roundTripContext) {
-        await runPostExecutionWorkspaceSync(roundTripContext, 'finish plan finalization');
-      }
-
-      if (hasFailures) {
-        throw new Error(
-          `Failed to finalize plan ${plan.id ?? planArg}: ${failedSteps.join(' and ')} failed.`
-        );
+      if (executionError) {
+        throw executionError;
       }
     },
   });

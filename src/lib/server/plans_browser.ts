@@ -11,10 +11,18 @@ import {
   type EnrichedPlan,
 } from './db_queries.js';
 
-async function loadFinishConfigForProject(db: Database, projectId: number): Promise<FinishConfig> {
+export async function loadFinishConfigForProject(
+  db: Database,
+  projectId: number
+): Promise<FinishConfig> {
   const project = getProjectById(db, projectId);
-  const cwd = project?.last_git_root ?? undefined;
-  const config = await loadEffectiveConfig(undefined, { cwd });
+  if (!project?.last_git_root) {
+    // Without a known git root, we can't resolve the repo-level config.
+    // Default conservatively: assume docs/lessons may be needed so the UI
+    // never silently skips required finalization work.
+    return { updateDocsMode: 'after-completion', applyLessons: true };
+  }
+  const config = await loadEffectiveConfig(undefined, { cwd: project.last_git_root });
   return {
     updateDocsMode: config.updateDocs?.mode,
     applyLessons: config.updateDocs?.applyLessons,

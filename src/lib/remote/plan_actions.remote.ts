@@ -25,6 +25,7 @@ import { removePlanAssignment } from '$tim/assignments/remove_plan_assignment.js
 import { loadEffectiveConfig } from '$tim/configLoader.js';
 import { getPlanByUuid } from '$tim/db/plan.js';
 import { getProjectById } from '$tim/db/project.js';
+import { withPlanAutoSync } from '$tim/plan_materialize.js';
 import { checkAndMarkParentDone } from '$tim/plans/parent_cascade.js';
 import { resolvePlanFromDb, writePlanFile } from '$tim/plans.js';
 
@@ -137,8 +138,13 @@ async function launchTimCommand(
 
 async function loadProjectFinishConfig(db: Database, projectId: number): Promise<FinishConfig> {
   const project = getProjectById(db, projectId);
-  const cwd = project?.last_git_root ?? undefined;
-  const config = await loadEffectiveConfig(undefined, { cwd });
+  if (!project?.last_git_root) {
+    // Without a known git root, we can't resolve the repo-level config.
+    // Default conservatively: assume docs/lessons may be needed so the UI
+    // never silently skips required finalization work.
+    return { updateDocsMode: 'after-completion', applyLessons: true };
+  }
+  const config = await loadEffectiveConfig(undefined, { cwd: project.last_git_root });
   return {
     updateDocsMode: config.updateDocs?.mode,
     applyLessons: config.updateDocs?.applyLessons,
@@ -291,21 +297,22 @@ export const finishPlanQuick = command(finishPlanQuickSchema, async ({ planUuid 
 
   const project = getProjectById(db, plan.projectId);
   const repoRoot = project?.last_git_root ?? process.cwd();
-  const resolved = await resolvePlanFromDb(plan.planId, repoRoot);
-  const planData = resolved.plan;
   const effectiveConfig = await loadEffectiveConfig(undefined, { cwd: repoRoot });
 
-  // Note: We use writePlanFile directly (not withPlanAutoSync) since this only runs when
-  // no executor work is needed — the plan is at a terminal-ish state (needs_review/done)
-  // so unsaved file edits are unlikely and the risk of overwriting is minimal.
-  planData.status = 'done';
-  planData.updatedAt = new Date().toISOString();
-  await writePlanFile(resolved.planPath ?? null, planData, { cwdForIdentity: repoRoot });
+  // Use withPlanAutoSync to merge any user edits from the materialized plan file
+  // before writing the status change, avoiding silent data loss.
+  await withPlanAutoSync(plan.planId, repoRoot, async () => {
+    const resolved = await resolvePlanFromDb(plan.planId, repoRoot);
+    const planData = resolved.plan;
+    planData.status = 'done';
+    planData.updatedAt = new Date().toISOString();
+    await writePlanFile(resolved.planPath ?? null, planData, { cwdForIdentity: repoRoot });
 
-  await removePlanAssignment(planData, repoRoot);
-  if (planData.parent) {
-    await checkAndMarkParentDone(planData.parent, effectiveConfig, { baseDir: repoRoot });
-  }
+    await removePlanAssignment(planData, repoRoot);
+    if (planData.parent) {
+      await checkAndMarkParentDone(planData.parent, effectiveConfig, { baseDir: repoRoot });
+    }
+  });
 
   return { status: 'done' as const };
 });
