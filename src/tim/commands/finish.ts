@@ -41,6 +41,10 @@ export interface FinishCommandOptions {
   applyLessons?: boolean;
 }
 
+function isTasklessEpic(plan: Pick<PlanSchema, 'epic' | 'tasks'>): boolean {
+  return plan.epic === true && plan.tasks.length === 0;
+}
+
 export function getFinishRequirements(
   plan: Pick<PlanSchema, 'docsUpdatedAt' | 'lessonsAppliedAt'>,
   config: Pick<TimConfig, 'updateDocs'>,
@@ -58,7 +62,13 @@ export function getFinishRequirements(
   };
 }
 
-export function isPlanReadyToFinish(plan: Pick<PlanSchema, 'status' | 'tasks'>): boolean {
+export function isPlanReadyToFinish(
+  plan: Pick<PlanSchema, 'status' | 'tasks' | 'epic'>
+): boolean {
+  if (isTasklessEpic(plan)) {
+    return true;
+  }
+
   if (plan.status === 'needs_review' || plan.status === 'done') {
     return true;
   }
@@ -106,8 +116,9 @@ export async function handleFinishCommand(
 
   const requirements = getFinishRequirements(plan, config, options);
   const initialPlanPath = resolvedPlan.planPath ?? null;
+  const directFinish = isTasklessEpic(plan) || !requirements.needsExecutor;
 
-  if (!requirements.needsExecutor) {
+  if (directFinish) {
     await persistPlan(plan, initialPlanPath, repoRoot, { markDone: true });
     await removePlanAssignment(plan, repoRoot);
     if (plan.parent) {

@@ -86,6 +86,7 @@ describe('finish command', () => {
     uuid: '11111111-1111-4111-8111-111111111111',
     title: 'finish plan command',
     status: 'needs_review' as const,
+    epic: false,
     tasks: [{ title: 'done task', description: 'implemented', done: true }],
   };
 
@@ -244,6 +245,34 @@ describe('finish command', () => {
         status: 'done',
         docsUpdatedAt: '2026-04-01T00:00:00.000Z',
         lessonsAppliedAt: '2026-04-02T00:00:00.000Z',
+      }),
+      { cwdForIdentity: '/repo' }
+    );
+  });
+
+  test('taskless epics always take the direct finish path', async () => {
+    resolvePlanFromDbOrSyncFileSpy.mockResolvedValue({
+      plan: {
+        ...basePlan,
+        status: 'pending',
+        epic: true,
+        tasks: [],
+      },
+      planPath: '/repo/.tim/plans/314.plan.md',
+    } as any);
+
+    await handleFinishCommand('314', { workspace: 'finish-task' }, buildCommand());
+
+    expect(runWithHeadlessAdapterIfEnabledSpy).not.toHaveBeenCalled();
+    expect(setupWorkspaceSpy).not.toHaveBeenCalled();
+    expect(runUpdateDocsSpy).not.toHaveBeenCalled();
+    expect(runUpdateLessonsSpy).not.toHaveBeenCalled();
+    expect(writePlanFileSpy).toHaveBeenCalledWith(
+      '/repo/.tim/plans/314.plan.md',
+      expect.objectContaining({
+        status: 'done',
+        epic: true,
+        tasks: [],
       }),
       { cwdForIdentity: '/repo' }
     );
@@ -498,6 +527,15 @@ describe('finish command', () => {
 
     test('rejects in_progress plans with no tasks', () => {
       expect(isPlanReadyToFinish({ status: 'in_progress', tasks: [] } as any)).toBe(false);
+    });
+
+    test('accepts taskless epics regardless of status', () => {
+      expect(isPlanReadyToFinish({ status: 'pending', epic: true, tasks: [] } as any)).toBe(
+        true
+      );
+      expect(isPlanReadyToFinish({ status: 'in_progress', epic: true, tasks: [] } as any)).toBe(
+        true
+      );
     });
   });
 });
