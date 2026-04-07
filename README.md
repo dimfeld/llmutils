@@ -62,6 +62,39 @@ Explicit status changes via `tim set <id> --status done` always go directly to `
 
 When the agent is launched from the web UI (with `--no-terminal-input`), the final review always exits automatically after completion. If the review found issues, they are saved as `reviewIssues` on the plan and the status is set to `needs_review`. The user can then triage review issues from the web UI and re-run the agent to continue.
 
+## Tim Finish
+
+`tim finish <planId>` runs the finalization steps for a completed plan: documentation updates and lessons learned extraction. After running the applicable steps, it sets the plan status to `done`.
+
+The command tracks two fields on the plan: `docsUpdatedAt` (when documentation was last updated) and `lessonsAppliedAt` (when lessons learned were last applied). It only runs whichever steps haven't been done yet, so re-running finish on a partially finalized plan picks up where it left off.
+
+The decision logic:
+- **Docs needed**: `docsUpdatedAt` is null AND `updateDocs.mode` is not `never`
+- **Lessons needed**: `lessonsAppliedAt` is null AND `applyLessons` is true
+- If either step is needed, the command sets up a workspace and headless adapter (like `tim agent`)
+- If neither step is needed, it skips workspace/headless setup and just transitions the status to `done`
+
+```bash
+tim finish 42                              # Finish plan 42
+tim finish 42 --auto-workspace             # Use auto-workspace selection
+tim finish 42 --executor claude-code       # Specify executor
+tim finish 42 --apply-lessons              # Force-enable lessons
+```
+
+In the web UI, "Finish" is the primary action button for `needs_review` plans. For `done` plans with pending finalization work (docs or lessons not yet run), "Finish" appears as a secondary action in the dropdown menu. If no executor work is needed, clicking "Finish" instantly transitions the plan to `done` without spawning a process.
+
+### Manual Mode
+
+The `updateDocs.mode` config option accepts a `manual` value. When set to `manual`, the agent command skips both documentation updates and lessons learned entirely, leaving them for the `finish` command. This is useful when you want to defer finalization to a separate step rather than running it at the end of each agent session.
+
+```yaml
+# tim.yml
+updateDocs:
+  mode: manual  # defer docs and lessons to `tim finish`
+```
+
+The `manual` mode overrides `applyLessons` in the agent context — both docs and lessons are skipped. The `applyLessons` setting still controls whether lessons run during `tim finish`.
+
 ## PR Status Monitoring
 
 `tim pr` is a subcommand namespace for GitHub PR operations:
@@ -218,7 +251,7 @@ lifecycle:
 
 ## Embedded Session Server
 
-Tim long-running commands (`agent`, `generate`, `chat`, `rebase`, `review`, `run-prompt`) automatically start an embedded WebSocket server that allows external clients (such as the tim web interface) to connect and monitor the session in real time. Each process advertises itself via a session info file in `~/.cache/tim/sessions/` (respects `XDG_CACHE_HOME`), enabling discovery by the web UI or other tools.
+Tim long-running commands (`agent`, `generate`, `chat`, `finish`, `rebase`, `review`, `run-prompt`) automatically start an embedded WebSocket server that allows external clients (such as the tim web interface) to connect and monitor the session in real time. Each process advertises itself via a session info file in `~/.cache/tim/sessions/` (respects `XDG_CACHE_HOME`), enabling discovery by the web UI or other tools.
 
 The tim web interface discovers running agent processes by scanning the session directory and connects to their embedded servers as a WebSocket client. Agents do not need to know the GUI's address and no longer open a client connection back to tim-gui.
 

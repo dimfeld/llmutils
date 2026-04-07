@@ -67,7 +67,7 @@ Actionable PR data is loaded client-side via `getActionablePrs` query in `src/li
 
 Key types:
 
-- `PlanAttentionItem` — groups multiple reasons per plan: `waiting_for_input`, `needs_review`, `agent_finished`. Agent finished = offline session linked to `in_progress` plan still in session manager memory (restricted to agent/generate/chat commands).
+- `PlanAttentionItem` — groups multiple reasons per plan: `waiting_for_input`, `needs_review`, `agent_finished`. Agent finished = offline session linked to `in_progress` plan still in session manager memory (restricted to agent/generate/chat commands). Includes `docsUpdatedAt`, `lessonsAppliedAt`, and `needsFinishExecutor` fields for determining Finish button behavior.
 - `PrAttentionItem` — per-PR: `ready_to_merge`, `checks_failing`, `changes_requested`, `review_requested`.
 - `ActionablePr` — type for PR actionability data (defined here for the remote query to import).
 
@@ -84,7 +84,7 @@ Server data renders immediately. A subtle "Connecting to sessions..." indicator 
 ### Components
 
 - `DashboardSection.svelte` — collapsible section with count badge, `▶`/`▼` toggle, Svelte 5 snippet-based content area. `defaultCollapsed` is a one-time initializer, not a live prop. Callers are responsible for not rendering when the section is empty
-- `NeedsAttentionCard.svelte` — plan attention card with plan ID, title, reason badges (Waiting for input, Needs review, Agent finished), and View Session action button. Uses `<a>` for plan navigation + separate `<button>` for actions (no nested interactive elements). Shows project name when `projectId = 'all'`
+- `NeedsAttentionCard.svelte` — plan attention card with plan ID, title, reason badges (Waiting for input, Needs review, Agent finished), and action buttons. Uses `<a>` for plan navigation + separate `<button>` for actions (no nested interactive elements). Shows project name when `projectId = 'all'`. For `needs_review` plans, shows a Finish button that calls `startFinish` (spawning a process) or `finishPlanQuick` (instant status transition) depending on whether executor work is needed
 - `PrAttentionCard.svelte` — PR attention card with PR title/repo as primary identity, action reason badge, check status, linked plan as secondary context. Opens GitHub URL on click
 - `RunningNowRow.svelte` — compact row with command type badge, plan title, workspace name, elapsed time. Selects session before navigating to Sessions tab
 - `ReadyToStartRow.svelte` — plan row with priority badge and inline "Run Agent" button using `startAgent()` from `plan_actions.remote.ts`. Handles launch lock with loading/launched state (30-second success timeout pattern). Tracks launched plan UUID so state resets when list reorders
