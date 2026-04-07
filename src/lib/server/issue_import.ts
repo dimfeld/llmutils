@@ -126,41 +126,36 @@ export async function fetchIssueForImport(
   }
 
   const trimmedIdentifier = identifier.trim();
-  const parsedInput = parseIssueInput(trimmedIdentifier);
-
-  // parseIssueInput doesn't handle GitHub-specific formats like owner/repo#123 or #123.
-  // Pass those through directly to the tracker which can parse them.
-  const isGitHubQualifiedRef =
-    trackerType === 'github' && /^[^/]+\/[^/]+#\d+$/.test(trimmedIdentifier);
-  const isGitHubHashRef = trackerType === 'github' && /^#\d+$/.test(trimmedIdentifier);
-
-  if (!parsedInput && !isGitHubQualifiedRef && !isGitHubHashRef) {
+  if (!trimmedIdentifier) {
     throw new Error(
       'Invalid issue identifier. Enter an issue ID, issue URL, or branch name containing the issue ID.'
     );
   }
 
+  const parsedInput = parseIssueInput(trimmedIdentifier);
+
   const issueTracker = await getIssueTracker(config);
   const supportsHierarchical = Boolean(issueTracker.fetchIssueWithChildren);
 
+  // parseIssueInput handles common formats (bare numbers, URLs, branch names).
+  // If it doesn't recognize the identifier, pass it through directly to the tracker
+  // which supports additional formats (e.g. owner/repo#123, #123, owner/repo/123).
   let trackerIdentifier: string;
-  if (isGitHubQualifiedRef) {
+  if (parsedInput?.isBranchName) {
+    trackerIdentifier = parsedInput.identifier;
+    if (trackerType === 'github' && /^\d+$/.test(trackerIdentifier)) {
+      const repository = await getGitRepository(gitRoot);
+      trackerIdentifier = `${repository}#${trackerIdentifier}`;
+    }
+  } else if (parsedInput) {
     trackerIdentifier = trimmedIdentifier;
-  } else if (isGitHubHashRef) {
-    const repository = await getGitRepository(gitRoot);
-    trackerIdentifier = `${repository}${trimmedIdentifier}`;
-  } else if (parsedInput!.isBranchName) {
-    trackerIdentifier = parsedInput!.identifier;
     if (trackerType === 'github' && /^\d+$/.test(trackerIdentifier)) {
       const repository = await getGitRepository(gitRoot);
       trackerIdentifier = `${repository}#${trackerIdentifier}`;
     }
   } else {
+    // Unrecognized format — pass directly to tracker
     trackerIdentifier = trimmedIdentifier;
-    if (trackerType === 'github' && /^\d+$/.test(trackerIdentifier)) {
-      const repository = await getGitRepository(gitRoot);
-      trackerIdentifier = `${repository}#${trackerIdentifier}`;
-    }
   }
 
   const issueData =

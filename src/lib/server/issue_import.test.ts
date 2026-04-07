@@ -209,30 +209,37 @@ describe('issue_import server helpers', () => {
       expect(nonHierarchicalTracker.fetchIssue).toHaveBeenCalledWith('ABC-1');
     });
 
-    test('throws for invalid identifiers', async () => {
-      vi.mocked(parseIssueInput).mockReturnValue(null);
-
-      await expect(fetchIssueForImport('???', 'single', '/tmp/repo')).rejects.toThrow(
+    test('throws for empty identifiers', async () => {
+      await expect(fetchIssueForImport('', 'single', '/tmp/repo')).rejects.toThrow(
+        'Invalid issue identifier'
+      );
+      await expect(fetchIssueForImport('   ', 'single', '/tmp/repo')).rejects.toThrow(
         'Invalid issue identifier'
       );
     });
 
-    test('passes owner/repo#123 format directly to tracker', async () => {
+    test('passes unrecognized identifiers directly to tracker', async () => {
       vi.mocked(parseIssueInput).mockReturnValue(null);
       vi.mocked(tracker.fetchIssue).mockResolvedValue(makeIssue(123, 'Qualified'));
 
       await fetchIssueForImport('owner/repo#123', 'single', '/tmp/repo');
-
       expect(tracker.fetchIssue).toHaveBeenCalledWith('owner/repo#123');
     });
 
-    test('expands #123 format with repo context', async () => {
+    test('passes #123 format directly to tracker', async () => {
       vi.mocked(parseIssueInput).mockReturnValue(null);
       vi.mocked(tracker.fetchIssue).mockResolvedValue(makeIssue(123, 'Hash ref'));
 
       await fetchIssueForImport('#123', 'single', '/tmp/repo');
+      expect(tracker.fetchIssue).toHaveBeenCalledWith('#123');
+    });
 
-      expect(tracker.fetchIssue).toHaveBeenCalledWith('owner/repo#123');
+    test('passes owner/repo/123 format directly to tracker', async () => {
+      vi.mocked(parseIssueInput).mockReturnValue(null);
+      vi.mocked(tracker.fetchIssue).mockResolvedValue(makeIssue(123, 'Slash ref'));
+
+      await fetchIssueForImport('owner/repo/123', 'single', '/tmp/repo');
+      expect(tracker.fetchIssue).toHaveBeenCalledWith('owner/repo/123');
     });
 
     test('throws when configured tracker is unavailable', async () => {
