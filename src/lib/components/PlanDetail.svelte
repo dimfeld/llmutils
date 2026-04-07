@@ -89,6 +89,9 @@
   let tasksOpen = $derived(plan.taskCounts.done < plan.taskCounts.total);
   let isBlocked = $derived(plan.displayStatus === 'blocked');
   let linkedPr = $derived(plan.prStatuses[0] ?? null);
+  let showFinishCommand = $derived(
+    (plan.status === 'needs_review' || plan.status === 'done') && plan.needsFinishExecutor
+  );
 
   // needs_review plans and taskless epics: show "Finish" as primary button
   let showFinish = $derived(plan.displayStatus === 'needs_review' || isTasklessEpic);
@@ -340,7 +343,7 @@
       : []
   );
 
-  async function handleFinish() {
+  async function handleFinish(markDone = true) {
     startingFinish = true;
     errorMessage = null;
     successMessage = null;
@@ -355,14 +358,18 @@
       }
 
       if (finishAction === 'start') {
-        const result = await startFinish({ planUuid: plan.uuid });
+        const result = await startFinish({ planUuid: plan.uuid, markDone });
         if (result.status === 'already_running') {
           successMessage = {
             text: 'A session is already running for this plan',
             connectionId: result.connectionId,
           };
         } else {
-          successMessage = { text: 'Finish started' };
+          successMessage = {
+            text: markDone
+              ? 'Finish started'
+              : 'Finish started without marking done',
+          };
         }
         setStartedSuccessfully();
       } else if (finishAction === 'quick') {
@@ -576,6 +583,11 @@
                     {startingRebase ? 'Starting Rebase…' : 'Rebase'}
                   </DropdownMenu.Item>
                 {/if}
+                {#if showFinishCommand}
+                  <DropdownMenu.Item onclick={() => handleFinish(false)} disabled={controlsDisabled}>
+                    {startingFinish ? 'Starting Finish without marking done…' : 'Finish without marking done'}
+                  </DropdownMenu.Item>
+                {/if}
               </DropdownMenu.Content>
             </DropdownMenu.Root>
           </ButtonGroup>
@@ -686,6 +698,9 @@
                       <DropdownMenu.Item onclick={handleFinish} disabled={controlsDisabled}>
                         {startingFinish ? 'Starting Finish…' : 'Finish'}
                       </DropdownMenu.Item>
+                      <DropdownMenu.Item onclick={() => handleFinish(false)} disabled={controlsDisabled}>
+                        {startingFinish ? 'Starting Finish without marking done…' : 'Finish without marking done'}
+                      </DropdownMenu.Item>
                     {/if}
                   </DropdownMenu.Content>
                 </DropdownMenu.Root>
@@ -736,6 +751,9 @@
                   <DropdownMenu.Content align="end">
                     <DropdownMenu.Item onclick={handleFinish} disabled={controlsDisabled}>
                       {startingFinish ? 'Starting Finish…' : 'Finish'}
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item onclick={() => handleFinish(false)} disabled={controlsDisabled}>
+                      {startingFinish ? 'Starting Finish without marking done…' : 'Finish without marking done'}
                     </DropdownMenu.Item>
                   </DropdownMenu.Content>
                 </DropdownMenu.Root>

@@ -251,9 +251,10 @@ function isPlanEligibleForFinish(plan: ReturnType<typeof getPlanDetail>): plan i
 
 const startFinishSchema = z.object({
   planUuid: z.string().min(1),
+  markDone: z.boolean().default(true),
 });
 
-export const startFinish = command(startFinishSchema, async ({ planUuid }) => {
+export const startFinish = command(startFinishSchema, async ({ planUuid, markDone }) => {
   const { db } = await getServerContext();
   const planRow = getPlanByUuid(db, planUuid);
   if (!planRow) {
@@ -265,7 +266,7 @@ export const startFinish = command(startFinishSchema, async ({ planUuid }) => {
     planUuid,
     isPlanEligibleForFinish,
     'Plan is not eligible for finish',
-    spawnFinishProcess,
+    (planId, cwd) => spawnFinishProcess(planId, cwd, markDone),
     finishConfig
   );
 });

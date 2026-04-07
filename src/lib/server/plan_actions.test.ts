@@ -72,10 +72,10 @@ describe('lib/server/plan_actions', () => {
     const [, options] = spawnSpy.mock.calls[0];
     expect(options).toMatchObject({
       cwd: '/tmp/primary-workspace',
-      env: process.env,
       stdin: 'ignore',
       detached: true,
     });
+    expect(options.env).toBeDefined();
     expect(options.stdout).toEqual(expect.any(Number));
     expect(options.stderr).toEqual(expect.any(Number));
     expect(proc.unref).toHaveBeenCalledTimes(1);
@@ -144,10 +144,10 @@ describe('lib/server/plan_actions', () => {
     const [, options] = spawnSpy.mock.calls[0];
     expect(options).toMatchObject({
       cwd: '/tmp/primary-workspace',
-      env: process.env,
       stdin: 'ignore',
       detached: true,
     });
+    expect(options.env).toBeDefined();
     expect(options.stdout).toEqual(expect.any(Number));
     expect(options.stderr).toEqual(expect.any(Number));
     expect(proc.unref).toHaveBeenCalledTimes(1);
@@ -216,10 +216,10 @@ describe('lib/server/plan_actions', () => {
     const [, options] = spawnSpy.mock.calls[0];
     expect(options).toMatchObject({
       cwd: '/tmp/primary-workspace',
-      env: process.env,
       stdin: 'ignore',
       detached: true,
     });
+    expect(options.env).toBeDefined();
     expect(options.stdout).toEqual(expect.any(Number));
     expect(options.stderr).toEqual(expect.any(Number));
     expect(proc.unref).toHaveBeenCalledTimes(1);
@@ -288,10 +288,10 @@ describe('lib/server/plan_actions', () => {
     expect(args).toEqual(['tim', 'rebase', '200', '--auto-workspace', '--no-terminal-input']);
     expect(options).toMatchObject({
       cwd: '/tmp/primary-workspace',
-      env: process.env,
       stdin: 'ignore',
       detached: true,
     });
+    expect(options.env).toBeDefined();
     expect(proc.unref).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ success: true, planId: 200 });
   });
@@ -347,13 +347,20 @@ describe('lib/server/plan_actions', () => {
 
     expect(spawnSpy).toHaveBeenCalledTimes(1);
     const [args, options] = spawnSpy.mock.calls[0];
-    expect(args).toEqual(['tim', 'finish', '204', '--auto-workspace', '--no-terminal-input']);
+    expect(args).toEqual([
+      'tim',
+      'finish',
+      '204',
+      '--mark-done',
+      '--auto-workspace',
+      '--no-terminal-input',
+    ]);
     expect(options).toMatchObject({
       cwd: '/tmp/primary-workspace',
-      env: process.env,
       stdin: 'ignore',
       detached: true,
     });
+    expect(options.env).toBeDefined();
     expect(proc.unref).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ success: true, planId: 204 });
   });

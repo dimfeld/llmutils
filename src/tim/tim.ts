@@ -375,6 +375,8 @@ program
     'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
   )
   .option('--base <ref>', 'Base branch or revision to checkout in workspace')
+  .option('--mark-done', 'Mark the plan done after finalization')
+  .option('--no-mark-done', 'Leave the plan status unchanged after finalization')
   .option('--no-workspace-sync', 'Disable automatic workspace round-trip sync')
   .option('--non-interactive', 'Do not prompt for user input (e.g., when clearing stale locks)')
   .option(
@@ -464,9 +466,9 @@ program
   });
 
 program
-  .command('finish <plan>')
-  .description(
-    'Run any remaining documentation and lessons finalization steps, then mark the plan done.'
+.command('finish <plan>')
+.description(
+    'Run any remaining documentation and lessons finalization steps, then mark the plan done by default.'
   )
   .option('-x, --executor <name>', 'The executor to use for finalization steps')
   .option('-m, --model <model>', 'Model to use for the executor')

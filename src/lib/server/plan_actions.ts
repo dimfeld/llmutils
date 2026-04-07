@@ -148,10 +148,17 @@ export async function spawnPrFixProcess(planId: number, cwd: string): Promise<Sp
   );
 }
 
-export async function spawnFinishProcess(planId: number, cwd: string): Promise<SpawnProcessResult> {
+export async function spawnFinishProcess(
+  planId: number,
+  cwd: string,
+  markDone = true
+): Promise<SpawnProcessResult> {
+  const finishArgs = ['finish', String(planId)];
+  finishArgs.push(markDone ? '--mark-done' : '--no-mark-done');
+  finishArgs.push('--auto-workspace', '--no-terminal-input');
   return spawnTimProcess(
     planId,
-    ['finish', String(planId), '--auto-workspace', '--no-terminal-input'],
+    finishArgs,
     cwd
   );
 }

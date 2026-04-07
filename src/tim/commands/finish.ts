@@ -39,6 +39,7 @@ export interface FinishCommandOptions {
   terminalInput?: boolean;
   requireWorkspace?: boolean;
   applyLessons?: boolean;
+  markDone?: boolean;
 }
 
 function isTasklessEpic(plan: Pick<PlanSchema, 'epic' | 'tasks'>): boolean {
@@ -107,6 +108,7 @@ export async function handleFinishCommand(
   const config = await loadEffectiveConfig(globalOpts.config, { cwd: repoRoot });
   const resolvedPlan = await resolvePlanFromDbOrSyncFile(planArg, repoRoot, repoRoot);
   const plan = resolvedPlan.plan;
+  const markDone = options.markDone !== false;
 
   if (!isPlanReadyToFinish(plan)) {
     throw new Error(
@@ -119,10 +121,12 @@ export async function handleFinishCommand(
   const directFinish = isTasklessEpic(plan) || !requirements.needsExecutor;
 
   if (directFinish) {
-    await persistPlan(plan, initialPlanPath, repoRoot, { markDone: true });
-    await removePlanAssignment(plan, repoRoot);
-    if (plan.parent) {
-      await checkAndMarkParentDone(plan.parent, config, { baseDir: repoRoot });
+    await persistPlan(plan, initialPlanPath, repoRoot, { markDone });
+    if (plan.status === 'done') {
+      await removePlanAssignment(plan, repoRoot);
+      if (plan.parent) {
+        await checkAndMarkParentDone(plan.parent, config, { baseDir: repoRoot });
+      }
     }
     return;
   }
@@ -246,9 +250,11 @@ export async function handleFinishCommand(
         }
         const hasFailures = failedSteps.length > 0;
 
-        await persistPlan(plan, currentPlanFile || null, repoRoot, { markDone: !hasFailures });
+        await persistPlan(plan, currentPlanFile || null, repoRoot, {
+          markDone: markDone && !hasFailures,
+        });
 
-        if (!hasFailures) {
+        if (!hasFailures && plan.status === 'done') {
           await removePlanAssignment(plan, currentBaseDir);
           if (plan.parent) {
             await checkAndMarkParentDone(plan.parent, config, { baseDir: currentBaseDir });
@@ -274,5 +280,9 @@ export async function handleFinishCommand(
     },
   });
 
-  log(`Marked plan ${plan.id ?? planArg} as done.`);
+  log(
+    plan.status === 'done'
+      ? `Marked plan ${plan.id ?? planArg} as done.`
+      : `Finished plan ${plan.id ?? planArg} without marking it done.`
+  );
 }
