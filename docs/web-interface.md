@@ -16,11 +16,16 @@ Module-scoped state in SvelteKit server modules is **not** HMR-safe — dev-serv
 
 When broadening server-side behavior (e.g. making a check command-agnostic instead of filtering to specific commands), update all corresponding client-side logic to match. Otherwise the UI will be inconsistent with what the server enforces — for example, a client filtering sessions to `['generate', 'agent']` while the server blocks launches for any command type.
 
+### CLI Code Reuse in Server Context
+
+When reusing code originally written for CLI (same `process.cwd()` as the project), check for implicit cwd dependencies like `getGitRepository()`. These functions silently resolve to the wrong directory in the web server process. Always pass an explicit `cwd` or `gitRoot` (typically from the project's `last_git_root` in the DB) to any function that might resolve paths relative to the working directory.
+
 ### Reactivity Gotchas (Svelte 5)
 
 - `$derived(() => { ... })` wraps the **function object itself**, not the return value. For multi-statement derivations, use `$derived.by(() => { ... })`.
 - SvelteKit **reuses page components** across param-only navigations — local `$state` persists across route changes. Use `afterNavigate` to reset `$state` when needed, though best is to use a "writable derived" when possible.
 - Setting a reactive variable that controls a `disabled` attribute doesn't immediately update the DOM. You must `await tick()` before interacting with the element if the interaction depends on the updated DOM state (e.g., focusing a previously-disabled textarea after setting `sending = false`).
+- **Hidden items with tracked selection state**: When hiding empty content items in the UI but tracking selection by index (e.g., checkbox arrays), ensure the default checked state matches visibility. An item that is hidden but defaults to checked creates an invisible selection that can block form submission or produce unexpected import results. Default `checked` to `true` only when the item has visible content.
 
 ### HTML & Component Gotchas
 
@@ -30,6 +35,7 @@ When broadening server-side behavior (e.g. making a check command-agnostic inste
 
 - SvelteKit's `resolve()` from `$app/paths` enforces typed route parameters — it won't accept dynamic/computed path segments. Use `base` from `$app/paths` + template literals for dynamic paths.
 - SvelteKit reserves filenames starting with `+` in route directories (e.g., `+page.svelte`, `+server.ts`). Test files must not use the `+` prefix — name them without it (e.g., `page.server.test.ts` instead of `+page.server.test.ts`).
+- **Handle parent layout null fallbacks in child routes**: When a parent layout has a documented fallback path (e.g., DB lookup returning `currentProject = null`), child routes that depend on that data must handle the null case with their own DB lookup rather than assuming the parent always provides it. This commonly arises with `currentProject` in project-scoped routes.
 
 ## Architecture
 
@@ -517,6 +523,10 @@ An "Import Issue" link button appears in the plans layout sidebar (`+layout.svel
 - For separate/merged mode: combined tree view with parent content, then each subissue as a top-level checkbox (checked by default) with nested body + comment checkboxes. Unchecking a subissue hides its content
 - "Import" button calls the `importIssue` command
 - On success: redirects to `/projects/[projectId]/plans/[newPlanUuid]`
+
+### Design Principle: Delegate Parsing to the Tracker
+
+Don't enumerate tracker-specific identifier formats (e.g., `owner/repo#123`, `TEAM-123`) in the web layer — let the tracker's own parser handle them. Adding special-case validation creates a maintenance burden and risks the web being narrower than what the tracker actually accepts.
 
 ### Duplicate Detection
 
