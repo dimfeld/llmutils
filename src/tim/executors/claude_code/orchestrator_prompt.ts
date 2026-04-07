@@ -20,9 +20,9 @@ const INPUT_COMBINATION_GUIDANCE =
   '- You can use both `--input-file` and `--input` together. `--input-file` is read first and `--input` is appended afterward.';
 
 function buildInputFileRandomizationGuidance(planId: string): string {
-  return `- If input is large (roughly over 50KB), write it to a temporary file in a temp directory (for example, \`/tmp\` or a \`mktemp\` path) and pass \`--input-file <paths...>\` instead of \`--input\`.
+  return `- If input is large (roughly over 50KB), write it to a temporary file in a temp directory (for example, \`/tmp/claude\` or a \`mktemp\` path) and pass \`--input-file <paths...>\` instead of \`--input\`.
 - When you create an input file for a subagent or reviewer, include the plan ID plus an extra random suffix in the filename so repeated runs on the same plan do not collide with earlier files.
-- Recommended pattern: \`/tmp/tim-${planId}-<purpose>-$(Date.now() % 100000).md\`.
+- Recommended pattern: \`/tmp/claude/tim-${planId}-<purpose>-$(Date.now() % 100000).md\`.
 - Always explicitly pass the full path instead of using "$TMPDIR/filename".
 - You can also pipe input to stdin and use \`--input-file -\`.`;
 }
