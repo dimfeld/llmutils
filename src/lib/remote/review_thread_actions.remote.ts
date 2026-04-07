@@ -3,14 +3,19 @@ import { error } from '@sveltejs/kit';
 import * as z from 'zod';
 
 import { getServerContext } from '$lib/server/init.js';
+import { getPrimaryWorkspacePath } from '$lib/server/db_queries.js';
+import { clearLaunchLock, isPlanLaunching, setLaunchLock } from '$lib/server/launch_lock.js';
+import { spawnPrFixProcess } from '$lib/server/plan_actions.js';
+import { getSessionManager } from '$lib/server/session_context.js';
 import { addReplyToReviewThread, resolveReviewThread } from '$common/github/pull_requests.js';
 import { getGitHubUsername } from '$common/github/user.js';
 import { createTaskFromReviewThread } from '$tim/commands/review.js';
 import { getPlanByUuid } from '$tim/db/plan.js';
-import type {
-  PrReviewThreadCommentRow,
-  PrReviewThreadDetail,
-  PrReviewThreadRow,
+import {
+  getPrStatusForPlan,
+  type PrReviewThreadCommentRow,
+  type PrReviewThreadDetail,
+  type PrReviewThreadRow,
 } from '$tim/db/pr_status.js';
 import { SQL_NOW_ISO_UTC } from '$tim/db/sql_utils.js';
 import { tryCanonicalizePrUrl } from '$common/github/identifiers.js';
@@ -244,3 +249,61 @@ export const replyToThread = command(
     return { success };
   }
 );
+
+const startFixThreadsSchema = z.object({
+  planUuid: z.string().min(1),
+});
+
+export const startFixThreads = command(startFixThreadsSchema, async ({ planUuid }) => {
+  const { db } = await getServerContext();
+
+  const plan = getPlanByUuid(db, planUuid);
+  if (!plan) {
+    error(404, 'Plan not found');
+  }
+
+  // Check for unresolved review threads
+  const prStatuses = getPrStatusForPlan(db, planUuid, undefined, { includeReviewThreads: true });
+  const hasUnresolvedThreads = prStatuses.some((ps) =>
+    ps.reviewThreads?.some((rt) => !rt.thread.is_resolved)
+  );
+  if (!hasUnresolvedThreads) {
+    error(400, 'No unresolved review threads to fix');
+  }
+
+  // Check for active session
+  const activeSession = getSessionManager().hasActiveSessionForPlan(planUuid);
+  if (activeSession.active) {
+    return { status: 'already_running' as const, connectionId: activeSession.connectionId };
+  }
+
+  if (isPlanLaunching(planUuid)) {
+    return { status: 'already_running' as const };
+  }
+
+  const primaryWorkspacePath = getPrimaryWorkspacePath(db, plan.project_id);
+  if (!primaryWorkspacePath) {
+    error(400, 'Project does not have a primary workspace');
+  }
+
+  setLaunchLock(planUuid);
+
+  let result;
+  try {
+    result = await spawnPrFixProcess(plan.plan_id, primaryWorkspacePath);
+  } catch (e) {
+    clearLaunchLock(planUuid);
+    throw e;
+  }
+
+  if (!result.success) {
+    clearLaunchLock(planUuid);
+    error(500, result.error);
+  }
+
+  if (result.earlyExit) {
+    clearLaunchLock(planUuid);
+  }
+
+  return { status: 'started' as const, planId: plan.plan_id };
+});

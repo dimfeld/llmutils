@@ -137,3 +137,11 @@ export async function spawnRebaseProcess(planId: number, cwd: string): Promise<S
     cwd
   );
 }
+
+export async function spawnPrFixProcess(planId: number, cwd: string): Promise<SpawnProcessResult> {
+  return spawnTimProcess(
+    planId,
+    ['pr', 'fix', String(planId), '--all', '--auto-workspace', '--no-terminal-input'],
+    cwd
+  );
+}

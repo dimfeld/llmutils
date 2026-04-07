@@ -5,6 +5,7 @@
     getPrStatus,
     refreshPrStatus,
   } from '$lib/remote/pr_status.remote.js';
+  import { startFixThreads } from '$lib/remote/review_thread_actions.remote.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import { hasRelevantPrUpdate } from '$lib/utils/pr_update_events.js';
   import {
@@ -31,8 +32,33 @@
   let effectivePrs = $derived(prData.prStatuses);
   let uncachedUrls = $derived(prUrls.filter((url) => !statusByUrl.has(url)));
 
+  let hasUnresolvedThreads = $derived(
+    effectivePrs.some((pr) => pr.reviewThreads?.some((rt) => !rt.thread.is_resolved)) ?? false
+  );
+
+  let sessionActiveForPlan = $derived.by(() => {
+    for (const session of sessionManager.sessions.values()) {
+      if (session.status === 'active' && session.sessionInfo.planUuid === planUuid) {
+        return true;
+      }
+    }
+    return false;
+  });
+
   let refreshError = $state<string | null>(null);
   let refreshing = $state(false);
+  let fixStarting = $state(false);
+
+  async function handleStartFix() {
+    fixStarting = true;
+    try {
+      await startFixThreads({ planUuid });
+    } catch (err) {
+      refreshError = `Failed to start fix: ${err}`;
+    } finally {
+      fixStarting = false;
+    }
+  }
 
   async function handleRefresh() {
     await runRefresh(refreshPrStatus);
@@ -79,6 +105,22 @@
       Pull Requests
     </h3>
     <div class="flex items-center gap-1.5">
+      {#if hasUnresolvedThreads}
+        <button
+          onclick={handleStartFix}
+          disabled={refreshing || fixStarting || sessionActiveForPlan}
+          class="rounded px-2 py-0.5 text-xs text-amber-700 hover:bg-amber-50 hover:text-amber-900 disabled:opacity-50 dark:text-amber-400 dark:hover:bg-amber-950/30 dark:hover:text-amber-300"
+          aria-label="Fix all unresolved review threads"
+        >
+          {#if fixStarting}
+            Starting...
+          {:else if sessionActiveForPlan}
+            Session Active
+          {:else}
+            Fix Unresolved
+          {/if}
+        </button>
+      {/if}
       {#if tokenConfigured}
         <button
           onclick={handleFullRefresh}

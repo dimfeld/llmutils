@@ -1455,23 +1455,20 @@ describe('tim/commands/pr', () => {
   });
 
   test('buildReviewThreadFixPrompt uses path only when no line numbers exist', () => {
-    const prompt = buildReviewThreadFixPrompt(
-      { id: 1, title: 'Test' } as any,
-      [
-        {
-          prUrl: 'https://github.com/example/repo/pull/1',
-          thread: createReviewThreadDetail({
-            threadId: 'thread-no-line',
-            path: 'src/config.ts',
-            line: null,
-            originalLine: null,
-            startLine: null,
-            originalStartLine: null,
-            comments: [{ body: 'Missing export.' }],
-          }),
-        },
-      ]
-    );
+    const prompt = buildReviewThreadFixPrompt({ id: 1, title: 'Test' } as any, [
+      {
+        prUrl: 'https://github.com/example/repo/pull/1',
+        thread: createReviewThreadDetail({
+          threadId: 'thread-no-line',
+          path: 'src/config.ts',
+          line: null,
+          originalLine: null,
+          startLine: null,
+          originalStartLine: null,
+          comments: [{ body: 'Missing export.' }],
+        }),
+      },
+    ]);
 
     expect(prompt).toContain('### Thread 1: src/config.ts');
     expect(prompt).not.toContain('src/config.ts:');
@@ -1479,91 +1476,76 @@ describe('tim/commands/pr', () => {
   });
 
   test('buildReviewThreadFixPrompt falls back to original_line when line is null', () => {
-    const prompt = buildReviewThreadFixPrompt(
-      { id: 1, title: 'Test' } as any,
-      [
-        {
-          prUrl: 'https://github.com/example/repo/pull/1',
-          thread: createReviewThreadDetail({
-            threadId: 'thread-orig-line',
-            path: 'src/utils.ts',
-            line: null,
-            originalLine: 55,
-            comments: [{ body: 'Check this.' }],
-          }),
-        },
-      ]
-    );
+    const prompt = buildReviewThreadFixPrompt({ id: 1, title: 'Test' } as any, [
+      {
+        prUrl: 'https://github.com/example/repo/pull/1',
+        thread: createReviewThreadDetail({
+          threadId: 'thread-orig-line',
+          path: 'src/utils.ts',
+          line: null,
+          originalLine: 55,
+          comments: [{ body: 'Check this.' }],
+        }),
+      },
+    ]);
 
     expect(prompt).toContain('### Thread 1: src/utils.ts:55');
     expect(prompt).toContain('**Line:** 55');
   });
 
   test('buildReviewThreadFixPrompt falls back to start_line when line and original_line are null', () => {
-    const prompt = buildReviewThreadFixPrompt(
-      { id: 1, title: 'Test' } as any,
-      [
-        {
-          prUrl: 'https://github.com/example/repo/pull/1',
-          thread: createReviewThreadDetail({
-            threadId: 'thread-start-line',
-            path: 'src/index.ts',
-            line: null,
-            originalLine: null,
-            startLine: 30,
-            comments: [{ body: 'Refactor this.' }],
-          }),
-        },
-      ]
-    );
+    const prompt = buildReviewThreadFixPrompt({ id: 1, title: 'Test' } as any, [
+      {
+        prUrl: 'https://github.com/example/repo/pull/1',
+        thread: createReviewThreadDetail({
+          threadId: 'thread-start-line',
+          path: 'src/index.ts',
+          line: null,
+          originalLine: null,
+          startLine: 30,
+          comments: [{ body: 'Refactor this.' }],
+        }),
+      },
+    ]);
 
     expect(prompt).toContain('### Thread 1: src/index.ts:30');
   });
 
   test('buildReviewThreadFixPrompt shows no comments message when thread has none', () => {
-    const prompt = buildReviewThreadFixPrompt(
-      { id: 1, title: 'Test' } as any,
-      [
-        {
-          prUrl: 'https://github.com/example/repo/pull/1',
-          thread: createReviewThreadDetail({
-            threadId: 'thread-no-comments',
-            path: 'src/empty.ts',
-            line: 1,
-            comments: [],
-          }),
-        },
-      ]
-    );
+    const prompt = buildReviewThreadFixPrompt({ id: 1, title: 'Test' } as any, [
+      {
+        prUrl: 'https://github.com/example/repo/pull/1',
+        thread: createReviewThreadDetail({
+          threadId: 'thread-no-comments',
+          path: 'src/empty.ts',
+          line: 1,
+          comments: [],
+        }),
+      },
+    ]);
 
     expect(prompt).toContain('No comment bodies were captured for this thread.');
   });
 
   test('buildReviewThreadFixPrompt omits diff hunk section when not present', () => {
-    const prompt = buildReviewThreadFixPrompt(
-      { id: 1, title: 'Test' } as any,
-      [
-        {
-          prUrl: 'https://github.com/example/repo/pull/1',
-          thread: createReviewThreadDetail({
-            threadId: 'thread-no-hunk',
-            path: 'src/no_hunk.ts',
-            line: 5,
-            comments: [{ body: 'Review comment.' }],
-          }),
-        },
-      ]
-    );
+    const prompt = buildReviewThreadFixPrompt({ id: 1, title: 'Test' } as any, [
+      {
+        prUrl: 'https://github.com/example/repo/pull/1',
+        thread: createReviewThreadDetail({
+          threadId: 'thread-no-hunk',
+          path: 'src/no_hunk.ts',
+          line: 5,
+          comments: [{ body: 'Review comment.' }],
+        }),
+      },
+    ]);
 
     expect(prompt).not.toContain('```diff');
     expect(prompt).not.toContain('**Diff Hunk:**');
   });
 
   test('buildReviewThreadFixPrompt omits goal line for plan without goal', () => {
-    const prompt = buildReviewThreadFixPrompt(
-      { id: 1, title: 'Test', goal: undefined } as any,
-      []
-    );
+    const prompt = buildReviewThreadFixPrompt({ id: 1, title: 'Test', goal: undefined } as any, []);
 
     expect(prompt).toContain('**Goal:** No goal provided');
   });
@@ -1578,29 +1560,26 @@ describe('tim/commands/pr', () => {
   });
 
   test('buildReviewThreadFixPrompt includes multiple threads from different PRs', () => {
-    const prompt = buildReviewThreadFixPrompt(
-      { id: 1, title: 'Multi-PR Test' } as any,
-      [
-        {
-          prUrl: 'https://github.com/example/repo/pull/10',
-          thread: createReviewThreadDetail({
-            threadId: 'thread-a',
-            path: 'src/a.ts',
-            line: 1,
-            comments: [{ body: 'Fix A.' }],
-          }),
-        },
-        {
-          prUrl: 'https://github.com/example/repo/pull/20',
-          thread: createReviewThreadDetail({
-            threadId: 'thread-b',
-            path: 'src/b.ts',
-            line: 2,
-            comments: [{ body: 'Fix B.' }],
-          }),
-        },
-      ]
-    );
+    const prompt = buildReviewThreadFixPrompt({ id: 1, title: 'Multi-PR Test' } as any, [
+      {
+        prUrl: 'https://github.com/example/repo/pull/10',
+        thread: createReviewThreadDetail({
+          threadId: 'thread-a',
+          path: 'src/a.ts',
+          line: 1,
+          comments: [{ body: 'Fix A.' }],
+        }),
+      },
+      {
+        prUrl: 'https://github.com/example/repo/pull/20',
+        thread: createReviewThreadDetail({
+          threadId: 'thread-b',
+          path: 'src/b.ts',
+          line: 2,
+          comments: [{ body: 'Fix B.' }],
+        }),
+      },
+    ]);
 
     expect(prompt).toContain('### Thread 1: src/a.ts:1');
     expect(prompt).toContain('**PR URL:** https://github.com/example/repo/pull/10');
