@@ -351,6 +351,7 @@ Available tasks:\n\n${taskDescriptions}`,
             model: config.updateDocs?.model,
             baseDir,
             justCompletedTaskIndices,
+            terminalInput,
           });
           const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
           updatedPlanForTimestamp.docsUpdatedAt = new Date().toISOString();
@@ -406,6 +407,7 @@ Available tasks:\n\n${taskDescriptions}`,
               executor: config.updateDocs?.executor,
               model: config.updateDocs?.model,
               baseDir,
+              terminalInput,
             });
             const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
             updatedPlanForTimestamp.docsUpdatedAt = new Date().toISOString();
@@ -515,6 +517,7 @@ Available tasks:\n\n${taskDescriptions}`,
               executor: config.updateDocs?.executor,
               model: config.updateDocs?.model,
               baseDir,
+              terminalInput,
             });
             if (applied) {
               const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
