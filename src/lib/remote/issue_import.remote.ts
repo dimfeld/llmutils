@@ -12,6 +12,28 @@ import {
 import { getProjectById } from '$tim/db/project.js';
 
 const modeSchema = z.enum(['single', 'separate', 'merged']);
+const issueWithCommentsSchema: z.ZodType = z.lazy(() =>
+  z
+    .object({
+      issue: z
+        .object({
+          title: z.string(),
+          htmlUrl: z.string(),
+          number: z.union([z.number(), z.string()]),
+          body: z.string().nullish(),
+        })
+        .passthrough(),
+      comments: z.array(
+        z
+          .object({
+            body: z.string().nullish(),
+          })
+          .passthrough()
+      ),
+      children: z.array(issueWithCommentsSchema).optional(),
+    })
+    .passthrough()
+);
 
 const fetchIssueForImportSchema = z.object({
   identifier: z.string().min(1),
@@ -38,7 +60,7 @@ export const fetchIssueForImport = query(
 const importIssueSchema = z.object({
   projectId: z.number().int().positive(),
   mode: modeSchema,
-  issueData: z.any(),
+  issueData: issueWithCommentsSchema,
   selectedParentContent: z.array(z.number().int().nonnegative()),
   selectedChildIndices: z.array(z.number().int().nonnegative()),
   selectedChildContent: z.record(z.string(), z.array(z.number().int().nonnegative())),
@@ -58,6 +80,9 @@ export const importIssue = command(
     const project = getProjectById(db, projectId);
     if (!project) {
       error(404, 'Project not found');
+    }
+    if (!project.last_git_root) {
+      error(400, 'Project does not have a git root configured');
     }
 
     return createPlansFromIssueOnServer(projectId, issueData, mode as IssueImportMode, {

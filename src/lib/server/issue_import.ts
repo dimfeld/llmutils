@@ -3,6 +3,7 @@ import {
   parseCommandOptionsFromComment,
   type RmprOptions,
 } from '$common/comment_options.js';
+import { getGitRepository } from '$common/git.js';
 import { getAvailableTrackers, getIssueTracker } from '$common/issue_tracker/factory.js';
 import type { IssueWithComments } from '$common/issue_tracker/types.js';
 import { loadEffectiveConfig } from '$tim/configLoader.js';
@@ -112,7 +113,8 @@ export async function fetchIssueForImport(
     throw new Error(`${trackerStatus.displayName} issue tracker is not configured`);
   }
 
-  const parsedInput = parseIssueInput(identifier);
+  const trimmedIdentifier = identifier.trim();
+  const parsedInput = parseIssueInput(trimmedIdentifier);
   if (!parsedInput) {
     throw new Error(
       'Invalid issue identifier. Enter an issue ID, issue URL, or branch name containing the issue ID.'
@@ -122,10 +124,16 @@ export async function fetchIssueForImport(
   const issueTracker = await getIssueTracker(config);
   const supportsHierarchical = Boolean(issueTracker.fetchIssueWithChildren);
 
+  let trackerIdentifier = parsedInput.isBranchName ? parsedInput.identifier : trimmedIdentifier;
+  if (trackerType === 'github' && /^\d+$/.test(trackerIdentifier)) {
+    const repository = await getGitRepository(gitRoot);
+    trackerIdentifier = `${repository}#${trackerIdentifier}`;
+  }
+
   const issueData =
     mode !== 'single' && supportsHierarchical
-      ? await issueTracker.fetchIssueWithChildren!(parsedInput.identifier)
-      : await issueTracker.fetchIssue(parsedInput.identifier);
+      ? await issueTracker.fetchIssueWithChildren!(trackerIdentifier)
+      : await issueTracker.fetchIssue(trackerIdentifier);
 
   return {
     issueData,
@@ -151,19 +159,58 @@ export async function createPlansFromIssue(
   const repoRoot = project.last_git_root;
 
   const children = issueData.children ?? [];
+  const normalizeSelectionIndexes = (indexes: number[], maxIndex: number): number[] => {
+    if (maxIndex < 0) {
+      return [];
+    }
+
+    return [...new Set(indexes)]
+      .filter((index) => Number.isInteger(index) && index >= 0 && index <= maxIndex)
+      .sort((a, b) => a - b);
+  };
+  const normalizedParentContent = normalizeSelectionIndexes(
+    selectedContent.selectedParentContent,
+    issueData.comments.length
+  );
   const selectedChildIndices = [...new Set(selectedContent.selectedChildIndices)]
     .filter((index) => Number.isInteger(index) && index >= 0 && index < children.length)
     .sort((a, b) => a - b);
+  const normalizedChildContent = Object.fromEntries(
+    selectedChildIndices.map((index) => [
+      index,
+      normalizeSelectionIndexes(
+        selectedContent.selectedChildContent[index] ?? [],
+        children[index].comments.length
+      ),
+    ])
+  );
+
+  if (mode === 'single' && normalizedParentContent.length === 0) {
+    throw new Error('Select at least one parent content item to import.');
+  }
+
+  if (mode !== 'single') {
+    const hasSelectedChildContent = selectedChildIndices.some(
+      (index) => (normalizedChildContent[index] ?? []).length > 0
+    );
+    if (normalizedParentContent.length === 0 && !hasSelectedChildContent) {
+      throw new Error('Select at least one parent or subissue content item to import.');
+    }
+    for (const childIndex of selectedChildIndices) {
+      if ((normalizedChildContent[childIndex] ?? []).length === 0) {
+        throw new Error(
+          `Selected subissue ${children[childIndex].issue.number} has no content selected.`
+        );
+      }
+    }
+  }
 
   const pendingWrites: PendingImportedPlanWrite[] = [];
   let parentPlanId = 0;
 
   if (mode === 'single' || selectedChildIndices.length === 0) {
     parentPlanId = await reserveImportedPlanStartId(repoRoot, 1);
-    const parentInstruction = getIssueInstructionData(
-      issueData,
-      selectedContent.selectedParentContent
-    );
+    const parentInstruction = getIssueInstructionData(issueData, normalizedParentContent);
     const parentPlan = createStubPlanFromIssue(parentInstruction, parentPlanId);
     pendingWrites.push({ plan: parentPlan, filePath: null });
   } else if (mode === 'separate') {
@@ -171,10 +218,7 @@ export async function createPlansFromIssue(
     const startId = await reserveImportedPlanStartId(repoRoot, totalPlans);
     parentPlanId = startId;
 
-    const parentInstruction = getIssueInstructionData(
-      issueData,
-      selectedContent.selectedParentContent
-    );
+    const parentInstruction = getIssueInstructionData(issueData, normalizedParentContent);
     const parentPlan = createStubPlanFromIssue(parentInstruction, parentPlanId);
     const childIds: number[] = [];
 
@@ -185,7 +229,7 @@ export async function createPlansFromIssue(
       childIds.push(childPlanId);
       const childInstruction = getIssueInstructionData(
         childIssue,
-        selectedContent.selectedChildContent[childIssueIndex] ?? []
+        normalizedChildContent[childIssueIndex] ?? []
       );
       const childPlan = createStubPlanFromIssue(childInstruction, childPlanId);
       childPlan.parent = parentPlanId;
@@ -196,10 +240,7 @@ export async function createPlansFromIssue(
     pendingWrites.push({ plan: parentPlan, filePath: null });
   } else {
     parentPlanId = await reserveImportedPlanStartId(repoRoot, 1);
-    const parentInstruction = getIssueInstructionData(
-      issueData,
-      selectedContent.selectedParentContent
-    );
+    const parentInstruction = getIssueInstructionData(issueData, normalizedParentContent);
     const parentPlan = createStubPlanFromIssue(parentInstruction, parentPlanId);
     const mergedDetails: string[] = [];
 
@@ -212,7 +253,7 @@ export async function createPlansFromIssue(
       const childIssue = children[childIssueIndex];
       const childInstruction = getIssueInstructionData(
         childIssue,
-        selectedContent.selectedChildContent[childIssueIndex] ?? []
+        normalizedChildContent[childIssueIndex] ?? []
       );
       mergedIssueUrls.add(childIssue.issue.htmlUrl);
       if (!childInstruction.plan.trim()) {
