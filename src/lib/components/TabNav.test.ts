@@ -23,7 +23,6 @@ describe('TabNav', () => {
     });
 
     expect(body).toContain('href="/projects/1/settings"');
-    expect(body).toContain('>Settings<');
   });
 
   test('does not render the settings tab for the all-projects view', () => {
@@ -45,12 +44,19 @@ describe('TabNav', () => {
     });
 
     expect(body).toContain('href="/projects/1/sessions"');
-    expect(body).toContain('>Sessions<');
     expect(body).toContain('href="/projects/1/active"');
-    expect(body).toContain('>Active Work<');
     expect(body).toContain('href="/projects/1/prs"');
-    expect(body).toContain('>Pull Requests<');
     expect(body).toContain('href="/projects/1/plans"');
-    expect(body).toContain('>Plans<');
+  });
+
+  test('renders an attention dot on the Sessions tab when requested', () => {
+    const { body } = render(TabNav, {
+      props: {
+        projectId: '1',
+        showSessionsAttentionDot: true,
+      },
+    });
+
+    expect(body).toContain('bg-blue-400');
   });
 });

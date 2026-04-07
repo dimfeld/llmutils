@@ -2,7 +2,10 @@
   import { page } from '$app/state';
   import { projectUrl } from '$lib/stores/project.svelte.js';
 
-  let { projectId }: { projectId: string } = $props();
+  let {
+    projectId,
+    showSessionsAttentionDot = false,
+  }: { projectId: string; showSessionsAttentionDot?: boolean } = $props();
 
   const baseTabs = [
     { label: 'Sessions', slug: 'sessions' },
@@ -33,7 +36,15 @@
         : 'text-gray-300 hover:bg-white/10 hover:text-white'}"
       aria-current={active ? 'page' : undefined}
     >
-      {tab.label}
+      <span class="relative inline-flex items-start">
+        {tab.label}
+        {#if tab.slug === 'sessions' && showSessionsAttentionDot}
+          <span
+            class="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-blue-400 ring-2 ring-gray-800 dark:ring-gray-900"
+            aria-hidden="true"
+          ></span>
+        {/if}
+      </span>
     </a>
   {/each}
 </nav>

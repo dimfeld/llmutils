@@ -44,6 +44,22 @@
     sessionManager.setProjects(data.projects, data.currentUsername);
   });
 
+  let showSessionsAttentionDot = $derived.by(() => {
+    const currentProjectId = projectId === 'all' ? null : Number(projectId);
+
+    for (const session of sessionManager.sessions.values()) {
+      if (currentProjectId !== null && session.projectId !== currentProjectId) {
+        continue;
+      }
+
+      if (sessionManager.hasSessionAttention(session)) {
+        return true;
+      }
+    }
+
+    return false;
+  });
+
   $effect(() => {
     if (sessionManager.needsAttention) {
       setAppBadge();
@@ -152,7 +168,7 @@
   <header class="flex items-center justify-between bg-gray-800 px-4 py-2 dark:bg-gray-900">
     <a href={resolve('/')} class="text-lg font-semibold text-white">tim</a>
     <div class="flex items-center gap-2">
-      <TabNav {projectId} />
+      <TabNav {projectId} {showSessionsAttentionDot} />
       <button
         type="button"
         class="rounded-md p-1.5 text-gray-300 transition-colors hover:bg-white/10 hover:text-white"
