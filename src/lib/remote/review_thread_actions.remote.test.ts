@@ -49,7 +49,11 @@ describe('convertThreadToTask', () => {
     status?: PlanSchema['status'];
     tasks?: Array<{ title: string; description: string; done?: boolean }>;
     thread: StoredPrReviewThreadInput;
+    pullRequest?: string[];
+    createPlanPrLink?: boolean;
   }) {
+    const prUrl = options.pullRequest?.[0] ?? 'https://github.com/owner/repo/pull/42';
+
     upsertPlan(currentDb, projectId, {
       uuid: options.planUuid,
       planId: options.planId,
@@ -58,10 +62,11 @@ describe('convertThreadToTask', () => {
       details: 'Test fixture',
       status: options.status ?? 'pending',
       tasks: options.tasks ?? [],
+      pullRequest: options.pullRequest,
     });
 
     const prStatus = upsertPrStatus(currentDb, {
-      prUrl: 'https://github.com/owner/repo/pull/42',
+      prUrl,
       owner: 'owner',
       repo: 'repo',
       prNumber: 42,
@@ -72,11 +77,13 @@ describe('convertThreadToTask', () => {
     });
 
     // Link PR to plan
-    currentDb
-      .prepare(
-        `INSERT INTO plan_pr (plan_uuid, pr_status_id, source) VALUES (?, ?, 'explicit')`
-      )
-      .run(options.planUuid, prStatus.status.id);
+    if (options.createPlanPrLink !== false) {
+      currentDb
+        .prepare(
+          `INSERT INTO plan_pr (plan_uuid, pr_status_id, source) VALUES (?, ?, 'explicit')`
+        )
+        .run(options.planUuid, prStatus.status.id);
+    }
 
     return { prStatusId: prStatus.status.id };
   }
@@ -123,6 +130,7 @@ describe('convertThreadToTask', () => {
     expect(tasks[0].title).toBe('Address review: src/auth.ts:42');
     expect(tasks[0].description).toContain('This needs a null check.');
     expect(tasks[0].description).toContain('#discussion_r12345');
+    expect(tasks[0].description).toContain('[source:review-thread:PRRT_thread1]');
     expect(tasks[0].done).toBe(0);
   });
 
@@ -162,6 +170,7 @@ describe('convertThreadToTask', () => {
     expect(tasks).toHaveLength(3);
     expect(tasks[2].task_index).toBe(2);
     expect(tasks[2].title).toBe('Address review: src/utils.ts:10');
+    expect(tasks[2].description).toContain('[source:review-thread:PRRT_thread2]');
   });
 
   test('rejects missing plan', async () => {
@@ -178,37 +187,24 @@ describe('convertThreadToTask', () => {
   });
 
   test('rejects missing thread', async () => {
-    upsertPlan(currentDb, projectId, {
-      uuid: 'plan-no-thread',
+    const { prStatusId } = seedPlanWithThread({
+      planUuid: 'plan-no-thread',
       planId: 302,
-      title: 'Plan 302',
-      goal: 'Test',
-      details: 'Test',
-      status: 'pending',
-      tasks: [],
+      thread: {
+        threadId: 'PRRT_present',
+        path: 'src/existing.ts',
+        line: 1,
+        isResolved: false,
+        isOutdated: false,
+        comments: [],
+      },
     });
-
-    const prStatus = upsertPrStatus(currentDb, {
-      prUrl: 'https://github.com/owner/repo/pull/99',
-      owner: 'owner',
-      repo: 'repo',
-      prNumber: 99,
-      state: 'OPEN',
-      draft: false,
-      lastFetchedAt: new Date().toISOString(),
-      reviewThreads: [],
-    });
-
-    currentDb
-      .prepare(
-        `INSERT INTO plan_pr (plan_uuid, pr_status_id, source) VALUES (?, ?, 'explicit')`
-      )
-      .run('plan-no-thread', prStatus.status.id);
+    currentDb.prepare(`DELETE FROM pr_review_thread WHERE pr_status_id = ?`).run(prStatusId);
 
     await expect(
       invokeCommand(convertThreadToTask, {
         planUuid: 'plan-no-thread',
-        prStatusId: prStatus.status.id,
+        prStatusId,
         threadId: 'PRRT_nonexistent',
       })
     ).rejects.toMatchObject({
@@ -308,6 +304,154 @@ describe('convertThreadToTask', () => {
 
     const tasks = getPlanTasksByUuid(currentDb, 'plan-duplicate-thread');
     expect(tasks).toHaveLength(1);
+    expect(tasks[0].description).toContain('[source:review-thread:PRRT_thread4]');
+  });
+
+  test('allows conversion via plan pull_request fallback without a plan_pr row', async () => {
+    const prUrl = 'https://github.com/owner/repo/pull/142';
+    const { prStatusId } = seedPlanWithThread({
+      planUuid: 'plan-pull-request-fallback',
+      planId: 306,
+      pullRequest: [prUrl],
+      createPlanPrLink: false,
+      thread: {
+        threadId: 'PRRT_fallback',
+        path: 'src/fallback.ts',
+        line: 22,
+        isResolved: false,
+        isOutdated: false,
+        comments: [
+          {
+            commentId: 'IC_fallback',
+            databaseId: 98765,
+            body: 'Fallback linkage should still work.',
+            state: 'SUBMITTED',
+          },
+        ],
+      },
+    });
+
+    await invokeCommand(convertThreadToTask, {
+      planUuid: 'plan-pull-request-fallback',
+      prStatusId,
+      threadId: 'PRRT_fallback',
+    });
+
+    const tasks = getPlanTasksByUuid(currentDb, 'plan-pull-request-fallback');
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].title).toBe('Address review: src/fallback.ts:22');
+    expect(tasks[0].description).toContain('[source:review-thread:PRRT_fallback]');
+  });
+
+  test('rejects resolved thread conversion', async () => {
+    const { prStatusId } = seedPlanWithThread({
+      planUuid: 'plan-resolved-thread',
+      planId: 307,
+      thread: {
+        threadId: 'PRRT_resolved',
+        path: 'src/resolved.ts',
+        line: 7,
+        isResolved: true,
+        isOutdated: false,
+        comments: [
+          {
+            commentId: 'IC_resolved',
+            body: 'This is already resolved.',
+            state: 'SUBMITTED',
+          },
+        ],
+      },
+    });
+
+    await expect(
+      invokeCommand(convertThreadToTask, {
+        planUuid: 'plan-resolved-thread',
+        prStatusId,
+        threadId: 'PRRT_resolved',
+      })
+    ).rejects.toMatchObject({
+      status: 400,
+      body: { message: 'Cannot convert a resolved thread to a task' },
+    });
+  });
+
+  test('detects duplicates by source marker and allows different threads at the same file and line', async () => {
+    const firstThread: StoredPrReviewThreadInput = {
+      threadId: 'PRRT_same_line_1',
+      path: 'src/shared.ts',
+      line: 33,
+      isResolved: false,
+      isOutdated: false,
+      comments: [
+        {
+          commentId: 'IC_same_line_1',
+          databaseId: 30001,
+          body: 'First comment at this line.',
+          state: 'SUBMITTED',
+        },
+      ],
+    };
+    const secondThread: StoredPrReviewThreadInput = {
+      threadId: 'PRRT_same_line_2',
+      path: 'src/shared.ts',
+      line: 33,
+      isResolved: false,
+      isOutdated: false,
+      comments: [
+        {
+          commentId: 'IC_same_line_2',
+          databaseId: 30002,
+          body: 'Second comment at the same line.',
+          state: 'SUBMITTED',
+        },
+      ],
+    };
+
+    const { prStatusId } = seedPlanWithThread({
+      planUuid: 'plan-source-marker-duplicate',
+      planId: 308,
+      thread: firstThread,
+    });
+    upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/owner/repo/pull/42',
+      owner: 'owner',
+      repo: 'repo',
+      prNumber: 42,
+      state: 'OPEN',
+      draft: false,
+      lastFetchedAt: new Date().toISOString(),
+      reviewThreads: [firstThread, secondThread],
+    });
+
+    await invokeCommand(convertThreadToTask, {
+      planUuid: 'plan-source-marker-duplicate',
+      prStatusId,
+      threadId: 'PRRT_same_line_1',
+    });
+
+    await expect(
+      invokeCommand(convertThreadToTask, {
+        planUuid: 'plan-source-marker-duplicate',
+        prStatusId,
+        threadId: 'PRRT_same_line_1',
+      })
+    ).rejects.toMatchObject({
+      status: 409,
+      body: { message: 'This thread has already been converted to a task' },
+    });
+
+    await invokeCommand(convertThreadToTask, {
+      planUuid: 'plan-source-marker-duplicate',
+      prStatusId,
+      threadId: 'PRRT_same_line_2',
+    });
+
+    const tasks = getPlanTasksByUuid(currentDb, 'plan-source-marker-duplicate');
+    expect(tasks).toHaveLength(2);
+    expect(tasks[0].title).toBe('Address review: src/shared.ts:33');
+    expect(tasks[1].title).toBe('Address review: src/shared.ts:33');
+    expect(tasks[0].description).toContain('[source:review-thread:PRRT_same_line_1]');
+    expect(tasks[1].description).toContain('[source:review-thread:PRRT_same_line_2]');
   });
 
   test('does not change status if plan is already in_progress', async () => {

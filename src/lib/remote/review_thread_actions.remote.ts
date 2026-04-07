@@ -29,14 +29,22 @@ export const convertThreadToTask = command(
         error(404, 'Plan not found');
       }
 
-      // Verify the PR is linked to this plan
+      // Verify the PR is linked to this plan via plan_pr junction or plan.pull_request URLs
       const planPrLink = db
-        .prepare(
-          `SELECT 1 FROM plan_pr WHERE plan_uuid = ? AND pr_status_id = ?`
-        )
+        .prepare(`SELECT 1 FROM plan_pr WHERE plan_uuid = ? AND pr_status_id = ?`)
         .get(planUuid, prStatusId);
       if (!planPrLink) {
-        error(404, 'PR is not linked to this plan');
+        // Fallback: check if the PR URL is in the plan's pull_request field
+        const prRow = db
+          .prepare(`SELECT pr_url FROM pr_status WHERE id = ?`)
+          .get(prStatusId) as { pr_url: string } | null;
+        if (!prRow) {
+          error(404, 'PR is not linked to this plan');
+        }
+        const planPrUrls: string[] = plan.pull_request ? JSON.parse(plan.pull_request) : [];
+        if (!planPrUrls.includes(prRow.pr_url)) {
+          error(404, 'PR is not linked to this plan');
+        }
       }
 
       const threadRow = db
@@ -50,6 +58,19 @@ export const convertThreadToTask = command(
         .get(prStatusId, threadId) as PrReviewThreadRow | null;
       if (!threadRow) {
         error(404, 'Review thread not found');
+      }
+
+      // Reject resolved threads
+      if (threadRow.is_resolved) {
+        error(400, 'Cannot convert a resolved thread to a task');
+      }
+
+      // Check for duplicate conversion using thread_id embedded in description
+      const existingTask = db
+        .prepare(`SELECT 1 FROM plan_task WHERE plan_uuid = ? AND description LIKE ?`)
+        .get(planUuid, `%[source:review-thread:${threadId}]%`);
+      if (existingTask) {
+        error(409, 'This thread has already been converted to a task');
       }
 
       const comments = db
@@ -82,15 +103,8 @@ export const convertThreadToTask = command(
       };
       const newTask = createTaskFromReviewThread(thread, prStatus.pr_url);
 
-      // Check for duplicate conversion using the generated title
-      const existingTask = db
-        .prepare(
-          `SELECT 1 FROM plan_task WHERE plan_uuid = ? AND title = ?`
-        )
-        .get(planUuid, newTask.title);
-      if (existingTask) {
-        error(409, 'This thread has already been converted to a task');
-      }
+      // Append thread_id marker to description for duplicate detection
+      const descriptionWithSource = `${newTask.description ?? ''}\n\n[source:review-thread:${threadId}]`;
 
       const taskIndexRow = db
         .prepare(
@@ -108,7 +122,7 @@ export const convertThreadToTask = command(
           INSERT INTO plan_task (plan_uuid, task_index, title, description, done)
           VALUES (?, ?, ?, ?, 0)
         `
-      ).run(planUuid, nextIndex, newTask.title, newTask.description ?? '');
+      ).run(planUuid, nextIndex, newTask.title, descriptionWithSource);
 
       db.prepare(
         `UPDATE plan SET status = 'in_progress', updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ? AND status != 'in_progress'`
