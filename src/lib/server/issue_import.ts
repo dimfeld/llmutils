@@ -158,7 +158,7 @@ export async function createPlansFromIssue(
   const pendingWrites: PendingImportedPlanWrite[] = [];
   let parentPlanId = 0;
 
-  if (mode === 'single' || (mode !== 'single' && selectedChildIndices.length === 0)) {
+  if (mode === 'single' || selectedChildIndices.length === 0) {
     parentPlanId = await reserveImportedPlanStartId(repoRoot, 1);
     const parentInstruction = getIssueInstructionData(
       issueData,
