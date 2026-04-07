@@ -877,6 +877,78 @@ describe('issue_import server helpers', () => {
       expect(writeImportedPlansToDbTransactionally).not.toHaveBeenCalled();
     });
 
+    test('updates child but not parent when only child title changed in separate mode', async () => {
+      const childA = makeIssue(2, 'Child A Updated Title', {
+        body: 'Child A body',
+        htmlUrl: 'https://tracker.test/issues/2',
+      });
+      const parentIssue = makeIssue(1, 'Parent', {
+        body: 'Parent body',
+        children: [childA],
+        htmlUrl: 'https://tracker.test/issues/1',
+      });
+      const existingParent: PlanSchema = {
+        id: 100,
+        uuid: 'uuid-parent',
+        title: 'Parent',
+        goal: 'goal',
+        details: 'Parent body',
+        status: 'pending',
+        issue: ['https://tracker.test/issues/1'],
+        dependencies: [101],
+        tasks: [],
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      };
+      const existingChildA: PlanSchema = {
+        id: 101,
+        uuid: 'uuid-child-a',
+        title: 'Child A',
+        goal: 'goal',
+        details: 'Child A body',
+        status: 'pending',
+        issue: ['https://tracker.test/issues/2'],
+        parent: 100,
+        tasks: [],
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      };
+      vi.mocked(loadPlansFromDb).mockReturnValue({
+        plans: new Map([
+          [100, existingParent],
+          [101, existingChildA],
+        ]),
+        duplicates: {},
+      });
+      vi.mocked(resolvePlanFromDb).mockImplementation(async (planArg) => {
+        if (String(planArg) === '100') return { plan: existingParent, planPath: null };
+        if (String(planArg) === '101') return { plan: existingChildA, planPath: null };
+        throw new Error(`Unexpected: ${String(planArg)}`);
+      });
+      vi.mocked(writeImportedPlansToDbTransactionally).mockResolvedValue([
+        { plan: { id: 101, uuid: 'uuid-child-a' } as never, filePath: null },
+      ]);
+
+      const result = await createPlansFromIssue(7, parentIssue, 'separate', {
+        selectedParentContent: [0],
+        selectedChildIndices: [0],
+        selectedChildContent: { 0: [0] },
+      });
+
+      // Parent UUID resolved from allPlans since parent not in writes
+      expect(result).toEqual({ planUuid: 'uuid-parent' });
+      expect(reserveImportedPlanStartId).not.toHaveBeenCalled();
+      // Only child is written, not parent
+      expect(writeImportedPlansToDbTransactionally).toHaveBeenCalledWith('/tmp/repo', [
+        expect.objectContaining({
+          plan: expect.objectContaining({
+            id: 101,
+            title: 'Child A Updated Title',
+          }),
+        }),
+      ]);
+    });
+
     test('creates new children when parent exists but children are new in separate mode', async () => {
       const childA = makeIssue(2, 'Child A new', {
         body: 'Child A body',
@@ -1024,8 +1096,7 @@ describe('issue_import server helpers', () => {
         htmlUrl: 'https://tracker.test/issues/1',
       });
       // Existing plan already has all content
-      const existingDetails =
-        'Parent body\n\n## Subissue 2: Child\n\nChild body';
+      const existingDetails = 'Parent body\n\n## Subissue 2: Child\n\nChild body';
       const existingParent: PlanSchema = {
         id: 50,
         uuid: 'uuid-parent-50',

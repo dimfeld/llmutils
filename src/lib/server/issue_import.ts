@@ -117,36 +117,16 @@ function getRmprOptions(issueData: IssueWithComments): RmprOptions | null {
   return rmprOptions;
 }
 
-type IssueUrlMatchMode = 'primary' | 'any';
-
 function findPlanByIssueUrl(
   plans: Map<number, PlanSchema>,
-  issueUrl: string,
-  matchMode: IssueUrlMatchMode
+  issueUrl: string
 ): PlanSchema | undefined {
-  if (matchMode === 'primary') {
-    for (const plan of plans.values()) {
-      if ((plan.issue ?? [])[0] === issueUrl) {
-        return plan;
-      }
-    }
-    return undefined;
-  }
-
-  // 'any' mode: prefer a primary match, fall back to secondary match.
-  // This prevents merged parent plans (which store child URLs) from being
-  // chosen over a dedicated plan for that child issue.
-  let secondaryMatch: PlanSchema | undefined;
   for (const plan of plans.values()) {
-    const issueUrls = plan.issue ?? [];
-    if (issueUrls[0] === issueUrl) {
+    if ((plan.issue ?? [])[0] === issueUrl) {
       return plan;
     }
-    if (!secondaryMatch && issueUrls.includes(issueUrl)) {
-      secondaryMatch = plan;
-    }
   }
-  return secondaryMatch;
+  return undefined;
 }
 
 function appendMissingSegments(
@@ -271,8 +251,7 @@ export async function createPlansFromIssue(
 
   if (mode === 'single' || selectedChildIndices.length === 0) {
     const parentIssueUrl = issueData.issue.htmlUrl;
-    const matchMode: IssueUrlMatchMode = mode === 'merged' ? 'any' : 'primary';
-    const existingParentPlan = findPlanByIssueUrl(allPlans, parentIssueUrl, matchMode);
+    const existingParentPlan = findPlanByIssueUrl(allPlans, parentIssueUrl);
     const parentInstruction = getIssueInstructionData(issueData, normalizedParentContent);
     if (existingParentPlan) {
       const resolvedParentPlan = await resolvePlanFromDb(String(existingParentPlan.id), repoRoot);
@@ -315,14 +294,14 @@ export async function createPlansFromIssue(
     }
   } else if (mode === 'separate') {
     const parentIssueUrl = issueData.issue.htmlUrl;
-    const existingParentPlan = findPlanByIssueUrl(allPlans, parentIssueUrl, 'primary');
+    const existingParentPlan = findPlanByIssueUrl(allPlans, parentIssueUrl);
     const parentInstruction = getIssueInstructionData(issueData, normalizedParentContent);
     const existingChildren = new Map<number, PlanSchema | undefined>();
     const childExtracted = new Map<number, string[]>();
     for (const childIndex of selectedChildIndices) {
       existingChildren.set(
         childIndex,
-        findPlanByIssueUrl(allPlans, children[childIndex].issue.htmlUrl, 'primary')
+        findPlanByIssueUrl(allPlans, children[childIndex].issue.htmlUrl)
       );
       const extracted = extractSelectedContent(
         children[childIndex],
@@ -334,8 +313,7 @@ export async function createPlansFromIssue(
       parentExtracted.length > 0 ||
       [...childExtracted.values()].some((content) => content.length > 0);
     const needsNewPlans =
-      !existingParentPlan ||
-      selectedChildIndices.some((index) => !existingChildren.get(index));
+      !existingParentPlan || selectedChildIndices.some((index) => !existingChildren.get(index));
     if (needsNewPlans && !hasAnyContent) {
       throw new Error('Select at least one parent or subissue content item to import.');
     }
@@ -348,9 +326,7 @@ export async function createPlansFromIssue(
       }
     }
 
-    const existingChildPlans = selectedChildIndices.map((index) =>
-      existingChildren.get(index)
-    );
+    const existingChildPlans = selectedChildIndices.map((index) => existingChildren.get(index));
     const newPlansCount =
       (existingParentPlan ? 0 : 1) + existingChildPlans.filter((plan) => !plan).length;
     const startId =
@@ -363,9 +339,10 @@ export async function createPlansFromIssue(
       const resolvedParentPlan = await resolvePlanFromDb(String(existingParentPlan.id), repoRoot);
       const currentParentPlan = resolvedParentPlan.plan;
       parentPlanId = currentParentPlan.id;
-      const { details: updatedDetails, newSegments } = appendMissingSegments(currentParentPlan.details, [
-        parentInstruction.plan.trim(),
-      ]);
+      const { details: updatedDetails, newSegments } = appendMissingSegments(
+        currentParentPlan.details,
+        [parentInstruction.plan.trim()]
+      );
       const titleChanged = currentParentPlan.title !== issueData.issue.title;
       const hasNewContent = newSegments.length > 0;
       shouldWriteParent = titleChanged || hasNewContent;
@@ -380,9 +357,6 @@ export async function createPlansFromIssue(
         parentPlan = currentParentPlan;
       }
     } else {
-      if (parentExtracted.length === 0) {
-        throw new Error('Select at least one parent or subissue content item to import.');
-      }
       parentPlanId = nextPlanId;
       nextPlanId++;
       parentPlan = createStubPlanFromIssue(parentInstruction, parentPlanId);
@@ -407,9 +381,10 @@ export async function createPlansFromIssue(
         const resolvedChildPlan = await resolvePlanFromDb(String(existingChildPlan.id), repoRoot);
         const currentChildPlan = resolvedChildPlan.plan;
         childPlanId = currentChildPlan.id;
-        const { details: updatedDetails, newSegments } = appendMissingSegments(currentChildPlan.details, [
-          childInstruction.plan.trim(),
-        ]);
+        const { details: updatedDetails, newSegments } = appendMissingSegments(
+          currentChildPlan.details,
+          [childInstruction.plan.trim()]
+        );
         const titleChanged = currentChildPlan.title !== childIssue.issue.title;
         const hasNewContent = newSegments.length > 0;
         const parentChanged = currentChildPlan.parent !== parentPlanId;
@@ -443,7 +418,9 @@ export async function createPlansFromIssue(
     const updatedDependencies = [...new Set([...originalDependencies, ...childIds])];
     const dependenciesChanged =
       updatedDependencies.length !== originalDependencies.length ||
-      updatedDependencies.some((dependencyId, index) => dependencyId !== originalDependencies[index]);
+      updatedDependencies.some(
+        (dependencyId, index) => dependencyId !== originalDependencies[index]
+      );
     if (dependenciesChanged) {
       shouldWriteParent = true;
       parentPlan = {
@@ -463,7 +440,7 @@ export async function createPlansFromIssue(
     }
   } else {
     const parentIssueUrl = issueData.issue.htmlUrl;
-    const existingParentPlan = findPlanByIssueUrl(allPlans, parentIssueUrl, 'any');
+    const existingParentPlan = findPlanByIssueUrl(allPlans, parentIssueUrl);
     const parentInstruction = getIssueInstructionData(issueData, normalizedParentContent);
     const mergedDetailsSegments: string[] = [];
     if (parentInstruction.plan.trim()) {
@@ -494,7 +471,9 @@ export async function createPlansFromIssue(
         currentParentPlan.details,
         mergedDetailsSegments
       );
-      const updatedIssueUrls = [...new Set([...(currentParentPlan.issue ?? []), ...mergedIssueUrls])];
+      const updatedIssueUrls = [
+        ...new Set([...(currentParentPlan.issue ?? []), ...mergedIssueUrls]),
+      ];
       const issueUrlsChanged =
         updatedIssueUrls.length !== (currentParentPlan.issue ?? []).length ||
         updatedIssueUrls.some((url, index) => url !== (currentParentPlan.issue ?? [])[index]);
@@ -537,11 +516,12 @@ export async function createPlansFromIssue(
 
   const persistedWrites = await writeImportedPlansToDbTransactionally(repoRoot, pendingWrites);
   const parentWrite = persistedWrites.find((entry) => entry.plan.id === parentPlanId);
-  if (!parentWrite?.plan.uuid) {
+  const parentUuid = parentWrite?.plan.uuid ?? allPlans.get(parentPlanId)?.uuid;
+  if (!parentUuid) {
     throw new Error('Failed to determine imported plan UUID');
   }
 
-  return { planUuid: parentWrite.plan.uuid };
+  return { planUuid: parentUuid };
 }
 
 function getIssueTrackerStatusFromType(trackerType: 'github' | 'linear'): IssueTrackerStatus {
