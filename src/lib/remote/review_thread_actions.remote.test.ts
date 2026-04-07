@@ -199,6 +199,12 @@ describe('convertThreadToTask', () => {
       reviewThreads: [],
     });
 
+    currentDb
+      .prepare(
+        `INSERT INTO plan_pr (plan_uuid, pr_status_id, source) VALUES (?, ?, 'explicit')`
+      )
+      .run('plan-no-thread', prStatus.status.id);
+
     await expect(
       invokeCommand(convertThreadToTask, {
         planUuid: 'plan-no-thread',
@@ -209,6 +215,99 @@ describe('convertThreadToTask', () => {
       status: 404,
       body: { message: 'Review thread not found' },
     });
+  });
+
+  test('rejects conversion when the PR is not linked to the plan', async () => {
+    upsertPlan(currentDb, projectId, {
+      uuid: 'plan-unlinked-pr',
+      planId: 304,
+      title: 'Plan 304',
+      goal: 'Test',
+      details: 'Test',
+      status: 'pending',
+      tasks: [],
+    });
+
+    const prStatus = upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/owner/repo/pull/100',
+      owner: 'owner',
+      repo: 'repo',
+      prNumber: 100,
+      state: 'OPEN',
+      draft: false,
+      lastFetchedAt: new Date().toISOString(),
+      reviewThreads: [
+        {
+          threadId: 'PRRT_unlinked',
+          path: 'src/unlinked.ts',
+          line: 12,
+          isResolved: false,
+          isOutdated: false,
+          comments: [
+            {
+              commentId: 'IC_unlinked',
+              body: 'Please fix this before merge.',
+              state: 'SUBMITTED',
+            },
+          ],
+        },
+      ],
+    });
+
+    await expect(
+      invokeCommand(convertThreadToTask, {
+        planUuid: 'plan-unlinked-pr',
+        prStatusId: prStatus.status.id,
+        threadId: 'PRRT_unlinked',
+      })
+    ).rejects.toMatchObject({
+      status: 404,
+      body: { message: 'PR is not linked to this plan' },
+    });
+  });
+
+  test('rejects duplicate conversion of the same thread', async () => {
+    const thread: StoredPrReviewThreadInput = {
+      threadId: 'PRRT_thread4',
+      path: 'src/dupe.ts',
+      line: 18,
+      isResolved: false,
+      isOutdated: false,
+      comments: [
+        {
+          commentId: 'IC_comment4',
+          databaseId: 45678,
+          body: 'Handle this branch explicitly.',
+          state: 'SUBMITTED',
+        },
+      ],
+    };
+
+    const { prStatusId } = seedPlanWithThread({
+      planUuid: 'plan-duplicate-thread',
+      planId: 305,
+      thread,
+    });
+
+    await invokeCommand(convertThreadToTask, {
+      planUuid: 'plan-duplicate-thread',
+      prStatusId,
+      threadId: 'PRRT_thread4',
+    });
+
+    await expect(
+      invokeCommand(convertThreadToTask, {
+        planUuid: 'plan-duplicate-thread',
+        prStatusId,
+        threadId: 'PRRT_thread4',
+      })
+    ).rejects.toMatchObject({
+      status: 409,
+      body: { message: 'This thread has already been converted to a task' },
+    });
+
+    const tasks = getPlanTasksByUuid(currentDb, 'plan-duplicate-thread');
+    expect(tasks).toHaveLength(1);
   });
 
   test('does not change status if plan is already in_progress', async () => {

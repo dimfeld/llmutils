@@ -48,6 +48,7 @@ describe('PrReviewThreadList', () => {
     const { body } = await render(PrReviewThreadList, {
       props: {
         prUrl: 'https://github.com/owner/repo/pull/42',
+        planUuid: 'plan-uuid-1',
         threads: [
           makeThread({ id: 2, path: 'src/z.ts', line: 2 }),
           makeThread({ id: 1, path: 'src/a.ts', line: 1 }, { database_id: 9001 }),
@@ -64,6 +65,7 @@ describe('PrReviewThreadList', () => {
     const { body } = await render(PrReviewThreadList, {
       props: {
         prUrl: 'https://github.com/owner/repo/pull/42',
+        planUuid: 'plan-uuid-1',
         threads: [
           makeThread({ id: 1, is_resolved: 0 }),
           makeThread({ id: 2, is_resolved: 1, path: 'src/b.ts' }),
@@ -73,5 +75,36 @@ describe('PrReviewThreadList', () => {
 
     expect(body.match(/<details open/g) ?? []).toHaveLength(1);
     expect(body).toContain('Resolved');
+  });
+
+  test('renders Convert to Task only for unresolved threads', async () => {
+    const { body } = await render(PrReviewThreadList, {
+      props: {
+        prUrl: 'https://github.com/owner/repo/pull/42',
+        planUuid: 'plan-uuid-1',
+        threads: [
+          makeThread({ id: 1, is_resolved: 0 }),
+          makeThread({ id: 2, is_resolved: 1, path: 'src/resolved.ts' }),
+        ],
+      },
+    });
+
+    expect(body).toContain('Convert to Task');
+    expect(body.match(/Convert to Task/g) ?? []).toHaveLength(1);
+  });
+
+  test('does not render Convert to Task when all threads are resolved', async () => {
+    const { body } = await render(PrReviewThreadList, {
+      props: {
+        prUrl: 'https://github.com/owner/repo/pull/42',
+        planUuid: 'plan-uuid-1',
+        threads: [
+          makeThread({ id: 1, is_resolved: 1 }),
+          makeThread({ id: 2, is_resolved: 1, path: 'src/also-resolved.ts' }),
+        ],
+      },
+    });
+
+    expect(body).not.toContain('Convert to Task');
   });
 });

@@ -563,6 +563,31 @@ describe('PrStatusSection', () => {
     expect(body).toContain('href="https://github.com/owner/repo/pull/42#discussion_r7002"');
     expect(body).toContain('src/a.ts:3');
     expect(body).toContain('Copy');
+    expect(body).toContain('Convert to Task');
+  });
+
+  test('passes planUuid through to the review thread list actions', async () => {
+    const detail = makePrDetail({
+      reviewThreads: [
+        makeReviewThreadDetail({
+          thread: {
+            id: 2,
+            thread_id: 'thread-with-plan',
+            path: 'src/actionable.ts',
+            line: 8,
+            is_resolved: 0,
+          },
+        }),
+      ],
+    });
+
+    const { body } = await renderSection({
+      planUuid: 'plan-custom-uuid',
+      prUrls: [detail.status.pr_url],
+      prStatuses: [detail],
+    });
+
+    expect(body).toContain('Convert to Task');
   });
 
   test('renders check run details URL as link', async () => {

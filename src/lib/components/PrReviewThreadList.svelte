@@ -83,6 +83,7 @@
         threadId: thread.thread.thread_id,
       });
       await invalidateAll();
+      toast.success('Thread converted to task');
     } catch (err) {
       toast.error(`Failed to convert thread to task: ${(err as Error).message}`);
     } finally {

@@ -29,6 +29,16 @@ export const convertThreadToTask = command(
         error(404, 'Plan not found');
       }
 
+      // Verify the PR is linked to this plan
+      const planPrLink = db
+        .prepare(
+          `SELECT 1 FROM plan_pr WHERE plan_uuid = ? AND pr_status_id = ?`
+        )
+        .get(planUuid, prStatusId);
+      if (!planPrLink) {
+        error(404, 'PR is not linked to this plan');
+      }
+
       const threadRow = db
         .prepare(
           `
@@ -71,6 +81,16 @@ export const convertThreadToTask = command(
         comments,
       };
       const newTask = createTaskFromReviewThread(thread, prStatus.pr_url);
+
+      // Check for duplicate conversion using the generated title
+      const existingTask = db
+        .prepare(
+          `SELECT 1 FROM plan_task WHERE plan_uuid = ? AND title = ?`
+        )
+        .get(planUuid, newTask.title);
+      if (existingTask) {
+        error(409, 'This thread has already been converted to a task');
+      }
 
       const taskIndexRow = db
         .prepare(
