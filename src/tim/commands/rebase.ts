@@ -130,7 +130,10 @@ export async function handleRebaseCommand(
         baseDir,
         branchName,
         'origin',
-        currentPlanFile
+        currentPlanFile,
+        {
+          skipJjDescription: true,
+        }
       );
       if (!checkedOut) {
         throw new Error(`Branch "${branchName}" does not exist locally or on origin.`);

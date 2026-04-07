@@ -1648,6 +1648,7 @@ export async function pullWorkspaceRefIfExists(
   planFilePath?: string,
   options?: {
     checkoutJjBookmark?: boolean;
+    skipJjDescription?: boolean;
   }
 ): Promise<boolean> {
   const isJj = await getUsingJj(workspacePath);
@@ -1683,7 +1684,9 @@ export async function pullWorkspaceRefIfExists(
       throw new Error(`Failed to check out bookmark "${refName}": ${editResult.stderr}`);
     }
 
-    await ensureJjRevisionHasDescription(workspacePath, '@', planFilePath, refName);
+    if (!options?.skipJjDescription) {
+      await ensureJjRevisionHasDescription(workspacePath, '@', planFilePath, refName);
+    }
 
     return true;
   }
