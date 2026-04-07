@@ -4,7 +4,13 @@ import * as path from 'node:path';
 import { beforeAll, afterAll, beforeEach, describe, expect, vi, test } from 'vitest';
 
 import { clearGitHubTokenCache } from '../../common/github/token.js';
-import { handlePrStatusCommand, handlePrLinkCommand, handlePrUnlinkCommand } from './pr.js';
+import {
+  handlePrStatusCommand,
+  handlePrLinkCommand,
+  handlePrReplyCommand,
+  handlePrResolveCommand,
+  handlePrUnlinkCommand,
+} from './pr.js';
 
 type AnyObject = Record<string, unknown>;
 
@@ -48,7 +54,9 @@ vi.mock('../../common/github/webhook_ingest.js', () => ({
 }));
 
 vi.mock('../../common/github/pull_requests.js', () => ({
+  addReplyToReviewThread: vi.fn(async (..._args: unknown[]) => true),
   fetchOpenPullRequests: vi.fn(async (..._args: unknown[]) => []),
+  resolveReviewThread: vi.fn(async (..._args: unknown[]) => true),
 }));
 
 vi.mock('../../common/github/identifiers.js', () => ({
@@ -90,7 +98,11 @@ import {
 } from '../../common/github/pr_status_service.js';
 import { getWebhookServerUrl as mockGetWebhookServerUrlFn } from '../../common/github/webhook_client.js';
 import { ingestWebhookEvents as mockIngestWebhookEventsFn } from '../../common/github/webhook_ingest.js';
-import { fetchOpenPullRequests as mockFetchOpenPullRequestsFn } from '../../common/github/pull_requests.js';
+import {
+  addReplyToReviewThread as mockAddReplyToReviewThreadFn,
+  fetchOpenPullRequests as mockFetchOpenPullRequestsFn,
+  resolveReviewThread as mockResolveReviewThreadFn,
+} from '../../common/github/pull_requests.js';
 import {
   canonicalizePrUrl as mockCanonicalizePrUrlFn,
   parsePrOrIssueNumber as mockParsePrOrIssueNumberFn,
@@ -127,7 +139,9 @@ const mockGetPrStatusForPlan = vi.mocked(mockGetPrStatusForPlanFn);
 const mockLinkPlanToPr = vi.mocked(mockLinkPlanToPrFn);
 const mockUnlinkPlanFromPr = vi.mocked(mockUnlinkPlanFromPrFn);
 const mockCleanOrphanedPrStatus = vi.mocked(mockCleanOrphanedPrStatusFn);
+const mockAddReplyToReviewThread = vi.mocked(mockAddReplyToReviewThreadFn);
 const mockFetchOpenPullRequests = vi.mocked(mockFetchOpenPullRequestsFn);
+const mockResolveReviewThread = vi.mocked(mockResolveReviewThreadFn);
 const mockReadPlanFile = vi.mocked(mockReadPlanFileFn);
 const mockResolvePlanFromDb = vi.mocked(mockResolvePlanFromDbFn);
 const mockWritePlanFile = vi.mocked(mockWritePlanFileFn);
@@ -145,7 +159,13 @@ let currentCachedDetail: AnyObject | null;
 let currentAutoLinkedDetails: AnyObject[];
 let currentPersistedPlan: AnyObject;
 
-const handlePrCommand = { handlePrStatusCommand, handlePrLinkCommand, handlePrUnlinkCommand };
+const handlePrCommand = {
+  handlePrStatusCommand,
+  handlePrLinkCommand,
+  handlePrReplyCommand,
+  handlePrResolveCommand,
+  handlePrUnlinkCommand,
+};
 
 let currentWebhookServerUrl: string | null;
 let prModule: typeof import('./pr.js');
@@ -208,7 +228,9 @@ describe('tim/commands/pr', () => {
     mockLinkPlanToPr.mockClear();
     mockUnlinkPlanFromPr.mockClear();
     mockCleanOrphanedPrStatus.mockClear();
+    mockAddReplyToReviewThread.mockClear();
     mockFetchOpenPullRequests.mockClear();
+    mockResolveReviewThread.mockClear();
     mockReadPlanFile.mockClear();
     mockResolvePlanFromDb.mockClear();
     mockWritePlanFile.mockClear();
@@ -276,7 +298,9 @@ describe('tim/commands/pr', () => {
     mockLinkPlanToPr.mockImplementation(() => {});
     mockUnlinkPlanFromPr.mockImplementation(() => {});
     mockCleanOrphanedPrStatus.mockImplementation(() => {});
+    mockAddReplyToReviewThread.mockImplementation(async () => true);
     mockFetchOpenPullRequests.mockImplementation(async () => []);
+    mockResolveReviewThread.mockImplementation(async () => true);
     mockReadPlanFile.mockImplementation(async () => currentPersistedPlan);
     mockResolvePlanFromDb.mockImplementation(async () => ({
       plan: currentPersistedPlan,
@@ -1052,6 +1076,36 @@ describe('tim/commands/pr', () => {
     ).rejects.toThrow('Plan not found: 999');
 
     expect(mockSyncPlanPrLinks).not.toHaveBeenCalled();
+  });
+
+  test('reply posts to the GitHub review thread and logs success', async () => {
+    await handlePrCommand.handlePrReplyCommand('thread-123', 'Fixed this');
+
+    expect(mockAddReplyToReviewThread).toHaveBeenCalledWith('thread-123', 'Fixed this');
+    expect(logs.some((line) => line.includes('Replied to review thread thread-123'))).toBe(true);
+  });
+
+  test('reply throws when posting to the GitHub review thread fails', async () => {
+    mockAddReplyToReviewThread.mockResolvedValueOnce(false);
+
+    await expect(handlePrCommand.handlePrReplyCommand('thread-123', 'Fixed this')).rejects.toThrow(
+      'Failed to reply to review thread thread-123'
+    );
+  });
+
+  test('resolve resolves the GitHub review thread and logs success', async () => {
+    await handlePrCommand.handlePrResolveCommand('thread-456');
+
+    expect(mockResolveReviewThread).toHaveBeenCalledWith('thread-456');
+    expect(logs.some((line) => line.includes('Resolved review thread thread-456'))).toBe(true);
+  });
+
+  test('resolve throws when resolving the GitHub review thread fails', async () => {
+    mockResolveReviewThread.mockResolvedValueOnce(false);
+
+    await expect(handlePrCommand.handlePrResolveCommand('thread-456')).rejects.toThrow(
+      'Failed to resolve review thread thread-456'
+    );
   });
 });
 

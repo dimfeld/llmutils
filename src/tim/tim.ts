@@ -1236,6 +1236,22 @@ prCommand
     await handlePrUnlinkCommand(planId, prUrl, options, command).catch(handleCommandError);
   });
 
+prCommand
+  .command('reply <threadId> <body>')
+  .description('Reply to a GitHub PR review thread')
+  .action(async (threadId, body) => {
+    const { handlePrReplyCommand } = await import('./commands/pr.js');
+    await handlePrReplyCommand(threadId, body).catch(handleCommandError);
+  });
+
+prCommand
+  .command('resolve <threadId>')
+  .description('Resolve a GitHub PR review thread')
+  .action(async (threadId) => {
+    const { handlePrResolveCommand } = await import('./commands/pr.js');
+    await handlePrResolveCommand(threadId).catch(handleCommandError);
+  });
+
 function registerPrDescriptionCommand(
   targetCommand: Command,
   signature: string,

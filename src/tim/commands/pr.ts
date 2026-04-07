@@ -13,7 +13,11 @@ import {
   ingestWebhookEvents,
 } from '../../common/github/webhook_ingest.js';
 import { resolveGitHubToken } from '../../common/github/token.js';
-import { fetchOpenPullRequests } from '../../common/github/pull_requests.js';
+import {
+  addReplyToReviewThread,
+  fetchOpenPullRequests,
+  resolveReviewThread,
+} from '../../common/github/pull_requests.js';
 import { refreshPrStatus, syncPlanPrLinks } from '../../common/github/pr_status_service.js';
 import { log } from '../../logging.js';
 import { getDatabase } from '../db/database.js';
@@ -585,6 +589,26 @@ export async function handlePrStatusCommand(
   if (errors.length > 0 && details.length === 0) {
     throw new Error('Failed to fetch status for all linked pull requests');
   }
+}
+
+export async function handlePrReplyCommand(threadId: string, body: string): Promise<void> {
+  const success = await addReplyToReviewThread(threadId, body);
+
+  if (!success) {
+    throw new Error(`Failed to reply to review thread ${threadId}`);
+  }
+
+  log(chalk.green(`Replied to review thread ${threadId}`));
+}
+
+export async function handlePrResolveCommand(threadId: string): Promise<void> {
+  const success = await resolveReviewThread(threadId);
+
+  if (!success) {
+    throw new Error(`Failed to resolve review thread ${threadId}`);
+  }
+
+  log(chalk.green(`Resolved review thread ${threadId}`));
 }
 
 export async function handlePrLinkCommand(
