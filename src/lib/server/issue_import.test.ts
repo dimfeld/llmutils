@@ -673,7 +673,7 @@ describe('issue_import server helpers', () => {
       );
     });
 
-    test('throws when selected subissue has only empty content', async () => {
+    test('creates empty child plan when selected subissue has only empty content', async () => {
       const child = makeIssue(2, 'Child', { body: ' ', comments: ['  '] });
       const parent = makeIssue(1, 'Parent', {
         body: 'Parent body',
@@ -688,9 +688,16 @@ describe('issue_import server helpers', () => {
         },
       };
 
-      await expect(createPlansFromIssue(7, parent, 'separate', selected)).rejects.toThrow(
-        'Selected subissue 2 has no non-empty content selected.'
-      );
+      vi.mocked(reserveImportedPlanStartId).mockResolvedValue(200);
+      vi.mocked(writeImportedPlansToDbTransactionally).mockResolvedValue([
+        { plan: { id: 201, uuid: 'uuid-child' } as never, filePath: null },
+        { plan: { id: 200, uuid: 'uuid-parent' } as never, filePath: null },
+      ]);
+
+      const result = await createPlansFromIssue(7, parent, 'separate', selected);
+
+      expect(result).toEqual({ planUuid: 'uuid-parent' });
+      expect(reserveImportedPlanStartId).toHaveBeenCalledWith('/tmp/repo', 2);
     });
 
     test('throws when project has no git root', async () => {

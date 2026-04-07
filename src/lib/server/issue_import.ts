@@ -317,14 +317,6 @@ export async function createPlansFromIssue(
     if (needsNewPlans && !hasAnyContent) {
       throw new Error('Select at least one parent or subissue content item to import.');
     }
-    for (const childIndex of selectedChildIndices) {
-      const existingChildPlan = existingChildren.get(childIndex);
-      if (!existingChildPlan && (childExtracted.get(childIndex) ?? []).length === 0) {
-        throw new Error(
-          `Selected subissue ${children[childIndex].issue.number} has no non-empty content selected.`
-        );
-      }
-    }
 
     const existingChildPlans = selectedChildIndices.map((index) => existingChildren.get(index));
     const newPlansCount =
