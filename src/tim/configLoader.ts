@@ -304,13 +304,8 @@ export async function loadEffectiveConfig(
   options: LoadEffectiveConfigOptions = {}
 ): Promise<TimConfig> {
   let resolution: RepositoryConfigResolution;
-  try {
-    const resolver = await RepositoryConfigResolver.create({ overridePath, cwd: options.cwd });
-    resolution = await resolver.resolve();
-  } catch (err: any) {
-    error(`Error finding configuration file: ${err.message}`);
-    throw err;
-  }
+  const resolver = await RepositoryConfigResolver.create({ overridePath, cwd: options.cwd });
+  resolution = await resolver.resolve();
 
   const cacheKey = overridePath ? path.resolve(overridePath) : (resolution.gitRoot ?? '');
   const cachedConfig = foundConfigs.get(cacheKey);

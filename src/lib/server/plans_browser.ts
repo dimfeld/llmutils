@@ -22,11 +22,19 @@ export async function loadFinishConfigForProject(
     // never silently skips required finalization work.
     return { updateDocsMode: 'after-completion', applyLessons: true };
   }
-  const config = await loadEffectiveConfig(undefined, { cwd: project.last_git_root });
-  return {
-    updateDocsMode: config.updateDocs?.mode,
-    applyLessons: config.updateDocs?.applyLessons,
-  };
+
+  try {
+    const config = await loadEffectiveConfig(undefined, { cwd: project.last_git_root });
+    return {
+      updateDocsMode: config.updateDocs?.mode,
+      applyLessons: config.updateDocs?.applyLessons,
+    };
+  } catch (e) {
+    return {
+      updateDocsMode: 'after-completion',
+      applyLessons: true,
+    };
+  }
 }
 
 async function loadFinishConfigForProjects(
@@ -49,11 +57,19 @@ async function loadFinishConfigForProjects(
   const configByProjectId = new Map<number, FinishConfig>();
   for (const [gitRoot, groupedProjectIds] of gitRootToProjectIds) {
     const cwd = gitRoot === '__default__' ? undefined : gitRoot;
-    const config = await loadEffectiveConfig(undefined, { cwd });
-    const finishConfig: FinishConfig = {
-      updateDocsMode: config.updateDocs?.mode,
-      applyLessons: config.updateDocs?.applyLessons,
-    };
+    let finishConfig: FinishConfig;
+    try {
+      const config = await loadEffectiveConfig(undefined, { cwd });
+      finishConfig = {
+        updateDocsMode: config.updateDocs?.mode,
+        applyLessons: config.updateDocs?.applyLessons,
+      };
+    } catch (e) {
+      finishConfig = {
+        updateDocsMode: 'after-completion',
+        applyLessons: true,
+      };
+    }
     for (const projectId of groupedProjectIds) {
       configByProjectId.set(projectId, finishConfig);
     }
