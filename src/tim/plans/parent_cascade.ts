@@ -1,22 +1,27 @@
+import type { Database } from 'bun:sqlite';
 import { getGitRoot } from '../../common/git.js';
 import { warn } from '../../logging.js';
 import { removePlanAssignment } from '../assignments/remove_plan_assignment.js';
+import { removeAssignment } from '../db/assignment.js';
 import type { TimConfig } from '../configSchema.js';
 import { getDatabase } from '../db/database.js';
-import { getPlanByPlanId, getPlansByParentUuid } from '../db/plan.js';
+import { getPlanByPlanId, getPlansByParentUuid, getPlansByProject, upsertPlan } from '../db/plan.js';
 import {
   getMaterializedPlanPath,
   resolveProjectContext,
   withPlanAutoSync,
 } from '../plan_materialize.js';
 import type { PlanSchema } from '../planSchema.js';
+import { invertPlanIdToUuidMap, planRowForTransaction } from '../plans_db.js';
 import { writePlanFile } from '../plans.js';
-import { planRowForTransaction } from '../plans_db.js';
+import { toPlanUpsertInput } from '../db/plan_sync.js';
 import { findNextActionableItem } from './find_next.js';
 import { getCompletionStatus, isWorkCompleteStatus } from './plan_state_utils.js';
 
 type ParentCascadeOptions = {
   baseDir?: string;
+  db?: Database;
+  projectId?: number;
   onParentMarkedDone?: (plan: PlanSchema) => void | Promise<void>;
   onParentMarkedInProgress?: (plan: PlanSchema) => void | Promise<void>;
 };
@@ -44,11 +49,91 @@ async function materializedPathOrNull(repoRoot: string, planId: number): Promise
   return exists ? filePath : null;
 }
 
+async function checkAndMarkParentDoneInDb(
+  db: Database,
+  projectId: number,
+  parentId: number,
+  config: TimConfig,
+  options: ParentCascadeOptions = {}
+): Promise<PlanSchema | undefined> {
+  const rows = getPlansByProject(db, projectId);
+  const planIdToUuid = new Map(rows.map((row) => [row.plan_id, row.uuid]));
+  const uuidToPlanId = invertPlanIdToUuidMap(planIdToUuid);
+  const parentRow = getPlanByPlanId(db, projectId, parentId);
+
+  if (!parentRow) {
+    warn(`Parent plan with ID ${parentId} not found`);
+    return undefined;
+  }
+
+  const parentPlan = planRowForTransaction(parentRow, uuidToPlanId);
+  if (
+    parentPlan.status === 'done' ||
+    parentPlan.status === 'cancelled' ||
+    parentPlan.status === 'needs_review' ||
+    parentPlan.status === 'deferred'
+  ) {
+    return undefined;
+  }
+
+  const childRows = getPlansByParentUuid(db, projectId, parentRow.uuid);
+  const allChildrenDone = childRows.every((row) => isWorkCompleteStatus(row.status));
+  const hasUnfinishedTasks = findNextActionableItem(parentPlan) !== null;
+
+  if (!(allChildrenDone && childRows.length > 0 && parentPlan.epic) || hasUnfinishedTasks) {
+    return parentPlan;
+  }
+
+  const children = childRows.map((row) => planRowForTransaction(row, uuidToPlanId));
+  const allChangedFiles = new Set<string>();
+  for (const child of children) {
+    child.changedFiles?.forEach((file) => allChangedFiles.add(file));
+  }
+
+  const updatedParent: PlanSchema = {
+    ...parentPlan,
+    status: getCompletionStatus(config),
+    updatedAt: new Date().toISOString(),
+    changedFiles:
+      allChangedFiles.size > 0 ? Array.from(allChangedFiles).sort() : parentPlan.changedFiles,
+  };
+
+  upsertPlan(db, projectId, {
+    ...toPlanUpsertInput(updatedParent, planIdToUuid),
+    forceOverwrite: true,
+  });
+
+  return updatedParent;
+}
+
 export async function checkAndMarkParentDone(
   parentId: number,
   config: TimConfig,
   options: ParentCascadeOptions = {}
 ): Promise<PlanSchema | undefined> {
+  if (options.db && options.projectId !== undefined) {
+    const result = await checkAndMarkParentDoneInDb(
+      options.db,
+      options.projectId,
+      parentId,
+      config,
+      options
+    );
+
+    if (result && (result.status === 'done' || result.status === 'needs_review')) {
+      if (result.status === 'done') {
+        removeAssignment(options.db, options.projectId, result.uuid);
+      }
+      await options.onParentMarkedDone?.(result);
+
+      if (result.parent) {
+        await checkAndMarkParentDone(result.parent, config, options);
+      }
+    }
+
+    return result;
+  }
+
   const repoRoot = await getRepoRoot(options.baseDir);
   const result = await withPlanAutoSync(parentId, repoRoot, async () => {
     const context = await resolveProjectContext(repoRoot);

@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 
 import { claimAssignment, getAssignment } from '$tim/db/assignment.js';
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
-import { upsertPlan } from '$tim/db/plan.js';
+import { getPlanByUuid, upsertPlan } from '$tim/db/plan.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import { recordWorkspace } from '$tim/db/workspace.js';
 import { SessionManager } from '$lib/server/session_manager.js';
@@ -20,10 +20,6 @@ const spawnChatProcessMock = vi.fn();
 const spawnRebaseProcessMock = vi.fn();
 const spawnFinishProcessMock = vi.fn();
 const loadEffectiveConfigMock = vi.fn();
-const resolvePlanFromDbMock = vi.fn();
-const writePlanFileMock = vi.fn();
-const checkAndMarkParentDoneMock = vi.fn();
-const removePlanAssignmentMock = vi.fn();
 
 vi.mock('$lib/server/init.js', () => ({
   getServerContext: async () => ({
@@ -56,22 +52,6 @@ vi.mock('$tim/configLoader.js', () => ({
     loadEffectiveConfigMock(...args),
 }));
 
-vi.mock('$tim/plans.js', () => ({
-  resolvePlanFromDb: (...args: Parameters<typeof resolvePlanFromDbMock>) =>
-    resolvePlanFromDbMock(...args),
-  writePlanFile: (...args: Parameters<typeof writePlanFileMock>) => writePlanFileMock(...args),
-}));
-
-vi.mock('$tim/plans/parent_cascade.js', () => ({
-  checkAndMarkParentDone: (...args: Parameters<typeof checkAndMarkParentDoneMock>) =>
-    checkAndMarkParentDoneMock(...args),
-}));
-
-vi.mock('$tim/assignments/remove_plan_assignment.js', () => ({
-  removePlanAssignment: (...args: Parameters<typeof removePlanAssignmentMock>) =>
-    removePlanAssignmentMock(...args),
-}));
-
 import { isPlanLaunching, resetLaunchLockState, setLaunchLock } from '$lib/server/launch_lock.js';
 import {
   finishPlanQuick,
@@ -100,10 +80,6 @@ describe('plan remote actions', () => {
     spawnRebaseProcessMock.mockReset();
     spawnFinishProcessMock.mockReset();
     loadEffectiveConfigMock.mockReset();
-    resolvePlanFromDbMock.mockReset();
-    writePlanFileMock.mockReset();
-    checkAndMarkParentDoneMock.mockReset();
-    removePlanAssignmentMock.mockReset();
 
     projectId = getOrCreateProject(currentDb, 'repo-plan-actions', {
       remoteUrl: 'https://example.com/repo-plan-actions.git',
@@ -123,20 +99,6 @@ describe('plan remote actions', () => {
       }
       return {};
     });
-    resolvePlanFromDbMock.mockImplementation(async (planId: number) => ({
-      plan: {
-        id: planId,
-        uuid: `resolved-${planId}`,
-        title: `Plan ${planId}`,
-        status: 'needs_review',
-        priority: 'medium',
-        tasks: [],
-      },
-      planPath: `/tmp/resolved/${planId}.plan.md`,
-    }));
-    writePlanFileMock.mockResolvedValue(undefined);
-    checkAndMarkParentDoneMock.mockResolvedValue(undefined);
-    removePlanAssignmentMock.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -1604,14 +1566,7 @@ describe('plan remote actions', () => {
         invokeCommand(finishPlanQuick, { planUuid: 'quick-finish-taskless-epic' })
       ).resolves.toEqual({ status: 'done' });
 
-      expect(writePlanFileMock).toHaveBeenCalledWith(
-        '/tmp/resolved/5007.plan.md',
-        expect.objectContaining({
-          status: 'done',
-          updatedAt: expect.any(String),
-        }),
-        { cwdForIdentity: '/tmp/repo-plan-actions' }
-      );
+      expect(getPlanByUuid(currentDb, 'quick-finish-taskless-epic')?.status).toBe('done');
     });
 
     test('rejects plans where needsFinishExecutor is true', async () => {
@@ -1629,7 +1584,7 @@ describe('plan remote actions', () => {
       });
     });
 
-    test('persists done status through writePlanFile when no executor work is needed', async () => {
+    test('persists done status directly in the DB when no executor work is needed', async () => {
       seedPlan({
         uuid: 'quick-finish-needs-review',
         planId: 5002,
@@ -1640,15 +1595,7 @@ describe('plan remote actions', () => {
 
       await invokeCommand(finishPlanQuick, { planUuid: 'quick-finish-needs-review' });
 
-      expect(resolvePlanFromDbMock).toHaveBeenCalledWith(5002, '/tmp/repo-plan-actions');
-      expect(writePlanFileMock).toHaveBeenCalledWith(
-        '/tmp/resolved/5002.plan.md',
-        expect.objectContaining({
-          status: 'done',
-          updatedAt: expect.any(String),
-        }),
-        { cwdForIdentity: '/tmp/repo-plan-actions' }
-      );
+      expect(getPlanByUuid(currentDb, 'quick-finish-needs-review')?.status).toBe('done');
     });
 
     test('successfully updates done plan status when no executor work needed', async () => {
@@ -1678,11 +1625,19 @@ describe('plan remote actions', () => {
       expect(result).toEqual({ status: 'done' });
     });
 
-    test('runs completion side effects after finishing', async () => {
+    test('runs completion side effects after finishing and cascades the parent in the DB', async () => {
+      seedPlan({
+        uuid: 'quick-finish-parent',
+        planId: 5006,
+        status: 'in_progress',
+        epic: true,
+        tasks: [],
+      });
       seedPlan({
         uuid: 'quick-finish-assignment',
         planId: 5005,
         status: 'needs_review',
+        parentUuid: 'quick-finish-parent',
         docsUpdatedAt: '2026-02-01T00:00:00.000Z',
         lessonsAppliedAt: '2026-02-02T00:00:00.000Z',
       });
@@ -1692,11 +1647,9 @@ describe('plan remote actions', () => {
 
       await invokeCommand(finishPlanQuick, { planUuid: 'quick-finish-assignment' });
 
-      expect(removePlanAssignmentMock).toHaveBeenCalledWith(
-        expect.objectContaining({ status: 'done' }),
-        '/tmp/repo-plan-actions'
-      );
-      expect(checkAndMarkParentDoneMock).not.toHaveBeenCalled();
+      expect(getAssignment(currentDb, projectId, 'quick-finish-assignment')).toBeNull();
+      expect(getPlanByUuid(currentDb, 'quick-finish-assignment')?.status).toBe('done');
+      expect(getPlanByUuid(currentDb, 'quick-finish-parent')?.status).toBe('needs_review');
     });
 
     test('uses per-project config for quick-finish eligibility', async () => {
@@ -1721,6 +1674,7 @@ describe('plan remote actions', () => {
     projectId?: number;
     status?: 'pending' | 'in_progress' | 'needs_review' | 'done' | 'cancelled' | 'deferred';
     epic?: boolean;
+    parentUuid?: string;
     tasks?: Array<{ title: string; description: string; done?: boolean }>;
     docsUpdatedAt?: string | null;
     lessonsAppliedAt?: string | null;
@@ -1732,6 +1686,7 @@ describe('plan remote actions', () => {
       status: options.status ?? 'pending',
       priority: 'medium',
       epic: options.epic ?? false,
+      parentUuid: options.parentUuid,
       filename: `${options.planId}.plan.md`,
       tasks: options.tasks,
       sourceDocsUpdatedAt: options.docsUpdatedAt,

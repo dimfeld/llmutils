@@ -223,7 +223,7 @@ export async function resolvePlanFromDb(
           ? getPlanByUuid(db, uuid)
           : null;
 
-    if (!row || row.project_id !== projectId) {
+    if (!row || (typeof planId === 'number' && row.project_id !== projectId)) {
       throw new PlanNotFoundError(`No plan found in the database for identifier: ${planArg}`);
     }
 

@@ -21,13 +21,13 @@ import {
 } from '$lib/server/plan_actions.js';
 import { getSessionManager } from '$lib/server/session_context.js';
 import { openTerminalWithCommand } from '$lib/server/terminal_control.js';
-import { removePlanAssignment } from '$tim/assignments/remove_plan_assignment.js';
 import { loadEffectiveConfig } from '$tim/configLoader.js';
-import { getPlanByUuid } from '$tim/db/plan.js';
+import { removeAssignment } from '$tim/db/assignment.js';
+import { getPlanByUuid, getPlansByProject, upsertPlan } from '$tim/db/plan.js';
 import { getProjectById } from '$tim/db/project.js';
-import { withPlanAutoSync } from '$tim/plan_materialize.js';
 import { checkAndMarkParentDone } from '$tim/plans/parent_cascade.js';
-import { resolvePlanFromDb, writePlanFile } from '$tim/plans.js';
+import { invertPlanIdToUuidMap, planRowForTransaction } from '$tim/plans_db.js';
+import { toPlanUpsertInput } from '$tim/db/plan_sync.js';
 
 type PlanDetailResult = NonNullable<ReturnType<typeof getPlanDetail>>;
 
@@ -304,23 +304,31 @@ export const finishPlanQuick = command(finishPlanQuickSchema, async ({ planUuid 
   }
 
   const project = getProjectById(db, plan.projectId);
-  const repoRoot = project?.last_git_root ?? process.cwd();
-  const effectiveConfig = await loadEffectiveConfig(undefined, { cwd: repoRoot });
-
-  // Use withPlanAutoSync to merge any user edits from the materialized plan file
-  // before writing the status change, avoiding silent data loss.
-  await withPlanAutoSync(plan.planId, repoRoot, async () => {
-    const resolved = await resolvePlanFromDb(plan.planId, repoRoot);
-    const planData = resolved.plan;
-    planData.status = 'done';
-    planData.updatedAt = new Date().toISOString();
-    await writePlanFile(resolved.planPath ?? null, planData, { cwdForIdentity: repoRoot });
-
-    await removePlanAssignment(planData, repoRoot);
-    if (planData.parent) {
-      await checkAndMarkParentDone(planData.parent, effectiveConfig, { baseDir: repoRoot });
-    }
+  const effectiveConfig = (
+    project?.last_git_root
+      ? await loadEffectiveConfig(undefined, { cwd: project.last_git_root })
+      : {}
+  ) as Parameters<typeof checkAndMarkParentDone>[1];
+  const planRows = getPlansByProject(db, plan.projectId);
+  const planIdToUuid = new Map(planRows.map((row) => [row.plan_id, row.uuid]));
+  const planData = planRowForTransaction(
+    getPlanByUuid(db, planUuid)!,
+    invertPlanIdToUuidMap(planIdToUuid)
+  );
+  planData.status = 'done';
+  planData.updatedAt = new Date().toISOString();
+  upsertPlan(db, plan.projectId, {
+    ...toPlanUpsertInput(planData, planIdToUuid),
+    forceOverwrite: true,
   });
+
+  removeAssignment(db, plan.projectId, planUuid);
+  if (planData.parent) {
+    await checkAndMarkParentDone(planData.parent, effectiveConfig, {
+      db,
+      projectId: plan.projectId,
+    });
+  }
 
   return { status: 'done' as const };
 });
