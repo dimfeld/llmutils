@@ -54,6 +54,13 @@
   <a href={planHref} class="min-w-0 flex-1" data-sveltekit-preload-data>
     <div class="flex items-center gap-2">
       <span class="shrink-0 text-xs font-medium text-muted-foreground">#{item.planId}</span>
+      {#if item.epic}
+        <span
+          class="shrink-0 rounded-full bg-indigo-100 px-1.5 py-0.5 text-xs leading-none font-medium text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300"
+        >
+          Epic
+        </span>
+      {/if}
       <span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
         {item.planTitle ?? 'Untitled'}
       </span>

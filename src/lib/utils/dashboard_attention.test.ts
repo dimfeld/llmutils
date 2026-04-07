@@ -107,6 +107,18 @@ describe('deriveAttentionItems', () => {
     expect(result.planItems[0].reasons).toEqual([{ type: 'needs_review' }]);
   });
 
+  test('preserves epic flag on plan attention items', () => {
+    const plan = makePlan({
+      uuid: 'plan-1',
+      displayStatus: 'needs_review',
+      epic: true,
+    });
+
+    const result = deriveAttentionItems([plan], [], []);
+    expect(result.planItems).toHaveLength(1);
+    expect(result.planItems[0].epic).toBe(true);
+  });
+
   test('detects agent_finished from offline session + in_progress plan', () => {
     const plan = makePlan({ uuid: 'plan-1', displayStatus: 'in_progress' });
     const session = makeSession({
