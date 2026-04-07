@@ -31,6 +31,19 @@ export async function readDotEnvFromDirectory(
 }
 
 /**
+ * Filter "bun-node" shim paths from a PATH string to avoid conflicts with the
+ * real Node.js binary when spawning child processes.
+ */
+export function filterBunNodeFromPath(pathEnv: string | undefined): string | undefined {
+  if (!pathEnv) return pathEnv;
+  const filtered = pathEnv
+    .split(':')
+    .filter((p) => !p.includes('bun-node'))
+    .join(':');
+  return filtered;
+}
+
+/**
  * Build a child-process environment using:
  * process.env -> workspace .env -> explicit overrides.
  */
@@ -39,9 +52,11 @@ export async function buildWorkspaceCommandEnv(
   overrides?: Record<string, string>
 ): Promise<Record<string, string>> {
   const workspaceEnv = cwd ? await readDotEnvFromDirectory(cwd) : null;
-  return {
+  const env = {
     ...process.env,
     ...(workspaceEnv ?? {}),
     ...(overrides ?? {}),
   } as Record<string, string>;
+  env.PATH = filterBunNodeFromPath(env.PATH) ?? env.PATH;
+  return env;
 }
