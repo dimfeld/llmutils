@@ -74,6 +74,7 @@ export interface PrFullStatus {
   reviews: PrStatusReview[];
   checks: PrStatusCheckRun[];
   checkRollupState: PrCheckRollupState;
+  latestCommitPushedAt: string | null;
 }
 
 export interface PrCheckStatusResult {
@@ -125,6 +126,8 @@ interface GraphQlStatusCheckRollup {
 
 interface GraphQlCommitNode {
   commit: {
+    pushedDate: string | null;
+    committedDate: string | null;
     statusCheckRollup: GraphQlStatusCheckRollup | null;
   } | null;
 }
@@ -265,6 +268,8 @@ const fullStatusQuery = `
         commits(last: 1) {
           nodes {
             commit {
+              pushedDate
+              committedDate
               statusCheckRollup {
                 state
                 contexts(first: 100) {
@@ -605,12 +610,14 @@ function normalizeCheckRun(node: GraphQlCheckContextNode): PrStatusCheckRun {
   };
 }
 
+function getLatestCommitNode(commits: { nodes: Array<GraphQlCommitNode | null> | null } | null) {
+  return commits?.nodes?.find((node): node is GraphQlCommitNode => node !== null)?.commit ?? null;
+}
+
 function getStatusRollupFromCommits(
   commits: { nodes: Array<GraphQlCommitNode | null> | null } | null
 ) {
-  const latestCommit =
-    commits?.nodes?.find((node): node is GraphQlCommitNode => node !== null)?.commit ?? null;
-  return latestCommit?.statusCheckRollup ?? null;
+  return getLatestCommitNode(commits)?.statusCheckRollup ?? null;
 }
 
 function normalizeChecks(
@@ -740,6 +747,9 @@ export async function fetchPrFullStatus(
       }))
   );
 
+  const latestCommit = getLatestCommitNode(pullRequest.commits);
+  const latestCommitPushedAt = latestCommit?.pushedDate ?? latestCommit?.committedDate ?? null;
+
   return {
     number: pullRequest.number,
     author: pullRequest.author?.login ?? null,
@@ -761,6 +771,7 @@ export async function fetchPrFullStatus(
     reviews: normalizedReviews,
     checks: normalizedChecks.checks,
     checkRollupState: normalizedChecks.checkRollupState,
+    latestCommitPushedAt,
   };
 }
 

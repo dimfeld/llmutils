@@ -22,6 +22,7 @@ export interface PrStatusRow {
   check_rollup_state: string | null;
   merged_at: string | null;
   pr_updated_at: string | null;
+  latest_commit_pushed_at: string | null;
   last_fetched_at: string;
   created_at: string;
   updated_at: string;
@@ -168,6 +169,7 @@ export interface UpsertPrStatusInput {
   reviewDecision?: string | null;
   checkRollupState?: string | null;
   mergedAt?: string | null;
+  latestCommitPushedAt?: string | null;
   lastFetchedAt: string;
   checks?: StoredPrCheckRunInput[];
   reviews?: StoredPrReviewInput[];
@@ -515,9 +517,10 @@ export function upsertPrStatus(db: Database, input: UpsertPrStatusInput): PrStat
           merged_at,
           pr_updated_at,
           last_fetched_at,
+          latest_commit_pushed_at,
           created_at,
           updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
         ON CONFLICT(pr_url) DO UPDATE SET
           owner = excluded.owner,
           repo = excluded.repo,
@@ -536,6 +539,7 @@ export function upsertPrStatus(db: Database, input: UpsertPrStatusInput): PrStat
           merged_at = excluded.merged_at,
           pr_updated_at = COALESCE(excluded.pr_updated_at, pr_status.pr_updated_at),
           last_fetched_at = excluded.last_fetched_at,
+          latest_commit_pushed_at = COALESCE(excluded.latest_commit_pushed_at, pr_status.latest_commit_pushed_at),
           updated_at = ${SQL_NOW_ISO_UTC}
       `
     ).run(
@@ -556,7 +560,8 @@ export function upsertPrStatus(db: Database, input: UpsertPrStatusInput): PrStat
       nextInput.checkRollupState ?? null,
       nextInput.mergedAt ?? null,
       null,
-      nextInput.lastFetchedAt
+      nextInput.lastFetchedAt,
+      nextInput.latestCommitPushedAt ?? null
     );
 
     const row = db.prepare('SELECT id FROM pr_status WHERE pr_url = ?').get(nextInput.prUrl) as {
@@ -615,9 +620,10 @@ export function upsertPrStatusMetadata(
             merged_at,
             pr_updated_at,
             last_fetched_at,
+            latest_commit_pushed_at,
             created_at,
             updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
           ON CONFLICT(pr_url) DO UPDATE SET
             owner = excluded.owner,
             repo = excluded.repo,
@@ -636,6 +642,7 @@ export function upsertPrStatusMetadata(
             merged_at = excluded.merged_at,
             pr_updated_at = excluded.pr_updated_at,
             last_fetched_at = excluded.last_fetched_at,
+            latest_commit_pushed_at = COALESCE(excluded.latest_commit_pushed_at, pr_status.latest_commit_pushed_at),
             updated_at = ${SQL_NOW_ISO_UTC}
           WHERE excluded.pr_updated_at IS NULL
              OR pr_status.pr_updated_at IS NULL
@@ -660,7 +667,8 @@ export function upsertPrStatusMetadata(
           nextInput.checkRollupState ?? null,
           nextInput.mergedAt ?? null,
           nextInput.prUpdatedAt ?? null,
-          nextInput.lastFetchedAt
+          nextInput.lastFetchedAt,
+          nextInput.latestCommitPushedAt ?? null
         );
 
       const row = db.prepare('SELECT id FROM pr_status WHERE pr_url = ?').get(nextInput.prUrl) as {

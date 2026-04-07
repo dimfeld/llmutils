@@ -47,6 +47,8 @@ describe('common/github/pr_status', () => {
             nodes: [
               {
                 commit: {
+                  pushedDate: '2026-03-20T00:05:00.000Z',
+                  committedDate: '2026-03-20T00:04:30.000Z',
                   statusCheckRollup: {
                     state: 'FAILURE',
                     contexts: {
@@ -145,6 +147,7 @@ describe('common/github/pr_status', () => {
         },
       ],
       checkRollupState: 'failure',
+      latestCommitPushedAt: '2026-03-20T00:05:00.000Z',
     });
     expect(graphql).toHaveBeenCalledTimes(1);
   });

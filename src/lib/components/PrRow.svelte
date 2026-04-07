@@ -71,6 +71,13 @@
           {reviewDecisionLabel(pr.status.review_decision)}
         </span>
       {/if}
+      {#if pr.currentUserPushedAfterReview}
+        <span
+          class="inline-flex items-center rounded-full bg-orange-100 px-1.5 py-0.5 text-xs leading-none font-medium text-orange-800 dark:bg-orange-900/30 dark:text-orange-300"
+        >
+          New commits
+        </span>
+      {/if}
       {#if pr.linkedPlans.length > 0}
         <span class="text-xs text-muted-foreground">
           Plan #{pr.linkedPlans[0].planId}{pr.linkedPlans.length > 1

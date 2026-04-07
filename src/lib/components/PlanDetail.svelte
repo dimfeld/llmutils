@@ -1043,14 +1043,16 @@
               </div>
             </div>
             <pre
-              class="plan-detail-content mt-1 whitespace-pre-wrap font-sans text-foreground"
-            >{@html renderPlanContentHtml(issue.content)}</pre>
+              class="plan-detail-content mt-1 font-sans whitespace-pre-wrap text-foreground">{@html renderPlanContentHtml(
+                issue.content
+              )}</pre>
             {#if issue.suggestion}
               <div class="mt-1 text-xs text-muted-foreground">
                 <span class="font-medium text-green-700 dark:text-green-400">Suggestion:</span>
                 <pre
-                  class="plan-detail-content mt-0.5 whitespace-pre-wrap font-sans text-xs text-muted-foreground"
-                >{@html renderPlanContentHtml(issue.suggestion)}</pre>
+                  class="plan-detail-content mt-0.5 font-sans text-xs whitespace-pre-wrap text-muted-foreground">{@html renderPlanContentHtml(
+                    issue.suggestion
+                  )}</pre>
               </div>
             {/if}
           </li>
@@ -1066,8 +1068,9 @@
         Details
       </h3>
       <pre
-        class="plan-detail-content text-sm whitespace-pre-wrap text-foreground font-sans"
-      >{@html renderPlanContentHtml(plan.details ?? '')}</pre>
+        class="plan-detail-content font-sans text-sm whitespace-pre-wrap text-foreground">{@html renderPlanContentHtml(
+          plan.details ?? ''
+        )}</pre>
     </div>
   {/if}
 

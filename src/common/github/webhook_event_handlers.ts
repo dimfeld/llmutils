@@ -331,6 +331,10 @@ export function handlePullRequestEvent(
       const existing = getPrStatusByRepoAndNumber(db, nextOwner, nextRepo, pullRequest.number);
       const previousHeadSha = existing?.head_sha ?? null;
       let reviewRequestChanged = false;
+      const isPushAction =
+        parsed.action === 'synchronize' ||
+        parsed.action === 'opened' ||
+        parsed.action === 'reopened';
       const nextDetail = upsertPrStatusMetadata(db, {
         prUrl,
         owner: nextOwner,
@@ -351,6 +355,7 @@ export function handlePullRequestEvent(
         prUpdatedAt: pullRequest.updatedAt,
         lastFetchedAt: getNowIsoString(),
         labels: pullRequest.labels,
+        latestCommitPushedAt: isPushAction ? (pullRequest.updatedAt ?? null) : undefined,
       });
 
       if (!nextDetail) {

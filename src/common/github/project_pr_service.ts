@@ -61,6 +61,7 @@ function buildUpsertPrStatusInput(
     reviewDecision: fullStatus.reviewDecision,
     checkRollupState: fullStatus.checkRollupState,
     mergedAt: fullStatus.mergedAt,
+    latestCommitPushedAt: fullStatus.latestCommitPushedAt,
     lastFetchedAt,
     checks: fullStatus.checks.map((check) => ({
       name: check.name,

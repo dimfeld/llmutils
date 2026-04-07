@@ -30,6 +30,7 @@ export interface EnrichedProjectPr extends PrStatusDetail {
   linkedPlans: LinkedPlanSummary[];
   projectId: number;
   currentUserReviewRequestLabel: string | null;
+  currentUserPushedAfterReview: boolean;
 }
 
 interface RefreshResult {
@@ -44,6 +45,17 @@ interface ResolvedProjectRepoContext {
   ownerRepo: ReturnType<typeof parseOwnerRepoFromRepositoryId>;
 }
 
+function getCurrentUserPushedAfterReview(pr: PrStatusDetail, username: string | null): boolean {
+  if (!username || !pr.status.latest_commit_pushed_at) {
+    return false;
+  }
+  const latestReviewAt = getLatestSubmittedReviewAt(pr, username);
+  if (latestReviewAt === null) {
+    return false;
+  }
+  return pr.status.latest_commit_pushed_at > latestReviewAt;
+}
+
 function enrichProjectPrs(
   projectId: number,
   prs: PrStatusDetail[],
@@ -55,6 +67,7 @@ function enrichProjectPrs(
     projectId,
     linkedPlans: linkedPlansByPrUrl.get(pr.status.pr_url) ?? [],
     currentUserReviewRequestLabel: getCurrentUserReviewRequestLabel(pr, username),
+    currentUserPushedAfterReview: getCurrentUserPushedAfterReview(pr, username),
   }));
 }
 

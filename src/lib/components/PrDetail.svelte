@@ -12,6 +12,7 @@
   import PrCheckRunList from './PrCheckRunList.svelte';
   import PrReviewList from './PrReviewList.svelte';
   import ExternalLink from '@lucide/svelte/icons/external-link';
+  import { formatRelativeTime } from '$lib/utils/time.js';
 
   let { pr, projectId }: { pr: EnrichedProjectPr; projectId: string } = $props();
 </script>
@@ -78,6 +79,13 @@
         Conflicts
       </span>
     {/if}
+    {#if pr.currentUserPushedAfterReview}
+      <span
+        class="inline-flex items-center rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-800 dark:bg-orange-900/30 dark:text-orange-300"
+      >
+        New commits since your review
+      </span>
+    {/if}
   </div>
 
   <!-- Labels -->
@@ -98,6 +106,15 @@
   {#if pr.status.author}
     <div class="text-sm text-muted-foreground">
       Opened by <span class="font-medium text-foreground">{pr.status.author}</span>
+    </div>
+  {/if}
+
+  <!-- Last push -->
+  {#if pr.status.latest_commit_pushed_at}
+    <div class="text-sm text-muted-foreground">
+      Last push: <span class="font-medium text-foreground"
+        >{formatRelativeTime(pr.status.latest_commit_pushed_at)}</span
+      >
     </div>
   {/if}
 
