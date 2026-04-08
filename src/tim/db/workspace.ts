@@ -156,6 +156,23 @@ export function findWorkspacesByProjectId(db: Database, projectId: number): Work
     .all(projectId) as WorkspaceRow[];
 }
 
+export function getPrimaryWorkspacePath(db: Database, projectId: number): string | null {
+  const row = db
+    .prepare(
+      `
+        SELECT workspace_path
+        FROM workspace
+        WHERE project_id = ?
+          AND workspace_type = ?
+        ORDER BY updated_at DESC, id DESC
+        LIMIT 1
+      `
+    )
+    .get(projectId, WORKSPACE_TYPE_VALUES.primary) as { workspace_path: string } | null;
+
+  return row?.workspace_path ?? null;
+}
+
 export function listAllWorkspaces(db: Database): WorkspaceRow[] {
   return db
     .prepare('SELECT * FROM workspace ORDER BY created_at DESC, id DESC')

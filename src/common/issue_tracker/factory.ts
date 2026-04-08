@@ -8,9 +8,12 @@
 
 import { createGitHubClient } from './github.js';
 import { createLinearClient } from '../linear.js';
+import { readDotEnvFromDirectory } from '../env.js';
 import { loadEffectiveConfig } from '../../tim/configLoader.js';
 import { debugLog } from '../../logging.js';
 import { resolveGitHubToken } from '../github/token.js';
+import { getDatabase } from '../../tim/db/database.js';
+import { getPrimaryWorkspacePath } from '../../tim/db/workspace.js';
 import type { TimConfig } from '../../tim/configSchema.js';
 import type { IssueTrackerClient, IssueTrackerConfig, IssueTrackerRegistry } from './types.js';
 
@@ -22,35 +25,74 @@ const issueTrackerRegistry: IssueTrackerRegistry = {
   linear: createLinearClient,
 };
 
+interface TrackerAvailability {
+  github: boolean;
+  linear: boolean;
+  available: Array<'github' | 'linear'>;
+  unavailable: Array<'github' | 'linear'>;
+}
+
+function getTrackerAvailabilityFromKeys(githubKey: boolean, linearKey: boolean): TrackerAvailability {
+  const available: Array<'github' | 'linear'> = [];
+  const unavailable: Array<'github' | 'linear'> = [];
+
+  if (githubKey) available.push('github');
+  else unavailable.push('github');
+
+  if (linearKey) available.push('linear');
+  else unavailable.push('linear');
+
+  return {
+    github: githubKey,
+    linear: linearKey,
+    available,
+    unavailable,
+  };
+}
+
+function getLinearApiKeyFromProcessEnv(): string | undefined {
+  return process.env.LINEAR_API_KEY?.trim() || undefined;
+}
+
+async function getLinearApiKeyFromProject(projectId: number): Promise<string | undefined> {
+  const db = getDatabase();
+  const primaryWorkspacePath = getPrimaryWorkspacePath(db, projectId);
+  if (!primaryWorkspacePath) {
+    return undefined;
+  }
+
+  const workspaceEnv = await readDotEnvFromDirectory(primaryWorkspacePath);
+  return workspaceEnv?.LINEAR_API_KEY?.trim() || undefined;
+}
+
+async function getLinearApiKey(projectId?: number): Promise<string | undefined> {
+  if (projectId === undefined) {
+    return getLinearApiKeyFromProcessEnv();
+  }
+
+  const projectKey = await getLinearApiKeyFromProject(projectId);
+  return projectKey ?? getLinearApiKeyFromProcessEnv();
+}
+
+export async function getAvailableTrackersForProject(
+  projectId?: number
+): Promise<TrackerAvailability> {
+  const github = !!resolveGitHubToken();
+  const linear = !!(await getLinearApiKey(projectId));
+
+  return getTrackerAvailabilityFromKeys(github, linear);
+}
+
 /**
  * Check which issue trackers are available based on configured API keys
  *
  * @returns Object indicating which trackers have API keys configured
  */
-export function getAvailableTrackers(): {
-  github: boolean;
-  linear: boolean;
-  available: Array<'github' | 'linear'>;
-  unavailable: Array<'github' | 'linear'>;
-} {
+export function getAvailableTrackers(): TrackerAvailability {
   const github = !!resolveGitHubToken();
-  const linear = !!process.env.LINEAR_API_KEY;
+  const linear = !!getLinearApiKeyFromProcessEnv();
 
-  const available: Array<'github' | 'linear'> = [];
-  const unavailable: Array<'github' | 'linear'> = [];
-
-  if (github) available.push('github');
-  else unavailable.push('github');
-
-  if (linear) available.push('linear');
-  else unavailable.push('linear');
-
-  return {
-    github,
-    linear,
-    available,
-    unavailable,
-  };
+  return getTrackerAvailabilityFromKeys(github, linear);
 }
 
 /**
@@ -60,7 +102,10 @@ export function getAvailableTrackers(): {
  * @returns Promise resolving to an IssueTrackerClient instance
  * @throws Error if the tracker is not supported or not properly configured
  */
-export async function getIssueTracker(config?: TimConfig): Promise<IssueTrackerClient> {
+export async function getIssueTracker(
+  config?: TimConfig,
+  options?: { projectId?: number }
+): Promise<IssueTrackerClient> {
   // Load configuration if not provided
   if (!config) {
     config = await loadEffectiveConfig();
@@ -75,7 +120,9 @@ export async function getIssueTracker(config?: TimConfig): Promise<IssueTrackerC
   }
 
   // Validate that the required API key is present
-  const availableTrackers = getAvailableTrackers();
+  const availableTrackers = options?.projectId
+    ? await getAvailableTrackersForProject(options.projectId)
+    : getAvailableTrackers();
   if (!availableTrackers[trackerType]) {
     const envVarName = trackerType === 'github' ? 'GITHUB_TOKEN' : 'LINEAR_API_KEY';
     throw new Error(
@@ -87,7 +134,9 @@ export async function getIssueTracker(config?: TimConfig): Promise<IssueTrackerC
 
   // Get the appropriate API key
   const apiKey =
-    trackerType === 'github' ? (resolveGitHubToken() ?? undefined) : process.env.LINEAR_API_KEY;
+    trackerType === 'github'
+      ? (resolveGitHubToken() ?? undefined)
+      : await getLinearApiKey(options?.projectId);
 
   // Create the tracker configuration
   const trackerConfig: IssueTrackerConfig = {

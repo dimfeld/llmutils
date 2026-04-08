@@ -11,6 +11,7 @@ import {
   deleteWorkspace,
   findWorkspacesByProjectId,
   findWorkspacesByTaskId,
+  getPrimaryWorkspacePath,
   getWorkspaceByPath,
   getWorkspaceById,
   getWorkspaceIssues,
@@ -142,8 +143,31 @@ describe('tim db/workspace', () => {
     expect(
       findWorkspacesByProjectId(db, projectId)
         .map((workspace) => workspace.workspace_path)
-        .sort()
+      .sort()
     ).toEqual(['/tmp/workspace-a', '/tmp/workspace-b']);
+  });
+
+  test('getPrimaryWorkspacePath returns the most recent primary workspace', () => {
+    recordWorkspace(db, {
+      projectId,
+      taskId: 'task-primary-old',
+      workspacePath: '/tmp/workspace-primary-old',
+      workspaceType: 'primary',
+    });
+    recordWorkspace(db, {
+      projectId,
+      taskId: 'task-primary-new',
+      workspacePath: '/tmp/workspace-primary-new',
+      workspaceType: 'primary',
+    });
+    recordWorkspace(db, {
+      projectId,
+      taskId: 'task-standard',
+      workspacePath: '/tmp/workspace-standard',
+    });
+
+    expect(getPrimaryWorkspacePath(db, projectId)).toBe('/tmp/workspace-primary-new');
+    expect(getPrimaryWorkspacePath(db, otherProjectId)).toBeNull();
   });
 
   test('patchWorkspace updates selected fields only', () => {

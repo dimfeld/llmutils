@@ -53,7 +53,12 @@ export const fetchIssueForImport = query(
       error(400, 'Project does not have a git root configured');
     }
 
-    return fetchIssueForImportOnServer(identifier, mode as IssueImportMode, project.last_git_root);
+    return fetchIssueForImportOnServer(
+      identifier,
+      mode as IssueImportMode,
+      project.last_git_root,
+      projectId
+    );
   }
 );
 
@@ -116,6 +121,6 @@ export const checkIssueTrackerStatus = query(
       };
     }
 
-    return getIssueTrackerStatusOnServer(project.last_git_root);
+    return getIssueTrackerStatusOnServer(project.last_git_root, projectId);
   }
 );

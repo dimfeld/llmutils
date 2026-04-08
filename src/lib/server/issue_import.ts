@@ -4,7 +4,11 @@ import {
   type RmprOptions,
 } from '$common/comment_options.js';
 import { getGitRepository } from '$common/git.js';
-import { getAvailableTrackers, getIssueTracker } from '$common/issue_tracker/factory.js';
+import {
+  getAvailableTrackers,
+  getAvailableTrackersForProject,
+  getIssueTracker,
+} from '$common/issue_tracker/factory.js';
 import type { IssueWithComments } from '$common/issue_tracker/types.js';
 import { loadEffectiveConfig } from '$tim/configLoader.js';
 import { getRepositoryIdentity } from '$tim/assignments/workspace_identifier.js';
@@ -154,11 +158,12 @@ function appendMissingSegments(
 export async function fetchIssueForImport(
   identifier: string,
   mode: IssueImportMode,
-  gitRoot: string
+  gitRoot: string,
+  projectId?: number
 ): Promise<{ issueData: IssueWithComments; tracker: IssueTrackerStatus }> {
   const config = await loadEffectiveConfig(undefined, { cwd: gitRoot });
   const trackerType = config.issueTracker ?? 'github';
-  const trackerStatus = getIssueTrackerStatusFromType(trackerType);
+  const trackerStatus = await getIssueTrackerStatusFromType(trackerType, projectId);
   if (!trackerStatus.available) {
     throw new Error(`${trackerStatus.displayName} issue tracker is not configured`);
   }
@@ -172,7 +177,7 @@ export async function fetchIssueForImport(
 
   const parsedInput = parseIssueInput(trimmedIdentifier);
 
-  const issueTracker = await getIssueTracker(config);
+  const issueTracker = await getIssueTracker(config, { projectId });
   const supportsHierarchical = Boolean(issueTracker.fetchIssueWithChildren);
 
   // parseIssueInput handles common formats (bare numbers, URLs, branch names).
@@ -516,8 +521,13 @@ export async function createPlansFromIssue(
   return { planUuid: parentUuid };
 }
 
-function getIssueTrackerStatusFromType(trackerType: 'github' | 'linear'): IssueTrackerStatus {
-  const availableTrackers = getAvailableTrackers();
+async function getIssueTrackerStatusFromType(
+  trackerType: 'github' | 'linear',
+  projectId?: number
+): Promise<IssueTrackerStatus> {
+  const availableTrackers = projectId
+    ? await getAvailableTrackersForProject(projectId)
+    : getAvailableTrackers();
   return {
     available: availableTrackers[trackerType],
     trackerType,
@@ -526,8 +536,11 @@ function getIssueTrackerStatusFromType(trackerType: 'github' | 'linear'): IssueT
   };
 }
 
-export async function getIssueTrackerStatus(gitRoot: string): Promise<IssueTrackerStatus> {
+export async function getIssueTrackerStatus(
+  gitRoot: string,
+  projectId?: number
+): Promise<IssueTrackerStatus> {
   const config = await loadEffectiveConfig(undefined, { cwd: gitRoot });
   const trackerType = config.issueTracker ?? 'github';
-  return getIssueTrackerStatusFromType(trackerType);
+  return getIssueTrackerStatusFromType(trackerType, projectId);
 }

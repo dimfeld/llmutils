@@ -8,15 +8,33 @@ vi.mock('../../tim/configLoader.js', () => ({
   loadEffectiveConfig: vi.fn(),
 }));
 
+vi.mock('../../tim/db/database.js', () => ({
+  getDatabase: vi.fn(),
+}));
+
+vi.mock('../../tim/db/workspace.js', () => ({
+  getPrimaryWorkspacePath: vi.fn(),
+}));
+
+vi.mock('../env.js', () => ({
+  readDotEnvFromDirectory: vi.fn(),
+}));
+
 vi.mock('../linear.js', () => ({
   createLinearClient: vi.fn(),
 }));
 
 // Import the mocked modules
 import { loadEffectiveConfig } from '../../tim/configLoader.js';
+import { getDatabase } from '../../tim/db/database.js';
+import { getPrimaryWorkspacePath } from '../../tim/db/workspace.js';
+import { readDotEnvFromDirectory } from '../env.js';
 import { createLinearClient } from '../linear.js';
 
 const mockLoadEffectiveConfig = vi.mocked(loadEffectiveConfig);
+const mockGetDatabase = vi.mocked(getDatabase);
+const mockGetPrimaryWorkspacePath = vi.mocked(getPrimaryWorkspacePath);
+const mockReadDotEnvFromDirectory = vi.mocked(readDotEnvFromDirectory);
 const mockCreateLinearClient = vi.mocked(createLinearClient);
 
 describe('Issue Tracker Factory Integration', () => {
@@ -31,6 +49,9 @@ describe('Issue Tracker Factory Integration', () => {
     clearGitHubTokenCache();
     // Reset mocks
     vi.clearAllMocks();
+    mockGetDatabase.mockReturnValue({} as never);
+    mockGetPrimaryWorkspacePath.mockReturnValue(null);
+    mockReadDotEnvFromDirectory.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -95,6 +116,34 @@ describe('Issue Tracker Factory Integration', () => {
       expect(client.getDisplayName()).toBe('Linear');
       expect(client.getConfig().type).toBe('linear');
       expect(client.getConfig().apiKey).toBe('lin_test_key');
+    });
+
+    test('should prefer the project workspace .env when a project id is provided', async () => {
+      process.env.LINEAR_API_KEY = 'global-linear-key';
+      mockGetPrimaryWorkspacePath.mockReturnValue('/tmp/project-workspace');
+      mockReadDotEnvFromDirectory.mockResolvedValue({
+        LINEAR_API_KEY: 'project-linear-key',
+      });
+
+      mockCreateLinearClient.mockImplementation((config: any) => ({
+        getDisplayName: () => 'Linear',
+        getConfig: () => config,
+        async fetchIssue() {
+          return { issue: {} as any, comments: [] };
+        },
+        async fetchAllOpenIssues() {
+          return [];
+        },
+        parseIssueIdentifier() {
+          return null;
+        },
+      }));
+
+      const client = await getIssueTracker({ issueTracker: 'linear' }, { projectId: 42 });
+
+      expect(mockGetPrimaryWorkspacePath).toHaveBeenCalledWith({}, 42);
+      expect(mockReadDotEnvFromDirectory).toHaveBeenCalledWith('/tmp/project-workspace');
+      expect(client.getConfig().apiKey).toBe('project-linear-key');
     });
 
     test('should default to github when no issueTracker specified', async () => {

@@ -10,6 +10,7 @@ vi.mock('$tim/configLoader.js', () => ({
 
 vi.mock('$common/issue_tracker/factory.js', () => ({
   getAvailableTrackers: vi.fn(),
+  getAvailableTrackersForProject: vi.fn(),
   getIssueTracker: vi.fn(),
 }));
 
@@ -48,7 +49,11 @@ vi.mock('$tim/plans.js', () => ({
 }));
 
 import { loadEffectiveConfig } from '$tim/configLoader.js';
-import { getAvailableTrackers, getIssueTracker } from '$common/issue_tracker/factory.js';
+import {
+  getAvailableTrackers,
+  getAvailableTrackersForProject,
+  getIssueTracker,
+} from '$common/issue_tracker/factory.js';
 import { createStubPlanFromIssue, parseIssueInput } from '$tim/issue_utils.js';
 import { getGitRepository } from '$common/git.js';
 import { getServerContext } from '$lib/server/init.js';
@@ -114,6 +119,12 @@ describe('issue_import server helpers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getAvailableTrackers).mockReturnValue({
+      github: true,
+      linear: true,
+      available: ['github', 'linear'],
+      unavailable: [],
+    });
+    vi.mocked(getAvailableTrackersForProject).mockResolvedValue({
       github: true,
       linear: true,
       available: ['github', 'linear'],
@@ -1293,6 +1304,32 @@ describe('issue_import server helpers', () => {
 
       const status = await getIssueTrackerStatus('/tmp/repo');
 
+      expect(status).toEqual({
+        available: true,
+        trackerType: 'linear',
+        displayName: 'Linear',
+        supportsHierarchical: true,
+      });
+    });
+
+    test('uses project-specific tracker availability when a project id is provided', async () => {
+      vi.mocked(loadEffectiveConfig).mockResolvedValue({ issueTracker: 'linear' } as never);
+      vi.mocked(getAvailableTrackers).mockReturnValue({
+        github: false,
+        linear: false,
+        available: [],
+        unavailable: ['github', 'linear'],
+      });
+      vi.mocked(getAvailableTrackersForProject).mockResolvedValue({
+        github: false,
+        linear: true,
+        available: ['linear'],
+        unavailable: ['github'],
+      });
+
+      const status = await getIssueTrackerStatus('/tmp/repo', 7);
+
+      expect(getAvailableTrackersForProject).toHaveBeenCalledWith(7);
       expect(status).toEqual({
         available: true,
         trackerType: 'linear',
