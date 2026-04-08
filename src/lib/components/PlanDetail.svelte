@@ -506,10 +506,10 @@
   }
 </script>
 
-<div class="space-y-6 p-4">
-  <!-- Header -->
-  <div>
-    <div class="flex items-center gap-2">
+<!-- Sticky plan number + title header -->
+<div class="@container sticky top-0 z-10 border-b border-border bg-background px-4 py-3">
+  <div class="flex flex-col gap-0.5 @md:flex-row @md:items-center @md:gap-2">
+    <div class="flex shrink-0 items-center gap-2">
       <span class="text-sm font-medium text-muted-foreground">#{plan.planId}</span>
       {#if plan.epic}
         <span
@@ -519,11 +519,17 @@
         </span>
       {/if}
     </div>
-    <h2 class="mt-1 text-xl font-semibold text-foreground">{plan.title ?? 'Untitled'}</h2>
-    {#if projectName}
-      <div class="mt-0.5 text-sm text-muted-foreground">{projectName}</div>
-    {/if}
-    <div class="mt-2 flex items-center gap-2">
+    <h2 class="text-xl font-semibold text-foreground">{plan.title ?? 'Untitled'}</h2>
+  </div>
+  {#if projectName}
+    <div class="mt-0.5 text-sm text-muted-foreground">{projectName}</div>
+  {/if}
+</div>
+
+<div class="space-y-6 p-4">
+  <!-- Status badges + actions -->
+  <div>
+    <div class="flex items-center gap-2">
       <StatusBadge status={plan.displayStatus} />
       <PriorityBadge priority={plan.priority} />
 
