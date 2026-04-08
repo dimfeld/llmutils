@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { DATABASE_FILENAME, openDatabase } from '../../tim/db/database.js';
-import { upsertPlan } from '../../tim/db/plan.js';
+import { getPlanByUuid, upsertPlan } from '../../tim/db/plan.js';
 import { getOrCreateProject } from '../../tim/db/project.js';
 import {
   getWebhookCursor,
@@ -186,6 +186,61 @@ describe('common/github/webhook_ingest', () => {
     expect(detail?.checks.map((check) => check.name)).toEqual(['unit tests']);
     expect(detail?.status.check_rollup_state).toBe('success');
     expect(getPrStatusByUrl(db, 'https://github.com/other/repo/pull/99')).toBeNull();
+  });
+
+  test('ingestWebhookEvents marks a linked needs_review plan done when the PR is merged and the plan is fully finished', async () => {
+    upsertPlan(db, getOrCreateProject(db, 'github.com__example__repo').id, {
+      uuid: 'plan-1',
+      planId: 1,
+      title: 'Plan 1',
+      branch: 'feature/webhook',
+      filename: '1.plan.md',
+      status: 'needs_review',
+      sourceDocsUpdatedAt: '2026-03-30T09:30:00.000Z',
+      sourceLessonsAppliedAt: '2026-03-30T09:45:00.000Z',
+      tasks: [
+        { title: 'Task 1', description: 'Done', done: true },
+        { title: 'Task 2', description: 'Done', done: true },
+      ],
+    });
+
+    mocks.fetchWebhookEvents.mockResolvedValueOnce([
+      {
+        id: 15,
+        deliveryId: 'delivery-merged',
+        eventType: 'pull_request',
+        action: 'closed',
+        repositoryFullName: 'example/repo',
+        receivedAt: '2026-03-30T10:00:00.000Z',
+        payloadJson: JSON.stringify({
+          action: 'closed',
+          repository: { full_name: 'example/repo' },
+          pull_request: {
+            number: 51,
+            title: 'Webhook PR',
+            state: 'closed',
+            draft: false,
+            merged_at: '2026-03-30T10:00:00.000Z',
+            user: { login: 'alice' },
+            head: { sha: 'sha-51', ref: 'feature/webhook' },
+            base: { ref: 'main' },
+            labels: [],
+            requested_reviewers: [],
+            updated_at: '2026-03-30T10:00:00.000Z',
+          },
+        }),
+      },
+    ]);
+    mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
+
+    const result = await ingestWebhookEvents(db);
+    const plan = getPlanByUuid(db, 'plan-1');
+
+    expect(result.errors).toEqual([]);
+    expect(result.prsUpdated).toEqual(['https://github.com/example/repo/pull/51']);
+    expect(plan?.status).toBe('done');
+    expect(plan?.docs_updated_at).toBe('2026-03-30T09:30:00.000Z');
+    expect(plan?.lessons_applied_at).toBe('2026-03-30T09:45:00.000Z');
   });
 
   test('ingestWebhookEvents returns early when webhook config is missing', async () => {

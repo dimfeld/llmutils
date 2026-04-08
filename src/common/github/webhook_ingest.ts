@@ -12,13 +12,151 @@ import {
   type PrRefreshTarget,
   type WebhookHandlerOptions,
 } from './webhook_event_handlers.js';
+import { constructGitHubRepositoryId } from './pull_requests.js';
 import { getKnownRepoFullNames } from '../../tim/db/pr_status.js';
+import { loadEffectiveConfig } from '../../tim/configLoader.js';
+import { removeAssignment } from '../../tim/db/assignment.js';
+import {
+  getPlanByUuid,
+  getPlanDependenciesByUuid,
+  getPlanTasksByUuid,
+  getPlanTagsByUuid,
+  getPlansByProject,
+  upsertPlan,
+} from '../../tim/db/plan.js';
+import { getProject } from '../../tim/db/project.js';
 import {
   getWebhookCursor,
   insertWebhookLogEntry,
   pruneOldWebhookLogs,
   updateWebhookCursor,
 } from '../../tim/db/webhook_log.js';
+import { checkAndMarkParentDone } from '../../tim/plans/parent_cascade.js';
+import { invertPlanIdToUuidMap, planRowToSchemaInput } from '../../tim/plans_db.js';
+import { toPlanUpsertInput } from '../../tim/db/plan_sync.js';
+import { type PlanSchema } from '../../tim/planSchema.js';
+import { getDefaultConfig } from '../../tim/configSchema.js';
+import { getPrStatusByRepoAndNumber } from '../../tim/db/pr_status.js';
+
+function computeNeedsFinishExecutor(
+  docsUpdatedAt: string | null,
+  lessonsAppliedAt: string | null,
+  finishConfig: { updateDocs?: { mode?: string; applyLessons?: boolean } }
+): boolean {
+  const mode = finishConfig.updateDocs?.mode ?? 'never';
+  const needsDocs = docsUpdatedAt === null && mode !== 'never';
+  const needsLessons = lessonsAppliedAt === null && finishConfig.updateDocs?.applyLessons === true;
+  return needsDocs || needsLessons;
+}
+
+function isMergedPrPayload(
+  payload: unknown
+): payload is {
+  pull_request: { number: number; merged_at?: string | null; state?: string };
+} {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+
+  const pullRequest = (payload as { pull_request?: unknown }).pull_request;
+  if (!pullRequest || typeof pullRequest !== 'object') {
+    return false;
+  }
+
+  const mergedAt = (pullRequest as { merged_at?: unknown }).merged_at;
+  const state = (pullRequest as { state?: unknown }).state;
+  return typeof mergedAt === 'string' && state === 'closed';
+}
+
+async function autoCompleteMergedLinkedPlans(
+  db: Database,
+  owner: string,
+  repo: string,
+  prNumber: number
+): Promise<void> {
+  const prStatus = getPrStatusByRepoAndNumber(db, owner, repo, prNumber);
+  if (!prStatus) {
+    return;
+  }
+
+  const project = getProject(db, constructGitHubRepositoryId(owner, repo));
+  if (!project) {
+    return;
+  }
+
+  const finishConfig = project.last_git_root
+    ? await loadEffectiveConfig(undefined, { cwd: project.last_git_root })
+    : getDefaultConfig();
+
+  const linkedPlanRows = db
+    .prepare(
+      `
+      SELECT DISTINCT plan_uuid
+      FROM plan_pr
+      WHERE pr_status_id = ?
+      ORDER BY plan_uuid
+    `
+    )
+    .all(prStatus.id) as Array<{ plan_uuid: string }>;
+
+  if (linkedPlanRows.length === 0) {
+    return;
+  }
+
+  const planRows = getPlansByProject(db, project.id);
+  const planIdToUuid = new Map(planRows.map((row) => [row.plan_id, row.uuid]));
+  const uuidToPlanId = invertPlanIdToUuidMap(planIdToUuid);
+  const completedParents = new Set<number>();
+  const nowIso = new Date().toISOString();
+
+  for (const { plan_uuid: planUuid } of linkedPlanRows) {
+    const planRow = getPlanByUuid(db, planUuid);
+    if (!planRow || planRow.status !== 'needs_review') {
+      continue;
+    }
+
+    const plan = planRowToSchemaInput(
+      planRow,
+      getPlanTasksByUuid(db, planUuid).map((task) => ({
+        title: task.title,
+        description: task.description,
+        done: task.done === 1,
+      })),
+      getPlanDependenciesByUuid(db, planUuid).map((dependency) => dependency.depends_on_uuid),
+      getPlanTagsByUuid(db, planUuid).map((tag) => tag.tag),
+      uuidToPlanId
+    );
+    if (
+      plan.tasks.length === 0 ||
+      !plan.tasks.every((task) => task.done === true) ||
+      computeNeedsFinishExecutor(plan.docsUpdatedAt ?? null, plan.lessonsAppliedAt ?? null, {
+        updateDocs: finishConfig.updateDocs,
+      })
+    ) {
+      continue;
+    }
+
+    const completedPlan: PlanSchema = {
+      ...plan,
+      status: 'done',
+      updatedAt: nowIso,
+    };
+
+    upsertPlan(db, project.id, {
+      ...toPlanUpsertInput(completedPlan, planIdToUuid),
+      forceOverwrite: true,
+    });
+    removeAssignment(db, project.id, completedPlan.uuid);
+
+    if (completedPlan.parent != null) {
+      completedParents.add(completedPlan.parent);
+    }
+  }
+
+  for (const parentId of completedParents) {
+    await checkAndMarkParentDone(parentId, finishConfig, { db, projectId: project.id });
+  }
+}
 
 export interface IngestResult {
   eventsIngested: number;
@@ -115,6 +253,26 @@ export async function ingestWebhookEvents(db: Database): Promise<IngestResult> {
         for (const target of result.apiRefreshTargets ?? []) {
           const key = `${target.owner}/${target.repo}#${target.prNumber}`;
           apiRefreshTargets.set(key, target);
+        }
+
+        if (
+          event.eventType === 'pull_request' &&
+          isMergedPrPayload(payload) &&
+          typeof payload.pull_request.number === 'number'
+        ) {
+          const [owner, repo] = event.repositoryFullName.split('/');
+          if (!owner || !repo) {
+            continue;
+          }
+          try {
+            await autoCompleteMergedLinkedPlans(db, owner, repo, payload.pull_request.number);
+          } catch (err) {
+            errors.push(
+              `webhook auto-complete failed: ${
+                err instanceof Error ? err.message : String(err)
+              }`
+            );
+          }
         }
       } catch (err) {
         errors.push(formatIngestError(event.id, err instanceof Error ? err.message : String(err)));
