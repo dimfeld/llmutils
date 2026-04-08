@@ -78,8 +78,12 @@ describe('classifyCheckStatus', () => {
     expect(classifyCheckStatus('PENDING')).toBe('pending');
   });
 
-  test('returns pending for unknown values', () => {
-    expect(classifyCheckStatus('IN_PROGRESS')).toBe('pending');
+  test('returns failing for lowercase failure', () => {
+    expect(classifyCheckStatus('failure')).toBe('failing');
+  });
+
+  test('returns none for unknown values', () => {
+    expect(classifyCheckStatus('IN_PROGRESS')).toBe('none');
   });
 });
 

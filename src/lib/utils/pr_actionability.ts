@@ -12,9 +12,18 @@ export interface ClassifiedPr {
 /** Classify a PR's check_rollup_state into a simplified check status. */
 export function classifyCheckStatus(checkRollupState: string | null): ActionablePr['checkStatus'] {
   if (checkRollupState === null) return 'none';
-  if (checkRollupState === 'SUCCESS') return 'passing';
-  if (checkRollupState === 'FAILURE' || checkRollupState === 'ERROR') return 'failing';
-  return 'pending';
+  switch (checkRollupState.toLowerCase()) {
+    case 'success':
+      return 'passing';
+    case 'failure':
+    case 'error':
+      return 'failing';
+    case 'pending':
+    case 'expected':
+      return 'pending';
+    default:
+      return 'none';
+  }
 }
 
 /**
