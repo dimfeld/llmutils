@@ -14,7 +14,7 @@
     threads,
     prUrl,
     planUuid,
-  }: { threads: PrReviewThreadDetail[]; prUrl: string; planUuid: string } = $props();
+  }: { threads: PrReviewThreadDetail[]; prUrl: string; planUuid?: string } = $props();
 
   let sortedThreads = $derived(
     [...threads].sort((a, b) => {
@@ -89,6 +89,11 @@
 
   async function handleConvertToTask(thread: PrReviewThreadDetail) {
     if (threadActionSubmitting !== null) {
+      return;
+    }
+
+    if (!planUuid) {
+      toast.error('Cannot convert thread to task without a plan context');
       return;
     }
 
@@ -227,20 +232,22 @@
           {thread.comments.length} comment{thread.comments.length === 1 ? '' : 's'}
         </span>
         {#if !isResolved}
-          <button
-            class="rounded px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
-            onclick={async (event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              await handleConvertToTask(thread);
-            }}
-            disabled={threadActionSubmitting !== null}
-            type="button"
-          >
-            {isSubmittingThread(thread.thread.thread_id, 'convert')
-              ? 'Converting...'
-              : 'Convert to Task'}
-          </button>
+          {#if planUuid}
+            <button
+              class="rounded px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
+              onclick={async (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                await handleConvertToTask(thread);
+              }}
+              disabled={threadActionSubmitting !== null}
+              type="button"
+            >
+              {isSubmittingThread(thread.thread.thread_id, 'convert')
+                ? 'Converting...'
+                : 'Convert to Task'}
+            </button>
+          {/if}
           <button
             class="rounded px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
             onclick={async (event) => {

@@ -23,6 +23,10 @@ const planUuidSchema = z.object({
   planUuid: z.string().min(1),
 });
 
+const prUrlSchema = z.object({
+  prUrl: z.string().url(),
+});
+
 async function loadPlanAndContext(planUuid: string) {
   const { db } = await getServerContext();
   const plan = getPlanByUuid(db, planUuid);
@@ -214,4 +218,20 @@ export const fullRefreshPrStatus = command(planUuidSchema, async ({ planUuid }) 
   }
 
   return refreshPlanPrStatusFromGitHub(db, planUuid, plan, { force: true });
+});
+
+export const refreshSinglePrStatus = command(prUrlSchema, async ({ prUrl }) => {
+  const { db } = await getServerContext();
+
+  if (!resolveGitHubToken()) {
+    error(400, 'GITHUB_TOKEN not configured');
+  }
+
+  try {
+    await refreshPrStatusFromApi(db, prUrl);
+  } catch (err) {
+    error(500, `Failed to refresh PR: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  return { success: true };
 });

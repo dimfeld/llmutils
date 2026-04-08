@@ -229,15 +229,14 @@ const PENDING_CHECK_STATUSES = new Set([
 const NON_BLOCKING_CHECK_CONCLUSIONS = new Set(['neutral', 'skipped', 'cancelled', 'stale']);
 
 function replaceCheckRuns(db: Database, prStatusId: number, checks: StoredPrCheckRunInput[]): void {
-  db.prepare('DELETE FROM pr_check_run WHERE pr_status_id = ?').run(prStatusId);
-
   if (checks.length === 0) {
+    db.prepare('DELETE FROM pr_check_run WHERE pr_status_id = ?').run(prStatusId);
     return;
   }
 
-  const insert = db.prepare(
+  const insertOrReplace = db.prepare(
     `
-      INSERT INTO pr_check_run (
+      INSERT OR REPLACE INTO pr_check_run (
         pr_status_id,
         name,
         source,
@@ -251,7 +250,7 @@ function replaceCheckRuns(db: Database, prStatusId: number, checks: StoredPrChec
   );
 
   for (const check of checks) {
-    insert.run(
+    insertOrReplace.run(
       prStatusId,
       check.name,
       check.source,

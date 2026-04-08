@@ -172,7 +172,7 @@ async function getAllProjectPrsData() {
     }
 
     const { owner, repo } = ownerRepo;
-    const prs = getPrStatusesForRepo(db, owner, repo);
+    const prs = getPrStatusesForRepo(db, owner, repo, { includeReviewThreads: true });
     const projectPrUrls = prs.map((pr) => pr.status.pr_url);
     prUrls.push(...projectPrUrls);
 
@@ -367,7 +367,7 @@ export const getProjectPrs = query(projectIdSchema, async ({ projectId }) => {
   }
 
   const { owner, repo } = ownerRepo;
-  const prs = getPrStatusesForRepo(db, owner, repo);
+  const prs = getPrStatusesForRepo(db, owner, repo, { includeReviewThreads: true });
   const username = await getGitHubUsername({ githubUsername: config.githubUsername });
   const linkedPlansByPrUrl = getLinkedPlansByPrUrl(
     db,

@@ -11,10 +11,35 @@
   } from '$lib/utils/pr_display.js';
   import PrCheckRunList from './PrCheckRunList.svelte';
   import PrReviewList from './PrReviewList.svelte';
+  import PrReviewThreadList from './PrReviewThreadList.svelte';
   import ExternalLink from '@lucide/svelte/icons/external-link';
+  import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import { formatRelativeTime } from '$lib/utils/time.js';
+  import { refreshSinglePrStatus } from '$lib/remote/pr_status.remote.js';
 
   let { pr, projectId }: { pr: EnrichedProjectPr; projectId: string } = $props();
+
+  let refreshing = $state(false);
+  let refreshError = $state<string | null>(null);
+
+  // Get planUuid if there's exactly one linked plan, otherwise undefined
+  let planUuid = $derived(
+    pr.linkedPlans.length === 1 ? pr.linkedPlans[0].planUuid : undefined
+  );
+
+  async function handleRefresh() {
+    refreshError = null;
+    refreshing = true;
+    try {
+      await refreshSinglePrStatus({ prUrl: pr.status.pr_url });
+      // Trigger a revalidation by reloading the page data
+      location.reload();
+    } catch (err) {
+      refreshError = err instanceof Error ? err.message : String(err);
+    } finally {
+      refreshing = false;
+    }
+  }
 </script>
 
 <div class="space-y-4 p-6">
@@ -29,16 +54,32 @@
         {pr.status.head_branch} &rarr; {pr.status.base_branch}
       </div>
     </div>
-    <a
-      href={pr.status.pr_url}
-      target="_blank"
-      rel="noopener noreferrer"
-      class="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
-      title="Open on GitHub"
-    >
-      <ExternalLink class="size-4" />
-    </a>
+    <div class="flex items-center gap-1 shrink-0">
+      <button
+        onclick={handleRefresh}
+        disabled={refreshing}
+        class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed dark:hover:bg-gray-800"
+        title="Refresh PR data"
+      >
+        <RefreshCw class="size-4 {refreshing ? 'animate-spin' : ''}" />
+      </button>
+      <a
+        href={pr.status.pr_url}
+        target="_blank"
+        rel="noopener noreferrer"
+        class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
+        title="Open on GitHub"
+      >
+        <ExternalLink class="size-4" />
+      </a>
+    </div>
   </div>
+
+  {#if refreshError}
+    <div class="rounded-md bg-red-50 p-3 text-sm text-red-800 dark:bg-red-900/20 dark:text-red-300">
+      {refreshError}
+    </div>
+  {/if}
 
   <!-- Badges -->
   <div class="flex flex-wrap items-center gap-1.5">
@@ -166,6 +207,26 @@
       </summary>
       <div class="mt-1.5 pl-2">
         <PrReviewList reviews={pr.reviews} />
+      </div>
+    </details>
+  {/if}
+
+  <!-- Review Threads -->
+  {#if pr.reviewThreads?.length}
+    {@const unresolvedCount = pr.reviewThreads.filter((t) => !t.thread.is_resolved).length}
+    <details open>
+      <summary
+        class="cursor-pointer text-xs font-semibold tracking-wide text-muted-foreground uppercase hover:text-foreground"
+      >
+        {pr.reviewThreads.length} review thread{pr.reviewThreads.length === 1 ? '' : 's'}
+        {#if unresolvedCount > 0}
+          <span class="text-amber-600 dark:text-amber-400">
+            ({unresolvedCount} unresolved)
+          </span>
+        {/if}
+      </summary>
+      <div class="mt-1.5 pl-2">
+        <PrReviewThreadList threads={pr.reviewThreads} prUrl={pr.status.pr_url} {planUuid} />
       </div>
     </details>
   {/if}
