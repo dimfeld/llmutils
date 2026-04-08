@@ -76,7 +76,7 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
   async fetchIssue(identifier: string): Promise<IssueWithComments> {
     debugLog(`Fetching Linear issue: ${identifier}`);
 
-    const client = getLinearClient();
+    const client = getLinearClient(this.config.apiKey);
     const parsed = this.parseIssueIdentifier(identifier);
 
     if (!parsed) {
@@ -174,7 +174,7 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
   async fetchIssueWithChildren(identifier: string): Promise<IssueWithComments> {
     debugLog(`Fetching Linear issue with children: ${identifier}`);
 
-    const client = getLinearClient();
+    const client = getLinearClient(this.config.apiKey);
     const parsed = this.parseIssueIdentifier(identifier);
 
     if (!parsed) {
@@ -289,7 +289,7 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
   async fetchAllOpenIssues(): Promise<IssueData[]> {
     debugLog('Fetching all open Linear issues');
 
-    const client = getLinearClient();
+    const client = getLinearClient(this.config.apiKey);
 
     try {
       // Fetch all open issues with pagination

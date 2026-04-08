@@ -56,6 +56,12 @@ describe('Linear Client', () => {
       process.env.LINEAR_API_KEY = '   ';
       expect(isLinearConfigured()).toBe(false);
     });
+
+    test('should prefer an explicit API key over environment configuration', () => {
+      delete process.env.LINEAR_API_KEY;
+      expect(isLinearConfigured('explicit-key')).toBe(true);
+      expect(isLinearConfigured('   ')).toBe(false);
+    });
   });
 
   describe('getLinearClient', () => {
@@ -99,6 +105,22 @@ describe('Linear Client', () => {
       expect(client).toBe(mockLinearClient);
     });
 
+    test('should create LinearClient with an explicit API key', async () => {
+      delete process.env.LINEAR_API_KEY;
+
+      const mockLinearClient = {
+        apiKey: 'explicit-api-key',
+      };
+
+      mockLinearClientConstructor.mockImplementation(function (options: any) {
+        expect(options.apiKey).toBe('explicit-api-key');
+        return mockLinearClient;
+      });
+
+      const client = getLinearClient('explicit-api-key');
+      expect(client).toBe(mockLinearClient);
+    });
+
     test('should cache the client instance and reuse it', async () => {
       process.env.LINEAR_API_KEY = 'test-api-key';
 
@@ -121,6 +143,30 @@ describe('Linear Client', () => {
       expect(mockLinearClientConstructor).toHaveBeenCalledTimes(1); // Should not be called again
       expect(client2).toBe(mockLinearClient);
       expect(client1).toBe(client2); // Same instance
+    });
+
+    test('should cache clients separately by API key', async () => {
+      mockLinearClientConstructor.mockImplementation(function (options: any) {
+        return { apiKey: options.apiKey };
+      });
+
+      const client1 = getLinearClient('key-1');
+      const client2 = getLinearClient('key-2');
+      const client1Again = getLinearClient('key-1');
+
+      expect(mockLinearClientConstructor).toHaveBeenCalledTimes(2);
+      expect(client1).toBe(client1Again);
+      expect(client1).not.toBe(client2);
+    });
+
+    test('should reject a blank explicit API key', async () => {
+      process.env.LINEAR_API_KEY = 'env-key';
+
+      expect(() => getLinearClient('   ')).toThrow(
+        'Linear API key is not set. ' +
+          'Provide an explicit API key or set LINEAR_API_KEY to use Linear integration. ' +
+          'You can obtain an API key from: https://linear.app/settings/api'
+      );
     });
 
     test('should handle LinearClient constructor errors gracefully', async () => {
@@ -193,28 +239,20 @@ describe('Linear Client', () => {
 
   describe('integration behavior', () => {
     test('should work correctly across different API keys', async () => {
-      // Test with first API key
       process.env.LINEAR_API_KEY = 'key1';
 
-      const mockClient1 = { apiKey: 'key1' };
       let constructorCallCount = 0;
-
       mockLinearClientConstructor.mockImplementation(function (options: any) {
         constructorCallCount++;
-        expect(options.apiKey).toBe(process.env.LINEAR_API_KEY);
-        return constructorCallCount === 1 ? mockClient1 : { apiKey: options.apiKey };
+        return { apiKey: options.apiKey };
       });
 
       const client1 = getLinearClient();
-      expect(client1).toBe(mockClient1);
-      expect(constructorCallCount).toBe(1);
-
-      // Change API key and clear cache
       process.env.LINEAR_API_KEY = 'key2';
-      clearLinearClientCache();
-
       const client2 = getLinearClient();
+
       expect(constructorCallCount).toBe(2);
+      expect(client1.apiKey).toBe('key1');
       expect(client2.apiKey).toBe('key2');
       expect(client1).not.toBe(client2);
     });

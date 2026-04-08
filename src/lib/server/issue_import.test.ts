@@ -14,6 +14,14 @@ vi.mock('$common/issue_tracker/factory.js', () => ({
   getIssueTracker: vi.fn(),
 }));
 
+vi.mock('$common/linear.js', () => ({
+  createLinearClient: vi.fn(),
+}));
+
+vi.mock('$common/env.js', () => ({
+  readDotEnvFromDirectory: vi.fn(),
+}));
+
 vi.mock('$tim/issue_utils.js', () => ({
   parseIssueInput: vi.fn(),
   createStubPlanFromIssue: vi.fn(),
@@ -48,12 +56,18 @@ vi.mock('$tim/plans.js', () => ({
   resolvePlanFromDb: vi.fn(),
 }));
 
+vi.mock('$tim/workspace/workspace_info.js', () => ({
+  getPreferredProjectGitRoot: vi.fn(),
+}));
+
 import { loadEffectiveConfig } from '$tim/configLoader.js';
 import {
   getAvailableTrackers,
   getAvailableTrackersForProject,
   getIssueTracker,
 } from '$common/issue_tracker/factory.js';
+import { createLinearClient } from '$common/linear.js';
+import { readDotEnvFromDirectory } from '$common/env.js';
 import { createStubPlanFromIssue, parseIssueInput } from '$tim/issue_utils.js';
 import { getGitRepository } from '$common/git.js';
 import { getServerContext } from '$lib/server/init.js';
@@ -65,6 +79,7 @@ import {
 import { getRepositoryIdentity } from '$tim/assignments/workspace_identifier.js';
 import { loadPlansFromDb } from '$tim/plans_db.js';
 import { resolvePlanFromDb } from '$tim/plans.js';
+import { getPreferredProjectGitRoot } from '$tim/workspace/workspace_info.js';
 import {
   createPlansFromIssue,
   fetchIssueForImport,
@@ -141,6 +156,7 @@ describe('issue_import server helpers', () => {
       getConfig: vi.fn(() => ({ type: 'github' })),
     };
     vi.mocked(getIssueTracker).mockResolvedValue(tracker);
+    vi.mocked(createLinearClient).mockReturnValue(tracker);
     vi.mocked(parseIssueInput).mockReturnValue({
       identifier: '123',
       isBranchName: false,
@@ -152,6 +168,8 @@ describe('issue_import server helpers', () => {
       db: {} as never,
       config: {} as never,
     });
+    vi.mocked(getPreferredProjectGitRoot).mockReturnValue('/tmp/preferred-workspace');
+    vi.mocked(readDotEnvFromDirectory).mockResolvedValue(null);
     vi.mocked(getProjectById).mockReturnValue({
       id: 7,
       name: 'repo',
@@ -305,6 +323,39 @@ describe('issue_import server helpers', () => {
 
       await expect(fetchIssueForImport('ABC-1', 'single', '/tmp/repo')).rejects.toThrow(
         'Linear issue tracker is not configured'
+      );
+    });
+
+    test('prefers LINEAR_API_KEY from the preferred project git root when creating the tracker', async () => {
+      const linearTracker: IssueTrackerClient = {
+        ...tracker,
+        fetchIssueWithChildren: vi.fn(),
+        getDisplayName: vi.fn(() => 'Linear'),
+        getConfig: vi.fn(() => ({ type: 'linear', apiKey: 'preferred-key' })),
+      };
+      vi.mocked(loadEffectiveConfig).mockResolvedValue({ issueTracker: 'linear' } as never);
+      vi.mocked(readDotEnvFromDirectory).mockResolvedValue({
+        LINEAR_API_KEY: 'preferred-key',
+      });
+      vi.mocked(createLinearClient).mockReturnValue(linearTracker);
+      vi.mocked(linearTracker.fetchIssue).mockResolvedValue(makeIssue('ABC-1', 'Linear issue'));
+      vi.mocked(parseIssueInput).mockReturnValue({
+        identifier: 'ABC-1',
+        isBranchName: false,
+        originalInput: 'ABC-1',
+      });
+
+      await fetchIssueForImport('ABC-1', 'single', '/tmp/repo', 7);
+
+      expect(getPreferredProjectGitRoot).toHaveBeenCalledWith({} as never, 7);
+      expect(readDotEnvFromDirectory).toHaveBeenCalledWith('/tmp/preferred-workspace');
+      expect(createLinearClient).toHaveBeenCalledWith({
+        type: 'linear',
+        apiKey: 'preferred-key',
+      });
+      expect(getIssueTracker).not.toHaveBeenCalledWith(
+        expect.objectContaining({ issueTracker: 'linear' }),
+        expect.anything()
       );
     });
   });
@@ -1330,6 +1381,31 @@ describe('issue_import server helpers', () => {
       const status = await getIssueTrackerStatus('/tmp/repo', 7);
 
       expect(getAvailableTrackersForProject).toHaveBeenCalledWith(7);
+      expect(status).toEqual({
+        available: true,
+        trackerType: 'linear',
+        displayName: 'Linear',
+        supportsHierarchical: true,
+      });
+    });
+
+    test('prefers the preferred project git root .env for linear availability', async () => {
+      vi.mocked(loadEffectiveConfig).mockResolvedValue({ issueTracker: 'linear' } as never);
+      vi.mocked(readDotEnvFromDirectory).mockResolvedValue({
+        LINEAR_API_KEY: 'preferred-key',
+      });
+      vi.mocked(getAvailableTrackersForProject).mockResolvedValue({
+        github: false,
+        linear: false,
+        available: [],
+        unavailable: ['github', 'linear'],
+      });
+
+      const status = await getIssueTrackerStatus('/tmp/repo', 7);
+
+      expect(getPreferredProjectGitRoot).toHaveBeenCalledWith({} as never, 7);
+      expect(readDotEnvFromDirectory).toHaveBeenCalledWith('/tmp/preferred-workspace');
+      expect(getAvailableTrackersForProject).not.toHaveBeenCalled();
       expect(status).toEqual({
         available: true,
         trackerType: 'linear',

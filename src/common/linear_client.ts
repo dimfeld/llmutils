@@ -1,26 +1,55 @@
 import { LinearClient } from '@linear/sdk';
 import { debugLog } from '../logging.ts';
 
-/** Cached Linear client instance */
-let cachedLinearClient: LinearClient | null = null;
+/** Cached Linear client instances, keyed by API key */
+const cachedLinearClients = new Map<string, LinearClient>();
+
+function resolveLinearApiKey(explicitApiKey?: string): string {
+  if (explicitApiKey !== undefined) {
+    const trimmedExplicitApiKey = explicitApiKey.trim();
+    if (!trimmedExplicitApiKey) {
+      throw new Error(
+        'Linear API key is not set. ' +
+          'Provide an explicit API key or set LINEAR_API_KEY to use Linear integration. ' +
+          'You can obtain an API key from: https://linear.app/settings/api'
+      );
+    }
+
+    return trimmedExplicitApiKey;
+  }
+
+  const apiKey = process.env.LINEAR_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error(
+      'LINEAR_API_KEY environment variable is not set. ' +
+        'Please set your Linear API key to use Linear integration. ' +
+        'You can obtain an API key from: https://linear.app/settings/api'
+    );
+  }
+
+  return apiKey;
+}
 
 /**
- * Checks if Linear is configured by verifying that the LINEAR_API_KEY environment variable is set.
- * @returns {boolean} True if LINEAR_API_KEY is present and not just whitespace, false otherwise
+ * Checks if Linear is configured by verifying that an explicit API key or
+ * the LINEAR_API_KEY environment variable is set.
+ * @returns {boolean} True if an API key is present and not just whitespace, false otherwise
  */
-export function isLinearConfigured(): boolean {
-  return Boolean(process.env.LINEAR_API_KEY?.trim());
+export function isLinearConfigured(explicitApiKey?: string): boolean {
+  const apiKey =
+    explicitApiKey !== undefined ? explicitApiKey.trim() : process.env.LINEAR_API_KEY?.trim();
+  return Boolean(apiKey);
 }
 
 /**
  * Gets or creates a Linear SDK client instance.
  *
- * This function reads the LINEAR_API_KEY from environment variables and initializes
- * the LinearClient from @linear/sdk. The client instance is cached for reuse across
- * multiple calls to avoid unnecessary reinitialization.
+ * This function uses an explicit API key when provided, otherwise it reads
+ * LINEAR_API_KEY from environment variables. Client instances are cached by API key
+ * for reuse across multiple calls.
  *
  * @returns {LinearClient} The Linear SDK client instance
- * @throws {Error} When LINEAR_API_KEY environment variable is not set
+ * @throws {Error} When no API key is available
  *
  * @example
  * ```typescript
@@ -34,33 +63,25 @@ export function isLinearConfigured(): boolean {
  * }
  * ```
  */
-export function getLinearClient(): LinearClient {
-  // Return cached instance if available
+export function getLinearClient(explicitApiKey?: string): LinearClient {
+  const apiKey = resolveLinearApiKey(explicitApiKey);
+
+  const cachedLinearClient = cachedLinearClients.get(apiKey);
   if (cachedLinearClient) {
     debugLog('Using cached Linear client instance');
     return cachedLinearClient;
   }
 
-  // Check if Linear API key is configured
-  const apiKey = process.env.LINEAR_API_KEY?.trim();
-  if (!apiKey) {
-    throw new Error(
-      'LINEAR_API_KEY environment variable is not set. ' +
-        'Please set your Linear API key to use Linear integration. ' +
-        'You can obtain an API key from: https://linear.app/settings/api'
-    );
-  }
-
   debugLog('Initializing new Linear client with API key');
 
   try {
-    // Initialize the Linear client with the API key
-    cachedLinearClient = new LinearClient({
+    const client = new LinearClient({
       apiKey,
     });
+    cachedLinearClients.set(apiKey, client);
 
     debugLog('Linear client initialized successfully');
-    return cachedLinearClient;
+    return client;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     throw new Error(
@@ -77,6 +98,6 @@ export function getLinearClient(): LinearClient {
  * @internal
  */
 export function clearLinearClientCache(): void {
-  debugLog('Clearing cached Linear client instance');
-  cachedLinearClient = null;
+  debugLog('Clearing cached Linear client instances');
+  cachedLinearClients.clear();
 }

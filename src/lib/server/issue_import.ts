@@ -9,6 +9,8 @@ import {
   getAvailableTrackersForProject,
   getIssueTracker,
 } from '$common/issue_tracker/factory.js';
+import { createLinearClient } from '$common/linear.js';
+import { readDotEnvFromDirectory } from '$common/env.js';
 import type { IssueWithComments } from '$common/issue_tracker/types.js';
 import { loadEffectiveConfig } from '$tim/configLoader.js';
 import { getRepositoryIdentity } from '$tim/assignments/workspace_identifier.js';
@@ -26,6 +28,7 @@ import {
 import type { PlanSchema, PlanWithLegacyMetadata } from '$tim/planSchema.js';
 import { loadPlansFromDb } from '$tim/plans_db.js';
 import { resolvePlanFromDb } from '$tim/plans.js';
+import { getPreferredProjectGitRoot } from '$tim/workspace/workspace_info.js';
 import { getServerContext } from './init.js';
 
 export type IssueImportMode = 'single' | 'separate' | 'merged';
@@ -155,6 +158,39 @@ function appendMissingSegments(
   return { details: updated, newSegments };
 }
 
+async function getPreferredProjectLinearApiKey(projectId?: number): Promise<string | undefined> {
+  if (projectId === undefined) {
+    return undefined;
+  }
+
+  const { db } = await getServerContext();
+  const preferredGitRoot = getPreferredProjectGitRoot(db, projectId);
+  if (!preferredGitRoot) {
+    return undefined;
+  }
+
+  const workspaceEnv = await readDotEnvFromDirectory(preferredGitRoot);
+  return workspaceEnv?.LINEAR_API_KEY?.trim() || undefined;
+}
+
+async function getIssueTrackerForImport(
+  trackerType: 'github' | 'linear',
+  config: Awaited<ReturnType<typeof loadEffectiveConfig>>,
+  projectId?: number
+) {
+  if (trackerType === 'linear') {
+    const preferredApiKey = await getPreferredProjectLinearApiKey(projectId);
+    if (preferredApiKey) {
+      return createLinearClient({
+        type: 'linear',
+        apiKey: preferredApiKey,
+      });
+    }
+  }
+
+  return getIssueTracker(config, { projectId });
+}
+
 export async function fetchIssueForImport(
   identifier: string,
   mode: IssueImportMode,
@@ -177,7 +213,7 @@ export async function fetchIssueForImport(
 
   const parsedInput = parseIssueInput(trimmedIdentifier);
 
-  const issueTracker = await getIssueTracker(config, { projectId });
+  const issueTracker = await getIssueTrackerForImport(trackerType, config, projectId);
   const supportsHierarchical = Boolean(issueTracker.fetchIssueWithChildren);
 
   // parseIssueInput handles common formats (bare numbers, URLs, branch names).
@@ -525,6 +561,15 @@ async function getIssueTrackerStatusFromType(
   trackerType: 'github' | 'linear',
   projectId?: number
 ): Promise<IssueTrackerStatus> {
+  if (trackerType === 'linear' && (await getPreferredProjectLinearApiKey(projectId))) {
+    return {
+      available: true,
+      trackerType,
+      displayName: getTrackerDisplayName(trackerType),
+      supportsHierarchical: true,
+    };
+  }
+
   const availableTrackers = projectId
     ? await getAvailableTrackersForProject(projectId)
     : getAvailableTrackers();
