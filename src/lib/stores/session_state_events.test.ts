@@ -431,6 +431,45 @@ describe('applySessionEvent', () => {
     expect(state.getSelectedSessionId()).toBeNull();
   });
 
+  test('rate-limit:updated calls setRateLimitState with the payload', () => {
+    const session = createSession();
+    const state = createState(session);
+    let capturedState: unknown = null;
+    state.setRateLimitState = (s) => {
+      capturedState = s;
+    };
+
+    const rateLimitState = {
+      entries: [
+        {
+          provider: 'claude' as const,
+          label: '7-day',
+          usedPercent: 77,
+          belowThreshold: false,
+          windowMinutes: 10080,
+          resetsAtMs: Date.now() + 86400000,
+          updatedAt: '2026-03-17T10:00:00.000Z',
+        },
+      ],
+    };
+
+    applySessionEvent('rate-limit:updated', { state: rateLimitState }, state);
+
+    expect(capturedState).toEqual(rateLimitState);
+    // Sessions should be unchanged
+    expect(state.sessions.get(session.connectionId)).toBe(session);
+  });
+
+  test('rate-limit:updated is safe when setRateLimitState is not provided', () => {
+    const session = createSession();
+    const state = createState(session);
+
+    // No setRateLimitState on state — should not throw
+    applySessionEvent('rate-limit:updated', { state: { entries: [] } }, state);
+
+    expect(state.sessions.get(session.connectionId)).toBe(session);
+  });
+
   test('pr:updated leaves the session store unchanged', () => {
     const session = createSession();
     const state = createState(session);

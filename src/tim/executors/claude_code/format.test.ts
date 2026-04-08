@@ -766,6 +766,13 @@ describe('formatJsonMessage', () => {
         source: 'claude',
         status: 'Rate limit warning (seven_day)',
         detail: `Utilization: 77%\nThreshold: 75%\nUsing overage: no\nResets at: ${expectedReset}`,
+        rateLimitInfo: {
+          utilization: 0.77,
+          rateLimitType: 'seven_day',
+          resetsAt,
+          isUsingOverage: false,
+          surpassedThreshold: 0.75,
+        },
       });
       expect(result.message).toContain('Rate limit warning (seven_day)');
       expect(result.message).toContain('Utilization: 77%');

@@ -15,6 +15,7 @@ import type {
   SessionClientEventName,
   SessionData,
   SessionGroup,
+  RateLimitState,
 } from '$lib/types/session.js';
 import { createContext } from 'svelte';
 import { SvelteMap } from 'svelte/reactivity';
@@ -55,6 +56,7 @@ export class SessionManager {
   connectionStatus: ConnectionStatus = $state('disconnected');
   currentProjectId: string | null = $state(null);
   projectsById = new SvelteMap<number, ProjectInfo>();
+  rateLimitState: RateLimitState = $state.raw({ entries: [] });
 
   eventSource: EventSource | null = null;
   reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -213,6 +215,9 @@ export class SessionManager {
       setSelectedSessionId: (value) => {
         this.selectedSessionId = value;
       },
+      setRateLimitState: (rateLimitState) => {
+        this.rateLimitState = rateLimitState;
+      },
     };
 
     applySessionEvent(eventName, parsed, state);
@@ -350,6 +355,7 @@ export class SessionManager {
       'session:prompt-cleared',
       'session:dismissed',
       'pr:updated',
+      'rate-limit:updated',
     ];
 
     for (const eventType of eventTypes) {

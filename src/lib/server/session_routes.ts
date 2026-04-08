@@ -84,6 +84,10 @@ export function createSessionEventsResponse(
 
       const snapshot: SessionSnapshot = manager.getSessionSnapshot();
       send('session:list', snapshot);
+
+      const rateLimitState = manager.getRateLimitState();
+      send('rate-limit:updated', { state: rateLimitState });
+
       snapshotSent = true;
 
       for (const { event, data } of buffered) {

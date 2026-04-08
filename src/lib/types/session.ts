@@ -204,6 +204,26 @@ export interface PrUpdatedEvent {
   projectIds: number[];
 }
 
+export type RateLimitProvider = 'claude' | 'codex';
+
+export interface RateLimitEntry {
+  provider: RateLimitProvider;
+  label: string;
+  usedPercent: number | null;
+  belowThreshold: boolean;
+  windowMinutes: number;
+  resetsAtMs: number | null;
+  updatedAt: string;
+}
+
+export interface RateLimitState {
+  entries: RateLimitEntry[];
+}
+
+export interface RateLimitUpdatedEvent {
+  state: RateLimitState;
+}
+
 export interface SessionClientEventMap {
   'session:list': SessionListEvent;
   'session:sync-complete': SessionSyncCompleteEvent;
@@ -216,6 +236,7 @@ export interface SessionClientEventMap {
   'session:prompt-cleared': SessionPromptClearedEvent;
   'session:dismissed': SessionDismissedEvent;
   'pr:updated': PrUpdatedEvent;
+  'rate-limit:updated': RateLimitUpdatedEvent;
 }
 
 export type SessionClientEventName = keyof SessionClientEventMap;

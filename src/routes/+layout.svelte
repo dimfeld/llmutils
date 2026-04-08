@@ -15,6 +15,7 @@
   import { getSidebarOrderedProjects, projectUrl } from '$lib/stores/project.svelte.js';
   import { registerDismissedSessionCleanup } from '$lib/stores/ui_state_cleanup.js';
   import CommandBar from '$lib/components/CommandBar.svelte';
+  import RateLimitIndicator from '$lib/components/RateLimitIndicator.svelte';
   import { ModeWatcher, setMode, userPrefersMode } from 'mode-watcher';
   import Sun from '@lucide/svelte/icons/sun';
   import Moon from '@lucide/svelte/icons/moon';
@@ -169,6 +170,7 @@
     <a href={resolve('/')} class="text-lg font-semibold text-white">tim</a>
     <div class="flex items-center gap-2">
       <TabNav {projectId} {showSessionsAttentionDot} />
+      <RateLimitIndicator />
       <button
         type="button"
         class="rounded-md p-1.5 text-gray-300 transition-colors hover:bg-white/10 hover:text-white"

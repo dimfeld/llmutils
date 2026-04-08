@@ -349,12 +349,16 @@ function parseReviewThreadPayload(payload: unknown): ParsedReviewThreadPayload |
     pullRequest: {
       number,
       title: typeof title === 'string' ? title : null,
-      author: typeof user === 'object' && user ? (user as { login?: string | null }).login || null : null,
+      author:
+        typeof user === 'object' && user ? (user as { login?: string | null }).login || null : null,
       state,
       draft,
-      headSha: typeof head === 'object' && head ? (head as { sha?: string | null }).sha || null : null,
-      baseRef: typeof base === 'object' && base ? (base as { ref?: string | null }).ref || null : null,
-      headRef: typeof head === 'object' && head ? (head as { ref?: string | null }).ref || null : null,
+      headSha:
+        typeof head === 'object' && head ? (head as { sha?: string | null }).sha || null : null,
+      baseRef:
+        typeof base === 'object' && base ? (base as { ref?: string | null }).ref || null : null,
+      headRef:
+        typeof head === 'object' && head ? (head as { ref?: string | null }).ref || null : null,
       mergedAt: typeof mergedAt === 'string' ? mergedAt : null,
       updatedAt: typeof updatedAt === 'string' ? updatedAt : null,
       labels: parseLabels(labels),

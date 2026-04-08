@@ -3,6 +3,7 @@ import type {
   SessionData,
   SessionClientEventMap,
   SessionClientEventName,
+  RateLimitState,
 } from '$lib/types/session.js';
 
 interface SessionMapLike {
@@ -17,6 +18,7 @@ export interface SessionStoreMutableState {
   setInitialized(value: boolean): void;
   getSelectedSessionId(): string | null;
   setSelectedSessionId(value: string | null): void;
+  setRateLimitState?(state: RateLimitState): void;
 }
 
 /** Maximum number of messages retained per session in the client-side store. */
@@ -141,6 +143,10 @@ export function applySessionEvent<TEventName extends SessionClientEventName>(
       break;
     }
     case 'pr:updated': {
+      break;
+    }
+    case 'rate-limit:updated': {
+      state.setRateLimitState?.(event.payload.state);
       break;
     }
   }

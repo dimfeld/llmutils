@@ -374,6 +374,13 @@ export function formatJsonMessage(input: string): FormattedClaudeMessage {
         source: 'claude',
         status,
         detail: detailLines.length > 0 ? detailLines.join('\n') : undefined,
+        rateLimitInfo: {
+          utilization: info.utilization,
+          rateLimitType: info.rateLimitType,
+          resetsAt: info.resetsAt,
+          isUsingOverage: info.isUsingOverage,
+          surpassedThreshold: info.surpassedThreshold,
+        },
       },
     });
   } else if (message.type === 'assistant' || message.type === 'user') {

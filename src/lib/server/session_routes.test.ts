@@ -93,6 +93,12 @@ describe('lib/server/session_routes', () => {
       data: { sessions: [] },
     });
 
+    const rateLimitEvent = await readSseEvent(reader!, decoder, streamState);
+    expect(rateLimitEvent).toEqual({
+      event: 'rate-limit:updated',
+      data: { state: { entries: [] } },
+    });
+
     const syncCompleteEvent = await readSseEvent(reader!, decoder, streamState);
     expect(syncCompleteEvent).toEqual({
       event: 'session:sync-complete',
@@ -190,7 +196,7 @@ describe('lib/server/session_routes', () => {
     manager.dismissSession('conn-1');
 
     const receivedEvents = [];
-    for (let index = 0; index < 13; index += 1) {
+    for (let index = 0; index < 14; index += 1) {
       const event = await readSseEvent(reader!, decoder, streamState);
       expect(event).not.toBeNull();
       receivedEvents.push(event!);
@@ -198,26 +204,31 @@ describe('lib/server/session_routes', () => {
 
     // Notification sessions stay separate from WebSocket sessions — no reconciliation
     expect(receivedEvents.map((event) => event.event)).toEqual([
-      'session:sync-complete', // 0: initial snapshot fully delivered
-      'session:new', // 1: notification session created
-      'session:message', // 2: first notification message
-      'session:update', // 3: second notification updates session
-      'session:message', // 4: second notification message
-      'session:new', // 5: WS conn-1 connected
-      'session:update', // 6: session_info metadata
-      'session:prompt', // 7: prompt_request
-      'session:message', // 8: prompt_request message
-      'session:prompt-cleared', // 9: prompt_answered clears prompt
-      'session:message', // 10: prompt_answered message
-      'session:disconnect', // 11: WS disconnect
-      'session:dismissed', // 12: dismiss conn-1
+      'rate-limit:updated', // 0: rate limit snapshot
+      'session:sync-complete', // 1: initial snapshot fully delivered
+      'session:new', // 2: notification session created
+      'session:message', // 3: first notification message
+      'session:update', // 4: second notification updates session
+      'session:message', // 5: second notification message
+      'session:new', // 6: WS conn-1 connected
+      'session:update', // 7: session_info metadata
+      'session:prompt', // 8: prompt_request
+      'session:message', // 9: prompt_request message
+      'session:prompt-cleared', // 10: prompt_answered clears prompt
+      'session:message', // 11: prompt_answered message
+      'session:disconnect', // 12: WS disconnect
+      'session:dismissed', // 13: dismiss conn-1
     ]);
 
     expect(receivedEvents[0]).toEqual({
+      event: 'rate-limit:updated',
+      data: { state: { entries: [] } },
+    });
+    expect(receivedEvents[1]).toEqual({
       event: 'session:sync-complete',
       data: {},
     });
-    expect(receivedEvents[1]).toMatchObject({
+    expect(receivedEvents[2]).toMatchObject({
       data: {
         session: {
           connectionId: 'notification:example.com/repo',
@@ -225,7 +236,7 @@ describe('lib/server/session_routes', () => {
         },
       },
     });
-    expect(receivedEvents[2]).toMatchObject({
+    expect(receivedEvents[3]).toMatchObject({
       data: {
         connectionId: 'notification:example.com/repo',
         message: {
@@ -233,7 +244,7 @@ describe('lib/server/session_routes', () => {
         },
       },
     });
-    expect(receivedEvents[4]).toMatchObject({
+    expect(receivedEvents[5]).toMatchObject({
       data: {
         connectionId: 'notification:example.com/repo',
         message: {
@@ -241,7 +252,7 @@ describe('lib/server/session_routes', () => {
         },
       },
     });
-    expect(receivedEvents[7]).toEqual({
+    expect(receivedEvents[8]).toEqual({
       event: 'session:prompt',
       data: {
         connectionId: 'conn-1',
@@ -252,7 +263,7 @@ describe('lib/server/session_routes', () => {
         },
       },
     });
-    expect(receivedEvents[8]).toMatchObject({
+    expect(receivedEvents[9]).toMatchObject({
       data: {
         connectionId: 'conn-1',
         message: {
@@ -260,14 +271,14 @@ describe('lib/server/session_routes', () => {
         },
       },
     });
-    expect(receivedEvents[9]).toEqual({
+    expect(receivedEvents[10]).toEqual({
       event: 'session:prompt-cleared',
       data: {
         connectionId: 'conn-1',
         requestId: 'req-1',
       },
     });
-    expect(receivedEvents[10]).toMatchObject({
+    expect(receivedEvents[11]).toMatchObject({
       event: 'session:message',
       data: {
         connectionId: 'conn-1',
@@ -276,7 +287,7 @@ describe('lib/server/session_routes', () => {
         },
       },
     });
-    expect(receivedEvents[11]).toMatchObject({
+    expect(receivedEvents[12]).toMatchObject({
       event: 'session:disconnect',
       data: {
         session: {
@@ -285,14 +296,14 @@ describe('lib/server/session_routes', () => {
         },
       },
     });
-    expect(receivedEvents[12]).toEqual({
+    expect(receivedEvents[13]).toEqual({
       event: 'session:dismissed',
       data: { connectionId: 'conn-1' },
     });
 
     abortController.abort();
     expect(await reader!.read()).toEqual({ done: true, value: undefined });
-    expect(unsubscribeSpy).toHaveBeenCalledTimes(9);
+    expect(unsubscribeSpy).toHaveBeenCalledTimes(10);
   });
 
   test('createSessionEventsResponse snapshot hides replayed prompts until replay ends', async () => {
@@ -374,7 +385,7 @@ describe('lib/server/session_routes', () => {
     const streamState = { buffer: '' };
     const events = [];
 
-    for (let index = 0; index < 4; index += 1) {
+    for (let index = 0; index < 5; index += 1) {
       const event = await readSseEvent(reader!, decoder, streamState);
       expect(event).not.toBeNull();
       events.push(event!);
@@ -382,6 +393,7 @@ describe('lib/server/session_routes', () => {
 
     expect(events).toEqual([
       { event: 'session:list', data: { sessions: [] } },
+      { event: 'rate-limit:updated', data: { state: { entries: [] } } },
       {
         event: 'session:new',
         data: {

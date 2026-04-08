@@ -17,6 +17,12 @@ import type {
 import type { TunnelMessage } from '../../logging/tunnel_protocol.js';
 import { listProjects } from '$tim/db/project.js';
 import { parseGitRemoteUrl } from '$common/git_url_parser.js';
+import {
+  RateLimitStore,
+  extractClaudeRateLimit,
+  extractCodexRateLimit,
+} from './rate_limit_store.js';
+import type { RateLimitState } from './rate_limit_store.js';
 
 export type SessionStatus = 'active' | 'offline' | 'notification';
 export type MessageCategory = 'log' | 'error' | 'structured';
@@ -135,6 +141,7 @@ export interface SessionManagerEvents {
   'session:prompt-cleared': { connectionId: string; requestId: string };
   'session:dismissed': { connectionId: string };
   'pr:updated': { prUrls: string[]; projectIds: number[] };
+  'rate-limit:updated': { state: RateLimitState };
 }
 
 type SessionEventName = keyof SessionManagerEvents;
@@ -156,6 +163,7 @@ const SESSION_EVENT_NAMES: SessionEventName[] = [
   'session:prompt-cleared',
   'session:dismissed',
   'pr:updated',
+  'rate-limit:updated',
 ];
 
 const NOTIFICATION_SEQ = 0;
@@ -342,6 +350,7 @@ export class SessionManager {
   private readonly sessions = new Map<string, SessionData>();
   private readonly senders = new Map<string, AgentSender>();
   private readonly internals = new Map<string, SessionInternals>();
+  private readonly rateLimitStore = new RateLimitStore();
   private projectIdByRemote: Map<string, number> | null = null;
   private sseSubscriberCount = 0;
 
@@ -691,6 +700,10 @@ export class SessionManager {
     };
   }
 
+  getRateLimitState(): RateLimitState {
+    return this.rateLimitStore.getState();
+  }
+
   subscribe<T extends SessionEventName>(
     eventName: T,
     listener: SessionEventListener<T>
@@ -775,6 +788,20 @@ export class SessionManager {
     session: SessionData,
     message: StructuredMessage
   ): void {
+    if (message.type === 'llm_status' && !session.isReplaying) {
+      const entries = extractClaudeRateLimit(message);
+      if (entries && this.rateLimitStore.update(entries)) {
+        this.emit('rate-limit:updated', { state: this.rateLimitStore.getState() });
+      }
+    }
+
+    if (message.type === 'token_usage' && !session.isReplaying) {
+      const entries = extractCodexRateLimit(message);
+      if (entries && this.rateLimitStore.update(entries)) {
+        this.emit('rate-limit:updated', { state: this.rateLimitStore.getState() });
+      }
+    }
+
     if (message.type === 'prompt_request') {
       if (typeof message.requestId !== 'string' || !isObjectRecord(message.promptConfig)) {
         return;

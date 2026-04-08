@@ -92,6 +92,13 @@ export interface LlmStatusMessage extends StructuredMessageBase {
   status: string;
   detail?: string;
   source?: 'codex' | 'claude';
+  rateLimitInfo?: {
+    utilization?: number;
+    rateLimitType?: string;
+    resetsAt?: number;
+    isUsingOverage?: boolean;
+    surpassedThreshold?: number;
+  };
 }
 
 export type TodoUpdateStatus = 'pending' | 'in_progress' | 'completed' | 'blocked' | 'unknown';

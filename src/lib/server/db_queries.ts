@@ -869,7 +869,9 @@ export function getPlanDetail(
   const parent = plan.parent_uuid
     ? toDependencySummary(plan.parent_uuid, planByUuid, dependenciesByPlanUuid)
     : null;
-  const prStatuses = getPrStatusForPlan(db, planUuid, enrichedPlan.pullRequests, { includeReviewThreads: true });
+  const prStatuses = getPrStatusForPlan(db, planUuid, enrichedPlan.pullRequests, {
+    includeReviewThreads: true,
+  });
 
   const reviewIssues: PlanSchema['reviewIssues'] = plan.review_issues
     ? (JSON.parse(plan.review_issues) as PlanSchema['reviewIssues'])

@@ -51,9 +51,7 @@ function computeNeedsFinishExecutor(
   return needsDocs || needsLessons;
 }
 
-function isMergedPrPayload(
-  payload: unknown
-): payload is {
+function isMergedPrPayload(payload: unknown): payload is {
   pull_request: { number: number; merged_at?: string | null; state?: string };
 } {
   if (!payload || typeof payload !== 'object') {
@@ -87,9 +85,7 @@ async function autoCompleteMergedLinkedPlans(
   }
 
   const cwd = getPreferredProjectGitRoot(db, project.id);
-  const finishConfig = cwd
-    ? await loadEffectiveConfig(undefined, { cwd })
-    : getDefaultConfig();
+  const finishConfig = cwd ? await loadEffectiveConfig(undefined, { cwd }) : getDefaultConfig();
 
   const linkedPlanRows = db
     .prepare(
@@ -239,9 +235,9 @@ export async function ingestWebhookEvents(db: Database): Promise<IngestResult> {
               ? handlePullRequestReviewEvent(db, payload, handlerOptions)
               : event.eventType === 'pull_request_review_thread'
                 ? handlePullRequestReviewThreadEvent(db, payload, handlerOptions)
-              : event.eventType === 'check_run'
-                ? handleCheckRunEvent(db, payload, handlerOptions)
-                : null;
+                : event.eventType === 'check_run'
+                  ? handleCheckRunEvent(db, payload, handlerOptions)
+                  : null;
 
         if (!result) {
           continue;
@@ -276,9 +272,7 @@ export async function ingestWebhookEvents(db: Database): Promise<IngestResult> {
             await autoCompleteMergedLinkedPlans(db, owner, repo, payload.pull_request.number);
           } catch (err) {
             errors.push(
-              `webhook auto-complete failed: ${
-                err instanceof Error ? err.message : String(err)
-              }`
+              `webhook auto-complete failed: ${err instanceof Error ? err.message : String(err)}`
             );
           }
         }

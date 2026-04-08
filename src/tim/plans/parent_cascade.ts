@@ -5,7 +5,12 @@ import { removePlanAssignment } from '../assignments/remove_plan_assignment.js';
 import { removeAssignment } from '../db/assignment.js';
 import type { TimConfig } from '../configSchema.js';
 import { getDatabase } from '../db/database.js';
-import { getPlanByPlanId, getPlansByParentUuid, getPlansByProject, upsertPlan } from '../db/plan.js';
+import {
+  getPlanByPlanId,
+  getPlansByParentUuid,
+  getPlansByProject,
+  upsertPlan,
+} from '../db/plan.js';
 import {
   getMaterializedPlanPath,
   resolveProjectContext,

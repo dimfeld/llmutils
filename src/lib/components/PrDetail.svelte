@@ -23,9 +23,7 @@
   let refreshError = $state<string | null>(null);
 
   // Get planUuid if there's exactly one linked plan, otherwise undefined
-  let planUuid = $derived(
-    pr.linkedPlans.length === 1 ? pr.linkedPlans[0].planUuid : undefined
-  );
+  let planUuid = $derived(pr.linkedPlans.length === 1 ? pr.linkedPlans[0].planUuid : undefined);
 
   async function handleRefresh() {
     refreshError = null;
@@ -54,11 +52,11 @@
         {pr.status.head_branch} &rarr; {pr.status.base_branch}
       </div>
     </div>
-    <div class="flex items-center gap-1 shrink-0">
+    <div class="flex shrink-0 items-center gap-1">
       <button
         onclick={handleRefresh}
         disabled={refreshing}
-        class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed dark:hover:bg-gray-800"
+        class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
         title="Refresh PR data"
       >
         <RefreshCw class="size-4 {refreshing ? 'animate-spin' : ''}" />
