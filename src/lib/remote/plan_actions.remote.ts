@@ -24,10 +24,10 @@ import { openTerminalWithCommand } from '$lib/server/terminal_control.js';
 import { loadEffectiveConfig } from '$tim/configLoader.js';
 import { removeAssignment } from '$tim/db/assignment.js';
 import { getPlanByUuid, getPlansByProject, upsertPlan } from '$tim/db/plan.js';
-import { getProjectById } from '$tim/db/project.js';
 import { checkAndMarkParentDone } from '$tim/plans/parent_cascade.js';
 import { invertPlanIdToUuidMap, planRowForTransaction } from '$tim/plans_db.js';
 import { toPlanUpsertInput } from '$tim/db/plan_sync.js';
+import { getPreferredProjectGitRoot } from '$tim/workspace/workspace_info.js';
 
 type PlanDetailResult = NonNullable<ReturnType<typeof getPlanDetail>>;
 
@@ -141,14 +141,14 @@ async function launchTimCommand(
 }
 
 async function loadProjectFinishConfig(db: Database, projectId: number): Promise<FinishConfig> {
-  const project = getProjectById(db, projectId);
-  if (!project?.last_git_root) {
+  const cwd = getPreferredProjectGitRoot(db, projectId);
+  if (!cwd) {
     // Without a known git root, we can't resolve the repo-level config.
     // Default conservatively: assume docs/lessons may be needed so the UI
     // never silently skips required finalization work.
     return { updateDocsMode: 'after-completion', applyLessons: true };
   }
-  const config = await loadEffectiveConfig(undefined, { cwd: project.last_git_root });
+  const config = await loadEffectiveConfig(undefined, { cwd });
   return {
     updateDocsMode: config.updateDocs?.mode,
     applyLessons: config.updateDocs?.applyLessons,
@@ -303,12 +303,10 @@ export const finishPlanQuick = command(finishPlanQuickSchema, async ({ planUuid 
     error(400, 'Plan requires executor work — use startFinish instead');
   }
 
-  const project = getProjectById(db, plan.projectId);
-  const effectiveConfig = (
-    project?.last_git_root
-      ? await loadEffectiveConfig(undefined, { cwd: project.last_git_root })
-      : {}
-  ) as Parameters<typeof checkAndMarkParentDone>[1];
+  const cwd = getPreferredProjectGitRoot(db, plan.projectId);
+  const effectiveConfig = (cwd ? await loadEffectiveConfig(undefined, { cwd }) : {}) as Parameters<
+    typeof checkAndMarkParentDone
+  >[1];
   const planRows = getPlansByProject(db, plan.projectId);
   const planIdToUuid = new Map(planRows.map((row) => [row.plan_id, row.uuid]));
   const planData = planRowForTransaction(

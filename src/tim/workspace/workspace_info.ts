@@ -1,3 +1,4 @@
+import type { Database } from 'bun:sqlite';
 import * as path from 'node:path';
 import { getDatabase } from '../db/database.js';
 import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
@@ -104,6 +105,30 @@ export function findPrimaryWorkspaceForRepository(repositoryId: string): Workspa
       (workspace) => workspace.workspaceType === 'primary'
     ) ?? null
   );
+}
+
+export function findPrimaryWorkspaceForProjectId(
+  db: Database,
+  projectId: number
+): WorkspaceInfo | null {
+  const row = findWorkspacesByProjectId(db, projectId).find(
+    (workspace) => dbValueToWorkspaceType(workspace.workspace_type) === 'primary'
+  );
+
+  return row ? workspaceRowToInfo(row, db) : null;
+}
+
+/**
+ * Prefer the primary workspace path for a project, falling back to the last known git root.
+ * This keeps config and command execution rooted in the active workspace when available.
+ */
+export function getPreferredProjectGitRoot(db: Database, projectId: number): string | null {
+  const primaryWorkspace = findPrimaryWorkspaceForProjectId(db, projectId);
+  if (primaryWorkspace) {
+    return primaryWorkspace.workspacePath;
+  }
+
+  return getProjectById(db, projectId)?.last_git_root ?? null;
 }
 
 export function listAllWorkspaceInfos(): WorkspaceInfo[] {

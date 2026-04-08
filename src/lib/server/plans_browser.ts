@@ -2,7 +2,8 @@ import type { Database } from 'bun:sqlite';
 
 import { loadEffectiveConfig } from '$tim/configLoader.js';
 import { getPlanByUuid } from '$tim/db/plan.js';
-import { getProjectById, listProjects } from '$tim/db/project.js';
+import { listProjects } from '$tim/db/project.js';
+import { getPreferredProjectGitRoot } from '$tim/workspace/workspace_info.js';
 import {
   getPlanDetail,
   getPlansForProject,
@@ -15,8 +16,8 @@ export async function loadFinishConfigForProject(
   db: Database,
   projectId: number
 ): Promise<FinishConfig> {
-  const project = getProjectById(db, projectId);
-  if (!project?.last_git_root) {
+  const cwd = getPreferredProjectGitRoot(db, projectId);
+  if (!cwd) {
     // Without a known git root, we can't resolve the repo-level config.
     // Default conservatively: assume docs/lessons may be needed so the UI
     // never silently skips required finalization work.
@@ -24,7 +25,7 @@ export async function loadFinishConfigForProject(
   }
 
   try {
-    const config = await loadEffectiveConfig(undefined, { cwd: project.last_git_root });
+    const config = await loadEffectiveConfig(undefined, { cwd });
     return {
       updateDocsMode: config.updateDocs?.mode,
       applyLessons: config.updateDocs?.applyLessons,
@@ -44,8 +45,7 @@ async function loadFinishConfigForProjects(
   const uniqueProjectIds = [...new Set(projectIds)];
   const gitRootToProjectIds = new Map<string, number[]>();
   for (const projectId of uniqueProjectIds) {
-    const project = getProjectById(db, projectId);
-    const gitRoot = project?.last_git_root ?? '__default__';
+    const gitRoot = getPreferredProjectGitRoot(db, projectId) ?? '__default__';
     const grouped = gitRootToProjectIds.get(gitRoot);
     if (grouped) {
       grouped.push(projectId);

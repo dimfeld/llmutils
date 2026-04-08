@@ -122,7 +122,9 @@ export async function checkAndMarkParentDone(
 
     if (result && (result.status === 'done' || result.status === 'needs_review')) {
       if (result.status === 'done') {
-        removeAssignment(options.db, options.projectId, result.uuid);
+        if (result.uuid) {
+          removeAssignment(options.db, options.projectId, result.uuid);
+        }
       }
       await options.onParentMarkedDone?.(result);
 

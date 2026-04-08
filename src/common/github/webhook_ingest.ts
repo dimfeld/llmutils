@@ -25,6 +25,7 @@ import {
   upsertPlan,
 } from '../../tim/db/plan.js';
 import { getProject } from '../../tim/db/project.js';
+import { getPreferredProjectGitRoot } from '../../tim/workspace/workspace_info.js';
 import {
   getWebhookCursor,
   insertWebhookLogEntry,
@@ -84,8 +85,9 @@ async function autoCompleteMergedLinkedPlans(
     return;
   }
 
-  const finishConfig = project.last_git_root
-    ? await loadEffectiveConfig(undefined, { cwd: project.last_git_root })
+  const cwd = getPreferredProjectGitRoot(db, project.id);
+  const finishConfig = cwd
+    ? await loadEffectiveConfig(undefined, { cwd })
     : getDefaultConfig();
 
   const linkedPlanRows = db
@@ -146,7 +148,7 @@ async function autoCompleteMergedLinkedPlans(
       ...toPlanUpsertInput(completedPlan, planIdToUuid),
       forceOverwrite: true,
     });
-    removeAssignment(db, project.id, completedPlan.uuid);
+    removeAssignment(db, project.id, planUuid);
 
     if (completedPlan.parent != null) {
       completedParents.add(completedPlan.parent);
@@ -260,6 +262,9 @@ export async function ingestWebhookEvents(db: Database): Promise<IngestResult> {
           isMergedPrPayload(payload) &&
           typeof payload.pull_request.number === 'number'
         ) {
+          if (!event.repositoryFullName) {
+            continue;
+          }
           const [owner, repo] = event.repositoryFullName.split('/');
           if (!owner || !repo) {
             continue;

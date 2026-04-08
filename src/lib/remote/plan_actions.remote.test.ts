@@ -91,10 +91,17 @@ describe('plan remote actions', () => {
     }).id;
 
     loadEffectiveConfigMock.mockImplementation(async (_overridePath, options) => {
-      if (options?.cwd === '/tmp/repo-plan-actions' || options?.cwd === undefined) {
+      if (
+        options?.cwd === '/tmp/repo-plan-actions' ||
+        options?.cwd === '/tmp/primary-workspace' ||
+        options?.cwd === undefined
+      ) {
         return { updateDocs: { mode: 'after-completion', applyLessons: true } };
       }
-      if (options?.cwd === '/tmp/repo-plan-actions-2') {
+      if (
+        options?.cwd === '/tmp/repo-plan-actions-2' ||
+        options?.cwd === '/tmp/primary-workspace-b'
+      ) {
         return { updateDocs: { mode: 'never', applyLessons: false } };
       }
       return {};
@@ -1665,6 +1672,36 @@ describe('plan remote actions', () => {
       await expect(
         invokeCommand(finishPlanQuick, { planUuid: 'quick-finish-project2-missing-docs' })
       ).resolves.toEqual({ status: 'done' });
+    });
+
+    test('prefers the primary workspace path when loading quick-finish config', async () => {
+      seedPlan({
+        uuid: 'quick-finish-primary-workspace',
+        planId: 5008,
+        status: 'needs_review',
+      });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+
+      const cwdCalls: Array<string | undefined> = [];
+      loadEffectiveConfigMock.mockImplementation(async (_overridePath, options) => {
+        cwdCalls.push(options?.cwd);
+        if (options?.cwd === '/tmp/primary-workspace') {
+          return { updateDocs: { mode: 'never', applyLessons: false } };
+        }
+        if (options?.cwd === '/tmp/repo-plan-actions') {
+          return { updateDocs: { mode: 'after-completion', applyLessons: true } };
+        }
+        return {};
+      });
+
+      await expect(
+        invokeCommand(finishPlanQuick, { planUuid: 'quick-finish-primary-workspace' })
+      ).resolves.toEqual({ status: 'done' });
+      expect(cwdCalls).toEqual(['/tmp/primary-workspace', '/tmp/primary-workspace']);
     });
   });
 
