@@ -572,6 +572,35 @@ All mutations use `invalidateAll()` to refresh the page after completion.
 
 - **Remote commands** (`src/lib/remote/review_issue_actions.remote.ts`): `removeReviewIssue`, `convertReviewIssueToTask`, and `clearReviewIssues` are `command()` exports. Each reads the plan by UUID, parses `reviewIssues` JSON, applies the mutation within `db.transaction().immediate()`, and writes back. `convertReviewIssueToTask` also appends a new task and sets `status = 'in_progress'`.
 
+## Rate Limit Indicator
+
+The header bar includes a rate limit indicator (`RateLimitIndicator.svelte`) that shows current Claude and Codex API usage at a glance.
+
+### Data Flow
+
+1. **Executor formatters** emit structured messages containing rate limit data:
+   - Claude Code: `rate_limit_event` → `LlmStatusMessage` with `rateLimitInfo` field (utilization, rateLimitType, resetsAt, isUsingOverage, surpassedThreshold)
+   - Codex CLI: `turn.completed` → `TokenUsageMessage` with `rateLimits` field (primary/secondary with used_percent, window_minutes, resets_in_seconds)
+2. **`handleStructuredSideEffects()`** in `SessionManager` intercepts these messages:
+   - `llm_status` with `source === 'claude'` and status starting with `'Rate limit'` → `extractClaudeRateLimit()`
+   - `token_usage` with `rateLimits` present → `extractCodexRateLimit()`
+3. **`RateLimitStore`** (`src/lib/server/rate_limit_store.ts`) holds entries in a `Map<string, RateLimitEntry>` keyed by `'provider:label'`. Auto-prunes expired entries (based on `resetsAtMs`).
+4. **`rate-limit:updated` SSE event** pushed to browsers when data changes. Initial state included in SSE snapshot for new connections.
+5. **Client store** (`session_state.svelte.ts`) holds `rateLimitState` as reactive `$state`, updated via `applySessionEvent()`.
+
+### UI Behavior
+
+- **Hidden** when no rate limit data has been received
+- **Gauge icon** color based on worst-case `usedPercent` across all entries (ignoring `belowThreshold` entries):
+  - Neutral (gray): usage ≤ 80% or no numeric data
+  - Yellow: 80-90% used
+  - Red: ≥ 90% used
+- **Click popover** shows per-entry rows with: provider + window label, usage percentage (or "< 75%" for Claude when under threshold), reset countdown, and staleness indicator
+
+### Claude-Specific Behavior
+
+Claude reports rate limits in two modes: when over 75% utilization, an exact percentage is provided; when under 75%, no utilization number is given. The store handles this by setting `usedPercent: null` with `belowThreshold: true`, displayed as "< 75%" in the popover.
+
 ## Dark Mode
 
 The web interface supports light, dark, and system-preference color modes using the `mode-watcher` package.
