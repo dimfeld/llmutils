@@ -16,10 +16,12 @@
     plans,
     selectedPlanUuid = null,
     projectNames,
+    importIssueHref = null,
   }: {
     plans: EnrichedPlan[];
     selectedPlanUuid?: string | null;
     projectNames?: Record<number, string>;
+    importIssueHref?: string | null;
   } = $props();
 
   let projectId = $derived(page.params.projectId);
@@ -181,7 +183,7 @@
       class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
       bind:value={searchQuery}
     />
-    <div class="flex items-center gap-2">
+    <div class="flex flex-wrap items-center justify-between gap-2">
       <select
         aria-label="Sort plans"
         class="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
@@ -191,6 +193,14 @@
         <option value="planId">Plan #</option>
         <option value="priority">Priority</option>
       </select>
+      {#if importIssueHref}
+        <a
+          href={importIssueHref}
+          class="rounded-md border border-border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          Import Issue
+        </a>
+      {/if}
     </div>
     <FilterChips {activeFilters} {statusCounts} onToggle={toggleFilter} onReset={resetFilters} />
   </div>

@@ -13,7 +13,7 @@ export const load: LayoutServerLoad = async ({ parent }) => {
     const preferredGitRoot = getPreferredProjectGitRoot(db, Number(projectId));
     if (preferredGitRoot) {
       try {
-        const status = await getIssueTrackerStatus(preferredGitRoot);
+        const status = await getIssueTrackerStatus(preferredGitRoot, Number(projectId));
         issueTrackerAvailable = status.available;
       } catch (e) {
         // Don't break the plans page if tracker status check fails

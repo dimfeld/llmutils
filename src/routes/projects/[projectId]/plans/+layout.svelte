@@ -24,26 +24,22 @@
   });
 
   let selectedPlanUuid = $derived(page.params.planId ?? null);
+  let importIssueHref = $derived(
+    data.issueTrackerAvailable && data.projectId !== 'all'
+      ? `/projects/${data.projectId}/import`
+      : null
+  );
 </script>
 
 <div class="flex h-full w-full">
   <!-- Plan list — key forces re-mount on project switch to reset filters -->
   {#key data.projectId}
     <div class="w-96 shrink-0 border-r border-border">
-      {#if data.issueTrackerAvailable && data.projectId !== 'all'}
-        <div class="flex items-center justify-end border-b border-border px-3 py-2">
-          <a
-            href="/projects/{data.projectId}/import"
-            class="rounded-md border border-border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          >
-            Import Issue
-          </a>
-        </div>
-      {/if}
       <PlansList
         plans={data.plans}
         {selectedPlanUuid}
         projectNames={showProject ? projectNamesByPlanProjectId : undefined}
+        {importIssueHref}
       />
     </div>
   {/key}
