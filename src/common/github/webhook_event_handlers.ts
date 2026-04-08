@@ -81,6 +81,26 @@ interface ParsedCheckRunPayload {
   };
 }
 
+interface ParsedReviewThreadPayload {
+  action: string;
+  repository: ParsedRepoInfo;
+  pullRequest: {
+    number: number;
+    title: string | null;
+    author: string | null;
+    state: string;
+    draft: boolean;
+    headSha: string | null;
+    baseRef: string | null;
+    headRef: string | null;
+    mergedAt: string | null;
+    updatedAt: string | null;
+    labels: Array<{ name: string; color: string | null }>;
+    requestedReviewers: string[];
+    requestedReviewerLogin: string | null;
+  };
+}
+
 function getNowIsoString(): string {
   return new Date().toISOString();
 }
@@ -294,6 +314,56 @@ function parseCheckRunPayload(payload: unknown): ParsedCheckRunPayload | null {
   };
 }
 
+function parseReviewThreadPayload(payload: unknown): ParsedReviewThreadPayload | null {
+  const repository = parseRepository(payload);
+  if (!repository || !payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const action = (payload as { action?: unknown }).action;
+  const pullRequest = (payload as { pull_request?: unknown }).pull_request;
+  if (!pullRequest || typeof pullRequest !== 'object' || typeof action !== 'string') {
+    return null;
+  }
+
+  const number = (pullRequest as { number?: unknown }).number;
+  const state = (pullRequest as { state?: unknown }).state;
+  const draft = (pullRequest as { draft?: unknown }).draft;
+  const head = (pullRequest as { head?: unknown }).head;
+  const base = (pullRequest as { base?: unknown }).base;
+  const user = (pullRequest as { user?: unknown }).user;
+  const mergedAt = (pullRequest as { merged_at?: unknown }).merged_at;
+  const updatedAt = (pullRequest as { updated_at?: unknown }).updated_at;
+  const title = (pullRequest as { title?: unknown }).title;
+  const requestedReviewer = (pullRequest as { requested_reviewer?: unknown }).requested_reviewer;
+  const requestedReviewers = (pullRequest as { requested_reviewers?: unknown }).requested_reviewers;
+  const labels = (pullRequest as { labels?: unknown }).labels;
+
+  if (typeof number !== 'number' || typeof state !== 'string' || typeof draft !== 'boolean') {
+    return null;
+  }
+
+  return {
+    action,
+    repository,
+    pullRequest: {
+      number,
+      title: typeof title === 'string' ? title : null,
+      author: typeof user === 'object' && user ? (user as { login?: string | null }).login || null : null,
+      state,
+      draft,
+      headSha: typeof head === 'object' && head ? (head as { sha?: string | null }).sha || null : null,
+      baseRef: typeof base === 'object' && base ? (base as { ref?: string | null }).ref || null : null,
+      headRef: typeof head === 'object' && head ? (head as { ref?: string | null }).ref || null : null,
+      mergedAt: typeof mergedAt === 'string' ? mergedAt : null,
+      updatedAt: typeof updatedAt === 'string' ? updatedAt : null,
+      labels: parseLabels(labels),
+      requestedReviewers: parseRequestedReviewers(requestedReviewers),
+      requestedReviewerLogin: parseRequestedReviewer(requestedReviewer),
+    },
+  };
+}
+
 export interface WebhookHandlerOptions {
   knownRepos?: Set<string>;
 }
@@ -476,6 +546,44 @@ export function handlePullRequestReviewEvent(
             },
           ]
         : [],
+  };
+}
+
+export function handlePullRequestReviewThreadEvent(
+  db: Database,
+  payload: unknown,
+  options?: WebhookHandlerOptions
+): WebhookHandlerResult {
+  const parsed = parseReviewThreadPayload(payload);
+  if (!parsed) {
+    return { updated: false };
+  }
+
+  const { action, repository, pullRequest } = parsed;
+  const canonicalPrUrl = getCanonicalPrUrl(repository.owner, repository.repo, pullRequest.number);
+
+  // Get the existing PR status to ensure it exists
+  const existing = getPrStatusByUrl(db, canonicalPrUrl);
+  if (!existing) {
+    console.warn(`[webhook] Review thread event for unknown PR: ${canonicalPrUrl}`);
+    return { updated: false };
+  }
+
+  // For review thread events, we need to refresh the full PR status to get updated review threads
+  // This is more efficient than trying to parse the review thread payload and update individual threads
+  const apiRefreshTargets: PrRefreshTarget[] = [
+    {
+      owner: repository.owner,
+      repo: repository.repo,
+      prNumber: pullRequest.number,
+      operation: `review thread ${action}`,
+    },
+  ];
+
+  return {
+    updated: true,
+    prUrl: canonicalPrUrl,
+    apiRefreshTargets,
   };
 }
 

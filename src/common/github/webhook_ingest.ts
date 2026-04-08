@@ -9,6 +9,7 @@ import {
   handleCheckRunEvent,
   handlePullRequestEvent,
   handlePullRequestReviewEvent,
+  handlePullRequestReviewThreadEvent,
   type PrRefreshTarget,
   type WebhookHandlerOptions,
 } from './webhook_event_handlers.js';
@@ -236,6 +237,8 @@ export async function ingestWebhookEvents(db: Database): Promise<IngestResult> {
             ? handlePullRequestEvent(db, payload, handlerOptions)
             : event.eventType === 'pull_request_review'
               ? handlePullRequestReviewEvent(db, payload, handlerOptions)
+              : event.eventType === 'pull_request_review_thread'
+                ? handlePullRequestReviewThreadEvent(db, payload, handlerOptions)
               : event.eventType === 'check_run'
                 ? handleCheckRunEvent(db, payload, handlerOptions)
                 : null;
