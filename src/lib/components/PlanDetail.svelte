@@ -856,7 +856,7 @@
         Branch
       </h3>
       <button
-        class="flex cursor-pointer items-center gap-1 text-muted-foreground transition-colors hover:text-foreground"
+        class="flex cursor-pointer items-center gap-1 text-foreground transition-colors hover:text-foreground"
         onclick={() => {
           navigator.clipboard.writeText(plan.branch!);
           toast.success('Branch name copied');
