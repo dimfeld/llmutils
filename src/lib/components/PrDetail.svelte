@@ -14,28 +14,72 @@
   import PrReviewThreadList from './PrReviewThreadList.svelte';
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+  import { normalizeGitHubUsername } from '$common/github/username.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
-  import { refreshSinglePrStatus } from '$lib/remote/pr_status.remote.js';
+  import { refreshSinglePrStatus, togglePrDraftStatus } from '$lib/remote/pr_status.remote.js';
 
-  let { pr, projectId }: { pr: EnrichedProjectPr; projectId: string } = $props();
+  let {
+    pr,
+    projectId,
+    username = null,
+    tokenConfigured = false,
+  }: {
+    pr: EnrichedProjectPr;
+    projectId: string;
+    username?: string | null;
+    tokenConfigured?: boolean;
+  } = $props();
 
   let refreshing = $state(false);
-  let refreshError = $state<string | null>(null);
+  let draftUpdating = $state(false);
+  let actionError = $state<string | null>(null);
 
   // Get planUuid if there's exactly one linked plan, otherwise undefined
   let planUuid = $derived(pr.linkedPlans.length === 1 ? pr.linkedPlans[0].planUuid : undefined);
+  let isOwnPr = $derived.by(() => {
+    if (!username || !pr.status.author) {
+      return false;
+    }
+
+    return normalizeGitHubUsername(pr.status.author) === normalizeGitHubUsername(username);
+  });
+  let canToggleDraft = $derived(tokenConfigured && pr.status.state === 'open' && isOwnPr);
+  let draftButtonLabel = $derived(pr.status.draft ? 'Mark ready for review' : 'Convert to draft');
 
   async function handleRefresh() {
-    refreshError = null;
+    actionError = null;
     refreshing = true;
     try {
       await refreshSinglePrStatus({ prUrl: pr.status.pr_url });
       // Trigger a revalidation by reloading the page data
       location.reload();
     } catch (err) {
-      refreshError = err instanceof Error ? err.message : String(err);
+      actionError = err instanceof Error ? err.message : String(err);
     } finally {
       refreshing = false;
+    }
+  }
+
+  async function handleToggleDraftStatus() {
+    if (!canToggleDraft || draftUpdating) {
+      return;
+    }
+
+    actionError = null;
+    draftUpdating = true;
+    try {
+      await togglePrDraftStatus({
+        owner: pr.status.owner,
+        repo: pr.status.repo,
+        prNumber: pr.status.pr_number,
+        prUrl: pr.status.pr_url,
+        draft: !pr.status.draft,
+      });
+      location.reload();
+    } catch (err) {
+      actionError = err instanceof Error ? err.message : String(err);
+    } finally {
+      draftUpdating = false;
     }
   }
 </script>
@@ -62,6 +106,16 @@
       </div>
     </div>
     <div class="flex shrink-0 items-center gap-1">
+      {#if canToggleDraft}
+        <button
+          onclick={handleToggleDraftStatus}
+          disabled={draftUpdating}
+          class="rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
+          title={draftButtonLabel}
+        >
+          {draftUpdating ? 'Updating...' : draftButtonLabel}
+        </button>
+      {/if}
       <button
         onclick={handleRefresh}
         disabled={refreshing}
@@ -73,9 +127,9 @@
     </div>
   </div>
 
-  {#if refreshError}
+  {#if actionError}
     <div class="rounded-md bg-red-50 p-3 text-sm text-red-800 dark:bg-red-900/20 dark:text-red-300">
-      {refreshError}
+      {actionError}
     </div>
   {/if}
 

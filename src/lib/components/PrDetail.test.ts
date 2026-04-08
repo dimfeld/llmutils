@@ -51,4 +51,29 @@ describe('PrDetail', () => {
     expect(body).toContain('Review Requested');
     expect(body).not.toContain('Review Required');
   });
+
+  test('shows the draft toggle only for the authenticated author', () => {
+    const ownPr = render(PrDetail, {
+      props: {
+        pr: createPr(),
+        projectId: '123',
+        username: 'alice',
+        tokenConfigured: true,
+      },
+    });
+
+    expect(ownPr.body).toContain('Convert to draft');
+
+    const otherPr = render(PrDetail, {
+      props: {
+        pr: createPr(),
+        projectId: '123',
+        username: 'bob',
+        tokenConfigured: true,
+      },
+    });
+
+    expect(otherPr.body).not.toContain('Convert to draft');
+    expect(otherPr.body).not.toContain('Mark ready for review');
+  });
 });

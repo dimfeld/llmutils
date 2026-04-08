@@ -15,10 +15,6 @@ export function clearGitHubUsernameCache(): void {
   failedAt = undefined;
 }
 
-export function normalizeGitHubUsername(username: string): string {
-  return username.toLowerCase();
-}
-
 /** Resolve the authenticated GitHub username.
  * Callers should pass `githubUsername` from the tim config (via `getServerContext()` or
  * `loadEffectiveConfig()`) to honor the user's configured identity. This module lives in

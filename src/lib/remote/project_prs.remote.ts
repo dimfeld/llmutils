@@ -5,12 +5,13 @@ import * as z from 'zod';
 import { formatWebhookIngestErrors, ingestWebhookEvents } from '$common/github/webhook_ingest.js';
 import { getWebhookServerUrl } from '$common/github/webhook_client.js';
 import { parseOwnerRepoFromRepositoryId } from '$common/github/pull_requests.js';
+import { normalizeGitHubUsername } from '$common/github/username.js';
 import { resolveGitHubToken } from '$common/github/token.js';
 import {
   refreshProjectPrs as refreshProjectPrsService,
   type ProjectPrLink,
 } from '$common/github/project_pr_service.js';
-import { getGitHubUsername, normalizeGitHubUsername } from '$common/github/user.js';
+import { getGitHubUsername } from '$common/github/user.js';
 import { getServerContext } from '$lib/server/init.js';
 import { emitPrUpdatesForIngestResult } from '$lib/server/pr_event_utils.js';
 import { getSessionManager } from '$lib/server/session_context.js';

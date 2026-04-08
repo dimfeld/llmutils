@@ -6,8 +6,8 @@ import { parsePrOrIssueNumber } from './identifiers.ts';
 import { getCurrentBranchName } from '../git.ts';
 import { getGitRepository } from '../git.js';
 import { getOctokit } from './octokit.js';
+import { normalizeGitHubUsername } from './username.js';
 import { resolveGitHubToken } from './token.js';
-import { normalizeGitHubUsername } from './user.js';
 
 export interface CommentAuthor {
   login: string;
@@ -74,6 +74,28 @@ interface GraphQLResponse {
     pullRequest: PullRequest;
   };
 }
+
+interface GraphQlPullRequestDraftState {
+  id: string;
+  isDraft: boolean;
+}
+
+interface PullRequestDraftStateGraphQlResponse {
+  repository: {
+    pullRequest: GraphQlPullRequestDraftState | null;
+  } | null;
+}
+
+const pullRequestDraftStateQuery = `
+  query GetPullRequestDraftState($owner: String!, $repo: String!, $prNumber: Int!) {
+    repository(owner: $owner, name: $repo) {
+      pullRequest(number: $prNumber) {
+        id
+        isDraft
+      }
+    }
+  }
+`;
 
 /**
  * Fetches all open pull requests for a repository
@@ -663,6 +685,81 @@ export async function resolveReviewThread(threadId: string): Promise<boolean> {
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     warn(`Failed to resolve review thread ${threadId}: ${errorMessage}`);
+    return false;
+  }
+}
+
+/**
+ * Sets the draft state of a pull request.
+ * @returns Promise that resolves to true if the state was updated successfully, false otherwise.
+ */
+export async function setPullRequestDraftState(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  draft: boolean
+): Promise<boolean> {
+  const token = resolveGitHubToken();
+  if (!token) {
+    error('GITHUB_TOKEN is not set. Cannot change pull request draft state.');
+    return false;
+  }
+
+  const octokit = getOctokit();
+
+  try {
+    const response = await octokit.graphql<PullRequestDraftStateGraphQlResponse>(
+      pullRequestDraftStateQuery,
+      {
+        owner,
+        repo,
+        prNumber,
+      }
+    );
+    const pullRequest = response.repository?.pullRequest;
+    if (!pullRequest) {
+      warn(`Could not find pull request #${prNumber} in ${owner}/${repo}`);
+      return false;
+    }
+
+    if (pullRequest.isDraft === draft) {
+      debugLog(`Pull request #${prNumber} in ${owner}/${repo} is already in draft state ${draft}`);
+      return true;
+    }
+
+    const mutation = draft
+      ? `
+        mutation ConvertPullRequestToDraft($pullRequestId: ID!) {
+          convertPullRequestToDraft(input: { pullRequestId: $pullRequestId }) {
+            pullRequest {
+              isDraft
+            }
+          }
+        }
+      `
+      : `
+        mutation MarkPullRequestReadyForReview($pullRequestId: ID!) {
+          markPullRequestReadyForReview(input: { pullRequestId: $pullRequestId }) {
+            pullRequest {
+              isDraft
+            }
+          }
+        }
+      `;
+
+    await octokit.graphql(mutation, {
+      pullRequestId: pullRequest.id,
+    });
+
+    debugLog(
+      `Successfully changed pull request #${prNumber} in ${owner}/${repo} to draft=${draft}`
+    );
+    return true;
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    warn(
+      `Failed to change draft state for pull request #${prNumber} in ${owner}/${repo}: ${errorMessage}`
+    );
     return false;
   }
 }

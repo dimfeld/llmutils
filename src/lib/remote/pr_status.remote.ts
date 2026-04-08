@@ -10,6 +10,7 @@ import {
 } from '$common/github/pr_status_service.js';
 import { resolveGitHubToken } from '$common/github/token.js';
 import { getWebhookServerUrl } from '$common/github/webhook_client.js';
+import { setPullRequestDraftState } from '$common/github/pull_requests.js';
 import { categorizePrUrls, parseJsonStringArray } from '$lib/server/db_queries.js';
 import { getServerContext } from '$lib/server/init.js';
 import { emitPrUpdatesForIngestResult } from '$lib/server/pr_event_utils.js';
@@ -25,6 +26,14 @@ const planUuidSchema = z.object({
 
 const prUrlSchema = z.object({
   prUrl: z.string().url(),
+});
+
+const togglePrDraftStatusSchema = z.object({
+  owner: z.string().min(1),
+  repo: z.string().min(1),
+  prNumber: z.number().int(),
+  prUrl: z.string().url(),
+  draft: z.boolean(),
 });
 
 async function loadPlanAndContext(planUuid: string) {
@@ -235,3 +244,27 @@ export const refreshSinglePrStatus = command(prUrlSchema, async ({ prUrl }) => {
 
   return { success: true };
 });
+
+export const togglePrDraftStatus = command(
+  togglePrDraftStatusSchema,
+  async ({ owner, repo, prNumber, prUrl, draft }) => {
+    const { db } = await getServerContext();
+
+    if (!resolveGitHubToken()) {
+      error(400, 'GITHUB_TOKEN not configured');
+    }
+
+    const success = await setPullRequestDraftState(owner, repo, prNumber, draft);
+    if (!success) {
+      error(500, `Failed to update pull request #${prNumber}`);
+    }
+
+    try {
+      await refreshPrStatusFromApi(db, prUrl);
+    } catch (err) {
+      error(500, `Failed to refresh PR: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    return { success: true };
+  }
+);

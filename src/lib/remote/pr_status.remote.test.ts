@@ -19,6 +19,9 @@ const refreshPrStatusFromApi = vi.fn();
 const ingestWebhookEvents = vi.fn();
 const mockEmitPrUpdatesForIngestResult = vi.fn();
 const mockSessionManager = { emitPrUpdate: vi.fn() };
+const { setPullRequestDraftState } = vi.hoisted(() => ({
+  setPullRequestDraftState: vi.fn(),
+}));
 
 vi.mock('$lib/server/init.js', () => ({
   getServerContext: async () => ({
@@ -32,6 +35,17 @@ vi.mock('$common/github/pr_status_service.js', () => ({
   ensurePrStatusFresh,
   refreshPrStatus: refreshPrStatusFromApi,
 }));
+
+vi.mock('$common/github/pull_requests.js', async () => {
+  const actual = await vi.importActual<typeof import('$common/github/pull_requests.js')>(
+    '$common/github/pull_requests.js'
+  );
+
+  return {
+    ...actual,
+    setPullRequestDraftState,
+  };
+});
 
 vi.mock('$common/github/webhook_client.js', () => ({
   getWebhookServerUrl: () => currentWebhookServerUrl,
@@ -102,6 +116,7 @@ describe('pr_status remote functions', () => {
     syncPlanPrLinks.mockReset();
     ensurePrStatusFresh.mockReset();
     refreshPrStatusFromApi.mockReset();
+    setPullRequestDraftState.mockReset();
     ingestWebhookEvents.mockReset();
     mockEmitPrUpdatesForIngestResult.mockReset();
     mockSessionManager.emitPrUpdate.mockReset();
@@ -162,6 +177,29 @@ describe('pr_status remote functions', () => {
         prsUpdated: ['https://github.com/example/repo/pull/1'],
       }),
       mockSessionManager
+    );
+  });
+
+  test('togglePrDraftStatus updates the PR draft state and refreshes the cache', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    setPullRequestDraftState.mockResolvedValueOnce(true);
+    refreshPrStatusFromApi.mockResolvedValueOnce(undefined);
+
+    const { togglePrDraftStatus } = await import('./pr_status.remote.js');
+
+    const result = await invokeCommand(togglePrDraftStatus, {
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 1,
+      prUrl: 'https://github.com/example/repo/pull/1',
+      draft: true,
+    });
+
+    expect(result).toEqual({ success: true });
+    expect(setPullRequestDraftState).toHaveBeenCalledWith('example', 'repo', 1, true);
+    expect(refreshPrStatusFromApi).toHaveBeenCalledWith(
+      currentDb,
+      'https://github.com/example/repo/pull/1'
     );
   });
 

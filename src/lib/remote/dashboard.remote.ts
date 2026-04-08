@@ -2,7 +2,8 @@ import { query } from '$app/server';
 import * as z from 'zod';
 
 import { parseOwnerRepoFromRepositoryId } from '$common/github/pull_requests.js';
-import { getGitHubUsername, normalizeGitHubUsername } from '$common/github/user.js';
+import { normalizeGitHubUsername } from '$common/github/username.js';
+import { getGitHubUsername } from '$common/github/user.js';
 import { getServerContext } from '$lib/server/init.js';
 import type { ActionablePr } from '$lib/utils/dashboard_attention.js';
 import { buildActionablePrsForRepo } from '$lib/utils/pr_actionability.js';

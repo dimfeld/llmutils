@@ -15,7 +15,7 @@
 </script>
 
 {#if pr}
-  <PrDetail {pr} {projectId} />
+  <PrDetail {pr} {projectId} username={prData.username} tokenConfigured={prData.tokenConfigured} />
 {:else}
   <div class="flex items-center justify-center p-8 text-sm text-muted-foreground">
     Pull request #{prNumber} not found

@@ -1,4 +1,4 @@
-import { normalizeGitHubUsername } from '$common/github/user.js';
+import { normalizeGitHubUsername } from '$common/github/username.js';
 import type { ActionablePr } from '$lib/utils/dashboard_attention.js';
 import type { LinkedPlanSummary, PrReviewRequestRow, PrStatusDetail } from '$tim/db/pr_status.js';
 

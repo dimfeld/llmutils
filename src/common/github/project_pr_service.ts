@@ -5,7 +5,7 @@ import {
   partitionUserRelevantOpenPrs,
 } from './pull_requests.js';
 import { fetchPrFullStatus, type PrFullStatus } from './pr_status.js';
-import { normalizeGitHubUsername } from './user.js';
+import { normalizeGitHubUsername } from './username.js';
 import { getPlansByProject } from '../../tim/db/plan.js';
 import { getProjectById } from '../../tim/db/project.js';
 import { SQL_NOW_ISO_UTC } from '../../tim/db/sql_utils.js';

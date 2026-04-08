@@ -52,6 +52,9 @@ vi.mock('$lib/server/session_context.js', () => ({
 
 vi.mock('$common/github/user.js', () => ({
   getGitHubUsername,
+}));
+
+vi.mock('$common/github/username.js', () => ({
   normalizeGitHubUsername: (value: string | null | undefined) => value?.toLowerCase() ?? '',
 }));
 
