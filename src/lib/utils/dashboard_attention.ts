@@ -21,6 +21,9 @@ export interface ActionablePr {
   linkedPlanUuid: string | null;
   linkedPlanTitle: string | null;
   projectId: number;
+  additions: number | null;
+  deletions: number | null;
+  changedFiles: number | null;
 }
 
 // --- Attention item types ---

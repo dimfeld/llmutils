@@ -88,6 +88,13 @@
       {#if pr.author}
         <span class="text-xs text-muted-foreground">by {pr.author}</span>
       {/if}
+      {#if pr.additions != null && pr.deletions != null}
+        <span class="text-xs">
+          <span class="text-green-600 dark:text-green-400">+{pr.additions}</span>
+          <span class="text-muted-foreground">/</span>
+          <span class="text-red-600 dark:text-red-400">-{pr.deletions}</span>
+        </span>
+      {/if}
     </div>
   </a>
   <a

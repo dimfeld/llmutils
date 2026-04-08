@@ -41,6 +41,7 @@ function makePrStatus(overrides: Partial<PrStatusRow> = {}): PrStatusRow {
     owner: 'owner',
     repo: 'repo',
     pr_number: 42,
+    author: 'testuser',
     title: 'Add feature X',
     state: 'open',
     draft: 0,
@@ -48,9 +49,15 @@ function makePrStatus(overrides: Partial<PrStatusRow> = {}): PrStatusRow {
     head_sha: 'abc123',
     base_branch: 'main',
     head_branch: 'feature-x',
+    requested_reviewers: null,
     review_decision: null,
     check_rollup_state: 'success',
     merged_at: null,
+    additions: null,
+    deletions: null,
+    changed_files: null,
+    pr_updated_at: null,
+    latest_commit_pushed_at: null,
     last_fetched_at: new Date().toISOString(),
     created_at: '2026-03-18T10:00:00.000Z',
     updated_at: '2026-03-18T10:00:00.000Z',
@@ -732,5 +739,47 @@ describe('PrStatusSection', () => {
     });
 
     expect(body).toContain('background-color: #ffffff; color: #000');
+  });
+
+  test('renders full diff stats when additions, deletions, and changed_files are available', async () => {
+    const detail = makePrDetail({
+      status: { additions: 42, deletions: 17, changed_files: 3 },
+    });
+    const { body } = await renderSection({
+      prUrls: [detail.status.pr_url],
+      prStatuses: [detail],
+    });
+
+    expect(body).toContain('3 files changed');
+    expect(body).toContain('+42');
+    expect(body).toContain('-17');
+  });
+
+  test('does not render diff stats when changed_files is null', async () => {
+    const detail = makePrDetail({
+      status: { additions: 42, deletions: 17, changed_files: null },
+    });
+    const { body } = await renderSection({
+      prUrls: [detail.status.pr_url],
+      prStatuses: [detail],
+    });
+
+    expect(body).not.toContain('files changed');
+    expect(body).not.toContain('text-green-600');
+    expect(body).not.toContain('text-red-600');
+  });
+
+  test('does not render diff stats when additions and deletions are null', async () => {
+    const detail = makePrDetail();
+    // additions, deletions, changed_files are null by default in makePrStatus
+
+    const { body } = await renderSection({
+      prUrls: [detail.status.pr_url],
+      prStatuses: [detail],
+    });
+
+    expect(body).not.toContain('files changed');
+    expect(body).not.toContain('text-green-600');
+    expect(body).not.toContain('text-red-600');
   });
 });

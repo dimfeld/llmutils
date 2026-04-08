@@ -33,7 +33,11 @@ function makePrStatus(overrides: Partial<PrStatusRow> = {}): PrStatusRow {
     review_decision: null,
     check_rollup_state: null,
     merged_at: null,
+    additions: null,
+    deletions: null,
+    changed_files: null,
     pr_updated_at: null,
+    latest_commit_pushed_at: null,
     last_fetched_at: '2026-01-01T00:00:00Z',
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
@@ -413,6 +417,9 @@ describe('buildActionablePrsForRepo', () => {
         linkedPlanUuid: 'plan-uuid-1',
         linkedPlanTitle: 'Linked plan',
         projectId: 7,
+        additions: null,
+        deletions: null,
+        changedFiles: null,
       },
     ]);
   });
@@ -454,6 +461,9 @@ describe('buildActionablePrsForRepo', () => {
         linkedPlanUuid: null,
         linkedPlanTitle: null,
         projectId: 7,
+        additions: null,
+        deletions: null,
+        changedFiles: null,
       },
     ]);
   });

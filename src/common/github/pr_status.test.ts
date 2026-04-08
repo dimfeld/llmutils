@@ -25,6 +25,9 @@ describe('common/github/pr_status', () => {
           baseRefName: 'main',
           headRefName: 'feature/pr-status',
           reviewDecision: 'APPROVED',
+          additions: 42,
+          deletions: 17,
+          changedFiles: 3,
           labels: {
             nodes: [null, { name: 'backend', color: '00ff00' }],
           },
@@ -148,6 +151,9 @@ describe('common/github/pr_status', () => {
       ],
       checkRollupState: 'failure',
       latestCommitPushedAt: '2026-03-20T00:05:00.000Z',
+      additions: 42,
+      deletions: 17,
+      changedFiles: 3,
     });
     expect(graphql).toHaveBeenCalledTimes(1);
   });

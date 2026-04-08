@@ -134,7 +134,8 @@ export function buildActionablePrsForRepo(
   for (const pr of prs) {
     if (pr.status.state !== 'open') continue;
 
-    const { owner, repo, pr_url, pr_number, title, author } = pr.status;
+    const { owner, repo, pr_url, pr_number, title, author, additions, deletions, changed_files } =
+      pr.status;
     const linkedPlans = linkedPlansByPrUrl.get(pr_url) ?? [];
     const firstLinkedPlan = linkedPlans[0] ?? null;
 
@@ -159,6 +160,9 @@ export function buildActionablePrsForRepo(
           linkedPlanUuid: firstLinkedPlan?.planUuid ?? null,
           linkedPlanTitle: firstLinkedPlan?.title ?? null,
           projectId,
+          additions,
+          deletions,
+          changedFiles: changed_files,
         });
       }
     } else if (normalizedUsername !== null && hasReviewRequestForUser(pr, normalizedUsername)) {
@@ -175,6 +179,9 @@ export function buildActionablePrsForRepo(
         linkedPlanUuid: firstLinkedPlan?.planUuid ?? null,
         linkedPlanTitle: firstLinkedPlan?.title ?? null,
         projectId,
+        additions,
+        deletions,
+        changedFiles: changed_files,
       });
     }
   }

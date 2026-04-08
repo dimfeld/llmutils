@@ -26,6 +26,9 @@ function createPr(): EnrichedProjectPr {
       review_decision: 'REVIEW_REQUIRED',
       check_rollup_state: 'success',
       merged_at: null,
+      additions: null,
+      deletions: null,
+      changed_files: null,
       pr_updated_at: null,
       last_fetched_at: '2026-03-18T10:00:00.000Z',
       created_at: '2026-03-18T10:00:00.000Z',
@@ -75,5 +78,58 @@ describe('PrDetail', () => {
 
     expect(otherPr.body).not.toContain('Convert to draft');
     expect(otherPr.body).not.toContain('Mark ready for review');
+  });
+
+
+  test('renders full diff stats when additions, deletions, and changed_files are available', () => {
+    const pr = createPr();
+    pr.status.additions = 42;
+    pr.status.deletions = 17;
+    pr.status.changed_files = 3;
+
+    const { body } = render(PrDetail, {
+      props: {
+        pr,
+        projectId: '123',
+      },
+    });
+
+    expect(body).toContain('3 files changed');
+    expect(body).toContain('+42');
+    expect(body).toContain('-17');
+  });
+
+  test('does not render diff stats when changed_files is null', () => {
+    const pr = createPr();
+    pr.status.additions = 42;
+    pr.status.deletions = 17;
+    pr.status.changed_files = null;
+
+    const { body } = render(PrDetail, {
+      props: {
+        pr,
+        projectId: '123',
+      },
+    });
+
+    expect(body).not.toContain('files changed');
+    expect(body).not.toContain('text-green-600');
+    expect(body).not.toContain('text-red-600');
+  });
+
+  test('does not render diff stats when additions and deletions are null', () => {
+    const pr = createPr();
+    // additions, deletions, changed_files are already null in createPr()
+
+    const { body } = render(PrDetail, {
+      props: {
+        pr,
+        projectId: '123',
+      },
+    });
+
+    expect(body).not.toContain('files changed');
+    expect(body).not.toContain('text-green-600');
+    expect(body).not.toContain('text-red-600');
   });
 });

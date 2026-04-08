@@ -96,6 +96,14 @@
         <span class="text-muted-foreground/40">&middot;</span>
       {/if}
       <span class="truncate font-mono">{pr.status.head_branch}</span>
+      {#if pr.status.additions != null && pr.status.deletions != null}
+        <span class="text-muted-foreground/40">&middot;</span>
+        <span>
+          <span class="text-green-600 dark:text-green-400">+{pr.status.additions}</span>
+          <span class="text-muted-foreground">/</span>
+          <span class="text-red-600 dark:text-red-400">-{pr.status.deletions}</span>
+        </span>
+      {/if}
     </div>
   </a>
 

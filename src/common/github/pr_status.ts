@@ -74,6 +74,9 @@ export interface PrFullStatus {
   reviews: PrStatusReview[];
   checks: PrStatusCheckRun[];
   checkRollupState: PrCheckRollupState;
+  additions: number | null;
+  deletions: number | null;
+  changedFiles: number | null;
   latestCommitPushedAt: string | null;
 }
 
@@ -144,6 +147,9 @@ interface GraphQlPullRequestFullStatus {
   baseRefName: string | null;
   headRefName: string | null;
   reviewDecision: string | null;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
   labels: { nodes: Array<GraphQlLabelNode | null> | null } | null;
   reviews: { nodes: Array<GraphQlReviewNode | null> | null } | null;
   commits: { nodes: Array<GraphQlCommitNode | null> | null } | null;
@@ -246,6 +252,9 @@ const fullStatusQuery = `
         isDraft
         mergeable
         mergedAt
+        additions
+        deletions
+        changedFiles
         headRefOid
         baseRefName
         headRefName
@@ -771,6 +780,9 @@ export async function fetchPrFullStatus(
     reviews: normalizedReviews,
     checks: normalizedChecks.checks,
     checkRollupState: normalizedChecks.checkRollupState,
+    additions: pullRequest.additions ?? null,
+    deletions: pullRequest.deletions ?? null,
+    changedFiles: pullRequest.changedFiles ?? null,
     latestCommitPushedAt,
   };
 }

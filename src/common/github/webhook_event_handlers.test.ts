@@ -847,6 +847,144 @@ describe('common/github/webhook_event_handlers', () => {
     });
   });
 
+  test('handlePullRequestEvent stores diff stats from webhook payload', () => {
+    handlePullRequestEvent(db, {
+      action: 'opened',
+      repository: { full_name: 'example/repo' },
+      pull_request: {
+        number: 201,
+        title: 'PR with diff stats',
+        state: 'open',
+        draft: false,
+        merged_at: null,
+        user: { login: 'alice' },
+        head: { sha: 'sha-201', ref: 'feature/diff-stats' },
+        base: { ref: 'main' },
+        labels: [],
+        requested_reviewers: [],
+        updated_at: '2026-03-30T12:00:00.000Z',
+        additions: 42,
+        deletions: 17,
+        changed_files: 3,
+      },
+    });
+
+    const detail = getPrStatusByUrl(db, 'https://github.com/example/repo/pull/201');
+    expect(detail?.status.additions).toBe(42);
+    expect(detail?.status.deletions).toBe(17);
+    expect(detail?.status.changed_files).toBe(3);
+  });
+
+  test('handlePullRequestEvent stores null diff stats when not provided in payload', () => {
+    handlePullRequestEvent(db, {
+      action: 'opened',
+      repository: { full_name: 'example/repo' },
+      pull_request: {
+        number: 202,
+        title: 'PR without diff stats',
+        state: 'open',
+        draft: false,
+        merged_at: null,
+        user: { login: 'alice' },
+        head: { sha: 'sha-202', ref: 'feature/no-stats' },
+        base: { ref: 'main' },
+        labels: [],
+        requested_reviewers: [],
+        updated_at: '2026-03-30T12:00:00.000Z',
+      },
+    });
+
+    const detail = getPrStatusByUrl(db, 'https://github.com/example/repo/pull/202');
+    expect(detail?.status.additions).toBeNull();
+    expect(detail?.status.deletions).toBeNull();
+    expect(detail?.status.changed_files).toBeNull();
+  });
+
+  test('handlePullRequestEvent preserves existing diff stats when new webhook payload has no diff stats', () => {
+    // First upsert sets the diff stats via a full status insert
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/203',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 203,
+      author: 'alice',
+      title: 'PR with initial diff stats',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-29T00:00:00.000Z',
+      additions: 100,
+      deletions: 50,
+      changedFiles: 8,
+    });
+
+    // Webhook event without diff stats should not clear existing values (COALESCE)
+    handlePullRequestEvent(db, {
+      action: 'labeled',
+      repository: { full_name: 'example/repo' },
+      pull_request: {
+        number: 203,
+        title: 'PR with initial diff stats',
+        state: 'open',
+        draft: false,
+        merged_at: null,
+        user: { login: 'alice' },
+        head: { sha: 'sha-203', ref: 'feature/coalesce-test' },
+        base: { ref: 'main' },
+        labels: [{ name: 'bug', color: 'ff0000' }],
+        requested_reviewers: [],
+        updated_at: '2026-03-30T12:00:00.000Z',
+      },
+    });
+
+    const detail = getPrStatusByUrl(db, 'https://github.com/example/repo/pull/203');
+    expect(detail?.status.additions).toBe(100);
+    expect(detail?.status.deletions).toBe(50);
+    expect(detail?.status.changed_files).toBe(8);
+  });
+
+  test('handlePullRequestEvent updates diff stats when new webhook payload provides them', () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/204',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 204,
+      author: 'alice',
+      title: 'PR with diff stats to update',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-29T00:00:00.000Z',
+      additions: 10,
+      deletions: 5,
+      changedFiles: 2,
+    });
+
+    handlePullRequestEvent(db, {
+      action: 'synchronize',
+      repository: { full_name: 'example/repo' },
+      pull_request: {
+        number: 204,
+        title: 'PR with diff stats to update',
+        state: 'open',
+        draft: false,
+        merged_at: null,
+        user: { login: 'alice' },
+        head: { sha: 'sha-204-new', ref: 'feature/update-stats' },
+        base: { ref: 'main' },
+        labels: [],
+        requested_reviewers: [],
+        updated_at: '2026-03-30T12:00:00.000Z',
+        additions: 200,
+        deletions: 80,
+        changed_files: 15,
+      },
+    });
+
+    const detail = getPrStatusByUrl(db, 'https://github.com/example/repo/pull/204');
+    expect(detail?.status.additions).toBe(200);
+    expect(detail?.status.deletions).toBe(80);
+    expect(detail?.status.changed_files).toBe(15);
+  });
+
   test('handlers ignore webhook events for unknown repositories', () => {
     expect(
       handlePullRequestEvent(db, {

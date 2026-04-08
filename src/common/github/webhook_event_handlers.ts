@@ -52,6 +52,9 @@ interface ParsedPullRequestPayload {
     headRef: string | null;
     mergedAt: string | null;
     updatedAt: string | null;
+    additions: number | null;
+    deletions: number | null;
+    changedFiles: number | null;
     labels: Array<{ name: string; color: string | null }>;
     requestedReviewers: string[];
     requestedReviewerLogin: string | null;
@@ -95,6 +98,9 @@ interface ParsedReviewThreadPayload {
     headRef: string | null;
     mergedAt: string | null;
     updatedAt: string | null;
+    additions: number | null;
+    deletions: number | null;
+    changedFiles: number | null;
     labels: Array<{ name: string; color: string | null }>;
     requestedReviewers: string[];
     requestedReviewerLogin: string | null;
@@ -195,6 +201,9 @@ function parsePullRequestPayload(payload: unknown): ParsedPullRequestPayload | n
   const user = (pullRequest as { user?: unknown }).user;
   const mergedAt = (pullRequest as { merged_at?: unknown }).merged_at;
   const updatedAt = (pullRequest as { updated_at?: unknown }).updated_at;
+  const additions = (pullRequest as { additions?: unknown }).additions;
+  const deletions = (pullRequest as { deletions?: unknown }).deletions;
+  const changedFiles = (pullRequest as { changed_files?: unknown }).changed_files;
   const title = (pullRequest as { title?: unknown }).title;
   const requestedReviewer = (pullRequest as { requested_reviewer?: unknown }).requested_reviewer;
 
@@ -227,6 +236,9 @@ function parsePullRequestPayload(payload: unknown): ParsedPullRequestPayload | n
           : null,
       mergedAt: typeof mergedAt === 'string' ? mergedAt : null,
       updatedAt: typeof updatedAt === 'string' ? updatedAt : null,
+      additions: typeof additions === 'number' ? additions : null,
+      deletions: typeof deletions === 'number' ? deletions : null,
+      changedFiles: typeof changedFiles === 'number' ? changedFiles : null,
       labels: parseLabels((pullRequest as { labels?: unknown }).labels),
       requestedReviewers: parseRequestedReviewers(
         (pullRequest as { requested_reviewers?: unknown }).requested_reviewers
@@ -334,6 +346,9 @@ function parseReviewThreadPayload(payload: unknown): ParsedReviewThreadPayload |
   const user = (pullRequest as { user?: unknown }).user;
   const mergedAt = (pullRequest as { merged_at?: unknown }).merged_at;
   const updatedAt = (pullRequest as { updated_at?: unknown }).updated_at;
+  const additions = (pullRequest as { additions?: unknown }).additions;
+  const deletions = (pullRequest as { deletions?: unknown }).deletions;
+  const changedFiles = (pullRequest as { changed_files?: unknown }).changed_files;
   const title = (pullRequest as { title?: unknown }).title;
   const requestedReviewer = (pullRequest as { requested_reviewer?: unknown }).requested_reviewer;
   const requestedReviewers = (pullRequest as { requested_reviewers?: unknown }).requested_reviewers;
@@ -361,6 +376,9 @@ function parseReviewThreadPayload(payload: unknown): ParsedReviewThreadPayload |
         typeof head === 'object' && head ? (head as { ref?: string | null }).ref || null : null,
       mergedAt: typeof mergedAt === 'string' ? mergedAt : null,
       updatedAt: typeof updatedAt === 'string' ? updatedAt : null,
+      additions: typeof additions === 'number' ? additions : null,
+      deletions: typeof deletions === 'number' ? deletions : null,
+      changedFiles: typeof changedFiles === 'number' ? changedFiles : null,
       labels: parseLabels(labels),
       requestedReviewers: parseRequestedReviewers(requestedReviewers),
       requestedReviewerLogin: parseRequestedReviewer(requestedReviewer),
@@ -426,6 +444,9 @@ export function handlePullRequestEvent(
         reviewDecision: null,
         checkRollupState: null,
         mergedAt: pullRequest.mergedAt,
+        additions: pullRequest.additions,
+        deletions: pullRequest.deletions,
+        changedFiles: pullRequest.changedFiles,
         prUpdatedAt: pullRequest.updatedAt,
         lastFetchedAt: getNowIsoString(),
         labels: pullRequest.labels,

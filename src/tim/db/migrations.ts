@@ -559,6 +559,14 @@ const migrations: Migration[] = [
       ALTER TABLE plan ADD COLUMN note TEXT;
     `,
   },
+  {
+    version: 20,
+    up: `
+      ALTER TABLE pr_status ADD COLUMN additions INTEGER;
+      ALTER TABLE pr_status ADD COLUMN deletions INTEGER;
+      ALTER TABLE pr_status ADD COLUMN changed_files INTEGER;
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {

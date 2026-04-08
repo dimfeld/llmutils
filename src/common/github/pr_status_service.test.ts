@@ -113,6 +113,9 @@ describe('common/github/pr_status_service', () => {
         },
       ],
       checkRollupState: 'success' as const,
+      additions: 10,
+      deletions: 5,
+      changedFiles: 3,
     });
     mockFetchPrReviewThreads.mockResolvedValue([]);
 
@@ -129,6 +132,88 @@ describe('common/github/pr_status_service', () => {
     expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/201')?.checks).toHaveLength(
       1
     );
+  });
+
+  test('refreshPrStatus persists additions, deletions, and changedFiles to the DB', async () => {
+    const mockFetchPrFullStatus = vi.mocked(fetchPrFullStatus);
+    const mockFetchPrReviewThreads = vi.mocked(fetchPrReviewThreads);
+    const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
+    const mockCanonicalizePrUrl = vi.mocked(canonicalizePrUrl);
+    const mockTryCanonicalizePrUrl = vi.mocked(tryCanonicalizePrUrl);
+
+    mockFetchPrFullStatus.mockResolvedValue({
+      number: 250,
+      title: 'Diff stats PR',
+      state: 'open' as const,
+      isDraft: false,
+      mergeable: 'MERGEABLE' as const,
+      mergedAt: null,
+      headSha: 'diff-sha',
+      baseRefName: 'main',
+      headRefName: 'feature/diff-stats',
+      reviewDecision: null,
+      labels: [],
+      reviews: [],
+      checks: [],
+      checkRollupState: 'success' as const,
+      additions: 42,
+      deletions: 17,
+      changedFiles: 3,
+    });
+    mockFetchPrReviewThreads.mockResolvedValue([]);
+
+    mockParsePrOrIssueNumber.mockResolvedValue({ owner: 'example', repo: 'repo', number: 250 });
+    mockCanonicalizePrUrl.mockReturnValue('https://github.com/example/repo/pull/250');
+    mockTryCanonicalizePrUrl.mockReturnValue('https://github.com/example/repo/pull/250');
+
+    const { refreshPrStatus } = await import('./pr_status_service.ts');
+    await refreshPrStatus(db, 'https://github.com/example/repo/pull/250');
+
+    const stored = getPrStatusByUrl(db, 'https://github.com/example/repo/pull/250');
+    expect(stored?.status.additions).toBe(42);
+    expect(stored?.status.deletions).toBe(17);
+    expect(stored?.status.changed_files).toBe(3);
+  });
+
+  test('refreshPrStatus handles null diff stats gracefully', async () => {
+    const mockFetchPrFullStatus = vi.mocked(fetchPrFullStatus);
+    const mockFetchPrReviewThreads = vi.mocked(fetchPrReviewThreads);
+    const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
+    const mockCanonicalizePrUrl = vi.mocked(canonicalizePrUrl);
+    const mockTryCanonicalizePrUrl = vi.mocked(tryCanonicalizePrUrl);
+
+    mockFetchPrFullStatus.mockResolvedValue({
+      number: 251,
+      title: 'No diff stats PR',
+      state: 'open' as const,
+      isDraft: false,
+      mergeable: 'MERGEABLE' as const,
+      mergedAt: null,
+      headSha: 'nodiff-sha',
+      baseRefName: 'main',
+      headRefName: 'feature/no-diff',
+      reviewDecision: null,
+      labels: [],
+      reviews: [],
+      checks: [],
+      checkRollupState: 'success' as const,
+      additions: null,
+      deletions: null,
+      changedFiles: null,
+    });
+    mockFetchPrReviewThreads.mockResolvedValue([]);
+
+    mockParsePrOrIssueNumber.mockResolvedValue({ owner: 'example', repo: 'repo', number: 251 });
+    mockCanonicalizePrUrl.mockReturnValue('https://github.com/example/repo/pull/251');
+    mockTryCanonicalizePrUrl.mockReturnValue('https://github.com/example/repo/pull/251');
+
+    const { refreshPrStatus } = await import('./pr_status_service.ts');
+    await refreshPrStatus(db, 'https://github.com/example/repo/pull/251');
+
+    const stored = getPrStatusByUrl(db, 'https://github.com/example/repo/pull/251');
+    expect(stored?.status.additions).toBeNull();
+    expect(stored?.status.deletions).toBeNull();
+    expect(stored?.status.changed_files).toBeNull();
   });
 
   test('refreshPrStatus persists review threads when the GitHub fetch succeeds', async () => {

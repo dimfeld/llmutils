@@ -70,6 +70,9 @@ function makeActionablePr(overrides: Partial<ActionablePr> & { prUrl: string }):
     linkedPlanUuid: null,
     linkedPlanTitle: null,
     projectId: 1,
+    additions: null,
+    deletions: null,
+    changedFiles: null,
     ...overrides,
   };
 }

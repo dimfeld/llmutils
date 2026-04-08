@@ -32,7 +32,10 @@ interface TrackerAvailability {
   unavailable: Array<'github' | 'linear'>;
 }
 
-function getTrackerAvailabilityFromKeys(githubKey: boolean, linearKey: boolean): TrackerAvailability {
+function getTrackerAvailabilityFromKeys(
+  githubKey: boolean,
+  linearKey: boolean
+): TrackerAvailability {
   const available: Array<'github' | 'linear'> = [];
   const unavailable: Array<'github' | 'linear'> = [];
 

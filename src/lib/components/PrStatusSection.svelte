@@ -270,6 +270,16 @@
           </div>
         {/if}
 
+        <!-- Diff stats -->
+        {#if pr.status.additions != null && pr.status.deletions != null && pr.status.changed_files != null}
+          <div class="mt-1.5 text-xs text-muted-foreground">
+            {pr.status.changed_files} file{pr.status.changed_files === 1 ? '' : 's'} changed,
+            <span class="text-green-600 dark:text-green-400">+{pr.status.additions}</span>
+            /
+            <span class="text-red-600 dark:text-red-400">-{pr.status.deletions}</span>
+          </div>
+        {/if}
+
         <!-- Expandable Check Runs -->
         {#if pr.checks.length > 0}
           <details class="mt-2">

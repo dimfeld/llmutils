@@ -25,6 +25,9 @@ function createPr(): EnrichedProjectPr {
       review_decision: null,
       check_rollup_state: 'success',
       merged_at: null,
+      additions: null,
+      deletions: null,
+      changed_files: null,
       pr_updated_at: null,
       last_fetched_at: '2026-03-18T10:00:00.000Z',
       created_at: '2026-03-18T10:00:00.000Z',
@@ -69,5 +72,38 @@ describe('PrRow', () => {
     });
 
     expect(body).toContain('Review Requested');
+  });
+
+  test('renders compact diff stats when additions and deletions are available', () => {
+    const pr = createPr();
+    pr.status.additions = 42;
+    pr.status.deletions = 17;
+
+    const { body } = render(PrRow, {
+      props: {
+        pr,
+        href: '/projects/123/prs/42',
+        itemId: '123:42',
+      },
+    });
+
+    expect(body).toContain('+42');
+    expect(body).toContain('-17');
+  });
+
+  test('does not render diff stats when additions and deletions are null', () => {
+    const pr = createPr();
+    // additions and deletions are already null in createPr()
+
+    const { body } = render(PrRow, {
+      props: {
+        pr,
+        href: '/projects/123/prs/42',
+        itemId: '123:42',
+      },
+    });
+
+    expect(body).not.toContain('text-green-600');
+    expect(body).not.toContain('text-red-600');
   });
 });

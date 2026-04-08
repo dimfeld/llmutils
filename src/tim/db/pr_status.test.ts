@@ -1817,4 +1817,195 @@ describe('tim db/pr_status', () => {
     expect(cleanOrphanedPrStatus(db)).toBe(0);
     expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/123')).not.toBeNull();
   });
+
+  test('upsertPrStatus stores and updates diff stat fields', () => {
+    const created = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/900',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 900,
+      author: 'alice',
+      title: 'PR with diff stats',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      additions: 42,
+      deletions: 17,
+      changedFiles: 3,
+    });
+
+    expect(created.status.additions).toBe(42);
+    expect(created.status.deletions).toBe(17);
+    expect(created.status.changed_files).toBe(3);
+
+    const updated = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/900',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 900,
+      author: 'alice',
+      title: 'PR with updated diff stats',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-21T00:00:00.000Z',
+      additions: 100,
+      deletions: 50,
+      changedFiles: 10,
+    });
+
+    expect(updated.status.id).toBe(created.status.id);
+    expect(updated.status.additions).toBe(100);
+    expect(updated.status.deletions).toBe(50);
+    expect(updated.status.changed_files).toBe(10);
+  });
+
+  test('upsertPrStatus stores null diff stats when not provided', () => {
+    const created = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/901',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 901,
+      author: 'alice',
+      title: 'PR without diff stats',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    expect(created.status.additions).toBeNull();
+    expect(created.status.deletions).toBeNull();
+    expect(created.status.changed_files).toBeNull();
+  });
+
+  test('upsertPrStatus replaces diff stats with null when explicitly set to null', () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/902',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 902,
+      author: 'alice',
+      title: 'PR with diff stats',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      additions: 5,
+      deletions: 2,
+      changedFiles: 1,
+    });
+
+    const updated = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/902',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 902,
+      author: 'alice',
+      title: 'PR with diff stats cleared',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-21T00:00:00.000Z',
+      additions: null,
+      deletions: null,
+      changedFiles: null,
+    });
+
+    expect(updated.status.additions).toBeNull();
+    expect(updated.status.deletions).toBeNull();
+    expect(updated.status.changed_files).toBeNull();
+  });
+
+  test('upsertPrStatusMetadata stores diff stat fields', () => {
+    const created = upsertPrStatusMetadata(db, {
+      prUrl: 'https://github.com/example/repo/pull/910',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 910,
+      author: 'alice',
+      title: 'PR with diff stats via metadata',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      additions: 30,
+      deletions: 10,
+      changedFiles: 5,
+    });
+
+    expect(created.status.additions).toBe(30);
+    expect(created.status.deletions).toBe(10);
+    expect(created.status.changed_files).toBe(5);
+  });
+
+  test('upsertPrStatusMetadata preserves existing diff stats when new values are null (COALESCE behavior)', () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/911',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 911,
+      author: 'alice',
+      title: 'PR with diff stats',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      additions: 42,
+      deletions: 17,
+      changedFiles: 3,
+    });
+
+    // Webhook event without diff stats (null values) should not overwrite existing values
+    const updated = upsertPrStatusMetadata(db, {
+      prUrl: 'https://github.com/example/repo/pull/911',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 911,
+      author: 'alice',
+      title: 'Updated title',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-21T00:00:00.000Z',
+      additions: null,
+      deletions: null,
+      changedFiles: null,
+      prUpdatedAt: '2026-03-21T00:00:00.000Z',
+    });
+
+    expect(updated.status.additions).toBe(42);
+    expect(updated.status.deletions).toBe(17);
+    expect(updated.status.changed_files).toBe(3);
+  });
+
+  test('upsertPrStatusMetadata overwrites diff stats when new values are provided', () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/912',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 912,
+      author: 'alice',
+      title: 'PR with diff stats',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      additions: 42,
+      deletions: 17,
+      changedFiles: 3,
+    });
+
+    const updated = upsertPrStatusMetadata(db, {
+      prUrl: 'https://github.com/example/repo/pull/912',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 912,
+      author: 'alice',
+      title: 'Updated title',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-21T00:00:00.000Z',
+      additions: 100,
+      deletions: 50,
+      changedFiles: 8,
+      prUpdatedAt: '2026-03-21T00:00:00.000Z',
+    });
+
+    expect(updated.status.additions).toBe(100);
+    expect(updated.status.deletions).toBe(50);
+    expect(updated.status.changed_files).toBe(8);
+  });
 });

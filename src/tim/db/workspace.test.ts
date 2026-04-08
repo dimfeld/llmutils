@@ -143,7 +143,7 @@ describe('tim db/workspace', () => {
     expect(
       findWorkspacesByProjectId(db, projectId)
         .map((workspace) => workspace.workspace_path)
-      .sort()
+        .sort()
     ).toEqual(['/tmp/workspace-a', '/tmp/workspace-b']);
   });
 

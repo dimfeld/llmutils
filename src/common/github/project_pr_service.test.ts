@@ -69,6 +69,10 @@ function makeFullStatus(prNumber: number, overrides: Record<string, unknown> = {
     reviews: [],
     checks: [],
     checkRollupState: 'pending' as const,
+    latestCommitPushedAt: null,
+    additions: null,
+    deletions: null,
+    changedFiles: null,
     ...overrides,
   };
 }
@@ -189,6 +193,37 @@ describe('common/github/project_pr_service', () => {
         'https://github.com/example/repo/pull/11'
       )
     ).toEqual([{ planUuid: 'plan-1', planId: 1, title: 'Plan 1' }]);
+  });
+
+  test('refreshProjectPrs persists diff stats from full status fetch', async () => {
+    vi.mocked(fetchOpenPullRequestsWithReviewers).mockImplementation(async () => [
+      makePr({
+        number: 11,
+        title: 'PR with stats',
+        headRefName: 'feature/stats',
+        userLogin: 'dimfeld',
+      }),
+    ]);
+    vi.mocked(partitionUserRelevantOpenPrs).mockImplementation((prs) => ({
+      authored: prs,
+      reviewing: [],
+    }));
+    vi.mocked(fetchPrFullStatus).mockImplementation(async () =>
+      makeFullStatus(11, {
+        title: 'PR with stats',
+        headRefName: 'feature/stats',
+        additions: 42,
+        deletions: 17,
+        changedFiles: 3,
+      })
+    );
+
+    const { refreshProjectPrs } = await import('./project_pr_service.ts');
+    const result = await refreshProjectPrs(db, projectId, 'dimfeld');
+
+    expect(result.authored[0]?.status.additions).toBe(42);
+    expect(result.authored[0]?.status.deletions).toBe(17);
+    expect(result.authored[0]?.status.changed_files).toBe(3);
   });
 
   test('refreshProjectPrs excludes self-authored PRs from reviewing group', async () => {

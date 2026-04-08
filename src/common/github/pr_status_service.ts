@@ -64,6 +64,9 @@ export async function refreshPrStatus(db: Database, prUrl: string): Promise<PrSt
     reviewDecision: fullStatus.reviewDecision,
     checkRollupState: fullStatus.checkRollupState,
     mergedAt: fullStatus.mergedAt,
+    additions: fullStatus.additions,
+    deletions: fullStatus.deletions,
+    changedFiles: fullStatus.changedFiles,
     lastFetchedAt: getNowIsoString(),
     checks: fullStatus.checks.map((check) => ({
       name: check.name,
@@ -215,6 +218,9 @@ export async function syncPlanPrLinks(
       reviewDecision: fullStatus.reviewDecision,
       checkRollupState: fullStatus.checkRollupState,
       mergedAt: fullStatus.mergedAt,
+      additions: fullStatus.additions,
+      deletions: fullStatus.deletions,
+      changedFiles: fullStatus.changedFiles,
       lastFetchedAt: getNowIsoString(),
       checks: fullStatus.checks.map((check) => ({
         name: check.name,

@@ -108,7 +108,7 @@ The `manual` mode overrides `applyLessons` in the agent context — both docs an
 - `tim pr reply <threadId> <body>` — Post a reply to a PR review thread via the GitHub API. Primarily used by agents during `tim pr fix` execution.
 - `tim pr resolve <threadId>` — Resolve a PR review thread via the GitHub API. Primarily used by agents during `tim pr fix` execution.
 
-PR status data (check runs, reviews, labels, merge state) is cached in the SQLite database and surfaced in the web interface. When `TIM_WEBHOOK_SERVER_URL` is configured, both the CLI and web UI use webhook-first refresh (ingesting from the webhook server before displaying data). When not configured, the CLI refreshes directly from GitHub and the web UI uses stale-while-revalidate caching. Requires `GITHUB_TOKEN` environment variable for direct GitHub API access.
+PR status data (check runs, reviews, labels, merge state, diff statistics) is cached in the SQLite database and surfaced in the web interface. When `TIM_WEBHOOK_SERVER_URL` is configured, both the CLI and web UI use webhook-first refresh (ingesting from the webhook server before displaying data). When not configured, the CLI refreshes directly from GitHub and the web UI uses stale-while-revalidate caching. Requires `GITHUB_TOKEN` environment variable for direct GitHub API access.
 
 ### Webhook-Based PR Updates
 

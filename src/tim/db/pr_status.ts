@@ -21,6 +21,9 @@ export interface PrStatusRow {
   review_decision: string | null;
   check_rollup_state: string | null;
   merged_at: string | null;
+  additions: number | null;
+  deletions: number | null;
+  changed_files: number | null;
   pr_updated_at: string | null;
   latest_commit_pushed_at: string | null;
   last_fetched_at: string;
@@ -169,6 +172,9 @@ export interface UpsertPrStatusInput {
   reviewDecision?: string | null;
   checkRollupState?: string | null;
   mergedAt?: string | null;
+  additions?: number | null;
+  deletions?: number | null;
+  changedFiles?: number | null;
   latestCommitPushedAt?: string | null;
   lastFetchedAt: string;
   checks?: StoredPrCheckRunInput[];
@@ -514,12 +520,15 @@ export function upsertPrStatus(db: Database, input: UpsertPrStatusInput): PrStat
           review_decision,
           check_rollup_state,
           merged_at,
+          additions,
+          deletions,
+          changed_files,
           pr_updated_at,
           last_fetched_at,
           latest_commit_pushed_at,
           created_at,
           updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
         ON CONFLICT(pr_url) DO UPDATE SET
           owner = excluded.owner,
           repo = excluded.repo,
@@ -536,6 +545,9 @@ export function upsertPrStatus(db: Database, input: UpsertPrStatusInput): PrStat
           review_decision = excluded.review_decision,
           check_rollup_state = excluded.check_rollup_state,
           merged_at = excluded.merged_at,
+          additions = excluded.additions,
+          deletions = excluded.deletions,
+          changed_files = excluded.changed_files,
           pr_updated_at = COALESCE(excluded.pr_updated_at, pr_status.pr_updated_at),
           last_fetched_at = excluded.last_fetched_at,
           latest_commit_pushed_at = COALESCE(excluded.latest_commit_pushed_at, pr_status.latest_commit_pushed_at),
@@ -558,6 +570,9 @@ export function upsertPrStatus(db: Database, input: UpsertPrStatusInput): PrStat
       nextInput.reviewDecision ?? null,
       nextInput.checkRollupState ?? null,
       nextInput.mergedAt ?? null,
+      nextInput.additions ?? null,
+      nextInput.deletions ?? null,
+      nextInput.changedFiles ?? null,
       null,
       nextInput.lastFetchedAt,
       nextInput.latestCommitPushedAt ?? null
@@ -617,12 +632,15 @@ export function upsertPrStatusMetadata(
             review_decision,
             check_rollup_state,
             merged_at,
+            additions,
+            deletions,
+            changed_files,
             pr_updated_at,
             last_fetched_at,
             latest_commit_pushed_at,
             created_at,
             updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
           ON CONFLICT(pr_url) DO UPDATE SET
             owner = excluded.owner,
             repo = excluded.repo,
@@ -639,6 +657,9 @@ export function upsertPrStatusMetadata(
             review_decision = COALESCE(excluded.review_decision, review_decision),
             check_rollup_state = COALESCE(excluded.check_rollup_state, check_rollup_state),
             merged_at = excluded.merged_at,
+            additions = COALESCE(excluded.additions, pr_status.additions),
+            deletions = COALESCE(excluded.deletions, pr_status.deletions),
+            changed_files = COALESCE(excluded.changed_files, pr_status.changed_files),
             pr_updated_at = excluded.pr_updated_at,
             last_fetched_at = excluded.last_fetched_at,
             latest_commit_pushed_at = COALESCE(excluded.latest_commit_pushed_at, pr_status.latest_commit_pushed_at),
@@ -665,6 +686,9 @@ export function upsertPrStatusMetadata(
           nextInput.reviewDecision ?? null,
           nextInput.checkRollupState ?? null,
           nextInput.mergedAt ?? null,
+          nextInput.additions ?? null,
+          nextInput.deletions ?? null,
+          nextInput.changedFiles ?? null,
           nextInput.prUpdatedAt ?? null,
           nextInput.lastFetchedAt,
           nextInput.latestCommitPushedAt ?? null

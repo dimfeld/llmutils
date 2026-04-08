@@ -62,6 +62,9 @@ function buildUpsertPrStatusInput(
     checkRollupState: fullStatus.checkRollupState,
     mergedAt: fullStatus.mergedAt,
     latestCommitPushedAt: fullStatus.latestCommitPushedAt,
+    additions: fullStatus.additions,
+    deletions: fullStatus.deletions,
+    changedFiles: fullStatus.changedFiles,
     lastFetchedAt,
     checks: fullStatus.checks.map((check) => ({
       name: check.name,
