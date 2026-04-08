@@ -41,6 +41,9 @@
   let planHref = $derived(`/projects/${projectId}/active/plan/${item.planUuid}`);
 
   let startingFinish = $state(false);
+  let finishButtonLabel = $derived(
+    startingFinish ? 'Starting…' : item.needsFinishExecutor ? 'Update Docs' : 'Finish'
+  );
 
   function navigateToSession(event: MouseEvent) {
     event.preventDefault();
@@ -61,11 +64,10 @@
         await startFinish({ planUuid: item.planUuid, markDone: false });
       } else {
         await finishPlanQuick({ planUuid: item.planUuid });
-        await invalidateAll();
       }
+      await invalidateAll();
     } catch (err) {
-      console.log(err);
-      toast.error(`Failed to start finish: ${(err as Error).message}`);
+      toast.error(`Failed to finish plan: ${(err as Error).message}`);
     } finally {
       startingFinish = false;
     }
@@ -123,11 +125,7 @@
       onclick={handleFinish}
       disabled={startingFinish}
     >
-      {#if item.needsFinishExecutor}
-        Update Docs
-      {:else}
-        {startingFinish ? 'Starting…' : 'Finish'}
-      {/if}
+      {finishButtonLabel}
     </button>
   {/if}
 </div>

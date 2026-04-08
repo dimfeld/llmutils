@@ -129,7 +129,7 @@ describe('PlanDetail', () => {
     expect(body).toContain('View PR #42');
   });
 
-  test('shows Finish for a taskless epic outside needs_review', () => {
+  test('shows Update Docs for a taskless epic outside needs_review', () => {
     const { body } = render(PlanDetailComponent, {
       props: {
         plan: makePlanDetail({
@@ -143,7 +143,7 @@ describe('PlanDetail', () => {
       },
     });
 
-    expect(body).toContain('Finish');
+    expect(body).toContain('Update Docs');
     expect(body).not.toContain('Generate');
   });
 });
