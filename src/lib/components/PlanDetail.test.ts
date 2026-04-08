@@ -146,4 +146,62 @@ describe('PlanDetail', () => {
     expect(body).toContain('Update Docs');
     expect(body).not.toContain('Generate');
   });
+
+  test('shows PR section when plan has explicit PR URLs', () => {
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail({
+          pullRequests: ['https://github.com/example/repo/pull/42'],
+          invalidPrUrls: [],
+        }),
+        projectId: '123',
+      },
+    });
+
+    expect(body).toContain('PrStatusSection');
+  });
+
+  test('shows PR section when plan has invalid PR URLs', () => {
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail({
+          pullRequests: [],
+          invalidPrUrls: ['not-a-url', 'owner/repo#123'],
+        }),
+        projectId: '123',
+      },
+    });
+
+    expect(body).toContain('PrStatusSection');
+  });
+
+  test('shows PR section when plan has auto-linked PRs (via prStatuses)', () => {
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail({
+          pullRequests: [],
+          invalidPrUrls: [],
+          prStatuses: [makePrStatusDetail()],
+        }),
+        projectId: '123',
+      },
+    });
+
+    expect(body).toContain('PrStatusSection');
+  });
+
+  test('does not show PR section when plan has no PR data', () => {
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail({
+          pullRequests: [],
+          invalidPrUrls: [],
+          prStatuses: [],
+        }),
+        projectId: '123',
+      },
+    });
+
+    expect(body).not.toContain('PrStatusSection');
+  });
 });
