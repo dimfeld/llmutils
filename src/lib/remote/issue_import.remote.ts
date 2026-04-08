@@ -84,20 +84,13 @@ export const importIssue = command(
       error(404, 'Project not found');
     }
 
-    const result = await createPlansFromIssueOnServer(
-      projectId,
-      issueData,
-      mode as IssueImportMode,
-      {
-        selectedParentContent,
-        selectedChildIndices,
-        selectedChildContent: Object.fromEntries(
-          Object.entries(selectedChildContent).map(([key, value]) => [Number(key), value])
-        ),
-      }
-    );
-
-    redirect(303, `/projects/${projectId}/plans/${result.planUuid}`);
+    return await createPlansFromIssueOnServer(projectId, issueData, mode as IssueImportMode, {
+      selectedParentContent,
+      selectedChildIndices,
+      selectedChildContent: Object.fromEntries(
+        Object.entries(selectedChildContent).map(([key, value]) => [Number(key), value])
+      ),
+    });
   }
 );
 

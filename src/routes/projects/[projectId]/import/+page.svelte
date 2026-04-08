@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { goto, invalidateAll } from '$app/navigation';
+  import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { Button } from '$lib/components/ui/button/index.js';
   import { Checkbox } from '$lib/components/ui/checkbox/index.js';
@@ -8,9 +8,9 @@
   import { RadioGroup, RadioGroupItem } from '$lib/components/ui/radio-group/index.js';
   import { fetchIssueForImport, importIssue } from '$lib/remote/issue_import.remote.js';
   import { renderPlanContentHtml } from '$lib/utils/plan_content.js';
-  import type { PageData } from './$types';
+  import type { PageProps } from './$types';
 
-  let { data }: { data: PageData } = $props();
+  let { data, params }: PageProps = $props();
 
   type ImportMode = 'single' | 'separate' | 'merged';
 
@@ -115,7 +115,7 @@
     importing = true;
     importError = null;
     try {
-      await importIssue({
+      const result = await importIssue({
         projectId: data.numericProjectId,
         mode,
         issueData: fetchedResult.issueData,
@@ -123,7 +123,7 @@
         selectedChildIndices,
         selectedChildContent,
       });
-      // If this works it redirects to the plan page
+      await goto(`/projects/${params.projectId}/plans/${result.planUuid}`);
     } catch (err) {
       importError = (err as Error).message || 'Failed to import issue';
     } finally {
