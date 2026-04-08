@@ -83,6 +83,25 @@ function sortProjectPrsByPrNumberDesc(prs: EnrichedProjectPr[]): EnrichedProject
   });
 }
 
+function sortReviewingProjectPrs(prs: EnrichedProjectPr[]): EnrichedProjectPr[] {
+  return [...prs].sort((left, right) => {
+    const leftReviewRequested = left.currentUserReviewRequestLabel === 'Review Requested' ? 1 : 0;
+    const rightReviewRequested = right.currentUserReviewRequestLabel === 'Review Requested' ? 1 : 0;
+
+    const reviewRequestComparison = rightReviewRequested - leftReviewRequested;
+    if (reviewRequestComparison !== 0) {
+      return reviewRequestComparison;
+    }
+
+    const prNumberComparison = right.status.pr_number - left.status.pr_number;
+    if (prNumberComparison !== 0) {
+      return prNumberComparison;
+    }
+
+    return left.projectId - right.projectId;
+  });
+}
+
 function getLatestSubmittedReviewAt(pr: PrStatusDetail, username: string): string | null {
   const normalizedUsername = normalizeGitHubUsername(username);
   let latest: string | null = null;
@@ -153,7 +172,7 @@ function partitionProjectPrs(
 
   return {
     authored: sortProjectPrsByPrNumberDesc(partitioned.authored),
-    reviewing: sortProjectPrsByPrNumberDesc(partitioned.reviewing),
+    reviewing: sortReviewingProjectPrs(partitioned.reviewing),
   };
 }
 

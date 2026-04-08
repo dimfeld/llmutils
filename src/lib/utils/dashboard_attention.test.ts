@@ -269,6 +269,25 @@ describe('deriveAttentionItems', () => {
     expect(result.prItems[0]).toEqual({ kind: 'pr', actionablePr: pr });
   });
 
+  test('sorts review-requested PRs before other PRs', () => {
+    const reviewRequestedPr = makeActionablePr({
+      prUrl: 'https://github.com/org/repo/pull/99',
+      prNumber: 99,
+      actionReason: 'review_requested',
+    });
+    const otherPr = makeActionablePr({
+      prUrl: 'https://github.com/org/repo/pull/42',
+      prNumber: 42,
+      actionReason: 'ready_to_merge',
+    });
+
+    const result = deriveAttentionItems([], [], [otherPr, reviewRequestedPr]);
+    expect(result.prItems.map((item) => item.actionablePr.actionReason)).toEqual([
+      'review_requested',
+      'ready_to_merge',
+    ]);
+  });
+
   test('propagates needsFinishExecutor with finish-tracking timestamps', () => {
     const plan = makePlan({
       uuid: 'plan-finish',

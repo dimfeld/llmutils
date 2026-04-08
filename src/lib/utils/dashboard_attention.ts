@@ -155,8 +155,22 @@ export function deriveAttentionItems(
     kind: 'pr' as const,
     actionablePr: pr,
   }));
+  const reviewRequestItems: PrAttentionItem[] = [];
+  const otherPrItems: PrAttentionItem[] = [];
 
-  return { planItems, prItems, sessionItems: notificationSessions };
+  for (const prItem of prItems) {
+    if (prItem.actionablePr.actionReason === 'review_requested') {
+      reviewRequestItems.push(prItem);
+    } else {
+      otherPrItems.push(prItem);
+    }
+  }
+
+  return {
+    planItems,
+    prItems: [...reviewRequestItems, ...otherPrItems],
+    sessionItems: notificationSessions,
+  };
 }
 
 export function deriveRunningNowSessions(

@@ -298,6 +298,49 @@ describe('project_prs remote functions', () => {
     expect(result.authored.map((pr) => pr.status.pr_number)).toEqual([23, 17]);
   });
 
+  test('getProjectPrs sorts reviewing PRs with review requests first', async () => {
+    upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/17',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 17,
+      title: 'Submitted review PR',
+      state: 'open',
+      draft: false,
+      author: 'someone-else',
+      lastFetchedAt: '2026-03-30T10:00:00.000Z',
+      reviews: [
+        {
+          author: 'dimfeld',
+          state: 'APPROVED',
+          submittedAt: '2026-03-30T10:10:00.000Z',
+        },
+      ],
+    });
+
+    const requestedPr = upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/18',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 18,
+      title: 'Review requested PR',
+      state: 'open',
+      draft: false,
+      author: 'someone-else',
+      lastFetchedAt: '2026-03-30T11:00:00.000Z',
+    });
+    upsertPrReviewRequestByReviewer(currentDb, requestedPr.status.id, {
+      reviewer: 'dimfeld',
+      action: 'requested',
+      eventAt: '2026-03-30T11:15:00.000Z',
+    });
+
+    const { getProjectPrs } = await import('./project_prs.remote.js');
+    const result = await invokeQuery(getProjectPrs, { projectId: String(projectId) });
+
+    expect(result.reviewing.map((pr) => pr.status.pr_number)).toEqual([18, 17]);
+  });
+
   test('refreshProjectPrs falls back to refreshing all projects when projectId is all', async () => {
     const otherProjectId = getOrCreateProject(currentDb, 'github.com__example__other-repo').id;
     const { refreshProjectPrs } = await import('./project_prs.remote.js');
