@@ -81,9 +81,14 @@ export function deriveAttentionItems(
 ): AttentionItems {
   // Index sessions by planUuid for fast lookup
   const sessionsByPlanUuid = new Map<string, SessionData[]>();
+  const activePlanUuids = new Set<string>();
   for (const session of sessions) {
     const uuid = session.sessionInfo.planUuid;
     if (!uuid) continue;
+    if (session.status === 'active') {
+      activePlanUuids.add(uuid);
+    }
+
     let list = sessionsByPlanUuid.get(uuid);
     if (!list) {
       list = [];
@@ -95,6 +100,11 @@ export function deriveAttentionItems(
   const planItems: PlanAttentionItem[] = [];
 
   for (const plan of plans) {
+    // Skip plans that already have an active session; they should appear in "Running Now".
+    if (activePlanUuids.has(plan.uuid)) {
+      continue;
+    }
+
     const reasons: PlanAttentionReason[] = [];
     const planSessions = sessionsByPlanUuid.get(plan.uuid) ?? [];
 

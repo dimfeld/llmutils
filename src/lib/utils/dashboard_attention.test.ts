@@ -81,7 +81,7 @@ describe('deriveAttentionItems', () => {
     expect(result.prItems).toEqual([]);
   });
 
-  test('detects waiting_for_input from active session with prompt', () => {
+  test('does not include plans that have an active session, even if waiting for input', () => {
     const plan = makePlan({ uuid: 'plan-1', displayStatus: 'in_progress' });
     const session = makeSession({
       connectionId: 'sess-1',
@@ -96,10 +96,7 @@ describe('deriveAttentionItems', () => {
     });
 
     const result = deriveAttentionItems([plan], [session], []);
-    expect(result.planItems).toHaveLength(1);
-    expect(result.planItems[0].reasons).toEqual([
-      { type: 'waiting_for_input', sessionId: 'sess-1', promptType: 'confirm' },
-    ]);
+    expect(result.planItems).toEqual([]);
   });
 
   test('detects needs_review status', () => {
@@ -168,7 +165,7 @@ describe('deriveAttentionItems', () => {
     expect(result.planItems[0].reasons).toEqual([{ type: 'needs_review' }]);
   });
 
-  test('groups multiple reasons for the same plan', () => {
+  test('excludes plans with active sessions even when offline agent finished reason exists', () => {
     const plan = makePlan({ uuid: 'plan-1', displayStatus: 'in_progress' });
     const activeSession = makeSession({
       connectionId: 'sess-1',
@@ -188,10 +185,25 @@ describe('deriveAttentionItems', () => {
     });
 
     const result = deriveAttentionItems([plan], [activeSession, offlineSession], []);
+    expect(result.planItems).toEqual([]);
+  });
+
+  test('still includes plan needing review when no active session exists', () => {
+    const plan = makePlan({ uuid: 'plan-1', displayStatus: 'needs_review' });
+    const session = makeSession({
+      connectionId: 'sess-1',
+      status: 'offline',
+      sessionInfo: { command: 'agent', planUuid: 'plan-1' },
+    });
+
+    const result = deriveAttentionItems([plan], [session], []);
     expect(result.planItems).toHaveLength(1);
-    expect(result.planItems[0].reasons).toHaveLength(2);
-    expect(result.planItems[0].reasons.map((r) => r.type)).toContain('waiting_for_input');
-    expect(result.planItems[0].reasons.map((r) => r.type)).toContain('agent_finished');
+    expect(result.planItems[0]).toEqual(
+      expect.objectContaining({
+        planUuid: 'plan-1',
+        reasons: [{ type: 'needs_review' }],
+      })
+    );
   });
 
   test('only adds agent_finished once even with multiple offline sessions', () => {
