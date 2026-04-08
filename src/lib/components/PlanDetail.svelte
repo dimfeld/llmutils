@@ -829,37 +829,6 @@
     </div>
   {/if}
 
-  <!-- Assignment -->
-  {#if plan.assignment}
-    <div>
-      <h3 class="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-        Assigned Workspace
-      </h3>
-      <div class="text-sm text-foreground">
-        {#each plan.assignment.workspacePaths as wsPath (wsPath)}
-          <div class="flex items-center gap-1">
-            <div class="min-w-0 truncate">{wsPath}</div>
-            <button
-              type="button"
-              class="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
-              onclick={() => handleOpenTerminal(wsPath)}
-              disabled={openingTerminalPath !== null}
-              aria-label="Open new terminal"
-              title="Open new terminal"
-            >
-              <AppWindow class="size-3.5" />
-            </button>
-          </div>
-        {/each}
-        {#if plan.assignment.users.length > 0}
-          <div class="mt-0.5 text-xs text-muted-foreground">
-            Users: {plan.assignment.users.join(', ')}
-          </div>
-        {/if}
-      </div>
-    </div>
-  {/if}
-
   <!-- Tags -->
   {#if plan.tags.length > 0}
     <div>
@@ -907,6 +876,35 @@
           <ExternalLink class="size-3.5 shrink-0" />
         </a>
       {/if}
+    </div>
+  {/if}
+
+  <!-- Assignment -->
+  {#if plan.assignment}
+    <div>
+      <h3 class="text-[11px] font-medium tracking-wide text-muted-foreground">Assigned Workspace</h3>
+      <div class="mt-1 text-xs text-muted-foreground">
+        {#each plan.assignment.workspacePaths as wsPath (wsPath)}
+          <div class="mt-0.5 flex items-center gap-1">
+            <div class="min-w-0 truncate">{wsPath}</div>
+            <button
+              type="button"
+              class="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
+              onclick={() => handleOpenTerminal(wsPath)}
+              disabled={openingTerminalPath !== null}
+              aria-label="Open new terminal"
+              title="Open new terminal"
+            >
+              <AppWindow class="size-3.5" />
+            </button>
+          </div>
+        {/each}
+        {#if plan.assignment.users.length > 0}
+          <div class="mt-0.5 text-[11px] text-muted-foreground">
+            Users: {plan.assignment.users.join(', ')}
+          </div>
+        {/if}
+      </div>
     </div>
   {/if}
 
