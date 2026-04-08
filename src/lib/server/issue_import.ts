@@ -3,6 +3,7 @@ import {
   parseCommandOptionsFromComment,
   type RmprOptions,
 } from '$common/comment_options.js';
+import type { Database } from 'bun:sqlite';
 import { getGitRepository } from '$common/git.js';
 import {
   getAvailableTrackers,
@@ -259,11 +260,11 @@ export async function createPlansFromIssue(
   selectedContent: SelectedIssueContent
 ): Promise<{ planUuid: string }> {
   const { db } = await getServerContext();
-  const project = getProjectById(db, projectId);
-  if (!project?.last_git_root) {
+  const repoRoot = getPreferredProjectGitRoot(db, projectId);
+  if (!repoRoot) {
     throw new Error('Project does not have a git root configured');
   }
-  const repoRoot = project.last_git_root;
+
   const repository = await getRepositoryIdentity({ cwd: repoRoot });
   const { plans: allPlans } = loadPlansFromDb(repoRoot, repository.repositoryId);
 
@@ -582,9 +583,18 @@ async function getIssueTrackerStatusFromType(
 }
 
 export async function getIssueTrackerStatus(
-  gitRoot: string,
-  projectId?: number
+  db: Database,
+  projectId: number
 ): Promise<IssueTrackerStatus> {
+  const gitRoot = getPreferredProjectGitRoot(db, projectId);
+  if (!gitRoot) {
+    return {
+      available: false,
+      trackerType: 'github',
+      displayName: getTrackerDisplayName('github'),
+      supportsHierarchical: false,
+    };
+  }
   const config = await loadEffectiveConfig(undefined, { cwd: gitRoot });
   const trackerType = config.issueTracker ?? 'github';
   return getIssueTrackerStatusFromType(trackerType, projectId);

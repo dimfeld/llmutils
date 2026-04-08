@@ -133,3 +133,44 @@
     @apply font-sans;
   }
 }
+
+.plan-rendered-content {
+  margin: 0;
+  word-break: break-word;
+}
+
+.plan-rendered-content .plan-heading {
+  font-weight: 700;
+  color: hsl(var(--foreground));
+}
+
+.plan-rendered-content .plan-bold {
+  font-weight: 700;
+}
+
+.plan-rendered-content .plan-inline-code {
+  background: rgb(0 0 0 / 0.06);
+  border-radius: 0.25rem;
+  font-family: ui-monospace, monospace;
+  padding: 0.1rem 0.3rem;
+  color: hsl(var(--foreground));
+}
+
+.dark .plan-rendered-content .plan-inline-code {
+  background: rgb(255 255 255 / 0.08);
+}
+
+.plan-rendered-content .plan-code-fence {
+  color: hsl(var(--muted-foreground));
+  font-family: ui-monospace, monospace;
+  font-size: 0.9em;
+}
+
+.plan-rendered-content .plan-code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.9em;
+}
+
+.plan-rendered-content .plan-list-marker {
+  color: hsl(var(--muted-foreground));
+}

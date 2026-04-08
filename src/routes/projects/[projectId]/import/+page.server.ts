@@ -1,11 +1,10 @@
 import { redirect } from '@sveltejs/kit';
 import { getServerContext } from '$lib/server/init.js';
 import { getIssueTrackerStatus } from '$lib/server/issue_import.js';
-import { getProjectById } from '$tim/db/project.js';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ parent }) => {
-  const { projectId, currentProject } = await parent();
+  const { projectId } = await parent();
 
   if (projectId === 'all') {
     redirect(302, `/projects/${projectId}/plans`);
@@ -19,15 +18,12 @@ export const load: PageServerLoad = async ({ parent }) => {
   // currentProject may be null when the parent layout resolved the project
   // via DB fallback. Look it up directly in that case.
   const { db } = await getServerContext();
-  const project = currentProject ?? getProjectById(db, numericProjectId);
-  if (!project?.last_git_root) {
-    redirect(302, `/projects/${projectId}/plans`);
-  }
 
   let trackerStatus;
   try {
-    trackerStatus = await getIssueTrackerStatus(project.last_git_root);
-  } catch {
+    trackerStatus = await getIssueTrackerStatus(db, numericProjectId);
+  } catch (e) {
+    console.error(e);
     redirect(302, `/projects/${projectId}/plans`);
   }
 

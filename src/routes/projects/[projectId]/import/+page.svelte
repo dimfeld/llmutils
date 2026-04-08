@@ -7,6 +7,7 @@
   import { Label } from '$lib/components/ui/label/index.js';
   import { RadioGroup, RadioGroupItem } from '$lib/components/ui/radio-group/index.js';
   import { fetchIssueForImport, importIssue } from '$lib/remote/issue_import.remote.js';
+  import { renderPlanContentHtml } from '$lib/utils/plan_content.js';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
@@ -114,7 +115,7 @@
     importing = true;
     importError = null;
     try {
-      const result = await importIssue({
+      await importIssue({
         projectId: data.numericProjectId,
         mode,
         issueData: fetchedResult.issueData,
@@ -122,8 +123,7 @@
         selectedChildIndices,
         selectedChildContent,
       });
-      await invalidateAll();
-      goto(`/projects/${page.params.projectId}/plans/${result.planUuid}`);
+      // If this works it redirects to the plan page
     } catch (err) {
       importError = (err as Error).message || 'Failed to import issue';
     } finally {
@@ -241,13 +241,16 @@
                 ? fetchedResult.issueData.issue.body
                 : fetchedResult.issueData.comments[index - 1]?.body}
               {#if hasContent(content)}
-                <label class="flex items-center gap-2 py-1">
-                  <Checkbox bind:checked={parentContentChecked[index]} />
-                  <span class="text-sm">{getContentLabel(index, isBody)}</span>
-                  <span class="max-w-md truncate text-xs text-muted-foreground">
-                    {content?.trim().slice(0, 80)}{(content?.trim().length ?? 0) > 80 ? '...' : ''}
-                  </span>
-                </label>
+                <div class="py-1">
+                  <label class="flex items-center gap-2">
+                    <Checkbox bind:checked={parentContentChecked[index]} />
+                    <span class="text-sm">{getContentLabel(index, isBody)}</span>
+                  </label>
+                  <pre
+                    class="plan-rendered-content mt-1 ml-6 line-clamp-10 text-xs whitespace-pre-wrap text-muted-foreground">{@html renderPlanContentHtml(
+                      content?.trim() ?? ''
+                    )}</pre>
+                </div>
               {/if}
             {/each}
           </div>
@@ -274,15 +277,18 @@
                         ? child.issue.body
                         : child.comments[contentIndex - 1]?.body}
                       {#if hasContent(content)}
-                        <label class="flex items-center gap-2 py-1">
-                          <Checkbox bind:checked={childContentChecked[childIndex][contentIndex]} />
-                          <span class="text-sm">{getContentLabel(contentIndex, isBody)}</span>
-                          <span class="max-w-md truncate text-xs text-muted-foreground">
-                            {content?.trim().slice(0, 80)}{(content?.trim().length ?? 0) > 80
-                              ? '...'
-                              : ''}
-                          </span>
-                        </label>
+                        <div class="py-1">
+                          <label class="flex items-center gap-2">
+                            <Checkbox
+                              bind:checked={childContentChecked[childIndex][contentIndex]}
+                            />
+                            <span class="text-sm">{getContentLabel(contentIndex, isBody)}</span>
+                          </label>
+                          <pre
+                            class="plan-rendered-content mt-1 ml-6 line-clamp-10 text-xs whitespace-pre-wrap text-muted-foreground">{@html renderPlanContentHtml(
+                              content?.trim() ?? ''
+                            )}</pre>
+                        </div>
                       {/if}
                     {/each}
                   </div>

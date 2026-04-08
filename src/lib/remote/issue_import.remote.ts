@@ -1,5 +1,5 @@
 import { command, query } from '$app/server';
-import { error } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import * as z from 'zod';
 
 import { getServerContext } from '$lib/server/init.js';
@@ -10,6 +10,7 @@ import {
   type IssueImportMode,
 } from '$lib/server/issue_import.js';
 import { getProjectById } from '$tim/db/project.js';
+import { getPreferredProjectGitRoot } from '$tim/workspace/workspace_info';
 
 const modeSchema = z.enum(['single', 'separate', 'merged']);
 const issueWithCommentsSchema: z.ZodType = z.lazy(() =>
@@ -41,7 +42,7 @@ const fetchIssueForImportSchema = z.object({
   projectId: z.number().int().positive(),
 });
 
-export const fetchIssueForImport = query(
+export const fetchIssueForImport = command(
   fetchIssueForImportSchema,
   async ({ identifier, mode, projectId }) => {
     const { db } = await getServerContext();
@@ -49,16 +50,12 @@ export const fetchIssueForImport = query(
     if (!project) {
       error(404, 'Project not found');
     }
-    if (!project.last_git_root) {
-      error(400, 'Project does not have a git root configured');
-    }
 
-    return fetchIssueForImportOnServer(
-      identifier,
-      mode as IssueImportMode,
-      project.last_git_root,
-      projectId
-    );
+    const gitRoot = getPreferredProjectGitRoot(db, projectId);
+    if (!gitRoot) {
+      error(404, 'Project not found');
+    }
+    return fetchIssueForImportOnServer(identifier, mode as IssueImportMode, gitRoot, projectId);
   }
 );
 
@@ -86,17 +83,21 @@ export const importIssue = command(
     if (!project) {
       error(404, 'Project not found');
     }
-    if (!project.last_git_root) {
-      error(400, 'Project does not have a git root configured');
-    }
 
-    return createPlansFromIssueOnServer(projectId, issueData, mode as IssueImportMode, {
-      selectedParentContent,
-      selectedChildIndices,
-      selectedChildContent: Object.fromEntries(
-        Object.entries(selectedChildContent).map(([key, value]) => [Number(key), value])
-      ),
-    });
+    const result = await createPlansFromIssueOnServer(
+      projectId,
+      issueData,
+      mode as IssueImportMode,
+      {
+        selectedParentContent,
+        selectedChildIndices,
+        selectedChildContent: Object.fromEntries(
+          Object.entries(selectedChildContent).map(([key, value]) => [Number(key), value])
+        ),
+      }
+    );
+
+    redirect(303, `/projects/${projectId}/plans/${result.planUuid}`);
   }
 );
 
@@ -108,19 +109,6 @@ export const checkIssueTrackerStatus = query(
   checkIssueTrackerStatusSchema,
   async ({ projectId }) => {
     const { db } = await getServerContext();
-    const project = getProjectById(db, projectId);
-    if (!project) {
-      error(404, 'Project not found');
-    }
-    if (!project.last_git_root) {
-      return {
-        available: false,
-        trackerType: 'github' as const,
-        displayName: 'GitHub',
-        supportsHierarchical: false,
-      };
-    }
-
-    return getIssueTrackerStatusOnServer(project.last_git_root, projectId);
+    return getIssueTrackerStatusOnServer(db, projectId);
   }
 );
