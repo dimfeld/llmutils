@@ -47,6 +47,15 @@
       <h2 class="text-lg font-semibold text-foreground">
         <span class="text-muted-foreground">#{pr.status.pr_number}</span>
         {pr.status.title ?? 'Untitled'}
+        <a
+          href={pr.status.pr_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="ml-1 inline-flex rounded-md p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
+          title="Open on GitHub"
+        >
+          <ExternalLink class="size-4" />
+        </a>
       </h2>
       <div class="mt-1 font-mono text-xs text-muted-foreground">
         {pr.status.head_branch} &rarr; {pr.status.base_branch}
@@ -61,15 +70,6 @@
       >
         <RefreshCw class="size-4 {refreshing ? 'animate-spin' : ''}" />
       </button>
-      <a
-        href={pr.status.pr_url}
-        target="_blank"
-        rel="noopener noreferrer"
-        class="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
-        title="Open on GitHub"
-      >
-        <ExternalLink class="size-4" />
-      </a>
     </div>
   </div>
 
