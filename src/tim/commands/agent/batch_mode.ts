@@ -520,13 +520,16 @@ Available tasks:\n\n${taskDescriptions}`,
           }
 
           try {
-            const applied = await runUpdateLessons(currentPlanFile, config, {
+            const lessonsUpdateResult = await runUpdateLessons(currentPlanFile, config, {
               executor: config.updateDocs?.executor,
               model: config.updateDocs?.model,
               baseDir,
               terminalInput,
             });
-            if (applied) {
+            if (
+              lessonsUpdateResult === true ||
+              lessonsUpdateResult === 'skipped-no-lessons'
+            ) {
               const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
               updatedPlanForTimestamp.lessonsAppliedAt = new Date().toISOString();
               await writePlanFile(currentPlanFile, updatedPlanForTimestamp);

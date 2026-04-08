@@ -944,14 +944,17 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
               if (isShuttingDown()) break;
 
               try {
-                const applied = await runUpdateLessons(currentPlanFile, config, {
+                const lessonsUpdateResult = await runUpdateLessons(currentPlanFile, config, {
                   executor: config.updateDocs?.executor,
                   model: config.updateDocs?.model,
                   baseDir: currentBaseDir,
                   nonInteractive: noninteractive,
                   terminalInput: terminalInputEnabled,
                 });
-                if (applied) {
+                if (
+                  lessonsUpdateResult === true ||
+                  lessonsUpdateResult === 'skipped-no-lessons'
+                ) {
                   const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
                   updatedPlanForTimestamp.lessonsAppliedAt = new Date().toISOString();
                   await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
@@ -1235,14 +1238,17 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
             if (isShuttingDown()) break;
 
             try {
-              const applied = await runUpdateLessons(currentPlanFile, config, {
+              const lessonsUpdateResult = await runUpdateLessons(currentPlanFile, config, {
                 executor: config.updateDocs?.executor,
                 model: config.updateDocs?.model,
                 baseDir: currentBaseDir,
                 nonInteractive: noninteractive,
                 terminalInput: terminalInputEnabled,
               });
-              if (applied) {
+              if (
+                lessonsUpdateResult === true ||
+                lessonsUpdateResult === 'skipped-no-lessons'
+              ) {
                 const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
                 updatedPlanForTimestamp.lessonsAppliedAt = new Date().toISOString();
                 await writePlanFile(currentPlanFile, updatedPlanForTimestamp);

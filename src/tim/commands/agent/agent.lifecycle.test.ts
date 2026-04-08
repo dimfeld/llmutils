@@ -940,6 +940,42 @@ describe('timAgent lifecycle integration', () => {
     );
   });
 
+  test('lessonsAppliedAt is set when runUpdateLessons is skipped due to no lessons', async () => {
+    effectiveConfig.updateDocs = { mode: 'after-completion', applyLessons: true };
+
+    runUpdateLessonsSpy.mockImplementationOnce(async () => 'skipped-no-lessons' as const);
+
+    markStepDoneSpy.mockImplementationOnce(async () => ({
+      message: 'Step marked',
+      planComplete: true,
+    }));
+
+    let itemReturned = false;
+    findNextActionableItemImpl = () => {
+      if (itemReturned) return null;
+      itemReturned = true;
+      return {
+        type: 'step',
+        taskIndex: 0,
+        stepIndex: 0,
+        task: { title: 'Task 1', description: 'Do the work', steps: [{ prompt: 'implement' }] },
+      };
+    };
+
+    const { timAgent } = await import('./agent.js');
+    await timAgent(
+      planFile,
+      { log: false, summary: false, serialTasks: true, finalReview: false },
+      {}
+    );
+
+    expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
+
+    const updatedPlan = await readPlanFile(planFile);
+    expect(updatedPlan.lessonsAppliedAt).toBeDefined();
+    expect(new Date(updatedPlan.lessonsAppliedAt!).toISOString()).toBe(updatedPlan.lessonsAppliedAt);
+  });
+
   test('lessonsAppliedAt is NOT set when runUpdateLessons returns false', async () => {
     effectiveConfig.updateDocs = { mode: 'after-completion', applyLessons: true };
 

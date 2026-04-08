@@ -25,6 +25,8 @@ interface UpdateLessonsPromptOptions {
   docsPaths?: string[];
 }
 
+export type UpdateLessonsRunResult = true | false | 'skipped-no-lessons';
+
 function extractLessonsLearnedFromContent(raw: string): string | null {
   const searchText = stripYamlFrontmatter(raw);
 
@@ -213,7 +215,7 @@ export async function runUpdateLessons(
     nonInteractive?: boolean;
     terminalInput?: boolean;
   }
-): Promise<boolean> {
+): Promise<UpdateLessonsRunResult> {
   const options = maybeOptions ?? (configOrOptions as NonNullable<typeof maybeOptions>);
   let planData: PlanSchema;
   let planFilePath: string;
@@ -244,7 +246,7 @@ export async function runUpdateLessons(
         : null;
   if (!lessonsLearned) {
     log('No lessons learned found in Current Progress. Skipping lessons documentation update.');
-    return false;
+    return 'skipped-no-lessons';
   }
 
   const items = parseLessonItems(lessonsLearned);
@@ -341,7 +343,7 @@ export async function handleUpdateLessonsCommand(
     configPath: globalOpts.config,
   });
 
-  if (didRun) {
+  if (didRun === true) {
     log('\n✅ Lessons learned documentation update complete');
   }
 }

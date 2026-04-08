@@ -313,7 +313,7 @@ notes: |
   });
 
   describe('runUpdateLessons', () => {
-    test('returns false when lessons are missing', async () => {
+    test('returns skipped-no-lessons when lessons are missing', async () => {
       const content = `## Current Progress
 ### Current State
 - Working through tasks
@@ -329,7 +329,7 @@ notes: |
 
       const didRun = await runUpdateLessons(planData, planFile, {} as TimConfig, {});
 
-      expect(didRun).toBe(false);
+      expect(didRun).toBe('skipped-no-lessons');
     });
 
     test('resolves repoRoot for string plan args when baseDir is omitted', async () => {

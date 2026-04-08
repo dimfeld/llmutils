@@ -1508,6 +1508,51 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       expect(new Date(finalPlan.lessonsAppliedAt).toISOString()).toBe(finalPlan.lessonsAppliedAt);
     });
 
+    test('lessonsAppliedAt is set when runUpdateLessons returns skipped-no-lessons', async () => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        updateDocs: { mode: 'never', applyLessons: true },
+      });
+
+      runUpdateLessonsSpy.mockResolvedValue('skipped-no-lessons' as const);
+
+      executorExecuteSpy.mockImplementation(async () => {
+        await createPlanFile({
+          tasks: [
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
+        });
+      });
+
+      const options = { log: false, nonInteractive: true, finalReview: false } as any;
+      const globalCliOptions = {};
+
+      await timAgent(planFile, options, globalCliOptions);
+
+      expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
+
+      const finalContent = await fs.readFile(planFile, 'utf-8');
+      const finalPlan = yaml.parse(finalContent.replace(/^#.*\n/, ''));
+      expect(finalPlan.lessonsAppliedAt).toBeDefined();
+      expect(new Date(finalPlan.lessonsAppliedAt).toISOString()).toBe(finalPlan.lessonsAppliedAt);
+    });
+
     test('lessonsAppliedAt is NOT set when runUpdateLessons returns false', async () => {
       await createPlanFile({
         tasks: [

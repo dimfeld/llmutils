@@ -404,6 +404,18 @@ describe('finish command', () => {
     expect(writtenPlan.lessonsAppliedAt).toBeUndefined();
   });
 
+  test('sets lessonsAppliedAt when runUpdateLessons is skipped due to no lessons found', async () => {
+    runUpdateLessonsSpy.mockResolvedValue('skipped-no-lessons' as const);
+
+    await handleFinishCommand('314', {}, buildCommand());
+
+    expect(runUpdateLessonsSpy).toHaveBeenCalled();
+    const writtenPlan = writePlanFileSpy.mock.calls[0]![1];
+    expect(writtenPlan.status).toBe('done');
+    expect(writtenPlan.lessonsAppliedAt).toBeDefined();
+    expect(new Date(writtenPlan.lessonsAppliedAt).toISOString()).toBe(writtenPlan.lessonsAppliedAt);
+  });
+
   test('respects --no-mark-done when finalizing without executor work', async () => {
     loadEffectiveConfigSpy.mockResolvedValue({
       updateDocs: {

@@ -227,8 +227,8 @@ export async function handleFinishCommand(
         let lessonsError: unknown = null;
         if (requirements.needsLessons) {
           try {
-            const applied = await runUpdateLessons(finishTarget, config, runOptions);
-            if (applied) {
+            const lessonsUpdateResult = await runUpdateLessons(finishTarget, config, runOptions);
+            if (lessonsUpdateResult === true || lessonsUpdateResult === 'skipped-no-lessons') {
               plan.lessonsAppliedAt = new Date().toISOString();
             }
           } catch (error) {
