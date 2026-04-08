@@ -1,5 +1,6 @@
 import * as path from 'node:path';
-import { log, warn } from '../../logging.js';
+import { executePostApplyCommand } from '../actions.js';
+import { error, log, warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import type { TimConfig } from '../configSchema.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
@@ -211,6 +212,21 @@ export async function handleFinishCommand(
 
       let executionError: unknown = null;
       try {
+        const runPostApplyCommands = async (): Promise<string | null> => {
+          if (!config.postApplyCommands || config.postApplyCommands.length === 0) {
+            return null;
+          }
+
+          for (const commandConfig of config.postApplyCommands) {
+            const commandSucceeded = await executePostApplyCommand(commandConfig, currentBaseDir);
+            if (!commandSucceeded) {
+              return commandConfig.title;
+            }
+          }
+
+          return null;
+        };
+
         let docsError: unknown = null;
         if (requirements.needsDocs) {
           try {
@@ -239,12 +255,25 @@ export async function handleFinishCommand(
           }
         }
 
+        let postApplyCommandError: string | null = null;
+        if (requirements.needsDocs || requirements.needsLessons) {
+          postApplyCommandError = await runPostApplyCommands();
+          if (postApplyCommandError) {
+            error(
+              `Post-apply command "${postApplyCommandError}" failed for plan ${plan.id ?? planArg}.`
+            );
+          }
+        }
+
         const failedSteps: string[] = [];
         if (docsError) {
           failedSteps.push('documentation update');
         }
         if (lessonsError) {
           failedSteps.push('lessons update');
+        }
+        if (postApplyCommandError) {
+          failedSteps.push(`post-apply command "${postApplyCommandError}"`);
         }
         const hasFailures = failedSteps.length > 0;
 

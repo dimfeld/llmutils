@@ -24,6 +24,10 @@ vi.mock('../headless.js', () => ({
   runWithHeadlessAdapterIfEnabled: vi.fn(async (options: any) => options.callback()),
 }));
 
+vi.mock('../actions.js', () => ({
+  executePostApplyCommand: vi.fn(),
+}));
+
 vi.mock('./update-docs.js', () => ({
   runUpdateDocs: vi.fn(),
 }));
@@ -74,6 +78,7 @@ import { materializePlan } from '../plan_materialize.js';
 import { removePlanAssignment } from '../assignments/remove_plan_assignment.js';
 import { checkAndMarkParentDone } from '../plans/parent_cascade.js';
 import { getFinishRequirements, handleFinishCommand, isPlanReadyToFinish } from './finish.js';
+import { executePostApplyCommand } from '../actions.js';
 
 describe('finish command', () => {
   const loadEffectiveConfigSpy = vi.mocked(loadEffectiveConfig);
@@ -88,6 +93,7 @@ describe('finish command', () => {
   const materializePlanSpy = vi.mocked(materializePlan);
   const removePlanAssignmentSpy = vi.mocked(removePlanAssignment);
   const checkAndMarkParentDoneSpy = vi.mocked(checkAndMarkParentDone);
+  const executePostApplyCommandSpy = vi.mocked(executePostApplyCommand);
   const prepareWorkspaceRoundTripSpy = vi.mocked(prepareWorkspaceRoundTrip);
   const runPreExecutionWorkspaceSyncSpy = vi.mocked(runPreExecutionWorkspaceSync);
   const runPostExecutionWorkspaceSyncSpy = vi.mocked(runPostExecutionWorkspaceSync);
@@ -127,6 +133,7 @@ describe('finish command', () => {
     runWithHeadlessAdapterIfEnabledSpy.mockImplementation(async (options: any) =>
       options.callback()
     );
+    executePostApplyCommandSpy.mockResolvedValue(true);
     runUpdateDocsSpy.mockResolvedValue(undefined);
     runUpdateLessonsSpy.mockResolvedValue(true);
     setupWorkspaceSpy.mockResolvedValue({
@@ -477,6 +484,50 @@ describe('finish command', () => {
         lessonsAppliedAt: expect.any(String),
       }),
       { cwdForIdentity: '/repo' }
+    );
+  });
+
+  test('runs configured postApplyCommands after docs and lessons updates', async () => {
+    loadEffectiveConfigSpy.mockResolvedValue({
+      updateDocs: {
+        mode: 'manual',
+        applyLessons: true,
+      },
+      postApplyCommands: [{ title: 'Post apply', command: 'echo ok' }],
+    } as any);
+
+    await handleFinishCommand('314', {}, buildCommand());
+
+    expect(executePostApplyCommandSpy).toHaveBeenCalledWith(
+      { title: 'Post apply', command: 'echo ok' },
+      '/repo'
+    );
+    expect(executePostApplyCommandSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test('throws when postApplyCommands fail after docs/lessons finish', async () => {
+    loadEffectiveConfigSpy.mockResolvedValue({
+      updateDocs: {
+        mode: 'manual',
+        applyLessons: true,
+      },
+      postApplyCommands: [{ title: 'Post apply', command: 'exit 1' }],
+    } as any);
+    executePostApplyCommandSpy.mockResolvedValue(false);
+
+    await expect(handleFinishCommand('314', {}, buildCommand())).rejects.toThrow(
+      'Failed to finalize plan 314'
+    );
+    expect(writePlanFileSpy).toHaveBeenCalledWith(
+      '/repo/.tim/plans/314.plan.md',
+      expect.objectContaining({
+        status: 'needs_review',
+      }),
+      { cwdForIdentity: '/repo' }
+    );
+    expect(executePostApplyCommandSpy).toHaveBeenCalledWith(
+      { title: 'Post apply', command: 'exit 1' },
+      '/repo'
     );
   });
 
