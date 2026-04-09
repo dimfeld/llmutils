@@ -1,6 +1,8 @@
 import { getGitRepository } from '../git.js';
 
-function parseShortPrIdentifier(identifier: string): { owner: string; repo: string; number: number } | null {
+function parseShortPrIdentifier(
+  identifier: string
+): { owner: string; repo: string; number: number } | null {
   const shortMatch = identifier.match(/^([^/]+)\/([^/#]+)#(\d+)$/);
   if (shortMatch) {
     return {

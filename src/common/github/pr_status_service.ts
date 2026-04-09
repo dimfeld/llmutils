@@ -213,9 +213,7 @@ export async function fetchAndUpdatePrReviewThreads(
     `[pr_status] fetching review threads for ${canonicalPrUrl} (${parsed.owner}/${parsed.repo}#${parsed.number})`
   );
   const reviewThreads = await fetchPrReviewThreads(parsed.owner, parsed.repo, parsed.number);
-  console.log(
-    `[pr_status] fetched ${reviewThreads.length} review threads for ${canonicalPrUrl}`
-  );
+  console.log(`[pr_status] fetched ${reviewThreads.length} review threads for ${canonicalPrUrl}`);
   const input: UpsertPrStatusInput = {
     prUrl: canonicalPrUrl,
     owner: parsed.owner,

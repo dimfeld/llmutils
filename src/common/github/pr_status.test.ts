@@ -37,7 +37,7 @@ describe('common/github/pr_status', () => {
               {
                 author: { login: 'reviewer-1' },
                 state: 'APPROVED',
-                body: "Looks good\r\nfrom here.",
+                body: 'Looks good\r\nfrom here.',
                 submittedAt: '2026-03-20T00:00:00.000Z',
               },
               {

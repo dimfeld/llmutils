@@ -564,404 +564,172 @@
   {/if}
 </div>
 
-<div class="space-y-6 p-4">
-  <!-- Status badges + actions -->
-  <div>
-    <div class="flex items-center gap-2">
-      <StatusBadge status={plan.displayStatus} />
-      <PriorityBadge priority={plan.priority} />
-
-      <div class="ml-auto flex items-center gap-2">
-        {#if openInEditorEnabled}
-          <Button
-            onclick={handleOpenInEditor}
-            disabled={openingInEditor}
-            size="sm"
-            variant="outline"
-          >
-            {openingInEditor ? 'Opening…' : 'Open in Editor'}
-          </Button>
-        {/if}
-        {#if activeSession}
-          <a
-            href="/projects/{projectId}/sessions/{activeSession.connectionId}"
-            class="inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-sm font-medium transition-colors
-              {activeSession.command === 'agent'
-              ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-900/60'
-              : activeSession.command === 'chat'
-                ? 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/40 dark:text-violet-300 dark:hover:bg-violet-900/60'
-                : activeSession.command === 'finish'
-                  ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/60'
-                  : 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-900/60'}"
-          >
-            <span
-              class="inline-block h-2 w-2 animate-pulse rounded-full {activeSession.command ===
-              'agent'
-                ? 'bg-emerald-500'
-                : activeSession.command === 'chat'
-                  ? 'bg-violet-500'
-                  : activeSession.command === 'finish'
-                    ? 'bg-amber-500'
-                    : 'bg-blue-500'}"
-            ></span>
-            {activeSession.command === 'agent'
-              ? 'Agent Running...'
-              : activeSession.command === 'generate'
-                ? 'Generating...'
-                : activeSession.command === 'finish'
-                  ? 'Finishing...'
-                  : `${activeSession.command.charAt(0).toUpperCase() + activeSession.command.slice(1)} Running...`}
-          </a>
-        {:else}
-          {@const { primary, menuItems } = actionConfig}
-          <ActionButtonWithDropdown {primary} {menuItems} disabled={controlsDisabled} />
-        {/if}
-      </div>
-    </div>
-
-    {#if errorMessage}
-      <div
-        class="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-300"
-      >
-        {errorMessage}
-      </div>
-    {/if}
-
-    {#if successMessage && !activeSession}
-      <div
-        class="mt-2 rounded-md bg-green-50 px-3 py-2 text-sm text-green-700 dark:bg-green-900/30 dark:text-green-300"
-      >
-        {successMessage.text}
-        {#if successMessage.connectionId}
-          — <a
-            href="/projects/{projectId}/sessions/{successMessage.connectionId}"
-            class="underline hover:no-underline">View session</a
-          >
-        {/if}
-      </div>
-    {/if}
-  </div>
-
-  <!-- Goal -->
-  {#if plan.goal}
+<div
+  class="overflow-x-hidden overflow-y-auto px-4 py-4 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
+  role="region"
+  aria-label="Plan details"
+  tabindex="0"
+>
+  <div class="space-y-6 pb-4">
+    <!-- Status badges + actions -->
     <div>
-      <h3 class="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">Goal</h3>
-      <p class="text-sm text-foreground">{plan.goal}</p>
-    </div>
-  {/if}
+      <div class="flex items-center gap-2">
+        <StatusBadge status={plan.displayStatus} />
+        <PriorityBadge priority={plan.priority} />
 
-  <!-- Note -->
-  {#if plan.note}
-    <div>
-      <h3 class="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">Note</h3>
-      <pre
-        class="plan-rendered-content font-sans text-sm whitespace-pre-wrap text-foreground">{@html renderPlanContentHtml(
-          plan.note
-        )}</pre>
-    </div>
-  {/if}
-
-  <!-- Tasks -->
-  {#if plan.tasks.length > 0}
-    <Collapsible.Root bind:open={tasksOpen}>
-      <Collapsible.Trigger
-        class="flex w-full cursor-pointer items-center justify-between rounded px-0 py-0.5 text-muted-foreground transition-colors hover:text-foreground"
-        aria-label="Toggle tasks"
-      >
-        <h3 class="text-xs font-semibold tracking-wide uppercase">
-          Tasks ({plan.taskCounts.done}/{plan.taskCounts.total})
-        </h3>
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          class="transition-transform {tasksOpen ? 'rotate-180' : ''}"
-        >
-          <path d="m6 9 6 6 6-6" />
-        </svg>
-      </Collapsible.Trigger>
-      <Collapsible.Content>
-        <ul class="mt-2 space-y-1.5">
-          {#each plan.tasks as task (task.id)}
-            {@const taskCopyId = `task-${task.id}`}
-            {@const taskCopyText = task.description
-              ? `${task.title}\n\n${task.description}`
-              : task.title}
-            <li class="group flex items-start gap-2 text-sm">
-              <span class="mt-0.5 shrink-0">
-                {#if task.done}
-                  <span class="text-green-600 dark:text-green-400">✓</span>
-                {:else}
-                  <span class="text-gray-300 dark:text-gray-500">○</span>
-                {/if}
-              </span>
-              <div class="min-w-0 flex-1">
-                <span class={task.done ? 'text-muted-foreground' : 'text-foreground'}>
-                  {task.title}
-                </span>
-                {#if task.description}
-                  <p class="mt-0.5 text-xs text-muted-foreground">{task.description}</p>
-                {/if}
-              </div>
-              <button
-                type="button"
-                onclick={() => copyToClipboard(taskCopyText, taskCopyId)}
-                class="mt-0.5 shrink-0 rounded p-0.5 text-muted-foreground transition-opacity hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800 {copiedId ===
-                taskCopyId
-                  ? 'opacity-100'
-                  : 'opacity-0 group-hover:opacity-100'}"
-                aria-label="Copy task"
-                title="Copy task"
-              >
-                {#if copiedId === taskCopyId}
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="12"
-                    height="12"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    class="text-green-600 dark:text-green-400"
-                    ><polyline points="20 6 9 17 4 12" /></svg
-                  >
-                {:else}
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="12"
-                    height="12"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    ><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path
-                      d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"
-                    /></svg
-                  >
-                {/if}
-              </button>
-            </li>
-          {/each}
-        </ul>
-      </Collapsible.Content>
-    </Collapsible.Root>
-  {/if}
-
-  <!-- Dependencies -->
-  {#if plan.dependencies.length > 0}
-    <div>
-      <h3 class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-        Dependencies
-      </h3>
-      <ul class="space-y-1">
-        {#each sortedDependencies as dep (dep.uuid)}
-          <li class="flex items-center gap-2 text-sm">
+        <div class="ml-auto flex items-center gap-2">
+          {#if openInEditorEnabled}
+            <Button
+              onclick={handleOpenInEditor}
+              disabled={openingInEditor}
+              size="sm"
+              variant="outline"
+            >
+              {openingInEditor ? 'Opening…' : 'Open in Editor'}
+            </Button>
+          {/if}
+          {#if activeSession}
             <a
-              href={planUrl(dep.uuid, dep.projectId)}
-              data-sveltekit-preload-data
-              class="flex items-center gap-1.5 rounded px-1.5 py-0.5 text-left transition-colors hover:bg-gray-100 dark:hover:bg-gray-800
-                {dep.isResolved ? 'text-muted-foreground' : 'text-amber-700 dark:text-amber-400'}"
+              href="/projects/{projectId}/sessions/{activeSession.connectionId}"
+              class="inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-sm font-medium transition-colors
+              {activeSession.command === 'agent'
+                ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-900/60'
+                : activeSession.command === 'chat'
+                  ? 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/40 dark:text-violet-300 dark:hover:bg-violet-900/60'
+                  : activeSession.command === 'finish'
+                    ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/60'
+                    : 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-900/60'}"
             >
-              {#if dep.planId}
-                <span class="text-xs font-medium">#{dep.planId}</span>
-              {/if}
-              <span class={dep.isResolved ? 'line-through' : ''}>
-                {dep.title ?? 'Unknown plan'}
-              </span>
-              {#if dep.displayStatus}
-                <StatusBadge status={dep.displayStatus} />
-              {/if}
+              <span
+                class="inline-block h-2 w-2 animate-pulse rounded-full {activeSession.command ===
+                'agent'
+                  ? 'bg-emerald-500'
+                  : activeSession.command === 'chat'
+                    ? 'bg-violet-500'
+                    : activeSession.command === 'finish'
+                      ? 'bg-amber-500'
+                      : 'bg-blue-500'}"
+              ></span>
+              {activeSession.command === 'agent'
+                ? 'Agent Running...'
+                : activeSession.command === 'generate'
+                  ? 'Generating...'
+                  : activeSession.command === 'finish'
+                    ? 'Finishing...'
+                    : `${activeSession.command.charAt(0).toUpperCase() + activeSession.command.slice(1)} Running...`}
             </a>
-          </li>
-        {/each}
-      </ul>
-    </div>
-  {/if}
-
-  <!-- Parent -->
-  {#if plan.parent}
-    <div>
-      <h3 class="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-        Parent Plan
-      </h3>
-      <a
-        href={planUrl(plan.parent.uuid, plan.parent.projectId)}
-        data-sveltekit-preload-data
-        class="flex items-center gap-1.5 rounded px-1.5 py-0.5 text-left text-sm transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
-      >
-        {#if plan.parent.planId}
-          <span class="text-xs font-medium text-muted-foreground">#{plan.parent.planId}</span>
-        {/if}
-        <span class="text-foreground">{plan.parent.title ?? 'Unknown plan'}</span>
-        {#if plan.parent.displayStatus}
-          <StatusBadge status={plan.parent.displayStatus} />
-        {/if}
-      </a>
-    </div>
-  {/if}
-
-  <!-- Tags -->
-  {#if plan.tags.length > 0}
-    <div>
-      <h3 class="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">Tags</h3>
-      <div class="flex flex-wrap gap-1">
-        {#each plan.tags as tag (tag)}
-          <span
-            class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300"
-            >{tag}</span
-          >
-        {/each}
+          {:else}
+            {@const { primary, menuItems } = actionConfig}
+            <ActionButtonWithDropdown {primary} {menuItems} disabled={controlsDisabled} />
+          {/if}
+        </div>
       </div>
-    </div>
-  {/if}
 
-  <!-- Pull Requests -->
-  {#if plan.pullRequests.length > 0 || plan.invalidPrUrls.length > 0 || plan.prStatuses.length > 0}
-    <PrStatusSection planUuid={plan.uuid} {projectId} />
-  {/if}
-
-  <!-- Branch -->
-  {#if plan.branch}
-    <div>
-      <h3 class="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-        Branch
-      </h3>
-      <button
-        class="flex cursor-pointer items-center gap-1 text-foreground transition-colors hover:text-foreground"
-        onclick={() => {
-          navigator.clipboard.writeText(plan.branch!);
-          toast.success('Branch name copied');
-        }}
-        title="Copy branch name"
-      >
-        <code class="text-xs">{plan.branch}</code>
-        <Copy class="h-3 w-3 shrink-0" />
-      </button>
-    </div>
-  {/if}
-
-  <!-- Assignment -->
-  {#if plan.assignment}
-    <div>
-      <h3 class="text-[11px] font-medium tracking-wide text-muted-foreground">
-        Assigned Workspace
-      </h3>
-      <div class="mt-1 text-xs text-muted-foreground">
-        {#each plan.assignment.workspacePaths as wsPath (wsPath)}
-          <div class="mt-0.5 flex items-center gap-1">
-            <div class="min-w-0 truncate">{wsPath}</div>
-            <button
-              type="button"
-              class="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
-              onclick={() => handleOpenTerminal(wsPath)}
-              disabled={openingTerminalPath !== null}
-              aria-label="Open new terminal"
-              title="Open new terminal"
-            >
-              <AppWindow class="size-3.5" />
-            </button>
-          </div>
-        {/each}
-        {#if plan.assignment.users.length > 0}
-          <div class="mt-0.5 text-[11px] text-muted-foreground">
-            Users: {plan.assignment.users.join(', ')}
-          </div>
-        {/if}
-      </div>
-    </div>
-  {/if}
-
-  <!-- Review Issues -->
-  {#if plan.reviewIssues && plan.reviewIssues.length > 0}
-    <div>
-      <div class="mb-2 flex items-center justify-between">
-        <h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-          Review Issues ({plan.reviewIssues.length})
-        </h3>
-        <button
-          type="button"
-          onclick={handleClearReviewIssues}
-          disabled={reviewIssueSubmitting !== null}
-          class="rounded px-2 py-0.5 text-xs text-muted-foreground hover:bg-red-100 hover:text-red-700 disabled:opacity-50 dark:hover:bg-red-950/50 dark:hover:text-red-400"
+      {#if errorMessage}
+        <div
+          class="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-300"
         >
-          {reviewIssueSubmitting === 'clear' ? 'Clearing...' : 'Clear All'}
-        </button>
+          {errorMessage}
+        </div>
+      {/if}
+
+      {#if successMessage && !activeSession}
+        <div
+          class="mt-2 rounded-md bg-green-50 px-3 py-2 text-sm text-green-700 dark:bg-green-900/30 dark:text-green-300"
+        >
+          {successMessage.text}
+          {#if successMessage.connectionId}
+            — <a
+              href="/projects/{projectId}/sessions/{successMessage.connectionId}"
+              class="underline hover:no-underline">View session</a
+            >
+          {/if}
+        </div>
+      {/if}
+    </div>
+
+    <!-- Goal -->
+    {#if plan.goal}
+      <div>
+        <h3 class="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+          Goal
+        </h3>
+        <p class="text-sm text-foreground">{plan.goal}</p>
       </div>
-      <ul class="space-y-2">
-        {#each sortedReviewIssues as { issue, originalIndex } (originalIndex)}
-          {@const severityClass =
-            issue.severity === 'critical'
-              ? 'border-red-500 bg-red-50 dark:bg-red-950/30'
-              : issue.severity === 'major'
-                ? 'border-orange-400 bg-orange-50 dark:bg-orange-950/30'
-                : issue.severity === 'minor'
-                  ? 'border-yellow-400 bg-yellow-50 dark:bg-yellow-950/30'
-                  : 'border-gray-300 bg-gray-50 dark:bg-gray-800/30'}
-          {@const severityTextClass =
-            issue.severity === 'critical'
-              ? 'text-red-700 dark:text-red-400'
-              : issue.severity === 'major'
-                ? 'text-orange-700 dark:text-orange-400'
-                : issue.severity === 'minor'
-                  ? 'text-yellow-700 dark:text-yellow-400'
-                  : 'text-gray-500 dark:text-gray-400'}
-          {@const issueCopyId = `issue-${originalIndex}`}
-          {@const issueCopyText = [
-            issue.file ? `${issue.file}${issue.line !== undefined ? `:${issue.line}` : ''}` : null,
-            issue.content,
-            issue.suggestion ? `Suggestion: ${issue.suggestion}` : null,
-          ]
-            .filter(Boolean)
-            .join('\n\n')}
-          <li class="group rounded border-l-2 px-3 py-2 text-sm {severityClass}">
-            <div class="flex items-center gap-2">
-              <span class="font-medium {severityTextClass}">{issue.severity}</span>
-              <span class="text-muted-foreground">·</span>
-              <span class="font-medium text-foreground">{issue.category}</span>
-              {#if issue.source}
-                <span
-                  class="rounded bg-purple-100 px-1 py-0.5 text-xs text-purple-700 dark:bg-purple-950/50 dark:text-purple-400"
-                >
-                  {issue.source === 'claude-code' ? 'Claude' : 'Codex'}
+    {/if}
+
+    <!-- Note -->
+    {#if plan.note}
+      <div>
+        <h3 class="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+          Note
+        </h3>
+        <pre
+          class="plan-rendered-content font-sans text-sm whitespace-pre-wrap text-foreground">{@html renderPlanContentHtml(
+            plan.note
+          )}</pre>
+      </div>
+    {/if}
+
+    <!-- Tasks -->
+    {#if plan.tasks.length > 0}
+      <Collapsible.Root bind:open={tasksOpen}>
+        <Collapsible.Trigger
+          class="flex w-full cursor-pointer items-center justify-between rounded px-0 py-0.5 text-muted-foreground transition-colors hover:text-foreground"
+          aria-label="Toggle tasks"
+        >
+          <h3 class="text-xs font-semibold tracking-wide uppercase">
+            Tasks ({plan.taskCounts.done}/{plan.taskCounts.total})
+          </h3>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            class="transition-transform {tasksOpen ? 'rotate-180' : ''}"
+          >
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+        </Collapsible.Trigger>
+        <Collapsible.Content>
+          <ul class="mt-2 space-y-1.5">
+            {#each plan.tasks as task (task.id)}
+              {@const taskCopyId = `task-${task.id}`}
+              {@const taskCopyText = task.description
+                ? `${task.title}\n\n${task.description}`
+                : task.title}
+              <li class="group flex items-start gap-2 text-sm">
+                <span class="mt-0.5 shrink-0">
+                  {#if task.done}
+                    <span class="text-green-600 dark:text-green-400">✓</span>
+                  {:else}
+                    <span class="text-gray-300 dark:text-gray-500">○</span>
+                  {/if}
                 </span>
-              {/if}
-              {#if issue.file}
-                <span class="font-mono text-xs text-muted-foreground">
-                  {issue.file}{issue.line !== undefined ? `:${issue.line}` : ''}
-                </span>
-              {/if}
-              <div class="ml-auto flex shrink-0 items-center gap-1">
+                <div class="min-w-0 flex-1">
+                  <span class={task.done ? 'text-muted-foreground' : 'text-foreground'}>
+                    {task.title}
+                  </span>
+                  {#if task.description}
+                    <p class="mt-0.5 text-xs text-muted-foreground">{task.description}</p>
+                  {/if}
+                </div>
                 <button
                   type="button"
-                  onclick={() => handleConvertToTask(originalIndex)}
-                  disabled={reviewIssueSubmitting !== null}
-                  class="rounded px-1 py-0.5 text-xs text-muted-foreground hover:bg-blue-100 hover:text-blue-700 disabled:opacity-50 dark:hover:bg-blue-950/50 dark:hover:text-blue-400"
-                  aria-label="Convert to task"
-                  title="Convert to task"
-                >
-                  {reviewIssueSubmitting === originalIndex ? '...' : '→ Task'}
-                </button>
-                <button
-                  type="button"
-                  onclick={() => copyToClipboard(issueCopyText, issueCopyId)}
-                  class="rounded p-0.5 text-muted-foreground transition-opacity hover:bg-black/10 hover:text-foreground dark:hover:bg-white/10 {copiedId ===
-                  issueCopyId
+                  onclick={() => copyToClipboard(taskCopyText, taskCopyId)}
+                  class="mt-0.5 shrink-0 rounded p-0.5 text-muted-foreground transition-opacity hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800 {copiedId ===
+                  taskCopyId
                     ? 'opacity-100'
                     : 'opacity-0 group-hover:opacity-100'}"
-                  aria-label="Copy issue"
-                  title="Copy issue"
+                  aria-label="Copy task"
+                  title="Copy task"
                 >
-                  {#if copiedId === issueCopyId}
+                  {#if copiedId === taskCopyId}
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
                       width="12"
@@ -992,64 +760,311 @@
                     >
                   {/if}
                 </button>
-                <button
-                  type="button"
-                  onclick={() => handleRemoveReviewIssue(originalIndex)}
-                  disabled={reviewIssueSubmitting !== null}
-                  class="rounded p-0.5 text-muted-foreground hover:bg-red-100 hover:text-red-700 disabled:opacity-50 dark:hover:bg-red-950/50 dark:hover:text-red-400"
-                  aria-label="Dismiss issue"
-                  title="Dismiss issue"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="12"
-                    height="12"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg
-                  >
-                </button>
-              </div>
+              </li>
+            {/each}
+          </ul>
+        </Collapsible.Content>
+      </Collapsible.Root>
+    {/if}
+
+    <!-- Dependencies -->
+    {#if plan.dependencies.length > 0}
+      <div>
+        <h3 class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+          Dependencies
+        </h3>
+        <ul class="space-y-1">
+          {#each sortedDependencies as dep (dep.uuid)}
+            <li class="flex items-center gap-2 text-sm">
+              <a
+                href={planUrl(dep.uuid, dep.projectId)}
+                data-sveltekit-preload-data
+                class="flex items-center gap-1.5 rounded px-1.5 py-0.5 text-left transition-colors hover:bg-gray-100 dark:hover:bg-gray-800
+                {dep.isResolved ? 'text-muted-foreground' : 'text-amber-700 dark:text-amber-400'}"
+              >
+                {#if dep.planId}
+                  <span class="text-xs font-medium">#{dep.planId}</span>
+                {/if}
+                <span class={dep.isResolved ? 'line-through' : ''}>
+                  {dep.title ?? 'Unknown plan'}
+                </span>
+                {#if dep.displayStatus}
+                  <StatusBadge status={dep.displayStatus} />
+                {/if}
+              </a>
+            </li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
+
+    <!-- Parent -->
+    {#if plan.parent}
+      <div>
+        <h3 class="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+          Parent Plan
+        </h3>
+        <a
+          href={planUrl(plan.parent.uuid, plan.parent.projectId)}
+          data-sveltekit-preload-data
+          class="flex items-center gap-1.5 rounded px-1.5 py-0.5 text-left text-sm transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+        >
+          {#if plan.parent.planId}
+            <span class="text-xs font-medium text-muted-foreground">#{plan.parent.planId}</span>
+          {/if}
+          <span class="text-foreground">{plan.parent.title ?? 'Unknown plan'}</span>
+          {#if plan.parent.displayStatus}
+            <StatusBadge status={plan.parent.displayStatus} />
+          {/if}
+        </a>
+      </div>
+    {/if}
+
+    <!-- Tags -->
+    {#if plan.tags.length > 0}
+      <div>
+        <h3 class="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+          Tags
+        </h3>
+        <div class="flex flex-wrap gap-1">
+          {#each plan.tags as tag (tag)}
+            <span
+              class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+              >{tag}</span
+            >
+          {/each}
+        </div>
+      </div>
+    {/if}
+
+    <!-- Pull Requests -->
+    {#if plan.pullRequests.length > 0 || plan.invalidPrUrls.length > 0 || plan.prStatuses.length > 0}
+      <PrStatusSection planUuid={plan.uuid} {projectId} />
+    {/if}
+
+    <!-- Branch -->
+    {#if plan.branch}
+      <div>
+        <h3 class="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+          Branch
+        </h3>
+        <button
+          class="flex cursor-pointer items-center gap-1 text-foreground transition-colors hover:text-foreground"
+          onclick={() => {
+            navigator.clipboard.writeText(plan.branch!);
+            toast.success('Branch name copied');
+          }}
+          title="Copy branch name"
+        >
+          <code class="text-xs">{plan.branch}</code>
+          <Copy class="h-3 w-3 shrink-0" />
+        </button>
+      </div>
+    {/if}
+
+    <!-- Assignment -->
+    {#if plan.assignment}
+      <div>
+        <h3 class="text-[11px] font-medium tracking-wide text-muted-foreground">
+          Assigned Workspace
+        </h3>
+        <div class="mt-1 text-xs text-muted-foreground">
+          {#each plan.assignment.workspacePaths as wsPath (wsPath)}
+            <div class="mt-0.5 flex items-center gap-1">
+              <div class="min-w-0 truncate">{wsPath}</div>
+              <button
+                type="button"
+                class="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
+                onclick={() => handleOpenTerminal(wsPath)}
+                disabled={openingTerminalPath !== null}
+                aria-label="Open new terminal"
+                title="Open new terminal"
+              >
+                <AppWindow class="size-3.5" />
+              </button>
             </div>
-            <pre
-              class="plan-rendered-content mt-1 font-sans whitespace-pre-wrap text-foreground">{@html renderPlanContentHtml(
-                issue.content
-              )}</pre>
-            {#if issue.suggestion}
-              <div class="mt-1 text-xs text-muted-foreground">
-                <span class="font-medium text-green-700 dark:text-green-400">Suggestion:</span>
-                <pre
-                  class="plan-rendered-content mt-0.5 font-sans text-xs whitespace-pre-wrap text-muted-foreground">{@html renderPlanContentHtml(
-                    issue.suggestion
-                  )}</pre>
+          {/each}
+          {#if plan.assignment.users.length > 0}
+            <div class="mt-0.5 text-[11px] text-muted-foreground">
+              Users: {plan.assignment.users.join(', ')}
+            </div>
+          {/if}
+        </div>
+      </div>
+    {/if}
+
+    <!-- Review Issues -->
+    {#if plan.reviewIssues && plan.reviewIssues.length > 0}
+      <div>
+        <div class="mb-2 flex items-center justify-between">
+          <h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+            Review Issues ({plan.reviewIssues.length})
+          </h3>
+          <button
+            type="button"
+            onclick={handleClearReviewIssues}
+            disabled={reviewIssueSubmitting !== null}
+            class="rounded px-2 py-0.5 text-xs text-muted-foreground hover:bg-red-100 hover:text-red-700 disabled:opacity-50 dark:hover:bg-red-950/50 dark:hover:text-red-400"
+          >
+            {reviewIssueSubmitting === 'clear' ? 'Clearing...' : 'Clear All'}
+          </button>
+        </div>
+        <ul class="space-y-2">
+          {#each sortedReviewIssues as { issue, originalIndex } (originalIndex)}
+            {@const severityClass =
+              issue.severity === 'critical'
+                ? 'border-red-500 bg-red-50 dark:bg-red-950/30'
+                : issue.severity === 'major'
+                  ? 'border-orange-400 bg-orange-50 dark:bg-orange-950/30'
+                  : issue.severity === 'minor'
+                    ? 'border-yellow-400 bg-yellow-50 dark:bg-yellow-950/30'
+                    : 'border-gray-300 bg-gray-50 dark:bg-gray-800/30'}
+            {@const severityTextClass =
+              issue.severity === 'critical'
+                ? 'text-red-700 dark:text-red-400'
+                : issue.severity === 'major'
+                  ? 'text-orange-700 dark:text-orange-400'
+                  : issue.severity === 'minor'
+                    ? 'text-yellow-700 dark:text-yellow-400'
+                    : 'text-gray-500 dark:text-gray-400'}
+            {@const issueCopyId = `issue-${originalIndex}`}
+            {@const issueCopyText = [
+              issue.file
+                ? `${issue.file}${issue.line !== undefined ? `:${issue.line}` : ''}`
+                : null,
+              issue.content,
+              issue.suggestion ? `Suggestion: ${issue.suggestion}` : null,
+            ]
+              .filter(Boolean)
+              .join('\n\n')}
+            <li class="group rounded border-l-2 px-3 py-2 text-sm {severityClass}">
+              <div class="flex items-center gap-2">
+                <span class="font-medium {severityTextClass}">{issue.severity}</span>
+                <span class="text-muted-foreground">·</span>
+                <span class="font-medium text-foreground">{issue.category}</span>
+                {#if issue.source}
+                  <span
+                    class="rounded bg-purple-100 px-1 py-0.5 text-xs text-purple-700 dark:bg-purple-950/50 dark:text-purple-400"
+                  >
+                    {issue.source === 'claude-code' ? 'Claude' : 'Codex'}
+                  </span>
+                {/if}
+                {#if issue.file}
+                  <span class="font-mono text-xs text-muted-foreground">
+                    {issue.file}{issue.line !== undefined ? `:${issue.line}` : ''}
+                  </span>
+                {/if}
+                <div class="ml-auto flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    onclick={() => handleConvertToTask(originalIndex)}
+                    disabled={reviewIssueSubmitting !== null}
+                    class="rounded px-1 py-0.5 text-xs text-muted-foreground hover:bg-blue-100 hover:text-blue-700 disabled:opacity-50 dark:hover:bg-blue-950/50 dark:hover:text-blue-400"
+                    aria-label="Convert to task"
+                    title="Convert to task"
+                  >
+                    {reviewIssueSubmitting === originalIndex ? '...' : '→ Task'}
+                  </button>
+                  <button
+                    type="button"
+                    onclick={() => copyToClipboard(issueCopyText, issueCopyId)}
+                    class="rounded p-0.5 text-muted-foreground transition-opacity hover:bg-black/10 hover:text-foreground dark:hover:bg-white/10 {copiedId ===
+                    issueCopyId
+                      ? 'opacity-100'
+                      : 'opacity-0 group-hover:opacity-100'}"
+                    aria-label="Copy issue"
+                    title="Copy issue"
+                  >
+                    {#if copiedId === issueCopyId}
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        class="text-green-600 dark:text-green-400"
+                        ><polyline points="20 6 9 17 4 12" /></svg
+                      >
+                    {:else}
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        ><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path
+                          d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"
+                        /></svg
+                      >
+                    {/if}
+                  </button>
+                  <button
+                    type="button"
+                    onclick={() => handleRemoveReviewIssue(originalIndex)}
+                    disabled={reviewIssueSubmitting !== null}
+                    class="rounded p-0.5 text-muted-foreground hover:bg-red-100 hover:text-red-700 disabled:opacity-50 dark:hover:bg-red-950/50 dark:hover:text-red-400"
+                    aria-label="Dismiss issue"
+                    title="Dismiss issue"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg
+                    >
+                  </button>
+                </div>
               </div>
-            {/if}
-          </li>
-        {/each}
-      </ul>
-    </div>
-  {/if}
+              <pre
+                class="plan-rendered-content mt-1 font-sans whitespace-pre-wrap text-foreground">{@html renderPlanContentHtml(
+                  issue.content
+                )}</pre>
+              {#if issue.suggestion}
+                <div class="mt-1 text-xs text-muted-foreground">
+                  <span class="font-medium text-green-700 dark:text-green-400">Suggestion:</span>
+                  <pre
+                    class="plan-rendered-content mt-0.5 font-sans text-xs whitespace-pre-wrap text-muted-foreground">{@html renderPlanContentHtml(
+                      issue.suggestion
+                    )}</pre>
+                </div>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
 
-  <!-- Details -->
-  {#if plan.details}
-    <div>
-      <h3 class="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-        Details
-      </h3>
-      <pre
-        class="plan-rendered-content font-sans text-sm whitespace-pre-wrap text-foreground">{@html renderPlanContentHtml(
-          plan.details ?? ''
-        )}</pre>
-    </div>
-  {/if}
+    <!-- Details -->
+    {#if plan.details}
+      <div>
+        <h3 class="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+          Details
+        </h3>
+        <pre
+          class="plan-rendered-content font-sans text-sm whitespace-pre-wrap text-foreground">{@html renderPlanContentHtml(
+            plan.details ?? ''
+          )}</pre>
+      </div>
+    {/if}
 
-  <!-- Timestamps -->
-  <div class="space-y-1 text-xs text-muted-foreground">
-    <div>Created: {formatDate(plan.createdAt)}</div>
-    <div>Updated: {formatDate(plan.updatedAt)}</div>
+    <!-- Timestamps -->
+    <div class="space-y-1 text-xs text-muted-foreground">
+      <div>Created: {formatDate(plan.createdAt)}</div>
+      <div>Updated: {formatDate(plan.updatedAt)}</div>
+    </div>
   </div>
 </div>
 

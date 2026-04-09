@@ -291,7 +291,9 @@
       aria-pressed={effectiveThreadExpandMode === 'mine'}
       onclick={() => setThreadExpandMode('mine')}
       disabled={!currentUsername}
-      title={currentUsername ? 'Expand only threads where you commented' : 'Set a username to use this filter'}
+      title={currentUsername
+        ? 'Expand only threads where you commented'
+        : 'Set a username to use this filter'}
     >
       My comments
     </button>

@@ -483,11 +483,7 @@ describe('common/github/pr_status_service', () => {
     mockTryCanonicalizePrUrl.mockReturnValue('https://github.com/example/repo/pull/230');
 
     const { fetchAndUpdatePrReviewThreads } = await import('./pr_status_service.ts');
-    await fetchAndUpdatePrReviewThreads(
-      db,
-      'https://github.com/example/repo/pull/230',
-      'thread-2'
-    );
+    await fetchAndUpdatePrReviewThreads(db, 'https://github.com/example/repo/pull/230', 'thread-2');
 
     expect(fetchPrReviewThread).toHaveBeenCalledWith('thread-2');
     expect(mockFetchPrReviewThreads).not.toHaveBeenCalled();
@@ -499,14 +495,19 @@ describe('common/github/pr_status_service', () => {
       'thread-1',
       'thread-2',
     ]);
-    expect(detail?.reviewThreads?.find((thread) => thread.thread.thread_id === 'thread-1')?.comments)
-      .toEqual([expect.objectContaining({ comment_id: 'comment-1' })]);
-    expect(detail?.reviewThreads?.find((thread) => thread.thread.thread_id === 'thread-2')?.thread.line)
-      .toBe(22);
-    expect(detail?.reviewThreads?.find((thread) => thread.thread.thread_id === 'thread-2')?.thread.is_resolved)
-      .toBe(1);
-    expect(detail?.reviewThreads?.find((thread) => thread.thread.thread_id === 'thread-2')?.comments)
-      .toEqual([expect.objectContaining({ comment_id: 'comment-2b' })]);
+    expect(
+      detail?.reviewThreads?.find((thread) => thread.thread.thread_id === 'thread-1')?.comments
+    ).toEqual([expect.objectContaining({ comment_id: 'comment-1' })]);
+    expect(
+      detail?.reviewThreads?.find((thread) => thread.thread.thread_id === 'thread-2')?.thread.line
+    ).toBe(22);
+    expect(
+      detail?.reviewThreads?.find((thread) => thread.thread.thread_id === 'thread-2')?.thread
+        .is_resolved
+    ).toBe(1);
+    expect(
+      detail?.reviewThreads?.find((thread) => thread.thread.thread_id === 'thread-2')?.comments
+    ).toEqual([expect.objectContaining({ comment_id: 'comment-2b' })]);
   });
 
   test('refreshPrCheckStatus canonicalizes equivalent PR URLs before cache lookup', async () => {

@@ -736,9 +736,8 @@ async function normalizeReviewThread(
 ): Promise<StoredPrReviewThreadInput> {
   const initialComments = (thread.comments.nodes ?? [])
     .filter(
-      (
-        comment: GraphQlReviewThreadCommentNode | null
-      ): comment is GraphQlReviewThreadCommentNode => comment !== null
+      (comment: GraphQlReviewThreadCommentNode | null): comment is GraphQlReviewThreadCommentNode =>
+        comment !== null
     )
     .map(normalizeReviewThreadComment);
   const additionalComments = thread.comments.pageInfo.hasNextPage
