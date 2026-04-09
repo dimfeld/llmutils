@@ -1099,6 +1099,7 @@ describe('tim db/pr_status', () => {
       upsertPrReviewByAuthor(db, detail.status.id, {
         author: 'reviewer',
         state: 'COMMENTED',
+        body: 'First pass',
         submittedAt: '2026-03-20T00:01:00.000Z',
       })
     ).toBe(true);
@@ -1106,6 +1107,7 @@ describe('tim db/pr_status', () => {
       upsertPrReviewByAuthor(db, detail.status.id, {
         author: 'reviewer',
         state: 'APPROVED',
+        body: 'Latest pass',
         submittedAt: '2026-03-20T00:02:00.000Z',
       })
     ).toBe(true);
@@ -1115,6 +1117,7 @@ describe('tim db/pr_status', () => {
     expect(refreshed?.reviews[0]).toMatchObject({
       author: 'reviewer',
       state: 'APPROVED',
+      body: 'Latest pass',
       submitted_at: '2026-03-20T00:02:00.000Z',
     });
   });
@@ -1134,6 +1137,7 @@ describe('tim db/pr_status', () => {
     const input = {
       author: 'reviewer',
       state: 'APPROVED',
+      body: 'Stable body',
       submittedAt: '2026-03-20T00:02:00.000Z',
     };
 
@@ -1145,6 +1149,7 @@ describe('tim db/pr_status', () => {
     expect(refreshed?.reviews[0]).toMatchObject({
       author: 'reviewer',
       state: 'APPROVED',
+      body: 'Stable body',
       submitted_at: '2026-03-20T00:02:00.000Z',
     });
   });
@@ -1165,6 +1170,7 @@ describe('tim db/pr_status', () => {
       upsertPrReviewByAuthor(db, detail.status.id, {
         author: 'reviewer',
         state: 'APPROVED',
+        body: 'Newer review',
         submittedAt: '2026-03-20T00:02:00.000Z',
       })
     ).toBe(true);
@@ -1172,6 +1178,7 @@ describe('tim db/pr_status', () => {
       upsertPrReviewByAuthor(db, detail.status.id, {
         author: 'reviewer',
         state: 'COMMENTED',
+        body: 'Older review',
         submittedAt: '2026-03-20T00:01:00.000Z',
       })
     ).toBe(false);
@@ -1181,6 +1188,7 @@ describe('tim db/pr_status', () => {
     expect(refreshed?.reviews[0]).toMatchObject({
       author: 'reviewer',
       state: 'APPROVED',
+      body: 'Newer review',
       submitted_at: '2026-03-20T00:02:00.000Z',
     });
   });

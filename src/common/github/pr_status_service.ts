@@ -82,6 +82,7 @@ export async function refreshPrStatus(db: Database, prUrl: string): Promise<PrSt
     reviews: fullStatus.reviews.map((review) => ({
       author: review.author,
       state: review.state,
+      body: review.body,
       submittedAt: review.submittedAt,
     })),
     labels: fullStatus.labels.map((label) => ({
@@ -310,6 +311,7 @@ export async function syncPlanPrLinks(
       reviews: fullStatus.reviews.map((review) => ({
         author: review.author,
         state: review.state,
+        body: review.body,
         submittedAt: review.submittedAt,
       })),
       labels: fullStatus.labels.map((label) => ({

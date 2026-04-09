@@ -45,6 +45,7 @@ export interface PrStatusLabel {
 export interface PrStatusReview {
   author: string;
   state: PrReviewState;
+  body: string | null;
   submittedAt: string | null;
 }
 
@@ -97,6 +98,7 @@ interface GraphQlLabelNode {
 interface GraphQlReviewNode {
   author: GraphQlActor | null;
   state: string;
+  body: string | null;
   submittedAt: string | null;
 }
 
@@ -275,6 +277,7 @@ const fullStatusQuery = `
               login
             }
             state
+            body
             submittedAt
           }
         }
@@ -823,6 +826,7 @@ export async function fetchPrFullStatus(
       .map((review) => ({
         author: review.author!.login,
         state: normalizeReviewState(review.state),
+        body: normalizeMultilineText(review.body),
         submittedAt: review.submittedAt,
       }))
   );

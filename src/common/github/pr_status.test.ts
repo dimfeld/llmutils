@@ -37,11 +37,13 @@ describe('common/github/pr_status', () => {
               {
                 author: { login: 'reviewer-1' },
                 state: 'APPROVED',
+                body: "Looks good\r\nfrom here.",
                 submittedAt: '2026-03-20T00:00:00.000Z',
               },
               {
                 author: null,
                 state: 'COMMENTED',
+                body: null,
                 submittedAt: '2026-03-20T00:01:00.000Z',
               },
             ],
@@ -117,6 +119,7 @@ describe('common/github/pr_status', () => {
         {
           author: 'reviewer-1',
           state: 'APPROVED',
+          body: 'Looks good\nfrom here.',
           submittedAt: '2026-03-20T00:00:00.000Z',
         },
       ],
@@ -180,21 +183,25 @@ describe('common/github/pr_status', () => {
               {
                 author: { login: 'reviewer-1' },
                 state: 'CHANGES_REQUESTED',
+                body: 'First pass',
                 submittedAt: '2026-03-20T00:00:00.000Z',
               },
               {
                 author: { login: 'reviewer-2' },
                 state: 'COMMENTED',
+                body: 'Comment',
                 submittedAt: '2026-03-20T00:01:00.000Z',
               },
               {
                 author: { login: 'reviewer-1' },
                 state: 'APPROVED',
+                body: 'Latest pass',
                 submittedAt: '2026-03-20T00:02:00.000Z',
               },
               {
                 author: { login: 'reviewer-2' },
                 state: 'APPROVED',
+                body: 'Ship it',
                 submittedAt: '2026-03-20T00:03:00.000Z',
               },
             ],
@@ -229,11 +236,13 @@ describe('common/github/pr_status', () => {
         {
           author: 'reviewer-1',
           state: 'APPROVED',
+          body: 'Latest pass',
           submittedAt: '2026-03-20T00:02:00.000Z',
         },
         {
           author: 'reviewer-2',
           state: 'APPROVED',
+          body: 'Ship it',
           submittedAt: '2026-03-20T00:03:00.000Z',
         },
       ],

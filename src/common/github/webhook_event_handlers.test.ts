@@ -240,6 +240,7 @@ describe('common/github/webhook_event_handlers', () => {
       pull_request: { number: 42 },
       review: {
         state: 'changes_requested',
+        body: "Needs work\r\nin this area.",
         submitted_at: '2026-03-30T10:00:00.000Z',
         user: { login: 'reviewer-1' },
       },
@@ -253,6 +254,7 @@ describe('common/github/webhook_event_handlers', () => {
       expect.objectContaining({
         author: 'reviewer-1',
         state: 'CHANGES_REQUESTED',
+        body: 'Needs work\nin this area.',
         submitted_at: '2026-03-30T10:00:00.000Z',
       }),
     ]);

@@ -326,7 +326,7 @@ describe('tim db/database', () => {
         []
       >('SELECT version, import_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(19);
+    expect(version?.version).toBe(21);
     expect(version?.import_completed).toBe(1);
 
     const tables = db
@@ -404,7 +404,7 @@ describe('tim db/database', () => {
         []
       >('SELECT version, import_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(19);
+    expect(version?.version).toBe(21);
     expect(version?.import_completed).toBe(1);
     const versionRowCount = db2
       .query<{ count: number }, []>('SELECT count(*) as count FROM schema_version')
@@ -535,7 +535,7 @@ describe('tim db/database', () => {
       const schemaVersion = db
         .query<{ version: number }, []>('SELECT version FROM schema_version')
         .get();
-      expect(schemaVersion?.version).toBe(19);
+      expect(schemaVersion?.version).toBe(21);
 
       const planColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('plan')")
@@ -652,7 +652,7 @@ describe('tim db/database', () => {
           []
         >('SELECT version FROM schema_version ORDER BY rowid DESC LIMIT 1')
         .get();
-      expect(schemaVersion?.version).toBe(19);
+      expect(schemaVersion?.version).toBe(21);
 
       const checkRows = db
         .query<
@@ -683,11 +683,18 @@ describe('tim db/database', () => {
       // Verify the latest (APPROVED) review survived, not the older COMMENTED one
       const survivingReview = db
         .query<
-          { state: string },
+          { state: string; body: string | null },
           []
-        >("SELECT state FROM pr_review WHERE pr_status_id = 1 AND author = 'reviewer'")
+        >("SELECT state, body FROM pr_review WHERE pr_status_id = 1 AND author = 'reviewer'")
         .get();
       expect(survivingReview?.state).toBe('APPROVED');
+      expect(survivingReview?.body).toBeNull();
+
+      const reviewColumns = db
+        .query<{ name: string }, []>("PRAGMA table_info('pr_review')")
+        .all()
+        .map((column) => column.name);
+      expect(reviewColumns).toContain('body');
 
       const cursorRow = db
         .query<

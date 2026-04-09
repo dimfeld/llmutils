@@ -48,6 +48,7 @@ export interface PrReviewRow {
   pr_status_id: number;
   author: string;
   state: string;
+  body: string | null;
   submitted_at: string | null;
 }
 
@@ -116,6 +117,7 @@ export interface StoredPrCheckRunInput {
 export interface StoredPrReviewInput {
   author: string;
   state: string;
+  body?: string | null;
   submittedAt?: string | null;
 }
 
@@ -282,13 +284,20 @@ function replaceReviews(db: Database, prStatusId: number, reviews: StoredPrRevie
         pr_status_id,
         author,
         state,
+        body,
         submitted_at
-      ) VALUES (?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?)
     `
   );
 
   for (const review of reviews) {
-    insert.run(prStatusId, review.author, review.state, review.submittedAt ?? null);
+    insert.run(
+      prStatusId,
+      review.author,
+      review.state,
+      review.body ?? null,
+      review.submittedAt ?? null
+    );
   }
 }
 
@@ -999,17 +1008,19 @@ export function upsertPrReviewByAuthor(
         pr_status_id,
         author,
         state,
+        body,
         submitted_at
-      ) VALUES (?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(pr_status_id, author) DO UPDATE SET
         state = excluded.state,
+        body = excluded.body,
         submitted_at = excluded.submitted_at
       WHERE excluded.submitted_at IS NULL
          OR pr_review.submitted_at IS NULL
          OR excluded.submitted_at >= pr_review.submitted_at
     `
     )
-    .run(prStatusId, input.author, input.state, input.submittedAt ?? null);
+    .run(prStatusId, input.author, input.state, input.body ?? null, input.submittedAt ?? null);
 
   return result.changes > 0;
 }

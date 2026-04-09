@@ -78,6 +78,7 @@ function buildUpsertPrStatusInput(
     reviews: fullStatus.reviews.map((review) => ({
       author: review.author,
       state: review.state,
+      body: review.body,
       submittedAt: review.submittedAt,
     })),
     labels: fullStatus.labels.map((label) => ({

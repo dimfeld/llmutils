@@ -72,6 +72,7 @@ interface ParsedReviewPayload {
   review: {
     author: string;
     state: string;
+    body: string | null;
     submittedAt: string | null;
   };
 }
@@ -277,6 +278,7 @@ function parseReviewPayload(payload: unknown): ParsedReviewPayload | null {
 
   const author = (review as { user?: { login?: unknown } }).user?.login;
   const state = (review as { state?: unknown }).state;
+  const body = (review as { body?: unknown }).body;
   const submittedAt = (review as { submitted_at?: unknown }).submitted_at;
   const number = (pullRequest as { number?: unknown }).number;
 
@@ -290,6 +292,7 @@ function parseReviewPayload(payload: unknown): ParsedReviewPayload | null {
     review: {
       author,
       state,
+      body: typeof body === 'string' ? body.replaceAll(/\r\n|\r/g, '\n') : null,
       submittedAt: typeof submittedAt === 'string' ? submittedAt : null,
     },
   };
@@ -620,6 +623,7 @@ export function handlePullRequestReviewEvent(
   const updated = upsertPrReviewByAuthor(db, row.id, {
     author: parsed.review.author,
     state: parsed.review.state.toUpperCase(),
+    body: parsed.review.body,
     submittedAt: parsed.review.submittedAt,
   });
 
