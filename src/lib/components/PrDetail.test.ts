@@ -55,6 +55,18 @@ describe('PrDetail', () => {
     expect(body).not.toContain('Review Required');
   });
 
+  test('renders a Graphite link for the current PR', () => {
+    const { body } = render(PrDetail, {
+      props: {
+        pr: createPr(),
+        projectId: '123',
+      },
+    });
+
+    expect(body).toContain('View in Graphite');
+    expect(body).toContain('href="https://app.graphite.com/github/pr/example/repo/42"');
+  });
+
   test('shows the draft toggle only for the authenticated author', () => {
     const ownPr = render(PrDetail, {
       props: {

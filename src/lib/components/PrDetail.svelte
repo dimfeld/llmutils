@@ -35,6 +35,9 @@
   let draftUpdating = $state(false);
   let actionError = $state<string | null>(null);
   let branchCopied = $state(false);
+  let graphitePrUrl = $derived(
+    `https://app.graphite.com/github/pr/${pr.status.owner}/${pr.status.repo}/${pr.status.pr_number}`
+  );
 
   // Get planUuid if there's exactly one linked plan, otherwise undefined
   let planUuid = $derived(pr.linkedPlans.length === 1 ? pr.linkedPlans[0].planUuid : undefined);
@@ -145,6 +148,16 @@
         </div>
       </div>
       <div class="flex shrink-0 items-center gap-1">
+        <a
+          href={graphitePrUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
+          title="View in Graphite"
+          aria-label={`View PR #${pr.status.pr_number} in Graphite`}
+        >
+          View in Graphite
+        </a>
         {#if canToggleDraft}
           <button
             onclick={handleToggleDraftStatus}

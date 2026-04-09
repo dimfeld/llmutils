@@ -262,6 +262,16 @@ describe('PrStatusSection', () => {
     expect(body).toContain('https://github.com/owner/repo/issues/42');
   });
 
+  test('renders a Graphite link for each PR row', async () => {
+    const { body } = await renderSection({
+      prUrls: ['https://github.com/owner/repo/pull/42'],
+      prStatuses: [makePrDetail()],
+    });
+
+    expect(body).toContain('View in Graphite');
+    expect(body).toContain('href="https://app.graphite.com/github/pr/owner/repo/42"');
+  });
+
   test('renders PR number and title as a link', async () => {
     const detail = makePrDetail({ status: { pr_number: 42, title: 'Add feature X' } });
     const { body } = await renderSection({
