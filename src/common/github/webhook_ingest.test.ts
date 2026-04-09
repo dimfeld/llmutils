@@ -18,6 +18,7 @@ import { getPrStatusByUrl } from '../../tim/db/pr_status.js';
 const mocks = vi.hoisted(() => ({
   fetchWebhookEvents: vi.fn<(...args: unknown[]) => Promise<unknown[]>>(),
   fetchAndUpdatePrMergeableStatus: vi.fn<(...args: unknown[]) => Promise<void>>(),
+  fetchAndUpdatePrReviewThreads: vi.fn<(...args: unknown[]) => Promise<void>>(),
 }));
 
 vi.mock('./webhook_client.ts', () => ({
@@ -28,6 +29,7 @@ vi.mock('./webhook_client.ts', () => ({
 
 vi.mock('./pr_status_service.ts', () => ({
   fetchAndUpdatePrMergeableStatus: mocks.fetchAndUpdatePrMergeableStatus,
+  fetchAndUpdatePrReviewThreads: mocks.fetchAndUpdatePrReviewThreads,
 }));
 
 import { ingestWebhookEvents } from './webhook_ingest.js';
@@ -60,6 +62,7 @@ describe('common/github/webhook_ingest', () => {
   afterEach(async () => {
     mocks.fetchWebhookEvents.mockReset();
     mocks.fetchAndUpdatePrMergeableStatus.mockReset();
+    mocks.fetchAndUpdatePrReviewThreads.mockReset();
     if (originalWebhookUrl === undefined) {
       delete process.env.TIM_WEBHOOK_SERVER_URL;
     } else {
@@ -157,6 +160,7 @@ describe('common/github/webhook_ingest', () => {
       },
     ]);
     mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
+    mocks.fetchAndUpdatePrReviewThreads.mockResolvedValue(undefined);
 
     const result = await ingestWebhookEvents(db);
 
@@ -176,6 +180,7 @@ describe('common/github/webhook_ingest', () => {
     // example/repo#51, but deduplication means only one API call is made
     expect(mocks.fetchAndUpdatePrMergeableStatus).toHaveBeenCalledTimes(1);
     expect(mocks.fetchAndUpdatePrMergeableStatus).toHaveBeenCalledWith(db, 'example', 'repo', 51);
+    expect(mocks.fetchAndUpdatePrReviewThreads).not.toHaveBeenCalled();
     expect(getWebhookCursor(db)).toBe(14);
     expect(
       db.prepare('SELECT COUNT(*) as count FROM webhook_log').get() as { count: number }
@@ -186,6 +191,140 @@ describe('common/github/webhook_ingest', () => {
     expect(detail?.checks.map((check) => check.name)).toEqual(['unit tests']);
     expect(detail?.status.check_rollup_state).toBe('success');
     expect(getPrStatusByUrl(db, 'https://github.com/other/repo/pull/99')).toBeNull();
+  });
+
+  test('ingestWebhookEvents refreshes review threads for pull_request_review_comment events', async () => {
+    mocks.fetchWebhookEvents.mockResolvedValueOnce([
+      {
+        id: 21,
+        deliveryId: 'delivery-pr-opened',
+        eventType: 'pull_request',
+        action: 'opened',
+        repositoryFullName: 'example/repo',
+        receivedAt: '2026-03-30T10:00:00.000Z',
+        payloadJson: JSON.stringify({
+          action: 'opened',
+          repository: { full_name: 'example/repo' },
+          pull_request: {
+            number: 52,
+            title: 'Webhook PR',
+            state: 'open',
+            draft: false,
+            merged_at: null,
+            user: { login: 'alice' },
+            head: { sha: 'sha-52', ref: 'feature/webhook' },
+            base: { ref: 'main' },
+          },
+        }),
+      },
+      {
+        id: 22,
+        deliveryId: 'delivery-review-comment',
+        eventType: 'pull_request_review_comment',
+        action: 'created',
+        repositoryFullName: 'example/repo',
+        receivedAt: '2026-03-30T10:01:00.000Z',
+        payloadJson: JSON.stringify({
+          action: 'created',
+          repository: { full_name: 'example/repo' },
+          pull_request: {
+            number: 52,
+            title: 'Webhook PR',
+            state: 'open',
+            draft: false,
+            merged_at: null,
+            user: { login: 'alice' },
+            head: { sha: 'sha-52', ref: 'feature/webhook' },
+            base: { ref: 'main' },
+          },
+          comment: {
+            id: 'PRRC_1',
+            body: 'Needs a change.',
+            created_at: '2026-03-30T10:01:00.000Z',
+            user: { login: 'reviewer-1' },
+          },
+        }),
+      },
+    ]);
+    mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
+    mocks.fetchAndUpdatePrReviewThreads.mockResolvedValue(undefined);
+
+    const result = await ingestWebhookEvents(db);
+
+    expect(result.errors).toEqual([]);
+    expect(mocks.fetchAndUpdatePrMergeableStatus).toHaveBeenCalledTimes(1);
+    expect(mocks.fetchAndUpdatePrMergeableStatus).toHaveBeenCalledWith(db, 'example', 'repo', 52);
+    expect(mocks.fetchAndUpdatePrReviewThreads).toHaveBeenCalledTimes(1);
+    expect(mocks.fetchAndUpdatePrReviewThreads).toHaveBeenCalledWith(
+      db,
+      'example/repo/pull/52'
+    );
+  });
+
+  test('ingestWebhookEvents keeps mergeable and review-thread refreshes for the same PR', async () => {
+    mocks.fetchWebhookEvents.mockResolvedValueOnce([
+      {
+        id: 31,
+        deliveryId: 'delivery-pr-opened-2',
+        eventType: 'pull_request',
+        action: 'opened',
+        repositoryFullName: 'example/repo',
+        receivedAt: '2026-03-30T10:00:00.000Z',
+        payloadJson: JSON.stringify({
+          action: 'opened',
+          repository: { full_name: 'example/repo' },
+          pull_request: {
+            number: 53,
+            title: 'Webhook PR',
+            state: 'open',
+            draft: false,
+            merged_at: null,
+            user: { login: 'alice' },
+            head: { sha: 'sha-53', ref: 'feature/webhook' },
+            base: { ref: 'main' },
+          },
+        }),
+      },
+      {
+        id: 32,
+        deliveryId: 'delivery-review-thread',
+        eventType: 'pull_request_review_thread',
+        action: 'created',
+        repositoryFullName: 'example/repo',
+        receivedAt: '2026-03-30T10:01:00.000Z',
+        payloadJson: JSON.stringify({
+          action: 'created',
+          repository: { full_name: 'example/repo' },
+          pull_request: {
+            number: 53,
+            title: 'Webhook PR',
+            state: 'open',
+            draft: false,
+            merged_at: null,
+            user: { login: 'alice' },
+            head: { sha: 'sha-53', ref: 'feature/webhook' },
+            base: { ref: 'main' },
+          },
+          thread: {
+            id: 'PRRT_1',
+            is_resolved: false,
+          },
+        }),
+      },
+    ]);
+    mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
+    mocks.fetchAndUpdatePrReviewThreads.mockResolvedValue(undefined);
+
+    const result = await ingestWebhookEvents(db);
+
+    expect(result.errors).toEqual([]);
+    expect(mocks.fetchAndUpdatePrMergeableStatus).toHaveBeenCalledTimes(1);
+    expect(mocks.fetchAndUpdatePrMergeableStatus).toHaveBeenCalledWith(db, 'example', 'repo', 53);
+    expect(mocks.fetchAndUpdatePrReviewThreads).toHaveBeenCalledTimes(1);
+    expect(mocks.fetchAndUpdatePrReviewThreads).toHaveBeenCalledWith(
+      db,
+      'example/repo/pull/53'
+    );
   });
 
   test('ingestWebhookEvents marks a linked needs_review plan done when the PR is merged and the plan is fully finished', async () => {

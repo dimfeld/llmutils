@@ -214,7 +214,8 @@ export async function ingestWebhookEvents(db: Database): Promise<IngestResult> {
             ? handlePullRequestEvent(db, payload, handlerOptions)
             : event.eventType === 'pull_request_review'
               ? handlePullRequestReviewEvent(db, payload, handlerOptions)
-              : event.eventType === 'pull_request_review_thread'
+              : event.eventType === 'pull_request_review_thread' ||
+                  event.eventType === 'pull_request_review_comment'
                 ? handlePullRequestReviewThreadEvent(db, payload, handlerOptions)
                 : event.eventType === 'check_run'
                   ? handleCheckRunEvent(db, payload, handlerOptions)
@@ -231,9 +232,10 @@ export async function ingestWebhookEvents(db: Database): Promise<IngestResult> {
           prsUpdated.add(prUrl);
         }
 
-        // Collect refresh targets — deduplication happens via the Map key
+        // Collect refresh targets. Deduplicate by PR and refresh type so a review-thread
+        // refresh cannot overwrite a mergeable refresh for the same PR in the same batch.
         for (const target of result.apiRefreshTargets ?? []) {
-          const key = `${target.owner}/${target.repo}#${target.prNumber}`;
+          const key = `${target.owner}/${target.repo}#${target.prNumber}:${target.type}`;
           apiRefreshTargets.set(key, target);
         }
 
