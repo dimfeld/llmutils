@@ -324,7 +324,17 @@ describe('createAppServerFormatter', () => {
           primary: { usedPercent: 2, windowDurationMins: 300, resetsAt: 1771665507 },
         },
       })
-    ).toEqual({ type: 'account/rateLimits/updated' });
+    ).toEqual(
+      expect.objectContaining({
+        type: 'account/rateLimits/updated',
+        structured: expect.objectContaining({
+          type: 'token_usage',
+          rateLimits: expect.objectContaining({
+            codex_bengalfox: expect.objectContaining({ limitId: 'codex_bengalfox' }),
+          }),
+        }),
+      })
+    );
 
     const completed = formatter.handleNotification('turn/completed', {
       turn: { status: 'completed', usage: {} },

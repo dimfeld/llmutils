@@ -189,6 +189,24 @@ rl.on('line', (line) => {
       return;
     }
 
+    if (message.method === 'account/rateLimits/read') {
+      send({
+        jsonrpc: '2.0',
+        id: message.id,
+        result: {
+          rateLimits: {
+            primary: {
+              usedPercent: 25,
+              windowDurationMins: 15,
+              resetsAt: 1730947200,
+            },
+            secondary: null,
+          },
+        },
+      });
+      return;
+    }
+
     send({ jsonrpc: '2.0', id: message.id, result: {} });
     return;
   }
@@ -513,6 +531,48 @@ describe('CodexAppServerConnection', () => {
 
     await expect(pending).rejects.toThrow(/exited unexpectedly/i);
     expect(connection.isAlive).toBe(false);
+
+    await connection.close();
+  });
+
+  test('turns account/rateLimits/read responses into updated notifications', async () => {
+    const notifications: Array<{ method: string; params: unknown }> = [];
+
+    const connection = await CodexAppServerConnection.create({
+      cwd: mockServer.rootDir,
+      env: buildSpawnEnv({
+        PATH: `${mockServer.rootDir}:${process.env.PATH ?? ''}`,
+        MOCK_REQUEST_LOG: mockServer.requestLogPath,
+        MOCK_CLIENT_RESPONSE_LOG: mockServer.clientResponseLogPath,
+      }),
+      onNotification: (method, params) => {
+        notifications.push({ method, params });
+      },
+    });
+
+    await connection.threadStart({});
+    await expect(connection.readRateLimits()).resolves.toEqual(
+      expect.objectContaining({
+        rateLimits: expect.objectContaining({
+          primary: expect.objectContaining({
+            usedPercent: 25,
+          }),
+        }),
+      })
+    );
+
+    expect(notifications).toContainEqual(
+      expect.objectContaining({
+        method: 'account/rateLimits/updated',
+        params: expect.objectContaining({
+          rateLimits: expect.objectContaining({
+            primary: expect.objectContaining({
+              usedPercent: 25,
+            }),
+          }),
+        }),
+      })
+    );
 
     await connection.close();
   });

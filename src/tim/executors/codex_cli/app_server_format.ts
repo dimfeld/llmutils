@@ -579,6 +579,17 @@ export function createAppServerFormatter() {
             extractRateLimitKey(rateLimit),
             normalizeRateLimitPayload(rateLimit)
           );
+          return {
+            type: method,
+            structured: {
+              type: 'token_usage',
+              timestamp: ts,
+              rateLimits:
+                state.latestRateLimits.size > 0
+                  ? Object.fromEntries(state.latestRateLimits.entries())
+                  : undefined,
+            },
+          };
         }
         return { type: method };
       }

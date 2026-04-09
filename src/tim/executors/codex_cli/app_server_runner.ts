@@ -15,6 +15,8 @@ import { createAppServerFormatter } from './app_server_format';
 import type { CodexStepOptions } from './codex_runner';
 import { TerminalInputReader } from '../claude_code/terminal_input.ts';
 
+const RATE_LIMIT_POLL_INTERVAL_MS = 15 * 60 * 1000;
+
 function getInactivityTimeoutMs(options?: CodexStepOptions): number {
   const inactivityOverride = Number.parseInt(process.env.CODEX_OUTPUT_TIMEOUT_MS || '', 10);
   return (
@@ -170,6 +172,9 @@ export async function executeCodexStepViaAppServer(
   let sawFirstNotification = false;
   let interruptedByInactivity = false;
   let inactivityTimer: ReturnType<typeof setTimeout> | undefined;
+  let rateLimitPoller: ReturnType<typeof setInterval> | undefined;
+  let rateLimitReadInFlight = false;
+  let rateLimitInitialPollSent = false;
   let resolveTurnCompleted: ((status: string) => void) | undefined;
   let turnCompletedPromise: Promise<string> | undefined;
   let turnStartError: unknown;
@@ -237,6 +242,46 @@ export async function executeCodexStepViaAppServer(
     }, timeout);
   };
 
+  const stopRateLimitPolling = () => {
+    if (rateLimitPoller) {
+      clearInterval(rateLimitPoller);
+      rateLimitPoller = undefined;
+    }
+    rateLimitInitialPollSent = false;
+  };
+
+  const pollRateLimits = () => {
+    if (!currentAttemptActive || !connection?.isAlive || !threadId || !currentTurnId) {
+      return;
+    }
+    if (rateLimitReadInFlight) {
+      return;
+    }
+
+    rateLimitReadInFlight = true;
+    void connection
+      .readRateLimits()
+      .catch((err) => {
+        debugLog('Failed to read Codex rate limits:', err);
+      })
+      .finally(() => {
+        rateLimitReadInFlight = false;
+      });
+  };
+
+  const startRateLimitPolling = () => {
+    if (!rateLimitPoller) {
+      rateLimitPoller = setInterval(() => {
+        pollRateLimits();
+      }, RATE_LIMIT_POLL_INTERVAL_MS);
+    }
+
+    if (!rateLimitInitialPollSent && currentTurnId) {
+      rateLimitInitialPollSent = true;
+      pollRateLimits();
+    }
+  };
+
   try {
     connection = await CodexAppServerConnection.create({
       cwd,
@@ -274,17 +319,20 @@ export async function executeCodexStepViaAppServer(
           resolveCurrentTurnStatus(extractTurnStatus(params));
           currentAttemptActive = false;
           clearInactivityTimer();
+          stopRateLimitPolling();
         } else if (keepSessionOpen && method === 'thread/status/changed') {
           if (extractThreadStatusType(params) === 'idle') {
             chatTurnCompleted = true;
             resolveCurrentTurnStatus('completed');
             currentAttemptActive = false;
             clearInactivityTimer();
+            stopRateLimitPolling();
           }
         } else if (method === 'turn/started') {
           currentTurnId = extractTurnId(params) ?? currentTurnId;
           chatTurnCompleted = false;
           chatTurnId = currentTurnId ?? chatTurnId;
+          startRateLimitPolling();
         }
       },
       onServerRequest: approvalHandler,
@@ -324,6 +372,7 @@ export async function executeCodexStepViaAppServer(
                 return;
               }
               currentTurnId = turnResult.turnId;
+              startRateLimitPolling();
               resetInactivityTimer();
             })
             .catch((err) => {
@@ -342,6 +391,7 @@ export async function executeCodexStepViaAppServer(
           const status = (await turnCompletedPromise) || 'completed';
           currentAttemptActive = false;
           clearInactivityTimer();
+          stopRateLimitPolling();
 
           if (status.toLowerCase() === 'completed') {
             if (turnStartError != null) {
@@ -368,6 +418,7 @@ export async function executeCodexStepViaAppServer(
         } catch (err) {
           currentAttemptActive = false;
           clearInactivityTimer();
+          stopRateLimitPolling();
 
           if (attempt >= maxAttempts) {
             throw err;
@@ -462,6 +513,7 @@ export async function executeCodexStepViaAppServer(
         ...(options?.outputSchema ? { outputSchema: options.outputSchema } : {}),
       });
       currentTurnId = startResult.turnId;
+      startRateLimitPolling();
       resetInactivityTimer();
 
       const steeringPump = (async () => {
@@ -502,6 +554,7 @@ export async function executeCodexStepViaAppServer(
         }
         successfulTurns += 1;
       } finally {
+        stopRateLimitPolling();
         inputQueue.close();
         await steeringPump;
         terminalInputReader?.stop();
@@ -604,6 +657,7 @@ export async function executeCodexStepViaAppServer(
             ...(options?.outputSchema ? { outputSchema: options.outputSchema } : {}),
           });
           chatTurnId = startResult.turnId;
+          startRateLimitPolling();
         };
 
         while (true) {
@@ -616,6 +670,7 @@ export async function executeCodexStepViaAppServer(
           successfulTurns += 1;
         }
       } finally {
+        stopRateLimitPolling();
         terminalInputReader?.stop();
         clearTunnelUserInputHandler();
         clearHeadlessUserInputHandler();

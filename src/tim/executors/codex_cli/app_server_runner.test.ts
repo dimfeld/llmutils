@@ -27,6 +27,7 @@ interface Harness {
     turnStart: ReturnType<typeof vi.fn>;
     turnSteer: ReturnType<typeof vi.fn>;
     turnInterrupt: ReturnType<typeof vi.fn>;
+    readRateLimits: ReturnType<typeof vi.fn>;
     close: ReturnType<typeof vi.fn>;
   };
   formatter: {
@@ -99,6 +100,7 @@ async function createHarness(options?: {
     turnStart: vi.fn(async () => ({ turnId: 'turn-1' })),
     turnSteer: vi.fn(async () => ({ turnId: 'turn-1' })),
     turnInterrupt: vi.fn(async () => {}),
+    readRateLimits: vi.fn(async () => ({})),
     close: vi.fn(async () => {}),
   };
 
@@ -261,6 +263,47 @@ describe('executeCodexStepViaAppServer', () => {
     expect(harness.connection.threadStart).toHaveBeenCalledTimes(1);
     expect(harness.connection.turnStart).toHaveBeenCalledTimes(1);
     expect(harness.connection.close).toHaveBeenCalledTimes(1);
+  });
+
+  test('polls codex rate limits at turn start and every 15 minutes while the turn is active', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = await createHarness();
+      const pollIntervalMs = 15 * 60 * 1000;
+
+      harness.connection.turnStart.mockImplementationOnce(async () => {
+        harness.connectionHandlers.onNotification?.('turn/started', {
+          turn: { id: 'turn-1' },
+        });
+        setTimeout(() => {
+          harness.connectionHandlers.onNotification?.('turn/completed', {
+            turn: { id: 'turn-1', status: 'completed' },
+          });
+        }, pollIntervalMs + 1);
+        return { turnId: 'turn-1' };
+      });
+
+      const result = harness.executeCodexStepViaAppServer(
+        'do work',
+        '/repo',
+        {},
+        {
+          inactivityTimeoutMs: 30 * 60 * 1000,
+        }
+      );
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(harness.connection.readRateLimits).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(pollIntervalMs);
+      expect(harness.connection.readRateLimits).toHaveBeenCalledTimes(2);
+
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(result).resolves.toBe('final agent message');
+      expect(harness.connection.readRateLimits).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test('treats thread idle status as fallback turn completion in chat sessions', async () => {

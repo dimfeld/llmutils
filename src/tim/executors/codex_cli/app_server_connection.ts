@@ -130,6 +130,10 @@ function extractNestedId(
   return undefined;
 }
 
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
 export class AppServerRequestError extends Error {
   constructor(
     message: string,
@@ -214,6 +218,10 @@ export class CodexAppServerConnection {
 
   async turnInterrupt(params: { threadId: string; turnId: string }): Promise<void> {
     await this.sendRequest('turn/interrupt', params);
+  }
+
+  async readRateLimits(): Promise<unknown> {
+    return await this.sendRequest('account/rateLimits/read');
   }
 
   async close(): Promise<void> {
@@ -412,6 +420,17 @@ export class CodexAppServerConnection {
         )
       );
       return;
+    }
+
+    if (pending.method === 'account/rateLimits/read' && isObjectRecord(message.result)) {
+      const rateLimits = message.result.rateLimits;
+      if (isObjectRecord(rateLimits)) {
+        try {
+          this.options.onNotification?.('account/rateLimits/updated', { rateLimits });
+        } catch (err) {
+          debugLog('Notification handler error:', err);
+        }
+      }
     }
 
     pending.resolve(message.result);
