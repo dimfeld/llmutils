@@ -13,6 +13,7 @@
   import PrReviewList from './PrReviewList.svelte';
   import PrReviewThreadList from './PrReviewThreadList.svelte';
   import ExternalLink from '@lucide/svelte/icons/external-link';
+  import Copy from '@lucide/svelte/icons/copy';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import { normalizeGitHubUsername } from '$common/github/username.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
@@ -33,6 +34,7 @@
   let refreshing = $state(false);
   let draftUpdating = $state(false);
   let actionError = $state<string | null>(null);
+  let branchCopied = $state(false);
 
   // Get planUuid if there's exactly one linked plan, otherwise undefined
   let planUuid = $derived(pr.linkedPlans.length === 1 ? pr.linkedPlans[0].planUuid : undefined);
@@ -82,6 +84,22 @@
       draftUpdating = false;
     }
   }
+
+  async function handleCopyHeadBranch() {
+    if (!pr.status.head_branch) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(pr.status.head_branch);
+      branchCopied = true;
+      setTimeout(() => {
+        branchCopied = false;
+      }, 1500);
+    } catch (err) {
+      actionError = err instanceof Error ? err.message : String(err);
+    }
+  }
 </script>
 
 <div class="space-y-4 p-6">
@@ -101,8 +119,21 @@
           <ExternalLink class="size-4" />
         </a>
       </h2>
-      <div class="mt-1 font-mono text-xs text-muted-foreground">
-        {pr.status.head_branch} &rarr; {pr.status.base_branch}
+      <div class="mt-1 flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
+        <span>{pr.status.head_branch}</span>
+        <button
+          type="button"
+          onclick={handleCopyHeadBranch}
+          class="rounded p-0.5 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
+          aria-label="Copy head branch"
+          title="Copy head branch"
+        >
+          <Copy class="size-3" />
+        </button>
+        <span class="text-foreground/60">{pr.status.base_branch ? `→ ${pr.status.base_branch}` : ''}</span>
+        {#if branchCopied}
+          <span class="text-emerald-600">Copied</span>
+        {/if}
       </div>
     </div>
     <div class="flex shrink-0 items-center gap-1">
