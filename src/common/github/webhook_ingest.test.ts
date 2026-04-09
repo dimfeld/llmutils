@@ -13,7 +13,7 @@ import {
   updateWebhookCursor,
   pruneOldWebhookLogs,
 } from '../../tim/db/webhook_log.js';
-import { getPrStatusByUrl } from '../../tim/db/pr_status.js';
+import { getPrStatusByUrl, upsertPrStatus } from '../../tim/db/pr_status.js';
 
 const mocks = vi.hoisted(() => ({
   fetchWebhookEvents: vi.fn<(...args: unknown[]) => Promise<unknown[]>>(),
@@ -257,7 +257,8 @@ describe('common/github/webhook_ingest', () => {
     expect(mocks.fetchAndUpdatePrReviewThreads).toHaveBeenCalledTimes(1);
     expect(mocks.fetchAndUpdatePrReviewThreads).toHaveBeenCalledWith(
       db,
-      'example/repo/pull/52'
+      'example/repo/pull/52',
+      undefined
     );
   });
 
@@ -323,8 +324,72 @@ describe('common/github/webhook_ingest', () => {
     expect(mocks.fetchAndUpdatePrReviewThreads).toHaveBeenCalledTimes(1);
     expect(mocks.fetchAndUpdatePrReviewThreads).toHaveBeenCalledWith(
       db,
-      'example/repo/pull/53'
+      'example/repo/pull/53',
+      'PRRT_1'
     );
+  });
+
+  test('ingestWebhookEvents skips thread fetch for resolved events when the thread is already cached', async () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/54',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 54,
+      title: 'Cached thread PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-30T09:59:00.000Z',
+      reviewThreads: [
+        {
+          threadId: 'PRRT_cached',
+          path: 'src/example.ts',
+          line: 11,
+          isResolved: false,
+          isOutdated: false,
+          comments: [{ commentId: 'comment-cached', body: 'Cached thread.' }],
+        },
+      ],
+    });
+
+    mocks.fetchWebhookEvents.mockResolvedValueOnce([
+      {
+        id: 33,
+        deliveryId: 'delivery-review-thread-resolved',
+        eventType: 'pull_request_review_thread',
+        action: 'resolved',
+        repositoryFullName: 'example/repo',
+        receivedAt: '2026-03-30T10:01:00.000Z',
+        payloadJson: JSON.stringify({
+          action: 'resolved',
+          repository: { full_name: 'example/repo' },
+          pull_request: {
+            number: 54,
+            title: 'Cached thread PR',
+            state: 'open',
+            draft: false,
+            merged_at: null,
+            user: { login: 'alice' },
+            head: { sha: 'sha-54', ref: 'feature/webhook' },
+            base: { ref: 'main' },
+          },
+          thread: {
+            node_id: 'PRRT_cached',
+            is_resolved: true,
+          },
+        }),
+      },
+    ]);
+
+    const result = await ingestWebhookEvents(db);
+
+    expect(result.errors).toEqual([]);
+    expect(mocks.fetchAndUpdatePrMergeableStatus).not.toHaveBeenCalled();
+    expect(mocks.fetchAndUpdatePrReviewThreads).not.toHaveBeenCalled();
+    expect(
+      getPrStatusByUrl(db, 'https://github.com/example/repo/pull/54', {
+        includeReviewThreads: true,
+      })?.reviewThreads?.[0]?.thread.is_resolved
+    ).toBe(1);
   });
 
   test('ingestWebhookEvents marks a linked needs_review plan done when the PR is merged and the plan is fully finished', async () => {

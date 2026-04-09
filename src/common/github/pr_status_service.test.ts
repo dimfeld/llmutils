@@ -21,6 +21,7 @@ vi.mock('../../common/github/pr_status.ts', () => ({
   fetchPrFullStatus: vi.fn(),
   fetchPrCheckStatus: vi.fn(),
   fetchPrMergeableAndReviewDecision: vi.fn(),
+  fetchPrReviewThread: vi.fn(),
   fetchPrReviewThreads: vi.fn(),
 }));
 
@@ -35,6 +36,7 @@ import {
   fetchPrCheckStatus,
   fetchPrFullStatus,
   fetchPrMergeableAndReviewDecision,
+  fetchPrReviewThread,
   fetchPrReviewThreads,
 } from '../../common/github/pr_status.ts';
 
@@ -430,6 +432,81 @@ describe('common/github/pr_status_service', () => {
     expect(result.status.check_rollup_state).toBe('failure');
     expect(result.reviews.map((review) => review.author)).toEqual(['bob']);
     expect(result.labels.map((label) => label.name)).toEqual(['bug']);
+  });
+
+  test('fetchAndUpdatePrReviewThreads updates only the targeted thread when a thread id is provided', async () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/230',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 230,
+      title: 'Targeted thread refresh',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      reviewThreads: [
+        {
+          threadId: 'thread-1',
+          path: 'src/one.ts',
+          line: 10,
+          isResolved: false,
+          isOutdated: false,
+          comments: [{ commentId: 'comment-1', body: 'Keep this thread.' }],
+        },
+        {
+          threadId: 'thread-2',
+          path: 'src/two.ts',
+          line: 20,
+          isResolved: false,
+          isOutdated: false,
+          comments: [{ commentId: 'comment-2', body: 'Replace this thread.' }],
+        },
+      ],
+    });
+
+    const mockFetchPrReviewThread = vi.mocked(fetchPrReviewThread);
+    const mockFetchPrReviewThreads = vi.mocked(fetchPrReviewThreads);
+    const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
+    const mockCanonicalizePrUrl = vi.mocked(canonicalizePrUrl);
+    const mockTryCanonicalizePrUrl = vi.mocked(tryCanonicalizePrUrl);
+
+    mockFetchPrReviewThread.mockResolvedValue({
+      threadId: 'thread-2',
+      path: 'src/two.ts',
+      line: 22,
+      isResolved: true,
+      isOutdated: false,
+      comments: [{ commentId: 'comment-2b', body: 'Updated thread body.' }],
+    });
+    mockParsePrOrIssueNumber.mockResolvedValue({ owner: 'example', repo: 'repo', number: 230 });
+    mockCanonicalizePrUrl.mockReturnValue('https://github.com/example/repo/pull/230');
+    mockTryCanonicalizePrUrl.mockReturnValue('https://github.com/example/repo/pull/230');
+
+    const { fetchAndUpdatePrReviewThreads } = await import('./pr_status_service.ts');
+    await fetchAndUpdatePrReviewThreads(
+      db,
+      'https://github.com/example/repo/pull/230',
+      'thread-2'
+    );
+
+    expect(fetchPrReviewThread).toHaveBeenCalledWith('thread-2');
+    expect(mockFetchPrReviewThreads).not.toHaveBeenCalled();
+
+    const detail = getPrStatusByUrl(db, 'https://github.com/example/repo/pull/230', {
+      includeReviewThreads: true,
+    });
+    expect(detail?.reviewThreads?.map((thread) => thread.thread.thread_id)).toEqual([
+      'thread-1',
+      'thread-2',
+    ]);
+    expect(detail?.reviewThreads?.find((thread) => thread.thread.thread_id === 'thread-1')?.comments)
+      .toEqual([expect.objectContaining({ comment_id: 'comment-1' })]);
+    expect(detail?.reviewThreads?.find((thread) => thread.thread.thread_id === 'thread-2')?.thread.line)
+      .toBe(22);
+    expect(detail?.reviewThreads?.find((thread) => thread.thread.thread_id === 'thread-2')?.thread.is_resolved)
+      .toBe(1);
+    expect(detail?.reviewThreads?.find((thread) => thread.thread.thread_id === 'thread-2')?.comments)
+      .toEqual([expect.objectContaining({ comment_id: 'comment-2b' })]);
   });
 
   test('refreshPrCheckStatus canonicalizes equivalent PR URLs before cache lookup', async () => {

@@ -158,8 +158,6 @@ export async function ingestWebhookEvents(db: Database): Promise<IngestResult> {
     return { eventsIngested: 0, prsUpdated: [], errors: [] };
   }
 
-  console.log(`[webhook-ingest] starting ingest from ${serverUrl}`);
-
   const token = getWebhookInternalApiToken();
   if (!token) {
     console.warn('TIM_WEBHOOK_SERVER_URL is set but WEBHOOK_INTERNAL_API_TOKEN is missing');
@@ -173,7 +171,7 @@ export async function ingestWebhookEvents(db: Database): Promise<IngestResult> {
   const BATCH_SIZE = 500;
   const prsUpdated = new Set<string>();
   const errors: string[] = [];
-  /** Deduplicated set of PRs needing API refresh, keyed by "owner/repo#number:type". */
+  /** Deduplicated set of PRs needing API refresh, keyed by "owner/repo#number:type[:threadId]". */
   const apiRefreshTargets = new Map<string, PrRefreshTarget>();
   let eventsProcessed = 0;
   let cursorId = getWebhookCursor(db);
@@ -188,7 +186,6 @@ export async function ingestWebhookEvents(db: Database): Promise<IngestResult> {
       afterId: cursorId,
       limit: BATCH_SIZE,
     });
-    console.log(`[webhook-ingest] fetched ${events.length} events after cursor ${cursorId}`);
     if (events.length === 0) {
       break;
     }
@@ -225,7 +222,7 @@ export async function ingestWebhookEvents(db: Database): Promise<IngestResult> {
               : event.eventType === 'pull_request_review_thread' ||
                   event.eventType === 'pull_request_review_comment'
                 ? handlePullRequestReviewThreadEvent(db, payload, handlerOptions)
-              : event.eventType === 'check_run'
+                : event.eventType === 'check_run'
                   ? handleCheckRunEvent(db, payload, handlerOptions)
                   : null;
 
@@ -248,9 +245,12 @@ export async function ingestWebhookEvents(db: Database): Promise<IngestResult> {
         // Collect refresh targets. Deduplicate by PR and refresh type so a review-thread
         // refresh cannot overwrite a mergeable refresh for the same PR in the same batch.
         for (const target of result.apiRefreshTargets ?? []) {
-          const key = `${target.owner}/${target.repo}#${target.prNumber}:${target.type}`;
+          const key =
+            target.type === 'review_threads'
+              ? `${target.owner}/${target.repo}#${target.prNumber}:${target.type}:${target.threadId ?? 'all'}`
+              : `${target.owner}/${target.repo}#${target.prNumber}:${target.type}`;
           console.log(
-            `[webhook-ingest] queued refresh key=${key} type=${target.type} op=${target.operation}`
+            `[webhook-ingest] queued refresh key=${key} type=${target.type} thread=${target.threadId ?? 'all'} op=${target.operation}`
           );
           apiRefreshTargets.set(key, target);
         }
@@ -294,24 +294,28 @@ export async function ingestWebhookEvents(db: Database): Promise<IngestResult> {
     const refreshType = target.type ?? 'mergeable'; // Default to mergeable for backwards compatibility
     if (refreshType === 'review_threads') {
       console.log(
-        `[webhook-ingest] starting review-thread refresh ${target.owner}/${target.repo}#${target.prNumber}`
+        `[webhook-ingest] starting review-thread refresh ${target.owner}/${target.repo}#${target.prNumber} thread=${target.threadId ?? 'all'}`
       );
       return fetchAndUpdatePrReviewThreads(
         db,
-        `${target.owner}/${target.repo}/pull/${target.prNumber}`
+        `${target.owner}/${target.repo}/pull/${target.prNumber}`,
+        target.threadId
       )
         .then(() => {
           console.log(
-            `[webhook-ingest] completed review-thread refresh ${target.owner}/${target.repo}#${target.prNumber}`
+            `[webhook-ingest] completed review-thread refresh ${target.owner}/${target.repo}#${target.prNumber} thread=${target.threadId ?? 'all'}`
           );
         })
         .catch((err: unknown) => {
           console.error(
-            `[webhook-ingest] review-thread refresh failed ${target.owner}/${target.repo}#${target.prNumber}: ${err instanceof Error ? err.message : String(err)}`
+            `[webhook-ingest] review-thread refresh failed ${target.owner}/${target.repo}#${target.prNumber} thread=${target.threadId ?? 'all'}: ${err instanceof Error ? err.message : String(err)}`
           );
-          throw new Error(`${target.owner}/${target.repo}#${target.prNumber}: ${target.operation}`, {
-            cause: err instanceof Error ? err : new Error(String(err)),
-          });
+          throw new Error(
+            `${target.owner}/${target.repo}#${target.prNumber}: ${target.operation}`,
+            {
+              cause: err instanceof Error ? err : new Error(String(err)),
+            }
+          );
         });
     } else {
       console.log(
@@ -334,9 +338,11 @@ export async function ingestWebhookEvents(db: Database): Promise<IngestResult> {
   });
 
   const apiResults = await Promise.allSettled(apiCallPromises);
-  console.log(
-    `[webhook-ingest] refresh results fulfilled=${apiResults.filter((result) => result.status === 'fulfilled').length} rejected=${apiResults.filter((result) => result.status === 'rejected').length}`
-  );
+  if (apiResults.length) {
+    console.log(
+      `[webhook-ingest] refresh results fulfilled=${apiResults.filter((result) => result.status === 'fulfilled').length} rejected=${apiResults.filter((result) => result.status === 'rejected').length}`
+    );
+  }
   for (const result of apiResults) {
     if (result.status === 'rejected') {
       errors.push(
@@ -350,10 +356,6 @@ export async function ingestWebhookEvents(db: Database): Promise<IngestResult> {
   if (eventsProcessed > 0) {
     pruneOldWebhookLogs(db, 30);
   }
-
-  console.log(
-    `[webhook-ingest] finished eventsIngested=${eventsProcessed} prsUpdated=${prsUpdated.size} errors=${errors.length}`
-  );
 
   return {
     eventsIngested: eventsProcessed,

@@ -4,6 +4,7 @@ import {
   fetchPrCheckStatus,
   fetchPrFullStatus,
   fetchPrMergeableAndReviewDecision,
+  fetchPrReviewThread,
   fetchPrReviewThreads,
 } from './pr_status.js';
 import {
@@ -11,6 +12,7 @@ import {
   getPrStatusByRepoAndNumber,
   updatePrMergeableAndReviewDecision,
   updatePrCheckRuns,
+  upsertPrReviewThread,
   upsertPrStatus,
   type PrStatusDetail,
   type UpsertPrStatusInput,
@@ -169,7 +171,11 @@ export async function fetchAndUpdatePrMergeableStatus(
   );
 }
 
-export async function fetchAndUpdatePrReviewThreads(db: Database, prUrl: string): Promise<void> {
+export async function fetchAndUpdatePrReviewThreads(
+  db: Database,
+  prUrl: string,
+  threadId?: string | null
+): Promise<void> {
   const canonicalPrUrl = canonicalizePrUrl(prUrl);
   const existing = getPrStatusByUrl(db, canonicalPrUrl);
   if (!existing) {
@@ -183,6 +189,23 @@ export async function fetchAndUpdatePrReviewThreads(db: Database, prUrl: string)
   const parsed = await parsePrOrIssueNumber(canonicalPrUrl);
   if (!parsed) {
     throw new Error(`Invalid GitHub pull request identifier: ${canonicalPrUrl}`);
+  }
+
+  if (threadId) {
+    console.log(
+      `[pr_status] fetching review thread ${threadId} for ${canonicalPrUrl} (${parsed.owner}/${parsed.repo}#${parsed.number})`
+    );
+    try {
+      const reviewThread = await fetchPrReviewThread(threadId);
+      upsertPrReviewThread(db, existing.status.id, reviewThread);
+      console.log(`[pr_status] stored review thread ${threadId} for ${canonicalPrUrl}`);
+      return;
+    } catch (error) {
+      console.warn(
+        `[pr_status] targeted review-thread fetch failed for ${canonicalPrUrl} thread=${threadId}; falling back to full refresh:`,
+        error
+      );
+    }
   }
 
   console.log(

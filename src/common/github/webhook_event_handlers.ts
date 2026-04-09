@@ -25,6 +25,8 @@ export interface PrRefreshTarget {
   operation: string;
   /** Type of refresh operation. */
   type: 'mergeable' | 'review_threads';
+  /** Optional review thread node ID for targeted thread refreshes. */
+  threadId?: string;
 }
 
 export interface WebhookHandlerResult {
@@ -376,10 +378,16 @@ function parseReviewThreadPayload(payload: unknown): ParsedReviewThreadPayload |
   // Extract thread data if available
   let parsedThread: { id: string | null; isResolved: boolean | null } | null = null;
   if (thread && typeof thread === 'object') {
-    const threadId = (thread as { id?: unknown }).id;
+    const threadId = (thread as { id?: unknown; node_id?: unknown }).id;
+    const threadNodeId = (thread as { node_id?: unknown }).node_id;
     const isResolved = (thread as { is_resolved?: unknown }).is_resolved;
     parsedThread = {
-      id: typeof threadId === 'string' ? threadId : null,
+      id:
+        typeof threadId === 'string'
+          ? threadId
+          : typeof threadNodeId === 'string'
+            ? threadNodeId
+            : null,
       isResolved: typeof isResolved === 'boolean' ? isResolved : null,
     };
   }
@@ -392,12 +400,20 @@ function parseReviewThreadPayload(payload: unknown): ParsedReviewThreadPayload |
     createdAt: string | null;
   } | null = null;
   if (comment && typeof comment === 'object') {
-    const commentId = (comment as { id?: unknown }).id;
+    const commentId = (comment as { id?: unknown; node_id?: unknown }).id;
+    const commentNodeId = (comment as { node_id?: unknown }).node_id;
     const body = (comment as { body?: unknown }).body;
     const commentUser = (comment as { user?: unknown }).user;
     const createdAt = (comment as { created_at?: unknown }).created_at;
     parsedComment = {
-      id: typeof commentId === 'string' ? commentId : null,
+      id:
+        typeof commentNodeId === 'string'
+          ? commentNodeId
+          : typeof commentId === 'string'
+            ? commentId
+            : typeof commentId === 'number'
+              ? String(commentId)
+              : null,
       body: typeof body === 'string' ? body : null,
       author:
         typeof commentUser === 'object' && commentUser
@@ -659,6 +675,42 @@ export function handlePullRequestReviewThreadEvent(
     `[webhook-handler] review-thread event action=${action} pr=${canonicalPrUrl} thread=${parsed.thread?.id ?? 'none'} comment=${parsed.comment?.id ?? 'none'} resolved=${parsed.thread?.isResolved ?? 'unknown'}`
   );
 
+  if (
+    parsed.thread?.id &&
+    parsed.thread.isResolved !== null &&
+    (action === 'resolved' || action === 'unresolved')
+  ) {
+    const existingThread = db
+      .prepare(
+        `
+          SELECT id
+          FROM pr_review_thread
+          WHERE pr_status_id = ? AND thread_id = ?
+        `
+      )
+      .get(existing.status.id, parsed.thread.id) as { id: number } | null;
+
+    if (existingThread) {
+      db.prepare(
+        `
+          UPDATE pr_review_thread
+          SET is_resolved = ?
+          WHERE pr_status_id = ? AND thread_id = ?
+        `
+      ).run(parsed.thread.isResolved ? 1 : 0, existing.status.id, parsed.thread.id);
+
+      console.log(
+        `[webhook-handler] review-thread event applied locally pr=${canonicalPrUrl} thread=${parsed.thread.id} resolved=${parsed.thread.isResolved}`
+      );
+
+      return {
+        updated: true,
+        prUrl: canonicalPrUrl,
+        apiRefreshTargets: [],
+      };
+    }
+  }
+
   // Return a target to refresh review threads for this PR
   const apiRefreshTargets: PrRefreshTarget[] = [
     {
@@ -667,6 +719,7 @@ export function handlePullRequestReviewThreadEvent(
       prNumber: pullRequest.number,
       operation: `review thread ${action}`,
       type: 'review_threads',
+      threadId: parsed.thread?.id ?? undefined,
     },
   ];
 

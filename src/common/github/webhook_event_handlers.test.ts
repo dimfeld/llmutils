@@ -19,6 +19,7 @@ import {
   handlePullRequestEvent,
   handlePullRequestReviewEvent,
   handleCheckRunEvent,
+  handlePullRequestReviewThreadEvent,
 } from './webhook_event_handlers.js';
 
 describe('common/github/webhook_event_handlers', () => {
@@ -72,6 +73,7 @@ describe('common/github/webhook_event_handlers', () => {
         repo: 'repo',
         prNumber: 41,
         operation: 'mergeable/review_decision refresh failed',
+        type: 'mergeable',
       },
     ]);
     expect(detail?.status.author).toBe('alice');
@@ -160,6 +162,7 @@ describe('common/github/webhook_event_handlers', () => {
         repo: 'repo',
         prNumber: 411,
         operation: 'mergeable/review_decision refresh failed',
+        type: 'mergeable',
       },
     ]);
   });
@@ -254,8 +257,114 @@ describe('common/github/webhook_event_handlers', () => {
       }),
     ]);
     expect(result.apiRefreshTargets).toEqual([
-      { owner: 'example', repo: 'repo', prNumber: 42, operation: 'review_decision refresh failed' },
+      {
+        owner: 'example',
+        repo: 'repo',
+        prNumber: 42,
+        operation: 'review_decision refresh failed',
+        type: 'mergeable',
+      },
     ]);
+  });
+
+  test('handlePullRequestReviewThreadEvent parses thread node_id and numeric comment id for targeted refresh', () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/44',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 44,
+      title: 'Existing PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    const result = handlePullRequestReviewThreadEvent(db, {
+      action: 'resolved',
+      repository: { full_name: 'example/repo' },
+      pull_request: {
+        number: 44,
+        title: 'Existing PR',
+        state: 'open',
+        draft: false,
+      },
+      thread: {
+        node_id: 'PRRT_thread_44',
+        is_resolved: true,
+      },
+      comment: {
+        id: 3056044198,
+        body: 'Needs a fix.',
+        created_at: '2026-03-30T10:00:00.000Z',
+        user: { login: 'reviewer-1' },
+      },
+    });
+
+    expect(result).toEqual({
+      updated: true,
+      prUrl: 'https://github.com/example/repo/pull/44',
+      apiRefreshTargets: [
+        {
+          owner: 'example',
+          repo: 'repo',
+          prNumber: 44,
+          operation: 'review thread resolved',
+          type: 'review_threads',
+          threadId: 'PRRT_thread_44',
+        },
+      ],
+    });
+  });
+
+  test('handlePullRequestReviewThreadEvent updates resolved state locally when the thread is already cached', () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/46',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 46,
+      title: 'Existing PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      reviewThreads: [
+        {
+          threadId: 'PRRT_thread_46',
+          path: 'src/example.ts',
+          line: 12,
+          isResolved: false,
+          isOutdated: false,
+          comments: [{ commentId: 'comment-46', body: 'Existing thread.' }],
+        },
+      ],
+    });
+
+    const result = handlePullRequestReviewThreadEvent(db, {
+      action: 'resolved',
+      repository: { full_name: 'example/repo' },
+      pull_request: {
+        number: 46,
+        title: 'Existing PR',
+        state: 'open',
+        draft: false,
+      },
+      thread: {
+        node_id: 'PRRT_thread_46',
+        is_resolved: true,
+      },
+    });
+
+    expect(result).toEqual({
+      updated: true,
+      prUrl: 'https://github.com/example/repo/pull/46',
+      apiRefreshTargets: [],
+    });
+    expect(
+      db
+        .prepare(
+          `SELECT is_resolved FROM pr_review_thread WHERE pr_status_id = (SELECT id FROM pr_status WHERE pr_url = ?) AND thread_id = ?`
+        )
+        .get('https://github.com/example/repo/pull/46', 'PRRT_thread_46')
+    ).toEqual({ is_resolved: 1 });
   });
 
   test('handlePullRequestReviewEvent returns refresh target for approved reviews', () => {
@@ -286,6 +395,7 @@ describe('common/github/webhook_event_handlers', () => {
         repo: 'repo',
         prNumber: 422,
         operation: 'review_decision refresh failed',
+        type: 'mergeable',
       },
     ]);
   });
@@ -363,6 +473,7 @@ describe('common/github/webhook_event_handlers', () => {
         repo: 'repo',
         prNumber: 143,
         operation: 'review_decision refresh failed',
+        type: 'mergeable',
       },
     ]);
 
@@ -561,6 +672,7 @@ describe('common/github/webhook_event_handlers', () => {
         repo: 'repo',
         prNumber: 45,
         operation: 'mergeable/review_decision refresh failed',
+        type: 'mergeable',
       },
     ]);
     const detail = getPrStatusByUrl(db, 'https://github.com/example/repo/pull/45');
@@ -598,6 +710,7 @@ describe('common/github/webhook_event_handlers', () => {
         repo: 'repo',
         prNumber: 48,
         operation: 'mergeable/review_decision refresh failed',
+        type: 'mergeable',
       },
     ]);
   });

@@ -239,6 +239,10 @@ interface ReviewThreadCommentsGraphQlResponse {
   } | null;
 }
 
+interface ReviewThreadGraphQlResponse {
+  node: GraphQlReviewThreadNode | null;
+}
+
 const fullStatusQuery = `
   query GetPrFullStatus($owner: String!, $repo: String!, $prNumber: Int!) {
     repository(owner: $owner, name: $repo) {
@@ -412,6 +416,43 @@ const reviewThreadCommentsQuery = `
     node(id: $threadId) {
       ... on PullRequestReviewThread {
         comments(first: 100, after: $commentsCursor) {
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+          nodes {
+            id
+            databaseId
+            body
+            diffHunk
+            state
+            createdAt
+            author {
+              login
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+const reviewThreadQuery = `
+  query GetPrReviewThread($threadId: ID!) {
+    node(id: $threadId) {
+      ... on PullRequestReviewThread {
+        id
+        isResolved
+        isOutdated
+        line
+        originalLine
+        originalStartLine
+        path
+        diffSide
+        startDiffSide
+        startLine
+        subjectType
+        comments(first: 100) {
           pageInfo {
             hasNextPage
             endCursor
@@ -687,6 +728,36 @@ function normalizeReviewThreadComment(
   };
 }
 
+async function normalizeReviewThread(
+  thread: GraphQlReviewThreadNode
+): Promise<StoredPrReviewThreadInput> {
+  const initialComments = (thread.comments.nodes ?? [])
+    .filter(
+      (
+        comment: GraphQlReviewThreadCommentNode | null
+      ): comment is GraphQlReviewThreadCommentNode => comment !== null
+    )
+    .map(normalizeReviewThreadComment);
+  const additionalComments = thread.comments.pageInfo.hasNextPage
+    ? await fetchAllReviewThreadComments(thread.id, thread.comments.pageInfo.endCursor)
+    : [];
+
+  return {
+    threadId: thread.id,
+    path: thread.path,
+    line: thread.line,
+    originalLine: thread.originalLine,
+    originalStartLine: thread.originalStartLine,
+    startLine: thread.startLine,
+    diffSide: thread.diffSide,
+    startDiffSide: thread.startDiffSide,
+    isResolved: thread.isResolved,
+    isOutdated: thread.isOutdated,
+    subjectType: thread.subjectType,
+    comments: [...initialComments, ...additionalComments],
+  };
+}
+
 async function fetchAllReviewThreadComments(
   threadId: string,
   afterCursor?: string | null
@@ -831,31 +902,7 @@ export async function fetchPrReviewThreads(
     for (const thread of (pullRequest.reviewThreads.nodes ?? []).filter(
       (node: GraphQlReviewThreadNode | null): node is GraphQlReviewThreadNode => node !== null
     )) {
-      const initialComments = (thread.comments.nodes ?? [])
-        .filter(
-          (
-            comment: GraphQlReviewThreadCommentNode | null
-          ): comment is GraphQlReviewThreadCommentNode => comment !== null
-        )
-        .map(normalizeReviewThreadComment);
-      const additionalComments = thread.comments.pageInfo.hasNextPage
-        ? await fetchAllReviewThreadComments(thread.id, thread.comments.pageInfo.endCursor)
-        : [];
-
-      reviewThreads.push({
-        threadId: thread.id,
-        path: thread.path,
-        line: thread.line,
-        originalLine: thread.originalLine,
-        originalStartLine: thread.originalStartLine,
-        startLine: thread.startLine,
-        diffSide: thread.diffSide,
-        startDiffSide: thread.startDiffSide,
-        isResolved: thread.isResolved,
-        isOutdated: thread.isOutdated,
-        subjectType: thread.subjectType,
-        comments: [...initialComments, ...additionalComments],
-      });
+      reviewThreads.push(await normalizeReviewThread(thread));
     }
 
     if (!pullRequest.reviewThreads.pageInfo.hasNextPage) {
@@ -864,6 +911,19 @@ export async function fetchPrReviewThreads(
 
     threadsCursor = pullRequest.reviewThreads.pageInfo.endCursor;
   }
+}
+
+export async function fetchPrReviewThread(threadId: string): Promise<StoredPrReviewThreadInput> {
+  const response = await getOctokit().graphql<ReviewThreadGraphQlResponse>(reviewThreadQuery, {
+    threadId,
+  });
+
+  const thread = response.node;
+  if (!thread) {
+    throw new Error(`Review thread ${threadId} not found`);
+  }
+
+  return normalizeReviewThread(thread);
 }
 
 export async function fetchPrMergeableAndReviewDecision(

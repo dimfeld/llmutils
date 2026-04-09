@@ -390,6 +390,79 @@ function replaceReviewThreads(
   }
 }
 
+export function upsertPrReviewThread(
+  db: Database,
+  prStatusId: number,
+  thread: StoredPrReviewThreadInput
+): void {
+  db.prepare('DELETE FROM pr_review_thread WHERE pr_status_id = ? AND thread_id = ?').run(
+    prStatusId,
+    thread.threadId
+  );
+
+  const insertThread = db.prepare(
+    `
+      INSERT INTO pr_review_thread (
+        pr_status_id,
+        thread_id,
+        path,
+        line,
+        original_line,
+        original_start_line,
+        start_line,
+        diff_side,
+        start_diff_side,
+        is_resolved,
+        is_outdated,
+        subject_type
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `
+  );
+  const insertComment = db.prepare(
+    `
+      INSERT INTO pr_review_thread_comment (
+        review_thread_id,
+        comment_id,
+        database_id,
+        author,
+        body,
+        diff_hunk,
+        state,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `
+  );
+
+  const result = insertThread.run(
+    prStatusId,
+    thread.threadId,
+    thread.path,
+    thread.line ?? null,
+    thread.originalLine ?? null,
+    thread.originalStartLine ?? null,
+    thread.startLine ?? null,
+    thread.diffSide ?? null,
+    thread.startDiffSide ?? null,
+    thread.isResolved ? 1 : 0,
+    thread.isOutdated ? 1 : 0,
+    thread.subjectType ?? null
+  );
+  const reviewThreadId = Number(result.lastInsertRowid);
+
+  for (const comment of thread.comments) {
+    insertComment.run(
+      reviewThreadId,
+      comment.commentId,
+      comment.databaseId ?? null,
+      comment.author ?? null,
+      comment.body ?? null,
+      comment.diffHunk ?? null,
+      comment.state ?? null,
+      comment.createdAt ?? null
+    );
+  }
+}
+
 function getDetailById(
   db: Database,
   prStatusId: number,
