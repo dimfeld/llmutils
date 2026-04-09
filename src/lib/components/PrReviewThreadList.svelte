@@ -9,6 +9,7 @@
   } from '$lib/remote/review_thread_actions.remote.js';
   import { formatReviewCommentForClipboard } from '$lib/utils/pr_display.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
+  import Diff from './Diff.svelte';
 
   let {
     threads,
@@ -281,8 +282,17 @@
 
       <div class="border-t border-gray-200 dark:border-gray-700">
         {#if diffHunk}
-          <pre
-            class="overflow-x-auto border-b border-gray-200 bg-gray-50 px-3 py-2 font-mono text-xs leading-relaxed text-gray-700 dark:border-gray-700 dark:bg-gray-900/50 dark:text-gray-300">{diffHunk}</pre>
+          <div
+            class="border-b border-gray-200 dark:border-gray-700"
+            style="--diffs-font-size: 12px; --diffs-line-height: 1.5;"
+          >
+            <Diff
+              patch={diffHunk}
+              filename={thread.thread.path}
+              disableFileHeader
+              hunkSeparators="simple"
+            />
+          </div>
         {/if}
 
         <div class="divide-y divide-gray-100 dark:divide-gray-800">
@@ -351,7 +361,9 @@
           </div>
         {/if}
 
-        <div class="flex items-center gap-2 border-t border-gray-200 px-3 py-2 text-xs dark:border-gray-700">
+        <div
+          class="flex items-center gap-2 border-t border-gray-200 px-3 py-2 text-xs dark:border-gray-700"
+        >
           {@render threadControls(thread, isResolved)}
         </div>
       </div>

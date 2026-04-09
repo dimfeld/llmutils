@@ -18,7 +18,6 @@ import {
 } from './webhook_event_handlers.js';
 import { constructGitHubRepositoryId } from './pull_requests.js';
 import { getKnownRepoFullNames } from '../../tim/db/pr_status.js';
-import { loadEffectiveConfig } from '../../tim/configLoader.js';
 import { removeAssignment } from '../../tim/db/assignment.js';
 import {
   getPlanByUuid,
@@ -29,7 +28,6 @@ import {
   upsertPlan,
 } from '../../tim/db/plan.js';
 import { getProject } from '../../tim/db/project.js';
-import { getPreferredProjectGitRoot } from '../../tim/workspace/workspace_info.js';
 import {
   getWebhookCursor,
   insertWebhookLogEntry,
@@ -42,17 +40,6 @@ import { toPlanUpsertInput } from '../../tim/db/plan_sync.js';
 import { type PlanSchema } from '../../tim/planSchema.js';
 import { getDefaultConfig } from '../../tim/configSchema.js';
 import { getPrStatusByRepoAndNumber } from '../../tim/db/pr_status.js';
-
-function computeNeedsFinishExecutor(
-  docsUpdatedAt: string | null,
-  lessonsAppliedAt: string | null,
-  finishConfig: { updateDocs?: { mode?: string; applyLessons?: boolean } }
-): boolean {
-  const mode = finishConfig.updateDocs?.mode ?? 'never';
-  const needsDocs = docsUpdatedAt === null && mode !== 'never';
-  const needsLessons = lessonsAppliedAt === null && finishConfig.updateDocs?.applyLessons === true;
-  return needsDocs || needsLessons;
-}
 
 function isMergedPrPayload(payload: unknown): payload is {
   pull_request: { number: number; merged_at?: string | null; state?: string };
@@ -86,9 +73,6 @@ async function autoCompleteMergedLinkedPlans(
   if (!project) {
     return;
   }
-
-  const cwd = getPreferredProjectGitRoot(db, project.id);
-  const finishConfig = cwd ? await loadEffectiveConfig(undefined, { cwd }) : getDefaultConfig();
 
   const linkedPlanRows = db
     .prepare(
@@ -128,13 +112,7 @@ async function autoCompleteMergedLinkedPlans(
       getPlanTagsByUuid(db, planUuid).map((tag) => tag.tag),
       uuidToPlanId
     );
-    if (
-      plan.tasks.length === 0 ||
-      !plan.tasks.every((task) => task.done === true) ||
-      computeNeedsFinishExecutor(plan.docsUpdatedAt ?? null, plan.lessonsAppliedAt ?? null, {
-        updateDocs: finishConfig.updateDocs,
-      })
-    ) {
+    if (plan.tasks.length === 0 || !plan.tasks.every((task) => task.done === true)) {
       continue;
     }
 
@@ -156,7 +134,7 @@ async function autoCompleteMergedLinkedPlans(
   }
 
   for (const parentId of completedParents) {
-    await checkAndMarkParentDone(parentId, finishConfig, { db, projectId: project.id });
+    await checkAndMarkParentDone(parentId, getDefaultConfig(), { db, projectId: project.id });
   }
 }
 

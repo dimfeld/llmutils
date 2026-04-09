@@ -243,6 +243,59 @@ describe('common/github/webhook_ingest', () => {
     expect(plan?.lessons_applied_at).toBe('2026-03-30T09:45:00.000Z');
   });
 
+  test('ingestWebhookEvents marks a linked needs_review plan done when the PR is merged even without docs/lessons timestamps', async () => {
+    upsertPlan(db, getOrCreateProject(db, 'github.com__example__repo').id, {
+      uuid: 'plan-2',
+      planId: 2,
+      title: 'Plan 2',
+      branch: 'feature/webhook-no-timestamps',
+      filename: '2.plan.md',
+      status: 'needs_review',
+      tasks: [
+        { title: 'Task 1', description: 'Done', done: true },
+        { title: 'Task 2', description: 'Done', done: true },
+      ],
+    });
+
+    mocks.fetchWebhookEvents.mockResolvedValueOnce([
+      {
+        id: 16,
+        deliveryId: 'delivery-merged-no-timestamps',
+        eventType: 'pull_request',
+        action: 'closed',
+        repositoryFullName: 'example/repo',
+        receivedAt: '2026-03-30T11:00:00.000Z',
+        payloadJson: JSON.stringify({
+          action: 'closed',
+          repository: { full_name: 'example/repo' },
+          pull_request: {
+            number: 52,
+            title: 'Webhook PR No Timestamps',
+            state: 'closed',
+            draft: false,
+            merged_at: '2026-03-30T11:00:00.000Z',
+            user: { login: 'alice' },
+            head: { sha: 'sha-52', ref: 'feature/webhook-no-timestamps' },
+            base: { ref: 'main' },
+            labels: [],
+            requested_reviewers: [],
+            updated_at: '2026-03-30T11:00:00.000Z',
+          },
+        }),
+      },
+    ]);
+    mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
+
+    const result = await ingestWebhookEvents(db);
+    const plan = getPlanByUuid(db, 'plan-2');
+
+    expect(result.errors).toEqual([]);
+    expect(result.prsUpdated).toEqual(['https://github.com/example/repo/pull/52']);
+    expect(plan?.status).toBe('done');
+    expect(plan?.docs_updated_at).toBeNull();
+    expect(plan?.lessons_applied_at).toBeNull();
+  });
+
   test('ingestWebhookEvents returns early when webhook config is missing', async () => {
     delete process.env.TIM_WEBHOOK_SERVER_URL;
 
