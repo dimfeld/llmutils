@@ -106,6 +106,8 @@
                 {projectId}
                 projectName={showProject ? projectNamesById[item.projectId] : undefined}
                 selected={selectedPlanUuid === item.planUuid}
+                developmentWorkflow={data.developmentWorkflowByProjectId[item.projectId] ??
+                  'pr-based'}
               />
             {/each}
             {#if attentionItems.sessionItems.length > 0}

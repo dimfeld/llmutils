@@ -18,6 +18,7 @@ import {
   spawnFinishProcess,
   spawnGenerateProcess,
   spawnRebaseProcess,
+  spawnPrCreateProcess,
 } from '$lib/server/plan_actions.js';
 import { getSessionManager } from '$lib/server/session_context.js';
 import { openTerminalWithCommand } from '$lib/server/terminal_control.js';
@@ -329,4 +330,29 @@ export const finishPlanQuick = command(finishPlanQuickSchema, async ({ planUuid 
   }
 
   return { status: 'done' as const };
+});
+
+const CREATE_PR_ELIGIBLE_STATUSES = new Set(['in_progress', 'needs_review', 'done']);
+
+function isPlanEligibleForCreatePr(
+  plan: ReturnType<typeof getPlanDetail>
+): plan is PlanDetailResult {
+  if (plan == null) return false;
+  if (!CREATE_PR_ELIGIBLE_STATUSES.has(plan.status)) return false;
+  if (plan.epic) return false;
+  if (plan.prStatuses.length > 0 || plan.pullRequests.length > 0) return false;
+  return true;
+}
+
+const startCreatePrSchema = z.object({
+  planUuid: z.string().min(1),
+});
+
+export const startCreatePr = command(startCreatePrSchema, async ({ planUuid }) => {
+  return launchTimCommand(
+    planUuid,
+    isPlanEligibleForCreatePr,
+    'Plan is not eligible for PR creation',
+    spawnPrCreateProcess
+  );
 });

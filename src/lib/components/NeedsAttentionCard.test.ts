@@ -11,6 +11,7 @@ vi.mock('$app/navigation', () => ({
 
 vi.mock('$lib/remote/plan_actions.remote.js', () => ({
   startFinish: vi.fn(),
+  startCreatePr: vi.fn(),
   finishPlanQuick: vi.fn(),
 }));
 
@@ -37,6 +38,7 @@ function makeItem(overrides: Partial<PlanAttentionItem> = {}): PlanAttentionItem
     docsUpdatedAt: null,
     lessonsAppliedAt: null,
     needsFinishExecutor: false,
+    hasPr: false,
     reasons: [{ type: 'needs_review' }],
     ...overrides,
   };
@@ -55,15 +57,69 @@ describe('NeedsAttentionCard', () => {
     expect(body).not.toContain('Finish');
   });
 
-  test('shows Finish when no finish executor is needed', () => {
+  test('shows Finish when no finish executor is needed and plan has PR', () => {
     const { body } = render(NeedsAttentionCard, {
       props: {
-        item: makeItem({ needsFinishExecutor: false }),
+        item: makeItem({ needsFinishExecutor: false, hasPr: true }),
         projectId: '123',
       },
     });
 
     expect(body).toContain('Finish');
     expect(body).not.toContain('Update Docs');
+    expect(body).not.toContain('Create PR');
+  });
+
+  test('shows Create PR as primary when no PR and pr-based workflow', () => {
+    const { body } = render(NeedsAttentionCard, {
+      props: {
+        item: makeItem({ needsFinishExecutor: false, hasPr: false }),
+        projectId: '123',
+        developmentWorkflow: 'pr-based',
+      },
+    });
+
+    expect(body).toContain('Create PR');
+    // "Finish" is in a dropdown menu which is not rendered during SSR
+    expect(body).not.toContain('Update Docs');
+  });
+
+  test('shows Finish without Create PR when trunk-based workflow', () => {
+    const { body } = render(NeedsAttentionCard, {
+      props: {
+        item: makeItem({ needsFinishExecutor: false, hasPr: false }),
+        projectId: '123',
+        developmentWorkflow: 'trunk-based',
+      },
+    });
+
+    expect(body).not.toContain('Create PR');
+    expect(body).toContain('Finish');
+  });
+
+  test('does not show Create PR for epic plans', () => {
+    const { body } = render(NeedsAttentionCard, {
+      props: {
+        item: makeItem({ epic: true, needsFinishExecutor: false, hasPr: false }),
+        projectId: '123',
+        developmentWorkflow: 'pr-based',
+      },
+    });
+
+    expect(body).not.toContain('Create PR');
+    expect(body).toContain('Finish');
+  });
+
+  test('shows Update Docs when finish executor is needed regardless of PR status', () => {
+    const { body } = render(NeedsAttentionCard, {
+      props: {
+        item: makeItem({ needsFinishExecutor: true, hasPr: false }),
+        projectId: '123',
+        developmentWorkflow: 'pr-based',
+      },
+    });
+
+    expect(body).toContain('Update Docs');
+    expect(body).not.toContain('Create PR');
   });
 });

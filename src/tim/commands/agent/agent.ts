@@ -76,6 +76,7 @@ import {
 } from '../plan_discovery.js';
 import { resolvePlanFromDbOrSyncFile } from '../../ensure_plan_in_db.js';
 import { clearTmpDir } from '../../batch_review_cache.js';
+import { autoCreatePrForPlan } from '../create_pr.js';
 
 export async function handleAgentCommand(
   planFile: string | undefined,
@@ -273,6 +274,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
   let postExecutionError: Error | undefined;
   let failureReason: Error | undefined;
   let lastKnownPlan: PlanSchema | undefined;
+  let recordedBranch: string | undefined;
   let lifecycleManager: LifecycleManager | undefined;
   let unregisterLifecycleCleanup: (() => void) | undefined;
   let lifecycleShutdownError: Error | undefined;
@@ -396,6 +398,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
         ]);
         if (currentBranch && currentBranch !== trunkBranch) {
           setPlanBranch(getDatabase(), planData.uuid, currentBranch);
+          recordedBranch = currentBranch;
         }
       } catch (err) {
         warn(`Failed to record branch on plan: ${err as Error}`);
@@ -1292,6 +1295,12 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
     if (currentPlanFile && !isShuttingDown()) {
       try {
         const updatedPlan = await readPlanFile(currentPlanFile);
+        // Preserve the branch recorded earlier — the plan file may not have it
+        // if setPlanBranch() ran after materialization on the first agent run.
+        if (!updatedPlan.branch && recordedBranch) {
+          updatedPlan.branch = recordedBranch;
+        }
+        lastKnownPlan = updatedPlan;
         await syncPlanToDb(updatedPlan, {
           cwdForIdentity: currentBaseDir,
           force: true,
@@ -1317,6 +1326,29 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
           executionError = workspaceSyncError;
         } else {
           warn(`Workspace sync failed after execution error: ${workspaceSyncError}`);
+        }
+      }
+    }
+
+    // Auto-create PR if configured and plan completed successfully
+    if (!isShuttingDown() && !executionError && lastKnownPlan) {
+      const autoCreateSetting = config.prCreation?.autoCreatePr ?? 'never';
+      const completionStatus = lastKnownPlan.status;
+      const shouldAutoCreate =
+        (autoCreateSetting === 'always' &&
+          (completionStatus === 'done' || completionStatus === 'needs_review')) ||
+        (autoCreateSetting === 'done' && completionStatus === 'done') ||
+        (autoCreateSetting === 'needs_review' && completionStatus === 'needs_review');
+
+      if (shouldAutoCreate) {
+        try {
+          await autoCreatePrForPlan(lastKnownPlan, currentPlanFile || null, {
+            baseDir: currentBaseDir,
+            config,
+            terminalInput: false,
+          });
+        } catch (err) {
+          warn(`Failed to auto-create PR: ${err as Error}`);
         }
       }
     }

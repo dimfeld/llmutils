@@ -31,6 +31,7 @@ function makePlan(overrides: Partial<EnrichedPlan> & { uuid: string }): Enriched
     invalidPrUrls: [],
     issues: [],
     prSummaryStatus: 'none',
+    hasPlanPrLinks: false,
     tags: [],
     dependencyUuids: [],
     tasks: [],
@@ -312,6 +313,57 @@ describe('deriveAttentionItems', () => {
     );
   });
 
+  test('sets hasPr to true when plan has pullRequests', () => {
+    const plan = makePlan({
+      uuid: 'plan-has-pr',
+      displayStatus: 'needs_review',
+      pullRequests: ['https://github.com/owner/repo/pull/1'],
+    });
+
+    const result = deriveAttentionItems([plan], [], []);
+    expect(result.planItems).toHaveLength(1);
+    expect(result.planItems[0].hasPr).toBe(true);
+  });
+
+  test('sets hasPr to true when plan has non-none prSummaryStatus', () => {
+    const plan = makePlan({
+      uuid: 'plan-has-pr-status',
+      displayStatus: 'needs_review',
+      prSummaryStatus: 'passing',
+    });
+
+    const result = deriveAttentionItems([plan], [], []);
+    expect(result.planItems).toHaveLength(1);
+    expect(result.planItems[0].hasPr).toBe(true);
+  });
+
+  test('sets hasPr to false when plan has no PR data', () => {
+    const plan = makePlan({
+      uuid: 'plan-no-pr',
+      displayStatus: 'needs_review',
+      pullRequests: [],
+      prSummaryStatus: 'none',
+    });
+
+    const result = deriveAttentionItems([plan], [], []);
+    expect(result.planItems).toHaveLength(1);
+    expect(result.planItems[0].hasPr).toBe(false);
+  });
+
+  test('sets hasPr to true when plan has auto-linked PRs via plan_pr table', () => {
+    const plan = makePlan({
+      uuid: 'plan-auto-linked',
+      displayStatus: 'needs_review',
+      pullRequests: [],
+      prSummaryStatus: 'none',
+      hasPlanPrLinks: true,
+    });
+
+    const result = deriveAttentionItems([plan], [], []);
+    expect(result.planItems).toHaveLength(1);
+    expect(result.planItems[0].hasPr).toBe(true);
+  });
+
   test('handles sessions without planUuid gracefully', () => {
     const plan = makePlan({ uuid: 'plan-1', displayStatus: 'needs_review' });
     const session = makeSession({
@@ -470,7 +522,7 @@ describe('deriveReadyToStartPlans', () => {
     expect(result[0].uuid).toBe('plan-1');
   });
 
-  test('includes raw in_progress plans even when displayStatus is blocked', () => {
+  test('excludes blocked plans even when raw status is in_progress', () => {
     const plan = makePlan({
       uuid: 'plan-1',
       status: 'in_progress',
@@ -478,8 +530,7 @@ describe('deriveReadyToStartPlans', () => {
     });
 
     const result = deriveReadyToStartPlans([plan], []);
-    expect(result).toHaveLength(1);
-    expect(result[0].uuid).toBe('plan-1');
+    expect(result).toEqual([]);
   });
 
   test('excludes in_progress plans with active sessions', () => {

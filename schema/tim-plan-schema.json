@@ -9,6 +9,9 @@
     "goal": {
       "type": "string"
     },
+    "note": {
+      "type": "string"
+    },
     "details": {
       "description": "Plan details. This can also be in markdown content after the YAML",
       "type": "string"

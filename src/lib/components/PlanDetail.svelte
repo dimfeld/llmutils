@@ -14,6 +14,7 @@
     startChat,
     startRebase,
     startFinish,
+    startCreatePr,
     finishPlanQuick,
     openInEditor,
   } from '$lib/remote/plan_actions.remote.js';
@@ -26,11 +27,10 @@
   import StatusBadge from './StatusBadge.svelte';
   import PriorityBadge from './PriorityBadge.svelte';
   import PrStatusSection from './PrStatusSection.svelte';
-  import { ButtonGroup } from '$lib/components/ui/button-group/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import * as Dialog from '$lib/components/ui/dialog/index.js';
-  import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
   import * as Collapsible from '$lib/components/ui/collapsible/index.js';
+  import ActionButtonWithDropdown, { type ActionItem } from './ActionButtonWithDropdown.svelte';
 
   let {
     plan,
@@ -91,14 +91,6 @@
   let isBlocked = $derived(plan.displayStatus === 'blocked');
   let linkedPr = $derived(plan.prStatuses[0] ?? null);
 
-  interface ActionItem {
-    label: string;
-    startingLabel: string;
-    onclick: () => void;
-    colorClass: string;
-    starting: boolean;
-  }
-
   let actionConfig = $derived.by(() => {
     // needs_review plans and taskless epics: show "Finish" as primary button
     let showFinish = plan.displayStatus === 'needs_review' || isTasklessEpic;
@@ -152,6 +144,13 @@
       colorClass: '',
       starting: startingRebase,
     };
+    const createPrItem: ActionItem = {
+      label: 'Create PR',
+      startingLabel: 'Starting PR Creation…',
+      onclick: handleCreatePr,
+      colorClass: '',
+      starting: startingCreatePr,
+    };
     const finishNoMarkDoneItem: ActionItem = {
       label: 'Update Docs',
       startingLabel: 'Starting Updating Docs…',
@@ -167,6 +166,7 @@
       primary = finishNoMarkDoneItem;
       menuItems.push(chatItem);
       if (isEligibleForRebase) menuItems.push(rebaseItem);
+      if (isEligibleForCreatePr) menuItems.push(createPrItem);
       if (plan.needsFinishExecutor) {
         menuItems.push(finishItem);
       }
@@ -174,15 +174,18 @@
       primary = agentItem;
       menuItems.push(chatItem);
       if (isEligibleForRebase) menuItems.push(rebaseItem);
+      if (isEligibleForCreatePr) menuItems.push(createPrItem);
     } else if (showGenerateWithAgent) {
       primary = generateItem;
       menuItems.push(agentItem);
       menuItems.push(chatItem);
       if (isEligibleForRebase) menuItems.push(rebaseItem);
+      if (isEligibleForCreatePr) menuItems.push(createPrItem);
     } else {
       // showChatOnly
       primary = chatItem;
       if (isEligibleForRebase) menuItems.push(rebaseItem);
+      if (isEligibleForCreatePr) menuItems.push(createPrItem);
       if (showFinishInDropdown) {
         if (plan.needsFinishExecutor) {
           menuItems.push(finishNoMarkDoneItem);
@@ -213,11 +216,20 @@
   const REBASE_ELIGIBLE_STATUSES = new Set(['in_progress', 'needs_review', 'done']);
   let isEligibleForRebase = $derived(REBASE_ELIGIBLE_STATUSES.has(plan.status));
 
+  const CREATE_PR_ELIGIBLE_STATUSES = new Set(['in_progress', 'needs_review', 'done']);
+  let isEligibleForCreatePr = $derived(
+    CREATE_PR_ELIGIBLE_STATUSES.has(plan.status) &&
+      !plan.epic &&
+      plan.prStatuses.length === 0 &&
+      plan.pullRequests.length === 0
+  );
+
   let startingGenerate = $state(false);
   let startingAgent = $state(false);
   let startingRebase = $state(false);
   let startingChat: 'claude' | 'codex' | false = $state(false);
   let startingFinish = $state(false);
+  let startingCreatePr = $state(false);
   let chatDialogOpen = $state(false);
   let startedSuccessfully = $state(false);
   let errorMessage: string | null = $state(null);
@@ -271,6 +283,7 @@
       startingRebase = false;
       startingChat = false;
       startingFinish = false;
+      startingCreatePr = false;
       chatDialogOpen = false;
       startedSuccessfully = false;
       reviewIssueSubmitting = null;
@@ -331,7 +344,12 @@
   }
 
   let starting = $derived(
-    startingGenerate || startingAgent || startingRebase || startingChat || startingFinish
+    startingGenerate ||
+      startingAgent ||
+      startingRebase ||
+      startingChat ||
+      startingFinish ||
+      startingCreatePr
   );
   let controlsDisabled = $derived(starting || startedSuccessfully);
 
@@ -379,6 +397,28 @@
       errorMessage = `${err as Error}`;
     } finally {
       startingRebase = false;
+    }
+  }
+
+  async function handleCreatePr() {
+    startingCreatePr = true;
+    errorMessage = null;
+    successMessage = null;
+    try {
+      const result = await startCreatePr({ planUuid: plan.uuid });
+      if (result.status === 'already_running') {
+        successMessage = {
+          text: 'A session is already running for this plan',
+          connectionId: result.connectionId,
+        };
+      } else {
+        successMessage = { text: 'PR creation started' };
+      }
+      setStartedSuccessfully();
+    } catch (err) {
+      errorMessage = `${err as Error}`;
+    } finally {
+      startingCreatePr = false;
     }
   }
 
@@ -576,75 +616,7 @@
           </a>
         {:else}
           {@const { primary, menuItems } = actionConfig}
-          {#if menuItems.length > 0}
-            <ButtonGroup>
-              <Button
-                onclick={primary.onclick}
-                disabled={controlsDisabled}
-                size="sm"
-                class={primary.colorClass}
-              >
-                {#if primary.starting}
-                  <span
-                    class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
-                  ></span>
-                  {primary.startingLabel}
-                {:else}
-                  {primary.label}
-                {/if}
-              </Button>
-              <DropdownMenu.Root>
-                <DropdownMenu.Trigger>
-                  {#snippet child({ props })}
-                    <Button
-                      {...props}
-                      disabled={controlsDisabled}
-                      size="icon-sm"
-                      aria-label="More plan actions"
-                      class={primary.colorClass}
-                    >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                      >
-                        <path d="m6 9 6 6 6-6" />
-                      </svg>
-                    </Button>
-                  {/snippet}
-                </DropdownMenu.Trigger>
-                <DropdownMenu.Content align="end">
-                  {#each menuItems as item}
-                    <DropdownMenu.Item onclick={item.onclick} disabled={controlsDisabled}>
-                      {item.starting ? item.startingLabel : item.label}
-                    </DropdownMenu.Item>
-                  {/each}
-                </DropdownMenu.Content>
-              </DropdownMenu.Root>
-            </ButtonGroup>
-          {:else}
-            <Button
-              onclick={primary.onclick}
-              disabled={controlsDisabled}
-              size="sm"
-              class={primary.colorClass}
-            >
-              {#if primary.starting}
-                <span
-                  class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
-                ></span>
-                {primary.startingLabel}
-              {:else}
-                {primary.label}
-              {/if}
-            </Button>
-          {/if}
+          <ActionButtonWithDropdown {primary} {menuItems} disabled={controlsDisabled} />
         {/if}
       </div>
     </div>

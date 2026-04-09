@@ -7,6 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 import { claimAssignment, getAssignment } from '$tim/db/assignment.js';
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
 import { getPlanByUuid, upsertPlan } from '$tim/db/plan.js';
+import { linkPlanToPr, upsertPrStatus } from '$tim/db/pr_status.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import { recordWorkspace } from '$tim/db/workspace.js';
 import { SessionManager } from '$lib/server/session_manager.js';
@@ -18,6 +19,7 @@ const spawnGenerateProcessMock = vi.fn();
 const spawnAgentProcessMock = vi.fn();
 const spawnChatProcessMock = vi.fn();
 const spawnRebaseProcessMock = vi.fn();
+const spawnPrCreateProcessMock = vi.fn();
 const spawnFinishProcessMock = vi.fn();
 const loadEffectiveConfigMock = vi.fn();
 
@@ -43,6 +45,8 @@ vi.mock('$lib/server/plan_actions.js', () => ({
     spawnChatProcessMock(...args),
   spawnRebaseProcess: (...args: Parameters<typeof spawnRebaseProcessMock>) =>
     spawnRebaseProcessMock(...args),
+  spawnPrCreateProcess: (...args: Parameters<typeof spawnPrCreateProcessMock>) =>
+    spawnPrCreateProcessMock(...args),
   spawnFinishProcess: (...args: Parameters<typeof spawnFinishProcessMock>) =>
     spawnFinishProcessMock(...args),
 }));
@@ -57,6 +61,7 @@ import {
   finishPlanQuick,
   startAgent,
   startChat,
+  startCreatePr,
   startFinish,
   startGenerate,
   startRebase,
@@ -78,6 +83,7 @@ describe('plan remote actions', () => {
     spawnAgentProcessMock.mockReset();
     spawnChatProcessMock.mockReset();
     spawnRebaseProcessMock.mockReset();
+    spawnPrCreateProcessMock.mockReset();
     spawnFinishProcessMock.mockReset();
     loadEffectiveConfigMock.mockReset();
 
@@ -1705,6 +1711,139 @@ describe('plan remote actions', () => {
     });
   });
 
+  describe('startCreatePr', () => {
+    test('rejects missing plans', async () => {
+      await expect(
+        invokeCommand(startCreatePr, { planUuid: 'missing-plan' })
+      ).rejects.toMatchObject({
+        status: 404,
+        body: { message: 'Plan not found' },
+      });
+    });
+
+    test('rejects plans with ineligible statuses (pending, cancelled, deferred)', async () => {
+      seedPlan({ uuid: 'pr-create-pending', planId: 4000, status: 'pending' });
+      seedPlan({ uuid: 'pr-create-cancelled', planId: 4001, status: 'cancelled' });
+      seedPlan({ uuid: 'pr-create-deferred', planId: 4002, status: 'deferred' });
+
+      await expect(
+        invokeCommand(startCreatePr, { planUuid: 'pr-create-pending' })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Plan is not eligible for PR creation' },
+      });
+      await expect(
+        invokeCommand(startCreatePr, { planUuid: 'pr-create-cancelled' })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Plan is not eligible for PR creation' },
+      });
+      await expect(
+        invokeCommand(startCreatePr, { planUuid: 'pr-create-deferred' })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Plan is not eligible for PR creation' },
+      });
+      expect(spawnPrCreateProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('rejects epic plans', async () => {
+      seedPlan({ uuid: 'pr-create-epic', planId: 4003, status: 'in_progress', epic: true });
+
+      await expect(
+        invokeCommand(startCreatePr, { planUuid: 'pr-create-epic' })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Plan is not eligible for PR creation' },
+      });
+      expect(spawnPrCreateProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('rejects plans that already have a pull request', async () => {
+      seedPlan({
+        uuid: 'pr-create-has-pr',
+        planId: 4004,
+        status: 'in_progress',
+        pullRequest: ['https://github.com/owner/repo/pull/1'],
+      });
+
+      await expect(
+        invokeCommand(startCreatePr, { planUuid: 'pr-create-has-pr' })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Plan is not eligible for PR creation' },
+      });
+      expect(spawnPrCreateProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('rejects plans with auto-linked PR status records', async () => {
+      seedPlan({
+        uuid: 'pr-create-has-linked-pr-status',
+        planId: 4008,
+        status: 'in_progress',
+      });
+      const detail = upsertPrStatus(currentDb, {
+        prUrl: 'https://github.com/owner/repo/pull/8',
+        owner: 'owner',
+        repo: 'repo',
+        prNumber: 8,
+        author: 'alice',
+        title: 'Existing linked PR',
+        state: 'open',
+        draft: true,
+        mergeable: 'UNKNOWN',
+        headSha: 'sha-8',
+        baseBranch: 'main',
+        headBranch: 'feature/8',
+        reviewDecision: null,
+        checkRollupState: 'pending',
+        mergedAt: null,
+        lastFetchedAt: new Date().toISOString(),
+        checks: [],
+        reviews: [],
+        labels: [],
+      });
+      linkPlanToPr(currentDb, 'pr-create-has-linked-pr-status', detail.status.id, 'auto');
+
+      await expect(
+        invokeCommand(startCreatePr, { planUuid: 'pr-create-has-linked-pr-status' })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Plan is not eligible for PR creation' },
+      });
+      expect(spawnPrCreateProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('allows in_progress, needs_review, and done plans without PRs', async () => {
+      seedPlan({ uuid: 'pr-create-in-progress', planId: 4005, status: 'in_progress' });
+      seedPlan({ uuid: 'pr-create-needs-review', planId: 4006, status: 'needs_review' });
+      seedPlan({ uuid: 'pr-create-done', planId: 4007, status: 'done' });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+
+      spawnPrCreateProcessMock.mockResolvedValue({ success: true, planId: 4005 });
+      await expect(
+        invokeCommand(startCreatePr, { planUuid: 'pr-create-in-progress' })
+      ).resolves.toEqual({ status: 'started', planId: 4005 });
+
+      spawnPrCreateProcessMock.mockResolvedValue({ success: true, planId: 4006 });
+      await expect(
+        invokeCommand(startCreatePr, { planUuid: 'pr-create-needs-review' })
+      ).resolves.toEqual({ status: 'started', planId: 4006 });
+
+      spawnPrCreateProcessMock.mockResolvedValue({ success: true, planId: 4007 });
+      await expect(invokeCommand(startCreatePr, { planUuid: 'pr-create-done' })).resolves.toEqual({
+        status: 'started',
+        planId: 4007,
+      });
+
+      expect(spawnPrCreateProcessMock).toHaveBeenCalledTimes(3);
+    });
+  });
+
   function seedPlan(options: {
     uuid: string;
     planId: number;
@@ -1715,6 +1854,7 @@ describe('plan remote actions', () => {
     tasks?: Array<{ title: string; description: string; done?: boolean }>;
     docsUpdatedAt?: string | null;
     lessonsAppliedAt?: string | null;
+    pullRequest?: string[] | null;
   }): void {
     upsertPlan(currentDb, options.projectId ?? projectId, {
       uuid: options.uuid,
@@ -1728,6 +1868,7 @@ describe('plan remote actions', () => {
       tasks: options.tasks,
       sourceDocsUpdatedAt: options.docsUpdatedAt,
       sourceLessonsAppliedAt: options.lessonsAppliedAt,
+      pullRequest: options.pullRequest,
     });
   }
 });

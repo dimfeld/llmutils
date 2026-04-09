@@ -19,16 +19,26 @@ export interface HeadlessPlanSummary {
   title?: string;
 }
 
+export type HeadlessCommand =
+  | 'agent'
+  | 'review'
+  | 'run-prompt'
+  | 'generate'
+  | 'chat'
+  | 'rebase'
+  | 'finish'
+  | 'pr-create';
+
 interface RunWithHeadlessOptions<T> {
   enabled: boolean;
-  command: 'agent' | 'review' | 'run-prompt' | 'generate' | 'chat' | 'rebase' | 'finish';
+  command: HeadlessCommand;
   interactive: boolean;
   plan?: HeadlessPlanSummary;
   callback: () => Promise<T>;
 }
 
 interface CreateHeadlessAdapterOptions {
-  command: 'agent' | 'review' | 'run-prompt' | 'generate' | 'chat' | 'rebase' | 'finish';
+  command: HeadlessCommand;
   interactive: boolean;
   plan?: HeadlessPlanSummary;
 }
@@ -75,7 +85,7 @@ function warnIfInvalidHeadlessUrl(url: string): void {
 }
 
 export async function buildHeadlessSessionInfo(
-  command: 'agent' | 'review' | 'run-prompt' | 'generate' | 'chat' | 'rebase' | 'finish',
+  command: HeadlessCommand,
   interactive: boolean,
   plan?: HeadlessPlanSummary
 ): Promise<HeadlessSessionInfo> {

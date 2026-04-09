@@ -233,13 +233,22 @@ export const timConfigSchema = z
         draft: z
           .boolean()
           .optional()
-          .default(true)
           .describe('Whether PRs should be created as drafts by default'),
         titlePrefix: z.string().optional().describe('Prefix to add to PR titles when creating PRs'),
+        autoCreatePr: z
+          .enum(['never', 'done', 'needs_review', 'always'])
+          .optional()
+          .describe(
+            'Automatically create a PR when agent completes. Values: never, done, needs_review, always'
+          ),
       })
       .strict()
       .optional()
       .describe('Configuration for PR creation behavior'),
+    developmentWorkflow: z
+      .enum(['pr-based', 'trunk-based'])
+      .optional()
+      .describe('Development workflow type, affects UI button visibility'),
     /** Default settings for the generate command */
     generate: z
       .object({

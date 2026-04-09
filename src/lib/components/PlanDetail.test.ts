@@ -16,6 +16,7 @@ vi.mock('$lib/remote/plan_actions.remote.js', () => ({
   startChat: vi.fn(),
   startRebase: vi.fn(),
   startFinish: vi.fn(),
+  startCreatePr: vi.fn(),
   finishPlanQuick: vi.fn(),
   openInEditor: vi.fn(),
 }));
@@ -108,6 +109,7 @@ function makePlanDetail(overrides: Partial<PlanDetail> = {}): PlanDetail {
     invalidPrUrls: [],
     issues: [],
     prSummaryStatus: 'none',
+    hasPlanPrLinks: false,
     docsUpdatedAt: null,
     lessonsAppliedAt: null,
     needsFinishExecutor: false,

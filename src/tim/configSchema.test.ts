@@ -180,7 +180,7 @@ describe('configSchema', () => {
 
       const validatedConfig = timConfigSchema.parse(defaultConfig);
       expect(validatedConfig.issueTracker).toBe('github');
-      expect(validatedConfig.prCreation?.draft).toBe(true);
+      expect(validatedConfig.prCreation?.draft).toBe(true); // Explicitly set in getDefaultConfig()
     });
   });
 
@@ -235,12 +235,14 @@ describe('configSchema', () => {
         prCreation: {
           draft: false,
           titlePrefix: '[Feature] ',
+          autoCreatePr: 'always' as const,
         },
       };
 
       const result = timConfigSchema.parse(config);
       expect(result.prCreation?.draft).toBe(false);
       expect(result.prCreation?.titlePrefix).toBe('[Feature] ');
+      expect(result.prCreation?.autoCreatePr).toBe('always');
     });
 
     test('should accept partial prCreation configuration with only draft', () => {
@@ -253,6 +255,7 @@ describe('configSchema', () => {
       const result = timConfigSchema.parse(config);
       expect(result.prCreation?.draft).toBe(true);
       expect(result.prCreation?.titlePrefix).toBeUndefined();
+      expect(result.prCreation?.autoCreatePr).toBeUndefined();
     });
 
     test('should accept partial prCreation configuration with only titlePrefix', () => {
@@ -263,8 +266,43 @@ describe('configSchema', () => {
       };
 
       const result = timConfigSchema.parse(config);
-      expect(result.prCreation?.draft).toBe(true); // Should use default
+      expect(result.prCreation?.draft).toBeUndefined(); // No default in schema; applied at use-site
       expect(result.prCreation?.titlePrefix).toBe('[WIP] ');
+      expect(result.prCreation?.autoCreatePr).toBeUndefined();
+    });
+
+    test('should accept valid autoCreatePr enum values', () => {
+      for (const value of ['never', 'done', 'needs_review', 'always'] as const) {
+        const config = {
+          prCreation: {
+            autoCreatePr: value,
+          },
+        };
+
+        const result = timConfigSchema.parse(config);
+        expect(result.prCreation?.autoCreatePr).toBe(value);
+      }
+    });
+
+    test('should reject invalid autoCreatePr values', () => {
+      const config = {
+        prCreation: {
+          autoCreatePr: 'sometimes',
+        },
+      };
+
+      expect(() => timConfigSchema.parse(config)).toThrow();
+    });
+
+    test('should make autoCreatePr optional', () => {
+      const config = {
+        prCreation: {
+          draft: false,
+        },
+      };
+
+      const result = timConfigSchema.parse(config);
+      expect(result.prCreation?.autoCreatePr).toBeUndefined();
     });
 
     test('should make prCreation field optional', () => {
@@ -276,7 +314,7 @@ describe('configSchema', () => {
       expect(result.prCreation).toBeUndefined();
     });
 
-    test('should default draft to true when not specified in config', () => {
+    test('should leave draft undefined when not specified in config', () => {
       const config = {
         prCreation: {
           titlePrefix: 'Test: ',
@@ -284,10 +322,10 @@ describe('configSchema', () => {
       };
 
       const result = timConfigSchema.parse(config);
-      expect(result.prCreation?.draft).toBe(true);
+      expect(result.prCreation?.draft).toBeUndefined(); // Default applied at use-site
     });
 
-    test('should default draft to true when prCreation exists but draft is undefined', () => {
+    test('should leave draft undefined when prCreation exists but draft is undefined', () => {
       const config = {
         prCreation: {
           draft: undefined,
@@ -296,7 +334,7 @@ describe('configSchema', () => {
       };
 
       const result = timConfigSchema.parse(config);
-      expect(result.prCreation?.draft).toBe(true);
+      expect(result.prCreation?.draft).toBeUndefined(); // Default applied at use-site
     });
 
     test('should preserve explicitly set draft false value', () => {
@@ -367,7 +405,7 @@ describe('configSchema', () => {
 
       const result = timConfigSchema.parse(config);
       expect(result.prCreation?.titlePrefix).toBe('');
-      expect(result.prCreation?.draft).toBe(true); // Should use default
+      expect(result.prCreation?.draft).toBeUndefined(); // Default applied at use-site
     });
 
     test('should accept titlePrefix with special characters', () => {
@@ -388,8 +426,9 @@ describe('configSchema', () => {
 
       const result = timConfigSchema.parse(config);
       expect(result.prCreation).toBeDefined();
-      expect(result.prCreation?.draft).toBe(true); // Should use default
+      expect(result.prCreation?.draft).toBeUndefined(); // Default applied at use-site
       expect(result.prCreation?.titlePrefix).toBeUndefined();
+      expect(result.prCreation?.autoCreatePr).toBeUndefined();
     });
 
     test('should reject unknown fields within prCreation due to strict', () => {
@@ -425,6 +464,39 @@ describe('configSchema', () => {
       expect(result.prCreation?.titlePrefix).toBe('[Feature] ');
       expect(result.review?.focusAreas).toEqual(['security']);
       expect(result.review?.outputFormat).toBe('json');
+    });
+  });
+
+  describe('developmentWorkflow field', () => {
+    test('should accept "pr-based" value', () => {
+      const config = {
+        developmentWorkflow: 'pr-based' as const,
+      };
+
+      const result = timConfigSchema.parse(config);
+      expect(result.developmentWorkflow).toBe('pr-based');
+    });
+
+    test('should accept "trunk-based" value', () => {
+      const config = {
+        developmentWorkflow: 'trunk-based' as const,
+      };
+
+      const result = timConfigSchema.parse(config);
+      expect(result.developmentWorkflow).toBe('trunk-based');
+    });
+
+    test('should reject invalid developmentWorkflow values', () => {
+      const config = {
+        developmentWorkflow: 'hybrid',
+      };
+
+      expect(() => timConfigSchema.parse(config)).toThrow();
+    });
+
+    test('should make developmentWorkflow optional', () => {
+      const result = timConfigSchema.parse({});
+      expect(result.developmentWorkflow).toBeUndefined();
     });
   });
 

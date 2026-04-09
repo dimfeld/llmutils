@@ -32,6 +32,7 @@ const {
   runUpdateLessonsSpy,
   handleReviewCommandSpy,
   promptConfirmSpy,
+  autoCreatePrForPlanSpy,
 } = vi.hoisted(() => {
   const executorExecuteSpy = vi.fn(async () => {});
   return {
@@ -62,6 +63,7 @@ const {
     runUpdateLessonsSpy: vi.fn(async () => true),
     handleReviewCommandSpy: vi.fn(async () => ({ tasksAppended: 0 })),
     promptConfirmSpy: vi.fn(async () => false),
+    autoCreatePrForPlanSpy: vi.fn(async () => null),
   };
 });
 
@@ -111,6 +113,11 @@ vi.mock('../../../common/git.js', async (importOriginal) => ({
   getWorkingCopyStatus: getWorkingCopyStatusSpy,
 }));
 
+vi.mock('../../../common/process.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../common/process.js')>()),
+  commitAll: vi.fn(async () => 0),
+}));
+
 vi.mock('../../configLoader.js', () => ({
   loadEffectiveConfig: loadEffectiveConfigSpy,
   loadGlobalConfigForNotifications: vi.fn(async () => ({})),
@@ -144,6 +151,10 @@ vi.mock('../update-lessons.js', () => ({
 
 vi.mock('../review.js', () => ({
   handleReviewCommand: handleReviewCommandSpy,
+}));
+
+vi.mock('../create_pr.js', () => ({
+  autoCreatePrForPlan: autoCreatePrForPlanSpy,
 }));
 
 vi.mock('../../plans.js', () => {
@@ -273,6 +284,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
     handleReviewCommandSpy.mockClear();
     promptConfirmSpy.mockClear();
     promptConfirmSpy.mockResolvedValue(false);
+    autoCreatePrForPlanSpy.mockClear();
     (removePlanAssignment as ReturnType<typeof vi.fn>).mockClear();
     resetShutdownState();
 
@@ -1699,7 +1711,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       });
 
       const customExecutor = { execute: vi.fn(), filePathPrefix: '/custom/' };
-      buildExecutorAndLogSpy.mockReturnValue(customExecutor);
+      buildExecutorAndLogSpy.mockReturnValueOnce(customExecutor);
 
       const options = { orchestrator: 'custom-executor', log: false } as any;
       const globalCliOptions = {};
@@ -1739,6 +1751,258 @@ describe('timAgent - Batch Mode Execution Loop', () => {
         }),
         expect.any(Object)
       );
+    });
+  });
+
+  describe('auto-create PR hook in agent completion', () => {
+    // Helper to create a plan that starts in_progress with a pending task. The executor mock
+    // completes the task, which triggers batch mode to transition the plan to the completion status.
+    // This mirrors a real agent run where the plan starts in_progress and transitions to done/needs_review.
+    const pendingTask = {
+      title: 'Task 1',
+      description: 'A pending task',
+      steps: [{ prompt: 'Do the task', done: false }],
+    };
+
+    const completedTask = {
+      title: 'Task 1',
+      description: 'A pending task',
+      steps: [{ prompt: 'Do the task', done: true }],
+      done: true,
+    };
+
+    // Executor mock that marks all tasks done so batch mode transitions the plan to completion status
+    function mockExecutorCompletingTasks(branch: string) {
+      executorExecuteSpy.mockImplementationOnce(async () => {
+        await createPlanFile({
+          status: 'in_progress',
+          branch,
+          tasks: [completedTask],
+        });
+      });
+    }
+
+    // Keep a pre-done task for negative/skip tests that just verify the hook is NOT called.
+    // These tests don't need realistic transitions since they only verify skipping behavior.
+    const donePlanTask = {
+      title: 'Task 1',
+      description: 'Already done task',
+      done: true,
+    };
+
+    test('calls autoCreatePrForPlan after plan transitions from in_progress to done via executor', async () => {
+      await createPlanFile({
+        status: 'in_progress',
+        branch: 'feature/my-branch',
+        tasks: [pendingTask],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        planAutocompleteStatus: 'done',
+        prCreation: { autoCreatePr: 'done' },
+      });
+
+      mockExecutorCompletingTasks('feature/my-branch');
+
+      const options = { log: false, nonInteractive: true, finalReview: false } as any;
+      await timAgent(planFile, options, {});
+
+      expect(autoCreatePrForPlanSpy).toHaveBeenCalledTimes(1);
+      expect(autoCreatePrForPlanSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'done', branch: 'feature/my-branch' }),
+        planFile,
+        expect.objectContaining({ terminalInput: false })
+      );
+    });
+
+    test('calls autoCreatePrForPlan when config is always and plan transitions to needs_review', async () => {
+      await createPlanFile({
+        status: 'in_progress',
+        branch: 'feature/my-branch',
+        tasks: [pendingTask],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        // planAutocompleteStatus defaults to 'needs_review'
+        prCreation: { autoCreatePr: 'always' },
+      });
+
+      mockExecutorCompletingTasks('feature/my-branch');
+
+      const options = { log: false, nonInteractive: true, finalReview: false } as any;
+      await timAgent(planFile, options, {});
+
+      expect(autoCreatePrForPlanSpy).toHaveBeenCalledTimes(1);
+      expect(autoCreatePrForPlanSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'needs_review', branch: 'feature/my-branch' }),
+        planFile,
+        expect.objectContaining({ terminalInput: false })
+      );
+    });
+
+    test('calls autoCreatePrForPlan when config is needs_review and plan transitions to needs_review', async () => {
+      await createPlanFile({
+        status: 'in_progress',
+        branch: 'feature/my-branch',
+        tasks: [pendingTask],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        // planAutocompleteStatus defaults to 'needs_review'
+        prCreation: { autoCreatePr: 'needs_review' },
+      });
+
+      mockExecutorCompletingTasks('feature/my-branch');
+
+      const options = { log: false, nonInteractive: true, finalReview: false } as any;
+      await timAgent(planFile, options, {});
+
+      expect(autoCreatePrForPlanSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test('does NOT call autoCreatePrForPlan when config is never (default)', async () => {
+      await createPlanFile({
+        status: 'needs_review',
+        branch: 'feature/my-branch',
+        tasks: [donePlanTask],
+      });
+
+      // Default config — no prCreation.autoCreatePr
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+      });
+
+      const options = { log: false, nonInteractive: true, finalReview: false } as any;
+      await timAgent(planFile, options, {});
+
+      expect(autoCreatePrForPlanSpy).not.toHaveBeenCalled();
+    });
+
+    test('does NOT call autoCreatePrForPlan when config is done but plan status is needs_review', async () => {
+      await createPlanFile({
+        status: 'needs_review',
+        branch: 'feature/my-branch',
+        tasks: [donePlanTask],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        prCreation: { autoCreatePr: 'done' },
+      });
+
+      const options = { log: false, nonInteractive: true, finalReview: false } as any;
+      await timAgent(planFile, options, {});
+
+      expect(autoCreatePrForPlanSpy).not.toHaveBeenCalled();
+    });
+
+    test('does NOT call autoCreatePrForPlan when config is needs_review but plan status is done', async () => {
+      await createPlanFile({
+        status: 'done',
+        branch: 'feature/my-branch',
+        tasks: [donePlanTask],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        prCreation: { autoCreatePr: 'needs_review' },
+      });
+
+      const options = { log: false, nonInteractive: true, finalReview: false } as any;
+      await timAgent(planFile, options, {});
+
+      expect(autoCreatePrForPlanSpy).not.toHaveBeenCalled();
+    });
+
+    test('auto-create failure is non-fatal — agent completes and warn is called', async () => {
+      await createPlanFile({
+        status: 'in_progress',
+        branch: 'feature/my-branch',
+        tasks: [pendingTask],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        // planAutocompleteStatus defaults to 'needs_review', always matches it
+        prCreation: { autoCreatePr: 'always' },
+      });
+
+      mockExecutorCompletingTasks('feature/my-branch');
+      autoCreatePrForPlanSpy.mockRejectedValueOnce(new Error('gh: command not found'));
+
+      const options = { log: false, nonInteractive: true, finalReview: false } as any;
+
+      // Should not throw — failure is non-fatal
+      await timAgent(planFile, options, {});
+
+      expect(autoCreatePrForPlanSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to auto-create PR'));
+    });
+
+    test('does NOT call autoCreatePrForPlan when isShuttingDown is true during execution', async () => {
+      await createPlanFile({
+        status: 'in_progress',
+        branch: 'feature/my-branch',
+        tasks: [pendingTask],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        prCreation: { autoCreatePr: 'always' },
+      });
+
+      // Executor triggers shutdown instead of completing tasks
+      executorExecuteSpy.mockImplementationOnce(async () => {
+        setShuttingDown(130);
+      });
+
+      const originalExit = process.exit;
+      process.exit = ((code?: number) => {
+        throw new Error(`process.exit(${code})`);
+      }) as typeof process.exit;
+
+      try {
+        await expect(
+          timAgent(planFile, { log: false, nonInteractive: true, finalReview: false } as any, {})
+        ).rejects.toThrow('process.exit(130)');
+      } finally {
+        process.exit = originalExit;
+      }
+
+      expect(autoCreatePrForPlanSpy).not.toHaveBeenCalled();
+    });
+
+    test('does NOT call autoCreatePrForPlan when executor threw an error', async () => {
+      await createPlanFile({
+        status: 'in_progress',
+        branch: 'feature/my-branch',
+        tasks: [pendingTask],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        prCreation: { autoCreatePr: 'always' },
+      });
+
+      // Executor throws an error — executionError is set, auto-create is skipped
+      executorExecuteSpy.mockRejectedValueOnce(new Error('Executor crashed'));
+
+      const options = { log: false, nonInteractive: true, finalReview: false } as any;
+      await expect(timAgent(planFile, options, {})).rejects.toThrow();
+
+      expect(autoCreatePrForPlanSpy).not.toHaveBeenCalled();
     });
   });
 });

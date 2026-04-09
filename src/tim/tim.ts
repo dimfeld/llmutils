@@ -1290,6 +1290,20 @@ prCommand
   });
 
 prCommand
+  .command('create <planId>')
+  .description('Create or update a draft PR for a plan using an AI agent')
+  .option('-x, --executor <name>', 'The executor to use')
+  .option('-m, --model <model>', 'Model override (default: haiku)')
+  .option('--aw, --auto-workspace', 'Auto-select or create a workspace')
+  .option('-w, --workspace <name>', 'Use a specific workspace')
+  .option('--no-terminal-input', 'Disable terminal input')
+  .option('--non-interactive', 'No user prompts')
+  .action(async (planId, options, command) => {
+    const { handleCreatePrCommand } = await import('./commands/create_pr.js');
+    await handleCreatePrCommand(planId, options, command).catch(handleCommandError);
+  });
+
+prCommand
   .command('fix <planId>')
   .description('Fix unresolved PR review threads using an AI agent')
   .option('-x, --executor <name>', 'The executor to use')

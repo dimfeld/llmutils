@@ -95,6 +95,8 @@ export interface EnrichedPlan {
   invalidPrUrls: string[];
   issues: string[];
   prSummaryStatus: PrSummaryStatus;
+  /** Whether this plan has any entries in the plan_pr junction table (explicit or auto-linked). */
+  hasPlanPrLinks: boolean;
   docsUpdatedAt: string | null;
   lessonsAppliedAt: string | null;
   /** Whether the finish command would need to spawn an executor for this plan. */
@@ -442,6 +444,18 @@ function enrichPlansWithContext(
     prUrlsByPlanUuid
   );
 
+  // Check which plans have any plan_pr links (explicit or auto-linked)
+  const planPrLinkUuids = new Set<string>();
+  if (bundle.plans.length > 0) {
+    const placeholders = bundle.plans.map(() => '?').join(', ');
+    const linkRows = db
+      .prepare(`SELECT DISTINCT plan_uuid FROM plan_pr WHERE plan_uuid IN (${placeholders})`)
+      .all(...bundle.plans.map((p) => p.uuid)) as Array<{ plan_uuid: string }>;
+    for (const row of linkRows) {
+      planPrLinkUuids.add(row.plan_uuid);
+    }
+  }
+
   const enrichedPlans = bundle.plans.map((plan) => {
     const tasks = (tasksByPlanUuid.get(plan.uuid) ?? []).map(toTask);
     const dependencyRows = dependenciesByPlanUuid.get(plan.uuid) ?? [];
@@ -474,6 +488,7 @@ function enrichPlansWithContext(
       updatedAt: plan.updated_at,
       pullRequests: prUrlsByPlanUuid.get(plan.uuid) ?? [],
       invalidPrUrls: categorizedPrUrlsByPlanUuid.get(plan.uuid)?.invalid ?? [],
+      hasPlanPrLinks: planPrLinkUuids.has(plan.uuid),
       docsUpdatedAt: plan.docs_updated_at,
       lessonsAppliedAt: plan.lessons_applied_at,
       needsFinishExecutor: computeNeedsFinishExecutor(

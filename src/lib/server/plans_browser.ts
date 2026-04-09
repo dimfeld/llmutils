@@ -106,6 +106,8 @@ export interface DashboardData {
   plans: EnrichedPlan[];
   /** Map of "projectId:planNumber" -> planUuid for linking workspace assigned plans. */
   planNumberToUuid: Record<string, string>;
+  /** Per-project development workflow setting. Keyed by numeric project ID. */
+  developmentWorkflowByProjectId: Record<number, 'pr-based' | 'trunk-based'>;
 }
 
 const TERMINAL_STATUSES = new Set(['done', 'cancelled', 'deferred']);
@@ -131,7 +133,37 @@ export async function getDashboardData(db: Database, projectId: string): Promise
     }
   }
 
-  return { plans, planNumberToUuid };
+  // Build per-project developmentWorkflow map, grouping by git root to avoid
+  // duplicate config loads when multiple projects share a repository.
+  const developmentWorkflowByProjectId: Record<number, 'pr-based' | 'trunk-based'> = {};
+  const projectIds = [...new Set(plans.map((p) => p.projectId))];
+  const gitRootToWorkflowProjectIds = new Map<string, number[]>();
+  for (const pid of projectIds) {
+    const gitRoot = getPreferredProjectGitRoot(db, pid) ?? '__default__';
+    const grouped = gitRootToWorkflowProjectIds.get(gitRoot);
+    if (grouped) {
+      grouped.push(pid);
+    } else {
+      gitRootToWorkflowProjectIds.set(gitRoot, [pid]);
+    }
+  }
+  for (const [gitRoot, groupedProjectIds] of gitRootToWorkflowProjectIds) {
+    const cwd = gitRoot === '__default__' ? undefined : gitRoot;
+    let workflow: 'pr-based' | 'trunk-based' = 'pr-based';
+    if (cwd) {
+      try {
+        const config = await loadEffectiveConfig(undefined, { cwd });
+        workflow = config.developmentWorkflow ?? 'pr-based';
+      } catch {
+        // Default to pr-based
+      }
+    }
+    for (const pid of groupedProjectIds) {
+      developmentWorkflowByProjectId[pid] = workflow;
+    }
+  }
+
+  return { plans, planNumberToUuid, developmentWorkflowByProjectId };
 }
 
 export async function getPlanDetailRouteData(

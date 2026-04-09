@@ -1155,5 +1155,71 @@ defaultExecutor: direct-call
         }
       }
     });
+
+    test('loadEffectiveConfig deep merges prCreation from local config', async () => {
+      const mainConfigPath = path.join(configDir, 'tim.yml');
+      const localConfigPath = path.join(configDir, 'tim.local.yml');
+
+      await fs.writeFile(
+        mainConfigPath,
+        yaml.stringify({
+          prCreation: {
+            draft: true,
+            titlePrefix: '[Feature] ',
+            autoCreatePr: 'needs_review',
+          },
+        }),
+        'utf-8'
+      );
+
+      await fs.writeFile(
+        localConfigPath,
+        yaml.stringify({
+          prCreation: {
+            draft: false,
+          },
+        }),
+        'utf-8'
+      );
+
+      const config = await loadEffectiveConfig();
+
+      expect(config.prCreation?.draft).toBe(false);
+      expect(config.prCreation?.titlePrefix).toBe('[Feature] ');
+      expect(config.prCreation?.autoCreatePr).toBe('needs_review');
+    });
+
+    test('local prCreation partial override does not clobber main draft value', async () => {
+      const mainConfigPath = path.join(configDir, 'tim.yml');
+      const localConfigPath = path.join(configDir, 'tim.local.yml');
+
+      await fs.writeFile(
+        mainConfigPath,
+        yaml.stringify({
+          prCreation: {
+            draft: false,
+            titlePrefix: '[Main] ',
+          },
+        }),
+        'utf-8'
+      );
+
+      await fs.writeFile(
+        localConfigPath,
+        yaml.stringify({
+          prCreation: {
+            autoCreatePr: 'always',
+          },
+        }),
+        'utf-8'
+      );
+
+      const config = await loadEffectiveConfig();
+
+      // Local only set autoCreatePr — main's draft: false must be preserved
+      expect(config.prCreation?.draft).toBe(false);
+      expect(config.prCreation?.titlePrefix).toBe('[Main] ');
+      expect(config.prCreation?.autoCreatePr).toBe('always');
+    });
   });
 });

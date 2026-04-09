@@ -43,6 +43,7 @@ export interface PlanAttentionItem {
   docsUpdatedAt: string | null;
   lessonsAppliedAt: string | null;
   needsFinishExecutor: boolean;
+  hasPr: boolean;
   reasons: PlanAttentionReason[];
 }
 
@@ -74,7 +75,7 @@ export interface RunningSession {
 
 // --- Derivation functions ---
 
-const AGENT_COMMANDS = new Set(['agent', 'generate', 'chat']);
+const AGENT_COMMANDS = new Set(['agent', 'generate', 'chat', 'pr-create']);
 
 export function deriveAttentionItems(
   plans: EnrichedPlan[],
@@ -149,6 +150,8 @@ export function deriveAttentionItems(
         docsUpdatedAt: plan.docsUpdatedAt,
         lessonsAppliedAt: plan.lessonsAppliedAt,
         needsFinishExecutor: plan.needsFinishExecutor,
+        hasPr:
+          plan.pullRequests.length > 0 || plan.prSummaryStatus !== 'none' || plan.hasPlanPrLinks,
         reasons,
       });
     }

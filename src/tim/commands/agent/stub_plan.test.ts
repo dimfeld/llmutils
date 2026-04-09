@@ -10,7 +10,6 @@ const handleReviewCommandSpy = vi.fn(async () => ({ tasksAppended: 2 }));
 const executorExecuteSpy = vi.fn(async () => undefined);
 const checkAndMarkParentDoneSpy = vi.fn(async () => undefined);
 const markParentInProgressSpy = vi.fn(async () => undefined);
-
 vi.mock('../../../logging.js', () => ({
   log: vi.fn(() => {}),
   warn: vi.fn(() => {}),

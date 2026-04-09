@@ -277,15 +277,32 @@
       "properties": {
         "draft": {
           "description": "Whether PRs should be created as drafts by default",
-          "default": true,
           "type": "boolean"
         },
         "titlePrefix": {
           "description": "Prefix to add to PR titles when creating PRs",
           "type": "string"
+        },
+        "autoCreatePr": {
+          "description": "Automatically create a PR when agent completes. Values: never, done, needs_review, always",
+          "type": "string",
+          "enum": [
+            "never",
+            "done",
+            "needs_review",
+            "always"
+          ]
         }
       },
       "additionalProperties": false
+    },
+    "developmentWorkflow": {
+      "description": "Development workflow type, affects UI button visibility",
+      "type": "string",
+      "enum": [
+        "pr-based",
+        "trunk-based"
+      ]
     },
     "generate": {
       "description": "Configuration for tim generate defaults",

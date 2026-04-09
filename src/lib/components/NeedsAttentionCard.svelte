@@ -1,21 +1,24 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { toast } from 'svelte-sonner';
-  import { startFinish, finishPlanQuick } from '$lib/remote/plan_actions.remote.js';
+  import { startFinish, startCreatePr, finishPlanQuick } from '$lib/remote/plan_actions.remote.js';
   import { invalidateAll } from '$app/navigation';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import type { PlanAttentionItem } from '$lib/utils/dashboard_attention.js';
+  import ActionButtonWithDropdown, { type ActionItem } from './ActionButtonWithDropdown.svelte';
 
   let {
     item,
     projectId,
     projectName,
     selected = false,
+    developmentWorkflow = 'pr-based' as const,
   }: {
     item: PlanAttentionItem;
     projectId: string;
     projectName?: string;
     selected?: boolean;
+    developmentWorkflow?: 'pr-based' | 'trunk-based';
   } = $props();
 
   const sessionManager = useSessionManager();
@@ -41,8 +44,16 @@
   let planHref = $derived(`/projects/${projectId}/active/plan/${item.planUuid}`);
 
   let startingFinish = $state(false);
+  let startingCreatePr = $state(false);
   let finishButtonLabel = $derived(
     startingFinish ? 'Starting…' : item.needsFinishExecutor ? 'Update Docs' : 'Finish'
+  );
+  let showCreatePr = $derived(
+    hasNeedsReview &&
+      !item.epic &&
+      !item.needsFinishExecutor &&
+      !item.hasPr &&
+      developmentWorkflow === 'pr-based'
   );
 
   function navigateToSession(event: MouseEvent) {
@@ -51,6 +62,21 @@
     if (waitingForInputReason && waitingForInputReason.type === 'waiting_for_input') {
       sessionManager.selectSession(waitingForInputReason.sessionId, projectId);
       void goto(`/projects/${projectId}/sessions`);
+    }
+  }
+
+  async function handleCreatePr(event?: MouseEvent) {
+    event?.preventDefault();
+    event?.stopPropagation();
+    if (startingCreatePr) return;
+    startingCreatePr = true;
+    try {
+      await startCreatePr({ planUuid: item.planUuid });
+      await invalidateAll();
+    } catch (err) {
+      toast.error(`Failed to create PR: ${(err as Error).message}`);
+    } finally {
+      startingCreatePr = false;
     }
   }
 
@@ -119,13 +145,37 @@
     </button>
   {/if}
   {#if hasNeedsReview}
-    <button
-      type="button"
-      class="shrink-0 rounded bg-green-600 px-2 py-0.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700 dark:bg-green-700 dark:hover:bg-emerald-600"
-      onclick={handleFinish}
-      disabled={startingFinish}
-    >
-      {finishButtonLabel}
-    </button>
+    {#if showCreatePr}
+      <ActionButtonWithDropdown
+        primary={{
+          label: 'Create PR',
+          startingLabel: 'Starting…',
+          onclick: handleCreatePr,
+          colorClass:
+            'bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600',
+          starting: startingCreatePr,
+        }}
+        menuItems={[
+          {
+            label: 'Finish',
+            startingLabel: 'Starting…',
+            onclick: handleFinish,
+            colorClass: '',
+            starting: startingFinish,
+          },
+        ]}
+        disabled={startingCreatePr || startingFinish}
+        size="sm"
+      />
+    {:else}
+      <button
+        type="button"
+        class="shrink-0 rounded bg-green-600 px-2 py-0.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700 dark:bg-green-700 dark:hover:bg-emerald-600"
+        onclick={handleFinish}
+        disabled={startingFinish}
+      >
+        {finishButtonLabel}
+      </button>
+    {/if}
   {/if}
 </div>
