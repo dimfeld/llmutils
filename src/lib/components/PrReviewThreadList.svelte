@@ -7,6 +7,7 @@
     replyToThread,
     resolveThread,
   } from '$lib/remote/review_thread_actions.remote.js';
+  import { normalizeGitHubUsername } from '$common/github/username.js';
   import { formatReviewCommentForClipboard } from '$lib/utils/pr_display.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
   import Diff from './Diff.svelte';
@@ -15,7 +16,20 @@
     threads,
     prUrl,
     planUuid,
-  }: { threads: PrReviewThreadDetail[]; prUrl: string; planUuid?: string } = $props();
+    currentUsername = null,
+    expandMode = 'default',
+  }: {
+    threads: PrReviewThreadDetail[];
+    prUrl: string;
+    planUuid?: string;
+    currentUsername?: string | null;
+    expandMode?: 'default' | 'expanded' | 'collapsed' | 'mine';
+  } = $props();
+
+  let threadExpandModeOverride = $state<'default' | 'expanded' | 'collapsed' | 'mine'>('default');
+  let effectiveThreadExpandMode = $derived(
+    threadExpandModeOverride === 'default' ? expandMode : threadExpandModeOverride
+  );
 
   let sortedThreads = $derived(
     [...threads].sort((a, b) => {
@@ -45,6 +59,52 @@
 
   function threadDiffHunk(thread: PrReviewThreadDetail): string | null {
     return thread.comments.find((c) => c.diff_hunk != null)?.diff_hunk ?? null;
+  }
+
+  function threadHasCurrentUserComment(thread: PrReviewThreadDetail): boolean {
+    if (!currentUsername) {
+      return false;
+    }
+
+    const normalizedCurrentUsername = normalizeGitHubUsername(currentUsername);
+    return thread.comments.some(
+      (comment) => normalizeGitHubUsername(comment.author) === normalizedCurrentUsername
+    );
+  }
+
+  function threadCommentBadgeLabel(thread: PrReviewThreadDetail): string | null {
+    if (!threadHasCurrentUserComment(thread)) {
+      return null;
+    }
+
+    const firstComment = thread.comments[0];
+    if (
+      firstComment &&
+      firstComment.author &&
+      currentUsername &&
+      normalizeGitHubUsername(firstComment.author) === normalizeGitHubUsername(currentUsername)
+    ) {
+      return 'Your Thread';
+    }
+
+    return 'You commented';
+  }
+
+  function isThreadExpanded(thread: PrReviewThreadDetail): boolean {
+    const isResolved = !!thread.thread.is_resolved;
+    if (effectiveThreadExpandMode === 'expanded') {
+      return true;
+    }
+
+    if (effectiveThreadExpandMode === 'collapsed') {
+      return false;
+    }
+
+    if (effectiveThreadExpandMode === 'mine') {
+      return threadHasCurrentUserComment(thread);
+    }
+
+    return !isResolved;
   }
 
   let copyFeedback = $state<{ id: number; status: 'copied' | 'failed' } | null>(null);
@@ -193,7 +253,50 @@
       threadActionSubmitting = null;
     }
   }
+
+  function setThreadExpandMode(mode: 'default' | 'expanded' | 'collapsed' | 'mine') {
+    threadExpandModeOverride = mode;
+  }
+
+  function expandModeButtonClass(isActive: boolean): string {
+    return `rounded border px-2 py-1 text-xs font-medium transition-colors ${
+      isActive
+        ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-900/30 dark:text-blue-300'
+        : 'border-gray-300 text-muted-foreground hover:bg-gray-100 hover:text-foreground dark:border-gray-600 dark:hover:bg-gray-800'
+    }`;
+  }
 </script>
+
+{#if sortedThreads.length > 0}
+  <div class="mb-2 flex flex-wrap items-center gap-2">
+    <button
+      type="button"
+      class={expandModeButtonClass(effectiveThreadExpandMode === 'expanded')}
+      aria-pressed={effectiveThreadExpandMode === 'expanded'}
+      onclick={() => setThreadExpandMode('expanded')}
+    >
+      Expand all
+    </button>
+    <button
+      type="button"
+      class={expandModeButtonClass(effectiveThreadExpandMode === 'collapsed')}
+      aria-pressed={effectiveThreadExpandMode === 'collapsed'}
+      onclick={() => setThreadExpandMode('collapsed')}
+    >
+      Collapse all
+    </button>
+    <button
+      type="button"
+      class={expandModeButtonClass(effectiveThreadExpandMode === 'mine')}
+      aria-pressed={effectiveThreadExpandMode === 'mine'}
+      onclick={() => setThreadExpandMode('mine')}
+      disabled={!currentUsername}
+      title={currentUsername ? 'Expand only threads where you commented' : 'Set a username to use this filter'}
+    >
+      My comments
+    </button>
+  </div>
+{/if}
 
 {#snippet threadControls(thread: PrReviewThreadDetail, isResolved: boolean)}
   <span class="ml-auto text-muted-foreground">
@@ -248,7 +351,9 @@
     {@const isResolved = !!thread.thread.is_resolved}
     {@const isOutdated = !!thread.thread.is_outdated}
     {@const diffHunk = threadDiffHunk(thread)}
-    <details open={!isResolved} class="rounded border border-gray-200 dark:border-gray-700">
+    {@const commentBadgeLabel = threadCommentBadgeLabel(thread)}
+    {@const isExpanded = isThreadExpanded(thread)}
+    <details open={isExpanded} class="rounded border border-gray-200 dark:border-gray-700">
       <summary
         class="flex cursor-pointer items-center gap-2 px-3 py-2 text-xs hover:bg-gray-50 dark:hover:bg-gray-800/50"
       >
@@ -274,6 +379,13 @@
               class="inline-flex items-center rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-400"
             >
               Outdated
+            </span>
+          {/if}
+          {#if commentBadgeLabel}
+            <span
+              class="inline-flex items-center rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+            >
+              {commentBadgeLabel}
             </span>
           {/if}
         </span>

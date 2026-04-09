@@ -321,7 +321,12 @@
         {/if}
       </summary>
       <div class="mt-1.5 pl-2">
-        <PrReviewThreadList threads={pr.reviewThreads} prUrl={pr.status.pr_url} {planUuid} />
+        <PrReviewThreadList
+          threads={pr.reviewThreads}
+          prUrl={pr.status.pr_url}
+          {planUuid}
+          currentUsername={username}
+        />
       </div>
     </details>
   {/if}

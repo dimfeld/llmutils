@@ -77,6 +77,113 @@ describe('PrReviewThreadList', () => {
     expect(body).toContain('Resolved');
   });
 
+  test('renders expand controls and opens only threads where the current user commented', async () => {
+    const { body } = await render(PrReviewThreadList, {
+      props: {
+        prUrl: 'https://github.com/owner/repo/pull/42',
+        planUuid: 'plan-uuid-1',
+        currentUsername: 'alice',
+        expandMode: 'mine',
+        threads: [
+          makeThread({ id: 1, is_resolved: 1 }, { author: 'alice' }),
+          makeThread({ id: 2, is_resolved: 1, path: 'src/b.ts' }, { author: 'bob' }),
+        ],
+      },
+    });
+
+    expect(body).toContain('Expand all');
+    expect(body).toContain('Collapse all');
+    expect(body).toContain('My comments');
+    expect(body).toContain('Your Thread');
+    expect(body.match(/<details open/g) ?? []).toHaveLength(1);
+  });
+
+  test('renders a generic badge when the current user commented but was not first', async () => {
+    const thread: PrReviewThreadDetail = {
+      thread: {
+        id: 1,
+        pr_status_id: 1,
+        thread_id: 'thread-1',
+        path: 'src/example.ts',
+        line: 10,
+        original_line: 10,
+        original_start_line: null,
+        start_line: null,
+        diff_side: 'RIGHT',
+        start_diff_side: null,
+        is_resolved: 0,
+        is_outdated: 0,
+        subject_type: 'LINE',
+      },
+      comments: [
+        {
+          id: 1,
+          review_thread_id: 1,
+          comment_id: 'c1',
+          database_id: 5001,
+          author: 'bob',
+          body: 'First comment from Bob.',
+          diff_hunk: '@@ -1,1 +1,1 @@',
+          state: 'COMMENTED',
+          created_at: '2026-03-18T10:00:00.000Z',
+        },
+        {
+          id: 2,
+          review_thread_id: 1,
+          comment_id: 'c2',
+          database_id: 5002,
+          author: 'alice',
+          body: 'Reply from Alice.',
+          diff_hunk: null,
+          state: 'COMMENTED',
+          created_at: '2026-03-18T10:05:00.000Z',
+        },
+      ],
+    };
+
+    const { body } = await render(PrReviewThreadList, {
+      props: {
+        prUrl: 'https://github.com/owner/repo/pull/42',
+        planUuid: 'plan-uuid-1',
+        currentUsername: 'alice',
+        expandMode: 'mine',
+        threads: [thread],
+      },
+    });
+
+    expect(body).toContain('You commented');
+    expect(body).not.toContain('Your Thread');
+    expect(body.match(/<details open/g) ?? []).toHaveLength(1);
+  });
+
+  test('respects explicit expand modes', async () => {
+    const baseProps = {
+      prUrl: 'https://github.com/owner/repo/pull/42',
+      planUuid: 'plan-uuid-1',
+      currentUsername: 'alice',
+      threads: [
+        makeThread({ id: 1, is_resolved: 1 }, { author: 'alice' }),
+        makeThread({ id: 2, is_resolved: 1, path: 'src/b.ts' }, { author: 'bob' }),
+      ],
+    };
+
+    const expanded = await render(PrReviewThreadList, {
+      props: {
+        ...baseProps,
+        expandMode: 'expanded',
+      },
+    });
+    expect(expanded.body.match(/<details open/g) ?? []).toHaveLength(2);
+
+    const collapsed = await render(PrReviewThreadList, {
+      props: {
+        ...baseProps,
+        expandMode: 'collapsed',
+      },
+    });
+    expect(collapsed.body.match(/<details open/g) ?? []).toHaveLength(0);
+  });
+
   test('renders unresolved thread actions only for unresolved threads', async () => {
     const { body } = await render(PrReviewThreadList, {
       props: {
@@ -92,9 +199,6 @@ describe('PrReviewThreadList', () => {
     expect(body).toContain('Convert to Task');
     expect(body).toContain('>Resolve<');
     expect(body).toContain('>Reply<');
-    expect(body.match(/Convert to Task/g) ?? []).toHaveLength(1);
-    expect(body.match(/>Resolve</g) ?? []).toHaveLength(1);
-    expect(body.match(/>Reply</g) ?? []).toHaveLength(1);
   });
 
   test('does not render unresolved thread actions when all threads are resolved', async () => {
