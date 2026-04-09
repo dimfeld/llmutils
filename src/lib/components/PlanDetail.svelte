@@ -91,7 +91,10 @@
 
   let actionConfig = $derived.by(() => {
     // needs_review plans and taskless epics: show "Finish" as primary button
+    // If finish executor work is needed (docs or lessons not yet applied), show "Update Docs" instead
     let showFinish = plan.displayStatus === 'needs_review' || isTasklessEpic;
+    let showUpdateDocs =
+      plan.displayStatus === 'needs_review' && plan.needsFinishExecutor && !isTasklessEpic;
 
     // Plans with incomplete tasks: show single "Run Agent" button
     let showAgentOnly = hasTasks && hasIncompleteTasks && !isIneligible && !showFinish;
@@ -160,14 +163,19 @@
     let primary: ActionItem;
     let menuItems: ActionItem[] = [];
 
-    if (showFinish) {
+    if (showUpdateDocs) {
+      // Show "Update Docs" as primary, with "Finish" in dropdown
       primary = finishNoMarkDoneItem;
       menuItems.push(chatItem);
       if (isEligibleForRebase) menuItems.push(rebaseItem);
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
-      if (plan.needsFinishExecutor) {
-        menuItems.push(finishItem);
-      }
+      menuItems.push(finishItem);
+    } else if (showFinish) {
+      // Show "Finish" as primary (marks plan as done)
+      primary = finishItem;
+      menuItems.push(chatItem);
+      if (isEligibleForRebase) menuItems.push(rebaseItem);
+      if (isEligibleForCreatePr) menuItems.push(createPrItem);
     } else if (showAgentOnly) {
       primary = agentItem;
       menuItems.push(chatItem);
@@ -620,7 +628,7 @@
             </a>
           {:else}
             {@const { primary, menuItems } = actionConfig}
-            <ActionButtonWithDropdown {primary} {menuItems} disabled={controlsDisabled} />
+            <ActionButtonWithDropdown {primary} {menuItems} disabled={controlsDisabled} size="xs" />
           {/if}
         </div>
       </div>
@@ -837,11 +845,6 @@
       </div>
     {/if}
 
-    <!-- Pull Requests -->
-    {#if plan.pullRequests.length > 0 || plan.invalidPrUrls.length > 0 || plan.prStatuses.length > 0}
-      <PrStatusSection planUuid={plan.uuid} {projectId} />
-    {/if}
-
     <!-- Branch -->
     {#if plan.branch}
       <div>
@@ -860,6 +863,11 @@
           <Copy class="h-3 w-3 shrink-0" />
         </button>
       </div>
+    {/if}
+
+    <!-- Pull Requests -->
+    {#if plan.pullRequests.length > 0 || plan.invalidPrUrls.length > 0 || plan.prStatuses.length > 0}
+      <PrStatusSection planUuid={plan.uuid} {projectId} />
     {/if}
 
     <!-- Assignment -->

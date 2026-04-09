@@ -148,6 +148,7 @@ describe('PlanDetail', () => {
           epic: true,
           tasks: [],
           taskCounts: { done: 0, total: 0 },
+          needsFinishExecutor: true,
         }),
         projectId: '123',
       },
@@ -155,6 +156,25 @@ describe('PlanDetail', () => {
 
     expect(body).toContain('Update Docs');
     expect(body).not.toContain('Generate');
+  });
+
+  test('does not show Update Docs when needs_review but finish work already done', () => {
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail({
+          status: 'needs_review',
+          displayStatus: 'needs_review',
+          needsFinishExecutor: false,
+          docsUpdatedAt: '2026-03-18T10:00:00.000Z',
+          lessonsAppliedAt: '2026-03-18T10:00:00.000Z',
+        }),
+        projectId: '123',
+      },
+    });
+
+    // Should show "Finish" button (not "Update Docs") since finish work is done
+    expect(body).toContain('Finish');
+    expect(body).not.toContain('Update Docs');
   });
 
   test('shows note content when plan has a note', () => {

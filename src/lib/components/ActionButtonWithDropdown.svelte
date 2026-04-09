@@ -22,16 +22,24 @@
     primary: ActionItem;
     menuItems?: ActionItem[];
     disabled?: boolean;
-    size?: 'sm' | 'default';
+    size?: 'xs' | 'sm' | 'default';
   } = $props();
 </script>
 
 {#if menuItems.length > 0}
-  <ButtonGroup>
-    <Button onclick={primary.onclick} {disabled} {size} class={primary.colorClass}>
+  <ButtonGroup class={size === 'xs' ? 'rounded' : ''}>
+    <Button
+      onclick={primary.onclick}
+      {disabled}
+      {size}
+      class={`${primary.colorClass} ${size === 'xs' ? 'rounded' : ''}`}
+    >
       {#if primary.starting}
         <span
-          class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
+          class="inline-block animate-spin rounded-full border-2 border-white border-t-transparent {size ===
+          'xs'
+            ? 'h-2 w-2'
+            : 'h-3 w-3'}"
         ></span>
         {primary.startingLabel}
       {:else}
@@ -44,14 +52,14 @@
           <Button
             {...props}
             {disabled}
-            size="icon-sm"
+            size={size === 'xs' ? 'icon-xs' : size === 'sm' ? 'icon-sm' : 'icon'}
             aria-label="More actions"
-            class={primary.colorClass}
+            class={`${primary.colorClass} ${size === 'xs' ? 'rounded' : ''}`}
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
+              width={size === 'xs' ? '12' : '16'}
+              height={size === 'xs' ? '12' : '16'}
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -74,10 +82,18 @@
     </DropdownMenu.Root>
   </ButtonGroup>
 {:else}
-  <Button onclick={primary.onclick} {disabled} {size} class={primary.colorClass}>
+  <Button
+    onclick={primary.onclick}
+    {disabled}
+    {size}
+    class={`${primary.colorClass} ${size === 'xs' ? 'rounded' : ''}`}
+  >
     {#if primary.starting}
       <span
-        class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"
+        class="inline-block animate-spin rounded-full border-2 border-white border-t-transparent {size ===
+        'xs'
+          ? 'h-2 w-2'
+          : 'h-3 w-3'}"
       ></span>
       {primary.startingLabel}
     {:else}

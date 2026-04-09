@@ -165,7 +165,7 @@
           },
         ]}
         disabled={startingCreatePr || startingFinish}
-        size="sm"
+        size="xs"
       />
     {:else}
       <button
