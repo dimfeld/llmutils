@@ -90,6 +90,7 @@ describe('common/github/webhook_event_handlers', () => {
     handlePullRequestEvent(db, {
       action: 'review_requested',
       repository: { full_name: 'example/repo' },
+      requested_reviewer: { login: 'bob' },
       pull_request: {
         number: 49,
         title: 'Webhook PR',
@@ -101,7 +102,6 @@ describe('common/github/webhook_event_handlers', () => {
         base: { ref: 'main' },
         labels: [],
         requested_reviewers: [{ login: 'bob' }],
-        requested_reviewer: { login: 'bob' },
         updated_at: '2026-03-30T12:00:00.000Z',
       },
     });
@@ -109,6 +109,7 @@ describe('common/github/webhook_event_handlers', () => {
     handlePullRequestEvent(db, {
       action: 'review_request_removed',
       repository: { full_name: 'example/repo' },
+      requested_reviewer: { login: 'bob' },
       pull_request: {
         number: 49,
         title: 'Webhook PR',
@@ -120,7 +121,6 @@ describe('common/github/webhook_event_handlers', () => {
         base: { ref: 'main' },
         labels: [],
         requested_reviewers: [],
-        requested_reviewer: { login: 'bob' },
         updated_at: '2026-03-30T13:00:00.000Z',
       },
     });
@@ -133,6 +133,36 @@ describe('common/github/webhook_event_handlers', () => {
         requested_at: '2026-03-30T12:00:00.000Z',
         removed_at: '2026-03-30T13:00:00.000Z',
         last_event_at: '2026-03-30T13:00:00.000Z',
+      }),
+    ]);
+  });
+
+  test('handlePullRequestEvent still supports nested requested_reviewer payloads', () => {
+    handlePullRequestEvent(db, {
+      action: 'review_requested',
+      repository: { full_name: 'example/repo' },
+      pull_request: {
+        number: 50,
+        title: 'Webhook PR',
+        state: 'open',
+        draft: false,
+        merged_at: null,
+        user: { login: 'alice' },
+        head: { sha: 'sha-50', ref: 'feature/webhook' },
+        base: { ref: 'main' },
+        labels: [],
+        requested_reviewers: [{ login: 'carol' }],
+        requested_reviewer: { login: 'carol' },
+        updated_at: '2026-03-30T12:00:00.000Z',
+      },
+    });
+
+    const detail = getPrStatusByUrl(db, 'https://github.com/example/repo/pull/50');
+    expect(detail?.reviewRequests).toEqual([
+      expect.objectContaining({
+        reviewer: 'carol',
+        requested_at: '2026-03-30T12:00:00.000Z',
+        removed_at: null,
       }),
     ]);
   });

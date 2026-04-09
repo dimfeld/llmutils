@@ -221,7 +221,9 @@ function parsePullRequestPayload(payload: unknown): ParsedPullRequestPayload | n
   const deletions = (pullRequest as { deletions?: unknown }).deletions;
   const changedFiles = (pullRequest as { changed_files?: unknown }).changed_files;
   const title = (pullRequest as { title?: unknown }).title;
-  const requestedReviewer = (pullRequest as { requested_reviewer?: unknown }).requested_reviewer;
+  const requestedReviewer =
+    (payload as { requested_reviewer?: unknown }).requested_reviewer ??
+    (pullRequest as { requested_reviewer?: unknown }).requested_reviewer;
 
   return {
     action:
