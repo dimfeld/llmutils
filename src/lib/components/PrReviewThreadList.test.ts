@@ -219,6 +219,27 @@ describe('PrReviewThreadList', () => {
     expect(body).not.toContain('Reply to review thread');
   });
 
+  test('renders review comment bodies with the plan markdown styler', async () => {
+    const { body } = await render(PrReviewThreadList, {
+      props: {
+        prUrl: 'https://github.com/owner/repo/pull/42',
+        planUuid: 'plan-uuid-1',
+        threads: [
+          makeThread(
+            {},
+            {
+              body: '# Heading\n\nUse `foo()` and **bold** text',
+            }
+          ),
+        ],
+      },
+    });
+
+    expect(body).toContain('<span class="plan-heading"># Heading</span>');
+    expect(body).toContain('<span class="plan-inline-code">`foo()`</span>');
+    expect(body).toContain('<span class="plan-bold">**bold**</span>');
+  });
+
   test('does not render the reply form by default', async () => {
     const { body } = await render(PrReviewThreadList, {
       props: {

@@ -9,6 +9,7 @@
   } from '$lib/remote/review_thread_actions.remote.js';
   import { normalizeGitHubUsername } from '$common/github/username.js';
   import { formatReviewCommentForClipboard } from '$lib/utils/pr_display.js';
+  import { renderPlanContentHtml } from '$lib/utils/plan_content.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
   import Diff from './Diff.svelte';
 
@@ -265,6 +266,10 @@
         : 'border-gray-300 text-muted-foreground hover:bg-gray-100 hover:text-foreground dark:border-gray-600 dark:hover:bg-gray-800'
     }`;
   }
+
+  function renderCommentBody(body: string | null): string {
+    return renderPlanContentHtml(body ?? '');
+  }
 </script>
 
 {#if sortedThreads.length > 0}
@@ -431,8 +436,8 @@
                   {/if}
                 </button>
               </div>
-              <div class="mt-1 text-sm whitespace-pre-wrap text-foreground">
-                {comment.body ?? ''}
+              <div class="plan-rendered-content mt-1 text-sm whitespace-pre-wrap text-foreground">
+                {@html renderCommentBody(comment.body)}
               </div>
             </div>
           {/each}
