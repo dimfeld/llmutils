@@ -194,6 +194,54 @@
   }
 </script>
 
+{#snippet threadControls(thread: PrReviewThreadDetail, isResolved: boolean)}
+  <span class="ml-auto text-muted-foreground">
+    {thread.comments.length} comment{thread.comments.length === 1 ? '' : 's'}
+  </span>
+  {#if !isResolved}
+    {#if planUuid}
+      <button
+        class="rounded px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
+        onclick={async (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          await handleConvertToTask(thread);
+        }}
+        disabled={threadActionSubmitting !== null}
+        type="button"
+      >
+        {isSubmittingThread(thread.thread.thread_id, 'convert')
+          ? 'Converting...'
+          : 'Convert to Task'}
+      </button>
+    {/if}
+    <button
+      class="rounded px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
+      onclick={async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        await handleResolveThread(thread);
+      }}
+      disabled={threadActionSubmitting !== null}
+      type="button"
+    >
+      {isSubmittingThread(thread.thread.thread_id, 'resolve') ? 'Resolving...' : 'Resolve'}
+    </button>
+    <button
+      class="rounded px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
+      onclick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openReplyForm(thread.thread.thread_id);
+      }}
+      disabled={threadActionSubmitting !== null}
+      type="button"
+    >
+      {replyingToThreadId === thread.thread.thread_id ? 'Cancel Reply' : 'Reply'}
+    </button>
+  {/if}
+{/snippet}
+
 <div class="space-y-3">
   {#each sortedThreads as thread (thread.thread.id)}
     {@const isResolved = !!thread.thread.is_resolved}
@@ -228,51 +276,7 @@
             </span>
           {/if}
         </span>
-        <span class="ml-auto text-muted-foreground">
-          {thread.comments.length} comment{thread.comments.length === 1 ? '' : 's'}
-        </span>
-        {#if !isResolved}
-          {#if planUuid}
-            <button
-              class="rounded px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
-              onclick={async (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                await handleConvertToTask(thread);
-              }}
-              disabled={threadActionSubmitting !== null}
-              type="button"
-            >
-              {isSubmittingThread(thread.thread.thread_id, 'convert')
-                ? 'Converting...'
-                : 'Convert to Task'}
-            </button>
-          {/if}
-          <button
-            class="rounded px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
-            onclick={async (event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              await handleResolveThread(thread);
-            }}
-            disabled={threadActionSubmitting !== null}
-            type="button"
-          >
-            {isSubmittingThread(thread.thread.thread_id, 'resolve') ? 'Resolving...' : 'Resolve'}
-          </button>
-          <button
-            class="rounded px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
-            onclick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              openReplyForm(thread.thread.thread_id);
-            }}
-            disabled={threadActionSubmitting !== null}
-            type="button"
-          >
-            {replyingToThreadId === thread.thread.thread_id ? 'Cancel Reply' : 'Reply'}
-          </button>
-        {/if}
+        {@render threadControls(thread, isResolved)}
       </summary>
 
       <div class="border-t border-gray-200 dark:border-gray-700">
@@ -346,6 +350,10 @@
             </div>
           </div>
         {/if}
+
+        <div class="flex items-center gap-2 border-t border-gray-200 px-3 py-2 text-xs dark:border-gray-700">
+          {@render threadControls(thread, isResolved)}
+        </div>
       </div>
     </details>
   {/each}
