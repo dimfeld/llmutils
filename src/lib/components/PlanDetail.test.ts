@@ -136,7 +136,7 @@ describe('PlanDetail', () => {
     });
 
     expect(body).toContain('href="/projects/123/prs/42"');
-    expect(body).toContain('View PR #42');
+    expect(body).not.toContain('View PR #42');
   });
 
   test('shows Update Docs for a taskless epic outside needs_review', () => {

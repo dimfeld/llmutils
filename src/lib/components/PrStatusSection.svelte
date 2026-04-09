@@ -22,11 +22,12 @@
     reviewDecisionBadgeColor,
     reviewDecisionLabel,
   } from '$lib/utils/pr_display.js';
+  import ExternalLink from '@lucide/svelte/icons/external-link';
   import PrCheckRunList from './PrCheckRunList.svelte';
   import PrReviewList from './PrReviewList.svelte';
   import PrReviewThreadList from './PrReviewThreadList.svelte';
 
-  let { planUuid }: { planUuid: string } = $props();
+  let { planUuid, projectId }: { planUuid: string; projectId: string } = $props();
   const sessionManager = useSessionManager();
 
   let prData = $derived(await getPrStatus({ planUuid }));
@@ -209,15 +210,23 @@
         <!-- PR Header -->
         <div class="flex items-start gap-2">
           <a
-            href={pr.status.pr_url}
-            target="_blank"
-            rel="noopener noreferrer"
+            href="/projects/{projectId}/prs/{pr.status.pr_number}"
             class="min-w-0 flex-1 text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
           >
             #{pr.status.pr_number}
             {#if pr.status.title}
               {pr.status.title}
             {/if}
+          </a>
+          <a
+            href={pr.status.pr_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="shrink-0 text-muted-foreground hover:text-foreground"
+            title="View in GitHub"
+            aria-label="View PR #{pr.status.pr_number} in GitHub"
+          >
+            <ExternalLink class="size-3.5" />
           </a>
         </div>
 
