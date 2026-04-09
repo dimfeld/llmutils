@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { PrReviewRow } from '$tim/db/pr_status.js';
+  import { formatRelativeTime } from '$lib/utils/time.js';
 
   let { reviews }: { reviews: PrReviewRow[] } = $props();
 
@@ -62,8 +63,13 @@
         {stateIcon(review.state)}
       </span>
       <span class="min-w-0 flex-1 text-foreground">{review.author}</span>
-      <span class="shrink-0 text-xs {stateColor(review.state)}">
-        {stateLabel(review.state)}
+      <span class="flex shrink-0 flex-col items-end text-right">
+        <span class="text-xs {stateColor(review.state)}">{stateLabel(review.state)}</span>
+        {#if review.submitted_at}
+          <span class="text-[10px] text-muted-foreground" title={review.submitted_at}>
+            {formatRelativeTime(review.submitted_at)}
+          </span>
+        {/if}
       </span>
     </li>
   {/each}
