@@ -91,7 +91,9 @@ export function extractClaudeRateLimit(message: LlmStatusMessage): RateLimitEntr
   const resetsAt = toFiniteNumber(info.resetsAt);
   const timestampMs = getMessageTimestampMs(message.timestamp);
 
-  console.log('Unknown claude rate limit type', info);
+  if (label === 'unknown') {
+    console.log('Unknown claude rate limit type', label, info);
+  }
 
   return [
     {
