@@ -260,10 +260,10 @@ export async function handleSetCommand(
     }
 
     if (options.details !== undefined) {
-    plan.details = options.details;
-    modified = true;
-    log(`Updated details`);
-  }
+      plan.details = options.details;
+      modified = true;
+      log(`Updated details`);
+    }
 
     if (options.note !== undefined) {
       plan.note = options.note;

@@ -130,7 +130,9 @@
         >
           <Copy class="size-3" />
         </button>
-        <span class="text-foreground/60">{pr.status.base_branch ? `→ ${pr.status.base_branch}` : ''}</span>
+        <span class="text-foreground/60"
+          >{pr.status.base_branch ? `→ ${pr.status.base_branch}` : ''}</span
+        >
         {#if branchCopied}
           <span class="text-emerald-600">Copied</span>
         {/if}

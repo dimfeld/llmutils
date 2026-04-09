@@ -4,7 +4,10 @@ import {
   getWebhookInternalApiToken,
   getWebhookServerUrl,
 } from './webhook_client.js';
-import { fetchAndUpdatePrMergeableStatus } from './pr_status_service.js';
+import {
+  fetchAndUpdatePrMergeableStatus,
+  fetchAndUpdatePrReviewThreads,
+} from './pr_status_service.js';
 import {
   handleCheckRunEvent,
   handlePullRequestEvent,
@@ -291,15 +294,30 @@ export async function ingestWebhookEvents(db: Database): Promise<IngestResult> {
   }
 
   // Execute deduplicated API refresh calls
-  const apiCallPromises = [...apiRefreshTargets.values()].map((target) =>
-    fetchAndUpdatePrMergeableStatus(db, target.owner, target.repo, target.prNumber).catch(
-      (err: unknown) => {
+  const apiCallPromises = [...apiRefreshTargets.values()].map((target) => {
+    const refreshType = target.type ?? 'mergeable'; // Default to mergeable for backwards compatibility
+    if (refreshType === 'review_threads') {
+      return fetchAndUpdatePrReviewThreads(
+        db,
+        `${target.owner}/${target.repo}/pull/${target.prNumber}`
+      ).catch((err: unknown) => {
         throw new Error(`${target.owner}/${target.repo}#${target.prNumber}: ${target.operation}`, {
           cause: err instanceof Error ? err : new Error(String(err)),
         });
-      }
-    )
-  );
+      });
+    } else {
+      return fetchAndUpdatePrMergeableStatus(db, target.owner, target.repo, target.prNumber).catch(
+        (err: unknown) => {
+          throw new Error(
+            `${target.owner}/${target.repo}#${target.prNumber}: ${target.operation}`,
+            {
+              cause: err instanceof Error ? err : new Error(String(err)),
+            }
+          );
+        }
+      );
+    }
+  });
 
   const apiResults = await Promise.allSettled(apiCallPromises);
   for (const result of apiResults) {

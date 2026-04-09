@@ -683,9 +683,7 @@
   <!-- Note -->
   {#if plan.note}
     <div>
-      <h3 class="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-        Note
-      </h3>
+      <h3 class="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">Note</h3>
       <pre
         class="plan-rendered-content font-sans text-sm whitespace-pre-wrap text-foreground">{@html renderPlanContentHtml(
           plan.note
@@ -895,7 +893,9 @@
   <!-- Assignment -->
   {#if plan.assignment}
     <div>
-      <h3 class="text-[11px] font-medium tracking-wide text-muted-foreground">Assigned Workspace</h3>
+      <h3 class="text-[11px] font-medium tracking-wide text-muted-foreground">
+        Assigned Workspace
+      </h3>
       <div class="mt-1 text-xs text-muted-foreground">
         {#each plan.assignment.workspacePaths as wsPath (wsPath)}
           <div class="mt-0.5 flex items-center gap-1">

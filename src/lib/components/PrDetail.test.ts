@@ -80,7 +80,6 @@ describe('PrDetail', () => {
     expect(otherPr.body).not.toContain('Mark ready for review');
   });
 
-
   test('renders full diff stats when additions, deletions, and changed_files are available', () => {
     const pr = createPr();
     pr.status.additions = 42;

@@ -973,7 +973,9 @@ describe('timAgent lifecycle integration', () => {
 
     const updatedPlan = await readPlanFile(planFile);
     expect(updatedPlan.lessonsAppliedAt).toBeDefined();
-    expect(new Date(updatedPlan.lessonsAppliedAt!).toISOString()).toBe(updatedPlan.lessonsAppliedAt);
+    expect(new Date(updatedPlan.lessonsAppliedAt!).toISOString()).toBe(
+      updatedPlan.lessonsAppliedAt
+    );
   });
 
   test('lessonsAppliedAt is NOT set when runUpdateLessons returns false', async () => {

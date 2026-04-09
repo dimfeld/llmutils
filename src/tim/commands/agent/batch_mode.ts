@@ -526,10 +526,7 @@ Available tasks:\n\n${taskDescriptions}`,
               baseDir,
               terminalInput,
             });
-            if (
-              lessonsUpdateResult === true ||
-              lessonsUpdateResult === 'skipped-no-lessons'
-            ) {
+            if (lessonsUpdateResult === true || lessonsUpdateResult === 'skipped-no-lessons') {
               const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
               updatedPlanForTimestamp.lessonsAppliedAt = new Date().toISOString();
               await writePlanFile(currentPlanFile, updatedPlanForTimestamp);

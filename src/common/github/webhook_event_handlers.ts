@@ -14,6 +14,7 @@ import {
   upsertPrReviewRequestByReviewer,
   upsertPrStatusMetadata,
 } from '../../tim/db/pr_status.js';
+import { fetchAndUpdatePrReviewThreads } from './pr_status_service.js';
 
 /** Identifies a PR that needs a follow-up API refresh (mergeable/review_decision). */
 export interface PrRefreshTarget {
@@ -22,6 +23,8 @@ export interface PrRefreshTarget {
   prNumber: number;
   /** Human-readable label for error messages. */
   operation: string;
+  /** Type of refresh operation. */
+  type: 'mergeable' | 'review_threads';
 }
 
 export interface WebhookHandlerResult {
@@ -105,6 +108,16 @@ interface ParsedReviewThreadPayload {
     requestedReviewers: string[];
     requestedReviewerLogin: string | null;
   };
+  thread: {
+    id: string | null;
+    isResolved: boolean | null;
+  } | null;
+  comment: {
+    id: string | null;
+    body: string | null;
+    author: string | null;
+    createdAt: string | null;
+  } | null;
 }
 
 function getNowIsoString(): string {
@@ -334,6 +347,8 @@ function parseReviewThreadPayload(payload: unknown): ParsedReviewThreadPayload |
 
   const action = (payload as { action?: unknown }).action;
   const pullRequest = (payload as { pull_request?: unknown }).pull_request;
+  const thread = (payload as { thread?: unknown }).thread;
+  const comment = (payload as { comment?: unknown }).comment;
   if (!pullRequest || typeof pullRequest !== 'object' || typeof action !== 'string') {
     return null;
   }
@@ -356,6 +371,40 @@ function parseReviewThreadPayload(payload: unknown): ParsedReviewThreadPayload |
 
   if (typeof number !== 'number' || typeof state !== 'string' || typeof draft !== 'boolean') {
     return null;
+  }
+
+  // Extract thread data if available
+  let parsedThread: { id: string | null; isResolved: boolean | null } | null = null;
+  if (thread && typeof thread === 'object') {
+    const threadId = (thread as { id?: unknown }).id;
+    const isResolved = (thread as { is_resolved?: unknown }).is_resolved;
+    parsedThread = {
+      id: typeof threadId === 'string' ? threadId : null,
+      isResolved: typeof isResolved === 'boolean' ? isResolved : null,
+    };
+  }
+
+  // Extract comment data if available
+  let parsedComment: {
+    id: string | null;
+    body: string | null;
+    author: string | null;
+    createdAt: string | null;
+  } | null = null;
+  if (comment && typeof comment === 'object') {
+    const commentId = (comment as { id?: unknown }).id;
+    const body = (comment as { body?: unknown }).body;
+    const commentUser = (comment as { user?: unknown }).user;
+    const createdAt = (comment as { created_at?: unknown }).created_at;
+    parsedComment = {
+      id: typeof commentId === 'string' ? commentId : null,
+      body: typeof body === 'string' ? body : null,
+      author:
+        typeof commentUser === 'object' && commentUser
+          ? (commentUser as { login?: string | null }).login || null
+          : null,
+      createdAt: typeof createdAt === 'string' ? createdAt : null,
+    };
   }
 
   return {
@@ -383,6 +432,8 @@ function parseReviewThreadPayload(payload: unknown): ParsedReviewThreadPayload |
       requestedReviewers: parseRequestedReviewers(requestedReviewers),
       requestedReviewerLogin: parseRequestedReviewer(requestedReviewer),
     },
+    thread: parsedThread,
+    comment: parsedComment,
   };
 }
 
@@ -521,6 +572,7 @@ export function handlePullRequestEvent(
             repo,
             prNumber: pullRequest.number,
             operation: 'mergeable/review_decision refresh failed',
+            type: 'mergeable',
           },
         ]
       : [],
@@ -568,6 +620,7 @@ export function handlePullRequestReviewEvent(
               repo,
               prNumber: parsed.pullRequestNumber,
               operation: 'review_decision refresh failed',
+              type: 'mergeable',
             },
           ]
         : [],
@@ -594,14 +647,14 @@ export function handlePullRequestReviewThreadEvent(
     return { updated: false };
   }
 
-  // For review thread events, we need to refresh the full PR status to get updated review threads
-  // This is more efficient than trying to parse the review thread payload and update individual threads
+  // Return a target to refresh review threads for this PR
   const apiRefreshTargets: PrRefreshTarget[] = [
     {
       owner: repository.owner,
       repo: repository.repo,
       prNumber: pullRequest.number,
       operation: `review thread ${action}`,
+      type: 'review_threads',
     },
   ];
 

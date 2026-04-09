@@ -169,6 +169,48 @@ export async function fetchAndUpdatePrMergeableStatus(
   );
 }
 
+export async function fetchAndUpdatePrReviewThreads(db: Database, prUrl: string): Promise<void> {
+  const canonicalPrUrl = canonicalizePrUrl(prUrl);
+  const existing = getPrStatusByUrl(db, canonicalPrUrl);
+  if (!existing) {
+    return;
+  }
+
+  const parsed = await parsePrOrIssueNumber(canonicalPrUrl);
+  if (!parsed) {
+    throw new Error(`Invalid GitHub pull request identifier: ${canonicalPrUrl}`);
+  }
+
+  const reviewThreads = await fetchPrReviewThreads(parsed.owner, parsed.repo, parsed.number);
+  const input: UpsertPrStatusInput = {
+    prUrl: canonicalPrUrl,
+    owner: parsed.owner,
+    repo: parsed.repo,
+    prNumber: parsed.number,
+    author: existing.status.author,
+    title: existing.status.title,
+    state: existing.status.state,
+    draft: existing.status.draft === 1,
+    mergeable: existing.status.mergeable,
+    headSha: existing.status.head_sha,
+    baseBranch: existing.status.base_branch,
+    headBranch: existing.status.head_branch,
+    reviewDecision: existing.status.review_decision,
+    checkRollupState: existing.status.check_rollup_state,
+    mergedAt: existing.status.merged_at,
+    additions: existing.status.additions,
+    deletions: existing.status.deletions,
+    changedFiles: existing.status.changed_files,
+    lastFetchedAt: getNowIsoString(),
+    checks: [],
+    reviews: [],
+    labels: [],
+    reviewThreads,
+  };
+
+  upsertPrStatus(db, input);
+}
+
 // plan_pr rows are populated lazily by the service layer when PR status is viewed or refreshed
 // (web UI API endpoint, CLI commands). We intentionally do not populate plan_pr during synchronous
 // plan file -> DB sync because fetching GitHub data is async and should not be on the critical path
