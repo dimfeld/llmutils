@@ -61,6 +61,7 @@ type CleanupMaterializedPlansResult = {
 type EditablePlanField =
   | 'title'
   | 'goal'
+  | 'note'
   | 'details'
   | 'status'
   | 'priority'
@@ -93,6 +94,7 @@ type PlanFieldDiff = {
 const EDITABLE_PLAN_FIELDS = [
   'title',
   'goal',
+  'note',
   'details',
   'status',
   'priority',

@@ -7,6 +7,7 @@ describe('planSchema tags', () => {
       id: 1,
       title: 'Tagged Plan',
       goal: 'Test goal',
+      note: 'Internal note',
       details: 'Details',
       tasks: [],
       tags: ['frontend', 'bug'],
@@ -21,6 +22,7 @@ describe('planSchema tags', () => {
       id: 2,
       title: 'Invalid Tags Plan',
       goal: 'Test goal',
+      note: 'Internal note',
       details: 'Details',
       tasks: [],
       tags: ['frontend', 123],
@@ -34,6 +36,7 @@ describe('planSchema tags', () => {
       id: 3,
       title: 'No Tags Plan',
       goal: 'Test goal',
+      note: 'Internal note',
       details: 'Details',
       tasks: [],
     };
@@ -49,6 +52,7 @@ describe('planSchema finalization timestamps', () => {
       id: 10,
       title: 'Finalization Plan',
       goal: 'Test goal',
+      note: 'Internal note',
       tasks: [],
       docsUpdatedAt: '2026-03-01T10:00:00.000Z',
       lessonsAppliedAt: '2026-03-02T12:00:00.000Z',
@@ -64,6 +68,7 @@ describe('planSchema finalization timestamps', () => {
       id: 11,
       title: 'No Timestamps',
       goal: 'Test goal',
+      note: 'Internal note',
       tasks: [],
     };
 
@@ -77,6 +82,7 @@ describe('planSchema finalization timestamps', () => {
       id: 12,
       title: 'Bad Timestamp',
       goal: 'Test goal',
+      note: 'Internal note',
       tasks: [],
       docsUpdatedAt: 'not-a-date',
     };
@@ -89,6 +95,7 @@ describe('planSchema finalization timestamps', () => {
       id: 13,
       title: 'Bad Timestamp',
       goal: 'Test goal',
+      note: 'Internal note',
       tasks: [],
       lessonsAppliedAt: '2026-13-01',
     };

@@ -29,6 +29,7 @@ function createPlanRow(overrides: Partial<PlanRow> = {}): PlanRow {
     plan_id: 11,
     title: 'Primary plan',
     goal: 'Ship the feature',
+    note: 'Internal implementation note',
     details: 'Detailed notes',
     status: 'in_progress',
     priority: 'high',
@@ -110,6 +111,7 @@ describe('tim plans_db', () => {
       uuid: '11111111-1111-4111-8111-111111111111',
       title: 'Primary plan',
       goal: 'Ship the feature',
+      note: 'Internal implementation note',
       details: 'Detailed notes',
       status: 'in_progress',
       priority: 'high',
@@ -151,6 +153,7 @@ describe('tim plans_db', () => {
     const row = createPlanRow({
       title: null,
       goal: null,
+      note: null,
       details: null,
       priority: null,
       branch: null,
@@ -179,6 +182,7 @@ describe('tim plans_db', () => {
       uuid: '11111111-1111-4111-8111-111111111111',
       title: undefined,
       goal: '',
+      note: undefined,
       details: '',
       status: 'in_progress',
       priority: undefined,
@@ -247,6 +251,7 @@ describe('tim plans_db', () => {
     expect(columnNames).toContain('docs_updated_at');
     expect(columnNames).toContain('lessons_applied_at');
     expect(columnNames).toContain('review_issues');
+    expect(columnNames).toContain('note');
   });
 
   test('upsertPlan and loadPlansFromDb round-trip materialization fields', () => {
@@ -270,6 +275,7 @@ describe('tim plans_db', () => {
       planId: 77,
       title: 'Round-trip plan',
       goal: 'Verify DB reconstruction',
+      note: 'Internal implementation note',
       details: 'Generated details',
       status: 'needs_review',
       priority: 'urgent',
@@ -316,6 +322,7 @@ describe('tim plans_db', () => {
       uuid: '77777777-7777-4777-8777-777777777777',
       title: 'Round-trip plan',
       goal: 'Verify DB reconstruction',
+      note: 'Internal implementation note',
       details: 'Generated details',
       status: 'needs_review',
       priority: 'urgent',
@@ -372,6 +379,7 @@ describe('tim plans_db', () => {
         uuid: planUuid,
         title: 'File sync materialization fields',
         goal: 'Verify toPlanUpsertInput persists new columns',
+        note: 'Generated note',
         temp: true,
         docs: ['docs/cli.md', 'docs/db-first.md'],
         changedFiles: ['src/tim/db/plan_sync.ts', 'src/tim/plans_db.ts'],
@@ -404,12 +412,13 @@ describe('tim plans_db', () => {
     const row = db
       .prepare(
         `
-          SELECT temp, docs, changed_files, plan_generated_at, review_issues, parent_uuid
+          SELECT note, temp, docs, changed_files, plan_generated_at, review_issues, parent_uuid
           FROM plan
           WHERE uuid = ?
         `
       )
       .get(planUuid) as {
+      note: string | null;
       temp: number | null;
       docs: string | null;
       changed_files: string | null;
@@ -418,7 +427,9 @@ describe('tim plans_db', () => {
       parent_uuid: string | null;
     } | null;
     expect(row).not.toBeNull();
+    expect(row?.note).toBe('Generated note');
     expect(row).toEqual({
+      note: 'Generated note',
       temp: 1,
       docs: JSON.stringify(['docs/cli.md', 'docs/db-first.md']),
       changed_files: JSON.stringify(['src/tim/db/plan_sync.ts', 'src/tim/plans_db.ts']),

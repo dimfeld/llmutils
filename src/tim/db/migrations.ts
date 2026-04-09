@@ -553,6 +553,12 @@ const migrations: Migration[] = [
       ALTER TABLE pr_status ADD COLUMN latest_commit_pushed_at TEXT;
     `,
   },
+  {
+    version: 19,
+    up: `
+      ALTER TABLE plan ADD COLUMN note TEXT;
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {

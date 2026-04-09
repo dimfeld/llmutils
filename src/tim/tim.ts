@@ -1037,7 +1037,7 @@ program
 program
   .command('set <planFile>')
   .description(
-    'Update plan properties like priority, status, dependencies, and rmfilter. Can be a file path or plan ID.'
+    'Update plan properties like priority, status, note, dependencies, and rmfilter. Can be a file path or plan ID.'
   )
   .option('-p, --priority <level>', 'Set the priority level', (value) => {
     if (!prioritySchema.options.includes(value as any)) {
@@ -1079,6 +1079,7 @@ program
   .option('--no-epic', 'Mark the plan as not an epic')
   .option('--simple', 'Mark the plan as simple')
   .option('--no-simple', 'Mark the plan as not simple')
+  .option('--note <text>', 'Replace the note field with the given text')
   .option('--details <text>', 'Replace the entire details field with the given text')
   .action(async (planFile, options, command) => {
     const { handleSetCommand } = await import('./commands/set.js');

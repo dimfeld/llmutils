@@ -37,6 +37,7 @@ export interface SetOptions {
   noParent?: boolean;
   discoveredFrom?: number;
   noDiscoveredFrom?: boolean;
+  note?: string;
   rmfilter?: string[];
   issue?: string[];
   noIssue?: string[];
@@ -259,9 +260,15 @@ export async function handleSetCommand(
     }
 
     if (options.details !== undefined) {
-      plan.details = options.details;
+    plan.details = options.details;
+    modified = true;
+    log(`Updated details`);
+  }
+
+    if (options.note !== undefined) {
+      plan.note = options.note;
       modified = true;
-      log(`Updated details`);
+      log(`Updated note`);
     }
 
     if (!modified) {

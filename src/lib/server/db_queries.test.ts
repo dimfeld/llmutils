@@ -179,6 +179,7 @@ describe('lib/server/db_queries', () => {
       uuid: 'plan-finish-tracking',
       planId: 115,
       title: 'Plan with finish tracking',
+      note: 'Internal note for finish-tracking',
       status: 'done',
       priority: 'medium',
       filename: '115-finish-tracking.plan.md',
@@ -194,12 +195,14 @@ describe('lib/server/db_queries', () => {
     expect(plan).toMatchObject({
       docsUpdatedAt,
       lessonsAppliedAt,
+      note: 'Internal note for finish-tracking',
     });
 
     const detail = getPlanDetail(db, 'plan-finish-tracking');
     expect(detail).toMatchObject({
       docsUpdatedAt,
       lessonsAppliedAt,
+      note: 'Internal note for finish-tracking',
     });
   });
 

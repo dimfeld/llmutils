@@ -68,6 +68,7 @@ export function planRowToSchemaInput(
     uuid: row.uuid,
     title: row.title ?? undefined,
     goal: row.goal ?? '',
+    note: row.note ?? undefined,
     details: row.details ?? '',
     status: row.status,
     priority: row.priority ?? undefined,

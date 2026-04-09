@@ -91,6 +91,7 @@ describe('tim set command', () => {
     const plan: PlanSchema = {
       id,
       goal: `Test plan ${id}`,
+      note: `Note for test plan ${id}`,
       details: `Details for test plan ${id}`,
       priority: 'medium',
       status: 'pending',
@@ -121,6 +122,22 @@ describe('tim set command', () => {
     const updatedPlan = await readPlanFile(planPath);
     expect(updatedPlan.priority).toBe('high');
     expect(updatedPlan.updatedAt).toBeDefined();
+  });
+
+  test('should update note', async () => {
+    const planPath = await createTestPlan(101);
+
+    await handleSetCommand(
+      planPath,
+      {
+        planFile: planPath,
+        note: 'Updated note text',
+      },
+      globalOpts
+    );
+
+    const updatedPlan = await readPlanFile(planPath);
+    expect(updatedPlan.note).toBe('Updated note text');
   });
 
   test('should update status', async () => {

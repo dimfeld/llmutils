@@ -326,7 +326,7 @@ describe('tim db/database', () => {
         []
       >('SELECT version, import_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(18);
+    expect(version?.version).toBe(19);
     expect(version?.import_completed).toBe(1);
 
     const tables = db
@@ -365,6 +365,7 @@ describe('tim db/database', () => {
     expect(planColumns).toContain('changed_files');
     expect(planColumns).toContain('plan_generated_at');
     expect(planColumns).toContain('review_issues');
+    expect(planColumns).toContain('note');
     expect(planColumns).not.toContain('filename');
 
     const indices = db
@@ -403,7 +404,7 @@ describe('tim db/database', () => {
         []
       >('SELECT version, import_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(18);
+    expect(version?.version).toBe(19);
     expect(version?.import_completed).toBe(1);
     const versionRowCount = db2
       .query<{ count: number }, []>('SELECT count(*) as count FROM schema_version')
@@ -534,7 +535,7 @@ describe('tim db/database', () => {
       const schemaVersion = db
         .query<{ version: number }, []>('SELECT version FROM schema_version')
         .get();
-      expect(schemaVersion?.version).toBe(18);
+      expect(schemaVersion?.version).toBe(19);
 
       const planColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('plan')")
@@ -651,7 +652,7 @@ describe('tim db/database', () => {
           []
         >('SELECT version FROM schema_version ORDER BY rowid DESC LIMIT 1')
         .get();
-      expect(schemaVersion?.version).toBe(18);
+      expect(schemaVersion?.version).toBe(19);
 
       const checkRows = db
         .query<

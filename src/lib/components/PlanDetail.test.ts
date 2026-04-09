@@ -26,6 +26,10 @@ vi.mock('$lib/remote/review_issue_actions.remote.js', () => ({
   clearReviewIssues: vi.fn(),
 }));
 
+vi.mock('./PrStatusSection.svelte', () => ({
+  default: () => '',
+}));
+
 vi.mock('$lib/stores/session_state.svelte.js', () => ({
   useSessionManager: () => ({
     sessions: new Map(),
@@ -147,6 +151,20 @@ describe('PlanDetail', () => {
     expect(body).not.toContain('Generate');
   });
 
+  test('shows note content when plan has a note', () => {
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail({
+          note: 'Internal note for this plan',
+        }),
+        projectId: '123',
+      },
+    });
+
+    expect(body).toContain('Note');
+    expect(body).toContain('Internal note for this plan');
+  });
+
   test('shows PR section when plan has explicit PR URLs', () => {
     const { body } = render(PlanDetailComponent, {
       props: {
@@ -158,7 +176,7 @@ describe('PlanDetail', () => {
       },
     });
 
-    expect(body).toContain('PrStatusSection');
+    expect(body).toContain('Linked PR plan');
   });
 
   test('shows PR section when plan has invalid PR URLs', () => {
@@ -172,7 +190,7 @@ describe('PlanDetail', () => {
       },
     });
 
-    expect(body).toContain('PrStatusSection');
+    expect(body).toContain('Linked PR plan');
   });
 
   test('shows PR section when plan has auto-linked PRs (via prStatuses)', () => {
@@ -187,7 +205,7 @@ describe('PlanDetail', () => {
       },
     });
 
-    expect(body).toContain('PrStatusSection');
+    expect(body).toContain('Linked PR plan');
   });
 
   test('does not show PR section when plan has no PR data', () => {

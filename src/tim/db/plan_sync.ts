@@ -160,6 +160,7 @@ export function toPlanUpsertInput(
   uuid: string;
   title?: string | null;
   goal?: string | null;
+  note?: string | null;
   details?: string | null;
   sourceCreatedAt?: string | null;
   sourceUpdatedAt?: string | null;
@@ -204,6 +205,7 @@ export function toPlanUpsertInput(
     uuid: plan.uuid!,
     title: plan.title ?? null,
     goal: plan.goal ?? null,
+    note: plan.note ?? null,
     details: plan.details ?? null,
     sourceCreatedAt: plan.createdAt ?? null,
     sourceUpdatedAt: plan.updatedAt ?? null,

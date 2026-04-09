@@ -80,6 +80,7 @@ export interface EnrichedPlan {
   planId: number;
   title: string | null;
   goal: string | null;
+  note?: string | null;
   details: string | null;
   status: PlanRow['status'];
   displayStatus: PlanDisplayStatus;
@@ -460,6 +461,7 @@ function enrichPlansWithContext(
       planId: plan.plan_id,
       title: plan.title,
       goal: plan.goal,
+      note: plan.note,
       details: plan.details,
       status: plan.status,
       displayStatus,

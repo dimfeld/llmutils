@@ -27,6 +27,7 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
   const phaseSchema = objectFactory({
     title: z.string().optional(),
     goal: z.string().optional(),
+    note: z.string().optional(),
     details: z
       .string()
       .optional()

@@ -8,6 +8,7 @@ export interface PlanRow {
   plan_id: number;
   title: string | null;
   goal: string | null;
+  note: string | null;
   details: string | null;
   status: PlanSchema['status'];
   priority: 'low' | 'medium' | 'high' | 'urgent' | 'maybe' | null;
@@ -56,6 +57,7 @@ export interface UpsertPlanInput {
   planId: number;
   title?: string | null;
   goal?: string | null;
+  note?: string | null;
   details?: string | null;
   sourceCreatedAt?: string | null;
   sourceUpdatedAt?: string | null;
@@ -195,6 +197,7 @@ export function upsertPlanInTransaction(
       plan_id,
       title,
       goal,
+      note,
       details,
       status,
       priority,
@@ -217,12 +220,13 @@ export function upsertPlanInTransaction(
       epic,
       created_at,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ${SQL_NOW_ISO_UTC}), COALESCE(?, ${SQL_NOW_ISO_UTC}))
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ${SQL_NOW_ISO_UTC}), COALESCE(?, ${SQL_NOW_ISO_UTC}))
     ON CONFLICT(uuid) DO UPDATE SET
       project_id = excluded.project_id,
       plan_id = excluded.plan_id,
       title = excluded.title,
       goal = excluded.goal,
+      note = excluded.note,
       details = excluded.details,
       status = excluded.status,
       priority = excluded.priority,
@@ -252,6 +256,7 @@ export function upsertPlanInTransaction(
     input.planId,
     input.title ?? null,
     input.goal ?? null,
+    input.note ?? null,
     input.details ?? null,
     input.status ?? 'pending',
     input.priority ?? null,
