@@ -94,6 +94,7 @@ describe('create_pr command helpers', () => {
       expect(prompt).toContain('jj log -r @ -n 1');
       expect(prompt).toContain('jj bookmark track <branch-name> --remote origin');
       expect(prompt).toContain('--draft --head <branch-name> --base main');
+      expect(prompt).toContain('do not ask for confirmation at any point');
       expect(prompt).toContain('Prefix the PR title with: [Feature]');
       expect(prompt).toContain('Plan ID: 317');
       expect(prompt).toContain('Issue reference: DF-123');
@@ -117,6 +118,7 @@ describe('create_pr command helpers', () => {
       expect(prompt).toContain('git push -u origin <branch-name>');
       expect(prompt).toContain('git add -A && git commit -m "<message>"');
       expect(prompt).toContain('gh pr create --head <branch-name> --base release');
+      expect(prompt).toContain('Push Changes Without Confirmation');
       expect(prompt).not.toContain('--draft --head');
       expect(prompt).toContain('comparison base is `abc123mergebase`');
     });
@@ -348,6 +350,18 @@ describe('create_pr command helpers', () => {
       );
 
       expect(mockBuildExecutorAndLog).toHaveBeenCalledTimes(1);
+      expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(
+        'claude-code',
+        expect.objectContaining({ baseDir: '/tmp', model: 'haiku', terminalInput: false }),
+        {},
+        expect.objectContaining({
+          allowedTools: expect.arrayContaining([
+            'Bash(gh pr create:*)',
+            'Bash(jj bookmark track:*)',
+            'Bash(jj git push --branch:*)',
+          ]),
+        })
+      );
       const builtExecutor = mockBuildExecutorAndLog.mock.results[0]?.value as
         | { execute?: ReturnType<typeof vi.fn> }
         | undefined;
@@ -460,6 +474,18 @@ describe('create_pr command helpers', () => {
       );
 
       expect(mockBuildExecutorAndLog).toHaveBeenCalledTimes(1);
+      expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(
+        'claude-code',
+        expect.objectContaining({ baseDir: '/tmp', model: 'haiku', terminalInput: false }),
+        {},
+        expect.objectContaining({
+          allowedTools: expect.arrayContaining([
+            'Bash(gh pr create:*)',
+            'Bash(jj bookmark track:*)',
+            'Bash(jj git push --branch:*)',
+          ]),
+        })
+      );
       const builtExecutor = mockBuildExecutorAndLog.mock.results[0]?.value as
         | { execute?: ReturnType<typeof vi.fn> }
         | undefined;

@@ -58,6 +58,13 @@ interface CommandResult {
   stderr: string;
 }
 
+const CREATE_PR_ALLOWED_BASH_TOOLS = [
+  'Bash(gh pr create:*)',
+  'Bash(jj bookmark track:*)',
+  'Bash(jj git push --branch:*)',
+];
+const CLAUDE_CODE_EXECUTOR_NAME = 'claude-code';
+
 function getRootOptions(command: RootCommandLike | undefined): { config?: string } {
   let current = command;
   while (current?.parent) {
@@ -123,6 +130,8 @@ export function buildPrCreationPrompt(options: PrCreationPromptOptions): string 
   const prompt: string[] = [
     'Please do the following:',
     '',
+    'Important: do not ask for confirmation at any point. Push the branch and create the PR directly.',
+    '',
     '## Step 1: Examine Repository State',
     '',
     `1a. Working copy status:\n\n!\`${statusCommand}\``,
@@ -153,7 +162,7 @@ export function buildPrCreationPrompt(options: PrCreationPromptOptions): string 
     `If there are uncommitted changes, create a commit using \`${commitCommand}\` with a concise subject and bullet list body.`,
     'If there are no uncommitted changes, skip this step.',
     '',
-    '## Step 4: Push Changes',
+    '## Step 4: Push Changes Without Confirmation',
     '',
     `Push with: \`${pushCommand}\``,
     '',
@@ -167,7 +176,7 @@ export function buildPrCreationPrompt(options: PrCreationPromptOptions): string 
     '5b. If a PR exists, inspect and update it with `gh pr edit` only when title/body are stale.',
     'Preserve any existing issue-closing tags in the body.',
     '',
-    `5c. If no PR exists, create one with \`gh pr create ${draftFlag}--head <branch-name> --base ${options.baseBranch}\` and include:`,
+    `5c. If no PR exists, create one directly with \`gh pr create ${draftFlag}--head <branch-name> --base ${options.baseBranch}\` and include:`,
     '- Summary section with bullet points',
     '- Changes section listing important files/modules',
     '- Test plan section with checkboxes',
@@ -299,10 +308,23 @@ async function runPrCreationExecutor(
     terminalInput: options.terminalInput ?? false,
     disableInactivityTimeout: true,
   };
+  const executorOptions =
+    (options.executor ?? CLAUDE_CODE_EXECUTOR_NAME) === CLAUDE_CODE_EXECUTOR_NAME
+      ? {
+          allowedTools: [
+            ...new Set([
+              ...((options.config.executors as Record<string, any>)?.[CLAUDE_CODE_EXECUTOR_NAME]
+                ?.allowedTools ?? []),
+              ...CREATE_PR_ALLOWED_BASH_TOOLS,
+            ]),
+          ],
+        }
+      : {};
   const executor = buildExecutorAndLog(
-    options.executor ?? 'claude-code',
+    options.executor ?? CLAUDE_CODE_EXECUTOR_NAME,
     sharedExecutorOptions,
-    options.config
+    options.config,
+    executorOptions
   );
 
   await executor.execute(prPrompt, {
