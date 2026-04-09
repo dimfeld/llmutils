@@ -23,6 +23,20 @@ import {
   getWorkspacesForProject,
 } from './db_queries.js';
 
+type FinishExecutorPlan = Parameters<typeof computeNeedsFinishExecutor>[0];
+
+function makeFinishExecutorPlan(
+  overrides: Partial<FinishExecutorPlan> = {}
+): FinishExecutorPlan {
+  return {
+    docsUpdatedAt: null,
+    lessonsAppliedAt: null,
+    epic: false,
+    tasks: [],
+    ...overrides,
+  };
+}
+
 describe('lib/server/db_queries', () => {
   let tempDir: string;
   let db: Database;
@@ -1306,62 +1320,123 @@ describe('computeNeedsFinishExecutor', () => {
 
   test('returns true when docsUpdatedAt is null and mode is after-completion', () => {
     expect(
-      computeNeedsFinishExecutor(null, SOME_TIMESTAMP, { updateDocsMode: 'after-completion' })
+      computeNeedsFinishExecutor(
+        makeFinishExecutorPlan({ docsUpdatedAt: null, lessonsAppliedAt: SOME_TIMESTAMP }),
+        { updateDocsMode: 'after-completion' }
+      )
     ).toBe(true);
   });
 
   test('returns true when docsUpdatedAt is null and mode is after-iteration', () => {
     expect(
-      computeNeedsFinishExecutor(null, SOME_TIMESTAMP, { updateDocsMode: 'after-iteration' })
+      computeNeedsFinishExecutor(
+        makeFinishExecutorPlan({ docsUpdatedAt: null, lessonsAppliedAt: SOME_TIMESTAMP }),
+        { updateDocsMode: 'after-iteration' }
+      )
     ).toBe(true);
   });
 
   test('returns false when docsUpdatedAt is null and mode is never', () => {
-    expect(computeNeedsFinishExecutor(null, SOME_TIMESTAMP, { updateDocsMode: 'never' })).toBe(
-      false
-    );
+    expect(
+      computeNeedsFinishExecutor(
+        makeFinishExecutorPlan({ docsUpdatedAt: null, lessonsAppliedAt: SOME_TIMESTAMP }),
+        { updateDocsMode: 'never' }
+      )
+    ).toBe(false);
   });
 
   test('returns false when docsUpdatedAt is null and mode is undefined (defaults to never)', () => {
-    expect(computeNeedsFinishExecutor(null, SOME_TIMESTAMP, {})).toBe(false);
+    expect(
+      computeNeedsFinishExecutor(
+        makeFinishExecutorPlan({ docsUpdatedAt: null, lessonsAppliedAt: SOME_TIMESTAMP }),
+        {}
+      )
+    ).toBe(false);
   });
 
   test('returns true when lessonsAppliedAt is null and applyLessons is true', () => {
-    expect(computeNeedsFinishExecutor(SOME_TIMESTAMP, null, { applyLessons: true })).toBe(true);
+    expect(
+      computeNeedsFinishExecutor(
+        makeFinishExecutorPlan({ docsUpdatedAt: SOME_TIMESTAMP, lessonsAppliedAt: null }),
+        { applyLessons: true }
+      )
+    ).toBe(true);
   });
 
   test('returns false when lessonsAppliedAt is null and applyLessons is false', () => {
-    expect(computeNeedsFinishExecutor(SOME_TIMESTAMP, null, { applyLessons: false })).toBe(false);
+    expect(
+      computeNeedsFinishExecutor(
+        makeFinishExecutorPlan({ docsUpdatedAt: SOME_TIMESTAMP, lessonsAppliedAt: null }),
+        { applyLessons: false }
+      )
+    ).toBe(false);
   });
 
   test('returns false when lessonsAppliedAt is null and applyLessons is undefined', () => {
-    expect(computeNeedsFinishExecutor(SOME_TIMESTAMP, null, {})).toBe(false);
+    expect(
+      computeNeedsFinishExecutor(
+        makeFinishExecutorPlan({ docsUpdatedAt: SOME_TIMESTAMP, lessonsAppliedAt: null }),
+        {}
+      )
+    ).toBe(false);
   });
 
   test('returns false when both timestamps are set regardless of config', () => {
     expect(
-      computeNeedsFinishExecutor(SOME_TIMESTAMP, SOME_TIMESTAMP, {
-        updateDocsMode: 'after-completion',
-        applyLessons: true,
-      })
+      computeNeedsFinishExecutor(
+        makeFinishExecutorPlan({
+          docsUpdatedAt: SOME_TIMESTAMP,
+          lessonsAppliedAt: SOME_TIMESTAMP,
+        }),
+        {
+          updateDocsMode: 'after-completion',
+          applyLessons: true,
+        }
+      )
     ).toBe(false);
   });
 
   test('returns true when both timestamps are null with active config', () => {
     expect(
-      computeNeedsFinishExecutor(null, null, {
-        updateDocsMode: 'after-completion',
-        applyLessons: true,
-      })
+      computeNeedsFinishExecutor(
+        makeFinishExecutorPlan({ docsUpdatedAt: null, lessonsAppliedAt: null }),
+        {
+          updateDocsMode: 'after-completion',
+          applyLessons: true,
+        }
+      )
     ).toBe(true);
   });
 
   test('returns false when docsUpdatedAt is set and lessonsAppliedAt is set', () => {
     expect(
-      computeNeedsFinishExecutor(SOME_TIMESTAMP, SOME_TIMESTAMP, {
-        updateDocsMode: 'never',
-        applyLessons: false,
-      })
+      computeNeedsFinishExecutor(
+        makeFinishExecutorPlan({
+          docsUpdatedAt: SOME_TIMESTAMP,
+          lessonsAppliedAt: SOME_TIMESTAMP,
+        }),
+        {
+          updateDocsMode: 'never',
+          applyLessons: false,
+        }
+      )
+    ).toBe(false);
+  });
+
+  test('returns false for taskless epics even when finish work would otherwise be needed', () => {
+    expect(
+      computeNeedsFinishExecutor(
+        makeFinishExecutorPlan({
+          docsUpdatedAt: null,
+          lessonsAppliedAt: null,
+          epic: true,
+          tasks: [],
+        }),
+        {
+          updateDocsMode: 'after-completion',
+          applyLessons: true,
+        }
+      )
     ).toBe(false);
   });
 });

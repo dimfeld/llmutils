@@ -390,13 +390,16 @@ export interface FinishConfig {
 type FinishConfigInput = FinishConfig | Map<number, FinishConfig>;
 
 export function computeNeedsFinishExecutor(
-  docsUpdatedAt: string | null,
-  lessonsAppliedAt: string | null,
+  plan: Pick<EnrichedPlan, 'docsUpdatedAt' | 'lessonsAppliedAt' | 'epic' | 'tasks'>,
   finishConfig: FinishConfig
 ): boolean {
+  if (plan.epic && plan.tasks.length === 0) {
+    return false;
+  }
+
   const mode = finishConfig.updateDocsMode ?? 'never';
-  const needsDocs = docsUpdatedAt === null && mode !== 'never';
-  const needsLessons = lessonsAppliedAt === null && finishConfig.applyLessons === true;
+  const needsDocs = plan.docsUpdatedAt === null && mode !== 'never';
+  const needsLessons = plan.lessonsAppliedAt === null && finishConfig.applyLessons === true;
   return needsDocs || needsLessons;
 }
 
@@ -492,8 +495,12 @@ function enrichPlansWithContext(
       docsUpdatedAt: plan.docs_updated_at,
       lessonsAppliedAt: plan.lessons_applied_at,
       needsFinishExecutor: computeNeedsFinishExecutor(
-        plan.docs_updated_at,
-        plan.lessons_applied_at,
+        {
+          docsUpdatedAt: plan.docs_updated_at,
+          lessonsAppliedAt: plan.lessons_applied_at,
+          epic: plan.epic === 1,
+          tasks,
+        },
         planFinishConfig
       ),
       issues: parseJsonStringArray(plan.issue),

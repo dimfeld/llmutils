@@ -295,11 +295,7 @@ export const finishPlanQuick = command(finishPlanQuickSchema, async ({ planUuid 
   }
 
   const projectConfig = await loadProjectFinishConfig(db, plan.projectId);
-  const needsExecutor = computeNeedsFinishExecutor(
-    plan.docsUpdatedAt ?? null,
-    plan.lessonsAppliedAt ?? null,
-    projectConfig
-  );
+  const needsExecutor = computeNeedsFinishExecutor(plan, projectConfig);
   if (!tasklessEpic && needsExecutor) {
     error(400, 'Plan requires executor work — use startFinish instead');
   }
