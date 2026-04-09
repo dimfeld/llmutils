@@ -333,9 +333,10 @@ function partitionCachedProjectPrs(
   for (const pr of prs) {
     const isAuthored =
       pr.status.author != null && normalizeGitHubUsername(pr.status.author) === normalizedUsername;
-    const isRequestedReviewer = parseRequestedReviewers(pr.status.requested_reviewers).some(
-      (reviewer) => normalizeGitHubUsername(reviewer) === normalizedUsername
-    );
+    const isRequestedReviewer =
+      parseRequestedReviewers(pr.status.requested_reviewers).some(
+        (reviewer) => normalizeGitHubUsername(reviewer) === normalizedUsername
+      ) || pr.reviewRequests.some((row) => row.reviewer === username);
     const hasSubmittedReview = pr.reviews.some(
       (review) =>
         normalizeGitHubUsername(review.author) === normalizedUsername && review.state !== 'PENDING'

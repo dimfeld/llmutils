@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { page } from '$app/state';
   import PrDetail from '$lib/components/PrDetail.svelte';
   import { getProjectPrs } from '$lib/remote/project_prs.remote.js';
 
-  let projectId = $derived(page.params.projectId);
-  let prNumber = $derived(Number(page.params.prNumber));
+  const { params } = $props();
+
+  let projectId = $derived(params.projectId);
+  let prNumber = $derived(Number(params.prNumber));
   let prData = $derived(await getProjectPrs({ projectId }));
 
   let pr = $derived.by(() => {
