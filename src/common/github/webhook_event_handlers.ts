@@ -586,11 +586,15 @@ export function handlePullRequestReviewEvent(
 ): WebhookHandlerResult {
   const parsed = parseReviewPayload(payload);
   if (!parsed || !isKnownRepository(db, parsed.repository.fullName, options?.knownRepos)) {
+    console.log('[webhook-handler] pull_request_review ignored: unparsable or unknown repo');
     return { updated: false };
   }
 
   const { owner, repo } = parsed.repository;
   const row = getPrStatusByRepoAndNumber(db, owner, repo, parsed.pullRequestNumber);
+  console.log(
+    `[webhook-handler] pull_request_review repo=${owner}/${repo} pr=${parsed.pullRequestNumber} author=${parsed.review.author} state=${parsed.review.state} row=${row ? 'found' : 'missing'}`
+  );
   // Known limitation: review events that arrive before the PR row exists are dropped.
   // A later pull_request event or manual full refresh will backfill the missing state.
   if (!row) {
@@ -608,6 +612,9 @@ export function handlePullRequestReviewEvent(
     reviewState === 'APPROVED' ||
     reviewState === 'CHANGES_REQUESTED' ||
     reviewState === 'DISMISSED';
+  console.log(
+    `[webhook-handler] pull_request_review updated=${updated} affectsReviewDecision=${affectsReviewDecision}`
+  );
 
   return {
     updated,
@@ -634,6 +641,7 @@ export function handlePullRequestReviewThreadEvent(
 ): WebhookHandlerResult {
   const parsed = parseReviewThreadPayload(payload);
   if (!parsed) {
+    console.log('[webhook-handler] pull_request_review_thread/comment ignored: unparsable payload');
     return { updated: false };
   }
 
@@ -646,6 +654,10 @@ export function handlePullRequestReviewThreadEvent(
     console.warn(`[webhook] Review thread event for unknown PR: ${canonicalPrUrl}`);
     return { updated: false };
   }
+
+  console.log(
+    `[webhook-handler] review-thread event action=${action} pr=${canonicalPrUrl} thread=${parsed.thread?.id ?? 'none'} comment=${parsed.comment?.id ?? 'none'} resolved=${parsed.thread?.isResolved ?? 'unknown'}`
+  );
 
   // Return a target to refresh review threads for this PR
   const apiRefreshTargets: PrRefreshTarget[] = [

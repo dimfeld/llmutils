@@ -173,6 +173,7 @@ export async function fetchAndUpdatePrReviewThreads(db: Database, prUrl: string)
   const canonicalPrUrl = canonicalizePrUrl(prUrl);
   const existing = getPrStatusByUrl(db, canonicalPrUrl);
   if (!existing) {
+    console.log(`[pr_status] review-thread refresh skipped; no cached row for ${canonicalPrUrl}`);
     return;
   }
 
@@ -181,7 +182,13 @@ export async function fetchAndUpdatePrReviewThreads(db: Database, prUrl: string)
     throw new Error(`Invalid GitHub pull request identifier: ${canonicalPrUrl}`);
   }
 
+  console.log(
+    `[pr_status] fetching review threads for ${canonicalPrUrl} (${parsed.owner}/${parsed.repo}#${parsed.number})`
+  );
   const reviewThreads = await fetchPrReviewThreads(parsed.owner, parsed.repo, parsed.number);
+  console.log(
+    `[pr_status] fetched ${reviewThreads.length} review threads for ${canonicalPrUrl}`
+  );
   const input: UpsertPrStatusInput = {
     prUrl: canonicalPrUrl,
     owner: parsed.owner,
@@ -209,6 +216,7 @@ export async function fetchAndUpdatePrReviewThreads(db: Database, prUrl: string)
   };
 
   upsertPrStatus(db, input);
+  console.log(`[pr_status] stored review threads for ${canonicalPrUrl}`);
 }
 
 // plan_pr rows are populated lazily by the service layer when PR status is viewed or refreshed
