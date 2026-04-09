@@ -173,7 +173,10 @@ export async function fetchAndUpdatePrReviewThreads(db: Database, prUrl: string)
   const canonicalPrUrl = canonicalizePrUrl(prUrl);
   const existing = getPrStatusByUrl(db, canonicalPrUrl);
   if (!existing) {
-    console.log(`[pr_status] review-thread refresh skipped; no cached row for ${canonicalPrUrl}`);
+    console.log(
+      `[pr_status] review-thread refresh falling back to full refresh for uncached PR ${canonicalPrUrl}`
+    );
+    await refreshPrStatus(db, canonicalPrUrl);
     return;
   }
 

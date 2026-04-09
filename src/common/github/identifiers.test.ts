@@ -37,6 +37,16 @@ describe('parsePrIdentifier', () => {
     expect(await parsePrOrIssueNumber(identifier)).toEqual(expected);
   });
 
+  test('should parse valid short pull path format (owner/repo/pull/123)', async () => {
+    const identifier = 'dimfeld/llmutils/pull/789';
+    const expected = {
+      owner: 'dimfeld',
+      repo: 'llmutils',
+      number: 789,
+    };
+    expect(await parsePrOrIssueNumber(identifier)).toEqual(expected);
+  });
+
   describe('invalid formats', () => {
     test('should return null for missing PR number in URL', async () => {
       const identifier = 'https://github.com/dimfeld/llmutils/pull/';
@@ -104,8 +114,19 @@ describe('canonicalizePrUrl', () => {
     ).toBe('https://github.com/dimfeld/llmutils/pull/123');
   });
 
-  test('returns non-URL identifiers unchanged', () => {
-    expect(canonicalizePrUrl('dimfeld/llmutils#123')).toBe('dimfeld/llmutils#123');
+  test('normalizes short PR identifiers to the canonical /pull form', () => {
+    expect(canonicalizePrUrl('dimfeld/llmutils#123')).toBe(
+      'https://github.com/dimfeld/llmutils/pull/123'
+    );
+    expect(canonicalizePrUrl('dimfeld/llmutils/123')).toBe(
+      'https://github.com/dimfeld/llmutils/pull/123'
+    );
+    expect(canonicalizePrUrl('dimfeld/llmutils/pull/123')).toBe(
+      'https://github.com/dimfeld/llmutils/pull/123'
+    );
+    expect(canonicalizePrUrl('dimfeld/llmutils/pulls/123')).toBe(
+      'https://github.com/dimfeld/llmutils/pull/123'
+    );
   });
 });
 
@@ -130,6 +151,7 @@ describe('deduplicatePrUrls', () => {
   test('deduplicates equivalent canonical PR URLs while preserving first-seen order', () => {
     expect(
       deduplicatePrUrls([
+        'dimfeld/llmutils#123',
         'https://github.com/dimfeld/llmutils/pulls/123?tab=checks',
         'https://github.com/dimfeld/llmutils/pull/124',
         'https://github.com/dimfeld/llmutils/pull/123#discussion_r1',

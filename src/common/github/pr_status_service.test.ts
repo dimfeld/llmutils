@@ -1093,4 +1093,51 @@ describe('common/github/pr_status_service', () => {
     expect(detail?.checks.map((check) => check.name)).toEqual(['existing-check']);
     expect(detail?.reviews.map((review) => review.author)).toEqual(['alice']);
   });
+
+  test('fetchAndUpdatePrReviewThreads falls back to a full refresh when the PR is uncached', async () => {
+    const mockFetchPrFullStatus = vi.mocked(fetchPrFullStatus);
+    const mockFetchPrReviewThreads = vi.mocked(fetchPrReviewThreads);
+    const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
+    const mockCanonicalizePrUrl = vi.mocked(canonicalizePrUrl);
+
+    mockFetchPrFullStatus.mockResolvedValue({
+      number: 302,
+      title: 'Uncached review thread PR',
+      state: 'open' as const,
+      isDraft: false,
+      mergeable: 'MERGEABLE' as const,
+      mergedAt: null,
+      headSha: 'uncached-sha',
+      baseRefName: 'main',
+      headRefName: 'feature/uncached',
+      reviewDecision: null,
+      labels: [],
+      reviews: [],
+      checks: [],
+      checkRollupState: 'success' as const,
+    });
+    mockFetchPrReviewThreads.mockResolvedValue([
+      {
+        threadId: 'thread-uncached',
+        path: 'src/uncached.ts',
+        line: 4,
+        isResolved: false,
+        isOutdated: false,
+        comments: [],
+      },
+    ]);
+    mockParsePrOrIssueNumber.mockResolvedValue({ owner: 'example', repo: 'repo', number: 302 });
+    mockCanonicalizePrUrl.mockReturnValue('https://github.com/example/repo/pull/302');
+
+    const { fetchAndUpdatePrReviewThreads } = await import('./pr_status_service.ts');
+    await fetchAndUpdatePrReviewThreads(db, 'https://github.com/example/repo/pull/302');
+
+    const detail = getPrStatusByUrl(db, 'https://github.com/example/repo/pull/302', {
+      includeReviewThreads: true,
+    });
+    expect(fetchPrFullStatus).toHaveBeenCalledWith('example', 'repo', 302);
+    expect(fetchPrReviewThreads).toHaveBeenCalledWith('example', 'repo', 302);
+    expect(detail?.reviewThreads).toHaveLength(1);
+    expect(detail?.reviewThreads?.[0]?.thread.thread_id).toBe('thread-uncached');
+  });
 });

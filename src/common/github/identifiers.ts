@@ -1,5 +1,36 @@
 import { getGitRepository } from '../git.js';
 
+function parseShortPrIdentifier(identifier: string): { owner: string; repo: string; number: number } | null {
+  const shortMatch = identifier.match(/^([^/]+)\/([^/#]+)#(\d+)$/);
+  if (shortMatch) {
+    return {
+      owner: shortMatch[1],
+      repo: shortMatch[2],
+      number: parseInt(shortMatch[3], 10),
+    };
+  }
+
+  const altShortMatch = identifier.match(/^([^/]+)\/([^/]+)\/(\d+)$/);
+  if (altShortMatch) {
+    return {
+      owner: altShortMatch[1],
+      repo: altShortMatch[2],
+      number: parseInt(altShortMatch[3], 10),
+    };
+  }
+
+  const pullShortMatch = identifier.match(/^([^/]+)\/([^/]+)\/pulls?\/(\d+)$/);
+  if (pullShortMatch) {
+    return {
+      owner: pullShortMatch[1],
+      repo: pullShortMatch[2],
+      number: parseInt(pullShortMatch[3], 10),
+    };
+  }
+
+  return null;
+}
+
 async function parsePrOrIssueNumberInternal(identifier: string): Promise<{
   owner: string;
   repo: string;
@@ -19,24 +50,9 @@ async function parsePrOrIssueNumberInternal(identifier: string): Promise<{
     // it's fine if it wasn't a url
   }
 
-  // Try parsing as short format: owner/repo#123
-  const shortMatch = identifier.match(/^([^/]+)\/([^/#]+)#(\d+)$/);
-  if (shortMatch) {
-    return {
-      owner: shortMatch[1],
-      repo: shortMatch[2],
-      number: parseInt(shortMatch[3], 10),
-    };
-  }
-
-  // Try parsing as alternative short format: owner/repo/123
-  const altShortMatch = identifier.match(/^([^/]+)\/([^/]+)\/(\d+)$/);
-  if (altShortMatch) {
-    return {
-      owner: altShortMatch[1],
-      repo: altShortMatch[2],
-      number: parseInt(altShortMatch[3], 10),
-    };
+  const shortIdentifier = parseShortPrIdentifier(identifier);
+  if (shortIdentifier) {
+    return shortIdentifier;
   }
 
   // See if it's just a number
@@ -102,6 +118,11 @@ export function tryCanonicalizePrUrl(identifier: string): string | null {
   try {
     url = new URL(identifier);
   } catch {
+    const shortIdentifier = parseShortPrIdentifier(identifier);
+    if (shortIdentifier) {
+      return `https://github.com/${shortIdentifier.owner}/${shortIdentifier.repo}/pull/${shortIdentifier.number}`;
+    }
+
     return identifier;
   }
 
