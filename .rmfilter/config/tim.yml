@@ -2,6 +2,7 @@
 
 defaultExecutor: claude-code
 planAutocompleteStatus: needs_review
+developmentWorkflow: trunk-based
 postApplyCommands:
   - title: Format JS
     command: bun run format
