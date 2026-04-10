@@ -126,6 +126,32 @@ describe('message_formatting', () => {
     });
   });
 
+  test('formats token_usage with console-style rate limit details', () => {
+    expect(
+      formatStructuredMessage({
+        type: 'token_usage',
+        inputTokens: 1683626,
+        cachedInputTokens: 1579136,
+        outputTokens: 15328,
+        reasoningTokens: 11327,
+        totalTokens: 1698954,
+        rateLimits: {
+          codex: {
+            limitId: 'codex',
+            primary: { usedPercent: 1, windowDurationMins: 300 },
+            secondary: { usedPercent: 1, windowDurationMins: 10080 },
+          },
+        },
+      })
+    ).toEqual({
+      type: 'text',
+      text: [
+        'input=1683626 cached=1579136 output=15328 reasoning=11327 total=1698954',
+        'rateLimits=codex: primary 1%/300m, secondary 1%/10080m',
+      ].join('\n'),
+    });
+  });
+
   test('formats todo_update by preserving structured items and explanation', () => {
     expect(
       formatStructuredMessage({

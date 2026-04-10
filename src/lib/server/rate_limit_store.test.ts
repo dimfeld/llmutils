@@ -174,6 +174,45 @@ describe('lib/server/rate_limit_store', () => {
       ]);
     });
 
+    test('extracts camelCase rate limits from the app-server formatter', () => {
+      const message: TokenUsageMessage = {
+        type: 'token_usage',
+        timestamp: '2026-03-20T12:00:00.000Z',
+        rateLimits: {
+          codex: {
+            limitId: 'codex',
+            primary: {
+              usedPercent: 42,
+              windowDurationMins: 300,
+              resetsAt: 1771665600,
+            },
+            secondary: {
+              usedPercent: 15,
+              windowDurationMins: 10080,
+              resetsInSeconds: 7200,
+            },
+          },
+        },
+      };
+
+      expect(extractCodexRateLimit(message)).toEqual([
+        expect.objectContaining({
+          provider: 'codex',
+          label: '5-hour',
+          usedPercent: 42,
+          windowMinutes: 300,
+          resetsAtMs: 1771665600000,
+        }),
+        expect.objectContaining({
+          provider: 'codex',
+          label: '7-day',
+          usedPercent: 15,
+          windowMinutes: 10080,
+          resetsAtMs: Date.parse('2026-03-20T14:00:00.000Z'),
+        }),
+      ]);
+    });
+
     test('returns null for missing or invalid rate limit fields', () => {
       const noRateLimits: TokenUsageMessage = {
         type: 'token_usage',

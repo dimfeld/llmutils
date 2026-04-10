@@ -127,6 +127,118 @@ describe('lib/server/session_routes', () => {
     expect(unregisterSpy).toHaveBeenCalledTimes(1);
   });
 
+  test('createSessionEventsResponse forwards token_usage payloads intact through SSE', async () => {
+    const abortController = new AbortController();
+    const response = createSessionEventsResponse(manager, abortController.signal);
+    const reader = response.body?.getReader();
+
+    expect(reader).toBeDefined();
+
+    const decoder = new TextDecoder();
+    const streamState = { buffer: '' };
+
+    expect(await readSseEvent(reader!, decoder, streamState)).toEqual({
+      event: 'session:list',
+      data: { sessions: [] },
+    });
+    expect(await readSseEvent(reader!, decoder, streamState)).toEqual({
+      event: 'rate-limit:updated',
+      data: { state: { entries: [] } },
+    });
+    expect(await readSseEvent(reader!, decoder, streamState)).toEqual({
+      event: 'session:sync-complete',
+      data: {},
+    });
+
+    manager.handleWebSocketConnect('conn-1', vi.fn());
+    manager.handleWebSocketMessage('conn-1', {
+      type: 'output',
+      seq: 1,
+      message: {
+        type: 'structured',
+        message: {
+          type: 'token_usage',
+          timestamp: '2026-03-17T10:00:59.000Z',
+          inputTokens: 1683626,
+          cachedInputTokens: 1579136,
+          outputTokens: 15328,
+          reasoningTokens: 11327,
+          totalTokens: 1698954,
+          rateLimits: {
+            codex: {
+              limitId: 'codex',
+              primary: { usedPercent: 1, windowDurationMins: 300, resetsInSeconds: 600 },
+              secondary: { usedPercent: 1, windowDurationMins: 10080, resetsInSeconds: 7200 },
+            },
+          },
+        },
+      },
+    });
+
+    expect(await readSseEvent(reader!, decoder, streamState)).toEqual({
+      event: 'session:new',
+      data: {
+        session: expect.objectContaining({
+          connectionId: 'conn-1',
+        }),
+      },
+    });
+    expect(await readSseEvent(reader!, decoder, streamState)).toEqual({
+      event: 'rate-limit:updated',
+      data: {
+        state: expect.objectContaining({
+          entries: expect.arrayContaining([
+            expect.objectContaining({
+              provider: 'codex',
+              label: '5-hour',
+              usedPercent: 1,
+            }),
+            expect.objectContaining({
+              provider: 'codex',
+              label: '7-day',
+              usedPercent: 1,
+            }),
+          ]),
+        }),
+      },
+    });
+
+    const sessionMessage = await readSseEvent(reader!, decoder, streamState);
+    expect(sessionMessage).toEqual({
+      event: 'session:message',
+      data: {
+        connectionId: 'conn-1',
+        message: expect.objectContaining({
+          rawType: 'token_usage',
+          body: {
+            type: 'structured',
+            message: expect.objectContaining({
+              type: 'token_usage',
+              inputTokens: 1683626,
+              cachedInputTokens: 1579136,
+              outputTokens: 15328,
+              reasoningTokens: 11327,
+              totalTokens: 1698954,
+              rateLimits: expect.objectContaining({
+                codex: expect.objectContaining({
+                  limitId: 'codex',
+                  primary: expect.objectContaining({ usedPercent: 1, windowDurationMins: 300 }),
+                  secondary: expect.objectContaining({
+                    usedPercent: 1,
+                    windowDurationMins: 10080,
+                  }),
+                }),
+              }),
+            }),
+          },
+        }),
+      },
+    });
+
+    abortController.abort();
+    await reader!.cancel();
+  });
+
   test('createSessionEventsResponse forwards every session event type and cleans up subscriptions', async () => {
     const unsubscribeSpy = vi.spyOn(manager, 'unsubscribe');
     const abortController = new AbortController();

@@ -114,7 +114,19 @@ describe('lib/server/session_manager', () => {
           metadata: { totalSteps: 1, failedSteps: 0 },
         },
       },
-      { type: 'token_usage', timestamp, totalTokens: 50, inputTokens: 20, outputTokens: 30 },
+      {
+        type: 'token_usage',
+        timestamp,
+        totalTokens: 50,
+        inputTokens: 20,
+        outputTokens: 30,
+        rateLimits: {
+          codex: {
+            limitId: 'codex',
+            primary: { usedPercent: 1, windowDurationMins: 300 },
+          },
+        },
+      },
       { type: 'input_required', timestamp, prompt: 'Continue?' },
       { type: 'user_terminal_input', timestamp, content: 'y', source: 'terminal' },
       {
@@ -167,6 +179,18 @@ describe('lib/server/session_manager', () => {
         expect(payload).toMatchObject({
           resultSummary: 'ok',
           result: { hits: 1 },
+        });
+      } else if (msg.type === 'token_usage') {
+        expect(payload).toMatchObject({
+          rateLimits: {
+            codex: {
+              limitId: 'codex',
+              primary: {
+                usedPercent: 1,
+                windowDurationMins: 300,
+              },
+            },
+          },
         });
       }
     }
@@ -315,6 +339,56 @@ describe('lib/server/session_manager', () => {
     expect(tunneled).toMatchObject({
       rawType: 'agent_session_end',
       triggersNotification: false,
+    });
+  });
+
+  test('emits rate-limit updates from camelCase token_usage structured messages', () => {
+    const listener = vi.fn();
+    manager.subscribe('rate-limit:updated', listener);
+    manager.handleWebSocketConnect('conn-1', vi.fn());
+
+    manager.handleWebSocketMessage('conn-1', {
+      type: 'output',
+      seq: 1,
+      message: {
+        type: 'structured',
+        message: {
+          type: 'token_usage',
+          timestamp: '2026-03-17T10:00:59.000Z',
+          totalTokens: 1698954,
+          inputTokens: 1683626,
+          cachedInputTokens: 1579136,
+          outputTokens: 15328,
+          reasoningTokens: 11327,
+          rateLimits: {
+            codex: {
+              limitId: 'codex',
+              primary: { usedPercent: 1, windowDurationMins: 300, resetsInSeconds: 600 },
+              secondary: { usedPercent: 1, windowDurationMins: 10080, resetsInSeconds: 7200 },
+            },
+          },
+        },
+      },
+    });
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith({
+      state: {
+        entries: [
+          expect.objectContaining({
+            provider: 'codex',
+            label: '5-hour',
+            usedPercent: 1,
+            windowMinutes: 300,
+          }),
+          expect.objectContaining({
+            provider: 'codex',
+            label: '7-day',
+            usedPercent: 1,
+            windowMinutes: 10080,
+          }),
+        ],
+      },
     });
   });
 

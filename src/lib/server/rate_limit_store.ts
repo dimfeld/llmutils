@@ -116,9 +116,13 @@ function extractCodexWindow(
     return null;
   }
 
-  const usedPercent = toFiniteNumber(value.used_percent);
-  const windowMinutes = toFiniteNumber(value.window_minutes);
-  const resetsInSeconds = toFiniteNumber(value.resets_in_seconds);
+  const usedPercent =
+    toFiniteNumber(value.usedPercent) ?? toFiniteNumber(value.used_percent) ?? null;
+  const windowMinutes =
+    toFiniteNumber(value.windowDurationMins) ?? toFiniteNumber(value.window_minutes) ?? null;
+  const resetsInSeconds =
+    toFiniteNumber(value.resetsInSeconds) ?? toFiniteNumber(value.resets_in_seconds);
+  const resetsAt = toFiniteNumber(value.resetsAt) ?? toFiniteNumber(value.resets_at);
 
   if (usedPercent == null || windowMinutes == null) {
     return null;
@@ -129,7 +133,12 @@ function extractCodexWindow(
     usedPercent: clampPercent(usedPercent),
     belowThreshold: false,
     windowMinutes,
-    resetsAtMs: codexResetsAtMs(resetsInSeconds, timestampMs),
+    resetsAtMs:
+      resetsInSeconds != null
+        ? codexResetsAtMs(resetsInSeconds, timestampMs)
+        : resetsAt != null
+          ? resetsAt * 1000
+          : null,
   };
 }
 
@@ -141,14 +150,27 @@ export function extractCodexRateLimit(message: TokenUsageMessage): RateLimitEntr
   const timestampMs = getMessageTimestampMs(message.timestamp);
   const updatedAt = new Date(timestampMs).toISOString();
   const entries: RateLimitEntry[] = [];
-  const primary = extractCodexWindow(message.rateLimits.primary, timestampMs);
-  if (primary) {
-    entries.push({ provider: 'codex', updatedAt, ...primary });
-  }
 
-  const secondary = extractCodexWindow(message.rateLimits.secondary, timestampMs);
-  if (secondary) {
-    entries.push({ provider: 'codex', updatedAt, ...secondary });
+  for (const [, value] of Object.entries(message.rateLimits)) {
+    if (!isObjectRecord(value)) {
+      continue;
+    }
+
+    const directWindow = extractCodexWindow(value, timestampMs);
+    if (directWindow) {
+      entries.push({ provider: 'codex', updatedAt, ...directWindow });
+      continue;
+    }
+
+    const primary = extractCodexWindow(value.primary, timestampMs);
+    if (primary) {
+      entries.push({ provider: 'codex', updatedAt, ...primary });
+    }
+
+    const secondary = extractCodexWindow(value.secondary, timestampMs);
+    if (secondary) {
+      entries.push({ provider: 'codex', updatedAt, ...secondary });
+    }
   }
 
   return entries.length > 0 ? entries : null;

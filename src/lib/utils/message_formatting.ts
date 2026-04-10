@@ -251,18 +251,60 @@ export function formatStructuredMessage(
         ]),
       };
     case 'token_usage':
-      return {
-        type: 'text',
-        text: [
-          `tokens=${message.totalTokens ?? '?'}`,
+      {
+        const lines: string[] = [];
+        const parts = [
           message.inputTokens != null ? `input=${message.inputTokens}` : null,
           message.cachedInputTokens != null ? `cached=${message.cachedInputTokens}` : null,
           message.outputTokens != null ? `output=${message.outputTokens}` : null,
           message.reasoningTokens != null ? `reasoning=${message.reasoningTokens}` : null,
-        ]
-          .filter(Boolean)
-          .join(' | '),
-      };
+          message.totalTokens != null ? `total=${message.totalTokens}` : null,
+        ].filter(Boolean);
+
+        if (parts.length > 0) {
+          lines.push(parts.join(' '));
+        }
+
+        const rateLimitLines: string[] = [];
+        const rateLimits =
+          message.rateLimits && typeof message.rateLimits === 'object'
+            ? message.rateLimits
+            : undefined;
+        if (rateLimits) {
+          for (const [key, value] of Object.entries(rateLimits)) {
+            if (!value || typeof value !== 'object') {
+              continue;
+            }
+            const entry = value as Record<string, unknown>;
+            const primary = formatRateLimitWindow(entry.primary);
+            const secondary = formatRateLimitWindow(entry.secondary);
+            const label =
+              (typeof entry.limitName === 'string' && entry.limitName.length > 0
+                ? entry.limitName
+                : undefined) ??
+              (typeof entry.limitId === 'string' && entry.limitId.length > 0
+                ? entry.limitId
+                : undefined) ??
+              key;
+            const details = [
+              primary ? `primary ${primary}` : '',
+              secondary ? `secondary ${secondary}` : '',
+            ]
+              .filter(Boolean)
+              .join(', ');
+            rateLimitLines.push(details.length > 0 ? `${label}: ${details}` : label);
+          }
+        }
+
+        if (rateLimitLines.length > 0) {
+          lines.push(`rateLimits=${rateLimitLines.join(' | ')}`);
+        }
+
+        return {
+          type: 'text',
+          text: lines.join('\n'),
+        };
+      }
     case 'input_required':
       return {
         type: 'text',
@@ -335,6 +377,40 @@ function formatJsonValue(value: unknown): string {
   }
 
   return JSON.stringify(value, null, 2);
+}
+
+function formatRateLimitWindow(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const usedPercent =
+    typeof record.usedPercent === 'number'
+      ? record.usedPercent
+      : typeof record.used_percent === 'number'
+        ? record.used_percent
+        : undefined;
+  const windowMins =
+    typeof record.windowDurationMins === 'number'
+      ? record.windowDurationMins
+      : typeof record.window_minutes === 'number'
+        ? record.window_minutes
+        : undefined;
+
+  if (usedPercent == null && windowMins == null) {
+    return undefined;
+  }
+
+  if (usedPercent != null && windowMins != null) {
+    return `${Math.round(usedPercent)}%/${windowMins}m`;
+  }
+
+  if (usedPercent != null) {
+    return `${Math.round(usedPercent)}%`;
+  }
+
+  return `${windowMins}m`;
 }
 
 function keyValueEntries(entries: Array<[string, unknown]>): KeyValuePairEntry[] {
