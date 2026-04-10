@@ -4,7 +4,7 @@ import * as z from 'zod';
 
 import type { Database } from 'bun:sqlite';
 import {
-  computeNeedsFinishExecutor,
+  computeCanUpdateDocs,
   getPrimaryWorkspacePath,
   getPlanDetail,
   type FinishConfig,
@@ -15,7 +15,7 @@ import {
   type SpawnProcessResult,
   spawnAgentProcess,
   spawnChatProcess,
-  spawnFinishProcess,
+  spawnUpdateDocsProcess,
   spawnGenerateProcess,
   spawnRebaseProcess,
   spawnPrCreateProcess,
@@ -244,18 +244,17 @@ function isPlanEligibleForFinish(plan: ReturnType<typeof getPlanDetail>): plan i
   if (isTasklessEpic(plan)) return false;
   if (plan.status === 'needs_review') return true;
   if (plan.status === 'done') {
-    // Use the server-computed needsFinishExecutor which accounts for config
-    return plan.needsFinishExecutor;
+    // Use the server-computed canUpdateDocs which accounts for config
+    return plan.canUpdateDocs;
   }
   return false;
 }
 
-const startFinishSchema = z.object({
+const startUpdateDocsSchema = z.object({
   planUuid: z.string().min(1),
-  markDone: z.boolean().default(true),
 });
 
-export const startFinish = command(startFinishSchema, async ({ planUuid, markDone }) => {
+export const startUpdateDocs = command(startUpdateDocsSchema, async ({ planUuid }) => {
   const { db } = await getServerContext();
   const planRow = getPlanByUuid(db, planUuid);
   if (!planRow) {
@@ -267,7 +266,7 @@ export const startFinish = command(startFinishSchema, async ({ planUuid, markDon
     planUuid,
     isPlanEligibleForFinish,
     'Plan is not eligible for finish',
-    (planId, cwd) => spawnFinishProcess(planId, cwd, markDone),
+    (planId, cwd) => spawnUpdateDocsProcess(planId, cwd),
     finishConfig
   );
 });
@@ -295,9 +294,9 @@ export const finishPlanQuick = command(finishPlanQuickSchema, async ({ planUuid 
   }
 
   const projectConfig = await loadProjectFinishConfig(db, plan.projectId);
-  const needsExecutor = computeNeedsFinishExecutor(plan, projectConfig);
-  if (!tasklessEpic && needsExecutor) {
-    error(400, 'Plan requires executor work — use startFinish instead');
+  const canUpdateDocs = computeCanUpdateDocs(plan, projectConfig);
+  if (!tasklessEpic && canUpdateDocs) {
+    error(400, 'Plan requires doc updates — use startUpdateDocs instead');
   }
 
   const cwd = getPreferredProjectGitRoot(db, plan.projectId);

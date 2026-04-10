@@ -15,9 +15,9 @@ vi.mock('node:fs', async (importOriginal) => {
 import {
   spawnAgentProcess,
   spawnChatProcess,
-  spawnFinishProcess,
   spawnGenerateProcess,
   spawnRebaseProcess,
+  spawnUpdateDocsProcess,
 } from './plan_actions.js';
 
 interface FakeSubprocess {
@@ -337,11 +337,11 @@ describe('lib/server/plan_actions', () => {
     });
   });
 
-  test('spawnFinishProcess starts tim finish in detached mode and unrefs it after the early-exit window', async () => {
+  test('spawnUpdateDocsProcess starts tim update-docs in detached mode and unrefs it after the early-exit window', async () => {
     const proc = createFakeProcess({ exitCode: null });
     const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
 
-    const resultPromise = spawnFinishProcess(204, '/tmp/primary-workspace');
+    const resultPromise = spawnUpdateDocsProcess(204, '/tmp/primary-workspace');
     await vi.advanceTimersByTimeAsync(500);
     const result = await resultPromise;
 
@@ -349,9 +349,8 @@ describe('lib/server/plan_actions', () => {
     const [args, options] = spawnSpy.mock.calls[0];
     expect(args).toEqual([
       'tim',
-      'finish',
+      'update-docs',
       '204',
-      '--mark-done',
       '--auto-workspace',
       '--no-terminal-input',
     ]);

@@ -14,7 +14,7 @@ import { patchWorkspace, recordWorkspace } from '$tim/db/workspace.js';
 import { acquireWorkspaceLock, getWorkspaceLock } from '$tim/db/workspace_lock.js';
 
 import {
-  computeNeedsFinishExecutor,
+  computeCanUpdateDocs,
   getPlanDetail,
   getPlansForProject,
   getPrimaryWorkspacePath,
@@ -23,7 +23,7 @@ import {
   getWorkspacesForProject,
 } from './db_queries.js';
 
-type FinishExecutorPlan = Parameters<typeof computeNeedsFinishExecutor>[0];
+type FinishExecutorPlan = Parameters<typeof computeCanUpdateDocs>[0];
 
 function makeFinishExecutorPlan(
   overrides: Partial<FinishExecutorPlan> = {}
@@ -1315,12 +1315,12 @@ function setWorkspaceUpdatedAt(db: Database, workspaceId: number, updatedAt: str
   db.prepare('UPDATE workspace SET updated_at = ? WHERE id = ?').run(updatedAt, workspaceId);
 }
 
-describe('computeNeedsFinishExecutor', () => {
+describe('computeCanUpdateDocs', () => {
   const SOME_TIMESTAMP = '2026-01-15T10:00:00.000Z';
 
   test('returns true when docsUpdatedAt is null and mode is after-completion', () => {
     expect(
-      computeNeedsFinishExecutor(
+      computeCanUpdateDocs(
         makeFinishExecutorPlan({ docsUpdatedAt: null, lessonsAppliedAt: SOME_TIMESTAMP }),
         { updateDocsMode: 'after-completion' }
       )
@@ -1329,7 +1329,7 @@ describe('computeNeedsFinishExecutor', () => {
 
   test('returns true when docsUpdatedAt is null and mode is after-iteration', () => {
     expect(
-      computeNeedsFinishExecutor(
+      computeCanUpdateDocs(
         makeFinishExecutorPlan({ docsUpdatedAt: null, lessonsAppliedAt: SOME_TIMESTAMP }),
         { updateDocsMode: 'after-iteration' }
       )
@@ -1338,7 +1338,7 @@ describe('computeNeedsFinishExecutor', () => {
 
   test('returns false when docsUpdatedAt is null and mode is never', () => {
     expect(
-      computeNeedsFinishExecutor(
+      computeCanUpdateDocs(
         makeFinishExecutorPlan({ docsUpdatedAt: null, lessonsAppliedAt: SOME_TIMESTAMP }),
         { updateDocsMode: 'never' }
       )
@@ -1347,7 +1347,7 @@ describe('computeNeedsFinishExecutor', () => {
 
   test('returns false when docsUpdatedAt is null and mode is undefined (defaults to never)', () => {
     expect(
-      computeNeedsFinishExecutor(
+      computeCanUpdateDocs(
         makeFinishExecutorPlan({ docsUpdatedAt: null, lessonsAppliedAt: SOME_TIMESTAMP }),
         {}
       )
@@ -1356,7 +1356,7 @@ describe('computeNeedsFinishExecutor', () => {
 
   test('returns true when lessonsAppliedAt is null and applyLessons is true', () => {
     expect(
-      computeNeedsFinishExecutor(
+      computeCanUpdateDocs(
         makeFinishExecutorPlan({ docsUpdatedAt: SOME_TIMESTAMP, lessonsAppliedAt: null }),
         { applyLessons: true }
       )
@@ -1365,7 +1365,7 @@ describe('computeNeedsFinishExecutor', () => {
 
   test('returns false when lessonsAppliedAt is null and applyLessons is false', () => {
     expect(
-      computeNeedsFinishExecutor(
+      computeCanUpdateDocs(
         makeFinishExecutorPlan({ docsUpdatedAt: SOME_TIMESTAMP, lessonsAppliedAt: null }),
         { applyLessons: false }
       )
@@ -1374,7 +1374,7 @@ describe('computeNeedsFinishExecutor', () => {
 
   test('returns false when lessonsAppliedAt is null and applyLessons is undefined', () => {
     expect(
-      computeNeedsFinishExecutor(
+      computeCanUpdateDocs(
         makeFinishExecutorPlan({ docsUpdatedAt: SOME_TIMESTAMP, lessonsAppliedAt: null }),
         {}
       )
@@ -1383,7 +1383,7 @@ describe('computeNeedsFinishExecutor', () => {
 
   test('returns false when both timestamps are set regardless of config', () => {
     expect(
-      computeNeedsFinishExecutor(
+      computeCanUpdateDocs(
         makeFinishExecutorPlan({
           docsUpdatedAt: SOME_TIMESTAMP,
           lessonsAppliedAt: SOME_TIMESTAMP,
@@ -1398,7 +1398,7 @@ describe('computeNeedsFinishExecutor', () => {
 
   test('returns true when both timestamps are null with active config', () => {
     expect(
-      computeNeedsFinishExecutor(
+      computeCanUpdateDocs(
         makeFinishExecutorPlan({ docsUpdatedAt: null, lessonsAppliedAt: null }),
         {
           updateDocsMode: 'after-completion',
@@ -1410,7 +1410,7 @@ describe('computeNeedsFinishExecutor', () => {
 
   test('returns false when docsUpdatedAt is set and lessonsAppliedAt is set', () => {
     expect(
-      computeNeedsFinishExecutor(
+      computeCanUpdateDocs(
         makeFinishExecutorPlan({
           docsUpdatedAt: SOME_TIMESTAMP,
           lessonsAppliedAt: SOME_TIMESTAMP,
@@ -1425,7 +1425,7 @@ describe('computeNeedsFinishExecutor', () => {
 
   test('returns false for taskless epics even when finish work would otherwise be needed', () => {
     expect(
-      computeNeedsFinishExecutor(
+      computeCanUpdateDocs(
         makeFinishExecutorPlan({
           docsUpdatedAt: null,
           lessonsAppliedAt: null,

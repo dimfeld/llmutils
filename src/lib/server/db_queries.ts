@@ -99,8 +99,8 @@ export interface EnrichedPlan {
   hasPlanPrLinks: boolean;
   docsUpdatedAt: string | null;
   lessonsAppliedAt: string | null;
-  /** Whether the finish command would need to spawn an executor for this plan. */
-  needsFinishExecutor: boolean;
+  /** Whether the update-docs command would need to spawn an executor for this plan. */
+  canUpdateDocs: boolean;
   tags: string[];
   dependencyUuids: string[];
   tasks: EnrichedPlanTask[];
@@ -389,7 +389,7 @@ export interface FinishConfig {
 
 type FinishConfigInput = FinishConfig | Map<number, FinishConfig>;
 
-export function computeNeedsFinishExecutor(
+export function computeCanUpdateDocs(
   plan: Pick<EnrichedPlan, 'docsUpdatedAt' | 'lessonsAppliedAt' | 'epic' | 'tasks'>,
   finishConfig: FinishConfig
 ): boolean {
@@ -494,7 +494,7 @@ function enrichPlansWithContext(
       hasPlanPrLinks: planPrLinkUuids.has(plan.uuid),
       docsUpdatedAt: plan.docs_updated_at,
       lessonsAppliedAt: plan.lessons_applied_at,
-      needsFinishExecutor: computeNeedsFinishExecutor(
+      canUpdateDocs: computeCanUpdateDocs(
         {
           docsUpdatedAt: plan.docs_updated_at,
           lessonsAppliedAt: plan.lessons_applied_at,

@@ -313,10 +313,10 @@ describe('lib/server/plans_browser', () => {
       ).resolves.toBeNull();
     });
 
-    test('uses per-project effective config to compute needsFinishExecutor', async () => {
+    test('uses per-project effective config to compute canUpdateDocs', async () => {
       const result = await getPlanDetailRouteData(db, 'feature-plan', String(projectId), 'plans');
       expect(result).not.toBeNull();
-      expect(result!.planDetail.needsFinishExecutor).toBe(true);
+      expect(result!.planDetail.canUpdateDocs).toBe(true);
       const otherResult = await getPlanDetailRouteData(
         db,
         'other-project-plan',
@@ -324,7 +324,7 @@ describe('lib/server/plans_browser', () => {
         'plans'
       );
       expect(otherResult).not.toBeNull();
-      expect(otherResult!.planDetail.needsFinishExecutor).toBe(false);
+      expect(otherResult!.planDetail.canUpdateDocs).toBe(false);
     });
   });
 });

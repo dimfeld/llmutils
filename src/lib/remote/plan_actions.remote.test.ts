@@ -20,7 +20,7 @@ const spawnAgentProcessMock = vi.fn();
 const spawnChatProcessMock = vi.fn();
 const spawnRebaseProcessMock = vi.fn();
 const spawnPrCreateProcessMock = vi.fn();
-const spawnFinishProcessMock = vi.fn();
+const spawnUpdateDocsProcessMock = vi.fn();
 const loadEffectiveConfigMock = vi.fn();
 
 vi.mock('$lib/server/init.js', () => ({
@@ -47,8 +47,8 @@ vi.mock('$lib/server/plan_actions.js', () => ({
     spawnRebaseProcessMock(...args),
   spawnPrCreateProcess: (...args: Parameters<typeof spawnPrCreateProcessMock>) =>
     spawnPrCreateProcessMock(...args),
-  spawnFinishProcess: (...args: Parameters<typeof spawnFinishProcessMock>) =>
-    spawnFinishProcessMock(...args),
+  spawnUpdateDocsProcess: (...args: Parameters<typeof spawnUpdateDocsProcessMock>) =>
+    spawnUpdateDocsProcessMock(...args),
 }));
 
 vi.mock('$tim/configLoader.js', () => ({
@@ -62,7 +62,7 @@ import {
   startAgent,
   startChat,
   startCreatePr,
-  startFinish,
+  startUpdateDocs,
   startGenerate,
   startRebase,
 } from './plan_actions.remote.js';
@@ -84,7 +84,7 @@ describe('plan remote actions', () => {
     spawnChatProcessMock.mockReset();
     spawnRebaseProcessMock.mockReset();
     spawnPrCreateProcessMock.mockReset();
-    spawnFinishProcessMock.mockReset();
+    spawnUpdateDocsProcessMock.mockReset();
     loadEffectiveConfigMock.mockReset();
 
     projectId = getOrCreateProject(currentDb, 'repo-plan-actions', {
@@ -1358,9 +1358,11 @@ describe('plan remote actions', () => {
     });
   });
 
-  describe('startFinish', () => {
+  describe('startUpdateDocs', () => {
     test('rejects missing plans', async () => {
-      await expect(invokeCommand(startFinish, { planUuid: 'missing-plan' })).rejects.toMatchObject({
+      await expect(
+        invokeCommand(startUpdateDocs, { planUuid: 'missing-plan' })
+      ).rejects.toMatchObject({
         status: 404,
         body: { message: 'Plan not found' },
       });
@@ -1373,15 +1375,15 @@ describe('plan remote actions', () => {
         workspacePath: '/tmp/primary-workspace',
         workspaceType: 'primary',
       });
-      spawnFinishProcessMock.mockResolvedValue({ success: true, planId: 4000 });
+      spawnUpdateDocsProcessMock.mockResolvedValue({ success: true, planId: 4000 });
 
       await expect(
-        invokeCommand(startFinish, { planUuid: 'finish-plan-needs-review' })
+        invokeCommand(startUpdateDocs, { planUuid: 'finish-plan-needs-review' })
       ).resolves.toEqual({
         status: 'started',
         planId: 4000,
       });
-      expect(spawnFinishProcessMock).toHaveBeenCalledWith(4000, '/tmp/primary-workspace', true);
+      expect(spawnUpdateDocsProcessMock).toHaveBeenCalledWith(4000, '/tmp/primary-workspace');
     });
 
     test('allows done plans when documentation has not been updated', async () => {
@@ -1397,15 +1399,15 @@ describe('plan remote actions', () => {
         workspacePath: '/tmp/primary-workspace',
         workspaceType: 'primary',
       });
-      spawnFinishProcessMock.mockResolvedValue({ success: true, planId: 4001 });
+      spawnUpdateDocsProcessMock.mockResolvedValue({ success: true, planId: 4001 });
 
       await expect(
-        invokeCommand(startFinish, { planUuid: 'finish-plan-missing-docs' })
+        invokeCommand(startUpdateDocs, { planUuid: 'finish-plan-missing-docs' })
       ).resolves.toEqual({
         status: 'started',
         planId: 4001,
       });
-      expect(spawnFinishProcessMock).toHaveBeenCalledWith(4001, '/tmp/primary-workspace', true);
+      expect(spawnUpdateDocsProcessMock).toHaveBeenCalledWith(4001, '/tmp/primary-workspace');
     });
 
     test('allows done plans when lessons have not been applied', async () => {
@@ -1421,37 +1423,15 @@ describe('plan remote actions', () => {
         workspacePath: '/tmp/primary-workspace',
         workspaceType: 'primary',
       });
-      spawnFinishProcessMock.mockResolvedValue({ success: true, planId: 4002 });
+      spawnUpdateDocsProcessMock.mockResolvedValue({ success: true, planId: 4002 });
 
       await expect(
-        invokeCommand(startFinish, { planUuid: 'finish-plan-missing-lessons' })
+        invokeCommand(startUpdateDocs, { planUuid: 'finish-plan-missing-lessons' })
       ).resolves.toEqual({
         status: 'started',
         planId: 4002,
       });
-      expect(spawnFinishProcessMock).toHaveBeenCalledWith(4002, '/tmp/primary-workspace', true);
-    });
-
-    test('can start finish without marking the plan done', async () => {
-      seedPlan({
-        uuid: 'finish-plan-no-mark-done',
-        planId: 4008,
-        status: 'needs_review',
-      });
-      recordWorkspace(currentDb, {
-        projectId,
-        workspacePath: '/tmp/primary-workspace',
-        workspaceType: 'primary',
-      });
-      spawnFinishProcessMock.mockResolvedValue({ success: true, planId: 4008 });
-
-      await expect(
-        invokeCommand(startFinish, { planUuid: 'finish-plan-no-mark-done', markDone: false })
-      ).resolves.toEqual({
-        status: 'started',
-        planId: 4008,
-      });
-      expect(spawnFinishProcessMock).toHaveBeenCalledWith(4008, '/tmp/primary-workspace', false);
+      expect(spawnUpdateDocsProcessMock).toHaveBeenCalledWith(4002, '/tmp/primary-workspace');
     });
 
     test('rejects done plans when both finish-tracking timestamps are present', async () => {
@@ -1464,12 +1444,12 @@ describe('plan remote actions', () => {
       });
 
       await expect(
-        invokeCommand(startFinish, { planUuid: 'finish-plan-complete' })
+        invokeCommand(startUpdateDocs, { planUuid: 'finish-plan-complete' })
       ).rejects.toMatchObject({
         status: 400,
         body: { message: 'Plan is not eligible for finish' },
       });
-      expect(spawnFinishProcessMock).not.toHaveBeenCalled();
+      expect(spawnUpdateDocsProcessMock).not.toHaveBeenCalled();
     });
 
     test('uses per-project config for eligibility', async () => {
@@ -1483,12 +1463,12 @@ describe('plan remote actions', () => {
       });
 
       await expect(
-        invokeCommand(startFinish, { planUuid: 'finish-plan-project2-missing-docs' })
+        invokeCommand(startUpdateDocs, { planUuid: 'finish-plan-project2-missing-docs' })
       ).rejects.toMatchObject({
         status: 400,
         body: { message: 'Plan is not eligible for finish' },
       });
-      expect(spawnFinishProcessMock).not.toHaveBeenCalled();
+      expect(spawnUpdateDocsProcessMock).not.toHaveBeenCalled();
     });
 
     test('rejects in-progress plans even when finish work is pending', async () => {
@@ -1501,20 +1481,20 @@ describe('plan remote actions', () => {
       });
 
       await expect(
-        invokeCommand(startFinish, { planUuid: 'finish-plan-in-progress' })
+        invokeCommand(startUpdateDocs, { planUuid: 'finish-plan-in-progress' })
       ).rejects.toMatchObject({
         status: 400,
         body: { message: 'Plan is not eligible for finish' },
       });
-      expect(spawnFinishProcessMock).not.toHaveBeenCalled();
+      expect(spawnUpdateDocsProcessMock).not.toHaveBeenCalled();
     });
 
-    test('returns already_running when a finish session exists on the same plan', async () => {
+    test('returns already_running when an update-docs session exists on the same plan', async () => {
       seedPlan({ uuid: 'finish-plan-running', planId: 4005, status: 'needs_review' });
       currentManager.handleWebSocketConnect('conn-finish-running', () => {});
       currentManager.handleWebSocketMessage('conn-finish-running', {
         type: 'session_info',
-        command: 'finish',
+        command: 'update-docs',
         interactive: true,
         planId: 4005,
         planUuid: 'finish-plan-running',
@@ -1522,24 +1502,24 @@ describe('plan remote actions', () => {
       });
 
       await expect(
-        invokeCommand(startFinish, { planUuid: 'finish-plan-running' })
+        invokeCommand(startUpdateDocs, { planUuid: 'finish-plan-running' })
       ).resolves.toEqual({
         status: 'already_running',
         connectionId: 'conn-finish-running',
       });
-      expect(spawnFinishProcessMock).not.toHaveBeenCalled();
+      expect(spawnUpdateDocsProcessMock).not.toHaveBeenCalled();
     });
 
     test('rejects plans without a primary workspace', async () => {
       seedPlan({ uuid: 'finish-plan-no-workspace', planId: 4006, status: 'needs_review' });
 
       await expect(
-        invokeCommand(startFinish, { planUuid: 'finish-plan-no-workspace' })
+        invokeCommand(startUpdateDocs, { planUuid: 'finish-plan-no-workspace' })
       ).rejects.toMatchObject({
         status: 400,
         body: { message: 'Project does not have a primary workspace' },
       });
-      expect(spawnFinishProcessMock).not.toHaveBeenCalled();
+      expect(spawnUpdateDocsProcessMock).not.toHaveBeenCalled();
     });
   });
 
@@ -1582,7 +1562,7 @@ describe('plan remote actions', () => {
       expect(getPlanByUuid(currentDb, 'quick-finish-taskless-epic')?.status).toBe('done');
     });
 
-    test('rejects plans where needsFinishExecutor is true', async () => {
+    test('rejects plans where canUpdateDocs is true', async () => {
       seedPlan({
         uuid: 'quick-finish-needs-executor',
         planId: 5001,
@@ -1593,7 +1573,7 @@ describe('plan remote actions', () => {
         invokeCommand(finishPlanQuick, { planUuid: 'quick-finish-needs-executor' })
       ).rejects.toMatchObject({
         status: 400,
-        body: { message: 'Plan requires executor work — use startFinish instead' },
+        body: { message: 'Plan requires doc updates — use startUpdateDocs instead' },
       });
     });
 

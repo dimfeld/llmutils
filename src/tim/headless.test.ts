@@ -215,13 +215,13 @@ describe('buildHeadlessSessionInfo', () => {
     });
   });
 
-  test('supports finish as a session command', async () => {
-    const info = await buildHeadlessSessionInfo('finish', false, {
+  test('supports update-docs as a session command', async () => {
+    const info = await buildHeadlessSessionInfo('update-docs', false, {
       id: 43,
       title: 'finalize plan',
     });
 
-    expect(info.command).toBe('finish');
+    expect(info.command).toBe('update-docs');
     expect(info.planId).toBe(43);
     expect(info.planTitle).toBe('finalize plan');
   });

@@ -1,7 +1,11 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { toast } from 'svelte-sonner';
-  import { startFinish, startCreatePr, finishPlanQuick } from '$lib/remote/plan_actions.remote.js';
+  import {
+    startUpdateDocs,
+    startCreatePr,
+    finishPlanQuick,
+  } from '$lib/remote/plan_actions.remote.js';
   import { invalidateAll } from '$app/navigation';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import type { PlanAttentionItem } from '$lib/utils/dashboard_attention.js';
@@ -46,12 +50,12 @@
   let startingFinish = $state(false);
   let startingCreatePr = $state(false);
   let finishButtonLabel = $derived(
-    startingFinish ? 'Starting…' : item.needsFinishExecutor ? 'Update Docs' : 'Finish'
+    startingFinish ? 'Starting…' : item.canUpdateDocs ? 'Update Docs' : 'Finish'
   );
   let showCreatePr = $derived(
     hasNeedsReview &&
       !item.epic &&
-      !item.needsFinishExecutor &&
+      !item.canUpdateDocs &&
       !item.hasPr &&
       developmentWorkflow === 'pr-based'
   );
@@ -86,14 +90,16 @@
     if (startingFinish) return;
     startingFinish = true;
     try {
-      if (item.needsFinishExecutor) {
-        await startFinish({ planUuid: item.planUuid, markDone: false });
+      if (item.canUpdateDocs) {
+        await startUpdateDocs({ planUuid: item.planUuid });
       } else {
         await finishPlanQuick({ planUuid: item.planUuid });
       }
       await invalidateAll();
     } catch (err) {
-      toast.error(`Failed to finish plan: ${(err as Error).message}`);
+      toast.error(
+        `${item.canUpdateDocs ? 'Failed to update docs' : 'Failed to finish plan'}: ${(err as Error).message}`
+      );
     } finally {
       startingFinish = false;
     }

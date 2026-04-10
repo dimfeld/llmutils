@@ -464,9 +464,9 @@ program
   });
 
 program
-  .command('finish <plan>')
+  .command('update-docs <plan>')
   .description(
-    'Run any remaining documentation and lessons finalization steps, then mark the plan done by default.'
+    'Run any remaining documentation and lessons finalization steps in a workspace-aware flow.'
   )
   .option('-x, --executor <name>', 'The executor to use for finalization steps')
   .option('-m, --model <model>', 'Model to use for the executor')
@@ -491,34 +491,10 @@ program
     'Fail if workspace creation is requested but fails (default: true)',
     true
   )
-  .option('--mark-done', 'Mark the plan done after finalization (default true)', true)
-  .option('--no-mark-done', 'Do not mark the plan done after finalization')
   .option('--apply-lessons', 'Apply lessons learned to documentation after plan completion')
   .action(async (planArg, options, command) => {
     const { handleFinishCommand } = await import('./commands/finish.js');
     await handleFinishCommand(planArg, options, command).catch(handleCommandError);
-  });
-
-program
-  .command('update-docs [planFile]')
-  .description('Update documentation based on completed plan work. Can be a file path or plan ID.')
-  .option('-x, --executor <name>', 'The executor to use for documentation updates')
-  .option('-m, --model <model>', 'Model to use for the executor')
-  .action(async (planFile, options, command) => {
-    const { handleUpdateDocsCommand } = await import('./commands/update-docs.js');
-    await handleUpdateDocsCommand(planFile, options, command).catch(handleCommandError);
-  });
-
-program
-  .command('update-lessons [planFile]')
-  .description(
-    'Update documentation based on lessons learned from a completed plan. Can be a file path or plan ID.'
-  )
-  .option('-x, --executor <name>', 'The executor to use for lessons learned documentation updates')
-  .option('-m, --model <model>', 'Model to use for the executor')
-  .action(async (planFile, options, command) => {
-    const { handleUpdateLessonsCommand } = await import('./commands/update-lessons.js');
-    await handleUpdateLessonsCommand(planFile, options, command).catch(handleCommandError);
   });
 
 program

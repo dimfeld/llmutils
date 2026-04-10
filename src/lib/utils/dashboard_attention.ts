@@ -42,7 +42,7 @@ export interface PlanAttentionItem {
   epic: boolean;
   docsUpdatedAt: string | null;
   lessonsAppliedAt: string | null;
-  needsFinishExecutor: boolean;
+  canUpdateDocs: boolean;
   hasPr: boolean;
   reasons: PlanAttentionReason[];
 }
@@ -149,7 +149,7 @@ export function deriveAttentionItems(
         epic: plan.epic,
         docsUpdatedAt: plan.docsUpdatedAt,
         lessonsAppliedAt: plan.lessonsAppliedAt,
-        needsFinishExecutor: plan.needsFinishExecutor,
+        canUpdateDocs: plan.canUpdateDocs,
         hasPr:
           plan.pullRequests.length > 0 || plan.prSummaryStatus !== 'none' || plan.hasPlanPrLinks,
         reasons,

@@ -63,7 +63,7 @@ describe('plan_detail remote function', () => {
     await expect(invokeQuery(getPlanDetail, { planUuid })).resolves.toMatchObject({
       plan: {
         uuid: planUuid,
-        needsFinishExecutor: true,
+        canUpdateDocs: true,
       },
       openInEditorEnabled: expect.any(Boolean),
     });

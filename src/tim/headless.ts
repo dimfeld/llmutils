@@ -26,7 +26,7 @@ export type HeadlessCommand =
   | 'generate'
   | 'chat'
   | 'rebase'
-  | 'finish'
+  | 'update-docs'
   | 'pr-create';
 
 interface RunWithHeadlessOptions<T> {

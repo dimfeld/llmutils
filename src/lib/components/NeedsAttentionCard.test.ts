@@ -10,7 +10,7 @@ vi.mock('$app/navigation', () => ({
 }));
 
 vi.mock('$lib/remote/plan_actions.remote.js', () => ({
-  startFinish: vi.fn(),
+  startUpdateDocs: vi.fn(),
   startCreatePr: vi.fn(),
   finishPlanQuick: vi.fn(),
 }));
@@ -37,7 +37,7 @@ function makeItem(overrides: Partial<PlanAttentionItem> = {}): PlanAttentionItem
     epic: false,
     docsUpdatedAt: null,
     lessonsAppliedAt: null,
-    needsFinishExecutor: false,
+    canUpdateDocs: false,
     hasPr: false,
     reasons: [{ type: 'needs_review' }],
     ...overrides,
@@ -48,7 +48,7 @@ describe('NeedsAttentionCard', () => {
   test('shows Update Docs when finish work still needs an executor', () => {
     const { body } = render(NeedsAttentionCard, {
       props: {
-        item: makeItem({ needsFinishExecutor: true }),
+        item: makeItem({ canUpdateDocs: true }),
         projectId: '123',
       },
     });
@@ -60,7 +60,7 @@ describe('NeedsAttentionCard', () => {
   test('shows Finish when no finish executor is needed and plan has PR', () => {
     const { body } = render(NeedsAttentionCard, {
       props: {
-        item: makeItem({ needsFinishExecutor: false, hasPr: true }),
+        item: makeItem({ canUpdateDocs: false, hasPr: true }),
         projectId: '123',
       },
     });
@@ -73,7 +73,7 @@ describe('NeedsAttentionCard', () => {
   test('shows Create PR as primary when no PR and pr-based workflow', () => {
     const { body } = render(NeedsAttentionCard, {
       props: {
-        item: makeItem({ needsFinishExecutor: false, hasPr: false }),
+        item: makeItem({ canUpdateDocs: false, hasPr: false }),
         projectId: '123',
         developmentWorkflow: 'pr-based',
       },
@@ -87,7 +87,7 @@ describe('NeedsAttentionCard', () => {
   test('shows Finish without Create PR when trunk-based workflow', () => {
     const { body } = render(NeedsAttentionCard, {
       props: {
-        item: makeItem({ needsFinishExecutor: false, hasPr: false }),
+        item: makeItem({ canUpdateDocs: false, hasPr: false }),
         projectId: '123',
         developmentWorkflow: 'trunk-based',
       },
@@ -100,7 +100,7 @@ describe('NeedsAttentionCard', () => {
   test('does not show Create PR for epic plans', () => {
     const { body } = render(NeedsAttentionCard, {
       props: {
-        item: makeItem({ epic: true, needsFinishExecutor: false, hasPr: false }),
+        item: makeItem({ epic: true, canUpdateDocs: false, hasPr: false }),
         projectId: '123',
         developmentWorkflow: 'pr-based',
       },
@@ -113,7 +113,7 @@ describe('NeedsAttentionCard', () => {
   test('shows Update Docs when finish executor is needed regardless of PR status', () => {
     const { body } = render(NeedsAttentionCard, {
       props: {
-        item: makeItem({ needsFinishExecutor: true, hasPr: false }),
+        item: makeItem({ canUpdateDocs: true, hasPr: false }),
         projectId: '123',
         developmentWorkflow: 'pr-based',
       },

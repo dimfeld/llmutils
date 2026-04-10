@@ -27,7 +27,7 @@ function makePlan(overrides: Partial<EnrichedPlan> & { uuid: string }): Enriched
     docsUpdatedAt: null,
     lessonsAppliedAt: null,
     pullRequests: [],
-    needsFinishExecutor: false,
+    canUpdateDocs: false,
     invalidPrUrls: [],
     issues: [],
     prSummaryStatus: 'none',
@@ -292,11 +292,11 @@ describe('deriveAttentionItems', () => {
     ]);
   });
 
-  test('propagates needsFinishExecutor with finish-tracking timestamps', () => {
+  test('propagates canUpdateDocs with finish-tracking timestamps', () => {
     const plan = makePlan({
       uuid: 'plan-finish',
       displayStatus: 'needs_review',
-      needsFinishExecutor: true,
+      canUpdateDocs: true,
       docsUpdatedAt: null,
       lessonsAppliedAt: null,
     });
@@ -306,7 +306,7 @@ describe('deriveAttentionItems', () => {
     expect(result.planItems[0]).toEqual(
       expect.objectContaining({
         planUuid: 'plan-finish',
-        needsFinishExecutor: true,
+        canUpdateDocs: true,
         docsUpdatedAt: null,
         lessonsAppliedAt: null,
       })

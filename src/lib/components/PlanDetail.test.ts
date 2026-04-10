@@ -15,7 +15,7 @@ vi.mock('$lib/remote/plan_actions.remote.js', () => ({
   startAgent: vi.fn(),
   startChat: vi.fn(),
   startRebase: vi.fn(),
-  startFinish: vi.fn(),
+  startUpdateDocs: vi.fn(),
   startCreatePr: vi.fn(),
   finishPlanQuick: vi.fn(),
   openInEditor: vi.fn(),
@@ -112,7 +112,7 @@ function makePlanDetail(overrides: Partial<PlanDetail> = {}): PlanDetail {
     hasPlanPrLinks: false,
     docsUpdatedAt: null,
     lessonsAppliedAt: null,
-    needsFinishExecutor: false,
+    canUpdateDocs: false,
     tags: [],
     dependencyUuids: [],
     tasks: [],
@@ -127,7 +127,7 @@ function makePlanDetail(overrides: Partial<PlanDetail> = {}): PlanDetail {
 }
 
 describe('PlanDetail', () => {
-  test('shows a route link when the branch is linked to a known PR', () => {
+  test('shows branch and PR context when the plan is linked to a known PR', () => {
     const { body } = render(PlanDetailComponent, {
       props: {
         plan: makePlanDetail(),
@@ -135,11 +135,11 @@ describe('PlanDetail', () => {
       },
     });
 
-    expect(body).toContain('href="/projects/123/prs/42"');
-    expect(body).not.toContain('View PR #42');
+    expect(body).toContain('feature/link-pr');
+    expect(body).toContain('Linked PR plan');
   });
 
-  test('shows Update Docs for a taskless epic outside needs_review', () => {
+  test('shows Finish for a taskless epic outside needs_review', () => {
     const { body } = render(PlanDetailComponent, {
       props: {
         plan: makePlanDetail({
@@ -148,13 +148,13 @@ describe('PlanDetail', () => {
           epic: true,
           tasks: [],
           taskCounts: { done: 0, total: 0 },
-          needsFinishExecutor: true,
+          canUpdateDocs: true,
         }),
         projectId: '123',
       },
     });
 
-    expect(body).toContain('Update Docs');
+    expect(body).toContain('Finish');
     expect(body).not.toContain('Generate');
   });
 
@@ -164,7 +164,7 @@ describe('PlanDetail', () => {
         plan: makePlanDetail({
           status: 'needs_review',
           displayStatus: 'needs_review',
-          needsFinishExecutor: false,
+          canUpdateDocs: false,
           docsUpdatedAt: '2026-03-18T10:00:00.000Z',
           lessonsAppliedAt: '2026-03-18T10:00:00.000Z',
         }),

@@ -10,8 +10,6 @@ import type { PlanSchema } from '../planSchema.js';
 import { writePlanFile } from '../plans.js';
 import { materializePlan } from '../plan_materialize.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
-import { removePlanAssignment } from '../assignments/remove_plan_assignment.js';
-import { checkAndMarkParentDone } from '../plans/parent_cascade.js';
 import { runUpdateDocs } from './update-docs.js';
 import { runUpdateLessons } from './update-lessons.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
@@ -40,7 +38,6 @@ export interface FinishCommandOptions {
   terminalInput?: boolean;
   requireWorkspace?: boolean;
   applyLessons?: boolean;
-  markDone?: boolean;
 }
 
 function isTasklessEpic(plan: Pick<PlanSchema, 'epic' | 'tasks'>): boolean {
@@ -83,12 +80,8 @@ export function isPlanReadyToFinish(plan: Pick<PlanSchema, 'status' | 'tasks' | 
 async function persistPlan(
   plan: PlanSchema,
   planFile: string | null,
-  repoRoot: string,
-  options: { markDone: boolean }
+  repoRoot: string
 ): Promise<void> {
-  if (options.markDone) {
-    plan.status = 'done';
-  }
   plan.updatedAt = new Date().toISOString();
   await writePlanFile(planFile, plan, { cwdForIdentity: repoRoot });
 }
@@ -107,7 +100,6 @@ export async function handleFinishCommand(
   const config = await loadEffectiveConfig(globalOpts.config, { cwd: repoRoot });
   const resolvedPlan = await resolvePlanFromDbOrSyncFile(planArg, repoRoot, repoRoot);
   const plan = resolvedPlan.plan;
-  const markDone = options.markDone !== false;
 
   if (!isPlanReadyToFinish(plan)) {
     throw new Error(
@@ -120,13 +112,7 @@ export async function handleFinishCommand(
   const directFinish = isTasklessEpic(plan) || !requirements.needsExecutor;
 
   if (directFinish) {
-    await persistPlan(plan, initialPlanPath, repoRoot, { markDone });
-    if (plan.status === 'done') {
-      await removePlanAssignment(plan, repoRoot);
-      if (plan.parent) {
-        await checkAndMarkParentDone(plan.parent, config, { baseDir: repoRoot });
-      }
-    }
+    await persistPlan(plan, initialPlanPath, repoRoot);
     return;
   }
 
@@ -136,7 +122,7 @@ export async function handleFinishCommand(
 
   await runWithHeadlessAdapterIfEnabled({
     enabled: !isTunnelActive(),
-    command: 'finish',
+    command: 'update-docs',
     interactive: options.nonInteractive !== true,
     plan: {
       id: plan.id,
@@ -165,7 +151,7 @@ export async function handleFinishCommand(
           currentBaseDir,
           currentPlanFile || undefined,
           config,
-          'tim finish'
+          'tim update-docs'
         );
 
         currentBaseDir = workspaceResult.baseDir;
@@ -194,7 +180,7 @@ export async function handleFinishCommand(
         currentPlanFile = await materializePlan(plan.id, currentBaseDir);
       }
 
-      const finishTarget = currentPlanFile || String(plan.id ?? planArg);
+      const updateDocsTarget = currentPlanFile || String(plan.id ?? planArg);
       const nonInteractive = options.nonInteractive === true;
       const terminalInputEnabled =
         !nonInteractive &&
@@ -230,7 +216,7 @@ export async function handleFinishCommand(
         let docsError: unknown = null;
         if (requirements.needsDocs) {
           try {
-            await runUpdateDocs(finishTarget, config, runOptions);
+            await runUpdateDocs(updateDocsTarget, config, runOptions);
             plan.docsUpdatedAt = new Date().toISOString();
           } catch (error) {
             warn(
@@ -243,7 +229,11 @@ export async function handleFinishCommand(
         let lessonsError: unknown = null;
         if (requirements.needsLessons) {
           try {
-            const lessonsUpdateResult = await runUpdateLessons(finishTarget, config, runOptions);
+            const lessonsUpdateResult = await runUpdateLessons(
+              updateDocsTarget,
+              config,
+              runOptions
+            );
             if (lessonsUpdateResult === true || lessonsUpdateResult === 'skipped-no-lessons') {
               plan.lessonsAppliedAt = new Date().toISOString();
             }
@@ -277,16 +267,7 @@ export async function handleFinishCommand(
         }
         const hasFailures = failedSteps.length > 0;
 
-        await persistPlan(plan, currentPlanFile || null, repoRoot, {
-          markDone: markDone && !hasFailures,
-        });
-
-        if (!hasFailures && plan.status === 'done') {
-          await removePlanAssignment(plan, currentBaseDir);
-          if (plan.parent) {
-            await checkAndMarkParentDone(plan.parent, config, { baseDir: currentBaseDir });
-          }
-        }
+        await persistPlan(plan, currentPlanFile || null, repoRoot);
 
         if (hasFailures) {
           executionError = new Error(
@@ -297,7 +278,7 @@ export async function handleFinishCommand(
         executionError = error;
       } finally {
         if (roundTripContext) {
-          await runPostExecutionWorkspaceSync(roundTripContext, 'finish plan finalization');
+          await runPostExecutionWorkspaceSync(roundTripContext, 'update docs finalization');
         }
       }
 
@@ -307,9 +288,5 @@ export async function handleFinishCommand(
     },
   });
 
-  log(
-    plan.status === 'done'
-      ? `Marked plan ${plan.id ?? planArg} as done.`
-      : `Finished plan ${plan.id ?? planArg} without marking it done.`
-  );
+  log(`Updated docs for plan ${plan.id ?? planArg}.`);
 }

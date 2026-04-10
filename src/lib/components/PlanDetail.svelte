@@ -12,7 +12,7 @@
     startAgent,
     startChat,
     startRebase,
-    startFinish,
+    startUpdateDocs,
     startCreatePr,
     finishPlanQuick,
     openInEditor,
@@ -94,17 +94,16 @@
     // If finish executor work is needed (docs or lessons not yet applied), show "Update Docs" instead
     let showFinish = plan.displayStatus === 'needs_review' || isTasklessEpic;
     let showUpdateDocs =
-      plan.displayStatus === 'needs_review' && plan.needsFinishExecutor && !isTasklessEpic;
+      plan.displayStatus === 'needs_review' && plan.canUpdateDocs && !isTasklessEpic;
 
     // Plans with incomplete tasks: show single "Run Agent" button
     let showAgentOnly = hasTasks && hasIncompleteTasks && !isIneligible && !showFinish;
     // Plans without tasks: show "Generate" as primary + "Run Agent" in dropdown
     let showGenerateWithAgent = !hasTasks && !isIneligible && !showFinish;
 
-    // done plans with pending finalization work: show "Finish" in dropdown
+    // done plans with pending doc updates: show "Update Docs" in dropdown
     // Use raw status (not displayStatus) since recently-done plans render as 'recently_done'
-    let showFinishInDropdown =
-      !isTasklessEpic && plan.status === 'done' && plan.needsFinishExecutor;
+    let showUpdateDocsInDropdown = !isTasklessEpic && plan.status === 'done' && plan.canUpdateDocs;
 
     const chatItem: ActionItem = {
       label: 'Chat',
@@ -133,7 +132,7 @@
     const finishItem: ActionItem = {
       label: 'Finish',
       startingLabel: 'Starting…',
-      onclick: () => handleFinish(true),
+      onclick: handleFinish,
       colorClass:
         'bg-amber-600 text-white hover:bg-amber-700 dark:bg-amber-500 dark:hover:bg-amber-600',
       starting: startingFinish,
@@ -155,7 +154,7 @@
     const finishNoMarkDoneItem: ActionItem = {
       label: 'Update Docs',
       startingLabel: 'Starting Updating Docs…',
-      onclick: () => handleFinish(false),
+      onclick: handleUpdateDocs,
       colorClass: '',
       starting: startingFinish,
     };
@@ -192,11 +191,8 @@
       primary = chatItem;
       if (isEligibleForRebase) menuItems.push(rebaseItem);
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
-      if (showFinishInDropdown) {
-        if (plan.needsFinishExecutor) {
-          menuItems.push(finishNoMarkDoneItem);
-        }
-        menuItems.push(finishItem);
+      if (showUpdateDocsInDropdown) {
+        menuItems.push(finishNoMarkDoneItem);
       }
     }
 
@@ -475,40 +471,39 @@
       : []
   );
 
-  async function handleFinish(markDone = true) {
+  async function handleUpdateDocs() {
     startingFinish = true;
     errorMessage = null;
     successMessage = null;
     try {
-      let finishAction: 'start' | 'quick' | 'none' = 'none';
-      if (isTasklessEpic) {
-        finishAction = 'quick';
-      } else if (plan.status === 'needs_review') {
-        finishAction = plan.needsFinishExecutor ? 'start' : 'quick';
-      } else if (plan.status === 'done' && plan.needsFinishExecutor) {
-        finishAction = 'start';
+      if (!(plan.status === 'needs_review' || plan.status === 'done') || isTasklessEpic) {
+        throw new Error('Plan is not eligible for doc updates');
       }
-
-      if (finishAction === 'start') {
-        const result = await startFinish({ planUuid: plan.uuid, markDone });
-        if (result.status === 'already_running') {
-          successMessage = {
-            text: 'A session is already running for this plan',
-            connectionId: result.connectionId,
-          };
-        } else {
-          successMessage = {
-            text: markDone ? 'Finish started' : 'Finish started without marking done',
-          };
-        }
-        setStartedSuccessfully();
-      } else if (finishAction === 'quick') {
-        await finishPlanQuick({ planUuid: plan.uuid });
-        successMessage = { text: 'Plan marked as done' };
-        // For quick finish, don't set startedSuccessfully since there's no session
+      const result = await startUpdateDocs({ planUuid: plan.uuid });
+      if (result.status === 'already_running') {
+        successMessage = {
+          text: 'A session is already running for this plan',
+          connectionId: result.connectionId,
+        };
       } else {
-        throw new Error('Plan is not eligible for finish');
+        successMessage = { text: 'Update Docs started' };
       }
+      setStartedSuccessfully();
+      await invalidateAll();
+    } catch (err) {
+      errorMessage = `${err as Error}`;
+    } finally {
+      startingFinish = false;
+    }
+  }
+
+  async function handleFinish() {
+    startingFinish = true;
+    errorMessage = null;
+    successMessage = null;
+    try {
+      await finishPlanQuick({ planUuid: plan.uuid });
+      successMessage = { text: 'Plan marked as done' };
       await invalidateAll();
     } catch (err) {
       errorMessage = `${err as Error}`;
@@ -604,7 +599,7 @@
                 ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-900/60'
                 : activeSession.command === 'chat'
                   ? 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/40 dark:text-violet-300 dark:hover:bg-violet-900/60'
-                  : activeSession.command === 'finish'
+                  : activeSession.command === 'update-docs'
                     ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/60'
                     : 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-900/60'}"
             >
@@ -614,7 +609,7 @@
                   ? 'bg-emerald-500'
                   : activeSession.command === 'chat'
                     ? 'bg-violet-500'
-                    : activeSession.command === 'finish'
+                    : activeSession.command === 'update-docs'
                       ? 'bg-amber-500'
                       : 'bg-blue-500'}"
               ></span>
@@ -622,8 +617,8 @@
                 ? 'Agent Running...'
                 : activeSession.command === 'generate'
                   ? 'Generating...'
-                  : activeSession.command === 'finish'
-                    ? 'Finishing...'
+                  : activeSession.command === 'update-docs'
+                    ? 'Updating Docs...'
                     : `${activeSession.command.charAt(0).toUpperCase() + activeSession.command.slice(1)} Running...`}
             </a>
           {:else}

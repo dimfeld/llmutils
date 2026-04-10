@@ -1,5 +1,5 @@
-// Command handler for 'tim update-lessons'
-// Updates process documentation based on lessons learned in a completed plan
+// Shared lessons updater used by the workspace-aware update-docs flow
+// and agent/batch follow-up work.
 
 import * as fs from 'node:fs/promises';
 import * as path from 'path';

@@ -1,5 +1,5 @@
-// Command handler for 'tim update-docs'
-// Updates documentation based on completed plan work
+// Shared documentation updater used by the workspace-aware update-docs flow
+// and agent/batch follow-up work.
 
 import * as path from 'path';
 import { getGitRoot } from '../../common/git.js';
@@ -218,7 +218,7 @@ export async function runUpdateDocs(
 }
 
 /**
- * Command handler for the standalone update-docs command
+ * Legacy direct entry point retained for internal callers/tests.
  */
 export async function handleUpdateDocsCommand(
   planFile: string | undefined,

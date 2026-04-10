@@ -159,13 +159,13 @@ export async function spawnPrCreateProcess(
   );
 }
 
-export async function spawnFinishProcess(
+export async function spawnUpdateDocsProcess(
   planId: number,
-  cwd: string,
-  markDone = true
+  cwd: string
 ): Promise<SpawnProcessResult> {
-  const finishArgs = ['finish', String(planId)];
-  finishArgs.push(markDone ? '--mark-done' : '--no-mark-done');
-  finishArgs.push('--auto-workspace', '--no-terminal-input');
-  return spawnTimProcess(planId, finishArgs, cwd);
+  return spawnTimProcess(
+    planId,
+    ['update-docs', String(planId), '--auto-workspace', '--no-terminal-input'],
+    cwd
+  );
 }

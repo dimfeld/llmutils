@@ -51,14 +51,6 @@ vi.mock('../plan_materialize.js', () => ({
   materializePlan: vi.fn(),
 }));
 
-vi.mock('../assignments/remove_plan_assignment.js', () => ({
-  removePlanAssignment: vi.fn(),
-}));
-
-vi.mock('../plans/parent_cascade.js', () => ({
-  checkAndMarkParentDone: vi.fn(),
-}));
-
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
@@ -75,8 +67,6 @@ import {
   runPreExecutionWorkspaceSync,
 } from '../workspace/workspace_roundtrip.js';
 import { materializePlan } from '../plan_materialize.js';
-import { removePlanAssignment } from '../assignments/remove_plan_assignment.js';
-import { checkAndMarkParentDone } from '../plans/parent_cascade.js';
 import { getFinishRequirements, handleFinishCommand, isPlanReadyToFinish } from './finish.js';
 import { executePostApplyCommand } from '../actions.js';
 
@@ -91,8 +81,6 @@ describe('finish command', () => {
   const runUpdateLessonsSpy = vi.mocked(runUpdateLessons);
   const setupWorkspaceSpy = vi.mocked(setupWorkspace);
   const materializePlanSpy = vi.mocked(materializePlan);
-  const removePlanAssignmentSpy = vi.mocked(removePlanAssignment);
-  const checkAndMarkParentDoneSpy = vi.mocked(checkAndMarkParentDone);
   const executePostApplyCommandSpy = vi.mocked(executePostApplyCommand);
   const prepareWorkspaceRoundTripSpy = vi.mocked(prepareWorkspaceRoundTrip);
   const runPreExecutionWorkspaceSyncSpy = vi.mocked(runPreExecutionWorkspaceSync);
@@ -147,8 +135,6 @@ describe('finish command', () => {
     materializePlansForExecutionSpy.mockResolvedValue(undefined);
     materializePlanSpy.mockResolvedValue('/repo/.tim/plans/314.plan.md');
     writePlanFileSpy.mockResolvedValue(undefined);
-    removePlanAssignmentSpy.mockResolvedValue(undefined);
-    checkAndMarkParentDoneSpy.mockResolvedValue(undefined);
   });
 
   test('getFinishRequirements only requires unfinished finalization steps', () => {
@@ -203,7 +189,7 @@ describe('finish command', () => {
     expect(runWithHeadlessAdapterIfEnabledSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         enabled: true,
-        command: 'finish',
+        command: 'update-docs',
         plan: expect.objectContaining({
           id: 314,
           title: 'finish plan command',
@@ -229,7 +215,7 @@ describe('finish command', () => {
     expect(writePlanFileSpy).toHaveBeenCalledWith(
       '/repo/.tim/plans/314.plan.md',
       expect.objectContaining({
-        status: 'done',
+        status: 'needs_review',
         docsUpdatedAt: expect.any(String),
         lessonsAppliedAt: expect.any(String),
         updatedAt: expect.any(String),
@@ -263,7 +249,7 @@ describe('finish command', () => {
     expect(writePlanFileSpy).toHaveBeenCalledWith(
       '/repo/.tim/plans/314.plan.md',
       expect.objectContaining({
-        status: 'done',
+        status: 'needs_review',
         docsUpdatedAt: '2026-04-01T00:00:00.000Z',
         lessonsAppliedAt: '2026-04-02T00:00:00.000Z',
       }),
@@ -291,7 +277,7 @@ describe('finish command', () => {
     expect(writePlanFileSpy).toHaveBeenCalledWith(
       '/repo/.tim/plans/314.plan.md',
       expect.objectContaining({
-        status: 'done',
+        status: 'pending',
         epic: true,
         tasks: [],
       }),
@@ -329,7 +315,7 @@ describe('finish command', () => {
     );
     expect(runPostExecutionWorkspaceSyncSpy).toHaveBeenCalledWith(
       expect.any(Object),
-      'finish plan finalization'
+      'update docs finalization'
     );
   });
 
@@ -382,7 +368,7 @@ describe('finish command', () => {
 
     expect(writePlanFileSpy).toHaveBeenCalledWith(
       '/repo/.tim/plans/314.plan.md',
-      expect.objectContaining({ status: 'done' }),
+      expect.objectContaining({ status: 'in_progress' }),
       { cwdForIdentity: '/repo' }
     );
   });
@@ -407,7 +393,7 @@ describe('finish command', () => {
     expect(runUpdateLessonsSpy).toHaveBeenCalled();
     expect(writePlanFileSpy).toHaveBeenCalled();
     const writtenPlan = writePlanFileSpy.mock.calls[0]![1];
-    expect(writtenPlan.status).toBe('done');
+    expect(writtenPlan.status).toBe('needs_review');
     expect(writtenPlan.lessonsAppliedAt).toBeUndefined();
   });
 
@@ -418,39 +404,9 @@ describe('finish command', () => {
 
     expect(runUpdateLessonsSpy).toHaveBeenCalled();
     const writtenPlan = writePlanFileSpy.mock.calls[0]![1];
-    expect(writtenPlan.status).toBe('done');
+    expect(writtenPlan.status).toBe('needs_review');
     expect(writtenPlan.lessonsAppliedAt).toBeDefined();
     expect(new Date(writtenPlan.lessonsAppliedAt).toISOString()).toBe(writtenPlan.lessonsAppliedAt);
-  });
-
-  test('respects --no-mark-done when finalizing without executor work', async () => {
-    loadEffectiveConfigSpy.mockResolvedValue({
-      updateDocs: {
-        mode: 'never',
-        applyLessons: false,
-      },
-    } as any);
-    resolvePlanFromDbOrSyncFileSpy.mockResolvedValue({
-      plan: {
-        ...basePlan,
-        docsUpdatedAt: '2026-04-01T00:00:00.000Z',
-        lessonsAppliedAt: '2026-04-02T00:00:00.000Z',
-      },
-      planPath: '/repo/.tim/plans/314.plan.md',
-    } as any);
-
-    await handleFinishCommand('314', { markDone: false }, buildCommand());
-
-    expect(writePlanFileSpy).toHaveBeenCalledWith(
-      '/repo/.tim/plans/314.plan.md',
-      expect.objectContaining({
-        status: 'needs_review',
-        updatedAt: expect.any(String),
-      }),
-      { cwdForIdentity: '/repo' }
-    );
-    expect(removePlanAssignmentSpy).not.toHaveBeenCalled();
-    expect(checkAndMarkParentDoneSpy).not.toHaveBeenCalled();
   });
 
   test('throws when lessons fail but still persists docsUpdatedAt without marking done', async () => {
@@ -597,7 +553,7 @@ describe('finish command', () => {
     // Verify the materialized path was used for persistence
     expect(writePlanFileSpy).toHaveBeenCalledWith(
       '/repo/.tim/plans/314.plan.md',
-      expect.objectContaining({ status: 'done' }),
+      expect.objectContaining({ status: 'needs_review' }),
       expect.anything()
     );
   });
@@ -618,7 +574,7 @@ describe('finish command', () => {
     // persistFinishedPlan is called with null planPath
     expect(writePlanFileSpy).toHaveBeenCalledWith(
       null,
-      expect.objectContaining({ status: 'done' }),
+      expect.objectContaining({ status: 'needs_review' }),
       expect.anything()
     );
   });
