@@ -11,13 +11,14 @@ export const ALL_NAV_ITEMS: NavItem[] = [
   { label: 'Active Work', slug: 'active', keywords: 'active work dashboard attention' },
   { label: 'Pull Requests', slug: 'prs', keywords: 'pull requests prs github' },
   { label: 'Plans', slug: 'plans', keywords: 'plans list browse' },
+  { label: 'Import', slug: 'import', keywords: 'import issue issues tracker' },
   { label: 'Settings', slug: 'settings', keywords: 'settings configuration' },
 ];
 
 export function getNavigationItems(projectId: string, searchQuery: string): NavItem[] {
   let items = ALL_NAV_ITEMS;
   if (projectId === 'all') {
-    items = items.filter((item) => item.slug !== 'settings');
+    items = items.filter((item) => item.slug !== 'settings' && item.slug !== 'import');
   }
 
   const q = searchQuery.trim().toLowerCase();
