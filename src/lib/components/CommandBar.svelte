@@ -79,6 +79,8 @@
 
   function selectAndClose(url: string) {
     open = false;
+    // onOpenChange doesn't trigger on programmatic open change so call it manually
+    handleOpenChange(false);
     void goto(url);
   }
 
