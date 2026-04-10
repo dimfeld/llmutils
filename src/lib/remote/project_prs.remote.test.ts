@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
 import { getOrCreateProject } from '$tim/db/project.js';
+import { upsertBranchMergeRequirements } from '$tim/db/branch_merge_requirements.js';
 import { upsertPrReviewRequestByReviewer, upsertPrStatus } from '$tim/db/pr_status.js';
 import { invokeCommand, invokeQuery } from '$lib/test-utils/invoke_command.js';
 
@@ -195,6 +196,57 @@ describe('project_prs remote functions', () => {
     expect(result.reviewing).toEqual([]);
     expect(result.authored).toHaveLength(1);
     expect(result.authored[0]?.status.pr_url).toBe('https://github.com/example/repo/pull/17');
+  });
+
+  test('getProjectPrs uses required checks when computing the displayed rollup state', async () => {
+    upsertBranchMergeRequirements(currentDb, {
+      owner: 'example',
+      repo: 'repo',
+      branchName: 'main',
+      lastFetchedAt: '2026-03-30T10:00:00.000Z',
+      requirements: [
+        {
+          sourceKind: 'legacy_branch_protection',
+          sourceId: 0,
+          sourceName: null,
+          strict: true,
+          checks: [{ context: 'required-check' }],
+        },
+      ],
+    });
+    upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/19',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 19,
+      title: 'Required check PR',
+      state: 'open',
+      draft: false,
+      author: 'dimfeld',
+      baseBranch: 'main',
+      checkRollupState: 'failure',
+      lastFetchedAt: '2026-03-30T10:00:00.000Z',
+      checks: [
+        {
+          name: 'required-check',
+          source: 'check_run',
+          status: 'completed',
+          conclusion: 'success',
+        },
+        {
+          name: 'optional-check',
+          source: 'check_run',
+          status: 'completed',
+          conclusion: 'failure',
+        },
+      ],
+    });
+
+    const { getProjectPrs } = await import('./project_prs.remote.js');
+    const result = await invokeQuery(getProjectPrs, { projectId: String(projectId) });
+
+    const pr = result.authored.find((entry) => entry.status.pr_number === 19);
+    expect(pr?.status.check_rollup_state).toBe('success');
   });
 
   test('getProjectPrs marks PRs with a review requested after the current user last reviewed', async () => {

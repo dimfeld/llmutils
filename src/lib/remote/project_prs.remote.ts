@@ -13,6 +13,7 @@ import {
 } from '$common/github/project_pr_service.js';
 import { getGitHubUsername } from '$common/github/user.js';
 import { getServerContext } from '$lib/server/init.js';
+import { withRequiredCheckRollupStates } from '$lib/server/required_check_rollup.js';
 import { emitPrUpdatesForIngestResult } from '$lib/server/pr_event_utils.js';
 import { getSessionManager } from '$lib/server/session_context.js';
 import { getProjectById, listProjects } from '$tim/db/project.js';
@@ -192,7 +193,10 @@ async function getAllProjectPrsData() {
     }
 
     const { owner, repo } = ownerRepo;
-    const prs = getPrStatusesForRepo(db, owner, repo, { includeReviewThreads: true });
+    const prs = withRequiredCheckRollupStates(
+      db,
+      getPrStatusesForRepo(db, owner, repo, { includeReviewThreads: true })
+    );
     const projectPrUrls = prs.map((pr) => pr.status.pr_url);
     prUrls.push(...projectPrUrls);
 
@@ -388,7 +392,10 @@ export const getProjectPrs = query(projectIdSchema, async ({ projectId }) => {
   }
 
   const { owner, repo } = ownerRepo;
-  const prs = getPrStatusesForRepo(db, owner, repo, { includeReviewThreads: true });
+  const prs = withRequiredCheckRollupStates(
+    db,
+    getPrStatusesForRepo(db, owner, repo, { includeReviewThreads: true })
+  );
   const username = await getGitHubUsername({ githubUsername: config.githubUsername });
   const linkedPlansByPrUrl = getLinkedPlansByPrUrl(
     db,

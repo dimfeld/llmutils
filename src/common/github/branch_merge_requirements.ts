@@ -83,15 +83,15 @@ async function fetchLegacyBranchProtectionRequiredChecks(
   branch: string
 ): Promise<BranchMergeRequirementSource | null> {
   try {
-    const response = await getOctokit().request<{
-      data: LegacyRequiredStatusChecksResponse;
-    }>('GET /repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks', {
-      owner,
-      repo,
-      branch,
-    });
-
-    const data = response.data;
+    const response = await getOctokit().request(
+      'GET /repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks',
+      {
+        owner,
+        repo,
+        branch,
+      }
+    );
+    const data = response.data as LegacyRequiredStatusChecksResponse;
     const checks =
       data.checks && data.checks.length > 0
         ? data.checks.map((check) => ({
@@ -131,7 +131,7 @@ async function fetchRulesetRequiredChecks(
   const rules: RulesBranchRuleResponse[] = [];
 
   for (let page = 1; ; page += 1) {
-    const response = await getOctokit().request<{ data: RulesBranchRuleResponse[] }>(
+    const response = await getOctokit().request(
       'GET /repos/{owner}/{repo}/rules/branches/{branch}',
       {
         owner,
@@ -141,9 +141,10 @@ async function fetchRulesetRequiredChecks(
         page,
       }
     );
+    const data = response.data as RulesBranchRuleResponse[];
 
-    rules.push(...response.data);
-    if (response.data.length < 100) {
+    rules.push(...data);
+    if (data.length < 100) {
       break;
     }
   }

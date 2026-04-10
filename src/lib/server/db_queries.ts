@@ -3,8 +3,9 @@ import type { Database } from 'bun:sqlite';
 import { deduplicatePrUrls } from '$common/github/identifiers.js';
 import { getAssignmentEntry, type AssignmentEntry } from '$tim/db/assignment.js';
 import type { PlanSchema } from '$tim/planSchema.js';
-import { getPrStatusForPlan, type PrStatusDetail } from '$tim/db/pr_status.js';
+import { getPrStatusByUrls, getPrStatusForPlan, type PrStatusDetail } from '$tim/db/pr_status.js';
 import { isWorkCompleteStatus, normalizePlanStatus } from '$tim/plans/plan_state_utils.js';
+import { withRequiredCheckRollupStates } from '$lib/server/required_check_rollup.js';
 import { cleanStaleLocks, type WorkspaceLockRow } from '$tim/db/workspace_lock.js';
 import {
   getPlanByUuid,
@@ -293,30 +294,21 @@ function getPrSummaryStatusByPlanUuid(
 
   const statesByPlanUuid = new Map<string, (string | null)[]>();
   if (urls.size > 0) {
-    const placeholders = [...urls].map(() => '?').join(', ');
-    const rows = db
-      .prepare(
-        `
-          SELECT
-            ps.pr_url AS pr_url,
-            ps.check_rollup_state AS check_rollup_state
-          FROM pr_status ps
-          WHERE ps.pr_url IN (${placeholders})
-        `
-      )
-      .all(...urls) as Array<{
-      pr_url: string;
-      check_rollup_state: string | null;
-    }>;
+    const detailsByUrl = new Map(
+      withRequiredCheckRollupStates(db, getPrStatusByUrls(db, [...urls])).map((detail) => [
+        detail.status.pr_url,
+        detail,
+      ])
+    );
 
-    for (const row of rows) {
-      const matchingPlanUuids = planUuidsByUrl.get(row.pr_url) ?? [];
+    for (const [prUrl, detail] of detailsByUrl.entries()) {
+      const matchingPlanUuids = planUuidsByUrl.get(prUrl) ?? [];
       for (const planUuid of matchingPlanUuids) {
         const existing = statesByPlanUuid.get(planUuid);
         if (existing) {
-          existing.push(row.check_rollup_state);
+          existing.push(detail.status.check_rollup_state);
         } else {
-          statesByPlanUuid.set(planUuid, [row.check_rollup_state]);
+          statesByPlanUuid.set(planUuid, [detail.status.check_rollup_state]);
         }
       }
     }
@@ -910,7 +902,7 @@ export function getPlanDetail(
     dependencies: dependencySummaries,
     assignment,
     parent,
-    prStatuses,
+    prStatuses: withRequiredCheckRollupStates(db, prStatuses),
     reviewIssues,
   };
 }

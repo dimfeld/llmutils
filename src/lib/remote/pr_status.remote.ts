@@ -13,6 +13,7 @@ import { getWebhookServerUrl } from '$common/github/webhook_client.js';
 import { setPullRequestDraftState } from '$common/github/pull_requests.js';
 import { categorizePrUrls, parseJsonStringArray } from '$lib/server/db_queries.js';
 import { getServerContext } from '$lib/server/init.js';
+import { withRequiredCheckRollupStates } from '$lib/server/required_check_rollup.js';
 import { emitPrUpdatesForIngestResult } from '$lib/server/pr_event_utils.js';
 import { getSessionManager } from '$lib/server/session_context.js';
 import { cleanOrphanedPrStatus, getPrStatusByUrl, getPrStatusForPlan } from '$tim/db/pr_status.js';
@@ -150,7 +151,10 @@ export const getPrStatus = query(planUuidSchema, async ({ planUuid }) => {
   const { valid: prUrls, invalid: invalidPrUrls } = categorizePrUrls(
     parseJsonStringArray(plan.pull_request)
   );
-  const prStatuses = getPrStatusForPlan(db, plan.uuid, prUrls, { includeReviewThreads: true });
+  const prStatuses = withRequiredCheckRollupStates(
+    db,
+    getPrStatusForPlan(db, plan.uuid, prUrls, { includeReviewThreads: true })
+  );
 
   return {
     prUrls,

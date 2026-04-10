@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 
 import { claimAssignment } from '$tim/db/assignment.js';
+import { upsertBranchMergeRequirements } from '$tim/db/branch_merge_requirements.js';
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
 import { upsertPlan } from '$tim/db/plan.js';
 import { linkPlanToPr, upsertPrStatus } from '$tim/db/pr_status.js';
@@ -328,6 +329,85 @@ describe('lib/server/db_queries', () => {
       'pending'
     );
     expect(plans.find((plan) => plan.uuid === 'plan-parent')?.prSummaryStatus).toBe('none');
+  });
+
+  test('getPlansForProject and getPlanDetail use required checks when computing PR status', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-required-checks',
+      planId: 115,
+      title: 'Required checks plan',
+      goal: 'Checks should ignore non-required failures',
+      status: 'pending',
+      priority: 'medium',
+      filename: '115-required-checks.plan.md',
+      pullRequest: ['https://github.com/example/repo/pull/115'],
+    });
+
+    upsertBranchMergeRequirements(db, {
+      owner: 'example',
+      repo: 'repo',
+      branchName: 'main',
+      lastFetchedAt: recentTimestamp(),
+      requirements: [
+        {
+          sourceKind: 'legacy_branch_protection',
+          sourceId: 0,
+          sourceName: null,
+          strict: true,
+          checks: [{ context: 'required-check' }],
+        },
+      ],
+    });
+
+    const pr = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/115',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 115,
+      title: 'Required checks PR',
+      state: 'open',
+      draft: false,
+      baseBranch: 'main',
+      checkRollupState: 'failure',
+      lastFetchedAt: recentTimestamp(),
+      checks: [
+        {
+          name: 'required-check',
+          source: 'check_run',
+          status: 'completed',
+          conclusion: 'success',
+        },
+        {
+          name: 'optional-check',
+          source: 'check_run',
+          status: 'completed',
+          conclusion: 'failure',
+        },
+      ],
+    });
+
+    linkPlanToPr(db, 'plan-required-checks', pr.status.id);
+
+    const plans = getPlansForProject(db, projectId);
+    expect(plans.find((plan) => plan.uuid === 'plan-required-checks')).toMatchObject({
+      prSummaryStatus: 'passing',
+    });
+
+    const detail = getPlanDetail(db, 'plan-required-checks');
+    expect(detail?.prStatuses).toHaveLength(1);
+    expect(detail?.prStatuses[0]?.status.check_rollup_state).toBe('success');
+    expect(detail?.prStatuses[0]?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'required-check',
+          conclusion: 'success',
+        }),
+        expect.objectContaining({
+          name: 'optional-check',
+          conclusion: 'failure',
+        }),
+      ])
+    );
   });
 
   test('getPlansForProject treats neutral, cancelled, and skipped PR rollups as passing', () => {

@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import { clearGitHubTokenCache } from '$common/github/token.js';
 
+import { upsertBranchMergeRequirements } from '$tim/db/branch_merge_requirements.js';
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
 import { upsertPlan } from '$tim/db/plan.js';
 import { linkPlanToPr, upsertPrStatus } from '$tim/db/pr_status.js';
@@ -157,6 +158,70 @@ describe('pr_status remote functions', () => {
         title: 'Cached PR',
       },
     });
+  });
+
+  test('getPrStatus uses required checks when computing the displayed rollup state', async () => {
+    upsertBranchMergeRequirements(currentDb, {
+      owner: 'example',
+      repo: 'repo',
+      branchName: 'main',
+      lastFetchedAt: new Date().toISOString(),
+      requirements: [
+        {
+          sourceKind: 'legacy_branch_protection',
+          sourceId: 0,
+          sourceName: null,
+          strict: true,
+          checks: [{ context: 'required-check' }],
+        },
+      ],
+    });
+
+    const status = upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/2',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 2,
+      title: 'Required check PR',
+      state: 'open',
+      draft: false,
+      baseBranch: 'main',
+      checkRollupState: 'failure',
+      lastFetchedAt: new Date().toISOString(),
+      checks: [
+        {
+          name: 'required-check',
+          source: 'check_run',
+          status: 'completed',
+          conclusion: 'success',
+        },
+        {
+          name: 'optional-check',
+          source: 'check_run',
+          status: 'completed',
+          conclusion: 'failure',
+        },
+      ],
+    });
+    linkPlanToPr(currentDb, 'plan-with-prs', status.status.id);
+
+    const { getPrStatus } = await import('./pr_status.remote.js');
+    const payload = await invokeQuery(getPrStatus, { planUuid: 'plan-with-prs' });
+
+    const pr = payload.prStatuses.find((entry) => entry.status.pr_number === 2);
+    expect(pr?.status.check_rollup_state).toBe('success');
+    expect(pr?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'required-check',
+          conclusion: 'success',
+        }),
+        expect.objectContaining({
+          name: 'optional-check',
+          conclusion: 'failure',
+        }),
+      ])
+    );
   });
 
   test('refreshPrStatus emits PR update events after webhook ingestion', async () => {
