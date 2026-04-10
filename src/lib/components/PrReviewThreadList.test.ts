@@ -59,6 +59,7 @@ describe('PrReviewThreadList', () => {
     expect(body.indexOf('src/a.ts:1')).toBeLessThan(body.indexOf('src/z.ts:2'));
     expect(body).toContain('href="https://github.com/owner/repo/pull/42#discussion_r9001"');
     expect(body).toContain('Copy');
+    expect(body).toContain('Copy with Diff');
   });
 
   test('renders unresolved threads expanded and resolved threads collapsed by default', async () => {

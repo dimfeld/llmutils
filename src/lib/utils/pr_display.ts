@@ -101,14 +101,15 @@ export function formatReviewCommentForClipboard(
   author: string | null,
   isResolved: boolean,
   body: string | null,
-  diffHunk?: string | null
+  diffHunk?: string | null,
+  includeDiff = false
 ): string {
   const location = line ? `${path}:${line}` : path;
   const status = isResolved ? 'resolved' : 'unresolved';
   const authorStr = author ? `@${author}` : 'Unknown';
 
   let text = `${location}\n\n${authorStr} (${status}):\n${body ?? ''}`;
-  if (diffHunk) {
+  if (includeDiff && diffHunk) {
     text += `\n\nDiff context:\n${diffHunk}`;
   }
   return text;

@@ -104,7 +104,7 @@ describe('reviewDecision display helpers', () => {
 });
 
 describe('formatReviewCommentForClipboard', () => {
-  test('formats a review comment with file context and diff hunk', () => {
+  test('formats a review comment without diff by default', () => {
     expect(
       formatReviewCommentForClipboard(
         'src/example.ts',
@@ -113,6 +113,20 @@ describe('formatReviewCommentForClipboard', () => {
         false,
         'Please rename this.',
         '@@ -42,1 +42,1 @@'
+      )
+    ).toBe('src/example.ts:42\n\n@reviewer (unresolved):\nPlease rename this.');
+  });
+
+  test('formats a review comment with file context and diff hunk when requested', () => {
+    expect(
+      formatReviewCommentForClipboard(
+        'src/example.ts',
+        42,
+        'reviewer',
+        false,
+        'Please rename this.',
+        '@@ -42,1 +42,1 @@',
+        true
       )
     ).toBe(
       'src/example.ts:42\n\n@reviewer (unresolved):\nPlease rename this.\n\nDiff context:\n@@ -42,1 +42,1 @@'

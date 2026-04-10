@@ -108,7 +108,11 @@
     return !isResolved;
   }
 
-  let copyFeedback = $state<{ id: number; status: 'copied' | 'failed' } | null>(null);
+  let copyFeedback = $state<{
+    id: number;
+    mode: 'plain' | 'diff';
+    status: 'copied' | 'failed';
+  } | null>(null);
   let threadActionSubmitting = $state<{
     threadId: string;
     action: 'convert' | 'resolve' | 'reply';
@@ -126,7 +130,9 @@
 
   async function copyComment(
     comment: PrReviewThreadDetail['comments'][number],
-    thread: PrReviewThreadDetail
+    thread: PrReviewThreadDetail,
+    includeDiff: boolean,
+    mode: 'plain' | 'diff'
   ) {
     const text = formatReviewCommentForClipboard(
       thread.thread.path,
@@ -134,7 +140,8 @@
       comment.author,
       !!thread.thread.is_resolved,
       comment.body,
-      comment.diff_hunk
+      comment.diff_hunk,
+      includeDiff
     );
     let status: 'copied' | 'failed';
     try {
@@ -143,9 +150,9 @@
     } catch {
       status = 'failed';
     }
-    copyFeedback = { id: comment.id, status };
+    copyFeedback = { id: comment.id, mode, status };
     setTimeout(() => {
-      if (copyFeedback?.id === comment.id) copyFeedback = null;
+      if (copyFeedback?.id === comment.id && copyFeedback.mode === mode) copyFeedback = null;
     }, 2000);
   }
 
@@ -424,15 +431,28 @@
                 {/if}
                 <button
                   class="ml-auto rounded px-1.5 py-0.5 text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-gray-100 focus-visible:opacity-100 dark:hover:bg-gray-800"
-                  onclick={() => copyComment(comment, thread)}
-                  title="Copy comment with file context"
+                  onclick={() => copyComment(comment, thread, false, 'plain')}
+                  title="Copy comment"
                   disabled={threadActionSubmitting !== null}
                   type="button"
                 >
-                  {#if copyFeedback?.id === comment.id}
+                  {#if copyFeedback?.id === comment.id && copyFeedback.mode === 'plain'}
                     {copyFeedback.status === 'copied' ? 'Copied!' : 'Failed'}
                   {:else}
                     Copy
+                  {/if}
+                </button>
+                <button
+                  class="rounded px-1.5 py-0.5 text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-gray-100 focus-visible:opacity-100 dark:hover:bg-gray-800"
+                  onclick={() => copyComment(comment, thread, true, 'diff')}
+                  title="Copy comment with file context and diff"
+                  disabled={threadActionSubmitting !== null}
+                  type="button"
+                >
+                  {#if copyFeedback?.id === comment.id && copyFeedback.mode === 'diff'}
+                    {copyFeedback.status === 'copied' ? 'Copied!' : 'Failed'}
+                  {:else}
+                    Copy with Diff
                   {/if}
                 </button>
               </div>
