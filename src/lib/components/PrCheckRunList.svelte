@@ -1,7 +1,13 @@
 <script lang="ts">
   import type { PrCheckRunRow } from '$tim/db/pr_status.js';
 
-  let { checks }: { checks: PrCheckRunRow[] } = $props();
+  let {
+    checks,
+    requiredCheckNames = [],
+  }: {
+    checks: PrCheckRunRow[];
+    requiredCheckNames?: string[];
+  } = $props();
 
   function conclusionColor(conclusion: string | null, status: string): string {
     if (
@@ -75,6 +81,8 @@
       return 'Pending';
     return conclusion ?? status;
   }
+
+  let requiredCheckNameSet = $derived(new Set(requiredCheckNames));
 </script>
 
 <ul class="space-y-1">
@@ -84,6 +92,13 @@
         {conclusionIcon(check.conclusion, check.status)}
       </span>
       <span class="min-w-0 flex-1 truncate text-foreground">{check.name}</span>
+      {#if requiredCheckNameSet.has(check.name)}
+        <span
+          class="shrink-0 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-blue-800 uppercase dark:bg-blue-900/30 dark:text-blue-300"
+        >
+          Required
+        </span>
+      {/if}
       <span class="shrink-0 text-xs {conclusionColor(check.conclusion, check.status)}">
         {displayLabel(check.conclusion, check.status)}
       </span>

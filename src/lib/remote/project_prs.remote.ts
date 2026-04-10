@@ -23,12 +23,13 @@ import {
   type LinkedPlanSummary,
   type PrStatusDetail,
 } from '$tim/db/pr_status.js';
+import type { PrStatusDetailWithRequiredChecks } from '$lib/server/required_check_rollup.js';
 
 const projectIdSchema = z.object({
   projectId: z.string().regex(/^(\d+|all)$/),
 });
 
-export interface EnrichedProjectPr extends PrStatusDetail {
+export interface EnrichedProjectPr extends PrStatusDetailWithRequiredChecks {
   linkedPlans: LinkedPlanSummary[];
   projectId: number;
   currentUserReviewRequestLabel: string | null;
@@ -60,7 +61,7 @@ function getCurrentUserPushedAfterReview(pr: PrStatusDetail, username: string | 
 
 function enrichProjectPrs(
   projectId: number,
-  prs: PrStatusDetail[],
+  prs: PrStatusDetailWithRequiredChecks[],
   linkedPlansByPrUrl: Map<string, LinkedPlanSummary[]>,
   username: string | null
 ): EnrichedProjectPr[] {

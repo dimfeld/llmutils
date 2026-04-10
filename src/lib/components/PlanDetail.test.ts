@@ -2,7 +2,8 @@ import { render } from 'svelte/server';
 import { describe, expect, test, vi } from 'vitest';
 
 import type { PlanDetail } from '$lib/server/db_queries.js';
-import type { PrStatusDetail, PrStatusRow } from '$tim/db/pr_status.js';
+import type { PrStatusRow } from '$tim/db/pr_status.js';
+import type { PrStatusDetailWithRequiredChecks } from '$lib/server/required_check_rollup.js';
 import PlanDetailComponent from './PlanDetail.svelte';
 
 vi.mock('$app/navigation', () => ({
@@ -77,9 +78,10 @@ function makePrStatus(overrides: Partial<PrStatusRow> = {}): PrStatusRow {
   };
 }
 
-function makePrStatusDetail(overrides: Partial<PrStatusRow> = {}): PrStatusDetail {
+function makePrStatusDetail(overrides: Partial<PrStatusRow> = {}): PrStatusDetailWithRequiredChecks {
   return {
     status: makePrStatus(overrides),
+    requiredCheckNames: [],
     checks: [],
     reviews: [],
     reviewRequests: [],

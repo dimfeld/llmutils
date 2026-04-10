@@ -3,9 +3,12 @@ import type { Database } from 'bun:sqlite';
 import { deduplicatePrUrls } from '$common/github/identifiers.js';
 import { getAssignmentEntry, type AssignmentEntry } from '$tim/db/assignment.js';
 import type { PlanSchema } from '$tim/planSchema.js';
-import { getPrStatusByUrls, getPrStatusForPlan, type PrStatusDetail } from '$tim/db/pr_status.js';
+import { getPrStatusByUrls, getPrStatusForPlan } from '$tim/db/pr_status.js';
 import { isWorkCompleteStatus, normalizePlanStatus } from '$tim/plans/plan_state_utils.js';
-import { withRequiredCheckRollupStates } from '$lib/server/required_check_rollup.js';
+import {
+  withRequiredCheckRollupStates,
+  type PrStatusDetailWithRequiredChecks,
+} from '$lib/server/required_check_rollup.js';
 import { cleanStaleLocks, type WorkspaceLockRow } from '$tim/db/workspace_lock.js';
 import {
   getPlanByUuid,
@@ -116,7 +119,7 @@ export interface PlanDetail extends EnrichedPlan {
   dependencies: EnrichedPlanDependency[];
   assignment: AssignmentEntry | null;
   parent: EnrichedPlanDependency | null;
-  prStatuses: PrStatusDetail[];
+  prStatuses: PrStatusDetailWithRequiredChecks[];
   reviewIssues: PlanSchema['reviewIssues'];
 }
 

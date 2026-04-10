@@ -6,6 +6,10 @@ import {
 } from '$tim/db/branch_merge_requirements.js';
 import type { PrCheckRunRow, PrStatusDetail, PrStatusRow } from '$tim/db/pr_status.js';
 
+export type PrStatusDetailWithRequiredChecks = PrStatusDetail & {
+  requiredCheckNames: string[];
+};
+
 const FAILURE_CHECK_CONCLUSIONS = new Set([
   'failure',
   'error',
@@ -80,6 +84,19 @@ function getRequiredCheckContexts(requirements: BranchMergeRequirementsDetail): 
   return requiredContexts;
 }
 
+export function getRequiredCheckNames(
+  db: Database,
+  status: Pick<PrStatusRow, 'owner' | 'repo' | 'base_branch'>,
+  cache: RequirementCache = new Map()
+): string[] {
+  const requirements = getRequirementsForStatus(db, status, cache);
+  if (!requirements || requirements.requirements.length === 0) {
+    return [];
+  }
+
+  return [...getRequiredCheckContexts(requirements)].sort((a, b) => a.localeCompare(b));
+}
+
 export function getEffectiveCheckRollupState(
   db: Database,
   status: Pick<PrStatusRow, 'owner' | 'repo' | 'base_branch' | 'check_rollup_state'>,
@@ -143,20 +160,25 @@ export function withRequiredCheckRollupState<T extends PrStatusDetail>(
   db: Database,
   detail: T,
   cache: RequirementCache = new Map()
-): T {
+): T & { requiredCheckNames: string[] } {
   const effectiveCheckRollupState = getEffectiveCheckRollupState(
     db,
     detail.status,
     detail.checks,
     cache
   );
+  const requiredCheckNames = getRequiredCheckNames(db, detail.status, cache);
 
   if (effectiveCheckRollupState === detail.status.check_rollup_state) {
-    return detail;
+    return {
+      ...detail,
+      requiredCheckNames,
+    };
   }
 
   return {
     ...detail,
+    requiredCheckNames,
     status: {
       ...detail.status,
       check_rollup_state: effectiveCheckRollupState,
@@ -167,7 +189,7 @@ export function withRequiredCheckRollupState<T extends PrStatusDetail>(
 export function withRequiredCheckRollupStates<T extends PrStatusDetail>(
   db: Database,
   details: T[]
-): T[] {
+): Array<T & { requiredCheckNames: string[] }> {
   const cache: RequirementCache = new Map();
   return details.map((detail) => withRequiredCheckRollupState(db, detail, cache));
 }

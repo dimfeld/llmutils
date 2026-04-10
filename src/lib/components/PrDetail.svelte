@@ -308,7 +308,7 @@
           {pr.checks.length} check{pr.checks.length === 1 ? '' : 's'}
         </summary>
         <div class="mt-1.5 pl-2">
-          <PrCheckRunList checks={pr.checks} />
+          <PrCheckRunList checks={pr.checks} requiredCheckNames={pr.requiredCheckNames ?? []} />
         </div>
       </details>
     {/if}

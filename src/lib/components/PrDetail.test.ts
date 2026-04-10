@@ -8,6 +8,7 @@ function createPr(): EnrichedProjectPr {
   return {
     projectId: 123,
     currentUserReviewRequestLabel: 'Review Requested',
+    requiredCheckNames: [],
     status: {
       id: 1,
       pr_url: 'https://github.com/example/repo/pull/42',
