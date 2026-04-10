@@ -61,6 +61,7 @@ interface CommandResult {
 const CREATE_PR_ALLOWED_BASH_TOOLS = [
   'Bash(gh pr create:*)',
   'Bash(jj bookmark track:*)',
+  'Bash(jj bookmark list:*)',
   'Bash(jj git push --branch:*)',
 ];
 const CLAUDE_CODE_EXECUTOR_NAME = 'claude-code';
