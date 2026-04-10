@@ -68,5 +68,13 @@
         {plan.taskCounts.done}/{plan.taskCounts.total}
       </span>
     {/if}
+    {#if plan.displayStatus === 'needs_review' && plan.reviewIssueCount > 0}
+      <span
+        class="inline-flex items-center rounded-full bg-red-100 px-1.5 py-0.5 text-xs leading-none font-medium text-red-700 dark:bg-red-900/30 dark:text-red-300"
+      >
+        {plan.reviewIssueCount}
+        {plan.reviewIssueCount === 1 ? 'issue' : 'issues'}
+      </span>
+    {/if}
   </div>
 </a>

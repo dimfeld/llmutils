@@ -25,9 +25,7 @@ import {
 
 type FinishExecutorPlan = Parameters<typeof computeCanUpdateDocs>[0];
 
-function makeFinishExecutorPlan(
-  overrides: Partial<FinishExecutorPlan> = {}
-): FinishExecutorPlan {
+function makeFinishExecutorPlan(overrides: Partial<FinishExecutorPlan> = {}): FinishExecutorPlan {
   return {
     docsUpdatedAt: null,
     lessonsAppliedAt: null,

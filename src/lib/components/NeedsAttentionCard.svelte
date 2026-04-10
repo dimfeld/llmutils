@@ -1,15 +1,8 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { toast } from 'svelte-sonner';
-  import {
-    startUpdateDocs,
-    startCreatePr,
-    finishPlanQuick,
-  } from '$lib/remote/plan_actions.remote.js';
-  import { invalidateAll } from '$app/navigation';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import type { PlanAttentionItem } from '$lib/utils/dashboard_attention.js';
-  import ActionButtonWithDropdown, { type ActionItem } from './ActionButtonWithDropdown.svelte';
+  import PlanAttentionActions from './PlanAttentionActions.svelte';
 
   let {
     item,
@@ -27,38 +20,16 @@
 
   const sessionManager = useSessionManager();
 
-  const reasonStyles: Record<string, { label: string; classes: string }> = {
-    waiting_for_input: {
-      label: 'Waiting for input',
-      classes: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
-    },
-    needs_review: {
-      label: 'Needs review',
-      classes: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300',
-    },
-    agent_finished: {
-      label: 'Agent finished',
-      classes: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
-    },
+  const waitingStyle = {
+    label: 'Waiting for input',
+    classes: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
   };
 
   let waitingForInputReason = $derived(item.reasons.find((r) => r.type === 'waiting_for_input'));
-  let hasNeedsReview = $derived(item.reasons.some((r) => r.type === 'needs_review'));
-
   let planHref = $derived(`/projects/${projectId}/active/plan/${item.planUuid}`);
 
-  let startingFinish = $state(false);
-  let startingCreatePr = $state(false);
-  let finishButtonLabel = $derived(
-    startingFinish ? 'Starting…' : item.canUpdateDocs ? 'Update Docs' : 'Finish'
-  );
-  let showCreatePr = $derived(
-    hasNeedsReview &&
-      !item.epic &&
-      !item.canUpdateDocs &&
-      !item.hasPr &&
-      developmentWorkflow === 'pr-based'
-  );
+  // Reasons passed to PlanAttentionActions excludes waiting_for_input (handled separately here)
+  let actionReasons = $derived(item.reasons.filter((r) => r.type !== 'waiting_for_input'));
 
   function navigateToSession(event: MouseEvent) {
     event.preventDefault();
@@ -66,42 +37,6 @@
     if (waitingForInputReason && waitingForInputReason.type === 'waiting_for_input') {
       sessionManager.selectSession(waitingForInputReason.sessionId, projectId);
       void goto(`/projects/${projectId}/sessions`);
-    }
-  }
-
-  async function handleCreatePr(event?: MouseEvent) {
-    event?.preventDefault();
-    event?.stopPropagation();
-    if (startingCreatePr) return;
-    startingCreatePr = true;
-    try {
-      await startCreatePr({ planUuid: item.planUuid });
-      await invalidateAll();
-    } catch (err) {
-      toast.error(`Failed to create PR: ${(err as Error).message}`);
-    } finally {
-      startingCreatePr = false;
-    }
-  }
-
-  async function handleFinish(event: MouseEvent) {
-    event.preventDefault();
-    event.stopPropagation();
-    if (startingFinish) return;
-    startingFinish = true;
-    try {
-      if (item.canUpdateDocs) {
-        await startUpdateDocs({ planUuid: item.planUuid });
-      } else {
-        await finishPlanQuick({ planUuid: item.planUuid });
-      }
-      await invalidateAll();
-    } catch (err) {
-      toast.error(
-        `${item.canUpdateDocs ? 'Failed to update docs' : 'Failed to finish plan'}: ${(err as Error).message}`
-      );
-    } finally {
-      startingFinish = false;
     }
   }
 </script>
@@ -129,16 +64,13 @@
       <div class="mt-0.5 truncate text-xs text-muted-foreground">{projectName}</div>
     {/if}
     <div class="mt-1 flex flex-wrap items-center gap-1.5">
-      {#each item.reasons as reason (reason.type === 'waiting_for_input' ? `${reason.type}-${reason.sessionId}` : reason.type)}
-        {@const style = reasonStyles[reason.type]}
-        {#if style}
-          <span
-            class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {style.classes}"
-          >
-            {style.label}
-          </span>
-        {/if}
-      {/each}
+      {#if waitingForInputReason}
+        <span
+          class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {waitingStyle.classes}"
+        >
+          {waitingStyle.label}
+        </span>
+      {/if}
     </div>
   </a>
   {#if waitingForInputReason}
@@ -150,38 +82,13 @@
       View Session
     </button>
   {/if}
-  {#if hasNeedsReview}
-    {#if showCreatePr}
-      <ActionButtonWithDropdown
-        primary={{
-          label: 'Create PR',
-          startingLabel: 'Starting…',
-          onclick: handleCreatePr,
-          colorClass:
-            'bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600',
-          starting: startingCreatePr,
-        }}
-        menuItems={[
-          {
-            label: 'Finish',
-            startingLabel: 'Starting…',
-            onclick: handleFinish,
-            colorClass: '',
-            starting: startingFinish,
-          },
-        ]}
-        disabled={startingCreatePr || startingFinish}
-        size="xs"
-      />
-    {:else}
-      <button
-        type="button"
-        class="shrink-0 rounded bg-green-600 px-2 py-0.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700 dark:bg-green-700 dark:hover:bg-emerald-600"
-        onclick={handleFinish}
-        disabled={startingFinish}
-      >
-        {finishButtonLabel}
-      </button>
-    {/if}
-  {/if}
+  <PlanAttentionActions
+    planUuid={item.planUuid}
+    reasons={actionReasons}
+    reviewIssueCount={item.reviewIssueCount}
+    canUpdateDocs={item.canUpdateDocs}
+    hasPr={item.hasPr}
+    epic={item.epic}
+    {developmentWorkflow}
+  />
 </div>

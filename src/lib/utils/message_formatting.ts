@@ -250,61 +250,60 @@ export function formatStructuredMessage(
           ['Errors', message.summary.errors.join('\n')],
         ]),
       };
-    case 'token_usage':
-      {
-        const lines: string[] = [];
-        const parts = [
-          message.inputTokens != null ? `input=${message.inputTokens}` : null,
-          message.cachedInputTokens != null ? `cached=${message.cachedInputTokens}` : null,
-          message.outputTokens != null ? `output=${message.outputTokens}` : null,
-          message.reasoningTokens != null ? `reasoning=${message.reasoningTokens}` : null,
-          message.totalTokens != null ? `total=${message.totalTokens}` : null,
-        ].filter(Boolean);
+    case 'token_usage': {
+      const lines: string[] = [];
+      const parts = [
+        message.inputTokens != null ? `input=${message.inputTokens}` : null,
+        message.cachedInputTokens != null ? `cached=${message.cachedInputTokens}` : null,
+        message.outputTokens != null ? `output=${message.outputTokens}` : null,
+        message.reasoningTokens != null ? `reasoning=${message.reasoningTokens}` : null,
+        message.totalTokens != null ? `total=${message.totalTokens}` : null,
+      ].filter(Boolean);
 
-        if (parts.length > 0) {
-          lines.push(parts.join(' '));
-        }
-
-        const rateLimitLines: string[] = [];
-        const rateLimits =
-          message.rateLimits && typeof message.rateLimits === 'object'
-            ? message.rateLimits
-            : undefined;
-        if (rateLimits) {
-          for (const [key, value] of Object.entries(rateLimits)) {
-            if (!value || typeof value !== 'object') {
-              continue;
-            }
-            const entry = value as Record<string, unknown>;
-            const primary = formatRateLimitWindow(entry.primary);
-            const secondary = formatRateLimitWindow(entry.secondary);
-            const label =
-              (typeof entry.limitName === 'string' && entry.limitName.length > 0
-                ? entry.limitName
-                : undefined) ??
-              (typeof entry.limitId === 'string' && entry.limitId.length > 0
-                ? entry.limitId
-                : undefined) ??
-              key;
-            const details = [
-              primary ? `primary ${primary}` : '',
-              secondary ? `secondary ${secondary}` : '',
-            ]
-              .filter(Boolean)
-              .join(', ');
-            rateLimitLines.push(details.length > 0 ? `${label}: ${details}` : label);
-          }
-        }
-
-        if (rateLimitLines.length > 0) {
-          lines.push(`rateLimits=${rateLimitLines.join(' | ')}`);
-        }
-
-        return {
-          type: 'text',
-          text: lines.join('\n'),
-        };
+      if (parts.length > 0) {
+        lines.push(parts.join(' '));
       }
+
+      const rateLimitLines: string[] = [];
+      const rateLimits =
+        message.rateLimits && typeof message.rateLimits === 'object'
+          ? message.rateLimits
+          : undefined;
+      if (rateLimits) {
+        for (const [key, value] of Object.entries(rateLimits)) {
+          if (!value || typeof value !== 'object') {
+            continue;
+          }
+          const entry = value as Record<string, unknown>;
+          const primary = formatRateLimitWindow(entry.primary);
+          const secondary = formatRateLimitWindow(entry.secondary);
+          const label =
+            (typeof entry.limitName === 'string' && entry.limitName.length > 0
+              ? entry.limitName
+              : undefined) ??
+            (typeof entry.limitId === 'string' && entry.limitId.length > 0
+              ? entry.limitId
+              : undefined) ??
+            key;
+          const details = [
+            primary ? `primary ${primary}` : '',
+            secondary ? `secondary ${secondary}` : '',
+          ]
+            .filter(Boolean)
+            .join(', ');
+          rateLimitLines.push(details.length > 0 ? `${label}: ${details}` : label);
+        }
+      }
+
+      if (rateLimitLines.length > 0) {
+        lines.push(`rateLimits=${rateLimitLines.join(' | ')}`);
+      }
+
+      return {
+        type: 'text',
+        text: lines.join('\n'),
+      };
+    }
     case 'input_required':
       return {
         type: 'text',

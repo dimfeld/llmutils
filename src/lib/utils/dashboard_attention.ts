@@ -44,6 +44,7 @@ export interface PlanAttentionItem {
   lessonsAppliedAt: string | null;
   canUpdateDocs: boolean;
   hasPr: boolean;
+  reviewIssueCount: number;
   reasons: PlanAttentionReason[];
 }
 
@@ -152,6 +153,7 @@ export function deriveAttentionItems(
         canUpdateDocs: plan.canUpdateDocs,
         hasPr:
           plan.pullRequests.length > 0 || plan.prSummaryStatus !== 'none' || plan.hasPlanPrLinks,
+        reviewIssueCount: plan.reviewIssueCount,
         reasons,
       });
     }

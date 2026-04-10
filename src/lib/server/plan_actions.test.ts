@@ -347,13 +347,7 @@ describe('lib/server/plan_actions', () => {
 
     expect(spawnSpy).toHaveBeenCalledTimes(1);
     const [args, options] = spawnSpy.mock.calls[0];
-    expect(args).toEqual([
-      'tim',
-      'update-docs',
-      '204',
-      '--auto-workspace',
-      '--no-terminal-input',
-    ]);
+    expect(args).toEqual(['tim', 'update-docs', '204', '--auto-workspace', '--no-terminal-input']);
     expect(options).toMatchObject({
       cwd: '/tmp/primary-workspace',
       stdin: 'ignore',

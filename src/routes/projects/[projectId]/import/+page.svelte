@@ -4,7 +4,11 @@
   import ClipboardPaste from '@lucide/svelte/icons/clipboard-paste';
   import { Button } from '$lib/components/ui/button/index.js';
   import { Checkbox } from '$lib/components/ui/checkbox/index.js';
-  import { InputGroup, InputGroupButton, InputGroupInput } from '$lib/components/ui/input-group/index.js';
+  import {
+    InputGroup,
+    InputGroupButton,
+    InputGroupInput,
+  } from '$lib/components/ui/input-group/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
   import { RadioGroup, RadioGroupItem } from '$lib/components/ui/radio-group/index.js';
   import { fetchIssueForImport, importIssue } from '$lib/remote/issue_import.remote.js';

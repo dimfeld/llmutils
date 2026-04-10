@@ -108,6 +108,7 @@ export interface EnrichedPlan {
     done: number;
     total: number;
   };
+  reviewIssueCount: number;
 }
 
 export interface PlanDetail extends EnrichedPlan {
@@ -512,6 +513,9 @@ function enrichPlansWithContext(
         done: doneTaskCount,
         total: tasks.length,
       },
+      reviewIssueCount: plan.review_issues
+        ? ((JSON.parse(plan.review_issues) as PlanSchema['reviewIssues'])?.length ?? 0)
+        : 0,
     };
   });
 

@@ -25,6 +25,9 @@
   import { page } from '$app/state';
   import { tick } from 'svelte';
   import { getPlanTaskCounts } from '$lib/remote/plan_task_counts.remote.js';
+  import { getPlanAttentionState } from '$lib/remote/plan_attention_state.remote.js';
+  import PlanAttentionActions from './PlanAttentionActions.svelte';
+  import type { PlanAttentionReason } from '$lib/utils/dashboard_attention.js';
   import { resolve } from '$app/paths';
 
   let { session }: { session: SessionData } = $props();
@@ -123,6 +126,23 @@
       ? await getPlanTaskCounts({ planUuid: session.sessionInfo.planUuid })
       : null
   );
+
+  let planAttentionState = $derived(
+    session.status === 'offline' && session.sessionInfo.planUuid
+      ? await getPlanAttentionState({ planUuid: session.sessionInfo.planUuid })
+      : null
+  );
+
+  let attentionReasons = $derived.by((): PlanAttentionReason[] => {
+    if (!planAttentionState) return [];
+    const reasons: PlanAttentionReason[] = [];
+    if (planAttentionState.displayStatus === 'needs_review') {
+      reasons.push({ type: 'needs_review' });
+    } else if (planAttentionState.displayStatus === 'in_progress') {
+      reasons.push({ type: 'agent_finished' });
+    }
+    return reasons;
+  });
 
   // This ensures that we do layout on the final messages, which helps autoscroll to continue to work when adding new
   // messages.
@@ -361,9 +381,22 @@
         {/if}
       </div>
     </div>
-    {#if session.sessionInfo.workspacePath}
-      <div class="mt-1 text-xs text-muted-foreground">
-        {session.sessionInfo.workspacePath}
+    {#if session.sessionInfo.workspacePath || (planAttentionState && attentionReasons.length > 0)}
+      <div class="mt-1 flex flex-wrap items-center justify-between gap-2">
+        {#if session.sessionInfo.workspacePath}
+          <span class="text-xs text-muted-foreground">{session.sessionInfo.workspacePath}</span>
+        {/if}
+        {#if planAttentionState && attentionReasons.length > 0}
+          <PlanAttentionActions
+            planUuid={session.sessionInfo.planUuid!}
+            reasons={attentionReasons}
+            reviewIssueCount={planAttentionState.reviewIssueCount}
+            canUpdateDocs={planAttentionState.canUpdateDocs}
+            hasPr={planAttentionState.hasPr}
+            epic={planAttentionState.epic}
+            developmentWorkflow={planAttentionState.developmentWorkflow}
+          />
+        {/if}
       </div>
     {/if}
   </div>
