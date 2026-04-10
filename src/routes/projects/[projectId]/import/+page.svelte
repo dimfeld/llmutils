@@ -1,13 +1,16 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
+  import ClipboardPaste from '@lucide/svelte/icons/clipboard-paste';
   import { Button } from '$lib/components/ui/button/index.js';
   import { Checkbox } from '$lib/components/ui/checkbox/index.js';
-  import { Input } from '$lib/components/ui/input/index.js';
+  import { InputGroup, InputGroupButton, InputGroupInput } from '$lib/components/ui/input-group/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
   import { RadioGroup, RadioGroupItem } from '$lib/components/ui/radio-group/index.js';
   import { fetchIssueForImport, importIssue } from '$lib/remote/issue_import.remote.js';
   import { renderPlanContentHtml } from '$lib/utils/plan_content.js';
+  import { tick } from 'svelte';
+  import { toast } from 'svelte-sonner';
   import type { PageProps } from './$types';
 
   let { data, params }: PageProps = $props();
@@ -30,6 +33,8 @@
 
   // Step 1 state
   let identifier = $state('');
+  let identifierInput = $state<HTMLInputElement | null>(null);
+  let pasting = $state(false);
   let mode: ImportMode = $state('single');
   let fetching = $state(false);
   let fetchError: string | null = $state(null);
@@ -81,6 +86,34 @@
       fetchError = (err as Error).message || 'Failed to fetch issue';
     } finally {
       fetching = false;
+    }
+  }
+
+  async function handlePasteFromClipboard() {
+    if (pasting) return;
+
+    if (!navigator.clipboard?.readText) {
+      toast.error('Clipboard paste is not available in this browser');
+      return;
+    }
+
+    pasting = true;
+    try {
+      const text = (await navigator.clipboard.readText()).trim();
+      if (!text) {
+        toast.error('Clipboard is empty');
+        return;
+      }
+
+      identifier = text;
+      fetchError = null;
+      await tick();
+      identifierInput?.focus();
+      identifierInput?.select();
+    } catch (err) {
+      toast.error(`Failed to paste: ${(err as Error).message}`);
+    } finally {
+      pasting = false;
     }
   }
 
@@ -140,7 +173,7 @@
   }
 </script>
 
-<div class="p-6">
+<div class="min-w-full p-6 md:min-w-lg">
   <div class="mb-6">
     <h1 class="text-xl font-semibold text-foreground">
       Import Issue from {data.displayName}
@@ -158,14 +191,25 @@
               Issue Identifier
             </Label>
             <p class="text-sm text-muted-foreground">Enter an issue ID, URL, or branch name.</p>
-            <Input
-              id="issue-identifier"
-              placeholder={data.trackerType === 'linear' ? 'TEAM-123' : '#123 or owner/repo#123'}
-              bind:value={identifier}
-              onkeydown={(e: KeyboardEvent) => {
-                if (e.key === 'Enter' && identifier.trim()) handleFetch();
-              }}
-            />
+            <InputGroup>
+              <InputGroupInput
+                bind:ref={identifierInput}
+                id="issue-identifier"
+                placeholder={data.trackerType === 'linear' ? 'TEAM-123' : '#123 or owner/repo#123'}
+                bind:value={identifier}
+                onkeydown={(e: KeyboardEvent) => {
+                  if (e.key === 'Enter' && identifier.trim()) handleFetch();
+                }}
+              />
+              <InputGroupButton
+                aria-label="Paste from clipboard"
+                title="Paste from clipboard"
+                disabled={pasting}
+                onclick={handlePasteFromClipboard}
+              >
+                <ClipboardPaste />
+              </InputGroupButton>
+            </InputGroup>
           </div>
 
           <div class="space-y-2">
