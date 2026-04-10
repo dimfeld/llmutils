@@ -247,9 +247,25 @@ export async function fetchAndUpdatePrReviewThreads(
     deletions: existing.status.deletions,
     changedFiles: existing.status.changed_files,
     lastFetchedAt: getNowIsoString(),
-    checks: [],
-    reviews: [],
-    labels: [],
+    checks: existing.checks.map((check) => ({
+      name: check.name,
+      source: check.source,
+      status: check.status,
+      conclusion: check.conclusion,
+      detailsUrl: check.details_url,
+      startedAt: check.started_at,
+      completedAt: check.completed_at,
+    })),
+    reviews: existing.reviews.map((review) => ({
+      author: review.author,
+      state: review.state,
+      body: review.body,
+      submittedAt: review.submitted_at,
+    })),
+    labels: existing.labels.map((label) => ({
+      name: label.name,
+      color: label.color,
+    })),
     reviewThreads,
   };
 

@@ -554,6 +554,66 @@ describe('common/github/pr_status_service', () => {
     ).toEqual([expect.objectContaining({ comment_id: 'comment-2b' })]);
   });
 
+  test('fetchAndUpdatePrReviewThreads preserves checks, reviews, and labels on full thread refresh', async () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/231',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 231,
+      title: 'Preserve status data',
+      state: 'open',
+      draft: false,
+      checkRollupState: 'failure',
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      checks: [
+        { name: 'ci/test', source: 'check_run', status: 'completed', conclusion: 'failure' },
+      ],
+      reviews: [{ author: 'bob', state: 'CHANGES_REQUESTED', body: 'Needs changes' }],
+      labels: [{ name: 'bug', color: 'ff0000' }],
+      reviewThreads: [
+        {
+          threadId: 'thread-1',
+          path: 'src/one.ts',
+          line: 10,
+          isResolved: false,
+          isOutdated: false,
+          comments: [{ commentId: 'comment-1', body: 'Old thread' }],
+        },
+      ],
+    });
+
+    const mockFetchPrReviewThreads = vi.mocked(fetchPrReviewThreads);
+    const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
+    const mockCanonicalizePrUrl = vi.mocked(canonicalizePrUrl);
+    const mockTryCanonicalizePrUrl = vi.mocked(tryCanonicalizePrUrl);
+
+    mockFetchPrReviewThreads.mockResolvedValue([
+      {
+        threadId: 'thread-2',
+        path: 'src/two.ts',
+        line: 22,
+        isResolved: false,
+        isOutdated: false,
+        comments: [{ commentId: 'comment-2', body: 'New thread' }],
+      },
+    ]);
+
+    mockParsePrOrIssueNumber.mockResolvedValue({ owner: 'example', repo: 'repo', number: 231 });
+    mockCanonicalizePrUrl.mockReturnValue('https://github.com/example/repo/pull/231');
+    mockTryCanonicalizePrUrl.mockReturnValue('https://github.com/example/repo/pull/231');
+
+    const { fetchAndUpdatePrReviewThreads } = await import('./pr_status_service.ts');
+    await fetchAndUpdatePrReviewThreads(db, 'https://github.com/example/repo/pull/231');
+
+    const updated = getPrStatusByUrl(db, 'https://github.com/example/repo/pull/231', {
+      includeReviewThreads: true,
+    });
+    expect(updated?.checks.map((check) => check.name)).toEqual(['ci/test']);
+    expect(updated?.reviews.map((review) => review.author)).toEqual(['bob']);
+    expect(updated?.labels.map((label) => label.name)).toEqual(['bug']);
+    expect(updated?.reviewThreads?.map((thread) => thread.thread.thread_id)).toEqual(['thread-2']);
+  });
+
   test('refreshPrCheckStatus canonicalizes equivalent PR URLs before cache lookup', async () => {
     upsertPrStatus(db, {
       prUrl: 'https://github.com/example/repo/pull/220',
