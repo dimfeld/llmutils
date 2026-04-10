@@ -21,11 +21,12 @@
     markEndSessionUsed,
     togglePlanPane,
   } from './session_detail_state.js';
-  import { afterNavigate } from '$app/navigation';
+  import { afterNavigate, invalidateAll } from '$app/navigation';
   import { page } from '$app/state';
-  import { tick } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import { getPlanTaskCounts } from '$lib/remote/plan_task_counts.remote.js';
   import { getPlanAttentionState } from '$lib/remote/plan_attention_state.remote.js';
+  import { startAgent } from '$lib/remote/plan_actions.remote.js';
   import PlanAttentionActions from './PlanAttentionActions.svelte';
   import type { PlanAttentionReason } from '$lib/utils/dashboard_attention.js';
   import { resolve } from '$app/paths';
@@ -41,6 +42,9 @@
   let confirmingEndSession = $state(false);
   let endSessionTriggerButton: HTMLButtonElement | undefined = $state();
   let confirmEndSessionButton: HTMLButtonElement | undefined = $state();
+  let startingAgent = $state(false);
+  let startedAgentStatus: 'started' | 'already_running' | null = $state(null);
+  let startedAgentTimeout: ReturnType<typeof setTimeout> | null = null;
   const FULLY_RENDERED_MESSAGE_COUNT = 20;
 
   afterNavigate(({ from, to }) => {
@@ -50,6 +54,10 @@
       isProgrammaticallyScrolled = false;
       autoScroll = true;
     }
+  });
+
+  onDestroy(() => {
+    clearStartedAgentTimeout();
   });
 
   // Track whether user is near the bottom of the scroll area
@@ -81,6 +89,13 @@
       });
       isFirstScroll = false;
     }
+  });
+
+  $effect(() => {
+    session.connectionId;
+    clearStartedAgentTimeout();
+    startingAgent = false;
+    startedAgentStatus = null;
   });
 
   let statusText = $derived.by(() => {
@@ -133,12 +148,20 @@
       : null
   );
 
+  let showRunAgent = $derived.by(() => {
+    if (!planAttentionState || !taskCounts) return false;
+    return planAttentionState.displayStatus === 'ready' && taskCounts.done < taskCounts.total;
+  });
+
   let attentionReasons = $derived.by((): PlanAttentionReason[] => {
     if (!planAttentionState) return [];
     const reasons: PlanAttentionReason[] = [];
     if (planAttentionState.displayStatus === 'needs_review') {
       reasons.push({ type: 'needs_review' });
-    } else if (planAttentionState.displayStatus === 'in_progress') {
+    } else if (
+      planAttentionState.displayStatus === 'in_progress' ||
+      planAttentionState.displayStatus === 'ready'
+    ) {
       reasons.push({ type: 'agent_finished' });
     }
     return reasons;
@@ -194,6 +217,39 @@
         markEndSessionUsed(uiState, session.connectionId);
       }
       confirmingEndSession = false;
+    }
+  }
+
+  function clearStartedAgentTimeout() {
+    if (startedAgentTimeout) {
+      clearTimeout(startedAgentTimeout);
+      startedAgentTimeout = null;
+    }
+  }
+
+  async function handleRunAgent() {
+    if (startingAgent || startedAgentStatus) return;
+    startingAgent = true;
+    clearStartedAgentTimeout();
+    try {
+      const result = await startAgent({ planUuid: session.sessionInfo.planUuid! });
+      startedAgentStatus = result.status;
+      startedAgentTimeout = setTimeout(() => {
+        startedAgentStatus = null;
+        startedAgentTimeout = null;
+      }, 30_000);
+
+      if (result.status === 'started') {
+        toast.success('Agent started');
+      } else {
+        toast.warning('A session is already running for this plan');
+      }
+
+      await invalidateAll();
+    } catch (err) {
+      toast.error(`Failed to start agent: ${(err as Error).message}`);
+    } finally {
+      startingAgent = false;
     }
   }
 
@@ -381,23 +437,48 @@
         {/if}
       </div>
     </div>
-    {#if session.sessionInfo.workspacePath || (planAttentionState && attentionReasons.length > 0)}
+    {#if session.sessionInfo.workspacePath || showRunAgent || (planAttentionState && attentionReasons.length > 0)}
       <div class="mt-1 flex flex-wrap items-center justify-between gap-2">
         {#if session.sessionInfo.workspacePath}
           <span class="text-xs text-muted-foreground">{session.sessionInfo.workspacePath}</span>
         {/if}
-        {#if planAttentionState && attentionReasons.length > 0}
-          <PlanAttentionActions
-            planUuid={session.sessionInfo.planUuid!}
-            projectId={String(session.projectId)}
-            reasons={attentionReasons}
-            reviewIssueCount={planAttentionState.reviewIssueCount}
-            canUpdateDocs={planAttentionState.canUpdateDocs}
-            hasPr={planAttentionState.hasPr}
-            epic={planAttentionState.epic}
-            developmentWorkflow={planAttentionState.developmentWorkflow}
-          />
-        {/if}
+        <div class="flex flex-wrap items-center gap-2">
+          {#if showRunAgent}
+            {#if startingAgent}
+              <button
+                type="button"
+                class="rounded bg-emerald-600 px-2 py-0.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700 disabled:opacity-50 dark:bg-emerald-700 dark:hover:bg-emerald-600"
+                disabled
+              >
+                Starting...
+              </button>
+            {:else if startedAgentStatus === 'already_running'}
+              <span class="text-xs text-muted-foreground">Already running</span>
+            {:else if startedAgentStatus === 'started'}
+              <span class="text-xs text-emerald-600 dark:text-emerald-400">Started</span>
+            {:else}
+              <button
+                type="button"
+                class="rounded bg-emerald-600 px-2 py-0.5 text-xs font-medium text-white transition-colors hover:bg-emerald-700 disabled:opacity-50 dark:bg-emerald-700 dark:hover:bg-emerald-600"
+                onclick={handleRunAgent}
+              >
+                Run Agent
+              </button>
+            {/if}
+          {/if}
+          {#if planAttentionState && attentionReasons.length > 0}
+            <PlanAttentionActions
+              planUuid={session.sessionInfo.planUuid!}
+              projectId={String(session.projectId)}
+              reasons={attentionReasons}
+              reviewIssueCount={planAttentionState.reviewIssueCount}
+              canUpdateDocs={planAttentionState.canUpdateDocs}
+              hasPr={planAttentionState.hasPr}
+              epic={planAttentionState.epic}
+              developmentWorkflow={planAttentionState.developmentWorkflow}
+            />
+          {/if}
+        </div>
       </div>
     {/if}
   </div>

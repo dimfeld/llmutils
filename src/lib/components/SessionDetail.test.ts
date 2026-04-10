@@ -23,6 +23,14 @@ const { sessionManager, uiState } = vi.hoisted(() => ({
   },
 }));
 
+const { getPlanAttentionState } = vi.hoisted(() => ({
+  getPlanAttentionState: vi.fn(),
+}));
+
+const { getPlanTaskCounts } = vi.hoisted(() => ({
+  getPlanTaskCounts: vi.fn(),
+}));
+
 vi.mock('$app/navigation', () => ({
   goto: vi.fn(),
   afterNavigate: vi.fn(),
@@ -54,7 +62,11 @@ vi.mock('$lib/stores/ui_state.svelte.js', () => ({
 }));
 
 vi.mock('$lib/remote/plan_task_counts.remote.js', () => ({
-  getPlanTaskCounts: () => Promise.resolve(null),
+  getPlanTaskCounts: (...args: unknown[]) => getPlanTaskCounts(...args),
+}));
+
+vi.mock('$lib/remote/plan_attention_state.remote.js', () => ({
+  getPlanAttentionState: (...args: unknown[]) => getPlanAttentionState(...args),
 }));
 
 import SessionDetail from './SessionDetail.svelte';
@@ -90,6 +102,10 @@ describe('SessionDetail', () => {
       endSessionUsed: false,
     });
     uiState.setSessionState.mockReset();
+    getPlanAttentionState.mockReset();
+    getPlanAttentionState.mockResolvedValue(null);
+    getPlanTaskCounts.mockReset();
+    getPlanTaskCounts.mockResolvedValue(null);
   });
 
   test('renders status dot with role="img" and aria-label for active session', async () => {
@@ -148,6 +164,52 @@ describe('SessionDetail', () => {
 
     // Input area should still be present for interactive active sessions
     expect(body).toContain('aria-label="Send input to session"');
+  });
+
+  test('renders a Run Agent button for offline ready plans with incomplete tasks', async () => {
+    const session = createSession({
+      status: 'offline',
+      sessionInfo: {
+        planId: 302,
+        planUuid: 'plan-302',
+      },
+    });
+    getPlanAttentionState.mockResolvedValue({
+      displayStatus: 'ready',
+      reviewIssueCount: 0,
+      canUpdateDocs: false,
+      hasPr: false,
+      epic: false,
+      developmentWorkflow: 'pr-based',
+    });
+    getPlanTaskCounts.mockResolvedValue({ done: 1, total: 3 });
+
+    const { body } = await render(SessionDetail, { props: { session } });
+
+    expect(body).toContain('Run Agent');
+  });
+
+  test('does not render Run Agent for offline plans without incomplete tasks', async () => {
+    const session = createSession({
+      status: 'offline',
+      sessionInfo: {
+        planId: 302,
+        planUuid: 'plan-302',
+      },
+    });
+    getPlanAttentionState.mockResolvedValue({
+      displayStatus: 'ready',
+      reviewIssueCount: 0,
+      canUpdateDocs: false,
+      hasPr: false,
+      epic: false,
+      developmentWorkflow: 'pr-based',
+    });
+    getPlanTaskCounts.mockResolvedValue({ done: 3, total: 3 });
+
+    const { body } = await render(SessionDetail, { props: { session } });
+
+    expect(body).not.toContain('Run Agent');
   });
 
   test('renders the plan split pane with placeholder when the session has a plan but no content yet', async () => {
