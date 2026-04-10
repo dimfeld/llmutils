@@ -1,6 +1,4 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
-  import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import type { PlanAttentionItem } from '$lib/utils/dashboard_attention.js';
   import PlanAttentionActions from './PlanAttentionActions.svelte';
 
@@ -18,35 +16,15 @@
     developmentWorkflow?: 'pr-based' | 'trunk-based';
   } = $props();
 
-  const sessionManager = useSessionManager();
-
-  const waitingStyle = {
-    label: 'Waiting for input',
-    classes: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
-  };
-
-  let waitingForInputReason = $derived(item.reasons.find((r) => r.type === 'waiting_for_input'));
   let planHref = $derived(`/projects/${projectId}/active/plan/${item.planUuid}`);
-
-  // Reasons passed to PlanAttentionActions excludes waiting_for_input (handled separately here)
-  let actionReasons = $derived(item.reasons.filter((r) => r.type !== 'waiting_for_input'));
-
-  function navigateToSession(event: MouseEvent) {
-    event.preventDefault();
-    event.stopPropagation();
-    if (waitingForInputReason && waitingForInputReason.type === 'waiting_for_input') {
-      sessionManager.selectSession(waitingForInputReason.sessionId, projectId);
-      void goto(`/projects/${projectId}/sessions`);
-    }
-  }
 </script>
 
 <div
-  class="flex w-full items-center gap-2 rounded-md px-3 py-2 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800 {selected
+  class="flex w-full flex-col gap-2 rounded-md px-3 py-2 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800 {selected
     ? 'bg-gray-100 dark:bg-gray-800'
     : ''}"
 >
-  <a href={planHref} class="min-w-0 flex-1" data-sveltekit-preload-data>
+  <a href={planHref} class="w-full min-w-0" data-sveltekit-preload-data>
     <div class="flex items-center gap-2">
       <span class="shrink-0 text-xs font-medium text-muted-foreground">#{item.planId}</span>
       {#if item.epic}
@@ -63,28 +41,11 @@
     {#if projectName}
       <div class="mt-0.5 truncate text-xs text-muted-foreground">{projectName}</div>
     {/if}
-    <div class="mt-1 flex flex-wrap items-center gap-1.5">
-      {#if waitingForInputReason}
-        <span
-          class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {waitingStyle.classes}"
-        >
-          {waitingStyle.label}
-        </span>
-      {/if}
-    </div>
   </a>
-  {#if waitingForInputReason}
-    <button
-      type="button"
-      class="shrink-0 rounded bg-amber-600 px-2 py-0.5 text-xs font-medium text-white transition-colors hover:bg-amber-700 dark:bg-amber-700 dark:hover:bg-amber-600"
-      onclick={navigateToSession}
-    >
-      View Session
-    </button>
-  {/if}
   <PlanAttentionActions
     planUuid={item.planUuid}
-    reasons={actionReasons}
+    {projectId}
+    reasons={item.reasons}
     reviewIssueCount={item.reviewIssueCount}
     canUpdateDocs={item.canUpdateDocs}
     hasPr={item.hasPr}

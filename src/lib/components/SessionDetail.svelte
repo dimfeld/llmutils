@@ -389,6 +389,7 @@
         {#if planAttentionState && attentionReasons.length > 0}
           <PlanAttentionActions
             planUuid={session.sessionInfo.planUuid!}
+            projectId={String(session.projectId)}
             reasons={attentionReasons}
             reviewIssueCount={planAttentionState.reviewIssueCount}
             canUpdateDocs={planAttentionState.canUpdateDocs}
@@ -420,6 +421,8 @@
     <div
       class="h-0 min-h-0 flex-1 overflow-y-auto bg-gray-900 p-4 font-mono text-sm focus:outline-none"
       tabindex="0"
+      role="region"
+      aria-label="Messages"
       bind:this={scrollContainer}
       onscroll={handleScroll}
       onscrollend={handleScrollEnd}

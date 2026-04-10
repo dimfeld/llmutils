@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { goto } from '$app/navigation';
+  import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import { toast } from 'svelte-sonner';
   import {
     startUpdateDocs,
@@ -16,6 +18,7 @@
     canUpdateDocs,
     hasPr,
     epic,
+    projectId,
     developmentWorkflow = 'pr-based' as const,
   }: {
     planUuid: string;
@@ -24,7 +27,9 @@
     canUpdateDocs: boolean;
     hasPr: boolean;
     epic: boolean;
+    projectId: string;
     developmentWorkflow?: 'pr-based' | 'trunk-based';
+    waitingForInputReason?: string;
   } = $props();
 
   const reasonStyles: Record<string, { label: string; classes: string }> = {
@@ -36,8 +41,13 @@
       label: 'Agent finished',
       classes: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
     },
+    waiting_for_input: {
+      label: 'Waiting for input',
+      classes: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
+    },
   };
 
+  let waitingForInputReason = $derived(reasons.find((r) => r.type === 'waiting_for_input'));
   let hasNeedsReview = $derived(reasons.some((r) => r.type === 'needs_review'));
 
   let startingFinish = $state(false);
@@ -84,28 +94,48 @@
       startingFinish = false;
     }
   }
+
+  const sessionManager = useSessionManager();
+  function navigateToSession(event: MouseEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (waitingForInputReason) {
+      sessionManager.selectSession(waitingForInputReason.sessionId, projectId);
+      void goto(`/projects/${projectId}/sessions`);
+    }
+  }
 </script>
 
-<div class="flex flex-wrap items-center gap-1.5">
-  {#each reasons as reason (reason.type === 'waiting_for_input' ? `${reason.type}-${reason.sessionId}` : reason.type)}
-    {@const style = reasonStyles[reason.type]}
-    {#if style}
+<div class="flex w-full flex-wrap items-center justify-between gap-1.5">
+  <div class="flex flex-wrap items-center gap-1.5">
+    {#each reasons as reason (reason.type === 'waiting_for_input' ? `${reason.type}-${reason.sessionId}` : reason.type)}
+      {@const style = reasonStyles[reason.type]}
+      {#if style}
+        <span
+          class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {style.classes}"
+        >
+          {style.label}
+        </span>
+      {/if}
+    {/each}
+    {#if reviewIssueCount > 0}
       <span
-        class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {style.classes}"
+        class="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900/30 dark:text-red-300"
       >
-        {style.label}
+        {reviewIssueCount}
+        {reviewIssueCount === 1 ? 'issue' : 'issues'}
       </span>
     {/if}
-  {/each}
-  {#if reviewIssueCount > 0}
-    <span
-      class="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900/30 dark:text-red-300"
+  </div>
+  {#if waitingForInputReason}
+    <button
+      type="button"
+      class="shrink-0 rounded bg-amber-600 px-2 py-0.5 text-xs font-medium text-white transition-colors hover:bg-amber-700 dark:bg-amber-700 dark:hover:bg-amber-600"
+      onclick={navigateToSession}
     >
-      {reviewIssueCount}
-      {reviewIssueCount === 1 ? 'issue' : 'issues'}
-    </span>
-  {/if}
-  {#if hasNeedsReview}
+      View Session
+    </button>
+  {:else if hasNeedsReview}
     {#if showCreatePr}
       <ActionButtonWithDropdown
         primary={{
