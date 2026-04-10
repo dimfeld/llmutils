@@ -213,7 +213,6 @@ export async function ingestWebhookEvents(db: Database): Promise<IngestResult> {
 
       try {
         const payload = JSON.parse(event.payloadJson) as unknown;
-        console.log(`[webhook-ingest] dispatching handler for event ${event.id}`);
         const result =
           event.eventType === 'pull_request'
             ? handlePullRequestEvent(db, payload, handlerOptions)
@@ -227,7 +226,6 @@ export async function ingestWebhookEvents(db: Database): Promise<IngestResult> {
                   : null;
 
         if (!result) {
-          console.log(`[webhook-ingest] no handler result for event ${event.id}`);
           continue;
         }
 
