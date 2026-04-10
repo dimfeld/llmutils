@@ -573,6 +573,48 @@ const migrations: Migration[] = [
       ALTER TABLE pr_review ADD COLUMN body TEXT;
     `,
   },
+  {
+    version: 22,
+    up: `
+      CREATE TABLE branch_merge_requirements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        owner TEXT NOT NULL,
+        repo TEXT NOT NULL,
+        branch_name TEXT NOT NULL,
+        last_fetched_at TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        UNIQUE(owner, repo, branch_name)
+      );
+      CREATE INDEX idx_branch_merge_requirements_repo_branch
+        ON branch_merge_requirements(owner, repo, branch_name);
+
+      CREATE TABLE branch_merge_requirement_source (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        branch_merge_requirements_id INTEGER NOT NULL
+          REFERENCES branch_merge_requirements(id) ON DELETE CASCADE,
+        source_kind TEXT NOT NULL
+          CHECK(source_kind IN ('legacy_branch_protection', 'ruleset')),
+        source_id INTEGER NOT NULL,
+        source_name TEXT,
+        strict INTEGER,
+        UNIQUE(branch_merge_requirements_id, source_kind, source_id)
+      );
+      CREATE INDEX idx_branch_merge_requirement_source_parent
+        ON branch_merge_requirement_source(branch_merge_requirements_id);
+
+      CREATE TABLE branch_merge_requirement_check (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        branch_merge_requirement_source_id INTEGER NOT NULL
+          REFERENCES branch_merge_requirement_source(id) ON DELETE CASCADE,
+        context TEXT NOT NULL,
+        integration_id INTEGER NOT NULL DEFAULT -1,
+        UNIQUE(branch_merge_requirement_source_id, context, integration_id)
+      );
+      CREATE INDEX idx_branch_merge_requirement_check_parent
+        ON branch_merge_requirement_check(branch_merge_requirement_source_id);
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {

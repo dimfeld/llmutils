@@ -5,6 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { DATABASE_FILENAME, openDatabase } from '../../tim/db/database.js';
+import { getBranchMergeRequirements } from '../../tim/db/branch_merge_requirements.js';
 import { getPrStatusByUrl, getPrStatusForPlan, upsertPrStatus } from '../../tim/db/pr_status.js';
 import { upsertPlan } from '../../tim/db/plan.js';
 import { getOrCreateProject } from '../../tim/db/project.js';
@@ -25,6 +26,10 @@ vi.mock('../../common/github/pr_status.ts', () => ({
   fetchPrReviewThreads: vi.fn(),
 }));
 
+vi.mock('../../common/github/branch_merge_requirements.ts', () => ({
+  fetchBranchMergeRequirements: vi.fn(),
+}));
+
 // Import mocked modules
 import {
   parsePrOrIssueNumber,
@@ -39,6 +44,7 @@ import {
   fetchPrReviewThread,
   fetchPrReviewThreads,
 } from '../../common/github/pr_status.ts';
+import { fetchBranchMergeRequirements } from '../../common/github/branch_merge_requirements.ts';
 
 function makeIdentifiersMock(
   parsePrOrIssueNumberImpl: (...args: unknown[]) => unknown,
@@ -72,6 +78,13 @@ describe('common/github/pr_status_service', () => {
       filename: '1.plan.md',
     });
 
+    vi.mocked(fetchBranchMergeRequirements).mockResolvedValue({
+      owner: 'example',
+      repo: 'repo',
+      branchName: 'main',
+      requirements: [],
+    });
+
     // Reset all mocks
     vi.clearAllMocks();
   });
@@ -89,6 +102,7 @@ describe('common/github/pr_status_service', () => {
     const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
     const mockCanonicalizePrUrl = vi.mocked(canonicalizePrUrl);
     const mockTryCanonicalizePrUrl = vi.mocked(tryCanonicalizePrUrl);
+    const mockFetchBranchMergeRequirements = vi.mocked(fetchBranchMergeRequirements);
 
     mockFetchPrFullStatus.mockResolvedValue({
       number: 201,
@@ -120,6 +134,20 @@ describe('common/github/pr_status_service', () => {
       changedFiles: 3,
     });
     mockFetchPrReviewThreads.mockResolvedValue([]);
+    mockFetchBranchMergeRequirements.mockResolvedValue({
+      owner: 'example',
+      repo: 'repo',
+      branchName: 'main',
+      requirements: [
+        {
+          sourceKind: 'legacy_branch_protection',
+          sourceId: 0,
+          sourceName: null,
+          strict: true,
+          checks: [{ context: 'test', integrationId: null }],
+        },
+      ],
+    });
 
     mockParsePrOrIssueNumber.mockResolvedValue({ owner: 'example', repo: 'repo', number: 201 });
     mockCanonicalizePrUrl.mockReturnValue('https://github.com/example/repo/pull/201');
@@ -129,11 +157,13 @@ describe('common/github/pr_status_service', () => {
     const result = await refreshPrStatus(db, 'https://github.com/example/repo/pull/201');
 
     expect(fetchPrFullStatus).toHaveBeenCalledWith('example', 'repo', 201);
+    expect(fetchBranchMergeRequirements).toHaveBeenCalledWith('example', 'repo', 'main');
     expect(result.status.title).toBe('Service PR');
     expect(result.status.check_rollup_state).toBe('success');
     expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/201')?.checks).toHaveLength(
       1
     );
+    expect(getBranchMergeRequirements(db, 'example', 'repo', 'main')?.requirements).toHaveLength(1);
   });
 
   test('refreshPrStatus persists additions, deletions, and changedFiles to the DB', async () => {
@@ -142,6 +172,7 @@ describe('common/github/pr_status_service', () => {
     const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
     const mockCanonicalizePrUrl = vi.mocked(canonicalizePrUrl);
     const mockTryCanonicalizePrUrl = vi.mocked(tryCanonicalizePrUrl);
+    const mockFetchBranchMergeRequirements = vi.mocked(fetchBranchMergeRequirements);
 
     mockFetchPrFullStatus.mockResolvedValue({
       number: 250,
@@ -163,6 +194,12 @@ describe('common/github/pr_status_service', () => {
       changedFiles: 3,
     });
     mockFetchPrReviewThreads.mockResolvedValue([]);
+    mockFetchBranchMergeRequirements.mockResolvedValue({
+      owner: 'example',
+      repo: 'repo',
+      branchName: 'main',
+      requirements: [],
+    });
 
     mockParsePrOrIssueNumber.mockResolvedValue({ owner: 'example', repo: 'repo', number: 250 });
     mockCanonicalizePrUrl.mockReturnValue('https://github.com/example/repo/pull/250');
@@ -183,6 +220,7 @@ describe('common/github/pr_status_service', () => {
     const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
     const mockCanonicalizePrUrl = vi.mocked(canonicalizePrUrl);
     const mockTryCanonicalizePrUrl = vi.mocked(tryCanonicalizePrUrl);
+    const mockFetchBranchMergeRequirements = vi.mocked(fetchBranchMergeRequirements);
 
     mockFetchPrFullStatus.mockResolvedValue({
       number: 251,
@@ -204,6 +242,12 @@ describe('common/github/pr_status_service', () => {
       changedFiles: null,
     });
     mockFetchPrReviewThreads.mockResolvedValue([]);
+    mockFetchBranchMergeRequirements.mockResolvedValue({
+      owner: 'example',
+      repo: 'repo',
+      branchName: 'main',
+      requirements: [],
+    });
 
     mockParsePrOrIssueNumber.mockResolvedValue({ owner: 'example', repo: 'repo', number: 251 });
     mockCanonicalizePrUrl.mockReturnValue('https://github.com/example/repo/pull/251');

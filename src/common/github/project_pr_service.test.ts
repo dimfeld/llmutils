@@ -5,6 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { DATABASE_FILENAME, openDatabase } from '../../tim/db/database.js';
+import { getBranchMergeRequirements } from '../../tim/db/branch_merge_requirements.js';
 import { upsertPlan } from '../../tim/db/plan.js';
 import { getOrCreateProject } from '../../tim/db/project.js';
 import {
@@ -32,8 +33,13 @@ vi.mock('./pr_status.js', () => ({
   fetchPrFullStatus: vi.fn(),
 }));
 
+vi.mock('./branch_merge_requirements.ts', () => ({
+  fetchBranchMergeRequirements: vi.fn(),
+}));
+
 import { partitionUserRelevantOpenPrs } from './pull_requests.js';
 import { fetchPrFullStatus } from './pr_status.js';
+import { fetchBranchMergeRequirements } from './branch_merge_requirements.ts';
 
 function makePr(opts: {
   number: number;
@@ -83,6 +89,8 @@ describe('common/github/project_pr_service', () => {
   let projectId: number;
 
   beforeEach(async () => {
+    vi.clearAllMocks();
+
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-project-pr-service-test-'));
     db = openDatabase(path.join(tempDir, DATABASE_FILENAME));
     projectId = getOrCreateProject(db, 'github.com__example__repo').id;
@@ -106,6 +114,13 @@ describe('common/github/project_pr_service', () => {
       planId: 3,
       title: 'Plan 3',
       filename: '3.plan.md',
+    });
+
+    vi.mocked(fetchBranchMergeRequirements).mockResolvedValue({
+      owner: 'example',
+      repo: 'repo',
+      branchName: 'main',
+      requirements: [],
     });
   });
 
@@ -224,6 +239,29 @@ describe('common/github/project_pr_service', () => {
     expect(result.authored[0]?.status.additions).toBe(42);
     expect(result.authored[0]?.status.deletions).toBe(17);
     expect(result.authored[0]?.status.changed_files).toBe(3);
+  });
+
+  test('refreshProjectPrs caches branch merge requirements once per base branch', async () => {
+    vi.mocked(fetchOpenPullRequestsWithReviewers).mockImplementation(async () => [
+      makePr({ number: 11, title: 'First PR', headRefName: 'feature/one', userLogin: 'dimfeld' }),
+      makePr({ number: 12, title: 'Second PR', headRefName: 'feature/two', userLogin: 'alice' }),
+    ]);
+    vi.mocked(partitionUserRelevantOpenPrs).mockImplementation((prs) => ({
+      authored: prs,
+      reviewing: [],
+    }));
+    vi.mocked(fetchPrFullStatus).mockImplementation(async (_owner, _repo, prNumber) =>
+      makeFullStatus(prNumber, {
+        baseRefName: 'main',
+      })
+    );
+
+    const { refreshProjectPrs } = await import('./project_pr_service.ts');
+    await refreshProjectPrs(db, projectId, 'dimfeld');
+
+    expect(fetchBranchMergeRequirements).toHaveBeenCalledTimes(1);
+    expect(fetchBranchMergeRequirements).toHaveBeenCalledWith('example', 'repo', 'main');
+    expect(getBranchMergeRequirements(db, 'example', 'repo', 'main')?.requirements).toEqual([]);
   });
 
   test('refreshProjectPrs excludes self-authored PRs from reviewing group', async () => {

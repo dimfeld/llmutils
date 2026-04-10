@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite';
 import { canonicalizePrUrl, parsePrOrIssueNumber } from './identifiers.js';
+import { ensureBranchMergeRequirementsFresh } from './branch_merge_requirements_service.js';
 import {
   fetchPrCheckStatus,
   fetchPrFullStatus,
@@ -17,6 +18,8 @@ import {
   type PrStatusDetail,
   type UpsertPrStatusInput,
 } from '../../tim/db/pr_status.js';
+
+const BRANCH_MERGE_REQUIREMENTS_MAX_AGE_MS = 30 * 60 * 1000;
 
 function getNowIsoString(): string {
   return new Date().toISOString();
@@ -50,6 +53,16 @@ export async function refreshPrStatus(db: Database, prUrl: string): Promise<PrSt
   }
 
   const fullStatus = fullStatusResult.value;
+  if (fullStatus.baseRefName) {
+    await ensureBranchMergeRequirementsFresh(
+      db,
+      parsed.owner,
+      parsed.repo,
+      fullStatus.baseRefName,
+      BRANCH_MERGE_REQUIREMENTS_MAX_AGE_MS
+    );
+  }
+
   return upsertPrStatus(db, {
     prUrl: canonicalPrUrl,
     owner: parsed.owner,

@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite';
+import { ensureBranchMergeRequirementsFresh } from './branch_merge_requirements_service.js';
 import {
   fetchOpenPullRequestsWithReviewers,
   parseOwnerRepoFromRepositoryId,
@@ -12,6 +13,7 @@ import { SQL_NOW_ISO_UTC } from '../../tim/db/sql_utils.js';
 import { linkPlanToPr, upsertPrStatus, type PrStatusDetail } from '../../tim/db/pr_status.js';
 
 const PR_FETCH_CONCURRENCY = 5;
+const BRANCH_MERGE_REQUIREMENTS_MAX_AGE_MS = 30 * 60 * 1000;
 
 export interface ProjectPrLink {
   prUrl: string;
@@ -155,6 +157,23 @@ export async function refreshProjectPrs(
     fullStatus: await fetchPrFullStatus(owner, repo, pr.number),
   }));
   const lastFetchedAt = getNowIsoString();
+
+  const baseBranches = [
+    ...new Set(
+      fullStatuses
+        .map(({ fullStatus }) => fullStatus.baseRefName)
+        .filter((baseRefName): baseRefName is string => Boolean(baseRefName))
+    ),
+  ];
+  await mapWithConcurrencyLimit(baseBranches, PR_FETCH_CONCURRENCY, (branchName) =>
+    ensureBranchMergeRequirementsFresh(
+      db,
+      owner,
+      repo,
+      branchName,
+      BRANCH_MERGE_REQUIREMENTS_MAX_AGE_MS
+    )
+  );
 
   // Phase 3: Write all data to DB in a single transaction
   const writePhase = db.transaction(() => {
