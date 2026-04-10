@@ -78,7 +78,9 @@ function makePrStatus(overrides: Partial<PrStatusRow> = {}): PrStatusRow {
   };
 }
 
-function makePrStatusDetail(overrides: Partial<PrStatusRow> = {}): PrStatusDetailWithRequiredChecks {
+function makePrStatusDetail(
+  overrides: Partial<PrStatusRow> = {}
+): PrStatusDetailWithRequiredChecks {
   return {
     status: makePrStatus(overrides),
     requiredCheckNames: [],

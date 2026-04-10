@@ -28,7 +28,9 @@ const NON_BLOCKING_CHECK_CONCLUSIONS = new Set(['neutral', 'skipped', 'cancelled
 
 type RequirementCache = Map<string, BranchMergeRequirementsDetail | null>;
 
-function getRequirementCacheKey(status: Pick<PrStatusRow, 'owner' | 'repo' | 'base_branch'>): string | null {
+function getRequirementCacheKey(
+  status: Pick<PrStatusRow, 'owner' | 'repo' | 'base_branch'>
+): string | null {
   if (!status.base_branch) {
     return null;
   }
@@ -51,7 +53,12 @@ function getRequirementsForStatus(
     return cached;
   }
 
-  const requirements = getBranchMergeRequirements(db, status.owner, status.repo, status.base_branch);
+  const requirements = getBranchMergeRequirements(
+    db,
+    status.owner,
+    status.repo,
+    status.base_branch
+  );
   cache.set(cacheKey, requirements);
   return requirements;
 }
@@ -65,7 +72,10 @@ function classifyCheckRun(check: PrCheckRunRow): 'failing' | 'pending' | 'passin
     return 'pending';
   }
 
-  if (check.conclusion === 'success' || NON_BLOCKING_CHECK_CONCLUSIONS.has(check.conclusion ?? '')) {
+  if (
+    check.conclusion === 'success' ||
+    NON_BLOCKING_CHECK_CONCLUSIONS.has(check.conclusion ?? '')
+  ) {
     return 'passing';
   }
 

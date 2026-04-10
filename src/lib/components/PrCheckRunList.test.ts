@@ -3,7 +3,15 @@ import { describe, expect, test } from 'vitest';
 
 import PrCheckRunList from './PrCheckRunList.svelte';
 
-function makeCheck(overrides: Partial<{ id: number; name: string; status: string; conclusion: string | null; details_url: string | null }> = {}) {
+function makeCheck(
+  overrides: Partial<{
+    id: number;
+    name: string;
+    status: string;
+    conclusion: string | null;
+    details_url: string | null;
+  }> = {}
+) {
   return {
     id: 1,
     pr_status_id: 1,
