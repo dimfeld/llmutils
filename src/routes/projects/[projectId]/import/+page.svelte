@@ -17,6 +17,19 @@
 
   type ImportMode = 'single' | 'separate' | 'merged';
 
+  function normalizeInitialIdentifier(value: string | null | undefined): string {
+    const trimmed = value?.trim() ?? '';
+    if (!trimmed || /\s/.test(trimmed)) {
+      return '';
+    }
+
+    return trimmed;
+  }
+
+  function getInitialIdentifier(): string {
+    return normalizeInitialIdentifier(data.initialIdentifier);
+  }
+
   interface FetchedIssue {
     issueData: {
       issue: { title: string; htmlUrl: string; number: number | string; body: string | null };
@@ -32,7 +45,7 @@
   }
 
   // Step 1 state
-  let identifier = $state('');
+  let identifier = $state(getInitialIdentifier());
   let identifierInput = $state<HTMLInputElement | null>(null);
   let pasting = $state(false);
   let mode: ImportMode = $state('single');

@@ -3,7 +3,16 @@ import { getServerContext } from '$lib/server/init.js';
 import { getIssueTrackerStatus } from '$lib/server/issue_import.js';
 import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async ({ parent }) => {
+function normalizeInitialIdentifier(value: string | null): string {
+  const trimmed = value?.trim() ?? '';
+  if (!trimmed || /\s/.test(trimmed)) {
+    return '';
+  }
+
+  return trimmed;
+}
+
+export const load: PageServerLoad = async ({ parent, url }) => {
   const { projectId } = await parent();
 
   if (projectId === 'all') {
@@ -36,5 +45,6 @@ export const load: PageServerLoad = async ({ parent }) => {
     displayName: trackerStatus.displayName,
     supportsHierarchical: trackerStatus.supportsHierarchical,
     numericProjectId,
+    initialIdentifier: normalizeInitialIdentifier(url.searchParams.get('identifier')),
   };
 };

@@ -27,6 +27,7 @@ describe('import page', () => {
           trackerType: 'linear',
           supportsHierarchical: true,
           numericProjectId: 1,
+          initialIdentifier: '',
         },
         params: {
           projectId: '1',
@@ -36,5 +37,24 @@ describe('import page', () => {
 
     expect(body).toContain('aria-label="Paste from clipboard"');
     expect(body).toContain('title="Paste from clipboard"');
+  });
+
+  test('prepopulates the identifier input from load data', () => {
+    const { body } = render(ImportPage, {
+      props: {
+        data: {
+          displayName: 'Example Project',
+          trackerType: 'linear',
+          supportsHierarchical: true,
+          numericProjectId: 1,
+          initialIdentifier: 'TEAM-123',
+        },
+        params: {
+          projectId: '1',
+        },
+      },
+    });
+
+    expect(body).toContain('value="TEAM-123"');
   });
 });

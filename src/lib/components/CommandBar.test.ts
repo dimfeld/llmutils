@@ -70,6 +70,7 @@ describe('command_bar_utils', () => {
       'prs',
       'plans',
       'import',
+      'import-from-clipboard',
       'settings',
     ]);
   });
@@ -77,12 +78,21 @@ describe('command_bar_utils', () => {
   test('filters navigation items by label and keywords', () => {
     expect(getNavigationItems('3', 'active').map((item) => item.slug)).toEqual(['active']);
     expect(getNavigationItems('3', 'github').map((item) => item.slug)).toEqual(['prs']);
-    expect(getNavigationItems('3', 'import').map((item) => item.slug)).toEqual(['import']);
+    expect(getNavigationItems('3', 'import').map((item) => item.slug)).toEqual([
+      'import',
+      'import-from-clipboard',
+    ]);
+    expect(getNavigationItems('3', 'clipboard').map((item) => item.slug)).toEqual([
+      'import-from-clipboard',
+    ]);
   });
 
   test('omits project-scoped navigation items when projectId is all', () => {
     expect(getNavigationItems('all', '').map((item) => item.slug)).not.toContain('settings');
     expect(getNavigationItems('all', '').map((item) => item.slug)).not.toContain('import');
+    expect(getNavigationItems('all', '').map((item) => item.slug)).not.toContain(
+      'import-from-clipboard'
+    );
   });
 
   test('filters sessions to active matching items in scope', () => {

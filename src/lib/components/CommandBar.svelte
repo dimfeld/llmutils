@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { toast } from 'svelte-sonner';
   import * as Command from '$lib/components/ui/command/index.js';
   import { projectUrl } from '$lib/stores/project.svelte.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
@@ -81,6 +82,34 @@
     void goto(url);
   }
 
+  async function buildImportFromClipboardUrl(): Promise<string> {
+    const baseUrl = projectUrl(projectId, 'import');
+    if (!navigator.clipboard?.readText) {
+      return baseUrl;
+    }
+
+    try {
+      const text = (await navigator.clipboard.readText()).trim();
+      if (!text || /\s/.test(text)) {
+        return baseUrl;
+      }
+
+      return `${baseUrl}?identifier=${encodeURIComponent(text)}`;
+    } catch (err) {
+      toast.error(`Failed to read clipboard: ${(err as Error).message}`);
+      return baseUrl;
+    }
+  }
+
+  async function handleNavSelect(slug: string) {
+    if (slug === 'import-from-clipboard') {
+      selectAndClose(await buildImportFromClipboardUrl());
+      return;
+    }
+
+    selectAndClose(projectUrl(projectId, slug));
+  }
+
   function handleOpenChange(_isOpen: boolean) {
     searchQuery = '';
     debouncedQuery = '';
@@ -107,10 +136,7 @@
     {#if navItems.length > 0}
       <Command.Group heading="Navigation">
         {#each navItems as item (item.slug)}
-          <Command.Item
-            value="nav-{item.slug}"
-            onSelect={() => selectAndClose(projectUrl(projectId, item.slug))}
-          >
+          <Command.Item value="nav-{item.slug}" onSelect={() => void handleNavSelect(item.slug)}>
             {item.label}
           </Command.Item>
         {/each}
