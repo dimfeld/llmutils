@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { getPlanTaskCounts } from '$lib/remote/plan_task_counts.remote.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import type { RunningSession } from '$lib/utils/dashboard_attention.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
@@ -20,11 +21,9 @@
 
   let elapsed = $derived(formatRelativeTime(session.connectedAt));
 
-  let workspaceName = $derived.by(() => {
-    if (!session.workspacePath) return null;
-    const parts = session.workspacePath.split('/');
-    return parts[parts.length - 1] || null;
-  });
+  let taskCounts = $derived(
+    session.planUuid ? await getPlanTaskCounts({ planUuid: session.planUuid }) : null
+  );
 
   const commandStyles: Record<string, string> = {
     agent: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
@@ -72,8 +71,10 @@
     {#if projectName}
       <span class="truncate">{projectName}</span>
     {/if}
-    {#if workspaceName}
-      <span class="shrink-0">{workspaceName}</span>
+    {#if taskCounts && taskCounts.total > 0}
+      <span class="shrink-0">
+        {taskCounts.done}/{taskCounts.total}
+      </span>
     {/if}
     <span class="shrink-0">started {elapsed}</span>
   </div>
