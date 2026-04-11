@@ -21,8 +21,9 @@
 
   let elapsed = $derived(formatRelativeTime(session.connectedAt));
 
+  const planUuid = $derived(session.planUuid);
   let taskCounts = $derived(
-    session.planUuid ? await getPlanTaskCounts({ planUuid: session.planUuid }) : null
+    planUuid ? await getPlanTaskCounts({ planUuid }) : Promise.resolve(null)
   );
 
   const commandStyles: Record<string, string> = {
