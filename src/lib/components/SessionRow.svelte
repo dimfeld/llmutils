@@ -4,6 +4,7 @@
   import { toast } from 'svelte-sonner';
 
   import type { SessionData } from '$lib/types/session.js';
+  import { getPlanTaskCounts } from '$lib/remote/plan_task_counts.remote.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
 
@@ -30,6 +31,11 @@
     session.sessionInfo.terminalType === 'wezterm' && Boolean(session.sessionInfo.terminalPaneId)
   );
   let needsAttention = $derived(sessionManager.hasSessionAttention(session));
+  let taskCounts = $derived(
+    session.sessionInfo.planUuid
+      ? await getPlanTaskCounts({ planUuid: session.sessionInfo.planUuid })
+      : null
+  );
   let workspaceLabel = $derived.by(() => {
     const workspacePath = session.sessionInfo.workspacePath;
     if (!workspacePath) {
@@ -131,11 +137,14 @@
     <span class="shrink-0 text-xs text-muted-foreground">{relativeTime}</span>
   </div>
   {#if session.sessionInfo.planTitle || session.sessionInfo.planId != null}
-    <div class="mt-0.5 truncate pl-4 text-xs text-muted-foreground">
+    <div class="mt-0.5 flex min-w-0 items-center gap-1 pl-4 text-xs text-muted-foreground">
       {#if session.sessionInfo.planId != null}
-        <span class="font-medium text-muted-foreground">#{session.sessionInfo.planId}</span>
+        <span class="shrink-0 font-medium text-muted-foreground">#{session.sessionInfo.planId}</span>
       {/if}
-      {session.sessionInfo.planTitle ?? ''}
+      <span class="min-w-0 flex-1 truncate">{session.sessionInfo.planTitle ?? ''}</span>
+      {#if taskCounts && taskCounts.total > 0}
+        <span class="shrink-0 tabular-nums">{taskCounts.done}/{taskCounts.total}</span>
+      {/if}
     </div>
   {/if}
   {#if workspaceLabel}
