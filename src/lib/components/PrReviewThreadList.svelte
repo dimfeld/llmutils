@@ -9,6 +9,7 @@
   } from '$lib/remote/review_thread_actions.remote.js';
   import { normalizeGitHubUsername } from '$common/github/username.js';
   import { formatReviewCommentForClipboard } from '$lib/utils/pr_display.js';
+  import { getReviewThreadHunkWindow } from '$lib/utils/review_hunk.js';
   import { renderPlanContentHtml } from '$lib/utils/plan_content.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
   import Diff from './Diff.svelte';
@@ -119,6 +120,7 @@
   } | null>(null);
   let replyingToThreadId = $state<string | null>(null);
   let replyBody = $state('');
+  let expandedHunks = $state<Record<number, boolean>>({});
 
   function isSubmittingThread(threadId: string, action?: 'convert' | 'resolve' | 'reply'): boolean {
     if (threadActionSubmitting?.threadId !== threadId) {
@@ -277,6 +279,14 @@
   function renderCommentBody(body: string | null): string {
     return renderPlanContentHtml(body ?? '');
   }
+
+  function isHunkExpanded(threadId: number): boolean {
+    return !!expandedHunks[threadId];
+  }
+
+  function toggleHunk(threadId: number): void {
+    expandedHunks[threadId] = !expandedHunks[threadId];
+  }
 </script>
 
 {#if sortedThreads.length > 0}
@@ -365,6 +375,9 @@
     {@const isResolved = !!thread.thread.is_resolved}
     {@const isOutdated = !!thread.thread.is_outdated}
     {@const diffHunk = threadDiffHunk(thread)}
+    {@const hunkWindow = diffHunk
+      ? getReviewThreadHunkWindow(thread.thread, diffHunk, 10)
+      : { hunk: null, isTruncated: false }}
     {@const commentBadgeLabel = threadCommentBadgeLabel(thread)}
     {@const isExpanded = isThreadExpanded(thread)}
     <details open={isExpanded} class="rounded border border-gray-200 dark:border-gray-700">
@@ -408,12 +421,33 @@
 
       <div class="border-t border-gray-200 dark:border-gray-700">
         {#if diffHunk}
-          <div
-            class="border-b border-gray-200 dark:border-gray-700"
-            style="--diffs-font-size: 12px; --diffs-line-height: 1.5;"
-          >
+          {#if hunkWindow.isTruncated}
+            <div
+              class="border-b border-gray-200 px-3 py-2 text-xs text-muted-foreground dark:border-gray-700"
+            >
+              <div class="flex items-center gap-2">
+                <span>
+                  Showing {isHunkExpanded(thread.thread.id) ? 'full hunk' : '10 lines of context'}
+                </span>
+                <button
+                  class="ml-auto rounded px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
+                  onclick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    toggleHunk(thread.thread.id);
+                  }}
+                  type="button"
+                >
+                  {isHunkExpanded(thread.thread.id) ? 'Show 10-line context' : 'Show full hunk'}
+                </button>
+              </div>
+            </div>
+          {/if}
+          <div style="--diffs-font-size: 12px; --diffs-line-height: 1.5;">
             <Diff
-              patch={diffHunk}
+              patch={isHunkExpanded(thread.thread.id) || !hunkWindow.isTruncated
+                ? diffHunk
+                : (hunkWindow.hunk ?? diffHunk)}
               filename={thread.thread.path}
               disableFileHeader
               hunkSeparators="simple"

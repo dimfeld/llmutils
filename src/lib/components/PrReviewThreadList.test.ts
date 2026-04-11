@@ -43,6 +43,28 @@ function makeThread(
   };
 }
 
+function makeLongHunk(focusLine = 15, totalLines = 30): string {
+  const body: string[] = [];
+  let oldCount = 0;
+  let newCount = 0;
+
+  for (let line = 1; line <= totalLines; line += 1) {
+    if (line === focusLine) {
+      body.push(`-line${line}-old`);
+      body.push(`+line${line}-new`);
+      oldCount += 1;
+      newCount += 1;
+      continue;
+    }
+
+    body.push(` line${line}`);
+    oldCount += 1;
+    newCount += 1;
+  }
+
+  return `@@ -1,${oldCount} +1,${newCount} @@\n${body.join('\n')}`;
+}
+
 describe('PrReviewThreadList', () => {
   test('sorts threads by file path and line number and renders GitHub discussion links', async () => {
     const { body } = await render(PrReviewThreadList, {
@@ -239,6 +261,30 @@ describe('PrReviewThreadList', () => {
     expect(body).toContain('<span class="plan-heading"># Heading</span>');
     expect(body).toContain('<span class="plan-inline-code">`foo()`</span>');
     expect(body).toContain('<span class="plan-bold">**bold**</span>');
+  });
+
+  test('truncates long diff hunks by default and offers a toggle to show the full hunk', async () => {
+    const { body } = await render(PrReviewThreadList, {
+      props: {
+        prUrl: 'https://github.com/owner/repo/pull/42',
+        planUuid: 'plan-uuid-1',
+        threads: [
+          makeThread(
+            {
+              line: 15,
+              original_line: 15,
+              diff_side: 'RIGHT',
+            },
+            {
+              diff_hunk: makeLongHunk(),
+            }
+          ),
+        ],
+      },
+    });
+
+    expect(body).toContain('Showing 10 lines of context');
+    expect(body).toContain('Show full hunk');
   });
 
   test('does not render the reply form by default', async () => {

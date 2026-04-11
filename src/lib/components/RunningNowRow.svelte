@@ -22,9 +22,7 @@
   let elapsed = $derived(formatRelativeTime(session.connectedAt));
 
   const planUuid = $derived(session.planUuid);
-  let taskCounts = $derived(
-    planUuid ? await getPlanTaskCounts({ planUuid }) : Promise.resolve(null)
-  );
+  let taskCounts = $derived(planUuid ? await getPlanTaskCounts({ planUuid }) : null);
 
   const commandStyles: Record<string, string> = {
     agent: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
