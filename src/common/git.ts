@@ -635,6 +635,131 @@ export async function getTrunkBranch(gitRoot: string): Promise<string> {
   return defaultBranch || 'main';
 }
 
+export async function fetchRemoteBranch(gitRoot: string, branchName: string): Promise<boolean> {
+  if (await getUsingJj(gitRoot)) {
+    const result = await $`jj git fetch --branch ${branchName}`.cwd(gitRoot).quiet().nothrow();
+    return result.exitCode === 0;
+  }
+
+  const result = await $`git fetch origin ${branchName}`.cwd(gitRoot).quiet().nothrow();
+  return result.exitCode === 0;
+}
+
+/** Check if a branch exists on the remote. Throws on transport/auth errors. */
+export async function remoteBranchExistsGit(gitRoot: string, branchName: string): Promise<boolean> {
+  const result = await $`git ls-remote --exit-code --heads origin ${branchName}`
+    .cwd(gitRoot)
+    .quiet()
+    .nothrow();
+  if (result.exitCode === 0) {
+    return result.stdout.toString().trim().length > 0;
+  }
+  // exit code 2 means no matching refs found (branch doesn't exist)
+  if (result.exitCode === 2) {
+    return false;
+  }
+  // Any other exit code is a transport/auth error
+  throw new Error(
+    `Failed to check remote branch existence for '${branchName}': ${result.stderr.toString().trim()}`
+  );
+}
+
+/** Check if a branch/bookmark exists on the remote in a JJ repo. Throws on unexpected errors. */
+export async function remoteBranchExistsJj(gitRoot: string, branchName: string): Promise<boolean> {
+  // First, refresh remote bookmark state so we check against the actual remote
+  const fetchResult = await $`jj git fetch --branch ${branchName}`.cwd(gitRoot).quiet().nothrow();
+  if (fetchResult.exitCode !== 0) {
+    const stderr = fetchResult.stderr.toString().trim();
+    // If the error is about the branch not existing on the remote, that's fine
+    if (stderr.includes('does not exist') || stderr.includes('No matching bookmark')) {
+      return false;
+    }
+    // Transport/auth errors should be propagated
+    throw new Error(`Failed to fetch remote branch '${branchName}' in JJ: ${stderr}`);
+  }
+
+  const result = await $`jj log -r ${branchName}@origin --no-graph -T commit_id`
+    .cwd(gitRoot)
+    .quiet()
+    .nothrow();
+  if (result.exitCode === 0) {
+    return result.stdout.toString().trim().length > 0;
+  }
+  const stderr = result.stderr.toString().trim();
+  // "Revision not found" or similar means bookmark doesn't exist
+  if (
+    stderr.includes('not found') ||
+    stderr.includes('cannot be resolved') ||
+    stderr.includes("doesn't exist") ||
+    stderr.includes('does not exist')
+  ) {
+    return false;
+  }
+  throw new Error(`Failed to check remote branch existence for '${branchName}' in JJ: ${stderr}`);
+}
+
+export async function remoteBranchExists(gitRoot: string, branchName: string): Promise<boolean> {
+  if (await getUsingJj(gitRoot)) {
+    return remoteBranchExistsJj(gitRoot, branchName);
+  }
+  return remoteBranchExistsGit(gitRoot, branchName);
+}
+
+/** Compute the merge-base between sourceRef and baseBranch.
+ * For Git, `useRemoteRef` (default true) prepends `origin/` to baseBranch.
+ * Callers comparing local refs should pass `{ useRemoteRef: false }`. */
+export async function getMergeBase(
+  gitRoot: string,
+  baseBranch: string,
+  sourceRef: string = 'HEAD',
+  options?: { useRemoteRef?: boolean }
+): Promise<string | null> {
+  const useRemoteRef = options?.useRemoteRef ?? true;
+
+  if (await getUsingJj(gitRoot)) {
+    const jjRef = sourceRef === 'HEAD' ? '@' : sourceRef;
+    const revset = `heads(::${jjRef} & ::${baseBranch})`;
+    const result = await $`jj log -r ${revset} --no-graph -T commit_id --limit 1`
+      .cwd(gitRoot)
+      .quiet()
+      .nothrow();
+    if (result.exitCode !== 0) {
+      return null;
+    }
+    const commitId = result.stdout.toString().trim();
+    return commitId.length > 0 ? commitId : null;
+  }
+
+  const baseRef = useRemoteRef ? `origin/${baseBranch}` : baseBranch;
+  const result = await $`git merge-base ${sourceRef} ${baseRef}`.cwd(gitRoot).quiet().nothrow();
+  if (result.exitCode !== 0) {
+    return null;
+  }
+
+  const commitId = result.stdout.toString().trim();
+  return commitId.length > 0 ? commitId : null;
+}
+
+export async function getJjChangeId(
+  gitRoot: string,
+  revision: string = '@'
+): Promise<string | null> {
+  if (!(await getUsingJj(gitRoot))) {
+    return null;
+  }
+
+  const result = await $`jj log -r ${revision} --no-graph -T change_id`
+    .cwd(gitRoot)
+    .quiet()
+    .nothrow();
+  if (result.exitCode !== 0) {
+    return null;
+  }
+
+  const changeId = result.stdout.toString().trim();
+  return changeId.length > 0 ? changeId : null;
+}
+
 /**
  * Gets the list of changed files compared to a base branch
  */

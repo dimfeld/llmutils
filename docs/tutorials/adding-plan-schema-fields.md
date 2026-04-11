@@ -31,6 +31,10 @@ export const phaseSchema = z
 
 The field should be marked as `.optional()` unless it's required for all plans.
 
+## Step 1b: Update Plan Merge Logic
+
+When adding new metadata fields, also check `plan_merge.ts` `mergeTasksIntoPlan()`. This function manually preserves metadata fields during task merges — new fields must be explicitly listed there or they will be silently dropped when plans are updated through task merge operations.
+
 ## Step 2: Update Plan Processing Logic
 
 When plans are generated from markdown or processed through various transformations, you need to ensure the new field is preserved. Update `src/tim/process_markdown.ts`:

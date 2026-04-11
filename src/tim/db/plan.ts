@@ -20,6 +20,8 @@ export interface PlanRow {
   pull_request: string | null;
   assigned_to: string | null;
   base_branch: string | null;
+  base_commit: string | null;
+  base_change_id: string | null;
   temp: number | null;
   docs: string | null;
   changed_files: string | null;
@@ -74,6 +76,8 @@ export interface UpsertPlanInput {
   pullRequest?: string[] | null;
   assignedTo?: string | null;
   baseBranch?: string | null;
+  baseCommit?: string | null;
+  baseChangeId?: string | null;
   temp?: boolean | null;
   docs?: string[] | null;
   changedFiles?: string[] | null;
@@ -209,6 +213,8 @@ export function upsertPlanInTransaction(
       pull_request,
       assigned_to,
       base_branch,
+      base_commit,
+      base_change_id,
       temp,
       docs,
       changed_files,
@@ -220,7 +226,7 @@ export function upsertPlanInTransaction(
       epic,
       created_at,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ${SQL_NOW_ISO_UTC}), COALESCE(?, ${SQL_NOW_ISO_UTC}))
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ${SQL_NOW_ISO_UTC}), COALESCE(?, ${SQL_NOW_ISO_UTC}))
     ON CONFLICT(uuid) DO UPDATE SET
       project_id = excluded.project_id,
       plan_id = excluded.plan_id,
@@ -238,6 +244,8 @@ export function upsertPlanInTransaction(
       pull_request = excluded.pull_request,
       assigned_to = excluded.assigned_to,
       base_branch = excluded.base_branch,
+      base_commit = excluded.base_commit,
+      base_change_id = excluded.base_change_id,
       temp = excluded.temp,
       docs = excluded.docs,
       changed_files = excluded.changed_files,
@@ -268,6 +276,8 @@ export function upsertPlanInTransaction(
     input.pullRequest ? JSON.stringify(input.pullRequest) : null,
     input.assignedTo ?? null,
     input.baseBranch ?? null,
+    input.baseCommit ?? null,
+    input.baseChangeId ?? null,
     typeof input.temp === 'boolean' ? (input.temp ? 1 : 0) : null,
     input.docs ? JSON.stringify(input.docs) : null,
     input.changedFiles ? JSON.stringify(input.changedFiles) : null,
@@ -358,6 +368,53 @@ export function setPlanBranch(db: Database, planUuid: string, branch: string): v
     branch,
     planUuid
   );
+}
+
+export type PlanBaseTrackingUpdate = {
+  baseBranch?: string | null;
+  baseCommit?: string | null;
+  baseChangeId?: string | null;
+};
+
+export function setPlanBaseTracking(
+  db: Database,
+  planUuid: string,
+  update: PlanBaseTrackingUpdate
+): void {
+  const updates: string[] = [];
+  const values: Array<string | null> = [];
+
+  if (update.baseBranch !== undefined) {
+    updates.push('base_branch = ?');
+    values.push(update.baseBranch ?? null);
+  }
+  if (update.baseCommit !== undefined) {
+    updates.push('base_commit = ?');
+    values.push(update.baseCommit ?? null);
+  }
+  if (update.baseChangeId !== undefined) {
+    updates.push('base_change_id = ?');
+    values.push(update.baseChangeId ?? null);
+  }
+
+  if (updates.length === 0) {
+    return;
+  }
+
+  db.prepare(
+    `UPDATE plan SET ${updates.join(', ')}, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
+  ).run(...values, planUuid);
+}
+
+export function clearPlanBaseTracking(db: Database, planUuid: string): void {
+  db.prepare(
+    `UPDATE plan
+     SET base_branch = NULL,
+         base_commit = NULL,
+         base_change_id = NULL,
+         updated_at = ${SQL_NOW_ISO_UTC}
+     WHERE uuid = ?`
+  ).run(planUuid);
 }
 
 export function getPlanByPlanId(db: Database, projectId: number, planId: number): PlanRow | null {

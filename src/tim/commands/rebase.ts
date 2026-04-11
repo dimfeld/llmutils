@@ -2,8 +2,19 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Command } from 'commander';
 import { spawnAndLogOutput } from '../../common/process.js';
-import { getCurrentCommitHash, getGitRoot, getTrunkBranch, getUsingJj } from '../../common/git.js';
-import { log, error as logError } from '../../logging.js';
+import {
+  fetchRemoteBranch,
+  getCurrentCommitHash,
+  getGitRoot,
+  getJjChangeId,
+  getMergeBase,
+  getTrunkBranch,
+  getUsingJj,
+  remoteBranchExists,
+  remoteBranchExistsGit,
+  remoteBranchExistsJj,
+} from '../../common/git.js';
+import { log, warn, error as logError } from '../../logging.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
@@ -12,6 +23,9 @@ import type { ExecutorCommonOptions } from '../executors/types.js';
 import { runWithHeadlessAdapterIfEnabled, updateHeadlessSessionInfo } from '../headless.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 import type { PlanSchema } from '../planSchema.js';
+import { getDatabase } from '../db/database.js';
+import { clearPlanBaseTracking, setPlanBaseTracking } from '../db/plan.js';
+import { materializePlan } from '../plan_materialize.js';
 import { generateBranchNameFromPlan } from './branch.js';
 import { findNextPlanFromDb } from './plan_discovery.js';
 import { pullWorkspaceRefIfExists } from './workspace.js';
@@ -27,9 +41,11 @@ export interface RebaseCommandOptions {
   workspace?: string;
   autoWorkspace?: boolean;
   newWorkspace?: boolean;
+  base?: string;
 }
 
 interface RebasePlanContext {
+  planId: number;
   plan: PlanSchema;
   planFile: string;
   repoRoot: string;
@@ -107,7 +123,7 @@ export async function handleRebaseCommand(
             createBranch: false,
             planId: resolved.plan.id,
             planUuid: resolved.plan.uuid,
-            base: branchName,
+            checkoutBranch: branchName,
             allowPrimaryWorkspaceWhenLocked: true,
           },
           baseDir,
@@ -140,11 +156,51 @@ export async function handleRebaseCommand(
       }
 
       const beforeRevision = await getRebaseTargetRevision(baseDir, branchName, isJj);
-      const rebaseTarget = isJj ? trunkBranch : `origin/${trunkBranch}`;
+      let effectiveBaseBranch: string | null = null;
+      let shouldClearBaseFields = false;
+
+      if (options.base) {
+        if (options.base === branchName) {
+          throw new Error(
+            `Base branch "${options.base}" is the same as the plan's own branch. A plan cannot use its own branch as its base.`
+          );
+        }
+        await fetchRemoteBranch(baseDir, options.base);
+        const existsOnRemote = await remoteBranchExists(baseDir, options.base);
+        if (!existsOnRemote) {
+          throw new Error(`Base branch "${options.base}" does not exist on remote.`);
+        }
+        if (options.base === trunkBranch) {
+          shouldClearBaseFields = true;
+        } else {
+          effectiveBaseBranch = options.base;
+        }
+      } else if (resolved.plan.baseBranch && resolved.plan.baseBranch !== trunkBranch) {
+        if (resolved.plan.baseBranch === branchName) {
+          log(
+            `Plan's baseBranch "${resolved.plan.baseBranch}" is the same as its own branch. Clearing and using trunk.`
+          );
+          shouldClearBaseFields = true;
+        } else {
+          await fetchRemoteBranch(baseDir, resolved.plan.baseBranch);
+          const existsOnRemote = await remoteBranchExists(baseDir, resolved.plan.baseBranch);
+          if (existsOnRemote) {
+            effectiveBaseBranch = resolved.plan.baseBranch;
+          } else {
+            log(
+              `Base branch "${resolved.plan.baseBranch}" no longer exists on remote. Falling back to trunk.`
+            );
+            shouldClearBaseFields = true;
+          }
+        }
+      }
+
+      const rebaseTargetBranch = effectiveBaseBranch ?? trunkBranch;
+      const rebaseTarget = isJj ? rebaseTargetBranch : `origin/${rebaseTargetBranch}`;
 
       log(`Rebasing ${branchName} onto ${rebaseTarget}...`);
       const rebaseResult = isJj
-        ? await spawnAndLogOutput(['jj', 'rebase', '-b', branchName, '-d', trunkBranch], {
+        ? await spawnAndLogOutput(['jj', 'rebase', '-b', branchName, '-d', rebaseTargetBranch], {
             cwd: baseDir,
           })
         : await spawnAndLogOutput(['git', 'rebase', rebaseTarget], { cwd: baseDir });
@@ -188,10 +244,42 @@ export async function handleRebaseCommand(
       const changed =
         beforeRevision === null || afterCommit === null ? true : beforeRevision !== afterCommit;
 
+      if (resolved.plan.uuid) {
+        const db = getDatabase();
+        if (shouldClearBaseFields) {
+          clearPlanBaseTracking(db, resolved.plan.uuid);
+          log('Cleared base tracking fields (rebased onto trunk).');
+        } else if (effectiveBaseBranch) {
+          const mergeBase = await getMergeBase(baseDir, effectiveBaseBranch, branchName);
+          if (mergeBase) {
+            const changeId = isJj ? await getJjChangeId(baseDir, mergeBase) : undefined;
+            setPlanBaseTracking(db, resolved.plan.uuid, {
+              ...(options.base ? { baseBranch: effectiveBaseBranch } : {}),
+              baseCommit: mergeBase,
+              baseChangeId: changeId,
+            });
+          } else if (options.base) {
+            // Still persist the baseBranch even if merge-base fails
+            setPlanBaseTracking(db, resolved.plan.uuid, {
+              baseBranch: effectiveBaseBranch,
+            });
+          }
+        }
+
+        try {
+          const repoRootForMaterialize = (await getGitRoot(baseDir)) ?? baseDir;
+          await materializePlan(resolved.planId, repoRootForMaterialize);
+        } catch (err) {
+          warn(
+            `Failed to rematerialize plan ${resolved.planId} after base tracking update: ${err as Error}`
+          );
+        }
+      }
+
       if (options.push === false) {
         log('Skipping push because --no-push was provided.');
         if (!changed) {
-          log(`Branch ${branchName} is already up to date with ${trunkBranch}.`);
+          log(`Branch ${branchName} is already up to date with ${rebaseTargetBranch}.`);
         }
         return;
       }
@@ -202,15 +290,15 @@ export async function handleRebaseCommand(
           ? await remoteBranchExistsJj(baseDir, branchName)
           : await remoteBranchExistsGit(baseDir, branchName);
         if (hasRemote) {
-          log(`Branch ${branchName} is already up to date with ${trunkBranch}.`);
+          log(`Branch ${branchName} is already up to date with ${rebaseTargetBranch}.`);
           return;
         }
-        log(`Branch ${branchName} is up to date with ${trunkBranch} but not yet pushed.`);
+        log(`Branch ${branchName} is up to date with ${rebaseTargetBranch} but not yet pushed.`);
       }
 
       log(`Pushing ${branchName}...`);
       await pushRebasedBranch(baseDir, branchName, isJj);
-      log(`Successfully rebased ${branchName} onto ${trunkBranch}.`);
+      log(`Successfully rebased ${branchName} onto ${rebaseTargetBranch}.`);
     },
   });
 }
@@ -242,6 +330,7 @@ async function resolveRebasePlan(
 
     const resolved = await resolvePlanFromDbOrSyncFile(String(plan.id), repoRoot, repoRoot);
     return {
+      planId: plan.id,
       plan: resolved.plan,
       planFile: resolved.planPath ?? '',
       repoRoot,
@@ -254,7 +343,12 @@ async function resolveRebasePlan(
 
   const planRepoRoot = await resolveRepoRootForPlanArg(planFile, repoRoot, configPath);
   const resolved = await resolvePlanFromDbOrSyncFile(planFile, planRepoRoot, planRepoRoot);
+  const resolvedPlanId = resolved.plan.id;
+  if (typeof resolvedPlanId !== 'number') {
+    throw new Error('Resolved plan does not have a numeric ID.');
+  }
   return {
+    planId: resolvedPlanId,
     plan: resolved.plan,
     planFile: resolved.planPath ?? '',
     repoRoot: planRepoRoot,
@@ -416,22 +510,6 @@ async function isBranchRebasedOnto(
     quiet: true,
   });
   return result.exitCode === 0;
-}
-
-async function remoteBranchExistsGit(baseDir: string, branchName: string): Promise<boolean> {
-  const result = await spawnAndLogOutput(
-    ['git', 'rev-parse', '--verify', `refs/remotes/origin/${branchName}`],
-    { cwd: baseDir, quiet: true }
-  );
-  return result.exitCode === 0;
-}
-
-async function remoteBranchExistsJj(baseDir: string, branchName: string): Promise<boolean> {
-  const result = await spawnAndLogOutput(
-    ['jj', 'log', '-r', `${branchName}@origin`, '--no-graph', '-T', 'commit_id'],
-    { cwd: baseDir, quiet: true }
-  );
-  return result.exitCode === 0 && result.stdout.trim().length > 0;
 }
 
 async function pushRebasedBranch(

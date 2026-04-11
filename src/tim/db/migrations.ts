@@ -615,6 +615,13 @@ const migrations: Migration[] = [
         ON branch_merge_requirement_check(branch_merge_requirement_source_id);
     `,
   },
+  {
+    version: 23,
+    up: `
+      ALTER TABLE plan ADD COLUMN base_commit TEXT;
+      ALTER TABLE plan ADD COLUMN base_change_id TEXT;
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {

@@ -2,7 +2,7 @@ import * as path from 'node:path';
 import { warn } from '../../logging.js';
 import { removeAssignment } from './assignment.js';
 import { getDatabase } from './database.js';
-import { deletePlan, getPlansByProject, upsertPlan } from './plan.js';
+import { deletePlan, getPlanByUuid, getPlansByProject, upsertPlan } from './plan.js';
 import { getOrCreateProject } from './project.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadEffectiveConfig } from '../configLoader.js';
@@ -26,6 +26,11 @@ interface PlanSyncOptions {
   cwdForIdentity?: string;
   force?: boolean;
   throwOnError?: boolean;
+  /** When true, also preserve DB-authoritative baseBranch for existing plans.
+   *  baseCommit/baseChangeId are always preserved (machine-managed).
+   *  Used by direct-file sync paths (resolvePlanFromDbOrSyncFile) where
+   *  the file may contain stale pre-rebase values. */
+  preserveBaseTracking?: boolean;
 }
 
 const cachedContextsByGitRoot = new Map<string, PlanSyncContext>();
@@ -176,6 +181,8 @@ export function toPlanUpsertInput(
   pullRequest?: string[] | null;
   assignedTo?: string | null;
   baseBranch?: string | null;
+  baseCommit?: string | null;
+  baseChangeId?: string | null;
   temp?: boolean | null;
   docs?: string[] | null;
   changedFiles?: string[] | null;
@@ -221,6 +228,8 @@ export function toPlanUpsertInput(
     pullRequest: plan.pullRequest ?? null,
     assignedTo: plan.assignedTo ?? null,
     baseBranch: plan.baseBranch ?? null,
+    baseCommit: plan.baseCommit ?? null,
+    baseChangeId: plan.baseChangeId ?? null,
     temp: typeof plan.temp === 'boolean' ? plan.temp : null,
     docs: plan.docs ?? null,
     changedFiles: plan.changedFiles ?? null,
@@ -256,8 +265,27 @@ export async function syncPlanToDb(
     const context = await resolvePlanSyncContext(options);
     const idToUuid = await resolveIdToUuidMap(plan, context, options.idToUuid);
     const db = getDatabase();
+    const upsertInput = toPlanUpsertInput(plan, idToUuid);
+    // baseCommit and baseChangeId are machine-managed tracking fields updated by
+    // workspace setup and rebase. Never import them from files so that stale file
+    // data cannot resurrect values that were cleared by rebase.
+    const existingPlan = getPlanByUuid(db, plan.uuid);
+    if (existingPlan) {
+      upsertInput.baseCommit = existingPlan.base_commit ?? null;
+      upsertInput.baseChangeId = existingPlan.base_change_id ?? null;
+      // baseBranch is user-editable and normally syncs from files. Only preserve
+      // DB state for stale direct-file sync paths (resolvePlanFromDbOrSyncFile)
+      // where the file may contain pre-rebase values.
+      if (options.preserveBaseTracking) {
+        upsertInput.baseBranch = existingPlan.base_branch ?? null;
+      }
+    } else {
+      // For new plans, machine-managed tracking fields start as null.
+      upsertInput.baseCommit = null;
+      upsertInput.baseChangeId = null;
+    }
     upsertPlan(db, context.projectId, {
-      ...toPlanUpsertInput(plan, idToUuid),
+      ...upsertInput,
       forceOverwrite: options.force === true,
     });
   } catch (error) {

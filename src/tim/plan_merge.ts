@@ -213,6 +213,8 @@ export async function mergeTasksIntoPlan(
     parent: originalPlan.parent,
     epic: originalPlan.epic,
     baseBranch: originalPlan.baseBranch,
+    baseCommit: originalPlan.baseCommit,
+    baseChangeId: originalPlan.baseChangeId,
     changedFiles: originalPlan.changedFiles,
     pullRequest: originalPlan.pullRequest,
     issue: originalPlan.issue,

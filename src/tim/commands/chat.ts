@@ -262,8 +262,9 @@ export async function handleChatCommand(
 
           // When --plan is provided without --base, derive branch from plan data
           let baseBranch = options.base;
+          let checkoutBranch: string | undefined;
           if (!baseBranch && currentPlanData) {
-            baseBranch = currentPlanData.branch ?? generateBranchNameFromPlan(currentPlanData);
+            checkoutBranch = currentPlanData.branch ?? generateBranchNameFromPlan(currentPlanData);
           }
 
           const workspaceResult = await setupWorkspace(
@@ -277,6 +278,7 @@ export async function handleChatCommand(
               planId: currentPlanData?.id,
               planUuid: currentPlanData?.uuid,
               base: baseBranch,
+              checkoutBranch,
               allowPrimaryWorkspaceWhenLocked: true,
             },
             currentBaseDir,

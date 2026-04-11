@@ -1398,4 +1398,294 @@ describe('tim set command', () => {
     const depPlan = (await resolvePlanFromDb('450', tempDir)).plan;
     expect(depPlan.uuid).toBe(existingUuid);
   });
+
+  describe('base field options', () => {
+    test('--base-branch sets baseBranch on the plan', async () => {
+      const planPath = await createTestPlan(500);
+
+      await handleSetCommand(
+        planPath,
+        {
+          planFile: planPath,
+          baseBranch: 'feature/parent-branch',
+        },
+        globalOpts
+      );
+
+      const updatedPlan = (await resolvePlanFromDb('500', tempDir)).plan;
+      expect(updatedPlan.baseBranch).toBe('feature/parent-branch');
+    });
+
+    test("--base-branch matching plan's own branch throws error", async () => {
+      const planPath = await createTestPlan(512, {
+        branch: 'feature/self-branch',
+      });
+
+      await expect(
+        handleSetCommand(
+          planPath,
+          {
+            planFile: planPath,
+            baseBranch: 'feature/self-branch',
+          },
+          globalOpts
+        )
+      ).rejects.toThrow(
+        `Base branch "feature/self-branch" is the same as the plan's own branch. A plan cannot use its own branch as its base.`
+      );
+    });
+
+    test("--base-branch matching plan's generated branch name throws error", async () => {
+      // Plan 513 has no explicit branch, so generateBranchNameFromPlan derives "513-test-plan-513"
+      const planPath = await createTestPlan(513);
+
+      await expect(
+        handleSetCommand(
+          planPath,
+          {
+            planFile: planPath,
+            baseBranch: '513-test-plan-513',
+          },
+          globalOpts
+        )
+      ).rejects.toThrow(
+        `Base branch "513-test-plan-513" is the same as the plan's own branch. A plan cannot use its own branch as its base.`
+      );
+    });
+
+    test('--no-base-branch clears baseBranch, baseCommit, and baseChangeId (cascade)', async () => {
+      const planPath = await createTestPlan(501, {
+        baseBranch: 'feature/parent-branch',
+        baseCommit: 'abc123def456',
+        baseChangeId: 'zyxwvu987654',
+      });
+
+      await handleSetCommand(
+        planPath,
+        {
+          planFile: planPath,
+          noBaseBranch: true,
+        },
+        globalOpts
+      );
+
+      const updatedPlan = (await resolvePlanFromDb('501', tempDir)).plan;
+      expect(updatedPlan.baseBranch).toBeUndefined();
+      expect(updatedPlan.baseCommit).toBeUndefined();
+      expect(updatedPlan.baseChangeId).toBeUndefined();
+    });
+
+    test('--no-base-branch logs message when no baseBranch to remove', async () => {
+      const planPath = await createTestPlan(502);
+
+      await handleSetCommand(
+        planPath,
+        {
+          planFile: planPath,
+          noBaseBranch: true,
+        },
+        globalOpts
+      );
+
+      const logs = logSpy.mock.calls.map((args) => args[0]);
+      expect(logs.some((msg) => msg === 'No baseBranch to remove')).toBe(true);
+
+      // Plan should be unchanged
+      const plan = (await resolvePlanFromDb('502', tempDir)).plan;
+      expect(plan.baseBranch).toBeUndefined();
+    });
+
+    test('--no-base-branch clears all fields even if only some are set', async () => {
+      // Only baseCommit set, no baseBranch
+      const planPath = await createTestPlan(503, {
+        baseCommit: 'abc123def456',
+      });
+
+      await handleSetCommand(
+        planPath,
+        {
+          planFile: planPath,
+          noBaseBranch: true,
+        },
+        globalOpts
+      );
+
+      const updatedPlan = (await resolvePlanFromDb('503', tempDir)).plan;
+      expect(updatedPlan.baseCommit).toBeUndefined();
+      expect(updatedPlan.baseChangeId).toBeUndefined();
+    });
+
+    test('--base-commit sets baseCommit on the plan', async () => {
+      const planPath = await createTestPlan(504);
+
+      await handleSetCommand(
+        planPath,
+        {
+          planFile: planPath,
+          baseCommit: 'deadbeef1234567890',
+        },
+        globalOpts
+      );
+
+      const updatedPlan = (await resolvePlanFromDb('504', tempDir)).plan;
+      expect(updatedPlan.baseCommit).toBe('deadbeef1234567890');
+    });
+
+    test('--no-base-commit clears only baseCommit, preserving other base fields', async () => {
+      const planPath = await createTestPlan(505, {
+        baseBranch: 'feature/parent-branch',
+        baseCommit: 'abc123def456',
+        baseChangeId: 'zyxwvu987654',
+      });
+
+      await handleSetCommand(
+        planPath,
+        {
+          planFile: planPath,
+          noBaseCommit: true,
+        },
+        globalOpts
+      );
+
+      const updatedPlan = (await resolvePlanFromDb('505', tempDir)).plan;
+      expect(updatedPlan.baseCommit).toBeUndefined();
+      expect(updatedPlan.baseBranch).toBe('feature/parent-branch');
+      expect(updatedPlan.baseChangeId).toBe('zyxwvu987654');
+    });
+
+    test('--no-base-commit logs message when no baseCommit to remove', async () => {
+      const planPath = await createTestPlan(506);
+
+      await handleSetCommand(
+        planPath,
+        {
+          planFile: planPath,
+          noBaseCommit: true,
+        },
+        globalOpts
+      );
+
+      const logs = logSpy.mock.calls.map((args) => args[0]);
+      expect(logs.some((msg) => msg === 'No baseCommit to remove')).toBe(true);
+    });
+
+    test('--base-change-id sets baseChangeId on the plan', async () => {
+      const planPath = await createTestPlan(507);
+
+      await handleSetCommand(
+        planPath,
+        {
+          planFile: planPath,
+          baseChangeId: 'qrstuvwxyz1234567890',
+        },
+        globalOpts
+      );
+
+      const updatedPlan = (await resolvePlanFromDb('507', tempDir)).plan;
+      expect(updatedPlan.baseChangeId).toBe('qrstuvwxyz1234567890');
+    });
+
+    test('--no-base-change-id clears only baseChangeId, preserving other base fields', async () => {
+      const planPath = await createTestPlan(508, {
+        baseBranch: 'feature/parent-branch',
+        baseCommit: 'abc123def456',
+        baseChangeId: 'zyxwvu987654',
+      });
+
+      await handleSetCommand(
+        planPath,
+        {
+          planFile: planPath,
+          noBaseChangeId: true,
+        },
+        globalOpts
+      );
+
+      const updatedPlan = (await resolvePlanFromDb('508', tempDir)).plan;
+      expect(updatedPlan.baseChangeId).toBeUndefined();
+      expect(updatedPlan.baseBranch).toBe('feature/parent-branch');
+      expect(updatedPlan.baseCommit).toBe('abc123def456');
+    });
+
+    test('--no-base-change-id logs message when no baseChangeId to remove', async () => {
+      const planPath = await createTestPlan(509);
+
+      await handleSetCommand(
+        planPath,
+        {
+          planFile: planPath,
+          noBaseChangeId: true,
+        },
+        globalOpts
+      );
+
+      const logs = logSpy.mock.calls.map((args) => args[0]);
+      expect(logs.some((msg) => msg === 'No baseChangeId to remove')).toBe(true);
+    });
+
+    test('can set all base fields at once', async () => {
+      const planPath = await createTestPlan(510);
+
+      await handleSetCommand(
+        planPath,
+        {
+          planFile: planPath,
+          baseBranch: 'feature/parent-branch',
+          baseCommit: 'abc123def456',
+          baseChangeId: 'zyxwvu987654',
+        },
+        globalOpts
+      );
+
+      const updatedPlan = (await resolvePlanFromDb('510', tempDir)).plan;
+      expect(updatedPlan.baseBranch).toBe('feature/parent-branch');
+      expect(updatedPlan.baseCommit).toBe('abc123def456');
+      expect(updatedPlan.baseChangeId).toBe('zyxwvu987654');
+    });
+
+    test('changing baseBranch clears stale baseCommit and baseChangeId', async () => {
+      const planPath = await createTestPlan(511, {
+        baseBranch: 'old-branch',
+        baseCommit: 'abc123def456',
+        baseChangeId: 'zyxwvu987654',
+      });
+
+      await handleSetCommand(
+        planPath,
+        {
+          planFile: planPath,
+          baseBranch: 'new-branch',
+        },
+        globalOpts
+      );
+
+      const updatedPlan = (await resolvePlanFromDb('511', tempDir)).plan;
+      expect(updatedPlan.baseBranch).toBe('new-branch');
+      // baseCommit and baseChangeId should be cleared since they refer to old branch
+      expect(updatedPlan.baseCommit).toBeUndefined();
+      expect(updatedPlan.baseChangeId).toBeUndefined();
+    });
+
+    test('setting baseBranch to same value preserves baseCommit and baseChangeId', async () => {
+      const planPath = await createTestPlan(512, {
+        baseBranch: 'same-branch',
+        baseCommit: 'abc123def456',
+        baseChangeId: 'zyxwvu987654',
+      });
+
+      await handleSetCommand(
+        planPath,
+        {
+          planFile: planPath,
+          baseBranch: 'same-branch',
+        },
+        globalOpts
+      );
+
+      const updatedPlan = (await resolvePlanFromDb('512', tempDir)).plan;
+      expect(updatedPlan.baseBranch).toBe('same-branch');
+      expect(updatedPlan.baseCommit).toBe('abc123def456');
+      expect(updatedPlan.baseChangeId).toBe('zyxwvu987654');
+    });
+  });
 });

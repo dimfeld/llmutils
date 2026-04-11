@@ -4,6 +4,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import {
   captureRepositoryState,
+  clearAllGitCaches,
   compareRepositoryStates,
   getGitRoot,
   hasUncommittedChanges,
@@ -12,6 +13,12 @@ import {
   getCurrentCommitHash,
   getCurrentJujutsuBranch,
   getGitRepository,
+  getMergeBase,
+  fetchRemoteBranch,
+  remoteBranchExists,
+  remoteBranchExistsGit,
+  remoteBranchExistsJj,
+  getJjChangeId,
   resetGitRepositoryCache,
   isInGitRepository,
   clearGitRootCache,
@@ -29,10 +36,58 @@ async function runGit(dir: string, args: string[]): Promise<void> {
   }
 }
 
+async function runGitOutput(dir: string, args: string[]): Promise<string> {
+  const proc = Bun.spawn(['git', ...args], { cwd: dir, stdout: 'pipe', stderr: 'pipe' });
+  const [exitCode, stdout, stderr] = await Promise.all([
+    proc.exited,
+    new Response(proc.stdout as ReadableStream).text(),
+    new Response(proc.stderr as ReadableStream).text(),
+  ]);
+  if (exitCode !== 0) {
+    throw new Error(`git ${args.join(' ')} failed: ${stderr.trim()}`);
+  }
+  return stdout.trim();
+}
+
 async function initGitRepository(dir: string): Promise<void> {
   await runGit(dir, ['init', '-b', 'main']);
   await runGit(dir, ['config', 'user.email', 'test@example.com']);
   await runGit(dir, ['config', 'user.name', 'Test User']);
+}
+
+async function isJjAvailable(): Promise<boolean> {
+  const proc = Bun.spawn(['jj', '--version'], { stdout: 'pipe', stderr: 'pipe' });
+  return (await proc.exited) === 0;
+}
+
+async function runJj(dir: string, args: string[]): Promise<void> {
+  const proc = Bun.spawn(['jj', ...args], { cwd: dir, stdout: 'pipe', stderr: 'pipe' });
+  const [exitCode, stderr] = await Promise.all([
+    proc.exited,
+    new Response(proc.stderr as ReadableStream).text(),
+  ]);
+  if (exitCode !== 0) {
+    throw new Error(`jj ${args.join(' ')} failed: ${stderr.trim()}`);
+  }
+}
+
+async function runJjOutput(dir: string, args: string[]): Promise<string> {
+  const proc = Bun.spawn(['jj', ...args], { cwd: dir, stdout: 'pipe', stderr: 'pipe' });
+  const [exitCode, stdout, stderr] = await Promise.all([
+    proc.exited,
+    new Response(proc.stdout as ReadableStream).text(),
+    new Response(proc.stderr as ReadableStream).text(),
+  ]);
+  if (exitCode !== 0) {
+    throw new Error(`jj ${args.join(' ')} failed: ${stderr.trim()}`);
+  }
+  return stdout.trim();
+}
+
+async function initJjColocatedRepository(dir: string): Promise<void> {
+  await runJj(dir, ['git', 'init', '--colocate']);
+  await runJj(dir, ['config', 'set', '--repo', 'user.email', 'test@example.com']);
+  await runJj(dir, ['config', 'set', '--repo', 'user.name', 'Test User']);
 }
 
 describe('Git Utilities', () => {
@@ -430,6 +485,336 @@ describe('Git Utilities', () => {
 
       const repo = await getGitRepository(tempDir);
       expect(repo).toBe('example.com');
+    });
+  });
+
+  describe('merge-base and remote branch helpers', () => {
+    it('computes merge-base for git repositories against origin/<baseBranch>', async () => {
+      const remoteDir = await fs.mkdtemp(path.join(os.tmpdir(), 'git-remote-'));
+      const sourceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'git-source-'));
+
+      try {
+        await runGit(remoteDir, ['init', '--bare']);
+        await initGitRepository(sourceDir);
+
+        await fs.writeFile(path.join(sourceDir, 'file.txt'), 'base');
+        await runGit(sourceDir, ['add', '.']);
+        await runGit(sourceDir, ['commit', '-m', 'base']);
+
+        await runGit(sourceDir, ['remote', 'add', 'origin', remoteDir]);
+        await runGit(sourceDir, ['push', '-u', 'origin', 'main']);
+        const mainCommit = await runGitOutput(sourceDir, ['rev-parse', 'main']);
+
+        await runGit(sourceDir, ['checkout', '-b', 'feature/base']);
+        await fs.writeFile(path.join(sourceDir, 'file.txt'), 'feature');
+        await runGit(sourceDir, ['add', '.']);
+        await runGit(sourceDir, ['commit', '-m', 'feature commit']);
+        await runGit(sourceDir, ['push', '-u', 'origin', 'feature/base']);
+
+        await runGit(tempDir, ['clone', remoteDir, '.']);
+        await runGit(tempDir, ['checkout', 'feature/base']);
+
+        const mergeBase = await getMergeBase(tempDir, 'main');
+        expect(mergeBase).toBe(mainCommit);
+      } finally {
+        await fs.rm(sourceDir, { recursive: true, force: true });
+        await fs.rm(remoteDir, { recursive: true, force: true });
+      }
+    });
+
+    it('returns null merge-base when base branch does not exist', async () => {
+      await initGitRepository(tempDir);
+      await fs.writeFile(path.join(tempDir, 'file.txt'), 'content');
+      await runGit(tempDir, ['add', '.']);
+      await runGit(tempDir, ['commit', '-m', 'initial']);
+
+      const mergeBase = await getMergeBase(tempDir, 'missing-branch');
+      expect(mergeBase).toBeNull();
+    });
+
+    it('fetches a specific remote branch and detects remote branch existence', async () => {
+      const remoteDir = await fs.mkdtemp(path.join(os.tmpdir(), 'git-remote-'));
+      const sourceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'git-source-'));
+
+      try {
+        await runGit(remoteDir, ['init', '--bare']);
+        await initGitRepository(sourceDir);
+
+        await fs.writeFile(path.join(sourceDir, 'base.txt'), 'base');
+        await runGit(sourceDir, ['add', '.']);
+        await runGit(sourceDir, ['commit', '-m', 'base']);
+        await runGit(sourceDir, ['remote', 'add', 'origin', remoteDir]);
+        await runGit(sourceDir, ['push', '-u', 'origin', 'main']);
+
+        await runGit(tempDir, ['clone', remoteDir, '.']);
+        expect(await remoteBranchExists(tempDir, 'late-branch')).toBe(false);
+        expect(await remoteBranchExistsGit(tempDir, 'late-branch')).toBe(false);
+        expect(await fetchRemoteBranch(tempDir, 'late-branch')).toBe(false);
+
+        await runGit(sourceDir, ['checkout', '-b', 'late-branch']);
+        await fs.writeFile(path.join(sourceDir, 'late.txt'), 'late');
+        await runGit(sourceDir, ['add', '.']);
+        await runGit(sourceDir, ['commit', '-m', 'late']);
+        await runGit(sourceDir, ['push', '-u', 'origin', 'late-branch']);
+
+        expect(await remoteBranchExists(tempDir, 'late-branch')).toBe(true);
+        expect(await fetchRemoteBranch(tempDir, 'late-branch')).toBe(true);
+        expect(await remoteBranchExists(tempDir, 'late-branch')).toBe(true);
+      } finally {
+        await fs.rm(sourceDir, { recursive: true, force: true });
+        await fs.rm(remoteDir, { recursive: true, force: true });
+      }
+    });
+
+    it('detects remote branch deletion even when local tracking ref still exists', async () => {
+      const remoteDir = await fs.mkdtemp(path.join(os.tmpdir(), 'git-remote-'));
+      const sourceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'git-source-'));
+
+      try {
+        await runGit(remoteDir, ['init', '--bare']);
+        await initGitRepository(sourceDir);
+
+        await fs.writeFile(path.join(sourceDir, 'base.txt'), 'base');
+        await runGit(sourceDir, ['add', '.']);
+        await runGit(sourceDir, ['commit', '-m', 'base']);
+        await runGit(sourceDir, ['remote', 'add', 'origin', remoteDir]);
+        await runGit(sourceDir, ['push', '-u', 'origin', 'main']);
+
+        await runGit(sourceDir, ['checkout', '-b', 'late-branch']);
+        await fs.writeFile(path.join(sourceDir, 'late.txt'), 'late');
+        await runGit(sourceDir, ['add', '.']);
+        await runGit(sourceDir, ['commit', '-m', 'late']);
+        await runGit(sourceDir, ['push', '-u', 'origin', 'late-branch']);
+
+        await runGit(tempDir, ['clone', remoteDir, '.']);
+        expect(await fetchRemoteBranch(tempDir, 'late-branch')).toBe(true);
+        expect(await remoteBranchExistsGit(tempDir, 'late-branch')).toBe(true);
+
+        await runGit(sourceDir, ['push', 'origin', '--delete', 'late-branch']);
+        await runGit(tempDir, ['rev-parse', '--verify', 'refs/remotes/origin/late-branch']);
+        expect(await remoteBranchExistsGit(tempDir, 'late-branch')).toBe(false);
+      } finally {
+        await fs.rm(sourceDir, { recursive: true, force: true });
+        await fs.rm(remoteDir, { recursive: true, force: true });
+      }
+    });
+
+    it('remoteBranchExistsGit throws on transport/auth errors', async () => {
+      await initGitRepository(tempDir);
+      // Point origin at a non-existent path to simulate transport failure
+      await runGit(tempDir, ['remote', 'add', 'origin', '/nonexistent/remote/path']);
+      await expect(remoteBranchExistsGit(tempDir, 'some-branch')).rejects.toThrow(
+        /Failed to check remote branch existence/
+      );
+    });
+
+    it('returns null JJ change id for git repositories', async () => {
+      await initGitRepository(tempDir);
+      const changeId = await getJjChangeId(tempDir);
+      expect(changeId).toBeNull();
+      const revisionChangeId = await getJjChangeId(tempDir, 'HEAD');
+      expect(revisionChangeId).toBeNull();
+    });
+  });
+
+  describe('JJ integration tests for base tracking', () => {
+    beforeEach(() => {
+      clearAllGitCaches();
+    });
+
+    afterEach(() => {
+      clearAllGitCaches();
+    });
+
+    it('computes merge-base in JJ repositories for default and explicit source refs', async () => {
+      if (!(await isJjAvailable())) {
+        return;
+      }
+
+      const remoteDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jj-remote-'));
+
+      try {
+        await runGit(remoteDir, ['init', '--bare']);
+        await initJjColocatedRepository(tempDir);
+        await runJj(tempDir, ['git', 'remote', 'add', 'origin', remoteDir]);
+
+        await fs.writeFile(path.join(tempDir, 'base.txt'), 'base');
+        await runJj(tempDir, ['commit', '-m', 'base']);
+        await runJj(tempDir, ['bookmark', 'set', '-r', '@-', 'main']);
+        await runJj(tempDir, ['git', 'push', '--bookmark', 'main']);
+        const mainCommit = await runJjOutput(tempDir, [
+          'log',
+          '-r',
+          'main',
+          '--no-graph',
+          '-T',
+          'commit_id',
+        ]);
+
+        await fs.writeFile(path.join(tempDir, 'feature.txt'), 'feature');
+        await runJj(tempDir, ['commit', '-m', 'feature']);
+        await runJj(tempDir, ['bookmark', 'set', '-r', '@-', 'feature/base']);
+        await runJj(tempDir, ['git', 'push', '--bookmark', 'feature/base']);
+
+        const mergeBaseFromHead = await getMergeBase(tempDir, 'main');
+        expect(mergeBaseFromHead).toBe(mainCommit);
+
+        const mergeBaseFromExplicitSource = await getMergeBase(tempDir, 'main', 'feature/base');
+        expect(mergeBaseFromExplicitSource).toBe(mainCommit);
+      } finally {
+        await fs.rm(remoteDir, { recursive: true, force: true });
+      }
+    });
+
+    it('returns null merge-base for a non-existent JJ base branch', async () => {
+      if (!(await isJjAvailable())) {
+        return;
+      }
+
+      await initJjColocatedRepository(tempDir);
+      await fs.writeFile(path.join(tempDir, 'base.txt'), 'base');
+      await runJj(tempDir, ['commit', '-m', 'base']);
+
+      const mergeBase = await getMergeBase(tempDir, 'missingbase');
+      expect(mergeBase).toBeNull();
+    });
+
+    it('reports existing remote JJ bookmarks', async () => {
+      if (!(await isJjAvailable())) {
+        return;
+      }
+
+      const remoteDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jj-remote-'));
+
+      try {
+        await runGit(remoteDir, ['init', '--bare']);
+        await initJjColocatedRepository(tempDir);
+        await runJj(tempDir, ['git', 'remote', 'add', 'origin', remoteDir]);
+
+        await fs.writeFile(path.join(tempDir, 'base.txt'), 'base');
+        await runJj(tempDir, ['commit', '-m', 'base']);
+        await runJj(tempDir, ['bookmark', 'set', '-r', '@-', 'main']);
+        await runJj(tempDir, ['git', 'push', '--bookmark', 'main']);
+
+        expect(await remoteBranchExistsJj(tempDir, 'main')).toBe(true);
+      } finally {
+        await fs.rm(remoteDir, { recursive: true, force: true });
+      }
+    });
+
+    it('reports missing remote JJ bookmarks', async () => {
+      if (!(await isJjAvailable())) {
+        return;
+      }
+
+      const remoteDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jj-remote-'));
+
+      try {
+        await runGit(remoteDir, ['init', '--bare']);
+        await initJjColocatedRepository(tempDir);
+        await runJj(tempDir, ['git', 'remote', 'add', 'origin', remoteDir]);
+
+        await fs.writeFile(path.join(tempDir, 'base.txt'), 'base');
+        await runJj(tempDir, ['commit', '-m', 'base']);
+        await runJj(tempDir, ['bookmark', 'set', '-r', '@-', 'main']);
+        await runJj(tempDir, ['git', 'push', '--bookmark', 'main']);
+
+        expect(await remoteBranchExistsJj(tempDir, 'nonexistent')).toBe(false);
+      } finally {
+        await fs.rm(remoteDir, { recursive: true, force: true });
+      }
+    });
+
+    it('reports deleted remote JJ bookmarks as missing', async () => {
+      if (!(await isJjAvailable())) {
+        return;
+      }
+
+      const remoteDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jj-remote-'));
+
+      try {
+        await runGit(remoteDir, ['init', '--bare']);
+        await initJjColocatedRepository(tempDir);
+        await runJj(tempDir, ['git', 'remote', 'add', 'origin', remoteDir]);
+
+        await fs.writeFile(path.join(tempDir, 'base.txt'), 'base');
+        await runJj(tempDir, ['commit', '-m', 'base']);
+        await runJj(tempDir, ['bookmark', 'set', '-r', '@-', 'main']);
+        await runJj(tempDir, ['git', 'push', '--bookmark', 'main']);
+
+        await fs.writeFile(path.join(tempDir, 'stacked.txt'), 'stacked');
+        await runJj(tempDir, ['commit', '-m', 'stacked']);
+        await runJj(tempDir, ['bookmark', 'set', '-r', '@-', 'stacked']);
+        await runJj(tempDir, ['git', 'push', '--bookmark', 'stacked']);
+
+        expect(await remoteBranchExistsJj(tempDir, 'stacked')).toBe(true);
+
+        await runGit(tempDir, ['push', 'origin', '--delete', 'stacked']);
+        expect(await remoteBranchExistsJj(tempDir, 'stacked')).toBe(false);
+      } finally {
+        await fs.rm(remoteDir, { recursive: true, force: true });
+      }
+    });
+
+    it('fetchRemoteBranch succeeds for existing JJ bookmark', async () => {
+      if (!(await isJjAvailable())) {
+        return;
+      }
+
+      const remoteDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jj-remote-'));
+
+      try {
+        await runGit(remoteDir, ['init', '--bare']);
+        await initJjColocatedRepository(tempDir);
+        await runJj(tempDir, ['git', 'remote', 'add', 'origin', remoteDir]);
+
+        await fs.writeFile(path.join(tempDir, 'base.txt'), 'base');
+        await runJj(tempDir, ['commit', '-m', 'base']);
+        await runJj(tempDir, ['bookmark', 'set', '-r', '@-', 'main']);
+        await runJj(tempDir, ['git', 'push', '--bookmark', 'main']);
+
+        // fetchRemoteBranch returns true for existing bookmarks
+        expect(await fetchRemoteBranch(tempDir, 'main')).toBe(true);
+        // Note: jj git fetch --branch returns exit 0 even for missing bookmarks
+        // (it fetches nothing), so remoteBranchExistsJj is needed for existence checks
+      } finally {
+        await fs.rm(remoteDir, { recursive: true, force: true });
+      }
+    });
+
+    it('returns JJ change id for current revision', async () => {
+      if (!(await isJjAvailable())) {
+        return;
+      }
+
+      await initJjColocatedRepository(tempDir);
+      await fs.writeFile(path.join(tempDir, 'base.txt'), 'base');
+      await runJj(tempDir, ['commit', '-m', 'base']);
+
+      const changeId = await getJjChangeId(tempDir);
+      expect(changeId).toEqual(expect.any(String));
+      expect(changeId).toMatch(/^[a-z0-9]+$/i);
+    });
+
+    it('returns JJ change id for a specific revision', async () => {
+      if (!(await isJjAvailable())) {
+        return;
+      }
+
+      await initJjColocatedRepository(tempDir);
+      await fs.writeFile(path.join(tempDir, 'base.txt'), 'base');
+      await runJj(tempDir, ['commit', '-m', 'base']);
+      await runJj(tempDir, ['bookmark', 'set', '-r', '@-', 'main']);
+
+      await fs.writeFile(path.join(tempDir, 'feature.txt'), 'feature');
+      await runJj(tempDir, ['commit', '-m', 'feature']);
+
+      const headChangeId = await getJjChangeId(tempDir);
+      const baseChangeId = await getJjChangeId(tempDir, 'main');
+
+      expect(headChangeId).toEqual(expect.any(String));
+      expect(baseChangeId).toEqual(expect.any(String));
+      expect(baseChangeId).not.toBe(headChangeId);
     });
   });
 

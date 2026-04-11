@@ -1,10 +1,22 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { getGitRoot, getUsingJj, getWorkingCopyStatus } from '../../common/git.js';
+import {
+  fetchRemoteBranch,
+  getGitRoot,
+  getJjChangeId,
+  getMergeBase,
+  getTrunkBranch,
+  getUsingJj,
+  getWorkingCopyStatus,
+  remoteBranchExists,
+} from '../../common/git.js';
 import { logSpawn } from '../../common/process.js';
 import { error, log, sendStructured, warn } from '../../logging.js';
 import { generateBranchNameFromPlan } from '../commands/branch.js';
 import type { TimConfig } from '../configSchema.js';
+import { getDatabase } from '../db/database.js';
+import type { PlanBaseTrackingUpdate } from '../db/plan.js';
+import { setPlanBaseTracking } from '../db/plan.js';
 import { updateHeadlessSessionInfo } from '../headless.js';
 import { materializePlan } from '../plan_materialize.js';
 import { readPlanFile, resolvePlanFromDb } from '../plans.js';
@@ -27,7 +39,10 @@ export interface WorkspaceSetupOptions {
   requireWorkspace?: boolean;
   planId?: number;
   planUuid?: string;
+  // Stacking base branch used for plan base tracking.
   base?: string;
+  // Checkout-only branch used to prepare/select workspaces without affecting tracking.
+  checkoutBranch?: string;
   createBranch?: boolean;
   allowPrimaryWorkspaceWhenLocked?: boolean;
 }
@@ -44,6 +59,8 @@ interface ResolvedWorkspaceBranchContext {
   planData?: PlanSchema;
   branchName?: string;
   baseBranch?: string;
+  checkoutBranch?: string;
+  baseBranchSource?: 'option' | 'plan' | 'parent';
   canRetryWithoutBaseBranch: boolean;
 }
 
@@ -62,11 +79,11 @@ async function getParentPlanBranch(
 
   const gitRoot = await getGitRoot(currentBaseDir);
   const parentPlan = await resolvePlanFromDb(String(plan.parent), gitRoot);
-  return parentPlan.plan.branch;
+  return parentPlan.plan.branch ?? generateBranchNameFromPlan(parentPlan.plan);
 }
 
 async function resolveWorkspaceBranchContext(
-  options: Pick<WorkspaceSetupOptions, 'planId' | 'base'>,
+  options: Pick<WorkspaceSetupOptions, 'planId' | 'base' | 'checkoutBranch'>,
   currentBaseDir: string,
   currentPlanFile: string | undefined,
   config: TimConfig
@@ -74,7 +91,12 @@ async function resolveWorkspaceBranchContext(
   let planData: PlanSchema | undefined;
   let branchName: string | undefined;
   let baseBranch = options.base;
+  let baseBranchSource: ResolvedWorkspaceBranchContext['baseBranchSource'];
   let canRetryWithoutBaseBranch = false;
+
+  if (baseBranch) {
+    baseBranchSource = 'option';
+  }
 
   if (currentPlanFile) {
     try {
@@ -99,13 +121,29 @@ async function resolveWorkspaceBranchContext(
     }
 
     if (!baseBranch) {
-      baseBranch = planData.baseBranch;
+      // When planId is available, prefer DB state for baseBranch over file state.
+      // The file may contain stale baseBranch after a trunk-fallback rebase cleared
+      // the DB fields but the direct plan file wasn't updated.
+      let resolvedBaseBranch = planData.baseBranch;
+      if (currentPlanFile && typeof options.planId === 'number') {
+        try {
+          const dbPlan = (await resolvePlanFromDb(String(options.planId), currentBaseDir)).plan;
+          resolvedBaseBranch = dbPlan.baseBranch;
+        } catch {
+          // Fall back to file-based baseBranch if DB lookup fails
+        }
+      }
+      baseBranch = resolvedBaseBranch;
+      if (baseBranch) {
+        baseBranchSource = 'plan';
+      }
     }
 
     if (!baseBranch) {
       const parentBranch = await getParentPlanBranch(planData, config, currentBaseDir);
       if (parentBranch) {
         baseBranch = parentBranch;
+        baseBranchSource = 'parent';
         canRetryWithoutBaseBranch = true;
       }
     }
@@ -115,8 +153,88 @@ async function resolveWorkspaceBranchContext(
     planData,
     branchName,
     baseBranch,
+    checkoutBranch: options.checkoutBranch,
+    baseBranchSource,
     canRetryWithoutBaseBranch,
   };
+}
+
+async function updateBaseCommitTracking(options: {
+  baseDir: string;
+  planId?: number;
+  planUuid?: string;
+  planBranch?: string;
+  baseBranch?: string;
+  baseBranchSource?: ResolvedWorkspaceBranchContext['baseBranchSource'];
+  trunkBranch: string;
+  isJj?: boolean;
+}): Promise<void> {
+  const { baseDir, planUuid, trunkBranch } = options;
+  const baseBranch = options.baseBranch;
+
+  if (!planUuid || !baseBranch || baseBranch === trunkBranch) {
+    return;
+  }
+
+  // Safety net: if the user passes --base with the plan's own branch, skip tracking
+  // to avoid storing the branch tip as baseCommit (merge-base of a branch with itself).
+  if (options.planBranch && baseBranch === options.planBranch) {
+    return;
+  }
+
+  try {
+    const db = getDatabase();
+    const rematerializeBestEffort = async (): Promise<void> => {
+      if (typeof options.planId !== 'number') {
+        return;
+      }
+
+      try {
+        await materializePlan(options.planId, baseDir);
+      } catch (err) {
+        warn(
+          `Failed to rematerialize plan ${options.planId} after base tracking update: ${err as Error}`
+        );
+      }
+    };
+    await fetchRemoteBranch(baseDir, baseBranch);
+    const existsOnRemote = await remoteBranchExists(baseDir, baseBranch);
+    if (!existsOnRemote) {
+      return;
+    }
+
+    // Use the plan branch (not HEAD) as the source ref so tracking is correct
+    // even when the plan branch isn't checked out (non-workspace mode).
+    const sourceRef = options.planBranch ?? 'HEAD';
+    const mergeBase = await getMergeBase(baseDir, baseBranch, sourceRef);
+    // Persist baseBranch for 'parent' (auto-derived) and 'option' (explicit --base) sources.
+    // 'plan' source means baseBranch is already in the plan, no need to re-persist it.
+    const shouldPersistBaseBranch =
+      options.baseBranchSource === 'parent' || options.baseBranchSource === 'option';
+
+    if (!mergeBase) {
+      // Don't overwrite existing tracking with nulls on transient failures
+      if (shouldPersistBaseBranch) {
+        setPlanBaseTracking(db, planUuid, { baseBranch });
+        await rematerializeBestEffort();
+      }
+      return;
+    }
+
+    const usingJj = options.isJj ?? (await getUsingJj(baseDir));
+    const baseChangeId = usingJj ? await getJjChangeId(baseDir, mergeBase) : undefined;
+    const update: PlanBaseTrackingUpdate = {
+      baseCommit: mergeBase,
+      baseChangeId,
+    };
+    if (shouldPersistBaseBranch) {
+      update.baseBranch = baseBranch;
+    }
+    setPlanBaseTracking(db, planUuid, update);
+    await rematerializeBestEffort();
+  } catch (err) {
+    warn(`Failed to update base commit tracking for plan ${planUuid}: ${err as Error}`);
+  }
 }
 
 export async function setupWorkspace(
@@ -175,7 +293,10 @@ export async function setupWorkspace(
 
   // When no plan file and no base branch, skip branch creation — use workspace as-is
   const effectiveCreateBranch =
-    !currentPlanFile && typeof options.planId !== 'number' && !options.base
+    !currentPlanFile &&
+    typeof options.planId !== 'number' &&
+    !options.base &&
+    !options.checkoutBranch
       ? false
       : options.createBranch;
   const branchContext = await resolveWorkspaceBranchContext(
@@ -184,7 +305,7 @@ export async function setupWorkspace(
     currentPlanFile,
     config
   );
-  let createWorkspaceBaseBranch = branchContext.baseBranch;
+  let createWorkspaceBaseBranch = branchContext.checkoutBranch ?? branchContext.baseBranch;
 
   if (options.workspace || options.autoWorkspace) {
     let workspace: Workspace | null | undefined;
@@ -202,7 +323,7 @@ export async function setupWorkspace(
         interactive: !options.nonInteractive,
         preferNewWorkspace: options.newWorkspace,
         createBranch: effectiveCreateBranch,
-        base: branchContext.baseBranch,
+        base: branchContext.checkoutBranch ?? branchContext.baseBranch,
         branchName: branchContext.branchName,
         planData: branchContext.planData,
         ...(options.planUuid ? { preferredPlanUuid: options.planUuid } : {}),
@@ -360,18 +481,20 @@ export async function setupWorkspace(
         let branchName = branchContext.branchName ?? workspace.taskId;
         const planData = branchContext.planData;
         let baseBranch = branchContext.baseBranch;
+        let effectiveCheckoutBranch = branchContext.checkoutBranch ?? baseBranch;
+        const baseBranchSource = branchContext.baseBranchSource;
         const canRetryWithoutBaseBranch = branchContext.canRetryWithoutBaseBranch;
         const shouldCreateBranch = effectiveCreateBranch ?? true;
         const shouldPrepareWorkspaceBranch = Boolean(
-          (currentPlanFile || typeof options.planId === 'number' || branchContext.baseBranch) &&
+          (currentPlanFile || typeof options.planId === 'number' || effectiveCheckoutBranch) &&
           !(isNewWorkspace && effectiveCreateBranch)
         );
 
         let reusedExistingBranch = false;
         if (shouldPrepareWorkspaceBranch) {
-          const hasExplicitBase = Boolean(options.base);
+          const hasExplicitBase = Boolean(options.base || options.checkoutBranch);
           let prepareResult = await prepareExistingWorkspace(workspace.path, {
-            baseBranch,
+            baseBranch: effectiveCheckoutBranch,
             branchName,
             planFilePath: currentPlanFile ? planFile : undefined,
             createBranch: shouldCreateBranch,
@@ -381,6 +504,7 @@ export async function setupWorkspace(
 
           if (!prepareResult.success && canRetryWithoutBaseBranch) {
             baseBranch = undefined;
+            effectiveCheckoutBranch = undefined;
             prepareResult = await prepareExistingWorkspace(workspace.path, {
               branchName,
               planFilePath: currentPlanFile ? planFile : undefined,
@@ -442,6 +566,18 @@ export async function setupWorkspace(
           planFile = workspace.planFilePathInWorkspace ?? workspacePlanFile ?? planFile;
         }
 
+        const trunkBranch = await getTrunkBranch(workspace.path);
+        await updateBaseCommitTracking({
+          baseDir: workspace.path,
+          planId: options.planId,
+          planUuid: planData?.uuid ?? options.planUuid,
+          planBranch: branchName,
+          baseBranch,
+          baseBranchSource,
+          trunkBranch,
+          isJj: workspaceIsJj,
+        });
+
         baseDir = workspace.path;
         sendStructured({
           type: 'workspace_info',
@@ -484,6 +620,17 @@ export async function setupWorkspace(
   if (typeof options.planId === 'number' && !currentPlanFile) {
     await resolveMaterializedPlanForWorkspace(baseDir);
   }
+
+  const trunkBranch = await getTrunkBranch(baseDir);
+  await updateBaseCommitTracking({
+    baseDir,
+    planId: options.planId,
+    planUuid: branchContext.planData?.uuid ?? options.planUuid,
+    planBranch: branchContext.branchName,
+    baseBranch: branchContext.baseBranch,
+    baseBranchSource: branchContext.baseBranchSource,
+    trunkBranch,
+  });
 
   return {
     baseDir,

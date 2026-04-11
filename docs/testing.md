@@ -74,3 +74,7 @@ Or for a single mock defined across the entire test file, use `afterAll(() => mo
 
 - **Bun.serve() port 0 for OS-assigned ports**: Use port 0 in tests to let the OS assign a free port. This avoids TOCTOU port allocation flakiness (where a port-availability check passes but another process grabs it before `serve()` binds). Read the actual port from the server handle after it starts.
 - **Testing shutdown/signal handlers**: When testing code that calls `process.exit()`, spy on and mock `process.exit` to prevent the test process from actually exiting. Restore the original in `afterEach`.
+
+### JJ Test Repositories
+
+- JJ test repos need `jj config set --repo user.email test@test.com` and `jj config set --repo user.name "Test User"` for hermetic identity, matching the pattern used by git test helpers with `git config user.email`. Without this, JJ operations may fail or use the host machine's identity, causing flaky tests.

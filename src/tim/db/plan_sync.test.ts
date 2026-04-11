@@ -6,7 +6,12 @@ import * as path from 'node:path';
 import { getDefaultConfig, type TimConfig } from '../configSchema.js';
 import { claimAssignment, getAssignment } from './assignment.js';
 import { closeDatabaseForTesting, getDatabase } from './database.js';
-import { getPlanByUuid, getPlanTagsByUuid, getPlanTasksByUuid } from './plan.js';
+import {
+  clearPlanBaseTracking,
+  getPlanByUuid,
+  getPlanTagsByUuid,
+  getPlanTasksByUuid,
+} from './plan.js';
 import { clearPlanSyncContext, removePlanFromDb, syncPlanToDb } from './plan_sync.js';
 import { getProject } from './project.js';
 import { recordWorkspace } from './workspace.js';
@@ -169,6 +174,212 @@ describe('tim db/plan_sync', () => {
 
     savedPlan = getPlanByUuid(getDatabase(), planUuid);
     expect(savedPlan?.branch).toBeNull();
+  });
+
+  test('syncPlanToDb with preserveBaseTracking preserves cleared DB base fields for existing plans', async () => {
+    const config = buildTestConfig(tasksDir);
+    const planUuid = '57575757-5757-4575-8575-575757575757';
+
+    await syncPlanToDb(
+      {
+        id: 57,
+        uuid: planUuid,
+        title: 'Base tracking sync plan',
+        goal: 'Protect DB-managed base fields',
+        baseBranch: 'feature/base',
+        baseCommit: 'abcdef1234567890',
+        baseChangeId: 'zzzzzzzzzzzz',
+        tasks: [],
+      },
+      { config }
+    );
+
+    clearPlanBaseTracking(getDatabase(), planUuid);
+
+    // Simulate stale plan file values — all three should be preserved as null from DB.
+    await syncPlanToDb(
+      {
+        id: 57,
+        uuid: planUuid,
+        title: 'Base tracking sync plan',
+        goal: 'Protect DB-managed base fields',
+        baseBranch: 'feature/base',
+        baseCommit: 'abcdef1234567890',
+        baseChangeId: 'zzzzzzzzzzzz',
+        tasks: [],
+      },
+      { config, preserveBaseTracking: true }
+    );
+
+    const savedPlan = getPlanByUuid(getDatabase(), planUuid);
+    expect(savedPlan?.base_branch).toBeNull();
+    expect(savedPlan?.base_commit).toBeNull();
+    expect(savedPlan?.base_change_id).toBeNull();
+  });
+
+  test('syncPlanToDb with preserveBaseTracking strips baseCommit/baseChangeId on first import', async () => {
+    const config = buildTestConfig(tasksDir);
+    const planUuid = '63636363-6363-4636-8636-636363636363';
+
+    await syncPlanToDb(
+      {
+        id: 63,
+        uuid: planUuid,
+        title: 'New plan with base tracking',
+        goal: 'Initial import from file',
+        baseBranch: 'feature/parent-branch',
+        baseCommit: 'deadbeef12345678',
+        baseChangeId: 'initialchangeid',
+        tasks: [],
+      },
+      { config, preserveBaseTracking: true }
+    );
+
+    const savedPlan = getPlanByUuid(getDatabase(), planUuid);
+    // baseBranch is imported from file for new plans (user-settable).
+    expect(savedPlan?.base_branch).toBe('feature/parent-branch');
+    // baseCommit and baseChangeId are machine-managed — never imported from file.
+    expect(savedPlan?.base_commit).toBeNull();
+    expect(savedPlan?.base_change_id).toBeNull();
+  });
+
+  test('syncPlanToDb with preserveBaseTracking preserves non-null DB base fields over stale file values', async () => {
+    const config = buildTestConfig(tasksDir);
+    const planUuid = '74747474-7474-4747-8747-474747474747';
+
+    await syncPlanToDb(
+      {
+        id: 74,
+        uuid: planUuid,
+        title: 'Stale file base tracking plan',
+        goal: 'DB base values should win over stale file',
+        baseBranch: 'feature/db-branch',
+        baseCommit: 'db-commit-hash',
+        baseChangeId: 'db-change-id',
+        tasks: [],
+      },
+      { config }
+    );
+
+    // Simulate the DB being updated via setPlanBaseTracking with different values.
+    const db = getDatabase();
+    db.prepare('UPDATE plan SET base_branch=?, base_commit=?, base_change_id=? WHERE uuid=?').run(
+      'feature/newer-branch',
+      'newer-commit-hash',
+      'newer-change-id',
+      planUuid
+    );
+
+    // Sync with stale file values — all base fields from DB should be preserved.
+    await syncPlanToDb(
+      {
+        id: 74,
+        uuid: planUuid,
+        title: 'Stale file base tracking plan',
+        goal: 'DB base values should win over stale file',
+        baseBranch: 'feature/db-branch',
+        baseCommit: 'db-commit-hash',
+        baseChangeId: 'db-change-id',
+        tasks: [],
+      },
+      { config, preserveBaseTracking: true }
+    );
+
+    const savedPlan = getPlanByUuid(getDatabase(), planUuid);
+    expect(savedPlan?.base_branch).toBe('feature/newer-branch');
+    expect(savedPlan?.base_commit).toBe('newer-commit-hash');
+    expect(savedPlan?.base_change_id).toBe('newer-change-id');
+  });
+
+  test('syncPlanToDb without preserveBaseTracking syncs baseBranch from file but protects baseCommit/baseChangeId', async () => {
+    const config = buildTestConfig(tasksDir);
+    const planUuid = '68686868-6868-4686-8686-686868686868';
+
+    await syncPlanToDb(
+      {
+        id: 68,
+        uuid: planUuid,
+        title: 'Materialized plan sync',
+        goal: 'baseBranch syncs from file, machine-managed fields preserved',
+        baseBranch: 'feature/old-base',
+        tasks: [],
+      },
+      { config }
+    );
+
+    // Simulate DB being updated by workspace setup with tracking data.
+    const db = getDatabase();
+    db.prepare('UPDATE plan SET base_commit=?, base_change_id=? WHERE uuid=?').run(
+      'db-commit',
+      'db-change-id',
+      planUuid
+    );
+
+    // Without preserveBaseTracking, baseBranch syncs from file normally,
+    // but baseCommit/baseChangeId are always DB-managed and preserved.
+    await syncPlanToDb(
+      {
+        id: 68,
+        uuid: planUuid,
+        title: 'Materialized plan sync',
+        goal: 'baseBranch syncs from file, machine-managed fields preserved',
+        baseBranch: 'feature/new-base',
+        baseCommit: 'stale-file-commit',
+        baseChangeId: 'stale-file-change-id',
+        tasks: [],
+      },
+      { config }
+    );
+
+    const savedPlan = getPlanByUuid(getDatabase(), planUuid);
+    // baseBranch syncs from file (user-editable, no preserveBaseTracking flag).
+    expect(savedPlan?.base_branch).toBe('feature/new-base');
+    // baseCommit/baseChangeId are always DB-managed — DB values preserved.
+    expect(savedPlan?.base_commit).toBe('db-commit');
+    expect(savedPlan?.base_change_id).toBe('db-change-id');
+  });
+
+  test('syncPlanToDb still syncs non-base-tracking fields normally with preserveBaseTracking', async () => {
+    const config = buildTestConfig(tasksDir);
+    const planUuid = '85858585-8585-4858-8858-858585858585';
+
+    await syncPlanToDb(
+      {
+        id: 85,
+        uuid: planUuid,
+        title: 'Original title',
+        goal: 'Original goal',
+        status: 'in_progress' as const,
+        branch: 'feature/original-branch',
+        tasks: [],
+      },
+      { config }
+    );
+
+    let savedPlan = getPlanByUuid(getDatabase(), planUuid);
+    expect(savedPlan?.title).toBe('Original title');
+    expect(savedPlan?.status).toBe('in_progress');
+    expect(savedPlan?.branch).toBe('feature/original-branch');
+
+    // Sync with updated non-base-tracking fields (with preserveBaseTracking enabled).
+    await syncPlanToDb(
+      {
+        id: 85,
+        uuid: planUuid,
+        title: 'Updated title',
+        goal: 'Updated goal',
+        status: 'needs_review' as const,
+        branch: 'feature/updated-branch',
+        tasks: [{ title: 'new task', description: 'new task description', done: false }],
+      },
+      { config, preserveBaseTracking: true }
+    );
+
+    savedPlan = getPlanByUuid(getDatabase(), planUuid);
+    expect(savedPlan?.title).toBe('Updated title');
+    expect(savedPlan?.goal).toBe('Updated goal');
+    expect(savedPlan?.status).toBe('needs_review');
+    expect(savedPlan?.branch).toBe('feature/updated-branch');
   });
 
   test('removePlanFromDb removes the plan and its assignment', async () => {

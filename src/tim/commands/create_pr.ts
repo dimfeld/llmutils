@@ -1,5 +1,5 @@
 import { syncPlanPrLinks } from '../../common/github/pr_status_service.js';
-import { getUsingJj } from '../../common/git.js';
+import { getMergeBase, getUsingJj } from '../../common/git.js';
 import { log, warn } from '../../logging.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { loadEffectiveConfig } from '../configLoader.js';
@@ -223,15 +223,6 @@ export async function detectExistingPrUrl(branch: string, baseDir: string): Prom
   return url && url.length > 0 ? url : null;
 }
 
-async function resolveGitMergeBase(baseDir: string, baseBranch: string): Promise<string> {
-  const baseRef = `origin/${baseBranch}`;
-  const result = await runCommand(['git', 'merge-base', 'HEAD', baseRef], baseDir);
-  if (result.exitCode !== 0 || !result.stdout) {
-    throw new Error(result.stderr || `Failed to resolve merge-base against ${baseRef}`);
-  }
-  return result.stdout;
-}
-
 /**
  * Persist a PR URL in the plan file and plan_pr junction table.
  * Re-reads the plan from DB/file to avoid overwriting concurrent changes.
@@ -290,12 +281,19 @@ async function runPrCreationExecutor(
   const usingJj = await getUsingJj(options.baseDir);
   const baseBranch = plan.baseBranch?.trim() || 'main';
   const baseRef = usingJj ? 'latest(ancestors(trunk()) & ancestors(@))' : undefined;
-  const mergeBase = usingJj ? undefined : await resolveGitMergeBase(options.baseDir, baseBranch);
+  let mergeBase: string | undefined;
+  if (!usingJj) {
+    const resolved = await getMergeBase(options.baseDir, baseBranch);
+    if (!resolved) {
+      throw new Error(`Failed to resolve merge-base against origin/${baseBranch}`);
+    }
+    mergeBase = resolved;
+  }
   const issueRef = plan.issue?.[0];
   const prPrompt = buildPrCreationPrompt({
     vcsType: usingJj ? 'jj' : 'git',
     baseBranch,
-    baseRef: baseRef ?? mergeBase,
+    baseRef: baseRef ?? mergeBase ?? undefined,
     planTitle: plan.title,
     planId: plan.id,
     planDetails: plan.details,
@@ -443,7 +441,7 @@ export async function handleCreatePrCommand(
             nonInteractive,
             planId: plan.id,
             planUuid: plan.uuid,
-            base: plan.branch,
+            checkoutBranch: plan.branch,
             createBranch: false,
             allowPrimaryWorkspaceWhenLocked: true,
           },

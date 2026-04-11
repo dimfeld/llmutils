@@ -46,9 +46,9 @@
 
 Plan metadata, tasks, and dependencies are mirrored in SQLite alongside the YAML plan files. This enables centralized querying across workspaces without reading individual files from disk.
 
-**Tables** (migration v2, extended through v17):
+**Tables** (migration v2, extended through v23):
 
-- `plan`: Core metadata (uuid PRIMARY KEY, project_id FK, plan_id, title, goal, details, status, priority, parent_uuid, epic, filename, timestamps). Additional columns added in later migrations: `assigned_to`, `simple`, `tdd`, `discovered_from`, `base_branch`, `issue` (JSON), `pull_request` (JSON), `branch`, `temp` (INTEGER), `docs` (JSON array), `changed_files` (JSON array), `plan_generated_at` (TEXT), `review_issues` (JSON array of objects), `docs_updated_at` (TEXT), `lessons_applied_at` (TEXT). No unique constraint on `(project_id, plan_id)` to tolerate temporary duplicate numeric IDs.
+- `plan`: Core metadata (uuid PRIMARY KEY, project_id FK, plan_id, title, goal, details, status, priority, parent_uuid, epic, filename, timestamps). Additional columns added in later migrations: `assigned_to`, `simple`, `tdd`, `discovered_from`, `base_branch`, `base_commit` (TEXT), `base_change_id` (TEXT), `issue` (JSON), `pull_request` (JSON), `branch`, `temp` (INTEGER), `docs` (JSON array), `changed_files` (JSON array), `plan_generated_at` (TEXT), `review_issues` (JSON array of objects), `docs_updated_at` (TEXT), `lessons_applied_at` (TEXT). No unique constraint on `(project_id, plan_id)` to tolerate temporary duplicate numeric IDs. `base_commit` and `base_change_id` are DB-managed fields for stacked PR base tracking — they are not imported from plan files during file→DB sync.
 - `plan_task`: Tasks per plan (plan_uuid FK with CASCADE, task_index, title, description, done). UNIQUE on `(plan_uuid, task_index)`.
 - `plan_dependency`: Dependencies by UUID (plan_uuid FK with CASCADE, depends_on_uuid, composite PK). No FK on `depends_on_uuid` since the referenced plan may not be synced yet.
 

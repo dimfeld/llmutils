@@ -14,6 +14,17 @@ import { WorkspaceAlreadyLocked, WorkspaceLock } from './workspace_lock.js';
 import * as workspaceManager from './workspace_manager.js';
 import { setupWorkspace } from './workspace_setup.js';
 import { writePlanFile } from '../plans.js';
+import { setPlanBaseTracking } from '../db/plan.js';
+
+// Partially mock db/plan.js: replace only setPlanBaseTracking so we can verify tracking calls
+// while leaving all other DB functions (upsertPlan, getPlanByPlanId, etc.) as real implementations.
+vi.mock('../db/plan.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../db/plan.js')>();
+  return {
+    ...actual,
+    setPlanBaseTracking: vi.fn(),
+  };
+});
 
 describe('setupWorkspace', () => {
   let tempDir: string;
@@ -2228,5 +2239,587 @@ describe('setupWorkspace', () => {
     expect(lock?.command).toBe('tim generate');
 
     await WorkspaceLock.releaseLock(baseDir, { force: true });
+  });
+
+  describe('base commit tracking in setupWorkspace', () => {
+    // These tests exercise the updateBaseCommitTracking logic through setupWorkspace.
+    // They use a plan file with a UUID and baseBranch to trigger the tracking code path.
+
+    beforeEach(() => {
+      // Mock getTrunkBranch to avoid needing a real git repo with commits
+      vi.spyOn(git, 'getTrunkBranch').mockResolvedValue('main');
+      // Reset the setPlanBaseTracking mock before each test
+      vi.mocked(setPlanBaseTracking).mockClear();
+    });
+
+    test('skips base tracking when baseBranch equals the trunk branch', async () => {
+      const planWithTrunkBase = path.join(baseDir, 'trunk-base.plan.md');
+      await fs.writeFile(
+        planWithTrunkBase,
+        [
+          '---',
+          'id: 200',
+          'uuid: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          'title: Plan with trunk as baseBranch',
+          'branch: feature/my-branch',
+          'baseBranch: main',
+          'tasks: []',
+          '---',
+          '',
+        ].join('\n')
+      );
+
+      const fetchRemoteBranchSpy = vi.spyOn(git, 'fetchRemoteBranch').mockResolvedValue(true);
+
+      await setupWorkspace({}, baseDir, planWithTrunkBase, config, 'tim generate');
+
+      // When baseBranch === trunk, tracking is skipped entirely
+      expect(fetchRemoteBranchSpy).not.toHaveBeenCalled();
+      expect(vi.mocked(setPlanBaseTracking)).not.toHaveBeenCalled();
+
+      await WorkspaceLock.releaseLock(baseDir, { force: true });
+    });
+
+    test('checkout-only checkoutBranch does not override tracking baseBranch from plan', async () => {
+      const planWithTrackedBase = path.join(baseDir, 'checkout-only-base.plan.md');
+      await fs.writeFile(
+        planWithTrackedBase,
+        [
+          '---',
+          'id: 201',
+          'uuid: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          'title: Plan with checkout-only branch override',
+          'branch: feature/self-branch',
+          'baseBranch: feature/parent-branch',
+          'tasks: []',
+          '---',
+          '',
+        ].join('\n')
+      );
+
+      const fakeCommitHash = '1111111111111111111111111111111111111111';
+      vi.spyOn(git, 'fetchRemoteBranch').mockResolvedValue(true);
+      vi.spyOn(git, 'remoteBranchExists').mockResolvedValue(true);
+      const mergeBaseSpy = vi.spyOn(git, 'getMergeBase').mockResolvedValue(fakeCommitHash);
+      vi.spyOn(git, 'getUsingJj').mockResolvedValue(false);
+
+      await setupWorkspace(
+        { checkoutBranch: 'feature/self-branch' },
+        baseDir,
+        planWithTrackedBase,
+        config,
+        'tim generate'
+      );
+
+      expect(mergeBaseSpy).toHaveBeenCalledWith(
+        baseDir,
+        'feature/parent-branch',
+        'feature/self-branch'
+      );
+      expect(vi.mocked(setPlanBaseTracking)).toHaveBeenCalledWith(
+        expect.anything(),
+        'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        expect.objectContaining({ baseCommit: fakeCommitHash })
+      );
+
+      await WorkspaceLock.releaseLock(baseDir, { force: true });
+    });
+
+    test('tracking failure does not block the command (warning only)', async () => {
+      const planWithBase = path.join(baseDir, 'tracking-failure.plan.md');
+      await fs.writeFile(
+        planWithBase,
+        [
+          '---',
+          'id: 202',
+          'uuid: cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+          'title: Plan where tracking will fail',
+          'branch: feature/child-branch',
+          'baseBranch: feature/parent-branch',
+          'tasks: []',
+          '---',
+          '',
+        ].join('\n')
+      );
+
+      // Simulate a network failure during fetchRemoteBranch
+      vi.spyOn(git, 'fetchRemoteBranch').mockRejectedValue(
+        new Error('Network error: could not reach remote')
+      );
+
+      // setupWorkspace should succeed despite the tracking failure
+      const result = await setupWorkspace({}, baseDir, planWithBase, config, 'tim generate');
+
+      expect(result.baseDir).toBe(baseDir);
+      // setPlanBaseTracking should NOT have been called because fetch failed
+      expect(vi.mocked(setPlanBaseTracking)).not.toHaveBeenCalled();
+
+      await WorkspaceLock.releaseLock(baseDir, { force: true });
+    });
+
+    test('successful tracking: calls setPlanBaseTracking with baseCommit when base branch exists', async () => {
+      const planWithBase = path.join(baseDir, 'happy-path-tracking.plan.md');
+      await fs.writeFile(
+        planWithBase,
+        [
+          '---',
+          'id: 203',
+          'uuid: dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+          'title: Plan with non-trunk baseBranch',
+          'branch: feature/child-branch',
+          'baseBranch: feature/parent-branch',
+          'tasks: []',
+          '---',
+          '',
+        ].join('\n')
+      );
+
+      const fakeCommitHash = 'abc123def456abc123def456abc123def456abc1';
+      vi.spyOn(git, 'fetchRemoteBranch').mockResolvedValue(true);
+      vi.spyOn(git, 'remoteBranchExists').mockResolvedValue(true);
+      vi.spyOn(git, 'getMergeBase').mockResolvedValue(fakeCommitHash);
+      vi.spyOn(git, 'getUsingJj').mockResolvedValue(false);
+
+      const result = await setupWorkspace({}, baseDir, planWithBase, config, 'tim generate');
+
+      expect(result.baseDir).toBe(baseDir);
+      // setPlanBaseTracking should have been called with the computed merge-base commit
+      expect(vi.mocked(setPlanBaseTracking)).toHaveBeenCalledWith(
+        expect.anything(),
+        'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        expect.objectContaining({ baseCommit: fakeCommitHash })
+      );
+      // baseBranch was sourced from plan field (not parent), so baseBranch should NOT be in the update
+      expect(vi.mocked(setPlanBaseTracking)).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ baseBranch: expect.any(String) })
+      );
+
+      await WorkspaceLock.releaseLock(baseDir, { force: true });
+    });
+
+    test('deleted remote base branch: setPlanBaseTracking is NOT called when remoteBranchExists returns false', async () => {
+      const planWithBase = path.join(baseDir, 'deleted-remote.plan.md');
+      await fs.writeFile(
+        planWithBase,
+        [
+          '---',
+          'id: 204',
+          'uuid: eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+          'title: Plan with deleted remote base',
+          'branch: feature/child-branch',
+          'baseBranch: feature/parent-branch',
+          'tasks: []',
+          '---',
+          '',
+        ].join('\n')
+      );
+
+      vi.spyOn(git, 'fetchRemoteBranch').mockResolvedValue(true);
+      vi.spyOn(git, 'remoteBranchExists').mockResolvedValue(false);
+
+      const result = await setupWorkspace({}, baseDir, planWithBase, config, 'tim generate');
+
+      expect(result.baseDir).toBe(baseDir);
+      // Base branch doesn't exist on remote → no tracking update
+      expect(vi.mocked(setPlanBaseTracking)).not.toHaveBeenCalled();
+
+      await WorkspaceLock.releaseLock(baseDir, { force: true });
+    });
+
+    test('null merge-base does not call setPlanBaseTracking with baseCommit for plan-sourced baseBranch', async () => {
+      const planWithBase = path.join(baseDir, 'null-merge-base.plan.md');
+      await fs.writeFile(
+        planWithBase,
+        [
+          '---',
+          'id: 205',
+          'uuid: ffffffff-ffff-4fff-8fff-ffffffffffff',
+          'title: Plan where getMergeBase returns null',
+          'branch: feature/child-branch',
+          'baseBranch: feature/parent-branch',
+          'tasks: []',
+          '---',
+          '',
+        ].join('\n')
+      );
+
+      vi.spyOn(git, 'fetchRemoteBranch').mockResolvedValue(true);
+      vi.spyOn(git, 'remoteBranchExists').mockResolvedValue(true);
+      // getMergeBase returns null (transient failure)
+      vi.spyOn(git, 'getMergeBase').mockResolvedValue(null);
+
+      const result = await setupWorkspace({}, baseDir, planWithBase, config, 'tim generate');
+
+      expect(result.baseDir).toBe(baseDir);
+      // For plan-sourced baseBranch with null merge-base, no tracking call should be made
+      expect(vi.mocked(setPlanBaseTracking)).not.toHaveBeenCalled();
+
+      await WorkspaceLock.releaseLock(baseDir, { force: true });
+    });
+
+    test('parent-derived baseBranch: setPlanBaseTracking called with baseBranch and baseCommit when remote exists', async () => {
+      // Initialize a git repo so resolvePlanFromDb can locate the project
+      await Bun.$`git init`.cwd(baseDir).quiet();
+      await Bun.$`git remote add origin https://example.com/test/repo.git`.cwd(baseDir).quiet();
+
+      // Create parent plan in DB with a branch
+      await writePlanFile(
+        null,
+        {
+          id: 206,
+          uuid: '20620620-2062-4062-8062-206206206206',
+          title: 'Parent plan with branch',
+          branch: 'feature/parent-branch',
+          status: 'pending',
+          tasks: [],
+        },
+        { cwdForIdentity: baseDir }
+      );
+
+      // Child plan file that has parent set but no baseBranch
+      const childPlanFile = path.join(baseDir, 'child-plan.plan.md');
+      await fs.writeFile(
+        childPlanFile,
+        [
+          '---',
+          'id: 207',
+          'uuid: 20720720-2072-4072-8072-207207207207',
+          'title: Child plan with parent-derived baseBranch',
+          'branch: feature/child-branch',
+          'parent: 206',
+          'tasks: []',
+          '---',
+          '',
+        ].join('\n')
+      );
+
+      const fakeCommitHash = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
+      vi.spyOn(git, 'fetchRemoteBranch').mockResolvedValue(true);
+      vi.spyOn(git, 'remoteBranchExists').mockResolvedValue(true);
+      vi.spyOn(git, 'getMergeBase').mockResolvedValue(fakeCommitHash);
+      vi.spyOn(git, 'getUsingJj').mockResolvedValue(false);
+
+      const result = await setupWorkspace({}, baseDir, childPlanFile, config, 'tim generate');
+
+      expect(result.baseDir).toBe(baseDir);
+      // For parent-derived baseBranch, both baseBranch and baseCommit should be persisted
+      expect(vi.mocked(setPlanBaseTracking)).toHaveBeenCalledWith(
+        expect.anything(),
+        '20720720-2072-4072-8072-207207207207',
+        expect.objectContaining({
+          baseBranch: 'feature/parent-branch',
+          baseCommit: fakeCommitHash,
+        })
+      );
+
+      await WorkspaceLock.releaseLock(baseDir, { force: true });
+    });
+
+    test('parent-derived baseBranch with null merge-base: persists baseBranch only', async () => {
+      // Initialize a git repo so resolvePlanFromDb can locate the project
+      await Bun.$`git init`.cwd(baseDir).quiet();
+      await Bun.$`git remote add origin https://example.com/test/repo.git`.cwd(baseDir).quiet();
+
+      // Create parent plan in DB with a branch
+      await writePlanFile(
+        null,
+        {
+          id: 208,
+          uuid: '20820820-2082-4082-8082-208208208208',
+          title: 'Parent plan for null merge-base test',
+          branch: 'feature/parent-branch-2',
+          status: 'pending',
+          tasks: [],
+        },
+        { cwdForIdentity: baseDir }
+      );
+
+      // Child plan file with parent set but no baseBranch
+      const childPlanFile = path.join(baseDir, 'child-plan-null-merge.plan.md');
+      await fs.writeFile(
+        childPlanFile,
+        [
+          '---',
+          'id: 209',
+          'uuid: 20920920-2092-4092-8092-209209209209',
+          'title: Child plan with null merge-base',
+          'branch: feature/child-branch-2',
+          'parent: 208',
+          'tasks: []',
+          '---',
+          '',
+        ].join('\n')
+      );
+
+      vi.spyOn(git, 'fetchRemoteBranch').mockResolvedValue(true);
+      vi.spyOn(git, 'remoteBranchExists').mockResolvedValue(true);
+      // getMergeBase returns null
+      vi.spyOn(git, 'getMergeBase').mockResolvedValue(null);
+
+      const result = await setupWorkspace({}, baseDir, childPlanFile, config, 'tim generate');
+
+      expect(result.baseDir).toBe(baseDir);
+      // For parent-derived baseBranch with null merge-base, only baseBranch should be persisted
+      expect(vi.mocked(setPlanBaseTracking)).toHaveBeenCalledWith(
+        expect.anything(),
+        '20920920-2092-4092-8092-209209209209',
+        expect.objectContaining({ baseBranch: 'feature/parent-branch-2' })
+      );
+      // baseCommit should NOT be in the call (null merge-base means we can't compute it)
+      const calls = vi.mocked(setPlanBaseTracking).mock.calls;
+      const update = calls[0]?.[2] as Record<string, unknown>;
+      expect(update).not.toHaveProperty('baseCommit');
+
+      await WorkspaceLock.releaseLock(baseDir, { force: true });
+    });
+
+    test('parent-derived baseBranch uses generated branch name when parent has no explicit branch', async () => {
+      // This tests the Task 11 fix: getParentPlanBranch() should return
+      // parentPlan.plan.branch ?? generateBranchNameFromPlan(parentPlan.plan)
+      // when the parent plan has no explicit branch field set.
+      await Bun.$`git init`.cwd(baseDir).quiet();
+      await Bun.$`git remote add origin https://example.com/test/repo.git`.cwd(baseDir).quiet();
+
+      // Create parent plan in DB WITHOUT an explicit branch — only id and title
+      // generateBranchNameFromPlan({ id: 214, title: 'Parent without explicit branch' })
+      // => slugify('Parent without explicit branch') = 'parent-without-explicit-branch'
+      // => '214-parent-without-explicit-branch'
+      await writePlanFile(
+        null,
+        {
+          id: 214,
+          uuid: '21421421-2142-4142-8142-214214214214',
+          title: 'Parent without explicit branch',
+          status: 'pending',
+          tasks: [],
+          // NOTE: no 'branch' field — forces fallback to generateBranchNameFromPlan
+        },
+        { cwdForIdentity: baseDir }
+      );
+
+      // Child plan that references the parent but has no baseBranch itself
+      const childPlanFile = path.join(baseDir, 'child-no-parent-branch.plan.md');
+      await fs.writeFile(
+        childPlanFile,
+        [
+          '---',
+          'id: 215',
+          'uuid: 21521521-2152-4152-8152-215215215215',
+          'title: Child plan referencing branchless parent',
+          'branch: feature/child-branchless-parent',
+          'parent: 214',
+          'tasks: []',
+          '---',
+          '',
+        ].join('\n')
+      );
+
+      const fakeCommitHash = 'aabbccddaabbccddaabbccddaabbccddaabbccdd';
+      vi.spyOn(git, 'fetchRemoteBranch').mockResolvedValue(true);
+      vi.spyOn(git, 'remoteBranchExists').mockResolvedValue(true);
+      vi.spyOn(git, 'getMergeBase').mockResolvedValue(fakeCommitHash);
+      vi.spyOn(git, 'getUsingJj').mockResolvedValue(false);
+
+      const result = await setupWorkspace({}, baseDir, childPlanFile, config, 'tim generate');
+
+      expect(result.baseDir).toBe(baseDir);
+      // The base branch should be the GENERATED name from the parent plan, not undefined
+      expect(vi.mocked(setPlanBaseTracking)).toHaveBeenCalledWith(
+        expect.anything(),
+        '21521521-2152-4152-8152-215215215215',
+        expect.objectContaining({
+          baseBranch: '214-parent-without-explicit-branch',
+          baseCommit: fakeCommitHash,
+        })
+      );
+
+      await WorkspaceLock.releaseLock(baseDir, { force: true });
+    });
+
+    test('checkoutBranch alone (no plan baseBranch, no options.base) does not trigger tracking', async () => {
+      // This verifies that checkoutBranch is checkout-only and never becomes the stacking base.
+      const planNoBase = path.join(baseDir, 'checkout-only-no-base.plan.md');
+      await fs.writeFile(
+        planNoBase,
+        [
+          '---',
+          'id: 211',
+          'uuid: 21121121-2112-4112-8112-211211211211',
+          'title: Plan without any baseBranch',
+          'branch: feature/self-branch',
+          'tasks: []',
+          '---',
+          '',
+        ].join('\n')
+      );
+
+      const fetchRemoteBranchSpy = vi.spyOn(git, 'fetchRemoteBranch').mockResolvedValue(true);
+
+      await setupWorkspace(
+        { checkoutBranch: 'feature/self-branch' },
+        baseDir,
+        planNoBase,
+        config,
+        'tim generate'
+      );
+
+      // checkoutBranch must not become the stacking base — tracking should be skipped entirely
+      expect(fetchRemoteBranchSpy).not.toHaveBeenCalled();
+      expect(vi.mocked(setPlanBaseTracking)).not.toHaveBeenCalled();
+
+      await WorkspaceLock.releaseLock(baseDir, { force: true });
+    });
+
+    test('JJ repos include baseChangeId in tracking update', async () => {
+      const planWithBase = path.join(baseDir, 'jj-tracking.plan.md');
+      await fs.writeFile(
+        planWithBase,
+        [
+          '---',
+          'id: 212',
+          'uuid: 21221221-2122-4122-8122-212212212212',
+          'title: Plan for JJ tracking',
+          'branch: feature/child-jj',
+          'baseBranch: feature/parent-jj',
+          'tasks: []',
+          '---',
+          '',
+        ].join('\n')
+      );
+
+      const fakeCommitHash = 'cafebabecafebabecafebabecafebabecafebabe';
+      const fakeChangeId = 'kwrqmzxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+      vi.spyOn(git, 'fetchRemoteBranch').mockResolvedValue(true);
+      vi.spyOn(git, 'remoteBranchExists').mockResolvedValue(true);
+      vi.spyOn(git, 'getMergeBase').mockResolvedValue(fakeCommitHash);
+      vi.spyOn(git, 'getUsingJj').mockResolvedValue(true);
+      const getJjChangeIdSpy = vi.spyOn(git, 'getJjChangeId').mockResolvedValue(fakeChangeId);
+
+      const result = await setupWorkspace({}, baseDir, planWithBase, config, 'tim generate');
+
+      expect(result.baseDir).toBe(baseDir);
+      // JJ path should call getJjChangeId with the computed merge-base commit
+      expect(getJjChangeIdSpy).toHaveBeenCalledWith(baseDir, fakeCommitHash);
+      // Tracking update should include both baseCommit and baseChangeId
+      expect(vi.mocked(setPlanBaseTracking)).toHaveBeenCalledWith(
+        expect.anything(),
+        '21221221-2122-4122-8122-212212212212',
+        expect.objectContaining({
+          baseCommit: fakeCommitHash,
+          baseChangeId: fakeChangeId,
+        })
+      );
+
+      await WorkspaceLock.releaseLock(baseDir, { force: true });
+    });
+
+    test('options.base as stacking source saves both baseCommit and baseBranch in update', async () => {
+      // When options.base is used (baseBranchSource === 'option'), the explicit stacking
+      // base should be persisted to the plan so later commands know which branch the
+      // tracking data belongs to.
+      const planNoBaseBranch = path.join(baseDir, 'option-base-tracking.plan.md');
+      await fs.writeFile(
+        planNoBaseBranch,
+        [
+          '---',
+          'id: 213',
+          'uuid: 21321321-2132-4132-8132-213213213213',
+          'title: Plan without baseBranch in file',
+          'branch: feature/child-option',
+          'tasks: []',
+          '---',
+          '',
+        ].join('\n')
+      );
+
+      const fakeCommitHash = 'beefbeefbeefbeefbeefbeefbeefbeefbeefbeef';
+      vi.spyOn(git, 'fetchRemoteBranch').mockResolvedValue(true);
+      vi.spyOn(git, 'remoteBranchExists').mockResolvedValue(true);
+      vi.spyOn(git, 'getMergeBase').mockResolvedValue(fakeCommitHash);
+      vi.spyOn(git, 'getUsingJj').mockResolvedValue(false);
+
+      await setupWorkspace(
+        { base: 'feature/option-base' },
+        baseDir,
+        planNoBaseBranch,
+        config,
+        'tim generate'
+      );
+
+      expect(vi.mocked(setPlanBaseTracking)).toHaveBeenCalledWith(
+        expect.anything(),
+        '21321321-2132-4132-8132-213213213213',
+        expect.objectContaining({
+          baseCommit: fakeCommitHash,
+          baseBranch: 'feature/option-base',
+        })
+      );
+
+      await WorkspaceLock.releaseLock(baseDir, { force: true });
+    });
+
+    test('workspace checkout uses checkoutBranch while tracking still uses plan baseBranch', async () => {
+      const existingWorkspacePath = path.join(tempDir, 'workspace-existing-checkout-vs-tracking');
+      await fs.mkdir(existingWorkspacePath, { recursive: true });
+      await seedWorkspace(existingWorkspacePath, 'task-existing-checkout-vs-tracking');
+
+      const planWithTrackedBase = path.join(baseDir, 'checkout-vs-tracking.plan.md');
+      await fs.writeFile(
+        planWithTrackedBase,
+        [
+          '---',
+          'id: 210',
+          'uuid: 21021021-0210-4210-8210-210210210210',
+          'title: Checkout branch separate from stacking base',
+          'branch: feature/child-branch',
+          'baseBranch: feature/stack-base',
+          'tasks: []',
+          '---',
+          '',
+        ].join('\n')
+      );
+
+      const prepareSpy = vi.spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({
+        success: true,
+      });
+      vi.spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
+        hasChanges: false,
+        checkFailed: false,
+      });
+      vi.spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
+      vi.spyOn(git, 'fetchRemoteBranch').mockResolvedValue(true);
+      vi.spyOn(git, 'remoteBranchExists').mockResolvedValue(true);
+      const mergeBaseSpy = vi
+        .spyOn(git, 'getMergeBase')
+        .mockResolvedValue('2222222222222222222222222222222222222222');
+      vi.spyOn(git, 'getUsingJj').mockResolvedValue(false);
+
+      await setupWorkspace(
+        {
+          workspace: 'task-existing-checkout-vs-tracking',
+          checkoutBranch: 'feature/checkout-only',
+        },
+        baseDir,
+        planWithTrackedBase,
+        config,
+        'tim generate'
+      );
+
+      expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
+        baseBranch: 'feature/checkout-only',
+        branchName: 'feature/child-branch',
+        planFilePath: planWithTrackedBase,
+        createBranch: true,
+        reuseExistingBranch: false,
+        primaryWorkspacePath: baseDir,
+      });
+      expect(mergeBaseSpy).toHaveBeenCalledWith(
+        existingWorkspacePath,
+        'feature/stack-base',
+        'feature/child-branch'
+      );
+    });
   });
 });

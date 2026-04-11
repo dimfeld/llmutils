@@ -484,7 +484,7 @@ describe('handleChatCommand', () => {
       planId: 123,
       planUuid: '11111111-1111-4111-8111-111111111111',
       createBranch: false,
-      base: 'plan-derived-branch',
+      checkoutBranch: 'plan-derived-branch',
     });
     expect(vi.mocked(setupWorkspace).mock.calls[0][2]).toBe('/repo-root/tasks/123-test.plan.md');
     expect(vi.mocked(runWithHeadlessAdapterIfEnabled).mock.calls[0][0]).toMatchObject({
@@ -518,7 +518,7 @@ describe('handleChatCommand', () => {
       planId: 123,
       planUuid: '11111111-1111-4111-8111-111111111111',
       createBranch: false,
-      base: 'plan-derived-branch',
+      checkoutBranch: 'plan-derived-branch',
     });
     expect(vi.mocked(resolvePlanFromDbOrSyncFile)).toHaveBeenCalledWith(
       '123',
@@ -576,7 +576,7 @@ describe('handleChatCommand', () => {
 
     expect(vi.mocked(generateBranchNameFromPlan)).not.toHaveBeenCalled();
     expect(vi.mocked(setupWorkspace).mock.calls[0][0]).toMatchObject({
-      base: 'explicit-branch',
+      checkoutBranch: 'explicit-branch',
     });
   });
 

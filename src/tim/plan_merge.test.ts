@@ -163,6 +163,25 @@ describe('mergeTasksIntoPlan', () => {
     expect(merged.tasks[2].title).toBe('New Task Without ID');
   });
 
+  test('preserves baseCommit and baseChangeId fields', async () => {
+    const planWithBaseTracking: PlanSchema = {
+      ...basePlan,
+      baseBranch: 'feature-parent',
+      baseCommit: 'abc123def456',
+      baseChangeId: 'jj-change-xyz',
+    };
+
+    const newPlanData: Partial<PlanSchema> = {
+      title: 'Updated Title',
+      tasks: planWithBaseTracking.tasks,
+    };
+
+    const merged = await mergeTasksIntoPlan(newPlanData, planWithBaseTracking);
+    expect(merged.baseBranch).toBe('feature-parent');
+    expect(merged.baseCommit).toBe('abc123def456');
+    expect(merged.baseChangeId).toBe('jj-change-xyz');
+  });
+
   test('allows pending tasks to be reordered using task IDs', async () => {
     const reorderPlan: PlanSchema = {
       ...basePlan,

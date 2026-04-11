@@ -7,7 +7,7 @@
 import { $ } from 'bun';
 import { readFile, writeFile, mkdir, stat, access, rename } from 'node:fs/promises';
 import { join } from 'node:path';
-import { getUsingJj, getTrunkBranch } from '../common/git.js';
+import { getMergeBase, getUsingJj, getTrunkBranch } from '../common/git.js';
 import { warn } from '../logging.js';
 
 /**
@@ -553,15 +553,8 @@ async function generateRegularDiffForReview(
     // Use merge-base revset to only show changes on this branch since it diverged
     const mergeBaseRevset = `heads(::@ & ::${safeBranch})`;
     try {
-      // Resolve the merge-base revset to a concrete commit hash
-      const mergeBaseResolveResult =
-        await $`jj log -r ${mergeBaseRevset} --no-graph -T commit_id --limit 1`
-          .cwd(gitRoot)
-          .nothrow()
-          .quiet();
-      if (mergeBaseResolveResult.exitCode === 0) {
-        mergeBaseCommit = mergeBaseResolveResult.stdout.toString().trim();
-      }
+      mergeBaseCommit =
+        (await getMergeBase(gitRoot, safeBranch, 'HEAD', { useRemoteRef: false })) ?? undefined;
 
       // Get list of changed files
       const filesResult = await $`jj diff --from ${mergeBaseRevset} --summary`
@@ -616,16 +609,10 @@ async function generateRegularDiffForReview(
     // Use git commands for diff generation
     try {
       // Find the merge-base to only show changes on this branch since it diverged
-      const mergeBaseResult = await $`git merge-base ${safeBranch} HEAD`
-        .cwd(gitRoot)
-        .nothrow()
-        .quiet();
-      if (mergeBaseResult.exitCode !== 0) {
-        throw new Error(
-          `git merge-base command failed (exit code ${mergeBaseResult.exitCode}): ${mergeBaseResult.stderr.toString()}`
-        );
+      const mergeBase = await getMergeBase(gitRoot, safeBranch, 'HEAD', { useRemoteRef: false });
+      if (!mergeBase) {
+        throw new Error(`Failed to resolve merge-base against ${safeBranch}`);
       }
-      const mergeBase = mergeBaseResult.stdout.toString().trim();
       mergeBaseCommit = mergeBase;
 
       // Get list of changed files

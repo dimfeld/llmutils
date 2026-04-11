@@ -72,6 +72,8 @@ type EditablePlanField =
   | 'discoveredFrom'
   | 'assignedTo'
   | 'baseBranch'
+  | 'baseCommit'
+  | 'baseChangeId'
   | 'temp'
   | 'epic'
   | 'planGeneratedAt'
@@ -105,6 +107,8 @@ const EDITABLE_PLAN_FIELDS = [
   'discoveredFrom',
   'assignedTo',
   'baseBranch',
+  'baseCommit',
+  'baseChangeId',
   'temp',
   'epic',
   'planGeneratedAt',

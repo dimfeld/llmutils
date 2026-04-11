@@ -187,6 +187,12 @@
     "baseBranch": {
       "type": "string"
     },
+    "baseCommit": {
+      "type": "string"
+    },
+    "baseChangeId": {
+      "type": "string"
+    },
     "branch": {
       "type": "string"
     },

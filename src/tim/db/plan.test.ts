@@ -15,6 +15,8 @@ import {
   getPlanTagsByUuid,
   getPlanTasksByProject,
   getPlanTasksByUuid,
+  clearPlanBaseTracking,
+  setPlanBaseTracking,
   upsertPlan,
   upsertPlanDependencies,
   upsertPlanTasks,
@@ -240,6 +242,68 @@ describe('tim db/plan', () => {
     found = getPlanByUuid(db, 'plan-branch');
     expect(found).not.toBeNull();
     expect(found?.branch).toBeNull();
+  });
+
+  test('upsertPlan stores and updates base tracking fields', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-base',
+      planId: 81,
+      baseBranch: 'feature/base',
+      baseCommit: 'abc123',
+      baseChangeId: 'xyzzzz',
+    });
+
+    let found = getPlanByUuid(db, 'plan-base');
+    expect(found?.base_branch).toBe('feature/base');
+    expect(found?.base_commit).toBe('abc123');
+    expect(found?.base_change_id).toBe('xyzzzz');
+
+    upsertPlan(db, projectId, {
+      uuid: 'plan-base',
+      planId: 82,
+      baseBranch: null,
+      baseCommit: null,
+      baseChangeId: null,
+    });
+
+    found = getPlanByUuid(db, 'plan-base');
+    expect(found?.base_branch).toBeNull();
+    expect(found?.base_commit).toBeNull();
+    expect(found?.base_change_id).toBeNull();
+  });
+
+  test('setPlanBaseTracking updates only provided fields and clearPlanBaseTracking clears all', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-base-tracking',
+      planId: 83,
+      baseBranch: 'feature/base',
+      baseCommit: 'commit-1',
+      baseChangeId: 'change-1',
+    });
+
+    setPlanBaseTracking(db, 'plan-base-tracking', {
+      baseCommit: 'commit-2',
+    });
+
+    let found = getPlanByUuid(db, 'plan-base-tracking');
+    expect(found?.base_branch).toBe('feature/base');
+    expect(found?.base_commit).toBe('commit-2');
+    expect(found?.base_change_id).toBe('change-1');
+
+    setPlanBaseTracking(db, 'plan-base-tracking', {
+      baseBranch: 'feature/other',
+      baseChangeId: null,
+    });
+    found = getPlanByUuid(db, 'plan-base-tracking');
+    expect(found?.base_branch).toBe('feature/other');
+    expect(found?.base_commit).toBe('commit-2');
+    expect(found?.base_change_id).toBeNull();
+
+    clearPlanBaseTracking(db, 'plan-base-tracking');
+    found = getPlanByUuid(db, 'plan-base-tracking');
+    expect(found?.base_branch).toBeNull();
+    expect(found?.base_commit).toBeNull();
+    expect(found?.base_change_id).toBeNull();
   });
 
   test('getPlanTasksByUuid returns tasks ordered by task_index', () => {

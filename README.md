@@ -184,7 +184,7 @@ The command:
 
 1. Resolves the plan's branch (from the `branch` field or calculated from the plan title)
 2. Fetches the latest from origin and ensures the local branch is up to date
-3. Rebases the branch onto the trunk branch (auto-detected via `getTrunkBranch()`)
+3. Determines the rebase target (see **Stacked PR support** below)
 4. If conflicts arise, lazily launches an LLM executor in bare mode with VCS-specific conflict resolution prompts
 5. Verifies conflicts are resolved after the executor session (errors if not; aborts the rebase for Git)
 6. Force-pushes the rebased branch back to origin (`--force-with-lease` for Git, native for Jujutsu)
@@ -196,9 +196,37 @@ tim rebase --next                             # Rebase the next ready plan's bra
 tim rebase 123 --no-push                      # Rebase without pushing
 tim rebase 123 --executor claude-code         # Specify executor for conflict resolution
 tim rebase 123 --auto-workspace               # Use auto-workspace (web UI mode)
+tim rebase 123 --base feature/parent-branch   # Rebase onto a specific base branch
 ```
 
 The web interface also provides a **Rebase** button on the plan detail page for plans in `in_progress`, `needs_review`, or `done` states.
+
+### Stacked PR Support
+
+For stacked PRs, tim tracks the base branch and commit so that rebases target the correct branch instead of always using trunk.
+
+**Base branch resolution** (in priority order):
+
+1. `--base <branch>` — explicit override. The branch must exist on the remote (errors if not). If it equals the trunk branch, base tracking fields are cleared. The branch is rejected if it matches the plan's own branch.
+2. Plan's `baseBranch` field — if set and not trunk, tim fetches the branch and checks if it still exists on the remote. If it exists, rebase targets it. If deleted, rebase falls back to trunk and clears all base tracking fields (`baseBranch`, `baseCommit`, `baseChangeId`).
+3. Trunk branch — default behavior when no base branch is configured.
+
+After a successful rebase, `baseCommit` (and `baseChangeId` for JJ repos) are updated to the new merge-base with the target branch. When rebasing onto trunk, all base tracking fields are cleared.
+
+**Setting base tracking via `tim set`:**
+
+```bash
+tim set 123 --base-branch feature/parent      # Set the base branch
+tim set 123 --no-base-branch                  # Clear base branch + all tracking fields
+tim set 123 --base-commit abc123              # Set base commit directly
+tim set 123 --no-base-commit                  # Clear base commit only
+tim set 123 --base-change-id xyz              # Set JJ base change ID
+tim set 123 --no-base-change-id               # Clear JJ change ID only
+```
+
+`--no-base-branch` cascades to also clear `baseCommit` and `baseChangeId`. Changing `--base-branch` to a new value clears stale `baseCommit`/`baseChangeId` since they reference the old branch.
+
+**Automatic base tracking:** During workspace setup (before `tim agent`, `tim generate`, `tim chat`), if a plan has a non-trunk `baseBranch`, tim proactively updates `baseCommit` and `baseChangeId` to the current merge-base. When a parent plan's branch is used as the base (derived from `parent` field), the `baseBranch` is automatically persisted after verifying the branch exists on the remote. This is best-effort — failures are logged as warnings and never block the command.
 
 ## Lifecycle Commands
 

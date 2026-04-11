@@ -92,6 +92,8 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
     materializedAs: z.enum(['primary', 'reference']).optional(),
     tasks: z.array(taskSchema),
     baseBranch: z.string().optional(),
+    baseCommit: z.string().optional(),
+    baseChangeId: z.string().optional(),
     branch: z.string().optional(),
     changedFiles: z.array(z.string()).optional(),
     tags: z.array(z.string()).optional(),

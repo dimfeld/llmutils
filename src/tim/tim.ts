@@ -374,7 +374,7 @@ program
     '--nw, --new-workspace',
     'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
   )
-  .option('--base <ref>', 'Base branch or revision to checkout in workspace')
+  .option('--base <ref>', 'Base branch for workspace checkout and stacking base tracking')
   .option('--no-workspace-sync', 'Disable automatic workspace round-trip sync')
   .option('--non-interactive', 'Do not prompt for user input (e.g., when clearing stale locks)')
   .option(
@@ -482,7 +482,7 @@ program
     '--nw, --new-workspace',
     'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
   )
-  .option('--base <ref>', 'Base branch or revision to checkout in workspace')
+  .option('--base <ref>', 'Base branch for workspace checkout and stacking base tracking')
   .option('--no-workspace-sync', 'Disable automatic workspace round-trip sync')
   .option('--non-interactive', 'Do not prompt for user input (e.g., when clearing stale locks)')
   .option('--no-terminal-input', 'Disable terminal input forwarding during finalization')
@@ -618,7 +618,7 @@ function createAgentCommand(command: Command, description: string) {
       '--nw, --new-workspace',
       'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
     )
-    .option('--base <ref>', 'Base branch or revision to checkout in workspace')
+    .option('--base <ref>', 'Base branch for workspace checkout and stacking base tracking')
     .option('--no-workspace-sync', 'Disable automatic workspace round-trip sync')
     .option('--non-interactive', 'Do not prompt for user input (e.g., when clearing stale locks)')
     .option(
@@ -695,7 +695,7 @@ program
     '--nw, --new-workspace',
     'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
   )
-  .option('--base <ref>', 'Base branch or revision to checkout in workspace')
+  .option('--base <ref>', 'Base branch for workspace checkout and stacking base tracking')
   .option('--no-workspace-sync', 'Disable automatic workspace round-trip sync')
   .option('--commit', 'Commit changes to jj/git after successful chat execution')
   .option('--plan <plan>', 'Associate chat with a plan for branch/workspace assignment')
@@ -858,6 +858,7 @@ program
   .description('Rebase a plan branch onto the latest main/trunk branch')
   .option('--current', 'Use the current plan')
   .option('--next', 'Use the next ready plan')
+  .option('--base <branch>', 'Base branch to rebase onto instead of trunk')
   .option('-x, --executor <name>', 'Executor to use for conflict resolution')
   .option('-m, --model <model>', 'Model to use for conflict resolution')
   .option('--no-push', 'Skip pushing after rebase')
@@ -1056,6 +1057,12 @@ program
   .option('--simple', 'Mark the plan as simple')
   .option('--no-simple', 'Mark the plan as not simple')
   .option('--note <text>', 'Replace the note field with the given text')
+  .option('--base-branch <branch>', 'Set the base branch for stacked PRs')
+  .option('--no-base-branch', 'Remove the base branch and all base tracking fields')
+  .option('--base-commit <hash>', 'Set the base commit hash')
+  .option('--no-base-commit', 'Remove the base commit')
+  .option('--base-change-id <id>', 'Set the JJ base change ID')
+  .option('--no-base-change-id', 'Remove the JJ base change ID')
   .option('--details <text>', 'Replace the entire details field with the given text')
   .action(async (planFile, options, command) => {
     const { handleSetCommand } = await import('./commands/set.js');
@@ -1112,6 +1119,18 @@ program
     }
 
     options.parent = intArg(options.parent);
+    if (options.baseBranch === false) {
+      options.noBaseBranch = true;
+      options.baseBranch = undefined;
+    }
+    if (options.baseCommit === false) {
+      options.noBaseCommit = true;
+      options.baseCommit = undefined;
+    }
+    if (options.baseChangeId === false) {
+      options.noBaseChangeId = true;
+      options.baseChangeId = undefined;
+    }
     await handleSetCommand(planFile, options, command.parent.opts()).catch(handleCommandError);
   });
 

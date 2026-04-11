@@ -26,6 +26,7 @@ import { checkAndMarkParentDone } from '../plans/parent_cascade.js';
 import { resolveWritablePath } from '../plans/resolve_writable_path.js';
 import { ensureReferences } from '../utils/references.js';
 import { findPlanFileOnDiskAsync } from '../plans/find_plan_file.js';
+import { generateBranchNameFromPlan } from './branch.js';
 
 export interface SetOptions {
   planFile: string;
@@ -51,6 +52,12 @@ export interface SetOptions {
   noEpic?: boolean;
   simple?: boolean;
   details?: string;
+  baseBranch?: string;
+  noBaseBranch?: boolean;
+  baseCommit?: string;
+  noBaseCommit?: boolean;
+  baseChangeId?: string;
+  noBaseChangeId?: boolean;
 }
 
 export async function handleSetCommand(
@@ -269,6 +276,71 @@ export async function handleSetCommand(
       plan.note = options.note;
       modified = true;
       log(`Updated note`);
+    }
+
+    if (options.baseBranch !== undefined) {
+      const effectiveBranch = plan.branch ?? generateBranchNameFromPlan(plan);
+      if (options.baseBranch === effectiveBranch) {
+        throw new Error(
+          `Base branch "${options.baseBranch}" is the same as the plan's own branch. A plan cannot use its own branch as its base.`
+        );
+      }
+      if (plan.baseBranch !== options.baseBranch) {
+        // Clear stale tracking data since it refers to the merge-base with the old branch
+        delete plan.baseCommit;
+        delete plan.baseChangeId;
+      }
+      plan.baseBranch = options.baseBranch;
+      modified = true;
+      log(`Set baseBranch to ${options.baseBranch}`);
+    }
+
+    if (options.noBaseBranch) {
+      if (
+        plan.baseBranch !== undefined ||
+        plan.baseCommit !== undefined ||
+        plan.baseChangeId !== undefined
+      ) {
+        delete plan.baseBranch;
+        delete plan.baseCommit;
+        delete plan.baseChangeId;
+        modified = true;
+        log('Removed baseBranch and all base tracking fields');
+      } else {
+        log('No baseBranch to remove');
+      }
+    }
+
+    if (options.baseCommit !== undefined) {
+      plan.baseCommit = options.baseCommit;
+      modified = true;
+      log(`Set baseCommit to ${options.baseCommit}`);
+    }
+
+    if (options.noBaseCommit) {
+      if (plan.baseCommit !== undefined) {
+        delete plan.baseCommit;
+        modified = true;
+        log('Removed baseCommit');
+      } else {
+        log('No baseCommit to remove');
+      }
+    }
+
+    if (options.baseChangeId !== undefined) {
+      plan.baseChangeId = options.baseChangeId;
+      modified = true;
+      log(`Set baseChangeId to ${options.baseChangeId}`);
+    }
+
+    if (options.noBaseChangeId) {
+      if (plan.baseChangeId !== undefined) {
+        delete plan.baseChangeId;
+        modified = true;
+        log('Removed baseChangeId');
+      } else {
+        log('No baseChangeId to remove');
+      }
     }
 
     if (!modified) {

@@ -58,6 +58,7 @@ export async function resolvePlanFromDbOrSyncFile(
     await syncPlanToDb(plan, {
       cwdForIdentity: repoRoot,
       throwOnError: true,
+      preserveBaseTracking: true,
     });
     const resolved = await resolvePlanFromDb(plan.uuid, repoRoot, { resolveDir: configBaseDir });
     return {

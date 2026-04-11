@@ -77,6 +77,8 @@ export function planRowToSchemaInput(
     tdd: row.tdd === 1 ? true : undefined,
     discoveredFrom: row.discovered_from ?? undefined,
     baseBranch: row.base_branch ?? undefined,
+    baseCommit: row.base_commit ?? undefined,
+    baseChangeId: row.base_change_id ?? undefined,
     epic: row.epic === 1 ? true : undefined,
     assignedTo: row.assigned_to ?? undefined,
     issue: parseOptionalStringArray(row.issue),
