@@ -12,6 +12,10 @@ export interface ServerContext {
 let serverContextPromise: Promise<ServerContext> | null = null;
 
 async function initializeServerContext(): Promise<ServerContext> {
+  // The web UI spans multiple repositories at once ("all projects", cross-project dashboards,
+  // session views, etc.), so the shared server context must not eagerly bind itself to any
+  // single repository's effective config. Repository-specific config is loaded later by callers
+  // that already know which repo/workspace they are operating on.
   const config = await loadGlobalConfigForNotifications();
   const db = getDatabase();
 
@@ -22,6 +26,8 @@ async function initializeServerContext(): Promise<ServerContext> {
 }
 
 export async function getServerContext(): Promise<ServerContext> {
+  // This intentionally returns global-only config plus the shared DB handle.
+  // Do not treat `config` here as the effective repo config for a particular project.
   serverContextPromise ??= initializeServerContext().catch((error) => {
     serverContextPromise = null;
     throw error;
