@@ -1,1 +1,0 @@
-This project is designed to implement the feature: Generating a plan from --issue should set the issue field in the resulting plan files

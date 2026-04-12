@@ -47,8 +47,6 @@ rmplan-*
 .rmfilter/reviews
 .*.bun-build
 
-*.xcuserstate
-
 tim-*-failure.yml
 
 # Sveltekit Output
