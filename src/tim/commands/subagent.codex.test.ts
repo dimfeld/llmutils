@@ -13,7 +13,7 @@ import {
 const mocks = vi.hoisted(() => ({
   loadEffectiveConfig: vi.fn(),
   getGitRoot: vi.fn(),
-  resolvePlanFromDbOrSyncFile: vi.fn(),
+  resolvePlanFromDb: vi.fn(),
   buildExecutionPromptWithoutSteps: vi.fn(),
   executeCodexStep: vi.fn(),
   loadAgentInstructionsFor: vi.fn(),
@@ -29,9 +29,13 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../configLoader.js', () => ({ loadEffectiveConfig: mocks.loadEffectiveConfig }));
 vi.mock('../../common/git.js', () => ({ getGitRoot: mocks.getGitRoot }));
-vi.mock('../ensure_plan_in_db.js', () => ({
-  resolvePlanFromDbOrSyncFile: mocks.resolvePlanFromDbOrSyncFile,
-}));
+vi.mock('../plans.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../plans.js')>();
+  return {
+    ...actual,
+    resolvePlanFromDb: mocks.resolvePlanFromDb,
+  };
+});
 vi.mock('../prompt_builder.js', () => ({
   buildExecutionPromptWithoutSteps: mocks.buildExecutionPromptWithoutSteps,
 }));
@@ -109,7 +113,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
       }),
     }));
     mocks.getGitRoot.mockImplementation(async () => tempDir);
-    mocks.resolvePlanFromDbOrSyncFile.mockImplementation(async () => ({
+    mocks.resolvePlanFromDb.mockImplementation(async () => ({
       plan: currentPlanData,
       planPath: planFilePath,
     }));
@@ -143,7 +147,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
   });
 
   test('builds implementer prompt with correct context and mode: report', async () => {
-    await handleSubagentCommand('implementer', planFilePath, { executor: 'codex-cli' }, {});
+    await handleSubagentCommand('implementer', '42', { executor: 'codex-cli' }, {});
 
     expect(capturedCodexPrompt).toBeDefined();
     expect(capturedCodexPrompt!).toContain('implementer agent');
@@ -155,7 +159,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
   });
 
   test('builds tester prompt with correct context and mode: report', async () => {
-    await handleSubagentCommand('tester', planFilePath, { executor: 'codex-cli' }, {});
+    await handleSubagentCommand('tester', '42', { executor: 'codex-cli' }, {});
 
     expect(capturedCodexPrompt).toBeDefined();
     expect(capturedCodexPrompt!).toContain('testing agent');
@@ -166,7 +170,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
   });
 
   test('builds verifier prompt with correct context and mode: report', async () => {
-    await handleSubagentCommand('verifier', planFilePath, { executor: 'codex-cli' }, {});
+    await handleSubagentCommand('verifier', '42', { executor: 'codex-cli' }, {});
 
     expect(capturedCodexPrompt).toBeDefined();
     expect(capturedCodexPrompt!).toContain('verification agent');
@@ -177,7 +181,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
   });
 
   test('builds tdd-tests prompt with correct context and mode: report', async () => {
-    await handleSubagentCommand('tdd-tests', planFilePath, { executor: 'codex-cli' }, {});
+    await handleSubagentCommand('tdd-tests', '42', { executor: 'codex-cli' }, {});
 
     expect(capturedCodexPrompt).toBeDefined();
     expect(capturedCodexPrompt!).toContain('TDD test-writing agent');
@@ -192,7 +196,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
 
     await handleSubagentCommand(
       'implementer',
-      planFilePath,
+      '42',
       { executor: 'codex-cli', input: inputText },
       {}
     );
@@ -209,7 +213,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
 
     await handleSubagentCommand(
       'implementer',
-      planFilePath,
+      '42',
       { executor: 'codex-cli', inputFile: inputFilePath },
       {}
     );
@@ -224,7 +228,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
     restoreIsTTY = mockIsTTY(false);
     restoreBunStdin = mockBunStdinText('Piped instructions from orchestrator stdin.');
 
-    await handleSubagentCommand('implementer', planFilePath, { executor: 'codex-cli' }, {});
+    await handleSubagentCommand('implementer', '42', { executor: 'codex-cli' }, {});
 
     expect(capturedCodexPrompt).toBeDefined();
     expect(capturedCodexPrompt!).toContain('Piped instructions from orchestrator stdin.');
@@ -236,12 +240,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
     restoreIsTTY = mockIsTTY(false);
     restoreBunStdin = mockBunStdinText('Instructions via --input-file -');
 
-    await handleSubagentCommand(
-      'implementer',
-      planFilePath,
-      { executor: 'codex-cli', inputFile: '-' },
-      {}
-    );
+    await handleSubagentCommand('implementer', '42', { executor: 'codex-cli', inputFile: '-' }, {});
 
     expect(capturedCodexPrompt).toBeDefined();
     expect(capturedCodexPrompt!).toContain('Instructions via --input-file -');
@@ -257,7 +256,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
     await expect(
       handleSubagentCommand(
         'implementer',
-        planFilePath,
+        '42',
         { executor: 'codex-cli', input: inputText, inputFile: inputFilePath },
         {}
       )
@@ -281,7 +280,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
 
     await handleSubagentCommand(
       'implementer',
-      planFilePath,
+      '42',
       {
         executor: 'codex-cli',
         inputFile: [firstInputFilePath, secondInputFilePath],
@@ -301,7 +300,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
     const customInstructionsText = 'Always use TypeScript strict mode and run bun run check.';
     customInstructionsMap.implementer = customInstructionsText;
 
-    await handleSubagentCommand('implementer', planFilePath, { executor: 'codex-cli' }, {});
+    await handleSubagentCommand('implementer', '42', { executor: 'codex-cli' }, {});
 
     expect(capturedCodexPrompt).toBeDefined();
     expect(capturedCodexPrompt!).toContain(customInstructionsText);
@@ -314,7 +313,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
 
     await handleSubagentCommand(
       'tester',
-      planFilePath,
+      '42',
       { executor: 'codex-cli', input: orchestratorInput },
       {}
     );
@@ -330,7 +329,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
     customInstructionsMap.tester = testerInstructions;
     customInstructionsMap.reviewer = reviewerInstructions;
 
-    await handleSubagentCommand('verifier', planFilePath, { executor: 'codex-cli' }, {});
+    await handleSubagentCommand('verifier', '42', { executor: 'codex-cli' }, {});
 
     expect(capturedCodexPrompt).toBeDefined();
     expect(capturedCodexPrompt!).toContain(testerInstructions);
@@ -340,13 +339,13 @@ describe('subagent command - prompt construction and executor delegation', () =>
   });
 
   test('implementer only loads implementer instructions', async () => {
-    await handleSubagentCommand('implementer', planFilePath, { executor: 'codex-cli' }, {});
+    await handleSubagentCommand('implementer', '42', { executor: 'codex-cli' }, {});
 
     expect(agentInstructionRequests).toEqual(['implementer']);
   });
 
   test('tester only loads tester instructions', async () => {
-    await handleSubagentCommand('tester', planFilePath, { executor: 'codex-cli' }, {});
+    await handleSubagentCommand('tester', '42', { executor: 'codex-cli' }, {});
 
     expect(agentInstructionRequests).toEqual(['tester']);
   });
@@ -355,7 +354,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
     const tddInstructions = 'TDD: Prefer behavior-driven tests.';
     customInstructionsMap.tddTests = tddInstructions;
 
-    await handleSubagentCommand('tdd-tests', planFilePath, { executor: 'codex-cli' }, {});
+    await handleSubagentCommand('tdd-tests', '42', { executor: 'codex-cli' }, {});
 
     expect(agentInstructionRequests).toEqual(['tddTests']);
     expect(capturedCodexPrompt).toBeDefined();
@@ -363,7 +362,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
   });
 
   test('prints final message to stdout for codex executor', async () => {
-    await handleSubagentCommand('implementer', planFilePath, { executor: 'codex-cli' }, {});
+    await handleSubagentCommand('implementer', '42', { executor: 'codex-cli' }, {});
 
     expect(stdoutWriteCalls.join('')).toContain('Codex execution complete.');
   });
@@ -373,7 +372,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
 
     await handleSubagentCommand(
       'implementer',
-      planFilePath,
+      '42',
       { executor: 'codex-cli', outputFile: outputFilePath },
       {}
     );
@@ -384,7 +383,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
   });
 
   test('includes all incomplete tasks in the context description', async () => {
-    await handleSubagentCommand('implementer', planFilePath, { executor: 'codex-cli' }, {});
+    await handleSubagentCommand('implementer', '42', { executor: 'codex-cli' }, {});
 
     expect(capturedCodexPrompt).toBeDefined();
     expect(capturedCodexPrompt!).toContain('Implement the widget');
@@ -403,20 +402,20 @@ describe('subagent command - prompt construction and executor delegation', () =>
       ],
     };
 
-    await handleSubagentCommand('implementer', planFilePath, { executor: 'codex-cli' }, {});
+    await handleSubagentCommand('implementer', '42', { executor: 'codex-cli' }, {});
 
     expect(capturedCodexPrompt).toBeDefined();
     expect(capturedCodexPrompt!).toContain('implementer agent');
   });
 
   test('delegates to codex when executor is codex-cli', async () => {
-    await handleSubagentCommand('implementer', planFilePath, { executor: 'codex-cli' }, {});
+    await handleSubagentCommand('implementer', '42', { executor: 'codex-cli' }, {});
 
     expect(capturedCodexPrompt).toBeDefined();
   });
 
   test('enables single-turn steering for codex subagent execution', async () => {
-    await handleSubagentCommand('implementer', planFilePath, { executor: 'codex-cli' }, {});
+    await handleSubagentCommand('implementer', '42', { executor: 'codex-cli' }, {});
 
     expect(capturedCodexOptions).toEqual(
       expect.objectContaining({
@@ -434,7 +433,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
       agents: {},
     };
 
-    await handleSubagentCommand('implementer', planFilePath, { executor: 'codex-cli' }, {});
+    await handleSubagentCommand('implementer', '42', { executor: 'codex-cli' }, {});
 
     expect(capturedCodexOptions).toEqual(
       expect.objectContaining({
@@ -454,7 +453,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
 
     await handleSubagentCommand(
       'implementer',
-      planFilePath,
+      '42',
       { executor: 'codex-cli', model: 'gpt-5-override' },
       {}
     );

@@ -11,7 +11,7 @@ vi.mock('../headless.js', () => ({
 }));
 
 vi.mock('../plan_repo_root.js', () => ({
-  resolveRepoRootForPlanArg: vi.fn(),
+  resolveRepoRoot: vi.fn(),
 }));
 
 vi.mock('../../common/git.js', () => ({
@@ -35,13 +35,14 @@ vi.mock('../executors/index.js', () => ({
   DEFAULT_EXECUTOR: 'claude-code',
 }));
 
-vi.mock('../plans.js', () => ({
-  readPlanFile: vi.fn(),
-}));
-
-vi.mock('../ensure_plan_in_db.js', () => ({
-  resolvePlanFromDbOrSyncFile: vi.fn(),
-}));
+vi.mock('../plans.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../plans.js')>();
+  return {
+    ...actual,
+    readPlanFile: vi.fn(),
+    resolvePlanFromDb: vi.fn(),
+  };
+});
 
 vi.mock('../db/plan_sync.js', () => ({
   syncPlanToDb: vi.fn(),
@@ -95,7 +96,7 @@ import { buildExecutorAndLog } from '../executors/index.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
 import { watchPlanFile } from '../plan_file_watcher.js';
 import { getGitRoot } from '../../common/git.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 import { commitAll } from '../../common/process.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
 import {
@@ -103,8 +104,7 @@ import {
   runPreExecutionWorkspaceSync,
   runPostExecutionWorkspaceSync,
 } from '../workspace/workspace_roundtrip.js';
-import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
-import { readPlanFile } from '../plans.js';
+import { readPlanFile, resolvePlanFromDb } from '../plans.js';
 import { buildDescriptionFromPlan, getCombinedTitleFromSummary } from '../display_utils.js';
 import {
   getWorkspaceInfoByPath,
@@ -143,7 +143,7 @@ describe('handleChatCommand', () => {
       options.callback()
     );
     vi.mocked(getGitRoot).mockResolvedValue('/repo-root');
-    vi.mocked(resolveRepoRootForPlanArg).mockResolvedValue('/repo-root');
+    vi.mocked(resolveRepoRoot).mockResolvedValue('/repo-root');
     vi.mocked(commitAll).mockResolvedValue(0);
     vi.mocked(setupWorkspace).mockImplementation(
       async (_options: any, _baseDir: string, planFile?: string) => ({
@@ -165,7 +165,7 @@ describe('handleChatCommand', () => {
       issue: ['https://example.com/issues/42'],
       tasks: [],
     } as any);
-    vi.mocked(resolvePlanFromDbOrSyncFile).mockImplementation(async () => ({
+    vi.mocked(resolvePlanFromDb).mockImplementation(async () => ({
       plan: await vi.mocked(readPlanFile)(''),
       planPath: '/repo-root/tasks/123-test.plan.md',
     }));
@@ -456,7 +456,7 @@ describe('handleChatCommand', () => {
   test('enters workspace mode and passes workspace options through setupWorkspace', async () => {
     await handleChatCommand('hello', { workspace: 'task-123', nonInteractive: true }, {});
 
-    expect(vi.mocked(resolveRepoRootForPlanArg)).not.toHaveBeenCalled();
+    expect(vi.mocked(resolveRepoRoot)).not.toHaveBeenCalled();
     expect(vi.mocked(getGitRoot)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(setupWorkspace)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(setupWorkspace).mock.calls[0]).toEqual([
@@ -488,12 +488,8 @@ describe('handleChatCommand', () => {
   test('resolves --plan and uses plan data for workspace setup and headless metadata', async () => {
     await handleChatCommand('hello', { autoWorkspace: true, plan: '123' }, { config: 'tim.json' });
 
-    expect(vi.mocked(resolveRepoRootForPlanArg)).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(resolvePlanFromDbOrSyncFile)).toHaveBeenCalledWith(
-      '123',
-      '/repo-root',
-      '/repo-root'
-    );
+    expect(vi.mocked(resolveRepoRoot)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(resolvePlanFromDb)).toHaveBeenCalledWith('123', '/repo-root');
     expect(vi.mocked(generateBranchNameFromPlan)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(setupWorkspace).mock.calls[0][0]).toMatchObject({
       autoWorkspace: true,
@@ -536,11 +532,7 @@ describe('handleChatCommand', () => {
       createBranch: false,
       checkoutBranch: 'plan-derived-branch',
     });
-    expect(vi.mocked(resolvePlanFromDbOrSyncFile)).toHaveBeenCalledWith(
-      '123',
-      '/repo-root',
-      '/repo-root'
-    );
+    expect(vi.mocked(resolvePlanFromDb)).toHaveBeenCalledWith('123', '/repo-root');
     expect(vi.mocked(generateBranchNameFromPlan)).toHaveBeenCalledTimes(1);
   });
 
@@ -576,7 +568,7 @@ describe('handleChatCommand', () => {
   });
 
   test('uses config-derived repo root for workspace setup when --config targets another repo', async () => {
-    vi.mocked(resolveRepoRootForPlanArg).mockResolvedValue('/other-repo');
+    vi.mocked(resolveRepoRoot).mockResolvedValue('/other-repo');
     vi.mocked(loadEffectiveConfig).mockImplementation(async (_override, options) => {
       if (options?.cwd === '/other-repo') {
         return {
@@ -591,7 +583,7 @@ describe('handleChatCommand', () => {
         terminalInput: true,
       } as any;
     });
-    vi.mocked(resolvePlanFromDbOrSyncFile).mockResolvedValueOnce({
+    vi.mocked(resolvePlanFromDb).mockResolvedValueOnce({
       plan: {
         id: 123,
         uuid: '11111111-1111-4111-8111-111111111111',
@@ -605,11 +597,7 @@ describe('handleChatCommand', () => {
 
     await handleChatCommand('hello', { plan: '123' }, { config: '/other-repo/.tim.json' });
 
-    expect(vi.mocked(resolvePlanFromDbOrSyncFile)).toHaveBeenCalledWith(
-      '123',
-      '/other-repo',
-      '/other-repo'
-    );
+    expect(vi.mocked(resolvePlanFromDb)).toHaveBeenCalledWith('123', '/other-repo');
     expect(vi.mocked(setupWorkspace)).toHaveBeenCalledWith(
       expect.anything(),
       '/other-repo',
@@ -620,7 +608,7 @@ describe('handleChatCommand', () => {
   });
 
   test('cross-repo --plan uses target repo executor and config in buildExecutorAndLog', async () => {
-    vi.mocked(resolveRepoRootForPlanArg).mockResolvedValue('/other-repo');
+    vi.mocked(resolveRepoRoot).mockResolvedValue('/other-repo');
     vi.mocked(loadEffectiveConfig).mockImplementation(async (_override, options) => {
       if (options?.cwd === '/other-repo') {
         return {
@@ -634,7 +622,7 @@ describe('handleChatCommand', () => {
         terminalInput: true,
       } as any;
     });
-    vi.mocked(resolvePlanFromDbOrSyncFile).mockResolvedValueOnce({
+    vi.mocked(resolvePlanFromDb).mockResolvedValueOnce({
       plan: {
         id: 123,
         uuid: '11111111-1111-4111-8111-111111111111',
@@ -660,7 +648,7 @@ describe('handleChatCommand', () => {
   });
 
   test('--executor CLI flag overrides target repo defaultExecutor in cross-repo scenario', async () => {
-    vi.mocked(resolveRepoRootForPlanArg).mockResolvedValue('/other-repo');
+    vi.mocked(resolveRepoRoot).mockResolvedValue('/other-repo');
     vi.mocked(loadEffectiveConfig).mockImplementation(async (_override, options) => {
       if (options?.cwd === '/other-repo') {
         return {
@@ -673,7 +661,7 @@ describe('handleChatCommand', () => {
         terminalInput: true,
       } as any;
     });
-    vi.mocked(resolvePlanFromDbOrSyncFile).mockResolvedValueOnce({
+    vi.mocked(resolvePlanFromDb).mockResolvedValueOnce({
       plan: {
         id: 123,
         uuid: '11111111-1111-4111-8111-111111111111',
@@ -704,7 +692,7 @@ describe('handleChatCommand', () => {
   });
 
   test('uses explicit branch from plan data without calling generateBranchNameFromPlan', async () => {
-    vi.mocked(resolvePlanFromDbOrSyncFile).mockResolvedValue({
+    vi.mocked(resolvePlanFromDb).mockResolvedValue({
       plan: {
         id: 123,
         uuid: '11111111-1111-4111-8111-111111111111',
@@ -734,7 +722,7 @@ describe('handleChatCommand', () => {
       createBranch: false,
       planUuid: undefined,
     });
-    expect(vi.mocked(resolvePlanFromDbOrSyncFile)).not.toHaveBeenCalled();
+    expect(vi.mocked(resolvePlanFromDb)).not.toHaveBeenCalled();
   });
 
   test('throws when --base is used without workspace options', async () => {

@@ -14,8 +14,8 @@ import {
 import type { ExecutorCommonOptions } from '../executors/types.js';
 import type { PlanSchema } from '../planSchema.js';
 import { materializePlan } from '../plan_materialize.js';
-import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { parsePlanIdFromCliArg, resolvePlanFromDb } from '../plans.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 
 interface UpdateDocsPromptOptions {
   justCompletedTaskIndices?: number[];
@@ -160,10 +160,8 @@ export async function runUpdateDocs(
   let effectiveConfig: TimConfig;
   let resolvedBaseDir = options.baseDir;
   if (typeof planDataOrPath === 'string') {
-    const repoRoot =
-      options.baseDir ??
-      (await resolveRepoRootForPlanArg(planDataOrPath, process.cwd(), options.configPath));
-    const resolvedPlan = await resolvePlanFromDbOrSyncFile(planDataOrPath, repoRoot, repoRoot);
+    const repoRoot = options.baseDir ?? (await resolveRepoRoot(options.configPath, process.cwd()));
+    const resolvedPlan = await resolvePlanFromDb(planDataOrPath, repoRoot);
     planData = resolvedPlan.plan;
     planFilePath = resolvedPlan.planPath ?? (await materializePlan(resolvedPlan.plan.id, repoRoot));
     effectiveConfig = planFilePathOrConfig as TimConfig;
@@ -229,15 +227,12 @@ export async function handleUpdateDocsCommand(
   const config = await loadEffectiveConfig(globalOpts.config);
 
   if (!planFile) {
-    throw new Error('Plan file or ID is required');
+    throw new Error('A numeric plan ID is required');
   }
+  const planIdArg = String(parsePlanIdFromCliArg(planFile));
 
-  const repoRoot = await resolveRepoRootForPlanArg(
-    planFile,
-    (await getGitRoot()) || process.cwd(),
-    globalOpts.config
-  );
-  const { plan, planPath } = await resolvePlanFromDbOrSyncFile(planFile, repoRoot, repoRoot);
+  const repoRoot = await resolveRepoRoot(globalOpts.config, (await getGitRoot()) || process.cwd());
+  const { plan, planPath } = await resolvePlanFromDb(planIdArg, repoRoot);
   const resolvedPlanFile = planPath ?? (await materializePlan(plan.id, repoRoot));
   const baseDir = repoRoot;
 

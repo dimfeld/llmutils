@@ -18,12 +18,12 @@ import { log, warn, error as logError } from '../../logging.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { getDatabase } from '../db/database.js';
-import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import { parsePlanIdFromCliArg, resolvePlanFromDb } from '../plans.js';
 import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../executors/index.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
 import { runWithHeadlessAdapterIfEnabled, updateHeadlessSessionInfo } from '../headless.js';
 import { materializePlan, resolveProjectContext } from '../plan_materialize.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 import type { PlanSchema } from '../planSchema.js';
 import { clearPlanBaseTracking, setPlanBaseTracking } from '../db/plan.js';
 import { generateBranchNameFromPlan, resolveBranchPrefix } from './branch.js';
@@ -88,11 +88,7 @@ export async function handleRebaseCommand(
   const globalOpts = command.parent?.opts() ?? {};
   const fallbackRoot = (await getGitRoot()) || process.cwd();
   const config = await loadEffectiveConfig(globalOpts.config);
-  const initialRepoRoot = await resolveRepoRootForPlanArg(
-    planFile ?? '',
-    fallbackRoot,
-    globalOpts.config
-  );
+  const initialRepoRoot = await resolveRepoRoot(globalOpts.config, fallbackRoot);
   const resolved = await resolveRebasePlan(planFile, options, initialRepoRoot, globalOpts.config);
   const effectiveConfig =
     resolved.repoRoot !== fallbackRoot
@@ -339,7 +335,7 @@ async function resolveRebasePlan(
       throw new Error('Resolved plan does not have a numeric ID.');
     }
 
-    const resolved = await resolvePlanFromDbOrSyncFile(String(plan.id), repoRoot, repoRoot);
+    const resolved = await resolvePlanFromDb(String(plan.id), repoRoot);
     return {
       planId: plan.id,
       plan: resolved.plan,
@@ -349,11 +345,12 @@ async function resolveRebasePlan(
   }
 
   if (!planFile) {
-    throw new Error('Please provide a plan file or use --next/--current to find a plan.');
+    throw new Error('Please provide a numeric plan ID or use --next/--current to find a plan.');
   }
+  const planIdArg = String(parsePlanIdFromCliArg(planFile));
 
-  const planRepoRoot = await resolveRepoRootForPlanArg(planFile, repoRoot, configPath);
-  const resolved = await resolvePlanFromDbOrSyncFile(planFile, planRepoRoot, planRepoRoot);
+  const planRepoRoot = await resolveRepoRoot(configPath, repoRoot);
+  const resolved = await resolvePlanFromDb(planIdArg, planRepoRoot);
   const resolvedPlanId = resolved.plan.id;
   if (typeof resolvedPlanId !== 'number') {
     throw new Error('Resolved plan does not have a numeric ID.');

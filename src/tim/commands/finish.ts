@@ -4,8 +4,8 @@ import { error, log, warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import type { TimConfig } from '../configSchema.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
-import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { parsePlanIdFromCliArg, resolvePlanFromDb } from '../plans.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 import type { PlanSchema } from '../planSchema.js';
 import { writePlanFile } from '../plans.js';
 import { materializePlan } from '../plan_materialize.js';
@@ -92,13 +92,14 @@ export async function handleFinishCommand(
   command: { parent: { opts: () => { config?: string } } }
 ): Promise<void> {
   if (!planArg) {
-    throw new Error('A plan ID or file path is required.');
+    throw new Error('A numeric plan ID is required.');
   }
+  const planIdArg = String(parsePlanIdFromCliArg(planArg));
 
   const globalOpts = command.parent.opts();
-  const repoRoot = await resolveRepoRootForPlanArg(planArg, process.cwd(), globalOpts.config);
+  const repoRoot = await resolveRepoRoot(globalOpts.config, process.cwd());
   const config = await loadEffectiveConfig(globalOpts.config, { cwd: repoRoot });
-  const resolvedPlan = await resolvePlanFromDbOrSyncFile(planArg, repoRoot, repoRoot);
+  const resolvedPlan = await resolvePlanFromDb(planIdArg, repoRoot);
   const plan = resolvedPlan.plan;
 
   if (!isPlanReadyToFinish(plan)) {
@@ -180,7 +181,6 @@ export async function handleFinishCommand(
         currentPlanFile = await materializePlan(plan.id, currentBaseDir);
       }
 
-      const updateDocsTarget = currentPlanFile || String(plan.id ?? planArg);
       const nonInteractive = options.nonInteractive === true;
       const terminalInputEnabled =
         !nonInteractive &&
@@ -216,7 +216,7 @@ export async function handleFinishCommand(
         let docsError: unknown = null;
         if (requirements.needsDocs) {
           try {
-            await runUpdateDocs(updateDocsTarget, config, runOptions);
+            await runUpdateDocs(plan, currentPlanFile, config, runOptions);
             plan.docsUpdatedAt = new Date().toISOString();
           } catch (error) {
             warn(
@@ -230,7 +230,8 @@ export async function handleFinishCommand(
         if (requirements.needsLessons) {
           try {
             const lessonsUpdateResult = await runUpdateLessons(
-              updateDocsTarget,
+              plan,
+              currentPlanFile,
               config,
               runOptions
             );

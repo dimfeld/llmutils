@@ -19,7 +19,7 @@ import { getDatabase } from '../db/database.js';
 import { getProject } from '../db/project.js';
 import { formatWorkspacePath, getCombinedTitleFromSummary } from '../display_utils.js';
 import { getLegacyAwareSearchDir } from '../path_resolver.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 import type { PlanSchema } from '../planSchema.js';
 import { loadPlansFromDb } from '../plans_db.js';
 
@@ -60,7 +60,7 @@ async function loadAssignmentsContext(command: any): Promise<AssignmentsContext>
   const globalOpts = typeof rootCommand?.opts === 'function' ? rootCommand.opts() : {};
 
   const config = await loadEffectiveConfig(globalOpts?.config);
-  const repoRoot = await resolveRepoRootForPlanArg('', process.cwd(), globalOpts?.config);
+  const repoRoot = await resolveRepoRoot(globalOpts?.config, process.cwd());
 
   const repository = await getRepositoryIdentity({ cwd: repoRoot });
 

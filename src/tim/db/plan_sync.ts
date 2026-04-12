@@ -28,8 +28,8 @@ interface PlanSyncOptions {
   throwOnError?: boolean;
   /** When true, also preserve DB-authoritative baseBranch for existing plans.
    *  baseCommit/baseChangeId are always preserved (machine-managed).
-   *  Used by direct-file sync paths (resolvePlanFromDbOrSyncFile) where
-   *  the file may contain stale pre-rebase values. */
+   *  Used by direct-file sync paths where the file may contain stale
+   *  pre-rebase values. */
   preserveBaseTracking?: boolean;
 }
 
@@ -274,8 +274,8 @@ export async function syncPlanToDb(
       upsertInput.baseCommit = existingPlan.base_commit ?? null;
       upsertInput.baseChangeId = existingPlan.base_change_id ?? null;
       // baseBranch is user-editable and normally syncs from files. Only preserve
-      // DB state for stale direct-file sync paths (resolvePlanFromDbOrSyncFile)
-      // where the file may contain pre-rebase values.
+      // DB state for stale direct-file sync paths where the file may contain
+      // pre-rebase values.
       if (options.preserveBaseTracking) {
         upsertInput.baseBranch = existingPlan.base_branch ?? null;
       }

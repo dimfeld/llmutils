@@ -7,7 +7,6 @@ import { removeAssignment } from '../db/assignment.js';
 import { getDatabase } from '../db/database.js';
 import { deletePlan, getPlanByPlanId, upsertPlan, type PlanRow } from '../db/plan.js';
 import { toPlanUpsertInput } from '../db/plan_sync.js';
-import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
 import {
   getMaterializedPlanPath,
   getShadowPlanPath,
@@ -16,8 +15,8 @@ import {
   syncMaterializedPlan,
 } from '../plan_materialize.js';
 import { getLegacyAwareSearchDir } from '../path_resolver.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
-import { resolvePlanFromDb, writePlanFile } from '../plans.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
+import { parsePlanIdFromCliArg, resolvePlanFromDb, writePlanFile } from '../plans.js';
 import { invertPlanIdToUuidMap, loadPlansFromDb, planRowForTransaction } from '../plans_db.js';
 import { resolveWritablePath } from '../plans/resolve_writable_path.js';
 import type { PlanSchema } from '../planSchema.js';
@@ -28,28 +27,25 @@ interface RemoveCommandOptions {
 }
 
 export async function handleRemoveCommand(
-  planFiles: string[],
+  planIdArgs: string[],
   options: RemoveCommandOptions,
   command: any
 ): Promise<void> {
-  if (!planFiles || planFiles.length === 0) {
-    throw new Error('At least one plan file or ID is required');
+  if (!planIdArgs || planIdArgs.length === 0) {
+    throw new Error('At least one numeric plan ID is required');
   }
+  const planIds = planIdArgs.map((plan) => String(parsePlanIdFromCliArg(plan)));
 
   const globalOpts = command.parent.opts();
   await loadEffectiveConfig(globalOpts.config);
-  const repoRoot = await resolveRepoRootForPlanArg(
-    planFiles[0] ?? '',
-    process.cwd(),
-    globalOpts.config
-  );
+  const repoRoot = await resolveRepoRoot(globalOpts.config, process.cwd());
   const repository = await getRepositoryIdentity({ cwd: repoRoot });
 
   let context = await resolveProjectContext(repoRoot, repository);
   await syncMaterializedPlans(repoRoot, context.rows);
   context = await resolveProjectContext(repoRoot, repository);
   const targetResolutions = await Promise.all(
-    planFiles.map((planArg) => resolvePlanFromDbOrSyncFile(planArg, repoRoot, repoRoot))
+    planIds.map((planArg) => resolvePlanFromDb(planArg, repoRoot))
   );
 
   const targetIds = new Set<number>(targetResolutions.map((target) => target.plan.id));
@@ -151,7 +147,7 @@ export async function handleRemoveCommand(
     plan.updatedAt = new Date().toISOString();
     affectedPlans.set(plan.id, plan);
 
-    const outputPath = await resolveWritablePath(String(plan.id), row, repoRoot, repoRoot);
+    const outputPath = await resolveWritablePath(row, repoRoot);
     if (outputPath) {
       affectedOutputPaths.set(plan.id, outputPath);
     }

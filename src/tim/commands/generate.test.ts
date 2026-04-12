@@ -18,9 +18,13 @@ vi.mock('../workspace/workspace_setup.js', () => ({
   setupWorkspace: vi.fn(),
 }));
 
-vi.mock('../ensure_plan_in_db.js', () => ({
-  resolvePlanFromDbOrSyncFile: vi.fn(),
-}));
+vi.mock('../plans.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../plans.js')>();
+  return {
+    ...actual,
+    resolvePlanFromDb: vi.fn(),
+  };
+});
 
 vi.mock('../db/plan_sync.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../db/plan_sync.js')>();
@@ -93,7 +97,7 @@ import type { PlanSchema } from '../planSchema.js';
 import { log, warn } from '../../logging.js';
 import { buildExecutorAndLog } from '../executors/index.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
-import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import { resolvePlanFromDb } from '../plans.js';
 import { syncPlanToDb } from '../db/plan_sync.js';
 import { buildPromptText } from './prompts.js';
 import { isAutoClaimEnabled, autoClaimPlan } from '../assignments/auto_claim.js';
@@ -151,7 +155,7 @@ describe('handleGenerateCommand', () => {
   const prepareWorkspaceRoundTripSpy = vi.mocked(prepareWorkspaceRoundTrip);
   const runPreExecutionWorkspaceSyncSpy = vi.mocked(runPreExecutionWorkspaceSync);
   const runPostExecutionWorkspaceSyncSpy = vi.mocked(runPostExecutionWorkspaceSync);
-  const resolvePlanFromDbOrSyncFileSpy = vi.mocked(resolvePlanFromDbOrSyncFile);
+  const resolvePlanFromDbSpy = vi.mocked(resolvePlanFromDb);
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -175,7 +179,7 @@ describe('handleGenerateCommand', () => {
     prepareWorkspaceRoundTripSpy.mockResolvedValue(null as any);
     runPreExecutionWorkspaceSyncSpy.mockResolvedValue(undefined);
     runPostExecutionWorkspaceSyncSpy.mockResolvedValue(undefined);
-    resolvePlanFromDbOrSyncFileSpy.mockImplementation(async (planArg: string) => ({
+    resolvePlanFromDbSpy.mockImplementation(async (planArg: string) => ({
       plan: await readPlanFile(planArg),
       planPath: planArg,
     }));
@@ -684,13 +688,10 @@ describe('handleGenerateCommand', () => {
     ).rejects.toThrow('Plan file not materialized');
   });
 
-  test('throws error when plan file is not valid YAML', async () => {
-    const invalidPath = path.join(tempDir, 'not-a-plan.txt');
-    await fs.writeFile(invalidPath, 'this is not yaml');
-
+  test('throws error when plan argument is not a numeric ID', async () => {
     await expect(
-      handleGenerateCommand(undefined, { plan: invalidPath }, buildCommand())
-    ).rejects.toThrow('File lacks frontmatter');
+      handleGenerateCommand(undefined, { plan: 'not-a-plan' }, buildCommand())
+    ).rejects.toThrow('Expected a numeric plan ID');
   });
 
   test('accepts positional plan argument', async () => {
@@ -931,7 +932,7 @@ describe('handleGenerateCommand with --next-ready flag', () => {
   let tasksDir: string;
 
   const findNextReadyDependencyFromDbSpy = vi.mocked(findNextReadyDependencyFromDb);
-  const resolvePlanFromDbOrSyncFileSpy = vi.mocked(resolvePlanFromDbOrSyncFile);
+  const resolvePlanFromDbSpy = vi.mocked(resolvePlanFromDb);
   const logSpy = vi.mocked(log);
 
   beforeEach(async () => {
@@ -941,7 +942,7 @@ describe('handleGenerateCommand with --next-ready flag', () => {
       plan: null as any,
       message: 'No ready dependencies found',
     });
-    resolvePlanFromDbOrSyncFileSpy.mockResolvedValue({
+    resolvePlanFromDbSpy.mockResolvedValue({
       plan: {
         id: 123,
         title: 'Mock Plan',
@@ -1034,10 +1035,10 @@ describe('handleGenerateCommand with --next-ready flag', () => {
     expect(options.plan).toBe('456');
   });
 
-  test('successfully finds and operates on a ready dependency with file path', async () => {
-    const parentPlanPath = '/mock/parent/plan.plan.md';
+  test('successfully finds and operates on a ready dependency with plan ID', async () => {
+    const parentPlanId = '123';
 
-    resolvePlanFromDbOrSyncFileSpy.mockResolvedValueOnce({
+    resolvePlanFromDbSpy.mockResolvedValueOnce({
       plan: {
         id: 123,
         title: 'Parent Plan',
@@ -1049,7 +1050,7 @@ describe('handleGenerateCommand with --next-ready flag', () => {
         updatedAt: '2024-01-01T00:00:00Z',
         tasks: [],
       },
-      planPath: parentPlanPath,
+      planPath: null,
     });
 
     const readyPlan: PlanSchema & { filename: string } = {
@@ -1071,7 +1072,7 @@ describe('handleGenerateCommand with --next-ready flag', () => {
     });
 
     const options = {
-      nextReady: parentPlanPath,
+      nextReady: parentPlanId,
     };
 
     const command = {
@@ -1080,7 +1081,7 @@ describe('handleGenerateCommand with --next-ready flag', () => {
 
     await handleGenerateCommand(undefined, options, command);
 
-    expect(resolvePlanFromDbOrSyncFileSpy).toHaveBeenCalledWith(parentPlanPath, tempDir, tempDir);
+    expect(resolvePlanFromDbSpy).toHaveBeenCalledWith(parentPlanId, tempDir);
     expect(findNextReadyDependencyFromDbSpy).toHaveBeenCalledWith(123, tempDir, tempDir, true);
 
     expect(logSpy).toHaveBeenCalledWith(
@@ -1133,24 +1134,8 @@ describe('handleGenerateCommand with --next-ready flag', () => {
   });
 
   test('handles parent plan file without valid ID', async () => {
-    const invalidPlanPath = '/mock/invalid/plan.plan.md';
-
-    resolvePlanFromDbOrSyncFileSpy.mockResolvedValueOnce({
-      plan: {
-        title: 'Parent Plan Without ID',
-        goal: 'Parent goal',
-        details: 'Parent details',
-        status: 'in_progress',
-        priority: 'high',
-        createdAt: '2024-01-01T00:00:00Z',
-        updatedAt: '2024-01-01T00:00:00Z',
-        tasks: [],
-      },
-      planPath: invalidPlanPath,
-    });
-
     const options = {
-      nextReady: invalidPlanPath,
+      nextReady: '/mock/invalid/plan.plan.md',
     };
 
     const command = {
@@ -1158,7 +1143,7 @@ describe('handleGenerateCommand with --next-ready flag', () => {
     };
 
     await expect(handleGenerateCommand(undefined, options, command)).rejects.toThrow(
-      'does not have a valid ID'
+      'Expected a numeric plan ID'
     );
   });
 });

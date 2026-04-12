@@ -23,7 +23,13 @@ import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { getAssignmentEntriesByProject, type AssignmentEntry } from '../db/assignment.js';
 import { getDatabase } from '../db/database.js';
 import { getProject } from '../db/project.js';
-import { getBlockedPlans, getChildPlans, getDiscoveredPlans, isPlanReady } from '../plans.js';
+import {
+  getBlockedPlans,
+  getChildPlans,
+  getDiscoveredPlans,
+  isPlanReady,
+  parsePlanIdFromCliArg,
+} from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { resolvePlan } from '../plan_display.js';
 import type { GenerateModeRegistrationContext, GetPlanArguments } from '../mcp/generate_mode.js';
@@ -587,23 +593,10 @@ export async function handleShowCommand(planFile: string | undefined, options: a
 
   if (options.nextReady) {
     if (!options.nextReady || options.nextReady === true || options.nextReady.trim() === '') {
-      throw new Error('--next-ready requires a parent plan ID or file path');
+      throw new Error('--next-ready requires a parent plan ID');
     }
 
-    let parentPlanId: number;
-    const planIdNumber = parseInt(options.nextReady, 10);
-    if (!isNaN(planIdNumber)) {
-      parentPlanId = planIdNumber;
-    } else {
-      const resolvedParent = await resolvePlan(options.nextReady, {
-        gitRoot: repository.gitRoot,
-        configPath: globalOpts.config,
-      });
-      if (!resolvedParent.plan.id || typeof resolvedParent.plan.id !== 'number') {
-        throw new Error(`Plan ${options.nextReady} does not have a valid numeric ID`);
-      }
-      parentPlanId = resolvedParent.plan.id;
-    }
+    const parentPlanId = parsePlanIdFromCliArg(options.nextReady);
 
     const result = findNextReadyDependencyFromCollection(parentPlanId, allPlans, true);
     if (!result.plan) {
@@ -676,7 +669,7 @@ export async function handleShowCommand(planFile: string | undefined, options: a
 
       if (!inferredPlanId) {
         throw new Error(
-          'Please provide a plan file or use --latest/--next/--current/--next-ready to find a plan'
+          'Please provide a plan ID or use --latest/--next/--current/--next-ready to find a plan'
         );
       }
 
@@ -687,6 +680,7 @@ export async function handleShowCommand(planFile: string | undefined, options: a
       );
       planFile = inferredPlanId;
     }
+    parsePlanIdFromCliArg(planFile);
     const resolvedPlan = await resolvePlan(planFile, {
       gitRoot: repository.gitRoot,
       configPath: globalOpts.config,

@@ -2,10 +2,9 @@ import chalk from 'chalk';
 import { editor } from '@inquirer/prompts';
 import { log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
 import { resolveProjectContext, withPlanAutoSync } from '../plan_materialize.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
-import { resolvePlanFromDb, writePlanFile } from '../plans.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
+import { parsePlanIdFromCliArg, resolvePlanFromDb, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { promptForTaskInfo, type TaskInput } from '../utils/task_operations.js';
 import type { PlanRow } from '../db/plan.js';
@@ -25,18 +24,19 @@ export async function handleAddTaskCommand(
   options: AddTaskOptions,
   command: any
 ): Promise<void> {
+  const planIdArg = String(parsePlanIdFromCliArg(plan));
   const globalOpts = command.parent?.opts?.() ?? {};
   const config = await loadEffectiveConfig(globalOpts.config);
-  const repoRoot = await resolveRepoRootForPlanArg(plan, undefined, globalOpts.config);
-  const initialPlan = await resolvePlanFromDbOrSyncFile(plan, repoRoot, repoRoot);
-  const resolvedPlanArg = initialPlan.plan.uuid ?? plan;
+  const repoRoot = await resolveRepoRoot(globalOpts.config);
+  const initialPlan = await resolvePlanFromDb(planIdArg, repoRoot);
+  const resolvedPlanArg = initialPlan.plan.uuid ?? planIdArg;
 
   const taskInfo = await collectTaskInput(options);
   await withPlanAutoSync(initialPlan.plan.id, repoRoot, async () => {
     const context = await resolveProjectContext(repoRoot);
     const target = await resolvePlanFromDb(resolvedPlanArg, repoRoot, { context });
     const planRow = getRequiredPlanRow(context.rows, target.plan.id);
-    const planPath = await resolveWritablePath(plan, planRow, repoRoot, repoRoot);
+    const planPath = await resolveWritablePath(planRow, repoRoot);
     const tasks = Array.isArray(target.plan.tasks) ? target.plan.tasks : [];
     const newTask: PlanTask = {
       title: taskInfo.title,

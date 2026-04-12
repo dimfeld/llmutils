@@ -17,7 +17,7 @@ import {
   formatWorkspacePath,
   getCombinedTitleFromSummary,
 } from '../display_utils.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 import { loadPlansFromDb } from '../plans_db.js';
 import {
   READY_PLAN_SORT_FIELDS,
@@ -417,7 +417,7 @@ export async function handleReadyCommand(options: ReadyCommandOptions, command: 
 
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
-  const repoRoot = await resolveRepoRootForPlanArg('', process.cwd(), globalOpts.config);
+  const repoRoot = await resolveRepoRoot(globalOpts.config, process.cwd());
   const repository = await getRepositoryIdentity({ cwd: repoRoot });
   const configBaseDir =
     config.isUsingExternalStorage && config.externalRepositoryConfigDir

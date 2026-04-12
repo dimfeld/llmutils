@@ -9,10 +9,9 @@ import { getDatabase } from '../db/database.js';
 import { reserveNextPlanId } from '../db/project.js';
 import { getPlanByPlanId, upsertPlan } from '../db/plan.js';
 import { toPlanUpsertInput } from '../db/plan_sync.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 import { resolveProjectContext } from '../plan_materialize.js';
-import { resolvePlanFromDb, writePlanFile } from '../plans.js';
-import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import { parsePlanIdFromCliArg, resolvePlanFromDb, writePlanFile } from '../plans.js';
 import { resolveWritablePath } from '../plans/resolve_writable_path.js';
 import { ensureReferences } from '../utils/references.js';
 
@@ -35,25 +34,24 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
     tasksByPlan.set(planId, existing);
   }
 
-  const affectedPlans = Array.from(tasksByPlan.keys());
+  const affectedPlans = Array.from(tasksByPlan.keys()).map((planId) =>
+    String(parsePlanIdFromCliArg(planId))
+  );
   if (affectedPlans.length > 1) {
     log(`This will affect ${affectedPlans.length} different plans: ${affectedPlans.join(', ')}`);
   }
   log(`Will create ${parsedTaskIds.length} new plan(s) from the promoted tasks`);
 
   const config = await loadEffectiveConfig(options.config);
-  const repoRoot = await resolveRepoRootForPlanArg(
-    affectedPlans[0] ?? '',
-    process.cwd(),
-    options.config
-  );
+  const repoRoot = await resolveRepoRoot(options.config, process.cwd());
   const db = getDatabase();
   let context = await resolveProjectContext(repoRoot);
 
-  for (const [planId, taskInfo] of tasksByPlan) {
+  for (const [rawPlanId, taskInfo] of tasksByPlan) {
+    const planId = String(parsePlanIdFromCliArg(rawPlanId));
     log(`Processing plan ${planId}...`);
     const sortedTaskInfo = taskInfo.sort((a, b) => a.taskIndex - b.taskIndex);
-    const resolvedPlan = await resolvePlanFromDbOrSyncFile(planId, repoRoot, repoRoot);
+    const resolvedPlan = await resolvePlanFromDb(planId, repoRoot);
     const originalPlan = resolvedPlan.plan;
 
     if (!originalPlan.tasks || originalPlan.tasks.length === 0) {
@@ -141,12 +139,7 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
     writePlans.immediate();
 
     context = await resolveProjectContext(repoRoot);
-    const outputPath = await resolveWritablePath(
-      String(originalPlan.id),
-      originalRow,
-      repoRoot,
-      repoRoot
-    );
+    const outputPath = await resolveWritablePath(originalRow, repoRoot);
     if (outputPath) {
       const refreshedOriginal = (
         await resolvePlanFromDb(String(originalPlan.id), repoRoot, { context })

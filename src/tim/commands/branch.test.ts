@@ -630,7 +630,7 @@ describe('handleBranchCommand', () => {
     const configPath = '/path/to/other-repo/tim.yml';
 
     const resolveRepoRootSpy = vi
-      .spyOn(planRepoRootModule, 'resolveRepoRootForPlanArg')
+      .spyOn(planRepoRootModule, 'resolveRepoRoot')
       .mockResolvedValue(crossRepoRoot);
 
     const findNextReadySpy = vi
@@ -658,8 +658,8 @@ describe('handleBranchCommand', () => {
       const command = { parent: { opts: () => ({ config: configPath }) } } as any;
       await handleBranchCommand(undefined, { nextReady: '300' }, command);
 
-      // resolveRepoRootForPlanArg should be called with empty string and the config path
-      expect(resolveRepoRootSpy).toHaveBeenCalledWith('', expect.any(String), configPath);
+      // resolveRepoRoot should be called with the config path and a fallback dir
+      expect(resolveRepoRootSpy).toHaveBeenCalledWith(configPath, expect.any(String));
 
       // findNextReadyDependencyFromDb should use the resolved cross-repo root, not the caller's root
       expect(findNextReadySpy).toHaveBeenCalledWith(300, crossRepoRoot, crossRepoRoot, true);

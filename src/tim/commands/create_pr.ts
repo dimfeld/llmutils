@@ -9,7 +9,7 @@ import { buildExecutorAndLog } from '../executors/index.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
 import { resolvePlan } from '../plan_display.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 import type { PlanSchema } from '../planSchema.js';
 import { writePlanFile } from '../plans.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
@@ -398,7 +398,7 @@ export async function handleCreatePrCommand(
     options as CreatePrCommandOptions;
 
   const globalOpts = getRootOptions(command);
-  const repoRoot = await resolveRepoRootForPlanArg(planArg, process.cwd(), globalOpts.config);
+  const repoRoot = await resolveRepoRoot(globalOpts.config, process.cwd());
   const config = await loadEffectiveConfig(globalOpts.config, { cwd: repoRoot });
 
   const effectiveTerminalInput =

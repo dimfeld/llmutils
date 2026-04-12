@@ -4,8 +4,8 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { findTaskByTitle, selectTaskInteractive } from '../utils/task_operations.js';
-import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { parsePlanIdFromCliArg, resolvePlanFromDb } from '../plans.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 import { withPlanAutoSync } from '../plan_materialize.js';
 
 export interface RemoveTaskOptions {
@@ -21,11 +21,12 @@ export async function handleRemoveTaskCommand(
   options: RemoveTaskOptions,
   command: any
 ): Promise<void> {
+  const planIdArg = String(parsePlanIdFromCliArg(plan));
   const globalOpts = command.parent?.opts?.() ?? {};
 
   await loadEffectiveConfig(globalOpts.config);
-  const repoRoot = await resolveRepoRootForPlanArg(plan, process.cwd(), globalOpts.config);
-  const resolvedPlan = await resolvePlanFromDbOrSyncFile(plan, repoRoot, repoRoot);
+  const repoRoot = await resolveRepoRoot(globalOpts.config, process.cwd());
+  const resolvedPlan = await resolvePlanFromDb(planIdArg, repoRoot);
   if (!Array.isArray(resolvedPlan.plan.tasks) || resolvedPlan.plan.tasks.length === 0) {
     throw new Error('Plan has no tasks to remove.');
   }
@@ -46,7 +47,7 @@ export async function handleRemoveTaskCommand(
   }
 
   await withPlanAutoSync(resolvedPlan.plan.id, repoRoot, async () => {
-    const planData = (await resolvePlanFromDbOrSyncFile(plan, repoRoot, repoRoot)).plan;
+    const planData = (await resolvePlanFromDb(planIdArg, repoRoot)).plan;
     if (!Array.isArray(planData.tasks) || planData.tasks.length === 0) {
       throw new Error('Plan has no tasks to remove.');
     }

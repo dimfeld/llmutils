@@ -44,7 +44,7 @@ describe('update-docs command', () => {
     };
 
     await expect(handleUpdateDocsCommand(undefined, {}, mockCommand)).rejects.toThrow(
-      'Plan file or ID is required'
+      'A numeric plan ID is required'
     );
   });
 

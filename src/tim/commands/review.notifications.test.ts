@@ -249,7 +249,7 @@ describe('review notifications', () => {
   test('emits review_done after successful review', async () => {
     const { handleReviewCommand } = await import('./review.js');
 
-    await handleReviewCommand(planFile, { noSave: true, noAutofix: true }, mockCommand);
+    await handleReviewCommand('123', { noSave: true, noAutofix: true }, mockCommand);
 
     expect(sendNotificationSpy).toHaveBeenCalledTimes(1);
     const [, input] = sendNotificationSpy.mock.calls[0];
@@ -264,7 +264,7 @@ describe('review notifications', () => {
     const { handleReviewCommand } = await import('./review.js');
 
     await expect(
-      handleReviewCommand(planFile, { noSave: true, noAutofix: true }, mockCommand)
+      handleReviewCommand('123', { noSave: true, noAutofix: true }, mockCommand)
     ).rejects.toThrow('config boom');
 
     expect(loadGlobalConfigForNotificationsSpy).toHaveBeenCalledTimes(1);
@@ -281,7 +281,7 @@ describe('review notifications', () => {
     const { handleReviewCommand } = await import('./review.js');
 
     await expect(
-      handleReviewCommand(planFile, { noSave: true, noAutofix: true }, mockCommand)
+      handleReviewCommand('123', { noSave: true, noAutofix: true }, mockCommand)
     ).rejects.toThrow('Review execution failed');
 
     expect(sendNotificationSpy).toHaveBeenCalledTimes(1);
@@ -299,7 +299,7 @@ describe('review notifications', () => {
     const { handleReviewCommand } = await import('./review.js');
 
     await expect(
-      handleReviewCommand(planFile, { noSave: true, noAutofix: true }, mockCommand)
+      handleReviewCommand('123', { noSave: true, noAutofix: true }, mockCommand)
     ).rejects.toThrow('context boom');
 
     expect(sendNotificationSpy).toHaveBeenCalledTimes(1);
@@ -325,7 +325,7 @@ describe('review notifications', () => {
 
     const { handleReviewCommand } = await import('./review.js');
 
-    await handleReviewCommand(planFile, { noSave: true, noAutofix: true }, mockCommand);
+    await handleReviewCommand('123', { noSave: true, noAutofix: true }, mockCommand);
 
     expect(sendNotificationSpy).not.toHaveBeenCalled();
   });
@@ -333,7 +333,7 @@ describe('review notifications', () => {
   test('skips notifications in dry-run mode', async () => {
     const { handleReviewCommand } = await import('./review.js');
 
-    await handleReviewCommand(planFile, { noSave: true, dryRun: true }, mockCommand);
+    await handleReviewCommand('123', { noSave: true, dryRun: true }, mockCommand);
 
     expect(sendNotificationSpy).not.toHaveBeenCalled();
   });
@@ -346,7 +346,7 @@ describe('review notifications', () => {
 
     try {
       await runWithLogger(existingHeadlessAdapter, () =>
-        handleReviewCommand(planFile, { noSave: true, noAutofix: true }, mockCommand)
+        handleReviewCommand('123', { noSave: true, noAutofix: true }, mockCommand)
       );
       expect(createAdapterSpy).not.toHaveBeenCalled();
     } finally {
@@ -374,7 +374,7 @@ describe('review notifications', () => {
     const { handleReviewCommand } = await import('./review.js');
 
     try {
-      await handleReviewCommand(planFile, { noSave: true, noAutofix: true }, mockCommand);
+      await handleReviewCommand('123', { noSave: true, noAutofix: true }, mockCommand);
       expect(destroySpy).toHaveBeenCalledTimes(1);
     } finally {
       destroySpy.mockRestore();
@@ -412,7 +412,7 @@ describe('review notifications', () => {
 
     const { handleReviewCommand } = await import('./review.js');
 
-    await handleReviewCommand(planFile, { noSave: true }, mockCommand);
+    await handleReviewCommand('123', { noSave: true }, mockCommand);
 
     expect(events).toContain('review_done');
     expect(events).not.toContain('review_input');
@@ -450,7 +450,7 @@ describe('review notifications', () => {
 
     const { handleReviewCommand } = await import('./review.js');
 
-    await handleReviewCommand(planFile, { noSave: true, print: true }, mockCommand);
+    await handleReviewCommand('123', { noSave: true, print: true }, mockCommand);
 
     expect(events).toContain('review_done');
     expect(events).not.toContain('review_input');
@@ -492,7 +492,7 @@ describe('review notifications', () => {
 
     const { handleReviewCommand } = await import('./review.js');
 
-    await handleReviewCommand(planFile, { noSave: true }, mockCommand);
+    await handleReviewCommand('123', { noSave: true }, mockCommand);
 
     expect(events).toContain('notify:review_input');
     expect(events.indexOf('notify:review_input')).toBeLessThan(events.indexOf('select'));
@@ -532,7 +532,7 @@ describe('review notifications', () => {
 
     const { handleReviewCommand } = await import('./review.js');
 
-    await handleReviewCommand(planFile, { noSave: true, autofix: true }, mockCommand);
+    await handleReviewCommand('123', { noSave: true, autofix: true }, mockCommand);
 
     expect(events).toContain('notify:review_input');
     expect(events.indexOf('notify:review_input')).toBeLessThan(events.indexOf('checkbox'));
@@ -555,7 +555,7 @@ describe('review notifications', () => {
     } as any);
 
     await runWithLogger(createStructuredCaptureAdapter(structuredMessages), () =>
-      handleReviewCommand(planFile, { noSave: true, noAutofix: true }, mockCommand)
+      handleReviewCommand('123', { noSave: true, noAutofix: true }, mockCommand)
     );
 
     expect(structuredMessages).toEqual(
@@ -600,7 +600,7 @@ describe('review notifications', () => {
     } as any);
 
     await runWithLogger(createStructuredCaptureAdapter(structuredMessages), () =>
-      handleReviewCommand(planFile, { noSave: true, noAutofix: true }, mockCommand)
+      handleReviewCommand('123', { noSave: true, noAutofix: true }, mockCommand)
     );
 
     const reviewResultMessage = structuredMessages.find(
@@ -656,9 +656,7 @@ describe('review notifications', () => {
       warnings: [],
     } as any);
 
-    await runWithLogger(adapter, () =>
-      handleReviewCommand(planFile, { noSave: true }, mockCommand)
-    );
+    await runWithLogger(adapter, () => handleReviewCommand('123', { noSave: true }, mockCommand));
 
     expect(orderedEvents).toContain('input_required');
     expect(orderedEvents).toContain('select');
@@ -684,7 +682,7 @@ describe('review notifications', () => {
     }));
 
     await runWithLogger(createStructuredCaptureAdapter(structuredMessages), () =>
-      handleReviewCommand(planFile, { noSave: true, autofix: true }, mockCommand)
+      handleReviewCommand('123', { noSave: true, autofix: true }, mockCommand)
     );
     expect(structuredMessages).toEqual(
       expect.arrayContaining([
@@ -694,7 +692,7 @@ describe('review notifications', () => {
 
     structuredMessages.length = 0;
     await runWithLogger(createStructuredCaptureAdapter(structuredMessages), () =>
-      handleReviewCommand(planFile, { noSave: true, createCleanupPlan: true }, mockCommand)
+      handleReviewCommand('123', { noSave: true, createCleanupPlan: true }, mockCommand)
     );
     expect(structuredMessages).toEqual(
       expect.arrayContaining([

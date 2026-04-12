@@ -185,16 +185,18 @@ vi.mock('../../plans/prepare_step.js', () => ({
   prepareNextStep: vi.fn(async (...args: any[]) => prepareNextStepImpl()),
 }));
 
-vi.mock('../../ensure_plan_in_db.js', () => ({
-  resolvePlanFromDbOrSyncFile: vi.fn(async (planArg: string) => {
-    const nodePath = await import('node:path');
-    const { readPlanFile } = await import('../../plans.js');
-    const resolvedPath = nodePath.resolve(planArg);
-    const plan = await readPlanFile(resolvedPath);
-    return { plan, planPath: resolvedPath };
-  }),
-  isPlanNotFoundError: vi.fn(() => false),
-}));
+vi.mock('../../plans.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../plans.js')>();
+  return {
+    ...actual,
+    resolvePlanFromDb: vi.fn(async (planArg: string) => {
+      const nodePath = await import('node:path');
+      const resolvedPath = nodePath.resolve(planArg);
+      const plan = await actual.readPlanFile(resolvedPath);
+      return { plan, planPath: resolvedPath };
+    }),
+  };
+});
 
 vi.mock('../../../logging/tunnel_client.js', () => ({
   isTunnelActive: vi.fn(() => false),

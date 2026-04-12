@@ -9,9 +9,13 @@ vi.mock('../configLoader.js', () => ({
   loadEffectiveConfig: vi.fn(),
 }));
 
-vi.mock('../ensure_plan_in_db.js', () => ({
-  resolvePlanFromDbOrSyncFile: vi.fn(),
-}));
+vi.mock('../plans.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../plans.js')>();
+  return {
+    ...actual,
+    resolvePlanFromDb: vi.fn(),
+  };
+});
 
 vi.mock('../executors/index.js', () => ({
   buildExecutorAndLog: vi.fn(),
@@ -19,7 +23,7 @@ vi.mock('../executors/index.js', () => ({
 }));
 
 vi.mock('../plan_repo_root.js', () => ({
-  resolveRepoRootForPlanArg: vi.fn(),
+  resolveRepoRoot: vi.fn(),
 }));
 
 const runWithHeadlessAdapterIfEnabledMock = vi.fn(
@@ -35,7 +39,9 @@ vi.mock('../headless.js', () => ({
 }));
 
 vi.mock('../db/database.js', () => ({
-  getDatabase: vi.fn(() => ({})),
+  getDatabase: vi.fn(() => ({
+    prepare: vi.fn(() => ({ get: vi.fn(() => null), all: vi.fn(() => []), run: vi.fn() })),
+  })),
 }));
 
 vi.mock('../db/plan.js', () => ({
@@ -45,12 +51,13 @@ vi.mock('../db/plan.js', () => ({
 
 vi.mock('../plan_materialize.js', () => ({
   materializePlan: vi.fn(),
+  resolveProjectContext: vi.fn().mockResolvedValue({ projectId: 1 }),
 }));
 
 import { loadEffectiveConfig } from '../configLoader.js';
-import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import { resolvePlanFromDb } from '../plans.js';
 import { buildExecutorAndLog } from '../executors/index.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 import { handleRebaseCommand } from './rebase.js';
 import { clearPlanBaseTracking, setPlanBaseTracking } from '../db/plan.js';
 
@@ -392,8 +399,8 @@ function mockPlanForRepo(
     terminalInput: false,
     ...configOverrides,
   } as any);
-  vi.mocked(resolveRepoRootForPlanArg).mockResolvedValue(repoDir);
-  vi.mocked(resolvePlanFromDbOrSyncFile).mockResolvedValue({
+  vi.mocked(resolveRepoRoot).mockResolvedValue(repoDir);
+  vi.mocked(resolvePlanFromDb).mockResolvedValue({
     plan,
     planPath: path.join(repoDir, '.tim', 'plans', `${String(plan.id ?? 'plan')}.plan.md`),
   } as any);
@@ -504,7 +511,7 @@ describe('handleRebaseCommand', () => {
     expect(buildExecutorAndLog).not.toHaveBeenCalled();
   });
 
-  test('reloads config from target repo when rebasing a cross-repo plan path', async () => {
+  test('reloads config from target repo when rebasing with cross-repo config', async () => {
     const plan = buildPlan({
       title: 'Update a plan branch to latest main',
     });
@@ -530,8 +537,8 @@ describe('handleRebaseCommand', () => {
         terminalInput: false,
       } as any;
     });
-    vi.mocked(resolveRepoRootForPlanArg).mockResolvedValue(repo.workDir);
-    vi.mocked(resolvePlanFromDbOrSyncFile).mockResolvedValue({
+    vi.mocked(resolveRepoRoot).mockResolvedValue(repo.workDir);
+    vi.mocked(resolvePlanFromDb).mockResolvedValue({
       plan,
       planPath: path.join(repo.workDir, '.tim', 'plans', '263.plan.md'),
     } as any);
@@ -542,7 +549,7 @@ describe('handleRebaseCommand', () => {
       'di/263-update-a-plan-branch-to-latest-main'
     );
 
-    await handleRebaseCommand('/tmp/other-repo/.tim/plans/263.plan.md', {}, {
+    await handleRebaseCommand('263', {}, {
       parent: { opts: () => ({}) },
     } as any);
 
@@ -697,13 +704,13 @@ describe('handleRebaseCommand', () => {
       defaultExecutor: 'mock-executor',
       terminalInput: false,
     } as any);
-    vi.mocked(resolveRepoRootForPlanArg).mockResolvedValue(repo.workDir);
+    vi.mocked(resolveRepoRoot).mockResolvedValue(repo.workDir);
 
     process.chdir(repo.workDir);
 
     await expect(
       handleRebaseCommand(undefined, {}, { parent: { opts: () => ({}) } } as any)
-    ).rejects.toThrow('Please provide a plan file or use --next/--current to find a plan.');
+    ).rejects.toThrow('Please provide a numeric plan ID or use --next/--current to find a plan.');
   });
 
   test('wraps execution in runWithHeadlessAdapterIfEnabled with plan metadata', async () => {
@@ -993,7 +1000,10 @@ describe('handleRebaseCommand', () => {
 
       await fetchOrigin(repo.workDir);
       expect(await isAncestor(repo.workDir, 'origin/main', repo.featureBranch)).toBe(true);
-      expect(vi.mocked(clearPlanBaseTracking)).toHaveBeenCalledWith({}, 'plan-263');
+      expect(vi.mocked(clearPlanBaseTracking)).toHaveBeenCalledWith(
+        expect.objectContaining({}),
+        'plan-263'
+      );
       expect(vi.mocked(setPlanBaseTracking)).not.toHaveBeenCalled();
     });
   });

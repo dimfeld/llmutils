@@ -40,6 +40,7 @@ import { clearAllGitCaches } from '../../common/git.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { getOrCreateProject, getProjectById, listProjects } from '../db/project.js';
 import { loadPlansFromDb } from '../plans_db.js';
+import { writePlanFile } from '../plans.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { log, warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
@@ -196,7 +197,7 @@ async function readTrackingData(): Promise<Record<string, WorkspaceInfo>> {
 }
 
 /**
- * Create a plan file in the given directory
+ * Create a plan file in the given directory and write it to the DB.
  */
 async function createPlanFile(
   tasksDir: string,
@@ -223,6 +224,10 @@ async function createPlanFile(
   const planPath = path.join(tasksDir, `${planId}.plan.md`);
   const planContent = stringifyPlanWithFrontmatter(plan);
   await fs.writeFile(planPath, planContent);
+
+  // Also write to DB so resolvePlanFromDb can find it by numeric ID
+  await writePlanFile(null, plan, { cwdForIdentity: mainRepoDir });
+
   return planPath;
 }
 
@@ -344,12 +349,12 @@ describe('workspace add --reuse and --try-reuse', () => {
     };
     await writeTrackingData({ [existingWorkspace]: workspaceEntry });
 
-    // Create a plan file
-    const planPath = await createPlanFile(path.join(mainRepoDir, 'tasks'), 42, 'Test Plan');
+    // Create a plan file and register it in DB
+    await createPlanFile(path.join(mainRepoDir, 'tasks'), 42, 'Test Plan');
 
     const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
-    await handleWorkspaceAddCommand(planPath, { reuse: true }, {
+    await handleWorkspaceAddCommand('42', { reuse: true }, {
       parent: {
         parent: {
           opts: () => ({ config: undefined }),
@@ -378,12 +383,12 @@ describe('workspace add --reuse and --try-reuse', () => {
     // Don't create any workspaces
     await writeTrackingData({});
 
-    const planPath = await createPlanFile(path.join(mainRepoDir, 'tasks'), 43, 'Test Plan');
+    await createPlanFile(path.join(mainRepoDir, 'tasks'), 43, 'Test Plan');
 
     const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
     await expect(
-      handleWorkspaceAddCommand(planPath, { reuse: true }, {
+      handleWorkspaceAddCommand('43', { reuse: true }, {
         parent: {
           parent: {
             opts: () => ({ config: undefined }),
@@ -418,11 +423,11 @@ describe('workspace add --reuse and --try-reuse', () => {
       },
     });
 
-    const planPath = await createPlanFile(path.join(mainRepoDir, 'tasks'), 430, 'Test Plan');
+    await createPlanFile(path.join(mainRepoDir, 'tasks'), 430, 'Test Plan');
     const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
     await expect(
-      handleWorkspaceAddCommand(planPath, { reuse: true }, {
+      handleWorkspaceAddCommand('430', { reuse: true }, {
         parent: {
           parent: {
             opts: () => ({ config: undefined }),
@@ -501,10 +506,10 @@ describe('workspace add --reuse and --try-reuse', () => {
       },
     });
 
-    const planPath = await createPlanFile(path.join(mainRepoDir, 'tasks'), 431, 'Reuse Auto Type');
+    await createPlanFile(path.join(mainRepoDir, 'tasks'), 431, 'Reuse Auto Type');
     const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
-    await handleWorkspaceAddCommand(planPath, { reuse: true, auto: true }, {
+    await handleWorkspaceAddCommand('431', { reuse: true, auto: true }, {
       parent: {
         parent: {
           opts: () => ({ config: undefined }),
@@ -520,11 +525,11 @@ describe('workspace add --reuse and --try-reuse', () => {
     // Don't create any workspaces
     await writeTrackingData({});
 
-    const planPath = await createPlanFile(path.join(mainRepoDir, 'tasks'), 44, 'Test Plan');
+    await createPlanFile(path.join(mainRepoDir, 'tasks'), 44, 'Test Plan');
 
     const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
-    await handleWorkspaceAddCommand(planPath, { tryReuse: true }, {
+    await handleWorkspaceAddCommand('44', { tryReuse: true }, {
       parent: {
         parent: {
           opts: () => ({ config: undefined }),
@@ -570,11 +575,11 @@ describe('workspace add --reuse and --try-reuse', () => {
       [cleanWorkspace]: cleanEntry,
     });
 
-    const planPath = await createPlanFile(path.join(mainRepoDir, 'tasks'), 45, 'Test Plan');
+    await createPlanFile(path.join(mainRepoDir, 'tasks'), 45, 'Test Plan');
 
     const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
-    await handleWorkspaceAddCommand(planPath, { reuse: true }, {
+    await handleWorkspaceAddCommand('45', { reuse: true }, {
       parent: {
         parent: {
           opts: () => ({ config: undefined }),
@@ -621,11 +626,11 @@ describe('workspace add --reuse and --try-reuse', () => {
     };
     await writeTrackingData({ [brokenWorkspace]: brokenEntry, [goodWorkspace]: goodEntry });
 
-    const planPath = await createPlanFile(path.join(mainRepoDir, 'tasks'), 52, 'Fallback Test');
+    await createPlanFile(path.join(mainRepoDir, 'tasks'), 52, 'Fallback Test');
 
     const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
-    await handleWorkspaceAddCommand(planPath, { reuse: true }, {
+    await handleWorkspaceAddCommand('52', { reuse: true }, {
       parent: {
         parent: {
           opts: () => ({ config: undefined }),
@@ -698,11 +703,11 @@ describe('workspace add --reuse and --try-reuse', () => {
     };
     await writeTrackingData({ [existingWorkspace]: workspaceEntry });
 
-    const planPath = await createPlanFile(path.join(mainRepoDir, 'tasks'), 61, 'Copy Fail');
+    await createPlanFile(path.join(mainRepoDir, 'tasks'), 61, 'Copy Fail');
 
     const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
-    await handleWorkspaceAddCommand(planPath, { reuse: true }, {
+    await handleWorkspaceAddCommand('61', { reuse: true }, {
       parent: {
         parent: {
           opts: () => ({ config: undefined }),
@@ -753,11 +758,11 @@ describe('workspace add --reuse and --try-reuse', () => {
       [availableWorkspace]: availableEntry,
     });
 
-    const planPath = await createPlanFile(path.join(mainRepoDir, 'tasks'), 46, 'Test Plan');
+    await createPlanFile(path.join(mainRepoDir, 'tasks'), 46, 'Test Plan');
 
     const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
-    await handleWorkspaceAddCommand(planPath, { reuse: true }, {
+    await handleWorkspaceAddCommand('46', { reuse: true }, {
       parent: {
         parent: {
           opts: () => ({ config: undefined }),
@@ -797,11 +802,11 @@ describe('workspace add --reuse and --try-reuse', () => {
     };
     await writeTrackingData({ [existingWorkspace]: oldEntry });
 
-    const planPath = await createPlanFile(path.join(mainRepoDir, 'tasks'), 47, 'New Plan Title');
+    await createPlanFile(path.join(mainRepoDir, 'tasks'), 47, 'New Plan Title');
 
     const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
-    await handleWorkspaceAddCommand(planPath, { reuse: true }, {
+    await handleWorkspaceAddCommand('47', { reuse: true }, {
       parent: {
         parent: {
           opts: () => ({ config: undefined }),
@@ -847,11 +852,11 @@ describe('workspace add --reuse and --try-reuse', () => {
     };
     await writeTrackingData({ [existingWorkspace]: workspaceEntry });
 
-    const planPath = await createPlanFile(path.join(mainRepoDir, 'tasks'), 48, 'From Branch Test');
+    await createPlanFile(path.join(mainRepoDir, 'tasks'), 48, 'From Branch Test');
 
     const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
-    await handleWorkspaceAddCommand(planPath, { reuse: true, fromBranch: 'develop' }, {
+    await handleWorkspaceAddCommand('48', { reuse: true, fromBranch: 'develop' }, {
       parent: {
         parent: {
           opts: () => ({ config: undefined }),
@@ -881,11 +886,11 @@ describe('workspace add --reuse and --try-reuse', () => {
     const developCommit = (await runGit(mainRepoDir, ['rev-parse', 'HEAD'])).stdout.trim();
     await runGit(mainRepoDir, ['checkout', 'main']);
 
-    const planPath = await createPlanFile(path.join(mainRepoDir, 'tasks'), 60, 'From Branch New');
+    await createPlanFile(path.join(mainRepoDir, 'tasks'), 60, 'From Branch New');
 
     const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
-    await handleWorkspaceAddCommand(planPath, { fromBranch: 'develop' }, {
+    await handleWorkspaceAddCommand('60', { fromBranch: 'develop' }, {
       parent: {
         parent: {
           opts: () => ({ config: undefined }),
@@ -922,11 +927,11 @@ describe('workspace add --reuse and --try-reuse', () => {
     };
     await writeTrackingData({ [existingWorkspace]: workspaceEntry });
 
-    const planPath = await createPlanFile(path.join(mainRepoDir, 'tasks'), 49, 'Plan Copy Test');
+    await createPlanFile(path.join(mainRepoDir, 'tasks'), 49, 'Plan Copy Test');
 
     const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
-    await handleWorkspaceAddCommand(planPath, { reuse: true }, {
+    await handleWorkspaceAddCommand('49', { reuse: true }, {
       parent: {
         parent: {
           opts: () => ({ config: undefined }),
@@ -990,14 +995,10 @@ describe('workspace add --reuse and --try-reuse', () => {
       );
 
     try {
-      const planPath = await createPlanFile(
-        path.join(mainRepoDir, 'tasks'),
-        62,
-        'Path Dedupe Test'
-      );
+      await createPlanFile(path.join(mainRepoDir, 'tasks'), 62, 'Path Dedupe Test');
 
       const { handleWorkspaceAddCommand } = await import('./workspace.js');
-      await handleWorkspaceAddCommand(planPath, { reuse: true }, {
+      await handleWorkspaceAddCommand('62', { reuse: true }, {
         parent: {
           parent: {
             opts: () => ({ config: undefined }),
@@ -1029,7 +1030,7 @@ describe('workspace add --reuse and --try-reuse', () => {
     };
     await writeTrackingData({ [existingWorkspace]: workspaceEntry });
 
-    const sourcePlanPath = await createPlanFile(path.join(mainRepoDir, 'tasks'), 63, 'Source Plan');
+    await createPlanFile(path.join(mainRepoDir, 'tasks'), 63, 'Source Plan');
     const workspacePlanPath = path.join(existingWorkspace, '.tim', 'plans', '63.plan.md');
     await fs.mkdir(path.dirname(workspacePlanPath), { recursive: true });
     await fs.writeFile(
@@ -1074,7 +1075,7 @@ describe('workspace add --reuse and --try-reuse', () => {
 
     try {
       const { handleWorkspaceAddCommand } = await import('./workspace.js');
-      await handleWorkspaceAddCommand(sourcePlanPath, { reuse: true }, {
+      await handleWorkspaceAddCommand('63', { reuse: true }, {
         parent: {
           parent: {
             opts: () => ({ config: undefined }),

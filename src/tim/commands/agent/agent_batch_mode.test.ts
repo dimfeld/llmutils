@@ -203,6 +203,13 @@ vi.mock('../../plans.js', () => {
       plan: { id: 1, title: 'P', status: 'pending', tasks: [] },
       planPath: '',
     })),
+    parsePlanIdFromCliArg: vi.fn((arg: string) => {
+      const n = Number(arg.trim());
+      if (!Number.isInteger(n) || n <= 0) {
+        throw new Error(`Expected a numeric plan ID, got: "${arg}"`);
+      }
+      return n;
+    }),
     writePlanToDb: vi.fn(async () => {}),
     isTaskDone: vi.fn((task: any) => !!task.done),
     getBlockedPlans: vi.fn(() => []),
@@ -361,7 +368,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { log: false, dryRun: true, nonInteractive: true } as any;
       const globalCliOptions = {};
 
-      await timAgent(planFile, options, globalCliOptions);
+      await timAgent('1', options, globalCliOptions);
 
       // Should have been called with batch mode prompt
       expect(buildExecutionPromptWithoutStepsSpy).toHaveBeenCalled();
@@ -391,7 +398,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { serialTasks: true, log: false, nonInteractive: true } as any;
       const globalCliOptions = {};
 
-      await timAgent(planFile, options, globalCliOptions);
+      await timAgent('1', options, globalCliOptions);
 
       // Should not have called batch mode prompt building
       const batchCalls = buildExecutionPromptWithoutStepsSpy.mock.calls.filter(
@@ -461,7 +468,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { log: false, nonInteractive: true } as any;
       const globalCliOptions = {};
 
-      await timAgent(planFile, options, globalCliOptions);
+      await timAgent('1', options, globalCliOptions);
 
       // Should have executed twice (once for each batch iteration)
       expect(executorExecuteSpy).toHaveBeenCalledTimes(2);
@@ -498,7 +505,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { log: false, nonInteractive: true, steps: '2' } as any;
       const globalCliOptions = {};
 
-      await timAgent(planFile, options, globalCliOptions);
+      await timAgent('1', options, globalCliOptions);
 
       expect(executorExecuteSpy).toHaveBeenCalledTimes(2);
       expect(sendStructuredSpy).toHaveBeenCalledWith(
@@ -522,7 +529,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const globalCliOptions = {};
       const { adapter } = createRecordingAdapter();
 
-      await runWithLogger(adapter, () => timAgent(planFile, options, globalCliOptions));
+      await runWithLogger(adapter, () => timAgent('1', options, globalCliOptions));
 
       // Should not execute anything since all tasks are already done
       expect(executorExecuteSpy).not.toHaveBeenCalled();
@@ -555,7 +562,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { log: false, dryRun: true, nonInteractive: true } as any;
       const globalCliOptions = {};
 
-      await timAgent(planFile, options, globalCliOptions);
+      await timAgent('1', options, globalCliOptions);
 
       // Check that the batch prompt includes the correct tasks
       const callArgs = buildExecutionPromptWithoutStepsSpy.mock.calls[0][0];
@@ -595,7 +602,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { log: false, nonInteractive: true } as any;
       const globalCliOptions = {};
 
-      await timAgent(planFile, options, globalCliOptions);
+      await timAgent('1', options, globalCliOptions);
 
       // Read the file to check status was updated
       const content = await fs.readFile(planFile, 'utf-8');
@@ -634,7 +641,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { log: false, nonInteractive: true } as any;
       const globalCliOptions = {};
 
-      await timAgent(planFile, options, globalCliOptions);
+      await timAgent('1', options, globalCliOptions);
 
       // Read the final file content to verify status was updated to needs_review
       const finalContent = await fs.readFile(planFile, 'utf-8');
@@ -680,7 +687,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { log: false, nonInteractive: true } as any;
       const globalCliOptions = {};
 
-      await timAgent(planFile, options, globalCliOptions);
+      await timAgent('1', options, globalCliOptions);
 
       const finalContent = await fs.readFile(planFile, 'utf-8');
       const finalPlan = yaml.parse(finalContent.replace(/^#.*\n/, ''));
@@ -743,7 +750,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { log: false, nonInteractive: true } as any;
       const globalCliOptions = {};
 
-      await timAgent(planFile, options, globalCliOptions);
+      await timAgent('1', options, globalCliOptions);
 
       const finalContent = await fs.readFile(planFile, 'utf-8');
       const finalPlan = yaml.parse(finalContent.replace(/^#.*\n/, ''));
@@ -784,7 +791,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { log: false, nonInteractive: true } as any;
       const globalCliOptions = {};
 
-      await timAgent(planFile, options, globalCliOptions);
+      await timAgent('1', options, globalCliOptions);
 
       // Parent checking happens through the setPlanStatus function in our mocks
       // Verify the plan was marked as needs_review (which would trigger parent updates)
@@ -822,7 +829,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { log: false, nonInteractive: true } as any;
       const globalCliOptions = {};
 
-      await timAgent(planFile, options, globalCliOptions);
+      await timAgent('1', options, globalCliOptions);
 
       // Verify executor was called with correct metadata including plan file path
       expect(executorExecuteSpy).toHaveBeenCalledWith(
@@ -851,7 +858,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { log: false, dryRun: true, nonInteractive: true } as any;
       const globalCliOptions = {};
 
-      await timAgent(planFile, options, globalCliOptions);
+      await timAgent('1', options, globalCliOptions);
 
       // Verify buildExecutionPromptWithoutSteps was called with correct params
       expect(buildExecutionPromptWithoutStepsSpy).toHaveBeenCalledWith(
@@ -902,7 +909,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { log: false, nonInteractive: true } as any;
       const globalCliOptions = {};
 
-      await timAgent(planFile, options, globalCliOptions);
+      await timAgent('1', options, globalCliOptions);
 
       // Verify post-apply commands were executed
       expect(executePostApplyCommandSpy).toHaveBeenCalledTimes(2);
@@ -926,7 +933,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { log: false, nonInteractive: true } as any;
       const globalCliOptions = {};
 
-      await expect(timAgent(planFile, options, globalCliOptions)).rejects.toThrow(
+      await expect(timAgent('1', options, globalCliOptions)).rejects.toThrow(
         'Batch mode stopped due to error.'
       );
     });
@@ -964,7 +971,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { log: false, nonInteractive: true, finalReview: false } as any;
       const globalCliOptions = {};
 
-      await timAgent(planFile, options, globalCliOptions);
+      await timAgent('1', options, globalCliOptions);
 
       expect(runUpdateDocsSpy).toHaveBeenCalledTimes(1);
       expect(executePostApplyCommandSpy).toHaveBeenCalledTimes(2);
@@ -1003,7 +1010,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { log: false, nonInteractive: true, finalReview: false } as any;
       const globalCliOptions = {};
 
-      await timAgent(planFile, options, globalCliOptions);
+      await timAgent('1', options, globalCliOptions);
 
       expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
       expect(executePostApplyCommandSpy).toHaveBeenCalledTimes(2);
@@ -1046,7 +1053,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       }) as typeof process.exit;
 
       try {
-        await expect(timAgent(planFile, { log: false, nonInteractive: true }, {})).rejects.toThrow(
+        await expect(timAgent('1', { log: false, nonInteractive: true }, {})).rejects.toThrow(
           'process.exit(130)'
         );
       } finally {
@@ -1105,7 +1112,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
 
       try {
         await expect(
-          timAgent(planFile, { log: false, nonInteractive: true, finalReview: false }, {})
+          timAgent('1', { log: false, nonInteractive: true, finalReview: false }, {})
         ).rejects.toThrow('process.exit(130)');
       } finally {
         process.exit = originalExit;
@@ -1162,7 +1169,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
 
       try {
         await expect(
-          timAgent(planFile, { log: false, nonInteractive: true, finalReview: false }, {})
+          timAgent('1', { log: false, nonInteractive: true, finalReview: false }, {})
         ).rejects.toThrow('process.exit(130)');
       } finally {
         process.exit = originalExit;
@@ -1187,7 +1194,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { log: false, dryRun: true, nonInteractive: true } as any;
       const globalCliOptions = {};
 
-      await timAgent(planFile, options, globalCliOptions);
+      await timAgent('1', options, globalCliOptions);
 
       // Should have built the prompt but not executed it
       expect(buildExecutionPromptWithoutStepsSpy).toHaveBeenCalled();
@@ -1221,22 +1228,24 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { log: false, nonInteractive: true } as any;
       const globalCliOptions = {};
 
-      await expect(timAgent(planFile, options, globalCliOptions)).rejects.toThrow(
+      await expect(timAgent('1', options, globalCliOptions)).rejects.toThrow(
         'Batch mode stopped due to error.'
       );
 
       expect(errorSpy).toHaveBeenCalledWith('Batch execution failed:', expect.any(Error));
     });
 
-    test('batch mode handles plan file read errors', async () => {
-      // Create invalid plan file
-      await fs.writeFile(planFile, 'invalid yaml content [');
+    test('batch mode handles plan load errors', async () => {
+      const plansModule = await import('../../plans.js');
+      vi.mocked(plansModule.resolvePlanFromDb).mockRejectedValueOnce(
+        new Error('Failed to load plan from database')
+      );
 
       const options = { log: false } as any;
       const globalCliOptions = {};
 
-      // Should throw error when trying to parse invalid YAML
-      await expect(timAgent(planFile, options, globalCliOptions)).rejects.toThrow();
+      // Should throw error when plan cannot be loaded
+      await expect(timAgent('1', options, globalCliOptions)).rejects.toThrow();
     });
   });
 
@@ -1292,7 +1301,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { log: false, nonInteractive: true } as any;
       const globalCliOptions = {};
 
-      await timAgent(planFile, options, globalCliOptions);
+      await timAgent('1', options, globalCliOptions);
 
       const logCalls = logSpy.mock.calls.map((call) => call[0]);
       expect(
@@ -1345,7 +1354,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { log: false, nonInteractive: true } as any;
       const globalCliOptions = {};
 
-      await timAgent(planFile, options, globalCliOptions);
+      await timAgent('1', options, globalCliOptions);
 
       const logCalls = logSpy.mock.calls.map((call) => call[0]);
       expect(
@@ -1391,7 +1400,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { log: false, nonInteractive: true, finalReview: false } as any;
       const globalCliOptions = {};
 
-      await timAgent(planFile, options, globalCliOptions);
+      await timAgent('1', options, globalCliOptions);
 
       expect(runUpdateDocsSpy).toHaveBeenCalledTimes(1);
 
@@ -1465,7 +1474,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { log: false, nonInteractive: true, finalReview: false } as any;
       const globalCliOptions = {};
 
-      await timAgent(planFile, options, globalCliOptions);
+      await timAgent('1', options, globalCliOptions);
 
       expect(runUpdateDocsSpy).toHaveBeenCalled();
 
@@ -1510,7 +1519,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { log: false, nonInteractive: true, finalReview: false } as any;
       const globalCliOptions = {};
 
-      await timAgent(planFile, options, globalCliOptions);
+      await timAgent('1', options, globalCliOptions);
 
       expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
 
@@ -1555,7 +1564,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { log: false, nonInteractive: true, finalReview: false } as any;
       const globalCliOptions = {};
 
-      await timAgent(planFile, options, globalCliOptions);
+      await timAgent('1', options, globalCliOptions);
 
       expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
 
@@ -1600,7 +1609,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { log: false, nonInteractive: true, finalReview: false } as any;
       const globalCliOptions = {};
 
-      await timAgent(planFile, options, globalCliOptions);
+      await timAgent('1', options, globalCliOptions);
 
       expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
 
@@ -1642,7 +1651,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { log: false, nonInteractive: true, finalReview: false } as any;
       const globalCliOptions = {};
 
-      await timAgent(planFile, options, globalCliOptions);
+      await timAgent('1', options, globalCliOptions);
 
       expect(runUpdateDocsSpy).not.toHaveBeenCalled();
       expect(runUpdateLessonsSpy).not.toHaveBeenCalled();
@@ -1670,7 +1679,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { log: false, nonInteractive: true } as any;
       const globalCliOptions = {};
 
-      await timAgent(planFile, options, globalCliOptions);
+      await timAgent('1', options, globalCliOptions);
 
       // Should not have opened log file
       expect(openLogFileSpy).not.toHaveBeenCalled();
@@ -1691,7 +1700,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = {};
       const globalCliOptions = {};
 
-      await timAgent(planFile, options, globalCliOptions);
+      await timAgent('1', options, globalCliOptions);
 
       // Should have opened and closed log file
       expect(openLogFileSpy).toHaveBeenCalled();
@@ -1716,7 +1725,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { orchestrator: 'custom-executor', log: false } as any;
       const globalCliOptions = {};
 
-      await timAgent(planFile, options, globalCliOptions);
+      await timAgent('1', options, globalCliOptions);
 
       // Should have built executor with the custom orchestrator name
       expect(buildExecutorAndLogSpy).toHaveBeenCalledWith(
@@ -1741,7 +1750,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { model: 'custom-model', log: false } as any;
       const globalCliOptions = {};
 
-      await timAgent(planFile, options, globalCliOptions);
+      await timAgent('1', options, globalCliOptions);
 
       // Should have passed custom model to executor options
       expect(buildExecutorAndLogSpy).toHaveBeenCalledWith(
@@ -1807,7 +1816,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       mockExecutorCompletingTasks('feature/my-branch');
 
       const options = { log: false, nonInteractive: true, finalReview: false } as any;
-      await timAgent(planFile, options, {});
+      await timAgent('1', options, {});
 
       expect(autoCreatePrForPlanSpy).toHaveBeenCalledTimes(1);
       expect(autoCreatePrForPlanSpy).toHaveBeenCalledWith(
@@ -1834,7 +1843,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       mockExecutorCompletingTasks('feature/my-branch');
 
       const options = { log: false, nonInteractive: true, finalReview: false } as any;
-      await timAgent(planFile, options, {});
+      await timAgent('1', options, {});
 
       expect(autoCreatePrForPlanSpy).toHaveBeenCalledTimes(1);
       expect(autoCreatePrForPlanSpy).toHaveBeenCalledWith(
@@ -1861,7 +1870,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       mockExecutorCompletingTasks('feature/my-branch');
 
       const options = { log: false, nonInteractive: true, finalReview: false } as any;
-      await timAgent(planFile, options, {});
+      await timAgent('1', options, {});
 
       expect(autoCreatePrForPlanSpy).toHaveBeenCalledTimes(1);
     });
@@ -1880,7 +1889,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       });
 
       const options = { log: false, nonInteractive: true, finalReview: false } as any;
-      await timAgent(planFile, options, {});
+      await timAgent('1', options, {});
 
       expect(autoCreatePrForPlanSpy).not.toHaveBeenCalled();
     });
@@ -1899,7 +1908,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       });
 
       const options = { log: false, nonInteractive: true, finalReview: false } as any;
-      await timAgent(planFile, options, {});
+      await timAgent('1', options, {});
 
       expect(autoCreatePrForPlanSpy).not.toHaveBeenCalled();
     });
@@ -1918,7 +1927,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       });
 
       const options = { log: false, nonInteractive: true, finalReview: false } as any;
-      await timAgent(planFile, options, {});
+      await timAgent('1', options, {});
 
       expect(autoCreatePrForPlanSpy).not.toHaveBeenCalled();
     });
@@ -1943,7 +1952,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       const options = { log: false, nonInteractive: true, finalReview: false } as any;
 
       // Should not throw — failure is non-fatal
-      await timAgent(planFile, options, {});
+      await timAgent('1', options, {});
 
       expect(autoCreatePrForPlanSpy).toHaveBeenCalledTimes(1);
       expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to auto-create PR'));
@@ -1974,7 +1983,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
 
       try {
         await expect(
-          timAgent(planFile, { log: false, nonInteractive: true, finalReview: false } as any, {})
+          timAgent('1', { log: false, nonInteractive: true, finalReview: false } as any, {})
         ).rejects.toThrow('process.exit(130)');
       } finally {
         process.exit = originalExit;
@@ -2000,7 +2009,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       executorExecuteSpy.mockRejectedValueOnce(new Error('Executor crashed'));
 
       const options = { log: false, nonInteractive: true, finalReview: false } as any;
-      await expect(timAgent(planFile, options, {})).rejects.toThrow();
+      await expect(timAgent('1', options, {})).rejects.toThrow();
 
       expect(autoCreatePrForPlanSpy).not.toHaveBeenCalled();
     });

@@ -3,6 +3,7 @@
 
 import { getGitRoot } from '../../common/git.js';
 import { loadEffectiveConfig } from '../configLoader.js';
+import { parsePlanIdFromCliArg } from '../plans.js';
 import { setTaskDone } from '../plans/mark_done.js';
 
 export interface SetTaskDoneOptions {
@@ -16,6 +17,7 @@ export async function handleSetTaskDoneCommand(
   options: SetTaskDoneOptions,
   command: any
 ) {
+  parsePlanIdFromCliArg(planFile);
   const globalOpts = command.parent.opts();
   const gitRoot = (await getGitRoot()) || process.cwd();
 

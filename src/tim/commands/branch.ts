@@ -12,8 +12,8 @@ import {
   findNextPlanFromDb,
   findNextReadyDependencyFromDb,
 } from './plan_discovery.js';
-import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { parsePlanIdFromCliArg, resolvePlanFromDb } from '../plans.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 import type { PlanSchema } from '../planSchema.js';
 import type { TimConfig } from '../configSchema.js';
 import type { Database } from 'bun:sqlite';
@@ -200,7 +200,7 @@ export async function handleBranchCommand(
   const config = await loadEffectiveConfig(globalOpts.config);
   const repoRoot = (await getGitRoot()) || process.cwd();
   const effectiveRepoRoot = globalOpts.config
-    ? await resolveRepoRootForPlanArg('', repoRoot, globalOpts.config)
+    ? await resolveRepoRoot(globalOpts.config, repoRoot)
     : repoRoot;
 
   let selectedPlan: PlanSchema | undefined;
@@ -208,28 +208,10 @@ export async function handleBranchCommand(
 
   if (options.nextReady) {
     if (!options.nextReady || options.nextReady.trim() === '') {
-      throw new Error('--next-ready requires a parent plan ID or file path');
+      throw new Error('--next-ready requires a numeric parent plan ID');
     }
 
-    let parentPlanId: number;
-    const parsedId = Number.parseInt(options.nextReady, 10);
-    if (!Number.isNaN(parsedId)) {
-      parentPlanId = parsedId;
-    } else {
-      const parentRepoRoot = await resolveRepoRootForPlanArg(
-        options.nextReady,
-        repoRoot,
-        globalOpts.config
-      );
-      selectedPlanRepoRoot = parentRepoRoot;
-      const planFromFile = (
-        await resolvePlanFromDbOrSyncFile(options.nextReady, parentRepoRoot, parentRepoRoot)
-      ).plan;
-      if (!planFromFile.id || typeof planFromFile.id !== 'number') {
-        throw new Error(`Plan ${options.nextReady} does not have a valid numeric ID`);
-      }
-      parentPlanId = planFromFile.id;
-    }
+    const parentPlanId = parsePlanIdFromCliArg(options.nextReady);
 
     const result = await findNextReadyDependencyFromDb(
       parentPlanId,
@@ -269,13 +251,14 @@ export async function handleBranchCommand(
   } else {
     if (!planFile) {
       throw new Error(
-        'Please provide a plan file or use --latest/--next/--current/--next-ready to find a plan'
+        'Please provide a numeric plan ID or use --latest/--next/--current/--next-ready to find a plan'
       );
     }
+    const planIdArg = String(parsePlanIdFromCliArg(planFile));
 
-    const planRepoRoot = await resolveRepoRootForPlanArg(planFile, repoRoot, globalOpts.config);
+    const planRepoRoot = await resolveRepoRoot(globalOpts.config, repoRoot);
     selectedPlanRepoRoot = planRepoRoot;
-    selectedPlan = (await resolvePlanFromDbOrSyncFile(planFile, planRepoRoot, planRepoRoot)).plan;
+    selectedPlan = (await resolvePlanFromDb(planIdArg, planRepoRoot)).plan;
   }
 
   const plan = selectedPlan;

@@ -23,11 +23,20 @@ vi.mock('../../common/process.js', () => ({
   spawnAndLogOutput: vi.fn(async () => ({ exitCode: 0, stdout: '', stderr: '' })),
 }));
 
+vi.mock('../plans.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../plans.js')>();
+  return {
+    ...actual,
+    resolvePlanFromDb: vi.fn(),
+  };
+});
+
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { getOrCreateProject } from '../db/project.js';
 import { recordWorkspace } from '../db/workspace.js';
 import { getGitRoot, getUsingJj } from '../../common/git.js';
 import { spawnAndLogOutput } from '../../common/process.js';
+import { resolvePlanFromDb } from '../plans.js';
 
 const logSpy = vi.fn(() => {});
 const warnSpy = vi.fn(() => {});
@@ -298,6 +307,17 @@ describe('workspace pull plan', () => {
       return { exitCode: 0, stdout: '', stderr: '' };
     });
 
+    vi.mocked(resolvePlanFromDb).mockResolvedValue({
+      plan: {
+        id: 123,
+        title: 'Pull plan branch',
+        branch: 'feature/plan',
+        tasks: [],
+        status: 'pending',
+      } as any,
+      planPath: null,
+    });
+
     const workspacePath = path.join(tempRoot, 'workspace');
     await fs.mkdir(workspacePath, { recursive: true });
 
@@ -310,21 +330,6 @@ describe('workspace pull plan', () => {
       branch: 'main',
     });
 
-    const planFile = path.join(tempRoot, 'task.plan.md');
-    await fs.writeFile(
-      planFile,
-      [
-        '---',
-        'id: 123',
-        'title: Pull plan branch',
-        'branch: feature/plan',
-        'tasks: []',
-        '---',
-        '',
-        'Plan details',
-      ].join('\n')
-    );
-
     const { handleWorkspacePullPlanCommand } = await import('./workspace.js');
 
     const command = {
@@ -335,7 +340,7 @@ describe('workspace pull plan', () => {
       },
     } as any;
 
-    await handleWorkspacePullPlanCommand(planFile, { workspace: workspacePath }, command);
+    await handleWorkspacePullPlanCommand('123', { workspace: workspacePath }, command);
 
     expect(processCalls).toContainEqual(['git', 'checkout', 'feature/plan']);
   });
@@ -368,6 +373,16 @@ describe('workspace pull plan', () => {
       return { exitCode: 0, stdout: '', stderr: '' };
     });
 
+    vi.mocked(resolvePlanFromDb).mockResolvedValue({
+      plan: {
+        id: 123,
+        title: 'Pull plan branch',
+        tasks: [],
+        status: 'pending',
+      } as any,
+      planPath: null,
+    });
+
     const configDir = path.join(tempRoot, '.rmfilter', 'config');
     await fs.mkdir(configDir, { recursive: true });
     await fs.writeFile(path.join(configDir, 'tim.yml'), 'branchPrefix: di/\n');
@@ -384,14 +399,6 @@ describe('workspace pull plan', () => {
       branch: 'main',
     });
 
-    const planFile = path.join(tempRoot, 'task.plan.md');
-    await fs.writeFile(
-      planFile,
-      ['---', 'id: 123', 'title: Pull plan branch', 'tasks: []', '---', '', 'Plan details'].join(
-        '\n'
-      )
-    );
-
     const { handleWorkspacePullPlanCommand } = await import('./workspace.js');
 
     const command = {
@@ -402,7 +409,7 @@ describe('workspace pull plan', () => {
       },
     } as any;
 
-    await handleWorkspacePullPlanCommand(planFile, { workspace: workspacePath }, command);
+    await handleWorkspacePullPlanCommand('123', { workspace: workspacePath }, command);
 
     expect(processCalls).toContainEqual(['git', 'checkout', generatedBranch]);
   });

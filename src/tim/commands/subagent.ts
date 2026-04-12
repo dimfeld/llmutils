@@ -10,7 +10,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'node:path';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import { parsePlanIdFromCliArg, resolvePlanFromDb } from '../plans.js';
 import { getAllIncompleteTasks } from '../plans/find_next.js';
 import { buildExecutionPromptWithoutSteps } from '../prompt_builder.js';
 import {
@@ -28,7 +28,7 @@ import type { Executor } from '../executors/types.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { log } from '../../logging.js';
 import { resolveOrchestratorInput } from '../utils/orchestrator_input.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 import { materializePlan } from '../plan_materialize.js';
 
 export type SubagentType = 'implementer' | 'tester' | 'tdd-tests' | 'verifier';
@@ -71,17 +71,13 @@ export async function handleSubagentCommand(
   options: SubagentOptions,
   globalCliOptions: any
 ): Promise<void> {
+  const planIdArg = String(parsePlanIdFromCliArg(planFileArg));
   const config = await loadEffectiveConfig(globalCliOptions.config);
-  const repoRoot = await resolveRepoRootForPlanArg(
-    planFileArg,
-    (await getGitRoot()) || process.cwd(),
-    globalCliOptions.config
+  const repoRoot = await resolveRepoRoot(
+    globalCliOptions.config,
+    (await getGitRoot()) || process.cwd()
   );
-  const { plan: planData, planPath } = await resolvePlanFromDbOrSyncFile(
-    planFileArg,
-    repoRoot,
-    repoRoot
-  );
+  const { plan: planData, planPath } = await resolvePlanFromDb(planIdArg, repoRoot);
   const planFilePath = planPath ?? (await materializePlan(planData.id, repoRoot));
   const gitRoot = await getGitRoot(path.dirname(planFilePath));
   const executorType = options.executor || 'claude-code';

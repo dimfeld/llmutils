@@ -8,8 +8,8 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { getDatabase } from '../db/database.js';
 import { syncPlanToDb } from '../db/plan_sync.js';
 import { buildDescriptionFromPlan, getCombinedTitleFromSummary } from '../display_utils.js';
-import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { parsePlanIdFromCliArg, resolvePlanFromDb } from '../plans.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
 import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../executors/index.js';
@@ -182,7 +182,7 @@ export async function handleChatCommand(
   // Resolve repo root from config/plan arg once, for both plan resolution and workspace setup
   const configRepoRoot =
     options.plan || globalOpts.config
-      ? await resolveRepoRootForPlanArg(options.plan ?? '', undefined, globalOpts.config)
+      ? await resolveRepoRoot(globalOpts.config)
       : (await getGitRoot()) || process.cwd();
   const workspaceConfig =
     path.resolve(configRepoRoot) === path.resolve(process.cwd())
@@ -236,11 +236,8 @@ export async function handleChatCommand(
   };
 
   if (options.plan) {
-    const resolvedPlan = await resolvePlanFromDbOrSyncFile(
-      options.plan,
-      configRepoRoot,
-      configRepoRoot
-    );
+    const planIdArg = String(parsePlanIdFromCliArg(options.plan));
+    const resolvedPlan = await resolvePlanFromDb(planIdArg, configRepoRoot);
     currentPlanFile = resolvedPlan.planPath ?? '';
     currentPlanData = resolvedPlan.plan;
   }

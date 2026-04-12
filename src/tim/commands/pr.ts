@@ -37,8 +37,8 @@ import {
 import { resolvePlan } from '../plan_display.js';
 import { getReviewThreadDisplayLine } from './review.js';
 import type { PlanSchema } from '../planSchema.js';
-import { resolvePlanFromDb, writePlanFile } from '../plans.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { parsePlanIdFromCliArg, resolvePlanFromDb, writePlanFile } from '../plans.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 import { getWorkspaceInfoByPath } from '../workspace/workspace_info.js';
 
 interface RootCommandLike {
@@ -76,7 +76,7 @@ function getWorkspacePlanReference(cwd: string): string | null {
   while (true) {
     const workspaceInfo = getWorkspaceInfoByPath(currentDir);
     if (workspaceInfo) {
-      return workspaceInfo.originalPlanFilePath ?? workspaceInfo.planId ?? null;
+      return workspaceInfo.planId ?? null;
     }
 
     const parentDir = path.dirname(currentDir);
@@ -93,23 +93,22 @@ async function resolvePlanForCommand(
   command: RootCommandLike | undefined
 ): Promise<{ plan: PlanSchema; planPath: string | null; repoRoot: string }> {
   const trimmedPlanArg = planArg?.trim();
-  const effectivePlanArg =
-    trimmedPlanArg && trimmedPlanArg.length > 0
-      ? trimmedPlanArg
-      : getWorkspacePlanReference(process.cwd());
+  let effectivePlanArg: string | undefined;
+  if (trimmedPlanArg && trimmedPlanArg.length > 0) {
+    parsePlanIdFromCliArg(trimmedPlanArg);
+    effectivePlanArg = trimmedPlanArg;
+  } else {
+    effectivePlanArg = getWorkspacePlanReference(process.cwd()) ?? undefined;
+  }
 
   if (!effectivePlanArg) {
     throw new Error(
-      'Please provide a plan ID/path or run this command from a workspace linked to a plan'
+      'Please provide a plan ID or run this command from a workspace linked to a plan'
     );
   }
 
   const globalOpts = getRootOptions(command);
-  const repoRoot = await resolveRepoRootForPlanArg(
-    effectivePlanArg,
-    process.cwd(),
-    globalOpts.config
-  );
+  const repoRoot = await resolveRepoRoot(globalOpts.config, process.cwd());
   const resolved = await resolvePlan(effectivePlanArg, {
     gitRoot: repoRoot,
     configPath: globalOpts.config,

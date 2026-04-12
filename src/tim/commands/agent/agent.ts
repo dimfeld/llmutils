@@ -34,7 +34,13 @@ import {
 } from '../../executors/index.js';
 import type { ExecutorCommonOptions } from '../../executors/types.js';
 import type { PlanSchema } from '../../planSchema.js';
-import { readPlanFile, setPlanStatusById, writePlanFile } from '../../plans.js';
+import {
+  parsePlanIdFromCliArg,
+  readPlanFile,
+  resolvePlanFromDb,
+  setPlanStatusById,
+  writePlanFile,
+} from '../../plans.js';
 import { findNextActionableItem } from '../../plans/find_next.js';
 import { markStepDone, markTaskDone } from '../../plans/mark_done.js';
 import { prepareNextStep } from '../../plans/prepare_step.js';
@@ -74,7 +80,6 @@ import {
   findNextReadyDependencyFromDb,
   toHeadlessPlanSummary,
 } from '../plan_discovery.js';
-import { resolvePlanFromDbOrSyncFile } from '../../ensure_plan_in_db.js';
 import { clearTmpDir } from '../../batch_review_cache.js';
 import { autoCreatePrForPlan } from '../create_pr.js';
 
@@ -133,23 +138,12 @@ export async function handleAgentCommand(
     if ('nextReady' in options) {
       // Validate that --next-ready has a value (parent plan ID or file path)
       if (!options.nextReady || options.nextReady === true || options.nextReady.trim() === '') {
-        throw new Error('--next-ready requires a parent plan ID or file path');
+        throw new Error('--next-ready requires a numeric parent plan ID');
       }
 
       // Find the next ready dependency of the specified parent plan
-      // Convert string ID to number or resolve plan file to get numeric ID
       const repoRoot = await getGitRoot();
-      let parentPlanId: number;
-      const planIdNumber = parseInt(options.nextReady, 10);
-      if (!isNaN(planIdNumber)) {
-        parentPlanId = planIdNumber;
-      } else {
-        const { plan } = await resolvePlanFromDbOrSyncFile(options.nextReady, repoRoot, repoRoot);
-        if (!plan.id || typeof plan.id !== 'number') {
-          throw new Error(`Plan file ${options.nextReady} does not have a valid numeric ID`);
-        }
-        parentPlanId = plan.id;
-      }
+      const parentPlanId = parsePlanIdFromCliArg(options.nextReady);
 
       const result = await findNextReadyDependencyFromDb(parentPlanId, repoRoot, repoRoot);
 
@@ -225,10 +219,10 @@ export async function handleAgentCommand(
     } else {
       if (!planFile) {
         throw new Error(
-          'Plan file is required, or use --next/--current/--next-ready/--latest to find a plan'
+          'A numeric plan ID is required, or use --next/--current/--next-ready/--latest to find a plan'
         );
       }
-      resolvedPlanArg = planFile;
+      resolvedPlanArg = String(parsePlanIdFromCliArg(planFile));
     }
 
     if (!resolvedPlanArg) {
@@ -239,7 +233,7 @@ export async function handleAgentCommand(
     if (!headlessPlanSummary) {
       try {
         const repoRoot = await getGitRoot();
-        const { plan } = await resolvePlanFromDbOrSyncFile(resolvedPlanArg, repoRoot, repoRoot);
+        const { plan } = await resolvePlanFromDb(resolvedPlanArg, repoRoot);
         headlessPlanSummary = toHeadlessPlanSummary(plan);
       } catch {
         // No-op: missing plan metadata should not block execution.
@@ -297,11 +291,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
     setDeferSignalExit(true);
     config = await loadEffectiveConfig(globalCliOptions.config);
     currentBaseDir = await getGitRoot();
-    const initialResolvedPlan = await resolvePlanFromDbOrSyncFile(
-      planArg,
-      currentBaseDir,
-      currentBaseDir
-    );
+    const initialResolvedPlan = await resolvePlanFromDb(planArg, currentBaseDir);
     const initialPlanData = initialResolvedPlan.plan;
 
     if (options.log !== false) {
@@ -782,7 +772,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
           if (isShuttingDown()) break;
 
           try {
-            await runUpdateDocs(currentPlanFile, config, {
+            await runUpdateDocs(planData, currentPlanFile, config, {
               executor: config.updateDocs?.executor,
               model: config.updateDocs?.model,
               baseDir: currentBaseDir,
@@ -839,7 +829,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
               if (isShuttingDown()) break;
 
               try {
-                await runUpdateDocs(currentPlanFile, config, {
+                await runUpdateDocs(planData, currentPlanFile, config, {
                   executor: config.updateDocs?.executor,
                   model: config.updateDocs?.model,
                   baseDir: currentBaseDir,
@@ -947,13 +937,18 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
               if (isShuttingDown()) break;
 
               try {
-                const lessonsUpdateResult = await runUpdateLessons(currentPlanFile, config, {
-                  executor: config.updateDocs?.executor,
-                  model: config.updateDocs?.model,
-                  baseDir: currentBaseDir,
-                  nonInteractive: noninteractive,
-                  terminalInput: terminalInputEnabled,
-                });
+                const lessonsUpdateResult = await runUpdateLessons(
+                  planData,
+                  currentPlanFile,
+                  config,
+                  {
+                    executor: config.updateDocs?.executor,
+                    model: config.updateDocs?.model,
+                    baseDir: currentBaseDir,
+                    nonInteractive: noninteractive,
+                    terminalInput: terminalInputEnabled,
+                  }
+                );
                 if (lessonsUpdateResult === true || lessonsUpdateResult === 'skipped-no-lessons') {
                   const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
                   updatedPlanForTimestamp.lessonsAppliedAt = new Date().toISOString();
@@ -1145,7 +1140,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
         if (isShuttingDown()) break;
 
         try {
-          await runUpdateDocs(currentPlanFile, config, {
+          await runUpdateDocs(planData, currentPlanFile, config, {
             executor: config.updateDocs?.executor,
             model: config.updateDocs?.model,
             baseDir: currentBaseDir,
@@ -1200,7 +1195,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
             if (isShuttingDown()) break;
 
             try {
-              await runUpdateDocs(currentPlanFile, config, {
+              await runUpdateDocs(planData, currentPlanFile, config, {
                 executor: config.updateDocs?.executor,
                 model: config.updateDocs?.model,
                 baseDir: currentBaseDir,
@@ -1238,13 +1233,18 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
             if (isShuttingDown()) break;
 
             try {
-              const lessonsUpdateResult = await runUpdateLessons(currentPlanFile, config, {
-                executor: config.updateDocs?.executor,
-                model: config.updateDocs?.model,
-                baseDir: currentBaseDir,
-                nonInteractive: noninteractive,
-                terminalInput: terminalInputEnabled,
-              });
+              const lessonsUpdateResult = await runUpdateLessons(
+                planData,
+                currentPlanFile,
+                config,
+                {
+                  executor: config.updateDocs?.executor,
+                  model: config.updateDocs?.model,
+                  baseDir: currentBaseDir,
+                  nonInteractive: noninteractive,
+                  terminalInput: terminalInputEnabled,
+                }
+              );
               if (lessonsUpdateResult === true || lessonsUpdateResult === 'skipped-no-lessons') {
                 const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
                 updatedPlanForTimestamp.lessonsAppliedAt = new Date().toISOString();

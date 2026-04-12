@@ -253,23 +253,24 @@ test('saveReviewIssuesToPlan persists only the selected review issues', async ()
   expect(updatedPlan.reviewIssues).toEqual([reviewIssues[0]]);
 });
 
-test('handleReviewCommand resolves plan by file path', async () => {
-  // Create a test plan file
-  const planContent = `
-id: 1
-title: Test Plan
-goal: Test the review functionality
-details: This is a test plan for the review command
-tasks:
-  - title: Test task
-    description: A test task
-    steps:
-      - prompt: Do something
-        done: false
-`;
-
+test('handleReviewCommand resolves plan by numeric ID', async () => {
+  // Create a test plan in the DB
+  await writePlanToDb(
+    {
+      id: 1,
+      title: 'Test Plan',
+      goal: 'Test the review functionality',
+      details: 'This is a test plan for the review command',
+      tasks: [
+        {
+          title: 'Test task',
+          description: 'A test task',
+        },
+      ],
+    },
+    { cwdForIdentity: testDir }
+  );
   const planFile = join(testDir, 'test-plan.yml');
-  await writeFile(planFile, `---\n${planContent}---\n`);
 
   // Mock the buildExecutorAndLog and other dependencies
   vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue({
@@ -327,14 +328,14 @@ tasks:
     prompt: 'mock reviewer prompt',
   } as any);
 
-  // Test resolving plan by file path
+  // Test resolving plan by numeric ID
   const mockCommand = {
     parent: {
       opts: () => ({}),
     },
   };
 
-  await handleReviewCommand(planFile, {}, mockCommand);
+  await handleReviewCommand('1', {}, mockCommand);
 });
 
 test('handleReviewCommand resolves plan by ID', async () => {
@@ -491,7 +492,7 @@ test('uses review default executor from config when no executor option passed', 
     },
   };
 
-  await handleReviewCommand('plan.yml', { noSave: true }, mockCommand);
+  await handleReviewCommand('1', { noSave: true }, mockCommand);
 
   expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
 });
@@ -847,10 +848,8 @@ index 1234567..abcdefg 100644
 
 describe('handleReviewCommand error handling', () => {
   test('throws error when plan cannot be loaded', async () => {
-    const invalidPlanFile = join(testDir, 'invalid.yml');
-
     vi.mocked(contextGatheringModule.gatherPlanContext).mockRejectedValue(
-      new Error('Plan file not found: ' + invalidPlanFile)
+      new Error('Plan not found: 999')
     );
 
     vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({} as any);
@@ -861,17 +860,13 @@ describe('handleReviewCommand error handling', () => {
       },
     };
 
-    await expect(handleReviewCommand(invalidPlanFile, {}, mockCommand)).rejects.toThrow(
-      'Plan file not found'
-    );
+    await expect(handleReviewCommand('999', {}, mockCommand)).rejects.toThrow('Plan not found');
   });
 
   test('exits early when no changes detected', async () => {
-    const planFile = join(testDir, 'no-changes.yml');
-
     vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
       createMockPlanContext({
-        resolvedPlanFile: planFile,
+        resolvedPlanFile: '1',
         planData: {
           id: 1,
           title: 'Test Plan',
@@ -905,14 +900,14 @@ describe('handleReviewCommand error handling', () => {
     };
 
     // Should complete without error but not call executor
-    await expect(handleReviewCommand(planFile, {}, mockCommand)).resolves.toEqual({
+    await expect(handleReviewCommand('1', {}, mockCommand)).resolves.toEqual({
       tasksAppended: 0,
       issuesSaved: 0,
     });
   });
 
   test('handles executor execution failure', async () => {
-    const planFile = join(testDir, 'executor-fail.yml');
+    const planFile = join(testDir, 'executor-fail.yml'); // only used in mock context
     await writePlanToDb(
       {
         id: 126,
@@ -946,7 +941,7 @@ describe('handleReviewCommand error handling', () => {
     // Avoid real context gathering that would hit git/FS
     vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
       createMockPlanContext({
-        resolvedPlanFile: planFile,
+        resolvedPlanFile: '126',
         planData: {
           id: 126,
           title: 'Test No Issues',
@@ -977,7 +972,7 @@ describe('handleReviewCommand error handling', () => {
       },
     };
 
-    await expect(handleReviewCommand(planFile, {}, mockCommand)).rejects.toThrow(
+    await expect(handleReviewCommand('126', {}, mockCommand)).rejects.toThrow(
       'Review execution failed'
     );
   });
@@ -985,23 +980,25 @@ describe('handleReviewCommand error handling', () => {
 
 describe('integration with executor system', () => {
   test('passes correct parameters to executor', async () => {
-    const planContent = `
-id: 123
-title: Integration Test Plan
-goal: Test executor integration
-tasks:
-  - title: Test task
-    description: Integration test task
-`;
-    const planFile = join(testDir, 'integration.yml');
-    await writeFile(planFile, `---\n${planContent}---\n`);
+    await writePlanToDb(
+      {
+        id: 123,
+        title: 'Integration Test Plan',
+        goal: 'Test executor integration',
+        tasks: [
+          {
+            title: 'Test task',
+            description: 'Integration test task',
+          },
+        ],
+      },
+      { cwdForIdentity: testDir }
+    );
 
     const mockExecutor = {
       execute: vi.fn(async (prompt: string, metadata: any) => {
         expect(prompt).toContain('REVIEWER AGENT');
-        // expect(metadata.planId).toBe('123');
         expect(metadata.planTitle).toBe('Integration Test Plan');
-        // expect(metadata.planFilePath).toBe(planFile);
         return JSON.stringify({
           issues: [],
           recommendations: [],
@@ -1016,7 +1013,7 @@ tasks:
 
     vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
       createMockPlanContext({
-        resolvedPlanFile: planFile,
+        resolvedPlanFile: '123',
         planData: {
           id: 123,
           title: 'Integration Test Plan',
@@ -1065,22 +1062,27 @@ tasks:
       },
     };
 
-    await handleReviewCommand(planFile, { executor: 'claude-code' }, mockCommand);
+    await handleReviewCommand('123', { executor: 'claude-code' }, mockCommand);
 
     expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
   });
 
   test('passes executionMode review to executor for review-only operation', async () => {
-    const planContent = `
-id: 123
-title: Test Review Execution
-goal: Test that review command uses review execution mode
-tasks:
-  - title: Test task
-    description: A test task for review execution mode
-`;
-    const planFile = join(testDir, 'review-execution.yml');
-    await writeFile(planFile, `---\n${planContent}---\n`);
+    await writePlanToDb(
+      {
+        id: 123,
+        title: 'Test Review Execution',
+        goal: 'Test that review command uses review execution mode',
+        tasks: [
+          {
+            title: 'Test task',
+            description: 'A test task for review execution mode',
+          },
+        ],
+      },
+      { cwdForIdentity: testDir }
+    );
+    const materializedPlanPath = join(testDir, '.tim', 'plans', '123.plan.md');
 
     const mockExecutor = {
       execute: vi.fn(async (prompt: string, planInfo: any) => {
@@ -1088,7 +1090,7 @@ tasks:
         expect(planInfo.executionMode).toBe('review');
         expect(planInfo.planId).toBe('123');
         expect(planInfo.planTitle).toBe('Test Review Execution');
-        expect(planInfo.planFilePath).toBe(planFile);
+        expect(planInfo.planFilePath).toBe(materializedPlanPath);
         expect(planInfo.captureOutput).toBe('result');
         return JSON.stringify({
           issues: [],
@@ -1104,7 +1106,7 @@ tasks:
 
     vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
       createMockPlanContext({
-        resolvedPlanFile: planFile,
+        resolvedPlanFile: '123',
         planData: {
           id: 123,
           title: 'Test Review Execution',
@@ -1140,7 +1142,7 @@ tasks:
       },
     };
 
-    await handleReviewCommand(planFile, {}, mockCommand);
+    await handleReviewCommand('123', {}, mockCommand);
 
     // Verify the executor was called with correct executionMode
     expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
@@ -1299,7 +1301,7 @@ tasks:
 
     try {
       await handleReviewCommand(
-        planFile,
+        '1',
         {
           print: true,
           format: 'terminal',
@@ -1557,7 +1559,7 @@ describe('Parent plan context handling', () => {
       },
     };
 
-    await handleReviewCommand(childPlanFile, {}, mockCommand);
+    await handleReviewCommand('101', {}, mockCommand);
 
     expect(gatherPlanContextMock).toHaveBeenCalledTimes(1);
     expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
@@ -1987,8 +1989,6 @@ describe('Security fixes', () => {
 
   describe('Input validation for plan files', () => {
     test('validates multiple tasks correctly', async () => {
-      const planFile = join(testDir, 'multiple-invalid-tasks.yml');
-
       vi.mocked(contextGatheringModule.gatherPlanContext).mockRejectedValue(
         new Error('tasks.1.title: Invalid input: expected string, received undefined')
       );
@@ -2001,7 +2001,7 @@ describe('Security fixes', () => {
         },
       };
 
-      await expect(handleReviewCommand(planFile, {}, mockCommand)).rejects.toThrow(
+      await expect(handleReviewCommand('1', {}, mockCommand)).rejects.toThrow(
         'tasks.1.title: Invalid input: expected string, received undefined'
       );
     });
@@ -2068,16 +2068,15 @@ describe('Security fixes', () => {
     });
 
     test('handles executor errors properly in review command', async () => {
-      const planContent = `
-id: 1
-title: Test Plan
-goal: Test goal
-tasks:
-  - title: Test task
-    description: A test task
-`;
-      const planFile = join(testDir, 'error-test.yml');
-      await writeFile(planFile, `---\n${planContent}---\n`);
+      await writePlanToDb(
+        {
+          id: 1,
+          title: 'Test Plan',
+          goal: 'Test goal',
+          tasks: [{ title: 'Test task', description: 'A test task' }],
+        },
+        { cwdForIdentity: testDir }
+      );
 
       const mockExecutor = {
         execute: async () => {
@@ -2089,7 +2088,7 @@ tasks:
 
       vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
         createMockPlanContext({
-          resolvedPlanFile: planFile,
+          resolvedPlanFile: '1',
           planData: {
             id: 1,
             title: 'Test Plan',
@@ -2124,7 +2123,7 @@ tasks:
         },
       };
 
-      await expect(handleReviewCommand(planFile, {}, mockCommand)).rejects.toThrow(
+      await expect(handleReviewCommand('1', {}, mockCommand)).rejects.toThrow(
         'Review execution failed: Network timeout'
       );
     });
@@ -2734,16 +2733,20 @@ describe('Autofix functionality', () => {
   });
 
   test('autofix flag executes review then autofix when issues found', async () => {
-    const planContent = `
-id: 123
-title: Test Plan with Issues
-goal: Test autofix functionality
-tasks:
-  - title: Test task
-    description: A test task that has issues
-`;
-    const planFile = join(testDir, 'autofix-test.yml');
-    await writeFile(planFile, `---\n${planContent}---\n`);
+    await writePlanToDb(
+      {
+        id: 123,
+        title: 'Test Plan with Issues',
+        goal: 'Test autofix functionality',
+        tasks: [
+          {
+            title: 'Test task',
+            description: 'A test task that has issues',
+          },
+        ],
+      },
+      { cwdForIdentity: testDir }
+    );
 
     // Mock checkbox to return all issues when autofix flag is used
     vi.mocked(inquirerModule.confirm).mockRejectedValue(
@@ -2799,7 +2802,7 @@ tasks:
 
     vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
       createMockPlanContext({
-        resolvedPlanFile: planFile,
+        resolvedPlanFile: '123',
         planData: {
           id: 123,
           title: 'Test Plan with Issues',
@@ -2837,7 +2840,7 @@ tasks:
       },
     };
 
-    await handleReviewCommand(planFile, { autofix: true }, mockCommand);
+    await handleReviewCommand('123', { autofix: true }, mockCommand);
 
     // Verify the executor was called twice: once for review, once for autofix
     expect(mockExecutor.execute).toHaveBeenCalledTimes(2);
@@ -2865,16 +2868,7 @@ tasks:
 
   // TODO something flaky about this test
   test.skip('prompts user for autofix when issues found without autofix flag', async () => {
-    const planContent = `
-id: 124
-title: Test Interactive Prompt
-goal: Test interactive autofix prompt
-tasks:
-  - title: Test task
-    description: A test task with issues
-`;
-    const planFile = join(testDir, 'interactive-test.yml');
-    await writeFile(planFile, `---\n${planContent}---\n`);
+    const planFile = join(testDir, 'interactive-test.yml'); // only used in mock context
 
     const mockExecutor = {
       execute: vi.fn(async (prompt: string, metadata: any) => {
@@ -2932,23 +2926,23 @@ tasks:
     };
 
     // Call without autofix flag - should prompt user and execute autofix
-    await handleReviewCommand(planFile, {}, mockCommand);
+    await handleReviewCommand('124', {}, mockCommand);
 
     // Should execute both review and autofix
     expect(mockExecutor.execute).toHaveBeenCalledTimes(2);
   });
 
   test('respects user declining autofix prompt', async () => {
-    const planContent = `
-id: 125
-title: Test Declined Autofix
-goal: Test user declining autofix
-tasks:
-  - title: Test task
-    description: A test task with issues
-`;
-    const planFile = join(testDir, 'decline-test.yml');
-    await writeFile(planFile, `---\n${planContent}---\n`);
+    await writePlanToDb(
+      {
+        id: 125,
+        title: 'Test Declined Autofix',
+        goal: 'Test user declining autofix',
+        tasks: [{ title: 'Test task', description: 'A test task with issues' }],
+      },
+      { cwdForIdentity: testDir }
+    );
+    const planFile = join(testDir, 'decline-test.yml'); // only used in mock context
 
     const mockExecutor = {
       execute: vi.fn(async (prompt: string, metadata: any) => {
@@ -2988,7 +2982,7 @@ tasks:
 
     vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
       createMockPlanContext({
-        resolvedPlanFile: planFile,
+        resolvedPlanFile: '125',
         planData: {
           id: 125,
           title: 'Test Declined Autofix',
@@ -3026,7 +3020,7 @@ tasks:
       },
     };
 
-    await handleReviewCommand(planFile, {}, mockCommand);
+    await handleReviewCommand('125', {}, mockCommand);
 
     // Should only execute review, not autofix
     expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
@@ -3039,16 +3033,16 @@ tasks:
   });
 
   test('no prompt or autofix when no issues found', async () => {
-    const planContent = `
-id: 126
-title: Test No Issues
-goal: Test no autofix when no issues
-tasks:
-  - title: Test task
-    description: A clean test task
-`;
-    const planFile = join(testDir, 'no-issues-test.yml');
-    await writeFile(planFile, `---\n${planContent}---\n`);
+    await writePlanToDb(
+      {
+        id: 126,
+        title: 'Test No Issues',
+        goal: 'Test no autofix when no issues',
+        tasks: [{ title: 'Test task', description: 'A clean test task' }],
+      },
+      { cwdForIdentity: testDir }
+    );
+    const planFile = join(testDir, 'no-issues-test.yml'); // only used in mock context
 
     const mockExecutor = {
       execute: vi.fn(async (prompt: string, metadata: any) => {
@@ -3079,7 +3073,7 @@ tasks:
 
     vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
       createMockPlanContext({
-        resolvedPlanFile: planFile,
+        resolvedPlanFile: '126',
         planData: {
           id: 126,
           title: 'Test No Issues',
@@ -3118,26 +3112,26 @@ tasks:
     };
 
     // Test both with and without autofix flag - should behave the same (no autofix)
-    await handleReviewCommand(planFile, {}, mockCommand);
+    await handleReviewCommand('126', {}, mockCommand);
     expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
 
     // Reset mock and test with autofix flag
     mockExecutor.execute.mockClear();
-    await handleReviewCommand(planFile, { autofix: true }, mockCommand);
+    await handleReviewCommand('126', { autofix: true }, mockCommand);
     expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
   });
 
   test('no-autofix flag prevents autofix even when issues found', async () => {
-    const planContent = `
-id: 127
-title: Test No-Autofix Flag
-goal: Test no-autofix flag prevention
-tasks:
-  - title: Test task
-    description: A test task with issues
-`;
-    const planFile = join(testDir, 'no-autofix-test.yml');
-    await writeFile(planFile, `---\n${planContent}---\n`);
+    await writePlanToDb(
+      {
+        id: 127,
+        title: 'Test No-Autofix Flag',
+        goal: 'Test no-autofix flag prevention',
+        tasks: [{ title: 'Test task', description: 'A test task with issues' }],
+      },
+      { cwdForIdentity: testDir }
+    );
+    const planFile = join(testDir, 'no-autofix-test.yml'); // only used in mock context
 
     const mockExecutor = {
       execute: vi.fn(async (prompt: string, metadata: any) => {
@@ -3173,7 +3167,7 @@ tasks:
     // Short-circuit context gathering to avoid touching real git and IO
     vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
       createMockPlanContext({
-        resolvedPlanFile: planFile,
+        resolvedPlanFile: '127',
         planData: {
           id: 127,
           title: 'Test No-Autofix Flag',
@@ -3216,7 +3210,7 @@ tasks:
       },
     };
 
-    await handleReviewCommand(planFile, { noAutofix: true }, mockCommand);
+    await handleReviewCommand('127', { noAutofix: true }, mockCommand);
 
     // Should only execute review, not autofix
     expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
@@ -3637,16 +3631,15 @@ Updated by branch-name autofix
 
 describe('JSON output mode integration', () => {
   test('detects JSON output from executor metadata and parses correctly', async () => {
-    const planContent = `
-id: 200
-title: JSON Output Test Plan
-goal: Test JSON output parsing
-tasks:
-  - title: Test task
-    description: A test task for JSON output
-`;
-    const planFile = join(testDir, 'json-output-test.yml');
-    await writeFile(planFile, `---\n${planContent}---\n`);
+    await writePlanToDb(
+      {
+        id: 200,
+        title: 'JSON Output Test Plan',
+        goal: 'Test JSON output parsing',
+        tasks: [{ title: 'Test task', description: 'A test task for JSON output' }],
+      },
+      { cwdForIdentity: testDir }
+    );
 
     // JSON output that the executor would return with structured format
     const jsonReviewOutput = JSON.stringify({
@@ -3696,7 +3689,7 @@ tasks:
 
     vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
       createMockPlanContext({
-        resolvedPlanFile: planFile,
+        resolvedPlanFile: '200',
         planData: {
           id: 200,
           title: 'JSON Output Test Plan',
@@ -3728,7 +3721,7 @@ tasks:
     };
 
     // Execute the review command
-    await handleReviewCommand(planFile, { noAutofix: true }, mockCommand);
+    await handleReviewCommand('200', { noAutofix: true }, mockCommand);
 
     // Verify the executor was called
     expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
@@ -3741,16 +3734,15 @@ tasks:
   });
 
   test('executor string output must be valid JSON', async () => {
-    const planContent = `
-id: 201
-title: JSON Output Test Plan
-goal: Test JSON output parsing
-tasks:
-  - title: Test task
-    description: A test task for JSON output
-`;
-    const planFile = join(testDir, 'json-output-test.yml');
-    await writeFile(planFile, `---\n${planContent}---\n`);
+    await writePlanToDb(
+      {
+        id: 201,
+        title: 'Text Output Test Plan',
+        goal: 'Test text output parsing',
+        tasks: [{ title: 'Test task', description: 'A test task for text output' }],
+      },
+      { cwdForIdentity: testDir }
+    );
 
     // JSON output that the executor would return in string format
     const jsonReviewOutput = JSON.stringify({
@@ -3786,7 +3778,7 @@ tasks:
 
     vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
       createMockPlanContext({
-        resolvedPlanFile: planFile,
+        resolvedPlanFile: '201',
         planData: {
           id: 201,
           title: 'Text Output Test Plan',
@@ -3818,23 +3810,22 @@ tasks:
     };
 
     // Execute the review command - should not throw
-    await handleReviewCommand(planFile, { noAutofix: true }, mockCommand);
+    await handleReviewCommand('201', { noAutofix: true }, mockCommand);
 
     // Verify the executor was called
     expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
   });
 
   test('executor output with JSON content is parsed correctly', async () => {
-    const planContent = `
-id: 202
-title: JSON Mode Plan
-goal: Test JSON mode
-tasks:
-  - title: Test task
-    description: A test task
-`;
-    const planFile = join(testDir, 'json-mode-test.yml');
-    await writeFile(planFile, `---\n${planContent}---\n`);
+    await writePlanToDb(
+      {
+        id: 202,
+        title: 'Explicit Text Mode Plan',
+        goal: 'Test explicit text mode',
+        tasks: [{ title: 'Test task', description: 'A test task' }],
+      },
+      { cwdForIdentity: testDir }
+    );
 
     const jsonOutput = JSON.stringify({
       issues: [
@@ -3875,7 +3866,7 @@ tasks:
 
     vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
       createMockPlanContext({
-        resolvedPlanFile: planFile,
+        resolvedPlanFile: '202',
         planData: {
           id: 202,
           title: 'Explicit Text Mode Plan',
@@ -3907,7 +3898,7 @@ tasks:
     };
 
     // Execute the review command
-    await handleReviewCommand(planFile, { noAutofix: true }, mockCommand);
+    await handleReviewCommand('202', { noAutofix: true }, mockCommand);
 
     expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
   });

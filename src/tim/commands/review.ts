@@ -11,8 +11,13 @@ import {
   getUsingJj,
 } from '../../common/git.js';
 import { promptCheckbox, promptSelect } from '../../common/input.js';
-import { isPlanNotFoundError, resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
-import { readPlanFile, resolvePlanFromDb, writePlanFile } from '../plans.js';
+import {
+  PlanNotFoundError,
+  parsePlanIdFromCliArg,
+  readPlanFile,
+  resolvePlanFromDb,
+  writePlanFile,
+} from '../plans.js';
 import { log, warn, runWithLogger, sendStructured } from '../../logging.js';
 import { getLoggerAdapter, type LoggerAdapter } from '../../logging/adapter.js';
 import type { StructuredMessage } from '../../logging/structured_messages.js';
@@ -73,7 +78,7 @@ import {
 } from '../batch_review_cache.js';
 import which from 'which';
 import { getMaterializedPlanPath, materializePlan } from '../plan_materialize.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 const FIX_EXECUTOR_COMMANDS = {
   'claude-code': 'claude',
   'codex-cli': 'codex',
@@ -323,7 +328,7 @@ async function autoSelectPlanForReview(
   cwd?: string,
   configPath?: string
 ): Promise<AutoSelectedReviewPlan | null> {
-  const repoRoot = await resolveRepoRootForPlanArg('', cwd ?? process.cwd(), configPath);
+  const repoRoot = await resolveRepoRoot(configPath, cwd ?? process.cwd());
   const branchName = await getCurrentBranchName(repoRoot);
   const planIdMatch = branchName?.match(/^(\d+)-/);
 
@@ -340,7 +345,7 @@ async function autoSelectPlanForReview(
     } catch (err) {
       // If the plan wasn't found in the DB, return null so the caller can report
       // the error. Re-throw unexpected errors (DB failures, malformed rows, etc.)
-      if (!isPlanNotFoundError(err)) {
+      if (!(err instanceof PlanNotFoundError)) {
         throw err;
       }
     }
@@ -809,7 +814,7 @@ export async function handleReviewCommand(
   };
 
   // If no planFile is provided, try to auto-select one from branch-specific plans
-  let resolvedPlanFile = planFile;
+  let resolvedPlanFile = planFile ? String(parsePlanIdFromCliArg(planFile)) : undefined;
   let autoSelectedPlanForReview: AutoSelectedReviewPlan | null = null;
   try {
     try {
@@ -824,8 +829,7 @@ export async function handleReviewCommand(
 
       if (!autoSelectedPlan) {
         throw new Error(
-          'No plan file specified and no suitable plans found. ' +
-            'Please specify a plan file explicitly.'
+          'No plan ID specified and no suitable plans found. Please specify a plan ID explicitly.'
         );
       }
 
@@ -842,14 +846,14 @@ export async function handleReviewCommand(
       resolvedPlanFile = autoSelectedPlan.planRef;
     }
     if (!resolvedPlanFile) {
-      throw new Error('No plan file resolved for review.');
+      throw new Error('No plan ID resolved for review.');
     }
     let initialResolvedPlan: Awaited<ReturnType<typeof resolveReviewPlanForWrite>> | undefined;
     let resolvedPlanFilePath = resolvedPlanFile;
     if (autoSelectedPlanForReview?.selectionReason === 'branch-name') {
       const repoRoot =
         autoSelectedPlanForReview.repoRoot ??
-        (await resolveRepoRootForPlanArg(resolvedPlanFile, options.cwd, globalOpts.config));
+        (await resolveRepoRoot(globalOpts.config, options.cwd));
       const existingPath = await materializedPlanFileExists(
         repoRoot,
         autoSelectedPlanForReview.plan.id
@@ -2055,8 +2059,8 @@ async function resolveReviewPlanForWrite(
   planPath: string | null;
   repoRoot: string;
 }> {
-  const repoRoot = await resolveRepoRootForPlanArg(planArg, undefined, configPath);
-  const resolvedPlan = await resolvePlanFromDbOrSyncFile(planArg, repoRoot, repoRoot);
+  const repoRoot = await resolveRepoRoot(configPath);
+  const resolvedPlan = await resolvePlanFromDb(planArg, repoRoot);
   return {
     plan: resolvedPlan.plan,
     planPath: resolvedPlan.planPath,
@@ -2103,7 +2107,7 @@ async function materializedPlanFileExists(
  * but without executing the review. This is used by the prompts command to show
  * what prompt would be generated.
  *
- * @param planFile - Plan file path or ID
+ * @param planFile - Plan ID
  * @param options - Review command options including task filters, instructions, etc.
  * @param globalOpts - Global CLI options including config path
  * @returns Promise<string> containing the generated prompt

@@ -8,13 +8,12 @@ import {
 import { commitAll } from '../../common/process.js';
 import { boldMarkdownHeaders, log, warn } from '../../logging.js';
 import type { TimConfig } from '../configSchema.js';
-import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
 import {
   resolveProjectContext,
   withPlanAutoSync,
   type ProjectContext,
 } from '../plan_materialize.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 import { resolvePlanFromDb, writePlanFile } from '../plans.js';
 import { checkAndMarkParentDone as checkAndMarkParentDoneShared } from './parent_cascade.js';
 import type { PlanSchema } from '../planSchema.js';
@@ -37,25 +36,15 @@ export async function markStepDone(
   config?: TimConfig,
   configPath?: string
 ): Promise<MarkDoneResult> {
-  const repoRoot = await resolveRepoRootForPlanArg(
-    planArg,
-    (await getGitRoot(baseDir)) || baseDir,
-    configPath
-  );
-  const initialPlan = await resolvePlanFromDbOrSyncFile(planArg, repoRoot, repoRoot);
+  const repoRoot = await resolveRepoRoot(configPath, (await getGitRoot(baseDir)) || baseDir);
+  const initialPlan = await resolvePlanFromDb(planArg, repoRoot);
   const resolvedPlanArg = initialPlan.plan.uuid ?? planArg;
 
   return withPlanAutoSync(initialPlan.plan.id, repoRoot, async () => {
     const context = await resolveProjectContext(repoRoot);
     const target = await resolvePlanFromDb(resolvedPlanArg, repoRoot, { context });
     const planData = target.plan;
-    const outputPath = await resolveWritablePathForPlan(
-      planArg,
-      context,
-      planData.id,
-      config,
-      repoRoot
-    );
+    const outputPath = await resolveWritablePathForPlan(context, planData.id, repoRoot);
 
     let pending: PendingTaskResult | null = null;
     if (currentTask) {
@@ -128,25 +117,15 @@ export async function markTaskDone(
   config?: TimConfig,
   configPath?: string
 ): Promise<MarkDoneResult> {
-  const repoRoot = await resolveRepoRootForPlanArg(
-    planArg,
-    (await getGitRoot(baseDir)) || baseDir,
-    configPath
-  );
-  const initialPlan = await resolvePlanFromDbOrSyncFile(planArg, repoRoot, repoRoot);
+  const repoRoot = await resolveRepoRoot(configPath, (await getGitRoot(baseDir)) || baseDir);
+  const initialPlan = await resolvePlanFromDb(planArg, repoRoot);
   const resolvedPlanArg = initialPlan.plan.uuid ?? planArg;
 
   return withPlanAutoSync(initialPlan.plan.id, repoRoot, async () => {
     const context = await resolveProjectContext(repoRoot);
     const target = await resolvePlanFromDb(resolvedPlanArg, repoRoot, { context });
     const planData = target.plan;
-    const outputPath = await resolveWritablePathForPlan(
-      planArg,
-      context,
-      planData.id,
-      config,
-      repoRoot
-    );
+    const outputPath = await resolveWritablePathForPlan(context, planData.id, repoRoot);
 
     if (taskIndex < 0 || taskIndex >= planData.tasks.length) {
       throw new Error(`Invalid task index: ${taskIndex}. Plan has ${planData.tasks.length} tasks.`);
@@ -199,25 +178,15 @@ export async function setTaskDone(
   config?: TimConfig,
   configPath?: string
 ): Promise<MarkDoneResult> {
-  const repoRoot = await resolveRepoRootForPlanArg(
-    planArg,
-    (await getGitRoot(baseDir)) || baseDir,
-    configPath
-  );
-  const initialPlan = await resolvePlanFromDbOrSyncFile(planArg, repoRoot, repoRoot);
+  const repoRoot = await resolveRepoRoot(configPath, (await getGitRoot(baseDir)) || baseDir);
+  const initialPlan = await resolvePlanFromDb(planArg, repoRoot);
   const resolvedPlanArg = initialPlan.plan.uuid ?? planArg;
 
   return withPlanAutoSync(initialPlan.plan.id, repoRoot, async () => {
     const context = await resolveProjectContext(repoRoot);
     const target = await resolvePlanFromDb(resolvedPlanArg, repoRoot, { context });
     const planData = target.plan;
-    const outputPath = await resolveWritablePathForPlan(
-      planArg,
-      context,
-      planData.id,
-      config,
-      repoRoot
-    );
+    const outputPath = await resolveWritablePathForPlan(context, planData.id, repoRoot);
 
     let taskIndex = -1;
     let task: PlanSchema['tasks'][0] | undefined;
@@ -380,12 +349,10 @@ async function checkAndMarkParentDone(
 }
 
 async function resolveWritablePathForPlan(
-  planArg: string,
   context: ProjectContext,
   planId: number,
-  config: TimConfig | undefined,
   repoRoot: string
 ): Promise<string | null> {
   const row = context.rows.find((candidate) => candidate.plan_id === planId);
-  return resolveWritablePath(planArg, row, repoRoot, repoRoot);
+  return resolveWritablePath(row, repoRoot);
 }
