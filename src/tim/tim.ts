@@ -1312,6 +1312,33 @@ prCommand
     await handlePrFixCommand(planId, options, command).catch(handleCommandError);
   });
 
+const prReviewGuideCommand = prCommand
+  .command('review-guide [pr-url-or-number]')
+  .description('Run standalone AI review on any PR')
+  .option('--plan <id>', 'Resolve PR from a plan-linked pull request')
+  .option('-x, --executor <name>', 'Run with a single executor (claude-code or codex-cli)')
+  .option('--aw, --auto-workspace', 'Auto-select or create a workspace')
+  .option('-m, --model <model>', 'Model override for executors')
+  .option('--no-terminal-input', 'Disable terminal input')
+  .option('--non-interactive', 'No user prompts')
+  .option('--verbose', 'Verbose output')
+  .action(async (prUrlOrNumber, options, command) => {
+    await runWithCommandTunnelAdapter(async () => {
+      const { handleReviewGuideCommand } = await import('./commands/review_pr.js');
+      await handleReviewGuideCommand(prUrlOrNumber, options, command);
+    }).catch(handleCommandError);
+  });
+
+prReviewGuideCommand
+  .command('materialize <pr-url-or-number>')
+  .description('Materialize the latest stored standalone PR review into .tim/reviews/')
+  .action(async (prUrlOrNumber, options, command) => {
+    await runWithCommandTunnelAdapter(async () => {
+      const { handleMaterializeCommand } = await import('./commands/review_pr.js');
+      await handleMaterializeCommand(prUrlOrNumber, options, command);
+    }).catch(handleCommandError);
+  });
+
 function registerPrDescriptionCommand(
   targetCommand: Command,
   signature: string,

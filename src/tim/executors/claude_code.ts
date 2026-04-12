@@ -741,6 +741,10 @@ export class ClaudeCodeExecutor implements Executor {
       let seenResultMessage = false;
       let retryFollowUpSent = false;
       let resultHandlingPromise: Promise<void> | undefined;
+      const followUpPrompts = planInfo.followUpPrompts ?? [];
+      const hasFollowUps = followUpPrompts.length > 0;
+      let followUpIndex = 0;
+      let resultMessageCount = 0;
       const fastNoopOrchestratorRetryEnabled =
         planInfo.retryFastNoopOrchestratorTurn === true &&
         planContextAvailable &&
@@ -785,9 +789,15 @@ export class ClaudeCodeExecutor implements Executor {
           // Extract file paths and add them to trackedFiles set
           for (const result of formattedResults) {
             if (result.type === 'result') {
+              resultMessageCount++;
               seenResultMessage = true;
-              if (
+              if (followUpIndex < followUpPrompts.length && terminalInputResult) {
+                const nextPrompt = followUpPrompts[followUpIndex]!;
+                followUpIndex++;
+                terminalInputResult.sendFollowUpMessage(nextPrompt);
+              } else if (
                 fastNoopOrchestratorRetryEnabled &&
+                resultMessageCount === 1 &&
                 !retryFollowUpSent &&
                 result.resultInfo?.success &&
                 result.resultInfo.turns === 1 &&
@@ -881,10 +891,11 @@ export class ClaudeCodeExecutor implements Executor {
         tunnelServer,
         terminalInputEnabled: this.sharedOptions.terminalInput === true,
         tunnelForwardingEnabled: isTunnelActive(),
-        closeOnResultMessage: fastNoopOrchestratorRetryEnabled
-          ? false
-          : (this.sharedOptions.closeTerminalInputOnResult ?? true),
-        keepStdinOpenWithoutInteractiveInput: fastNoopOrchestratorRetryEnabled,
+        closeOnResultMessage:
+          fastNoopOrchestratorRetryEnabled || hasFollowUps
+            ? false
+            : (this.sharedOptions.closeTerminalInputOnResult ?? true),
+        keepStdinOpenWithoutInteractiveInput: fastNoopOrchestratorRetryEnabled || hasFollowUps,
       });
 
       const result = await terminalInputResult.resultPromise;

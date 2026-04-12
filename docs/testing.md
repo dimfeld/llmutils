@@ -75,6 +75,7 @@ Or for a single mock defined across the entire test file, use `afterAll(() => mo
 
 - **Bun.serve() port 0 for OS-assigned ports**: Use port 0 in tests to let the OS assign a free port. This avoids TOCTOU port allocation flakiness (where a port-availability check passes but another process grabs it before `serve()` binds). Read the actual port from the server handle after it starts.
 - **Testing shutdown/signal handlers**: When testing code that calls `process.exit()`, spy on and mock `process.exit` to prevent the test process from actually exiting. Restore the original in `afterEach`.
+- **`mockImplementation()` is persistent across tests**: Unlike `mockReturnValueOnce()`, `mockImplementation()` persists for all subsequent calls within and across tests in the same file. Use `mockImplementationOnce()` when the mock should only apply to the current test, or explicitly restore/reset in `afterEach`.
 
 ### JJ Test Repositories
 

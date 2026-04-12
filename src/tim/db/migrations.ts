@@ -616,10 +616,45 @@ const migrations: Migration[] = [
     `,
   },
   {
-    version: 23,
+    version: 24,
     up: `
-      ALTER TABLE plan ADD COLUMN base_commit TEXT;
-      ALTER TABLE plan ADD COLUMN base_change_id TEXT;
+      CREATE TABLE review (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+        pr_status_id INTEGER REFERENCES pr_status(id) ON DELETE SET NULL,
+        pr_url TEXT NOT NULL,
+        branch TEXT NOT NULL,
+        base_branch TEXT,
+        reviewed_sha TEXT,
+        review_guide TEXT,
+        status TEXT NOT NULL DEFAULT 'pending'
+          CHECK(status IN ('pending', 'in_progress', 'complete', 'error')),
+        error_message TEXT,
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC})
+      );
+      CREATE INDEX idx_review_project_id ON review(project_id);
+      CREATE INDEX idx_review_pr_url ON review(pr_url);
+
+      CREATE TABLE review_issue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        review_id INTEGER NOT NULL REFERENCES review(id) ON DELETE CASCADE,
+        severity TEXT NOT NULL
+          CHECK(severity IN ('critical', 'major', 'minor', 'info')),
+        category TEXT NOT NULL
+          CHECK(category IN ('security', 'performance', 'bug', 'style', 'compliance', 'testing', 'other')),
+        content TEXT NOT NULL,
+        file TEXT,
+        line TEXT,
+        start_line TEXT,
+        suggestion TEXT,
+        source TEXT
+          CHECK(source IN ('claude-code', 'codex-cli', 'combined')),
+        resolved INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC})
+      );
+      CREATE INDEX idx_review_issue_review_id ON review_issue(review_id);
     `,
   },
 ];

@@ -38,9 +38,11 @@
 ### ON CONFLICT / Upsert Patterns
 
 - `ON CONFLICT DO UPDATE SET col = excluded.col` will overwrite existing values with whatever was passed — including `NULL` when the caller provides sparse input. Use `COALESCE(excluded.col, col)` for columns that should preserve their existing value when the new value is null. This is especially important for `recordWorkspace`-style functions that may be called from multiple processes with different subsets of fields populated.
+- **COALESCE prevents clearing nullable fields**: The `COALESCE(excluded.col, col)` pattern is only appropriate when null means "not provided." For update functions that need to support explicitly clearing a nullable column to NULL, use conditional field building instead — build the SET clause dynamically, only including columns present in the input (use `'field' in input` to distinguish "omitted" from "explicitly null"). See `updateReview()` in `src/tim/db/review.ts` for the pattern.
 - When calling `getOrCreateProject()` followed by `updateProject()`, compare existing field values against the new values before updating. Skipping the update when all fields match avoids unnecessary `updated_at` timestamp bumps that make projects appear modified when they weren't.
 - When adding a provenance/source column to a junction table, include it in the primary key so both sources can coexist for the same entity pair. `INSERT OR IGNORE` with a single-column key won't allow inserting a second row with a different source — the first source wins silently.
 - Multi-step DB mutations (e.g., upsert + clear child rows + update related rows) should be wrapped in a single transaction for atomicity, even if each individual statement seems independent. This prevents partial state from being visible to concurrent readers or from persisting if a later step fails.
+- **Match ordering semantics within a module**: When adding SQL dedup logic (e.g., correlated subqueries for "latest per group"), ensure the ordering matches the module's existing convention. If the module defines "latest" as `ORDER BY created_at DESC`, don't use `MAX(id)` — ID ordering and timestamp ordering can diverge when records are inserted out of chronological order or across time zones.
 
 ### Plan SQLite Sync
 
@@ -269,6 +271,26 @@ PR status data from GitHub is cached in SQLite for display in the web UI and CLI
 - `tryCanonicalizePrUrl(identifier)`: Non-throwing variant that returns `null` for invalid URLs. Used in read paths (e.g., `getPrStatusForPlan`, `getPrSummaryStatusByPlanUuid`) to avoid crashing page loads on malformed plan data.
 - `validatePrIdentifier(identifier)`: Enforces GitHub host + `/pull/` path + numeric PR number for URL-form identifiers. Rejects issue URLs and other non-PR GitHub URLs.
 - `deduplicatePrUrls(urls, options?)`: Canonicalizes and deduplicates a list of PR URLs. Optionally warns on invalid entries via `onInvalid` callback. Used by CLI commands and API endpoints to normalize input before processing.
+
+### Standalone PR Reviews
+
+Standalone PR reviews (via `tim pr review-guide`) are stored in SQLite (migration v23). Multiple reviews per PR are supported for review history. The review guide is stored as TEXT directly on the `review` row. Results from multiple executors (Claude, Codex) are combined and individual issues are stored with source attribution.
+
+**Tables**:
+
+- `review`: Linked to a project and optionally to a `pr_status` record. Columns: `id`, `project_id` (FK CASCADE), `pr_status_id` (FK SET NULL), `pr_url` (canonicalized), `branch`, `base_branch`, `reviewed_sha`, `review_guide` (TEXT), `status` (pending/in_progress/complete/error), `error_message`, `created_at`, `updated_at`. No unique constraint on `(project_id, pr_url)` — use `ORDER BY created_at DESC, id DESC LIMIT 1` for latest. Indexes on `project_id` and `pr_url`.
+- `review_issue`: Individual issues per review. Columns: `id`, `review_id` (FK CASCADE), `severity` (critical/major/minor/info), `category` (security/performance/bug/style/compliance/testing/other), `content`, `file`, `line`, `start_line`, `suggestion`, `source` (claude-code/codex-cli/combined), `resolved` (INTEGER default 0), `created_at`, `updated_at`. Index on `review_id`.
+
+**CRUD module** (`src/tim/db/review.ts`):
+
+- `createReview(db, input)`: Always inserts a new review record (never upserts). Canonicalizes `prUrl` on insert.
+- `updateReview(db, id, updates)`: Conditional field-building pattern (like workspace.ts) for nullable fields — supports explicit null clearing. Fields: `status`, `reviewedSha`, `reviewGuide`, `errorMessage`.
+- `getLatestReviewByPrUrl(db, prUrl)`: Canonicalizes URL, returns most recent review (`ORDER BY created_at DESC, id DESC LIMIT 1`).
+- `getReviewById(db, id)`: Look up by ID.
+- `insertReviewIssues(db, reviewId, issues)`: Bulk insert in a single transaction.
+- `getReviewIssues(db, reviewId)`: All issues for a review.
+- `updateReviewIssue(db, id, updates)`: Update a single issue (e.g., mark resolved).
+- `getReviewsForProject(db, projectId, options?)`: List reviews for a project. `latestPerPr` option uses a correlated subquery for consistent "latest" semantics.
 
 ### Webhook Log
 

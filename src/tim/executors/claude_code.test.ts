@@ -1877,6 +1877,105 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
     expect(cleanupSpy).toHaveBeenCalledTimes(1);
   });
 
+  test('sends follow-up prompts in the same Claude session before closing stdin', async () => {
+    const onResultMessageSpy = vi.fn(() => {});
+    const closeStdinSpy = vi.fn(() => {});
+    const sendFollowUpMessageSpy = vi.fn(() => {});
+    const cleanupSpy = vi.fn(() => {});
+    let resolveStreamingResult:
+      | ((value: {
+          exitCode: number;
+          stdout: string;
+          stderr: string;
+          signal: NodeJS.Signals | null;
+          killedByInactivity: boolean;
+        }) => void)
+      | undefined;
+    const executeWithTerminalInputSpy = vi.fn(() => ({
+      resultPromise: new Promise((resolve) => {
+        resolveStreamingResult = resolve;
+      }),
+      onResultMessage: onResultMessageSpy,
+      sendFollowUpMessage: sendFollowUpMessageSpy,
+      closeStdin: closeStdinSpy,
+      cleanup: cleanupSpy,
+    }));
+    let formatStdout: ((output: string) => unknown) | undefined;
+
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
+    }));
+
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async (_args: string[], opts: any) => {
+        formatStdout = opts.formatStdout;
+        setTimeout(() => {
+          formatStdout?.('{"type":"result"}\n');
+          formatStdout?.('{"type":"result"}\n');
+          resolveStreamingResult?.({
+            exitCode: 0,
+            stdout: '',
+            stderr: '',
+            signal: null,
+            killedByInactivity: false,
+          });
+        }, 0);
+        return {
+          ...createStreamingProcessMock(),
+          kill: vi.fn(() => {}),
+        };
+      }),
+      createLineSplitter: () => (s: string) => s.split('\n').filter(Boolean),
+      debug: false,
+    }));
+
+    vi.doMock('./claude_code/format.ts', () => ({
+      formatJsonMessage: vi.fn((_line: string) => ({
+        type: 'result',
+        message: 'done',
+        resultInfo: {
+          success: true,
+          turns: 2,
+          durationMs: 1,
+        },
+      })),
+      extractStructuredMessages: vi.fn(() => []),
+      resetToolUseCache: vi.fn(() => {}),
+    }));
+
+    vi.doMock('./claude_code/terminal_input_lifecycle.ts', () => ({
+      executeWithTerminalInput: executeWithTerminalInputSpy,
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
+    const exec = new ClaudeCodeExecutor(
+      { permissionsMcp: { enabled: false } } as any,
+      { baseDir: tempDir, terminalInput: true } as any,
+      {} as any
+    );
+
+    await exec.execute('CTX', {
+      planId: 'p1',
+      planTitle: 'T',
+      planFilePath: `${tempDir}/plan.yml`,
+      executionMode: 'bare',
+      followUpPrompts: ['follow up prompt'],
+    });
+
+    expect(executeWithTerminalInputSpy).toHaveBeenCalledTimes(1);
+    expect(executeWithTerminalInputSpy.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        closeOnResultMessage: false,
+        keepStdinOpenWithoutInteractiveInput: true,
+      })
+    );
+    expect(sendFollowUpMessageSpy).toHaveBeenCalledTimes(1);
+    expect(sendFollowUpMessageSpy).toHaveBeenCalledWith('follow up prompt');
+    expect(onResultMessageSpy).toHaveBeenCalledTimes(1);
+    expect(closeStdinSpy).toHaveBeenCalledTimes(1);
+    expect(cleanupSpy).toHaveBeenCalledTimes(1);
+  });
+
   test('fast no-op retry flow closes stdin when it decides not to continue', async () => {
     const onResultMessageSpy = vi.fn(() => {});
     const closeStdinSpy = vi.fn(() => {});

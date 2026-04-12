@@ -79,6 +79,13 @@ export interface ExecutePlanInfo {
    * without any working copy changes.
    */
   retryFastNoopOrchestratorTurn?: boolean;
+  /**
+   * Optional follow-up prompts to send into the same session after the initial prompt completes.
+   * Each follow-up is sent after the previous result message is received.
+   * Currently only supported by the Claude Code executor; other executors should treat
+   * follow-ups as unsupported unless handled explicitly by the caller.
+   */
+  followUpPrompts?: string[];
 }
 
 /**

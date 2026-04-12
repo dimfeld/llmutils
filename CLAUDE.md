@@ -72,12 +72,12 @@ The codebase is organized into several main modules with improved modularity and
    - Modular command structure in `commands/` directory with separate files per sub-command
 
 - Core functionality: `add.ts`, `agent.ts`, `branch.ts`, `chat.ts`, `finish.ts`, `generate.ts`, `list.ts`, `next.ts`, `done.ts`, `rebase.ts`, `show.ts`
-- Specialized commands: `answer-pr.ts`, `cleanup.ts`, `extract.ts`, `pr.ts`, `validate.ts`, `set.ts`
+- Specialized commands: `answer-pr.ts`, `cleanup.ts`, `extract.ts`, `pr.ts`, `review_pr.ts`, `validate.ts`, `set.ts`
 
 - Database layer: `db/` directory with SQLite-backed storage for assignments, workspaces, permissions, and project metadata
   - `database.ts`: Singleton connection with WAL mode, foreign keys, and auto-migration
   - `migrations.ts`: Schema versioning with `schema_version` table
-  - CRUD modules: `project.ts`, `assignment.ts`, `permission.ts`, `workspace.ts`, `workspace_lock.ts`, `plan.ts`, `pr_status.ts`, `webhook_log.ts`, `project_settings.ts`
+  - CRUD modules: `project.ts`, `assignment.ts`, `permission.ts`, `workspace.ts`, `workspace_lock.ts`, `plan.ts`, `pr_status.ts`, `review.ts`, `webhook_log.ts`, `project_settings.ts`
   - Plan sync: `plan_sync.ts` provides `syncPlanToDb()` for syncing individual materialized plan files to DB with lazy-cached project context; called by `writePlanFile()` when `skipDb` is false. `tim sync` scans `.tim/plans/` for `*.plan.md` files and syncs them back to DB. DB-first write functions (`writePlanToDb()`, `resolvePlanFromDb()`) are in `plans.ts`. `path_resolver.ts` provides `getLegacyAwareSearchDir()` for legacy-aware plan path resolution where commands still need to work with backing files.
   - `sql_utils.ts`: Shared SQL helpers (e.g. `SQL_NOW_ISO_UTC` for ISO-8601 UTC timestamps)
   - `json_import.ts`: One-time import from legacy JSON files on first DB creation
