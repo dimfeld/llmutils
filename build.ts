@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { $ } from 'bun';
 import type { BuildConfig } from 'bun';
 import { glob } from 'glob';
 import { promises as fs } from 'fs';
@@ -37,6 +38,8 @@ async function copyWasmFiles() {
   console.log(`Copied ${wasmFiles.length} .wasm files to dist`);
 }
 
+process.env.BUN_NO_CODESIGN_MACHO_BINARY = '1';
+
 const output = await Promise.all([
   buildOne({
     outdir: 'dist',
@@ -69,6 +72,9 @@ console.log(output.map((o) => o?.outputs.flatMap((o) => o.path)).join('\n'));
 if (output.some((o) => !o)) {
   process.exit(1);
 }
+
+await $`codesign --sign - --force dist/tim`;
+await $`codesign --sign - --force dist/webhooks/server`;
 
 // Copy .wasm files after successful build
 // await copyWasmFiles();
