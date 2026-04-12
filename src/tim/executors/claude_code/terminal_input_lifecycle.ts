@@ -265,7 +265,7 @@ export function executeWithTerminalInput(
     });
   }
 
-  // When a HeadlessAdapter is present (tim-gui use case), it acts as an interactive
+  // When a HeadlessAdapter is present, it acts as an interactive
   // input source just like tunnel forwarding — stdin must stay open for follow-up messages.
   const headlessForwardingEnabled = loggerAdapter instanceof HeadlessAdapter;
 

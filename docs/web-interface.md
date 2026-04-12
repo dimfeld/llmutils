@@ -202,7 +202,7 @@ The sessions system uses a discovery-based architecture where the web GUI discov
 
 2. **Session discovery client** (`src/lib/server/session_discovery.ts`): The web interface discovers agent processes by scanning `~/.cache/tim/sessions/` for session info files and connects to each agent's embedded WebSocket server as a client. Uses `fs.watch()` with debounced re-scan (500ms) for real-time discovery of new/removed processes, plus periodic reconciliation polling (30s) for PID liveness checks and stale file cleanup. Handles connection retry with exponential backoff (100ms to 5s) for cases where the PID file appears before the server is ready. Enforces loopback-only connections: non-loopback hostnames in session info files are rejected with a warning (full `127.0.0.0/8` range and `::1` accepted; wildcard binds like `0.0.0.0` and `::` are mapped to `127.0.0.1` and `[::1]` respectively). Processes with `token: true` are skipped (bearer token auth deferred to remote workspace plans). Survives HMR via the session context singleton pattern.
 
-3. **Tim-gui WebSocket server**: The web interface also runs a WebSocket server on port 8123 for the HTTP notification endpoint and future use. Agent processes no longer connect to this server; session discovery is the only live session transport.
+3. **Tim-gui WebSocket server**: The web interface also runs a WebSocket server on port 8123 for the HTTP notification endpoint and future use.
 
 - **WebSocket server** (`src/lib/server/ws_server.ts`): Listens on port 8123 (configurable via `TIM_WS_PORT` env var or `headless.url` config). Accepts HTTP POST notifications at `/messages`. It remains in place for notifications and future features, but not for agent session connections. Message parsing uses shared utilities from `src/logging/headless_message_utils.ts`.
 - **Session discovery client** (`src/lib/server/session_discovery.ts`): Watches the session directory, manages WebSocket client connections to discovered agent processes, and feeds messages into SessionManager via `handleWebSocketConnect/Message/Disconnect`. Uses the session info file's `sessionId` as the `connectionId` for SessionManager. Session registration is gated on validated `session_info` (sessionId must match PID file); reconnections to existing offline sessions buffer messages until `replay_end` to protect existing session history.
@@ -273,7 +273,6 @@ Browser clients receive real-time updates via SSE and interact with sessions thr
 ### Key Design Decisions
 
 - Each WebSocket connection creates a new session (no reconnection merging)
-- Port 8123 conflicts with macOS tim-gui — only one should run at a time
 - Vite HMR may restart the discovery client during dev; it reconnects to discovered agents on restart
 - SSE subscribes before taking snapshot to avoid lost-event race window, with event buffering during snapshot delivery
 - `sendPromptResponse` validates requestId against the `activePrompts` array and removes the matched prompt on success — prevents duplicate responses from multiple browser tabs. Multiple prompts can be active simultaneously (e.g., from concurrent subagents); the UI shows the oldest first
@@ -641,7 +640,7 @@ The web interface is installable as a Progressive Web App, allowing it to run as
 - `src/app.html` — PWA meta tags (manifest link, theme-color, apple-mobile-web-app-capable, apple-touch-icon). Uses `%sveltekit.assets%` for base-path safety.
 - `src/routes/+layout.svelte` — Service worker registration in `onMount`, badge effect reacting to `sessionManager.needsAttention`
 - `src/lib/utils/pwa_badge.ts` — Feature-detecting wrappers for `navigator.setAppBadge()` / `navigator.clearAppBadge()`
-- `static/icon-192.png`, `static/icon-512.png`, `static/favicon.png` — App icons (sourced from tim-gui macOS app)
+- `static/icon-192.png`, `static/icon-512.png`, `static/favicon.png` — App icons
 
 ### Service Worker Caching Strategy
 

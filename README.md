@@ -302,7 +302,7 @@ lifecycle:
 
 Tim long-running commands (`agent`, `generate`, `chat`, `finish`, `rebase`, `review`, `run-prompt`) automatically start an embedded WebSocket server that allows external clients (such as the tim web interface) to connect and monitor the session in real time. Each process advertises itself via a session info file in `~/.cache/tim/sessions/` (respects `XDG_CACHE_HOME`), enabling discovery by the web UI or other tools.
 
-The tim web interface discovers running agent processes by scanning the session directory and connects to their embedded servers as a WebSocket client. Agents do not need to know the GUI's address and no longer open a client connection back to tim-gui.
+The tim web interface discovers running agent processes by scanning the session directory and connects to their embedded servers as a WebSocket client.
 
 ### Environment Variables
 

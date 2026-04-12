@@ -51,7 +51,7 @@ The `HeadlessAdapter` supports a `setUserInputHandler()` callback, mirroring the
 3. Broadcasts via `tunnelServer?.sendUserInput()` (if a tunnel is also active)
 4. Emits a `user_terminal_input` structured message for logging/display
 
-This enables tim-gui to send user messages to running agent sessions via the WebSocket connection (tim-gui discovers agent processes and connects to their embedded WebSocket servers).
+This enables the web UI to send user messages to running agent sessions via the WebSocket connection (the web UI discovers agent processes and connects to their embedded WebSocket servers).
 
 ### Headless Adapter End Session
 
@@ -68,14 +68,14 @@ The handler also clears tunnel and headless user input handlers, rejects pending
 The shared helper in `terminal_input_lifecycle.ts` handles three distinct modes:
 
 1. **Terminal input enabled**: Full readline lifecycle with `setupTerminalInput()` / `awaitAndCleanup()`
-2. **Tunnel or headless forwarding active, no terminal**: Multi-message lifecycle (`sendInitialPrompt` + `closeStdinAndWait`) to keep stdin open for forwarded input. A `headlessForwardingEnabled` boolean is computed from `loggerAdapter instanceof HeadlessAdapter` — this ensures the headless adapter (tim-gui) keeps stdin open for follow-up messages, just like tunnel forwarding does.
+2. **Tunnel or headless forwarding active, no terminal**: Multi-message lifecycle (`sendInitialPrompt` + `closeStdinAndWait`) to keep stdin open for forwarded input. A `headlessForwardingEnabled` boolean is computed from `loggerAdapter instanceof HeadlessAdapter` — this ensures the headless adapter keeps stdin open for follow-up messages, just like tunnel forwarding does.
 3. **Neither**: Single-shot `sendSinglePromptAndWait()`
 
 Both `claude_code.ts` and `run_claude_subprocess.ts` delegate to this helper to avoid duplicating the branching logic.
 
 ### Tunnel and Headless Forwarding as Interactive Input Sources
 
-Tunnel and headless forwarding are interactive input sources alongside terminal input. When writing validation guards (e.g., "is this session interactive?"), check for **all** of `terminalInputEnabled`, tunnel-active state, and headless adapter presence — not just terminal input. For example, a command that requires user interaction to function (like chat with no initial prompt) must allow execution when any of these can provide input. Checking only `terminalInputEnabled` would break Tim-GUI integration where input arrives via the tunnel or the headless WebSocket.
+Tunnel and headless forwarding are interactive input sources alongside terminal input. When writing validation guards (e.g., "is this session interactive?"), check for **all** of `terminalInputEnabled`, tunnel-active state, and headless adapter presence — not just terminal input. For example, a command that requires user interaction to function (like chat with no initial prompt) must allow execution when any of these can provide input. Checking only `terminalInputEnabled` would break web UI integration where input arrives via the tunnel or the headless WebSocket.
 
 This principle also applies to the session's `interactive` metadata flag reported over the headless protocol. The flag should reflect whether the session can receive input via **any** transport (including WebSocket), not just whether local terminal input is enabled. The `--no-terminal-input` and `config.terminalInput=false` flags control local stdin only — they must not suppress interactivity for headless/GUI sessions.
 
