@@ -135,7 +135,19 @@ The web interface supports a project-wide PR view that shows all open PRs for a 
 ```yaml
 # tim.yml
 githubUsername: your-github-username # optional, avoids an API call
+branchPrefix: di/ # optional, prefix for auto-generated branch names
 ```
+
+### Branch Prefix
+
+The `branchPrefix` setting prepends a prefix to auto-generated branch names (e.g. `di/123-implement-feature` instead of `123-implement-feature`). This is useful for team repositories where branches should be identifiable by author.
+
+The prefix can be set in two places:
+
+1. **Config file** (`tim.local.yml` recommended for per-developer prefixes): `branchPrefix: "di/"`
+2. **Project settings** (via web UI): per-project override stored in the database
+
+The DB project setting takes precedence over the config file value when both are set. If the prefix doesn't end with `/`, `-`, or `_`, a `/` is automatically appended. The prefix counts toward the 63-character git branch name limit.
 
 ### Project Settings
 
@@ -146,6 +158,7 @@ Available settings:
 - **Featured** (default: on): Controls whether the project appears in the main sidebar list or is grouped in a collapsed "Other Projects" section at the bottom.
 - **Abbreviation** (string, max 4 chars): Custom abbreviation for the project avatar in collapsed sidebar mode. Overrides the auto-generated abbreviation. Leave empty to use the default.
 - **Color** (palette enum): Custom avatar background color for collapsed sidebar mode. Overrides the auto-generated color based on the project name hash.
+- **Branch Prefix** (string, max 20 chars): Prefix for auto-generated branch names (e.g. `di/`). Overrides the config file `branchPrefix` value for this project.
 
 ### GitHub Webhook Receiver (separate ingress service)
 

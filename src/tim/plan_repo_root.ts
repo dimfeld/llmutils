@@ -4,8 +4,11 @@ import { getGitRoot } from '../common/git.js';
 const TIM_CONFIG_CANDIDATES = [
   '.tim.yml',
   'tim.yml',
+  'tim.local.yml',
   '.rmfilter/tim.yml',
   '.rmfilter/config/tim.yml',
+  '.rmfilter/tim.local.yml',
+  '.rmfilter/config/tim.local.yml',
 ];
 
 async function findRepoRootFromConfig(startDir: string): Promise<string | null> {
@@ -71,7 +74,7 @@ export async function resolveRepoRootForPlanArg(
     if (configFile === '.tim.yml') {
       return configDir;
     }
-    if (configFile === 'tim.yml') {
+    if (configFile === 'tim.yml' || configFile === 'tim.local.yml') {
       if (path.basename(configDir) === '.rmfilter') {
         return path.dirname(configDir);
       }

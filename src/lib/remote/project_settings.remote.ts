@@ -4,13 +4,16 @@ import * as z from 'zod';
 
 import { getServerContext } from '$lib/server/init.js';
 import { PROJECT_COLOR_PALETTE } from '$lib/stores/project.svelte.js';
+import { branchPrefixSchema } from '$tim/branch_prefix.js';
 import { getProjectById } from '$tim/db/project.js';
 import { deleteProjectSetting, setProjectSetting } from '$tim/db/project_settings.js';
+
 
 const settingValueSchemas: Record<string, z.ZodType> = {
   featured: z.boolean(),
   abbreviation: z.string().max(4),
   color: z.enum(PROJECT_COLOR_PALETTE),
+  branchPrefix: branchPrefixSchema,
 };
 
 const updateSettingSchema = z.object({

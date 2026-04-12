@@ -6,6 +6,7 @@ import {
   claudeCodeOptionsSchema,
   codexCliOptionsSchema,
 } from './executors/schemas.js';
+import { branchPrefixSchema } from './branch_prefix.js';
 
 /**
  * Schema for a single command to be executed after applying changes.
@@ -117,6 +118,8 @@ export const timConfigSchema = z
   .object({
     /** GitHub username used for project-wide PR filtering. */
     githubUsername: z.string().optional().describe('GitHub username for PR filtering'),
+    /** Prefix to prepend to auto-generated branch names. */
+    branchPrefix: branchPrefixSchema.optional(),
     /** Issue tracking service to use for import commands and issue-related operations. Defaults to 'github'. */
     issueTracker: z
       .enum(['github', 'linear'])

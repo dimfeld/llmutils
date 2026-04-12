@@ -382,10 +382,15 @@ function buildPlan(overrides?: Record<string, unknown>) {
   };
 }
 
-function mockPlanForRepo(repoDir: string, plan: Record<string, unknown>): void {
+function mockPlanForRepo(
+  repoDir: string,
+  plan: Record<string, unknown>,
+  configOverrides?: Record<string, unknown>
+): void {
   vi.mocked(loadEffectiveConfig).mockResolvedValue({
     defaultExecutor: 'mock-executor',
     terminalInput: false,
+    ...configOverrides,
   } as any);
   vi.mocked(resolveRepoRootForPlanArg).mockResolvedValue(repoDir);
   vi.mocked(resolvePlanFromDbOrSyncFile).mockResolvedValue({
@@ -470,6 +475,83 @@ describe('handleRebaseCommand', () => {
     );
     expect(afterRemoteFeature).not.toBe(beforeRemoteFeature);
     expect(buildExecutorAndLog).not.toHaveBeenCalled();
+  });
+
+  test('uses branchPrefix from config when generating branch name for plans without explicit branch', async () => {
+    const plan = buildPlan({
+      title: 'Update a plan branch to latest main',
+    });
+    const repo = await createTestRepo({
+      featureBranch: 'di/263-update-a-plan-branch-to-latest-main',
+      advanceMain: 'safe',
+    });
+    tempDirs.push(repo.tempRoot);
+    mockPlanForRepo(repo.workDir, plan, { branchPrefix: 'di/' });
+
+    process.chdir(repo.workDir);
+    const beforeRemoteFeature = await getRemoteRef(
+      repo.originDir,
+      'di/263-update-a-plan-branch-to-latest-main'
+    );
+
+    await handleRebaseCommand('263', {}, { parent: { opts: () => ({}) } } as any);
+
+    const afterRemoteFeature = await getRemoteRef(
+      repo.originDir,
+      'di/263-update-a-plan-branch-to-latest-main'
+    );
+    expect(afterRemoteFeature).not.toBe(beforeRemoteFeature);
+    expect(buildExecutorAndLog).not.toHaveBeenCalled();
+  });
+
+  test('reloads config from target repo when rebasing a cross-repo plan path', async () => {
+    const plan = buildPlan({
+      title: 'Update a plan branch to latest main',
+    });
+    const repo = await createTestRepo({
+      featureBranch: 'di/263-update-a-plan-branch-to-latest-main',
+      advanceMain: 'safe',
+    });
+    tempDirs.push(repo.tempRoot);
+    const callerDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-rebase-caller-'));
+    tempDirs.push(callerDir);
+
+    vi.mocked(loadEffectiveConfig).mockImplementation(async (_overridePath, options) => {
+      if (options?.cwd === repo.workDir) {
+        return {
+          defaultExecutor: 'mock-executor',
+          terminalInput: false,
+          branchPrefix: 'di/',
+        } as any;
+      }
+
+      return {
+        defaultExecutor: 'mock-executor',
+        terminalInput: false,
+      } as any;
+    });
+    vi.mocked(resolveRepoRootForPlanArg).mockResolvedValue(repo.workDir);
+    vi.mocked(resolvePlanFromDbOrSyncFile).mockResolvedValue({
+      plan,
+      planPath: path.join(repo.workDir, '.tim', 'plans', '263.plan.md'),
+    } as any);
+
+    process.chdir(callerDir);
+    const beforeRemoteFeature = await getRemoteRef(
+      repo.originDir,
+      'di/263-update-a-plan-branch-to-latest-main'
+    );
+
+    await handleRebaseCommand('/tmp/other-repo/.tim/plans/263.plan.md', {}, {
+      parent: { opts: () => ({}) },
+    } as any);
+
+    const afterRemoteFeature = await getRemoteRef(
+      repo.originDir,
+      'di/263-update-a-plan-branch-to-latest-main'
+    );
+    expect(afterRemoteFeature).not.toBe(beforeRemoteFeature);
+    expect(loadEffectiveConfig).toHaveBeenCalledWith(undefined, { cwd: repo.workDir });
   });
 
   test('returns without pushing when the branch is already based on the latest main', async () => {

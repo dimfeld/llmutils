@@ -25,13 +25,18 @@
   let serverFeatured = $derived((data.settings.featured as boolean) ?? true);
   let serverAbbreviation = $derived((data.settings.abbreviation as string | undefined) ?? '');
   let serverColor = $derived((data.settings.color as string | undefined) ?? '');
+  let serverBranchPrefix = $derived((data.settings.branchPrefix as string | undefined) ?? '');
 
   let featured = $derived(serverFeatured);
   let abbreviation = $derived(serverAbbreviation);
   let color = $derived(serverColor);
+  let branchPrefix = $derived(serverBranchPrefix);
 
   let hasChanges = $derived(
-    featured !== serverFeatured || abbreviation !== serverAbbreviation || color !== serverColor
+    featured !== serverFeatured ||
+      abbreviation !== serverAbbreviation ||
+      color !== serverColor ||
+      branchPrefix !== serverBranchPrefix
   );
 
   let submitting = $state(false);
@@ -61,6 +66,9 @@
       }
       if (color !== serverColor) {
         updates.push({ setting: 'color', value: color });
+      }
+      if (branchPrefix !== serverBranchPrefix) {
+        updates.push({ setting: 'branchPrefix', value: branchPrefix });
       }
 
       if (updates.length === 0) return;
@@ -152,6 +160,27 @@
             ></button>
           {/each}
         </div>
+      </div>
+    </div>
+
+    <div class="rounded-lg border border-border p-4">
+      <div class="space-y-3">
+        <div>
+          <Label for="branch-prefix-input" class="text-sm font-medium text-foreground"
+            >Branch Prefix</Label
+          >
+          <p class="text-sm text-muted-foreground">
+            Prefix to prepend to auto-generated branch names (e.g. "di/" produces
+            "di/123-feature-name"). A separator (/, -, or _) is appended automatically if missing.
+          </p>
+        </div>
+        <Input
+          id="branch-prefix-input"
+          maxlength={20}
+          placeholder="e.g. di/"
+          bind:value={branchPrefix}
+          class="w-40"
+        />
       </div>
     </div>
 

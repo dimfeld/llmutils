@@ -12,6 +12,8 @@ import { resolvePlanFromDb } from '../plans.js';
 import { WorkspaceAutoSelector } from './workspace_auto_selector.js';
 import { WorkspaceAlreadyLocked, WorkspaceLock } from './workspace_lock.js';
 import * as workspaceManager from './workspace_manager.js';
+import { BranchPrefixValidationError } from '../commands/branch.js';
+import * as planMaterialize from '../plan_materialize.js';
 import { setupWorkspace } from './workspace_setup.js';
 import { writePlanFile } from '../plans.js';
 import { setPlanBaseTracking } from '../db/plan.js';
@@ -825,6 +827,73 @@ describe('setupWorkspace', () => {
       reuseExistingBranch: true,
       primaryWorkspacePath: baseDir,
     });
+  });
+
+  test('throws when branch prefix validation fails during branch name resolution', async () => {
+    const invalidPrefixPlanFile = path.join(baseDir, 'invalid-prefix.plan.md');
+    await fs.writeFile(
+      invalidPrefixPlanFile,
+      [
+        '---',
+        'id: 43',
+        'title: Trigger invalid branch prefix',
+        'tasks: []',
+        '---',
+        '',
+        'Plan details',
+        '',
+      ].join('\n')
+    );
+
+    await expect(
+      setupWorkspace(
+        {},
+        baseDir,
+        invalidPrefixPlanFile,
+        {
+          ...config,
+          branchPrefix: 'invalid prefix',
+        },
+        'tim generate'
+      )
+    ).rejects.toBeInstanceOf(BranchPrefixValidationError);
+  });
+
+  test('propagates error when project context resolution fails for branch prefix lookup', async () => {
+    const existingWorkspacePath = path.join(tempDir, 'workspace-existing-project-context-fails');
+    await fs.mkdir(existingWorkspacePath, { recursive: true });
+    await seedWorkspace(existingWorkspacePath, 'task-project-context-fails');
+
+    const validPlanFile = path.join(baseDir, 'project-context-fails.plan.md');
+    await fs.writeFile(
+      validPlanFile,
+      [
+        '---',
+        'id: 44',
+        'title: Continue when project context fails',
+        'tasks: []',
+        '---',
+        '',
+        'Plan details',
+        '',
+      ].join('\n')
+    );
+
+    vi.spyOn(planMaterialize, 'resolveProjectContext').mockRejectedValue(
+      new Error('project context unavailable')
+    );
+
+    await expect(
+      setupWorkspace(
+        {
+          workspace: 'task-project-context-fails',
+        },
+        baseDir,
+        validPlanFile,
+        config,
+        'tim generate'
+      )
+    ).rejects.toThrow('project context unavailable');
   });
 
   test('omits plan file path for update commands when plan copy into existing workspace fails', async () => {

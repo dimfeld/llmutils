@@ -239,6 +239,107 @@ describe('project settings remote actions', () => {
     expect(getProjectSetting(currentDb, projectId, 'abbreviation')).toBe('AB');
   });
 
+  test('successfully sets a branchPrefix setting', async () => {
+    await expect(
+      invokeCommand(updateProjectSetting, { projectId, setting: 'branchPrefix', value: 'di/' })
+    ).resolves.toBeUndefined();
+
+    expect(getProjectSetting(currentDb, projectId, 'branchPrefix')).toBe('di/');
+  });
+
+  test('successfully updates an existing branchPrefix', async () => {
+    await invokeCommand(updateProjectSetting, {
+      projectId,
+      setting: 'branchPrefix',
+      value: 'di/',
+    });
+
+    await expect(
+      invokeCommand(updateProjectSetting, {
+        projectId,
+        setting: 'branchPrefix',
+        value: 'feature-',
+      })
+    ).resolves.toBeUndefined();
+
+    expect(getProjectSetting(currentDb, projectId, 'branchPrefix')).toBe('feature-');
+  });
+
+  test('rejects branchPrefix longer than 20 characters', async () => {
+    await expect(
+      invokeCommand(updateProjectSetting, {
+        projectId,
+        setting: 'branchPrefix',
+        value: 'a-very-long-prefix-that-exceeds',
+      })
+    ).rejects.toMatchObject({
+      status: 400,
+      body: {
+        message: expect.stringContaining('Invalid value for setting "branchPrefix"'),
+      },
+    });
+  });
+
+  test('rejects invalid branchPrefix characters', async () => {
+    await expect(
+      invokeCommand(updateProjectSetting, {
+        projectId,
+        setting: 'branchPrefix',
+        value: 'foo:bar',
+      })
+    ).rejects.toMatchObject({
+      status: 400,
+      body: {
+        message: expect.stringContaining('Invalid value for setting "branchPrefix"'),
+      },
+    });
+  });
+
+  test('rejects branchPrefix with SOH control character (\\x01)', async () => {
+    await expect(
+      invokeCommand(updateProjectSetting, {
+        projectId,
+        setting: 'branchPrefix',
+        value: 'foo\x01bar',
+      })
+    ).rejects.toMatchObject({
+      status: 400,
+      body: {
+        message: expect.stringContaining('Invalid value for setting "branchPrefix"'),
+      },
+    });
+  });
+
+  test('rejects branchPrefix with DEL character (\\x7f)', async () => {
+    await expect(
+      invokeCommand(updateProjectSetting, {
+        projectId,
+        setting: 'branchPrefix',
+        value: 'foo\x7fbar',
+      })
+    ).rejects.toMatchObject({
+      status: 400,
+      body: {
+        message: expect.stringContaining('Invalid value for setting "branchPrefix"'),
+      },
+    });
+  });
+
+  test('empty string clears branchPrefix to null', async () => {
+    await invokeCommand(updateProjectSetting, {
+      projectId,
+      setting: 'branchPrefix',
+      value: 'di/',
+    });
+    expect(getProjectSetting(currentDb, projectId, 'branchPrefix')).toBe('di/');
+
+    await expect(
+      invokeCommand(updateProjectSetting, { projectId, setting: 'branchPrefix', value: '' })
+    ).resolves.toBeUndefined();
+
+    expect(getProjectSetting(currentDb, projectId, 'branchPrefix')).toBeNull();
+  });
+
   test('empty string clears abbreviation setting', async () => {
     await invokeCommand(updateProjectSetting, {
       projectId,
@@ -262,6 +363,7 @@ describe('project settings remote actions', () => {
           { setting: 'featured', value: false },
           { setting: 'abbreviation', value: ' AB ' },
           { setting: 'color', value: '#e74c3c' },
+          { setting: 'branchPrefix', value: 'di/' },
         ],
       })
     ).resolves.toBeUndefined();
@@ -269,6 +371,7 @@ describe('project settings remote actions', () => {
     expect(getProjectSetting(currentDb, projectId, 'featured')).toBe(false);
     expect(getProjectSetting(currentDb, projectId, 'abbreviation')).toBe('AB');
     expect(getProjectSetting(currentDb, projectId, 'color')).toBe('#e74c3c');
+    expect(getProjectSetting(currentDb, projectId, 'branchPrefix')).toBe('di/');
   });
 
   test('rejects a batch before writing any settings when one value is invalid', async () => {

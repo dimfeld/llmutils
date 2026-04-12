@@ -1,9 +1,11 @@
 import * as path from 'node:path';
+import { getGitRoot } from '../../common/git.js';
 import { commitAll } from '../../common/process.js';
 import { getLoggerAdapter } from '../../logging/adapter.js';
 import { HeadlessAdapter } from '../../logging/headless_adapter.js';
 import { warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
+import { getDatabase } from '../db/database.js';
 import { syncPlanToDb } from '../db/plan_sync.js';
 import { buildDescriptionFromPlan, getCombinedTitleFromSummary } from '../display_utils.js';
 import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
@@ -15,9 +17,10 @@ import { ClaudeCodeExecutorName, CodexCliExecutorName } from '../executors/schem
 import { isCodexAppServerEnabled } from '../executors/codex_cli/app_server_mode.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
 import { watchPlanFile } from '../plan_file_watcher.js';
+import { resolveProjectContext } from '../plan_materialize.js';
 import { readPlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
-import { generateBranchNameFromPlan } from './branch.js';
+import { generateBranchNameFromPlan, resolveBranchPrefix } from './branch.js';
 import { resolveOptionalPromptInput, type PromptResolverDeps } from './prompt_input.js';
 import {
   patchWorkspaceInfo,
@@ -159,8 +162,34 @@ export async function handleChatCommand(
   const resolvedModel = options.model
     ? (MODEL_ALIASES.get(options.model.trim().toLowerCase()) ?? options.model)
     : undefined;
+  const tunnelActive = isTunnelActive();
+  const prompt = await resolveOptionalPromptText(promptText, {
+    promptFile: options.promptFile,
+    stdinIsTTY: process.stdin.isTTY,
+    tunnelActive,
+  });
+  const codexAppServerEnabled = isCodexAppServerEnabled();
 
-  const requestedExecutorRaw = options.executor ?? config.defaultExecutor;
+  const noninteractive = options.nonInteractive === true;
+  let currentBaseDir = process.cwd();
+  let currentPlanFile = '';
+  let currentPlanData: PlanSchema | undefined;
+  let touchedWorkspacePath: string | null = null;
+  let roundTripContext: Awaited<ReturnType<typeof prepareWorkspaceRoundTrip>> = null;
+  let executionError: unknown;
+  let planWatcher: ReturnType<typeof watchPlanFile> | undefined;
+
+  // Resolve repo root from config/plan arg once, for both plan resolution and workspace setup
+  const configRepoRoot =
+    options.plan || globalOpts.config
+      ? await resolveRepoRootForPlanArg(options.plan ?? '', undefined, globalOpts.config)
+      : (await getGitRoot()) || process.cwd();
+  const workspaceConfig =
+    path.resolve(configRepoRoot) === path.resolve(process.cwd())
+      ? config
+      : await loadEffectiveConfig(globalOpts.config, { cwd: configRepoRoot });
+
+  const requestedExecutorRaw = options.executor ?? workspaceConfig.defaultExecutor;
   const requestedExecutor =
     resolveChatExecutor(requestedExecutorRaw) ??
     (options.executor === undefined ? inferExecutorFromModel(resolvedModel) : undefined);
@@ -177,20 +206,11 @@ export async function handleChatCommand(
     );
   }
   const executorName = requestedExecutor ?? DEFAULT_EXECUTOR;
-  const tunnelActive = isTunnelActive();
-  const prompt = await resolveOptionalPromptText(promptText, {
-    promptFile: options.promptFile,
-    stdinIsTTY: process.stdin.isTTY,
-    tunnelActive,
-  });
-  const codexAppServerEnabled = isCodexAppServerEnabled();
-
-  const noninteractive = options.nonInteractive === true;
   const canUseTerminalInput =
     !noninteractive &&
     process.stdin.isTTY === true &&
     options.terminalInput !== false &&
-    config.terminalInput !== false;
+    workspaceConfig.terminalInput !== false;
   const terminalInputEnabled =
     executorName === CodexCliExecutorName && !codexAppServerEnabled ? false : canUseTerminalInput;
 
@@ -214,20 +234,6 @@ export async function handleChatCommand(
     closeTerminalInputOnResult: false,
     disableInactivityTimeout: true,
   };
-  let currentBaseDir = sharedExecutorOptions.baseDir;
-  let currentPlanFile = '';
-  let currentPlanData: PlanSchema | undefined;
-  let touchedWorkspacePath: string | null = null;
-  let roundTripContext: Awaited<ReturnType<typeof prepareWorkspaceRoundTrip>> = null;
-  let executionError: unknown;
-  let planWatcher: ReturnType<typeof watchPlanFile> | undefined;
-
-  // Resolve repo root from config/plan arg once, for both plan resolution and workspace setup
-  const configRepoRoot = await resolveRepoRootForPlanArg(
-    options.plan ?? '',
-    undefined,
-    globalOpts.config
-  );
 
   if (options.plan) {
     const resolvedPlan = await resolvePlanFromDbOrSyncFile(
@@ -264,7 +270,19 @@ export async function handleChatCommand(
           let baseBranch = options.base;
           let checkoutBranch: string | undefined;
           if (!baseBranch && currentPlanData) {
-            checkoutBranch = currentPlanData.branch ?? generateBranchNameFromPlan(currentPlanData);
+            if (currentPlanData.branch) {
+              checkoutBranch = currentPlanData.branch;
+            } else {
+              const projectContext = await resolveProjectContext(configRepoRoot);
+              const branchPrefix = resolveBranchPrefix({
+                config: workspaceConfig,
+                db: getDatabase(),
+                projectId: projectContext.projectId,
+              });
+              checkoutBranch = generateBranchNameFromPlan(currentPlanData, {
+                branchPrefix,
+              });
+            }
           }
 
           const workspaceResult = await setupWorkspace(
@@ -283,7 +301,7 @@ export async function handleChatCommand(
             },
             currentBaseDir,
             currentPlanFile || undefined,
-            config,
+            workspaceConfig,
             'tim chat'
           );
           currentBaseDir = workspaceResult.baseDir;
@@ -321,7 +339,7 @@ export async function handleChatCommand(
             ...sharedExecutorOptions,
             baseDir: currentBaseDir,
           },
-          config
+          workspaceConfig
         );
         const promptForExecution =
           executorName === CodexCliExecutorName && codexAppServerEnabled ? (prompt ?? '') : prompt;

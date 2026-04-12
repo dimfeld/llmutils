@@ -17,16 +17,16 @@ import {
 import { log, warn, error as logError } from '../../logging.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { loadEffectiveConfig } from '../configLoader.js';
+import { getDatabase } from '../db/database.js';
 import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
 import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../executors/index.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
 import { runWithHeadlessAdapterIfEnabled, updateHeadlessSessionInfo } from '../headless.js';
+import { materializePlan, resolveProjectContext } from '../plan_materialize.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 import type { PlanSchema } from '../planSchema.js';
-import { getDatabase } from '../db/database.js';
 import { clearPlanBaseTracking, setPlanBaseTracking } from '../db/plan.js';
-import { materializePlan } from '../plan_materialize.js';
-import { generateBranchNameFromPlan } from './branch.js';
+import { generateBranchNameFromPlan, resolveBranchPrefix } from './branch.js';
 import { findNextPlanFromDb } from './plan_discovery.js';
 import { pullWorkspaceRefIfExists } from './workspace.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
@@ -86,16 +86,27 @@ export async function handleRebaseCommand(
   command: Command
 ): Promise<void> {
   const globalOpts = command.parent?.opts() ?? {};
-  const config = await loadEffectiveConfig(globalOpts.config);
   const fallbackRoot = (await getGitRoot()) || process.cwd();
+  const config = await loadEffectiveConfig(globalOpts.config);
   const initialRepoRoot = await resolveRepoRootForPlanArg(
     planFile ?? '',
     fallbackRoot,
     globalOpts.config
   );
   const resolved = await resolveRebasePlan(planFile, options, initialRepoRoot, globalOpts.config);
-
-  const branchName = resolved.plan.branch ?? generateBranchNameFromPlan(resolved.plan);
+  const effectiveConfig =
+    resolved.repoRoot !== fallbackRoot
+      ? await loadEffectiveConfig(globalOpts.config, { cwd: resolved.repoRoot })
+      : config;
+  const branchName = resolved.plan.branch
+    ? resolved.plan.branch
+    : generateBranchNameFromPlan(resolved.plan, {
+        branchPrefix: resolveBranchPrefix({
+          config: effectiveConfig,
+          db: getDatabase(),
+          projectId: (await resolveProjectContext(resolved.repoRoot)).projectId,
+        }),
+      });
   const workspaceMode =
     options.workspace !== undefined ||
     options.autoWorkspace === true ||
@@ -128,7 +139,7 @@ export async function handleRebaseCommand(
           },
           baseDir,
           currentPlanFile || undefined,
-          config,
+          effectiveConfig,
           'tim rebase'
         );
         baseDir = workspaceResult.baseDir;
@@ -224,11 +235,11 @@ export async function handleRebaseCommand(
           plan: resolved.plan,
           planFilePath: currentPlanFile,
           isJj,
-          executorName: options.executor ?? config.defaultExecutor ?? DEFAULT_EXECUTOR,
+          executorName: options.executor ?? effectiveConfig.defaultExecutor ?? DEFAULT_EXECUTOR,
           model: options.model,
           terminalInput: options.terminalInput,
-          configTerminalInput: config.terminalInput,
-          config,
+          configTerminalInput: effectiveConfig.terminalInput,
+          config: effectiveConfig,
         });
 
         // Verify the branch is actually rebased onto trunk (not silently aborted).

@@ -65,8 +65,9 @@ export class RepositoryConfigResolver {
 
     const gitRoot = this.gitRoot ?? (await getGitRoot(this.cwd));
     const configDir = path.join(gitRoot, '.rmfilter', 'config');
-    // Check for tim.yml first, then fall back to the old rmplan.yml name
-    for (const configName of ['tim.yml', 'rmplan.yml']) {
+    // Check for repository config files before falling back to external storage.
+    // A standalone tim.local.yml is a valid per-developer repository config.
+    for (const configName of ['tim.yml', 'rmplan.yml', 'tim.local.yml', 'rmplan.local.yml']) {
       const localConfigPath = path.join(configDir, configName);
       const hasLocalConfig = await Bun.file(localConfigPath).exists();
 

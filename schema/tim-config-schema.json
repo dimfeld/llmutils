@@ -7,6 +7,11 @@
       "description": "GitHub username for PR filtering",
       "type": "string"
     },
+    "branchPrefix": {
+      "description": "Prefix to prepend to auto-generated branch names (for example \"di/\")",
+      "type": "string",
+      "maxLength": 20
+    },
     "issueTracker": {
       "description": "Issue tracking service to use for import commands and issue-related operations",
       "type": "string",

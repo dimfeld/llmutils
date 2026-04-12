@@ -172,6 +172,7 @@ The Settings tab (`/projects/[projectId]/settings`) allows configuring per-proje
 - **Featured** (boolean, default `true`): Controls whether the project appears in the main sidebar list or is grouped in a collapsed "Other Projects" section at the bottom. The `ProjectSidebar` component splits projects into featured and non-featured groups using `$derived`. The "Other Projects" section auto-opens when the selected project is non-featured.
 - **Abbreviation** (string, max 4 chars): Custom abbreviation for the project avatar in collapsed sidebar mode. Overrides the auto-generated abbreviation from `getProjectAbbreviation()`. Setting to empty string clears the override.
 - **Color** (enum from `PROJECT_COLOR_PALETTE`): Custom avatar background color for collapsed sidebar mode. Overrides the auto-generated color from `getProjectColor()`. Setting to empty string clears the override.
+- **Branch Prefix** (string, max 20 chars): Prefix for auto-generated branch names (e.g. `di/`). Overrides the config file `branchPrefix` value for this project. If the prefix doesn't end with `/`, `-`, or `_`, a `/` is automatically appended.
 
 ### Sidebar Integration
 

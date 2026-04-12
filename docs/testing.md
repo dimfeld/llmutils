@@ -14,6 +14,7 @@
 - **Use exact assertions over range assertions**: When the expected count is known, use `toBe(1)` instead of `toBeGreaterThan(0)` — range assertions mask off-by-one and double-counting bugs.
 - **Delete or fix empty tests**: Tests with no assertions provide false coverage — they pass without verifying anything. Either delete them or convert them to explicit assertions. Treat empty tests found during review as effectively failing tests by omission.
 - **Return type changes cascade to all test mocks**: When making a function's return type non-void (e.g., `acquireLock` returning lock info instead of void), every test mock for that function must be updated to return valid objects matching the new type. The change cascades to all callers across the test suite.
+- **New code paths in production cascade to mocks too**: Adding a new import or function call to production code (e.g., calling `loadEffectiveConfig` or `debugLog`) that flows through a mocked module requires updating that mock — even if the test doesn't exercise the new path. The mock replaces the entire module, so unmocked exports become `undefined` and cause cryptic failures.
 - **Environment variable cleanup**: In Node/Bun, `process.env.X = undefined` sets the value to the string `"undefined"`, not to `undefined`. Use `delete process.env.X` when restoring an env var that was originally unset. The standard pattern for save/restore is:
   ```typescript
   const original = process.env.MY_VAR;

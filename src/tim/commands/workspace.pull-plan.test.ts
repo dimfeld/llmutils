@@ -6,6 +6,7 @@ import * as path from 'node:path';
 vi.mock('../../logging.js', () => ({
   log: vi.fn(() => {}),
   warn: vi.fn(() => {}),
+  debugLog: vi.fn(() => {}),
 }));
 
 vi.mock('../../common/git.js', () => ({
@@ -337,5 +338,72 @@ describe('workspace pull plan', () => {
     await handleWorkspacePullPlanCommand(planFile, { workspace: workspacePath }, command);
 
     expect(processCalls).toContainEqual(['git', 'checkout', 'feature/plan']);
+  });
+
+  test('handleWorkspacePullPlanCommand uses generated branch name with configured branchPrefix', async () => {
+    const generatedBranch = 'di/123-pull-plan-branch';
+    vi.mocked(spawnAndLogOutput).mockImplementation(async (args: string[]) => {
+      processCalls.push(args);
+
+      if (args[0] === 'git' && args[1] === 'fetch') {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (
+        args[0] === 'git' &&
+        args[1] === 'rev-parse' &&
+        args[3] === `refs/heads/${generatedBranch}`
+      ) {
+        return { exitCode: 0, stdout: 'abc123', stderr: '' };
+      }
+
+      if (
+        args[0] === 'git' &&
+        args[1] === 'rev-parse' &&
+        args[3] === `refs/remotes/origin/${generatedBranch}`
+      ) {
+        return { exitCode: 0, stdout: 'abc123', stderr: '' };
+      }
+
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    const configDir = path.join(tempRoot, '.rmfilter', 'config');
+    await fs.mkdir(configDir, { recursive: true });
+    await fs.writeFile(path.join(configDir, 'tim.yml'), 'branchPrefix: di/\n');
+
+    const workspacePath = path.join(tempRoot, 'workspace');
+    await fs.mkdir(workspacePath, { recursive: true });
+
+    const db = getDatabase();
+    const project = getOrCreateProject(db, 'workspace-pull-plan-repo');
+    recordWorkspace(db, {
+      projectId: project.id,
+      workspacePath,
+      taskId: 'task-plan-workspace',
+      branch: 'main',
+    });
+
+    const planFile = path.join(tempRoot, 'task.plan.md');
+    await fs.writeFile(
+      planFile,
+      ['---', 'id: 123', 'title: Pull plan branch', 'tasks: []', '---', '', 'Plan details'].join(
+        '\n'
+      )
+    );
+
+    const { handleWorkspacePullPlanCommand } = await import('./workspace.js');
+
+    const command = {
+      parent: {
+        parent: {
+          opts: () => ({}),
+        },
+      },
+    } as any;
+
+    await handleWorkspacePullPlanCommand(planFile, { workspace: workspacePath }, command);
+
+    expect(processCalls).toContainEqual(['git', 'checkout', generatedBranch]);
   });
 });

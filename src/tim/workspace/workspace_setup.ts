@@ -12,13 +12,13 @@ import {
 } from '../../common/git.js';
 import { logSpawn } from '../../common/process.js';
 import { error, log, sendStructured, warn } from '../../logging.js';
-import { generateBranchNameFromPlan } from '../commands/branch.js';
+import { generateBranchNameFromPlan, resolveBranchPrefix } from '../commands/branch.js';
 import type { TimConfig } from '../configSchema.js';
 import { getDatabase } from '../db/database.js';
 import type { PlanBaseTrackingUpdate } from '../db/plan.js';
 import { setPlanBaseTracking } from '../db/plan.js';
 import { updateHeadlessSessionInfo } from '../headless.js';
-import { materializePlan } from '../plan_materialize.js';
+import { materializePlan, resolveProjectContext } from '../plan_materialize.js';
 import { readPlanFile, resolvePlanFromDb } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { WorkspaceAutoSelector } from './workspace_auto_selector.js';
@@ -111,13 +111,16 @@ async function resolveWorkspaceBranchContext(
   }
 
   if (planData) {
-    try {
-      branchName = planData.branch ?? generateBranchNameFromPlan(planData);
-    } catch (err) {
-      const planLabel = currentPlanFile ?? `plan ${options.planId}`;
-      warn(
-        `Failed to generate branch name from ${planLabel}. Falling back to workspace task ID: ${err as Error}`
-      );
+    if (planData.branch) {
+      branchName = planData.branch;
+    } else {
+      const projectContext = await resolveProjectContext(currentBaseDir);
+      const branchPrefix = resolveBranchPrefix({
+        config,
+        db: getDatabase(),
+        projectId: projectContext.projectId,
+      });
+      branchName = generateBranchNameFromPlan(planData, { branchPrefix });
     }
 
     if (!baseBranch) {

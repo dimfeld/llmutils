@@ -262,6 +262,29 @@ describe('configLoader', () => {
     expect(config.tags?.allowed).toEqual(['urgent']);
   });
 
+  test('loadEffectiveConfig loads standalone repository tim.local.yml before external storage fallback', async () => {
+    const mainConfigPath = path.join(configDir, 'tim.yml');
+    const localConfigPath = path.join(configDir, 'tim.local.yml');
+
+    await fs.rm(mainConfigPath, { force: true });
+    await fs.writeFile(
+      localConfigPath,
+      yaml.stringify({
+        branchPrefix: 'di/',
+      }),
+      'utf-8'
+    );
+
+    const config = await loadEffectiveConfig();
+
+    expect(config.branchPrefix).toBe('di/');
+    expect(config.isUsingExternalStorage).toBe(false);
+    expect(config.resolvedConfigPath).toBe(localConfigPath);
+    expect(logSpy).not.toHaveBeenCalledWith(
+      expect.stringMatching(/^Using external tim storage at /)
+    );
+  });
+
   test('findConfigPath falls back to external repository config path when default config does not exist', async () => {
     await fs.rm(path.join(configDir, 'tim.yml'), { force: true });
 

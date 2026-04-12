@@ -47,7 +47,7 @@ import { getIssueTracker } from '../../common/issue_tracker/factory.js';
 import { importSingleIssue } from './import/import.js';
 import { parseIssueInput, type ParsedIssueInput } from '../issue_utils.js';
 import { spawnAndLogOutput } from '../../common/process.js';
-import { generateBranchNameFromPlan } from './branch.js';
+import { generateBranchNameFromPlan, resolveBranchPrefix } from './branch.js';
 import {
   findPrimaryWorkspaceForRepository,
   findWorkspaceInfosByRepositoryId,
@@ -64,7 +64,11 @@ import type { WorkspaceType } from '../db/workspace.js';
 import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 import { loadPlansFromDb } from '../plans_db.js';
-import { getMaterializedPlanPath, materializePlan } from '../plan_materialize.js';
+import {
+  getMaterializedPlanPath,
+  materializePlan,
+  resolveProjectContext,
+} from '../plan_materialize.js';
 import { getLegacyAwareSearchDir } from '../path_resolver.js';
 
 const PRIMARY_REMOTE_NAME = 'primary';
@@ -1433,7 +1437,16 @@ export async function handleWorkspacePullPlanCommand(
     globalOpts.config
   );
   const plan = (await resolvePlanFromDbOrSyncFile(planIdentifier, repoRoot, repoRoot)).plan;
-  const branchName = options.branch ?? plan.branch ?? generateBranchNameFromPlan(plan);
+  const branchName =
+    options.branch ??
+    plan.branch ??
+    generateBranchNameFromPlan(plan, {
+      branchPrefix: resolveBranchPrefix({
+        config: await loadEffectiveConfig(globalOpts.config, { cwd: repoRoot }),
+        db: getDatabase(),
+        projectId: (await resolveProjectContext(repoRoot)).projectId,
+      }),
+    });
   const remoteName = options.remote ?? 'origin';
 
   if (!branchName) {
