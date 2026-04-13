@@ -52,13 +52,11 @@ let serialMarkTaskDoneImpl: () => Promise<any> = async () => ({
 // For batch mode tests - TestBatchExecutor instance
 let testBatchExecutor: TestBatchExecutor | null = null;
 
-// ensure_plan_in_db control
-let resolvePlanFromDbOrSyncFileImpl: (
-  planArg: string,
-  repoRoot: string,
-  tasksDir?: string
-) => Promise<any> = async (planArg: string) => {
-  const resolvedPath = path.resolve(planArg);
+// plans.resolvePlanFromDb control
+let resolvePlanFromDbImpl: (planArg: string | number, repoRoot: string) => Promise<any> = async (
+  planArg: string | number
+) => {
+  const resolvedPath = path.resolve(String(planArg));
   const plan = await readPlanFile(resolvedPath);
   return { plan, planPath: resolvedPath };
 };
@@ -264,12 +262,13 @@ vi.mock('../../../logging/tunnel_client.js', () => ({
   isTunnelActive: vi.fn(() => false),
 }));
 
-vi.mock('../../ensure_plan_in_db.js', () => ({
-  resolvePlanFromDbOrSyncFile: vi.fn(async (...args: any[]) =>
-    resolvePlanFromDbOrSyncFileImpl(args[0], args[1], args[2])
-  ),
-  isPlanNotFoundError: vi.fn((err: unknown) => false),
-}));
+vi.mock('../../plans.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../plans.js')>();
+  return {
+    ...actual,
+    resolvePlanFromDb: vi.fn(async (...args: any[]) => resolvePlanFromDbImpl(args[0], args[1])),
+  };
+});
 
 vi.mock('../plan_discovery.js', () => ({
   findNextReadyDependencyFromDb: vi.fn(async (...args: any[]) =>
@@ -1346,7 +1345,7 @@ describe('handleAgentCommand - --next-ready flag', () => {
       postApplyCommands: [],
     });
 
-    resolvePlanFromDbOrSyncFileImpl = async (planArg: string) => {
+    resolvePlanFromDbImpl = async (planArg: string) => {
       const resolvedPath = path.resolve(planArg);
       const content = await fs.readFile(resolvedPath, 'utf-8');
       return {
@@ -1372,7 +1371,7 @@ describe('handleAgentCommand - --next-ready flag', () => {
     const globalCliOptions = {};
 
     await expect(handleAgentCommand(undefined, options, globalCliOptions)).rejects.toThrow(
-      '--next-ready requires a parent plan ID or file path'
+      '--next-ready requires a numeric parent plan ID'
     );
   });
 
@@ -1381,7 +1380,7 @@ describe('handleAgentCommand - --next-ready flag', () => {
     const globalCliOptions = {};
 
     await expect(handleAgentCommand(undefined, options, globalCliOptions)).rejects.toThrow(
-      '--next-ready requires a parent plan ID or file path'
+      '--next-ready requires a numeric parent plan ID'
     );
   });
 
@@ -1429,7 +1428,7 @@ describe('handleAgentCommand - --next-ready flag', () => {
       message: 'Found ready plan: Ready Dependency Plan (ID: 101)',
     });
 
-    const options = { nextReady: parentPlanFile };
+    const options = { nextReady: '100' };
     const globalCliOptions = {};
     const structuredMessages: StructuredMessage[] = [];
 
@@ -1493,29 +1492,12 @@ describe('handleAgentCommand - --next-ready flag', () => {
     timAgentSpy.mockRestore();
   });
 
-  test('throws error when parent plan file does not have valid ID', async () => {
-    const invalidPlanFile = path.join(tempDir, 'tasks', '999-invalid-plan.yml');
-    const invalidPlan: Partial<PlanSchema> = {
-      title: 'Invalid Plan',
-      goal: 'No ID',
-      status: 'pending',
-    };
-    await fs.writeFile(invalidPlanFile, yaml.stringify(invalidPlan));
-
-    resolvePlanFromDbOrSyncFileImpl = async (planArg: string) => {
-      const resolvedPath = path.resolve(planArg);
-      const content = await fs.readFile(resolvedPath, 'utf-8');
-      return {
-        plan: yaml.parse(content) as PlanSchema,
-        planPath: resolvedPath,
-      };
-    };
-
-    const options = { nextReady: invalidPlanFile };
+  test('rejects non-numeric --next-ready value', async () => {
+    const options = { nextReady: 'not-a-number' };
     const globalCliOptions = {};
 
     await expect(handleAgentCommand(undefined, options, globalCliOptions)).rejects.toThrow(
-      `Plan file ${invalidPlanFile} does not have a valid numeric ID`
+      'Expected a numeric plan ID'
     );
   });
 
@@ -1592,26 +1574,14 @@ describe('handleAgentCommand - --next-ready flag', () => {
     timAgentSpy.mockRestore();
   });
 
-  test('handles plan file resolution errors', async () => {
-    resolvePlanFromDbOrSyncFileImpl = async (planFile: string) => {
-      if (planFile.includes('non-existent')) {
-        throw new Error('File not found');
-      }
-      const resolvedPath = path.resolve(planFile);
-      const content = await fs.readFile(resolvedPath, 'utf-8');
-      return {
-        plan: yaml.parse(content) as PlanSchema,
-        planPath: resolvedPath,
-      };
-    };
-
+  test('rejects non-numeric plan ID for --next-ready', async () => {
     const timAgentSpy = vi.spyOn(agentModule, 'timAgent').mockResolvedValue(undefined as any);
 
     const options = { nextReady: '/path/to/non-existent-plan.yml' };
     const globalCliOptions = {};
 
     await expect(handleAgentCommand(undefined, options, globalCliOptions)).rejects.toThrow(
-      'File not found'
+      'Expected a numeric plan ID'
     );
 
     expect(timAgentSpy).not.toHaveBeenCalled();
@@ -1713,35 +1683,14 @@ describe('handleAgentCommand - --next-ready flag', () => {
     expect(runWithHeadlessMock).toHaveBeenCalledWith(expect.objectContaining({ command: 'agent' }));
   });
 
-  test('handles plan with string ID correctly', async () => {
-    const stringIdPlanFile = path.join(tempDir, 'tasks', 'string-plan.yml');
-    const stringIdPlan: PlanSchemaInputWithFilename = {
-      id: 'feature-123',
-      title: 'String ID Plan',
-      goal: 'Test string ID handling',
-      details: 'Test details',
-      status: 'pending',
-      tasks: [{ title: 'Test task', description: 'Test description', steps: [] }],
-      filename: stringIdPlanFile,
-    };
-    await fs.writeFile(stringIdPlanFile, yaml.stringify(stringIdPlan));
-
-    resolvePlanFromDbOrSyncFileImpl = async (planArg: string) => {
-      const resolvedPath = path.resolve(planArg);
-      const content = await fs.readFile(resolvedPath, 'utf-8');
-      return {
-        plan: yaml.parse(content) as PlanSchema,
-        planPath: resolvedPath,
-      };
-    };
-
+  test('rejects non-numeric --next-ready value', async () => {
     const timAgentSpy = vi.spyOn(agentModule, 'timAgent').mockResolvedValue(undefined as any);
 
-    const options = { nextReady: stringIdPlanFile };
+    const options = { nextReady: 'feature-123' };
     const globalCliOptions = {};
 
     await expect(handleAgentCommand(undefined, options, globalCliOptions)).rejects.toThrow(
-      `Plan file ${stringIdPlanFile} does not have a valid numeric ID`
+      'Expected a numeric plan ID'
     );
 
     expect(timAgentSpy).not.toHaveBeenCalled();
@@ -1819,7 +1768,7 @@ describe('handleAgentCommand - headless metadata for direct plan argument', () =
       postApplyCommands: [],
     });
 
-    resolvePlanFromDbOrSyncFileImpl = async (_planRef: string) => {
+    resolvePlanFromDbImpl = async (_planRef: string) => {
       const content = await fs.readFile(planPath, 'utf-8');
       return {
         plan: yaml.parse(content) as PlanSchema,
@@ -1995,7 +1944,7 @@ describe('timAgent - Batch Tasks Mode', () => {
     useRealFindNext = true; // Use real getAllIncompleteTasks for batch mode tests
     runWithHeadlessAdapterIfEnabledImpl = async (opts: any) => opts.callback();
     // Reset to default so it uses batchPlanFile, not a stale closure from a previous test
-    resolvePlanFromDbOrSyncFileImpl = async (planArg: string) => {
+    resolvePlanFromDbImpl = async (planArg: string) => {
       const resolvedPath = path.resolve(planArg);
       const plan = await readPlanFile(resolvedPath);
       return { plan, planPath: resolvedPath };

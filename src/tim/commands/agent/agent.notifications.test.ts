@@ -17,7 +17,7 @@ const {
   executeBatchModeSpy,
   buildExecutorAndLogSpy,
   findNextPlanFromDbSpy,
-  resolvePlanFromDbOrSyncFileSpy,
+  resolvePlanFromDbSpy,
   loadEffectiveConfigSpy,
   loadGlobalConfigForNotificationsSpy,
   getGitRootSpy,
@@ -38,7 +38,7 @@ const {
   executeBatchModeSpy: vi.fn(async () => undefined),
   buildExecutorAndLogSpy: vi.fn(() => ({ execute: vi.fn(async () => {}), filePathPrefix: '' })),
   findNextPlanFromDbSpy: vi.fn(async () => undefined),
-  resolvePlanFromDbOrSyncFileSpy: vi.fn(async () => null as any),
+  resolvePlanFromDbSpy: vi.fn(async () => null as any),
   loadEffectiveConfigSpy: vi.fn(async () => ({}) as any),
   loadGlobalConfigForNotificationsSpy: vi.fn(async () => ({}) as any),
   getGitRootSpy: vi.fn(async () => '/tmp'),
@@ -94,14 +94,7 @@ vi.mock('../../plans.js', () => ({
     await fs.writeFile(p, yaml.stringify(data));
   }),
   generatePlanFileContent: vi.fn(() => ''),
-  resolvePlanFromDb: vi.fn(async () => ({
-    plan: { id: 1, title: 'P', status: 'pending', tasks: [] },
-    planPath: '/tmp/plan.yml',
-  })),
-}));
-
-vi.mock('../../ensure_plan_in_db.js', () => ({
-  resolvePlanFromDbOrSyncFile: resolvePlanFromDbOrSyncFileSpy,
+  resolvePlanFromDb: resolvePlanFromDbSpy,
 }));
 
 vi.mock('../plan_discovery.js', () => ({
@@ -157,7 +150,7 @@ describe('timAgent notifications', () => {
     executeBatchModeSpy.mockClear();
     buildExecutorAndLogSpy.mockClear();
     findNextPlanFromDbSpy.mockClear();
-    resolvePlanFromDbOrSyncFileSpy.mockClear();
+    resolvePlanFromDbSpy.mockClear();
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-notify-test-'));
     planFile = path.join(tempDir, 'plan.yml');
@@ -177,8 +170,8 @@ describe('timAgent notifications', () => {
     // Update getGitRoot mock to use tempDir
     getGitRootSpy.mockImplementation(async () => tempDir);
 
-    // Update resolvePlanFromDbOrSyncFile to use current planFile
-    resolvePlanFromDbOrSyncFileSpy.mockImplementation(async (planArg: string) => {
+    // Update resolvePlanFromDb to use current planFile
+    resolvePlanFromDbSpy.mockImplementation(async (planArg: string) => {
       const resolvedPath = path.resolve(planArg);
       const content = await fs.readFile(resolvedPath, 'utf-8');
       return {
@@ -234,7 +227,7 @@ describe('timAgent notifications', () => {
   });
 
   test('sends notification when plan resolution fails', async () => {
-    resolvePlanFromDbOrSyncFileSpy.mockImplementationOnce(async () => {
+    resolvePlanFromDbSpy.mockImplementationOnce(async () => {
       throw new Error('duplicate plan id');
     });
 

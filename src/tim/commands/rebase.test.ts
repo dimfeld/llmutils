@@ -9,9 +9,13 @@ vi.mock('../configLoader.js', () => ({
   loadEffectiveConfig: vi.fn(),
 }));
 
-vi.mock('../ensure_plan_in_db.js', () => ({
-  resolvePlanFromDbOrSyncFile: vi.fn(),
-}));
+vi.mock('../plans.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../plans.js')>();
+  return {
+    ...actual,
+    resolvePlanFromDb: vi.fn(),
+  };
+});
 
 vi.mock('../executors/index.js', () => ({
   buildExecutorAndLog: vi.fn(),
@@ -48,7 +52,7 @@ vi.mock('../plan_materialize.js', () => ({
 }));
 
 import { loadEffectiveConfig } from '../configLoader.js';
-import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import { resolvePlanFromDb } from '../plans.js';
 import { buildExecutorAndLog } from '../executors/index.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import { handleRebaseCommand } from './rebase.js';
@@ -393,7 +397,7 @@ function mockPlanForRepo(
     ...configOverrides,
   } as any);
   vi.mocked(resolveRepoRoot).mockResolvedValue(repoDir);
-  vi.mocked(resolvePlanFromDbOrSyncFile).mockResolvedValue({
+  vi.mocked(resolvePlanFromDb).mockResolvedValue({
     plan,
     planPath: path.join(repoDir, '.tim', 'plans', `${String(plan.id ?? 'plan')}.plan.md`),
   } as any);
@@ -504,7 +508,7 @@ describe('handleRebaseCommand', () => {
     expect(buildExecutorAndLog).not.toHaveBeenCalled();
   });
 
-  test('reloads config from target repo when rebasing a cross-repo plan path', async () => {
+  test('reloads config from target repo when rebasing with cross-repo config', async () => {
     const plan = buildPlan({
       title: 'Update a plan branch to latest main',
     });
@@ -531,7 +535,7 @@ describe('handleRebaseCommand', () => {
       } as any;
     });
     vi.mocked(resolveRepoRoot).mockResolvedValue(repo.workDir);
-    vi.mocked(resolvePlanFromDbOrSyncFile).mockResolvedValue({
+    vi.mocked(resolvePlanFromDb).mockResolvedValue({
       plan,
       planPath: path.join(repo.workDir, '.tim', 'plans', '263.plan.md'),
     } as any);
@@ -542,7 +546,7 @@ describe('handleRebaseCommand', () => {
       'di/263-update-a-plan-branch-to-latest-main'
     );
 
-    await handleRebaseCommand('/tmp/other-repo/.tim/plans/263.plan.md', {}, {
+    await handleRebaseCommand('263', {}, {
       parent: { opts: () => ({}) },
     } as any);
 
@@ -703,7 +707,7 @@ describe('handleRebaseCommand', () => {
 
     await expect(
       handleRebaseCommand(undefined, {}, { parent: { opts: () => ({}) } } as any)
-    ).rejects.toThrow('Please provide a plan file or use --next/--current to find a plan.');
+    ).rejects.toThrow('Please provide a numeric plan ID or use --next/--current to find a plan.');
   });
 
   test('wraps execution in runWithHeadlessAdapterIfEnabled with plan metadata', async () => {

@@ -32,16 +32,20 @@ vi.mock('../../configLoader.js', () => ({
   })),
 }));
 
-vi.mock('../../ensure_plan_in_db.js', () => ({
-  resolvePlanFromDbOrSyncFile: vi.fn(async (_p: string) => ({
-    plan: {
-      id: 1,
-      title: 'P',
-      tasks: [{ title: 'T1', steps: [{ prompt: 'p', done: false }] }],
-    },
-    planPath: '/tmp/plan.yml',
-  })),
-}));
+vi.mock('../../plans.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../plans.js')>();
+  return {
+    ...actual,
+    resolvePlanFromDb: vi.fn(async (_p: string) => ({
+      plan: {
+        id: 1,
+        title: 'P',
+        tasks: [{ title: 'T1', steps: [{ prompt: 'p', done: false }] }],
+      },
+      planPath: '/tmp/plan.yml',
+    })),
+  };
+});
 
 vi.mock('../../plans.js', () => ({
   readPlanFile: vi.fn(async () => ({

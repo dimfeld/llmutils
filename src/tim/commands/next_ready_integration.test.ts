@@ -85,9 +85,13 @@ vi.mock('../headless.js', () => ({
   runWithHeadlessAdapterIfEnabled: vi.fn(async (options: any) => options.callback()),
 }));
 
-vi.mock('../ensure_plan_in_db.js', () => ({
-  resolvePlanFromDbOrSyncFile: vi.fn(),
-}));
+vi.mock('../plans.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../plans.js')>();
+  return {
+    ...actual,
+    resolvePlanFromDb: vi.fn(),
+  };
+});
 
 vi.mock('../db/plan_sync.js', () => ({
   syncPlanToDb: vi.fn(async () => {}),
@@ -98,7 +102,7 @@ import { handleAgentCommand } from './agent/agent.js';
 import { log as logFn } from '../../logging.js';
 import { getGitRoot } from '../../common/git.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import { resolvePlanFromDb } from '../plans.js';
 
 const logSpy = vi.mocked(logFn);
 const errorSpy = vi.mocked((await import('../../logging.js')).error);
@@ -130,7 +134,7 @@ describe('--next-ready CLI flag integration tests', () => {
 
     vi.mocked(getGitRoot).mockResolvedValue(tempDir);
 
-    vi.mocked(resolvePlanFromDbOrSyncFile).mockImplementation(async (planArg: string) => {
+    vi.mocked(resolvePlanFromDb).mockImplementation(async (planArg: string) => {
       const { readPlanFile } = await import('../plans.js');
       return {
         plan: await readPlanFile(planArg),

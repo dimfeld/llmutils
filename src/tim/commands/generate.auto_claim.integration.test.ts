@@ -93,14 +93,18 @@ vi.mock('./plan_discovery.js', () => ({
   findLatestPlanFromDb: vi.fn(async () => null),
 }));
 
-vi.mock('../ensure_plan_in_db.js', () => ({
-  resolvePlanFromDbOrSyncFile: vi.fn().mockImplementation((planPath: string) =>
-    Promise.resolve({
-      plan: { id: 42, uuid: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' },
-      planPath,
-    })
-  ),
-}));
+vi.mock('../plans.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../plans.js')>();
+  return {
+    ...actual,
+    resolvePlanFromDb: vi.fn().mockImplementation((planId: string | number) =>
+      Promise.resolve({
+        plan: { id: 42, uuid: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' },
+        planPath: String(planId),
+      })
+    ),
+  };
+});
 
 vi.mock('../db/plan_sync.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../db/plan_sync.js')>();

@@ -5,10 +5,9 @@ import type { DiffResult } from '../incremental_review.js';
 import type { PlanSchema } from '../planSchema.js';
 
 interface MockDependencies {
-  resolvePlanFromDbOrSyncFile: (
-    planFile: string,
-    repoRoot: string,
-    configBaseDir?: string
+  resolvePlanFromDb: (
+    planArg: string | number,
+    repoRoot: string
   ) => Promise<{
     plan: PlanSchema;
     planPath: string | null;
@@ -55,7 +54,7 @@ describe('gatherPlanContext', () => {
     };
 
     mockDeps = {
-      resolvePlanFromDbOrSyncFile: async () => ({
+      resolvePlanFromDb: async () => ({
         plan: basePlan,
         planPath: planFile,
       }),
@@ -156,7 +155,7 @@ describe('gatherPlanContext', () => {
     allPlans.set(123, { ...basePlan, parent: 100 });
     allPlans.set(124, completedChild);
 
-    mockDeps.resolvePlanFromDbOrSyncFile = async () => ({
+    mockDeps.resolvePlanFromDb = async () => ({
       plan: { ...basePlan, parent: 100 },
       planPath: planFile,
     });
@@ -177,7 +176,7 @@ describe('gatherPlanContext', () => {
   });
 
   test('should use plan id as resolvedPlanFile for DB-only plans', async () => {
-    mockDeps.resolvePlanFromDbOrSyncFile = async () => ({
+    mockDeps.resolvePlanFromDb = async () => ({
       plan: basePlan,
       planPath: null,
     });
@@ -188,7 +187,7 @@ describe('gatherPlanContext', () => {
   });
 
   test('should surface DB resolution failures', async () => {
-    mockDeps.resolvePlanFromDbOrSyncFile = async () => {
+    mockDeps.resolvePlanFromDb = async () => {
       throw new Error('No plan found in the database for identifier: 123');
     };
 

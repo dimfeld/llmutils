@@ -118,14 +118,10 @@ describe('handleSetTaskDoneCommand', () => {
     const planFile = path.join(tasksDir, '1.yml');
     await fs.writeFile(planFile, yaml.stringify(plan));
 
-    await handleSetTaskDoneCommand(
-      planFile,
-      { title: 'Task Two' },
-      { parent: { opts: () => ({}) } }
-    );
+    await handleSetTaskDoneCommand('1', { title: 'Task Two' }, { parent: { opts: () => ({}) } });
 
     expect(setTaskDoneSpy).toHaveBeenCalledWith(
-      planFile,
+      '1',
       {
         taskIdentifier: 'Task Two',
         commit: undefined,
@@ -169,10 +165,10 @@ describe('handleSetTaskDoneCommand', () => {
     const planFile = path.join(tasksDir, '1.yml');
     await fs.writeFile(planFile, yaml.stringify(plan));
 
-    await handleSetTaskDoneCommand(planFile, { index: 2 }, { parent: { opts: () => ({}) } });
+    await handleSetTaskDoneCommand('1', { index: 2 }, { parent: { opts: () => ({}) } });
 
     expect(setTaskDoneSpy).toHaveBeenCalledWith(
-      planFile,
+      '1',
       {
         taskIdentifier: 2,
         commit: undefined,
@@ -210,13 +206,13 @@ describe('handleSetTaskDoneCommand', () => {
     await fs.writeFile(planFile, yaml.stringify(plan));
 
     await handleSetTaskDoneCommand(
-      planFile,
+      '1',
       { title: 'Task One', commit: true },
       { parent: { opts: () => ({}) } }
     );
 
     expect(setTaskDoneSpy).toHaveBeenCalledWith(
-      planFile,
+      '1',
       {
         taskIdentifier: 'Task One',
         commit: true,
@@ -245,7 +241,7 @@ describe('handleSetTaskDoneCommand', () => {
     await fs.writeFile(planFile, yaml.stringify(plan));
 
     await expect(
-      handleSetTaskDoneCommand(planFile, {}, { parent: { opts: () => ({}) } })
+      handleSetTaskDoneCommand('1', {}, { parent: { opts: () => ({}) } })
     ).rejects.toThrow('You must specify either --title or --index to identify the task');
   });
 
@@ -263,11 +259,7 @@ describe('handleSetTaskDoneCommand', () => {
     await fs.writeFile(planFile, yaml.stringify(plan));
 
     await expect(
-      handleSetTaskDoneCommand(
-        planFile,
-        { title: 'Task', index: 1 },
-        { parent: { opts: () => ({}) } }
-      )
+      handleSetTaskDoneCommand('1', { title: 'Task', index: 1 }, { parent: { opts: () => ({}) } })
     ).rejects.toThrow('Please specify either --title or --index, not both');
   });
 
@@ -297,11 +289,7 @@ describe('handleSetTaskDoneCommand', () => {
     const planFile = path.join(tasksDir, '1.yml');
     await fs.writeFile(planFile, yaml.stringify(plan));
 
-    await handleSetTaskDoneCommand(
-      planFile,
-      { title: 'Last Task' },
-      { parent: { opts: () => ({}) } }
-    );
+    await handleSetTaskDoneCommand('1', { title: 'Last Task' }, { parent: { opts: () => ({}) } });
 
     expect(releaseLockSpy).toHaveBeenCalledWith(tempDir);
     expect(logSpy).toHaveBeenCalledWith('Released workspace lock');
@@ -333,11 +321,7 @@ describe('handleSetTaskDoneCommand', () => {
     const planFile = path.join(tasksDir, '1.yml');
     await fs.writeFile(planFile, yaml.stringify(plan));
 
-    await handleSetTaskDoneCommand(
-      planFile,
-      { title: 'First Task' },
-      { parent: { opts: () => ({}) } }
-    );
+    await handleSetTaskDoneCommand('1', { title: 'First Task' }, { parent: { opts: () => ({}) } });
 
     expect(releaseLockSpy).not.toHaveBeenCalled();
   });
