@@ -27,14 +27,14 @@ interface RemoveCommandOptions {
 }
 
 export async function handleRemoveCommand(
-  planFiles: string[],
+  planIdArgs: string[],
   options: RemoveCommandOptions,
   command: any
 ): Promise<void> {
-  if (!planFiles || planFiles.length === 0) {
+  if (!planIdArgs || planIdArgs.length === 0) {
     throw new Error('At least one numeric plan ID is required');
   }
-  const planIds = planFiles.map((plan) => String(parsePlanIdFromCliArg(plan)));
+  const planIds = planIdArgs.map((plan) => String(parsePlanIdFromCliArg(plan)));
 
   const globalOpts = command.parent.opts();
   await loadEffectiveConfig(globalOpts.config);

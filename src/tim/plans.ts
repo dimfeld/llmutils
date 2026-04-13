@@ -16,7 +16,6 @@ import { getDatabase } from './db/database.js';
 import { toPlanUpsertInput } from './db/plan_sync.js';
 import { getOrCreateProject } from './db/project.js';
 import { resolveProjectContext } from './plan_materialize.js';
-import { getMaterializedPlanPath } from './plan_materialize.js';
 import type { ProjectContext } from './plan_materialize.js';
 import {
   normalizeContainerToEpic,
