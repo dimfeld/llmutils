@@ -10,7 +10,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'node:path';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import { parsePlanIdFromCliArg, resolvePlanFromDb } from '../plans.js';
 import { getAllIncompleteTasks } from '../plans/find_next.js';
 import { buildExecutionPromptWithoutSteps } from '../prompt_builder.js';
 import {
@@ -71,17 +71,14 @@ export async function handleSubagentCommand(
   options: SubagentOptions,
   globalCliOptions: any
 ): Promise<void> {
+  const planIdArg = String(parsePlanIdFromCliArg(planFileArg));
   const config = await loadEffectiveConfig(globalCliOptions.config);
   const repoRoot = await resolveRepoRootForPlanArg(
-    planFileArg,
+    planIdArg,
     (await getGitRoot()) || process.cwd(),
     globalCliOptions.config
   );
-  const { plan: planData, planPath } = await resolvePlanFromDbOrSyncFile(
-    planFileArg,
-    repoRoot,
-    repoRoot
-  );
+  const { plan: planData, planPath } = await resolvePlanFromDb(planIdArg, repoRoot);
   const planFilePath = planPath ?? (await materializePlan(planData.id, repoRoot));
   const gitRoot = await getGitRoot(path.dirname(planFilePath));
   const executorType = options.executor || 'claude-code';

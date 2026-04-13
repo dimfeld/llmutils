@@ -61,7 +61,7 @@ import {
 import { getAssignmentEntriesByProject } from '../db/assignment.js';
 import { getProject } from '../db/project.js';
 import type { WorkspaceType } from '../db/workspace.js';
-import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import { parsePlanIdFromCliArg, resolvePlanFromDb } from '../plans.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 import { loadPlansFromDb } from '../plans_db.js';
 import {
@@ -970,6 +970,9 @@ export async function handleWorkspaceAddCommand(
   options: any,
   command: Command
 ) {
+  const normalizedPlanIdentifier = planIdentifier
+    ? String(parsePlanIdFromCliArg(planIdentifier))
+    : undefined;
   const globalOpts = command.parent!.parent!.opts();
   const workspaceType = resolveWorkspaceTypeOption(options);
 
@@ -1034,9 +1037,9 @@ export async function handleWorkspaceAddCommand(
   } else if (issueInfo) {
     // Use issue identifier for workspace ID
     workspaceId = `issue-${issueInfo.identifier}`;
-  } else if (planIdentifier) {
+  } else if (normalizedPlanIdentifier) {
     // Generate ID based on plan
-    workspaceId = `task-${planIdentifier}`;
+    workspaceId = `task-${normalizedPlanIdentifier}`;
   } else {
     // Generate a random ID for standalone workspace
     workspaceId = generateAlphanumericId();
@@ -1046,18 +1049,14 @@ export async function handleWorkspaceAddCommand(
   let resolvedPlanFilePath: string | undefined;
   let planData: PlanSchema | undefined;
 
-  if (planIdentifier) {
+  if (normalizedPlanIdentifier) {
     try {
       const planRepoRoot = await resolveRepoRootForPlanArg(
-        planIdentifier,
+        normalizedPlanIdentifier,
         gitRoot,
         globalOpts.config
       );
-      const resolvedPlan = await resolvePlanFromDbOrSyncFile(
-        planIdentifier,
-        planRepoRoot,
-        planRepoRoot
-      );
+      const resolvedPlan = await resolvePlanFromDb(normalizedPlanIdentifier, planRepoRoot);
       planData = resolvedPlan.plan;
       resolvedPlanFilePath =
         resolvedPlan.planPath ??
@@ -1182,11 +1181,7 @@ export async function handleWorkspaceAddCommand(
         log(chalk.green(`✓ Issue ${issueInfo.identifier} imported successfully`));
         importedPlanId = result.planId;
         if (result.planId) {
-          const resolvedImportedPlan = await resolvePlanFromDbOrSyncFile(
-            String(result.planId),
-            workspace.path,
-            workspace.path
-          );
+          const resolvedImportedPlan = await resolvePlanFromDb(String(result.planId), workspace.path);
           importedPlan = resolvedImportedPlan.plan;
         }
       } else {
@@ -1426,17 +1421,18 @@ export async function handleWorkspacePullPlanCommand(
   command: Command
 ) {
   if (!planIdentifier) {
-    throw new Error('Plan identifier is required.');
+    throw new Error('A numeric plan ID is required.');
   }
+  const planIdArg = String(parsePlanIdFromCliArg(planIdentifier));
 
   const globalOpts = command.parent!.parent!.opts();
   const workspace = await resolveWorkspaceIdentifier(options.workspace);
   const repoRoot = await resolveRepoRootForPlanArg(
-    planIdentifier,
+    planIdArg,
     process.cwd(),
     globalOpts.config
   );
-  const plan = (await resolvePlanFromDbOrSyncFile(planIdentifier, repoRoot, repoRoot)).plan;
+  const plan = (await resolvePlanFromDb(planIdArg, repoRoot)).plan;
   const branchName =
     options.branch ??
     plan.branch ??
@@ -1451,7 +1447,7 @@ export async function handleWorkspacePullPlanCommand(
 
   if (!branchName) {
     throw new Error(
-      `Could not determine a branch/bookmark name from plan ${planIdentifier}. Use --branch to specify one explicitly.`
+      `Could not determine a branch/bookmark name from plan ${planIdArg}. Use --branch to specify one explicitly.`
     );
   }
 
@@ -1990,12 +1986,13 @@ export async function handleWorkspaceUpdateCommand(
   // Handle description - from-plan takes precedence if both specified
   if (options.fromPlan) {
     try {
+      const fromPlanIdArg = String(parsePlanIdFromCliArg(options.fromPlan));
       const repoRoot = await resolveRepoRootForPlanArg(
-        options.fromPlan,
+        fromPlanIdArg,
         process.cwd(),
         globalOpts.config
       );
-      const plan = (await resolvePlanFromDbOrSyncFile(options.fromPlan, repoRoot, repoRoot)).plan;
+      const plan = (await resolvePlanFromDb(fromPlanIdArg, repoRoot)).plan;
       const planDescription = buildDescriptionFromPlan(plan);
       const planId = plan.id ? String(plan.id) : '';
       patch.description = planId ? `${planId} - ${planDescription}` : planDescription;

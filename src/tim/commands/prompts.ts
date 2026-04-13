@@ -13,7 +13,7 @@ import {
 } from '../mcp/generate_mode.js';
 import { getCombinedTitle } from '../display_utils.js';
 import { findLatestPlanFromDb, findNextReadyDependencyFromDb } from './plan_discovery.js';
-import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import { parsePlanIdFromCliArg, resolvePlanFromDb } from '../plans.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 import type { PlanSchema } from '../planSchema.js';
 import { findPlanFileOnDiskAsync } from '../plans/find_plan_file.js';
@@ -306,34 +306,19 @@ export async function handlePromptsCommand(
   // Manual conflict check for --plan, --next-ready, and --latest
   if (planOptionsSet > 1) {
     throw new Error(
-      'You must provide at most one of [plan], --plan <plan>, --next-ready <planIdOrPath>, or --latest'
+      'You must provide at most one of [plan], --plan <planId>, --next-ready <planId>, or --latest'
     );
   }
 
   let plan = normalizePlanIdentifier(options.plan) ?? normalizePlanIdentifier(planArg);
+  if (plan) {
+    plan = String(parsePlanIdFromCliArg(plan));
+  }
 
   // Handle --next-ready option - find and operate on next ready dependency
   if (options.nextReady) {
     const repoRoot = pathContext.gitRoot;
-    // Convert string ID to number or resolve plan file to get numeric ID
-    let parentPlanId: number;
-    const planIdNumber = parseInt(options.nextReady, 10);
-    if (!isNaN(planIdNumber)) {
-      parentPlanId = planIdNumber;
-    } else {
-      const parentRepoRoot = await resolveRepoRootForPlanArg(
-        options.nextReady,
-        repoRoot,
-        globalOpts.config
-      );
-      const parentPlan = (
-        await resolvePlanFromDbOrSyncFile(options.nextReady, parentRepoRoot, parentRepoRoot)
-      ).plan;
-      if (!parentPlan.id) {
-        throw new Error(`Plan ${options.nextReady} does not have a valid ID`);
-      }
-      parentPlanId = parentPlan.id;
-    }
+    const parentPlanId = parsePlanIdFromCliArg(options.nextReady);
 
     const result = await findNextReadyDependencyFromDb(parentPlanId, repoRoot, repoRoot, true);
 

@@ -7,7 +7,6 @@ import { removeAssignment } from '../db/assignment.js';
 import { getDatabase } from '../db/database.js';
 import { deletePlan, getPlanByPlanId, upsertPlan, type PlanRow } from '../db/plan.js';
 import { toPlanUpsertInput } from '../db/plan_sync.js';
-import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
 import {
   getMaterializedPlanPath,
   getShadowPlanPath,
@@ -17,7 +16,7 @@ import {
 } from '../plan_materialize.js';
 import { getLegacyAwareSearchDir } from '../path_resolver.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
-import { resolvePlanFromDb, writePlanFile } from '../plans.js';
+import { parsePlanIdFromCliArg, resolvePlanFromDb, writePlanFile } from '../plans.js';
 import { invertPlanIdToUuidMap, loadPlansFromDb, planRowForTransaction } from '../plans_db.js';
 import { resolveWritablePath } from '../plans/resolve_writable_path.js';
 import type { PlanSchema } from '../planSchema.js';
@@ -33,13 +32,14 @@ export async function handleRemoveCommand(
   command: any
 ): Promise<void> {
   if (!planFiles || planFiles.length === 0) {
-    throw new Error('At least one plan file or ID is required');
+    throw new Error('At least one numeric plan ID is required');
   }
+  const planIds = planFiles.map((plan) => String(parsePlanIdFromCliArg(plan)));
 
   const globalOpts = command.parent.opts();
   await loadEffectiveConfig(globalOpts.config);
   const repoRoot = await resolveRepoRootForPlanArg(
-    planFiles[0] ?? '',
+    planIds[0] ?? '',
     process.cwd(),
     globalOpts.config
   );
@@ -49,7 +49,7 @@ export async function handleRemoveCommand(
   await syncMaterializedPlans(repoRoot, context.rows);
   context = await resolveProjectContext(repoRoot, repository);
   const targetResolutions = await Promise.all(
-    planFiles.map((planArg) => resolvePlanFromDbOrSyncFile(planArg, repoRoot, repoRoot))
+    planIds.map((planArg) => resolvePlanFromDb(planArg, repoRoot))
   );
 
   const targetIds = new Set<number>(targetResolutions.map((target) => target.plan.id));

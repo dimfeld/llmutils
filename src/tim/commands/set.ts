@@ -8,7 +8,6 @@ import { getLegacyAwareSearchDir } from '../path_resolver.js';
 import { getDatabase } from '../db/database.js';
 import { getPlanByPlanId, type PlanRow, upsertPlan } from '../db/plan.js';
 import { toPlanUpsertInput } from '../db/plan_sync.js';
-import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
 import {
   getMaterializedPlanPath,
   materializePlan,
@@ -20,7 +19,7 @@ import {
 import { updatePlanProperties } from '../planPropertiesUpdater.js';
 import type { PlanSchema, Priority } from '../planSchema.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
-import { readPlanFile, resolvePlanFromDb, writePlanFile } from '../plans.js';
+import { parsePlanIdFromCliArg, readPlanFile, resolvePlanFromDb, writePlanFile } from '../plans.js';
 import { invertPlanIdToUuidMap, planRowForTransaction } from '../plans_db.js';
 import { checkAndMarkParentDone } from '../plans/parent_cascade.js';
 import { resolveWritablePath } from '../plans/resolve_writable_path.js';
@@ -65,21 +64,22 @@ export async function handleSetCommand(
   options: SetOptions,
   globalOpts: any
 ): Promise<void> {
+  const planIdArg = String(parsePlanIdFromCliArg(planArg));
   const config = await loadEffectiveConfig(globalOpts?.config);
   const repoRoot = await resolveRepoRootForPlanArg(
-    planArg,
+    planIdArg,
     (await getGitRoot()) || process.cwd(),
     globalOpts?.config
   );
-  const initialPlan = await resolvePlanFromDbOrSyncFile(planArg, repoRoot, repoRoot);
-  const resolvedPlanArg = initialPlan.plan.uuid ?? planArg;
+  const initialPlan = await resolvePlanFromDb(planIdArg, repoRoot);
+  const resolvedPlanArg = initialPlan.plan.uuid ?? planIdArg;
 
   await withPlanAutoSync(initialPlan.plan.id, repoRoot, async () => {
     let context = await resolveProjectContext(repoRoot);
     const tasksDir = getLegacyAwareSearchDir(repoRoot);
     const target = await resolvePlanFromDb(resolvedPlanArg, repoRoot, { context });
     const planRow = getRequiredPlanRow(context, target.plan.id);
-    const outputPath = await resolveWritablePath(planArg, planRow, repoRoot, repoRoot);
+    const outputPath = await resolveWritablePath(planIdArg, planRow, repoRoot, repoRoot);
 
     const plan = target.plan;
     let modified = false;

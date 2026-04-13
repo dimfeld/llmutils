@@ -10,7 +10,7 @@ import { HeadlessAdapter } from '../../logging/headless_adapter.js';
 import { log, warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { syncPlanToDb } from '../db/plan_sync.js';
-import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import { parsePlanIdFromCliArg, resolvePlanFromDb } from '../plans.js';
 import { resolvePlanPathContext } from '../path_resolver.js';
 import { watchPlanFile } from '../plan_file_watcher.js';
 import { readPlanFile } from '../plans.js';
@@ -85,23 +85,13 @@ export async function handleGenerateCommand(
 
   if (planOptionsSet !== 1) {
     throw new Error(
-      'You must provide one and only one of [plan], --plan <plan>, --next-ready <planIdOrPath>, or --latest'
+      'You must provide one and only one of [plan], --plan <planId>, --next-ready <planId>, or --latest'
     );
   }
 
   // Handle --next-ready option - find and operate on next ready dependency
   if (options.nextReady) {
-    let parentPlanId: number;
-    const planIdNumber = parseInt(options.nextReady, 10);
-    if (!isNaN(planIdNumber)) {
-      parentPlanId = planIdNumber;
-    } else {
-      const { plan } = await resolvePlanFromDbOrSyncFile(options.nextReady, gitRoot, gitRoot);
-      if (!plan.id) {
-        throw new Error(`Plan ${options.nextReady} does not have a valid ID`);
-      }
-      parentPlanId = plan.id;
-    }
+    const parentPlanId = parsePlanIdFromCliArg(options.nextReady);
 
     const result = await findNextReadyDependencyFromDb(parentPlanId, gitRoot, gitRoot, true);
 
@@ -135,7 +125,7 @@ export async function handleGenerateCommand(
   }
 
   if (planArg) {
-    options.plan = planArg;
+    options.plan = String(parsePlanIdFromCliArg(planArg));
   }
 
   // Resolve plan file
@@ -143,7 +133,10 @@ export async function handleGenerateCommand(
     throw new Error('No plan specified.');
   }
 
-  const resolvedPlan = await resolvePlanFromDbOrSyncFile(options.plan, gitRoot, gitRoot);
+  const resolvedPlan = await resolvePlanFromDb(
+    String(parsePlanIdFromCliArg(String(options.plan))),
+    gitRoot
+  );
   const initialPlanFile = resolvedPlan.planPath;
   const parsedPlan: PlanSchema = resolvedPlan.plan;
 

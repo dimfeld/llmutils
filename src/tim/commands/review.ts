@@ -11,8 +11,13 @@ import {
   getUsingJj,
 } from '../../common/git.js';
 import { promptCheckbox, promptSelect } from '../../common/input.js';
-import { isPlanNotFoundError, resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
-import { readPlanFile, resolvePlanFromDb, writePlanFile } from '../plans.js';
+import {
+  PlanNotFoundError,
+  parsePlanIdFromCliArg,
+  readPlanFile,
+  resolvePlanFromDb,
+  writePlanFile,
+} from '../plans.js';
 import { log, warn, runWithLogger, sendStructured } from '../../logging.js';
 import { getLoggerAdapter, type LoggerAdapter } from '../../logging/adapter.js';
 import type { StructuredMessage } from '../../logging/structured_messages.js';
@@ -340,7 +345,7 @@ async function autoSelectPlanForReview(
     } catch (err) {
       // If the plan wasn't found in the DB, return null so the caller can report
       // the error. Re-throw unexpected errors (DB failures, malformed rows, etc.)
-      if (!isPlanNotFoundError(err)) {
+      if (!(err instanceof PlanNotFoundError)) {
         throw err;
       }
     }
@@ -809,7 +814,7 @@ export async function handleReviewCommand(
   };
 
   // If no planFile is provided, try to auto-select one from branch-specific plans
-  let resolvedPlanFile = planFile;
+  let resolvedPlanFile = planFile ? String(parsePlanIdFromCliArg(planFile)) : undefined;
   let autoSelectedPlanForReview: AutoSelectedReviewPlan | null = null;
   try {
     try {
@@ -824,8 +829,7 @@ export async function handleReviewCommand(
 
       if (!autoSelectedPlan) {
         throw new Error(
-          'No plan file specified and no suitable plans found. ' +
-            'Please specify a plan file explicitly.'
+          'No plan ID specified and no suitable plans found. Please specify a plan ID explicitly.'
         );
       }
 
@@ -842,7 +846,7 @@ export async function handleReviewCommand(
       resolvedPlanFile = autoSelectedPlan.planRef;
     }
     if (!resolvedPlanFile) {
-      throw new Error('No plan file resolved for review.');
+      throw new Error('No plan ID resolved for review.');
     }
     let initialResolvedPlan: Awaited<ReturnType<typeof resolveReviewPlanForWrite>> | undefined;
     let resolvedPlanFilePath = resolvedPlanFile;
@@ -2056,7 +2060,7 @@ async function resolveReviewPlanForWrite(
   repoRoot: string;
 }> {
   const repoRoot = await resolveRepoRootForPlanArg(planArg, undefined, configPath);
-  const resolvedPlan = await resolvePlanFromDbOrSyncFile(planArg, repoRoot, repoRoot);
+  const resolvedPlan = await resolvePlanFromDb(planArg, repoRoot);
   return {
     plan: resolvedPlan.plan,
     planPath: resolvedPlan.planPath,

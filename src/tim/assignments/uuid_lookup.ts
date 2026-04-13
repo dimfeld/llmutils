@@ -1,8 +1,6 @@
-import path from 'node:path';
 import type { PlanSchema } from '../planSchema.js';
-import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import { resolvePlanFromDb } from '../plans.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
-import { readPlanFile } from '../plans.js';
 
 export interface ResolvePlanWithUuidOptions {
   configPath?: string;
@@ -71,27 +69,7 @@ export async function resolvePlanWithUuid(
 ): Promise<ResolvePlanWithUuidResult> {
   const repoRoot = await resolveRepoRootForPlanArg(planArg, process.cwd(), options.configPath);
 
-  if (path.isAbsolute(planArg)) {
-    const directExists = await Bun.file(planArg)
-      .stat()
-      .then((stats) => stats.isFile())
-      .catch(() => false);
-    if (directExists) {
-      await readPlanFile(planArg);
-      const persistedPlan = await readPlanFile(planArg);
-      if (!persistedPlan.uuid) {
-        throw new Error(`Plan ${planArg} does not have a UUID`);
-      }
-
-      return {
-        plan: { ...persistedPlan, filename: planArg },
-        repoRoot,
-        uuid: persistedPlan.uuid,
-      };
-    }
-  }
-
-  const { plan, planPath } = await resolvePlanFromDbOrSyncFile(planArg, repoRoot, repoRoot);
+  const { plan, planPath } = await resolvePlanFromDb(planArg, repoRoot);
 
   if (!plan.uuid) {
     throw new Error(`Plan ${planArg} does not have a UUID`);

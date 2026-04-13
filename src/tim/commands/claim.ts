@@ -2,6 +2,7 @@ import { claimPlan } from '../assignments/claim_plan.js';
 import { logClaimOutcome } from '../assignments/claim_logging.js';
 import { resolvePlanWithUuid } from '../assignments/uuid_lookup.js';
 import { getRepositoryIdentity, getUserIdentity } from '../assignments/workspace_identifier.js';
+import { parsePlanIdFromCliArg } from '../plans.js';
 
 export interface ClaimCommandOptions {
   // Placeholder for future flags (e.g., --quiet)
@@ -15,9 +16,10 @@ export async function handleClaimCommand(
   if (!planArg) {
     throw new Error('Plan identifier is required');
   }
+  const planIdArg = String(parsePlanIdFromCliArg(planArg));
 
   const globalOpts = command?.parent?.opts?.() ?? {};
-  const { plan, repoRoot, uuid } = await resolvePlanWithUuid(planArg, {
+  const { plan, repoRoot, uuid } = await resolvePlanWithUuid(planIdArg, {
     configPath: globalOpts.config,
   });
 

@@ -8,7 +8,7 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { getDatabase } from '../db/database.js';
 import { syncPlanToDb } from '../db/plan_sync.js';
 import { buildDescriptionFromPlan, getCombinedTitleFromSummary } from '../display_utils.js';
-import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import { parsePlanIdFromCliArg, resolvePlanFromDb } from '../plans.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
@@ -236,11 +236,8 @@ export async function handleChatCommand(
   };
 
   if (options.plan) {
-    const resolvedPlan = await resolvePlanFromDbOrSyncFile(
-      options.plan,
-      configRepoRoot,
-      configRepoRoot
-    );
+    const planIdArg = String(parsePlanIdFromCliArg(options.plan));
+    const resolvedPlan = await resolvePlanFromDb(planIdArg, configRepoRoot);
     currentPlanFile = resolvedPlan.planPath ?? '';
     currentPlanData = resolvedPlan.plan;
   }

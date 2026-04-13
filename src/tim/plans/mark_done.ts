@@ -8,7 +8,6 @@ import {
 import { commitAll } from '../../common/process.js';
 import { boldMarkdownHeaders, log, warn } from '../../logging.js';
 import type { TimConfig } from '../configSchema.js';
-import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
 import {
   resolveProjectContext,
   withPlanAutoSync,
@@ -42,7 +41,7 @@ export async function markStepDone(
     (await getGitRoot(baseDir)) || baseDir,
     configPath
   );
-  const initialPlan = await resolvePlanFromDbOrSyncFile(planArg, repoRoot, repoRoot);
+  const initialPlan = await resolvePlanFromDb(planArg, repoRoot);
   const resolvedPlanArg = initialPlan.plan.uuid ?? planArg;
 
   return withPlanAutoSync(initialPlan.plan.id, repoRoot, async () => {
@@ -133,7 +132,7 @@ export async function markTaskDone(
     (await getGitRoot(baseDir)) || baseDir,
     configPath
   );
-  const initialPlan = await resolvePlanFromDbOrSyncFile(planArg, repoRoot, repoRoot);
+  const initialPlan = await resolvePlanFromDb(planArg, repoRoot);
   const resolvedPlanArg = initialPlan.plan.uuid ?? planArg;
 
   return withPlanAutoSync(initialPlan.plan.id, repoRoot, async () => {
@@ -204,7 +203,7 @@ export async function setTaskDone(
     (await getGitRoot(baseDir)) || baseDir,
     configPath
   );
-  const initialPlan = await resolvePlanFromDbOrSyncFile(planArg, repoRoot, repoRoot);
+  const initialPlan = await resolvePlanFromDb(planArg, repoRoot);
   const resolvedPlanArg = initialPlan.plan.uuid ?? planArg;
 
   return withPlanAutoSync(initialPlan.plan.id, repoRoot, async () => {

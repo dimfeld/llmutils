@@ -6,7 +6,7 @@
 
 import chalk from 'chalk';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
-import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
+import { resolvePlanFromDb } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { getLegacyAwareSearchDir } from '../path_resolver.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
@@ -50,7 +50,7 @@ export interface PlanContext {
  * Dependencies that can be injected for testing
  */
 export interface ContextGatheringDependencies {
-  resolvePlanFromDbOrSyncFile: typeof resolvePlanFromDbOrSyncFile;
+  resolvePlanFromDb: typeof resolvePlanFromDb;
   loadPlansFromDb: typeof loadPlansFromDb;
   generateDiffForReview: typeof generateDiffForReview;
   getGitRoot: typeof getGitRoot;
@@ -65,7 +65,7 @@ export interface ContextGatheringDependencies {
  * Default dependencies using the actual implementations
  */
 const defaultDependencies: ContextGatheringDependencies = {
-  resolvePlanFromDbOrSyncFile,
+  resolvePlanFromDb,
   loadPlansFromDb,
   generateDiffForReview,
   getGitRoot,
@@ -101,7 +101,7 @@ export async function gatherPlanContext(
   deps: ContextGatheringDependencies = defaultDependencies
 ): Promise<PlanContext> {
   const repoRoot = await deps.resolveRepoRootForPlanArg(planFile, options.cwd, globalOpts.config);
-  const resolvedPlan = await deps.resolvePlanFromDbOrSyncFile(planFile, repoRoot, repoRoot);
+  const resolvedPlan = await deps.resolvePlanFromDb(planFile, repoRoot);
   const planData = resolvedPlan.plan;
   const resolvedPlanFile = resolvedPlan.planPath ?? String(planData.id ?? planFile);
 
