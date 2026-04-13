@@ -38,6 +38,7 @@
   let graphitePrUrl = $derived(
     `https://app.graphite.com/github/pr/${pr.status.owner}/${pr.status.repo}/${pr.status.pr_number}`
   );
+  let sortedLinkedPlans = $derived([...pr.linkedPlans].sort((a, b) => a.planId - b.planId));
 
   // Get planUuid if there's exactly one linked plan, otherwise undefined
   let planUuid = $derived(pr.linkedPlans.length === 1 ? pr.linkedPlans[0].planUuid : undefined);
@@ -282,7 +283,7 @@
           Linked Plans
         </h3>
         <ul class="space-y-1">
-          {#each pr.linkedPlans as plan (plan.planUuid)}
+          {#each sortedLinkedPlans as plan (plan.planUuid)}
             <li>
               <a
                 href="/projects/{projectId}/plans/{plan.planUuid}"

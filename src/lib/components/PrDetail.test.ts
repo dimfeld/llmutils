@@ -144,4 +144,30 @@ describe('PrDetail', () => {
     expect(body).not.toContain('text-green-600');
     expect(body).not.toContain('text-red-600');
   });
+
+  test('sorts linked plans by plan number', () => {
+    const pr = createPr();
+    pr.linkedPlans = [
+      { planUuid: 'plan-30', planId: 30, title: 'Plan thirty' },
+      { planUuid: 'plan-10', planId: 10, title: 'Plan ten' },
+      { planUuid: 'plan-20', planId: 20, title: 'Plan twenty' },
+    ];
+
+    const { body } = render(PrDetail, {
+      props: {
+        pr,
+        projectId: '123',
+      },
+    });
+
+    const plan10 = body.indexOf('href="/projects/123/plans/plan-10"');
+    const plan20 = body.indexOf('href="/projects/123/plans/plan-20"');
+    const plan30 = body.indexOf('href="/projects/123/plans/plan-30"');
+
+    expect(plan10).toBeGreaterThanOrEqual(0);
+    expect(plan20).toBeGreaterThanOrEqual(0);
+    expect(plan30).toBeGreaterThanOrEqual(0);
+    expect(plan10).toBeLessThan(plan20);
+    expect(plan20).toBeLessThan(plan30);
+  });
 });
