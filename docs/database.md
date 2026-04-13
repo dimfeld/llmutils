@@ -67,7 +67,7 @@ Plan metadata, tasks, and dependencies are mirrored in SQLite alongside the YAML
 - `removePlanFromDb(planUuid, options?)`: Deletes plan and its assignment in a single transaction. Supports `throwOnError: true` to propagate DB deletion failures to the caller (used by `cleanup-temp` to keep the DB row intact when file deletion succeeds but DB deletion fails).
 - `clearPlanSyncContext()`: Resets cached context for testing.
 - DB sync failures are logged as warnings, never blocking plan file writes.
-- Stale write protection: when a plan includes `updatedAt`, upserts are skipped if that timestamp is older than the existing row's `updated_at`. `tim sync --force` disables this guard. All file→DB sync paths (including `syncMaterializedPlan` and `resolvePlanFromDbOrSyncFile`) rely on this guard — `force: true` is reserved for explicit user-initiated sync operations, never used in generic resolution or workspace reuse paths. **Important**: any sync path that modifies data must refresh `updatedAt` to a current timestamp before calling `upsertPlan()`, otherwise the stale-write guard may cause subsequent syncs to silently skip updates.
+- Stale write protection: when a plan includes `updatedAt`, upserts are skipped if that timestamp is older than the existing row's `updated_at`. `tim sync --force` disables this guard. All file→DB sync paths (including `syncMaterializedPlan`) rely on this guard — `force: true` is reserved for explicit user-initiated sync operations, never used in generic resolution or workspace reuse paths. **Important**: any sync path that modifies data must refresh `updatedAt` to a current timestamp before calling `upsertPlan()`, otherwise the stale-write guard may cause subsequent syncs to silently skip updates.
 
 **Context caching**: The sync module caches project context per git root to avoid repeated `getRepositoryIdentity()` calls. Concurrent context resolution for the same git root is deduplicated via a shared promise.
 
@@ -116,7 +116,7 @@ The plan system uses DB-first access: the SQLite database is the source of truth
 
 **Plan resolution** (`src/tim/plans.ts`):
 
-- `resolvePlanFromDb(planArg, repoRoot, options?)`: Resolves a plan from the DB by numeric ID or UUID string. Returns `{ plan: PlanSchema, planPath: string | null }` where `planPath` is the materialized file path (via `getMaterializedPlanPath()`) if one exists on disk, or `null` for DB-only plans. Throws `PlanNotFoundError` if the plan is not found in the DB — no file fallback. Options: `context` (pre-resolved `ProjectContext`), `resolveDir` (base directory for resolving relative file paths — defaults to `process.cwd()`).
+- `resolvePlanFromDb(planArg, repoRoot, options?)`: Resolves a plan from the DB by numeric ID or UUID string. Returns `{ plan: PlanSchema, planPath: string | null }` where `planPath` is the materialized file path (via `getMaterializedPlanPath()`) if one exists on disk, or `null` for DB-only plans. Throws `PlanNotFoundError` if the plan is not found in the DB — no file fallback. File paths are not accepted as plan arguments. Options: `context` (pre-resolved `ProjectContext`).
 - `PlanNotFoundError` (`src/tim/plans.ts`): Custom error class for plan-not-found conditions. Use `instanceof PlanNotFoundError` to check errors — avoids false positives from broad string matching against unrelated "not found" messages.
 - `resolvePlan()` in `plan_display.ts` delegates to `resolvePlanFromDb()`. Returns nullable `planPath` — callers must handle `null`.
 
