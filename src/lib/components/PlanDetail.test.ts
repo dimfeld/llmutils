@@ -238,6 +238,55 @@ describe('PlanDetail', () => {
     expect(body).toContain('Linked PR plan');
   });
 
+  test('sorts dependencies by plan number', () => {
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail({
+          dependencies: [
+            {
+              uuid: 'dep-30',
+              projectId: 123,
+              planId: 30,
+              title: 'Plan thirty',
+              status: 'in_progress',
+              displayStatus: 'in_progress',
+              isResolved: false,
+            },
+            {
+              uuid: 'dep-10',
+              projectId: 123,
+              planId: 10,
+              title: 'Plan ten',
+              status: 'pending',
+              displayStatus: 'pending',
+              isResolved: false,
+            },
+            {
+              uuid: 'dep-20',
+              projectId: 123,
+              planId: 20,
+              title: 'Plan twenty',
+              status: 'done',
+              displayStatus: 'done',
+              isResolved: true,
+            },
+          ],
+        }),
+        projectId: '123',
+      },
+    });
+
+    const dep10 = body.indexOf('href="/projects/123/plans/dep-10"');
+    const dep20 = body.indexOf('href="/projects/123/plans/dep-20"');
+    const dep30 = body.indexOf('href="/projects/123/plans/dep-30"');
+
+    expect(dep10).toBeGreaterThanOrEqual(0);
+    expect(dep20).toBeGreaterThanOrEqual(0);
+    expect(dep30).toBeGreaterThanOrEqual(0);
+    expect(dep10).toBeLessThan(dep20);
+    expect(dep20).toBeLessThan(dep30);
+  });
+
   test('does not show PR section when plan has no PR data', () => {
     const { body } = render(PlanDetailComponent, {
       props: {

@@ -4,7 +4,6 @@
   import { toast } from 'svelte-sonner';
 
   import type { PlanDetail } from '$lib/server/db_queries.js';
-  import { STATUS_ORDER_MAP } from '$lib/utils/plan_status.js';
   import { renderPlanContentHtml } from '$lib/utils/plan_content.js';
   import { afterNavigate, invalidateAll } from '$app/navigation';
   import {
@@ -514,9 +513,13 @@
 
   let sortedDependencies = $derived(
     [...plan.dependencies].sort((a, b) => {
-      const aOrder = a.displayStatus ? (STATUS_ORDER_MAP[a.displayStatus] ?? 99) : 99;
-      const bOrder = b.displayStatus ? (STATUS_ORDER_MAP[b.displayStatus] ?? 99) : 99;
-      return aOrder - bOrder;
+      const aPlanId = a.planId ?? Number.POSITIVE_INFINITY;
+      const bPlanId = b.planId ?? Number.POSITIVE_INFINITY;
+      if (aPlanId !== bPlanId) {
+        return aPlanId - bPlanId;
+      }
+
+      return a.title?.localeCompare(b.title ?? '') ?? 0;
     })
   );
 
