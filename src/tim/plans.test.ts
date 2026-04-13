@@ -8,6 +8,7 @@ import {
   getChildPlans,
   getDiscoveredPlans,
   isPlanReady,
+  parsePlanIdFromCliArg,
   parsePlanIdentifier,
   readPlanFile,
   resolvePlanFromDb,
@@ -43,14 +44,28 @@ describe('plans', () => {
     await rm(tempDir, { recursive: true, force: true });
   });
 
-  test('parsePlanIdentifier handles numeric IDs, UUIDs, and filenames', () => {
+  test('parsePlanIdentifier handles numeric IDs and UUIDs', () => {
     expect(parsePlanIdentifier(12)).toEqual({ planId: 12 });
     expect(parsePlanIdentifier('34')).toEqual({ planId: 34 });
-    expect(parsePlanIdentifier('56-feature.plan.md')).toEqual({ planId: 56 });
+    expect(parsePlanIdentifier('56-feature.plan.md')).toEqual({});
     expect(parsePlanIdentifier('123e4567-e89b-42d3-a456-426614174000')).toEqual({
       uuid: '123e4567-e89b-42d3-a456-426614174000',
     });
     expect(parsePlanIdentifier('not-a-plan')).toEqual({});
+  });
+
+  test('parsePlanIdFromCliArg accepts positive numeric IDs', () => {
+    expect(parsePlanIdFromCliArg('12')).toBe(12);
+    expect(parsePlanIdFromCliArg(' 34 ')).toBe(34);
+  });
+
+  test('parsePlanIdFromCliArg rejects non-numeric input', () => {
+    expect(() => parsePlanIdFromCliArg('abc')).toThrow(
+      'Expected a numeric plan ID, got: "abc"'
+    );
+    expect(() => parsePlanIdFromCliArg('56-feature.plan.md')).toThrow(
+      'Expected a numeric plan ID, got: "56-feature.plan.md"'
+    );
   });
 
   test('relationship helpers find blocked, child, and discovered plans', () => {
@@ -163,6 +178,12 @@ describe('plans', () => {
     expect(resolved.plan.id).toBe(20);
     expect(resolved.plan.title).toBe('DB plan');
     expect(resolved.planPath).toBe(materializedPath);
+  });
+
+  test('resolvePlanFromDb rejects file-like identifiers', async () => {
+    await expect(resolvePlanFromDb('56-feature.plan.md', repoDir)).rejects.toThrow(
+      'Could not parse plan identifier: expected a numeric plan ID or UUID, got: "56-feature.plan.md"'
+    );
   });
 
   test('setPlanStatus updates a plan file on disk', async () => {

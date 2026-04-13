@@ -39,9 +39,7 @@ export async function resolvePlanFromDbOrSyncFile(
 
     if (!plan.updatedAt) {
       try {
-        const resolved = await resolvePlanFromDb(plan.uuid, repoRoot, {
-          resolveDir: configBaseDir,
-        });
+        const resolved = await resolvePlanFromDb(plan.uuid, repoRoot);
         return {
           ...resolved,
           planPath: directPath,
@@ -60,12 +58,12 @@ export async function resolvePlanFromDbOrSyncFile(
       throwOnError: true,
       preserveBaseTracking: true,
     });
-    const resolved = await resolvePlanFromDb(plan.uuid, repoRoot, { resolveDir: configBaseDir });
+    const resolved = await resolvePlanFromDb(plan.uuid, repoRoot);
     return {
       ...resolved,
       planPath: directPath,
     };
   }
 
-  return resolvePlanFromDb(planArg, repoRoot, { resolveDir: configBaseDir });
+  return resolvePlanFromDb(planArg, repoRoot);
 }

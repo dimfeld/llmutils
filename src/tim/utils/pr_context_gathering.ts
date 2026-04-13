@@ -117,9 +117,7 @@ export async function resolvePrUrl(
 ): Promise<string> {
   if (options.plan !== undefined) {
     const gitRoot = await deps.getGitRoot(options.cwd);
-    const resolved = await deps.resolvePlanFromDb(String(options.plan), gitRoot, {
-      resolveDir: options.cwd,
-    });
+    const resolved = await deps.resolvePlanFromDb(String(options.plan), gitRoot);
     const plan = resolved.plan;
     if (!plan.uuid || !plan.id) {
       throw new Error(`Could not resolve plan UUID for plan ${options.plan}`);

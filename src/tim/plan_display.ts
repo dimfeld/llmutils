@@ -97,5 +97,5 @@ export async function resolvePlan(
   planArg: string,
   context: PlanDisplayContext
 ): Promise<{ plan: PlanSchema; planPath: string | null }> {
-  return resolvePlanFromDb(planArg, context.gitRoot, { resolveDir: context.gitRoot });
+  return resolvePlanFromDb(planArg, context.gitRoot);
 }

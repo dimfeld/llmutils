@@ -1,4 +1,3 @@
-import { stat } from 'node:fs/promises';
 import * as path from 'node:path';
 import { resolve } from 'node:path';
 import * as yaml from 'yaml';
@@ -17,7 +16,7 @@ import { getDatabase } from './db/database.js';
 import { toPlanUpsertInput } from './db/plan_sync.js';
 import { getOrCreateProject } from './db/project.js';
 import { resolveProjectContext } from './plan_materialize.js';
-import { getMaterializedPlanPath, readMaterializedPlanRole } from './plan_materialize.js';
+import { getMaterializedPlanPath } from './plan_materialize.js';
 import type { ProjectContext } from './plan_materialize.js';
 import {
   normalizeContainerToEpic,
@@ -150,54 +149,29 @@ export function parsePlanIdentifier(planArg: string | number): { planId?: number
     return { uuid: trimmed };
   }
 
-  const fileName = path.basename(trimmed);
-  const fileMatch = fileName.match(/^(\d+)(?:[.-].*)?\.(?:plan\.md|ya?ml)$/i);
-  if (fileMatch) {
-    return { planId: Number(fileMatch[1]) };
-  }
-
   return {};
 }
 
-async function fileExists(filePath: string): Promise<boolean> {
-  try {
-    await stat(filePath);
-    return true;
-  } catch {
-    return false;
+export function parsePlanIdFromCliArg(arg: string): number {
+  const trimmed = arg.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    throw new Error(`Expected a numeric plan ID, got: "${arg}"`);
   }
+
+  const planId = Number(trimmed);
+  if (!Number.isInteger(planId) || planId <= 0) {
+    throw new Error(`Expected a numeric plan ID, got: "${arg}"`);
+  }
+
+  return planId;
 }
 
 export async function resolvePlanFromDb(
   planArg: string | number,
   repoRoot: string,
-  options?: { context?: ProjectContext; resolveDir?: string }
+  options?: { context?: ProjectContext }
 ): Promise<ResolvedPlanFromDb> {
-  let directPath: string | null = null;
-  let resolvedPlanArg = planArg;
-  let parsedIdentifier = parsePlanIdentifier(planArg);
-  const resolveDir = options?.resolveDir ?? process.cwd();
-  if (
-    typeof resolvedPlanArg === 'string' &&
-    typeof parsedIdentifier.planId !== 'number' &&
-    typeof parsedIdentifier.uuid !== 'string'
-  ) {
-    directPath = path.isAbsolute(resolvedPlanArg)
-      ? resolvedPlanArg
-      : resolve(resolveDir, resolvedPlanArg);
-    if (await fileExists(directPath)) {
-      const parsedPlan = await readPlanFile(directPath);
-      resolvedPlanArg = parsedPlan.uuid ?? parsedPlan.id;
-      parsedIdentifier = parsePlanIdentifier(resolvedPlanArg);
-    }
-  } else if (typeof resolvedPlanArg === 'string') {
-    const candidatePath = path.isAbsolute(resolvedPlanArg)
-      ? resolvedPlanArg
-      : resolve(resolveDir, resolvedPlanArg);
-    if (await fileExists(candidatePath)) {
-      directPath = candidatePath;
-    }
-  }
+  const parsedIdentifier = parsePlanIdentifier(planArg);
 
   const db = getDatabase();
   const projectContext = options?.context;
@@ -212,7 +186,7 @@ export async function resolvePlanFromDb(
   const { planId, uuid } = parsedIdentifier;
   if (typeof planId !== 'number' && typeof uuid !== 'string') {
     throw new PlanNotFoundError(
-      `Could not parse plan identifier: expected a numeric ID, UUID, or plan file path, got: "${planArg}"`
+      `Could not parse plan identifier: expected a numeric plan ID or UUID, got: "${planArg}"`
     );
   }
   const readPlanSnapshot = db.transaction(() => {
@@ -248,20 +222,7 @@ export async function resolvePlanFromDb(
     };
   });
   const { row, plan } = readPlanSnapshot();
-  let planPath: string | null = null;
-  const materializedDir = path.join(repoRoot, '.tim', 'plans') + path.sep;
-  if (directPath && (await fileExists(directPath))) {
-    // Reject reference materializations even when addressed by direct path
-    if (
-      !directPath.startsWith(materializedDir) ||
-      (await readMaterializedPlanRole(directPath)) === 'primary'
-    ) {
-      planPath = directPath;
-    }
-  }
-  if (!planPath) {
-    planPath = await findPlanFileOnDiskAsync(row.plan_id, repoRoot);
-  }
+  const planPath = await findPlanFileOnDiskAsync(row.plan_id, repoRoot);
 
   return {
     plan,
