@@ -2,11 +2,9 @@
 // Opens a plan file in your editor
 
 import type { Command } from 'commander';
-import path from 'node:path';
 import { editMaterializedPlan } from './materialized_edit.js';
 import { parsePlanIdFromCliArg, resolvePlanFromDb } from '../plans.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
-import { writePlanFile } from '../plans.js';
 
 export async function handleEditCommand(planArg: string, options: any, _command: Command) {
   const planIdArg = String(parsePlanIdFromCliArg(planArg));
@@ -17,18 +15,4 @@ export async function handleEditCommand(planArg: string, options: any, _command:
     throw new Error('Plan must have a UUID to edit');
   }
   await editMaterializedPlan(plan.id, repoRoot, options.editor);
-
-  const directPath = path.isAbsolute(planIdArg) ? planIdArg : path.resolve(repoRoot, planIdArg);
-  const directExists = await Bun.file(directPath)
-    .stat()
-    .then((stats) => stats.isFile())
-    .catch(() => false);
-  if (directExists) {
-    const refreshed = (await resolvePlanFromDb(plan.uuid, repoRoot)).plan;
-    await writePlanFile(directPath, refreshed, {
-      cwdForIdentity: repoRoot,
-      skipDb: true,
-      skipUpdatedAt: true,
-    });
-  }
 }

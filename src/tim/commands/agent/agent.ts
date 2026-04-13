@@ -773,7 +773,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
           if (isShuttingDown()) break;
 
           try {
-            await runUpdateDocs(currentPlanFile, config, {
+            await runUpdateDocs(String(planData.id), config, {
               executor: config.updateDocs?.executor,
               model: config.updateDocs?.model,
               baseDir: currentBaseDir,
@@ -830,7 +830,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
               if (isShuttingDown()) break;
 
               try {
-                await runUpdateDocs(currentPlanFile, config, {
+                await runUpdateDocs(String(planData.id), config, {
                   executor: config.updateDocs?.executor,
                   model: config.updateDocs?.model,
                   baseDir: currentBaseDir,
@@ -938,7 +938,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
               if (isShuttingDown()) break;
 
               try {
-                const lessonsUpdateResult = await runUpdateLessons(currentPlanFile, config, {
+                const lessonsUpdateResult = await runUpdateLessons(String(planData.id), config, {
                   executor: config.updateDocs?.executor,
                   model: config.updateDocs?.model,
                   baseDir: currentBaseDir,
@@ -1136,7 +1136,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
         if (isShuttingDown()) break;
 
         try {
-          await runUpdateDocs(currentPlanFile, config, {
+          await runUpdateDocs(String(planData.id), config, {
             executor: config.updateDocs?.executor,
             model: config.updateDocs?.model,
             baseDir: currentBaseDir,
@@ -1191,7 +1191,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
             if (isShuttingDown()) break;
 
             try {
-              await runUpdateDocs(currentPlanFile, config, {
+              await runUpdateDocs(String(planData.id), config, {
                 executor: config.updateDocs?.executor,
                 model: config.updateDocs?.model,
                 baseDir: currentBaseDir,
@@ -1229,7 +1229,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
             if (isShuttingDown()) break;
 
             try {
-              const lessonsUpdateResult = await runUpdateLessons(currentPlanFile, config, {
+              const lessonsUpdateResult = await runUpdateLessons(String(planData.id), config, {
                 executor: config.updateDocs?.executor,
                 model: config.updateDocs?.model,
                 baseDir: currentBaseDir,

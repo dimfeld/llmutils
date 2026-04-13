@@ -181,7 +181,7 @@ export async function handleFinishCommand(
         currentPlanFile = await materializePlan(plan.id, currentBaseDir);
       }
 
-      const updateDocsTarget = currentPlanFile || String(plan.id ?? planArg);
+      const updateDocsTarget = String(plan.id);
       const nonInteractive = options.nonInteractive === true;
       const terminalInputEnabled =
         !nonInteractive &&
