@@ -39,7 +39,9 @@ vi.mock('../headless.js', () => ({
 }));
 
 vi.mock('../db/database.js', () => ({
-  getDatabase: vi.fn(() => ({})),
+  getDatabase: vi.fn(() => ({
+    prepare: vi.fn(() => ({ get: vi.fn(() => null), all: vi.fn(() => []), run: vi.fn() })),
+  })),
 }));
 
 vi.mock('../db/plan.js', () => ({
@@ -49,6 +51,7 @@ vi.mock('../db/plan.js', () => ({
 
 vi.mock('../plan_materialize.js', () => ({
   materializePlan: vi.fn(),
+  resolveProjectContext: vi.fn().mockResolvedValue({ projectId: 1 }),
 }));
 
 import { loadEffectiveConfig } from '../configLoader.js';
@@ -997,7 +1000,10 @@ describe('handleRebaseCommand', () => {
 
       await fetchOrigin(repo.workDir);
       expect(await isAncestor(repo.workDir, 'origin/main', repo.featureBranch)).toBe(true);
-      expect(vi.mocked(clearPlanBaseTracking)).toHaveBeenCalledWith({}, 'plan-263');
+      expect(vi.mocked(clearPlanBaseTracking)).toHaveBeenCalledWith(
+        expect.objectContaining({}),
+        'plan-263'
+      );
       expect(vi.mocked(setPlanBaseTracking)).not.toHaveBeenCalled();
     });
   });
