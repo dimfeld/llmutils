@@ -80,7 +80,7 @@ const defaultDependencies: ContextGatheringDependencies = {
  * Gathers comprehensive context for a plan including hierarchy and diff information.
  * This function encapsulates the context-gathering logic previously embedded in handleReviewCommand.
  *
- * @param planFile - Plan file path or ID
+ * @param planFile - Plan ID
  * @param options - Command options including incremental review settings
  * @param globalOpts - Global CLI options including config path
  * @param deps - Injectable dependencies for testing

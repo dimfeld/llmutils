@@ -76,7 +76,7 @@ function getWorkspacePlanReference(cwd: string): string | null {
   while (true) {
     const workspaceInfo = getWorkspaceInfoByPath(currentDir);
     if (workspaceInfo) {
-      return workspaceInfo.originalPlanFilePath ?? workspaceInfo.planId ?? null;
+      return workspaceInfo.planId ?? null;
     }
 
     const parentDir = path.dirname(currentDir);

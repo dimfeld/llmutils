@@ -584,7 +584,7 @@ export function registerGenerateMode(
       arguments: [
         {
           name: 'plan',
-          description: 'Plan ID or file path to generate',
+          description: 'Numeric plan ID to generate',
           required: true,
         },
         {
@@ -608,7 +608,7 @@ export function registerGenerateMode(
     arguments: [
       {
         name: 'plan',
-        description: 'Plan ID or file path to discuss with the user',
+        description: 'Numeric plan ID to discuss with the user',
         required: false,
       },
     ],
@@ -622,13 +622,13 @@ export function registerGenerateMode(
     arguments: [
       {
         name: 'plan',
-        description: 'Plan ID or file path to load',
+        description: 'Numeric plan ID to load',
         required: true,
       },
     ],
     load: async (args) => {
       if (!args.plan) {
-        return `Plan ID or file path is required for this prompt`;
+        return `Plan ID is required for this prompt`;
       }
       return loadPlanPrompt({ plan: args.plan }, context);
     },
@@ -681,7 +681,7 @@ export function registerGenerateMode(
     server.addTool({
       name: 'get-plan',
       description:
-        'Retrieve the full plan details by numeric ID or file path. Returns the plan metadata, goal, details, tasks, and related information.',
+        'Retrieve the full plan details by numeric ID. Returns the plan metadata, goal, details, tasks, and related information.',
       parameters: getPlanParameters,
       annotations: {
         destructiveHint: false,
@@ -790,7 +790,7 @@ export function registerGenerateMode(
     arguments: [
       {
         name: 'planId',
-        description: 'Plan ID or file path',
+        description: 'Numeric plan ID',
         required: true,
       },
     ],

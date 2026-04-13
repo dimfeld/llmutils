@@ -249,7 +249,7 @@ export async function buildPromptText(
 
   const plan = normalizePlanIdentifier(args.plan);
   if (definition.requiresPlan && !plan) {
-    throw new Error(`Prompt "${promptName}" requires a plan ID or file path.`);
+    throw new Error(`Prompt "${promptName}" requires a plan ID.`);
   }
 
   const allowMultiplePlans = definition.supportsAllowMultiplePlans

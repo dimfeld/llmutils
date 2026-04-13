@@ -2107,7 +2107,7 @@ async function materializedPlanFileExists(
  * but without executing the review. This is used by the prompts command to show
  * what prompt would be generated.
  *
- * @param planFile - Plan file path or ID
+ * @param planFile - Plan ID
  * @param options - Review command options including task filters, instructions, etc.
  * @param globalOpts - Global CLI options including config path
  * @returns Promise<string> containing the generated prompt
