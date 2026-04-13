@@ -34,8 +34,8 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
     tasksByPlan.set(planId, existing);
   }
 
-  const affectedPlans = Array.from(tasksByPlan.keys()).map(
-    (planId) => String(parsePlanIdFromCliArg(planId))
+  const affectedPlans = Array.from(tasksByPlan.keys()).map((planId) =>
+    String(parsePlanIdFromCliArg(planId))
   );
   if (affectedPlans.length > 1) {
     log(`This will affect ${affectedPlans.length} different plans: ${affectedPlans.join(', ')}`);

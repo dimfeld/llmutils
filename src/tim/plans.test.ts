@@ -62,36 +62,24 @@ describe('plans', () => {
   });
 
   test('parsePlanIdFromCliArg rejects non-numeric input', () => {
-    expect(() => parsePlanIdFromCliArg('abc')).toThrow(
-      'Expected a numeric plan ID, got: "abc"'
-    );
+    expect(() => parsePlanIdFromCliArg('abc')).toThrow('Expected a numeric plan ID, got: "abc"');
     expect(() => parsePlanIdFromCliArg('56-feature.plan.md')).toThrow(
       'Expected a numeric plan ID, got: "56-feature.plan.md"'
     );
   });
 
   test('parsePlanIdFromCliArg rejects zero', () => {
-    expect(() => parsePlanIdFromCliArg('0')).toThrow(
-      'Expected a numeric plan ID, got: "0"'
-    );
+    expect(() => parsePlanIdFromCliArg('0')).toThrow('Expected a numeric plan ID, got: "0"');
   });
 
   test('parsePlanIdFromCliArg rejects negative numbers', () => {
-    expect(() => parsePlanIdFromCliArg('-1')).toThrow(
-      'Expected a numeric plan ID, got: "-1"'
-    );
-    expect(() => parsePlanIdFromCliArg('-100')).toThrow(
-      'Expected a numeric plan ID, got: "-100"'
-    );
+    expect(() => parsePlanIdFromCliArg('-1')).toThrow('Expected a numeric plan ID, got: "-1"');
+    expect(() => parsePlanIdFromCliArg('-100')).toThrow('Expected a numeric plan ID, got: "-100"');
   });
 
   test('parsePlanIdFromCliArg rejects floats', () => {
-    expect(() => parsePlanIdFromCliArg('1.5')).toThrow(
-      'Expected a numeric plan ID, got: "1.5"'
-    );
-    expect(() => parsePlanIdFromCliArg('3.14')).toThrow(
-      'Expected a numeric plan ID, got: "3.14"'
-    );
+    expect(() => parsePlanIdFromCliArg('1.5')).toThrow('Expected a numeric plan ID, got: "1.5"');
+    expect(() => parsePlanIdFromCliArg('3.14')).toThrow('Expected a numeric plan ID, got: "3.14"');
   });
 
   test('parsePlanIdFromCliArg rejects UUIDs', () => {
@@ -101,12 +89,8 @@ describe('plans', () => {
   });
 
   test('parsePlanIdFromCliArg rejects empty strings', () => {
-    expect(() => parsePlanIdFromCliArg('')).toThrow(
-      'Expected a numeric plan ID, got: ""'
-    );
-    expect(() => parsePlanIdFromCliArg('   ')).toThrow(
-      'Expected a numeric plan ID, got: "   "'
-    );
+    expect(() => parsePlanIdFromCliArg('')).toThrow('Expected a numeric plan ID, got: ""');
+    expect(() => parsePlanIdFromCliArg('   ')).toThrow('Expected a numeric plan ID, got: "   "');
   });
 
   test('parsePlanIdFromCliArg rejects absolute file paths', () => {

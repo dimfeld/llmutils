@@ -8,7 +8,6 @@ import { branchPrefixSchema } from '$tim/branch_prefix.js';
 import { getProjectById } from '$tim/db/project.js';
 import { deleteProjectSetting, setProjectSetting } from '$tim/db/project_settings.js';
 
-
 const settingValueSchemas: Record<string, z.ZodType> = {
   featured: z.boolean(),
   abbreviation: z.string().max(4),

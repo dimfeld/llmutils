@@ -291,8 +291,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
     setDeferSignalExit(true);
     config = await loadEffectiveConfig(globalCliOptions.config);
     currentBaseDir = await getGitRoot();
-    const initialResolvedPlan = await resolvePlanFromDb(
-      planArg, currentBaseDir);
+    const initialResolvedPlan = await resolvePlanFromDb(planArg, currentBaseDir);
     const initialPlanData = initialResolvedPlan.plan;
 
     if (options.log !== false) {
@@ -773,7 +772,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
           if (isShuttingDown()) break;
 
           try {
-            await runUpdateDocs(String(planData.id), config, {
+            await runUpdateDocs(planData, currentPlanFile, config, {
               executor: config.updateDocs?.executor,
               model: config.updateDocs?.model,
               baseDir: currentBaseDir,
@@ -830,7 +829,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
               if (isShuttingDown()) break;
 
               try {
-                await runUpdateDocs(String(planData.id), config, {
+                await runUpdateDocs(planData, currentPlanFile, config, {
                   executor: config.updateDocs?.executor,
                   model: config.updateDocs?.model,
                   baseDir: currentBaseDir,
@@ -938,13 +937,18 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
               if (isShuttingDown()) break;
 
               try {
-                const lessonsUpdateResult = await runUpdateLessons(String(planData.id), config, {
-                  executor: config.updateDocs?.executor,
-                  model: config.updateDocs?.model,
-                  baseDir: currentBaseDir,
-                  nonInteractive: noninteractive,
-                  terminalInput: terminalInputEnabled,
-                });
+                const lessonsUpdateResult = await runUpdateLessons(
+                  planData,
+                  currentPlanFile,
+                  config,
+                  {
+                    executor: config.updateDocs?.executor,
+                    model: config.updateDocs?.model,
+                    baseDir: currentBaseDir,
+                    nonInteractive: noninteractive,
+                    terminalInput: terminalInputEnabled,
+                  }
+                );
                 if (lessonsUpdateResult === true || lessonsUpdateResult === 'skipped-no-lessons') {
                   const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
                   updatedPlanForTimestamp.lessonsAppliedAt = new Date().toISOString();
@@ -1136,7 +1140,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
         if (isShuttingDown()) break;
 
         try {
-          await runUpdateDocs(String(planData.id), config, {
+          await runUpdateDocs(planData, currentPlanFile, config, {
             executor: config.updateDocs?.executor,
             model: config.updateDocs?.model,
             baseDir: currentBaseDir,
@@ -1191,7 +1195,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
             if (isShuttingDown()) break;
 
             try {
-              await runUpdateDocs(String(planData.id), config, {
+              await runUpdateDocs(planData, currentPlanFile, config, {
                 executor: config.updateDocs?.executor,
                 model: config.updateDocs?.model,
                 baseDir: currentBaseDir,
@@ -1229,13 +1233,18 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
             if (isShuttingDown()) break;
 
             try {
-              const lessonsUpdateResult = await runUpdateLessons(String(planData.id), config, {
-                executor: config.updateDocs?.executor,
-                model: config.updateDocs?.model,
-                baseDir: currentBaseDir,
-                nonInteractive: noninteractive,
-                terminalInput: terminalInputEnabled,
-              });
+              const lessonsUpdateResult = await runUpdateLessons(
+                planData,
+                currentPlanFile,
+                config,
+                {
+                  executor: config.updateDocs?.executor,
+                  model: config.updateDocs?.model,
+                  baseDir: currentBaseDir,
+                  nonInteractive: noninteractive,
+                  terminalInput: terminalInputEnabled,
+                }
+              );
               if (lessonsUpdateResult === true || lessonsUpdateResult === 'skipped-no-lessons') {
                 const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
                 updatedPlanForTimestamp.lessonsAppliedAt = new Date().toISOString();

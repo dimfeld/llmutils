@@ -8,12 +8,10 @@ vi.mock('../plan_repo_root.js', () => ({
   resolveRepoRootForPlanArg: vi.fn(),
 }));
 
-vi.mock('../ensure_plan_in_db.js', () => ({
-  resolvePlanFromDbOrSyncFile: vi.fn(),
-}));
-
 vi.mock('../plans.js', () => ({
   writePlanFile: vi.fn(),
+  resolvePlanFromDb: vi.fn(),
+  parsePlanIdFromCliArg: vi.fn((arg: string) => Number(arg)),
 }));
 
 vi.mock('../../logging/tunnel_client.js', () => ({
@@ -53,8 +51,7 @@ vi.mock('../plan_materialize.js', () => ({
 
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
-import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
-import { writePlanFile } from '../plans.js';
+import { resolvePlanFromDb, writePlanFile } from '../plans.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
 import { runUpdateDocs } from './update-docs.js';
@@ -73,7 +70,7 @@ import { executePostApplyCommand } from '../actions.js';
 describe('finish command', () => {
   const loadEffectiveConfigSpy = vi.mocked(loadEffectiveConfig);
   const resolveRepoRootForPlanArgSpy = vi.mocked(resolveRepoRootForPlanArg);
-  const resolvePlanFromDbOrSyncFileSpy = vi.mocked(resolvePlanFromDbOrSyncFile);
+  const resolvePlanFromDbSpy = vi.mocked(resolvePlanFromDb);
   const writePlanFileSpy = vi.mocked(writePlanFile);
   const isTunnelActiveSpy = vi.mocked(isTunnelActive);
   const runWithHeadlessAdapterIfEnabledSpy = vi.mocked(runWithHeadlessAdapterIfEnabled);
@@ -113,7 +110,7 @@ describe('finish command', () => {
       },
     } as any);
     resolveRepoRootForPlanArgSpy.mockResolvedValue('/repo');
-    resolvePlanFromDbOrSyncFileSpy.mockResolvedValue({
+    resolvePlanFromDbSpy.mockResolvedValue({
       plan: { ...basePlan },
       planPath: '/repo/.tim/plans/314.plan.md',
     } as any);
@@ -197,6 +194,7 @@ describe('finish command', () => {
       })
     );
     expect(runUpdateDocsSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 314 }),
       '/repo/.tim/plans/314.plan.md',
       expect.any(Object),
       expect.objectContaining({
@@ -205,6 +203,7 @@ describe('finish command', () => {
       })
     );
     expect(runUpdateLessonsSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 314 }),
       '/repo/.tim/plans/314.plan.md',
       expect.any(Object),
       expect.objectContaining({
@@ -231,7 +230,7 @@ describe('finish command', () => {
         applyLessons: false,
       },
     } as any);
-    resolvePlanFromDbOrSyncFileSpy.mockResolvedValue({
+    resolvePlanFromDbSpy.mockResolvedValue({
       plan: {
         ...basePlan,
         docsUpdatedAt: '2026-04-01T00:00:00.000Z',
@@ -258,7 +257,7 @@ describe('finish command', () => {
   });
 
   test('taskless epics always take the direct finish path', async () => {
-    resolvePlanFromDbOrSyncFileSpy.mockResolvedValue({
+    resolvePlanFromDbSpy.mockResolvedValue({
       plan: {
         ...basePlan,
         status: 'pending',
@@ -286,7 +285,7 @@ describe('finish command', () => {
   });
 
   test('only runs missing steps and performs workspace round-trip when workspace execution is requested', async () => {
-    resolvePlanFromDbOrSyncFileSpy.mockResolvedValue({
+    resolvePlanFromDbSpy.mockResolvedValue({
       plan: {
         ...basePlan,
         docsUpdatedAt: '2026-04-01T00:00:00.000Z',
@@ -307,6 +306,7 @@ describe('finish command', () => {
     expect(materializePlansForExecutionSpy).toHaveBeenCalledWith('/repo/workspaces/finish', 314);
     expect(runUpdateDocsSpy).not.toHaveBeenCalled();
     expect(runUpdateLessonsSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 314 }),
       '/repo/workspaces/finish/.tim/plans/314.plan.md',
       expect.any(Object),
       expect.objectContaining({
@@ -320,7 +320,7 @@ describe('finish command', () => {
   });
 
   test('rejects plans that are not ready to finish', async () => {
-    resolvePlanFromDbOrSyncFileSpy.mockResolvedValue({
+    resolvePlanFromDbSpy.mockResolvedValue({
       plan: {
         ...basePlan,
         status: 'pending',
@@ -334,7 +334,7 @@ describe('finish command', () => {
   });
 
   test('rejects in_progress plans with incomplete tasks', async () => {
-    resolvePlanFromDbOrSyncFileSpy.mockResolvedValue({
+    resolvePlanFromDbSpy.mockResolvedValue({
       plan: {
         ...basePlan,
         status: 'in_progress',
@@ -352,7 +352,7 @@ describe('finish command', () => {
   });
 
   test('accepts in_progress plans with all tasks complete', async () => {
-    resolvePlanFromDbOrSyncFileSpy.mockResolvedValue({
+    resolvePlanFromDbSpy.mockResolvedValue({
       plan: {
         ...basePlan,
         status: 'in_progress',
@@ -375,7 +375,7 @@ describe('finish command', () => {
 
   test('throws when no plan argument is provided', async () => {
     await expect(handleFinishCommand(undefined, {}, buildCommand())).rejects.toThrow(
-      'A plan ID or file path is required.'
+      'A numeric plan ID is required.'
     );
   });
 
@@ -535,7 +535,7 @@ describe('finish command', () => {
   });
 
   test('materializes plan from DB when planPath is null and executor work needed', async () => {
-    resolvePlanFromDbOrSyncFileSpy.mockResolvedValue({
+    resolvePlanFromDbSpy.mockResolvedValue({
       plan: { ...basePlan },
       planPath: null,
     } as any);
@@ -546,6 +546,7 @@ describe('finish command', () => {
     expect(materializePlanSpy).toHaveBeenCalledWith(314, '/repo');
     // Verify the materialized path was used for docs/lessons execution
     expect(runUpdateDocsSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 314 }),
       '/repo/.tim/plans/314.plan.md',
       expect.anything(),
       expect.anything()
@@ -559,7 +560,7 @@ describe('finish command', () => {
   });
 
   test('does not materialize plan from DB when planPath is null and no executor work needed', async () => {
-    resolvePlanFromDbOrSyncFileSpy.mockResolvedValue({
+    resolvePlanFromDbSpy.mockResolvedValue({
       plan: {
         ...basePlan,
         docsUpdatedAt: '2026-01-01T00:00:00.000Z',

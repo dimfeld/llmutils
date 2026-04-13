@@ -139,7 +139,8 @@
   {#if session.sessionInfo.planTitle || session.sessionInfo.planId != null}
     <div class="mt-0.5 flex min-w-0 items-center gap-1 pl-4 text-xs text-muted-foreground">
       {#if session.sessionInfo.planId != null}
-        <span class="shrink-0 font-medium text-muted-foreground">#{session.sessionInfo.planId}</span>
+        <span class="shrink-0 font-medium text-muted-foreground">#{session.sessionInfo.planId}</span
+        >
       {/if}
       <span class="min-w-0 flex-1 truncate">{session.sessionInfo.planTitle ?? ''}</span>
       {#if taskCounts && taskCounts.total > 0}

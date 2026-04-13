@@ -1181,7 +1181,10 @@ export async function handleWorkspaceAddCommand(
         log(chalk.green(`✓ Issue ${issueInfo.identifier} imported successfully`));
         importedPlanId = result.planId;
         if (result.planId) {
-          const resolvedImportedPlan = await resolvePlanFromDb(String(result.planId), workspace.path);
+          const resolvedImportedPlan = await resolvePlanFromDb(
+            String(result.planId),
+            workspace.path
+          );
           importedPlan = resolvedImportedPlan.plan;
         }
       } else {
@@ -1427,11 +1430,7 @@ export async function handleWorkspacePullPlanCommand(
 
   const globalOpts = command.parent!.parent!.opts();
   const workspace = await resolveWorkspaceIdentifier(options.workspace);
-  const repoRoot = await resolveRepoRootForPlanArg(
-    planIdArg,
-    process.cwd(),
-    globalOpts.config
-  );
+  const repoRoot = await resolveRepoRootForPlanArg(planIdArg, process.cwd(), globalOpts.config);
   const plan = (await resolvePlanFromDb(planIdArg, repoRoot)).plan;
   const branchName =
     options.branch ??

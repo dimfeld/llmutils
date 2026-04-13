@@ -353,7 +353,7 @@ Available tasks:\n\n${taskDescriptions}`,
           .filter((index) => !remainingTaskIndices.has(index));
 
         try {
-          await runUpdateDocs(String(planId), config, {
+          await runUpdateDocs(planData, currentPlanFile, config, {
             executor: config.updateDocs?.executor,
             model: config.updateDocs?.model,
             baseDir,
@@ -410,7 +410,7 @@ Available tasks:\n\n${taskDescriptions}`,
           }
 
           try {
-            await runUpdateDocs(String(planId), config, {
+            await runUpdateDocs(planData, currentPlanFile, config, {
               executor: config.updateDocs?.executor,
               model: config.updateDocs?.model,
               baseDir,
@@ -520,7 +520,7 @@ Available tasks:\n\n${taskDescriptions}`,
           }
 
           try {
-            const lessonsUpdateResult = await runUpdateLessons(String(planId), config, {
+            const lessonsUpdateResult = await runUpdateLessons(planData, currentPlanFile, config, {
               executor: config.updateDocs?.executor,
               model: config.updateDocs?.model,
               baseDir,

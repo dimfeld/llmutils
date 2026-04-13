@@ -181,7 +181,6 @@ export async function handleFinishCommand(
         currentPlanFile = await materializePlan(plan.id, currentBaseDir);
       }
 
-      const updateDocsTarget = String(plan.id);
       const nonInteractive = options.nonInteractive === true;
       const terminalInputEnabled =
         !nonInteractive &&
@@ -217,7 +216,7 @@ export async function handleFinishCommand(
         let docsError: unknown = null;
         if (requirements.needsDocs) {
           try {
-            await runUpdateDocs(updateDocsTarget, config, runOptions);
+            await runUpdateDocs(plan, currentPlanFile, config, runOptions);
             plan.docsUpdatedAt = new Date().toISOString();
           } catch (error) {
             warn(
@@ -231,7 +230,8 @@ export async function handleFinishCommand(
         if (requirements.needsLessons) {
           try {
             const lessonsUpdateResult = await runUpdateLessons(
-              updateDocsTarget,
+              plan,
+              currentPlanFile,
               config,
               runOptions
             );
