@@ -233,6 +233,22 @@ describe('plans', () => {
     );
   });
 
+  test('resolvePlanFromDb rejects relative path to a real file', async () => {
+    const planPath = join(repoDir, '99-real.plan.md');
+    await Bun.write(planPath, '---\nid: 99\ntitle: Real file plan\n---\n');
+    await expect(resolvePlanFromDb('99-real.plan.md', repoDir)).rejects.toThrow(
+      'Could not parse plan identifier: expected a numeric plan ID or UUID, got: "99-real.plan.md"'
+    );
+  });
+
+  test('resolvePlanFromDb rejects absolute path to a real file', async () => {
+    const planPath = join(repoDir, '88-abs.plan.md');
+    await Bun.write(planPath, '---\nid: 88\ntitle: Absolute path plan\n---\n');
+    await expect(resolvePlanFromDb(planPath, repoDir)).rejects.toThrow(
+      'Could not parse plan identifier: expected a numeric plan ID or UUID'
+    );
+  });
+
   test('setPlanStatus updates a plan file on disk', async () => {
     const planPath = join(repoDir, 'status.plan.md');
     await writePlanFile(planPath, {
