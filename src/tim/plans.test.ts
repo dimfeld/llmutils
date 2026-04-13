@@ -57,6 +57,8 @@ describe('plans', () => {
   test('parsePlanIdFromCliArg accepts positive numeric IDs', () => {
     expect(parsePlanIdFromCliArg('12')).toBe(12);
     expect(parsePlanIdFromCliArg(' 34 ')).toBe(34);
+    expect(parsePlanIdFromCliArg('1')).toBe(1);
+    expect(parsePlanIdFromCliArg('99999')).toBe(99999);
   });
 
   test('parsePlanIdFromCliArg rejects non-numeric input', () => {
@@ -65,6 +67,51 @@ describe('plans', () => {
     );
     expect(() => parsePlanIdFromCliArg('56-feature.plan.md')).toThrow(
       'Expected a numeric plan ID, got: "56-feature.plan.md"'
+    );
+  });
+
+  test('parsePlanIdFromCliArg rejects zero', () => {
+    expect(() => parsePlanIdFromCliArg('0')).toThrow(
+      'Expected a numeric plan ID, got: "0"'
+    );
+  });
+
+  test('parsePlanIdFromCliArg rejects negative numbers', () => {
+    expect(() => parsePlanIdFromCliArg('-1')).toThrow(
+      'Expected a numeric plan ID, got: "-1"'
+    );
+    expect(() => parsePlanIdFromCliArg('-100')).toThrow(
+      'Expected a numeric plan ID, got: "-100"'
+    );
+  });
+
+  test('parsePlanIdFromCliArg rejects floats', () => {
+    expect(() => parsePlanIdFromCliArg('1.5')).toThrow(
+      'Expected a numeric plan ID, got: "1.5"'
+    );
+    expect(() => parsePlanIdFromCliArg('3.14')).toThrow(
+      'Expected a numeric plan ID, got: "3.14"'
+    );
+  });
+
+  test('parsePlanIdFromCliArg rejects UUIDs', () => {
+    expect(() => parsePlanIdFromCliArg('123e4567-e89b-42d3-a456-426614174000')).toThrow(
+      'Expected a numeric plan ID, got: "123e4567-e89b-42d3-a456-426614174000"'
+    );
+  });
+
+  test('parsePlanIdFromCliArg rejects empty strings', () => {
+    expect(() => parsePlanIdFromCliArg('')).toThrow(
+      'Expected a numeric plan ID, got: ""'
+    );
+    expect(() => parsePlanIdFromCliArg('   ')).toThrow(
+      'Expected a numeric plan ID, got: "   "'
+    );
+  });
+
+  test('parsePlanIdFromCliArg rejects absolute file paths', () => {
+    expect(() => parsePlanIdFromCliArg('/path/to/42.plan.md')).toThrow(
+      'Expected a numeric plan ID, got: "/path/to/42.plan.md"'
     );
   });
 
