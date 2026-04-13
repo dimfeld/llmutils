@@ -207,7 +207,7 @@ async function deleteUnusedLocalBranch(context: WorkspaceRoundTripContext): Prom
   }
 
   if (await getUsingJj(context.executionWorkspacePath)) {
-    const editProc = logSpawn(['jj', 'edit', restoreBranch], {
+    const editProc = logSpawn(['jj', 'new', restoreBranch], {
       cwd: context.executionWorkspacePath,
       stdio: ['ignore', 'inherit', 'inherit'],
     });

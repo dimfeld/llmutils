@@ -3,11 +3,10 @@
 
 import chalk from 'chalk';
 import * as path from 'node:path';
-import { getCurrentBranchName, getGitRoot, getTrunkBranch } from '../../common/git.js';
 import { commitAll } from '../../common/process.js';
 import { getLoggerAdapter } from '../../logging/adapter.js';
 import { HeadlessAdapter } from '../../logging/headless_adapter.js';
-import { log, warn } from '../../logging.js';
+import { log, warn, error } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { syncPlanToDb } from '../db/plan_sync.js';
 import { parsePlanIdFromCliArg, resolvePlanFromDb } from '../plans.js';
@@ -221,14 +220,14 @@ export async function handleGenerateCommand(
 
         if (roundTripContext) {
           await runPreExecutionWorkspaceSync(roundTripContext);
+        }
 
-          const materializedPlanFile = await materializePlansForExecution(
-            currentBaseDir,
-            parsedPlan.id
-          );
-          if (materializedPlanFile) {
-            currentPlanFile = materializedPlanFile;
-          }
+        const materializedPlanFile = await materializePlansForExecution(
+          currentBaseDir,
+          parsedPlan.id
+        );
+        if (materializedPlanFile) {
+          currentPlanFile = materializedPlanFile;
         }
 
         // Auto-claim the plan if enabled (before execution, matching agent pattern)
@@ -266,7 +265,7 @@ export async function handleGenerateCommand(
         const singlePrompt = await buildPromptText(
           promptName,
           {
-            plan: currentPlanFile,
+            plan: String(parsedPlan.id),
             allowMultiplePlans: true,
           },
           context
@@ -295,8 +294,6 @@ export async function handleGenerateCommand(
           disableInactivityTimeout: true,
         };
         const executor = buildExecutorAndLog(executorName, sharedExecutorOptions, config);
-
-        log(chalk.blue('🤖 Running plan generation with executor...'));
 
         const loggerAdapter = getLoggerAdapter();
         if (currentPlanFile && loggerAdapter instanceof HeadlessAdapter) {
@@ -352,6 +349,7 @@ export async function handleGenerateCommand(
         });
       } catch (err) {
         generationError = err;
+        error(err);
       } finally {
         await planWatcher?.closeAndFlush();
         planWatcher = undefined;

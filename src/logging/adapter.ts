@@ -48,6 +48,13 @@ export function getLoggerAdapter(): LoggerAdapter | undefined {
  * @param callback The function to execute with the specified adapter
  * @returns The result of the callback function
  */
-export function runWithLogger<T>(adapter: LoggerAdapter, callback: () => T): T {
-  return adapterStorage.run(adapter, callback);
+export function runWithLogger<T>(adapter: LoggerAdapter, callback: () => Promise<T>): Promise<T> {
+  return adapterStorage.run(adapter, async () => {
+    try {
+      return await callback();
+    } catch (e) {
+      adapter.error(e);
+      throw e;
+    }
+  });
 }
