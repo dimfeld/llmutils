@@ -3,7 +3,7 @@ import { editor } from '@inquirer/prompts';
 import { log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveProjectContext, withPlanAutoSync } from '../plan_materialize.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 import { parsePlanIdFromCliArg, resolvePlanFromDb, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { promptForTaskInfo, type TaskInput } from '../utils/task_operations.js';
@@ -27,7 +27,7 @@ export async function handleAddTaskCommand(
   const planIdArg = String(parsePlanIdFromCliArg(plan));
   const globalOpts = command.parent?.opts?.() ?? {};
   const config = await loadEffectiveConfig(globalOpts.config);
-  const repoRoot = await resolveRepoRootForPlanArg(planIdArg, undefined, globalOpts.config);
+  const repoRoot = await resolveRepoRoot(globalOpts.config);
   const initialPlan = await resolvePlanFromDb(planIdArg, repoRoot);
   const resolvedPlanArg = initialPlan.plan.uuid ?? planIdArg;
 
@@ -36,7 +36,7 @@ export async function handleAddTaskCommand(
     const context = await resolveProjectContext(repoRoot);
     const target = await resolvePlanFromDb(resolvedPlanArg, repoRoot, { context });
     const planRow = getRequiredPlanRow(context.rows, target.plan.id);
-    const planPath = await resolveWritablePath(planIdArg, planRow, repoRoot, repoRoot);
+    const planPath = await resolveWritablePath(planRow, repoRoot);
     const tasks = Array.isArray(target.plan.tasks) ? target.plan.tasks : [];
     const newTask: PlanTask = {
       title: taskInfo.title,

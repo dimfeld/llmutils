@@ -19,7 +19,7 @@ vi.mock('../executors/index.js', () => ({
 }));
 
 vi.mock('../plan_repo_root.js', () => ({
-  resolveRepoRootForPlanArg: vi.fn(),
+  resolveRepoRoot: vi.fn(),
 }));
 
 const runWithHeadlessAdapterIfEnabledMock = vi.fn(
@@ -50,7 +50,7 @@ vi.mock('../plan_materialize.js', () => ({
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolvePlanFromDbOrSyncFile } from '../ensure_plan_in_db.js';
 import { buildExecutorAndLog } from '../executors/index.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 import { handleRebaseCommand } from './rebase.js';
 import { clearPlanBaseTracking, setPlanBaseTracking } from '../db/plan.js';
 
@@ -392,7 +392,7 @@ function mockPlanForRepo(
     terminalInput: false,
     ...configOverrides,
   } as any);
-  vi.mocked(resolveRepoRootForPlanArg).mockResolvedValue(repoDir);
+  vi.mocked(resolveRepoRoot).mockResolvedValue(repoDir);
   vi.mocked(resolvePlanFromDbOrSyncFile).mockResolvedValue({
     plan,
     planPath: path.join(repoDir, '.tim', 'plans', `${String(plan.id ?? 'plan')}.plan.md`),
@@ -530,7 +530,7 @@ describe('handleRebaseCommand', () => {
         terminalInput: false,
       } as any;
     });
-    vi.mocked(resolveRepoRootForPlanArg).mockResolvedValue(repo.workDir);
+    vi.mocked(resolveRepoRoot).mockResolvedValue(repo.workDir);
     vi.mocked(resolvePlanFromDbOrSyncFile).mockResolvedValue({
       plan,
       planPath: path.join(repo.workDir, '.tim', 'plans', '263.plan.md'),
@@ -697,7 +697,7 @@ describe('handleRebaseCommand', () => {
       defaultExecutor: 'mock-executor',
       terminalInput: false,
     } as any);
-    vi.mocked(resolveRepoRootForPlanArg).mockResolvedValue(repo.workDir);
+    vi.mocked(resolveRepoRoot).mockResolvedValue(repo.workDir);
 
     process.chdir(repo.workDir);
 

@@ -5,7 +5,7 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import type { TimConfig } from '../configSchema.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
 import { parsePlanIdFromCliArg, resolvePlanFromDb } from '../plans.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 import type { PlanSchema } from '../planSchema.js';
 import { writePlanFile } from '../plans.js';
 import { materializePlan } from '../plan_materialize.js';
@@ -97,7 +97,7 @@ export async function handleFinishCommand(
   const planIdArg = String(parsePlanIdFromCliArg(planArg));
 
   const globalOpts = command.parent.opts();
-  const repoRoot = await resolveRepoRootForPlanArg(planIdArg, process.cwd(), globalOpts.config);
+  const repoRoot = await resolveRepoRoot(globalOpts.config, process.cwd());
   const config = await loadEffectiveConfig(globalOpts.config, { cwd: repoRoot });
   const resolvedPlan = await resolvePlanFromDb(planIdArg, repoRoot);
   const plan = resolvedPlan.plan;

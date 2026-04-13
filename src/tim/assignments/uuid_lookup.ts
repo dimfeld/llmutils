@@ -1,6 +1,6 @@
 import type { PlanSchema } from '../planSchema.js';
 import { resolvePlanFromDb } from '../plans.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 
 export interface ResolvePlanWithUuidOptions {
   configPath?: string;
@@ -67,7 +67,7 @@ export async function resolvePlanWithUuid(
   planArg: string,
   options: ResolvePlanWithUuidOptions = {}
 ): Promise<ResolvePlanWithUuidResult> {
-  const repoRoot = await resolveRepoRootForPlanArg(planArg, process.cwd(), options.configPath);
+  const repoRoot = await resolveRepoRoot(options.configPath, process.cwd());
 
   const { plan, planPath } = await resolvePlanFromDb(planArg, repoRoot);
 

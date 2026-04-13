@@ -62,7 +62,7 @@ import { getAssignmentEntriesByProject } from '../db/assignment.js';
 import { getProject } from '../db/project.js';
 import type { WorkspaceType } from '../db/workspace.js';
 import { parsePlanIdFromCliArg, resolvePlanFromDb } from '../plans.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 import { loadPlansFromDb } from '../plans_db.js';
 import {
   getMaterializedPlanPath,
@@ -1051,11 +1051,7 @@ export async function handleWorkspaceAddCommand(
 
   if (normalizedPlanIdentifier) {
     try {
-      const planRepoRoot = await resolveRepoRootForPlanArg(
-        normalizedPlanIdentifier,
-        gitRoot,
-        globalOpts.config
-      );
+      const planRepoRoot = await resolveRepoRoot(globalOpts.config, gitRoot);
       const resolvedPlan = await resolvePlanFromDb(normalizedPlanIdentifier, planRepoRoot);
       planData = resolvedPlan.plan;
       resolvedPlanFilePath =
@@ -1430,7 +1426,7 @@ export async function handleWorkspacePullPlanCommand(
 
   const globalOpts = command.parent!.parent!.opts();
   const workspace = await resolveWorkspaceIdentifier(options.workspace);
-  const repoRoot = await resolveRepoRootForPlanArg(planIdArg, process.cwd(), globalOpts.config);
+  const repoRoot = await resolveRepoRoot(globalOpts.config, process.cwd());
   const plan = (await resolvePlanFromDb(planIdArg, repoRoot)).plan;
   const branchName =
     options.branch ??
@@ -1986,11 +1982,7 @@ export async function handleWorkspaceUpdateCommand(
   if (options.fromPlan) {
     try {
       const fromPlanIdArg = String(parsePlanIdFromCliArg(options.fromPlan));
-      const repoRoot = await resolveRepoRootForPlanArg(
-        fromPlanIdArg,
-        process.cwd(),
-        globalOpts.config
-      );
+      const repoRoot = await resolveRepoRoot(globalOpts.config, process.cwd());
       const plan = (await resolvePlanFromDb(fromPlanIdArg, repoRoot)).plan;
       const planDescription = buildDescriptionFromPlan(plan);
       const planId = plan.id ? String(plan.id) : '';

@@ -7,7 +7,7 @@ import { getRepositoryIdentity, getUserIdentity } from '../assignments/workspace
 import { parsePlanIdFromCliArg } from '../plans.js';
 import { writePlanFile } from '../plans.js';
 import { findPlanFileOnDiskAsync } from '../plans/find_plan_file.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 
 export interface ReleaseCommandOptions {
   resetStatus?: boolean;
@@ -82,7 +82,7 @@ export async function handleReleaseCommand(
   if (options.resetStatus) {
     const originalStatus = plan.status;
     if (originalStatus !== 'pending') {
-      const repoRoot = await resolveRepoRootForPlanArg(planIdArg, process.cwd(), globalOpts.config);
+      const repoRoot = await resolveRepoRoot(globalOpts.config, process.cwd());
       plan.status = 'pending';
       const planFile =
         typeof plan.id === 'number' ? await findPlanFileOnDiskAsync(plan.id, repoRoot) : null;

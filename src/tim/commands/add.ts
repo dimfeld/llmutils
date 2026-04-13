@@ -17,7 +17,7 @@ import {
   resolveProjectContext,
   syncMaterializedPlan,
 } from '../plan_materialize.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 import { updatePlanProperties } from '../planPropertiesUpdater.js';
 import { prioritySchema, statusSchema, type PlanSchema } from '../planSchema.js';
 import { invertPlanIdToUuidMap, planRowForTransaction } from '../plans_db.js';
@@ -28,11 +28,7 @@ import { editMaterializedPlan } from './materialized_edit.js';
 export async function handleAddCommand(title: string[], options: any, command: any) {
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
-  const repoRoot = await resolveRepoRootForPlanArg(
-    '',
-    (await getGitRoot()) || process.cwd(),
-    globalOpts.config
-  );
+  const repoRoot = await resolveRepoRoot(globalOpts.config, (await getGitRoot()) || process.cwd());
   const projectContext = await resolveProjectContext(repoRoot);
   const db = getDatabase();
 

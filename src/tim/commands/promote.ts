@@ -9,7 +9,7 @@ import { getDatabase } from '../db/database.js';
 import { reserveNextPlanId } from '../db/project.js';
 import { getPlanByPlanId, upsertPlan } from '../db/plan.js';
 import { toPlanUpsertInput } from '../db/plan_sync.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 import { resolveProjectContext } from '../plan_materialize.js';
 import { parsePlanIdFromCliArg, resolvePlanFromDb, writePlanFile } from '../plans.js';
 import { resolveWritablePath } from '../plans/resolve_writable_path.js';
@@ -43,11 +43,7 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
   log(`Will create ${parsedTaskIds.length} new plan(s) from the promoted tasks`);
 
   const config = await loadEffectiveConfig(options.config);
-  const repoRoot = await resolveRepoRootForPlanArg(
-    affectedPlans[0] ?? '',
-    process.cwd(),
-    options.config
-  );
+  const repoRoot = await resolveRepoRoot(options.config, process.cwd());
   const db = getDatabase();
   let context = await resolveProjectContext(repoRoot);
 
@@ -143,12 +139,7 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
     writePlans.immediate();
 
     context = await resolveProjectContext(repoRoot);
-    const outputPath = await resolveWritablePath(
-      String(originalPlan.id),
-      originalRow,
-      repoRoot,
-      repoRoot
-    );
+    const outputPath = await resolveWritablePath(originalRow, repoRoot);
     if (outputPath) {
       const refreshedOriginal = (
         await resolvePlanFromDb(String(originalPlan.id), repoRoot, { context })

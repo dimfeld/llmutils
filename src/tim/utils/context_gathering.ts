@@ -9,7 +9,7 @@ import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { resolvePlanFromDb } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { getLegacyAwareSearchDir } from '../path_resolver.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 import { loadPlansFromDb } from '../plans_db.js';
 import { getParentChain, getCompletedChildren } from './hierarchy.js';
 import { generateDiffForReview, getIncrementalSummary } from '../incremental_review.js';
@@ -25,7 +25,7 @@ export interface PlanContext {
   resolvedPlanFile: string;
   /** The loaded plan data */
   planData: PlanSchema;
-  /** The resolved repository root (from resolveRepoRootForPlanArg) */
+  /** The resolved repository root (from resolveRepoRoot) */
   repoRoot: string;
   /** The resolved git root (derived from repoRoot) */
   gitRoot: string;
@@ -57,7 +57,7 @@ export interface ContextGatheringDependencies {
   getParentChain: typeof getParentChain;
   getCompletedChildren: typeof getCompletedChildren;
   getIncrementalSummary: typeof getIncrementalSummary;
-  resolveRepoRootForPlanArg: typeof resolveRepoRootForPlanArg;
+  resolveRepoRoot: typeof resolveRepoRoot;
   getRepositoryIdentity: typeof getRepositoryIdentity;
 }
 
@@ -72,7 +72,7 @@ const defaultDependencies: ContextGatheringDependencies = {
   getParentChain,
   getCompletedChildren,
   getIncrementalSummary,
-  resolveRepoRootForPlanArg,
+  resolveRepoRoot,
   getRepositoryIdentity,
 };
 
@@ -100,7 +100,7 @@ export async function gatherPlanContext(
   },
   deps: ContextGatheringDependencies = defaultDependencies
 ): Promise<PlanContext> {
-  const repoRoot = await deps.resolveRepoRootForPlanArg(planFile, options.cwd, globalOpts.config);
+  const repoRoot = await deps.resolveRepoRoot(globalOpts.config, options.cwd);
   const resolvedPlan = await deps.resolvePlanFromDb(planFile, repoRoot);
   const planData = resolvedPlan.plan;
   const resolvedPlanFile = resolvedPlan.planPath ?? String(planData.id ?? planFile);

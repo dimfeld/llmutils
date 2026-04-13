@@ -18,7 +18,7 @@ import {
 } from '../plan_materialize.js';
 import { updatePlanProperties } from '../planPropertiesUpdater.js';
 import type { PlanSchema, Priority } from '../planSchema.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 import { parsePlanIdFromCliArg, readPlanFile, resolvePlanFromDb, writePlanFile } from '../plans.js';
 import { invertPlanIdToUuidMap, planRowForTransaction } from '../plans_db.js';
 import { checkAndMarkParentDone } from '../plans/parent_cascade.js';
@@ -66,11 +66,7 @@ export async function handleSetCommand(
 ): Promise<void> {
   const planIdArg = String(parsePlanIdFromCliArg(planArg));
   const config = await loadEffectiveConfig(globalOpts?.config);
-  const repoRoot = await resolveRepoRootForPlanArg(
-    planIdArg,
-    (await getGitRoot()) || process.cwd(),
-    globalOpts?.config
-  );
+  const repoRoot = await resolveRepoRoot(globalOpts?.config, (await getGitRoot()) || process.cwd());
   const initialPlan = await resolvePlanFromDb(planIdArg, repoRoot);
   const resolvedPlanArg = initialPlan.plan.uuid ?? planIdArg;
 
@@ -79,7 +75,7 @@ export async function handleSetCommand(
     const tasksDir = getLegacyAwareSearchDir(repoRoot);
     const target = await resolvePlanFromDb(resolvedPlanArg, repoRoot, { context });
     const planRow = getRequiredPlanRow(context, target.plan.id);
-    const outputPath = await resolveWritablePath(planIdArg, planRow, repoRoot, repoRoot);
+    const outputPath = await resolveWritablePath(planRow, repoRoot);
 
     const plan = target.plan;
     let modified = false;

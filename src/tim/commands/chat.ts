@@ -9,7 +9,7 @@ import { getDatabase } from '../db/database.js';
 import { syncPlanToDb } from '../db/plan_sync.js';
 import { buildDescriptionFromPlan, getCombinedTitleFromSummary } from '../display_utils.js';
 import { parsePlanIdFromCliArg, resolvePlanFromDb } from '../plans.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
 import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../executors/index.js';
@@ -182,7 +182,7 @@ export async function handleChatCommand(
   // Resolve repo root from config/plan arg once, for both plan resolution and workspace setup
   const configRepoRoot =
     options.plan || globalOpts.config
-      ? await resolveRepoRootForPlanArg(options.plan ?? '', undefined, globalOpts.config)
+      ? await resolveRepoRoot(globalOpts.config)
       : (await getGitRoot()) || process.cwd();
   const workspaceConfig =
     path.resolve(configRepoRoot) === path.resolve(process.cwd())

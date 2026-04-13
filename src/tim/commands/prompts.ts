@@ -14,7 +14,7 @@ import {
 import { getCombinedTitle } from '../display_utils.js';
 import { findLatestPlanFromDb, findNextReadyDependencyFromDb } from './plan_discovery.js';
 import { parsePlanIdFromCliArg, resolvePlanFromDb } from '../plans.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 import type { PlanSchema } from '../planSchema.js';
 import { findPlanFileOnDiskAsync } from '../plans/find_plan_file.js';
 import * as fs from 'node:fs/promises';

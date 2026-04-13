@@ -202,11 +202,11 @@ program
 program
   .command('prompts [prompt] [plan]')
   .description('Print an MCP prompt to stdout for use in CLI workflows')
-  .option('--plan <plan>', 'Plan ID or file path to use')
+  .option('--plan <plan>', 'Plan ID to use')
   .option('--latest', 'Use the most recently updated plan')
   .option(
-    '--next-ready <planIdOrPath>',
-    'Find and use the next ready dependency of the specified parent plan (accepts plan ID or file path)'
+    '--next-ready <planId>',
+    'Find and use the next ready dependency of the specified parent plan'
   )
   .option(
     '--no-allow-multiple-plans',
@@ -359,8 +359,8 @@ program
   .option('--commit', 'Commit changes to jj/git after successful plan generation')
   .option('-x, --executor <name>', 'The executor to use for generation (e.g., claude_code, codex)')
   .option(
-    '--next-ready <planIdOrPath>',
-    'Find and operate on the next ready dependency of the specified parent plan (accepts plan ID or file path)'
+    '--next-ready <planId>',
+    'Find and operate on the next ready dependency of the specified parent plan'
   )
   .option(
     '-w, --workspace <id>',
@@ -498,8 +498,8 @@ program
   });
 
 program
-  .command('set-task-done <planFile>')
-  .description('Mark a specific task as done by title or index. Can be a file path or plan ID.')
+  .command('set-task-done <planId>')
+  .description('Mark a specific task as done by title or index.')
   .option('--title <title>', 'Task title to mark as done')
   .option('--index <index>', 'Task index to mark as done (1-based)', (value: string) => {
     const n = Number(value);
@@ -509,9 +509,9 @@ program
     return n - 1; // Convert to 0-based for internal use
   })
   .option('--commit', 'Commit changes to jj/git')
-  .action(async (planFile, options, command) => {
+  .action(async (planId, options, command) => {
     const { handleSetTaskDoneCommand } = await import('./commands/set-task-done.js');
-    await handleSetTaskDoneCommand(planFile, options, command).catch(handleCommandError);
+    await handleSetTaskDoneCommand(planId, options, command).catch(handleCommandError);
   });
 
 program
@@ -633,8 +633,8 @@ function createAgentCommand(command: Command, description: string) {
     .option('--next', 'Execute the next plan that is ready to be implemented')
     .option('--current', 'Execute the current plan (in_progress or next ready plan)')
     .option(
-      '--next-ready <planIdOrPath>',
-      'Find and operate on the next ready dependency of the specified parent plan (accepts plan ID or file path)'
+      '--next-ready <planId>',
+      'Find and operate on the next ready dependency of the specified parent plan'
     )
     .option('--latest', 'Execute the most recently updated plan')
     .option('--with-dependencies', 'Also execute all dependencies first in the correct order')
@@ -656,22 +656,22 @@ function createAgentCommand(command: Command, description: string) {
     .option('--apply-lessons', 'Apply lessons learned to documentation after plan completion')
     .allowExcessArguments(true)
     .allowUnknownOption(true)
-    .action(async (planFile, options, command) => {
+    .action(async (planId, options, command) => {
       const { handleAgentCommand } = await import('./commands/agent/agent.js');
-      await handleAgentCommand(planFile, options, command.parent.opts()).catch(handleCommandError);
+      await handleAgentCommand(planId, options, command.parent.opts()).catch(handleCommandError);
     });
 }
 
 // Create the agent command
 createAgentCommand(
-  program.command('agent [planFile]'),
-  'Automatically execute steps in a plan YAML file. Can be a file path or plan ID.'
+  program.command('agent [planId]'),
+  'Automatically execute steps in a plan. Accepts a numeric plan ID.'
 );
 
 // Create the run command as an alias
 createAgentCommand(
-  program.command('run [planFile]'),
-  'Alias for "agent". Automatically execute steps in a plan YAML file. Can be a file path or plan ID.'
+  program.command('run [planId]'),
+  'Alias for "agent". Automatically execute steps in a plan. Accepts a numeric plan ID.'
 );
 
 program
@@ -820,41 +820,41 @@ program
   });
 
 program
-  .command('show [planFile]')
-  .description('Display detailed information about a plan. Can be a file path or plan ID.')
+  .command('show [planId]')
+  .description('Display detailed information about a plan.')
   .option('--next', 'Show the next plan that is ready to be implemented')
   .option('--current', 'Show the current plan (in_progress or next ready plan)')
   .option(
-    '--next-ready <planIdOrPath>',
-    'Find and show the next ready dependency of the specified parent plan (accepts plan ID or file path)'
+    '--next-ready <planId>',
+    'Find and show the next ready dependency of the specified parent plan'
   )
   .option('--latest', 'Show the most recently updated plan')
   .option('--copy-details', 'Copy the plan details to the clipboard')
   .option('--full', 'Display full details without truncation')
   .option('-s, --short', 'Display a condensed summary view')
   .option('-w, --watch', 'Watch mode: re-print short output every 5 seconds')
-  .action(async (planFile, options, command) => {
+  .action(async (planId, options, command) => {
     const { handleShowCommand } = await import('./commands/show.js');
-    await handleShowCommand(planFile, options, command).catch(handleCommandError);
+    await handleShowCommand(planId, options, command).catch(handleCommandError);
   });
 
 program
-  .command('branch-name [planFile]')
-  .description('Generate a branch name from a plan. Can be a file path or plan ID.')
+  .command('branch-name [planId]')
+  .description('Generate a branch name from a plan.')
   .option('--next', 'Use the next plan that is ready to be implemented')
   .option('--current', 'Use the current plan (in_progress or next ready plan)')
   .option(
-    '--next-ready <planIdOrPath>',
-    'Find and use the next ready dependency of the specified parent plan (accepts plan ID or file path)'
+    '--next-ready <planId>',
+    'Find and use the next ready dependency of the specified parent plan'
   )
   .option('--latest', 'Use the most recently updated plan')
-  .action(async (planFile, options, command) => {
+  .action(async (planId, options, command) => {
     const { handleBranchCommand } = await import('./commands/branch.js');
-    await handleBranchCommand(planFile, options, command).catch(handleCommandError);
+    await handleBranchCommand(planId, options, command).catch(handleCommandError);
   });
 
 program
-  .command('rebase [planFile]')
+  .command('rebase [planId]')
   .description('Rebase a plan branch onto the latest main/trunk branch')
   .option('--current', 'Use the current plan')
   .option('--next', 'Use the next ready plan')
@@ -872,14 +872,14 @@ program
     '--nw, --new-workspace',
     'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
   )
-  .action(async (planFile, options, command) => {
+  .action(async (planId, options, command) => {
     const { handleRebaseCommand } = await import('./commands/rebase.js');
-    await handleRebaseCommand(planFile, options, command).catch(handleCommandError);
+    await handleRebaseCommand(planId, options, command).catch(handleCommandError);
   });
 
 program
-  .command('edit <planArg>')
-  .description('Open a plan file in your editor. Can be a file path or plan ID.')
+  .command('edit <planId>')
+  .description('Open a plan in your editor.')
   .option('--editor <editor>', 'Editor to use (defaults to $EDITOR or nano)')
   .action(async (planArg, options, command) => {
     const { handleEditCommand } = await import('./commands/edit.js');
@@ -973,7 +973,7 @@ program
 
 program
   .command('add-task <plan>')
-  .description('Add a task to an existing plan (file path or plan ID)')
+  .description('Add a task to an existing plan')
   .option('--title <title>', 'Task title')
   .option('--description <desc>', 'Task description')
   .option('--editor', 'Open editor for description')
@@ -986,17 +986,17 @@ program
   });
 
 program
-  .command('remove <planFiles...>')
-  .description('Remove one or more plan files and clean up references')
+  .command('remove <planIds...>')
+  .description('Remove one or more plans and clean up references')
   .option('-f, --force', 'Force removal even if other plans depend on this one')
-  .action(async (planFiles, options, command) => {
+  .action(async (planIds, options, command) => {
     const { handleRemoveCommand } = await import('./commands/remove.js');
-    await handleRemoveCommand(planFiles, options, command).catch(handleCommandError);
+    await handleRemoveCommand(planIds, options, command).catch(handleCommandError);
   });
 
 program
   .command('remove-task <plan>')
-  .description('Remove a task from a plan (file path or plan ID)')
+  .description('Remove a task from a plan')
   .option('--index <index>', 'Task index (1-based)', (val: string) => {
     const n = parseInt(val, 10);
     if (Number.isNaN(n) || n < 1) {
@@ -1012,10 +1012,8 @@ program
   });
 
 program
-  .command('set <planFile>')
-  .description(
-    'Update plan properties like priority, status, note, dependencies, and rmfilter. Can be a file path or plan ID.'
-  )
+  .command('set <planId>')
+  .description('Update plan properties like priority, status, note, dependencies, and rmfilter.')
   .option('-p, --priority <level>', 'Set the priority level', (value) => {
     if (!prioritySchema.options.includes(value as any)) {
       throw new Error(`Priority must be one of: ${prioritySchema.options.join(', ')}`);
@@ -1064,7 +1062,7 @@ program
   .option('--base-change-id <id>', 'Set the JJ base change ID')
   .option('--no-base-change-id', 'Remove the JJ base change ID')
   .option('--details <text>', 'Replace the entire details field with the given text')
-  .action(async (planFile, options, command) => {
+  .action(async (planId, options, command) => {
     const { handleSetCommand } = await import('./commands/set.js');
     const rawArgs = command.rawArgs ?? [];
     const sourceArgs =
@@ -1131,11 +1129,11 @@ program
       options.noBaseChangeId = true;
       options.baseChangeId = undefined;
     }
-    await handleSetCommand(planFile, options, command.parent.opts()).catch(handleCommandError);
+    await handleSetCommand(planId, options, command.parent.opts()).catch(handleCommandError);
   });
 
 program
-  .command('review [planFile]')
+  .command('review [planId]')
   .description(
     'Analyze code changes on current branch against plan requirements using reviewer agent. If no plan is specified, automatically selects the oldest plan that exists only on this branch.'
   )
@@ -1234,10 +1232,10 @@ program
     '-v, --verbose',
     'When used with --print, show progress output to stderr. Otherwise only JSON output is shown.'
   )
-  .action(async (planFile, options, command) => {
+  .action(async (planId, options, command) => {
     const { handleReviewCommand } = await import('./commands/review.js');
     await runWithCommandTunnelAdapter(async () => {
-      await handleReviewCommand(planFile, options, command);
+      await handleReviewCommand(planId, options, command);
     }).catch(handleCommandError);
   });
 
@@ -1374,18 +1372,18 @@ function registerPrDescriptionCommand(
     .option('--output-file <path>', 'Save the generated description to the specified file')
     .option('--copy', 'Copy the generated description to the clipboard')
     .option('--create-pr', 'Create a GitHub PR using the generated description with gh CLI')
-    .action(async (planFile, options, command) => {
+    .action(async (planId, options, command) => {
       const { handleDescriptionCommand } = await import('./commands/description.js');
       const rootParent = command.parent?.parent ?? command.parent;
-      await handleDescriptionCommand(planFile, options, {
+      await handleDescriptionCommand(planId, options, {
         ...command,
         parent: rootParent,
       }).catch(handleCommandError);
     });
 }
 
-registerPrDescriptionCommand(prCommand, 'description <planFile>');
-registerPrDescriptionCommand(program, 'pr-description <planFile>', true);
+registerPrDescriptionCommand(prCommand, 'description <planId>');
+registerPrDescriptionCommand(program, 'pr-description <planId>', true);
 
 // Create the workspace command
 const workspaceCommand = program.command('workspace').description('Manage workspaces for plans');
@@ -1473,10 +1471,7 @@ workspaceCommand
     '--description <description>',
     'Set the workspace description (use empty string to clear)'
   )
-  .option(
-    '--from-plan <planId>',
-    'Seed description from plan (plan ID or file path). Only sets description, not name.'
-  )
+  .option('--from-plan <planId>', 'Seed description from plan. Only sets description, not name.')
   .option(
     '--primary',
     'Mark this workspace as primary (used as the primary sync/push target and excluded from auto-selection)'
@@ -1561,7 +1556,7 @@ const subagentCommand = program
 
 for (const agentType of ['implementer', 'tester', 'tdd-tests', 'verifier'] as const) {
   subagentCommand
-    .command(`${agentType} <planFile>`)
+    .command(`${agentType} <planId>`)
     .description(`Run the ${agentType} subagent`)
     .addOption(
       new Option('-x, --executor <name>', 'Executor to use: codex-cli or claude-code')
@@ -1575,10 +1570,10 @@ for (const agentType of ['implementer', 'tester', 'tdd-tests', 'verifier'] as co
       'Read additional instructions from file (use "-" to read from stdin)'
     )
     .option('--output-file <path>', 'Write the final subagent message to a file')
-    .action(async (planFile: string, options: any, command: any) => {
+    .action(async (planId: string, options: any, command: any) => {
       const { handleSubagentCommand } = await import('./commands/subagent.js');
       await runWithCommandTunnelAdapter(async () => {
-        await handleSubagentCommand(agentType, planFile, options, command.parent.parent.opts());
+        await handleSubagentCommand(agentType, planId, options, command.parent.parent.opts());
       }).catch(handleCommandError);
     });
 }

@@ -5,7 +5,7 @@ vi.mock('../configLoader.js', () => ({
 }));
 
 vi.mock('../plan_repo_root.js', () => ({
-  resolveRepoRootForPlanArg: vi.fn(),
+  resolveRepoRoot: vi.fn(),
 }));
 
 vi.mock('../plans.js', () => ({
@@ -50,7 +50,7 @@ vi.mock('../plan_materialize.js', () => ({
 }));
 
 import { loadEffectiveConfig } from '../configLoader.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 import { resolvePlanFromDb, writePlanFile } from '../plans.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
@@ -69,7 +69,7 @@ import { executePostApplyCommand } from '../actions.js';
 
 describe('finish command', () => {
   const loadEffectiveConfigSpy = vi.mocked(loadEffectiveConfig);
-  const resolveRepoRootForPlanArgSpy = vi.mocked(resolveRepoRootForPlanArg);
+  const resolveRepoRootSpy = vi.mocked(resolveRepoRoot);
   const resolvePlanFromDbSpy = vi.mocked(resolvePlanFromDb);
   const writePlanFileSpy = vi.mocked(writePlanFile);
   const isTunnelActiveSpy = vi.mocked(isTunnelActive);
@@ -109,7 +109,7 @@ describe('finish command', () => {
         applyLessons: true,
       },
     } as any);
-    resolveRepoRootForPlanArgSpy.mockResolvedValue('/repo');
+    resolveRepoRootSpy.mockResolvedValue('/repo');
     resolvePlanFromDbSpy.mockResolvedValue({
       plan: { ...basePlan },
       planPath: '/repo/.tim/plans/314.plan.md',

@@ -23,7 +23,7 @@ const taskSchema = z
 
 export const addPlanTaskParameters = z
   .object({
-    plan: z.string().describe('Plan ID or file path'),
+    plan: z.string().describe('Numeric plan ID'),
     title: z.string().min(1, 'Task title cannot be empty.').describe('Task title to add'),
     description: z
       .string()
@@ -34,7 +34,7 @@ export const addPlanTaskParameters = z
 
 export const removePlanTaskParameters = z
   .object({
-    plan: z.string().describe('Plan ID or file path'),
+    plan: z.string().describe('Numeric plan ID'),
     taskTitle: z
       .string()
       .optional()
@@ -54,7 +54,7 @@ export const removePlanTaskParameters = z
 
 export const generateTasksParameters = z
   .object({
-    plan: z.string().describe('Plan ID or file path to update'),
+    plan: z.string().describe('Numeric plan ID'),
     title: z.string().optional().describe('Plan title'),
     goal: z.string().optional().describe('High-level goal of the plan'),
     details: z.string().optional().describe('Additional details about the plan in markdown format'),
@@ -67,15 +67,15 @@ export type GenerateTasksArguments = z.infer<typeof generateTasksParameters>;
 
 export const getPlanParameters = z
   .object({
-    plan: z.string().describe('Plan ID or file path to retrieve'),
+    plan: z.string().describe('Numeric plan ID'),
   })
-  .describe('Retrieve the full plan text for a given plan ID or file path');
+  .describe('Retrieve the full plan text for a given plan ID');
 
 export type GetPlanArguments = z.infer<typeof getPlanParameters>;
 
 export const updatePlanDetailsParameters = z
   .object({
-    plan: z.string().describe('Plan ID or file path to update'),
+    plan: z.string().describe('Numeric plan ID'),
     details: z.string().describe('New details text to add or replace within the generated section'),
     append: z
       .boolean()
@@ -91,7 +91,7 @@ export type UpdatePlanDetailsArguments = z.infer<typeof updatePlanDetailsParamet
 
 export const managePlanTaskParameters = z
   .object({
-    plan: z.string().describe('Plan ID or file path'),
+    plan: z.string().describe('Numeric plan ID'),
     action: z.enum(['add', 'update', 'remove']).describe('Action to perform on the task'),
     // Task identification (for update and remove)
     taskTitle: z

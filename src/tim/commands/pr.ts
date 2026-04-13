@@ -38,7 +38,7 @@ import { resolvePlan } from '../plan_display.js';
 import { getReviewThreadDisplayLine } from './review.js';
 import type { PlanSchema } from '../planSchema.js';
 import { resolvePlanFromDb, writePlanFile } from '../plans.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 import { getWorkspaceInfoByPath } from '../workspace/workspace_info.js';
 
 interface RootCommandLike {
@@ -105,11 +105,7 @@ async function resolvePlanForCommand(
   }
 
   const globalOpts = getRootOptions(command);
-  const repoRoot = await resolveRepoRootForPlanArg(
-    effectivePlanArg,
-    process.cwd(),
-    globalOpts.config
-  );
+  const repoRoot = await resolveRepoRoot(globalOpts.config, process.cwd());
   const resolved = await resolvePlan(effectivePlanArg, {
     gitRoot: repoRoot,
     configPath: globalOpts.config,

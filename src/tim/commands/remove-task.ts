@@ -5,7 +5,7 @@ import { writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { findTaskByTitle, selectTaskInteractive } from '../utils/task_operations.js';
 import { parsePlanIdFromCliArg, resolvePlanFromDb } from '../plans.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 import { withPlanAutoSync } from '../plan_materialize.js';
 
 export interface RemoveTaskOptions {
@@ -25,7 +25,7 @@ export async function handleRemoveTaskCommand(
   const globalOpts = command.parent?.opts?.() ?? {};
 
   await loadEffectiveConfig(globalOpts.config);
-  const repoRoot = await resolveRepoRootForPlanArg(planIdArg, process.cwd(), globalOpts.config);
+  const repoRoot = await resolveRepoRoot(globalOpts.config, process.cwd());
   const resolvedPlan = await resolvePlanFromDb(planIdArg, repoRoot);
   if (!Array.isArray(resolvedPlan.plan.tasks) || resolvedPlan.plan.tasks.length === 0) {
     throw new Error('Plan has no tasks to remove.');

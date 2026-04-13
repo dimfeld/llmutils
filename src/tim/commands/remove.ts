@@ -15,7 +15,7 @@ import {
   syncMaterializedPlan,
 } from '../plan_materialize.js';
 import { getLegacyAwareSearchDir } from '../path_resolver.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 import { parsePlanIdFromCliArg, resolvePlanFromDb, writePlanFile } from '../plans.js';
 import { invertPlanIdToUuidMap, loadPlansFromDb, planRowForTransaction } from '../plans_db.js';
 import { resolveWritablePath } from '../plans/resolve_writable_path.js';
@@ -38,11 +38,7 @@ export async function handleRemoveCommand(
 
   const globalOpts = command.parent.opts();
   await loadEffectiveConfig(globalOpts.config);
-  const repoRoot = await resolveRepoRootForPlanArg(
-    planIds[0] ?? '',
-    process.cwd(),
-    globalOpts.config
-  );
+  const repoRoot = await resolveRepoRoot(globalOpts.config, process.cwd());
   const repository = await getRepositoryIdentity({ cwd: repoRoot });
 
   let context = await resolveProjectContext(repoRoot, repository);
@@ -151,7 +147,7 @@ export async function handleRemoveCommand(
     plan.updatedAt = new Date().toISOString();
     affectedPlans.set(plan.id, plan);
 
-    const outputPath = await resolveWritablePath(String(plan.id), row, repoRoot, repoRoot);
+    const outputPath = await resolveWritablePath(row, repoRoot);
     if (outputPath) {
       affectedOutputPaths.set(plan.id, outputPath);
     }

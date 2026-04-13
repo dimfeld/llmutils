@@ -13,7 +13,7 @@ import {
   findNextReadyDependencyFromDb,
 } from './plan_discovery.js';
 import { parsePlanIdFromCliArg, resolvePlanFromDb } from '../plans.js';
-import { resolveRepoRootForPlanArg } from '../plan_repo_root.js';
+import { resolveRepoRoot } from '../plan_repo_root.js';
 import type { PlanSchema } from '../planSchema.js';
 import type { TimConfig } from '../configSchema.js';
 import type { Database } from 'bun:sqlite';
@@ -200,7 +200,7 @@ export async function handleBranchCommand(
   const config = await loadEffectiveConfig(globalOpts.config);
   const repoRoot = (await getGitRoot()) || process.cwd();
   const effectiveRepoRoot = globalOpts.config
-    ? await resolveRepoRootForPlanArg('', repoRoot, globalOpts.config)
+    ? await resolveRepoRoot(globalOpts.config, repoRoot)
     : repoRoot;
 
   let selectedPlan: PlanSchema | undefined;
@@ -256,7 +256,7 @@ export async function handleBranchCommand(
     }
     const planIdArg = String(parsePlanIdFromCliArg(planFile));
 
-    const planRepoRoot = await resolveRepoRootForPlanArg(planIdArg, repoRoot, globalOpts.config);
+    const planRepoRoot = await resolveRepoRoot(globalOpts.config, repoRoot);
     selectedPlanRepoRoot = planRepoRoot;
     selectedPlan = (await resolvePlanFromDb(planIdArg, planRepoRoot)).plan;
   }

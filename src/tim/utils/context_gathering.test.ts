@@ -19,11 +19,7 @@ interface MockDependencies {
   getParentChain: (plan: PlanSchema, allPlans: Map<number, PlanSchema>) => PlanSchema[];
   getCompletedChildren: (planId: number, allPlans: Map<number, PlanSchema>) => PlanSchema[];
   getIncrementalSummary: (gitRoot: string, planId: string, opts: any[]) => Promise<any>;
-  resolveRepoRootForPlanArg: (
-    planArg: string,
-    fallbackDir?: string,
-    configPath?: string
-  ) => Promise<string>;
+  resolveRepoRoot: (configPath?: string, fallbackDir?: string) => Promise<string>;
   getRepositoryIdentity: (options?: { cwd?: string }) => Promise<{
     repositoryId: string;
     remoteUrl: string | null;
@@ -74,7 +70,7 @@ describe('gatherPlanContext', () => {
       getParentChain: () => [],
       getCompletedChildren: () => [],
       getIncrementalSummary: async () => null,
-      resolveRepoRootForPlanArg: async () => repoRoot,
+      resolveRepoRoot: async () => repoRoot,
       getRepositoryIdentity: async () => ({
         repositoryId: 'repo-id',
         remoteUrl: 'git@github.com:test/repo.git',
@@ -103,14 +99,13 @@ describe('gatherPlanContext', () => {
   test('should resolve repo root using cwd and config path', async () => {
     let receivedArgs:
       | {
-          planArg: string;
-          fallbackDir?: string;
           configPath?: string;
+          fallbackDir?: string;
         }
       | undefined;
 
-    mockDeps.resolveRepoRootForPlanArg = async (planArg, fallbackDir, configPath) => {
-      receivedArgs = { planArg, fallbackDir, configPath };
+    mockDeps.resolveRepoRoot = async (configPath, fallbackDir) => {
+      receivedArgs = { configPath, fallbackDir };
       return repoRoot;
     };
 
@@ -122,9 +117,8 @@ describe('gatherPlanContext', () => {
     );
 
     expect(receivedArgs).toEqual({
-      planArg: planFile,
-      fallbackDir: '/tmp/switched-workspace',
       configPath: '/tmp/custom.tim.yml',
+      fallbackDir: '/tmp/switched-workspace',
     });
   });
 
@@ -137,7 +131,7 @@ describe('gatherPlanContext', () => {
 
     await gatherPlanContext(planFile, { cwd: '/tmp/switched-workspace' }, {}, mockDeps);
 
-    // getGitRoot should receive repoRoot (from resolveRepoRootForPlanArg), not options.cwd
+    // getGitRoot should receive repoRoot (from resolveRepoRoot), not options.cwd
     expect(receivedCwd).toBe(repoRoot);
   });
 
