@@ -62,7 +62,9 @@ describe('agent_prompts failure protocol integration', () => {
 
   it('includes dead code guidance in reviewer prompt', () => {
     const def = getReviewerPrompt(context);
-    expect(def.prompt).toContain('Newly dead code or unreachable code paths that should be removed');
+    expect(def.prompt).toContain(
+      'Newly dead code or unreachable code paths that should be removed'
+    );
   });
 
   it('can include PR review scope guidance in reviewer prompt when requested', () => {

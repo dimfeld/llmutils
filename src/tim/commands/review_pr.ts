@@ -638,341 +638,343 @@ export async function handleReviewGuideCommand(
           prUrlOrNumber: prArg,
           plan: options.plan,
           cwd: baseDir,
-      });
-
-      const metadata = buildPrMetadata(prContext);
-      const { projectId, repoRoot } = await resolveProjectContextForRepo(db, baseDir);
-      const repoIdentity = await getRepositoryIdentity({ cwd: repoRoot });
-      const parsedRepositoryId = parseOwnerRepoFromRepositoryId(repoIdentity.repositoryId);
-      if (!parsedRepositoryId) {
-        throw new Error(
-          `Cannot validate repository identity: ${repoIdentity.repositoryId} is not a recognized GitHub repository. This command only works with GitHub PRs.`
-        );
-      }
-      if (
-        parsedRepositoryId.owner.toLowerCase() !== prContext.owner.toLowerCase() ||
-        parsedRepositoryId.repo.toLowerCase() !== prContext.repo.toLowerCase()
-      ) {
-        throw new Error(
-          `PR ${prContext.prUrl} belongs to ${prContext.owner}/${prContext.repo}, but the current repository is ${parsedRepositoryId.owner}/${parsedRepositoryId.repo}. Run this command from inside the matching repository.`
-        );
-      }
-
-      if (options.autoWorkspace === true) {
-        const selector = new WorkspaceAutoSelector(baseDir, config);
-        const taskId = `pr-review-${prContext.prNumber}-${Date.now()}`;
-        const selectedWorkspace = await selector.selectWorkspace(taskId, undefined, {
-          interactive: options.nonInteractive !== true,
-          createBranch: false,
         });
-        if (!selectedWorkspace) {
-          throw new Error('Failed to select or create a workspace for PR review.');
+
+        const metadata = buildPrMetadata(prContext);
+        const { projectId, repoRoot } = await resolveProjectContextForRepo(db, baseDir);
+        const repoIdentity = await getRepositoryIdentity({ cwd: repoRoot });
+        const parsedRepositoryId = parseOwnerRepoFromRepositoryId(repoIdentity.repositoryId);
+        if (!parsedRepositoryId) {
+          throw new Error(
+            `Cannot validate repository identity: ${repoIdentity.repositoryId} is not a recognized GitHub repository. This command only works with GitHub PRs.`
+          );
         }
-
-        const lockInfo = await WorkspaceLock.acquireLock(
-          selectedWorkspace.workspace.workspacePath,
-          'tim pr review-guide',
-          { type: 'pid' }
-        );
-        WorkspaceLock.setupCleanupHandlers(
-          selectedWorkspace.workspace.workspacePath,
-          lockInfo.type
-        );
-
-        baseDir = selectedWorkspace.workspace.workspacePath;
-        updateHeadlessSessionInfo({ workspacePath: baseDir });
-      }
-
-      await checkoutPrBranch({
-        branch: prContext.headBranch,
-        baseBranch: prContext.baseBranch,
-        prNumber: prContext.prNumber,
-        skipDirtyCheck: options.autoWorkspace === true,
-        cwd: baseDir,
-      });
-
-      // Read the actual reviewed SHA after checkout, not the cached pr_status value,
-      // since the remote branch may have advanced since the cache was written.
-      // For jj, `jj new` creates a synthetic working-copy commit on top of the branch,
-      // so `git rev-parse HEAD` would return the wrong SHA. Use the parent instead.
-      let reviewedSha = prContext.headSha;
-      try {
-        const usingJjForSha = await getUsingJj(baseDir);
-        if (usingJjForSha) {
-          const result = await $`jj log -r @- --no-graph -T commit_id`
-            .cwd(baseDir)
-            .quiet()
-            .nothrow();
-          const sha = result.stdout.toString().trim();
-          if (sha && result.exitCode === 0) {
-            reviewedSha = sha;
-          }
-        } else {
-          const result = await $`git rev-parse HEAD`.cwd(baseDir).quiet().nothrow();
-          const sha = result.stdout.toString().trim();
-          if (sha && result.exitCode === 0) {
-            reviewedSha = sha;
-          }
-        }
-      } catch {
-        // Fall back to cached SHA if we can't read HEAD
-      }
-
-      const review = createReview(db, {
-        projectId,
-        prStatusId: prContext.prStatus.id,
-        prUrl: prContext.prUrl,
-        branch: prContext.headBranch,
-        baseBranch: prContext.baseBranch,
-        status: 'in_progress',
-      });
-
-      const tempPaths = getReviewTempPaths(baseDir, review.id);
-      let lifecycleManager: LifecycleManager | undefined;
-      let workflowError: unknown;
-
-      try {
         if (
-          config.lifecycle?.commands &&
-          config.lifecycle.commands.length > 0 &&
-          !isShuttingDown()
+          parsedRepositoryId.owner.toLowerCase() !== prContext.owner.toLowerCase() ||
+          parsedRepositoryId.repo.toLowerCase() !== prContext.repo.toLowerCase()
         ) {
-          const workspaceInfo = getWorkspaceInfoByPath(baseDir);
-          lifecycleManager = new LifecycleManager(
-            config.lifecycle.commands,
-            baseDir,
-            workspaceInfo?.workspaceType,
-            'review'
+          throw new Error(
+            `PR ${prContext.prUrl} belongs to ${prContext.owner}/${prContext.repo}, but the current repository is ${parsedRepositoryId.owner}/${parsedRepositoryId.repo}. Run this command from inside the matching repository.`
           );
-          await lifecycleManager.startup();
         }
+
+        if (options.autoWorkspace === true) {
+          const selector = new WorkspaceAutoSelector(baseDir, config);
+          const taskId = `pr-review-${prContext.prNumber}-${Date.now()}`;
+          const selectedWorkspace = await selector.selectWorkspace(taskId, undefined, {
+            interactive: options.nonInteractive !== true,
+            createBranch: false,
+          });
+          if (!selectedWorkspace) {
+            throw new Error('Failed to select or create a workspace for PR review.');
+          }
+
+          const lockInfo = await WorkspaceLock.acquireLock(
+            selectedWorkspace.workspace.workspacePath,
+            'tim pr review-guide',
+            { type: 'pid' }
+          );
+          WorkspaceLock.setupCleanupHandlers(
+            selectedWorkspace.workspace.workspacePath,
+            lockInfo.type
+          );
+
+          baseDir = selectedWorkspace.workspace.workspacePath;
+          updateHeadlessSessionInfo({ workspacePath: baseDir });
+        }
+
+        await checkoutPrBranch({
+          branch: prContext.headBranch,
+          baseBranch: prContext.baseBranch,
+          prNumber: prContext.prNumber,
+          skipDirtyCheck: options.autoWorkspace === true,
+          cwd: baseDir,
+        });
+
+        // Read the actual reviewed SHA after checkout, not the cached pr_status value,
+        // since the remote branch may have advanced since the cache was written.
+        // For jj, `jj new` creates a synthetic working-copy commit on top of the branch,
+        // so `git rev-parse HEAD` would return the wrong SHA. Use the parent instead.
+        let reviewedSha = prContext.headSha;
+        try {
+          const usingJjForSha = await getUsingJj(baseDir);
+          if (usingJjForSha) {
+            const result = await $`jj log -r @- --no-graph -T commit_id`
+              .cwd(baseDir)
+              .quiet()
+              .nothrow();
+            const sha = result.stdout.toString().trim();
+            if (sha && result.exitCode === 0) {
+              reviewedSha = sha;
+            }
+          } else {
+            const result = await $`git rev-parse HEAD`.cwd(baseDir).quiet().nothrow();
+            const sha = result.stdout.toString().trim();
+            if (sha && result.exitCode === 0) {
+              reviewedSha = sha;
+            }
+          }
+        } catch {
+          // Fall back to cached SHA if we can't read HEAD
+        }
+
+        const review = createReview(db, {
+          projectId,
+          prStatusId: prContext.prStatus.id,
+          prUrl: prContext.prUrl,
+          branch: prContext.headBranch,
+          baseBranch: prContext.baseBranch,
+          status: 'in_progress',
+        });
+
+        const tempPaths = getReviewTempPaths(baseDir, review.id);
+        let lifecycleManager: LifecycleManager | undefined;
+        let workflowError: unknown;
 
         try {
-          await ensureTmpDir(tempPaths.dir);
-          const usingJj = await getUsingJj(baseDir);
-          const customInstructions = await loadCustomReviewInstructions(config, baseDir);
-
-          const executorPromises: Array<Promise<ClaudeGuideResult | ExecutorIssueResult>> = [];
-          const executorOrder: Array<'claude-guide' | ReviewExecutorName> = [];
-          const hasClaude = selectedExecutorNames.includes('claude-code');
-          const hasCodex = selectedExecutorNames.includes('codex-cli');
-          const concurrentJobCount = (hasClaude ? 2 : 0) + (hasCodex ? 1 : 0);
-          const isConcurrent = concurrentJobCount > 1;
-          const executorTerminalInput = isConcurrent ? false : effectiveTerminalInput;
-          const executorNoninteractive = isConcurrent || !reviewInteractive;
-
-          if (hasClaude) {
-            executorOrder.push('claude-guide');
-            const claudeGuideExecutor = buildExecutorAndLog(
-              'claude-code',
-              {
-                baseDir,
-                model: options.model,
-                terminalInput: executorTerminalInput,
-                noninteractive: executorNoninteractive,
-              },
-              config
+          if (
+            config.lifecycle?.commands &&
+            config.lifecycle.commands.length > 0 &&
+            !isShuttingDown()
+          ) {
+            const workspaceInfo = getWorkspaceInfoByPath(baseDir);
+            lifecycleManager = new LifecycleManager(
+              config.lifecycle.commands,
+              baseDir,
+              workspaceInfo?.workspaceType,
+              'review'
             );
-
-            executorPromises.push(
-              runClaudeGuide({
-                executor: claudeGuideExecutor,
-                metadata,
-                useJj: usingJj,
-                customInstructions,
-                guidePath: tempPaths.guidePath,
-                reviewId: review.id,
-                prUrl: prContext.prUrl,
-              })
-            );
-
-            executorOrder.push('claude-code');
-            const claudeIssuesExecutor = buildExecutorAndLog(
-              'claude-code',
-              {
-                baseDir,
-                model: options.model,
-                terminalInput: executorTerminalInput,
-                noninteractive: executorNoninteractive,
-              },
-              config
-            );
-
-            executorPromises.push(
-              runReviewIssues({
-                executor: claudeIssuesExecutor,
-                metadata,
-                useJj: usingJj,
-                customInstructions,
-                reviewId: review.id,
-                prUrl: prContext.prUrl,
-                source: 'claude-code',
-                planTitlePrefix: 'PR review issues (claude)',
-              })
-            );
+            await lifecycleManager.startup();
           }
 
-          if (hasCodex) {
-            executorOrder.push('codex-cli');
-            const codexExecutor = buildExecutorAndLog(
-              'codex-cli',
-              {
-                baseDir,
-                model: options.model,
-                terminalInput: executorTerminalInput,
-                noninteractive: executorNoninteractive,
-              },
-              config
-            );
-
-            executorPromises.push(
-              runReviewIssues({
-                executor: codexExecutor,
-                metadata,
-                useJj: usingJj,
-                customInstructions,
-                reviewId: review.id,
-                prUrl: prContext.prUrl,
-                source: 'codex-cli',
-                planTitlePrefix: 'PR review issues (codex)',
-              })
-            );
-          }
-
-          const settled = await Promise.allSettled(executorPromises);
-
-          let claudeGuideResult: ClaudeGuideResult | null = null;
-          let claudeIssuesResult: ExecutorIssueResult | null = null;
-          let codexResult: ExecutorIssueResult | null = null;
-
-          for (let index = 0; index < settled.length; index++) {
-            const result = settled[index];
-            const executorName = executorOrder[index];
-            if (!executorName || !result) {
-              continue;
-            }
-
-            if (result.status === 'rejected') {
-              warn(`${executorName} review failed: ${asErrorMessage(result.reason)}`);
-              continue;
-            }
-
-            if (executorName === 'claude-guide') {
-              claudeGuideResult = result.value as ClaudeGuideResult;
-            } else if (executorName === 'claude-code') {
-              claudeIssuesResult = result.value as ExecutorIssueResult;
-            } else if (executorName === 'codex-cli') {
-              codexResult = result.value as ExecutorIssueResult;
-            }
-          }
-
-          const issueResults = [claudeIssuesResult, codexResult].filter(
-            (entry): entry is ExecutorIssueResult => entry != null
-          );
-
-          if (issueResults.length === 0) {
-            const allErrors = settled
-              .filter((entry): entry is PromiseRejectedResult => entry.status === 'rejected')
-              .map((entry) => asErrorMessage(entry.reason));
-            const errorMessage = `All review executors failed. ${allErrors.join(' | ')}`;
-            throw new Error(errorMessage);
-          }
-
-          let finalIssues: StoredReviewIssue[] = [];
-          const reviewGuide = claudeGuideResult?.guideText ?? null;
-
-          if (claudeIssuesResult && codexResult) {
-            try {
-              finalIssues = await runCombinationStep({
-                config,
-                baseDir,
-                claudeIssues: claudeIssuesResult.issues,
-                codexIssues: codexResult.issues,
-                reviewId: review.id,
-                prUrl: prContext.prUrl,
-              });
-            } catch (error) {
-              warn(
-                `Issue combination failed, falling back to merged raw issues: ${asErrorMessage(error)}`
-              );
-              finalIssues = [...claudeIssuesResult.issues, ...codexResult.issues];
-            }
-          } else if (claudeIssuesResult) {
-            finalIssues = claudeIssuesResult.issues;
-          } else if (codexResult) {
-            finalIssues = codexResult.issues;
-          }
-
-          finalIssues = sortIssues(finalIssues);
-
-          insertReviewIssues(db, {
-            reviewId: review.id,
-            issues: finalIssues.map(toInsertIssue),
-          });
-
-          updateReview(db, review.id, {
-            status: 'complete',
-            reviewGuide,
-            reviewedSha,
-            errorMessage: null,
-          });
-
-          const filesReviewed = prContext.prStatus.changed_files ?? 0;
-          const formatterIssues = finalIssues.map(toFormatterIssue);
-          const summary = generateReviewSummary(formatterIssues, filesReviewed);
-          log(chalk.green(`Review complete for ${prContext.prUrl}`));
-          log(
-            `Issues: ${summary.totalIssues} total (${summary.criticalCount} critical, ${summary.majorCount} major, ${summary.minorCount} minor, ${summary.infoCount} info)`
-          );
-
-          const topIssues = summarizeTopIssues(finalIssues);
-          if (topIssues.length > 0) {
-            log('Top issues:');
-            for (const issue of topIssues) {
-              log(`  ${issue}`);
-            }
-          }
-
-          if (options.verbose) {
-            const terminalDetails = formatSeverityGroupedIssuesForTerminal(formatterIssues, {
-              verbosity: 'detailed',
-              includeHeader: false,
-            });
-            if (terminalDetails) {
-              log(terminalDetails);
-            }
-          }
-        } finally {
-          await cleanupTempFiles(tempPaths);
-        }
-      } catch (error) {
-        workflowError = error;
-      } finally {
-        if (lifecycleManager) {
           try {
-            await lifecycleManager.shutdown();
-          } catch (shutdownErr) {
-            if (workflowError) {
-              warn(`Lifecycle shutdown failed for review command: ${asErrorMessage(shutdownErr)}`);
-            } else {
-              workflowError = shutdownErr;
+            await ensureTmpDir(tempPaths.dir);
+            const usingJj = await getUsingJj(baseDir);
+            const customInstructions = await loadCustomReviewInstructions(config, baseDir);
+
+            const executorPromises: Array<Promise<ClaudeGuideResult | ExecutorIssueResult>> = [];
+            const executorOrder: Array<'claude-guide' | ReviewExecutorName> = [];
+            const hasClaude = selectedExecutorNames.includes('claude-code');
+            const hasCodex = selectedExecutorNames.includes('codex-cli');
+            const concurrentJobCount = (hasClaude ? 2 : 0) + (hasCodex ? 1 : 0);
+            const isConcurrent = concurrentJobCount > 1;
+            const executorTerminalInput = isConcurrent ? false : effectiveTerminalInput;
+            const executorNoninteractive = isConcurrent || !reviewInteractive;
+
+            if (hasClaude) {
+              executorOrder.push('claude-guide');
+              const claudeGuideExecutor = buildExecutorAndLog(
+                'claude-code',
+                {
+                  baseDir,
+                  model: options.model,
+                  terminalInput: executorTerminalInput,
+                  noninteractive: executorNoninteractive,
+                },
+                config
+              );
+
+              executorPromises.push(
+                runClaudeGuide({
+                  executor: claudeGuideExecutor,
+                  metadata,
+                  useJj: usingJj,
+                  customInstructions,
+                  guidePath: tempPaths.guidePath,
+                  reviewId: review.id,
+                  prUrl: prContext.prUrl,
+                })
+              );
+
+              executorOrder.push('claude-code');
+              const claudeIssuesExecutor = buildExecutorAndLog(
+                'claude-code',
+                {
+                  baseDir,
+                  model: options.model,
+                  terminalInput: executorTerminalInput,
+                  noninteractive: executorNoninteractive,
+                },
+                config
+              );
+
+              executorPromises.push(
+                runReviewIssues({
+                  executor: claudeIssuesExecutor,
+                  metadata,
+                  useJj: usingJj,
+                  customInstructions,
+                  reviewId: review.id,
+                  prUrl: prContext.prUrl,
+                  source: 'claude-code',
+                  planTitlePrefix: 'PR review issues (claude)',
+                })
+              );
+            }
+
+            if (hasCodex) {
+              executorOrder.push('codex-cli');
+              const codexExecutor = buildExecutorAndLog(
+                'codex-cli',
+                {
+                  baseDir,
+                  model: options.model,
+                  terminalInput: executorTerminalInput,
+                  noninteractive: executorNoninteractive,
+                },
+                config
+              );
+
+              executorPromises.push(
+                runReviewIssues({
+                  executor: codexExecutor,
+                  metadata,
+                  useJj: usingJj,
+                  customInstructions,
+                  reviewId: review.id,
+                  prUrl: prContext.prUrl,
+                  source: 'codex-cli',
+                  planTitlePrefix: 'PR review issues (codex)',
+                })
+              );
+            }
+
+            const settled = await Promise.allSettled(executorPromises);
+
+            let claudeGuideResult: ClaudeGuideResult | null = null;
+            let claudeIssuesResult: ExecutorIssueResult | null = null;
+            let codexResult: ExecutorIssueResult | null = null;
+
+            for (let index = 0; index < settled.length; index++) {
+              const result = settled[index];
+              const executorName = executorOrder[index];
+              if (!executorName || !result) {
+                continue;
+              }
+
+              if (result.status === 'rejected') {
+                warn(`${executorName} review failed: ${asErrorMessage(result.reason)}`);
+                continue;
+              }
+
+              if (executorName === 'claude-guide') {
+                claudeGuideResult = result.value as ClaudeGuideResult;
+              } else if (executorName === 'claude-code') {
+                claudeIssuesResult = result.value as ExecutorIssueResult;
+              } else if (executorName === 'codex-cli') {
+                codexResult = result.value as ExecutorIssueResult;
+              }
+            }
+
+            const issueResults = [claudeIssuesResult, codexResult].filter(
+              (entry): entry is ExecutorIssueResult => entry != null
+            );
+
+            if (issueResults.length === 0) {
+              const allErrors = settled
+                .filter((entry): entry is PromiseRejectedResult => entry.status === 'rejected')
+                .map((entry) => asErrorMessage(entry.reason));
+              const errorMessage = `All review executors failed. ${allErrors.join(' | ')}`;
+              throw new Error(errorMessage);
+            }
+
+            let finalIssues: StoredReviewIssue[] = [];
+            const reviewGuide = claudeGuideResult?.guideText ?? null;
+
+            if (claudeIssuesResult && codexResult) {
+              try {
+                finalIssues = await runCombinationStep({
+                  config,
+                  baseDir,
+                  claudeIssues: claudeIssuesResult.issues,
+                  codexIssues: codexResult.issues,
+                  reviewId: review.id,
+                  prUrl: prContext.prUrl,
+                });
+              } catch (error) {
+                warn(
+                  `Issue combination failed, falling back to merged raw issues: ${asErrorMessage(error)}`
+                );
+                finalIssues = [...claudeIssuesResult.issues, ...codexResult.issues];
+              }
+            } else if (claudeIssuesResult) {
+              finalIssues = claudeIssuesResult.issues;
+            } else if (codexResult) {
+              finalIssues = codexResult.issues;
+            }
+
+            finalIssues = sortIssues(finalIssues);
+
+            insertReviewIssues(db, {
+              reviewId: review.id,
+              issues: finalIssues.map(toInsertIssue),
+            });
+
+            updateReview(db, review.id, {
+              status: 'complete',
+              reviewGuide,
+              reviewedSha,
+              errorMessage: null,
+            });
+
+            const filesReviewed = prContext.prStatus.changed_files ?? 0;
+            const formatterIssues = finalIssues.map(toFormatterIssue);
+            const summary = generateReviewSummary(formatterIssues, filesReviewed);
+            log(chalk.green(`Review complete for ${prContext.prUrl}`));
+            log(
+              `Issues: ${summary.totalIssues} total (${summary.criticalCount} critical, ${summary.majorCount} major, ${summary.minorCount} minor, ${summary.infoCount} info)`
+            );
+
+            const topIssues = summarizeTopIssues(finalIssues);
+            if (topIssues.length > 0) {
+              log('Top issues:');
+              for (const issue of topIssues) {
+                log(`  ${issue}`);
+              }
+            }
+
+            if (options.verbose) {
+              const terminalDetails = formatSeverityGroupedIssuesForTerminal(formatterIssues, {
+                verbosity: 'detailed',
+                includeHeader: false,
+              });
+              if (terminalDetails) {
+                log(terminalDetails);
+              }
+            }
+          } finally {
+            await cleanupTempFiles(tempPaths);
+          }
+        } catch (error) {
+          workflowError = error;
+        } finally {
+          if (lifecycleManager) {
+            try {
+              await lifecycleManager.shutdown();
+            } catch (shutdownErr) {
+              if (workflowError) {
+                warn(
+                  `Lifecycle shutdown failed for review command: ${asErrorMessage(shutdownErr)}`
+                );
+              } else {
+                workflowError = shutdownErr;
+              }
             }
           }
         }
-      }
 
-      if (workflowError) {
-        try {
-          updateReview(db, review.id, {
-            status: 'error',
-            errorMessage: asErrorMessage(workflowError),
-            reviewedSha,
-          });
-        } catch (updateErr) {
-          warn(`Failed to mark review as error: ${asErrorMessage(updateErr)}`);
+        if (workflowError) {
+          try {
+            updateReview(db, review.id, {
+              status: 'error',
+              errorMessage: asErrorMessage(workflowError),
+              reviewedSha,
+            });
+          } catch (updateErr) {
+            warn(`Failed to mark review as error: ${asErrorMessage(updateErr)}`);
+          }
+          throw workflowError;
         }
-        throw workflowError;
-      }
       },
     });
   } finally {
