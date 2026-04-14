@@ -360,6 +360,29 @@ export function updateReviewIssue(
   return updateInTransaction.immediate(issueId, input);
 }
 
+export interface ReviewWithIssueCounts extends ReviewRow {
+  issue_count: number;
+  unresolved_count: number;
+}
+
+export function getReviewsByPrUrl(db: Database, prUrl: string): ReviewWithIssueCounts[] {
+  const canonicalUrl = canonicalizePrUrl(prUrl);
+  return db
+    .prepare(
+      `
+        SELECT r.*,
+          COUNT(ri.id) as issue_count,
+          COALESCE(SUM(CASE WHEN ri.resolved = 0 THEN 1 ELSE 0 END), 0) as unresolved_count
+        FROM review r
+        LEFT JOIN review_issue ri ON ri.review_id = r.id
+        WHERE r.pr_url = ?
+        GROUP BY r.id
+        ORDER BY r.created_at DESC, r.id DESC
+      `
+    )
+    .all(canonicalUrl) as ReviewWithIssueCounts[];
+}
+
 export function getReviewsForProject(
   db: Database,
   projectId: number,

@@ -684,7 +684,10 @@ export async function handleReviewGuideCommand(
           'tim pr review-guide',
           { type: 'pid' }
         );
-        WorkspaceLock.setupCleanupHandlers(selectedWorkspace.workspace.workspacePath, lockInfo.type);
+        WorkspaceLock.setupCleanupHandlers(
+          selectedWorkspace.workspace.workspacePath,
+          lockInfo.type
+        );
 
         baseDir = selectedWorkspace.workspace.workspacePath;
         updateHeadlessSessionInfo({ workspacePath: baseDir });

@@ -19,6 +19,8 @@
   import { formatRelativeTime } from '$lib/utils/time.js';
   import { refreshSinglePrStatus, togglePrDraftStatus } from '$lib/remote/pr_status.remote.js';
   import { startPrReviewGuide } from '$lib/remote/review_thread_actions.remote.js';
+  import { getPrReviews } from '$lib/remote/pr_reviews.remote.js';
+  import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
 
   let {
     pr,
@@ -39,6 +41,14 @@
   let branchCopied = $state(false);
   let graphitePrUrl = $derived(
     `https://app.graphite.com/github/pr/${pr.status.owner}/${pr.status.repo}/${pr.status.pr_number}`
+  );
+  let reviews = $derived(await getPrReviews({ prUrl: pr.status.pr_url }));
+  let latestCompletedReview = $derived(reviews?.find((r) => r.status === 'complete') ?? null);
+  let hasNewCommitsSinceReview = $derived(
+    pr.status.head_sha != null &&
+      latestCompletedReview != null &&
+      latestCompletedReview.reviewed_sha != null &&
+      pr.status.head_sha !== latestCompletedReview.reviewed_sha
   );
   let sortedLinkedPlans = $derived([...pr.linkedPlans].sort((a, b) => a.planId - b.planId));
 
@@ -180,14 +190,6 @@
         >
           View in Graphite
         </a>
-        <button
-          onclick={handleStartReviewGuide}
-          disabled={reviewGuideRunning}
-          class="rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
-          title="Generate review guide"
-        >
-          {reviewGuideRunning ? 'Starting...' : 'Review Guide'}
-        </button>
         {#if canToggleDraft}
           <button
             onclick={handleToggleDraftStatus}
@@ -328,6 +330,73 @@
         </ul>
       </div>
     {/if}
+
+    <!-- Review Guides -->
+    <div>
+      <div class="mb-1.5 flex items-center justify-between">
+        <h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+          Review Guides
+        </h3>
+        <button
+          onclick={handleStartReviewGuide}
+          disabled={reviewGuideRunning}
+          class="rounded px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
+          title="Generate a new review guide"
+        >
+          {reviewGuideRunning ? 'Starting...' : 'Generate'}
+        </button>
+      </div>
+
+      {#if hasNewCommitsSinceReview}
+        <div
+          class="mb-2 flex items-center gap-1.5 rounded-md bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-300"
+        >
+          <AlertTriangle class="size-3 shrink-0" />
+          New commits since last review
+        </div>
+      {/if}
+
+      {#if reviews && reviews.length > 0}
+        <ul class="space-y-1">
+          {#each reviews as review (review.id)}
+            {@const statusColor =
+              review.status === 'complete'
+                ? 'text-green-600 dark:text-green-400'
+                : review.status === 'error'
+                  ? 'text-red-600 dark:text-red-400'
+                  : review.status === 'in_progress'
+                    ? 'text-blue-600 dark:text-blue-400'
+                    : 'text-muted-foreground'}
+            <li>
+              <a
+                href="/projects/{projectId}/prs/{pr.status.pr_number}/reviews/{review.id}"
+                class="flex items-center gap-2 rounded px-1 py-0.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                <span class="min-w-0 flex-1 truncate text-foreground">
+                  {formatRelativeTime(review.created_at)}
+                </span>
+                {#if review.status === 'complete'}
+                  <span class="shrink-0 text-xs text-muted-foreground">
+                    {review.unresolved_count}/{review.issue_count} open
+                  </span>
+                {/if}
+                <span class="shrink-0 text-xs {statusColor}">
+                  {review.status === 'complete'
+                    ? 'Complete'
+                    : review.status === 'error'
+                      ? 'Error'
+                      : review.status === 'in_progress'
+                        ? 'Running'
+                        : 'Pending'}
+                </span>
+              </a>
+            </li>
+          {/each}
+        </ul>
+      {:else if reviews}
+        <p class="text-xs text-muted-foreground">No review guides generated yet.</p>
+      {/if}
+    </div>
 
     <!-- Check Runs -->
     {#if pr.checks.length > 0}
