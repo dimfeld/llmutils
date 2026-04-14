@@ -322,7 +322,9 @@ describe('review_pr command', () => {
         return { content: 'ok' };
       }
 
-      if (prompt.includes('standalone PR code review and must return structured JSON issues only')) {
+      if (
+        prompt.includes('standalone PR code review and must return structured JSON issues only')
+      ) {
         return {
           content: JSON.stringify({
             issues: [
@@ -388,7 +390,9 @@ describe('review_pr command', () => {
       String(prompt).includes('must produce a complete review guide')
     );
     const issuesCall = claudeExecute.mock.calls.find(([prompt]) =>
-      String(prompt).includes('standalone PR code review and must return structured JSON issues only')
+      String(prompt).includes(
+        'standalone PR code review and must return structured JSON issues only'
+      )
     );
     expect(guideCall?.[1]).toEqual(expect.objectContaining({ executionMode: 'bare' }));
     expect(issuesCall?.[1]).toEqual(expect.objectContaining({ executionMode: 'review' }));
@@ -422,7 +426,9 @@ describe('review_pr command', () => {
         return { content: 'ok' };
       }
 
-      if (prompt.includes('standalone PR code review and must return structured JSON issues only')) {
+      if (
+        prompt.includes('standalone PR code review and must return structured JSON issues only')
+      ) {
         return {
           content: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
         };
@@ -707,7 +713,9 @@ describe('review_pr command', () => {
         return { content: 'ok' };
       }
 
-      if (prompt.includes('standalone PR code review and must return structured JSON issues only')) {
+      if (
+        prompt.includes('standalone PR code review and must return structured JSON issues only')
+      ) {
         return {
           content: JSON.stringify({
             issues: [
@@ -754,7 +762,9 @@ describe('review_pr command', () => {
         return { content: 'ok' };
       }
 
-      if (prompt.includes('standalone PR code review and must return structured JSON issues only')) {
+      if (
+        prompt.includes('standalone PR code review and must return structured JSON issues only')
+      ) {
         return {
           content: JSON.stringify({
             issues: [
@@ -1147,7 +1157,9 @@ describe('review_pr command', () => {
         return { content: 'ok' };
       }
 
-      if (prompt.includes('standalone PR code review and must return structured JSON issues only')) {
+      if (
+        prompt.includes('standalone PR code review and must return structured JSON issues only')
+      ) {
         return {
           content: JSON.stringify({
             issues: [
@@ -1255,7 +1267,9 @@ describe('review_pr command', () => {
         return { content: 'ok' };
       }
 
-      if (prompt.includes('standalone PR code review and must return structured JSON issues only')) {
+      if (
+        prompt.includes('standalone PR code review and must return structured JSON issues only')
+      ) {
         return {
           content: JSON.stringify({
             issues: [

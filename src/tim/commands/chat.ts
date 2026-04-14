@@ -58,7 +58,6 @@ export interface ChatCommandOptions {
   workspace?: string;
   autoWorkspace?: boolean;
   newWorkspace?: boolean;
-  base?: string;
   workspaceSync?: boolean;
   commit?: boolean;
   plan?: string;
@@ -151,9 +150,6 @@ export async function handleChatCommand(
 
   // Validate that workspace-modifier flags require workspace mode
   if (!workspaceMode) {
-    if (options.base) {
-      throw new Error('--base requires a workspace option (-w, --aw, --nw, or --plan)');
-    }
     if (options.commit) {
       throw new Error('--commit requires a workspace option (-w, --aw, --nw, or --plan)');
     }
@@ -263,10 +259,9 @@ export async function handleChatCommand(
             options.autoWorkspace === true ||
             (options.plan !== undefined && !options.workspace && !options.newWorkspace);
 
-          // When --plan is provided without --base, derive branch from plan data
-          let baseBranch = options.base;
+          // When --plan is provided, derive branch from plan data.
           let checkoutBranch: string | undefined;
-          if (!baseBranch && currentPlanData) {
+          if (currentPlanData) {
             if (currentPlanData.branch) {
               checkoutBranch = currentPlanData.branch;
             } else {
@@ -292,7 +287,6 @@ export async function handleChatCommand(
               createBranch: false,
               planId: currentPlanData?.id,
               planUuid: currentPlanData?.uuid,
-              base: baseBranch,
               checkoutBranch,
               allowPrimaryWorkspaceWhenLocked: true,
             },

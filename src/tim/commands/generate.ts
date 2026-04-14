@@ -198,7 +198,6 @@ export async function handleGenerateCommand(
             createBranch: options.createBranch,
             planId: parsedPlan.id,
             planUuid: parsedPlan.uuid,
-            base: options.base,
             allowPrimaryWorkspaceWhenLocked: true,
           },
           currentBaseDir,

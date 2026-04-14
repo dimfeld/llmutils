@@ -13,6 +13,11 @@ Patterns and gotchas for working with Git and JJ in `src/common/git.ts` and rela
 - `getMergeBase` uses HEAD by default, which is wrong in non-workspace mode where the plan branch isn't checked out. Always pass the plan branch as an explicit source ref when the working copy may not match the target branch.
 - The `useRemoteRef` option on `getMergeBase` controls whether `origin/` is prepended for Git refs. Some callers (e.g., `incremental_review.ts`) need local refs while others (e.g., `create_pr.ts`) need remote refs. Default is `true` (remote).
 
+## JJ Bookmark Handling
+
+- `jj bookmark set <name>` without `-r` moves the bookmark to `@` (the working copy), which creates synthetic empty revisions and can advance the bookmark past the intended target. Always use `-r <rev>` to specify the exact revision — e.g., `jj bookmark set <name> -r <name>@origin` to align a local bookmark with its remote version.
+- When checking out a remote branch in JJ, the correct sequence is: (1) `jj bookmark track <name>@origin`, (2) `jj bookmark set <name> -r <name>@origin`, (3) `jj new <name>`. This avoids the bookmark advancing to the working copy.
+
 ## JJ Shell Command Gotchas
 
 - JJ revsets with parentheses (e.g., `heads(::@ & ::<branch>)`) must be pre-built as a complete string before passing to Bun's shell template literals (`$\`...\``). Shell metacharacter parsing on `(` causes errors if the revset is interpolated piecemeal.

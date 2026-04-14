@@ -207,14 +207,14 @@ async function deleteUnusedLocalBranch(context: WorkspaceRoundTripContext): Prom
   }
 
   if (await getUsingJj(context.executionWorkspacePath)) {
-    const editProc = logSpawn(['jj', 'new', restoreBranch], {
+    const newProc = logSpawn(['jj', 'new', restoreBranch], {
       cwd: context.executionWorkspacePath,
       stdio: ['ignore', 'inherit', 'inherit'],
     });
-    await editProc.exited;
-    if (editProc.exitCode !== 0) {
+    await newProc.exited;
+    if (newProc.exitCode !== 0) {
       throw new Error(
-        `Failed to restore jj workspace to ${restoreBranch} (exit code ${editProc.exitCode})`
+        `Failed to restore jj workspace to ${restoreBranch} (exit code ${newProc.exitCode})`
       );
     }
 

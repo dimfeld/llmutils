@@ -455,7 +455,6 @@ describe('setupWorkspace', () => {
         {
           autoWorkspace: true,
           createBranch: true,
-          base: 'develop',
           requireWorkspace: true,
         },
         baseDir,
@@ -470,7 +469,6 @@ describe('setupWorkspace', () => {
       planFile,
       expect.objectContaining({
         createBranch: true,
-        base: 'develop',
       })
     );
   });
@@ -672,10 +670,7 @@ describe('setupWorkspace', () => {
     expect(prepareSpy).toHaveBeenCalledWith(autoWorkspacePath, {
       baseBranch: undefined,
       branchName: '42-sync-base-before-plan-branch-reuse',
-      planFilePath: validPlanFile,
       createBranch: true,
-      reuseExistingBranch: true,
-      primaryWorkspacePath: baseDir,
     });
   });
 
@@ -718,10 +713,7 @@ describe('setupWorkspace', () => {
     expect(prepareSpy).toHaveBeenCalledWith(autoWorkspacePath, {
       baseBranch: undefined,
       branchName: 'task-auto-existing-no-branch',
-      planFilePath: planFile,
       createBranch: false,
-      reuseExistingBranch: true,
-      primaryWorkspacePath: baseDir,
     });
   });
 
@@ -765,10 +757,7 @@ describe('setupWorkspace', () => {
     expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
       baseBranch: undefined,
       branchName: 'task-existing-prep',
-      planFilePath: planFile,
       createBranch: true,
-      reuseExistingBranch: true,
-      primaryWorkspacePath: baseDir,
     });
     expect(updateSpy).toHaveBeenCalledWith(
       existingWorkspacePath,
@@ -822,10 +811,7 @@ describe('setupWorkspace', () => {
     expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
       baseBranch: undefined,
       branchName: '42-add-workspace-branch-naming',
-      planFilePath: validPlanFile,
       createBranch: true,
-      reuseExistingBranch: true,
-      primaryWorkspacePath: baseDir,
     });
   });
 
@@ -1216,10 +1202,7 @@ describe('setupWorkspace', () => {
     expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
       baseBranch: undefined,
       branchName: '88-keep-branch-metadata-in-sync',
-      planFilePath: validPlanFile,
       createBranch: true,
-      reuseExistingBranch: true,
-      primaryWorkspacePath: baseDir,
     });
     expect(await fs.readFile(validPlanFile, 'utf8')).not.toContain('branch:');
   });
@@ -1277,10 +1260,7 @@ describe('setupWorkspace', () => {
     expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
       baseBranch: 'feature/parent-plan',
       branchName: '21-child-plan',
-      planFilePath: childPlanFile,
       createBranch: true,
-      reuseExistingBranch: true,
-      primaryWorkspacePath: baseDir,
     });
   });
 
@@ -1348,10 +1328,7 @@ describe('setupWorkspace', () => {
     expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
       baseBranch: 'feature/parent-plan',
       branchName: '21-child-plan',
-      planFilePath: childPlanFile,
       createBranch: true,
-      reuseExistingBranch: true,
-      primaryWorkspacePath: baseDir,
     });
   });
 
@@ -1455,17 +1432,11 @@ describe('setupWorkspace', () => {
     expect(prepareSpy).toHaveBeenNthCalledWith(1, existingWorkspacePath, {
       baseBranch: 'feature/missing-parent',
       branchName: '21-child-plan',
-      planFilePath: childPlanFile,
       createBranch: true,
-      reuseExistingBranch: true,
-      primaryWorkspacePath: baseDir,
     });
     expect(prepareSpy).toHaveBeenNthCalledWith(2, existingWorkspacePath, {
       branchName: '21-child-plan',
-      planFilePath: childPlanFile,
       createBranch: true,
-      reuseExistingBranch: true,
-      primaryWorkspacePath: baseDir,
     });
   });
 
@@ -1514,49 +1485,11 @@ describe('setupWorkspace', () => {
     expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
       baseBranch: 'feature/deleted-base',
       branchName: '22-explicit-base-plan',
-      planFilePath: explicitBasePlanFile,
       createBranch: true,
-      reuseExistingBranch: true,
-      primaryWorkspacePath: baseDir,
     });
   });
 
-  test('passes --base through as baseBranch for existing workspace preparation', async () => {
-    const existingWorkspacePath = path.join(tempDir, 'workspace-existing-base-explicit');
-    await fs.mkdir(existingWorkspacePath, { recursive: true });
-    await seedWorkspace(existingWorkspacePath, 'task-existing-base-explicit');
-
-    vi.spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
-      hasChanges: false,
-      checkFailed: false,
-    });
-    const prepareSpy = vi.spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({
-      success: true,
-    });
-    vi.spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
-
-    await setupWorkspace(
-      {
-        workspace: 'task-existing-base-explicit',
-        base: 'feature/base-branch',
-      },
-      baseDir,
-      planFile,
-      config,
-      'tim generate'
-    );
-
-    expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
-      baseBranch: 'feature/base-branch',
-      branchName: 'task-existing-base-explicit',
-      planFilePath: planFile,
-      createBranch: true,
-      reuseExistingBranch: false,
-      primaryWorkspacePath: baseDir,
-    });
-  });
-
-  test('defaults baseBranch to undefined when --base is not provided', async () => {
+  test('defaults baseBranch to undefined when no plan base is set', async () => {
     const existingWorkspacePath = path.join(tempDir, 'workspace-existing-base-default');
     await fs.mkdir(existingWorkspacePath, { recursive: true });
     await seedWorkspace(existingWorkspacePath, 'task-existing-base-default');
@@ -1583,10 +1516,7 @@ describe('setupWorkspace', () => {
     expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
       baseBranch: undefined,
       branchName: 'task-existing-base-default',
-      planFilePath: planFile,
       createBranch: true,
-      reuseExistingBranch: true,
-      primaryWorkspacePath: baseDir,
     });
   });
 
@@ -1711,7 +1641,6 @@ describe('setupWorkspace', () => {
         workspace: 'task-options',
         newWorkspace: true,
         createBranch: true,
-        base: 'develop',
       },
       baseDir,
       planFile,
@@ -1721,7 +1650,6 @@ describe('setupWorkspace', () => {
 
     expect(createWorkspaceSpy).toHaveBeenCalledWith(baseDir, 'task-options', planFile, config, {
       createBranch: true,
-      fromBranch: 'develop',
     });
   });
 
@@ -2784,51 +2712,6 @@ describe('setupWorkspace', () => {
       await WorkspaceLock.releaseLock(baseDir, { force: true });
     });
 
-    test('options.base as stacking source saves both baseCommit and baseBranch in update', async () => {
-      // When options.base is used (baseBranchSource === 'option'), the explicit stacking
-      // base should be persisted to the plan so later commands know which branch the
-      // tracking data belongs to.
-      const planNoBaseBranch = path.join(baseDir, 'option-base-tracking.plan.md');
-      await fs.writeFile(
-        planNoBaseBranch,
-        [
-          '---',
-          'id: 213',
-          'uuid: 21321321-2132-4132-8132-213213213213',
-          'title: Plan without baseBranch in file',
-          'branch: feature/child-option',
-          'tasks: []',
-          '---',
-          '',
-        ].join('\n')
-      );
-
-      const fakeCommitHash = 'beefbeefbeefbeefbeefbeefbeefbeefbeefbeef';
-      vi.spyOn(git, 'fetchRemoteBranch').mockResolvedValue(true);
-      vi.spyOn(git, 'remoteBranchExists').mockResolvedValue(true);
-      vi.spyOn(git, 'getMergeBase').mockResolvedValue(fakeCommitHash);
-      vi.spyOn(git, 'getUsingJj').mockResolvedValue(false);
-
-      await setupWorkspace(
-        { base: 'feature/option-base' },
-        baseDir,
-        planNoBaseBranch,
-        config,
-        'tim generate'
-      );
-
-      expect(vi.mocked(setPlanBaseTracking)).toHaveBeenCalledWith(
-        expect.anything(),
-        '21321321-2132-4132-8132-213213213213',
-        expect.objectContaining({
-          baseCommit: fakeCommitHash,
-          baseBranch: 'feature/option-base',
-        })
-      );
-
-      await WorkspaceLock.releaseLock(baseDir, { force: true });
-    });
-
     test('workspace checkout uses checkoutBranch while tracking still uses plan baseBranch', async () => {
       const existingWorkspacePath = path.join(tempDir, 'workspace-existing-checkout-vs-tracking');
       await fs.mkdir(existingWorkspacePath, { recursive: true });
@@ -2879,10 +2762,7 @@ describe('setupWorkspace', () => {
       expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
         baseBranch: 'feature/checkout-only',
         branchName: 'feature/child-branch',
-        planFilePath: planWithTrackedBase,
         createBranch: true,
-        reuseExistingBranch: false,
-        primaryWorkspacePath: baseDir,
       });
       expect(mergeBaseSpy).toHaveBeenCalledWith(
         existingWorkspacePath,

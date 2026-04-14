@@ -194,7 +194,7 @@ describe('runPostExecutionWorkspaceSync', () => {
 
     expect(mockPushWorkspaceRefToRemote).not.toHaveBeenCalled();
     expect(mockSetWorkspaceBookmarkToCurrent).not.toHaveBeenCalled();
-    expect(mockLogSpawn).toHaveBeenCalledWith(['jj', 'edit', 'main'], {
+    expect(mockLogSpawn).toHaveBeenCalledWith(['jj', 'new', 'main'], {
       cwd: '/tmp/workspace',
       stdio: ['ignore', 'inherit', 'inherit'],
     });

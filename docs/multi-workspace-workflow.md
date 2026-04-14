@@ -196,12 +196,10 @@ When preparing an existing workspace, if the target branch exists locally but **
 2. A new branch is created from the current base branch, ensuring a clean starting point.
 3. `reusedExistingBranch` is set to `false`, so `branchCreatedDuringSetup` is `true` — the workspace behaves identically to a fresh branch creation.
 
-This applies regardless of whether `reuseExistingBranch` is enabled. The `reuseExistingBranch` flag only causes reuse when the branch exists on the remote (indicating a successful prior push).
-
 **Safety guards:**
 
 - Stale-branch deletion is only performed when the fetch from origin succeeded (`fetchSucceeded`), ensuring offline mode or transient network failures don't cause valid branches to be mistakenly deleted.
-- In `hasSeparatePrimary` configurations, only the execution workspace's branch is cleaned up — the primary workspace's local copy is left untouched.
+- Only the execution workspace's branch is cleaned up — the primary workspace is not touched during branch setup.
 
 Plans are not copied as files during workspace creation. Instead, when commands like `tim agent`, `tim generate`, or `tim chat` run in a workspace, they materialize the plan from the DB into the workspace at `.tim/plans/{planId}.plan.md` via `setupWorkspace()`. This approach keeps the DB as the source of truth and avoids stale file copies. After the executor finishes editing the materialized file, changes are synced back to the DB. The workspace roundtrip automatically wipes all materialized plan files from `.tim/plans/` (except `.gitignore`/`.gitkeep`) both at the start of pre-execution sync (to clean up leftovers from prior crashed runs) and at the end of post-execution sync (to prevent stale files from confusing subsequent runs on different plans).
 

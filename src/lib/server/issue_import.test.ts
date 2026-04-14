@@ -385,7 +385,7 @@ describe('issue_import server helpers', () => {
       const result = await createPlansFromIssue(7, issueData, 'single', selected);
 
       expect(result).toEqual({ planUuid: 'uuid-parent' });
-      expect(reserveImportedPlanStartId).toHaveBeenCalledWith('/tmp/repo', 1);
+      expect(reserveImportedPlanStartId).toHaveBeenCalledWith('/tmp/preferred-workspace', 1);
       expect(createStubPlanFromIssue).toHaveBeenCalledTimes(1);
       expect(vi.mocked(createStubPlanFromIssue).mock.calls[0]?.[0]).toMatchObject({
         issue: {
@@ -500,7 +500,7 @@ describe('issue_import server helpers', () => {
 
       await createPlansFromIssue(7, parent, 'separate', selected);
 
-      expect(reserveImportedPlanStartId).toHaveBeenCalledWith('/tmp/repo', 3);
+      expect(reserveImportedPlanStartId).toHaveBeenCalledWith('/tmp/preferred-workspace', 3);
       expect(writeImportedPlansToDbTransactionally).toHaveBeenCalledTimes(1);
       const pendingWrites = vi.mocked(writeImportedPlansToDbTransactionally).mock.calls[0]?.[1];
       expect(pendingWrites).toHaveLength(3);
@@ -597,7 +597,7 @@ describe('issue_import server helpers', () => {
       });
 
       expect(result).toEqual({ planUuid: 'uuid-parent-existing' });
-      expect(reserveImportedPlanStartId).toHaveBeenCalledWith('/tmp/repo', 1);
+      expect(reserveImportedPlanStartId).toHaveBeenCalledWith('/tmp/preferred-workspace', 1);
       const pendingWrites = vi.mocked(writeImportedPlansToDbTransactionally).mock.calls[0]?.[1];
       expect(pendingWrites).toHaveLength(3);
       expect(pendingWrites?.[0]?.plan).toMatchObject({
@@ -759,10 +759,11 @@ describe('issue_import server helpers', () => {
       const result = await createPlansFromIssue(7, parent, 'separate', selected);
 
       expect(result).toEqual({ planUuid: 'uuid-parent' });
-      expect(reserveImportedPlanStartId).toHaveBeenCalledWith('/tmp/repo', 2);
+      expect(reserveImportedPlanStartId).toHaveBeenCalledWith('/tmp/preferred-workspace', 2);
     });
 
     test('throws when project has no git root', async () => {
+      vi.mocked(getPreferredProjectGitRoot).mockReturnValue(null);
       vi.mocked(getProjectById).mockReturnValue({
         id: 7,
         name: 'repo',
@@ -1008,14 +1009,17 @@ describe('issue_import server helpers', () => {
       expect(result).toEqual({ planUuid: 'uuid-parent' });
       expect(reserveImportedPlanStartId).not.toHaveBeenCalled();
       // Only child is written, not parent
-      expect(writeImportedPlansToDbTransactionally).toHaveBeenCalledWith('/tmp/repo', [
-        expect.objectContaining({
-          plan: expect.objectContaining({
-            id: 101,
-            title: 'Child A Updated Title',
+      expect(writeImportedPlansToDbTransactionally).toHaveBeenCalledWith(
+        '/tmp/preferred-workspace',
+        [
+          expect.objectContaining({
+            plan: expect.objectContaining({
+              id: 101,
+              title: 'Child A Updated Title',
+            }),
           }),
-        }),
-      ]);
+        ]
+      );
     });
 
     test('creates new children when parent exists but children are new in separate mode', async () => {
@@ -1056,7 +1060,7 @@ describe('issue_import server helpers', () => {
 
       expect(result).toEqual({ planUuid: 'uuid-parent' });
       // Only 1 new plan (the child), since parent already exists
-      expect(reserveImportedPlanStartId).toHaveBeenCalledWith('/tmp/repo', 1);
+      expect(reserveImportedPlanStartId).toHaveBeenCalledWith('/tmp/preferred-workspace', 1);
       const pendingWrites = vi.mocked(writeImportedPlansToDbTransactionally).mock.calls[0]?.[1];
       expect(pendingWrites).toHaveLength(2); // child + parent
       const childWrite = pendingWrites?.find((w) => w.plan.id === 200);
@@ -1101,7 +1105,7 @@ describe('issue_import server helpers', () => {
       });
 
       // Only 1 new plan (the parent)
-      expect(reserveImportedPlanStartId).toHaveBeenCalledWith('/tmp/repo', 1);
+      expect(reserveImportedPlanStartId).toHaveBeenCalledWith('/tmp/preferred-workspace', 1);
       const pendingWrites = vi.mocked(writeImportedPlansToDbTransactionally).mock.calls[0]?.[1];
       expect(pendingWrites).toHaveLength(2); // existing child + new parent
       const parentWrite = pendingWrites?.find((w) => w.plan.id === 200);
@@ -1230,7 +1234,7 @@ describe('issue_import server helpers', () => {
       });
 
       expect(result).toEqual({ planUuid: 'uuid-new-child' });
-      expect(reserveImportedPlanStartId).toHaveBeenCalledWith('/tmp/repo', 1);
+      expect(reserveImportedPlanStartId).toHaveBeenCalledWith('/tmp/preferred-workspace', 1);
       expect(resolvePlanFromDb).not.toHaveBeenCalled();
       expect(createStubPlanFromIssue).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -1281,7 +1285,7 @@ describe('issue_import server helpers', () => {
 
       // Should create new plans, not match the merged parent
       expect(result).toEqual({ planUuid: 'uuid-parent-200' });
-      expect(reserveImportedPlanStartId).toHaveBeenCalledWith('/tmp/repo', 2);
+      expect(reserveImportedPlanStartId).toHaveBeenCalledWith('/tmp/preferred-workspace', 2);
       expect(resolvePlanFromDb).not.toHaveBeenCalled();
     });
 
@@ -1339,7 +1343,7 @@ describe('issue_import server helpers', () => {
 
       // Should update the dedicated plan, not the merged parent
       expect(result).toEqual({ planUuid: 'uuid-dedicated-child' });
-      expect(resolvePlanFromDb).toHaveBeenCalledWith('60', '/tmp/repo');
+      expect(resolvePlanFromDb).toHaveBeenCalledWith('60', '/tmp/preferred-workspace');
     });
   });
 

@@ -697,6 +697,10 @@ describe('session integration', () => {
     });
 
     expect(await sseReader.readEvent()).toMatchObject({
+      event: 'rate-limit:updated',
+    });
+
+    expect(await sseReader.readEvent()).toMatchObject({
       event: 'session:sync-complete',
       data: {},
     });
@@ -774,6 +778,10 @@ describe('session integration', () => {
     expect(initialEvent).toMatchObject({
       event: 'session:list',
       data: { sessions: [] },
+    });
+
+    expect(await sseReader.readEvent()).toMatchObject({
+      event: 'rate-limit:updated',
     });
 
     expect(await sseReader.readEvent()).toMatchObject({
@@ -952,6 +960,7 @@ describe('session integration', () => {
     const sseReader = createSseReader(reader!);
 
     expect(await sseReader.readEvent()).toMatchObject({ event: 'session:list' });
+    expect(await sseReader.readEvent()).toMatchObject({ event: 'rate-limit:updated' });
     expect(await sseReader.readEvent()).toMatchObject({ event: 'session:sync-complete' });
 
     manager.emitPrUpdate(['https://github.com/example/repo/pull/17'], [12]);

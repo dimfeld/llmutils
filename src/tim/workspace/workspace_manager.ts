@@ -574,8 +574,7 @@ async function buildJjStartDescription(
 async function checkoutWorkspaceBranch(
   workspacePath: string,
   branchName: string,
-  isJj: boolean,
-  planFilePath?: string
+  isJj: boolean
 ): Promise<{ success: boolean; error?: string }> {
   log(`Checking out branch "${branchName}" in workspace...`);
 
@@ -605,8 +604,6 @@ async function checkoutWorkspaceBranch(
         error: `Failed to check out branch "${branchName}" in workspace: ${newResult.stderr}`,
       };
     }
-
-    await ensureJjRevisionHasDescription(workspacePath, '@', planFilePath, branchName);
 
     const bookmarkResult = await spawnAndLogOutput(['jj', 'bookmark', 'set', branchName], {
       cwd: workspacePath,
@@ -712,7 +709,6 @@ async function createLocalWorkspaceBranch(
   baseBranch: string,
   branchName: string,
   isJj: boolean,
-  planFilePath: string | undefined,
   hasRemote: boolean | null,
   allowOffline: boolean,
   updateBaseFromRemote: boolean
@@ -731,12 +727,9 @@ async function createLocalWorkspaceBranch(
 
   log(`Creating new branch "${branchName}"...`);
   const createBranchResult = isJj
-    ? await (async () => {
-        await ensureJjRevisionHasDescription(workspacePath, '@', planFilePath, branchName);
-        return spawnAndLogOutput(['jj', 'bookmark', 'set', branchName], {
-          cwd: workspacePath,
-        });
-      })()
+    ? await spawnAndLogOutput(['jj', 'bookmark', 'set', branchName], {
+        cwd: workspacePath,
+      })
     : await spawnAndLogOutput(['git', 'checkout', '-b', branchName], {
         cwd: workspacePath,
       });
@@ -971,6 +964,7 @@ export async function createWorkspace(
   let checkedOutRemoteBranch = false;
   try {
     if (shouldCreateBranch) {
+      let copiedWorkspaceFetchSucceeded = false;
       if (cloneMethod === 'cp' || cloneMethod === 'mac-cow') {
         const fetchResult = await fetchInWorkspace(targetClonePath, isJj, hasRemote, allowOffline);
         if (!fetchResult.success) {
@@ -978,20 +972,74 @@ export async function createWorkspace(
           await fs.rm(targetClonePath, { recursive: true, force: true }).catch(() => {});
           return null;
         }
+        copiedWorkspaceFetchSucceeded = fetchResult.fetchSucceeded ?? false;
       }
 
       const remoteExists = await remoteBranchExists(targetClonePath, branchName, isJj);
-      const localExists = await branchExists(targetClonePath, branchName, isJj);
+      let localExists = await branchExists(targetClonePath, branchName, isJj);
+
+      // Delete stale local-only branches inherited from the primary workspace copy.
+      // Only safe when remote refs are fresh or there is no remote at all.
+      // In offline mode with a remote, the branch might legitimately exist only locally.
+      const canTrustRemoteRefs = copiedWorkspaceFetchSucceeded || hasRemote === false;
+      if (localExists && !remoteExists && canTrustRemoteRefs) {
+        const deleteResult = await deleteLocalBranch(targetClonePath, branchName, isJj);
+        if (!deleteResult.success) {
+          log(
+            deleteResult.error ??
+              `Failed to delete inherited local branch "${branchName}" in new workspace`
+          );
+          await fs.rm(targetClonePath, { recursive: true, force: true }).catch(() => {});
+          return null;
+        }
+        localExists = false;
+      }
+
       checkedOutRemoteBranch = remoteExists || localExists;
       let branchResult;
 
       if (remoteExists) {
-        branchResult = await checkoutWorkspaceBranch(
-          targetClonePath,
-          branchName,
-          isJj,
-          originalPlanFilePath
-        );
+        if (isJj) {
+          // For JJ with remote branches: align bookmark to remote version, then create working copy.
+          // Don't use checkoutWorkspaceBranch — it moves the bookmark to @.
+          const trackResult = await spawnAndLogOutput(['jj', 'bookmark', 'track', branchName], {
+            cwd: targetClonePath,
+            quiet: true,
+          });
+          if (
+            trackResult.exitCode !== 0 &&
+            !isMissingJjBookmarkError(`${trackResult.stderr}\n${trackResult.stdout}`.trim())
+          ) {
+            branchResult = {
+              success: false,
+              error: `Failed to track bookmark "${branchName}": ${trackResult.stderr}`,
+            };
+          } else {
+            const setResult = await spawnAndLogOutput(
+              ['jj', 'bookmark', 'set', branchName, '-r', `${branchName}@origin`],
+              { cwd: targetClonePath, quiet: true }
+            );
+            if (setResult.exitCode !== 0) {
+              branchResult = {
+                success: false,
+                error: `Failed to set bookmark "${branchName}" to remote version: ${setResult.stderr}`,
+              };
+            } else {
+              const newResult = await spawnAndLogOutput(['jj', 'new', branchName], {
+                cwd: targetClonePath,
+              });
+              branchResult =
+                newResult.exitCode === 0
+                  ? { success: true }
+                  : {
+                      success: false,
+                      error: `Failed to check out existing bookmark "${branchName}": ${newResult.stderr}`,
+                    };
+            }
+          }
+        } else {
+          branchResult = await checkoutWorkspaceBranch(targetClonePath, branchName, isJj);
+        }
         if (branchResult.success) {
           const fastForwarded = await fastForwardWorkspaceBranchFromRemote(
             targetClonePath,
@@ -1006,19 +1054,13 @@ export async function createWorkspace(
         }
       } else {
         if (localExists) {
-          branchResult = await checkoutWorkspaceBranch(
-            targetClonePath,
-            branchName,
-            isJj,
-            originalPlanFilePath
-          );
+          branchResult = await checkoutWorkspaceBranch(targetClonePath, branchName, isJj);
         } else {
           branchResult = await createLocalWorkspaceBranch(
             targetClonePath,
             options?.fromBranch ?? (await getTrunkBranch(targetClonePath)),
             branchName,
             isJj,
-            originalPlanFilePath,
             hasRemote,
             allowOffline,
             false
@@ -1234,6 +1276,10 @@ async function remoteBranchExists(
     }
     const lines = result.stdout.split('\n');
     for (const line of lines) {
+      // Skip lines indicating the bookmark is not yet on the remote
+      if (line.includes('(not created yet)')) {
+        continue;
+      }
       const name = line.trimStart().split(/[\s:]/)[0];
       if (name === `${branchName}@${remoteName}`) {
         return true;
@@ -1387,10 +1433,6 @@ function isMissingJjBookmarkError(message: string): boolean {
   return /No such bookmark|Revision .* doesn't exist/i.test(message);
 }
 
-function isMissingLocalBranchError(message: string): boolean {
-  return /error: branch .* not found/i.test(message) || isMissingJjBookmarkError(message);
-}
-
 /**
  * Options for preparing an existing workspace for reuse.
  */
@@ -1399,23 +1441,12 @@ export interface PrepareWorkspaceOptions {
   baseBranch?: string;
   /** Name of new branch to create */
   branchName: string;
-  /** Plan file used to derive a fallback jj revision description when needed */
-  planFilePath?: string;
   /** Whether to create a new branch (default: true) */
   createBranch?: boolean;
   /** Whether to log when branch creation is intentionally skipped (default: true) */
   logSkippedBranchCreation?: boolean;
   /** Whether to force the checked-out base branch to the fetched remote tip when available */
   updateBaseFromRemote?: boolean;
-  /** When true, check if branchName exists locally and reuse it instead of creating new.
-   *  Also checks remote when finding unique names for new branches. */
-  reuseExistingBranch?: boolean;
-  /** Path to the primary/current workspace where branch name decisions should be made.
-   *  When provided, branch existence checks and unique name finding happen here,
-   *  and reused branches may be pushed from here before being fetched in workspacePath.
-   *  New branches are still created locally in workspacePath. When omitted,
-   *  all operations happen in workspacePath directly. */
-  primaryWorkspacePath?: string;
 }
 
 /**
@@ -1426,7 +1457,7 @@ export interface PrepareWorkspaceResult {
   success: boolean;
   /** Error message if operation failed */
   error?: string;
-  /** The actual branch name used (may include auto-suffix) */
+  /** The actual branch name used */
   actualBranchName?: string;
   /** Whether an existing local branch was reused (vs creating a new one) */
   reusedExistingBranch?: boolean;
@@ -1442,8 +1473,7 @@ async function detectIsJj(dirPath: string): Promise<boolean> {
 }
 
 /**
- * Fetch latest from remote in a workspace. Used to sync the workspace after
- * branch decisions are made in the primary workspace.
+ * Fetch latest from remote in a workspace.
  */
 async function fetchInWorkspace(
   workspacePath: string,
@@ -1491,41 +1521,88 @@ async function checkoutAndUpdateBaseBranch(
   updateFromRemote: boolean
 ): Promise<{ success: boolean; error?: string }> {
   log(`Checking out base branch "${baseBranch}"...`);
-  const checkoutResult = isJj
-    ? await spawnAndLogOutput(['jj', 'new', baseBranch], { cwd: workspacePath })
-    : await spawnAndLogOutput(['git', 'checkout', baseBranch], { cwd: workspacePath });
 
-  if (checkoutResult.exitCode !== 0) {
-    return {
-      success: false,
-      error: `Failed to checkout base branch "${baseBranch}": ${checkoutResult.stderr}`,
-    };
-  }
+  if (isJj) {
+    // For JJ: track the remote bookmark first so that a local bookmark exists
+    // before `jj new`. Without this, parent-derived base branches that exist
+    // only as `baseBranch@origin` would fail to resolve.
+    if (updateFromRemote && hasRemote !== false) {
+      log(`Updating base branch "${baseBranch}" from remote...`);
+      const trackResult = await spawnAndLogOutput(
+        ['jj', 'bookmark', 'track', baseBranch, '--remote', 'origin'],
+        { cwd: workspacePath, quiet: true }
+      );
+      const trackOutput = `${trackResult.stderr}\n${trackResult.stdout}`.trim();
+      const remoteBookmarkMissing =
+        trackResult.exitCode !== 0 && isMissingJjBookmarkError(trackOutput);
 
-  if (updateFromRemote && hasRemote !== false) {
-    log(`Updating base branch "${baseBranch}" from remote...`);
-    const updateBaseResult = isJj
-      ? await spawnAndLogOutput(['jj', 'bookmark', 'track', baseBranch, '--remote', 'origin'], {
-          cwd: workspacePath,
-          quiet: true,
-        })
-      : await spawnAndLogOutput(['git', 'pull', '--ff-only', 'origin', baseBranch], {
-          cwd: workspacePath,
-        });
-
-    if (updateBaseResult.exitCode !== 0) {
-      const updateOutput = `${updateBaseResult.stderr}\n${updateBaseResult.stdout}`.trim();
-      if (isJj && isMissingJjBookmarkError(updateOutput)) {
+      if (trackResult.exitCode !== 0 && !remoteBookmarkMissing) {
+        if (allowOffline) {
+          log(
+            `Warning: Failed to update base branch from remote (continuing in offline mode): ${trackResult.stderr}`
+          );
+        } else {
+          return {
+            success: false,
+            error: `Failed to update base branch "${baseBranch}" from remote: ${trackResult.stderr}`,
+          };
+        }
+      } else if (remoteBookmarkMissing) {
         log(`Remote bookmark "${baseBranch}" not found; using local base branch.`);
-      } else if (allowOffline) {
-        log(
-          `Warning: Failed to update base branch from remote (continuing in offline mode): ${updateBaseResult.stderr}`
-        );
       } else {
-        return {
-          success: false,
-          error: `Failed to update base branch "${baseBranch}" from remote: ${updateBaseResult.stderr}`,
-        };
+        // Align local bookmark to the remote version. This resolves conflicts
+        // when the local bookmark has diverged (e.g. after fetch advanced the
+        // remote while the local copy was stale).
+        const setResult = await spawnAndLogOutput(
+          ['jj', 'bookmark', 'set', baseBranch, '-r', `${baseBranch}@origin`],
+          { cwd: workspacePath, quiet: true }
+        );
+        if (setResult.exitCode !== 0) {
+          return {
+            success: false,
+            error: `Failed to align base branch "${baseBranch}" to remote: ${setResult.stderr}`,
+          };
+        }
+      }
+    }
+
+    const checkoutResult = await spawnAndLogOutput(['jj', 'new', baseBranch], {
+      cwd: workspacePath,
+    });
+    if (checkoutResult.exitCode !== 0) {
+      return {
+        success: false,
+        error: `Failed to checkout base branch "${baseBranch}": ${checkoutResult.stderr}`,
+      };
+    }
+  } else {
+    const checkoutResult = await spawnAndLogOutput(['git', 'checkout', baseBranch], {
+      cwd: workspacePath,
+    });
+    if (checkoutResult.exitCode !== 0) {
+      return {
+        success: false,
+        error: `Failed to checkout base branch "${baseBranch}": ${checkoutResult.stderr}`,
+      };
+    }
+
+    if (updateFromRemote && hasRemote !== false) {
+      log(`Updating base branch "${baseBranch}" from remote...`);
+      const updateBaseResult = await spawnAndLogOutput(
+        ['git', 'pull', '--ff-only', 'origin', baseBranch],
+        { cwd: workspacePath }
+      );
+      if (updateBaseResult.exitCode !== 0) {
+        if (allowOffline) {
+          log(
+            `Warning: Failed to update base branch from remote (continuing in offline mode): ${updateBaseResult.stderr}`
+          );
+        } else {
+          return {
+            success: false,
+            error: `Failed to update base branch "${baseBranch}" from remote: ${updateBaseResult.stderr}`,
+          };
+        }
       }
     }
   }
@@ -1537,21 +1614,13 @@ async function checkoutAndUpdateBaseBranch(
  * Prepares an existing workspace for reuse by fetching, checking out base branch,
  * and creating a new working branch.
  *
- * When primaryWorkspacePath is provided, branch name decisions (existence checks,
- * unique name finding) happen there, and reused branches may be pushed from primary
- * before being fetched in workspacePath. New branches are created locally in
- * workspacePath. When primaryWorkspacePath is omitted, all operations happen directly
- * in workspacePath.
- *
  * This function:
  * 1. Detects VCS type (git vs jj)
- * 2. Fetches latest from remote in the primary workspace
- * 2a. If reuseExistingBranch: checks if branchName exists in primary, and if so
- *     fetches+checks it out in workspacePath + pulls latest
+ * 2. Fetches latest from remote in the execution workspace
  * 3. Determines the base branch
- * 4. Finds a unique branch name in the primary workspace
- * 5. Creates the branch locally in workspacePath or checks out an existing remote branch
- * 6. Checks out the branch in workspacePath
+ * 4. Deletes stale local-only branches (local exists, remote missing) when remote refs are fresh
+ * 5. Reuses existing remote/local branch when available
+ * 6. Creates the branch locally in workspacePath when it doesn't exist
  *
  * @param workspacePath - Absolute path to the workspace
  * @param options - Options including base branch and new branch name
@@ -1561,13 +1630,7 @@ export async function prepareExistingWorkspace(
   workspacePath: string,
   options: PrepareWorkspaceOptions
 ): Promise<PrepareWorkspaceResult> {
-  const primaryPath = options.primaryWorkspacePath ?? workspacePath;
-  const hasSeparatePrimary = primaryPath !== workspacePath;
-
-  // Detect VCS type for each path — they may differ between primary and workspace
   const workspaceIsJj = await detectIsJj(workspacePath);
-  const primaryIsJj = hasSeparatePrimary ? await detectIsJj(primaryPath) : workspaceIsJj;
-
   const allowOffline = process.env.ALLOW_OFFLINE === 'true' || process.env.ALLOW_OFFLINE === '1';
 
   const logMissingRemote = () => {
@@ -1578,18 +1641,18 @@ export async function prepareExistingWorkspace(
     return /no such remote|no remotes configured|unknown remote/i.test(message);
   };
 
-  // Step 1: Fetch latest from remote in the primary workspace (for branch name decisions)
+  // Step 1: Fetch latest from remote in the execution workspace
   let hasRemote: boolean | null = null;
-  if (primaryIsJj) {
+  if (workspaceIsJj) {
     const remoteList = await spawnAndLogOutput(['jj', 'git', 'remote', 'list'], {
-      cwd: primaryPath,
+      cwd: workspacePath,
     });
     if (remoteList.exitCode === 0) {
       hasRemote = remoteList.stdout.trim().length > 0;
     }
   } else {
     const remoteCheck = await spawnAndLogOutput(['git', 'remote', 'get-url', 'origin'], {
-      cwd: primaryPath,
+      cwd: workspacePath,
     });
     hasRemote = remoteCheck.exitCode === 0;
   }
@@ -1601,9 +1664,9 @@ export async function prepareExistingWorkspace(
     logMissingRemote();
   } else {
     log('Fetching latest changes from remote...');
-    const fetchResult = primaryIsJj
-      ? await spawnAndLogOutput(['jj', 'git', 'fetch'], { cwd: primaryPath })
-      : await spawnAndLogOutput(['git', 'fetch', 'origin'], { cwd: primaryPath });
+    const fetchResult = workspaceIsJj
+      ? await spawnAndLogOutput(['jj', 'git', 'fetch'], { cwd: workspacePath })
+      : await spawnAndLogOutput(['git', 'fetch', 'origin'], { cwd: workspacePath });
 
     if (fetchResult.exitCode !== 0) {
       const fetchOutput = `${fetchResult.stderr}\n${fetchResult.stdout}`.trim();
@@ -1627,158 +1690,13 @@ export async function prepareExistingWorkspace(
   const shouldCreateBranch = options.createBranch ?? true;
 
   // Determine base branch early so stale-branch cleanup can restore to it
-  const baseBranch = options.baseBranch || (await getTrunkBranch(primaryPath));
-
-  // Step 2: If reuseExistingBranch is enabled, check if the plan branch already exists
-  // locally in the primary workspace or on the remote
-  if (options.reuseExistingBranch && shouldCreateBranch) {
-    const localExists = await branchExists(primaryPath, options.branchName, primaryIsJj);
-    const remoteExists = await remoteBranchExists(primaryPath, options.branchName, primaryIsJj);
-    const remoteOnlyExists = !localExists && remoteExists;
-    const staleLocalOnlyBranch = localExists && !remoteExists && fetchSucceeded;
-
-    if (staleLocalOnlyBranch) {
-      log(
-        `Branch "${options.branchName}" exists locally but not on remote; deleting stale branch and recreating from base`
-      );
-
-      // Use undefined for restoreBranch to fall back to getTrunkBranch — baseBranch may
-      // not exist yet in the execution workspace if it hasn't been fetched.
-      const deleteResult = await deleteLocalBranch(
-        workspacePath,
-        options.branchName,
-        workspaceIsJj
-      );
-      if (
-        !deleteResult.success &&
-        !(hasSeparatePrimary && isMissingLocalBranchError(deleteResult.error ?? ''))
-      ) {
-        return {
-          success: false,
-          error: `Failed to delete stale branch "${options.branchName}": ${deleteResult.error ?? 'unknown error'}`,
-        };
-      }
-    } else if (localExists || remoteOnlyExists) {
-      log(
-        `Found existing branch "${options.branchName}", checking out and pulling latest in workspace...`
-      );
-
-      // Push the branch from primary so the remote has the latest version,
-      // then fetch in the workspace so it's available there.
-      if (hasSeparatePrimary && hasRemote !== false && localExists) {
-        log(`Pushing branch "${options.branchName}" from primary workspace...`);
-        const pushResult = primaryIsJj
-          ? await spawnAndLogOutput(['jj', 'git', 'push', '--bookmark', options.branchName], {
-              cwd: primaryPath,
-            })
-          : await spawnAndLogOutput(['git', 'push', 'origin', options.branchName], {
-              cwd: primaryPath,
-            });
-        if (pushResult.exitCode !== 0) {
-          log(
-            `Note: Could not push "${options.branchName}" from primary (may not exist remotely yet): ${pushResult.stderr}`
-          );
-        }
-        const fetchResult = await fetchInWorkspace(
-          workspacePath,
-          workspaceIsJj,
-          hasRemote,
-          allowOffline
-        );
-        if (!fetchResult.success) {
-          return { success: false, error: fetchResult.error };
-        }
-      } else if (hasSeparatePrimary) {
-        const fetchResult = await fetchInWorkspace(
-          workspacePath,
-          workspaceIsJj,
-          hasRemote,
-          allowOffline
-        );
-        if (!fetchResult.success) {
-          return { success: false, error: fetchResult.error };
-        }
-      }
-
-      if (workspaceIsJj) {
-        // Track remote version if it exists
-        await spawnAndLogOutput(['jj', 'bookmark', 'track', options.branchName], {
-          cwd: workspacePath,
-          quiet: true,
-        });
-
-        // In case the bookmark is conflicted, set it to the origin version
-        await spawnAndLogOutput(
-          ['jj', 'bookmark', 'set', options.branchName, '-r', `${options.branchName}@origin`],
-          {
-            cwd: workspacePath,
-            quiet: true,
-          }
-        );
-
-        const editResult = await spawnAndLogOutput(['jj', 'new', options.branchName], {
-          cwd: workspacePath,
-        });
-        if (editResult.exitCode !== 0) {
-          return {
-            success: false,
-            error: `Failed to check out existing bookmark "${options.branchName}": ${editResult.stderr}`,
-          };
-        }
-      } else {
-        const checkoutResult = await spawnAndLogOutput(['git', 'checkout', options.branchName], {
-          cwd: workspacePath,
-        });
-        if (checkoutResult.exitCode !== 0) {
-          return {
-            success: false,
-            error: `Failed to check out existing branch "${options.branchName}": ${checkoutResult.stderr}`,
-          };
-        }
-
-        if (
-          hasRemote !== false &&
-          (await remoteBranchExists(workspacePath, options.branchName, workspaceIsJj))
-        ) {
-          const syncResult = await syncWorkspaceBranchFromRemote(
-            workspacePath,
-            options.branchName,
-            workspaceIsJj
-          );
-          if (!syncResult.success) {
-            return syncResult;
-          }
-        }
-      }
-
-      log(`Successfully prepared workspace with existing branch "${options.branchName}"`);
-      return {
-        success: true,
-        actualBranchName: options.branchName,
-        reusedExistingBranch: true,
-      };
-    }
-
-    // Branch doesn't exist locally -- fall through to create a new branch
-  }
+  const baseBranch = options.baseBranch || (await getTrunkBranch(workspacePath));
 
   // Step 3: Log the base branch
   log(`Using base branch: ${baseBranch}`);
 
   if (!shouldCreateBranch) {
     // When not creating a branch, just checkout the base in the workspace directly
-    if (hasSeparatePrimary) {
-      const fetchResult = await fetchInWorkspace(
-        workspacePath,
-        workspaceIsJj,
-        hasRemote,
-        allowOffline
-      );
-      if (!fetchResult.success) {
-        return { success: false, error: fetchResult.error };
-      }
-    }
-
     const baseResult = await checkoutAndUpdateBaseBranch(
       workspacePath,
       baseBranch,
@@ -1800,130 +1718,77 @@ export async function prepareExistingWorkspace(
     };
   }
 
-  // Step 4: Find a unique branch name in the primary workspace.
-  // When reuseExistingBranch is NOT set and we have a separate primary workspace,
-  // also check remote refs here to avoid collisions with branches that this workspace
-  // would later push to origin. When reuseExistingBranch is set, skip remote checks
-  // here because branch existence was already handled earlier.
-  if (!hasSeparatePrimary && fetchSucceeded) {
-    const localExists = await branchExists(primaryPath, options.branchName, primaryIsJj);
-    if (localExists && !(await remoteBranchExists(primaryPath, options.branchName, primaryIsJj))) {
-      log(
-        `Branch "${options.branchName}" exists locally but not on remote; deleting stale branch and recreating from base`
-      );
-      const deleteResult = await deleteLocalBranch(
-        primaryPath,
-        options.branchName,
-        primaryIsJj,
-        baseBranch
-      );
-      if (!deleteResult.success) {
-        return {
-          success: false,
-          error: `Failed to delete stale branch "${options.branchName}": ${deleteResult.error ?? 'unknown error'}`,
-        };
-      }
+  const actualBranchName = options.branchName;
+  let localExists = await branchExists(workspacePath, actualBranchName, workspaceIsJj);
+  let remoteExists = await remoteBranchExists(workspacePath, actualBranchName, workspaceIsJj);
+
+  if (localExists && !remoteExists && fetchSucceeded) {
+    log(
+      `Branch "${actualBranchName}" exists locally but not on remote; deleting stale branch and recreating from base`
+    );
+    const deleteResult = await deleteLocalBranch(
+      workspacePath,
+      actualBranchName,
+      workspaceIsJj,
+      baseBranch
+    );
+    if (!deleteResult.success) {
+      return {
+        success: false,
+        error: `Failed to delete stale branch "${actualBranchName}": ${deleteResult.error ?? 'unknown error'}`,
+      };
     }
+    localExists = false;
   }
 
-  let actualBranchName = hasSeparatePrimary
-    ? !options.reuseExistingBranch
-      ? await findUniqueRemoteBranchName(primaryPath, options.branchName, primaryIsJj)
-      : options.branchName
-    : await findUniqueBranchName(primaryPath, options.branchName, primaryIsJj);
-
-  // Step 5: For a separate workspace, fetch and check if the branch already exists on
-  // the remote. If it does, check it out. Otherwise, create a new local branch from
-  // the base branch.
-  if (hasSeparatePrimary) {
-    const fetchResult = await fetchInWorkspace(
-      workspacePath,
-      workspaceIsJj,
-      hasRemote,
-      allowOffline
-    );
-    if (!fetchResult.success) {
-      return { success: false, error: fetchResult.error };
-    }
-    const workspaceFetchSucceeded = fetchResult.fetchSucceeded ?? false;
-
-    const workspaceLocalExists = await branchExists(workspacePath, actualBranchName, workspaceIsJj);
-    if (workspaceLocalExists) {
-      const workspaceRemoteExists = await remoteBranchExists(
+  if (localExists || remoteExists) {
+    if (remoteExists && workspaceIsJj) {
+      // For JJ with remote branches: align bookmark to remote version, then create working copy.
+      // Don't use checkoutWorkspaceBranch here — it moves the bookmark to @ which would
+      // create a synthetic empty revision ahead of the remote commit.
+      const trackResult = await spawnAndLogOutput(['jj', 'bookmark', 'track', actualBranchName], {
+        cwd: workspacePath,
+        quiet: true,
+      });
+      if (
+        trackResult.exitCode !== 0 &&
+        !isMissingJjBookmarkError(`${trackResult.stderr}\n${trackResult.stdout}`.trim())
+      ) {
+        return {
+          success: false,
+          error: `Failed to track bookmark "${actualBranchName}": ${trackResult.stderr}`,
+        };
+      }
+      const setResult = await spawnAndLogOutput(
+        ['jj', 'bookmark', 'set', actualBranchName, '-r', `${actualBranchName}@origin`],
+        { cwd: workspacePath, quiet: true }
+      );
+      if (setResult.exitCode !== 0) {
+        return {
+          success: false,
+          error: `Failed to set bookmark "${actualBranchName}" to remote version: ${setResult.stderr}`,
+        };
+      }
+      const newResult = await spawnAndLogOutput(['jj', 'new', actualBranchName], {
+        cwd: workspacePath,
+      });
+      if (newResult.exitCode !== 0) {
+        return {
+          success: false,
+          error: `Failed to check out existing bookmark "${actualBranchName}": ${newResult.stderr}`,
+        };
+      }
+    } else {
+      const branchResult = await checkoutWorkspaceBranch(
         workspacePath,
         actualBranchName,
         workspaceIsJj
       );
-
-      if (!workspaceRemoteExists && workspaceFetchSucceeded) {
-        log(
-          `Branch "${actualBranchName}" exists locally in workspace but not on remote; deleting stale branch and recreating from base`
-        );
-        const deleteResult = await deleteLocalBranch(
-          workspacePath,
-          actualBranchName,
-          workspaceIsJj,
-          baseBranch
-        );
-        if (!deleteResult.success) {
-          return {
-            success: false,
-            error: `Failed to delete stale branch "${actualBranchName}": ${deleteResult.error ?? 'unknown error'}`,
-          };
-        }
-      } else if (options.reuseExistingBranch) {
-        const branchResult = await checkoutWorkspaceBranch(
-          workspacePath,
-          actualBranchName,
-          workspaceIsJj,
-          options.planFilePath
-        );
-
-        if (!branchResult.success) {
-          return branchResult;
-        }
-
-        if (workspaceRemoteExists) {
-          const syncResult = await syncWorkspaceBranchFromRemote(
-            workspacePath,
-            actualBranchName,
-            workspaceIsJj
-          );
-          if (!syncResult.success) {
-            return syncResult;
-          }
-        }
-
-        log(`Successfully prepared workspace with existing local branch "${actualBranchName}"`);
-        return {
-          success: true,
-          actualBranchName,
-          reusedExistingBranch: true,
-        };
-      } else {
-        actualBranchName = await findUniqueBranchName(
-          workspacePath,
-          actualBranchName,
-          workspaceIsJj,
-          hasSeparatePrimary ? { checkRemote: true } : undefined
-        );
+      if (!branchResult.success) {
+        return branchResult;
       }
-    }
 
-    if (options.reuseExistingBranch) {
-      const remoteExists = await remoteBranchExists(workspacePath, actualBranchName, workspaceIsJj);
       if (remoteExists) {
-        const branchResult = await checkoutWorkspaceBranch(
-          workspacePath,
-          actualBranchName,
-          workspaceIsJj,
-          options.planFilePath
-        );
-
-        if (!branchResult.success) {
-          return branchResult;
-        }
-
         const syncResult = await syncWorkspaceBranchFromRemote(
           workspacePath,
           actualBranchName,
@@ -1932,15 +1797,15 @@ export async function prepareExistingWorkspace(
         if (!syncResult.success) {
           return syncResult;
         }
-
-        log(`Successfully prepared workspace with branch "${actualBranchName}"`);
-        return {
-          success: true,
-          actualBranchName,
-          reusedExistingBranch: true,
-        };
       }
     }
+
+    log(`Successfully prepared workspace with existing branch "${actualBranchName}"`);
+    return {
+      success: true,
+      actualBranchName,
+      reusedExistingBranch: true,
+    };
   }
 
   // Create the branch locally in the workspace
@@ -1949,7 +1814,6 @@ export async function prepareExistingWorkspace(
     baseBranch,
     actualBranchName,
     workspaceIsJj,
-    options.planFilePath,
     hasRemote,
     allowOffline,
     options.updateBaseFromRemote ?? true

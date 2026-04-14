@@ -1,3 +1,4 @@
+- When duplicate logic appears across multiple functions (e.g., branch setup in both `prepareExistingWorkspace` and `createWorkspace`), verify that error handling and edge cases are covered consistently in all locations — it's common for fixes applied to one copy to be missed in the other.
 - When reviewing Svelte code, be sure to load the svelte-core-bestpractices skill.
 - When reviewing SvelteKit code, you should flag API +server.ts endpoints as anti-patterns, unless you need SSE event streaming. SvelteKit
   remote functions using `form`, `command`, and `query` are preferred otherwise.

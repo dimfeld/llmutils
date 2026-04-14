@@ -1775,7 +1775,7 @@ describe('createWorkspace', () => {
     expect(gitCheckoutCalls).toHaveLength(0);
   });
 
-  test('createWorkspace adds a fallback jj description before moving the workspace bookmark to @', async () => {
+  test('createWorkspace sets the workspace bookmark to @ in a jj repo', async () => {
     const taskId = 'task-jj-workspace-description';
     const sourceDirectory = path.join(testTempDir, 'jj-source-description');
     const cloneLocation = path.join(testTempDir, 'clones-description');
@@ -1827,20 +1827,12 @@ describe('createWorkspace', () => {
 
     expect(result).not.toBeNull();
     expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
-      ['jj', 'log', '-r', '@', '--no-graph', '-T', 'description'],
-      { cwd: targetClonePath, quiet: true },
-    ]);
-    expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
-      ['jj', 'describe', '-r', '@', '-m', 'start plan 456: Prepare workspace description'],
-      { cwd: targetClonePath },
-    ]);
-    expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
       ['jj', 'bookmark', 'set', 'jj-feature-description'],
       { cwd: targetClonePath },
     ]);
   });
 
-  test('createWorkspace reuses inherited local-only jj bookmarks without requiring a remote bookmark', async () => {
+  test('createWorkspace deletes inherited local-only jj bookmarks and recreates from base', async () => {
     const taskId = 'task-jj-local-only-bookmark';
     const sourceDirectory = path.join(testTempDir, 'jj-source-local-only-bookmark');
     const cloneLocation = path.join(testTempDir, 'clones');
@@ -1885,10 +1877,6 @@ describe('createWorkspace', () => {
         return { exitCode: 0, stdout: `${taskId}: abc123`, stderr: '' };
       }
 
-      if (cmd[0] === 'jj' && cmd[1] === 'bookmark' && cmd[2] === 'track') {
-        return { exitCode: 1, stdout: '', stderr: `No such bookmark: ${taskId}@origin` };
-      }
-
       if (cmd[0] === 'jj' && cmd[1] === 'log') {
         return { exitCode: 0, stdout: 'existing description', stderr: '' };
       }
@@ -1901,22 +1889,276 @@ describe('createWorkspace', () => {
     });
 
     expect(result).not.toBeNull();
-    expect(result?.checkedOutRemoteBranch).toBe(true);
+    // Local-only branch was deleted and recreated, so it's a new branch
+    expect(result?.checkedOutRemoteBranch).toBe(false);
+    // Should delete the stale local bookmark
     expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
-      ['jj', 'bookmark', 'track', taskId],
+      ['jj', 'bookmark', 'delete', taskId],
       { cwd: targetClonePath, quiet: true },
     ]);
-    expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
-      ['jj', 'new', taskId],
-      { cwd: targetClonePath },
-    ]);
+    // Should create a new bookmark from base
     expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
       ['jj', 'bookmark', 'set', taskId],
       { cwd: targetClonePath },
     ]);
   });
 
-  test('prepareExistingWorkspace adds a fallback jj description before moving the bookmark to @', async () => {
+  test('createWorkspace aborts when tracking an existing remote jj bookmark fails', async () => {
+    const taskId = 'task-jj-track-fails';
+    const sourceDirectory = path.join(testTempDir, 'jj-source-track-fails');
+    const cloneLocation = path.join(testTempDir, 'clones');
+    const targetClonePath = path.join(cloneLocation, 'jj-source-track-fails-task-jj-track-fails');
+
+    await fs.mkdir(path.join(sourceDirectory, '.jj'), { recursive: true });
+    await fs.writeFile(path.join(sourceDirectory, 'README.md'), 'jj content');
+
+    const config: TimConfig = {
+      workspaceCreation: {
+        cloneMethod: 'cp',
+        sourceDirectory,
+        cloneLocation,
+      },
+    };
+
+    mockSpawnAndLogOutput.mockImplementation(async (cmd: string[]) => {
+      if (cmd[0] === 'git' && cmd[1] === 'ls-files') {
+        return { exitCode: 0, stdout: 'README.md\u0000', stderr: '' };
+      }
+
+      if (cmd[0] === 'git' && cmd[1] === 'init') {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (cmd[0] === 'jj' && cmd[1] === 'git' && cmd[2] === 'remote' && cmd[3] === 'list') {
+        return { exitCode: 0, stdout: 'origin /tmp/remote\n', stderr: '' };
+      }
+
+      if (cmd[0] === 'jj' && cmd[1] === 'git' && cmd[2] === 'fetch') {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (cmd[0] === 'jj' && cmd[1] === 'bookmark' && cmd[2] === 'list' && cmd[3] === '--all') {
+        return { exitCode: 0, stdout: `${taskId}@origin: abc123`, stderr: '' };
+      }
+
+      if (cmd[0] === 'jj' && cmd[1] === 'bookmark' && cmd[2] === 'list' && cmd[3] === taskId) {
+        return { exitCode: 0, stdout: `${taskId}: abc123`, stderr: '' };
+      }
+
+      if (cmd[0] === 'jj' && cmd[1] === 'bookmark' && cmd[2] === 'track' && cmd[3] === taskId) {
+        return { exitCode: 1, stdout: '', stderr: 'track failed' };
+      }
+
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config, {
+      createBranch: true,
+    });
+
+    expect(result).toBeNull();
+    await expect(fs.access(targetClonePath)).rejects.toThrow();
+  });
+
+  test('createWorkspace aborts when setting an existing remote jj bookmark fails', async () => {
+    const taskId = 'task-jj-set-fails';
+    const sourceDirectory = path.join(testTempDir, 'jj-source-set-fails');
+    const cloneLocation = path.join(testTempDir, 'clones');
+    const targetClonePath = path.join(cloneLocation, 'jj-source-set-fails-task-jj-set-fails');
+
+    await fs.mkdir(path.join(sourceDirectory, '.jj'), { recursive: true });
+    await fs.writeFile(path.join(sourceDirectory, 'README.md'), 'jj content');
+
+    const config: TimConfig = {
+      workspaceCreation: {
+        cloneMethod: 'cp',
+        sourceDirectory,
+        cloneLocation,
+      },
+    };
+
+    mockSpawnAndLogOutput.mockImplementation(async (cmd: string[]) => {
+      if (cmd[0] === 'git' && cmd[1] === 'ls-files') {
+        return { exitCode: 0, stdout: 'README.md\u0000', stderr: '' };
+      }
+
+      if (cmd[0] === 'git' && cmd[1] === 'init') {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (cmd[0] === 'jj' && cmd[1] === 'git' && cmd[2] === 'remote' && cmd[3] === 'list') {
+        return { exitCode: 0, stdout: 'origin /tmp/remote\n', stderr: '' };
+      }
+
+      if (cmd[0] === 'jj' && cmd[1] === 'git' && cmd[2] === 'fetch') {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (cmd[0] === 'jj' && cmd[1] === 'bookmark' && cmd[2] === 'list' && cmd[3] === '--all') {
+        return { exitCode: 0, stdout: `${taskId}@origin: abc123`, stderr: '' };
+      }
+
+      if (cmd[0] === 'jj' && cmd[1] === 'bookmark' && cmd[2] === 'list' && cmd[3] === taskId) {
+        return { exitCode: 0, stdout: `${taskId}: abc123`, stderr: '' };
+      }
+
+      if (cmd[0] === 'jj' && cmd[1] === 'bookmark' && cmd[2] === 'track' && cmd[3] === taskId) {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (
+        cmd[0] === 'jj' &&
+        cmd[1] === 'bookmark' &&
+        cmd[2] === 'set' &&
+        cmd[3] === taskId &&
+        cmd[4] === '-r'
+      ) {
+        return { exitCode: 1, stdout: '', stderr: 'set failed' };
+      }
+
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config, {
+      createBranch: true,
+    });
+
+    expect(result).toBeNull();
+    await expect(fs.access(targetClonePath)).rejects.toThrow();
+  });
+
+  test('createWorkspace aborts when creating a working copy from an existing remote jj bookmark fails', async () => {
+    const taskId = 'task-jj-new-fails';
+    const sourceDirectory = path.join(testTempDir, 'jj-source-new-fails');
+    const cloneLocation = path.join(testTempDir, 'clones');
+    const targetClonePath = path.join(cloneLocation, 'jj-source-new-fails-task-jj-new-fails');
+
+    await fs.mkdir(path.join(sourceDirectory, '.jj'), { recursive: true });
+    await fs.writeFile(path.join(sourceDirectory, 'README.md'), 'jj content');
+
+    const config: TimConfig = {
+      workspaceCreation: {
+        cloneMethod: 'cp',
+        sourceDirectory,
+        cloneLocation,
+      },
+    };
+
+    mockSpawnAndLogOutput.mockImplementation(async (cmd: string[]) => {
+      if (cmd[0] === 'git' && cmd[1] === 'ls-files') {
+        return { exitCode: 0, stdout: 'README.md\u0000', stderr: '' };
+      }
+
+      if (cmd[0] === 'git' && cmd[1] === 'init') {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (cmd[0] === 'jj' && cmd[1] === 'git' && cmd[2] === 'remote' && cmd[3] === 'list') {
+        return { exitCode: 0, stdout: 'origin /tmp/remote\n', stderr: '' };
+      }
+
+      if (cmd[0] === 'jj' && cmd[1] === 'git' && cmd[2] === 'fetch') {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (cmd[0] === 'jj' && cmd[1] === 'bookmark' && cmd[2] === 'list' && cmd[3] === '--all') {
+        return { exitCode: 0, stdout: `${taskId}@origin: abc123`, stderr: '' };
+      }
+
+      if (cmd[0] === 'jj' && cmd[1] === 'bookmark' && cmd[2] === 'list' && cmd[3] === taskId) {
+        return { exitCode: 0, stdout: `${taskId}: abc123`, stderr: '' };
+      }
+
+      if (cmd[0] === 'jj' && cmd[1] === 'bookmark' && cmd[2] === 'track' && cmd[3] === taskId) {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (
+        cmd[0] === 'jj' &&
+        cmd[1] === 'bookmark' &&
+        cmd[2] === 'set' &&
+        cmd[3] === taskId &&
+        cmd[4] === '-r'
+      ) {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (cmd[0] === 'jj' && cmd[1] === 'new' && cmd[2] === taskId) {
+        return { exitCode: 1, stdout: '', stderr: 'new failed' };
+      }
+
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config, {
+      createBranch: true,
+    });
+
+    expect(result).toBeNull();
+    await expect(fs.access(targetClonePath)).rejects.toThrow();
+  });
+
+  test('createWorkspace aborts when deleting an inherited local-only jj bookmark fails', async () => {
+    const taskId = 'task-jj-delete-stale-fails';
+    const sourceDirectory = path.join(testTempDir, 'jj-source-delete-stale-fails');
+    const cloneLocation = path.join(testTempDir, 'clones');
+    const targetClonePath = path.join(
+      cloneLocation,
+      'jj-source-delete-stale-fails-task-jj-delete-stale-fails'
+    );
+
+    await fs.mkdir(path.join(sourceDirectory, '.jj'), { recursive: true });
+    await fs.writeFile(path.join(sourceDirectory, 'README.md'), 'jj content');
+
+    const config: TimConfig = {
+      workspaceCreation: {
+        cloneMethod: 'cp',
+        sourceDirectory,
+        cloneLocation,
+      },
+    };
+
+    mockSpawnAndLogOutput.mockImplementation(async (cmd: string[]) => {
+      if (cmd[0] === 'git' && cmd[1] === 'ls-files') {
+        return { exitCode: 0, stdout: 'README.md\u0000', stderr: '' };
+      }
+
+      if (cmd[0] === 'git' && cmd[1] === 'init') {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (cmd[0] === 'jj' && cmd[1] === 'git' && cmd[2] === 'remote' && cmd[3] === 'list') {
+        return { exitCode: 0, stdout: 'origin /tmp/remote\n', stderr: '' };
+      }
+
+      if (cmd[0] === 'jj' && cmd[1] === 'git' && cmd[2] === 'fetch') {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (cmd[0] === 'jj' && cmd[1] === 'bookmark' && cmd[2] === 'list' && cmd[3] === '--all') {
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (cmd[0] === 'jj' && cmd[1] === 'bookmark' && cmd[2] === 'list' && cmd[3] === taskId) {
+        return { exitCode: 0, stdout: `${taskId}: abc123`, stderr: '' };
+      }
+
+      if (cmd[0] === 'jj' && cmd[1] === 'bookmark' && cmd[2] === 'delete' && cmd[3] === taskId) {
+        return { exitCode: 1, stdout: '', stderr: 'delete failed' };
+      }
+
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    const result = await createWorkspace(mainRepoRoot, taskId, undefined, config, {
+      createBranch: true,
+    });
+
+    expect(result).toBeNull();
+    await expect(fs.access(targetClonePath)).rejects.toThrow();
+  });
+
+  test('prepareExistingWorkspace moves the bookmark to @ in a jj repo', async () => {
     const workspacePath = path.join(testTempDir, 'jj-existing-workspace');
     const planPath = path.join(mainRepoRoot, 'tasks', 'task-901.plan.md');
 
@@ -1942,14 +2184,6 @@ describe('createWorkspace', () => {
     });
 
     expect(result).toEqual({ success: true, actualBranchName: 'jj-described' });
-    expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
-      ['jj', 'log', '-r', '@', '--no-graph', '-T', 'description'],
-      { cwd: workspacePath, quiet: true },
-    ]);
-    expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
-      ['jj', 'describe', '-r', '@', '-m', 'start plan 901: Prepare reused workspace'],
-      { cwd: workspacePath },
-    ]);
     expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
       ['jj', 'bookmark', 'set', 'jj-described'],
       { cwd: workspacePath },
@@ -2337,7 +2571,7 @@ describe('createWorkspace', () => {
     ]);
   });
 
-  test('createWorkspace reuses inherited local-only branches for cp clones', async () => {
+  test('createWorkspace deletes inherited local-only branches for cp clones and recreates from base', async () => {
     const taskId = 'task-cp-local-only-branch';
     const sourceDirectory = path.join(mainRepoRoot, 'source-local-only-branch');
     const cloneLocation = path.join(testTempDir, 'clones');
@@ -2402,16 +2636,15 @@ describe('createWorkspace', () => {
     });
 
     expect(result).not.toBeNull();
-    expect(result?.checkedOutRemoteBranch).toBe(true);
+    // Local-only branch was deleted and recreated from base, so it's a new branch
+    expect(result?.checkedOutRemoteBranch).toBe(false);
+    // Should delete the stale local branch
     expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
-      ['git', 'checkout', taskId],
-      { cwd: targetClonePath },
-    ]);
-    expect(mockSpawnAndLogOutput.mock.calls).not.toContainEqual([
       ['git', 'branch', '-D', taskId],
-      { cwd: targetClonePath },
+      { cwd: targetClonePath, quiet: true },
     ]);
-    expect(mockSpawnAndLogOutput.mock.calls).not.toContainEqual([
+    // Should create new branch from base
+    expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
       ['git', 'checkout', '-b', taskId],
       { cwd: targetClonePath },
     ]);
@@ -2506,7 +2739,7 @@ describe('createWorkspace', () => {
     ]);
   });
 
-  test('createWorkspace reuses inherited local-only branches for cp clones without a remote', async () => {
+  test('createWorkspace deletes inherited local-only branches for cp clones without a remote', async () => {
     const taskId = 'task-cp-no-remote-local-branch';
     const sourceDirectory = path.join(testTempDir, 'source-no-remote-local-branch');
     const cloneLocation = path.join(testTempDir, 'clones');
@@ -2567,23 +2800,16 @@ describe('createWorkspace', () => {
     });
 
     expect(result).not.toBeNull();
-    expect(result?.checkedOutRemoteBranch).toBe(true);
+    // Local-only branch deleted and recreated from base
+    expect(result?.checkedOutRemoteBranch).toBe(false);
+    // Should delete the stale local branch
     expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
-      ['git', 'checkout', taskId],
-      { cwd: targetClonePath },
+      ['git', 'branch', '-D', taskId],
+      { cwd: targetClonePath, quiet: true },
     ]);
-    expect(
-      mockSpawnAndLogOutput.mock.calls.some(
-        ([cmd, options]) =>
-          Array.isArray(cmd) &&
-          cmd[0] === 'git' &&
-          cmd[1] === 'fetch' &&
-          options?.cwd === targetClonePath
-      )
-    ).toBe(false);
   });
 
-  test('createWorkspace reuses inherited local-only branches for mac-cow clones without a remote', async () => {
+  test('createWorkspace deletes inherited local-only branches for mac-cow clones without a remote', async () => {
     const taskId = 'task-mac-cow-no-remote-local-branch';
     const sourceDirectory = path.join(testTempDir, 'source-mac-cow-no-remote-local-branch');
     const cloneLocation = path.join(testTempDir, 'clones');
@@ -2648,29 +2874,22 @@ describe('createWorkspace', () => {
     vi.mocked(os.platform).mockReset();
 
     expect(result).not.toBeNull();
-    expect(result?.checkedOutRemoteBranch).toBe(true);
+    // Local-only branch deleted and recreated from base
+    expect(result?.checkedOutRemoteBranch).toBe(false);
+    // Should delete the stale local branch
     expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
-      ['git', 'checkout', taskId],
-      { cwd: targetClonePath },
+      ['git', 'branch', '-D', taskId],
+      { cwd: targetClonePath, quiet: true },
     ]);
-    expect(
-      mockSpawnAndLogOutput.mock.calls.some(
-        ([cmd, options]) =>
-          Array.isArray(cmd) &&
-          cmd[0] === 'git' &&
-          cmd[1] === 'fetch' &&
-          options?.cwd === targetClonePath
-      )
-    ).toBe(false);
   });
 
-  test('createWorkspace cleans up when checkout of an inherited local-only branch fails', async () => {
-    const taskId = 'task-cp-local-branch-checkout-fails';
-    const sourceDirectory = path.join(testTempDir, 'source-local-branch-checkout-fails');
+  test('createWorkspace cleans up when branch creation fails after deleting inherited local-only branch', async () => {
+    const taskId = 'task-cp-local-branch-create-fails';
+    const sourceDirectory = path.join(testTempDir, 'source-local-branch-create-fails');
     const cloneLocation = path.join(testTempDir, 'clones');
     const targetClonePath = path.join(
       cloneLocation,
-      'source-local-branch-checkout-fails-task-cp-local-branch-checkout-fails'
+      'source-local-branch-create-fails-task-cp-local-branch-create-fails'
     );
 
     await fs.mkdir(sourceDirectory, { recursive: true });
@@ -2717,8 +2936,9 @@ describe('createWorkspace', () => {
         return { exitCode: 0, stdout: 'local-only-branch', stderr: '' };
       }
 
-      if (cmd[0] === 'git' && cmd[1] === 'checkout' && cmd[2] === taskId) {
-        return { exitCode: 1, stdout: '', stderr: 'checkout failed' };
+      // After deleting the stale branch, creating new branch from base fails
+      if (cmd[0] === 'git' && cmd[1] === 'checkout' && cmd[2] === '-b' && cmd[3] === taskId) {
+        return { exitCode: 1, stdout: '', stderr: 'branch creation failed' };
       }
 
       return { exitCode: 0, stdout: '', stderr: '' };

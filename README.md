@@ -26,7 +26,6 @@ Workspace options:
 - `-w, --workspace <id>` to use a specific workspace
 - `--aw, --auto-workspace` to automatically choose a workspace
 - `--nw, --new-workspace` to create a new workspace
-- `--base <ref>` to work against a specific branch or ref in the workspace
 - `--plan <plan>` to associate the session with a plan and use that plan's workspace metadata
 - `--commit` to commit changes after the session finishes
 - `--no-workspace-sync` to disable workspace sync for the roundtrip
@@ -35,8 +34,8 @@ Examples:
 
 ```bash
 tim chat --aw --plan 42 "Fix the bug"
-tim chat -w my-workspace --base feature-branch "Review code"
-tim chat --aw --base main --commit "Clean up imports"
+tim chat -w my-workspace "Review code"
+tim chat --aw --commit "Clean up imports"
 ```
 
 ## Workspace Management

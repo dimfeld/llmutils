@@ -49,6 +49,11 @@ vi.mock('../db/plan.js', () => ({
   setPlanBaseTracking: vi.fn(),
 }));
 
+vi.mock('../db/project_settings.js', () => ({
+  getProjectSetting: vi.fn().mockReturnValue(null),
+  getProjectSettings: vi.fn().mockReturnValue({}),
+}));
+
 vi.mock('../plan_materialize.js', () => ({
   materializePlan: vi.fn(),
   resolveProjectContext: vi.fn().mockResolvedValue({ projectId: 1 }),

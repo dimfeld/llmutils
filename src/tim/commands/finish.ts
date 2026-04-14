@@ -32,7 +32,6 @@ export interface FinishCommandOptions {
   workspace?: string;
   autoWorkspace?: boolean;
   newWorkspace?: boolean;
-  base?: string;
   workspaceSync?: boolean;
   nonInteractive?: boolean;
   terminalInput?: boolean;
@@ -146,7 +145,6 @@ export async function handleFinishCommand(
             requireWorkspace: options.requireWorkspace,
             planId: plan.id,
             planUuid: plan.uuid,
-            base: options.base,
             allowPrimaryWorkspaceWhenLocked: true,
           },
           currentBaseDir,

@@ -147,39 +147,39 @@ describe('classifyOwnPr', () => {
     });
   });
 
-  test('returns null when checks pass but not approved', () => {
+  test('returns open when checks pass but not approved', () => {
     const pr = makePrDetail({
       check_rollup_state: 'SUCCESS',
       review_decision: 'REVIEW_REQUIRED',
       mergeable: 'MERGEABLE',
     });
-    expect(classifyOwnPr(pr)).toBeNull();
+    expect(classifyOwnPr(pr)).toEqual({ actionReason: 'open', checkStatus: 'passing' });
   });
 
-  test('returns null when approved but checks not passing', () => {
+  test('returns open when approved but checks not passing', () => {
     const pr = makePrDetail({
       check_rollup_state: 'PENDING',
       review_decision: 'APPROVED',
       mergeable: 'MERGEABLE',
     });
-    expect(classifyOwnPr(pr)).toBeNull();
+    expect(classifyOwnPr(pr)).toEqual({ actionReason: 'open', checkStatus: 'pending' });
   });
 
-  test('returns null when approved and checks pass but not mergeable', () => {
+  test('returns open when approved and checks pass but not mergeable', () => {
     const pr = makePrDetail({
       check_rollup_state: 'SUCCESS',
       review_decision: 'APPROVED',
       mergeable: 'CONFLICTING',
     });
-    expect(classifyOwnPr(pr)).toBeNull();
+    expect(classifyOwnPr(pr)).toEqual({ actionReason: 'open', checkStatus: 'passing' });
   });
 
-  test('returns null when no actionable status', () => {
+  test('returns open when no actionable status', () => {
     const pr = makePrDetail({
       check_rollup_state: 'PENDING',
       review_decision: null,
     });
-    expect(classifyOwnPr(pr)).toBeNull();
+    expect(classifyOwnPr(pr)).toEqual({ actionReason: 'open', checkStatus: 'pending' });
   });
 });
 
@@ -468,7 +468,7 @@ describe('buildActionablePrsForRepo', () => {
     ]);
   });
 
-  test('skips closed PRs and PRs with no actionable state', () => {
+  test('skips closed PRs but includes open PRs regardless of actionable state', () => {
     const closed = makePrDetail({
       pr_url: 'https://github.com/owner/repo/pull/12',
       pr_number: 12,
@@ -478,7 +478,7 @@ describe('buildActionablePrsForRepo', () => {
       review_decision: 'APPROVED',
       mergeable: 'MERGEABLE',
     });
-    const notActionable = makePrDetail({
+    const openPending = makePrDetail({
       pr_url: 'https://github.com/owner/repo/pull/13',
       pr_number: 13,
       author: 'testuser',
@@ -486,9 +486,14 @@ describe('buildActionablePrsForRepo', () => {
       review_decision: null,
     });
 
-    expect(buildActionablePrsForRepo(7, [closed, notActionable], new Map(), 'testuser')).toEqual(
-      []
-    );
+    const result = buildActionablePrsForRepo(7, [closed, openPending], new Map(), 'testuser');
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      prUrl: 'https://github.com/owner/repo/pull/13',
+      prNumber: 13,
+      actionReason: 'open',
+      checkStatus: 'pending',
+    });
   });
 
   test('returns no actionable PRs when there is no authenticated username', () => {

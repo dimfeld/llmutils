@@ -865,7 +865,6 @@ async function tryReuseExistingWorkspace(
         baseBranch: options.fromBranch,
         branchName: options.branchName,
         createBranch: shouldCreateBranch,
-        primaryWorkspacePath: options.mainRepoRoot,
       });
 
       if (!prepareResult.success) {

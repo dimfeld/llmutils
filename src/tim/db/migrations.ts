@@ -655,6 +655,9 @@ const migrations: Migration[] = [
         updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC})
       );
       CREATE INDEX idx_review_issue_review_id ON review_issue(review_id);
+
+      ALTER TABLE plan ADD COLUMN base_commit TEXT;
+      ALTER TABLE plan ADD COLUMN base_change_id TEXT;
     `,
   },
 ];

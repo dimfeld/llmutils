@@ -713,26 +713,6 @@ describe('handleChatCommand', () => {
     });
   });
 
-  test('passes --base through with createBranch disabled when no plan is provided', async () => {
-    await handleChatCommand('hello', { workspace: 'task-123', base: 'feature-branch' }, {});
-
-    expect(vi.mocked(setupWorkspace).mock.calls[0][0]).toMatchObject({
-      workspace: 'task-123',
-      base: 'feature-branch',
-      createBranch: false,
-      planUuid: undefined,
-    });
-    expect(vi.mocked(resolvePlanFromDb)).not.toHaveBeenCalled();
-  });
-
-  test('throws when --base is used without workspace options', async () => {
-    await expect(handleChatCommand('hello', { base: 'feature-branch' }, {})).rejects.toThrow(
-      '--base requires a workspace option'
-    );
-
-    expect(vi.mocked(setupWorkspace)).not.toHaveBeenCalled();
-  });
-
   test('throws when --commit is used without workspace options', async () => {
     await expect(handleChatCommand('hello', { commit: true }, {})).rejects.toThrow(
       '--commit requires a workspace option'

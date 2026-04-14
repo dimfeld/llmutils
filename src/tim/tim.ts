@@ -374,7 +374,6 @@ program
     '--nw, --new-workspace',
     'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
   )
-  .option('--base <ref>', 'Base branch for workspace checkout and stacking base tracking')
   .option('--no-workspace-sync', 'Disable automatic workspace round-trip sync')
   .option('--non-interactive', 'Do not prompt for user input (e.g., when clearing stale locks)')
   .option(
@@ -482,7 +481,6 @@ program
     '--nw, --new-workspace',
     'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
   )
-  .option('--base <ref>', 'Base branch for workspace checkout and stacking base tracking')
   .option('--no-workspace-sync', 'Disable automatic workspace round-trip sync')
   .option('--non-interactive', 'Do not prompt for user input (e.g., when clearing stale locks)')
   .option('--no-terminal-input', 'Disable terminal input forwarding during finalization')
@@ -618,7 +616,6 @@ function createAgentCommand(command: Command, description: string) {
       '--nw, --new-workspace',
       'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
     )
-    .option('--base <ref>', 'Base branch for workspace checkout and stacking base tracking')
     .option('--no-workspace-sync', 'Disable automatic workspace round-trip sync')
     .option('--non-interactive', 'Do not prompt for user input (e.g., when clearing stale locks)')
     .option(
@@ -695,7 +692,6 @@ program
     '--nw, --new-workspace',
     'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
   )
-  .option('--base <ref>', 'Base branch for workspace checkout and stacking base tracking')
   .option('--no-workspace-sync', 'Disable automatic workspace round-trip sync')
   .option('--commit', 'Commit changes to jj/git after successful chat execution')
   .option('--plan <plan>', 'Associate chat with a plan for branch/workspace assignment')

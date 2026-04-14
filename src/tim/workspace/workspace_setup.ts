@@ -39,8 +39,6 @@ export interface WorkspaceSetupOptions {
   requireWorkspace?: boolean;
   planId?: number;
   planUuid?: string;
-  // Stacking base branch used for plan base tracking.
-  base?: string;
   // Checkout-only branch used to prepare/select workspaces without affecting tracking.
   checkoutBranch?: string;
   createBranch?: boolean;
@@ -60,7 +58,7 @@ interface ResolvedWorkspaceBranchContext {
   branchName?: string;
   baseBranch?: string;
   checkoutBranch?: string;
-  baseBranchSource?: 'option' | 'plan' | 'parent';
+  baseBranchSource?: 'plan' | 'parent';
   canRetryWithoutBaseBranch: boolean;
 }
 
@@ -83,20 +81,16 @@ async function getParentPlanBranch(
 }
 
 async function resolveWorkspaceBranchContext(
-  options: Pick<WorkspaceSetupOptions, 'planId' | 'base' | 'checkoutBranch'>,
+  options: Pick<WorkspaceSetupOptions, 'planId' | 'checkoutBranch'>,
   currentBaseDir: string,
   currentPlanFile: string | undefined,
   config: TimConfig
 ): Promise<ResolvedWorkspaceBranchContext> {
   let planData: PlanSchema | undefined;
   let branchName: string | undefined;
-  let baseBranch = options.base;
+  let baseBranch: string | undefined;
   let baseBranchSource: ResolvedWorkspaceBranchContext['baseBranchSource'];
   let canRetryWithoutBaseBranch = false;
-
-  if (baseBranch) {
-    baseBranchSource = 'option';
-  }
 
   if (currentPlanFile) {
     try {
@@ -179,7 +173,7 @@ async function updateBaseCommitTracking(options: {
     return;
   }
 
-  // Safety net: if the user passes --base with the plan's own branch, skip tracking
+  // Safety net: if baseBranch resolves to the plan's own branch, skip tracking
   // to avoid storing the branch tip as baseCommit (merge-base of a branch with itself).
   if (options.planBranch && baseBranch === options.planBranch) {
     return;
@@ -210,10 +204,9 @@ async function updateBaseCommitTracking(options: {
     // even when the plan branch isn't checked out (non-workspace mode).
     const sourceRef = options.planBranch ?? 'HEAD';
     const mergeBase = await getMergeBase(baseDir, baseBranch, sourceRef);
-    // Persist baseBranch for 'parent' (auto-derived) and 'option' (explicit --base) sources.
+    // Persist baseBranch for 'parent' (auto-derived) source.
     // 'plan' source means baseBranch is already in the plan, no need to re-persist it.
-    const shouldPersistBaseBranch =
-      options.baseBranchSource === 'parent' || options.baseBranchSource === 'option';
+    const shouldPersistBaseBranch = options.baseBranchSource === 'parent';
 
     if (!mergeBase) {
       // Don't overwrite existing tracking with nulls on transient failures
@@ -296,10 +289,7 @@ export async function setupWorkspace(
 
   // When no plan file and no base branch, skip branch creation — use workspace as-is
   const effectiveCreateBranch =
-    !currentPlanFile &&
-    typeof options.planId !== 'number' &&
-    !options.base &&
-    !options.checkoutBranch
+    !currentPlanFile && typeof options.planId !== 'number' && !options.checkoutBranch
       ? false
       : options.createBranch;
   const branchContext = await resolveWorkspaceBranchContext(
@@ -495,14 +485,10 @@ export async function setupWorkspace(
 
         let reusedExistingBranch = false;
         if (shouldPrepareWorkspaceBranch) {
-          const hasExplicitBase = Boolean(options.base || options.checkoutBranch);
           let prepareResult = await prepareExistingWorkspace(workspace.path, {
             baseBranch: effectiveCheckoutBranch,
             branchName,
-            planFilePath: currentPlanFile ? planFile : undefined,
             createBranch: shouldCreateBranch,
-            reuseExistingBranch: !hasExplicitBase,
-            primaryWorkspacePath: currentBaseDir,
           });
 
           if (!prepareResult.success && canRetryWithoutBaseBranch) {
@@ -510,10 +496,7 @@ export async function setupWorkspace(
             effectiveCheckoutBranch = undefined;
             prepareResult = await prepareExistingWorkspace(workspace.path, {
               branchName,
-              planFilePath: currentPlanFile ? planFile : undefined,
               createBranch: shouldCreateBranch,
-              reuseExistingBranch: !hasExplicitBase,
-              primaryWorkspacePath: currentBaseDir,
             });
           }
 

@@ -40,6 +40,7 @@ vi.mock('$lib/stores/project.svelte.js', () => ({
   },
   getContrastTextColor: () => 'white',
   PROJECT_COLOR_PALETTE: ['#3498db', '#e74c3c', '#2ecc71'],
+  getSidebarOrderedProjects: (projects: any[]) => projects,
 }));
 
 vi.mock('$lib/stores/ui_state.svelte.js', () => ({

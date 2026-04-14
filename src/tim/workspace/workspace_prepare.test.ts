@@ -464,7 +464,7 @@ describe('prepareExistingWorkspace', () => {
     }
   });
 
-  test('with a separate primary workspace, creates a new branch locally in the execution workspace', async () => {
+  test('creates a new branch locally in the execution workspace', async () => {
     const primaryDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-primary-prepare-'));
     const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-exec-prepare-'));
 
@@ -480,7 +480,6 @@ describe('prepareExistingWorkspace', () => {
       const result = await prepareExistingWorkspace(workspaceDir, {
         branchName: 'separate-primary-local-branch',
         createBranch: true,
-        primaryWorkspacePath: primaryDir,
       });
 
       expect(result).toEqual({
@@ -502,7 +501,7 @@ describe('prepareExistingWorkspace', () => {
     }
   });
 
-  test('with a separate primary workspace, checks out an existing remote branch in the execution workspace', async () => {
+  test('checks out an existing remote branch in the execution workspace', async () => {
     const primaryDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-primary-existing-'));
     const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-exec-existing-'));
 
@@ -526,8 +525,6 @@ describe('prepareExistingWorkspace', () => {
       const result = await prepareExistingWorkspace(workspaceDir, {
         branchName: 'already-remote',
         createBranch: true,
-        reuseExistingBranch: true,
-        primaryWorkspacePath: primaryDir,
       });
 
       expect(result).toEqual({
@@ -546,9 +543,8 @@ describe('prepareExistingWorkspace', () => {
     }
   });
 
-  test('with a separate primary workspace, creates a suffixed local branch when reuseExistingBranch is false and the remote branch exists', async () => {
-    const primaryDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-primary-no-reuse-'));
-    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-exec-no-reuse-'));
+  test('reuses an existing remote branch even when a local branch with the same name does not exist', async () => {
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-exec-reuse-remote-'));
 
     try {
       await runGit(tempDir, ['checkout', '-b', 'already-remote']);
@@ -558,10 +554,6 @@ describe('prepareExistingWorkspace', () => {
       await runGit(tempDir, ['push', '-u', 'origin', 'already-remote']);
       await runGit(tempDir, ['checkout', 'main']);
 
-      await cloneGitRepository(remoteDir, primaryDir);
-      await runGit(primaryDir, ['config', 'user.email', 'test@example.com']);
-      await runGit(primaryDir, ['config', 'user.name', 'Test User']);
-
       await cloneGitRepository(remoteDir, workspaceDir);
       await runGit(workspaceDir, ['config', 'user.email', 'test@example.com']);
       await runGit(workspaceDir, ['config', 'user.name', 'Test User']);
@@ -569,28 +561,26 @@ describe('prepareExistingWorkspace', () => {
       const result = await prepareExistingWorkspace(workspaceDir, {
         branchName: 'already-remote',
         createBranch: true,
-        reuseExistingBranch: false,
-        primaryWorkspacePath: primaryDir,
       });
 
       expect(result).toEqual({
         success: true,
-        actualBranchName: 'already-remote-2',
+        actualBranchName: 'already-remote',
+        reusedExistingBranch: true,
       });
-      expect(await getCurrentBranch(workspaceDir)).toBe('already-remote-2');
+      expect(await getCurrentBranch(workspaceDir)).toBe('already-remote');
 
-      const reusedRemoteFileExists = await fs
+      const remoteFileExists = await fs
         .access(path.join(workspaceDir, 'already-remote.txt'))
         .then(() => true)
         .catch(() => false);
-      expect(reusedRemoteFileExists).toBe(false);
+      expect(remoteFileExists).toBe(true);
     } finally {
-      await fs.rm(primaryDir, { recursive: true, force: true });
       await fs.rm(workspaceDir, { recursive: true, force: true });
     }
   });
 
-  test('with a separate primary workspace, preserves the primary local-only branch and recreates execution work on the original branch when reuseExistingBranch is true', async () => {
+  test('preserves the primary local-only branch and recreates execution work on the original branch', async () => {
     const primaryDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-primary-local-reuse-'));
     const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-exec-local-reuse-'));
 
@@ -620,8 +610,6 @@ describe('prepareExistingWorkspace', () => {
       const result = await prepareExistingWorkspace(workspaceDir, {
         branchName: 'local-only-branch',
         createBranch: true,
-        reuseExistingBranch: true,
-        primaryWorkspacePath: primaryDir,
       });
 
       expect(result).toEqual({
@@ -647,7 +635,7 @@ describe('prepareExistingWorkspace', () => {
     }
   });
 
-  test('with a separate primary workspace, ignores a stale local-only branch that exists only in primary when reuseExistingBranch is true', async () => {
+  test('ignores a stale local-only branch that exists only in primary', async () => {
     const primaryDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-primary-only-stale-'));
     const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-exec-only-stale-'));
 
@@ -671,8 +659,6 @@ describe('prepareExistingWorkspace', () => {
       const result = await prepareExistingWorkspace(workspaceDir, {
         branchName: 'primary-only-stale-branch',
         createBranch: true,
-        reuseExistingBranch: true,
-        primaryWorkspacePath: primaryDir,
       });
 
       expect(result).toEqual({
@@ -700,8 +686,7 @@ describe('prepareExistingWorkspace', () => {
     }
   });
 
-  test('with a separate primary workspace, fast-forwards an existing local execution branch from origin when reuseExistingBranch is true', async () => {
-    const primaryDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-primary-local-ff-'));
+  test('fast-forwards an existing local execution branch from origin', async () => {
     const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-exec-local-ff-'));
 
     try {
@@ -711,10 +696,6 @@ describe('prepareExistingWorkspace', () => {
       await runGit(tempDir, ['commit', '-m', 'Create shared branch']);
       await runGit(tempDir, ['push', '-u', 'origin', 'shared-branch']);
       await runGit(tempDir, ['checkout', 'main']);
-
-      await cloneGitRepository(remoteDir, primaryDir);
-      await runGit(primaryDir, ['config', 'user.email', 'test@example.com']);
-      await runGit(primaryDir, ['config', 'user.name', 'Test User']);
 
       await cloneGitRepository(remoteDir, workspaceDir);
       await runGit(workspaceDir, ['config', 'user.email', 'test@example.com']);
@@ -739,8 +720,6 @@ describe('prepareExistingWorkspace', () => {
       const result = await prepareExistingWorkspace(workspaceDir, {
         branchName: 'shared-branch',
         createBranch: true,
-        reuseExistingBranch: true,
-        primaryWorkspacePath: primaryDir,
       });
 
       expect(result).toEqual({
@@ -753,13 +732,11 @@ describe('prepareExistingWorkspace', () => {
         'updated remotely'
       );
     } finally {
-      await fs.rm(primaryDir, { recursive: true, force: true });
       await fs.rm(workspaceDir, { recursive: true, force: true });
     }
   });
 
-  test('with a separate primary workspace, force-resets a divergent local execution branch from origin when reuseExistingBranch is true', async () => {
-    const primaryDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-primary-diverged-'));
+  test('force-resets a divergent local execution branch from origin', async () => {
     const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-exec-diverged-'));
 
     try {
@@ -769,10 +746,6 @@ describe('prepareExistingWorkspace', () => {
       await runGit(tempDir, ['commit', '-m', 'Create shared branch']);
       await runGit(tempDir, ['push', '-u', 'origin', 'shared-branch']);
       await runGit(tempDir, ['checkout', 'main']);
-
-      await cloneGitRepository(remoteDir, primaryDir);
-      await runGit(primaryDir, ['config', 'user.email', 'test@example.com']);
-      await runGit(primaryDir, ['config', 'user.name', 'Test User']);
 
       await cloneGitRepository(remoteDir, workspaceDir);
       await runGit(workspaceDir, ['config', 'user.email', 'test@example.com']);
@@ -800,8 +773,6 @@ describe('prepareExistingWorkspace', () => {
       const result = await prepareExistingWorkspace(workspaceDir, {
         branchName: 'shared-branch',
         createBranch: true,
-        reuseExistingBranch: true,
-        primaryWorkspacePath: primaryDir,
       });
 
       expect(result).toEqual({
@@ -814,20 +785,14 @@ describe('prepareExistingWorkspace', () => {
         'remote canonical change'
       );
     } finally {
-      await fs.rm(primaryDir, { recursive: true, force: true });
       await fs.rm(workspaceDir, { recursive: true, force: true });
     }
   });
 
-  test('with a separate primary workspace, recreates a local-only execution branch instead of suffixing when reuseExistingBranch is false', async () => {
-    const primaryDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-primary-local-suffix-'));
+  test('recreates a local-only execution branch without suffixing', async () => {
     const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-exec-local-suffix-'));
 
     try {
-      await cloneGitRepository(remoteDir, primaryDir);
-      await runGit(primaryDir, ['config', 'user.email', 'test@example.com']);
-      await runGit(primaryDir, ['config', 'user.name', 'Test User']);
-
       await cloneGitRepository(remoteDir, workspaceDir);
       await runGit(workspaceDir, ['config', 'user.email', 'test@example.com']);
       await runGit(workspaceDir, ['config', 'user.name', 'Test User']);
@@ -842,8 +807,6 @@ describe('prepareExistingWorkspace', () => {
       const result = await prepareExistingWorkspace(workspaceDir, {
         branchName: 'local-only-branch',
         createBranch: true,
-        reuseExistingBranch: false,
-        primaryWorkspacePath: primaryDir,
       });
 
       expect(result).toEqual({
@@ -862,13 +825,11 @@ describe('prepareExistingWorkspace', () => {
         .catch(() => false);
       expect(inheritedFileExists).toBe(false);
     } finally {
-      await fs.rm(primaryDir, { recursive: true, force: true });
       await fs.rm(workspaceDir, { recursive: true, force: true });
     }
   });
 
-  test('with a separate primary workspace, local collision suffixing also avoids remote branch names', async () => {
-    const primaryDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-primary-remote-suffix-'));
+  test('reuses an exact branch name even when a suffixed variant exists on remote', async () => {
     const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-exec-remote-suffix-'));
 
     try {
@@ -878,10 +839,6 @@ describe('prepareExistingWorkspace', () => {
       await runGit(tempDir, ['commit', '-m', 'Create remote suffix branch']);
       await runGit(tempDir, ['push', '-u', 'origin', 'local-only-branch-2']);
       await runGit(tempDir, ['checkout', 'main']);
-
-      await cloneGitRepository(remoteDir, primaryDir);
-      await runGit(primaryDir, ['config', 'user.email', 'test@example.com']);
-      await runGit(primaryDir, ['config', 'user.name', 'Test User']);
 
       await cloneGitRepository(remoteDir, workspaceDir);
       await runGit(workspaceDir, ['config', 'user.email', 'test@example.com']);
@@ -895,8 +852,6 @@ describe('prepareExistingWorkspace', () => {
       const result = await prepareExistingWorkspace(workspaceDir, {
         branchName: 'local-only-branch',
         createBranch: true,
-        reuseExistingBranch: false,
-        primaryWorkspacePath: primaryDir,
       });
 
       expect(result).toEqual({
@@ -905,7 +860,6 @@ describe('prepareExistingWorkspace', () => {
       });
       expect(await getCurrentBranch(workspaceDir)).toBe('local-only-branch');
     } finally {
-      await fs.rm(primaryDir, { recursive: true, force: true });
       await fs.rm(workspaceDir, { recursive: true, force: true });
     }
   });
@@ -982,7 +936,7 @@ describe('prepareExistingWorkspace with Jujutsu', () => {
     }
   });
 
-  test('auto-suffixes bookmark when it exists (Jujutsu)', async () => {
+  test('reuses a local-only bookmark when there is no remote (Jujutsu)', async () => {
     if (!hasJj) {
       console.log('Skipping Jujutsu test - jj not installed');
       return;
@@ -1009,8 +963,9 @@ describe('prepareExistingWorkspace with Jujutsu', () => {
       });
 
       expect(result.success).toBe(true);
-      // No remote configured, so local-only branch is not considered stale — it gets suffixed
-      expect(result.actualBranchName).toBe('task-789-2');
+      // No remote and no fetch — local-only branch is not considered stale, so it gets reused
+      expect(result.actualBranchName).toBe('task-789');
+      expect(result.reusedExistingBranch).toBe(true);
     } finally {
       if (originalAllowOffline === undefined) {
         delete process.env.ALLOW_OFFLINE;
@@ -1075,7 +1030,7 @@ describe('prepareExistingWorkspace with Jujutsu', () => {
     }
   });
 
-  test('recreates a stale local-only bookmark from base when reuseExistingBranch is true (Jujutsu)', async () => {
+  test('recreates a stale local-only bookmark from base (Jujutsu)', async () => {
     if (!hasJj) {
       console.log('Skipping Jujutsu test - jj not installed');
       return;
@@ -1113,68 +1068,6 @@ describe('prepareExistingWorkspace with Jujutsu', () => {
         baseBranch: 'main',
         branchName: 'stale-bookmark',
         createBranch: true,
-        reuseExistingBranch: true,
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.actualBranchName).toBe('stale-bookmark');
-      expect(result.reusedExistingBranch).toBeFalsy();
-      expect(await getJjRevision(workspaceDir, 'stale-bookmark')).toBe(
-        await getJjRevision(workspaceDir)
-      );
-      expect(await getJjRevision(workspaceDir, 'stale-bookmark')).not.toBe(staleRevision);
-      expect(await getJjRevision(workspaceDir, '@-')).toBe(mainRevision);
-
-      const staleFileExists = await fs
-        .access(path.join(workspaceDir, 'stale.txt'))
-        .then(() => true)
-        .catch(() => false);
-      expect(staleFileExists).toBe(false);
-    } finally {
-      await fs.rm(remoteDir, { recursive: true, force: true });
-      await fs.rm(workspaceDir, { recursive: true, force: true });
-    }
-  });
-
-  test('recreates a stale local-only bookmark from base when reuseExistingBranch is false (Jujutsu)', async () => {
-    if (!hasJj) {
-      console.log('Skipping Jujutsu test - jj not installed');
-      return;
-    }
-
-    const remoteDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-jj-remote-no-reuse-'));
-    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-jj-clone-no-reuse-'));
-
-    try {
-      expect((await runGit(remoteDir, ['init', '--bare', '--initial-branch=main'])).exitCode).toBe(
-        0
-      );
-      expect((await runJj(tempDir, ['git', 'remote', 'add', 'origin', remoteDir])).exitCode).toBe(
-        0
-      );
-      expect(
-        (await runJj(tempDir, ['git', 'push', '--remote', 'origin', '--bookmark', 'main'])).exitCode
-      ).toBe(0);
-
-      await cloneJjRepository(remoteDir, workspaceDir);
-      expect((await runJj(workspaceDir, ['git', 'fetch'])).exitCode).toBe(0);
-      expect((await runJj(workspaceDir, ['new', 'main'])).exitCode).toBe(0);
-      await fs.writeFile(path.join(workspaceDir, 'stale.txt'), 'stale jj work');
-      expect((await runJj(workspaceDir, ['commit', '-m', 'Stale local bookmark'])).exitCode).toBe(
-        0
-      );
-      expect(
-        (await runJj(workspaceDir, ['bookmark', 'set', '-r', '@-', 'stale-bookmark'])).exitCode
-      ).toBe(0);
-      const staleRevision = await getJjRevision(workspaceDir, 'stale-bookmark');
-      const mainRevision = await getJjRevision(workspaceDir, 'main');
-      expect(staleRevision).not.toBe(mainRevision);
-
-      const result = await prepareExistingWorkspace(workspaceDir, {
-        baseBranch: 'main',
-        branchName: 'stale-bookmark',
-        createBranch: true,
-        reuseExistingBranch: false,
       });
 
       expect(result.success).toBe(true);
@@ -1198,7 +1091,7 @@ describe('prepareExistingWorkspace with Jujutsu', () => {
   });
 });
 
-describe('reuseExistingBranch', () => {
+describe('branch preparation behavior', () => {
   let tempDir: string;
   let remoteDir: string;
 
@@ -1239,7 +1132,6 @@ describe('reuseExistingBranch', () => {
     const result = await prepareExistingWorkspace(tempDir, {
       branchName: 'my-plan-branch',
       createBranch: true,
-      reuseExistingBranch: true,
     });
 
     expect(result.success).toBe(true);
@@ -1264,7 +1156,6 @@ describe('reuseExistingBranch', () => {
     const result = await prepareExistingWorkspace(tempDir, {
       branchName: 'brand-new-branch',
       createBranch: true,
-      reuseExistingBranch: true,
     });
 
     expect(result.success).toBe(true);
@@ -1291,11 +1182,10 @@ describe('reuseExistingBranch', () => {
     const result = await prepareExistingWorkspace(tempDir, {
       branchName: 'remote-only-branch',
       createBranch: true,
-      reuseExistingBranch: true,
     });
 
     expect(result.success).toBe(true);
-    // Should reuse the remote branch since reuseExistingBranch is true
+    // Remote branch should be reused as-is.
     expect(result.actualBranchName).toBe('remote-only-branch');
     expect(result.reusedExistingBranch).toBe(true);
 
@@ -1303,7 +1193,7 @@ describe('reuseExistingBranch', () => {
     expect(currentBranch).toBe('remote-only-branch');
   });
 
-  test('recreates a stale local branch when reuseExistingBranch is false', async () => {
+  test('recreates a stale local branch', async () => {
     // Create a local-only branch
     await runGit(tempDir, ['checkout', '-b', 'existing-branch']);
     await fs.writeFile(path.join(tempDir, 'stale.txt'), 'stale branch content');
@@ -1316,7 +1206,6 @@ describe('reuseExistingBranch', () => {
     const result = await prepareExistingWorkspace(tempDir, {
       branchName: 'existing-branch',
       createBranch: true,
-      reuseExistingBranch: false,
     });
 
     expect(result.success).toBe(true);
@@ -1360,7 +1249,6 @@ describe('reuseExistingBranch', () => {
     const result = await prepareExistingWorkspace(tempDir, {
       branchName: 'shared-branch',
       createBranch: true,
-      reuseExistingBranch: true,
     });
 
     expect(result.success).toBe(true);

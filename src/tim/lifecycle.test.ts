@@ -769,12 +769,16 @@ describe('LifecycleManager', () => {
   });
 
   test('runIn defaults to running in all command contexts when omitted', async () => {
-    const events = await startupAndShutdown([
-      {
-        title: 'always',
-        command: appendLineCommand(logFile, 'always-start'),
-      },
-    ], undefined, 'review');
+    const events = await startupAndShutdown(
+      [
+        {
+          title: 'always',
+          command: appendLineCommand(logFile, 'always-start'),
+        },
+      ],
+      undefined,
+      'review'
+    );
 
     expect(events).toEqual(['always-start']);
   });

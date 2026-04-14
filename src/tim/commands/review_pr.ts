@@ -732,7 +732,11 @@ export async function handleReviewGuideCommand(
       let workflowError: unknown;
 
       try {
-        if (config.lifecycle?.commands && config.lifecycle.commands.length > 0 && !isShuttingDown()) {
+        if (
+          config.lifecycle?.commands &&
+          config.lifecycle.commands.length > 0 &&
+          !isShuttingDown()
+        ) {
           const workspaceInfo = getWorkspaceInfoByPath(baseDir);
           lifecycleManager = new LifecycleManager(
             config.lifecycle.commands,

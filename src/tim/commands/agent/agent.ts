@@ -314,7 +314,6 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
         createBranch: options.createBranch,
         planId: initialPlanData.id,
         planUuid: initialPlanData.uuid,
-        base: options.base,
       },
       currentBaseDir,
       initialResolvedPlan.planPath ?? undefined,
