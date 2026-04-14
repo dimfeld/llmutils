@@ -60,6 +60,31 @@ describe('agent_prompts failure protocol integration', () => {
     );
   });
 
+  it('includes dead code guidance in reviewer prompt', () => {
+    const def = getReviewerPrompt(context);
+    expect(def.prompt).toContain('Newly dead code or unreachable code paths that should be removed');
+  });
+
+  it('can include PR review scope guidance in reviewer prompt when requested', () => {
+    const def = getReviewerPrompt(
+      context,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      false,
+      undefined,
+      true
+    );
+    expect(def.prompt).toContain('For PR reviews, also check for outdated documentation');
+    expect(def.prompt).toContain('Do not run tests, type checking, linting, formatting');
+  });
+
+  it('omits PR review scope guidance by default', () => {
+    const def = getReviewerPrompt(context);
+    expect(def.prompt).not.toContain('For PR reviews, also check for outdated documentation');
+  });
+
   it('directs implementer to report progress to orchestrator', () => {
     const def = getImplementerPrompt(context, '42');
     expect(def.prompt).toContain('Progress Reporting');

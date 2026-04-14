@@ -73,6 +73,9 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('Security Vulnerabilities (HIGH PRIORITY)');
     expect(prompt).toContain('Do not include plan/task context');
     expect(prompt).toContain('Do not provide a verdict');
+    expect(prompt).toContain('For PR reviews, also check for outdated documentation');
+    expect(prompt).toContain('Do not run tests, type checking, linting, formatting');
+    expect(prompt).not.toContain('## Review Scope');
     expect(prompt).toContain('"issues"');
   });
 

@@ -1,6 +1,7 @@
 import { getReviewOutputJsonSchema } from '../formatters/review_output_schema.js';
 import {
   buildReviewerCriticalIssuesGuidance,
+  buildPrReviewScopeGuidance,
   buildReviewerPromptIntro,
 } from '../executors/claude_code/agent_prompts.js';
 
@@ -156,6 +157,7 @@ export function buildStandaloneReviewIssuesPrompt(
   const schema = renderSchema();
 
   return `${buildReviewerPromptIntro(false)}You are performing a standalone PR code review and must return structured JSON issues only.
+${buildPrReviewScopeGuidance()}
 
 ## PR Metadata
 ${formatPrMetadata(metadata)}

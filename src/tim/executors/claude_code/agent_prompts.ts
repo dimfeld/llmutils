@@ -74,6 +74,7 @@ When you reference files in your findings, use file paths relative to the projec
 - Improper imports or dependency usage
 - Wrong file organization or module structure
 - Missing required documentation or comments where mandated
+- Newly dead code or unreachable code paths that should be removed
 
 ### Performance Issues (MEDIUM PRIORITY)
 - Inefficient algorithms (O(n²) where O(n) is possible)
@@ -112,6 +113,10 @@ middleware already verifies the presence of an organization and user, the handle
 
 Once you have finished your analysis and are ready to produce your report, review your list of issues one last time. Remove any issues that you have determined are not actually problems, and downgrade to "info" severity any issues that are only minor concerns or unlikely to cause real harm. The goal is to avoid confusing the person reading the report with false positives or overstated severity.
 `;
+}
+
+export function buildPrReviewScopeGuidance(): string {
+  return `For PR reviews, also check for outdated documentation that no longer matches the code or behavior. Do not run tests, type checking, linting, formatting, or similar commands; CI already covers those checks, and they should not be raised as review findings.`;
 }
 
 function buildProgressGuidance(options?: ProgressGuidanceOptions): string {
@@ -527,7 +532,8 @@ export function getReviewerPrompt(
   model?: string,
   useSubagents: boolean = false,
   includeTaskCompletionInstructions: boolean = false,
-  progressGuidanceOptions?: ProgressGuidanceOptions
+  progressGuidanceOptions?: ProgressGuidanceOptions,
+  includePrReviewScopeGuidance: boolean = false
 ): AgentDefinition {
   const customInstructionsSection = customInstructions?.trim()
     ? `\n## Custom Instructions\n${customInstructions}\n`
@@ -562,6 +568,9 @@ Do this for each task that was successfully implemented and reviewed before prov
   }
 
   const progressGuidance = buildProgressGuidance(progressGuidanceOptions);
+  const prReviewScopeGuidance = includePrReviewScopeGuidance
+    ? `\n${buildPrReviewScopeGuidance()}\n`
+    : '';
 
   return {
     name: 'reviewer',
@@ -571,6 +580,7 @@ Do this for each task that was successfully implemented and reviewed before prov
     skills: ['using-tim'],
     prompt: `${buildReviewerPromptIntro(useSubagents)}
 
+${prReviewScopeGuidance}
 
 ## Context and Task
 ${contextContent}${customInstructionsSection}
