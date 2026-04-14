@@ -50,7 +50,8 @@ import { resolveReviewExecutorSelection, type ReviewExecutorName } from '../revi
 import { validateInstructionsFilePath } from '../utils/file_validation.js';
 import { gatherPrContext, checkoutPrBranch, resolvePrUrl } from '../utils/pr_context_gathering.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
-import { setupWorkspace } from '../workspace/workspace_setup.js';
+import { WorkspaceAutoSelector } from '../workspace/workspace_auto_selector.js';
+import { WorkspaceLock } from '../workspace/workspace_lock.js';
 
 interface RootCommandLike {
   parent?: RootCommandLike;
@@ -668,20 +669,24 @@ export async function handleReviewGuideCommand(
       }
 
       if (options.autoWorkspace === true) {
-        const workspaceResult = await setupWorkspace(
-          {
-            autoWorkspace: true,
-            createBranch: false,
-            base: prContext.baseBranch,
-            allowPrimaryWorkspaceWhenLocked: true,
-            nonInteractive: options.nonInteractive,
-          },
-          baseDir,
-          undefined,
-          config,
-          'tim pr review-guide'
+        const selector = new WorkspaceAutoSelector(baseDir, config);
+        const taskId = `pr-review-${prContext.prNumber}-${Date.now()}`;
+        const selectedWorkspace = await selector.selectWorkspace(taskId, undefined, {
+          interactive: options.nonInteractive !== true,
+          createBranch: false,
+        });
+        if (!selectedWorkspace) {
+          throw new Error('Failed to select or create a workspace for PR review.');
+        }
+
+        const lockInfo = await WorkspaceLock.acquireLock(
+          selectedWorkspace.workspace.workspacePath,
+          'tim pr review-guide',
+          { type: 'pid' }
         );
-        baseDir = workspaceResult.baseDir;
+        WorkspaceLock.setupCleanupHandlers(selectedWorkspace.workspace.workspacePath, lockInfo.type);
+
+        baseDir = selectedWorkspace.workspace.workspacePath;
         updateHeadlessSessionInfo({ workspacePath: baseDir });
       }
 

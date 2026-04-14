@@ -4,6 +4,11 @@ import * as fsSync from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+const workspaceAutoSelectorMocks = vi.hoisted(() => ({
+  ctor: vi.fn(),
+  selectWorkspace: vi.fn(),
+}));
+
 vi.mock('../../logging.js', () => ({
   log: vi.fn(),
   warn: vi.fn(),
@@ -69,8 +74,21 @@ vi.mock('../assignments/workspace_identifier.js', () => ({
   getRepositoryIdentity: vi.fn(),
 }));
 
-vi.mock('../workspace/workspace_setup.js', () => ({
-  setupWorkspace: vi.fn(),
+vi.mock('../workspace/workspace_auto_selector.js', () => ({
+  WorkspaceAutoSelector: class {
+    constructor(...args: unknown[]) {
+      workspaceAutoSelectorMocks.ctor(...args);
+    }
+
+    selectWorkspace = workspaceAutoSelectorMocks.selectWorkspace;
+  },
+}));
+
+vi.mock('../workspace/workspace_lock.js', () => ({
+  WorkspaceLock: {
+    acquireLock: vi.fn(),
+    setupCleanupHandlers: vi.fn(),
+  },
 }));
 
 import {
@@ -94,7 +112,7 @@ import { getOrCreateProject } from '../db/project.js';
 import { buildExecutorAndLog } from '../executors/index.js';
 import { gatherPrContext, checkoutPrBranch, resolvePrUrl } from '../utils/pr_context_gathering.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
-import { setupWorkspace } from '../workspace/workspace_setup.js';
+import { WorkspaceLock } from '../workspace/workspace_lock.js';
 import { handleMaterializeCommand, handleReviewGuideCommand, parseLineRange } from './review_pr.js';
 
 const mockGetGitInfoExcludePath = vi.mocked(getGitInfoExcludePath);
@@ -115,7 +133,8 @@ const mockGatherPrContext = vi.mocked(gatherPrContext);
 const mockCheckoutPrBranch = vi.mocked(checkoutPrBranch);
 const mockResolvePrUrl = vi.mocked(resolvePrUrl);
 const mockGetRepositoryIdentity = vi.mocked(getRepositoryIdentity);
-const mockSetupWorkspace = vi.mocked(setupWorkspace);
+const mockWorkspaceLockAcquireLock = vi.mocked(WorkspaceLock.acquireLock);
+const mockWorkspaceLockSetupCleanupHandlers = vi.mocked(WorkspaceLock.setupCleanupHandlers);
 const mockWarn = vi.mocked(warn);
 
 function makeCommand(config?: string) {
@@ -208,6 +227,16 @@ describe('review_pr command', () => {
     } as any);
     mockCreateReview.mockReturnValue({ id: 501 } as any);
     mockResolvePrUrl.mockResolvedValue('https://github.com/acme/repo/pull/42');
+    mockWorkspaceLockAcquireLock.mockResolvedValue({ type: 'pid' } as any);
+    workspaceAutoSelectorMocks.ctor.mockReset();
+    workspaceAutoSelectorMocks.selectWorkspace.mockReset();
+    workspaceAutoSelectorMocks.selectWorkspace.mockResolvedValue({
+      workspace: {
+        workspacePath: tempDir,
+      },
+      isNew: false,
+      clearedStaleLock: false,
+    });
   });
 
   afterEach(async () => {
@@ -1212,8 +1241,7 @@ describe('review_pr command', () => {
     fsSync.chmodSync(tmpParent, 0o700);
   });
 
-  test('uses setupWorkspace with base branch (not head branch) when --auto-workspace is enabled', async () => {
-    mockSetupWorkspace.mockResolvedValueOnce({ baseDir: tempDir } as any);
+  test('uses lightweight auto-workspace selection and then checks out the PR branch', async () => {
     const codexExecute = vi.fn().mockResolvedValue({
       content: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
     });
@@ -1225,22 +1253,30 @@ describe('review_pr command', () => {
       makeCommand()
     );
 
-    expect(mockSetupWorkspace).toHaveBeenCalledWith(
-      expect.objectContaining({
-        autoWorkspace: true,
-        createBranch: false,
-        base: 'main',
-      }),
-      tempDir,
+    expect(workspaceAutoSelectorMocks.ctor).toHaveBeenCalledWith(tempDir, expect.anything());
+    expect(workspaceAutoSelectorMocks.selectWorkspace).toHaveBeenCalledWith(
+      expect.stringMatching(/^pr-review-42-/),
       undefined,
-      expect.anything(),
-      'tim pr review-guide'
+      expect.objectContaining({
+        interactive: true,
+        createBranch: false,
+      })
     );
+    expect(mockWorkspaceLockAcquireLock).toHaveBeenCalledWith(tempDir, 'tim pr review-guide', {
+      type: 'pid',
+    });
+    expect(mockWorkspaceLockSetupCleanupHandlers).toHaveBeenCalledWith(tempDir, 'pid');
+    expect(
+      vi.mocked((await import('../headless.js')).updateHeadlessSessionInfo)
+    ).toHaveBeenCalledWith({
+      workspacePath: tempDir,
+    });
     expect(mockCheckoutPrBranch).toHaveBeenCalledWith(
       expect.objectContaining({
         baseBranch: 'main',
         branch: 'feature/pr',
         skipDirtyCheck: true,
+        cwd: tempDir,
       })
     );
   });

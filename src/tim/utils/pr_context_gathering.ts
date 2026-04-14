@@ -236,7 +236,8 @@ export async function checkoutPrBranch(
     }
   }
 
-  const usingJj = await deps.getUsingJj(cwd);
+  // For now we always use Git for this since JJ can't fetch `refs/pull/*`
+  const usingJj = false; // await deps.getUsingJj(cwd);
   if (usingJj) {
     await checkoutJjBranch(options.branch, options.prNumber, cwd, deps);
   } else {
@@ -332,9 +333,6 @@ async function checkoutJjBranch(
     const errorSuffix = result.stderr ? `: ${result.stderr}` : '';
     throw new Error(`Failed to switch to branch "${branch}" with jj new${errorSuffix}`);
   }
-
-  // Track the remote bookmark if available (ignore errors for local-only bookmarks)
-  await deps.runCommand(['jj', 'bookmark', 'track', `${branch}@origin`], cwd);
 
   // jj new creates a new working-copy revision on top of the branch.
   // This is the standard jj workflow — all work happens on new revisions.
