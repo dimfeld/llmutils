@@ -128,6 +128,56 @@ describe('configSchema', () => {
       const result = timConfigSchema.parse(config);
       expect(result.lifecycle?.commands?.[0]?.onlyWorkspaceType).toBe('auto');
     });
+
+    test('accepts lifecycle commands with runIn contexts', () => {
+      const config = {
+        lifecycle: {
+          commands: [
+            {
+              title: 'pnpm install',
+              command: 'pnpm install',
+              runIn: ['agent'],
+            },
+          ],
+        },
+      };
+
+      const result = timConfigSchema.parse(config);
+      expect(result.lifecycle?.commands?.[0]?.runIn).toEqual(['agent']);
+    });
+
+    test('accepts review as a lifecycle command context', () => {
+      const config = {
+        lifecycle: {
+          commands: [
+            {
+              title: 'review prep',
+              command: 'pnpm install',
+              runIn: ['review'],
+            },
+          ],
+        },
+      };
+
+      const result = timConfigSchema.parse(config);
+      expect(result.lifecycle?.commands?.[0]?.runIn).toEqual(['review']);
+    });
+
+    test('rejects invalid runIn contexts', () => {
+      expect(() =>
+        timConfigSchema.parse({
+          lifecycle: {
+            commands: [
+              {
+                title: 'pnpm install',
+                command: 'pnpm install',
+                runIn: ['invalid'],
+              },
+            ],
+          },
+        })
+      ).toThrow();
+    });
   });
 
   describe('updateDocs.mode', () => {

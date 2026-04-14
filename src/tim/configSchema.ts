@@ -26,6 +26,9 @@ export const postApplyCommandSchema = z.object({
   hideOutputOnSuccess: z.boolean().optional().default(false),
 });
 
+export const lifecycleCommandContextSchema = z.enum(['agent', 'run', 'review']);
+export type LifecycleCommandContext = z.infer<typeof lifecycleCommandContextSchema>;
+
 export const lifecycleCommandSchema = z.object({
   title: z.string(),
   command: z.string(),
@@ -42,6 +45,12 @@ export const lifecycleCommandSchema = z.object({
   env: z.record(z.string(), z.string()).optional(),
   allowFailure: z.boolean().optional(),
   onlyWorkspaceType: z.enum(['auto', 'standard', 'primary']).optional(),
+  runIn: z
+    .array(lifecycleCommandContextSchema)
+    .optional()
+    .describe(
+      'Optional list of command contexts in which this lifecycle command should run. Omit to run in all contexts.'
+    ),
 });
 
 /**
@@ -136,7 +145,7 @@ export const timConfigSchema = z
         commands: z.array(lifecycleCommandSchema).optional(),
       })
       .optional()
-      .describe('Lifecycle commands to run before and after tim run/tim agent execution'),
+      .describe('Lifecycle commands to run before and after tim command execution'),
     headless: z
       .object({
         url: z.string().optional().describe('WebSocket URL for headless output streaming'),

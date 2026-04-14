@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { error, log, warn, writeStderr, writeStdout } from '../logging.js';
 import { buildWorkspaceCommandEnv } from '../common/env.js';
-import type { LifecycleCommand } from './configSchema.js';
+import type { LifecycleCommand, LifecycleCommandContext } from './configSchema.js';
 import type { WorkspaceType } from './db/workspace.js';
 import { isShuttingDown } from './shutdown_state.js';
 
@@ -56,6 +56,7 @@ export class LifecycleManager {
     commands: LifecycleCommand[] | undefined,
     private readonly baseDir: string,
     private readonly workspaceType: WorkspaceType | undefined,
+    private readonly commandContext: LifecycleCommandContext = 'agent',
     private readonly shutdownTimeoutMs = SHUTDOWN_COMMAND_TIMEOUT_MS
   ) {
     this.states = (commands ?? []).map((command) => ({
@@ -73,6 +74,14 @@ export class LifecycleManager {
       }
 
       const { command, mode } = state;
+
+      if (!this.shouldRunInContext(command)) {
+        state.startupState = 'skipped';
+        log(
+          `Skipping lifecycle command "${command.title}" because it only runs in ${command.runIn?.join(', ')} contexts and the current command context is "${this.commandContext}".`
+        );
+        continue;
+      }
 
       if (command.onlyWorkspaceType && command.onlyWorkspaceType !== this.workspaceType) {
         state.startupState = 'skipped';
@@ -356,6 +365,14 @@ export class LifecycleManager {
 
   private shouldRunCheck(command: LifecycleCommand, mode: LifecycleMode): boolean {
     return Boolean(command.check && (command.shutdown || mode === 'daemon'));
+  }
+
+  private shouldRunInContext(command: LifecycleCommand): boolean {
+    if (!command.runIn || command.runIn.length === 0) {
+      return true;
+    }
+
+    return command.runIn.includes(this.commandContext);
   }
 
   private resolveCwd(command: Pick<LifecycleCommand, 'workingDirectory'>): string {

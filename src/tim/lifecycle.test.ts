@@ -256,9 +256,10 @@ describe('LifecycleManager', () => {
 
   async function startupAndShutdown(
     commands: LifecycleCommand[],
-    workspaceType?: WorkspaceType
+    workspaceType?: WorkspaceType,
+    commandContext = 'agent'
   ): Promise<string[]> {
-    const manager = new LifecycleManager(commands, tempDir, workspaceType);
+    const manager = new LifecycleManager(commands, tempDir, workspaceType, commandContext);
     await manager.startup();
     await manager.shutdown();
     return await readLines(logFile);
@@ -765,6 +766,53 @@ describe('LifecycleManager', () => {
     );
 
     expect(events).toEqual(['auto', 'auto-stop']);
+  });
+
+  test('runIn defaults to running in all command contexts when omitted', async () => {
+    const events = await startupAndShutdown([
+      {
+        title: 'always',
+        command: appendLineCommand(logFile, 'always-start'),
+      },
+    ], undefined, 'run');
+
+    expect(events).toEqual(['always-start']);
+  });
+
+  test('runIn skips commands when the command context does not match', async () => {
+    const events = await startupAndShutdown(
+      [
+        {
+          title: 'agent-only',
+          command: appendLineCommand(logFile, 'agent-only-start'),
+          runIn: ['agent'],
+        },
+        {
+          title: 'always',
+          command: appendLineCommand(logFile, 'always-start'),
+        },
+      ],
+      undefined,
+      'run'
+    );
+
+    expect(events).toEqual(['always-start']);
+  });
+
+  test('runIn allows commands when the command context matches', async () => {
+    const events = await startupAndShutdown(
+      [
+        {
+          title: 'agent-only',
+          command: appendLineCommand(logFile, 'agent-only-start'),
+          runIn: ['agent'],
+        },
+      ],
+      undefined,
+      'agent'
+    );
+
+    expect(events).toEqual(['agent-only-start']);
   });
 
   test('daemon shutdown command runs before the daemon is terminated', async () => {

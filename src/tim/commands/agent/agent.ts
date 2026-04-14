@@ -400,7 +400,8 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
       lifecycleManager = new LifecycleManager(
         config.lifecycle.commands,
         currentBaseDir,
-        workspaceInfo?.workspaceType
+        workspaceInfo?.workspaceType,
+        'agent'
       );
       unregisterLifecycleCleanup = cleanupRegistry.register(() => lifecycleManager?.killDaemons());
       await lifecycleManager.startup();
