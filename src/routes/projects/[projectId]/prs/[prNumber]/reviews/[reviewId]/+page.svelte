@@ -52,7 +52,6 @@
     toggleError = null;
 
     const newResolved = !issue.resolved;
-    // Optimistic update
     const local = issues.find((i) => i.id === issue.id);
     if (local) local.resolved = newResolved ? 1 : 0;
     togglingIssueIds.add(issue.id);
@@ -61,7 +60,6 @@
     try {
       await toggleReviewIssueResolved({ issueId: issue.id, resolved: newResolved });
     } catch (err) {
-      // Revert optimistic update
       if (local) local.resolved = newResolved ? 0 : 1;
       toggleError = err instanceof Error ? err.message : String(err);
       await invalidateAll();
@@ -148,8 +146,8 @@
   aria-label="Review guide detail"
   tabindex="0"
 >
-  <div class="space-y-4 pb-4">
-    <!-- Back link -->
+  <!-- Top: back link, header, metadata, alerts -->
+  <div class="mb-6 space-y-3">
     <a
       href="/projects/{projectId}/prs/{prNumber}"
       class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
@@ -158,7 +156,6 @@
       Back to PR #{prNumber}
     </a>
 
-    <!-- Header -->
     <div class="flex items-start gap-2">
       <div class="min-w-0 flex-1">
         <h2 class="text-lg font-semibold text-foreground">Review Guide</h2>
@@ -178,24 +175,20 @@
       </span>
     </div>
 
-    <!-- Metadata row -->
     <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
       <span title={data.review.created_at}>
         Generated {formatRelativeTime(data.review.created_at)}
       </span>
       {#if data.review.reviewed_sha}
-        <span class="font-mono">
-          SHA: {shortSha(data.review.reviewed_sha)}
-        </span>
+        <span class="font-mono">SHA: {shortSha(data.review.reviewed_sha)}</span>
       {/if}
       {#if data.review.status === 'complete'}
-        <span>
-          {issues.length} issue{issues.length === 1 ? '' : 's'} ({unresolvedCount} unresolved)
-        </span>
+        <span
+          >{issues.length} issue{issues.length === 1 ? '' : 's'} ({unresolvedCount} unresolved)</span
+        >
       {/if}
     </div>
 
-    <!-- New commits warning -->
     {#if hasNewCommits}
       <div
         class="flex items-start gap-2 rounded-md bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-300"
@@ -209,7 +202,6 @@
       </div>
     {/if}
 
-    <!-- Error message -->
     {#if data.review.status === 'error' && data.review.error_message}
       <div
         class="rounded-md bg-red-50 p-3 text-sm text-red-800 dark:bg-red-900/20 dark:text-red-300"
@@ -225,104 +217,107 @@
         {toggleError}
       </div>
     {/if}
+  </div>
 
-    <!-- Issues -->
-    {#if issues.length > 0}
-      <div>
-        <h3 class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-          Issues
-        </h3>
-        <div class="space-y-3">
-          {#each SEVERITY_ORDER as severity (severity)}
-            {@const severityIssues = groupedIssues.get(severity) ?? []}
-            {#if severityIssues.length > 0}
-              <div>
-                <div class="mb-1.5 flex items-center gap-2">
-                  <span
-                    class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {severityBadgeClass(
-                      severity
-                    )}"
+  <!-- Split: guide left, issues right -->
+  <div class="flex items-start gap-6">
+    <!-- Left: review guide -->
+    <div class="min-w-0 flex-1">
+      {#if data.review.review_guide}
+        <MarkdownContent content={data.review.review_guide} class="text-sm text-foreground" />
+      {:else if data.review.status !== 'complete'}
+        <p class="text-sm text-muted-foreground">Review guide not yet available.</p>
+      {/if}
+    </div>
+
+    <!-- Right: issues -->
+    <div class="sticky top-6 w-80 shrink-0 space-y-1.5">
+      <h3 class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+        Issues
+        {#if issues.length > 0}
+          <span class="ml-1 font-normal normal-case">
+            ({unresolvedCount} of {issues.length} unresolved)
+          </span>
+        {/if}
+      </h3>
+
+      {#if issues.length > 0}
+        {#each SEVERITY_ORDER as severity (severity)}
+          {@const severityIssues = groupedIssues.get(severity) ?? []}
+          {#if severityIssues.length > 0}
+            <details open class="group">
+              <summary
+                class="flex cursor-pointer list-none items-center gap-2 rounded px-1 py-1 hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                <span
+                  class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {severityBadgeClass(
+                    severity
+                  )}"
+                >
+                  {formatSeverity(severity)}
+                </span>
+                <span class="text-xs text-muted-foreground">
+                  {severityIssues.filter((i) => !i.resolved).length}/{severityIssues.length} open
+                </span>
+              </summary>
+              <ul class="mt-1 space-y-1.5 pl-1">
+                {#each severityIssues as issue (issue.id)}
+                  <li
+                    class="rounded-md border border-border bg-card p-2.5 text-xs {issue.resolved
+                      ? 'opacity-50'
+                      : ''}"
                   >
-                    {formatSeverity(severity)}
-                  </span>
-                  <span class="text-xs text-muted-foreground">
-                    {severityIssues.length} issue{severityIssues.length === 1 ? '' : 's'}
-                  </span>
-                </div>
-                <ul class="space-y-2">
-                  {#each severityIssues as issue (issue.id)}
-                    <li
-                      class="rounded-md border border-border bg-card p-3 text-sm {issue.resolved
-                        ? 'opacity-50'
-                        : ''}"
-                    >
-                      <div class="flex items-start gap-2">
-                        <button
-                          onclick={() => handleToggleResolved(issue)}
-                          disabled={togglingIssueIds.has(issue.id)}
-                          class="mt-0.5 shrink-0 text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                          title={issue.resolved ? 'Mark as unresolved' : 'Mark as resolved'}
-                          aria-label={issue.resolved ? 'Mark as unresolved' : 'Mark as resolved'}
-                        >
-                          {#if issue.resolved}
-                            <CheckCircle class="size-4 text-green-600 dark:text-green-400" />
-                          {:else}
-                            <Circle class="size-4" />
-                          {/if}
-                        </button>
-                        <div class="min-w-0 flex-1 space-y-1.5">
-                          <div class="flex flex-wrap items-center gap-1.5">
-                            <span
-                              class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium {categoryBadgeClass(
-                                issue.category
-                              )}"
-                            >
-                              {formatCategory(issue.category)}
+                    <div class="flex items-start gap-1.5">
+                      <button
+                        onclick={() => handleToggleResolved(issue)}
+                        disabled={togglingIssueIds.has(issue.id)}
+                        class="mt-0.5 shrink-0 text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                        title={issue.resolved ? 'Mark as unresolved' : 'Mark as resolved'}
+                        aria-label={issue.resolved ? 'Mark as unresolved' : 'Mark as resolved'}
+                      >
+                        {#if issue.resolved}
+                          <CheckCircle class="size-3.5 text-green-600 dark:text-green-400" />
+                        {:else}
+                          <Circle class="size-3.5" />
+                        {/if}
+                      </button>
+                      <div class="min-w-0 flex-1 space-y-1">
+                        <div class="flex flex-wrap items-center gap-1">
+                          <span
+                            class="inline-flex items-center rounded px-1 py-0.5 text-[10px] font-medium {categoryBadgeClass(
+                              issue.category
+                            )}"
+                          >
+                            {formatCategory(issue.category)}
+                          </span>
+                          {#if issue.file}
+                            <span class="truncate font-mono text-[10px] text-muted-foreground">
+                              {issue.file}{issue.start_line
+                                ? `:${issue.start_line}`
+                                : ''}{issue.line && issue.line !== issue.start_line
+                                ? `–${issue.line}`
+                                : ''}
                             </span>
-                            {#if issue.file}
-                              <span class="font-mono text-xs text-muted-foreground">
-                                {issue.file}{issue.start_line
-                                  ? `:${issue.start_line}`
-                                  : ''}{issue.line && issue.line !== issue.start_line
-                                  ? `–${issue.line}`
-                                  : ''}
-                              </span>
-                            {/if}
-                          </div>
-                          <p class="text-foreground">{issue.content}</p>
-                          {#if issue.suggestion}
-                            <p class="text-muted-foreground">
-                              <span class="font-medium text-foreground">Suggestion:</span>
-                              {issue.suggestion}
-                            </p>
                           {/if}
                         </div>
+                        <p class="text-foreground">{issue.content}</p>
+                        {#if issue.suggestion}
+                          <p class="text-muted-foreground">
+                            <span class="font-medium text-foreground">Suggestion:</span>
+                            {issue.suggestion}
+                          </p>
+                        {/if}
                       </div>
-                    </li>
-                  {/each}
-                </ul>
-              </div>
-            {/if}
-          {/each}
-        </div>
-      </div>
-    {:else if data.review.status === 'complete'}
-      <p class="text-sm text-muted-foreground">No issues found.</p>
-    {/if}
-
-    <!-- Review Guide Text -->
-    {#if data.review.review_guide}
-      <details>
-        <summary
-          class="cursor-pointer text-xs font-semibold tracking-wide text-muted-foreground uppercase hover:text-foreground"
-        >
-          Full review guide
-        </summary>
-        <MarkdownContent
-          content={data.review.review_guide}
-          class="mt-2 rounded-md border border-border bg-muted/30 p-4 text-sm text-foreground"
-        />
-      </details>
-    {/if}
+                    </div>
+                  </li>
+                {/each}
+              </ul>
+            </details>
+          {/if}
+        {/each}
+      {:else if data.review.status === 'complete'}
+        <p class="text-xs text-muted-foreground">No issues found.</p>
+      {/if}
+    </div>
   </div>
 </div>

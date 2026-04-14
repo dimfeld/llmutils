@@ -331,6 +331,34 @@
       </div>
     {/if}
 
+    <!-- Check Runs -->
+    {#if pr.checks.length > 0}
+      <details open>
+        <summary
+          class="cursor-pointer text-xs font-semibold tracking-wide text-muted-foreground uppercase hover:text-foreground"
+        >
+          {pr.checks.length} check{pr.checks.length === 1 ? '' : 's'}
+        </summary>
+        <div class="mt-1.5 pl-2">
+          <PrCheckRunList checks={pr.checks} requiredCheckNames={pr.requiredCheckNames ?? []} />
+        </div>
+      </details>
+    {/if}
+
+    <!-- Reviews -->
+    {#if pr.reviews.length > 0}
+      <details open>
+        <summary
+          class="cursor-pointer text-xs font-semibold tracking-wide text-muted-foreground uppercase hover:text-foreground"
+        >
+          {pr.reviews.length} review{pr.reviews.length === 1 ? '' : 's'}
+        </summary>
+        <div class="mt-1.5 pl-2">
+          <PrReviewList reviews={pr.reviews} />
+        </div>
+      </details>
+    {/if}
+
     <!-- Review Guides -->
     <div>
       <div class="mb-1.5 flex items-center justify-between">
@@ -397,34 +425,6 @@
         <p class="text-xs text-muted-foreground">No review guides generated yet.</p>
       {/if}
     </div>
-
-    <!-- Check Runs -->
-    {#if pr.checks.length > 0}
-      <details open>
-        <summary
-          class="cursor-pointer text-xs font-semibold tracking-wide text-muted-foreground uppercase hover:text-foreground"
-        >
-          {pr.checks.length} check{pr.checks.length === 1 ? '' : 's'}
-        </summary>
-        <div class="mt-1.5 pl-2">
-          <PrCheckRunList checks={pr.checks} requiredCheckNames={pr.requiredCheckNames ?? []} />
-        </div>
-      </details>
-    {/if}
-
-    <!-- Reviews -->
-    {#if pr.reviews.length > 0}
-      <details open>
-        <summary
-          class="cursor-pointer text-xs font-semibold tracking-wide text-muted-foreground uppercase hover:text-foreground"
-        >
-          {pr.reviews.length} review{pr.reviews.length === 1 ? '' : 's'}
-        </summary>
-        <div class="mt-1.5 pl-2">
-          <PrReviewList reviews={pr.reviews} />
-        </div>
-      </details>
-    {/if}
 
     <!-- Review Threads -->
     {#if pr.reviewThreads?.length}
