@@ -440,7 +440,9 @@
     {#if session.sessionInfo.workspacePath || showRunAgent || (planAttentionState && attentionReasons.length > 0)}
       <div class="mt-1 flex min-w-0 items-center justify-between gap-2">
         {#if session.sessionInfo.workspacePath}
-          <span class="truncate text-xs text-muted-foreground">{session.sessionInfo.workspacePath}</span>
+          <span class="truncate text-xs text-muted-foreground"
+            >{session.sessionInfo.workspacePath}</span
+          >
         {/if}
         <div class="flex shrink-0 items-center gap-2">
           {#if showRunAgent}
