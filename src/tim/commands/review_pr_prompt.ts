@@ -110,8 +110,9 @@ ${getDiffInstructions(metadata.baseBranch, useJj)}
 2. Group files into functional sections/subsections (core logic, data model, API, tests, docs, etc.).
 3. Analyze each section with enough detail that a reviewer can walk the PR without opening every file.
 4. Ensure every changed file and every changed line is covered in at least one section.
-5. Include subsection commentary plus concrete diff snippets/line references for important changes.
-6. Ignore comments that begin with \`AI:\` or \`AI_COMMENT_START\`.
+5. Each section must include the full unified diff for all files in that section, in a \`\`\`unified-diff code block, so the reviewer can read the changes inline without opening the files separately.
+6. Include subsection commentary plus concrete line references for important changes.
+7. Ignore comments that begin with \`AI:\` or \`AI_COMMENT_START\`.
 
 ${REVIEW_CATEGORIES_SECTION}
 
