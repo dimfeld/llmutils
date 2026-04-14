@@ -791,6 +791,69 @@ autoexamples:
       }
     });
 
+    test('loadEffectiveConfig dedupes lifecycle commands by title or command across global/repo/local, preferring local', async () => {
+      const originalEnv = process.env.TIM_LOAD_GLOBAL_CONFIG;
+      delete process.env.TIM_LOAD_GLOBAL_CONFIG;
+
+      try {
+        const globalConfigPath = path.join(fakeHomeDir, '.config', 'tim', 'config.yml');
+        await fs.mkdir(path.dirname(globalConfigPath), { recursive: true });
+        await fs.writeFile(
+          globalConfigPath,
+          yaml.stringify({
+            lifecycle: {
+              commands: [
+                { title: 'global title', command: 'echo title' },
+                { title: 'global command', command: 'echo command match' },
+              ],
+            },
+          }),
+          'utf-8'
+        );
+
+        const mainConfigPath = path.join(configDir, 'tim.yml');
+        await fs.writeFile(
+          mainConfigPath,
+          yaml.stringify({
+            lifecycle: {
+              commands: [
+                { title: 'global title', command: 'echo repo title override' },
+                { title: 'repo', command: 'echo repo' },
+              ],
+            },
+          }),
+          'utf-8'
+        );
+
+        const localConfigPath = path.join(configDir, 'tim.local.yml');
+        await fs.writeFile(
+          localConfigPath,
+          yaml.stringify({
+            lifecycle: {
+              commands: [
+                { title: 'local-only', command: 'echo local' },
+                { title: 'local command override', command: 'echo command match' },
+              ],
+            },
+          }),
+          'utf-8'
+        );
+
+        const config = await loadEffectiveConfig();
+
+        expect(config.lifecycle?.commands?.map((command) => command.title)).toEqual([
+          'global title',
+          'repo',
+          'local-only',
+          'local command override',
+        ]);
+      } finally {
+        if (originalEnv !== undefined) {
+          process.env.TIM_LOAD_GLOBAL_CONFIG = originalEnv;
+        }
+      }
+    });
+
     test('loadEffectiveConfig keeps repository lifecycle commands when no overrides exist', async () => {
       const mainConfigPath = path.join(configDir, 'tim.yml');
       await fs.writeFile(

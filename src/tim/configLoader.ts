@@ -42,6 +42,42 @@ function mergeConfigs(mainConfig: TimConfig, localConfig: TimConfig): TimConfig 
     }
   }
 
+  function dedupeLifecycleCommands(
+    commands: NonNullable<TimConfig['lifecycle']>['commands']
+  ): NonNullable<TimConfig['lifecycle']>['commands'] {
+    const seen = new Set<string>();
+    const deduped: NonNullable<TimConfig['lifecycle']>['commands'] = [];
+
+    // Iterate backwards so later/local commands take precedence over earlier/global commands.
+    for (let i = commands.length - 1; i >= 0; i--) {
+      const command = commands[i];
+      if (!command) {
+        continue;
+      }
+
+      const keys = [
+        command.title ? `title:${command.title}` : undefined,
+        command.command ? `command:${command.command}` : undefined,
+      ].filter((key): key is string => Boolean(key));
+
+      if (keys.length === 0) {
+        deduped.push(command);
+        continue;
+      }
+
+      if (keys.some((key) => seen.has(key))) {
+        continue;
+      }
+
+      for (const key of keys) {
+        seen.add(key);
+      }
+      deduped.push(command);
+    }
+
+    return deduped.reverse();
+  }
+
   // Do deep merge for select paths
 
   mergeConfigKey('answerPr');
@@ -128,10 +164,10 @@ function mergeConfigs(mainConfig: TimConfig, localConfig: TimConfig): TimConfig 
         ...localConfig.lifecycle,
       };
       if (mainConfig.lifecycle.commands || localConfig.lifecycle.commands) {
-        mergedLifecycle.commands = [
+        mergedLifecycle.commands = dedupeLifecycleCommands([
           ...(mainConfig.lifecycle.commands ?? []),
           ...(localConfig.lifecycle.commands ?? []),
-        ];
+        ]);
       }
       merged.lifecycle = mergedLifecycle;
     } else {
