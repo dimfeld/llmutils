@@ -438,11 +438,11 @@
       </div>
     </div>
     {#if session.sessionInfo.workspacePath || showRunAgent || (planAttentionState && attentionReasons.length > 0)}
-      <div class="mt-1 flex flex-wrap items-center justify-between gap-2">
+      <div class="mt-1 flex min-w-0 items-center justify-between gap-2">
         {#if session.sessionInfo.workspacePath}
-          <span class="text-xs text-muted-foreground">{session.sessionInfo.workspacePath}</span>
+          <span class="truncate text-xs text-muted-foreground">{session.sessionInfo.workspacePath}</span>
         {/if}
-        <div class="flex flex-wrap items-center gap-2">
+        <div class="flex shrink-0 items-center gap-2">
           {#if showRunAgent}
             {#if startingAgent}
               <button
@@ -470,6 +470,7 @@
             <PlanAttentionActions
               planUuid={session.sessionInfo.planUuid!}
               projectId={String(session.projectId)}
+              inline={true}
               reasons={attentionReasons}
               reviewIssueCount={planAttentionState.reviewIssueCount}
               canUpdateDocs={planAttentionState.canUpdateDocs}

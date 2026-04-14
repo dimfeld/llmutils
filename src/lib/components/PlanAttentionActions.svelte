@@ -20,6 +20,7 @@
     epic,
     projectId,
     developmentWorkflow = 'pr-based' as const,
+    inline = false,
   }: {
     planUuid: string;
     reasons: PlanAttentionReason[];
@@ -30,6 +31,7 @@
     projectId: string;
     developmentWorkflow?: 'pr-based' | 'trunk-based';
     waitingForInputReason?: string;
+    inline?: boolean;
   } = $props();
 
   const reasonStyles: Record<string, { label: string; classes: string }> = {
@@ -106,7 +108,7 @@
   }
 </script>
 
-<div class="flex w-full flex-wrap items-center justify-between gap-1.5">
+<div class={inline ? 'flex items-center gap-1.5' : 'flex w-full flex-wrap items-center justify-between gap-1.5'}>
   <div class="flex flex-wrap items-center gap-1.5">
     {#each reasons as reason (reason.type === 'waiting_for_input' ? `${reason.type}-${reason.sessionId}` : reason.type)}
       {@const style = reasonStyles[reason.type]}
