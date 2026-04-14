@@ -51,6 +51,9 @@ import { gatherPrContext, checkoutPrBranch, resolvePrUrl } from '../utils/pr_con
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { WorkspaceAutoSelector } from '../workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from '../workspace/workspace_lock.js';
+import { LifecycleManager } from '../lifecycle.js';
+import { getWorkspaceInfoByPath } from '../workspace/workspace_info.js';
+import { isShuttingDown } from '../shutdown_state.js';
 
 interface RootCommandLike {
   parent?: RootCommandLike;
@@ -720,215 +723,246 @@ export async function handleReviewGuideCommand(
       });
 
       const tempPaths = getReviewTempPaths(baseDir, review.id);
+      let lifecycleManager: LifecycleManager | undefined;
+      let workflowError: unknown;
 
       try {
-        await ensureTmpDir(tempPaths.dir);
-        const usingJj = await getUsingJj(baseDir);
-        const customInstructions = await loadCustomReviewInstructions(config, baseDir);
-
-        const executorPromises: Array<Promise<ClaudeGuideResult | ExecutorIssueResult>> = [];
-        const executorOrder: Array<'claude-guide' | ReviewExecutorName> = [];
-        const hasClaude = selectedExecutorNames.includes('claude-code');
-        const hasCodex = selectedExecutorNames.includes('codex-cli');
-        const concurrentJobCount = (hasClaude ? 2 : 0) + (hasCodex ? 1 : 0);
-        const isConcurrent = concurrentJobCount > 1;
-        const executorTerminalInput = isConcurrent ? false : effectiveTerminalInput;
-        const executorNoninteractive = isConcurrent || !reviewInteractive;
-
-        if (hasClaude) {
-          executorOrder.push('claude-guide');
-          const claudeGuideExecutor = buildExecutorAndLog(
-            'claude-code',
-            {
-              baseDir,
-              model: options.model,
-              terminalInput: executorTerminalInput,
-              noninteractive: executorNoninteractive,
-            },
-            config
+        if (config.lifecycle?.commands && config.lifecycle.commands.length > 0 && !isShuttingDown()) {
+          const workspaceInfo = getWorkspaceInfoByPath(baseDir);
+          lifecycleManager = new LifecycleManager(
+            config.lifecycle.commands,
+            baseDir,
+            workspaceInfo?.workspaceType,
+            'review'
           );
-
-          executorPromises.push(
-            runClaudeGuide({
-              executor: claudeGuideExecutor,
-              metadata,
-              useJj: usingJj,
-              customInstructions,
-              guidePath: tempPaths.guidePath,
-              reviewId: review.id,
-              prUrl: prContext.prUrl,
-            })
-          );
-
-          executorOrder.push('claude-code');
-          const claudeIssuesExecutor = buildExecutorAndLog(
-            'claude-code',
-            {
-              baseDir,
-              model: options.model,
-              terminalInput: executorTerminalInput,
-              noninteractive: executorNoninteractive,
-            },
-            config
-          );
-
-          executorPromises.push(
-            runReviewIssues({
-              executor: claudeIssuesExecutor,
-              metadata,
-              useJj: usingJj,
-              customInstructions,
-              reviewId: review.id,
-              prUrl: prContext.prUrl,
-              source: 'claude-code',
-              planTitlePrefix: 'PR review issues (claude)',
-            })
-          );
+          await lifecycleManager.startup();
         }
 
-        if (hasCodex) {
-          executorOrder.push('codex-cli');
-          const codexExecutor = buildExecutorAndLog(
-            'codex-cli',
-            {
-              baseDir,
-              model: options.model,
-              terminalInput: executorTerminalInput,
-              noninteractive: executorNoninteractive,
-            },
-            config
-          );
+        try {
+          await ensureTmpDir(tempPaths.dir);
+          const usingJj = await getUsingJj(baseDir);
+          const customInstructions = await loadCustomReviewInstructions(config, baseDir);
 
-          executorPromises.push(
-            runReviewIssues({
-              executor: codexExecutor,
-              metadata,
-              useJj: usingJj,
-              customInstructions,
-              reviewId: review.id,
-              prUrl: prContext.prUrl,
-              source: 'codex-cli',
-              planTitlePrefix: 'PR review issues (codex)',
-            })
-          );
-        }
+          const executorPromises: Array<Promise<ClaudeGuideResult | ExecutorIssueResult>> = [];
+          const executorOrder: Array<'claude-guide' | ReviewExecutorName> = [];
+          const hasClaude = selectedExecutorNames.includes('claude-code');
+          const hasCodex = selectedExecutorNames.includes('codex-cli');
+          const concurrentJobCount = (hasClaude ? 2 : 0) + (hasCodex ? 1 : 0);
+          const isConcurrent = concurrentJobCount > 1;
+          const executorTerminalInput = isConcurrent ? false : effectiveTerminalInput;
+          const executorNoninteractive = isConcurrent || !reviewInteractive;
 
-        const settled = await Promise.allSettled(executorPromises);
-
-        let claudeGuideResult: ClaudeGuideResult | null = null;
-        let claudeIssuesResult: ExecutorIssueResult | null = null;
-        let codexResult: ExecutorIssueResult | null = null;
-
-        for (let index = 0; index < settled.length; index++) {
-          const result = settled[index];
-          const executorName = executorOrder[index];
-          if (!executorName || !result) {
-            continue;
-          }
-
-          if (result.status === 'rejected') {
-            warn(`${executorName} review failed: ${asErrorMessage(result.reason)}`);
-            continue;
-          }
-
-          if (executorName === 'claude-guide') {
-            claudeGuideResult = result.value as ClaudeGuideResult;
-          } else if (executorName === 'claude-code') {
-            claudeIssuesResult = result.value as ExecutorIssueResult;
-          } else if (executorName === 'codex-cli') {
-            codexResult = result.value as ExecutorIssueResult;
-          }
-        }
-
-        const issueResults = [claudeIssuesResult, codexResult].filter(
-          (entry): entry is ExecutorIssueResult => entry != null
-        );
-
-        if (issueResults.length === 0) {
-          const allErrors = settled
-            .filter((entry): entry is PromiseRejectedResult => entry.status === 'rejected')
-            .map((entry) => asErrorMessage(entry.reason));
-          const errorMessage = `All review executors failed. ${allErrors.join(' | ')}`;
-          throw new Error(errorMessage);
-        }
-
-        let finalIssues: StoredReviewIssue[] = [];
-        const reviewGuide = claudeGuideResult?.guideText ?? null;
-
-        if (claudeIssuesResult && codexResult) {
-          try {
-            finalIssues = await runCombinationStep({
-              config,
-              baseDir,
-              claudeIssues: claudeIssuesResult.issues,
-              codexIssues: codexResult.issues,
-              reviewId: review.id,
-              prUrl: prContext.prUrl,
-            });
-          } catch (error) {
-            warn(
-              `Issue combination failed, falling back to merged raw issues: ${asErrorMessage(error)}`
+          if (hasClaude) {
+            executorOrder.push('claude-guide');
+            const claudeGuideExecutor = buildExecutorAndLog(
+              'claude-code',
+              {
+                baseDir,
+                model: options.model,
+                terminalInput: executorTerminalInput,
+                noninteractive: executorNoninteractive,
+              },
+              config
             );
-            finalIssues = [...claudeIssuesResult.issues, ...codexResult.issues];
+
+            executorPromises.push(
+              runClaudeGuide({
+                executor: claudeGuideExecutor,
+                metadata,
+                useJj: usingJj,
+                customInstructions,
+                guidePath: tempPaths.guidePath,
+                reviewId: review.id,
+                prUrl: prContext.prUrl,
+              })
+            );
+
+            executorOrder.push('claude-code');
+            const claudeIssuesExecutor = buildExecutorAndLog(
+              'claude-code',
+              {
+                baseDir,
+                model: options.model,
+                terminalInput: executorTerminalInput,
+                noninteractive: executorNoninteractive,
+              },
+              config
+            );
+
+            executorPromises.push(
+              runReviewIssues({
+                executor: claudeIssuesExecutor,
+                metadata,
+                useJj: usingJj,
+                customInstructions,
+                reviewId: review.id,
+                prUrl: prContext.prUrl,
+                source: 'claude-code',
+                planTitlePrefix: 'PR review issues (claude)',
+              })
+            );
           }
-        } else if (claudeIssuesResult) {
-          finalIssues = claudeIssuesResult.issues;
-        } else if (codexResult) {
-          finalIssues = codexResult.issues;
-        }
 
-        finalIssues = sortIssues(finalIssues);
+          if (hasCodex) {
+            executorOrder.push('codex-cli');
+            const codexExecutor = buildExecutorAndLog(
+              'codex-cli',
+              {
+                baseDir,
+                model: options.model,
+                terminalInput: executorTerminalInput,
+                noninteractive: executorNoninteractive,
+              },
+              config
+            );
 
-        insertReviewIssues(db, {
-          reviewId: review.id,
-          issues: finalIssues.map(toInsertIssue),
-        });
-
-        updateReview(db, review.id, {
-          status: 'complete',
-          reviewGuide,
-          reviewedSha,
-          errorMessage: null,
-        });
-
-        const filesReviewed = prContext.prStatus.changed_files ?? 0;
-        const formatterIssues = finalIssues.map(toFormatterIssue);
-        const summary = generateReviewSummary(formatterIssues, filesReviewed);
-        log(chalk.green(`Review complete for ${prContext.prUrl}`));
-        log(
-          `Issues: ${summary.totalIssues} total (${summary.criticalCount} critical, ${summary.majorCount} major, ${summary.minorCount} minor, ${summary.infoCount} info)`
-        );
-
-        const topIssues = summarizeTopIssues(finalIssues);
-        if (topIssues.length > 0) {
-          log('Top issues:');
-          for (const issue of topIssues) {
-            log(`  ${issue}`);
+            executorPromises.push(
+              runReviewIssues({
+                executor: codexExecutor,
+                metadata,
+                useJj: usingJj,
+                customInstructions,
+                reviewId: review.id,
+                prUrl: prContext.prUrl,
+                source: 'codex-cli',
+                planTitlePrefix: 'PR review issues (codex)',
+              })
+            );
           }
-        }
 
-        if (options.verbose) {
-          const terminalDetails = formatSeverityGroupedIssuesForTerminal(formatterIssues, {
-            verbosity: 'detailed',
-            includeHeader: false,
+          const settled = await Promise.allSettled(executorPromises);
+
+          let claudeGuideResult: ClaudeGuideResult | null = null;
+          let claudeIssuesResult: ExecutorIssueResult | null = null;
+          let codexResult: ExecutorIssueResult | null = null;
+
+          for (let index = 0; index < settled.length; index++) {
+            const result = settled[index];
+            const executorName = executorOrder[index];
+            if (!executorName || !result) {
+              continue;
+            }
+
+            if (result.status === 'rejected') {
+              warn(`${executorName} review failed: ${asErrorMessage(result.reason)}`);
+              continue;
+            }
+
+            if (executorName === 'claude-guide') {
+              claudeGuideResult = result.value as ClaudeGuideResult;
+            } else if (executorName === 'claude-code') {
+              claudeIssuesResult = result.value as ExecutorIssueResult;
+            } else if (executorName === 'codex-cli') {
+              codexResult = result.value as ExecutorIssueResult;
+            }
+          }
+
+          const issueResults = [claudeIssuesResult, codexResult].filter(
+            (entry): entry is ExecutorIssueResult => entry != null
+          );
+
+          if (issueResults.length === 0) {
+            const allErrors = settled
+              .filter((entry): entry is PromiseRejectedResult => entry.status === 'rejected')
+              .map((entry) => asErrorMessage(entry.reason));
+            const errorMessage = `All review executors failed. ${allErrors.join(' | ')}`;
+            throw new Error(errorMessage);
+          }
+
+          let finalIssues: StoredReviewIssue[] = [];
+          const reviewGuide = claudeGuideResult?.guideText ?? null;
+
+          if (claudeIssuesResult && codexResult) {
+            try {
+              finalIssues = await runCombinationStep({
+                config,
+                baseDir,
+                claudeIssues: claudeIssuesResult.issues,
+                codexIssues: codexResult.issues,
+                reviewId: review.id,
+                prUrl: prContext.prUrl,
+              });
+            } catch (error) {
+              warn(
+                `Issue combination failed, falling back to merged raw issues: ${asErrorMessage(error)}`
+              );
+              finalIssues = [...claudeIssuesResult.issues, ...codexResult.issues];
+            }
+          } else if (claudeIssuesResult) {
+            finalIssues = claudeIssuesResult.issues;
+          } else if (codexResult) {
+            finalIssues = codexResult.issues;
+          }
+
+          finalIssues = sortIssues(finalIssues);
+
+          insertReviewIssues(db, {
+            reviewId: review.id,
+            issues: finalIssues.map(toInsertIssue),
           });
-          if (terminalDetails) {
-            log(terminalDetails);
+
+          updateReview(db, review.id, {
+            status: 'complete',
+            reviewGuide,
+            reviewedSha,
+            errorMessage: null,
+          });
+
+          const filesReviewed = prContext.prStatus.changed_files ?? 0;
+          const formatterIssues = finalIssues.map(toFormatterIssue);
+          const summary = generateReviewSummary(formatterIssues, filesReviewed);
+          log(chalk.green(`Review complete for ${prContext.prUrl}`));
+          log(
+            `Issues: ${summary.totalIssues} total (${summary.criticalCount} critical, ${summary.majorCount} major, ${summary.minorCount} minor, ${summary.infoCount} info)`
+          );
+
+          const topIssues = summarizeTopIssues(finalIssues);
+          if (topIssues.length > 0) {
+            log('Top issues:');
+            for (const issue of topIssues) {
+              log(`  ${issue}`);
+            }
           }
+
+          if (options.verbose) {
+            const terminalDetails = formatSeverityGroupedIssuesForTerminal(formatterIssues, {
+              verbosity: 'detailed',
+              includeHeader: false,
+            });
+            if (terminalDetails) {
+              log(terminalDetails);
+            }
+          }
+        } finally {
+          await cleanupTempFiles(tempPaths);
         }
       } catch (error) {
+        workflowError = error;
+      } finally {
+        if (lifecycleManager) {
+          try {
+            await lifecycleManager.shutdown();
+          } catch (shutdownErr) {
+            if (workflowError) {
+              warn(`Lifecycle shutdown failed for review command: ${asErrorMessage(shutdownErr)}`);
+            } else {
+              workflowError = shutdownErr;
+            }
+          }
+        }
+      }
+
+      if (workflowError) {
         try {
           updateReview(db, review.id, {
             status: 'error',
-            errorMessage: asErrorMessage(error),
+            errorMessage: asErrorMessage(workflowError),
             reviewedSha,
           });
         } catch (updateErr) {
           warn(`Failed to mark review as error: ${asErrorMessage(updateErr)}`);
         }
-        throw error;
-      } finally {
-        await cleanupTempFiles(tempPaths);
+        throw workflowError;
       }
     },
   });

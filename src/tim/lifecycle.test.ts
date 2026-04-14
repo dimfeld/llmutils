@@ -774,7 +774,7 @@ describe('LifecycleManager', () => {
         title: 'always',
         command: appendLineCommand(logFile, 'always-start'),
       },
-    ], undefined, 'run');
+    ], undefined, 'review');
 
     expect(events).toEqual(['always-start']);
   });
@@ -793,7 +793,7 @@ describe('LifecycleManager', () => {
         },
       ],
       undefined,
-      'run'
+      'review'
     );
 
     expect(events).toEqual(['always-start']);

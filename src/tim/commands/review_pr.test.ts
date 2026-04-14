@@ -9,6 +9,15 @@ const workspaceAutoSelectorMocks = vi.hoisted(() => ({
   selectWorkspace: vi.fn(),
 }));
 
+const lifecycleManagerMocks = vi.hoisted(() => ({
+  ctor: vi.fn(),
+  instances: [] as Array<{
+    startup: ReturnType<typeof vi.fn>;
+    shutdown: ReturnType<typeof vi.fn>;
+    killDaemons: ReturnType<typeof vi.fn>;
+  }>,
+}));
+
 vi.mock('../../logging.js', () => ({
   log: vi.fn(),
   warn: vi.fn(),
@@ -74,6 +83,10 @@ vi.mock('../assignments/workspace_identifier.js', () => ({
   getRepositoryIdentity: vi.fn(),
 }));
 
+vi.mock('../workspace/workspace_info.js', () => ({
+  getWorkspaceInfoByPath: vi.fn(() => null),
+}));
+
 vi.mock('../workspace/workspace_auto_selector.js', () => ({
   WorkspaceAutoSelector: class {
     constructor(...args: unknown[]) {
@@ -88,6 +101,19 @@ vi.mock('../workspace/workspace_lock.js', () => ({
   WorkspaceLock: {
     acquireLock: vi.fn(),
     setupCleanupHandlers: vi.fn(),
+  },
+}));
+
+vi.mock('../lifecycle.js', () => ({
+  LifecycleManager: class {
+    startup = vi.fn(async () => {});
+    shutdown = vi.fn(async () => {});
+    killDaemons = vi.fn(() => {});
+
+    constructor(...args: unknown[]) {
+      lifecycleManagerMocks.ctor(...args);
+      lifecycleManagerMocks.instances.push(this);
+    }
   },
 }));
 
@@ -112,6 +138,7 @@ import { getOrCreateProject } from '../db/project.js';
 import { buildExecutorAndLog } from '../executors/index.js';
 import { gatherPrContext, checkoutPrBranch, resolvePrUrl } from '../utils/pr_context_gathering.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import { LifecycleManager } from '../lifecycle.js';
 import { WorkspaceLock } from '../workspace/workspace_lock.js';
 import { handleMaterializeCommand, handleReviewGuideCommand, parseLineRange } from './review_pr.js';
 
@@ -221,6 +248,7 @@ describe('review_pr command', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    lifecycleManagerMocks.instances.length = 0;
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-review-pr-test-'));
     // Review ID is 501 from the mock, so temp dir is review-501
     guidePath = path.join(tempDir, '.tim', 'tmp', 'review-501', 'review-guide.md');
@@ -507,6 +535,50 @@ describe('review_pr command', () => {
         configurable: true,
       });
     }
+  });
+
+  test('runs lifecycle hooks in review context when configured', async () => {
+    mockLoadEffectiveConfig.mockResolvedValueOnce({
+      terminalInput: true,
+      review: {},
+      lifecycle: {
+        commands: [
+          {
+            title: 'install deps',
+            command: 'pnpm install',
+            runIn: ['review'],
+          },
+        ],
+      },
+      executors: {},
+    } as any);
+
+    const codexExecute = vi.fn().mockResolvedValue({
+      content: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
+    });
+    mockBuildExecutorAndLog.mockReturnValue({ execute: codexExecute } as any);
+
+    await handleReviewGuideCommand(
+      '42',
+      { executor: 'codex-cli', terminalInput: false },
+      makeCommand()
+    );
+
+    expect(lifecycleManagerMocks.ctor).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          title: 'install deps',
+          runIn: ['review'],
+        }),
+      ]),
+      tempDir,
+      undefined,
+      'review'
+    );
+
+    const lifecycleInstance = lifecycleManagerMocks.instances[0];
+    expect(lifecycleInstance.startup).toHaveBeenCalledTimes(1);
+    expect(lifecycleInstance.shutdown).toHaveBeenCalledTimes(1);
   });
 
   test('single executor mode skips combination', async () => {

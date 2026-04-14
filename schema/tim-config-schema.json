@@ -84,7 +84,7 @@
       "additionalProperties": false
     },
     "lifecycle": {
-      "description": "Lifecycle commands to run before and after tim run/tim agent execution",
+      "description": "Lifecycle commands to run before and after tim command execution",
       "type": "object",
       "properties": {
         "commands": {
@@ -136,6 +136,17 @@
                   "standard",
                   "primary"
                 ]
+              },
+              "runIn": {
+                "description": "Optional list of command contexts in which this lifecycle command should run. Omit to run in all contexts.",
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "agent",
+                    "review"
+                  ]
+                }
               }
             },
             "required": [
