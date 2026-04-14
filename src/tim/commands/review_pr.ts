@@ -41,7 +41,6 @@ import { TMP_DIR } from '../plan_materialize.js';
 import {
   COMBINATION_OUTPUT_SCHEMA,
   buildIssueCombinationPrompt,
-  buildReviewGuideIssuesFollowUpPrompt,
   buildReviewGuidePrompt,
   buildStandaloneReviewIssuesPrompt,
   type PrReviewMetadata,
@@ -79,7 +78,7 @@ interface ExecutorIssueResult {
   source: ReviewIssueSource;
 }
 
-interface ClaudeRunResult extends ExecutorIssueResult {
+interface ClaudeGuideResult {
   guideText: string;
 }
 
@@ -268,7 +267,7 @@ export function parseLineRange(line: string | number | null | undefined): {
   const lineStr = String(line);
   const rangeMatch = lineStr.match(/^(\d+)\s*[-–]\s*(\d+)$/);
   if (rangeMatch) {
-    return { startLine: rangeMatch[1]!, line: rangeMatch[2]! };
+    return { startLine: rangeMatch[1], line: rangeMatch[2] };
   }
 
   return { startLine: null, line: lineStr };
@@ -284,7 +283,7 @@ function toInsertIssue(issue: StoredReviewIssue): InsertReviewIssueInput {
     line,
     startLine,
     suggestion: issue.suggestion ?? null,
-    source: (issue.source as ReviewIssueSource | undefined) ?? null,
+    source: issue.source ?? null,
     resolved: false,
   };
 }
@@ -338,16 +337,15 @@ async function cleanupTempFiles(paths: {
     .catch((err) => warn('Failed to clean up temp files: ' + String(err)));
 }
 
-async function runClaudeGuideAndIssues(options: {
+async function runClaudeGuide(options: {
   executor: Executor;
   metadata: PrReviewMetadata;
   useJj: boolean;
   customInstructions?: string;
   guidePath: string;
-  issuesPath: string;
   reviewId: number;
   prUrl: string;
-}): Promise<ClaudeRunResult> {
+}): Promise<ClaudeGuideResult> {
   const guidePrompt = buildReviewGuidePrompt({
     metadata: options.metadata,
     guidePath: options.guidePath,
@@ -361,47 +359,30 @@ async function runClaudeGuideAndIssues(options: {
     planFilePath: '',
     captureOutput: 'result',
     executionMode: 'bare',
-    followUpPrompts: [
-      buildReviewGuideIssuesFollowUpPrompt({
-        guidePath: options.guidePath,
-        issuesPath: options.issuesPath,
-      }),
-    ],
   });
 
   let guideText: string;
   try {
     guideText = await fs.readFile(options.guidePath, 'utf8');
-  } catch (_error) {
+  } catch (error) {
     throw new Error(
-      `Claude executor completed but did not write the expected review guide to ${options.guidePath}. Check that the prompt instructs the agent to write to this exact path.`
+      `Claude executor completed but did not write the expected review guide to ${options.guidePath}. Check that the prompt instructs the agent to write to this exact path.`,
+      { cause: error }
     );
   }
 
-  let issueJson: string;
-  try {
-    issueJson = await fs.readFile(options.issuesPath, 'utf8');
-  } catch (_error) {
-    throw new Error(
-      `Claude executor completed but did not write the expected review issues JSON to ${options.issuesPath}. Check that the follow-up prompt instructs the agent to write to this exact path.`
-    );
-  }
-  const parsed = parseJsonReviewOutput(issueJson);
-
-  return {
-    guideText,
-    issues: withSource(parsed.issues, 'claude-code'),
-    source: 'claude-code',
-  };
+  return { guideText };
 }
 
-async function runCodexIssues(options: {
+async function runReviewIssues(options: {
   executor: Executor;
   metadata: PrReviewMetadata;
   useJj: boolean;
   customInstructions?: string;
   reviewId: number;
   prUrl: string;
+  source: ReviewIssueSource;
+  planTitlePrefix: string;
 }): Promise<ExecutorIssueResult> {
   const prompt = buildStandaloneReviewIssuesPrompt({
     metadata: options.metadata,
@@ -411,7 +392,7 @@ async function runCodexIssues(options: {
 
   const rawOutput = await options.executor.execute(prompt, {
     planId: String(options.reviewId),
-    planTitle: `PR review issues (codex): ${options.prUrl}`,
+    planTitle: `${options.planTitlePrefix}: ${options.prUrl}`,
     planFilePath: '',
     captureOutput: 'result',
     executionMode: 'review',
@@ -420,8 +401,8 @@ async function runCodexIssues(options: {
   const parsed = parseJsonReviewOutput(tryExtractJsonCandidate(normalizeExecutorOutput(rawOutput)));
 
   return {
-    issues: withSource(parsed.issues, 'codex-cli'),
-    source: 'codex-cli',
+    issues: withSource(parsed.issues, options.source),
+    source: options.source,
   };
 }
 
@@ -446,6 +427,9 @@ async function runCombinationStep(options: {
     },
   });
 
+  log(
+    `Combining ${options.claudeIssues.length} claude issues and ${options.codexIssues.length} codex issues...`
+  );
   const combinationExecutor = buildExecutorAndLog(
     'claude-code',
     {
@@ -565,9 +549,7 @@ export function formatReviewIssuesMarkdown(issues: ReviewIssueRow[]): string {
       continue;
     }
 
-    sections.push(
-      `## ${severity[0]!.toUpperCase()}${severity.slice(1)} (${severityIssues.length})`
-    );
+    sections.push(`## ${severity[0].toUpperCase()}${severity.slice(1)} (${severityIssues.length})`);
     sections.push('');
 
     severityIssues.forEach((issue, index) => {
@@ -744,15 +726,18 @@ export async function handleReviewGuideCommand(
         const usingJj = await getUsingJj(baseDir);
         const customInstructions = await loadCustomReviewInstructions(config, baseDir);
 
-        const executorPromises: Array<Promise<ClaudeRunResult | ExecutorIssueResult>> = [];
-        const executorOrder: ReviewExecutorName[] = [];
-        const isConcurrent = selectedExecutorNames.length > 1;
+        const executorPromises: Array<Promise<ClaudeGuideResult | ExecutorIssueResult>> = [];
+        const executorOrder: Array<'claude-guide' | ReviewExecutorName> = [];
+        const hasClaude = selectedExecutorNames.includes('claude-code');
+        const hasCodex = selectedExecutorNames.includes('codex-cli');
+        const concurrentJobCount = (hasClaude ? 2 : 0) + (hasCodex ? 1 : 0);
+        const isConcurrent = concurrentJobCount > 1;
         const executorTerminalInput = isConcurrent ? false : effectiveTerminalInput;
         const executorNoninteractive = isConcurrent || !reviewInteractive;
 
-        if (selectedExecutorNames.includes('claude-code')) {
-          executorOrder.push('claude-code');
-          const claudeExecutor = buildExecutorAndLog(
+        if (hasClaude) {
+          executorOrder.push('claude-guide');
+          const claudeGuideExecutor = buildExecutorAndLog(
             'claude-code',
             {
               baseDir,
@@ -764,20 +749,44 @@ export async function handleReviewGuideCommand(
           );
 
           executorPromises.push(
-            runClaudeGuideAndIssues({
-              executor: claudeExecutor,
+            runClaudeGuide({
+              executor: claudeGuideExecutor,
               metadata,
               useJj: usingJj,
               customInstructions,
               guidePath: tempPaths.guidePath,
-              issuesPath: tempPaths.issuesPath,
               reviewId: review.id,
               prUrl: prContext.prUrl,
             })
           );
+
+          executorOrder.push('claude-code');
+          const claudeIssuesExecutor = buildExecutorAndLog(
+            'claude-code',
+            {
+              baseDir,
+              model: options.model,
+              terminalInput: executorTerminalInput,
+              noninteractive: executorNoninteractive,
+            },
+            config
+          );
+
+          executorPromises.push(
+            runReviewIssues({
+              executor: claudeIssuesExecutor,
+              metadata,
+              useJj: usingJj,
+              customInstructions,
+              reviewId: review.id,
+              prUrl: prContext.prUrl,
+              source: 'claude-code',
+              planTitlePrefix: 'PR review issues (claude)',
+            })
+          );
         }
 
-        if (selectedExecutorNames.includes('codex-cli')) {
+        if (hasCodex) {
           executorOrder.push('codex-cli');
           const codexExecutor = buildExecutorAndLog(
             'codex-cli',
@@ -791,20 +800,23 @@ export async function handleReviewGuideCommand(
           );
 
           executorPromises.push(
-            runCodexIssues({
+            runReviewIssues({
               executor: codexExecutor,
               metadata,
               useJj: usingJj,
               customInstructions,
               reviewId: review.id,
               prUrl: prContext.prUrl,
+              source: 'codex-cli',
+              planTitlePrefix: 'PR review issues (codex)',
             })
           );
         }
 
         const settled = await Promise.allSettled(executorPromises);
 
-        let claudeResult: ClaudeRunResult | null = null;
+        let claudeGuideResult: ClaudeGuideResult | null = null;
+        let claudeIssuesResult: ExecutorIssueResult | null = null;
         let codexResult: ExecutorIssueResult | null = null;
 
         for (let index = 0; index < settled.length; index++) {
@@ -819,14 +831,20 @@ export async function handleReviewGuideCommand(
             continue;
           }
 
-          if (executorName === 'claude-code') {
-            claudeResult = result.value as ClaudeRunResult;
+          if (executorName === 'claude-guide') {
+            claudeGuideResult = result.value as ClaudeGuideResult;
+          } else if (executorName === 'claude-code') {
+            claudeIssuesResult = result.value as ExecutorIssueResult;
           } else if (executorName === 'codex-cli') {
-            codexResult = result.value;
+            codexResult = result.value as ExecutorIssueResult;
           }
         }
 
-        if (!claudeResult && !codexResult) {
+        const issueResults = [claudeIssuesResult, codexResult].filter(
+          (entry): entry is ExecutorIssueResult => entry != null
+        );
+
+        if (issueResults.length === 0) {
           const allErrors = settled
             .filter((entry): entry is PromiseRejectedResult => entry.status === 'rejected')
             .map((entry) => asErrorMessage(entry.reason));
@@ -835,14 +853,14 @@ export async function handleReviewGuideCommand(
         }
 
         let finalIssues: StoredReviewIssue[] = [];
-        const reviewGuide = claudeResult?.guideText ?? null;
+        const reviewGuide = claudeGuideResult?.guideText ?? null;
 
-        if (claudeResult && codexResult) {
+        if (claudeIssuesResult && codexResult) {
           try {
             finalIssues = await runCombinationStep({
               config,
               baseDir,
-              claudeIssues: claudeResult.issues,
+              claudeIssues: claudeIssuesResult.issues,
               codexIssues: codexResult.issues,
               reviewId: review.id,
               prUrl: prContext.prUrl,
@@ -851,10 +869,10 @@ export async function handleReviewGuideCommand(
             warn(
               `Issue combination failed, falling back to merged raw issues: ${asErrorMessage(error)}`
             );
-            finalIssues = [...claudeResult.issues, ...codexResult.issues];
+            finalIssues = [...claudeIssuesResult.issues, ...codexResult.issues];
           }
-        } else if (claudeResult) {
-          finalIssues = claudeResult.issues;
+        } else if (claudeIssuesResult) {
+          finalIssues = claudeIssuesResult.issues;
         } else if (codexResult) {
           finalIssues = codexResult.issues;
         }

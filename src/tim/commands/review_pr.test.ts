@@ -145,6 +145,37 @@ function makeCommand(config?: string) {
   } as any;
 }
 
+function installExecutorMock(options: {
+  claudeExecute?: ReturnType<typeof vi.fn>;
+  codexExecute?: ReturnType<typeof vi.fn>;
+  combineExecute?: ReturnType<typeof vi.fn>;
+}) {
+  mockBuildExecutorAndLog.mockImplementation((name, sharedOptions) => {
+    if (name === 'claude-code' && (sharedOptions as any)?.model === 'haiku') {
+      if (!options.combineExecute) {
+        throw new Error('Unexpected Claude combination executor request');
+      }
+      return { execute: options.combineExecute } as any;
+    }
+
+    if (name === 'claude-code') {
+      if (!options.claudeExecute) {
+        throw new Error('Unexpected Claude executor request');
+      }
+      return { execute: options.claudeExecute } as any;
+    }
+
+    if (name === 'codex-cli') {
+      if (!options.codexExecute) {
+        throw new Error('Unexpected Codex executor request');
+      }
+      return { execute: options.codexExecute } as any;
+    }
+
+    throw new Error(`Unexpected executor ${name}`);
+  });
+}
+
 describe('parseLineRange', () => {
   test('splits hyphen range into startLine and line', () => {
     expect(parseLineRange('10-20')).toEqual({ startLine: '10', line: '20' });
@@ -244,25 +275,33 @@ describe('review_pr command', () => {
   });
 
   test('runs both executors and combines issues when both succeed', async () => {
-    const claudeExecute = vi.fn().mockImplementationOnce(async () => {
-      await fs.mkdir(path.dirname(guidePath), { recursive: true });
-      await fs.writeFile(guidePath, '# Guide\n\nBody', 'utf8');
-      const issues = {
-        issues: [
-          {
-            severity: 'major',
-            category: 'bug',
-            content: 'Claude issue',
-            file: 'src/a.ts',
-            line: '10',
-            suggestion: 'Fix A',
-          },
-        ],
-        recommendations: [],
-        actionItems: [],
-      };
-      await fs.writeFile(issuesPath, JSON.stringify(issues), 'utf8');
-      return { content: 'ok' };
+    const claudeExecute = vi.fn().mockImplementation(async (prompt: string) => {
+      if (prompt.includes('must produce a complete review guide')) {
+        await fs.mkdir(path.dirname(guidePath), { recursive: true });
+        await fs.writeFile(guidePath, '# Guide\n\nBody', 'utf8');
+        return { content: 'ok' };
+      }
+
+      if (prompt.includes('standalone PR code review and must return structured JSON issues only')) {
+        return {
+          content: JSON.stringify({
+            issues: [
+              {
+                severity: 'major',
+                category: 'bug',
+                content: 'Claude issue',
+                file: 'src/a.ts',
+                line: '10',
+                suggestion: 'Fix A',
+              },
+            ],
+            recommendations: [],
+            actionItems: [],
+          }),
+        };
+      }
+
+      throw new Error(`Unexpected Claude prompt: ${prompt}`);
     });
 
     const codexExecute = vi.fn().mockResolvedValue({
@@ -300,28 +339,20 @@ describe('review_pr command', () => {
       }),
     });
 
-    let buildCount = 0;
-    mockBuildExecutorAndLog.mockImplementation((name) => {
-      buildCount++;
-      if (name === 'claude-code' && buildCount === 1) {
-        return { execute: claudeExecute } as any;
-      }
-      if (name === 'codex-cli') {
-        return { execute: codexExecute } as any;
-      }
-      return { execute: combineExecute } as any;
-    });
+    installExecutorMock({ claudeExecute, codexExecute, combineExecute });
 
     await handleReviewGuideCommand('42', { terminalInput: false }, makeCommand());
 
-    expect(claudeExecute).toHaveBeenCalledTimes(1);
-    expect(claudeExecute.mock.calls[0]?.[1]).toEqual(
-      expect.objectContaining({
-        executionMode: 'bare',
-        followUpPrompts: expect.any(Array),
-      })
+    expect(claudeExecute).toHaveBeenCalledTimes(2);
+    const guideCall = claudeExecute.mock.calls.find(([prompt]) =>
+      String(prompt).includes('must produce a complete review guide')
     );
-    expect(claudeExecute.mock.calls[0]?.[1]?.followUpPrompts).toHaveLength(1);
+    const issuesCall = claudeExecute.mock.calls.find(([prompt]) =>
+      String(prompt).includes('standalone PR code review and must return structured JSON issues only')
+    );
+    expect(guideCall?.[1]).toEqual(expect.objectContaining({ executionMode: 'bare' }));
+    expect(issuesCall?.[1]).toEqual(expect.objectContaining({ executionMode: 'review' }));
+    expect(issuesCall?.[0]).toBe(codexExecute.mock.calls[0]?.[0]);
 
     expect(mockCheckoutPrBranch).toHaveBeenCalled();
     expect(mockInsertReviewIssues).toHaveBeenCalledTimes(1);
@@ -344,15 +375,20 @@ describe('review_pr command', () => {
     const originalIsTTY = process.stdin.isTTY;
     Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
 
-    const claudeExecute = vi.fn().mockImplementationOnce(async () => {
-      await fs.mkdir(path.dirname(guidePath), { recursive: true });
-      await fs.writeFile(guidePath, '# Guide\n\nBody', 'utf8');
-      await fs.writeFile(
-        issuesPath,
-        JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
-        'utf8'
-      );
-      return { content: 'ok' };
+    const claudeExecute = vi.fn().mockImplementation(async (prompt: string) => {
+      if (prompt.includes('must produce a complete review guide')) {
+        await fs.mkdir(path.dirname(guidePath), { recursive: true });
+        await fs.writeFile(guidePath, '# Guide\n\nBody', 'utf8');
+        return { content: 'ok' };
+      }
+
+      if (prompt.includes('standalone PR code review and must return structured JSON issues only')) {
+        return {
+          content: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
+        };
+      }
+
+      throw new Error(`Unexpected Claude prompt: ${prompt}`);
     });
     const codexExecute = vi.fn().mockResolvedValue({
       content: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
@@ -361,17 +397,7 @@ describe('review_pr command', () => {
       content: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
     });
 
-    let buildCount = 0;
-    mockBuildExecutorAndLog.mockImplementation((name) => {
-      buildCount++;
-      if (name === 'claude-code' && buildCount === 1) {
-        return { execute: claudeExecute } as any;
-      }
-      if (name === 'codex-cli') {
-        return { execute: codexExecute } as any;
-      }
-      return { execute: combineExecute } as any;
-    });
+    installExecutorMock({ claudeExecute, codexExecute, combineExecute });
 
     try {
       await handleReviewGuideCommand(
@@ -538,19 +564,11 @@ describe('review_pr command', () => {
       }),
     });
 
-    mockBuildExecutorAndLog.mockImplementation((name) => {
-      if (name === 'claude-code') {
-        return { execute: claudeExecute } as any;
-      }
-      if (name === 'codex-cli') {
-        return { execute: codexExecute } as any;
-      }
-      throw new Error(`Unexpected executor ${name}`);
-    });
+    installExecutorMock({ claudeExecute, codexExecute });
 
     await handleReviewGuideCommand('42', { terminalInput: false }, makeCommand());
 
-    expect(mockBuildExecutorAndLog).toHaveBeenCalledTimes(2);
+    expect(mockBuildExecutorAndLog).toHaveBeenCalledTimes(3);
     const inserted = mockInsertReviewIssues.mock.calls[0]?.[1];
     expect(inserted?.issues).toHaveLength(1);
     expect(inserted?.issues?.[0]?.content).toBe('Codex-only issue');
@@ -566,41 +584,41 @@ describe('review_pr command', () => {
   });
 
   test('uses claude results when codex fails and skips combination', async () => {
-    const claudeExecute = vi.fn().mockImplementationOnce(async () => {
-      await fs.mkdir(path.dirname(guidePath), { recursive: true });
-      await fs.writeFile(guidePath, '# Guide\n\nBody', 'utf8');
-      const issues = {
-        issues: [
-          {
-            severity: 'major',
-            category: 'bug',
-            content: 'Claude-only issue',
-            file: 'src/d.ts',
-            line: '9',
-            suggestion: 'Fix it',
-          },
-        ],
-        recommendations: [],
-        actionItems: [],
-      };
-      await fs.writeFile(issuesPath, JSON.stringify(issues), 'utf8');
-      return { content: 'ok' };
+    const claudeExecute = vi.fn().mockImplementation(async (prompt: string) => {
+      if (prompt.includes('must produce a complete review guide')) {
+        await fs.mkdir(path.dirname(guidePath), { recursive: true });
+        await fs.writeFile(guidePath, '# Guide\n\nBody', 'utf8');
+        return { content: 'ok' };
+      }
+
+      if (prompt.includes('standalone PR code review and must return structured JSON issues only')) {
+        return {
+          content: JSON.stringify({
+            issues: [
+              {
+                severity: 'major',
+                category: 'bug',
+                content: 'Claude-only issue',
+                file: 'src/d.ts',
+                line: '9',
+                suggestion: 'Fix it',
+              },
+            ],
+            recommendations: [],
+            actionItems: [],
+          }),
+        };
+      }
+
+      throw new Error(`Unexpected Claude prompt: ${prompt}`);
     });
     const codexExecute = vi.fn().mockRejectedValue(new Error('codex failed'));
 
-    mockBuildExecutorAndLog.mockImplementation((name) => {
-      if (name === 'claude-code') {
-        return { execute: claudeExecute } as any;
-      }
-      if (name === 'codex-cli') {
-        return { execute: codexExecute } as any;
-      }
-      throw new Error(`Unexpected executor ${name}`);
-    });
+    installExecutorMock({ claudeExecute, codexExecute });
 
     await handleReviewGuideCommand('42', { terminalInput: false }, makeCommand());
 
-    expect(mockBuildExecutorAndLog).toHaveBeenCalledTimes(2);
+    expect(mockBuildExecutorAndLog).toHaveBeenCalledTimes(3);
     const inserted = mockInsertReviewIssues.mock.calls[0]?.[1];
     expect(inserted?.issues).toHaveLength(1);
     expect(inserted?.issues?.[0]?.content).toBe('Claude-only issue');
@@ -613,25 +631,33 @@ describe('review_pr command', () => {
   });
 
   test('falls back to merged raw issues when combination fails', async () => {
-    const claudeExecute = vi.fn().mockImplementationOnce(async () => {
-      await fs.mkdir(path.dirname(guidePath), { recursive: true });
-      await fs.writeFile(guidePath, '# Guide\n\nBody', 'utf8');
-      const issues = {
-        issues: [
-          {
-            severity: 'major',
-            category: 'bug',
-            content: 'Claude issue',
-            file: 'src/a.ts',
-            line: '10',
-            suggestion: 'Fix A',
-          },
-        ],
-        recommendations: [],
-        actionItems: [],
-      };
-      await fs.writeFile(issuesPath, JSON.stringify(issues), 'utf8');
-      return { content: 'ok' };
+    const claudeExecute = vi.fn().mockImplementation(async (prompt: string) => {
+      if (prompt.includes('must produce a complete review guide')) {
+        await fs.mkdir(path.dirname(guidePath), { recursive: true });
+        await fs.writeFile(guidePath, '# Guide\n\nBody', 'utf8');
+        return { content: 'ok' };
+      }
+
+      if (prompt.includes('standalone PR code review and must return structured JSON issues only')) {
+        return {
+          content: JSON.stringify({
+            issues: [
+              {
+                severity: 'major',
+                category: 'bug',
+                content: 'Claude issue',
+                file: 'src/a.ts',
+                line: '10',
+                suggestion: 'Fix A',
+              },
+            ],
+            recommendations: [],
+            actionItems: [],
+          }),
+        };
+      }
+
+      throw new Error(`Unexpected Claude prompt: ${prompt}`);
     });
     const codexExecute = vi.fn().mockResolvedValue({
       content: JSON.stringify({
@@ -651,17 +677,7 @@ describe('review_pr command', () => {
     });
     const combineExecute = vi.fn().mockRejectedValue(new Error('combine failed'));
 
-    let buildCount = 0;
-    mockBuildExecutorAndLog.mockImplementation((name) => {
-      buildCount++;
-      if (name === 'claude-code' && buildCount === 1) {
-        return { execute: claudeExecute } as any;
-      }
-      if (name === 'codex-cli') {
-        return { execute: codexExecute } as any;
-      }
-      return { execute: combineExecute } as any;
-    });
+    installExecutorMock({ claudeExecute, codexExecute, combineExecute });
 
     await handleReviewGuideCommand('42', { terminalInput: false }, makeCommand());
 
@@ -1008,28 +1024,33 @@ describe('review_pr command', () => {
     // The null line case cannot come from Codex (strict schema), but can come from the combination step.
     // The "accepts null file/line from combination output" test covers this.
     // This test explicitly verifies the null-line case results in null startLine and null line.
-    const claudeExecute = vi.fn().mockImplementationOnce(async () => {
-      await fs.mkdir(path.dirname(guidePath), { recursive: true });
-      await fs.writeFile(guidePath, '# Guide', 'utf8');
-      await fs.writeFile(
-        issuesPath,
-        JSON.stringify({
-          issues: [
-            {
-              severity: 'info',
-              category: 'other',
-              content: 'C',
-              file: 'f.ts',
-              line: '1',
-              suggestion: 'S',
-            },
-          ],
-          recommendations: [],
-          actionItems: [],
-        }),
-        'utf8'
-      );
-      return { content: 'ok' };
+    const claudeExecute = vi.fn().mockImplementation(async (prompt: string) => {
+      if (prompt.includes('must produce a complete review guide')) {
+        await fs.mkdir(path.dirname(guidePath), { recursive: true });
+        await fs.writeFile(guidePath, '# Guide', 'utf8');
+        return { content: 'ok' };
+      }
+
+      if (prompt.includes('standalone PR code review and must return structured JSON issues only')) {
+        return {
+          content: JSON.stringify({
+            issues: [
+              {
+                severity: 'info',
+                category: 'other',
+                content: 'C',
+                file: 'f.ts',
+                line: '1',
+                suggestion: 'S',
+              },
+            ],
+            recommendations: [],
+            actionItems: [],
+          }),
+        };
+      }
+
+      throw new Error(`Unexpected Claude prompt: ${prompt}`);
     });
     const codexExecute = vi.fn().mockResolvedValue({
       content: JSON.stringify({
@@ -1065,13 +1086,7 @@ describe('review_pr command', () => {
       }),
     });
 
-    let buildCount = 0;
-    mockBuildExecutorAndLog.mockImplementation((name) => {
-      buildCount++;
-      if (name === 'claude-code' && buildCount === 1) return { execute: claudeExecute } as any;
-      if (name === 'codex-cli') return { execute: codexExecute } as any;
-      return { execute: combineExecute } as any;
-    });
+    installExecutorMock({ claudeExecute, codexExecute, combineExecute });
 
     await handleReviewGuideCommand('42', { terminalInput: false }, makeCommand());
 
@@ -1117,25 +1132,33 @@ describe('review_pr command', () => {
   });
 
   test('accepts null file/line from combination output', async () => {
-    const claudeExecute = vi.fn().mockImplementationOnce(async () => {
-      await fs.mkdir(path.dirname(guidePath), { recursive: true });
-      await fs.writeFile(guidePath, '# Guide\n\nBody', 'utf8');
-      const issues = {
-        issues: [
-          {
-            severity: 'major',
-            category: 'bug',
-            content: 'Claude issue',
-            file: 'src/a.ts',
-            line: '10',
-            suggestion: 'Fix A',
-          },
-        ],
-        recommendations: [],
-        actionItems: [],
-      };
-      await fs.writeFile(issuesPath, JSON.stringify(issues), 'utf8');
-      return { content: 'ok' };
+    const claudeExecute = vi.fn().mockImplementation(async (prompt: string) => {
+      if (prompt.includes('must produce a complete review guide')) {
+        await fs.mkdir(path.dirname(guidePath), { recursive: true });
+        await fs.writeFile(guidePath, '# Guide\n\nBody', 'utf8');
+        return { content: 'ok' };
+      }
+
+      if (prompt.includes('standalone PR code review and must return structured JSON issues only')) {
+        return {
+          content: JSON.stringify({
+            issues: [
+              {
+                severity: 'major',
+                category: 'bug',
+                content: 'Claude issue',
+                file: 'src/a.ts',
+                line: '10',
+                suggestion: 'Fix A',
+              },
+            ],
+            recommendations: [],
+            actionItems: [],
+          }),
+        };
+      }
+
+      throw new Error(`Unexpected Claude prompt: ${prompt}`);
     });
     const codexExecute = vi.fn().mockResolvedValue({
       content: JSON.stringify({
@@ -1171,17 +1194,7 @@ describe('review_pr command', () => {
       }),
     });
 
-    let buildCount = 0;
-    mockBuildExecutorAndLog.mockImplementation((name) => {
-      buildCount++;
-      if (name === 'claude-code' && buildCount === 1) {
-        return { execute: claudeExecute } as any;
-      }
-      if (name === 'codex-cli') {
-        return { execute: codexExecute } as any;
-      }
-      return { execute: combineExecute } as any;
-    });
+    installExecutorMock({ claudeExecute, codexExecute, combineExecute });
 
     await handleReviewGuideCommand('42', { terminalInput: false }, makeCommand());
 
