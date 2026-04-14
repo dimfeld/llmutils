@@ -1,4 +1,8 @@
 import { getReviewOutputJsonSchema } from '../formatters/review_output_schema.js';
+import {
+  buildReviewerCriticalIssuesGuidance,
+  buildReviewerPromptIntro,
+} from '../executors/claude_code/agent_prompts.js';
 
 const REVIEW_CATEGORIES_SECTION = `### Critical Issue Categories
 - Code Correctness (HIGH): logic bugs, race conditions, boundary errors, unsafe error handling.
@@ -151,7 +155,7 @@ export function buildStandaloneReviewIssuesPrompt(
   const { metadata, useJj, customInstructions } = options;
   const schema = renderSchema();
 
-  return `You are performing a standalone PR code review and must return structured JSON issues only.
+  return `${buildReviewerPromptIntro(false)}You are performing a standalone PR code review and must return structured JSON issues only.
 
 ## PR Metadata
 ${formatPrMetadata(metadata)}
@@ -159,13 +163,15 @@ ${formatPrMetadata(metadata)}
 ## Diff Discovery
 ${getDiffInstructions(metadata.baseBranch, useJj)}
 
-${REVIEW_CATEGORIES_SECTION}
+${buildReviewerCriticalIssuesGuidance()}
 
 ## Output Requirements
 - Return valid JSON matching the schema below.
 - Focus on concrete, actionable issues tied to changed code.
 - Prefer fewer high-signal findings over speculative noise.
 - Do not include plan/task context; this is PR-only review.
+- Do not provide a verdict; only return the JSON issues payload.
+- Use the same severity bar as the reviewer prompt: only report genuine issues that would matter in review.
 
 ## Required JSON Schema
 \`\`\`json

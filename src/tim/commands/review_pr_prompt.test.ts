@@ -66,9 +66,13 @@ describe('review_pr_prompt', () => {
     });
 
     expect(prompt.length).toBeGreaterThan(0);
-    expect(prompt).toContain('Code Correctness (HIGH)');
-    expect(prompt).toContain('Security Vulnerabilities (HIGH)');
+    expect(prompt).toContain('You are a tim critical code reviewer');
+    expect(prompt).toContain('Do not be polite or encouraging');
+    expect(prompt).toContain('## Critical Issues to Flag');
+    expect(prompt).toContain('Code Correctness (HIGH PRIORITY)');
+    expect(prompt).toContain('Security Vulnerabilities (HIGH PRIORITY)');
     expect(prompt).toContain('Do not include plan/task context');
+    expect(prompt).toContain('Do not provide a verdict');
     expect(prompt).toContain('"issues"');
   });
 
@@ -79,7 +83,7 @@ describe('review_pr_prompt', () => {
     });
 
     expect(prompt).toContain("jj diff --from 'heads(::@ & ::main@origin)'");
-    expect(prompt).not.toContain('git merge-base');
+    expect(prompt).toContain('Repository is jj-based');
   });
 
   test('buildIssueCombinationPrompt includes both issue sets and merge instructions', () => {
@@ -218,26 +222,6 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('"source"');
     // Should NOT embed source markers in content
     expect(prompt).toContain('Do NOT embed source attribution in the `content` field');
-  });
-
-  test('buildReviewGuideIssuesFollowUpPrompt references guide for re-reading', () => {
-    const prompt = buildReviewGuideIssuesFollowUpPrompt({
-      guidePath: '/path/to/guide.md',
-      issuesPath: '/path/to/issues.json',
-    });
-
-    expect(prompt).toContain('/path/to/guide.md');
-    expect(prompt).toContain('/path/to/issues.json');
-    expect(prompt).toContain('Re-read the guide');
-  });
-
-  test('buildReviewGuideIssuesFollowUpPrompt prohibits markdown fences in output', () => {
-    const prompt = buildReviewGuideIssuesFollowUpPrompt({
-      guidePath: 'guide.md',
-      issuesPath: 'issues.json',
-    });
-
-    expect(prompt).toContain('Do not include markdown fences');
   });
 
   test('COMBINATION_OUTPUT_SCHEMA allows null for file and line', () => {
