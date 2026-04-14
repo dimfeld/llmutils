@@ -169,3 +169,10 @@ export async function spawnUpdateDocsProcess(
     cwd
   );
 }
+
+export async function spawnPrReviewGuideProcess(
+  prNumber: number,
+  cwd: string
+): Promise<SpawnProcessResult> {
+  return spawnTimProcess(prNumber, ['pr', 'review-guide', String(prNumber)], cwd);
+}

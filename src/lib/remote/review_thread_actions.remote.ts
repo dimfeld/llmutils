@@ -9,7 +9,7 @@ import {
   parseJsonStringArray,
 } from '$lib/server/db_queries.js';
 import { clearLaunchLock, isPlanLaunching, setLaunchLock } from '$lib/server/launch_lock.js';
-import { spawnPrFixProcess } from '$lib/server/plan_actions.js';
+import { spawnPrFixProcess, spawnPrReviewGuideProcess } from '$lib/server/plan_actions.js';
 import { getSessionManager } from '$lib/server/session_context.js';
 import { addReplyToReviewThread, resolveReviewThread } from '$common/github/pull_requests.js';
 import { getGitHubUsername } from '$common/github/user.js';
@@ -318,3 +318,28 @@ export const startFixThreads = command(startFixThreadsSchema, async ({ planUuid 
 
   return { status: 'started' as const, planId: plan.plan_id };
 });
+
+const startPrReviewGuideSchema = z.object({
+  projectId: z.number().int(),
+  prNumber: z.number().int(),
+});
+
+export const startPrReviewGuide = command(
+  startPrReviewGuideSchema,
+  async ({ projectId, prNumber }) => {
+    const { db } = await getServerContext();
+
+    const primaryWorkspacePath = getPrimaryWorkspacePath(db, projectId);
+    if (!primaryWorkspacePath) {
+      error(400, 'Project does not have a primary workspace');
+    }
+
+    const result = await spawnPrReviewGuideProcess(prNumber, primaryWorkspacePath);
+
+    if (!result.success) {
+      error(500, result.error);
+    }
+
+    return { status: 'started' as const };
+  }
+);

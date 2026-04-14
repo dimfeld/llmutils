@@ -18,6 +18,7 @@
   import { normalizeGitHubUsername } from '$common/github/username.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
   import { refreshSinglePrStatus, togglePrDraftStatus } from '$lib/remote/pr_status.remote.js';
+  import { startPrReviewGuide } from '$lib/remote/review_thread_actions.remote.js';
 
   let {
     pr,
@@ -33,6 +34,7 @@
 
   let refreshing = $state(false);
   let draftUpdating = $state(false);
+  let reviewGuideRunning = $state(false);
   let actionError = $state<string | null>(null);
   let branchCopied = $state(false);
   let graphitePrUrl = $derived(
@@ -86,6 +88,25 @@
       actionError = err instanceof Error ? err.message : String(err);
     } finally {
       draftUpdating = false;
+    }
+  }
+
+  async function handleStartReviewGuide() {
+    if (reviewGuideRunning) {
+      return;
+    }
+
+    actionError = null;
+    reviewGuideRunning = true;
+    try {
+      await startPrReviewGuide({
+        projectId: pr.projectId,
+        prNumber: pr.status.pr_number,
+      });
+    } catch (err) {
+      actionError = err instanceof Error ? err.message : String(err);
+    } finally {
+      reviewGuideRunning = false;
     }
   }
 
@@ -159,6 +180,14 @@
         >
           View in Graphite
         </a>
+        <button
+          onclick={handleStartReviewGuide}
+          disabled={reviewGuideRunning}
+          class="rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
+          title="Generate review guide"
+        >
+          {reviewGuideRunning ? 'Starting...' : 'Review Guide'}
+        </button>
         {#if canToggleDraft}
           <button
             onclick={handleToggleDraftStatus}
