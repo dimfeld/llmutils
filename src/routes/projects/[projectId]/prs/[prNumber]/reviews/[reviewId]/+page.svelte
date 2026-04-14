@@ -6,7 +6,7 @@
   import Circle from '@lucide/svelte/icons/circle';
   import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
   import { toggleReviewIssueResolved } from '$lib/remote/pr_reviews.remote.js';
-  import { renderMarkdown } from '$lib/utils/markdown_parser.js';
+  import MarkdownContent from '$lib/components/MarkdownContent.svelte';
   import { formatRelativeTime } from '$lib/utils/time.js';
   import type { ReviewIssueRow, ReviewSeverity, ReviewCategory } from '$tim/db/review.js';
   import type { PageData } from './$types';
@@ -318,11 +318,10 @@
         >
           Full review guide
         </summary>
-        <div
-          class="plan-rendered-content mt-2 rounded-md border border-border bg-muted/30 p-4 text-sm text-foreground"
-        >
-          {@html renderMarkdown(data.review.review_guide)}
-        </div>
+        <MarkdownContent
+          content={data.review.review_guide}
+          class="mt-2 rounded-md border border-border bg-muted/30 p-4 text-sm text-foreground"
+        />
       </details>
     {/if}
   </div>

@@ -8,12 +8,7 @@
 
 <div class="flex h-full min-h-0 flex-col overflow-y-auto bg-gray-900 p-4 text-sm text-gray-200">
   {#if renderedContent}
-    <div
-      class="plan-content"
-      tabindex="0"
-      role="region"
-      aria-label="Plan content"
-    >
+    <div class="plan-content" tabindex="0" role="region" aria-label="Plan content">
       {@html renderedContent}
     </div>
   {:else}
