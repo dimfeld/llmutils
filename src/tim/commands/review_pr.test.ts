@@ -18,6 +18,12 @@ const lifecycleManagerMocks = vi.hoisted(() => ({
   }>,
 }));
 
+const shutdownStateMocks = vi.hoisted(() => ({
+  isShuttingDown: vi.fn(() => false),
+  getSignalExitCode: vi.fn(() => 143),
+  setDeferSignalExit: vi.fn(() => {}),
+}));
+
 vi.mock('../../logging.js', () => ({
   log: vi.fn(),
   warn: vi.fn(),
@@ -104,6 +110,8 @@ vi.mock('../workspace/workspace_lock.js', () => ({
   },
 }));
 
+vi.mock('../shutdown_state.js', () => shutdownStateMocks);
+
 vi.mock('../lifecycle.js', () => ({
   LifecycleManager: class {
     startup = vi.fn(async () => {});
@@ -139,6 +147,7 @@ import { buildExecutorAndLog } from '../executors/index.js';
 import { gatherPrContext, checkoutPrBranch, resolvePrUrl } from '../utils/pr_context_gathering.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { LifecycleManager } from '../lifecycle.js';
+import { getSignalExitCode, isShuttingDown, setDeferSignalExit } from '../shutdown_state.js';
 import { WorkspaceLock } from '../workspace/workspace_lock.js';
 import { handleMaterializeCommand, handleReviewGuideCommand, parseLineRange } from './review_pr.js';
 
@@ -163,6 +172,9 @@ const mockGetRepositoryIdentity = vi.mocked(getRepositoryIdentity);
 const mockWorkspaceLockAcquireLock = vi.mocked(WorkspaceLock.acquireLock);
 const mockWorkspaceLockSetupCleanupHandlers = vi.mocked(WorkspaceLock.setupCleanupHandlers);
 const mockWarn = vi.mocked(warn);
+const mockIsShuttingDown = vi.mocked(isShuttingDown);
+const mockGetSignalExitCode = vi.mocked(getSignalExitCode);
+const mockSetDeferSignalExit = vi.mocked(setDeferSignalExit);
 
 function makeCommand(config?: string) {
   return {
@@ -479,6 +491,38 @@ describe('review_pr command', () => {
     expect(runWithHeadlessAdapterIfEnabledMock).toHaveBeenCalledWith(
       expect.objectContaining({ interactive: true })
     );
+  });
+
+  test('defers SIGTERM until review-guide cleanup completes', async () => {
+    mockIsShuttingDown.mockReturnValue(true);
+    mockGetSignalExitCode.mockReturnValue(143);
+
+    const originalExit = process.exit;
+    process.exit = ((code?: number) => {
+      throw new Error(`process.exit(${code})`);
+    }) as typeof process.exit;
+
+    try {
+      const codexExecute = vi.fn().mockResolvedValue({
+        content: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
+      });
+      mockBuildExecutorAndLog.mockReturnValue({ execute: codexExecute } as any);
+
+      await expect(
+        handleReviewGuideCommand(
+          '42',
+          { executor: 'codex-cli', terminalInput: false },
+          makeCommand()
+        )
+      ).rejects.toThrow('process.exit(143)');
+
+      expect(mockSetDeferSignalExit).toHaveBeenNthCalledWith(1, true);
+      expect(mockSetDeferSignalExit).toHaveBeenLastCalledWith(false);
+      expect(mockGetSignalExitCode).toHaveBeenCalled();
+    } finally {
+      process.exit = originalExit;
+      mockIsShuttingDown.mockReturnValue(false);
+    }
   });
 
   test('single executor stays interactive when tunnel input is available without TTY', async () => {

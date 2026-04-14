@@ -53,7 +53,7 @@ import { WorkspaceAutoSelector } from '../workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from '../workspace/workspace_lock.js';
 import { LifecycleManager } from '../lifecycle.js';
 import { getWorkspaceInfoByPath } from '../workspace/workspace_info.js';
-import { isShuttingDown } from '../shutdown_state.js';
+import { getSignalExitCode, isShuttingDown, setDeferSignalExit } from '../shutdown_state.js';
 
 interface RootCommandLike {
   parent?: RootCommandLike;
@@ -623,16 +623,21 @@ export async function handleReviewGuideCommand(
 
   let baseDir = initialRepoRoot;
 
-  await runWithHeadlessAdapterIfEnabled({
-    enabled: !tunnelActive,
-    command: 'review',
-    interactive: reviewInteractive,
-    callback: async () => {
-      const prContext = await gatherPrContext({
-        db,
-        prUrlOrNumber: prArg,
-        plan: options.plan,
-        cwd: baseDir,
+  try {
+    // Allow SIGTERM/SIGINT to be captured while this command finishes async cleanup.
+    // The tim CLI will exit using the stored signal code once the callback completes.
+    setDeferSignalExit(true);
+
+    await runWithHeadlessAdapterIfEnabled({
+      enabled: !tunnelActive,
+      command: 'review',
+      interactive: reviewInteractive,
+      callback: async () => {
+        const prContext = await gatherPrContext({
+          db,
+          prUrlOrNumber: prArg,
+          plan: options.plan,
+          cwd: baseDir,
       });
 
       const metadata = buildPrMetadata(prContext);
@@ -964,8 +969,14 @@ export async function handleReviewGuideCommand(
         }
         throw workflowError;
       }
-    },
-  });
+      },
+    });
+  } finally {
+    setDeferSignalExit(false);
+    if (isShuttingDown()) {
+      process.exit(getSignalExitCode() ?? 1);
+    }
+  }
 }
 
 export async function handleMaterializeCommand(
