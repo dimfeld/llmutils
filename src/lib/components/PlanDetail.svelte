@@ -4,7 +4,7 @@
   import { toast } from 'svelte-sonner';
 
   import type { PlanDetail } from '$lib/server/db_queries.js';
-  import { renderPlanContentHtml } from '$lib/utils/plan_content.js';
+  import { renderMarkdown } from '$lib/utils/markdown_parser.js';
   import { afterNavigate, invalidateAll } from '$app/navigation';
   import {
     startGenerate,
@@ -670,10 +670,9 @@
         <h3 class="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
           Note
         </h3>
-        <pre
-          class="plan-rendered-content font-sans text-sm whitespace-pre-wrap text-foreground">{@html renderPlanContentHtml(
-            plan.note
-          )}</pre>
+        <div class="plan-rendered-content text-sm text-foreground">
+          {@html renderMarkdown(plan.note)}
+        </div>
       </div>
     {/if}
 
@@ -1034,17 +1033,15 @@
                   </button>
                 </div>
               </div>
-              <pre
-                class="plan-rendered-content mt-1 font-sans whitespace-pre-wrap text-foreground">{@html renderPlanContentHtml(
-                  issue.content
-                )}</pre>
+              <div class="plan-rendered-content mt-1 text-foreground">
+                {@html renderMarkdown(issue.content)}
+              </div>
               {#if issue.suggestion}
                 <div class="mt-1 text-xs text-muted-foreground">
                   <span class="font-medium text-green-700 dark:text-green-400">Suggestion:</span>
-                  <pre
-                    class="plan-rendered-content mt-0.5 font-sans text-xs whitespace-pre-wrap text-muted-foreground">{@html renderPlanContentHtml(
-                      issue.suggestion
-                    )}</pre>
+                  <div class="plan-rendered-content mt-0.5 text-xs text-muted-foreground">
+                    {@html renderMarkdown(issue.suggestion)}
+                  </div>
                 </div>
               {/if}
             </li>
@@ -1059,10 +1056,9 @@
         <h3 class="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
           Details
         </h3>
-        <pre
-          class="plan-rendered-content font-sans text-sm whitespace-pre-wrap text-foreground">{@html renderPlanContentHtml(
-            plan.details ?? ''
-          )}</pre>
+        <div class="plan-rendered-content text-sm text-foreground">
+          {@html renderMarkdown(plan.details ?? '')}
+        </div>
       </div>
     {/if}
 

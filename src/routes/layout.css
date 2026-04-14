@@ -135,42 +135,109 @@
 }
 
 .plan-rendered-content {
-  margin: 0;
   word-break: break-word;
 }
 
-.plan-rendered-content .plan-heading {
-  font-weight: 700;
-  color: hsl(var(--foreground));
+.plan-rendered-content > :first-child {
+  margin-top: 0;
 }
 
-.plan-rendered-content .plan-bold {
+.plan-rendered-content > :last-child {
+  margin-bottom: 0;
+}
+
+.plan-rendered-content :is(h1, h2, h3, h4, h5, h6) {
+  font-weight: 700;
+  color: var(--foreground);
+  margin-top: 0.75em;
+  margin-bottom: 0.25em;
+}
+
+.plan-rendered-content h1 {
+  font-size: 1.25em;
+}
+
+.plan-rendered-content h2 {
+  font-size: 1.1em;
+}
+
+.plan-rendered-content h3 {
+  font-size: 1em;
+}
+
+.plan-rendered-content :is(h4, h5, h6) {
+  font-size: 0.9em;
+}
+
+.plan-rendered-content p {
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+}
+
+.plan-rendered-content strong {
   font-weight: 700;
 }
 
-.plan-rendered-content .plan-inline-code {
+.plan-rendered-content em {
+  font-style: italic;
+}
+
+.plan-rendered-content code {
   background: rgb(0 0 0 / 0.06);
   border-radius: 0.25rem;
   font-family: ui-monospace, monospace;
+  font-size: 0.9em;
   padding: 0.1rem 0.3rem;
-  color: hsl(var(--foreground));
+  color: var(--foreground);
 }
 
-.dark .plan-rendered-content .plan-inline-code {
+.dark .plan-rendered-content code {
   background: rgb(255 255 255 / 0.08);
 }
 
-.plan-rendered-content .plan-code-fence {
-  color: hsl(var(--muted-foreground));
+.plan-rendered-content pre {
+  background: rgb(0 0 0 / 0.04);
+  border-radius: 0.375rem;
   font-family: ui-monospace, monospace;
-  font-size: 0.9em;
+  font-size: 0.875em;
+  color: var(--muted-foreground);
+  padding: 0.6rem 0.75rem;
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+  overflow-x: auto;
 }
 
-.plan-rendered-content .plan-code {
-  font-family: ui-monospace, monospace;
-  font-size: 0.9em;
+.dark .plan-rendered-content pre {
+  background: rgb(255 255 255 / 0.04);
 }
 
-.plan-rendered-content .plan-list-marker {
-  color: hsl(var(--muted-foreground));
+.plan-rendered-content pre code {
+  background: none;
+  border-radius: 0;
+  padding: 0;
+  font-size: 1em;
+  color: inherit;
+}
+
+.plan-rendered-content :is(ul, ol) {
+  padding-left: 1.5em;
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+}
+
+.plan-rendered-content ul {
+  list-style-type: disc;
+}
+
+.plan-rendered-content ol {
+  list-style-type: decimal;
+}
+
+.plan-rendered-content li {
+  margin-top: 0.1em;
+  margin-bottom: 0.1em;
+}
+
+.plan-rendered-content li::marker {
+  color: var(--muted-foreground);
 }

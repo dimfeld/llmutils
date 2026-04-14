@@ -10,7 +10,7 @@
   import { normalizeGitHubUsername } from '$common/github/username.js';
   import { formatReviewCommentForClipboard } from '$lib/utils/pr_display.js';
   import { getReviewThreadHunkWindow } from '$lib/utils/review_hunk.js';
-  import { renderPlanContentHtml } from '$lib/utils/plan_content.js';
+  import { renderMarkdown } from '$lib/utils/markdown_parser.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
   import Diff from './Diff.svelte';
 
@@ -277,7 +277,7 @@
   }
 
   function renderCommentBody(body: string | null): string {
-    return renderPlanContentHtml(body ?? '');
+    return renderMarkdown(body ?? '');
   }
 
   function isHunkExpanded(threadId: number): boolean {
@@ -490,7 +490,7 @@
                   {/if}
                 </button>
               </div>
-              <div class="plan-rendered-content mt-1 text-sm whitespace-pre-wrap text-foreground">
+              <div class="plan-rendered-content mt-1 text-sm text-foreground">
                 {@html renderCommentBody(comment.body)}
               </div>
             </div>
