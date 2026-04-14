@@ -1,4 +1,5 @@
 import { $ } from 'bun';
+import { log } from '../../logging.ts';
 import type { Database } from 'bun:sqlite';
 import {
   canonicalizePrUrl,
@@ -99,7 +100,7 @@ function getSingleLinkedPrUrl(details: PrStatusDetail[], planId: number): string
     );
   }
 
-  return details[0]!.status.pr_url;
+  return details[0].status.pr_url;
 }
 
 function buildPrUrlFromNumber(ownerRepo: string, prNumber: string): string {
@@ -208,6 +209,7 @@ const defaultBranchCheckoutDependencies: BranchCheckoutDependencies = {
   getWorkingCopyStatus,
   getUsingJj,
   runCommand: async (args: string[], cwd: string) => {
+    log(`> ${args.join(' ')}`);
     const result = await $`${args}`.cwd(cwd).quiet().nothrow();
     return {
       exitCode: result.exitCode,

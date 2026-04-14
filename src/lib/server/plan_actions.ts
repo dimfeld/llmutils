@@ -174,5 +174,9 @@ export async function spawnPrReviewGuideProcess(
   prNumber: number,
   cwd: string
 ): Promise<SpawnProcessResult> {
-  return spawnTimProcess(prNumber, ['pr', 'review-guide', String(prNumber)], cwd);
+  return spawnTimProcess(
+    prNumber,
+    ['pr', 'review-guide', String(prNumber), '--auto-workspace'],
+    cwd
+  );
 }
