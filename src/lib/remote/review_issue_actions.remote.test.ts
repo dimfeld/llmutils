@@ -63,7 +63,9 @@ describe('review issue remote actions', () => {
 
     const plan = getPlanByUuid(currentDb, 'plan-remove');
 
-    expect(JSON.parse(plan?.review_issues ?? '[]')).toEqual([makeIssue('minor', 'style', 'Second')]);
+    expect(JSON.parse(plan?.review_issues ?? '[]')).toEqual([
+      makeIssue('minor', 'style', 'Second'),
+    ]);
   });
 
   test('removeReviewIssue rejects out-of-range indexes', async () => {
