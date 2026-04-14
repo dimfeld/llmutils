@@ -99,6 +99,7 @@ export function getDefaultAllowedTools(): string[] {
 export function buildAllowedToolsList(options: {
   includeDefaultTools?: boolean;
   configAllowedTools?: string[];
+  extraAllowedTools?: string[];
   disallowedTools?: string[];
   sharedPermissions?: string[];
 }): string[] {
@@ -106,6 +107,7 @@ export function buildAllowedToolsList(options: {
   let tools = [
     ...defaultTools,
     ...(options.configAllowedTools ?? []),
+    ...(options.extraAllowedTools ?? []),
     ...(options.sharedPermissions ?? []),
   ];
   if (options.disallowedTools) {
@@ -122,6 +124,8 @@ export interface ClaudeCodeSubprocessOptions {
   includeDefaultTools?: boolean;
   /** Extra tools to allow beyond the defaults */
   allowedTools?: string[];
+  /** Additional tools requested by the caller for this execution only */
+  extraAllowedTools?: string[];
   /** Tools to remove from the allowed list */
   disallowedTools?: string[];
   /** Path to an MCP config file to pass to Claude */
@@ -256,6 +260,7 @@ export async function runClaudeSubprocess(
   const allowedTools = buildAllowedToolsList({
     includeDefaultTools: claudeCodeOptions.includeDefaultTools,
     configAllowedTools: claudeCodeOptions.allowedTools,
+    extraAllowedTools: claudeCodeOptions.extraAllowedTools,
     disallowedTools: claudeCodeOptions.disallowedTools,
     sharedPermissions,
   });

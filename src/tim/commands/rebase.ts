@@ -440,6 +440,12 @@ async function resolveRebaseConflicts(options: {
   const sharedExecutorOptions: ExecutorCommonOptions = {
     baseDir: options.baseDir,
     model: options.model,
+    extraAllowedTools: [
+      'Bash(jj squash)',
+      'Bash(jj new:*)',
+      'Bash(jj edit:*)',
+      'Bash(jj resolve:*)',
+    ],
     terminalInput:
       options.terminalInput !== false &&
       options.configTerminalInput !== false &&

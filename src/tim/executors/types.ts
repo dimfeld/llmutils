@@ -8,6 +8,12 @@ import type { PrepareNextStepOptions } from '../plans/prepare_step.ts';
 export interface ExecutorCommonOptions {
   baseDir: string;
   model?: string;
+  /**
+   * Extra tools the caller wants to allow for this executor session.
+   * This is intentionally shared so command-level flows can extend the allowlist
+   * without reaching into executor-specific option schemas.
+   */
+  extraAllowedTools?: string[];
   /** When true, executor should avoid any user prompts (e.g., permissions MCP) */
   noninteractive?: boolean;
   /** When true, Claude Code executor accepts terminal follow-up input during execution */

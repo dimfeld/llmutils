@@ -482,6 +482,7 @@ export class ClaudeCodeExecutor implements Executor {
     const allowedTools = buildAllowedToolsList({
       includeDefaultTools: this.options.includeDefaultTools,
       configAllowedTools: this.options.allowedTools,
+      extraAllowedTools: this.sharedOptions.extraAllowedTools,
       disallowedTools: this.options.disallowedTools,
       sharedPermissions,
     });
@@ -494,7 +495,10 @@ export class ClaudeCodeExecutor implements Executor {
     const result = await runClaudeSubprocess({
       prompt: contextContent + '\n\nBe sure to provide the structured output with your response',
       cwd: gitRoot,
-      claudeCodeOptions: this.options,
+      claudeCodeOptions: {
+        ...this.options,
+        extraAllowedTools: this.sharedOptions.extraAllowedTools,
+      },
       noninteractive: this.sharedOptions.noninteractive ?? false,
       terminalInput: this.sharedOptions.terminalInput,
       model: this.sharedOptions.model,
@@ -641,6 +645,7 @@ export class ClaudeCodeExecutor implements Executor {
     let allowedTools = buildAllowedToolsList({
       includeDefaultTools: this.options.includeDefaultTools,
       configAllowedTools: this.options.allowedTools,
+      extraAllowedTools: this.sharedOptions.extraAllowedTools,
       disallowedTools,
       sharedPermissions,
     });

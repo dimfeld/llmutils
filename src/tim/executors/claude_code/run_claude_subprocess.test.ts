@@ -98,6 +98,14 @@ describe('buildAllowedToolsList', () => {
     expect(tools).toEqual(['SharedTool']);
   });
 
+  test('merges caller-provided extra allowed tools', () => {
+    const tools = buildAllowedToolsList({
+      includeDefaultTools: false,
+      extraAllowedTools: ['SessionTool'],
+    });
+    expect(tools).toEqual(['SessionTool']);
+  });
+
   test('filters out disallowed tools', () => {
     const tools = buildAllowedToolsList({
       includeDefaultTools: true,
@@ -112,9 +120,10 @@ describe('buildAllowedToolsList', () => {
     const tools = buildAllowedToolsList({
       includeDefaultTools: false,
       configAllowedTools: ['ToolA', 'ToolB'],
+      extraAllowedTools: ['ToolD'],
       sharedPermissions: ['ToolC'],
       disallowedTools: ['ToolB'],
     });
-    expect(tools).toEqual(['ToolA', 'ToolC']);
+    expect(tools).toEqual(['ToolA', 'ToolD', 'ToolC']);
   });
 });
