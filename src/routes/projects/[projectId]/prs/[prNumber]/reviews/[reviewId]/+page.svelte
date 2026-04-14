@@ -2,10 +2,15 @@
   import { invalidateAll } from '$app/navigation';
   import { page } from '$app/state';
   import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+  import Copy from '@lucide/svelte/icons/copy';
   import CheckCircle from '@lucide/svelte/icons/check-circle';
   import Circle from '@lucide/svelte/icons/circle';
   import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
   import { toggleReviewIssueResolved } from '$lib/remote/pr_reviews.remote.js';
+  import {
+    addReviewIssueToPlanTask,
+    deleteReviewIssue,
+  } from '$lib/remote/review_issue_actions.remote.js';
   import MarkdownContent from '$lib/components/MarkdownContent.svelte';
   import { formatRelativeTime } from '$lib/utils/time.js';
   import type { ReviewIssueRow, ReviewSeverity, ReviewCategory } from '$tim/db/review.js';
@@ -23,7 +28,8 @@
   });
 
   let togglingIssueIds = $state(new Set<number>());
-  let toggleError = $state<string | null>(null);
+  let issueActionError = $state<string | null>(null);
+  let copiedIssueId = $state<number | null>(null);
 
   const SEVERITY_ORDER: ReviewSeverity[] = ['critical', 'major', 'minor', 'info'];
 
@@ -46,26 +52,119 @@
   );
 
   let unresolvedCount = $derived(issues.filter((i) => !i.resolved).length);
+  let linkedPlanUuid = $derived(data.linkedPlanUuid);
+
+  function isIssueActioning(issueId: number): boolean {
+    return togglingIssueIds.has(issueId);
+  }
+
+  function setIssueActioning(issueId: number) {
+    togglingIssueIds.add(issueId);
+    togglingIssueIds = togglingIssueIds;
+  }
+
+  function clearIssueActioning(issueId: number) {
+    togglingIssueIds.delete(issueId);
+    togglingIssueIds = togglingIssueIds;
+  }
 
   async function handleToggleResolved(issue: ReviewIssueRow) {
-    if (togglingIssueIds.has(issue.id)) return;
-    toggleError = null;
+    if (isIssueActioning(issue.id)) return;
+    issueActionError = null;
 
     const newResolved = !issue.resolved;
     const local = issues.find((i) => i.id === issue.id);
     if (local) local.resolved = newResolved ? 1 : 0;
-    togglingIssueIds.add(issue.id);
-    togglingIssueIds = togglingIssueIds;
+    setIssueActioning(issue.id);
 
     try {
       await toggleReviewIssueResolved({ issueId: issue.id, resolved: newResolved });
     } catch (err) {
       if (local) local.resolved = newResolved ? 0 : 1;
-      toggleError = err instanceof Error ? err.message : String(err);
+      issueActionError = err instanceof Error ? err.message : String(err);
       await invalidateAll();
     } finally {
-      togglingIssueIds.delete(issue.id);
-      togglingIssueIds = togglingIssueIds;
+      clearIssueActioning(issue.id);
+    }
+  }
+
+  async function handleDeleteIssue(issue: ReviewIssueRow) {
+    if (isIssueActioning(issue.id)) return;
+    issueActionError = null;
+    setIssueActioning(issue.id);
+
+    try {
+      await deleteReviewIssue({ reviewId: data.review.id, issueId: issue.id });
+      await invalidateAll();
+    } catch (err) {
+      issueActionError = err instanceof Error ? err.message : String(err);
+    } finally {
+      clearIssueActioning(issue.id);
+    }
+  }
+
+  async function handleAddIssueToPlan(issue: ReviewIssueRow) {
+    if (isIssueActioning(issue.id) || !linkedPlanUuid) return;
+    issueActionError = null;
+    setIssueActioning(issue.id);
+
+    try {
+      await addReviewIssueToPlanTask({
+        reviewId: data.review.id,
+        issueId: issue.id,
+        planUuid: linkedPlanUuid,
+      });
+      await invalidateAll();
+    } catch (err) {
+      issueActionError = err instanceof Error ? err.message : String(err);
+    } finally {
+      clearIssueActioning(issue.id);
+    }
+  }
+
+  function issueLocationLabel(issue: ReviewIssueRow): string | null {
+    if (!issue.file) return null;
+
+    const line =
+      issue.start_line && issue.line && issue.start_line !== issue.line
+        ? `${issue.start_line}–${issue.line}`
+        : issue.line ?? issue.start_line;
+
+    return line ? `${issue.file}:${line}` : issue.file;
+  }
+
+  function issueClipboardText(issue: ReviewIssueRow): string {
+    const parts: string[] = [];
+    const location = issueLocationLabel(issue);
+    if (location) {
+      parts.push(location);
+    }
+
+    const content = issue.content.trim();
+    if (content) {
+      parts.push(content);
+    }
+
+    const suggestion = issue.suggestion?.trim();
+    if (suggestion) {
+      parts.push(`Suggestion:\n${suggestion}`);
+    }
+
+    return parts.join('\n\n');
+  }
+
+  async function handleCopyIssue(issue: ReviewIssueRow) {
+    issueActionError = null;
+    try {
+      await navigator.clipboard.writeText(issueClipboardText(issue));
+      copiedIssueId = issue.id;
+      setTimeout(() => {
+        if (copiedIssueId === issue.id) {
+          copiedIssueId = null;
+        }
+      }, 1500);
+    } catch (err) {
+      issueActionError = err instanceof Error ? err.message : String(err);
     }
   }
 
@@ -210,11 +309,11 @@
       </div>
     {/if}
 
-    {#if toggleError}
+    {#if issueActionError}
       <div
         class="rounded-md bg-red-50 p-3 text-sm text-red-800 dark:bg-red-900/20 dark:text-red-300"
       >
-        {toggleError}
+        {issueActionError}
       </div>
     {/if}
   </div>
@@ -231,7 +330,7 @@
     </div>
 
     <!-- Right: issues -->
-    <div class="w-80 shrink-0 space-y-1.5 overflow-y-auto">
+    <div class="w-96 shrink-0 space-y-1.5 overflow-y-auto">
       <h3 class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
         Issues
         {#if issues.length > 0}
@@ -267,21 +366,8 @@
                       ? 'opacity-50'
                       : ''}"
                   >
-                    <div class="flex items-start gap-1.5">
-                      <button
-                        onclick={() => handleToggleResolved(issue)}
-                        disabled={togglingIssueIds.has(issue.id)}
-                        class="mt-0.5 shrink-0 text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                        title={issue.resolved ? 'Mark as unresolved' : 'Mark as resolved'}
-                        aria-label={issue.resolved ? 'Mark as unresolved' : 'Mark as resolved'}
-                      >
-                        {#if issue.resolved}
-                          <CheckCircle class="size-3.5 text-green-600 dark:text-green-400" />
-                        {:else}
-                          <Circle class="size-3.5" />
-                        {/if}
-                      </button>
-                      <div class="min-w-0 flex-1 space-y-1">
+                    <div class="space-y-2">
+                      <div class="space-y-1">
                         <div class="flex flex-wrap items-center gap-1">
                           <span
                             class="inline-flex items-center rounded px-1 py-0.5 text-[10px] font-medium {categoryBadgeClass(
@@ -290,13 +376,16 @@
                           >
                             {formatCategory(issue.category)}
                           </span>
+                          {#if issue.resolved}
+                            <span
+                              class="inline-flex items-center rounded px-1 py-0.5 text-[10px] font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300"
+                            >
+                              Resolved
+                            </span>
+                          {/if}
                           {#if issue.file}
                             <span class="truncate font-mono text-[10px] text-muted-foreground">
-                              {issue.file}{issue.start_line
-                                ? `:${issue.start_line}`
-                                : ''}{issue.line && issue.line !== issue.start_line
-                                ? `–${issue.line}`
-                                : ''}
+                              {issueLocationLabel(issue)}
                             </span>
                           {/if}
                         </div>
@@ -307,6 +396,58 @@
                             {issue.suggestion}
                           </p>
                         {/if}
+                      </div>
+
+                      <div class="flex flex-wrap items-center gap-1.5">
+                        <button
+                          type="button"
+                          onclick={() => handleDeleteIssue(issue)}
+                          disabled={isIssueActioning(issue.id)}
+                          class="rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
+                        >
+                          Delete issue
+                        </button>
+
+                        {#if linkedPlanUuid}
+                          <button
+                            type="button"
+                            onclick={() => handleAddIssueToPlan(issue)}
+                            disabled={isIssueActioning(issue.id)}
+                            class="rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
+                          >
+                            Add to plan as a task
+                          </button>
+                        {/if}
+
+                        <button
+                          type="button"
+                          onclick={() => handleToggleResolved(issue)}
+                          disabled={isIssueActioning(issue.id)}
+                          class="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
+                          title={issue.resolved ? 'Mark as unresolved' : 'Mark as resolved'}
+                          aria-label={issue.resolved ? 'Mark as unresolved' : 'Mark as resolved'}
+                        >
+                          {#if issue.resolved}
+                            <CheckCircle class="size-3" />
+                          {:else}
+                            <Circle class="size-3" />
+                          {/if}
+                          {issue.resolved ? 'Mark unresolved' : 'Mark resolved'}
+                        </button>
+
+                        <button
+                          type="button"
+                          onclick={() => handleCopyIssue(issue)}
+                          class="ml-auto rounded p-1 transition-colors {copiedIssueId === issue.id ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800'}"
+                          title="Copy file/line, issue content, and suggestion"
+                          aria-label="Copy issue details"
+                        >
+                          {#if copiedIssueId === issue.id}
+                            <CheckCircle class="size-3.5" />
+                          {:else}
+                            <Copy class="size-3.5" />
+                          {/if}
+                        </button>
                       </div>
                     </div>
                   </li>
