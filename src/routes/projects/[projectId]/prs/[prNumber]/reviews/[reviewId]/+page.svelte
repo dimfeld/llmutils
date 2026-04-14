@@ -141,13 +141,13 @@
 </script>
 
 <div
-  class="overflow-x-hidden overflow-y-auto px-6 py-6 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
+  class="flex h-full flex-col overflow-hidden px-6 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
   role="region"
   aria-label="Review guide detail"
   tabindex="0"
 >
   <!-- Top: back link, header, metadata, alerts -->
-  <div class="mb-6 space-y-3">
+  <div class="mb-4 shrink-0 space-y-3 pt-6">
     <a
       href="/projects/{projectId}/prs/{prNumber}"
       class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
@@ -220,9 +220,9 @@
   </div>
 
   <!-- Split: guide left, issues right -->
-  <div class="flex items-start gap-6">
+  <div class="flex min-h-0 flex-1 gap-6 pb-6">
     <!-- Left: review guide -->
-    <div class="min-w-0 flex-1">
+    <div class="min-w-0 flex-1 overflow-y-auto pr-1">
       {#if data.review.review_guide}
         <MarkdownContent content={data.review.review_guide} class="text-sm text-foreground" />
       {:else if data.review.status !== 'complete'}
@@ -231,7 +231,7 @@
     </div>
 
     <!-- Right: issues -->
-    <div class="sticky top-6 w-80 shrink-0 space-y-1.5">
+    <div class="w-80 shrink-0 space-y-1.5 overflow-y-auto">
       <h3 class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
         Issues
         {#if issues.length > 0}

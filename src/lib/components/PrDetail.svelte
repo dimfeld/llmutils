@@ -51,6 +51,13 @@
       pr.status.head_sha !== latestCompletedReview.reviewed_sha
   );
   let sortedLinkedPlans = $derived([...pr.linkedPlans].sort((a, b) => a.planId - b.planId));
+  let hasRequiredChecks = $derived((pr.requiredCheckNames ?? []).length > 0);
+  let showAllChecks = $state(false);
+  let visibleChecks = $derived(
+    hasRequiredChecks && !showAllChecks
+      ? pr.checks.filter((c) => (pr.requiredCheckNames ?? []).includes(c.name))
+      : pr.checks
+  );
 
   // Get planUuid if there's exactly one linked plan, otherwise undefined
   let planUuid = $derived(pr.linkedPlans.length === 1 ? pr.linkedPlans[0].planUuid : undefined);
@@ -337,10 +344,26 @@
         <summary
           class="cursor-pointer text-xs font-semibold tracking-wide text-muted-foreground uppercase hover:text-foreground"
         >
-          {pr.checks.length} check{pr.checks.length === 1 ? '' : 's'}
+          <span class="inline-flex items-center gap-2">
+            {hasRequiredChecks && !showAllChecks
+              ? `${visibleChecks.length} of ${pr.checks.length} check${pr.checks.length === 1 ? '' : 's'} (required)`
+              : `${pr.checks.length} check${pr.checks.length === 1 ? '' : 's'}`}
+            {#if hasRequiredChecks}
+              <button
+                type="button"
+                onclick={(e) => {
+                  e.preventDefault();
+                  showAllChecks = !showAllChecks;
+                }}
+                class="rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground normal-case hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
+              >
+                {showAllChecks ? 'Required only' : 'Show all'}
+              </button>
+            {/if}
+          </span>
         </summary>
         <div class="mt-1.5 pl-2">
-          <PrCheckRunList checks={pr.checks} requiredCheckNames={pr.requiredCheckNames ?? []} />
+          <PrCheckRunList checks={visibleChecks} requiredCheckNames={pr.requiredCheckNames ?? []} />
         </div>
       </details>
     {/if}
