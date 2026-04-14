@@ -103,6 +103,7 @@
     "remark-rehype": "^11.1.2",
     "resolve.exports": "^2.0.3",
     "strip-ansi": "^7.2.0",
+    "svelte-splitpanes": "^8.0.12",
     "table": "^6.9.0",
     "unified": "^11.0.5",
     "web-tree-sitter": "^0.26.7",

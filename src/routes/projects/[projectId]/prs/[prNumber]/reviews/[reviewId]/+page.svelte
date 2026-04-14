@@ -13,6 +13,7 @@
   } from '$lib/remote/review_issue_actions.remote.js';
   import MarkdownContent from '$lib/components/MarkdownContent.svelte';
   import { formatRelativeTime } from '$lib/utils/time.js';
+  import { Splitpanes, Pane } from 'svelte-splitpanes';
   import type { ReviewIssueRow, ReviewSeverity, ReviewCategory } from '$tim/db/review.js';
   import type { PageData } from './$types';
 
@@ -128,7 +129,7 @@
     const line =
       issue.start_line && issue.line && issue.start_line !== issue.line
         ? `${issue.start_line}–${issue.line}`
-        : issue.line ?? issue.start_line;
+        : (issue.line ?? issue.start_line);
 
     return line ? `${issue.file}:${line}` : issue.file;
   }
@@ -241,9 +242,7 @@
 
 <div
   class="flex h-full flex-col overflow-hidden px-6 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
-  role="region"
   aria-label="Review guide detail"
-  tabindex="0"
 >
   <!-- Top: back link, header, metadata, alerts -->
   <div class="mb-4 shrink-0 space-y-3 pt-6">
@@ -319,146 +318,156 @@
   </div>
 
   <!-- Split: guide left, issues right -->
-  <div class="flex min-h-0 flex-1 gap-6 pb-6">
+  <Splitpanes theme="tim-split" class="min-h-0 flex-1 pb-6">
     <!-- Left: review guide -->
-    <div class="min-w-0 flex-1 overflow-y-auto pr-1">
-      {#if data.review.review_guide}
-        <MarkdownContent content={data.review.review_guide} class="text-sm text-foreground" />
-      {:else if data.review.status !== 'complete'}
-        <p class="text-sm text-muted-foreground">Review guide not yet available.</p>
-      {/if}
-    </div>
+    <Pane minSize={20}>
+      <div class="h-full overflow-y-auto pr-1">
+        {#if data.review.review_guide}
+          <MarkdownContent content={data.review.review_guide} class="text-sm text-foreground" />
+        {:else if data.review.status !== 'complete'}
+          <p class="text-sm text-muted-foreground">Review guide not yet available.</p>
+        {/if}
+      </div>
+    </Pane>
 
     <!-- Right: issues -->
-    <div class="w-96 shrink-0 space-y-1.5 overflow-y-auto">
-      <h3 class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-        Issues
-        {#if issues.length > 0}
-          <span class="ml-1 font-normal normal-case">
-            ({unresolvedCount} of {issues.length} unresolved)
-          </span>
-        {/if}
-      </h3>
+    <Pane size={30} minSize={15}>
+      <div class="@container h-full space-y-1.5 overflow-y-auto pl-3">
+        <h3
+          class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase @sm:text-sm"
+        >
+          Issues
+          {#if issues.length > 0}
+            <span class="ml-1 font-normal normal-case">
+              ({unresolvedCount} of {issues.length} unresolved)
+            </span>
+          {/if}
+        </h3>
 
-      {#if issues.length > 0}
-        {#each SEVERITY_ORDER as severity (severity)}
-          {@const severityIssues = groupedIssues.get(severity) ?? []}
-          {#if severityIssues.length > 0}
-            <details open class="group">
-              <summary
-                class="flex cursor-pointer list-none items-center gap-2 rounded px-1 py-1 hover:bg-gray-100 dark:hover:bg-gray-800"
-              >
-                <span
-                  class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {severityBadgeClass(
-                    severity
-                  )}"
+        {#if issues.length > 0}
+          {#each SEVERITY_ORDER as severity (severity)}
+            {@const severityIssues = groupedIssues.get(severity) ?? []}
+            {#if severityIssues.length > 0}
+              <details open class="group">
+                <summary
+                  class="flex cursor-pointer list-none items-center gap-2 rounded px-1 py-1 hover:bg-gray-100 dark:hover:bg-gray-800"
                 >
-                  {formatSeverity(severity)}
-                </span>
-                <span class="text-xs text-muted-foreground">
-                  {severityIssues.filter((i) => !i.resolved).length}/{severityIssues.length} open
-                </span>
-              </summary>
-              <ul class="mt-1 space-y-1.5 pl-1">
-                {#each severityIssues as issue (issue.id)}
-                  <li
-                    class="rounded-md border border-border bg-card p-2.5 text-xs {issue.resolved
-                      ? 'opacity-50'
-                      : ''}"
+                  <span
+                    class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium @sm:text-sm {severityBadgeClass(
+                      severity
+                    )}"
                   >
-                    <div class="space-y-2">
-                      <div class="space-y-1">
-                        <div class="flex flex-wrap items-center gap-1">
-                          <span
-                            class="inline-flex items-center rounded px-1 py-0.5 text-[10px] font-medium {categoryBadgeClass(
-                              issue.category
-                            )}"
-                          >
-                            {formatCategory(issue.category)}
-                          </span>
-                          {#if issue.resolved}
+                    {formatSeverity(severity)}
+                  </span>
+                  <span class="text-xs text-muted-foreground @sm:text-sm">
+                    {severityIssues.filter((i) => !i.resolved).length}/{severityIssues.length} open
+                  </span>
+                </summary>
+                <ul class="mt-1 space-y-1.5 pl-1">
+                  {#each severityIssues as issue (issue.id)}
+                    <li
+                      class="rounded-md border border-border bg-card p-2.5 text-xs @sm:text-sm {issue.resolved
+                        ? 'opacity-50'
+                        : ''}"
+                    >
+                      <div class="space-y-2">
+                        <div class="space-y-1">
+                          <div class="flex flex-wrap items-center gap-1">
                             <span
-                              class="inline-flex items-center rounded px-1 py-0.5 text-[10px] font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300"
+                              class="inline-flex items-center rounded px-1 py-0.5 text-[10px] font-medium @sm:text-xs {categoryBadgeClass(
+                                issue.category
+                              )}"
                             >
-                              Resolved
+                              {formatCategory(issue.category)}
                             </span>
-                          {/if}
-                          {#if issue.file}
-                            <span class="truncate font-mono text-[10px] text-muted-foreground">
-                              {issueLocationLabel(issue)}
-                            </span>
+                            {#if issue.resolved}
+                              <span
+                                class="inline-flex items-center rounded bg-emerald-100 px-1 py-0.5 text-[10px] font-medium text-emerald-800 @sm:text-xs dark:bg-emerald-900/30 dark:text-emerald-300"
+                              >
+                                Resolved
+                              </span>
+                            {/if}
+                            {#if issue.file}
+                              <span
+                                class="truncate font-mono text-[10px] text-muted-foreground @sm:text-xs"
+                              >
+                                {issueLocationLabel(issue)}
+                              </span>
+                            {/if}
+                          </div>
+                          <p class="text-foreground">{issue.content}</p>
+                          {#if issue.suggestion}
+                            <p class="text-muted-foreground">
+                              <span class="font-medium text-foreground">Suggestion:</span>
+                              {issue.suggestion}
+                            </p>
                           {/if}
                         </div>
-                        <p class="text-foreground">{issue.content}</p>
-                        {#if issue.suggestion}
-                          <p class="text-muted-foreground">
-                            <span class="font-medium text-foreground">Suggestion:</span>
-                            {issue.suggestion}
-                          </p>
-                        {/if}
-                      </div>
 
-                      <div class="flex flex-wrap items-center gap-1.5">
-                        <button
-                          type="button"
-                          onclick={() => handleDeleteIssue(issue)}
-                          disabled={isIssueActioning(issue.id)}
-                          class="rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
-                        >
-                          Delete issue
-                        </button>
-
-                        {#if linkedPlanUuid}
+                        <div class="flex flex-wrap items-center gap-1.5">
                           <button
                             type="button"
-                            onclick={() => handleAddIssueToPlan(issue)}
+                            onclick={() => handleDeleteIssue(issue)}
                             disabled={isIssueActioning(issue.id)}
-                            class="rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
+                            class="rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 @sm:text-xs dark:hover:bg-gray-800"
                           >
-                            Add to plan as a task
+                            Delete issue
                           </button>
-                        {/if}
 
-                        <button
-                          type="button"
-                          onclick={() => handleToggleResolved(issue)}
-                          disabled={isIssueActioning(issue.id)}
-                          class="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
-                          title={issue.resolved ? 'Mark as unresolved' : 'Mark as resolved'}
-                          aria-label={issue.resolved ? 'Mark as unresolved' : 'Mark as resolved'}
-                        >
-                          {#if issue.resolved}
-                            <CheckCircle class="size-3" />
-                          {:else}
-                            <Circle class="size-3" />
+                          {#if linkedPlanUuid}
+                            <button
+                              type="button"
+                              onclick={() => handleAddIssueToPlan(issue)}
+                              disabled={isIssueActioning(issue.id)}
+                              class="rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 @sm:text-xs dark:hover:bg-gray-800"
+                            >
+                              Add to plan as a task
+                            </button>
                           {/if}
-                          {issue.resolved ? 'Mark unresolved' : 'Mark resolved'}
-                        </button>
 
-                        <button
-                          type="button"
-                          onclick={() => handleCopyIssue(issue)}
-                          class="ml-auto rounded p-1 transition-colors {copiedIssueId === issue.id ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800'}"
-                          title="Copy file/line, issue content, and suggestion"
-                          aria-label="Copy issue details"
-                        >
-                          {#if copiedIssueId === issue.id}
-                            <CheckCircle class="size-3.5" />
-                          {:else}
-                            <Copy class="size-3.5" />
-                          {/if}
-                        </button>
+                          <button
+                            type="button"
+                            onclick={() => handleToggleResolved(issue)}
+                            disabled={isIssueActioning(issue.id)}
+                            class="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 @sm:text-xs dark:hover:bg-gray-800"
+                            title={issue.resolved ? 'Mark as unresolved' : 'Mark as resolved'}
+                            aria-label={issue.resolved ? 'Mark as unresolved' : 'Mark as resolved'}
+                          >
+                            {#if issue.resolved}
+                              <CheckCircle class="size-3 @sm:size-3.5" />
+                            {:else}
+                              <Circle class="size-3 @sm:size-3.5" />
+                            {/if}
+                            {issue.resolved ? 'Mark unresolved' : 'Mark resolved'}
+                          </button>
+
+                          <button
+                            type="button"
+                            onclick={() => handleCopyIssue(issue)}
+                            class="ml-auto rounded p-1 transition-colors {copiedIssueId === issue.id
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : 'text-muted-foreground hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800'}"
+                            title="Copy file/line, issue content, and suggestion"
+                            aria-label="Copy issue details"
+                          >
+                            {#if copiedIssueId === issue.id}
+                              <CheckCircle class="size-3.5 @sm:size-4" />
+                            {:else}
+                              <Copy class="size-3.5 @sm:size-4" />
+                            {/if}
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  </li>
-                {/each}
-              </ul>
-            </details>
-          {/if}
-        {/each}
-      {:else if data.review.status === 'complete'}
-        <p class="text-xs text-muted-foreground">No issues found.</p>
-      {/if}
-    </div>
-  </div>
+                    </li>
+                  {/each}
+                </ul>
+              </details>
+            {/if}
+          {/each}
+        {:else if data.review.status === 'complete'}
+          <p class="text-xs text-muted-foreground @sm:text-sm">No issues found.</p>
+        {/if}
+      </div>
+    </Pane>
+  </Splitpanes>
 </div>
