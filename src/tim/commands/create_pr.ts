@@ -148,13 +148,13 @@ export function buildPrCreationPrompt(options: PrCreationPromptOptions): string 
     '',
     `1d. Commit history on the branch:\n\n!\`${historyCommand}\``,
     '',
-    '## Step 2: Review Changes',
+    '## Step 2: Examine Changes',
     '',
     'The files that will be included in the PR are:',
     '',
     `!\`${diffSummaryCommand}\``,
     '',
-    'Group the files by functional area and review each file diff carefully. Use per-file diff commands as needed.',
+    'Group the files by functional area and examine each file diff carefully. Use per-file diff commands as needed. Do not run any lint or tests, you are only trying to figure out what the changes do.',
     `For each file, use ${options.vcsType === 'jj' ? "`jj diff -r '" + baseRef + "::@' <file>`" : '`git diff ' + baseRef + '...HEAD -- <file>`'}.`,
     'If you find an issue tracker reference in plan files or code comments, include it in the PR title/body where appropriate.',
     '',
@@ -185,7 +185,7 @@ export function buildPrCreationPrompt(options: PrCreationPromptOptions): string 
     titlePrefixLine,
     '- Include issue references when available (for Linear keep the full key, e.g. DF-123)',
     '',
-    'Do not include generated-by or co-author lines.',
+    'Do not include generated-by or co-author lines. Do not make any changes to the code. You are only creating the PR right now.',
   ];
 
   appendPlanContext(prompt, options);
