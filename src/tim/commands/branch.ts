@@ -34,7 +34,6 @@ export class BranchPrefixValidationError extends Error {
 }
 
 const MAX_BRANCH_NAME_LENGTH = 63;
-const MID_TRUNCATION_MARKER = '...';
 
 export function normalizeBranchPrefix(prefix: string | undefined): string {
   if (!prefix) {
@@ -88,26 +87,11 @@ export function generateBranchNameFromPlan(
   }
   const maxBaseNameLength = Math.max(0, MAX_BRANCH_NAME_LENGTH - branchPrefix.length);
 
-  let branchName: string;
-
   if (plan.id !== undefined && plan.id !== null) {
-    branchName = buildBranchNameWithId(plan.id, slugSegment, issueId, maxBaseNameLength);
+    return `${branchPrefix}${buildBranchNameWithId(plan.id, slugSegment, issueId, maxBaseNameLength)}`;
   } else {
-    branchName = buildBranchNameWithoutId(slugSegment, issueId, maxBaseNameLength);
+    return `${branchPrefix}${buildBranchNameWithoutId(slugSegment, issueId, maxBaseNameLength)}`;
   }
-
-  if (branchName.length > maxBaseNameLength) {
-    branchName = truncateMiddle(branchName, maxBaseNameLength);
-  }
-
-  const fullBranchName = `${branchPrefix}${branchName}`;
-  if (fullBranchName.length > MAX_BRANCH_NAME_LENGTH) {
-    throw new BranchPrefixValidationError(
-      `Generated branch name "${fullBranchName}" exceeds ${MAX_BRANCH_NAME_LENGTH} characters`
-    );
-  }
-
-  return fullBranchName;
 }
 
 function getIssueIdFromPlanIssues(plan: PlanSchema): string | undefined {
@@ -154,41 +138,35 @@ function buildBranchNameWithSlugSegment(
   maxLength: number
 ): string {
   const issueSuffix = issueId ? `-${issueId}` : '';
+  const baseBranch = `${prefix}${issueSuffix}`;
+
   if (!slugSegment) {
-    return `${prefix}${issueSuffix}`;
+    if (baseBranch.length > maxLength) {
+      throw new BranchPrefixValidationError(
+        `Generated branch name "${baseBranch}" exceeds ${maxLength} characters`
+      );
+    }
+
+    return baseBranch;
   }
 
-  const availableSlugLength = Math.max(0, maxLength - prefix.length - issueSuffix.length - 1);
-  const truncatedSlug = truncateMiddle(slugSegment, availableSlugLength);
+  const availableSlugLength = maxLength - baseBranch.length - 1;
+  if (availableSlugLength <= 0) {
+    if (baseBranch.length > maxLength) {
+      throw new BranchPrefixValidationError(
+        `Generated branch name "${baseBranch}" exceeds ${maxLength} characters`
+      );
+    }
 
-  if (truncatedSlug.length === 0) {
-    return `${prefix}${issueSuffix}`;
+    return baseBranch;
   }
 
-  return `${prefix}-${truncatedSlug}${issueSuffix}`;
-}
-
-function truncateMiddle(value: string, maxLength: number): string {
-  if (value.length <= maxLength) {
-    return value;
+  const slugPart = slugSegment.slice(0, availableSlugLength);
+  if (slugPart.length === 0) {
+    return baseBranch;
   }
 
-  if (maxLength <= 0) {
-    return '';
-  }
-
-  if (maxLength <= MID_TRUNCATION_MARKER.length) {
-    return value.slice(0, maxLength);
-  }
-
-  const visibleLength = maxLength - MID_TRUNCATION_MARKER.length;
-  const leftLength = Math.ceil(visibleLength / 2);
-  const rightLength = Math.floor(visibleLength / 2);
-
-  const left = value.slice(0, leftLength);
-  const right = value.slice(value.length - rightLength);
-
-  return `${left}${MID_TRUNCATION_MARKER}${right}`;
+  return `${prefix}-${slugPart}${issueSuffix}`;
 }
 
 export async function handleBranchCommand(

@@ -101,6 +101,7 @@ describe('generateBranchNameFromPlan', () => {
 
     expect(name.length).toBeLessThanOrEqual(63);
     expect(name.startsWith('123-')).toBe(true);
+    expect(name).not.toContain('...');
     expect(name.includes('-gh-1471')).toBe(true);
     expect(name.endsWith('-gh-1471')).toBe(true);
   });
@@ -157,6 +158,7 @@ describe('generateBranchNameFromPlan with branchPrefix', () => {
 
     expect(name.length).toBeLessThanOrEqual(63);
     expect(name.startsWith('di/123-')).toBe(true);
+    expect(name).not.toContain('...');
   });
 
   test('prefix is included in the 63-char limit with issue id', () => {
@@ -174,6 +176,7 @@ describe('generateBranchNameFromPlan with branchPrefix', () => {
 
     expect(name.length).toBeLessThanOrEqual(63);
     expect(name.startsWith('di/123-')).toBe(true);
+    expect(name).not.toContain('...');
     expect(name.endsWith('-gh-1471')).toBe(true);
   });
 
@@ -589,7 +592,7 @@ describe('handleBranchCommand', () => {
   test('throws when no plan or selection flags are provided', async () => {
     const command = { parent: { opts: () => ({}) } } as any;
     await expect(handleBranchCommand(undefined, {}, command)).rejects.toThrow(
-      'Please provide a plan file or use --latest/--next/--current/--next-ready to find a plan'
+      'Please provide a numeric plan ID or use --latest/--next/--current/--next-ready to find a plan'
     );
   });
 
