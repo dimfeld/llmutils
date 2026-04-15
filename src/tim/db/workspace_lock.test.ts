@@ -69,6 +69,27 @@ describe('tim db/workspace_lock', () => {
     ).toThrow(/already locked/);
   });
 
+  test('acquireWorkspaceLock transitions persistent lock to pid when explicitly allowed', () => {
+    acquireWorkspaceLock(db, workspaceId, {
+      lockType: 'persistent',
+      hostname: 'persistent-host',
+      command: 'tim workspace lock',
+    });
+
+    const lock = acquireWorkspaceLock(db, workspaceId, {
+      lockType: 'pid',
+      pid: 12345,
+      hostname: 'pid-host',
+      command: 'tim generate --workspace task-1',
+      allowPersistentToPidTransition: true,
+    });
+
+    expect(lock.lock_type).toBe('pid');
+    expect(lock.pid).toBe(12345);
+    expect(lock.hostname).toBe('pid-host');
+    expect(lock.command).toBe('tim generate --workspace task-1');
+  });
+
   test('acquireWorkspaceLock replaces stale pid lock before acquiring', () => {
     acquireWorkspaceLock(db, workspaceId, {
       lockType: 'pid',

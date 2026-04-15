@@ -39,6 +39,8 @@ export interface AcquireLockOptions {
   type?: LockType;
   /** Optional user friendly identifier for the lock owner. */
   owner?: string;
+  /** Allow replacing an existing persistent lock with a PID lock for this acquisition. */
+  allowPersistentToPidTransition?: boolean;
 }
 
 export interface ReleaseLockOptions {
@@ -127,6 +129,7 @@ export class WorkspaceLock {
         pid: this.pid,
         hostname: os.hostname(),
         command: lockCommand,
+        allowPersistentToPidTransition: options.allowPersistentToPidTransition,
       });
       return this.rowToLockInfo(created);
     } catch (error) {

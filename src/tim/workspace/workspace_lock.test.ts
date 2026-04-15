@@ -80,6 +80,18 @@ describe('WorkspaceLock', () => {
     );
   });
 
+  test('acquireLock can transition a persistent lock to pid when explicitly allowed', async () => {
+    await WorkspaceLock.acquireLock(workspacePath, 'initial');
+
+    const lockInfo = await WorkspaceLock.acquireLock(workspacePath, 'second', {
+      type: 'pid',
+      allowPersistentToPidTransition: true,
+    });
+
+    expect(lockInfo.type).toBe('pid');
+    expect(lockInfo.pid).toBe(process.pid);
+  });
+
   test('releaseLock does not remove persistent lock without force', async () => {
     await WorkspaceLock.acquireLock(workspacePath, 'persistent');
 

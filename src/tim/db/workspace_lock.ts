@@ -15,6 +15,7 @@ export interface AcquireLockInput {
   pid?: number;
   hostname: string;
   command: string;
+  allowPersistentToPidTransition?: boolean;
 }
 
 export interface ReleaseLockOptions {
@@ -66,29 +67,52 @@ export function acquireWorkspaceLock(
       if (existing) {
         if (isLockStale(existing)) {
           db.prepare('DELETE FROM workspace_lock WHERE workspace_id = ?').run(nextWorkspaceId);
+        } else if (
+          nextInput.allowPersistentToPidTransition &&
+          existing.lock_type === 'persistent' &&
+          nextInput.lockType === 'pid'
+        ) {
+          db.prepare(
+            `
+            UPDATE workspace_lock
+            SET lock_type = 'pid',
+                pid = ?,
+                started_at = ${SQL_NOW_ISO_UTC},
+                hostname = ?,
+                command = ?
+            WHERE workspace_id = ?
+          `
+          ).run(
+            nextInput.pid ?? process.pid,
+            nextInput.hostname,
+            nextInput.command,
+            nextWorkspaceId
+          );
         } else {
           throw new Error(`Workspace ${nextWorkspaceId} is already locked`);
         }
       }
 
-      db.prepare(
+      if (!existing || isLockStale(existing)) {
+        db.prepare(
+          `
+          INSERT INTO workspace_lock (
+            workspace_id,
+            lock_type,
+            pid,
+            started_at,
+            hostname,
+            command
+          ) VALUES (?, ?, ?, ${SQL_NOW_ISO_UTC}, ?, ?)
         `
-        INSERT INTO workspace_lock (
-          workspace_id,
-          lock_type,
-          pid,
-          started_at,
-          hostname,
-          command
-        ) VALUES (?, ?, ?, ${SQL_NOW_ISO_UTC}, ?, ?)
-      `
-      ).run(
-        nextWorkspaceId,
-        nextInput.lockType,
-        nextInput.lockType === 'pid' ? (nextInput.pid ?? process.pid) : null,
-        nextInput.hostname,
-        nextInput.command
-      );
+        ).run(
+          nextWorkspaceId,
+          nextInput.lockType,
+          nextInput.lockType === 'pid' ? (nextInput.pid ?? process.pid) : null,
+          nextInput.hostname,
+          nextInput.command
+        );
+      }
 
       const created = getWorkspaceLock(db, nextWorkspaceId);
       if (!created) {

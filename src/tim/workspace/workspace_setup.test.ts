@@ -1588,7 +1588,6 @@ describe('setupWorkspace', () => {
     vi.spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
 
     const acquireLockSpy = vi.spyOn(WorkspaceLock, 'acquireLock');
-    const releaseLockSpy = vi.spyOn(WorkspaceLock, 'releaseLock');
     const setupCleanupHandlersSpy = vi.spyOn(WorkspaceLock, 'setupCleanupHandlers');
 
     const result = await setupWorkspace(
@@ -1607,11 +1606,10 @@ describe('setupWorkspace', () => {
     expect(result.workspaceTaskId).toBe('task-new');
     expect(result.isNewWorkspace).toBe(true);
 
-    expect(releaseLockSpy).toHaveBeenCalledWith(createdWorkspacePath, { force: true });
     expect(acquireLockSpy).toHaveBeenCalledWith(
       createdWorkspacePath,
       'tim generate --workspace task-new',
-      { type: 'pid' }
+      { type: 'pid', allowPersistentToPidTransition: true }
     );
     expect(setupCleanupHandlersSpy).toHaveBeenCalledWith(createdWorkspacePath, 'pid');
     expect((await WorkspaceLock.getLockInfo(createdWorkspacePath))?.type).toBe('pid');

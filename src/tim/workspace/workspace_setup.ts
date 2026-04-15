@@ -431,15 +431,13 @@ export async function setupWorkspace(
       const workspacePlanFile = relativePlanPath
         ? path.join(workspace.path, relativePlanPath)
         : undefined;
-      // createWorkspace() acquires a persistent lock. Replace it with a PID lock so
-      // signal-based cleanup handlers can release it on interruption.
-      if (isNewWorkspace) {
-        await WorkspaceLock.releaseLock(workspace.path, { force: true });
-      }
       const lockInfo = await WorkspaceLock.acquireLock(
         workspace.path,
         `${commandLabel} --workspace ${workspace.taskId}`,
-        { type: 'pid' }
+        {
+          type: 'pid',
+          ...(isNewWorkspace ? { allowPersistentToPidTransition: true } : {}),
+        }
       );
       WorkspaceLock.setupCleanupHandlers(workspace.path, lockInfo.type);
 
