@@ -130,6 +130,7 @@ describe('setupWorkspace', () => {
       base: undefined,
       branchName: undefined,
       planData: undefined,
+      fallbackToTrunkOnMissingBase: false,
     });
     expect(result.baseDir).toBe(autoWorkspacePath);
     expect(result.workspaceTaskId).toBe('task-auto');
@@ -274,6 +275,7 @@ describe('setupWorkspace', () => {
       base: undefined,
       branchName: undefined,
       planData: undefined,
+      fallbackToTrunkOnMissingBase: false,
       preferredPlanUuid: '11111111-1111-4111-8111-111111111111',
     });
   });
@@ -469,6 +471,7 @@ describe('setupWorkspace', () => {
       planFile,
       expect.objectContaining({
         createBranch: true,
+        fallbackToTrunkOnMissingBase: false,
       })
     );
   });
@@ -514,6 +517,7 @@ describe('setupWorkspace', () => {
         createBranch: true,
         base: 'release/auto-base',
         branchName: 'feature/auto-plan',
+        fallbackToTrunkOnMissingBase: false,
         planData: expect.objectContaining({
           id: 52,
           branch: 'feature/auto-plan',
@@ -546,6 +550,7 @@ describe('setupWorkspace', () => {
       base: undefined,
       branchName: undefined,
       planData: undefined,
+      fallbackToTrunkOnMissingBase: false,
     });
     expect(result.baseDir).toBe(baseDir);
     expect(result.planFile).toBe(planFile);
@@ -1783,12 +1788,86 @@ describe('setupWorkspace', () => {
         createBranch: true,
         branchName: '31-child-branch-holder',
         fromBranch: 'feature/parent-base',
+        fallbackToTrunkOnMissingBase: true,
         planData: expect.objectContaining({
           id: 31,
           parent: 30,
         }),
       }
     );
+  });
+
+  test('auto-created workspaces retry from trunk when a parent-derived base branch is missing', async () => {
+    const autoWorkspacePath = path.join(tempDir, 'workspace-auto-parent-base-fallback');
+    await fs.mkdir(autoWorkspacePath, { recursive: true });
+
+    const parentPlanFile = path.join(baseDir, 'parent-auto.plan.md');
+    const childPlanFile = path.join(baseDir, 'child-auto.plan.md');
+    await writePlanFile(
+      parentPlanFile,
+      {
+        id: 40,
+        title: 'Parent auto branch holder',
+        branch: 'feature/missing-parent',
+        tasks: [],
+      },
+      { cwdForIdentity: baseDir }
+    );
+    await writePlanFile(
+      childPlanFile,
+      {
+        id: 41,
+        title: 'Child auto branch holder',
+        parent: 40,
+        tasks: [],
+      },
+      { cwdForIdentity: baseDir }
+    );
+
+    const selectWorkspaceSpy = vi
+      .spyOn(WorkspaceAutoSelector.prototype, 'selectWorkspace')
+      .mockResolvedValue({
+        workspace: {
+          taskId: 'task-auto-parent-base-fallback',
+          workspacePath: autoWorkspacePath,
+          originalPlanFilePath: childPlanFile,
+          createdAt: new Date().toISOString(),
+          checkedOutRemoteBranch: false,
+        },
+        isNew: true,
+        clearedStaleLock: false,
+      });
+    vi.spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
+      hasChanges: false,
+      checkFailed: false,
+    });
+    vi.spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
+
+    const result = await setupWorkspace(
+      {
+        autoWorkspace: true,
+        workspace: 'task-auto-parent-base-fallback',
+        createBranch: true,
+        nonInteractive: true,
+      },
+      baseDir,
+      childPlanFile,
+      config,
+      'tim generate'
+    );
+
+    expect(selectWorkspaceSpy).toHaveBeenCalledWith(
+      'task-auto-parent-base-fallback',
+      childPlanFile,
+      expect.objectContaining({
+        createBranch: true,
+        base: 'feature/missing-parent',
+        branchName: '41-child-auto-branch-holder',
+        fallbackToTrunkOnMissingBase: true,
+      })
+    );
+    expect(result.baseDir).toBe(autoWorkspacePath);
+    expect(result.isNewWorkspace).toBe(true);
   });
 
   test('marks branchCreatedDuringSetup false when a new workspace checks out an existing remote branch', async () => {

@@ -711,11 +711,30 @@ async function createLocalWorkspaceBranch(
   isJj: boolean,
   hasRemote: boolean | null,
   allowOffline: boolean,
-  updateBaseFromRemote: boolean
+  updateBaseFromRemote: boolean,
+  fallbackToTrunkOnMissingBase = false
 ): Promise<{ success: boolean; error?: string }> {
+  let effectiveBaseBranch = baseBranch;
+  if (fallbackToTrunkOnMissingBase) {
+    const trunkBranch = await getTrunkBranch(workspacePath);
+    if (baseBranch !== trunkBranch) {
+      const [localBaseExists, remoteBaseExists] = await Promise.all([
+        branchExists(workspacePath, baseBranch, isJj),
+        remoteBranchExists(workspacePath, baseBranch, isJj),
+      ]);
+
+      if (!localBaseExists && !remoteBaseExists) {
+        log(
+          `Base branch "${baseBranch}" does not exist; falling back to trunk branch "${trunkBranch}".`
+        );
+        effectiveBaseBranch = trunkBranch;
+      }
+    }
+  }
+
   const baseResult = await checkoutAndUpdateBaseBranch(
     workspacePath,
-    baseBranch,
+    effectiveBaseBranch,
     isJj,
     hasRemote,
     allowOffline,
@@ -765,6 +784,7 @@ export async function createWorkspace(
     targetDir?: string;
     workspaceType?: WorkspaceType;
     createBranch?: boolean;
+    fallbackToTrunkOnMissingBase?: boolean;
   }
 ): Promise<Workspace | null> {
   // Check if workspace creation is enabled in the config
@@ -953,7 +973,7 @@ export async function createWorkspace(
   })();
 
   const branchName = options?.branchName ?? taskId;
-  const shouldCreateBranch = options?.createBranch ?? false;
+  const shouldCreateBranch = options?.createBranch ?? workspaceConfig.createBranch ?? true;
   const planFilePathInWorkspace = originalPlanFilePath
     ? path.join(targetClonePath, path.relative(mainRepoRoot, originalPlanFilePath))
     : undefined;
@@ -1063,7 +1083,8 @@ export async function createWorkspace(
             isJj,
             hasRemote,
             allowOffline,
-            false
+            false,
+            options?.fallbackToTrunkOnMissingBase ?? false
           );
         }
       }

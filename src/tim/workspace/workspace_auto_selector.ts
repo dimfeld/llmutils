@@ -34,6 +34,8 @@ export interface AutoSelectOptions {
   branchName?: string;
   /** Plan metadata to record on newly created workspaces */
   planData?: PlanSchema;
+  /** Whether a missing inferred base branch should fall back to trunk inside createWorkspace */
+  fallbackToTrunkOnMissingBase?: boolean;
 }
 
 export interface SelectedWorkspace {
@@ -84,6 +86,7 @@ export class WorkspaceAutoSelector {
       base,
       branchName,
       planData,
+      fallbackToTrunkOnMissingBase = false,
     } = options;
 
     // Get repository ID from current git repo
@@ -116,6 +119,7 @@ export class WorkspaceAutoSelector {
         branchName,
         planData,
         workspaceType: newWorkspaceType,
+        fallbackToTrunkOnMissingBase,
       });
       if (newWorkspace) {
         return { workspace: newWorkspace, isNew: true, clearedStaleLock: false };
@@ -203,6 +207,7 @@ export class WorkspaceAutoSelector {
       branchName,
       planData,
       workspaceType: newWorkspaceType,
+      fallbackToTrunkOnMissingBase,
     });
 
     if (newWorkspace) {
@@ -219,7 +224,10 @@ export class WorkspaceAutoSelector {
   private async createNewWorkspace(
     taskId: string,
     planFilePath: string | undefined,
-    options: Pick<AutoSelectOptions, 'createBranch' | 'base' | 'branchName' | 'planData'> & {
+    options: Pick<
+      AutoSelectOptions,
+      'createBranch' | 'base' | 'branchName' | 'planData' | 'fallbackToTrunkOnMissingBase'
+    > & {
       workspaceType?: WorkspaceType;
     } = {}
   ): Promise<(WorkspaceInfo & Pick<Workspace, 'checkedOutRemoteBranch'>) | null> {
@@ -227,6 +235,7 @@ export class WorkspaceAutoSelector {
       ...(options.createBranch !== undefined && { createBranch: options.createBranch }),
       ...(options.base && { fromBranch: options.base }),
       ...(options.branchName && { branchName: options.branchName }),
+      ...(options.fallbackToTrunkOnMissingBase && { fallbackToTrunkOnMissingBase: true }),
       ...(options.planData && { planData: options.planData }),
       ...(options.workspaceType && { workspaceType: options.workspaceType }),
     });

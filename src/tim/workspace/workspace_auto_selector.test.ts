@@ -282,6 +282,45 @@ describe('WorkspaceAutoSelector', () => {
     expect(result?.workspace.checkedOutRemoteBranch).toBe(true);
   });
 
+  test('passes fallback-to-trunk option through to createWorkspace', async () => {
+    const newWorkspacePath = path.join(testDir, 'workspace-parent-base-fallback');
+    const createWorkspaceSpy = vi
+      .spyOn(await import('./workspace_manager.js'), 'createWorkspace')
+      .mockImplementation(async () => {
+        await fs.mkdir(newWorkspacePath, { recursive: true });
+        await seedWorkspace('github.com/test/repo', newWorkspacePath, 'task-parent', 'task-parent');
+        return {
+          path: newWorkspacePath,
+          originalPlanFilePath: '/test/plan-parent.yml',
+          taskId: 'task-parent',
+        };
+      });
+
+    const result = await selector.selectWorkspace('task-parent', '/test/plan-parent.yml', {
+      interactive: false,
+      preferNewWorkspace: true,
+      createBranch: true,
+      base: 'feature/missing-parent',
+      branchName: '41-child-auto-branch-holder',
+      fallbackToTrunkOnMissingBase: true,
+    });
+
+    expect(createWorkspaceSpy).toHaveBeenCalledWith(
+      testDir,
+      'task-parent',
+      '/test/plan-parent.yml',
+      config,
+      {
+        createBranch: true,
+        fromBranch: 'feature/missing-parent',
+        branchName: '41-child-auto-branch-holder',
+        fallbackToTrunkOnMissingBase: true,
+      }
+    );
+    expect(result?.isNew).toBe(true);
+    expect(result?.workspace.workspacePath).toBe(newWorkspacePath);
+  });
+
   test('selectWorkspace uses repository identity fallback when origin is missing', async () => {
     const repositoryId = 'local/jj-repo';
     getRepositoryIdentitySpy.mockResolvedValue({

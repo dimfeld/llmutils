@@ -319,6 +319,7 @@ export async function setupWorkspace(
         base: branchContext.checkoutBranch ?? branchContext.baseBranch,
         branchName: branchContext.branchName,
         planData: branchContext.planData,
+        fallbackToTrunkOnMissingBase: branchContext.canRetryWithoutBaseBranch,
         ...(options.planUuid ? { preferredPlanUuid: options.planUuid } : {}),
       });
 
@@ -348,17 +349,9 @@ export async function setupWorkspace(
           ...(effectiveCreateBranch !== undefined && { createBranch: effectiveCreateBranch }),
           ...(branchContext.branchName && { branchName: branchContext.branchName }),
           ...(createWorkspaceBaseBranch && { fromBranch: createWorkspaceBaseBranch }),
+          ...(branchContext.canRetryWithoutBaseBranch && { fallbackToTrunkOnMissingBase: true }),
           ...(branchContext.planData && { planData: branchContext.planData }),
         });
-        if (!workspace && branchContext.canRetryWithoutBaseBranch) {
-          log('Retrying workspace creation without parent-derived base branch...');
-          createWorkspaceBaseBranch = undefined;
-          workspace = await createWorkspace(baseDir, options.workspace, currentPlanFile, config, {
-            ...(effectiveCreateBranch !== undefined && { createBranch: effectiveCreateBranch }),
-            ...(branchContext.branchName && { branchName: branchContext.branchName }),
-            ...(branchContext.planData && { planData: branchContext.planData }),
-          });
-        }
         isNewWorkspace = true;
       } else if (existingWorkspaces.length > 0) {
         let availableWorkspace = null;
@@ -394,17 +387,9 @@ export async function setupWorkspace(
           ...(effectiveCreateBranch !== undefined && { createBranch: effectiveCreateBranch }),
           ...(branchContext.branchName && { branchName: branchContext.branchName }),
           ...(createWorkspaceBaseBranch && { fromBranch: createWorkspaceBaseBranch }),
+          ...(branchContext.canRetryWithoutBaseBranch && { fallbackToTrunkOnMissingBase: true }),
           ...(branchContext.planData && { planData: branchContext.planData }),
         });
-        if (!workspace && branchContext.canRetryWithoutBaseBranch) {
-          log('Retrying workspace creation without parent-derived base branch...');
-          createWorkspaceBaseBranch = undefined;
-          workspace = await createWorkspace(baseDir, options.workspace, currentPlanFile, config, {
-            ...(effectiveCreateBranch !== undefined && { createBranch: effectiveCreateBranch }),
-            ...(branchContext.branchName && { branchName: branchContext.branchName }),
-            ...(branchContext.planData && { planData: branchContext.planData }),
-          });
-        }
         isNewWorkspace = true;
       }
     }

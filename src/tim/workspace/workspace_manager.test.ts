@@ -2246,6 +2246,78 @@ describe('createWorkspace', () => {
     ]);
   });
 
+  test('createWorkspace falls back to trunk inside the clone when fromBranch is missing', async () => {
+    const taskId = 'task-missing-parent-base';
+    const repositoryUrl = 'https://github.com/example/repo.git';
+    const cloneLocation = path.join(testTempDir, 'clones');
+    const targetClonePath = path.join(cloneLocation, 'repo-task-missing-parent-base');
+
+    const config: TimConfig = {
+      workspaceCreation: {
+        repositoryUrl,
+        cloneLocation,
+        createBranch: true,
+      },
+    };
+
+    mockSpawnAndLogOutput.mockImplementation(async (cmd: string[], options?: { cwd?: string }) => {
+      if (cmd[0] === 'git' && cmd[1] === 'clone') {
+        await fs.mkdir(targetClonePath, { recursive: true });
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (
+        cmd[0] === 'git' &&
+        cmd[1] === 'rev-parse' &&
+        cmd[2] === '--verify' &&
+        options?.cwd === targetClonePath &&
+        (cmd[3] === `refs/remotes/origin/${taskId}` || cmd[3] === `refs/heads/${taskId}`)
+      ) {
+        return { exitCode: 1, stdout: '', stderr: 'unknown revision' };
+      }
+
+      if (
+        cmd[0] === 'git' &&
+        cmd[1] === 'rev-parse' &&
+        cmd[2] === '--verify' &&
+        options?.cwd === targetClonePath &&
+        cmd[3] === 'refs/heads/feature/missing-parent'
+      ) {
+        return { exitCode: 1, stdout: '', stderr: 'unknown revision' };
+      }
+
+      if (
+        cmd[0] === 'git' &&
+        cmd[1] === 'rev-parse' &&
+        cmd[2] === '--verify' &&
+        options?.cwd === targetClonePath &&
+        cmd[3] === 'refs/remotes/origin/feature/missing-parent'
+      ) {
+        return { exitCode: 1, stdout: '', stderr: 'unknown revision' };
+      }
+
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    await createWorkspace(mainRepoRoot, taskId, undefined, config, {
+      fromBranch: 'feature/missing-parent',
+      createBranch: true,
+      fallbackToTrunkOnMissingBase: true,
+    });
+
+    expect(mockLog).toHaveBeenCalledWith(
+      'Base branch "feature/missing-parent" does not exist; falling back to trunk branch "main".'
+    );
+    expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
+      ['git', 'checkout', 'main'],
+      { cwd: targetClonePath },
+    ]);
+    expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
+      ['git', 'checkout', '-b', taskId],
+      { cwd: targetClonePath },
+    ]);
+  });
+
   test('createWorkspace cleans up the cloned workspace when branch creation throws', async () => {
     const taskId = 'task-throw-cleanup';
     const repositoryUrl = 'https://github.com/example/repo.git';
