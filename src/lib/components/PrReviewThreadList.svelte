@@ -359,8 +359,10 @@
     {@const isResolved = !!thread.thread.is_resolved}
     {@const isOutdated = !!thread.thread.is_outdated}
     {@const diffHunk = threadDiffHunk(thread)}
+    {@const diffHunkLineCount = Math.max(0, diffHunk ? diffHunk.split('\n').length - 1 : 0)}
+    {@const hunkContextLines = diffHunkLineCount > 20 ? 10 : Number.MAX_SAFE_INTEGER}
     {@const hunkWindow = diffHunk
-      ? getReviewThreadHunkWindow(thread.thread, diffHunk, 10)
+      ? getReviewThreadHunkWindow(thread.thread, diffHunk, hunkContextLines)
       : { hunk: null, isTruncated: false }}
     {@const commentBadgeLabel = threadCommentBadgeLabel(thread)}
     {@const isExpanded = isThreadExpanded(thread)}
