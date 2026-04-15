@@ -257,7 +257,9 @@ export async function handleGenerateCommand(
         const context: GenerateModeRegistrationContext = {
           config,
           configPath: globalOpts.config,
-          gitRoot, // Use actual git root for plan resolution, not workspace dir
+          // Build the prompt against the execution workspace so writable plan paths
+          // and relative file references point at the active workspace checkout.
+          gitRoot: currentBaseDir,
           configBaseDir: pathContext.configBaseDir,
         };
 
