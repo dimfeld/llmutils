@@ -1,37 +1,35 @@
 <script lang="ts">
   import CheckCircle from '@lucide/svelte/icons/check-circle';
   import Circle from '@lucide/svelte/icons/circle';
-  import Copy from '@lucide/svelte/icons/copy';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import type { ReviewIssueRow, ReviewCategory } from '$tim/db/review.js';
+  import CopyButton from '$lib/components/CopyButton.svelte';
 
   interface Props {
     issue: ReviewIssueRow;
     actioning: boolean;
-    copied: boolean;
     linkedPlanUuid: string | null;
     categoryBadgeClass: (category: ReviewCategory) => string;
     issueLocationLabel: (issue: ReviewIssueRow) => string | null;
     formatCategory: (category: ReviewCategory) => string;
+    onCopyError?: (message: string) => void;
     onToggleResolved: (issue: ReviewIssueRow) => void;
     onDelete: (issue: ReviewIssueRow) => void;
     onAddToPlan: (issue: ReviewIssueRow) => void;
-    onCopy: (issue: ReviewIssueRow) => void;
   }
 
   let {
     issue,
     actioning,
-    copied,
     linkedPlanUuid,
     categoryBadgeClass,
     issueLocationLabel,
     formatCategory,
+    onCopyError,
     onToggleResolved,
     onDelete,
     onAddToPlan,
-    onCopy,
   }: Props = $props();
 
   let expanded = $state(!issue.resolved);
@@ -43,6 +41,26 @@
     if (!wasResolved) {
       expanded = false;
     }
+  }
+
+  function issueCopyText(): string {
+    const parts: string[] = [];
+    const location = issueLocationLabel(issue);
+    if (location) {
+      parts.push(location);
+    }
+
+    const content = issue.content.trim();
+    if (content) {
+      parts.push(content);
+    }
+
+    const suggestion = issue.suggestion?.trim();
+    if (suggestion) {
+      parts.push(`Suggestion:\n${suggestion}`);
+    }
+
+    return parts.join('\n\n');
   }
 </script>
 
@@ -129,6 +147,20 @@
           </button>
         {/if}
 
+        {#if issue.file}
+          <CopyButton
+            text={issue.file}
+            mode="text-with-icon"
+            label="Copy file path"
+            iconClass="size-3 @sm:size-3.5"
+            className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 @sm:text-xs dark:hover:bg-gray-800"
+            copiedClass="text-emerald-600 dark:text-emerald-400"
+            title="Copy file path"
+            ariaLabel="Copy file path"
+            disabled={actioning}
+          />
+        {/if}
+
         <button
           type="button"
           onclick={handleToggleResolved}
@@ -145,21 +177,18 @@
           {issue.resolved ? 'Mark unresolved' : 'Mark resolved'}
         </button>
 
-        <button
-          type="button"
-          onclick={() => onCopy(issue)}
-          class="ml-auto rounded p-1 transition-colors {copied
-            ? 'text-emerald-600 dark:text-emerald-400'
-            : 'text-muted-foreground hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800'}"
-          title="Copy file/line, issue content, and suggestion"
-          aria-label="Copy issue details"
-        >
-          {#if copied}
-            <CheckCircle class="size-3.5 @sm:size-4" />
-          {:else}
-            <Copy class="size-3.5 @sm:size-4" />
-          {/if}
-        </button>
+          <CopyButton
+            text={issueCopyText()}
+            mode="icon"
+            iconClass="size-3.5 @sm:size-4"
+            className="ml-auto rounded p-1 transition-colors text-muted-foreground hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
+            copiedClass="text-emerald-600 dark:text-emerald-400"
+            failedClass="text-red-600 dark:text-red-400"
+            title="Copy file/line, issue content, and suggestion"
+            ariaLabel="Copy issue details"
+            disabled={actioning}
+            onCopyError={(message) => onCopyError?.(message)}
+          />
       </div>
     </div>
   {/if}

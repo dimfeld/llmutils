@@ -13,7 +13,6 @@
   import PrReviewList from './PrReviewList.svelte';
   import PrReviewThreadList from './PrReviewThreadList.svelte';
   import ExternalLink from '@lucide/svelte/icons/external-link';
-  import Copy from '@lucide/svelte/icons/copy';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import { normalizeGitHubUsername } from '$common/github/username.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
@@ -21,6 +20,7 @@
   import { startPrReviewGuide } from '$lib/remote/review_thread_actions.remote.js';
   import { getPrReviews } from '$lib/remote/pr_reviews.remote.js';
   import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
+  import CopyButton from './CopyButton.svelte';
 
   let {
     pr,
@@ -38,7 +38,6 @@
   let draftUpdating = $state(false);
   let reviewGuideRunning = $state(false);
   let actionError = $state<string | null>(null);
-  let branchCopied = $state(false);
   let graphitePrUrl = $derived(
     `https://app.graphite.com/github/pr/${pr.status.owner}/${pr.status.repo}/${pr.status.pr_number}`
   );
@@ -127,21 +126,16 @@
     }
   }
 
-  async function handleCopyHeadBranch() {
-    if (!pr.status.head_branch) {
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText(pr.status.head_branch);
-      branchCopied = true;
-      setTimeout(() => {
-        branchCopied = false;
-      }, 1500);
-    } catch (err) {
-      actionError = err instanceof Error ? err.message : String(err);
-    }
+  function reviewGuideStatusLabel(status: string): string {
+    return status === 'complete'
+      ? 'Complete'
+      : status === 'error'
+        ? 'Error'
+        : status === 'in_progress'
+          ? 'Running'
+          : 'Pending';
   }
+
 </script>
 
 <div
@@ -169,21 +163,19 @@
         </h2>
         <div class="mt-1 flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
           <span>{pr.status.head_branch}</span>
-          <button
-            type="button"
-            onclick={handleCopyHeadBranch}
-            class="rounded p-0.5 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
-            aria-label="Copy head branch"
+          <CopyButton
+            text={pr.status.head_branch ?? ''}
+            disabled={!pr.status.head_branch}
+            mode="icon"
+            iconClass="size-3"
+            className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
             title="Copy head branch"
-          >
-            <Copy class="size-3" />
-          </button>
+            ariaLabel="Copy head branch"
+            onCopyError={(message) => (actionError = message)}
+          />
           <span class="text-foreground/60"
             >{pr.status.base_branch ? `→ ${pr.status.base_branch}` : ''}</span
           >
-          {#if branchCopied}
-            <span class="text-emerald-600">Copied</span>
-          {/if}
         </div>
       </div>
       <div class="flex shrink-0 items-center gap-1">
@@ -418,10 +410,10 @@
                   : review.status === 'in_progress'
                     ? 'text-blue-600 dark:text-blue-400'
                     : 'text-muted-foreground'}
-            <li>
+            <li class="flex items-center gap-2 rounded px-1 py-0.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800">
               <a
                 href="/projects/{projectId}/prs/{pr.status.pr_number}/reviews/{review.id}"
-                class="flex items-center gap-2 rounded px-1 py-0.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
+                class="flex min-w-0 flex-1 items-center gap-2"
               >
                 <span class="min-w-0 flex-1 truncate text-foreground">
                   {formatRelativeTime(review.created_at)}
@@ -432,13 +424,7 @@
                   </span>
                 {/if}
                 <span class="shrink-0 text-xs {statusColor}">
-                  {review.status === 'complete'
-                    ? 'Complete'
-                    : review.status === 'error'
-                      ? 'Error'
-                      : review.status === 'in_progress'
-                        ? 'Running'
-                        : 'Pending'}
+                  {reviewGuideStatusLabel(review.status)}
                 </span>
               </a>
             </li>

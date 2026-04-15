@@ -28,7 +28,6 @@
 
   let togglingIssueIds = $state(new Set<number>());
   let issueActionError = $state<string | null>(null);
-  let copiedIssueId = $state<number | null>(null);
 
   const SEVERITY_ORDER: ReviewSeverity[] = ['critical', 'major', 'minor', 'info'];
 
@@ -130,41 +129,6 @@
         : (issue.line ?? issue.start_line);
 
     return line ? `${issue.file}:${line}` : issue.file;
-  }
-
-  function issueClipboardText(issue: ReviewIssueRow): string {
-    const parts: string[] = [];
-    const location = issueLocationLabel(issue);
-    if (location) {
-      parts.push(location);
-    }
-
-    const content = issue.content.trim();
-    if (content) {
-      parts.push(content);
-    }
-
-    const suggestion = issue.suggestion?.trim();
-    if (suggestion) {
-      parts.push(`Suggestion:\n${suggestion}`);
-    }
-
-    return parts.join('\n\n');
-  }
-
-  async function handleCopyIssue(issue: ReviewIssueRow) {
-    issueActionError = null;
-    try {
-      await navigator.clipboard.writeText(issueClipboardText(issue));
-      copiedIssueId = issue.id;
-      setTimeout(() => {
-        if (copiedIssueId === issue.id) {
-          copiedIssueId = null;
-        }
-      }, 1500);
-    } catch (err) {
-      issueActionError = err instanceof Error ? err.message : String(err);
-    }
   }
 
   function severityBadgeClass(severity: ReviewSeverity): string {
@@ -363,20 +327,19 @@
                 </summary>
                 <ul class="mt-1 space-y-1.5 pl-1">
                   {#each severityIssues as issue (issue.id)}
-                    <ReviewIssueCard
-                      {issue}
-                      actioning={isIssueActioning(issue.id)}
-                      copied={copiedIssueId === issue.id}
-                      {linkedPlanUuid}
-                      {categoryBadgeClass}
-                      {issueLocationLabel}
-                      {formatCategory}
-                      onToggleResolved={handleToggleResolved}
-                      onDelete={handleDeleteIssue}
-                      onAddToPlan={handleAddIssueToPlan}
-                      onCopy={handleCopyIssue}
-                    />
-                  {/each}
+                  <ReviewIssueCard
+                    {issue}
+                    actioning={isIssueActioning(issue.id)}
+                    {linkedPlanUuid}
+                    {categoryBadgeClass}
+                    {issueLocationLabel}
+                    {formatCategory}
+                    onToggleResolved={handleToggleResolved}
+                    onDelete={handleDeleteIssue}
+                    onAddToPlan={handleAddIssueToPlan}
+                    onCopyError={(message) => (issueActionError = message)}
+                  />
+                {/each}
                 </ul>
               </details>
             {/if}

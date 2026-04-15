@@ -13,6 +13,7 @@
   import { renderMarkdown } from '$lib/utils/markdown_parser.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
   import Diff from './Diff.svelte';
+  import CopyButton from './CopyButton.svelte';
 
   let {
     threads,
@@ -109,11 +110,6 @@
     return !isResolved;
   }
 
-  let copyFeedback = $state<{
-    id: number;
-    mode: 'plain' | 'diff';
-    status: 'copied' | 'failed';
-  } | null>(null);
   let threadActionSubmitting = $state<{
     threadId: string;
     action: 'convert' | 'resolve' | 'reply';
@@ -130,13 +126,12 @@
     return action ? threadActionSubmitting.action === action : true;
   }
 
-  async function copyComment(
+  function commentCopyText(
     comment: PrReviewThreadDetail['comments'][number],
     thread: PrReviewThreadDetail,
-    includeDiff: boolean,
-    mode: 'plain' | 'diff'
-  ) {
-    const text = formatReviewCommentForClipboard(
+    includeDiff: boolean
+  ): string {
+    return formatReviewCommentForClipboard(
       thread.thread.path,
       displayLine(thread),
       comment.author,
@@ -145,17 +140,6 @@
       comment.diff_hunk,
       includeDiff
     );
-    let status: 'copied' | 'failed';
-    try {
-      await navigator.clipboard.writeText(text);
-      status = 'copied';
-    } catch {
-      status = 'failed';
-    }
-    copyFeedback = { id: comment.id, mode, status };
-    setTimeout(() => {
-      if (copyFeedback?.id === comment.id && copyFeedback.mode === mode) copyFeedback = null;
-    }, 2000);
   }
 
   async function handleConvertToTask(thread: PrReviewThreadDetail) {
@@ -393,6 +377,16 @@
         >
           {locationLabel(thread)}
         </a>
+        <CopyButton
+          text={thread.thread.path}
+          mode="icon"
+          iconClass="size-3"
+          className="rounded p-0.5 text-muted-foreground hover:bg-gray-100 dark:hover:bg-gray-800"
+          title="Copy file path"
+          ariaLabel="Copy file path"
+          onCopied={() => toast.success('File path copied')}
+          onCopyError={(message) => toast.error(`Failed to copy file path: ${message}`)}
+        />
         <span class="flex items-center gap-1">
           {#if isResolved}
             <span
@@ -463,32 +457,28 @@
                 {#if comment.created_at}
                   <span title={comment.created_at}>{formatRelativeTime(comment.created_at)}</span>
                 {/if}
-                <button
-                  class="ml-auto rounded px-1.5 py-0.5 text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-gray-100 focus-visible:opacity-100 dark:hover:bg-gray-800"
-                  onclick={() => copyComment(comment, thread, false, 'plain')}
+                <CopyButton
+                  text={commentCopyText(comment, thread, false)}
+                  mode="text"
+                  label="Copy"
+                  copiedLabel="Copied!"
+                  failedLabel="Failed"
+                  className="ml-auto rounded px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-gray-100 dark:hover:bg-gray-800"
                   title="Copy comment"
                   disabled={threadActionSubmitting !== null}
-                  type="button"
-                >
-                  {#if copyFeedback?.id === comment.id && copyFeedback.mode === 'plain'}
-                    {copyFeedback.status === 'copied' ? 'Copied!' : 'Failed'}
-                  {:else}
-                    Copy
-                  {/if}
-                </button>
-                <button
-                  class="rounded px-1.5 py-0.5 text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-gray-100 focus-visible:opacity-100 dark:hover:bg-gray-800"
-                  onclick={() => copyComment(comment, thread, true, 'diff')}
+                  ariaLabel="Copy comment"
+                />
+                <CopyButton
+                  text={commentCopyText(comment, thread, true)}
+                  mode="text"
+                  label="Copy with Diff"
+                  copiedLabel="Copied!"
+                  failedLabel="Failed"
+                  className="rounded px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-gray-100 dark:hover:bg-gray-800"
                   title="Copy comment with file context and diff"
                   disabled={threadActionSubmitting !== null}
-                  type="button"
-                >
-                  {#if copyFeedback?.id === comment.id && copyFeedback.mode === 'diff'}
-                    {copyFeedback.status === 'copied' ? 'Copied!' : 'Failed'}
-                  {:else}
-                    Copy with Diff
-                  {/if}
-                </button>
+                  ariaLabel="Copy comment with file context and diff"
+                />
               </div>
               <div class="plan-rendered-content mt-1 text-sm text-foreground">
                 {@html renderCommentBody(comment.body)}

@@ -1,6 +1,5 @@
 <script lang="ts">
   import AppWindow from '@lucide/svelte/icons/app-window';
-  import Copy from '@lucide/svelte/icons/copy';
   import { toast } from 'svelte-sonner';
 
   import type { PlanDetail } from '$lib/server/db_queries.js';
@@ -25,6 +24,7 @@
   import StatusBadge from './StatusBadge.svelte';
   import PriorityBadge from './PriorityBadge.svelte';
   import PrStatusSection from './PrStatusSection.svelte';
+  import CopyButton from './CopyButton.svelte';
   import { Button } from '$lib/components/ui/button/index.js';
   import * as Dialog from '$lib/components/ui/dialog/index.js';
   import * as Collapsible from '$lib/components/ui/collapsible/index.js';
@@ -539,15 +539,6 @@
     });
   }
 
-  let copiedId: string | null = $state(null);
-
-  async function copyToClipboard(text: string, id: string) {
-    await navigator.clipboard.writeText(text);
-    copiedId = id;
-    setTimeout(() => {
-      if (copiedId === id) copiedId = null;
-    }, 1500);
-  }
 </script>
 
 <!-- Sticky plan number + title header -->
@@ -724,47 +715,16 @@
                     <p class="mt-0.5 text-xs text-muted-foreground">{task.description}</p>
                   {/if}
                 </div>
-                <button
-                  type="button"
-                  onclick={() => copyToClipboard(taskCopyText, taskCopyId)}
-                  class="mt-0.5 shrink-0 rounded p-0.5 text-muted-foreground transition-opacity hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800 {copiedId ===
-                  taskCopyId
-                    ? 'opacity-100'
-                    : 'opacity-0 group-hover:opacity-100'}"
-                  aria-label="Copy task"
+                <CopyButton
+                  text={taskCopyText}
+                  mode="icon"
+                  className="mt-0.5 shrink-0 rounded p-0.5 text-muted-foreground transition-opacity hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
+                  idleClass="opacity-0 group-hover:opacity-100"
+                  copiedClass="opacity-100"
+                  iconClass="size-3"
                   title="Copy task"
-                >
-                  {#if copiedId === taskCopyId}
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      class="text-green-600 dark:text-green-400"
-                      ><polyline points="20 6 9 17 4 12" /></svg
-                    >
-                  {:else}
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      ><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path
-                        d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"
-                      /></svg
-                    >
-                  {/if}
-                </button>
+                  ariaLabel="Copy task"
+                />
               </li>
             {/each}
           </ul>
@@ -848,17 +808,18 @@
         <h3 class="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
           Branch
         </h3>
-        <button
-          class="flex cursor-pointer items-center gap-1 text-foreground transition-colors hover:text-foreground"
-          onclick={() => {
-            navigator.clipboard.writeText(plan.branch!);
-            toast.success('Branch name copied');
-          }}
-          title="Copy branch name"
-        >
+        <div class="flex items-center gap-1">
           <code class="text-xs">{plan.branch}</code>
-          <Copy class="h-3 w-3 shrink-0" />
-        </button>
+          <CopyButton
+            text={plan.branch}
+            mode="icon"
+            iconClass="size-3"
+            className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
+            title="Copy branch name"
+            ariaLabel="Copy branch name"
+            onCopied={() => toast.success('Branch name copied')}
+          />
+        </div>
       </div>
     {/if}
 
@@ -970,47 +931,16 @@
                   >
                     {reviewIssueSubmitting === originalIndex ? '...' : '→ Task'}
                   </button>
-                  <button
-                    type="button"
-                    onclick={() => copyToClipboard(issueCopyText, issueCopyId)}
-                    class="rounded p-0.5 text-muted-foreground transition-opacity hover:bg-black/10 hover:text-foreground dark:hover:bg-white/10 {copiedId ===
-                    issueCopyId
-                      ? 'opacity-100'
-                      : 'opacity-0 group-hover:opacity-100'}"
-                    aria-label="Copy issue"
+                  <CopyButton
+                    text={issueCopyText}
+                    mode="icon"
+                    className="rounded p-0.5 text-muted-foreground transition-opacity hover:bg-black/10 hover:text-foreground dark:hover:bg-white/10"
+                    idleClass="opacity-0 group-hover:opacity-100"
+                    copiedClass="opacity-100"
+                    iconClass="size-3"
                     title="Copy issue"
-                  >
-                    {#if copiedId === issueCopyId}
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="12"
-                        height="12"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        class="text-green-600 dark:text-green-400"
-                        ><polyline points="20 6 9 17 4 12" /></svg
-                      >
-                    {:else}
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="12"
-                        height="12"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        ><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path
-                          d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"
-                        /></svg
-                      >
-                    {/if}
-                  </button>
+                    ariaLabel="Copy issue"
+                  />
                   <button
                     type="button"
                     onclick={() => handleRemoveReviewIssue(originalIndex)}

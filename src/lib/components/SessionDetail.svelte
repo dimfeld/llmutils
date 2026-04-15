@@ -1,7 +1,6 @@
 <script lang="ts">
   import TerminalIcon from '@lucide/svelte/icons/terminal';
   import AppWindow from '@lucide/svelte/icons/app-window';
-  import ClipboardCopy from '@lucide/svelte/icons/clipboard-copy';
   import Download from '@lucide/svelte/icons/download';
   import PanelRightClose from '@lucide/svelte/icons/panel-right-close';
   import PanelRightOpen from '@lucide/svelte/icons/panel-right-open';
@@ -21,6 +20,7 @@
     markEndSessionUsed,
     togglePlanPane,
   } from './session_detail_state.js';
+  import CopyButton from './CopyButton.svelte';
   import { afterNavigate, invalidateAll } from '$app/navigation';
   import { page } from '$app/state';
   import { onDestroy, tick } from 'svelte';
@@ -263,16 +263,6 @@
   let activePrompt = $derived(session.activePrompts[0] ?? null);
   let queuedPromptCount = $derived(Math.max(0, session.activePrompts.length - 1));
 
-  async function handleCopyTranscript() {
-    try {
-      const markdown = exportSessionAsMarkdown(session);
-      await navigator.clipboard.writeText(markdown);
-      toast.success('Copied to clipboard');
-    } catch (err) {
-      toast.error(`Failed to copy: ${(err as Error).message}`);
-    }
-  }
-
   function handleDownloadTranscript() {
     try {
       const markdown = exportSessionAsMarkdown(session);
@@ -376,16 +366,17 @@
           {/if}
         {/if}
 
-        <button
-          type="button"
-          class="rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
-          onclick={handleCopyTranscript}
-          disabled={!hasMessages}
-          aria-label="Copy transcript to clipboard"
+        <CopyButton
+          text={exportSessionAsMarkdown(session)}
+          mode="icon"
+          iconClass="size-4"
+          className="rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
+          ariaLabel="Copy transcript to clipboard"
           title="Copy transcript to clipboard"
-        >
-          <ClipboardCopy class="size-4" />
-        </button>
+          disabled={!hasMessages}
+          onCopyError={(message) => toast.error(`Failed to copy: ${message}`)}
+          onCopied={() => toast.success('Copied to clipboard')}
+        />
         <button
           type="button"
           class="rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
