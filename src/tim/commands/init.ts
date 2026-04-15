@@ -228,8 +228,40 @@ async function promptForConfig(): Promise<TimConfigInput> {
     default: true,
   });
 
+  const autoCreatePr = await select({
+    message: 'When should agent mode automatically create a pull request?',
+    choices: [
+      {
+        name: 'never',
+        value: 'never',
+        description: 'Do not create PRs automatically',
+      },
+      {
+        name: 'done',
+        value: 'done',
+        description: 'Create a PR only when the plan ends in done',
+      },
+      {
+        name: 'needs_review',
+        value: 'needs_review',
+        description: 'Create a PR only when the plan ends in needs_review',
+      },
+      {
+        name: 'always',
+        value: 'always',
+        description: 'Create a PR for either done or needs_review completion',
+      },
+    ],
+    default: 'never',
+  });
+
   config.prCreation = {
     draft: draftPRs,
+    ...(autoCreatePr === 'never'
+      ? {}
+      : {
+          autoCreatePr: autoCreatePr as 'done' | 'needs_review' | 'always',
+        }),
   };
 
   return config;

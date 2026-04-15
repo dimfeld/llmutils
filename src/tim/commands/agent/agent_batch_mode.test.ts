@@ -201,7 +201,7 @@ vi.mock('../../plans.js', () => {
     generatePlanFileContent: vi.fn(() => ''),
     resolvePlanFromDb: vi.fn(async () => ({
       plan: { id: 1, title: 'P', status: 'pending', tasks: [] },
-      planPath: '',
+      planPath: planFile,
     })),
     parsePlanIdFromCliArg: vi.fn((arg: string) => {
       const n = Number(arg.trim());
@@ -1367,6 +1367,115 @@ describe('timAgent - Batch Mode Execution Loop', () => {
   });
 
   describe('finalization timestamps and manual mode', () => {
+    test('after-review mode runs docs and lessons when final review is clean', async () => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 0',
+            description: 'Already done',
+            done: true,
+          },
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        updateDocs: { mode: 'after-review', applyLessons: true },
+      });
+
+      handleReviewCommandSpy.mockResolvedValue({ tasksAppended: 0, issuesSaved: 0 });
+
+      executorExecuteSpy.mockImplementation(async () => {
+        await createPlanFile({
+          tasks: [
+            {
+              title: 'Task 0',
+              description: 'Already done',
+              done: true,
+            },
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
+        });
+      });
+
+      const options = { log: false, nonInteractive: true } as any;
+      await timAgent('1', options, {});
+
+      expect(runUpdateDocsSpy).toHaveBeenCalledTimes(1);
+      expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
+
+      const finalContent = await fs.readFile(planFile, 'utf-8');
+      const finalPlan = yaml.parse(finalContent.replace(/^#.*\n/, ''));
+      expect(finalPlan.docsUpdatedAt).toBeDefined();
+      expect(finalPlan.lessonsAppliedAt).toBeDefined();
+    });
+
+    test('after-review mode skips docs and lessons when final review saves issues', async () => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 0',
+            description: 'Already done',
+            done: true,
+          },
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        updateDocs: { mode: 'after-review', applyLessons: true },
+      });
+
+      handleReviewCommandSpy.mockResolvedValue({ tasksAppended: 0, issuesSaved: 2 });
+
+      executorExecuteSpy.mockImplementation(async () => {
+        await createPlanFile({
+          tasks: [
+            {
+              title: 'Task 0',
+              description: 'Already done',
+              done: true,
+            },
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
+        });
+      });
+
+      const options = { log: false, nonInteractive: true } as any;
+      await timAgent('1', options, {});
+
+      expect(runUpdateDocsSpy).not.toHaveBeenCalled();
+      expect(runUpdateLessonsSpy).not.toHaveBeenCalled();
+
+      const finalContent = await fs.readFile(planFile, 'utf-8');
+      const finalPlan = yaml.parse(finalContent.replace(/^#.*\n/, ''));
+      expect(finalPlan.status).toBe('needs_review');
+      expect(finalPlan.docsUpdatedAt).toBeUndefined();
+      expect(finalPlan.lessonsAppliedAt).toBeUndefined();
+    });
+
     test('docsUpdatedAt is set after successful runUpdateDocs in after-completion mode', async () => {
       await createPlanFile({
         tasks: [

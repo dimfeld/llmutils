@@ -182,7 +182,13 @@ describe('configSchema', () => {
 
   describe('updateDocs.mode', () => {
     test('accepts all valid modes', () => {
-      for (const mode of ['never', 'after-iteration', 'after-completion', 'manual'] as const) {
+      for (const mode of [
+        'never',
+        'after-iteration',
+        'after-completion',
+        'after-review',
+        'manual',
+      ] as const) {
         const result = timConfigSchema.parse({
           updateDocs: { mode },
         });

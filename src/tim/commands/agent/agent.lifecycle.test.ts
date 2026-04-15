@@ -828,6 +828,93 @@ describe('timAgent lifecycle integration', () => {
     );
   });
 
+  test('after-review mode runs docs and lessons after a clean final review in serial task mode', async () => {
+    effectiveConfig.updateDocs = { mode: 'after-review', applyLessons: true };
+
+    const reviewModule = await import('../review.js');
+    vi.mocked(reviewModule.handleReviewCommand).mockResolvedValueOnce({
+      tasksAppended: 0,
+      issuesSaved: 0,
+    } as any);
+
+    markTaskDoneSpy.mockImplementationOnce(async () => ({
+      message: 'Task marked',
+      planComplete: true,
+    }));
+
+    const initialPlan = await readPlanFile(planFile);
+    initialPlan.tasks = [
+      { title: 'Task 0', description: 'Already done', done: true },
+      { title: 'Task 1', description: 'Do the work', steps: [{ prompt: 'implement' }] },
+    ];
+    await writePlanFile(planFile, initialPlan);
+
+    let itemReturned = false;
+    findNextActionableItemImpl = () => {
+      if (itemReturned) return null;
+      itemReturned = true;
+      return {
+        type: 'task',
+        taskIndex: 1,
+        task: { title: 'Task 1', description: 'Do the work', steps: [{ prompt: 'implement' }] },
+      };
+    };
+
+    const { timAgent } = await import('./agent.js');
+    await timAgent(planFile, { log: false, summary: false, serialTasks: true }, {});
+
+    expect(runUpdateDocsSpy).toHaveBeenCalledTimes(1);
+    expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
+
+    const updatedPlan = await readPlanFile(planFile);
+    expect(updatedPlan.docsUpdatedAt).toBeDefined();
+    expect(updatedPlan.lessonsAppliedAt).toBeDefined();
+  });
+
+  test('after-review mode skips docs and lessons when final review saves issues in serial task mode', async () => {
+    effectiveConfig.updateDocs = { mode: 'after-review', applyLessons: true };
+
+    const reviewModule = await import('../review.js');
+    vi.mocked(reviewModule.handleReviewCommand).mockResolvedValueOnce({
+      tasksAppended: 0,
+      issuesSaved: 1,
+    } as any);
+
+    markTaskDoneSpy.mockImplementationOnce(async () => ({
+      message: 'Task marked',
+      planComplete: true,
+    }));
+
+    const initialPlan = await readPlanFile(planFile);
+    initialPlan.tasks = [
+      { title: 'Task 0', description: 'Already done', done: true },
+      { title: 'Task 1', description: 'Do the work', steps: [{ prompt: 'implement' }] },
+    ];
+    await writePlanFile(planFile, initialPlan);
+
+    let itemReturned = false;
+    findNextActionableItemImpl = () => {
+      if (itemReturned) return null;
+      itemReturned = true;
+      return {
+        type: 'task',
+        taskIndex: 1,
+        task: { title: 'Task 1', description: 'Do the work', steps: [{ prompt: 'implement' }] },
+      };
+    };
+
+    const { timAgent } = await import('./agent.js');
+    await timAgent(planFile, { log: false, summary: false, serialTasks: true }, {});
+
+    expect(runUpdateDocsSpy).not.toHaveBeenCalled();
+    expect(runUpdateLessonsSpy).not.toHaveBeenCalled();
+
+    const updatedPlan = await readPlanFile(planFile);
+    expect(updatedPlan.status).toBe('needs_review');
+    expect(updatedPlan.docsUpdatedAt).toBeUndefined();
+    expect(updatedPlan.lessonsAppliedAt).toBeUndefined();
+  });
+
   test('docsUpdatedAt is NOT set when runUpdateDocs throws', async () => {
     effectiveConfig.updateDocs = { mode: 'after-completion' };
 

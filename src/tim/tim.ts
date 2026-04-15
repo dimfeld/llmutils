@@ -648,7 +648,7 @@ function createAgentCommand(command: Command, description: string) {
     .option('--tdd', 'Use TDD mode: write tests first, then implement to make them pass')
     .option(
       '--update-docs <mode>',
-      'Override when to update documentation: never, after-iteration, after-completion'
+      'Override when to update documentation: never, after-iteration, after-completion, after-review'
     )
     .option('--apply-lessons', 'Apply lessons learned to documentation after plan completion')
     .allowExcessArguments(true)

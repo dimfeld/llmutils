@@ -904,6 +904,7 @@
             "never",
             "after-iteration",
             "after-completion",
+            "after-review",
             "manual"
           ]
         },

@@ -465,7 +465,12 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
         : 'normal';
 
     // Determine updateDocs mode: CLI option overrides config
-    const updateDocsMode: 'never' | 'after-iteration' | 'after-completion' | 'manual' =
+    const updateDocsMode:
+      | 'never'
+      | 'after-iteration'
+      | 'after-completion'
+      | 'after-review'
+      | 'manual' =
       options.updateDocs || config.updateDocs?.mode || 'never';
 
     if (isAutoClaimEnabled() && !isShuttingDown()) {
@@ -929,6 +934,43 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
 
             if (isShuttingDown()) break;
 
+            if (planStillCompleteAfterReview && updateDocsMode === 'after-review') {
+              if (isShuttingDown()) break;
+
+              try {
+                await runUpdateDocs(planData, currentPlanFile, config, {
+                  executor: config.updateDocs?.executor,
+                  model: config.updateDocs?.model,
+                  baseDir: currentBaseDir,
+                  nonInteractive: noninteractive,
+                  terminalInput: terminalInputEnabled,
+                });
+                const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
+                updatedPlanForTimestamp.docsUpdatedAt = new Date().toISOString();
+                await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
+              } catch (err) {
+                error('Failed to update documentation:', err);
+                // Don't stop execution for documentation update failures
+              }
+
+              if (!isShuttingDown()) {
+                const failedAfterReviewDocsPostApplyCommand = await runPostApplyCommands();
+                if (failedAfterReviewDocsPostApplyCommand) {
+                  error(
+                    `Agent stopping because required command "${failedAfterReviewDocsPostApplyCommand}" failed.`
+                  );
+                  hasError = true;
+                  recordFailure(
+                    `Post-apply command failed: ${failedAfterReviewDocsPostApplyCommand}`
+                  );
+                  if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
+                  break;
+                }
+              }
+            } else if (!planStillCompleteAfterReview && updateDocsMode === 'after-review') {
+              log('Skipping documentation update because final review produced follow-up work.');
+            }
+
             if (
               planStillCompleteAfterReview &&
               updateDocsMode !== 'manual' &&
@@ -975,7 +1017,9 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
               !planStillCompleteAfterReview &&
               (config.updateDocs?.applyLessons || options.applyLessons)
             ) {
-              log('Skipping lessons-learned documentation update because review added new tasks.');
+              log(
+                'Skipping lessons-learned documentation update because final review produced follow-up work.'
+              );
             }
 
             break;
@@ -1220,6 +1264,39 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
                 recordFailure(
                   `Post-apply command failed: ${failedAfterCompletionDocsPostApplyCommand}`
                 );
+                if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
+                break;
+              }
+            }
+          }
+
+          if (updateDocsMode === 'after-review') {
+            if (isShuttingDown()) break;
+
+            try {
+              await runUpdateDocs(planData, currentPlanFile, config, {
+                executor: config.updateDocs?.executor,
+                model: config.updateDocs?.model,
+                baseDir: currentBaseDir,
+                nonInteractive: noninteractive,
+                terminalInput: terminalInputEnabled,
+              });
+              const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
+              updatedPlanForTimestamp.docsUpdatedAt = new Date().toISOString();
+              await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
+            } catch (err) {
+              error('Failed to update documentation:', err);
+              // Don't stop execution for documentation update failures
+            }
+
+            if (!isShuttingDown()) {
+              const failedAfterReviewDocsPostApplyCommand = await runPostApplyCommands();
+              if (failedAfterReviewDocsPostApplyCommand) {
+                error(
+                  `Agent stopping because required command "${failedAfterReviewDocsPostApplyCommand}" failed.`
+                );
+                hasError = true;
+                recordFailure(`Post-apply command failed: ${failedAfterReviewDocsPostApplyCommand}`);
                 if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
                 break;
               }

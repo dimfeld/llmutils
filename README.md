@@ -95,6 +95,15 @@ updateDocs:
 
 The `manual` mode overrides `applyLessons` in the agent context — both docs and lessons are skipped. The `applyLessons` setting still controls whether lessons run during `tim finish`.
 
+The `updateDocs.mode` option also accepts `after-review`. This waits until the end of the agent run and only updates docs if the final review leaves no saved review issues or appended follow-up tasks. When `applyLessons` is enabled, lessons are applied in that same post-review finalization phase.
+
+```yaml
+# tim.yml
+updateDocs:
+  mode: after-review
+  applyLessons: true
+```
+
 ## PR Status Monitoring
 
 `tim pr` is a subcommand namespace for GitHub PR operations:

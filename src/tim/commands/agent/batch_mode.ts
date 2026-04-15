@@ -70,7 +70,7 @@ export async function executeBatchMode(
     maxSteps?: number;
     executorName?: string;
     executionMode?: 'normal' | 'simple' | 'tdd';
-    updateDocsMode?: 'never' | 'after-iteration' | 'after-completion' | 'manual';
+    updateDocsMode?: 'never' | 'after-iteration' | 'after-completion' | 'after-review' | 'manual';
     applyLessons?: boolean;
     finalReview?: boolean;
     configPath?: string;
@@ -510,6 +510,41 @@ Available tasks:\n\n${taskDescriptions}`,
           await removePlanAssignment(updatedPlanData, baseDir);
         }
 
+        if (planStillCompleteAfterReview && updateDocsMode === 'after-review') {
+          if (isShuttingDown()) {
+            break;
+          }
+
+          try {
+            await runUpdateDocs(planData, currentPlanFile, config, {
+              executor: config.updateDocs?.executor,
+              model: config.updateDocs?.model,
+              baseDir,
+              terminalInput,
+            });
+            const updatedPlanForTimestamp = await readPlanFile(currentPlanFile);
+            updatedPlanForTimestamp.docsUpdatedAt = new Date().toISOString();
+            await writePlanFile(currentPlanFile, updatedPlanForTimestamp);
+          } catch (err) {
+            error('Failed to update documentation:', err);
+            // Don't stop execution for documentation update failures
+          }
+
+          if (!isShuttingDown()) {
+            const failedAfterReviewDocsPostApplyCommand = await runPostApplyCommands();
+            if (failedAfterReviewDocsPostApplyCommand) {
+              error(
+                `Batch mode stopping because required command "${failedAfterReviewDocsPostApplyCommand}" failed.`
+              );
+              hasError = true;
+              if (summaryCollector) summaryCollector.addError('Post-apply command failed');
+              break;
+            }
+          }
+        } else if (!planStillCompleteAfterReview && updateDocsMode === 'after-review') {
+          log('Skipping documentation update because final review produced follow-up work.');
+        }
+
         if (
           planStillCompleteAfterReview &&
           updateDocsMode !== 'manual' &&
@@ -551,7 +586,9 @@ Available tasks:\n\n${taskDescriptions}`,
           !planStillCompleteAfterReview &&
           (config.updateDocs?.applyLessons || applyLessons)
         ) {
-          log('Skipping lessons-learned documentation update because review added new tasks.');
+          log(
+            'Skipping lessons-learned documentation update because final review produced follow-up work.'
+          );
         }
 
         if (isShuttingDown()) {
