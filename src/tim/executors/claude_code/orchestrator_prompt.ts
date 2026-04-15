@@ -19,6 +19,9 @@ interface OrchestrationOptions {
 const INPUT_COMBINATION_GUIDANCE =
   '- You can use both `--input-file` and `--input` together. `--input-file` is read first and `--input` is appended afterward.';
 
+const BRANCH_SETUP_GUIDANCE =
+  '- **The git branch for this task has already been set up.** Do not create, switch, or check out any branches. Do not use git worktrees. Work in the current directory as-is.';
+
 function buildInputFileRandomizationGuidance(planId: string): string {
   return `- If input is large (roughly over 50KB), write it to a temporary file in a temp directory (for example, \`/tmp/claude\` or a \`mktemp\` path) and pass \`--input-file <paths...>\` instead of \`--input\`.
 - When you create an input file for a subagent or reviewer, include the plan ID plus an extra random suffix in the filename so repeated runs on the same plan do not collide with earlier files.
@@ -314,6 +317,7 @@ function buildImportantGuidelines(planId: string, options: OrchestrationOptions)
 - ${INPUT_COMBINATION_GUIDANCE}
 - Include relevant context from previous subagent responses when invoking the next subagent.
 - ${buildInputFileRandomizationGuidance(planId)}
+- ${BRANCH_SETUP_GUIDANCE}
 
 ## Plan Documentation During Implementation
 
@@ -503,6 +507,7 @@ ${options.batchMode ? '5' : '4'}. **Iteration**
 - ${INPUT_COMBINATION_GUIDANCE}
 - Provide prior subagent outputs to the next subagent so they have full context.
 - ${buildInputFileRandomizationGuidance(planId)}
+- ${BRANCH_SETUP_GUIDANCE}
 - Keep the scope focused; if verification fails, loop back to implementation before moving forward.${
     options.batchMode
       ? `
@@ -739,6 +744,7 @@ ${reviewFollowupGuidance}
 - Always pass the TDD tests output into the implementer invocation.
 - Do not skip the TDD test phase, even if implementation seems straightforward.
 - ${buildInputFileRandomizationGuidance(planId)}
+- ${BRANCH_SETUP_GUIDANCE}
 - When subagents can see all pending tasks, explicitly state which task titles are in scope for this run.${
     options.batchMode
       ? `
