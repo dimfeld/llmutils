@@ -14,6 +14,11 @@ interface OrchestrationOptions {
    * for subagent execution in dynamic mode.
    */
   dynamicSubagentInstructions?: string;
+  /**
+   * When true, the workspace uses Jujutsu (jj) for version control.
+   * Instructs the orchestrator to use jj commands instead of git.
+   */
+  useJj?: boolean;
 }
 
 const INPUT_COMBINATION_GUIDANCE =
@@ -21,6 +26,17 @@ const INPUT_COMBINATION_GUIDANCE =
 
 const BRANCH_SETUP_GUIDANCE =
   '- **The git branch for this task has already been set up.** Do not create, switch, or check out any branches. Do not use git worktrees. Work in the current directory as-is.';
+
+const JJ_VCS_GUIDANCE = `- **This workspace uses Jujutsu (jj) for version control.** Use \`jj\` commands for all VCS operations instead of \`git\`. For example:
+  - \`jj status\` instead of \`git status\`
+  - \`jj commit -m "..."\` instead of \`git commit\`
+  - \`jj diff\` instead of \`git diff\`
+  - \`jj log\` instead of \`git log\`
+  - Do NOT run \`git\` commands directly; they will not reflect Jujutsu's working-copy model correctly.`;
+
+function buildJjGuidance(options: OrchestrationOptions): string {
+  return options.useJj ? `\n${JJ_VCS_GUIDANCE}` : '';
+}
 
 function buildInputFileRandomizationGuidance(planId: string): string {
   return `- If input is large (roughly over 50KB), write it to a temporary file in a temp directory (for example, \`/tmp/claude\` or a \`mktemp\` path) and pass \`--input-file <paths...>\` instead of \`--input\`.
@@ -317,7 +333,7 @@ function buildImportantGuidelines(planId: string, options: OrchestrationOptions)
 - ${INPUT_COMBINATION_GUIDANCE}
 - Include relevant context from previous subagent responses when invoking the next subagent.
 - ${buildInputFileRandomizationGuidance(planId)}
-- ${BRANCH_SETUP_GUIDANCE}
+- ${BRANCH_SETUP_GUIDANCE}${buildJjGuidance(options)}
 
 ## Plan Documentation During Implementation
 
@@ -507,7 +523,7 @@ ${options.batchMode ? '5' : '4'}. **Iteration**
 - ${INPUT_COMBINATION_GUIDANCE}
 - Provide prior subagent outputs to the next subagent so they have full context.
 - ${buildInputFileRandomizationGuidance(planId)}
-- ${BRANCH_SETUP_GUIDANCE}
+- ${BRANCH_SETUP_GUIDANCE}${buildJjGuidance(options)}
 - Keep the scope focused; if verification fails, loop back to implementation before moving forward.${
     options.batchMode
       ? `
@@ -744,7 +760,7 @@ ${reviewFollowupGuidance}
 - Always pass the TDD tests output into the implementer invocation.
 - Do not skip the TDD test phase, even if implementation seems straightforward.
 - ${buildInputFileRandomizationGuidance(planId)}
-- ${BRANCH_SETUP_GUIDANCE}
+- ${BRANCH_SETUP_GUIDANCE}${buildJjGuidance(options)}
 - When subagents can see all pending tasks, explicitly state which task titles are in scope for this run.${
     options.batchMode
       ? `

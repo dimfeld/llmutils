@@ -5,7 +5,7 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import { debugLog, log, sendStructured, error } from '../../logging.ts';
 import { createLineSplitter, debug, spawnWithStreamingIO } from '../../common/process.ts';
-import { getGitRoot, getWorkingCopyStatus } from '../../common/git.ts';
+import { getGitRoot, getUsingJj, getWorkingCopyStatus } from '../../common/git.ts';
 import type { PrepareNextStepOptions } from '../plans/prepare_step.ts';
 import type { TimConfig } from '../configSchema.ts';
 import type { Executor, ExecutorCommonOptions, ExecutePlanInfo } from './types.ts';
@@ -587,6 +587,7 @@ export class ClaudeCodeExecutor implements Executor {
 
     // Apply orchestration wrapper when plan information is provided and in normal mode
     if (planContextAvailable && promptContent != null) {
+      const useJj = await getUsingJj(this.sharedOptions.baseDir);
       if (planInfo.executionMode === 'normal') {
         promptContent = wrapWithOrchestration(promptContent, planId, {
           batchMode: planInfo.batchMode,
@@ -594,6 +595,7 @@ export class ClaudeCodeExecutor implements Executor {
           reviewExecutor: this.sharedOptions.reviewExecutor,
           subagentExecutor: this.sharedOptions.subagentExecutor,
           dynamicSubagentInstructions: this.sharedOptions.dynamicSubagentInstructions,
+          useJj,
         });
       } else if (planInfo.executionMode === 'simple') {
         promptContent = wrapWithOrchestrationSimple(promptContent, planId, {
@@ -601,6 +603,7 @@ export class ClaudeCodeExecutor implements Executor {
           planFilePath,
           subagentExecutor: this.sharedOptions.subagentExecutor,
           dynamicSubagentInstructions: this.sharedOptions.dynamicSubagentInstructions,
+          useJj,
         });
       } else if (planInfo.executionMode === 'tdd') {
         promptContent = wrapWithOrchestrationTdd(promptContent, planId, {
@@ -610,6 +613,7 @@ export class ClaudeCodeExecutor implements Executor {
           reviewExecutor: this.sharedOptions.reviewExecutor,
           subagentExecutor: this.sharedOptions.subagentExecutor,
           dynamicSubagentInstructions: this.sharedOptions.dynamicSubagentInstructions,
+          useJj,
         });
       }
     }
