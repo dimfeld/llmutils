@@ -292,3 +292,8 @@
 .plan-rendered-content li::marker {
   color: var(--muted-foreground);
 }
+
+.plan-rendered-content :is(th, td) {
+  padding: 0.25rem 0.5rem;
+  font-variant-numeric: tabular-nums;
+}

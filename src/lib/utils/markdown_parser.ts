@@ -1,10 +1,11 @@
 import rehypeStringify from 'rehype-stringify';
 import remarkParse from 'remark-parse';
 import remarkRehype from 'remark-rehype';
+import remarkGfm from 'remark-gfm';
 import { unified } from 'unified';
 import type { Root } from 'mdast';
 
-const processor = unified().use(remarkParse).use(remarkRehype).use(rehypeStringify);
+const processor = unified().use(remarkParse).use(remarkGfm).use(remarkRehype).use(rehypeStringify);
 
 /**
  * Render markdown content as HTML using the unified/remark/rehype pipeline.
@@ -32,7 +33,7 @@ export function parseMarkdownWithDiffs(content: string): MarkdownSegment[] {
     return [{ type: 'html', content: renderMarkdown(content) }];
   }
 
-  const tree = unified().use(remarkParse).parse(content) as Root;
+  const tree = unified().use(remarkParse).use(remarkGfm).parse(content) as Root;
 
   const segments: MarkdownSegment[] = [];
   let lastOffset = 0;
