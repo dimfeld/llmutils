@@ -10,6 +10,7 @@
   } from '$lib/remote/review_issue_actions.remote.js';
   import CopyButton from '$lib/components/CopyButton.svelte';
   import MarkdownContent from '$lib/components/MarkdownContent.svelte';
+  import { extractHeadings, type TocEntry } from '$lib/utils/markdown_parser.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
   import { Splitpanes, Pane } from 'svelte-splitpanes';
   import type { ReviewIssueRow, ReviewSeverity, ReviewCategory } from '$tim/db/review.js';
@@ -52,6 +53,19 @@
 
   let unresolvedCount = $derived(issues.filter((i) => !i.resolved).length);
   let linkedPlanUuid = $derived(data.linkedPlanUuid);
+
+  let toc = $derived<TocEntry[]>(
+    data.review.review_guide ? extractHeadings(data.review.review_guide) : []
+  );
+
+  function handleTocChange(event: Event) {
+    const select = event.currentTarget as HTMLSelectElement;
+    const slug = select.value;
+    select.value = '';
+    if (!slug) return;
+    const el = document.getElementById(slug);
+    el?.scrollIntoView({ behavior: 'instant', block: 'start' });
+  }
 
   function isIssueActioning(issueId: number): boolean {
     return togglingIssueIds.has(issueId);
@@ -236,13 +250,29 @@
           {/if}
         </div>
       </div>
-      <span
-        class="inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium {statusBadgeClass(
-          data.review.status
-        )}"
-      >
-        {statusLabel(data.review.status)}
-      </span>
+      <div class="flex shrink-0 items-center gap-2">
+        {#if toc.length > 0}
+          <select
+            aria-label="Jump to section"
+            class="max-w-[16rem] rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+            onchange={handleTocChange}
+          >
+            <option value="">Jump to section…</option>
+            {#each toc as entry (entry.slug)}
+              <option value={entry.slug}>
+                {'\u00A0\u00A0'.repeat(Math.max(0, entry.depth - 1))}{entry.text}
+              </option>
+            {/each}
+          </select>
+        {/if}
+        <span
+          class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {statusBadgeClass(
+            data.review.status
+          )}"
+        >
+          {statusLabel(data.review.status)}
+        </span>
+      </div>
     </div>
 
     <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -337,19 +367,19 @@
                 </summary>
                 <ul class="mt-1 space-y-1.5 pl-1">
                   {#each severityIssues as issue (issue.id)}
-                  <ReviewIssueCard
-                    {issue}
-                    actioning={isIssueActioning(issue.id)}
-                    {linkedPlanUuid}
-                    {categoryBadgeClass}
-                    {issueLocationLabel}
-                    {formatCategory}
-                    onToggleResolved={handleToggleResolved}
-                    onDelete={handleDeleteIssue}
-                    onAddToPlan={handleAddIssueToPlan}
-                    onCopyError={(message) => (issueActionError = message)}
-                  />
-                {/each}
+                    <ReviewIssueCard
+                      {issue}
+                      actioning={isIssueActioning(issue.id)}
+                      {linkedPlanUuid}
+                      {categoryBadgeClass}
+                      {issueLocationLabel}
+                      {formatCategory}
+                      onToggleResolved={handleToggleResolved}
+                      onDelete={handleDeleteIssue}
+                      onAddToPlan={handleAddIssueToPlan}
+                      onCopyError={(message) => (issueActionError = message)}
+                    />
+                  {/each}
                 </ul>
               </details>
             {/if}
