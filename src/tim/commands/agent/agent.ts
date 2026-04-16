@@ -470,8 +470,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
       | 'after-iteration'
       | 'after-completion'
       | 'after-review'
-      | 'manual' =
-      options.updateDocs || config.updateDocs?.mode || 'never';
+      | 'manual' = options.updateDocs || config.updateDocs?.mode || 'never';
 
     if (isAutoClaimEnabled() && !isShuttingDown()) {
       if (planData.uuid) {
@@ -1296,7 +1295,9 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
                   `Agent stopping because required command "${failedAfterReviewDocsPostApplyCommand}" failed.`
                 );
                 hasError = true;
-                recordFailure(`Post-apply command failed: ${failedAfterReviewDocsPostApplyCommand}`);
+                recordFailure(
+                  `Post-apply command failed: ${failedAfterReviewDocsPostApplyCommand}`
+                );
                 if (summaryEnabled) summaryCollector.addError('Post-apply command failed');
                 break;
               }

@@ -135,7 +135,6 @@
           ? 'Running'
           : 'Pending';
   }
-
 </script>
 
 <div
@@ -410,7 +409,9 @@
                   : review.status === 'in_progress'
                     ? 'text-blue-600 dark:text-blue-400'
                     : 'text-muted-foreground'}
-            <li class="flex items-center gap-2 rounded px-1 py-0.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800">
+            <li
+              class="flex items-center gap-2 rounded px-1 py-0.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
+            >
               <a
                 href="/projects/{projectId}/prs/{pr.status.pr_number}/reviews/{review.id}"
                 class="flex min-w-0 flex-1 items-center gap-2"

@@ -177,18 +177,18 @@
           {issue.resolved ? 'Mark unresolved' : 'Mark resolved'}
         </button>
 
-          <CopyButton
-            text={issueCopyText()}
-            mode="icon"
-            iconClass="size-3.5 @sm:size-4"
-            className="ml-auto rounded p-1 transition-colors text-muted-foreground hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
-            copiedClass="text-emerald-600 dark:text-emerald-400"
-            failedClass="text-red-600 dark:text-red-400"
-            title="Copy file/line, issue content, and suggestion"
-            ariaLabel="Copy issue details"
-            disabled={actioning}
-            onCopyError={(message) => onCopyError?.(message)}
-          />
+        <CopyButton
+          text={issueCopyText()}
+          mode="icon"
+          iconClass="size-3.5 @sm:size-4"
+          className="ml-auto rounded p-1 transition-colors text-muted-foreground hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
+          copiedClass="text-emerald-600 dark:text-emerald-400"
+          failedClass="text-red-600 dark:text-red-400"
+          title="Copy file/line, issue content, and suggestion"
+          ariaLabel="Copy issue details"
+          disabled={actioning}
+          onCopyError={(message) => onCopyError?.(message)}
+        />
       </div>
     </div>
   {/if}

@@ -307,9 +307,8 @@
         {#if latestReviewGuidesByPrUrl[pr.status.pr_url]}
           <div class="mt-1.5 text-xs text-muted-foreground">
             <a
-              href="/projects/{projectId}/prs/{pr.status.pr_number}/reviews/{latestReviewGuidesByPrUrl[
-                pr.status.pr_url
-              ].id}"
+              href="/projects/{projectId}/prs/{pr.status
+                .pr_number}/reviews/{latestReviewGuidesByPrUrl[pr.status.pr_url].id}"
               class="text-blue-600 hover:underline dark:text-blue-400"
             >
               Latest review guide

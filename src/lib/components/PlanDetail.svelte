@@ -538,7 +538,6 @@
       minute: '2-digit',
     });
   }
-
 </script>
 
 <!-- Sticky plan number + title header -->
