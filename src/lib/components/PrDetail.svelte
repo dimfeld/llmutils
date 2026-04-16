@@ -400,7 +400,7 @@
 
       {#if reviews && reviews.length > 0}
         <ul class="space-y-1">
-          {#each reviews as review (review.id)}
+          {#each reviews as review, i (review.id)}
             {@const statusColor =
               review.status === 'complete'
                 ? 'text-green-600 dark:text-green-400'
@@ -416,8 +416,8 @@
                 href="/projects/{projectId}/prs/{pr.status.pr_number}/reviews/{review.id}"
                 class="flex min-w-0 flex-1 items-center gap-2"
               >
-                <span class="min-w-0 flex-1 truncate text-foreground">
-                  {formatRelativeTime(review.created_at)}
+                <span class="min-w-0 flex-1 truncate tabular-nums text-foreground">
+                  #{reviews.length - i} - {formatRelativeTime(review.created_at)}
                 </span>
                 {#if review.status === 'complete'}
                   <span class="shrink-0 text-xs text-muted-foreground">
