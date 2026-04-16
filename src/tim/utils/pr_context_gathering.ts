@@ -268,6 +268,8 @@ async function checkoutGitBranch(
   cwd: string,
   deps: BranchCheckoutDependencies
 ): Promise<void> {
+  let stderr = '';
+
   // Always operate in detached HEAD for review runs to avoid mutating local branches.
   const fetchResult = await deps.runCommand(['git', 'fetch', 'origin', branch], cwd);
   if (fetchResult.exitCode === 0) {
@@ -277,6 +279,8 @@ async function checkoutGitBranch(
     );
     if (detachResult.exitCode === 0) {
       return;
+    } else {
+      stderr = detachResult.stderr;
     }
   }
 
@@ -291,14 +295,13 @@ async function checkoutGitBranch(
       );
       if (checkoutPrResult.exitCode === 0) {
         return;
+      } else {
+        stderr = checkoutPrResult.stderr;
       }
     }
   }
 
-  throw new Error(
-    `Failed to switch to branch "${branch}" with git checkout. ` +
-      `The branch may not exist on origin or as a PR ref.`
-  );
+  throw new Error(`Failed to switch to branch "${branch}" with git checkout: ${stderr}`);
 }
 
 async function checkoutJjBranch(

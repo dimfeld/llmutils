@@ -127,6 +127,10 @@ export function buildPrCreationPrompt(options: PrCreationPromptOptions): string 
   const titlePrefixLine = titlePrefix
     ? `- Prefix the PR title with: ${titlePrefix}`
     : '- No title prefix is required unless it improves clarity.';
+  const trimmedPlanTitle = options.planTitle?.trim();
+  const prTitleInstruction = trimmedPlanTitle
+    ? `Use this exact plan title as the PR title: "${trimmedPlanTitle}". If a title prefix is required, prepend it to that title.`
+    : 'If a plan title is available in the Plan Context section, use it as the PR title. If a title prefix is required, prepend it to that title.';
 
   const prompt: string[] = [
     'Please do the following:',
@@ -176,12 +180,15 @@ export function buildPrCreationPrompt(options: PrCreationPromptOptions): string 
     '',
     '5b. If a PR exists, inspect and update it with `gh pr edit` only when title/body are stale.',
     'Preserve any existing issue-closing tags in the body.',
+    prTitleInstruction,
     '',
     `5c. If no PR exists, create one directly with \`gh pr create ${draftFlag}--head <branch-name> --base ${options.baseBranch}\` and include:`,
     '- Summary section with bullet points',
     '- Changes section listing important files/modules',
     '- Test plan section with checkboxes',
-    '- A concise, specific PR title',
+    trimmedPlanTitle
+      ? `- PR title: "${trimmedPlanTitle}"`
+      : '- PR title: use the exact plan title from the Plan Context section',
     titlePrefixLine,
     '- Include issue references when available (for Linear keep the full key, e.g. DF-123)',
     '',
