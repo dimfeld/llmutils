@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 
 import type { Database } from 'bun:sqlite';
 
+import { SvelteMap } from 'svelte/reactivity';
 import type {
   HeadlessMessage,
   HeadlessServerMessage,
@@ -347,7 +348,8 @@ export function formatTunnelMessage(
 
 export class SessionManager {
   private readonly eventEmitter = new EventEmitter({ captureRejections: false });
-  private readonly sessions = new Map<string, SessionData>();
+  private readonly sessions = new SvelteMap<string, SessionData>();
+  private readonly sessionsByPlanUuid = new SvelteMap<string, SessionData[]>();
   private readonly senders = new Map<string, AgentSender>();
   private readonly internals = new Map<string, SessionInternals>();
   private readonly rateLimitStore = new RateLimitStore();
@@ -377,6 +379,7 @@ export class SessionManager {
     this.sessions.set(connectionId, session);
     this.senders.set(connectionId, sendToAgent);
     this.internals.set(connectionId, { deferredPromptEvents: [], nextNotificationId: 0 });
+    this.syncSessionPlanIndex(session);
 
     try {
       sendToAgent({
@@ -409,6 +412,7 @@ export class SessionManager {
       internals.deferredPromptEvents = [];
     }
 
+    this.syncSessionPlanIndex(session);
     this.emit('session:disconnect', { session: this.cloneSessionMetadata(session) });
 
     return this.cloneSession(session);
@@ -422,6 +426,7 @@ export class SessionManager {
 
     switch (message.type) {
       case 'session_info': {
+        const previousPlanUuid = session.sessionInfo.planUuid ?? null;
         session.sessionInfo = {
           command: message.command,
           interactive: message.interactive,
@@ -437,12 +442,14 @@ export class SessionManager {
         session.groupKey = sessionGroupKey(message.gitRemote, message.workspacePath);
         session.projectId = this.resolveProjectId(message.gitRemote);
 
+        this.syncSessionPlanIndex(session, previousPlanUuid);
         this.emit('session:update', { session: this.cloneSessionMetadata(session) });
         return;
       }
       case 'replay_start':
         session.isReplaying = true;
         this.internals.get(connectionId)!.deferredPromptEvents = [];
+        this.syncSessionPlanIndex(session);
         this.emit('session:update', { session: this.cloneSessionMetadata(session) });
         return;
       case 'replay_end': {
@@ -450,6 +457,7 @@ export class SessionManager {
         const deferredPrompts = this.internals.get(connectionId)?.deferredPromptEvents ?? [];
         // Emit session:update first with empty activePrompts, then emit session:prompt
         // for each deferred prompt so the client builds the queue incrementally without duplication.
+        this.syncSessionPlanIndex(session);
         this.emit('session:update', { session: this.cloneSessionMetadata(session) });
         for (const deferredPrompt of deferredPrompts) {
           session.activePrompts.push(cloneActivePrompt(deferredPrompt));
@@ -463,6 +471,7 @@ export class SessionManager {
       }
       case 'plan_content':
         session.planContent = message.content;
+        this.syncSessionPlanIndex(session);
         this.emit('session:plan-content', {
           connectionId,
           planContent: message.content,
@@ -484,6 +493,7 @@ export class SessionManager {
           this.handleStructuredSideEffects(connectionId, session, message.message.message);
         }
 
+        this.syncSessionPlanIndex(session);
         if (displayMessage && !session.isReplaying) {
           this.emit('session:message', { connectionId, message: { ...displayMessage } });
         }
@@ -535,6 +545,7 @@ export class SessionManager {
         disconnectedAt: now,
       } satisfies SessionData);
 
+    const previousPlanUuid = existing?.sessionInfo.planUuid ?? null;
     session.sessionInfo = sessionInfo;
     session.status = 'notification';
     session.projectId = this.resolveProjectId(payload.gitRemote);
@@ -561,6 +572,7 @@ export class SessionManager {
     this.trimSessionMessages(session, MAX_NOTIFICATION_MESSAGES);
 
     this.sessions.set(connectionId, session);
+    this.syncSessionPlanIndex(session, previousPlanUuid);
     // Use metadata-only clone to avoid duplicating the message that session:message also sends
     this.emit(existing ? 'session:update' : 'session:new', {
       session: this.cloneSessionMetadata(session),
@@ -596,6 +608,7 @@ export class SessionManager {
       session.activePrompts = session.activePrompts.filter(
         (activePrompt) => activePrompt.requestId !== requestId
       );
+      this.syncSessionPlanIndex(session);
       this.emit('session:prompt-cleared', { connectionId, requestId });
       return 'sent';
     }
@@ -650,6 +663,7 @@ export class SessionManager {
       return false;
     }
 
+    this.removeSessionFromPlanIndex(session);
     this.sessions.delete(connectionId);
     this.senders.delete(connectionId);
     this.internals.delete(connectionId);
@@ -661,6 +675,7 @@ export class SessionManager {
     let dismissed = 0;
     for (const [connectionId, session] of this.sessions) {
       if (session.status !== 'active') {
+        this.removeSessionFromPlanIndex(session);
         this.sessions.delete(connectionId);
         this.senders.delete(connectionId);
         this.internals.delete(connectionId);
@@ -675,7 +690,7 @@ export class SessionManager {
     planUuid: string,
     command?: string | string[]
   ): { active: boolean; connectionId?: string } {
-    for (const session of this.sessions.values()) {
+    for (const session of this.sessionsByPlanUuid.get(planUuid) ?? []) {
       if (
         session.status === 'active' &&
         session.sessionInfo.planUuid === planUuid &&
@@ -730,6 +745,63 @@ export class SessionManager {
 
   private emit<T extends SessionEventName>(eventName: T, payload: SessionManagerEvents[T]): void {
     this.eventEmitter.emit(eventName, payload);
+  }
+
+  private syncSessionPlanIndex(session: SessionData, previousPlanUuid?: string | null): void {
+    const currentPlanUuid = session.sessionInfo.planUuid ?? null;
+    const normalizedPreviousPlanUuid = previousPlanUuid ?? null;
+
+    if (normalizedPreviousPlanUuid && normalizedPreviousPlanUuid !== currentPlanUuid) {
+      this.removeSessionFromPlanIndex(session, normalizedPreviousPlanUuid);
+    }
+
+    if (!currentPlanUuid) {
+      return;
+    }
+
+    const indexedSessions = this.sessionsByPlanUuid.get(currentPlanUuid);
+    if (!indexedSessions) {
+      this.sessionsByPlanUuid.set(currentPlanUuid, [session]);
+      return;
+    }
+
+    const existingIndex = indexedSessions.findIndex(
+      (indexedSession) => indexedSession.connectionId === session.connectionId
+    );
+    if (existingIndex === -1) {
+      this.sessionsByPlanUuid.set(currentPlanUuid, [...indexedSessions, session]);
+      return;
+    }
+
+    if (indexedSessions[existingIndex] !== session) {
+      const nextSessions = [...indexedSessions];
+      nextSessions[existingIndex] = session;
+      this.sessionsByPlanUuid.set(currentPlanUuid, nextSessions);
+    }
+  }
+
+  private removeSessionFromPlanIndex(session: SessionData, planUuidOverride?: string | null): void {
+    const planUuid = planUuidOverride ?? session.sessionInfo.planUuid ?? null;
+    if (!planUuid) {
+      return;
+    }
+
+    const indexedSessions = this.sessionsByPlanUuid.get(planUuid);
+    if (!indexedSessions) {
+      return;
+    }
+
+    const nextSessions = indexedSessions.filter(
+      (indexedSession) => indexedSession.connectionId !== session.connectionId
+    );
+    if (nextSessions.length === 0) {
+      this.sessionsByPlanUuid.delete(planUuid);
+      return;
+    }
+
+    if (nextSessions.length !== indexedSessions.length) {
+      this.sessionsByPlanUuid.set(planUuid, nextSessions);
+    }
   }
 
   private broadcastNotificationSubscribers(hasSubscribers: boolean): void {

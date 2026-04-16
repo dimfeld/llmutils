@@ -58,7 +58,7 @@
   let attentionItems = $derived(
     deriveAttentionItems(
       data.plans,
-      sessionManager.sessions.values(),
+      sessionManager.sessionsByPlanUuid,
       actionablePrs,
       notificationSessions
     )

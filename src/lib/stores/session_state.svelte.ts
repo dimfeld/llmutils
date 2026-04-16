@@ -57,6 +57,7 @@ export class SessionManager {
   currentProjectId: string | null = $state(null);
   projectsById = new SvelteMap<number, ProjectInfo>();
   rateLimitState: RateLimitState = $state.raw({ entries: [] });
+  sessionsByPlanUuid = new SvelteMap<string, SessionData[]>();
 
   eventSource: EventSource | null = null;
   reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -208,6 +209,7 @@ export class SessionManager {
 
     const state: SessionStoreMutableState = {
       sessions: this.sessions,
+      sessionsByPlanUuid: this.sessionsByPlanUuid,
       setInitialized: (value) => {
         this.initialized = value;
       },

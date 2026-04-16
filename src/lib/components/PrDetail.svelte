@@ -375,14 +375,14 @@
 
     <!-- Review Guides -->
     <div>
-      <div class="mb-1.5 flex items-center justify-between">
+      <div class="mb-1.5 flex items-center justify-start gap-2">
         <h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
           Review Guides
         </h3>
         <button
           onclick={handleStartReviewGuide}
           disabled={reviewGuideRunning}
-          class="rounded px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
+          class="rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
           title="Generate a new review guide"
         >
           {reviewGuideRunning ? 'Starting...' : 'Generate'}
@@ -416,7 +416,7 @@
                 href="/projects/{projectId}/prs/{pr.status.pr_number}/reviews/{review.id}"
                 class="flex min-w-0 flex-1 items-center gap-2"
               >
-                <span class="min-w-0 flex-1 truncate tabular-nums text-foreground">
+                <span class="min-w-0 flex-1 truncate text-foreground tabular-nums">
                   #{reviews.length - i} - {formatRelativeTime(review.created_at)}
                 </span>
                 {#if review.status === 'complete'}

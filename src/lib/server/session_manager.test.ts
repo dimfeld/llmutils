@@ -1694,6 +1694,52 @@ describe('lib/server/session_manager', () => {
     expect(freshSnapshot.sessions[1].messages).toHaveLength(0);
   });
 
+  test('keeps sessionsByPlanUuid in sync when sessions move between plans and are dismissed', () => {
+    const indexedSessions = manager as unknown as {
+      sessionsByPlanUuid: Map<
+        string,
+        Array<{
+          connectionId: string;
+          status: string;
+          sessionInfo: { planUuid?: string | null };
+        }>
+      >;
+    };
+
+    manager.handleWebSocketConnect('conn-1', vi.fn());
+    manager.handleWebSocketMessage('conn-1', {
+      type: 'session_info',
+      command: 'agent',
+      interactive: true,
+      planId: 42,
+      planUuid: 'plan-42',
+      workspacePath: '/tmp/ws-1',
+    });
+
+    expect(indexedSessions.sessionsByPlanUuid.get('plan-42')?.map((session) => session.connectionId))
+      .toEqual(['conn-1']);
+
+    manager.handleWebSocketMessage('conn-1', {
+      type: 'session_info',
+      command: 'agent',
+      interactive: true,
+      planId: 43,
+      planUuid: 'plan-43',
+      workspacePath: '/tmp/ws-2',
+    });
+
+    expect(indexedSessions.sessionsByPlanUuid.get('plan-42')).toBeUndefined();
+    expect(indexedSessions.sessionsByPlanUuid.get('plan-43')?.map((session) => session.connectionId))
+      .toEqual(['conn-1']);
+
+    manager.handleWebSocketDisconnect('conn-1');
+    expect(indexedSessions.sessionsByPlanUuid.get('plan-43')?.[0].status).toBe('offline');
+
+    const dismissed = manager.dismissSession('conn-1');
+    expect(dismissed).toBe(true);
+    expect(indexedSessions.sessionsByPlanUuid.get('plan-43')).toBeUndefined();
+  });
+
   test('hasActiveSessionForPlan returns only matching active sessions', () => {
     manager.handleWebSocketConnect('generate-active', () => {});
     manager.handleWebSocketMessage('generate-active', {

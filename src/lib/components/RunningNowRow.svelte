@@ -21,8 +21,15 @@
 
   let elapsed = $derived(formatRelativeTime(session.connectedAt));
 
+  async function getCounts(uuid: string | null) {
+    if (uuid) {
+      return await getPlanTaskCounts({ planUuid: uuid });
+    }
+    return null;
+  }
+
   const planUuid = $derived(session.planUuid);
-  let taskCounts = $derived(planUuid ? await getPlanTaskCounts({ planUuid }) : null);
+  const taskCounts = $derived(await getCounts(planUuid));
 
   const commandStyles: Record<string, string> = {
     agent: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',

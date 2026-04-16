@@ -78,28 +78,37 @@ export interface RunningSession {
 
 const AGENT_COMMANDS = new Set(['agent', 'generate', 'chat', 'pr-create']);
 
+export function indexSessionsByPlanUuid(sessions: Iterable<SessionData>): Map<string, SessionData[]> {
+  const sessionsByPlanUuid = new Map<string, SessionData[]>();
+
+  for (const session of sessions) {
+    const planUuid = session.sessionInfo.planUuid;
+    if (!planUuid) {
+      continue;
+    }
+
+    const planSessions = sessionsByPlanUuid.get(planUuid);
+    if (planSessions) {
+      planSessions.push(session);
+    } else {
+      sessionsByPlanUuid.set(planUuid, [session]);
+    }
+  }
+
+  return sessionsByPlanUuid;
+}
+
 export function deriveAttentionItems(
   plans: EnrichedPlan[],
-  sessions: Iterable<SessionData>,
+  sessionsByPlanUuid: ReadonlyMap<string, SessionData[]>,
   actionablePrs: ActionablePr[],
   notificationSessions: RunningSession[] = []
 ): AttentionItems {
-  // Index sessions by planUuid for fast lookup
-  const sessionsByPlanUuid = new Map<string, SessionData[]>();
   const activePlanUuids = new Set<string>();
-  for (const session of sessions) {
-    const uuid = session.sessionInfo.planUuid;
-    if (!uuid) continue;
-    if (session.status === 'active') {
-      activePlanUuids.add(uuid);
+  for (const [planUuid, planSessions] of sessionsByPlanUuid.entries()) {
+    if (planSessions.some((session) => session.status === 'active')) {
+      activePlanUuids.add(planUuid);
     }
-
-    let list = sessionsByPlanUuid.get(uuid);
-    if (!list) {
-      list = [];
-      sessionsByPlanUuid.set(uuid, list);
-    }
-    list.push(session);
   }
 
   const planItems: PlanAttentionItem[] = [];

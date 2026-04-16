@@ -5,6 +5,7 @@ import {
   deriveAttentionItems,
   deriveRunningNowSessions,
   deriveReadyToStartPlans,
+  indexSessionsByPlanUuid,
   type ActionablePr,
 } from './dashboard_attention.js';
 
@@ -78,9 +79,13 @@ function makeActionablePr(overrides: Partial<ActionablePr> & { prUrl: string }):
   };
 }
 
+function planIndex(sessions: SessionData[]): Map<string, SessionData[]> {
+  return indexSessionsByPlanUuid(sessions);
+}
+
 describe('deriveAttentionItems', () => {
   test('returns empty when no plans or sessions', () => {
-    const result = deriveAttentionItems([], [], []);
+    const result = deriveAttentionItems([], planIndex([]), []);
     expect(result.planItems).toEqual([]);
     expect(result.prItems).toEqual([]);
   });
@@ -99,14 +104,14 @@ describe('deriveAttentionItems', () => {
       ],
     });
 
-    const result = deriveAttentionItems([plan], [session], []);
+    const result = deriveAttentionItems([plan], planIndex([session]), []);
     expect(result.planItems).toEqual([]);
   });
 
   test('detects needs_review status', () => {
     const plan = makePlan({ uuid: 'plan-1', displayStatus: 'needs_review' });
 
-    const result = deriveAttentionItems([plan], [], []);
+    const result = deriveAttentionItems([plan], planIndex([]), []);
     expect(result.planItems).toHaveLength(1);
     expect(result.planItems[0].reasons).toEqual([{ type: 'needs_review' }]);
   });
@@ -118,7 +123,7 @@ describe('deriveAttentionItems', () => {
       epic: true,
     });
 
-    const result = deriveAttentionItems([plan], [], []);
+    const result = deriveAttentionItems([plan], planIndex([]), []);
     expect(result.planItems).toHaveLength(1);
     expect(result.planItems[0].epic).toBe(true);
   });
@@ -131,7 +136,7 @@ describe('deriveAttentionItems', () => {
       lessonsAppliedAt: null,
     });
 
-    const result = deriveAttentionItems([plan], [], []);
+    const result = deriveAttentionItems([plan], planIndex([]), []);
     expect(result.planItems).toEqual([
       expect.objectContaining({
         planUuid: 'plan-1',
@@ -150,7 +155,7 @@ describe('deriveAttentionItems', () => {
       sessionInfo: { command: 'agent', planUuid: 'plan-1' },
     });
 
-    const result = deriveAttentionItems([plan], [session], []);
+    const result = deriveAttentionItems([plan], planIndex([session]), []);
     expect(result.planItems).toHaveLength(1);
     expect(result.planItems[0].reasons).toEqual([{ type: 'agent_finished' }]);
   });
@@ -163,7 +168,7 @@ describe('deriveAttentionItems', () => {
       sessionInfo: { command: 'agent', planUuid: 'plan-1' },
     });
 
-    const result = deriveAttentionItems([plan], [session], []);
+    const result = deriveAttentionItems([plan], planIndex([session]), []);
     expect(result.planItems).toHaveLength(1);
     // Should have needs_review but NOT agent_finished
     expect(result.planItems[0].reasons).toEqual([{ type: 'needs_review' }]);
@@ -188,7 +193,11 @@ describe('deriveAttentionItems', () => {
       sessionInfo: { command: 'agent', planUuid: 'plan-1' },
     });
 
-    const result = deriveAttentionItems([plan], [activeSession, offlineSession], []);
+    const result = deriveAttentionItems(
+      [plan],
+      planIndex([activeSession, offlineSession]),
+      []
+    );
     expect(result.planItems).toEqual([]);
   });
 
@@ -200,7 +209,7 @@ describe('deriveAttentionItems', () => {
       sessionInfo: { command: 'agent', planUuid: 'plan-1' },
     });
 
-    const result = deriveAttentionItems([plan], [session], []);
+    const result = deriveAttentionItems([plan], planIndex([session]), []);
     expect(result.planItems).toHaveLength(1);
     expect(result.planItems[0]).toEqual(
       expect.objectContaining({
@@ -225,7 +234,7 @@ describe('deriveAttentionItems', () => {
       }),
     ];
 
-    const result = deriveAttentionItems([plan], sessions, []);
+    const result = deriveAttentionItems([plan], planIndex(sessions), []);
     const agentFinished = result.planItems[0].reasons.filter((r) => r.type === 'agent_finished');
     expect(agentFinished).toHaveLength(1);
   });
@@ -238,7 +247,7 @@ describe('deriveAttentionItems', () => {
       sessionInfo: { command: 'show', planUuid: 'plan-1' },
     });
 
-    const result = deriveAttentionItems([plan], [session], []);
+    const result = deriveAttentionItems([plan], planIndex([session]), []);
     // Non-agent commands like 'show' should not trigger agent_finished
     expect(result.planItems).toEqual([]);
   });
@@ -246,7 +255,7 @@ describe('deriveAttentionItems', () => {
   test('ignores plans with no attention reasons', () => {
     const plan = makePlan({ uuid: 'plan-1', displayStatus: 'in_progress' });
     // No sessions linked, no needs_review, no offline sessions
-    const result = deriveAttentionItems([plan], [], []);
+    const result = deriveAttentionItems([plan], planIndex([]), []);
     expect(result.planItems).toEqual([]);
   });
 
@@ -258,7 +267,7 @@ describe('deriveAttentionItems', () => {
       activePrompts: [],
     });
 
-    const result = deriveAttentionItems([plan], [session], []);
+    const result = deriveAttentionItems([plan], planIndex([session]), []);
     expect(result.planItems).toEqual([]);
   });
 
@@ -268,7 +277,7 @@ describe('deriveAttentionItems', () => {
       actionReason: 'checks_failing',
     });
 
-    const result = deriveAttentionItems([], [], [pr]);
+    const result = deriveAttentionItems([], planIndex([]), [pr]);
     expect(result.prItems).toHaveLength(1);
     expect(result.prItems[0]).toEqual({ kind: 'pr', actionablePr: pr });
   });
@@ -285,7 +294,7 @@ describe('deriveAttentionItems', () => {
       actionReason: 'ready_to_merge',
     });
 
-    const result = deriveAttentionItems([], [], [otherPr, reviewRequestedPr]);
+    const result = deriveAttentionItems([], planIndex([]), [otherPr, reviewRequestedPr]);
     expect(result.prItems.map((item) => item.actionablePr.actionReason)).toEqual([
       'review_requested',
       'ready_to_merge',
@@ -301,7 +310,7 @@ describe('deriveAttentionItems', () => {
       lessonsAppliedAt: null,
     });
 
-    const result = deriveAttentionItems([plan], [], []);
+    const result = deriveAttentionItems([plan], planIndex([]), []);
     expect(result.planItems).toHaveLength(1);
     expect(result.planItems[0]).toEqual(
       expect.objectContaining({
@@ -320,7 +329,7 @@ describe('deriveAttentionItems', () => {
       pullRequests: ['https://github.com/owner/repo/pull/1'],
     });
 
-    const result = deriveAttentionItems([plan], [], []);
+    const result = deriveAttentionItems([plan], planIndex([]), []);
     expect(result.planItems).toHaveLength(1);
     expect(result.planItems[0].hasPr).toBe(true);
   });
@@ -332,7 +341,7 @@ describe('deriveAttentionItems', () => {
       prSummaryStatus: 'passing',
     });
 
-    const result = deriveAttentionItems([plan], [], []);
+    const result = deriveAttentionItems([plan], planIndex([]), []);
     expect(result.planItems).toHaveLength(1);
     expect(result.planItems[0].hasPr).toBe(true);
   });
@@ -345,7 +354,7 @@ describe('deriveAttentionItems', () => {
       prSummaryStatus: 'none',
     });
 
-    const result = deriveAttentionItems([plan], [], []);
+    const result = deriveAttentionItems([plan], planIndex([]), []);
     expect(result.planItems).toHaveLength(1);
     expect(result.planItems[0].hasPr).toBe(false);
   });
@@ -359,7 +368,7 @@ describe('deriveAttentionItems', () => {
       hasPlanPrLinks: true,
     });
 
-    const result = deriveAttentionItems([plan], [], []);
+    const result = deriveAttentionItems([plan], planIndex([]), []);
     expect(result.planItems).toHaveLength(1);
     expect(result.planItems[0].hasPr).toBe(true);
   });
@@ -372,7 +381,7 @@ describe('deriveAttentionItems', () => {
       // No planUuid
     });
 
-    const result = deriveAttentionItems([plan], [session], []);
+    const result = deriveAttentionItems([plan], planIndex([session]), []);
     // Plan should still show needs_review, session should be ignored for plan matching
     expect(result.planItems).toHaveLength(1);
     expect(result.planItems[0].reasons).toEqual([{ type: 'needs_review' }]);
