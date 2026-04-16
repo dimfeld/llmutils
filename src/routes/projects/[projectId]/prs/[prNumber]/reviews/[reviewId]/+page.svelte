@@ -8,6 +8,7 @@
     addReviewIssueToPlanTask,
     deleteReviewIssue,
   } from '$lib/remote/review_issue_actions.remote.js';
+  import CopyButton from '$lib/components/CopyButton.svelte';
   import MarkdownContent from '$lib/components/MarkdownContent.svelte';
   import { formatRelativeTime } from '$lib/utils/time.js';
   import { Splitpanes, Pane } from 'svelte-splitpanes';
@@ -219,8 +220,17 @@
     <div class="flex items-start gap-2">
       <div class="min-w-0 flex-1">
         <h2 class="text-lg font-semibold text-foreground">Review Guide</h2>
-        <div class="mt-0.5 text-sm text-muted-foreground">
-          {data.review.branch}
+        <div class="mt-0.5 flex items-center gap-1.5 text-sm text-muted-foreground">
+          <span class="min-w-0 truncate">{data.review.branch}</span>
+          <CopyButton
+            text={data.review.branch ?? ''}
+            disabled={!data.review.branch}
+            mode="icon"
+            iconClass="size-3"
+            className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
+            title="Copy branch name"
+            ariaLabel="Copy branch name"
+          />
           {#if data.review.base_branch}
             <span class="text-foreground/50"> → {data.review.base_branch}</span>
           {/if}
