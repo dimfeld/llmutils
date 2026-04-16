@@ -233,7 +233,23 @@
 
     <div class="flex items-start gap-2">
       <div class="min-w-0 flex-1">
-        <h2 class="text-lg font-semibold text-foreground">Review Guide</h2>
+        <div class="flex items-center gap-3">
+          <h2 class="text-lg font-semibold text-foreground">Review Guide</h2>
+          {#if toc.length > 0}
+            <select
+              aria-label="Jump to section"
+              class="max-w-[16rem] rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+              onchange={handleTocChange}
+            >
+              <option value="">Jump to section…</option>
+              {#each toc as entry (entry.slug)}
+                <option value={entry.slug}>
+                  {'\u00A0\u00A0'.repeat(Math.max(0, entry.depth - 1))}{entry.text}
+                </option>
+              {/each}
+            </select>
+          {/if}
+        </div>
         <div class="mt-0.5 flex items-center gap-1.5 text-sm text-muted-foreground">
           <span class="min-w-0 truncate">{data.review.branch}</span>
           <CopyButton
@@ -250,29 +266,13 @@
           {/if}
         </div>
       </div>
-      <div class="flex shrink-0 items-center gap-2">
-        {#if toc.length > 0}
-          <select
-            aria-label="Jump to section"
-            class="max-w-[16rem] rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-            onchange={handleTocChange}
-          >
-            <option value="">Jump to section…</option>
-            {#each toc as entry (entry.slug)}
-              <option value={entry.slug}>
-                {'\u00A0\u00A0'.repeat(Math.max(0, entry.depth - 1))}{entry.text}
-              </option>
-            {/each}
-          </select>
-        {/if}
-        <span
-          class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {statusBadgeClass(
-            data.review.status
-          )}"
-        >
-          {statusLabel(data.review.status)}
-        </span>
-      </div>
+      <span
+        class="inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium {statusBadgeClass(
+          data.review.status
+        )}"
+      >
+        {statusLabel(data.review.status)}
+      </span>
     </div>
 
     <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
