@@ -18,6 +18,7 @@ import { emitPrUpdatesForIngestResult } from '$lib/server/pr_event_utils.js';
 import { getSessionManager } from '$lib/server/session_context.js';
 import { cleanOrphanedPrStatus, getPrStatusByUrl, getPrStatusForPlan } from '$tim/db/pr_status.js';
 import { getPlanByUuid } from '$tim/db/plan.js';
+import { getLatestReviewGuideByPrUrl } from '$tim/db/review.js';
 
 const PR_STATUS_MAX_AGE_MS = 5 * 60 * 1000;
 
@@ -36,6 +37,11 @@ const togglePrDraftStatusSchema = z.object({
   prUrl: z.string().url(),
   draft: z.boolean(),
 });
+
+interface LatestReviewGuideSummary {
+  id: number;
+  createdAt: string;
+}
 
 async function loadPlanAndContext(planUuid: string) {
   const { db } = await getServerContext();
@@ -155,11 +161,32 @@ export const getPrStatus = query(planUuidSchema, async ({ planUuid }) => {
     db,
     getPrStatusForPlan(db, plan.uuid, prUrls, { includeReviewThreads: true })
   );
+  const latestReviewGuidesByPrUrl = Object.fromEntries(
+    prStatuses.flatMap((pr) => {
+      const latestGuide = getLatestReviewGuideByPrUrl(db, pr.status.pr_url, {
+        projectId: plan.project_id,
+      });
+      if (!latestGuide) {
+        return [];
+      }
+
+      return [
+        [
+          pr.status.pr_url,
+          {
+            id: latestGuide.id,
+            createdAt: latestGuide.created_at,
+          } satisfies LatestReviewGuideSummary,
+        ],
+      ];
+    })
+  );
 
   return {
     prUrls,
     invalidPrUrls,
     prStatuses,
+    latestReviewGuidesByPrUrl,
     tokenConfigured: !!resolveGitHubToken(),
   };
 });

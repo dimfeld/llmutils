@@ -35,6 +35,7 @@
   let invalidPrUrls = $derived(prData.invalidPrUrls);
   let tokenConfigured = $derived(prData.tokenConfigured);
   let statusByUrl = $derived(new Map(prData.prStatuses.map((pr) => [pr.status.pr_url, pr])));
+  let latestReviewGuidesByPrUrl = $derived(prData.latestReviewGuidesByPrUrl);
   let effectivePrs = $derived(prData.prStatuses);
   let uncachedUrls = $derived(prUrls.filter((url) => !statusByUrl.has(url)));
 
@@ -300,6 +301,19 @@
             <span class="text-green-600 dark:text-green-400">+{pr.status.additions}</span>
             /
             <span class="text-red-600 dark:text-red-400">-{pr.status.deletions}</span>
+          </div>
+        {/if}
+
+        {#if latestReviewGuidesByPrUrl[pr.status.pr_url]}
+          <div class="mt-1.5 text-xs text-muted-foreground">
+            <a
+              href="/projects/{projectId}/prs/{pr.status.pr_number}/reviews/{latestReviewGuidesByPrUrl[
+                pr.status.pr_url
+              ].id}"
+              class="text-blue-600 hover:underline dark:text-blue-400"
+            >
+              Latest review guide
+            </a>
           </div>
         {/if}
 

@@ -178,15 +178,18 @@ function makeReviewThreadDetail(
 
 async function renderSection(props: {
   planUuid?: string;
+  projectId?: string;
   prUrls: string[];
   invalidPrUrls?: string[];
   prStatuses: PrStatusDetail[];
+  latestReviewGuidesByPrUrl?: Record<string, { id: number; createdAt: string }>;
 }) {
   mockGetPrStatus.mockReturnValue(
     Promise.resolve({
       prUrls: props.prUrls,
       invalidPrUrls: props.invalidPrUrls ?? [],
       prStatuses: props.prStatuses,
+      latestReviewGuidesByPrUrl: props.latestReviewGuidesByPrUrl ?? {},
       tokenConfigured: true,
     })
   );
@@ -194,6 +197,7 @@ async function renderSection(props: {
   return await render(PrStatusSection, {
     props: {
       planUuid: props.planUuid ?? 'plan-uuid-1',
+      projectId: props.projectId ?? '1',
     },
   });
 }
@@ -233,6 +237,7 @@ describe('PrStatusSection', () => {
     const { body } = await render(PrStatusSection, {
       props: {
         planUuid: 'plan-uuid-1',
+        projectId: '1',
       },
     });
 
@@ -402,6 +407,23 @@ describe('PrStatusSection', () => {
     });
 
     expect(body).toContain('Conflicts');
+  });
+
+  test('renders a link to the latest generated review guide when available', async () => {
+    const detail = makePrDetail();
+    const { body } = await renderSection({
+      prUrls: [detail.status.pr_url],
+      prStatuses: [detail],
+      latestReviewGuidesByPrUrl: {
+        [detail.status.pr_url]: {
+          id: 17,
+          createdAt: '2026-03-18T10:10:00.000Z',
+        },
+      },
+    });
+
+    expect(body).toContain('Latest review guide');
+    expect(body).toContain('href="/projects/1/prs/42/reviews/17"');
   });
 
   test('does not render conflict badge when mergeable is MERGEABLE', async () => {

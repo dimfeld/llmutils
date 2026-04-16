@@ -10,6 +10,7 @@ import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
 import { upsertPlan } from '$tim/db/plan.js';
 import { linkPlanToPr, upsertPrStatus } from '$tim/db/pr_status.js';
 import { getOrCreateProject } from '$tim/db/project.js';
+import { createReview } from '$tim/db/review.js';
 import { invokeCommand, invokeQuery } from '$lib/test-utils/invoke_command.js';
 
 let currentDb: Database;
@@ -68,6 +69,7 @@ vi.mock('$lib/server/session_context.js', () => ({
 
 describe('pr_status remote functions', () => {
   let tempDir: string;
+  let currentProjectId: number;
 
   beforeAll(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-plan-pr-status-remote-test-'));
@@ -76,6 +78,7 @@ describe('pr_status remote functions', () => {
   beforeEach(() => {
     currentDb = openDatabase(path.join(tempDir, `${crypto.randomUUID()}-${DATABASE_FILENAME}`));
     const project = getOrCreateProject(currentDb, 'repo-plan-pr-status-route');
+    currentProjectId = project.id;
 
     upsertPlan(currentDb, project.id, {
       uuid: 'plan-with-prs',
@@ -156,6 +159,40 @@ describe('pr_status remote functions', () => {
       status: {
         pr_url: 'https://github.com/example/repo/pull/1',
         title: 'Cached PR',
+      },
+    });
+    expect(payload.latestReviewGuidesByPrUrl).toEqual({});
+  });
+
+  test('getPrStatus includes the latest generated review guide for each PR', async () => {
+    createReview(currentDb, {
+      projectId: currentProjectId,
+      prUrl: 'https://github.com/example/repo/pull/1',
+      branch: 'feature/review-guide-old',
+      reviewGuide: '# Old Guide',
+      status: 'complete',
+    });
+    const latestReview = createReview(currentDb, {
+      projectId: currentProjectId,
+      prUrl: 'https://github.com/example/repo/pull/1',
+      branch: 'feature/review-guide-new',
+      reviewGuide: '# New Guide',
+      status: 'complete',
+    });
+    createReview(currentDb, {
+      projectId: currentProjectId,
+      prUrl: 'https://github.com/example/repo/pull/2',
+      branch: 'feature/no-guide',
+      status: 'complete',
+    });
+
+    const { getPrStatus } = await import('./pr_status.remote.js');
+    const payload = await invokeQuery(getPrStatus, { planUuid: 'plan-with-prs' });
+
+    expect(payload.latestReviewGuidesByPrUrl).toEqual({
+      'https://github.com/example/repo/pull/1': {
+        id: latestReview.id,
+        createdAt: latestReview.created_at,
       },
     });
   });
@@ -311,6 +348,7 @@ describe('pr_status remote functions', () => {
       prUrls: [],
       invalidPrUrls: ['https://github.com/example/repo/issues/3'],
       prStatuses: [],
+      latestReviewGuidesByPrUrl: {},
       tokenConfigured: false,
     });
   });

@@ -225,6 +225,35 @@ export function getLatestReviewByPrUrl(
   );
 }
 
+export function getLatestReviewGuideByPrUrl(
+  db: Database,
+  prUrl: string,
+  options?: { projectId?: number }
+): ReviewRow | null {
+  const canonicalUrl = canonicalizePrUrl(prUrl);
+  const conditions = ['pr_url = ?', 'review_guide IS NOT NULL', "TRIM(review_guide) != ''"];
+  const params: (string | number)[] = [canonicalUrl];
+
+  if (options?.projectId !== undefined) {
+    conditions.push('project_id = ?');
+    params.push(options.projectId);
+  }
+
+  return (
+    (db
+      .prepare(
+        `
+          SELECT *
+          FROM review
+          WHERE ${conditions.join(' AND ')}
+          ORDER BY created_at DESC, id DESC
+          LIMIT 1
+        `
+      )
+      .get(...params) as ReviewRow | null) ?? null
+  );
+}
+
 export function getReviewById(db: Database, reviewId: number): ReviewRow | null {
   return (
     (db.prepare('SELECT * FROM review WHERE id = ?').get(reviewId) as ReviewRow | null) ?? null
