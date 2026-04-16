@@ -12,7 +12,6 @@
   import PrCheckRunList from './PrCheckRunList.svelte';
   import PrReviewList from './PrReviewList.svelte';
   import PrReviewThreadList from './PrReviewThreadList.svelte';
-  import ExternalLink from '@lucide/svelte/icons/external-link';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import { normalizeGitHubUsername } from '$common/github/username.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
@@ -150,15 +149,6 @@
         <h2 class="text-lg font-semibold text-foreground">
           <span class="text-muted-foreground">#{pr.status.pr_number}</span>
           {pr.status.title ?? 'Untitled'}
-          <a
-            href={pr.status.pr_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            class="ml-1 inline-flex rounded-md p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
-            title="Open on GitHub"
-          >
-            <ExternalLink class="size-4" />
-          </a>
         </h2>
         <div class="mt-1 flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
           <span>{pr.status.head_branch}</span>
@@ -178,6 +168,16 @@
         </div>
       </div>
       <div class="flex shrink-0 items-center gap-1">
+        <a
+          href={pr.status.pr_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
+          title="View in GitHub"
+          aria-label={`View PR #${pr.status.pr_number} in GitHub`}
+        >
+          View in GitHub
+        </a>
         <a
           href={graphitePrUrl}
           target="_blank"
