@@ -3,6 +3,14 @@ import * as z from 'zod/v4';
 // Executor name constants
 export const ClaudeCodeExecutorName = 'claude-code';
 export const CodexCliExecutorName = 'codex-cli';
+export const claudeCodeReasoningEffortSchema = z.enum([
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+]);
+export type ClaudeCodeReasoningEffort = z.infer<typeof claudeCodeReasoningEffortSchema>;
 
 /**
  * Schema for the 'claude-code' executor's options.
@@ -13,6 +21,9 @@ export const claudeCodeOptionsSchema = z.object({
   includeDefaultTools: z.boolean().default(true).optional(),
   disallowedTools: z.array(z.string()).optional(),
   mcpConfigFile: z.string().optional(),
+  reasoningEffort: claudeCodeReasoningEffortSchema
+    .optional()
+    .describe('Reasoning effort for Claude Code sessions (default: CLI default)'),
   permissionsMcp: z
     .object({
       enabled: z.boolean(),

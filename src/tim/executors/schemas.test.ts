@@ -5,6 +5,7 @@ import {
   codexCliOptionsSchema,
   ClaudeCodeExecutorName,
   CodexCliExecutorName,
+  claudeCodeReasoningEffortSchema,
 } from './schemas.ts';
 
 describe('claudeCodeOptionsSchema', () => {
@@ -189,6 +190,24 @@ describe('claudeCodeOptionsSchema', () => {
         expect(result.error.issues[0].path).toEqual(['simpleMode']);
       }
     });
+
+    test('accepts Claude reasoningEffort configuration', () => {
+      const result = claudeCodeOptionsSchema.safeParse({ reasoningEffort: 'high' });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.reasoningEffort).toBe('high');
+      }
+    });
+
+    test('rejects invalid Claude reasoningEffort values', () => {
+      const result = claudeCodeOptionsSchema.safeParse({ reasoningEffort: 'ultra' });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues[0].path).toEqual(['reasoningEffort']);
+      }
+    });
   });
 });
 
@@ -237,6 +256,16 @@ describe('executor name constants', () => {
   test('executor name constants are defined correctly', () => {
     expect(ClaudeCodeExecutorName).toBe('claude-code');
     expect(CodexCliExecutorName).toBe('codex-cli');
+  });
+});
+
+describe('claudeCodeReasoningEffortSchema', () => {
+  test('accepts all supported Claude effort levels', () => {
+    const levels = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+
+    for (const level of levels) {
+      expect(claudeCodeReasoningEffortSchema.safeParse(level).success).toBe(true);
+    }
   });
 });
 

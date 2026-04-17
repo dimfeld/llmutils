@@ -61,6 +61,7 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     // Mock git root
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     // Make spawn call succeed and invoke the provided formatter once
@@ -123,6 +124,7 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     // Mock git root
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     // Make spawn call succeed and invoke the provided formatter once
@@ -176,6 +178,7 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
   test('reports verifier as failure source when simple mode verifier reports FAILED', async () => {
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     vi.doMock('../../common/process.ts', () => ({
@@ -228,6 +231,7 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
   test('detects FAILED when not first line and returns orchestrator source by default', async () => {
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     vi.doMock('../../common/process.ts', () => ({
@@ -279,6 +283,7 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
   test('strips ANSI escape codes from non-raw messages when captureOutput is all', async () => {
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     vi.doMock('../../common/process.ts', () => ({
@@ -345,6 +350,7 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     try {
       vi.doMock('../../common/git.ts', () => ({
         getGitRoot: vi.fn(async () => planRoot),
+        getUsingJj: vi.fn(async () => false),
       }));
 
       vi.doMock('../../common/process.ts', () => ({
@@ -413,6 +419,7 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
 
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     vi.doMock('../../common/process.ts', () => ({
@@ -464,6 +471,7 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
 
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     vi.doMock('../../common/process.ts', () => ({
@@ -522,6 +530,7 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
 
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     vi.doMock('../../common/process.ts', () => ({
@@ -574,6 +583,7 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
   test('returns ExecutorOutput with jsonOutput metadata flag set to true', async () => {
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     const mockStructuredOutput = {
@@ -638,6 +648,7 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
   test('throws error when Claude exits with non-zero exit code in review mode', async () => {
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     vi.doMock('../../common/process.ts', () => ({
@@ -670,6 +681,7 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
 
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     vi.doMock('../../common/process.ts', () => ({
@@ -704,11 +716,52 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
     expect(args[modelIndex + 1]).toBe('sonnet');
   });
 
+  test('uses specified reasoning effort in review mode', async () => {
+    const recordedArgs: string[][] = [];
+
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
+    }));
+
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async (args: string[]) => {
+        recordedArgs.push(args);
+        return createStreamingProcessMock();
+      }),
+      createLineSplitter: () => (s: string) => s.split('\n'),
+      sendSinglePromptAndWait: sendSinglePromptAndWaitForTest,
+      debug: false,
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
+
+    const exec = new ClaudeCodeExecutor(
+      { permissionsMcp: { enabled: false }, reasoningEffort: 'xhigh' } as any,
+      { baseDir: tempDir },
+      {} as any
+    );
+
+    await exec.execute('REVIEW CONTEXT', {
+      planId: 'review-plan',
+      planTitle: 'Review Plan',
+      planFilePath: `${tempDir}/plan.yml`,
+      executionMode: 'review',
+    });
+
+    expect(recordedArgs).toHaveLength(1);
+    const args = recordedArgs[0];
+    expect(args).toContain('--effort');
+    const effortIndex = args.indexOf('--effort');
+    expect(args[effortIndex + 1]).toBe('xhigh');
+  });
+
   test('review mode does not use orchestration wrapper or agents', async () => {
     const recordedArgs: string[][] = [];
 
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     vi.doMock('../../common/process.ts', () => ({
@@ -755,6 +808,7 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
 
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     vi.doMock('../../common/process.ts', () => ({
@@ -803,6 +857,7 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
 
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     vi.doMock('../../common/process.ts', () => ({
@@ -864,6 +919,7 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
 
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     vi.doMock('../../common/process.ts', () => ({
@@ -928,6 +984,7 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
 
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     vi.doMock('../../common/process.ts', () => ({
@@ -991,6 +1048,7 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
 
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     vi.doMock('../../common/process.ts', () => ({
@@ -1056,6 +1114,7 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
 
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     vi.doMock('../../common/process.ts', () => ({
@@ -1122,6 +1181,7 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
 
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     vi.doMock('../../common/process.ts', () => ({
@@ -1186,6 +1246,7 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
 
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     vi.doMock('../../common/process.ts', () => ({
@@ -1255,6 +1316,7 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
 
       vi.doMock('../../common/git.ts', () => ({
         getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
       }));
 
       vi.doMock('../../common/process.ts', () => ({
@@ -1324,6 +1386,7 @@ describe('ClaudeCodeExecutor - tunnel prompt handler wiring', () => {
   test('passes onPromptRequest handler to createTunnelServer in normal mode', async () => {
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     vi.doMock('../../common/process.ts', () => ({
@@ -1384,6 +1447,7 @@ describe('ClaudeCodeExecutor - tunnel prompt handler wiring', () => {
   test('passes onPromptRequest handler to createTunnelServer in review mode', async () => {
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     vi.doMock('../../common/process.ts', () => ({
@@ -1456,6 +1520,7 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
 
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     vi.doMock('../../common/process.ts', () => ({
@@ -1521,6 +1586,7 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
 
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     vi.doMock('../../common/process.ts', () => ({
@@ -1579,6 +1645,7 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
 
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     vi.doMock('../../common/process.ts', () => ({
@@ -1703,6 +1770,7 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
 
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     vi.doMock('../../common/process.ts', () => ({
@@ -1813,6 +1881,7 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
 
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     vi.doMock('../../common/process.ts', () => ({
@@ -1904,6 +1973,7 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
 
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     vi.doMock('../../common/process.ts', () => ({
@@ -2004,6 +2074,7 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
 
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
       getWorkingCopyStatus: vi.fn(async () => {
         workingCopyStatusCallCount += 1;
         return workingCopyStatusCallCount === 1
@@ -2132,6 +2203,7 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
 
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     vi.doMock('../../common/process.ts', () => ({
@@ -2227,6 +2299,7 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
 
     vi.doMock('../../common/git.ts', () => ({
       getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
     }));
 
     vi.doMock('../../common/process.ts', () => ({

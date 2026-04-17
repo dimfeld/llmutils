@@ -497,6 +497,8 @@ export class ClaudeCodeExecutor implements Executor {
       cwd: gitRoot,
       claudeCodeOptions: {
         ...this.options,
+        reasoningEffort:
+          this.options.reasoningEffort ?? (planInfo.isTaskScoped ? 'medium' : 'high'),
         extraAllowedTools: this.sharedOptions.extraAllowedTools,
       },
       noninteractive: this.sharedOptions.noninteractive ?? false,

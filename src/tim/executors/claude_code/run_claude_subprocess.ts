@@ -130,6 +130,8 @@ export interface ClaudeCodeSubprocessOptions {
   disallowedTools?: string[];
   /** Path to an MCP config file to pass to Claude */
   mcpConfigFile?: string;
+  /** Reasoning effort to pass to Claude via --effort */
+  reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   /** Permissions MCP configuration */
   permissionsMcp?: {
     enabled?: boolean;
@@ -367,6 +369,10 @@ export async function runClaudeSubprocess(
         log(`Using default model: ${DEFAULT_CLAUDE_MODEL}\n`);
       }
       args.push('--model', DEFAULT_CLAUDE_MODEL);
+    }
+
+    if (claudeCodeOptions.reasoningEffort) {
+      args.push('--effort', claudeCodeOptions.reasoningEffort);
     }
 
     // Streaming JSON I/O

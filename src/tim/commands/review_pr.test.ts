@@ -397,6 +397,13 @@ describe('review_pr command', () => {
     expect(guideCall?.[1]).toEqual(expect.objectContaining({ executionMode: 'bare' }));
     expect(issuesCall?.[1]).toEqual(expect.objectContaining({ executionMode: 'review' }));
     expect(issuesCall?.[0]).toBe(codexExecute.mock.calls[0]?.[0]);
+    const claudeBuildCalls = mockBuildExecutorAndLog.mock.calls.filter(
+      (call) => call[0] === 'claude-code'
+    );
+    expect(claudeBuildCalls).toHaveLength(3);
+    for (const call of claudeBuildCalls) {
+      expect(call[3]).toEqual(expect.objectContaining({ reasoningEffort: 'high' }));
+    }
 
     expect(mockCheckoutPrBranch).toHaveBeenCalled();
     expect(mockInsertReviewIssues).toHaveBeenCalledTimes(1);

@@ -771,7 +771,8 @@ export async function handleReviewGuideCommand(
                   terminalInput: executorTerminalInput,
                   noninteractive: executorNoninteractive,
                 },
-                config
+                config,
+                { reasoningEffort: 'high' }
               );
 
               executorPromises.push(
@@ -795,7 +796,8 @@ export async function handleReviewGuideCommand(
                   terminalInput: executorTerminalInput,
                   noninteractive: executorNoninteractive,
                 },
-                config
+                config,
+                { reasoningEffort: 'high' }
               );
 
               executorPromises.push(
