@@ -212,6 +212,7 @@
               <InputGroupInput
                 bind:ref={identifierInput}
                 id="issue-identifier"
+                autofocus
                 placeholder={data.trackerType === 'linear' ? 'TEAM-123' : '#123 or owner/repo#123'}
                 bind:value={identifier}
                 onkeydown={(e: KeyboardEvent) => {

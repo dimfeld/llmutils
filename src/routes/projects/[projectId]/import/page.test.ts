@@ -57,4 +57,23 @@ describe('import page', () => {
 
     expect(body).toContain('value="TEAM-123"');
   });
+
+  test('autofocuses the identifier input', () => {
+    const { body } = render(ImportPage, {
+      props: {
+        data: {
+          displayName: 'Example Project',
+          trackerType: 'linear',
+          supportsHierarchical: true,
+          numericProjectId: 1,
+          initialIdentifier: '',
+        },
+        params: {
+          projectId: '1',
+        },
+      },
+    });
+
+    expect(body).toContain('autofocus');
+  });
 });
