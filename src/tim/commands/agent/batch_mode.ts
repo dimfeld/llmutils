@@ -456,7 +456,7 @@ Available tasks:\n\n${taskDescriptions}`,
           });
           try {
             const reviewResult = await handleReviewCommand(
-              currentPlanFile,
+              String(updatedPlanData.id),
               isNonInteractiveReview
                 ? { cwd: baseDir, saveIssues: true, noAutofix: true }
                 : { cwd: baseDir },
