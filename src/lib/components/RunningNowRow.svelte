@@ -28,8 +28,9 @@
     return null;
   }
 
-  const planUuid = $derived(session.planUuid);
-  const taskCounts = $derived(await getCounts(planUuid));
+  // const planUuid = $derived(session.planUuid);
+  // Disabled for now since it's causing weird issues
+  // const taskCounts = $derived(await getCounts(planUuid));
 
   const commandStyles: Record<string, string> = {
     agent: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
@@ -77,11 +78,13 @@
     {#if projectName}
       <span class="truncate">{projectName}</span>
     {/if}
+    <!--
     {#if taskCounts && taskCounts.total > 0}
       <span class="shrink-0">
         {taskCounts.done}/{taskCounts.total}
       </span>
     {/if}
+-->
     <span class="shrink-0">started {elapsed}</span>
   </div>
 </button>

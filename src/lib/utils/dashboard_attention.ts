@@ -78,7 +78,9 @@ export interface RunningSession {
 
 const AGENT_COMMANDS = new Set(['agent', 'generate', 'chat', 'pr-create']);
 
-export function indexSessionsByPlanUuid(sessions: Iterable<SessionData>): Map<string, SessionData[]> {
+export function indexSessionsByPlanUuid(
+  sessions: Iterable<SessionData>
+): Map<string, SessionData[]> {
   const sessionsByPlanUuid = new Map<string, SessionData[]>();
 
   for (const session of sessions) {

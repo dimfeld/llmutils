@@ -1716,8 +1716,9 @@ describe('lib/server/session_manager', () => {
       workspacePath: '/tmp/ws-1',
     });
 
-    expect(indexedSessions.sessionsByPlanUuid.get('plan-42')?.map((session) => session.connectionId))
-      .toEqual(['conn-1']);
+    expect(
+      indexedSessions.sessionsByPlanUuid.get('plan-42')?.map((session) => session.connectionId)
+    ).toEqual(['conn-1']);
 
     manager.handleWebSocketMessage('conn-1', {
       type: 'session_info',
@@ -1729,8 +1730,9 @@ describe('lib/server/session_manager', () => {
     });
 
     expect(indexedSessions.sessionsByPlanUuid.get('plan-42')).toBeUndefined();
-    expect(indexedSessions.sessionsByPlanUuid.get('plan-43')?.map((session) => session.connectionId))
-      .toEqual(['conn-1']);
+    expect(
+      indexedSessions.sessionsByPlanUuid.get('plan-43')?.map((session) => session.connectionId)
+    ).toEqual(['conn-1']);
 
     manager.handleWebSocketDisconnect('conn-1');
     expect(indexedSessions.sessionsByPlanUuid.get('plan-43')?.[0].status).toBe('offline');

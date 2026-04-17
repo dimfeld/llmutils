@@ -193,11 +193,7 @@ describe('deriveAttentionItems', () => {
       sessionInfo: { command: 'agent', planUuid: 'plan-1' },
     });
 
-    const result = deriveAttentionItems(
-      [plan],
-      planIndex([activeSession, offlineSession]),
-      []
-    );
+    const result = deriveAttentionItems([plan], planIndex([activeSession, offlineSession]), []);
     expect(result.planItems).toEqual([]);
   });
 
