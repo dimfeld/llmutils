@@ -835,6 +835,14 @@ program
   });
 
 program
+  .command('show-config')
+  .description('Print the effective configuration for the current directory as YAML')
+  .action(async (options, command) => {
+    const { handleShowConfigCommand } = await import('./commands/show-config.js');
+    await handleShowConfigCommand(options, command).catch(handleCommandError);
+  });
+
+program
   .command('branch-name [planId]')
   .description('Generate a branch name from a plan.')
   .option('--next', 'Use the next plan that is ready to be implemented')
