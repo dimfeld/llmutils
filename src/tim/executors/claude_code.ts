@@ -767,7 +767,7 @@ export class ClaudeCodeExecutor implements Executor {
         : undefined;
 
       log(`Interactive permissions MCP is`, isPermissionsMcpEnabled ? 'enabled' : 'disabled');
-      const disableInactivityTimeout = this.sharedOptions.disableInactivityTimeout === true;
+      const disableInactivityTimeout = this.sharedOptions.disableInactivityTimeout !== false;
       const executionTimeoutMs = 60 * 60 * 1000; // 60 minutes
       let killedByTimeout = false;
       resetToolUseCache();
