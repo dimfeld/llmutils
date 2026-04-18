@@ -506,23 +506,3 @@ export async function writeSampleConfig(yamlPath: string) {
     await Bun.write(yamlPath, yamlContent);
   }
 }
-
-export async function listPresets() {
-  const gitRoot = await getGitRoot();
-  const presets = await findAllPresetFiles(gitRoot);
-  if (presets.length > 0) {
-    log('Available presets:');
-    const longestNameLength = presets.reduce((max, p) => Math.max(max, p.name.length), 0);
-    const sourcePadding = '(repository)'.length;
-
-    presets.forEach((preset) => {
-      const sourceStr = `(${preset.source})`;
-      const descriptionStr = preset.description ? ` ${preset.description}` : '';
-      log(
-        `${preset.name.padEnd(longestNameLength)}   ${sourceStr.padEnd(sourcePadding)} ${descriptionStr}`
-      );
-    });
-  } else {
-    log('No presets found.');
-  }
-}

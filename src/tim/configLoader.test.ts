@@ -105,7 +105,7 @@ describe('configLoader', () => {
 
     // Create a unique temporary directory for each test
     testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-config-test-'));
-    configDir = path.join(testDir, '.rmfilter', 'config');
+    configDir = path.join(testDir, '.tim', 'config');
 
     fakeHomeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-home-'));
     originalXdgConfigHome = process.env.XDG_CONFIG_HOME;

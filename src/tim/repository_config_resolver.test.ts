@@ -48,7 +48,25 @@ describe('RepositoryConfigResolver', () => {
     await fs.rm(fakeHomeDir, { recursive: true, force: true });
   });
 
-  test('returns local config path when repository config exists', async () => {
+  test('returns .tim config path when repository config exists', async () => {
+    const legacyConfigDir = path.join(gitRoot, '.rmfilter', 'config');
+    const newConfigDir = path.join(gitRoot, '.tim', 'config');
+    await fs.mkdir(legacyConfigDir, { recursive: true });
+    await fs.mkdir(newConfigDir, { recursive: true });
+    const legacyConfigPath = path.join(legacyConfigDir, 'tim.yml');
+    const newConfigPath = path.join(newConfigDir, 'tim.yml');
+    await fs.writeFile(legacyConfigPath, 'defaultExecutor: copy-only');
+    await fs.writeFile(newConfigPath, 'defaultExecutor: direct-call');
+
+    const resolver = await RepositoryConfigResolver.create();
+    const resolution = await resolver.resolve();
+
+    expect(resolution.usingExternalStorage).toBe(false);
+    expect(resolution.configPath).toBe(newConfigPath);
+    expect(resolution.gitRoot).toBe(gitRoot);
+  });
+
+  test('falls back to .rmfilter config path for legacy repositories', async () => {
     const localConfigDir = path.join(gitRoot, '.rmfilter', 'config');
     await fs.mkdir(localConfigDir, { recursive: true });
     const localConfigPath = path.join(localConfigDir, 'tim.yml');

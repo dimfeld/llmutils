@@ -34,7 +34,7 @@ LINEAR_API_KEY="lin_api_1234567890abcdef" tim import TEAM-123
 
 ### Step 3: Configure tim
 
-Create or update your tim configuration file at `.rmfilter/config/tim.yml`:
+Create or update your tim configuration file at `.tim/config/tim.yml`:
 
 ```yaml
 # yaml-language-server: $schema=https://raw.githubusercontent.com/dimfeld/llmutils/main/schema/tim-config-schema.json
@@ -132,7 +132,7 @@ Linear issue comments are automatically included in imported plans:
 export LINEAR_API_KEY="lin_api_your_key_here"
 
 # 2. Configure tim for Linear
-cat > .rmfilter/config/tim.yml << EOF
+cat > .tim/config/tim.yml << EOF
 issueTracker: 'linear'
 EOF
 

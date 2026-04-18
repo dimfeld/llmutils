@@ -64,20 +64,26 @@ export class RepositoryConfigResolver {
     }
 
     const gitRoot = this.gitRoot ?? (await getGitRoot(this.cwd));
-    const configDir = path.join(gitRoot, '.rmfilter', 'config');
-    // Check for repository config files before falling back to external storage.
-    // A standalone tim.local.yml is a valid per-developer repository config.
-    for (const configName of ['tim.yml', 'rmplan.yml', 'tim.local.yml', 'rmplan.local.yml']) {
-      const localConfigPath = path.join(configDir, configName);
-      const hasLocalConfig = await Bun.file(localConfigPath).exists();
+    const configDirs = [
+      path.join(gitRoot, '.tim', 'config'),
+      path.join(gitRoot, '.rmfilter', 'config'),
+    ];
 
-      if (hasLocalConfig) {
-        debugLog(`Found repository configuration at ${localConfigPath}`);
-        return {
-          configPath: localConfigPath,
-          usingExternalStorage: false,
-          gitRoot,
-        };
+    for (const configDir of configDirs) {
+      // Check for repository config files before falling back to external storage.
+      // A standalone tim.local.yml is a valid per-developer repository config.
+      for (const configName of ['tim.yml', 'rmplan.yml', 'tim.local.yml', 'rmplan.local.yml']) {
+        const localConfigPath = path.join(configDir, configName);
+        const hasLocalConfig = await Bun.file(localConfigPath).exists();
+
+        if (hasLocalConfig) {
+          debugLog(`Found repository configuration at ${localConfigPath}`);
+          return {
+            configPath: localConfigPath,
+            usingExternalStorage: false,
+            gitRoot,
+          };
+        }
       }
     }
 

@@ -183,7 +183,7 @@ function mergeConfigs(mainConfig: TimConfig, localConfig: TimConfig): TimConfig 
  *
  * It searches in the following order:
  * 1. The path specified by `overridePath` (if provided).
- * 2. The default path `.rmfilter/config/tim.yml` in the Git repository root.
+ * 2. The default path `.tim/config/tim.yml` in the Git repository root.
  *
  * @param overridePath - An optional path explicitly provided by the user (e.g., via CLI flag).
  * @returns The absolute path to the configuration file if found, otherwise `null`.

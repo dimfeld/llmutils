@@ -245,6 +245,8 @@ async function copyFilesToTarget(
  * Local config files that should be symlinked instead of copied
  */
 const LOCAL_CONFIG_FILES = [
+  '.tim/config/tim.local.yml',
+  '.tim/config/rmplan.local.yml',
   '.rmfilter/config/tim.local.yml',
   '.rmfilter/config/rmplan.local.yml',
   '.claude/settings.local.json',

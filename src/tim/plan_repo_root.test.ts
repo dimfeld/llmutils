@@ -20,7 +20,7 @@ describe('resolveRepoRoot', () => {
 
   test('resolves repo root from tim.local.yml config path', async () => {
     const targetRepo = path.join(tempDir, 'target-repo');
-    const configDir = path.join(targetRepo, '.rmfilter', 'config');
+    const configDir = path.join(targetRepo, '.tim', 'config');
     const configPath = path.join(configDir, 'tim.local.yml');
 
     await fs.mkdir(configDir, { recursive: true });

@@ -160,7 +160,7 @@ program.name('tim').description('Generate and execute task plans using LLMs');
 const statusSchemaHelpText = `(${statusSchema.options.join(', ')})`;
 program.option(
   '-c, --config <path>',
-  'Specify path to the tim configuration file (default: .rmfilter/tim.yml)'
+  'Specify path to the tim configuration file (default: .tim/config/tim.yml)'
 );
 
 program.option('--debug', 'Enable debug logging', () => setDebug(true));

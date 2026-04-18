@@ -5,6 +5,10 @@ const TIM_CONFIG_CANDIDATES = [
   '.tim.yml',
   'tim.yml',
   'tim.local.yml',
+  '.tim/tim.yml',
+  '.tim/config/tim.yml',
+  '.tim/tim.local.yml',
+  '.tim/config/tim.local.yml',
   '.rmfilter/tim.yml',
   '.rmfilter/config/tim.yml',
   '.rmfilter/tim.local.yml',
@@ -46,12 +50,13 @@ export async function resolveRepoRoot(configPath?: string, fallbackDir?: string)
       return configDir;
     }
     if (configFile === 'tim.yml' || configFile === 'tim.local.yml') {
-      if (path.basename(configDir) === '.rmfilter') {
+      if (path.basename(configDir) === '.rmfilter' || path.basename(configDir) === '.tim') {
         return path.dirname(configDir);
       }
       if (
         path.basename(configDir) === 'config' &&
-        path.basename(path.dirname(configDir)) === '.rmfilter'
+        (path.basename(path.dirname(configDir)) === '.rmfilter' ||
+          path.basename(path.dirname(configDir)) === '.tim')
       ) {
         return path.dirname(path.dirname(configDir));
       }

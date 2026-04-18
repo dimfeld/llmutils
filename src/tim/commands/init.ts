@@ -21,17 +21,16 @@ export async function handleInitCommand(options: InitOptions, command: any) {
   try {
     // Get git root or use current directory
     const gitRoot = (await getGitRoot()) || process.cwd();
-    const configDir = path.join(gitRoot, '.rmfilter', 'config');
+    const configDir = path.join(gitRoot, '.tim', 'config');
     const configPath = path.join(configDir, 'tim.yml');
+    const legacyConfigPath = path.join(gitRoot, '.rmfilter', 'config', 'tim.yml');
 
     // Check if config already exists
-    const configExists = await fs
-      .access(configPath)
-      .then(() => true)
-      .catch(() => false);
+    const existingConfigPath = await findExistingConfigPath([configPath, legacyConfigPath]);
+    const configExists = existingConfigPath !== null;
 
     if (configExists && !options.force) {
-      log(chalk.yellow('⚠ Configuration file already exists:'), configPath);
+      log(chalk.yellow('⚠ Configuration file already exists:'), existingConfigPath);
       const shouldOverwrite = options.yes
         ? true
         : await confirm({
@@ -98,12 +97,31 @@ export async function handleInitCommand(options: InitOptions, command: any) {
   }
 }
 
+async function findExistingConfigPath(paths: string[]): Promise<string | null> {
+  for (const candidatePath of paths) {
+    const exists = await fs
+      .access(candidatePath)
+      .then(() => true)
+      .catch(() => false);
+    if (exists) {
+      return candidatePath;
+    }
+  }
+
+  return null;
+}
+
 /**
  * Updates or creates .gitignore with required tim entries
  */
 async function updateGitignore(gitRoot: string): Promise<void> {
   const gitignorePath = path.join(gitRoot, '.gitignore');
-  const requiredEntries = ['.rmfilter/reviews', '.rmfilter/config/tim.local.yml'];
+  const requiredEntries = [
+    '.tim/reviews',
+    '.tim/config/tim.local.yml',
+    '.rmfilter/reviews',
+    '.rmfilter/config/tim.local.yml',
+  ];
 
   let gitignoreContent = '';
   let exists = false;

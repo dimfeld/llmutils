@@ -55,7 +55,7 @@ describe('tim init command', () => {
     await handleInitCommand({ yes: true }, command);
 
     // Verify config file was created
-    const configPath = path.join(tempDir, '.rmfilter', 'config', 'tim.yml');
+    const configPath = path.join(tempDir, '.tim', 'config', 'tim.yml');
     const configExists = await fs
       .access(configPath)
       .then(() => true)
@@ -77,7 +77,7 @@ describe('tim init command', () => {
 
     await handleInitCommand({ minimal: true }, command);
 
-    const configPath = path.join(tempDir, '.rmfilter', 'config', 'tim.yml');
+    const configPath = path.join(tempDir, '.tim', 'config', 'tim.yml');
     const configContent = await fs.readFile(configPath, 'utf-8');
     const config = yaml.parse(configContent);
 
@@ -90,7 +90,7 @@ describe('tim init command', () => {
 
   test('refuses to overwrite existing configuration without --force', async () => {
     // Create existing config
-    const configPath = path.join(tempDir, '.rmfilter', 'config', 'tim.yml');
+    const configPath = path.join(tempDir, '.tim', 'config', 'tim.yml');
     await fs.mkdir(path.dirname(configPath), { recursive: true });
     const existingConfig = {
       paths: { tasks: 'my-custom-tasks' },
@@ -120,7 +120,7 @@ describe('tim init command', () => {
 
   test('overwrites existing configuration with --force', async () => {
     // Create existing config
-    const configPath = path.join(tempDir, '.rmfilter', 'config', 'tim.yml');
+    const configPath = path.join(tempDir, '.tim', 'config', 'tim.yml');
     await fs.mkdir(path.dirname(configPath), { recursive: true });
     const existingConfig = {
       paths: { tasks: 'my-custom-tasks' },
@@ -152,7 +152,7 @@ describe('tim init command', () => {
 
     await handleInitCommand({ yes: true }, command);
 
-    const configPath = path.join(tempDir, '.rmfilter', 'config', 'tim.yml');
+    const configPath = path.join(tempDir, '.tim', 'config', 'tim.yml');
     const configContent = await fs.readFile(configPath, 'utf-8');
     const config = yaml.parse(configContent);
 
@@ -172,7 +172,7 @@ describe('tim init command', () => {
 
     await handleInitCommand({ yes: true }, command);
 
-    const configPath = path.join(tempDir, '.rmfilter', 'config', 'tim.yml');
+    const configPath = path.join(tempDir, '.tim', 'config', 'tim.yml');
     const configContent = await fs.readFile(configPath, 'utf-8');
     const config = yaml.parse(configContent);
 
@@ -189,7 +189,7 @@ describe('tim init command', () => {
 
     await handleInitCommand({ yes: true }, command);
 
-    const configPath = path.join(tempDir, '.rmfilter', 'config', 'tim.yml');
+    const configPath = path.join(tempDir, '.tim', 'config', 'tim.yml');
     const configContent = await fs.readFile(configPath, 'utf-8');
     const config = yaml.parse(configContent);
 
@@ -243,8 +243,8 @@ describe('tim init command', () => {
 
     // Verify content includes required entries
     const content = await fs.readFile(gitignorePath, 'utf-8');
-    expect(content).toContain('.rmfilter/reviews');
-    expect(content).toContain('.rmfilter/config/tim.local.yml');
+    expect(content).toContain('.tim/reviews');
+    expect(content).toContain('.tim/config/tim.local.yml');
     expect(content).toContain('# tim generated files');
   });
 
@@ -265,15 +265,15 @@ describe('tim init command', () => {
     const content = await fs.readFile(gitignorePath, 'utf-8');
     expect(content).toContain('# Existing content');
     expect(content).toContain('node_modules');
-    expect(content).toContain('.rmfilter/reviews');
-    expect(content).toContain('.rmfilter/config/tim.local.yml');
+    expect(content).toContain('.tim/reviews');
+    expect(content).toContain('.tim/config/tim.local.yml');
     expect(content).toContain('# tim generated files');
   });
 
   test('does not duplicate entries in .gitignore if they already exist', async () => {
     const gitignorePath = path.join(tempDir, '.gitignore');
     const existingContent =
-      '# Existing content\n.rmfilter/reviews\n.rmfilter/config/tim.local.yml\n';
+      '# Existing content\n.tim/reviews\n.tim/config/tim.local.yml\n';
     await fs.writeFile(gitignorePath, existingContent, 'utf-8');
 
     const command = {
@@ -286,8 +286,8 @@ describe('tim init command', () => {
 
     // Verify .gitignore was not modified unnecessarily
     const content = await fs.readFile(gitignorePath, 'utf-8');
-    const reviewsCount = (content.match(/\.rmfilter\/reviews/g) || []).length;
-    const localYmlCount = (content.match(/\.rmfilter\/config\/tim\.local\.yml/g) || []).length;
+    const reviewsCount = (content.match(/\.tim\/reviews/g) || []).length;
+    const localYmlCount = (content.match(/\.tim\/config\/tim\.local\.yml/g) || []).length;
 
     expect(reviewsCount).toBe(1);
     expect(localYmlCount).toBe(1);
@@ -295,7 +295,7 @@ describe('tim init command', () => {
 
   test('adds only missing entries to existing .gitignore', async () => {
     const gitignorePath = path.join(tempDir, '.gitignore');
-    const existingContent = '# Existing content\n.rmfilter/reviews\n';
+    const existingContent = '# Existing content\n.tim/reviews\n';
     await fs.writeFile(gitignorePath, existingContent, 'utf-8');
 
     const command = {
@@ -308,11 +308,11 @@ describe('tim init command', () => {
 
     // Verify only the missing entry was added
     const content = await fs.readFile(gitignorePath, 'utf-8');
-    expect(content).toContain('.rmfilter/reviews');
-    expect(content).toContain('.rmfilter/config/tim.local.yml');
+    expect(content).toContain('.tim/reviews');
+    expect(content).toContain('.tim/config/tim.local.yml');
 
     // Verify only one instance of the existing entry
-    const reviewsCount = (content.match(/\.rmfilter\/reviews/g) || []).length;
+    const reviewsCount = (content.match(/\.tim\/reviews/g) || []).length;
     expect(reviewsCount).toBe(1);
   });
 });

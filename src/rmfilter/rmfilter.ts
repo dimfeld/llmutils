@@ -55,7 +55,6 @@ import { getGitRoot } from '../common/git.ts';
 import { Extractor } from './treesitter/extract.ts';
 import {
   getCurrentConfig,
-  listPresets,
   modelPresets,
   resolveModelSettings,
   writeSampleConfig,
@@ -79,12 +78,6 @@ async function handleInitialCliCommands(globalValues: GlobalValues) {
     let yamlPath = path.resolve(process.cwd(), globalValues.new);
     await writeSampleConfig(yamlPath);
     log(`Created new configuration file at ${yamlPath}`);
-    process.exit(0);
-  }
-
-  // Handle list-presets
-  if (globalValues['list-presets']) {
-    await listPresets();
     process.exit(0);
   }
 
