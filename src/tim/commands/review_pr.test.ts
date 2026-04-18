@@ -35,6 +35,7 @@ vi.mock('../../logging/tunnel_client.js', () => ({
 
 vi.mock('../../common/git.js', () => ({
   getGitInfoExcludePath: vi.fn(),
+  getMergeBase: vi.fn(),
   getGitRoot: vi.fn(),
   getUsingJj: vi.fn(),
   isIgnoredByGitSharedExcludes: vi.fn(),
@@ -127,6 +128,7 @@ vi.mock('../lifecycle.js', () => ({
 
 import {
   getGitInfoExcludePath,
+  getMergeBase,
   getGitRoot,
   getUsingJj,
   isIgnoredByGitSharedExcludes,
@@ -152,6 +154,7 @@ import { WorkspaceLock } from '../workspace/workspace_lock.js';
 import { handleMaterializeCommand, handleReviewGuideCommand, parseLineRange } from './review_pr.js';
 
 const mockGetGitInfoExcludePath = vi.mocked(getGitInfoExcludePath);
+const mockGetMergeBase = vi.mocked(getMergeBase);
 const mockGetGitRoot = vi.mocked(getGitRoot);
 const mockGetUsingJj = vi.mocked(getUsingJj);
 const mockIsIgnoredByGitSharedExcludes = vi.mocked(isIgnoredByGitSharedExcludes);
@@ -187,14 +190,14 @@ function makeCommand(config?: string) {
 function installExecutorMock(options: {
   claudeExecute?: ReturnType<typeof vi.fn>;
   codexExecute?: ReturnType<typeof vi.fn>;
-  combineExecute?: ReturnType<typeof vi.fn>;
+  haikuExecute?: ReturnType<typeof vi.fn>;
 }) {
   mockBuildExecutorAndLog.mockImplementation((name, sharedOptions) => {
     if (name === 'claude-code' && (sharedOptions as any)?.model === 'haiku') {
-      if (!options.combineExecute) {
-        throw new Error('Unexpected Claude combination executor request');
+      if (!options.haikuExecute) {
+        throw new Error('Unexpected Claude Haiku executor request');
       }
-      return { execute: options.combineExecute } as any;
+      return { execute: options.haikuExecute } as any;
     }
 
     if (name === 'claude-code') {
@@ -268,6 +271,7 @@ describe('review_pr command', () => {
 
     mockGetDatabase.mockReturnValue({} as any);
     mockGetGitRoot.mockResolvedValue(tempDir);
+    mockGetMergeBase.mockResolvedValue('base123');
     mockGetUsingJj.mockResolvedValue(false);
     mockGetRepositoryIdentity.mockResolvedValue({
       repositoryId: 'github.com__acme__repo',
@@ -363,7 +367,7 @@ describe('review_pr command', () => {
       }),
     });
 
-    const combineExecute = vi.fn().mockResolvedValue({
+    const haikuExecute = vi.fn().mockResolvedValue({
       content: JSON.stringify({
         issues: [
           {
@@ -381,7 +385,7 @@ describe('review_pr command', () => {
       }),
     });
 
-    installExecutorMock({ claudeExecute, codexExecute, combineExecute });
+    installExecutorMock({ claudeExecute, codexExecute, haikuExecute });
 
     await handleReviewGuideCommand('42', { terminalInput: false }, makeCommand());
 
@@ -401,7 +405,7 @@ describe('review_pr command', () => {
       (call) => call[0] === 'claude-code'
     );
     expect(claudeBuildCalls).toHaveLength(3);
-    for (const call of claudeBuildCalls) {
+    for (const call of claudeBuildCalls.slice(0, 2)) {
       expect(call[3]).toEqual(expect.objectContaining({ reasoningEffort: 'high' }));
     }
 
@@ -446,11 +450,11 @@ describe('review_pr command', () => {
     const codexExecute = vi.fn().mockResolvedValue({
       content: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
     });
-    const combineExecute = vi.fn().mockResolvedValue({
+    const haikuExecute = vi.fn().mockResolvedValue({
       content: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
     });
 
-    installExecutorMock({ claudeExecute, codexExecute, combineExecute });
+    installExecutorMock({ claudeExecute, codexExecute, haikuExecute });
 
     try {
       await handleReviewGuideCommand(
@@ -638,6 +642,67 @@ describe('review_pr command', () => {
     expect(lifecycleInstance.shutdown).toHaveBeenCalledTimes(1);
   });
 
+  test('repairs malformed unified diff blocks in the generated review guide', async () => {
+    await fs.mkdir(path.join(tempDir, 'src'), { recursive: true });
+    await fs.writeFile(path.join(tempDir, 'src', 'a.ts'), 'const value = 1;\n', 'utf8');
+
+    const claudeExecute = vi.fn().mockImplementation(async (prompt: string) => {
+      if (prompt.includes('must produce a complete review guide')) {
+        await fs.mkdir(path.dirname(guidePath), { recursive: true });
+        await fs.writeFile(
+          guidePath,
+          [
+            '# Guide',
+            '',
+            '```unified-diff',
+            '--- a/src/a.ts',
+            '+++ b/src/a.ts',
+            '+const value = 1;',
+            '```',
+            '',
+          ].join('\n'),
+          'utf8'
+        );
+        return { content: 'ok' };
+      }
+
+      if (
+        prompt.includes('standalone PR code review and must return structured JSON issues only')
+      ) {
+        return {
+          content: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
+        };
+      }
+
+      throw new Error(`Unexpected Claude prompt: ${prompt}`);
+    });
+
+    const haikuExecute = vi.fn().mockImplementation(async (prompt: string) => {
+      if (!prompt.includes('repairing a malformed unified diff block')) {
+        throw new Error(`Unexpected Haiku prompt: ${prompt}`);
+      }
+
+      return {
+        content: ['--- a/src/a.ts', '+++ b/src/a.ts', '@@ -0,0 +1 @@', '+const value = 1;'].join(
+          '\n'
+        ),
+      };
+    });
+
+    installExecutorMock({ claudeExecute, haikuExecute });
+
+    await handleReviewGuideCommand('42', { executor: 'claude-code' }, makeCommand());
+
+    expect(haikuExecute).toHaveBeenCalledTimes(1);
+    expect(mockUpdateReview).toHaveBeenCalledWith(
+      expect.anything(),
+      501,
+      expect.objectContaining({
+        reviewGuide: expect.stringContaining('@@ -0,0 +1 @@'),
+      })
+    );
+  });
+
   test('single executor mode skips combination', async () => {
     const codexExecute = vi.fn().mockResolvedValue({
       content: JSON.stringify({
@@ -808,9 +873,9 @@ describe('review_pr command', () => {
         actionItems: [],
       }),
     });
-    const combineExecute = vi.fn().mockRejectedValue(new Error('combine failed'));
+    const haikuExecute = vi.fn().mockRejectedValue(new Error('combine failed'));
 
-    installExecutorMock({ claudeExecute, codexExecute, combineExecute });
+    installExecutorMock({ claudeExecute, codexExecute, haikuExecute });
 
     await handleReviewGuideCommand('42', { terminalInput: false }, makeCommand());
 
@@ -1203,7 +1268,7 @@ describe('review_pr command', () => {
         actionItems: [],
       }),
     });
-    const combineExecute = vi.fn().mockResolvedValue({
+    const haikuExecute = vi.fn().mockResolvedValue({
       content: JSON.stringify({
         issues: [
           {
@@ -1221,7 +1286,7 @@ describe('review_pr command', () => {
       }),
     });
 
-    installExecutorMock({ claudeExecute, codexExecute, combineExecute });
+    installExecutorMock({ claudeExecute, codexExecute, haikuExecute });
 
     await handleReviewGuideCommand('42', { terminalInput: false }, makeCommand());
 
@@ -1313,7 +1378,7 @@ describe('review_pr command', () => {
         actionItems: [],
       }),
     });
-    const combineExecute = vi.fn().mockResolvedValue({
+    const haikuExecute = vi.fn().mockResolvedValue({
       content: JSON.stringify({
         issues: [
           {
@@ -1331,7 +1396,7 @@ describe('review_pr command', () => {
       }),
     });
 
-    installExecutorMock({ claudeExecute, codexExecute, combineExecute });
+    installExecutorMock({ claudeExecute, codexExecute, haikuExecute });
 
     await handleReviewGuideCommand('42', { terminalInput: false }, makeCommand());
 

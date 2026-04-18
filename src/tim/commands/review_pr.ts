@@ -5,6 +5,7 @@ import chalk from 'chalk';
 import type { Database } from 'bun:sqlite';
 import {
   getGitInfoExcludePath,
+  getMergeBase,
   getGitRoot,
   getUsingJj,
   isIgnoredByGitSharedExcludes,
@@ -85,6 +86,17 @@ interface ClaudeGuideResult {
   guideText: string;
 }
 
+interface UnifiedDiffCleanupResult {
+  guideText: string;
+  repairedBlockCount: number;
+}
+
+interface UnifiedDiffFenceBlock {
+  fullMatch: string;
+  diffText: string;
+  index: number;
+}
+
 type CombinationIssue = {
   severity: ReviewSeverity;
   category: ReviewCategory;
@@ -104,6 +116,7 @@ type StoredReviewIssue = Omit<ReviewIssue, 'source' | 'file' | 'line'> & {
 const REVIEW_GUIDE_FILENAME = 'review-guide.md';
 const REVIEW_ISSUES_FILENAME = 'review-issues.json';
 const MATERIALIZED_REVIEWS_DIR = path.join('.tim', 'reviews');
+const UNIFIED_DIFF_FENCE_REGEX = /```unified-diff[^\n]*\n([\s\S]*?)```/gi;
 
 const SEVERITY_ORDER: ReviewSeverity[] = ['critical', 'major', 'minor', 'info'];
 
@@ -338,6 +351,231 @@ async function cleanupTempFiles(paths: {
   await fs
     .rm(paths.dir, { recursive: true, force: true })
     .catch((err) => warn('Failed to clean up temp files: ' + String(err)));
+}
+
+function normalizePatchText(diffText: string): string {
+  const trimmed = diffText.trim();
+  return trimmed.length > 0 ? `${trimmed}\n` : '';
+}
+
+function extractUnifiedDiffBlocks(guideText: string): UnifiedDiffFenceBlock[] {
+  const blocks: UnifiedDiffFenceBlock[] = [];
+  let match: RegExpExecArray | null;
+  let index = 0;
+
+  UNIFIED_DIFF_FENCE_REGEX.lastIndex = 0;
+  while ((match = UNIFIED_DIFF_FENCE_REGEX.exec(guideText)) !== null) {
+    blocks.push({
+      fullMatch: match[0],
+      diffText: match[1] ?? '',
+      index,
+    });
+    index += 1;
+  }
+
+  return blocks;
+}
+
+async function validateUnifiedDiffBlock(options: {
+  baseDir: string;
+  tempDir: string;
+  diffText: string;
+  blockIndex: number;
+}): Promise<{ valid: true } | { valid: false; reason: string }> {
+  const normalizedPatch = normalizePatchText(options.diffText);
+  if (!normalizedPatch) {
+    return { valid: false, reason: 'Diff block is empty.' };
+  }
+
+  if (!/(^|\n)--- /.test(normalizedPatch) || !/(^|\n)\+\+\+ /.test(normalizedPatch)) {
+    return { valid: false, reason: 'Diff is missing ---/+++ file headers.' };
+  }
+
+  if (!/(^|\n)@@ /.test(normalizedPatch)) {
+    return { valid: false, reason: 'Diff is missing at least one @@ hunk header.' };
+  }
+
+  const patchPath = path.join(options.tempDir, `guide-diff-${options.blockIndex}.patch`);
+  await fs.writeFile(patchPath, normalizedPatch, 'utf8');
+
+  try {
+    const result = await $`git apply --reverse --check ${patchPath}`
+      .cwd(options.baseDir)
+      .quiet()
+      .nothrow();
+
+    if (result.exitCode === 0) {
+      return { valid: true };
+    }
+
+    const stderr = result.stderr.toString().trim();
+    const stdout = result.stdout.toString().trim();
+    return {
+      valid: false,
+      reason: stderr || stdout || 'git apply rejected the diff.',
+    };
+  } finally {
+    await fs.rm(patchPath, { force: true }).catch(() => {});
+  }
+}
+
+function extractPatchedDiffText(rawOutput: string): string {
+  const trimmed = rawOutput.trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+
+  const fencedMatch = trimmed.match(/```unified-diff[^\n]*\n([\s\S]*?)```/i);
+  if (fencedMatch?.[1]) {
+    return fencedMatch[1].trim();
+  }
+
+  return trimmed;
+}
+
+function buildUnifiedDiffRepairPrompt(options: {
+  brokenDiff: string;
+  validationError: string;
+  baseSha: string | null;
+  reviewedSha: string;
+  prUrl: string;
+  blockIndex: number;
+}): string {
+  const baseShaLine = options.baseSha
+    ? `Base SHA for the PR diff is ${options.baseSha}.`
+    : 'Base SHA could not be resolved automatically.';
+
+  return [
+    `You are repairing a malformed unified diff block taken from a PR review guide for ${options.prUrl}.`,
+    `The repository is currently checked out at reviewed SHA ${options.reviewedSha}.`,
+    baseShaLine,
+    `The broken diff is block #${options.blockIndex + 1}.`,
+    '',
+    'Requirements:',
+    '1. Return only the corrected unified diff content. Do not wrap it in markdown fences.',
+    '2. Preserve the intended changes from the broken diff as closely as possible.',
+    '3. Produce a real unified diff with valid ---/+++ file headers and @@ hunk headers.',
+    '4. Do not include commentary, explanation, or surrounding prose.',
+    '',
+    'Validation failure from git apply --reverse --check:',
+    options.validationError,
+    '',
+    'Broken diff:',
+    '```unified-diff',
+    options.brokenDiff.trim(),
+    '```',
+  ].join('\n');
+}
+
+async function repairUnifiedDiffBlock(options: {
+  config: TimConfig;
+  baseDir: string;
+  tempDir: string;
+  diffText: string;
+  validationError: string;
+  baseSha: string | null;
+  reviewedSha: string;
+  prUrl: string;
+  reviewId: number;
+  blockIndex: number;
+}): Promise<string> {
+  const repairExecutor = buildExecutorAndLog(
+    'claude-code',
+    {
+      baseDir: options.baseDir,
+      model: 'haiku',
+      terminalInput: false,
+      noninteractive: true,
+    },
+    options.config,
+    { reasoningEffort: 'medium' }
+  );
+
+  const output = await repairExecutor.execute(
+    buildUnifiedDiffRepairPrompt({
+      brokenDiff: options.diffText,
+      validationError: options.validationError,
+      baseSha: options.baseSha,
+      reviewedSha: options.reviewedSha,
+      prUrl: options.prUrl,
+      blockIndex: options.blockIndex,
+    }),
+    {
+      planId: String(options.reviewId),
+      planTitle: `PR review diff cleanup: ${options.prUrl}#${options.blockIndex + 1}`,
+      planFilePath: '',
+      captureOutput: 'result',
+      executionMode: 'bare',
+    }
+  );
+
+  const repairedDiff = extractPatchedDiffText(normalizeExecutorOutput(output));
+  const validation = await validateUnifiedDiffBlock({
+    baseDir: options.baseDir,
+    tempDir: options.tempDir,
+    diffText: repairedDiff,
+    blockIndex: options.blockIndex,
+  });
+  if (!validation.valid) {
+    throw new Error(
+      `Claude repair produced an invalid unified diff for block ${options.blockIndex + 1}: ${validation.reason}`
+    );
+  }
+
+  return repairedDiff;
+}
+
+async function cleanupUnifiedDiffBlocks(options: {
+  config: TimConfig;
+  baseDir: string;
+  tempDir: string;
+  guideText: string;
+  reviewId: number;
+  prUrl: string;
+  baseSha: string | null;
+  reviewedSha: string;
+}): Promise<UnifiedDiffCleanupResult> {
+  const blocks = extractUnifiedDiffBlocks(options.guideText);
+  if (blocks.length === 0) {
+    return { guideText: options.guideText, repairedBlockCount: 0 };
+  }
+
+  let cleanedGuideText = options.guideText;
+  let repairedBlockCount = 0;
+
+  for (const block of blocks) {
+    const validation = await validateUnifiedDiffBlock({
+      baseDir: options.baseDir,
+      tempDir: options.tempDir,
+      diffText: block.diffText,
+      blockIndex: block.index,
+    });
+
+    if (validation.valid) {
+      continue;
+    }
+
+    const repairedDiff = await repairUnifiedDiffBlock({
+      config: options.config,
+      baseDir: options.baseDir,
+      tempDir: options.tempDir,
+      diffText: block.diffText,
+      validationError: validation.reason,
+      baseSha: options.baseSha,
+      reviewedSha: options.reviewedSha,
+      prUrl: options.prUrl,
+      reviewId: options.reviewId,
+      blockIndex: block.index,
+    });
+
+    cleanedGuideText = cleanedGuideText.replace(
+      block.fullMatch,
+      `\`\`\`unified-diff\n${normalizePatchText(repairedDiff)}\`\`\``
+    );
+    repairedBlockCount += 1;
+  }
+
+  return { guideText: cleanedGuideText, repairedBlockCount };
 }
 
 async function runClaudeGuide(options: {
@@ -717,6 +955,7 @@ export async function handleReviewGuideCommand(
         } catch {
           // Fall back to cached SHA if we can't read HEAD
         }
+        const baseSha = await getMergeBase(baseDir, prContext.baseBranch, 'HEAD');
 
         const review = createReview(db, {
           projectId,
@@ -881,7 +1120,26 @@ export async function handleReviewGuideCommand(
             }
 
             let finalIssues: StoredReviewIssue[] = [];
-            const reviewGuide = claudeGuideResult?.guideText ?? null;
+            let reviewGuide = claudeGuideResult?.guideText ?? null;
+
+            if (reviewGuide) {
+              const cleanupResult = await cleanupUnifiedDiffBlocks({
+                config,
+                baseDir,
+                tempDir: tempPaths.dir,
+                guideText: reviewGuide,
+                reviewId: review.id,
+                prUrl: prContext.prUrl,
+                baseSha,
+                reviewedSha,
+              });
+              reviewGuide = cleanupResult.guideText;
+              if (cleanupResult.repairedBlockCount > 0) {
+                log(
+                  `Repaired ${cleanupResult.repairedBlockCount} malformed unified diff block${cleanupResult.repairedBlockCount === 1 ? '' : 's'} in the review guide.`
+                );
+              }
+            }
 
             if (claudeIssuesResult && codexResult) {
               try {
