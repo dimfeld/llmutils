@@ -84,14 +84,22 @@ vi.mock('../db/pr_status.js', () => ({
   cleanOrphanedPrStatus: vi.fn((_db: unknown) => {}),
 }));
 
-vi.mock('../plans.js', () => ({
-  readPlanFile: vi.fn(async (..._args: unknown[]) => ({})),
-  resolvePlanFromDb: vi.fn(async (..._args: unknown[]) => ({
-    plan: {},
-    planPath: '',
-  })),
-  writePlanFile: vi.fn(async (..._args: unknown[]) => {}),
-}));
+vi.mock('../plans.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../plans.js')>();
+  return {
+    ...actual,
+    readPlanFile: vi.fn(async (..._args: unknown[]) => ({})),
+    resolvePlanByNumericId: vi.fn(async (..._args: unknown[]) => ({
+      plan: {},
+      planPath: '',
+    })),
+    resolvePlanByUuid: vi.fn(async (..._args: unknown[]) => ({
+      plan: {},
+      planPath: '',
+    })),
+    writePlanFile: vi.fn(async (..._args: unknown[]) => {}),
+  };
+});
 
 vi.mock('../db/plan_sync.js', () => ({
   syncPlanToDb: vi.fn(async (..._args: unknown[]) => {}),
@@ -129,7 +137,8 @@ import {
 } from '../db/pr_status.js';
 import {
   readPlanFile as mockReadPlanFileFn,
-  resolvePlanFromDb as mockResolvePlanFromDbFn,
+  resolvePlanByNumericId as mockResolvePlanFromDbFn,
+  resolvePlanByUuid as mockResolvePlanByUuidFn,
   writePlanFile as mockWritePlanFileFn,
 } from '../plans.js';
 import { syncPlanToDb as mockSyncPlanToDbFn } from '../db/plan_sync.js';
@@ -159,6 +168,7 @@ const mockResolveReviewThread = vi.mocked(mockResolveReviewThreadFn);
 const mockPromptCheckbox = vi.mocked(mockPromptCheckboxFn);
 const mockReadPlanFile = vi.mocked(mockReadPlanFileFn);
 const mockResolvePlanFromDb = vi.mocked(mockResolvePlanFromDbFn);
+const mockResolvePlanByUuid = vi.mocked(mockResolvePlanByUuidFn);
 const mockWritePlanFile = vi.mocked(mockWritePlanFileFn);
 const mockSyncPlanToDb = vi.mocked(mockSyncPlanToDbFn);
 const mockTimAgent = vi.mocked(mockTimAgentFn);
@@ -231,10 +241,7 @@ describe('tim/commands/pr', () => {
     currentCachedDetail = null;
     currentAutoLinkedDetails = [];
     currentWebhookServerUrl = null;
-    currentPersistedPlan = {
-      ...currentPlan,
-      pullRequest: [],
-    };
+    currentPersistedPlan = currentPlan;
     process.env.GITHUB_TOKEN = 'test-token';
 
     mockLog.mockClear();
@@ -261,6 +268,7 @@ describe('tim/commands/pr', () => {
     mockPromptCheckbox.mockClear();
     mockReadPlanFile.mockClear();
     mockResolvePlanFromDb.mockClear();
+    mockResolvePlanByUuid.mockClear();
     mockWritePlanFile.mockClear();
     mockSyncPlanToDb.mockClear();
     mockTimAgent.mockClear();
@@ -337,6 +345,10 @@ describe('tim/commands/pr', () => {
       plan: currentPersistedPlan,
       planPath: currentPlanPath,
     }));
+    mockResolvePlanByUuid.mockImplementation(async () => ({
+      plan: currentPersistedPlan,
+      planPath: currentPlanPath,
+    }));
     mockWritePlanFile.mockImplementation(async (_planPath: string, plan: unknown) => {
       currentPersistedPlan = plan as AnyObject;
     });
@@ -346,7 +358,7 @@ describe('tim/commands/pr', () => {
 
   test('status resolves the current workspace plan and syncs each linked PR atomically', async () => {
     currentWorkspaceInfo = {
-      originalPlanFilePath: '/tmp/248.plan.md',
+      planId: '248',
     };
     currentPlan.pullRequest = [
       'https://github.com/example/repo/pull/101',
@@ -359,10 +371,7 @@ describe('tim/commands/pr', () => {
 
     await handlePrCommand.handlePrStatusCommand(undefined, {}, createNestedCommand());
 
-    expect(mockResolvePlan).toHaveBeenCalledWith('/tmp/248.plan.md', {
-      gitRoot: '/tmp',
-      configPath: '/tmp/tim.yml',
-    });
+    expect(mockResolvePlanFromDb).toHaveBeenCalledWith(248, expect.any(String));
     // refreshPrStatus called for each URL (force-fresh)
     expect(mockRefreshPrStatus).toHaveBeenCalledTimes(2);
     // syncPlanPrLinks called to update junctions
@@ -380,7 +389,7 @@ describe('tim/commands/pr', () => {
     const nestedDir = path.join(workspaceDir, 'src', 'nested');
     await fs.mkdir(nestedDir, { recursive: true });
     currentWorkspaceInfo = {
-      originalPlanFilePath: '/tmp/248.plan.md',
+      planId: '248',
     };
     currentPlan.pullRequest = [];
     mockGetWorkspaceInfoByPath.mockImplementation((cwd: string) =>
@@ -397,16 +406,13 @@ describe('tim/commands/pr', () => {
     expect(mockGetWorkspaceInfoByPath).toHaveBeenCalledWith(nestedDir);
     expect(mockGetWorkspaceInfoByPath).toHaveBeenCalledWith(path.join(workspaceDir, 'src'));
     expect(mockGetWorkspaceInfoByPath).toHaveBeenCalledWith(workspaceDir);
-    expect(mockResolvePlan).toHaveBeenCalledWith('/tmp/248.plan.md', {
-      gitRoot: '/tmp',
-      configPath: '/tmp/tim.yml',
-    });
+    expect(mockResolvePlanFromDb).toHaveBeenCalledWith(248, expect.any(String));
   });
 
   test('status reports when a plan has no linked pull requests', async () => {
     currentPlan.pullRequest = [];
 
-    await handlePrCommand.handlePrStatusCommand('248', {}, createNestedCommand());
+    await handlePrCommand.handlePrStatusCommand(248, {}, createNestedCommand());
 
     expect(mockSyncPlanPrLinks).not.toHaveBeenCalled();
     expect(logs).toContain('Plan 248 has no linked pull requests and no branch to look up.');
@@ -421,7 +427,7 @@ describe('tim/commands/pr', () => {
       createPrDetail(605, 'Auto-linked PR', 'success')
     );
 
-    await prModule.handlePrStatusCommand('248', {}, createNestedCommand());
+    await prModule.handlePrStatusCommand(248, {}, createNestedCommand());
 
     expect(mockGetPrStatusForPlan).toHaveBeenCalledWith(dbHandle, 'plan-248', []);
     expect(mockGetPrStatusByUrl).toHaveBeenCalledWith(
@@ -446,7 +452,7 @@ describe('tim/commands/pr', () => {
       createPrDetail(612, 'Auto-linked PR', 'success')
     );
 
-    await prModule.handlePrStatusCommand('248', {}, createNestedCommand());
+    await prModule.handlePrStatusCommand(248, {}, createNestedCommand());
 
     expect(mockGetPrStatusForPlan).toHaveBeenCalledWith(dbHandle, 'plan-248', []);
     expect(mockGetPrStatusByUrl).toHaveBeenCalledWith(
@@ -477,7 +483,7 @@ describe('tim/commands/pr', () => {
     currentRefreshedStatuses.set('https://github.com/example/repo/pull/402', detail402);
     currentRefreshedStatuses.set('https://github.com/example/repo/pull/403', detail403);
 
-    await handlePrCommand.handlePrStatusCommand('248', {}, createNestedCommand());
+    await handlePrCommand.handlePrStatusCommand(248, {}, createNestedCommand());
 
     expect(mockRefreshPrStatus).toHaveBeenCalledTimes(3);
     expect(logs.some((line) => line.includes('example/repo#401: Passing PR'))).toBe(true);
@@ -496,7 +502,7 @@ describe('tim/commands/pr', () => {
       createPrDetail(601, 'Webhook PR', 'success')
     );
 
-    await prModule.handlePrStatusCommand('248', {}, createNestedCommand());
+    await prModule.handlePrStatusCommand(248, {}, createNestedCommand());
 
     expect(mockIngestWebhookEvents).toHaveBeenCalledWith(dbHandle);
     expect(mockGetPrStatusByUrl).toHaveBeenCalledWith(
@@ -520,7 +526,7 @@ describe('tim/commands/pr', () => {
       errors: ['follow-up refresh failed'],
     }));
 
-    await prModule.handlePrStatusCommand('248', {}, createNestedCommand());
+    await prModule.handlePrStatusCommand(248, {}, createNestedCommand());
 
     expect(
       logs.some((line) => line.includes('Webhook ingestion had issues: follow-up refresh failed'))
@@ -538,7 +544,7 @@ describe('tim/commands/pr', () => {
       createPrDetail(611, 'Cached PR', 'success')
     );
 
-    await prModule.handlePrStatusCommand('248', {}, createNestedCommand());
+    await prModule.handlePrStatusCommand(248, {}, createNestedCommand());
 
     expect(mockSyncPlanPrLinks).toHaveBeenCalledWith(dbHandle, 'plan-248', [
       'https://github.com/example/repo/pull/611',
@@ -554,7 +560,7 @@ describe('tim/commands/pr', () => {
     currentPlan.pullRequest = ['https://github.com/example/repo/pull/603'];
     currentCachedDetail = createPrDetail(603, 'Cached Webhook PR', 'success');
 
-    await prModule.handlePrStatusCommand('248', {}, createNestedCommand());
+    await prModule.handlePrStatusCommand(248, {}, createNestedCommand());
 
     expect(mockIngestWebhookEvents).toHaveBeenCalledWith(dbHandle);
     expect(mockGetPrStatusByUrl).toHaveBeenCalledWith(
@@ -578,7 +584,7 @@ describe('tim/commands/pr', () => {
       createPrDetail(710, 'Auto-linked Only PR', 'success')
     );
 
-    await prModule.handlePrStatusCommand('248', {}, createNestedCommand());
+    await prModule.handlePrStatusCommand(248, {}, createNestedCommand());
 
     expect(mockSyncPlanPrLinks).toHaveBeenCalledWith(dbHandle, 'plan-248', []);
     expect(mockGetPrStatusForPlan).toHaveBeenCalledWith(dbHandle, 'plan-248', []);
@@ -592,7 +598,7 @@ describe('tim/commands/pr', () => {
     currentPlan.pullRequest = ['https://github.com/example/repo/pull/604'];
     currentCachedDetail = null;
 
-    await expect(prModule.handlePrStatusCommand('248', {}, createNestedCommand())).rejects.toThrow(
+    await expect(prModule.handlePrStatusCommand(248, {}, createNestedCommand())).rejects.toThrow(
       'Failed to fetch status for all linked pull requests'
     );
 
@@ -617,7 +623,7 @@ describe('tim/commands/pr', () => {
       createPrDetail(602, 'Force Refresh PR', 'success')
     );
 
-    await prModule.handlePrStatusCommand('248', { forceRefresh: true }, createNestedCommand());
+    await prModule.handlePrStatusCommand(248, { forceRefresh: true }, createNestedCommand());
 
     expect(mockIngestWebhookEvents).not.toHaveBeenCalled();
     expect(mockEnsurePrStatusFresh).not.toHaveBeenCalled();
@@ -636,7 +642,7 @@ describe('tim/commands/pr', () => {
       createPrDetail(605, 'Webhook Auto-linked PR', 'success')
     );
 
-    await prModule.handlePrStatusCommand('248', { forceRefresh: true }, createNestedCommand());
+    await prModule.handlePrStatusCommand(248, { forceRefresh: true }, createNestedCommand());
 
     expect(mockIngestWebhookEvents).not.toHaveBeenCalled();
     expect(mockGetPrStatusForPlan).toHaveBeenCalledWith(dbHandle, 'plan-248', []);
@@ -662,7 +668,7 @@ describe('tim/commands/pr', () => {
       createPrDetail(702, 'Webhook Auto-linked PR', 'success')
     );
 
-    await prModule.handlePrStatusCommand('248', { forceRefresh: true }, createNestedCommand());
+    await prModule.handlePrStatusCommand(248, { forceRefresh: true }, createNestedCommand());
 
     expect(mockRefreshPrStatus).toHaveBeenCalledWith(
       dbHandle,
@@ -686,7 +692,7 @@ describe('tim/commands/pr', () => {
     currentRefreshedStatuses.set('https://github.com/example/repo/pull/501', detail501);
     // PR 502 is NOT in currentRefreshedStatuses, so refreshPrStatus will throw
 
-    await handlePrCommand.handlePrStatusCommand('248', {}, createNestedCommand());
+    await handlePrCommand.handlePrStatusCommand(248, {}, createNestedCommand());
 
     // Successful PR is displayed
     expect(logs.some((line) => line.includes('example/repo#501: Good PR'))).toBe(true);
@@ -712,16 +718,13 @@ describe('tim/commands/pr', () => {
     );
 
     await handlePrCommand.handlePrLinkCommand(
-      '248',
+      248,
       'https://github.com/example/repo/pull/201',
       {},
       createNestedCommand()
     );
 
-    expect(mockResolvePlan).toHaveBeenCalledWith('248', {
-      gitRoot: '/tmp',
-      configPath: '/tmp/tim.yml',
-    });
+    expect(mockResolvePlanFromDb).toHaveBeenCalledWith(248, expect.any(String));
     expect(mockParsePrOrIssueNumber).toHaveBeenCalledWith(
       'https://github.com/example/repo/pull/201'
     );
@@ -761,7 +764,7 @@ describe('tim/commands/pr', () => {
     });
 
     await handlePrCommand.handlePrLinkCommand(
-      '248',
+      248,
       'https://github.com/example/repo/pull/201',
       {},
       createNestedCommand()
@@ -796,7 +799,7 @@ describe('tim/commands/pr', () => {
     );
 
     await handlePrCommand.handlePrLinkCommand(
-      '248',
+      248,
       'https://github.com/example/repo/pull/201',
       {},
       createNestedCommand()
@@ -827,7 +830,7 @@ describe('tim/commands/pr', () => {
     );
 
     await handlePrCommand.handlePrLinkCommand(
-      '248',
+      248,
       'https://github.com/example/repo/pull/201',
       {},
       createNestedCommand()
@@ -849,7 +852,7 @@ describe('tim/commands/pr', () => {
     currentParsedIdentifier = null;
 
     await expect(
-      handlePrCommand.handlePrLinkCommand('248', 'not-a-pr', {}, createNestedCommand())
+      handlePrCommand.handlePrLinkCommand(248, 'not-a-pr', {}, createNestedCommand())
     ).rejects.toThrow(
       'No open PR found for branch "not-a-pr". Please specify a PR URL explicitly.'
     );
@@ -864,7 +867,7 @@ describe('tim/commands/pr', () => {
 
     await expect(
       handlePrCommand.handlePrLinkCommand(
-        '248',
+        248,
         'https://github.com/example/repo/issues/201',
         {},
         createNestedCommand()
@@ -884,7 +887,7 @@ describe('tim/commands/pr', () => {
     };
 
     await handlePrCommand.handlePrUnlinkCommand(
-      '248',
+      248,
       'https://github.com/example/repo/pull/301',
       {},
       createNestedCommand()
@@ -924,7 +927,7 @@ describe('tim/commands/pr', () => {
     });
 
     await handlePrCommand.handlePrUnlinkCommand(
-      '248',
+      248,
       'https://github.com/example/repo/pull/301',
       {},
       createNestedCommand()
@@ -958,7 +961,7 @@ describe('tim/commands/pr', () => {
     };
 
     await handlePrCommand.handlePrUnlinkCommand(
-      '248',
+      248,
       'https://github.com/example/repo/pull/301',
       {},
       createNestedCommand()
@@ -985,7 +988,7 @@ describe('tim/commands/pr', () => {
       pullRequest: ['https://github.com/example/repo/pull/301'],
     };
     await handlePrCommand.handlePrUnlinkCommand(
-      '248',
+      248,
       'https://github.com/example/repo/pull/301',
       {},
       createNestedCommand()
@@ -1008,7 +1011,7 @@ describe('tim/commands/pr', () => {
     currentPersistedPlan = { ...currentPlan, pullRequest: [] };
 
     await handlePrCommand.handlePrUnlinkCommand(
-      '248',
+      248,
       'https://github.com/example/repo/pull/302',
       {},
       createNestedCommand()
@@ -1026,7 +1029,7 @@ describe('tim/commands/pr', () => {
 
     await expect(
       handlePrCommand.handlePrUnlinkCommand(
-        '248',
+        248,
         'https://github.com/example/repo/issues/302',
         {},
         createNestedCommand()
@@ -1043,11 +1046,11 @@ describe('tim/commands/pr', () => {
     currentPlan.pullRequest = ['https://github.com/example/repo/pull/101'];
 
     await expect(
-      handlePrCommand.handlePrStatusCommand('248', {}, createNestedCommand())
+      handlePrCommand.handlePrStatusCommand(248, {}, createNestedCommand())
     ).rejects.toThrow('GITHUB_TOKEN environment variable is required for PR status commands');
 
     // Plan is resolved first, then token is checked
-    expect(mockResolvePlan).toHaveBeenCalled();
+    expect(mockResolvePlanFromDb).toHaveBeenCalled();
     expect(mockRefreshPrStatus).not.toHaveBeenCalled();
   });
 
@@ -1055,7 +1058,7 @@ describe('tim/commands/pr', () => {
     delete process.env.GITHUB_TOKEN;
     currentPlan.pullRequest = [];
 
-    await handlePrCommand.handlePrStatusCommand('248', {}, createNestedCommand());
+    await handlePrCommand.handlePrStatusCommand(248, {}, createNestedCommand());
 
     expect(logs).toContain('Plan 248 has no linked pull requests and no branch to look up.');
   });
@@ -1065,7 +1068,7 @@ describe('tim/commands/pr', () => {
 
     await expect(
       handlePrCommand.handlePrLinkCommand(
-        '248',
+        248,
         'https://github.com/example/repo/pull/201',
         {},
         createNestedCommand()
@@ -1084,7 +1087,7 @@ describe('tim/commands/pr', () => {
     };
 
     await handlePrCommand.handlePrUnlinkCommand(
-      '248',
+      248,
       'https://github.com/example/repo/pull/999',
       {},
       createNestedCommand()
@@ -1099,12 +1102,12 @@ describe('tim/commands/pr', () => {
   });
 
   test('status surfaces plan resolution failures for invalid plan identifiers', async () => {
-    mockResolvePlan.mockImplementationOnce(async () => {
+    mockResolvePlanFromDb.mockImplementationOnce(async () => {
       throw new Error('Plan not found: 999');
     });
 
     await expect(
-      handlePrCommand.handlePrStatusCommand('999', {}, createNestedCommand())
+      handlePrCommand.handlePrStatusCommand(999, {}, createNestedCommand())
     ).rejects.toThrow('Plan not found: 999');
 
     expect(mockSyncPlanPrLinks).not.toHaveBeenCalled();
@@ -1213,7 +1216,7 @@ describe('tim/commands/pr', () => {
       },
     ];
 
-    await handlePrFixCommand('248', {}, createNestedCommand());
+    await handlePrFixCommand(248, {}, createNestedCommand());
 
     expect(mockPromptCheckbox).not.toHaveBeenCalled();
     expect(mockTimAgent).not.toHaveBeenCalled();
@@ -1243,7 +1246,7 @@ describe('tim/commands/pr', () => {
     mockPromptCheckbox.mockResolvedValueOnce([1]);
 
     await handlePrFixCommand(
-      '248',
+      248,
       { executor: 'codex-cli', model: 'gpt-5.4', terminalInput: true },
       createNestedCommand()
     );
@@ -1267,7 +1270,7 @@ describe('tim/commands/pr', () => {
       })
     );
     expect(mockTimAgent).toHaveBeenCalledWith(
-      '248',
+      248,
       expect.objectContaining({
         orchestrator: 'codex-cli',
         model: 'gpt-5.4',
@@ -1297,11 +1300,11 @@ describe('tim/commands/pr', () => {
       },
     ];
 
-    await handlePrFixCommand('248', { nonInteractive: true }, createNestedCommand());
+    await handlePrFixCommand(248, { nonInteractive: true }, createNestedCommand());
 
     expect(mockPromptCheckbox).not.toHaveBeenCalled();
     expect(mockTimAgent).toHaveBeenCalledWith(
-      '248',
+      248,
       expect.objectContaining({
         nonInteractive: true,
         reviewThreadContext: expect.stringContaining('src/auth.ts:42'),
@@ -1331,7 +1334,7 @@ describe('tim/commands/pr', () => {
       },
     ];
 
-    await handlePrFixCommand('248', { all: true }, createNestedCommand());
+    await handlePrFixCommand(248, { all: true }, createNestedCommand());
 
     expect(mockPromptCheckbox).not.toHaveBeenCalled();
     const context = String(mockTimAgent.mock.calls[0]?.[1]?.reviewThreadContext ?? '');
@@ -1343,7 +1346,7 @@ describe('tim/commands/pr', () => {
     delete process.env.GITHUB_TOKEN;
     clearGitHubTokenCache();
 
-    await expect(handlePrFixCommand('248', {}, createNestedCommand())).rejects.toThrow(
+    await expect(handlePrFixCommand(248, {}, createNestedCommand())).rejects.toThrow(
       'GITHUB_TOKEN environment variable is required'
     );
 
@@ -1373,7 +1376,7 @@ describe('tim/commands/pr', () => {
       },
     ];
 
-    await handlePrFixCommand('248', { all: true }, createNestedCommand());
+    await handlePrFixCommand(248, { all: true }, createNestedCommand());
 
     const context = String(mockTimAgent.mock.calls[0]?.[1]?.reviewThreadContext ?? '');
     expect(context).toContain('src/new.ts:20');
@@ -1397,7 +1400,7 @@ describe('tim/commands/pr', () => {
     ];
     mockPromptCheckbox.mockResolvedValueOnce([]);
 
-    await handlePrFixCommand('248', {}, createNestedCommand());
+    await handlePrFixCommand(248, {}, createNestedCommand());
 
     expect(mockPromptCheckbox).toHaveBeenCalled();
     expect(mockTimAgent).not.toHaveBeenCalled();
@@ -1430,7 +1433,7 @@ describe('tim/commands/pr', () => {
       },
     ];
 
-    await handlePrFixCommand('248', { all: true }, createNestedCommand());
+    await handlePrFixCommand(248, { all: true }, createNestedCommand());
 
     const context = String(mockTimAgent.mock.calls[0]?.[1]?.reviewThreadContext ?? '');
     expect(context).toContain('src/auth.ts:10');
@@ -1454,7 +1457,7 @@ describe('tim/commands/pr', () => {
       },
     ];
 
-    await handlePrFixCommand('248', { terminalInput: false }, createNestedCommand());
+    await handlePrFixCommand(248, { terminalInput: false }, createNestedCommand());
 
     expect(mockPromptCheckbox).not.toHaveBeenCalled();
     expect(mockTimAgent).toHaveBeenCalled();
@@ -1480,7 +1483,7 @@ describe('tim/commands/pr', () => {
       },
     ];
 
-    await handlePrFixCommand('248', { all: true }, createNestedCommand());
+    await handlePrFixCommand(248, { all: true }, createNestedCommand());
 
     expect(mockDeduplicatePrUrls).toHaveBeenCalledWith([
       'https://github.com/example/repo/pulls/701?tab=checks',
@@ -1510,13 +1513,13 @@ describe('tim/commands/pr', () => {
     ];
 
     await handlePrFixCommand(
-      '248',
+      248,
       { all: true, orchestrator: 'claude-code' },
       createNestedCommand()
     );
 
     expect(mockTimAgent).toHaveBeenCalledWith(
-      '248',
+      248,
       expect.objectContaining({
         orchestrator: 'claude-code',
       }),

@@ -539,7 +539,7 @@ describe('handleBranchCommand', () => {
     await writePlanFile(path.join(tasksDir, '7.yml'), plan, { cwdForIdentity: process.cwd() });
 
     const command = { parent: { opts: () => ({}) } } as any;
-    await handleBranchCommand('7', {}, command);
+    await handleBranchCommand(7, {}, command);
 
     expect(writeStdoutSpy).toHaveBeenCalledWith('7-fix-search-filters\n');
   });
@@ -561,7 +561,7 @@ describe('handleBranchCommand', () => {
     await writePlanFile(path.join(tasksDir, '7.yml'), plan, { cwdForIdentity: process.cwd() });
 
     const command = { parent: { opts: () => ({}) } } as any;
-    await handleBranchCommand('7', {}, command);
+    await handleBranchCommand(7, {}, command);
 
     expect(writeStdoutSpy).toHaveBeenCalledWith('explicit-branch-name\n');
     expect(resolveProjectContextSpy).not.toHaveBeenCalled();
@@ -595,7 +595,7 @@ describe('handleBranchCommand', () => {
 
     try {
       const command = { parent: { opts: () => ({}) } } as any;
-      await handleBranchCommand('7', {}, command);
+      await handleBranchCommand(7, {}, command);
 
       expect(writeStdoutSpy).toHaveBeenCalledWith('di/7-fix-search-filters\n');
     } finally {
@@ -672,7 +672,7 @@ describe('handleBranchCommand', () => {
     });
 
     const command = { parent: { opts: () => ({}) } } as any;
-    await handleBranchCommand(undefined, { nextReady: '200' }, command);
+    await handleBranchCommand(undefined, { nextReady: 200 }, command);
 
     expect(writeStdoutSpy).toHaveBeenCalledWith('201-child-task\n');
   });
@@ -708,7 +708,7 @@ describe('handleBranchCommand', () => {
 
     try {
       const command = { parent: { opts: () => ({ config: configPath }) } } as any;
-      await handleBranchCommand(undefined, { nextReady: '300' }, command);
+      await handleBranchCommand(undefined, { nextReady: 300 }, command);
 
       // resolveRepoRoot should be called with the config path and a fallback dir
       expect(resolveRepoRootSpy).toHaveBeenCalledWith(configPath, expect.any(String));

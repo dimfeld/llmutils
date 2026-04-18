@@ -35,9 +35,8 @@ import {
 import type { ExecutorCommonOptions } from '../../executors/types.js';
 import type { PlanSchema } from '../../planSchema.js';
 import {
-  parsePlanIdFromCliArg,
   readPlanFile,
-  resolvePlanFromDb,
+  resolvePlanByNumericId,
   setPlanStatusById,
   writePlanFile,
 } from '../../plans.js';
@@ -83,13 +82,49 @@ import {
 import { clearTmpDir } from '../../batch_review_cache.js';
 import { autoCreatePrForPlan } from '../create_pr.js';
 
+interface AgentCommandOptions {
+  nextReady?: number;
+  latest?: boolean;
+  next?: boolean;
+  current?: boolean;
+  nonInteractive?: boolean;
+  log?: boolean;
+  workspace?: string;
+  autoWorkspace?: boolean;
+  newWorkspace?: boolean;
+  requireWorkspace?: boolean;
+  createBranch?: boolean;
+  workspaceSync?: boolean;
+  orchestrator?: string;
+  model?: string;
+  executor?: string;
+  dynamicInstructions?: string;
+  simple?: boolean;
+  tdd?: boolean;
+  terminalInput?: boolean;
+  reviewExecutor?: string;
+  updateDocs?: 'after-iteration' | 'after-completion' | 'after-review' | 'manual' | 'never';
+  summary?: boolean;
+  summaryFile?: string;
+  serialTasks?: boolean;
+  dryRun?: boolean;
+  finalReview?: boolean;
+  steps?: string;
+  applyLessons?: boolean;
+  reviewThreadContext?: string;
+}
+
+interface AgentGlobalCliOptions {
+  config?: string;
+}
+
 export async function handleAgentCommand(
-  planFile: string | undefined,
-  options: any,
-  globalCliOptions: any
+  planId: number | undefined,
+  options: AgentCommandOptions,
+  globalCliOptions: AgentGlobalCliOptions
 ) {
   let config = getDefaultConfig();
-  let resolvedPlanArg: string | undefined;
+  let resolvedPlanId: number | undefined;
   let headlessPlanSummary: HeadlessPlanSummary | undefined;
   let didInvokeAgent = false;
   const notifyNoPlanFound = async (message: string): Promise<void> => {
@@ -135,17 +170,10 @@ export async function handleAgentCommand(
       throw err;
     }
 
-    if ('nextReady' in options) {
-      // Validate that --next-ready has a value (parent plan ID or file path)
-      if (!options.nextReady || options.nextReady === true || options.nextReady.trim() === '') {
-        throw new Error('--next-ready requires a numeric parent plan ID');
-      }
-
+    if (options.nextReady !== undefined) {
       // Find the next ready dependency of the specified parent plan
       const repoRoot = await getGitRoot();
-      const parentPlanId = parsePlanIdFromCliArg(options.nextReady);
-
-      const result = await findNextReadyDependencyFromDb(parentPlanId, repoRoot, repoRoot);
+      const result = await findNextReadyDependencyFromDb(options.nextReady, repoRoot, repoRoot);
 
       if (!result.plan) {
         log(result.message);
@@ -163,7 +191,7 @@ export async function handleAgentCommand(
       } else {
         log(chalk.green(`Found ready plan: ${getCombinedTitleFromSummary(result.plan)}`));
       }
-      resolvedPlanArg = String(result.plan.id);
+      resolvedPlanId = result.plan.id;
       headlessPlanSummary = toHeadlessPlanSummary(result.plan);
     } else if (options.latest) {
       const repoRoot = await getGitRoot();
@@ -186,7 +214,7 @@ export async function handleAgentCommand(
       } else {
         log(chalk.green(`Found latest plan: ${getCombinedTitleFromSummary(latestPlan)}`));
       }
-      resolvedPlanArg = String(latestPlan.id);
+      resolvedPlanId = latestPlan.id;
       headlessPlanSummary = toHeadlessPlanSummary(latestPlan);
     } else if (options.next || options.current) {
       const repoRoot = await getGitRoot();
@@ -214,18 +242,18 @@ export async function handleAgentCommand(
       } else {
         log(chalk.green(`Found plan: ${getCombinedTitleFromSummary(plan)}`));
       }
-      resolvedPlanArg = String(plan.id);
+      resolvedPlanId = plan.id;
       headlessPlanSummary = toHeadlessPlanSummary(plan);
     } else {
-      if (!planFile) {
+      if (!planId) {
         throw new Error(
           'A numeric plan ID is required, or use --next/--current/--next-ready/--latest to find a plan'
         );
       }
-      resolvedPlanArg = String(parsePlanIdFromCliArg(planFile));
+      resolvedPlanId = planId;
     }
 
-    if (!resolvedPlanArg) {
+    if (!resolvedPlanId) {
       throw new Error('No plan resolved for agent execution.');
     }
 
@@ -233,7 +261,7 @@ export async function handleAgentCommand(
     if (!headlessPlanSummary) {
       try {
         const repoRoot = await getGitRoot();
-        const { plan } = await resolvePlanFromDb(resolvedPlanArg, repoRoot);
+        const { plan } = await resolvePlanByNumericId(resolvedPlanId, repoRoot);
         headlessPlanSummary = toHeadlessPlanSummary(plan);
       } catch {
         // No-op: missing plan metadata should not block execution.
@@ -245,7 +273,7 @@ export async function handleAgentCommand(
       command: 'agent',
       interactive: options.nonInteractive !== true,
       plan: headlessPlanSummary,
-      callback: async () => timAgent(resolvedPlanArg!, options, globalCliOptions),
+      callback: async () => timAgent(resolvedPlanId!, options, globalCliOptions),
     });
   } catch (err) {
     if (!didInvokeAgent) {
@@ -256,7 +284,11 @@ export async function handleAgentCommand(
   }
 }
 
-export async function timAgent(planArg: string, options: any, globalCliOptions: any) {
+export async function timAgent(
+  planId: number,
+  options: AgentCommandOptions,
+  globalCliOptions: AgentGlobalCliOptions
+) {
   const cleanupRegistry = CleanupRegistry.getInstance();
   let currentPlanFile = '';
   let config = getDefaultConfig();
@@ -291,7 +323,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
     setDeferSignalExit(true);
     config = await loadEffectiveConfig(globalCliOptions.config);
     currentBaseDir = await getGitRoot();
-    const initialResolvedPlan = await resolvePlanFromDb(planArg, currentBaseDir);
+    const initialResolvedPlan = await resolvePlanByNumericId(planId, currentBaseDir);
     const initialPlanData = initialResolvedPlan.plan;
 
     if (options.log !== false) {
@@ -812,7 +844,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
         try {
           log(boldMarkdownHeaders('\n## Marking task done\n'));
           const markResult = await markTaskDone(
-            currentPlanFile,
+            planData.id,
             actionableItem.taskIndex,
             { commit: true },
             currentBaseDir,
@@ -880,7 +912,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
               });
               try {
                 const reviewResult = await handleReviewCommand(
-                  currentPlanFile,
+                  initialPlanData.id,
                   isNonInteractiveReview
                     ? { cwd: currentBaseDir, saveIssues: true, noAutofix: true }
                     : { cwd: currentBaseDir },
@@ -1219,7 +1251,7 @@ export async function timAgent(planArg: string, options: any, globalCliOptions: 
       try {
         log(boldMarkdownHeaders('\n## Marking done\n'));
         markResult = await markStepDone(
-          currentPlanFile,
+          planData.id,
           { commit: true },
           { taskIndex },
           currentBaseDir,

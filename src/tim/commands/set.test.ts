@@ -26,7 +26,7 @@ vi.mock('../assignments/workspace_identifier.js', () => ({
   })),
 }));
 
-import { readPlanFile, resolvePlanFromDb, writePlanFile } from '../plans.js';
+import { readPlanFile, resolvePlanByNumericId, writePlanFile } from '../plans.js';
 import { handleSetCommand } from './set.js';
 import type { PlanSchema } from '../planSchema.js';
 import type { TimConfig } from '../configSchema.js';
@@ -68,7 +68,7 @@ describe('tim set command', () => {
     };
 
     getRepositoryIdentitySpy.mockResolvedValue({
-      repositoryId: 'test-repo',
+      repositoryId: tempDir,
       remoteUrl: null,
       gitRoot: tempDir,
     });
@@ -111,15 +111,14 @@ describe('tim set command', () => {
     const planPath = await createTestPlan(10);
 
     await handleSetCommand(
-      planPath,
+      10,
       {
-        planFile: planPath,
         priority: 'high',
       },
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanByNumericId(10, tempDir)).plan;
     expect(updatedPlan.priority).toBe('high');
     expect(updatedPlan.updatedAt).toBeDefined();
   });
@@ -128,15 +127,14 @@ describe('tim set command', () => {
     const planPath = await createTestPlan(101);
 
     await handleSetCommand(
-      planPath,
+      101,
       {
-        planFile: planPath,
         note: 'Updated note text',
       },
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanByNumericId(101, tempDir)).plan;
     expect(updatedPlan.note).toBe('Updated note text');
   });
 
@@ -144,15 +142,14 @@ describe('tim set command', () => {
     const planPath = await createTestPlan(11);
 
     await handleSetCommand(
-      planPath,
+      11,
       {
-        planFile: planPath,
         status: 'in_progress',
       },
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanByNumericId(11, tempDir)).plan;
     expect(updatedPlan.status).toBe('in_progress');
     expect(removeAssignmentSpy).not.toHaveBeenCalled();
   });
@@ -161,15 +158,14 @@ describe('tim set command', () => {
     const planPath = await createTestPlan(111);
 
     await handleSetCommand(
-      planPath,
+      111,
       {
-        planFile: planPath,
         status: 'done',
       },
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanByNumericId(111, tempDir)).plan;
     expect(updatedPlan.status).toBe('done');
     expect(removeAssignmentSpy).toHaveBeenCalledTimes(1);
     const [callArgs] = removeAssignmentSpy.mock.calls;
@@ -180,15 +176,14 @@ describe('tim set command', () => {
     const planPath = await createTestPlan(112);
 
     await handleSetCommand(
-      planPath,
+      112,
       {
-        planFile: planPath,
         status: 'cancelled',
       },
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanByNumericId(112, tempDir)).plan;
     expect(updatedPlan.status).toBe('cancelled');
     expect(removeAssignmentSpy).toHaveBeenCalledTimes(1);
     const [callArgs] = removeAssignmentSpy.mock.calls;
@@ -199,15 +194,14 @@ describe('tim set command', () => {
     const planPath = await createTestPlan(117);
 
     await handleSetCommand(
-      planPath,
+      117,
       {
-        planFile: planPath,
         status: 'needs_review',
       },
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanByNumericId(117, tempDir)).plan;
     expect(updatedPlan.status).toBe('needs_review');
     expect(removeAssignmentSpy).toHaveBeenCalledTimes(1);
     const [callArgs] = removeAssignmentSpy.mock.calls;
@@ -221,9 +215,8 @@ describe('tim set command', () => {
     });
 
     await handleSetCommand(
-      planPath,
+      113,
       {
-        planFile: planPath,
         status: 'done',
       },
       globalOpts
@@ -252,17 +245,16 @@ describe('tim set command', () => {
     });
 
     await handleSetCommand(
-      lastChildPath,
+      116,
       {
-        planFile: lastChildPath,
         status: 'cancelled',
       },
       globalOpts
     );
 
-    const updatedLastChild = await readPlanFile(lastChildPath);
-    const updatedParent = (await resolvePlanFromDb('114', tempDir)).plan;
-    const doneChild = await readPlanFile(doneChildPath);
+    const updatedLastChild = (await resolvePlanByNumericId(116, tempDir)).plan;
+    const updatedParent = (await resolvePlanByNumericId(114, tempDir)).plan;
+    const doneChild = (await resolvePlanByNumericId(115, tempDir)).plan;
 
     expect(updatedLastChild.status).toBe('cancelled');
     expect(doneChild.status).toBe('done');
@@ -276,15 +268,14 @@ describe('tim set command', () => {
     const planPath = await createTestPlan(12);
 
     await handleSetCommand(
-      planPath,
+      12,
       {
-        planFile: planPath,
         dependsOn: [10, 11],
       },
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanByNumericId(12, tempDir)).plan;
     expect(updatedPlan.dependencies).toEqual([10, 11]);
   });
 
@@ -296,9 +287,8 @@ describe('tim set command', () => {
 
     // First add
     await handleSetCommand(
-      planPath,
+      13,
       {
-        planFile: planPath,
         dependsOn: [10],
       },
       globalOpts
@@ -306,15 +296,14 @@ describe('tim set command', () => {
 
     // Try to add again with overlap
     await handleSetCommand(
-      planPath,
+      13,
       {
-        planFile: planPath,
         dependsOn: [10, 11],
       },
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanByNumericId(13, tempDir)).plan;
     expect(updatedPlan.dependencies).toEqual([10, 11]);
   });
 
@@ -327,9 +316,8 @@ describe('tim set command', () => {
 
     // First add dependencies
     await handleSetCommand(
-      planPath,
+      14,
       {
-        planFile: planPath,
         dependsOn: [10, 11, 12],
       },
       globalOpts
@@ -337,15 +325,14 @@ describe('tim set command', () => {
 
     // Remove some
     await handleSetCommand(
-      planPath,
+      14,
       {
-        planFile: planPath,
         noDependsOn: [10, 12],
       },
       globalOpts
     );
 
-    const updatedPlan = (await resolvePlanFromDb('14', tempDir)).plan;
+    const updatedPlan = (await resolvePlanByNumericId(14, tempDir)).plan;
     expect(updatedPlan.dependencies).toEqual([11]);
   });
 
@@ -353,15 +340,14 @@ describe('tim set command', () => {
     const planPath = await createTestPlan(15);
 
     await handleSetCommand(
-      planPath,
+      15,
       {
-        planFile: planPath,
         rmfilter: ['src/**/*.ts', 'tests/**/*.test.ts'],
       },
       globalOpts
     );
 
-    const updatedPlan = (await resolvePlanFromDb('15', tempDir)).plan;
+    const updatedPlan = (await resolvePlanByNumericId(15, tempDir)).plan;
     expect(updatedPlan.rmfilter).toBeUndefined();
   });
 
@@ -372,9 +358,8 @@ describe('tim set command', () => {
     const planPath = await createTestPlan(16);
 
     await handleSetCommand(
-      planPath,
+      16,
       {
-        planFile: planPath,
         priority: 'urgent',
         status: 'in_progress',
         dependsOn: [10, 11],
@@ -383,7 +368,7 @@ describe('tim set command', () => {
       globalOpts
     );
 
-    const updatedPlan = (await resolvePlanFromDb('16', tempDir)).plan;
+    const updatedPlan = (await resolvePlanByNumericId(16, tempDir)).plan;
     expect(updatedPlan.priority).toBe('urgent');
     expect(updatedPlan.status).toBe('in_progress');
     expect(updatedPlan.dependencies).toEqual([10, 11]);
@@ -398,13 +383,7 @@ describe('tim set command', () => {
     // Wait a bit to ensure time difference
     await new Promise((resolve) => setTimeout(resolve, 10));
 
-    await handleSetCommand(
-      planPath,
-      {
-        planFile: planPath,
-      },
-      globalOpts
-    );
+    await handleSetCommand(17, {}, globalOpts);
 
     const unchangedPlan = await readPlanFile(planPath);
     // Check that the file content hasn't changed
@@ -421,9 +400,8 @@ describe('tim set command', () => {
     const planPath = await createTestPlan(18);
 
     await handleSetCommand(
-      planPath,
+      18,
       {
-        planFile: planPath,
         issue: [
           'https://github.com/owner/repo/issues/123',
           'https://github.com/owner/repo/issues/124',
@@ -432,7 +410,7 @@ describe('tim set command', () => {
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanByNumericId(18, tempDir)).plan;
     expect(updatedPlan.issue).toEqual([
       'https://github.com/owner/repo/issues/123',
       'https://github.com/owner/repo/issues/124',
@@ -444,9 +422,8 @@ describe('tim set command', () => {
 
     // First add
     await handleSetCommand(
-      planPath,
+      19,
       {
-        planFile: planPath,
         issue: ['https://github.com/owner/repo/issues/123'],
       },
       globalOpts
@@ -454,9 +431,8 @@ describe('tim set command', () => {
 
     // Try to add again with overlap
     await handleSetCommand(
-      planPath,
+      19,
       {
-        planFile: planPath,
         issue: [
           'https://github.com/owner/repo/issues/123',
           'https://github.com/owner/repo/issues/124',
@@ -465,7 +441,7 @@ describe('tim set command', () => {
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanByNumericId(19, tempDir)).plan;
     expect(updatedPlan.issue).toEqual([
       'https://github.com/owner/repo/issues/123',
       'https://github.com/owner/repo/issues/124',
@@ -477,9 +453,8 @@ describe('tim set command', () => {
 
     // First add issue URLs
     await handleSetCommand(
-      planPath,
+      20,
       {
-        planFile: planPath,
         issue: [
           'https://github.com/owner/repo/issues/123',
           'https://github.com/owner/repo/issues/124',
@@ -491,9 +466,8 @@ describe('tim set command', () => {
 
     // Remove some
     await handleSetCommand(
-      planPath,
+      20,
       {
-        planFile: planPath,
         noIssue: [
           'https://github.com/owner/repo/issues/123',
           'https://github.com/owner/repo/issues/125',
@@ -502,7 +476,7 @@ describe('tim set command', () => {
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanByNumericId(20, tempDir)).plan;
     expect(updatedPlan.issue).toEqual(['https://github.com/owner/repo/issues/124']);
   });
 
@@ -511,15 +485,14 @@ describe('tim set command', () => {
 
     // Remove dependencies
     await handleSetCommand(
-      planPath,
+      21,
       {
-        planFile: planPath,
         noDependsOn: [10, 11],
       },
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanByNumericId(21, tempDir)).plan;
     expect(updatedPlan.dependencies).toEqual([]);
   });
 
@@ -528,15 +501,14 @@ describe('tim set command', () => {
 
     // Remove issue URLs
     await handleSetCommand(
-      planPath,
+      22,
       {
-        planFile: planPath,
         noIssue: ['https://github.com/owner/repo/issues/123'],
       },
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanByNumericId(22, tempDir)).plan;
     expect(updatedPlan.issue).toEqual([]);
   });
 
@@ -544,15 +516,14 @@ describe('tim set command', () => {
     const planPath = await createTestPlan(23);
 
     await handleSetCommand(
-      planPath,
+      23,
       {
-        planFile: planPath,
         doc: ['docs/setup.md', 'docs/api.md'],
       },
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanByNumericId(23, tempDir)).plan;
     expect(updatedPlan.docs).toEqual(['docs/setup.md', 'docs/api.md']);
   });
 
@@ -561,9 +532,8 @@ describe('tim set command', () => {
 
     // First add
     await handleSetCommand(
-      planPath,
+      24,
       {
-        planFile: planPath,
         doc: ['docs/setup.md'],
       },
       globalOpts
@@ -571,15 +541,14 @@ describe('tim set command', () => {
 
     // Try to add again with overlap
     await handleSetCommand(
-      planPath,
+      24,
       {
-        planFile: planPath,
         doc: ['docs/setup.md', 'docs/api.md'],
       },
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanByNumericId(24, tempDir)).plan;
     expect(updatedPlan.docs).toEqual(['docs/setup.md', 'docs/api.md']);
   });
 
@@ -588,9 +557,8 @@ describe('tim set command', () => {
 
     // First add documentation paths
     await handleSetCommand(
-      planPath,
+      25,
       {
-        planFile: planPath,
         doc: ['docs/setup.md', 'docs/api.md', 'docs/guide.md'],
       },
       globalOpts
@@ -598,15 +566,14 @@ describe('tim set command', () => {
 
     // Remove some
     await handleSetCommand(
-      planPath,
+      25,
       {
-        planFile: planPath,
         noDoc: ['docs/setup.md', 'docs/guide.md'],
       },
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanByNumericId(25, tempDir)).plan;
     expect(updatedPlan.docs).toEqual(['docs/api.md']);
   });
 
@@ -615,15 +582,14 @@ describe('tim set command', () => {
 
     // Remove documentation paths from plan without any
     await handleSetCommand(
-      planPath,
+      26,
       {
-        planFile: planPath,
         noDoc: ['docs/setup.md'],
       },
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanByNumericId(26, tempDir)).plan;
     expect(updatedPlan.docs).toEqual([]);
   });
 
@@ -632,9 +598,8 @@ describe('tim set command', () => {
 
     // First add some docs
     await handleSetCommand(
-      planPath,
+      27,
       {
-        planFile: planPath,
         doc: ['docs/old1.md', 'docs/old2.md', 'docs/keep.md'],
       },
       globalOpts
@@ -642,16 +607,15 @@ describe('tim set command', () => {
 
     // Add new and remove old in same command
     await handleSetCommand(
-      planPath,
+      27,
       {
-        planFile: planPath,
         doc: ['docs/new1.md', 'docs/new2.md'],
         noDoc: ['docs/old1.md', 'docs/old2.md'],
       },
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanByNumericId(27, tempDir)).plan;
     expect(updatedPlan.docs).toEqual(['docs/keep.md', 'docs/new1.md', 'docs/new2.md']);
   });
 
@@ -661,15 +625,14 @@ describe('tim set command', () => {
     const planPath = await createTestPlan(30);
 
     await handleSetCommand(
-      planPath,
+      30,
       {
-        planFile: planPath,
         parent: 15,
       },
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanByNumericId(30, tempDir)).plan;
     expect(updatedPlan.parent).toBe(15);
   });
 
@@ -680,28 +643,26 @@ describe('tim set command', () => {
 
     // First set a parent
     await handleSetCommand(
-      planPath,
+      31,
       {
-        planFile: planPath,
         parent: 20,
       },
       globalOpts
     );
 
-    let updatedPlan = await readPlanFile(planPath);
+    let updatedPlan = (await resolvePlanByNumericId(31, tempDir)).plan;
     expect(updatedPlan.parent).toBe(20);
 
     // Then remove it
     await handleSetCommand(
-      planPath,
+      31,
       {
-        planFile: planPath,
         noParent: true,
       },
       globalOpts
     );
 
-    updatedPlan = (await resolvePlanFromDb('31', tempDir)).plan;
+    updatedPlan = (await resolvePlanByNumericId(31, tempDir)).plan;
     expect(updatedPlan.parent).toBeUndefined();
   });
 
@@ -709,15 +670,14 @@ describe('tim set command', () => {
     const planPath = await createTestPlan(32);
 
     await handleSetCommand(
-      planPath,
+      32,
       {
-        planFile: planPath,
         noParent: true,
       },
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanByNumericId(32, tempDir)).plan;
     expect(updatedPlan.parent).toBeUndefined();
   });
 
@@ -726,9 +686,8 @@ describe('tim set command', () => {
 
     await expect(
       handleSetCommand(
-        planPath,
+        33,
         {
-          planFile: planPath,
           parent: 999, // Non-existent parent ID
         },
         globalOpts
@@ -743,15 +702,14 @@ describe('tim set command', () => {
 
     // Set parent to the existing plan
     await handleSetCommand(
-      childPlanPath,
+      101,
       {
-        planFile: childPlanPath,
         parent: 100,
       },
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(childPlanPath);
+    const updatedPlan = (await resolvePlanByNumericId(101, tempDir)).plan;
     expect(updatedPlan.parent).toBe(100);
   });
 
@@ -761,20 +719,19 @@ describe('tim set command', () => {
     const childPlanPath = await createTestPlan(201);
 
     await handleSetCommand(
-      childPlanPath,
+      201,
       {
-        planFile: childPlanPath,
         parent: 200,
       },
       globalOpts
     );
 
     // Verify child has parent field set
-    const updatedChild = (await resolvePlanFromDb('201', tempDir)).plan;
+    const updatedChild = (await resolvePlanByNumericId(201, tempDir)).plan;
     expect(updatedChild.parent).toBe(200);
 
     // Verify parent has child in dependencies array
-    const updatedParent = (await resolvePlanFromDb('200', tempDir)).plan;
+    const updatedParent = (await resolvePlanByNumericId(200, tempDir)).plan;
     expect(updatedParent.dependencies).toEqual([201]);
     expect(updatedParent.updatedAt).toBeDefined();
   });
@@ -786,36 +743,34 @@ describe('tim set command', () => {
 
     // First set parent relationship
     await handleSetCommand(
-      childPlanPath,
+      203,
       {
-        planFile: childPlanPath,
         parent: 202,
       },
       globalOpts
     );
 
     // Verify relationship is established
-    let updatedChild = (await resolvePlanFromDb('203', tempDir)).plan;
-    let updatedParent = (await resolvePlanFromDb('202', tempDir)).plan;
+    let updatedChild = (await resolvePlanByNumericId(203, tempDir)).plan;
+    let updatedParent = (await resolvePlanByNumericId(202, tempDir)).plan;
     expect(updatedChild.parent).toBe(202);
     expect(updatedParent.dependencies).toEqual([203]);
 
     // Remove parent relationship
     await handleSetCommand(
-      childPlanPath,
+      203,
       {
-        planFile: childPlanPath,
         noParent: true,
       },
       globalOpts
     );
 
     // Verify child parent field is removed
-    updatedChild = (await resolvePlanFromDb('203', tempDir)).plan;
+    updatedChild = (await resolvePlanByNumericId(203, tempDir)).plan;
     expect(updatedChild.parent).toBeUndefined();
 
     // Verify parent dependencies array is updated
-    updatedParent = (await resolvePlanFromDb('202', tempDir)).plan;
+    updatedParent = (await resolvePlanByNumericId(202, tempDir)).plan;
     expect(updatedParent.dependencies).toEqual([]);
   });
 
@@ -827,40 +782,38 @@ describe('tim set command', () => {
 
     // Establish initial relationship with old parent
     await handleSetCommand(
-      childPlanPath,
+      204,
       {
-        planFile: childPlanPath,
         parent: 205,
       },
       globalOpts
     );
 
     // Verify initial relationship
-    let updatedChild = (await resolvePlanFromDb('204', tempDir)).plan;
-    let oldParent = (await resolvePlanFromDb('205', tempDir)).plan;
+    let updatedChild = (await resolvePlanByNumericId(204, tempDir)).plan;
+    let oldParent = (await resolvePlanByNumericId(205, tempDir)).plan;
     expect(updatedChild.parent).toBe(205);
     expect(oldParent.dependencies).toEqual([204]);
 
     // Change to new parent
     await handleSetCommand(
-      childPlanPath,
+      204,
       {
-        planFile: childPlanPath,
         parent: 206,
       },
       globalOpts
     );
 
     // Verify child has new parent
-    updatedChild = (await resolvePlanFromDb('204', tempDir)).plan;
+    updatedChild = (await resolvePlanByNumericId(204, tempDir)).plan;
     expect(updatedChild.parent).toBe(206);
 
     // Verify old parent no longer has child in dependencies
-    oldParent = (await resolvePlanFromDb('205', tempDir)).plan;
+    oldParent = (await resolvePlanByNumericId(205, tempDir)).plan;
     expect(oldParent.dependencies).toEqual([]);
 
     // Verify new parent has child in dependencies
-    const newParent = (await resolvePlanFromDb('206', tempDir)).plan;
+    const newParent = (await resolvePlanByNumericId(206, tempDir)).plan;
     expect(newParent.dependencies).toEqual([204]);
   });
 
@@ -870,40 +823,37 @@ describe('tim set command', () => {
     const planCPath = await createTestPlan(209);
 
     await handleSetCommand(
-      planCPath,
+      209,
       {
-        planFile: planCPath,
         parent: 207,
       },
       globalOpts
     );
 
     await handleSetCommand(
-      planBPath,
+      208,
       {
-        planFile: planBPath,
         parent: 209,
       },
       globalOpts
     );
 
-    const planB = await readPlanFile(planBPath);
-    const planC = await readPlanFile(planCPath);
+    const planB = (await resolvePlanByNumericId(208, tempDir)).plan;
+    const planC = (await resolvePlanByNumericId(209, tempDir)).plan;
     expect(planB.parent).toBe(209);
     expect(planC.parent).toBe(207);
 
     await expect(
       handleSetCommand(
-        planAPath,
+        207,
         {
-          planFile: planAPath,
           parent: 208,
         },
         globalOpts
       )
     ).rejects.toThrow('Setting parent 208 would create a circular dependency');
 
-    const updatedPlanA = await readPlanFile(planAPath);
+    const updatedPlanA = (await resolvePlanByNumericId(207, tempDir)).plan;
     expect(updatedPlanA.parent).toBeUndefined();
   });
 
@@ -921,16 +871,15 @@ describe('tim set command', () => {
 
     await expect(
       handleSetCommand(
-        childPlanPath,
+        560,
         {
-          planFile: childPlanPath,
           parent: 561,
         },
         globalOpts
       )
     ).rejects.toThrow('Setting parent 561 would create a circular dependency');
 
-    const updatedChild = await readPlanFile(childPlanPath);
+    const updatedChild = (await resolvePlanByNumericId(560, tempDir)).plan;
     expect(updatedChild.parent).toBeUndefined();
   });
 
@@ -941,33 +890,31 @@ describe('tim set command', () => {
 
     // Set parent first time
     await handleSetCommand(
-      childPlanPath,
+      211,
       {
-        planFile: childPlanPath,
         parent: 210,
       },
       globalOpts
     );
 
     // Verify initial relationship
-    let updatedChild = await readPlanFile(childPlanPath);
-    let updatedParent = (await resolvePlanFromDb('210', tempDir)).plan;
+    let updatedChild = (await resolvePlanByNumericId(211, tempDir)).plan;
+    let updatedParent = (await resolvePlanByNumericId(210, tempDir)).plan;
     expect(updatedChild.parent).toBe(210);
     expect(updatedParent.dependencies).toEqual([211]);
 
     // Set same parent again
     await handleSetCommand(
-      childPlanPath,
+      211,
       {
-        planFile: childPlanPath,
         parent: 210,
       },
       globalOpts
     );
 
     // Verify no duplicate dependencies
-    updatedChild = await readPlanFile(childPlanPath);
-    updatedParent = (await resolvePlanFromDb('210', tempDir)).plan;
+    updatedChild = (await resolvePlanByNumericId(211, tempDir)).plan;
+    updatedParent = (await resolvePlanByNumericId(210, tempDir)).plan;
     expect(updatedChild.parent).toBe(210);
     expect(updatedParent.dependencies).toEqual([211]); // Should still be [211], not [211, 211]
   });
@@ -977,15 +924,14 @@ describe('tim set command', () => {
     const planPath = await createTestPlan(40);
 
     await handleSetCommand(
-      planPath,
+      40,
       {
-        planFile: planPath,
         discoveredFrom: 38,
       },
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanByNumericId(40, tempDir)).plan;
     expect(updatedPlan.discoveredFrom).toBe(38);
     expect(updatedPlan.updatedAt).toBeDefined();
   });
@@ -996,28 +942,26 @@ describe('tim set command', () => {
 
     // First set discoveredFrom
     await handleSetCommand(
-      planPath,
+      41,
       {
-        planFile: planPath,
         discoveredFrom: 38,
       },
       globalOpts
     );
 
-    let updatedPlan = await readPlanFile(planPath);
+    let updatedPlan = (await resolvePlanByNumericId(41, tempDir)).plan;
     expect(updatedPlan.discoveredFrom).toBe(38);
 
     // Then remove it
     await handleSetCommand(
-      planPath,
+      41,
       {
-        planFile: planPath,
         noDiscoveredFrom: true,
       },
       globalOpts
     );
 
-    updatedPlan = await readPlanFile(planPath);
+    updatedPlan = (await resolvePlanByNumericId(41, tempDir)).plan;
     expect(updatedPlan.discoveredFrom).toBeUndefined();
   });
 
@@ -1025,15 +969,14 @@ describe('tim set command', () => {
     const planPath = await createTestPlan(42);
 
     await handleSetCommand(
-      planPath,
+      42,
       {
-        planFile: planPath,
         noDiscoveredFrom: true,
       },
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanByNumericId(42, tempDir)).plan;
     expect(updatedPlan.discoveredFrom).toBeUndefined();
   });
 
@@ -1044,28 +987,26 @@ describe('tim set command', () => {
 
     // First set discoveredFrom to 38
     await handleSetCommand(
-      planPath,
+      43,
       {
-        planFile: planPath,
         discoveredFrom: 38,
       },
       globalOpts
     );
 
-    let updatedPlan = await readPlanFile(planPath);
+    let updatedPlan = (await resolvePlanByNumericId(43, tempDir)).plan;
     expect(updatedPlan.discoveredFrom).toBe(38);
 
     // Change it to 39
     await handleSetCommand(
-      planPath,
+      43,
       {
-        planFile: planPath,
         discoveredFrom: 39,
       },
       globalOpts
     );
 
-    updatedPlan = await readPlanFile(planPath);
+    updatedPlan = (await resolvePlanByNumericId(43, tempDir)).plan;
     expect(updatedPlan.discoveredFrom).toBe(39);
   });
 
@@ -1073,15 +1014,14 @@ describe('tim set command', () => {
     const planPath = await createTestPlan(200);
 
     await handleSetCommand(
-      planPath,
+      200,
       {
-        planFile: planPath,
         tag: ['Frontend', 'frontend', 'Urgent', ''],
       },
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanByNumericId(200, tempDir)).plan;
     expect(updatedPlan.tags).toEqual(['frontend', 'urgent']);
   });
 
@@ -1089,15 +1029,14 @@ describe('tim set command', () => {
     const planPath = await createTestPlan(201, { tags: ['frontend', 'bug', 'urgent'] });
 
     await handleSetCommand(
-      planPath,
+      201,
       {
-        planFile: planPath,
         noTag: ['BUG'],
       },
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanByNumericId(201, tempDir)).plan;
     expect(updatedPlan.tags).toEqual(['frontend', 'urgent']);
   });
 
@@ -1105,16 +1044,15 @@ describe('tim set command', () => {
     const planPath = await createTestPlan(202, { tags: ['frontend'] });
 
     await handleSetCommand(
-      planPath,
+      202,
       {
-        planFile: planPath,
         tag: ['Bug'],
         noTag: ['frontend'],
       },
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanByNumericId(202, tempDir)).plan;
     expect(updatedPlan.tags).toEqual(['bug']);
   });
 
@@ -1131,9 +1069,8 @@ describe('tim set command', () => {
 
     await expect(
       handleSetCommand(
-        planPath,
+        203,
         {
-          planFile: planPath,
           tag: ['urgent'],
         },
         globalOpts
@@ -1145,15 +1082,14 @@ describe('tim set command', () => {
     const planPath = await createTestPlan(300);
 
     await handleSetCommand(
-      planPath,
+      300,
       {
-        planFile: planPath,
         epic: true,
       },
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanByNumericId(300, tempDir)).plan;
     expect(updatedPlan.epic).toBe(true);
     expect(updatedPlan.updatedAt).toBeDefined();
   });
@@ -1162,47 +1098,44 @@ describe('tim set command', () => {
     const planPath = await createTestPlan(301, { epic: true });
 
     await handleSetCommand(
-      planPath,
+      301,
       {
-        planFile: planPath,
         noEpic: true,
       },
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
-    expect(updatedPlan.epic).toBe(false);
+    const updatedPlan = (await resolvePlanByNumericId(301, tempDir)).plan;
+    expect(updatedPlan.epic).toBeFalsy();
   });
 
   test('should handle noEpic when epic is already false', async () => {
     const planPath = await createTestPlan(302, { epic: false });
 
     await handleSetCommand(
-      planPath,
+      302,
       {
-        planFile: planPath,
         noEpic: true,
       },
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
-    expect(updatedPlan.epic).toBe(false);
+    const updatedPlan = (await resolvePlanByNumericId(302, tempDir)).plan;
+    expect(updatedPlan.epic).toBeFalsy();
   });
 
   test('should set simple to true', async () => {
     const planPath = await createTestPlan(304);
 
     await handleSetCommand(
-      planPath,
+      304,
       {
-        planFile: planPath,
         simple: true,
       },
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanByNumericId(304, tempDir)).plan;
     expect(updatedPlan.simple).toBe(true);
   });
 
@@ -1210,15 +1143,14 @@ describe('tim set command', () => {
     const planPath = await createTestPlan(305, { simple: true });
 
     await handleSetCommand(
-      planPath,
+      305,
       {
-        planFile: planPath,
         simple: false,
       },
       globalOpts
     );
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = (await resolvePlanByNumericId(305, tempDir)).plan;
     expect(updatedPlan.simple).toBeUndefined();
   });
 
@@ -1227,29 +1159,27 @@ describe('tim set command', () => {
 
     // First set to true
     await handleSetCommand(
-      planPath,
+      303,
       {
-        planFile: planPath,
         epic: true,
       },
       globalOpts
     );
 
-    let updatedPlan = await readPlanFile(planPath);
+    let updatedPlan = (await resolvePlanByNumericId(303, tempDir)).plan;
     expect(updatedPlan.epic).toBe(true);
 
     // Then set back to false explicitly
     await handleSetCommand(
-      planPath,
+      303,
       {
-        planFile: planPath,
         epic: false,
       },
       globalOpts
     );
 
-    updatedPlan = await readPlanFile(planPath);
-    expect(updatedPlan.epic).toBe(false);
+    updatedPlan = (await resolvePlanByNumericId(303, tempDir)).plan;
+    expect(updatedPlan.epic).toBeFalsy();
   });
 
   test('should preserve dependencies when adding dependsOn', async () => {
@@ -1257,15 +1187,14 @@ describe('tim set command', () => {
     const planPath = await createTestPlan(401);
 
     await handleSetCommand(
-      planPath,
+      401,
       {
-        planFile: planPath,
         dependsOn: [400],
       },
       globalOpts
     );
 
-    const updatedPlan = (await resolvePlanFromDb('401', tempDir)).plan;
+    const updatedPlan = (await resolvePlanByNumericId(401, tempDir)).plan;
     expect(updatedPlan.dependencies).toEqual([400]);
   });
 
@@ -1274,15 +1203,14 @@ describe('tim set command', () => {
     const planPath = await createTestPlan(411);
 
     await handleSetCommand(
-      planPath,
+      411,
       {
-        planFile: planPath,
         discoveredFrom: 410,
       },
       globalOpts
     );
 
-    const updatedPlan = (await resolvePlanFromDb('411', tempDir)).plan;
+    const updatedPlan = (await resolvePlanByNumericId(411, tempDir)).plan;
     expect(updatedPlan.discoveredFrom).toBe(410);
   });
 
@@ -1293,9 +1221,8 @@ describe('tim set command', () => {
 
     // Add two dependencies
     await handleSetCommand(
-      planPath,
+      422,
       {
-        planFile: planPath,
         dependsOn: [420, 421],
       },
       globalOpts
@@ -1303,15 +1230,14 @@ describe('tim set command', () => {
 
     // Remove one dependency
     await handleSetCommand(
-      planPath,
+      422,
       {
-        planFile: planPath,
         noDependsOn: [420],
       },
       globalOpts
     );
 
-    const updatedPlan = (await resolvePlanFromDb('422', tempDir)).plan;
+    const updatedPlan = (await resolvePlanByNumericId(422, tempDir)).plan;
     expect(updatedPlan.dependencies).toEqual([421]);
   });
 
@@ -1321,28 +1247,26 @@ describe('tim set command', () => {
 
     // Set parent
     await handleSetCommand(
-      childPlanPath,
+      431,
       {
-        planFile: childPlanPath,
         parent: 430,
       },
       globalOpts
     );
 
-    let updatedChild = (await resolvePlanFromDb('431', tempDir)).plan;
+    let updatedChild = (await resolvePlanByNumericId(431, tempDir)).plan;
     expect(updatedChild.parent).toBe(430);
 
     // Remove parent
     await handleSetCommand(
-      childPlanPath,
+      431,
       {
-        planFile: childPlanPath,
         noParent: true,
       },
       globalOpts
     );
 
-    updatedChild = (await resolvePlanFromDb('431', tempDir)).plan;
+    updatedChild = (await resolvePlanByNumericId(431, tempDir)).plan;
     expect(updatedChild.parent).toBeUndefined();
   });
 
@@ -1352,28 +1276,26 @@ describe('tim set command', () => {
 
     // Set discoveredFrom
     await handleSetCommand(
-      planPath,
+      441,
       {
-        planFile: planPath,
         discoveredFrom: 440,
       },
       globalOpts
     );
 
-    let updatedPlan = (await resolvePlanFromDb('441', tempDir)).plan;
+    let updatedPlan = (await resolvePlanByNumericId(441, tempDir)).plan;
     expect(updatedPlan.discoveredFrom).toBe(440);
 
     // Remove discoveredFrom
     await handleSetCommand(
-      planPath,
+      441,
       {
-        planFile: planPath,
         noDiscoveredFrom: true,
       },
       globalOpts
     );
 
-    updatedPlan = (await resolvePlanFromDb('441', tempDir)).plan;
+    updatedPlan = (await resolvePlanByNumericId(441, tempDir)).plan;
     expect(updatedPlan.discoveredFrom).toBeUndefined();
   });
 
@@ -1383,19 +1305,18 @@ describe('tim set command', () => {
     const planPath = await createTestPlan(451);
 
     await handleSetCommand(
-      planPath,
+      451,
       {
-        planFile: planPath,
         dependsOn: [450],
       },
       globalOpts
     );
 
-    const updatedPlan = (await resolvePlanFromDb('451', tempDir)).plan;
+    const updatedPlan = (await resolvePlanByNumericId(451, tempDir)).plan;
     expect(updatedPlan.dependencies).toEqual([450]);
 
     // The dependency plan's UUID should not have changed
-    const depPlan = (await resolvePlanFromDb('450', tempDir)).plan;
+    const depPlan = (await resolvePlanByNumericId(450, tempDir)).plan;
     expect(depPlan.uuid).toBe(existingUuid);
   });
 
@@ -1404,15 +1325,14 @@ describe('tim set command', () => {
       const planPath = await createTestPlan(500);
 
       await handleSetCommand(
-        planPath,
+        500,
         {
-          planFile: planPath,
           baseBranch: 'feature/parent-branch',
         },
         globalOpts
       );
 
-      const updatedPlan = (await resolvePlanFromDb('500', tempDir)).plan;
+      const updatedPlan = (await resolvePlanByNumericId(500, tempDir)).plan;
       expect(updatedPlan.baseBranch).toBe('feature/parent-branch');
     });
 
@@ -1423,9 +1343,8 @@ describe('tim set command', () => {
 
       await expect(
         handleSetCommand(
-          planPath,
+          512,
           {
-            planFile: planPath,
             baseBranch: 'feature/self-branch',
           },
           globalOpts
@@ -1441,9 +1360,8 @@ describe('tim set command', () => {
 
       await expect(
         handleSetCommand(
-          planPath,
+          513,
           {
-            planFile: planPath,
             baseBranch: '513-test-plan-513',
           },
           globalOpts
@@ -1461,15 +1379,14 @@ describe('tim set command', () => {
       });
 
       await handleSetCommand(
-        planPath,
+        501,
         {
-          planFile: planPath,
           noBaseBranch: true,
         },
         globalOpts
       );
 
-      const updatedPlan = (await resolvePlanFromDb('501', tempDir)).plan;
+      const updatedPlan = (await resolvePlanByNumericId(501, tempDir)).plan;
       expect(updatedPlan.baseBranch).toBeUndefined();
       expect(updatedPlan.baseCommit).toBeUndefined();
       expect(updatedPlan.baseChangeId).toBeUndefined();
@@ -1479,9 +1396,8 @@ describe('tim set command', () => {
       const planPath = await createTestPlan(502);
 
       await handleSetCommand(
-        planPath,
+        502,
         {
-          planFile: planPath,
           noBaseBranch: true,
         },
         globalOpts
@@ -1491,7 +1407,7 @@ describe('tim set command', () => {
       expect(logs.some((msg) => msg === 'No baseBranch to remove')).toBe(true);
 
       // Plan should be unchanged
-      const plan = (await resolvePlanFromDb('502', tempDir)).plan;
+      const plan = (await resolvePlanByNumericId(502, tempDir)).plan;
       expect(plan.baseBranch).toBeUndefined();
     });
 
@@ -1502,15 +1418,14 @@ describe('tim set command', () => {
       });
 
       await handleSetCommand(
-        planPath,
+        503,
         {
-          planFile: planPath,
           noBaseBranch: true,
         },
         globalOpts
       );
 
-      const updatedPlan = (await resolvePlanFromDb('503', tempDir)).plan;
+      const updatedPlan = (await resolvePlanByNumericId(503, tempDir)).plan;
       expect(updatedPlan.baseCommit).toBeUndefined();
       expect(updatedPlan.baseChangeId).toBeUndefined();
     });
@@ -1519,15 +1434,14 @@ describe('tim set command', () => {
       const planPath = await createTestPlan(504);
 
       await handleSetCommand(
-        planPath,
+        504,
         {
-          planFile: planPath,
           baseCommit: 'deadbeef1234567890',
         },
         globalOpts
       );
 
-      const updatedPlan = (await resolvePlanFromDb('504', tempDir)).plan;
+      const updatedPlan = (await resolvePlanByNumericId(504, tempDir)).plan;
       expect(updatedPlan.baseCommit).toBe('deadbeef1234567890');
     });
 
@@ -1539,15 +1453,14 @@ describe('tim set command', () => {
       });
 
       await handleSetCommand(
-        planPath,
+        505,
         {
-          planFile: planPath,
           noBaseCommit: true,
         },
         globalOpts
       );
 
-      const updatedPlan = (await resolvePlanFromDb('505', tempDir)).plan;
+      const updatedPlan = (await resolvePlanByNumericId(505, tempDir)).plan;
       expect(updatedPlan.baseCommit).toBeUndefined();
       expect(updatedPlan.baseBranch).toBe('feature/parent-branch');
       expect(updatedPlan.baseChangeId).toBe('zyxwvu987654');
@@ -1557,9 +1470,8 @@ describe('tim set command', () => {
       const planPath = await createTestPlan(506);
 
       await handleSetCommand(
-        planPath,
+        506,
         {
-          planFile: planPath,
           noBaseCommit: true,
         },
         globalOpts
@@ -1573,15 +1485,14 @@ describe('tim set command', () => {
       const planPath = await createTestPlan(507);
 
       await handleSetCommand(
-        planPath,
+        507,
         {
-          planFile: planPath,
           baseChangeId: 'qrstuvwxyz1234567890',
         },
         globalOpts
       );
 
-      const updatedPlan = (await resolvePlanFromDb('507', tempDir)).plan;
+      const updatedPlan = (await resolvePlanByNumericId(507, tempDir)).plan;
       expect(updatedPlan.baseChangeId).toBe('qrstuvwxyz1234567890');
     });
 
@@ -1593,15 +1504,14 @@ describe('tim set command', () => {
       });
 
       await handleSetCommand(
-        planPath,
+        508,
         {
-          planFile: planPath,
           noBaseChangeId: true,
         },
         globalOpts
       );
 
-      const updatedPlan = (await resolvePlanFromDb('508', tempDir)).plan;
+      const updatedPlan = (await resolvePlanByNumericId(508, tempDir)).plan;
       expect(updatedPlan.baseChangeId).toBeUndefined();
       expect(updatedPlan.baseBranch).toBe('feature/parent-branch');
       expect(updatedPlan.baseCommit).toBe('abc123def456');
@@ -1611,9 +1521,8 @@ describe('tim set command', () => {
       const planPath = await createTestPlan(509);
 
       await handleSetCommand(
-        planPath,
+        509,
         {
-          planFile: planPath,
           noBaseChangeId: true,
         },
         globalOpts
@@ -1627,9 +1536,8 @@ describe('tim set command', () => {
       const planPath = await createTestPlan(510);
 
       await handleSetCommand(
-        planPath,
+        510,
         {
-          planFile: planPath,
           baseBranch: 'feature/parent-branch',
           baseCommit: 'abc123def456',
           baseChangeId: 'zyxwvu987654',
@@ -1637,7 +1545,7 @@ describe('tim set command', () => {
         globalOpts
       );
 
-      const updatedPlan = (await resolvePlanFromDb('510', tempDir)).plan;
+      const updatedPlan = (await resolvePlanByNumericId(510, tempDir)).plan;
       expect(updatedPlan.baseBranch).toBe('feature/parent-branch');
       expect(updatedPlan.baseCommit).toBe('abc123def456');
       expect(updatedPlan.baseChangeId).toBe('zyxwvu987654');
@@ -1651,15 +1559,14 @@ describe('tim set command', () => {
       });
 
       await handleSetCommand(
-        planPath,
+        511,
         {
-          planFile: planPath,
           baseBranch: 'new-branch',
         },
         globalOpts
       );
 
-      const updatedPlan = (await resolvePlanFromDb('511', tempDir)).plan;
+      const updatedPlan = (await resolvePlanByNumericId(511, tempDir)).plan;
       expect(updatedPlan.baseBranch).toBe('new-branch');
       // baseCommit and baseChangeId should be cleared since they refer to old branch
       expect(updatedPlan.baseCommit).toBeUndefined();
@@ -1674,15 +1581,14 @@ describe('tim set command', () => {
       });
 
       await handleSetCommand(
-        planPath,
+        512,
         {
-          planFile: planPath,
           baseBranch: 'same-branch',
         },
         globalOpts
       );
 
-      const updatedPlan = (await resolvePlanFromDb('512', tempDir)).plan;
+      const updatedPlan = (await resolvePlanByNumericId(512, tempDir)).plan;
       expect(updatedPlan.baseBranch).toBe('same-branch');
       expect(updatedPlan.baseCommit).toBe('abc123def456');
       expect(updatedPlan.baseChangeId).toBe('zyxwvu987654');

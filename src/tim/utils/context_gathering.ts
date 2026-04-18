@@ -6,7 +6,7 @@
 
 import chalk from 'chalk';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
-import { resolvePlanFromDb } from '../plans.js';
+import { resolvePlanByNumericId } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { getLegacyAwareSearchDir } from '../path_resolver.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
@@ -50,7 +50,7 @@ export interface PlanContext {
  * Dependencies that can be injected for testing
  */
 export interface ContextGatheringDependencies {
-  resolvePlanFromDb: typeof resolvePlanFromDb;
+  resolvePlanByNumericId: typeof resolvePlanByNumericId;
   loadPlansFromDb: typeof loadPlansFromDb;
   generateDiffForReview: typeof generateDiffForReview;
   getGitRoot: typeof getGitRoot;
@@ -65,7 +65,7 @@ export interface ContextGatheringDependencies {
  * Default dependencies using the actual implementations
  */
 const defaultDependencies: ContextGatheringDependencies = {
-  resolvePlanFromDb,
+  resolvePlanByNumericId,
   loadPlansFromDb,
   generateDiffForReview,
   getGitRoot,
@@ -80,14 +80,14 @@ const defaultDependencies: ContextGatheringDependencies = {
  * Gathers comprehensive context for a plan including hierarchy and diff information.
  * This function encapsulates the context-gathering logic previously embedded in handleReviewCommand.
  *
- * @param planFile - Plan ID
+ * @param planId - Plan ID
  * @param options - Command options including incremental review settings
  * @param globalOpts - Global CLI options including config path
  * @param deps - Injectable dependencies for testing
  * @returns Promise<PlanContext> containing all gathered context
  */
 export async function gatherPlanContext(
-  planFile: string,
+  planId: number,
   options: {
     incremental?: boolean;
     sinceLastReview?: boolean;
@@ -101,9 +101,9 @@ export async function gatherPlanContext(
   deps: ContextGatheringDependencies = defaultDependencies
 ): Promise<PlanContext> {
   const repoRoot = await deps.resolveRepoRoot(globalOpts.config, options.cwd);
-  const resolvedPlan = await deps.resolvePlanFromDb(planFile, repoRoot);
+  const resolvedPlan = await deps.resolvePlanByNumericId(planId, repoRoot);
   const planData = resolvedPlan.plan;
-  const resolvedPlanFile = resolvedPlan.planPath ?? String(planData.id ?? planFile);
+  const resolvedPlanFile = resolvedPlan.planPath ?? String(planData.id ?? planId);
 
   // Validate plan exists and has content
   if (!planData) {

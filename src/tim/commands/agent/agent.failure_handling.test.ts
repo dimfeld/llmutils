@@ -4,6 +4,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 
 let tempDir: string;
+let currentTestPlanFile = '';
 let yielded = false;
 const markStepDoneSpy = vi.fn(async () => ({ planComplete: false, message: 'ok' }));
 
@@ -121,7 +122,7 @@ vi.mock('../../plans.js', () => {
     }),
     writePlanFile: vi.fn(async () => {}),
     generatePlanFileContent: vi.fn(() => ''),
-    resolvePlanFromDb: vi.fn(async () => ({
+    resolvePlanByNumericId: vi.fn(async () => ({
       plan: { id: 1, title: 'P', status: 'pending', tasks: [] },
       planPath: '',
     })),
@@ -147,6 +148,14 @@ vi.mock('../../workspace/workspace_roundtrip.js', () => ({
   materializePlansForExecution: vi.fn(async () => undefined),
 }));
 
+vi.mock('../../workspace/workspace_setup.js', () => ({
+  setupWorkspace: vi.fn(async (_opts: any, baseDir: string) => ({
+    baseDir,
+    planFile: currentTestPlanFile,
+    branchCreatedDuringSetup: false,
+  })),
+}));
+
 describe('timAgent - serial mode failure handling', () => {
   beforeEach(async () => {
     yielded = false;
@@ -162,13 +171,14 @@ describe('timAgent - serial mode failure handling', () => {
 
   test('executor failure stops loop, prints details, and does not mark step done', async () => {
     const planFile = path.join(tempDir, 'tasks', 'p.yml');
+    currentTestPlanFile = planFile;
     const content = `---\nid: 1\ntitle: P\ngoal: G\ndetails: D\ntasks:\n  - title: T1\n    description: Desc\n    steps:\n      - prompt: do it\n---\n`;
     await fs.writeFile(planFile, content);
 
     const { timAgent } = await import('./agent.js');
-    await expect(
-      timAgent(planFile, { summary: true, log: false, serialTasks: true }, {})
-    ).rejects.toThrow('Agent stopped due to error.');
+    await expect(timAgent(1, { summary: true, log: false, serialTasks: true }, {})).rejects.toThrow(
+      'Agent stopped due to error.'
+    );
 
     // Ensure we did not mark the step as done
     expect(markStepDoneSpy).not.toHaveBeenCalled();

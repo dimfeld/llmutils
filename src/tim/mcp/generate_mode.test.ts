@@ -43,7 +43,8 @@ vi.mock('node:os', async (importOriginal) => {
   };
 });
 
-vi.mock('../../common/git.js', () => ({
+vi.mock('../../common/git.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../common/git.js')>()),
   getGitRoot: vi.fn(),
   clearAllGitCaches: vi.fn(),
 }));
@@ -104,10 +105,17 @@ describe('tim MCP generate mode helpers', () => {
       remoteUrl: 'https://example.com/repo.git',
       gitRoot: tmpDir,
     });
-    planPath = path.join(tmpDir, '99999-test.plan.md');
+    planPath = getMaterializedPlanPath(tmpDir, basePlan.id);
+    await mkdir(path.dirname(planPath), { recursive: true });
     await writePlanFile(planPath, basePlan);
     mockGenerateNumericPlanId.mockImplementation(async () => {
-      const entries = await readdir(tmpDir);
+      const materializedDir = path.join(tmpDir, '.tim', 'plans');
+      let entries: string[] = [];
+      try {
+        entries = await readdir(materializedDir);
+      } catch {
+        // directory may not exist yet
+      }
       let maxId = 0;
       for (const entry of entries) {
         const match = entry.match(/^(\d+)[^/]*\.plan\.md$/);
@@ -168,7 +176,7 @@ describe('tim MCP generate mode helpers', () => {
   });
 
   test('loadResearchPrompt returns plan context with research template', async () => {
-    const prompt = await loadResearchPrompt({ plan: planPath }, context);
+    const prompt = await loadResearchPrompt({ plan: basePlan.id }, context);
     const message = prompt.messages[0]?.content;
     expect(message?.text).toContain('Test Plan');
     expect(message?.text).toContain('Please analyze this project description');
@@ -181,7 +189,7 @@ describe('tim MCP generate mode helpers', () => {
       instructions: path.basename(instructionFile),
     };
 
-    const prompt = await loadResearchPrompt({ plan: planPath }, context);
+    const prompt = await loadResearchPrompt({ plan: basePlan.id }, context);
     const messageText = prompt.messages[0]?.content?.text ?? '';
 
     expect(messageText).toContain('# Planning Instructions');
@@ -189,14 +197,14 @@ describe('tim MCP generate mode helpers', () => {
   });
 
   test('loadQuestionsPrompt encourages iterative questioning', async () => {
-    const prompt = await loadQuestionsPrompt({ plan: planPath }, context);
+    const prompt = await loadQuestionsPrompt({ plan: basePlan.id }, context);
     const message = prompt.messages[0]?.content;
     expect(message?.text).toContain('Ask one concise, high-impact question');
     expect(message?.text).toContain('Initial details about the plan.');
   });
 
   test('loadGeneratePrompt returns plan context with generation instructions', async () => {
-    const prompt = await loadGeneratePrompt({ plan: planPath }, context);
+    const prompt = await loadGeneratePrompt({ plan: basePlan.id }, context);
     const message = prompt.messages[0]?.content;
     expect(message?.text).toContain('Test Plan');
     expect(message?.text).toContain('generate a detailed implementation plan');
@@ -211,7 +219,7 @@ describe('tim MCP generate mode helpers', () => {
       instructions: instructionPath,
     };
 
-    const prompt = await loadGeneratePrompt({ plan: planPath }, context);
+    const prompt = await loadGeneratePrompt({ plan: basePlan.id }, context);
     const messageText = prompt.messages[0]?.content?.text ?? '';
 
     expect(messageText).toContain('# Planning Instructions');
@@ -249,7 +257,7 @@ describe('tim MCP generate mode helpers', () => {
       parent: 99998,
     });
 
-    const prompt = await loadResearchPrompt({ plan: planPath }, context);
+    const prompt = await loadResearchPrompt({ plan: basePlan.id }, context);
     const messageText = prompt.messages[0]?.content?.text ?? '';
 
     expect(messageText).toContain('# Parent Plan Context');
@@ -298,7 +306,7 @@ describe('tim MCP generate mode helpers', () => {
       parent: 99998,
     });
 
-    const prompt = await loadGeneratePrompt({ plan: planPath }, context);
+    const prompt = await loadGeneratePrompt({ plan: basePlan.id }, context);
     const messageText = prompt.messages[0]?.content?.text ?? '';
 
     expect(messageText).toContain('# Parent Plan Context');
@@ -348,7 +356,7 @@ describe('tim MCP generate mode helpers', () => {
       parent: 99998,
     });
 
-    const prompt = await loadResearchPrompt({ plan: planPath }, context);
+    const prompt = await loadResearchPrompt({ plan: basePlan.id }, context);
     const messageText = prompt.messages[0]?.content?.text ?? '';
 
     expect(messageText).toContain('# Parent Plan Context');
@@ -362,7 +370,7 @@ describe('tim MCP generate mode helpers', () => {
   });
 
   test('loadPlanPrompt returns plan details and wait instruction', async () => {
-    const prompt = await loadPlanPrompt({ plan: planPath }, context);
+    const prompt = await loadPlanPrompt({ plan: basePlan.id }, context);
     const message = prompt.messages[0]?.content;
     expect(message?.text).toContain('Plan ID: 99999');
     expect(message?.text).toContain('Test Plan');
@@ -370,7 +378,7 @@ describe('tim MCP generate mode helpers', () => {
   });
 
   test('loadImplementPrompt returns plan details and implementation instruction', async () => {
-    const prompt = await loadImplementPrompt({ plan: planPath }, context);
+    const prompt = await loadImplementPrompt({ plan: basePlan.id }, context);
     const messageText = prompt.messages[0]?.content?.text ?? '';
 
     expect(messageText).toContain('Plan ID: 99999');
@@ -392,7 +400,7 @@ describe('tim MCP generate mode helpers', () => {
       ],
     });
 
-    const prompt = await loadImplementPrompt({ plan: planPath }, context);
+    const prompt = await loadImplementPrompt({ plan: basePlan.id }, context);
     const messageText = prompt.messages[0]?.content?.text ?? '';
 
     expect(messageText).toContain("Follow the plan's tasks and details");
@@ -409,7 +417,7 @@ describe('tim MCP generate mode helpers', () => {
       simple: true,
     });
 
-    const prompt = await loadImplementPrompt({ plan: planPath }, context);
+    const prompt = await loadImplementPrompt({ plan: basePlan.id }, context);
     const messageText = prompt.messages[0]?.content?.text ?? '';
 
     expect(messageText).toContain('Title: Add export button');
@@ -420,7 +428,7 @@ describe('tim MCP generate mode helpers', () => {
 
   test('mcpUpdatePlanTasks updates plan with structured data', async () => {
     const args = generateTasksParameters.parse({
-      plan: planPath,
+      plan: basePlan.id,
       goal: 'Ship a high-quality feature',
       details: 'Updated details about the plan.',
       priority: 'high',
@@ -446,7 +454,7 @@ describe('tim MCP generate mode helpers', () => {
     expect(result).toContain('2 tasks');
 
     // Verify the plan was actually updated
-    const updated = await readPlanFile(planPath);
+    const updated = await readPlanFile(getMaterializedPlanPath(tmpDir, basePlan.id));
     expect(updated.tasks).toHaveLength(2);
     expect(updated.tasks[0]?.title).toBe('Implement core functionality');
     expect(updated.tasks[0]?.description).toBe('Build the main feature');
@@ -457,7 +465,7 @@ describe('tim MCP generate mode helpers', () => {
   });
 
   test('mcpGetPlan retrieves plan details', async () => {
-    const args = getPlanParameters.parse({ plan: planPath });
+    const args = getPlanParameters.parse({ plan: basePlan.id });
     const result = await mcpGetPlan(args, context);
     expect(result).toContain('Plan ID: 99999');
     expect(result).toContain('Test Plan');
@@ -469,7 +477,7 @@ describe('tim MCP generate mode helpers', () => {
 
   test('mcpUpdatePlanTasks adds delimiters on first update', async () => {
     const args = generateTasksParameters.parse({
-      plan: planPath,
+      plan: basePlan.id,
       details: 'First generated details.',
       tasks: [
         {
@@ -488,7 +496,7 @@ describe('tim MCP generate mode helpers', () => {
 
     await mcpUpdatePlanTasks(args, context, { log: stubLogger });
 
-    const updated = await readPlanFile(planPath);
+    const updated = await readPlanFile(getMaterializedPlanPath(tmpDir, basePlan.id));
     expect(updated.details).toContain('<!-- tim-generated-start -->');
     expect(updated.details).toContain('<!-- tim-generated-end -->');
     expect(updated.details).toContain('First generated details.');
@@ -497,7 +505,7 @@ describe('tim MCP generate mode helpers', () => {
   test('mcpUpdatePlanTasks replaces content between delimiters on subsequent update', async () => {
     // First update adds delimiters
     const firstArgs = generateTasksParameters.parse({
-      plan: planPath,
+      plan: basePlan.id,
       details: 'First generated details.',
       tasks: [{ title: 'Task 1', description: 'Description' }],
     });
@@ -513,14 +521,14 @@ describe('tim MCP generate mode helpers', () => {
 
     // Second update replaces content between delimiters
     const secondArgs = generateTasksParameters.parse({
-      plan: planPath,
+      plan: basePlan.id,
       details: 'Second generated details (updated).',
       tasks: [{ title: 'Task 2', description: 'New description' }],
     });
 
     await mcpUpdatePlanTasks(secondArgs, context, { log: stubLogger });
 
-    const updated = await readPlanFile(planPath);
+    const updated = await readPlanFile(getMaterializedPlanPath(tmpDir, basePlan.id));
     expect(updated.details).toContain('<!-- tim-generated-start -->');
     expect(updated.details).toContain('<!-- tim-generated-end -->');
     expect(updated.details).toContain('Second generated details (updated).');
@@ -542,7 +550,7 @@ describe('tim MCP generate mode helpers', () => {
 
     // Update with new generated details
     const args = generateTasksParameters.parse({
-      plan: planPath,
+      plan: basePlan.id,
       details: 'New generated details.',
       tasks: [{ title: 'Task 1', description: 'Description' }],
     });
@@ -557,7 +565,7 @@ describe('tim MCP generate mode helpers', () => {
     await mcpUpdatePlanTasks(args, context, { log: stubLogger });
 
     // Verify delimiters were inserted before Research section
-    const updated = await readPlanFile(planPath);
+    const updated = await readPlanFile(getMaterializedPlanPath(tmpDir, basePlan.id));
     expect(updated.details).toContain('<!-- tim-generated-start -->');
     expect(updated.details).toContain('<!-- tim-generated-end -->');
     expect(updated.details).toContain('New generated details.');
@@ -593,7 +601,7 @@ describe('tim MCP generate mode helpers', () => {
     // First update
     await mcpUpdatePlanTasks(
       generateTasksParameters.parse({
-        plan: planPath,
+        plan: basePlan.id,
         details: 'First update.',
         tasks: [{ title: 'Task 1', description: 'Desc' }],
       }),
@@ -601,7 +609,7 @@ describe('tim MCP generate mode helpers', () => {
       { log: stubLogger }
     );
 
-    let updated = await readPlanFile(planPath);
+    let updated = await readPlanFile(getMaterializedPlanPath(tmpDir, basePlan.id));
     expect(updated.details).toContain('First update.');
     expect(updated.details).toContain('## Research');
     expect(updated.details).toContain('Important research data that should be preserved');
@@ -609,7 +617,7 @@ describe('tim MCP generate mode helpers', () => {
     // Second update - research should still be preserved
     await mcpUpdatePlanTasks(
       generateTasksParameters.parse({
-        plan: planPath,
+        plan: basePlan.id,
         details: 'Second update.',
         tasks: [{ title: 'Task 2', description: 'Desc' }],
       }),
@@ -617,7 +625,7 @@ describe('tim MCP generate mode helpers', () => {
       { log: stubLogger }
     );
 
-    updated = await readPlanFile(planPath);
+    updated = await readPlanFile(getMaterializedPlanPath(tmpDir, basePlan.id));
     expect(updated.details).toContain('Second update.');
     expect(updated.details).not.toContain('First update.');
     expect(updated.details).toContain('## Research');
@@ -627,7 +635,7 @@ describe('tim MCP generate mode helpers', () => {
   // Tests for unified mcpManagePlanTask function
   test('mcpManagePlanTask with action=add creates task with metadata', async () => {
     const args = managePlanTaskParameters.parse({
-      plan: planPath,
+      plan: basePlan.id,
       action: 'add',
       title: 'Investigate issue',
       description: 'Reproduce the bug and identify the failing component.',
@@ -645,7 +653,7 @@ describe('tim MCP generate mode helpers', () => {
     const result = await mcpManagePlanTask(args, context, { log: stubLogger });
     expect(result).toContain('Added task "Investigate issue"');
 
-    const updated = await readPlanFile(planPath);
+    const updated = await readPlanFile(getMaterializedPlanPath(tmpDir, basePlan.id));
     expect(updated.tasks).toHaveLength(1);
     const task = updated.tasks[0];
     expect(task?.title).toBe('Investigate issue');
@@ -663,7 +671,7 @@ describe('tim MCP generate mode helpers', () => {
 
     await mcpManagePlanTask(
       managePlanTaskParameters.parse({
-        plan: planPath,
+        plan: basePlan.id,
         action: 'add',
         title: 'First Task',
         description: 'Initial task',
@@ -673,7 +681,7 @@ describe('tim MCP generate mode helpers', () => {
     );
     await mcpManagePlanTask(
       managePlanTaskParameters.parse({
-        plan: planPath,
+        plan: basePlan.id,
         action: 'add',
         title: 'Follow-up Task',
         description: 'Secondary task',
@@ -684,7 +692,7 @@ describe('tim MCP generate mode helpers', () => {
 
     const result = await mcpManagePlanTask(
       managePlanTaskParameters.parse({
-        plan: planPath,
+        plan: basePlan.id,
         action: 'remove',
         taskTitle: 'first',
       }),
@@ -695,7 +703,7 @@ describe('tim MCP generate mode helpers', () => {
     expect(result).toContain('Removed task "First Task"');
     expect(result).toContain('have shifted');
 
-    const updated = await readPlanFile(planPath);
+    const updated = await readPlanFile(getMaterializedPlanPath(tmpDir, basePlan.id));
     expect(updated.tasks).toHaveLength(1);
     expect(updated.tasks[0]?.title).toBe('Follow-up Task');
   });
@@ -703,7 +711,7 @@ describe('tim MCP generate mode helpers', () => {
   test('mcpManagePlanTask with action=remove errors on missing selectors', async () => {
     await mcpManagePlanTask(
       managePlanTaskParameters.parse({
-        plan: planPath,
+        plan: basePlan.id,
         action: 'add',
         title: 'Existing Task',
         description: 'Something to remove',
@@ -714,7 +722,7 @@ describe('tim MCP generate mode helpers', () => {
     await expect(
       mcpManagePlanTask(
         managePlanTaskParameters.parse({
-          plan: planPath,
+          plan: basePlan.id,
           action: 'remove',
         }),
         context
@@ -732,7 +740,7 @@ describe('tim MCP generate mode helpers', () => {
 
     await mcpManagePlanTask(
       managePlanTaskParameters.parse({
-        plan: planPath,
+        plan: basePlan.id,
         action: 'add',
         title: 'Original Task',
         description: 'Original description',
@@ -743,7 +751,7 @@ describe('tim MCP generate mode helpers', () => {
 
     const result = await mcpManagePlanTask(
       managePlanTaskParameters.parse({
-        plan: planPath,
+        plan: basePlan.id,
         action: 'update',
         taskTitle: 'original',
         title: 'Updated Task Title',
@@ -755,7 +763,7 @@ describe('tim MCP generate mode helpers', () => {
     expect(result).toContain('Updated task "Original Task"');
     expect(result).toContain('title to "Updated Task Title"');
 
-    const updated = await readPlanFile(planPath);
+    const updated = await readPlanFile(getMaterializedPlanPath(tmpDir, basePlan.id));
     expect(updated.tasks).toHaveLength(1);
     expect(updated.tasks[0]?.title).toBe('Updated Task Title');
     expect(updated.tasks[0]?.description).toBe('Original description');
@@ -771,7 +779,7 @@ describe('tim MCP generate mode helpers', () => {
 
     await mcpManagePlanTask(
       managePlanTaskParameters.parse({
-        plan: planPath,
+        plan: basePlan.id,
         action: 'add',
         title: 'Task Title',
         description: 'Original description',
@@ -782,7 +790,7 @@ describe('tim MCP generate mode helpers', () => {
 
     const result = await mcpManagePlanTask(
       managePlanTaskParameters.parse({
-        plan: planPath,
+        plan: basePlan.id,
         action: 'update',
         taskIndex: 1, // 1-based index
         description: 'Updated description with more details',
@@ -794,7 +802,7 @@ describe('tim MCP generate mode helpers', () => {
     expect(result).toContain('Updated task "Task Title"');
     expect(result).toContain('description');
 
-    const updated = await readPlanFile(planPath);
+    const updated = await readPlanFile(getMaterializedPlanPath(tmpDir, basePlan.id));
     expect(updated.tasks).toHaveLength(1);
     expect(updated.tasks[0]?.title).toBe('Task Title');
     expect(updated.tasks[0]?.description).toBe('Updated description with more details');
@@ -810,7 +818,7 @@ describe('tim MCP generate mode helpers', () => {
 
     await mcpManagePlanTask(
       managePlanTaskParameters.parse({
-        plan: planPath,
+        plan: basePlan.id,
         action: 'add',
         title: 'Task to Complete',
         description: 'Task description',
@@ -821,7 +829,7 @@ describe('tim MCP generate mode helpers', () => {
 
     const result = await mcpManagePlanTask(
       managePlanTaskParameters.parse({
-        plan: planPath,
+        plan: basePlan.id,
         action: 'update',
         taskTitle: 'complete',
         done: true,
@@ -833,7 +841,7 @@ describe('tim MCP generate mode helpers', () => {
     expect(result).toContain('Updated task "Task to Complete"');
     expect(result).toContain('done status to true');
 
-    const updated = await readPlanFile(planPath);
+    const updated = await readPlanFile(getMaterializedPlanPath(tmpDir, basePlan.id));
     expect(updated.tasks).toHaveLength(1);
     expect(updated.tasks[0]?.done).toBeTruthy();
   });
@@ -848,7 +856,7 @@ describe('tim MCP generate mode helpers', () => {
 
     await mcpManagePlanTask(
       managePlanTaskParameters.parse({
-        plan: planPath,
+        plan: basePlan.id,
         action: 'add',
         title: 'Multi-update Task',
         description: 'Original description',
@@ -859,7 +867,7 @@ describe('tim MCP generate mode helpers', () => {
 
     const result = await mcpManagePlanTask(
       managePlanTaskParameters.parse({
-        plan: planPath,
+        plan: basePlan.id,
         action: 'update',
         taskIndex: 1, // 1-based index
         title: 'Updated Title',
@@ -875,7 +883,7 @@ describe('tim MCP generate mode helpers', () => {
     expect(result).toContain('description');
     expect(result).toContain('done status to true');
 
-    const updated = await readPlanFile(planPath);
+    const updated = await readPlanFile(getMaterializedPlanPath(tmpDir, basePlan.id));
     expect(updated.tasks).toHaveLength(1);
     expect(updated.tasks[0]?.title).toBe('Updated Title');
     expect(updated.tasks[0]?.description).toBe('Updated description');
@@ -885,7 +893,7 @@ describe('tim MCP generate mode helpers', () => {
   test('mcpManagePlanTask with action=update errors when no update fields provided', async () => {
     await mcpManagePlanTask(
       managePlanTaskParameters.parse({
-        plan: planPath,
+        plan: basePlan.id,
         action: 'add',
         title: 'Task',
         description: 'Description',
@@ -896,7 +904,7 @@ describe('tim MCP generate mode helpers', () => {
     await expect(
       mcpManagePlanTask(
         managePlanTaskParameters.parse({
-          plan: planPath,
+          plan: basePlan.id,
           action: 'update',
           taskIndex: 1, // 1-based index
         }),
@@ -910,7 +918,7 @@ describe('tim MCP generate mode helpers', () => {
   test('mcpManagePlanTask with action=update errors when task title not found', async () => {
     await mcpManagePlanTask(
       managePlanTaskParameters.parse({
-        plan: planPath,
+        plan: basePlan.id,
         action: 'add',
         title: 'Existing Task',
         description: 'Description',
@@ -921,7 +929,7 @@ describe('tim MCP generate mode helpers', () => {
     await expect(
       mcpManagePlanTask(
         managePlanTaskParameters.parse({
-          plan: planPath,
+          plan: basePlan.id,
           action: 'update',
           taskTitle: 'nonexistent',
           title: 'Updated',
@@ -934,7 +942,7 @@ describe('tim MCP generate mode helpers', () => {
   test('mcpManagePlanTask with action=update errors when index out of bounds', async () => {
     await mcpManagePlanTask(
       managePlanTaskParameters.parse({
-        plan: planPath,
+        plan: basePlan.id,
         action: 'add',
         title: 'Task',
         description: 'Description',
@@ -945,7 +953,7 @@ describe('tim MCP generate mode helpers', () => {
     await expect(
       mcpManagePlanTask(
         managePlanTaskParameters.parse({
-          plan: planPath,
+          plan: basePlan.id,
           action: 'update',
           taskIndex: 5,
           title: 'Updated',
@@ -958,7 +966,7 @@ describe('tim MCP generate mode helpers', () => {
   test('mcpManagePlanTask with action=update errors on empty title', async () => {
     await mcpManagePlanTask(
       managePlanTaskParameters.parse({
-        plan: planPath,
+        plan: basePlan.id,
         action: 'add',
         title: 'Task',
         description: 'Description',
@@ -969,7 +977,7 @@ describe('tim MCP generate mode helpers', () => {
     await expect(
       mcpManagePlanTask(
         managePlanTaskParameters.parse({
-          plan: planPath,
+          plan: basePlan.id,
           action: 'update',
           taskIndex: 1, // 1-based index
           title: '   ',
@@ -982,7 +990,7 @@ describe('tim MCP generate mode helpers', () => {
   test('mcpManagePlanTask with action=update errors on empty description', async () => {
     await mcpManagePlanTask(
       managePlanTaskParameters.parse({
-        plan: planPath,
+        plan: basePlan.id,
         action: 'add',
         title: 'Task',
         description: 'Description',
@@ -993,7 +1001,7 @@ describe('tim MCP generate mode helpers', () => {
     await expect(
       mcpManagePlanTask(
         managePlanTaskParameters.parse({
-          plan: planPath,
+          plan: basePlan.id,
           action: 'update',
           taskIndex: 1, // 1-based index
           description: '   ',
@@ -1006,7 +1014,7 @@ describe('tim MCP generate mode helpers', () => {
   test('mcpManagePlanTask with action=update errors on missing selectors', async () => {
     await mcpManagePlanTask(
       managePlanTaskParameters.parse({
-        plan: planPath,
+        plan: basePlan.id,
         action: 'add',
         title: 'Task',
         description: 'Description',
@@ -1017,7 +1025,7 @@ describe('tim MCP generate mode helpers', () => {
     await expect(
       mcpManagePlanTask(
         managePlanTaskParameters.parse({
-          plan: planPath,
+          plan: basePlan.id,
           action: 'update',
           title: 'Updated',
         }),
@@ -1028,7 +1036,7 @@ describe('tim MCP generate mode helpers', () => {
 
   test('mcpManagePlanTask with action=add errors when title or description missing', async () => {
     const args = managePlanTaskParameters.parse({
-      plan: planPath,
+      plan: basePlan.id,
       action: 'add',
       title: 'Only Title',
       // description is missing
@@ -1900,7 +1908,7 @@ describe('mcpCreatePlan', () => {
 
     expect(result).toContain('Created plan');
     const planId = createdPlanId(result);
-    const { plan } = await resolvePlan(String(planId), context);
+    const { plan } = await resolvePlan(planId, context);
 
     expect(plan.id).toBe(planId);
     expect(plan.title).toBe('Test Plan');
@@ -1938,7 +1946,7 @@ describe('mcpCreatePlan', () => {
 
     expect(result).toContain('Created plan');
     const planId = createdPlanId(result);
-    const { plan } = await resolvePlan(String(planId), context);
+    const { plan } = await resolvePlan(planId, context);
 
     expect(plan.id).toBe(planId);
     expect(plan.title).toBe('Feature Plan');
@@ -2053,7 +2061,7 @@ describe('mcpCreatePlan', () => {
     const { plan: parentPlan } = await resolvePlan('10', context);
     expect(parentPlan.dependencies).toContain(11);
 
-    const { plan: childPlan } = await resolvePlan(String(planId), context);
+    const { plan: childPlan } = await resolvePlan(planId, context);
     expect(childPlan.parent).toBe(10);
   });
 
@@ -2485,8 +2493,7 @@ describe('MCP Resources', () => {
         updatedAt: '2025-01-20T10:00:00Z',
       });
 
-      const planPath = path.join(tmpDir, '42-test.plan.md');
-      const { plan } = await resolvePlan(planPath, context);
+      const { plan } = await resolvePlan('42', context);
 
       expect(plan.id).toBe(42);
       expect(plan.title).toBe('Specific Plan');
@@ -2505,8 +2512,7 @@ describe('MCP Resources', () => {
         tasks: [],
       });
 
-      const planPath = path.join(tmpDir, '10-test.plan.md');
-      const { plan } = await resolvePlan(planPath, context);
+      const { plan } = await resolvePlan('10', context);
 
       expect(plan.id).toBe(10);
       expect(plan.title).toBe('Path Plan');
@@ -2520,8 +2526,7 @@ describe('MCP Resources', () => {
         tasks: [],
       });
 
-      const planPath = path.join(tmpDir, '1-test.plan.md');
-      const { plan } = await resolvePlan(planPath, context);
+      const { plan } = await resolvePlan('1', context);
       const jsonOutput = JSON.stringify(plan, null, 2);
 
       expect(() => JSON.parse(jsonOutput)).not.toThrow();
@@ -2564,8 +2569,7 @@ describe('MCP Resources', () => {
         updatedAt: '2025-01-20T10:00:00Z',
       });
 
-      const planPath = path.join(tmpDir, '1-test.plan.md');
-      const { plan } = await resolvePlan(planPath, context);
+      const { plan } = await resolvePlan('1', context);
 
       expect(plan.id).toBe(1);
       expect(plan.title).toBe('Detailed Plan');

@@ -241,7 +241,7 @@ describe('handleWorkspaceAddCommand - plan claiming', () => {
       },
     };
 
-    await handleWorkspaceAddCommand('1', {}, command);
+    await handleWorkspaceAddCommand(1, {}, command);
 
     // Check that claimPlan was called with the correct parameters
     expect(mockClaimPlan).toHaveBeenCalledTimes(1);
@@ -287,7 +287,7 @@ describe('handleWorkspaceAddCommand - plan claiming', () => {
     };
 
     // Should not throw - should just warn
-    await handleWorkspaceAddCommand('1', {}, command);
+    await handleWorkspaceAddCommand(1, {}, command);
 
     expect(mockWarn).toHaveBeenCalledWith(
       expect.stringContaining('Failed to claim plan in workspace')

@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import type { PlanSchema } from '../planSchema.js';
-import { readPlanFile, resolvePlanFromDb, writePlanFile } from '../plans.js';
+import { readPlanFile, resolvePlanByNumericId, writePlanFile } from '../plans.js';
 import { materializePlan } from '../plan_materialize.js';
 import { handleAddCommand } from './add.js';
 import { handleSetCommand } from './set.js';
@@ -111,7 +111,7 @@ describe('CLI integration tests for parent-child relationships (internal handler
       const parentMaterialized = await materializePlan(1, tempDir);
       const childMaterialized = await materializePlan(2, tempDir);
 
-      await handleSetCommand(childMaterialized, { parent: 1 }, commandObj.parent.opts());
+      await handleSetCommand(2, { parent: 1 }, commandObj.parent.opts());
 
       // Verify that the plans were created correctly by checking file contents
       const parentPlan = await readPlanFile(parentMaterialized);
@@ -143,7 +143,7 @@ describe('CLI integration tests for parent-child relationships (internal handler
       const childMaterialized = await materializePlan(2, tempDir);
 
       // Use set command to establish parent-child relationship
-      await handleSetCommand(childMaterialized, { parent: 1 }, commandObj.parent.opts());
+      await handleSetCommand(2, { parent: 1 }, commandObj.parent.opts());
 
       // Verify the relationship was established by checking file contents
       const parentPlan = await readPlanFile(parentMaterialized);
@@ -173,8 +173,8 @@ describe('CLI integration tests for parent-child relationships (internal handler
       const grandparentMaterialized = await materializePlan(1, tempDir);
       const parentMaterialized = await materializePlan(2, tempDir);
       const childMaterialized = await materializePlan(3, tempDir);
-      await handleSetCommand(parentMaterialized, { parent: 1 }, commandObj.parent.opts());
-      await handleSetCommand(childMaterialized, { parent: 2 }, commandObj.parent.opts());
+      await handleSetCommand(2, { parent: 1 }, commandObj.parent.opts());
+      await handleSetCommand(3, { parent: 2 }, commandObj.parent.opts());
 
       // Validate the initial hierarchy
       (console.log as any).mockClear();
@@ -192,7 +192,7 @@ describe('CLI integration tests for parent-child relationships (internal handler
       expect(childPlan.parent).toBe(2);
 
       // Modify relationships using set command - change child's parent from 2 to 1
-      await handleSetCommand('3', { parent: 1 }, commandObj.parent.opts());
+      await handleSetCommand(3, { parent: 1 }, commandObj.parent.opts());
 
       // Verify the parent change took effect
       grandparentPlan = await readPlanFile(grandparentMaterialized);
@@ -263,7 +263,7 @@ describe('CLI integration tests for parent-child relationships (internal handler
       expect(output).toContain('2 valid');
 
       // Verify that the parent plan was actually updated in the DB
-      const parentPlan = await resolvePlanFromDb('1', tempDir);
+      const parentPlan = await resolvePlanByNumericId(1, tempDir);
       expect(parentPlan.plan.dependencies).toContain(2);
 
       // Run validate again to ensure there are no more inconsistencies

@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { clearAllTimCaches } from '../../testing.js';
-import { readPlanFile, writePlanFile } from '../plans.js';
+import { readPlanFile, resolvePlanByNumericId, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { resolvePlan } from '../plan_display.js';
 import { handleAddTaskCommand } from './add-task.js';
@@ -127,7 +127,7 @@ describe('task management integration workflows', () => {
     await writePlanFile(planFile, plan);
 
     await handleAddTaskCommand(
-      planFile,
+      101,
       {
         title: 'Add logging',
         description: 'Add structured logging to API handlers',
@@ -136,11 +136,11 @@ describe('task management integration workflows', () => {
       command
     );
 
-    const updated = await readPlanFile(planFile);
+    const { plan: updated } = await resolvePlanByNumericId(101, tempDir);
     expect(updated.tasks).toHaveLength(1);
 
     logSpy.mockClear();
-    await handleShowCommand(planFile, {}, command);
+    await handleShowCommand(101, {}, command);
     const showOutput = logSpy.mock.calls
       .map((call) => call.map((value) => String(value)).join(' '))
       .join('\n');
@@ -186,7 +186,7 @@ describe('task management integration workflows', () => {
     logSpy.mockClear();
     warnSpy.mockClear();
     await handleRemoveTaskCommand(
-      planFile,
+      202,
       {
         index: 1,
       },
@@ -198,12 +198,12 @@ describe('task management integration workflows', () => {
       .join('\n');
     expect(removalWarning).toContain('shifted');
 
-    const updated = await readPlanFile(planFile);
+    const { plan: updated } = await resolvePlanByNumericId(202, tempDir);
     expect(updated.tasks).toHaveLength(2);
     expect(updated.tasks.map((task) => task?.title)).toEqual(['Task One', 'Task Three']);
 
     logSpy.mockClear();
-    await handleShowCommand(planFile, {}, command);
+    await handleShowCommand(202, {}, command);
     const showOutput = logSpy.mock.calls
       .map((call) => call.map((value) => String(value)).join(' '))
       .join('\n');
@@ -234,7 +234,7 @@ describe('task management integration workflows', () => {
     const originalTasks = JSON.parse(JSON.stringify(plan.tasks));
 
     await handleAddTaskCommand(
-      planFile,
+      303,
       {
         title: 'Temporary Task',
         description: 'Will be removed shortly',
@@ -243,7 +243,7 @@ describe('task management integration workflows', () => {
     );
 
     await handleRemoveTaskCommand(
-      planFile,
+      303,
       {
         title: 'Temporary',
         yes: true,
@@ -285,7 +285,7 @@ describe('task management integration workflows', () => {
     };
 
     const addArgs = addPlanTaskParameters.parse({
-      plan: '404',
+      plan: 404,
       title: 'Investigate outage',
       description: 'Collect logs and metrics from affected services.',
       docs: ['docs/runbook.md'],
@@ -293,7 +293,7 @@ describe('task management integration workflows', () => {
     const addResult = await mcpAddPlanTask(addArgs, mcpContext, { log: logger });
     expect(addResult).toContain('Added task "Investigate outage"');
 
-    const { plan: afterAdd } = await resolvePlan('404', { gitRoot: tempDir });
+    const { plan: afterAdd } = await resolvePlan(404, { gitRoot: tempDir });
     expect(afterAdd.tasks).toHaveLength(1);
     const addedTask = afterAdd.tasks[0];
     expect(addedTask?.title).toBe('Investigate outage');
@@ -302,13 +302,13 @@ describe('task management integration workflows', () => {
     const addTimestamp = afterAdd.updatedAt;
 
     const removeArgs = removePlanTaskParameters.parse({
-      plan: '404',
+      plan: 404,
       taskTitle: 'outage',
     });
     const removeResult = await mcpRemovePlanTask(removeArgs, mcpContext, { log: logger });
     expect(removeResult).toContain('Removed task "Investigate outage"');
 
-    const { plan: afterRemove } = await resolvePlan('404', { gitRoot: tempDir });
+    const { plan: afterRemove } = await resolvePlan(404, { gitRoot: tempDir });
     expect(afterRemove.tasks).toHaveLength(0);
     expect(afterRemove.updatedAt).toBeTypeOf('string');
     if (addTimestamp) {
@@ -329,7 +329,7 @@ describe('task management integration workflows', () => {
     await writePlanFile(planFile, plan);
 
     await handleAddTaskCommand(
-      planFile,
+      505,
       {
         title: 'Mixed Task',
         description: 'Added via CLI command',
@@ -338,7 +338,7 @@ describe('task management integration workflows', () => {
     );
 
     const removeArgs = removePlanTaskParameters.parse({
-      plan: '505',
+      plan: 505,
       taskTitle: 'Mixed Task',
     });
     const logger = {
@@ -350,7 +350,7 @@ describe('task management integration workflows', () => {
     const removeResult = await mcpRemovePlanTask(removeArgs, mcpContext, { log: logger });
     expect(removeResult).toContain('Removed task "Mixed Task"');
 
-    const { plan: finalPlan } = await resolvePlan('505', { gitRoot: tempDir });
+    const { plan: finalPlan } = await resolvePlan(505, { gitRoot: tempDir });
     expect(finalPlan.tasks).toHaveLength(0);
   });
 });

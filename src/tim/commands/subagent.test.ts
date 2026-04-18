@@ -10,7 +10,7 @@ import {
 
 describe('subagent prompt function correctness', () => {
   test('getImplementerPrompt with mode: report includes progress reporting', () => {
-    const result = getImplementerPrompt('test context', '42', 'custom instructions', undefined, {
+    const result = getImplementerPrompt('test context', 42, 'custom instructions', undefined, {
       mode: 'report',
     });
 
@@ -22,7 +22,7 @@ describe('subagent prompt function correctness', () => {
   });
 
   test('getTesterPrompt with mode: report includes progress reporting', () => {
-    const result = getTesterPrompt('test context', '42', 'custom instructions', undefined, {
+    const result = getTesterPrompt('test context', 42, 'custom instructions', undefined, {
       mode: 'report',
     });
 
@@ -33,7 +33,7 @@ describe('subagent prompt function correctness', () => {
   });
 
   test('getTddTestsPrompt with mode: report includes TDD-first guidance', () => {
-    const result = getTddTestsPrompt('test context', '42', 'custom instructions', undefined, {
+    const result = getTddTestsPrompt('test context', 42, 'custom instructions', undefined, {
       mode: 'report',
     });
 
@@ -64,7 +64,7 @@ describe('subagent prompt function correctness', () => {
   });
 
   test('getImplementerPrompt custom instructions appear in dedicated section', () => {
-    const result = getImplementerPrompt('context', '42', 'My custom instruction', undefined, {
+    const result = getImplementerPrompt('', 42, 'My custom instruction', undefined, {
       mode: 'report',
     });
 
@@ -73,7 +73,7 @@ describe('subagent prompt function correctness', () => {
   });
 
   test('getImplementerPrompt without custom instructions omits section', () => {
-    const result = getImplementerPrompt('context', '42', undefined, undefined, {
+    const result = getImplementerPrompt('', 42, undefined, undefined, {
       mode: 'report',
     });
 
@@ -81,7 +81,7 @@ describe('subagent prompt function correctness', () => {
   });
 
   test('getTesterPrompt model is passed through', () => {
-    const result = getTesterPrompt('context', '42', undefined, 'sonnet', {
+    const result = getTesterPrompt('', 42, undefined, 'sonnet', {
       mode: 'report',
     });
 
@@ -89,7 +89,7 @@ describe('subagent prompt function correctness', () => {
   });
 
   test('getVerifierAgentPrompt model is passed through', () => {
-    const result = getVerifierAgentPrompt('context', '42', undefined, 'haiku', false, false, {
+    const result = getVerifierAgentPrompt('', 42, undefined, 'haiku', false, false, {
       mode: 'report',
     });
 
@@ -97,7 +97,7 @@ describe('subagent prompt function correctness', () => {
   });
 
   test('getImplementerPrompt includes FAILED_PROTOCOL_INSTRUCTIONS', () => {
-    const result = getImplementerPrompt('context', '42', undefined, undefined, {
+    const result = getImplementerPrompt('', 42, undefined, undefined, {
       mode: 'report',
     });
 
@@ -106,7 +106,7 @@ describe('subagent prompt function correctness', () => {
   });
 
   test('getTesterPrompt includes FAILED_PROTOCOL_INSTRUCTIONS', () => {
-    const result = getTesterPrompt('context', '42', undefined, undefined, {
+    const result = getTesterPrompt('', 42, undefined, undefined, {
       mode: 'report',
     });
 
@@ -115,7 +115,7 @@ describe('subagent prompt function correctness', () => {
   });
 
   test('getVerifierAgentPrompt includes FAILED_PROTOCOL_INSTRUCTIONS', () => {
-    const result = getVerifierAgentPrompt('context', '42', undefined, undefined, false, false, {
+    const result = getVerifierAgentPrompt('', 42, undefined, undefined, false, false, {
       mode: 'report',
     });
 
@@ -124,7 +124,7 @@ describe('subagent prompt function correctness', () => {
   });
 
   test('getImplementerPrompt skills include using-tim', () => {
-    const result = getImplementerPrompt('context', '42', undefined, undefined, {
+    const result = getImplementerPrompt('', 42, undefined, undefined, {
       mode: 'report',
     });
 
@@ -132,10 +132,10 @@ describe('subagent prompt function correctness', () => {
   });
 
   test('all prompt functions produce skills with using-tim', () => {
-    const impl = getImplementerPrompt('ctx', '1', undefined, undefined, { mode: 'report' });
-    const tdd = getTddTestsPrompt('ctx', '1', undefined, undefined, { mode: 'report' });
-    const tester = getTesterPrompt('ctx', '1', undefined, undefined, { mode: 'report' });
-    const verifier = getVerifierAgentPrompt('ctx', '1', undefined, undefined, false, false, {
+    const impl = getImplementerPrompt('ctx', 1, undefined, undefined, { mode: 'report' });
+    const tdd = getTddTestsPrompt('ctx', 1, undefined, undefined, { mode: 'report' });
+    const tester = getTesterPrompt('ctx', 1, undefined, undefined, { mode: 'report' });
+    const verifier = getVerifierAgentPrompt('ctx', 1, undefined, undefined, false, false, {
       mode: 'report',
     });
 
@@ -183,7 +183,7 @@ describe('subagent command registration in tim.ts', () => {
     const sourceFile = path.join(import.meta.dirname, '..', 'tim.ts');
     const source = await fs.readFile(sourceFile, 'utf-8');
 
-    expect(source).toContain('<planFile>');
+    expect(source).toContain('<planId>');
     expect(source).toContain("'--input <text>'");
     expect(source).toContain("'--input-file <paths...>'");
     expect(source).toContain("'--output-file <path>'");

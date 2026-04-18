@@ -203,7 +203,7 @@ describe('handleDescriptionCommand', () => {
       },
     };
 
-    await handleDescriptionCommand('test-plan.yml', options, command);
+    await handleDescriptionCommand(123, options, command);
 
     expect(mockExecuteInner).toHaveBeenCalledTimes(1);
     expect(logCalls.length).toBeGreaterThan(0);
@@ -242,7 +242,7 @@ describe('handleDescriptionCommand', () => {
       },
     };
 
-    await handleDescriptionCommand('test-plan.yml', options, command);
+    await handleDescriptionCommand(123, options, command);
 
     // Executor should not be called in dry-run mode
     expect(mockExecuteInner).not.toHaveBeenCalled();
@@ -279,7 +279,7 @@ describe('handleDescriptionCommand', () => {
       },
     };
 
-    await handleDescriptionCommand('test-plan.yml', options, command);
+    await handleDescriptionCommand(123, options, command);
 
     const allOutput = logCalls.map((call) => call[0]).join('\n');
     expect(allOutput).toContain('No changes detected');
@@ -316,7 +316,7 @@ describe('handleDescriptionCommand', () => {
       },
     };
 
-    await handleDescriptionCommand('test-plan.yml', options, command);
+    await handleDescriptionCommand(123, options, command);
 
     // Verify prompt was called with custom instructions
     expect(promptSpy).toHaveBeenCalledWith(expect.any(String), 'Focus on performance improvements');
@@ -347,7 +347,7 @@ describe('handleDescriptionCommand', () => {
       },
     };
 
-    await handleDescriptionCommand('test-plan.yml', options, command);
+    await handleDescriptionCommand(123, options, command);
 
     // Verify executor was built with correct options
     expect(buildExecutorSpy).toHaveBeenCalledWith(
@@ -378,7 +378,7 @@ describe('handleDescriptionCommand', () => {
       },
     };
 
-    await expect(handleDescriptionCommand('test-plan.yml', options, command)).rejects.toThrow(
+    await expect(handleDescriptionCommand(123, options, command)).rejects.toThrow(
       'Description generation failed: Execution failed'
     );
   });
@@ -397,7 +397,7 @@ describe('handleDescriptionCommand', () => {
     };
 
     // This should be caught by gatherPlanContext's validation
-    await expect(handleDescriptionCommand('invalid-plan.yml', options, command)).rejects.toThrow(
+    await expect(handleDescriptionCommand(999, options, command)).rejects.toThrow(
       'Invalid plan file invalid-plan.yml:\n  - goal: Required'
     );
   });
@@ -437,7 +437,7 @@ describe('handleDescriptionCommand', () => {
         },
       };
 
-      await handleDescriptionCommand('test-plan.yml', options, command);
+      await handleDescriptionCommand(123, options, command);
 
       expect(mkdirCalls.some(([p, opts]) => p === testDir && opts?.recursive === true)).toBe(true);
       expect(
@@ -482,7 +482,7 @@ describe('handleDescriptionCommand', () => {
         },
       };
 
-      await handleDescriptionCommand('test-plan.yml', options, command);
+      await handleDescriptionCommand(123, options, command);
 
       expect(clipboardCalls).toContain('Generated PR description content');
 
@@ -521,7 +521,7 @@ describe('handleDescriptionCommand', () => {
         },
       };
 
-      await handleDescriptionCommand('test-plan.yml', options, command);
+      await handleDescriptionCommand(123, options, command);
 
       expect(spawnCalls.length).toBe(1);
       expect(spawnCalls[0][0]).toEqual([
@@ -567,7 +567,7 @@ describe('handleDescriptionCommand', () => {
       const options = { createPr: true };
       const command = { parent: { opts: () => ({}) } };
 
-      await handleDescriptionCommand('test-plan.yml', options, command);
+      await handleDescriptionCommand(123, options, command);
 
       // Should NOT include --draft flag when draft is false
       expect(spawnCalls[0][0]).toEqual([
@@ -611,7 +611,7 @@ describe('handleDescriptionCommand', () => {
       const options = { createPr: true };
       const command = { parent: { opts: () => ({}) } };
 
-      await handleDescriptionCommand('test-plan.yml', options, command);
+      await handleDescriptionCommand(123, options, command);
 
       // Should include the prefix in the title
       expect(spawnCalls[0][0]).toEqual([
@@ -656,7 +656,7 @@ describe('handleDescriptionCommand', () => {
       const options = { createPr: true };
       const command = { parent: { opts: () => ({}) } };
 
-      await handleDescriptionCommand('test-plan.yml', options, command);
+      await handleDescriptionCommand(123, options, command);
 
       // Should default to draft mode (includes --draft flag)
       expect(spawnCalls[0][0]).toEqual([
@@ -712,7 +712,7 @@ describe('handleDescriptionCommand', () => {
       };
       const command = { parent: { opts: () => ({}) } };
 
-      await handleDescriptionCommand('test-plan.yml', options, command);
+      await handleDescriptionCommand(123, options, command);
 
       // All actions should be performed
       expect(
@@ -759,7 +759,7 @@ describe('handleDescriptionCommand', () => {
       const options = {}; // No output flags provided
       const command = { parent: { opts: () => ({}) } };
 
-      await handleDescriptionCommand('test-plan.yml', options, command);
+      await handleDescriptionCommand(123, options, command);
 
       expect(clipboardCalls).toContain('Generated PR description content');
     });
@@ -785,7 +785,7 @@ describe('handleDescriptionCommand', () => {
       };
       const command = { parent: { opts: () => ({}) } };
 
-      await expect(handleDescriptionCommand('test-plan.yml', options, command)).rejects.toThrow(
+      await expect(handleDescriptionCommand(123, options, command)).rejects.toThrow(
         'Output operations failed'
       );
     });
@@ -809,7 +809,7 @@ describe('handleDescriptionCommand', () => {
       const options = { createPr: true };
       const command = { parent: { opts: () => ({}) } };
 
-      await expect(handleDescriptionCommand('test-plan.yml', options, command)).rejects.toThrow(
+      await expect(handleDescriptionCommand(123, options, command)).rejects.toThrow(
         'Failed to create GitHub PR: gh command failed with exit code 1: fatal: not a git repository'
       );
     });
@@ -846,7 +846,7 @@ describe('handleDescriptionCommand', () => {
       const command = { parent: { opts: () => ({}) } };
 
       // Should not throw, should handle cancellation gracefully
-      await handleDescriptionCommand('test-plan.yml', options, command);
+      await handleDescriptionCommand(123, options, command);
 
       // Should log cancellation message
       const allOutput = logCalls.map((call) => call[0]).join('\n');
@@ -880,7 +880,7 @@ describe('handleDescriptionCommand', () => {
       const command = { parent: { opts: () => ({}) } };
 
       // Should not throw, should handle the error gracefully
-      await handleDescriptionCommand('test-plan.yml', options, command);
+      await handleDescriptionCommand(123, options, command);
 
       // Should log error message
       const allOutput = logCalls.map((call) => call[0]).join('\n');
@@ -915,7 +915,7 @@ describe('handleDescriptionCommand', () => {
       const command = { parent: { opts: () => ({}) } };
 
       // Should not throw, should handle the error gracefully
-      await handleDescriptionCommand('test-plan.yml', options, command);
+      await handleDescriptionCommand(123, options, command);
 
       // Should log error message
       const allOutput = logCalls.map((call) => call[0]).join('\n');
@@ -950,7 +950,7 @@ describe('handleDescriptionCommand', () => {
       const command = { parent: { opts: () => ({}) } };
 
       // Should not throw, should handle the error gracefully
-      await handleDescriptionCommand('test-plan.yml', options, command);
+      await handleDescriptionCommand(123, options, command);
 
       // Should log error message
       const allOutput = logCalls.map((call) => call[0]).join('\n');
@@ -980,7 +980,7 @@ describe('handleDescriptionCommand', () => {
       const options = {}; // No output flags provided - should trigger interactive mode
       const command = { parent: { opts: () => ({}) } };
 
-      await handleDescriptionCommand('test-plan.yml', options, command);
+      await handleDescriptionCommand(123, options, command);
 
       // Should log "no actions selected" message
       const allOutput = logCalls.map((call) => call[0]).join('\n');
@@ -1008,7 +1008,7 @@ describe('handleDescriptionCommand', () => {
       const options = {}; // No output flags provided - should trigger interactive mode
       const command = { parent: { opts: () => ({}) } };
 
-      await handleDescriptionCommand('test-plan.yml', options, command);
+      await handleDescriptionCommand(123, options, command);
 
       // Should log "no actions selected" message
       const allOutput = logCalls.map((call) => call[0]).join('\n');
@@ -1029,9 +1029,9 @@ describe('handleDescriptionCommand', () => {
         },
       };
 
-      await expect(
-        handleDescriptionCommand('test-plan.yml', options as any, command)
-      ).rejects.toThrow('--output-file must be a string path');
+      await expect(handleDescriptionCommand(123, options as any, command)).rejects.toThrow(
+        '--output-file must be a string path'
+      );
     });
 
     test('validates output file paths for security', async () => {
@@ -1053,7 +1053,7 @@ describe('handleDescriptionCommand', () => {
       };
       const command = { parent: { opts: () => ({}) } };
 
-      await expect(handleDescriptionCommand('test-plan.yml', options, command)).rejects.toThrow(
+      await expect(handleDescriptionCommand(123, options, command)).rejects.toThrow(
         'Output operations failed'
       );
     });
@@ -1078,7 +1078,7 @@ describe('handleDescriptionCommand', () => {
       const options = { createPr: true };
       const command = { parent: { opts: () => ({}) } };
 
-      await handleDescriptionCommand('test-plan.yml', options, command);
+      await handleDescriptionCommand(123, options, command);
 
       // Verify that the input was sanitized (control characters removed)
       expect(spawnCalls[0][0]).toEqual([
@@ -1108,7 +1108,7 @@ describe('handleDescriptionCommand', () => {
       const options = { createPr: true };
       const command = { parent: { opts: () => ({}) } };
 
-      await expect(handleDescriptionCommand('test-plan.yml', options, command)).rejects.toThrow(
+      await expect(handleDescriptionCommand(123, options, command)).rejects.toThrow(
         'Process input contains null byte character'
       );
     });
@@ -1151,7 +1151,7 @@ describe('handleDescriptionCommand', () => {
       const command = { parent: { opts: () => ({}) } };
 
       // Should fail with comprehensive error message
-      await expect(handleDescriptionCommand('test-plan.yml', options, command)).rejects.toThrow(
+      await expect(handleDescriptionCommand(123, options, command)).rejects.toThrow(
         'Output operations failed'
       );
 
@@ -1182,7 +1182,7 @@ describe('handleDescriptionCommand', () => {
       const command = { parent: { opts: () => ({}) } };
 
       // Should not throw, should handle the error gracefully
-      await handleDescriptionCommand('test-plan.yml', options, command);
+      await handleDescriptionCommand(123, options, command);
 
       // Should log error message about path traversal
       const allOutput = logCalls.map((call) => call[0]).join('\n');
@@ -1217,7 +1217,7 @@ describe('handleDescriptionCommand', () => {
       const options = { createPr: true };
       const command = { parent: { opts: () => ({}) } };
 
-      await handleDescriptionCommand('test-plan.yml', options, command);
+      await handleDescriptionCommand(123, options, command);
 
       // Should sanitize the dangerous characters from the prefix
       expect(spawnCalls[0][0]).toEqual([
@@ -1260,7 +1260,7 @@ describe('handleDescriptionCommand', () => {
       const options = { createPr: true };
       const command = { parent: { opts: () => ({}) } };
 
-      await handleDescriptionCommand('test-plan.yml', options, command);
+      await handleDescriptionCommand(123, options, command);
 
       // Get the actual call to verify title was truncated
       expect(spawnCalls).toHaveLength(1);
@@ -1298,7 +1298,7 @@ describe('handleDescriptionCommand', () => {
       const options = { createPr: true };
       const command = { parent: { opts: () => ({}) } };
 
-      await handleDescriptionCommand('test-plan.yml', options, command);
+      await handleDescriptionCommand(123, options, command);
 
       // Should create non-draft PR with prefix
       expect(spawnCalls[0][0]).toEqual([
@@ -1343,7 +1343,7 @@ describe('handleDescriptionCommand', () => {
       const command = { parent: { opts: () => ({}) } };
 
       // Should throw error due to gh command failure
-      await expect(handleDescriptionCommand('test-plan.yml', options, command)).rejects.toThrow(
+      await expect(handleDescriptionCommand(123, options, command)).rejects.toThrow(
         'Failed to create GitHub PR: gh command failed with exit code 128: fatal: not in a git repository'
       );
 
@@ -1392,7 +1392,7 @@ describe('handleDescriptionCommand', () => {
       const options = {}; // No flags - should trigger interactive mode
       const command = { parent: { opts: () => ({}) } };
 
-      await handleDescriptionCommand('test-plan.yml', options, command);
+      await handleDescriptionCommand(123, options, command);
 
       // Should use config for PR creation in interactive mode
       expect(spawnCalls[0][0]).toEqual([
@@ -1438,7 +1438,7 @@ describe('handleDescriptionCommand', () => {
       const options = { createPr: true };
       const command = { parent: { opts: () => ({}) } };
 
-      await handleDescriptionCommand('test-plan.yml', options, command);
+      await handleDescriptionCommand(123, options, command);
 
       // Should use titlePrefix from config and default to draft mode
       expect(spawnCalls[0][0]).toEqual([
@@ -1475,7 +1475,7 @@ describe('handleDescriptionCommand', () => {
       const options = { createPr: true };
       const command = { parent: { opts: () => ({}) } };
 
-      await handleDescriptionCommand('test-plan.yml', options, command);
+      await handleDescriptionCommand(123, options, command);
 
       // Should default to draft mode with no prefix when prCreation is empty object
       expect(spawnCalls[0][0]).toEqual([

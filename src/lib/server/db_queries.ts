@@ -129,6 +129,7 @@ export interface EnrichedWorkspace {
   workspacePath: string;
   name: string | null;
   branch: string | null;
+  // Mirrors workspace.plan_id DB column (TEXT); parse at use-sites that need a numeric ID.
   planId: string | null;
   planTitle: string | null;
   workspaceType: WorkspaceType;

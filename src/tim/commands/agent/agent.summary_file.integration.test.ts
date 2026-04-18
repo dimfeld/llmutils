@@ -102,9 +102,9 @@ vi.mock('../../plans.js', () => {
       await writeFile(filePath, schemaComment + yaml.default.stringify(data));
     }),
     generatePlanFileContent: vi.fn(() => ''),
-    resolvePlanFromDb: vi.fn(async () => ({
-      plan: { id: 1, title: 'P', status: 'pending', tasks: [] },
-      planPath: '',
+    resolvePlanByNumericId: vi.fn(async (planId: number) => ({
+      plan: { id: planId, title: 'Batch Plan', status: 'pending', tasks: [] },
+      planPath: planFile,
     })),
     writePlanToDb: vi.fn(async () => {}),
     setPlanStatus: vi.fn(async () => {}),
@@ -249,7 +249,7 @@ describe('timAgent - summary file write (batch mode)', () => {
 
     const { timAgent } = await import('./agent.js');
     const options: any = { log: false, orchestrator: 'codex-cli', summaryFile: summaryOut };
-    await timAgent(planFile, options, {});
+    await timAgent(551, options, {});
 
     // Verify file written and contains key elements
     const content = await fs.readFile(summaryOut, 'utf8');
@@ -326,7 +326,7 @@ describe('timAgent - summary file write (batch mode)', () => {
     await expect(fs.access(path.dirname(nestedOut))).rejects.toBeTruthy();
 
     const options: any = { log: false, orchestrator: 'codex-cli', summaryFile: nestedOut };
-    await timAgent(planFile, options, {});
+    await timAgent(551, options, {});
 
     // File should now exist and contain a header
     const content = await fs.readFile(nestedOut, 'utf8');

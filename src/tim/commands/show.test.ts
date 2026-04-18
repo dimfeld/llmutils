@@ -284,7 +284,7 @@ describe('handleShowCommand', () => {
       },
     };
 
-    await handleShowCommand('1', options, command);
+    await handleShowCommand(1, options, command);
 
     // Should display plan details
     expect(logSpy).toHaveBeenCalled();
@@ -310,7 +310,7 @@ describe('handleShowCommand', () => {
 
     addDbPlan(plan);
 
-    await handleShowCommand('50', {}, { parent: { opts: () => ({}) } });
+    await handleShowCommand(50, {}, { parent: { opts: () => ({}) } });
 
     const output = stripAnsi(logSpy.mock.calls.map((call) => call[0]).join('\n'));
     expect(output).toContain('Tags: frontend, urgent');
@@ -327,7 +327,7 @@ describe('handleShowCommand', () => {
 
     addDbPlan(plan);
 
-    await handleShowCommand('51', {}, { parent: { opts: () => ({}) } });
+    await handleShowCommand(51, {}, { parent: { opts: () => ({}) } });
 
     const output = stripAnsi(logSpy.mock.calls.map((call) => call[0]).join('\n'));
     expect(output).toContain('Tags: none');
@@ -360,7 +360,7 @@ describe('handleShowCommand', () => {
     addDbPlan(phase);
     addDbPlan(child);
 
-    await handleShowCommand('3', {}, { parent: { opts: () => ({}) } });
+    await handleShowCommand(3, {}, { parent: { opts: () => ({}) } });
 
     const output = stripAnsi(logSpy.mock.calls.map((call) => call[0]).join('\n'));
     expect(output).toContain('Epic: 1 - Epic Plan');
@@ -392,7 +392,7 @@ describe('handleShowCommand', () => {
     const options = { short: true } as any;
     const command = { parent: { opts: () => ({}) } } as any;
 
-    await handleShowCommand('2', options, command);
+    await handleShowCommand(2, options, command);
 
     const logs = logSpy.mock.calls.map((call) => call[0]).join('\n');
 
@@ -416,7 +416,7 @@ describe('handleShowCommand', () => {
       },
     };
 
-    await expect(handleShowCommand('nonexistent', options, command)).rejects.toThrow();
+    await expect(handleShowCommand(9999, options, command)).rejects.toThrow();
   });
 
   test('falls back to SQLite when the plan file is missing', async () => {
@@ -439,7 +439,7 @@ describe('handleShowCommand', () => {
       },
     ];
 
-    await handleShowCommand('77', {}, { parent: { opts: () => ({}) } });
+    await handleShowCommand(77, {}, { parent: { opts: () => ({}) } });
 
     const output = stripAnsi(logSpy.mock.calls.map((call) => call[0]).join('\n'));
     expect(output).toContain('SQLite fallback plan');
@@ -729,7 +729,7 @@ describe('handleShowCommand', () => {
     };
 
     await expect(handleShowCommand(undefined, options, command)).rejects.toThrow(
-      'Please provide a plan file or use --latest/--next/--current/--next-ready to find a plan'
+      'Please provide a plan ID or use --latest/--next/--current/--next-ready to find a plan'
     );
   });
 
@@ -762,7 +762,7 @@ describe('handleShowCommand', () => {
     await expect(
       handleShowCommand(undefined, {}, { parent: { opts: () => ({}) } })
     ).rejects.toThrow(
-      'Please provide a plan file or use --latest/--next/--current/--next-ready to find a plan'
+      'Please provide a plan ID or use --latest/--next/--current/--next-ready to find a plan'
     );
   });
 
@@ -797,7 +797,7 @@ describe('handleShowCommand', () => {
       },
     };
 
-    await handleShowCommand('8', options, command);
+    await handleShowCommand(8, options, command);
 
     const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
     const stripped = stripAnsi(output);
@@ -835,7 +835,7 @@ describe('handleShowCommand', () => {
       },
     };
 
-    await handleShowCommand('9', options, command);
+    await handleShowCommand(9, options, command);
 
     expect(warnSpy).toHaveBeenCalled();
   });
@@ -859,7 +859,7 @@ describe('handleShowCommand', () => {
       },
     };
 
-    await handleShowCommand('10', options, command);
+    await handleShowCommand(10, options, command);
 
     const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
     const stripped = stripAnsi(output);
@@ -944,7 +944,7 @@ describe('mcpGetPlan', () => {
         gitRoot: tempDir,
       };
 
-      const result = await mcpGetPlan({ plan: '200' }, context);
+      const result = await mcpGetPlan({ plan: 200 }, context);
 
       expect(result).toContain('Plan file: Plan 200');
       expect(result).toContain('Plan ID: 200');
@@ -1080,7 +1080,7 @@ describe('inverse relationships', () => {
       addDbPlan(plan);
     }
 
-    await handleShowCommand('100', {}, { parent: { opts: () => ({}) } } as any);
+    await handleShowCommand(100, {}, { parent: { opts: () => ({}) } } as any);
 
     const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
     const stripped = stripAnsi(output);
@@ -1121,7 +1121,7 @@ describe('inverse relationships', () => {
       addDbPlan(plan);
     }
 
-    await handleShowCommand('200', {}, { parent: { opts: () => ({}) } } as any);
+    await handleShowCommand(200, {}, { parent: { opts: () => ({}) } } as any);
 
     const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
     const stripped = stripAnsi(output);
@@ -1162,7 +1162,7 @@ describe('inverse relationships', () => {
       addDbPlan(plan);
     }
 
-    await handleShowCommand('300', {}, { parent: { opts: () => ({}) } } as any);
+    await handleShowCommand(300, {}, { parent: { opts: () => ({}) } } as any);
 
     const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
     const stripped = stripAnsi(output);
@@ -1215,7 +1215,7 @@ describe('inverse relationships', () => {
       addDbPlan(plan);
     }
 
-    await handleShowCommand('350', {}, { parent: { opts: () => ({}) } } as any);
+    await handleShowCommand(350, {}, { parent: { opts: () => ({}) } } as any);
 
     const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
     const stripped = stripAnsi(output);
@@ -1249,7 +1249,7 @@ describe('inverse relationships', () => {
       addDbPlan(plan);
     }
 
-    await handleShowCommand('401', {}, { parent: { opts: () => ({}) } } as any);
+    await handleShowCommand(401, {}, { parent: { opts: () => ({}) } } as any);
 
     const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
     const stripped = stripAnsi(output);
@@ -1270,7 +1270,7 @@ describe('inverse relationships', () => {
 
     addDbPlan(plan);
 
-    await handleShowCommand('500', {}, { parent: { opts: () => ({}) } } as any);
+    await handleShowCommand(500, {}, { parent: { opts: () => ({}) } } as any);
 
     const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
     const stripped = stripAnsi(output);
@@ -1303,7 +1303,7 @@ describe('inverse relationships', () => {
       addDbPlan(plan);
     }
 
-    await handleShowCommand('600', { short: true }, { parent: { opts: () => ({}) } } as any);
+    await handleShowCommand(600, { short: true }, { parent: { opts: () => ({}) } } as any);
 
     const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
     const stripped = stripAnsi(output);
@@ -1328,7 +1328,7 @@ describe('inverse relationships', () => {
     addDbPlan(plan);
 
     // Test without --full flag (should truncate)
-    await handleShowCommand('700', {}, { parent: { opts: () => ({}) } } as any);
+    await handleShowCommand(700, {}, { parent: { opts: () => ({}) } } as any);
     let output = logSpy.mock.calls.map((call) => call[0]).join('\n');
     let stripped = stripAnsi(output);
 
@@ -1339,7 +1339,7 @@ describe('inverse relationships', () => {
 
     // Clear logs and test with --full flag (should show all)
     logSpy.mockClear();
-    await handleShowCommand('700', { full: true }, { parent: { opts: () => ({}) } } as any);
+    await handleShowCommand(700, { full: true }, { parent: { opts: () => ({}) } } as any);
     output = logSpy.mock.calls.map((call) => call[0]).join('\n');
     stripped = stripAnsi(output);
 

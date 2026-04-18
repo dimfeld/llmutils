@@ -6,7 +6,6 @@ import { log, warn } from '../../logging.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import {
   getMaterializedPlanPath,
-  parsePlanId,
   resolveProjectContext,
   syncMaterializedPlan,
 } from '../plan_materialize.js';
@@ -50,15 +49,14 @@ async function getMaterializedPlanIds(repoRoot: string): Promise<number[]> {
 }
 
 export async function handleSyncCommand(
-  planIdArg: string | undefined,
+  planId: number | undefined,
   options: SyncCommandOptions,
   _command: Command
 ): Promise<void> {
   const repository = await getRepositoryIdentity();
   const context = await resolveProjectContext(repository.gitRoot, repository);
 
-  if (planIdArg) {
-    const planId = parsePlanId(planIdArg);
+  if (planId) {
     if (options.verbose) {
       log(`Syncing materialized plan ${planId}`);
     }

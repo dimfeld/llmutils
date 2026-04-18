@@ -8,7 +8,7 @@ import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { upsertPlan } from '../db/plan.js';
 import { getOrCreateProject } from '../db/project.js';
-import { resolvePlanFromDb, writePlanFile } from '../plans.js';
+import { resolvePlanByNumericId, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import {
   getPlanTool,
@@ -295,17 +295,17 @@ describe('tim tools CLI handlers', () => {
       gitRoot: tempDir,
     };
 
-    const toolOutput = await getPlanTool({ plan: '42' }, context);
+    const toolOutput = await getPlanTool({ plan: 42 }, context);
     const expected = toolOutput.text.endsWith('\n') ? toolOutput.text : `${toolOutput.text}\n`;
 
     restoreIsTTY = mockIsTTY(false);
-    restoreBunStdin = mockBunStdinText(JSON.stringify({ plan: '42' }));
+    restoreBunStdin = mockBunStdinText(JSON.stringify({ plan: 42 }));
 
     await handleToolCommand('get-plan', {}, command);
 
     expect(readStdout()).toBe(expected);
 
-    const mcpOutput = await mcpGetPlan({ plan: '42' }, context);
+    const mcpOutput = await mcpGetPlan({ plan: 42 }, context);
     expect(mcpOutput).toBe(toolOutput.text);
   });
 
@@ -323,7 +323,7 @@ describe('tim tools CLI handlers', () => {
     };
 
     const context = createToolContext();
-    const args = { plan: '10', details: 'New details' };
+    const args = { plan: 10, details: 'New details' };
     await writeDbBackedPlan(planFile, plan);
     const toolOutput = await updatePlanDetailsTool(args, context);
 
@@ -358,7 +358,7 @@ describe('tim tools CLI handlers', () => {
 
     const context = createToolContext();
     const args = {
-      plan: '11',
+      plan: 11,
       tasks: [
         {
           title: 'Task 1',
@@ -398,7 +398,7 @@ describe('tim tools CLI handlers', () => {
 
     const context = createToolContext();
     const args = {
-      plan: '15',
+      plan: 15,
       tasks: [
         {
           title: 'Task with detail',
@@ -415,7 +415,7 @@ describe('tim tools CLI handlers', () => {
     expect(toolOutput.text).toContain('Successfully updated plan');
     expect(toolOutput.text).toContain('1 task');
 
-    const { plan: storedPlan } = await resolvePlanFromDb('15', tempDir);
+    const { plan: storedPlan } = await resolvePlanByNumericId(15, tempDir);
     expect(storedPlan.tasks).toHaveLength(1);
     expect(storedPlan.tasks[0]?.title).toBe('Task with detail');
     expect(storedPlan.tasks[0]?.description).toBe('This uses detail instead of description');
@@ -434,7 +434,7 @@ describe('tim tools CLI handlers', () => {
 
     const context = createToolContext();
     const args = {
-      plan: '16',
+      plan: 16,
       tasks: [
         {
           title: 'Task with details',
@@ -451,7 +451,7 @@ describe('tim tools CLI handlers', () => {
     expect(toolOutput.text).toContain('Successfully updated plan');
     expect(toolOutput.text).toContain('1 task');
 
-    const { plan: storedPlan } = await resolvePlanFromDb('16', tempDir);
+    const { plan: storedPlan } = await resolvePlanByNumericId(16, tempDir);
     expect(storedPlan.tasks).toHaveLength(1);
     expect(storedPlan.tasks[0]?.title).toBe('Task with details');
     expect(storedPlan.tasks[0]?.description).toBe('This uses details instead of description');
@@ -482,7 +482,7 @@ describe('tim tools CLI handlers', () => {
     // Use inputData instead of stdin
     const options = {
       inputData: {
-        plan: '14',
+        plan: 14,
         tasks: JSON.parse(tasksJson),
       },
     };
@@ -493,7 +493,7 @@ describe('tim tools CLI handlers', () => {
     expect(output).toContain('Successfully updated plan');
     expect(output).toContain('1 task');
 
-    const { plan: storedPlan } = await resolvePlanFromDb('14', tempDir);
+    const { plan: storedPlan } = await resolvePlanByNumericId(14, tempDir);
     expect(storedPlan.tasks).toHaveLength(1);
     expect(storedPlan.tasks[0]?.title).toBe('Task from --tasks');
     expect(storedPlan.tasks[0]?.description).toBe('This task was passed via CLI option');
@@ -515,7 +515,7 @@ describe('tim tools CLI handlers', () => {
 
     const context = createToolContext();
     const args = {
-      plan: '12',
+      plan: 12,
       action: 'add',
       title: 'New Task',
       description: 'Add a task',

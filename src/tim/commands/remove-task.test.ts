@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { closeDatabaseForTesting } from '../db/database.js';
-import { readPlanFile, writePlanFile } from '../plans.js';
+import { resolvePlanByNumericId, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { handleRemoveTaskCommand } from './remove-task.js';
 
@@ -100,14 +100,14 @@ describe('handleRemoveTaskCommand', () => {
 
   test('removes task by index', async () => {
     await handleRemoveTaskCommand(
-      planFile,
+      200,
       {
         index: 1,
       },
       { parent: { opts: () => ({}) } }
     );
 
-    const updated = await readPlanFile(planFile);
+    const { plan: updated } = await resolvePlanByNumericId(200, tempDir);
     expect(updated.tasks).toHaveLength(2);
     expect(updated.tasks.map((t) => t.title)).toEqual(['Task One', 'Task Three']);
     expect(warnSpy).toHaveBeenCalled(); // removal from middle shifts indices
@@ -115,14 +115,14 @@ describe('handleRemoveTaskCommand', () => {
 
   test('removes task by title', async () => {
     await handleRemoveTaskCommand(
-      planFile,
+      200,
       {
         title: 'Three',
       },
       { parent: { opts: () => ({}) } }
     );
 
-    const updated = await readPlanFile(planFile);
+    const { plan: updated } = await resolvePlanByNumericId(200, tempDir);
     expect(updated.tasks).toHaveLength(2);
     expect(updated.tasks.map((t) => t.title)).toEqual(['Task One', 'Task Two']);
     expect(warnSpy).not.toHaveBeenCalled(); // removed last task
@@ -134,14 +134,14 @@ describe('handleRemoveTaskCommand', () => {
     selectSpy.mockResolvedValue(0);
 
     await handleRemoveTaskCommand(
-      planFile,
+      200,
       {
         interactive: true,
       },
       { parent: { opts: () => ({}) } }
     );
 
-    const updated = await readPlanFile(planFile);
+    const { plan: updated } = await resolvePlanByNumericId(200, tempDir);
     expect(updated.tasks).toHaveLength(2);
     expect(updated.tasks.map((t) => t.title)).toEqual(['Task Two', 'Task Three']);
     expect(selectSpy).toHaveBeenCalledTimes(1);
@@ -150,7 +150,7 @@ describe('handleRemoveTaskCommand', () => {
   test('throws when index is invalid', async () => {
     await expect(
       handleRemoveTaskCommand(
-        planFile,
+        200,
         {
           index: 99, // 0-based internal index (would be 100 in 1-based user input)
         },
@@ -161,14 +161,14 @@ describe('handleRemoveTaskCommand', () => {
 
   test('throws when no selection mode is provided', async () => {
     await expect(
-      handleRemoveTaskCommand(planFile, {}, { parent: { opts: () => ({}) } })
+      handleRemoveTaskCommand(200, {}, { parent: { opts: () => ({}) } })
     ).rejects.toThrow('Specify one of --title, --index, or --interactive to choose a task.');
   });
 
   test('throws when multiple selection modes are provided', async () => {
     await expect(
       handleRemoveTaskCommand(
-        planFile,
+        200,
         {
           title: 'Task One',
           index: 0,

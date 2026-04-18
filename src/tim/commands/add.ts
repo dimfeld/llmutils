@@ -21,11 +21,45 @@ import { resolveRepoRoot } from '../plan_repo_root.js';
 import { updatePlanProperties } from '../planPropertiesUpdater.js';
 import { prioritySchema, statusSchema, type PlanSchema } from '../planSchema.js';
 import { invertPlanIdToUuidMap, planRowForTransaction } from '../plans_db.js';
-import { resolvePlanFromDb } from '../plans.js';
+import { resolvePlanByNumericId } from '../plans.js';
 import { ensureReferences } from '../utils/references.js';
 import { editMaterializedPlan } from './materialized_edit.js';
 
-export async function handleAddCommand(title: string[], options: any, command: any) {
+type AddCommandOptions = {
+  discoveredFrom?: number;
+  cleanup?: number;
+  edit?: boolean;
+  priority?: PlanSchema['priority'];
+  status?: PlanSchema['status'];
+  temp?: boolean;
+  simple?: boolean;
+  epic?: boolean;
+  dependsOn?: number[];
+  parent?: number;
+  rmfilter?: string[];
+  issue?: string[];
+  doc?: string[];
+  assign?: string;
+  tag?: string[];
+  details?: string;
+  detailsFile?: string;
+  editorDetails?: boolean;
+  editor?: string;
+};
+
+interface AddCommandContext {
+  parent: {
+    opts: () => {
+      config?: string;
+    };
+  };
+}
+
+export async function handleAddCommand(
+  title: string[],
+  options: AddCommandOptions,
+  command: AddCommandContext
+) {
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
   const repoRoot = await resolveRepoRoot(globalOpts.config, (await getGitRoot()) || process.cwd());
@@ -39,7 +73,7 @@ export async function handleAddCommand(title: string[], options: any, command: a
     if (typeof options.discoveredFrom !== 'number' || Number.isNaN(options.discoveredFrom)) {
       throw new Error('--discovered-from option requires a numeric plan ID');
     }
-    const discoveredFromPlanId = Number(options.discoveredFrom);
+    const discoveredFromPlanId = options.discoveredFrom;
     if (!Number.isInteger(discoveredFromPlanId) || discoveredFromPlanId <= 0) {
       throw new Error('--discovered-from option requires a positive integer plan ID');
     }
@@ -57,7 +91,7 @@ export async function handleAddCommand(title: string[], options: any, command: a
       throw new Error('--cleanup option requires a positive plan ID');
     }
     referencedPlan = (
-      await resolvePlanFromDb(options.cleanup, repoRoot, { context: projectContext })
+      await resolvePlanByNumericId(options.cleanup, repoRoot, { context: projectContext })
     ).plan;
     if (title.length === 0) {
       planTitle = `${referencedPlan.title} - Cleanup`;
@@ -111,13 +145,8 @@ export async function handleAddCommand(title: string[], options: any, command: a
     simple: options.simple || false,
     epic: options.epic || false,
     dependencies: needArrayOrUndefined(options.dependsOn),
-    parent: referencedPlan
-      ? referencedPlan.id
-      : options.parent
-        ? Number(options.parent)
-        : undefined,
-    discoveredFrom:
-      options.discoveredFrom !== undefined ? Number(options.discoveredFrom) : undefined,
+    parent: referencedPlan ? referencedPlan.id : options.parent,
+    discoveredFrom: options.discoveredFrom,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     tasks: [],
@@ -185,7 +214,7 @@ export async function handleAddCommand(title: string[], options: any, command: a
   const parentPlan =
     parentPlanId === undefined
       ? undefined
-      : (await resolvePlanFromDb(parentPlanId, repoRoot, { context: projectContext })).plan;
+      : (await resolvePlanByNumericId(parentPlanId, repoRoot, { context: projectContext })).plan;
 
   const idToUuid = new Map(projectContext.planIdToUuid).set(planId, plan.uuid!);
   const { updatedPlan: updatedNewPlan } = ensureReferences(plan, { planIdToUuid: idToUuid });

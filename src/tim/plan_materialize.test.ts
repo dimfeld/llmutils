@@ -1032,7 +1032,7 @@ describe('tim plan_materialize', () => {
     try {
       process.chdir(repoDir);
 
-      await handleMaterializeCommand('3', {}, {} as any);
+      await handleMaterializeCommand(3, {}, {} as any);
 
       const planPath = getMaterializedPlanPath(repoDir, 3);
       const dependencyRefPath = getMaterializedPlanPath(repoDir, 2);
@@ -1045,7 +1045,7 @@ describe('tim plan_materialize', () => {
       editedPlan.title = 'Edited via command flow';
       await writePlanFile(planPath, editedPlan, { skipSync: true });
 
-      await handleSyncCommand('3', {}, {} as any);
+      await handleSyncCommand(3, {}, {} as any);
       const syncedPlan = getPlanByPlanId(db, project.id, 3);
       expect(syncedPlan?.title).toBe('Edited via command flow');
 

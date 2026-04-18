@@ -94,11 +94,7 @@ describe('executeStubPlan', () => {
 
     expect(result).toEqual({ tasksAppended: 2 });
     expect(handleReviewCommandSpy).toHaveBeenCalledTimes(1);
-    expect(handleReviewCommandSpy).toHaveBeenCalledWith(
-      planFile,
-      { cwd: tempDir },
-      expect.any(Object)
-    );
+    expect(handleReviewCommandSpy).toHaveBeenCalledWith(242, { cwd: tempDir }, expect.any(Object));
     expect(updatedPlan.status).toBe('in_progress');
     expect(executorExecuteSpy).toHaveBeenCalledTimes(1);
     expect(checkAndMarkParentDoneSpy).not.toHaveBeenCalled();
@@ -125,7 +121,7 @@ describe('executeStubPlan', () => {
 
     expect(result).toEqual({ issuesSaved: 2 });
     expect(handleReviewCommandSpy).toHaveBeenCalledWith(
-      planFile,
+      242,
       { cwd: tempDir, saveIssues: true, noAutofix: true },
       expect.any(Object)
     );

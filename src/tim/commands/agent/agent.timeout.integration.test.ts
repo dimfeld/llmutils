@@ -68,6 +68,25 @@ vi.mock('../../workspace/workspace_roundtrip.js', () => ({
   materializePlansForExecution: vi.fn(async () => undefined),
 }));
 
+vi.mock('../../workspace/workspace_setup.js', () => ({
+  setupWorkspace: vi.fn(async (_options: any, baseDir: string, currentPlanFile: string) => ({
+    baseDir,
+    planFile: currentPlanFile,
+    branchCreatedDuringSetup: false,
+  })),
+}));
+
+vi.mock('../../plans.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../plans.js')>();
+  return {
+    ...actual,
+    resolvePlanByNumericId: vi.fn(async (planId: number) => ({
+      plan: { id: planId, title: 'Timeout Plan', status: 'in_progress', tasks: [] },
+      planPath: path.join(tempDir, 'tasks', `${planId}.yml`),
+    })),
+  };
+});
+
 describe('tim agent integration (timeout simulation)', () => {
   let tasksDir: string;
   let configPath: string;
@@ -140,7 +159,7 @@ describe('tim agent integration (timeout simulation)', () => {
     const summaryOut = path.join(tempDir, 'out', 'timeout-summary.txt');
     await expect(
       timAgent(
-        planPath,
+        707,
         { serialTasks: true, summaryFile: summaryOut, model: 'auto', log: false },
         { config: configPath }
       )

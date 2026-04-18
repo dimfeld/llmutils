@@ -164,11 +164,7 @@ describe('executeBatchMode final review workspace', () => {
     });
 
     expect(handleReviewCommandSpy).toHaveBeenCalledTimes(1);
-    expect(handleReviewCommandSpy).toHaveBeenCalledWith(
-      planFile,
-      { cwd: tempDir },
-      expect.any(Object)
-    );
+    expect(handleReviewCommandSpy).toHaveBeenCalledWith(1, { cwd: tempDir }, expect.any(Object));
   });
 
   test('saves review issues and leaves the plan in needs_review when terminalInput is false', async () => {
@@ -198,7 +194,7 @@ describe('executeBatchMode final review workspace', () => {
     const updatedPlan = yaml.parse(await fs.readFile(planFile, 'utf-8'));
 
     expect(handleReviewCommandSpy).toHaveBeenCalledWith(
-      planFile,
+      1,
       { cwd: tempDir, saveIssues: true, noAutofix: true },
       expect.any(Object)
     );

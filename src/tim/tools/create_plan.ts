@@ -5,7 +5,7 @@ import {
   resolveProjectContext,
   syncMaterializedPlan,
 } from '../plan_materialize.js';
-import { resolvePlanFromDb, writePlanFile } from '../plans.js';
+import { resolvePlanByNumericId, writePlanFile } from '../plans.js';
 import { validateTags } from '../utils/tags.js';
 import { ensureReferences } from '../utils/references.js';
 import { getDatabase } from '../db/database.js';
@@ -45,7 +45,8 @@ export async function createPlanTool(
   const parentPlan =
     args.parent === undefined
       ? undefined
-      : (await resolvePlanFromDb(args.parent, context.gitRoot, { context: projectContext })).plan;
+      : (await resolvePlanByNumericId(args.parent, context.gitRoot, { context: projectContext }))
+          .plan;
 
   if (args.parent !== undefined && !parentPlan) {
     throw new Error(`Parent plan ${args.parent} not found`);

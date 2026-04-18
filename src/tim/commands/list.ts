@@ -41,6 +41,23 @@ type SortValueInfo = {
   value: string | number;
 };
 
+interface ListCommandOptions {
+  all?: boolean;
+  assigned?: boolean;
+  dir?: string;
+  epic?: number;
+  here?: boolean;
+  mine?: boolean;
+  number?: number;
+  reverse?: boolean;
+  showFiles?: boolean;
+  sort?: ListSortField;
+  status?: string[];
+  tag?: string[];
+  unassigned?: boolean;
+  user?: string;
+}
+
 function getSortValue(plan: ListPlan, sort: ListSortField): SortValueInfo {
   switch (sort) {
     case 'title':
@@ -86,7 +103,11 @@ function getSortValue(plan: ListPlan, sort: ListSortField): SortValueInfo {
   }
 }
 
-export async function handleListCommand(options: any, command: any, searchTerms?: string[]) {
+export async function handleListCommand(
+  options: ListCommandOptions,
+  command: any,
+  searchTerms?: string[]
+) {
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
 
@@ -216,12 +237,7 @@ export async function handleListCommand(options: any, command: any, searchTerms?
   }
 
   if (options.epic !== undefined) {
-    const epicId =
-      typeof options.epic === 'number' ? options.epic : Number.parseInt(options.epic, 10);
-
-    if (Number.isNaN(epicId) || !Number.isInteger(epicId) || epicId <= 0) {
-      throw new Error(`Invalid epic ID: ${options.epic}`);
-    }
+    const epicId = options.epic;
 
     const epicPlan = enrichedPlans.get(epicId);
     if (!epicPlan) {

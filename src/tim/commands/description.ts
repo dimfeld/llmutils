@@ -386,7 +386,7 @@ async function handleInteractiveOutput(
  * Main handler for the tim description command
  */
 export async function handleDescriptionCommand(
-  planFile: string,
+  planId: number,
   options: DescriptionOptions,
   command: DescriptionCommand
 ) {
@@ -410,7 +410,7 @@ export async function handleDescriptionCommand(
 
   // Gather plan context using the shared utility
   // Description command doesn't use incremental features, so pass empty review options
-  const context = await gatherPlanContext(planFile, { base: options.base }, globalOpts);
+  const context = await gatherPlanContext(planId, { base: options.base }, globalOpts);
 
   // Check if no changes were detected and early return
   if (context.noChangesDetected) {

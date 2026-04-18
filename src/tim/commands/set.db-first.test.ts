@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { clearAllTimCaches } from '../../testing.js';
 import { closeDatabaseForTesting } from '../db/database.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
-import { readPlanFile, resolvePlanFromDb, writePlanFile } from '../plans.js';
+import { readPlanFile, resolvePlanByNumericId, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { materializePlan } from '../plan_materialize.js';
 import { handleSetCommand } from './set.js';
@@ -65,10 +65,10 @@ describe('tim set DB-first command', () => {
       tasks: [],
     } satisfies PlanSchema);
 
-    await handleSetCommand(childPath, { planFile: childPath, parent: 1 }, globalOpts);
+    await handleSetCommand(2, { parent: 1 }, globalOpts);
 
-    const child = await resolvePlanFromDb('2', tempDir);
-    const parent = await resolvePlanFromDb('1', tempDir);
+    const child = await resolvePlanByNumericId(2, tempDir);
+    const parent = await resolvePlanByNumericId(1, tempDir);
     expect(child.plan.parent).toBe(1);
     expect(parent.plan.dependencies).toContain(2);
   });
@@ -106,10 +106,10 @@ describe('tim set DB-first command', () => {
       tasks: [],
     } satisfies PlanSchema);
 
-    await handleSetCommand(child2Path, { planFile: child2Path, status: 'cancelled' }, globalOpts);
+    await handleSetCommand(12, { status: 'cancelled' }, globalOpts);
 
-    const updatedParent = await resolvePlanFromDb('10', tempDir);
-    const updatedChild = await resolvePlanFromDb('12', tempDir);
+    const updatedParent = await resolvePlanByNumericId(10, tempDir);
+    const updatedChild = await resolvePlanByNumericId(12, tempDir);
     expect(updatedChild.plan.status).toBe('cancelled');
     expect(updatedParent.plan.status).toBe('needs_review');
   });
@@ -142,7 +142,7 @@ describe('tim set DB-first command', () => {
       skipUpdatedAt: true,
     });
 
-    await handleSetCommand(childPath, { planFile: childPath, parent: 20 }, globalOpts);
+    await handleSetCommand(21, { parent: 20 }, globalOpts);
 
     const refreshedParent = await readPlanFile(materializedParentPath);
     expect(refreshedParent.dependencies).toContain(21);

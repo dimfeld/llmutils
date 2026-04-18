@@ -36,7 +36,7 @@ vi.mock('../../plans.js', () => {
     writePlanFile: vi.fn(async (_p: string, _data: any) => {}),
     setPlanStatus: vi.fn(async () => {}),
     generatePlanFileContent: vi.fn(() => ''),
-    resolvePlanFromDb: vi.fn(async () => ({
+    resolvePlanByNumericId: vi.fn(async () => ({
       plan: { id: 1, title: 'P', status: 'pending', tasks: [] },
       planPath: '',
     })),

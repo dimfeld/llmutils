@@ -85,17 +85,28 @@ vi.mock('../../executors/index.js', () => ({
   defaultModelForExecutor: vi.fn(() => 'test-model'),
 }));
 
-vi.mock('../../plans.js', () => ({
-  readPlanFile: vi.fn(async (p: string) => {
-    const content = await fs.readFile(p, 'utf-8');
-    return yaml.parse(content);
-  }),
-  writePlanFile: vi.fn(async (p: string, data: any) => {
-    await fs.writeFile(p, yaml.stringify(data));
-  }),
-  generatePlanFileContent: vi.fn(() => ''),
-  resolvePlanFromDb: resolvePlanFromDbSpy,
-}));
+vi.mock('../../plans.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../plans.js')>();
+  return {
+    ...actual,
+    readPlanFile: vi.fn(async (p: string) => {
+      const content = await fs.readFile(p, 'utf-8');
+      return yaml.parse(content);
+    }),
+    writePlanFile: vi.fn(async (p: string, data: any) => {
+      await fs.writeFile(p, yaml.stringify(data));
+    }),
+    generatePlanFileContent: vi.fn(() => ''),
+    resolvePlanByNumericId: resolvePlanFromDbSpy,
+    parsePlanIdFromCliArg: vi.fn((arg: string) => {
+      const n = parseInt(arg, 10);
+      if (isNaN(n) || n <= 0 || !Number.isInteger(n)) {
+        throw new Error(`Expected a numeric plan ID, got: "${arg}"`);
+      }
+      return n;
+    }),
+  };
+});
 
 vi.mock('../plan_discovery.js', () => ({
   findNextPlanFromDb: findNextPlanFromDbSpy,
@@ -170,13 +181,12 @@ describe('timAgent notifications', () => {
     // Update getGitRoot mock to use tempDir
     getGitRootSpy.mockImplementation(async () => tempDir);
 
-    // Update resolvePlanFromDb to use current planFile
-    resolvePlanFromDbSpy.mockImplementation(async (planArg: string) => {
-      const resolvedPath = path.resolve(planArg);
-      const content = await fs.readFile(resolvedPath, 'utf-8');
+    // Update resolvePlanByNumericId to use current planFile
+    resolvePlanFromDbSpy.mockImplementation(async (_planId: number, _repoRoot: string) => {
+      const content = await fs.readFile(planFile, 'utf-8');
       return {
         plan: yaml.parse(content),
-        planPath: resolvedPath,
+        planPath: planFile,
       };
     });
   });
@@ -195,7 +205,7 @@ describe('timAgent notifications', () => {
   });
 
   test('sends notification on success', async () => {
-    await timAgent(planFile, { log: false, summary: false }, {} as any);
+    await timAgent(1, { log: false, summary: false }, {} as any);
 
     expect(spawnAndLogOutputSpy).toHaveBeenCalledTimes(1);
     const [, options] = spawnAndLogOutputSpy.mock.calls[0];
@@ -211,9 +221,7 @@ describe('timAgent notifications', () => {
       throw new Error('boom');
     });
 
-    await expect(timAgent(planFile, { log: false, summary: false }, {} as any)).rejects.toThrow(
-      'boom'
-    );
+    await expect(timAgent(1, { log: false, summary: false }, {} as any)).rejects.toThrow('boom');
 
     expect(spawnAndLogOutputSpy).toHaveBeenCalledTimes(1);
     const [, options] = spawnAndLogOutputSpy.mock.calls[0];
@@ -231,7 +239,7 @@ describe('timAgent notifications', () => {
       throw new Error('duplicate plan id');
     });
 
-    await expect(timAgent(planFile, { log: false, summary: false }, {} as any)).rejects.toThrow(
+    await expect(timAgent(1, { log: false, summary: false }, {} as any)).rejects.toThrow(
       'duplicate plan id'
     );
 
@@ -248,7 +256,7 @@ describe('timAgent notifications', () => {
   test('sends notification after batch mode execution', async () => {
     await writePlan([{ title: 'Task 1' }]);
 
-    await timAgent(planFile, { log: false, summary: false }, {} as any);
+    await timAgent(1, { log: false, summary: false }, {} as any);
 
     expect(executeBatchModeSpy).toHaveBeenCalledTimes(1);
     expect(spawnAndLogOutputSpy).toHaveBeenCalledTimes(1);
@@ -261,7 +269,7 @@ describe('timAgent notifications', () => {
   test('sends notification after serial execution', async () => {
     await writePlan([{ title: 'Task 1', done: true }]);
 
-    await timAgent(planFile, { log: false, summary: false, serialTasks: true }, {} as any);
+    await timAgent(1, { log: false, summary: false, serialTasks: true }, {} as any);
 
     expect(executeBatchModeSpy).not.toHaveBeenCalled();
     expect(spawnAndLogOutputSpy).toHaveBeenCalledTimes(1);
@@ -272,7 +280,7 @@ describe('timAgent notifications', () => {
   });
 
   test('sends notification in dry-run mode', async () => {
-    await timAgent(planFile, { log: false, summary: false, dryRun: true }, {} as any);
+    await timAgent(1, { log: false, summary: false, dryRun: true }, {} as any);
 
     expect(executeStubPlanSpy).toHaveBeenCalledTimes(1);
     expect(executeStubPlanSpy).toHaveBeenCalledWith(expect.objectContaining({ dryRun: true }));
@@ -286,7 +294,7 @@ describe('timAgent notifications', () => {
   test('suppresses notification when env flag is set', async () => {
     process.env.TIM_NOTIFY_SUPPRESS = '1';
 
-    await timAgent(planFile, { log: false, summary: false }, {} as any);
+    await timAgent(1, { log: false, summary: false }, {} as any);
 
     expect(spawnAndLogOutputSpy).not.toHaveBeenCalled();
   });
@@ -300,7 +308,7 @@ describe('timAgent notifications', () => {
     delete mockConfig.notifications;
     loadEffectiveConfigSpy.mockImplementation(async () => mockConfig);
 
-    await timAgent(planFile, { log: false, summary: false }, {} as any);
+    await timAgent(1, { log: false, summary: false }, {} as any);
 
     expect(spawnAndLogOutputSpy).not.toHaveBeenCalled();
   });
@@ -310,7 +318,7 @@ describe('timAgent notifications', () => {
       throw new Error('config boom');
     });
 
-    await expect(handleAgentCommand(planFile, {}, {} as any)).rejects.toThrow('config boom');
+    await expect(handleAgentCommand(1, {}, {} as any)).rejects.toThrow('config boom');
 
     expect(loadGlobalConfigForNotificationsSpy).toHaveBeenCalledTimes(1);
     expect(spawnAndLogOutputSpy).toHaveBeenCalledTimes(1);

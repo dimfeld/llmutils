@@ -8,7 +8,12 @@ import { closeDatabaseForTesting } from '../db/database.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
 import { getMaterializedPlanPath } from '../plan_materialize.js';
 import type { PlanSchema } from '../planSchema.js';
-import { NoFrontmatterError, readPlanFile, resolvePlanFromDb, writePlanFile } from '../plans.js';
+import {
+  NoFrontmatterError,
+  readPlanFile,
+  resolvePlanByNumericId,
+  writePlanFile,
+} from '../plans.js';
 
 const mockState = vi.hoisted(() => ({
   attempt: 0,
@@ -180,7 +185,7 @@ describe('materialized edit retry flow', () => {
 
     await editMaterializedPlan(12, tempDir, 'test-editor');
 
-    const resolved = await resolvePlanFromDb('12', tempDir);
+    const resolved = await resolvePlanByNumericId(12, tempDir);
     expect(resolved.plan.details).toBe('Edited details');
     expect(mockState.promptConfirm).not.toHaveBeenCalled();
     await expect(Bun.file(getMaterializedPlanPath(tempDir, 12)).exists()).resolves.toBe(false);
@@ -206,7 +211,7 @@ describe('materialized edit retry flow', () => {
 
     await editMaterializedPlan(12, tempDir, 'test-editor');
 
-    const resolved = await resolvePlanFromDb('12', tempDir);
+    const resolved = await resolvePlanByNumericId(12, tempDir);
     expect(resolved.plan.details).toBe('Recovered after retry');
     expect(mockState.promptConfirm).toHaveBeenCalledTimes(1);
 
@@ -288,7 +293,7 @@ describe('materialized edit retry flow', () => {
 
     await editMaterializedPlan(12, tempDir, 'test-editor');
 
-    const resolved = await resolvePlanFromDb('12', tempDir);
+    const resolved = await resolvePlanByNumericId(12, tempDir);
     expect(resolved.plan.details).toBe('Fixed after NoFrontmatterError');
     expect(mockState.promptConfirm).toHaveBeenCalledTimes(1);
 

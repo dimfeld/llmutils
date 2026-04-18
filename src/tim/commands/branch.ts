@@ -12,7 +12,7 @@ import {
   findNextPlanFromDb,
   findNextReadyDependencyFromDb,
 } from './plan_discovery.js';
-import { parsePlanIdFromCliArg, resolvePlanFromDb } from '../plans.js';
+import { resolvePlanByNumericId } from '../plans.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import type { PlanSchema } from '../planSchema.js';
 import type { TimConfig } from '../configSchema.js';
@@ -22,7 +22,7 @@ import { BRANCH_PREFIX_VALIDATION_MESSAGE, isValidBranchPrefix } from '../branch
 type BranchCommandOptions = {
   next?: boolean;
   current?: boolean;
-  nextReady?: string;
+  nextReady?: number;
   latest?: boolean;
 };
 
@@ -179,7 +179,7 @@ function buildBranchNameWithSlugSegment(
 }
 
 export async function handleBranchCommand(
-  planFile: string | undefined,
+  planId: number | undefined,
   options: BranchCommandOptions,
   command: any
 ): Promise<void> {
@@ -193,15 +193,9 @@ export async function handleBranchCommand(
   let selectedPlan: PlanSchema | undefined;
   let selectedPlanRepoRoot = effectiveRepoRoot;
 
-  if (options.nextReady) {
-    if (!options.nextReady || options.nextReady.trim() === '') {
-      throw new Error('--next-ready requires a numeric parent plan ID');
-    }
-
-    const parentPlanId = parsePlanIdFromCliArg(options.nextReady);
-
+  if (options.nextReady !== undefined) {
     const result = await findNextReadyDependencyFromDb(
-      parentPlanId,
+      options.nextReady,
       selectedPlanRepoRoot,
       selectedPlanRepoRoot,
       true
@@ -236,16 +230,15 @@ export async function handleBranchCommand(
 
     selectedPlan = plan;
   } else {
-    if (!planFile) {
+    if (!planId) {
       throw new Error(
         'Please provide a numeric plan ID or use --latest/--next/--current/--next-ready to find a plan'
       );
     }
-    const planIdArg = String(parsePlanIdFromCliArg(planFile));
 
     const planRepoRoot = await resolveRepoRoot(globalOpts.config, repoRoot);
     selectedPlanRepoRoot = planRepoRoot;
-    selectedPlan = (await resolvePlanFromDb(planIdArg, planRepoRoot)).plan;
+    selectedPlan = (await resolvePlanByNumericId(planId, planRepoRoot)).plan;
   }
 
   const plan = selectedPlan;

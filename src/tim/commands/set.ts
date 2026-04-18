@@ -19,7 +19,12 @@ import {
 import { updatePlanProperties } from '../planPropertiesUpdater.js';
 import type { PlanSchema, Priority } from '../planSchema.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
-import { parsePlanIdFromCliArg, readPlanFile, resolvePlanFromDb, writePlanFile } from '../plans.js';
+import {
+  readPlanFile,
+  resolvePlanByNumericId,
+  resolvePlanByUuid,
+  writePlanFile,
+} from '../plans.js';
 import { invertPlanIdToUuidMap, planRowForTransaction } from '../plans_db.js';
 import { checkAndMarkParentDone } from '../plans/parent_cascade.js';
 import { resolveWritablePath } from '../plans/resolve_writable_path.js';
@@ -28,7 +33,6 @@ import { findPlanFileOnDiskAsync } from '../plans/find_plan_file.js';
 import { generateBranchNameFromPlan } from './branch.js';
 
 export interface SetOptions {
-  planFile: string;
   priority?: Priority;
   status?: PlanSchema['status'];
   dependsOn?: number[];
@@ -60,20 +64,21 @@ export interface SetOptions {
 }
 
 export async function handleSetCommand(
-  planArg: string,
+  planId: number,
   options: SetOptions,
   globalOpts: any
 ): Promise<void> {
-  const planIdArg = String(parsePlanIdFromCliArg(planArg));
   const config = await loadEffectiveConfig(globalOpts?.config);
   const repoRoot = await resolveRepoRoot(globalOpts?.config, (await getGitRoot()) || process.cwd());
-  const initialPlan = await resolvePlanFromDb(planIdArg, repoRoot);
-  const resolvedPlanArg = initialPlan.plan.uuid ?? planIdArg;
+  const initialPlan = await resolvePlanByNumericId(planId, repoRoot);
+  const resolvedPlanUuid = initialPlan.plan.uuid;
 
   await withPlanAutoSync(initialPlan.plan.id, repoRoot, async () => {
     let context = await resolveProjectContext(repoRoot);
     const tasksDir = getLegacyAwareSearchDir(repoRoot);
-    const target = await resolvePlanFromDb(resolvedPlanArg, repoRoot, { context });
+    const target = resolvedPlanUuid
+      ? await resolvePlanByUuid(resolvedPlanUuid, repoRoot, { context })
+      : await resolvePlanByNumericId(planId, repoRoot, { context });
     const planRow = getRequiredPlanRow(context, target.plan.id);
     const outputPath = await resolveWritablePath(planRow, repoRoot);
 
@@ -408,9 +413,9 @@ export async function handleSetCommand(
 
     const freshContext = await resolveProjectContext(repoRoot);
     const refreshedPlan = (
-      await resolvePlanFromDb(plan.uuid ?? String(plan.id), repoRoot, {
-        context: freshContext,
-      })
+      plan.uuid
+        ? await resolvePlanByUuid(plan.uuid, repoRoot, { context: freshContext })
+        : await resolvePlanByNumericId(plan.id, repoRoot, { context: freshContext })
     ).plan;
 
     const { updatedPlan: refreshedPlanWithReferences } = ensureReferences(refreshedPlan, {
@@ -431,7 +436,7 @@ export async function handleSetCommand(
 
     for (const [parentId, filePath] of parentFileWrites) {
       const refreshedParent = (
-        await resolvePlanFromDb(String(parentId), repoRoot, {
+        await resolvePlanByNumericId(parentId, repoRoot, {
           context: freshContext,
         })
       ).plan;

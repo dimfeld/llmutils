@@ -4,7 +4,7 @@ import { log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveProjectContext, withPlanAutoSync } from '../plan_materialize.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
-import { parsePlanIdFromCliArg, resolvePlanFromDb, writePlanFile } from '../plans.js';
+import { resolvePlanByNumericId, resolvePlanByUuid, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { promptForTaskInfo, type TaskInput } from '../utils/task_operations.js';
 import type { PlanRow } from '../db/plan.js';
@@ -20,21 +20,22 @@ export interface AddTaskOptions {
 type PlanTask = NonNullable<PlanSchema['tasks']>[number];
 
 export async function handleAddTaskCommand(
-  plan: string,
+  planId: number,
   options: AddTaskOptions,
   command: any
 ): Promise<void> {
-  const planIdArg = String(parsePlanIdFromCliArg(plan));
   const globalOpts = command.parent?.opts?.() ?? {};
   const config = await loadEffectiveConfig(globalOpts.config);
   const repoRoot = await resolveRepoRoot(globalOpts.config);
-  const initialPlan = await resolvePlanFromDb(planIdArg, repoRoot);
-  const resolvedPlanArg = initialPlan.plan.uuid ?? planIdArg;
+  const initialPlan = await resolvePlanByNumericId(planId, repoRoot);
+  const resolvedPlanUuid = initialPlan.plan.uuid;
 
   const taskInfo = await collectTaskInput(options);
   await withPlanAutoSync(initialPlan.plan.id, repoRoot, async () => {
     const context = await resolveProjectContext(repoRoot);
-    const target = await resolvePlanFromDb(resolvedPlanArg, repoRoot, { context });
+    const target = resolvedPlanUuid
+      ? await resolvePlanByUuid(resolvedPlanUuid, repoRoot, { context })
+      : await resolvePlanByNumericId(planId, repoRoot, { context });
     const planRow = getRequiredPlanRow(context.rows, target.plan.id);
     const planPath = await resolveWritablePath(planRow, repoRoot);
     const tasks = Array.isArray(target.plan.tasks) ? target.plan.tasks : [];

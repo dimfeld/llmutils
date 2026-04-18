@@ -8,7 +8,7 @@ import { getOrCreateProject } from '../db/project.js';
 import { recordWorkspace } from '../db/workspace.js';
 import type { TimConfig } from '../configSchema.js';
 import * as git from '../../common/git.js';
-import { resolvePlanFromDb } from '../plans.js';
+import { resolvePlanByNumericId } from '../plans.js';
 import { WorkspaceAutoSelector } from './workspace_auto_selector.js';
 import { WorkspaceAlreadyLocked, WorkspaceLock } from './workspace_lock.js';
 import * as workspaceManager from './workspace_manager.js';
@@ -441,7 +441,7 @@ describe('setupWorkspace', () => {
 
     // DB version should overwrite workspace edits during setup
     expect(await fs.readFile(result.planFile, 'utf8')).toContain('DB copy');
-    const resolved = await resolvePlanFromDb('46', baseDir);
+    const resolved = await resolvePlanByNumericId(46, baseDir);
     expect(resolved.plan.title).toBe('DB copy');
     expect(resolved.plan.details).toContain('DB content is authoritative');
     expect(resolved.plan.status).toBe('pending');
@@ -2564,7 +2564,7 @@ describe('setupWorkspace', () => {
     });
 
     test('parent-derived baseBranch: setPlanBaseTracking called with baseBranch and baseCommit when remote exists', async () => {
-      // Initialize a git repo so resolvePlanFromDb can locate the project
+      // Initialize a git repo so resolvePlanByNumericId can locate the project
       await Bun.$`git init`.cwd(baseDir).quiet();
       await Bun.$`git remote add origin https://example.com/test/repo.git`.cwd(baseDir).quiet();
 
@@ -2622,7 +2622,7 @@ describe('setupWorkspace', () => {
     });
 
     test('parent-derived baseBranch with null merge-base: persists baseBranch only', async () => {
-      // Initialize a git repo so resolvePlanFromDb can locate the project
+      // Initialize a git repo so resolvePlanByNumericId can locate the project
       await Bun.$`git init`.cwd(baseDir).quiet();
       await Bun.$`git remote add origin https://example.com/test/repo.git`.cwd(baseDir).quiet();
 

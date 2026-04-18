@@ -5,8 +5,8 @@ import type { DiffResult } from '../incremental_review.js';
 import type { PlanSchema } from '../planSchema.js';
 
 interface MockDependencies {
-  resolvePlanFromDb: (
-    planArg: string | number,
+  resolvePlanByNumericId: (
+    planId: number,
     repoRoot: string
   ) => Promise<{
     plan: PlanSchema;
@@ -54,7 +54,7 @@ describe('gatherPlanContext', () => {
     };
 
     mockDeps = {
-      resolvePlanFromDb: async () => ({
+      resolvePlanByNumericId: async () => ({
         plan: basePlan,
         planPath: planFile,
       }),
@@ -79,7 +79,7 @@ describe('gatherPlanContext', () => {
   });
 
   test('should gather basic plan context successfully', async () => {
-    const result = await gatherPlanContext(planFile, {}, {}, mockDeps);
+    const result = await gatherPlanContext(123, {}, {}, mockDeps);
 
     expect(result.resolvedPlanFile).toBe(planFile);
     expect(result.planData).toBeDefined();
@@ -109,7 +109,7 @@ describe('gatherPlanContext', () => {
     };
 
     await gatherPlanContext(
-      planFile,
+      123,
       { cwd: '/tmp/switched-workspace' },
       { config: '/tmp/custom.tim.yml' },
       mockDeps
@@ -128,7 +128,7 @@ describe('gatherPlanContext', () => {
       return gitRoot;
     };
 
-    await gatherPlanContext(planFile, { cwd: '/tmp/switched-workspace' }, {}, mockDeps);
+    await gatherPlanContext(123, { cwd: '/tmp/switched-workspace' }, {}, mockDeps);
 
     // getGitRoot should receive repoRoot (from resolveRepoRoot), not options.cwd
     expect(receivedCwd).toBe(repoRoot);
@@ -155,7 +155,7 @@ describe('gatherPlanContext', () => {
     allPlans.set(123, { ...basePlan, parent: 100 });
     allPlans.set(124, completedChild);
 
-    mockDeps.resolvePlanFromDb = async () => ({
+    mockDeps.resolvePlanByNumericId = async () => ({
       plan: { ...basePlan, parent: 100 },
       planPath: planFile,
     });
@@ -167,7 +167,7 @@ describe('gatherPlanContext', () => {
     mockDeps.getParentChain = () => [parentPlan];
     mockDeps.getCompletedChildren = () => [completedChild];
 
-    const result = await gatherPlanContext(planFile, {}, {}, mockDeps);
+    const result = await gatherPlanContext(123, {}, {}, mockDeps);
 
     expect(result.parentChain).toHaveLength(1);
     expect(result.parentChain[0]?.id).toBe(100);
@@ -176,22 +176,22 @@ describe('gatherPlanContext', () => {
   });
 
   test('should use plan id as resolvedPlanFile for DB-only plans', async () => {
-    mockDeps.resolvePlanFromDb = async () => ({
+    mockDeps.resolvePlanByNumericId = async () => ({
       plan: basePlan,
       planPath: null,
     });
 
-    const result = await gatherPlanContext('123', {}, {}, mockDeps);
+    const result = await gatherPlanContext(123, {}, {}, mockDeps);
 
     expect(result.resolvedPlanFile).toBe('123');
   });
 
   test('should surface DB resolution failures', async () => {
-    mockDeps.resolvePlanFromDb = async () => {
+    mockDeps.resolvePlanByNumericId = async () => {
       throw new Error('No plan found in the database for identifier: 123');
     };
 
-    await expect(gatherPlanContext('123', {}, {}, mockDeps)).rejects.toThrow(
+    await expect(gatherPlanContext(123, {}, {}, mockDeps)).rejects.toThrow(
       'No plan found in the database for identifier: 123'
     );
   });
@@ -206,7 +206,7 @@ describe('gatherPlanContext', () => {
 
     mockDeps.getIncrementalSummary = async () => incrementalSummary;
 
-    const result = await gatherPlanContext(planFile, { incremental: true }, {}, mockDeps);
+    const result = await gatherPlanContext(123, { incremental: true }, {}, mockDeps);
 
     expect(result.incrementalSummary).toBeDefined();
     expect(result.incrementalSummary?.totalFiles).toBe(2);
@@ -221,7 +221,7 @@ describe('gatherPlanContext', () => {
       diffContent: '',
     });
 
-    const result = await gatherPlanContext(planFile, {}, {}, mockDeps);
+    const result = await gatherPlanContext(123, {}, {}, mockDeps);
 
     expect(result.diffResult.hasChanges).toBe(false);
     expect(result.diffResult.changedFiles).toEqual([]);
@@ -233,7 +233,7 @@ describe('gatherPlanContext', () => {
       throw new Error('Failed to load plans from DB');
     };
 
-    const result = await gatherPlanContext(planFile, {}, {}, mockDeps);
+    const result = await gatherPlanContext(123, {}, {}, mockDeps);
 
     expect(result.planData).toBeDefined();
     expect(result.parentChain).toEqual([]);
@@ -250,7 +250,7 @@ describe('gatherPlanContext', () => {
 
     mockDeps.getIncrementalSummary = async () => incrementalSummary;
 
-    const result = await gatherPlanContext(planFile, { incremental: true }, {}, mockDeps);
+    const result = await gatherPlanContext(123, { incremental: true }, {}, mockDeps);
 
     expect(result.incrementalSummary).toBeDefined();
     expect(result.incrementalSummary?.totalFiles).toBe(0);
@@ -268,7 +268,7 @@ describe('gatherPlanContext', () => {
       }),
     };
 
-    const result = await gatherPlanContext(planFile, {}, {}, customDeps);
+    const result = await gatherPlanContext(123, {}, {}, customDeps);
 
     expect(result.diffResult.changedFiles).toEqual(['custom-file.ts']);
     expect(result.diffResult.baseBranch).toBe('feature-branch');
@@ -288,7 +288,7 @@ describe('gatherPlanContext', () => {
     };
 
     await gatherPlanContext(
-      planFile,
+      123,
       {
         incremental: true,
         sinceLastReview: true,

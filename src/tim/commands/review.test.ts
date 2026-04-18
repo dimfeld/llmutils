@@ -18,7 +18,7 @@ import { validateInstructionsFilePath } from '../utils/file_validation.js';
 import { generateDiffForReview } from '../incremental_review.js';
 import type { PlanSchema } from '../planSchema.js';
 import type { PlanWithFilename } from '../utils/hierarchy.js';
-import { readPlanFile, resolvePlanFromDb, writePlanFile, writePlanToDb } from '../plans.js';
+import { readPlanFile, resolvePlanByNumericId, writePlanFile, writePlanToDb } from '../plans.js';
 import { closeDatabaseForTesting } from '../db/database.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
 import { clearAllTimCaches } from '../../testing.js';
@@ -150,14 +150,16 @@ afterEach(async () => {
 
 describe('review issue persistence helpers', () => {
   test('saveReviewIssuesToPlan persists issues to the plan file', async () => {
-    const planFile = join(testDir, 'review-issues.plan.md');
-    await writePlanFile(planFile, {
-      id: 1,
-      title: 'Persist review issues',
-      goal: 'Verify saved issues round-trip',
-      details: 'Details',
-      tasks: [],
-    });
+    await writePlanToDb(
+      {
+        id: 1,
+        title: 'Persist review issues',
+        goal: 'Verify saved issues round-trip',
+        details: 'Details',
+        tasks: [],
+      },
+      { cwdForIdentity: testDir }
+    );
 
     const issues = [
       {
@@ -178,9 +180,9 @@ describe('review issue persistence helpers', () => {
       },
     ];
 
-    await saveReviewIssuesToPlan(planFile, issues);
+    await saveReviewIssuesToPlan(1, issues, testDir);
 
-    const updatedPlan = await readPlanFile(planFile);
+    const updatedPlan = (await resolvePlanByNumericId(1, testDir)).plan;
     expect(updatedPlan.reviewIssues).toEqual(issues);
   });
 
@@ -206,10 +208,10 @@ describe('review issue persistence helpers', () => {
       { cwdForIdentity: testDir }
     );
 
-    await clearSavedReviewIssues('2', configPath);
-    await clearSavedReviewIssues('2', configPath);
+    await clearSavedReviewIssues(2, testDir);
+    await clearSavedReviewIssues(2, testDir);
 
-    const updatedPlan = (await resolvePlanFromDb('2', testDir)).plan;
+    const updatedPlan = (await resolvePlanByNumericId(2, testDir)).plan;
     expect(updatedPlan.reviewIssues).toBeUndefined();
   });
 });
@@ -247,9 +249,9 @@ test('saveReviewIssuesToPlan persists only the selected review issues', async ()
     },
   ];
 
-  await saveReviewIssuesToPlan('10', [reviewIssues[0]], configPath);
+  await saveReviewIssuesToPlan(10, [reviewIssues[0]], testDir);
 
-  const updatedPlan = (await resolvePlanFromDb('10', testDir)).plan;
+  const updatedPlan = (await resolvePlanByNumericId(10, testDir)).plan;
   expect(updatedPlan.reviewIssues).toEqual([reviewIssues[0]]);
 });
 
@@ -335,7 +337,7 @@ test('handleReviewCommand resolves plan by numeric ID', async () => {
     },
   };
 
-  await handleReviewCommand('1', {}, mockCommand);
+  await handleReviewCommand(1, {}, mockCommand);
 });
 
 test('handleReviewCommand resolves plan by ID', async () => {
@@ -355,8 +357,8 @@ test('handleReviewCommand resolves plan by ID', async () => {
     { cwdForIdentity: testDir }
   );
 
-  const gatherPlanContextMock = vi.fn(async (planArg: string) => {
-    expect(planArg).toBe('42');
+  const gatherPlanContextMock = vi.fn(async (planArg: number) => {
+    expect(planArg).toBe(42);
     return createMockPlanContext({
       resolvedPlanFile: '42',
       planData: {
@@ -410,7 +412,7 @@ test('handleReviewCommand resolves plan by ID', async () => {
     },
   };
 
-  await handleReviewCommand('42', {}, mockCommand);
+  await handleReviewCommand(42, {}, mockCommand);
   expect(gatherPlanContextMock).toHaveBeenCalledTimes(1);
 });
 
@@ -492,7 +494,7 @@ test('uses review default executor from config when no executor option passed', 
     },
   };
 
-  await handleReviewCommand('1', { noSave: true }, mockCommand);
+  await handleReviewCommand(1, { noSave: true }, mockCommand);
 
   expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
 });
@@ -860,7 +862,7 @@ describe('handleReviewCommand error handling', () => {
       },
     };
 
-    await expect(handleReviewCommand('999', {}, mockCommand)).rejects.toThrow('Plan not found');
+    await expect(handleReviewCommand(999, {}, mockCommand)).rejects.toThrow('Plan not found');
   });
 
   test('exits early when no changes detected', async () => {
@@ -900,7 +902,7 @@ describe('handleReviewCommand error handling', () => {
     };
 
     // Should complete without error but not call executor
-    await expect(handleReviewCommand('1', {}, mockCommand)).resolves.toEqual({
+    await expect(handleReviewCommand(1, {}, mockCommand)).resolves.toEqual({
       tasksAppended: 0,
       issuesSaved: 0,
     });
@@ -972,7 +974,7 @@ describe('handleReviewCommand error handling', () => {
       },
     };
 
-    await expect(handleReviewCommand('126', {}, mockCommand)).rejects.toThrow(
+    await expect(handleReviewCommand(126, {}, mockCommand)).rejects.toThrow(
       'Review execution failed'
     );
   });
@@ -1062,7 +1064,7 @@ describe('integration with executor system', () => {
       },
     };
 
-    await handleReviewCommand('123', { executor: 'claude-code' }, mockCommand);
+    await handleReviewCommand(123, { executor: 'claude-code' }, mockCommand);
 
     expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
   });
@@ -1142,7 +1144,7 @@ describe('integration with executor system', () => {
       },
     };
 
-    await handleReviewCommand('123', {}, mockCommand);
+    await handleReviewCommand(123, {}, mockCommand);
 
     // Verify the executor was called with correct executionMode
     expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
@@ -1195,7 +1197,7 @@ describe('integration with executor system', () => {
       },
     };
 
-    await handleReviewCommand('1', { dryRun: true }, mockCommand);
+    await handleReviewCommand(1, { dryRun: true }, mockCommand);
 
     // Executor should not be called in dry-run mode
     expect(mockExecutor.execute).not.toHaveBeenCalled();
@@ -1559,7 +1561,7 @@ describe('Parent plan context handling', () => {
       },
     };
 
-    await handleReviewCommand('101', {}, mockCommand);
+    await handleReviewCommand(101, {}, mockCommand);
 
     expect(gatherPlanContextMock).toHaveBeenCalledTimes(1);
     expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
@@ -2001,7 +2003,7 @@ describe('Security fixes', () => {
         },
       };
 
-      await expect(handleReviewCommand('1', {}, mockCommand)).rejects.toThrow(
+      await expect(handleReviewCommand(1, {}, mockCommand)).rejects.toThrow(
         'tasks.1.title: Invalid input: expected string, received undefined'
       );
     });
@@ -2123,7 +2125,7 @@ describe('Security fixes', () => {
         },
       };
 
-      await expect(handleReviewCommand('1', {}, mockCommand)).rejects.toThrow(
+      await expect(handleReviewCommand(1, {}, mockCommand)).rejects.toThrow(
         'Review execution failed: Network timeout'
       );
     });
@@ -2549,10 +2551,10 @@ describe('Autofix functionality', () => {
         parent: 300,
         status: 'needs_review',
       },
-      undefined
+      testDir
     );
 
-    const updatedParent = (await resolvePlanFromDb('300', testDir)).plan;
+    const updatedParent = (await resolvePlanByNumericId(300, testDir)).plan;
     expect(updatedParent.status).toBe('in_progress');
   });
 
@@ -2574,10 +2576,10 @@ describe('Autofix functionality', () => {
         parent: 302,
         status: 'done',
       },
-      undefined
+      testDir
     );
 
-    const updatedParent = (await resolvePlanFromDb('302', testDir)).plan;
+    const updatedParent = (await resolvePlanByNumericId(302, testDir)).plan;
     expect(updatedParent.status).toBe('in_progress');
   });
 
@@ -2599,10 +2601,10 @@ describe('Autofix functionality', () => {
         parent: 303,
         status: 'in_progress',
       },
-      undefined
+      testDir
     );
 
-    const updatedParent = (await resolvePlanFromDb('303', testDir)).plan;
+    const updatedParent = (await resolvePlanByNumericId(303, testDir)).plan;
     expect(updatedParent.status).toBe('needs_review');
   });
 
@@ -2713,7 +2715,7 @@ describe('Autofix functionality', () => {
       },
     };
 
-    await handleReviewCommand('123', { autofix: true, noSave: true }, mockCommand);
+    await handleReviewCommand(123, { autofix: true, noSave: true }, mockCommand);
 
     expect(mockExecutor.execute).toHaveBeenCalledTimes(2);
     expect(mockExecutor.execute.mock.calls[0]?.[1]?.planFilePath).toBe(materializedPlanPath);
@@ -2727,7 +2729,7 @@ describe('Autofix functionality', () => {
         ([, payload]) => payload?.command === 'review' && payload?.planFile === materializedPlanPath
       )
     ).toBe(true);
-    const updatedPlan = (await resolvePlanFromDb('123', testDir)).plan;
+    const updatedPlan = (await resolvePlanByNumericId(123, testDir)).plan;
     expect(updatedPlan.details).toBe('Updated by autofix');
     expect(updatedPlan.tasks?.[0]?.done).toBe(true);
   });
@@ -2840,7 +2842,7 @@ describe('Autofix functionality', () => {
       },
     };
 
-    await handleReviewCommand('123', { autofix: true }, mockCommand);
+    await handleReviewCommand(123, { autofix: true }, mockCommand);
 
     // Verify the executor was called twice: once for review, once for autofix
     expect(mockExecutor.execute).toHaveBeenCalledTimes(2);
@@ -2926,7 +2928,7 @@ describe('Autofix functionality', () => {
     };
 
     // Call without autofix flag - should prompt user and execute autofix
-    await handleReviewCommand('124', {}, mockCommand);
+    await handleReviewCommand(124, {}, mockCommand);
 
     // Should execute both review and autofix
     expect(mockExecutor.execute).toHaveBeenCalledTimes(2);
@@ -3020,7 +3022,7 @@ describe('Autofix functionality', () => {
       },
     };
 
-    await handleReviewCommand('125', {}, mockCommand);
+    await handleReviewCommand(125, {}, mockCommand);
 
     // Should only execute review, not autofix
     expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
@@ -3112,12 +3114,12 @@ describe('Autofix functionality', () => {
     };
 
     // Test both with and without autofix flag - should behave the same (no autofix)
-    await handleReviewCommand('126', {}, mockCommand);
+    await handleReviewCommand(126, {}, mockCommand);
     expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
 
     // Reset mock and test with autofix flag
     mockExecutor.execute.mockClear();
-    await handleReviewCommand('126', { autofix: true }, mockCommand);
+    await handleReviewCommand(126, { autofix: true }, mockCommand);
     expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
   });
 
@@ -3210,7 +3212,7 @@ describe('Autofix functionality', () => {
       },
     };
 
-    await handleReviewCommand('127', { noAutofix: true }, mockCommand);
+    await handleReviewCommand(127, { noAutofix: true }, mockCommand);
 
     // Should only execute review, not autofix
     expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
@@ -3420,8 +3422,8 @@ describe('Auto-selection of branch-specific plans', () => {
         })
       ),
     };
-    const gatherPlanContextMock = vi.fn(async (planArg: string) => {
-      expect(planArg).toBe(materializedPlanPath);
+    const gatherPlanContextMock = vi.fn(async (planArg: number) => {
+      expect(planArg).toBe(280);
       return createMockPlanContext({
         resolvedPlanFile: materializedPlanPath,
         planData: {
@@ -3478,7 +3480,7 @@ describe('Auto-selection of branch-specific plans', () => {
       },
       { cwdForIdentity: testDir }
     );
-    const persistedPlan = (await resolvePlanFromDb('281', testDir)).plan;
+    const persistedPlan = (await resolvePlanByNumericId(281, testDir)).plan;
     const materializedPlanPath = join(testDir, '.tim', 'plans', '281.plan.md');
     await mkdir(join(testDir, '.tim', 'plans'), { recursive: true });
     await writePlanFile(
@@ -3544,8 +3546,8 @@ Updated by branch-name autofix
       }),
     };
 
-    const gatherPlanContextMock = vi.fn(async (planArg: string) => {
-      expect(planArg).toBe(materializedPlanPath);
+    const gatherPlanContextMock = vi.fn(async (planArg: number) => {
+      expect(planArg).toBe(281);
       return createMockPlanContext({
         resolvedPlanFile: materializedPlanPath,
         planData: {
@@ -3592,7 +3594,7 @@ Updated by branch-name autofix
     const materializedPlan = await readPlanFile(materializedPlanPath);
     expect(materializedPlan.details).toBe('Updated by branch-name autofix');
     expect(materializedPlan.tasks?.[0]?.done).toBe(true);
-    const updatedPlan = (await resolvePlanFromDb('281', testDir)).plan;
+    const updatedPlan = (await resolvePlanByNumericId(281, testDir)).plan;
     expect(updatedPlan.details).toBe('Updated by branch-name autofix');
     expect(updatedPlan.tasks?.[0]?.done).toBe(true);
   });
@@ -3608,7 +3610,7 @@ Updated by branch-name autofix
     };
 
     await expect(handleReviewCommand(undefined, {}, mockCommand)).rejects.toThrow(
-      'No plan file specified and no suitable plans found'
+      'No plan ID specified and no suitable plans found'
     );
   });
 
@@ -3624,7 +3626,7 @@ Updated by branch-name autofix
     };
 
     await expect(handleReviewCommand(undefined, {}, mockCommand)).rejects.toThrow(
-      'No plan file specified and no suitable plans found'
+      'No plan ID specified and no suitable plans found'
     );
   });
 });
@@ -3721,7 +3723,7 @@ describe('JSON output mode integration', () => {
     };
 
     // Execute the review command
-    await handleReviewCommand('200', { noAutofix: true }, mockCommand);
+    await handleReviewCommand(200, { noAutofix: true }, mockCommand);
 
     // Verify the executor was called
     expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
@@ -3810,7 +3812,7 @@ describe('JSON output mode integration', () => {
     };
 
     // Execute the review command - should not throw
-    await handleReviewCommand('201', { noAutofix: true }, mockCommand);
+    await handleReviewCommand(201, { noAutofix: true }, mockCommand);
 
     // Verify the executor was called
     expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
@@ -3898,7 +3900,7 @@ describe('JSON output mode integration', () => {
     };
 
     // Execute the review command
-    await handleReviewCommand('202', { noAutofix: true }, mockCommand);
+    await handleReviewCommand(202, { noAutofix: true }, mockCommand);
 
     expect(mockExecutor.execute).toHaveBeenCalledTimes(1);
   });

@@ -49,6 +49,25 @@ interface AssignmentDisplayInfo {
   conflicts?: string[];
 }
 
+interface ShowCommandOptions {
+  short?: boolean;
+  watch?: boolean;
+  full?: boolean;
+  copyDetails?: boolean;
+  nextReady?: number;
+  latest?: boolean;
+  next?: boolean;
+  current?: boolean;
+}
+
+interface ShowCommandContext {
+  parent: {
+    opts: () => {
+      config?: string;
+    };
+  };
+}
+
 function parseLeadingPlanIdFromBranchName(branchName: string | null | undefined): string | null {
   if (!branchName) {
     return null;
@@ -564,7 +583,11 @@ async function displayPlanInfo(
   return outputLines;
 }
 
-export async function handleShowCommand(planFile: string | undefined, options: any, command: any) {
+export async function handleShowCommand(
+  planId: number | undefined,
+  options: ShowCommandOptions,
+  command: ShowCommandContext
+) {
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
   const pathContext = await resolvePlanPathContext(config);
@@ -591,14 +614,8 @@ export async function handleShowCommand(planFile: string | undefined, options: a
   let selectedPlanId: number | undefined;
   let resolvedPlanFile: string | undefined;
 
-  if (options.nextReady) {
-    if (!options.nextReady || options.nextReady === true || options.nextReady.trim() === '') {
-      throw new Error('--next-ready requires a parent plan ID');
-    }
-
-    const parentPlanId = parsePlanIdFromCliArg(options.nextReady);
-
-    const result = findNextReadyDependencyFromCollection(parentPlanId, allPlans, true);
+  if (options.nextReady !== undefined) {
+    const result = findNextReadyDependencyFromCollection(options.nextReady, allPlans, true);
     if (!result.plan) {
       log(result.message);
       return;
@@ -663,7 +680,7 @@ export async function handleShowCommand(planFile: string | undefined, options: a
         ? (findPlanFileOnDisk(plan.id, repository.gitRoot) ?? undefined)
         : undefined;
   } else {
-    if (!planFile) {
+    if (!planId) {
       const currentBranch = await getCurrentBranchName();
       const inferredPlanId = parseLeadingPlanIdFromBranchName(currentBranch);
 
@@ -678,10 +695,9 @@ export async function handleShowCommand(planFile: string | undefined, options: a
           `Using plan ID ${inferredPlanId} from current branch/bookmark: ${currentBranch}`
         )
       );
-      planFile = inferredPlanId;
+      planId = parsePlanIdFromCliArg(inferredPlanId);
     }
-    parsePlanIdFromCliArg(planFile);
-    const resolvedPlan = await resolvePlan(planFile, {
+    const resolvedPlan = await resolvePlan(planId!, {
       gitRoot: repository.gitRoot,
       configPath: globalOpts.config,
     });
@@ -695,7 +711,7 @@ export async function handleShowCommand(planFile: string | undefined, options: a
     (selectedPlanId !== undefined ? allPlans.get(selectedPlanId) : undefined) ?? selectedPlan;
 
   if (!plan) {
-    throw new Error(`Failed to load plan from ${planFile ?? 'current selection'}`);
+    throw new Error(`Failed to load plan from ${planId ?? 'current selection'}`);
   }
   resolvedPlanFile ??= getPlanDisplayLocation(plan);
 

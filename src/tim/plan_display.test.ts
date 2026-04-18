@@ -154,7 +154,7 @@ describe('resolvePlan', () => {
     );
   });
 
-  it('loads the plan and path for an explicit file argument', async () => {
+  it('loads the plan by numeric ID', async () => {
     const tempDir = await mkdtemp(join(tmpdir(), 'plan-display-test-'));
     temporaryDirectories.push(tempDir);
     const planPath = join(tempDir, '0001.plan.yml');
@@ -176,11 +176,10 @@ describe('resolvePlan', () => {
       { skipUpdatedAt: true, cwdForIdentity: tempDir }
     );
 
-    const { plan, planPath: resolvedPath } = await resolvePlan(planPath, {
+    const { plan } = await resolvePlan('1', {
       gitRoot: tempDir,
     });
 
-    expect(resolvedPath).toBe(planPath);
     expect(plan.id).toBe(1);
     expect(plan.title).toBe('Sample plan');
     expect(plan.tasks).toHaveLength(1);

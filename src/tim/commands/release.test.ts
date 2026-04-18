@@ -8,7 +8,7 @@ import { getAssignment } from '../db/assignment.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { getOrCreateProject } from '../db/project.js';
 import { recordWorkspace } from '../db/workspace.js';
-import { readPlanFile, resolvePlanFromDb, writePlanFile, writePlanToDb } from '../plans.js';
+import { readPlanFile, resolvePlanByNumericId, writePlanFile, writePlanToDb } from '../plans.js';
 
 vi.mock('../../logging.js', () => ({
   log: vi.fn(),
@@ -172,7 +172,7 @@ describe('handleReleaseCommand', () => {
     await seedClaim(currentWorkspacePath, currentUser);
 
     const command = { parent: { opts: () => ({}) } };
-    await handleReleaseCommand('1', {}, command);
+    await handleReleaseCommand(1, {}, command);
 
     expect(getAssignmentRow(planUuid)).toBeNull();
 
@@ -184,7 +184,7 @@ describe('handleReleaseCommand', () => {
 
   test('gracefully handles releasing an unassigned plan', async () => {
     const command = { parent: { opts: () => ({}) } };
-    await handleReleaseCommand('1', {}, command);
+    await handleReleaseCommand(1, {}, command);
 
     expect(getAssignmentRow(planUuid)).toBeNull();
 
@@ -197,7 +197,7 @@ describe('handleReleaseCommand', () => {
     await seedClaim(otherWorkspaceDir, 'bob');
 
     const command = { parent: { opts: () => ({}) } };
-    await handleReleaseCommand('1', {}, command);
+    await handleReleaseCommand(1, {}, command);
 
     const entry = getAssignmentRow(planUuid);
     expect(entry).toBeDefined();
@@ -214,7 +214,7 @@ describe('handleReleaseCommand', () => {
     await seedClaim(otherWorkspaceDir, currentUser);
 
     const command = { parent: { opts: () => ({}) } };
-    await handleReleaseCommand('1', {}, command);
+    await handleReleaseCommand(1, {}, command);
 
     const entry = getAssignmentRow(planUuid);
     expect(entry).toBeDefined();
@@ -230,7 +230,7 @@ describe('handleReleaseCommand', () => {
     await seedClaim(otherWorkspaceDir, 'bob');
 
     const command = { parent: { opts: () => ({}) } };
-    await handleReleaseCommand('1', {}, command);
+    await handleReleaseCommand(1, {}, command);
 
     const entry = getAssignmentRow(planUuid);
     expect(entry).toBeDefined();
@@ -247,7 +247,7 @@ describe('handleReleaseCommand', () => {
     currentUser = 'alice';
 
     const command = { parent: { opts: () => ({}) } };
-    await handleReleaseCommand('1', {}, command);
+    await handleReleaseCommand(1, {}, command);
 
     const entry = getAssignmentRow(planUuid);
     expect(entry).toBeDefined();
@@ -264,9 +264,9 @@ describe('handleReleaseCommand', () => {
     await seedClaim(currentWorkspacePath, currentUser);
 
     const command = { parent: { opts: () => ({}) } };
-    await handleReleaseCommand('1', { resetStatus: true }, command);
+    await handleReleaseCommand(1, { resetStatus: true }, command);
 
-    const { plan: refreshedPlan } = await resolvePlanFromDb('1', repoDir);
+    const { plan: refreshedPlan } = await resolvePlanByNumericId(1, repoDir);
     expect(refreshedPlan.status).toBe('pending');
 
     expect(vi.mocked(logFn)).toHaveBeenCalledWith(`✓ Reset status for plan 1 to pending`);
@@ -289,9 +289,9 @@ describe('handleReleaseCommand', () => {
     await seedClaim(currentWorkspacePath, currentUser);
 
     const command = { parent: { opts: () => ({}) } };
-    await handleReleaseCommand('1', { resetStatus: true }, command);
+    await handleReleaseCommand(1, { resetStatus: true }, command);
 
-    const { plan, planPath } = await resolvePlanFromDb('1', repoDir);
+    const { plan, planPath } = await resolvePlanByNumericId(1, repoDir);
     expect(plan.status).toBe('pending');
     expect(planPath).toBeNull();
 
@@ -316,7 +316,7 @@ describe('handleReleaseCommand', () => {
     });
 
     const command = { parent: { opts: () => ({ config: configPath }) } };
-    await handleReleaseCommand('1', {}, command);
+    await handleReleaseCommand(1, {}, command);
 
     expect(vi.mocked(getRepositoryIdentity)).toHaveBeenCalledWith({ cwd: configuredRepoDir });
   });

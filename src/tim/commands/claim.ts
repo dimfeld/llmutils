@@ -3,24 +3,18 @@ import { logClaimOutcome } from '../assignments/claim_logging.js';
 import { resolvePlanWithUuid } from '../assignments/uuid_lookup.js';
 import { getRepositoryIdentity, getUserIdentity } from '../assignments/workspace_identifier.js';
 import { getRootCommandOptions } from './command_context.js';
-import { parsePlanIdFromCliArg } from '../plans.js';
 
 export interface ClaimCommandOptions {
   // Placeholder for future flags (e.g., --quiet)
 }
 
 export async function handleClaimCommand(
-  planArg: string,
+  planId: number,
   _options: ClaimCommandOptions,
   command: any
 ): Promise<void> {
-  if (!planArg) {
-    throw new Error('Plan identifier is required');
-  }
-  const planIdArg = String(parsePlanIdFromCliArg(planArg));
-
   const globalOpts = getRootCommandOptions(command);
-  const { plan, repoRoot, uuid } = await resolvePlanWithUuid(planIdArg, {
+  const { plan, repoRoot, uuid } = await resolvePlanWithUuid(planId, {
     configPath: globalOpts.config,
   });
 

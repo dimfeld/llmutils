@@ -8,10 +8,9 @@ import { getDatabase } from '../db/database.js';
 import { buildExecutorAndLog } from '../executors/index.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
-import { resolvePlan } from '../plan_display.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import type { PlanSchema } from '../planSchema.js';
-import { writePlanFile } from '../plans.js';
+import { resolvePlanByNumericId, writePlanFile } from '../plans.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
 
 interface RootCommandLike {
@@ -235,7 +234,7 @@ export async function detectExistingPrUrl(branch: string, baseDir: string): Prom
  * Re-reads the plan from DB/file to avoid overwriting concurrent changes.
  */
 async function persistPrUrl(
-  planId: string | number | undefined,
+  planId: number | undefined,
   planUuid: string | undefined,
   planPath: string | null,
   prUrl: string,
@@ -245,10 +244,13 @@ async function persistPrUrl(
     throw new Error(`Plan ${planId ?? '(unknown)'} is missing UUID and cannot sync plan_pr links`);
   }
 
-  const planLookupArg = planId != null ? String(planId) : planUuid;
-  const { plan: freshPlan, planPath: freshPlanPath } = await resolvePlan(planLookupArg, {
-    gitRoot: baseDir,
-  });
+  if (planId == null) {
+    throw new Error(`Plan ${planUuid ?? '(unknown)'} is missing a numeric ID`);
+  }
+  const { plan: freshPlan, planPath: freshPlanPath } = await resolvePlanByNumericId(
+    planId,
+    baseDir
+  );
 
   const actualPlanPath = freshPlanPath ?? planPath;
   const nextPullRequests = [...new Set([...(freshPlan.pullRequest ?? []), prUrl])];
@@ -265,7 +267,7 @@ async function persistPrUrl(
 }
 
 export async function detectAndStorePrUrl(
-  planId: string | number | undefined,
+  planId: number | undefined,
   planUuid: string | undefined,
   planPath: string | null,
   branch: string,
@@ -397,7 +399,7 @@ export async function autoCreatePrForPlan(
 }
 
 export async function handleCreatePrCommand(
-  planArg: string,
+  planId: number,
   options: Record<string, unknown>,
   command: RootCommandLike
 ): Promise<void> {
@@ -413,14 +415,11 @@ export async function handleCreatePrCommand(
     config.terminalInput !== false &&
     nonInteractive !== true &&
     process.stdin.isTTY === true;
-  const { plan, planPath } = await resolvePlan(planArg, {
-    gitRoot: repoRoot,
-    configPath: globalOpts.config,
-  });
+  const { plan, planPath } = await resolvePlanByNumericId(planId, repoRoot);
 
   if (!plan.branch) {
     throw new Error(
-      `Plan ${plan.id ?? planArg} does not have a branch. Create one before PR creation.`
+      `Plan ${plan.id ?? planId} does not have a branch. Create one before PR creation.`
     );
   }
 

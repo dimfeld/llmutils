@@ -4,17 +4,25 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import type { PlanSchemaWithFilename } from '../planSchema.js';
-import { readPlanFile, writePlanFile } from '../plans.js';
+import { readPlanFile, writePlanFile, writePlanToDb } from '../plans.js';
 import { findPlanByUuid, resolvePlanWithUuid, verifyPlanIdCache } from './uuid_lookup.js';
 
 describe('uuid_lookup utilities', () => {
   let tempDir: string;
+  let originalCwd: string;
 
   beforeEach(async () => {
+    originalCwd = process.cwd();
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'uuid-lookup-'));
+    await Bun.$`git init`.cwd(tempDir).quiet();
+    await Bun.$`git remote add origin https://example.com/acme/uuid-lookup-tests.git`
+      .cwd(tempDir)
+      .quiet();
+    process.chdir(tempDir);
   });
 
   afterEach(async () => {
+    process.chdir(originalCwd);
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
@@ -88,56 +96,59 @@ describe('uuid_lookup utilities', () => {
     expect(verifyPlanIdCache(1, 'missing', allPlans)).toBeNull();
   });
 
-  test('resolvePlanWithUuid returns persisted UUID for plan path', async () => {
-    const planPath = path.join(tempDir, 'sample.plan.md');
-    await writePlanFile(planPath, {
-      id: 42,
-      uuid: '123e4567-e89b-12d3-a456-426614179999',
-      goal: 'Sample goal',
-      details: '',
-      tasks: [
-        {
-          title: 'Task',
-          description: 'Do something',
-          done: false,
-          files: [],
-          docs: [],
-          steps: [],
-        },
-      ],
-    });
-
-    const result = await resolvePlanWithUuid(planPath);
-
-    expect(result.uuid).toBe('123e4567-e89b-12d3-a456-426614179999');
-    expect(result.plan.filename).toBe(planPath);
-  });
-
-  test('resolvePlanWithUuid rejects plans that are missing UUIDs', async () => {
-    const planPath = path.join(tempDir, 'legacy.plan.md');
-    await writePlanFile(planPath, {
-      id: 101,
-      goal: 'Legacy plan',
-      details: '',
-      tasks: [
-        {
-          title: 'Task',
-          description: 'Legacy work',
-          done: false,
-        },
-      ],
-    });
-
-    // Remove uuid from file to simulate legacy data.
-    const initial = await fs.readFile(planPath, 'utf-8');
-    const withoutUuid = initial.replace(/uuid:.*\n/, '');
-    await fs.writeFile(planPath, withoutUuid, 'utf-8');
-
-    await expect(resolvePlanWithUuid(planPath)).rejects.toThrow(
-      `Plan ${planPath} does not have a UUID`
+  test('resolvePlanWithUuid returns persisted UUID for plan ID', async () => {
+    await writePlanToDb(
+      {
+        id: 42,
+        uuid: '123e4567-e89b-12d3-a456-426614179999',
+        goal: 'Sample goal',
+        details: '',
+        tasks: [
+          {
+            title: 'Task',
+            description: 'Do something',
+            done: false,
+            files: [],
+            docs: [],
+            steps: [],
+          },
+        ],
+      },
+      { cwdForIdentity: tempDir }
     );
 
+    const result = await resolvePlanWithUuid(42);
+
+    expect(result.uuid).toBe('123e4567-e89b-12d3-a456-426614179999');
+    expect(result.plan.id).toBe(42);
+  });
+
+  test('resolvePlanWithUuid succeeds for plans written without an explicit UUID (auto-generated)', async () => {
+    const planPath = path.join(tempDir, 'legacy.plan.md');
+    await writePlanFile(
+      planPath,
+      {
+        id: 101,
+        goal: 'Legacy plan',
+        details: '',
+        tasks: [
+          {
+            title: 'Task',
+            description: 'Legacy work',
+            done: false,
+          },
+        ],
+      },
+      { cwdForIdentity: tempDir }
+    );
+
+    // writePlanFile now auto-generates UUIDs, so resolvePlanWithUuid should succeed
+    const result = await resolvePlanWithUuid(101);
+    expect(result.plan.id).toBe(101);
+    expect(result.uuid).toBeDefined();
+    expect(typeof result.uuid).toBe('string');
+
     const reread = await readPlanFile(planPath);
-    expect(reread.uuid).toBeUndefined();
+    expect(reread.id).toBe(101);
   });
 });

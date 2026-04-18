@@ -246,7 +246,7 @@ describe('simple field logic in commands', () => {
       tasks: [],
     };
 
-    await writePlanFile(planFile, simplePlan);
+    await writePlanFile(planFile, simplePlan, { cwdForIdentity: tmpDir });
 
     try {
       // Import the actual loadResearchPrompt function
@@ -256,8 +256,8 @@ describe('simple field logic in commands', () => {
         gitRoot: tmpDir,
       };
 
-      // Call the actual function
-      const result = await loadResearchPrompt({ plan: planFile }, context);
+      // Call the actual function using numeric plan ID
+      const result = await loadResearchPrompt({ plan: '1' }, context);
 
       // Verify it uses the simple generation prompt (loadGeneratePrompt)
       // The simple prompt has the generation instructions, not research instructions
@@ -283,7 +283,7 @@ describe('simple field logic in commands', () => {
       tasks: [],
     };
 
-    await writePlanFile(planFile, complexPlan);
+    await writePlanFile(planFile, complexPlan, { cwdForIdentity: tmpDir });
 
     try {
       const { loadResearchPrompt } = await import('./mcp/generate_mode.js');
@@ -292,7 +292,8 @@ describe('simple field logic in commands', () => {
         gitRoot: tmpDir,
       };
 
-      const result = await loadResearchPrompt({ plan: planFile }, context);
+      // Call using numeric plan ID
+      const result = await loadResearchPrompt({ plan: '2' }, context);
 
       // Verify it uses the research prompt
       const promptText =
@@ -316,7 +317,7 @@ describe('simple field logic in commands', () => {
       tasks: [],
     };
 
-    await writePlanFile(planFile, defaultPlan);
+    await writePlanFile(planFile, defaultPlan, { cwdForIdentity: tmpDir });
 
     try {
       const { loadResearchPrompt } = await import('./mcp/generate_mode.js');
@@ -325,7 +326,8 @@ describe('simple field logic in commands', () => {
         gitRoot: tmpDir,
       };
 
-      const result = await loadResearchPrompt({ plan: planFile }, context);
+      // Call using numeric plan ID
+      const result = await loadResearchPrompt({ plan: '3' }, context);
 
       // Verify it uses the research prompt (default behavior)
       const promptText =

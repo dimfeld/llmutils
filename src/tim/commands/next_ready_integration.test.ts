@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import type { PlanSchema } from '../planSchema.js';
+import { parsePlanIdFromCliArg } from '../plans.js';
 
 vi.mock('../../logging.js', async (importOriginal) => {
   const actual = await importOriginal();
@@ -89,7 +90,7 @@ vi.mock('../plans.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../plans.js')>();
   return {
     ...actual,
-    resolvePlanFromDb: vi.fn(),
+    resolvePlanByNumericId: vi.fn(),
   };
 });
 
@@ -102,7 +103,7 @@ import { handleAgentCommand } from './agent/agent.js';
 import { log as logFn } from '../../logging.js';
 import { getGitRoot } from '../../common/git.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { resolvePlanFromDb } from '../plans.js';
+import { resolvePlanByNumericId } from '../plans.js';
 
 const logSpy = vi.mocked(logFn);
 const errorSpy = vi.mocked((await import('../../logging.js')).error);
@@ -134,11 +135,17 @@ describe('--next-ready CLI flag integration tests', () => {
 
     vi.mocked(getGitRoot).mockResolvedValue(tempDir);
 
-    vi.mocked(resolvePlanFromDb).mockImplementation(async (planArg: string) => {
+    vi.mocked(resolvePlanByNumericId).mockImplementation(async (planId: number) => {
       const { readPlanFile } = await import('../plans.js');
+      const entries = await fs.readdir(tasksDir);
+      const filename = entries.find((entry) => entry.startsWith(`${planId}-`));
+      if (!filename) {
+        throw new Error(`No plan file found for ${planId}`);
+      }
+      const planPath = path.join(tasksDir, filename);
       return {
-        plan: await readPlanFile(planArg),
-        planPath: planArg,
+        plan: await readPlanFile(planPath),
+        planPath,
       };
     });
   });
@@ -206,7 +213,7 @@ describe('--next-ready CLI flag integration tests', () => {
       });
 
       const options = {
-        nextReady: '1', // Parent plan ID
+        nextReady: 1, // Parent plan ID
         extract: false,
         parent: {
           opts: () => ({}),
@@ -259,7 +266,7 @@ describe('--next-ready CLI flag integration tests', () => {
       });
 
       const options = {
-        nextReady: '1',
+        nextReady: 1,
         extract: false,
         parent: {
           opts: () => ({}),
@@ -280,7 +287,7 @@ describe('--next-ready CLI flag integration tests', () => {
 
     test('should handle invalid parent plan ID gracefully', async () => {
       const options = {
-        nextReady: '999', // Non-existent plan ID
+        nextReady: 999, // Non-existent plan ID
         extract: false,
         parent: {
           opts: () => ({}),
@@ -313,29 +320,18 @@ describe('--next-ready CLI flag integration tests', () => {
       // We'll simulate how Commander.js would parse the options
 
       const mockOptions = {
-        nextReady: '123',
+        nextReady: 123,
         extract: false,
         parent: { opts: () => ({}) },
       };
 
       // Verify the option is accessible
-      expect(mockOptions.nextReady).toBe('123');
+      expect(mockOptions.nextReady).toBe(123);
     });
 
-    test('--next-ready flag should accept both numeric IDs and file paths', async () => {
-      const mockOptionsNumeric = {
-        nextReady: '42',
-        parent: { opts: () => ({}) },
-      };
-
-      const mockOptionsFilePath = {
-        nextReady: 'my-plan.yml',
-        parent: { opts: () => ({}) },
-      };
-
-      // Both should be valid
-      expect(mockOptionsNumeric.nextReady).toBe('42');
-      expect(mockOptionsFilePath.nextReady).toBe('my-plan.yml');
+    test('--next-ready should reject file-path values before handlers run', async () => {
+      expect(parsePlanIdFromCliArg('42')).toBe(42);
+      expect(() => parsePlanIdFromCliArg('my-plan.yml')).toThrow('Expected a numeric plan ID');
     });
   });
 });

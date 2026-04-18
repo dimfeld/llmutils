@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
 import { handleAddCommand } from './add.js';
-import { resolvePlanFromDb } from '../plans.js';
+import { resolvePlanByNumericId } from '../plans.js';
 
 describe('tim add with details', () => {
   let tempDir: string;
@@ -48,7 +48,7 @@ describe('tim add with details', () => {
 
     await handleAddCommand(title, options, command);
 
-    const { plan } = await resolvePlanFromDb('1', tempDir);
+    const { plan } = await resolvePlanByNumericId(1, tempDir);
 
     expect(plan.title).toBe('Test Plan');
     expect(plan.details).toBe(details);
@@ -74,7 +74,7 @@ describe('tim add with details', () => {
 
     await handleAddCommand(title, options, command);
 
-    const { plan } = await resolvePlanFromDb('1', tempDir);
+    const { plan } = await resolvePlanByNumericId(1, tempDir);
 
     expect(plan.title).toBe('Test Plan');
     expect(plan.details).toBe(detailsContent);
@@ -91,7 +91,7 @@ describe('tim add with details', () => {
 
     await handleAddCommand(title, options, command);
 
-    const { plan } = await resolvePlanFromDb('1', tempDir);
+    const { plan } = await resolvePlanByNumericId(1, tempDir);
 
     expect(plan.title).toBe('Test Plan');
     expect(plan.details).toBe('');
@@ -112,7 +112,7 @@ describe('tim add with details', () => {
 
     await handleAddCommand(title, options, command);
 
-    const { plan } = await resolvePlanFromDb('1', tempDir);
+    const { plan } = await resolvePlanByNumericId(1, tempDir);
 
     expect(plan.details).toBe(details);
   });
@@ -130,7 +130,7 @@ describe('tim add with details', () => {
 
     await handleAddCommand(title, options, command);
 
-    const { plan } = await resolvePlanFromDb('1', tempDir);
+    const { plan } = await resolvePlanByNumericId(1, tempDir);
 
     expect(plan.title).toBe('Test Plan');
     expect(plan.details).toBe('');
@@ -154,7 +154,7 @@ describe('tim add with details', () => {
 
     await handleAddCommand(title, options, command);
 
-    const { plan } = await resolvePlanFromDb('1', tempDir);
+    const { plan } = await resolvePlanByNumericId(1, tempDir);
 
     expect(plan.title).toBe('Test Plan');
     expect(plan.details).toBe(detailsContent);
@@ -177,7 +177,7 @@ describe('tim add with details', () => {
 
     await handleAddCommand(title, options, command);
 
-    const { plan } = await resolvePlanFromDb('1', tempDir);
+    const { plan } = await resolvePlanByNumericId(1, tempDir);
 
     expect(plan.title).toBe('Test Plan');
     expect(plan.details).toBe(details);

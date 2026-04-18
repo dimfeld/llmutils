@@ -33,18 +33,27 @@ import { singleLineWithPrefix, limitLines } from '../../../common/formatting.js'
 import * as clipboard from '../../../common/clipboard.js';
 import { loadPlansFromDb } from '../../plans_db.js';
 import { ensureMaterializeDir, resolveProjectContext } from '../../plan_materialize.js';
-import { resolvePlanFromDb } from '../../plans.js';
+import { resolvePlanByNumericId } from '../../plans.js';
 import { editMaterializedPlan } from '../materialized_edit.js';
 import {
   applyCommandOptions,
   getImportedIssueUrlsFromPlans,
   reserveImportedPlanStartId,
   type PendingImportedPlanWrite,
+  type ImportCommandPlanOptions,
   writeImportedPlansToDbTransactionally,
 } from './import_helpers.js';
 
 type HierarchicalImportMode = 'none' | 'separate' | 'merged';
 type PlanSnapshot = Map<number, PlanSchema>;
+type ImportCommandOptions = ImportCommandPlanOptions & {
+  issue?: string;
+  clipboard?: boolean;
+  withSubissues?: boolean;
+  withMergedSubissues?: boolean;
+  edit?: boolean;
+  editor?: string;
+};
 
 async function refreshPlanSnapshot(repoRoot: string, planRoot: string): Promise<PlanSnapshot> {
   const repository = await getRepositoryIdentity({ cwd: repoRoot });
@@ -65,7 +74,7 @@ async function updateParentPlanDependencies(
   parentPlanId: number,
   childPlanId: number
 ): Promise<void> {
-  const { plan: parentPlan, planPath } = await resolvePlanFromDb(String(parentPlanId), repoRoot);
+  const { plan: parentPlan, planPath } = await resolvePlanByNumericId(parentPlanId, repoRoot);
 
   // Add this plan's ID to the parent's dependencies
   if (!parentPlan.dependencies) {
@@ -237,7 +246,7 @@ async function importHierarchicalIssue(
   issueSpecifier: string,
   repoRoot: string,
   issueTracker: IssueTrackerClient,
-  options: any,
+  options: ImportCommandOptions,
   allPlans: Map<number, PlanSchema>
 ): Promise<{ successCount: number; parentPlanId?: number }> {
   log(`Importing issue hierarchically: ${issueSpecifier}`);
@@ -296,7 +305,7 @@ async function importHierarchicalIssue(
   if (existingParentPlan) {
     // Update existing parent plan
     log(`Updating existing parent plan for issue: ${parentIssueUrl}`);
-    const resolvedParentPlan = await resolvePlanFromDb(String(existingParentPlan.id), repoRoot);
+    const resolvedParentPlan = await resolvePlanByNumericId(existingParentPlan.id, repoRoot);
     parentPlanPath = resolvedParentPlan.planPath;
     const currentPlan = resolvedParentPlan.plan;
     const existingDetails = currentPlan.details || '';
@@ -365,7 +374,7 @@ async function importHierarchicalIssue(
     if (existingChildPlan) {
       // Update existing child plan
       log(`Updating existing child plan for issue: ${childIssueUrl}`);
-      const resolvedChildPlan = await resolvePlanFromDb(String(existingChildPlan.id), repoRoot);
+      const resolvedChildPlan = await resolvePlanByNumericId(existingChildPlan.id, repoRoot);
       childPlanPath = resolvedChildPlan.planPath;
       const currentChildPlan = resolvedChildPlan.plan;
       const existingChildDetails = currentChildPlan.details || '';
@@ -468,7 +477,7 @@ async function importHierarchicalIssue(
   // Update parent plan dependencies if parent option was provided
   // (Only for the top-level parent plan created from the issue)
   if (options.parent !== undefined && parentPlan.id !== undefined) {
-    await updateParentPlanDependencies(repoRoot, Number(options.parent), parentPlan.id);
+    await updateParentPlanDependencies(repoRoot, options.parent, parentPlan.id);
   }
 
   return {
@@ -484,7 +493,7 @@ async function importHierarchicalIssueMerged(
   issueSpecifier: string,
   repoRoot: string,
   issueTracker: IssueTrackerClient,
-  options: any,
+  options: ImportCommandOptions,
   allPlans: Map<number, PlanSchema>
 ): Promise<{ successCount: number; parentPlanId?: number }> {
   log(`Importing issue hierarchically into a single plan: ${issueSpecifier}`);
@@ -532,7 +541,7 @@ async function importHierarchicalIssueMerged(
   let parentPlan: PlanSchema;
 
   if (existingParentPlan) {
-    const resolvedParentPlan = await resolvePlanFromDb(String(existingParentPlan.id), repoRoot);
+    const resolvedParentPlan = await resolvePlanByNumericId(existingParentPlan.id, repoRoot);
     parentPlanPath = resolvedParentPlan.planPath;
     const currentPlan = resolvedParentPlan.plan;
     const existingDetails = currentPlan.details || '';
@@ -586,7 +595,7 @@ async function importHierarchicalIssueMerged(
   }
 
   if (options.parent !== undefined && parentPlanId !== undefined) {
-    await updateParentPlanDependencies(repoRoot, Number(options.parent), parentPlanId);
+    await updateParentPlanDependencies(repoRoot, options.parent, parentPlanId);
   }
 
   return { successCount: 1, parentPlanId };
@@ -607,7 +616,7 @@ export async function importSingleIssue(
   issueSpecifier: string,
   repoRoot: string,
   issueTracker: IssueTrackerClient,
-  options: any,
+  options: ImportCommandOptions,
   allPlans: Map<number, PlanSchema>,
   withSubissues = false,
   withMergedSubissues = false
@@ -653,7 +662,7 @@ export async function importSingleIssue(
   if (existingPlan) {
     // Update existing plan
     log(`Updating existing plan for issue: ${issueUrl}`);
-    const resolvedExistingPlan = await resolvePlanFromDb(String(existingPlan.id), repoRoot);
+    const resolvedExistingPlan = await resolvePlanByNumericId(existingPlan.id, repoRoot);
     const fullPath = resolvedExistingPlan.planPath;
     const currentPlan = resolvedExistingPlan.plan as PlanWithLegacyMetadata;
 
@@ -752,14 +761,14 @@ export async function importSingleIssue(
 
   // Update parent plan dependencies if parent option was provided
   if (options.parent !== undefined) {
-    await updateParentPlanDependencies(repoRoot, Number(options.parent), newId);
+    await updateParentPlanDependencies(repoRoot, options.parent, newId);
   }
 
   return { success: true, planId: newId };
 }
 
 function resolveHierarchicalImportMode(
-  options: any,
+  options: ImportCommandOptions,
   issueTracker: IssueTrackerClient
 ): HierarchicalImportMode {
   const withSubissues = Boolean(options.withSubissues);
@@ -799,7 +808,11 @@ function resolveHierarchicalImportMode(
  * @param options - Command options including --issue flag
  * @param command - Commander command object
  */
-export async function handleImportCommand(issue?: string, options: any = {}, command?: any) {
+export async function handleImportCommand(
+  issue?: string,
+  options: ImportCommandOptions = {},
+  command?: unknown
+) {
   // Determine the issue specifier from either positional argument or --issue flag
   const issueSpecifier = issue || options.issue;
 
@@ -835,7 +848,7 @@ export async function handleImportCommand(issue?: string, options: any = {}, com
 
   // Validate parent plan if provided
   if (options.parent !== undefined) {
-    const parentPlanId = Number(options.parent);
+    const parentPlanId = options.parent;
     if (!Number.isInteger(parentPlanId) || parentPlanId <= 0) {
       throw new Error('--parent option requires a positive integer plan ID');
     }

@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import yaml from 'yaml';
 import { markTaskDone, markStepDone } from '../../plans/mark_done.js';
 import { checkAndMarkParentDone as agentCheckAndMarkParentDone } from './parent_plans.js';
-import { readPlanFile, resolvePlanFromDb, writePlanFile } from '../../plans.js';
+import { readPlanFile, resolvePlanByNumericId, writePlanFile } from '../../plans.js';
 import type { PlanSchema, PlanSchemaInput } from '../../planSchema.js';
 import type { TimConfig } from '../../configSchema.js';
 import { closeDatabaseForTesting } from '../../db/database.js';
@@ -42,7 +42,7 @@ describe('Parent Plan Completion', () => {
   }
 
   async function readDbPlan(planId: number): Promise<PlanSchema> {
-    return (await resolvePlanFromDb(planId, tempDir)).plan;
+    return (await resolvePlanByNumericId(planId, tempDir)).plan;
   }
 
   beforeEach(async () => {
@@ -160,14 +160,14 @@ describe('Parent Plan Completion', () => {
     await writeDbBackedPlan(child2Path, child2);
 
     // Mark child 1 task as done (simple task without steps)
-    await markTaskDone(child1Path, 0, { commit: false }, tempDir, config);
+    await markTaskDone(2, 0, { commit: false }, tempDir, config);
 
     // Parent should still be in_progress
     let parent = await readPlanFile(parentPath);
     expect(parent.status).toBe('in_progress');
 
     // Mark child 2 steps as done
-    await markStepDone(child2Path, { steps: 2 }, { taskIndex: 0, stepIndex: 0 }, tempDir, config);
+    await markStepDone(3, { steps: 2 }, { taskIndex: 0, stepIndex: 0 }, tempDir, config);
 
     // Parent should now be needs_review
     parent = await readDbPlan(1);
@@ -349,7 +349,7 @@ describe('Parent Plan Completion', () => {
     const childPath = path.join(tasksDir, '2.yaml');
     await writeDbBackedPlan(childPath, childPlan);
 
-    await markTaskDone(childPath, 0, { commit: false }, tempDir, config);
+    await markTaskDone(2, 0, { commit: false }, tempDir, config);
 
     const parent = await readDbPlan(1);
     expect(parent.status).toBe('in_progress');
@@ -407,7 +407,7 @@ describe('Parent Plan Completion', () => {
     await writeDbBackedPlan(childPath, childPlan);
 
     // Mark child task as done
-    await markTaskDone(childPath, 0, { commit: false }, tempDir, config);
+    await markTaskDone(3, 0, { commit: false }, tempDir, config);
 
     // Both parent and grandparent should be needs_review
     const parent = await readDbPlan(2);
@@ -459,7 +459,7 @@ describe('Parent Plan Completion', () => {
     await writeDbBackedPlan(childPath, childPlan);
 
     // Mark child as done — all children complete, but parent has an unfinished task
-    await markTaskDone(childPath, 0, { commit: false }, tempDir, config);
+    await markTaskDone(2, 0, { commit: false }, tempDir, config);
 
     // Parent should still be in_progress because it has an unfinished task
     const parent = await readDbPlan(1);
@@ -521,7 +521,7 @@ describe('Parent Plan Completion', () => {
     await writeDbBackedPlan(child2Path, child2);
 
     // Mark only child 1 as done
-    await markTaskDone(child1Path, 0, { commit: false }, tempDir, config);
+    await markTaskDone(2, 0, { commit: false }, tempDir, config);
 
     // Parent should still be in_progress
     const parent = await readPlanFile(parentPath);

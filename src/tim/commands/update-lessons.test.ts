@@ -302,7 +302,7 @@ notes: |
         },
       };
 
-      await handleUpdateLessonsCommand('8', {}, mockCommand);
+      await handleUpdateLessonsCommand(8, {}, mockCommand);
 
       expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
       expect(executeSpy).toHaveBeenCalledTimes(1);
@@ -332,21 +332,21 @@ notes: |
       expect(didRun).toBe('skipped-no-lessons');
     });
 
-    test('resolves repoRoot for string plan args when baseDir is omitted', async () => {
-      const helperPlanFile = path.join(tempDir, 'helper-lessons-plan.md');
-      await fs.writeFile(
-        helperPlanFile,
-        `---
-id: 188
-title: Cross-repo helper lessons update
-goal: Run helper in target repo
-tasks: []
----
-
-## Current Progress
+    test('resolves repoRoot for numeric string plan IDs when baseDir is omitted', async () => {
+      const configPath = path.join(tempDir, '.tim.yml');
+      await fs.writeFile(configPath, 'defaultExecutor: codex-cli\n');
+      await writePlanToDb(
+        {
+          id: 188,
+          title: 'Cross-repo helper lessons update',
+          goal: 'Run helper in target repo',
+          details: `## Current Progress
 ### Lessons Learned
 - Keep helper execution anchored to the target repo.
-`
+`,
+          tasks: [],
+        },
+        { cwdForIdentity: tempDir }
       );
 
       const executeSpy = vi.fn(async () => undefined);
@@ -367,19 +367,21 @@ tasks: []
       process.chdir(otherDir);
 
       const didRun = await runUpdateLessons(
-        helperPlanFile,
+        '188',
         {
           defaultExecutor: 'codex-cli',
           updateDocs: {},
           isUsingExternalStorage: true,
         } as TimConfig,
-        {}
+        { configPath }
       );
 
       expect(didRun).toBe(true);
       expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
       expect(executeSpy).toHaveBeenCalledTimes(1);
-      expect(executeSpy.mock.calls[0]?.[1]?.planFilePath).toBe(helperPlanFile);
+      expect(executeSpy.mock.calls[0]?.[1]?.planFilePath).toBe(
+        path.join(tempDir, '.tim', 'plans', '188.plan.md')
+      );
     });
 
     test('uses configPath to resolve target repo for string plan IDs', async () => {

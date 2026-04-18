@@ -56,10 +56,11 @@ import {
   managePlanTaskParameters,
   listReadyPlansParameters,
 } from './tools/schemas.js';
+import { parseOptionalPlanIdFromCliArg, parsePlanIdFromCliArg } from './plans.js';
 
-function intArg(value: string | undefined): number | undefined;
-function intArg(value: string[] | undefined): number[] | undefined;
-function intArg<T extends string | string[] | undefined>(
+function parsePlanIdOption(value: string | undefined): number | undefined;
+function parsePlanIdOption(value: string[] | undefined): number[] | undefined;
+function parsePlanIdOption<T extends string | string[] | undefined>(
   value: T | undefined
 ): number | number[] | undefined {
   if (value === undefined) {
@@ -67,15 +68,11 @@ function intArg<T extends string | string[] | undefined>(
   }
 
   if (Array.isArray(value)) {
-    const out = value.map((s) => intArg(s));
+    const out = value.map((s) => parsePlanIdOption(s));
     return out as number[] | undefined;
   }
 
-  let n = Number(value);
-  if (Number.isNaN(n)) {
-    throw new Error(`Argument must be an integer, saw ${value.toString()}`);
-  }
-  return n;
+  return parsePlanIdFromCliArg(value);
 }
 
 function formatSchemaHelp(schema: z.ZodTypeAny): string {
@@ -106,7 +103,7 @@ async function runWithCommandTunnelAdapter<T>(callback: () => Promise<T> | T): P
   const cleanupRegistry = CleanupRegistry.getInstance();
   const unregisterCleanup = cleanupRegistry.register(() => tunnelAdapter.destroySync());
   try {
-    return await runWithLogger(tunnelAdapter, callback);
+    return await runWithLogger(tunnelAdapter, async () => await callback());
   } finally {
     unregisterCleanup();
     try {
@@ -117,7 +114,7 @@ async function runWithCommandTunnelAdapter<T>(callback: () => Promise<T> | T): P
   }
 }
 
-const program = new Command();
+export const program = new Command();
 
 type SignalHandlerProcess = Pick<NodeJS.Process, 'on'>;
 
@@ -200,9 +197,9 @@ program
   });
 
 program
-  .command('prompts [prompt] [plan]')
+  .command('prompts [prompt] [planId]')
   .description('Print an MCP prompt to stdout for use in CLI workflows')
-  .option('--plan <plan>', 'Plan ID to use')
+  .option('--plan <planId>', 'Plan ID to use')
   .option('--latest', 'Use the most recently updated plan')
   .option(
     '--next-ready <planId>',
@@ -226,7 +223,16 @@ program
   .option('--base <branch>', 'Base branch for diff comparison. For review prompt only.')
   .action(async (promptName, planArg, options, command) => {
     const { handlePromptsCommand } = await import('./commands/prompts.js');
-    await handlePromptsCommand(promptName, planArg, options, command).catch(handleCommandError);
+    const parsedPlanId = parseOptionalPlanIdFromCliArg(planArg);
+    if (options.plan !== undefined) {
+      options.plan = parsePlanIdFromCliArg(options.plan);
+    }
+    if (options.nextReady !== undefined) {
+      options.nextReady = parsePlanIdFromCliArg(options.nextReady);
+    }
+    await handlePromptsCommand(promptName, parsedPlanId, options, command).catch(
+      handleCommandError
+    );
   });
 
 const toolsCommand = program
@@ -271,11 +277,12 @@ toolsCommand
   .option('--print-schema', 'Print the input JSON schema and exit')
   .option('--tasks <json>', 'JSON array of tasks (alternative to stdin)')
   .addHelpText('after', formatSchemaHelp(generateTasksParameters))
-  .action(async (planId, options, command) => {
+  .action(async (planIdArg, options, command) => {
     const { handleToolCommand } = await import('./commands/tools.js');
 
-    // If planId and --tasks are provided, construct the input data
-    if (planId && options.tasks) {
+    const planId = parseOptionalPlanIdFromCliArg(planIdArg);
+
+    if (planId !== undefined && options.tasks) {
       let tasksArray;
       try {
         tasksArray = JSON.parse(options.tasks);
@@ -294,10 +301,11 @@ toolsCommand
         plan: planId,
         tasks: tasksArray,
       };
-    } else if (planId || options.tasks) {
-      // If only one is provided, show an error
-      console.error('Error: Both planId and --tasks must be provided together, or use stdin');
+    } else if (options.tasks && planId === undefined) {
+      console.error('Error: --tasks requires a plan ID positional argument or stdin input');
       process.exit(1);
+    } else if (planId !== undefined) {
+      options.planIdOverride = planId;
     }
 
     await handleToolCommand('update-plan-tasks', options, command).catch(handleCommandError);
@@ -348,9 +356,9 @@ program
   });
 
 program
-  .command('generate [plan]')
+  .command('generate [planId]')
   .description('Generate a plan using an interactive executor')
-  .option('--plan <plan>', 'Plan to use')
+  .option('--plan <planId>', 'Plan to use')
   .option('--latest', 'Use the most recently updated plan')
   .option(
     '--simple',
@@ -387,7 +395,14 @@ program
   )
   .action(async (planArg, options, command) => {
     const { handleGenerateCommand } = await import('./commands/generate.js');
-    await handleGenerateCommand(planArg, options, command).catch(handleCommandError);
+    const planId = parseOptionalPlanIdFromCliArg(planArg);
+    if (options.plan !== undefined) {
+      options.plan = parsePlanIdFromCliArg(options.plan);
+    }
+    if (options.nextReady !== undefined) {
+      options.nextReady = parsePlanIdFromCliArg(options.nextReady);
+    }
+    await handleGenerateCommand(planId, options, command).catch(handleCommandError);
   });
 
 program
@@ -409,23 +424,17 @@ program
   .option('--doc <paths...>', 'Add documentation file paths to the plan')
   .option('--tag <tags...>', 'Add tags to the plan (repeatable)')
   .option('--assign <username>', 'Assign the plan to a user')
-  .option('--discovered-from <planId>', 'Set the plan this was discovered from', (value) => {
-    const n = Number(value);
-    if (Number.isNaN(n) || !Number.isInteger(n) || n <= 0) {
-      throw new Error(`discovered-from must be a positive integer, saw ${value}`);
-    }
-    return n;
-  })
+  .option('--discovered-from <planId>', 'Set the plan this was discovered from')
   .option('--cleanup <planId>', 'Create a cleanup plan for the specified plan ID')
   .option('--temp', 'Mark this plan as temporary (can be deleted with cleanup-temp command)')
   .option('--simple', 'Mark this plan as simple (skips research phase in generation)')
   .option('--epic', 'Mark this plan as an epic')
   .action(async (title, options, command) => {
     const { handleAddCommand } = await import('./commands/add.js');
-    options.dependsOn = intArg(options.dependsOn);
-    options.parent = intArg(options.parent);
-    options.cleanup = intArg(options.cleanup);
-    options.discoveredFrom = intArg(options.discoveredFrom);
+    options.dependsOn = parsePlanIdOption(options.dependsOn);
+    options.parent = parsePlanIdOption(options.parent);
+    options.cleanup = parsePlanIdOption(options.cleanup);
+    options.discoveredFrom = parsePlanIdOption(options.discoveredFrom);
     await handleAddCommand(title, options, command).catch(handleCommandError);
   });
 
@@ -451,6 +460,8 @@ program
   .option('--edit', 'Open the plan file in your editor after import')
   .action(async (issue, options, command) => {
     const { handleImportCommand } = await import('./commands/import/import.js');
+    options.parent = parsePlanIdOption(options.parent);
+    options.dependsOn = parsePlanIdOption(options.dependsOn);
     await handleImportCommand(issue, options, command).catch(handleCommandError);
   });
 
@@ -463,7 +474,7 @@ program
   });
 
 program
-  .command('update-docs <plan>')
+  .command('update-docs <planId>')
   .description(
     'Run any remaining documentation and lessons finalization steps in a workspace-aware flow.'
   )
@@ -492,7 +503,8 @@ program
   .option('--apply-lessons', 'Apply lessons learned to documentation after plan completion')
   .action(async (planArg, options, command) => {
     const { handleFinishCommand } = await import('./commands/finish.js');
-    await handleFinishCommand(planArg, options, command).catch(handleCommandError);
+    const planId = parsePlanIdFromCliArg(planArg);
+    await handleFinishCommand(planId, options, command).catch(handleCommandError);
   });
 
 program
@@ -507,8 +519,9 @@ program
     return n - 1; // Convert to 0-based for internal use
   })
   .option('--commit', 'Commit changes to jj/git')
-  .action(async (planId, options, command) => {
+  .action(async (planIdArg, options, command) => {
     const { handleSetTaskDoneCommand } = await import('./commands/set-task-done.js');
+    const planId = parsePlanIdFromCliArg(planIdArg);
     await handleSetTaskDoneCommand(planId, options, command).catch(handleCommandError);
   });
 
@@ -533,16 +546,18 @@ program
   .description('Sync materialized plans in .tim/plans/ back to the database')
   .option('--force', 'Sync even when the materialized file looks stale')
   .option('--verbose', 'Reserved for additional sync diagnostics')
-  .action(async (planId, options, command) => {
+  .action(async (planIdArg, options, command) => {
     const { handleSyncCommand } = await import('./commands/sync.js');
+    const planId = parseOptionalPlanIdFromCliArg(planIdArg);
     await handleSyncCommand(planId, options, command).catch(handleCommandError);
   });
 
 program
   .command('materialize <planId>')
   .description('Materialize a plan from the database to .tim/plans/ for editing')
-  .action(async (planId, options, command) => {
+  .action(async (planIdArg, options, command) => {
     const { handleMaterializeCommand } = await import('./commands/materialize.js');
+    const planId = parsePlanIdFromCliArg(planIdArg);
     await handleMaterializeCommand(planId, options, command).catch(handleCommandError);
   });
 
@@ -641,8 +656,12 @@ function createAgentCommand(command: Command, description: string) {
     .option('--apply-lessons', 'Apply lessons learned to documentation after plan completion')
     .allowExcessArguments(true)
     .allowUnknownOption(true)
-    .action(async (planId, options, command) => {
+    .action(async (planIdArg, options, command) => {
       const { handleAgentCommand } = await import('./commands/agent/agent.js');
+      const planId = parseOptionalPlanIdFromCliArg(planIdArg);
+      if (options.nextReady !== undefined) {
+        options.nextReady = parsePlanIdFromCliArg(options.nextReady);
+      }
       await handleAgentCommand(planId, options, command.parent.opts()).catch(handleCommandError);
     });
 }
@@ -682,7 +701,7 @@ program
   )
   .option('--no-workspace-sync', 'Disable automatic workspace round-trip sync')
   .option('--commit', 'Commit changes to jj/git after successful chat execution')
-  .option('--plan <plan>', 'Associate chat with a plan for branch/workspace assignment')
+  .option('--plan <planId>', 'Associate chat with a plan for branch/workspace assignment')
   .option('--non-interactive', 'Disable interactive terminal input')
   .option('--no-terminal-input', 'Disable terminal input forwarding')
   .option(
@@ -691,6 +710,9 @@ program
   )
   .action(async (prompt, options, command) => {
     const { handleChatCommand } = await import('./commands/chat.js');
+    if (options.plan !== undefined) {
+      options.plan = parsePlanIdFromCliArg(options.plan);
+    }
     await handleChatCommand(prompt, options, command.parent.opts()).catch(handleCommandError);
   });
 
@@ -750,13 +772,7 @@ program
   .option(
     '--epic <id>',
     'Filter plans belonging to this epic (directly or indirectly)',
-    (value) => {
-      const parsed = Number(value);
-      if (Number.isNaN(parsed) || parsed <= 0 || !Number.isInteger(parsed)) {
-        throw new Error(`Epic ID must be a positive integer, saw ${value}`);
-      }
-      return parsed;
-    }
+    parsePlanIdFromCliArg
   )
   .option('-n, --number <count>', 'Limit the number of results shown', (value: string) => {
     const n = Number(value);
@@ -789,13 +805,7 @@ program
   .option(
     '--epic <id>',
     'Filter ready plans belonging to this epic (directly or indirectly)',
-    (value) => {
-      const parsed = Number(value);
-      if (Number.isNaN(parsed) || parsed <= 0 || !Number.isInteger(parsed)) {
-        throw new Error(`Epic ID must be a positive integer, saw ${value}`);
-      }
-      return parsed;
-    }
+    parsePlanIdFromCliArg
   )
   .option('-v, --verbose', 'Show additional details like file paths')
   .action(async (options, command) => {
@@ -817,8 +827,12 @@ program
   .option('--full', 'Display full details without truncation')
   .option('-s, --short', 'Display a condensed summary view')
   .option('-w, --watch', 'Watch mode: re-print short output every 5 seconds')
-  .action(async (planId, options, command) => {
+  .action(async (planIdArg, options, command) => {
     const { handleShowCommand } = await import('./commands/show.js');
+    const planId = parseOptionalPlanIdFromCliArg(planIdArg);
+    if (options.nextReady !== undefined) {
+      options.nextReady = parsePlanIdFromCliArg(options.nextReady);
+    }
     await handleShowCommand(planId, options, command).catch(handleCommandError);
   });
 
@@ -840,8 +854,12 @@ program
     'Find and use the next ready dependency of the specified parent plan'
   )
   .option('--latest', 'Use the most recently updated plan')
-  .action(async (planId, options, command) => {
+  .action(async (planIdArg, options, command) => {
     const { handleBranchCommand } = await import('./commands/branch.js');
+    const planId = parseOptionalPlanIdFromCliArg(planIdArg);
+    if (options.nextReady !== undefined) {
+      options.nextReady = parsePlanIdFromCliArg(options.nextReady);
+    }
     await handleBranchCommand(planId, options, command).catch(handleCommandError);
   });
 
@@ -864,8 +882,9 @@ program
     '--nw, --new-workspace',
     'Allow creating a new workspace. When used with --workspace, creates a new workspace with the specified ID. When used with --auto-workspace, always creates a new workspace instead of reusing existing ones.'
   )
-  .action(async (planId, options, command) => {
+  .action(async (planIdArg, options, command) => {
     const { handleRebaseCommand } = await import('./commands/rebase.js');
+    const planId = parseOptionalPlanIdFromCliArg(planIdArg);
     await handleRebaseCommand(planId, options, command).catch(handleCommandError);
   });
 
@@ -873,9 +892,10 @@ program
   .command('edit <planId>')
   .description('Open a plan in your editor.')
   .option('--editor <editor>', 'Editor to use (defaults to $EDITOR or nano)')
-  .action(async (planArg, options, command) => {
+  .action(async (planIdArg, options, command) => {
     const { handleEditCommand } = await import('./commands/edit.js');
-    await handleEditCommand(planArg, options, command).catch(handleCommandError);
+    const planId = parsePlanIdFromCliArg(planIdArg);
+    await handleEditCommand(planId, options, command).catch(handleCommandError);
   });
 
 const assignmentsCommand = program
@@ -883,20 +903,22 @@ const assignmentsCommand = program
   .description('Inspect and manage shared plan assignments');
 
 assignmentsCommand
-  .command('claim <plan>')
+  .command('claim <planId>')
   .description('Assign a plan to the current workspace (and optionally user)')
-  .action(async (plan, options, command) => {
+  .action(async (planIdArg, options, command) => {
     const { handleClaimCommand } = await import('./commands/claim.js');
-    await handleClaimCommand(plan, options, command).catch(handleCommandError);
+    const planId = parsePlanIdFromCliArg(planIdArg);
+    await handleClaimCommand(planId, options, command).catch(handleCommandError);
   });
 
 assignmentsCommand
-  .command('release <plan>')
+  .command('release <planId>')
   .description('Release a plan assignment from the current workspace')
   .option('--reset-status', 'Reset plan status to pending')
-  .action(async (plan, options, command) => {
+  .action(async (planIdArg, options, command) => {
     const { handleReleaseCommand } = await import('./commands/release.js');
-    await handleReleaseCommand(plan, options, command).catch(handleCommandError);
+    const planId = parsePlanIdFromCliArg(planIdArg);
+    await handleReleaseCommand(planId, options, command).catch(handleCommandError);
   });
 
 assignmentsCommand
@@ -933,20 +955,8 @@ program
     `Do not change IDs for these plan file paths when resolving conflicts`
   )
   .option('--conflicts-only', 'Only resolve ID conflicts, skip hierarchical ordering violations')
-  .option('--from <id>', 'Plan ID to renumber (use with --to)', (value) => {
-    const n = Number(value);
-    if (Number.isNaN(n) || !Number.isInteger(n) || n <= 0) {
-      throw new Error('--from must be a positive integer');
-    }
-    return n;
-  })
-  .option('--to <id>', 'Target ID to renumber to (use with --from)', (value) => {
-    const n = Number(value);
-    if (Number.isNaN(n) || !Number.isInteger(n) || n <= 0) {
-      throw new Error('--to must be a positive integer');
-    }
-    return n;
-  })
+  .option('--from <id>', 'Plan ID to renumber (use with --to)', parsePlanIdFromCliArg)
+  .option('--to <id>', 'Target ID to renumber to (use with --from)', parsePlanIdFromCliArg)
   .action(async (options, command) => {
     const { handleRenumber } = await import('./commands/renumber.js');
     await handleRenumber(options, command).catch(handleCommandError);
@@ -964,7 +974,7 @@ program
   });
 
 program
-  .command('add-task <plan>')
+  .command('add-task <planId>')
   .description('Add a task to an existing plan')
   .option('--title <title>', 'Task title')
   .option('--description <desc>', 'Task description')
@@ -972,22 +982,24 @@ program
   .option('--files <files...>', 'Related files')
   .option('--docs <docs...>', 'Documentation paths')
   .option('--interactive', 'Prompt for all fields interactively')
-  .action(async (plan, options, command) => {
+  .action(async (planIdArg, options, command) => {
     const { handleAddTaskCommand } = await import('./commands/add-task.js');
-    await handleAddTaskCommand(plan, options, command).catch(handleCommandError);
+    const planId = parsePlanIdFromCliArg(planIdArg);
+    await handleAddTaskCommand(planId, options, command).catch(handleCommandError);
   });
 
 program
   .command('remove <planIds...>')
   .description('Remove one or more plans and clean up references')
   .option('-f, --force', 'Force removal even if other plans depend on this one')
-  .action(async (planIds, options, command) => {
+  .action(async (planIdArgs, options, command) => {
     const { handleRemoveCommand } = await import('./commands/remove.js');
+    const planIds = planIdArgs.map((planIdArg: string) => parsePlanIdFromCliArg(planIdArg));
     await handleRemoveCommand(planIds, options, command).catch(handleCommandError);
   });
 
 program
-  .command('remove-task <plan>')
+  .command('remove-task <planId>')
   .description('Remove a task from a plan')
   .option('--index <index>', 'Task index (1-based)', (val: string) => {
     const n = parseInt(val, 10);
@@ -998,9 +1010,10 @@ program
   })
   .option('--title <title>', 'Find task by title (partial match)')
   .option('--interactive', 'Select task interactively')
-  .action(async (plan, options, command) => {
+  .action(async (planIdArg, options, command) => {
     const { handleRemoveTaskCommand } = await import('./commands/remove-task.js');
-    await handleRemoveTaskCommand(plan, options, command).catch(handleCommandError);
+    const planId = parsePlanIdFromCliArg(planIdArg);
+    await handleRemoveTaskCommand(planId, options, command).catch(handleCommandError);
   });
 
 program
@@ -1022,13 +1035,7 @@ program
   .option('--no-d, --no-depends-on <planIds...>', 'Remove plan IDs from dependencies')
   .option('--parent <planId>', 'Set the parent plan ID')
   .option('--no-parent', 'Remove the parent plan association')
-  .option('--discovered-from <planId>', 'Set the plan this was discovered from', (value) => {
-    const n = Number(value);
-    if (Number.isNaN(n) || n <= 0 || !Number.isInteger(n)) {
-      throw new Error(`discovered-from must be a positive integer, saw ${value}`);
-    }
-    return n;
-  })
+  .option('--discovered-from <planId>', 'Set the plan this was discovered from')
   .option('--no-discovered-from', 'Remove the discoveredFrom association')
   .option(
     '--rmfilter <files...>',
@@ -1054,8 +1061,9 @@ program
   .option('--base-change-id <id>', 'Set the JJ base change ID')
   .option('--no-base-change-id', 'Remove the JJ base change ID')
   .option('--details <text>', 'Replace the entire details field with the given text')
-  .action(async (planId, options, command) => {
+  .action(async (planIdArg, options, command) => {
     const { handleSetCommand } = await import('./commands/set.js');
+    const planId = parsePlanIdFromCliArg(planIdArg);
     const rawArgs = command.rawArgs ?? [];
     const sourceArgs =
       command.parent?.rawArgs && command.parent.rawArgs.length > 0
@@ -1067,8 +1075,8 @@ program
           arg === flag || (alias !== undefined && arg === alias) || arg.startsWith(`${flag}=`)
       ) ||
       (alias !== undefined && sourceArgs.some((arg: string) => arg.startsWith(`${alias}=`)));
-    const parsedDependsOn = intArg(options.dependsOn);
-    const parsedNoDependsOn = intArg(options.noDependsOn);
+    const parsedDependsOn = parsePlanIdOption(options.dependsOn);
+    const parsedNoDependsOn = parsePlanIdOption(options.noDependsOn);
     const parsedIssue = options.issue;
     const parsedNoIssue = options.noIssue;
     const parsedDoc = options.doc;
@@ -1108,7 +1116,8 @@ program
       options.noTag = parsedNoTag;
     }
 
-    options.parent = intArg(options.parent);
+    options.parent = parsePlanIdOption(options.parent);
+    options.discoveredFrom = parsePlanIdOption(options.discoveredFrom);
     if (options.baseBranch === false) {
       options.noBaseBranch = true;
       options.baseBranch = undefined;
@@ -1224,8 +1233,9 @@ program
     '-v, --verbose',
     'When used with --print, show progress output to stderr. Otherwise only JSON output is shown.'
   )
-  .action(async (planId, options, command) => {
+  .action(async (planIdArg, options, command) => {
     const { handleReviewCommand } = await import('./commands/review.js');
+    const planId = parseOptionalPlanIdFromCliArg(planIdArg);
     await runWithCommandTunnelAdapter(async () => {
       await handleReviewCommand(planId, options, command);
     }).catch(handleCommandError);
@@ -1237,24 +1247,27 @@ prCommand
   .command('status [planId]')
   .description('Fetch and display GitHub PR status for a plan')
   .option('--force-refresh', 'Bypass webhooks and fetch directly from GitHub API')
-  .action(async (planId, options, command) => {
+  .action(async (planIdArg, options, command) => {
     const { handlePrStatusCommand } = await import('./commands/pr.js');
+    const planId = parseOptionalPlanIdFromCliArg(planIdArg);
     await handlePrStatusCommand(planId, options, command).catch(handleCommandError);
   });
 
 prCommand
   .command('link <planId> [prUrlOrBranch]')
   .description('Link a GitHub PR to a plan (accepts PR URL, branch name, or auto-detects)')
-  .action(async (planId, prUrl, options, command) => {
+  .action(async (planIdArg, prUrl, options, command) => {
     const { handlePrLinkCommand } = await import('./commands/pr.js');
+    const planId = parsePlanIdFromCliArg(planIdArg);
     await handlePrLinkCommand(planId, prUrl, options, command).catch(handleCommandError);
   });
 
 prCommand
   .command('unlink <planId> <prUrl>')
   .description('Unlink a GitHub PR from a plan ')
-  .action(async (planId, prUrl, options, command) => {
+  .action(async (planIdArg, prUrl, options, command) => {
     const { handlePrUnlinkCommand } = await import('./commands/pr.js');
+    const planId = parsePlanIdFromCliArg(planIdArg);
     await handlePrUnlinkCommand(planId, prUrl, options, command).catch(handleCommandError);
   });
 
@@ -1283,8 +1296,9 @@ prCommand
   .option('-w, --workspace <name>', 'Use a specific workspace')
   .option('--no-terminal-input', 'Disable terminal input')
   .option('--non-interactive', 'No user prompts')
-  .action(async (planId, options, command) => {
+  .action(async (planIdArg, options, command) => {
     const { handleCreatePrCommand } = await import('./commands/create_pr.js');
+    const planId = parsePlanIdFromCliArg(planIdArg);
     await handleCreatePrCommand(planId, options, command).catch(handleCommandError);
   });
 
@@ -1297,8 +1311,9 @@ prCommand
   .option('--aw, --auto-workspace', 'Auto-select or create a workspace')
   .option('--non-interactive', 'No user prompts')
   .option('--no-terminal-input', 'Disable terminal input')
-  .action(async (planId, options, command) => {
+  .action(async (planIdArg, options, command) => {
     const { handlePrFixCommand } = await import('./commands/pr.js');
+    const planId = parsePlanIdFromCliArg(planIdArg);
     await handlePrFixCommand(planId, options, command).catch(handleCommandError);
   });
 
@@ -1313,6 +1328,9 @@ const prReviewGuideCommand = prCommand
   .option('--non-interactive', 'No user prompts')
   .option('--verbose', 'Verbose output')
   .action(async (prUrlOrNumber, options, command) => {
+    if (options.plan !== undefined) {
+      options.plan = parsePlanIdFromCliArg(options.plan);
+    }
     await runWithCommandTunnelAdapter(async () => {
       const { handleReviewGuideCommand } = await import('./commands/review_pr.js');
       await handleReviewGuideCommand(prUrlOrNumber, options, command);
@@ -1364,8 +1382,9 @@ function registerPrDescriptionCommand(
     .option('--output-file <path>', 'Save the generated description to the specified file')
     .option('--copy', 'Copy the generated description to the clipboard')
     .option('--create-pr', 'Create a GitHub PR using the generated description with gh CLI')
-    .action(async (planId, options, command) => {
+    .action(async (planIdArg, options, command) => {
       const { handleDescriptionCommand } = await import('./commands/description.js');
+      const planId = parsePlanIdFromCliArg(planIdArg);
       const rootParent = command.parent?.parent ?? command.parent;
       await handleDescriptionCommand(planId, options, {
         ...command,
@@ -1395,7 +1414,7 @@ workspaceCommand
 
 // Add the 'add' subcommand to workspace
 workspaceCommand
-  .command('add [planIdentifier]')
+  .command('add [planId]')
   .description('Create a new workspace, optionally linked to a plan or issue')
   .option('--id <workspaceId>', 'Specify a custom workspace ID')
   .option('--issue <issueId>', 'Import a GitHub/Linear issue as a new plan in the workspace')
@@ -1413,13 +1432,14 @@ workspaceCommand
     '--target-dir <path>',
     'Target directory name or path (relative to cloneLocation or absolute)'
   )
-  .action(async (planIdentifier, options, command) => {
+  .action(async (planIdArg, options, command) => {
     if (options.reuse && options.tryReuse) {
       console.error('Error: Cannot use both --reuse and --try-reuse');
       process.exit(1);
     }
     const { handleWorkspaceAddCommand } = await import('./commands/workspace.js');
-    await handleWorkspaceAddCommand(planIdentifier, options, command).catch(handleCommandError);
+    const planId = parseOptionalPlanIdFromCliArg(planIdArg);
+    await handleWorkspaceAddCommand(planId, options, command).catch(handleCommandError);
   });
 
 workspaceCommand
@@ -1473,6 +1493,9 @@ workspaceCommand
   .option('--no-auto', 'Set this workspace type back to standard')
   .action(async (workspaceIdentifier, options, command) => {
     const { handleWorkspaceUpdateCommand } = await import('./commands/workspace.js');
+    if (options.fromPlan !== undefined) {
+      options.fromPlan = parsePlanIdFromCliArg(options.fromPlan);
+    }
     await handleWorkspaceUpdateCommand(workspaceIdentifier, options, command).catch(
       handleCommandError
     );
@@ -1495,16 +1518,15 @@ workspaceCommand
   });
 
 workspaceCommand
-  .command('pull-plan <planIdentifier>')
+  .command('pull-plan <planId>')
   .description('Fetch and check out a plan branch/bookmark if it exists')
   .option('--workspace <workspace>', 'Workspace task ID or path (defaults to current workspace)')
   .option('--branch <branch>', 'Branch/bookmark override (defaults to plan branch)')
   .option('--remote <remote>', 'Remote name to fetch from (default: origin)')
-  .action(async (planIdentifier, options, command) => {
+  .action(async (planIdArg, options, command) => {
     const { handleWorkspacePullPlanCommand } = await import('./commands/workspace.js');
-    await handleWorkspacePullPlanCommand(planIdentifier, options, command).catch(
-      handleCommandError
-    );
+    const planId = parsePlanIdFromCliArg(planIdArg);
+    await handleWorkspacePullPlanCommand(planId, options, command).catch(handleCommandError);
   });
 
 program
@@ -1562,8 +1584,9 @@ for (const agentType of ['implementer', 'tester', 'tdd-tests', 'verifier'] as co
       'Read additional instructions from file (use "-" to read from stdin)'
     )
     .option('--output-file <path>', 'Write the final subagent message to a file')
-    .action(async (planId: string, options: any, command: any) => {
+    .action(async (planIdArg: string, options: any, command: any) => {
       const { handleSubagentCommand } = await import('./commands/subagent.js');
+      const planId = parsePlanIdFromCliArg(planIdArg);
       await runWithCommandTunnelAdapter(async () => {
         await handleSubagentCommand(agentType, planId, options, command.parent.parent.opts());
       }).catch(handleCommandError);
@@ -1582,8 +1605,5 @@ async function run() {
 }
 
 if (import.meta.main) {
-  run().catch((e) => {
-    console.error(e);
-    process.exit(1);
-  });
+  run().catch(handleCommandError);
 }

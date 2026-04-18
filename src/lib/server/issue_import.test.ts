@@ -53,7 +53,7 @@ vi.mock('$tim/plans_db.js', () => ({
 }));
 
 vi.mock('$tim/plans.js', () => ({
-  resolvePlanFromDb: vi.fn(),
+  resolvePlanByNumericId: vi.fn(),
 }));
 
 vi.mock('$tim/workspace/workspace_info.js', () => ({
@@ -78,7 +78,7 @@ import {
 } from '$tim/commands/import/import_helpers.js';
 import { getRepositoryIdentity } from '$tim/assignments/workspace_identifier.js';
 import { loadPlansFromDb } from '$tim/plans_db.js';
-import { resolvePlanFromDb } from '$tim/plans.js';
+import { resolvePlanByNumericId } from '$tim/plans.js';
 import { getPreferredProjectGitRoot } from '$tim/workspace/workspace_info.js';
 import {
   createPlansFromIssue,
@@ -196,7 +196,7 @@ describe('issue_import server helpers', () => {
       plans: new Map<number, PlanSchema>(),
       duplicates: {},
     });
-    vi.mocked(resolvePlanFromDb).mockImplementation(async (planArg) => ({
+    vi.mocked(resolvePlanByNumericId).mockImplementation(async (planArg) => ({
       plan: {
         id: Number(planArg),
         uuid: `uuid-${String(planArg)}`,
@@ -418,7 +418,7 @@ describe('issue_import server helpers', () => {
         plans: new Map([[41, existingPlan]]),
         duplicates: {},
       });
-      vi.mocked(resolvePlanFromDb).mockResolvedValue({
+      vi.mocked(resolvePlanByNumericId).mockResolvedValue({
         plan: existingPlan,
         planPath: null,
       });
@@ -464,7 +464,7 @@ describe('issue_import server helpers', () => {
         plans: new Map([[41, existingPlan]]),
         duplicates: {},
       });
-      vi.mocked(resolvePlanFromDb).mockResolvedValue({
+      vi.mocked(resolvePlanByNumericId).mockResolvedValue({
         plan: existingPlan,
         planPath: null,
       });
@@ -576,7 +576,7 @@ describe('issue_import server helpers', () => {
         ]),
         duplicates: {},
       });
-      vi.mocked(resolvePlanFromDb).mockImplementation(async (planArg) => {
+      vi.mocked(resolvePlanByNumericId).mockImplementation(async (planArg) => {
         if (String(planArg) === '100') {
           return { plan: existingParent, planPath: null };
         }
@@ -674,7 +674,7 @@ describe('issue_import server helpers', () => {
         plans: new Map([[50, existingParent]]),
         duplicates: {},
       });
-      vi.mocked(resolvePlanFromDb).mockResolvedValue({
+      vi.mocked(resolvePlanByNumericId).mockResolvedValue({
         plan: existingParent,
         planPath: null,
       });
@@ -799,7 +799,7 @@ describe('issue_import server helpers', () => {
         plans: new Map([[41, existingPlan]]),
         duplicates: {},
       });
-      vi.mocked(resolvePlanFromDb).mockResolvedValue({ plan: existingPlan, planPath: null });
+      vi.mocked(resolvePlanByNumericId).mockResolvedValue({ plan: existingPlan, planPath: null });
 
       const result = await createPlansFromIssue(7, issueData, 'single', {
         selectedParentContent: [0],
@@ -834,7 +834,7 @@ describe('issue_import server helpers', () => {
         plans: new Map([[41, existingPlan]]),
         duplicates: {},
       });
-      vi.mocked(resolvePlanFromDb).mockResolvedValue({ plan: existingPlan, planPath: null });
+      vi.mocked(resolvePlanByNumericId).mockResolvedValue({ plan: existingPlan, planPath: null });
 
       const result = await createPlansFromIssue(7, issueData, 'single', {
         selectedParentContent: [0],
@@ -869,7 +869,7 @@ describe('issue_import server helpers', () => {
         plans: new Map([[41, existingPlan]]),
         duplicates: {},
       });
-      vi.mocked(resolvePlanFromDb).mockResolvedValue({ plan: existingPlan, planPath: null });
+      vi.mocked(resolvePlanByNumericId).mockResolvedValue({ plan: existingPlan, planPath: null });
 
       const result = await createPlansFromIssue(7, issueData, 'single', {
         selectedParentContent: [0],
@@ -931,7 +931,7 @@ describe('issue_import server helpers', () => {
         ]),
         duplicates: {},
       });
-      vi.mocked(resolvePlanFromDb).mockImplementation(async (planArg) => {
+      vi.mocked(resolvePlanByNumericId).mockImplementation(async (planArg) => {
         if (String(planArg) === '100') return { plan: existingParent, planPath: null };
         if (String(planArg) === '101') return { plan: existingChildA, planPath: null };
         throw new Error(`Unexpected: ${String(planArg)}`);
@@ -990,7 +990,7 @@ describe('issue_import server helpers', () => {
         ]),
         duplicates: {},
       });
-      vi.mocked(resolvePlanFromDb).mockImplementation(async (planArg) => {
+      vi.mocked(resolvePlanByNumericId).mockImplementation(async (planArg) => {
         if (String(planArg) === '100') return { plan: existingParent, planPath: null };
         if (String(planArg) === '101') return { plan: existingChildA, planPath: null };
         throw new Error(`Unexpected: ${String(planArg)}`);
@@ -1049,7 +1049,7 @@ describe('issue_import server helpers', () => {
         plans: new Map([[100, existingParent]]),
         duplicates: {},
       });
-      vi.mocked(resolvePlanFromDb).mockResolvedValue({ plan: existingParent, planPath: null });
+      vi.mocked(resolvePlanByNumericId).mockResolvedValue({ plan: existingParent, planPath: null });
       vi.mocked(reserveImportedPlanStartId).mockResolvedValue(200);
 
       const result = await createPlansFromIssue(7, parentIssue, 'separate', {
@@ -1095,7 +1095,7 @@ describe('issue_import server helpers', () => {
         plans: new Map([[101, existingChildA]]),
         duplicates: {},
       });
-      vi.mocked(resolvePlanFromDb).mockResolvedValue({ plan: existingChildA, planPath: null });
+      vi.mocked(resolvePlanByNumericId).mockResolvedValue({ plan: existingChildA, planPath: null });
       vi.mocked(reserveImportedPlanStartId).mockResolvedValue(200);
 
       const result = await createPlansFromIssue(7, parentIssue, 'separate', {
@@ -1142,7 +1142,7 @@ describe('issue_import server helpers', () => {
         plans: new Map([[50, existingParent]]),
         duplicates: {},
       });
-      vi.mocked(resolvePlanFromDb).mockResolvedValue({ plan: existingParent, planPath: null });
+      vi.mocked(resolvePlanByNumericId).mockResolvedValue({ plan: existingParent, planPath: null });
 
       await createPlansFromIssue(7, parentIssue, 'merged', {
         selectedParentContent: [0],
@@ -1186,7 +1186,7 @@ describe('issue_import server helpers', () => {
         plans: new Map([[50, existingParent]]),
         duplicates: {},
       });
-      vi.mocked(resolvePlanFromDb).mockResolvedValue({ plan: existingParent, planPath: null });
+      vi.mocked(resolvePlanByNumericId).mockResolvedValue({ plan: existingParent, planPath: null });
 
       const result = await createPlansFromIssue(7, parentIssue, 'merged', {
         selectedParentContent: [0],
@@ -1235,7 +1235,7 @@ describe('issue_import server helpers', () => {
 
       expect(result).toEqual({ planUuid: 'uuid-new-child' });
       expect(reserveImportedPlanStartId).toHaveBeenCalledWith('/tmp/preferred-workspace', 1);
-      expect(resolvePlanFromDb).not.toHaveBeenCalled();
+      expect(resolvePlanByNumericId).not.toHaveBeenCalled();
       expect(createStubPlanFromIssue).toHaveBeenCalledWith(
         expect.objectContaining({
           issue: expect.objectContaining({ html_url: 'https://tracker.test/issues/2' }),
@@ -1286,7 +1286,7 @@ describe('issue_import server helpers', () => {
       // Should create new plans, not match the merged parent
       expect(result).toEqual({ planUuid: 'uuid-parent-200' });
       expect(reserveImportedPlanStartId).toHaveBeenCalledWith('/tmp/preferred-workspace', 2);
-      expect(resolvePlanFromDb).not.toHaveBeenCalled();
+      expect(resolvePlanByNumericId).not.toHaveBeenCalled();
     });
 
     test('merged mode prefers primary-URL plan over merged parent with same URL', async () => {
@@ -1327,7 +1327,7 @@ describe('issue_import server helpers', () => {
         ]),
         duplicates: {},
       });
-      vi.mocked(resolvePlanFromDb).mockResolvedValue({
+      vi.mocked(resolvePlanByNumericId).mockResolvedValue({
         plan: dedicatedPlan,
         planPath: null,
       });
@@ -1343,7 +1343,7 @@ describe('issue_import server helpers', () => {
 
       // Should update the dedicated plan, not the merged parent
       expect(result).toEqual({ planUuid: 'uuid-dedicated-child' });
-      expect(resolvePlanFromDb).toHaveBeenCalledWith('60', '/tmp/preferred-workspace');
+      expect(resolvePlanByNumericId).toHaveBeenCalledWith(60, '/tmp/preferred-workspace');
     });
   });
 

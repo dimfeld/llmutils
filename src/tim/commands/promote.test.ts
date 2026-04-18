@@ -32,7 +32,12 @@ vi.mock('../id_utils.js', async (importOriginal) => {
   };
 });
 
-import { getMaxNumericPlanId, readPlanFile, resolvePlanFromDb, writePlanFile } from '../plans.js';
+import {
+  getMaxNumericPlanId,
+  readPlanFile,
+  resolvePlanByNumericId,
+  writePlanFile,
+} from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { handlePromoteCommand } from './promote.js';
 import { log, error } from '../../logging.js';
@@ -126,14 +131,14 @@ describe('handlePromoteCommand', () => {
     await handlePromoteCommand(['1.2'], { config: configPath });
 
     // Read and verify the original plan was updated
-    const updatedOriginalPlan = (await resolvePlanFromDb('1', tempDir)).plan;
+    const updatedOriginalPlan = (await resolvePlanByNumericId(1, tempDir)).plan;
     expect(updatedOriginalPlan.tasks).toHaveLength(2);
     expect(updatedOriginalPlan.tasks![0].title).toBe('Set up database schema');
     expect(updatedOriginalPlan.tasks![1].title).toBe('Add password hashing');
     expect(updatedOriginalPlan.dependencies).toHaveLength(1);
 
     const newPlanId = updatedOriginalPlan.dependencies![0]!;
-    const newPlan = (await resolvePlanFromDb(String(newPlanId), tempDir)).plan;
+    const newPlan = (await resolvePlanByNumericId(newPlanId, tempDir)).plan;
     expect(newPlan.id).toBe(newPlanId);
     expect(newPlan.title).toBe('Implement login endpoint');
     expect(newPlan.details).toBe('Create API endpoint for user authentication');
@@ -162,11 +167,10 @@ describe('handlePromoteCommand', () => {
 
     await handlePromoteCommand(['1.1'], { config: configPath });
 
-    const updatedParent = (await resolvePlanFromDb('1', tempDir)).plan;
+    const updatedParent = (await resolvePlanByNumericId(1, tempDir)).plan;
     expect(updatedParent.dependencies).toHaveLength(1);
 
-    const childPlan = (await resolvePlanFromDb(String(updatedParent.dependencies![0]!), tempDir))
-      .plan;
+    const childPlan = (await resolvePlanByNumericId(updatedParent.dependencies![0]!, tempDir)).plan;
     expect(childPlan.tags).toEqual(['backend', 'urgent']);
     expect(updatedParent.tags).toEqual(['backend', 'urgent']);
   });
@@ -213,13 +217,13 @@ describe('handlePromoteCommand', () => {
     // Promote tasks 2-4 (1.2-4)
     await handlePromoteCommand(['1.2-4'], { config: configPath });
 
-    const updatedOriginalPlan = (await resolvePlanFromDb('1', tempDir)).plan;
+    const updatedOriginalPlan = (await resolvePlanByNumericId(1, tempDir)).plan;
     expect(updatedOriginalPlan.dependencies).toHaveLength(3);
 
     const promotedPlans = await Promise.all(
       updatedOriginalPlan.dependencies!.map(async (planId) => ({
         id: planId!,
-        plan: (await resolvePlanFromDb(String(planId!), tempDir)).plan,
+        plan: (await resolvePlanByNumericId(planId!, tempDir)).plan,
       }))
     );
     const promotedByTitle = new Map(promotedPlans.map(({ plan }) => [plan.title, plan]));
@@ -284,11 +288,11 @@ describe('handlePromoteCommand', () => {
 
       await handlePromoteCommand(['1.1'], { config: config.resolvedConfigPath });
 
-      const updatedOriginalPlan = (await resolvePlanFromDb('1', tempDir)).plan;
+      const updatedOriginalPlan = (await resolvePlanByNumericId(1, tempDir)).plan;
       expect(updatedOriginalPlan.dependencies).toHaveLength(1);
 
       const promotedPlan = (
-        await resolvePlanFromDb(String(updatedOriginalPlan.dependencies![0]!), tempDir)
+        await resolvePlanByNumericId(updatedOriginalPlan.dependencies![0]!, tempDir)
       ).plan;
       expect(promotedPlan.id).toBe(updatedOriginalPlan.dependencies![0]!);
       expect(promotedPlan.title).toBe('External task');
@@ -330,13 +334,13 @@ describe('handlePromoteCommand', () => {
     // Promote all tasks (1.1-3)
     await handlePromoteCommand(['1.1-3'], { config: configPath });
 
-    const updatedOriginalPlan = (await resolvePlanFromDb('1', tempDir)).plan;
+    const updatedOriginalPlan = (await resolvePlanByNumericId(1, tempDir)).plan;
     expect(updatedOriginalPlan.dependencies).toHaveLength(3);
 
     const promotedPlans = await Promise.all(
       updatedOriginalPlan.dependencies!.map(async (planId) => ({
         id: planId!,
-        plan: (await resolvePlanFromDb(String(planId!), tempDir)).plan,
+        plan: (await resolvePlanByNumericId(planId!, tempDir)).plan,
       }))
     );
     const promotedByTitle = new Map(promotedPlans.map(({ plan }) => [plan.title, plan]));
@@ -411,16 +415,14 @@ describe('handlePromoteCommand', () => {
     await handlePromoteCommand(['1.2', '2.1'], { config: configPath });
 
     // Read and verify both original plans were updated
-    const updatedPlan1 = (await resolvePlanFromDb('1', tempDir)).plan;
-    const updatedPlan2 = (await resolvePlanFromDb('2', tempDir)).plan;
+    const updatedPlan1 = (await resolvePlanByNumericId(1, tempDir)).plan;
+    const updatedPlan2 = (await resolvePlanByNumericId(2, tempDir)).plan;
 
     expect(updatedPlan1.dependencies).toHaveLength(1);
     expect(updatedPlan2.dependencies).toHaveLength(1);
 
-    const newPlan3 = (await resolvePlanFromDb(String(updatedPlan1.dependencies![0]!), tempDir))
-      .plan;
-    const newPlan4 = (await resolvePlanFromDb(String(updatedPlan2.dependencies![0]!), tempDir))
-      .plan;
+    const newPlan3 = (await resolvePlanByNumericId(updatedPlan1.dependencies![0]!, tempDir)).plan;
+    const newPlan4 = (await resolvePlanByNumericId(updatedPlan2.dependencies![0]!, tempDir)).plan;
 
     // Verify plan 3 (from task 1.2)
     expect(newPlan3.id).toBe(updatedPlan1.dependencies![0]!);

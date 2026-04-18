@@ -101,9 +101,9 @@ vi.mock('../../plans.js', () => {
       await writeFile(filePath, yaml.default.stringify(data));
     }),
     generatePlanFileContent: vi.fn(() => ''),
-    resolvePlanFromDb: vi.fn(async () => ({
-      plan: { id: 1, title: 'P', status: 'pending', tasks: [] },
-      planPath: '',
+    resolvePlanByNumericId: vi.fn(async () => ({
+      plan: { id: 242, title: 'Stub Review Plan', status: 'pending', tasks: [] },
+      planPath: planFile,
     })),
     writePlanToDb: vi.fn(async () => {}),
     setPlanStatus: vi.fn(async () => {}),
@@ -229,7 +229,7 @@ describe('timAgent stub plan review continuation', () => {
 
     const { timAgent } = await import('./agent.js');
 
-    await timAgent(planFile, { log: false, summary: false }, {});
+    await timAgent(242, { log: false, summary: false }, {});
 
     expect(executeStubPlanSpy).toHaveBeenCalledTimes(1);
     expect(promptConfirmSpy).toHaveBeenCalledWith({
@@ -247,7 +247,7 @@ describe('timAgent stub plan review continuation', () => {
 
     const { timAgent } = await import('./agent.js');
 
-    await timAgent(planFile, { log: false, summary: false }, {});
+    await timAgent(242, { log: false, summary: false }, {});
 
     expect(executeStubPlanSpy).toHaveBeenCalledTimes(1);
     expect(promptConfirmSpy).toHaveBeenCalledTimes(1);

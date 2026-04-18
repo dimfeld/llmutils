@@ -1,6 +1,10 @@
 import path from 'node:path';
 
-import { resolvePlanFromDb } from './plans.js';
+import {
+  parsePlanIdentifier,
+  resolvePlanByNumericId as resolvePlanByNumericIdFromDb,
+  resolvePlanByUuid as resolvePlanByUuidFromDb,
+} from './plans.js';
 import type { PlanSchema } from './planSchema.js';
 
 export interface PlanDisplayContext {
@@ -93,9 +97,33 @@ export function buildPlanContext(
   return parts.join('\n\n');
 }
 
-export async function resolvePlan(
-  planArg: string,
+export async function resolvePlanByNumericId(
+  planId: number,
   context: PlanDisplayContext
 ): Promise<{ plan: PlanSchema; planPath: string | null }> {
-  return resolvePlanFromDb(planArg, context.gitRoot);
+  return resolvePlanByNumericIdFromDb(planId, context.gitRoot);
+}
+
+export async function resolvePlanByUuid(
+  uuid: string,
+  context: PlanDisplayContext
+): Promise<{ plan: PlanSchema; planPath: string | null }> {
+  return resolvePlanByUuidFromDb(uuid, context.gitRoot);
+}
+
+export async function resolvePlan(
+  planArg: string | number,
+  context: PlanDisplayContext
+): Promise<{ plan: PlanSchema; planPath: string | null }> {
+  const { planId, uuid } = parsePlanIdentifier(planArg);
+  if (typeof planId === 'number') {
+    return resolvePlanByNumericId(planId, context);
+  }
+  if (typeof uuid === 'string') {
+    return resolvePlanByUuid(uuid, context);
+  }
+
+  throw new Error(
+    `Could not parse plan identifier: expected a numeric plan ID or UUID, got: "${planArg}"`
+  );
 }

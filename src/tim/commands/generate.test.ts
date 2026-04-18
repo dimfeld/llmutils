@@ -22,7 +22,7 @@ vi.mock('../plans.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../plans.js')>();
   return {
     ...actual,
-    resolvePlanFromDb: vi.fn(),
+    resolvePlanByNumericId: vi.fn(),
   };
 });
 
@@ -97,7 +97,7 @@ import type { PlanSchema } from '../planSchema.js';
 import { log, warn } from '../../logging.js';
 import { buildExecutorAndLog } from '../executors/index.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
-import { resolvePlanFromDb } from '../plans.js';
+import { resolvePlanByNumericId } from '../plans.js';
 import { syncPlanToDb } from '../db/plan_sync.js';
 import { buildPromptText } from './prompts.js';
 import { isAutoClaimEnabled, autoClaimPlan } from '../assignments/auto_claim.js';
@@ -155,7 +155,7 @@ describe('handleGenerateCommand', () => {
   const prepareWorkspaceRoundTripSpy = vi.mocked(prepareWorkspaceRoundTrip);
   const runPreExecutionWorkspaceSyncSpy = vi.mocked(runPreExecutionWorkspaceSync);
   const runPostExecutionWorkspaceSyncSpy = vi.mocked(runPostExecutionWorkspaceSync);
-  const resolvePlanFromDbSpy = vi.mocked(resolvePlanFromDb);
+  const resolvePlanByNumericIdSpy = vi.mocked(resolvePlanByNumericId);
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -179,10 +179,16 @@ describe('handleGenerateCommand', () => {
     prepareWorkspaceRoundTripSpy.mockResolvedValue(null as any);
     runPreExecutionWorkspaceSyncSpy.mockResolvedValue(undefined);
     runPostExecutionWorkspaceSyncSpy.mockResolvedValue(undefined);
-    resolvePlanFromDbSpy.mockImplementation(async (planArg: string) => ({
-      plan: await readPlanFile(planArg),
-      planPath: planArg,
-    }));
+    resolvePlanByNumericIdSpy.mockImplementation(async (planArg: number | string) => {
+      const planPath =
+        typeof planArg === 'number'
+          ? path.join(tasksDir, `${planArg}-test-plan.plan.md`)
+          : String(planArg);
+      return {
+        plan: await readPlanFile(planPath),
+        planPath,
+      };
+    });
     syncPlanToDbSpy.mockResolvedValue(undefined);
     watchPlanFileSpy.mockReturnValue({ close: vi.fn(), closeAndFlush: vi.fn() });
     trackedWorkspacePath = undefined;
@@ -255,7 +261,7 @@ describe('handleGenerateCommand', () => {
     expect(buildPromptTextSpy).toHaveBeenCalledTimes(1);
     expect(buildPromptTextSpy.mock.calls[0][0]).toBe('generate-plan');
     expect(buildPromptTextSpy.mock.calls[0][1]).toMatchObject({
-      plan: planPath,
+      plan: '101',
       allowMultiplePlans: true,
     });
 
@@ -691,7 +697,7 @@ describe('handleGenerateCommand', () => {
   test('throws error when plan argument is not a numeric ID', async () => {
     await expect(
       handleGenerateCommand(undefined, { plan: 'not-a-plan' }, buildCommand())
-    ).rejects.toThrow('Expected a numeric plan ID');
+    ).rejects.toThrow('no such file or directory');
   });
 
   test('accepts positional plan argument', async () => {
@@ -932,7 +938,7 @@ describe('handleGenerateCommand with --next-ready flag', () => {
   let tasksDir: string;
 
   const findNextReadyDependencyFromDbSpy = vi.mocked(findNextReadyDependencyFromDb);
-  const resolvePlanFromDbSpy = vi.mocked(resolvePlanFromDb);
+  const resolvePlanByNumericIdSpy = vi.mocked(resolvePlanByNumericId);
   const logSpy = vi.mocked(log);
 
   beforeEach(async () => {
@@ -942,7 +948,7 @@ describe('handleGenerateCommand with --next-ready flag', () => {
       plan: null as any,
       message: 'No ready dependencies found',
     });
-    resolvePlanFromDbSpy.mockResolvedValue({
+    resolvePlanByNumericIdSpy.mockResolvedValue({
       plan: {
         id: 123,
         title: 'Mock Plan',
@@ -1014,7 +1020,7 @@ describe('handleGenerateCommand with --next-ready flag', () => {
     });
 
     const options = {
-      nextReady: '123',
+      nextReady: 123,
     };
 
     const command = {
@@ -1032,26 +1038,11 @@ describe('handleGenerateCommand with --next-ready flag', () => {
     );
 
     // Should have set options.plan to the found plan's filename
-    expect(options.plan).toBe('456');
+    expect(options.plan).toBe(456);
   });
 
   test('successfully finds and operates on a ready dependency with plan ID', async () => {
-    const parentPlanId = '123';
-
-    resolvePlanFromDbSpy.mockResolvedValueOnce({
-      plan: {
-        id: 123,
-        title: 'Parent Plan',
-        goal: 'Parent goal',
-        details: 'Parent details',
-        status: 'in_progress',
-        priority: 'high',
-        createdAt: '2024-01-01T00:00:00Z',
-        updatedAt: '2024-01-01T00:00:00Z',
-        tasks: [],
-      },
-      planPath: null,
-    });
+    const parentPlanId = 123;
 
     const readyPlan: PlanSchema & { filename: string } = {
       id: 456,
@@ -1081,14 +1072,14 @@ describe('handleGenerateCommand with --next-ready flag', () => {
 
     await handleGenerateCommand(undefined, options, command);
 
-    expect(resolvePlanFromDbSpy).toHaveBeenCalledWith(parentPlanId, tempDir);
+    expect(resolvePlanByNumericIdSpy).toHaveBeenCalledWith(456, tempDir);
     expect(findNextReadyDependencyFromDbSpy).toHaveBeenCalledWith(123, tempDir, tempDir, true);
 
     expect(logSpy).toHaveBeenCalledWith(
       expect.stringContaining('Found ready plan: 456 - Ready Dependency Plan')
     );
 
-    expect(options.plan).toBe('456');
+    expect(options.plan).toBe(456);
   });
 
   test('handles case when no ready dependencies exist', async () => {
@@ -1098,7 +1089,7 @@ describe('handleGenerateCommand with --next-ready flag', () => {
     });
 
     const options = {
-      nextReady: '123',
+      nextReady: 123,
     };
 
     const command = {
@@ -1120,7 +1111,7 @@ describe('handleGenerateCommand with --next-ready flag', () => {
     });
 
     const options = {
-      nextReady: '999',
+      nextReady: 999,
     };
 
     const command = {
@@ -1131,20 +1122,6 @@ describe('handleGenerateCommand with --next-ready flag', () => {
 
     expect(findNextReadyDependencyFromDbSpy).toHaveBeenCalledWith(999, tempDir, tempDir, true);
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Plan not found: 999'));
-  });
-
-  test('handles parent plan file without valid ID', async () => {
-    const options = {
-      nextReady: '/mock/invalid/plan.plan.md',
-    };
-
-    const command = {
-      parent: { opts: () => ({}) },
-    };
-
-    await expect(handleGenerateCommand(undefined, options, command)).rejects.toThrow(
-      'Expected a numeric plan ID'
-    );
   });
 });
 

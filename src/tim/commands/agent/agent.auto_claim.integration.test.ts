@@ -63,9 +63,9 @@ vi.mock('../../plans.js', () => {
     readPlanFile: readPlanFileSpy,
     writePlanFile: vi.fn(async () => {}),
     generatePlanFileContent: vi.fn(() => ''),
-    resolvePlanFromDb: vi.fn(async () => ({
+    resolvePlanByNumericId: vi.fn(async () => ({
       plan: { id: 7, title: 'P', status: 'pending', tasks: [] },
-      planPath: '',
+      planPath: path.join(tempRoot, 'tasks', '7-agent.plan.md'),
     })),
     writePlanToDb: vi.fn(async () => {}),
     getBlockedPlans: vi.fn(() => []),
@@ -161,6 +161,14 @@ vi.mock('../../workspace/workspace_roundtrip.js', () => ({
   materializePlansForExecution: vi.fn(async () => undefined),
 }));
 
+vi.mock('../../workspace/workspace_setup.js', () => ({
+  setupWorkspace: vi.fn(async (_options: any, baseDir: string, currentPlanFile: string) => ({
+    baseDir,
+    planFile: currentPlanFile,
+    branchCreatedDuringSetup: false,
+  })),
+}));
+
 describe('timAgent auto-claim integration', () => {
   let planPath: string;
 
@@ -185,7 +193,7 @@ describe('timAgent auto-claim integration', () => {
     const { enableAutoClaim } = await import('../../assignments/auto_claim.js');
     enableAutoClaim();
 
-    await timAgent(planPath, { log: false, serialTasks: true, nonInteractive: true }, {});
+    await timAgent(7, { log: false, serialTasks: true, nonInteractive: true }, {});
 
     expect(readPlanFileSpy).toHaveBeenCalled();
     expect(autoClaimPlanSpy).toHaveBeenCalledTimes(1);

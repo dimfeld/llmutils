@@ -60,7 +60,7 @@ vi.mock('../../plans.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../plans.js')>();
   return {
     ...actual,
-    resolvePlanFromDb: vi.fn(async (_planArg: string) => ({
+    resolvePlanByNumericId: vi.fn(async (_planId: number) => ({
       plan: { id: 1, title: 'Test Plan', status: 'pending', tasks: [] },
       planPath: '/tmp/test-plan.yml',
     })),
@@ -138,7 +138,7 @@ describe('--serial-tasks flag pass-through tests', () => {
       const options = { serialTasks: true };
       const globalCliOptions = {};
 
-      await agentModule.handleAgentCommand('1', options, globalCliOptions);
+      await agentModule.handleAgentCommand(1, options, globalCliOptions);
 
       // handleAgentCommand should have called runWithHeadlessAdapterIfEnabled
       expect(runWithHeadlessAdapterIfEnabledSpy).toHaveBeenCalledTimes(1);
@@ -151,7 +151,7 @@ describe('--serial-tasks flag pass-through tests', () => {
       const options: Record<string, any> = {}; // No serialTasks option
       const globalCliOptions = {};
 
-      await agentModule.handleAgentCommand('1', options, globalCliOptions);
+      await agentModule.handleAgentCommand(1, options, globalCliOptions);
 
       expect(runWithHeadlessAdapterIfEnabledSpy).toHaveBeenCalledTimes(1);
       expect(options.serialTasks).toBeUndefined();
@@ -161,7 +161,7 @@ describe('--serial-tasks flag pass-through tests', () => {
       const options = { serialTasks: false };
       const globalCliOptions = {};
 
-      await agentModule.handleAgentCommand('1', options, globalCliOptions);
+      await agentModule.handleAgentCommand(1, options, globalCliOptions);
 
       expect(runWithHeadlessAdapterIfEnabledSpy).toHaveBeenCalledTimes(1);
       expect(options.serialTasks).toBe(false);
@@ -180,7 +180,7 @@ describe('--serial-tasks flag pass-through tests', () => {
       };
       const globalCliOptions = {};
 
-      await agentModule.handleAgentCommand('1', options, globalCliOptions);
+      await agentModule.handleAgentCommand(1, options, globalCliOptions);
 
       expect(runWithHeadlessAdapterIfEnabledSpy).toHaveBeenCalledTimes(1);
       // Options object is not mutated — all values preserved
@@ -201,7 +201,7 @@ describe('--serial-tasks flag pass-through tests', () => {
       };
       const globalCliOptions = {};
 
-      await agentModule.handleAgentCommand('1', options, globalCliOptions);
+      await agentModule.handleAgentCommand(1, options, globalCliOptions);
 
       expect(runWithHeadlessAdapterIfEnabledSpy).toHaveBeenCalledTimes(1);
       expect(options.serialTasks).toBe(true);
@@ -218,7 +218,7 @@ describe('--serial-tasks flag pass-through tests', () => {
       };
       const globalCliOptions = {};
 
-      await agentModule.handleAgentCommand('1', options, globalCliOptions);
+      await agentModule.handleAgentCommand(1, options, globalCliOptions);
 
       expect(runWithHeadlessAdapterIfEnabledSpy).toHaveBeenCalledTimes(1);
       expect(options.serialTasks).toBe(true);
@@ -244,7 +244,7 @@ describe('--serial-tasks flag pass-through tests', () => {
         debug: true,
       };
 
-      await agentModule.handleAgentCommand('1', options, globalCliOptions);
+      await agentModule.handleAgentCommand(1, options, globalCliOptions);
 
       expect(runWithHeadlessAdapterIfEnabledSpy).toHaveBeenCalledTimes(1);
       expect(options.serialTasks).toBe(true);
@@ -327,7 +327,7 @@ describe('--serial-tasks flag pass-through tests', () => {
       const globalCliOptions = {};
 
       // This should work without throwing errors related to serialTasks processing
-      await agentModule.handleAgentCommand('1', options, globalCliOptions);
+      await agentModule.handleAgentCommand(1, options, globalCliOptions);
 
       expect(runWithHeadlessAdapterIfEnabledSpy).toHaveBeenCalledTimes(1);
       expect(options.serialTasks).toBe(true);
@@ -343,7 +343,7 @@ describe('--serial-tasks flag pass-through tests', () => {
       };
       const globalCliOptions = {};
 
-      await agentModule.handleAgentCommand('1', options, globalCliOptions);
+      await agentModule.handleAgentCommand(1, options, globalCliOptions);
 
       expect(runWithHeadlessAdapterIfEnabledSpy).toHaveBeenCalledTimes(1);
       expect(options.serialTasks).toBe(true);
@@ -362,7 +362,7 @@ describe('--serial-tasks flag pass-through tests', () => {
       };
       const globalCliOptions = {};
 
-      await agentModule.handleAgentCommand('1', options, globalCliOptions);
+      await agentModule.handleAgentCommand(1, options, globalCliOptions);
 
       expect(runWithHeadlessAdapterIfEnabledSpy).toHaveBeenCalledTimes(1);
       expect(options.serialTasks).toBe(true);
@@ -384,7 +384,7 @@ describe('--serial-tasks flag pass-through tests', () => {
       };
       const globalCliOptions = {};
 
-      await agentModule.handleAgentCommand('1', options, globalCliOptions);
+      await agentModule.handleAgentCommand(1, options, globalCliOptions);
 
       expect(runWithHeadlessAdapterIfEnabledSpy).toHaveBeenCalledTimes(1);
       expect(options.serialTasks).toBe(true);
@@ -406,7 +406,7 @@ describe('--serial-tasks flag pass-through tests', () => {
       };
       const globalCliOptions = {};
 
-      await agentModule.handleAgentCommand('1', options, globalCliOptions);
+      await agentModule.handleAgentCommand(1, options, globalCliOptions);
 
       expect(runWithHeadlessAdapterIfEnabledSpy).toHaveBeenCalledTimes(1);
       expect(options.serialTasks).toBe(true);
@@ -422,7 +422,7 @@ describe('--serial-tasks flag pass-through tests', () => {
       };
       const globalCliOptions = {};
 
-      await agentModule.handleAgentCommand('1', options, globalCliOptions);
+      await agentModule.handleAgentCommand(1, options, globalCliOptions);
 
       expect(runWithHeadlessAdapterIfEnabledSpy).toHaveBeenCalledTimes(1);
       expect(options.serialTasks).toBe(true);
@@ -434,7 +434,7 @@ describe('--serial-tasks flag pass-through tests', () => {
       const options = { serialTasks: true };
       const globalCliOptions = {};
 
-      await agentModule.handleAgentCommand('1', options, globalCliOptions);
+      await agentModule.handleAgentCommand(1, options, globalCliOptions);
 
       // The original options object should not be affected
       expect(options.serialTasks).toBe(true);

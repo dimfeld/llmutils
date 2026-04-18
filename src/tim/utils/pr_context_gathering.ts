@@ -20,7 +20,7 @@ import {
   type PrStatusDetail,
   type PrStatusRow,
 } from '../db/pr_status.js';
-import { resolvePlanFromDb } from '../plans.js';
+import { resolvePlanByNumericId } from '../plans.js';
 
 const DEFAULT_PR_STATUS_MAX_AGE_MS = 30 * 60 * 1000;
 
@@ -38,7 +38,7 @@ export interface PrReviewContext {
 export interface GatherPrContextOptions {
   db: Database;
   prUrlOrNumber?: string;
-  plan?: string | number;
+  plan?: number;
   cwd?: string;
   maxStatusAgeMs?: number;
 }
@@ -49,7 +49,7 @@ export interface PrContextGatheringDependencies {
   validatePrIdentifier: typeof validatePrIdentifier;
   getGitRepository: typeof getGitRepository;
   getGitRoot: typeof getGitRoot;
-  resolvePlanFromDb: typeof resolvePlanFromDb;
+  resolvePlanByNumericId: typeof resolvePlanByNumericId;
   getPrStatusByUrl: typeof getPrStatusByUrl;
   getPrStatusForPlan: typeof getPrStatusForPlan;
   refreshPrStatus: typeof refreshPrStatus;
@@ -61,7 +61,7 @@ const defaultDependencies: PrContextGatheringDependencies = {
   validatePrIdentifier,
   getGitRepository,
   getGitRoot,
-  resolvePlanFromDb,
+  resolvePlanByNumericId,
   getPrStatusByUrl,
   getPrStatusForPlan,
   refreshPrStatus,
@@ -118,7 +118,7 @@ export async function resolvePrUrl(
 ): Promise<string> {
   if (options.plan !== undefined) {
     const gitRoot = await deps.getGitRoot(options.cwd);
-    const resolved = await deps.resolvePlanFromDb(String(options.plan), gitRoot);
+    const resolved = await deps.resolvePlanByNumericId(options.plan, gitRoot);
     const plan = resolved.plan;
     if (!plan.uuid || !plan.id) {
       throw new Error(`Could not resolve plan UUID for plan ${options.plan}`);

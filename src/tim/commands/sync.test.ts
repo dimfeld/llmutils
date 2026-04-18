@@ -215,7 +215,7 @@ describe('tim sync command', () => {
       { skipSync: true }
     );
 
-    await handleSyncCommand('2', {}, makeCommand() as any);
+    await handleSyncCommand(2, {}, makeCommand() as any);
 
     const repository = await getRepositoryIdentity({ cwd: repoDir });
     const db = getDatabase();
@@ -251,7 +251,7 @@ describe('tim sync command', () => {
       { skipSync: true, skipUpdatedAt: true }
     );
 
-    await handleSyncCommand('1', { force: true }, makeCommand() as any);
+    await handleSyncCommand(1, { force: true }, makeCommand() as any);
 
     const repository = await getRepositoryIdentity({ cwd: repoDir });
     const db = getDatabase();

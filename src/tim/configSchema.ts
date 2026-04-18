@@ -105,6 +105,11 @@ export const workspaceCreationConfigSchema = z.object({
    */
   workspaceUpdateCommands: z.array(postApplyCommandSchema).optional(),
   /**
+   * Whether creating/reusing workspaces should create/check out a task branch.
+   * Defaults to true when unspecified.
+   */
+  createBranch: z.boolean().optional(),
+  /**
    * Additional glob patterns to copy when using filesystem-based clone methods.
    * Allows including files that are normally ignored by Git.
    */

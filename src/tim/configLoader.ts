@@ -43,7 +43,7 @@ function mergeConfigs(mainConfig: TimConfig, localConfig: TimConfig): TimConfig 
   }
 
   function dedupeLifecycleCommands(
-    commands: NonNullable<TimConfig['lifecycle']>['commands']
+    commands: NonNullable<TimConfig['lifecycle']>['commands'] = []
   ): NonNullable<TimConfig['lifecycle']>['commands'] {
     const seen = new Set<string>();
     const deduped: NonNullable<TimConfig['lifecycle']>['commands'] = [];

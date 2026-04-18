@@ -8,10 +8,12 @@ import {
   getChildPlans,
   getDiscoveredPlans,
   isPlanReady,
+  parseOptionalPlanIdFromCliArg,
   parsePlanIdFromCliArg,
   parsePlanIdentifier,
   readPlanFile,
-  resolvePlanFromDb,
+  resolvePlanByNumericId,
+  resolvePlanByUuid,
   setPlanStatus,
   setPlanStatusById,
   writePlanFile,
@@ -190,7 +192,7 @@ describe('plans', () => {
     expect(ordered.map((plan) => plan.id)).toEqual([3, 1]);
   });
 
-  test('resolvePlanFromDb returns the materialized path when present', async () => {
+  test('resolvePlanByNumericId returns the materialized path when present', async () => {
     await writePlanToDb(
       {
         id: 20,
@@ -204,32 +206,93 @@ describe('plans', () => {
     );
 
     const materializedPath = await materializePlan(20, repoDir);
-    const resolved = await resolvePlanFromDb('20', repoDir);
+    const resolved = await resolvePlanByNumericId(20, repoDir);
 
     expect(resolved.plan.id).toBe(20);
     expect(resolved.plan.title).toBe('DB plan');
     expect(resolved.planPath).toBe(materializedPath);
   });
 
-  test('resolvePlanFromDb rejects file-like identifiers', async () => {
-    await expect(resolvePlanFromDb('56-feature.plan.md', repoDir)).rejects.toThrow(
-      'Could not parse plan identifier: expected a numeric plan ID or UUID, got: "56-feature.plan.md"'
-    );
+  test('parsePlanIdentifier rejects file-like identifiers', () => {
+    expect(parsePlanIdentifier('56-feature.plan.md')).toEqual({});
   });
 
-  test('resolvePlanFromDb rejects relative path to a real file', async () => {
+  test('parsePlanIdFromCliArg rejects relative path to a real file', async () => {
     const planPath = join(repoDir, '99-real.plan.md');
     await Bun.write(planPath, '---\nid: 99\ntitle: Real file plan\n---\n');
-    await expect(resolvePlanFromDb('99-real.plan.md', repoDir)).rejects.toThrow(
-      'Could not parse plan identifier: expected a numeric plan ID or UUID, got: "99-real.plan.md"'
+    expect(() => parsePlanIdFromCliArg('99-real.plan.md')).toThrow(
+      'Expected a numeric plan ID, got: "99-real.plan.md"'
     );
   });
 
-  test('resolvePlanFromDb rejects absolute path to a real file', async () => {
+  test('parseOptionalPlanIdFromCliArg returns undefined for undefined input', () => {
+    expect(parseOptionalPlanIdFromCliArg(undefined)).toBeUndefined();
+  });
+
+  test('parseOptionalPlanIdFromCliArg parses a numeric string', () => {
+    expect(parseOptionalPlanIdFromCliArg('42')).toBe(42);
+  });
+
+  test('parseOptionalPlanIdFromCliArg rejects invalid input', () => {
+    expect(() => parseOptionalPlanIdFromCliArg('abc')).toThrow(
+      'Expected a numeric plan ID, got: "abc"'
+    );
+  });
+
+  test('resolvePlanByNumericId rejects non-positive integers', async () => {
+    await expect(resolvePlanByNumericId(0, repoDir)).rejects.toThrow('Invalid numeric plan ID');
+    await expect(resolvePlanByNumericId(-5, repoDir)).rejects.toThrow('Invalid numeric plan ID');
+    await expect(resolvePlanByNumericId(1.5, repoDir)).rejects.toThrow('Invalid numeric plan ID');
+  });
+
+  test('resolvePlanByNumericId resolves a plan stored in the DB', async () => {
+    await writePlanToDb(
+      {
+        id: 77,
+        uuid: '77777777-7777-4777-8777-777777777777',
+        title: 'Numeric resolver plan',
+        goal: 'g',
+        tasks: [],
+      },
+      { cwdForIdentity: repoDir }
+    );
+
+    const resolved = await resolvePlanByNumericId(77, repoDir);
+    expect(resolved.plan.id).toBe(77);
+    expect(resolved.plan.title).toBe('Numeric resolver plan');
+  });
+
+  test('resolvePlanByUuid rejects non-UUID strings', async () => {
+    await expect(resolvePlanByUuid('329', repoDir)).rejects.toThrow('Invalid plan UUID');
+    await expect(resolvePlanByUuid('./plans/329.plan.md', repoDir)).rejects.toThrow(
+      'Invalid plan UUID'
+    );
+    await expect(resolvePlanByUuid('', repoDir)).rejects.toThrow('Invalid plan UUID');
+  });
+
+  test('resolvePlanByUuid resolves a plan stored in the DB', async () => {
+    const uuid = '88888888-8888-4888-8888-888888888888';
+    await writePlanToDb(
+      {
+        id: 88,
+        uuid,
+        title: 'UUID resolver plan',
+        goal: 'g',
+        tasks: [],
+      },
+      { cwdForIdentity: repoDir }
+    );
+
+    const resolved = await resolvePlanByUuid(uuid, repoDir);
+    expect(resolved.plan.id).toBe(88);
+    expect(resolved.plan.uuid).toBe(uuid);
+  });
+
+  test('parsePlanIdFromCliArg rejects absolute path to a real file', async () => {
     const planPath = join(repoDir, '88-abs.plan.md');
     await Bun.write(planPath, '---\nid: 88\ntitle: Absolute path plan\n---\n');
-    await expect(resolvePlanFromDb(planPath, repoDir)).rejects.toThrow(
-      'Could not parse plan identifier: expected a numeric plan ID or UUID'
+    expect(() => parsePlanIdFromCliArg(planPath)).toThrow(
+      `Expected a numeric plan ID, got: "${planPath}"`
     );
   });
 
@@ -268,7 +331,7 @@ describe('plans', () => {
 
     const updated = await readPlanFile(materializedPath);
     expect(updated.status).toBe('done');
-    const resolved = await resolvePlanFromDb('40', repoDir);
+    const resolved = await resolvePlanByNumericId(40, repoDir);
     expect(resolved.plan.status).toBe('done');
   });
 });

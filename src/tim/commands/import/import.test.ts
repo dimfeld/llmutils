@@ -15,10 +15,14 @@ vi.mock('../../../common/issue_tracker/factory.js', () => ({
   getIssueTracker: vi.fn(),
 }));
 
-vi.mock('../../plans.js', () => ({
-  writePlanFile: vi.fn(),
-  resolvePlanFromDb: vi.fn(),
-}));
+vi.mock('../../plans.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../plans.js')>();
+  return {
+    ...actual,
+    writePlanFile: vi.fn(),
+    resolvePlanByNumericId: vi.fn(),
+  };
+});
 
 vi.mock('../../plans_db.js', () => ({
   loadPlansFromDb: vi.fn(),
@@ -86,7 +90,7 @@ vi.mock('../../assignments/workspace_identifier.js', () => ({
 
 import { getInstructionsFromIssue, createStubPlanFromIssue } from '../../issue_utils.js';
 import { getIssueTracker } from '../../../common/issue_tracker/factory.js';
-import { writePlanFile, resolvePlanFromDb } from '../../plans.js';
+import { writePlanFile, resolvePlanByNumericId } from '../../plans.js';
 import { loadPlansFromDb } from '../../plans_db.js';
 import { resolveProjectContext } from '../../plan_materialize.js';
 import { getDatabase } from '../../db/database.js';
@@ -218,10 +222,10 @@ describe('handleImportCommand', () => {
     vi.mocked(getIssueTracker).mockResolvedValue(mockIssueTracker);
 
     vi.mocked(writePlanFile).mockResolvedValue(undefined);
-    vi.mocked(resolvePlanFromDb).mockImplementation((planArg: string) => {
-      const plan = currentPlansResult.plans.get(Number(planArg));
+    vi.mocked(resolvePlanByNumericId).mockImplementation((planId: number) => {
+      const plan = currentPlansResult.plans.get(planId);
       if (!plan) {
-        throw new Error(`No plan found in the database for identifier: ${planArg}`);
+        throw new Error(`No plan found in the database for identifier: ${planId}`);
       }
       return Promise.resolve({
         plan,

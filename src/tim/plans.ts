@@ -165,39 +165,36 @@ export function parsePlanIdFromCliArg(arg: string): number {
   return planId;
 }
 
-export async function resolvePlanFromDb(
-  planArg: string | number,
-  repoRoot: string,
-  options?: { context?: ProjectContext }
-): Promise<ResolvedPlanFromDb> {
-  const parsedIdentifier = parsePlanIdentifier(planArg);
-
-  const db = getDatabase();
-  const projectContext = options?.context;
-  const repository = projectContext?.repository ?? (await getRepositoryIdentity({ cwd: repoRoot }));
-  const projectId =
-    projectContext?.projectId ??
-    getOrCreateProject(db, repository.repositoryId, {
-      remoteUrl: repository.remoteUrl,
-      lastGitRoot: repository.gitRoot,
-    }).id;
-
-  const { planId, uuid } = parsedIdentifier;
-  if (typeof planId !== 'number' && typeof uuid !== 'string') {
-    throw new PlanNotFoundError(
-      `Could not parse plan identifier: expected a numeric plan ID or UUID, got: "${planArg}"`
-    );
+export function parseOptionalPlanIdFromCliArg(arg: string | undefined): number | undefined {
+  if (arg === undefined) {
+    return undefined;
   }
+
+  return parsePlanIdFromCliArg(arg);
+}
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+type PlanLookup = { type: 'planId'; planId: number } | { type: 'uuid'; uuid: string };
+
+async function loadPlanSnapshot(
+  lookup: PlanLookup,
+  projectId: number,
+  context: ProjectContext | undefined,
+  repoRoot: string,
+  identifierForError: string | number
+): Promise<ResolvedPlanFromDb> {
+  const db = getDatabase();
   const readPlanSnapshot = db.transaction(() => {
     const row =
-      typeof planId === 'number'
-        ? getPlanByPlanId(db, projectId, planId)
-        : typeof uuid === 'string'
-          ? getPlanByUuid(db, uuid)
-          : null;
+      lookup.type === 'planId'
+        ? getPlanByPlanId(db, projectId, lookup.planId)
+        : getPlanByUuid(db, lookup.uuid);
 
-    if (!row || (typeof planId === 'number' && row.project_id !== projectId)) {
-      throw new PlanNotFoundError(`No plan found in the database for identifier: ${planArg}`);
+    if (!row || (lookup.type === 'planId' && row.project_id !== projectId)) {
+      throw new PlanNotFoundError(
+        `No plan found in the database for identifier: ${identifierForError}`
+      );
     }
 
     const tasks = getPlanTasksByUuid(db, row.uuid).map((task) => ({
@@ -210,7 +207,7 @@ export async function resolvePlanFromDb(
     );
     const tags = getPlanTagsByUuid(db, row.uuid).map((tag) => tag.tag);
     const uuidToPlanId =
-      projectContext?.uuidToPlanId ??
+      context?.uuidToPlanId ??
       new Map(
         getPlansByProject(db, projectId).map((projectRow) => [projectRow.uuid, projectRow.plan_id])
       );
@@ -220,6 +217,7 @@ export async function resolvePlanFromDb(
       plan: planRowToSchemaInput(row, tasks, dependencyUuids, tags, uuidToPlanId),
     };
   });
+
   const { row, plan } = readPlanSnapshot();
   const planPath = await findPlanFileOnDiskAsync(row.plan_id, repoRoot);
 
@@ -227,6 +225,59 @@ export async function resolvePlanFromDb(
     plan,
     planPath,
   };
+}
+
+export async function resolvePlanByNumericId(
+  planId: number,
+  repoRoot: string,
+  options?: { context?: ProjectContext }
+): Promise<ResolvedPlanFromDb> {
+  if (!Number.isInteger(planId) || planId <= 0) {
+    throw new PlanNotFoundError(
+      `Invalid numeric plan ID: must be a positive integer, got: "${planId}"`
+    );
+  }
+
+  const db = getDatabase();
+  const projectContext = options?.context;
+  const repository = projectContext?.repository ?? (await getRepositoryIdentity({ cwd: repoRoot }));
+  const projectId =
+    projectContext?.projectId ??
+    getOrCreateProject(db, repository.repositoryId, {
+      remoteUrl: repository.remoteUrl,
+      lastGitRoot: repository.gitRoot,
+    }).id;
+
+  return loadPlanSnapshot({ type: 'planId', planId }, projectId, projectContext, repoRoot, planId);
+}
+
+export async function resolvePlanByUuid(
+  uuid: string,
+  repoRoot: string,
+  options?: { context?: ProjectContext }
+): Promise<ResolvedPlanFromDb> {
+  const trimmedUuid = uuid.trim();
+  if (!UUID_REGEX.test(trimmedUuid)) {
+    throw new PlanNotFoundError(`Invalid plan UUID: "${uuid}"`);
+  }
+
+  const db = getDatabase();
+  const projectContext = options?.context;
+  const repository = projectContext?.repository ?? (await getRepositoryIdentity({ cwd: repoRoot }));
+  const projectId =
+    projectContext?.projectId ??
+    getOrCreateProject(db, repository.repositoryId, {
+      remoteUrl: repository.remoteUrl,
+      lastGitRoot: repository.gitRoot,
+    }).id;
+
+  return loadPlanSnapshot(
+    { type: 'uuid', uuid: trimmedUuid },
+    projectId,
+    projectContext,
+    repoRoot,
+    uuid
+  );
 }
 
 export type PlanFilterOptions = {
@@ -685,7 +736,7 @@ export async function setPlanStatusById(
   repoRoot: string,
   filePath?: string | null
 ): Promise<void> {
-  const resolvedPlan = await resolvePlanFromDb(String(planId), repoRoot);
+  const resolvedPlan = await resolvePlanByNumericId(planId, repoRoot);
   const plan: PlanSchema = resolvedPlan.plan;
   const targetPath = filePath ?? resolvedPlan.planPath ?? null;
 

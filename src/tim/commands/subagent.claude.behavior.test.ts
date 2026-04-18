@@ -13,7 +13,7 @@ import {
 const mocks = vi.hoisted(() => ({
   loadEffectiveConfig: vi.fn(),
   getGitRoot: vi.fn(),
-  resolvePlanFromDb: vi.fn(),
+  resolvePlanByNumericId: vi.fn(),
   buildExecutionPromptWithoutSteps: vi.fn(),
   executeCodexStep: vi.fn(),
   loadAgentInstructionsFor: vi.fn(),
@@ -45,7 +45,7 @@ vi.mock('../plans.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../plans.js')>();
   return {
     ...actual,
-    resolvePlanFromDb: mocks.resolvePlanFromDb,
+    resolvePlanByNumericId: mocks.resolvePlanByNumericId,
   };
 });
 vi.mock('../prompt_builder.js', () => ({
@@ -181,7 +181,7 @@ describe('subagent command - executeWithClaude error scenarios and tunnel behavi
       }),
     }));
     mocks.getGitRoot.mockImplementation(async () => tempDir);
-    mocks.resolvePlanFromDb.mockImplementation(async () => ({
+    mocks.resolvePlanByNumericId.mockImplementation(async () => ({
       plan: currentPlanData,
       planPath: planFilePath,
     }));
@@ -299,14 +299,14 @@ describe('subagent command - executeWithClaude error scenarios and tunnel behavi
   });
 
   test('delegates to claude when executor is claude-code', async () => {
-    await handleSubagentCommand('implementer', '42', { executor: 'claude-code' }, {});
+    await handleSubagentCommand('implementer', 42, { executor: 'claude-code' }, {});
 
     expect(capturedClaudeSpawnArgs).toBeDefined();
     expect(capturedClaudeSpawnArgs![0]).toBe('claude');
   });
 
   test('defaults to claude-code when executor option is empty', async () => {
-    await handleSubagentCommand('implementer', '42', { executor: '' }, {});
+    await handleSubagentCommand('implementer', 42, { executor: '' }, {});
 
     expect(capturedClaudeSpawnArgs).toBeDefined();
     expect(capturedClaudeSpawnArgs![0]).toBe('claude');
@@ -315,7 +315,7 @@ describe('subagent command - executeWithClaude error scenarios and tunnel behavi
   test('passes model to claude-code spawned process', async () => {
     await handleSubagentCommand(
       'implementer',
-      '42',
+      42,
       { executor: 'claude-code', model: 'sonnet' },
       {}
     );
@@ -327,7 +327,7 @@ describe('subagent command - executeWithClaude error scenarios and tunnel behavi
   });
 
   test('uses default opus model when no model specified for claude', async () => {
-    await handleSubagentCommand('implementer', '42', { executor: 'claude-code' }, {});
+    await handleSubagentCommand('implementer', 42, { executor: 'claude-code' }, {});
 
     expect(capturedClaudeSpawnArgs).toBeDefined();
     const modelIdx = capturedClaudeSpawnArgs!.indexOf('--model');
@@ -344,7 +344,7 @@ describe('subagent command - executeWithClaude error scenarios and tunnel behavi
       agents: {},
     };
 
-    await handleSubagentCommand('implementer', '42', { executor: 'claude-code' }, {});
+    await handleSubagentCommand('implementer', 42, { executor: 'claude-code' }, {});
 
     expect(capturedClaudeSpawnArgs).toBeDefined();
     const modelIdx = capturedClaudeSpawnArgs!.indexOf('--model');
@@ -360,7 +360,7 @@ describe('subagent command - executeWithClaude error scenarios and tunnel behavi
       agents: {},
     };
 
-    await handleSubagentCommand('implementer', '42', { executor: 'claude-code' }, {});
+    await handleSubagentCommand('implementer', 42, { executor: 'claude-code' }, {});
 
     expect(capturedClaudeSpawnArgs).toBeDefined();
     const modelIdx = capturedClaudeSpawnArgs!.indexOf('--model');
@@ -369,7 +369,7 @@ describe('subagent command - executeWithClaude error scenarios and tunnel behavi
   });
 
   test('claude-code path includes stream-json output format', async () => {
-    await handleSubagentCommand('implementer', '42', { executor: 'claude-code' }, {});
+    await handleSubagentCommand('implementer', 42, { executor: 'claude-code' }, {});
 
     expect(capturedClaudeSpawnArgs).toBeDefined();
     expect(capturedClaudeSpawnArgs!).toContain('--output-format');
@@ -378,7 +378,7 @@ describe('subagent command - executeWithClaude error scenarios and tunnel behavi
   });
 
   test('claude-code path includes --verbose and --input-format stream-json flags', async () => {
-    await handleSubagentCommand('implementer', '42', { executor: 'claude-code' }, {});
+    await handleSubagentCommand('implementer', 42, { executor: 'claude-code' }, {});
 
     expect(capturedClaudeSpawnArgs).toBeDefined();
     expect(capturedClaudeSpawnArgs!).toContain('--verbose');
@@ -407,7 +407,7 @@ describe('subagent command - executeWithClaude error scenarios and tunnel behavi
       return streamingProcess;
     });
 
-    await handleSubagentCommand('implementer', '42', { executor: 'claude-code' }, {});
+    await handleSubagentCommand('implementer', 42, { executor: 'claude-code' }, {});
 
     expect(stdinWrite).toHaveBeenCalledTimes(1);
     const sentLine = stdinWrite.mock.calls[0]?.[0];
@@ -424,14 +424,14 @@ describe('subagent command - executeWithClaude error scenarios and tunnel behavi
   });
 
   test('claude-code path includes --no-session-persistence', async () => {
-    await handleSubagentCommand('implementer', '42', { executor: 'claude-code' }, {});
+    await handleSubagentCommand('implementer', 42, { executor: 'claude-code' }, {});
 
     expect(capturedClaudeSpawnArgs).toBeDefined();
     expect(capturedClaudeSpawnArgs!).toContain('--no-session-persistence');
   });
 
   test('claude-code path includes allowed tools', async () => {
-    await handleSubagentCommand('implementer', '42', { executor: 'claude-code' }, {});
+    await handleSubagentCommand('implementer', 42, { executor: 'claude-code' }, {});
 
     expect(capturedClaudeSpawnArgs).toBeDefined();
     expect(capturedClaudeSpawnArgs!).toContain('--allowedTools');
@@ -445,7 +445,7 @@ describe('subagent command - executeWithClaude error scenarios and tunnel behavi
       agents: {},
     };
 
-    await handleSubagentCommand('implementer', '42', { executor: 'claude-code' }, {});
+    await handleSubagentCommand('implementer', 42, { executor: 'claude-code' }, {});
 
     expect(capturedClaudeSpawnArgs).toBeDefined();
     expect(capturedClaudeSpawnArgs!).toContain('--dangerously-skip-permissions');
@@ -460,7 +460,7 @@ describe('subagent command - executeWithClaude error scenarios and tunnel behavi
       agents: {},
     };
 
-    await handleSubagentCommand('implementer', '42', { executor: 'claude-code' }, {});
+    await handleSubagentCommand('implementer', 42, { executor: 'claude-code' }, {});
 
     expect(capturedClaudeSpawnArgs).toBeDefined();
     expect(capturedClaudeSpawnArgs!).toContain('--mcp-config');
@@ -468,7 +468,7 @@ describe('subagent command - executeWithClaude error scenarios and tunnel behavi
   });
 
   test('prints final message to stdout for claude executor', async () => {
-    await handleSubagentCommand('implementer', '42', { executor: 'claude-code' }, {});
+    await handleSubagentCommand('implementer', 42, { executor: 'claude-code' }, {});
 
     expect(stdoutWriteCalls.join('')).toContain('Claude execution complete.');
   });
@@ -488,7 +488,7 @@ describe('subagent command - executeWithClaude error scenarios and tunnel behavi
     mocks.extractStructuredMessages.mockReturnValue([]);
 
     await expect(
-      handleSubagentCommand('implementer', '42', { executor: 'claude-code' }, {})
+      handleSubagentCommand('implementer', 42, { executor: 'claude-code' }, {})
     ).rejects.toThrow('non-zero exit code');
   });
 
@@ -505,7 +505,7 @@ describe('subagent command - executeWithClaude error scenarios and tunnel behavi
       return createStreamingProcessMock({ exitCode: 1 });
     });
 
-    await handleSubagentCommand('implementer', '42', { executor: 'claude-code' }, {});
+    await handleSubagentCommand('implementer', 42, { executor: 'claude-code' }, {});
 
     expect(stdoutWriteCalls.join('')).toContain('Completed despite exit code.');
   });
@@ -517,7 +517,7 @@ describe('subagent command - executeWithClaude error scenarios and tunnel behavi
     mocks.extractStructuredMessages.mockReturnValue([]);
 
     await expect(
-      handleSubagentCommand('implementer', '42', { executor: 'claude-code' }, {})
+      handleSubagentCommand('implementer', 42, { executor: 'claude-code' }, {})
     ).rejects.toThrow('timed out');
   });
 
@@ -534,7 +534,7 @@ describe('subagent command - executeWithClaude error scenarios and tunnel behavi
       return createStreamingProcessMock({ killedByInactivity: true });
     });
 
-    await handleSubagentCommand('implementer', '42', { executor: 'claude-code' }, {});
+    await handleSubagentCommand('implementer', 42, { executor: 'claude-code' }, {});
 
     expect(stdoutWriteCalls.join('')).toContain('Completed before timeout.');
   });
@@ -550,7 +550,7 @@ describe('subagent command - executeWithClaude error scenarios and tunnel behavi
     mocks.extractStructuredMessages.mockReturnValue([]);
 
     await expect(
-      handleSubagentCommand('implementer', '42', { executor: 'claude-code' }, {})
+      handleSubagentCommand('implementer', 42, { executor: 'claude-code' }, {})
     ).rejects.toThrow('No final agent message found');
   });
 
@@ -566,13 +566,13 @@ describe('subagent command - executeWithClaude error scenarios and tunnel behavi
       return createStreamingProcessMock();
     });
 
-    await handleSubagentCommand('implementer', '42', { executor: 'claude-code' }, {});
+    await handleSubagentCommand('implementer', 42, { executor: 'claude-code' }, {});
 
     expect(stdoutWriteCalls.join('')).toContain('Fallback assistant message.');
   });
 
   test('creates tunnel server and passes TIM_OUTPUT_SOCKET when tunnel is inactive', async () => {
-    await handleSubagentCommand('implementer', '42', { executor: 'claude-code' }, {});
+    await handleSubagentCommand('implementer', 42, { executor: 'claude-code' }, {});
 
     expect(createTunnelServerCalls).toHaveLength(1);
     expect(createTunnelServerCalls[0]).toContain('output.sock');
@@ -587,14 +587,14 @@ describe('subagent command - executeWithClaude error scenarios and tunnel behavi
   test('does not create tunnel server when tunnel is already active', async () => {
     mocks.isTunnelActive.mockReturnValue(true);
 
-    await handleSubagentCommand('implementer', '42', { executor: 'claude-code' }, {});
+    await handleSubagentCommand('implementer', 42, { executor: 'claude-code' }, {});
 
     expect(createTunnelServerCalls).toHaveLength(0);
     expect(capturedSpawnEnv).toBeDefined();
   });
 
   test('calls tunnel server close on cleanup after successful execution', async () => {
-    await handleSubagentCommand('implementer', '42', { executor: 'claude-code' }, {});
+    await handleSubagentCommand('implementer', 42, { executor: 'claude-code' }, {});
 
     expect(tunnelCloseCallCount).toBe(1);
   });
@@ -606,7 +606,7 @@ describe('subagent command - executeWithClaude error scenarios and tunnel behavi
     mocks.extractStructuredMessages.mockReturnValue([]);
 
     await expect(
-      handleSubagentCommand('implementer', '42', { executor: 'claude-code' }, {})
+      handleSubagentCommand('implementer', 42, { executor: 'claude-code' }, {})
     ).rejects.toThrow();
 
     expect(tunnelCloseCallCount).toBe(1);

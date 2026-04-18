@@ -105,10 +105,17 @@ vi.mock('../../plans.js', () => {
       await fs.writeFile(p, schemaComment + yaml.stringify(data));
     }),
     generatePlanFileContent: vi.fn(() => ''),
-    resolvePlanFromDb: vi.fn(async () => ({
+    resolvePlanByNumericId: vi.fn(async () => ({
       plan: { id: 1, title: 'Test Plan', status: 'pending', tasks: [] },
       planPath: '',
     })),
+    parsePlanIdFromCliArg: vi.fn((arg: string) => {
+      const n = parseInt(arg, 10);
+      if (isNaN(n) || n <= 0 || !Number.isInteger(n)) {
+        throw new Error(`Expected a numeric plan ID, got: "${arg}"`);
+      }
+      return n;
+    }),
     writePlanToDb: vi.fn(async () => {}),
     setPlanStatus: vi.fn(async () => {}),
     setPlanStatusById: vi.fn(async () => {}),
@@ -169,6 +176,14 @@ vi.mock('../../workspace/workspace_roundtrip.js', () => ({
   materializePlansForExecution: vi.fn(async () => undefined),
 }));
 
+vi.mock('../../workspace/workspace_setup.js', () => ({
+  setupWorkspace: vi.fn(async () => ({
+    baseDir: tempDir,
+    planFile: planFile,
+    branchCreatedDuringSetup: false,
+  })),
+}));
+
 let planFile: string;
 
 async function writePlanWithTasks() {
@@ -220,7 +235,7 @@ describe('timAgent summary options', () => {
     const options = { log: false, nonInteractive: true, summary: false } as any;
     const globalCliOptions = {};
 
-    await timAgent(planFile, options, globalCliOptions);
+    await timAgent(1, options, globalCliOptions);
 
     expect(recordStartSpy).not.toHaveBeenCalled();
     expect(recordEndSpy).not.toHaveBeenCalled();
@@ -233,7 +248,7 @@ describe('timAgent summary options', () => {
     const options = { log: false, nonInteractive: true } as any;
     const globalCliOptions = {};
 
-    await timAgent(planFile, options, globalCliOptions);
+    await timAgent(1, options, globalCliOptions);
 
     expect(recordStartSpy).not.toHaveBeenCalled();
   });
@@ -243,7 +258,7 @@ describe('timAgent summary options', () => {
     const options = { log: false, nonInteractive: true, summaryFile: outPath } as any;
     const globalCliOptions = {};
 
-    await timAgent(planFile, options, globalCliOptions);
+    await timAgent(1, options, globalCliOptions);
 
     // Summary hooks called
     expect(recordStartSpy).toHaveBeenCalled();

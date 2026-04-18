@@ -18,7 +18,7 @@ import { log, warn, error as logError } from '../../logging.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { getDatabase } from '../db/database.js';
-import { parsePlanIdFromCliArg, resolvePlanFromDb } from '../plans.js';
+import { resolvePlanByNumericId } from '../plans.js';
 import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../executors/index.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
 import { runWithHeadlessAdapterIfEnabled, updateHeadlessSessionInfo } from '../headless.js';
@@ -81,7 +81,7 @@ As you make edits, describe your reasoning. If it is not clear to you how a conf
 When you use \`jj squash\` as part of this process, do not give it any arguments since the squash message will overwrite the original commit message.`;
 
 export async function handleRebaseCommand(
-  planFile: string | undefined,
+  planId: number | undefined,
   options: RebaseCommandOptions,
   command: Command
 ): Promise<void> {
@@ -89,7 +89,7 @@ export async function handleRebaseCommand(
   const fallbackRoot = (await getGitRoot()) || process.cwd();
   const config = await loadEffectiveConfig(globalOpts.config);
   const initialRepoRoot = await resolveRepoRoot(globalOpts.config, fallbackRoot);
-  const resolved = await resolveRebasePlan(planFile, options, initialRepoRoot, globalOpts.config);
+  const resolved = await resolveRebasePlan(planId, options, initialRepoRoot, globalOpts.config);
   const effectiveConfig =
     resolved.repoRoot !== fallbackRoot
       ? await loadEffectiveConfig(globalOpts.config, { cwd: resolved.repoRoot })
@@ -311,7 +311,7 @@ export async function handleRebaseCommand(
 }
 
 async function resolveRebasePlan(
-  planFile: string | undefined,
+  planId: number | undefined,
   options: Pick<RebaseCommandOptions, 'current' | 'next'>,
   repoRoot: string,
   configPath?: string
@@ -335,7 +335,7 @@ async function resolveRebasePlan(
       throw new Error('Resolved plan does not have a numeric ID.');
     }
 
-    const resolved = await resolvePlanFromDb(String(plan.id), repoRoot);
+    const resolved = await resolvePlanByNumericId(plan.id, repoRoot);
     return {
       planId: plan.id,
       plan: resolved.plan,
@@ -344,13 +344,12 @@ async function resolveRebasePlan(
     };
   }
 
-  if (!planFile) {
+  if (!planId) {
     throw new Error('Please provide a numeric plan ID or use --next/--current to find a plan.');
   }
-  const planIdArg = String(parsePlanIdFromCliArg(planFile));
 
   const planRepoRoot = await resolveRepoRoot(configPath, repoRoot);
-  const resolved = await resolvePlanFromDb(planIdArg, planRepoRoot);
+  const resolved = await resolvePlanByNumericId(planId, planRepoRoot);
   const resolvedPlanId = resolved.plan.id;
   if (typeof resolvedPlanId !== 'number') {
     throw new Error('Resolved plan does not have a numeric ID.');

@@ -3,13 +3,12 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import yaml from 'yaml';
-import { readPlanFile, resolvePlanFromDb, writePlanFile } from './plans.js';
+import { readPlanFile, resolvePlanByNumericId, writePlanFile } from './plans.js';
 import type { PlanSchema } from './planSchema.js';
 import { handleAddCommand } from './commands/add.js';
 import { handleAddTaskCommand } from './commands/add-task.js';
 import { handleDoneCommand } from './commands/done.js';
 import { handleRemoveTaskCommand } from './commands/remove-task.js';
-import { materializePlan } from './plan_materialize.js';
 
 // Handlers that rely on mocked modules are imported dynamically in beforeEach
 let handleListCommand: any;
@@ -108,7 +107,7 @@ describe('tim CLI integration tests (internal handlers)', () => {
     const planFiles = await fs.readdir(tasksDir);
     expect(planFiles).toHaveLength(0);
 
-    const { plan } = await resolvePlanFromDb('1', tempDir);
+    const { plan } = await resolvePlanByNumericId(1, tempDir);
     expect(plan.id).toBe(1);
     expect(plan.title).toBe('Integration Test Plan');
   });
@@ -151,7 +150,7 @@ describe('tim CLI integration tests (internal handlers)', () => {
     await writePlanFile(path.join(tasksDir, '1.yml'), plan);
 
     const command = { parent: { opts: () => ({ config: configPath }) } } as any;
-    await handleShowCommand('1', {}, command);
+    await handleShowCommand(1, {}, command);
     const calls = mockLog.mock.calls.flat().map(String).join('\n');
     expect(calls).toContain('Show Test Plan');
     expect(calls).toContain('Task 1');
@@ -176,10 +175,10 @@ describe('tim CLI integration tests (internal handlers)', () => {
     await writePlanFile(path.join(tasksDir, '1.yml'), plan);
 
     const command = { parent: { opts: () => ({ config: configPath }) } } as any;
-    await handleDoneCommand('1', {}, command);
+    await handleDoneCommand(1, {}, command);
 
     // Verify the task was marked as done
-    const updatedPlan = (await resolvePlanFromDb('1', tempDir)).plan;
+    const updatedPlan = (await resolvePlanByNumericId(1, tempDir)).plan;
 
     // The plan should have tasks
     expect(updatedPlan.tasks).toBeDefined();
@@ -194,12 +193,12 @@ describe('tim CLI integration tests (internal handlers)', () => {
 
     await handleAddCommand(['Integration', 'AddTask', 'Plan'], {}, command);
 
-    const initialPlan = (await resolvePlanFromDb('1', tempDir)).plan;
+    const initialPlan = (await resolvePlanByNumericId(1, tempDir)).plan;
     expect(initialPlan.tasks ?? []).toHaveLength(0);
 
     mockLog.mockClear();
     await handleAddTaskCommand(
-      '1',
+      1,
       {
         title: 'Integration Task',
         description: 'Created via add-task integration test',
@@ -207,7 +206,7 @@ describe('tim CLI integration tests (internal handlers)', () => {
       command
     );
 
-    const updatedPlan = (await resolvePlanFromDb('1', tempDir)).plan;
+    const updatedPlan = (await resolvePlanByNumericId(1, tempDir)).plan;
     expect(updatedPlan.tasks).toHaveLength(1);
     const [task] = updatedPlan.tasks;
     expect(task?.title).toBe('Integration Task');
@@ -268,7 +267,7 @@ describe('tim CLI integration tests (internal handlers)', () => {
     await handleAddCommand(['Integration', 'Task', 'Removal'], {}, command);
 
     await handleAddTaskCommand(
-      '1',
+      1,
       {
         title: 'First Task',
         description: 'Initial task to remove later',
@@ -276,27 +275,25 @@ describe('tim CLI integration tests (internal handlers)', () => {
       command
     );
     await handleAddTaskCommand(
-      '1',
+      1,
       {
         title: 'Second Task',
         description: 'Task that should remain',
       },
       command
     );
-    const preRemovalPlan = (await resolvePlanFromDb('1', tempDir)).plan;
+    const preRemovalPlan = (await resolvePlanByNumericId(1, tempDir)).plan;
     expect(preRemovalPlan.tasks).toHaveLength(2);
-    const planFilePath = await materializePlan(1, tempDir);
-
     mockLog.mockClear();
     await handleRemoveTaskCommand(
-      planFilePath,
+      1,
       {
         index: 0,
       },
       command
     );
 
-    const updatedPlan = (await resolvePlanFromDb('1', tempDir)).plan;
+    const updatedPlan = (await resolvePlanByNumericId(1, tempDir)).plan;
     expect(updatedPlan.tasks).toHaveLength(1);
     expect(updatedPlan.tasks[0]?.title).toBe('Second Task');
     expect(typeof updatedPlan.updatedAt).toBe('string');
@@ -365,7 +362,7 @@ describe('tim CLI integration tests (internal handlers)', () => {
     );
 
     // Verify the plan has dependencies and priority
-    const created = (await resolvePlanFromDb('3', tempDir)).plan;
+    const created = (await resolvePlanByNumericId(3, tempDir)).plan;
     expect([...(created.dependencies ?? [])].sort((a, b) => a - b)).toEqual([1, 2]);
     expect(created.priority).toBe('high');
   });

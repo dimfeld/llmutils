@@ -28,7 +28,7 @@ import {
 } from '$tim/issue_utils.js';
 import type { PlanSchema, PlanWithLegacyMetadata } from '$tim/planSchema.js';
 import { loadPlansFromDb } from '$tim/plans_db.js';
-import { resolvePlanFromDb } from '$tim/plans.js';
+import { resolvePlanByNumericId } from '$tim/plans.js';
 import { getPreferredProjectGitRoot } from '$tim/workspace/workspace_info.js';
 import { getServerContext } from './init.js';
 
@@ -296,7 +296,7 @@ export async function createPlansFromIssue(
     const existingParentPlan = findPlanByIssueUrl(allPlans, parentIssueUrl);
     const parentInstruction = getIssueInstructionData(issueData, normalizedParentContent);
     if (existingParentPlan) {
-      const resolvedParentPlan = await resolvePlanFromDb(String(existingParentPlan.id), repoRoot);
+      const resolvedParentPlan = await resolvePlanByNumericId(existingParentPlan.id, repoRoot);
       const currentPlan = resolvedParentPlan.plan as PlanWithLegacyMetadata;
       const { details: updatedDetails, newSegments } = appendMissingSegments(currentPlan.details, [
         ...parentExtracted,
@@ -370,7 +370,7 @@ export async function createPlansFromIssue(
     let parentPlan: PlanSchema;
     let shouldWriteParent = false;
     if (existingParentPlan) {
-      const resolvedParentPlan = await resolvePlanFromDb(String(existingParentPlan.id), repoRoot);
+      const resolvedParentPlan = await resolvePlanByNumericId(existingParentPlan.id, repoRoot);
       const currentParentPlan = resolvedParentPlan.plan;
       parentPlanId = currentParentPlan.id;
       const { details: updatedDetails, newSegments } = appendMissingSegments(
@@ -412,7 +412,7 @@ export async function createPlansFromIssue(
       let shouldWriteChild = false;
 
       if (existingChildPlan) {
-        const resolvedChildPlan = await resolvePlanFromDb(String(existingChildPlan.id), repoRoot);
+        const resolvedChildPlan = await resolvePlanByNumericId(existingChildPlan.id, repoRoot);
         const currentChildPlan = resolvedChildPlan.plan;
         childPlanId = currentChildPlan.id;
         const { details: updatedDetails, newSegments } = appendMissingSegments(
@@ -498,7 +498,7 @@ export async function createPlansFromIssue(
     }
 
     if (existingParentPlan) {
-      const resolvedParentPlan = await resolvePlanFromDb(String(existingParentPlan.id), repoRoot);
+      const resolvedParentPlan = await resolvePlanByNumericId(existingParentPlan.id, repoRoot);
       const currentParentPlan = resolvedParentPlan.plan;
       parentPlanId = currentParentPlan.id;
       const { details: updatedDetails, newSegments } = appendMissingSegments(

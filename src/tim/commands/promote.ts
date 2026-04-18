@@ -11,7 +11,7 @@ import { getPlanByPlanId, upsertPlan } from '../db/plan.js';
 import { toPlanUpsertInput } from '../db/plan_sync.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import { resolveProjectContext } from '../plan_materialize.js';
-import { parsePlanIdFromCliArg, resolvePlanFromDb, writePlanFile } from '../plans.js';
+import { parsePlanIdFromCliArg, resolvePlanByNumericId, writePlanFile } from '../plans.js';
 import { resolveWritablePath } from '../plans/resolve_writable_path.js';
 import { ensureReferences } from '../utils/references.js';
 
@@ -35,7 +35,7 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
   }
 
   const affectedPlans = Array.from(tasksByPlan.keys()).map((planId) =>
-    String(parsePlanIdFromCliArg(planId))
+    parsePlanIdFromCliArg(planId)
   );
   if (affectedPlans.length > 1) {
     log(`This will affect ${affectedPlans.length} different plans: ${affectedPlans.join(', ')}`);
@@ -48,10 +48,10 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
   let context = await resolveProjectContext(repoRoot);
 
   for (const [rawPlanId, taskInfo] of tasksByPlan) {
-    const planId = String(parsePlanIdFromCliArg(rawPlanId));
+    const planId = parsePlanIdFromCliArg(rawPlanId);
     log(`Processing plan ${planId}...`);
     const sortedTaskInfo = taskInfo.sort((a, b) => a.taskIndex - b.taskIndex);
-    const resolvedPlan = await resolvePlanFromDb(planId, repoRoot);
+    const resolvedPlan = await resolvePlanByNumericId(planId, repoRoot);
     const originalPlan = resolvedPlan.plan;
 
     if (!originalPlan.tasks || originalPlan.tasks.length === 0) {
@@ -142,7 +142,7 @@ export async function handlePromoteCommand(taskIds: string[], options: any) {
     const outputPath = await resolveWritablePath(originalRow, repoRoot);
     if (outputPath) {
       const refreshedOriginal = (
-        await resolvePlanFromDb(String(originalPlan.id), repoRoot, { context })
+        await resolvePlanByNumericId(originalPlan.id, repoRoot, { context })
       ).plan;
       await writePlanFile(outputPath, refreshedOriginal, {
         cwdForIdentity: repoRoot,

@@ -168,7 +168,7 @@ describe('update-docs command', () => {
       },
     };
 
-    await handleUpdateDocsCommand('7', {}, mockCommand);
+    await handleUpdateDocsCommand(7, {}, mockCommand);
 
     expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
     expect(executeSpy).toHaveBeenCalledTimes(1);
@@ -177,14 +177,18 @@ describe('update-docs command', () => {
     );
   });
 
-  test('runUpdateDocs resolves repoRoot for string plan args when baseDir is omitted', async () => {
-    const helperPlanFile = path.join(tempDir, 'helper-plan.md');
-    await writePlanFile(helperPlanFile, {
-      id: 9,
-      title: 'Cross-repo helper docs update',
-      goal: 'Run helper in target repo',
-      tasks: [],
-    });
+  test('runUpdateDocs resolves repoRoot for numeric string plan IDs when baseDir is omitted', async () => {
+    const configPath = path.join(tempDir, '.tim.yml');
+    await fs.writeFile(configPath, 'defaultExecutor: codex-cli\n');
+    await writePlanToDb(
+      {
+        id: 9,
+        title: 'Cross-repo helper docs update',
+        goal: 'Run helper in target repo',
+        tasks: [],
+      },
+      { cwdForIdentity: tempDir }
+    );
 
     const executeSpy = vi.fn(async () => undefined);
     const buildExecutorAndLogSpy = vi.fn((_executor: string, options: { baseDir: string }) => {
@@ -198,18 +202,20 @@ describe('update-docs command', () => {
     process.chdir(otherDir);
 
     await runUpdateDocs(
-      helperPlanFile,
+      '9',
       {
         defaultExecutor: 'codex-cli',
         updateDocs: {},
         isUsingExternalStorage: true,
       } as any,
-      {}
+      { configPath }
     );
 
     expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
     expect(executeSpy).toHaveBeenCalledTimes(1);
-    expect(executeSpy.mock.calls[0]?.[1]?.planFilePath).toBe(helperPlanFile);
+    expect(executeSpy.mock.calls[0]?.[1]?.planFilePath).toBe(
+      path.join(tempDir, '.tim', 'plans', '9.plan.md')
+    );
   });
 
   test('runUpdateDocs uses configPath to resolve target repo for string plan IDs', async () => {

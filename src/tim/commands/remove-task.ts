@@ -4,7 +4,7 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { findTaskByTitle, selectTaskInteractive } from '../utils/task_operations.js';
-import { parsePlanIdFromCliArg, resolvePlanFromDb } from '../plans.js';
+import { resolvePlanByNumericId } from '../plans.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import { withPlanAutoSync } from '../plan_materialize.js';
 
@@ -17,16 +17,15 @@ export interface RemoveTaskOptions {
 type PlanTask = NonNullable<PlanSchema['tasks']>[number];
 
 export async function handleRemoveTaskCommand(
-  plan: string,
+  planId: number,
   options: RemoveTaskOptions,
   command: any
 ): Promise<void> {
-  const planIdArg = String(parsePlanIdFromCliArg(plan));
   const globalOpts = command.parent?.opts?.() ?? {};
 
   await loadEffectiveConfig(globalOpts.config);
   const repoRoot = await resolveRepoRoot(globalOpts.config, process.cwd());
-  const resolvedPlan = await resolvePlanFromDb(planIdArg, repoRoot);
+  const resolvedPlan = await resolvePlanByNumericId(planId, repoRoot);
   if (!Array.isArray(resolvedPlan.plan.tasks) || resolvedPlan.plan.tasks.length === 0) {
     throw new Error('Plan has no tasks to remove.');
   }
@@ -47,7 +46,7 @@ export async function handleRemoveTaskCommand(
   }
 
   await withPlanAutoSync(resolvedPlan.plan.id, repoRoot, async () => {
-    const planData = (await resolvePlanFromDb(planIdArg, repoRoot)).plan;
+    const planData = (await resolvePlanByNumericId(planId, repoRoot)).plan;
     if (!Array.isArray(planData.tasks) || planData.tasks.length === 0) {
       throw new Error('Plan has no tasks to remove.');
     }

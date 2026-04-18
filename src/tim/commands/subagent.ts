@@ -10,7 +10,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'node:path';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { parsePlanIdFromCliArg, resolvePlanFromDb } from '../plans.js';
+import { resolvePlanByNumericId } from '../plans.js';
 import { getAllIncompleteTasks } from '../plans/find_next.js';
 import { buildExecutionPromptWithoutSteps } from '../prompt_builder.js';
 import {
@@ -67,17 +67,16 @@ const minimalExecutor: Pick<Executor, 'filePathPrefix' | 'todoDirections' | 'exe
  */
 export async function handleSubagentCommand(
   agentType: SubagentType,
-  planFileArg: string,
+  planId: number,
   options: SubagentOptions,
   globalCliOptions: any
 ): Promise<void> {
-  const planIdArg = String(parsePlanIdFromCliArg(planFileArg));
   const config = await loadEffectiveConfig(globalCliOptions.config);
   const repoRoot = await resolveRepoRoot(
     globalCliOptions.config,
     (await getGitRoot()) || process.cwd()
   );
-  const { plan: planData, planPath } = await resolvePlanFromDb(planIdArg, repoRoot);
+  const { plan: planData, planPath } = await resolvePlanByNumericId(planId, repoRoot);
   const planFilePath = planPath ?? (await materializePlan(planData.id, repoRoot));
   const gitRoot = await getGitRoot(path.dirname(planFilePath));
   const executorType = options.executor || 'claude-code';
@@ -137,13 +136,13 @@ export async function handleSubagentCommand(
     .filter((s): s is string => Boolean(s?.trim()))
     .join('\n\n');
 
-  const planId = planData.id?.toString() ?? 'unknown';
+  const planIdLabel = planData.id?.toString() ?? 'unknown';
 
   // Build the agent prompt using the appropriate function
   const agentDefinition = buildAgentDefinition(
     agentType,
     contextContent,
-    planId,
+    planIdLabel,
     allInstructions || undefined,
     selectedModel
   );

@@ -64,7 +64,7 @@ interface RootCommandLike {
 }
 
 export interface ReviewGuideCommandOptions {
-  plan?: string | number;
+  plan?: number;
   executor?: string;
   autoWorkspace?: boolean;
   model?: string;

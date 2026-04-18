@@ -14,7 +14,7 @@ import {
   type ProjectContext,
 } from '../plan_materialize.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
-import { resolvePlanFromDb, writePlanFile } from '../plans.js';
+import { resolvePlanByNumericId, resolvePlanByUuid, writePlanFile } from '../plans.js';
 import { checkAndMarkParentDone as checkAndMarkParentDoneShared } from './parent_cascade.js';
 import type { PlanSchema } from '../planSchema.js';
 import { type PendingTaskResult, findPendingTask, findNextActionableItem } from './find_next.js';
@@ -29,7 +29,7 @@ type MarkDoneResult = {
 };
 
 export async function markStepDone(
-  planArg: string,
+  planId: number,
   options: { commit?: boolean },
   currentTask?: { taskIndex: number },
   baseDir?: string,
@@ -37,12 +37,14 @@ export async function markStepDone(
   configPath?: string
 ): Promise<MarkDoneResult> {
   const repoRoot = await resolveRepoRoot(configPath, (await getGitRoot(baseDir)) || baseDir);
-  const initialPlan = await resolvePlanFromDb(planArg, repoRoot);
-  const resolvedPlanArg = initialPlan.plan.uuid ?? planArg;
+  const initialPlan = await resolvePlanByNumericId(planId, repoRoot);
+  const resolvedPlanUuid = initialPlan.plan.uuid;
 
   return withPlanAutoSync(initialPlan.plan.id, repoRoot, async () => {
     const context = await resolveProjectContext(repoRoot);
-    const target = await resolvePlanFromDb(resolvedPlanArg, repoRoot, { context });
+    const target = resolvedPlanUuid
+      ? await resolvePlanByUuid(resolvedPlanUuid, repoRoot, { context })
+      : await resolvePlanByNumericId(planId, repoRoot, { context });
     const planData = target.plan;
     const outputPath = await resolveWritablePathForPlan(context, planData.id, repoRoot);
 
@@ -110,7 +112,7 @@ export async function markStepDone(
 }
 
 export async function markTaskDone(
-  planArg: string,
+  planId: number,
   taskIndex: number,
   options: { commit?: boolean } = {},
   baseDir?: string,
@@ -118,12 +120,14 @@ export async function markTaskDone(
   configPath?: string
 ): Promise<MarkDoneResult> {
   const repoRoot = await resolveRepoRoot(configPath, (await getGitRoot(baseDir)) || baseDir);
-  const initialPlan = await resolvePlanFromDb(planArg, repoRoot);
-  const resolvedPlanArg = initialPlan.plan.uuid ?? planArg;
+  const initialPlan = await resolvePlanByNumericId(planId, repoRoot);
+  const resolvedPlanUuid = initialPlan.plan.uuid;
 
   return withPlanAutoSync(initialPlan.plan.id, repoRoot, async () => {
     const context = await resolveProjectContext(repoRoot);
-    const target = await resolvePlanFromDb(resolvedPlanArg, repoRoot, { context });
+    const target = resolvedPlanUuid
+      ? await resolvePlanByUuid(resolvedPlanUuid, repoRoot, { context })
+      : await resolvePlanByNumericId(planId, repoRoot, { context });
     const planData = target.plan;
     const outputPath = await resolveWritablePathForPlan(context, planData.id, repoRoot);
 
@@ -172,19 +176,21 @@ export async function markTaskDone(
 }
 
 export async function setTaskDone(
-  planArg: string,
+  planId: number,
   options: { taskIdentifier: string | number; commit?: boolean },
   baseDir?: string,
   config?: TimConfig,
   configPath?: string
 ): Promise<MarkDoneResult> {
   const repoRoot = await resolveRepoRoot(configPath, (await getGitRoot(baseDir)) || baseDir);
-  const initialPlan = await resolvePlanFromDb(planArg, repoRoot);
-  const resolvedPlanArg = initialPlan.plan.uuid ?? planArg;
+  const initialPlan = await resolvePlanByNumericId(planId, repoRoot);
+  const resolvedPlanUuid = initialPlan.plan.uuid;
 
   return withPlanAutoSync(initialPlan.plan.id, repoRoot, async () => {
     const context = await resolveProjectContext(repoRoot);
-    const target = await resolvePlanFromDb(resolvedPlanArg, repoRoot, { context });
+    const target = resolvedPlanUuid
+      ? await resolvePlanByUuid(resolvedPlanUuid, repoRoot, { context })
+      : await resolvePlanByNumericId(planId, repoRoot, { context });
     const planData = target.plan;
     const outputPath = await resolveWritablePathForPlan(context, planData.id, repoRoot);
 

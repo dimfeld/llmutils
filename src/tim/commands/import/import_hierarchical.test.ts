@@ -18,7 +18,7 @@ vi.mock('../../plans.js', () => ({
   writePlanFile: vi.fn(),
   getMaxNumericPlanId: vi.fn(),
   readPlanFile: vi.fn(),
-  resolvePlanFromDb: vi.fn(),
+  resolvePlanByNumericId: vi.fn(),
 }));
 
 vi.mock('../../plans_db.js', () => ({
@@ -92,7 +92,7 @@ import {
   writePlanFile,
   getMaxNumericPlanId,
   readPlanFile,
-  resolvePlanFromDb,
+  resolvePlanByNumericId,
 } from '../../plans.js';
 import { loadPlansFromDb } from '../../plans_db.js';
 import { resolveProjectContext } from '../../plan_materialize.js';
@@ -210,7 +210,7 @@ describe('Hierarchical Linear Import', () => {
     vi.mocked(writePlanFile).mockResolvedValue(undefined);
     vi.mocked(getMaxNumericPlanId).mockResolvedValue(5);
     vi.mocked(readPlanFile).mockResolvedValue({ issue: [] });
-    vi.mocked(resolvePlanFromDb).mockResolvedValue({
+    vi.mocked(resolvePlanByNumericId).mockResolvedValue({
       plan: {
         id: 6,
         title: 'Existing plan',

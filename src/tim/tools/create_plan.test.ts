@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { clearAllTimCaches } from '../../testing.js';
 import { getDefaultConfig } from '../configSchema.js';
 import { closeDatabaseForTesting } from '../db/database.js';
-import { resolvePlanFromDb, writePlanToDb } from '../plans.js';
+import { resolvePlanByNumericId, writePlanToDb } from '../plans.js';
 import { createPlanTool } from './create_plan.js';
 import type { ToolContext } from './context.js';
 import type { TimConfig } from '../configSchema.js';
@@ -85,7 +85,7 @@ describe('createPlanTool references', () => {
       context
     );
 
-    const { plan, planPath } = await resolvePlanFromDb('1', tempDir);
+    const { plan, planPath } = await resolvePlanByNumericId(1, tempDir);
     expect(plan.uuid).toMatch(UUID_REGEX);
     expect(plan.title).toBe('Test Plan');
     expect(plan.details).toBe('Test details');
@@ -116,12 +116,12 @@ describe('createPlanTool references', () => {
       context
     );
 
-    const { plan: childPlan } = await resolvePlanFromDb(String(result.data?.id), tempDir);
+    const { plan: childPlan } = await resolvePlanByNumericId(result.data?.id, tempDir);
     expect(childPlan.uuid).toMatch(UUID_REGEX);
     expect(childPlan.parent).toBe(1);
     expect(childPlan.references).toBeUndefined();
 
-    const { plan: parentPlan } = await resolvePlanFromDb('1', tempDir);
+    const { plan: parentPlan } = await resolvePlanByNumericId(1, tempDir);
     expect(parentPlan.dependencies).toEqual([2]);
     expect(parentPlan.references).toBeUndefined();
     expect(parentPlan.status).toBe('in_progress');
@@ -150,9 +150,9 @@ describe('createPlanTool references', () => {
       context
     );
 
-    const { plan } = await resolvePlanFromDb('3', tempDir);
-    const { plan: dep1 } = await resolvePlanFromDb('1', tempDir);
-    const { plan: dep2 } = await resolvePlanFromDb('2', tempDir);
+    const { plan } = await resolvePlanByNumericId(3, tempDir);
+    const { plan: dep1 } = await resolvePlanByNumericId(1, tempDir);
+    const { plan: dep2 } = await resolvePlanByNumericId(2, tempDir);
 
     expect([...plan.dependencies].sort((a, b) => a - b)).toEqual([1, 2]);
     expect(plan.references).toBeUndefined();
@@ -180,8 +180,8 @@ describe('createPlanTool references', () => {
       context
     );
 
-    const { plan } = await resolvePlanFromDb('2', tempDir);
-    const { plan: sourcePlan } = await resolvePlanFromDb('1', tempDir);
+    const { plan } = await resolvePlanByNumericId(2, tempDir);
+    const { plan: sourcePlan } = await resolvePlanByNumericId(1, tempDir);
 
     expect(plan.discoveredFrom).toBe(1);
     expect(plan.references).toBeUndefined();
@@ -199,7 +199,7 @@ describe('createPlanTool references', () => {
       context
     );
 
-    const { plan } = await resolvePlanFromDb('1', tempDir);
+    const { plan } = await resolvePlanByNumericId(1, tempDir);
     expect(plan.uuid).toMatch(UUID_REGEX);
     expect(plan.references === undefined || Object.keys(plan.references).length === 0).toBe(true);
   });

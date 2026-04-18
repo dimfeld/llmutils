@@ -133,7 +133,7 @@ export async function executeStubPlan({
     log(boldMarkdownHeaders('\n## Running Final Review\n'));
     try {
       const reviewResult = await handleReviewCommand(
-        planFilePath,
+        planData.id,
         isNonInteractiveReview
           ? { cwd: baseDir, saveIssues: true, noAutofix: true }
           : { cwd: baseDir },

@@ -61,7 +61,7 @@ import {
 import { getAssignmentEntriesByProject } from '../db/assignment.js';
 import { getProject } from '../db/project.js';
 import type { WorkspaceType } from '../db/workspace.js';
-import { parsePlanIdFromCliArg, resolvePlanFromDb } from '../plans.js';
+import { resolvePlanByNumericId } from '../plans.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import { loadPlansFromDb } from '../plans_db.js';
 import {
@@ -965,13 +965,10 @@ async function tryReuseExistingWorkspace(
 }
 
 export async function handleWorkspaceAddCommand(
-  planIdentifier: string | undefined,
+  planId: number | undefined,
   options: any,
   command: Command
 ) {
-  const normalizedPlanIdentifier = planIdentifier
-    ? String(parsePlanIdFromCliArg(planIdentifier))
-    : undefined;
   const globalOpts = command.parent!.parent!.opts();
   const workspaceType = resolveWorkspaceTypeOption(options);
 
@@ -1036,9 +1033,9 @@ export async function handleWorkspaceAddCommand(
   } else if (issueInfo) {
     // Use issue identifier for workspace ID
     workspaceId = `issue-${issueInfo.identifier}`;
-  } else if (normalizedPlanIdentifier) {
+  } else if (planId !== undefined) {
     // Generate ID based on plan
-    workspaceId = `task-${normalizedPlanIdentifier}`;
+    workspaceId = `task-${planId}`;
   } else {
     // Generate a random ID for standalone workspace
     workspaceId = generateAlphanumericId();
@@ -1048,10 +1045,10 @@ export async function handleWorkspaceAddCommand(
   let resolvedPlanFilePath: string | undefined;
   let planData: PlanSchema | undefined;
 
-  if (normalizedPlanIdentifier) {
+  if (planId !== undefined) {
     try {
       const planRepoRoot = await resolveRepoRoot(globalOpts.config, gitRoot);
-      const resolvedPlan = await resolvePlanFromDb(normalizedPlanIdentifier, planRepoRoot);
+      const resolvedPlan = await resolvePlanByNumericId(planId, planRepoRoot);
       planData = resolvedPlan.plan;
       resolvedPlanFilePath =
         resolvedPlan.planPath ??
@@ -1176,10 +1173,7 @@ export async function handleWorkspaceAddCommand(
         log(chalk.green(`✓ Issue ${issueInfo.identifier} imported successfully`));
         importedPlanId = result.planId;
         if (result.planId) {
-          const resolvedImportedPlan = await resolvePlanFromDb(
-            String(result.planId),
-            workspace.path
-          );
+          const resolvedImportedPlan = await resolvePlanByNumericId(result.planId, workspace.path);
           importedPlan = resolvedImportedPlan.plan;
         }
       } else {
@@ -1414,19 +1408,18 @@ export async function handleWorkspacePushCommand(
 }
 
 export async function handleWorkspacePullPlanCommand(
-  planIdentifier: string | undefined,
+  planId: number | undefined,
   options: { workspace?: string; branch?: string; remote?: string },
   command: Command
 ) {
-  if (!planIdentifier) {
+  if (!planId) {
     throw new Error('A numeric plan ID is required.');
   }
-  const planIdArg = String(parsePlanIdFromCliArg(planIdentifier));
 
   const globalOpts = command.parent!.parent!.opts();
   const workspace = await resolveWorkspaceIdentifier(options.workspace);
   const repoRoot = await resolveRepoRoot(globalOpts.config, process.cwd());
-  const plan = (await resolvePlanFromDb(planIdArg, repoRoot)).plan;
+  const plan = (await resolvePlanByNumericId(planId, repoRoot)).plan;
   const branchName =
     options.branch ??
     plan.branch ??
@@ -1441,7 +1434,7 @@ export async function handleWorkspacePullPlanCommand(
 
   if (!branchName) {
     throw new Error(
-      `Could not determine a branch/bookmark name from plan ${planIdArg}. Use --branch to specify one explicitly.`
+      `Could not determine a branch/bookmark name from plan ${planId}. Use --branch to specify one explicitly.`
     );
   }
 
@@ -1916,7 +1909,7 @@ export async function handleWorkspaceUpdateCommand(
   options: {
     name?: string;
     description?: string;
-    fromPlan?: string;
+    fromPlan?: number;
     primary?: boolean;
     auto?: boolean;
   },
@@ -1978,11 +1971,10 @@ export async function handleWorkspaceUpdateCommand(
   }
 
   // Handle description - from-plan takes precedence if both specified
-  if (options.fromPlan) {
+  if (options.fromPlan !== undefined) {
     try {
-      const fromPlanIdArg = String(parsePlanIdFromCliArg(options.fromPlan));
       const repoRoot = await resolveRepoRoot(globalOpts.config, process.cwd());
-      const plan = (await resolvePlanFromDb(fromPlanIdArg, repoRoot)).plan;
+      const plan = (await resolvePlanByNumericId(options.fromPlan, repoRoot)).plan;
       const planDescription = buildDescriptionFromPlan(plan);
       const planId = plan.id ? String(plan.id) : '';
       patch.description = planId ? `${planId} - ${planDescription}` : planDescription;

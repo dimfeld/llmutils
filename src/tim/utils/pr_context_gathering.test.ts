@@ -57,7 +57,7 @@ function makeDeps(
     validatePrIdentifier: vi.fn(),
     getGitRepository: vi.fn(async () => 'acme/repo'),
     getGitRoot: vi.fn(async () => '/tmp/repo'),
-    resolvePlanFromDb: vi.fn(async () => ({
+    resolvePlanByNumericId: vi.fn(async () => ({
       plan: { id: 22, uuid: '22-uuid' },
       planPath: null,
     })) as any,
@@ -102,7 +102,7 @@ describe('gatherPrContext', () => {
     const deps = makeDeps();
     const result = await gatherPrContext({ db: {} as Database, plan: 22 }, deps);
 
-    expect(deps.resolvePlanFromDb).toHaveBeenCalled();
+    expect(deps.resolvePlanByNumericId).toHaveBeenCalled();
     expect(deps.getPrStatusForPlan).toHaveBeenCalledWith({} as Database, '22-uuid');
     expect(result.prUrl).toBe('https://github.com/acme/repo/pull/123');
   });

@@ -36,7 +36,7 @@ vi.mock('../../plans.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../plans.js')>();
   return {
     ...actual,
-    resolvePlanFromDb: vi.fn(async (_p: string) => ({
+    resolvePlanByNumericId: vi.fn(async (_p: number) => ({
       plan: {
         id: 1,
         title: 'P',
@@ -55,7 +55,7 @@ vi.mock('../../plans.js', () => ({
   })),
   writePlanFile: vi.fn(async (_p: string, _data: any) => {}),
   generatePlanFileContent: vi.fn(() => ''),
-  resolvePlanFromDb: vi.fn(async () => ({
+  resolvePlanByNumericId: vi.fn(async () => ({
     plan: { id: 1, title: 'P', status: 'pending', tasks: [] },
     planPath: '/tmp/plan.yml',
   })),
@@ -154,7 +154,7 @@ describe('timAgent serial captureOutput integration', () => {
   });
 
   test('passes captureOutput: "result" and records output in serial mode', async () => {
-    await timAgent('/tmp/plan.yml', { summary: true, log: false, serialTasks: true }, {});
+    await timAgent(1, { summary: true, log: false, serialTasks: true }, {});
 
     // Verify executor called with captureOutput: 'result'
     expect(executorExecuteSpy).toHaveBeenCalledTimes(1);

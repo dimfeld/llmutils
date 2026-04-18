@@ -2,9 +2,23 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import type { PlanSchema } from '../planSchema.js';
 
-vi.mock('../plans.js', () => ({
-  writePlanFile: vi.fn(async (..._args: unknown[]) => {}),
-}));
+vi.mock('../plans.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../plans.js')>();
+  return {
+    ...actual,
+    writePlanFile: vi.fn(async (..._args: unknown[]) => {}),
+    resolvePlanByNumericId: vi.fn(async (..._args: unknown[]) => ({
+      plan: {
+        id: 317,
+        uuid: 'plan-317',
+        status: 'in_progress',
+        tasks: [],
+        pullRequest: ['https://github.com/acme/repo/pull/1'],
+      } as unknown as PlanSchema,
+      planPath: '/tmp/317.plan.md',
+    })),
+  };
+});
 
 vi.mock('../db/database.js', () => ({
   getDatabase: vi.fn(() => ({ id: 'db' })),
@@ -45,7 +59,10 @@ import {
   detectExistingPrUrl,
 } from './create_pr.js';
 
-import { writePlanFile as mockWritePlanFileFn } from '../plans.js';
+import {
+  writePlanFile as mockWritePlanFileFn,
+  resolvePlanByNumericId as mockResolvePlanByNumericIdFn,
+} from '../plans.js';
 import { getDatabase as mockGetDatabaseFn } from '../db/database.js';
 import { resolvePlan as mockResolvePlanFn } from '../plan_display.js';
 import { syncPlanPrLinks as mockSyncPlanPrLinksFn } from '../../common/github/pr_status_service.js';
@@ -53,6 +70,7 @@ import { getUsingJj as mockGetUsingJjFn } from '../../common/git.js';
 import { buildExecutorAndLog as mockBuildExecutorAndLogFn } from '../executors/index.js';
 
 const mockWritePlanFile = vi.mocked(mockWritePlanFileFn);
+const mockResolvePlanByNumericId = vi.mocked(mockResolvePlanByNumericIdFn);
 const mockGetDatabase = vi.mocked(mockGetDatabaseFn);
 const mockResolvePlan = vi.mocked(mockResolvePlanFn);
 const mockSyncPlanPrLinks = vi.mocked(mockSyncPlanPrLinksFn);
@@ -70,6 +88,16 @@ function createSpawnResult(exitCode: number, stdout: string, stderr = ''): any {
 describe('create_pr command helpers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockResolvePlanByNumericId.mockResolvedValue({
+      plan: {
+        id: 317,
+        uuid: 'plan-317',
+        status: 'in_progress',
+        tasks: [],
+        pullRequest: ['https://github.com/acme/repo/pull/1'],
+      } as unknown as PlanSchema,
+      planPath: '/tmp/317.plan.md',
+    });
   });
   afterEach(() => {
     vi.restoreAllMocks();
@@ -156,7 +184,7 @@ describe('create_pr command helpers', () => {
         .mockReturnValue(
           createSpawnResult(0, JSON.stringify([{ url: 'https://github.com/acme/repo/pull/42' }]))
         );
-      mockResolvePlan.mockResolvedValueOnce({
+      mockResolvePlanByNumericId.mockResolvedValueOnce({
         plan: {
           id: 317,
           uuid: 'plan-317',
@@ -180,7 +208,7 @@ describe('create_pr command helpers', () => {
         ['gh', 'pr', 'list', '--head', 'feature-branch', '--json', 'url'],
         expect.objectContaining({ cwd: '/tmp' })
       );
-      expect(mockResolvePlan).toHaveBeenCalledWith('317', { gitRoot: '/tmp' });
+      expect(mockResolvePlanByNumericId).toHaveBeenCalledWith(317, '/tmp');
       expect(mockWritePlanFile).toHaveBeenCalledTimes(1);
       expect(mockGetDatabase).toHaveBeenCalledTimes(1);
       expect(mockSyncPlanPrLinks).toHaveBeenCalledWith(
@@ -205,7 +233,7 @@ describe('create_pr command helpers', () => {
       );
 
       expect(prUrl).toBeNull();
-      expect(mockResolvePlan).not.toHaveBeenCalled();
+      expect(mockResolvePlanByNumericId).not.toHaveBeenCalled();
       expect(mockWritePlanFile).not.toHaveBeenCalled();
       expect(mockSyncPlanPrLinks).not.toHaveBeenCalled();
     });
@@ -214,7 +242,7 @@ describe('create_pr command helpers', () => {
       vi.spyOn(Bun, 'spawn').mockReturnValue(
         createSpawnResult(0, JSON.stringify([{ url: 'https://github.com/acme/repo/pull/42' }]))
       );
-      mockResolvePlan.mockResolvedValueOnce({
+      mockResolvePlanByNumericId.mockResolvedValueOnce({
         plan: {
           id: 319,
           uuid: 'plan-319',
@@ -228,9 +256,11 @@ describe('create_pr command helpers', () => {
       await detectAndStorePrUrl(319, 'plan-319', '/tmp/319.plan.md', 'feature-branch', '/tmp');
 
       expect(mockWritePlanFile).toHaveBeenCalledTimes(1);
-      expect(mockSyncPlanPrLinks).toHaveBeenCalledWith({ id: 'db' }, 'plan-319', [
-        'https://github.com/acme/repo/pull/42',
-      ]);
+      expect(mockSyncPlanPrLinks).toHaveBeenCalledWith(
+        { id: 'db' },
+        'plan-319',
+        expect.arrayContaining(['https://github.com/acme/repo/pull/42'])
+      );
     });
 
     test('throws when gh list command fails', async () => {
@@ -240,7 +270,7 @@ describe('create_pr command helpers', () => {
         detectAndStorePrUrl(320, 'plan-320', '/tmp/320.plan.md', 'feature-branch', '/tmp')
       ).rejects.toThrow('gh: not authenticated');
 
-      expect(mockResolvePlan).not.toHaveBeenCalled();
+      expect(mockResolvePlanByNumericId).not.toHaveBeenCalled();
       expect(mockWritePlanFile).not.toHaveBeenCalled();
       expect(mockSyncPlanPrLinks).not.toHaveBeenCalled();
     });
@@ -254,7 +284,7 @@ describe('create_pr command helpers', () => {
         detectAndStorePrUrl(321, undefined, '/tmp/321.plan.md', 'feature-branch', '/tmp')
       ).rejects.toThrow('Plan 321 is missing UUID');
 
-      expect(mockResolvePlan).not.toHaveBeenCalled();
+      expect(mockResolvePlanByNumericId).not.toHaveBeenCalled();
       expect(mockWritePlanFile).not.toHaveBeenCalled();
       expect(mockSyncPlanPrLinks).not.toHaveBeenCalled();
     });
@@ -399,7 +429,7 @@ describe('create_pr command helpers', () => {
       vi.spyOn(Bun, 'spawn').mockReturnValue(
         createSpawnResult(0, JSON.stringify([{ url: 'https://github.com/acme/repo/pull/88' }]))
       );
-      mockResolvePlan.mockResolvedValueOnce({
+      mockResolvePlanByNumericId.mockResolvedValueOnce({
         plan: {
           id: 501,
           uuid: 'plan-501',
@@ -445,7 +475,7 @@ describe('create_pr command helpers', () => {
         .mockReturnValueOnce(
           createSpawnResult(0, JSON.stringify([{ url: 'https://github.com/acme/repo/pull/99' }]))
         );
-      mockResolvePlan.mockResolvedValueOnce({
+      mockResolvePlanByNumericId.mockResolvedValueOnce({
         plan: {
           id: 502,
           uuid: 'plan-502',

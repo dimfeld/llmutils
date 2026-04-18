@@ -12,7 +12,7 @@ import type {
 } from './schemas.js';
 
 type UpdatePlanTaskArguments = {
-  plan: string;
+  plan: number;
   taskTitle?: string;
   taskIndex?: number;
   newTitle?: string;

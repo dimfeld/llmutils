@@ -19,7 +19,7 @@ import type { PlanBaseTrackingUpdate } from '../db/plan.js';
 import { setPlanBaseTracking } from '../db/plan.js';
 import { updateHeadlessSessionInfo } from '../headless.js';
 import { materializePlan, resolveProjectContext } from '../plan_materialize.js';
-import { readPlanFile, resolvePlanFromDb } from '../plans.js';
+import { readPlanFile, resolvePlanByNumericId } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { WorkspaceAutoSelector } from './workspace_auto_selector.js';
 import { findWorkspaceInfosByTaskId } from './workspace_info.js';
@@ -76,7 +76,7 @@ async function getParentPlanBranch(
   }
 
   const gitRoot = await getGitRoot(currentBaseDir);
-  const parentPlan = await resolvePlanFromDb(String(plan.parent), gitRoot);
+  const parentPlan = await resolvePlanByNumericId(plan.parent, gitRoot);
   return parentPlan.plan.branch ?? generateBranchNameFromPlan(parentPlan.plan);
 }
 
@@ -101,7 +101,7 @@ async function resolveWorkspaceBranchContext(
       );
     }
   } else if (typeof options.planId === 'number') {
-    planData = (await resolvePlanFromDb(String(options.planId), currentBaseDir)).plan;
+    planData = (await resolvePlanByNumericId(options.planId, currentBaseDir)).plan;
   }
 
   if (planData) {
@@ -124,7 +124,7 @@ async function resolveWorkspaceBranchContext(
       let resolvedBaseBranch = planData.baseBranch;
       if (currentPlanFile && typeof options.planId === 'number') {
         try {
-          const dbPlan = (await resolvePlanFromDb(String(options.planId), currentBaseDir)).plan;
+          const dbPlan = (await resolvePlanByNumericId(options.planId, currentBaseDir)).plan;
           resolvedBaseBranch = dbPlan.baseBranch;
         } catch {
           // Fall back to file-based baseBranch if DB lookup fails

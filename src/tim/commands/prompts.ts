@@ -13,15 +13,14 @@ import {
 } from '../mcp/generate_mode.js';
 import { getCombinedTitle } from '../display_utils.js';
 import { findLatestPlanFromDb, findNextReadyDependencyFromDb } from './plan_discovery.js';
-import { parsePlanIdFromCliArg, resolvePlanFromDb } from '../plans.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import type { PlanSchema } from '../planSchema.js';
 import { findPlanFileOnDiskAsync } from '../plans/find_plan_file.js';
 import * as fs from 'node:fs/promises';
 
 type PromptCommandOptions = {
-  plan?: string;
-  nextReady?: string;
+  plan?: number;
+  nextReady?: number;
   latest?: boolean;
   allowMultiplePlans?: boolean;
   // Review-specific options
@@ -107,8 +106,12 @@ const PROMPT_DEFINITIONS: PromptDefinition[] = [
     supportsAllowMultiplePlans: false,
     load: async (args, context) => {
       const { buildReviewPromptFromOptions } = await import('./review.js');
+      if (!args.plan) {
+        throw new Error('Review prompt requires a numeric plan ID.');
+      }
+      const reviewPlanId = Number.parseInt(args.plan, 10);
       return await buildReviewPromptFromOptions(
-        args.plan ?? '',
+        reviewPlanId,
         {
           taskIndex: args.taskIndex,
           taskTitle: args.taskTitle,
@@ -157,12 +160,12 @@ function extractPromptText(result: PromptResult): string {
   return textBlocks.join('\n\n');
 }
 
-function normalizePlanIdentifier(plan: string | undefined): string | undefined {
-  if (!plan) {
+function normalizePlanIdentifier(plan: string | number | undefined): string | undefined {
+  if (plan === undefined || plan === null) {
     return undefined;
   }
 
-  const trimmed = plan.trim();
+  const trimmed = String(plan).trim();
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
@@ -275,7 +278,7 @@ export async function buildPromptText(
 
 export async function handlePromptsCommand(
   promptName: string | undefined,
-  planArg: string | undefined,
+  planId: number | undefined,
   options: PromptCommandOptions,
   command: any
 ): Promise<void> {
@@ -298,7 +301,7 @@ export async function handlePromptsCommand(
   };
 
   // Validate input options first
-  let planOptionsSet = [planArg, options.plan, options.nextReady, options.latest].reduce(
+  const planOptionsSet = [planId, options.plan, options.nextReady, options.latest].reduce<number>(
     (acc, val) => acc + (val ? 1 : 0),
     0
   );
@@ -310,17 +313,12 @@ export async function handlePromptsCommand(
     );
   }
 
-  let plan = normalizePlanIdentifier(options.plan) ?? normalizePlanIdentifier(planArg);
-  if (plan) {
-    plan = String(parsePlanIdFromCliArg(plan));
-  }
+  let plan = normalizePlanIdentifier(options.plan) ?? (planId ? String(planId) : undefined);
 
   // Handle --next-ready option - find and operate on next ready dependency
-  if (options.nextReady) {
+  if (options.nextReady !== undefined) {
     const repoRoot = pathContext.gitRoot;
-    const parentPlanId = parsePlanIdFromCliArg(options.nextReady);
-
-    const result = await findNextReadyDependencyFromDb(parentPlanId, repoRoot, repoRoot, true);
+    const result = await findNextReadyDependencyFromDb(options.nextReady, repoRoot, repoRoot, true);
 
     if (!result.plan) {
       log(result.message);

@@ -31,7 +31,7 @@ vi.mock('../plans.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../plans.js')>();
   return {
     ...actual,
-    resolvePlanFromDb: vi.fn(async () => ({
+    resolvePlanByNumericId: vi.fn(async () => ({
       plan: {},
       planPath: '',
     })),
@@ -575,9 +575,9 @@ Authentication implementation plan
     const planFile = path.join(tasksDir, '789-implement-auth.plan.md');
     await fs.writeFile(planFile, planContent);
 
-    const { resolvePlanFromDb } = await import('../plans.js');
-    vi.mocked(resolvePlanFromDb).mockImplementation(async (identifier: string) => {
-      if (identifier !== '789') {
+    const { resolvePlanByNumericId } = await import('../plans.js');
+    vi.mocked(resolvePlanByNumericId).mockImplementation(async (identifier: number) => {
+      if (identifier !== 789) {
         throw new Error(`Plan not found: ${identifier}`);
       }
       return {
@@ -593,7 +593,7 @@ Authentication implementation plan
 
     const { handleWorkspaceUpdateCommand } = await import('./workspace.js');
 
-    await handleWorkspaceUpdateCommand(workspaceDir, { fromPlan: '789' }, {
+    await handleWorkspaceUpdateCommand(workspaceDir, { fromPlan: 789 }, {
       parent: {
         parent: {
           opts: () => ({ config: undefined }),
@@ -627,8 +627,8 @@ Authentication implementation plan
     const planFile = path.join(tasksDir, 'no-id.plan.md');
     await fs.writeFile(planFile, '---\ntitle: Maintenance\n---\n');
 
-    const { resolvePlanFromDb } = await import('../plans.js');
-    vi.mocked(resolvePlanFromDb).mockResolvedValue({
+    const { resolvePlanByNumericId } = await import('../plans.js');
+    vi.mocked(resolvePlanByNumericId).mockResolvedValue({
       plan: {
         title: 'Maintenance',
         issue: [],
@@ -638,7 +638,7 @@ Authentication implementation plan
 
     const { handleWorkspaceUpdateCommand } = await import('./workspace.js');
 
-    await handleWorkspaceUpdateCommand(workspaceDir, { fromPlan: '100' }, {
+    await handleWorkspaceUpdateCommand(workspaceDir, { fromPlan: 100 }, {
       parent: {
         parent: {
           opts: () => ({ config: undefined }),
@@ -687,14 +687,14 @@ describe('extractIssueNumber helper', () => {
       gitRoot: localTempDir,
     });
 
-    const { resolvePlanFromDb } = await import('../plans.js');
-    vi.mocked(resolvePlanFromDb).mockResolvedValue({
+    const { resolvePlanByNumericId } = await import('../plans.js');
+    vi.mocked(resolvePlanByNumericId).mockResolvedValue({
       plan: plan as any,
       planPath: '/fake/plan.md',
     });
 
     const { handleWorkspaceUpdateCommand } = await import('./workspace.js');
-    await handleWorkspaceUpdateCommand(workspaceDir, { fromPlan: '1' }, {
+    await handleWorkspaceUpdateCommand(workspaceDir, { fromPlan: 1 }, {
       parent: {
         parent: {
           opts: () => ({ config: undefined }),

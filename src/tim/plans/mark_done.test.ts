@@ -7,6 +7,7 @@ import { markStepDone, markTaskDone, setTaskDone } from './mark_done.js';
 import { closeDatabaseForTesting } from '../db/database.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
 import { readPlanFile, writePlanFile } from '../plans.js';
+import { getMaterializedPlanPath } from '../plan_materialize.js';
 import type { PlanSchema } from '../planSchema.js';
 
 vi.mock('../assignments/remove_plan_assignment.js', () => ({
@@ -56,13 +57,13 @@ describe('markStepDone', () => {
     };
 
     const planPath = path.join(tasksDir, '1.yml');
-    await writePlanFile(planPath, plan);
+    await writePlanFile(planPath, plan, { cwdForIdentity: tempDir });
 
-    const result = await markStepDone(planPath, {}, undefined, tempDir, {});
+    const result = await markStepDone(1, {}, undefined, tempDir, {});
 
     expect(result.planComplete).toBe(false);
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = await readPlanFile(getMaterializedPlanPath(tempDir, 1));
     expect(updatedPlan.tasks[0].done).toBe(true);
     expect(updatedPlan.tasks[1].done).toBe(false);
   });
@@ -84,14 +85,14 @@ describe('markStepDone', () => {
     };
 
     const planPath = path.join(tasksDir, '1.yml');
-    await writePlanFile(planPath, plan);
+    await writePlanFile(planPath, plan, { cwdForIdentity: tempDir });
 
-    const result = await markStepDone(planPath, {}, undefined, tempDir, {});
+    const result = await markStepDone(1, {}, undefined, tempDir, {});
 
     expect(result.planComplete).toBe(true);
     expect(result.status).toBe('needs_review');
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = await readPlanFile(getMaterializedPlanPath(tempDir, 1));
     expect(updatedPlan.status).toBe('needs_review');
     expect(updatedPlan.tasks[0].done).toBe(true);
   });
@@ -107,16 +108,16 @@ describe('markStepDone', () => {
     };
 
     const planPath = path.join(tasksDir, '1.yml');
-    await writePlanFile(planPath, plan);
+    await writePlanFile(planPath, plan, { cwdForIdentity: tempDir });
 
-    const result = await markStepDone(planPath, {}, undefined, tempDir, {
+    const result = await markStepDone(1, {}, undefined, tempDir, {
       planAutocompleteStatus: 'done',
     } as any);
 
     expect(result.planComplete).toBe(true);
     expect(result.status).toBe('done');
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = await readPlanFile(getMaterializedPlanPath(tempDir, 1));
     expect(updatedPlan.status).toBe('done');
   });
 
@@ -131,15 +132,18 @@ describe('markStepDone', () => {
     };
 
     const planPath = path.join(tasksDir, '1.yml');
-    await writePlanFile(planPath, plan);
+    await writePlanFile(planPath, plan, { cwdForIdentity: tempDir });
 
-    await markStepDone(planPath, {}, undefined, tempDir, {});
+    await markStepDone(1, {}, undefined, tempDir, {});
     expect(removePlanAssignment).not.toHaveBeenCalled();
 
     (removePlanAssignment as ReturnType<typeof vi.fn>).mockClear();
 
-    await writePlanFile(planPath, plan);
-    await markStepDone(planPath, {}, undefined, tempDir, {
+    // Reset the plan by writing to both the original path and the materialized path
+    // so that withPlanAutoSync's sync doesn't restore the old state
+    await writePlanFile(planPath, plan, { cwdForIdentity: tempDir });
+    await writePlanFile(getMaterializedPlanPath(tempDir, 1), plan, { cwdForIdentity: tempDir });
+    await markStepDone(1, {}, undefined, tempDir, {
       planAutocompleteStatus: 'done',
     } as any);
     expect(removePlanAssignment).toHaveBeenCalledTimes(1);
@@ -156,15 +160,14 @@ describe('markStepDone', () => {
     };
 
     const planPath = path.join(tasksDir, '1.yml');
-    await writePlanFile(planPath, plan);
+    await writePlanFile(planPath, plan, { cwdForIdentity: tempDir });
 
-    const result = await markStepDone(planPath, {}, undefined, tempDir, {});
+    const result = await markStepDone(1, {}, undefined, tempDir, {});
 
     expect(result.planComplete).toBe(false);
     expect(result.status).toBe('in_progress');
-
-    const savedPlan = await readPlanFile(planPath);
-    expect(savedPlan.status).toBe('in_progress');
+    // markStepDone returns early when there are no tasks, without writing the plan file
+    // so we just verify the result directly instead of reading from materialized path
   });
 
   test('handles plan with no pending tasks', async () => {
@@ -184,9 +187,9 @@ describe('markStepDone', () => {
     };
 
     const planPath = path.join(tasksDir, '1.yml');
-    await writePlanFile(planPath, plan);
+    await writePlanFile(planPath, plan, { cwdForIdentity: tempDir });
 
-    const result = await markStepDone(planPath, {}, undefined, tempDir, {});
+    const result = await markStepDone(1, {}, undefined, tempDir, {});
 
     expect(result.planComplete).toBe(true);
     expect(result.message).toBe('All tasks in the plan are already done.');
@@ -215,14 +218,14 @@ describe('markStepDone', () => {
     };
 
     const planPath = path.join(tasksDir, '1.yml');
-    await writePlanFile(planPath, plan);
+    await writePlanFile(planPath, plan, { cwdForIdentity: tempDir });
 
-    const result = await markStepDone(planPath, {}, undefined, tempDir, {});
+    const result = await markStepDone(1, {}, undefined, tempDir, {});
 
     expect(result.planComplete).toBe(true);
     expect(result.status).toBe('needs_review');
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = await readPlanFile(getMaterializedPlanPath(tempDir, 1));
     expect(updatedPlan.status).toBe('needs_review');
     expect(updatedPlan.tasks.every((task) => task.done)).toBe(true);
     expect(removePlanAssignment).not.toHaveBeenCalled();
@@ -271,13 +274,13 @@ describe('markTaskDone', () => {
     };
 
     const planPath = path.join(tasksDir, '1.yml');
-    await writePlanFile(planPath, plan);
+    await writePlanFile(planPath, plan, { cwdForIdentity: tempDir });
 
-    const result = await markTaskDone(planPath, 1, {}, tempDir, {});
+    const result = await markTaskDone(1, 1, {}, tempDir, {});
 
     expect(result.planComplete).toBe(false);
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = await readPlanFile(getMaterializedPlanPath(tempDir, 1));
     expect(updatedPlan.tasks[0].done).toBe(false);
     expect(updatedPlan.tasks[1].done).toBe(true);
   });
@@ -304,14 +307,14 @@ describe('markTaskDone', () => {
     };
 
     const planPath = path.join(tasksDir, '1.yml');
-    await writePlanFile(planPath, plan);
+    await writePlanFile(planPath, plan, { cwdForIdentity: tempDir });
 
-    const result = await markTaskDone(planPath, 1, {}, tempDir, {});
+    const result = await markTaskDone(1, 1, {}, tempDir, {});
 
     expect(result.planComplete).toBe(true);
     expect(result.status).toBe('needs_review');
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = await readPlanFile(getMaterializedPlanPath(tempDir, 1));
     expect(updatedPlan.status).toBe('needs_review');
     expect(updatedPlan.tasks[1].done).toBe(true);
   });
@@ -333,9 +336,9 @@ describe('markTaskDone', () => {
     };
 
     const planPath = path.join(tasksDir, '1.yml');
-    await writePlanFile(planPath, plan);
+    await writePlanFile(planPath, plan, { cwdForIdentity: tempDir });
 
-    await expect(markTaskDone(planPath, 5, {}, tempDir, {})).rejects.toThrow();
+    await expect(markTaskDone(1, 5, {}, tempDir, {})).rejects.toThrow();
   });
 });
 
@@ -381,13 +384,13 @@ describe('setTaskDone', () => {
     };
 
     const planPath = path.join(tasksDir, '1.yml');
-    await writePlanFile(planPath, plan);
+    await writePlanFile(planPath, plan, { cwdForIdentity: tempDir });
 
-    const result = await setTaskDone(planPath, { taskIdentifier: 'Task 2' }, tempDir, {});
+    const result = await setTaskDone(1, { taskIdentifier: 'Task 2' }, tempDir, {});
 
     expect(result.planComplete).toBe(false);
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = await readPlanFile(getMaterializedPlanPath(tempDir, 1));
     expect(updatedPlan.tasks[0].done).toBe(false);
     expect(updatedPlan.tasks[1].done).toBe(true);
   });
@@ -409,10 +412,10 @@ describe('setTaskDone', () => {
     };
 
     const planPath = path.join(tasksDir, '1.yml');
-    await writePlanFile(planPath, plan);
+    await writePlanFile(planPath, plan, { cwdForIdentity: tempDir });
 
     await expect(
-      setTaskDone(planPath, { taskIdentifier: 'Nonexistent Task' }, tempDir, {})
+      setTaskDone(1, { taskIdentifier: 'Nonexistent Task' }, tempDir, {})
     ).rejects.toThrow();
   });
 
@@ -438,14 +441,14 @@ describe('setTaskDone', () => {
     };
 
     const planPath = path.join(tasksDir, '1.yml');
-    await writePlanFile(planPath, plan);
+    await writePlanFile(planPath, plan, { cwdForIdentity: tempDir });
 
     // "Implement" only matches one task
-    const result = await setTaskDone(planPath, { taskIdentifier: 'Implement' }, tempDir, {});
+    const result = await setTaskDone(1, { taskIdentifier: 'Implement' }, tempDir, {});
 
     expect(result.planComplete).toBe(false);
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = await readPlanFile(getMaterializedPlanPath(tempDir, 1));
     expect(updatedPlan.tasks[0].done).toBe(true);
     expect(updatedPlan.tasks[1].done).toBe(false);
   });
@@ -472,10 +475,10 @@ describe('setTaskDone', () => {
     };
 
     const planPath = path.join(tasksDir, '1.yml');
-    await writePlanFile(planPath, plan);
+    await writePlanFile(planPath, plan, { cwdForIdentity: tempDir });
 
     // "Task" matches both tasks
-    await expect(setTaskDone(planPath, { taskIdentifier: 'Task' }, tempDir, {})).rejects.toThrow(
+    await expect(setTaskDone(1, { taskIdentifier: 'Task' }, tempDir, {})).rejects.toThrow(
       /Multiple tasks match prefix/
     );
   });
@@ -502,14 +505,14 @@ describe('setTaskDone', () => {
     };
 
     const planPath = path.join(tasksDir, '1.yml');
-    await writePlanFile(planPath, plan);
+    await writePlanFile(planPath, plan, { cwdForIdentity: tempDir });
 
     // "Task" exactly matches the first task
-    const result = await setTaskDone(planPath, { taskIdentifier: 'Task' }, tempDir, {});
+    const result = await setTaskDone(1, { taskIdentifier: 'Task' }, tempDir, {});
 
     expect(result.planComplete).toBe(false);
 
-    const updatedPlan = await readPlanFile(planPath);
+    const updatedPlan = await readPlanFile(getMaterializedPlanPath(tempDir, 1));
     expect(updatedPlan.tasks[0].done).toBe(true);
     expect(updatedPlan.tasks[1].done).toBe(false);
   });

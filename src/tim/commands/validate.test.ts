@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { handleValidateCommand } from './validate.js';
 import type { TimConfig } from '../configSchema.js';
 import { clearAllTimCaches } from '../../testing.js';
-import { readPlanFile, resolvePlanFromDb, writePlanToDb } from '../plans.js';
+import { readPlanFile, resolvePlanByNumericId, writePlanToDb } from '../plans.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
@@ -1494,7 +1494,7 @@ Orphan plan body.`;
       expect(output).toContain('Found 1 orphaned discovery reference');
       expect(output).toContain('1 discoveredFrom reference removed');
 
-      const resolved = await resolvePlanFromDb('80', tempDir);
+      const resolved = await resolvePlanByNumericId(80, tempDir);
       expect(resolved.plan.discoveredFrom).toBeUndefined();
       expect(await fs.stat(path.join(tempDir, '80.plan.md')).catch(() => null)).toBeNull();
     });
@@ -1557,7 +1557,7 @@ Orphan plan body.`;
       expect(output).toContain('Auto-generating UUIDs...');
       expect(output).toContain('✓ Generated 1 UUID');
 
-      const resolved = await resolvePlanFromDb('92', tempDir);
+      const resolved = await resolvePlanByNumericId(92, tempDir);
       expect(resolved.plan.uuid).toBeTruthy();
       expect(await fs.stat(path.join(tempDir, '92.plan.md')).catch(() => null)).toBeNull();
     });
@@ -1581,7 +1581,7 @@ Orphan plan body.`;
       expect(output).toContain('Found 1 parent-child inconsistencies');
       expect(output).toContain('1 parent-child relationships fixed');
 
-      const resolvedParent = await resolvePlanFromDb('93', tempDir);
+      const resolvedParent = await resolvePlanByNumericId(93, tempDir);
       expect(resolvedParent.plan.dependencies).toEqual([94]);
       expect(await fs.stat(path.join(tempDir, '93.plan.md')).catch(() => null)).toBeNull();
       expect(await fs.stat(path.join(tempDir, '94.plan.md')).catch(() => null)).toBeNull();

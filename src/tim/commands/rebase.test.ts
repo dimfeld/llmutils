@@ -13,7 +13,7 @@ vi.mock('../plans.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../plans.js')>();
   return {
     ...actual,
-    resolvePlanFromDb: vi.fn(),
+    resolvePlanByNumericId: vi.fn(),
   };
 });
 
@@ -60,7 +60,7 @@ vi.mock('../plan_materialize.js', () => ({
 }));
 
 import { loadEffectiveConfig } from '../configLoader.js';
-import { resolvePlanFromDb } from '../plans.js';
+import { resolvePlanByNumericId } from '../plans.js';
 import { buildExecutorAndLog } from '../executors/index.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import { handleRebaseCommand } from './rebase.js';
@@ -405,7 +405,7 @@ function mockPlanForRepo(
     ...configOverrides,
   } as any);
   vi.mocked(resolveRepoRoot).mockResolvedValue(repoDir);
-  vi.mocked(resolvePlanFromDb).mockResolvedValue({
+  vi.mocked(resolvePlanByNumericId).mockResolvedValue({
     plan,
     planPath: path.join(repoDir, '.tim', 'plans', `${String(plan.id ?? 'plan')}.plan.md`),
   } as any);
@@ -543,7 +543,7 @@ describe('handleRebaseCommand', () => {
       } as any;
     });
     vi.mocked(resolveRepoRoot).mockResolvedValue(repo.workDir);
-    vi.mocked(resolvePlanFromDb).mockResolvedValue({
+    vi.mocked(resolvePlanByNumericId).mockResolvedValue({
       plan,
       planPath: path.join(repo.workDir, '.tim', 'plans', '263.plan.md'),
     } as any);

@@ -79,7 +79,7 @@ describe('tim remove command DB cleanup flow', () => {
     const planUuid = '11111111-1111-4111-8111-111111111111';
     const planPath = await writePlan(1, { uuid: planUuid });
 
-    await handleRemoveCommand(['1'], {}, makeCommand());
+    await handleRemoveCommand([1], {}, makeCommand());
 
     await expect(fs.access(planPath)).rejects.toThrow();
     expect(getPlanByUuid(getDatabase(), planUuid)).toBeNull();
@@ -99,7 +99,7 @@ describe('tim remove command DB cleanup flow', () => {
 
     expect(getAssignment(getDatabase(), getProjectId(), planUuid)).not.toBeNull();
 
-    await handleRemoveCommand(['1'], {}, makeCommand());
+    await handleRemoveCommand([1], {}, makeCommand());
 
     expect(getPlanByUuid(getDatabase(), planUuid)).toBeNull();
     expect(getAssignment(getDatabase(), getProjectId(), planUuid)).toBeNull();

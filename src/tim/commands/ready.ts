@@ -65,7 +65,7 @@ interface ReadyCommandOptions {
   here?: boolean;
   hasTasks?: boolean;
   tag?: string[];
-  epic?: number | string;
+  epic?: number;
 }
 
 const VALID_FORMATS = ['list', 'table', 'json'] as const;
@@ -508,12 +508,7 @@ export async function handleReadyCommand(options: ReadyCommandOptions, command: 
   }
 
   if (options.epic !== undefined) {
-    const epicId =
-      typeof options.epic === 'number' ? options.epic : Number.parseInt(options.epic, 10);
-
-    if (Number.isNaN(epicId) || !Number.isInteger(epicId) || epicId <= 0) {
-      throw new Error(`Invalid epic ID: ${options.epic}`);
-    }
+    const epicId = options.epic;
 
     if (!enrichedPlans.has(epicId)) {
       throw new Error(`Epic plan ${epicId} not found`);

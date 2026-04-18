@@ -131,7 +131,7 @@ async function loadPlanningInstructions(context: GenerateModeRegistrationContext
 }
 
 async function buildGeneratePromptContext(
-  planArg: string,
+  planArg: string | number,
   context: GenerateModeRegistrationContext
 ): Promise<{
   plan: Awaited<ReturnType<typeof resolvePlan>>['plan'];
@@ -205,7 +205,7 @@ ${siblingContext}`.trim();
 }
 
 export async function loadResearchPrompt(
-  args: { plan?: string; allowMultiplePlans?: unknown },
+  args: { plan?: string | number; allowMultiplePlans?: unknown },
   context: GenerateModeRegistrationContext
 ) {
   const { plan, planPath, contextBlock } = await buildGeneratePromptContext(
@@ -292,7 +292,7 @@ After adding the structured tasks, re-read the entire plan file and look for any
 }
 
 export async function loadQuestionsPrompt(
-  args: { plan?: string },
+  args: { plan?: string | number },
   context: GenerateModeRegistrationContext
 ) {
   let contextBlock = '';
@@ -319,7 +319,7 @@ ${contextBlock}You are collaborating with a human partner to refine this plan. $
 }
 
 export async function loadPlanPrompt(
-  args: { plan: string },
+  args: { plan: string | number },
   context: GenerateModeRegistrationContext
 ) {
   const { plan, planPath } = await resolvePlan(args.plan, context);
@@ -345,7 +345,7 @@ Wait for your human collaborator to review the plan and provide further instruct
 }
 
 export async function loadImplementPrompt(
-  args: { plan: string },
+  args: { plan: string | number },
   context: GenerateModeRegistrationContext
 ) {
   const { plan, planPath } = await resolvePlan(args.plan, context);
@@ -384,7 +384,7 @@ Load the plan, implement it, and keep the plan file up to date as you work. ${ex
 }
 
 export async function loadGeneratePrompt(
-  args: { plan?: string; allowMultiplePlans?: unknown },
+  args: { plan?: string | number; allowMultiplePlans?: unknown },
   context: GenerateModeRegistrationContext
 ) {
   let contextBlock = '';
@@ -474,7 +474,7 @@ function wrapLogger(log: GenerateModeExecutionLogger, prefix: string): GenerateM
 }
 
 type UpdatePlanTaskArguments = {
-  plan: string;
+  plan: number;
   taskTitle?: string;
   taskIndex?: number;
   newTitle?: string;

@@ -97,7 +97,7 @@ vi.mock('../plans.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../plans.js')>();
   return {
     ...actual,
-    resolvePlanFromDb: vi.fn().mockImplementation((planId: string | number) =>
+    resolvePlanByNumericId: vi.fn().mockImplementation((planId: string | number) =>
       Promise.resolve({
         plan: { id: 42, uuid: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' },
         planPath: String(planId),

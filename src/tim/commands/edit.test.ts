@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { clearAllTimCaches } from '../../testing.js';
 import type { PlanSchema } from '../planSchema.js';
 import { readPlanFile, writePlanFile } from '../plans.js';
-import { resolvePlanFromDb } from '../plans.js';
+import { resolvePlanByNumericId } from '../plans.js';
 import { closeDatabaseForTesting } from '../db/database.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
 import { getMaterializedPlanPath, materializePlan } from '../plan_materialize.js';
@@ -26,6 +26,7 @@ import { handleEditCommand } from './edit.js';
 describe('handleEditCommand', () => {
   let tempDir: string;
   let planFile: string;
+  const planId = 12;
   let editorBehavior: ((editedPath: string) => Promise<void>) | undefined;
 
   beforeEach(async () => {
@@ -33,11 +34,12 @@ describe('handleEditCommand', () => {
     closeDatabaseForTesting();
     clearPlanSyncContext();
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-edit-'));
-    planFile = path.join(tempDir, '12-edit.plan.md');
+    await fs.writeFile(path.join(tempDir, '.tim.yml'), 'paths:\n  tasks: .\n');
+    planFile = path.join(tempDir, `${planId}-edit.plan.md`);
     editorBehavior = undefined;
 
     const plan: PlanSchema = {
-      id: 12,
+      id: planId,
       title: 'Edit plan',
       goal: 'Verify edit timestamp behavior',
       status: 'pending',
@@ -76,13 +78,13 @@ describe('handleEditCommand', () => {
       await writePlanFile(editedPath, plan, { skipDb: true, skipUpdatedAt: true });
     };
 
-    await handleEditCommand(planFile, { editor: 'test-editor' }, {
-      parent: { opts: () => ({}) },
+    await handleEditCommand(planId, { editor: 'test-editor' }, {
+      parent: { opts: () => ({ config: path.join(tempDir, '.tim.yml') }) },
     } as any);
 
-    const updatedPlan = await readPlanFile(planFile);
-    expect(updatedPlan.details).toBe('Edited details');
-    expect(updatedPlan.updatedAt).not.toBe('2024-01-01T00:00:00.000Z');
+    const resolved = await resolvePlanByNumericId(planId, tempDir);
+    expect(resolved.plan.details).toBe('Edited details');
+    expect(resolved.plan.updatedAt).not.toBe('2024-01-01T00:00:00.000Z');
   });
 
   test('preserves editor-written updatedAt when it changed during the edit', async () => {
@@ -93,35 +95,32 @@ describe('handleEditCommand', () => {
       await writePlanFile(editedPath, plan, { skipDb: true, skipUpdatedAt: true });
     };
 
-    await handleEditCommand(planFile, { editor: 'test-editor' }, {
-      parent: { opts: () => ({}) },
+    await handleEditCommand(planId, { editor: 'test-editor' }, {
+      parent: { opts: () => ({ config: path.join(tempDir, '.tim.yml') }) },
     } as any);
 
-    const updatedPlan = await readPlanFile(planFile);
-    expect(updatedPlan.details).toBe('Edited details');
-    expect(updatedPlan.updatedAt).toBe('2024-02-01T00:00:00.000Z');
+    const resolved = await resolvePlanByNumericId(planId, tempDir);
+    expect(resolved.plan.details).toBe('Edited details');
+    expect(resolved.plan.updatedAt).toBe('2024-02-01T00:00:00.000Z');
   });
 
-  test('syncs direct file edits into the DB before starting the edit flow', async () => {
+  test('ignores direct source-file edits outside the materialized edit flow', async () => {
     const externallyEditedPlan = await readPlanFile(planFile);
     externallyEditedPlan.details = 'Unsynced file details';
     await writePlanFile(planFile, externallyEditedPlan, { skipDb: true, skipUpdatedAt: true });
 
     (global as any).editorBehavior = async () => {};
 
-    await handleEditCommand(planFile, { editor: 'test-editor' }, {
-      parent: { opts: () => ({}) },
+    await handleEditCommand(planId, { editor: 'test-editor' }, {
+      parent: { opts: () => ({ config: path.join(tempDir, '.tim.yml') }) },
     } as any);
 
-    const updatedPlan = await readPlanFile(planFile);
-    expect(updatedPlan.details).toBe('Unsynced file details');
-
-    const resolved = await resolvePlanFromDb(String(updatedPlan.id), tempDir);
-    expect(resolved.plan.details).toBe('Unsynced file details');
+    const resolved = await resolvePlanByNumericId(planId, tempDir);
+    expect(resolved.plan.details).toBe('Original details');
   });
 
   test('preserves a pre-existing materialized file after editing', async () => {
-    const materializedPath = await materializePlan(12, tempDir);
+    const materializedPath = await materializePlan(planId, tempDir);
 
     (global as any).editorBehavior = async (editedPath) => {
       const plan = await readPlanFile(editedPath);
@@ -129,12 +128,12 @@ describe('handleEditCommand', () => {
       await writePlanFile(editedPath, plan, { skipDb: true, skipUpdatedAt: true });
     };
 
-    await handleEditCommand(planFile, { editor: 'test-editor' }, {
-      parent: { opts: () => ({}) },
+    await handleEditCommand(planId, { editor: 'test-editor' }, {
+      parent: { opts: () => ({ config: path.join(tempDir, '.tim.yml') }) },
     } as any);
 
     await expect(Bun.file(materializedPath).exists()).resolves.toBe(true);
-    const materializedPlan = await readPlanFile(getMaterializedPlanPath(tempDir, 12));
+    const materializedPlan = await readPlanFile(getMaterializedPlanPath(tempDir, planId));
     expect(materializedPlan.details).toBe('Edited materialized details');
   });
 });

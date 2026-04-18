@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { clearAllTimCaches } from '../../testing.js';
 import { closeDatabaseForTesting } from '../db/database.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
-import { readPlanFile, writePlanFile } from '../plans.js';
+import { resolvePlanByNumericId, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { handleAddTaskCommand } from './add-task.js';
 
@@ -106,7 +106,7 @@ describe('handleAddTaskCommand', () => {
 
   test('adds a task using explicit options', async () => {
     await handleAddTaskCommand(
-      planFile,
+      100,
       {
         title: 'Add logging',
         description: 'Introduce structured logging across modules',
@@ -114,7 +114,7 @@ describe('handleAddTaskCommand', () => {
       command
     );
 
-    const updated = await readPlanFile(planFile);
+    const { plan: updated } = await resolvePlanByNumericId(100, tempDir);
     expect(updated.tasks).toHaveLength(2);
     const newTask = updated.tasks[1];
     expect(newTask?.title).toBe('Add logging');
@@ -134,14 +134,14 @@ describe('handleAddTaskCommand', () => {
     });
 
     await handleAddTaskCommand(
-      planFile,
+      100,
       {
         interactive: true,
       },
       command
     );
 
-    const updated = await readPlanFile(planFile);
+    const { plan: updated } = await resolvePlanByNumericId(100, tempDir);
     expect(updated.tasks).toHaveLength(2);
     const newTask = updated.tasks[1];
     expect(newTask?.title).toBe('Interactive Task');
@@ -155,7 +155,7 @@ describe('handleAddTaskCommand', () => {
     editorSpy.mockResolvedValue('Description from editor');
 
     await handleAddTaskCommand(
-      planFile,
+      100,
       {
         title: 'Editor Task',
         editor: true,
@@ -163,7 +163,7 @@ describe('handleAddTaskCommand', () => {
       command
     );
 
-    const updated = await readPlanFile(planFile);
+    const { plan: updated } = await resolvePlanByNumericId(100, tempDir);
     expect(updated.tasks).toHaveLength(2);
     const newTask = updated.tasks[1];
     expect(newTask?.title).toBe('Editor Task');
@@ -174,7 +174,7 @@ describe('handleAddTaskCommand', () => {
   test('throws when required fields are missing in non-interactive mode', async () => {
     await expect(
       handleAddTaskCommand(
-        planFile,
+        100,
         {
           title: 'Incomplete task',
         },
@@ -188,7 +188,7 @@ describe('handleAddTaskCommand', () => {
   test('throws when title is missing in non-interactive mode', async () => {
     await expect(
       handleAddTaskCommand(
-        planFile,
+        100,
         {
           description: 'Missing the title field',
         },

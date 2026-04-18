@@ -16,7 +16,7 @@ import {
 import type { ExecutorCommonOptions } from '../executors/types.js';
 import type { PlanSchema } from '../planSchema.js';
 import { materializePlan } from '../plan_materialize.js';
-import { parsePlanIdFromCliArg, resolvePlanFromDb } from '../plans.js';
+import { parsePlanIdFromCliArg, resolvePlanByNumericId } from '../plans.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 
 interface UpdateLessonsPromptOptions {
@@ -223,7 +223,8 @@ export async function runUpdateLessons(
   let resolvedBaseDir = options.baseDir;
   if (typeof planDataOrPath === 'string') {
     const repoRoot = options.baseDir ?? (await resolveRepoRoot(options.configPath, process.cwd()));
-    const resolvedPlan = await resolvePlanFromDb(planDataOrPath, repoRoot);
+    const planId = parsePlanIdFromCliArg(planDataOrPath);
+    const resolvedPlan = await resolvePlanByNumericId(planId, repoRoot);
     planData = resolvedPlan.plan;
     planFilePath = resolvedPlan.planPath ?? (await materializePlan(planData.id, repoRoot));
     effectiveConfig = planFilePathOrConfig as TimConfig;
@@ -314,20 +315,19 @@ export async function runUpdateLessons(
 }
 
 export async function handleUpdateLessonsCommand(
-  planFile: string | undefined,
+  planId: number | undefined,
   options: any,
   command: any
 ) {
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
 
-  if (!planFile) {
+  if (!planId) {
     throw new Error('A numeric plan ID is required');
   }
-  const planIdArg = String(parsePlanIdFromCliArg(planFile));
 
   const repoRoot = await resolveRepoRoot(globalOpts.config, (await getGitRoot()) || process.cwd());
-  const { plan, planPath } = await resolvePlanFromDb(planIdArg, repoRoot);
+  const { plan, planPath } = await resolvePlanByNumericId(planId, repoRoot);
   const resolvedPlanFile = planPath ?? (await materializePlan(plan.id, repoRoot));
   const baseDir = repoRoot;
 

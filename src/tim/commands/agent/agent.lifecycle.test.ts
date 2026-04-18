@@ -189,11 +189,9 @@ vi.mock('../../plans.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../plans.js')>();
   return {
     ...actual,
-    resolvePlanFromDb: vi.fn(async (planArg: string) => {
-      const nodePath = await import('node:path');
-      const resolvedPath = nodePath.resolve(planArg);
-      const plan = await actual.readPlanFile(resolvedPath);
-      return { plan, planPath: resolvedPath };
+    resolvePlanByNumericId: vi.fn(async (planId: number, repoRoot: string) => {
+      const plan = await actual.readPlanFile(planFile);
+      return { plan, planPath: planFile };
     }),
   };
 });
@@ -403,7 +401,7 @@ describe('timAgent lifecycle integration', () => {
       const { timAgent } = await import('./agent.js');
 
       await expect(
-        timAgent(planFile, { log: false, summary: false, serialTasks: true }, {})
+        timAgent(1, { log: false, summary: false, serialTasks: true }, {})
       ).rejects.toThrow('process.exit(130)');
     } finally {
       process.exit = originalExit;
@@ -433,7 +431,7 @@ describe('timAgent lifecycle integration', () => {
     findNextActionableItemImpl = () => null;
 
     const { timAgent } = await import('./agent.js');
-    await timAgent(planFile, { log: true, summary: true, serialTasks: true }, {});
+    await timAgent(1, { log: true, summary: true, serialTasks: true }, {});
 
     expect(await fs.readFile(shutdownFile, 'utf-8')).toBe('stopped');
     expect(summaryOrder).toEqual(['record-end', 'track-files', 'write-summary', 'close-log']);
@@ -443,7 +441,7 @@ describe('timAgent lifecycle integration', () => {
     executeBatchModeImpl = async () => undefined;
 
     const { timAgent } = await import('./agent.js');
-    await timAgent(planFile, { log: false, summary: false }, {});
+    await timAgent(1, { log: false, summary: false }, {});
 
     expect(await fs.readFile(path.join(tempDir, 'lifecycle-startup.txt'), 'utf-8')).toBe('started');
     expect(await fs.readFile(path.join(tempDir, 'lifecycle-shutdown.txt'), 'utf-8')).toBe(
@@ -461,7 +459,7 @@ describe('timAgent lifecycle integration', () => {
     executeBatchModeImpl = async () => undefined;
 
     const { timAgent } = await import('./agent.js');
-    await timAgent(planFile, { log: true, summary: true }, {});
+    await timAgent(1, { log: true, summary: true }, {});
 
     expect(await fs.readFile(shutdownFile, 'utf-8')).toBe('stopped');
     expect(summaryOrder).toEqual(['record-end', 'track-files', 'write-summary', 'close-log']);
@@ -482,7 +480,7 @@ describe('timAgent lifecycle integration', () => {
       const { timAgent } = await import('./agent.js');
 
       await expect(
-        timAgent(planFile, { log: false, summary: false, serialTasks: true }, {})
+        timAgent(1, { log: false, summary: false, serialTasks: true }, {})
       ).rejects.toThrow('process.exit(130)');
     } finally {
       process.exit = originalExit;
@@ -523,7 +521,7 @@ describe('timAgent lifecycle integration', () => {
       const { timAgent } = await import('./agent.js');
 
       await expect(
-        timAgent(planFile, { log: false, summary: false, serialTasks: true }, {})
+        timAgent(1, { log: false, summary: false, serialTasks: true }, {})
       ).rejects.toThrow('process.exit(130)');
     } finally {
       process.exit = originalExit;
@@ -562,7 +560,7 @@ describe('timAgent lifecycle integration', () => {
       const { timAgent } = await import('./agent.js');
 
       await expect(
-        timAgent(planFile, { log: false, summary: false, serialTasks: true }, {})
+        timAgent(1, { log: false, summary: false, serialTasks: true }, {})
       ).rejects.toThrow('process.exit(130)');
     } finally {
       process.exit = originalExit;
@@ -598,7 +596,7 @@ describe('timAgent lifecycle integration', () => {
       const { timAgent } = await import('./agent.js');
 
       await expect(
-        timAgent(planFile, { log: false, summary: false, serialTasks: true }, {})
+        timAgent(1, { log: false, summary: false, serialTasks: true }, {})
       ).rejects.toThrow('process.exit(130)');
     } finally {
       process.exit = originalExit;
@@ -636,11 +634,7 @@ describe('timAgent lifecycle integration', () => {
       const { timAgent } = await import('./agent.js');
 
       await expect(
-        timAgent(
-          planFile,
-          { log: false, summary: false, serialTasks: true, finalReview: false },
-          {}
-        )
+        timAgent(1, { log: false, summary: false, serialTasks: true, finalReview: false }, {})
       ).rejects.toThrow('process.exit(130)');
     } finally {
       process.exit = originalExit;
@@ -671,11 +665,7 @@ describe('timAgent lifecycle integration', () => {
     };
 
     const { timAgent } = await import('./agent.js');
-    await timAgent(
-      planFile,
-      { log: false, summary: false, serialTasks: true, finalReview: false },
-      {}
-    );
+    await timAgent(1, { log: false, summary: false, serialTasks: true, finalReview: false }, {});
 
     expect(runUpdateDocsSpy).not.toHaveBeenCalled();
     expect(runUpdateLessonsSpy).not.toHaveBeenCalled();
@@ -701,11 +691,7 @@ describe('timAgent lifecycle integration', () => {
     };
 
     const { timAgent } = await import('./agent.js');
-    await timAgent(
-      planFile,
-      { log: false, summary: false, serialTasks: true, finalReview: false },
-      {}
-    );
+    await timAgent(1, { log: false, summary: false, serialTasks: true, finalReview: false }, {});
 
     expect(runUpdateDocsSpy).not.toHaveBeenCalled();
     expect(runUpdateLessonsSpy).not.toHaveBeenCalled();
@@ -727,7 +713,7 @@ describe('timAgent lifecycle integration', () => {
     };
 
     const { timAgent } = await import('./agent.js');
-    await timAgent(planFile, { log: false, summary: false, serialTasks: true }, {});
+    await timAgent(1, { log: false, summary: false, serialTasks: true }, {});
 
     expect(runUpdateDocsSpy).not.toHaveBeenCalled();
   });
@@ -753,11 +739,7 @@ describe('timAgent lifecycle integration', () => {
     };
 
     const { timAgent } = await import('./agent.js');
-    await timAgent(
-      planFile,
-      { log: false, summary: false, serialTasks: true, finalReview: false },
-      {}
-    );
+    await timAgent(1, { log: false, summary: false, serialTasks: true, finalReview: false }, {});
 
     expect(runUpdateDocsSpy).toHaveBeenCalledTimes(1);
 
@@ -783,7 +765,7 @@ describe('timAgent lifecycle integration', () => {
     };
 
     const { timAgent } = await import('./agent.js');
-    await timAgent(planFile, { log: false, summary: false, serialTasks: true }, {});
+    await timAgent(1, { log: false, summary: false, serialTasks: true }, {});
 
     expect(runUpdateDocsSpy).toHaveBeenCalledTimes(1);
 
@@ -813,11 +795,7 @@ describe('timAgent lifecycle integration', () => {
     };
 
     const { timAgent } = await import('./agent.js');
-    await timAgent(
-      planFile,
-      { log: false, summary: false, serialTasks: true, finalReview: false },
-      {}
-    );
+    await timAgent(1, { log: false, summary: false, serialTasks: true, finalReview: false }, {});
 
     expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
 
@@ -861,7 +839,7 @@ describe('timAgent lifecycle integration', () => {
     };
 
     const { timAgent } = await import('./agent.js');
-    await timAgent(planFile, { log: false, summary: false, serialTasks: true }, {});
+    await timAgent(1, { log: false, summary: false, serialTasks: true }, {});
 
     expect(runUpdateDocsSpy).toHaveBeenCalledTimes(1);
     expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
@@ -904,7 +882,7 @@ describe('timAgent lifecycle integration', () => {
     };
 
     const { timAgent } = await import('./agent.js');
-    await timAgent(planFile, { log: false, summary: false, serialTasks: true }, {});
+    await timAgent(1, { log: false, summary: false, serialTasks: true }, {});
 
     expect(runUpdateDocsSpy).not.toHaveBeenCalled();
     expect(runUpdateLessonsSpy).not.toHaveBeenCalled();
@@ -940,11 +918,7 @@ describe('timAgent lifecycle integration', () => {
     };
 
     const { timAgent } = await import('./agent.js');
-    await timAgent(
-      planFile,
-      { log: false, summary: false, serialTasks: true, finalReview: false },
-      {}
-    );
+    await timAgent(1, { log: false, summary: false, serialTasks: true, finalReview: false }, {});
 
     expect(runUpdateDocsSpy).toHaveBeenCalledTimes(1);
 
@@ -977,11 +951,7 @@ describe('timAgent lifecycle integration', () => {
     };
 
     const { timAgent } = await import('./agent.js');
-    await timAgent(
-      planFile,
-      { log: false, summary: false, serialTasks: true, finalReview: false },
-      {}
-    );
+    await timAgent(1, { log: false, summary: false, serialTasks: true, finalReview: false }, {});
 
     expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
 
@@ -1010,11 +980,7 @@ describe('timAgent lifecycle integration', () => {
     };
 
     const { timAgent } = await import('./agent.js');
-    await timAgent(
-      planFile,
-      { log: false, summary: false, serialTasks: true, finalReview: false },
-      {}
-    );
+    await timAgent(1, { log: false, summary: false, serialTasks: true, finalReview: false }, {});
 
     expect(runUpdateDocsSpy).toHaveBeenCalledTimes(1);
     expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
@@ -1052,11 +1018,7 @@ describe('timAgent lifecycle integration', () => {
     };
 
     const { timAgent } = await import('./agent.js');
-    await timAgent(
-      planFile,
-      { log: false, summary: false, serialTasks: true, finalReview: false },
-      {}
-    );
+    await timAgent(1, { log: false, summary: false, serialTasks: true, finalReview: false }, {});
 
     expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
 
@@ -1090,11 +1052,7 @@ describe('timAgent lifecycle integration', () => {
     };
 
     const { timAgent } = await import('./agent.js');
-    await timAgent(
-      planFile,
-      { log: false, summary: false, serialTasks: true, finalReview: false },
-      {}
-    );
+    await timAgent(1, { log: false, summary: false, serialTasks: true, finalReview: false }, {});
 
     expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
 
@@ -1124,7 +1082,7 @@ describe('timAgent lifecycle integration', () => {
 
     const { timAgent } = await import('./agent.js');
     await timAgent(
-      planFile,
+      1,
       {
         log: false,
         summary: false,

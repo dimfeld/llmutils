@@ -4,7 +4,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import yaml from 'yaml';
-import { resolvePlanFromDb, writePlanFile } from '../plans.js';
+import { resolvePlanByNumericId, writePlanFile } from '../plans.js';
 import { clearAllTimCaches, stringifyPlanWithFrontmatter } from '../../testing.js';
 import { getDefaultConfig } from '../configSchema.js';
 import { handleAddCommand } from './add.js';
@@ -136,7 +136,7 @@ describe('tim add command', () => {
     const planPath = path.join(tasksDir, '1-test-title.plan.md');
     expect(await planExists(planPath)).toBe(false);
 
-    const { plan } = await resolvePlanFromDb('1', tempDir);
+    const { plan } = await resolvePlanByNumericId(1, tempDir);
     expect(plan.id).toBe(1);
     expect(plan.uuid).toMatch(UUID_REGEX);
     expect(plan.title).toBe('Test Title');
@@ -161,7 +161,7 @@ describe('tim add command', () => {
     const planPath = path.join(tasksDir, '101-new-plan-title.plan.md');
     expect(await planExists(planPath)).toBe(false);
 
-    const { plan } = await resolvePlanFromDb('101', tempDir);
+    const { plan } = await resolvePlanByNumericId(101, tempDir);
     expect(plan.id).toBe(101);
     expect(plan.title).toBe('New Plan Title');
   });
@@ -193,7 +193,7 @@ describe('tim add command', () => {
     const planPath = path.join(tasksDir, '6-another-plan.plan.md');
     expect(await planExists(planPath)).toBe(false);
 
-    const { plan } = await resolvePlanFromDb('6', tempDir);
+    const { plan } = await resolvePlanByNumericId(6, tempDir);
     expect(plan.id).toBe(6);
     expect(plan.title).toBe('Another Plan');
   });
@@ -228,7 +228,7 @@ describe('tim add command', () => {
     const createdPath = path.join(externalTasksDir, '1-external-plan.plan.md');
     expect(await planExists(createdPath)).toBe(false);
 
-    const { plan } = await resolvePlanFromDb('1', tempDir);
+    const { plan } = await resolvePlanByNumericId(1, tempDir);
     expect(plan.title).toBe('External Plan');
 
     await fs.rm(externalBase, { recursive: true, force: true });
@@ -246,7 +246,7 @@ describe('tim add command', () => {
     const planPath = path.join(tasksDir, '1-this-is-a-multi-word-title.plan.md');
     expect(await planExists(planPath)).toBe(false);
 
-    const { plan } = await resolvePlanFromDb('1', tempDir);
+    const { plan } = await resolvePlanByNumericId(1, tempDir);
     expect(plan.id).toBe(1);
     expect(plan.title).toBe('This is a Multi Word Title');
   });
@@ -267,15 +267,15 @@ describe('tim add command', () => {
       command
     );
 
-    const plan = (await resolvePlanFromDb('3', tempDir)).plan;
+    const plan = (await resolvePlanByNumericId(3, tempDir)).plan;
 
     expect(plan.id).toBe(3);
     expect(plan.title).toBe('Plan with Dependencies');
     expect([...(plan.dependencies ?? [])].sort((a, b) => a - b)).toEqual([1, 2]);
     expect(plan.priority).toBe('high');
 
-    const dep1 = (await resolvePlanFromDb('1', tempDir)).plan;
-    const dep2 = (await resolvePlanFromDb('2', tempDir)).plan;
+    const dep1 = (await resolvePlanByNumericId(1, tempDir)).plan;
+    const dep2 = (await resolvePlanByNumericId(2, tempDir)).plan;
     expect(dep1.uuid).toMatch(UUID_REGEX);
     expect(dep2.uuid).toMatch(UUID_REGEX);
   });
@@ -317,12 +317,12 @@ describe('tim add command', () => {
     };
     await handleAddCommand(['Child', 'Plan'], { parent: 1 }, command);
 
-    const childPlan = (await resolvePlanFromDb('2', tempDir)).plan;
+    const childPlan = (await resolvePlanByNumericId(2, tempDir)).plan;
     expect(childPlan.id).toBe(2);
     expect(childPlan.title).toBe('Child Plan');
     expect(childPlan.parent).toBe(1);
 
-    const parentPlan = (await resolvePlanFromDb('1', tempDir)).plan;
+    const parentPlan = (await resolvePlanByNumericId(1, tempDir)).plan;
     expect(parentPlan.dependencies).toEqual([2]);
     expect(new Date(parentPlan.updatedAt!).getTime()).toBeGreaterThan(
       new Date(parentCreatedAt).getTime()
@@ -361,13 +361,13 @@ describe('tim add command', () => {
       };
       await handleAddCommand([], { cleanup: 10 }, command);
 
-      const cleanupPlan = (await resolvePlanFromDb('11', tempDir)).plan;
+      const cleanupPlan = (await resolvePlanByNumericId(11, tempDir)).plan;
       expect(cleanupPlan.id).toBe(11);
       expect(cleanupPlan.title).toBe('Parent Plan - Cleanup');
       expect(cleanupPlan.parent).toBe(10);
       expect(cleanupPlan.status).toBe('pending');
 
-      const parentPlan = (await resolvePlanFromDb('10', tempDir)).plan;
+      const parentPlan = (await resolvePlanByNumericId(10, tempDir)).plan;
       expect(parentPlan.dependencies).toEqual([11]);
     });
 
@@ -390,13 +390,13 @@ describe('tim add command', () => {
       };
       await handleAddCommand(['Custom', 'Cleanup', 'Title'], { cleanup: 20 }, command);
 
-      const cleanupPlan = (await resolvePlanFromDb('21', tempDir)).plan;
+      const cleanupPlan = (await resolvePlanByNumericId(21, tempDir)).plan;
       expect(cleanupPlan.id).toBe(21);
       expect(cleanupPlan.title).toBe('Custom Cleanup Title'); // Custom title, not default
       expect(cleanupPlan.parent).toBe(20);
       expect(cleanupPlan.status).toBe('pending');
 
-      const parentPlan = (await resolvePlanFromDb('20', tempDir)).plan;
+      const parentPlan = (await resolvePlanByNumericId(20, tempDir)).plan;
       expect(parentPlan.dependencies).toEqual([21]);
     });
 
@@ -444,12 +444,12 @@ describe('tim add command', () => {
       };
       await handleAddCommand([], { cleanup: 30 }, command);
 
-      const cleanupPlan = (await resolvePlanFromDb('33', tempDir)).plan;
+      const cleanupPlan = (await resolvePlanByNumericId(33, tempDir)).plan;
       expect(cleanupPlan.id).toBe(33);
       expect(cleanupPlan.title).toBe('Parent With Files - Cleanup');
       expect(cleanupPlan.parent).toBe(30);
 
-      const parentPlan = (await resolvePlanFromDb('30', tempDir)).plan;
+      const parentPlan = (await resolvePlanByNumericId(30, tempDir)).plan;
       expect(parentPlan.dependencies).toEqual([33]);
     });
 
@@ -491,13 +491,13 @@ describe('tim add command', () => {
       };
       await handleAddCommand([], { cleanup: 40 }, command);
 
-      const cleanupPlan = (await resolvePlanFromDb('41', tempDir)).plan;
+      const cleanupPlan = (await resolvePlanByNumericId(41, tempDir)).plan;
       expect(cleanupPlan.id).toBe(41);
       expect(cleanupPlan.title).toBe('Done Plan - Cleanup');
       expect(cleanupPlan.parent).toBe(40);
       expect(cleanupPlan.status).toBe('pending');
 
-      const parentPlan = (await resolvePlanFromDb('40', tempDir)).plan;
+      const parentPlan = (await resolvePlanByNumericId(40, tempDir)).plan;
       expect(parentPlan.dependencies).toEqual([41]);
       expect(parentPlan.status).toBe('in_progress'); // Changed from 'done'
       expect(new Date(parentPlan.updatedAt!).getTime()).toBeGreaterThan(
@@ -517,7 +517,7 @@ describe('tim add command', () => {
     const planPath = path.join(tasksDir, '1-temporary-plan.plan.md');
     expect(await planExists(planPath)).toBe(false);
 
-    const { plan } = await resolvePlanFromDb('1', tempDir);
+    const { plan } = await resolvePlanByNumericId(1, tempDir);
     expect(plan.id).toBe(1);
     expect(plan.title).toBe('Temporary Plan');
     expect(plan.temp).toBe(true);
@@ -534,7 +534,7 @@ describe('tim add command', () => {
     const planPath = path.join(tasksDir, '1-epic-plan.plan.md');
     expect(await planExists(planPath)).toBe(false);
 
-    const { plan } = await resolvePlanFromDb('1', tempDir);
+    const { plan } = await resolvePlanByNumericId(1, tempDir);
     expect(plan.id).toBe(1);
     expect(plan.title).toBe('Epic Plan');
     expect(plan.epic).toBe(true);
@@ -613,7 +613,7 @@ describe('tim add command', () => {
 
     await handleAddCommand(['Tagged', 'Plan'], { tag: ['Frontend', 'Bug', 'frontend'] }, command);
 
-    const plan = (await resolvePlanFromDb('1', tempDir)).plan;
+    const plan = (await resolvePlanByNumericId(1, tempDir)).plan;
     expect(plan.tags).toEqual(['bug', 'frontend']);
   });
 
@@ -665,10 +665,10 @@ describe('tim add command', () => {
     };
     await handleAddCommand(['Discovered', 'Plan'], { discoveredFrom: 1 }, command);
 
-    const plan = (await resolvePlanFromDb('2', tempDir)).plan;
+    const plan = (await resolvePlanByNumericId(2, tempDir)).plan;
     expect(plan.discoveredFrom).toBe(1);
 
-    const sourcePlan = (await resolvePlanFromDb('1', tempDir)).plan;
+    const sourcePlan = (await resolvePlanByNumericId(1, tempDir)).plan;
     expect(sourcePlan.uuid).toMatch(UUID_REGEX);
   });
 
@@ -701,15 +701,15 @@ describe('tim add command', () => {
     };
     await handleAddCommand(['Child', 'Plan'], { parent: 1, dependsOn: [2] }, command);
 
-    const childPlan = (await resolvePlanFromDb('3', tempDir)).plan;
+    const childPlan = (await resolvePlanByNumericId(3, tempDir)).plan;
     expect(childPlan.parent).toBe(1);
     expect(childPlan.dependencies).toEqual([2]);
 
-    const parentPlan = (await resolvePlanFromDb('1', tempDir)).plan;
+    const parentPlan = (await resolvePlanByNumericId(1, tempDir)).plan;
     expect(parentPlan.dependencies).toContain(3);
     expect(parentPlan.uuid).toBe(parentUuid);
 
-    const depPlan = (await resolvePlanFromDb('2', tempDir)).plan;
+    const depPlan = (await resolvePlanByNumericId(2, tempDir)).plan;
     expect(depPlan.uuid).toMatch(UUID_REGEX);
   });
 });

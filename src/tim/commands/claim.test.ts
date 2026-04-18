@@ -154,7 +154,7 @@ describe('handleClaimCommand', () => {
   test('claims an unassigned plan and records workspace/user', async () => {
     ensureWorkspace(currentWorkspacePath);
     const command = { parent: { opts: () => ({}) } };
-    await handleClaimCommand('1', {}, command);
+    await handleClaimCommand(1, {}, command);
 
     const entry = getAssignmentRow('11111111-1111-4111-8111-111111111111');
     expect(entry).toBeDefined();
@@ -169,7 +169,7 @@ describe('handleClaimCommand', () => {
 
   test('creates workspace row when claiming from an untracked workspace', async () => {
     const command = { parent: { opts: () => ({}) } };
-    await handleClaimCommand('1', {}, command);
+    await handleClaimCommand(1, {}, command);
 
     const entry = getAssignmentRow('11111111-1111-4111-8111-111111111111');
     expect(entry).toBeDefined();
@@ -180,12 +180,12 @@ describe('handleClaimCommand', () => {
   test('re-claiming from same workspace is a no-op', async () => {
     ensureWorkspace(currentWorkspacePath);
     const command = { parent: { opts: () => ({}) } };
-    await handleClaimCommand('1', {}, command);
+    await handleClaimCommand(1, {}, command);
 
     vi.mocked(logFn).mockClear();
     vi.mocked(warnFn).mockClear();
 
-    await handleClaimCommand('1', {}, command);
+    await handleClaimCommand(1, {}, command);
 
     const entry = getAssignmentRow('11111111-1111-4111-8111-111111111111');
     expect(entry).toBeDefined();
@@ -198,7 +198,7 @@ describe('handleClaimCommand', () => {
   test('claiming from a different workspace warns about reassignment', async () => {
     ensureWorkspace(currentWorkspacePath);
     const command = { parent: { opts: () => ({}) } };
-    await handleClaimCommand('1', {}, command);
+    await handleClaimCommand(1, {}, command);
 
     vi.mocked(logFn).mockClear();
     vi.mocked(warnFn).mockClear();
@@ -207,7 +207,7 @@ describe('handleClaimCommand', () => {
     await fs.mkdir(currentWorkspacePath, { recursive: true });
     ensureWorkspace(currentWorkspacePath);
 
-    await handleClaimCommand('1', {}, command);
+    await handleClaimCommand(1, {}, command);
 
     const entry = getAssignmentRow('11111111-1111-4111-8111-111111111111');
     expect(entry).toBeDefined();
@@ -223,14 +223,14 @@ describe('handleClaimCommand', () => {
   test('claiming from a different user warns about reassignment', async () => {
     ensureWorkspace(currentWorkspacePath);
     const command = { parent: { opts: () => ({}) } };
-    await handleClaimCommand('1', {}, command);
+    await handleClaimCommand(1, {}, command);
 
     vi.mocked(logFn).mockClear();
     vi.mocked(warnFn).mockClear();
 
     currentUser = 'bob';
 
-    await handleClaimCommand('1', {}, command);
+    await handleClaimCommand(1, {}, command);
 
     const entry = getAssignmentRow('11111111-1111-4111-8111-111111111111');
     expect(entry).toBeDefined();
@@ -249,7 +249,7 @@ describe('handleClaimCommand', () => {
     currentUser = null;
     const command = { parent: { opts: () => ({}) } };
 
-    await handleClaimCommand('1', {}, command);
+    await handleClaimCommand(1, {}, command);
 
     const entry = getAssignmentRow('11111111-1111-4111-8111-111111111111');
     expect(entry).toBeDefined();
@@ -264,13 +264,13 @@ describe('handleClaimCommand', () => {
   test('claiming from same workspace with null user does not emit reassignment warning', async () => {
     ensureWorkspace(currentWorkspacePath);
     const command = { parent: { opts: () => ({}) } };
-    await handleClaimCommand('1', {}, command);
+    await handleClaimCommand(1, {}, command);
 
     vi.mocked(logFn).mockClear();
     vi.mocked(warnFn).mockClear();
     currentUser = null;
 
-    await handleClaimCommand('1', {}, command);
+    await handleClaimCommand(1, {}, command);
 
     expect(vi.mocked(warnFn)).not.toHaveBeenCalled();
     expect(vi.mocked(logFn)).not.toHaveBeenCalled();
@@ -293,7 +293,7 @@ describe('handleClaimCommand', () => {
     });
 
     const command = { parent: { opts: () => ({ config: configPath }) } };
-    await handleClaimCommand('1', {}, command);
+    await handleClaimCommand(1, {}, command);
 
     expect(vi.mocked(getRepositoryIdentity)).toHaveBeenCalledWith({ cwd: configuredRepoDir });
   });

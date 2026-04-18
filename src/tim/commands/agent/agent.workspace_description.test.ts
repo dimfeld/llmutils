@@ -177,7 +177,8 @@ describe('Agent workspace description auto-update', () => {
         },
       ],
     };
-    await fs.writeFile(planFile, `---\n${yaml.stringify(planContent)}---\n`);
+    const { writePlanFile } = await import('../../plans.js');
+    await writePlanFile(planFile, planContent, { cwdForIdentity: workspaceDir });
 
     const db = getDatabase();
     const project = getOrCreateProject(db, 'github.com/example/repo');
@@ -211,7 +212,7 @@ describe('Agent workspace description auto-update', () => {
   test('updates workspace description when running in a tracked workspace', async () => {
     const { timAgent } = await import('./agent.js');
 
-    await timAgent(planFile, { log: false } as any, {});
+    await timAgent(123, { log: false } as any, {});
 
     const db = getDatabase();
     const workspaceMetadata = getWorkspaceByPath(db, workspaceDir);
@@ -244,11 +245,12 @@ describe('Agent workspace description auto-update', () => {
         },
       ],
     };
-    await fs.writeFile(planFile, `---\n${yaml.stringify(planContent)}---\n`);
+    const { writePlanFile } = await import('../../plans.js');
+    await writePlanFile(planFile, planContent, { cwdForIdentity: workspaceDir });
 
     const { timAgent } = await import('./agent.js');
 
-    await timAgent(planFile, { log: false } as any, {});
+    await timAgent(789, { log: false } as any, {});
 
     const db = getDatabase();
     const workspaceMetadata = getWorkspaceByPath(db, workspaceDir);
@@ -277,7 +279,8 @@ describe('Agent workspace description auto-update', () => {
         },
       ],
     };
-    await fs.writeFile(planFile, `---\n${yaml.stringify(planContent)}---\n`);
+    const { writePlanFile } = await import('../../plans.js');
+    await writePlanFile(planFile, planContent, { cwdForIdentity: workspaceDir });
 
     const db = getDatabase();
     patchWorkspace(db, workspaceDir, {
@@ -293,7 +296,7 @@ describe('Agent workspace description auto-update', () => {
 
     const { timAgent } = await import('./agent.js');
 
-    await timAgent(planFile, { log: false } as any, {});
+    await timAgent(321, { log: false } as any, {});
 
     const updatedWorkspace = getWorkspaceByPath(db, workspaceDir);
     expect(updatedWorkspace).toBeDefined();
@@ -313,7 +316,7 @@ describe('Agent workspace description auto-update', () => {
     const { timAgent } = await import('./agent.js');
 
     // Should not throw
-    await timAgent(planFile, { log: false } as any, {});
+    await timAgent(123, { log: false } as any, {});
 
     // Verify no workspace description warning was issued (silent skip)
     expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('workspace description'));
@@ -329,7 +332,7 @@ describe('Agent workspace description auto-update', () => {
     const { timAgent } = await import('./agent.js');
 
     // Should not throw even though workspace update will fail
-    await timAgent(planFile, { log: false } as any, {});
+    await timAgent(123, { log: false } as any, {});
     spy.mockRestore();
 
     // Verify warning was logged
@@ -359,11 +362,12 @@ describe('Agent workspace description auto-update', () => {
         },
       ],
     };
-    await fs.writeFile(planFile, `---\n${yaml.stringify(planContent)}---\n`);
+    const { writePlanFile } = await import('../../plans.js');
+    await writePlanFile(planFile, planContent, { cwdForIdentity: workspaceDir });
 
     const { timAgent } = await import('./agent.js');
 
-    await timAgent(planFile, { log: false } as any, {});
+    await timAgent(999, { log: false } as any, {});
 
     // Verify workspace metadata includes combined title
     const db = getDatabase();

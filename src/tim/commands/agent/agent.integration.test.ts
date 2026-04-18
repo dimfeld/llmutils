@@ -101,29 +101,26 @@ vi.mock('../../executors/index.js', () => ({
   defaultModelForExecutor: vi.fn(() => 'mock-model'),
 }));
 
-vi.mock('../../plan_materialize.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../plan_materialize.js')>()),
-  materializePlan: vi.fn(async () => {}),
-  syncMaterializedPlan: vi.fn(async () => {}),
-  getMaterializedPlanPath: vi.fn(() => '/tmp/plan.md'),
-  getShadowPlanPath: vi.fn(() => '/tmp/.plan.md.shadow'),
-  materializeRelatedPlans: vi.fn(async () => {}),
-  materializeAndPruneRelatedPlans: vi.fn(async () => {}),
-  withPlanAutoSync: vi.fn(async (_id: any, _root: any, fn: () => any) => fn()),
-  resolveProjectContext: vi.fn(async () => ({
-    projectId: 1,
-    planRowsByPlanId: new Map(),
-    planRowsByUuid: new Map(),
-    maxNumericId: 0,
-  })),
-  readMaterializedPlanRole: vi.fn(async () => null),
-  ensureMaterializeDir: vi.fn(async () => '/tmp'),
-  parsePlanId: vi.fn((id: string) => parseInt(id)),
-  diffPlanFields: vi.fn(() => ({})),
-  mergePlanWithShadow: vi.fn((base: any) => base),
-  cleanupMaterializedPlans: vi.fn(async () => {}),
-  MATERIALIZED_DIR: '.tim/plans',
-}));
+vi.mock('../../plan_materialize.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../plan_materialize.js')>();
+  return {
+    ...actual,
+    materializePlan: vi.fn(async (planId: number, repoRoot: string) =>
+      actual.materializePlan(planId, repoRoot)
+    ),
+    syncMaterializedPlan: vi.fn(async () => {}),
+    materializeRelatedPlans: vi.fn(async () => []),
+    materializeAndPruneRelatedPlans: vi.fn(async () => []),
+    withPlanAutoSync: vi.fn(async (_id: any, _root: any, fn: () => any) => fn()),
+    resolveProjectContext: vi.fn(async (repoRoot: string) =>
+      actual.resolveProjectContext(repoRoot)
+    ),
+    readMaterializedPlanRole: vi.fn(async () => null),
+    diffPlanFields: vi.fn(() => ({})),
+    mergePlanWithShadow: vi.fn((base: any) => base),
+    cleanupMaterializedPlans: vi.fn(async () => {}),
+  };
+});
 
 describe('tim agent integration (execution summaries)', () => {
   beforeEach(async () => {
@@ -200,7 +197,7 @@ describe('tim agent integration (execution summaries)', () => {
     const summaryFile = path.join(tempDir, 'out', 'summary.txt');
 
     await timAgent(
-      planPath,
+      123,
       {
         serialTasks: true,
         nonInteractive: true,
@@ -250,7 +247,7 @@ describe('tim agent integration (execution summaries)', () => {
 
     await expect(
       timAgent(
-        planPath,
+        321,
         {
           serialTasks: true,
           nonInteractive: true,
@@ -284,7 +281,7 @@ describe('tim agent integration (execution summaries)', () => {
     const summaryFile2 = path.join(tempDir, 'out', 'summary3.txt');
 
     await timAgent(
-      planPath,
+      321,
       {
         serialTasks: true,
         nonInteractive: true,
@@ -317,10 +314,12 @@ describe('tim agent integration (execution summaries)', () => {
     };
     const planPath = await writePlan('999-batch-plan.yml', plan);
 
-    // Executor marks all tasks done after first call so batch loop terminates
+    // Executor marks all tasks done after first call so batch loop terminates.
+    // Must write to the materialized plan path since batch_mode reads from there.
     executorExecuteImpl = async () => {
       const { writePlanFile } = await import('../../plans.js');
-      await writePlanFile(planPath, {
+      const materializedPlanPath = path.join(tempDir, '.tim', 'plans', '999.plan.md');
+      await writePlanFile(materializedPlanPath, {
         id: 999,
         title: 'Batch Mode Plan',
         goal: 'Batch mode summary',
@@ -339,7 +338,7 @@ describe('tim agent integration (execution summaries)', () => {
     const summaryFile = path.join(tempDir, 'out', 'batch-summary.txt');
 
     await timAgent(
-      planPath,
+      999,
       {
         serialTasks: false,
         nonInteractive: true,
@@ -386,7 +385,7 @@ describe('tim agent integration (execution summaries)', () => {
     const reviewContext = '## Review Thread Context\nFix the bug in auth.ts:42';
 
     await timAgent(
-      planPath,
+      789,
       {
         serialTasks: true,
         nonInteractive: true,

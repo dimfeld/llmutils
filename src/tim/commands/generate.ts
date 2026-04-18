@@ -9,7 +9,7 @@ import { HeadlessAdapter } from '../../logging/headless_adapter.js';
 import { log, warn, error } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { syncPlanToDb } from '../db/plan_sync.js';
-import { parsePlanIdFromCliArg, resolvePlanFromDb } from '../plans.js';
+import { resolvePlanByNumericId } from '../plans.js';
 import { resolvePlanPathContext } from '../path_resolver.js';
 import { watchPlanFile } from '../plan_file_watcher.js';
 import { readPlanFile } from '../plans.js';
@@ -40,6 +40,31 @@ import {
 } from '../workspace/workspace_roundtrip.js';
 import { findLatestPlanFromDb, findNextReadyDependencyFromDb } from './plan_discovery.js';
 
+interface GenerateCommandOptions {
+  plan?: number;
+  nextReady?: number;
+  latest?: boolean;
+  simple?: boolean;
+  workspace?: string;
+  autoWorkspace?: boolean;
+  newWorkspace?: boolean;
+  nonInteractive?: boolean;
+  requireWorkspace?: boolean;
+  createBranch?: boolean;
+  workspaceSync?: boolean;
+  terminalInput?: boolean;
+  executor?: string;
+  commit?: boolean;
+}
+
+interface GenerateCommandContext {
+  parent: {
+    opts: () => {
+      config?: string;
+    };
+  };
+}
+
 async function updateWorkspaceDescriptionFromPlan(
   baseDir: string,
   planData: PlanSchema
@@ -67,9 +92,9 @@ async function updateWorkspaceDescriptionFromPlan(
 }
 
 export async function handleGenerateCommand(
-  planArg: string | undefined,
-  options: any,
-  command: any
+  planId: number | undefined,
+  options: GenerateCommandOptions,
+  command: GenerateCommandContext
 ) {
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
@@ -77,10 +102,9 @@ export async function handleGenerateCommand(
   const { gitRoot } = pathContext;
 
   // Validate input options - only one plan source allowed
-  const planOptionsSet = [planArg, options.plan, options.nextReady, options.latest].reduce(
-    (acc, val) => acc + (val ? 1 : 0),
-    0
-  );
+  const planOptionsSet = [planId, options.plan, options.nextReady, options.latest].filter(
+    (value) => value !== undefined && value !== false
+  ).length;
 
   if (planOptionsSet !== 1) {
     throw new Error(
@@ -89,10 +113,8 @@ export async function handleGenerateCommand(
   }
 
   // Handle --next-ready option - find and operate on next ready dependency
-  if (options.nextReady) {
-    const parentPlanId = parsePlanIdFromCliArg(options.nextReady);
-
-    const result = await findNextReadyDependencyFromDb(parentPlanId, gitRoot, gitRoot, true);
+  if (options.nextReady !== undefined) {
+    const result = await findNextReadyDependencyFromDb(options.nextReady, gitRoot, gitRoot, true);
 
     if (!result.plan) {
       log(result.message);
@@ -101,8 +123,8 @@ export async function handleGenerateCommand(
 
     log(chalk.green(`Found ready plan: ${result.plan.id} - ${result.plan.title}`));
 
-    options.plan = String(result.plan.id);
-    planArg = undefined;
+    options.plan = result.plan.id;
+    planId = undefined;
   } else if (options.latest) {
     const latestPlan = await findLatestPlanFromDb(gitRoot, gitRoot);
 
@@ -119,12 +141,12 @@ export async function handleGenerateCommand(
 
     log(chalk.green(`Found latest plan: ${label}`));
 
-    options.plan = String(latestPlan.id);
-    planArg = undefined;
+    options.plan = latestPlan.id;
+    planId = undefined;
   }
 
-  if (planArg) {
-    options.plan = String(parsePlanIdFromCliArg(planArg));
+  if (planId) {
+    options.plan = planId;
   }
 
   // Resolve plan file
@@ -132,10 +154,7 @@ export async function handleGenerateCommand(
     throw new Error('No plan specified.');
   }
 
-  const resolvedPlan = await resolvePlanFromDb(
-    String(parsePlanIdFromCliArg(String(options.plan))),
-    gitRoot
-  );
+  const resolvedPlan = await resolvePlanByNumericId(options.plan, gitRoot);
   const initialPlanFile = resolvedPlan.planPath;
   const parsedPlan: PlanSchema = resolvedPlan.plan;
 

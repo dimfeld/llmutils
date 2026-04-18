@@ -9,7 +9,7 @@ import { mcpListReadyPlans } from './commands/ready.js';
 import { getDefaultConfig, type TimConfig } from './configSchema.js';
 import type { GenerateModeRegistrationContext } from './mcp/generate_mode.js';
 import { mcpCreatePlan } from './mcp/generate_mode.js';
-import { resolvePlanFromDb } from './plans.js';
+import { resolvePlanByNumericId } from './plans.js';
 
 // Mock the modules that were previously mocked by ModuleMocker
 const { logSpy, warnSpy } = vi.hoisted(() => ({
@@ -125,7 +125,7 @@ describe('tag workflows across CLI and MCP', () => {
     const createdId = Number(result.match(/Created plan (\d+)/)?.[1]);
 
     await handleSetCommand(
-      String(createdId),
+      createdId,
       {
         tag: ['OPS'],
         noTag: ['frontend'],
@@ -135,7 +135,7 @@ describe('tag workflows across CLI and MCP', () => {
 
     expect(createdId).toBeGreaterThan(0);
 
-    const { plan: updatedPlan } = await resolvePlanFromDb(String(createdId), tempDir);
+    const { plan: updatedPlan } = await resolvePlanByNumericId(createdId, tempDir);
     expect(updatedPlan.tags).toEqual(['ops']);
 
     const filteredJson = await mcpListReadyPlans({ tags: ['ops'] }, mcpContext);
@@ -151,7 +151,7 @@ describe('tag workflows across CLI and MCP', () => {
 
     await expect(
       handleSetCommand(
-        '1',
+        1,
         {
           tag: ['backend'],
         },
@@ -169,7 +169,7 @@ describe('tag workflows across CLI and MCP', () => {
       )
     ).rejects.toThrow('Invalid tag');
 
-    const { plan: planAfterFailure } = await resolvePlanFromDb('1', tempDir);
+    const { plan: planAfterFailure } = await resolvePlanByNumericId(1, tempDir);
     expect(planAfterFailure.tags).toEqual(['frontend']);
   });
 });

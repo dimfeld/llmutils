@@ -16,7 +16,7 @@ import {
 } from '../plan_materialize.js';
 import { getLegacyAwareSearchDir } from '../path_resolver.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
-import { parsePlanIdFromCliArg, resolvePlanFromDb, writePlanFile } from '../plans.js';
+import { resolvePlanByNumericId, writePlanFile } from '../plans.js';
 import { invertPlanIdToUuidMap, loadPlansFromDb, planRowForTransaction } from '../plans_db.js';
 import { resolveWritablePath } from '../plans/resolve_writable_path.js';
 import type { PlanSchema } from '../planSchema.js';
@@ -27,14 +27,13 @@ interface RemoveCommandOptions {
 }
 
 export async function handleRemoveCommand(
-  planIdArgs: string[],
+  planIds: number[],
   options: RemoveCommandOptions,
   command: any
 ): Promise<void> {
-  if (!planIdArgs || planIdArgs.length === 0) {
+  if (!planIds || planIds.length === 0) {
     throw new Error('At least one numeric plan ID is required');
   }
-  const planIds = planIdArgs.map((plan) => String(parsePlanIdFromCliArg(plan)));
 
   const globalOpts = command.parent.opts();
   await loadEffectiveConfig(globalOpts.config);
@@ -45,7 +44,7 @@ export async function handleRemoveCommand(
   await syncMaterializedPlans(repoRoot, context.rows);
   context = await resolveProjectContext(repoRoot, repository);
   const targetResolutions = await Promise.all(
-    planIds.map((planArg) => resolvePlanFromDb(planArg, repoRoot))
+    planIds.map((planId) => resolvePlanByNumericId(planId, repoRoot))
   );
 
   const targetIds = new Set<number>(targetResolutions.map((target) => target.plan.id));
@@ -181,7 +180,7 @@ export async function handleRemoveCommand(
   const refreshedContext = await resolveProjectContext(repoRoot, repository);
   for (const [planId, outputPath] of affectedOutputPaths.entries()) {
     const refreshedPlan = (
-      await resolvePlanFromDb(String(planId), repoRoot, { context: refreshedContext })
+      await resolvePlanByNumericId(planId, repoRoot, { context: refreshedContext })
     ).plan;
     await writePlanFile(outputPath, refreshedPlan, {
       cwdForIdentity: repoRoot,

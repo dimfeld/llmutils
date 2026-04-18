@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { closeDatabaseForTesting } from '../db/database.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
-import { resolvePlanFromDb, readPlanFile, writePlanToDb } from '../plans.js';
+import { resolvePlanByNumericId, readPlanFile, writePlanToDb } from '../plans.js';
 import type { ReviewIssue } from '../formatters/review_formatter.js';
 import { createCleanupPlan } from './cleanup_plan_creator.js';
 
@@ -103,7 +103,7 @@ describe('cleanup_plan_creator', () => {
     expect(storedPlan.title).toBe('Reviewed Plan - Cleanup');
     expect(storedPlan.rmfilter).toBeUndefined();
 
-    const updatedParent = (await resolvePlanFromDb('10', repoRoot)).plan;
+    const updatedParent = (await resolvePlanByNumericId(10, repoRoot)).plan;
     expect(updatedParent.status).toBe('in_progress');
     expect(updatedParent.dependencies).toContain(result.planId);
   });
@@ -133,7 +133,7 @@ describe('cleanup_plan_creator', () => {
       },
     ]);
 
-    const updatedParent = (await resolvePlanFromDb('20', repoRoot)).plan;
+    const updatedParent = (await resolvePlanByNumericId(20, repoRoot)).plan;
     expect(updatedParent.status).toBe('in_progress');
     expect(updatedParent.dependencies).toContain(result.planId);
   });

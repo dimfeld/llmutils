@@ -4,7 +4,7 @@ import { error, log, warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import type { TimConfig } from '../configSchema.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
-import { parsePlanIdFromCliArg, resolvePlanFromDb } from '../plans.js';
+import { resolvePlanByNumericId } from '../plans.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import type { PlanSchema } from '../planSchema.js';
 import { writePlanFile } from '../plans.js';
@@ -86,24 +86,23 @@ async function persistPlan(
 }
 
 export async function handleFinishCommand(
-  planArg: string | undefined,
+  planId: number | undefined,
   options: FinishCommandOptions,
   command: { parent: { opts: () => { config?: string } } }
 ): Promise<void> {
-  if (!planArg) {
+  if (!planId) {
     throw new Error('A numeric plan ID is required.');
   }
-  const planIdArg = String(parsePlanIdFromCliArg(planArg));
 
   const globalOpts = command.parent.opts();
   const repoRoot = await resolveRepoRoot(globalOpts.config, process.cwd());
   const config = await loadEffectiveConfig(globalOpts.config, { cwd: repoRoot });
-  const resolvedPlan = await resolvePlanFromDb(planIdArg, repoRoot);
+  const resolvedPlan = await resolvePlanByNumericId(planId, repoRoot);
   const plan = resolvedPlan.plan;
 
   if (!isPlanReadyToFinish(plan)) {
     throw new Error(
-      `Plan ${plan.id ?? planArg} is not ready to finish. Expected status needs_review, done, or in_progress with all tasks complete.`
+      `Plan ${plan.id ?? planId} is not ready to finish. Expected status needs_review, done, or in_progress with all tasks complete.`
     );
   }
 
@@ -218,7 +217,7 @@ export async function handleFinishCommand(
             plan.docsUpdatedAt = new Date().toISOString();
           } catch (error) {
             warn(
-              `Documentation update failed for plan ${plan.id ?? planArg}: ${error instanceof Error ? error.message : String(error)}`
+              `Documentation update failed for plan ${plan.id ?? planId}: ${error instanceof Error ? error.message : String(error)}`
             );
             docsError = error;
           }
@@ -238,7 +237,7 @@ export async function handleFinishCommand(
             }
           } catch (error) {
             warn(
-              `Lessons update failed for plan ${plan.id ?? planArg}: ${error instanceof Error ? error.message : String(error)}`
+              `Lessons update failed for plan ${plan.id ?? planId}: ${error instanceof Error ? error.message : String(error)}`
             );
             lessonsError = error;
           }
@@ -249,7 +248,7 @@ export async function handleFinishCommand(
           postApplyCommandError = await runPostApplyCommands();
           if (postApplyCommandError) {
             error(
-              `Post-apply command "${postApplyCommandError}" failed for plan ${plan.id ?? planArg}.`
+              `Post-apply command "${postApplyCommandError}" failed for plan ${plan.id ?? planId}.`
             );
           }
         }
@@ -270,7 +269,7 @@ export async function handleFinishCommand(
 
         if (hasFailures) {
           executionError = new Error(
-            `Failed to finalize plan ${plan.id ?? planArg}: ${failedSteps.join(' and ')} failed.`
+            `Failed to finalize plan ${plan.id ?? planId}: ${failedSteps.join(' and ')} failed.`
           );
         }
       } catch (error) {
@@ -287,5 +286,5 @@ export async function handleFinishCommand(
     },
   });
 
-  log(`Updated docs for plan ${plan.id ?? planArg}.`);
+  log(`Updated docs for plan ${plan.id ?? planId}.`);
 }

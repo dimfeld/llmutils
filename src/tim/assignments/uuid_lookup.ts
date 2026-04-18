@@ -1,5 +1,5 @@
 import type { PlanSchema } from '../planSchema.js';
-import { resolvePlanFromDb } from '../plans.js';
+import { resolvePlanByNumericId } from '../plans.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 
 export interface ResolvePlanWithUuidOptions {
@@ -64,15 +64,15 @@ export function verifyPlanIdCache(
 }
 
 export async function resolvePlanWithUuid(
-  planArg: string,
+  planId: number,
   options: ResolvePlanWithUuidOptions = {}
 ): Promise<ResolvePlanWithUuidResult> {
   const repoRoot = await resolveRepoRoot(options.configPath, process.cwd());
 
-  const { plan, planPath } = await resolvePlanFromDb(planArg, repoRoot);
+  const { plan, planPath } = await resolvePlanByNumericId(planId, repoRoot);
 
   if (!plan.uuid) {
-    throw new Error(`Plan ${planArg} does not have a UUID`);
+    throw new Error(`Plan ${planId} does not have a UUID`);
   }
 
   return {

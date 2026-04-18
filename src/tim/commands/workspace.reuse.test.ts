@@ -13,16 +13,20 @@ vi.mock('../configLoader.js', () => ({
   loadEffectiveConfig: vi.fn(async () => ({})),
 }));
 
-vi.mock('../../common/git.js', () => ({
-  getGitRoot: vi.fn(async () => ''),
-  getCurrentBranchName: vi.fn(async () => 'main'),
-  getCurrentCommitHash: vi.fn(async () => null),
-  isInGitRepository: vi.fn(async () => true),
-  hasUncommittedChanges: vi.fn(async () => false),
-  getTrunkBranch: vi.fn(async () => 'main'),
-  getUsingJj: vi.fn(async () => false),
-  clearAllGitCaches: vi.fn(() => {}),
-}));
+vi.mock('../../common/git.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../common/git.js')>();
+  return {
+    ...actual,
+    getGitRoot: vi.fn(async () => ''),
+    getCurrentBranchName: vi.fn(async () => 'main'),
+    getCurrentCommitHash: vi.fn(async () => null),
+    isInGitRepository: vi.fn(async () => true),
+    hasUncommittedChanges: vi.fn(async () => false),
+    getTrunkBranch: vi.fn(async () => 'main'),
+    getUsingJj: vi.fn(async () => false),
+    clearAllGitCaches: vi.fn(() => {}),
+  };
+});
 
 vi.mock('../assignments/workspace_identifier.js', () => ({
   getRepositoryIdentity: vi.fn(async () => ({
@@ -225,7 +229,7 @@ async function createPlanFile(
   const planContent = stringifyPlanWithFrontmatter(plan);
   await fs.writeFile(planPath, planContent);
 
-  // Also write to DB so resolvePlanFromDb can find it by numeric ID
+  // Also write to DB so resolvePlanByNumericId can find it by numeric ID
   await writePlanFile(null, plan, { cwdForIdentity: mainRepoDir });
 
   return planPath;
@@ -354,7 +358,7 @@ describe('workspace add --reuse and --try-reuse', () => {
 
     const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
-    await handleWorkspaceAddCommand('42', { reuse: true }, {
+    await handleWorkspaceAddCommand(42, { reuse: true }, {
       parent: {
         parent: {
           opts: () => ({ config: undefined }),
@@ -388,7 +392,7 @@ describe('workspace add --reuse and --try-reuse', () => {
     const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
     await expect(
-      handleWorkspaceAddCommand('43', { reuse: true }, {
+      handleWorkspaceAddCommand(43, { reuse: true }, {
         parent: {
           parent: {
             opts: () => ({ config: undefined }),
@@ -427,7 +431,7 @@ describe('workspace add --reuse and --try-reuse', () => {
     const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
     await expect(
-      handleWorkspaceAddCommand('430', { reuse: true }, {
+      handleWorkspaceAddCommand(430, { reuse: true }, {
         parent: {
           parent: {
             opts: () => ({ config: undefined }),
@@ -509,7 +513,7 @@ describe('workspace add --reuse and --try-reuse', () => {
     await createPlanFile(path.join(mainRepoDir, 'tasks'), 431, 'Reuse Auto Type');
     const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
-    await handleWorkspaceAddCommand('431', { reuse: true, auto: true }, {
+    await handleWorkspaceAddCommand(431, { reuse: true, auto: true }, {
       parent: {
         parent: {
           opts: () => ({ config: undefined }),
@@ -529,7 +533,7 @@ describe('workspace add --reuse and --try-reuse', () => {
 
     const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
-    await handleWorkspaceAddCommand('44', { tryReuse: true }, {
+    await handleWorkspaceAddCommand(44, { tryReuse: true }, {
       parent: {
         parent: {
           opts: () => ({ config: undefined }),
@@ -579,7 +583,7 @@ describe('workspace add --reuse and --try-reuse', () => {
 
     const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
-    await handleWorkspaceAddCommand('45', { reuse: true }, {
+    await handleWorkspaceAddCommand(45, { reuse: true }, {
       parent: {
         parent: {
           opts: () => ({ config: undefined }),
@@ -630,7 +634,7 @@ describe('workspace add --reuse and --try-reuse', () => {
 
     const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
-    await handleWorkspaceAddCommand('52', { reuse: true }, {
+    await handleWorkspaceAddCommand(52, { reuse: true }, {
       parent: {
         parent: {
           opts: () => ({ config: undefined }),
@@ -707,7 +711,7 @@ describe('workspace add --reuse and --try-reuse', () => {
 
     const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
-    await handleWorkspaceAddCommand('61', { reuse: true }, {
+    await handleWorkspaceAddCommand(61, { reuse: true }, {
       parent: {
         parent: {
           opts: () => ({ config: undefined }),
@@ -762,7 +766,7 @@ describe('workspace add --reuse and --try-reuse', () => {
 
     const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
-    await handleWorkspaceAddCommand('46', { reuse: true }, {
+    await handleWorkspaceAddCommand(46, { reuse: true }, {
       parent: {
         parent: {
           opts: () => ({ config: undefined }),
@@ -806,7 +810,7 @@ describe('workspace add --reuse and --try-reuse', () => {
 
     const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
-    await handleWorkspaceAddCommand('47', { reuse: true }, {
+    await handleWorkspaceAddCommand(47, { reuse: true }, {
       parent: {
         parent: {
           opts: () => ({ config: undefined }),
@@ -856,7 +860,7 @@ describe('workspace add --reuse and --try-reuse', () => {
 
     const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
-    await handleWorkspaceAddCommand('48', { reuse: true, fromBranch: 'develop' }, {
+    await handleWorkspaceAddCommand(48, { reuse: true, fromBranch: 'develop' }, {
       parent: {
         parent: {
           opts: () => ({ config: undefined }),
@@ -890,7 +894,7 @@ describe('workspace add --reuse and --try-reuse', () => {
 
     const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
-    await handleWorkspaceAddCommand('60', { fromBranch: 'develop' }, {
+    await handleWorkspaceAddCommand(60, { fromBranch: 'develop' }, {
       parent: {
         parent: {
           opts: () => ({ config: undefined }),
@@ -931,7 +935,7 @@ describe('workspace add --reuse and --try-reuse', () => {
 
     const { handleWorkspaceAddCommand } = await import('./workspace.js');
 
-    await handleWorkspaceAddCommand('49', { reuse: true }, {
+    await handleWorkspaceAddCommand(49, { reuse: true }, {
       parent: {
         parent: {
           opts: () => ({ config: undefined }),
@@ -998,7 +1002,7 @@ describe('workspace add --reuse and --try-reuse', () => {
       await createPlanFile(path.join(mainRepoDir, 'tasks'), 62, 'Path Dedupe Test');
 
       const { handleWorkspaceAddCommand } = await import('./workspace.js');
-      await handleWorkspaceAddCommand('62', { reuse: true }, {
+      await handleWorkspaceAddCommand(62, { reuse: true }, {
         parent: {
           parent: {
             opts: () => ({ config: undefined }),
@@ -1075,7 +1079,7 @@ describe('workspace add --reuse and --try-reuse', () => {
 
     try {
       const { handleWorkspaceAddCommand } = await import('./workspace.js');
-      await handleWorkspaceAddCommand('63', { reuse: true }, {
+      await handleWorkspaceAddCommand(63, { reuse: true }, {
         parent: {
           parent: {
             opts: () => ({ config: undefined }),

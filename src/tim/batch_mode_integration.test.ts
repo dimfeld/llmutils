@@ -70,6 +70,7 @@ describe('Batch Mode Integration Tests', () => {
 
     vi.doMock('../common/git.ts', () => ({
       getGitRoot: mocks.getGitRoot,
+      getUsingJj: vi.fn().mockResolvedValue(false),
     }));
     vi.doMock('../common/process.ts', () => ({
       createLineSplitter: mocks.createLineSplitter,

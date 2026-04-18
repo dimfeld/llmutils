@@ -1,12 +1,12 @@
 import { z as z3 } from 'zod/v3';
 import { generateObject } from 'ai';
 import { createModel } from '../../../common/model_factory';
-import { readPlanFile } from '../../plans';
+import { parsePlanIdFromCliArg, readPlanFile } from '../../plans';
 import { setTaskDone } from '../../plans/mark_done';
 import type { ExecutePlanInfo } from '../types';
 import type { TimConfig } from '../../configSchema';
 import { log, warn } from '../../../logging';
-import { resolve } from 'path';
+import { basename, resolve } from 'path';
 
 /** Categorize tasks in a plan into completed and pending lists */
 export function categorizeTasks(plan: { tasks?: Array<{ title: string; done?: boolean }> }): {
@@ -183,7 +183,8 @@ export async function markTasksAsDone(
 ): Promise<void> {
   for (const title of taskTitles) {
     try {
-      await setTaskDone(planFilePath, { taskIdentifier: title, commit: false }, gitRoot, timConfig);
+      const planId = parsePlanIdFromCliArg(basename(planFilePath).replace(/\.plan\.md$/, ''));
+      await setTaskDone(planId, { taskIdentifier: title, commit: false }, gitRoot, timConfig);
       log(`Marked task done (from implementer analysis): ${title}`);
     } catch (e) {
       warn(

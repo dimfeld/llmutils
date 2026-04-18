@@ -5,7 +5,6 @@ import { releasePlan } from '../assignments/release_plan.js';
 import { resolvePlanWithUuid } from '../assignments/uuid_lookup.js';
 import { getRepositoryIdentity, getUserIdentity } from '../assignments/workspace_identifier.js';
 import { getRootCommandOptions } from './command_context.js';
-import { parsePlanIdFromCliArg } from '../plans.js';
 import { writePlanFile } from '../plans.js';
 import { findPlanFileOnDiskAsync } from '../plans/find_plan_file.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
@@ -15,27 +14,23 @@ export interface ReleaseCommandOptions {
 }
 
 export async function handleReleaseCommand(
-  planArg: string,
+  planId: number,
   options: ReleaseCommandOptions,
   command: any
 ): Promise<void> {
-  if (!planArg) {
-    throw new Error('Plan identifier is required');
-  }
-  const planIdArg = String(parsePlanIdFromCliArg(planArg));
-
   const globalOpts = getRootCommandOptions(command);
-  const { plan, repoRoot, uuid } = await resolvePlanWithUuid(planIdArg, {
+  const { plan, repoRoot, uuid } = await resolvePlanWithUuid(planId, {
     configPath: globalOpts.config,
   });
 
   const repository = await getRepositoryIdentity({ cwd: repoRoot });
   const user = getUserIdentity();
 
-  const planId = typeof plan.id === 'number' && !Number.isNaN(plan.id) ? plan.id : undefined;
-  const planLabel = planId !== undefined ? String(planId) : uuid;
+  const resolvedPlanId =
+    typeof plan.id === 'number' && !Number.isNaN(plan.id) ? plan.id : undefined;
+  const planLabel = resolvedPlanId !== undefined ? String(resolvedPlanId) : uuid;
 
-  const result = await releasePlan(planId, {
+  const result = await releasePlan(resolvedPlanId, {
     uuid,
     repositoryId: repository.repositoryId,
     repositoryRemoteUrl: repository.remoteUrl,

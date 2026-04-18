@@ -27,7 +27,7 @@ vi.mock('../plans.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../plans.js')>();
   return {
     ...actual,
-    resolvePlanFromDb: vi.fn(),
+    resolvePlanByNumericId: vi.fn(),
   };
 });
 
@@ -36,7 +36,7 @@ import { getOrCreateProject } from '../db/project.js';
 import { recordWorkspace } from '../db/workspace.js';
 import { getGitRoot, getUsingJj } from '../../common/git.js';
 import { spawnAndLogOutput } from '../../common/process.js';
-import { resolvePlanFromDb } from '../plans.js';
+import { resolvePlanByNumericId } from '../plans.js';
 
 const logSpy = vi.fn(() => {});
 const warnSpy = vi.fn(() => {});
@@ -307,7 +307,7 @@ describe('workspace pull plan', () => {
       return { exitCode: 0, stdout: '', stderr: '' };
     });
 
-    vi.mocked(resolvePlanFromDb).mockResolvedValue({
+    vi.mocked(resolvePlanByNumericId).mockResolvedValue({
       plan: {
         id: 123,
         title: 'Pull plan branch',
@@ -373,7 +373,7 @@ describe('workspace pull plan', () => {
       return { exitCode: 0, stdout: '', stderr: '' };
     });
 
-    vi.mocked(resolvePlanFromDb).mockResolvedValue({
+    vi.mocked(resolvePlanByNumericId).mockResolvedValue({
       plan: {
         id: 123,
         title: 'Pull plan branch',

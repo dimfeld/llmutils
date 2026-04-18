@@ -15,7 +15,7 @@ import {
   PlanNotFoundError,
   parsePlanIdFromCliArg,
   readPlanFile,
-  resolvePlanFromDb,
+  resolvePlanByNumericId,
   writePlanFile,
 } from '../plans.js';
 import { log, warn, runWithLogger, sendStructured } from '../../logging.js';
@@ -77,7 +77,7 @@ import {
   writeBatchReviewCache,
 } from '../batch_review_cache.js';
 import which from 'which';
-import { getMaterializedPlanPath, materializePlan } from '../plan_materialize.js';
+import { getMaterializedPlanPath, materializePlan, withPlanAutoSync } from '../plan_materialize.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 const FIX_EXECUTOR_COMMANDS = {
   'claude-code': 'claude',
@@ -334,7 +334,10 @@ async function autoSelectPlanForReview(
 
   if (planIdMatch) {
     try {
-      const resolved = await resolvePlanFromDb(planIdMatch[1], repoRoot);
+      const resolved = await resolvePlanByNumericId(
+        parsePlanIdFromCliArg(planIdMatch[1]),
+        repoRoot
+      );
       return {
         plan: resolved.plan,
         planRef: String(resolved.plan.id),
@@ -355,28 +358,17 @@ async function autoSelectPlanForReview(
 }
 
 export async function saveReviewIssuesToPlan(
-  planFilePath: string,
+  planId: number,
   issues: readonly ReviewIssue[],
-  configPath?: string
+  repoRoot: string
 ): Promise<void> {
-  const {
-    plan: latestPlan,
-    planPath,
-    repoRoot,
-  } = await resolveReviewPlanForWrite(planFilePath, configPath);
+  const { plan: latestPlan, planPath } = await resolveReviewPlanForWriteById(planId, repoRoot);
   latestPlan.reviewIssues = issues.map((issue) => ({ ...issue }));
   await writePlanFile(planPath, latestPlan, { cwdForIdentity: repoRoot });
 }
 
-export async function clearSavedReviewIssues(
-  planFilePath: string,
-  configPath?: string
-): Promise<void> {
-  const {
-    plan: latestPlan,
-    planPath,
-    repoRoot,
-  } = await resolveReviewPlanForWrite(planFilePath, configPath);
+export async function clearSavedReviewIssues(planId: number, repoRoot: string): Promise<void> {
+  const { plan: latestPlan, planPath } = await resolveReviewPlanForWriteById(planId, repoRoot);
   if (!latestPlan.reviewIssues) {
     return;
   }
@@ -471,7 +463,8 @@ async function handleReviewIssueActions(params: {
   planData: PlanSchema;
   scopedPlanData: PlanSchema;
   diffResult: DiffResult;
-  planRefForWrite: string;
+  planRefForWrite: number;
+  planFileForWrite: string;
   executionPlanFile: string;
   options: any;
   isInteractiveEnv: boolean;
@@ -491,6 +484,7 @@ async function handleReviewIssueActions(params: {
     scopedPlanData,
     diffResult,
     planRefForWrite,
+    planFileForWrite,
     executionPlanFile,
     options,
     isInteractiveEnv,
@@ -614,7 +608,7 @@ async function handleReviewIssueActions(params: {
         const appendedCount = await appendIssuesToPlanTasks(
           planRefForWrite,
           issuesToAppend,
-          globalOpts.config
+          sharedExecutorOptions.baseDir
         );
         appendedTaskCount = appendedCount;
         actionCompleted = true;
@@ -622,7 +616,7 @@ async function handleReviewIssueActions(params: {
         if (appendedCount > 0) {
           await reopenParentForAppendedReviewTasks(
             { parent: planData.parent, status: originalStatus },
-            globalOpts.config
+            sharedExecutorOptions.baseDir
           );
           const plural = appendedCount === 1 ? '' : 's';
           log(
@@ -711,7 +705,7 @@ async function handleReviewIssueActions(params: {
         ? getMaterializedPlanPath(sharedExecutorOptions.baseDir, planData.id)
         : null;
     const shouldSyncEditedPlan =
-      executionPlanFile !== planRefForWrite || executionPlanFile === materializedPlanPath;
+      executionPlanFile !== planFileForWrite || executionPlanFile === materializedPlanPath;
     if (shouldSyncEditedPlan) {
       const updatedPlan = await readPlanFile(executionPlanFile);
       await syncPlanToDb(updatedPlan, {
@@ -727,7 +721,11 @@ async function handleReviewIssueActions(params: {
   }
 
   if (issuesToSaveForLater && !isPrintMode) {
-    await saveReviewIssuesToPlan(planRefForWrite, issuesToSaveForLater, globalOpts.config);
+    await saveReviewIssuesToPlan(
+      planRefForWrite,
+      issuesToSaveForLater,
+      sharedExecutorOptions.baseDir
+    );
     actionCompleted = true;
     log(
       chalk.green(
@@ -737,7 +735,7 @@ async function handleReviewIssueActions(params: {
   }
 
   if (actionCompleted && issuesToSaveForLater == null) {
-    await clearSavedReviewIssues(planRefForWrite, globalOpts.config);
+    await clearSavedReviewIssues(planRefForWrite, sharedExecutorOptions.baseDir);
   }
 
   return {
@@ -749,13 +747,13 @@ async function handleReviewIssueActions(params: {
 }
 
 export async function handleReviewCommand(
-  planFile: string | undefined,
+  planId: number | undefined,
   options: any,
   command: any
 ): Promise<ReviewCommandResult> {
   const isPrintMode = options.print === true;
   const tunnelActive = isTunnelActive();
-  const withReviewLogger = <T>(cb: () => T) => {
+  const withReviewLogger = <T>(cb: () => Promise<T>): Promise<T> => {
     if (isPrintMode && !tunnelActive && !headlessAdapter) {
       // In print mode without tunnel or headless: suppress or redirect output to avoid
       // polluting stdout (which the executor captures). When the tunnel is
@@ -813,8 +811,8 @@ export async function handleReviewCommand(
     // else: suppress in quiet print mode
   };
 
-  // If no planFile is provided, try to auto-select one from branch-specific plans
-  let resolvedPlanFile = planFile ? String(parsePlanIdFromCliArg(planFile)) : undefined;
+  // If no planId is provided, try to auto-select one from branch-specific plans
+  let resolvedPlanId = planId;
   let autoSelectedPlanForReview: AutoSelectedReviewPlan | null = null;
   try {
     try {
@@ -824,7 +822,7 @@ export async function handleReviewCommand(
       throw err;
     }
 
-    if (!resolvedPlanFile) {
+    if (!resolvedPlanId) {
       const autoSelectedPlan = await autoSelectPlanForReview(options.cwd, globalOpts.config);
 
       if (!autoSelectedPlan) {
@@ -843,13 +841,14 @@ export async function handleReviewCommand(
       }
 
       autoSelectedPlanForReview = autoSelectedPlan;
-      resolvedPlanFile = autoSelectedPlan.planRef;
+      resolvedPlanId = autoSelectedPlan.plan.id;
     }
-    if (!resolvedPlanFile) {
+    if (!resolvedPlanId) {
       throw new Error('No plan ID resolved for review.');
     }
-    let initialResolvedPlan: Awaited<ReturnType<typeof resolveReviewPlanForWrite>> | undefined;
-    let resolvedPlanFilePath = resolvedPlanFile;
+    const reviewPlanId = resolvedPlanId;
+    let initialResolvedPlan: Awaited<ReturnType<typeof resolveReviewPlanForWriteById>> | undefined;
+    let resolvedPlanFilePath: string | undefined;
     if (autoSelectedPlanForReview?.selectionReason === 'branch-name') {
       const repoRoot =
         autoSelectedPlanForReview.repoRoot ??
@@ -876,8 +875,7 @@ export async function handleReviewCommand(
         planPath: materializedPath,
         repoRoot,
       };
-      resolvedPlanFile = materializedPath;
-      resolvedPlanFilePath = initialResolvedPlan.planPath ?? resolvedPlanFile;
+      resolvedPlanFilePath = initialResolvedPlan.planPath ?? materializedPath;
     }
     notifyPlanFile = resolvedPlanFilePath;
     // We intentionally manage headless setup/teardown manually here instead of
@@ -888,9 +886,11 @@ export async function handleReviewCommand(
     if (!tunnelActive) {
       let planSummary: HeadlessPlanSummary | undefined;
       try {
+        const planSummaryRepoRoot =
+          initialResolvedPlan?.repoRoot ?? (await resolveRepoRoot(globalOpts.config, options.cwd));
         const { plan } =
           initialResolvedPlan ??
-          (await resolveReviewPlanForWrite(resolvedPlanFilePath, globalOpts.config));
+          (await resolveReviewPlanForWriteById(reviewPlanId, planSummaryRepoRoot));
         planSummary = {
           id: plan.id,
           uuid: plan.uuid,
@@ -927,7 +927,7 @@ export async function handleReviewCommand(
     const executeReviewFlow = async (): Promise<void> => {
       // Gather plan context using the shared utility
       const context = await withReviewLogger(() =>
-        gatherPlanContext(resolvedPlanFilePath, options, globalOpts)
+        gatherPlanContext(reviewPlanId, options, globalOpts)
       );
 
       // Extract context for use in the rest of the function
@@ -940,6 +940,10 @@ export async function handleReviewCommand(
         completedChildren,
         diffResult,
       } = context;
+      if (typeof planData.id !== 'number') {
+        throw new Error('Plan must have a numeric ID.');
+      }
+      const contextPlanId = planData.id;
       notifyPlan = planData;
 
       // Check if no changes were detected and early return for review
@@ -1148,7 +1152,8 @@ export async function handleReviewCommand(
           planData,
           scopedPlanData,
           diffResult,
-          planRefForWrite: contextPlanFile,
+          planRefForWrite: contextPlanId,
+          planFileForWrite: contextPlanFile,
           executionPlanFile: executablePlanFile,
           options,
           isInteractiveEnv,
@@ -1282,7 +1287,7 @@ export async function handleReviewCommand(
         const currentCommitHash = (await getCurrentCommitHash(gitRoot, true)) ?? 'unknown';
 
         if (!hasIssues && planData.reviewIssues) {
-          await clearSavedReviewIssues(contextPlanFile, globalOpts.config);
+          await clearSavedReviewIssues(contextPlanId, gitRoot);
         }
 
         try {
@@ -1335,7 +1340,8 @@ export async function handleReviewCommand(
             planData,
             scopedPlanData,
             diffResult,
-            planRefForWrite: contextPlanFile,
+            planRefForWrite: contextPlanId,
+            planFileForWrite: contextPlanFile,
             executionPlanFile: executablePlanFile,
             options,
             isInteractiveEnv,
@@ -1355,7 +1361,7 @@ export async function handleReviewCommand(
             !actionResult.actionCompleted &&
             !actionResult.savedIssuesForLater
           ) {
-            await saveReviewIssuesToPlan(contextPlanFile, reviewResult.issues, globalOpts.config);
+            await saveReviewIssuesToPlan(contextPlanId, reviewResult.issues, gitRoot);
             issuesSavedCount = reviewResult.issues.length;
             skipNotification = true;
             reviewLog(
@@ -1987,16 +1993,12 @@ export function createTaskFromReviewThread(thread: PrReviewThreadDetail, prUrl: 
 }
 
 async function appendIssuesToPlanTasks(
-  planFilePath: string,
+  planId: number,
   issues: ReviewIssue[],
-  configPath?: string
+  repoRoot: string
 ): Promise<number> {
   // Re-read the plan to get the latest state (handles parallel reviews)
-  const {
-    plan: planData,
-    planPath,
-    repoRoot,
-  } = await resolveReviewPlanForWrite(planFilePath, configPath);
+  const { plan: planData, planPath } = await resolveReviewPlanForWriteById(planId, repoRoot);
 
   if (!Array.isArray(planData.tasks)) {
     planData.tasks = [];
@@ -2028,39 +2030,34 @@ async function appendIssuesToPlanTasks(
 
 export async function reopenParentForAppendedReviewTasks(
   planData: Pick<PlanSchema, 'parent' | 'status'>,
-  configPath?: string
+  repoRoot: string
 ): Promise<void> {
   if (!planData.parent || (planData.status !== 'done' && planData.status !== 'needs_review')) {
     return;
   }
+  const parentId = planData.parent;
 
-  const { plan: parentPlan, repoRoot: parentRepoRoot } = await resolveReviewPlanForWrite(
-    String(planData.parent),
-    configPath
-  );
-  if (parentPlan.status !== 'done' && parentPlan.status !== 'needs_review') {
-    return;
-  }
+  await withPlanAutoSync(parentId, repoRoot, async () => {
+    const { plan: parentPlan } = await resolveReviewPlanForWriteById(parentId, repoRoot);
+    if (parentPlan.status !== 'done' && parentPlan.status !== 'needs_review') {
+      return;
+    }
 
-  parentPlan.status = 'in_progress';
-  const parentPlanPath = await ensureReviewPlanFilePath(
-    String(planData.parent),
-    parentPlan,
-    parentRepoRoot
-  );
-  await writePlanFile(parentPlanPath, parentPlan, { cwdForIdentity: parentRepoRoot });
+    parentPlan.status = 'in_progress';
+    const parentPlanPath = await ensureReviewPlanFilePathById(parentId, parentPlan, repoRoot);
+    await writePlanFile(parentPlanPath, parentPlan, { cwdForIdentity: repoRoot });
+  });
 }
 
-async function resolveReviewPlanForWrite(
-  planArg: string,
-  configPath?: string
+async function resolveReviewPlanForWriteById(
+  planId: number,
+  repoRoot: string
 ): Promise<{
   plan: PlanSchema;
   planPath: string | null;
   repoRoot: string;
 }> {
-  const repoRoot = await resolveRepoRoot(configPath);
-  const resolvedPlan = await resolvePlanFromDb(planArg, repoRoot);
+  const resolvedPlan = await resolvePlanByNumericId(planId, repoRoot);
   return {
     plan: resolvedPlan.plan,
     planPath: resolvedPlan.planPath,
@@ -2073,10 +2070,6 @@ async function ensureReviewPlanFilePath(
   planData: PlanSchema,
   repoRoot: string
 ): Promise<string> {
-  if (planData.id && planFilePath === String(planData.id)) {
-    return materializePlan(planData.id, repoRoot);
-  }
-
   try {
     await access(planFilePath, constants.F_OK);
     return planFilePath;
@@ -2087,6 +2080,23 @@ async function ensureReviewPlanFilePath(
 
     return materializePlan(planData.id, repoRoot);
   }
+}
+
+async function ensureReviewPlanFilePathById(
+  planId: number,
+  planData: PlanSchema,
+  repoRoot: string
+): Promise<string> {
+  if (planData.id !== planId) {
+    throw new Error(`Resolved plan ID ${planData.id} does not match expected plan ID ${planId}.`);
+  }
+
+  const existingMaterializedPath = await materializedPlanFileExists(repoRoot, planId);
+  if (existingMaterializedPath) {
+    return existingMaterializedPath;
+  }
+
+  return materializePlan(planId, repoRoot);
 }
 
 async function materializedPlanFileExists(
@@ -2113,7 +2123,7 @@ async function materializedPlanFileExists(
  * @returns Promise<string> containing the generated prompt
  */
 export async function buildReviewPromptFromOptions(
-  planFile: string,
+  planId: number,
   options: {
     taskIndex?: string | string[];
     taskTitle?: string | string[];
@@ -2136,7 +2146,7 @@ export async function buildReviewPromptFromOptions(
   const config = await loadEffectiveConfig(globalOpts.config);
 
   // Gather plan context using the shared utility
-  const context = await gatherPlanContext(planFile, options, globalOpts);
+  const context = await gatherPlanContext(planId, options, globalOpts);
 
   // Extract context — use gitRoot from context (derived from resolved repoRoot, not CWD)
   const { planData, gitRoot, parentChain, completedChildren, diffResult } = context;

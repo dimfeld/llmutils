@@ -72,7 +72,7 @@ describe('tim remove command', () => {
   test('removes a plan file with no dependents', async () => {
     const planPath = await writePlan(1);
 
-    await handleRemoveCommand(['1'], {}, makeCommand());
+    await handleRemoveCommand([1], {}, makeCommand());
 
     await expect(fs.stat(planPath)).rejects.toThrow();
   });
@@ -81,7 +81,7 @@ describe('tim remove command', () => {
     const planPath = await writePlan(1);
     const dependentPath = await writePlan(2, { dependencies: [1] });
 
-    await expect(handleRemoveCommand(['1'], {}, makeCommand())).rejects.toThrow(
+    await expect(handleRemoveCommand([1], {}, makeCommand())).rejects.toThrow(
       'Refusing to remove plans with dependents without --force'
     );
 
@@ -93,7 +93,7 @@ describe('tim remove command', () => {
     const planPath = await writePlan(1);
     const childPath = await writePlan(2, { parent: 1 });
 
-    await expect(handleRemoveCommand(['1'], {}, makeCommand())).rejects.toThrow(
+    await expect(handleRemoveCommand([1], {}, makeCommand())).rejects.toThrow(
       'Refusing to remove plans with dependents without --force'
     );
 
@@ -114,7 +114,7 @@ describe('tim remove command', () => {
     });
     await writePlan(3, { uuid: '33333333-3333-4333-8333-333333333333' });
 
-    await handleRemoveCommand(['1'], { force: true }, makeCommand());
+    await handleRemoveCommand([1], { force: true }, makeCommand());
 
     await expect(fs.stat(getMaterializedPlanPath(tempDir, 1))).rejects.toThrow();
     const dependent = await readPlanFile(dependentPath);
@@ -126,14 +126,14 @@ describe('tim remove command', () => {
     await writePlan(1);
     const childPath = await writePlan(2, { parent: 1 });
 
-    await handleRemoveCommand(['1'], { force: true }, makeCommand());
+    await handleRemoveCommand([1], { force: true }, makeCommand());
 
     const childPlan = await readPlanFile(childPath);
     expect(childPlan.parent).toBeUndefined();
   });
 
   test('errors when removing a non-existent plan', async () => {
-    await expect(handleRemoveCommand(['9999'], {}, makeCommand())).rejects.toThrow(
+    await expect(handleRemoveCommand([9999], {}, makeCommand())).rejects.toThrow(
       'No plan found in the database for identifier: 9999'
     );
   });
@@ -150,7 +150,7 @@ describe('tim remove command', () => {
       },
     });
 
-    await handleRemoveCommand(['1', '2'], { force: true }, makeCommand());
+    await handleRemoveCommand([1, 2], { force: true }, makeCommand());
 
     await expect(fs.stat(getMaterializedPlanPath(tempDir, 1))).rejects.toThrow();
     await expect(fs.stat(getMaterializedPlanPath(tempDir, 2))).rejects.toThrow();
@@ -165,7 +165,7 @@ describe('tim remove command', () => {
     await writePlan(1);
     await writePlan(2, { dependencies: [1] });
 
-    await handleRemoveCommand(['1', '2'], {}, makeCommand());
+    await handleRemoveCommand([1, 2], {}, makeCommand());
 
     await expect(fs.stat(getMaterializedPlanPath(tempDir, 1))).rejects.toThrow();
     await expect(fs.stat(getMaterializedPlanPath(tempDir, 2))).rejects.toThrow();
@@ -187,7 +187,7 @@ describe('tim remove command', () => {
 
     await expect(fs.stat(path.join(tasksDir, '999.plan.md'))).rejects.toThrow();
 
-    await handleRemoveCommand(['999'], {}, makeCommand());
+    await handleRemoveCommand([999], {}, makeCommand());
 
     expect(getPlanByUuid(db, '99999999-9999-4999-8999-999999999999')).toBeNull();
   });

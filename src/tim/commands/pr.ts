@@ -34,10 +34,14 @@ import {
   type PrStatusDetail,
   type PrStatusRow,
 } from '../db/pr_status.js';
-import { resolvePlan } from '../plan_display.js';
 import { getReviewThreadDisplayLine } from './review.js';
 import type { PlanSchema } from '../planSchema.js';
-import { parsePlanIdFromCliArg, resolvePlanFromDb, writePlanFile } from '../plans.js';
+import {
+  parsePlanIdFromCliArg,
+  resolvePlanByNumericId,
+  resolvePlanByUuid,
+  writePlanFile,
+} from '../plans.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import { getWorkspaceInfoByPath } from '../workspace/workspace_info.js';
 
@@ -70,13 +74,25 @@ function getRootOptions(command: RootCommandLike | undefined): { config?: string
   return current?.opts?.() ?? {};
 }
 
-function getWorkspacePlanReference(cwd: string): string | null {
+function getWorkspacePlanReference(cwd: string): number | null {
   let currentDir = cwd;
 
   while (true) {
     const workspaceInfo = getWorkspaceInfoByPath(currentDir);
     if (workspaceInfo) {
-      return workspaceInfo.planId ?? null;
+      if (!workspaceInfo.planId) {
+        return null;
+      }
+      try {
+        return parsePlanIdFromCliArg(workspaceInfo.planId);
+      } catch (error) {
+        log(
+          chalk.yellow(
+            `Warning: workspace at ${currentDir} has invalid plan_id "${workspaceInfo.planId}": ${(error as Error).message}`
+          )
+        );
+        return null;
+      }
     }
 
     const parentDir = path.dirname(currentDir);
@@ -89,19 +105,12 @@ function getWorkspacePlanReference(cwd: string): string | null {
 }
 
 async function resolvePlanForCommand(
-  planArg: string | undefined,
+  planId: number | undefined,
   command: RootCommandLike | undefined
 ): Promise<{ plan: PlanSchema; planPath: string | null; repoRoot: string }> {
-  const trimmedPlanArg = planArg?.trim();
-  let effectivePlanArg: string | undefined;
-  if (trimmedPlanArg && trimmedPlanArg.length > 0) {
-    parsePlanIdFromCliArg(trimmedPlanArg);
-    effectivePlanArg = trimmedPlanArg;
-  } else {
-    effectivePlanArg = getWorkspacePlanReference(process.cwd()) ?? undefined;
-  }
+  const effectivePlanId = planId ?? getWorkspacePlanReference(process.cwd()) ?? undefined;
 
-  if (!effectivePlanArg) {
+  if (!effectivePlanId) {
     throw new Error(
       'Please provide a plan ID or run this command from a workspace linked to a plan'
     );
@@ -109,10 +118,7 @@ async function resolvePlanForCommand(
 
   const globalOpts = getRootOptions(command);
   const repoRoot = await resolveRepoRoot(globalOpts.config, process.cwd());
-  const resolved = await resolvePlan(effectivePlanArg, {
-    gitRoot: repoRoot,
-    configPath: globalOpts.config,
-  });
+  const resolved = await resolvePlanByNumericId(effectivePlanId, repoRoot);
   return { ...resolved, repoRoot };
 }
 
@@ -140,7 +146,9 @@ async function persistPlanPullRequests(
 ): Promise<boolean> {
   // Re-read from DB for freshest state. Small TOCTOU window between read and write
   // is acceptable for a CLI tool — much smaller than the old window that spanned API calls.
-  const resolved = await resolvePlanFromDb(currentPlan.uuid ?? String(currentPlan.id), repoRoot);
+  const resolved = currentPlan.uuid
+    ? await resolvePlanByUuid(currentPlan.uuid, repoRoot)
+    : await resolvePlanByNumericId(currentPlan.id, repoRoot);
   const freshPlan = resolved.plan;
 
   const currentPullRequests = freshPlan.pullRequest ?? [];
@@ -464,7 +472,7 @@ function logPrStatus(detail: PrStatusDetail): void {
 }
 
 export async function handlePrStatusCommand(
-  planId: string | undefined,
+  planId: number | undefined,
   options: Record<string, unknown>,
   command: RootCommandLike
 ): Promise<void> {
@@ -704,7 +712,7 @@ export function buildReviewThreadFixPrompt(
 }
 
 export async function handlePrFixCommand(
-  planId: string,
+  planId: number,
   options: Record<string, unknown>,
   command: RootCommandLike
 ): Promise<void> {
@@ -790,7 +798,7 @@ export async function handlePrFixCommand(
 }
 
 export async function handlePrLinkCommand(
-  planId: string,
+  planId: number,
   prUrl: string | undefined,
   _options: Record<string, unknown>,
   command: RootCommandLike
@@ -869,7 +877,7 @@ export async function handlePrLinkCommand(
 }
 
 export async function handlePrUnlinkCommand(
-  planId: string,
+  planId: number,
   prUrl: string,
   _options: Record<string, unknown>,
   command: RootCommandLike

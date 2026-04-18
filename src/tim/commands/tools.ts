@@ -23,6 +23,7 @@ type ToolCommandOptions = {
   json?: boolean;
   printSchema?: boolean;
   inputData?: unknown;
+  planIdOverride?: number;
 };
 
 type ToolHandler = {
@@ -147,7 +148,10 @@ export async function handleToolCommand(
     };
 
     // Use inputData if provided, otherwise read from stdin
-    const rawInput = options.inputData ?? (await readJsonFromStdin());
+    let rawInput = options.inputData ?? (await readJsonFromStdin());
+    if (options.planIdOverride !== undefined && rawInput !== null && typeof rawInput === 'object') {
+      rawInput = { ...(rawInput as Record<string, unknown>), plan: options.planIdOverride };
+    }
     const parsedArgs = handler.schema.parse(rawInput);
     const result = await handler.fn(parsedArgs, context);
 

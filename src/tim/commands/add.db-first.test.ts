@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { clearAllTimCaches } from '../../testing.js';
 import { closeDatabaseForTesting } from '../db/database.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
-import { resolvePlanFromDb, writePlanFile } from '../plans.js';
+import { resolvePlanByNumericId, writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { handleAddCommand } from './add.js';
 
@@ -45,7 +45,7 @@ describe('tim add DB-first command', () => {
   test('creates a new plan in the DB without creating a task file', async () => {
     await handleAddCommand(['DB', 'First', 'Plan'], {}, command);
 
-    const resolved = await resolvePlanFromDb('1', tempDir);
+    const resolved = await resolvePlanByNumericId(1, tempDir);
     expect(resolved.plan.title).toBe('DB First Plan');
     expect(resolved.plan.status).toBe('pending');
 
@@ -68,8 +68,8 @@ describe('tim add DB-first command', () => {
 
     await handleAddCommand(['Child'], { parent: 1 }, command);
 
-    const child = await resolvePlanFromDb('2', tempDir);
-    const updatedParent = await resolvePlanFromDb('1', tempDir);
+    const child = await resolvePlanByNumericId(2, tempDir);
+    const updatedParent = await resolvePlanByNumericId(1, tempDir);
     expect(child.plan.parent).toBe(1);
     expect(updatedParent.plan.dependencies).toContain(2);
     expect(updatedParent.plan.status).toBe('in_progress');
@@ -82,7 +82,7 @@ describe('tim add DB-first command', () => {
 
     try {
       await handleAddCommand(['Config', 'Scoped', 'Plan'], {}, command);
-      const resolved = await resolvePlanFromDb('1', tempDir);
+      const resolved = await resolvePlanByNumericId(1, tempDir);
       expect(resolved.plan.title).toBe('Config Scoped Plan');
     } finally {
       process.chdir(originalCwd);

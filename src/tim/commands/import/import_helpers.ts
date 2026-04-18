@@ -12,6 +12,15 @@ export type PendingImportedPlanWrite = {
   filePath: string | null;
 };
 
+export interface ImportCommandPlanOptions {
+  priority?: PlanSchema['priority'];
+  status?: PlanSchema['status'];
+  temp?: boolean;
+  parent?: number;
+  dependsOn?: number[];
+  assign?: string;
+}
+
 export async function writeImportedPlansToDbTransactionally(
   repoRoot: string,
   pendingWrites: PendingImportedPlanWrite[]
@@ -92,7 +101,7 @@ export function getImportedIssueUrlsFromPlans(allPlans: Map<number, PlanSchema>)
   return importedUrls;
 }
 
-export function applyCommandOptions(plan: PlanSchema, options: any): void {
+export function applyCommandOptions(plan: PlanSchema, options: ImportCommandPlanOptions): void {
   if (options.priority) {
     plan.priority = options.priority;
   }
@@ -106,7 +115,7 @@ export function applyCommandOptions(plan: PlanSchema, options: any): void {
   }
 
   if (options.parent !== undefined) {
-    plan.parent = Number(options.parent);
+    plan.parent = options.parent;
   }
 
   if (options.dependsOn) {
