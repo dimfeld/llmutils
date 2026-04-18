@@ -26,11 +26,16 @@ bun run lint
 # Code formatting
 bun run format
 
-# Run tests
+# Run tests (server/node project only)
 bun run test
+
+# Run browser-mode Svelte component tests (uses Node runtime, not bun)
+bun run test:client
 ```
 
-Use `bun run test` for repository test runs. Do not use `bun test` directly since it runs the wrong test runner.
+Use `bun run test` for the server/Node test project. Do not use `bun test` directly since it runs the wrong test runner.
+
+The browser test project (vitest + @vitest/browser-playwright + chromium) must run under Node, not Bun — bun's runtime cannot complete the vitest ↔ chromium handshake. Use `bun run test:client` (which invokes `bunx vitest run --project client`). Test files with names matching `*.svelte.{test,spec}.{js,ts}` belong in the browser project; keep SSR-only tests (that import `svelte/server`) as plain `*.test.ts` so they run in the Node project where `AsyncLocalStorage` is available.
 
 ## Repository Structure
 

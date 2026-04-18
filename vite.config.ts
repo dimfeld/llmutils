@@ -16,6 +16,7 @@ export default defineConfig({
   test: {
     silent: 'passed-only',
     projects: [
+      //  Disabled until we have a playwright mode properly set up to test without interfering with the real database
       // {
       //   extends: './vite.config.ts',
       //   test: {
@@ -39,10 +40,8 @@ export default defineConfig({
           env: {
             PATH: `${path.join(import.meta.dirname, 'test', 'mocks')}:${process.env.PATH || ''}`,
           },
-          // adding files one at a time until we know everything passes with vitest
           include: ['src/**/*.test.ts'],
-          exclude: ['src/rmfilter/**/*.test.ts'],
-          // exclude: ['src/**/*.svelte.{test,spec}.{js,ts}'],
+          exclude: ['src/rmfilter/**/*.test.ts', 'src/**/*.svelte.{test,spec}.{js,ts}'],
         },
       },
     ],

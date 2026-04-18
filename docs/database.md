@@ -6,6 +6,20 @@
 - Inner `db.transaction().immediate()` calls within an existing transaction automatically use savepoints — no special handling needed for nesting
 - Single-statement DELETEs (and other single-statement writes) don't need transaction wrappers since individual SQL statements are already atomic in SQLite
 
+### Schema Migrations
+
+- `ALTER TABLE ADD COLUMN` in SQLite supports inline `REFERENCES other_table(col) ON DELETE ...`, so adding an FK with delete behavior does not require a table rebuild.
+- `CHECK` constraints on an added column **do** require a table rebuild. For enum-like validation on a newly-added nullable column, prefer write-path validation in the DB helper layer — it's less invasive and catches bad data at the same moment.
+- Nullable back-compat columns (e.g. `side` defaulting to `'RIGHT'` on read when NULL) are fine, but keep the read-path fallback in one place and throw on unexpected non-null values so data corruption doesn't hide.
+
+### Cross-Table Integrity
+
+- Integrity constraints that span multiple tables (e.g. "this submission belongs to the same review as these issues", or "don't stamp an issue that's already claimed by another submission") cannot be expressed as a composite FK in SQLite. Enforce them in the DB helper layer with an explicit pre-check inside the same transaction as the write, not in the caller — callers forget.
+
+### Partial-Update Validation
+
+- Validating partial-update patches against a zod schema requires loading the pre-state and merging with the patch before validation. Validating only the patch fragment allows partial updates to create invalid merged states (e.g. updating `line` alone to a value lower than the existing `start_line`, inverting the range). See `validatePatch` in `src/routes/.../review_issue_editor_utils.ts` for the pattern.
+
 ### SQL Security
 
 - Always use parameterized queries (`?` placeholders), even for values that have been validated as integers or other safe types. This maintains consistent security patterns and prevents accidental injection if validation is later removed.

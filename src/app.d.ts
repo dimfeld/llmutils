@@ -2,7 +2,12 @@
 // for information about these interfaces
 declare global {
   namespace App {
-    // interface Error {}
+    interface Error {
+      message: string;
+      kind?: 'persistence-failed';
+      githubReviewId?: number;
+      githubReviewUrl?: string | null;
+    }
     // interface Locals {}
     // interface PageData {}
     // interface PageState {}

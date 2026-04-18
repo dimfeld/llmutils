@@ -81,7 +81,35 @@ export function renderMarkdown(content: string): string {
 
 export type MarkdownSegment =
   | { type: 'html'; content: string }
-  | { type: 'unified-diff'; patch: string };
+  | { type: 'unified-diff'; patch: string; filename: string | null };
+
+const PATCH_TARGET_FILENAME_RE = /^\+\+\+\s+(.+?)\s*$/m;
+const PATCH_SOURCE_FILENAME_RE = /^---\s+(.+?)\s*$/m;
+
+function extractFilename(header: string | undefined): string | null {
+  if (!header) return null;
+  if (header === '/dev/null') return null;
+  // Strip the standard `a/` or `b/` prefix when present.
+  if (header.startsWith('a/') || header.startsWith('b/')) {
+    return header.slice(2) || null;
+  }
+  return header || null;
+}
+
+/**
+ * Parse the target filename from a unified diff patch body. Prefers the post-
+ * change side (`+++ b/<file>`); falls back to the source side (`--- a/<file>`)
+ * for deleted-file diffs where `+++` is `/dev/null`. Returns null when neither
+ * header yields a usable filename (e.g. raw hunks).
+ */
+export function parsePatchFilename(patch: string): string | null {
+  const target = patch.match(PATCH_TARGET_FILENAME_RE)?.[1]?.trim();
+  const fromTarget = extractFilename(target);
+  if (fromTarget) return fromTarget;
+
+  const source = patch.match(PATCH_SOURCE_FILENAME_RE)?.[1]?.trim();
+  return extractFilename(source);
+}
 
 /**
  * Parse markdown into segments, extracting ```unified-diff code blocks as
@@ -119,7 +147,11 @@ export function parseMarkdownWithDiffs(content: string): MarkdownSegment[] {
         if (slice) pushHtml(slice);
       }
 
-      segments.push({ type: 'unified-diff', patch: node.value });
+      segments.push({
+        type: 'unified-diff',
+        patch: node.value,
+        filename: parsePatchFilename(node.value),
+      });
       lastOffset = end ?? content.length;
     }
   }

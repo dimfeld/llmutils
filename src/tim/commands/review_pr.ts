@@ -11,6 +11,8 @@ import {
   isIgnoredByGitSharedExcludes,
 } from '../../common/git.js';
 import { parseOwnerRepoFromRepositoryId } from '../../common/github/pull_requests.js';
+import { parseLineRange } from '../../common/review_line_range.js';
+export { parseLineRange };
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { log, warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
@@ -270,23 +272,6 @@ function parseCombinationIssues(rawOutput: string): StoredReviewIssue[] {
   }
 
   return normalized;
-}
-
-export function parseLineRange(line: string | number | null | undefined): {
-  startLine: string | null;
-  line: string | null;
-} {
-  if (line == null) {
-    return { startLine: null, line: null };
-  }
-
-  const lineStr = String(line);
-  const rangeMatch = lineStr.match(/^(\d+)\s*[-–]\s*(\d+)$/);
-  if (rangeMatch) {
-    return { startLine: rangeMatch[1], line: rangeMatch[2] };
-  }
-
-  return { startLine: null, line: lineStr };
 }
 
 function toInsertIssue(issue: StoredReviewIssue): InsertReviewIssueInput {

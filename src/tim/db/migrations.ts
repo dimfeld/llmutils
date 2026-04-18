@@ -660,6 +660,29 @@ const migrations: Migration[] = [
       ALTER TABLE plan ADD COLUMN base_change_id TEXT;
     `,
   },
+  {
+    version: 25,
+    up: `
+      ALTER TABLE review_issue ADD COLUMN side TEXT;
+
+      CREATE TABLE pr_review_submission (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        review_id INTEGER NOT NULL REFERENCES review(id) ON DELETE CASCADE,
+        github_review_id INTEGER,
+        github_review_url TEXT,
+        event TEXT NOT NULL CHECK (event IN ('APPROVE', 'COMMENT', 'REQUEST_CHANGES')),
+        body TEXT,
+        commit_sha TEXT,
+        submitted_by TEXT,
+        submitted_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        error_message TEXT
+      );
+      CREATE INDEX idx_pr_review_submission_review_id ON pr_review_submission(review_id);
+
+      ALTER TABLE review_issue ADD COLUMN submitted_in_pr_review_id INTEGER
+        REFERENCES pr_review_submission(id) ON DELETE SET NULL;
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {

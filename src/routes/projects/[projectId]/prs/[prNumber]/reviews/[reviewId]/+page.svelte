@@ -1,20 +1,43 @@
 <script lang="ts">
   import { invalidateAll } from '$app/navigation';
   import { page } from '$app/state';
+  import type { DiffLineAnnotation } from '@pierre/diffs';
   import ArrowLeft from '@lucide/svelte/icons/arrow-left';
   import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
+  import { onDestroy } from 'svelte';
   import { toggleReviewIssueResolved } from '$lib/remote/pr_reviews.remote.js';
   import {
     addReviewIssueToPlanTask,
     deleteReviewIssue,
   } from '$lib/remote/review_issue_actions.remote.js';
+  import { updateReviewIssueFields } from '$lib/remote/pr_review_submission.remote.js';
   import CopyButton from '$lib/components/CopyButton.svelte';
-  import MarkdownContent from '$lib/components/MarkdownContent.svelte';
-  import { extractHeadings, type TocEntry } from '$lib/utils/markdown_parser.js';
+  import MarkdownContent, { type DiffOverrides } from '$lib/components/MarkdownContent.svelte';
+  import {
+    extractHeadings,
+    parseMarkdownWithDiffs,
+    type TocEntry,
+  } from '$lib/utils/markdown_parser.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
   import { Splitpanes, Pane } from 'svelte-splitpanes';
   import type { ReviewIssueRow, ReviewSeverity, ReviewCategory } from '$tim/db/review.js';
   import ReviewIssueCard from './ReviewIssueCard.svelte';
+  import {
+    createAnnotationRenderer,
+    type ReviewIssueAnnotationMetadata,
+  } from './annotation_mount_helper.js';
+  import NewReviewIssueModal from './NewReviewIssueModal.svelte';
+  import SubmitReviewDialog from './SubmitReviewDialog.svelte';
+  import Send from '@lucide/svelte/icons/send';
+  import { normalizeGutterRange } from './new_issue_modal_utils.js';
+  import { buildAnnotationsForFile } from './review_detail_utils.js';
+  import { extractRemoteErrorMessage } from './remote_error.js';
+  import {
+    highlightAnnotationNode,
+    type AnnotationHighlightHandle,
+  } from './annotation_highlight.js';
+  import { createSaveEditHandler, createAnnotationClickHandler } from './page_handlers.js';
+  import type { PrReviewSubmissionRow } from '$tim/db/review.js';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
@@ -22,11 +45,31 @@
   let projectId = $derived(page.params.projectId);
   let prNumber = $derived(page.params.prNumber);
 
-  // Local state for optimistic issue updates
-  let issues = $state(data.issues.map((i) => ({ ...i })));
-  $effect(() => {
-    issues = data.issues.map((i) => ({ ...i }));
-  });
+  // Local state for optimistic issue updates. $derived is writable in Svelte 5,
+  // so optimistic mutations work directly and the list auto-refreshes when
+  // `data.issues` updates (e.g. after invalidateAll).
+  let issues = $derived(data.issues.map((i) => ({ ...i })));
+
+  let submissions = $derived<PrReviewSubmissionRow[]>(data.submissions ?? []);
+  let submissionsById = $derived(
+    new Map<number, PrReviewSubmissionRow>(submissions.map((s) => [s.id, s]))
+  );
+
+  let submitDialogOpen = $state(false);
+
+  function openSubmitDialog() {
+    submitDialogOpen = true;
+  }
+
+  function closeSubmitDialog() {
+    submitDialogOpen = false;
+  }
+
+  async function handleSubmitted() {
+    // Keep the dialog open so the user sees the result panel; refetch the
+    // page data so submitted issues get their badges.
+    await invalidateAll();
+  }
 
   let togglingIssueIds = $state(new Set<number>());
   let issueActionError = $state<string | null>(null);
@@ -58,6 +101,144 @@
     data.review.review_guide ? extractHeadings(data.review.review_guide) : []
   );
 
+  interface NewIssueModalState {
+    file: string;
+    startLine: number;
+    endLine: number;
+    side: 'LEFT' | 'RIGHT';
+  }
+  let newIssueModalState = $state<NewIssueModalState | null>(null);
+
+  let highlightedIssueId = $state<number | null>(null);
+
+  const annotationClick = createAnnotationClickHandler({
+    setHighlightedIssueId: (id) => {
+      highlightedIssueId = id;
+    },
+  });
+
+  const annotationRenderer = createAnnotationRenderer({
+    onAnnotationClick: annotationClick.handleAnnotationClick,
+  });
+
+  let annotationHighlight: AnnotationHighlightHandle | null = null;
+
+  function handleJumpToDiff(issue: ReviewIssueRow) {
+    const node = annotationRenderer.getNodeForIssue(issue.id);
+    if (!node) {
+      issueActionError = `No annotation rendered for this issue — the line may be outside the diff hunks shown in the guide.`;
+      return;
+    }
+    node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    annotationHighlight?.cancel();
+    annotationHighlight = highlightAnnotationNode(node);
+  }
+
+  onDestroy(() => {
+    annotationRenderer.disposeAll();
+    annotationClick.cancel();
+    annotationHighlight?.cancel();
+  });
+
+  function handleGutterUtilityClick(
+    filename: string,
+    range: { start: number; end: number; side: string; endSide: string }
+  ) {
+    if (newIssueModalState) return;
+    const normalized = normalizeGutterRange({ ...range });
+    if (!normalized) {
+      // Mixed-side selection (e.g. deletion -> addition). GitHub won't accept
+      // such anchors as a single inline comment — skip opening the modal.
+      console.warn('Ignoring mixed-side gutter selection', range);
+      return;
+    }
+    newIssueModalState = {
+      file: filename,
+      startLine: normalized.startLine,
+      endLine: normalized.endLine,
+      side: normalized.side,
+    };
+  }
+
+  function closeNewIssueModal() {
+    newIssueModalState = null;
+  }
+
+  function handleNewIssueSaved(created: ReviewIssueRow) {
+    issues = [...issues, created];
+  }
+
+  // Track the universe of annotation keys that could be rendered for the
+  // current `issues`. After Pierre re-renders, dispose any mount whose key is
+  // no longer present so we don't leak Svelte components for edited/removed
+  // issues. $effect is used intentionally: we need to sync an external DOM-
+  // resource lifecycle (mounted Svelte components) with reactive state.
+  let activeAnnotationKeys = $derived.by(() => {
+    const keys = new Set<string>();
+    for (const issue of issues) {
+      const annotations = buildAnnotationsForFile([issue], issue.file);
+      for (const annotation of annotations) {
+        keys.add(
+          annotationRenderer.keyFor(annotation as DiffLineAnnotation<ReviewIssueAnnotationMetadata>)
+        );
+      }
+    }
+    return keys;
+  });
+
+  // Set of filenames that the review guide renders as inline diff segments.
+  // `Jump to diff` is only meaningful for issues whose file appears here
+  // (otherwise Pierre never mounts an annotation and the click would no-op).
+  let guideDiffFilenames = $derived.by(() => {
+    const names = new Set<string>();
+    const guide = data.review.review_guide;
+    if (!guide) return names;
+    for (const segment of parseMarkdownWithDiffs(guide)) {
+      if (segment.type === 'unified-diff' && segment.filename) {
+        names.add(segment.filename);
+      }
+    }
+    return names;
+  });
+
+  // Issue IDs that currently have at least one annotation anchor resolvable
+  // from the rendered diffs. Used to gate the "Jump to diff" button so we
+  // don't expose a no-op click when the issue's file isn't in the guide or
+  // its line doesn't parse to a usable range.
+  let issueIdsWithAnnotation = $derived.by(() => {
+    const ids = new Set<number>();
+    for (const issue of issues) {
+      if (!issue.file || !guideDiffFilenames.has(issue.file)) continue;
+      const annotations = buildAnnotationsForFile([issue], issue.file);
+      if (annotations.length > 0) ids.add(issue.id);
+    }
+    return ids;
+  });
+
+  $effect(() => {
+    annotationRenderer.syncRenderPass(activeAnnotationKeys);
+  });
+
+  let diffOverrides = $derived.by(() => {
+    const currentIssues = issues;
+    return (filename: string | null): DiffOverrides | undefined => {
+      const annotations = buildAnnotationsForFile(currentIssues, filename);
+      const canAddIssues = filename != null;
+      return {
+        lineAnnotations: annotations,
+        renderAnnotation: (annotation) =>
+          annotationRenderer.renderAnnotation(
+            annotation as DiffLineAnnotation<ReviewIssueAnnotationMetadata>
+          ),
+        enableLineSelection: true,
+        enableGutterUtility: canAddIssues,
+        onGutterUtilityClick: canAddIssues
+          ? (range) => handleGutterUtilityClick(filename, range)
+          : undefined,
+      };
+    };
+  });
+
   function handleTocChange(event: Event) {
     const select = event.currentTarget as HTMLSelectElement;
     const slug = select.value;
@@ -86,15 +267,20 @@
     issueActionError = null;
 
     const newResolved = !issue.resolved;
-    const local = issues.find((i) => i.id === issue.id);
-    if (local) local.resolved = newResolved ? 1 : 0;
+    const newResolvedValue = newResolved ? 1 : 0;
+    const previousResolvedValue = newResolved ? 0 : 1;
+    issues = issues.map((row) =>
+      row.id === issue.id ? { ...row, resolved: newResolvedValue } : row
+    );
     setIssueActioning(issue.id);
 
     try {
       await toggleReviewIssueResolved({ issueId: issue.id, resolved: newResolved });
     } catch (err) {
-      if (local) local.resolved = newResolved ? 0 : 1;
-      issueActionError = err instanceof Error ? err.message : String(err);
+      issues = issues.map((row) =>
+        row.id === issue.id ? { ...row, resolved: previousResolvedValue } : row
+      );
+      issueActionError = extractRemoteErrorMessage(err);
       await invalidateAll();
     } finally {
       clearIssueActioning(issue.id);
@@ -110,7 +296,7 @@
       await deleteReviewIssue({ reviewId: data.review.id, issueId: issue.id });
       await invalidateAll();
     } catch (err) {
-      issueActionError = err instanceof Error ? err.message : String(err);
+      issueActionError = extractRemoteErrorMessage(err);
     } finally {
       clearIssueActioning(issue.id);
     }
@@ -129,11 +315,22 @@
       });
       await invalidateAll();
     } catch (err) {
-      issueActionError = err instanceof Error ? err.message : String(err);
+      issueActionError = extractRemoteErrorMessage(err);
     } finally {
       clearIssueActioning(issue.id);
     }
   }
+
+  const handleSaveEdit = createSaveEditHandler({
+    getIssues: () => issues,
+    setIssues: (next) => {
+      issues = next;
+    },
+    setError: (message) => {
+      issueActionError = message;
+    },
+    updateRemote: ({ issueId, patch }) => updateReviewIssueFields({ issueId, patch }),
+  });
 
   function issueLocationLabel(issue: ReviewIssueRow): string | null {
     if (!issue.file) return null;
@@ -273,6 +470,16 @@
       >
         {statusLabel(data.review.status)}
       </span>
+      {#if data.review.status === 'complete'}
+        <button
+          type="button"
+          onclick={openSubmitDialog}
+          class="inline-flex shrink-0 items-center gap-1 rounded-md border border-border bg-background px-3 py-1 text-xs font-medium text-foreground transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+        >
+          <Send class="size-3" />
+          Submit Review
+        </button>
+      {/if}
     </div>
 
     <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -325,7 +532,11 @@
     <Pane minSize={20}>
       <div class="h-full overflow-y-auto pr-1">
         {#if data.review.review_guide}
-          <MarkdownContent content={data.review.review_guide} class="text-sm text-foreground" />
+          <MarkdownContent
+            content={data.review.review_guide}
+            class="text-sm text-foreground"
+            {diffOverrides}
+          />
         {:else if data.review.status !== 'complete'}
           <p class="text-sm text-muted-foreground">Review guide not yet available.</p>
         {/if}
@@ -369,14 +580,23 @@
                   {#each severityIssues as issue (issue.id)}
                     <ReviewIssueCard
                       {issue}
+                      rootId="review-issue-{issue.id}"
+                      highlighted={highlightedIssueId === issue.id}
                       actioning={isIssueActioning(issue.id)}
                       {linkedPlanUuid}
+                      submission={issue.submittedInPrReviewId != null
+                        ? (submissionsById.get(issue.submittedInPrReviewId) ?? null)
+                        : null}
                       {categoryBadgeClass}
                       {issueLocationLabel}
                       {formatCategory}
                       onToggleResolved={handleToggleResolved}
                       onDelete={handleDeleteIssue}
                       onAddToPlan={handleAddIssueToPlan}
+                      onSaveEdit={handleSaveEdit}
+                      onJumpToDiff={issueIdsWithAnnotation.has(issue.id)
+                        ? handleJumpToDiff
+                        : undefined}
                       onCopyError={(message) => (issueActionError = message)}
                     />
                   {/each}
@@ -390,4 +610,29 @@
       </div>
     </Pane>
   </Splitpanes>
+
+  {#if submitDialogOpen}
+    <SubmitReviewDialog
+      open={true}
+      reviewId={data.review.id}
+      reviewedSha={data.review.reviewed_sha}
+      currentHeadSha={data.currentHeadSha}
+      {issues}
+      onClose={closeSubmitDialog}
+      onSubmitted={handleSubmitted}
+    />
+  {/if}
+
+  {#if newIssueModalState}
+    <NewReviewIssueModal
+      open={true}
+      reviewId={data.review.id}
+      file={newIssueModalState.file}
+      startLine={newIssueModalState.startLine}
+      endLine={newIssueModalState.endLine}
+      side={newIssueModalState.side}
+      onSaved={handleNewIssueSaved}
+      onClose={closeNewIssueModal}
+    />
+  {/if}
 </div>

@@ -26,10 +26,29 @@ When reusing code originally written for CLI (same `process.cwd()` as the projec
 - SvelteKit **reuses page components** across param-only navigations — local `$state` persists across route changes. Use `afterNavigate` to reset `$state` when needed, though best is to use a "writable derived" when possible.
 - Setting a reactive variable that controls a `disabled` attribute doesn't immediately update the DOM. You must `await tick()` before interacting with the element if the interaction depends on the updated DOM state (e.g., focusing a previously-disabled textarea after setting `sending = false`).
 - **Hidden items with tracked selection state**: When hiding empty content items in the UI but tracking selection by index (e.g., checkbox arrays), ensure the default checked state matches visibility. An item that is hidden but defaults to checked creates an invisible selection that can block form submission or produce unexpected import results. Default `checked` to `true` only when the item has visible content.
+- **`state_referenced_locally` + intentional capture-once**: Svelte 5 warns on the `let x = $state(props.y)` pattern. When capture-once is intentional (e.g. an editor form that should not reset on prop refresh mid-edit), wrap the initializer in `untrack(() => ...)` to make intent explicit and silence the warning.
+- **`$derived` is not a drop-in for `$state` when mutating in place**: Writable `$derived` arrays/objects do not re-run dependent derives when you mutate nested properties (`arr[i].prop = x`, `Object.assign(row, patch)`). Before switching a `$state` value to `$derived`, audit all write sites and convert them to immutable reassignment (`arr = arr.map(row => row.id === x.id ? { ...row, ...patch } : row)`).
+- **Editor unmounts inside `{#if expanded}`**: If an inline editor lives inside a collapsible `{#if}` region, a separate collapse button can silently unmount the editor and discard unsaved state. Disable the collapse affordance while editing — don't rely on users to remember to Save/Cancel first.
 
 ### HTML & Component Gotchas
 
 - **No nested `<a>` tags**: When wrapping a component in an `<a>` tag (e.g., making a row clickable), check for nested `<a>` tags inside — browsers handle nested anchors unpredictably (the inner link may not work, or clicking behavior differs across browsers). Render inner links as plain text when the outer element is already a link.
+- **`<ul>` must contain `<li>` directly**: Don't wrap each row in a `<div>` to attach a scroll id or highlight ring — it breaks list semantics. Push the id/styling down into the list-item component via props, or make the outer wrapper the `<li>` itself.
+
+### CLI Code Reuse (Client-Side)
+
+- Client modules under `src/routes/` **cannot** import from `src/tim/commands/*` — those pull in `bun:sqlite`, `node:fs/promises`, workspace helpers, etc. Extract shared pure helpers to `src/common/` (or `src/lib/utils/`) and re-export from the command module for back-compat. Always check the transitive import chain when reusing a CLI helper on the client.
+
+### Remote Function Error Shapes
+
+- SvelteKit's `error(status, body)` accepts a structured body. Use it to tag distinct failure modes (e.g. `{ kind: 'persistence-failed', message, githubReviewUrl }`) and surface enough context for the UI to render a safe recovery path. Generic string errors force the UI to regex-match the message, and "Retry" on an already-completed remote side-effect causes duplicates. Augment `App.Error` in `src/app.d.ts` to type the extra fields.
+- In the client, unwrap remote-function errors with a shared helper (`extractRemoteErrorMessage`) that reads `err.body.message` → string body → `err.message` → `String(err)`. Raw `String(err)` at DOM error sites renders `[object Object]`.
+- Separate remote side-effects from local DB persistence in catch blocks with nested try/catches. Conflating them either (a) records a synthetic failure row for a remote call that actually succeeded or (b) masks the real error when persistence also throws.
+- Validate user-supplied ids at the remote boundary **before** making external API calls. Silently filtering unknown/duplicate/cross-entity ids inside the pipeline turns "invalid selection" into "partial success" — the worst kind of bug to debug. Share the validation between any preview/partition query and the commit command so they can't drift.
+
+### UI Affordance Gating
+
+- Gate an affordance on the conditions that actually determine success, not on the data that feeds the success path. Example: a "Jump to diff" button gated on `issue.file && issue.line` answers "is the issue anchored?" — not "is there a rendered annotation on the page?" — so the button stays visible for files the guide never renders. Derive the gate from whatever produced the DOM (e.g. parse the same markdown the page renders and collect surfaced filenames).
 
 ### Routing Gotchas
 
@@ -44,6 +63,16 @@ When reusing code originally written for CLI (same `process.cwd()` as the projec
 - `src/lib/server/plans_browser.ts` is the abstraction layer between route handlers and `db_queries.ts`
 - Display statuses (`blocked`, `recently_done`) are computed server-side in `db_queries.ts`, not stored in DB
 - Cookie-based project persistence: `src/lib/stores/project.svelte.ts` manages the last-selected project ID (httpOnly cookie, server-read only)
+
+## Standalone PR Review Detail Page
+
+The review detail route is `/projects/[projectId]/prs/[prNumber]/reviews/[reviewId]`.
+
+- **Inline diffs**: Markdown review guide ` ```unified-diff ` fenced blocks are rendered as Pierre `Diff.svelte` instances. `MarkdownContent.svelte` uses per-filename `diffOverrides` to pass annotation and interaction props to each diff segment.
+- **Issue annotations**: Existing review issues render as clickable diff annotations via `lineAnnotations` + `renderAnnotation` (mounting `ReviewIssueAnnotation.svelte`). Annotation click scrolls to/highlights the matching issue card. The issue card "Jump to diff" action scrolls to/highlights the matching annotation node.
+- **Inline edit**: Each `ReviewIssueCard` supports an Edit mode backed by `ReviewIssueEditor.svelte` (severity, category, file, `start_line`, `line`, side, content, suggestion). Save sends only changed fields in the patch payload.
+- **Gutter-add issues**: The diff gutter `+` utility (`onGutterUtilityClick`) opens `NewReviewIssueModal.svelte` with content + optional suggestion fields. File/line/side are prefilled from the selected range. Save calls the `createReviewIssue` remote command.
+- **GitHub submission**: The page includes a Submit Review dialog for choosing event, body, and issue subset, with partition preview and GitHub posting. See `README.md` for the full submission flow details.
 
 ## Active Work Tab
 

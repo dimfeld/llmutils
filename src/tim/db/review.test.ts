@@ -6,12 +6,15 @@ import * as path from 'node:path';
 
 import { DATABASE_FILENAME, openDatabase } from './database.js';
 import {
+  createPrReviewSubmission,
   createReview,
   getLatestReviewByPrUrl,
+  getPrReviewSubmissionsForReview,
   getReviewById,
   getReviewIssues,
   getReviewsForProject,
   insertReviewIssues,
+  markIssuesSubmitted,
   updateReview,
   updateReviewIssue,
 } from './review.js';
@@ -444,6 +447,145 @@ describe('tim db/review', () => {
       expect(issues[0].start_line).toBeNull();
       expect(issues[0].suggestion).toBeNull();
       expect(issues[0].source).toBeNull();
+      expect(issues[0].side).toBe('RIGHT');
+      expect(issues[0].submittedInPrReviewId).toBeNull();
+    });
+
+    test('defaults side to RIGHT when side is NULL in the database', () => {
+      const review = createReview(db, {
+        projectId,
+        prUrl: PR_URL_1,
+        branch: 'feature/my-branch',
+      });
+
+      db.prepare(
+        `
+          INSERT INTO review_issue (
+            review_id,
+            severity,
+            category,
+            content,
+            side,
+            created_at,
+            updated_at
+          ) VALUES (?, ?, ?, ?, NULL, datetime('now'), datetime('now'))
+        `
+      ).run(review.id, 'minor', 'other', 'Issue with null side');
+
+      const [issue] = getReviewIssues(db, review.id);
+      expect(issue.side).toBe('RIGHT');
+    });
+
+    test('throws when persisted side contains an unexpected value', () => {
+      const review = createReview(db, {
+        projectId,
+        prUrl: PR_URL_1,
+        branch: 'feature/my-branch',
+      });
+
+      db.prepare(
+        `
+          INSERT INTO review_issue (
+            review_id,
+            severity,
+            category,
+            content,
+            side,
+            created_at,
+            updated_at
+          ) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+        `
+      ).run(review.id, 'minor', 'other', 'Issue with bad side', 'UP');
+
+      expect(() => getReviewIssues(db, review.id)).toThrow(
+        'Unexpected review_issue.side value: UP'
+      );
+    });
+
+    test('inserts issue with explicit side and submission id', () => {
+      const review = createReview(db, {
+        projectId,
+        prUrl: PR_URL_1,
+        branch: 'feature/my-branch',
+      });
+
+      const submission = createPrReviewSubmission(db, {
+        reviewId: review.id,
+        event: 'COMMENT',
+        body: 'Submitted review body',
+      });
+
+      insertReviewIssues(db, {
+        reviewId: review.id,
+        issues: [
+          {
+            severity: 'major',
+            category: 'bug',
+            content: 'Anchored issue',
+            side: 'LEFT',
+            submittedInPrReviewId: submission.id,
+          },
+        ],
+      });
+
+      const [issue] = getReviewIssues(db, review.id);
+      expect(issue.side).toBe('LEFT');
+      expect(issue.submittedInPrReviewId).toBe(submission.id);
+    });
+
+    test('throws when insertReviewIssues receives an invalid side', () => {
+      const review = createReview(db, {
+        projectId,
+        prUrl: PR_URL_1,
+        branch: 'feature/my-branch',
+      });
+
+      expect(() =>
+        insertReviewIssues(db, {
+          reviewId: review.id,
+          issues: [
+            {
+              severity: 'major',
+              category: 'bug',
+              content: 'Invalid side',
+              side: 'UP' as 'LEFT',
+            },
+          ],
+        })
+      ).toThrow('Invalid review_issue.side value in insertReviewIssues: UP');
+    });
+
+    test('throws when insertReviewIssues uses submission from a different review', () => {
+      const review = createReview(db, {
+        projectId,
+        prUrl: PR_URL_1,
+        branch: 'feature/one',
+      });
+      const otherReview = createReview(db, {
+        projectId,
+        prUrl: PR_URL_2,
+        branch: 'feature/two',
+      });
+      const submission = createPrReviewSubmission(db, {
+        reviewId: otherReview.id,
+        event: 'COMMENT',
+      });
+
+      expect(() =>
+        insertReviewIssues(db, {
+          reviewId: review.id,
+          issues: [
+            {
+              severity: 'minor',
+              category: 'other',
+              content: 'Cross-review submission',
+              submittedInPrReviewId: submission.id,
+            },
+          ],
+        })
+      ).toThrow(
+        `Issue for review ${review.id} cannot reference submission ${submission.id} from review ${otherReview.id}`
+      );
     });
 
     test('inserts issue with resolved=true', () => {
@@ -541,6 +683,8 @@ describe('tim db/review', () => {
 
       const updated = updateReviewIssue(db, issue.id, { resolved: true });
       expect(updated?.resolved).toBe(1);
+      expect(updated?.side).toBe('RIGHT');
+      expect(updated?.submittedInPrReviewId).toBeNull();
     });
 
     test('marks a resolved issue as unresolved', () => {
@@ -782,6 +926,230 @@ describe('tim db/review', () => {
       const result = updateReviewIssue(db, 99999, { resolved: true });
       expect(result).toBeNull();
     });
+
+    test('updates side and submitted review id fields', () => {
+      const review = createReview(db, {
+        projectId,
+        prUrl: PR_URL_1,
+        branch: 'feature/my-branch',
+      });
+
+      insertReviewIssues(db, {
+        reviewId: review.id,
+        issues: [{ severity: 'major', category: 'bug', content: 'Issue' }],
+      });
+
+      const submission = createPrReviewSubmission(db, {
+        reviewId: review.id,
+        event: 'REQUEST_CHANGES',
+      });
+
+      const [issue] = getReviewIssues(db, review.id);
+      const updated = updateReviewIssue(db, issue.id, {
+        side: 'LEFT',
+        submittedInPrReviewId: submission.id,
+      });
+
+      expect(updated?.side).toBe('LEFT');
+      expect(updated?.submittedInPrReviewId).toBe(submission.id);
+    });
+
+    test('throws when updateReviewIssue receives an invalid side', () => {
+      const review = createReview(db, {
+        projectId,
+        prUrl: PR_URL_1,
+        branch: 'feature/my-branch',
+      });
+
+      insertReviewIssues(db, {
+        reviewId: review.id,
+        issues: [{ severity: 'major', category: 'bug', content: 'Issue' }],
+      });
+
+      const [issue] = getReviewIssues(db, review.id);
+
+      expect(() =>
+        updateReviewIssue(db, issue.id, {
+          side: 'UP' as 'LEFT',
+        })
+      ).toThrow('Invalid review_issue.side value in updateReviewIssue: UP');
+    });
+
+    test('throws when updateReviewIssue sets submission from another review', () => {
+      const review = createReview(db, {
+        projectId,
+        prUrl: PR_URL_1,
+        branch: 'feature/my-branch',
+      });
+      const otherReview = createReview(db, {
+        projectId,
+        prUrl: PR_URL_2,
+        branch: 'feature/other-branch',
+      });
+
+      insertReviewIssues(db, {
+        reviewId: review.id,
+        issues: [{ severity: 'major', category: 'bug', content: 'Issue' }],
+      });
+      const submission = createPrReviewSubmission(db, {
+        reviewId: otherReview.id,
+        event: 'REQUEST_CHANGES',
+      });
+
+      const [issue] = getReviewIssues(db, review.id);
+      expect(() =>
+        updateReviewIssue(db, issue.id, {
+          submittedInPrReviewId: submission.id,
+        })
+      ).toThrow(`Issue ${issue.id} does not belong to review of submission ${submission.id}`);
+    });
+  });
+
+  describe('pr_review_submission helpers', () => {
+    test('markIssuesSubmitted with empty array is a no-op', () => {
+      const review = createReview(db, {
+        projectId,
+        prUrl: PR_URL_1,
+        branch: 'feature/my-branch',
+      });
+
+      insertReviewIssues(db, {
+        reviewId: review.id,
+        issues: [{ severity: 'minor', category: 'other', content: 'Issue' }],
+      });
+
+      const submission = createPrReviewSubmission(db, { reviewId: review.id, event: 'COMMENT' });
+
+      // Empty array should not throw and should not mark any issue
+      expect(() => markIssuesSubmitted(db, [], submission.id)).not.toThrow();
+
+      const issues = getReviewIssues(db, review.id);
+      expect(issues[0].submittedInPrReviewId).toBeNull();
+    });
+
+    test('creates and reads back submission rows ordered newest first', async () => {
+      const review = createReview(db, {
+        projectId,
+        prUrl: PR_URL_1,
+        branch: 'feature/my-branch',
+      });
+
+      const first = createPrReviewSubmission(db, {
+        reviewId: review.id,
+        githubReviewId: 1001,
+        githubReviewUrl: 'https://github.com/example/repo/pull/1#pullrequestreview-1001',
+        event: 'COMMENT',
+        body: 'First body',
+        commitSha: 'sha-1',
+        submittedBy: 'alice',
+      });
+      const second = createPrReviewSubmission(db, {
+        reviewId: review.id,
+        githubReviewId: 1002,
+        githubReviewUrl: 'https://github.com/example/repo/pull/1#pullrequestreview-1002',
+        event: 'APPROVE',
+        body: 'Second body',
+        commitSha: 'sha-2',
+        submittedBy: 'bob',
+        errorMessage: null,
+      });
+
+      const rows = getPrReviewSubmissionsForReview(db, review.id);
+      expect(rows).toHaveLength(2);
+      expect(rows[0].id).toBe(second.id);
+      expect(rows[1].id).toBe(first.id);
+      expect(rows[0]).toMatchObject({
+        reviewId: review.id,
+        githubReviewId: 1002,
+        githubReviewUrl: 'https://github.com/example/repo/pull/1#pullrequestreview-1002',
+        event: 'APPROVE',
+        body: 'Second body',
+        commitSha: 'sha-2',
+        submittedBy: 'bob',
+        errorMessage: null,
+      });
+      expect(rows[0].submittedAt).toBeTruthy();
+    });
+
+    test('markIssuesSubmitted updates only the selected issues', () => {
+      const review = createReview(db, {
+        projectId,
+        prUrl: PR_URL_1,
+        branch: 'feature/my-branch',
+      });
+
+      insertReviewIssues(db, {
+        reviewId: review.id,
+        issues: [
+          { severity: 'minor', category: 'other', content: 'Issue 1' },
+          { severity: 'minor', category: 'other', content: 'Issue 2' },
+          { severity: 'minor', category: 'other', content: 'Issue 3' },
+        ],
+      });
+      const submission = createPrReviewSubmission(db, {
+        reviewId: review.id,
+        event: 'COMMENT',
+      });
+      const issues = getReviewIssues(db, review.id);
+
+      markIssuesSubmitted(db, [issues[0].id, issues[2].id], submission.id);
+
+      const updated = getReviewIssues(db, review.id);
+      expect(updated[0].submittedInPrReviewId).toBe(submission.id);
+      expect(updated[1].submittedInPrReviewId).toBeNull();
+      expect(updated[2].submittedInPrReviewId).toBe(submission.id);
+    });
+
+    test('markIssuesSubmitted throws when an issue belongs to a different review', () => {
+      const review = createReview(db, {
+        projectId,
+        prUrl: PR_URL_1,
+        branch: 'feature/main',
+      });
+      const otherReview = createReview(db, {
+        projectId,
+        prUrl: PR_URL_2,
+        branch: 'feature/other',
+      });
+
+      insertReviewIssues(db, {
+        reviewId: review.id,
+        issues: [{ severity: 'minor', category: 'other', content: 'Issue in review 1' }],
+      });
+      insertReviewIssues(db, {
+        reviewId: otherReview.id,
+        issues: [{ severity: 'minor', category: 'other', content: 'Issue in review 2' }],
+      });
+
+      const submission = createPrReviewSubmission(db, {
+        reviewId: review.id,
+        event: 'COMMENT',
+      });
+      const [otherIssue] = getReviewIssues(db, otherReview.id);
+
+      expect(() => markIssuesSubmitted(db, [otherIssue.id], submission.id)).toThrow(
+        `Issue ${otherIssue.id} does not belong to review of submission ${submission.id}`
+      );
+    });
+
+    test('rejects invalid submission event values', () => {
+      const review = createReview(db, {
+        projectId,
+        prUrl: PR_URL_1,
+        branch: 'feature/my-branch',
+      });
+
+      expect(() =>
+        db
+          .prepare(
+            `
+              INSERT INTO pr_review_submission (review_id, event, submitted_at)
+              VALUES (?, ?, datetime('now'))
+            `
+          )
+          .run(review.id, 'INVALID')
+      ).toThrow();
+    });
   });
 
   describe('cascade delete', () => {
@@ -818,6 +1186,50 @@ describe('tim db/review', () => {
       db.prepare('DELETE FROM project WHERE id = ?').run(projectId);
 
       expect(getReviewById(db, review.id)).toBeNull();
+    });
+
+    test('deleting a review cascades to pr_review_submission rows', () => {
+      const review = createReview(db, {
+        projectId,
+        prUrl: PR_URL_1,
+        branch: 'feature/my-branch',
+      });
+
+      insertReviewIssues(db, {
+        reviewId: review.id,
+        issues: [{ severity: 'minor', category: 'other', content: 'Issue 1' }],
+      });
+      const submission = createPrReviewSubmission(db, { reviewId: review.id, event: 'COMMENT' });
+      const [issue] = getReviewIssues(db, review.id);
+      updateReviewIssue(db, issue.id, { submittedInPrReviewId: submission.id });
+
+      expect(getPrReviewSubmissionsForReview(db, review.id)).toHaveLength(1);
+
+      db.prepare('DELETE FROM review WHERE id = ?').run(review.id);
+
+      expect(getPrReviewSubmissionsForReview(db, review.id)).toHaveLength(0);
+      expect(getReviewIssues(db, review.id)).toHaveLength(0);
+    });
+
+    test('deleting a submission clears issue submitted_in_pr_review_id', () => {
+      const review = createReview(db, {
+        projectId,
+        prUrl: PR_URL_1,
+        branch: 'feature/my-branch',
+      });
+      insertReviewIssues(db, {
+        reviewId: review.id,
+        issues: [{ severity: 'minor', category: 'other', content: 'Issue 1' }],
+      });
+      const submission = createPrReviewSubmission(db, { reviewId: review.id, event: 'COMMENT' });
+      const [issue] = getReviewIssues(db, review.id);
+
+      markIssuesSubmitted(db, [issue.id], submission.id);
+      expect(getReviewIssues(db, review.id)[0]?.submittedInPrReviewId).toBe(submission.id);
+
+      db.prepare('DELETE FROM pr_review_submission WHERE id = ?').run(submission.id);
+
+      expect(getReviewIssues(db, review.id)[0]?.submittedInPrReviewId).toBeNull();
     });
   });
 
@@ -991,6 +1403,49 @@ Changes to query handling to prevent SQL injection.
 
       const latest = getReviewsForProject(db, projectId, { latestPerPr: true });
       expect(latest).toHaveLength(1);
+    });
+  });
+
+  describe('migration 25 schema structure', () => {
+    test('review_issue has side and submitted_in_pr_review_id columns after migration', () => {
+      // openDatabase() already ran all migrations; verify the new columns exist
+      const columns = db.prepare("PRAGMA table_info('review_issue')").all() as Array<{
+        name: string;
+      }>;
+      const columnNames = columns.map((c) => c.name);
+      expect(columnNames).toContain('side');
+      expect(columnNames).toContain('submitted_in_pr_review_id');
+    });
+
+    test('pr_review_submission table exists with expected columns', () => {
+      const columns = db.prepare("PRAGMA table_info('pr_review_submission')").all() as Array<{
+        name: string;
+      }>;
+      const columnNames = columns.map((c) => c.name);
+      expect(columnNames).toContain('id');
+      expect(columnNames).toContain('review_id');
+      expect(columnNames).toContain('github_review_id');
+      expect(columnNames).toContain('github_review_url');
+      expect(columnNames).toContain('event');
+      expect(columnNames).toContain('body');
+      expect(columnNames).toContain('commit_sha');
+      expect(columnNames).toContain('submitted_by');
+      expect(columnNames).toContain('submitted_at');
+      expect(columnNames).toContain('error_message');
+    });
+
+    test('submitted_in_pr_review_id foreign key uses ON DELETE SET NULL', () => {
+      const foreignKeys = db.prepare("PRAGMA foreign_key_list('review_issue')").all() as Array<{
+        from: string;
+        table: string;
+        on_delete: string;
+      }>;
+
+      const submittedFk = foreignKeys.find(
+        (fk) => fk.from === 'submitted_in_pr_review_id' && fk.table === 'pr_review_submission'
+      );
+      expect(submittedFk).toBeDefined();
+      expect(submittedFk?.on_delete).toBe('SET NULL');
     });
   });
 

@@ -315,6 +315,44 @@ const instance = new FileDiff({
 });
 ```
 
+### Mounting Svelte Annotation Components
+
+Pierre's `renderAnnotation(annotation)` callback must return a plain DOM node. For review pages that need richer annotation UI, use `createAnnotationRenderer({ onAnnotationClick })` from `src/routes/projects/[projectId]/prs/[prNumber]/reviews/[reviewId]/annotation_mount_helper.ts`:
+
+- Mounted components are tracked by annotation key (`issueId-side-lineNumber`). When Pierre re-renders the same key, the previous mount is torn down and a fresh one is mounted — do not assume components persist across renders.
+- `syncRenderPass(requestedKeys)` is invoked by the page after each render pass with the set of keys that should remain mounted; any tracked key not in the set is disposed. This prevents leaks when issues are edited or removed (Pierre does not notify the helper of removals).
+- `getNodeForIssue(issueId)` is a separate DOM-node lookup keyed by issue id. Its only purpose is to let pages find the live mount root for programmatic scroll/highlight (for example, card → diff "Jump to diff"). When an issue has multiple mounted annotations and one is disposed, the map is repointed to another live entry; when the last entry for an issue is disposed, the mapping is dropped.
+- `disposeAll()` tears down all remaining mounts on component destroy.
+
+Shadow DOM caveat: Pierre renders inside a shadow root, so document-level stylesheets do not reach annotation nodes. Use inline styles or scoped Pierre CSS variables. For temporary jump/highlight effects, apply inline styles directly to the mount root.
+
+Svelte 5 note: `unmount()` returns a Promise. Cleanup failures are non-actionable here, so handle with `.catch(() => {})` — `try { unmount(...) } catch` will not catch the async rejection.
+
+Secondary lookup maps (e.g. `nodesByIssue` alongside `entries` keyed by annotation key) must be repointed on every dispose path: if one of an issue's multiple annotations is disposed while a sibling survives, point the lookup at the surviving entry. "Stop tracking only when empty" leaves the map pointing at detached DOM nodes and callers silently no-op. Pair every "dispose X" with "if the public lookup named X, repoint or clear it."
+
+### Gutter Range Normalization
+
+`onGutterUtilityClick(range)` and `onLineSelected(range)` return `{ start, end, side, endSide }`. Two traps:
+
+- The user can drag upward, producing a range where `end < start`. Normalize with `Math.min(start, end)` / `Math.max(start, end)` before using it as a GitHub comment anchor.
+- `side` and `endSide` can differ when the user drags across the LEFT/RIGHT gutter boundary. A single-side comment anchor cannot span both sides — explicitly reject mixed-side ranges (return `null` and bail out of the affordance) rather than silently falling back to one side.
+
+### Parsing Patch Filenames
+
+Patches for deleted files have `+++ /dev/null`. A parser that only reads `+++ b/<file>` silently fails on deletions. Parse both `+++` and `---` and fall back to the other header when one is `/dev/null`.
+
+### Fetching SHA-Anchored Diffs
+
+`octokit.rest.pulls.get({ mediaType: { format: 'diff' } })` always returns the diff for the PR's current head, regardless of any SHA you pass alongside. For inline review comments to apply, the diff must match the commit you're anchoring against.
+
+Use `octokit.rest.repos.compareCommitsWithBasehead({ basehead: '<baseBranch>...<commitSha>', mediaType: { format: 'diff' } })` instead. A "fetch the PR diff" helper that takes only `prUrl` is an anti-abstraction — require `baseBranch` and `commitSha` as explicit inputs; branch _names_ are not part of the diff's identity.
+
+For the same reason, **do not cache diff responses across requests**. The diff depends on both base-branch and head-branch SHAs, either of which can advance. If cross-request caching is tempting, key on `(owner, repo, baseSha, headSha)` — never on branch names or PR URLs alone — and default to skipping the cache.
+
+### Pierre Shadow DOM Theming
+
+Pierre mounts annotations inside a shadow root. Document-level stylesheets and CSS variables defined on `:root` do **not** reach annotation nodes — only variables defined inside Pierre's shadow root apply. For theme-dependent visual effects on annotations, apply inline styles directly to the mount root, and pick colors that read on both light and dark Pierre themes (amber/gold works on both; saturated blue on blue does not).
+
 ### Mouse Events
 
 ```ts

@@ -54,6 +54,13 @@ Or for a single mock defined across the entire test file, use `afterAll(() => mo
 
 - **Extract pure logic from `.svelte.ts` files into plain `.ts` modules**: `.svelte.ts` files pull in browser/framework imports that make them difficult to test without mocking the entire Svelte runtime. When a `.svelte.ts` store contains pure utility functions or data-transformation logic, extract those into a plain `.ts` module and re-export from the original file for backward compatibility. The plain module can then be tested directly without any Svelte mocking.
 
+### Browser-mode Svelte Component Tests
+
+- **Two vitest projects, two runtimes**: `bun run test` runs the server/Node project under bun. `bun run test:client` runs the browser project (`@vitest/browser-playwright` + chromium + `vitest-browser-svelte`) under Node via `bunx vitest run --project client`. `bun --bun vitest run --project client` hangs on the vitest↔chromium websocket handshake; always use `bunx` for the client project.
+- **Filename convention picks the project**: `*.svelte.{test,spec}.{js,ts}` is the browser project (real DOM, chromium). Any SSR-only test that imports from `svelte/server` must use a plain `*.test.ts` suffix so it runs in the Node project where `AsyncLocalStorage` is available. The two project globs must stay disjoint — overlapping globs cause the server pool to load `vitest/browser` and fail.
+- **Color assertions in browser tests**: Browsers normalize inline style colors (`#f59e0b` → `rgb(245, 158, 11)`). Regex matchers on `element.style.outline`/`.background` etc. must accept both forms, or use a tolerant parser. A jsdom-based unit test won't catch this — only a real browser round-trip does.
+- **Verify browser project runs before writing interactive tests**: Interactive Svelte component tests (click/submit simulation via `vitest-browser-svelte`) require the browser project to be enabled and chromium to launch successfully. `svelte/server`'s `render()` can only assert initial HTML — it cannot simulate user interaction. If a plan calls for interactive tests, run `bun run test:client` on an existing browser-project test first and confirm it passes; if chromium won't launch in the current environment (sandbox issues, handshake timeouts), either fix the environment or fall back to SSR + pure-function tests and flag the gap explicitly.
+
 ### Test Against Production Code Paths
 
 - **Tests should call production computed properties and methods rather than duplicating logic in local helpers.** For example, if production code uses `status.isActiveWork` to filter items, tests should assert against that same property — not reimplement the filter predicate locally. Duplicating logic means the test won't catch regressions when the production predicate changes.
@@ -77,6 +84,7 @@ Or for a single mock defined across the entire test file, use `afterAll(() => mo
 - **Bun.serve() port 0 for OS-assigned ports**: Use port 0 in tests to let the OS assign a free port. This avoids TOCTOU port allocation flakiness (where a port-availability check passes but another process grabs it before `serve()` binds). Read the actual port from the server handle after it starts.
 - **Testing shutdown/signal handlers**: When testing code that calls `process.exit()`, spy on and mock `process.exit` to prevent the test process from actually exiting. Restore the original in `afterEach`.
 - **`mockImplementation()` is persistent across tests**: Unlike `mockReturnValueOnce()`, `mockImplementation()` persists for all subsequent calls within and across tests in the same file. Use `mockImplementationOnce()` when the mock should only apply to the current test, or explicitly restore/reset in `afterEach`.
+- **`vi.spyOn` queues leak across tests**: `mockImplementationOnce`/`mockReturnValueOnce` queued on a spy survive into the next test unless cleared. When using `vi.spyOn` across multiple tests in the same file, call `vi.restoreAllMocks()` in `afterEach` — otherwise a previous test's queued one-shot can fire in an unrelated test and cause confusing failures.
 
 ### JJ Test Repositories
 
