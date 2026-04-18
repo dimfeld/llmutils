@@ -146,6 +146,7 @@ The web interface supports a project-wide PR view that shows all open PRs for a 
 # tim.yml
 githubUsername: your-github-username # optional, avoids an API call
 branchPrefix: di/ # optional, prefix for auto-generated branch names
+requireBranchPrefix: true # optional, fail branch-creating commands if no prefix resolves
 ```
 
 ### Branch Prefix
@@ -158,6 +159,29 @@ The prefix can be set in two places:
 2. **Project settings** (via web UI): per-project override stored in the database
 
 The DB project setting takes precedence over the config file value when both are set. If the prefix doesn't end with `/`, `-`, or `_`, a `/` is automatically appended. The prefix counts toward the 63-character git branch name limit.
+
+Set `requireBranchPrefix: true` to enforce prefix usage for branch-creating flows (for example `tim agent`, `tim generate`, `tim chat`, `tim branch`, `tim rebase`, and workspace flows that create or derive branches). When enabled, tim throws an error if both the effective config `branchPrefix` and the per-project DB `branchPrefix` setting are empty/unset.
+
+To resolve the error, configure a prefix in either place:
+
+1. **Repo/global/local config**: set `branchPrefix`
+2. **Project settings** in the web UI: set **Branch Prefix**
+
+Example configuration:
+
+```yaml
+branchPrefix: 'myname/'
+requireBranchPrefix: true
+```
+
+```json
+{
+  "branchPrefix": "myname/",
+  "requireBranchPrefix": true
+}
+```
+
+Standard config merge semantics apply (`global -> repo -> local`). A local config can override a repo-level `requireBranchPrefix: true`; this is intentional and consistent with other config options.
 
 ### Project Settings
 

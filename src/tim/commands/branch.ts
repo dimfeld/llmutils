@@ -64,11 +64,20 @@ export function resolveBranchPrefix(options: {
   projectId: number;
 }): string {
   const settingValue = getProjectSetting(options.db, options.projectId, 'branchPrefix');
-  if (typeof settingValue === 'string' && settingValue.length > 0) {
-    return normalizeBranchPrefix(settingValue);
+  const normalizedSetting =
+    typeof settingValue === 'string' ? normalizeBranchPrefix(settingValue) : '';
+  const resolvedPrefix =
+    normalizedSetting.length > 0
+      ? normalizedSetting
+      : normalizeBranchPrefix(options.config.branchPrefix);
+
+  if (options.config.requireBranchPrefix === true && resolvedPrefix.length === 0) {
+    throw new BranchPrefixValidationError(
+      'This repository requires a branch prefix (`requireBranchPrefix` is enabled), but none is configured. Set `branchPrefix` in your tim config or set the per-project `branchPrefix` setting in the web UI.'
+    );
   }
 
-  return normalizeBranchPrefix(options.config.branchPrefix);
+  return resolvedPrefix;
 }
 
 export function generateBranchNameFromPlan(

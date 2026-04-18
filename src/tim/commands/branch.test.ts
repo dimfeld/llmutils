@@ -6,6 +6,7 @@ import { writePlanFile } from '../plans.js';
 import { closeDatabaseForTesting, DATABASE_FILENAME, openDatabase } from '../db/database.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
 import {
+  BranchPrefixValidationError,
   generateBranchNameFromPlan,
   handleBranchCommand,
   normalizeBranchPrefix,
@@ -446,6 +447,54 @@ describe('resolveBranchPrefix', () => {
     const result = resolveBranchPrefix({ config: { branchPrefix: 'fallback' }, db, projectId });
     // Empty string DB setting is treated as unset, so config fallback applies
     expect(result).toBe('fallback/');
+  });
+
+  test('requireBranchPrefix: true with repo-config branchPrefix returns prefix', () => {
+    const result = resolveBranchPrefix({
+      config: { requireBranchPrefix: true, branchPrefix: 'di' },
+      db,
+      projectId,
+    });
+    expect(result).toBe('di/');
+  });
+
+  test('requireBranchPrefix: true with only DB project-setting returns project-setting prefix', () => {
+    setProjectSetting(db, projectId, 'branchPrefix', 'team');
+
+    const result = resolveBranchPrefix({
+      config: { requireBranchPrefix: true },
+      db,
+      projectId,
+    });
+    expect(result).toBe('team/');
+  });
+
+  test('requireBranchPrefix: true with no prefix configured throws BranchPrefixValidationError', () => {
+    expect(() =>
+      resolveBranchPrefix({ config: { requireBranchPrefix: true }, db, projectId })
+    ).toThrow(BranchPrefixValidationError);
+  });
+
+  test('requireBranchPrefix: false with no prefix returns empty string without throwing', () => {
+    const result = resolveBranchPrefix({ config: { requireBranchPrefix: false }, db, projectId });
+    expect(result).toBe('');
+  });
+
+  test('requireBranchPrefix: undefined with no prefix returns empty string without throwing', () => {
+    const result = resolveBranchPrefix({ config: {}, db, projectId });
+    expect(result).toBe('');
+  });
+
+  test('requireBranchPrefix: true with empty-string prefix at both levels throws BranchPrefixValidationError', () => {
+    setProjectSetting(db, projectId, 'branchPrefix', '');
+
+    expect(() =>
+      resolveBranchPrefix({
+        config: { requireBranchPrefix: true, branchPrefix: '' },
+        db,
+        projectId,
+      })
+    ).toThrow(BranchPrefixValidationError);
   });
 });
 

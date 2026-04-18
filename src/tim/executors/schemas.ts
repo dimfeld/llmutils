@@ -3,13 +3,7 @@ import * as z from 'zod/v4';
 // Executor name constants
 export const ClaudeCodeExecutorName = 'claude-code';
 export const CodexCliExecutorName = 'codex-cli';
-export const claudeCodeReasoningEffortSchema = z.enum([
-  'low',
-  'medium',
-  'high',
-  'xhigh',
-  'max',
-]);
+export const claudeCodeReasoningEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max']);
 export type ClaudeCodeReasoningEffort = z.infer<typeof claudeCodeReasoningEffortSchema>;
 
 /**

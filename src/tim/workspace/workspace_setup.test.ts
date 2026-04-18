@@ -850,6 +850,36 @@ describe('setupWorkspace', () => {
     ).rejects.toBeInstanceOf(BranchPrefixValidationError);
   });
 
+  test('throws BranchPrefixValidationError through setupWorkspace when requireBranchPrefix is true and no prefix is configured', async () => {
+    const noPrefixPlanFile = path.join(baseDir, 'require-prefix-no-prefix.plan.md');
+    await fs.writeFile(
+      noPrefixPlanFile,
+      [
+        '---',
+        'id: 43',
+        'title: Plan without explicit branch',
+        'tasks: []',
+        '---',
+        '',
+        'Plan details',
+        '',
+      ].join('\n')
+    );
+
+    await expect(
+      setupWorkspace(
+        {},
+        baseDir,
+        noPrefixPlanFile,
+        {
+          ...config,
+          requireBranchPrefix: true,
+        },
+        'tim generate'
+      )
+    ).rejects.toBeInstanceOf(BranchPrefixValidationError);
+  });
+
   test('propagates error when project context resolution fails for branch prefix lookup', async () => {
     const existingWorkspacePath = path.join(tempDir, 'workspace-existing-project-context-fails');
     await fs.mkdir(existingWorkspacePath, { recursive: true });

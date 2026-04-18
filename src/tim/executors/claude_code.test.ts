@@ -1316,7 +1316,7 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
 
       vi.doMock('../../common/git.ts', () => ({
         getGitRoot: vi.fn(async () => tempDir),
-      getUsingJj: vi.fn(async () => false),
+        getUsingJj: vi.fn(async () => false),
       }));
 
       vi.doMock('../../common/process.ts', () => ({

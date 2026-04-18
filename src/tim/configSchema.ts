@@ -129,6 +129,13 @@ export const timConfigSchema = z
     githubUsername: z.string().optional().describe('GitHub username for PR filtering'),
     /** Prefix to prepend to auto-generated branch names. */
     branchPrefix: branchPrefixSchema.optional(),
+    /** Require a configured branch prefix for commands that create branches. */
+    requireBranchPrefix: z
+      .boolean()
+      .optional()
+      .describe(
+        'If true, commands that create branches will fail unless a branchPrefix is configured (via repo config or project setting).'
+      ),
     /** Issue tracking service to use for import commands and issue-related operations. Defaults to 'github'. */
     issueTracker: z
       .enum(['github', 'linear'])
