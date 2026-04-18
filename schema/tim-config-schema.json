@@ -12,6 +12,10 @@
       "type": "string",
       "maxLength": 20
     },
+    "requireBranchPrefix": {
+      "description": "If true, commands that create branches will fail unless a branchPrefix is configured (via repo config or project setting).",
+      "type": "boolean"
+    },
     "issueTracker": {
       "description": "Issue tracking service to use for import commands and issue-related operations",
       "type": "string",
@@ -764,6 +768,17 @@
             },
             "mcpConfigFile": {
               "type": "string"
+            },
+            "reasoningEffort": {
+              "description": "Reasoning effort for Claude Code sessions (default: CLI default)",
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ]
             },
             "permissionsMcp": {
               "description": "Configuration for the permissions MCP server",
