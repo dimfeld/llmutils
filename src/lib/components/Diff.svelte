@@ -105,12 +105,22 @@
     }
 
     if (patch) {
-      const parsed = parsePatchFiles(normalizePatch(patch, filename));
-      return parsed[0]?.files[0] ?? null;
+      try {
+        const parsed = parsePatchFiles(normalizePatch(patch, filename));
+        return parsed[0]?.files[0] ?? null;
+      } catch (e) {
+        console.error(e);
+        return null;
+      }
     }
 
     if (oldFile && newFile) {
-      return parseDiffFromFile(oldFile, newFile);
+      try {
+        return parseDiffFromFile(oldFile, newFile);
+      } catch (e) {
+        console.error(e);
+        return null;
+      }
     }
 
     return null;
