@@ -4,6 +4,7 @@ import { log, warn } from '../../logging.js';
 import { releasePlan } from '../assignments/release_plan.js';
 import { resolvePlanWithUuid } from '../assignments/uuid_lookup.js';
 import { getRepositoryIdentity, getUserIdentity } from '../assignments/workspace_identifier.js';
+import { getRootCommandOptions } from './command_context.js';
 import { parsePlanIdFromCliArg } from '../plans.js';
 import { writePlanFile } from '../plans.js';
 import { findPlanFileOnDiskAsync } from '../plans/find_plan_file.js';
@@ -23,7 +24,7 @@ export async function handleReleaseCommand(
   }
   const planIdArg = String(parsePlanIdFromCliArg(planArg));
 
-  const globalOpts = command?.parent?.opts?.() ?? {};
+  const globalOpts = getRootCommandOptions(command);
   const { plan, repoRoot, uuid } = await resolvePlanWithUuid(planIdArg, {
     configPath: globalOpts.config,
   });

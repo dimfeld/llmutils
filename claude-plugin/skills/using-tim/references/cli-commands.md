@@ -311,21 +311,21 @@ Workspace types: `standard` (default), `primary` (push target, excluded from aut
 
 ## Assignment Commands
 
-### tim claim
+### tim assignments claim
 
 Claim a plan for the current workspace.
 
 ```bash
-tim claim 123
+tim assignments claim 123
 ```
 
-### tim release
+### tim assignments release
 
 Release a plan assignment.
 
 ```bash
-tim release 123
-tim release 123 --reset-status         # Reset to pending
+tim assignments release 123
+tim assignments release 123 --reset-status         # Reset to pending
 ```
 
 ### tim assignments
@@ -465,16 +465,6 @@ Delete stale materialized plan files from `.tim/plans/`. Primary files are remov
 
 ```bash
 tim cleanup-materialized
-```
-
-### tim cleanup
-
-Clean up comments from files.
-
-```bash
-tim cleanup
-tim cleanup src/file.ts
-tim cleanup --diff-from main
 ```
 
 ### tim answer-pr

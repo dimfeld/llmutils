@@ -17,7 +17,7 @@ Managing large features often requires multiple active workspaces, or even multi
 3. **Claim a plan** from the workspace that will execute it:
 
    ```bash
-   tim claim 42
+   tim assignments claim 42
    ```
 
    The claim records:
@@ -33,7 +33,7 @@ Managing large features often requires multiple active workspaces, or even multi
 5. **Release the plan** when you leave the workspace or finish the task:
 
    ```bash
-   tim release 42
+   tim assignments release 42
    ```
 
    Use `--reset-status` if you also want to move the plan back to `pending`.
@@ -63,18 +63,18 @@ Each clone has its own git root, so the assignment system distinguishes workspac
 # Workspace A – feature implementation
 cd ~/dev/myapp-feature-a
 tim ready          # shows plans assigned here or unclaimed
-tim claim 10       # mark plan 10 for this workspace
+tim assignments claim 10       # mark plan 10 for this workspace
 tim agent 10       # executes and auto-claims if not already claimed
 
 # Workspace B – documentation plan
 cd ~/dev/myapp-feature-b
 tim ready --unassigned
-tim claim docs-uuid
+tim assignments claim docs-uuid
 tim generate --plan docs-uuid
 
 # Later, release plans when the work is complete
-tim release 10
-tim release docs-uuid --reset-status
+tim assignments release 10
+tim assignments release docs-uuid --reset-status
 ```
 
 ## Team Coordination
@@ -89,7 +89,7 @@ tim release docs-uuid --reset-status
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
 | `auto-claim` warnings in tests or scripts   | Auto-claim is disabled unless the CLI enables it.                                                                                                      | Import `enableAutoClaim()` from `src/tim/assignments/auto_claim.js` if you need it in custom tooling. |
 | Claims point to stale workspaces            | The workspace was deleted or renamed.                                                                                                                  | Run `tim assignments clean-stale` or release the plan manually.                                       |
-| Plan still appears claimed after completion | tim removes assignments when plan status transitions to `done` or `cancelled`. Plans in `needs_review` preserve their assignments and workspace locks. | Verify the plan reached the correct status; re-run `tim release <plan>` if necessary.                 |
+| Plan still appears claimed after completion | tim removes assignments when plan status transitions to `done` or `cancelled`. Plans in `needs_review` preserve their assignments and workspace locks. | Verify the plan reached the correct status; re-run `tim assignments release <plan>` if necessary.                 |
 
 ## Workspace Types
 
@@ -223,8 +223,8 @@ Implementation strategy:
 
 ## Related Commands
 
-- `tim claim <plan>` - manually claim a plan
-- `tim release <plan>` - remove the current workspace/user from a claim
+- `tim assignments claim <plan>` - manually claim a plan
+- `tim assignments release <plan>` - remove the current workspace/user from a claim
 - `tim workspace add` - create a new workspace (or reuse an existing one with `--reuse`)
 - `tim workspace list` - list workspaces with status, name, and description
 - `tim workspace update` - update workspace name and description

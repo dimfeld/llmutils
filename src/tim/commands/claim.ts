@@ -2,6 +2,7 @@ import { claimPlan } from '../assignments/claim_plan.js';
 import { logClaimOutcome } from '../assignments/claim_logging.js';
 import { resolvePlanWithUuid } from '../assignments/uuid_lookup.js';
 import { getRepositoryIdentity, getUserIdentity } from '../assignments/workspace_identifier.js';
+import { getRootCommandOptions } from './command_context.js';
 import { parsePlanIdFromCliArg } from '../plans.js';
 
 export interface ClaimCommandOptions {
@@ -18,7 +19,7 @@ export async function handleClaimCommand(
   }
   const planIdArg = String(parsePlanIdFromCliArg(planArg));
 
-  const globalOpts = command?.parent?.opts?.() ?? {};
+  const globalOpts = getRootCommandOptions(command);
   const { plan, repoRoot, uuid } = await resolvePlanWithUuid(planIdArg, {
     configPath: globalOpts.config,
   });

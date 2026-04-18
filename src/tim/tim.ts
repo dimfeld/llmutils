@@ -513,18 +513,6 @@ program
   });
 
 program
-  .command('cleanup [files...]')
-  .description('Remove end-of-line comments from changed files or specified files')
-  .option(
-    '--diff-from <branch>',
-    'Compare to this branch/revision when no files provided. Default is current diff'
-  )
-  .action(async (files, options) => {
-    const { handleCleanupCommand } = await import('./commands/cleanup.js');
-    await handleCleanupCommand(files, options).catch(handleCommandError);
-  });
-
-program
   .command('cleanup-temp')
   .description('Delete all temporary plan files marked with temp: true')
   .action(async (options, command) => {
@@ -890,7 +878,11 @@ program
     await handleEditCommand(planArg, options, command).catch(handleCommandError);
   });
 
-program
+const assignmentsCommand = program
+  .command('assignments')
+  .description('Inspect and manage shared plan assignments');
+
+assignmentsCommand
   .command('claim <plan>')
   .description('Assign a plan to the current workspace (and optionally user)')
   .action(async (plan, options, command) => {
@@ -898,7 +890,7 @@ program
     await handleClaimCommand(plan, options, command).catch(handleCommandError);
   });
 
-program
+assignmentsCommand
   .command('release <plan>')
   .description('Release a plan assignment from the current workspace')
   .option('--reset-status', 'Reset plan status to pending')
@@ -906,10 +898,6 @@ program
     const { handleReleaseCommand } = await import('./commands/release.js');
     await handleReleaseCommand(plan, options, command).catch(handleCommandError);
   });
-
-const assignmentsCommand = program
-  .command('assignments')
-  .description('Inspect and manage shared plan assignments');
 
 assignmentsCommand
   .command('list')
