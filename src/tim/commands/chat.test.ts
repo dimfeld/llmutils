@@ -478,7 +478,6 @@ describe('handleChatCommand', () => {
         newWorkspace: undefined,
         nonInteractive: true,
         requireWorkspace: false,
-        createBranch: false,
         planId: undefined,
         planUuid: undefined,
         base: undefined,
@@ -507,7 +506,6 @@ describe('handleChatCommand', () => {
       autoWorkspace: true,
       planId: 123,
       planUuid: '11111111-1111-4111-8111-111111111111',
-      createBranch: false,
       checkoutBranch: 'plan-derived-branch',
     });
     expect(vi.mocked(setupWorkspace).mock.calls[0][2]).toBe('/repo-root/tasks/123-test.plan.md');
@@ -541,7 +539,6 @@ describe('handleChatCommand', () => {
       autoWorkspace: true,
       planId: 123,
       planUuid: '11111111-1111-4111-8111-111111111111',
-      createBranch: false,
       checkoutBranch: 'plan-derived-branch',
     });
     expect(vi.mocked(resolvePlanByNumericId)).toHaveBeenCalledWith('123', '/repo-root');

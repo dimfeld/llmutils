@@ -279,7 +279,6 @@ export async function handleChatCommand(
               newWorkspace: options.newWorkspace,
               nonInteractive: options.nonInteractive,
               requireWorkspace: false,
-              createBranch: false,
               planId: currentPlanData?.id,
               planUuid: currentPlanData?.uuid,
               checkoutBranch,
