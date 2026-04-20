@@ -12,7 +12,12 @@ vi.mock('node:fs', async (importOriginal) => {
   };
 });
 
+vi.mock('$common/env.js', () => ({
+  buildWorkspaceCommandEnv: vi.fn(async () => ({ PATH: '/usr/bin' })),
+}));
+
 import {
+  formatLogFileName,
   spawnAgentProcess,
   spawnChatProcess,
   spawnGenerateProcess,
@@ -49,6 +54,7 @@ function createFakeProcess(options: {
 describe('lib/server/plan_actions', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-19T00:00:00.000Z'));
     vi.mocked(fs.mkdirSync).mockImplementation(() => {});
     vi.mocked(fs.openSync).mockReturnValue(7);
     vi.mocked(fs.closeSync).mockImplementation(() => {});
@@ -356,5 +362,11 @@ describe('lib/server/plan_actions', () => {
     expect(options.env).toBeDefined();
     expect(proc.unref).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ success: true, planId: 204 });
+  });
+
+  test('formatLogFileName uses planId, timestamp, and command in the expected order', () => {
+    const filename = formatLogFileName(189, 'generate', new Date('2026-04-19T00:00:00.000Z'));
+
+    expect(filename).toBe('189-2026-04-19T00-00-00-000Z-generate.log');
   });
 });

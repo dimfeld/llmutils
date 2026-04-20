@@ -30,12 +30,16 @@ interface LogFileInfo {
   path: string;
 }
 
+export function formatLogFileName(planId: number, command: string, timestamp = new Date()): string {
+  const isoTimestamp = timestamp.toISOString().replace(/[:.]/g, '-');
+  return `${planId}-${isoTimestamp}-${command}.log`;
+}
+
 function createLogFile(command: string, planId: number): LogFileInfo {
   const logDir = getLogDir();
   fs.mkdirSync(logDir, { recursive: true });
 
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const filename = `${command}-plan${planId}-${timestamp}.log`;
+  const filename = formatLogFileName(planId, command);
   const logPath = path.join(logDir, filename);
 
   return { fd: fs.openSync(logPath, 'a'), path: logPath };
