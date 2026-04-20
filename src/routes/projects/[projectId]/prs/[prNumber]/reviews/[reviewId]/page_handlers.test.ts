@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import type { ReviewIssueRow } from '$tim/db/review.js';

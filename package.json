@@ -20,7 +20,7 @@
     "format": "prettier --write --log-level warn .",
     "update-schemas": "scripts/update-json-schemas.ts",
     "test": "bun --bun vitest run --project server",
-    "test:client": "bunx vitest run --project client",
+    "test:client": "bun --bun vitest run --project client",
     "tim": "src/tim/tim.ts",
     "webhook-receiver": "bun run src/webhooks/server.ts"
   },

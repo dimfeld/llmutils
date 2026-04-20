@@ -35,7 +35,7 @@ bun run test:client
 
 Use `bun run test` for the server/Node test project. Do not use `bun test` directly since it runs the wrong test runner.
 
-The browser test project (vitest + @vitest/browser-playwright + chromium) must run under Node, not Bun — bun's runtime cannot complete the vitest ↔ chromium handshake. Use `bun run test:client` (which invokes `bunx vitest run --project client`). Test files with names matching `*.svelte.{test,spec}.{js,ts}` belong in the browser project; keep SSR-only tests (that import `svelte/server`) as plain `*.test.ts` so they run in the Node project where `AsyncLocalStorage` is available.
+The browser test project (vitest + @vitest/browser-playwright + chromium) must run under Node, not Bun — bun's runtime cannot complete the vitest ↔ chromium handshake. Use `bun run test:client` (which invokes `bunx vitest run --project client`). Test files with names matching `*.svelte.e2e.{test,spec}.{js,ts}` belong in the browser project and run with an isolated tim config root/database; keep SSR-only tests (that import `svelte/server`) as plain `*.test.ts` so they run in the Node project where `AsyncLocalStorage` is available.
 
 ## Repository Structure
 
