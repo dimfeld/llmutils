@@ -117,12 +117,17 @@ function inferExecutorFromModel(model: string | undefined): string | undefined {
 
 export async function resolveOptionalPromptText(
   promptText: string | undefined,
-  options: { promptFile?: string; stdinIsTTY?: boolean; tunnelActive?: boolean },
+  options: {
+    promptFile?: string;
+    stdinIsTTY?: boolean;
+    tunnelActive?: boolean;
+    readStdinWhenNotTTY?: boolean;
+  },
   deps: PromptResolverDeps = {}
 ): Promise<string | undefined> {
   const tunnelActive = options.tunnelActive ?? false;
   const hasPromptFile = Boolean(options.promptFile);
-  const shouldReadStdinWhenNotTTY = !tunnelActive && !hasPromptFile;
+  const shouldReadStdinWhenNotTTY = options.readStdinWhenNotTTY ?? (!tunnelActive && !hasPromptFile);
 
   return resolveOptionalPromptInput(
     {
@@ -159,22 +164,7 @@ export async function handleChatCommand(
     ? (MODEL_ALIASES.get(options.model.trim().toLowerCase()) ?? options.model)
     : undefined;
   const tunnelActive = isTunnelActive();
-  const prompt = await resolveOptionalPromptText(promptText, {
-    promptFile: options.promptFile,
-    stdinIsTTY: process.stdin.isTTY,
-    tunnelActive,
-  });
-  const codexAppServerEnabled = isCodexAppServerEnabled();
-
   const noninteractive = options.nonInteractive === true;
-  let currentBaseDir = process.cwd();
-  let currentPlanFile = '';
-  let currentPlanData: PlanSchema | undefined;
-  let touchedWorkspacePath: string | null = null;
-  let roundTripContext: Awaited<ReturnType<typeof prepareWorkspaceRoundTrip>> = null;
-  let executionError: unknown;
-  let planWatcher: ReturnType<typeof watchPlanFile> | undefined;
-
   // Resolve repo root from config/plan arg once, for both plan resolution and workspace setup
   const configRepoRoot =
     options.plan || globalOpts.config
@@ -202,6 +192,7 @@ export async function handleChatCommand(
     );
   }
   const executorName = requestedExecutor ?? DEFAULT_EXECUTOR;
+  const codexAppServerEnabled = isCodexAppServerEnabled();
   const canUseTerminalInput =
     !noninteractive &&
     process.stdin.isTTY === true &&
@@ -209,18 +200,23 @@ export async function handleChatCommand(
     workspaceConfig.terminalInput !== false;
   const terminalInputEnabled =
     executorName === CodexCliExecutorName && !codexAppServerEnabled ? false : canUseTerminalInput;
+  const prompt = await resolveOptionalPromptText(
+    promptText,
+    {
+      promptFile: options.promptFile,
+      stdinIsTTY: process.stdin.isTTY,
+      tunnelActive,
+      readStdinWhenNotTTY: terminalInputEnabled && !tunnelActive,
+    }
+  );
 
-  if (executorName === CodexCliExecutorName && !codexAppServerEnabled && !prompt) {
-    throw new Error(
-      'codex-cli requires an explicit prompt. Provide a prompt via argument, --prompt-file, or stdin.'
-    );
-  }
-
-  if (!prompt && !terminalInputEnabled && !tunnelActive) {
-    throw new Error(
-      'No input provided. Pass a prompt argument, --prompt-file, or stdin when running without terminal input.'
-    );
-  }
+  let currentBaseDir = process.cwd();
+  let currentPlanFile = '';
+  let currentPlanData: PlanSchema | undefined;
+  let touchedWorkspacePath: string | null = null;
+  let roundTripContext: Awaited<ReturnType<typeof prepareWorkspaceRoundTrip>> = null;
+  let executionError: unknown;
+  let planWatcher: ReturnType<typeof watchPlanFile> | undefined;
 
   const sharedExecutorOptions: ExecutorCommonOptions = {
     baseDir: process.cwd(),
@@ -332,7 +328,7 @@ export async function handleChatCommand(
           workspaceConfig
         );
         const promptForExecution =
-          executorName === CodexCliExecutorName && codexAppServerEnabled ? (prompt ?? '') : prompt;
+          executorName === CodexCliExecutorName ? (prompt ?? '') : prompt;
 
         const loggerAdapter = getLoggerAdapter();
         if (currentPlanFile && loggerAdapter instanceof HeadlessAdapter) {

@@ -249,6 +249,19 @@ describe('handleChatCommand', () => {
     expect(mockExecutorExecute.mock.calls[0][0]).toBeUndefined();
   });
 
+  test('allows starting without an initial prompt when terminal input is disabled and stdin is not a tty', async () => {
+    Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
+
+    await handleChatCommand(undefined, { terminalInput: false }, {});
+
+    expect(vi.mocked(buildExecutorAndLog)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(buildExecutorAndLog).mock.calls[0][1]).toMatchObject({
+      terminalInput: false,
+    });
+    expect(mockExecutorExecute).toHaveBeenCalledTimes(1);
+    expect(mockExecutorExecute.mock.calls[0][0]).toBeUndefined();
+  });
+
   test('wraps execution in the headless adapter with the chat command type', async () => {
     await handleChatCommand('hello', {}, {});
 
@@ -282,13 +295,14 @@ describe('handleChatCommand', () => {
     });
   });
 
-  test('throws when there is no prompt and non-interactive mode is enabled', async () => {
-    await expect(handleChatCommand(undefined, { nonInteractive: true }, {})).rejects.toThrow(
-      'No input provided. Pass a prompt argument, --prompt-file, or stdin when running without terminal input.'
-    );
+  test('allows no prompt in non-interactive mode when terminal input is disabled', async () => {
+    await expect(
+      handleChatCommand(undefined, { nonInteractive: true, terminalInput: false }, {})
+    ).resolves.toBeUndefined();
 
-    expect(vi.mocked(buildExecutorAndLog)).toHaveBeenCalledTimes(0);
-    expect(mockExecutorExecute).toHaveBeenCalledTimes(0);
+    expect(vi.mocked(buildExecutorAndLog)).toHaveBeenCalledTimes(1);
+    expect(mockExecutorExecute).toHaveBeenCalledTimes(1);
+    expect(mockExecutorExecute.mock.calls[0][0]).toBeUndefined();
   });
 
   test('allows no prompt in non-interactive mode when tunnel forwarding is active', async () => {
@@ -303,15 +317,14 @@ describe('handleChatCommand', () => {
     expect(mockExecutorExecute.mock.calls[0][0]).toBeUndefined();
   });
 
-  test('rejects codex-cli without an explicit prompt when app-server mode is disabled', async () => {
+  test('allows codex-cli without an explicit prompt when app-server mode is disabled', async () => {
     process.env.CODEX_USE_APP_SERVER = 'false';
 
-    await expect(handleChatCommand(undefined, { executor: 'codex-cli' }, {})).rejects.toThrow(
-      'codex-cli requires an explicit prompt. Provide a prompt via argument, --prompt-file, or stdin.'
-    );
+    await expect(handleChatCommand(undefined, { executor: 'codex-cli' }, {})).resolves.toBeUndefined();
 
-    expect(vi.mocked(buildExecutorAndLog)).toHaveBeenCalledTimes(0);
-    expect(mockExecutorExecute).toHaveBeenCalledTimes(0);
+    expect(vi.mocked(buildExecutorAndLog)).toHaveBeenCalledTimes(1);
+    expect(mockExecutorExecute).toHaveBeenCalledTimes(1);
+    expect(mockExecutorExecute.mock.calls[0][0]).toBe('');
   });
 
   test('allows codex-cli without an explicit prompt when app-server mode is enabled', async () => {
@@ -352,18 +365,17 @@ describe('handleChatCommand', () => {
     });
   });
 
-  test('rejects codex-cli when tunnel is active without an initial prompt and app-server is disabled', async () => {
+  test('allows codex-cli when tunnel is active without an initial prompt and app-server is disabled', async () => {
     process.env.CODEX_USE_APP_SERVER = 'false';
     vi.mocked(isTunnelActive).mockReturnValue(true);
 
     await expect(
       handleChatCommand(undefined, { executor: 'codex-cli', nonInteractive: true }, {})
-    ).rejects.toThrow(
-      'codex-cli requires an explicit prompt. Provide a prompt via argument, --prompt-file, or stdin.'
-    );
+    ).resolves.toBeUndefined();
 
-    expect(vi.mocked(buildExecutorAndLog)).toHaveBeenCalledTimes(0);
-    expect(mockExecutorExecute).toHaveBeenCalledTimes(0);
+    expect(vi.mocked(buildExecutorAndLog)).toHaveBeenCalledTimes(1);
+    expect(mockExecutorExecute).toHaveBeenCalledTimes(1);
+    expect(mockExecutorExecute.mock.calls[0][0]).toBe('');
   });
 
   test('uses configured default executor when provided', async () => {
