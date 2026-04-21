@@ -410,7 +410,7 @@ function extractPatchedDiffText(rawOutput: string): string {
     return trimmed;
   }
 
-  const fencedMatch = trimmed.match(/```unified-diff[^\n]*\n([\s\S]*?)```/i);
+  const fencedMatch = trimmed.match(/```(?:unified-diff|diff)[^\n]*\n([\s\S]*?)```/i);
   if (fencedMatch?.[1]) {
     return fencedMatch[1].trim();
   }

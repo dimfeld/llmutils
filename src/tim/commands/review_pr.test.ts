@@ -683,9 +683,14 @@ describe('review_pr command', () => {
       }
 
       return {
-        content: ['--- a/src/a.ts', '+++ b/src/a.ts', '@@ -0,0 +1 @@', '+const value = 1;'].join(
-          '\n'
-        ),
+        content: [
+          '```diff',
+          '--- a/src/a.ts',
+          '+++ b/src/a.ts',
+          '@@ -0,0 +1 @@',
+          '+const value = 1;',
+          '```',
+        ].join('\n'),
       };
     });
 
