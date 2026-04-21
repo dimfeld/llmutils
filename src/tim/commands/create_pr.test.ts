@@ -42,6 +42,7 @@ vi.mock('../../common/github/pr_status_service.js', () => ({
 }));
 
 vi.mock('../../common/git.js', () => ({
+  ensureJjPublishedCommitsHaveDescriptions: vi.fn(async (..._args: unknown[]) => []),
   getUsingJj: vi.fn(async (..._args: unknown[]) => true),
 }));
 
@@ -66,7 +67,10 @@ import {
 import { getDatabase as mockGetDatabaseFn } from '../db/database.js';
 import { resolvePlan as mockResolvePlanFn } from '../plan_display.js';
 import { syncPlanPrLinks as mockSyncPlanPrLinksFn } from '../../common/github/pr_status_service.js';
-import { getUsingJj as mockGetUsingJjFn } from '../../common/git.js';
+import {
+  ensureJjPublishedCommitsHaveDescriptions as mockEnsureJjPublishedCommitsHaveDescriptionsFn,
+  getUsingJj as mockGetUsingJjFn,
+} from '../../common/git.js';
 import { buildExecutorAndLog as mockBuildExecutorAndLogFn } from '../executors/index.js';
 
 const mockWritePlanFile = vi.mocked(mockWritePlanFileFn);
@@ -74,6 +78,9 @@ const mockResolvePlanByNumericId = vi.mocked(mockResolvePlanByNumericIdFn);
 const mockGetDatabase = vi.mocked(mockGetDatabaseFn);
 const mockResolvePlan = vi.mocked(mockResolvePlanFn);
 const mockSyncPlanPrLinks = vi.mocked(mockSyncPlanPrLinksFn);
+const mockEnsureJjPublishedCommitsHaveDescriptions = vi.mocked(
+  mockEnsureJjPublishedCommitsHaveDescriptionsFn
+);
 const mockGetUsingJj = vi.mocked(mockGetUsingJjFn);
 const mockBuildExecutorAndLog = vi.mocked(mockBuildExecutorAndLogFn);
 
@@ -88,6 +95,7 @@ function createSpawnResult(exitCode: number, stdout: string, stderr = ''): any {
 describe('create_pr command helpers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockEnsureJjPublishedCommitsHaveDescriptions.mockResolvedValue([]);
     mockResolvePlanByNumericId.mockResolvedValue({
       plan: {
         id: 317,
@@ -396,6 +404,7 @@ describe('create_pr command helpers', () => {
         | { execute?: ReturnType<typeof vi.fn> }
         | undefined;
       expect(builtExecutor?.execute).toHaveBeenCalledTimes(1);
+      expect(mockEnsureJjPublishedCommitsHaveDescriptions).toHaveBeenCalledWith('/tmp');
       expect(result).toBe('https://github.com/acme/repo/pull/77');
     });
   });
@@ -520,6 +529,7 @@ describe('create_pr command helpers', () => {
         | { execute?: ReturnType<typeof vi.fn> }
         | undefined;
       expect(builtExecutor?.execute).toHaveBeenCalledTimes(1);
+      expect(mockEnsureJjPublishedCommitsHaveDescriptions).toHaveBeenCalledWith('/tmp');
       expect(spawnSpy).toHaveBeenCalledTimes(2);
       expect(result).toBe('https://github.com/acme/repo/pull/99');
       expect(mockWritePlanFile).toHaveBeenCalledTimes(1);

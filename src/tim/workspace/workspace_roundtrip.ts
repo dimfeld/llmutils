@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import {
   captureRepositoryState,
   compareRepositoryStates,
+  ensureJjPublishedCommitsHaveDescriptions,
   getCurrentBranchName,
   getTrunkBranch,
   getUsingJj,
@@ -145,6 +146,7 @@ export async function runPostExecutionWorkspaceSync(
       }
     } else {
       if (await getUsingJj(context.executionWorkspacePath)) {
+        await ensureJjPublishedCommitsHaveDescriptions(context.executionWorkspacePath);
         await setWorkspaceBookmarkToCurrent(context.executionWorkspacePath, context.refName, '@-');
       }
 

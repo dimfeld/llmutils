@@ -20,6 +20,7 @@ vi.mock('../../common/git.js', () => ({
     workingTreeChanged: false,
     hasDifferences: true,
   })),
+  ensureJjPublishedCommitsHaveDescriptions: vi.fn(async () => []),
   getUsingJj: vi.fn(async () => true),
   getCurrentBranchName: vi.fn(async () => 'task-123'),
   getTrunkBranch: vi.fn(async () => 'main'),
@@ -66,6 +67,7 @@ import { commitAll, logSpawn } from '../../common/process.js';
 import {
   captureRepositoryState,
   compareRepositoryStates,
+  ensureJjPublishedCommitsHaveDescriptions,
   getUsingJj,
   getCurrentBranchName,
   getTrunkBranch,
@@ -87,6 +89,9 @@ import { readdir as readdirMock, rm as rmMock } from 'node:fs/promises';
 describe('runPostExecutionWorkspaceSync', () => {
   const mockCommitAll = vi.mocked(commitAll);
   const mockLogSpawn = vi.mocked(logSpawn);
+  const mockEnsureJjPublishedCommitsHaveDescriptions = vi.mocked(
+    ensureJjPublishedCommitsHaveDescriptions
+  );
   const mockGetUsingJj = vi.mocked(getUsingJj);
   const mockGetTrunkBranch = vi.mocked(getTrunkBranch);
   const mockCaptureRepositoryState = vi.mocked(captureRepositoryState);
@@ -107,6 +112,7 @@ describe('runPostExecutionWorkspaceSync', () => {
 
     mockCommitAll.mockResolvedValue(1);
     mockLogSpawn.mockReturnValue({ exited: Promise.resolve(0), exitCode: 0 } as any);
+    mockEnsureJjPublishedCommitsHaveDescriptions.mockResolvedValue([]);
     mockGetUsingJj.mockResolvedValue(true);
     mockGetTrunkBranch.mockResolvedValue('main');
     mockCaptureRepositoryState.mockResolvedValue({
@@ -153,6 +159,7 @@ describe('runPostExecutionWorkspaceSync', () => {
       'task-123',
       '@-'
     );
+    expect(mockEnsureJjPublishedCommitsHaveDescriptions).toHaveBeenCalledWith('/tmp/workspace');
     expect(mockPushWorkspaceRefToRemote).toHaveBeenCalledWith({
       workspacePath: '/tmp/workspace',
       refName: 'task-123',
@@ -307,6 +314,7 @@ describe('runPostExecutionWorkspaceSync', () => {
       remoteName: 'origin',
       ensureJjBookmarkAtCurrent: false,
     });
+    expect(mockEnsureJjPublishedCommitsHaveDescriptions).toHaveBeenCalledWith('/tmp/workspace');
     expect(mockPullWorkspaceRefIfExists).toHaveBeenCalledWith(
       '/tmp/primary',
       'task-123',
@@ -348,6 +356,7 @@ describe('runPostExecutionWorkspaceSync', () => {
       remoteName: 'origin',
       ensureJjBookmarkAtCurrent: false,
     });
+    expect(mockEnsureJjPublishedCommitsHaveDescriptions).toHaveBeenCalledWith('/tmp/workspace');
     // Verify no cleanup occurs when there are uncommitted changes
     expect(mockLogSpawn).not.toHaveBeenCalled();
     expect(mockPatchWorkspaceInfo).not.toHaveBeenCalled();

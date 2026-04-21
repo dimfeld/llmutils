@@ -18,6 +18,7 @@ import {
   remoteBranchExists,
   remoteBranchExistsGit,
   remoteBranchExistsJj,
+  ensureJjPublishedCommitsHaveDescriptions,
   getJjChangeId,
   resetGitRepositoryCache,
   isInGitRepository,
@@ -815,6 +816,43 @@ describe('Git Utilities', () => {
       expect(headChangeId).toEqual(expect.any(String));
       expect(baseChangeId).toEqual(expect.any(String));
       expect(baseChangeId).not.toBe(headChangeId);
+    });
+
+    it('assigns default descriptions to unpublished JJ commits with empty messages', async () => {
+      if (!(await isJjAvailable())) {
+        return;
+      }
+
+      const remoteDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jj-remote-'));
+
+      try {
+        await runGit(remoteDir, ['init', '--bare']);
+        await initJjColocatedRepository(tempDir);
+        await runJj(tempDir, ['git', 'remote', 'add', 'origin', remoteDir]);
+
+        await fs.writeFile(path.join(tempDir, 'base.txt'), 'base');
+        await runJj(tempDir, ['commit', '-m', 'base']);
+        await runJj(tempDir, ['bookmark', 'set', '-r', '@-', 'main']);
+        await runJj(tempDir, ['git', 'push', '--bookmark', 'main']);
+
+        await fs.writeFile(path.join(tempDir, 'feature.txt'), 'feature');
+        await runJj(tempDir, ['commit', '-m', '']);
+
+        const revisions = await ensureJjPublishedCommitsHaveDescriptions(tempDir);
+
+        expect(revisions.length).toBeGreaterThan(0);
+        const remaining = await runJjOutput(tempDir, [
+          'log',
+          '-r',
+          'remote_bookmarks()..@- & description(exact:"")',
+          '--no-graph',
+          '-T',
+          'commit_id',
+        ]);
+        expect(remaining).toBe('');
+      } finally {
+        await fs.rm(remoteDir, { recursive: true, force: true });
+      }
     });
   });
 

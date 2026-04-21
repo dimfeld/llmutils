@@ -760,6 +760,80 @@ export async function getJjChangeId(
   return changeId.length > 0 ? changeId : null;
 }
 
+const JJ_NULL_COMMIT_ID = '0000000000000000000000000000000000000000';
+
+/**
+ * Ensure unpublished JJ commits have a non-empty description before they are pushed or
+ * included in a PR flow. Commits with an empty description are assigned ".".
+ *
+ * Returns the commit ids that were updated.
+ */
+export async function ensureJjPublishedCommitsHaveDescriptions(gitRoot: string): Promise<string[]> {
+  if (!(await getUsingJj(gitRoot))) {
+    return [];
+  }
+
+  const logProc = Bun.spawn(
+    [
+      'jj',
+      'log',
+      '-r',
+      'remote_bookmarks()..@- & description(exact:"")',
+      '--no-graph',
+      '-T',
+      'commit_id ++ "\n"',
+    ],
+    {
+      cwd: gitRoot,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    }
+  );
+  const [logExitCode, logStdout, logStderr] = await Promise.all([
+    logProc.exited,
+    new Response(logProc.stdout as ReadableStream).text(),
+    new Response(logProc.stderr as ReadableStream).text(),
+  ]);
+  if (logExitCode !== 0) {
+    throw new Error(
+      `Failed to inspect JJ commit descriptions: ${logStderr.trim()}`
+    );
+  }
+
+  const revisions = logStdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && line !== JJ_NULL_COMMIT_ID);
+
+  if (revisions.length === 0) {
+    return [];
+  }
+
+  log(
+    `Assigning default JJ descriptions to ${revisions.length} commit${revisions.length === 1 ? '' : 's'} before publish`
+  );
+
+  for (const revision of revisions) {
+    const describeProc = Bun.spawn(['jj', 'describe', `-r${revision}`, '-m', '.'], {
+      cwd: gitRoot,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const [describeExitCode, , describeStderr] = await Promise.all([
+      describeProc.exited,
+      new Response(describeProc.stdout as ReadableStream).text(),
+      new Response(describeProc.stderr as ReadableStream).text(),
+    ]);
+    if (describeExitCode !== 0) {
+      throw new Error(
+        `Failed to set default JJ description for ${revision}: ${describeStderr.trim()}`
+      );
+    }
+  }
+
+  return revisions;
+}
+
 /**
  * Gets the list of changed files compared to a base branch
  */

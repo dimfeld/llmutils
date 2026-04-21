@@ -1,5 +1,9 @@
 import { syncPlanPrLinks } from '../../common/github/pr_status_service.js';
-import { getMergeBase, getUsingJj } from '../../common/git.js';
+import {
+  ensureJjPublishedCommitsHaveDescriptions,
+  getMergeBase,
+  getUsingJj,
+} from '../../common/git.js';
 import { log, warn } from '../../logging.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { loadEffectiveConfig } from '../configLoader.js';
@@ -288,6 +292,9 @@ async function runPrCreationExecutor(
   options: AutoCreatePrOptions
 ): Promise<void> {
   const usingJj = await getUsingJj(options.baseDir);
+  if (usingJj) {
+    await ensureJjPublishedCommitsHaveDescriptions(options.baseDir);
+  }
   const baseBranch = plan.baseBranch?.trim() || 'main';
   const baseRef = usingJj ? 'latest(ancestors(trunk()) & ancestors(@))' : undefined;
   let mergeBase: string | undefined;
