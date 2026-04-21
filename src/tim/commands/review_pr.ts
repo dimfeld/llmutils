@@ -572,14 +572,16 @@ export function expandReviewGuideDiffReferences(options: {
   guideText: string;
   replacedCount: number;
   unresolvedRefs: string[];
+  unusedRefs: string[];
 } {
   if (options.diffCatalog.length === 0) {
-    return { guideText: options.guideText, replacedCount: 0, unresolvedRefs: [] };
+    return { guideText: options.guideText, replacedCount: 0, unresolvedRefs: [], unusedRefs: [] };
   }
 
   const diffMap = new Map(options.diffCatalog.map((entry) => [entry.ref, entry.diffText]));
   let replacedCount = 0;
   const unresolvedRefs = new Set<string>();
+  const usedRefs = new Set<string>();
 
   const guideText = options.guideText.replace(
     DIFF_REF_TAG_REGEX,
@@ -592,14 +594,37 @@ export function expandReviewGuideDiffReferences(options: {
       }
 
       replacedCount += 1;
+      usedRefs.add(ref);
       return `\`\`\`unified-diff\n${normalizePatchText(diffText)}\`\`\``;
     }
   );
 
+  const unusedEntries = options.diffCatalog.filter((entry) => !usedRefs.has(entry.ref));
+  const otherChangesSection =
+    unusedEntries.length > 0
+      ? [
+          '## Other changes',
+          'These are the remaining changes that the model did not include above.',
+          '',
+          ...unusedEntries.flatMap((entry) => [
+            '```unified-diff',
+            normalizePatchText(entry.diffText).trimEnd(),
+            '```',
+            '',
+          ]),
+        ]
+          .join('\n')
+          .trimEnd()
+      : '';
+
   return {
-    guideText,
+    guideText:
+      otherChangesSection.length > 0
+        ? `${guideText.trimEnd()}\n\n${otherChangesSection}\n`
+        : guideText,
     replacedCount,
     unresolvedRefs: [...unresolvedRefs],
+    unusedRefs: unusedEntries.map((entry) => entry.ref),
   };
 }
 

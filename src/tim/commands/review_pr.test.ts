@@ -312,11 +312,16 @@ describe('review guide diff references', () => {
     });
 
     expect(expanded.unresolvedRefs).toEqual([]);
+    expect(expanded.unusedRefs).toEqual(['src/example.ts#hunk-1']);
     expect(expanded.replacedCount).toBe(1);
     expect(expanded.guideText).toContain('```unified-diff');
     expect(expanded.guideText).toContain('diff --git a/src/example.ts b/src/example.ts');
     expect(expanded.guideText).toContain('@@ -10 +11 @@');
     expect(expanded.guideText).toContain('+newValue();');
+    expect(expanded.guideText).toContain('## Other changes');
+    expect(expanded.guideText).toContain(
+      'These are the remaining changes that the model did not include above.'
+    );
   });
 });
 
@@ -490,13 +495,14 @@ describe('review_pr command', () => {
     await expect(fs.stat(issuesPath)).rejects.toThrow();
   });
 
-  test('expands diff refs in the stored review guide using the canonical git diff', async () => {
+  test('expands diff refs in the stored review guide and appends unused diffs as other changes', async () => {
     execFileSync('git', ['init', '-q'], { cwd: tempDir });
     execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: tempDir });
     execFileSync('git', ['config', 'user.name', 'Test User'], { cwd: tempDir });
 
     await fs.mkdir(path.join(tempDir, 'src'), { recursive: true });
     await fs.writeFile(path.join(tempDir, 'src', 'feature.ts'), 'const alpha = 1;\n', 'utf8');
+    await fs.writeFile(path.join(tempDir, 'src', 'extra.ts'), 'const omega = 1;\n', 'utf8');
     execFileSync('git', ['add', '.'], { cwd: tempDir });
     execFileSync('git', ['commit', '-m', 'base'], { cwd: tempDir });
     const baseSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: tempDir }).toString().trim();
@@ -506,6 +512,7 @@ describe('review_pr command', () => {
       'const alpha = 2;\nconst beta = 3;\n',
       'utf8'
     );
+    await fs.writeFile(path.join(tempDir, 'src', 'extra.ts'), 'const omega = 2;\n', 'utf8');
     execFileSync('git', ['add', '.'], { cwd: tempDir });
     execFileSync('git', ['commit', '-m', 'head'], { cwd: tempDir });
     const headSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: tempDir }).toString().trim();
@@ -531,6 +538,7 @@ describe('review_pr command', () => {
       if (prompt.includes('must produce a complete review guide')) {
         expect(prompt).toContain('## Diff Reference Catalog');
         expect(prompt).toContain('src/feature.ts#hunk-1');
+        expect(prompt).toContain('src/extra.ts#hunk-1');
         await fs.mkdir(path.dirname(guidePath), { recursive: true });
         await fs.writeFile(
           guidePath,
@@ -577,6 +585,14 @@ describe('review_pr command', () => {
     expect(storedGuide).toContain('-const alpha = 1;');
     expect(storedGuide).toContain('+const alpha = 2;');
     expect(storedGuide).toContain('+const beta = 3;');
+    expect(storedGuide).toContain('## Other changes');
+    expect(storedGuide).toContain(
+      'These are the remaining changes that the model did not include above.'
+    );
+    expect(storedGuide).toContain('diff --git a/src/extra.ts b/src/extra.ts');
+    expect(storedGuide).toContain('@@ -1 +1 @@');
+    expect(storedGuide).toContain('-const omega = 1;');
+    expect(storedGuide).toContain('+const omega = 2;');
     expect(storedGuide).not.toContain('<diff ref=');
   });
 
