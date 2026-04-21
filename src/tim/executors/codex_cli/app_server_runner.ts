@@ -166,6 +166,7 @@ export async function executeCodexStepViaAppServer(
   });
 
   let connection: CodexAppServerConnection | undefined;
+  let activeInputQueue: UserInputQueue | undefined;
   let threadId: string | undefined;
   let currentTurnId: string | undefined;
   let currentAttemptActive = false;
@@ -181,6 +182,7 @@ export async function executeCodexStepViaAppServer(
   let successfulTurns = 0;
   let chatTurnId: string | undefined;
   let chatTurnCompleted = true;
+  let connectionExitError: Error | undefined;
 
   const clearInactivityTimer = () => {
     if (inactivityTimer) {
@@ -282,6 +284,32 @@ export async function executeCodexStepViaAppServer(
     }
   };
 
+  const handleUnexpectedConnectionExit = (exitCode: number, signal?: NodeJS.Signals) => {
+    if (connectionExitError) {
+      return;
+    }
+
+    connectionExitError = new Error(
+      `Codex app-server exited unexpectedly with code ${exitCode}${signal ? ` (signal ${signal})` : ''}.`
+    );
+
+    if (currentAttemptActive) {
+      turnStartError = connectionExitError;
+      currentAttemptActive = false;
+      resolveCurrentTurnStatus('failed');
+    }
+
+    activeInputQueue?.close();
+    clearInactivityTimer();
+    stopRateLimitPolling();
+  };
+
+  const throwIfConnectionExited = () => {
+    if (connectionExitError) {
+      throw connectionExitError;
+    }
+  };
+
   try {
     connection = await CodexAppServerConnection.create({
       cwd,
@@ -290,6 +318,9 @@ export async function executeCodexStepViaAppServer(
         AGENT: process.env.AGENT || '1',
         TIM_NOTIFY_SUPPRESS: '1',
         ...tunnelEnv,
+      },
+      onExit: ({ exitCode, signal }) => {
+        handleUnexpectedConnectionExit(exitCode, signal);
       },
       onNotification: (method, params) => {
         const message = formatter.handleNotification(method, params);
@@ -352,6 +383,7 @@ export async function executeCodexStepViaAppServer(
       let promptForAttempt = initialInput;
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
+          throwIfConnectionExited();
           currentTurnId = undefined;
           sawFirstNotification = false;
           interruptedByInactivity = false;
@@ -389,6 +421,7 @@ export async function executeCodexStepViaAppServer(
             throw new Error('Codex app-server turn tracking was not initialized.');
           }
           const status = (await turnCompletedPromise) || 'completed';
+          throwIfConnectionExited();
           currentAttemptActive = false;
           clearInactivityTimer();
           stopRateLimitPolling();
@@ -434,6 +467,7 @@ export async function executeCodexStepViaAppServer(
       await executeTurnWithRetry(prompt);
     } else if (singleTurnSteeringEnabled) {
       const inputQueue = new UserInputQueue();
+      activeInputQueue = inputQueue;
       let terminalInputReader: TerminalInputReader | undefined;
       let clearTunnelUserInputHandler: () => void = () => {};
       let clearHeadlessUserInputHandler: () => void = () => {};
@@ -518,6 +552,7 @@ export async function executeCodexStepViaAppServer(
 
       const steeringPump = (async () => {
         while (true) {
+          throwIfConnectionExited();
           const nextInput = await inputQueue.next();
           if (nextInput == null) {
             break;
@@ -546,6 +581,7 @@ export async function executeCodexStepViaAppServer(
         }
 
         const status = (await turnCompletedPromise) || 'completed';
+        throwIfConnectionExited();
         currentAttemptActive = false;
         clearInactivityTimer();
 
@@ -556,6 +592,7 @@ export async function executeCodexStepViaAppServer(
       } finally {
         stopRateLimitPolling();
         inputQueue.close();
+        activeInputQueue = undefined;
         await steeringPump;
         terminalInputReader?.stop();
         clearTunnelUserInputHandler();
@@ -563,6 +600,7 @@ export async function executeCodexStepViaAppServer(
       }
     } else {
       const inputQueue = new UserInputQueue();
+      activeInputQueue = inputQueue;
       let terminalInputReader: TerminalInputReader | undefined;
       let clearTunnelUserInputHandler: () => void = () => {};
       let clearHeadlessUserInputHandler: () => void = () => {};
@@ -661,6 +699,7 @@ export async function executeCodexStepViaAppServer(
         };
 
         while (true) {
+          throwIfConnectionExited();
           const nextInput = await inputQueue.next();
           if (nextInput == null) {
             break;
@@ -675,12 +714,15 @@ export async function executeCodexStepViaAppServer(
         clearTunnelUserInputHandler();
         clearHeadlessUserInputHandler();
         inputQueue.close();
+        activeInputQueue = undefined;
       }
     }
 
+    throwIfConnectionExited();
     const failedMsg = formatter.getFailedAgentMessage();
     const final = failedMsg || formatter.getFinalAgentMessage();
     if (!final) {
+      throwIfConnectionExited();
       if (appServerMode === 'chat-session' && successfulTurns === 0) {
         return '';
       }
@@ -688,9 +730,11 @@ export async function executeCodexStepViaAppServer(
       throw new Error('No final agent message found in Codex output.');
     }
 
+    throwIfConnectionExited();
     return final;
   } finally {
     clearInactivityTimer();
+    activeInputQueue?.close();
 
     if (connection) {
       try {

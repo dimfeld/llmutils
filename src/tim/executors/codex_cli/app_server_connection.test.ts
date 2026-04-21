@@ -514,6 +514,7 @@ describe('CodexAppServerConnection', () => {
   });
 
   test('rejects pending requests when subprocess exits unexpectedly', async () => {
+    const exits: Array<{ exitCode: number; signal?: NodeJS.Signals }> = [];
     const connection = await CodexAppServerConnection.create({
       cwd: mockServer.rootDir,
       env: buildSpawnEnv({
@@ -522,6 +523,9 @@ describe('CodexAppServerConnection', () => {
         MOCK_REQUEST_LOG: mockServer.requestLogPath,
         MOCK_CLIENT_RESPONSE_LOG: mockServer.clientResponseLogPath,
       }),
+      onExit: (info) => {
+        exits.push(info);
+      },
     });
 
     const pending = connection.turnSteer({
@@ -530,6 +534,7 @@ describe('CodexAppServerConnection', () => {
     });
 
     await expect(pending).rejects.toThrow(/exited unexpectedly/i);
+    expect(exits).toEqual([{ exitCode: 77, signal: undefined }]);
     expect(connection.isAlive).toBe(false);
 
     await connection.close();

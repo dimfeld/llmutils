@@ -475,6 +475,27 @@ describe('executeCodexStepViaAppServer', () => {
     expect(harness.connection.close).toHaveBeenCalledTimes(1);
   });
 
+  test('rejects when the app-server exits unexpectedly during an active turn', async () => {
+    const harness = await createHarness();
+    let resolveTurnStart: (() => void) | undefined;
+
+    harness.connection.turnStart.mockImplementationOnce(
+      async () =>
+        await new Promise<{ turnId: string }>((resolve) => {
+          resolveTurnStart = () => resolve({ turnId: 'turn-1' });
+        })
+    );
+
+    const result = harness.executeCodexStepViaAppServer('prompt', '/repo', {}, { inactivityTimeoutMs: 10 });
+
+    await waitFor(() => Boolean(harness.connectionCreateOptions.current?.onExit));
+    harness.connectionCreateOptions.current.onExit({ exitCode: 1 });
+    resolveTurnStart?.();
+
+    await expect(result).rejects.toThrow(/exited unexpectedly/i);
+    expect(harness.connection.close).toHaveBeenCalledTimes(1);
+  });
+
   test('passes output schema through to turnStart', async () => {
     const harness = await createHarness();
     const outputSchema = {

@@ -67,6 +67,7 @@ export interface ConnectionOptions {
   env?: Record<string, string>;
   onNotification?: (method: string, params: unknown) => void;
   onServerRequest?: (method: string, id: number, params: unknown) => Promise<unknown>;
+  onExit?: (info: { exitCode: number; signal?: NodeJS.Signals }) => void;
 }
 
 interface PendingRequest {
@@ -350,6 +351,7 @@ export class CodexAppServerConnection {
     this.alive = false;
 
     if (!this.closing) {
+      this.options.onExit?.({ exitCode, signal: signal ?? undefined });
       this.rejectAllPending(
         new Error(
           `Codex app-server exited unexpectedly with code ${exitCode}${signal ? ` (signal ${signal})` : ''}.`
