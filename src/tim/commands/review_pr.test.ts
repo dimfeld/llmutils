@@ -706,6 +706,60 @@ describe('review_pr command', () => {
         reviewGuide: expect.stringContaining('@@ -0,0 +1 @@'),
       })
     );
+    expect(mockInsertReviewIssues).toHaveBeenCalledTimes(1);
+  });
+
+  test('stores the original review guide when diff repair throws', async () => {
+    await fs.mkdir(path.join(tempDir, 'src'), { recursive: true });
+    await fs.writeFile(path.join(tempDir, 'src', 'a.ts'), 'const value = 1;\n', 'utf8');
+
+    const brokenGuide = [
+      '# Guide',
+      '',
+      '```unified-diff',
+      '--- a/src/a.ts',
+      '+++ b/src/a.ts',
+      '+const value = 1;',
+      '```',
+      '',
+    ].join('\n');
+
+    const claudeExecute = vi.fn().mockImplementation(async (prompt: string) => {
+      if (prompt.includes('must produce a complete review guide')) {
+        await fs.mkdir(path.dirname(guidePath), { recursive: true });
+        await fs.writeFile(guidePath, brokenGuide, 'utf8');
+        return { content: 'ok' };
+      }
+
+      if (
+        prompt.includes('standalone PR code review and must return structured JSON issues only')
+      ) {
+        return {
+          content: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
+        };
+      }
+
+      throw new Error(`Unexpected Claude prompt: ${prompt}`);
+    });
+
+    const haikuExecute = vi.fn().mockRejectedValue(new Error('repair failed'));
+
+    installExecutorMock({ claudeExecute, haikuExecute });
+
+    await handleReviewGuideCommand('42', { executor: 'claude-code' }, makeCommand());
+
+    expect(haikuExecute).toHaveBeenCalledTimes(1);
+    expect(mockWarn).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to repair malformed unified diff blocks in the review guide')
+    );
+    expect(mockUpdateReview).toHaveBeenCalledWith(
+      expect.anything(),
+      501,
+      expect.objectContaining({
+        reviewGuide: brokenGuide,
+      })
+    );
+    expect(mockInsertReviewIssues).toHaveBeenCalledTimes(1);
   });
 
   test('single executor mode skips combination', async () => {

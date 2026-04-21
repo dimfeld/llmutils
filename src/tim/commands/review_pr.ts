@@ -434,7 +434,6 @@ function buildUnifiedDiffRepairPrompt(options: {
     `You are repairing a malformed unified diff block taken from a PR review guide for ${options.prUrl}.`,
     `The repository is currently checked out at reviewed SHA ${options.reviewedSha}.`,
     baseShaLine,
-    `The broken diff is block #${options.blockIndex + 1}.`,
     '',
     'Requirements:',
     '1. Return only the corrected unified diff content. Do not wrap it in markdown fences.',
@@ -446,9 +445,9 @@ function buildUnifiedDiffRepairPrompt(options: {
     options.validationError,
     '',
     'Broken diff:',
-    '```unified-diff',
+    '',
     options.brokenDiff.trim(),
-    '```',
+    '',
   ].join('\n');
 }
 
@@ -468,7 +467,7 @@ async function repairUnifiedDiffBlock(options: {
     'claude-code',
     {
       baseDir: options.baseDir,
-      model: 'haiku',
+      model: 'sonnet',
       terminalInput: false,
       noninteractive: true,
     },
@@ -1108,20 +1107,26 @@ export async function handleReviewGuideCommand(
             let reviewGuide = claudeGuideResult?.guideText ?? null;
 
             if (reviewGuide) {
-              const cleanupResult = await cleanupUnifiedDiffBlocks({
-                config,
-                baseDir,
-                tempDir: tempPaths.dir,
-                guideText: reviewGuide,
-                reviewId: review.id,
-                prUrl: prContext.prUrl,
-                baseSha,
-                reviewedSha,
-              });
-              reviewGuide = cleanupResult.guideText;
-              if (cleanupResult.repairedBlockCount > 0) {
-                log(
-                  `Repaired ${cleanupResult.repairedBlockCount} malformed unified diff block${cleanupResult.repairedBlockCount === 1 ? '' : 's'} in the review guide.`
+              try {
+                const cleanupResult = await cleanupUnifiedDiffBlocks({
+                  config,
+                  baseDir,
+                  tempDir: tempPaths.dir,
+                  guideText: reviewGuide,
+                  reviewId: review.id,
+                  prUrl: prContext.prUrl,
+                  baseSha,
+                  reviewedSha,
+                });
+                reviewGuide = cleanupResult.guideText;
+                if (cleanupResult.repairedBlockCount > 0) {
+                  log(
+                    `Repaired ${cleanupResult.repairedBlockCount} malformed unified diff block${cleanupResult.repairedBlockCount === 1 ? '' : 's'} in the review guide.`
+                  );
+                }
+              } catch (error) {
+                warn(
+                  `Failed to repair malformed unified diff blocks in the review guide; storing the original guide and continuing: ${asErrorMessage(error)}`
                 );
               }
             }
