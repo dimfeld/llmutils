@@ -21,6 +21,8 @@
     }) => void;
     enableLineSelection?: boolean;
     onLineSelected?: (range: { start: number; end: number; side: string } | null) => void;
+    /** The patch string being rendered, so callers can extract line ranges from it */
+    patch?: string;
   }
 
   let {
@@ -31,7 +33,7 @@
     content: string;
     class?: string;
     /** Per-diff override bag keyed by filename (null when the patch has no filename header). */
-    diffOverrides?: (filename: string | null) => DiffOverrides | undefined;
+    diffOverrides?: (filename: string | null, patch: string) => DiffOverrides | undefined;
   } = $props();
 
   let segments = $derived(parseMarkdownWithDiffs(content));
@@ -42,7 +44,7 @@
     {#if segment.type === 'html'}
       {@html segment.content}
     {:else if segment.type === 'unified-diff'}
-      {@const overrides = diffOverrides?.(segment.filename) ?? {}}
+      {@const overrides = diffOverrides?.(segment.filename, segment.patch) ?? {}}
       <div class="my-2">
         <Diff
           patch={segment.patch}

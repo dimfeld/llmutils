@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { ReviewIssueRow } from '$tim/db/review.js';
 
-import { buildAnnotationsForFile } from './review_detail_utils.js';
+import {
+  buildAnnotationsForFile,
+  extractDiffLineRanges,
+  type LineRange,
+} from './review_detail_utils.js';
 
 function makeIssue(overrides: Partial<ReviewIssueRow> = {}): ReviewIssueRow {
   return {
@@ -140,5 +144,146 @@ describe('buildAnnotationsForFile', () => {
     );
     expect(annotations).toHaveLength(1);
     expect(annotations[0]?.lineNumber).toBe(11);
+  });
+
+  it('anchors to closest line in diff when end line is outside range', () => {
+    const diffRanges: LineRange[] = [
+      { start: 10, end: 23, side: 'additions' },
+    ];
+    const annotations = buildAnnotationsForFile(
+      [makeIssue({ id: 24, file: 'src/a.ts', start_line: '22', line: '33', side: 'RIGHT' })],
+      'src/a.ts',
+      diffRanges
+    );
+    // Should anchor to line 23 (the end of the diff) instead of 33
+    expect(annotations[0]?.lineNumber).toBe(23);
+    expect(annotations[0]?.metadata.lineLabel).toBe('22–33');
+  });
+
+  it('keeps original line when it is already in diff range', () => {
+    const diffRanges: LineRange[] = [
+      { start: 10, end: 23, side: 'additions' },
+    ];
+    const annotations = buildAnnotationsForFile(
+      [makeIssue({ id: 25, file: 'src/a.ts', line: '15', side: 'RIGHT' })],
+      'src/a.ts',
+      diffRanges
+    );
+    // Should keep line 15 since it's in the diff
+    expect(annotations[0]?.lineNumber).toBe(15);
+  });
+
+  it('works without diff ranges (backward compatibility)', () => {
+    const annotations = buildAnnotationsForFile(
+      [makeIssue({ id: 26, file: 'src/a.ts', line: '10', side: 'RIGHT' })],
+      'src/a.ts'
+    );
+    expect(annotations[0]?.lineNumber).toBe(10);
+  });
+
+  it('filters annotations when issue does not overlap with diff ranges', () => {
+    const diffRanges: LineRange[] = [
+      { start: 10, end: 23, side: 'additions' },
+    ];
+    const annotations = buildAnnotationsForFile(
+      [makeIssue({ id: 27, file: 'src/a.ts', start_line: '30', line: '40', side: 'RIGHT' })],
+      'src/a.ts',
+      diffRanges
+    );
+    // Issue ranges 30-40, diff ranges 10-23 - no overlap, so no annotation
+    expect(annotations).toHaveLength(0);
+  });
+
+  it('includes annotation when issue overlaps with diff ranges', () => {
+    const diffRanges: LineRange[] = [
+      { start: 10, end: 23, side: 'additions' },
+    ];
+    const annotations = buildAnnotationsForFile(
+      [makeIssue({ id: 28, file: 'src/a.ts', start_line: '20', line: '25', side: 'RIGHT' })],
+      'src/a.ts',
+      diffRanges
+    );
+    // Issue ranges 20-25, diff ranges 10-23 - overlap, so annotation is included
+    expect(annotations).toHaveLength(1);
+    expect(annotations[0]?.lineNumber).toBe(23); // Anchored to end of diff
+  });
+
+  it('handles multiple issues with selective overlap', () => {
+    const diffRanges: LineRange[] = [
+      { start: 10, end: 23, side: 'additions' },
+    ];
+    const annotations = buildAnnotationsForFile(
+      [
+        makeIssue({ id: 29, file: 'src/a.ts', line: '15', side: 'RIGHT' }), // Overlaps
+        makeIssue({ id: 30, file: 'src/a.ts', line: '30', side: 'RIGHT' }), // Does not overlap
+      ],
+      'src/a.ts',
+      diffRanges
+    );
+    expect(annotations).toHaveLength(1);
+    expect(annotations[0]?.metadata.issueId).toBe(29);
+  });
+});
+
+describe('extractDiffLineRanges', () => {
+  it('extracts line ranges from hunk headers', () => {
+    const patch = `--- a/src/test.ts
++++ b/src/test.ts
+@@ -10,5 +10,8 @@ function test() {
+ const x = 1;
+-const y = 2;
++const y = 3;
++const z = 4;
++const w = 5;
+ return x;`;
+    const ranges = extractDiffLineRanges(patch, 'src/test.ts');
+    expect(ranges).toEqual([
+      { start: 10, end: 14, side: 'deletions' },
+      { start: 10, end: 17, side: 'additions' },
+    ]);
+  });
+
+  it('handles single-line hunks', () => {
+    const patch = `--- a/src/test.ts
++++ b/src/test.ts
+@@ -5 +5 @@
+-const old = 1;
++const new = 2;`;
+    const ranges = extractDiffLineRanges(patch, 'src/test.ts');
+    expect(ranges).toEqual([
+      { start: 5, end: 5, side: 'deletions' },
+      { start: 5, end: 5, side: 'additions' },
+    ]);
+  });
+
+  it('handles multiple hunks', () => {
+    const patch = `--- a/src/test.ts
++++ b/src/test.ts
+@@ -1,3 +1,3 @@
+ line 1
+-line 2
++line 2 modified
+ line 3
+@@ -10,2 +10,2 @@
+ line 10
+-line 11
++line 11 modified`;
+    const ranges = extractDiffLineRanges(patch, 'src/test.ts');
+    expect(ranges).toEqual([
+      { start: 1, end: 3, side: 'deletions' },
+      { start: 1, end: 3, side: 'additions' },
+      { start: 10, end: 11, side: 'deletions' },
+      { start: 10, end: 11, side: 'additions' },
+    ]);
+  });
+
+  it('returns empty array for null filename', () => {
+    const ranges = extractDiffLineRanges('some patch', null);
+    expect(ranges).toEqual([]);
+  });
+
+  it('returns empty array for empty patch', () => {
+    const ranges = extractDiffLineRanges('', 'src/test.ts');
+    expect(ranges).toEqual([]);
   });
 });

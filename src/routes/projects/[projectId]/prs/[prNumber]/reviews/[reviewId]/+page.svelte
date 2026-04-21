@@ -18,6 +18,10 @@
     parseMarkdownWithDiffs,
     type TocEntry,
   } from '$lib/utils/markdown_parser.js';
+  import {
+    buildAnnotationsForFile,
+    extractDiffLineRanges,
+  } from './review_detail_utils.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
   import { Splitpanes, Pane } from 'svelte-splitpanes';
   import type { ReviewIssueRow, ReviewSeverity, ReviewCategory } from '$tim/db/review.js';
@@ -30,7 +34,6 @@
   import SubmitReviewDialog from './SubmitReviewDialog.svelte';
   import Send from '@lucide/svelte/icons/send';
   import { normalizeGutterRange } from './new_issue_modal_utils.js';
-  import { buildAnnotationsForFile } from './review_detail_utils.js';
   import { extractRemoteErrorMessage } from './remote_error.js';
   import {
     highlightAnnotationNode,
@@ -101,6 +104,11 @@
     data.review.review_guide ? extractHeadings(data.review.review_guide) : []
   );
 
+  // Track which TOC section is currently visible via Intersection Observer
+  let visibleSectionSlug = $state<string>('');
+  let isProgrammaticUpdate = $state(false);
+  let isUserNavigating = $state(false);
+
   interface NewIssueModalState {
     file: string;
     startLine: number;
@@ -138,6 +146,69 @@
     annotationRenderer.disposeAll();
     annotationClick.cancel();
     annotationHighlight?.cancel();
+    intersectionObserver?.disconnect();
+  });
+
+  // Intersection Observer to track visible sections
+  let intersectionObserver: IntersectionObserver | null = null;
+
+  $effect(() => {
+    // Clean up previous observer
+    if (intersectionObserver) {
+      intersectionObserver.disconnect();
+      intersectionObserver = null;
+    }
+
+    // Only set up observer if we have TOC entries
+    if (toc.length === 0) return;
+
+    // Create observer with rootMargin to detect when sections are near top
+    intersectionObserver = new IntersectionObserver(
+      (entries) => {
+        // Skip updates if user is currently navigating via the dropdown
+        if (isUserNavigating) return;
+
+        // Find the entry that's most visible (highest intersection ratio)
+        // and is above the middle of the viewport
+        let bestEntry: IntersectionObserverEntry | null = null;
+        let bestRatio = 0;
+
+        for (const entry of entries) {
+          if (entry.isIntersecting && entry.intersectionRatio > bestRatio) {
+            bestEntry = entry;
+            bestRatio = entry.intersectionRatio;
+          }
+        }
+
+        if (bestEntry) {
+          const slug = bestEntry.target.id;
+          if (slug && slug !== visibleSectionSlug) {
+            isProgrammaticUpdate = true;
+            visibleSectionSlug = slug;
+            // Reset flag after a tick to allow reactivity to settle
+            requestAnimationFrame(() => {
+              isProgrammaticUpdate = false;
+            });
+          }
+        }
+      },
+      {
+        rootMargin: '-20% 0px -60% 0px', // Trigger when element is in top 20% of viewport
+        threshold: [0, 0.1, 0.25, 0.5, 0.75, 1]
+      }
+    );
+
+    // Observe all heading elements that match TOC slugs
+    for (const entry of toc) {
+      const el = document.getElementById(entry.slug);
+      if (el) {
+        intersectionObserver.observe(el);
+      }
+    }
+
+    return () => {
+      intersectionObserver?.disconnect();
+    };
   });
 
   function handleGutterUtilityClick(
@@ -176,6 +247,8 @@
   let activeAnnotationKeys = $derived.by(() => {
     const keys = new Set<string>();
     for (const issue of issues) {
+      // Build annotations without diff ranges - the actual keys will be
+      // determined when each specific diff is rendered
       const annotations = buildAnnotationsForFile([issue], issue.file);
       for (const annotation of annotations) {
         keys.add(
@@ -209,6 +282,8 @@
     const ids = new Set<number>();
     for (const issue of issues) {
       if (!issue.file || !guideDiffFilenames.has(issue.file)) continue;
+      // Check if the issue can be parsed into an annotation (without diff ranges)
+      // The actual anchoring will happen when the specific diff is rendered
       const annotations = buildAnnotationsForFile([issue], issue.file);
       if (annotations.length > 0) ids.add(issue.id);
     }
@@ -221,8 +296,10 @@
 
   let diffOverrides = $derived.by(() => {
     const currentIssues = issues;
-    return (filename: string | null): DiffOverrides | undefined => {
-      const annotations = buildAnnotationsForFile(currentIssues, filename);
+    return (filename: string | null, patch: string): DiffOverrides | undefined => {
+      // Extract line ranges from the specific patch being rendered
+      const ranges = extractDiffLineRanges(patch, filename);
+      const annotations = buildAnnotationsForFile(currentIssues, filename, ranges);
       const canAddIssues = filename != null;
       return {
         lineAnnotations: annotations,
@@ -235,17 +312,29 @@
         onGutterUtilityClick: canAddIssues
           ? (range) => handleGutterUtilityClick(filename, range)
           : undefined,
+        patch,
       };
     };
   });
 
   function handleTocChange(event: Event) {
+    // Skip navigation if this is a programmatic update from Intersection Observer
+    if (isProgrammaticUpdate) return;
+
     const select = event.currentTarget as HTMLSelectElement;
     const slug = select.value;
-    select.value = '';
     if (!slug) return;
+
+    // Set flag to prevent Intersection Observer from interfering during navigation
+    isUserNavigating = true;
+
     const el = document.getElementById(slug);
     el?.scrollIntoView({ behavior: 'instant', block: 'start' });
+
+    // Clear flag after scroll completes (give it some buffer time)
+    setTimeout(() => {
+      isUserNavigating = false;
+    }, 500);
   }
 
   function isIssueActioning(issueId: number): boolean {
@@ -435,7 +524,8 @@
           {#if toc.length > 0}
             <select
               aria-label="Jump to section"
-              class="max-w-[16rem] rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+              class="w-auto max-w-[32rem] rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+              bind:value={visibleSectionSlug}
               onchange={handleTocChange}
             >
               <option value="">Jump to section…</option>
