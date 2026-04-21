@@ -7,6 +7,7 @@
   import { searchCommandBar } from '$lib/remote/command_bar_search.remote.js';
   import {
     formatStatus,
+    detectImportIdentifierFromClipboard,
     getNavigationItems,
     filterSessions,
   } from '$lib/components/command_bar_utils.js';
@@ -84,7 +85,7 @@
     void goto(url);
   }
 
-  async function buildImportFromClipboardUrl(): Promise<string> {
+  async function buildImportUrl(): Promise<string> {
     const baseUrl = projectUrl(projectId, 'import');
     if (!navigator.clipboard?.readText) {
       return baseUrl;
@@ -92,11 +93,12 @@
 
     try {
       const text = (await navigator.clipboard.readText()).trim();
-      if (!text || /\s/.test(text)) {
+      const identifier = detectImportIdentifierFromClipboard(text);
+      if (!identifier) {
         return baseUrl;
       }
 
-      return `${baseUrl}?identifier=${encodeURIComponent(text)}`;
+      return `${baseUrl}?identifier=${encodeURIComponent(identifier)}`;
     } catch (err) {
       toast.error(`Failed to read clipboard: ${(err as Error).message}`);
       return baseUrl;
@@ -104,8 +106,8 @@
   }
 
   async function handleNavSelect(slug: string) {
-    if (slug === 'import-from-clipboard') {
-      selectAndClose(await buildImportFromClipboardUrl());
+    if (slug === 'import') {
+      selectAndClose(await buildImportUrl());
       return;
     }
 

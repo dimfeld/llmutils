@@ -24,7 +24,12 @@ vi.mock('$lib/remote/command_bar_search.remote.js', () => ({
 }));
 
 import CommandBar from './CommandBar.svelte';
-import { filterSessions, formatStatus, getNavigationItems } from './command_bar_utils.js';
+import {
+  detectImportIdentifierFromClipboard,
+  filterSessions,
+  formatStatus,
+  getNavigationItems,
+} from './command_bar_utils.js';
 
 function createSession(overrides: Partial<SessionData> = {}): SessionData {
   return {
@@ -70,7 +75,6 @@ describe('command_bar_utils', () => {
       'prs',
       'plans',
       'import',
-      'import-from-clipboard',
       'settings',
     ]);
   });
@@ -80,19 +84,28 @@ describe('command_bar_utils', () => {
     expect(getNavigationItems('3', 'github').map((item) => item.slug)).toEqual(['prs']);
     expect(getNavigationItems('3', 'import').map((item) => item.slug)).toEqual([
       'import',
-      'import-from-clipboard',
     ]);
     expect(getNavigationItems('3', 'clipboard').map((item) => item.slug)).toEqual([
-      'import-from-clipboard',
+      'import',
     ]);
   });
 
   test('omits project-scoped navigation items when projectId is all', () => {
     expect(getNavigationItems('all', '').map((item) => item.slug)).not.toContain('settings');
     expect(getNavigationItems('all', '').map((item) => item.slug)).not.toContain('import');
-    expect(getNavigationItems('all', '').map((item) => item.slug)).not.toContain(
-      'import-from-clipboard'
+  });
+
+  test('detects clipboard values that look like import identifiers', () => {
+    expect(detectImportIdentifierFromClipboard('TEAM-123')).toBe('TEAM-123');
+    expect(detectImportIdentifierFromClipboard('feature-team-123')).toBe('feature-team-123');
+    expect(detectImportIdentifierFromClipboard('owner/repo#123')).toBe('owner/repo#123');
+    expect(detectImportIdentifierFromClipboard('https://github.com/owner/repo/issues/42')).toBe(
+      'https://github.com/owner/repo/issues/42'
     );
+    expect(detectImportIdentifierFromClipboard('https://linear.app/team/issue/TEAM-7')).toBe(
+      'https://linear.app/team/issue/TEAM-7'
+    );
+    expect(detectImportIdentifierFromClipboard('not an identifier')).toBeNull();
   });
 
   test('filters sessions to active matching items in scope', () => {
