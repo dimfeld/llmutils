@@ -73,8 +73,5 @@ if (output.some((o) => !o)) {
   process.exit(1);
 }
 
-await $`codesign --sign - --force dist/tim`;
-await $`codesign --sign - --force dist/webhooks/server`;
-
 // Copy .wasm files after successful build
 // await copyWasmFiles();
