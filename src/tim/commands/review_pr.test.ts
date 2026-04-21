@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as fsSync from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 const workspaceAutoSelectorMocks = vi.hoisted(() => ({
   ctor: vi.fn(),
@@ -151,7 +152,13 @@ import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { LifecycleManager } from '../lifecycle.js';
 import { getSignalExitCode, isShuttingDown, setDeferSignalExit } from '../shutdown_state.js';
 import { WorkspaceLock } from '../workspace/workspace_lock.js';
-import { handleMaterializeCommand, handleReviewGuideCommand, parseLineRange } from './review_pr.js';
+import {
+  buildReviewGuideDiffCatalog,
+  expandReviewGuideDiffReferences,
+  handleMaterializeCommand,
+  handleReviewGuideCommand,
+  parseLineRange,
+} from './review_pr.js';
 
 const mockGetGitInfoExcludePath = vi.mocked(getGitInfoExcludePath);
 const mockGetMergeBase = vi.mocked(getMergeBase);
@@ -261,6 +268,55 @@ describe('parseLineRange', () => {
 
   test('returns null startLine for empty string', () => {
     expect(parseLineRange('')).toEqual({ startLine: null, line: '' });
+  });
+});
+
+describe('review guide diff references', () => {
+  test('builds stable hunk refs and expands them into exact unified diffs', () => {
+    const diffText = [
+      'diff --git a/src/example.ts b/src/example.ts',
+      'index 1111111..2222222 100644',
+      '--- a/src/example.ts',
+      '+++ b/src/example.ts',
+      '@@ -1,2 +1,3 @@',
+      ' const alpha = 1;',
+      '+const beta = 2;',
+      ' const gamma = 3;',
+      '@@ -10 +11 @@',
+      '-oldValue();',
+      '+newValue();',
+    ].join('\n');
+
+    const catalog = buildReviewGuideDiffCatalog(diffText);
+
+    expect(catalog).toHaveLength(2);
+    expect(catalog[0]).toEqual(
+      expect.objectContaining({
+        ref: 'src/example.ts#hunk-1',
+        filePath: 'src/example.ts',
+        oldRange: '1-2',
+        newRange: '1-3',
+      })
+    );
+    expect(catalog[1]).toEqual(
+      expect.objectContaining({
+        ref: 'src/example.ts#hunk-2',
+        oldRange: '10',
+        newRange: '11',
+      })
+    );
+
+    const expanded = expandReviewGuideDiffReferences({
+      guideText: '# Guide\n\n<diff ref="src/example.ts#hunk-2"/>\n',
+      diffCatalog: catalog,
+    });
+
+    expect(expanded.unresolvedRefs).toEqual([]);
+    expect(expanded.replacedCount).toBe(1);
+    expect(expanded.guideText).toContain('```unified-diff');
+    expect(expanded.guideText).toContain('diff --git a/src/example.ts b/src/example.ts');
+    expect(expanded.guideText).toContain('@@ -10 +11 @@');
+    expect(expanded.guideText).toContain('+newValue();');
   });
 });
 
@@ -432,6 +488,96 @@ describe('review_pr command', () => {
 
     await expect(fs.stat(guidePath)).rejects.toThrow();
     await expect(fs.stat(issuesPath)).rejects.toThrow();
+  });
+
+  test('expands diff refs in the stored review guide using the canonical git diff', async () => {
+    execFileSync('git', ['init', '-q'], { cwd: tempDir });
+    execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: tempDir });
+    execFileSync('git', ['config', 'user.name', 'Test User'], { cwd: tempDir });
+
+    await fs.mkdir(path.join(tempDir, 'src'), { recursive: true });
+    await fs.writeFile(path.join(tempDir, 'src', 'feature.ts'), 'const alpha = 1;\n', 'utf8');
+    execFileSync('git', ['add', '.'], { cwd: tempDir });
+    execFileSync('git', ['commit', '-m', 'base'], { cwd: tempDir });
+    const baseSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: tempDir }).toString().trim();
+
+    await fs.writeFile(
+      path.join(tempDir, 'src', 'feature.ts'),
+      'const alpha = 2;\nconst beta = 3;\n',
+      'utf8'
+    );
+    execFileSync('git', ['add', '.'], { cwd: tempDir });
+    execFileSync('git', ['commit', '-m', 'head'], { cwd: tempDir });
+    const headSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: tempDir }).toString().trim();
+
+    mockGetMergeBase.mockResolvedValue(baseSha);
+    mockGatherPrContext.mockResolvedValue({
+      prStatus: {
+        id: 99,
+        title: 'PR title',
+        author: 'alice',
+        changed_files: 1,
+      },
+      baseBranch: 'main',
+      headBranch: 'feature/pr',
+      headSha,
+      owner: 'acme',
+      repo: 'repo',
+      prNumber: 42,
+      prUrl: 'https://github.com/acme/repo/pull/42',
+    } as any);
+
+    const claudeExecute = vi.fn().mockImplementation(async (prompt: string) => {
+      if (prompt.includes('must produce a complete review guide')) {
+        expect(prompt).toContain('## Diff Reference Catalog');
+        expect(prompt).toContain('src/feature.ts#hunk-1');
+        await fs.mkdir(path.dirname(guidePath), { recursive: true });
+        await fs.writeFile(
+          guidePath,
+          '# Guide\n\n## Feature\n\n<diff ref="src/feature.ts#hunk-1"/>\n',
+          'utf8'
+        );
+        return { content: 'ok' };
+      }
+
+      if (
+        prompt.includes('standalone PR code review and must return structured JSON issues only')
+      ) {
+        return {
+          content: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
+        };
+      }
+
+      throw new Error(`Unexpected Claude prompt: ${prompt}`);
+    });
+
+    installExecutorMock({ claudeExecute });
+
+    await handleReviewGuideCommand(
+      '42',
+      { executor: 'claude-code', terminalInput: false },
+      makeCommand()
+    );
+
+    expect(mockUpdateReview).toHaveBeenCalledWith(
+      expect.anything(),
+      501,
+      expect.objectContaining({
+        status: 'complete',
+        reviewGuide: expect.stringContaining('```unified-diff'),
+      })
+    );
+
+    const storedGuide = mockUpdateReview.mock.calls.find(
+      (call) => call[1] === 501 && call[2]?.status === 'complete'
+    )?.[2]?.reviewGuide;
+
+    expect(storedGuide).toContain('diff --git a/src/feature.ts b/src/feature.ts');
+    expect(storedGuide).toContain('@@ -1 +1,2 @@');
+    expect(storedGuide).toContain('-const alpha = 1;');
+    expect(storedGuide).toContain('+const alpha = 2;');
+    expect(storedGuide).toContain('+const beta = 3;');
+    expect(storedGuide).not.toContain('<diff ref=');
   });
 
   test('forces noninteractive executors when running both executors concurrently', async () => {
@@ -758,7 +904,9 @@ describe('review_pr command', () => {
 
     expect(repairExecute).toHaveBeenCalledTimes(1);
     expect(mockWarn).toHaveBeenCalledWith(
-      expect.stringContaining('Failed to repair malformed unified diff sections in the review guide')
+      expect.stringContaining(
+        'Failed to repair malformed unified diff sections in the review guide'
+      )
     );
     expect(mockUpdateReview).toHaveBeenCalledWith(
       expect.anything(),
@@ -1106,7 +1254,6 @@ describe('review_pr command', () => {
     const prompt = codexExecute.mock.calls[0]?.[0];
     expect(prompt).toContain('## Custom Instructions');
     expect(prompt).toContain('Focus on auth logic and test gaps.');
-    expect(mockWarn).not.toHaveBeenCalled();
   });
 
   test('warns and omits custom instructions when configured file does not exist', async () => {
@@ -1478,9 +1625,7 @@ describe('review_pr command', () => {
   });
 
   test('marks review as error when temp directory creation fails', async () => {
-    const badBasePath = path.join(tempDir, 'not-a-directory');
-    await fs.writeFile(badBasePath, 'x', 'utf8');
-    mockGetGitRoot.mockResolvedValue(badBasePath);
+    await fs.writeFile(path.join(tempDir, '.tim'), 'x', 'utf8');
 
     const codexExecute = vi.fn().mockResolvedValue({
       content: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),

@@ -6,6 +6,7 @@ import {
   buildStandaloneReviewIssuesPrompt,
   COMBINATION_OUTPUT_SCHEMA,
   type PrReviewMetadata,
+  type ReviewGuideDiffReference,
 } from './review_pr_prompt.js';
 
 const METADATA: PrReviewMetadata = {
@@ -18,6 +19,17 @@ const METADATA: PrReviewMetadata = {
   owner: 'acme',
   repo: 'repo',
 };
+
+const DIFF_REFERENCES: ReviewGuideDiffReference[] = [
+  {
+    ref: 'src/tim/commands/review_pr.ts#hunk-1',
+    filePath: 'src/tim/commands/review_pr.ts',
+    oldRange: '100-110',
+    newRange: '100-115',
+    header: '@@ -100,11 +100,16 @@',
+    preview: '-old behavior | +new behavior',
+  },
+];
 
 describe('review_pr_prompt', () => {
   test('buildReviewGuidePrompt includes metadata and git instructions', () => {
@@ -34,6 +46,20 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('.tim/tmp/review-guide.md');
     expect(prompt).toContain('Group files into functional sections');
     expect(prompt).toContain('copied verbatim from the relevant `git diff` output');
+  });
+
+  test('buildReviewGuidePrompt includes diff placeholder instructions when refs are provided', () => {
+    const prompt = buildReviewGuidePrompt({
+      metadata: METADATA,
+      guidePath: '.tim/tmp/review-guide.md',
+      useJj: false,
+      diffReferences: DIFF_REFERENCES,
+    });
+
+    expect(prompt).toContain('## Diff Reference Catalog');
+    expect(prompt).toContain(DIFF_REFERENCES[0]!.ref);
+    expect(prompt).toContain('Write placeholders exactly as `<diff ref="..."/>`');
+    expect(prompt).toContain('Do not write raw ```unified-diff fences yourself');
   });
 
   test('buildReviewGuidePrompt includes jj instructions when requested', () => {

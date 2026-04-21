@@ -48,6 +48,7 @@ import {
   buildReviewGuidePrompt,
   buildStandaloneReviewIssuesPrompt,
   type PrReviewMetadata,
+  type ReviewGuideDiffReference,
 } from './review_pr_prompt.js';
 import { resolveReviewExecutorSelection, type ReviewExecutorName } from '../review_runner.js';
 import { validateInstructionsFilePath } from '../utils/file_validation.js';
@@ -107,6 +108,10 @@ interface UnifiedDiffSection {
   filePath: string | null;
 }
 
+interface ReviewGuideDiffCatalogEntry extends ReviewGuideDiffReference {
+  diffText: string;
+}
+
 type CombinationIssue = {
   severity: ReviewSeverity;
   category: ReviewCategory;
@@ -162,6 +167,118 @@ function getReviewTempPaths(
     guidePath: path.join(dir, REVIEW_GUIDE_FILENAME),
     issuesPath: path.join(dir, REVIEW_ISSUES_FILENAME),
   };
+}
+
+function parseUnifiedDiffHunkHeader(headerLine: string): {
+  oldRange: string | null;
+  newRange: string | null;
+} {
+  const match = headerLine.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/);
+  if (!match) {
+    return { oldRange: null, newRange: null };
+  }
+
+  const [, oldStart, oldCount, newStart, newCount] = match;
+  const formatRange = (start: string, count: string | undefined) => {
+    if (!count || count === '1') {
+      return start;
+    }
+    return `${start}-${Number(start) + Number(count) - 1}`;
+  };
+
+  return {
+    oldRange: formatRange(oldStart, oldCount),
+    newRange: formatRange(newStart, newCount),
+  };
+}
+
+function buildDiffPreview(lines: string[]): string | null {
+  const previewLines = lines
+    .filter(
+      (line) =>
+        (line.startsWith('+') || line.startsWith('-')) &&
+        !line.startsWith('+++ ') &&
+        !line.startsWith('--- ')
+    )
+    .slice(0, 3)
+    .map((line) => line.trim());
+
+  return previewLines.length > 0 ? previewLines.join(' | ') : null;
+}
+
+export function buildReviewGuideDiffCatalog(diffText: string): ReviewGuideDiffCatalogEntry[] {
+  const sections = splitUnifiedDiffSections(diffText);
+  const entries: ReviewGuideDiffCatalogEntry[] = [];
+
+  for (const section of sections) {
+    const lines = section.diffText.trim().split('\n');
+    const hunkStartIndexes = lines
+      .map((line, index) => (line.startsWith('@@ ') ? index : -1))
+      .filter((index) => index >= 0);
+
+    if (hunkStartIndexes.length === 0) {
+      const fallbackRef = `${section.filePath ?? `diff-section-${section.index + 1}`}#change`;
+      entries.push({
+        ref: fallbackRef,
+        filePath: section.filePath,
+        oldRange: null,
+        newRange: null,
+        header: null,
+        preview: null,
+        diffText: normalizePatchText(section.diffText).trimEnd(),
+      });
+      continue;
+    }
+
+    const fileHeaderLines = lines.slice(0, hunkStartIndexes[0]);
+    for (let hunkIndex = 0; hunkIndex < hunkStartIndexes.length; hunkIndex++) {
+      const startIndex = hunkStartIndexes[hunkIndex]!;
+      const endIndex = hunkStartIndexes[hunkIndex + 1] ?? lines.length;
+      const hunkLines = lines.slice(startIndex, endIndex);
+      const headerLine = hunkLines[0] ?? '';
+      const { oldRange, newRange } = parseUnifiedDiffHunkHeader(headerLine);
+      const ref = `${section.filePath ?? `diff-section-${section.index + 1}`}#hunk-${hunkIndex + 1}`;
+
+      entries.push({
+        ref,
+        filePath: section.filePath,
+        oldRange,
+        newRange,
+        header: headerLine || null,
+        preview: buildDiffPreview(hunkLines),
+        diffText: normalizePatchText([...fileHeaderLines, ...hunkLines].join('\n')).trimEnd(),
+      });
+    }
+  }
+
+  return entries;
+}
+
+async function loadReviewGuideDiffCatalog(options: {
+  baseDir: string;
+  baseSha: string | null;
+  reviewedSha: string;
+}): Promise<ReviewGuideDiffCatalogEntry[] | null> {
+  if (!options.baseSha) {
+    return null;
+  }
+
+  const result =
+    await $`git diff --no-color --find-renames ${options.baseSha} ${options.reviewedSha}`
+      .cwd(options.baseDir)
+      .quiet()
+      .nothrow();
+
+  if (result.exitCode !== 0) {
+    const stderr = result.stderr.toString().trim();
+    warn(
+      `Failed to build canonical PR diff catalog; falling back to raw diff instructions: ${stderr || 'git diff failed.'}`
+    );
+    return null;
+  }
+
+  const diffText = result.stdout.toString();
+  return buildReviewGuideDiffCatalog(diffText);
 }
 
 function normalizeExecutorOutput(executorOutput: unknown): string {
@@ -446,6 +563,46 @@ function joinUnifiedDiffSections(sections: string[]): string {
   return sections.map((section) => normalizePatchText(section).trimEnd()).join('\n\n');
 }
 
+const DIFF_REF_TAG_REGEX = /<diff\s+ref=(?:"([^"]+)"|'([^']+)')\s*\/>/g;
+
+export function expandReviewGuideDiffReferences(options: {
+  guideText: string;
+  diffCatalog: ReviewGuideDiffCatalogEntry[];
+}): {
+  guideText: string;
+  replacedCount: number;
+  unresolvedRefs: string[];
+} {
+  if (options.diffCatalog.length === 0) {
+    return { guideText: options.guideText, replacedCount: 0, unresolvedRefs: [] };
+  }
+
+  const diffMap = new Map(options.diffCatalog.map((entry) => [entry.ref, entry.diffText]));
+  let replacedCount = 0;
+  const unresolvedRefs = new Set<string>();
+
+  const guideText = options.guideText.replace(
+    DIFF_REF_TAG_REGEX,
+    (fullMatch, doubleQuoted, singleQuoted) => {
+      const ref = String(doubleQuoted ?? singleQuoted ?? '').trim();
+      const diffText = diffMap.get(ref);
+      if (!diffText) {
+        unresolvedRefs.add(ref || fullMatch);
+        return fullMatch;
+      }
+
+      replacedCount += 1;
+      return `\`\`\`unified-diff\n${normalizePatchText(diffText)}\`\`\``;
+    }
+  );
+
+  return {
+    guideText,
+    replacedCount,
+    unresolvedRefs: [...unresolvedRefs],
+  };
+}
+
 async function validateUnifiedDiffSection(options: {
   baseDir: string;
   tempDir: string;
@@ -459,10 +616,6 @@ async function validateUnifiedDiffSection(options: {
 
   if (!/(^|\n)--- /.test(normalizedPatch) || !/(^|\n)\+\+\+ /.test(normalizedPatch)) {
     return { valid: false, reason: 'Diff is missing ---/+++ file headers.' };
-  }
-
-  if (!/(^|\n)@@ /.test(normalizedPatch)) {
-    return { valid: false, reason: 'Diff is missing at least one @@ hunk header.' };
   }
 
   const patchPath = path.join(options.tempDir, `guide-diff-${options.sectionIndex}.patch`);
@@ -684,6 +837,7 @@ async function runClaudeGuide(options: {
   executor: Executor;
   metadata: PrReviewMetadata;
   useJj: boolean;
+  diffReferences?: ReviewGuideDiffReference[] | null;
   customInstructions?: string;
   guidePath: string;
   reviewId: number;
@@ -693,6 +847,7 @@ async function runClaudeGuide(options: {
     metadata: options.metadata,
     guidePath: options.guidePath,
     useJj: options.useJj,
+    diffReferences: options.diffReferences,
     customInstructions: options.customInstructions,
   });
 
@@ -1058,6 +1213,11 @@ export async function handleReviewGuideCommand(
           // Fall back to cached SHA if we can't read HEAD
         }
         const baseSha = await getMergeBase(baseDir, prContext.baseBranch, 'HEAD');
+        const diffCatalog = await loadReviewGuideDiffCatalog({
+          baseDir,
+          baseSha,
+          reviewedSha,
+        });
 
         const review = createReview(db, {
           projectId,
@@ -1121,6 +1281,7 @@ export async function handleReviewGuideCommand(
                   executor: claudeGuideExecutor,
                   metadata,
                   useJj: usingJj,
+                  diffReferences: diffCatalog,
                   customInstructions,
                   guidePath: tempPaths.guidePath,
                   reviewId: review.id,
@@ -1246,6 +1407,20 @@ export async function handleReviewGuideCommand(
                 warn(
                   `Failed to repair malformed unified diff sections in the review guide; storing the original guide and continuing: ${asErrorMessage(error)}`
                 );
+              }
+
+              if (diffCatalog && diffCatalog.length > 0) {
+                const expansionResult = expandReviewGuideDiffReferences({
+                  guideText: reviewGuide,
+                  diffCatalog,
+                });
+                reviewGuide = expansionResult.guideText;
+
+                if (expansionResult.unresolvedRefs.length > 0) {
+                  warn(
+                    `Review guide referenced unknown diff ref(s): ${expansionResult.unresolvedRefs.join(', ')}`
+                  );
+                }
               }
             }
 

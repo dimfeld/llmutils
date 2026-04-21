@@ -23,10 +23,20 @@ export interface PrReviewMetadata {
   repo: string;
 }
 
+export interface ReviewGuideDiffReference {
+  ref: string;
+  filePath: string | null;
+  oldRange: string | null;
+  newRange: string | null;
+  header: string | null;
+  preview: string | null;
+}
+
 interface ReviewGuidePromptOptions {
   metadata: PrReviewMetadata;
   guidePath: string;
   useJj: boolean;
+  diffReferences?: ReviewGuideDiffReference[] | null;
   customInstructions?: string;
 }
 
@@ -101,8 +111,35 @@ function toJson(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
+function renderDiffReferenceCatalog(diffReferences?: ReviewGuideDiffReference[] | null): string {
+  if (!diffReferences || diffReferences.length === 0) {
+    return '';
+  }
+
+  const lines = [
+    '## Diff Reference Catalog',
+    'Use these exact refs when inserting diff placeholders into the guide.',
+    'Write placeholders exactly as `<diff ref="..."/>` and do not invent new refs.',
+    '',
+  ];
+
+  for (const entry of diffReferences) {
+    const filePart = entry.filePath ?? '(unknown file)';
+    const oldPart = entry.oldRange ? `old ${entry.oldRange}` : 'old n/a';
+    const newPart = entry.newRange ? `new ${entry.newRange}` : 'new n/a';
+    const headerPart = entry.header ? ` ${entry.header}` : '';
+    const previewPart = entry.preview ? ` | ${entry.preview}` : '';
+    lines.push(
+      `- \`${entry.ref}\` -> ${filePart} (${oldPart}, ${newPart})${headerPart}${previewPart}`
+    );
+  }
+
+  return `${lines.join('\n')}\n`;
+}
+
 export function buildReviewGuidePrompt(options: ReviewGuidePromptOptions): string {
-  const { metadata, guidePath, useJj, customInstructions } = options;
+  const { metadata, guidePath, useJj, diffReferences, customInstructions } = options;
+  const hasDiffReferences = Boolean(diffReferences && diffReferences.length > 0);
   return `You are reviewing a pull request and must produce a complete review guide before issue extraction.
 
 ## PR Metadata
@@ -111,12 +148,18 @@ ${formatPrMetadata(metadata)}
 ## Diff Discovery
 ${getDiffInstructions(metadata.baseBranch, useJj)}
 
+${renderDiffReferenceCatalog(diffReferences)}
+
 ## Required Workflow
 1. Enumerate all changed files from the PR diff.
 2. Group files into functional sections/subsections (core logic, data model, API, tests, docs, etc.).
 3. Analyze each section with enough detail that a reviewer can walk the PR without opening every file.
 4. Ensure every changed file and every changed line is covered in at least one section.
-5. Each section must include the full unified diff for all files in that section, in a \`\`\`unified-diff code block, copied verbatim from the relevant \`git diff\` output, so the reviewer can read the changes inline without opening the files separately.
+5. ${
+    hasDiffReferences
+      ? 'Each section must include one or more `<diff ref="..."/>` placeholders using refs from the catalog above. Do not write raw diff blocks yourself. The system will replace the placeholders with the exact canonical diff text after you finish.'
+      : 'Each section must include the full unified diff for all files in that section, in a ```unified-diff code block, copied verbatim from the relevant `git diff` output, so the reviewer can read the changes inline without opening the files separately.'
+  }
 6. Include subsection commentary plus concrete line references for important changes.
 7. Ignore comments that begin with \`AI:\` or \`AI_COMMENT_START\`.
 
