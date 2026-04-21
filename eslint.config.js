@@ -78,4 +78,4 @@ export function createConfig() {
   ].filter((x) => x != null);
 }
 
-export default ts.config(...createConfig(), prettier, svelte.configs.prettier);
+export default [...createConfig(), prettier, svelte.configs.prettier];
