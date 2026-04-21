@@ -33,7 +33,11 @@
     content: string;
     class?: string;
     /** Per-diff override bag keyed by filename (null when the patch has no filename header). */
-    diffOverrides?: (filename: string | null, patch: string) => DiffOverrides | undefined;
+    diffOverrides?: (
+      filename: string | null,
+      patch: string,
+      diffIndex: number
+    ) => DiffOverrides | undefined;
   } = $props();
 
   let segments = $derived(parseMarkdownWithDiffs(content));
@@ -44,7 +48,7 @@
     {#if segment.type === 'html'}
       {@html segment.content}
     {:else if segment.type === 'unified-diff'}
-      {@const overrides = diffOverrides?.(segment.filename, segment.patch) ?? {}}
+      {@const overrides = diffOverrides?.(segment.filename, segment.patch, i) ?? {}}
       <div class="my-2">
         <Diff
           patch={segment.patch}

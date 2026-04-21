@@ -19,8 +19,7 @@
     type TocEntry,
   } from '$lib/utils/markdown_parser.js';
   import {
-    buildAnnotationsForFile,
-    extractDiffLineRanges,
+    buildGuideDiffAnnotations,
   } from './review_detail_utils.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
   import { Splitpanes, Pane } from 'svelte-splitpanes';
@@ -103,6 +102,8 @@
   let toc = $derived<TocEntry[]>(
     data.review.review_guide ? extractHeadings(data.review.review_guide) : []
   );
+
+  let guideSegments = $derived(parseMarkdownWithDiffs(data.review.review_guide ?? ''));
 
   // Track which TOC section is currently visible via Intersection Observer
   let visibleSectionSlug = $state<string>('');
@@ -239,6 +240,8 @@
     issues = [...issues, created];
   }
 
+  let guideIssueAnnotations = $derived(buildGuideDiffAnnotations(issues, guideSegments));
+
   // Track the universe of annotation keys that could be rendered for the
   // current `issues`. After Pierre re-renders, dispose any mount whose key is
   // no longer present so we don't leak Svelte components for edited/removed
@@ -246,10 +249,7 @@
   // resource lifecycle (mounted Svelte components) with reactive state.
   let activeAnnotationKeys = $derived.by(() => {
     const keys = new Set<string>();
-    for (const issue of issues) {
-      // Build annotations without diff ranges - the actual keys will be
-      // determined when each specific diff is rendered
-      const annotations = buildAnnotationsForFile([issue], issue.file);
+    for (const annotations of guideIssueAnnotations.values()) {
       for (const annotation of annotations) {
         keys.add(
           annotationRenderer.keyFor(annotation as DiffLineAnnotation<ReviewIssueAnnotationMetadata>)
@@ -259,33 +259,16 @@
     return keys;
   });
 
-  // Set of filenames that the review guide renders as inline diff segments.
-  // `Jump to diff` is only meaningful for issues whose file appears here
-  // (otherwise Pierre never mounts an annotation and the click would no-op).
-  let guideDiffFilenames = $derived.by(() => {
-    const names = new Set<string>();
-    const guide = data.review.review_guide;
-    if (!guide) return names;
-    for (const segment of parseMarkdownWithDiffs(guide)) {
-      if (segment.type === 'unified-diff' && segment.filename) {
-        names.add(segment.filename);
-      }
-    }
-    return names;
-  });
-
   // Issue IDs that currently have at least one annotation anchor resolvable
   // from the rendered diffs. Used to gate the "Jump to diff" button so we
   // don't expose a no-op click when the issue's file isn't in the guide or
   // its line doesn't parse to a usable range.
   let issueIdsWithAnnotation = $derived.by(() => {
     const ids = new Set<number>();
-    for (const issue of issues) {
-      if (!issue.file || !guideDiffFilenames.has(issue.file)) continue;
-      // Check if the issue can be parsed into an annotation (without diff ranges)
-      // The actual anchoring will happen when the specific diff is rendered
-      const annotations = buildAnnotationsForFile([issue], issue.file);
-      if (annotations.length > 0) ids.add(issue.id);
+    for (const annotations of guideIssueAnnotations.values()) {
+      for (const annotation of annotations) {
+        ids.add(annotation.metadata.issueId);
+      }
     }
     return ids;
   });
@@ -295,17 +278,19 @@
   });
 
   let diffOverrides = $derived.by(() => {
-    const currentIssues = issues;
-    return (filename: string | null, patch: string): DiffOverrides | undefined => {
-      // Extract line ranges from the specific patch being rendered
-      const ranges = extractDiffLineRanges(patch, filename);
-      const annotations = buildAnnotationsForFile(currentIssues, filename, ranges);
+    const annotationsBySegment = guideIssueAnnotations;
+    return (
+      filename: string | null,
+      patch: string,
+      diffIndex: number
+    ): DiffOverrides | undefined => {
+      const annotations = annotationsBySegment.get(diffIndex) ?? [];
       const canAddIssues = filename != null;
       return {
-        lineAnnotations: annotations,
+        lineAnnotations: annotations as unknown as DiffLineAnnotation[],
         renderAnnotation: (annotation) =>
           annotationRenderer.renderAnnotation(
-            annotation as DiffLineAnnotation<ReviewIssueAnnotationMetadata>
+            annotation as unknown as DiffLineAnnotation<ReviewIssueAnnotationMetadata>
           ),
         enableLineSelection: true,
         enableGutterUtility: canAddIssues,

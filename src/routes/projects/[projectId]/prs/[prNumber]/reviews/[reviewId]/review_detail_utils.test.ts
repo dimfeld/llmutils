@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ReviewIssueRow } from '$tim/db/review.js';
 
 import {
+  buildGuideDiffAnnotations,
   buildAnnotationsForFile,
   extractDiffLineRanges,
   type LineRange,
@@ -285,5 +286,91 @@ describe('extractDiffLineRanges', () => {
   it('returns empty array for empty patch', () => {
     const ranges = extractDiffLineRanges('', 'src/test.ts');
     expect(ranges).toEqual([]);
+  });
+});
+
+describe('buildGuideDiffAnnotations', () => {
+  it('assigns an overlapping issue to only the closest matching hunk in the guide', () => {
+    const guideSegments = [
+      { type: 'html', content: '<h1>Guide</h1>' },
+      {
+        type: 'unified-diff',
+        filename: 'src/a.ts',
+        patch: `--- a/src/a.ts
++++ b/src/a.ts
+@@ -10,3 +10,3 @@
+ line 10
+-line 11
++line 11 updated
+ line 12`,
+      },
+      {
+        type: 'unified-diff',
+        filename: 'src/a.ts',
+        patch: `--- a/src/a.ts
++++ b/src/a.ts
+@@ -20,4 +20,4 @@
+ line 20
+-line 21
++line 21 updated
++line 22 updated
+ line 23`,
+      },
+    ] as const;
+
+    const annotations = buildGuideDiffAnnotations(
+      [makeIssue({ id: 41, file: 'src/a.ts', start_line: '12', line: '22', side: 'RIGHT' })],
+      [...guideSegments]
+    );
+
+    expect(annotations.get(1)).toBeUndefined();
+    expect(annotations.get(2)).toEqual([
+      {
+        side: 'additions',
+        lineNumber: 22,
+        metadata: {
+          issueId: 41,
+          severity: 'minor',
+          content: 'Issue content',
+          suggestion: null,
+          lineLabel: '12–22',
+        },
+      },
+    ]);
+  });
+
+  it('falls back to the globally closest overlapping hunk when multiple hunks overlap the issue range', () => {
+    const guideSegments = [
+      {
+        type: 'unified-diff',
+        filename: 'src/a.ts',
+        patch: `--- a/src/a.ts
++++ b/src/a.ts
+@@ -10,2 +10,2 @@
+ line 10
+-line 11
++line 11 updated`,
+      },
+      {
+        type: 'unified-diff',
+        filename: 'src/a.ts',
+        patch: `--- a/src/a.ts
++++ b/src/a.ts
+@@ -20,3 +20,3 @@
+ line 20
+-line 21
++line 21 updated
+ line 22`,
+      },
+    ] as const;
+
+    const annotations = buildGuideDiffAnnotations(
+      [makeIssue({ id: 42, file: 'src/a.ts', start_line: '11', line: '21', side: 'RIGHT' })],
+      [...guideSegments]
+    );
+
+    expect(annotations.get(0)).toBeUndefined();
+    expect(annotations.get(1)?.[0]?.lineNumber).toBe(21);
+    expect(annotations.get(1)?.[0]?.metadata.issueId).toBe(42);
   });
 });

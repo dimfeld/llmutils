@@ -1,6 +1,7 @@
 import type { DiffLineAnnotation } from '@pierre/diffs';
 
 import { parseLineRange } from '$common/review_line_range.js';
+import type { MarkdownSegment } from '$lib/utils/markdown_parser.js';
 import type { ReviewIssueRow, ReviewSeverity } from '$tim/db/review.js';
 
 export interface ReviewIssueAnnotationData {
@@ -15,6 +16,14 @@ export interface LineRange {
   start: number;
   end: number;
   side: 'additions' | 'deletions';
+}
+
+interface ParsedIssueAnchor {
+  issue: ReviewIssueRow;
+  side: 'additions' | 'deletions';
+  rangeStart: number;
+  rangeEnd: number;
+  lineLabel: string | null;
 }
 
 /**
@@ -109,7 +118,70 @@ function findClosestLineInRange(
     }
   }
 
+  // Fall back to the closest line on any side when the preferred side does
+  // not appear in this hunk (for example, a pure deletion hunk for a RIGHT-side
+  // issue due to imperfect source data).
+  for (const range of ranges) {
+    if (targetLine < range.start) {
+      const distance = range.start - targetLine;
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestLine = range.start;
+      }
+    } else if (targetLine > range.end) {
+      const distance = targetLine - range.end;
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestLine = range.end;
+      }
+    }
+  }
+
   return closestLine;
+}
+
+function parseIssueAnchor(issue: ReviewIssueRow): ParsedIssueAnchor | null {
+  if (!issue.line) return null;
+
+  // `issue.line` may be a plain number ("5") or a range ("10-20" / "10–20").
+  // parseLineRange normalizes both forms; if start_line is explicitly set on the
+  // row (older data path), it takes precedence over the range's parsed start.
+  const parsed = parseLineRange(issue.line);
+  const endStr = parsed.line ?? issue.line;
+  const end = Number.parseInt(endStr, 10);
+  if (!Number.isFinite(end)) return null;
+
+  const startSource = issue.start_line ?? parsed.startLine ?? endStr;
+  const parsedStart = Number.parseInt(startSource, 10);
+  const start = Number.isFinite(parsedStart) ? parsedStart : end;
+
+  const rangeStart = Math.min(start, end);
+  const rangeEnd = Math.max(start, end);
+
+  return {
+    issue,
+    side: issue.side === 'LEFT' ? 'deletions' : 'additions',
+    rangeStart,
+    rangeEnd,
+    lineLabel: rangeStart === rangeEnd ? null : `${rangeStart}–${rangeEnd}`,
+  };
+}
+
+function toAnnotation(
+  parsed: ParsedIssueAnchor,
+  lineNumber: number
+): DiffLineAnnotation<ReviewIssueAnnotationData> {
+  return {
+    side: parsed.side,
+    lineNumber,
+    metadata: {
+      issueId: parsed.issue.id,
+      severity: parsed.issue.severity,
+      content: parsed.issue.content,
+      suggestion: parsed.issue.suggestion,
+      lineLabel: parsed.lineLabel,
+    },
+  };
 }
 
 export function buildAnnotationsForFile(
@@ -123,61 +195,104 @@ export function buildAnnotationsForFile(
 
   for (const issue of allIssues) {
     if (issue.file !== filename) continue;
-    if (!issue.line) continue;
-
-    // `issue.line` may be a plain number ("5") or a range ("10-20" / "10–20").
-    // parseLineRange normalizes both forms; if start_line is explicitly set on the
-    // row (older data path), it takes precedence over the range's parsed start.
-    const parsed = parseLineRange(issue.line);
-    const endStr = parsed.line ?? issue.line;
-    const end = Number.parseInt(endStr, 10);
-    if (!Number.isFinite(end)) continue;
-
-    const startSource = issue.start_line ?? parsed.startLine ?? endStr;
-    const parsedStart = Number.parseInt(startSource, 10);
-    const start = Number.isFinite(parsedStart) ? parsedStart : end;
-
-    const rangeStart = Math.min(start, end);
-    const rangeEnd = Math.max(start, end);
-    const lineLabel = rangeStart === rangeEnd ? null : `${rangeStart}–${rangeEnd}`;
-
-    const side = issue.side === 'LEFT' ? 'deletions' : 'additions';
+    const parsed = parseIssueAnchor(issue);
+    if (!parsed) continue;
 
     // If diff line ranges are provided, check if the issue overlaps with this specific diff
     // Only include the annotation if the issue's line range overlaps with the diff's line ranges
     if (diffLineRanges && diffLineRanges.length > 0) {
-      const hasOverlap = checkLineRangeOverlap(rangeStart, rangeEnd, diffLineRanges, side);
+      const hasOverlap = checkLineRangeOverlap(
+        parsed.rangeStart,
+        parsed.rangeEnd,
+        diffLineRanges,
+        parsed.side
+      );
       if (!hasOverlap) continue;
 
       // Try to find a line that's actually in the diff
-      const closestLine = findClosestLineInRange(rangeEnd, diffLineRanges, side);
+      const closestLine = findClosestLineInRange(parsed.rangeEnd, diffLineRanges, parsed.side);
       if (closestLine !== null) {
-        const anchorLine = closestLine;
-        const metadata: ReviewIssueAnnotationData = {
-          issueId: issue.id,
-          severity: issue.severity,
-          content: issue.content,
-          suggestion: issue.suggestion,
-          lineLabel,
-        };
-        annotations.push({ side, lineNumber: anchorLine, metadata });
+        annotations.push(toAnnotation(parsed, closestLine));
         continue;
       }
     }
 
-    // If no diff ranges or no overlap found, use the original line
-    const metadata: ReviewIssueAnnotationData = {
-      issueId: issue.id,
-      severity: issue.severity,
-      content: issue.content,
-      suggestion: issue.suggestion,
-      lineLabel,
-    };
-
-    annotations.push({ side, lineNumber: rangeEnd, metadata });
+    // If no diff ranges or no overlap found, use the original line.
+    annotations.push(toAnnotation(parsed, parsed.rangeEnd));
   }
 
   return annotations;
+}
+
+export function buildGuideDiffAnnotations(
+  allIssues: ReviewIssueRow[],
+  guideSegments: MarkdownSegment[]
+): Map<number, DiffLineAnnotation<ReviewIssueAnnotationData>[]> {
+  const annotationsBySegment = new Map<number, DiffLineAnnotation<ReviewIssueAnnotationData>[]>();
+
+  const diffSegments = guideSegments.flatMap((segment, segmentIndex) => {
+    if (segment.type !== 'unified-diff' || !segment.filename) return [];
+    return [
+      {
+        segmentIndex,
+        filename: segment.filename,
+        ranges: extractDiffLineRanges(segment.patch, segment.filename),
+      },
+    ];
+  });
+
+  for (const issue of allIssues) {
+    if (!issue.file) continue;
+
+    const parsed = parseIssueAnchor(issue);
+    if (!parsed) continue;
+
+    let bestMatch:
+      | {
+          segmentIndex: number;
+          anchorLine: number;
+          distance: number;
+        }
+      | null = null;
+
+    for (const segment of diffSegments) {
+      if (segment.filename !== issue.file || segment.ranges.length === 0) continue;
+
+      const hasOverlap = checkLineRangeOverlap(
+        parsed.rangeStart,
+        parsed.rangeEnd,
+        segment.ranges,
+        parsed.side
+      );
+      if (!hasOverlap) continue;
+
+      const anchorLine = findClosestLineInRange(parsed.rangeEnd, segment.ranges, parsed.side);
+      if (anchorLine == null) continue;
+
+      const candidate = {
+        segmentIndex: segment.segmentIndex,
+        anchorLine,
+        distance: Math.abs(anchorLine - parsed.rangeEnd),
+      };
+
+      if (
+        bestMatch == null ||
+        candidate.distance < bestMatch.distance ||
+        (candidate.distance === bestMatch.distance &&
+          candidate.segmentIndex < bestMatch.segmentIndex)
+      ) {
+        bestMatch = candidate;
+      }
+    }
+
+    if (!bestMatch) continue;
+
+    const segmentAnnotations = annotationsBySegment.get(bestMatch.segmentIndex) ?? [];
+    segmentAnnotations.push(toAnnotation(parsed, bestMatch.anchorLine));
+    annotationsBySegment.set(bestMatch.segmentIndex, segmentAnnotations);
+  }
+
+  return annotationsBySegment;
 }
 
 /**
