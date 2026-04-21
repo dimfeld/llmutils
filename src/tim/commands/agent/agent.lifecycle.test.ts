@@ -849,6 +849,42 @@ describe('timAgent lifecycle integration', () => {
     expect(updatedPlan.lessonsAppliedAt).toBeDefined();
   });
 
+  test('after-review mode runs docs and lessons when final review is skipped in serial task mode', async () => {
+    effectiveConfig.updateDocs = { mode: 'after-review', applyLessons: true };
+
+    markTaskDoneSpy.mockImplementationOnce(async () => ({
+      message: 'Task marked',
+      planComplete: true,
+    }));
+
+    const initialPlan = await readPlanFile(planFile);
+    initialPlan.tasks = [
+      { title: 'Task 1', description: 'Do the work', steps: [{ prompt: 'implement' }] },
+    ];
+    await writePlanFile(planFile, initialPlan);
+
+    let itemReturned = false;
+    findNextActionableItemImpl = () => {
+      if (itemReturned) return null;
+      itemReturned = true;
+      return {
+        type: 'task',
+        taskIndex: 0,
+        task: { title: 'Task 1', description: 'Do the work', steps: [{ prompt: 'implement' }] },
+      };
+    };
+
+    const { timAgent } = await import('./agent.js');
+    await timAgent(1, { log: false, summary: false, serialTasks: true }, {});
+
+    expect(runUpdateDocsSpy).toHaveBeenCalledTimes(1);
+    expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
+
+    const updatedPlan = await readPlanFile(planFile);
+    expect(updatedPlan.docsUpdatedAt).toBeDefined();
+    expect(updatedPlan.lessonsAppliedAt).toBeDefined();
+  });
+
   test('after-review mode skips docs and lessons when final review saves issues in serial task mode', async () => {
     effectiveConfig.updateDocs = { mode: 'after-review', applyLessons: true };
 

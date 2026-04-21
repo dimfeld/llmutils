@@ -1421,6 +1421,49 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       expect(finalPlan.lessonsAppliedAt).toBeDefined();
     });
 
+    test('after-review mode runs docs and lessons when final review is skipped', async () => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        updateDocs: { mode: 'after-review', applyLessons: true },
+      });
+
+      executorExecuteSpy.mockImplementation(async () => {
+        await createPlanFile({
+          tasks: [
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
+        });
+      });
+
+      const options = { log: false, nonInteractive: true } as any;
+      await timAgent(1, options, {});
+
+      expect(handleReviewCommandSpy).not.toHaveBeenCalled();
+      expect(runUpdateDocsSpy).toHaveBeenCalledTimes(1);
+      expect(runUpdateLessonsSpy).toHaveBeenCalledTimes(1);
+
+      const finalContent = await fs.readFile(planFile, 'utf-8');
+      const finalPlan = yaml.parse(finalContent.replace(/^#.*\n/, ''));
+      expect(finalPlan.docsUpdatedAt).toBeDefined();
+      expect(finalPlan.lessonsAppliedAt).toBeDefined();
+    });
+
     test('after-review mode skips docs and lessons when final review saves issues', async () => {
       await createPlanFile({
         tasks: [
