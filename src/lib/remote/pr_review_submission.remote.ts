@@ -183,7 +183,7 @@ function requireReviewForDiff(review: ReviewRow): {
   return { owner: match[1]!, repo: match[2]!, baseBranch: review.base_branch };
 }
 
-export const getSubmissionPartition = query(
+export const getSubmissionPartition = command(
   submissionPartitionSchema,
   async ({ reviewId, issueIds, commitSha, fallbackCommitSha }) => {
     const { db } = await getServerContext();
