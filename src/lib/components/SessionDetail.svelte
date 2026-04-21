@@ -150,7 +150,15 @@
 
   let showRunAgent = $derived.by(() => {
     if (!planAttentionState || !taskCounts) return false;
-    return planAttentionState.displayStatus === 'ready' && taskCounts.done < taskCounts.total;
+    return (
+      taskCounts.total > 0 &&
+      taskCounts.done < taskCounts.total &&
+      planAttentionState.displayStatus !== 'needs_review' &&
+      planAttentionState.displayStatus !== 'done' &&
+      planAttentionState.displayStatus !== 'cancelled' &&
+      planAttentionState.displayStatus !== 'deferred' &&
+      planAttentionState.displayStatus !== 'recently_done'
+    );
   });
 
   let attentionReasons = $derived.by((): PlanAttentionReason[] => {

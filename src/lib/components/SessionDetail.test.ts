@@ -189,6 +189,29 @@ describe('SessionDetail', () => {
     expect(body).toContain('Run Agent');
   });
 
+  test('renders a Run Agent button for offline in-progress plans with incomplete tasks', async () => {
+    const session = createSession({
+      status: 'offline',
+      sessionInfo: {
+        planId: 302,
+        planUuid: 'plan-302',
+      },
+    });
+    getPlanAttentionState.mockResolvedValue({
+      displayStatus: 'in_progress',
+      reviewIssueCount: 0,
+      canUpdateDocs: false,
+      hasPr: false,
+      epic: false,
+      developmentWorkflow: 'pr-based',
+    });
+    getPlanTaskCounts.mockResolvedValue({ done: 1, total: 3 });
+
+    const { body } = await render(SessionDetail, { props: { session } });
+
+    expect(body).toContain('Run Agent');
+  });
+
   test('does not render Run Agent for offline plans without incomplete tasks', async () => {
     const session = createSession({
       status: 'offline',
@@ -236,8 +259,8 @@ describe('SessionDetail', () => {
     });
     const { body } = await render(SessionDetail, { props: { session } });
 
-    expect(body).toContain('<span class="plan-heading">## Current Plan</span>');
-    expect(body).toContain('plan-list-item');
+    expect(body).toContain('aria-label="Plan content"');
+    expect(body).toContain('<h2 id="current-plan">Current Plan</h2>');
     expect(body).toContain('Task 1');
     expect(body).not.toContain('Waiting for plan content...');
   });

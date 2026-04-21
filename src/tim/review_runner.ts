@@ -85,6 +85,10 @@ export function resolveReviewExecutorSelection(
     }
   }
 
+  log(
+    `Using executor "${resolved}" (CLI: ${executorSelection}, config: ${config.review?.defaultExecutor}, default: ${config.defaultExecutor})`
+  );
+
   // Fall back to default executor
   resolved = resolved || DEFAULT_EXECUTOR;
 
