@@ -40,8 +40,10 @@ function buildJjGuidance(options: OrchestrationOptions): string {
 
 function buildInputFileRandomizationGuidance(planId: string): string {
   return `- If input is large (roughly over 50KB), write it to a temporary file in a temp directory (for example, \`/tmp/claude\` or a \`mktemp\` path) and pass \`--input-file <paths...>\` instead of \`--input\`.
-- When you create an input file for a subagent or reviewer, include the plan ID plus an extra random suffix in the filename so repeated runs on the same plan do not collide with earlier files.
-- Recommended pattern: \`/tmp/claude/tim-${planId}-<purpose>-$(Date.now() % 100000).md\`.
+- When you create an input file for a subagent or reviewer, do not use Bash commands or scripts to generate random numbers or timestamps for the filename.
+- Prefer deterministic names such as \`/tmp/claude/tim-${planId}-<purpose>.md\`, \`/tmp/claude/tim-${planId}-<purpose>-task-1.md\`, or a stable counter-based filename.
+- Recommended pattern: \`/tmp/claude/tim-${planId}-<purpose>-${Date.now() % 10000}.md\`.
+- It is also acceptable to reuse the same filename each time if that is simpler.
 - Always explicitly pass the full path instead of using "$TMPDIR/filename".
 - You can also pipe input to stdin and use \`--input-file -\`.`;
 }
@@ -169,15 +171,20 @@ function buildSubagentExecutorFlag(options: OrchestrationOptions): string {
 function buildSubagentOutputCaptureGuidance(planId: string): string {
   return `Output capture requirement for every \`tim subagent\` run:
 - Always pass \`--output-file <path>\` and use the full path, not $TMPDIR/<filename>
-- Use a temp-dir file name that includes the plan ID and agent name to avoid collisions with other concurrent agents/projects.
-- Recommended pattern: tim-${planId}-<agent>-output-$(Date.now() % 100000).txt.
+- Do not use Bash commands or scripts to generate random numbers or timestamps for output filenames.
+- Prefer deterministic names such as \`tim-${planId}-<agent>-output.txt\` or \`tim-${planId}-<agent>-output-1.txt\`.
+- Recommended pattern: \`tim-${planId}-<agent>-output-${Date.now() % 10000}.txt\`.
+- Reusing the same filename each time is acceptable if it keeps the workflow simple.
 - If the command returns no stdout/stderr output, immediately read the \`--output-file\` path and use that as the subagent output.`;
 }
 
 function buildReviewOutputCaptureGuidance(planId: string): string {
   return `Output capture requirement for every \`tim review\` run:
 - Always pass \`--output-file <path>\` and use the full path, not $TMPDIR/<filename>
-- Use a temp-dir file name that includes the plan ID (for example tim-${planId}-review-output-$(Date.now() % 100000).txt) to avoid collisions with other concurrent agents/projects.
+- Do not use Bash commands or scripts to generate random numbers or timestamps for output filenames.
+- Prefer deterministic names such as \`tim-${planId}-review-output.txt\` or \`tim-${planId}-review-output-1.txt\`.
+- Recommended pattern: \`tim-${planId}-review-output-${Date.now() % 10000}.txt\`.
+- Reusing the same filename each time is acceptable if that keeps the workflow simple.
 - If the command returns no stdout/stderr output, immediately read the \`--output-file\` path and use that as the review output.`;
 }
 
