@@ -64,6 +64,7 @@ function getDiffInstructions(baseBranch: string, useJj: boolean): string {
     `Repository is git-based. Determine the merge-base diff yourself; do not ask for inline diffs.`,
     `Use: \`git merge-base 'origin/${quotedBranch}' HEAD\` then \`git diff <merge-base>\``,
     `Use \`git diff <merge-base> --name-only\` for file lists and file-specific diffs for deep analysis.`,
+    `When you generate diffs for the review guide, copy the relevant sections of \`git diff\` output verbatim. Do not paraphrase, normalize, or reconstruct the diff hunks.`,
   ].join('\n');
 }
 
@@ -115,7 +116,7 @@ ${getDiffInstructions(metadata.baseBranch, useJj)}
 2. Group files into functional sections/subsections (core logic, data model, API, tests, docs, etc.).
 3. Analyze each section with enough detail that a reviewer can walk the PR without opening every file.
 4. Ensure every changed file and every changed line is covered in at least one section.
-5. Each section must include the full unified diff for all files in that section, in a \`\`\`unified-diff code block, so the reviewer can read the changes inline without opening the files separately.
+5. Each section must include the full unified diff for all files in that section, in a \`\`\`unified-diff code block, copied verbatim from the relevant \`git diff\` output, so the reviewer can read the changes inline without opening the files separately.
 6. Include subsection commentary plus concrete line references for important changes.
 7. Ignore comments that begin with \`AI:\` or \`AI_COMMENT_START\`.
 

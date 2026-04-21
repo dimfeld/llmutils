@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import { $ } from 'bun';
 import chalk from 'chalk';
 import type { Database } from 'bun:sqlite';
+import PQueue from 'p-queue';
 import {
   getGitInfoExcludePath,
   getMergeBase,
@@ -14,7 +15,7 @@ import { parseOwnerRepoFromRepositoryId } from '../../common/github/pull_request
 import { parseLineRange } from '../../common/review_line_range.js';
 export { parseLineRange };
 import { isTunnelActive } from '../../logging/tunnel_client.js';
-import { log, warn } from '../../logging.js';
+import { log, warn, error } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import type { TimConfig } from '../configSchema.js';
 import { getDatabase } from '../db/database.js';
@@ -90,13 +91,20 @@ interface ClaudeGuideResult {
 
 interface UnifiedDiffCleanupResult {
   guideText: string;
-  repairedBlockCount: number;
+  repairedSectionCount: number;
 }
 
 interface UnifiedDiffFenceBlock {
   fullMatch: string;
   diffText: string;
   index: number;
+}
+
+interface UnifiedDiffSection {
+  fullMatch: string;
+  diffText: string;
+  index: number;
+  filePath: string | null;
 }
 
 type CombinationIssue = {
@@ -343,6 +351,25 @@ function normalizePatchText(diffText: string): string {
   return trimmed.length > 0 ? `${trimmed}\n` : '';
 }
 
+function getUnifiedDiffSectionFilePath(diffText: string): string | null {
+  const gitHeaderMatch = diffText.match(/^diff --git a\/(.+?) b\/(.+)$/m);
+  if (gitHeaderMatch?.[2]) {
+    return gitHeaderMatch[2].trim();
+  }
+
+  const plusHeaderMatch = diffText.match(/^\+\+\+ b\/(.+)$/m);
+  if (plusHeaderMatch?.[1]) {
+    return plusHeaderMatch[1].trim();
+  }
+
+  const minusHeaderMatch = diffText.match(/^--- a\/(.+)$/m);
+  if (minusHeaderMatch?.[1]) {
+    return minusHeaderMatch[1].trim();
+  }
+
+  return null;
+}
+
 function extractUnifiedDiffBlocks(guideText: string): UnifiedDiffFenceBlock[] {
   const blocks: UnifiedDiffFenceBlock[] = [];
   let match: RegExpExecArray | null;
@@ -361,11 +388,69 @@ function extractUnifiedDiffBlocks(guideText: string): UnifiedDiffFenceBlock[] {
   return blocks;
 }
 
-async function validateUnifiedDiffBlock(options: {
+function splitUnifiedDiffSections(diffText: string): UnifiedDiffSection[] {
+  const trimmed = diffText.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  const lines = trimmed.split('\n');
+  const sections: UnifiedDiffSection[] = [];
+  let startIndex = 0;
+  let sectionIndex = 0;
+
+  for (let index = 1; index < lines.length; index++) {
+    if (!lines[index].startsWith('diff --git ')) {
+      continue;
+    }
+
+    const sectionText = lines.slice(startIndex, index).join('\n').trim();
+    if (sectionText.length > 0) {
+      sections.push({
+        fullMatch: sectionText,
+        diffText: sectionText,
+        index: sectionIndex,
+        filePath: getUnifiedDiffSectionFilePath(sectionText),
+      });
+      sectionIndex += 1;
+    }
+
+    startIndex = index;
+  }
+
+  const finalSectionText = lines.slice(startIndex).join('\n').trim();
+  if (finalSectionText.length > 0) {
+    sections.push({
+      fullMatch: finalSectionText,
+      diffText: finalSectionText,
+      index: sectionIndex,
+      filePath: getUnifiedDiffSectionFilePath(finalSectionText),
+    });
+  }
+
+  if (sections.length === 0) {
+    return [
+      {
+        fullMatch: trimmed,
+        diffText: trimmed,
+        index: 0,
+        filePath: getUnifiedDiffSectionFilePath(trimmed),
+      },
+    ];
+  }
+
+  return sections;
+}
+
+function joinUnifiedDiffSections(sections: string[]): string {
+  return sections.map((section) => normalizePatchText(section).trimEnd()).join('\n\n');
+}
+
+async function validateUnifiedDiffSection(options: {
   baseDir: string;
   tempDir: string;
   diffText: string;
-  blockIndex: number;
+  sectionIndex: number;
 }): Promise<{ valid: true } | { valid: false; reason: string }> {
   const normalizedPatch = normalizePatchText(options.diffText);
   if (!normalizedPatch) {
@@ -380,7 +465,7 @@ async function validateUnifiedDiffBlock(options: {
     return { valid: false, reason: 'Diff is missing at least one @@ hunk header.' };
   }
 
-  const patchPath = path.join(options.tempDir, `guide-diff-${options.blockIndex}.patch`);
+  const patchPath = path.join(options.tempDir, `guide-diff-${options.sectionIndex}.patch`);
   await fs.writeFile(patchPath, normalizedPatch, 'utf8');
 
   try {
@@ -424,22 +509,26 @@ function buildUnifiedDiffRepairPrompt(options: {
   baseSha: string | null;
   reviewedSha: string;
   prUrl: string;
-  blockIndex: number;
+  sectionIndex: number;
+  filePath: string | null;
 }): string {
   const baseShaLine = options.baseSha
     ? `Base SHA for the PR diff is ${options.baseSha}.`
     : 'Base SHA could not be resolved automatically.';
+  const sectionLabel = options.filePath ?? `section ${options.sectionIndex + 1}`;
 
   return [
-    `You are repairing a malformed unified diff block taken from a PR review guide for ${options.prUrl}.`,
+    `You are repairing a malformed unified diff section from a PR review guide for ${options.prUrl}.`,
     `The repository is currently checked out at reviewed SHA ${options.reviewedSha}.`,
+    `This section targets ${sectionLabel}.`,
     baseShaLine,
     '',
     'Requirements:',
-    '1. Return only the corrected unified diff content. Do not wrap it in markdown fences.',
-    '2. Preserve the intended changes from the broken diff as closely as possible.',
+    '1. Return only the corrected unified diff content for this section. Do not wrap it in markdown fences.',
+    '2. Preserve the intended changes from the broken diff section as closely as possible.',
     '3. Produce a real unified diff with valid ---/+++ file headers and @@ hunk headers.',
-    '4. Do not include commentary, explanation, or surrounding prose.',
+    '4. Before returning, verify the section with `git apply --reverse --check` or a similar `git apply` command.',
+    '5. Do not include commentary, explanation, or unrelated file sections.',
     '',
     'Validation failure from git apply --reverse --check:',
     options.validationError,
@@ -461,7 +550,8 @@ async function repairUnifiedDiffBlock(options: {
   reviewedSha: string;
   prUrl: string;
   reviewId: number;
-  blockIndex: number;
+  sectionIndex: number;
+  filePath: string | null;
 }): Promise<string> {
   const repairExecutor = buildExecutorAndLog(
     'claude-code',
@@ -470,6 +560,7 @@ async function repairUnifiedDiffBlock(options: {
       model: 'sonnet',
       terminalInput: false,
       noninteractive: true,
+      extraAllowedTools: ['Bash(git apply --reverse --check:*)', 'Bash(git apply --check:*)'],
     },
     options.config,
     { reasoningEffort: 'medium' }
@@ -482,11 +573,12 @@ async function repairUnifiedDiffBlock(options: {
       baseSha: options.baseSha,
       reviewedSha: options.reviewedSha,
       prUrl: options.prUrl,
-      blockIndex: options.blockIndex,
+      sectionIndex: options.sectionIndex,
+      filePath: options.filePath,
     }),
     {
       planId: String(options.reviewId),
-      planTitle: `PR review diff cleanup: ${options.prUrl}#${options.blockIndex + 1}`,
+      planTitle: `PR review diff cleanup: ${options.prUrl}#${options.sectionIndex + 1}`,
       planFilePath: '',
       captureOutput: 'result',
       executionMode: 'bare',
@@ -494,15 +586,15 @@ async function repairUnifiedDiffBlock(options: {
   );
 
   const repairedDiff = extractPatchedDiffText(normalizeExecutorOutput(output));
-  const validation = await validateUnifiedDiffBlock({
+  const validation = await validateUnifiedDiffSection({
     baseDir: options.baseDir,
     tempDir: options.tempDir,
     diffText: repairedDiff,
-    blockIndex: options.blockIndex,
+    sectionIndex: options.sectionIndex,
   });
   if (!validation.valid) {
-    throw new Error(
-      `Claude repair produced an invalid unified diff for block ${options.blockIndex + 1}: ${validation.reason}`
+    error(
+      `Claude repair produced an invalid unified diff section for section ${options.sectionIndex + 1}: ${validation.reason}\n${repairedDiff}`
     );
   }
 
@@ -521,45 +613,71 @@ async function cleanupUnifiedDiffBlocks(options: {
 }): Promise<UnifiedDiffCleanupResult> {
   const blocks = extractUnifiedDiffBlocks(options.guideText);
   if (blocks.length === 0) {
-    return { guideText: options.guideText, repairedBlockCount: 0 };
+    return { guideText: options.guideText, repairedSectionCount: 0 };
   }
 
+  const repairQueue = new PQueue({ concurrency: 4 });
   let cleanedGuideText = options.guideText;
-  let repairedBlockCount = 0;
+  let repairedSectionCount = 0;
 
   for (const block of blocks) {
-    const validation = await validateUnifiedDiffBlock({
-      baseDir: options.baseDir,
-      tempDir: options.tempDir,
-      diffText: block.diffText,
-      blockIndex: block.index,
-    });
-
-    if (validation.valid) {
+    const sections = splitUnifiedDiffSections(block.diffText);
+    if (sections.length === 0) {
       continue;
     }
 
-    const repairedDiff = await repairUnifiedDiffBlock({
-      config: options.config,
-      baseDir: options.baseDir,
-      tempDir: options.tempDir,
-      diffText: block.diffText,
-      validationError: validation.reason,
-      baseSha: options.baseSha,
-      reviewedSha: options.reviewedSha,
-      prUrl: options.prUrl,
-      reviewId: options.reviewId,
-      blockIndex: block.index,
-    });
+    const sectionResults = await Promise.all(
+      sections.map(async (section) => {
+        const validation = await validateUnifiedDiffSection({
+          baseDir: options.baseDir,
+          tempDir: options.tempDir,
+          diffText: section.diffText,
+          sectionIndex: section.index,
+        });
 
-    cleanedGuideText = cleanedGuideText.replace(
-      block.fullMatch,
-      `\`\`\`unified-diff\n${normalizePatchText(repairedDiff)}\`\`\``
+        if (validation.valid) {
+          return {
+            cleanedText: section.fullMatch,
+            repaired: false,
+          };
+        }
+
+        const repairedDiff = await repairQueue.add(() =>
+          repairUnifiedDiffBlock({
+            config: options.config,
+            baseDir: options.baseDir,
+            tempDir: options.tempDir,
+            diffText: section.diffText,
+            validationError: validation.reason,
+            baseSha: options.baseSha,
+            reviewedSha: options.reviewedSha,
+            prUrl: options.prUrl,
+            reviewId: options.reviewId,
+            sectionIndex: section.index,
+            filePath: section.filePath,
+          })
+        );
+
+        return {
+          cleanedText: normalizePatchText(repairedDiff).trimEnd(),
+          repaired: true,
+        };
+      })
     );
-    repairedBlockCount += 1;
+
+    const blockChanged = sectionResults.some((result) => result.repaired);
+    if (blockChanged) {
+      repairedSectionCount += sectionResults.filter((result) => result.repaired).length;
+      cleanedGuideText = cleanedGuideText.replace(
+        block.fullMatch,
+        `\`\`\`unified-diff\n${normalizePatchText(
+          joinUnifiedDiffSections(sectionResults.map((result) => result.cleanedText))
+        )}\`\`\``
+      );
+    }
   }
 
-  return { guideText: cleanedGuideText, repairedBlockCount };
+  return { guideText: cleanedGuideText, repairedSectionCount };
 }
 
 async function runClaudeGuide(options: {
@@ -1119,14 +1237,14 @@ export async function handleReviewGuideCommand(
                   reviewedSha,
                 });
                 reviewGuide = cleanupResult.guideText;
-                if (cleanupResult.repairedBlockCount > 0) {
+                if (cleanupResult.repairedSectionCount > 0) {
                   log(
-                    `Repaired ${cleanupResult.repairedBlockCount} malformed unified diff block${cleanupResult.repairedBlockCount === 1 ? '' : 's'} in the review guide.`
+                    `Repaired ${cleanupResult.repairedSectionCount} malformed unified diff section${cleanupResult.repairedSectionCount === 1 ? '' : 's'} in the review guide.`
                   );
                 }
               } catch (error) {
                 warn(
-                  `Failed to repair malformed unified diff blocks in the review guide; storing the original guide and continuing: ${asErrorMessage(error)}`
+                  `Failed to repair malformed unified diff sections in the review guide; storing the original guide and continuing: ${asErrorMessage(error)}`
                 );
               }
             }

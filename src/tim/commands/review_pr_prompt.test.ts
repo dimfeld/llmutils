@@ -33,6 +33,7 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain("git merge-base 'origin/main' HEAD");
     expect(prompt).toContain('.tim/tmp/review-guide.md');
     expect(prompt).toContain('Group files into functional sections');
+    expect(prompt).toContain('copied verbatim from the relevant `git diff` output');
   });
 
   test('buildReviewGuidePrompt includes jj instructions when requested', () => {

@@ -191,8 +191,16 @@ function installExecutorMock(options: {
   claudeExecute?: ReturnType<typeof vi.fn>;
   codexExecute?: ReturnType<typeof vi.fn>;
   haikuExecute?: ReturnType<typeof vi.fn>;
+  repairExecute?: ReturnType<typeof vi.fn>;
 }) {
   mockBuildExecutorAndLog.mockImplementation((name, sharedOptions) => {
+    if (name === 'claude-code' && (sharedOptions as any)?.model === 'sonnet') {
+      if (!options.repairExecute) {
+        throw new Error('Unexpected Claude repair executor request');
+      }
+      return { execute: options.repairExecute } as any;
+    }
+
     if (name === 'claude-code' && (sharedOptions as any)?.model === 'haiku') {
       if (!options.haikuExecute) {
         throw new Error('Unexpected Claude Haiku executor request');
@@ -642,7 +650,7 @@ describe('review_pr command', () => {
     expect(lifecycleInstance.shutdown).toHaveBeenCalledTimes(1);
   });
 
-  test('repairs malformed unified diff blocks in the generated review guide', async () => {
+  test('repairs malformed unified diff sections in the generated review guide', async () => {
     await fs.mkdir(path.join(tempDir, 'src'), { recursive: true });
     await fs.writeFile(path.join(tempDir, 'src', 'a.ts'), 'const value = 1;\n', 'utf8');
 
@@ -677,9 +685,9 @@ describe('review_pr command', () => {
       throw new Error(`Unexpected Claude prompt: ${prompt}`);
     });
 
-    const haikuExecute = vi.fn().mockImplementation(async (prompt: string) => {
-      if (!prompt.includes('repairing a malformed unified diff block')) {
-        throw new Error(`Unexpected Haiku prompt: ${prompt}`);
+    const repairExecute = vi.fn().mockImplementation(async (prompt: string) => {
+      if (!prompt.includes('repairing a malformed unified diff section')) {
+        throw new Error(`Unexpected repair prompt: ${prompt}`);
       }
 
       return {
@@ -694,11 +702,11 @@ describe('review_pr command', () => {
       };
     });
 
-    installExecutorMock({ claudeExecute, haikuExecute });
+    installExecutorMock({ claudeExecute, repairExecute });
 
     await handleReviewGuideCommand('42', { executor: 'claude-code' }, makeCommand());
 
-    expect(haikuExecute).toHaveBeenCalledTimes(1);
+    expect(repairExecute).toHaveBeenCalledTimes(1);
     expect(mockUpdateReview).toHaveBeenCalledWith(
       expect.anything(),
       501,
@@ -742,15 +750,15 @@ describe('review_pr command', () => {
       throw new Error(`Unexpected Claude prompt: ${prompt}`);
     });
 
-    const haikuExecute = vi.fn().mockRejectedValue(new Error('repair failed'));
+    const repairExecute = vi.fn().mockRejectedValue(new Error('repair failed'));
 
-    installExecutorMock({ claudeExecute, haikuExecute });
+    installExecutorMock({ claudeExecute, repairExecute });
 
     await handleReviewGuideCommand('42', { executor: 'claude-code' }, makeCommand());
 
-    expect(haikuExecute).toHaveBeenCalledTimes(1);
+    expect(repairExecute).toHaveBeenCalledTimes(1);
     expect(mockWarn).toHaveBeenCalledWith(
-      expect.stringContaining('Failed to repair malformed unified diff blocks in the review guide')
+      expect.stringContaining('Failed to repair malformed unified diff sections in the review guide')
     );
     expect(mockUpdateReview).toHaveBeenCalledWith(
       expect.anything(),
