@@ -127,7 +127,8 @@ export async function resolveOptionalPromptText(
 ): Promise<string | undefined> {
   const tunnelActive = options.tunnelActive ?? false;
   const hasPromptFile = Boolean(options.promptFile);
-  const shouldReadStdinWhenNotTTY = options.readStdinWhenNotTTY ?? (!tunnelActive && !hasPromptFile);
+  const shouldReadStdinWhenNotTTY =
+    options.readStdinWhenNotTTY ?? (!tunnelActive && !hasPromptFile);
 
   return resolveOptionalPromptInput(
     {
@@ -200,15 +201,12 @@ export async function handleChatCommand(
     workspaceConfig.terminalInput !== false;
   const terminalInputEnabled =
     executorName === CodexCliExecutorName && !codexAppServerEnabled ? false : canUseTerminalInput;
-  const prompt = await resolveOptionalPromptText(
-    promptText,
-    {
-      promptFile: options.promptFile,
-      stdinIsTTY: process.stdin.isTTY,
-      tunnelActive,
-      readStdinWhenNotTTY: terminalInputEnabled && !tunnelActive,
-    }
-  );
+  const prompt = await resolveOptionalPromptText(promptText, {
+    promptFile: options.promptFile,
+    stdinIsTTY: process.stdin.isTTY,
+    tunnelActive,
+    readStdinWhenNotTTY: terminalInputEnabled && !tunnelActive,
+  });
 
   let currentBaseDir = process.cwd();
   let currentPlanFile = '';
@@ -326,8 +324,7 @@ export async function handleChatCommand(
           },
           workspaceConfig
         );
-        const promptForExecution =
-          executorName === CodexCliExecutorName ? (prompt ?? '') : prompt;
+        const promptForExecution = executorName === CodexCliExecutorName ? (prompt ?? '') : prompt;
 
         const loggerAdapter = getLoggerAdapter();
         if (currentPlanFile && loggerAdapter instanceof HeadlessAdapter) {

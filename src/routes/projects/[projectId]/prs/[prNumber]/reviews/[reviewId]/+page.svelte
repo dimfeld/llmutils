@@ -18,9 +18,7 @@
     parseMarkdownWithDiffs,
     type TocEntry,
   } from '$lib/utils/markdown_parser.js';
-  import {
-    buildGuideDiffAnnotations,
-  } from './review_detail_utils.js';
+  import { buildGuideDiffAnnotations } from './review_detail_utils.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
   import { Splitpanes, Pane } from 'svelte-splitpanes';
   import type { ReviewIssueRow, ReviewSeverity, ReviewCategory } from '$tim/db/review.js';
@@ -195,7 +193,7 @@
       },
       {
         rootMargin: '-20% 0px -60% 0px', // Trigger when element is in top 20% of viewport
-        threshold: [0, 0.1, 0.25, 0.5, 0.75, 1]
+        threshold: [0, 0.1, 0.25, 0.5, 0.75, 1],
       }
     );
 

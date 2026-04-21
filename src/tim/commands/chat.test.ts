@@ -320,7 +320,9 @@ describe('handleChatCommand', () => {
   test('allows codex-cli without an explicit prompt when app-server mode is disabled', async () => {
     process.env.CODEX_USE_APP_SERVER = 'false';
 
-    await expect(handleChatCommand(undefined, { executor: 'codex-cli' }, {})).resolves.toBeUndefined();
+    await expect(
+      handleChatCommand(undefined, { executor: 'codex-cli' }, {})
+    ).resolves.toBeUndefined();
 
     expect(vi.mocked(buildExecutorAndLog)).toHaveBeenCalledTimes(1);
     expect(mockExecutorExecute).toHaveBeenCalledTimes(1);

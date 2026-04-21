@@ -10,7 +10,7 @@ describe('assignment command registration in tim.ts', () => {
     expect(source).not.toContain(".command('cleanup [files...]')");
     expect(source).not.toContain("program\n  .command('claim <plan>')");
     expect(source).not.toContain("program\n  .command('release <plan>')");
-    expect(source).toContain("const assignmentsCommand = program");
+    expect(source).toContain('const assignmentsCommand = program');
     expect(source).toContain("assignmentsCommand\n  .command('claim <plan>')");
     expect(source).toContain("assignmentsCommand\n  .command('release <plan>')");
   });

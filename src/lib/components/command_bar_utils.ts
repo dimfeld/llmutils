@@ -25,9 +25,7 @@ function isGithubIssueLikeUrl(value: string): boolean {
 }
 
 function isLinearIssueLikeUrl(value: string): boolean {
-  return /^https:\/\/linear\.app\/[^/]+\/issue\/[A-Za-z][A-Za-z0-9]*-\d+(?:\/[^/]*)?$/i.test(
-    value
-  );
+  return /^https:\/\/linear\.app\/[^/]+\/issue\/[A-Za-z][A-Za-z0-9]*-\d+(?:\/[^/]*)?$/i.test(value);
 }
 
 function isImportIdentifierLike(value: string): boolean {
@@ -62,9 +60,7 @@ export const ALL_NAV_ITEMS: NavItem[] = [
 export function getNavigationItems(projectId: string, searchQuery: string): NavItem[] {
   let items = ALL_NAV_ITEMS;
   if (projectId === 'all') {
-    items = items.filter(
-      (item) => item.slug !== 'settings' && item.slug !== 'import'
-    );
+    items = items.filter((item) => item.slug !== 'settings' && item.slug !== 'import');
   }
 
   const q = searchQuery.trim().toLowerCase();

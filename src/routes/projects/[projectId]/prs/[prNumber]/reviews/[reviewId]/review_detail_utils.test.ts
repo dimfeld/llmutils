@@ -96,9 +96,7 @@ describe('buildAnnotationsForFile', () => {
       [makeIssue({ id: 20, file: 'src/a.ts', line: '10-20', start_line: null })],
       'src/a.ts'
     );
-    expect(annotations.map((a) => a.lineNumber)).toEqual([
-      20,
-    ]);
+    expect(annotations.map((a) => a.lineNumber)).toEqual([20]);
     expect(annotations[0]?.metadata.lineLabel).toBe('10–20');
     expect(annotations[0]?.metadata.suggestion).toBeNull();
   });
@@ -108,9 +106,7 @@ describe('buildAnnotationsForFile', () => {
       [makeIssue({ id: 21, file: 'src/a.ts', line: '10\u201320', start_line: null })],
       'src/a.ts'
     );
-    expect(annotations.map((a) => a.lineNumber)).toEqual([
-      20,
-    ]);
+    expect(annotations.map((a) => a.lineNumber)).toEqual([20]);
     expect(annotations[0]?.metadata.lineLabel).toBe('10–20');
     expect(annotations[0]?.metadata.suggestion).toBeNull();
   });
@@ -148,9 +144,7 @@ describe('buildAnnotationsForFile', () => {
   });
 
   it('anchors to closest line in diff when end line is outside range', () => {
-    const diffRanges: LineRange[] = [
-      { start: 10, end: 23, side: 'additions' },
-    ];
+    const diffRanges: LineRange[] = [{ start: 10, end: 23, side: 'additions' }];
     const annotations = buildAnnotationsForFile(
       [makeIssue({ id: 24, file: 'src/a.ts', start_line: '22', line: '33', side: 'RIGHT' })],
       'src/a.ts',
@@ -162,9 +156,7 @@ describe('buildAnnotationsForFile', () => {
   });
 
   it('keeps original line when it is already in diff range', () => {
-    const diffRanges: LineRange[] = [
-      { start: 10, end: 23, side: 'additions' },
-    ];
+    const diffRanges: LineRange[] = [{ start: 10, end: 23, side: 'additions' }];
     const annotations = buildAnnotationsForFile(
       [makeIssue({ id: 25, file: 'src/a.ts', line: '15', side: 'RIGHT' })],
       'src/a.ts',
@@ -183,9 +175,7 @@ describe('buildAnnotationsForFile', () => {
   });
 
   it('filters annotations when issue does not overlap with diff ranges', () => {
-    const diffRanges: LineRange[] = [
-      { start: 10, end: 23, side: 'additions' },
-    ];
+    const diffRanges: LineRange[] = [{ start: 10, end: 23, side: 'additions' }];
     const annotations = buildAnnotationsForFile(
       [makeIssue({ id: 27, file: 'src/a.ts', start_line: '30', line: '40', side: 'RIGHT' })],
       'src/a.ts',
@@ -196,9 +186,7 @@ describe('buildAnnotationsForFile', () => {
   });
 
   it('includes annotation when issue overlaps with diff ranges', () => {
-    const diffRanges: LineRange[] = [
-      { start: 10, end: 23, side: 'additions' },
-    ];
+    const diffRanges: LineRange[] = [{ start: 10, end: 23, side: 'additions' }];
     const annotations = buildAnnotationsForFile(
       [makeIssue({ id: 28, file: 'src/a.ts', start_line: '20', line: '25', side: 'RIGHT' })],
       'src/a.ts',
@@ -210,9 +198,7 @@ describe('buildAnnotationsForFile', () => {
   });
 
   it('handles multiple issues with selective overlap', () => {
-    const diffRanges: LineRange[] = [
-      { start: 10, end: 23, side: 'additions' },
-    ];
+    const diffRanges: LineRange[] = [{ start: 10, end: 23, side: 'additions' }];
     const annotations = buildAnnotationsForFile(
       [
         makeIssue({ id: 29, file: 'src/a.ts', line: '15', side: 'RIGHT' }), // Overlaps

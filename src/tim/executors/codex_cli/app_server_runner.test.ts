@@ -486,7 +486,12 @@ describe('executeCodexStepViaAppServer', () => {
         })
     );
 
-    const result = harness.executeCodexStepViaAppServer('prompt', '/repo', {}, { inactivityTimeoutMs: 10 });
+    const result = harness.executeCodexStepViaAppServer(
+      'prompt',
+      '/repo',
+      {},
+      { inactivityTimeoutMs: 10 }
+    );
 
     await waitFor(() => Boolean(harness.connectionCreateOptions.current?.onExit));
     harness.connectionCreateOptions.current.onExit({ exitCode: 1 });

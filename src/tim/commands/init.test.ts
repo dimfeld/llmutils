@@ -272,8 +272,7 @@ describe('tim init command', () => {
 
   test('does not duplicate entries in .gitignore if they already exist', async () => {
     const gitignorePath = path.join(tempDir, '.gitignore');
-    const existingContent =
-      '# Existing content\n.tim/reviews\n.tim/config/tim.local.yml\n';
+    const existingContent = '# Existing content\n.tim/reviews\n.tim/config/tim.local.yml\n';
     await fs.writeFile(gitignorePath, existingContent, 'utf-8');
 
     const command = {

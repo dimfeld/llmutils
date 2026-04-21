@@ -795,9 +795,7 @@ export async function ensureJjPublishedCommitsHaveDescriptions(gitRoot: string):
     new Response(logProc.stderr as ReadableStream).text(),
   ]);
   if (logExitCode !== 0) {
-    throw new Error(
-      `Failed to inspect JJ commit descriptions: ${logStderr.trim()}`
-    );
+    throw new Error(`Failed to inspect JJ commit descriptions: ${logStderr.trim()}`);
   }
 
   const revisions = logStdout

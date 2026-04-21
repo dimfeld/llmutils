@@ -110,20 +110,11 @@ vi.mock('../lifecycle.js', () => ({
 
 import { getGitRoot, getMergeBase, getUsingJj } from '../../common/git.js';
 import { getDatabase } from '../db/database.js';
-import {
-  createReview,
-  getReviewIssues,
-  insertReviewIssues,
-  updateReview,
-} from '../db/review.js';
+import { createReview, getReviewIssues, insertReviewIssues, updateReview } from '../db/review.js';
 import { getOrCreateProject } from '../db/project.js';
 import { buildExecutorAndLog } from '../executors/index.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import {
-  gatherPrContext,
-  checkoutPrBranch,
-  resolvePrUrl,
-} from '../utils/pr_context_gathering.js';
+import { gatherPrContext, checkoutPrBranch, resolvePrUrl } from '../utils/pr_context_gathering.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { handleReviewGuideCommand } from './review_pr.js';
 
@@ -277,7 +268,11 @@ describe('review_pr diff repair', () => {
   });
 
   test('repairs only the malformed file section and keeps the valid section intact', async () => {
-    await handleReviewGuideCommand('42', { executor: 'claude-code', terminalInput: false }, makeCommand());
+    await handleReviewGuideCommand(
+      '42',
+      { executor: 'claude-code', terminalInput: false },
+      makeCommand()
+    );
 
     expect(executorMocks.repairExecute).toHaveBeenCalledTimes(1);
     expect(mockUpdateReview).toHaveBeenCalledTimes(1);

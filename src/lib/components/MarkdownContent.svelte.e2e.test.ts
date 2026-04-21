@@ -32,7 +32,11 @@ describe('MarkdownContent diffOverrides forwarding', () => {
   test('passes lineAnnotations only to the matching filename', async () => {
     const content = `# Review\n\n${patchFor('foo.ts')}\n\nSome text.\n\n${patchFor('bar.ts')}\n`;
 
-    const overrides = (filename: string | null, _patch: string, diffIndex: number): DiffOverrides | undefined => {
+    const overrides = (
+      filename: string | null,
+      _patch: string,
+      diffIndex: number
+    ): DiffOverrides | undefined => {
       if (filename === 'foo.ts' && diffIndex === 1) {
         return {
           lineAnnotations: [{ side: 'additions', lineNumber: 1, metadata: { issueId: 1 } }],
@@ -59,7 +63,11 @@ describe('MarkdownContent diffOverrides forwarding', () => {
   test('enableGutterUtility is forwarded per filename', async () => {
     const content = `${patchFor('foo.ts')}\n\n${patchFor('bar.ts')}\n`;
 
-    const overrides = (filename: string | null, _patch: string, diffIndex: number): DiffOverrides | undefined => {
+    const overrides = (
+      filename: string | null,
+      _patch: string,
+      diffIndex: number
+    ): DiffOverrides | undefined => {
       if (filename === 'foo.ts' && diffIndex === 0) {
         return { enableGutterUtility: true };
       }

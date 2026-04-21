@@ -82,12 +82,8 @@ describe('command_bar_utils', () => {
   test('filters navigation items by label and keywords', () => {
     expect(getNavigationItems('3', 'active').map((item) => item.slug)).toEqual(['active']);
     expect(getNavigationItems('3', 'github').map((item) => item.slug)).toEqual(['prs']);
-    expect(getNavigationItems('3', 'import').map((item) => item.slug)).toEqual([
-      'import',
-    ]);
-    expect(getNavigationItems('3', 'clipboard').map((item) => item.slug)).toEqual([
-      'import',
-    ]);
+    expect(getNavigationItems('3', 'import').map((item) => item.slug)).toEqual(['import']);
+    expect(getNavigationItems('3', 'clipboard').map((item) => item.slug)).toEqual(['import']);
   });
 
   test('omits project-scoped navigation items when projectId is all', () => {

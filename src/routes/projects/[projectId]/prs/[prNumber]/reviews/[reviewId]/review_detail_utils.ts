@@ -30,10 +30,7 @@ interface ParsedIssueAnchor {
  * Parse a unified diff patch and extract line ranges from hunk headers.
  * Returns a map of filename → array of line ranges that appear in the diff.
  */
-export function extractDiffLineRanges(
-  patch: string,
-  filename: string | null
-): LineRange[] {
+export function extractDiffLineRanges(patch: string, filename: string | null): LineRange[] {
   const ranges: LineRange[] = [];
   if (!filename) return ranges;
 
@@ -247,13 +244,11 @@ export function buildGuideDiffAnnotations(
     const parsed = parseIssueAnchor(issue);
     if (!parsed) continue;
 
-    let bestMatch:
-      | {
-          segmentIndex: number;
-          anchorLine: number;
-          distance: number;
-        }
-      | null = null;
+    let bestMatch: {
+      segmentIndex: number;
+      anchorLine: number;
+      distance: number;
+    } | null = null;
 
     for (const segment of diffSegments) {
       if (segment.filename !== issue.file || segment.ranges.length === 0) continue;

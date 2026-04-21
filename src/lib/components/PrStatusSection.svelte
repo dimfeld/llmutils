@@ -22,7 +22,7 @@
     reviewDecisionBadgeColor,
     reviewDecisionLabel,
   } from '$lib/utils/pr_display.js';
-  import ExternalLink from '@lucide/svelte/icons/external-link';
+
   import PrCheckRunList from './PrCheckRunList.svelte';
   import PrReviewList from './PrReviewList.svelte';
   import PrReviewThreadList from './PrReviewThreadList.svelte';
@@ -227,11 +227,10 @@
             href={pr.status.pr_url}
             target="_blank"
             rel="noopener noreferrer"
-            class="shrink-0 text-muted-foreground hover:text-foreground"
-            title="View in GitHub"
+            class="shrink-0 rounded px-2 py-0.5 text-xs text-muted-foreground hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
             aria-label="View PR #{pr.status.pr_number} in GitHub"
           >
-            <ExternalLink class="size-3.5" />
+            View in GitHub
           </a>
           <a
             href={getGraphitePrUrl(pr)}

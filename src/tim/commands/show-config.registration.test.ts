@@ -11,7 +11,7 @@ describe('show-config command registration in tim.ts', () => {
     expect(blockStart).toBeGreaterThanOrEqual(0);
 
     const block = source.slice(blockStart, blockStart + 300);
-    expect(block).toContain("handleShowConfigCommand");
+    expect(block).toContain('handleShowConfigCommand');
     expect(block).toContain('Print the effective configuration for the current directory as YAML');
   });
 });
