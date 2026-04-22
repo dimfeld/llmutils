@@ -333,6 +333,7 @@ describe('tim plan_materialize', () => {
     expect(after).not.toContain('.tim/plans');
     expect(after).toContain('.tim/logs');
     expect(after).toContain('.tim/tmp');
+    expect(after).toContain('.tim/workspaces');
     await expect(fs.access(path.join(materializeDir, '.gitignore'))).rejects.toMatchObject({
       code: 'ENOENT',
     });

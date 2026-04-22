@@ -445,7 +445,7 @@ describe('createWorkspace', () => {
     );
   });
 
-  test('createWorkspace throws error when cloneLocation is not specified', async () => {
+  test('createWorkspace defaults cloneLocation to .tim/workspaces when not specified', async () => {
     // Setup
     const taskId = 'task-123';
     const planPath = '/path/to/plan.yml';
@@ -455,12 +455,39 @@ describe('createWorkspace', () => {
       workspaceCreation: {
         repositoryUrl,
         // No cloneLocation specified
+        createBranch: false,
       },
     };
 
-    // Execute and verify it throws an error
-    await expect(createWorkspace(mainRepoRoot, taskId, planPath, config)).rejects.toThrow(
-      'cloneLocation must be set in workspace configuration to clone a new workspace'
+    const expectedCloneLocation = path.join(mainRepoRoot, '.tim', 'workspaces');
+    const expectedTargetPath = path.join(expectedCloneLocation, `repo-${taskId}`);
+
+    mockSpawnAndLogOutput.mockImplementation(async (cmd: string[], options?: { cwd?: string }) => {
+      if (cmd[0] === 'git' && cmd[1] === 'clone') {
+        await fs.mkdir(expectedTargetPath, { recursive: true });
+        return { exitCode: 0, stdout: '', stderr: '' };
+      }
+
+      if (
+        cmd[0] === 'git' &&
+        cmd[1] === 'remote' &&
+        cmd[2] === 'get-url' &&
+        options?.cwd === expectedTargetPath
+      ) {
+        return { exitCode: 0, stdout: repositoryUrl, stderr: '' };
+      }
+
+      return { exitCode: 0, stdout: '', stderr: '' };
+    });
+
+    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
+
+    expect(result).not.toBeNull();
+    expect(result?.path).toBe(expectedTargetPath);
+    await expect(fs.access(expectedCloneLocation)).resolves.toBeNull();
+    expect(mockSpawnAndLogOutput).toHaveBeenCalledWith(
+      ['git', 'clone', repositoryUrl, expectedTargetPath],
+      expect.objectContaining({ cwd: mainRepoRoot })
     );
   });
 
