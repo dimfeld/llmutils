@@ -1860,13 +1860,40 @@ async function pushGitBranchToWorkspace(
   destinationWorkspacePath: string,
   branch: string
 ): Promise<void> {
-  const fetchResult = await spawnAndLogOutput(
-    ['git', 'fetch', '--update-head-ok', sourceWorkspacePath, `${branch}:${branch}`],
-    { cwd: destinationWorkspacePath }
-  );
+  const fetchResult = await spawnAndLogOutput(['git', 'fetch', sourceWorkspacePath, branch], {
+    cwd: destinationWorkspacePath,
+  });
   if (fetchResult.exitCode !== 0) {
     throw new Error(
       `Failed to fetch branch "${branch}" into destination workspace: ${fetchResult.stderr}`
+    );
+  }
+
+  const currentBranch = await getCurrentBranchName(destinationWorkspacePath);
+  if (currentBranch === branch) {
+    const mergeResult = await spawnAndLogOutput(['git', 'merge', '--ff-only', 'FETCH_HEAD'], {
+      cwd: destinationWorkspacePath,
+    });
+    if (mergeResult.exitCode !== 0) {
+      throw new Error(
+        `Failed to fast-forward checked out branch "${branch}" in destination workspace: ${mergeResult.stderr}`
+      );
+    }
+    return;
+  }
+
+  const localExists = await spawnAndLogOutput(['git', 'rev-parse', '--verify', `refs/heads/${branch}`], {
+    cwd: destinationWorkspacePath,
+    quiet: true,
+  }).then((result) => result.exitCode === 0);
+
+  const updateResult = await spawnAndLogOutput(
+    localExists ? ['git', 'branch', '-f', branch, 'FETCH_HEAD'] : ['git', 'branch', branch, 'FETCH_HEAD'],
+    { cwd: destinationWorkspacePath }
+  );
+  if (updateResult.exitCode !== 0) {
+    throw new Error(
+      `Failed to update branch "${branch}" in destination workspace: ${updateResult.stderr}`
     );
   }
 }

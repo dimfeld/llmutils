@@ -117,7 +117,12 @@ export async function runPostExecutionWorkspaceSync(
   context: WorkspaceRoundTripContext,
   commitMessage: string
 ): Promise<void> {
-  await commitAll(commitMessage, context.executionWorkspacePath);
+  const commitExitCode = await commitAll(commitMessage, context.executionWorkspacePath);
+  if (commitExitCode !== 0) {
+    throw new Error(
+      `Failed to commit workspace changes before sync push (exit code ${commitExitCode}).`
+    );
+  }
   const postExecutionState = await captureRepositoryState(context.executionWorkspacePath);
   const hasPendingChanges = await hasUncommittedChanges(context.executionWorkspacePath);
   const hasRepositoryChanges = context.preExecutionState

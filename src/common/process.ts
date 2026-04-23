@@ -405,7 +405,8 @@ export function createLineSplitter(): (input: string) => string[] {
  * This function automatically detects whether the repository uses Git or Jujutsu (jj)
  * and executes the correct commit command with the provided message.
  *
- * For Git repositories, uses `git commit -a -m` to stage and commit all changes.
+ * For Git repositories, stages tracked/untracked changes with `git add -A`
+ * before committing them with `git commit -m`.
  * For Jujutsu repositories, uses `jj commit -m` (jj automatically includes all changes).
  *
  * @param message - The commit message to use
@@ -425,7 +426,15 @@ export async function commitAll(message: string, cwd?: string): Promise<number> 
       stdio: ['ignore', 'inherit', 'inherit'],
     }).exited;
   } else {
-    return await logSpawn(['git', 'commit', '-a', '-m', message], {
+    const addExitCode = await logSpawn(['git', 'add', '-A'], {
+      cwd,
+      stdio: ['ignore', 'inherit', 'inherit'],
+    }).exited;
+    if (addExitCode !== 0) {
+      return addExitCode;
+    }
+
+    return await logSpawn(['git', 'commit', '-m', message], {
       cwd,
       stdio: ['ignore', 'inherit', 'inherit'],
     }).exited;

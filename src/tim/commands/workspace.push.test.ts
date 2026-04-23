@@ -381,6 +381,10 @@ describe('handleWorkspacePushCommand', () => {
       await runGitChecked(primaryDir, ['rev-parse', 'feature/checked-out'])
     ).stdout.trim();
     expect(primaryHead).toBe(secondaryHead);
+    await expect(fs.readFile(path.join(primaryDir, 'secondary-branch.txt'), 'utf-8')).resolves.toBe(
+      'secondary change\n'
+    );
+    expect((await runGitChecked(primaryDir, ['status', '--short'])).stdout.trim()).toBe('');
   });
 
   test('jj mode skips set-url when primary remote already matches', async () => {

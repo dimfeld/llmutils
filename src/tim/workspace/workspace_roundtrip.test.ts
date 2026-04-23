@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 vi.mock('../../common/process.js', () => ({
-  commitAll: vi.fn(async () => 1),
+  commitAll: vi.fn(async () => 0),
   logSpawn: vi.fn(() => ({ exited: Promise.resolve(0), exitCode: 0 })),
 }));
 
@@ -110,7 +110,7 @@ describe('runPostExecutionWorkspaceSync', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    mockCommitAll.mockResolvedValue(1);
+    mockCommitAll.mockResolvedValue(0);
     mockLogSpawn.mockReturnValue({ exited: Promise.resolve(0), exitCode: 0 } as any);
     mockEnsureJjPublishedCommitsHaveDescriptions.mockResolvedValue([]);
     mockGetUsingJj.mockResolvedValue(true);
@@ -176,6 +176,30 @@ describe('runPostExecutionWorkspaceSync', () => {
       }
     );
     expect(mockReaddir).toHaveBeenCalledWith('/tmp/workspace/.tim/plans');
+  });
+
+  test('throws before pushing when committing workspace changes fails', async () => {
+    const { runPostExecutionWorkspaceSync } = await import('./workspace_roundtrip.js');
+    mockCommitAll.mockResolvedValue(1);
+
+    await expect(
+      runPostExecutionWorkspaceSync(
+        {
+          executionWorkspacePath: '/tmp/workspace',
+          primaryWorkspacePath: '/tmp/primary',
+          refName: 'task-123',
+          preExecutionState: {
+            commitHash: 'before',
+            hasChanges: false,
+          },
+        },
+        'sync workspace'
+      )
+    ).rejects.toThrow('Failed to commit workspace changes before sync push');
+
+    expect(mockPushWorkspaceRefToRemote).not.toHaveBeenCalled();
+    expect(mockPullWorkspaceRefIfExists).not.toHaveBeenCalled();
+    expect(mockReaddir).not.toHaveBeenCalled();
   });
 
   test('skips push and deletes a newly created empty jj branch', async () => {

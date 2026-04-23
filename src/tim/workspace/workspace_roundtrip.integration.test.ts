@@ -152,6 +152,57 @@ describe('runPostExecutionWorkspaceSync integration', () => {
     }
   });
 
+  test('git: commits untracked files before pushing', async () => {
+    const remoteDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-roundtrip-remote-'));
+    const workspaceParentDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-roundtrip-git-'));
+    const workspaceDir = path.join(workspaceParentDir, 'workspace');
+    try {
+      await seedBareRemoteWithMain(remoteDir);
+      expect((await runGit(workspaceParentDir, ['clone', remoteDir, workspaceDir])).exitCode).toBe(0);
+      expect((await runGit(workspaceDir, ['config', 'user.email', 'test@example.com'])).exitCode).toBe(
+        0
+      );
+      expect((await runGit(workspaceDir, ['config', 'user.name', 'Test User'])).exitCode).toBe(0);
+
+      const prepareResult = await prepareExistingWorkspace(workspaceDir, {
+        branchName: 'plan-untracked',
+        createBranch: true,
+      });
+      expect(prepareResult.success).toBe(true);
+
+      const preExecutionState = await captureRepositoryState(workspaceDir);
+      expect(preExecutionState.hasChanges).toBe(false);
+
+      await fs.writeFile(path.join(workspaceDir, 'new-file.txt'), 'untracked content\n');
+      expect(await hasUncommittedChanges(workspaceDir)).toBe(true);
+
+      await runPostExecutionWorkspaceSync(
+        {
+          executionWorkspacePath: workspaceDir,
+          refName: 'plan-untracked',
+          branchCreatedDuringSetup: true,
+          preExecutionState,
+        },
+        'sync workspace'
+      );
+
+      expect(await hasUncommittedChanges(workspaceDir)).toBe(false);
+      expect(pushWorkspaceRefToRemoteMock).toHaveBeenCalledWith({
+        workspacePath: workspaceDir,
+        refName: 'plan-untracked',
+        remoteName: 'origin',
+        ensureJjBookmarkAtCurrent: false,
+      });
+
+      const committedFile = await runGit(workspaceDir, ['show', 'HEAD:new-file.txt']);
+      expect(committedFile.exitCode).toBe(0);
+      expect(committedFile.stdout).toBe('untracked content\n');
+    } finally {
+      await fs.rm(workspaceParentDir, { recursive: true, force: true });
+      await fs.rm(remoteDir, { recursive: true, force: true });
+    }
+  });
+
   test.skipIf(!HAS_JJ)(
     'jj: deletes an unused newly-created bookmark and does not push',
     async () => {
