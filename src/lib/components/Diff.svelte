@@ -12,6 +12,7 @@
   } from '@pierre/diffs';
   import WorkerUrl from '@pierre/diffs/worker/worker.js?worker&url';
   import { getOrCreateWorkerPoolSingleton } from '@pierre/diffs/worker';
+  import { untrack } from 'svelte';
 
   type DiffStyle = 'split' | 'unified';
   type HunkSeparatorStyle = 'line-info' | 'line-info-basic' | 'metadata' | 'simple';
@@ -55,6 +56,20 @@
       return `--- a/${name}\n+++ b/${name}\n${raw}`;
     }
     return raw;
+  }
+
+  function handleLineSelected(...args: Parameters<NonNullable<FileDiffOptions<unknown>['onLineSelected']>>) {
+    onLineSelected?.(...args);
+  }
+
+  function handleGutterUtilityClick(
+    ...args: Parameters<NonNullable<FileDiffOptions<unknown>['onGutterUtilityClick']>>
+  ) {
+    onGutterUtilityClick?.(...args);
+  }
+
+  function handleLineClick(...args: Parameters<NonNullable<FileDiffOptions<unknown>['onLineClick']>>) {
+    onLineClick?.(...args);
   }
 
   let {
@@ -176,26 +191,24 @@
       disableLineNumbers,
       collapsed,
       enableLineSelection,
-      onLineSelected,
+      onLineSelected: handleLineSelected,
       enableGutterUtility,
-      onGutterUtilityClick,
-      onLineClick,
+      onGutterUtilityClick: handleGutterUtilityClick,
+      onLineClick: handleLineClick,
       renderAnnotation,
     };
   }
 
   function diffAttachment(node: HTMLElement) {
-    const instance = new FileDiff<unknown>(buildOptions());
-
-    if (resolvedDiff) {
-      instance.render({
-        fileDiff: resolvedDiff,
-        lineAnnotations,
-        containerWrapper: node,
-      });
-    }
+    const instance = new FileDiff<unknown>(untrack(() => buildOptions()));
 
     $effect(() => {
+      instance.setLineAnnotations(lineAnnotations || []);
+    });
+
+    let renderedOnce = false;
+    $effect(() => {
+      $inspect.trace();
       if (!resolvedDiff) {
         return;
       }
@@ -205,11 +218,16 @@
         ...buildOptions(),
       });
 
-      instance.render({
-        fileDiff: resolvedDiff,
-        lineAnnotations,
-        containerWrapper: node,
-      });
+      if (renderedOnce) {
+        instance.rerender();
+      } else {
+        renderedOnce = true;
+        instance.render({
+          fileDiff: resolvedDiff,
+          lineAnnotations,
+          containerWrapper: node,
+        });
+      }
     });
 
     return () => {
@@ -223,20 +241,17 @@
     }
 
     const instance = new VirtualizedFileDiff(
-      buildOptions(),
+      untrack(() => buildOptions()),
       virtualizer,
       { lineHeight: 22, fileGap: 10 },
       getWorkerPool()
     );
 
-    if (resolvedDiff) {
-      instance.render({
-        fileDiff: resolvedDiff,
-        lineAnnotations,
-        containerWrapper: node,
-      });
-    }
+    $effect(() => {
+      instance.setLineAnnotations(lineAnnotations || []);
+    });
 
+    let renderedOnce = false;
     $effect(() => {
       if (!resolvedDiff) {
         return;
@@ -247,11 +262,16 @@
         ...buildOptions(),
       });
 
-      instance.render({
-        fileDiff: resolvedDiff,
-        lineAnnotations,
-        containerWrapper: node,
-      });
+      if (renderedOnce) {
+        instance.rerender();
+      } else {
+        renderedOnce = true;
+        instance.render({
+          fileDiff: resolvedDiff,
+          lineAnnotations,
+          containerWrapper: node,
+        });
+      }
     });
 
     return () => {

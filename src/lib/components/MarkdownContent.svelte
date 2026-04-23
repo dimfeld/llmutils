@@ -42,7 +42,7 @@
 </script>
 
 <div class={['plan-rendered-content', className].filter(Boolean).join(' ')}>
-  {#each segments as segment, i (i)}
+  {#each segments as segment, i}
     {#if segment.type === 'html'}
       {@html segment.content}
     {:else if segment.type === 'unified-diff'}
