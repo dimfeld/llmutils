@@ -67,5 +67,10 @@ export function pruneOldWebhookLogs(db: Database, maxAgeDays = 7): number {
     )
     .run(maxAgeDays);
 
+  if (result.changes) {
+    console.log(
+      `[webhook-ingest] Pruned ${result.changes} webhook log entries older than ${maxAgeDays} days`
+    );
+  }
   return result.changes;
 }
