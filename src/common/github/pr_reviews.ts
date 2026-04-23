@@ -7,8 +7,12 @@ export type DiffAnnotationSide = 'additions' | 'deletions';
 export type PrReviewEvent = 'APPROVE' | 'COMMENT' | 'REQUEST_CHANGES';
 
 export interface DiffFileIndex {
+  /** Commentable RIGHT-side line numbers from the diff, including additions and context. */
   additions: Set<number>;
+  /** Commentable LEFT-side line numbers from the diff, including deletions and context. */
   deletions: Set<number>;
+  changedAdditions: Set<number>;
+  changedDeletions: Set<number>;
 }
 
 export interface ReviewIssueForSubmission {
@@ -17,6 +21,7 @@ export interface ReviewIssueForSubmission {
   line: string | null;
   start_line: string | null;
   side?: DiffSide | null;
+  source?: string | null;
   content: string;
   suggestion: string | null;
 }
@@ -66,6 +71,8 @@ function ensureDiffFileIndex(
   const created = {
     additions: new Set<number>(),
     deletions: new Set<number>(),
+    changedAdditions: new Set<number>(),
+    changedDeletions: new Set<number>(),
   };
   diffIndex.set(normalized, created);
   return created;
@@ -114,17 +121,21 @@ export function buildDiffIndex(unifiedDiff: string): Map<string, DiffFileIndex> 
 
     if (line.startsWith('+') && !line.startsWith('+++')) {
       currentFileIndex.additions.add(newLine);
+      currentFileIndex.changedAdditions.add(newLine);
       newLine += 1;
       continue;
     }
 
     if (line.startsWith('-') && !line.startsWith('---')) {
       currentFileIndex.deletions.add(oldLine);
+      currentFileIndex.changedDeletions.add(oldLine);
       oldLine += 1;
       continue;
     }
 
     if (line.startsWith(' ')) {
+      currentFileIndex.deletions.add(oldLine);
+      currentFileIndex.additions.add(newLine);
       oldLine += 1;
       newLine += 1;
     }
@@ -164,8 +175,8 @@ function inferIssueSide(
   end: number
 ): DiffSide | null {
   const endpoints = start === end ? [start] : [start, end];
-  const allInAdditions = endpoints.every((line) => fileIndex.additions.has(line));
-  const allInDeletions = endpoints.every((line) => fileIndex.deletions.has(line));
+  const allInAdditions = endpoints.every((line) => fileIndex.changedAdditions.has(line));
+  const allInDeletions = endpoints.every((line) => fileIndex.changedDeletions.has(line));
 
   if (allInAdditions === allInDeletions) {
     return null;
@@ -200,7 +211,7 @@ export function partitionIssuesForSubmission<T extends ReviewIssueForSubmission>
       continue;
     }
 
-    const resolvedSide =
+    let resolvedSide =
       issue.side ?? inferIssueSide(issue, fileIndex, range.start, range.end) ?? null;
     if (!resolvedSide) {
       appendToBody.push(issue);
@@ -209,7 +220,22 @@ export function partitionIssuesForSubmission<T extends ReviewIssueForSubmission>
 
     const sideLines = resolvedSide === 'RIGHT' ? fileIndex.additions : fileIndex.deletions;
     const endpointLines = range.start === range.end ? [range.start] : [range.start, range.end];
-    const endpointsInDiff = endpointLines.every((line) => sideLines.has(line));
+    let endpointsInDiff = endpointLines.every((line) => sideLines.has(line));
+
+    if (!endpointsInDiff && issue.source != null) {
+      const inferredSide = inferIssueSide(issue, fileIndex, range.start, range.end);
+      if (inferredSide && inferredSide !== resolvedSide) {
+        const inferredSideLines =
+          inferredSide === 'RIGHT' ? fileIndex.additions : fileIndex.deletions;
+        const endpointsInInferredSide = endpointLines.every((line) =>
+          inferredSideLines.has(line)
+        );
+        if (endpointsInInferredSide) {
+          resolvedSide = inferredSide;
+          endpointsInDiff = true;
+        }
+      }
+    }
 
     if (!endpointsInDiff) {
       appendToBody.push(issue);

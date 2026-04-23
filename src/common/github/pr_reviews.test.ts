@@ -27,7 +27,7 @@ describe('common/github/pr_reviews', () => {
     vi.restoreAllMocks();
   });
 
-  test('buildDiffIndex parses additions/deletions across files and hunks', () => {
+  test('buildDiffIndex parses commentable lines across files and hunks', () => {
     const diff = [
       'diff --git a/src/a.ts b/src/a.ts',
       'index 1111111..2222222 100644',
@@ -59,18 +59,24 @@ describe('common/github/pr_reviews', () => {
     const b = index.get('src/b.ts');
 
     expect(a).toBeDefined();
+    expect(a?.additions.has(10)).toBe(true);
     expect(a?.additions.has(11)).toBe(true);
     expect(a?.additions.has(12)).toBe(true);
+    expect(a?.additions.has(13)).toBe(true);
+    expect(a?.deletions.has(10)).toBe(true);
     expect(a?.deletions.has(11)).toBe(true);
+    expect(a?.deletions.has(12)).toBe(true);
     expect(a?.deletions.has(30)).toBe(true);
+    expect(a?.deletions.has(31)).toBe(true);
     expect(a?.deletions.has(32)).toBe(true);
     expect(a?.additions.has(999)).toBe(false);
 
     expect(b).toBeDefined();
     expect(b?.additions.has(1)).toBe(true);
+    expect(b?.additions.has(2)).toBe(true);
     expect(b?.additions.has(3)).toBe(true);
     expect(b?.deletions.has(1)).toBe(true);
-    expect(b?.deletions.has(2)).toBe(false);
+    expect(b?.deletions.has(2)).toBe(true);
   });
 
   test('partitionIssuesForSubmission separates inlineable and append cases', () => {
@@ -187,6 +193,86 @@ describe('common/github/pr_reviews', () => {
     expect(result.inlineable).toHaveLength(0);
     expect(result.appendToBody).toHaveLength(1);
     expect(result.appendToBody[0].id).toBe(1);
+  });
+
+  test('partitionIssuesForSubmission re-infers generated issue side when the stored default is wrong', () => {
+    const diff = [
+      'diff --git a/src/a.ts b/src/a.ts',
+      '--- a/src/a.ts',
+      '+++ b/src/a.ts',
+      '@@ -20,1 +30,0 @@',
+      '-removed20',
+    ].join('\n');
+    const index = buildDiffIndex(diff);
+
+    const issues: ReviewIssueForSubmission[] = [
+      {
+        id: 1,
+        file: 'src/a.ts',
+        line: '20',
+        start_line: null,
+        side: 'RIGHT',
+        source: 'combined',
+        content: 'Generated issue on deleted line',
+        suggestion: null,
+      },
+      {
+        id: 2,
+        file: 'src/a.ts',
+        line: '20',
+        start_line: null,
+        side: 'RIGHT',
+        source: null,
+        content: 'Manual issue with explicit right side',
+        suggestion: null,
+      },
+    ];
+
+    const result = partitionIssuesForSubmission(issues, index);
+    expect(result.inlineable.map((issue) => [issue.id, issue.side])).toEqual([[1, 'LEFT']]);
+    expect(result.appendToBody.map((issue) => issue.id)).toEqual([2]);
+  });
+
+  test('partitionIssuesForSubmission allows explicit side anchors on diff context lines', () => {
+    const diff = [
+      'diff --git a/src/a.ts b/src/a.ts',
+      '--- a/src/a.ts',
+      '+++ b/src/a.ts',
+      '@@ -10,2 +20,3 @@',
+      ' shared context',
+      '-old11',
+      '+new21',
+      '+new22',
+    ].join('\n');
+    const index = buildDiffIndex(diff);
+
+    const issues: ReviewIssueForSubmission[] = [
+      {
+        id: 1,
+        file: 'src/a.ts',
+        line: '20',
+        start_line: null,
+        side: 'RIGHT',
+        content: 'Right-side context line',
+        suggestion: null,
+      },
+      {
+        id: 2,
+        file: 'src/a.ts',
+        line: '10',
+        start_line: null,
+        side: 'LEFT',
+        content: 'Left-side context line',
+        suggestion: null,
+      },
+    ];
+
+    const result = partitionIssuesForSubmission(issues, index);
+    expect(result.inlineable.map((issue) => [issue.id, issue.side])).toEqual([
+      [1, 'RIGHT'],
+      [2, 'LEFT'],
+    ]);
+    expect(result.appendToBody).toHaveLength(0);
   });
 
   test('partitionIssuesForSubmission allows multi-line ranges with unchanged interior context when endpoints are in diff', () => {
