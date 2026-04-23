@@ -9,7 +9,7 @@
   const annotationsCount = annotations?.length ?? 0;
   const gutterEnabled = Boolean(props.enableGutterUtility);
   const lineSelection = Boolean(props.enableLineSelection);
-  const hasRenderAnnotation = Boolean(props.renderAnnotation);
+  const hasAnnotation = Boolean(props.annotation);
   const hasGutterClick = Boolean(props.onGutterUtilityClick);
   const hasLineSelected = Boolean(props.onLineSelected);
 </script>
@@ -20,7 +20,7 @@
   data-annotations-count={String(annotationsCount)}
   data-gutter-enabled={String(gutterEnabled)}
   data-line-selection-enabled={String(lineSelection)}
-  data-has-render-annotation={String(hasRenderAnnotation)}
+  data-has-annotation={String(hasAnnotation)}
   data-has-gutter-click={String(hasGutterClick)}
   data-has-line-selected={String(hasLineSelected)}
 ></div>

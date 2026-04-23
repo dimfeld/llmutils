@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 
 import { highlightAnnotationNode } from './annotation_highlight.js';
-import { createAnnotationRenderer } from './annotation_mount_helper.js';
 import ReviewIssueAnnotation from './ReviewIssueAnnotation.svelte';
 
 describe('highlightAnnotationNode (real DOM)', () => {
@@ -78,40 +77,5 @@ describe('ReviewIssueAnnotation click', () => {
 
     expect(screen.getByText('Suggestion')).toBeTruthy();
     expect(screen.getByText('Use the parsed value instead.')).toBeTruthy();
-  });
-});
-
-describe('createAnnotationRenderer (mounted in real DOM)', () => {
-  test('renderAnnotation mounts ReviewIssueAnnotation and its click fires onAnnotationClick', async () => {
-    const onAnnotationClick = vi.fn();
-    const renderer = createAnnotationRenderer({ onAnnotationClick });
-
-    const node = renderer.renderAnnotation({
-      side: 'additions',
-      lineNumber: 12,
-      metadata: {
-        issueId: 77,
-        severity: 'major',
-        content: 'Needs a null check',
-        suggestion: null,
-        lineLabel: null,
-      },
-    } as Parameters<typeof renderer.renderAnnotation>[0]);
-
-    expect(node).toBeDefined();
-    document.body.appendChild(node!);
-
-    try {
-      expect(renderer.getNodeForIssue(77)).toBe(node);
-      const button = node!.querySelector('button')!;
-      expect(button).toBeTruthy();
-      expect(button.textContent).toContain('Needs a null check');
-
-      button.click();
-      expect(onAnnotationClick).toHaveBeenCalledWith(77);
-    } finally {
-      renderer.disposeAll();
-      node!.remove();
-    }
   });
 });

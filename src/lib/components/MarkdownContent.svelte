@@ -1,17 +1,17 @@
 <script lang="ts">
   import type { DiffLineAnnotation, FileDiffOptions, Virtualizer } from '@pierre/diffs';
+  import type { Snippet } from 'svelte';
 
   import Diff from './Diff.svelte';
   import { parseMarkdownWithDiffs } from '$lib/utils/markdown_parser.js';
 
   /**
-   * Overrides are passed to each rendered Diff instance. `DiffLineAnnotation`'s
-   * metadata is caller-typed; we use the default (unknown) here and let callers
-   * cast/assert to their own metadata type in `renderAnnotation`.
+   * Overrides are passed to each rendered Diff instance. Annotation metadata is
+   * caller-typed; snippets that render annotations can cast/assert their own
+   * metadata type.
    */
   export interface DiffOverrides {
     lineAnnotations?: DiffLineAnnotation<unknown>[];
-    renderAnnotation?: FileDiffOptions<unknown>['renderAnnotation'];
     enableGutterUtility?: boolean;
     onGutterUtilityClick?: FileDiffOptions<unknown>['onGutterUtilityClick'];
     enableLineSelection?: boolean;
@@ -24,10 +24,13 @@
     content,
     class: className = '',
     diffOverrides,
+    diffAnnotation,
     virtualizer = null,
   }: {
     content: string;
     class?: string;
+    /** Snippet rendered for each diff annotation. */
+    diffAnnotation?: Snippet<[DiffLineAnnotation<unknown>]>;
     /** Per-diff override bag keyed by filename (null when the patch has no filename header). */
     diffOverrides?: (
       filename: string | null,
@@ -52,7 +55,7 @@
           patch={segment.patch}
           filename={segment.filename ?? undefined}
           lineAnnotations={overrides.lineAnnotations}
-          renderAnnotation={overrides.renderAnnotation}
+          annotation={diffAnnotation}
           enableGutterUtility={overrides.enableGutterUtility ?? false}
           onGutterUtilityClick={overrides.onGutterUtilityClick}
           enableLineSelection={overrides.enableLineSelection ?? false}

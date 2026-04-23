@@ -13,7 +13,6 @@ interface DiffOverrides {
   lineAnnotations?: unknown[];
   enableGutterUtility?: boolean;
   enableLineSelection?: boolean;
-  renderAnnotation?: (a: unknown) => HTMLElement | undefined;
   onGutterUtilityClick?: (r: unknown) => void;
   onLineSelected?: (r: unknown) => void;
 }
@@ -84,6 +83,24 @@ describe('MarkdownContent diffOverrides forwarding', () => {
     const barEl = document.querySelector('[data-testid="diff-stub"][data-filename="bar.ts"]');
     expect(fooEl!.getAttribute('data-gutter-enabled')).toBe('true');
     expect(barEl!.getAttribute('data-gutter-enabled')).toBe('false');
+  });
+
+  test('forwards diffAnnotation snippet to each diff', async () => {
+    const content = `${patchFor('foo.ts')}\n\n${patchFor('bar.ts')}\n`;
+
+    render(MarkdownContent, {
+      content,
+      diffAnnotation: (() => null) as never,
+    });
+
+    const stubs = page.getByTestId('diff-stub');
+    await expect.element(stubs.nth(0)).toBeInTheDocument();
+    await expect.element(stubs.nth(1)).toBeInTheDocument();
+
+    const fooEl = document.querySelector('[data-testid="diff-stub"][data-filename="foo.ts"]');
+    const barEl = document.querySelector('[data-testid="diff-stub"][data-filename="bar.ts"]');
+    expect(fooEl!.getAttribute('data-has-annotation')).toBe('true');
+    expect(barEl!.getAttribute('data-has-annotation')).toBe('true');
   });
 
   test('non-diff markdown still renders without emitting any Diff stubs', async () => {

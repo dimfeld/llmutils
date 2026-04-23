@@ -12,7 +12,8 @@
   } from '@pierre/diffs';
   import WorkerUrl from '@pierre/diffs/worker/worker.js?worker&url';
   import { getOrCreateWorkerPoolSingleton } from '@pierre/diffs/worker';
-  import { untrack } from 'svelte';
+  import { mount, unmount, untrack, type Snippet } from 'svelte';
+  import DiffAnnotationHost from './DiffAnnotationHost.svelte';
 
   type DiffStyle = 'split' | 'unified';
   type HunkSeparatorStyle = 'line-info' | 'line-info-basic' | 'metadata' | 'simple';
@@ -58,7 +59,9 @@
     return raw;
   }
 
-  function handleLineSelected(...args: Parameters<NonNullable<FileDiffOptions<unknown>['onLineSelected']>>) {
+  function handleLineSelected(
+    ...args: Parameters<NonNullable<FileDiffOptions<unknown>['onLineSelected']>>
+  ) {
     onLineSelected?.(...args);
   }
 
@@ -68,8 +71,65 @@
     onGutterUtilityClick?.(...args);
   }
 
-  function handleLineClick(...args: Parameters<NonNullable<FileDiffOptions<unknown>['onLineClick']>>) {
+  function handleLineClick(
+    ...args: Parameters<NonNullable<FileDiffOptions<unknown>['onLineClick']>>
+  ) {
     onLineClick?.(...args);
+  }
+
+  function unmountAnnotationComponent(component: Record<string, unknown>) {
+    try {
+      const result = unmount(component) as unknown;
+      if (result && typeof (result as Promise<unknown>).then === 'function') {
+        (result as Promise<unknown>).catch(() => {});
+      }
+    } catch {
+      // The diff is tearing down detached annotation DOM; a late unmount failure
+      // should not interrupt cleanup of the diff instance itself.
+    }
+  }
+
+  function createAnnotationRenderer() {
+    const mounts = new Map<HTMLElement, Record<string, unknown>>();
+
+    function renderAnnotation(
+      diffAnnotation: DiffLineAnnotation<unknown>
+    ): HTMLElement | undefined {
+      if (!annotation) {
+        return undefined;
+      }
+
+      const node = document.createElement('div');
+      const component = mount(DiffAnnotationHost, {
+        target: node,
+        props: {
+          renderer: annotation,
+          annotation: diffAnnotation,
+        },
+      }) as Record<string, unknown>;
+
+      mounts.set(node, component);
+      return node;
+    }
+
+    function disposeDisconnected() {
+      for (const [node, component] of mounts) {
+        if (node.isConnected) {
+          continue;
+        }
+        unmountAnnotationComponent(component);
+        mounts.delete(node);
+      }
+    }
+
+    function disposeAll() {
+      for (const component of mounts.values()) {
+        unmountAnnotationComponent(component);
+      }
+      mounts.clear();
+    }
+
+    return { renderAnnotation, disposeDisconnected, disposeAll };
   }
 
   let {
@@ -86,7 +146,7 @@
     disableLineNumbers = false,
     collapsed = false,
     lineAnnotations,
-    renderAnnotation,
+    annotation,
     enableLineSelection = false,
     onLineSelected,
     enableGutterUtility = false,
@@ -122,8 +182,8 @@
     collapsed?: boolean;
     /** Annotations to render on specific lines */
     lineAnnotations?: DiffLineAnnotation<unknown>[];
-    /** Custom annotation renderer */
-    renderAnnotation?: FileDiffOptions<unknown>['renderAnnotation'];
+    /** Custom annotation snippet */
+    annotation?: Snippet<[DiffLineAnnotation<unknown>]>;
     /** Enable click-to-select on line numbers */
     enableLineSelection?: boolean;
     /** Callback when line selection completes */
@@ -180,7 +240,9 @@
     return totalLines >= VIRTUALIZED_LINE_THRESHOLD;
   });
 
-  function buildOptions(): FileDiffOptions<unknown> {
+  function buildOptions(
+    renderAnnotation?: FileDiffOptions<unknown>['renderAnnotation']
+  ): FileDiffOptions<unknown> {
     return {
       theme: { dark: 'pierre-dark', light: 'pierre-light' } as const,
       diffStyle,
@@ -200,25 +262,33 @@
   }
 
   function diffAttachment(node: HTMLElement) {
-    const instance = new FileDiff<unknown>(untrack(() => buildOptions()));
-
-    $effect(() => {
-      instance.setLineAnnotations(lineAnnotations || []);
-    });
+    const annotationRenderer = createAnnotationRenderer();
+    const instance = new FileDiff<unknown>(
+      untrack(() => buildOptions(annotationRenderer.renderAnnotation))
+    );
 
     let renderedOnce = false;
+    let renderedAnnotationSnippet = untrack(() => annotation);
     $effect(() => {
       $inspect.trace();
       if (!resolvedDiff) {
         return;
       }
 
+      if (renderedOnce && annotation !== renderedAnnotationSnippet) {
+        instance.setLineAnnotations([]);
+        instance.rerender();
+        annotationRenderer.disposeDisconnected();
+        renderedAnnotationSnippet = annotation;
+      }
+
       instance.setOptions({
         ...instance.options,
-        ...buildOptions(),
+        ...buildOptions(annotationRenderer.renderAnnotation),
       });
 
       if (renderedOnce) {
+        instance.setLineAnnotations(lineAnnotations || []);
         instance.rerender();
       } else {
         renderedOnce = true;
@@ -228,10 +298,12 @@
           containerWrapper: node,
         });
       }
+      annotationRenderer.disposeDisconnected();
     });
 
     return () => {
       instance.cleanUp();
+      annotationRenderer.disposeAll();
     };
   }
 
@@ -240,29 +312,35 @@
       return;
     }
 
+    const annotationRenderer = createAnnotationRenderer();
     const instance = new VirtualizedFileDiff(
-      untrack(() => buildOptions()),
+      untrack(() => buildOptions(annotationRenderer.renderAnnotation)),
       virtualizer,
       { lineHeight: 22, fileGap: 10 },
       getWorkerPool()
     );
 
-    $effect(() => {
-      instance.setLineAnnotations(lineAnnotations || []);
-    });
-
     let renderedOnce = false;
+    let renderedAnnotationSnippet = untrack(() => annotation);
     $effect(() => {
       if (!resolvedDiff) {
         return;
       }
 
+      if (renderedOnce && annotation !== renderedAnnotationSnippet) {
+        instance.setLineAnnotations([]);
+        instance.rerender();
+        annotationRenderer.disposeDisconnected();
+        renderedAnnotationSnippet = annotation;
+      }
+
       instance.setOptions({
         ...instance.options,
-        ...buildOptions(),
+        ...buildOptions(annotationRenderer.renderAnnotation),
       });
 
       if (renderedOnce) {
+        instance.setLineAnnotations(lineAnnotations || []);
         instance.rerender();
       } else {
         renderedOnce = true;
@@ -272,10 +350,12 @@
           containerWrapper: node,
         });
       }
+      annotationRenderer.disposeDisconnected();
     });
 
     return () => {
       instance.cleanUp();
+      annotationRenderer.disposeAll();
     };
   }
 </script>

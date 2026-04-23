@@ -23,10 +23,8 @@
   import { Splitpanes, Pane } from 'svelte-splitpanes';
   import type { ReviewIssueRow, ReviewSeverity, ReviewCategory } from '$tim/db/review.js';
   import ReviewIssueCard from './ReviewIssueCard.svelte';
-  import {
-    createAnnotationRenderer,
-    type ReviewIssueAnnotationMetadata,
-  } from './annotation_mount_helper.js';
+  import ReviewIssueAnnotation from './ReviewIssueAnnotation.svelte';
+  import type { ReviewIssueAnnotationMetadata } from './annotation_types.js';
   import NewReviewIssueModal from './NewReviewIssueModal.svelte';
   import SubmitReviewDialog from './SubmitReviewDialog.svelte';
   import Send from '@lucide/svelte/icons/send';
@@ -125,14 +123,12 @@
     },
   });
 
-  const annotationRenderer = createAnnotationRenderer({
-    onAnnotationClick: annotationClick.handleAnnotationClick,
-  });
+  const annotationNodesByIssue = new Map<number, Set<HTMLElement>>();
 
   let annotationHighlight: AnnotationHighlightHandle | null = null;
 
   function handleJumpToDiff(issue: ReviewIssueRow) {
-    const node = annotationRenderer.getNodeForIssue(issue.id);
+    const node = annotationNodesByIssue.get(issue.id)?.values().next().value;
     if (!node) {
       issueActionError = `No annotation rendered for this issue — the line may be outside the diff hunks shown in the guide.`;
       return;
@@ -143,11 +139,29 @@
   }
 
   onDestroy(() => {
-    annotationRenderer.disposeAll();
     annotationClick.cancel();
     annotationHighlight?.cancel();
     intersectionObserver?.disconnect();
   });
+
+  function annotationNodeAttachment(issueId: number) {
+    return (node: HTMLElement) => {
+      let nodes = annotationNodesByIssue.get(issueId);
+      if (!nodes) {
+        nodes = new Set();
+        annotationNodesByIssue.set(issueId, nodes);
+      }
+      nodes.add(node);
+
+      return () => {
+        const currentNodes = annotationNodesByIssue.get(issueId);
+        currentNodes?.delete(node);
+        if (currentNodes?.size === 0) {
+          annotationNodesByIssue.delete(issueId);
+        }
+      };
+    };
+  }
 
   // Intersection Observer to track visible sections
   let intersectionObserver: IntersectionObserver | null = null;
@@ -245,23 +259,6 @@
 
   let guideIssueAnnotations = $derived(buildGuideDiffAnnotations(issues, guideSegments));
 
-  // Track the universe of annotation keys that could be rendered for the
-  // current `issues`. After Pierre re-renders, dispose any mount whose key is
-  // no longer present so we don't leak Svelte components for edited/removed
-  // issues. $effect is used intentionally: we need to sync an external DOM-
-  // resource lifecycle (mounted Svelte components) with reactive state.
-  let activeAnnotationKeys = $derived.by(() => {
-    const keys = new Set<string>();
-    for (const annotations of guideIssueAnnotations.values()) {
-      for (const annotation of annotations) {
-        keys.add(
-          annotationRenderer.keyFor(annotation as DiffLineAnnotation<ReviewIssueAnnotationMetadata>)
-        );
-      }
-    }
-    return keys;
-  });
-
   // Issue IDs that currently have at least one annotation anchor resolvable
   // from the rendered diffs. Used to gate the "Jump to diff" button so we
   // don't expose a no-op click when the issue's file isn't in the guide or
@@ -276,10 +273,6 @@
     return ids;
   });
 
-  $effect(() => {
-    annotationRenderer.syncRenderPass(activeAnnotationKeys);
-  });
-
   let diffOverrides = $derived.by(() => {
     const annotationsBySegment = guideIssueAnnotations;
     return (
@@ -291,10 +284,6 @@
       const canAddIssues = filename != null;
       return {
         lineAnnotations: annotations as DiffLineAnnotation<unknown>[],
-        renderAnnotation: (annotation) =>
-          annotationRenderer.renderAnnotation(
-            annotation as unknown as DiffLineAnnotation<ReviewIssueAnnotationMetadata>
-          ),
         enableLineSelection: true,
         enableGutterUtility: canAddIssues,
         onGutterUtilityClick: canAddIssues
@@ -640,7 +629,23 @@
               class="text-sm text-foreground"
               {diffOverrides}
               virtualizer={guideVirtualizer}
-            />
+            >
+              {#snippet diffAnnotation(annotation)}
+                {@const metadata = annotation.metadata as ReviewIssueAnnotationMetadata | undefined}
+                {#if metadata}
+                  <div {@attach annotationNodeAttachment(metadata.issueId)}>
+                    <ReviewIssueAnnotation
+                      issueId={metadata.issueId}
+                      severity={metadata.severity}
+                      content={metadata.content}
+                      suggestion={metadata.suggestion}
+                      lineLabel={metadata.lineLabel}
+                      onClick={annotationClick.handleAnnotationClick}
+                    />
+                  </div>
+                {/if}
+              {/snippet}
+            </MarkdownContent>
           {:else if data.review.status !== 'complete'}
             <p class="text-sm text-muted-foreground">Review guide not yet available.</p>
           {/if}
