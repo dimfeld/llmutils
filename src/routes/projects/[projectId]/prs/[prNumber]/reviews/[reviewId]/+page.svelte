@@ -315,8 +315,6 @@
   }
 
   function guideScrollAttachment(scrollRoot: HTMLElement) {
-    // uncomment to reenable guide virtualization
-    /*
     const scrollContent = scrollRoot.firstElementChild;
     if (!(scrollContent instanceof HTMLElement)) {
       return;
@@ -335,7 +333,6 @@
       }
       virtualizer.cleanUp();
     };
-    */
   }
 
   function isIssueActioning(issueId: number): boolean {

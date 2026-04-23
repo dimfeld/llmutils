@@ -270,7 +270,7 @@
     let renderedOnce = false;
     let renderedAnnotationSnippet = untrack(() => annotation);
     $effect(() => {
-      $inspect.trace();
+      // $inspect.trace();
       if (!resolvedDiff) {
         return;
       }
