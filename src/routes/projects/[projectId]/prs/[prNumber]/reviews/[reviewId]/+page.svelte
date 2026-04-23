@@ -102,7 +102,8 @@
     data.review.review_guide ? extractHeadings(data.review.review_guide) : []
   );
 
-  let guideSegments = $derived(parseMarkdownWithDiffs(data.review.review_guide ?? ''));
+  let reviewGuideText = $derived(data.review.review_guide ?? '');
+  let guideSegments = $derived(parseMarkdownWithDiffs(reviewGuideText));
 
   // Track which TOC section is currently visible via Intersection Observer
   let visibleSectionSlug = $state<string>('');
@@ -471,12 +472,14 @@
   async function handleDeleteIssue(issue: ReviewIssueRow) {
     if (isIssueActioning(issue.id)) return;
     issueActionError = null;
+    const previousIssues = issues;
+    issues = issues.filter((row) => row.id !== issue.id);
     setIssueActioning(issue.id);
 
     try {
       await deleteReviewIssue({ reviewId: data.review.id, issueId: issue.id });
-      await invalidateAll();
     } catch (err) {
+      issues = previousIssues;
       issueActionError = extractRemoteErrorMessage(err);
     } finally {
       clearIssueActioning(issue.id);
