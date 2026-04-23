@@ -22,7 +22,7 @@
 
   const HUNK_HEADER_RE = /^@@\s/m;
   const PATCH_HEADER_RE = /^---\s/m;
-  const VIRTUALIZED_LINE_THRESHOLD = 400;
+  const VIRTUALIZED_LINE_THRESHOLD = 20;
   const EMPTY_LINE_ANNOTATIONS: DiffLineAnnotation<unknown>[] = [];
 
   let workerPool: ReturnType<typeof getOrCreateWorkerPoolSingleton> | undefined;
