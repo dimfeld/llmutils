@@ -3,6 +3,7 @@ import svelte from 'eslint-plugin-svelte';
 import js from '@eslint/js';
 import ts from 'typescript-eslint';
 import globals from 'globals';
+import { defineConfig } from 'eslint/config';
 
 const pedanticWarn = process.env.PEDANTIC ? 'warn' : 'off';
 
@@ -78,4 +79,4 @@ export function createConfig() {
   ].filter((x) => x != null);
 }
 
-export default [...createConfig(), prettier, svelte.configs.prettier];
+export default defineConfig(...createConfig(), prettier, svelte.configs.prettier);
