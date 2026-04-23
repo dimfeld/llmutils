@@ -34,11 +34,12 @@ import {
   runPostExecutionWorkspaceSync,
   runPreExecutionWorkspaceSync,
 } from '../workspace/workspace_roundtrip.js';
+import { LATEST_GPT5_MODEL, LATEST_GPT5_MINI_MODEL } from '../constants.js';
 
 const CHAT_COMPATIBLE_EXECUTORS = new Set([ClaudeCodeExecutorName, CodexCliExecutorName]);
 const MODEL_ALIASES = new Map<string, string>([
-  ['gpt5', 'gpt-5.4'],
-  ['mini', 'gpt-5.4-mini'],
+  ['gpt5', LATEST_GPT5_MODEL],
+  ['mini', LATEST_GPT5_MINI_MODEL],
   ['spark', 'gpt-5.3-codex-spark'],
 ]);
 const CHAT_EXECUTOR_ALIASES = new Map<string, string>([

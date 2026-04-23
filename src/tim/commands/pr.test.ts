@@ -13,6 +13,7 @@ import {
   handlePrResolveCommand,
   handlePrUnlinkCommand,
 } from './pr.js';
+import { LATEST_GPT5_MODEL } from '../constants.js';
 
 type AnyObject = Record<string, unknown>;
 
@@ -1247,7 +1248,7 @@ describe('tim/commands/pr', () => {
 
     await handlePrFixCommand(
       248,
-      { executor: 'codex-cli', model: 'gpt-5.4', terminalInput: true },
+      { executor: 'codex-cli', model: LATEST_GPT5_MODEL, terminalInput: true },
       createNestedCommand()
     );
 
@@ -1273,7 +1274,7 @@ describe('tim/commands/pr', () => {
       248,
       expect.objectContaining({
         orchestrator: 'codex-cli',
-        model: 'gpt-5.4',
+        model: LATEST_GPT5_MODEL,
         reviewThreadContext: expect.stringContaining('### Thread 1: src/user.ts:88'),
       }),
       { config: '/tmp/tim.yml' }
