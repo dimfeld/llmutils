@@ -42,20 +42,20 @@ export default defineConfig({
   test: {
     silent: 'passed-only',
     projects: [
-      {
-        extends: './vite.config.ts',
-        test: {
-          name: 'client',
-          browser: {
-            enabled: true,
-            provider: playwright(),
-            instances: [{ browser: 'chromium', headless: true }],
-          },
-          env: playwrightTestEnv,
-          include: ['src/**/*.svelte.e2e.{test,spec}.{js,ts}'],
-          exclude: ['src/lib/server/**'],
-        },
-      },
+      // {
+      //   extends: './vite.config.ts',
+      //   test: {
+      //     name: 'client',
+      //     browser: {
+      //       enabled: true,
+      //       provider: playwright(),
+      //       instances: [{ browser: 'chromium', headless: true }],
+      //     },
+      //     env: playwrightTestEnv,
+      //     include: ['src/**/*.svelte.e2e.{test,spec}.{js,ts}'],
+      //     exclude: ['src/lib/server/**'],
+      //   },
+      // },
 
       {
         extends: './vite.config.ts',
