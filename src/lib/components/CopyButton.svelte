@@ -3,7 +3,7 @@
   import Copy from '@lucide/svelte/icons/copy';
 
   type CopyState = 'idle' | 'copied' | 'failed';
-  type CopyMode = 'icon' | 'text' | 'text-with-icon';
+  type CopyMode = 'icon' | 'text' | 'text-with-icon' | 'icon-with-text';
 
   interface Props {
     text?: string;
@@ -122,6 +122,13 @@
     {:else}
       <Copy class={idleIconClass} />
     {/if}
+  {:else if mode === 'icon-with-text'}
+    {#if copyState === 'copied'}
+      <CheckCircle class={copiedIconClass} />
+    {:else}
+      <Copy class={idleIconClass} />
+    {/if}
+    <span>{labelText}</span>
   {:else if copyState === 'copied'}
     <CheckCircle class={copiedIconClass} />
   {:else if copyState === 'failed'}

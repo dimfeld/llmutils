@@ -5,6 +5,8 @@
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import Pencil from '@lucide/svelte/icons/pencil';
   import ExternalLink from '@lucide/svelte/icons/external-link';
+  import Plus from '@lucide/svelte/icons/plus';
+  import Trash from '@lucide/svelte/icons/trash';
   import { untrack } from 'svelte';
   import type { ReviewIssueRow, ReviewCategory, PrReviewSubmissionRow } from '$tim/db/review.js';
   import CopyButton from '$lib/components/CopyButton.svelte';
@@ -192,92 +194,99 @@
           {/if}
         </div>
 
-        <div class="flex flex-wrap items-center gap-1.5">
-          {#if canJumpToDiff}
+        <div class="space-y-1.5">
+          <div class="flex flex-wrap items-center gap-1.5">
+            {#if canJumpToDiff}
+              <button
+                type="button"
+                onclick={() => onJumpToDiff?.(issue)}
+                disabled={actioning}
+                class="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 @sm:text-xs dark:hover:bg-gray-800"
+                title="Jump to this issue in the diff"
+              >
+                <ExternalLink class="size-3 @sm:size-3.5" />
+                Jump to diff
+              </button>
+            {/if}
+
+            {#if issue.file}
+              <CopyButton
+                text={issue.file}
+                mode="icon-with-text"
+                label="Copy file path"
+                iconClass="size-3 @sm:size-3.5"
+                className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 @sm:text-xs dark:hover:bg-gray-800"
+                copiedClass="text-emerald-600 dark:text-emerald-400"
+                title="Copy file path"
+                ariaLabel="Copy file path"
+                disabled={actioning}
+              />
+            {/if}
+
+            <CopyButton
+              text={issueCopyText()}
+              mode="icon-with-text"
+              label="Copy issue"
+              iconClass="size-3 @sm:size-3.5"
+              className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[10px] font-medium text-blue-600 transition-colors hover:bg-gray-100 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-50 @sm:text-xs dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-gray-800"
+              copiedClass="text-emerald-600 dark:text-emerald-400"
+              failedClass="text-red-600 dark:text-red-400"
+              title="Copy file/line, issue content, and suggestion"
+              ariaLabel="Copy issue details"
+              disabled={actioning}
+              onCopyError={(message) => onCopyError?.(message)}
+            />
+          </div>
+
+          <div class="flex flex-wrap items-center gap-1.5">
+            {#if linkedPlanUuid}
+              <button
+                type="button"
+                onclick={() => onAddToPlan(issue)}
+                disabled={actioning}
+                class="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 @sm:text-xs dark:hover:bg-gray-800"
+              >
+                <Plus class="size-3 @sm:size-3.5" />
+                Add to plan as a task
+              </button>
+            {/if}
+
             <button
               type="button"
-              onclick={() => onJumpToDiff?.(issue)}
+              onclick={handleToggleResolved}
               disabled={actioning}
               class="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 @sm:text-xs dark:hover:bg-gray-800"
-              title="Jump to this issue in the diff"
+              title={issue.resolved ? 'Mark as unresolved' : 'Mark as resolved'}
+              aria-label={issue.resolved ? 'Mark as unresolved' : 'Mark as resolved'}
             >
-              <ExternalLink class="size-3 @sm:size-3.5" />
-              Jump to diff
+              {#if issue.resolved}
+                <CheckCircle class="size-3 @sm:size-3.5" />
+              {:else}
+                <Circle class="size-3 @sm:size-3.5" />
+              {/if}
+              {issue.resolved ? 'Mark unresolved' : 'Mark resolved'}
             </button>
-          {/if}
 
-          <button
-            type="button"
-            onclick={startEditing}
-            disabled={actioning}
-            class="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 @sm:text-xs dark:hover:bg-gray-800"
-          >
-            <Pencil class="size-3 @sm:size-3.5" />
-            Edit
-          </button>
-
-          <button
-            type="button"
-            onclick={() => onDelete(issue)}
-            disabled={actioning}
-            class="rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 @sm:text-xs dark:hover:bg-gray-800"
-          >
-            Delete issue
-          </button>
-
-          {#if linkedPlanUuid}
             <button
               type="button"
-              onclick={() => onAddToPlan(issue)}
+              onclick={startEditing}
               disabled={actioning}
-              class="rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 @sm:text-xs dark:hover:bg-gray-800"
+              class="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 @sm:text-xs dark:hover:bg-gray-800"
             >
-              Add to plan as a task
+              <Pencil class="size-3 @sm:size-3.5" />
+              Edit
             </button>
-          {/if}
 
-          {#if issue.file}
-            <CopyButton
-              text={issue.file}
-              mode="text-with-icon"
-              label="Copy file path"
-              iconClass="size-3 @sm:size-3.5"
-              className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 @sm:text-xs dark:hover:bg-gray-800"
-              copiedClass="text-emerald-600 dark:text-emerald-400"
-              title="Copy file path"
-              ariaLabel="Copy file path"
+            <button
+              type="button"
+              onclick={() => onDelete(issue)}
               disabled={actioning}
-            />
-          {/if}
-
-          <button
-            type="button"
-            onclick={handleToggleResolved}
-            disabled={actioning}
-            class="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 @sm:text-xs dark:hover:bg-gray-800"
-            title={issue.resolved ? 'Mark as unresolved' : 'Mark as resolved'}
-            aria-label={issue.resolved ? 'Mark as unresolved' : 'Mark as resolved'}
-          >
-            {#if issue.resolved}
-              <CheckCircle class="size-3 @sm:size-3.5" />
-            {:else}
-              <Circle class="size-3 @sm:size-3.5" />
-            {/if}
-            {issue.resolved ? 'Mark unresolved' : 'Mark resolved'}
-          </button>
-
-          <CopyButton
-            text={issueCopyText()}
-            mode="icon"
-            iconClass="size-3.5 @sm:size-4"
-            className="ml-auto rounded p-1 transition-colors text-muted-foreground hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
-            copiedClass="text-emerald-600 dark:text-emerald-400"
-            failedClass="text-red-600 dark:text-red-400"
-            title="Copy file/line, issue content, and suggestion"
-            ariaLabel="Copy issue details"
-            disabled={actioning}
-            onCopyError={(message) => onCopyError?.(message)}
-          />
+              class="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 @sm:text-xs dark:hover:bg-gray-800"
+            >
+              <Trash class="size-3 @sm:size-3.5" />
+              Delete issue
+            </button>
+          </div>
         </div>
       {/if}
     </div>
