@@ -57,7 +57,7 @@ export function updateWebhookCursor(db: Database, lastEventId: number): void {
   ).run(lastEventId);
 }
 
-export function pruneOldWebhookLogs(db: Database, maxAgeDays = 30): number {
+export function pruneOldWebhookLogs(db: Database, maxAgeDays = 7): number {
   const result = db
     .prepare(
       `

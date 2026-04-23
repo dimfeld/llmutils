@@ -321,7 +321,7 @@ Webhook events from the GitHub webhook ingestion server are stored locally for p
 - `insertWebhookLogEntry(db, entry)`: INSERT OR IGNORE by `delivery_id` — skips duplicates. Returns `{ inserted: boolean }`.
 - `getWebhookCursor(db)`: Returns `last_event_id` from the single cursor row.
 - `updateWebhookCursor(db, lastEventId)`: Updates the cursor row with a new event ID and timestamp.
-- `pruneOldWebhookLogs(db, maxAgeDays?)`: Deletes entries where `ingested_at` is older than `maxAgeDays` (default 30).
+- `pruneOldWebhookLogs(db, maxAgeDays?)`: Deletes entries where `ingested_at` is older than `maxAgeDays` (default 7).
 
 **Webhook client** (`src/common/github/webhook_client.ts`): Fetches events from the webhook server's `/internal/events` endpoint. Uses `TIM_WEBHOOK_SERVER_URL` and `WEBHOOK_INTERNAL_API_TOKEN` env vars. Connection errors return empty array with warning; HTTP errors are thrown. Defines a local `WebhookEvent` interface (decoupled from `src/webhooks/`).
 

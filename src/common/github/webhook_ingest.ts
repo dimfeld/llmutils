@@ -352,7 +352,7 @@ export async function ingestWebhookEvents(db: Database): Promise<IngestResult> {
   }
 
   if (eventsProcessed > 0) {
-    pruneOldWebhookLogs(db, 30);
+    pruneOldWebhookLogs(db);
   }
 
   return {

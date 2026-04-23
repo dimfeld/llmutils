@@ -119,7 +119,7 @@ describe('tim db/webhook_log', () => {
       '2099-03-30T00:00:00.000Z'
     );
 
-    expect(pruneOldWebhookLogs(db, 30)).toBe(1);
+    expect(pruneOldWebhookLogs(db)).toBe(1);
     const remainingRows = db
       .query<
         { delivery_id: string },
