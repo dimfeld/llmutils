@@ -18,7 +18,10 @@
     parseMarkdownWithDiffs,
     type TocEntry,
   } from '$lib/utils/markdown_parser.js';
-  import { buildGuideDiffAnnotations } from './review_detail_utils.js';
+  import {
+    buildGuideDiffAnnotations,
+    type ReviewIssueAnnotationData,
+  } from './review_detail_utils.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
   import { Splitpanes, Pane } from 'svelte-splitpanes';
   import type { ReviewIssueRow, ReviewSeverity, ReviewCategory } from '$tim/db/review.js';
@@ -122,6 +125,105 @@
       highlightedIssueId = id;
     },
   });
+
+  const EMPTY_DIFF_ANNOTATIONS: DiffLineAnnotation<unknown>[] = [];
+
+  type GuideIssueAnnotation = DiffLineAnnotation<ReviewIssueAnnotationData>;
+  type DiffOverrideResolver = (
+    filename: string | null,
+    patch: string,
+    diffIndex: number
+  ) => DiffOverrides | undefined;
+
+  let previousGuideIssueAnnotations = new Map<number, GuideIssueAnnotation[]>();
+  const diffOverrideCache = new Map<
+    number,
+    {
+      filename: string | null;
+      lineAnnotations: DiffLineAnnotation<unknown>[];
+      override: DiffOverrides;
+    }
+  >();
+  const gutterClickHandlers = new Map<
+    number,
+    {
+      filename: string;
+      handler: NonNullable<FileDiffOptions<unknown>['onGutterUtilityClick']>;
+    }
+  >();
+
+  function sameAnnotation(a: GuideIssueAnnotation, b: GuideIssueAnnotation): boolean {
+    return (
+      a.side === b.side &&
+      a.lineNumber === b.lineNumber &&
+      a.metadata.issueId === b.metadata.issueId &&
+      a.metadata.severity === b.metadata.severity &&
+      a.metadata.content === b.metadata.content &&
+      a.metadata.suggestion === b.metadata.suggestion &&
+      a.metadata.lineLabel === b.metadata.lineLabel
+    );
+  }
+
+  function sameAnnotations(a: GuideIssueAnnotation[], b: GuideIssueAnnotation[]): boolean {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i += 1) {
+      if (!sameAnnotation(a[i], b[i])) return false;
+    }
+    return true;
+  }
+
+  function stabilizeGuideIssueAnnotations(
+    next: Map<number, GuideIssueAnnotation[]>
+  ): Map<number, GuideIssueAnnotation[]> {
+    const stable = new Map<number, GuideIssueAnnotation[]>();
+    for (const [segmentIndex, annotations] of next) {
+      const previous = previousGuideIssueAnnotations.get(segmentIndex);
+      stable.set(
+        segmentIndex,
+        previous && sameAnnotations(previous, annotations) ? previous : annotations
+      );
+    }
+    previousGuideIssueAnnotations = stable;
+    return stable;
+  }
+
+  function getGutterClickHandler(
+    diffIndex: number,
+    filename: string
+  ): NonNullable<FileDiffOptions<unknown>['onGutterUtilityClick']> {
+    const cached = gutterClickHandlers.get(diffIndex);
+    if (cached?.filename === filename) {
+      return cached.handler;
+    }
+
+    const handler = (range: Parameters<typeof handleGutterUtilityClick>[1]) =>
+      handleGutterUtilityClick(filename, range);
+    gutterClickHandlers.set(diffIndex, { filename, handler });
+    return handler;
+  }
+
+  function getDiffOverrides(
+    annotationsBySegment: Map<number, GuideIssueAnnotation[]>,
+    filename: string | null,
+    diffIndex: number
+  ): DiffOverrides {
+    const lineAnnotations = (annotationsBySegment.get(diffIndex) ??
+      EMPTY_DIFF_ANNOTATIONS) as DiffLineAnnotation<unknown>[];
+    const cached = diffOverrideCache.get(diffIndex);
+    if (cached && cached.filename === filename && cached.lineAnnotations === lineAnnotations) {
+      return cached.override;
+    }
+
+    const canAddIssues = filename != null;
+    const override: DiffOverrides = {
+      lineAnnotations,
+      enableLineSelection: true,
+      enableGutterUtility: canAddIssues,
+      onGutterUtilityClick: canAddIssues ? getGutterClickHandler(diffIndex, filename) : undefined,
+    };
+    diffOverrideCache.set(diffIndex, { filename, lineAnnotations, override });
+    return override;
+  }
 
   const annotationNodesByIssue = new Map<number, Set<HTMLElement>>();
 
@@ -257,7 +359,9 @@
     issues = [...issues, created];
   }
 
-  let guideIssueAnnotations = $derived(buildGuideDiffAnnotations(issues, guideSegments));
+  let guideIssueAnnotations = $derived.by(() =>
+    stabilizeGuideIssueAnnotations(buildGuideDiffAnnotations(issues, guideSegments))
+  );
 
   // Issue IDs that currently have at least one annotation anchor resolvable
   // from the rendered diffs. Used to gate the "Jump to diff" button so we
@@ -273,24 +377,14 @@
     return ids;
   });
 
-  let diffOverrides = $derived.by(() => {
+  let diffOverrides = $derived.by<DiffOverrideResolver>(() => {
     const annotationsBySegment = guideIssueAnnotations;
     return (
       filename: string | null,
-      patch: string,
+      _patch: string,
       diffIndex: number
     ): DiffOverrides | undefined => {
-      const annotations = annotationsBySegment.get(diffIndex) ?? [];
-      const canAddIssues = filename != null;
-      return {
-        lineAnnotations: annotations as DiffLineAnnotation<unknown>[],
-        enableLineSelection: true,
-        enableGutterUtility: canAddIssues,
-        onGutterUtilityClick: canAddIssues
-          ? (range) => handleGutterUtilityClick(filename, range)
-          : undefined,
-        patch,
-      };
+      return getDiffOverrides(annotationsBySegment, filename, diffIndex);
     };
   });
 

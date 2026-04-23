@@ -23,6 +23,7 @@
   const HUNK_HEADER_RE = /^@@\s/m;
   const PATCH_HEADER_RE = /^---\s/m;
   const VIRTUALIZED_LINE_THRESHOLD = 400;
+  const EMPTY_LINE_ANNOTATIONS: DiffLineAnnotation<unknown>[] = [];
 
   let workerPool: ReturnType<typeof getOrCreateWorkerPoolSingleton> | undefined;
 
@@ -261,42 +262,81 @@
     };
   }
 
+  function areOptionsEquivalent(a: FileDiffOptions<unknown>, b: FileDiffOptions<unknown>): boolean {
+    return (
+      a.diffStyle === b.diffStyle &&
+      a.hunkSeparators === b.hunkSeparators &&
+      a.lineDiffType === b.lineDiffType &&
+      a.overflow === b.overflow &&
+      a.disableFileHeader === b.disableFileHeader &&
+      a.disableLineNumbers === b.disableLineNumbers &&
+      a.collapsed === b.collapsed &&
+      a.enableLineSelection === b.enableLineSelection &&
+      a.onLineSelected === b.onLineSelected &&
+      a.enableGutterUtility === b.enableGutterUtility &&
+      a.onGutterUtilityClick === b.onGutterUtilityClick &&
+      a.onLineClick === b.onLineClick &&
+      a.renderAnnotation === b.renderAnnotation
+    );
+  }
+
   function diffAttachment(node: HTMLElement) {
     const annotationRenderer = createAnnotationRenderer();
-    const instance = new FileDiff<unknown>(
-      untrack(() => buildOptions(annotationRenderer.renderAnnotation))
-    );
+    const initialOptions = untrack(() => buildOptions(annotationRenderer.renderAnnotation));
+    const instance = new FileDiff<unknown>(initialOptions);
 
     let renderedOnce = false;
     let renderedAnnotationSnippet = untrack(() => annotation);
+    let renderedOptions = initialOptions;
+    let renderedLineAnnotations: DiffLineAnnotation<unknown>[] = EMPTY_LINE_ANNOTATIONS;
     $effect(() => {
       // $inspect.trace();
       if (!resolvedDiff) {
         return;
       }
 
-      if (renderedOnce && annotation !== renderedAnnotationSnippet) {
-        instance.setLineAnnotations([]);
-        instance.rerender();
-        annotationRenderer.disposeDisconnected();
-        renderedAnnotationSnippet = annotation;
-      }
+      const nextOptions = buildOptions(annotationRenderer.renderAnnotation);
+      const nextLineAnnotations = lineAnnotations || EMPTY_LINE_ANNOTATIONS;
 
-      instance.setOptions({
-        ...instance.options,
-        ...buildOptions(annotationRenderer.renderAnnotation),
-      });
-
-      if (renderedOnce) {
-        instance.setLineAnnotations(lineAnnotations || []);
-        instance.rerender();
-      } else {
+      if (!renderedOnce) {
         renderedOnce = true;
+        renderedOptions = nextOptions;
+        renderedLineAnnotations = nextLineAnnotations;
         instance.render({
           fileDiff: resolvedDiff,
-          lineAnnotations,
+          lineAnnotations: nextLineAnnotations,
           containerWrapper: node,
         });
+        annotationRenderer.disposeDisconnected();
+        return;
+      }
+
+      let shouldRerender = false;
+      if (renderedOnce && annotation !== renderedAnnotationSnippet) {
+        instance.setLineAnnotations([]);
+        annotationRenderer.disposeDisconnected();
+        renderedAnnotationSnippet = annotation;
+        renderedLineAnnotations = EMPTY_LINE_ANNOTATIONS;
+        shouldRerender = true;
+      }
+
+      if (!areOptionsEquivalent(renderedOptions, nextOptions)) {
+        instance.setOptions({
+          ...instance.options,
+          ...nextOptions,
+        });
+        renderedOptions = nextOptions;
+        shouldRerender = true;
+      }
+
+      if (renderedLineAnnotations !== nextLineAnnotations) {
+        instance.setLineAnnotations(nextLineAnnotations);
+        renderedLineAnnotations = nextLineAnnotations;
+        shouldRerender = true;
+      }
+
+      if (shouldRerender) {
+        instance.rerender();
       }
       annotationRenderer.disposeDisconnected();
     });
@@ -313,8 +353,9 @@
     }
 
     const annotationRenderer = createAnnotationRenderer();
+    const initialOptions = untrack(() => buildOptions(annotationRenderer.renderAnnotation));
     const instance = new VirtualizedFileDiff(
-      untrack(() => buildOptions(annotationRenderer.renderAnnotation)),
+      initialOptions,
       virtualizer,
       { lineHeight: 22, fileGap: 10 },
       getWorkerPool()
@@ -322,33 +363,55 @@
 
     let renderedOnce = false;
     let renderedAnnotationSnippet = untrack(() => annotation);
+    let renderedOptions = initialOptions;
+    let renderedLineAnnotations: DiffLineAnnotation<unknown>[] = EMPTY_LINE_ANNOTATIONS;
     $effect(() => {
       if (!resolvedDiff) {
         return;
       }
 
-      if (renderedOnce && annotation !== renderedAnnotationSnippet) {
-        instance.setLineAnnotations([]);
-        instance.rerender();
-        annotationRenderer.disposeDisconnected();
-        renderedAnnotationSnippet = annotation;
-      }
+      const nextOptions = buildOptions(annotationRenderer.renderAnnotation);
+      const nextLineAnnotations = lineAnnotations || EMPTY_LINE_ANNOTATIONS;
 
-      instance.setOptions({
-        ...instance.options,
-        ...buildOptions(annotationRenderer.renderAnnotation),
-      });
-
-      if (renderedOnce) {
-        instance.setLineAnnotations(lineAnnotations || []);
-        instance.rerender();
-      } else {
+      if (!renderedOnce) {
         renderedOnce = true;
+        renderedOptions = nextOptions;
+        renderedLineAnnotations = nextLineAnnotations;
         instance.render({
           fileDiff: resolvedDiff,
-          lineAnnotations,
+          lineAnnotations: nextLineAnnotations,
           containerWrapper: node,
         });
+        annotationRenderer.disposeDisconnected();
+        return;
+      }
+
+      let shouldRerender = false;
+      if (renderedOnce && annotation !== renderedAnnotationSnippet) {
+        instance.setLineAnnotations([]);
+        annotationRenderer.disposeDisconnected();
+        renderedAnnotationSnippet = annotation;
+        renderedLineAnnotations = EMPTY_LINE_ANNOTATIONS;
+        shouldRerender = true;
+      }
+
+      if (!areOptionsEquivalent(renderedOptions, nextOptions)) {
+        instance.setOptions({
+          ...instance.options,
+          ...nextOptions,
+        });
+        renderedOptions = nextOptions;
+        shouldRerender = true;
+      }
+
+      if (renderedLineAnnotations !== nextLineAnnotations) {
+        instance.setLineAnnotations(nextLineAnnotations);
+        renderedLineAnnotations = nextLineAnnotations;
+        shouldRerender = true;
+      }
+
+      if (shouldRerender) {
+        instance.rerender();
       }
       annotationRenderer.disposeDisconnected();
     });
