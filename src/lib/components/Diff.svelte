@@ -1,12 +1,17 @@
 <script lang="ts">
   import {
     FileDiff,
+    VirtualizedFileDiff,
     parseDiffFromFile,
     parsePatchFiles,
     type FileContents,
     type FileDiffMetadata,
     type DiffLineAnnotation,
+    type FileDiffOptions,
+    type Virtualizer,
   } from '@pierre/diffs';
+  import WorkerUrl from '@pierre/diffs/worker/worker.js?worker&url';
+  import { getOrCreateWorkerPoolSingleton } from '@pierre/diffs/worker';
 
   type DiffStyle = 'split' | 'unified';
   type HunkSeparatorStyle = 'line-info' | 'line-info-basic' | 'metadata' | 'simple';
@@ -15,6 +20,29 @@
 
   const HUNK_HEADER_RE = /^@@\s/m;
   const PATCH_HEADER_RE = /^---\s/m;
+  const VIRTUALIZED_LINE_THRESHOLD = 400;
+
+  let workerPool: ReturnType<typeof getOrCreateWorkerPoolSingleton> | undefined;
+
+  function getWorkerPool() {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    workerPool ??= getOrCreateWorkerPoolSingleton({
+      poolOptions: {
+        workerFactory: () =>
+          new Worker(WorkerUrl, {
+            type: 'module',
+          }),
+      },
+      highlighterOptions: {
+        theme: { dark: 'pierre-dark', light: 'pierre-light' },
+      },
+    });
+
+    return workerPool;
+  }
 
   /** If the patch is just a raw hunk (starts with @@ but has no --- header),
    *  wrap it with minimal file headers so parsePatchFiles can parse it. */
@@ -49,6 +77,7 @@
     enableGutterUtility = false,
     onGutterUtilityClick,
     onLineClick,
+    virtualizer,
     class: className = '',
   }: {
     /** Old file version for two-file comparison */
@@ -77,24 +106,21 @@
     /** Collapse file body, keep header visible */
     collapsed?: boolean;
     /** Annotations to render on specific lines */
-    lineAnnotations?: DiffLineAnnotation[];
+    lineAnnotations?: DiffLineAnnotation<unknown>[];
     /** Custom annotation renderer */
-    renderAnnotation?: (annotation: DiffLineAnnotation) => HTMLElement | undefined;
+    renderAnnotation?: FileDiffOptions<unknown>['renderAnnotation'];
     /** Enable click-to-select on line numbers */
     enableLineSelection?: boolean;
     /** Callback when line selection completes */
-    onLineSelected?: (range: { start: number; end: number; side: string } | null) => void;
+    onLineSelected?: FileDiffOptions<unknown>['onLineSelected'];
     /** Show gutter utility button (e.g. for adding comments) */
     enableGutterUtility?: boolean;
     /** Callback when gutter utility button is clicked */
-    onGutterUtilityClick?: (range: {
-      start: number;
-      end: number;
-      side: string;
-      endSide: string;
-    }) => void;
+    onGutterUtilityClick?: FileDiffOptions<unknown>['onGutterUtilityClick'];
     /** Callback when a line is clicked */
-    onLineClick?: (props: { lineNumber: number; side: string; event: MouseEvent }) => void;
+    onLineClick?: FileDiffOptions<unknown>['onLineClick'];
+    /** Shared top-level virtualizer from a parent scroll container */
+    virtualizer?: Virtualizer | null;
     /** Additional CSS classes for the wrapper div */
     class?: string;
   } = $props();
@@ -126,9 +152,22 @@
     return null;
   });
 
-  function diffAttachment(node: HTMLElement) {
-    const instance = new FileDiff({
-      theme: { dark: 'pierre-dark', light: 'pierre-light' },
+  let shouldVirtualize = $derived.by(() => {
+    if (!resolvedDiff || !virtualizer) {
+      return false;
+    }
+
+    const totalLines = Math.max(
+      resolvedDiff.additionLines.length,
+      resolvedDiff.deletionLines.length
+    );
+
+    return totalLines >= VIRTUALIZED_LINE_THRESHOLD;
+  });
+
+  function buildOptions(): FileDiffOptions<unknown> {
+    return {
+      theme: { dark: 'pierre-dark', light: 'pierre-light' } as const,
       diffStyle,
       hunkSeparators,
       lineDiffType,
@@ -142,7 +181,11 @@
       onGutterUtilityClick,
       onLineClick,
       renderAnnotation,
-    });
+    };
+  }
+
+  function diffAttachment(node: HTMLElement) {
+    const instance = new FileDiff<unknown>(buildOptions());
 
     if (resolvedDiff) {
       instance.render({
@@ -159,19 +202,49 @@
 
       instance.setOptions({
         ...instance.options,
-        diffStyle,
-        hunkSeparators,
-        lineDiffType,
-        overflow,
-        disableFileHeader,
-        disableLineNumbers,
-        collapsed,
-        enableLineSelection,
-        onLineSelected,
-        enableGutterUtility,
-        onGutterUtilityClick,
-        onLineClick,
-        renderAnnotation,
+        ...buildOptions(),
+      });
+
+      instance.render({
+        fileDiff: resolvedDiff,
+        lineAnnotations,
+        containerWrapper: node,
+      });
+    });
+
+    return () => {
+      instance.cleanUp();
+    };
+  }
+
+  function virtualizedDiffAttachment(node: HTMLElement) {
+    if (!virtualizer) {
+      return;
+    }
+
+    const instance = new VirtualizedFileDiff(
+      buildOptions(),
+      virtualizer,
+      { lineHeight: 22, fileGap: 10 },
+      getWorkerPool()
+    );
+
+    if (resolvedDiff) {
+      instance.render({
+        fileDiff: resolvedDiff,
+        lineAnnotations,
+        containerWrapper: node,
+      });
+    }
+
+    $effect(() => {
+      if (!resolvedDiff) {
+        return;
+      }
+
+      instance.setOptions({
+        ...instance.options,
+        ...buildOptions(),
       });
 
       instance.render({
@@ -188,5 +261,9 @@
 </script>
 
 {#if resolvedDiff}
-  <div class={className} {@attach diffAttachment}></div>
+  {#if shouldVirtualize}
+    <div class={className} {@attach virtualizedDiffAttachment}></div>
+  {:else}
+    <div class={className} {@attach diffAttachment}></div>
+  {/if}
 {/if}

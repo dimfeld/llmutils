@@ -1,7 +1,7 @@
 <script lang="ts">
   import { invalidateAll } from '$app/navigation';
   import { page } from '$app/state';
-  import type { DiffLineAnnotation } from '@pierre/diffs';
+  import { Virtualizer, type DiffLineAnnotation, type FileDiffOptions } from '@pierre/diffs';
   import ArrowLeft from '@lucide/svelte/icons/arrow-left';
   import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
   import { onDestroy } from 'svelte';
@@ -107,6 +107,7 @@
   let visibleSectionSlug = $state<string>('');
   let isProgrammaticUpdate = $state(false);
   let isUserNavigating = $state(false);
+  let guideVirtualizer = $state<Virtualizer | null>(null);
 
   interface NewIssueModalState {
     file: string;
@@ -212,10 +213,14 @@
 
   function handleGutterUtilityClick(
     filename: string,
-    range: { start: number; end: number; side: string; endSide: string }
+    range: NonNullable<FileDiffOptions<unknown>['onGutterUtilityClick']> extends (
+      range: infer T
+    ) => unknown
+      ? T
+      : never
   ) {
     if (newIssueModalState) return;
-    const normalized = normalizeGutterRange({ ...range });
+    const normalized = normalizeGutterRange(range as Parameters<typeof normalizeGutterRange>[0]);
     if (!normalized) {
       // Mixed-side selection (e.g. deletion -> addition). GitHub won't accept
       // such anchors as a single inline comment — skip opening the modal.
@@ -285,7 +290,7 @@
       const annotations = annotationsBySegment.get(diffIndex) ?? [];
       const canAddIssues = filename != null;
       return {
-        lineAnnotations: annotations as unknown as DiffLineAnnotation[],
+        lineAnnotations: annotations as DiffLineAnnotation<unknown>[],
         renderAnnotation: (annotation) =>
           annotationRenderer.renderAnnotation(
             annotation as unknown as DiffLineAnnotation<ReviewIssueAnnotationMetadata>
@@ -318,6 +323,30 @@
     setTimeout(() => {
       isUserNavigating = false;
     }, 500);
+  }
+
+  function guideScrollAttachment(scrollRoot: HTMLElement) {
+    // uncomment to reenable guide virtualization
+    /*
+    const scrollContent = scrollRoot.firstElementChild;
+    if (!(scrollContent instanceof HTMLElement)) {
+      return;
+    }
+
+    const virtualizer = new Virtualizer({
+      overscrollSize: 1000,
+      intersectionObserverMargin: 4000,
+    });
+    virtualizer.setup(scrollRoot, scrollContent);
+    guideVirtualizer = virtualizer;
+
+    return () => {
+      if (guideVirtualizer === virtualizer) {
+        guideVirtualizer = null;
+      }
+      virtualizer.cleanUp();
+    };
+    */
   }
 
   function isIssueActioning(issueId: number): boolean {
@@ -603,16 +632,19 @@
   <Splitpanes theme="tim-split" class="min-h-0 flex-1 pb-6">
     <!-- Left: review guide -->
     <Pane minSize={20}>
-      <div class="h-full overflow-y-auto pr-1">
-        {#if data.review.review_guide}
-          <MarkdownContent
-            content={data.review.review_guide}
-            class="text-sm text-foreground"
-            {diffOverrides}
-          />
-        {:else if data.review.status !== 'complete'}
-          <p class="text-sm text-muted-foreground">Review guide not yet available.</p>
-        {/if}
+      <div class="h-full overflow-y-auto pr-1" {@attach guideScrollAttachment}>
+        <div>
+          {#if data.review.review_guide}
+            <MarkdownContent
+              content={data.review.review_guide}
+              class="text-sm text-foreground"
+              {diffOverrides}
+              virtualizer={guideVirtualizer}
+            />
+          {:else if data.review.status !== 'complete'}
+            <p class="text-sm text-muted-foreground">Review guide not yet available.</p>
+          {/if}
+        </div>
       </div>
     </Pane>
 

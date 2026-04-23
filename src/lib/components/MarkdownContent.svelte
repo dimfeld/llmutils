@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { DiffLineAnnotation } from '@pierre/diffs';
+  import type { DiffLineAnnotation, FileDiffOptions, Virtualizer } from '@pierre/diffs';
 
   import Diff from './Diff.svelte';
   import { parseMarkdownWithDiffs } from '$lib/utils/markdown_parser.js';
@@ -10,17 +10,12 @@
    * cast/assert to their own metadata type in `renderAnnotation`.
    */
   export interface DiffOverrides {
-    lineAnnotations?: DiffLineAnnotation[];
-    renderAnnotation?: (annotation: DiffLineAnnotation) => HTMLElement | undefined;
+    lineAnnotations?: DiffLineAnnotation<unknown>[];
+    renderAnnotation?: FileDiffOptions<unknown>['renderAnnotation'];
     enableGutterUtility?: boolean;
-    onGutterUtilityClick?: (range: {
-      start: number;
-      end: number;
-      side: string;
-      endSide: string;
-    }) => void;
+    onGutterUtilityClick?: FileDiffOptions<unknown>['onGutterUtilityClick'];
     enableLineSelection?: boolean;
-    onLineSelected?: (range: { start: number; end: number; side: string } | null) => void;
+    onLineSelected?: FileDiffOptions<unknown>['onLineSelected'];
     /** The patch string being rendered, so callers can extract line ranges from it */
     patch?: string;
   }
@@ -29,6 +24,7 @@
     content,
     class: className = '',
     diffOverrides,
+    virtualizer = null,
   }: {
     content: string;
     class?: string;
@@ -38,6 +34,8 @@
       patch: string,
       diffIndex: number
     ) => DiffOverrides | undefined;
+    /** Shared virtualizer for diffs within a parent scroll container */
+    virtualizer?: Virtualizer | null;
   } = $props();
 
   let segments = $derived(parseMarkdownWithDiffs(content));
@@ -59,6 +57,7 @@
           onGutterUtilityClick={overrides.onGutterUtilityClick}
           enableLineSelection={overrides.enableLineSelection ?? false}
           onLineSelected={overrides.onLineSelected}
+          {virtualizer}
         />
       </div>
     {/if}
