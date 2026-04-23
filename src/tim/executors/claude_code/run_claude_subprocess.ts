@@ -323,7 +323,7 @@ export async function runClaudeSubprocess(
   let terminalInputResult: ReturnType<typeof executeWithTerminalInput> | undefined;
 
   try {
-    const args = ['claude', '--no-session-persistence'];
+    const args = ['claude', '--no-session-persistence', '--permission-mode', 'auto'];
 
     // Add MCP config: permissions MCP takes priority, then user's mcpConfigFile
     if (isPermissionsMcpEnabled && permissionsMcpConfigFile) {

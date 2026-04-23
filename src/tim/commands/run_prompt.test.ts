@@ -173,6 +173,8 @@ describe('buildClaudeRunPromptArgs', () => {
       '--verbose',
       '--output-format',
       'stream-json',
+      '--permission-mode',
+      'auto',
       '--model',
       'sonnet',
       '--json-schema',
@@ -191,6 +193,8 @@ describe('buildClaudeRunPromptArgs', () => {
       '--verbose',
       '--output-format',
       'stream-json',
+      '--permission-mode',
+      'auto',
       '--print',
       'hello',
     ]);

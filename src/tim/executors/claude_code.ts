@@ -695,7 +695,7 @@ export class ClaudeCodeExecutor implements Executor {
 
     let terminalInputResult: ReturnType<typeof executeWithTerminalInput> | undefined;
     try {
-      const args = ['claude'];
+      const args = ['claude', '--permission-mode', 'auto'];
 
       const extraAccessDirs = new Set<string>();
       if (this.timConfig.isUsingExternalStorage && this.timConfig.externalRepositoryConfigDir) {

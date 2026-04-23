@@ -211,6 +211,8 @@ export function buildClaudeRunPromptArgs(options: ClaudeArgOptions): string[] {
     '--verbose',
     '--output-format',
     'stream-json',
+    '--permission-mode',
+    'auto',
   ];
 
   if (options.model) {

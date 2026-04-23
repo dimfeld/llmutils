@@ -405,6 +405,9 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
       expect(wrapSimple).toHaveBeenCalledTimes(1);
       expect(recordedArgs.length).toBeGreaterThan(0);
       const args = recordedArgs[0];
+      expect(args).toContain('--permission-mode');
+      const permissionModeIndex = args.indexOf('--permission-mode');
+      expect(args[permissionModeIndex + 1]).toBe('auto');
       expect(args).toContain('--input-format');
       const inputFormatIndex = args.indexOf('--input-format');
       expect(args[inputFormatIndex + 1]).toBe('stream-json');
@@ -560,6 +563,9 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
 
     expect(recordedArgs).toHaveLength(1);
     const args = recordedArgs[0];
+    expect(args).toContain('--permission-mode');
+    const permissionModeIndex = args.indexOf('--permission-mode');
+    expect(args[permissionModeIndex + 1]).toBe('auto');
 
     // Check that --output-format stream-json is used
     expect(args).toContain('--output-format');
@@ -791,6 +797,9 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
 
     expect(recordedArgs).toHaveLength(1);
     const args = recordedArgs[0];
+    expect(args).toContain('--permission-mode');
+    const permissionModeIndex = args.indexOf('--permission-mode');
+    expect(args[permissionModeIndex + 1]).toBe('auto');
 
     // Review mode should NOT have agents or orchestration-related args when permissions MCP is disabled
     expect(args).not.toContain('--agents');

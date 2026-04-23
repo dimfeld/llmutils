@@ -197,6 +197,9 @@ describe('runClaudeSubprocess shared permissions DB integration', () => {
     });
 
     expect(spawnedArgs).not.toBeNull();
+    expect(spawnedArgs).toContain('--permission-mode');
+    const permissionModeIndex = spawnedArgs!.indexOf('--permission-mode');
+    expect(spawnedArgs![permissionModeIndex + 1]).toBe('auto');
     const allowedToolsIndex = spawnedArgs!.indexOf('--allowedTools');
     expect(allowedToolsIndex).toBeGreaterThan(-1);
     expect(spawnedArgs![allowedToolsIndex + 1]).toContain(sharedTool);
