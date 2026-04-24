@@ -1,413 +1,297 @@
-# llmutils
+# tim
 
-Command-line utilities for managing context with chat-oriented programming and applying edits from language models.
+`tim` is an AI development assistant for turning issues into plans, running agents in isolated workspaces, tracking active sessions in a web UI, and preparing review/PR follow-up work.
 
-## Key Commands
 
-- **rmfilter**: Analyzes import trees to gather related files, adds instructions, and prepares context for LLMs
-- **rmfind**: Finds relevant files to use with rmfilter
-- **tim**: Generates and manages step-by-step project plans using LLMs
-- **apply-llm-edits**: Applies LLM-generated edits back to the codebase
-- **rmrun**: Sends rmfilter output to an LLM and applies edits
-- **rmfix**: Toolkit for fixing LLM-generated code when it doesn't apply cleanly
+## Requirements
 
-## Tim Prompt Helpers
+`tim` depends on Bun features, including Bun's native SQLite client. It is not a plain Node.js application.
 
-`tim prompts` can print reusable prompt text for CLI-driven workflows. For implementation work, use `tim prompts implement <plan>` to load a plan and instruct the agent to implement it while keeping the plan up to date.
-
-## Tim Chat
-
-`tim chat` runs an arbitrary free-form prompt in Claude Code or Codex. Without workspace options, it behaves exactly as before and runs in the current working directory.
-
-When you provide workspace options, `tim chat` participates in the full workspace roundtrip flow used by other tim workspace-aware commands. This includes workspace selection or creation, branch checkout, optional plan association, workspace sync, and optional committing at the end of the session.
-
-Workspace options:
-
-- `-w, --workspace <id>` to use a specific workspace
-- `--aw, --auto-workspace` to automatically choose a workspace
-- `--nw, --new-workspace` to create a new workspace
-- `--plan <plan>` to associate the session with a plan and use that plan's workspace metadata
-- `--commit` to commit changes after the session finishes
-- `--no-workspace-sync` to disable workspace sync for the roundtrip
-
-Examples:
+Install the expected local tools:
 
 ```bash
-tim chat --aw --plan 42 "Fix the bug"
-tim chat -w my-workspace "Review code"
-tim chat --aw --commit "Clean up imports"
+brew install oven-sh/bun/bun
+bun --version
 ```
 
-## Workspace Management
+For global CLI installation from this repo, `bun run dev-install` currently uses `pnpm add -g file://...`, so make sure `pnpm` is also available.
 
-Use `tim workspace list`, `tim workspace add`, and `tim workspace update` to manage repository workspaces. Workspaces can be `standard`, `primary`, or `auto`: `primary` workspaces receive branch updates from origin after execution, while `auto` workspaces form the preferred pool for `--auto-workspace`.
+Long-running `tim` workflows call an executor such as Claude Code or Codex CLI. Install and authenticate whichever executor your project config uses.
 
-`tim workspace add [planIdentifier] [--primary | --auto]` sets the initial type for a new workspace, and `tim workspace update <id> [--primary | --no-primary | --auto | --no-auto]` changes it later. When at least one `auto` workspace exists, commands such as `tim agent --auto-workspace` and `tim generate --auto-workspace` only choose from `auto` workspaces; otherwise they fall back to any non-`primary` workspace. See [`docs/multi-workspace-workflow.md`](docs/multi-workspace-workflow.md) for the full workflow.
+## Install the CLI
 
-## Plan Auto-Completion Status
-
-When all tasks in a plan are completed (via `tim done`, agent batch mode, or stub plans), the plan transitions to `needs_review` by default instead of `done`. This gives you a chance to review completed work before marking it fully done. Parent plans also auto-complete to `needs_review` when all children reach a work-complete state (`done`, `needs_review`, `cancelled`, or `deferred`).
-
-Plans in `needs_review` satisfy dependency requirements, so downstream plans are not blocked. Workspace assignments and locks are preserved for `needs_review` plans and only released when the plan reaches `done` (whether via `tim set`, auto-completion with `planAutocompleteStatus: done`, or agent-driven completion).
-
-To skip the review step and go directly to `done`, set the `planAutocompleteStatus` config option:
-
-```yaml
-# tim.yml
-planAutocompleteStatus: done # default: needs_review
-```
-
-Explicit status changes via `tim set <id> --status done` always go directly to `done` regardless of this setting.
-
-When the agent is launched from the web UI (with `--no-terminal-input`), the final review always exits automatically after completion. If the review found issues, they are saved as `reviewIssues` on the plan and the status is set to `needs_review`. The user can then triage review issues from the web UI and re-run the agent to continue.
-
-## Tim Finish
-
-`tim finish <planId>` runs the finalization steps for a completed plan: documentation updates and lessons learned extraction. After running the applicable steps, it sets the plan status to `done`.
-
-The command tracks two fields on the plan: `docsUpdatedAt` (when documentation was last updated) and `lessonsAppliedAt` (when lessons learned were last applied). It only runs whichever steps haven't been done yet, so re-running finish on a partially finalized plan picks up where it left off.
-
-The decision logic:
-
-- **Docs needed**: `docsUpdatedAt` is null AND `updateDocs.mode` is not `never`
-- **Lessons needed**: `lessonsAppliedAt` is null AND `applyLessons` is true
-- If either step is needed, the command sets up a workspace and headless adapter (like `tim agent`)
-- If neither step is needed, it skips workspace/headless setup and just transitions the status to `done`
+Clone this repository, install dependencies, then build and register the command:
 
 ```bash
-tim finish 42                              # Finish plan 42
-tim finish 42 --auto-workspace             # Use auto-workspace selection
-tim finish 42 --executor claude-code       # Specify executor
-tim finish 42 --apply-lessons              # Force-enable lessons
+git clone <this-repo-url> llmutils
+cd llmutils
+bun install
+bun run dev-install
+tim --help
 ```
 
-In the web UI, "Finish" is the primary action button for `needs_review` plans. For `done` plans with pending finalization work (docs or lessons not yet run), "Finish" appears as a secondary action in the dropdown menu. If no executor work is needed, clicking "Finish" instantly transitions the plan to `done` without spawning a process.
+During development you can also run the CLI without global installation:
 
-### Manual Mode
-
-The `updateDocs.mode` config option accepts a `manual` value. When set to `manual`, the agent command skips both documentation updates and lessons learned entirely, leaving them for the `finish` command. This is useful when you want to defer finalization to a separate step rather than running it at the end of each agent session.
-
-```yaml
-# tim.yml
-updateDocs:
-  mode: manual # defer docs and lessons to `tim finish`
+```bash
+bun run tim -- --help
+bun run tim -- list
 ```
 
-The `manual` mode overrides `applyLessons` in the agent context — both docs and lessons are skipped. The `applyLessons` setting still controls whether lessons run during `tim finish`.
+## Configure a Project
 
-The `updateDocs.mode` option also accepts `after-review`. This waits until the end of the agent run and only updates docs if the final review leaves no saved review issues or appended follow-up tasks. When `applyLessons` is enabled, lessons are applied in that same post-review finalization phase.
+Run these commands inside the repository you want `tim` to manage, not necessarily inside the `llmutils` repository:
 
-```yaml
-# tim.yml
-updateDocs:
-  mode: after-review
-  applyLessons: true
+```bash
+tim init
+tim show-config
 ```
 
-## PR Status Monitoring
+The default project config lives at:
 
-`tim pr` is a subcommand namespace for GitHub PR operations:
-
-- `tim pr status [planId]` — Fetch and display PR status for a plan (checks, reviews, merge readiness) with color-coded terminal output. Resolves the plan from a positional argument or the current workspace plan (walks parent directories to find the workspace root). When `TIM_WEBHOOK_SERVER_URL` is set, ingests webhook events first (webhook-first mode); use `--force-refresh` to bypass webhooks and fetch directly from the GitHub API.
-- `tim pr link <planId> <prUrl>` — Link a PR to a plan. Validates the PR exists on GitHub, rejects non-PR URLs (e.g. issue URLs), and canonicalizes the URL before updating the plan.
-- `tim pr unlink <planId> <prUrl>` — Remove a PR link from a plan.
-- `tim pr description <planId>` — Generate a PR description from a plan (migrated from the former `tim pr-description` command, which remains as a hidden alias for backwards compatibility).
-- `tim pr fix <planId>` — Fix unresolved PR review threads by spawning an agent session with review thread context. Supports interactive thread selection (default) or `--all` to fix all unresolved threads. The agent uses `tim pr reply` and `tim pr resolve` to respond to and resolve threads after making code changes. Options: `-x/--executor`, `-m/--model`, `--all`, `--auto-workspace`, `--no-terminal-input`.
-- `tim pr review-guide <pr-url-or-number>` — Run a standalone AI-powered review on any PR. Runs two concurrent review prompts (Claude for review guide + issues, Codex for structured issues), combines the results, and stores them in the database. Supports full PR URLs or bare numbers (resolved from the current repo). Options: `--plan <id>` (resolve PR from a plan's linked PRs), `--executor <name>` (single executor mode, skips combination), `--auto-workspace` (workspace isolation for branch checkout), `--model <model>`, `--no-terminal-input`. Without `--auto-workspace`, aborts if the working tree is dirty.
-- `tim pr review-guide materialize <pr-url-or-number>` — Write the latest stored review guide and issues to `.tim/reviews/` as markdown files. Adds `.tim/reviews/` to `.git/info/exclude`.
-- `tim pr reply <threadId> <body>` — Post a reply to a PR review thread via the GitHub API. Primarily used by agents during `tim pr fix` execution.
-- `tim pr resolve <threadId>` — Resolve a PR review thread via the GitHub API. Primarily used by agents during `tim pr fix` execution.
-
-PR status data (check runs, reviews, labels, merge state, diff statistics) is cached in the SQLite database and surfaced in the web interface. When `TIM_WEBHOOK_SERVER_URL` is configured, both the CLI and web UI use webhook-first refresh (ingesting from the webhook server before displaying data). When not configured, the CLI refreshes directly from GitHub and the web UI uses stale-while-revalidate caching. Requires `GITHUB_TOKEN` environment variable for direct GitHub API access.
-
-### Webhook-Based PR Updates
-
-When connected to the GitHub Webhook Receiver (see below), tim can ingest PR status updates incrementally from webhook events instead of polling the GitHub API directly. This is the preferred approach as it's faster and avoids API rate limits.
-
-Set `TIM_WEBHOOK_SERVER_URL` to the webhook receiver's base URL (e.g., `http://localhost:8080`) and ensure `WEBHOOK_INTERNAL_API_TOKEN` is set to the same token used by the receiver.
-
-Set `TIM_WEBHOOK_POLL_INTERVAL` to enable periodic webhook ingestion in the web server. The value is in seconds, values below `5` are clamped to `5`, polling starts after a `15` second initial delay, and it only runs when both `TIM_WEBHOOK_SERVER_URL` and `WEBHOOK_INTERNAL_API_TOKEN` are also configured.
-
-Supported webhook event types:
-
-- **`pull_request`**: Creates/updates PR status, labels, requested reviewers. Auto-links PRs to plans by branch name.
-- **`pull_request_review`**: Updates review state per author.
-- **`check_run`**: Updates individual check runs and recomputes the check rollup state.
-
-Fields not available in webhooks (`mergeable`, `review_decision`) are fetched via targeted lightweight API calls triggered by relevant events (only for review states that affect `review_decision`: APPROVED, CHANGES_REQUESTED, DISMISSED). Events for repositories not associated with any tim project are logged but not applied.
-
-**Known limitation**: In webhook mode, the project-level refresh does not run the full `refreshProjectPrsService()` cleanup, so PRs that were closed without a webhook event (e.g., due to webhook server downtime) won't be detected as stale until a manual "Full Refresh from GitHub API" is triggered from the web UI or CLI (`--force-refresh`). Full refresh is available at both the project level and the individual plan level.
-
-### Project-Wide PR View
-
-The web interface supports a project-wide PR view that shows all open PRs for a project's GitHub repository that are relevant to the authenticated user (authored or reviewing). PRs are automatically linked to plans based on branch name matching. The GitHub username is resolved from the `githubUsername` config setting or via the GitHub API (cached in-memory).
-
-```yaml
-# tim.yml
-githubUsername: your-github-username # optional, avoids an API call
-branchPrefix: di/ # optional, prefix for auto-generated branch names
-requireBranchPrefix: true # optional, fail branch-creating commands if no prefix resolves
+```text
+.tim/config/tim.yml
 ```
 
-### Branch Prefix
+Local, per-developer overrides can live next to it:
 
-The `branchPrefix` setting prepends a prefix to auto-generated branch names (e.g. `di/123-implement-feature` instead of `123-implement-feature`). This is useful for team repositories where branches should be identifiable by author.
+```text
+.tim/config/tim.local.yml
+```
 
-The prefix can be set in two places:
+You can also place a global configuration in `~/.config/tim/config.yml`.
 
-1. **Config file** (`tim.local.yml` recommended for per-developer prefixes): `branchPrefix: "di/"`
-2. **Project settings** (via web UI): per-project override stored in the database
-
-The DB project setting takes precedence over the config file value when both are set. If the prefix doesn't end with `/`, `-`, or `_`, a `/` is automatically appended. The prefix counts toward the 63-character git branch name limit.
-
-Set `requireBranchPrefix: true` to enforce prefix usage for branch-creating flows (for example `tim agent`, `tim generate`, `tim chat`, `tim branch`, `tim rebase`, and workspace flows that create or derive branches). When enabled, tim throws an error if both the effective config `branchPrefix` and the per-project DB `branchPrefix` setting are empty/unset.
-
-To resolve the error, configure a prefix in either place:
-
-1. **Repo/global/local config**: set `branchPrefix`
-2. **Project settings** in the web UI: set **Branch Prefix**
-
-Example configuration:
+Common project settings:
 
 ```yaml
-branchPrefix: 'myname/'
+issueTracker: linear
+branchPrefix: di/
 requireBranchPrefix: true
+githubUsername: your-github-username
 ```
 
-```json
-{
-  "branchPrefix": "myname/",
-  "requireBranchPrefix": true
-}
-```
-
-Standard config merge semantics apply (`global -> repo -> local`). A local config can override a repo-level `requireBranchPrefix: true`; this is intentional and consistent with other config options.
-
-### Project Settings
-
-The web interface includes a per-project Settings tab at `/projects/[projectId]/settings` for configuring project-level preferences stored in the database. The settings tab is not shown for the "all projects" view.
-
-Available settings:
-
-- **Featured** (default: on): Controls whether the project appears in the main sidebar list or is grouped in a collapsed "Other Projects" section at the bottom.
-- **Abbreviation** (string, max 4 chars): Custom abbreviation for the project avatar in collapsed sidebar mode. Overrides the auto-generated abbreviation. Leave empty to use the default.
-- **Color** (palette enum): Custom avatar background color for collapsed sidebar mode. Overrides the auto-generated color based on the project name hash.
-- **Branch Prefix** (string, max 20 chars): Prefix for auto-generated branch names (e.g. `di/`). Overrides the config file `branchPrefix` value for this project.
-
-### GitHub Webhook Receiver (separate ingress service)
-
-This repository includes a standalone Bun + SQLite webhook receiver at `src/webhooks/server.ts` that can run as a small internet-facing ingress service while keeping the main tim web app private.
-
-Start it with:
+Use environment variables for secrets. For Linear imports, set `LINEAR_API_KEY` in the shell or in the project workspace environment. For GitHub PR status and review thread operations, set `GITHUB_TOKEN` or have an authenticated `gh` GitHub CLI installed.
 
 ```bash
-bun run webhook-receiver
+export LINEAR_API_KEY="lin_api_..."
+export GITHUB_TOKEN="ghp_..."
 ```
 
-Required environment variables:
-
-- `GITHUB_WEBHOOK_SECRET`: webhook secret used to validate `X-Hub-Signature-256`
-- `WEBHOOK_INTERNAL_API_TOKEN`: bearer token required for all non-public polling/ack routes
-
-Optional environment variables:
-
-- `WEBHOOK_RECEIVER_PORT` (default `8080`)
-- `WEBHOOK_RECEIVER_HOST` (default `0.0.0.0`)
-- `WEBHOOK_DB_PATH` (default `~/.cache/tim/webhook-receiver.sqlite`)
-- `WEBHOOK_REQUIRE_SECURE_INTERNAL_ROUTES` (default `true`)
-
-Routes:
-
-- `POST /github/webhook` (public): validates GitHub signature and stores deliveries idempotently by `X-GitHub-Delivery`
-- `GET /internal/events` (protected): bearer auth + secure transport required; supports `afterId`, `limit`, `includeAcked`
-- `POST /internal/events/ack` (protected): bearer auth + secure transport required; accepts `{ deliveryIds: string[] }`
-- `GET /healthz`: health check endpoint
-
-## Tim Rebase
-
-`tim rebase <planId>` updates a plan's feature branch to be on top of the latest main/trunk branch. It supports both Git and Jujutsu repositories and handles conflict resolution automatically via the executor system.
-
-The command:
-
-1. Resolves the plan's branch (from the `branch` field or calculated from the plan title)
-2. Fetches the latest from origin and ensures the local branch is up to date
-3. Determines the rebase target (see **Stacked PR support** below)
-4. If conflicts arise, lazily launches an LLM executor in bare mode with VCS-specific conflict resolution prompts
-5. Verifies conflicts are resolved after the executor session (errors if not; aborts the rebase for Git)
-6. Force-pushes the rebased branch back to origin (`--force-with-lease` for Git, native for Jujutsu)
+If you use the webhook receiver for PR updates, configure these in the environment where the web app runs:
 
 ```bash
-tim rebase 123                                # Rebase plan 123's branch
-tim rebase --current                          # Rebase the current plan's branch
-tim rebase --next                             # Rebase the next ready plan's branch
-tim rebase 123 --no-push                      # Rebase without pushing
-tim rebase 123 --executor claude-code         # Specify executor for conflict resolution
-tim rebase 123 --auto-workspace               # Use auto-workspace (web UI mode)
-tim rebase 123 --base feature/parent-branch   # Rebase onto a specific base branch
+export TIM_WEBHOOK_SERVER_URL="http://localhost:8080"
+export WEBHOOK_INTERNAL_API_TOKEN="..."
+export TIM_WEBHOOK_POLL_INTERVAL="30"
 ```
 
-The web interface also provides a **Rebase** button on the plan detail page for plans in `in_progress`, `needs_review`, or `done` states.
+## Workspaces
 
-### Stacked PR Support
+`tim` is designed to run AI work outside your main checkout. A project should have one primary workspace and any number of execution workspaces.
 
-For stacked PRs, tim tracks the base branch and commit so that rebases target the correct branch instead of always using trunk.
+The primary workspace is a normal Git checkout that anchors the project in `tim`'s database. The web UI launches `generate`, `agent`, `chat`, `update-docs`, and `rebase` commands from the primary workspace, and new workspaces are created as siblings of it.
 
-**Base branch resolution** (in priority order):
-
-1. `--base <branch>` — explicit override. The branch must exist on the remote (errors if not). If it equals the trunk branch, base tracking fields are cleared. The branch is rejected if it matches the plan's own branch.
-2. Plan's `baseBranch` field — if set and not trunk, tim fetches the branch and checks if it still exists on the remote. If it exists, rebase targets it. If deleted, rebase falls back to trunk and clears all base tracking fields (`baseBranch`, `baseCommit`, `baseChangeId`).
-3. Trunk branch — default behavior when no base branch is configured.
-
-After a successful rebase, `baseCommit` (and `baseChangeId` for JJ repos) are updated to the new merge-base with the target branch. When rebasing onto trunk, all base tracking fields are cleared.
-
-**Setting base tracking via `tim set`:**
+Register the primary workspace from the checkout you want to use as the anchor:
 
 ```bash
-tim set 123 --base-branch feature/parent      # Set the base branch
-tim set 123 --no-base-branch                  # Clear base branch + all tracking fields
-tim set 123 --base-commit abc123              # Set base commit directly
-tim set 123 --no-base-commit                  # Clear base commit only
-tim set 123 --base-change-id xyz              # Set JJ base change ID
-tim set 123 --no-base-change-id               # Clear JJ change ID only
+cd /path/to/your-project-primary
+tim workspace register --primary
+tim workspace list
 ```
 
-`--no-base-branch` cascades to also clear `baseCommit` and `baseChangeId`. Changing `--base-branch` to a new value clears stale `baseCommit`/`baseChangeId` since they reference the old branch.
-
-**Automatic base tracking:** During workspace setup (before `tim agent`, `tim generate`, `tim chat`), if a plan has a non-trunk `baseBranch`, tim proactively updates `baseCommit` and `baseChangeId` to the current merge-base. When a parent plan's branch is used as the base (derived from `parent` field), the `baseBranch` is automatically persisted after verifying the branch exists on the remote. This is best-effort — failures are logged as warnings and never block the command.
-
-## Lifecycle Commands
-
-Tim supports defining lifecycle commands that run automatically when starting and stopping agent sessions (`tim agent` / `tim run`). This is useful for managing dev servers, Docker containers, database migrations, and other setup/teardown tasks.
-
-Configure lifecycle commands in your `tim.yml` config file:
-
-```yaml
-lifecycle:
-  commands:
-    # Managed daemon — spawned as child process, killed on shutdown
-    - title: Dev server
-      command: node server.js
-      mode: daemon
-
-    # External daemon — start something externally, explicit shutdown to clean up
-    # check prevents starting (and shutting down) if already running
-    - title: Docker containers
-      command: docker compose up -d
-      check: docker compose ps --status running | grep -q mycontainer
-      shutdown: docker compose down
-
-    # Run-and-wait with cleanup on exit
-    - title: Seed test data
-      command: bun run seed
-      shutdown: bun run seed:reset
-
-    # Simple run-and-wait, no cleanup needed
-    - title: Run migrations
-      command: bun run migrate
-```
-
-### Command Options
-
-| Field               | Description                                                                                                                               |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `title`             | Display name for logging                                                                                                                  |
-| `command`           | Shell command to run at startup                                                                                                           |
-| `mode`              | `run` (default) — run and wait; `daemon` — spawn as managed child process                                                                 |
-| `shutdown`          | Shell command to run at shutdown (for `run` mode) or before killing the daemon (for `daemon` mode)                                        |
-| `check`             | Shell command run before startup; if exit 0, both startup and shutdown are skipped (available when `shutdown` is set or mode is `daemon`) |
-| `workingDirectory`  | Working directory for the command (defaults to repo root)                                                                                 |
-| `env`               | Additional environment variables                                                                                                          |
-| `allowFailure`      | If true, startup failure won't abort the agent                                                                                            |
-| `onlyWorkspaceType` | Only run in workspaces of this type (`auto`, `standard`, or `primary`); skipped otherwise                                                 |
-
-### Behavior
-
-- **Startup**: Commands run sequentially in config order before the agent execution loop begins.
-- **Shutdown**: Commands are processed in reverse order when the agent exits — including on SIGINT/SIGTERM/SIGHUP. Errors during shutdown (including daemon termination failures) are collected and reported after all commands have been attempted.
-- **Shutdown timeouts**: Explicit shutdown commands are given 30 seconds by default; if they hang, tim terminates the shutdown process and continues cleaning up remaining lifecycle commands.
-- **Daemons**: `mode: daemon` commands are spawned as child processes. On shutdown, they receive SIGTERM (then SIGKILL after 5s timeout) unless an explicit `shutdown` command is provided. If a daemon exits unexpectedly during the agent run (including with exit code 0), a warning is logged.
-- **Check**: The `check` command lets you skip startup when the resource is already running, and suppresses the corresponding shutdown so it isn't torn down on exit.
-- **Interrupts**: On SIGINT/SIGTERM, the agent stops executing new work immediately and runs lifecycle shutdown before exiting. A second interrupt force-exits.
-- **Config merging**: `lifecycle.commands` arrays are concatenated across global, repo, and local configs (global first, then repo, then local).
-
-## Embedded Session Server
-
-Tim long-running commands (`agent`, `generate`, `chat`, `finish`, `rebase`, `review`, `run-prompt`) automatically start an embedded WebSocket server that allows external clients (such as the tim web interface) to connect and monitor the session in real time. Each process advertises itself via a session info file in `~/.cache/tim/sessions/` (respects `XDG_CACHE_HOME`), enabling discovery by the web UI or other tools.
-
-The tim web interface discovers running agent processes by scanning the session directory and connects to their embedded servers as a WebSocket client.
-
-### Environment Variables
-
-| Variable              | Description                                                                                                                                                                     |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `TIM_SERVER_PORT`     | Port for the embedded server (default: `0` for random). If the port is unavailable, the process exits with an error.                                                            |
-| `TIM_NO_SERVER`       | Set to `1` to disable the embedded server entirely. The adapter buffers messages locally with no external visibility.                                                           |
-| `TIM_SERVER_HOSTNAME` | Hostname to bind to (default: `127.0.0.1`). Set to `0.0.0.0` for remote/container access.                                                                                       |
-| `TIM_WS_BEARER_TOKEN` | When set, requires `Authorization: Bearer <token>` on WebSocket upgrade. The session info file records `token: true` (not the token itself) so consumers know auth is required. |
-
-### Session Info Files
-
-Each running process writes a JSON file at `~/.cache/tim/sessions/<pid>.json` containing the session ID, port, command, workspace path, plan info (including plan UUID), git remote, and whether auth is required. These files are cleaned up automatically on process exit. Stale files from crashed processes are detected by PID liveness checks and cleaned up by the web interface's session discovery client.
-
-## Web Interface
-
-Tim includes a SvelteKit-based web interface for browsing and managing plans. The server-side layer uses lazy initialization to load the tim configuration, sync materialized plan files to the SQLite database, and serve enriched plan data with computed display statuses (e.g. blocked, recently done).
-
-The interface is organized around projects, with tabs per project:
-
-- **Sessions** — real-time monitoring of tim agent processes with live message transcripts, prompt interaction (confirm/input/select/checkbox/prefix_select), and free-form user input. For plan-associated sessions (generate, agent, chat), a split-pane view shows the live plan file content alongside the message stream, updating in real-time as the agent modifies the plan. The plan pane can be collapsed to give the message stream full width. Unsent message drafts are preserved per-session when navigating between sessions.
-- **Active Work** — single-page scrollable dashboard with three sections: **Needs Attention** (plans waiting for input, needing review, or with actionable PRs), **Running Now** (active agent/generate/chat sessions with plan context), and **Ready to Start** (unblocked plans sorted by priority with inline "Run Agent" button). Sections are collapsible with count badges and hidden when empty.
-- **Pull Requests** — project-wide view of open GitHub PRs relevant to the user (authored or reviewing), with automatic plan-PR linking based on branch name matching, webhook-first refresh (when configured), and PR detail with checks, reviews, and labels. A "Full Refresh from GitHub API" button provides an escape hatch when webhook data is stale or missing.
-- **Plans** — browse, filter, search, and inspect plans with two-column layout (list + detail), status/priority badges, collapsible status groups, and clickable dependency navigation. Import issues from configured issue trackers (GitHub or Linear) via a two-step wizard with content selection. Review issues on a plan can be managed directly: dismiss individual issues, convert them into plan tasks, or clear all issues at once. PR review threads support inline actions: convert a thread to a plan task, resolve threads, reply to threads, or trigger "Fix Unresolved" to spawn an agent that addresses all unresolved review comments.
-- **Settings** — per-project settings stored in the database (only shown for individual projects, not the "all projects" view). Supports a "Featured" toggle that controls sidebar grouping, a custom abbreviation for the collapsed sidebar avatar, and a color override for the avatar background.
-
-### Standalone PR Review Submission
-
-On the review detail page at `/projects/[projectId]/prs/[prNumber]/reviews/[reviewId]` (when the review status is `complete`), the **Submit Review to GitHub** flow lets you choose `APPROVE` / `COMMENT` / `REQUEST_CHANGES`, enter a review body, and select unresolved issues that have not already been submitted. Before posting, the dialog shows a partition preview of how many selected issues will be sent as inline comments versus appended to the review body. Submission uses GitHub's `pulls.createReview` API.
-
-If the PR head SHA has moved past the reviewed SHA, the page shows a warning banner; comments are still anchored to the reviewed SHA. Submitted issues are stamped with `submitted_in_pr_review_id`, displayed on the page with a "Submitted in review #N" badge linking to GitHub, and excluded from future submission dialogs.
-
-The project sidebar defaults to a compact collapsed mode showing colored avatar buttons with two-letter abbreviations per project. Clicking an avatar navigates to that project. A toggle expands the sidebar to show full project names and plan counts. The collapse state is persisted across page loads.
-
-Navigation uses route-based project selection at `/projects/{projectId}/{tab}`, with cookie persistence to remember the last-selected project. The home page redirects to the most recently used project. On all tabs, pressing **Option+Down** (Alt+Down) / **Option+Up** (Alt+Up) navigates to the next/previous item in the list, respecting collapsed groups and active filters. Global keyboard shortcuts are also available: **Ctrl+/** focuses the search input, and **Ctrl+1/2/3/4** switches between the Sessions, Active Work, Pull Requests, and Plans tabs.
-
-A **rate limit indicator** in the header bar shows current Claude and Codex API usage at a glance. The Gauge icon is hidden when no rate limit data is available, turns yellow when any provider reaches 80-90% usage, and red at 90%+. Clicking the icon opens a popover with per-provider, per-window details including usage percentage, time until reset, and staleness. Rate limit data is extracted from agent session messages (Claude's `rate_limit_event` and Codex's `turn.completed` with rate limit info) and held in memory on the server, pushed to browsers via SSE.
-
-The web interface supports PWA installation, allowing it to be added to your desktop or mobile home screen and run as a standalone app without browser chrome. Static assets are cached by a service worker for faster loads, while API calls and real-time connections (SSE, WebSocket) always go through the network. When installed as a PWA, the app icon shows a badge dot whenever any session needs attention (active prompt or unhandled notification).
-
-The terminal app used by the "Open Terminal" button is configurable via the `terminalApp` config field (defaults to WezTerm). Set it to `"Terminal"`, `"iTerm"`, or any other macOS terminal application name. macOS only.
+Create or register execution workspaces as needed:
 
 ```bash
-# Start the dev server
+tim workspace add --auto
+tim workspace add 123 --auto --create-branch
+tim workspace register /path/to/existing-checkout --auto --name agent-a
+```
+
+Workspace types:
+
+- `primary` - anchor checkout for the project; not selected for agent execution
+- `auto` - preferred pool for `--auto-workspace` and web-launched agent runs
+- `standard` - eligible for auto-selection only when no `auto` workspaces exist
+
+When an agent runs, `tim` locks the selected workspace, materializes the plan into `.tim/plans/`, checks out or creates the plan branch, syncs edited plan data back into SQLite, and pushes actual code changes through the remote. Plan files are temporary working material; the SQLite database is the source of truth.
+
+For the full multi-workspace model, see [`docs/multi-workspace-workflow.md`](docs/multi-workspace-workflow.md).
+
+## Run the Web UI
+
+The web app is the preferred way to drive `tim` day to day.
+
+Start it from this repository:
+
+```bash
+cd /path/to/llmutils
 bun run dev
 ```
 
-## Development
+Open the Vite URL printed by the command. The app groups data by project and provides these main tabs:
+
+- **Active** - dashboard for plans needing attention, running sessions, and ready work
+- **Sessions** - live transcripts for `generate`, `agent`, `chat`, `update-docs`, and review sessions
+- **Plans** - searchable plan browser and plan detail pages
+- **Settings** - per-project settings such as branch prefix, project color, and sidebar visibility
+
+The web UI discovers running agent processes through session files in `~/.cache/tim/sessions/` and connects to each process over its embedded local WebSocket server. It also uses SSE to update the browser as sessions and PR status change.
+
+For production-style local serving:
 
 ```bash
-# Install dependencies
-bun install
-
-# Type checking
-bun run check
-
-# Linting
-bun run lint
-
-# Code formatting
-bun run format
-
-# Run the full test suite
-bun run test
-
-# Install globally for development
-bun run dev-install
+bun run web-prod
 ```
 
-## Building
+## Core Web UI Workflow
+
+The main workflow is:
+
+1. **Create or Import an issue**
+
+   Open the project, go to **Plans**, and click **Import Issue**. Paste a Linear issue ID such as `TEAM-123`, a Linear URL, a GitHub issue URL, or another identifier supported by the configured tracker.
+
+   You can also create an issue using `tim add` in the CLI.
+
+2. **Select issue content**
+
+   The import wizard fetches the issue and lets you choose the issue body, comments, and, for Linear, subissues. Import creates a stub plan with the issue context but no detailed implementation tasks yet.
+
+3. **Generate the plan**
+
+   On the plan detail page, click **Generate**. This starts an interactive planning session. The agent asks clarifying questions, researches context, and updates the plan. Answer prompts in the **Sessions** tab.
+
+   Click **End Session** when the plan has the right structure and tasks.
+
+4. **Run the agent**
+
+   Click **Run Agent**. The agent executes tasks in a locked workspace, runs verification and review steps, marks completed tasks, and may add follow-up tasks if review finds issues. The live transcript appears in **Sessions**, and the plan pane updates as tasks change.
+
+5. **Review the result**
+
+   Completed implementation work usually lands in `needs_review`. Review the generated summary, review issues, linked PR status, and any unresolved PR review threads. Convert review issues or PR threads into plan tasks when more work is needed.
+
+6. **Finish**
+
+   Use **Finish** on a `needs_review` plan to run any configured documentation or lessons-learned finalization and then move the plan to `done`. Under the hood this launches `tim update-docs` when executor work is needed; if no executor work is needed, the web UI can mark it done immediately.
+
+The **Active** tab is the fastest place to work once a project is set up. It surfaces plans waiting for input, completed agents that need review, actionable PRs, running sessions, and ready plans with inline **Run Agent** controls.
+
+## PR and Review Workflows
+
+`tim` can cache PR status, show CI/review state in the web UI, and help process review feedback.
+
+Useful web actions:
+
+- Link or view PR status from a plan detail page.
+- Use **Full Refresh from GitHub API** when webhook data is missing or stale.
+- Expand unresolved PR review threads and reply, resolve, or convert them to plan tasks.
+- Use **Fix Unresolved** to spawn `tim pr fix` for review thread cleanup.
+- Open stored PR review guides from project PR pages when standalone review has been run.
+
+Useful CLI commands:
 
 ```bash
-bun run build
+tim pr status 123
+tim pr link 123 https://github.com/owner/repo/pull/456
+tim pr review-guide https://github.com/owner/repo/pull/456
+tim pr fix 123 --all --auto-workspace
+tim rebase 123 --auto-workspace
 ```
 
-Uses `@sveltejs/adapter-node` for the SvelteKit web interface.
+See the PR status and web interface notes in [`docs/web-interface.md`](docs/web-interface.md) for implementation details and edge cases.
+
+## CLI Plan Management
+
+The web UI covers the normal workflow, but the CLI is useful for quick creation, edits, dependency management, and scripting.
+
+Create plans:
+
+```bash
+tim add "Implement user profile settings" --priority high
+tim add "Database migration" --parent 120 --depends-on 119
+tim import TEAM-123
+tim import https://linear.app/acme/issue/TEAM-123/example-title
+```
+
+Generate and execute:
+
+```bash
+tim generate 123
+tim generate 123 --auto-workspace
+tim agent 123 --auto-workspace
+tim agent --next
+tim agent --next-ready 120 --auto-workspace
+```
+
+Inspect and edit:
+
+```bash
+tim list
+tim ready
+tim show 123
+tim edit 123
+tim materialize 123
+tim sync 123
+```
+
+Update metadata and tasks:
+
+```bash
+tim set 123 --status in_progress
+tim set 123 --priority urgent
+tim set 123 --parent 120
+tim set 123 --depends-on 119 121
+tim add-task 123 --title "Add tests" --description "Cover the new validation path"
+tim set-task-done 123 --title "Add tests"
+tim remove-task 123
+```
+
+Complete and finalize:
+
+```bash
+tim set 123 --status needs_review
+tim update-docs 123 --auto-workspace
+tim set 123 --status done
+```
+
+`needs_review` means implementation work is complete enough to unblock dependent plans, but the workspace assignment and lock remain until final completion. `done`, `cancelled`, and `deferred` are terminal lifecycle states.
+
+## Configuration Reference Points
+
+Start with:
+
+```bash
+tim init
+tim show-config
+```
+
+Important config areas:
+
+- `issueTracker` - `linear` or GitHub-backed import behavior
+- `branchPrefix` - prefix for generated branches, such as `di/`
+- `requireBranchPrefix` - fail branch-creating flows if no prefix is configured
+- `githubUsername` - avoids an API call when classifying PRs
+- `lifecycle.commands` - start/stop dev servers or services around agent runs
+- `updateDocs` and `applyLessons` - control finalization behavior
+
+The web UI **Settings** tab stores per-project settings in SQLite. The project-level branch prefix there takes precedence over the config file value.
+
+## Known Issues and Workarounds
+
+**Missing branch prefix**
+
+Projects with `requireBranchPrefix: true` cannot create branches until a prefix is configured. Set one for the project in the web UI **Settings** tab or in `.tim/config/tim.local.yml`:
+
+```yaml
+branchPrefix: di/
+```
+
+Use a unique prefix per developer to prevent accidental PR-to-plan matching from branch names.
+
+## More Documentation
+
+- [`docs/import_command.md`](docs/import_command.md) - CLI and web issue import behavior
+- [`docs/linear-integration.md`](docs/linear-integration.md) - Linear setup and supported issue formats
+- [`docs/multi-workspace-workflow.md`](docs/multi-workspace-workflow.md) - workspace assignment, locking, and sync behavior
+- [`docs/web-interface.md`](docs/web-interface.md) - web architecture and UI workflow details
+- [`docs/database.md`](docs/database.md) - SQLite-backed plan storage and materialization
