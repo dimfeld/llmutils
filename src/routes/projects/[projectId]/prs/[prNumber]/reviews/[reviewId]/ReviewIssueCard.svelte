@@ -10,7 +10,8 @@
   import { untrack } from 'svelte';
   import type { ReviewIssueRow, ReviewCategory, PrReviewSubmissionRow } from '$tim/db/review.js';
   import CopyButton from '$lib/components/CopyButton.svelte';
-  import ReviewIssueEditor, { type ReviewIssuePatch } from './ReviewIssueEditor.svelte';
+  import ReviewIssueEditor from './ReviewIssueEditor.svelte';
+  import type { ReviewIssuePatch } from './review_issue_editor_utils.js';
 
   interface Props {
     issue: ReviewIssueRow;
@@ -168,7 +169,7 @@
         {/if}
         {#if issue.file}
           <span
-            class="whitespace-normal [overflow-wrap:anywhere] font-mono text-[10px] text-muted-foreground @sm:text-xs"
+            class="font-mono text-[10px] [overflow-wrap:anywhere] whitespace-normal text-muted-foreground @sm:text-xs"
           >
             {issueLocationLabel(issue)}
           </span>

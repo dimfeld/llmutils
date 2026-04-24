@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
+import { getReviewGuideDiffId } from '$lib/utils/review_diff_ids.js';
 
 vi.mock('$lib/components/Diff.svelte', async () => {
   const mod = await import('./__mocks__/DiffStub.svelte');
@@ -10,6 +11,7 @@ vi.mock('$lib/components/Diff.svelte', async () => {
 import MarkdownContent from './MarkdownContent.svelte';
 
 interface DiffOverrides {
+  id?: string;
   lineAnnotations?: unknown[];
   enableGutterUtility?: boolean;
   enableLineSelection?: boolean;
@@ -19,12 +21,16 @@ interface DiffOverrides {
 
 function patchFor(filename: string): string {
   return `\`\`\`unified-diff
---- a/${filename}
+${diffBodyFor(filename)}
+\`\`\``;
+}
+
+function diffBodyFor(filename: string): string {
+  return `--- a/${filename}
 +++ b/${filename}
 @@ -1,1 +1,1 @@
 -a
-+b
-\`\`\``;
++b`;
 }
 
 describe('MarkdownContent diffOverrides forwarding', () => {
@@ -57,6 +63,29 @@ describe('MarkdownContent diffOverrides forwarding', () => {
     expect(barEl).not.toBeNull();
     expect(fooEl!.getAttribute('data-annotations-count')).toBe('1');
     expect(barEl!.getAttribute('data-annotations-count')).toBe('0');
+  });
+
+  test('forwards deterministic diff ids to each diff', async () => {
+    const content = `${patchFor('foo.ts')}\n\n${patchFor('bar.ts')}\n`;
+
+    const overrides = (
+      filename: string | null,
+      patch: string,
+      _diffIndex: number
+    ): DiffOverrides | undefined => {
+      return { id: getReviewGuideDiffId(filename, patch) };
+    };
+
+    render(MarkdownContent, { content, diffOverrides: overrides });
+
+    const stubs = page.getByTestId('diff-stub');
+    await expect.element(stubs.nth(0)).toBeInTheDocument();
+    await expect.element(stubs.nth(1)).toBeInTheDocument();
+
+    const fooEl = document.querySelector('[data-testid="diff-stub"][data-filename="foo.ts"]');
+    const barEl = document.querySelector('[data-testid="diff-stub"][data-filename="bar.ts"]');
+    expect(fooEl?.id).toBe(getReviewGuideDiffId('foo.ts', diffBodyFor('foo.ts')));
+    expect(barEl?.id).toBe(getReviewGuideDiffId('bar.ts', diffBodyFor('bar.ts')));
   });
 
   test('enableGutterUtility is forwarded per filename', async () => {

@@ -139,6 +139,7 @@
     patch,
     filename,
     fileDiff,
+    id,
     diffStyle = 'unified',
     hunkSeparators = 'line-info-basic',
     lineDiffType = 'word-alt',
@@ -167,6 +168,8 @@
     filename?: string;
     /** Pre-parsed diff metadata (alternative to oldFile/newFile or patch) */
     fileDiff?: FileDiffMetadata;
+    /** Stable DOM id for the diff container */
+    id?: string;
     /** Side-by-side or single column */
     diffStyle?: DiffStyle;
     /** What to show between diff hunks */
@@ -425,8 +428,8 @@
 
 {#if resolvedDiff}
   {#if shouldVirtualize}
-    <div class={className} {@attach virtualizedDiffAttachment}></div>
+    <div {id} class={className} {@attach virtualizedDiffAttachment}></div>
   {:else}
-    <div class={className} {@attach diffAttachment}></div>
+    <div {id} class={className} {@attach diffAttachment}></div>
   {/if}
 {/if}

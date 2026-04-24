@@ -5,6 +5,7 @@
   const props: Record<string, unknown> = $props();
 
   const filename = (props.filename as string | undefined) ?? '';
+  const id = (props.id as string | undefined) ?? '';
   const annotations = props.lineAnnotations as Array<unknown> | undefined;
   const annotationsCount = annotations?.length ?? 0;
   const gutterEnabled = Boolean(props.enableGutterUtility);
@@ -15,6 +16,7 @@
 </script>
 
 <div
+  {id}
   data-testid="diff-stub"
   data-filename={filename}
   data-annotations-count={String(annotationsCount)}

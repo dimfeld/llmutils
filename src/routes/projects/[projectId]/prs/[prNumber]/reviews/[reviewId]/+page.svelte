@@ -37,7 +37,13 @@
     highlightAnnotationNode,
     type AnnotationHighlightHandle,
   } from './annotation_highlight.js';
-  import { createSaveEditHandler, createAnnotationClickHandler } from './page_handlers.js';
+  import { getReviewGuideAnnotationId, getReviewGuideDiffId } from '$lib/utils/review_diff_ids.js';
+  import {
+    createSaveEditHandler,
+    createAnnotationClickHandler,
+    createJumpToDiffHandler,
+    type ApproximateAnnotationPosition,
+  } from './page_handlers.js';
   import type { PrReviewSubmissionRow } from '$tim/db/review.js';
   import type { PageData } from './$types';
 
@@ -141,6 +147,7 @@
     number,
     {
       filename: string | null;
+      patch: string | null;
       lineAnnotations: DiffLineAnnotation<unknown>[];
       override: DiffOverrides;
     }
@@ -211,35 +218,208 @@
     const lineAnnotations = (annotationsBySegment.get(diffIndex) ??
       EMPTY_DIFF_ANNOTATIONS) as DiffLineAnnotation<unknown>[];
     const cached = diffOverrideCache.get(diffIndex);
-    if (cached && cached.filename === filename && cached.lineAnnotations === lineAnnotations) {
+    if (
+      cached &&
+      cached.filename === filename &&
+      cached.lineAnnotations === lineAnnotations &&
+      cached.patch ===
+        (guideSegments[diffIndex]?.type === 'unified-diff' ? guideSegments[diffIndex].patch : null)
+    ) {
       return cached.override;
     }
 
+    const patch =
+      guideSegments[diffIndex]?.type === 'unified-diff' ? guideSegments[diffIndex].patch : null;
     const canAddIssues = filename != null;
     const override: DiffOverrides = {
+      id: getReviewGuideDiffId(filename, patch ?? ''),
       lineAnnotations,
       enableLineSelection: true,
       enableGutterUtility: canAddIssues,
       onGutterUtilityClick: canAddIssues ? getGutterClickHandler(diffIndex, filename) : undefined,
     };
-    diffOverrideCache.set(diffIndex, { filename, lineAnnotations, override });
+    diffOverrideCache.set(diffIndex, { filename, patch, lineAnnotations, override });
     return override;
   }
 
   const annotationNodesByIssue = new Map<number, Set<HTMLElement>>();
 
+  function getAnnotationNode(issueId: number): HTMLElement | null {
+    const nodes = annotationNodesByIssue.get(issueId);
+    if (!nodes) {
+      return null;
+    }
+
+    for (const node of nodes) {
+      if (node.isConnected) {
+        return node;
+      }
+      nodes.delete(node);
+    }
+
+    if (nodes.size === 0) {
+      annotationNodesByIssue.delete(issueId);
+    }
+    return null;
+  }
+
   let annotationHighlight: AnnotationHighlightHandle | null = null;
 
-  function handleJumpToDiff(issue: ReviewIssueRow) {
-    const node = annotationNodesByIssue.get(issue.id)?.values().next().value;
-    if (!node) {
-      issueActionError = `No annotation rendered for this issue — the line may be outside the diff hunks shown in the guide.`;
-      return;
+  function queryLineNode(root: ParentNode, lineNumber: number): HTMLElement | null {
+    const selector = `[data-line="${lineNumber}"]`;
+    const direct = root.querySelector(selector);
+    if (direct instanceof HTMLElement) {
+      return direct;
     }
-    node.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    annotationHighlight?.cancel();
-    annotationHighlight = highlightAnnotationNode(node);
+
+    const diffHosts: HTMLElement[] = [];
+    if (root instanceof HTMLElement && root.matches('diffs-container')) {
+      diffHosts.push(root);
+    }
+    diffHosts.push(...root.querySelectorAll<HTMLElement>('diffs-container'));
+
+    for (const host of diffHosts) {
+      const nested = host.shadowRoot?.querySelector(selector);
+      if (nested instanceof HTMLElement) {
+        return nested;
+      }
+    }
+
+    return null;
   }
+
+  function getGuideDiffTarget(issueId: number): {
+    filename: string;
+    patch: string;
+    lineNumber: number;
+    side: GuideIssueAnnotation['side'];
+  } | null {
+    for (const [diffIndex, annotations] of guideIssueAnnotations) {
+      const annotation = annotations.find((annotation) => annotation.metadata.issueId === issueId);
+      if (!annotation) {
+        continue;
+      }
+
+      const segment = guideSegments[diffIndex];
+      if (segment?.type === 'unified-diff' && segment.filename) {
+        return {
+          filename: segment.filename,
+          patch: segment.patch,
+          lineNumber: annotation.lineNumber,
+          side: annotation.side,
+        };
+      }
+    }
+    return null;
+  }
+
+  function getApproximateLinePosition(
+    patch: string,
+    lineNumber: number,
+    side: GuideIssueAnnotation['side']
+  ): ApproximateAnnotationPosition | null {
+    const hunkHeaderRegex = /^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/;
+    let oldLine = 0;
+    let newLine = 0;
+    let inHunk = false;
+    let lineIndex = 0;
+    let targetLineIndex: number | null = null;
+
+    for (const patchLine of patch.split('\n')) {
+      const hunkMatch = hunkHeaderRegex.exec(patchLine);
+      if (hunkMatch) {
+        oldLine = Number.parseInt(hunkMatch[1], 10);
+        newLine = Number.parseInt(hunkMatch[2], 10);
+        inHunk = true;
+        continue;
+      }
+
+      if (!inHunk || patchLine.startsWith('\\')) {
+        continue;
+      }
+
+      const marker = patchLine[0];
+      let matchesTargetLine = false;
+
+      if (marker === '+') {
+        matchesTargetLine = side === 'additions' && newLine === lineNumber;
+        newLine += 1;
+      } else if (marker === '-') {
+        matchesTargetLine = side === 'deletions' && oldLine === lineNumber;
+        oldLine += 1;
+      } else if (marker === ' ') {
+        matchesTargetLine =
+          (side === 'additions' && newLine === lineNumber) ||
+          (side === 'deletions' && oldLine === lineNumber);
+        oldLine += 1;
+        newLine += 1;
+      } else {
+        continue;
+      }
+
+      if (matchesTargetLine && targetLineIndex === null) {
+        targetLineIndex = lineIndex;
+      }
+      lineIndex += 1;
+    }
+
+    if (targetLineIndex === null || lineIndex === 0) {
+      return null;
+    }
+
+    return {
+      lineIndex: targetLineIndex,
+      totalLines: lineIndex,
+    };
+  }
+
+  function getDiffNodeForIssue(issueId: number): HTMLElement | null {
+    const diffTarget = getGuideDiffTarget(issueId);
+    if (diffTarget === null) {
+      return null;
+    }
+
+    return document.getElementById(getReviewGuideDiffId(diffTarget.filename, diffTarget.patch));
+  }
+
+  function getAnnotationLineNode(issueId: number): HTMLElement | null {
+    const diffTarget = getGuideDiffTarget(issueId);
+    if (diffTarget === null) {
+      return null;
+    }
+
+    const diffNode = document.getElementById(
+      getReviewGuideDiffId(diffTarget.filename, diffTarget.patch)
+    );
+    if (!diffNode) {
+      return null;
+    }
+
+    return queryLineNode(diffNode, diffTarget.lineNumber);
+  }
+
+  function getApproximateAnnotationPosition(issueId: number): ApproximateAnnotationPosition | null {
+    const diffTarget = getGuideDiffTarget(issueId);
+    if (diffTarget === null) {
+      return null;
+    }
+
+    return getApproximateLinePosition(diffTarget.patch, diffTarget.lineNumber, diffTarget.side);
+  }
+
+  const handleJumpToDiff = createJumpToDiffHandler({
+    getAnnotationNode,
+    getAnnotationLineNode,
+    getApproximateAnnotationPosition,
+    getDiffNode: getDiffNodeForIssue,
+    setHighlightedAnnotation: (node) => {
+      annotationHighlight?.cancel();
+      annotationHighlight = highlightAnnotationNode(node);
+    },
+    setError: (message) => {
+      issueActionError = message;
+    },
+  });
 
   onDestroy(() => {
     annotationClick.cancel();
@@ -513,7 +693,7 @@
     setError: (message) => {
       issueActionError = message;
     },
-    updateRemote: ({ issueId, patch }) => updateReviewIssueFields({ issueId, patch }),
+    updateRemote: async ({ issueId, patch }) => await updateReviewIssueFields({ issueId, patch }),
   });
 
   function issueLocationLabel(issue: ReviewIssueRow): string | null {
@@ -727,7 +907,10 @@
               {#snippet diffAnnotation(annotation)}
                 {@const metadata = annotation.metadata as ReviewIssueAnnotationMetadata | undefined}
                 {#if metadata}
-                  <div {@attach annotationNodeAttachment(metadata.issueId)}>
+                  <div
+                    id={getReviewGuideAnnotationId(metadata.issueId)}
+                    {@attach annotationNodeAttachment(metadata.issueId)}
+                  >
                     <ReviewIssueAnnotation
                       issueId={metadata.issueId}
                       severity={metadata.severity}

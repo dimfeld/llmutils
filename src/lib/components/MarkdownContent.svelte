@@ -11,6 +11,7 @@
    * metadata type.
    */
   export interface DiffOverrides {
+    id?: string;
     lineAnnotations?: DiffLineAnnotation<unknown>[];
     enableGutterUtility?: boolean;
     onGutterUtilityClick?: FileDiffOptions<unknown>['onGutterUtilityClick'];
@@ -52,6 +53,7 @@
       {@const overrides = diffOverrides?.(segment.filename, segment.patch, i) ?? {}}
       <div class="my-2">
         <Diff
+          id={overrides.id}
           patch={segment.patch}
           filename={segment.filename ?? undefined}
           lineAnnotations={overrides.lineAnnotations}

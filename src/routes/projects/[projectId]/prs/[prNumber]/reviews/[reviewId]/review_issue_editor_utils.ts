@@ -1,9 +1,24 @@
-import type {
-  ReviewIssueRow,
-  ReviewIssueSide,
-  ReviewSeverity,
-  ReviewCategory,
-} from '$tim/db/review.js';
+export type ReviewIssueSide = 'RIGHT' | 'LEFT';
+export type ReviewSeverity = 'critical' | 'major' | 'minor' | 'info';
+export type ReviewCategory =
+  | 'security'
+  | 'performance'
+  | 'bug'
+  | 'style'
+  | 'compliance'
+  | 'testing'
+  | 'other';
+
+export interface EditableReviewIssueSource {
+  severity: ReviewSeverity;
+  category: ReviewCategory;
+  file: string | null;
+  start_line: string | null;
+  line: string | null;
+  side: ReviewIssueSide;
+  content: string;
+  suggestion: string | null;
+}
 
 export type ReviewIssuePatch = {
   severity?: ReviewSeverity;
@@ -36,7 +51,10 @@ export function nullIfEmpty(value: string): string | null {
   return trimmed.length === 0 ? null : trimmed;
 }
 
-export function buildPatch(current: FormState, issue: ReviewIssueRow): ReviewIssuePatch | null {
+export function buildPatch(
+  current: FormState,
+  issue: EditableReviewIssueSource
+): ReviewIssuePatch | null {
   const patch: ReviewIssuePatch = {};
 
   if (current.severity !== issue.severity) patch.severity = current.severity;
@@ -62,7 +80,10 @@ export function buildPatch(current: FormState, issue: ReviewIssueRow): ReviewIss
   return Object.keys(patch).length > 0 ? patch : null;
 }
 
-export function validatePatch(patch: ReviewIssuePatch, issue: ReviewIssueRow): string | null {
+export function validatePatch(
+  patch: ReviewIssuePatch,
+  issue: EditableReviewIssueSource
+): string | null {
   if ('content' in patch && (!patch.content || patch.content.length === 0)) {
     return 'Content is required.';
   }
