@@ -2,6 +2,7 @@ import path from 'node:path';
 import { withPlanAutoSync } from '../plan_materialize.js';
 import { resolvePlan } from '../plan_display.js';
 import { writePlanFile } from '../plans.js';
+import { findNextActionableItem } from '../plans/find_next.js';
 import type { PlanSchema, TaskSchema } from '../planSchema.js';
 import { findTaskByTitle } from '../utils/task_operations.js';
 import type { ToolContext, ToolResult } from './context.js';
@@ -257,6 +258,14 @@ export async function updatePlanTaskTool(
     if (args.done !== undefined) {
       task.done = args.done;
       updates.push(`done status to ${args.done}`);
+    }
+
+    if (
+      (plan.status === 'done' || plan.status === 'needs_review') &&
+      findNextActionableItem(plan) !== null
+    ) {
+      plan.status = 'in_progress';
+      updates.push('plan status back to in_progress');
     }
 
     plan.updatedAt = new Date().toISOString();

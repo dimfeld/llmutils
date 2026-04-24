@@ -2,6 +2,7 @@ import path from 'node:path';
 import { withPlanAutoSync } from '../plan_materialize.js';
 import { resolvePlan } from '../plan_display.js';
 import { mergeTasksIntoPlan } from '../plan_merge.js';
+import { findNextActionableItem } from '../plans/find_next.js';
 import { writePlanFile } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import type { ToolContext, ToolResult } from './context.js';
@@ -41,6 +42,14 @@ export async function updatePlanTasksTool(
     await withPlanAutoSync(initialPlan.id, context.gitRoot, async () => {
       const { plan, planPath } = await resolvePlan(args.plan, context);
       const updatedPlan = await mergeTasksIntoPlan(newPlanData, plan);
+
+      if (
+        (plan.status === 'done' || plan.status === 'needs_review') &&
+        findNextActionableItem(updatedPlan) !== null
+      ) {
+        updatedPlan.status = 'in_progress';
+      }
+
       await writePlanFile(planPath, updatedPlan, { cwdForIdentity: context.gitRoot });
       relativePath = planPath
         ? path.relative(context.gitRoot, planPath) || planPath

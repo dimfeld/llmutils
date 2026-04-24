@@ -542,6 +542,93 @@ describe('tim tools CLI handlers', () => {
     expect(payload.result).toEqual(toolOutput.data);
   });
 
+  test('manage-plan-task moves a done plan back to in_progress when unfinished tasks remain', async () => {
+    const planFile = path.join(tasksDir, '15-reopen.plan.md');
+    const plan: PlanSchema = {
+      id: 15,
+      title: 'Reopen Plan',
+      goal: 'Move back to in progress when work remains',
+      details: 'Initial details',
+      status: 'done',
+      tasks: [
+        {
+          title: 'Completed task',
+          description: 'Already finished',
+          done: true,
+        },
+        {
+          title: 'Remaining task',
+          description: 'Still pending',
+          done: true,
+        },
+      ],
+    };
+    await writeDbBackedPlan(planFile, plan);
+
+    const context = createToolContext();
+    const result = await managePlanTaskTool(
+      {
+        plan: 15,
+        action: 'update',
+        taskIndex: 2,
+        done: false,
+      },
+      context
+    );
+
+    expect(result.text).toContain('plan status back to in_progress');
+
+    const { plan: storedPlan } = await resolvePlanByNumericId(15, tempDir);
+    expect(storedPlan.status).toBe('in_progress');
+    expect(storedPlan.tasks[1]?.done).toBe(false);
+  });
+
+  test('update-plan-tasks moves a done plan back to in_progress when unfinished tasks remain', async () => {
+    const planFile = path.join(tasksDir, '16-update-tasks-reopen.plan.md');
+    const plan: PlanSchema = {
+      id: 16,
+      title: 'Update Tasks Reopen Plan',
+      goal: 'Keep status aligned with remaining work',
+      details: 'Initial details',
+      status: 'done',
+      tasks: [
+        {
+          title: 'Completed task',
+          description: 'Already finished',
+          done: true,
+        },
+      ],
+    };
+    await writeDbBackedPlan(planFile, plan);
+
+    const context = createToolContext();
+    const result = await updatePlanTasksTool(
+      {
+        plan: 16,
+        tasks: [
+          {
+            title: 'Completed task',
+            description: 'Already finished',
+            done: true,
+          },
+          {
+            title: 'Remaining task',
+            description: 'Still pending',
+            done: false,
+          },
+        ],
+      },
+      context
+    );
+
+    expect(result.text).toContain('2 tasks');
+
+    const { plan: storedPlan } = await resolvePlanByNumericId(16, tempDir);
+    expect(storedPlan.status).toBe('in_progress');
+    expect(storedPlan.tasks).toHaveLength(2);
+    expect(storedPlan.tasks[1]?.done).toBe(false);
+  });
+
   test('list-ready-plans CLI output matches shared tool output', async () => {
     const { handleToolCommand } = await import('./tools.js');
 
