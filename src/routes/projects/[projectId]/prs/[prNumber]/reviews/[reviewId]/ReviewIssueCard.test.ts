@@ -85,6 +85,7 @@ describe('ReviewIssueCard', () => {
     const issue = makeIssue({ file: 'src/auth.ts', line: '42' });
     const { body } = render(ReviewIssueCard, { props: defaultProps(issue) });
     expect(body).toContain('src/auth.ts:42');
+    expect(body).toContain('[overflow-wrap:anywhere]');
   });
 
   test('shows Add to plan button when linkedPlanUuid is provided', () => {

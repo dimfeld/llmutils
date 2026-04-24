@@ -167,7 +167,9 @@
           {/if}
         {/if}
         {#if issue.file}
-          <span class="truncate font-mono text-[10px] text-muted-foreground @sm:text-xs">
+          <span
+            class="whitespace-normal [overflow-wrap:anywhere] font-mono text-[10px] text-muted-foreground @sm:text-xs"
+          >
             {issueLocationLabel(issue)}
           </span>
         {/if}
