@@ -26,6 +26,7 @@
   import type { ReviewIssueRow, ReviewSeverity, ReviewCategory } from '$tim/db/review.js';
   import ReviewIssueCard from './ReviewIssueCard.svelte';
   import ReviewIssueAnnotation from './ReviewIssueAnnotation.svelte';
+  import ReviewGuideLinkedPlans from './ReviewGuideLinkedPlans.svelte';
   import type { ReviewIssueAnnotationMetadata } from './annotation_types.js';
   import NewReviewIssueModal from './NewReviewIssueModal.svelte';
   import SubmitReviewDialog from './SubmitReviewDialog.svelte';
@@ -838,6 +839,9 @@
           {#if data.review.base_branch}
             <span class="text-foreground/50"> → {data.review.base_branch}</span>
           {/if}
+        </div>
+        <div class="mt-2">
+          <ReviewGuideLinkedPlans projectId={projectId} linkedPlans={data.linkedPlans} />
         </div>
       </div>
       <span

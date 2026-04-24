@@ -27,5 +27,5 @@ export const load: PageServerLoad = async ({ params }) => {
     .get(review.pr_url) as { head_sha: string | null } | null;
   const currentHeadSha = prStatusRow?.head_sha ?? null;
 
-  return { review, issues, submissions, currentHeadSha, linkedPlanUuid };
+  return { review, issues, submissions, currentHeadSha, linkedPlanUuid, linkedPlans };
 };
