@@ -809,12 +809,15 @@ function resolveHierarchicalImportMode(
  * @param command - Commander command object
  */
 export async function handleImportCommand(
-  issue?: string,
+  issue: string,
   options: ImportCommandOptions = {},
   command?: unknown
 ) {
   // Determine the issue specifier from either positional argument or --issue flag
-  const issueSpecifier = issue || options.issue;
+  const issueSpecifier = issue?.trim();
+  if (!issueSpecifier) {
+    throw new Error('Issue ID is required');
+  }
 
   // Get configuration and repository context
   const config = await loadEffectiveConfig();

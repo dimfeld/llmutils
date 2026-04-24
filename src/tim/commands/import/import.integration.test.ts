@@ -409,84 +409,16 @@ describe('handleImportCommand Integration Tests', () => {
     expect(log).toHaveBeenCalledWith(expect.stringContaining(`Created plan ${planData.id}`));
   });
 
-  test('should work with Linear in interactive mode', async () => {
-    const linearConfig = {
-      issueTracker: 'linear',
-      paths: { tasks: 'tasks' },
-    };
-
-    const mockLinearClient: IssueTrackerClient = {
-      fetchIssue: vi.fn(() => Promise.resolve(mockLinearIssueWithComments)),
-      fetchAllOpenIssues: vi.fn(() => Promise.resolve(mockLinearIssues)),
-      parseIssueIdentifier: vi.fn(() => ({ identifier: 'LIN-100' })),
-      getDisplayName: vi.fn(() => 'Linear'),
-      getConfig: vi.fn(() => ({ type: 'linear' })),
-    };
-
-    vi.mocked(loadEffectiveConfig).mockResolvedValue(linearConfig);
-    vi.mocked(getIssueTracker).mockResolvedValue(mockLinearClient);
-
-    // Mock checkbox to select Linear issues
-    vi.mocked(checkbox).mockResolvedValue([100, 101]);
-
-    await handleImportCommand(); // No issue specified, should enter interactive mode
-
-    expect(getIssueTracker).toHaveBeenCalledWith(linearConfig);
-    expect(mockLinearClient.fetchAllOpenIssues).toHaveBeenCalled();
-
-    expect(log).toHaveBeenCalledWith('Fetching all open issues...');
-    expect(log).toHaveBeenCalledWith('Found 2 open issues.');
-
-    expect(checkbox).toHaveBeenCalledWith({
-      message: 'Select issues to import:',
-      choices: [
-        { name: '100: Linear Issue 1', value: 100 },
-        { name: '101: Linear Issue 2', value: 101 },
-      ],
-    });
-
-    expect(log).toHaveBeenCalledWith('Importing 2 selected issues...');
-    expect(writePlanFile).toHaveBeenCalledTimes(2);
+  test('requires an issue ID for Linear imports', async () => {
+    await expect(handleImportCommand()).rejects.toThrow('Issue ID is required');
+    expect(getIssueTracker).not.toHaveBeenCalled();
+    expect(writePlanFile).not.toHaveBeenCalled();
   });
 
-  test('should work with GitHub in interactive mode', async () => {
-    const githubConfig = {
-      issueTracker: 'github',
-      paths: { tasks: 'tasks' },
-    };
-
-    const mockGitHubClient: IssueTrackerClient = {
-      fetchIssue: vi.fn(() => Promise.resolve(mockGitHubIssueWithComments)),
-      fetchAllOpenIssues: vi.fn(() => Promise.resolve(mockGitHubIssues)),
-      parseIssueIdentifier: vi.fn(() => ({ identifier: '200' })),
-      getDisplayName: vi.fn(() => 'GitHub'),
-      getConfig: vi.fn(() => ({ type: 'github' })),
-    };
-
-    vi.mocked(loadEffectiveConfig).mockResolvedValue(githubConfig);
-    vi.mocked(getIssueTracker).mockResolvedValue(mockGitHubClient);
-
-    // Mock checkbox to select GitHub issues
-    vi.mocked(checkbox).mockResolvedValue([200, 201]);
-
-    await handleImportCommand(); // No issue specified, should enter interactive mode
-
-    expect(getIssueTracker).toHaveBeenCalledWith(githubConfig);
-    expect(mockGitHubClient.fetchAllOpenIssues).toHaveBeenCalled();
-
-    expect(log).toHaveBeenCalledWith('Fetching all open issues...');
-    expect(log).toHaveBeenCalledWith('Found 2 open issues.');
-
-    expect(checkbox).toHaveBeenCalledWith({
-      message: 'Select issues to import:',
-      choices: [
-        { name: '200: GitHub Issue 1', value: 200 },
-        { name: '201: GitHub Issue 2', value: 201 },
-      ],
-    });
-
-    expect(log).toHaveBeenCalledWith('Importing 2 selected issues...');
-    expect(writePlanFile).toHaveBeenCalledTimes(2);
+  test('requires an issue ID for GitHub imports', async () => {
+    await expect(handleImportCommand()).rejects.toThrow('Issue ID is required');
+    expect(getIssueTracker).not.toHaveBeenCalled();
+    expect(writePlanFile).not.toHaveBeenCalled();
   });
 
   test('should handle factory errors gracefully', async () => {

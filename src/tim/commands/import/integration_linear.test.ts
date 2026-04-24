@@ -592,25 +592,9 @@ describe('Linear Integration Tests', () => {
         rmfilter: issueData.rmprOptions?.rmfilter || [],
       }));
 
-      // Execute batch import (no issue specified = interactive mode)
-      await handleImportCommand();
-
-      // Verify all issues were fetched
-      expect(mockLinearClient.fetchAllOpenIssues).toHaveBeenCalled();
-
-      // Verify user was prompted to select issues
-      expect(checkbox).toHaveBeenCalledWith({
-        message: 'Select issues to import:',
-        choices: [
-          { name: 'TEAM-100: Setup CI/CD pipeline', value: 'TEAM-100' },
-          { name: 'TEAM-101: Update documentation', value: 'TEAM-101' },
-          { name: 'TEAM-102: Performance optimization', value: 'TEAM-102' },
-        ],
-      });
-
-      // Verify all selected issues were imported
-      expect(writePlanFile).toHaveBeenCalledTimes(3);
-      expect(log).toHaveBeenCalledWith('Importing 3 selected issues...');
+      await expect(handleImportCommand()).rejects.toThrow('Issue ID is required');
+      expect(mockLinearClient.fetchAllOpenIssues).not.toHaveBeenCalled();
+      expect(writePlanFile).not.toHaveBeenCalled();
     });
   });
 

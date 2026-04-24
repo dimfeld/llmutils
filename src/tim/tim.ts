@@ -439,9 +439,8 @@ program
   });
 
 program
-  .command('import [issue]')
-  .description('Import GitHub issues and create corresponding local plan files')
-  .option('--issue <url|number>', 'Issue URL or number to import')
+  .command('import <url|issue_id>')
+  .description('Import GitHub or Linear issues and create corresponding local plan files')
   .option('--with-subissues', 'Include subissues when importing (Linear only)')
   .option(
     '--with-merged-subissues',
