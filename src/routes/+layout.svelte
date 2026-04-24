@@ -17,6 +17,7 @@
   import CommandBar from '$lib/components/CommandBar.svelte';
   import RateLimitIndicator from '$lib/components/RateLimitIndicator.svelte';
   import { ModeWatcher, setMode, userPrefersMode } from 'mode-watcher';
+  import ExternalLink from '@lucide/svelte/icons/external-link';
   import Sun from '@lucide/svelte/icons/sun';
   import Moon from '@lucide/svelte/icons/moon';
   import Monitor from '@lucide/svelte/icons/monitor';
@@ -123,6 +124,10 @@
     }
   }
 
+  function openCurrentUrlInNewWindow() {
+    window.open(page.url.href, '_blank', 'noopener,noreferrer')?.focus();
+  }
+
   onMount(() => {
     requestNotificationPermission().catch((e) =>
       console.warn('Failed to request notification permission:', e)
@@ -170,6 +175,15 @@
     <a href={resolve('/')} class="text-lg font-semibold text-white">tim</a>
     <div class="flex items-center gap-2">
       <TabNav {projectId} {showSessionsAttentionDot} />
+      <button
+        type="button"
+        class="rounded-md p-1.5 text-gray-300 transition-colors hover:bg-white/10 hover:text-white"
+        onclick={openCurrentUrlInNewWindow}
+        aria-label="Open current page in new window"
+        title="Open current page in new window"
+      >
+        <ExternalLink class="size-4" />
+      </button>
       <RateLimitIndicator />
       <button
         type="button"

@@ -160,34 +160,32 @@
 
     let primary: ActionItem;
     let menuItems: ActionItem[] = [];
+    let showSeparateChatButton = true;
 
     if (showUpdateDocs) {
       // Show "Update Docs" as primary, with "Finish" in dropdown
       primary = finishNoMarkDoneItem;
-      menuItems.push(chatItem);
       if (isEligibleForRebase) menuItems.push(rebaseItem);
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
       menuItems.push(finishItem);
     } else if (showFinish) {
       // Show "Finish" as primary (marks plan as done)
       primary = finishItem;
-      menuItems.push(chatItem);
       if (isEligibleForRebase) menuItems.push(rebaseItem);
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
     } else if (showAgentOnly) {
       primary = agentItem;
-      menuItems.push(chatItem);
       if (isEligibleForRebase) menuItems.push(rebaseItem);
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
     } else if (showGenerateWithAgent) {
       primary = generateItem;
       menuItems.push(agentItem);
-      menuItems.push(chatItem);
       if (isEligibleForRebase) menuItems.push(rebaseItem);
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
     } else {
       // showChatOnly
       primary = chatItem;
+      showSeparateChatButton = false;
       if (isEligibleForRebase) menuItems.push(rebaseItem);
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
       if (showUpdateDocsInDropdown) {
@@ -195,7 +193,7 @@
       }
     }
 
-    return { primary, menuItems };
+    return { primary, menuItems, chatAction: chatItem, showSeparateChatButton };
   });
 
   // Active session detection is independent of eligibility so the "Running" link
@@ -615,8 +613,25 @@
                     : `${activeSession.command.charAt(0).toUpperCase() + activeSession.command.slice(1)} Running...`}
             </a>
           {:else}
-            {@const { primary, menuItems } = actionConfig}
+            {@const { primary, menuItems, chatAction, showSeparateChatButton } = actionConfig}
             <ActionButtonWithDropdown {primary} {menuItems} disabled={controlsDisabled} size="xs" />
+            {#if showSeparateChatButton}
+              <Button
+                onclick={chatAction.onclick}
+                disabled={controlsDisabled}
+                size="xs"
+                class={chatAction.colorClass}
+              >
+                {#if chatAction.starting}
+                  <span
+                    class="inline-block animate-spin rounded-full border-2 border-white border-t-transparent h-2 w-2"
+                  ></span>
+                  {chatAction.startingLabel}
+                {:else}
+                  {chatAction.label}
+                {/if}
+              </Button>
+            {/if}
           {/if}
         </div>
       </div>
