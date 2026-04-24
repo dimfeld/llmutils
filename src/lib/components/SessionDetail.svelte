@@ -16,8 +16,8 @@
   import PlanContentPane from './PlanContentPane.svelte';
   import {
     hasUsedEndSession,
+    endSessionAndRefreshPlan,
     isPlanPaneCollapsed,
-    markEndSessionUsed,
     togglePlanPane,
   } from './session_detail_state.js';
   import CopyButton from './CopyButton.svelte';
@@ -219,13 +219,14 @@
   }
 
   async function handleConfirmEndSession() {
-    const ended = await sessionManager.endSession(session.connectionId);
-    if (ended) {
-      if (!endSessionUsed) {
-        markEndSessionUsed(uiState, session.connectionId);
-      }
-      confirmingEndSession = false;
-    }
+    const ended = await endSessionAndRefreshPlan({
+      connectionId: session.connectionId,
+      endSessionUsed,
+      invalidateAll,
+      sessionManager,
+      uiState,
+    });
+    if (ended) confirmingEndSession = false;
   }
 
   function clearStartedAgentTimeout() {
