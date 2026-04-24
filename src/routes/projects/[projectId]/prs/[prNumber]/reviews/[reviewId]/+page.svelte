@@ -14,8 +14,7 @@
   import CopyButton from '$lib/components/CopyButton.svelte';
   import MarkdownContent, { type DiffOverrides } from '$lib/components/MarkdownContent.svelte';
   import {
-    extractHeadings,
-    parseMarkdownWithDiffs,
+    parseMarkdownWithDiffsAndToc,
     type TocEntry,
   } from '$lib/utils/markdown_parser.js';
   import {
@@ -104,12 +103,10 @@
   let unresolvedCount = $derived(issues.filter((i) => !i.resolved).length);
   let linkedPlanUuid = $derived(data.linkedPlanUuid);
 
-  let toc = $derived<TocEntry[]>(
-    data.review.review_guide ? extractHeadings(data.review.review_guide) : []
-  );
-
   let reviewGuideText = $derived(data.review.review_guide ?? '');
-  let guideSegments = $derived(parseMarkdownWithDiffs(reviewGuideText));
+  let parsedGuide = $derived(parseMarkdownWithDiffsAndToc(reviewGuideText));
+  let toc = $derived<TocEntry[]>(parsedGuide.toc);
+  let guideSegments = $derived(parsedGuide.segments);
 
   // Track which TOC section is currently visible via Intersection Observer
   let visibleSectionSlug = $state<string>('');
@@ -900,6 +897,7 @@
           {#if data.review.review_guide}
             <MarkdownContent
               content={data.review.review_guide}
+              parsedSegments={guideSegments}
               class="text-sm text-foreground"
               {diffOverrides}
               virtualizer={guideVirtualizer}

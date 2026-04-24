@@ -3,7 +3,10 @@
   import type { Snippet } from 'svelte';
 
   import Diff from './Diff.svelte';
-  import { parseMarkdownWithDiffs } from '$lib/utils/markdown_parser.js';
+  import {
+    parseMarkdownWithDiffs,
+    type MarkdownSegment,
+  } from '$lib/utils/markdown_parser.js';
 
   /**
    * Overrides are passed to each rendered Diff instance. Annotation metadata is
@@ -27,6 +30,7 @@
     diffOverrides,
     diffAnnotation,
     virtualizer = null,
+    parsedSegments,
   }: {
     content: string;
     class?: string;
@@ -40,9 +44,11 @@
     ) => DiffOverrides | undefined;
     /** Shared virtualizer for diffs within a parent scroll container */
     virtualizer?: Virtualizer | null;
+    /** Pre-parsed markdown segments for callers that also need derived metadata such as TOC entries. */
+    parsedSegments?: MarkdownSegment[];
   } = $props();
 
-  let segments = $derived(parseMarkdownWithDiffs(content));
+  let segments = $derived(parsedSegments ?? parseMarkdownWithDiffs(content));
 </script>
 
 <div class={['plan-rendered-content', className].filter(Boolean).join(' ')}>

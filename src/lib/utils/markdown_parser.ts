@@ -5,7 +5,8 @@ import remarkGfm from 'remark-gfm';
 import { unified } from 'unified';
 import type { Root, RootContent } from 'mdast';
 
-const processor = unified().use(remarkParse).use(remarkGfm).use(remarkRehype).use(rehypeStringify);
+const parser = unified().use(remarkParse).use(remarkGfm);
+const htmlProcessor = unified().use(remarkRehype).use(rehypeStringify);
 
 export interface TocEntry {
   depth: number;
@@ -53,7 +54,7 @@ function collectHeadings(tree: Root): TocEntry[] {
  */
 export function extractHeadings(content: string): TocEntry[] {
   if (!content.trim()) return [];
-  const tree = unified().use(remarkParse).use(remarkGfm).parse(content) as Root;
+  const tree = parser.parse(content) as Root;
   return collectHeadings(tree);
 }
 
@@ -67,6 +68,12 @@ function applyHeadingIds(html: string, toc: TocEntry[], cursor: { i: number }): 
   });
 }
 
+function renderMarkdownTree(tree: Root, toc: TocEntry[], cursor: { i: number }): string {
+  if (tree.children.length === 0) return '';
+  const hast = htmlProcessor.runSync(tree);
+  return applyHeadingIds(String(htmlProcessor.stringify(hast)), toc, cursor);
+}
+
 /**
  * Render markdown content as HTML using the unified/remark/rehype pipeline.
  * Output is suitable for use with {@html ...} inside a .plan-rendered-content container.
@@ -74,14 +81,19 @@ function applyHeadingIds(html: string, toc: TocEntry[], cursor: { i: number }): 
  */
 export function renderMarkdown(content: string): string {
   if (!content.trim()) return '';
-  const html = String(processor.processSync(content));
-  const toc = extractHeadings(content);
-  return applyHeadingIds(html, toc, { i: 0 });
+  const tree = parser.parse(content) as Root;
+  const toc = collectHeadings(tree);
+  return renderMarkdownTree(tree, toc, { i: 0 });
 }
 
 export type MarkdownSegment =
   | { type: 'html'; content: string }
   | { type: 'unified-diff'; patch: string; filename: string | null };
+
+export interface ParsedMarkdownWithDiffs {
+  segments: MarkdownSegment[];
+  toc: TocEntry[];
+}
 
 const PATCH_TARGET_FILENAME_RE = /^\+\+\+\s+(.+?)\s*$/m;
 const PATCH_SOURCE_FILENAME_RE = /^---\s+(.+?)\s*$/m;
@@ -116,48 +128,48 @@ export function parsePatchFilename(patch: string): string | null {
  * structured data so callers can render them as Diff components. All other
  * content is converted to HTML via the normal pipeline.
  */
-export function parseMarkdownWithDiffs(content: string): MarkdownSegment[] {
-  if (!content.trim()) return [];
+export function parseMarkdownWithDiffsAndToc(content: string): ParsedMarkdownWithDiffs {
+  if (!content.trim()) return { segments: [], toc: [] };
 
-  const tree = unified().use(remarkParse).use(remarkGfm).parse(content) as Root;
+  const tree = parser.parse(content) as Root;
   const toc = collectHeadings(tree);
   const cursor = { i: 0 };
 
   // Fast path: no diff blocks present
   if (!content.includes('```unified-diff')) {
-    const html = applyHeadingIds(String(processor.processSync(content)), toc, cursor);
-    return [{ type: 'html', content: html }];
+    return { segments: [{ type: 'html', content: renderMarkdownTree(tree, toc, cursor) }], toc };
   }
 
   const segments: MarkdownSegment[] = [];
-  let lastOffset = 0;
+  let htmlChildren: RootContent[] = [];
 
-  const pushHtml = (slice: string) => {
-    const html = applyHeadingIds(String(processor.processSync(slice)), toc, cursor);
-    segments.push({ type: 'html', content: html });
+  const pushHtml = () => {
+    if (htmlChildren.length === 0) return;
+    const html = renderMarkdownTree({ type: 'root', children: htmlChildren }, toc, cursor);
+    if (html) {
+      segments.push({ type: 'html', content: html });
+    }
+    htmlChildren = [];
   };
 
   for (const node of tree.children) {
     if (node.type === 'code' && node.lang === 'unified-diff') {
-      const start = node.position?.start.offset;
-      const end = node.position?.end.offset;
-
-      if (start !== undefined && start > lastOffset) {
-        const slice = content.slice(lastOffset, start).trim();
-        if (slice) pushHtml(slice);
-      }
-
+      pushHtml();
       segments.push({
         type: 'unified-diff',
         patch: node.value,
         filename: parsePatchFilename(node.value),
       });
-      lastOffset = end ?? content.length;
+    } else {
+      htmlChildren.push(node);
     }
   }
 
-  const remaining = content.slice(lastOffset).trim();
-  if (remaining) pushHtml(remaining);
+  pushHtml();
 
-  return segments;
+  return { segments, toc };
+}
+
+export function parseMarkdownWithDiffs(content: string): MarkdownSegment[] {
+  return parseMarkdownWithDiffsAndToc(content).segments;
 }
