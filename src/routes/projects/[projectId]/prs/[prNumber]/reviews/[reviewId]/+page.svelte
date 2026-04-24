@@ -5,6 +5,7 @@
   import ArrowLeft from '@lucide/svelte/icons/arrow-left';
   import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
   import { onDestroy } from 'svelte';
+  import { toast } from 'svelte-sonner';
   import { toggleReviewIssueResolved } from '$lib/remote/pr_reviews.remote.js';
   import {
     addReviewIssueToPlanTask,
@@ -691,6 +692,7 @@
           issueId: issue.id,
           planUuid: linkedPlanUuid,
         });
+        toast.success('Added review issue to plan as a task');
       },
       afterSuccess: async () => {
         await invalidateAll();
