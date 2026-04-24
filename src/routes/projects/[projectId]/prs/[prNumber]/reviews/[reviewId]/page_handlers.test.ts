@@ -6,6 +6,7 @@ import {
   createAnnotationClickHandler,
   createJumpToDiffHandler,
   createSaveEditHandler,
+  runTrackedAsyncAction,
   type EditableReviewIssueRow,
   type ReviewIssueRef,
 } from './page_handlers.js';
@@ -129,6 +130,57 @@ describe('createSaveEditHandler', () => {
 
     await expect(handler(issues[0], { content: 'x' })).rejects.toBeDefined();
     expect(errorCalls[errorCalls.length - 1]).toBe('validation failed');
+  });
+});
+
+describe('runTrackedAsyncAction', () => {
+  test('clears the busy flag before running follow-up work', async () => {
+    const calls: string[] = [];
+
+    await runTrackedAsyncAction({
+      setError: (message) => {
+        calls.push(`error:${message}`);
+      },
+      setBusy: () => {
+        calls.push('busy');
+      },
+      clearBusy: () => {
+        calls.push('clear');
+      },
+      action: async () => {
+        calls.push('action');
+      },
+      afterSuccess: async () => {
+        calls.push('after');
+      },
+    });
+
+    expect(calls).toEqual(['error:null', 'busy', 'action', 'clear', 'after']);
+  });
+
+  test('clears the busy flag when the action fails and skips follow-up work', async () => {
+    const calls: string[] = [];
+
+    await runTrackedAsyncAction({
+      setError: (message) => {
+        calls.push(`error:${message}`);
+      },
+      setBusy: () => {
+        calls.push('busy');
+      },
+      clearBusy: () => {
+        calls.push('clear');
+      },
+      action: async () => {
+        calls.push('action');
+        throw new Error('server rejected');
+      },
+      afterSuccess: async () => {
+        calls.push('after');
+      },
+    });
+
+    expect(calls).toEqual(['error:null', 'busy', 'action', 'error:server rejected', 'clear']);
   });
 });
 

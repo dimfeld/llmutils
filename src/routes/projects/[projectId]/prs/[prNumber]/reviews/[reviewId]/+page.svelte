@@ -41,6 +41,7 @@
     createSaveEditHandler,
     createAnnotationClickHandler,
     createJumpToDiffHandler,
+    runTrackedAsyncAction,
     type ApproximateAnnotationPosition,
   } from './page_handlers.js';
   import type { PrReviewSubmissionRow } from '$tim/db/review.js';
@@ -648,38 +649,52 @@
 
   async function handleDeleteIssue(issue: ReviewIssueRow) {
     if (isIssueActioning(issue.id)) return;
-    issueActionError = null;
     const previousIssues = issues;
-    issues = issues.filter((row) => row.id !== issue.id);
-    setIssueActioning(issue.id);
-
-    try {
-      await deleteReviewIssue({ reviewId: data.review.id, issueId: issue.id });
-    } catch (err) {
-      issues = previousIssues;
-      issueActionError = extractRemoteErrorMessage(err);
-    } finally {
-      clearIssueActioning(issue.id);
-    }
+    await runTrackedAsyncAction({
+      setError: (message) => {
+        issueActionError = message;
+      },
+      setBusy: () => {
+        issues = issues.filter((row) => row.id !== issue.id);
+        setIssueActioning(issue.id);
+      },
+      clearBusy: () => {
+        clearIssueActioning(issue.id);
+      },
+      action: async () => {
+        try {
+          await deleteReviewIssue({ reviewId: data.review.id, issueId: issue.id });
+        } catch (err) {
+          issues = previousIssues;
+          throw err;
+        }
+      },
+    });
   }
 
   async function handleAddIssueToPlan(issue: ReviewIssueRow) {
     if (isIssueActioning(issue.id) || !linkedPlanUuid) return;
-    issueActionError = null;
-    setIssueActioning(issue.id);
-
-    try {
-      await addReviewIssueToPlanTask({
-        reviewId: data.review.id,
-        issueId: issue.id,
-        planUuid: linkedPlanUuid,
-      });
-      await invalidateAll();
-    } catch (err) {
-      issueActionError = extractRemoteErrorMessage(err);
-    } finally {
-      clearIssueActioning(issue.id);
-    }
+    await runTrackedAsyncAction({
+      setError: (message) => {
+        issueActionError = message;
+      },
+      setBusy: () => {
+        setIssueActioning(issue.id);
+      },
+      clearBusy: () => {
+        clearIssueActioning(issue.id);
+      },
+      action: async () => {
+        await addReviewIssueToPlanTask({
+          reviewId: data.review.id,
+          issueId: issue.id,
+          planUuid: linkedPlanUuid,
+        });
+      },
+      afterSuccess: async () => {
+        await invalidateAll();
+      },
+    });
   }
 
   const handleSaveEdit = createSaveEditHandler({

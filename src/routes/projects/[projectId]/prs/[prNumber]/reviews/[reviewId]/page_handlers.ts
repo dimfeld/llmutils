@@ -38,6 +38,40 @@ export function applyPatchToRow<Row extends EditableReviewIssueRow>(
   return next;
 }
 
+export interface TrackedAsyncActionOptions {
+  setError: (message: string | null) => void;
+  setBusy: () => void;
+  clearBusy: () => void;
+  action: () => Promise<void>;
+  afterSuccess?: () => Promise<void>;
+}
+
+export async function runTrackedAsyncAction(options: TrackedAsyncActionOptions): Promise<void> {
+  const { setError, setBusy, clearBusy, action, afterSuccess } = options;
+
+  setError(null);
+  setBusy();
+
+  try {
+    await action();
+  } catch (err) {
+    setError(extractRemoteErrorMessage(err));
+    return;
+  } finally {
+    clearBusy();
+  }
+
+  if (!afterSuccess) {
+    return;
+  }
+
+  try {
+    await afterSuccess();
+  } catch (err) {
+    setError(extractRemoteErrorMessage(err));
+  }
+}
+
 export interface SaveEditHandlerOptions<Row extends EditableReviewIssueRow> {
   getIssues: () => Row[];
   setIssues: (next: Row[]) => void;
