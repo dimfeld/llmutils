@@ -35,6 +35,7 @@
         ? 'bg-white/20 text-white'
         : 'text-gray-300 hover:bg-white/10 hover:text-white'}"
       aria-current={active ? 'page' : undefined}
+      title={tab.label}
     >
       <span class="relative inline-flex items-start">
         {tab.label}

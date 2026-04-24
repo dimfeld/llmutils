@@ -21,6 +21,7 @@
   import Sun from '@lucide/svelte/icons/sun';
   import Moon from '@lucide/svelte/icons/moon';
   import Monitor from '@lucide/svelte/icons/monitor';
+  import * as Tooltip from '$lib/components/ui/tooltip/index.js';
   import { Toaster } from '$lib/components/ui/sonner/index.js';
   import type { LayoutData } from './$types';
 
@@ -164,53 +165,73 @@
 <svelte:window onkeydown={handleShortcuts} />
 <svelte:head><link rel="icon" href={resolve('/favicon.png')} /></svelte:head>
 
-<div class="flex h-screen min-h-screen flex-col bg-background">
-  <a
-    href="#main-content"
-    class="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-background focus:p-2 focus:text-foreground"
-  >
-    Skip to main content
-  </a>
-  <header class="flex items-center justify-between bg-gray-800 px-4 py-2 dark:bg-gray-900">
-    <a href={resolve('/')} class="text-lg font-semibold text-white">tim</a>
-    <div class="flex items-center gap-2">
-      <TabNav {projectId} {showSessionsAttentionDot} />
-      <button
-        type="button"
-        class="rounded-md p-1.5 text-gray-300 transition-colors hover:bg-white/10 hover:text-white"
-        onclick={openCurrentUrlInNewWindow}
-        aria-label="Open current page in new window"
-        title="Open current page in new window"
-      >
-        <ExternalLink class="size-4" />
-      </button>
-      <RateLimitIndicator />
-      <button
-        type="button"
-        class="rounded-md p-1.5 text-gray-300 transition-colors hover:bg-white/10 hover:text-white"
-        onclick={cycleMode}
-        aria-label="Toggle dark mode"
-        title={userPrefersMode.current === 'system'
-          ? 'Theme: System'
-          : userPrefersMode.current === 'dark'
-            ? 'Theme: Dark'
-            : 'Theme: Light'}
-      >
-        {#if userPrefersMode.current === 'dark'}
-          <Moon class="size-4" />
-        {:else if userPrefersMode.current === 'light'}
-          <Sun class="size-4" />
-        {:else}
-          <Monitor class="size-4" />
-        {/if}
-      </button>
-    </div>
-  </header>
+<Tooltip.Provider delayDuration={500}>
+  <div class="flex h-screen min-h-screen flex-col bg-background">
+    <a
+      href="#main-content"
+      class="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-background focus:p-2 focus:text-foreground"
+    >
+      Skip to main content
+    </a>
+    <header class="flex items-center justify-between bg-gray-800 px-4 py-2 dark:bg-gray-900">
+      <a href={resolve('/')} class="text-lg font-semibold text-white" title="Home">
+        tim
+      </a>
+      <div class="flex items-center gap-2">
+        <TabNav {projectId} {showSessionsAttentionDot} />
+        <Tooltip.Root>
+          <Tooltip.Trigger>
+            {#snippet child({ props })}
+              <button
+                {...props}
+                type="button"
+                class="rounded-md p-1.5 text-gray-300 transition-colors hover:bg-white/10 hover:text-white"
+                onclick={openCurrentUrlInNewWindow}
+                aria-label="Open current page in new window"
+              >
+                <ExternalLink class="size-4" />
+              </button>
+            {/snippet}
+          </Tooltip.Trigger>
+          <Tooltip.Content sideOffset={8}>Open current page in new window</Tooltip.Content>
+        </Tooltip.Root>
+        <RateLimitIndicator />
+        <Tooltip.Root>
+          <Tooltip.Trigger>
+            {#snippet child({ props })}
+              <button
+                {...props}
+                type="button"
+                class="rounded-md p-1.5 text-gray-300 transition-colors hover:bg-white/10 hover:text-white"
+                onclick={cycleMode}
+                aria-label="Toggle dark mode"
+              >
+                {#if userPrefersMode.current === 'dark'}
+                  <Moon class="size-4" />
+                {:else if userPrefersMode.current === 'light'}
+                  <Sun class="size-4" />
+                {:else}
+                  <Monitor class="size-4" />
+                {/if}
+              </button>
+            {/snippet}
+          </Tooltip.Trigger>
+          <Tooltip.Content sideOffset={8}>
+            {userPrefersMode.current === 'system'
+              ? 'Toggle theme (current: System)'
+              : userPrefersMode.current === 'dark'
+                ? 'Toggle theme (current: Dark)'
+                : 'Toggle theme (current: Light)'}
+          </Tooltip.Content>
+        </Tooltip.Root>
+      </div>
+    </header>
 
-  <main class="flex min-h-0 flex-1 overflow-hidden">
-    {@render children()}
-  </main>
+    <main class="flex min-h-0 flex-1 overflow-hidden">
+      {@render children()}
+    </main>
 
-  <CommandBar bind:open={commandBarOpen} {projectId} allProjects={commandBarAllProjects} />
-  <Toaster />
-</div>
+    <CommandBar bind:open={commandBarOpen} {projectId} allProjects={commandBarAllProjects} />
+    <Toaster />
+  </div>
+</Tooltip.Provider>

@@ -68,8 +68,7 @@ vi.mock('$lib/remote/plan_task_counts.remote.js', () => ({
 vi.mock('$lib/remote/plan_attention_state.remote.js', () => ({
   getPlanAttentionState: (...args: unknown[]) => getPlanAttentionState(...args),
 }));
-
-import SessionDetail from './SessionDetail.svelte';
+import SessionDetail from './SessionDetailTooltipWrapper.svelte';
 
 function createSession(overrides: Partial<SessionData> = {}): SessionData {
   return {

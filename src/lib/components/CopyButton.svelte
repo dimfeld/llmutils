@@ -1,6 +1,8 @@
 <script lang="ts">
   import CheckCircle from '@lucide/svelte/icons/check-circle';
   import Copy from '@lucide/svelte/icons/copy';
+  import { mergeProps } from 'bits-ui';
+  import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 
   type CopyState = 'idle' | 'copied' | 'failed';
   type CopyMode = 'icon' | 'text' | 'text-with-icon' | 'icon-with-text';
@@ -105,35 +107,64 @@
   let failedIconClass = $derived.by(() => `size-3 shrink-0 ${failedIconClassOverride}`.trim());
 </script>
 
-<button
-  type="button"
-  {disabled}
-  class={combinedClass}
-  {title}
-  aria-label={ariaLabel}
-  onclick={handleButtonClick}
->
-  {#if mode === 'text'}
-    {labelText}
-  {:else if mode === 'text-with-icon'}
-    <span>{labelText}</span>
-    {#if copyState === 'copied'}
+{#if mode === 'icon'}
+  <Tooltip.Root>
+    <Tooltip.Trigger>
+      {#snippet child({ props })}
+        {@const buttonProps = mergeProps(
+          {
+            type: 'button',
+            disabled,
+            class: combinedClass,
+            'aria-label': ariaLabel,
+            onclick: handleButtonClick,
+          },
+          props
+        )}
+        <button {...buttonProps}>
+          {#if copyState === 'copied'}
+            <CheckCircle class={copiedIconClass} />
+          {:else if copyState === 'failed'}
+            <Copy class={failedIconClass} />
+          {:else}
+            <Copy class={idleIconClass} />
+          {/if}
+        </button>
+      {/snippet}
+    </Tooltip.Trigger>
+    <Tooltip.Content sideOffset={8}>{title}</Tooltip.Content>
+  </Tooltip.Root>
+{:else}
+  <button
+    type="button"
+    {disabled}
+    class={combinedClass}
+    {title}
+    aria-label={ariaLabel}
+    onclick={handleButtonClick}
+  >
+    {#if mode === 'text'}
+      {labelText}
+    {:else if mode === 'text-with-icon'}
+      <span>{labelText}</span>
+      {#if copyState === 'copied'}
+        <CheckCircle class={copiedIconClass} />
+      {:else}
+        <Copy class={idleIconClass} />
+      {/if}
+    {:else if mode === 'icon-with-text'}
+      {#if copyState === 'copied'}
+        <CheckCircle class={copiedIconClass} />
+      {:else}
+        <Copy class={idleIconClass} />
+      {/if}
+      <span>{labelText}</span>
+    {:else if copyState === 'copied'}
       <CheckCircle class={copiedIconClass} />
+    {:else if copyState === 'failed'}
+      <Copy class={failedIconClass} />
     {:else}
       <Copy class={idleIconClass} />
     {/if}
-  {:else if mode === 'icon-with-text'}
-    {#if copyState === 'copied'}
-      <CheckCircle class={copiedIconClass} />
-    {:else}
-      <Copy class={idleIconClass} />
-    {/if}
-    <span>{labelText}</span>
-  {:else if copyState === 'copied'}
-    <CheckCircle class={copiedIconClass} />
-  {:else if copyState === 'failed'}
-    <Copy class={failedIconClass} />
-  {:else}
-    <Copy class={idleIconClass} />
-  {/if}
-</button>
+  </button>
+{/if}

@@ -5,6 +5,7 @@
   import PanelRightClose from '@lucide/svelte/icons/panel-right-close';
   import PanelRightOpen from '@lucide/svelte/icons/panel-right-open';
   import { toast } from 'svelte-sonner';
+  import { mergeProps } from 'bits-ui';
   import { exportSessionAsMarkdown, generateExportFilename } from '$lib/utils/session_export.js';
 
   import type { SessionData } from '$lib/types/session.js';
@@ -30,6 +31,7 @@
   import PlanAttentionActions from './PlanAttentionActions.svelte';
   import type { PlanAttentionReason } from '$lib/utils/dashboard_attention.js';
   import { resolve } from '$app/paths';
+  import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 
   let { session }: { session: SessionData } = $props();
   const sessionManager = useSessionManager();
@@ -332,110 +334,157 @@
       </div>
 
       <div class="flex shrink-0 items-center gap-2">
-        {#if showEndSession}
-          {#if confirmingEndSession}
-            <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-            <div
-              role="alertdialog"
-              aria-label={endSessionUsed ? 'Confirm SIGTERM' : 'Confirm end session'}
-              tabindex="-1"
-              class="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-900 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-100"
-              onkeydown={handleConfirmationKeydown}
-            >
-              <span>
-                {endSessionUsed
-                  ? 'Send SIGTERM to this running session?'
-                  : 'End this running session?'}
-              </span>
-              <button
-                type="button"
-                class="rounded bg-red-600 px-2 py-1 font-medium text-white transition-colors hover:bg-red-700"
-                onclick={handleConfirmEndSession}
-                bind:this={confirmEndSessionButton}
+          {#if showEndSession}
+            {#if confirmingEndSession}
+              <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+              <div
+                role="alertdialog"
+                aria-label={endSessionUsed ? 'Confirm SIGTERM' : 'Confirm end session'}
+                tabindex="-1"
+                class="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-900 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-100"
+                onkeydown={handleConfirmationKeydown}
               >
-                {endSessionUsed ? 'Send SIGTERM' : 'End Session'}
-              </button>
-              <button
-                type="button"
-                class="rounded px-2 py-1 text-red-900 transition-colors hover:bg-red-100 dark:text-red-100 dark:hover:bg-red-900/40"
-                onclick={handleCancelEndSession}
-              >
-                Cancel
-              </button>
-            </div>
-          {:else}
-            <button
-              type="button"
-              class="rounded border border-red-200 px-2 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-950/40"
-              onclick={handleRequestEndSession}
-              bind:this={endSessionTriggerButton}
-            >
-              End Session
-            </button>
-          {/if}
-        {/if}
-
-        <CopyButton
-          text={exportSessionAsMarkdown(session)}
-          mode="icon"
-          iconClass="size-4"
-          className="rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
-          ariaLabel="Copy transcript to clipboard"
-          title="Copy transcript to clipboard"
-          disabled={!hasMessages}
-          onCopyError={(message) => toast.error(`Failed to copy: ${message}`)}
-          onCopied={() => toast.success('Copied to clipboard')}
-        />
-        <button
-          type="button"
-          class="rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
-          onclick={handleDownloadTranscript}
-          disabled={!hasMessages}
-          aria-label="Download transcript"
-          title="Download transcript"
-        >
-          <Download class="size-4" />
-        </button>
-
-        {#if session.sessionInfo.workspacePath}
-          <button
-            type="button"
-            class="rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
-            onclick={handleOpenTerminal}
-            disabled={openingTerminal}
-            aria-label="Open new terminal"
-            title="Open new terminal"
-          >
-            <AppWindow class="size-4" />
-          </button>
-        {/if}
-        {#if hasTerminalPane}
-          <button
-            type="button"
-            class="rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
-            onclick={handleActivateTerminal}
-            aria-label="Activate terminal pane"
-            title="Activate terminal pane"
-          >
-            <TerminalIcon class="size-4" />
-          </button>
-        {/if}
-        {#if showPlanPane}
-          <button
-            type="button"
-            class="rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
-            onclick={handleTogglePlanPane}
-            aria-label={planPaneCollapsed ? 'Show plan pane' : 'Hide plan pane'}
-            title={planPaneCollapsed ? 'Show plan pane' : 'Hide plan pane'}
-          >
-            {#if planPaneCollapsed}
-              <PanelRightOpen class="size-4" />
+                <span>
+                  {endSessionUsed
+                    ? 'Send SIGTERM to this running session?'
+                    : 'End this running session?'}
+                </span>
+                <button
+                  type="button"
+                  class="rounded bg-red-600 px-2 py-1 font-medium text-white transition-colors hover:bg-red-700"
+                  onclick={handleConfirmEndSession}
+                  bind:this={confirmEndSessionButton}
+                >
+                  {endSessionUsed ? 'Send SIGTERM' : 'End Session'}
+                </button>
+                <button
+                  type="button"
+                  class="rounded px-2 py-1 text-red-900 transition-colors hover:bg-red-100 dark:text-red-100 dark:hover:bg-red-900/40"
+                  onclick={handleCancelEndSession}
+                >
+                  Cancel
+                </button>
+              </div>
             {:else}
-              <PanelRightClose class="size-4" />
+              <button
+                type="button"
+                class="rounded border border-red-200 px-2 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-950/40"
+                onclick={handleRequestEndSession}
+                bind:this={endSessionTriggerButton}
+              >
+                End Session
+              </button>
             {/if}
-          </button>
-        {/if}
-      </div>
+          {/if}
+
+          <CopyButton
+            text={exportSessionAsMarkdown(session)}
+            mode="icon"
+            iconClass="size-4"
+            className="rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
+            ariaLabel="Copy transcript to clipboard"
+            title="Copy transcript to clipboard"
+            disabled={!hasMessages}
+            onCopyError={(message) => toast.error(`Failed to copy: ${message}`)}
+            onCopied={() => toast.success('Copied to clipboard')}
+          />
+          <Tooltip.Root>
+            <Tooltip.Trigger>
+              {#snippet child({ props })}
+                {@const buttonProps = mergeProps(
+                  {
+                    type: 'button',
+                    class:
+                      'rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800',
+                    onclick: handleDownloadTranscript,
+                    disabled: !hasMessages,
+                    'aria-label': 'Download transcript',
+                  },
+                  props
+                )}
+                <button {...buttonProps}>
+                  <Download class="size-4" />
+                </button>
+              {/snippet}
+            </Tooltip.Trigger>
+            <Tooltip.Content sideOffset={8}>Download transcript</Tooltip.Content>
+          </Tooltip.Root>
+
+          {#if session.sessionInfo.workspacePath}
+            <Tooltip.Root>
+              <Tooltip.Trigger>
+                {#snippet child({ props })}
+                  {@const buttonProps = mergeProps(
+                    {
+                      type: 'button',
+                      class:
+                        'rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800',
+                      onclick: handleOpenTerminal,
+                      disabled: openingTerminal,
+                      'aria-label': 'Open new terminal',
+                    },
+                    props
+                  )}
+                  <button {...buttonProps}>
+                    <AppWindow class="size-4" />
+                  </button>
+                {/snippet}
+              </Tooltip.Trigger>
+              <Tooltip.Content sideOffset={8}>Open new terminal</Tooltip.Content>
+            </Tooltip.Root>
+          {/if}
+          {#if hasTerminalPane}
+            <Tooltip.Root>
+              <Tooltip.Trigger>
+                {#snippet child({ props })}
+                  {@const buttonProps = mergeProps(
+                    {
+                      type: 'button',
+                      class:
+                        'rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800',
+                      onclick: handleActivateTerminal,
+                      'aria-label': 'Activate terminal pane',
+                    },
+                    props
+                  )}
+                  <button {...buttonProps}>
+                    <TerminalIcon class="size-4" />
+                  </button>
+                {/snippet}
+              </Tooltip.Trigger>
+              <Tooltip.Content sideOffset={8}>Activate terminal pane</Tooltip.Content>
+            </Tooltip.Root>
+          {/if}
+          {#if showPlanPane}
+            <Tooltip.Root>
+              <Tooltip.Trigger>
+                {#snippet child({ props })}
+                  {@const planPaneLabel = planPaneCollapsed ? 'Show plan pane' : 'Hide plan pane'}
+                  {@const buttonProps = mergeProps(
+                    {
+                      type: 'button',
+                      class:
+                        'rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800',
+                      onclick: handleTogglePlanPane,
+                      'aria-label': planPaneLabel,
+                    },
+                    props
+                  )}
+                  <button {...buttonProps}>
+                    {#if planPaneCollapsed}
+                      <PanelRightOpen class="size-4" />
+                    {:else}
+                      <PanelRightClose class="size-4" />
+                    {/if}
+                  </button>
+                {/snippet}
+              </Tooltip.Trigger>
+              <Tooltip.Content sideOffset={8}>
+                {planPaneCollapsed ? 'Show plan pane' : 'Hide plan pane'}
+              </Tooltip.Content>
+            </Tooltip.Root>
+          {/if}
+        </div>
     </div>
     {#if session.sessionInfo.workspacePath || showRunAgent || (planAttentionState && attentionReasons.length > 0)}
       <div class="mt-1 flex min-w-0 items-center justify-between gap-2">

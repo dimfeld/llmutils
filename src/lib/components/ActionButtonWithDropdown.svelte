@@ -54,6 +54,7 @@
             {disabled}
             size={size === 'xs' ? 'icon-xs' : size === 'sm' ? 'icon-sm' : 'icon'}
             aria-label="More actions"
+            title="More actions"
             class={`${primary.colorClass} ${size === 'xs' ? 'rounded' : ''}`}
           >
             <svg
