@@ -582,6 +582,9 @@
             ]
           }
         },
+        "createBranch": {
+          "type": "boolean"
+        },
         "copyAdditionalGlobs": {
           "type": "array",
           "items": {
