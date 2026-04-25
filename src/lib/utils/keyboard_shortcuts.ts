@@ -1,10 +1,10 @@
 export interface ShortcutCallbacks {
   /** Return true if focus was successfully moved; preventDefault is only called when true. */
   focusSearch?: () => boolean;
-  navigateTab?: (tabIndex: number) => void;
+  navigateTab?: (tabIndex: number) => boolean | void;
   openCommandBar?: (allProjects: boolean) => void;
   /** Called with 1-based index: 1 = all projects, 2+ = projects[index-2] */
-  navigateProject?: (projectIndex: number) => void;
+  navigateProject?: (projectIndex: number) => boolean | void;
 }
 
 /** Returns true if the event target is a text-entry element where Ctrl+/ would type a character. */
@@ -29,13 +29,13 @@ const DIGIT_MAP: Record<string, number> = {
   Digit9: 9,
 };
 
-const TAB_DIGIT_MAX = 4;
+const TAB_DIGIT_MAX = 5;
 
 /**
  * Handles global keyboard shortcuts using physical key codes for locale independence.
  * - Ctrl+/ → focusSearch (suppressed in typing targets)
- * - Ctrl+1/2/3/4 → navigateTab (always active)
- * - Cmd+1 → all projects, Cmd+2..9 → project by index (always active)
+ * - Ctrl+1/2/3/4/5 → navigateTab (always active)
+ * - Ctrl+Shift+1 → all projects, Ctrl+Shift+2..9 → project by index (always active)
  */
 export function handleGlobalShortcuts(event: KeyboardEvent, callbacks: ShortcutCallbacks): void {
   if (event.code === 'KeyK' && (event.metaKey || event.ctrlKey) && !event.altKey) {
@@ -48,10 +48,11 @@ export function handleGlobalShortcuts(event: KeyboardEvent, callbacks: ShortcutC
 
   const digit = DIGIT_MAP[event.code];
 
-  if (event.metaKey && !event.ctrlKey && !event.altKey && digit !== undefined) {
+  if (event.ctrlKey && event.shiftKey && !event.metaKey && !event.altKey && digit !== undefined) {
     if (callbacks.navigateProject) {
-      event.preventDefault();
-      callbacks.navigateProject(digit);
+      if (callbacks.navigateProject(digit) !== false) {
+        event.preventDefault();
+      }
     }
     return;
   }
@@ -68,7 +69,8 @@ export function handleGlobalShortcuts(event: KeyboardEvent, callbacks: ShortcutC
   }
 
   if (digit !== undefined && digit <= TAB_DIGIT_MAX && callbacks.navigateTab) {
-    event.preventDefault();
-    callbacks.navigateTab(digit);
+    if (callbacks.navigateTab(digit) !== false) {
+      event.preventDefault();
+    }
   }
 }

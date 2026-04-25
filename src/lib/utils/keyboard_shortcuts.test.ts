@@ -177,6 +177,22 @@ describe('handleGlobalShortcuts', () => {
     expect(event.preventDefault).toHaveBeenCalledOnce();
   });
 
+  test('Ctrl+5 calls navigateTab with 5', () => {
+    const navigateTab = vi.fn();
+    const event = makeKeyEvent('Digit5', { ctrlKey: true });
+    handleGlobalShortcuts(event, { navigateTab });
+    expect(navigateTab).toHaveBeenCalledWith(5);
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+  });
+
+  test('Ctrl+5 does not prevent default when navigateTab returns false', () => {
+    const navigateTab = vi.fn(() => false);
+    const event = makeKeyEvent('Digit5', { ctrlKey: true });
+    handleGlobalShortcuts(event, { navigateTab });
+    expect(navigateTab).toHaveBeenCalledWith(5);
+    expect(event.preventDefault).not.toHaveBeenCalled();
+  });
+
   test('Ctrl+1/2/3 fires even in typing targets', () => {
     const navigateTab = vi.fn();
     const event = makeKeyEvent(
@@ -207,11 +223,39 @@ describe('handleGlobalShortcuts', () => {
     expect(focusSearch).toHaveBeenCalledOnce();
   });
 
-  test('Ctrl+Shift+1 fires navigateTab (Shift modifier allowed)', () => {
+  test('Ctrl+Shift+1 fires navigateProject with index 1', () => {
+    const navigateProject = vi.fn();
+    const event = makeKeyEvent('Digit1', { ctrlKey: true, shiftKey: true });
+    handleGlobalShortcuts(event, { navigateProject });
+    expect(navigateProject).toHaveBeenCalledWith(1);
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+  });
+
+  test('Ctrl+Shift+2 fires navigateProject with index 2', () => {
+    const navigateProject = vi.fn();
+    const event = makeKeyEvent('Digit2', { ctrlKey: true, shiftKey: true });
+    handleGlobalShortcuts(event, { navigateProject });
+    expect(navigateProject).toHaveBeenCalledWith(2);
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+  });
+
+  test('Ctrl+Shift+1/2 fires even in typing targets', () => {
+    const navigateProject = vi.fn();
+    const event = makeKeyEvent(
+      'Digit1',
+      { ctrlKey: true, shiftKey: true },
+      { tagName: 'INPUT', isContentEditable: false }
+    );
+    handleGlobalShortcuts(event, { navigateProject });
+    expect(navigateProject).toHaveBeenCalledWith(1);
+  });
+
+  test('Ctrl+Shift+1 does not trigger navigateTab', () => {
     const navigateTab = vi.fn();
     const event = makeKeyEvent('Digit1', { ctrlKey: true, shiftKey: true });
     handleGlobalShortcuts(event, { navigateTab });
-    expect(navigateTab).toHaveBeenCalledWith(1);
+    expect(navigateTab).not.toHaveBeenCalled();
+    expect(event.preventDefault).not.toHaveBeenCalled();
   });
 
   test('does nothing without Ctrl modifier', () => {
@@ -260,12 +304,12 @@ describe('handleGlobalShortcuts', () => {
     expect(event.preventDefault).toHaveBeenCalledOnce();
   });
 
-  test('Ctrl+Digit5 does NOT trigger navigateTab', () => {
+  test('Ctrl+Digit5 calls navigateTab with 5', () => {
     const navigateTab = vi.fn();
     const event = makeKeyEvent('Digit5', { ctrlKey: true });
     handleGlobalShortcuts(event, { navigateTab });
-    expect(navigateTab).not.toHaveBeenCalled();
-    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(navigateTab).toHaveBeenCalledWith(5);
+    expect(event.preventDefault).toHaveBeenCalledOnce();
   });
 
   test('does nothing when no callbacks provided', () => {

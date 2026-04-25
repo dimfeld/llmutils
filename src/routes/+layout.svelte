@@ -71,7 +71,8 @@
     }
   });
 
-  const tabSlugs = ['sessions', 'active', 'prs', 'plans'] as const;
+  const baseTabSlugs = ['sessions', 'active', 'prs', 'plans'] as const;
+  const projectTabSlugs = [...baseTabSlugs, 'settings'] as const;
 
   function handleShortcuts(event: KeyboardEvent) {
     handleGlobalShortcuts(event, {
@@ -79,15 +80,17 @@
         const input = document.querySelector<HTMLElement>('[data-search-input]');
         if (input) {
           input.focus();
+        }
+        return !!input;
+      },
+      navigateTab(tabIndex: number) {
+        const tabSlugs = projectId === 'all' ? baseTabSlugs : projectTabSlugs;
+        const slug = tabSlugs[tabIndex - 1];
+        if (slug && !(projectId === 'all' && slug === 'settings')) {
+          void goto(projectUrl(projectId, slug));
           return true;
         }
         return false;
-      },
-      navigateTab(tabIndex: number) {
-        const slug = tabSlugs[tabIndex - 1];
-        if (slug) {
-          void goto(projectUrl(projectId, slug));
-        }
       },
       openCommandBar(allProjects: boolean) {
         commandBarAllProjects = allProjects || projectId === 'all';
@@ -98,18 +101,22 @@
         // Settings tab isn't valid for other projects, fall back to sessions
         const currentTab = page.url.pathname.split('/')[3] ?? 'sessions';
         const tab =
-          currentTab === 'settings' || !tabSlugs.includes(currentTab as (typeof tabSlugs)[number])
+          currentTab === 'settings' ||
+          !baseTabSlugs.includes(currentTab as (typeof baseTabSlugs)[number])
             ? 'sessions'
             : currentTab;
-        // Cmd+1 = all projects, Cmd+2..9 = projects in sidebar order
+        // Ctrl+Shift+1 = all projects, Ctrl+Shift+2..9 = projects in sidebar order
         if (projectIndex === 1) {
           void goto(resolve(projectUrl('all', tab)));
+          return true;
         } else {
           const project = getSidebarOrderedProjects(data.projects)[projectIndex - 2];
           if (project) {
             void goto(resolve(projectUrl(String(project.id), tab)));
+            return true;
           }
         }
+        return false;
       },
     });
   }
