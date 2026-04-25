@@ -30,6 +30,7 @@ import {
   type ReviewIssueSource,
   updateReview,
 } from '../db/review.js';
+import { getLinkedPlansByPrUrl } from '../db/pr_status.js';
 import { getOrCreateProject } from '../db/project.js';
 import { buildExecutorAndLog } from '../executors/index.js';
 import type { Executor, ExecutorOutput } from '../executors/types.js';
@@ -155,6 +156,22 @@ function buildPrMetadata(context: Awaited<ReturnType<typeof gatherPrContext>>): 
     owner: context.owner,
     repo: context.repo,
   };
+}
+
+function updateReviewGuideSessionInfo(
+  db: Database,
+  context: Awaited<ReturnType<typeof gatherPrContext>>
+): void {
+  const linkedPlan = getLinkedPlansByPrUrl(db, [context.prUrl]).get(context.prUrl)?.[0];
+
+  updateHeadlessSessionInfo({
+    linkedPrUrl: context.prUrl,
+    linkedPrNumber: context.prNumber,
+    linkedPrTitle: context.prStatus.title ?? undefined,
+    linkedPlanId: linkedPlan?.planId,
+    linkedPlanUuid: linkedPlan?.planUuid,
+    linkedPlanTitle: linkedPlan?.title ?? undefined,
+  });
 }
 
 function getReviewTempPaths(
@@ -1159,6 +1176,7 @@ export async function handleReviewGuideCommand(
           plan: options.plan,
           cwd: baseDir,
         });
+        updateReviewGuideSessionInfo(db, prContext);
 
         const metadata = buildPrMetadata(prContext);
         const { projectId, repoRoot } = await resolveProjectContextForRepo(db, baseDir);

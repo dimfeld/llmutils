@@ -130,12 +130,29 @@
   let endSessionUsed = $derived(hasUsedEndSession(uiState, session.connectionId));
 
   let planLink = $derived.by(() => {
-    const uuid = session.sessionInfo.planUuid;
+    const uuid = session.sessionInfo.planUuid ?? session.sessionInfo.linkedPlanUuid;
     const projectId = page.params.projectId;
     if (uuid && projectId) {
       return resolve(`/projects/[projectId]/plans/[planId]`, { projectId, planId: uuid });
     }
     return null;
+  });
+
+  let displayPlan = $derived.by(() => ({
+    id: session.sessionInfo.planId ?? session.sessionInfo.linkedPlanId,
+    title: session.sessionInfo.planTitle ?? session.sessionInfo.linkedPlanTitle,
+  }));
+
+  let prLink = $derived.by(() => {
+    const prNumber = session.sessionInfo.linkedPrNumber;
+    const projectId = page.params.projectId;
+    if (prNumber != null && projectId) {
+      return resolve(`/projects/[projectId]/prs/[prNumber]`, {
+        projectId,
+        prNumber: String(prNumber),
+      });
+    }
+    return session.sessionInfo.linkedPrUrl ?? null;
   });
 
   let taskCounts = $derived(
@@ -305,12 +322,12 @@
         <h2 class="truncate text-lg font-semibold text-foreground">
           {session.sessionInfo.command}
         </h2>
-        {#if session.sessionInfo.planTitle || session.sessionInfo.planId != null}
+        {#if displayPlan.title || displayPlan.id != null}
           {#snippet planText()}
-            {#if session.sessionInfo.planId != null}
-              #{session.sessionInfo.planId}
+            {#if displayPlan.id != null}
+              #{displayPlan.id}
             {/if}
-            {session.sessionInfo.planTitle ?? ''}
+            {displayPlan.title ?? ''}
           {/snippet}
           {#if planLink}
             <a
@@ -330,64 +347,109 @@
             </span>
           {/if}
         {/if}
+        {#if session.sessionInfo.linkedPrNumber != null || session.sessionInfo.linkedPrUrl}
+          {#snippet prText()}
+            {#if session.sessionInfo.linkedPrNumber != null}
+              PR #{session.sessionInfo.linkedPrNumber}
+            {:else}
+              PR
+            {/if}
+            {session.sessionInfo.linkedPrTitle ? ` ${session.sessionInfo.linkedPrTitle}` : ''}
+          {/snippet}
+          {#if prLink}
+            <a
+              href={prLink}
+              class="truncate text-sm text-muted-foreground hover:text-foreground hover:underline"
+            >
+              {@render prText()}
+            </a>
+          {:else}
+            <span class="truncate text-sm text-muted-foreground">
+              {@render prText()}
+            </span>
+          {/if}
+        {/if}
         <span class="text-xs text-muted-foreground">{statusText}</span>
       </div>
 
       <div class="flex shrink-0 items-center gap-2">
-          {#if showEndSession}
-            {#if confirmingEndSession}
-              <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-              <div
-                role="alertdialog"
-                aria-label={endSessionUsed ? 'Confirm SIGTERM' : 'Confirm end session'}
-                tabindex="-1"
-                class="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-900 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-100"
-                onkeydown={handleConfirmationKeydown}
-              >
-                <span>
-                  {endSessionUsed
-                    ? 'Send SIGTERM to this running session?'
-                    : 'End this running session?'}
-                </span>
-                <button
-                  type="button"
-                  class="rounded bg-red-600 px-2 py-1 font-medium text-white transition-colors hover:bg-red-700"
-                  onclick={handleConfirmEndSession}
-                  bind:this={confirmEndSessionButton}
-                >
-                  {endSessionUsed ? 'Send SIGTERM' : 'End Session'}
-                </button>
-                <button
-                  type="button"
-                  class="rounded px-2 py-1 text-red-900 transition-colors hover:bg-red-100 dark:text-red-100 dark:hover:bg-red-900/40"
-                  onclick={handleCancelEndSession}
-                >
-                  Cancel
-                </button>
-              </div>
-            {:else}
+        {#if showEndSession}
+          {#if confirmingEndSession}
+            <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+            <div
+              role="alertdialog"
+              aria-label={endSessionUsed ? 'Confirm SIGTERM' : 'Confirm end session'}
+              tabindex="-1"
+              class="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-900 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-100"
+              onkeydown={handleConfirmationKeydown}
+            >
+              <span>
+                {endSessionUsed
+                  ? 'Send SIGTERM to this running session?'
+                  : 'End this running session?'}
+              </span>
               <button
                 type="button"
-                class="rounded border border-red-200 px-2 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-950/40"
-                onclick={handleRequestEndSession}
-                bind:this={endSessionTriggerButton}
+                class="rounded bg-red-600 px-2 py-1 font-medium text-white transition-colors hover:bg-red-700"
+                onclick={handleConfirmEndSession}
+                bind:this={confirmEndSessionButton}
               >
-                End Session
+                {endSessionUsed ? 'Send SIGTERM' : 'End Session'}
               </button>
-            {/if}
+              <button
+                type="button"
+                class="rounded px-2 py-1 text-red-900 transition-colors hover:bg-red-100 dark:text-red-100 dark:hover:bg-red-900/40"
+                onclick={handleCancelEndSession}
+              >
+                Cancel
+              </button>
+            </div>
+          {:else}
+            <button
+              type="button"
+              class="rounded border border-red-200 px-2 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-950/40"
+              onclick={handleRequestEndSession}
+              bind:this={endSessionTriggerButton}
+            >
+              End Session
+            </button>
           {/if}
+        {/if}
 
-          <CopyButton
-            text={exportSessionAsMarkdown(session)}
-            mode="icon"
-            iconClass="size-4"
-            className="rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
-            ariaLabel="Copy transcript to clipboard"
-            title="Copy transcript to clipboard"
-            disabled={!hasMessages}
-            onCopyError={(message) => toast.error(`Failed to copy: ${message}`)}
-            onCopied={() => toast.success('Copied to clipboard')}
-          />
+        <CopyButton
+          text={exportSessionAsMarkdown(session)}
+          mode="icon"
+          iconClass="size-4"
+          className="rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
+          ariaLabel="Copy transcript to clipboard"
+          title="Copy transcript to clipboard"
+          disabled={!hasMessages}
+          onCopyError={(message) => toast.error(`Failed to copy: ${message}`)}
+          onCopied={() => toast.success('Copied to clipboard')}
+        />
+        <Tooltip.Root>
+          <Tooltip.Trigger>
+            {#snippet child({ props })}
+              {@const buttonProps = mergeProps(
+                {
+                  type: 'button',
+                  class:
+                    'rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800',
+                  onclick: handleDownloadTranscript,
+                  disabled: !hasMessages,
+                  'aria-label': 'Download transcript',
+                },
+                props
+              )}
+              <button {...buttonProps}>
+                <Download class="size-4" />
+              </button>
+            {/snippet}
+          </Tooltip.Trigger>
+          <Tooltip.Content sideOffset={8}>Download transcript</Tooltip.Content>
+        </Tooltip.Root>
+
+        {#if session.sessionInfo.workspacePath}
           <Tooltip.Root>
             <Tooltip.Trigger>
               {#snippet child({ props })}
@@ -396,95 +458,72 @@
                     type: 'button',
                     class:
                       'rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800',
-                    onclick: handleDownloadTranscript,
-                    disabled: !hasMessages,
-                    'aria-label': 'Download transcript',
+                    onclick: handleOpenTerminal,
+                    disabled: openingTerminal,
+                    'aria-label': 'Open new terminal',
                   },
                   props
                 )}
                 <button {...buttonProps}>
-                  <Download class="size-4" />
+                  <AppWindow class="size-4" />
                 </button>
               {/snippet}
             </Tooltip.Trigger>
-            <Tooltip.Content sideOffset={8}>Download transcript</Tooltip.Content>
+            <Tooltip.Content sideOffset={8}>Open new terminal</Tooltip.Content>
           </Tooltip.Root>
-
-          {#if session.sessionInfo.workspacePath}
-            <Tooltip.Root>
-              <Tooltip.Trigger>
-                {#snippet child({ props })}
-                  {@const buttonProps = mergeProps(
-                    {
-                      type: 'button',
-                      class:
-                        'rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800',
-                      onclick: handleOpenTerminal,
-                      disabled: openingTerminal,
-                      'aria-label': 'Open new terminal',
-                    },
-                    props
-                  )}
-                  <button {...buttonProps}>
-                    <AppWindow class="size-4" />
-                  </button>
-                {/snippet}
-              </Tooltip.Trigger>
-              <Tooltip.Content sideOffset={8}>Open new terminal</Tooltip.Content>
-            </Tooltip.Root>
-          {/if}
-          {#if hasTerminalPane}
-            <Tooltip.Root>
-              <Tooltip.Trigger>
-                {#snippet child({ props })}
-                  {@const buttonProps = mergeProps(
-                    {
-                      type: 'button',
-                      class:
-                        'rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800',
-                      onclick: handleActivateTerminal,
-                      'aria-label': 'Activate terminal pane',
-                    },
-                    props
-                  )}
-                  <button {...buttonProps}>
-                    <TerminalIcon class="size-4" />
-                  </button>
-                {/snippet}
-              </Tooltip.Trigger>
-              <Tooltip.Content sideOffset={8}>Activate terminal pane</Tooltip.Content>
-            </Tooltip.Root>
-          {/if}
-          {#if showPlanPane}
-            <Tooltip.Root>
-              <Tooltip.Trigger>
-                {#snippet child({ props })}
-                  {@const planPaneLabel = planPaneCollapsed ? 'Show plan pane' : 'Hide plan pane'}
-                  {@const buttonProps = mergeProps(
-                    {
-                      type: 'button',
-                      class:
-                        'rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800',
-                      onclick: handleTogglePlanPane,
-                      'aria-label': planPaneLabel,
-                    },
-                    props
-                  )}
-                  <button {...buttonProps}>
-                    {#if planPaneCollapsed}
-                      <PanelRightOpen class="size-4" />
-                    {:else}
-                      <PanelRightClose class="size-4" />
-                    {/if}
-                  </button>
-                {/snippet}
-              </Tooltip.Trigger>
-              <Tooltip.Content sideOffset={8}>
-                {planPaneCollapsed ? 'Show plan pane' : 'Hide plan pane'}
-              </Tooltip.Content>
-            </Tooltip.Root>
-          {/if}
-        </div>
+        {/if}
+        {#if hasTerminalPane}
+          <Tooltip.Root>
+            <Tooltip.Trigger>
+              {#snippet child({ props })}
+                {@const buttonProps = mergeProps(
+                  {
+                    type: 'button',
+                    class:
+                      'rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800',
+                    onclick: handleActivateTerminal,
+                    'aria-label': 'Activate terminal pane',
+                  },
+                  props
+                )}
+                <button {...buttonProps}>
+                  <TerminalIcon class="size-4" />
+                </button>
+              {/snippet}
+            </Tooltip.Trigger>
+            <Tooltip.Content sideOffset={8}>Activate terminal pane</Tooltip.Content>
+          </Tooltip.Root>
+        {/if}
+        {#if showPlanPane}
+          <Tooltip.Root>
+            <Tooltip.Trigger>
+              {#snippet child({ props })}
+                {@const planPaneLabel = planPaneCollapsed ? 'Show plan pane' : 'Hide plan pane'}
+                {@const buttonProps = mergeProps(
+                  {
+                    type: 'button',
+                    class:
+                      'rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800',
+                    onclick: handleTogglePlanPane,
+                    'aria-label': planPaneLabel,
+                  },
+                  props
+                )}
+                <button {...buttonProps}>
+                  {#if planPaneCollapsed}
+                    <PanelRightOpen class="size-4" />
+                  {:else}
+                    <PanelRightClose class="size-4" />
+                  {/if}
+                </button>
+              {/snippet}
+            </Tooltip.Trigger>
+            <Tooltip.Content sideOffset={8}>
+              {planPaneCollapsed ? 'Show plan pane' : 'Hide plan pane'}
+            </Tooltip.Content>
+          </Tooltip.Root>
+        {/if}
+      </div>
     </div>
     {#if session.sessionInfo.workspacePath || showRunAgent || (planAttentionState && attentionReasons.length > 0)}
       <div class="mt-1 flex min-w-0 items-center justify-between gap-2">

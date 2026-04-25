@@ -293,6 +293,12 @@ describe('HeadlessAdapter', () => {
         planId: 42,
         planUuid: 'plan-uuid-42',
         planTitle: 'review plan',
+        linkedPlanId: 43,
+        linkedPlanUuid: 'linked-plan-uuid-43',
+        linkedPlanTitle: 'linked plan',
+        linkedPrUrl: 'https://github.com/owner/repo/pull/42',
+        linkedPrNumber: 42,
+        linkedPrTitle: 'review target',
       },
       wrapped
     );
@@ -305,6 +311,12 @@ describe('HeadlessAdapter', () => {
       planId: 42,
       planUuid: 'plan-uuid-42',
       planTitle: 'review plan',
+      linkedPlanId: 43,
+      linkedPlanUuid: 'linked-plan-uuid-43',
+      linkedPlanTitle: 'linked plan',
+      linkedPrUrl: 'https://github.com/owner/repo/pull/42',
+      linkedPrNumber: 42,
+      linkedPrTitle: 'review target',
       sessionId: expect.any(String),
     });
 

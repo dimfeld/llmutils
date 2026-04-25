@@ -249,6 +249,41 @@ describe('SessionDetail', () => {
     expect(body).toContain('aria-label="Hide plan pane"');
   });
 
+  test('renders a linked pull request in the session header', async () => {
+    const session = createSession({
+      sessionInfo: {
+        linkedPrNumber: 42,
+        linkedPrUrl: 'https://github.com/acme/repo/pull/42',
+        linkedPrTitle: 'Review target',
+      },
+    });
+
+    const { body } = await render(SessionDetail, { props: { session } });
+
+    expect(body).toContain('href="/projects/3/prs/42"');
+    expect(body).toContain('PR #42');
+    expect(body).toContain('Review target');
+  });
+
+  test('renders a linked plan without opening the plan split pane', async () => {
+    const session = createSession({
+      sessionInfo: {
+        linkedPlanId: 302,
+        linkedPlanUuid: 'plan-302',
+        linkedPlanTitle: 'Linked plan',
+      },
+      planContent: null,
+    });
+
+    const { body } = await render(SessionDetail, { props: { session } });
+
+    expect(body).toContain('href="/projects/3/plans/plan-302"');
+    expect(body).toContain('#302');
+    expect(body).toContain('Linked plan');
+    expect(body).not.toContain('Waiting for plan content...');
+    expect(body).not.toContain('Hide plan pane');
+  });
+
   test('renders streamed plan content when the session has a plan', async () => {
     const session = createSession({
       sessionInfo: {

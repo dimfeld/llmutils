@@ -7,6 +7,12 @@ export interface HeadlessSessionInfo {
   planId?: number;
   planUuid?: string;
   planTitle?: string;
+  linkedPlanId?: number;
+  linkedPlanUuid?: string;
+  linkedPlanTitle?: string;
+  linkedPrUrl?: string;
+  linkedPrNumber?: number;
+  linkedPrTitle?: string;
   workspacePath?: string;
   gitRemote?: string;
   terminalPaneId?: string;

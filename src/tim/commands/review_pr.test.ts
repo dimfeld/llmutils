@@ -58,6 +58,10 @@ vi.mock('../db/review.js', () => ({
   updateReview: vi.fn(),
 }));
 
+vi.mock('../db/pr_status.js', () => ({
+  getLinkedPlansByPrUrl: vi.fn(() => new Map()),
+}));
+
 vi.mock('../db/project.js', () => ({
   getOrCreateProject: vi.fn(),
 }));
@@ -145,6 +149,7 @@ import {
   insertReviewIssues,
   updateReview,
 } from '../db/review.js';
+import { getLinkedPlansByPrUrl } from '../db/pr_status.js';
 import { getOrCreateProject } from '../db/project.js';
 import { buildExecutorAndLog } from '../executors/index.js';
 import { gatherPrContext, checkoutPrBranch, resolvePrUrl } from '../utils/pr_context_gathering.js';
@@ -173,6 +178,7 @@ const mockGetLatestReviewByPrUrl = vi.mocked(getLatestReviewByPrUrl);
 const mockGetReviewIssues = vi.mocked(getReviewIssues);
 const mockInsertReviewIssues = vi.mocked(insertReviewIssues);
 const mockUpdateReview = vi.mocked(updateReview);
+const mockGetLinkedPlansByPrUrl = vi.mocked(getLinkedPlansByPrUrl);
 const mockGetOrCreateProject = vi.mocked(getOrCreateProject);
 const mockBuildExecutorAndLog = vi.mocked(buildExecutorAndLog);
 const mockGatherPrContext = vi.mocked(gatherPrContext);
@@ -678,6 +684,38 @@ describe('review_pr command', () => {
     expect(runWithHeadlessAdapterIfEnabledMock).toHaveBeenCalledWith(
       expect.objectContaining({ interactive: true })
     );
+  });
+
+  test('updates headless session info with PR metadata and a linked plan', async () => {
+    const codexExecute = vi.fn().mockResolvedValue({
+      content: JSON.stringify({ issues: [], recommendations: [], actionItems: [] }),
+    });
+    mockBuildExecutorAndLog.mockReturnValue({ execute: codexExecute } as any);
+    mockGetLinkedPlansByPrUrl.mockReturnValue(
+      new Map([
+        [
+          'https://github.com/acme/repo/pull/42',
+          [{ planId: 302, planUuid: 'plan-302', title: 'Linked plan' }],
+        ],
+      ])
+    );
+
+    await handleReviewGuideCommand(
+      '42',
+      { executor: 'codex-cli', terminalInput: false },
+      makeCommand()
+    );
+
+    expect(
+      vi.mocked((await import('../headless.js')).updateHeadlessSessionInfo)
+    ).toHaveBeenCalledWith({
+      linkedPrUrl: 'https://github.com/acme/repo/pull/42',
+      linkedPrNumber: 42,
+      linkedPrTitle: 'PR title',
+      linkedPlanId: 302,
+      linkedPlanUuid: 'plan-302',
+      linkedPlanTitle: 'Linked plan',
+    });
   });
 
   test('defers SIGTERM until review-guide cleanup completes', async () => {

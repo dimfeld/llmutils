@@ -13,6 +13,12 @@ export interface SessionInfoFile {
   planId?: number;
   planUuid?: string;
   planTitle?: string;
+  linkedPlanId?: number;
+  linkedPlanUuid?: string;
+  linkedPlanTitle?: string;
+  linkedPrUrl?: string;
+  linkedPrNumber?: number;
+  linkedPrTitle?: string;
   gitRemote?: string;
   startedAt: string;
   token?: boolean;
@@ -66,6 +72,30 @@ function parseSessionInfoFile(value: unknown): SessionInfoFile {
   if (data.planTitle != null && typeof data.planTitle !== 'string') {
     throw new Error('Session info file has invalid planTitle');
   }
+  if (
+    data.linkedPlanId != null &&
+    (typeof data.linkedPlanId !== 'number' || !Number.isInteger(data.linkedPlanId))
+  ) {
+    throw new Error('Session info file has invalid linkedPlanId');
+  }
+  if (data.linkedPlanUuid != null && typeof data.linkedPlanUuid !== 'string') {
+    throw new Error('Session info file has invalid linkedPlanUuid');
+  }
+  if (data.linkedPlanTitle != null && typeof data.linkedPlanTitle !== 'string') {
+    throw new Error('Session info file has invalid linkedPlanTitle');
+  }
+  if (data.linkedPrUrl != null && typeof data.linkedPrUrl !== 'string') {
+    throw new Error('Session info file has invalid linkedPrUrl');
+  }
+  if (
+    data.linkedPrNumber != null &&
+    (typeof data.linkedPrNumber !== 'number' || !Number.isInteger(data.linkedPrNumber))
+  ) {
+    throw new Error('Session info file has invalid linkedPrNumber');
+  }
+  if (data.linkedPrTitle != null && typeof data.linkedPrTitle !== 'string') {
+    throw new Error('Session info file has invalid linkedPrTitle');
+  }
   if (data.gitRemote != null && typeof data.gitRemote !== 'string') {
     throw new Error('Session info file has invalid gitRemote');
   }
@@ -83,6 +113,12 @@ function parseSessionInfoFile(value: unknown): SessionInfoFile {
     planId: data.planId as number | undefined,
     planUuid: data.planUuid as string | undefined,
     planTitle: data.planTitle as string | undefined,
+    linkedPlanId: data.linkedPlanId as number | undefined,
+    linkedPlanUuid: data.linkedPlanUuid as string | undefined,
+    linkedPlanTitle: data.linkedPlanTitle as string | undefined,
+    linkedPrUrl: data.linkedPrUrl as string | undefined,
+    linkedPrNumber: data.linkedPrNumber as number | undefined,
+    linkedPrTitle: data.linkedPrTitle as string | undefined,
     gitRemote: data.gitRemote as string | undefined,
     startedAt: data.startedAt,
     token: data.token as boolean | undefined,

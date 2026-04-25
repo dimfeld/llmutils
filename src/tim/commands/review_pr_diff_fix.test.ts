@@ -42,6 +42,10 @@ vi.mock('../db/review.js', () => ({
   updateReview: vi.fn(),
 }));
 
+vi.mock('../db/pr_status.js', () => ({
+  getLinkedPlansByPrUrl: vi.fn(() => new Map()),
+}));
+
 vi.mock('../db/project.js', () => ({
   getOrCreateProject: vi.fn(),
 }));
