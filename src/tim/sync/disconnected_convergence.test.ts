@@ -560,14 +560,12 @@ describe('disconnected sync convergence', () => {
     expect(setOrderOp?.seq).toBeGreaterThan(createOp!.seq!);
 
     b.db.prepare('UPDATE sync_op_log SET seq = -1 WHERE op_id = ?').run(createOp!.op_id);
-    b.db.prepare('UPDATE sync_op_log SET seq = ? WHERE op_id = ?').run(
-      createOp!.seq!,
-      setOrderOp!.op_id
-    );
-    b.db.prepare('UPDATE sync_op_log SET seq = ? WHERE op_id = ?').run(
-      setOrderOp!.seq!,
-      createOp!.op_id
-    );
+    b.db
+      .prepare('UPDATE sync_op_log SET seq = ? WHERE op_id = ?')
+      .run(createOp!.seq!, setOrderOp!.op_id);
+    b.db
+      .prepare('UPDATE sync_op_log SET seq = ? WHERE op_id = ?')
+      .run(setOrderOp!.seq!, createOp!.op_id);
 
     const result = await runPeerSync(a.db, b.nodeId, directTransport(b, a), { batchSize: 1 });
     expect(result.pullChunks).toBeGreaterThanOrEqual(2);
@@ -621,14 +619,12 @@ describe('disconnected sync convergence', () => {
     expect(setOrderOp?.seq).toBeGreaterThan(createOp!.seq!);
 
     a.db.prepare('UPDATE sync_op_log SET seq = -1 WHERE op_id = ?').run(createOp!.op_id);
-    a.db.prepare('UPDATE sync_op_log SET seq = ? WHERE op_id = ?').run(
-      createOp!.seq!,
-      setOrderOp!.op_id
-    );
-    a.db.prepare('UPDATE sync_op_log SET seq = ? WHERE op_id = ?').run(
-      setOrderOp!.seq!,
-      createOp!.op_id
-    );
+    a.db
+      .prepare('UPDATE sync_op_log SET seq = ? WHERE op_id = ?')
+      .run(createOp!.seq!, setOrderOp!.op_id);
+    a.db
+      .prepare('UPDATE sync_op_log SET seq = ? WHERE op_id = ?')
+      .run(setOrderOp!.seq!, createOp!.op_id);
 
     registerPeerNode(a.db, { nodeId: b.nodeId, nodeType: 'main', label: b.name });
     registerPeerNode(b.db, { nodeId: a.nodeId, nodeType: 'main', label: a.name });

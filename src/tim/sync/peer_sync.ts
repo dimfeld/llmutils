@@ -74,9 +74,7 @@ function countDeferredSkips(result: ApplyResult): number {
 }
 
 function countDurableOps(result: ApplyResult): number {
-  return (
-    result.applied + result.skipped.filter((skip) => skip.kind === 'permanent').length
-  );
+  return result.applied + result.skipped.filter((skip) => skip.kind === 'permanent').length;
 }
 
 function mergeApplyResults(chunkResult: ApplyResult, retryResult: ApplyResult): ApplyResult {
