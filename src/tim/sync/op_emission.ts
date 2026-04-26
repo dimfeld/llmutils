@@ -202,13 +202,10 @@ function emitWithFields(
 // project identity is supplied as `projectIdentity` in the payload instead.
 // `plan_id` is a display/convenience numeric ID that nodes allocate locally
 // and reconcile out-of-band; it's emitted as a provisional hint, not a LWW
-// register. `review_issues` is the legacy JSON column kept dual-written for
-// migration safety; the authoritative source is the `plan_review_issue` table
-// (which has its own ops). `created_at`/`updated_at` are local clock values.
+// register. `created_at`/`updated_at` are local clock values.
 const PLAN_LOCAL_ONLY_FIELDS = new Set<string>([
   'project_id',
   'plan_id',
-  'review_issues',
   'created_at',
   'updated_at',
 ]);

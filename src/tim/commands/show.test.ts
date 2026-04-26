@@ -895,7 +895,6 @@ describe('mcpGetPlan', () => {
           changed_files: null,
           temp: 0,
           base_branch: null,
-          review_issues: null,
           plan_generated_at: null,
           filename: '200.plan.md',
           created_at: '2026-01-01T00:00:00.000Z',

@@ -1064,6 +1064,16 @@ const migrations: Migration[] = [
       CREATE INDEX idx_sync_worker_lease_expires ON sync_worker_lease(lease_expires_at);
     `,
   },
+  {
+    version: 30,
+    up: (db: Database): void => {
+      const planColumns = db.prepare("PRAGMA table_info('plan')").all() as Array<{ name: string }>;
+      if (!planColumns.some((column) => column.name === 'review_issues')) {
+        return;
+      }
+      db.run('ALTER TABLE plan DROP COLUMN review_issues');
+    },
+  },
 ];
 
 function getCurrentVersion(db: Database): number {

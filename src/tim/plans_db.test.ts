@@ -49,16 +49,6 @@ function createPlanRow(overrides: Partial<PlanRow> = {}): PlanRow {
     plan_generated_at: '2026-03-01T00:00:00.000Z',
     docs_updated_at: '2026-03-04T00:00:00.000Z',
     lessons_applied_at: '2026-03-05T00:00:00.000Z',
-    review_issues: JSON.stringify([
-      {
-        severity: 'major',
-        category: 'coverage',
-        content: 'Missing integration test',
-        file: 'src/tim/plans_db.ts',
-        line: 42,
-        suggestion: 'Add direct coverage for DB fallback parent resolution',
-      },
-    ]),
     parent_uuid: '22222222-2222-4222-8222-222222222222',
     epic: 1,
     created_at: '2026-03-02T00:00:00.000Z',
@@ -197,7 +187,6 @@ describe('tim plans_db', () => {
       plan_generated_at: null,
       docs_updated_at: null,
       lessons_applied_at: null,
-      review_issues: null,
       parent_uuid: null,
       epic: 0,
     });
@@ -279,7 +268,7 @@ describe('tim plans_db', () => {
     expect(columnNames).toContain('plan_generated_at');
     expect(columnNames).toContain('docs_updated_at');
     expect(columnNames).toContain('lessons_applied_at');
-    expect(columnNames).toContain('review_issues');
+    expect(columnNames).not.toContain('review_issues');
     expect(columnNames).toContain('note');
   });
 
@@ -455,7 +444,7 @@ describe('tim plans_db', () => {
     const row = db
       .prepare(
         `
-          SELECT note, temp, docs, changed_files, plan_generated_at, review_issues, parent_uuid
+          SELECT note, temp, docs, changed_files, plan_generated_at, parent_uuid
           FROM plan
           WHERE uuid = ?
         `
@@ -466,7 +455,6 @@ describe('tim plans_db', () => {
       docs: string | null;
       changed_files: string | null;
       plan_generated_at: string | null;
-      review_issues: string | null;
       parent_uuid: string | null;
     } | null;
     expect(row).not.toBeNull();
@@ -477,16 +465,23 @@ describe('tim plans_db', () => {
       docs: JSON.stringify(['docs/cli.md', 'docs/db-first.md']),
       changed_files: JSON.stringify(['src/tim/db/plan_sync.ts', 'src/tim/plans_db.ts']),
       plan_generated_at: '2026-03-20T01:02:03.000Z',
-      review_issues: JSON.stringify([
-        {
-          severity: 'major',
-          category: 'round-trip',
-          content: 'Ensure new DB columns are written from syncPlanToDb',
-          file: 'src/tim/db/plan_sync.ts',
-          line: 152,
-        },
-      ]),
       parent_uuid: parentUuid,
+    });
+    const reviewIssue = db
+      .prepare(
+        `
+          SELECT severity, category, content, file, line
+          FROM plan_review_issue
+          WHERE plan_uuid = ?
+        `
+      )
+      .get(planUuid);
+    expect(reviewIssue).toEqual({
+      severity: 'major',
+      category: 'round-trip',
+      content: 'Ensure new DB columns are written from syncPlanToDb',
+      file: 'src/tim/db/plan_sync.ts',
+      line: '152',
     });
 
     const dependencyRows = db

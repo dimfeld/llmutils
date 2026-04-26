@@ -652,14 +652,13 @@ function importPlans(db: Database, projectId: number, plans: PlanRow[]): void {
         docs,
         changed_files,
         plan_generated_at,
-        review_issues,
         docs_updated_at,
         lessons_applied_at,
         parent_uuid,
         epic,
         created_at,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(uuid) DO UPDATE SET
         project_id = excluded.project_id,
         plan_id = excluded.plan_id,
@@ -683,7 +682,6 @@ function importPlans(db: Database, projectId: number, plans: PlanRow[]): void {
         docs = excluded.docs,
         changed_files = excluded.changed_files,
         plan_generated_at = excluded.plan_generated_at,
-        review_issues = excluded.review_issues,
         docs_updated_at = excluded.docs_updated_at,
         lessons_applied_at = excluded.lessons_applied_at,
         parent_uuid = excluded.parent_uuid,
@@ -717,7 +715,6 @@ function importPlans(db: Database, projectId: number, plans: PlanRow[]): void {
       plan.docs,
       plan.changed_files,
       plan.plan_generated_at,
-      plan.review_issues,
       plan.docs_updated_at,
       plan.lessons_applied_at,
       plan.parent_uuid,

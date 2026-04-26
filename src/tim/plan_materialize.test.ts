@@ -424,10 +424,14 @@ describe('tim plan_materialize', () => {
     );
     expect(saved?.docs_updated_at).toBe('2026-03-04T00:00:00.000Z');
     expect(saved?.lessons_applied_at).toBe('2026-03-05T00:00:00.000Z');
-    expect(saved?.review_issues).toBe(
-      '[{"severity":"minor","category":"correctness","content":"Updated review issue from materialized file","file":"src/tim/plan_materialize.test.ts","line":1}]'
-    );
     const savedIssue = listReviewIssuesForPlan(db, '33333333-3333-4333-8333-333333333333')[0]!;
+    expect(savedIssue).toMatchObject({
+      severity: 'minor',
+      category: 'correctness',
+      content: 'Updated review issue from materialized file',
+      file: 'src/tim/plan_materialize.test.ts',
+      line: '1',
+    });
 
     const tasks = getPlanTasksByUuid(db, '33333333-3333-4333-8333-333333333333');
     expect(tasks).toHaveLength(3);
@@ -1204,10 +1208,24 @@ describe('tim plan_materialize', () => {
       changed_files:
         '["src/tim/plan_materialize.ts","src/tim/plan_materialize.test.ts","src/tim/commands/materialize.ts"]',
       plan_generated_at: '2026-03-24T00:00:00.000Z',
-      review_issues:
-        '[{"severity":"critical","category":"correctness","content":"Round-trip coverage must preserve review findings","file":"src/tim/plan_materialize.ts","line":42},{"severity":"minor","category":"coverage","content":"Verify cleanup cases","file":"src/tim/plan_materialize.test.ts","line":1}]',
       parent_uuid: '11111111-1111-4111-8111-111111111111',
     });
+    expect(listReviewIssuesForPlan(db, '33333333-3333-4333-8333-333333333333')).toEqual([
+      expect.objectContaining({
+        severity: 'critical',
+        category: 'correctness',
+        content: 'Round-trip coverage must preserve review findings',
+        file: 'src/tim/plan_materialize.ts',
+        line: '42',
+      }),
+      expect.objectContaining({
+        severity: 'minor',
+        category: 'coverage',
+        content: 'Verify cleanup cases',
+        file: 'src/tim/plan_materialize.test.ts',
+        line: '1',
+      }),
+    ]);
 
     expect(
       getPlanTasksByUuid(db, '33333333-3333-4333-8333-333333333333').map((task) => ({
@@ -1326,8 +1344,8 @@ describe('tim plan_materialize', () => {
 
     // Capture op count after seeding + materialization (materialize itself emits no new ops)
     const opsBefore = (
-      db.prepare('SELECT COUNT(*) as cnt FROM sync_op_log').get() as { cnt: number }
-    ).cnt;
+      db.prepare('SELECT COALESCE(MAX(seq), 0) as seq FROM sync_op_log').get() as { seq: number }
+    ).seq;
 
     // Edit only title in the materialized file, leave goal unchanged
     const editedPlan = await readPlanFile(planPath);
@@ -1340,10 +1358,10 @@ describe('tim plan_materialize', () => {
     // Collect all update_fields ops for this plan emitted AFTER the seed
     const allUpdateOps = db
       .prepare(
-        'SELECT rowid, payload FROM sync_op_log WHERE entity_type = ? AND entity_id = ? AND op_type = ?'
+        'SELECT seq, payload FROM sync_op_log WHERE entity_type = ? AND entity_id = ? AND op_type = ?'
       )
-      .all('plan', planUuid, 'update_fields') as Array<{ rowid: number; payload: string }>;
-    const newUpdateOps = allUpdateOps.filter((op) => op.rowid > opsBefore);
+      .all('plan', planUuid, 'update_fields') as Array<{ seq: number; payload: string }>;
+    const newUpdateOps = allUpdateOps.filter((op) => op.seq > opsBefore);
 
     // At least one update_fields op must have been emitted
     expect(newUpdateOps.length).toBeGreaterThan(0);

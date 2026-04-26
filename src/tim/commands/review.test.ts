@@ -183,7 +183,22 @@ describe('review issue persistence helpers', () => {
     await saveReviewIssuesToPlan(1, issues, testDir);
 
     const updatedPlan = (await resolvePlanByNumericId(1, testDir)).plan;
-    expect(updatedPlan.reviewIssues).toEqual(issues);
+    expect(updatedPlan.reviewIssues).toEqual([
+      expect.objectContaining({
+        severity: 'major',
+        category: 'bug',
+        content: 'A saved issue',
+        file: 'src/example.ts',
+        line: '12',
+        suggestion: 'Add a guard clause',
+      }),
+      expect.objectContaining({
+        severity: 'minor',
+        category: 'testing',
+        content: 'Add a regression test',
+        line: '24-30',
+      }),
+    ]);
   });
 
   test('clearSavedReviewIssues removes saved issues and is a no-op when absent', async () => {
@@ -252,7 +267,15 @@ test('saveReviewIssuesToPlan persists only the selected review issues', async ()
   await saveReviewIssuesToPlan(10, [reviewIssues[0]], testDir);
 
   const updatedPlan = (await resolvePlanByNumericId(10, testDir)).plan;
-  expect(updatedPlan.reviewIssues).toEqual([reviewIssues[0]]);
+  expect(updatedPlan.reviewIssues).toEqual([
+    expect.objectContaining({
+      severity: 'critical',
+      category: 'security',
+      content: 'Critical security issue',
+      file: 'src/security.ts',
+      line: '12',
+    }),
+  ]);
 });
 
 test('handleReviewCommand resolves plan by numeric ID', async () => {

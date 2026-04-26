@@ -43,7 +43,6 @@ export interface PlanRow {
   docs: string | null;
   changed_files: string | null;
   plan_generated_at: string | null;
-  review_issues: string | null;
   docs_updated_at: string | null;
   lessons_applied_at: string | null;
   parent_uuid: string | null;
@@ -367,7 +366,6 @@ export function upsertPlanInTransaction(
     docs: input.docs ? JSON.stringify(input.docs) : null,
     changed_files: input.changedFiles ? JSON.stringify(input.changedFiles) : null,
     plan_generated_at: input.planGeneratedAt ?? null,
-    review_issues: input.reviewIssues ? JSON.stringify(input.reviewIssues) : null,
     docs_updated_at: input.sourceDocsUpdatedAt ?? null,
     lessons_applied_at: input.sourceLessonsAppliedAt ?? null,
     parent_uuid: input.parentUuid ?? null,
@@ -400,14 +398,13 @@ export function upsertPlanInTransaction(
       docs,
       changed_files,
       plan_generated_at,
-      review_issues,
       docs_updated_at,
       lessons_applied_at,
       parent_uuid,
       epic,
       created_at,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ${SQL_NOW_ISO_UTC}), COALESCE(?, ${SQL_NOW_ISO_UTC}))
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ${SQL_NOW_ISO_UTC}), COALESCE(?, ${SQL_NOW_ISO_UTC}))
     ON CONFLICT(uuid) DO UPDATE SET
       project_id = excluded.project_id,
       plan_id = excluded.plan_id,
@@ -431,7 +428,6 @@ export function upsertPlanInTransaction(
       docs = excluded.docs,
       changed_files = excluded.changed_files,
       plan_generated_at = excluded.plan_generated_at,
-      review_issues = excluded.review_issues,
       docs_updated_at = excluded.docs_updated_at,
       lessons_applied_at = excluded.lessons_applied_at,
       parent_uuid = excluded.parent_uuid,
@@ -463,7 +459,6 @@ export function upsertPlanInTransaction(
     nextPlanFields.docs,
     nextPlanFields.changed_files,
     nextPlanFields.plan_generated_at,
-    nextPlanFields.review_issues,
     nextPlanFields.docs_updated_at,
     nextPlanFields.lessons_applied_at,
     nextPlanFields.parent_uuid,
