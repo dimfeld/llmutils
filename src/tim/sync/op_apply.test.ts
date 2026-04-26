@@ -13,6 +13,7 @@ import {
   upsertPlan,
   upsertPlanDependencies,
 } from '../db/plan.js';
+import { createReviewIssue, listReviewIssuesForPlan } from '../db/plan_review_issue.js';
 import { getProjectSetting, setProjectSetting } from '../db/project_settings.js';
 import { getOrCreateProject } from '../db/project.js';
 import { applyRemoteOps, type SyncOpRecord } from './op_apply.js';
@@ -369,5 +370,189 @@ describe('sync op application', () => {
     };
     expect(clock.physical_ms).toBe(futurePhysical);
     expect(clock.logical).toBe(8);
+  });
+
+  test('set_order op changes order_key and task_index but not title or description', () => {
+    const projectId = getOrCreateProject(db, 'github.com__owner__repo').id;
+    upsertPlan(db, projectId, {
+      uuid: 'plan-setorder',
+      planId: 10,
+      tasks: [
+        { uuid: 'task-ord', title: 'Keep title', description: 'Keep desc', done: false },
+      ],
+    });
+
+    const setOrderOp = makeOp(
+      'remote-a',
+      { physicalMs: Date.now() + 10_000, logical: 0 },
+      1,
+      'plan_task',
+      'task-ord',
+      'set_order',
+      { planUuid: 'plan-setorder', orderKey: '0000000099', taskIndex: 99 }
+    );
+
+    expect(applyRemoteOps(db, [setOrderOp]).errors).toEqual([]);
+
+    const row = db
+      .prepare('SELECT title, description, order_key, task_index FROM plan_task WHERE uuid = ?')
+      .get('task-ord') as {
+        title: string;
+        description: string;
+        order_key: string;
+        task_index: number;
+      };
+    expect(row.order_key).toBe('0000000099');
+    expect(row.task_index).toBe(99);
+    expect(row.title).toBe('Keep title');
+    expect(row.description).toBe('Keep desc');
+  });
+
+  test('planIdHint collision assigns a fresh numeric id', () => {
+    const projectId = getOrCreateProject(db, 'github.com__owner__repo').id;
+    upsertPlan(db, projectId, { uuid: 'plan-existing', planId: 5 });
+
+    const createOp = makeOp(
+      'remote-a',
+      { physicalMs: 1000, logical: 0 },
+      1,
+      'plan',
+      'plan-new-uuid',
+      'create',
+      {
+        projectIdentity: 'github.com__owner__repo',
+        planIdHint: 5,
+        fields: { title: 'New plan with colliding hint' },
+      }
+    );
+
+    expect(applyRemoteOps(db, [createOp]).errors).toEqual([]);
+
+    const newPlan = getPlanByUuid(db, 'plan-new-uuid');
+    expect(newPlan).not.toBeNull();
+    // Must not reuse plan_id=5 (already taken by plan-existing)
+    expect(newPlan?.plan_id).not.toBe(5);
+    expect(newPlan?.plan_id).toBeGreaterThan(0);
+    // Original plan must be untouched
+    expect(getPlanByUuid(db, 'plan-existing')?.plan_id).toBe(5);
+  });
+
+  test('same UUID created on two nodes merges by field clocks and exists once', () => {
+    // Earlier HLC (800) from node-b, later HLC (1000) from node-a
+    const createEarly = makeOp(
+      'node-b',
+      { physicalMs: 800, logical: 0 },
+      1,
+      'plan',
+      'plan-dual',
+      'create',
+      {
+        projectIdentity: 'github.com__owner__repo',
+        planIdHint: 20,
+        fields: { title: 'Early title', status: 'pending' },
+      }
+    );
+    const createLate = makeOp(
+      'node-a',
+      { physicalMs: 1000, logical: 0 },
+      1,
+      'plan',
+      'plan-dual',
+      'create',
+      {
+        projectIdentity: 'github.com__owner__repo',
+        planIdHint: 20,
+        fields: { title: 'Late title', status: 'in_progress' },
+      }
+    );
+
+    expect(applyRemoteOps(db, [createLate, createEarly]).errors).toEqual([]);
+
+    // Plan must exist exactly once
+    const count = (
+      db.prepare('SELECT count(*) AS c FROM plan WHERE uuid = ?').get('plan-dual') as { c: number }
+    ).c;
+    expect(count).toBe(1);
+
+    // Higher-HLC (1000) wins for both fields
+    const plan = getPlanByUuid(db, 'plan-dual');
+    expect(plan?.title).toBe('Late title');
+    expect(plan?.status).toBe('in_progress');
+  });
+
+  test('plan_review_issue round-trip: create, update, and delete ops applied correctly', async () => {
+    const otherDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-sync-op-apply-ri-peer-'));
+    const source = openDatabase(path.join(otherDir, DATABASE_FILENAME));
+    try {
+      const sourceProjectId = getOrCreateProject(source, 'github.com__owner__repo').id;
+      upsertPlan(source, sourceProjectId, { uuid: 'plan-ri-rt', planId: 30 });
+
+      const issue = createReviewIssue(source, {
+        planUuid: 'plan-ri-rt',
+        content: 'Found a bug',
+        severity: 'major',
+        category: 'bug',
+      });
+
+      // Apply source ops (create) to target
+      const sourceOps = source
+        .prepare('SELECT * FROM sync_op_log ORDER BY hlc_physical_ms, hlc_logical, local_counter')
+        .all() as SyncOpRecord[];
+
+      const result = applyRemoteOps(db, sourceOps);
+      expect(result.errors).toEqual([]);
+
+      const targetProjectId = getOrCreateProject(db, 'github.com__owner__repo').id;
+      const issues = listReviewIssuesForPlan(db, 'plan-ri-rt');
+      expect(issues).toHaveLength(1);
+      expect(issues[0]!.uuid).toBe(issue.uuid);
+      expect(issues[0]!.content).toBe('Found a bug');
+      expect(issues[0]!.severity).toBe('major');
+
+      // Now delete the issue on source and sync again
+      source
+        .prepare(
+          'UPDATE plan_review_issue SET deleted_hlc = ?, updated_hlc = ? WHERE uuid = ?'
+        )
+        .run('9999999999.00000001', '9999999999.00000001', issue.uuid);
+      // Emit a delete op manually
+      const deleteOp = makeOp(
+        'remote-src',
+        { physicalMs: 9999999999, logical: 1 },
+        99,
+        'plan_review_issue',
+        issue.uuid,
+        'delete',
+        { planUuid: 'plan-ri-rt' }
+      );
+
+      const deleteResult = applyRemoteOps(db, [deleteOp]);
+      expect(deleteResult.errors).toEqual([]);
+      expect(listReviewIssuesForPlan(db, 'plan-ri-rt')).toHaveLength(0);
+
+      void targetProjectId;
+    } finally {
+      source.close(false);
+      await fs.rm(otherDir, { recursive: true, force: true });
+    }
+  });
+
+  test('plan delete op removes the plan row', () => {
+    const projectId = getOrCreateProject(db, 'github.com__owner__repo').id;
+    upsertPlan(db, projectId, { uuid: 'plan-to-delete', planId: 40 });
+    expect(getPlanByUuid(db, 'plan-to-delete')).not.toBeNull();
+
+    const deleteOp = makeOp(
+      'remote-a',
+      { physicalMs: 5000, logical: 0 },
+      1,
+      'plan',
+      'plan-to-delete',
+      'delete',
+      {}
+    );
+
+    expect(applyRemoteOps(db, [deleteOp]).errors).toEqual([]);
+    expect(getPlanByUuid(db, 'plan-to-delete')).toBeNull();
   });
 });
