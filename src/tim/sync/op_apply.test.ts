@@ -1007,6 +1007,75 @@ describe('sync op application', () => {
     expect(reResult.applied).toBe(0);
   });
 
+  test('add_edge for non-existent (non-tombstoned) parent plan is skipped without FK throw', () => {
+    const projectId = getOrCreateProject(db, 'github.com__owner__repo').id;
+    upsertPlan(db, projectId, { uuid: 'plan-existing-edge', planId: 95 });
+
+    // Reference a parent plan UUID that has no row and no tombstone
+    const badDep = makeOp(
+      'remote-e',
+      { physicalMs: Date.now() + 70_000, logical: 0 },
+      1,
+      'plan_dependency',
+      'plan-missing->plan-existing-edge',
+      'add_edge',
+      { planUuid: 'plan-missing', dependsOnUuid: 'plan-existing-edge' }
+    );
+    const badTag = makeOp(
+      'remote-e',
+      { physicalMs: Date.now() + 70_001, logical: 0 },
+      2,
+      'plan_tag',
+      'plan-missing#x',
+      'add_edge',
+      { planUuid: 'plan-missing', tag: 'x' }
+    );
+
+    const result = applyRemoteOps(db, [badDep, badTag]);
+    expect(result.errors).toEqual([]);
+    expect(result.skipped).toHaveLength(2);
+    expect(
+      db.prepare('SELECT count(*) AS count FROM sync_op_log WHERE op_id = ?').get(badDep.op_id)
+    ).toEqual({ count: 1 });
+    expect(
+      db.prepare('SELECT count(*) AS count FROM sync_op_log WHERE op_id = ?').get(badTag.op_id)
+    ).toEqual({ count: 1 });
+  });
+
+  test('set_order arriving before task create is skipped and does not poison field clock', () => {
+    const projectId = getOrCreateProject(db, 'github.com__owner__repo').id;
+    upsertPlan(db, projectId, { uuid: 'plan-order-race', planId: 96 });
+
+    const setOrderEarly = makeOp(
+      'remote-f',
+      { physicalMs: Date.now() + 80_000, logical: 0 },
+      1,
+      'plan_task',
+      'task-order-race',
+      'set_order',
+      { planUuid: 'plan-order-race', orderKey: '0000000099', taskIndex: 99 }
+    );
+
+    const result = applyRemoteOps(db, [setOrderEarly]);
+    expect(result.errors).toEqual([]);
+    expect(result.skipped).toHaveLength(1);
+
+    // No field clock written for order_key — later create can apply its own order_key
+    const clock = db
+      .prepare(
+        'SELECT * FROM sync_field_clock WHERE entity_type = ? AND entity_id = ? AND field_name = ?'
+      )
+      .get('plan_task', 'task-order-race', 'order_key');
+    expect(clock).toBeNull();
+
+    // op_log row still persisted for dedup
+    expect(
+      db
+        .prepare('SELECT count(*) AS count FROM sync_op_log WHERE op_id = ?')
+        .get(setOrderEarly.op_id)
+    ).toEqual({ count: 1 });
+  });
+
   test('add_edge with missing payload fields routes to skipped without throwing', () => {
     const projectId = getOrCreateProject(db, 'github.com__owner__repo').id;
     upsertPlan(db, projectId, { uuid: 'plan-bad-edge', planId: 91 });

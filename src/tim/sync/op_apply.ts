@@ -504,6 +504,15 @@ function applyTaskSetOrder(db: Database, op: SyncOpRecord): SkippedSyncOp | null
       reason: `plan_task set_order references missing plan ${payload.planUuid}`,
     };
   }
+  const taskRowExists = db
+    .prepare('SELECT 1 AS present FROM plan_task WHERE uuid = ?')
+    .get(op.entity_id) as { present: number } | null;
+  if (!taskRowExists) {
+    return {
+      opId: op.op_id,
+      reason: `plan_task set_order arrived before task ${op.entity_id} create`,
+    };
+  }
   applyScalarFields(
     db,
     op,
@@ -740,6 +749,12 @@ function applyDependencyEdge(db: Database, op: SyncOpRecord): SkippedSyncOp | nu
     ) {
       return { opId: op.op_id, reason: 'parent plan tombstoned; dropping dependency edge' };
     }
+    if (!planExists(db, payload.planUuid) || !planExists(db, payload.dependsOnUuid)) {
+      return {
+        opId: op.op_id,
+        reason: 'dependency edge references missing parent plan; deferring',
+      };
+    }
     db.prepare(
       'INSERT OR IGNORE INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)'
     ).run(payload.planUuid, payload.dependsOnUuid);
@@ -770,6 +785,9 @@ function applyTagEdge(db: Database, op: SyncOpRecord): SkippedSyncOp | null {
   if (present) {
     if (hasTombstone(db, 'plan', payload.planUuid)) {
       return { opId: op.op_id, reason: 'parent plan tombstoned; dropping tag edge' };
+    }
+    if (!planExists(db, payload.planUuid)) {
+      return { opId: op.op_id, reason: 'tag edge references missing parent plan; deferring' };
     }
     db.prepare('INSERT OR IGNORE INTO plan_tag (plan_uuid, tag) VALUES (?, ?)').run(
       payload.planUuid,
