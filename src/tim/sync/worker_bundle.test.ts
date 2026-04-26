@@ -370,38 +370,32 @@ describe('worker sync bundles', () => {
     const ops = exportWorkerOps(workerDb);
     const spoofed = ops.map((op) => ({ ...op, node_id: 'some-other-node' }));
 
-    expect(() =>
-      applyWorkerOps(mainDb, spoofed, { workerNodeId: bundle.worker.nodeId })
-    ).toThrow(/does not match leased worker/);
+    expect(() => applyWorkerOps(mainDb, spoofed, { workerNodeId: bundle.worker.nodeId })).toThrow(
+      /does not match leased worker/
+    );
   });
 
   test('applyWorkerOps rejects calls without a known worker lease', () => {
-    expect(() =>
-      applyWorkerOps(mainDb, [], { workerNodeId: 'unknown-worker-node-id' })
-    ).toThrow(/No worker lease found/);
+    expect(() => applyWorkerOps(mainDb, [], { workerNodeId: 'unknown-worker-node-id' })).toThrow(
+      /No worker lease found/
+    );
   });
 
   test('import remains idempotent when source plan_task.id differs from worker autoincrement', () => {
     // Simulate a main DB whose autoincrement has advanced (e.g. prior task deletions).
-    mainDb
-      .prepare(
-        "UPDATE sqlite_sequence SET seq = 99 WHERE name = 'plan_task'"
-      )
-      .run();
+    mainDb.prepare("UPDATE sqlite_sequence SET seq = 99 WHERE name = 'plan_task'").run();
     // If sqlite_sequence has no row yet, insert one.
-    if ((mainDb.prepare("SELECT changes() AS c").get() as { c: number }).c === 0) {
-      mainDb
-        .prepare("INSERT INTO sqlite_sequence(name, seq) VALUES ('plan_task', 99)")
-        .run();
+    if ((mainDb.prepare('SELECT changes() AS c').get() as { c: number }).c === 0) {
+      mainDb.prepare("INSERT INTO sqlite_sequence(name, seq) VALUES ('plan_task', 99)").run();
     }
     upsertPlanTasks(mainDb, 'plan-target', [
       { uuid: 'task-existing', title: 'Existing', description: 'Do it', done: false },
       { uuid: 'task-fresh', title: 'Fresh', description: 'New', done: false },
     ]);
     const mainTaskId = (
-      mainDb.prepare('SELECT id FROM plan_task WHERE uuid = ?').get('task-fresh') as
-        | { id: number }
-        | null
+      mainDb.prepare('SELECT id FROM plan_task WHERE uuid = ?').get('task-fresh') as {
+        id: number;
+      } | null
     )?.id;
     expect(mainTaskId).toBeGreaterThan(1);
 
@@ -412,9 +406,9 @@ describe('worker sync bundles', () => {
 
     importWorkerBundle(workerDb, bundle);
     const workerTaskId = (
-      workerDb.prepare('SELECT id FROM plan_task WHERE uuid = ?').get('task-existing') as
-        | { id: number }
-        | null
+      workerDb.prepare('SELECT id FROM plan_task WHERE uuid = ?').get('task-existing') as {
+        id: number;
+      } | null
     )?.id;
     expect(workerTaskId).toBe(1);
 

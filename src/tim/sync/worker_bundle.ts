@@ -305,7 +305,9 @@ function assertWorkerImportPreconditions(
   }
 
   for (const plan of bundle.plans) {
-    const existing = db.prepare('SELECT * FROM plan WHERE uuid = ?').get(plan.uuid) as PlanRow | null;
+    const existing = db
+      .prepare('SELECT * FROM plan WHERE uuid = ?')
+      .get(plan.uuid) as PlanRow | null;
     const matches = rowMatches(
       existing as unknown as Record<string, unknown> | null,
       plan as unknown as Record<string, unknown>,
@@ -379,7 +381,9 @@ function assertWorkerImportPreconditions(
       { project_id: projectId }
     );
     if (!matches) {
-      throw new Error(`Cannot import worker bundle over existing project setting ${setting.setting}`);
+      throw new Error(
+        `Cannot import worker bundle over existing project setting ${setting.setting}`
+      );
     }
   }
 }
@@ -407,7 +411,9 @@ function metadataEntityIdsForPlanSlice(
     .all(...planUuids) as Array<{ uuid: string }>;
   for (const issue of issueRows) ids.add(`plan_review_issue:${issue.uuid}`);
 
-  const tombstones = db.prepare('SELECT entity_type, entity_id FROM sync_tombstone').all() as Array<{
+  const tombstones = db
+    .prepare('SELECT entity_type, entity_id FROM sync_tombstone')
+    .all() as Array<{
     entity_type: string;
     entity_id: string;
   }>;

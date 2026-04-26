@@ -101,7 +101,6 @@ describe('tim sync/hlc', () => {
     expect(nextLocal.opId).toContain('/node-a/');
   });
 
-
   test('formatOpId and parseOpId round trip', () => {
     const hlc = { physicalMs: 1234, logical: 5 };
     const opId = formatOpId(hlc, 'node-123', 42);
