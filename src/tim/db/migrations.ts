@@ -683,6 +683,83 @@ const migrations: Migration[] = [
         REFERENCES pr_review_submission(id) ON DELETE SET NULL;
     `,
   },
+  {
+    version: 26,
+    up: `
+      CREATE TABLE sync_node (
+        node_id TEXT PRIMARY KEY,
+        node_type TEXT NOT NULL CHECK(node_type IN ('main', 'worker')),
+        is_local INTEGER NOT NULL DEFAULT 0,
+        label TEXT,
+        lease_expires_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC})
+      );
+      CREATE UNIQUE INDEX idx_sync_node_single_local
+        ON sync_node(is_local)
+        WHERE is_local = 1;
+
+      CREATE TABLE sync_clock (
+        id INTEGER PRIMARY KEY CHECK(id = 1),
+        physical_ms INTEGER NOT NULL DEFAULT 0,
+        logical INTEGER NOT NULL DEFAULT 0,
+        local_counter INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC})
+      );
+
+      CREATE TABLE sync_op_log (
+        op_id TEXT PRIMARY KEY,
+        node_id TEXT NOT NULL,
+        hlc_physical_ms INTEGER NOT NULL,
+        hlc_logical INTEGER NOT NULL,
+        local_counter INTEGER NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        op_type TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        base TEXT,
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC})
+      );
+      CREATE INDEX idx_sync_op_log_order
+        ON sync_op_log(hlc_physical_ms, hlc_logical, node_id, local_counter);
+      CREATE INDEX idx_sync_op_log_entity
+        ON sync_op_log(entity_type, entity_id);
+      CREATE INDEX idx_sync_op_log_origin
+        ON sync_op_log(node_id, hlc_physical_ms, hlc_logical, local_counter);
+
+      CREATE TABLE sync_peer_cursor (
+        peer_node_id TEXT NOT NULL REFERENCES sync_node(node_id) ON DELETE CASCADE,
+        direction TEXT NOT NULL CHECK(direction IN ('pull', 'push')),
+        hlc_physical_ms INTEGER NOT NULL DEFAULT 0,
+        hlc_logical INTEGER NOT NULL DEFAULT 0,
+        last_op_id TEXT,
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        PRIMARY KEY(peer_node_id, direction)
+      );
+
+      CREATE TABLE sync_field_clock (
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        field_name TEXT NOT NULL,
+        hlc_physical_ms INTEGER NOT NULL,
+        hlc_logical INTEGER NOT NULL,
+        node_id TEXT NOT NULL,
+        deleted INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        PRIMARY KEY(entity_type, entity_id, field_name)
+      );
+
+      CREATE TABLE sync_tombstone (
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        hlc_physical_ms INTEGER NOT NULL,
+        hlc_logical INTEGER NOT NULL,
+        node_id TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        PRIMARY KEY(entity_type, entity_id)
+      );
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {
