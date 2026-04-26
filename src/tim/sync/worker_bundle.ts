@@ -11,6 +11,7 @@ import {
   createWorkerLease,
   getLocalNode,
   getOrCreateClockRow,
+  getWorkerLease,
   markWorkerLeaseCompleted,
   type SyncFieldClockRow,
   type SyncTombstoneRow,
@@ -40,9 +41,14 @@ export interface WorkerBundleSync {
   lease: SyncWorkerLeaseRow;
 }
 
+export interface WorkerBundleMetadata {
+  truncatedPlans: string[];
+}
+
 export interface WorkerBundle {
   version: 1;
   worker: WorkerBundleWorker;
+  metadata: WorkerBundleMetadata;
   project: WorkerBundleProject;
   plans: PlanRow[];
   tasks: PlanTaskRow[];
@@ -69,6 +75,24 @@ export interface ExportWorkerOpsOptions {
   sinceSeq?: number | null;
 }
 
+export interface ApplyWorkerOpsOptions {
+  workerNodeId: string;
+  final?: boolean;
+}
+
+export class WorkerBundleTooLargeError extends Error {
+  constructor(
+    readonly targetPlanUuid: string,
+    readonly requiredPlanCount: number,
+    readonly maxPlans: number
+  ) {
+    super(
+      `Cannot export worker bundle for plan ${targetPlanUuid}: ${requiredPlanCount} required plans exceed maxPlans ${maxPlans}`
+    );
+    this.name = 'WorkerBundleTooLargeError';
+  }
+}
+
 function defaultLeaseExpiresAt(durationMs: number | undefined): string {
   return new Date(Date.now() + (durationMs ?? 24 * 60 * 60 * 1000)).toISOString();
 }
@@ -88,7 +112,16 @@ function getPlan(db: Database, planUuid: string): PlanRow | null {
   return db.prepare('SELECT * FROM plan WHERE uuid = ?').get(planUuid) as PlanRow | null;
 }
 
-function collectPlanUuids(db: Database, targetPlanUuid: string, maxPlans: number): Set<string> {
+interface CollectedPlanUuids {
+  planUuids: Set<string>;
+  truncatedPlans: string[];
+}
+
+function collectPlanUuids(
+  db: Database,
+  targetPlanUuid: string,
+  maxPlans: number
+): CollectedPlanUuids {
   if (!Number.isInteger(maxPlans) || maxPlans < 1) {
     throw new Error(`Invalid worker bundle maxPlans: ${maxPlans}`);
   }
@@ -98,49 +131,103 @@ function collectPlanUuids(db: Database, targetPlanUuid: string, maxPlans: number
     throw new Error(`Cannot export worker bundle: plan ${targetPlanUuid} was not found`);
   }
 
-  const included = new Set<string>();
-  const queue: string[] = [targetPlanUuid];
+  const planCache = new Map<string, PlanRow | null>([[targetPlanUuid, target]]);
+  const getCachedPlan = (planUuid: string): PlanRow | null => {
+    if (!planCache.has(planUuid)) {
+      planCache.set(planUuid, getPlan(db, planUuid));
+    }
+    return planCache.get(planUuid) ?? null;
+  };
+  const projectPlan = (planUuid: string | null | undefined): PlanRow | null => {
+    if (!planUuid) return null;
+    const plan = getCachedPlan(planUuid);
+    return plan && plan.project_id === target.project_id ? plan : null;
+  };
+  const directChildren = (planUuid: string): string[] =>
+    (
+      db
+        .prepare('SELECT uuid FROM plan WHERE project_id = ? AND parent_uuid = ? ORDER BY plan_id')
+        .all(target.project_id, planUuid) as Array<{ uuid: string }>
+    ).map((row) => row.uuid);
+  const outgoingDependencies = (planUuid: string): string[] =>
+    (
+      db
+        .prepare('SELECT depends_on_uuid FROM plan_dependency WHERE plan_uuid = ?')
+        .all(planUuid) as Array<{ depends_on_uuid: string }>
+    ).map((row) => row.depends_on_uuid);
+  const incomingDependencies = (planUuid: string): string[] =>
+    (
+      db
+        .prepare('SELECT plan_uuid FROM plan_dependency WHERE depends_on_uuid = ?')
+        .all(planUuid) as Array<{ plan_uuid: string }>
+    ).map((row) => row.plan_uuid);
 
-  const enqueue = (planUuid: string | null | undefined): void => {
-    if (!planUuid || included.has(planUuid) || queue.includes(planUuid)) return;
-    if (included.size + queue.length >= maxPlans) return;
-    const plan = getPlan(db, planUuid);
+  const required = new Set<string>([targetPlanUuid]);
+  const addRequired = (planUuid: string | null | undefined): void => {
+    const plan = projectPlan(planUuid);
     if (!plan || plan.project_id !== target.project_id) return;
-    queue.push(planUuid);
+    required.add(plan.uuid);
   };
 
-  while (queue.length > 0 && included.size < maxPlans) {
-    const planUuid = queue.shift()!;
-    if (included.has(planUuid)) continue;
-    const plan = getPlan(db, planUuid);
-    if (!plan || plan.project_id !== target.project_id) continue;
-    included.add(planUuid);
-
-    enqueue(plan.parent_uuid);
-
-    const children = db
-      .prepare('SELECT uuid FROM plan WHERE project_id = ? AND parent_uuid = ? ORDER BY plan_id')
-      .all(target.project_id, planUuid) as Array<{ uuid: string }>;
-    for (const child of children) {
-      enqueue(child.uuid);
+  const parentVisited = new Set<string>([target.uuid]);
+  for (let cursor: PlanRow | null = target; cursor?.parent_uuid; ) {
+    if (parentVisited.has(cursor.parent_uuid)) {
+      throw new Error(
+        `Cycle detected in plan parent chain at ${cursor.uuid} -> ${cursor.parent_uuid}`
+      );
     }
+    parentVisited.add(cursor.parent_uuid);
+    const parent = projectPlan(cursor.parent_uuid);
+    if (!parent) break;
+    required.add(parent.uuid);
+    cursor = parent;
+  }
+  for (const childUuid of directChildren(targetPlanUuid)) addRequired(childUuid);
+  for (const dependencyUuid of outgoingDependencies(targetPlanUuid)) addRequired(dependencyUuid);
+  for (const dependentUuid of incomingDependencies(targetPlanUuid)) addRequired(dependentUuid);
 
-    const outgoing = db
-      .prepare('SELECT depends_on_uuid FROM plan_dependency WHERE plan_uuid = ?')
-      .all(planUuid) as Array<{ depends_on_uuid: string }>;
-    for (const dependency of outgoing) {
-      enqueue(dependency.depends_on_uuid);
-    }
-
-    const incoming = db
-      .prepare('SELECT plan_uuid FROM plan_dependency WHERE depends_on_uuid = ?')
-      .all(planUuid) as Array<{ plan_uuid: string }>;
-    for (const dependent of incoming) {
-      enqueue(dependent.plan_uuid);
-    }
+  if (required.size > maxPlans) {
+    throw new WorkerBundleTooLargeError(targetPlanUuid, required.size, maxPlans);
   }
 
-  return included;
+  const included = new Set(required);
+  const known = new Set(included);
+  const optionalQueue: string[] = [];
+  const truncatedPlans: string[] = [];
+
+  const enqueueOptional = (planUuid: string | null | undefined): void => {
+    const plan = projectPlan(planUuid);
+    if (!plan || known.has(plan.uuid)) return;
+    known.add(plan.uuid);
+    optionalQueue.push(plan.uuid);
+  };
+
+  for (const planUuid of included) {
+    const plan = projectPlan(planUuid);
+    if (!plan) continue;
+    enqueueOptional(plan.parent_uuid);
+    for (const childUuid of directChildren(planUuid)) enqueueOptional(childUuid);
+    for (const dependencyUuid of outgoingDependencies(planUuid)) enqueueOptional(dependencyUuid);
+    for (const dependentUuid of incomingDependencies(planUuid)) enqueueOptional(dependentUuid);
+  }
+
+  while (optionalQueue.length > 0) {
+    const planUuid = optionalQueue.shift()!;
+    if (included.size >= maxPlans) {
+      truncatedPlans.push(planUuid);
+      continue;
+    }
+    included.add(planUuid);
+
+    const plan = projectPlan(planUuid);
+    if (!plan) continue;
+    enqueueOptional(plan.parent_uuid);
+    for (const childUuid of directChildren(planUuid)) enqueueOptional(childUuid);
+    for (const dependencyUuid of outgoingDependencies(planUuid)) enqueueOptional(dependencyUuid);
+    for (const dependentUuid of incomingDependencies(planUuid)) enqueueOptional(dependentUuid);
+  }
+
+  return { planUuids: included, truncatedPlans };
 }
 
 function rowEntityIds(
@@ -168,6 +255,176 @@ function filterEntityMetadata<T extends { entity_type: string; entity_id: string
   entityIds: Set<string>
 ): T[] {
   return rows.filter((row) => entityIds.has(`${row.entity_type}:${row.entity_id}`));
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableJson).join(',')}]`;
+  }
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, nextValue]) => `${JSON.stringify(key)}:${stableJson(nextValue)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function omitFields<T extends Record<string, unknown>>(value: T, ignore: readonly string[]): T {
+  if (ignore.length === 0) return value;
+  const copy = { ...value } as Record<string, unknown>;
+  for (const key of ignore) delete copy[key];
+  return copy as T;
+}
+
+function rowMatches<T extends Record<string, unknown>>(
+  existing: T | null,
+  incoming: T,
+  overrides: Partial<T> = {},
+  ignoreFields: readonly string[] = []
+): boolean {
+  if (!existing) return true;
+  return (
+    stableJson(omitFields(existing, ignoreFields)) ===
+    stableJson(omitFields({ ...incoming, ...overrides }, ignoreFields))
+  );
+}
+
+function assertWorkerImportPreconditions(
+  db: Database,
+  bundle: WorkerBundle,
+  projectId: number
+): void {
+  const opCount = (
+    db.prepare('SELECT count(*) AS count FROM sync_op_log').get() as { count: number }
+  ).count;
+  if (opCount > 0) {
+    throw new Error(
+      'Cannot import worker bundle into a database that has already emitted sync operations'
+    );
+  }
+
+  for (const plan of bundle.plans) {
+    const existing = db.prepare('SELECT * FROM plan WHERE uuid = ?').get(plan.uuid) as PlanRow | null;
+    const matches = rowMatches(
+      existing as unknown as Record<string, unknown> | null,
+      plan as unknown as Record<string, unknown>,
+      { project_id: projectId }
+    );
+    if (!matches) {
+      throw new Error(`Cannot import worker bundle over existing plan ${plan.uuid}`);
+    }
+  }
+  for (const task of bundle.tasks) {
+    const existing = db
+      .prepare('SELECT * FROM plan_task WHERE uuid = ?')
+      .get(task.uuid) as PlanTaskRow | null;
+    const matches = rowMatches(
+      existing as unknown as Record<string, unknown> | null,
+      task as unknown as Record<string, unknown>,
+      {},
+      ['id']
+    );
+    if (!matches) {
+      throw new Error(`Cannot import worker bundle over existing task ${task.uuid}`);
+    }
+  }
+  for (const issue of bundle.reviewIssues) {
+    const existing = db
+      .prepare('SELECT * FROM plan_review_issue WHERE uuid = ?')
+      .get(issue.uuid) as PlanReviewIssueRow | null;
+    const matches = rowMatches(
+      existing as unknown as Record<string, unknown> | null,
+      issue as unknown as Record<string, unknown>,
+      {},
+      ['id']
+    );
+    if (!matches) {
+      throw new Error(`Cannot import worker bundle over existing review issue ${issue.uuid}`);
+    }
+  }
+  for (const dependency of bundle.dependencies) {
+    const existing = db
+      .prepare('SELECT * FROM plan_dependency WHERE plan_uuid = ? AND depends_on_uuid = ?')
+      .get(dependency.plan_uuid, dependency.depends_on_uuid) as PlanDependencyRow | null;
+    const matches = rowMatches(
+      existing as unknown as Record<string, unknown> | null,
+      dependency as unknown as Record<string, unknown>
+    );
+    if (!matches) {
+      throw new Error(
+        `Cannot import worker bundle over existing dependency ${dependency.plan_uuid}->${dependency.depends_on_uuid}`
+      );
+    }
+  }
+  for (const tag of bundle.tags) {
+    const existing = db
+      .prepare('SELECT * FROM plan_tag WHERE plan_uuid = ? AND tag = ?')
+      .get(tag.plan_uuid, tag.tag) as PlanTagRow | null;
+    const matches = rowMatches(
+      existing as unknown as Record<string, unknown> | null,
+      tag as unknown as Record<string, unknown>
+    );
+    if (!matches) {
+      throw new Error(`Cannot import worker bundle over existing tag ${tag.plan_uuid}#${tag.tag}`);
+    }
+  }
+  for (const setting of bundle.projectSettings) {
+    const existing = db
+      .prepare('SELECT * FROM project_setting WHERE project_id = ? AND setting = ?')
+      .get(projectId, setting.setting) as ProjectSetting | null;
+    const matches = rowMatches(
+      existing as unknown as Record<string, unknown> | null,
+      setting as unknown as Record<string, unknown>,
+      { project_id: projectId }
+    );
+    if (!matches) {
+      throw new Error(`Cannot import worker bundle over existing project setting ${setting.setting}`);
+    }
+  }
+}
+
+function metadataEntityIdsForPlanSlice(
+  db: Database,
+  bundle: Pick<
+    WorkerBundle,
+    'plans' | 'tasks' | 'reviewIssues' | 'dependencies' | 'tags' | 'projectSettings' | 'project'
+  >
+): Set<string> {
+  const ids = rowEntityIds(bundle);
+  const planUuids = bundle.plans.map((plan) => plan.uuid);
+  const planUuidSet = new Set(planUuids);
+  if (planUuids.length === 0) return ids;
+
+  const placeholders = planUuids.map(() => '?').join(', ');
+  const taskRows = db
+    .prepare(`SELECT uuid FROM plan_task WHERE plan_uuid IN (${placeholders})`)
+    .all(...planUuids) as Array<{ uuid: string }>;
+  for (const task of taskRows) ids.add(`plan_task:${task.uuid}`);
+
+  const issueRows = db
+    .prepare(`SELECT uuid FROM plan_review_issue WHERE plan_uuid IN (${placeholders})`)
+    .all(...planUuids) as Array<{ uuid: string }>;
+  for (const issue of issueRows) ids.add(`plan_review_issue:${issue.uuid}`);
+
+  const tombstones = db.prepare('SELECT entity_type, entity_id FROM sync_tombstone').all() as Array<{
+    entity_type: string;
+    entity_id: string;
+  }>;
+  for (const tombstone of tombstones) {
+    if (tombstone.entity_type === 'plan_dependency') {
+      const planUuid = tombstone.entity_id.split('->', 1)[0];
+      if (planUuid && planUuidSet.has(planUuid)) {
+        ids.add(`plan_dependency:${tombstone.entity_id}`);
+      }
+    } else if (tombstone.entity_type === 'plan_tag') {
+      const planUuid = tombstone.entity_id.split('#', 1)[0];
+      if (planUuid && planUuidSet.has(planUuid)) {
+        ids.add(`plan_tag:${tombstone.entity_id}`);
+      }
+    }
+  }
+  return ids;
 }
 
 export function exportWorkerBundle(db: Database, options: ExportWorkerBundleOptions): WorkerBundle {
@@ -208,7 +465,11 @@ export function exportWorkerBundle(db: Database, options: ExportWorkerBundleOpti
       metadata: nextOptions.metadata,
     });
 
-    const planUuids = collectPlanUuids(db, nextOptions.targetPlanUuid, nextOptions.maxPlans ?? 200);
+    const { planUuids, truncatedPlans } = collectPlanUuids(
+      db,
+      nextOptions.targetPlanUuid,
+      nextOptions.maxPlans ?? 200
+    );
     const placeholders = [...planUuids].map(() => '?').join(', ');
     const plans =
       planUuids.size === 0
@@ -261,7 +522,7 @@ export function exportWorkerBundle(db: Database, options: ExportWorkerBundleOpti
       tags,
       projectSettings,
     };
-    const entityIds = rowEntityIds(partial);
+    const entityIds = metadataEntityIdsForPlanSlice(db, partial);
     const fieldClocks = filterEntityMetadata(
       db.prepare('SELECT * FROM sync_field_clock').all() as SyncFieldClockRow[],
       entityIds
@@ -274,6 +535,7 @@ export function exportWorkerBundle(db: Database, options: ExportWorkerBundleOpti
     return {
       version: 1 as const,
       worker: { nodeId: workerNodeId, leaseExpiresAt },
+      metadata: { truncatedPlans },
       project: partial.project,
       plans,
       tasks,
@@ -296,6 +558,7 @@ export function exportWorkerBundle(db: Database, options: ExportWorkerBundleOpti
 }
 
 function writeLocalWorkerNode(db: Database, bundle: WorkerBundle): void {
+  // Fresh worker databases get an auto-created local node from openDatabase(); replace it with the leased worker node.
   db.prepare(
     `
       UPDATE sync_node
@@ -681,15 +944,27 @@ function importTombstones(db: Database, tombstones: SyncTombstoneRow[]): void {
   }
 }
 
+/**
+ * Imports a worker slice into a fresh worker database.
+ *
+ * The database must not have emitted sync operations, and any syncable rows
+ * already present for bundle entities must match the bundle exactly. This keeps
+ * import as slice hydration only; worker-local mutations are returned as ops and
+ * merged by applyRemoteOps on the receiving main node.
+ */
 export function importWorkerBundle(db: Database, bundle: WorkerBundle): void {
   if (bundle.version !== 1) {
     throw new Error(`Unsupported worker bundle version: ${String(bundle.version)}`);
   }
 
   const importInTransaction = db.transaction((nextBundle: WorkerBundle): void => {
+    // assertWorkerImportPreconditions runs after writeLocalWorkerNode/writeIssuerPeer/importProject
+    // because the precondition needs the resolved projectId. The enclosing immediate transaction
+    // rolls back those writes if any precondition throws, so the worker DB is never left half-mutated.
     writeLocalWorkerNode(db, nextBundle);
     writeIssuerPeer(db, nextBundle);
     const projectId = importProject(db, nextBundle);
+    assertWorkerImportPreconditions(db, nextBundle, projectId);
     importPlans(db, projectId, nextBundle.plans);
     importTasks(db, nextBundle.tasks);
     importReviewIssues(db, nextBundle.reviewIssues);
@@ -737,13 +1012,25 @@ export function exportWorkerOps(
   return rows as SyncOpRecord[];
 }
 
-export function applyWorkerOps(db: Database, ops: SyncOpRecord[]): ApplyResult {
-  const result = applyRemoteOps(db, ops);
-  if (result.errors.length === 0) {
-    const workerNodeIds = new Set(ops.map((op) => op.node_id));
-    for (const workerNodeId of workerNodeIds) {
-      markWorkerLeaseCompleted(db, workerNodeId);
+export function applyWorkerOps(
+  db: Database,
+  ops: SyncOpRecord[],
+  options: ApplyWorkerOpsOptions
+): ApplyResult {
+  const lease = getWorkerLease(db, options.workerNodeId);
+  if (!lease) {
+    throw new Error(`No worker lease found for worker node ${options.workerNodeId}`);
+  }
+  for (const op of ops) {
+    if (op.node_id !== options.workerNodeId) {
+      throw new Error(
+        `Worker op origin ${op.node_id} does not match leased worker ${options.workerNodeId}`
+      );
     }
+  }
+  const result = applyRemoteOps(db, ops);
+  if (result.errors.length === 0 && options.final !== false) {
+    markWorkerLeaseCompleted(db, options.workerNodeId);
   }
   return result;
 }

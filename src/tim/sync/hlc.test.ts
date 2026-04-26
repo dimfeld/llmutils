@@ -87,6 +87,21 @@ describe('tim sync/hlc', () => {
     expect(afterSamePhysical.logical).toBe(6);
   });
 
+  test('observe advances a local node clock past a different remote node HLC', () => {
+    const generator = new HlcGenerator(db, 'node-a');
+
+    generator.observe({ physicalMs: 5000, logical: 7 }, 4000);
+    const observed = getOrCreateClockRow(db);
+
+    expect(observed.physical_ms).toBe(5000);
+    expect(observed.logical).toBe(8);
+
+    const nextLocal = generator.tick(4000);
+    expect(compareHlc(nextLocal.hlc, { physicalMs: 5000, logical: 7 })).toBeGreaterThan(0);
+    expect(nextLocal.opId).toContain('/node-a/');
+  });
+
+
   test('formatOpId and parseOpId round trip', () => {
     const hlc = { physicalMs: 1234, logical: 5 };
     const opId = formatOpId(hlc, 'node-123', 42);

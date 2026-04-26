@@ -23,6 +23,7 @@ import {
   exportWorkerBundle,
   exportWorkerOps,
   importWorkerBundle,
+  WorkerBundleTooLargeError,
 } from './worker_bundle.js';
 
 describe('worker sync bundles', () => {
@@ -122,7 +123,7 @@ describe('worker sync bundles', () => {
     expect(ops.length).toBeGreaterThan(0);
     expect(ops.every((op) => op.node_id === bundle.worker.nodeId)).toBe(true);
 
-    const result = applyWorkerOps(mainDb, ops);
+    const result = applyWorkerOps(mainDb, ops, { workerNodeId: bundle.worker.nodeId });
     expect(result.errors).toEqual([]);
     expect(getPlanByUuid(mainDb, 'plan-target')?.title).toBe('Target updated by worker');
     expect(getPlanTasksByUuid(mainDb, 'plan-target').map((task) => task.uuid)).toContain(
@@ -197,7 +198,9 @@ describe('worker sync bundles', () => {
     ]);
     upsertPlanTasks(mainDb, 'plan-target', []);
 
-    const result = applyWorkerOps(mainDb, exportWorkerOps(workerDb));
+    const result = applyWorkerOps(mainDb, exportWorkerOps(workerDb), {
+      workerNodeId: bundle.worker.nodeId,
+    });
     expect(result.errors).toEqual([]);
     expect(getPlanTasksByUuid(mainDb, 'plan-target')).toEqual([]);
   });
@@ -232,8 +235,214 @@ describe('worker sync bundles', () => {
       tags: ['sync'],
     });
 
-    const result = applyWorkerOps(mainDb, workerOps);
+    const result = applyWorkerOps(mainDb, workerOps, { workerNodeId: bundle.worker.nodeId });
     expect(result.errors).toEqual([]);
     expect(getPlanByUuid(mainDb, 'plan-target')?.title).toBe('Newer main title');
+  });
+
+  test('throws when required parent chain exceeds maxPlans', () => {
+    upsertPlan(mainDb, mainProjectId, {
+      uuid: 'plan-parent-1',
+      planId: 2,
+      title: 'Parent 1',
+      status: 'pending',
+    });
+    upsertPlan(mainDb, mainProjectId, {
+      uuid: 'plan-parent-2',
+      planId: 3,
+      title: 'Parent 2',
+      status: 'pending',
+      parentUuid: 'plan-parent-1',
+    });
+    upsertPlan(mainDb, mainProjectId, {
+      uuid: 'plan-target',
+      planId: 1,
+      title: 'Target',
+      status: 'pending',
+      parentUuid: 'plan-parent-2',
+      tasks: [{ uuid: 'task-existing', title: 'Existing', description: 'Do it', done: false }],
+      tags: ['sync'],
+    });
+
+    expect(() =>
+      exportWorkerBundle(mainDb, {
+        targetPlanUuid: 'plan-target',
+        leaseExpiresAt: '2030-01-01T00:00:00.000Z',
+        maxPlans: 2,
+      })
+    ).toThrow(WorkerBundleTooLargeError);
+  });
+
+  test('exports child tombstones for plans in the slice', () => {
+    upsertPlanTasks(mainDb, 'plan-target', []);
+
+    const bundle = exportWorkerBundle(mainDb, {
+      targetPlanUuid: 'plan-target',
+      leaseExpiresAt: '2030-01-01T00:00:00.000Z',
+    });
+
+    expect(bundle.tasks.map((task) => task.uuid)).not.toContain('task-existing');
+    expect(bundle.tombstones).toContainEqual(
+      expect.objectContaining({ entity_type: 'plan_task', entity_id: 'task-existing' })
+    );
+
+    importWorkerBundle(workerDb, bundle);
+    expect(
+      workerDb
+        .prepare('SELECT * FROM sync_tombstone WHERE entity_type = ? AND entity_id = ?')
+        .get('plan_task', 'task-existing')
+    ).toMatchObject({ entity_type: 'plan_task', entity_id: 'task-existing' });
+
+    appendPlanTask(workerDb, 'plan-target', {
+      uuid: 'task-existing',
+      title: 'Attempted resurrection',
+      description: 'Worker only has a tombstone',
+    });
+
+    const result = applyWorkerOps(mainDb, exportWorkerOps(workerDb), {
+      workerNodeId: bundle.worker.nodeId,
+    });
+    expect(result.errors).toEqual([]);
+    expect(getPlanTasksByUuid(mainDb, 'plan-target')).toEqual([]);
+  });
+
+  test('import refuses to overwrite a worker database that already emitted ops', () => {
+    const bundle = exportWorkerBundle(mainDb, {
+      targetPlanUuid: 'plan-target',
+      leaseExpiresAt: '2030-01-01T00:00:00.000Z',
+    });
+    importWorkerBundle(workerDb, bundle);
+    appendPlanTask(workerDb, 'plan-target', {
+      uuid: 'task-worker',
+      title: 'Worker task',
+      description: 'Added by worker',
+    });
+
+    expect(() => importWorkerBundle(workerDb, bundle)).toThrow(
+      'Cannot import worker bundle into a database that has already emitted sync operations'
+    );
+  });
+
+  test('applyWorkerOps can complete a lease with zero returned ops', () => {
+    const bundle = exportWorkerBundle(mainDb, {
+      targetPlanUuid: 'plan-target',
+      leaseExpiresAt: '2030-01-01T00:00:00.000Z',
+    });
+
+    const result = applyWorkerOps(mainDb, [], { workerNodeId: bundle.worker.nodeId });
+
+    expect(result.errors).toEqual([]);
+    expect(getWorkerLease(mainDb, bundle.worker.nodeId)?.status).toBe('completed');
+  });
+
+  test('applyWorkerOps leaves lease active for non-final returns', () => {
+    const bundle = exportWorkerBundle(mainDb, {
+      targetPlanUuid: 'plan-target',
+      leaseExpiresAt: '2030-01-01T00:00:00.000Z',
+    });
+    importWorkerBundle(workerDb, bundle);
+    appendPlanTask(workerDb, 'plan-target', {
+      uuid: 'task-worker',
+      title: 'Worker task',
+      description: 'Added by worker',
+    });
+
+    const result = applyWorkerOps(mainDb, exportWorkerOps(workerDb), {
+      workerNodeId: bundle.worker.nodeId,
+      final: false,
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(getWorkerLease(mainDb, bundle.worker.nodeId)?.status).toBe('active');
+  });
+
+  test('applyWorkerOps rejects ops whose origin does not match the leased worker', () => {
+    const bundle = exportWorkerBundle(mainDb, {
+      targetPlanUuid: 'plan-target',
+      leaseExpiresAt: '2030-01-01T00:00:00.000Z',
+    });
+    importWorkerBundle(workerDb, bundle);
+    appendPlanTask(workerDb, 'plan-target', {
+      uuid: 'task-worker',
+      title: 'Worker task',
+      description: 'Added by worker',
+    });
+    const ops = exportWorkerOps(workerDb);
+    const spoofed = ops.map((op) => ({ ...op, node_id: 'some-other-node' }));
+
+    expect(() =>
+      applyWorkerOps(mainDb, spoofed, { workerNodeId: bundle.worker.nodeId })
+    ).toThrow(/does not match leased worker/);
+  });
+
+  test('applyWorkerOps rejects calls without a known worker lease', () => {
+    expect(() =>
+      applyWorkerOps(mainDb, [], { workerNodeId: 'unknown-worker-node-id' })
+    ).toThrow(/No worker lease found/);
+  });
+
+  test('import remains idempotent when source plan_task.id differs from worker autoincrement', () => {
+    // Simulate a main DB whose autoincrement has advanced (e.g. prior task deletions).
+    mainDb
+      .prepare(
+        "UPDATE sqlite_sequence SET seq = 99 WHERE name = 'plan_task'"
+      )
+      .run();
+    // If sqlite_sequence has no row yet, insert one.
+    if ((mainDb.prepare("SELECT changes() AS c").get() as { c: number }).c === 0) {
+      mainDb
+        .prepare("INSERT INTO sqlite_sequence(name, seq) VALUES ('plan_task', 99)")
+        .run();
+    }
+    upsertPlanTasks(mainDb, 'plan-target', [
+      { uuid: 'task-existing', title: 'Existing', description: 'Do it', done: false },
+      { uuid: 'task-fresh', title: 'Fresh', description: 'New', done: false },
+    ]);
+    const mainTaskId = (
+      mainDb.prepare('SELECT id FROM plan_task WHERE uuid = ?').get('task-fresh') as
+        | { id: number }
+        | null
+    )?.id;
+    expect(mainTaskId).toBeGreaterThan(1);
+
+    const bundle = exportWorkerBundle(mainDb, {
+      targetPlanUuid: 'plan-target',
+      leaseExpiresAt: '2030-01-01T00:00:00.000Z',
+    });
+
+    importWorkerBundle(workerDb, bundle);
+    const workerTaskId = (
+      workerDb.prepare('SELECT id FROM plan_task WHERE uuid = ?').get('task-existing') as
+        | { id: number }
+        | null
+    )?.id;
+    expect(workerTaskId).toBe(1);
+
+    // Re-import should be a no-op even though the local autoincrement ids differ.
+    expect(() => importWorkerBundle(workerDb, bundle)).not.toThrow();
+  });
+
+  test('exportWorkerBundle throws on a cycle in the parent chain', () => {
+    upsertPlan(mainDb, mainProjectId, {
+      uuid: 'plan-cycle-a',
+      planId: 10,
+      title: 'A',
+      status: 'pending',
+      parentUuid: 'plan-cycle-b',
+    });
+    upsertPlan(mainDb, mainProjectId, {
+      uuid: 'plan-cycle-b',
+      planId: 11,
+      title: 'B',
+      status: 'pending',
+      parentUuid: 'plan-cycle-a',
+    });
+
+    expect(() =>
+      exportWorkerBundle(mainDb, {
+        targetPlanUuid: 'plan-cycle-a',
+        leaseExpiresAt: '2030-01-01T00:00:00.000Z',
+      })
+    ).toThrow(/Cycle detected/);
   });
 });
