@@ -1044,6 +1044,26 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 29,
+    up: `
+      CREATE TABLE sync_worker_lease (
+        worker_node_id TEXT PRIMARY KEY,
+        issuing_node_id TEXT NOT NULL,
+        target_plan_uuid TEXT,
+        bundle_high_water_seq INTEGER,
+        bundle_high_water_hlc TEXT,
+        lease_expires_at TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'completed', 'expired')),
+        last_returned_at TEXT,
+        metadata TEXT,
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        FOREIGN KEY (worker_node_id) REFERENCES sync_node(node_id) ON DELETE CASCADE
+      );
+      CREATE INDEX idx_sync_worker_lease_status ON sync_worker_lease(status);
+      CREATE INDEX idx_sync_worker_lease_expires ON sync_worker_lease(lease_expires_at);
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {

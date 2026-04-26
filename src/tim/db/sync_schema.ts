@@ -71,6 +71,31 @@ export interface SyncTombstoneRow {
   created_at: string;
 }
 
+export type WorkerLeaseStatus = 'active' | 'completed' | 'expired';
+
+export interface SyncWorkerLeaseRow {
+  worker_node_id: string;
+  issuing_node_id: string;
+  target_plan_uuid: string | null;
+  bundle_high_water_seq: number | null;
+  bundle_high_water_hlc: string | null;
+  lease_expires_at: string;
+  status: WorkerLeaseStatus;
+  last_returned_at: string | null;
+  metadata: string | null;
+  created_at: string;
+}
+
+export interface CreateWorkerLeaseInput {
+  workerNodeId: string;
+  issuingNodeId: string;
+  targetPlanUuid?: string | null;
+  bundleHighWaterSeq?: number | null;
+  bundleHighWaterHlc?: string | null;
+  leaseExpiresAt: string;
+  metadata?: unknown;
+}
+
 export interface OpLogChunk {
   ops: SyncOpLogRow[];
   nextAfterSeq: string | null;
@@ -240,3 +265,99 @@ export function setPeerCursor(
   }
   return row;
 }
+
+export function createWorkerLease(db: Database, input: CreateWorkerLeaseInput): SyncWorkerLeaseRow {
+  const metadata =
+    input.metadata === undefined || input.metadata === null ? null : JSON.stringify(input.metadata);
+  db.prepare(
+    `
+      INSERT INTO sync_worker_lease (
+        worker_node_id,
+        issuing_node_id,
+        target_plan_uuid,
+        bundle_high_water_seq,
+        bundle_high_water_hlc,
+        lease_expires_at,
+        status,
+        last_returned_at,
+        metadata,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 'active', NULL, ?, ${SQL_NOW_ISO_UTC})
+      ON CONFLICT(worker_node_id) DO UPDATE SET
+        issuing_node_id = excluded.issuing_node_id,
+        target_plan_uuid = excluded.target_plan_uuid,
+        bundle_high_water_seq = excluded.bundle_high_water_seq,
+        bundle_high_water_hlc = excluded.bundle_high_water_hlc,
+        lease_expires_at = excluded.lease_expires_at,
+        status = 'active',
+        last_returned_at = NULL,
+        metadata = excluded.metadata
+    `
+  ).run(
+    input.workerNodeId,
+    input.issuingNodeId,
+    input.targetPlanUuid ?? null,
+    input.bundleHighWaterSeq ?? null,
+    input.bundleHighWaterHlc ?? null,
+    input.leaseExpiresAt,
+    metadata
+  );
+
+  const row = getWorkerLease(db, input.workerNodeId);
+  if (!row) {
+    throw new Error(`Failed to create worker lease for ${input.workerNodeId}`);
+  }
+  return row;
+}
+
+export function getWorkerLease(db: Database, workerNodeId: string): SyncWorkerLeaseRow | null {
+  return db
+    .prepare('SELECT * FROM sync_worker_lease WHERE worker_node_id = ?')
+    .get(workerNodeId) as SyncWorkerLeaseRow | null;
+}
+
+export function listActiveWorkerLeases(db: Database): SyncWorkerLeaseRow[] {
+  return db
+    .prepare(
+      `
+        SELECT *
+        FROM sync_worker_lease
+        WHERE status = 'active'
+        ORDER BY lease_expires_at, worker_node_id
+      `
+    )
+    .all() as SyncWorkerLeaseRow[];
+}
+
+export function markWorkerLeaseCompleted(
+  db: Database,
+  workerNodeId: string
+): SyncWorkerLeaseRow | null {
+  db.prepare(
+    `
+      UPDATE sync_worker_lease
+      SET status = 'completed',
+          last_returned_at = ${SQL_NOW_ISO_UTC}
+      WHERE worker_node_id = ?
+    `
+  ).run(workerNodeId);
+  return getWorkerLease(db, workerNodeId);
+}
+
+export function expireWorkerLease(db: Database, workerNodeId: string): SyncWorkerLeaseRow | null {
+  db.prepare(
+    `
+      UPDATE sync_worker_lease
+      SET status = 'expired'
+      WHERE worker_node_id = ?
+        AND status = 'active'
+    `
+  ).run(workerNodeId);
+  return getWorkerLease(db, workerNodeId);
+}
+
+export const createLease = createWorkerLease;
+export const getLease = getWorkerLease;
+export const listActiveLeases = listActiveWorkerLeases;
+export const markLeaseCompleted = markWorkerLeaseCompleted;
+export const expireLease = expireWorkerLease;

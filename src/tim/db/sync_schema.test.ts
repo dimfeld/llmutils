@@ -39,6 +39,7 @@ describe('tim db/sync_schema migration', () => {
       'sync_op_log',
       'sync_peer_cursor',
       'sync_tombstone',
+      'sync_worker_lease',
     ]);
 
     const nodeColumns = db.prepare("PRAGMA table_info('sync_node')").all() as Array<{
