@@ -1,0 +1,791 @@
+import type { Database } from 'bun:sqlite';
+
+import { getOrCreateProject, getProjectById } from '../db/project.js';
+import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
+import {
+  ensureLocalNode,
+  getLocalNode,
+  type SyncFieldClockRow,
+  type SyncOpLogRow,
+  type SyncTombstoneRow,
+} from '../db/sync_schema.js';
+import { compareHlc, formatHlc, HlcGenerator, type Hlc } from './hlc.js';
+
+type JsonRecord = Record<string, unknown>;
+type SqlValue = string | number | bigint | boolean | null;
+
+export type SyncOpRecord = Pick<
+  SyncOpLogRow,
+  | 'op_id'
+  | 'node_id'
+  | 'hlc_physical_ms'
+  | 'hlc_logical'
+  | 'local_counter'
+  | 'entity_type'
+  | 'entity_id'
+  | 'op_type'
+  | 'payload'
+  | 'base'
+> & {
+  created_at?: string;
+};
+
+export interface SkippedSyncOp {
+  opId: string;
+  reason: string;
+}
+
+export interface SyncOpApplyError {
+  opId: string;
+  message: string;
+}
+
+export interface ApplyResult {
+  applied: number;
+  skipped: SkippedSyncOp[];
+  errors: SyncOpApplyError[];
+}
+
+const PLAN_FIELDS = new Set([
+  'title',
+  'goal',
+  'note',
+  'details',
+  'status',
+  'priority',
+  'branch',
+  'simple',
+  'tdd',
+  'discovered_from',
+  'issue',
+  'pull_request',
+  'assigned_to',
+  'base_branch',
+  'base_commit',
+  'base_change_id',
+  'temp',
+  'docs',
+  'changed_files',
+  'plan_generated_at',
+  'docs_updated_at',
+  'lessons_applied_at',
+  'parent_uuid',
+  'epic',
+]);
+
+const PLAN_TASK_FIELDS = new Set([
+  'plan_uuid',
+  'task_index',
+  'order_key',
+  'title',
+  'description',
+  'done',
+]);
+
+const REVIEW_ISSUE_FIELDS = new Set([
+  'plan_uuid',
+  'order_key',
+  'severity',
+  'category',
+  'content',
+  'file',
+  'line',
+  'suggestion',
+  'source',
+  'source_ref',
+]);
+
+function opHlc(op: SyncOpRecord): Hlc {
+  return { physicalMs: op.hlc_physical_ms, logical: op.hlc_logical };
+}
+
+function compareClock(
+  remoteHlc: Hlc,
+  remoteNodeId: string,
+  storedHlc: Hlc,
+  storedNodeId: string
+): number {
+  const byHlc = compareHlc(remoteHlc, storedHlc);
+  if (byHlc !== 0) return byHlc;
+  return remoteNodeId.localeCompare(storedNodeId);
+}
+
+function remoteWins(
+  remoteHlc: Hlc,
+  remoteNodeId: string,
+  stored:
+    | Pick<SyncFieldClockRow | SyncTombstoneRow, 'hlc_physical_ms' | 'hlc_logical' | 'node_id'>
+    | null
+    | undefined
+): boolean {
+  if (!stored) return true;
+  return (
+    compareClock(
+      remoteHlc,
+      remoteNodeId,
+      { physicalMs: stored.hlc_physical_ms, logical: stored.hlc_logical },
+      stored.node_id
+    ) > 0
+  );
+}
+
+function tombstoneWinsOrTies(db: Database, op: SyncOpRecord): boolean {
+  const tombstone = db
+    .prepare('SELECT * FROM sync_tombstone WHERE entity_type = ? AND entity_id = ?')
+    .get(op.entity_type, op.entity_id) as SyncTombstoneRow | null;
+  return tombstone ? !remoteWins(opHlc(op), op.node_id, tombstone) : false;
+}
+
+function parsePayload(op: SyncOpRecord): JsonRecord {
+  const parsed = JSON.parse(op.payload) as unknown;
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`Expected object payload for sync op ${op.op_id}`);
+  }
+  return parsed as JsonRecord;
+}
+
+function fieldsFromPayload(payload: JsonRecord): JsonRecord {
+  const fields = payload.fields;
+  if (!fields || typeof fields !== 'object' || Array.isArray(fields)) {
+    return {};
+  }
+  return fields as JsonRecord;
+}
+
+function sqlValue(value: unknown): SqlValue {
+  if (value === undefined || value === null) return null;
+  if (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'bigint' ||
+    typeof value === 'boolean'
+  ) {
+    return value;
+  }
+  return JSON.stringify(value);
+}
+
+function insertRemoteOpLog(db: Database, op: SyncOpRecord): void {
+  db.prepare(
+    `
+      INSERT INTO sync_op_log (
+        op_id,
+        node_id,
+        hlc_physical_ms,
+        hlc_logical,
+        local_counter,
+        entity_type,
+        entity_id,
+        op_type,
+        payload,
+        base,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, ${SQL_NOW_ISO_UTC}))
+    `
+  ).run(
+    op.op_id,
+    op.node_id,
+    op.hlc_physical_ms,
+    op.hlc_logical,
+    op.local_counter,
+    op.entity_type,
+    op.entity_id,
+    op.op_type,
+    op.payload,
+    op.base ?? null,
+    op.created_at ?? null
+  );
+}
+
+function updateFieldClock(
+  db: Database,
+  op: SyncOpRecord,
+  fieldName: string,
+  deleted = false
+): void {
+  db.prepare(
+    `
+      INSERT INTO sync_field_clock (
+        entity_type,
+        entity_id,
+        field_name,
+        hlc_physical_ms,
+        hlc_logical,
+        node_id,
+        deleted,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC})
+      ON CONFLICT(entity_type, entity_id, field_name) DO UPDATE SET
+        hlc_physical_ms = excluded.hlc_physical_ms,
+        hlc_logical = excluded.hlc_logical,
+        node_id = excluded.node_id,
+        deleted = excluded.deleted,
+        updated_at = ${SQL_NOW_ISO_UTC}
+    `
+  ).run(
+    op.entity_type,
+    op.entity_id,
+    fieldName,
+    op.hlc_physical_ms,
+    op.hlc_logical,
+    op.node_id,
+    deleted ? 1 : 0
+  );
+}
+
+function insertTombstone(db: Database, op: SyncOpRecord): void {
+  const existing = db
+    .prepare('SELECT * FROM sync_tombstone WHERE entity_type = ? AND entity_id = ?')
+    .get(op.entity_type, op.entity_id) as SyncTombstoneRow | null;
+  if (!remoteWins(opHlc(op), op.node_id, existing)) {
+    return;
+  }
+  db.prepare(
+    `
+      INSERT INTO sync_tombstone (
+        entity_type,
+        entity_id,
+        hlc_physical_ms,
+        hlc_logical,
+        node_id,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC})
+      ON CONFLICT(entity_type, entity_id) DO UPDATE SET
+        hlc_physical_ms = excluded.hlc_physical_ms,
+        hlc_logical = excluded.hlc_logical,
+        node_id = excluded.node_id,
+        created_at = ${SQL_NOW_ISO_UTC}
+    `
+  ).run(op.entity_type, op.entity_id, op.hlc_physical_ms, op.hlc_logical, op.node_id);
+}
+
+function applyScalarFields(
+  db: Database,
+  op: SyncOpRecord,
+  tableName: string,
+  idColumn: string,
+  allowedFields: Set<string>,
+  fields: JsonRecord,
+  options: { touchUpdatedAt?: boolean } = { touchUpdatedAt: true }
+): string[] {
+  const appliedFields: string[] = [];
+  for (const [fieldName, value] of Object.entries(fields)) {
+    if (!allowedFields.has(fieldName)) {
+      continue;
+    }
+    const storedClock = db
+      .prepare(
+        `
+          SELECT *
+          FROM sync_field_clock
+          WHERE entity_type = ?
+            AND entity_id = ?
+            AND field_name = ?
+        `
+      )
+      .get(op.entity_type, op.entity_id, fieldName) as SyncFieldClockRow | null;
+    if (!remoteWins(opHlc(op), op.node_id, storedClock)) {
+      continue;
+    }
+    const updatedAtSql =
+      options.touchUpdatedAt === false ? '' : `, updated_at = ${SQL_NOW_ISO_UTC}`;
+    db.prepare(`UPDATE ${tableName} SET ${fieldName} = ?${updatedAtSql} WHERE ${idColumn} = ?`).run(
+      sqlValue(value),
+      op.entity_id
+    );
+    updateFieldClock(db, op, fieldName);
+    appliedFields.push(fieldName);
+  }
+  return appliedFields;
+}
+
+function projectIdForIdentity(db: Database, projectIdentity: unknown): number | null {
+  if (typeof projectIdentity !== 'string' || projectIdentity.length === 0) {
+    return null;
+  }
+  return getOrCreateProject(db, projectIdentity).id;
+}
+
+function allocatePlanId(db: Database, projectId: number, planIdHint: unknown): number {
+  if (typeof planIdHint === 'number' && Number.isInteger(planIdHint) && planIdHint > 0) {
+    const existing = db
+      .prepare('SELECT uuid FROM plan WHERE project_id = ? AND plan_id = ?')
+      .get(projectId, planIdHint) as { uuid: string } | null;
+    if (!existing) {
+      db.prepare(
+        `UPDATE project SET highest_plan_id = max(highest_plan_id, ?), updated_at = ${SQL_NOW_ISO_UTC} WHERE id = ?`
+      ).run(planIdHint, projectId);
+      return planIdHint;
+    }
+  }
+
+  const row = db
+    .prepare('SELECT COALESCE(MAX(plan_id), 0) AS maxPlanId FROM plan WHERE project_id = ?')
+    .get(projectId) as { maxPlanId: number };
+  const nextPlanId =
+    Math.max(row.maxPlanId, getProjectById(db, projectId)?.highest_plan_id ?? 0) + 1;
+  db.prepare(
+    `UPDATE project SET highest_plan_id = max(highest_plan_id, ?), updated_at = ${SQL_NOW_ISO_UTC} WHERE id = ?`
+  ).run(nextPlanId, projectId);
+  return nextPlanId;
+}
+
+function applyPlanCreateOrUpdate(db: Database, op: SyncOpRecord): SkippedSyncOp | null {
+  const payload = parsePayload(op);
+  const projectId = projectIdForIdentity(db, payload.projectIdentity);
+  if (projectId === null) {
+    return { opId: op.op_id, reason: 'plan op missing projectIdentity' };
+  }
+  if (tombstoneWinsOrTies(db, op)) {
+    return null;
+  }
+
+  const existing = db.prepare('SELECT uuid FROM plan WHERE uuid = ?').get(op.entity_id) as {
+    uuid: string;
+  } | null;
+  if (!existing) {
+    const planId = allocatePlanId(db, projectId, payload.planIdHint);
+    const fields = fieldsFromPayload(payload);
+    db.prepare(
+      `
+        INSERT INTO plan (
+          uuid,
+          project_id,
+          plan_id,
+          title,
+          goal,
+          note,
+          details,
+          status,
+          priority,
+          branch,
+          simple,
+          tdd,
+          discovered_from,
+          issue,
+          pull_request,
+          assigned_to,
+          base_branch,
+          base_commit,
+          base_change_id,
+          temp,
+          docs,
+          changed_files,
+          plan_generated_at,
+          docs_updated_at,
+          lessons_applied_at,
+          parent_uuid,
+          epic
+        ) VALUES (?, ?, ?, NULL, NULL, NULL, NULL, 'pending', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0)
+      `
+    ).run(op.entity_id, projectId, planId);
+    applyScalarFields(db, op, 'plan', 'uuid', PLAN_FIELDS, fields);
+    return null;
+  }
+
+  applyScalarFields(db, op, 'plan', 'uuid', PLAN_FIELDS, fieldsFromPayload(payload));
+  return null;
+}
+
+function maxTaskIndex(db: Database, planUuid: string): number {
+  const row = db
+    .prepare(
+      'SELECT COALESCE(MAX(task_index), -1) AS maxTaskIndex FROM plan_task WHERE plan_uuid = ? AND deleted_hlc IS NULL'
+    )
+    .get(planUuid) as { maxTaskIndex: number };
+  return row.maxTaskIndex;
+}
+
+function applyTaskCreateOrUpdate(db: Database, op: SyncOpRecord): void {
+  if (tombstoneWinsOrTies(db, op)) {
+    return;
+  }
+  const payload = parsePayload(op);
+  const fields = fieldsFromPayload(payload);
+  const planUuid = String(fields.plan_uuid ?? payload.planUuid ?? '');
+  const existing = db.prepare('SELECT uuid FROM plan_task WHERE uuid = ?').get(op.entity_id) as {
+    uuid: string;
+  } | null;
+  if (!existing) {
+    const orderKey = String(fields.order_key ?? '0000000000');
+    const taskIndex =
+      typeof fields.task_index === 'number' ? fields.task_index : maxTaskIndex(db, planUuid) + 1;
+    db.prepare(
+      `
+        INSERT INTO plan_task (
+          uuid,
+          plan_uuid,
+          task_index,
+          order_key,
+          title,
+          description,
+          done,
+          created_hlc,
+          updated_hlc
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      op.entity_id,
+      planUuid,
+      taskIndex,
+      orderKey,
+      String(fields.title ?? ''),
+      String(fields.description ?? ''),
+      fields.done ? 1 : 0,
+      formatHlc(opHlc(op)),
+      formatHlc(opHlc(op))
+    );
+  }
+
+  const applied = applyScalarFields(db, op, 'plan_task', 'uuid', PLAN_TASK_FIELDS, fields, {
+    touchUpdatedAt: false,
+  });
+  if (applied.length > 0) {
+    db.prepare('UPDATE plan_task SET updated_hlc = ? WHERE uuid = ? AND deleted_hlc IS NULL').run(
+      formatHlc(opHlc(op)),
+      op.entity_id
+    );
+  }
+}
+
+function applyTaskSetOrder(db: Database, op: SyncOpRecord): void {
+  if (tombstoneWinsOrTies(db, op)) {
+    return;
+  }
+  const payload = parsePayload(op);
+  applyScalarFields(
+    db,
+    op,
+    'plan_task',
+    'uuid',
+    PLAN_TASK_FIELDS,
+    {
+      order_key: payload.orderKey,
+      task_index: payload.taskIndex,
+    },
+    {
+      touchUpdatedAt: false,
+    }
+  );
+}
+
+function applyReviewIssueCreateOrUpdate(db: Database, op: SyncOpRecord): void {
+  if (tombstoneWinsOrTies(db, op)) {
+    return;
+  }
+  const payload = parsePayload(op);
+  const fields = fieldsFromPayload(payload);
+  const planUuid = String(fields.plan_uuid ?? payload.planUuid ?? '');
+  const existing = db
+    .prepare('SELECT uuid FROM plan_review_issue WHERE uuid = ?')
+    .get(op.entity_id) as { uuid: string } | null;
+  if (!existing) {
+    db.prepare(
+      `
+        INSERT INTO plan_review_issue (
+          uuid,
+          plan_uuid,
+          order_key,
+          severity,
+          category,
+          content,
+          file,
+          line,
+          suggestion,
+          source,
+          source_ref,
+          created_hlc,
+          updated_hlc
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    ).run(
+      op.entity_id,
+      planUuid,
+      String(fields.order_key ?? '0000000000'),
+      sqlValue(fields.severity),
+      sqlValue(fields.category),
+      String(fields.content ?? ''),
+      sqlValue(fields.file),
+      sqlValue(fields.line),
+      sqlValue(fields.suggestion),
+      sqlValue(fields.source),
+      sqlValue(fields.source_ref),
+      formatHlc(opHlc(op)),
+      formatHlc(opHlc(op))
+    );
+  }
+
+  const applied = applyScalarFields(
+    db,
+    op,
+    'plan_review_issue',
+    'uuid',
+    REVIEW_ISSUE_FIELDS,
+    fields
+  );
+  if (applied.length > 0) {
+    db.prepare(
+      `UPDATE plan_review_issue SET updated_hlc = ?, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ? AND deleted_hlc IS NULL`
+    ).run(formatHlc(opHlc(op)), op.entity_id);
+  }
+}
+
+function applyEntityDelete(db: Database, op: SyncOpRecord): void {
+  insertTombstone(db, op);
+  const hlcText = formatHlc(opHlc(op));
+  if (op.entity_type === 'plan_task') {
+    db.prepare(
+      'UPDATE plan_task SET deleted_hlc = ?, updated_hlc = ?, task_index = -id WHERE uuid = ? AND (deleted_hlc IS NULL OR deleted_hlc < ?)'
+    ).run(hlcText, hlcText, op.entity_id, hlcText);
+  } else if (op.entity_type === 'plan_review_issue') {
+    db.prepare(
+      `UPDATE plan_review_issue SET deleted_hlc = ?, updated_hlc = ?, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ? AND (deleted_hlc IS NULL OR deleted_hlc < ?)`
+    ).run(hlcText, hlcText, op.entity_id, hlcText);
+  } else if (op.entity_type === 'project_setting') {
+    const payload = parsePayload(op);
+    const projectId = projectIdForIdentity(db, payload.projectIdentity);
+    const storedClock = db
+      .prepare(
+        'SELECT * FROM sync_field_clock WHERE entity_type = ? AND entity_id = ? AND field_name = ?'
+      )
+      .get('project_setting', op.entity_id, 'value') as SyncFieldClockRow | null;
+    if (!remoteWins(opHlc(op), op.node_id, storedClock)) {
+      return;
+    }
+    if (projectId !== null && typeof payload.setting === 'string') {
+      db.prepare('DELETE FROM project_setting WHERE project_id = ? AND setting = ?').run(
+        projectId,
+        payload.setting
+      );
+    }
+    updateFieldClock(db, op, 'value', true);
+  } else if (op.entity_type === 'plan') {
+    db.prepare('DELETE FROM plan WHERE uuid = ?').run(op.entity_id);
+  }
+}
+
+function latestAddEdge(db: Database, op: SyncOpRecord): SyncOpLogRow | null {
+  return db
+    .prepare(
+      `
+        SELECT *
+        FROM sync_op_log
+        WHERE entity_type = ?
+          AND entity_id = ?
+          AND op_type = 'add_edge'
+        ORDER BY hlc_physical_ms DESC, hlc_logical DESC, node_id DESC, local_counter DESC
+        LIMIT 1
+      `
+    )
+    .get(op.entity_type, op.entity_id) as SyncOpLogRow | null;
+}
+
+function applyDependencyEdge(db: Database, op: SyncOpRecord): void {
+  const payload = parsePayload(op);
+  if (typeof payload.planUuid !== 'string' || typeof payload.dependsOnUuid !== 'string') {
+    throw new Error('dependency edge op missing planUuid or dependsOnUuid');
+  }
+  if (op.op_type === 'remove_edge') {
+    insertTombstone(db, op);
+  }
+  const add = latestAddEdge(db, op);
+  const remove = db
+    .prepare('SELECT * FROM sync_tombstone WHERE entity_type = ? AND entity_id = ?')
+    .get(op.entity_type, op.entity_id) as SyncTombstoneRow | null;
+  const present =
+    add !== null &&
+    remoteWins({ physicalMs: add.hlc_physical_ms, logical: add.hlc_logical }, add.node_id, remove);
+  if (present) {
+    db.prepare(
+      'INSERT OR IGNORE INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)'
+    ).run(payload.planUuid, payload.dependsOnUuid);
+  } else {
+    db.prepare('DELETE FROM plan_dependency WHERE plan_uuid = ? AND depends_on_uuid = ?').run(
+      payload.planUuid,
+      payload.dependsOnUuid
+    );
+  }
+}
+
+function applyTagEdge(db: Database, op: SyncOpRecord): void {
+  const payload = parsePayload(op);
+  if (typeof payload.planUuid !== 'string' || typeof payload.tag !== 'string') {
+    throw new Error('tag edge op missing planUuid or tag');
+  }
+  if (op.op_type === 'remove_edge') {
+    insertTombstone(db, op);
+  }
+  const add = latestAddEdge(db, op);
+  const remove = db
+    .prepare('SELECT * FROM sync_tombstone WHERE entity_type = ? AND entity_id = ?')
+    .get(op.entity_type, op.entity_id) as SyncTombstoneRow | null;
+  const present =
+    add !== null &&
+    remoteWins({ physicalMs: add.hlc_physical_ms, logical: add.hlc_logical }, add.node_id, remove);
+  if (present) {
+    db.prepare('INSERT OR IGNORE INTO plan_tag (plan_uuid, tag) VALUES (?, ?)').run(
+      payload.planUuid,
+      payload.tag
+    );
+  } else {
+    db.prepare('DELETE FROM plan_tag WHERE plan_uuid = ? AND tag = ?').run(
+      payload.planUuid,
+      payload.tag
+    );
+  }
+}
+
+function applyProjectSettingUpdate(db: Database, op: SyncOpRecord): SkippedSyncOp | null {
+  if (tombstoneWinsOrTies(db, op)) {
+    return null;
+  }
+  const payload = parsePayload(op);
+  const projectId = projectIdForIdentity(db, payload.projectIdentity);
+  if (projectId === null || typeof payload.setting !== 'string') {
+    return { opId: op.op_id, reason: 'project_setting op missing projectIdentity or setting' };
+  }
+  const storedClock = db
+    .prepare(
+      'SELECT * FROM sync_field_clock WHERE entity_type = ? AND entity_id = ? AND field_name = ?'
+    )
+    .get('project_setting', op.entity_id, 'value') as SyncFieldClockRow | null;
+  if (!remoteWins(opHlc(op), op.node_id, storedClock)) {
+    return null;
+  }
+  db.prepare(
+    'INSERT OR REPLACE INTO project_setting (project_id, setting, value) VALUES (?, ?, ?)'
+  ).run(projectId, payload.setting, JSON.stringify(payload.value));
+  updateFieldClock(db, op, 'value');
+  return null;
+}
+
+function observeRemoteHlc(db: Database, op: SyncOpRecord): void {
+  const localNode = getLocalNode(db) ?? ensureLocalNode(db);
+  new HlcGenerator(db, localNode.node_id).observe(opHlc(op), Date.now(), db);
+}
+
+function applyKnownOp(db: Database, op: SyncOpRecord): SkippedSyncOp | null {
+  if (op.entity_type === 'plan' && (op.op_type === 'create' || op.op_type === 'update_fields')) {
+    return applyPlanCreateOrUpdate(db, op);
+  }
+  if (
+    op.entity_type === 'plan_task' &&
+    (op.op_type === 'create' || op.op_type === 'update_fields')
+  ) {
+    applyTaskCreateOrUpdate(db, op);
+    return null;
+  }
+  if (op.entity_type === 'plan_task' && op.op_type === 'set_order') {
+    applyTaskSetOrder(db, op);
+    return null;
+  }
+  if (
+    op.entity_type === 'plan_review_issue' &&
+    (op.op_type === 'create' || op.op_type === 'update_fields')
+  ) {
+    applyReviewIssueCreateOrUpdate(db, op);
+    return null;
+  }
+  if (
+    (op.entity_type === 'plan' ||
+      op.entity_type === 'plan_task' ||
+      op.entity_type === 'plan_review_issue' ||
+      op.entity_type === 'project_setting') &&
+    op.op_type === 'delete'
+  ) {
+    applyEntityDelete(db, op);
+    return null;
+  }
+  if (
+    op.entity_type === 'plan_dependency' &&
+    (op.op_type === 'add_edge' || op.op_type === 'remove_edge')
+  ) {
+    applyDependencyEdge(db, op);
+    return null;
+  }
+  if (
+    op.entity_type === 'plan_tag' &&
+    (op.op_type === 'add_edge' || op.op_type === 'remove_edge')
+  ) {
+    applyTagEdge(db, op);
+    return null;
+  }
+  if (op.entity_type === 'project_setting' && op.op_type === 'update_fields') {
+    return applyProjectSettingUpdate(db, op);
+  }
+  return { opId: op.op_id, reason: `unsupported op ${op.entity_type}:${op.op_type}` };
+}
+
+function isSupportedOp(op: SyncOpRecord): boolean {
+  return (
+    (op.entity_type === 'plan' &&
+      (op.op_type === 'create' || op.op_type === 'update_fields' || op.op_type === 'delete')) ||
+    (op.entity_type === 'plan_task' &&
+      (op.op_type === 'create' ||
+        op.op_type === 'update_fields' ||
+        op.op_type === 'set_order' ||
+        op.op_type === 'delete')) ||
+    (op.entity_type === 'plan_review_issue' &&
+      (op.op_type === 'create' || op.op_type === 'update_fields' || op.op_type === 'delete')) ||
+    (op.entity_type === 'project_setting' &&
+      (op.op_type === 'update_fields' || op.op_type === 'delete')) ||
+    (op.entity_type === 'plan_dependency' &&
+      (op.op_type === 'add_edge' || op.op_type === 'remove_edge')) ||
+    (op.entity_type === 'plan_tag' && (op.op_type === 'add_edge' || op.op_type === 'remove_edge'))
+  );
+}
+
+function sortOps(ops: SyncOpRecord[]): SyncOpRecord[] {
+  return [...ops].sort((a, b) => {
+    if (a.hlc_physical_ms !== b.hlc_physical_ms) return a.hlc_physical_ms - b.hlc_physical_ms;
+    if (a.hlc_logical !== b.hlc_logical) return a.hlc_logical - b.hlc_logical;
+    const nodeCompare = a.node_id.localeCompare(b.node_id);
+    if (nodeCompare !== 0) return nodeCompare;
+    return a.local_counter - b.local_counter;
+  });
+}
+
+export function applyRemoteOps(db: Database, ops: SyncOpRecord[]): ApplyResult {
+  const result: ApplyResult = { applied: 0, skipped: [], errors: [] };
+
+  for (const op of sortOps(ops)) {
+    const existing = db.prepare('SELECT op_id FROM sync_op_log WHERE op_id = ?').get(op.op_id) as {
+      op_id: string;
+    } | null;
+    if (existing) {
+      result.skipped.push({ opId: op.op_id, reason: 'already applied' });
+      continue;
+    }
+
+    try {
+      const applyOne = db.transaction((nextOp: SyncOpRecord): SkippedSyncOp | null => {
+        if (!isSupportedOp(nextOp)) {
+          return {
+            opId: nextOp.op_id,
+            reason: `unsupported op ${nextOp.entity_type}:${nextOp.op_type}`,
+          };
+        }
+        insertRemoteOpLog(db, nextOp);
+        const skipped = applyKnownOp(db, nextOp);
+        if (skipped) {
+          throw new Error(`supported op unexpectedly skipped: ${skipped.reason}`);
+        }
+        observeRemoteHlc(db, nextOp);
+        return null;
+      });
+      const skipped = applyOne.immediate(op);
+      if (skipped) {
+        result.skipped.push(skipped);
+      } else {
+        result.applied += 1;
+      }
+    } catch (error) {
+      result.errors.push({
+        opId: op.op_id,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return result;
+}
