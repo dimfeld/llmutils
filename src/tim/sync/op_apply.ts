@@ -88,10 +88,23 @@ const REVIEW_ISSUE_FIELDS = new Set([
   'source_ref',
 ]);
 
+const SKIPPED_SYNC_OP_MARKER = Symbol('SkippedSyncOp');
+
+type MarkedSkippedSyncOp = SkippedSyncOp & { [SKIPPED_SYNC_OP_MARKER]: true };
+
 class DeferredSkipRollback extends Error {
   constructor(public readonly skipped: SkippedSyncOp) {
     super(skipped.reason);
   }
+}
+
+function permanentSkip(op: SyncOpRecord, reason: string): MarkedSkippedSyncOp {
+  const skip = { opId: op.op_id, reason, kind: 'permanent' as const } as MarkedSkippedSyncOp;
+  Object.defineProperty(skip, SKIPPED_SYNC_OP_MARKER, {
+    value: true,
+    enumerable: false,
+  });
+  return skip;
 }
 
 function deferredSkip(op: SyncOpRecord, reason: string): SkippedSyncOp {
@@ -146,29 +159,24 @@ function hasTombstone(db: Database, entityType: string, entityId: string): boole
   return row !== null;
 }
 
-function parsePayload(op: SyncOpRecord): JsonRecord | SkippedSyncOp {
+function parsePayload(op: SyncOpRecord): JsonRecord | MarkedSkippedSyncOp {
   let parsed: unknown;
   try {
     parsed = JSON.parse(op.payload) as unknown;
   } catch (error) {
-    return {
-      opId: op.op_id,
-      reason: `invalid JSON payload: ${error instanceof Error ? error.message : String(error)}`,
-      kind: 'permanent',
-    };
+    return permanentSkip(
+      op,
+      `invalid JSON payload: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return {
-      opId: op.op_id,
-      reason: 'expected object payload',
-      kind: 'permanent',
-    };
+    return permanentSkip(op, 'expected object payload');
   }
   return parsed as JsonRecord;
 }
 
-function isSkippedSyncOp(value: JsonRecord | SkippedSyncOp): value is SkippedSyncOp {
-  return 'opId' in value && 'reason' in value;
+function isSkippedSyncOp(value: JsonRecord | MarkedSkippedSyncOp): value is MarkedSkippedSyncOp {
+  return SKIPPED_SYNC_OP_MARKER in value;
 }
 
 function fieldsFromPayload(payload: JsonRecord): JsonRecord {

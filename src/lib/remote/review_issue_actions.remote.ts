@@ -13,6 +13,18 @@ import { getReviewById, getReviewIssues, type ReviewIssueRow } from '$tim/db/rev
 import { getLinkedPlansByPrUrl } from '$tim/db/pr_status.js';
 import type { PlanSchema } from '$tim/planSchema.js';
 import type { ReviewIssue as ReviewFormatterIssue } from '$tim/formatters/review_formatter.js';
+import { ReviewSeveritySchema } from '$tim/formatters/review_output_schema.js';
+
+type PlanReviewIssue = NonNullable<PlanSchema['reviewIssues']>[number];
+
+function normalizeReviewSeverity(severity: string | null): PlanReviewIssue['severity'] {
+  const parsed = ReviewSeveritySchema.safeParse(severity);
+  return parsed.success ? parsed.data : 'info';
+}
+
+function normalizeReviewSource(source: string | null): PlanReviewIssue['source'] {
+  return source === 'claude-code' || source === 'codex-cli' ? source : undefined;
+}
 
 function reviewIssueRowsToPlanIssues(
   rows: ReturnType<typeof listPlanReviewIssuesForPlan>
@@ -20,13 +32,13 @@ function reviewIssueRowsToPlanIssues(
   return rows.map((row) => ({
     uuid: row.uuid,
     orderKey: row.order_key,
-    severity: row.severity ?? 'minor',
+    severity: normalizeReviewSeverity(row.severity),
     category: row.category ?? 'bug',
     content: row.content,
     file: row.file ?? undefined,
     line: row.line ?? undefined,
     suggestion: row.suggestion ?? undefined,
-    source: row.source ?? undefined,
+    source: normalizeReviewSource(row.source),
     sourceRef: row.source_ref ?? undefined,
   }));
 }

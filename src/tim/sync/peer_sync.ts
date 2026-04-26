@@ -27,6 +27,10 @@ export interface PullResponse {
 
 export interface PushResponse {
   applied?: number;
+  /**
+   * Skips reported by the receiver. This count includes deferred skips;
+   * `deferredSkips` is the deferred subset.
+   */
   skipped?: number;
   /**
    * Deferred skips reported by the receiver after they have been durably
@@ -75,6 +79,22 @@ function countDurableOps(result: ApplyResult): number {
   );
 }
 
+function mergeApplyResults(chunkResult: ApplyResult, retryResult: ApplyResult): ApplyResult {
+  const retryOpIds = new Set(retryResult.skipped.map((skip) => skip.opId));
+  const chunkSkipsToReport = chunkResult.skipped.filter(
+    (skip) => skip.kind !== 'deferred' || retryOpIds.has(skip.opId)
+  );
+
+  return {
+    applied: chunkResult.applied + retryResult.applied,
+    skipped: [
+      ...chunkSkipsToReport.filter((skip) => skip.kind !== 'deferred'),
+      ...retryResult.skipped,
+    ],
+    errors: [...chunkResult.errors, ...retryResult.errors],
+  };
+}
+
 function chunkLastSeq(chunk: OpLogChunk): string | null {
   return chunk.ops.at(-1)?.seq?.toString() ?? chunk.nextAfterSeq;
 }
@@ -112,7 +132,10 @@ export function applyPeerOpsWithPending(
   const result = applyRemoteOps(db, ops);
   assertApplySucceeded(result);
   persistDeferredOps(db, peerNodeId, ops, result.skipped);
-  return result;
+  // Receiver-side pending retries run after every pushed chunk. This lets a
+  // pure receiver converge when chunk N satisfies a deferred op from chunk N-1.
+  const retryResult = retryPendingOps(db, peerNodeId);
+  return mergeApplyResults(result, retryResult);
 }
 
 function parsePendingOp(row: { op_id: string; op_json: string }): SyncOpRecord | null {

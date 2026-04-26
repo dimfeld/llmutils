@@ -585,6 +585,88 @@ describe('disconnected sync convergence', () => {
     ).toEqual([{ uuid: 'task-cross-chunk', orderKey: '0000000099' }]);
   });
 
+  test('push receiver retries cross-chunk deferred skips without initiating outbound sync', async () => {
+    const a = createMainNode('A');
+    const b = createMainNode('B');
+    upsertPlan(a.db, a.projectId, { uuid: 'plan-push-only', planId: 1, title: 'Push only' });
+    upsertPlan(b.db, b.projectId, { uuid: 'plan-push-only', planId: 1, title: 'Push only' });
+
+    const planCreateOp = opsFor(a.db, 'plan', 'plan-push-only').find(
+      (op) => op.op_type === 'create'
+    );
+    expect(planCreateOp?.seq).toBeGreaterThan(0);
+
+    appendPlanTask(a.db, 'plan-push-only', {
+      uuid: 'task-push-cross-chunk',
+      title: 'Push cross chunk task',
+      description: 'Created after pushed reorder',
+    });
+    upsertPlanTasks(a.db, 'plan-push-only', [
+      {
+        uuid: 'task-push-cross-chunk',
+        orderKey: '0000000042',
+        title: 'Push cross chunk task',
+        description: 'Created after pushed reorder',
+        done: false,
+      },
+    ]);
+
+    const createOp = opsFor(a.db, 'plan_task', 'task-push-cross-chunk').find(
+      (op) => op.op_type === 'create'
+    );
+    const setOrderOp = opsFor(a.db, 'plan_task', 'task-push-cross-chunk').find(
+      (op) => op.op_type === 'set_order'
+    );
+    expect(createOp?.seq).toBeGreaterThan(planCreateOp!.seq!);
+    expect(setOrderOp?.seq).toBeGreaterThan(createOp!.seq!);
+
+    a.db.prepare('UPDATE sync_op_log SET seq = -1 WHERE op_id = ?').run(createOp!.op_id);
+    a.db.prepare('UPDATE sync_op_log SET seq = ? WHERE op_id = ?').run(
+      createOp!.seq!,
+      setOrderOp!.op_id
+    );
+    a.db.prepare('UPDATE sync_op_log SET seq = ? WHERE op_id = ?').run(
+      setOrderOp!.seq!,
+      createOp!.op_id
+    );
+
+    registerPeerNode(a.db, { nodeId: b.nodeId, nodeType: 'main', label: b.name });
+    registerPeerNode(b.db, { nodeId: a.nodeId, nodeType: 'main', label: a.name });
+    setPeerCursor(a.db, b.nodeId, 'push', planCreateOp!.seq!.toString(), planCreateOp);
+    const transport: PeerTransport = {
+      async pullChunk() {
+        return { ops: [], nextAfterSeq: null, hasMore: false };
+      },
+      async pushChunk(ops) {
+        const result = applyPeerOpsWithPending(b.db, a.nodeId, ops);
+        const deferredSkips = result.skipped.filter((skip) => skip.kind === 'deferred').length;
+        const lastPushed = ops.reduce<SyncOpRecord | null>((current, op) => {
+          if (!Number.isInteger(op.seq) || op.seq < 1) return current;
+          return !current || op.seq > (current.seq ?? 0) ? op : current;
+        }, null);
+        if (lastPushed?.seq) {
+          setPeerCursor(b.db, a.nodeId, 'pull', lastPushed.seq.toString(), lastPushed);
+        }
+        return { applied: result.applied, skipped: result.skipped.length, deferredSkips };
+      },
+    };
+
+    const result = await runPeerSync(a.db, b.nodeId, transport, { batchSize: 1 });
+    expect(result.pullChunks).toBe(0);
+    expect(result.pushChunks).toBe(2);
+    expect(
+      b.db
+        .prepare('SELECT count(*) AS count FROM sync_pending_op WHERE peer_node_id = ?')
+        .get(a.nodeId)
+    ).toEqual({ count: 0 });
+    expect(
+      getPlanTasksByUuid(b.db, 'plan-push-only').map((task) => ({
+        uuid: task.uuid,
+        orderKey: task.order_key,
+      }))
+    ).toEqual([{ uuid: 'task-push-cross-chunk', orderKey: '0000000042' }]);
+  });
+
   test('unresolved deferred set_order stays retryable without side effects', () => {
     const a = createMainNode('A');
     upsertPlan(a.db, a.projectId, { uuid: 'plan-missing-task', planId: 1, title: 'Plan exists' });

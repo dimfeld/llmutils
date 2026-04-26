@@ -3,6 +3,7 @@ import type { Database } from 'bun:sqlite';
 import { deduplicatePrUrls } from '$common/github/identifiers.js';
 import { getAssignmentEntry, type AssignmentEntry } from '$tim/db/assignment.js';
 import type { PlanSchema } from '$tim/planSchema.js';
+import { ReviewSeveritySchema } from '$tim/formatters/review_output_schema.js';
 import { getPrStatusByUrls, getPrStatusForPlan } from '$tim/db/pr_status.js';
 import { isWorkCompleteStatus, normalizePlanStatus } from '$tim/plans/plan_state_utils.js';
 import {
@@ -195,17 +196,28 @@ function toTask(task: PlanTaskRow): EnrichedPlanTask {
   };
 }
 
+type ReviewIssue = NonNullable<PlanSchema['reviewIssues']>[number];
+
+function normalizeReviewSeverity(severity: string | null): ReviewIssue['severity'] {
+  const parsed = ReviewSeveritySchema.safeParse(severity);
+  return parsed.success ? parsed.data : 'info';
+}
+
+function normalizeReviewSource(source: string | null): ReviewIssue['source'] {
+  return source === 'claude-code' || source === 'codex-cli' ? source : undefined;
+}
+
 function toReviewIssue(issue: PlanReviewIssueRow): NonNullable<PlanSchema['reviewIssues']>[number] {
   return {
     uuid: issue.uuid,
     orderKey: issue.order_key,
-    severity: issue.severity ?? 'minor',
+    severity: normalizeReviewSeverity(issue.severity),
     category: issue.category ?? 'bug',
     content: issue.content,
     file: issue.file ?? undefined,
     line: issue.line ?? undefined,
     suggestion: issue.suggestion ?? undefined,
-    source: issue.source ?? undefined,
+    source: normalizeReviewSource(issue.source),
     sourceRef: issue.source_ref ?? undefined,
   };
 }
@@ -905,6 +917,7 @@ export function getPlanDetail(
       tasks,
       dependencies: [...dependencies, ...referencedDependencyRows],
       tags,
+      reviewIssues: listReviewIssuesForPlan(db, planUuid),
     },
     Date.now(),
     finishConfig

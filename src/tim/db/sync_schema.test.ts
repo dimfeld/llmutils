@@ -38,6 +38,7 @@ describe('tim db/sync_schema migration', () => {
       'sync_node',
       'sync_op_log',
       'sync_peer_cursor',
+      'sync_pending_op',
       'sync_tombstone',
       'sync_worker_lease',
     ]);
@@ -54,6 +55,20 @@ describe('tim db/sync_schema migration', () => {
       'created_at',
       'updated_at',
     ]);
+  });
+
+  test('sync_pending_op has the expected primary key', () => {
+    const columns = db.prepare("PRAGMA table_info('sync_pending_op')").all() as Array<{
+      name: string;
+      pk: number;
+    }>;
+
+    expect(
+      columns
+        .filter((column) => column.pk > 0)
+        .sort((a, b) => a.pk - b.pk)
+        .map((column) => column.name)
+    ).toEqual(['peer_node_id', 'op_id']);
   });
 
   test('allows at most one local sync node', () => {
