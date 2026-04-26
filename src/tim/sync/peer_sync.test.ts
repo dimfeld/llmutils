@@ -253,6 +253,43 @@ describe('HTTP peer sync transport', () => {
     await expect(response.json()).resolves.toEqual({ error: 'push batch too large' });
   });
 
+  test('rejects streamed bodies that exceed maxBodyBytes without Content-Length', async () => {
+    const handler = createPeerSyncHttpHandler(dbB, { token: 'secret-token', maxBodyBytes: 256 });
+    const url = new URL('http://peer.test/sync/push');
+    url.searchParams.set('peer_node_id', getLocalNodeId(dbA));
+
+    const oversizedPayload = new TextEncoder().encode(
+      JSON.stringify({ ops: [{ filler: 'x'.repeat(1024) }] })
+    );
+    let pushed = false;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (!pushed) {
+          controller.enqueue(oversizedPayload);
+          pushed = true;
+        } else {
+          controller.close();
+        }
+      },
+    });
+
+    const response = await handler(
+      new Request(url, {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer secret-token',
+          'content-type': 'application/json',
+        },
+        body: stream,
+        // @ts-expect-error duplex is required for streaming bodies in undici/Bun
+        duplex: 'half',
+      })
+    );
+
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toEqual({ error: 'request body too large' });
+  });
+
   test('rejects invalid peer_node_id before registration', async () => {
     const handler = createPeerSyncHttpHandler(dbB, { token: 'secret-token' });
     const response = await handler(

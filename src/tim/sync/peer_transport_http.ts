@@ -80,10 +80,41 @@ async function readJson(request: Request, maxBodyBytes: number): Promise<unknown
       throw new HttpRequestError('request body too large', 413);
     }
   }
-  const text = await request.text();
-  if (Buffer.byteLength(text, 'utf8') > maxBodyBytes) {
-    throw new HttpRequestError('request body too large', 413);
+  // Stream the body and abort once accumulated bytes exceed the limit so peers
+  // that omit Content-Length or use chunked transfer can't force unbounded buffering.
+  const body = request.body;
+  if (body === null) {
+    return null;
   }
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (value) {
+        total += value.byteLength;
+        if (total > maxBodyBytes) {
+          await reader.cancel().catch(() => {});
+          throw new HttpRequestError('request body too large', 413);
+        }
+        chunks.push(value);
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  if (total === 0) {
+    return null;
+  }
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  const text = new TextDecoder('utf-8').decode(merged);
   if (text.trim().length === 0) {
     return null;
   }

@@ -1016,6 +1016,20 @@ const migrations: Migration[] = [
           );
       `);
 
+      // If a cursor still references an op_id that's no longer in the log
+      // (would only happen post-compaction, but be defensive), reset it so the
+      // next sync starts from the beginning rather than throwing on parse.
+      db.run(`
+        UPDATE sync_peer_cursor
+        SET last_op_id = NULL
+        WHERE last_op_id IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1
+            FROM sync_op_log_new
+            WHERE CAST(sync_op_log_new.seq AS TEXT) = sync_peer_cursor.last_op_id
+          );
+      `);
+
       db.run('DROP TABLE sync_op_log');
       db.run('ALTER TABLE sync_op_log_new RENAME TO sync_op_log');
       db.run('CREATE INDEX idx_sync_op_log_seq ON sync_op_log(seq)');
