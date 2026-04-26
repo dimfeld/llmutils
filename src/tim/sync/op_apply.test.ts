@@ -516,7 +516,7 @@ describe('sync op application', () => {
 
     const moveFirstAfter = makeOp(
       'remote-a',
-      { physicalMs: Date.now() + 10_000, logical: 0 },
+      { physicalMs: Date.now() + 1_000_000, logical: 0 },
       1,
       'plan_task',
       'task-first',
@@ -525,7 +525,7 @@ describe('sync op application', () => {
     );
     const moveSecondBefore = makeOp(
       'remote-a',
-      { physicalMs: Date.now() + 10_001, logical: 0 },
+      { physicalMs: Date.now() + 1_000_001, logical: 0 },
       2,
       'plan_task',
       'task-second',
