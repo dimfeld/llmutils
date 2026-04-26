@@ -21,6 +21,7 @@ export interface SyncClockRow {
   logical: number;
   local_counter: number;
   updated_at: string;
+  bootstrap_completed_at: string | null;
 }
 
 export interface SyncOpLogRow {

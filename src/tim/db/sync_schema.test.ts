@@ -55,6 +55,18 @@ describe('tim db/sync_schema migration', () => {
       'created_at',
       'updated_at',
     ]);
+
+    const clockColumns = db.prepare("PRAGMA table_info('sync_clock')").all() as Array<{
+      name: string;
+    }>;
+    expect(clockColumns.map((column) => column.name)).toEqual([
+      'id',
+      'physical_ms',
+      'logical',
+      'local_counter',
+      'updated_at',
+      'bootstrap_completed_at',
+    ]);
   });
 
   test('sync_pending_op has the expected primary key', () => {

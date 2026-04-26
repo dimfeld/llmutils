@@ -1160,6 +1160,18 @@ const migrations: Migration[] = [
       bootstrapSyncMetadata(db);
     },
   },
+  {
+    version: 34,
+    up: (db: Database): void => {
+      const clockColumns = db.prepare("PRAGMA table_info('sync_clock')").all() as Array<{
+        name: string;
+      }>;
+      if (!clockColumns.some((column) => column.name === 'bootstrap_completed_at')) {
+        db.run('ALTER TABLE sync_clock ADD COLUMN bootstrap_completed_at TEXT');
+      }
+      bootstrapSyncMetadata(db, { force: true });
+    },
+  },
 ];
 
 function getCurrentVersion(db: Database): number {

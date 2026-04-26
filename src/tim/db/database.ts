@@ -31,14 +31,16 @@ export function openDatabase(dbPath: string = getDefaultDatabasePath()): Databas
     runMigrations(db);
     ensureLocalNode(db);
 
+    let importedLegacyJson = false;
     if (shouldRunImport(db)) {
       const defaultDbPath = getDefaultDatabasePath();
       const configRoot = dbPath === defaultDbPath ? getTimConfigRoot() : path.dirname(dbPath);
       importFromJsonFiles(db, configRoot);
       markImportCompleted(db);
+      importedLegacyJson = true;
     }
 
-    bootstrapSyncMetadata(db);
+    bootstrapSyncMetadata(db, { force: importedLegacyJson });
   } catch (err) {
     db.close(false);
     throw err;

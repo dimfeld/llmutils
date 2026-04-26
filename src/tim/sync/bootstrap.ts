@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite';
 
 import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
-import { ensureLocalNode } from '../db/sync_schema.js';
+import { ensureLocalNode, getOrCreateClockRow } from '../db/sync_schema.js';
 import { formatHlc, formatOpId, type Hlc } from './hlc.js';
 import {
   getLocalGenerator,
@@ -27,6 +27,10 @@ interface BootstrapStats {
   syntheticOpsInserted: number;
   taskRowsStamped: number;
   reviewIssueRowsStamped: number;
+}
+
+interface BootstrapOptions {
+  force?: boolean;
 }
 
 interface PlanRow extends JsonRecord {
@@ -240,7 +244,62 @@ function updateClockLocalCounter(db: Database, bootstrap: BootstrapClock): void 
   ).run(bootstrap.nextLocalCounter - 1);
 }
 
-export function bootstrapSyncMetadata(db: Database): BootstrapStats {
+function emptyStats(): BootstrapStats {
+  return {
+    fieldClocksInserted: 0,
+    syntheticOpsInserted: 0,
+    taskRowsStamped: 0,
+    reviewIssueRowsStamped: 0,
+  };
+}
+
+function getBootstrapCompletedAt(db: Database): string | null {
+  try {
+    const row = db
+      .prepare('SELECT bootstrap_completed_at FROM sync_clock WHERE id = 1')
+      .get() as { bootstrap_completed_at: string | null } | null;
+    return row?.bootstrap_completed_at ?? null;
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      /no such column: bootstrap_completed_at/.test(error.message)
+    ) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function markBootstrapCompleted(db: Database): void {
+  try {
+    getOrCreateClockRow(db);
+    db.prepare(
+      `
+        UPDATE sync_clock
+        SET bootstrap_completed_at = ${SQL_NOW_ISO_UTC},
+            updated_at = ${SQL_NOW_ISO_UTC}
+        WHERE id = 1
+      `
+    ).run();
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      /no such column: bootstrap_completed_at/.test(error.message)
+    ) {
+      return;
+    }
+    throw error;
+  }
+}
+
+export function bootstrapSyncMetadata(
+  db: Database,
+  options: BootstrapOptions = {}
+): BootstrapStats {
+  if (!options.force && getBootstrapCompletedAt(db) !== null) {
+    return emptyStats();
+  }
+
   const run = db.transaction((): BootstrapStats => {
     ensureLocalNode(db);
     let bootstrap: BootstrapClock | null = null;
@@ -259,12 +318,7 @@ export function bootstrapSyncMetadata(db: Database): BootstrapStats {
       return bootstrap;
     };
 
-    const stats: BootstrapStats = {
-      fieldClocksInserted: 0,
-      syntheticOpsInserted: 0,
-      taskRowsStamped: 0,
-      reviewIssueRowsStamped: 0,
-    };
+    const stats = emptyStats();
 
     if (tableExists(db, 'plan')) {
       const plans = db.prepare('SELECT * FROM plan ORDER BY uuid').all() as PlanRow[];
@@ -469,6 +523,7 @@ export function bootstrapSyncMetadata(db: Database): BootstrapStats {
     if (bootstrap) {
       updateClockLocalCounter(db, bootstrap);
     }
+    markBootstrapCompleted(db);
     return stats;
   });
 

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Database } from 'bun:sqlite';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
@@ -63,6 +63,13 @@ function countRows(db: Database, tableName: string): number {
 
 function opRows(db: Database): SyncOpLogRow[] {
   return db.prepare('SELECT * FROM sync_op_log ORDER BY seq').all() as SyncOpLogRow[];
+}
+
+function bootstrapCompletedAt(db: Database): string | null {
+  const row = db
+    .prepare('SELECT bootstrap_completed_at FROM sync_clock WHERE id = 1')
+    .get() as { bootstrap_completed_at: string | null } | null;
+  return row?.bootstrap_completed_at ?? null;
 }
 
 function insertLegacyData(db: Database): { projectId: number } {
@@ -198,10 +205,49 @@ describe('sync metadata bootstrap', () => {
     expect(countRows(db, 'sync_field_clock')).toBe(0);
   });
 
+  test('bootstrap completion marker makes subsequent calls a fast no-op unless forced', () => {
+    expect(bootstrapCompletedAt(db)).not.toBeNull();
+    insertLegacyData(db);
+
+    const preparedSql: string[] = [];
+    const originalPrepare = db.prepare.bind(db);
+    const prepareSpy = vi.spyOn(db, 'prepare').mockImplementation(((sql: string) => {
+      preparedSql.push(sql);
+      if (
+        /\bFROM\s+(plan|plan_task|plan_review_issue|plan_dependency|plan_tag|project_setting)\b/i.test(
+          sql
+        )
+      ) {
+        throw new Error(`unexpected syncable table query: ${sql}`);
+      }
+      return originalPrepare(sql);
+    }) as typeof db.prepare);
+
+    try {
+      expect(bootstrapSyncMetadata(db)).toEqual({
+        fieldClocksInserted: 0,
+        syntheticOpsInserted: 0,
+        taskRowsStamped: 0,
+        reviewIssueRowsStamped: 0,
+      });
+    } finally {
+      prepareSpy.mockRestore();
+    }
+    expect(preparedSql).toEqual(['SELECT bootstrap_completed_at FROM sync_clock WHERE id = 1']);
+    expect(clock(db, 'plan', 'plan-legacy', 'title')).toBeNull();
+
+    const stats = bootstrapSyncMetadata(db, { force: true });
+
+    expect(stats.fieldClocksInserted).toBeGreaterThan(0);
+    expect(stats.syntheticOpsInserted).toBe(7);
+    expect(clock(db, 'plan', 'plan-legacy', 'title')).not.toBeNull();
+    expect(bootstrapCompletedAt(db)).not.toBeNull();
+  });
+
   test('bootstrap seeds clocks and synthetic ops for existing syncable rows', () => {
     insertLegacyData(db);
 
-    const stats = bootstrapSyncMetadata(db);
+    const stats = bootstrapSyncMetadata(db, { force: true });
 
     expect(stats.fieldClocksInserted).toBeGreaterThan(0);
     expect(stats.syntheticOpsInserted).toBe(7);
@@ -248,12 +294,12 @@ describe('sync metadata bootstrap', () => {
 
   test('bootstrap is idempotent and does not bump existing clocks', () => {
     insertLegacyData(db);
-    bootstrapSyncMetadata(db);
+    bootstrapSyncMetadata(db, { force: true });
     const clockBefore = clock(db, 'plan', 'plan-legacy', 'title');
     const opCountBefore = countRows(db, 'sync_op_log');
     const fieldClockCountBefore = countRows(db, 'sync_field_clock');
 
-    const stats = bootstrapSyncMetadata(db);
+    const stats = bootstrapSyncMetadata(db, { force: true });
 
     expect(stats).toEqual({
       fieldClocksInserted: 0,
@@ -268,7 +314,7 @@ describe('sync metadata bootstrap', () => {
 
   test('older remote field op after bootstrap does not overwrite existing data', () => {
     insertLegacyData(db);
-    bootstrapSyncMetadata(db);
+    bootstrapSyncMetadata(db, { force: true });
     const titleClock = clock(db, 'plan', 'plan-legacy', 'title');
     expect(titleClock).not.toBeNull();
 
@@ -292,7 +338,7 @@ describe('sync metadata bootstrap', () => {
 
   test('newer remote field op after bootstrap wins', () => {
     insertLegacyData(db);
-    bootstrapSyncMetadata(db);
+    bootstrapSyncMetadata(db, { force: true });
     const titleClock = clock(db, 'plan', 'plan-legacy', 'title');
     expect(titleClock).not.toBeNull();
 
@@ -326,7 +372,7 @@ describe('sync metadata bootstrap', () => {
       created_node_id: null,
     });
 
-    bootstrapSyncMetadata(db);
+    bootstrapSyncMetadata(db, { force: true });
 
     expect(
       db
@@ -347,7 +393,7 @@ describe('sync metadata bootstrap', () => {
       `UPDATE plan_task SET created_hlc = ?, updated_hlc = ?, created_node_id = ? WHERE uuid = ?`
     ).run(existingHlc, existingHlc, existingNodeId, 'task-legacy');
 
-    const stats = bootstrapSyncMetadata(db);
+    const stats = bootstrapSyncMetadata(db, { force: true });
 
     expect(stats.taskRowsStamped).toBe(0);
     expect(
@@ -369,7 +415,7 @@ describe('sync metadata bootstrap', () => {
       `UPDATE plan_review_issue SET created_hlc = ?, updated_hlc = ?, created_node_id = ? WHERE uuid = ?`
     ).run(existingHlc, existingHlc, existingNodeId, 'issue-legacy');
 
-    const stats = bootstrapSyncMetadata(db);
+    const stats = bootstrapSyncMetadata(db, { force: true });
 
     expect(stats.reviewIssueRowsStamped).toBe(0);
     expect(
@@ -393,7 +439,7 @@ describe('sync metadata bootstrap', () => {
       'task-legacy'
     );
 
-    bootstrapSyncMetadata(db);
+    bootstrapSyncMetadata(db, { force: true });
 
     expect(clock(db, 'plan_task', 'task-legacy', 'title')).toBeNull();
     const taskOps = opRows(db).filter(
@@ -410,7 +456,7 @@ describe('sync metadata bootstrap', () => {
       'issue-legacy'
     );
 
-    bootstrapSyncMetadata(db);
+    bootstrapSyncMetadata(db, { force: true });
 
     expect(clock(db, 'plan_review_issue', 'issue-legacy', 'content')).toBeNull();
     const issueOps = opRows(db).filter(
@@ -419,16 +465,16 @@ describe('sync metadata bootstrap', () => {
     expect(issueOps).toHaveLength(0);
   });
 
-  test('migration v33 fires bootstrap for pre-existing plan rows', () => {
+  test('migration v33/v34 fires bootstrap for pre-existing plan rows and sets marker', () => {
     // Simulate upgrading from v32: open a fully migrated DB, roll back to v32,
     // clear bootstrap artifacts, insert plan data, then run migrations again
-    // to trigger only v33 (which calls bootstrapSyncMetadata).
+    // to trigger v33/v34 (which call bootstrapSyncMetadata).
     db.close(false);
 
     const dbPath = path.join(tempDir, DATABASE_FILENAME);
     db = openDatabase(dbPath);
 
-    // Roll back to v32 and clear all bootstrap artifacts so v33 will re-run.
+    // Roll back to v32 and clear all bootstrap artifacts so v33/v34 will re-run.
     db.run('DELETE FROM schema_version');
     db.prepare('INSERT INTO schema_version (version, import_completed) VALUES (32, 1)').run();
     db.run('DELETE FROM sync_op_log');
@@ -462,7 +508,7 @@ describe('sync metadata bootstrap', () => {
     expect(countRows(db, 'sync_op_log')).toBe(0);
     expect(countRows(db, 'sync_field_clock')).toBe(0);
 
-    // Running migrations will see v32 and execute v33 (bootstrap).
+    // Running migrations will see v32 and execute v33/v34 (bootstrap + marker).
     runMigrations(db);
 
     // Verify bootstrap ran: field clocks and a synthetic create op exist for the plan.
@@ -472,5 +518,6 @@ describe('sync metadata bootstrap', () => {
         op.entity_type === 'plan' && op.entity_id === 'plan-pre-v33' && op.op_type === 'create'
     );
     expect(planOp).not.toBeUndefined();
+    expect(bootstrapCompletedAt(db)).not.toBeNull();
   });
 });
