@@ -62,12 +62,8 @@ describe('review issue remote actions', () => {
 
     await invokeCommand(removeReviewIssue, { planUuid: 'plan-remove', issueIndex: 0 });
 
-    const plan = getPlanByUuid(currentDb, 'plan-remove');
     const mirroredIssues = listReviewIssuesForPlan(currentDb, 'plan-remove');
 
-    expect(JSON.parse(plan?.review_issues ?? '[]')).toEqual([
-      makeIssue('minor', 'style', 'Second'),
-    ]);
     expect(mirroredIssues.map((issue) => issue.content)).toEqual(['Second']);
     expect(
       currentDb
@@ -124,9 +120,6 @@ describe('review issue remote actions', () => {
     const createdTask = createTaskFromIssue(issue);
 
     expect(plan?.status).toBe('in_progress');
-    expect(JSON.parse(plan?.review_issues ?? '[]')).toEqual([
-      makeIssue('minor', 'style', 'Leftover issue'),
-    ]);
     expect(listReviewIssuesForPlan(currentDb, 'plan-convert').map((row) => row.content)).toEqual([
       'Leftover issue',
     ]);
@@ -163,9 +156,6 @@ describe('review issue remote actions', () => {
 
     await invokeCommand(clearReviewIssues, { planUuid: 'plan-clear' });
 
-    const plan = getPlanByUuid(currentDb, 'plan-clear');
-
-    expect(plan?.review_issues).toBeNull();
     expect(listReviewIssuesForPlan(currentDb, 'plan-clear')).toEqual([]);
   });
 

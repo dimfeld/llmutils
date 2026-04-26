@@ -1,6 +1,5 @@
 import { command } from '$app/server';
 import { error } from '@sveltejs/kit';
-import { randomUUID } from 'node:crypto';
 import * as z from 'zod';
 
 import { getServerContext } from '$lib/server/init.js';
@@ -15,14 +14,13 @@ import { getSessionManager } from '$lib/server/session_context.js';
 import { addReplyToReviewThread, resolveReviewThread } from '$common/github/pull_requests.js';
 import { getGitHubUsername } from '$common/github/user.js';
 import { createTaskFromReviewThread } from '$tim/commands/review.js';
-import { getPlanByUuid } from '$tim/db/plan.js';
+import { appendPlanTask, getPlanByUuid, setPlanStatus } from '$tim/db/plan.js';
 import {
   getPrStatusForPlan,
   type PrReviewThreadCommentRow,
   type PrReviewThreadDetail,
   type PrReviewThreadRow,
 } from '$tim/db/pr_status.js';
-import { SQL_NOW_ISO_UTC } from '$tim/db/sql_utils.js';
 import { tryCanonicalizePrUrl } from '$common/github/identifiers.js';
 
 const convertThreadToTaskSchema = z.object({
@@ -132,34 +130,11 @@ export const convertThreadToTask = command(
       // Append thread_id marker to description for duplicate detection
       const descriptionWithSource = `${newTask.description ?? ''}\n\n[source:review-thread:${threadId}]`;
 
-      const taskIndexRow = db
-        .prepare(
-          `
-            SELECT MAX(task_index) as maxTaskIndex
-            FROM plan_task
-            WHERE plan_uuid = ?
-          `
-        )
-        .get(planUuid) as { maxTaskIndex: number | null };
-      const nextIndex = (taskIndexRow.maxTaskIndex ?? -1) + 1;
-
-      db.prepare(
-        `
-          INSERT INTO plan_task (uuid, plan_uuid, task_index, order_key, title, description, done)
-          VALUES (?, ?, ?, ?, ?, ?, 0)
-        `
-      ).run(
-        randomUUID(),
-        planUuid,
-        nextIndex,
-        String(nextIndex).padStart(10, '0'),
-        newTask.title,
-        descriptionWithSource
-      );
-
-      db.prepare(
-        `UPDATE plan SET status = 'in_progress', updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ? AND status != 'in_progress'`
-      ).run(planUuid);
+      appendPlanTask(db, planUuid, {
+        title: newTask.title,
+        description: descriptionWithSource,
+      });
+      setPlanStatus(db, planUuid, 'in_progress');
     }).immediate();
   }
 );

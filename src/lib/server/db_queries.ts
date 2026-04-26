@@ -23,6 +23,11 @@ import {
   type PlanTagRow,
   type PlanTaskRow,
 } from '$tim/db/plan.js';
+import {
+  getPlanReviewIssuesByProject,
+  listReviewIssuesForPlan,
+  type PlanReviewIssueRow,
+} from '$tim/db/plan_review_issue.js';
 import { listProjects, type Project } from '$tim/db/project.js';
 import {
   dbValueToWorkspaceType,
@@ -157,6 +162,7 @@ interface PlanQueryBundle {
   tasks: PlanTaskRow[];
   dependencies: PlanDependencyRow[];
   tags: PlanTagRow[];
+  reviewIssues: PlanReviewIssueRow[];
 }
 
 export type PrSummaryStatus = 'passing' | 'failing' | 'pending' | 'none';
@@ -189,7 +195,22 @@ function toTask(task: PlanTaskRow): EnrichedPlanTask {
   };
 }
 
-function groupByPlanUuid<T extends { plan_uuid: string }>(items: T[]): Map<string, T[]> {
+function toReviewIssue(issue: PlanReviewIssueRow): NonNullable<PlanSchema['reviewIssues']>[number] {
+  return {
+    uuid: issue.uuid,
+    orderKey: issue.order_key,
+    severity: issue.severity ?? 'minor',
+    category: issue.category ?? 'bug',
+    content: issue.content,
+    file: issue.file ?? undefined,
+    line: issue.line ?? undefined,
+    suggestion: issue.suggestion ?? undefined,
+    source: issue.source ?? undefined,
+    sourceRef: issue.source_ref ?? undefined,
+  };
+}
+
+function groupByPlanUuid<T extends { plan_uuid: string }>(items: T[] = []): Map<string, T[]> {
   const grouped = new Map<string, T[]>();
 
   for (const item of items) {
@@ -413,6 +434,7 @@ function enrichPlansWithContext(
   const tasksByPlanUuid = groupByPlanUuid(bundle.tasks);
   const dependenciesByPlanUuid = groupByPlanUuid(bundle.dependencies);
   const tagsByPlanUuid = groupTagsByPlanUuid(bundle.tags);
+  const reviewIssuesByPlanUuid = groupByPlanUuid(bundle.reviewIssues);
   const planByUuid = new Map(bundle.plans.map((plan) => [plan.uuid, plan]));
   const missingDependencyUuids = new Set<string>();
 
@@ -513,9 +535,7 @@ function enrichPlansWithContext(
         done: doneTaskCount,
         total: tasks.length,
       },
-      reviewIssueCount: plan.review_issues
-        ? ((JSON.parse(plan.review_issues) as PlanSchema['reviewIssues'])?.length ?? 0)
-        : 0,
+      reviewIssueCount: reviewIssuesByPlanUuid.get(plan.uuid)?.length ?? 0,
     };
   });
 
@@ -534,6 +554,16 @@ function getAllProjectBundle(db: Database): PlanQueryBundle {
       )
       .all() as PlanDependencyRow[],
     tags: db.prepare('SELECT * FROM plan_tag ORDER BY plan_uuid, tag').all() as PlanTagRow[],
+    reviewIssues: db
+      .prepare(
+        `
+          SELECT *
+          FROM plan_review_issue
+          WHERE deleted_hlc IS NULL
+          ORDER BY plan_uuid, order_key, uuid
+        `
+      )
+      .all() as PlanReviewIssueRow[],
   };
 }
 
@@ -543,6 +573,7 @@ function getProjectBundle(db: Database, projectId: number): PlanQueryBundle {
     tasks: getPlanTasksByProject(db, projectId),
     dependencies: getPlanDependenciesByProject(db, projectId),
     tags: getPlanTagsByProject(db, projectId),
+    reviewIssues: getPlanReviewIssuesByProject(db, projectId),
   };
 }
 
@@ -901,9 +932,7 @@ export function getPlanDetail(
     includeReviewThreads: true,
   });
 
-  const reviewIssues: PlanSchema['reviewIssues'] = plan.review_issues
-    ? (JSON.parse(plan.review_issues) as PlanSchema['reviewIssues'])
-    : undefined;
+  const reviewIssues = listReviewIssuesForPlan(db, planUuid).map(toReviewIssue);
 
   return {
     ...enrichedPlan,

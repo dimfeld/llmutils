@@ -1,4 +1,9 @@
 import type { Database } from 'bun:sqlite';
+import {
+  emitProjectSettingDelete,
+  emitProjectSettingUpdate,
+  getProjectSyncIdentity,
+} from '../sync/op_emission.js';
 
 export interface ProjectSetting {
   project_id: number;
@@ -43,12 +48,25 @@ export function setProjectSetting(
 
   const setInTransaction = db.transaction(
     (nextProjectId: number, nextSetting: string, nextValue: unknown): void => {
+      const encodedValue = JSON.stringify(nextValue);
+      const existing = db
+        .prepare('SELECT value FROM project_setting WHERE project_id = ? AND setting = ?')
+        .get(nextProjectId, nextSetting) as Pick<ProjectSetting, 'value'> | null;
+      if (existing?.value === encodedValue) {
+        return;
+      }
       db.prepare(
         `
           INSERT OR REPLACE INTO project_setting (project_id, setting, value)
           VALUES (?, ?, ?)
         `
-      ).run(nextProjectId, nextSetting, JSON.stringify(nextValue));
+      ).run(nextProjectId, nextSetting, encodedValue);
+      emitProjectSettingUpdate(
+        db,
+        getProjectSyncIdentity(db, nextProjectId),
+        nextSetting,
+        nextValue
+      );
     }
   );
 
@@ -61,6 +79,9 @@ export function deleteProjectSetting(db: Database, projectId: number, setting: s
       const result = db
         .prepare('DELETE FROM project_setting WHERE project_id = ? AND setting = ?')
         .run(nextProjectId, nextSetting);
+      if (result.changes > 0) {
+        emitProjectSettingDelete(db, getProjectSyncIdentity(db, nextProjectId), nextSetting);
+      }
 
       return result.changes > 0;
     }

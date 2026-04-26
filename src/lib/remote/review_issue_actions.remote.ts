@@ -1,30 +1,34 @@
 import { command } from '$app/server';
 import { error } from '@sveltejs/kit';
-import { randomUUID } from 'node:crypto';
 import * as z from 'zod';
 
 import { getServerContext } from '$lib/server/init.js';
 import { createTaskFromIssue } from '$tim/commands/review.js';
-import { getPlanByUuid, getPlanTasksByUuid } from '$tim/db/plan.js';
-import { reconcileReviewIssuesForPlan } from '$tim/db/plan_review_issue.js';
+import { appendPlanTask, getPlanByUuid, setPlanStatus } from '$tim/db/plan.js';
+import {
+  listReviewIssuesForPlan as listPlanReviewIssuesForPlan,
+  reconcileReviewIssuesForPlan,
+} from '$tim/db/plan_review_issue.js';
 import { getReviewById, getReviewIssues, type ReviewIssueRow } from '$tim/db/review.js';
 import { getLinkedPlansByPrUrl } from '$tim/db/pr_status.js';
-import { SQL_NOW_ISO_UTC } from '$tim/db/sql_utils.js';
 import type { PlanSchema } from '$tim/planSchema.js';
 import type { ReviewIssue as ReviewFormatterIssue } from '$tim/formatters/review_formatter.js';
 
-function parseReviewIssuesJson(
-  reviewIssuesJson: string | null
+function reviewIssueRowsToPlanIssues(
+  rows: ReturnType<typeof listPlanReviewIssuesForPlan>
 ): NonNullable<PlanSchema['reviewIssues']> {
-  if (!reviewIssuesJson) {
-    return [];
-  }
-
-  try {
-    return JSON.parse(reviewIssuesJson);
-  } catch {
-    return [];
-  }
+  return rows.map((row) => ({
+    uuid: row.uuid,
+    orderKey: row.order_key,
+    severity: row.severity ?? 'minor',
+    category: row.category ?? 'bug',
+    content: row.content,
+    file: row.file ?? undefined,
+    line: row.line ?? undefined,
+    suggestion: row.suggestion ?? undefined,
+    source: row.source ?? undefined,
+    sourceRef: row.source_ref ?? undefined,
+  }));
 }
 
 const planUuidSchema = z.object({
@@ -56,16 +60,13 @@ export const removeReviewIssue = command(issueIndexSchema, async ({ planUuid, is
       error(404, 'Plan not found');
     }
 
-    const issues = parseReviewIssuesJson(plan.review_issues);
+    const issues = reviewIssueRowsToPlanIssues(listPlanReviewIssuesForPlan(db, planUuid));
     if (issueIndex >= issues.length) {
       error(400, 'Issue index out of range');
     }
 
     issues.splice(issueIndex, 1);
 
-    db.prepare(
-      `UPDATE plan SET review_issues = ?, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
-    ).run(issues.length > 0 ? JSON.stringify(issues) : null, planUuid);
     reconcileReviewIssuesForPlan(db, planUuid, issues);
   }).immediate();
 });
@@ -81,7 +82,7 @@ export const convertReviewIssueToTask = command(
         error(404, 'Plan not found');
       }
 
-      const issues = parseReviewIssuesJson(plan.review_issues);
+      const issues = reviewIssueRowsToPlanIssues(listPlanReviewIssuesForPlan(db, planUuid));
       if (issueIndex >= issues.length) {
         error(400, 'Issue index out of range');
       }
@@ -89,25 +90,14 @@ export const convertReviewIssueToTask = command(
       const issue = issues[issueIndex];
       const newTask = createTaskFromIssue(issue);
 
-      const existingTasks = getPlanTasksByUuid(db, planUuid);
       issues.splice(issueIndex, 1);
-      const nextIndex = existingTasks.length;
 
-      db.prepare(
-        `UPDATE plan SET review_issues = ?, status = 'in_progress', updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
-      ).run(issues.length > 0 ? JSON.stringify(issues) : null, planUuid);
       reconcileReviewIssuesForPlan(db, planUuid, issues);
-
-      db.prepare(
-        `INSERT INTO plan_task (uuid, plan_uuid, task_index, order_key, title, description, done) VALUES (?, ?, ?, ?, ?, ?, 0)`
-      ).run(
-        randomUUID(),
-        planUuid,
-        nextIndex,
-        String(nextIndex).padStart(10, '0'),
-        newTask.title,
-        newTask.description ?? ''
-      );
+      appendPlanTask(db, planUuid, {
+        title: newTask.title,
+        description: newTask.description ?? '',
+      });
+      setPlanStatus(db, planUuid, 'in_progress');
     }).immediate();
   }
 );
@@ -121,9 +111,6 @@ export const clearReviewIssues = command(planUuidSchema, async ({ planUuid }) =>
       error(404, 'Plan not found');
     }
 
-    db.prepare(
-      `UPDATE plan SET review_issues = NULL, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
-    ).run(planUuid);
     reconcileReviewIssuesForPlan(db, planUuid, []);
   }).immediate();
 });
@@ -193,34 +180,11 @@ export const addReviewIssueToPlanTask = command(
 
       const newTask = createTaskFromIssue(reviewIssueToTask(issue));
       const descriptionWithSource = `${newTask.description ?? ''}\n\n${duplicateMarker}`;
-      const taskIndexRow = db
-        .prepare(
-          `
-            SELECT MAX(task_index) as maxTaskIndex
-            FROM plan_task
-            WHERE plan_uuid = ?
-          `
-        )
-        .get(planUuid) as { maxTaskIndex: number | null };
-      const nextIndex = (taskIndexRow.maxTaskIndex ?? -1) + 1;
-
-      db.prepare(
-        `
-          INSERT INTO plan_task (uuid, plan_uuid, task_index, order_key, title, description, done)
-          VALUES (?, ?, ?, ?, ?, ?, 0)
-        `
-      ).run(
-        randomUUID(),
-        planUuid,
-        nextIndex,
-        String(nextIndex).padStart(10, '0'),
-        newTask.title,
-        descriptionWithSource
-      );
-
-      db.prepare(
-        `UPDATE plan SET status = 'in_progress', updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ? AND status != 'in_progress'`
-      ).run(planUuid);
+      appendPlanTask(db, planUuid, {
+        title: newTask.title,
+        description: descriptionWithSource,
+      });
+      setPlanStatus(db, planUuid, 'in_progress');
     }).immediate();
   }
 );

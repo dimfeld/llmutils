@@ -12,6 +12,7 @@ import {
   upsertPlanInTransaction,
   type UpsertPlanInput,
 } from '../db/plan.js';
+import { listReviewIssuesForPlan } from '../db/plan_review_issue.js';
 import { getOrCreateProject, getProject } from '../db/project.js';
 import { reserveNextPlanId } from '../db/project.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
@@ -300,7 +301,29 @@ function snapshotOriginalDbState(
       docs: row.docs ? JSON.parse(row.docs) : null,
       changedFiles: row.changed_files ? JSON.parse(row.changed_files) : null,
       planGeneratedAt: row.plan_generated_at,
-      reviewIssues: row.review_issues ? JSON.parse(row.review_issues) : null,
+      reviewIssues: listReviewIssuesForPlan(db, row.uuid).map(
+        (issue): NonNullable<PlanSchema['reviewIssues']>[number] => ({
+          uuid: issue.uuid,
+          orderKey: issue.order_key,
+          severity:
+            issue.severity === 'critical' ||
+            issue.severity === 'major' ||
+            issue.severity === 'minor' ||
+            issue.severity === 'info'
+              ? issue.severity
+              : 'minor',
+          category: issue.category ?? 'bug',
+          content: issue.content,
+          file: issue.file ?? undefined,
+          line: issue.line ?? undefined,
+          suggestion: issue.suggestion ?? undefined,
+          source:
+            issue.source === 'claude-code' || issue.source === 'codex-cli'
+              ? issue.source
+              : undefined,
+          sourceRef: issue.source_ref ?? undefined,
+        })
+      ),
       parentUuid: row.parent_uuid,
       epic: row.epic === 1,
       tasks: getPlanTasksByUuid(db, row.uuid).map((task) => ({

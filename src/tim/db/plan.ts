@@ -3,6 +3,19 @@ import { randomUUID } from 'node:crypto';
 import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 import type { PlanSchema } from '../planSchema.js';
 import { reconcileReviewIssuesForPlan } from './plan_review_issue.js';
+import {
+  emitDependencyAdd,
+  emitDependencyRemove,
+  emitPlanCreate,
+  emitPlanDelete,
+  emitPlanFieldUpdate,
+  emitTagAdd,
+  emitTagRemove,
+  emitTaskCreate,
+  emitTaskDelete,
+  emitTaskFieldUpdate,
+  emitTaskSetOrder,
+} from '../sync/op_emission.js';
 
 export interface PlanRow {
   uuid: string;
@@ -125,13 +138,10 @@ function replacePlanTasks(
     done?: boolean;
   }>
 ): void {
-  const existingTasks = getPlanTasksByUuid(db, planUuid);
+  const existingTasks = db
+    .prepare('SELECT * FROM plan_task WHERE plan_uuid = ? ORDER BY order_key, uuid')
+    .all(planUuid) as PlanTaskRow[];
   const existingTasksByUuid = new Map(existingTasks.map((task) => [task.uuid, task]));
-  db.prepare('DELETE FROM plan_task WHERE plan_uuid = ?').run(planUuid);
-
-  if (tasks.length === 0) {
-    return;
-  }
 
   const insertTask = db.prepare(
     `
@@ -149,6 +159,27 @@ function replacePlanTasks(
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `
   );
+  const updateTask = db.prepare(
+    `
+      UPDATE plan_task
+      SET task_index = ?,
+          order_key = ?,
+          title = ?,
+          description = ?,
+          done = ?
+      WHERE uuid = ?
+      AND deleted_hlc IS NULL
+    `
+  );
+  const retainedUuids = new Set<string>();
+  db.prepare(
+    `
+      UPDATE plan_task
+      SET task_index = -id
+      WHERE plan_uuid = ?
+        AND deleted_hlc IS NULL
+    `
+  ).run(planUuid);
   const incomingOrderKeys = tasks.map((task) => task.orderKey);
   const canPreserveIncomingOrderKeys =
     incomingOrderKeys.every((orderKey): orderKey is string => typeof orderKey === 'string') &&
@@ -157,6 +188,7 @@ function replacePlanTasks(
     );
   tasks.forEach((task, index) => {
     const existingTask = task.uuid ? existingTasksByUuid.get(task.uuid) : undefined;
+    const canReuseIncomingUuid = !existingTask || existingTask.deleted_hlc === null;
     // Preserve round-tripped order keys when they already agree with list order.
     // If a materialized file reorders task objects without editing orderKey, the
     // keys no longer sort like the list, so v1 rewrites all order keys by index.
@@ -164,27 +196,81 @@ function replacePlanTasks(
       ? task.orderKey!
       : String(index).padStart(10, '0');
     const taskUuid =
-      typeof task.uuid === 'string' && task.uuid.length > 0 ? task.uuid : randomUUID();
-    insertTask.run(
-      taskUuid,
-      planUuid,
-      index,
-      orderKey,
-      task.title,
-      task.description,
-      task.done ? 1 : 0,
-      existingTask?.created_hlc ?? null,
-      existingTask?.updated_hlc ?? null,
-      existingTask?.deleted_hlc ?? null
-    );
+      typeof task.uuid === 'string' && task.uuid.length > 0 && canReuseIncomingUuid
+        ? task.uuid
+        : randomUUID();
+    const done = task.done ? 1 : 0;
+    retainedUuids.add(taskUuid);
+    if (!existingTask || existingTask.deleted_hlc !== null) {
+      insertTask.run(
+        taskUuid,
+        planUuid,
+        index,
+        orderKey,
+        task.title,
+        task.description,
+        done,
+        null,
+        null,
+        null
+      );
+      emitTaskCreate(db, planUuid, taskUuid, {
+        plan_uuid: planUuid,
+        task_index: index,
+        order_key: orderKey,
+        title: task.title,
+        description: task.description,
+        done,
+      });
+      return;
+    }
+
+    const fieldUpdates: Record<string, unknown> = {};
+    if (existingTask.title !== task.title) fieldUpdates.title = task.title;
+    if (existingTask.description !== task.description) fieldUpdates.description = task.description;
+    if (existingTask.done !== done) fieldUpdates.done = done;
+
+    let wroteTaskRow = false;
+    if (Object.keys(fieldUpdates).length > 0) {
+      updateTask.run(index, orderKey, task.title, task.description, done, taskUuid);
+      wroteTaskRow = true;
+      emitTaskFieldUpdate(db, planUuid, taskUuid, fieldUpdates);
+    }
+    if (existingTask.order_key !== orderKey || existingTask.task_index !== index) {
+      updateTask.run(index, orderKey, task.title, task.description, done, taskUuid);
+      wroteTaskRow = true;
+      emitTaskSetOrder(db, planUuid, taskUuid, orderKey, index);
+    }
+    if (!wroteTaskRow) {
+      updateTask.run(index, orderKey, task.title, task.description, done, taskUuid);
+    }
   });
+
+  for (const existingTask of existingTasks) {
+    if (existingTask.deleted_hlc === null && !retainedUuids.has(existingTask.uuid)) {
+      emitTaskDelete(db, planUuid, existingTask.uuid);
+    }
+  }
 }
 
 function replacePlanDependencies(db: Database, planUuid: string, dependencyUuids: string[]): void {
-  db.prepare('DELETE FROM plan_dependency WHERE plan_uuid = ?').run(planUuid);
+  const existing = new Set(
+    (
+      db
+        .prepare('SELECT depends_on_uuid FROM plan_dependency WHERE plan_uuid = ?')
+        .all(planUuid) as Array<{ depends_on_uuid: string }>
+    ).map((row) => row.depends_on_uuid)
+  );
+  const desired = new Set(dependencyUuids);
 
-  if (dependencyUuids.length === 0) {
-    return;
+  for (const dependencyUuid of existing) {
+    if (!desired.has(dependencyUuid)) {
+      db.prepare('DELETE FROM plan_dependency WHERE plan_uuid = ? AND depends_on_uuid = ?').run(
+        planUuid,
+        dependencyUuid
+      );
+      emitDependencyRemove(db, planUuid, dependencyUuid);
+    }
   }
 
   const insertDependency = db.prepare(
@@ -195,16 +281,29 @@ function replacePlanDependencies(db: Database, planUuid: string, dependencyUuids
     ) VALUES (?, ?)
   `
   );
-  for (const dependencyUuid of dependencyUuids) {
-    insertDependency.run(planUuid, dependencyUuid);
+  for (const dependencyUuid of desired) {
+    if (!existing.has(dependencyUuid)) {
+      insertDependency.run(planUuid, dependencyUuid);
+      emitDependencyAdd(db, planUuid, dependencyUuid);
+    }
   }
 }
 
 function replacePlanTags(db: Database, planUuid: string, tags: string[]): void {
-  db.prepare('DELETE FROM plan_tag WHERE plan_uuid = ?').run(planUuid);
+  const existing = new Set(
+    (
+      db.prepare('SELECT tag FROM plan_tag WHERE plan_uuid = ?').all(planUuid) as Array<{
+        tag: string;
+      }>
+    ).map((row) => row.tag)
+  );
+  const desired = new Set(tags);
 
-  if (tags.length === 0) {
-    return;
+  for (const tag of existing) {
+    if (!desired.has(tag)) {
+      db.prepare('DELETE FROM plan_tag WHERE plan_uuid = ? AND tag = ?').run(planUuid, tag);
+      emitTagRemove(db, planUuid, tag);
+    }
   }
 
   const insertTag = db.prepare(
@@ -215,8 +314,11 @@ function replacePlanTags(db: Database, planUuid: string, tags: string[]): void {
     ) VALUES (?, ?)
   `
   );
-  for (const tag of new Set(tags)) {
-    insertTag.run(planUuid, tag);
+  for (const tag of desired) {
+    if (!existing.has(tag)) {
+      insertTag.run(planUuid, tag);
+      emitTagAdd(db, planUuid, tag);
+    }
   }
 }
 
@@ -240,6 +342,36 @@ export function upsertPlanInTransaction(
       return existing;
     }
   }
+
+  const nextPlanFields = {
+    project_id: projectId,
+    plan_id: input.planId,
+    title: input.title ?? null,
+    goal: input.goal ?? null,
+    note: input.note ?? null,
+    details: input.details ?? null,
+    status: input.status ?? 'pending',
+    priority: input.priority ?? null,
+    branch: input.branch ?? null,
+    simple: typeof input.simple === 'boolean' ? (input.simple ? 1 : 0) : null,
+    tdd: typeof input.tdd === 'boolean' ? (input.tdd ? 1 : 0) : null,
+    discovered_from: input.discoveredFrom ?? null,
+    issue: input.issue ? JSON.stringify(input.issue) : null,
+    pull_request: input.pullRequest ? JSON.stringify(input.pullRequest) : null,
+    assigned_to: input.assignedTo ?? null,
+    base_branch: input.baseBranch ?? null,
+    base_commit: input.baseCommit ?? null,
+    base_change_id: input.baseChangeId ?? null,
+    temp: typeof input.temp === 'boolean' ? (input.temp ? 1 : 0) : null,
+    docs: input.docs ? JSON.stringify(input.docs) : null,
+    changed_files: input.changedFiles ? JSON.stringify(input.changedFiles) : null,
+    plan_generated_at: input.planGeneratedAt ?? null,
+    review_issues: input.reviewIssues ? JSON.stringify(input.reviewIssues) : null,
+    docs_updated_at: input.sourceDocsUpdatedAt ?? null,
+    lessons_applied_at: input.sourceLessonsAppliedAt ?? null,
+    parent_uuid: input.parentUuid ?? null,
+    epic: input.epic ? 1 : 0,
+  };
 
   db.prepare(
     `
@@ -310,34 +442,46 @@ export function upsertPlanInTransaction(
     input.uuid,
     projectId,
     input.planId,
-    input.title ?? null,
-    input.goal ?? null,
-    input.note ?? null,
-    input.details ?? null,
-    input.status ?? 'pending',
-    input.priority ?? null,
-    input.branch ?? null,
-    typeof input.simple === 'boolean' ? (input.simple ? 1 : 0) : null,
-    typeof input.tdd === 'boolean' ? (input.tdd ? 1 : 0) : null,
-    input.discoveredFrom ?? null,
-    input.issue ? JSON.stringify(input.issue) : null,
-    input.pullRequest ? JSON.stringify(input.pullRequest) : null,
-    input.assignedTo ?? null,
-    input.baseBranch ?? null,
-    input.baseCommit ?? null,
-    input.baseChangeId ?? null,
-    typeof input.temp === 'boolean' ? (input.temp ? 1 : 0) : null,
-    input.docs ? JSON.stringify(input.docs) : null,
-    input.changedFiles ? JSON.stringify(input.changedFiles) : null,
-    input.planGeneratedAt ?? null,
-    input.reviewIssues ? JSON.stringify(input.reviewIssues) : null,
-    input.sourceDocsUpdatedAt ?? null,
-    input.sourceLessonsAppliedAt ?? null,
-    input.parentUuid ?? null,
-    input.epic ? 1 : 0,
+    nextPlanFields.title,
+    nextPlanFields.goal,
+    nextPlanFields.note,
+    nextPlanFields.details,
+    nextPlanFields.status,
+    nextPlanFields.priority,
+    nextPlanFields.branch,
+    nextPlanFields.simple,
+    nextPlanFields.tdd,
+    nextPlanFields.discovered_from,
+    nextPlanFields.issue,
+    nextPlanFields.pull_request,
+    nextPlanFields.assigned_to,
+    nextPlanFields.base_branch,
+    nextPlanFields.base_commit,
+    nextPlanFields.base_change_id,
+    nextPlanFields.temp,
+    nextPlanFields.docs,
+    nextPlanFields.changed_files,
+    nextPlanFields.plan_generated_at,
+    nextPlanFields.review_issues,
+    nextPlanFields.docs_updated_at,
+    nextPlanFields.lessons_applied_at,
+    nextPlanFields.parent_uuid,
+    nextPlanFields.epic,
     effectiveCreatedAt,
     effectiveUpdatedAt
   );
+
+  if (!existing) {
+    emitPlanCreate(db, input.uuid, nextPlanFields);
+  } else {
+    const fieldUpdates: Record<string, unknown> = {};
+    for (const [fieldName, value] of Object.entries(nextPlanFields)) {
+      if (existing[fieldName as keyof PlanRow] !== value) {
+        fieldUpdates[fieldName] = value;
+      }
+    }
+    emitPlanFieldUpdate(db, input.uuid, fieldUpdates);
+  }
 
   replacePlanTasks(db, input.uuid, input.tasks ?? []);
   replacePlanDependencies(db, input.uuid, input.dependencyUuids ?? []);
@@ -404,6 +548,78 @@ export function upsertPlanDependencies(
   upsertDependenciesInTransaction.immediate(planUuid, dependencyUuids);
 }
 
+export function appendPlanTask(
+  db: Database,
+  planUuid: string,
+  task: { uuid?: string; title: string; description: string; done?: boolean }
+): string {
+  const appendInTransaction = db.transaction(
+    (
+      nextPlanUuid: string,
+      nextTask: { uuid?: string; title: string; description: string; done?: boolean }
+    ): string => {
+      const taskIndexRow = db
+        .prepare(
+          `
+            SELECT MAX(task_index) as maxTaskIndex
+            FROM plan_task
+            WHERE plan_uuid = ?
+              AND deleted_hlc IS NULL
+          `
+        )
+        .get(nextPlanUuid) as { maxTaskIndex: number | null };
+      const nextIndex = (taskIndexRow.maxTaskIndex ?? -1) + 1;
+      const orderKey = String(nextIndex).padStart(10, '0');
+      const taskUuid = nextTask.uuid ?? randomUUID();
+      const done = nextTask.done ? 1 : 0;
+
+      db.prepare(
+        `
+          INSERT INTO plan_task (uuid, plan_uuid, task_index, order_key, title, description, done)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `
+      ).run(
+        taskUuid,
+        nextPlanUuid,
+        nextIndex,
+        orderKey,
+        nextTask.title,
+        nextTask.description,
+        done
+      );
+      emitTaskCreate(db, nextPlanUuid, taskUuid, {
+        plan_uuid: nextPlanUuid,
+        task_index: nextIndex,
+        order_key: orderKey,
+        title: nextTask.title,
+        description: nextTask.description,
+        done,
+      });
+      return taskUuid;
+    }
+  );
+
+  return appendInTransaction.immediate(planUuid, task);
+}
+
+export function setPlanStatus(db: Database, planUuid: string, status: PlanSchema['status']): void {
+  const updateInTransaction = db.transaction(
+    (nextPlanUuid: string, nextStatus: PlanSchema['status']): void => {
+      const existing = getPlanByUuid(db, nextPlanUuid);
+      if (!existing || existing.status === nextStatus) {
+        return;
+      }
+      db.prepare(`UPDATE plan SET status = ?, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`).run(
+        nextStatus,
+        nextPlanUuid
+      );
+      emitPlanFieldUpdate(db, nextPlanUuid, { status: nextStatus });
+    }
+  );
+
+  updateInTransaction.immediate(planUuid, status);
+}
+
 export function getPlanByUuid(db: Database, uuid: string): PlanRow | null {
   return (db.prepare('SELECT * FROM plan WHERE uuid = ?').get(uuid) as PlanRow | null) ?? null;
 }
@@ -425,10 +641,19 @@ export function getPlansByParentUuid(
 }
 
 export function setPlanBranch(db: Database, planUuid: string, branch: string): void {
-  db.prepare(`UPDATE plan SET branch = ?, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`).run(
-    branch,
-    planUuid
-  );
+  const updateInTransaction = db.transaction((nextPlanUuid: string, nextBranch: string): void => {
+    const existing = getPlanByUuid(db, nextPlanUuid);
+    if (!existing || existing.branch === nextBranch) {
+      return;
+    }
+    db.prepare(`UPDATE plan SET branch = ?, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`).run(
+      nextBranch,
+      nextPlanUuid
+    );
+    emitPlanFieldUpdate(db, nextPlanUuid, { branch: nextBranch });
+  });
+
+  updateInTransaction.immediate(planUuid, branch);
 }
 
 export type PlanBaseTrackingUpdate = {
@@ -442,40 +667,61 @@ export function setPlanBaseTracking(
   planUuid: string,
   update: PlanBaseTrackingUpdate
 ): void {
-  const updates: string[] = [];
-  const values: Array<string | null> = [];
+  const updateInTransaction = db.transaction(
+    (nextPlanUuid: string, nextUpdate: PlanBaseTrackingUpdate): void => {
+      const updates: string[] = [];
+      const values: Array<string | null> = [];
+      const fieldUpdates: Record<string, string | null> = {};
+      const existing = getPlanByUuid(db, nextPlanUuid);
+      if (!existing) {
+        return;
+      }
 
-  if (update.baseBranch !== undefined) {
-    updates.push('base_branch = ?');
-    values.push(update.baseBranch ?? null);
-  }
-  if (update.baseCommit !== undefined) {
-    updates.push('base_commit = ?');
-    values.push(update.baseCommit ?? null);
-  }
-  if (update.baseChangeId !== undefined) {
-    updates.push('base_change_id = ?');
-    values.push(update.baseChangeId ?? null);
-  }
+      if (
+        nextUpdate.baseBranch !== undefined &&
+        existing.base_branch !== (nextUpdate.baseBranch ?? null)
+      ) {
+        updates.push('base_branch = ?');
+        values.push(nextUpdate.baseBranch ?? null);
+        fieldUpdates.base_branch = nextUpdate.baseBranch ?? null;
+      }
+      if (
+        nextUpdate.baseCommit !== undefined &&
+        existing.base_commit !== (nextUpdate.baseCommit ?? null)
+      ) {
+        updates.push('base_commit = ?');
+        values.push(nextUpdate.baseCommit ?? null);
+        fieldUpdates.base_commit = nextUpdate.baseCommit ?? null;
+      }
+      if (
+        nextUpdate.baseChangeId !== undefined &&
+        existing.base_change_id !== (nextUpdate.baseChangeId ?? null)
+      ) {
+        updates.push('base_change_id = ?');
+        values.push(nextUpdate.baseChangeId ?? null);
+        fieldUpdates.base_change_id = nextUpdate.baseChangeId ?? null;
+      }
 
-  if (updates.length === 0) {
-    return;
-  }
+      if (updates.length === 0) {
+        return;
+      }
 
-  db.prepare(
-    `UPDATE plan SET ${updates.join(', ')}, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
-  ).run(...values, planUuid);
+      db.prepare(
+        `UPDATE plan SET ${updates.join(', ')}, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
+      ).run(...values, nextPlanUuid);
+      emitPlanFieldUpdate(db, nextPlanUuid, fieldUpdates);
+    }
+  );
+
+  updateInTransaction.immediate(planUuid, update);
 }
 
 export function clearPlanBaseTracking(db: Database, planUuid: string): void {
-  db.prepare(
-    `UPDATE plan
-     SET base_branch = NULL,
-         base_commit = NULL,
-         base_change_id = NULL,
-         updated_at = ${SQL_NOW_ISO_UTC}
-     WHERE uuid = ?`
-  ).run(planUuid);
+  setPlanBaseTracking(db, planUuid, {
+    baseBranch: null,
+    baseCommit: null,
+    baseChangeId: null,
+  });
 }
 
 export function getPlanByPlanId(db: Database, projectId: number, planId: number): PlanRow | null {
@@ -492,7 +738,9 @@ export function getPlanByPlanId(db: Database, projectId: number, planId: number)
 
 export function getPlanTasksByUuid(db: Database, planUuid: string): PlanTaskRow[] {
   return db
-    .prepare('SELECT * FROM plan_task WHERE plan_uuid = ? ORDER BY order_key, uuid')
+    .prepare(
+      'SELECT * FROM plan_task WHERE plan_uuid = ? AND deleted_hlc IS NULL ORDER BY order_key, uuid'
+    )
     .all(planUuid) as PlanTaskRow[];
 }
 
@@ -504,6 +752,7 @@ export function getPlanTasksByProject(db: Database, projectId: number): PlanTask
       FROM plan_task pt
       INNER JOIN plan p ON p.uuid = pt.plan_uuid
       WHERE p.project_id = ?
+        AND pt.deleted_hlc IS NULL
       ORDER BY pt.plan_uuid, pt.order_key, pt.uuid
     `
     )
@@ -558,8 +807,14 @@ export function getPlanTagsByProject(db: Database, projectId: number): PlanTagRo
 }
 
 export function deletePlan(db: Database, uuid: string): boolean {
-  const result = db.prepare('DELETE FROM plan WHERE uuid = ?').run(uuid);
-  return result.changes > 0;
+  const deleteInTransaction = db.transaction((planUuid: string): boolean => {
+    const result = db.prepare('DELETE FROM plan WHERE uuid = ?').run(planUuid);
+    if (result.changes > 0) {
+      emitPlanDelete(db, planUuid);
+    }
+    return result.changes > 0;
+  });
+  return deleteInTransaction.immediate(uuid);
 }
 
 export function getPlansNotInSet(db: Database, projectId: number, uuids: Set<string>): PlanRow[] {

@@ -106,29 +106,15 @@ export const updateProjectSettings = command(
       validateProjectSettingUpdate(setting, value)
     );
 
-    const insertStatement = db.prepare(
-      `
-        INSERT OR REPLACE INTO project_setting (project_id, setting, value)
-        VALUES (?, ?, ?)
-      `
-    );
-    const deleteStatement = db.prepare(
-      'DELETE FROM project_setting WHERE project_id = ? AND setting = ?'
-    );
-
     const applyUpdates = db.transaction(
       (nextProjectId: number, nextSettings: ValidatedProjectSettingUpdate[]) => {
         for (const nextSetting of nextSettings) {
           if (nextSetting.clear) {
-            deleteStatement.run(nextProjectId, nextSetting.setting);
+            deleteProjectSetting(db, nextProjectId, nextSetting.setting);
             continue;
           }
 
-          insertStatement.run(
-            nextProjectId,
-            nextSetting.setting,
-            JSON.stringify(nextSetting.value)
-          );
+          setProjectSetting(db, nextProjectId, nextSetting.setting, nextSetting.value);
         }
       }
     );
