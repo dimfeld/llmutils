@@ -135,9 +135,11 @@ describe('peer sync transport core', () => {
         planId: 30,
         title: 'Offline C',
       });
-      dbC.prepare(
-        "UPDATE sync_op_log SET hlc_physical_ms = 1, hlc_logical = 0 WHERE entity_type = 'plan' AND entity_id = ?"
-      ).run('plan-from-c-offline');
+      dbC
+        .prepare(
+          "UPDATE sync_op_log SET hlc_physical_ms = 1, hlc_logical = 0 WHERE entity_type = 'plan' AND entity_id = ?"
+        )
+        .run('plan-from-c-offline');
 
       upsertPlan(dbA, projectA, {
         uuid: 'plan-from-a-high',
@@ -158,7 +160,7 @@ describe('peer sync transport core', () => {
       const aPullsC = await runPeerSync(dbA, nodeC, directTransport(dbC, nodeA));
       expect(aPullsC.pulledOps).toBeGreaterThan(0);
       const cOpOnA = dbA
-        .prepare("SELECT seq, hlc_physical_ms FROM sync_op_log WHERE entity_id = ?")
+        .prepare('SELECT seq, hlc_physical_ms FROM sync_op_log WHERE entity_id = ?')
         .get('plan-from-c-offline') as { seq: number; hlc_physical_ms: number } | null;
       expect(cOpOnA?.hlc_physical_ms).toBe(1);
       expect(cOpOnA?.seq).toBeGreaterThan(Number(bCursorAfterHighA));
@@ -339,12 +341,12 @@ describe('peer sync advanced scenarios', () => {
 
     const tasksA = dbA
       .prepare(
-        "SELECT title FROM plan_task WHERE plan_uuid = ? AND deleted_hlc IS NULL ORDER BY order_key, uuid"
+        'SELECT title FROM plan_task WHERE plan_uuid = ? AND deleted_hlc IS NULL ORDER BY order_key, uuid'
       )
       .all(planUuid) as Array<{ title: string }>;
     const tasksB = dbB
       .prepare(
-        "SELECT title FROM plan_task WHERE plan_uuid = ? AND deleted_hlc IS NULL ORDER BY order_key, uuid"
+        'SELECT title FROM plan_task WHERE plan_uuid = ? AND deleted_hlc IS NULL ORDER BY order_key, uuid'
       )
       .all(planUuid) as Array<{ title: string }>;
 
@@ -355,10 +357,14 @@ describe('peer sync advanced scenarios', () => {
 
     // Field clocks should exist on both sides for plan fields
     const clocksA = dbA
-      .prepare("SELECT field_name FROM sync_field_clock WHERE entity_type = 'plan' AND entity_id = ?")
+      .prepare(
+        "SELECT field_name FROM sync_field_clock WHERE entity_type = 'plan' AND entity_id = ?"
+      )
       .all(planUuid) as Array<{ field_name: string }>;
     const clocksB = dbB
-      .prepare("SELECT field_name FROM sync_field_clock WHERE entity_type = 'plan' AND entity_id = ?")
+      .prepare(
+        "SELECT field_name FROM sync_field_clock WHERE entity_type = 'plan' AND entity_id = ?"
+      )
       .all(planUuid) as Array<{ field_name: string }>;
     expect(clocksA.length).toBeGreaterThan(0);
     expect(clocksA.map((c) => c.field_name).sort()).toEqual(
@@ -399,18 +405,16 @@ describe('peer sync advanced scenarios', () => {
     expect(pullCursor).not.toBeNull();
 
     // Should have synced only the first chunk's ops
-    const appliedPlans = dbA
-      .prepare('SELECT uuid FROM plan ORDER BY rowid')
-      .all() as Array<{ uuid: string }>;
+    const appliedPlans = dbA.prepare('SELECT uuid FROM plan ORDER BY rowid').all() as Array<{
+      uuid: string;
+    }>;
     // At batchSize=2, first chunk applied 2 plans. Second chunk threw → not applied.
     expect(appliedPlans.length).toBe(2);
 
     // Now recover: fix the transport and sync again — cursor should resume from where it left off
     const result = await runPeerSync(dbA, nodeB, directTransport(dbB, nodeA), { batchSize: 2 });
     expect(result.pulledOps).toBeGreaterThan(0);
-    const finalPlans = dbA
-      .prepare('SELECT uuid FROM plan')
-      .all() as Array<{ uuid: string }>;
+    const finalPlans = dbA.prepare('SELECT uuid FROM plan').all() as Array<{ uuid: string }>;
     expect(finalPlans.length).toBe(4);
   });
 
@@ -469,9 +473,7 @@ describe('peer sync advanced scenarios', () => {
 
     // No phantom field clock for the nonexistent task's order_key
     const fieldClocks = dbA
-      .prepare(
-        "SELECT * FROM sync_field_clock WHERE entity_type = 'plan_task' AND entity_id = ?"
-      )
+      .prepare("SELECT * FROM sync_field_clock WHERE entity_type = 'plan_task' AND entity_id = ?")
       .all(fakeTaskUuid) as unknown[];
     expect(fieldClocks).toHaveLength(0);
   });

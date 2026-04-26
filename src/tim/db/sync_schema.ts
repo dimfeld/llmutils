@@ -150,9 +150,7 @@ function cursorPartsForSeq(db: Database, seqText: string): SyncOpLogRow {
   if (!Number.isInteger(seq) || seq < 0 || String(seq) !== seqText) {
     throw new Error(`Invalid sync op seq cursor: ${seqText}`);
   }
-  const row = db
-    .prepare('SELECT * FROM sync_op_log WHERE seq = ?')
-    .get(seq) as SyncOpLogRow | null;
+  const row = db.prepare('SELECT * FROM sync_op_log WHERE seq = ?').get(seq) as SyncOpLogRow | null;
   if (!row) {
     throw new Error(`Unknown sync op seq cursor: ${seqText}`);
   }
