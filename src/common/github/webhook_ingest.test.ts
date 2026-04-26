@@ -5,7 +5,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { DATABASE_FILENAME, openDatabase } from '../../tim/db/database.js';
-import { getPlanByUuid, upsertPlan } from '../../tim/db/plan.js';
+import { getPlanByUuid, getPlanTasksByUuid, upsertPlan } from '../../tim/db/plan.js';
+import { createReviewIssue, listReviewIssuesForPlan } from '../../tim/db/plan_review_issue.js';
 import { getOrCreateProject } from '../../tim/db/project.js';
 import {
   getWebhookCursor,
@@ -407,6 +408,19 @@ describe('common/github/webhook_ingest', () => {
         { title: 'Task 2', description: 'Done', done: true },
       ],
     });
+    const originalTasks = getPlanTasksByUuid(db, 'plan-1').map((task) => ({
+      uuid: task.uuid,
+      orderKey: task.order_key,
+      title: task.title,
+    }));
+    const originalReviewIssue = createReviewIssue(db, {
+      uuid: 'review-issue-1',
+      planUuid: 'plan-1',
+      content: 'Preserve this issue',
+      severity: 'major',
+      category: 'bug',
+      orderKey: '0000001500',
+    });
 
     mocks.fetchWebhookEvents.mockResolvedValueOnce([
       {
@@ -439,12 +453,25 @@ describe('common/github/webhook_ingest', () => {
 
     const result = await ingestWebhookEvents(db);
     const plan = getPlanByUuid(db, 'plan-1');
+    const updatedTasks = getPlanTasksByUuid(db, 'plan-1').map((task) => ({
+      uuid: task.uuid,
+      orderKey: task.order_key,
+      title: task.title,
+    }));
+    const updatedReviewIssues = listReviewIssuesForPlan(db, 'plan-1');
 
     expect(result.errors).toEqual([]);
     expect(result.prsUpdated).toEqual(['https://github.com/example/repo/pull/51']);
     expect(plan?.status).toBe('done');
     expect(plan?.docs_updated_at).toBe('2026-03-30T09:30:00.000Z');
     expect(plan?.lessons_applied_at).toBe('2026-03-30T09:45:00.000Z');
+    expect(updatedTasks).toEqual(originalTasks);
+    expect(updatedReviewIssues).toHaveLength(1);
+    expect(updatedReviewIssues[0]).toMatchObject({
+      uuid: originalReviewIssue.uuid,
+      order_key: originalReviewIssue.order_key,
+      content: originalReviewIssue.content,
+    });
   });
 
   test('ingestWebhookEvents marks a linked needs_review plan done when the PR is merged even without docs/lessons timestamps', async () => {

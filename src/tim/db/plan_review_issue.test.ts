@@ -7,6 +7,7 @@ import * as path from 'node:path';
 import { DATABASE_FILENAME, openDatabase } from './database.js';
 import {
   createReviewIssue,
+  getPlanReviewIssuesByProject,
   getReviewIssueByUuid,
   listReviewIssuesForPlan,
   reconcileReviewIssuesForPlan,
@@ -106,7 +107,7 @@ describe('tim db/plan_review_issue', () => {
   });
 
   test('listReviewIssuesForPlan returns only issues for the given plan', () => {
-    upsertPlan(db, getOrCreateProject(db, 'repo-review-issue-2').id, {
+    upsertPlan(db, getOrCreateProject(db, 'repo-review-issue-1').id, {
       uuid: 'plan-other',
       planId: 2,
     });
@@ -117,6 +118,57 @@ describe('tim db/plan_review_issue', () => {
     const issues = listReviewIssuesForPlan(db, 'plan-review-issue');
     expect(issues).toHaveLength(1);
     expect(issues[0]?.content).toBe('Issue for plan 1');
+  });
+
+  test('getPlanReviewIssuesByProject returns active issues grouped by project order', () => {
+    const projectId = getOrCreateProject(db, 'repo-review-issue-1').id;
+    const otherProjectId = getOrCreateProject(db, 'repo-review-issue-2').id;
+    upsertPlan(db, projectId, {
+      uuid: 'plan-other',
+      planId: 2,
+    });
+    upsertPlan(db, otherProjectId, {
+      uuid: 'plan-different-project',
+      planId: 3,
+    });
+
+    createReviewIssue(db, {
+      uuid: 'issue-plan-1-later',
+      planUuid: 'plan-review-issue',
+      content: 'Plan 1 later',
+      orderKey: '0000002000',
+    });
+    createReviewIssue(db, {
+      uuid: 'issue-plan-1-earlier',
+      planUuid: 'plan-review-issue',
+      content: 'Plan 1 earlier',
+      orderKey: '0000001000',
+    });
+    const deletedIssue = createReviewIssue(db, {
+      uuid: 'issue-deleted',
+      planUuid: 'plan-review-issue',
+      content: 'Deleted issue',
+      orderKey: '0000003000',
+    });
+    createReviewIssue(db, {
+      uuid: 'issue-plan-2',
+      planUuid: 'plan-other',
+      content: 'Plan 2 issue',
+      orderKey: '0000001000',
+    });
+    createReviewIssue(db, {
+      uuid: 'issue-other-project',
+      planUuid: 'plan-different-project',
+      content: 'Other project issue',
+      orderKey: '0000001000',
+    });
+    softDeleteReviewIssue(db, deletedIssue.uuid);
+
+    expect(getPlanReviewIssuesByProject(db, projectId).map((issue) => issue.uuid)).toEqual([
+      'issue-plan-2',
+      'issue-plan-1-earlier',
+      'issue-plan-1-later',
+    ]);
   });
 
   test('two new review issues for the same plan get distinct UUIDs', () => {

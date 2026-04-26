@@ -10,7 +10,11 @@ import {
   getPlanTagsByProject,
   type PlanRow,
 } from './db/plan.js';
-import { listReviewIssuesForPlan, type PlanReviewIssueRow } from './db/plan_review_issue.js';
+import {
+  getPlanReviewIssuesByProject,
+  listReviewIssuesForPlan,
+  type PlanReviewIssueRow,
+} from './db/plan_review_issue.js';
 import { getProject } from './db/project.js';
 import type { PlanSchema, PlanSchemaInput } from './planSchema.js';
 
@@ -198,8 +202,11 @@ export function loadPlansFromDb(_searchDir: string, repositoryId: string): Plans
   }
 
   const reviewIssueRowsByPlanUuid = new Map<string, PlanReviewIssueRow[]>();
-  for (const row of rows) {
-    reviewIssueRowsByPlanUuid.set(row.uuid, listReviewIssuesForPlan(db, row.uuid));
+  const reviewIssueRows = getPlanReviewIssuesByProject(db, project.id);
+  for (const issueRow of reviewIssueRows) {
+    const list = reviewIssueRowsByPlanUuid.get(issueRow.plan_uuid) ?? [];
+    list.push(issueRow);
+    reviewIssueRowsByPlanUuid.set(issueRow.plan_uuid, list);
   }
 
   const plans = new Map<number, PlanSchema>();

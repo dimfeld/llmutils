@@ -27,6 +27,7 @@ import {
   getPlansByProject,
   upsertPlan,
 } from '../../tim/db/plan.js';
+import { listReviewIssuesForPlan } from '../../tim/db/plan_review_issue.js';
 import { getProject } from '../../tim/db/project.js';
 import {
   getWebhookCursor,
@@ -104,13 +105,16 @@ async function autoCompleteMergedLinkedPlans(
     const plan = planRowToSchemaInput(
       planRow,
       getPlanTasksByUuid(db, planUuid).map((task) => ({
+        uuid: task.uuid,
+        orderKey: task.order_key,
         title: task.title,
         description: task.description,
         done: task.done === 1,
       })),
       getPlanDependenciesByUuid(db, planUuid).map((dependency) => dependency.depends_on_uuid),
       getPlanTagsByUuid(db, planUuid).map((tag) => tag.tag),
-      uuidToPlanId
+      uuidToPlanId,
+      listReviewIssuesForPlan(db, planUuid)
     );
     if (plan.tasks.length === 0 || !plan.tasks.every((task) => task.done === true)) {
       continue;

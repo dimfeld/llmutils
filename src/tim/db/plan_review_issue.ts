@@ -120,6 +120,24 @@ export function listReviewIssuesForPlan(db: Database, planUuid: string): PlanRev
     .all(planUuid) as PlanReviewIssueRow[];
 }
 
+export function getPlanReviewIssuesByProject(
+  db: Database,
+  projectId: number
+): PlanReviewIssueRow[] {
+  return db
+    .prepare(
+      `
+        SELECT plan_review_issue.*
+        FROM plan_review_issue
+        JOIN plan ON plan.uuid = plan_review_issue.plan_uuid
+        WHERE plan.project_id = ?
+          AND plan_review_issue.deleted_hlc IS NULL
+        ORDER BY plan_review_issue.plan_uuid, plan_review_issue.order_key, plan_review_issue.uuid
+      `
+    )
+    .all(projectId) as PlanReviewIssueRow[];
+}
+
 export function softDeleteReviewIssue(
   db: Database,
   uuid: string,
