@@ -27,6 +27,22 @@ export interface RunHttpPeerSyncOptions extends PeerSyncOptions {
 
 export interface PeerSyncHttpHandlerOptions {
   token: string;
+  maxPushBatch?: number;
+  maxBodyBytes?: number;
+}
+
+const DEFAULT_MAX_PUSH_BATCH = 1000;
+const DEFAULT_MAX_BODY_BYTES = 5 * 1024 * 1024;
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+class HttpRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number
+  ) {
+    super(message);
+  }
 }
 
 function extractBearerToken(request: Request): string | null {
@@ -56,8 +72,18 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), { ...init, headers });
 }
 
-async function readJson(request: Request): Promise<unknown> {
+async function readJson(request: Request, maxBodyBytes: number): Promise<unknown> {
+  const contentLength = request.headers.get('content-length');
+  if (contentLength !== null) {
+    const parsedLength = Number.parseInt(contentLength, 10);
+    if (Number.isFinite(parsedLength) && parsedLength > maxBodyBytes) {
+      throw new HttpRequestError('request body too large', 413);
+    }
+  }
   const text = await request.text();
+  if (Buffer.byteLength(text, 'utf8') > maxBodyBytes) {
+    throw new HttpRequestError('request body too large', 413);
+  }
   if (text.trim().length === 0) {
     return null;
   }
@@ -68,6 +94,9 @@ function asPeerNodeId(url: URL): string {
   const peerNodeId = url.searchParams.get('peer_node_id');
   if (!peerNodeId) {
     throw new Error('Missing peer_node_id');
+  }
+  if (!UUID_PATTERN.test(peerNodeId)) {
+    throw new Error('Invalid peer_node_id');
   }
   return peerNodeId;
 }
@@ -94,16 +123,6 @@ function readOpsBody(value: unknown): SyncOpRecord[] {
     throw new Error('Expected request body to be an array of sync operations');
   }
   return opsValue as SyncOpRecord[];
-}
-
-function sortOps(ops: SyncOpRecord[]): SyncOpRecord[] {
-  return [...ops].sort((a, b) => {
-    if (a.hlc_physical_ms !== b.hlc_physical_ms) return a.hlc_physical_ms - b.hlc_physical_ms;
-    if (a.hlc_logical !== b.hlc_logical) return a.hlc_logical - b.hlc_logical;
-    const nodeCompare = a.node_id.localeCompare(b.node_id);
-    if (nodeCompare !== 0) return nodeCompare;
-    return a.local_counter - b.local_counter;
-  });
 }
 
 function requestUrl(baseUrl: string, pathname: string): URL {
@@ -134,12 +153,12 @@ export function createHttpPeerTransport(options: HttpPeerTransportOptions): Peer
   };
 
   return {
-    async pullChunk(afterOpId, limit) {
+    async pullChunk(afterSeq, limit) {
       const url = requestUrl(options.baseUrl, '/sync/pull');
       url.searchParams.set('peer_node_id', options.localNodeId);
       url.searchParams.set('limit', String(limit));
-      if (afterOpId) {
-        url.searchParams.set('after_op_id', afterOpId);
+      if (afterSeq) {
+        url.searchParams.set('after_seq', afterSeq);
       }
 
       const response = await fetchImpl(url, { method: 'POST', headers });
@@ -152,9 +171,9 @@ export function createHttpPeerTransport(options: HttpPeerTransportOptions): Peer
       }
       return {
         ops: body.ops as SyncOpRecord[],
-        nextAfterOpId:
-          typeof body.nextAfterOpId === 'string' || body.nextAfterOpId === null
-            ? body.nextAfterOpId
+        nextAfterSeq:
+          typeof body.nextAfterSeq === 'string' || body.nextAfterSeq === null
+            ? body.nextAfterSeq
             : null,
         hasMore: body.hasMore === true,
       };
@@ -195,6 +214,9 @@ export function createPeerSyncHttpHandler(
   db: Database,
   options: PeerSyncHttpHandlerOptions
 ): (request: Request) => Response | Promise<Response> {
+  const maxPushBatch = options.maxPushBatch ?? DEFAULT_MAX_PUSH_BATCH;
+  const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
+
   return async (request: Request): Promise<Response> => {
     if (!isAuthorized(request, options.token)) {
       return jsonResponse({ error: 'Unauthorized' }, { status: 401 });
@@ -208,25 +230,36 @@ export function createPeerSyncHttpHandler(
       if (url.pathname === '/sync/pull') {
         const peerNodeId = asPeerNodeId(url);
         registerPeerNode(db, { nodeId: peerNodeId, nodeType: 'main' });
-        const chunk = getOpLogChunkAfter(db, url.searchParams.get('after_op_id'), asLimit(url));
+        // Pull is read-only from the server's perspective. The pulling client
+        // advances its local pull-from-server cursor after successful apply.
+        const afterSeq = url.searchParams.get('after_seq') ?? url.searchParams.get('after_op_id');
+        const chunk = getOpLogChunkAfter(db, afterSeq, asLimit(url));
         return jsonResponse(chunk);
       }
 
       if (url.pathname === '/sync/push') {
         const peerNodeId = asPeerNodeId(url);
         registerPeerNode(db, { nodeId: peerNodeId, nodeType: 'main' });
-        const ops = readOpsBody(await readJson(request));
+        const ops = readOpsBody(await readJson(request, maxBodyBytes));
+        if (ops.length > maxPushBatch) {
+          return jsonResponse({ error: 'push batch too large' }, { status: 413 });
+        }
         const applyResult = applyRemoteOps(db, ops);
         if (applyResult.errors.length > 0) {
-          return jsonResponse(
-            { error: applyResult.errors[0]?.message, result: applyResult },
-            { status: 500 }
-          );
+          return jsonResponse({ error: 'apply failed' }, { status: 500 });
         }
 
-        const lastOp = sortOps(ops).at(-1);
-        if (lastOp) {
-          setPeerCursor(db, peerNodeId, 'pull', lastOp.op_id);
+        // Push advances the server's pull-from-pusher cursor only after the
+        // pushed batch is durably applied. Server-side pull requests never
+        // advance any server cursor.
+        const lastPushedOp = ops.reduce<SyncOpRecord | null>((current, op) => {
+          const seq = op.seq;
+          if (typeof seq !== 'number' || !Number.isInteger(seq) || seq < 1) return current;
+          if (!current || seq > (current.seq ?? 0)) return op;
+          return current;
+        }, null);
+        if (lastPushedOp?.seq) {
+          setPeerCursor(db, peerNodeId, 'pull', lastPushedOp.seq.toString(), lastPushedOp);
         }
         return jsonResponse({
           applied: applyResult.applied,
@@ -234,6 +267,9 @@ export function createPeerSyncHttpHandler(
         });
       }
     } catch (error) {
+      if (error instanceof HttpRequestError) {
+        return jsonResponse({ error: error.message }, { status: error.status });
+      }
       return jsonResponse(
         { error: error instanceof Error ? error.message : String(error) },
         { status: 400 }

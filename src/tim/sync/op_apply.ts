@@ -26,6 +26,7 @@ export type SyncOpRecord = Pick<
   | 'payload'
   | 'base'
 > & {
+  seq?: number;
   created_at?: string;
 };
 

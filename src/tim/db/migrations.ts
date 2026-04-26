@@ -943,6 +943,93 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 28,
+    up: (db: Database): void => {
+      const opLogColumns = db.prepare("PRAGMA table_info('sync_op_log')").all() as Array<{
+        name: string;
+      }>;
+      if (opLogColumns.some((column) => column.name === 'seq')) {
+        db.run('CREATE INDEX IF NOT EXISTS idx_sync_op_log_seq ON sync_op_log(seq)');
+        return;
+      }
+
+      db.run(`
+        CREATE TABLE sync_op_log_new (
+          seq INTEGER PRIMARY KEY AUTOINCREMENT,
+          op_id TEXT NOT NULL UNIQUE,
+          node_id TEXT NOT NULL,
+          hlc_physical_ms INTEGER NOT NULL,
+          hlc_logical INTEGER NOT NULL,
+          local_counter INTEGER NOT NULL,
+          entity_type TEXT NOT NULL,
+          entity_id TEXT NOT NULL,
+          op_type TEXT NOT NULL,
+          payload TEXT NOT NULL,
+          base TEXT,
+          created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC})
+        );
+      `);
+
+      db.run(`
+        INSERT INTO sync_op_log_new (
+          op_id,
+          node_id,
+          hlc_physical_ms,
+          hlc_logical,
+          local_counter,
+          entity_type,
+          entity_id,
+          op_type,
+          payload,
+          base,
+          created_at
+        )
+        SELECT
+          op_id,
+          node_id,
+          hlc_physical_ms,
+          hlc_logical,
+          local_counter,
+          entity_type,
+          entity_id,
+          op_type,
+          payload,
+          base,
+          created_at
+        FROM sync_op_log
+        ORDER BY hlc_physical_ms, hlc_logical, node_id, local_counter, op_id;
+      `);
+
+      db.run(`
+        UPDATE sync_peer_cursor
+        SET last_op_id = (
+          SELECT CAST(seq AS TEXT)
+          FROM sync_op_log_new
+          WHERE sync_op_log_new.op_id = sync_peer_cursor.last_op_id
+        )
+        WHERE last_op_id IS NOT NULL
+          AND EXISTS (
+            SELECT 1
+            FROM sync_op_log_new
+            WHERE sync_op_log_new.op_id = sync_peer_cursor.last_op_id
+          );
+      `);
+
+      db.run('DROP TABLE sync_op_log');
+      db.run('ALTER TABLE sync_op_log_new RENAME TO sync_op_log');
+      db.run('CREATE INDEX idx_sync_op_log_seq ON sync_op_log(seq)');
+      db.run(`
+        CREATE INDEX idx_sync_op_log_order
+        ON sync_op_log(hlc_physical_ms, hlc_logical, node_id, local_counter);
+      `);
+      db.run('CREATE INDEX idx_sync_op_log_entity ON sync_op_log(entity_type, entity_id)');
+      db.run(`
+        CREATE INDEX idx_sync_op_log_origin
+        ON sync_op_log(node_id, hlc_physical_ms, hlc_logical, local_counter);
+      `);
+    },
+  },
 ];
 
 function getCurrentVersion(db: Database): number {

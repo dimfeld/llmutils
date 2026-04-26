@@ -13,7 +13,7 @@ export const DEFAULT_PEER_SYNC_BATCH_SIZE = 500;
 
 export interface PullResponse {
   ops: SyncOpRecord[];
-  nextAfterOpId: string | null;
+  nextAfterSeq: string | null;
   hasMore: boolean;
 }
 
@@ -23,7 +23,7 @@ export interface PushResponse {
 }
 
 export interface PeerTransport {
-  pullChunk(afterOpId: string | null, limit: number): Promise<PullResponse>;
+  pullChunk(afterSeq: string | null, limit: number): Promise<PullResponse>;
   pushChunk(ops: SyncOpRecord[]): Promise<PushResponse>;
 }
 
@@ -52,8 +52,8 @@ function assertApplySucceeded(result: ApplyResult): void {
   throw new Error(`Failed to apply sync op ${first?.opId ?? '(unknown)'}: ${first?.message}`);
 }
 
-function chunkLastOpId(chunk: OpLogChunk): string | null {
-  return chunk.ops.at(-1)?.op_id ?? chunk.nextAfterOpId;
+function chunkLastSeq(chunk: OpLogChunk): string | null {
+  return chunk.ops.at(-1)?.seq?.toString() ?? chunk.nextAfterSeq;
 }
 
 export async function runPeerSync(
@@ -72,6 +72,11 @@ export async function runPeerSync(
     pushChunks: 0,
   };
 
+  // Cursor invariant: transport cursors advance only after the received chunk is
+  // durably applied. If an apply handler throws instead of returning
+  // SkippedSyncOp for malformed/out-of-order data, this transaction rolls back,
+  // the cursor stays put, and the peer will redeliver the same chunk forever.
+  // Task 4's strict skipped-op contract is what keeps retries bounded here.
   let pullAfter = getPeerCursor(db, peerNodeId, 'pull')?.last_op_id ?? null;
   while (true) {
     const response = await transport.pullChunk(pullAfter, batchSize);
@@ -81,12 +86,12 @@ export async function runPeerSync(
 
     const applyResult = applyRemoteOps(db, response.ops);
     assertApplySucceeded(applyResult);
-    if (!response.nextAfterOpId) {
+    if (!response.nextAfterSeq) {
       throw new Error('Peer pull response included ops but no next cursor');
     }
-    setPeerCursor(db, peerNodeId, 'pull', response.nextAfterOpId);
+    setPeerCursor(db, peerNodeId, 'pull', response.nextAfterSeq, response.ops.at(-1));
 
-    pullAfter = response.nextAfterOpId;
+    pullAfter = response.nextAfterSeq;
     result.pulledOps += response.ops.length;
     result.pullChunks += 1;
 
@@ -103,13 +108,13 @@ export async function runPeerSync(
     }
 
     await transport.pushChunk(chunk.ops as SyncOpRecord[]);
-    const lastOpId = chunkLastOpId(chunk);
-    if (!lastOpId) {
+    const lastSeq = chunkLastSeq(chunk);
+    if (!lastSeq) {
       throw new Error('Local push chunk included ops but no next cursor');
     }
-    setPeerCursor(db, peerNodeId, 'push', lastOpId);
+    setPeerCursor(db, peerNodeId, 'push', lastSeq, chunk.ops.at(-1));
 
-    pushAfter = lastOpId;
+    pushAfter = lastSeq;
     result.pushedOps += chunk.ops.length;
     result.pushChunks += 1;
 

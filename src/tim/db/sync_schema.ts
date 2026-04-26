@@ -24,6 +24,7 @@ export interface SyncClockRow {
 }
 
 export interface SyncOpLogRow {
+  seq: number;
   op_id: string;
   node_id: string;
   hlc_physical_ms: number;
@@ -42,6 +43,10 @@ export interface SyncPeerCursorRow {
   direction: SyncDirection;
   hlc_physical_ms: number;
   hlc_logical: number;
+  /**
+   * Transport cursor stored as a sync_op_log.seq string, despite the legacy
+   * column name. HLC is telemetry only and must not be used for paging.
+   */
   last_op_id: string | null;
   updated_at: string;
 }
@@ -68,7 +73,7 @@ export interface SyncTombstoneRow {
 
 export interface OpLogChunk {
   ops: SyncOpLogRow[];
-  nextAfterOpId: string | null;
+  nextAfterSeq: string | null;
   hasMore: boolean;
 }
 
@@ -140,12 +145,16 @@ export function getOrCreateClockRow(db: Database): SyncClockRow {
   return row;
 }
 
-function cursorPartsForOpId(db: Database, opId: string): SyncOpLogRow {
+function cursorPartsForSeq(db: Database, seqText: string): SyncOpLogRow {
+  const seq = Number.parseInt(seqText, 10);
+  if (!Number.isInteger(seq) || seq < 0 || String(seq) !== seqText) {
+    throw new Error(`Invalid sync op seq cursor: ${seqText}`);
+  }
   const row = db
-    .prepare('SELECT * FROM sync_op_log WHERE op_id = ?')
-    .get(opId) as SyncOpLogRow | null;
+    .prepare('SELECT * FROM sync_op_log WHERE seq = ?')
+    .get(seq) as SyncOpLogRow | null;
   if (!row) {
-    throw new Error(`Unknown sync op cursor: ${opId}`);
+    throw new Error(`Unknown sync op seq cursor: ${seqText}`);
   }
   return row;
 }
@@ -159,64 +168,32 @@ function normalizeLimit(limit: number): number {
 
 export function getOpLogChunkAfter(
   db: Database,
-  afterOpId: string | null | undefined,
+  afterSeq: string | null | undefined,
   limit: number
 ): OpLogChunk {
   const safeLimit = normalizeLimit(limit);
   const fetchLimit = safeLimit + 1;
-  let rows: SyncOpLogRow[];
-
-  if (afterOpId) {
-    const cursor = cursorPartsForOpId(db, afterOpId);
-    rows = db
-      .prepare(
-        `
-          SELECT *
-          FROM sync_op_log
-          WHERE
-            hlc_physical_ms > ?
-            OR (hlc_physical_ms = ? AND hlc_logical > ?)
-            OR (hlc_physical_ms = ? AND hlc_logical = ? AND node_id > ?)
-            OR (
-              hlc_physical_ms = ?
-              AND hlc_logical = ?
-              AND node_id = ?
-              AND local_counter > ?
-            )
-          ORDER BY hlc_physical_ms, hlc_logical, node_id, local_counter
-          LIMIT ?
-        `
-      )
-      .all(
-        cursor.hlc_physical_ms,
-        cursor.hlc_physical_ms,
-        cursor.hlc_logical,
-        cursor.hlc_physical_ms,
-        cursor.hlc_logical,
-        cursor.node_id,
-        cursor.hlc_physical_ms,
-        cursor.hlc_logical,
-        cursor.node_id,
-        cursor.local_counter,
-        fetchLimit
-      ) as SyncOpLogRow[];
-  } else {
-    rows = db
-      .prepare(
-        `
-          SELECT *
-          FROM sync_op_log
-          ORDER BY hlc_physical_ms, hlc_logical, node_id, local_counter
-          LIMIT ?
-        `
-      )
-      .all(fetchLimit) as SyncOpLogRow[];
+  let cursorSeq = 0;
+  if (afterSeq) {
+    cursorSeq = cursorPartsForSeq(db, afterSeq).seq;
   }
+
+  const rows = db
+    .prepare(
+      `
+        SELECT *
+        FROM sync_op_log
+        WHERE seq > ?
+        ORDER BY seq ASC
+        LIMIT ?
+      `
+    )
+    .all(cursorSeq, fetchLimit) as SyncOpLogRow[];
 
   const ops = rows.slice(0, safeLimit);
   return {
     ops,
-    nextAfterOpId: ops.at(-1)?.op_id ?? afterOpId ?? null,
+    nextAfterSeq: ops.at(-1)?.seq?.toString() ?? afterSeq ?? null,
     hasMore: rows.length > safeLimit,
   };
 }
@@ -235,15 +212,11 @@ export function setPeerCursor(
   db: Database,
   peerNodeId: string,
   direction: SyncDirection,
-  lastOpId: string | null
+  lastSeq: string | null,
+  clockSource?: Pick<SyncOpLogRow, 'hlc_physical_ms' | 'hlc_logical'> | null
 ): SyncPeerCursorRow {
-  let physicalMs = 0;
-  let logical = 0;
-  if (lastOpId) {
-    const op = cursorPartsForOpId(db, lastOpId);
-    physicalMs = op.hlc_physical_ms;
-    logical = op.hlc_logical;
-  }
+  const physicalMs = clockSource?.hlc_physical_ms ?? 0;
+  const logical = clockSource?.hlc_logical ?? 0;
 
   db.prepare(
     `
@@ -261,7 +234,7 @@ export function setPeerCursor(
         last_op_id = excluded.last_op_id,
         updated_at = ${SQL_NOW_ISO_UTC}
     `
-  ).run(peerNodeId, direction, physicalMs, logical, lastOpId);
+  ).run(peerNodeId, direction, physicalMs, logical, lastSeq);
 
   const row = getPeerCursor(db, peerNodeId, direction);
   if (!row) {
