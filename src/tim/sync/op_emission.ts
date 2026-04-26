@@ -18,6 +18,7 @@ export interface EmittedSyncOperation {
   hlcText: string;
   nodeId: string;
   opId: string;
+  localCounter: number;
 }
 
 type JsonValue = unknown;
@@ -31,14 +32,26 @@ export function getProjectSyncIdentity(db: Database, projectId: number): string 
   return project.repository_id || `local-project-${project.id}`;
 }
 
-function tickLocal(db: Database): EmittedSyncOperation {
+const generatorCache = new WeakMap<Database, { nodeId: string; generator: HlcGenerator }>();
+
+function getLocalGenerator(db: Database): { nodeId: string; generator: HlcGenerator } {
+  const cached = generatorCache.get(db);
+  if (cached) return cached;
   const localNode = ensureLocalNode(db);
-  const tick = new HlcGenerator(db, localNode.node_id).tick(Date.now(), db);
+  const entry = { nodeId: localNode.node_id, generator: new HlcGenerator(db, localNode.node_id) };
+  generatorCache.set(db, entry);
+  return entry;
+}
+
+function tickLocal(db: Database): EmittedSyncOperation {
+  const { nodeId, generator } = getLocalGenerator(db);
+  const tick = generator.tick(Date.now(), db);
   return {
     hlc: tick.hlc,
     hlcText: formatHlc(tick.hlc),
-    nodeId: localNode.node_id,
+    nodeId,
     opId: tick.opId,
+    localCounter: tick.localCounter,
   };
 }
 
@@ -72,7 +85,7 @@ function insertOp(
     emitted.nodeId,
     emitted.hlc.physicalMs,
     emitted.hlc.logical,
-    Number.parseInt(emitted.opId.split('/')[2] ?? '0', 10),
+    emitted.localCounter,
     entityType,
     entityId,
     opType,
@@ -390,6 +403,9 @@ export function emitTagRemove(db: Database, planUuid: string, tag: string): Emit
   return emitted;
 }
 
+// project_setting uses a single-field LWW model: the entire stored value is one register
+// keyed by the synthetic field name "value". This differs from plan/plan_task which carry
+// per-field clocks. The apply path (Task 4) must treat both shapes accordingly.
 export function emitProjectSettingUpdate(
   db: Database,
   projectIdentity: string,

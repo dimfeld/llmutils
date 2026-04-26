@@ -230,19 +230,19 @@ function replacePlanTasks(
     if (existingTask.description !== task.description) fieldUpdates.description = task.description;
     if (existingTask.done !== done) fieldUpdates.done = done;
 
-    let wroteTaskRow = false;
-    if (Object.keys(fieldUpdates).length > 0) {
-      updateTask.run(index, orderKey, task.title, task.description, done, taskUuid);
-      wroteTaskRow = true;
+    const orderChanged =
+      existingTask.order_key !== orderKey || existingTask.task_index !== index;
+    const fieldsChanged = Object.keys(fieldUpdates).length > 0;
+    // Always rewrite the row: the pre-iteration sweep above sets task_index = -id
+    // for every existing task to free the (plan_uuid, task_index) UNIQUE slot, so
+    // retained tasks must restore their canonical task_index even when nothing in
+    // the schema view changed.
+    updateTask.run(index, orderKey, task.title, task.description, done, taskUuid);
+    if (fieldsChanged) {
       emitTaskFieldUpdate(db, planUuid, taskUuid, fieldUpdates);
     }
-    if (existingTask.order_key !== orderKey || existingTask.task_index !== index) {
-      updateTask.run(index, orderKey, task.title, task.description, done, taskUuid);
-      wroteTaskRow = true;
+    if (orderChanged) {
       emitTaskSetOrder(db, planUuid, taskUuid, orderKey, index);
-    }
-    if (!wroteTaskRow) {
-      updateTask.run(index, orderKey, task.title, task.description, done, taskUuid);
     }
   });
 
@@ -570,7 +570,15 @@ export function appendPlanTask(
         .get(nextPlanUuid) as { maxTaskIndex: number | null };
       const nextIndex = (taskIndexRow.maxTaskIndex ?? -1) + 1;
       const orderKey = String(nextIndex).padStart(10, '0');
-      const taskUuid = nextTask.uuid ?? randomUUID();
+      let taskUuid = nextTask.uuid ?? randomUUID();
+      if (nextTask.uuid) {
+        const collision = db
+          .prepare('SELECT deleted_hlc FROM plan_task WHERE uuid = ?')
+          .get(nextTask.uuid) as { deleted_hlc: string | null } | undefined;
+        if (collision) {
+          taskUuid = randomUUID();
+        }
+      }
       const done = nextTask.done ? 1 : 0;
 
       db.prepare(

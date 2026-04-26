@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 import { claimAssignment } from '$tim/db/assignment.js';
 import { upsertBranchMergeRequirements } from '$tim/db/branch_merge_requirements.js';
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
-import { upsertPlan } from '$tim/db/plan.js';
+import { upsertPlan, getPlanTasksByUuid, upsertPlanTasks } from '$tim/db/plan.js';
 import { linkPlanToPr, upsertPrStatus } from '$tim/db/pr_status.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import { setProjectSetting } from '$tim/db/project_settings.js';
@@ -856,6 +856,23 @@ describe('lib/server/db_queries', () => {
       [otherProjectId, 'other-cancelled'],
       [otherProjectId, 'other-pending'],
     ]);
+  });
+
+  test('getPlansForProject without a projectId excludes tombstoned tasks', () => {
+    const planUuid = 'plan-blocked';
+    const before = getPlanTasksByUuid(db, planUuid);
+    expect(before.length).toBeGreaterThan(0);
+
+    upsertPlanTasks(db, planUuid, [
+      { uuid: before[0].uuid, title: before[0].title, description: before[0].description, done: !!before[0].done },
+    ]);
+
+    const allProjectPlans = getPlansForProject(db);
+    const blocked = allProjectPlans.find((plan) => plan.uuid === planUuid);
+    expect(blocked).toBeDefined();
+    const taskUuids = (blocked!.tasks ?? []).map((task) => task.uuid);
+    expect(taskUuids).toEqual([before[0].uuid]);
+    expect(blocked!.taskCounts.total).toBe(1);
   });
 
   test('getWorkspacesForProject returns lock info and recently active flags', () => {
