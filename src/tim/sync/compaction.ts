@@ -63,10 +63,15 @@ export function getCompactionFloorSeq(db: Database): number {
     return 0;
   }
 
+  // direction='push' is the local seq last confirmed received by the remote peer.
+  // CAST(...AS INTEGER) coerces non-numeric values to 0; migration v28 already
+  // resets unmappable legacy cursors to NULL so this should not happen in practice.
   const candidates: number[] = [];
   if (cursorFloor.peer_count > 0 && cursorFloor.min_cursor_seq !== null) {
     candidates.push(cursorFloor.min_cursor_seq);
   }
+  // If no durable main peers are registered, an active worker lease alone
+  // can establish a floor — workers are the only sync participants in that case.
   if (leaseFloor.active_lease_count > 0 && leaseFloor.min_high_water_seq !== null) {
     candidates.push(leaseFloor.min_high_water_seq);
   }
