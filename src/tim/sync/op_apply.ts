@@ -1007,6 +1007,11 @@ export function applyRemoteOps(db: Database, ops: SyncOpRecord[]): ApplyResult {
       }
     } catch (error) {
       if (error instanceof DeferredSkipRollback) {
+        // The apply transaction rolled back so the op-log row can be retried,
+        // but the remote HLC must still advance — otherwise a high-HLC deferred
+        // op that we durably retain in sync_pending_op could be overwritten by
+        // a later local write that picked a lower HLC.
+        observeRemoteHlc(db, op);
         result.skipped.push(error.skipped);
         continue;
       }
