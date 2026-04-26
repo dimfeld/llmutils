@@ -78,15 +78,10 @@ function countDurableOps(result: ApplyResult): number {
 }
 
 function mergeApplyResults(chunkResult: ApplyResult, retryResult: ApplyResult): ApplyResult {
-  const retryOpIds = new Set(retryResult.skipped.map((skip) => skip.opId));
-  const chunkSkipsToReport = chunkResult.skipped.filter(
-    (skip) => skip.kind !== 'deferred' || retryOpIds.has(skip.opId)
-  );
-
   return {
     applied: chunkResult.applied + retryResult.applied,
     skipped: [
-      ...chunkSkipsToReport.filter((skip) => skip.kind !== 'deferred'),
+      ...chunkResult.skipped.filter((skip) => skip.kind !== 'deferred'),
       ...retryResult.skipped,
     ],
     errors: [...chunkResult.errors, ...retryResult.errors],
