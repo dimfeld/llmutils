@@ -91,7 +91,9 @@ export const convertThreadToTask = command(
 
       // Check for duplicate conversion using thread_id embedded in description
       const existingTask = db
-        .prepare(`SELECT 1 FROM plan_task WHERE plan_uuid = ? AND description LIKE ?`)
+        .prepare(
+          `SELECT 1 FROM plan_task WHERE plan_uuid = ? AND deleted_hlc IS NULL AND description LIKE ?`
+        )
         .get(planUuid, `%[source:review-thread:${threadId}]%`);
       if (existingTask) {
         error(409, 'This thread has already been converted to a task');

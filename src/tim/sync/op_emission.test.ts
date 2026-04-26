@@ -101,7 +101,11 @@ describe('sync op emission', () => {
       entity_id: 'plan-sync-1',
       op_type: 'update_fields',
     });
-    expect(JSON.parse(planOps.at(-1)?.payload ?? '{}')).toEqual({ fields: { title: 'Updated' } });
+    expect(JSON.parse(planOps.at(-1)?.payload ?? '{}')).toMatchObject({
+      fields: { title: 'Updated' },
+      planIdHint: 1,
+    });
+    expect(JSON.parse(planOps.at(-1)?.payload ?? '{}').projectIdentity).toBeDefined();
   });
 
   test('replacePlanTasks emits create, update, set_order, delete, and skips idempotent reapply', () => {

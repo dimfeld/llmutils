@@ -184,20 +184,66 @@ function emitWithFields(
   return emitted;
 }
 
+// Local-only plan columns that must not be carried in cross-node sync ops.
+// `project_id` is a local SQLite integer that differs per node; the stable
+// project identity is supplied as `projectIdentity` in the payload instead.
+// `plan_id` is a display/convenience numeric ID that nodes allocate locally
+// and reconcile out-of-band; it's emitted as a provisional hint, not a LWW
+// register. `review_issues` is the legacy JSON column kept dual-written for
+// migration safety; the authoritative source is the `plan_review_issue` table
+// (which has its own ops). `created_at`/`updated_at` are local clock values.
+const PLAN_LOCAL_ONLY_FIELDS = new Set<string>([
+  'project_id',
+  'plan_id',
+  'review_issues',
+  'created_at',
+  'updated_at',
+]);
+
+function pickPlanLwwFields(fields: FieldUpdates): FieldUpdates {
+  const filtered: FieldUpdates = {};
+  for (const [name, value] of Object.entries(fields)) {
+    if (!PLAN_LOCAL_ONLY_FIELDS.has(name)) {
+      filtered[name] = value;
+    }
+  }
+  return filtered;
+}
+
+export interface EmitPlanContext {
+  projectIdentity: string;
+  planIdHint?: number | null;
+}
+
 export function emitPlanCreate(
   db: Database,
   planUuid: string,
+  context: EmitPlanContext,
   fields: FieldUpdates
 ): EmittedSyncOperation {
-  return emitWithFields(db, 'plan', planUuid, 'create', { fields }, fields);
+  const lwwFields = pickPlanLwwFields(fields);
+  return emitWithFields(
+    db,
+    'plan',
+    planUuid,
+    'create',
+    {
+      projectIdentity: context.projectIdentity,
+      planIdHint: context.planIdHint ?? null,
+      fields: lwwFields,
+    },
+    lwwFields
+  );
 }
 
 export function emitPlanFieldUpdate(
   db: Database,
   planUuid: string,
+  context: EmitPlanContext,
   fieldUpdates: FieldUpdates
 ): EmittedSyncOperation | null {
-  if (Object.keys(fieldUpdates).length === 0) {
+  const lwwFields = pickPlanLwwFields(fieldUpdates);
+  if (Object.keys(lwwFields).length === 0) {
     return null;
   }
   return emitWithFields(
@@ -205,8 +251,12 @@ export function emitPlanFieldUpdate(
     'plan',
     planUuid,
     'update_fields',
-    { fields: fieldUpdates },
-    fieldUpdates
+    {
+      projectIdentity: context.projectIdentity,
+      planIdHint: context.planIdHint ?? null,
+      fields: lwwFields,
+    },
+    lwwFields
   );
 }
 

@@ -172,7 +172,9 @@ export const addReviewIssueToPlanTask = command(
 
       const duplicateMarker = `[source:review-issue:${issue.id}]`;
       const existingTask = db
-        .prepare(`SELECT 1 FROM plan_task WHERE plan_uuid = ? AND description LIKE ?`)
+        .prepare(
+          `SELECT 1 FROM plan_task WHERE plan_uuid = ? AND deleted_hlc IS NULL AND description LIKE ?`
+        )
         .get(planUuid, `%${duplicateMarker}%`);
       if (existingTask) {
         error(409, 'This review issue has already been converted to a task');

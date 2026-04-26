@@ -15,6 +15,8 @@ import {
   emitTaskDelete,
   emitTaskFieldUpdate,
   emitTaskSetOrder,
+  getProjectSyncIdentity,
+  type EmitPlanContext,
 } from '../sync/op_emission.js';
 
 export interface PlanRow {
@@ -471,8 +473,12 @@ export function upsertPlanInTransaction(
     effectiveUpdatedAt
   );
 
+  const planContext: EmitPlanContext = {
+    projectIdentity: getProjectSyncIdentity(db, projectId),
+    planIdHint: input.planId ?? null,
+  };
   if (!existing) {
-    emitPlanCreate(db, input.uuid, nextPlanFields);
+    emitPlanCreate(db, input.uuid, planContext, nextPlanFields);
   } else {
     const fieldUpdates: Record<string, unknown> = {};
     for (const [fieldName, value] of Object.entries(nextPlanFields)) {
@@ -480,7 +486,7 @@ export function upsertPlanInTransaction(
         fieldUpdates[fieldName] = value;
       }
     }
-    emitPlanFieldUpdate(db, input.uuid, fieldUpdates);
+    emitPlanFieldUpdate(db, input.uuid, planContext, fieldUpdates);
   }
 
   replacePlanTasks(db, input.uuid, input.tasks ?? []);
@@ -610,6 +616,13 @@ export function appendPlanTask(
   return appendInTransaction.immediate(planUuid, task);
 }
 
+function planContextFor(db: Database, plan: PlanRow): EmitPlanContext {
+  return {
+    projectIdentity: getProjectSyncIdentity(db, plan.project_id),
+    planIdHint: plan.plan_id ?? null,
+  };
+}
+
 export function setPlanStatus(db: Database, planUuid: string, status: PlanSchema['status']): void {
   const updateInTransaction = db.transaction(
     (nextPlanUuid: string, nextStatus: PlanSchema['status']): void => {
@@ -621,7 +634,7 @@ export function setPlanStatus(db: Database, planUuid: string, status: PlanSchema
         nextStatus,
         nextPlanUuid
       );
-      emitPlanFieldUpdate(db, nextPlanUuid, { status: nextStatus });
+      emitPlanFieldUpdate(db, nextPlanUuid, planContextFor(db, existing), { status: nextStatus });
     }
   );
 
@@ -658,7 +671,7 @@ export function setPlanBranch(db: Database, planUuid: string, branch: string): v
       nextBranch,
       nextPlanUuid
     );
-    emitPlanFieldUpdate(db, nextPlanUuid, { branch: nextBranch });
+    emitPlanFieldUpdate(db, nextPlanUuid, planContextFor(db, existing), { branch: nextBranch });
   });
 
   updateInTransaction.immediate(planUuid, branch);
@@ -717,7 +730,7 @@ export function setPlanBaseTracking(
       db.prepare(
         `UPDATE plan SET ${updates.join(', ')}, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
       ).run(...values, nextPlanUuid);
-      emitPlanFieldUpdate(db, nextPlanUuid, fieldUpdates);
+      emitPlanFieldUpdate(db, nextPlanUuid, planContextFor(db, existing), fieldUpdates);
     }
   );
 
