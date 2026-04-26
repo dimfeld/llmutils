@@ -99,9 +99,9 @@ describe('sync compaction metadata floor', () => {
   test('local node cursor is excluded from the durable peer floor', () => {
     // The local node is created automatically by openDatabase; set a push cursor for it
     // to verify it does not lower the floor.
-    const localNode = db
-      .prepare(`SELECT node_id FROM sync_node WHERE is_local = 1`)
-      .get() as { node_id: string };
+    const localNode = db.prepare(`SELECT node_id FROM sync_node WHERE is_local = 1`).get() as {
+      node_id: string;
+    };
     expect(localNode).toBeTruthy();
     setPeerCursor(db, localNode.node_id, 'push', '5');
 

@@ -56,10 +56,7 @@ export function getCompactionFloorSeq(db: Database): number {
     )
     .get() as WorkerLeaseFloorRow;
 
-  if (
-    cursorFloor.missing_cursor_count > 0 ||
-    leaseFloor.missing_high_water_count > 0
-  ) {
+  if (cursorFloor.missing_cursor_count > 0 || leaseFloor.missing_high_water_count > 0) {
     return 0;
   }
 
