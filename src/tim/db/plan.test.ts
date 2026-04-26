@@ -546,4 +546,81 @@ describe('tim db/plan', () => {
     expect(found?.docs_updated_at).toBeNull();
     expect(found?.lessons_applied_at).toBeNull();
   });
+
+  test('new tasks inserted via upsertPlan get distinct non-null UUIDs and sequential order_keys', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-uuid-check',
+      planId: 600,
+      tasks: [
+        { title: 'first', description: 'd1', done: false },
+        { title: 'second', description: 'd2', done: false },
+        { title: 'third', description: 'd3', done: true },
+      ],
+    });
+
+    const tasks = getPlanTasksByUuid(db, 'plan-uuid-check');
+    expect(tasks).toHaveLength(3);
+
+    // All UUIDs are non-null and non-empty
+    for (const task of tasks) {
+      expect(task.uuid).toBeTruthy();
+    }
+
+    // All UUIDs are distinct
+    const uuids = tasks.map((t) => t.uuid);
+    expect(new Set(uuids).size).toBe(3);
+
+    // Order keys match the expected zero-padded index pattern
+    expect(tasks.map((t) => t.order_key)).toEqual(['0000000000', '0000000001', '0000000002']);
+  });
+
+  test('upsertPlan preserves task UUIDs when re-upserting at the same task_index', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-uuid-preserve',
+      planId: 601,
+      tasks: [
+        { title: 'alpha', description: 'da', done: false },
+        { title: 'beta', description: 'db', done: false },
+      ],
+    });
+
+    const original = getPlanTasksByUuid(db, 'plan-uuid-preserve');
+    const originalUuids = original.map((t) => t.uuid);
+
+    // Re-upsert with same number of tasks at same positions (no explicit UUID provided)
+    upsertPlan(db, projectId, {
+      uuid: 'plan-uuid-preserve',
+      planId: 601,
+      tasks: [
+        { title: 'alpha updated', description: 'da-updated', done: true },
+        { title: 'beta updated', description: 'db-updated', done: false },
+      ],
+    });
+
+    const updated = getPlanTasksByUuid(db, 'plan-uuid-preserve');
+    expect(updated).toHaveLength(2);
+    // UUIDs preserved for same indexes
+    expect(updated.map((t) => t.uuid)).toEqual(originalUuids);
+    // Content updated
+    expect(updated[0]?.title).toBe('alpha updated');
+    expect(updated[1]?.title).toBe('beta updated');
+  });
+
+  test('tasks from two different plans have distinct UUIDs', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-distinct-a',
+      planId: 700,
+      tasks: [{ title: 'task', description: 'd', done: false }],
+    });
+    upsertPlan(db, projectId, {
+      uuid: 'plan-distinct-b',
+      planId: 701,
+      tasks: [{ title: 'task', description: 'd', done: false }],
+    });
+
+    const tasksA = getPlanTasksByUuid(db, 'plan-distinct-a');
+    const tasksB = getPlanTasksByUuid(db, 'plan-distinct-b');
+
+    expect(tasksA[0]?.uuid).not.toBe(tasksB[0]?.uuid);
+  });
 });

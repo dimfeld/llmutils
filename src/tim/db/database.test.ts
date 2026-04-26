@@ -627,6 +627,245 @@ describe('tim db/database', () => {
     }
   });
 
+  test('runMigrations v27: multiple plans with gapped task_index values get unique UUIDs and order_keys sorted correctly', () => {
+    const dbPath = path.join(tempDir, DATABASE_FILENAME);
+    const db = new Database(dbPath);
+
+    try {
+      seedSchemaVersionNine(db);
+
+      db.prepare(
+        `INSERT INTO project (
+          id, repository_id, remote_url, last_git_root, external_config_path, external_tasks_dir,
+          remote_label, highest_plan_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        1,
+        'repo-multi',
+        null,
+        null,
+        null,
+        null,
+        null,
+        5,
+        '2026-01-01T00:00:00Z',
+        '2026-01-01T00:00:00Z'
+      );
+
+      // plan-a: tasks at non-contiguous indexes 0, 2, 5 (gaps to test order_key derivation)
+      db.prepare(
+        `INSERT INTO plan (
+          uuid, project_id, plan_id, title, status, parent_uuid, epic, filename,
+          review_issues, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        'plan-a',
+        1,
+        1,
+        'Plan A',
+        'pending',
+        null,
+        0,
+        '1.plan.md',
+        JSON.stringify([
+          { severity: 'minor', category: 'style', content: 'First issue', source: 'agent' },
+          { content: 'Second issue with no extra fields' },
+        ]),
+        '2026-01-01T00:00:00Z',
+        '2026-01-01T00:00:00Z'
+      );
+
+      for (const [index, title] of [
+        [0, 'Task zero'],
+        [2, 'Task two'],
+        [5, 'Task five'],
+      ] as Array<[number, string]>) {
+        db.prepare(
+          'INSERT INTO plan_task (plan_uuid, task_index, title, description, done) VALUES (?, ?, ?, ?, ?)'
+        ).run('plan-a', index, title, `desc-${index}`, 0);
+      }
+
+      // plan-b: two contiguous tasks, no review issues
+      db.prepare(
+        `INSERT INTO plan (
+          uuid, project_id, plan_id, title, status, parent_uuid, epic, filename,
+          review_issues, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        'plan-b',
+        1,
+        2,
+        'Plan B',
+        'in_progress',
+        null,
+        0,
+        '2.plan.md',
+        null,
+        '2026-01-02T00:00:00Z',
+        '2026-01-02T00:00:00Z'
+      );
+      db.prepare(
+        'INSERT INTO plan_task (plan_uuid, task_index, title, description, done) VALUES (?, ?, ?, ?, ?)'
+      ).run('plan-b', 0, 'B-task-0', 'desc-b0', 0);
+      db.prepare(
+        'INSERT INTO plan_task (plan_uuid, task_index, title, description, done) VALUES (?, ?, ?, ?, ?)'
+      ).run('plan-b', 1, 'B-task-1', 'desc-b1', 1);
+
+      runMigrations(db);
+
+      // Verify schema version
+      const version = db.query<{ version: number }, []>('SELECT version FROM schema_version').get();
+      expect(version?.version).toBe(27);
+
+      // Verify all 5 tasks exist
+      const allTasks = db
+        .query<{ uuid: string; plan_uuid: string; task_index: number; order_key: string }, []>(
+          'SELECT uuid, plan_uuid, task_index, order_key FROM plan_task ORDER BY plan_uuid, task_index'
+        )
+        .all();
+      expect(allTasks).toHaveLength(5);
+
+      // All UUIDs must be non-null
+      for (const task of allTasks) {
+        expect(task.uuid).toBeTruthy();
+      }
+
+      // All UUIDs must be unique across both plans
+      const uuids = allTasks.map((t) => t.uuid);
+      expect(new Set(uuids).size).toBe(5);
+
+      // Plan A tasks: order_keys derived from task_index, sorted in same order as task_index
+      const planATasks = allTasks.filter((t) => t.plan_uuid === 'plan-a');
+      expect(planATasks.map((t) => t.order_key)).toEqual([
+        '0000000000',
+        '0000000002',
+        '0000000005',
+      ]);
+      // Confirm lexicographic sort of order_keys matches task_index sort
+      const planAByOrderKey = [...planATasks].sort((a, b) =>
+        a.order_key.localeCompare(b.order_key)
+      );
+      const planAByTaskIndex = [...planATasks].sort((a, b) => a.task_index - b.task_index);
+      expect(planAByOrderKey.map((t) => t.task_index)).toEqual(
+        planAByTaskIndex.map((t) => t.task_index)
+      );
+
+      // Plan B tasks: contiguous order_keys
+      const planBTasks = allTasks.filter((t) => t.plan_uuid === 'plan-b');
+      expect(planBTasks.map((t) => t.order_key)).toEqual(['0000000000', '0000000001']);
+
+      // Plan A review issues migrated: 2 rows
+      const issueA = db
+        .query<
+          { count: number },
+          [string]
+        >('SELECT count(*) AS count FROM plan_review_issue WHERE plan_uuid = ?')
+        .get('plan-a');
+      expect(issueA?.count).toBe(2);
+
+      const issueFull = db
+        .query<
+          { severity: string | null; category: string | null; content: string; source: string | null },
+          [string, string]
+        >(
+          'SELECT severity, category, content, source FROM plan_review_issue WHERE plan_uuid = ? AND content = ?'
+        )
+        .get('plan-a', 'First issue');
+      expect(issueFull).toEqual({
+        severity: 'minor',
+        category: 'style',
+        content: 'First issue',
+        source: 'agent',
+      });
+
+      const issueMinimal = db
+        .query<
+          { severity: string | null; content: string },
+          [string, string]
+        >(
+          'SELECT severity, content FROM plan_review_issue WHERE plan_uuid = ? AND content = ?'
+        )
+        .get('plan-a', 'Second issue with no extra fields');
+      expect(issueMinimal).not.toBeNull();
+      expect(issueMinimal?.severity).toBeNull();
+
+      // Plan B has no review issues
+      const issueB = db
+        .query<
+          { count: number },
+          [string]
+        >('SELECT count(*) AS count FROM plan_review_issue WHERE plan_uuid = ?')
+        .get('plan-b');
+      expect(issueB?.count).toBe(0);
+
+      // Existing plan rows are unchanged
+      const planARow = db.query<{ title: string }, [string]>('SELECT title FROM plan WHERE uuid = ?').get('plan-a');
+      expect(planARow?.title).toBe('Plan A');
+      const planBRow = db.query<{ title: string }, [string]>('SELECT title FROM plan WHERE uuid = ?').get('plan-b');
+      expect(planBRow?.title).toBe('Plan B');
+    } finally {
+      db.close(false);
+    }
+  });
+
+  test('runMigrations v27 is idempotent: re-opening DB does not duplicate review issue rows', () => {
+    const dbPath = path.join(tempDir, DATABASE_FILENAME);
+    const db1 = new Database(dbPath);
+    try {
+      seedSchemaVersionNine(db1);
+
+      db1.prepare(
+        `INSERT INTO project (id, repository_id, highest_plan_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?)`
+      ).run(1, 'repo-idem', 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+
+      db1.prepare(
+        `INSERT INTO plan (uuid, project_id, plan_id, title, status, parent_uuid, epic, filename,
+          review_issues, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        'plan-idem',
+        1,
+        1,
+        'Idem plan',
+        'pending',
+        null,
+        0,
+        '1.plan.md',
+        JSON.stringify([{ content: 'Idem issue', severity: 'major' }]),
+        '2026-01-01T00:00:00Z',
+        '2026-01-01T00:00:00Z'
+      );
+
+      runMigrations(db1);
+
+      const count1 = db1
+        .query<{ count: number }, [string]>(
+          'SELECT count(*) AS count FROM plan_review_issue WHERE plan_uuid = ?'
+        )
+        .get('plan-idem');
+      expect(count1?.count).toBe(1);
+    } finally {
+      db1.close(false);
+    }
+
+    // Re-open via openDatabase — migrations should not re-run, so count stays 1
+    const db2 = openDatabase(dbPath);
+    try {
+      const version = db2.query<{ version: number }, []>('SELECT version FROM schema_version').get();
+      expect(version?.version).toBe(27);
+
+      const count2 = db2
+        .query<{ count: number }, [string]>(
+          'SELECT count(*) AS count FROM plan_review_issue WHERE plan_uuid = ?'
+        )
+        .get('plan-idem');
+      expect(count2?.count).toBe(1);
+    } finally {
+      db2.close(false);
+    }
+  });
+
   test('runMigrations upgrades schema version 12 to 16, deduping PR child rows and seeding webhook cursor', () => {
     const dbPath = path.join(tempDir, DATABASE_FILENAME);
     const db = new Database(dbPath);
