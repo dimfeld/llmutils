@@ -356,6 +356,57 @@ describe('convertThreadToTask', () => {
     expect(tasks[0].description).toContain('[source:review-thread:PRRT_thread4]');
   });
 
+  test('allows reconverting a thread after the prior task is soft-deleted', async () => {
+    const thread: StoredPrReviewThreadInput = {
+      threadId: 'PRRT_reconvert',
+      path: 'src/reconvert.ts',
+      line: 7,
+      isResolved: false,
+      isOutdated: false,
+      comments: [
+        {
+          commentId: 'IC_reconvert',
+          databaseId: 91011,
+          body: 'Tighten this guard.',
+          state: 'SUBMITTED',
+        },
+      ],
+    };
+
+    const { prStatusId } = seedPlanWithThread({
+      projectId,
+      planUuid: 'plan-reconvert-thread',
+      planId: 320,
+      thread,
+    });
+
+    await invokeCommand(convertThreadToTask, {
+      planUuid: 'plan-reconvert-thread',
+      prStatusId,
+      threadId: 'PRRT_reconvert',
+    });
+
+    const firstTasks = getPlanTasksByUuid(currentDb, 'plan-reconvert-thread');
+    expect(firstTasks).toHaveLength(1);
+
+    currentDb
+      .prepare(
+        `UPDATE plan_task SET deleted_hlc = '0000000001000000.00000000', task_index = -id WHERE uuid = ?`
+      )
+      .run(firstTasks[0]!.uuid);
+
+    await invokeCommand(convertThreadToTask, {
+      planUuid: 'plan-reconvert-thread',
+      prStatusId,
+      threadId: 'PRRT_reconvert',
+    });
+
+    const liveTasks = getPlanTasksByUuid(currentDb, 'plan-reconvert-thread');
+    expect(liveTasks).toHaveLength(1);
+    expect(liveTasks[0]!.uuid).not.toBe(firstTasks[0]!.uuid);
+    expect(liveTasks[0]!.description).toContain('[source:review-thread:PRRT_reconvert]');
+  });
+
   test('allows conversion via plan pull_request fallback without a plan_pr row', async () => {
     const prUrl = 'https://github.com/owner/repo/pull/142';
     const { prStatusId } = seedPlanWithThread({

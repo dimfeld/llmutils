@@ -242,6 +242,61 @@ describe('review issue remote actions', () => {
     });
   });
 
+  test('addReviewIssueToPlanTask allows reconversion after the prior task was soft-deleted', async () => {
+    const review = seedReview({
+      prUrl: 'https://github.com/example/repo/pull/410',
+      branch: 'feature/review-issue-reconvert',
+    });
+    const issue = seedReviewIssue(
+      review.id,
+      makeIssue('major', 'bug', 'Reconvertible issue')
+    );
+    seedPlan({ uuid: 'plan-reconvert', planId: 270 });
+    const prStatus = upsertPrStatus(currentDb, {
+      prUrl: review.pr_url,
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 4101,
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+    linkPlanToPr(currentDb, 'plan-reconvert', prStatus.status.id);
+
+    await invokeCommand(addReviewIssueToPlanTask, {
+      reviewId: review.id,
+      issueId: issue.id,
+      planUuid: 'plan-reconvert',
+    });
+
+    const tasksAfterFirst = getPlanTasksByUuid(currentDb, 'plan-reconvert');
+    expect(tasksAfterFirst).toHaveLength(1);
+
+    await expect(
+      invokeCommand(addReviewIssueToPlanTask, {
+        reviewId: review.id,
+        issueId: issue.id,
+        planUuid: 'plan-reconvert',
+      })
+    ).rejects.toMatchObject({ status: 409 });
+
+    currentDb
+      .prepare(
+        `UPDATE plan_task SET deleted_hlc = '0000000001000000.00000000', task_index = -id WHERE uuid = ?`
+      )
+      .run(tasksAfterFirst[0]!.uuid);
+
+    await invokeCommand(addReviewIssueToPlanTask, {
+      reviewId: review.id,
+      issueId: issue.id,
+      planUuid: 'plan-reconvert',
+    });
+
+    const liveTasks = getPlanTasksByUuid(currentDb, 'plan-reconvert');
+    expect(liveTasks).toHaveLength(1);
+    expect(liveTasks[0]!.uuid).not.toBe(tasksAfterFirst[0]!.uuid);
+  });
+
   test('addReviewIssueToPlanTask rejects PRs linked to multiple plans', async () => {
     const review = seedReview({
       prUrl: 'https://github.com/example/repo/pull/403',
