@@ -20,6 +20,7 @@ export interface PullResponse {
 export interface PushResponse {
   applied?: number;
   skipped?: number;
+  deferredSkips?: number;
 }
 
 export interface PeerTransport {
@@ -52,6 +53,10 @@ function assertApplySucceeded(result: ApplyResult): void {
   throw new Error(`Failed to apply sync op ${first?.opId ?? '(unknown)'}: ${first?.message}`);
 }
 
+function countDeferredSkips(result: ApplyResult): number {
+  return result.skipped.filter((skip) => skip.kind === 'deferred').length;
+}
+
 function chunkLastSeq(chunk: OpLogChunk): string | null {
   return chunk.ops.at(-1)?.seq?.toString() ?? chunk.nextAfterSeq;
 }
@@ -73,10 +78,10 @@ export async function runPeerSync(
   };
 
   // Cursor invariant: transport cursors advance only after the received chunk is
-  // durably applied. If an apply handler throws instead of returning
-  // SkippedSyncOp for malformed/out-of-order data, this transaction rolls back,
-  // the cursor stays put, and the peer will redeliver the same chunk forever.
-  // Task 4's strict skipped-op contract is what keeps retries bounded here.
+  // durably applied. Permanent skipped ops are recorded for dedup and count as
+  // durable. Deferred skips intentionally roll back their op-log row, so the
+  // cursor stays put and a later sync can redeliver them after dependencies
+  // arrive.
   let pullAfter = getPeerCursor(db, peerNodeId, 'pull')?.last_op_id ?? null;
   while (true) {
     const response = await transport.pullChunk(pullAfter, batchSize);
@@ -86,14 +91,18 @@ export async function runPeerSync(
 
     const applyResult = applyRemoteOps(db, response.ops);
     assertApplySucceeded(applyResult);
+    const deferredSkips = countDeferredSkips(applyResult);
+    result.pulledOps += deferredSkips > 0 ? applyResult.applied : response.ops.length;
+    result.pullChunks += 1;
+    if (deferredSkips > 0) {
+      break;
+    }
     if (!response.nextAfterSeq) {
       throw new Error('Peer pull response included ops but no next cursor');
     }
     setPeerCursor(db, peerNodeId, 'pull', response.nextAfterSeq, response.ops.at(-1));
 
     pullAfter = response.nextAfterSeq;
-    result.pulledOps += response.ops.length;
-    result.pullChunks += 1;
 
     if (!response.hasMore) {
       break;
@@ -107,7 +116,13 @@ export async function runPeerSync(
       break;
     }
 
-    await transport.pushChunk(chunk.ops as SyncOpRecord[]);
+    const pushResponse = await transport.pushChunk(chunk.ops as SyncOpRecord[]);
+    const deferredSkips = pushResponse.deferredSkips ?? 0;
+    result.pushedOps += deferredSkips > 0 ? (pushResponse.applied ?? 0) : chunk.ops.length;
+    result.pushChunks += 1;
+    if (deferredSkips > 0) {
+      break;
+    }
     const lastSeq = chunkLastSeq(chunk);
     if (!lastSeq) {
       throw new Error('Local push chunk included ops but no next cursor');
@@ -115,8 +130,6 @@ export async function runPeerSync(
     setPeerCursor(db, peerNodeId, 'push', lastSeq, chunk.ops.at(-1));
 
     pushAfter = lastSeq;
-    result.pushedOps += chunk.ops.length;
-    result.pushChunks += 1;
 
     if (!chunk.hasMore) {
       break;

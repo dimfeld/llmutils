@@ -64,14 +64,15 @@ function directTransport(remote: TestNode, local: TestNode): PeerTransport {
       if (result.errors.length > 0) {
         throw new Error(result.errors[0]?.message ?? 'apply failed');
       }
+      const deferredSkips = result.skipped.filter((skip) => skip.kind === 'deferred').length;
       const lastPushed = ops.reduce<SyncOpRecord | null>((current, op) => {
         if (!Number.isInteger(op.seq) || op.seq < 1) return current;
         return !current || op.seq > (current.seq ?? 0) ? op : current;
       }, null);
-      if (lastPushed?.seq) {
+      if (deferredSkips === 0 && lastPushed?.seq) {
         setPeerCursor(remote.db, local.nodeId, 'pull', lastPushed.seq.toString(), lastPushed);
       }
-      return { applied: result.applied, skipped: result.skipped.length };
+      return { applied: result.applied, skipped: result.skipped.length, deferredSkips };
     },
   };
 }
@@ -148,6 +149,7 @@ function syncStateDump(db: Database): Record<string, unknown[]> {
           CASE WHEN deleted_hlc IS NULL THEN description ELSE NULL END AS description,
           CASE WHEN deleted_hlc IS NULL THEN done ELSE NULL END AS done,
           created_hlc,
+          created_node_id,
           deleted_hlc
         FROM plan_task
         ORDER BY uuid
@@ -158,7 +160,7 @@ function syncStateDump(db: Database): Record<string, unknown[]> {
       `
         SELECT
           uuid, plan_uuid, order_key, severity, category, content, file, line,
-          suggestion, source, source_ref, created_hlc, updated_hlc, deleted_hlc
+          suggestion, source, source_ref, created_hlc, created_node_id, updated_hlc, deleted_hlc
         FROM plan_review_issue
         ORDER BY uuid
       `
@@ -321,22 +323,24 @@ describe('disconnected sync convergence', () => {
     createBasePlan(a);
     await bidirectionalSync(a, b);
 
-    appendPlanTask(a.db, 'plan-shared', {
-      uuid: 'task-a',
-      title: 'Task A',
-      description: 'From A',
-    });
     appendPlanTask(b.db, 'plan-shared', {
-      uuid: 'task-b',
-      title: 'Task B',
+      uuid: 'zzzz-task-b-low-hlc',
+      title: 'Task B low HLC',
       description: 'From B',
+    });
+    bumpClockPast(a.db, b.db);
+    appendPlanTask(a.db, 'plan-shared', {
+      uuid: '0000-task-a-high-hlc',
+      title: 'Task A high HLC',
+      description: 'From A',
     });
 
     await bidirectionalSync(a, b);
 
     const tasks = getPlanTasksByUuid(a.db, 'plan-shared');
-    expect(tasks.map((task) => task.uuid)).toEqual(['task-a', 'task-b']);
+    expect(tasks.map((task) => task.uuid)).toEqual(['zzzz-task-b-low-hlc', '0000-task-a-high-hlc']);
     expect(tasks.map((task) => task.order_key)).toEqual(['0000000000', '0000000000']);
+    expect(tasks[0]!.created_hlc! < tasks[1]!.created_hlc!).toBe(true);
     assertDbsConverged(a.db, b.db);
   });
 
@@ -463,7 +467,7 @@ describe('disconnected sync convergence', () => {
     expect(appStateDump(controlA.db)).toEqual(appStateDump(alternateA.db));
   });
 
-  test('out-of-order set_order skip recovers after a later causal reorder op', async () => {
+  test('out-of-order set_order skip is retried after create arrives', async () => {
     const a = createMainNode('A');
     const b = createMainNode('B');
     upsertPlan(a.db, a.projectId, {
@@ -492,45 +496,69 @@ describe('disconnected sync convergence', () => {
     const earlySetOrder = opsFor(a.db, 'plan_task', 'task-new').find(
       (op) => op.op_type === 'set_order'
     );
+    const createNew = opsFor(a.db, 'plan_task', 'task-new').find((op) => op.op_type === 'create');
+    const existingSetOrder = opsFor(a.db, 'plan_task', 'task-existing').find(
+      (op) => op.op_type === 'set_order'
+    );
     expect(earlySetOrder).toBeTruthy();
+    expect(createNew).toBeTruthy();
+    expect(existingSetOrder).toBeTruthy();
     const earlyResult = applyRemoteOps(b.db, [earlySetOrder!]);
     expect(earlyResult.errors).toEqual([]);
     expect(earlyResult.skipped[0]?.reason).toContain('arrived before task task-new create');
+    expect(earlyResult.skipped[0]?.kind).toBe('deferred');
+    expect(
+      b.db.prepare('SELECT op_id FROM sync_op_log WHERE op_id = ?').get(earlySetOrder!.op_id)
+    ).toBeNull();
 
-    await bidirectionalSync(a, b);
+    const retryResult = applyRemoteOps(b.db, [createNew!, existingSetOrder!, earlySetOrder!]);
+    expect(retryResult.errors).toEqual([]);
+    expect(retryResult.skipped).toEqual([]);
+
     expect(getPlanTasksByUuid(b.db, 'plan-shared').map((task) => task.uuid)).toEqual([
-      'task-existing',
-      'task-new',
-    ]);
-
-    upsertPlanTasks(a.db, 'plan-shared', [
-      {
-        uuid: 'task-existing',
-        orderKey: '0000000000',
-        title: 'Existing',
-        description: 'Existing',
-        done: false,
-      },
-      { uuid: 'task-new', orderKey: '0000000001', title: 'New', description: 'New', done: false },
-    ]);
-    upsertPlanTasks(a.db, 'plan-shared', [
-      { uuid: 'task-new', orderKey: '0000000000', title: 'New', description: 'New', done: false },
-      {
-        uuid: 'task-existing',
-        orderKey: '0000000001',
-        title: 'Existing',
-        description: 'Existing',
-        done: false,
-      },
-    ]);
-
-    await bidirectionalSync(a, b);
-
-    expect(getPlanTasksByUuid(a.db, 'plan-shared').map((task) => task.uuid)).toEqual([
       'task-new',
       'task-existing',
     ]);
-    assertDbsConverged(a.db, b.db);
+    expect(
+      b.db.prepare('SELECT op_id FROM sync_op_log WHERE op_id = ?').get(earlySetOrder!.op_id)
+    ).toEqual({ op_id: earlySetOrder!.op_id });
+  });
+
+  test('unresolved deferred set_order stays retryable without side effects', () => {
+    const a = createMainNode('A');
+    upsertPlan(a.db, a.projectId, { uuid: 'plan-missing-task', planId: 1, title: 'Plan exists' });
+    const neverCreatedSetOrder: SyncOpRecord = {
+      op_id: 'never-created-set-order',
+      node_id: 'remote-node',
+      hlc_physical_ms: Date.now() + 1_000,
+      hlc_logical: 0,
+      local_counter: 1,
+      entity_type: 'plan_task',
+      entity_id: 'task-never-created',
+      op_type: 'set_order',
+      payload: JSON.stringify({ planUuid: 'plan-missing-task', orderKey: '0000000000' }),
+      base: null,
+    };
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const result = applyRemoteOps(a.db, [neverCreatedSetOrder]);
+      expect(result.errors).toEqual([]);
+      expect(result.skipped).toEqual([
+        {
+          opId: 'never-created-set-order',
+          reason: 'plan_task set_order arrived before task task-never-created create',
+          kind: 'deferred',
+        },
+      ]);
+    }
+    expect(
+      a.db.prepare('SELECT op_id FROM sync_op_log WHERE op_id = ?').get('never-created-set-order')
+    ).toBeNull();
+    expect(
+      a.db
+        .prepare("SELECT * FROM sync_field_clock WHERE entity_type = 'plan_task' AND entity_id = ?")
+        .all('task-never-created')
+    ).toEqual([]);
   });
 
   test('worker loop returns plan, task, and follow-up plan changes to main peers', async () => {

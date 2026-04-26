@@ -1074,6 +1074,71 @@ const migrations: Migration[] = [
       db.run('ALTER TABLE plan DROP COLUMN review_issues');
     },
   },
+  {
+    version: 31,
+    up: (db: Database): void => {
+      const localNode = db.prepare('SELECT node_id FROM sync_node WHERE is_local = 1').get() as {
+        node_id: string;
+      } | null;
+      const localNodeId = localNode?.node_id ?? randomUUID();
+      if (!localNode) {
+        db.prepare(
+          `
+            INSERT INTO sync_node (
+              node_id,
+              node_type,
+              is_local,
+              label,
+              lease_expires_at,
+              created_at,
+              updated_at
+            ) VALUES (?, 'main', 1, NULL, NULL, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
+          `
+        ).run(localNodeId);
+      }
+
+      const tableExists = (tableName: string): boolean => {
+        const row = db
+          .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
+          .get(tableName);
+        return row !== null;
+      };
+
+      if (tableExists('plan_task')) {
+        const taskColumns = db.prepare("PRAGMA table_info('plan_task')").all() as Array<{
+          name: string;
+        }>;
+        if (!taskColumns.some((column) => column.name === 'created_node_id')) {
+          db.run('ALTER TABLE plan_task ADD COLUMN created_node_id TEXT');
+          db.prepare('UPDATE plan_task SET created_node_id = ? WHERE created_node_id IS NULL').run(
+            localNodeId
+          );
+        }
+        db.run('DROP INDEX IF EXISTS idx_plan_task_order');
+        db.run(`
+          CREATE INDEX idx_plan_task_order
+          ON plan_task(plan_uuid, order_key, created_hlc, created_node_id, uuid)
+        `);
+      }
+
+      if (tableExists('plan_review_issue')) {
+        const issueColumns = db.prepare("PRAGMA table_info('plan_review_issue')").all() as Array<{
+          name: string;
+        }>;
+        if (!issueColumns.some((column) => column.name === 'created_node_id')) {
+          db.run('ALTER TABLE plan_review_issue ADD COLUMN created_node_id TEXT');
+          db.prepare(
+            'UPDATE plan_review_issue SET created_node_id = ? WHERE created_node_id IS NULL'
+          ).run(localNodeId);
+        }
+        db.run('DROP INDEX IF EXISTS idx_plan_review_issue_order');
+        db.run(`
+          CREATE INDEX idx_plan_review_issue_order
+          ON plan_review_issue(plan_uuid, order_key, created_hlc, created_node_id, uuid)
+        `);
+      }
+    },
+  },
 ];
 
 function getCurrentVersion(db: Database): number {

@@ -33,6 +33,7 @@ export type SyncOpRecord = Pick<
 export interface SkippedSyncOp {
   opId: string;
   reason: string;
+  kind?: 'permanent' | 'deferred';
 }
 
 export interface SyncOpApplyError {
@@ -86,6 +87,16 @@ const REVIEW_ISSUE_FIELDS = new Set([
   'source',
   'source_ref',
 ]);
+
+class DeferredSkipRollback extends Error {
+  constructor(public readonly skipped: SkippedSyncOp) {
+    super(skipped.reason);
+  }
+}
+
+function deferredSkip(op: SyncOpRecord, reason: string): SkippedSyncOp {
+  return { opId: op.op_id, reason, kind: 'deferred' };
+}
 
 function opHlc(op: SyncOpRecord): Hlc {
   return { physicalMs: op.hlc_physical_ms, logical: op.hlc_logical };
@@ -420,8 +431,11 @@ function applyTaskCreateOrUpdate(db: Database, op: SyncOpRecord): SkippedSyncOp 
     return { opId: op.op_id, reason: 'plan_task op missing plan_uuid' };
   }
   const planUuid = planUuidValue;
+  if (hasTombstone(db, 'plan', planUuid)) {
+    return { opId: op.op_id, reason: `plan_task op references tombstoned plan ${planUuid}` };
+  }
   if (!planExists(db, planUuid)) {
-    return { opId: op.op_id, reason: `plan_task op references missing plan ${planUuid}` };
+    return deferredSkip(op, `plan_task op references missing plan ${planUuid}`);
   }
   const existing = db.prepare('SELECT uuid FROM plan_task WHERE uuid = ?').get(op.entity_id) as {
     uuid: string;
@@ -440,9 +454,10 @@ function applyTaskCreateOrUpdate(db: Database, op: SyncOpRecord): SkippedSyncOp 
           title,
           description,
           done,
+          created_node_id,
           created_hlc,
           updated_hlc
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `
     ).run(
       op.entity_id,
@@ -452,6 +467,7 @@ function applyTaskCreateOrUpdate(db: Database, op: SyncOpRecord): SkippedSyncOp 
       String(fields.title ?? ''),
       String(fields.description ?? ''),
       fields.done ? 1 : 0,
+      op.node_id,
       formatHlc(opHlc(op)),
       formatHlc(opHlc(op))
     );
@@ -484,7 +500,7 @@ function renumberPlanTaskIndices(db: Database, planUuid: string): void {
 
   const rows = db
     .prepare(
-      'SELECT uuid FROM plan_task WHERE plan_uuid = ? AND deleted_hlc IS NULL ORDER BY order_key, uuid'
+      'SELECT uuid FROM plan_task WHERE plan_uuid = ? AND deleted_hlc IS NULL ORDER BY order_key, created_hlc, created_node_id, uuid'
     )
     .all(planUuid) as Array<{ uuid: string }>;
   const update = db.prepare('UPDATE plan_task SET task_index = ? WHERE uuid = ?');
@@ -499,20 +515,20 @@ function applyTaskSetOrder(db: Database, op: SyncOpRecord): SkippedSyncOp | null
   if (typeof payload.planUuid !== 'string' || payload.planUuid.length === 0) {
     return { opId: op.op_id, reason: 'plan_task set_order op missing planUuid' };
   }
-  if (!planExists(db, payload.planUuid)) {
+  if (hasTombstone(db, 'plan', payload.planUuid)) {
     return {
       opId: op.op_id,
-      reason: `plan_task set_order references missing plan ${payload.planUuid}`,
+      reason: `plan_task set_order references tombstoned plan ${payload.planUuid}`,
     };
+  }
+  if (!planExists(db, payload.planUuid)) {
+    return deferredSkip(op, `plan_task set_order references missing plan ${payload.planUuid}`);
   }
   const taskRowExists = db
     .prepare('SELECT 1 AS present FROM plan_task WHERE uuid = ?')
     .get(op.entity_id) as { present: number } | null;
   if (!taskRowExists) {
-    return {
-      opId: op.op_id,
-      reason: `plan_task set_order arrived before task ${op.entity_id} create`,
-    };
+    return deferredSkip(op, `plan_task set_order arrived before task ${op.entity_id} create`);
   }
   applyScalarFields(
     db,
@@ -542,8 +558,14 @@ function applyReviewIssueCreateOrUpdate(db: Database, op: SyncOpRecord): Skipped
     return { opId: op.op_id, reason: 'plan_review_issue op missing plan_uuid' };
   }
   const planUuid = planUuidValue;
+  if (hasTombstone(db, 'plan', planUuid)) {
+    return {
+      opId: op.op_id,
+      reason: `plan_review_issue op references tombstoned plan ${planUuid}`,
+    };
+  }
   if (!planExists(db, planUuid)) {
-    return { opId: op.op_id, reason: `plan_review_issue op references missing plan ${planUuid}` };
+    return deferredSkip(op, `plan_review_issue op references missing plan ${planUuid}`);
   }
   const existing = db
     .prepare('SELECT uuid FROM plan_review_issue WHERE uuid = ?')
@@ -563,9 +585,10 @@ function applyReviewIssueCreateOrUpdate(db: Database, op: SyncOpRecord): Skipped
           suggestion,
           source,
           source_ref,
+          created_node_id,
           created_hlc,
           updated_hlc
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `
     ).run(
       op.entity_id,
@@ -579,6 +602,7 @@ function applyReviewIssueCreateOrUpdate(db: Database, op: SyncOpRecord): Skipped
       sqlValue(fields.suggestion),
       sqlValue(fields.source),
       sqlValue(fields.source_ref),
+      op.node_id,
       formatHlc(opHlc(op)),
       formatHlc(opHlc(op))
     );
@@ -751,10 +775,7 @@ function applyDependencyEdge(db: Database, op: SyncOpRecord): SkippedSyncOp | nu
       return { opId: op.op_id, reason: 'parent plan tombstoned; dropping dependency edge' };
     }
     if (!planExists(db, payload.planUuid) || !planExists(db, payload.dependsOnUuid)) {
-      return {
-        opId: op.op_id,
-        reason: 'dependency edge references missing parent plan; deferring',
-      };
+      return deferredSkip(op, 'dependency edge references missing parent plan; deferring');
     }
     db.prepare(
       'INSERT OR IGNORE INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)'
@@ -788,7 +809,7 @@ function applyTagEdge(db: Database, op: SyncOpRecord): SkippedSyncOp | null {
       return { opId: op.op_id, reason: 'parent plan tombstoned; dropping tag edge' };
     }
     if (!planExists(db, payload.planUuid)) {
-      return { opId: op.op_id, reason: 'tag edge references missing parent plan; deferring' };
+      return deferredSkip(op, 'tag edge references missing parent plan; deferring');
     }
     db.prepare('INSERT OR IGNORE INTO plan_tag (plan_uuid, tag) VALUES (?, ?)').run(
       payload.planUuid,
@@ -924,6 +945,9 @@ export function applyRemoteOps(db: Database, ops: SyncOpRecord[]): ApplyResult {
 
     try {
       const applyOne = db.transaction((nextOp: SyncOpRecord): SkippedSyncOp | null => {
+        // Permanent skips keep this op-log row so malformed or unsupported ops
+        // dedupe on retry. Deferred skips deliberately roll the row back below
+        // so out-of-order ops can be re-delivered after their parents arrive.
         insertRemoteOpLog(db, nextOp);
         if (!isSupportedOp(nextOp)) {
           observeRemoteHlc(db, nextOp);
@@ -933,6 +957,9 @@ export function applyRemoteOps(db: Database, ops: SyncOpRecord[]): ApplyResult {
           };
         }
         const skipped = applyKnownOp(db, nextOp);
+        if (skipped?.kind === 'deferred') {
+          throw new DeferredSkipRollback(skipped);
+        }
         observeRemoteHlc(db, nextOp);
         return skipped;
       });
@@ -943,6 +970,10 @@ export function applyRemoteOps(db: Database, ops: SyncOpRecord[]): ApplyResult {
         result.applied += 1;
       }
     } catch (error) {
+      if (error instanceof DeferredSkipRollback) {
+        result.skipped.push(error.skipped);
+        continue;
+      }
       result.errors.push({
         opId: op.op_id,
         message: error instanceof Error ? error.message : String(error),

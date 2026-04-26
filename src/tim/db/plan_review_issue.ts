@@ -22,6 +22,7 @@ export interface PlanReviewIssueRow {
   source: string | null;
   source_ref: string | null;
   created_hlc: string | null;
+  created_node_id: string | null;
   updated_hlc: string | null;
   deleted_hlc: string | null;
   created_at: string;
@@ -133,7 +134,7 @@ export function listReviewIssuesForPlan(db: Database, planUuid: string): PlanRev
         FROM plan_review_issue
         WHERE plan_uuid = ?
           AND deleted_hlc IS NULL
-        ORDER BY order_key, uuid
+        ORDER BY order_key, created_hlc, created_node_id, uuid
       `
     )
     .all(planUuid) as PlanReviewIssueRow[];
@@ -151,7 +152,7 @@ export function getPlanReviewIssuesByProject(
         JOIN plan ON plan.uuid = plan_review_issue.plan_uuid
         WHERE plan.project_id = ?
           AND plan_review_issue.deleted_hlc IS NULL
-        ORDER BY plan_review_issue.plan_uuid, plan_review_issue.order_key, plan_review_issue.uuid
+        ORDER BY plan_review_issue.plan_uuid, plan_review_issue.order_key, plan_review_issue.created_hlc, plan_review_issue.created_node_id, plan_review_issue.uuid
       `
     )
     .all(projectId) as PlanReviewIssueRow[];

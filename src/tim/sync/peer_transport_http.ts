@@ -278,22 +278,25 @@ export function createPeerSyncHttpHandler(
         if (applyResult.errors.length > 0) {
           return jsonResponse({ error: 'apply failed' }, { status: 500 });
         }
+        const deferredSkips = applyResult.skipped.filter((skip) => skip.kind === 'deferred').length;
 
         // Push advances the server's pull-from-pusher cursor only after the
-        // pushed batch is durably applied. Server-side pull requests never
-        // advance any server cursor.
+        // pushed batch is durably applied. Deferred skips are not durable
+        // because their op-log rows are rolled back for retry. Server-side pull
+        // requests never advance any server cursor.
         const lastPushedOp = ops.reduce<SyncOpRecord | null>((current, op) => {
           const seq = op.seq;
           if (typeof seq !== 'number' || !Number.isInteger(seq) || seq < 1) return current;
           if (!current || seq > (current.seq ?? 0)) return op;
           return current;
         }, null);
-        if (lastPushedOp?.seq) {
+        if (deferredSkips === 0 && lastPushedOp?.seq) {
           setPeerCursor(db, peerNodeId, 'pull', lastPushedOp.seq.toString(), lastPushedOp);
         }
         return jsonResponse({
           applied: applyResult.applied,
           skipped: applyResult.skipped.length,
+          deferredSkips,
         });
       }
     } catch (error) {

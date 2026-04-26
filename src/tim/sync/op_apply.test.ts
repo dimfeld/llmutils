@@ -1003,7 +1003,7 @@ describe('sync op application', () => {
     expect(reResult.applied).toBe(0);
   });
 
-  test('add_edge for non-existent (non-tombstoned) parent plan is skipped without FK throw', () => {
+  test('add_edge for non-existent (non-tombstoned) parent plan is deferred without FK throw', () => {
     const projectId = getOrCreateProject(db, 'github.com__owner__repo').id;
     upsertPlan(db, projectId, { uuid: 'plan-existing-edge', planId: 95 });
 
@@ -1030,12 +1030,13 @@ describe('sync op application', () => {
     const result = applyRemoteOps(db, [badDep, badTag]);
     expect(result.errors).toEqual([]);
     expect(result.skipped).toHaveLength(2);
+    expect(result.skipped.every((skip) => skip.kind === 'deferred')).toBe(true);
     expect(
       db.prepare('SELECT count(*) AS count FROM sync_op_log WHERE op_id = ?').get(badDep.op_id)
-    ).toEqual({ count: 1 });
+    ).toEqual({ count: 0 });
     expect(
       db.prepare('SELECT count(*) AS count FROM sync_op_log WHERE op_id = ?').get(badTag.op_id)
-    ).toEqual({ count: 1 });
+    ).toEqual({ count: 0 });
   });
 
   test('set_order arriving before task create is skipped and does not poison field clock', () => {
@@ -1055,6 +1056,7 @@ describe('sync op application', () => {
     const result = applyRemoteOps(db, [setOrderEarly]);
     expect(result.errors).toEqual([]);
     expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0]?.kind).toBe('deferred');
 
     // No field clock written for order_key — later create can apply its own order_key
     const clock = db
@@ -1064,12 +1066,12 @@ describe('sync op application', () => {
       .get('plan_task', 'task-order-race', 'order_key');
     expect(clock).toBeNull();
 
-    // op_log row still persisted for dedup
+    // Deferred skips roll back the op_log row so the original op can be retried.
     expect(
       db
         .prepare('SELECT count(*) AS count FROM sync_op_log WHERE op_id = ?')
         .get(setOrderEarly.op_id)
-    ).toEqual({ count: 1 });
+    ).toEqual({ count: 0 });
   });
 
   test('add_edge with missing payload fields routes to skipped without throwing', () => {

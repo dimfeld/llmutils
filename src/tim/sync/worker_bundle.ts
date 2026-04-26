@@ -488,7 +488,7 @@ export function exportWorkerBundle(db: Database, options: ExportWorkerBundleOpti
         ? []
         : (db
             .prepare(
-              `SELECT * FROM plan_task WHERE plan_uuid IN (${placeholders}) AND deleted_hlc IS NULL ORDER BY plan_uuid, order_key, uuid`
+              `SELECT * FROM plan_task WHERE plan_uuid IN (${placeholders}) AND deleted_hlc IS NULL ORDER BY plan_uuid, order_key, created_hlc, created_node_id, uuid`
             )
             .all(...planUuids) as PlanTaskRow[]);
     const reviewIssues =
@@ -496,7 +496,7 @@ export function exportWorkerBundle(db: Database, options: ExportWorkerBundleOpti
         ? []
         : (db
             .prepare(
-              `SELECT * FROM plan_review_issue WHERE plan_uuid IN (${placeholders}) AND deleted_hlc IS NULL ORDER BY plan_uuid, order_key, uuid`
+              `SELECT * FROM plan_review_issue WHERE plan_uuid IN (${placeholders}) AND deleted_hlc IS NULL ORDER BY plan_uuid, order_key, created_hlc, created_node_id, uuid`
             )
             .all(...planUuids) as PlanReviewIssueRow[]);
     const dependencies =
@@ -742,10 +742,11 @@ function importTasks(db: Database, tasks: PlanTaskRow[]): void {
         title,
         description,
         done,
+        created_node_id,
         created_hlc,
         updated_hlc,
         deleted_hlc
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(uuid) DO UPDATE SET
         plan_uuid = excluded.plan_uuid,
         task_index = excluded.task_index,
@@ -753,6 +754,7 @@ function importTasks(db: Database, tasks: PlanTaskRow[]): void {
         title = excluded.title,
         description = excluded.description,
         done = excluded.done,
+        created_node_id = excluded.created_node_id,
         created_hlc = excluded.created_hlc,
         updated_hlc = excluded.updated_hlc,
         deleted_hlc = excluded.deleted_hlc
@@ -767,6 +769,7 @@ function importTasks(db: Database, tasks: PlanTaskRow[]): void {
       task.title,
       task.description,
       task.done,
+      task.created_node_id,
       task.created_hlc,
       task.updated_hlc,
       task.deleted_hlc
@@ -789,12 +792,13 @@ function importReviewIssues(db: Database, issues: PlanReviewIssueRow[]): void {
         suggestion,
         source,
         source_ref,
+        created_node_id,
         created_hlc,
         updated_hlc,
         deleted_hlc,
         created_at,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(uuid) DO UPDATE SET
         plan_uuid = excluded.plan_uuid,
         order_key = excluded.order_key,
@@ -806,6 +810,7 @@ function importReviewIssues(db: Database, issues: PlanReviewIssueRow[]): void {
         suggestion = excluded.suggestion,
         source = excluded.source,
         source_ref = excluded.source_ref,
+        created_node_id = excluded.created_node_id,
         created_hlc = excluded.created_hlc,
         updated_hlc = excluded.updated_hlc,
         deleted_hlc = excluded.deleted_hlc,
@@ -826,6 +831,7 @@ function importReviewIssues(db: Database, issues: PlanReviewIssueRow[]): void {
       issue.suggestion,
       issue.source,
       issue.source_ref,
+      issue.created_node_id,
       issue.created_hlc,
       issue.updated_hlc,
       issue.deleted_hlc,

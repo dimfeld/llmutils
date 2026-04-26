@@ -61,6 +61,7 @@ export interface PlanTaskRow {
   description: string;
   done: number;
   created_hlc: string | null;
+  created_node_id: string | null;
   updated_hlc: string | null;
   deleted_hlc: string | null;
 }
@@ -140,7 +141,9 @@ function replacePlanTasks(
   }>
 ): void {
   const existingTasks = db
-    .prepare('SELECT * FROM plan_task WHERE plan_uuid = ? ORDER BY order_key, uuid')
+    .prepare(
+      'SELECT * FROM plan_task WHERE plan_uuid = ? ORDER BY order_key, created_hlc, created_node_id, uuid'
+    )
     .all(planUuid) as PlanTaskRow[];
   const existingTasksByUuid = new Map(existingTasks.map((task) => [task.uuid, task]));
 
@@ -155,9 +158,10 @@ function replacePlanTasks(
       description,
       done,
       created_hlc,
+      created_node_id,
       updated_hlc,
       deleted_hlc
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `
   );
   const updateTask = db.prepare(
@@ -211,6 +215,7 @@ function replacePlanTasks(
         task.title,
         task.description,
         done,
+        null,
         null,
         null,
         null
@@ -754,7 +759,7 @@ export function getPlanByPlanId(db: Database, projectId: number, planId: number)
 export function getPlanTasksByUuid(db: Database, planUuid: string): PlanTaskRow[] {
   return db
     .prepare(
-      'SELECT * FROM plan_task WHERE plan_uuid = ? AND deleted_hlc IS NULL ORDER BY order_key, uuid'
+      'SELECT * FROM plan_task WHERE plan_uuid = ? AND deleted_hlc IS NULL ORDER BY order_key, created_hlc, created_node_id, uuid'
     )
     .all(planUuid) as PlanTaskRow[];
 }
@@ -768,7 +773,7 @@ export function getPlanTasksByProject(db: Database, projectId: number): PlanTask
       INNER JOIN plan p ON p.uuid = pt.plan_uuid
       WHERE p.project_id = ?
         AND pt.deleted_hlc IS NULL
-      ORDER BY pt.plan_uuid, pt.order_key, pt.uuid
+      ORDER BY pt.plan_uuid, pt.order_key, pt.created_hlc, pt.created_node_id, pt.uuid
     `
     )
     .all(projectId) as PlanTaskRow[];

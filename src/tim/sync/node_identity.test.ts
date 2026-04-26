@@ -120,8 +120,9 @@ describe('tim sync/node_identity', () => {
     expect(main?.lease_expires_at).toBeNull();
   });
 
-  test('getLocalNodeId throws when no local node has been created', () => {
-    // Build a bare migrated DB without going through openDatabase so no local node is initialized.
+  test('runMigrations initializes a local node for sync metadata backfills', () => {
+    // v31 may need a stable local node while backfilling syncable row metadata,
+    // so bare migrated DBs now get the same singleton local identity.
     const { Database } = require('bun:sqlite') as typeof import('bun:sqlite');
     const { runMigrations } =
       require('../db/migrations.js') as typeof import('../db/migrations.js');
@@ -129,7 +130,7 @@ describe('tim sync/node_identity', () => {
     try {
       bare.run('PRAGMA foreign_keys = ON');
       runMigrations(bare);
-      expect(() => getLocalNodeId(bare)).toThrow('Local sync node is not initialized');
+      expect(getLocalNodeId(bare)).toMatch(/^[0-9a-f-]{36}$/);
     } finally {
       bare.close(false);
     }

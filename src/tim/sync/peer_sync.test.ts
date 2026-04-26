@@ -33,15 +33,16 @@ function directTransport(remoteDb: Database, localNodeId: string): PeerTransport
       if (result.errors.length > 0) {
         throw new Error(result.errors[0]?.message ?? 'apply failed');
       }
+      const deferredSkips = result.skipped.filter((skip) => skip.kind === 'deferred').length;
       const lastPushedOp = ops.reduce<SyncOpRecord | null>((current, op) => {
         if (!Number.isInteger(op.seq) || op.seq < 1) return current;
         if (!current || op.seq > (current.seq ?? 0)) return op;
         return current;
       }, null);
-      if (lastPushedOp?.seq) {
+      if (deferredSkips === 0 && lastPushedOp?.seq) {
         setPeerCursor(remoteDb, localNodeId, 'pull', lastPushedOp.seq.toString(), lastPushedOp);
       }
-      return { applied: result.applied, skipped: result.skipped.length };
+      return { applied: result.applied, skipped: result.skipped.length, deferredSkips };
     },
   };
 }
@@ -341,12 +342,12 @@ describe('peer sync advanced scenarios', () => {
 
     const tasksA = dbA
       .prepare(
-        'SELECT title FROM plan_task WHERE plan_uuid = ? AND deleted_hlc IS NULL ORDER BY order_key, uuid'
+        'SELECT title FROM plan_task WHERE plan_uuid = ? AND deleted_hlc IS NULL ORDER BY order_key, created_hlc, created_node_id, uuid'
       )
       .all(planUuid) as Array<{ title: string }>;
     const tasksB = dbB
       .prepare(
-        'SELECT title FROM plan_task WHERE plan_uuid = ? AND deleted_hlc IS NULL ORDER BY order_key, uuid'
+        'SELECT title FROM plan_task WHERE plan_uuid = ? AND deleted_hlc IS NULL ORDER BY order_key, created_hlc, created_node_id, uuid'
       )
       .all(planUuid) as Array<{ title: string }>;
 
@@ -440,7 +441,7 @@ describe('peer sync advanced scenarios', () => {
     expect(opCount(dbA)).toBe(opCount(dbB));
   });
 
-  test('set_order before task create is skipped but op is recorded for dedup', () => {
+  test('set_order before task create is deferred and left retryable', () => {
     const planUuid = 'plan-ooo';
     upsertPlan(dbA, projectA, { uuid: planUuid, planId: 10, title: 'Out-of-order plan' });
 
@@ -464,12 +465,13 @@ describe('peer sync advanced scenarios', () => {
     expect(result.skipped).toHaveLength(1);
     expect(result.skipped[0]?.opId).toBe('fake-set-order-before-create-001');
     expect(result.skipped[0]?.reason).toMatch(/set_order arrived before task/);
+    expect(result.skipped[0]?.kind).toBe('deferred');
 
-    // Op is recorded in op_log for dedup (so it won't loop forever on retry)
+    // Deferred ops are not recorded in op_log so the same op_id can be retried.
     const opLogEntry = dbA
       .prepare('SELECT op_id FROM sync_op_log WHERE op_id = ?')
       .get('fake-set-order-before-create-001') as { op_id: string } | null;
-    expect(opLogEntry).not.toBeNull();
+    expect(opLogEntry).toBeNull();
 
     // No phantom field clock for the nonexistent task's order_key
     const fieldClocks = dbA

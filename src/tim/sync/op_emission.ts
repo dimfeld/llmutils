@@ -327,11 +327,9 @@ export function emitTaskCreate(
   fields: FieldUpdates
 ): EmittedSyncOperation {
   const emitted = emitWithFields(db, 'plan_task', taskUuid, 'create', { planUuid, fields }, fields);
-  db.prepare('UPDATE plan_task SET created_hlc = ?, updated_hlc = ? WHERE uuid = ?').run(
-    emitted.hlcText,
-    emitted.hlcText,
-    taskUuid
-  );
+  db.prepare(
+    'UPDATE plan_task SET created_hlc = ?, created_node_id = ?, updated_hlc = ? WHERE uuid = ?'
+  ).run(emitted.hlcText, emitted.nodeId, emitted.hlcText, taskUuid);
   return emitted;
 }
 
@@ -416,11 +414,9 @@ export function emitReviewIssueCreate(
     { planUuid, fields },
     fields
   );
-  db.prepare('UPDATE plan_review_issue SET created_hlc = ?, updated_hlc = ? WHERE uuid = ?').run(
-    emitted.hlcText,
-    emitted.hlcText,
-    issueUuid
-  );
+  db.prepare(
+    'UPDATE plan_review_issue SET created_hlc = ?, created_node_id = ?, updated_hlc = ? WHERE uuid = ?'
+  ).run(emitted.hlcText, emitted.nodeId, emitted.hlcText, issueUuid);
   return emitted;
 }
 

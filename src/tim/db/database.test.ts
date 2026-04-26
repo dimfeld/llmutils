@@ -326,7 +326,7 @@ describe('tim db/database', () => {
         []
       >('SELECT version, import_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(30);
+    expect(version?.version).toBe(31);
     expect(version?.import_completed).toBe(1);
 
     const tables = db
@@ -379,6 +379,7 @@ describe('tim db/database', () => {
     expect(taskColumns).toContain('uuid');
     expect(taskColumns).toContain('order_key');
     expect(taskColumns).toContain('created_hlc');
+    expect(taskColumns).toContain('created_node_id');
     expect(taskColumns).toContain('updated_hlc');
     expect(taskColumns).toContain('deleted_hlc');
 
@@ -387,6 +388,7 @@ describe('tim db/database', () => {
       .all()
       .map((row) => row.name);
     expect(reviewIssueColumns).toContain('order_key');
+    expect(reviewIssueColumns).toContain('created_node_id');
 
     const indices = db
       .query<{ name: string }, []>(
@@ -437,7 +439,7 @@ describe('tim db/database', () => {
         []
       >('SELECT version, import_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(30);
+    expect(version?.version).toBe(31);
     expect(version?.import_completed).toBe(1);
     const versionRowCount = db2
       .query<{ count: number }, []>('SELECT count(*) as count FROM schema_version')
@@ -575,7 +577,7 @@ describe('tim db/database', () => {
       const schemaVersion = db
         .query<{ version: number }, []>('SELECT version FROM schema_version')
         .get();
-      expect(schemaVersion?.version).toBe(30);
+      expect(schemaVersion?.version).toBe(31);
 
       const planColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('plan')")
@@ -589,9 +591,14 @@ describe('tim db/database', () => {
         .get();
       const migratedTask = db
         .query<
-          { uuid: string; order_key: string; created_hlc: string | null },
+          {
+            uuid: string;
+            order_key: string;
+            created_hlc: string | null;
+            created_node_id: string | null;
+          },
           [string]
-        >('SELECT uuid, order_key, created_hlc FROM plan_task WHERE plan_uuid = ?')
+        >('SELECT uuid, order_key, created_hlc, created_node_id FROM plan_task WHERE plan_uuid = ?')
         .get('plan-1');
       const dependencyCount = db
         .query<{ count: number }, []>('SELECT count(*) AS count FROM plan_dependency')
@@ -620,6 +627,7 @@ describe('tim db/database', () => {
       expect(migratedTask?.uuid).toEqual(expect.any(String));
       expect(migratedTask?.order_key).toBe('0000000000');
       expect(migratedTask?.created_hlc).toBeNull();
+      expect(migratedTask?.created_node_id).toEqual(expect.any(String));
       expect(dependencyCount?.count).toBe(1);
       expect(tagCount?.count).toBe(1);
       expect(planPrCount?.count).toBe(1);
@@ -731,7 +739,7 @@ describe('tim db/database', () => {
 
       // Verify schema version
       const version = db.query<{ version: number }, []>('SELECT version FROM schema_version').get();
-      expect(version?.version).toBe(30);
+      expect(version?.version).toBe(31);
 
       // Verify all 5 tasks exist
       const allTasks = db
@@ -893,7 +901,7 @@ describe('tim db/database', () => {
       const version = db2
         .query<{ version: number }, []>('SELECT version FROM schema_version')
         .get();
-      expect(version?.version).toBe(30);
+      expect(version?.version).toBe(31);
 
       const count2 = db2
         .query<
@@ -985,7 +993,7 @@ describe('tim db/database', () => {
           []
         >('SELECT version FROM schema_version ORDER BY rowid DESC LIMIT 1')
         .get();
-      expect(schemaVersion?.version).toBe(30);
+      expect(schemaVersion?.version).toBe(31);
 
       const checkRows = db
         .query<

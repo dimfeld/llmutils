@@ -547,7 +547,7 @@ function getAllProjectBundle(db: Database): PlanQueryBundle {
     plans: db.prepare('SELECT * FROM plan ORDER BY project_id, plan_id, uuid').all() as PlanRow[],
     tasks: db
       .prepare(
-        'SELECT * FROM plan_task WHERE deleted_hlc IS NULL ORDER BY plan_uuid, order_key, uuid'
+        'SELECT * FROM plan_task WHERE deleted_hlc IS NULL ORDER BY plan_uuid, order_key, created_hlc, created_node_id, uuid'
       )
       .all() as PlanTaskRow[],
     dependencies: db
@@ -562,7 +562,7 @@ function getAllProjectBundle(db: Database): PlanQueryBundle {
           SELECT *
           FROM plan_review_issue
           WHERE deleted_hlc IS NULL
-          ORDER BY plan_uuid, order_key, uuid
+          ORDER BY plan_uuid, order_key, created_hlc, created_node_id, uuid
         `
       )
       .all() as PlanReviewIssueRow[],

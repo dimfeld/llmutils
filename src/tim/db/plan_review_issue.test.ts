@@ -179,19 +179,19 @@ describe('tim db/plan_review_issue', () => {
     expect(listReviewIssuesForPlan(db, 'plan-review-issue')).toHaveLength(2);
   });
 
-  test('listReviewIssuesForPlan orders by order_key then uuid', () => {
+  test('listReviewIssuesForPlan orders by order_key then create clock before uuid', () => {
     const laterUuid = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
     const earlierUuid = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
     createReviewIssue(db, {
       uuid: laterUuid,
       planUuid: 'plan-review-issue',
-      content: 'Later same key',
+      content: 'Created first with lexically later uuid',
       orderKey: '0000002000',
     });
     createReviewIssue(db, {
       uuid: earlierUuid,
       planUuid: 'plan-review-issue',
-      content: 'Earlier same key',
+      content: 'Created second with lexically earlier uuid',
       orderKey: '0000002000',
     });
     createReviewIssue(db, {
@@ -202,8 +202,8 @@ describe('tim db/plan_review_issue', () => {
 
     expect(listReviewIssuesForPlan(db, 'plan-review-issue').map((issue) => issue.content)).toEqual([
       'First by order key',
-      'Earlier same key',
-      'Later same key',
+      'Created first with lexically later uuid',
+      'Created second with lexically earlier uuid',
     ]);
   });
 
