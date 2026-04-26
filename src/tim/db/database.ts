@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { getTimConfigRoot } from '../../common/config_paths.js';
+import { bootstrapSyncMetadata } from '../sync/bootstrap.js';
 import { importFromJsonFiles, markImportCompleted, shouldRunImport } from './json_import.js';
 import { runMigrations } from './migrations.js';
 import { ensureLocalNode } from './sync_schema.js';
@@ -36,6 +37,8 @@ export function openDatabase(dbPath: string = getDefaultDatabasePath()): Databas
       importFromJsonFiles(db, configRoot);
       markImportCompleted(db);
     }
+
+    bootstrapSyncMetadata(db);
   } catch (err) {
     db.close(false);
     throw err;

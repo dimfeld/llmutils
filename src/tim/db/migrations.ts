@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite';
 import { randomUUID } from 'node:crypto';
+import { bootstrapSyncMetadata } from '../sync/bootstrap.js';
 import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 
 interface Migration {
@@ -1152,6 +1153,12 @@ const migrations: Migration[] = [
       );
       CREATE INDEX idx_sync_pending_op_peer ON sync_pending_op(peer_node_id, first_deferred_at);
     `,
+  },
+  {
+    version: 33,
+    up: (db: Database): void => {
+      bootstrapSyncMetadata(db);
+    },
   },
 ];
 

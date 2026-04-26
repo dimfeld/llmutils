@@ -24,6 +24,49 @@ export interface EmittedSyncOperation {
 type JsonValue = unknown;
 type FieldUpdates = Record<string, JsonValue>;
 
+export const PLAN_LWW_FIELD_NAMES = [
+  'title',
+  'goal',
+  'note',
+  'details',
+  'status',
+  'priority',
+  'branch',
+  'simple',
+  'tdd',
+  'discovered_from',
+  'issue',
+  'pull_request',
+  'assigned_to',
+  'base_branch',
+  'base_commit',
+  'base_change_id',
+  'temp',
+  'docs',
+  'changed_files',
+  'plan_generated_at',
+  'docs_updated_at',
+  'lessons_applied_at',
+  'parent_uuid',
+  'epic',
+] as const;
+
+export const PLAN_TASK_LWW_FIELD_NAMES = ['order_key', 'title', 'description', 'done'] as const;
+
+export const REVIEW_ISSUE_LWW_FIELD_NAMES = [
+  'order_key',
+  'severity',
+  'category',
+  'content',
+  'file',
+  'line',
+  'suggestion',
+  'source',
+  'source_ref',
+] as const;
+
+export const PROJECT_SETTING_LWW_FIELD_NAME = 'value';
+
 export function getProjectSyncIdentity(db: Database, projectId: number): string {
   const project = getProjectById(db, projectId);
   if (!project) {

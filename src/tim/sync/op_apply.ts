@@ -8,7 +8,12 @@ import {
   type SyncTombstoneRow,
 } from '../db/sync_schema.js';
 import { compareHlc, formatHlc, type Hlc } from './hlc.js';
-import { getLocalGenerator } from './op_emission.js';
+import {
+  getLocalGenerator,
+  PLAN_LWW_FIELD_NAMES,
+  PLAN_TASK_LWW_FIELD_NAMES,
+  REVIEW_ISSUE_LWW_FIELD_NAMES,
+} from './op_emission.js';
 
 type JsonRecord = Record<string, unknown>;
 type SqlValue = string | number | bigint | boolean | null;
@@ -47,46 +52,11 @@ export interface ApplyResult {
   errors: SyncOpApplyError[];
 }
 
-const PLAN_FIELDS = new Set([
-  'title',
-  'goal',
-  'note',
-  'details',
-  'status',
-  'priority',
-  'branch',
-  'simple',
-  'tdd',
-  'discovered_from',
-  'issue',
-  'pull_request',
-  'assigned_to',
-  'base_branch',
-  'base_commit',
-  'base_change_id',
-  'temp',
-  'docs',
-  'changed_files',
-  'plan_generated_at',
-  'docs_updated_at',
-  'lessons_applied_at',
-  'parent_uuid',
-  'epic',
-]);
+const PLAN_FIELDS = new Set<string>(PLAN_LWW_FIELD_NAMES);
 
-const PLAN_TASK_FIELDS = new Set(['order_key', 'title', 'description', 'done']);
+const PLAN_TASK_FIELDS = new Set<string>(PLAN_TASK_LWW_FIELD_NAMES);
 
-const REVIEW_ISSUE_FIELDS = new Set([
-  'order_key',
-  'severity',
-  'category',
-  'content',
-  'file',
-  'line',
-  'suggestion',
-  'source',
-  'source_ref',
-]);
+const REVIEW_ISSUE_FIELDS = new Set<string>(REVIEW_ISSUE_LWW_FIELD_NAMES);
 
 const SKIPPED_SYNC_OP_MARKER = Symbol('SkippedSyncOp');
 
