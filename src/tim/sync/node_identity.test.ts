@@ -27,13 +27,15 @@ describe('tim sync/node_identity', () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  test('ensureLocalNode is idempotent and returns the same UUID', () => {
-    const first = ensureLocalNode(db, { label: 'Laptop' });
-    const second = ensureLocalNode(db, { label: 'Different Label' });
+  test('openDatabase initializes a local node automatically', () => {
+    // openDatabase wires ensureLocalNode into setup, so a fresh DB already has one.
+    const initial = getLocalNodeId(db);
+    expect(initial).toMatch(/^[0-9a-f-]{36}$/);
 
-    expect(second.node_id).toBe(first.node_id);
-    expect(second.label).toBe('Laptop');
-    expect(getLocalNodeId(db)).toBe(first.node_id);
+    const second = ensureLocalNode(db, { label: 'Different Label' });
+    expect(second.node_id).toBe(initial);
+    // Idempotent: existing node is returned unchanged; subsequent options do not overwrite.
+    expect(second.label).toBeNull();
   });
 
   test('database constraint permits only one local node', () => {
@@ -55,7 +57,7 @@ describe('tim sync/node_identity', () => {
     expect((rows[0] as { node_id: string }).node_id).toBe(local.node_id);
   });
 
-  test('registerPeerNode upserts known peer metadata', () => {
+  test('registerPeerNode upserts label/lease metadata for an existing peer', () => {
     registerPeerNode(db, {
       nodeId: 'peer-1',
       nodeType: 'main',
@@ -63,19 +65,41 @@ describe('tim sync/node_identity', () => {
     });
     const updated = registerPeerNode(db, {
       nodeId: 'peer-1',
-      nodeType: 'worker',
-      label: 'Worker',
+      nodeType: 'main',
+      label: 'Server (renamed)',
       leaseExpiresAt: '2030-01-01T00:00:00.000Z',
     });
 
-    expect(updated.node_type).toBe('worker');
-    expect(updated.label).toBe('Worker');
+    expect(updated.node_type).toBe('main');
+    expect(updated.label).toBe('Server (renamed)');
     expect(updated.lease_expires_at).toBe('2030-01-01T00:00:00.000Z');
     expect(
       db.prepare("SELECT count(*) AS count FROM sync_node WHERE node_id = 'peer-1'").get()
     ).toEqual({
       count: 1,
     });
+  });
+
+  test('registerPeerNode rejects changing an existing peer node_type', () => {
+    registerPeerNode(db, { nodeId: 'peer-2', nodeType: 'main' });
+
+    expect(() =>
+      registerPeerNode(db, { nodeId: 'peer-2', nodeType: 'worker' })
+    ).toThrow(/type/);
+  });
+
+  test('registerPeerNode rejects writing the local node id', () => {
+    const localId = getLocalNodeId(db);
+
+    expect(() =>
+      registerPeerNode(db, { nodeId: localId, nodeType: 'main', label: 'oops' })
+    ).toThrow(/local node/);
+
+    // Local row metadata must remain untouched.
+    const local = db.prepare('SELECT * FROM sync_node WHERE is_local = 1').get() as {
+      label: string | null;
+    };
+    expect(local.label).toBeNull();
   });
 
   test('listPeerNodes excludes the local node and returns peers ordered by node id', () => {
@@ -99,8 +123,17 @@ describe('tim sync/node_identity', () => {
   });
 
   test('getLocalNodeId throws when no local node has been created', () => {
-    // Fresh database — no local node exists yet
-    expect(() => getLocalNodeId(db)).toThrow('Local sync node is not initialized');
+    // Build a bare migrated DB without going through openDatabase so no local node is initialized.
+    const { Database } = require('bun:sqlite') as typeof import('bun:sqlite');
+    const { runMigrations } = require('../db/migrations.js') as typeof import('../db/migrations.js');
+    const bare = new Database(':memory:');
+    try {
+      bare.run('PRAGMA foreign_keys = ON');
+      runMigrations(bare);
+      expect(() => getLocalNodeId(bare)).toThrow('Local sync node is not initialized');
+    } finally {
+      bare.close(false);
+    }
   });
 
   test('setWorkerLeaseExpiry updates updated_at', async () => {

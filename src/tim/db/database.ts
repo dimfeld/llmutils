@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { getTimConfigRoot } from '../../common/config_paths.js';
 import { importFromJsonFiles, markImportCompleted, shouldRunImport } from './json_import.js';
 import { runMigrations } from './migrations.js';
+import { ensureLocalNode } from './sync_schema.js';
 
 let databaseSingleton: Database | null = null;
 
@@ -27,6 +28,7 @@ export function openDatabase(dbPath: string = getDefaultDatabasePath()): Databas
   try {
     applyPragmas(db);
     runMigrations(db);
+    ensureLocalNode(db);
 
     if (shouldRunImport(db)) {
       const defaultDbPath = getDefaultDatabasePath();

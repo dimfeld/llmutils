@@ -15,9 +15,10 @@ export interface ParsedOpId {
 
 export function compareHlc(a: Hlc, b: Hlc): number {
   if (a.physicalMs !== b.physicalMs) {
-    return a.physicalMs - b.physicalMs;
+    return a.physicalMs < b.physicalMs ? -1 : 1;
   }
-  return a.logical - b.logical;
+  if (a.logical === b.logical) return 0;
+  return a.logical < b.logical ? -1 : 1;
 }
 
 export function formatHlc(hlc: Hlc): string {
@@ -32,10 +33,16 @@ export function parseHlc(value: string): Hlc {
     throw new Error(`Invalid HLC value: ${value}`);
   }
 
-  return {
-    physicalMs: Number.parseInt(match[1], 10),
-    logical: Number.parseInt(match[2], 10),
-  };
+  const physicalMs = Number.parseInt(match[1], 10);
+  const logical = Number.parseInt(match[2], 10);
+  if (!Number.isSafeInteger(physicalMs) || physicalMs < 0) {
+    throw new Error(`Invalid HLC physical timestamp: ${value}`);
+  }
+  if (!Number.isSafeInteger(logical) || logical < 0) {
+    throw new Error(`Invalid HLC logical counter: ${value}`);
+  }
+
+  return { physicalMs, logical };
 }
 
 export function formatOpId(hlc: Hlc, nodeId: string, localCounter: number): string {
@@ -67,38 +74,46 @@ export class HlcGenerator {
   ) {}
 
   tick(now = Date.now(), db: Database = this.db): { hlc: Hlc; localCounter: number; opId: string } {
-    const row = getOrCreateClockRow(db);
-    const physicalMs = Math.max(row.physical_ms, Math.floor(now));
-    const logical = physicalMs === row.physical_ms ? row.logical + 1 : 0;
-    const localCounter = row.local_counter + 1;
+    const nodeId = this.nodeId;
+    const persist = this.persist.bind(this);
+    const reserve = db.transaction(
+      (nowMs: number): { hlc: Hlc; localCounter: number; opId: string } => {
+        const row = getOrCreateClockRow(db);
+        const physicalMs = Math.max(row.physical_ms, Math.floor(nowMs));
+        const logical = physicalMs === row.physical_ms ? row.logical + 1 : 0;
+        const localCounter = row.local_counter + 1;
 
-    this.persist(db, physicalMs, logical, localCounter);
+        persist(db, physicalMs, logical, localCounter);
 
-    const hlc = { physicalMs, logical };
-    return {
-      hlc,
-      localCounter,
-      opId: formatOpId(hlc, this.nodeId, localCounter),
-    };
+        const hlc = { physicalMs, logical };
+        return { hlc, localCounter, opId: formatOpId(hlc, nodeId, localCounter) };
+      }
+    );
+
+    return reserve.immediate(now);
   }
 
   observe(remote: Hlc, now = Date.now(), db: Database = this.db): void {
-    const row = getOrCreateClockRow(db);
-    const nowMs = Math.floor(now);
-    const physicalMs = Math.max(row.physical_ms, remote.physicalMs, nowMs);
+    const persist = this.persist.bind(this);
+    const advance = db.transaction((nowMs: number) => {
+      const row = getOrCreateClockRow(db);
+      const physicalMs = Math.max(row.physical_ms, remote.physicalMs, Math.floor(nowMs));
 
-    let logical: number;
-    if (physicalMs === row.physical_ms && physicalMs === remote.physicalMs) {
-      logical = Math.max(row.logical, remote.logical) + 1;
-    } else if (physicalMs === row.physical_ms) {
-      logical = row.logical + 1;
-    } else if (physicalMs === remote.physicalMs) {
-      logical = remote.logical + 1;
-    } else {
-      logical = 0;
-    }
+      let logical: number;
+      if (physicalMs === row.physical_ms && physicalMs === remote.physicalMs) {
+        logical = Math.max(row.logical, remote.logical) + 1;
+      } else if (physicalMs === row.physical_ms) {
+        logical = row.logical + 1;
+      } else if (physicalMs === remote.physicalMs) {
+        logical = remote.logical + 1;
+      } else {
+        logical = 0;
+      }
 
-    this.persist(db, physicalMs, logical, row.local_counter);
+      persist(db, physicalMs, logical, row.local_counter);
+    });
+
+    advance.immediate(now);
   }
 
   private persist(db: Database, physicalMs: number, logical: number, localCounter: number): void {

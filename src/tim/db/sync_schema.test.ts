@@ -56,12 +56,11 @@ describe('tim db/sync_schema migration', () => {
   });
 
   test('allows at most one local sync node', () => {
-    db.prepare(
-      `
-        INSERT INTO sync_node (node_id, node_type, is_local)
-        VALUES ('node-1', 'main', 1)
-      `
-    ).run();
+    // openDatabase already initialized one local node — attempting to insert a second must fail.
+    const existing = db
+      .prepare("SELECT count(*) AS count FROM sync_node WHERE is_local = 1")
+      .get() as { count: number };
+    expect(existing.count).toBe(1);
 
     expect(() =>
       db
