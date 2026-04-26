@@ -85,8 +85,11 @@ describe('tim db/plan', () => {
 
     let tasks = getPlanTasksByUuid(db, 'plan-1');
     expect(tasks).toHaveLength(2);
+    expect(tasks[0]?.uuid).toEqual(expect.any(String));
+    expect(tasks[0]?.order_key).toBe('0000000000');
     expect(tasks[0]?.task_index).toBe(0);
     expect(tasks[0]?.title).toBe('task a');
+    expect(tasks[1]?.order_key).toBe('0000000001');
     expect(tasks[1]?.task_index).toBe(1);
     expect(tasks[1]?.done).toBe(1);
 
@@ -310,14 +313,14 @@ describe('tim db/plan', () => {
     upsertPlan(db, projectId, { uuid: 'plan-order', planId: 50 });
 
     db.prepare(
-      'INSERT INTO plan_task (plan_uuid, task_index, title, description, done) VALUES (?, ?, ?, ?, ?)'
-    ).run('plan-order', 2, 'third', 'third', 0);
+      'INSERT INTO plan_task (uuid, plan_uuid, task_index, order_key, title, description, done) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).run('task-3', 'plan-order', 2, '0000000002', 'third', 'third', 0);
     db.prepare(
-      'INSERT INTO plan_task (plan_uuid, task_index, title, description, done) VALUES (?, ?, ?, ?, ?)'
-    ).run('plan-order', 0, 'first', 'first', 0);
+      'INSERT INTO plan_task (uuid, plan_uuid, task_index, order_key, title, description, done) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).run('task-1', 'plan-order', 0, '0000000000', 'first', 'first', 0);
     db.prepare(
-      'INSERT INTO plan_task (plan_uuid, task_index, title, description, done) VALUES (?, ?, ?, ?, ?)'
-    ).run('plan-order', 1, 'second', 'second', 1);
+      'INSERT INTO plan_task (uuid, plan_uuid, task_index, order_key, title, description, done) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).run('task-2', 'plan-order', 1, '0000000001', 'second', 'second', 1);
 
     const tasks = getPlanTasksByUuid(db, 'plan-order');
     expect(tasks.map((task) => task.title)).toEqual(['first', 'second', 'third']);

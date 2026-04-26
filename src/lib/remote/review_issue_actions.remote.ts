@@ -1,5 +1,6 @@
 import { command } from '$app/server';
 import { error } from '@sveltejs/kit';
+import { randomUUID } from 'node:crypto';
 import * as z from 'zod';
 
 import { getServerContext } from '$lib/server/init.js';
@@ -95,8 +96,15 @@ export const convertReviewIssueToTask = command(
       ).run(issues.length > 0 ? JSON.stringify(issues) : null, planUuid);
 
       db.prepare(
-        `INSERT INTO plan_task (plan_uuid, task_index, title, description, done) VALUES (?, ?, ?, ?, 0)`
-      ).run(planUuid, nextIndex, newTask.title, newTask.description ?? '');
+        `INSERT INTO plan_task (uuid, plan_uuid, task_index, order_key, title, description, done) VALUES (?, ?, ?, ?, ?, ?, 0)`
+      ).run(
+        randomUUID(),
+        planUuid,
+        nextIndex,
+        String(nextIndex).padStart(10, '0'),
+        newTask.title,
+        newTask.description ?? ''
+      );
     }).immediate();
   }
 );
@@ -194,10 +202,17 @@ export const addReviewIssueToPlanTask = command(
 
       db.prepare(
         `
-          INSERT INTO plan_task (plan_uuid, task_index, title, description, done)
-          VALUES (?, ?, ?, ?, 0)
+          INSERT INTO plan_task (uuid, plan_uuid, task_index, order_key, title, description, done)
+          VALUES (?, ?, ?, ?, ?, ?, 0)
         `
-      ).run(planUuid, nextIndex, newTask.title, descriptionWithSource);
+      ).run(
+        randomUUID(),
+        planUuid,
+        nextIndex,
+        String(nextIndex).padStart(10, '0'),
+        newTask.title,
+        descriptionWithSource
+      );
 
       db.prepare(
         `UPDATE plan SET status = 'in_progress', updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ? AND status != 'in_progress'`

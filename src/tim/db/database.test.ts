@@ -326,7 +326,7 @@ describe('tim db/database', () => {
         []
       >('SELECT version, import_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(26);
+    expect(version?.version).toBe(27);
     expect(version?.import_completed).toBe(1);
 
     const tables = db
@@ -347,6 +347,7 @@ describe('tim db/database', () => {
     expect(tables).toContain('plan_task');
     expect(tables).toContain('plan_dependency');
     expect(tables).toContain('plan_tag');
+    expect(tables).toContain('plan_review_issue');
     expect(tables).toContain('pr_status');
     expect(tables).toContain('pr_check_run');
     expect(tables).toContain('pr_review');
@@ -371,6 +372,16 @@ describe('tim db/database', () => {
     expect(planColumns).toContain('note');
     expect(planColumns).not.toContain('filename');
 
+    const taskColumns = db
+      .query<{ name: string }, []>("PRAGMA table_info('plan_task')")
+      .all()
+      .map((row) => row.name);
+    expect(taskColumns).toContain('uuid');
+    expect(taskColumns).toContain('order_key');
+    expect(taskColumns).toContain('created_hlc');
+    expect(taskColumns).toContain('updated_hlc');
+    expect(taskColumns).toContain('deleted_hlc');
+
     const indices = db
       .query<{ name: string }, []>(
         "SELECT name FROM sqlite_master WHERE type = 'index' ORDER BY name"
@@ -384,7 +395,11 @@ describe('tim db/database', () => {
     expect(indices).toContain('idx_plan_project_plan_id');
     expect(indices).toContain('idx_plan_parent_uuid');
     expect(indices).toContain('idx_plan_task_plan_uuid');
+    expect(indices).toContain('idx_plan_task_order');
+    expect(indices).toContain('idx_plan_dependency_uuid_edge');
     expect(indices).toContain('idx_plan_tag_plan_uuid');
+    expect(indices).toContain('idx_plan_tag_uuid_tag');
+    expect(indices).toContain('idx_plan_review_issue_plan_uuid');
     expect(indices).toContain('idx_webhook_log_repo_id');
     expect(indices).toContain('idx_pr_check_run_unique');
     expect(indices).toContain('idx_pr_review_unique');
@@ -415,7 +430,7 @@ describe('tim db/database', () => {
         []
       >('SELECT version, import_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(26);
+    expect(version?.version).toBe(27);
     expect(version?.import_completed).toBe(1);
     const versionRowCount = db2
       .query<{ count: number }, []>('SELECT count(*) as count FROM schema_version')
@@ -445,7 +460,7 @@ describe('tim db/database', () => {
     expect(getDefaultDatabasePath()).toBe(path.join(tempDir, 'tim', DATABASE_FILENAME));
   });
 
-  test('runMigrations preserves child plan rows when upgrading from schema version 9 to 10', () => {
+  test('runMigrations preserves child plan rows and migrates nested stable identifiers', () => {
     const dbPath = path.join(tempDir, DATABASE_FILENAME);
     const db = new Database(dbPath);
 
@@ -497,7 +512,14 @@ describe('tim db/database', () => {
         '[]',
         '[]',
         null,
-        null,
+        JSON.stringify([
+          {
+            severity: 'major',
+            category: 'bug',
+            content: 'Preserve this issue',
+            source: 'codex-cli',
+          },
+        ]),
         null,
         0,
         '289.plan.md',
@@ -546,7 +568,7 @@ describe('tim db/database', () => {
       const schemaVersion = db
         .query<{ version: number }, []>('SELECT version FROM schema_version')
         .get();
-      expect(schemaVersion?.version).toBe(26);
+      expect(schemaVersion?.version).toBe(27);
 
       const planColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('plan')")
@@ -558,6 +580,12 @@ describe('tim db/database', () => {
       const taskCount = db
         .query<{ count: number }, []>('SELECT count(*) AS count FROM plan_task')
         .get();
+      const migratedTask = db
+        .query<
+          { uuid: string; order_key: string; created_hlc: string | null },
+          [string]
+        >('SELECT uuid, order_key, created_hlc FROM plan_task WHERE plan_uuid = ?')
+        .get('plan-1');
       const dependencyCount = db
         .query<{ count: number }, []>('SELECT count(*) AS count FROM plan_dependency')
         .get();
@@ -573,13 +601,27 @@ describe('tim db/database', () => {
           []
         >('SELECT last_event_id FROM webhook_cursor WHERE id = 1')
         .get();
+      const planReviewIssues = db
+        .query<
+          { count: number; content: string | null; source: string | null },
+          [string]
+        >('SELECT count(*) AS count, content, source FROM plan_review_issue WHERE plan_uuid = ?')
+        .get('plan-1');
 
       expect(planCount?.count).toBe(1);
       expect(taskCount?.count).toBe(1);
+      expect(migratedTask?.uuid).toEqual(expect.any(String));
+      expect(migratedTask?.order_key).toBe('0000000000');
+      expect(migratedTask?.created_hlc).toBeNull();
       expect(dependencyCount?.count).toBe(1);
       expect(tagCount?.count).toBe(1);
       expect(planPrCount?.count).toBe(1);
       expect(webhookCursor?.last_event_id).toBe(0);
+      expect(planReviewIssues).toEqual({
+        count: 1,
+        content: 'Preserve this issue',
+        source: 'codex-cli',
+      });
     } finally {
       db.close(false);
     }
@@ -663,7 +705,7 @@ describe('tim db/database', () => {
           []
         >('SELECT version FROM schema_version ORDER BY rowid DESC LIMIT 1')
         .get();
-      expect(schemaVersion?.version).toBe(26);
+      expect(schemaVersion?.version).toBe(27);
 
       const checkRows = db
         .query<

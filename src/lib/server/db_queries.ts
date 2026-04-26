@@ -62,7 +62,9 @@ export interface ProjectWithMetadata extends Project {
 
 export interface EnrichedPlanTask {
   id: number;
+  uuid: string;
   taskIndex: number;
+  orderKey: string;
   title: string;
   description: string;
   done: boolean;
@@ -178,7 +180,9 @@ function createEmptyStatusCounts(): ProjectPlanStatusCounts {
 function toTask(task: PlanTaskRow): EnrichedPlanTask {
   return {
     id: task.id,
+    uuid: task.uuid,
     taskIndex: task.task_index,
+    orderKey: task.order_key,
     title: task.title,
     description: task.description,
     done: task.done === 1,

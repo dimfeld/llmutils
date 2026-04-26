@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite';
+import { randomUUID } from 'node:crypto';
 import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 import type { PlanSchema } from '../planSchema.js';
 
@@ -37,11 +38,16 @@ export interface PlanRow {
 
 export interface PlanTaskRow {
   id: number;
+  uuid: string;
   plan_uuid: string;
   task_index: number;
+  order_key: string;
   title: string;
   description: string;
   done: number;
+  created_hlc: string | null;
+  updated_hlc: string | null;
+  deleted_hlc: string | null;
 }
 
 export interface PlanDependencyRow {
@@ -86,6 +92,8 @@ export interface UpsertPlanInput {
   parentUuid?: string | null;
   epic?: boolean;
   tasks?: Array<{
+    uuid?: string;
+    orderKey?: string;
     title: string;
     description: string;
     done?: boolean;
@@ -108,8 +116,16 @@ function parseTimestamp(value: string | null | undefined): number | null {
 function replacePlanTasks(
   db: Database,
   planUuid: string,
-  tasks: Array<{ title: string; description: string; done?: boolean }>
+  tasks: Array<{
+    uuid?: string;
+    orderKey?: string;
+    title: string;
+    description: string;
+    done?: boolean;
+  }>
 ): void {
+  const existingTasks = getPlanTasksByUuid(db, planUuid);
+  const existingTasksByIndex = new Map(existingTasks.map((task) => [task.task_index, task]));
   db.prepare('DELETE FROM plan_task WHERE plan_uuid = ?').run(planUuid);
 
   if (tasks.length === 0) {
@@ -119,16 +135,27 @@ function replacePlanTasks(
   const insertTask = db.prepare(
     `
     INSERT INTO plan_task (
+      uuid,
       plan_uuid,
       task_index,
+      order_key,
       title,
       description,
       done
-    ) VALUES (?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
   `
   );
   tasks.forEach((task, index) => {
-    insertTask.run(planUuid, index, task.title, task.description, task.done ? 1 : 0);
+    const existingTask = existingTasksByIndex.get(index);
+    insertTask.run(
+      task.uuid ?? existingTask?.uuid ?? randomUUID(),
+      planUuid,
+      index,
+      task.orderKey ?? existingTask?.order_key ?? String(index).padStart(10, '0'),
+      task.title,
+      task.description,
+      task.done ? 1 : 0
+    );
   });
 }
 
@@ -315,12 +342,24 @@ export function upsertPlan(db: Database, projectId: number, input: UpsertPlanInp
 export function upsertPlanTasks(
   db: Database,
   planUuid: string,
-  tasks: Array<{ title: string; description: string; done?: boolean }>
+  tasks: Array<{
+    uuid?: string;
+    orderKey?: string;
+    title: string;
+    description: string;
+    done?: boolean;
+  }>
 ): void {
   const upsertTasksInTransaction = db.transaction(
     (
       nextPlanUuid: string,
-      nextTasks: Array<{ title: string; description: string; done?: boolean }>
+      nextTasks: Array<{
+        uuid?: string;
+        orderKey?: string;
+        title: string;
+        description: string;
+        done?: boolean;
+      }>
     ): void => {
       replacePlanTasks(db, nextPlanUuid, nextTasks);
     }

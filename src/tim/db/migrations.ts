@@ -1,9 +1,10 @@
 import type { Database } from 'bun:sqlite';
+import { randomUUID } from 'node:crypto';
 import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 
 interface Migration {
   version: number;
-  up: string;
+  up: string | ((db: Database) => void);
   requiresFkOff?: boolean;
 }
 
@@ -760,6 +761,170 @@ const migrations: Migration[] = [
       );
     `,
   },
+  {
+    version: 27,
+    requiresFkOff: true,
+    up: (db: Database): void => {
+      const tableExists = (tableName: string): boolean => {
+        const row = db
+          .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
+          .get(tableName);
+        return row !== null;
+      };
+
+      if (tableExists('plan_task')) {
+        db.run(`
+          CREATE TABLE plan_task_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            uuid TEXT NOT NULL UNIQUE,
+            plan_uuid TEXT NOT NULL REFERENCES plan(uuid) ON DELETE CASCADE,
+            task_index INTEGER NOT NULL,
+            order_key TEXT NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL,
+            done INTEGER NOT NULL DEFAULT 0,
+            created_hlc TEXT,
+            updated_hlc TEXT,
+            deleted_hlc TEXT,
+            UNIQUE(plan_uuid, task_index)
+          );
+        `);
+
+        const taskRows = db
+          .prepare(
+            `
+              SELECT id, plan_uuid, task_index, title, description, done
+              FROM plan_task
+              ORDER BY plan_uuid, task_index, id
+            `
+          )
+          .all() as Array<{
+          id: number;
+          plan_uuid: string;
+          task_index: number;
+          title: string;
+          description: string;
+          done: number;
+        }>;
+        const insertTask = db.prepare(
+          `
+            INSERT INTO plan_task_new (
+              id,
+              uuid,
+              plan_uuid,
+              task_index,
+              order_key,
+              title,
+              description,
+              done
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          `
+        );
+        for (const task of taskRows) {
+          insertTask.run(
+            task.id,
+            randomUUID(),
+            task.plan_uuid,
+            task.task_index,
+            String(task.task_index).padStart(10, '0'),
+            task.title,
+            task.description,
+            task.done
+          );
+        }
+        db.run('DROP TABLE plan_task');
+        db.run('ALTER TABLE plan_task_new RENAME TO plan_task');
+        db.run('CREATE INDEX idx_plan_task_plan_uuid ON plan_task(plan_uuid)');
+        db.run('CREATE INDEX idx_plan_task_order ON plan_task(plan_uuid, order_key, uuid)');
+      }
+
+      if (tableExists('plan_dependency')) {
+        db.run(
+          'CREATE INDEX IF NOT EXISTS idx_plan_dependency_uuid_edge ON plan_dependency(plan_uuid, depends_on_uuid)'
+        );
+      }
+      if (tableExists('plan_tag')) {
+        db.run(
+          'CREATE UNIQUE INDEX IF NOT EXISTS idx_plan_tag_uuid_tag ON plan_tag(plan_uuid, tag)'
+        );
+      }
+
+      db.run(`
+        CREATE TABLE plan_review_issue (
+          uuid TEXT PRIMARY KEY,
+          plan_uuid TEXT NOT NULL REFERENCES plan(uuid) ON DELETE CASCADE,
+          severity TEXT,
+          category TEXT,
+          content TEXT NOT NULL,
+          source TEXT,
+          source_ref TEXT,
+          created_hlc TEXT,
+          updated_hlc TEXT,
+          deleted_hlc TEXT,
+          created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+          updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC})
+        );
+      `);
+      db.run('CREATE INDEX idx_plan_review_issue_plan_uuid ON plan_review_issue(plan_uuid)');
+
+      const planColumns = tableExists('plan')
+        ? (db.prepare("PRAGMA table_info('plan')").all() as Array<{ name: string }>)
+        : [];
+      const hasReviewIssuesColumn = planColumns.some((column) => column.name === 'review_issues');
+      const planRows = hasReviewIssuesColumn
+        ? (db
+            .prepare('SELECT uuid, review_issues FROM plan WHERE review_issues IS NOT NULL')
+            .all() as Array<{ uuid: string; review_issues: string | null }>)
+        : [];
+      const insertIssue = db.prepare(
+        `
+          INSERT INTO plan_review_issue (
+            uuid,
+            plan_uuid,
+            severity,
+            category,
+            content,
+            source,
+            source_ref
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `
+      );
+      for (const plan of planRows) {
+        let issues: unknown;
+        try {
+          issues = JSON.parse(plan.review_issues ?? '[]');
+        } catch {
+          continue;
+        }
+        if (!Array.isArray(issues)) {
+          continue;
+        }
+        for (const issue of issues) {
+          if (!issue || typeof issue !== 'object') {
+            continue;
+          }
+          const issueRecord = issue as Record<string, unknown>;
+          const content = issueRecord.content;
+          if (typeof content !== 'string' || content.length === 0) {
+            continue;
+          }
+          insertIssue.run(
+            randomUUID(),
+            plan.uuid,
+            typeof issueRecord.severity === 'string' ? issueRecord.severity : null,
+            typeof issueRecord.category === 'string' ? issueRecord.category : null,
+            content,
+            typeof issueRecord.source === 'string' ? issueRecord.source : null,
+            typeof issueRecord.source_ref === 'string'
+              ? issueRecord.source_ref
+              : typeof issueRecord.sourceRef === 'string'
+                ? issueRecord.sourceRef
+                : null
+          );
+        }
+      }
+    },
+  },
 ];
 
 function getCurrentVersion(db: Database): number {
@@ -809,7 +974,11 @@ export function runMigrations(db: Database): void {
       db.run('PRAGMA foreign_keys = OFF');
       try {
         db.transaction(() => {
-          db.run(migration.up);
+          if (typeof migration.up === 'function') {
+            migration.up(db);
+          } else {
+            db.run(migration.up);
+          }
           persistVersion(migration.version);
         }).immediate();
       } finally {
@@ -817,7 +986,11 @@ export function runMigrations(db: Database): void {
       }
     } else {
       db.transaction(() => {
-        db.run(migration.up);
+        if (typeof migration.up === 'function') {
+          migration.up(db);
+        } else {
+          db.run(migration.up);
+        }
         persistVersion(migration.version);
       }).immediate();
     }
