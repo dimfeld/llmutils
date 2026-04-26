@@ -437,7 +437,7 @@ describe('sync op application', () => {
     expect(result.applied).toBe(0);
     expect(result.errors).toEqual([]);
     expect(result.skipped).toEqual([
-      { opId: op.op_id, reason: 'unsupported op plan:future_magic' },
+      { opId: op.op_id, reason: 'unsupported op plan:future_magic', kind: 'permanent' },
     ]);
   });
 
@@ -871,6 +871,37 @@ describe('sync op application', () => {
         .get(malformedOp.op_id) as { c: number }
     ).c;
     expect(count).toBe(1);
+  });
+
+  test('invalid JSON payload is permanently skipped and deduped', () => {
+    const badJsonOp = {
+      ...makeOp(
+        'remote-a',
+        { physicalMs: 2500, logical: 0 },
+        1,
+        'plan_task',
+        'task-bad-json',
+        'update_fields',
+        { fields: { title: 'ignored' } }
+      ),
+      payload: '{not json',
+    };
+
+    const first = applyRemoteOps(db, [badJsonOp]);
+    expect(first.errors).toEqual([]);
+    expect(first.skipped).toHaveLength(1);
+    expect(first.skipped[0]).toMatchObject({
+      opId: badJsonOp.op_id,
+      kind: 'permanent',
+    });
+
+    expect(
+      db.prepare('SELECT count(*) AS count FROM sync_op_log WHERE op_id = ?').get(badJsonOp.op_id)
+    ).toEqual({ count: 1 });
+
+    const second = applyRemoteOps(db, [badJsonOp]);
+    expect(second.errors).toEqual([]);
+    expect(second.skipped).toEqual([{ opId: badJsonOp.op_id, reason: 'already applied' }]);
   });
 
   test('plan update_fields with missing projectIdentity goes to skipped not errors', () => {

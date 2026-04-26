@@ -2,9 +2,10 @@ import type { Database } from 'bun:sqlite';
 import { timingSafeEqual } from 'node:crypto';
 
 import { getOpLogChunkAfter, setPeerCursor } from '../db/sync_schema.js';
-import { applyRemoteOps, type SyncOpRecord } from './op_apply.js';
+import type { SyncOpRecord } from './op_apply.js';
 import { getLocalNodeId, registerPeerNode } from './node_identity.js';
 import {
+  applyPeerOpsWithPending,
   runPeerSync,
   type PeerSyncOptions,
   type PeerSyncResult,
@@ -274,23 +275,24 @@ export function createPeerSyncHttpHandler(
         if (ops.length > maxPushBatch) {
           return jsonResponse({ error: 'push batch too large' }, { status: 413 });
         }
-        const applyResult = applyRemoteOps(db, ops);
-        if (applyResult.errors.length > 0) {
+        let applyResult;
+        try {
+          applyResult = applyPeerOpsWithPending(db, peerNodeId, ops);
+        } catch {
           return jsonResponse({ error: 'apply failed' }, { status: 500 });
         }
         const deferredSkips = applyResult.skipped.filter((skip) => skip.kind === 'deferred').length;
 
-        // Push advances the server's pull-from-pusher cursor only after the
-        // pushed batch is durably applied. Deferred skips are not durable
-        // because their op-log rows are rolled back for retry. Server-side pull
-        // requests never advance any server cursor.
+        // Push advances the server's pull-from-pusher cursor after deferred
+        // skips have been persisted into sync_pending_op for retry. Server-side
+        // pull requests never advance any server cursor.
         const lastPushedOp = ops.reduce<SyncOpRecord | null>((current, op) => {
           const seq = op.seq;
           if (typeof seq !== 'number' || !Number.isInteger(seq) || seq < 1) return current;
           if (!current || seq > (current.seq ?? 0)) return op;
           return current;
         }, null);
-        if (deferredSkips === 0 && lastPushedOp?.seq) {
+        if (lastPushedOp?.seq) {
           setPeerCursor(db, peerNodeId, 'pull', lastPushedOp.seq.toString(), lastPushedOp);
         }
         return jsonResponse({

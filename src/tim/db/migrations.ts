@@ -1139,6 +1139,20 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 32,
+    up: `
+      CREATE TABLE sync_pending_op (
+        peer_node_id TEXT NOT NULL REFERENCES sync_node(node_id) ON DELETE CASCADE,
+        op_id TEXT NOT NULL,
+        op_json TEXT NOT NULL,
+        first_deferred_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        retry_count INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (peer_node_id, op_id)
+      );
+      CREATE INDEX idx_sync_pending_op_peer ON sync_pending_op(peer_node_id, first_deferred_at);
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {

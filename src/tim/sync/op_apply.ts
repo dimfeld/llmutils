@@ -146,12 +146,29 @@ function hasTombstone(db: Database, entityType: string, entityId: string): boole
   return row !== null;
 }
 
-function parsePayload(op: SyncOpRecord): JsonRecord {
-  const parsed = JSON.parse(op.payload) as unknown;
+function parsePayload(op: SyncOpRecord): JsonRecord | SkippedSyncOp {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(op.payload) as unknown;
+  } catch (error) {
+    return {
+      opId: op.op_id,
+      reason: `invalid JSON payload: ${error instanceof Error ? error.message : String(error)}`,
+      kind: 'permanent',
+    };
+  }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error(`Expected object payload for sync op ${op.op_id}`);
+    return {
+      opId: op.op_id,
+      reason: 'expected object payload',
+      kind: 'permanent',
+    };
   }
   return parsed as JsonRecord;
+}
+
+function isSkippedSyncOp(value: JsonRecord | SkippedSyncOp): value is SkippedSyncOp {
+  return 'opId' in value && 'reason' in value;
 }
 
 function fieldsFromPayload(payload: JsonRecord): JsonRecord {
@@ -349,6 +366,7 @@ function allocatePlanId(db: Database, projectId: number, planIdHint: unknown): n
 
 function applyPlanCreateOrUpdate(db: Database, op: SyncOpRecord): SkippedSyncOp | null {
   const payload = parsePayload(op);
+  if (isSkippedSyncOp(payload)) return payload;
   const projectId = projectIdForIdentity(db, payload.projectIdentity);
   if (projectId === null) {
     return { opId: op.op_id, reason: 'plan op missing projectIdentity' };
@@ -425,6 +443,7 @@ function applyTaskCreateOrUpdate(db: Database, op: SyncOpRecord): SkippedSyncOp 
     return null;
   }
   const payload = parsePayload(op);
+  if (isSkippedSyncOp(payload)) return payload;
   const fields = fieldsFromPayload(payload);
   const planUuidValue = fields.plan_uuid ?? payload.planUuid;
   if (typeof planUuidValue !== 'string' || planUuidValue.length === 0) {
@@ -512,6 +531,7 @@ function applyTaskSetOrder(db: Database, op: SyncOpRecord): SkippedSyncOp | null
     return null;
   }
   const payload = parsePayload(op);
+  if (isSkippedSyncOp(payload)) return payload;
   if (typeof payload.planUuid !== 'string' || payload.planUuid.length === 0) {
     return { opId: op.op_id, reason: 'plan_task set_order op missing planUuid' };
   }
@@ -552,6 +572,7 @@ function applyReviewIssueCreateOrUpdate(db: Database, op: SyncOpRecord): Skipped
     return null;
   }
   const payload = parsePayload(op);
+  if (isSkippedSyncOp(payload)) return payload;
   const fields = fieldsFromPayload(payload);
   const planUuidValue = fields.plan_uuid ?? payload.planUuid;
   if (typeof planUuidValue !== 'string' || planUuidValue.length === 0) {
@@ -683,6 +704,7 @@ function applyEntityDelete(db: Database, op: SyncOpRecord): SkippedSyncOp | null
     ).run(hlcText, hlcText, op.entity_id, hlcText);
   } else if (op.entity_type === 'project_setting') {
     const payload = parsePayload(op);
+    if (isSkippedSyncOp(payload)) return payload;
     if (
       typeof payload.projectIdentity !== 'string' ||
       payload.projectIdentity.length === 0 ||
@@ -716,6 +738,7 @@ function applyEntityDelete(db: Database, op: SyncOpRecord): SkippedSyncOp | null
     db.prepare('DELETE FROM plan WHERE uuid = ?').run(op.entity_id);
   } else if (op.entity_type === 'plan_dependency') {
     const payload = parsePayload(op);
+    if (isSkippedSyncOp(payload)) return payload;
     insertTombstone(db, op);
     if (typeof payload.planUuid === 'string' && typeof payload.dependsOnUuid === 'string') {
       db.prepare('DELETE FROM plan_dependency WHERE plan_uuid = ? AND depends_on_uuid = ?').run(
@@ -725,6 +748,7 @@ function applyEntityDelete(db: Database, op: SyncOpRecord): SkippedSyncOp | null
     }
   } else if (op.entity_type === 'plan_tag') {
     const payload = parsePayload(op);
+    if (isSkippedSyncOp(payload)) return payload;
     insertTombstone(db, op);
     if (typeof payload.planUuid === 'string' && typeof payload.tag === 'string') {
       db.prepare('DELETE FROM plan_tag WHERE plan_uuid = ? AND tag = ?').run(
@@ -754,6 +778,7 @@ function latestAddEdge(db: Database, op: SyncOpRecord): SyncOpLogRow | null {
 
 function applyDependencyEdge(db: Database, op: SyncOpRecord): SkippedSyncOp | null {
   const payload = parsePayload(op);
+  if (isSkippedSyncOp(payload)) return payload;
   if (typeof payload.planUuid !== 'string' || typeof payload.dependsOnUuid !== 'string') {
     return { opId: op.op_id, reason: 'dependency edge op missing planUuid or dependsOnUuid' };
   }
@@ -791,6 +816,7 @@ function applyDependencyEdge(db: Database, op: SyncOpRecord): SkippedSyncOp | nu
 
 function applyTagEdge(db: Database, op: SyncOpRecord): SkippedSyncOp | null {
   const payload = parsePayload(op);
+  if (isSkippedSyncOp(payload)) return payload;
   if (typeof payload.planUuid !== 'string' || typeof payload.tag !== 'string') {
     return { opId: op.op_id, reason: 'tag edge op missing planUuid or tag' };
   }
@@ -829,6 +855,7 @@ function applyProjectSettingUpdate(db: Database, op: SyncOpRecord): SkippedSyncO
     return null;
   }
   const payload = parsePayload(op);
+  if (isSkippedSyncOp(payload)) return payload;
   const projectId = projectIdForIdentity(db, payload.projectIdentity);
   if (projectId === null || typeof payload.setting !== 'string') {
     return { opId: op.op_id, reason: 'project_setting op missing projectIdentity or setting' };
@@ -954,6 +981,7 @@ export function applyRemoteOps(db: Database, ops: SyncOpRecord[]): ApplyResult {
           return {
             opId: nextOp.op_id,
             reason: `unsupported op ${nextOp.entity_type}:${nextOp.op_type}`,
+            kind: 'permanent',
           };
         }
         const skipped = applyKnownOp(db, nextOp);
@@ -961,7 +989,7 @@ export function applyRemoteOps(db: Database, ops: SyncOpRecord[]): ApplyResult {
           throw new DeferredSkipRollback(skipped);
         }
         observeRemoteHlc(db, nextOp);
-        return skipped;
+        return skipped ? { ...skipped, kind: skipped.kind ?? 'permanent' } : null;
       });
       const skipped = applyOne.immediate(op);
       if (skipped) {

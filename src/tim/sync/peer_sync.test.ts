@@ -15,7 +15,7 @@ import { getOrCreateProject } from '../db/project.js';
 import { appendPlanTask, getPlanByUuid, upsertPlan } from '../db/plan.js';
 import { applyRemoteOps, type SyncOpRecord } from './op_apply.js';
 import { getLocalNodeId, registerPeerNode } from './node_identity.js';
-import { runPeerSync, type PeerTransport } from './peer_sync.js';
+import { applyPeerOpsWithPending, runPeerSync, type PeerTransport } from './peer_sync.js';
 import {
   createHttpPeerTransport,
   createPeerSyncHttpHandler,
@@ -29,17 +29,14 @@ function directTransport(remoteDb: Database, localNodeId: string): PeerTransport
       return getOpLogChunkAfter(remoteDb, afterSeq, limit);
     },
     async pushChunk(ops) {
-      const result = applyRemoteOps(remoteDb, ops);
-      if (result.errors.length > 0) {
-        throw new Error(result.errors[0]?.message ?? 'apply failed');
-      }
+      const result = applyPeerOpsWithPending(remoteDb, localNodeId, ops);
       const deferredSkips = result.skipped.filter((skip) => skip.kind === 'deferred').length;
       const lastPushedOp = ops.reduce<SyncOpRecord | null>((current, op) => {
         if (!Number.isInteger(op.seq) || op.seq < 1) return current;
         if (!current || op.seq > (current.seq ?? 0)) return op;
         return current;
       }, null);
-      if (deferredSkips === 0 && lastPushedOp?.seq) {
+      if (lastPushedOp?.seq) {
         setPeerCursor(remoteDb, localNodeId, 'pull', lastPushedOp.seq.toString(), lastPushedOp);
       }
       return { applied: result.applied, skipped: result.skipped.length, deferredSkips };

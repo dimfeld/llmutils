@@ -119,7 +119,7 @@ describe('worker sync bundles', () => {
     upsertPlanDependencies(workerDb, 'plan-target', ['plan-created-by-worker']);
     setProjectSetting(workerDb, workerProjectId, 'featured', false);
 
-    const ops = exportWorkerOps(workerDb);
+    const { ops } = exportWorkerOps(workerDb);
     expect(ops.length).toBeGreaterThan(0);
     expect(ops.every((op) => op.node_id === bundle.worker.nodeId)).toBe(true);
 
@@ -198,7 +198,7 @@ describe('worker sync bundles', () => {
     ]);
     upsertPlanTasks(mainDb, 'plan-target', []);
 
-    const result = applyWorkerOps(mainDb, exportWorkerOps(workerDb), {
+    const result = applyWorkerOps(mainDb, exportWorkerOps(workerDb).ops, {
       workerNodeId: bundle.worker.nodeId,
     });
     expect(result.errors).toEqual([]);
@@ -221,7 +221,7 @@ describe('worker sync bundles', () => {
       tasks: [{ uuid: 'task-existing', title: 'Existing', description: 'Do it', done: false }],
       tags: ['sync'],
     });
-    const workerOps = exportWorkerOps(workerDb);
+    const workerOps = exportWorkerOps(workerDb).ops;
     const maxWorkerPhysicalMs = Math.max(...workerOps.map((op) => op.hlc_physical_ms));
     mainDb
       .prepare('UPDATE sync_clock SET physical_ms = ?, logical = 0 WHERE id = 1')
@@ -299,7 +299,7 @@ describe('worker sync bundles', () => {
       description: 'Worker only has a tombstone',
     });
 
-    const result = applyWorkerOps(mainDb, exportWorkerOps(workerDb), {
+    const result = applyWorkerOps(mainDb, exportWorkerOps(workerDb).ops, {
       workerNodeId: bundle.worker.nodeId,
     });
     expect(result.errors).toEqual([]);
@@ -347,7 +347,7 @@ describe('worker sync bundles', () => {
       description: 'Added by worker',
     });
 
-    const result = applyWorkerOps(mainDb, exportWorkerOps(workerDb), {
+    const result = applyWorkerOps(mainDb, exportWorkerOps(workerDb).ops, {
       workerNodeId: bundle.worker.nodeId,
       final: false,
     });
@@ -367,7 +367,7 @@ describe('worker sync bundles', () => {
       title: 'Worker task',
       description: 'Added by worker',
     });
-    const ops = exportWorkerOps(workerDb);
+    const { ops } = exportWorkerOps(workerDb);
     const spoofed = ops.map((op) => ({ ...op, node_id: 'some-other-node' }));
 
     expect(() => applyWorkerOps(mainDb, spoofed, { workerNodeId: bundle.worker.nodeId })).toThrow(
@@ -379,6 +379,32 @@ describe('worker sync bundles', () => {
     expect(() => applyWorkerOps(mainDb, [], { workerNodeId: 'unknown-worker-node-id' })).toThrow(
       /No worker lease found/
     );
+  });
+
+  test('exportWorkerOps uses a worker-local checkpoint cursor', () => {
+    const bundle = exportWorkerBundle(mainDb, {
+      targetPlanUuid: 'plan-target',
+      leaseExpiresAt: '2030-01-01T00:00:00.000Z',
+    });
+    bundle.sync.highWaterSeq = 100;
+    importWorkerBundle(workerDb, bundle);
+
+    appendPlanTask(workerDb, 'plan-target', {
+      uuid: 'task-worker-cursor',
+      title: 'Worker cursor task',
+      description: 'Worker-local seq starts at one',
+    });
+
+    const firstExport = exportWorkerOps(workerDb);
+    expect(firstExport.ops.map((op) => op.entity_id)).toContain('task-worker-cursor');
+    expect(firstExport.workerHighWaterSeq).toBeGreaterThan(0);
+    expect(firstExport.workerHighWaterSeq).toBeLessThan(100);
+
+    const secondExport = exportWorkerOps(workerDb, {
+      sinceWorkerSeq: firstExport.workerHighWaterSeq,
+    });
+    expect(secondExport.ops).toEqual([]);
+    expect(secondExport.workerHighWaterSeq).toBe(firstExport.workerHighWaterSeq);
   });
 
   test('import remains idempotent when source plan_task.id differs from worker autoincrement', () => {

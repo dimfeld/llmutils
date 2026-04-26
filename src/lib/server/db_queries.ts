@@ -942,6 +942,6 @@ export function getPlanDetail(
     assignment,
     parent,
     prStatuses: withRequiredCheckRollupStates(db, prStatuses),
-    reviewIssues,
+    reviewIssues: reviewIssues.length > 0 ? reviewIssues : undefined,
   };
 }

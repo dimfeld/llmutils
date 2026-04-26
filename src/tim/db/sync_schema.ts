@@ -71,6 +71,14 @@ export interface SyncTombstoneRow {
   created_at: string;
 }
 
+export interface SyncPendingOpRow {
+  peer_node_id: string;
+  op_id: string;
+  op_json: string;
+  first_deferred_at: string;
+  retry_count: number;
+}
+
 export type WorkerLeaseStatus = 'active' | 'completed' | 'expired';
 
 export interface SyncWorkerLeaseRow {
@@ -264,6 +272,48 @@ export function setPeerCursor(
     throw new Error(`Failed to write ${direction} sync cursor for peer ${peerNodeId}`);
   }
   return row;
+}
+
+export function listPendingOps(db: Database, peerNodeId: string): SyncPendingOpRow[] {
+  return db
+    .prepare(
+      `
+        SELECT *
+        FROM sync_pending_op
+        WHERE peer_node_id = ?
+        ORDER BY first_deferred_at, op_id
+      `
+    )
+    .all(peerNodeId) as SyncPendingOpRow[];
+}
+
+export function upsertPendingOp(
+  db: Database,
+  peerNodeId: string,
+  op: Pick<SyncOpLogRow, 'op_id'>,
+  opJson: string
+): void {
+  db.prepare(
+    `
+      INSERT INTO sync_pending_op (
+        peer_node_id,
+        op_id,
+        op_json,
+        first_deferred_at,
+        retry_count
+      ) VALUES (?, ?, ?, ${SQL_NOW_ISO_UTC}, 0)
+      ON CONFLICT(peer_node_id, op_id) DO UPDATE SET
+        op_json = excluded.op_json,
+        retry_count = sync_pending_op.retry_count + 1
+    `
+  ).run(peerNodeId, op.op_id, opJson);
+}
+
+export function deletePendingOp(db: Database, peerNodeId: string, opId: string): void {
+  db.prepare('DELETE FROM sync_pending_op WHERE peer_node_id = ? AND op_id = ?').run(
+    peerNodeId,
+    opId
+  );
 }
 
 export function createWorkerLease(db: Database, input: CreateWorkerLeaseInput): SyncWorkerLeaseRow {

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import type { Database } from 'bun:sqlite';
 
 import {
@@ -26,7 +26,12 @@ import { openDatabase } from '../db/database.js';
 import { getCompactionFloorSeq } from './compaction.js';
 import { applyRemoteOps, type SyncOpRecord } from './op_apply.js';
 import { getLocalNodeId, registerPeerNode } from './node_identity.js';
-import { runPeerSync, type PeerSyncResult, type PeerTransport } from './peer_sync.js';
+import {
+  applyPeerOpsWithPending,
+  runPeerSync,
+  type PeerSyncResult,
+  type PeerTransport,
+} from './peer_sync.js';
 import {
   applyWorkerOps,
   exportWorkerBundle,
@@ -43,7 +48,7 @@ interface TestNode {
   projectId: number;
 }
 
-const nodes: TestNode[] = [];
+let nodes: TestNode[] = [];
 
 function createMainNode(name: string): TestNode {
   const db = openDatabase(':memory:');
@@ -60,16 +65,13 @@ function directTransport(remote: TestNode, local: TestNode): PeerTransport {
       return getOpLogChunkAfter(remote.db, afterSeq, limit);
     },
     async pushChunk(ops) {
-      const result = applyRemoteOps(remote.db, ops);
-      if (result.errors.length > 0) {
-        throw new Error(result.errors[0]?.message ?? 'apply failed');
-      }
+      const result = applyPeerOpsWithPending(remote.db, local.nodeId, ops);
       const deferredSkips = result.skipped.filter((skip) => skip.kind === 'deferred').length;
       const lastPushed = ops.reduce<SyncOpRecord | null>((current, op) => {
         if (!Number.isInteger(op.seq) || op.seq < 1) return current;
         return !current || op.seq > (current.seq ?? 0) ? op : current;
       }, null);
-      if (deferredSkips === 0 && lastPushed?.seq) {
+      if (lastPushed?.seq) {
         setPeerCursor(remote.db, local.nodeId, 'pull', lastPushed.seq.toString(), lastPushed);
       }
       return { applied: result.applied, skipped: result.skipped.length, deferredSkips };
@@ -233,13 +235,17 @@ function createBasePlan(node: TestNode, uuid = 'plan-shared'): void {
   });
 }
 
-afterEach(() => {
-  while (nodes.length > 0) {
-    nodes.pop()?.db.close(false);
-  }
-});
-
 describe('disconnected sync convergence', () => {
+  beforeEach(() => {
+    nodes = [];
+  });
+
+  afterEach(() => {
+    while (nodes.length > 0) {
+      nodes.pop()?.db.close(false);
+    }
+  });
+
   test('two main nodes create distinct plans while disconnected and converge', async () => {
     const a = createMainNode('A');
     const b = createMainNode('B');
@@ -524,6 +530,61 @@ describe('disconnected sync convergence', () => {
     ).toEqual({ op_id: earlySetOrder!.op_id });
   });
 
+  test('peer sync persists cross-chunk deferred skips and retries after later chunks', async () => {
+    const a = createMainNode('A');
+    const b = createMainNode('B');
+    upsertPlan(a.db, a.projectId, { uuid: 'plan-cross-chunk', planId: 1, title: 'Cross chunk' });
+    await bidirectionalSync(a, b);
+
+    appendPlanTask(b.db, 'plan-cross-chunk', {
+      uuid: 'task-cross-chunk',
+      title: 'Cross chunk task',
+      description: 'Created after reordered op',
+    });
+    upsertPlanTasks(b.db, 'plan-cross-chunk', [
+      {
+        uuid: 'task-cross-chunk',
+        orderKey: '0000000099',
+        title: 'Cross chunk task',
+        description: 'Created after reordered op',
+        done: false,
+      },
+    ]);
+    const createOp = opsFor(b.db, 'plan_task', 'task-cross-chunk').find(
+      (op) => op.op_type === 'create'
+    );
+    const setOrderOp = opsFor(b.db, 'plan_task', 'task-cross-chunk').find(
+      (op) => op.op_type === 'set_order'
+    );
+    expect(createOp?.seq).toBeGreaterThan(0);
+    expect(setOrderOp?.seq).toBeGreaterThan(createOp!.seq!);
+
+    b.db.prepare('UPDATE sync_op_log SET seq = -1 WHERE op_id = ?').run(createOp!.op_id);
+    b.db.prepare('UPDATE sync_op_log SET seq = ? WHERE op_id = ?').run(
+      createOp!.seq!,
+      setOrderOp!.op_id
+    );
+    b.db.prepare('UPDATE sync_op_log SET seq = ? WHERE op_id = ?').run(
+      setOrderOp!.seq!,
+      createOp!.op_id
+    );
+
+    const result = await runPeerSync(a.db, b.nodeId, directTransport(b, a), { batchSize: 1 });
+    expect(result.pullChunks).toBeGreaterThanOrEqual(2);
+    expect(result.pulledOps).toBeGreaterThanOrEqual(2);
+    expect(
+      a.db
+        .prepare('SELECT count(*) AS count FROM sync_pending_op WHERE peer_node_id = ?')
+        .get(b.nodeId)
+    ).toEqual({ count: 0 });
+    expect(
+      getPlanTasksByUuid(a.db, 'plan-cross-chunk').map((task) => ({
+        uuid: task.uuid,
+        orderKey: task.order_key,
+      }))
+    ).toEqual([{ uuid: 'task-cross-chunk', orderKey: '0000000099' }]);
+  });
+
   test('unresolved deferred set_order stays retryable without side effects', () => {
     const a = createMainNode('A');
     upsertPlan(a.db, a.projectId, { uuid: 'plan-missing-task', planId: 1, title: 'Plan exists' });
@@ -593,7 +654,7 @@ describe('disconnected sync convergence', () => {
       status: 'pending',
     });
 
-    const applyResult = applyWorkerOps(a.db, exportWorkerOps(worker.db), {
+    const applyResult = applyWorkerOps(a.db, exportWorkerOps(worker.db).ops, {
       workerNodeId: bundle.worker.nodeId,
       final: true,
     });
@@ -629,7 +690,7 @@ describe('disconnected sync convergence', () => {
       status: 'in_progress',
     });
     const firstBatch = exportWorkerOps(worker.db);
-    const heartbeatResult = applyWorkerOps(a.db, firstBatch, {
+    const heartbeatResult = applyWorkerOps(a.db, firstBatch.ops, {
       workerNodeId: bundle.worker.nodeId,
       final: false,
     });
@@ -642,7 +703,7 @@ describe('disconnected sync convergence', () => {
       description: 'Second batch',
     });
     const replayedBatch = exportWorkerOps(worker.db);
-    const finalResult = applyWorkerOps(a.db, replayedBatch, {
+    const finalResult = applyWorkerOps(a.db, replayedBatch.ops, {
       workerNodeId: bundle.worker.nodeId,
       final: true,
     });
@@ -678,5 +739,14 @@ describe('disconnected sync convergence', () => {
     expect(floor).toBeLessThanOrEqual(pushedToB);
     expect(floor).toBeLessThanOrEqual(leaseHighWater!);
     expect(getWorkerLease(a.db, bundle.worker.nodeId)?.status).toBe('active');
+
+    const completed = applyWorkerOps(a.db, [], {
+      workerNodeId: bundle.worker.nodeId,
+      final: true,
+    });
+    expect(completed.errors).toEqual([]);
+    expect(getWorkerLease(a.db, bundle.worker.nodeId)?.status).toBe('completed');
+    expect(getCompactionFloorSeq(a.db)).toBe(pushedToB);
+    expect(getCompactionFloorSeq(a.db)).toBeGreaterThanOrEqual(leaseHighWater!);
   });
 });

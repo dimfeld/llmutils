@@ -72,7 +72,12 @@ export interface ExportWorkerBundleOptions {
 }
 
 export interface ExportWorkerOpsOptions {
-  sinceSeq?: number | null;
+  sinceWorkerSeq?: number | null;
+}
+
+export interface ExportWorkerOpsResult {
+  ops: SyncOpRecord[];
+  workerHighWaterSeq: number | null;
 }
 
 export interface ApplyWorkerOpsOptions {
@@ -1004,21 +1009,28 @@ export function importWorkerBundle(db: Database, bundle: WorkerBundle): void {
 export function exportWorkerOps(
   db: Database,
   options: ExportWorkerOpsOptions = {}
-): SyncOpRecord[] {
+): ExportWorkerOpsResult {
   const localNode = getLocalNode(db);
   if (!localNode) {
     throw new Error('Cannot export worker ops without a local sync node');
   }
-  const sinceSeq = options.sinceSeq ?? null;
+  const sinceWorkerSeq = options.sinceWorkerSeq ?? null;
   const rows =
-    sinceSeq === null
+    sinceWorkerSeq === null
       ? db
           .prepare('SELECT * FROM sync_op_log WHERE node_id = ? ORDER BY seq')
           .all(localNode.node_id)
       : db
           .prepare('SELECT * FROM sync_op_log WHERE node_id = ? AND seq > ? ORDER BY seq')
-          .all(localNode.node_id, sinceSeq);
-  return rows as SyncOpRecord[];
+          .all(localNode.node_id, sinceWorkerSeq);
+  const ops = rows as SyncOpRecord[];
+  const highWater = db
+    .prepare('SELECT MAX(seq) AS seq FROM sync_op_log WHERE node_id = ?')
+    .get(localNode.node_id) as { seq: number | null };
+  return {
+    ops,
+    workerHighWaterSeq: highWater.seq ?? null,
+  };
 }
 
 export function applyWorkerOps(
