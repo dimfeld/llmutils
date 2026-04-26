@@ -98,4 +98,61 @@ describe('tim sync/hlc', () => {
       localCounter: 42,
     });
   });
+
+  test('formatOpId and parseOpId round trip with a full UUID node id', () => {
+    const hlc = { physicalMs: 9999999999999, logical: 123 };
+    const nodeId = '123e4567-e89b-12d3-a456-426614174000';
+    const opId = formatOpId(hlc, nodeId, 1);
+
+    const parsed = parseOpId(opId);
+    expect(parsed.nodeId).toBe(nodeId);
+    expect(parsed.hlc).toEqual(hlc);
+    expect(parsed.localCounter).toBe(1);
+  });
+
+  test('tick increments logical (not physical) when called within the same millisecond', () => {
+    const generator = new HlcGenerator(db, 'node-a');
+
+    const first = generator.tick(5000);
+    const second = generator.tick(5000);
+    const third = generator.tick(5000);
+
+    expect(first.hlc).toEqual({ physicalMs: 5000, logical: 0 });
+    expect(second.hlc).toEqual({ physicalMs: 5000, logical: 1 });
+    expect(third.hlc).toEqual({ physicalMs: 5000, logical: 2 });
+    // physical never changes; only logical increments
+    expect(second.hlc.physicalMs).toBe(first.hlc.physicalMs);
+  });
+
+  test('observe is a no-op when the remote HLC is behind local', () => {
+    const generator = new HlcGenerator(db, 'node-a');
+
+    generator.tick(2000);
+    const before = getOrCreateClockRow(db);
+
+    // remote is older than the local clock
+    generator.observe({ physicalMs: 500, logical: 0 }, 2000);
+
+    const after = getOrCreateClockRow(db);
+    // physical and logical should not regress; local_counter is not changed by observe
+    expect(after.physical_ms).toBeGreaterThanOrEqual(before.physical_ms);
+    expect(after.logical).toBeGreaterThanOrEqual(before.logical);
+  });
+
+  test('HlcGenerator persists state so a new instance picks up from where the prior left off', () => {
+    const generatorA = new HlcGenerator(db, 'node-a');
+    const last = generatorA.tick(3000);
+
+    // Create a fresh generator backed by the same DB
+    const generatorB = new HlcGenerator(db, 'node-a');
+    const next = generatorB.tick(3000);
+
+    // localCounter must continue from where generatorA left off
+    expect(next.localCounter).toBe(last.localCounter + 1);
+    // HLC must be strictly greater
+    expect(
+      next.hlc.physicalMs > last.hlc.physicalMs ||
+        (next.hlc.physicalMs === last.hlc.physicalMs && next.hlc.logical > last.hlc.logical)
+    ).toBe(true);
+  });
 });

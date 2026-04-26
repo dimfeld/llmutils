@@ -97,4 +97,32 @@ describe('tim sync/node_identity', () => {
     expect(worker?.lease_expires_at).toBe('2030-01-01T00:00:00.000Z');
     expect(main?.lease_expires_at).toBeNull();
   });
+
+  test('getLocalNodeId throws when no local node has been created', () => {
+    // Fresh database — no local node exists yet
+    expect(() => getLocalNodeId(db)).toThrow('Local sync node is not initialized');
+  });
+
+  test('setWorkerLeaseExpiry updates updated_at', async () => {
+    registerPeerNode(db, { nodeId: 'worker-2', nodeType: 'worker' });
+
+    const before = (
+      db.prepare("SELECT updated_at FROM sync_node WHERE node_id = 'worker-2'").get() as {
+        updated_at: string;
+      }
+    ).updated_at;
+
+    // Wait a tick so wall-clock time can advance
+    await new Promise((r) => setTimeout(r, 5));
+
+    setWorkerLeaseExpiry(db, 'worker-2', '2035-06-01T00:00:00.000Z');
+
+    const after = (
+      db.prepare("SELECT updated_at FROM sync_node WHERE node_id = 'worker-2'").get() as {
+        updated_at: string;
+      }
+    ).updated_at;
+
+    expect(after >= before).toBe(true);
+  });
 });

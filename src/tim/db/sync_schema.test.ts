@@ -96,4 +96,29 @@ describe('tim db/sync_schema migration', () => {
       .get() as { count: number };
     expect(count.count).toBe(0);
   });
+
+  test('sync_op_log has the expected indexes', () => {
+    const indexes = db
+      .prepare("PRAGMA index_list('sync_op_log')")
+      .all() as Array<{ name: string; unique: number }>;
+
+    const indexNames = indexes.map((idx) => idx.name).sort();
+
+    expect(indexNames).toContain('idx_sync_op_log_order');
+    expect(indexNames).toContain('idx_sync_op_log_entity');
+    expect(indexNames).toContain('idx_sync_op_log_origin');
+  });
+
+  test('sync_clock CHECK constraint rejects id != 1', () => {
+    expect(() =>
+      db
+        .prepare(
+          `
+            INSERT INTO sync_clock (id, physical_ms, logical, local_counter, updated_at)
+            VALUES (2, 0, 0, 0, datetime('now'))
+          `
+        )
+        .run()
+    ).toThrow();
+  });
 });
