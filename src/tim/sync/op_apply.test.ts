@@ -1105,6 +1105,72 @@ describe('sync op application', () => {
     ).toEqual({ count: 0 });
   });
 
+  test('deferred high-HLC set_order advances local clock so later local task order wins on retry', () => {
+    const projectId = getOrCreateProject(db, 'github.com__owner__repo').id;
+    upsertPlan(db, projectId, { uuid: 'plan-deferred-hlc-order', planId: 97 });
+
+    const remotePhysical = Date.now() + 120_000;
+    const deferredSetOrder = makeOp(
+      'remote-hlc',
+      { physicalMs: remotePhysical, logical: 0 },
+      1,
+      'plan_task',
+      'task-deferred-hlc',
+      'set_order',
+      { planUuid: 'plan-deferred-hlc-order', orderKey: '0000000099', taskIndex: 99 }
+    );
+
+    const deferResult = applyRemoteOps(db, [deferredSetOrder]);
+    expect(deferResult.errors).toEqual([]);
+    expect(deferResult.skipped).toEqual([
+      {
+        opId: deferredSetOrder.op_id,
+        reason: 'plan_task set_order arrived before task task-deferred-hlc create',
+        kind: 'deferred',
+      },
+    ]);
+
+    const observedClock = db
+      .prepare('SELECT physical_ms, logical FROM sync_clock WHERE id = 1')
+      .get() as { physical_ms: number; logical: number };
+    expect(observedClock).toEqual({ physical_ms: remotePhysical, logical: 1 });
+
+    upsertPlan(db, projectId, {
+      uuid: 'plan-deferred-hlc-order',
+      planId: 97,
+      tasks: [
+        {
+          uuid: 'task-deferred-hlc',
+          orderKey: '0000000000',
+          title: 'Local task',
+          description: 'Created after deferred remote op',
+          done: false,
+        },
+      ],
+    });
+
+    const localOrderClock = db
+      .prepare(
+        'SELECT hlc_physical_ms, hlc_logical FROM sync_field_clock WHERE entity_type = ? AND entity_id = ? AND field_name = ?'
+      )
+      .get('plan_task', 'task-deferred-hlc', 'order_key') as {
+      hlc_physical_ms: number;
+      hlc_logical: number;
+    };
+    expect(localOrderClock.hlc_physical_ms).toBe(remotePhysical);
+    expect(localOrderClock.hlc_logical).toBeGreaterThan(0);
+
+    const retryResult = applyRemoteOps(db, [deferredSetOrder]);
+    expect(retryResult.errors).toEqual([]);
+    expect(retryResult.skipped).toEqual([]);
+    expect(retryResult.applied).toBe(1);
+
+    const task = db
+      .prepare('SELECT order_key, task_index FROM plan_task WHERE uuid = ?')
+      .get('task-deferred-hlc') as { order_key: string; task_index: number };
+    expect(task).toEqual({ order_key: '0000000000', task_index: 0 });
+  });
+
   test('add_edge with missing payload fields routes to skipped without throwing', () => {
     const projectId = getOrCreateProject(db, 'github.com__owner__repo').id;
     upsertPlan(db, projectId, { uuid: 'plan-bad-edge', planId: 91 });
