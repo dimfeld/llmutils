@@ -828,10 +828,14 @@ export function getPlanTagsByProject(db: Database, projectId: number): PlanTagRo
 
 export function deletePlan(db: Database, uuid: string): boolean {
   const deleteInTransaction = db.transaction((planUuid: string): boolean => {
-    const result = db.prepare('DELETE FROM plan WHERE uuid = ?').run(planUuid);
-    if (result.changes > 0) {
-      emitPlanDelete(db, planUuid);
+    const existing = db.prepare('SELECT uuid FROM plan WHERE uuid = ?').get(planUuid) as
+      | { uuid: string }
+      | null;
+    if (!existing) {
+      return false;
     }
+    emitPlanDelete(db, planUuid);
+    const result = db.prepare('DELETE FROM plan WHERE uuid = ?').run(planUuid);
     return result.changes > 0;
   });
   return deleteInTransaction.immediate(uuid);

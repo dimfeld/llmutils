@@ -3,7 +3,7 @@ import type { Database } from 'bun:sqlite';
 import { getProjectById } from '../db/project.js';
 import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
 import { ensureLocalNode } from '../db/sync_schema.js';
-import { formatHlc, HlcGenerator, type Hlc } from './hlc.js';
+import { formatHlc, formatOpId, HlcGenerator, type Hlc } from './hlc.js';
 
 export type SyncEntityType =
   | 'plan'
@@ -34,7 +34,7 @@ export function getProjectSyncIdentity(db: Database, projectId: number): string 
 
 const generatorCache = new WeakMap<Database, { nodeId: string; generator: HlcGenerator }>();
 
-function getLocalGenerator(db: Database): { nodeId: string; generator: HlcGenerator } {
+export function getLocalGenerator(db: Database): { nodeId: string; generator: HlcGenerator } {
   const cached = generatorCache.get(db);
   if (cached) return cached;
   const localNode = ensureLocalNode(db);
@@ -51,6 +51,19 @@ function tickLocal(db: Database): EmittedSyncOperation {
     hlcText: formatHlc(tick.hlc),
     nodeId,
     opId: tick.opId,
+    localCounter: tick.localCounter,
+  };
+}
+
+function tickLocalWithHlc(db: Database, hlc: Hlc): EmittedSyncOperation {
+  const { nodeId } = getLocalGenerator(db);
+  const tick = tickLocal(db);
+  const hlcText = formatHlc(hlc);
+  return {
+    hlc,
+    hlcText,
+    nodeId,
+    opId: formatOpId(hlc, nodeId, tick.localCounter),
     localCounter: tick.localCounter,
   };
 }
@@ -264,6 +277,49 @@ export function emitPlanDelete(db: Database, planUuid: string): EmittedSyncOpera
   const emitted = tickLocal(db);
   insertOp(db, emitted, 'plan', planUuid, 'delete', {});
   insertTombstone(db, emitted, 'plan', planUuid);
+
+  const emitChild = (
+    entityType: SyncEntityType,
+    entityId: string,
+    payload: JsonValue
+  ): EmittedSyncOperation => {
+    const child = tickLocalWithHlc(db, emitted.hlc);
+    insertOp(db, child, entityType, entityId, 'delete', payload);
+    insertTombstone(db, child, entityType, entityId);
+    return child;
+  };
+
+  const tasks = db
+    .prepare('SELECT uuid FROM plan_task WHERE plan_uuid = ? AND deleted_hlc IS NULL')
+    .all(planUuid) as Array<{ uuid: string }>;
+  for (const task of tasks) {
+    emitChild('plan_task', task.uuid, { planUuid });
+  }
+
+  const reviewIssues = db
+    .prepare('SELECT uuid FROM plan_review_issue WHERE plan_uuid = ? AND deleted_hlc IS NULL')
+    .all(planUuid) as Array<{ uuid: string }>;
+  for (const issue of reviewIssues) {
+    emitChild('plan_review_issue', issue.uuid, { planUuid });
+  }
+
+  const dependencies = db
+    .prepare('SELECT depends_on_uuid FROM plan_dependency WHERE plan_uuid = ?')
+    .all(planUuid) as Array<{ depends_on_uuid: string }>;
+  for (const dependency of dependencies) {
+    emitChild('plan_dependency', `${planUuid}->${dependency.depends_on_uuid}`, {
+      planUuid,
+      dependsOnUuid: dependency.depends_on_uuid,
+    });
+  }
+
+  const tags = db.prepare('SELECT tag FROM plan_tag WHERE plan_uuid = ?').all(planUuid) as Array<{
+    tag: string;
+  }>;
+  for (const tag of tags) {
+    emitChild('plan_tag', `${planUuid}#${tag.tag}`, { planUuid, tag: tag.tag });
+  }
+
   return emitted;
 }
 

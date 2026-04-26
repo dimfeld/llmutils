@@ -10,6 +10,7 @@ import {
   getPlanDependenciesByUuid,
   getPlanTagsByUuid,
   getPlanTasksByUuid,
+  deletePlan,
   upsertPlan,
   upsertPlanDependencies,
 } from '../db/plan.js';
@@ -177,6 +178,100 @@ describe('sync op application', () => {
       .get('task-gone') as { title: string; deleted_hlc: string | null };
     expect(row.title).toBe('Original');
     expect(row.deleted_hlc).toBe(formatHlc({ physicalMs: 3000, logical: 0 }));
+  });
+
+  test('plan delete tombstones children so stale child ops are no-ops on both peers', async () => {
+    const otherDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-sync-op-apply-delete-peer-'));
+    const source = openDatabase(path.join(otherDir, DATABASE_FILENAME));
+    try {
+      const projectId = getOrCreateProject(source, 'github.com__owner__repo').id;
+      upsertPlan(source, projectId, {
+        uuid: 'plan-delete-wall',
+        planId: 50,
+        tasks: [
+          {
+            uuid: 'task-delete-wall',
+            title: 'Original',
+            description: 'Before delete',
+            done: false,
+          },
+        ],
+        tags: ['sync'],
+      });
+      const staleTaskUpdate = makeOp(
+        'remote-stale',
+        { physicalMs: 1000, logical: 0 },
+        1,
+        'plan_task',
+        'task-delete-wall',
+        'update_fields',
+        {
+          planUuid: 'plan-delete-wall',
+          fields: { title: 'Stale title' },
+        }
+      );
+
+      expect(deletePlan(source, 'plan-delete-wall')).toBe(true);
+      expect(applyRemoteOps(source, [staleTaskUpdate]).errors).toEqual([]);
+      expect(getPlanByUuid(source, 'plan-delete-wall')).toBeNull();
+      expect(
+        source
+          .prepare(
+            'SELECT count(*) AS count FROM sync_tombstone WHERE entity_type = ? AND entity_id = ?'
+          )
+          .get('plan_task', 'task-delete-wall')
+      ).toEqual({ count: 1 });
+
+      const result = applyRemoteOps(db, opRows(source));
+      expect(result.errors).toEqual([]);
+      expect(getPlanByUuid(db, 'plan-delete-wall')).toBeNull();
+      expect(
+        db
+          .prepare(
+            'SELECT count(*) AS count FROM sync_tombstone WHERE entity_type = ? AND entity_id = ?'
+          )
+          .get('plan_task', 'task-delete-wall')
+      ).toEqual({ count: 1 });
+
+      const staleResult = applyRemoteOps(db, [staleTaskUpdate]);
+      expect(staleResult.errors).toEqual([]);
+      expect(getPlanTasksByUuid(db, 'plan-delete-wall')).toEqual([]);
+    } finally {
+      source.close(false);
+      await fs.rm(otherDir, { recursive: true, force: true });
+    }
+  });
+
+  test('deleted plan is not resurrected by a higher-HLC create op', () => {
+    const projectId = getOrCreateProject(db, 'github.com__owner__repo').id;
+    upsertPlan(db, projectId, { uuid: 'plan-no-resurrect', planId: 51, title: 'Gone' });
+
+    const deleteOp = makeOp(
+      'remote-a',
+      { physicalMs: 2000, logical: 0 },
+      1,
+      'plan',
+      'plan-no-resurrect',
+      'delete',
+      {}
+    );
+    const higherCreate = makeOp(
+      'remote-b',
+      { physicalMs: 3000, logical: 0 },
+      1,
+      'plan',
+      'plan-no-resurrect',
+      'create',
+      {
+        projectIdentity: 'github.com__owner__repo',
+        planIdHint: 51,
+        fields: { title: 'Back again', status: 'pending' },
+      }
+    );
+
+    expect(applyRemoteOps(db, [deleteOp]).errors).toEqual([]);
+    expect(applyRemoteOps(db, [higherCreate]).errors).toEqual([]);
+    expect(getPlanByUuid(db, 'plan-no-resurrect')).toBeNull();
   });
 
   test('remove-wins edge clocks control dependency and tag presence', () => {
@@ -372,7 +467,7 @@ describe('sync op application', () => {
     expect(clock.logical).toBe(8);
   });
 
-  test('set_order op changes order_key and task_index but not title or description', () => {
+  test('set_order op changes order_key and derived task_index but not title or description', () => {
     const projectId = getOrCreateProject(db, 'github.com__owner__repo').id;
     upsertPlan(db, projectId, {
       uuid: 'plan-setorder',
@@ -403,9 +498,53 @@ describe('sync op application', () => {
         task_index: number;
       };
     expect(row.order_key).toBe('0000000099');
-    expect(row.task_index).toBe(99);
+    expect(row.task_index).toBe(0);
     expect(row.title).toBe('Keep title');
     expect(row.description).toBe('Keep desc');
+  });
+
+  test('set_order swap applies without violating task_index uniqueness', () => {
+    const projectId = getOrCreateProject(db, 'github.com__owner__repo').id;
+    upsertPlan(db, projectId, {
+      uuid: 'plan-swap-order',
+      planId: 11,
+      tasks: [
+        { uuid: 'task-first', title: 'First', description: 'A', done: false },
+        { uuid: 'task-second', title: 'Second', description: 'B', done: false },
+      ],
+    });
+
+    const moveFirstAfter = makeOp(
+      'remote-a',
+      { physicalMs: Date.now() + 10_000, logical: 0 },
+      1,
+      'plan_task',
+      'task-first',
+      'set_order',
+      { planUuid: 'plan-swap-order', orderKey: '0000000001', taskIndex: 1 }
+    );
+    const moveSecondBefore = makeOp(
+      'remote-a',
+      { physicalMs: Date.now() + 10_001, logical: 0 },
+      2,
+      'plan_task',
+      'task-second',
+      'set_order',
+      { planUuid: 'plan-swap-order', orderKey: '0000000000', taskIndex: 0 }
+    );
+
+    const result = applyRemoteOps(db, [moveFirstAfter, moveSecondBefore]);
+    expect(result.errors).toEqual([]);
+    expect(
+      db
+        .prepare(
+          'SELECT uuid, task_index, order_key FROM plan_task WHERE plan_uuid = ? ORDER BY task_index'
+        )
+        .all('plan-swap-order')
+    ).toEqual([
+      { uuid: 'task-second', task_index: 0, order_key: '0000000000' },
+      { uuid: 'task-first', task_index: 1, order_key: '0000000001' },
+    ]);
   });
 
   test('planIdHint collision assigns a fresh numeric id', () => {
@@ -554,5 +693,272 @@ describe('sync op application', () => {
 
     expect(applyRemoteOps(db, [deleteOp]).errors).toEqual([]);
     expect(getPlanByUuid(db, 'plan-to-delete')).toBeNull();
+  });
+
+  test('plan delete + stale child op does not resurrect deleted task', () => {
+    const projectId = getOrCreateProject(db, 'github.com__owner__repo').id;
+    upsertPlan(db, projectId, {
+      uuid: 'plan-cascade-res',
+      planId: 50,
+      tasks: [{ uuid: 'task-cascade-res', title: 'Original', description: 'Desc', done: false }],
+    });
+
+    // Capture a stale update op at T0 before the plan is deleted
+    const staleUpdate = makeOp(
+      'remote-b',
+      { physicalMs: 1000, logical: 0 },
+      1,
+      'plan_task',
+      'task-cascade-res',
+      'update_fields',
+      {
+        planUuid: 'plan-cascade-res',
+        fields: { title: 'Stale resurrection attempt' },
+      }
+    );
+
+    // Delete the plan locally at T1 (higher HLC) via deletePlan — tombstones children
+    deletePlan(db, 'plan-cascade-res');
+
+    // Plan and task should be gone
+    expect(getPlanByUuid(db, 'plan-cascade-res')).toBeNull();
+    expect(getPlanTasksByUuid(db, 'plan-cascade-res')).toEqual([]);
+
+    // Apply the stale T0 task update — must be skipped due to tombstone wall
+    const result = applyRemoteOps(db, [staleUpdate]);
+    expect(result.errors).toEqual([]);
+
+    // Task must remain absent
+    const taskRow = db
+      .prepare('SELECT title, deleted_hlc FROM plan_task WHERE uuid = ?')
+      .get('task-cascade-res') as { title: string; deleted_hlc: string | null } | null;
+    // Task row may exist with deleted_hlc set (tombstoned) but must not have updated title
+    if (taskRow) {
+      expect(taskRow.deleted_hlc).not.toBeNull();
+      expect(taskRow.title).toBe('Original');
+    }
+  });
+
+  test('plan tombstone is absolute: higher-HLC create does not resurrect deleted plan', () => {
+    const projectId = getOrCreateProject(db, 'github.com__owner__repo').id;
+    upsertPlan(db, projectId, { uuid: 'plan-no-resurrect', planId: 51 });
+
+    // Delete the plan via a remote op at T1
+    const deleteOp = makeOp(
+      'remote-a',
+      { physicalMs: 5000, logical: 0 },
+      1,
+      'plan',
+      'plan-no-resurrect',
+      'delete',
+      {}
+    );
+    expect(applyRemoteOps(db, [deleteOp]).errors).toEqual([]);
+    expect(getPlanByUuid(db, 'plan-no-resurrect')).toBeNull();
+
+    // Receive a create op at T2 > T1 from another node
+    const lateCreate = makeOp(
+      'remote-b',
+      { physicalMs: 9000, logical: 0 },
+      1,
+      'plan',
+      'plan-no-resurrect',
+      'create',
+      {
+        projectIdentity: 'github.com__owner__repo',
+        planIdHint: 51,
+        fields: { title: 'Resurrected — should not appear' },
+      }
+    );
+    const result = applyRemoteOps(db, [lateCreate]);
+    expect(result.errors).toEqual([]);
+
+    // Plan must NOT be resurrected
+    const count = (
+      db
+        .prepare('SELECT count(*) AS c FROM plan WHERE uuid = ?')
+        .get('plan-no-resurrect') as { c: number }
+    ).c;
+    expect(count).toBe(0);
+  });
+
+  test('reorder swap applies without UNIQUE violation and re-derives task_index', () => {
+    const projectId = getOrCreateProject(db, 'github.com__owner__repo').id;
+    upsertPlan(db, projectId, {
+      uuid: 'plan-swap',
+      planId: 60,
+      tasks: [
+        { uuid: 'task-swap-a', title: 'Task A', description: '', done: false },
+        { uuid: 'task-swap-b', title: 'Task B', description: '', done: false },
+      ],
+    });
+
+    // Confirm initial state: A before B
+    const before = db
+      .prepare(
+        'SELECT uuid, order_key, task_index FROM plan_task WHERE plan_uuid = ? ORDER BY task_index'
+      )
+      .all('plan-swap') as Array<{ uuid: string; order_key: string; task_index: number }>;
+    expect(before[0]!.uuid).toBe('task-swap-a');
+    expect(before[1]!.uuid).toBe('task-swap-b');
+    const aOrderKey = before[0]!.order_key;
+    const bOrderKey = before[1]!.order_key;
+
+    // Apply two set_order ops to swap order_keys
+    const swapA = makeOp(
+      'remote-a',
+      { physicalMs: Date.now() + 10_000, logical: 0 },
+      1,
+      'plan_task',
+      'task-swap-a',
+      'set_order',
+      { planUuid: 'plan-swap', orderKey: bOrderKey }
+    );
+    const swapB = makeOp(
+      'remote-a',
+      { physicalMs: Date.now() + 10_000, logical: 1 },
+      2,
+      'plan_task',
+      'task-swap-b',
+      'set_order',
+      { planUuid: 'plan-swap', orderKey: aOrderKey }
+    );
+
+    const result = applyRemoteOps(db, [swapA, swapB]);
+    expect(result.errors).toEqual([]);
+    expect(result.applied).toBe(2);
+
+    const rowA = db
+      .prepare('SELECT order_key, task_index FROM plan_task WHERE uuid = ?')
+      .get('task-swap-a') as { order_key: string; task_index: number };
+    const rowB = db
+      .prepare('SELECT order_key, task_index FROM plan_task WHERE uuid = ?')
+      .get('task-swap-b') as { order_key: string; task_index: number };
+
+    // order_keys should be swapped
+    expect(rowA.order_key).toBe(bOrderKey);
+    expect(rowB.order_key).toBe(aOrderKey);
+
+    // task_index is re-derived from new order_key order: B now has lower order_key, so index 0
+    expect(rowB.task_index).toBe(0);
+    expect(rowA.task_index).toBe(1);
+  });
+
+  test('malformed plan_task op is deduped: only one op_log row even on re-apply', () => {
+    const malformedOp = makeOp(
+      'remote-a',
+      { physicalMs: 2000, logical: 0 },
+      1,
+      'plan_task',
+      'task-malformed',
+      'update_fields',
+      {
+        // plan_uuid intentionally omitted
+        fields: { title: 'should not land' },
+      }
+    );
+
+    const first = applyRemoteOps(db, [malformedOp]);
+    expect(first.errors).toEqual([]);
+    expect(first.skipped).toHaveLength(1);
+    expect(first.skipped[0]!.reason).toContain('plan_uuid');
+
+    const second = applyRemoteOps(db, [malformedOp]);
+    expect(second.errors).toEqual([]);
+    // Second apply is deduped as 'already applied'
+    expect(second.skipped).toHaveLength(1);
+    expect(second.skipped[0]!.reason).toBe('already applied');
+
+    const count = (
+      db
+        .prepare('SELECT count(*) AS c FROM sync_op_log WHERE op_id = ?')
+        .get(malformedOp.op_id) as { c: number }
+    ).c;
+    expect(count).toBe(1);
+  });
+
+  test('plan update_fields with missing projectIdentity goes to skipped not errors', () => {
+    const badOp = makeOp(
+      'remote-a',
+      { physicalMs: 3000, logical: 0 },
+      1,
+      'plan',
+      'plan-no-identity',
+      'update_fields',
+      {
+        // projectIdentity intentionally omitted
+        planIdHint: 99,
+        fields: { title: 'should be skipped' },
+      }
+    );
+
+    const result = applyRemoteOps(db, [badOp]);
+    expect(result.errors).toEqual([]);
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0]!.reason).toContain('projectIdentity');
+
+    // op_log row must still be persisted for dedup
+    const count = (
+      db
+        .prepare('SELECT count(*) AS c FROM sync_op_log WHERE op_id = ?')
+        .get(badOp.op_id) as { c: number }
+    ).c;
+    expect(count).toBe(1);
+  });
+
+  test('remote plan delete op cascades tombstones to all child entity types', () => {
+    const projectId = getOrCreateProject(db, 'github.com__owner__repo').id;
+    upsertPlan(db, projectId, { uuid: 'plan-dep-src', planId: 70 });
+    upsertPlan(db, projectId, {
+      uuid: 'plan-cascade-all',
+      planId: 71,
+      tasks: [{ uuid: 'task-cascade-all', title: 'T', description: '', done: false }],
+      dependencyUuids: ['plan-dep-src'],
+      tags: ['mytag'],
+    });
+
+    // Add a review issue and capture its UUID BEFORE the delete op
+    const issue = createReviewIssue(db, {
+      planUuid: 'plan-cascade-all',
+      content: 'Issue to cascade',
+      severity: 'minor',
+      category: 'quality',
+    });
+    const issueUuid = issue.uuid;
+
+    // Apply a remote delete plan op
+    const deleteOp = makeOp(
+      'remote-a',
+      { physicalMs: 8000, logical: 0 },
+      1,
+      'plan',
+      'plan-cascade-all',
+      'delete',
+      {}
+    );
+    const result = applyRemoteOps(db, [deleteOp]);
+    expect(result.errors).toEqual([]);
+
+    function hasSyncTombstone(entityType: string, entityId: string): boolean {
+      const row = db
+        .prepare('SELECT 1 AS present FROM sync_tombstone WHERE entity_type = ? AND entity_id = ?')
+        .get(entityType, entityId) as { present: number } | null;
+      return row !== null;
+    }
+
+    // Plan itself must be tombstoned
+    expect(hasSyncTombstone('plan', 'plan-cascade-all')).toBe(true);
+
+    // Task must be tombstoned
+    expect(hasSyncTombstone('plan_task', 'task-cascade-all')).toBe(true);
+
+    // Review issue must be tombstoned
+    expect(hasSyncTombstone('plan_review_issue', issueUuid)).toBe(true);
+
+    // Dependency edge must be tombstoned
+    expect(hasSyncTombstone('plan_dependency', 'plan-cascade-all->plan-dep-src')).toBe(true);
+
+    // Tag edge must be tombstoned
+    expect(hasSyncTombstone('plan_tag', 'plan-cascade-all#mytag')).toBe(true);
   });
 });

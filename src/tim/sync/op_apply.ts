@@ -3,13 +3,12 @@ import type { Database } from 'bun:sqlite';
 import { getOrCreateProject, getProjectById } from '../db/project.js';
 import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
 import {
-  ensureLocalNode,
-  getLocalNode,
   type SyncFieldClockRow,
   type SyncOpLogRow,
   type SyncTombstoneRow,
 } from '../db/sync_schema.js';
-import { compareHlc, formatHlc, HlcGenerator, type Hlc } from './hlc.js';
+import { compareHlc, formatHlc, type Hlc } from './hlc.js';
+import { getLocalGenerator } from './op_emission.js';
 
 type JsonRecord = Record<string, unknown>;
 type SqlValue = string | number | bigint | boolean | null;
@@ -75,7 +74,6 @@ const PLAN_FIELDS = new Set([
 
 const PLAN_TASK_FIELDS = new Set([
   'plan_uuid',
-  'task_index',
   'order_key',
   'title',
   'description',
@@ -134,6 +132,13 @@ function tombstoneWinsOrTies(db: Database, op: SyncOpRecord): boolean {
     .prepare('SELECT * FROM sync_tombstone WHERE entity_type = ? AND entity_id = ?')
     .get(op.entity_type, op.entity_id) as SyncTombstoneRow | null;
   return tombstone ? !remoteWins(opHlc(op), op.node_id, tombstone) : false;
+}
+
+function hasTombstone(db: Database, entityType: string, entityId: string): boolean {
+  const row = db
+    .prepare('SELECT 1 AS present FROM sync_tombstone WHERE entity_type = ? AND entity_id = ?')
+    .get(entityType, entityId) as { present: number } | null;
+  return row !== null;
 }
 
 function parsePayload(op: SyncOpRecord): JsonRecord {
@@ -268,10 +273,17 @@ function applyScalarFields(
   fields: JsonRecord,
   options: { touchUpdatedAt?: boolean } = { touchUpdatedAt: true }
 ): string[] {
+  const identifierPattern = /^[a-z_]+$/;
+  if (!identifierPattern.test(tableName) || !identifierPattern.test(idColumn)) {
+    throw new Error(`Invalid SQL identifier in sync scalar apply: ${tableName}.${idColumn}`);
+  }
   const appliedFields: string[] = [];
   for (const [fieldName, value] of Object.entries(fields)) {
     if (!allowedFields.has(fieldName)) {
       continue;
+    }
+    if (!identifierPattern.test(fieldName)) {
+      throw new Error(`Invalid SQL field identifier in sync scalar apply: ${fieldName}`);
     }
     const storedClock = db
       .prepare(
@@ -336,7 +348,7 @@ function applyPlanCreateOrUpdate(db: Database, op: SyncOpRecord): SkippedSyncOp 
   if (projectId === null) {
     return { opId: op.op_id, reason: 'plan op missing projectIdentity' };
   }
-  if (tombstoneWinsOrTies(db, op)) {
+  if (hasTombstone(db, 'plan', op.entity_id)) {
     return null;
   }
 
@@ -396,20 +408,34 @@ function maxTaskIndex(db: Database, planUuid: string): number {
   return row.maxTaskIndex;
 }
 
-function applyTaskCreateOrUpdate(db: Database, op: SyncOpRecord): void {
-  if (tombstoneWinsOrTies(db, op)) {
-    return;
+function planExists(db: Database, planUuid: string): boolean {
+  const row = db.prepare('SELECT 1 AS present FROM plan WHERE uuid = ?').get(planUuid) as
+    | { present: number }
+    | null;
+  return row !== null;
+}
+
+function applyTaskCreateOrUpdate(db: Database, op: SyncOpRecord): SkippedSyncOp | null {
+  if (hasTombstone(db, 'plan_task', op.entity_id)) {
+    return null;
   }
   const payload = parsePayload(op);
   const fields = fieldsFromPayload(payload);
-  const planUuid = String(fields.plan_uuid ?? payload.planUuid ?? '');
+  const planUuidValue = fields.plan_uuid ?? payload.planUuid;
+  if (typeof planUuidValue !== 'string' || planUuidValue.length === 0) {
+    return { opId: op.op_id, reason: 'plan_task op missing plan_uuid' };
+  }
+  const planUuid = planUuidValue;
+  if (!planExists(db, planUuid)) {
+    return { opId: op.op_id, reason: `plan_task op references missing plan ${planUuid}` };
+  }
   const existing = db.prepare('SELECT uuid FROM plan_task WHERE uuid = ?').get(op.entity_id) as {
     uuid: string;
   } | null;
-  if (!existing) {
+  const wasInserted = !existing;
+  if (wasInserted) {
     const orderKey = String(fields.order_key ?? '0000000000');
-    const taskIndex =
-      typeof fields.task_index === 'number' ? fields.task_index : maxTaskIndex(db, planUuid) + 1;
+    const taskIndex = maxTaskIndex(db, planUuid) + 1;
     db.prepare(
       `
         INSERT INTO plan_task (
@@ -446,13 +472,45 @@ function applyTaskCreateOrUpdate(db: Database, op: SyncOpRecord): void {
       op.entity_id
     );
   }
+  if (wasInserted || applied.includes('order_key')) {
+    renumberPlanTaskIndices(db, planUuid);
+  }
+  return null;
 }
 
-function applyTaskSetOrder(db: Database, op: SyncOpRecord): void {
-  if (tombstoneWinsOrTies(db, op)) {
-    return;
+function renumberPlanTaskIndices(db: Database, planUuid: string): void {
+  db.prepare(
+    `
+      UPDATE plan_task
+      SET task_index = -id
+      WHERE plan_uuid = ?
+        AND deleted_hlc IS NULL
+    `
+  ).run(planUuid);
+
+  const rows = db
+    .prepare(
+      'SELECT uuid FROM plan_task WHERE plan_uuid = ? AND deleted_hlc IS NULL ORDER BY order_key, uuid'
+    )
+    .all(planUuid) as Array<{ uuid: string }>;
+  const update = db.prepare('UPDATE plan_task SET task_index = ? WHERE uuid = ?');
+  rows.forEach((row, index) => update.run(index, row.uuid));
+}
+
+function applyTaskSetOrder(db: Database, op: SyncOpRecord): SkippedSyncOp | null {
+  if (hasTombstone(db, 'plan_task', op.entity_id)) {
+    return null;
   }
   const payload = parsePayload(op);
+  if (typeof payload.planUuid !== 'string' || payload.planUuid.length === 0) {
+    return { opId: op.op_id, reason: 'plan_task set_order op missing planUuid' };
+  }
+  if (!planExists(db, payload.planUuid)) {
+    return {
+      opId: op.op_id,
+      reason: `plan_task set_order references missing plan ${payload.planUuid}`,
+    };
+  }
   applyScalarFields(
     db,
     op,
@@ -461,21 +519,29 @@ function applyTaskSetOrder(db: Database, op: SyncOpRecord): void {
     PLAN_TASK_FIELDS,
     {
       order_key: payload.orderKey,
-      task_index: payload.taskIndex,
     },
     {
       touchUpdatedAt: false,
     }
   );
+  renumberPlanTaskIndices(db, payload.planUuid);
+  return null;
 }
 
-function applyReviewIssueCreateOrUpdate(db: Database, op: SyncOpRecord): void {
-  if (tombstoneWinsOrTies(db, op)) {
-    return;
+function applyReviewIssueCreateOrUpdate(db: Database, op: SyncOpRecord): SkippedSyncOp | null {
+  if (hasTombstone(db, 'plan_review_issue', op.entity_id)) {
+    return null;
   }
   const payload = parsePayload(op);
   const fields = fieldsFromPayload(payload);
-  const planUuid = String(fields.plan_uuid ?? payload.planUuid ?? '');
+  const planUuidValue = fields.plan_uuid ?? payload.planUuid;
+  if (typeof planUuidValue !== 'string' || planUuidValue.length === 0) {
+    return { opId: op.op_id, reason: 'plan_review_issue op missing plan_uuid' };
+  }
+  const planUuid = planUuidValue;
+  if (!planExists(db, planUuid)) {
+    return { opId: op.op_id, reason: `plan_review_issue op references missing plan ${planUuid}` };
+  }
   const existing = db
     .prepare('SELECT uuid FROM plan_review_issue WHERE uuid = ?')
     .get(op.entity_id) as { uuid: string } | null;
@@ -528,21 +594,79 @@ function applyReviewIssueCreateOrUpdate(db: Database, op: SyncOpRecord): void {
       `UPDATE plan_review_issue SET updated_hlc = ?, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ? AND deleted_hlc IS NULL`
     ).run(formatHlc(opHlc(op)), op.entity_id);
   }
+  return null;
 }
 
-function applyEntityDelete(db: Database, op: SyncOpRecord): void {
-  insertTombstone(db, op);
+function insertSyntheticTombstone(
+  db: Database,
+  op: SyncOpRecord,
+  entityType: string,
+  entityId: string
+): void {
+  insertTombstone(db, { ...op, entity_type: entityType, entity_id: entityId });
+}
+
+function tombstonePlanChildren(db: Database, op: SyncOpRecord): void {
+  const planUuid = op.entity_id;
+  const tasks = db
+    .prepare('SELECT uuid FROM plan_task WHERE plan_uuid = ? AND deleted_hlc IS NULL')
+    .all(planUuid) as Array<{ uuid: string }>;
+  for (const task of tasks) {
+    insertSyntheticTombstone(db, op, 'plan_task', task.uuid);
+  }
+
+  const reviewIssues = db
+    .prepare('SELECT uuid FROM plan_review_issue WHERE plan_uuid = ? AND deleted_hlc IS NULL')
+    .all(planUuid) as Array<{ uuid: string }>;
+  for (const issue of reviewIssues) {
+    insertSyntheticTombstone(db, op, 'plan_review_issue', issue.uuid);
+  }
+
+  const dependencies = db
+    .prepare('SELECT depends_on_uuid FROM plan_dependency WHERE plan_uuid = ?')
+    .all(planUuid) as Array<{ depends_on_uuid: string }>;
+  for (const dependency of dependencies) {
+    insertSyntheticTombstone(
+      db,
+      op,
+      'plan_dependency',
+      `${planUuid}->${dependency.depends_on_uuid}`
+    );
+  }
+
+  const tags = db.prepare('SELECT tag FROM plan_tag WHERE plan_uuid = ?').all(planUuid) as Array<{
+    tag: string;
+  }>;
+  for (const tag of tags) {
+    insertSyntheticTombstone(db, op, 'plan_tag', `${planUuid}#${tag.tag}`);
+  }
+}
+
+function applyEntityDelete(db: Database, op: SyncOpRecord): SkippedSyncOp | null {
   const hlcText = formatHlc(opHlc(op));
   if (op.entity_type === 'plan_task') {
+    insertTombstone(db, op);
     db.prepare(
       'UPDATE plan_task SET deleted_hlc = ?, updated_hlc = ?, task_index = -id WHERE uuid = ? AND (deleted_hlc IS NULL OR deleted_hlc < ?)'
     ).run(hlcText, hlcText, op.entity_id, hlcText);
   } else if (op.entity_type === 'plan_review_issue') {
+    insertTombstone(db, op);
     db.prepare(
       `UPDATE plan_review_issue SET deleted_hlc = ?, updated_hlc = ?, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ? AND (deleted_hlc IS NULL OR deleted_hlc < ?)`
     ).run(hlcText, hlcText, op.entity_id, hlcText);
   } else if (op.entity_type === 'project_setting') {
     const payload = parsePayload(op);
+    if (
+      typeof payload.projectIdentity !== 'string' ||
+      payload.projectIdentity.length === 0 ||
+      typeof payload.setting !== 'string'
+    ) {
+      return {
+        opId: op.op_id,
+        reason: 'project_setting delete op missing projectIdentity or setting',
+      };
+    }
+    insertTombstone(db, op);
     const projectId = projectIdForIdentity(db, payload.projectIdentity);
     const storedClock = db
       .prepare(
@@ -550,9 +674,9 @@ function applyEntityDelete(db: Database, op: SyncOpRecord): void {
       )
       .get('project_setting', op.entity_id, 'value') as SyncFieldClockRow | null;
     if (!remoteWins(opHlc(op), op.node_id, storedClock)) {
-      return;
+      return null;
     }
-    if (projectId !== null && typeof payload.setting === 'string') {
+    if (projectId !== null) {
       db.prepare('DELETE FROM project_setting WHERE project_id = ? AND setting = ?').run(
         projectId,
         payload.setting
@@ -560,8 +684,29 @@ function applyEntityDelete(db: Database, op: SyncOpRecord): void {
     }
     updateFieldClock(db, op, 'value', true);
   } else if (op.entity_type === 'plan') {
+    insertTombstone(db, op);
+    tombstonePlanChildren(db, op);
     db.prepare('DELETE FROM plan WHERE uuid = ?').run(op.entity_id);
+  } else if (op.entity_type === 'plan_dependency') {
+    const payload = parsePayload(op);
+    insertTombstone(db, op);
+    if (typeof payload.planUuid === 'string' && typeof payload.dependsOnUuid === 'string') {
+      db.prepare('DELETE FROM plan_dependency WHERE plan_uuid = ? AND depends_on_uuid = ?').run(
+        payload.planUuid,
+        payload.dependsOnUuid
+      );
+    }
+  } else if (op.entity_type === 'plan_tag') {
+    const payload = parsePayload(op);
+    insertTombstone(db, op);
+    if (typeof payload.planUuid === 'string' && typeof payload.tag === 'string') {
+      db.prepare('DELETE FROM plan_tag WHERE plan_uuid = ? AND tag = ?').run(
+        payload.planUuid,
+        payload.tag
+      );
+    }
   }
+  return null;
 }
 
 function latestAddEdge(db: Database, op: SyncOpRecord): SyncOpLogRow | null {
@@ -660,8 +805,8 @@ function applyProjectSettingUpdate(db: Database, op: SyncOpRecord): SkippedSyncO
 }
 
 function observeRemoteHlc(db: Database, op: SyncOpRecord): void {
-  const localNode = getLocalNode(db) ?? ensureLocalNode(db);
-  new HlcGenerator(db, localNode.node_id).observe(opHlc(op), Date.now(), db);
+  const cached = getLocalGenerator(db);
+  cached.generator.observe(opHlc(op), Date.now(), db);
 }
 
 function applyKnownOp(db: Database, op: SyncOpRecord): SkippedSyncOp | null {
@@ -672,29 +817,27 @@ function applyKnownOp(db: Database, op: SyncOpRecord): SkippedSyncOp | null {
     op.entity_type === 'plan_task' &&
     (op.op_type === 'create' || op.op_type === 'update_fields')
   ) {
-    applyTaskCreateOrUpdate(db, op);
-    return null;
+    return applyTaskCreateOrUpdate(db, op);
   }
   if (op.entity_type === 'plan_task' && op.op_type === 'set_order') {
-    applyTaskSetOrder(db, op);
-    return null;
+    return applyTaskSetOrder(db, op);
   }
   if (
     op.entity_type === 'plan_review_issue' &&
     (op.op_type === 'create' || op.op_type === 'update_fields')
   ) {
-    applyReviewIssueCreateOrUpdate(db, op);
-    return null;
+    return applyReviewIssueCreateOrUpdate(db, op);
   }
   if (
     (op.entity_type === 'plan' ||
       op.entity_type === 'plan_task' ||
       op.entity_type === 'plan_review_issue' ||
-      op.entity_type === 'project_setting') &&
+      op.entity_type === 'project_setting' ||
+      op.entity_type === 'plan_dependency' ||
+      op.entity_type === 'plan_tag') &&
     op.op_type === 'delete'
   ) {
-    applyEntityDelete(db, op);
-    return null;
+    return applyEntityDelete(db, op);
   }
   if (
     op.entity_type === 'plan_dependency' &&
@@ -730,8 +873,9 @@ function isSupportedOp(op: SyncOpRecord): boolean {
     (op.entity_type === 'project_setting' &&
       (op.op_type === 'update_fields' || op.op_type === 'delete')) ||
     (op.entity_type === 'plan_dependency' &&
-      (op.op_type === 'add_edge' || op.op_type === 'remove_edge')) ||
-    (op.entity_type === 'plan_tag' && (op.op_type === 'add_edge' || op.op_type === 'remove_edge'))
+      (op.op_type === 'add_edge' || op.op_type === 'remove_edge' || op.op_type === 'delete')) ||
+    (op.entity_type === 'plan_tag' &&
+      (op.op_type === 'add_edge' || op.op_type === 'remove_edge' || op.op_type === 'delete'))
   );
 }
 
@@ -759,19 +903,17 @@ export function applyRemoteOps(db: Database, ops: SyncOpRecord[]): ApplyResult {
 
     try {
       const applyOne = db.transaction((nextOp: SyncOpRecord): SkippedSyncOp | null => {
+        insertRemoteOpLog(db, nextOp);
         if (!isSupportedOp(nextOp)) {
+          observeRemoteHlc(db, nextOp);
           return {
             opId: nextOp.op_id,
             reason: `unsupported op ${nextOp.entity_type}:${nextOp.op_type}`,
           };
         }
-        insertRemoteOpLog(db, nextOp);
         const skipped = applyKnownOp(db, nextOp);
-        if (skipped) {
-          throw new Error(`supported op unexpectedly skipped: ${skipped.reason}`);
-        }
         observeRemoteHlc(db, nextOp);
-        return null;
+        return skipped;
       });
       const skipped = applyOne.immediate(op);
       if (skipped) {
