@@ -9,6 +9,7 @@ import {
   createReviewIssue,
   getReviewIssueByUuid,
   listReviewIssuesForPlan,
+  reconcileReviewIssuesForPlan,
   softDeleteReviewIssue,
 } from './plan_review_issue.js';
 import { getOrCreateProject } from './project.js';
@@ -36,12 +37,18 @@ describe('tim db/plan_review_issue', () => {
       severity: 'major',
       category: 'bug',
       content: 'Fix the bug',
+      file: 'src/file.ts',
+      line: '10-12',
+      suggestion: 'Patch it',
       source: 'agent',
       sourceRef: 'thread-1',
     });
 
     expect(issue.uuid).toEqual(expect.any(String));
     expect(issue.content).toBe('Fix the bug');
+    expect(issue.file).toBe('src/file.ts');
+    expect(issue.line).toBe('10-12');
+    expect(issue.suggestion).toBe('Patch it');
 
     expect(listReviewIssuesForPlan(db, 'plan-review-issue')).toHaveLength(1);
     expect(softDeleteReviewIssue(db, issue.uuid)).toBe(true);
@@ -117,5 +124,58 @@ describe('tim db/plan_review_issue', () => {
 
     expect(a.uuid).not.toBe(b.uuid);
     expect(listReviewIssuesForPlan(db, 'plan-review-issue')).toHaveLength(2);
+  });
+
+  test('reconcileReviewIssuesForPlan mirrors desired JSON-shaped issues', () => {
+    const stableUuid = '11111111-1111-4111-8111-111111111111';
+    reconcileReviewIssuesForPlan(db, 'plan-review-issue', [
+      {
+        uuid: stableUuid,
+        severity: 'major',
+        category: 'bug',
+        content: 'Keep this issue',
+        file: 'src/a.ts',
+        line: 7,
+        suggestion: 'Fix it',
+      },
+      {
+        severity: 'minor',
+        category: 'style',
+        content: 'Remove this issue later',
+      },
+    ]);
+
+    expect(listReviewIssuesForPlan(db, 'plan-review-issue').map((issue) => issue.content)).toEqual([
+      'Keep this issue',
+      'Remove this issue later',
+    ]);
+
+    reconcileReviewIssuesForPlan(db, 'plan-review-issue', [
+      {
+        uuid: stableUuid,
+        severity: 'critical',
+        category: 'bug',
+        content: 'Keep this issue',
+        file: 'src/a.ts',
+        line: '7-8',
+        suggestion: 'Fix it better',
+      },
+    ]);
+
+    const activeIssues = listReviewIssuesForPlan(db, 'plan-review-issue');
+    expect(activeIssues).toHaveLength(1);
+    expect(activeIssues[0]).toMatchObject({
+      uuid: stableUuid,
+      severity: 'critical',
+      line: '7-8',
+      suggestion: 'Fix it better',
+    });
+    expect(
+      db
+        .prepare(
+          'SELECT count(*) AS count FROM plan_review_issue WHERE plan_uuid = ? AND deleted_hlc IS NOT NULL'
+        )
+        .get('plan-review-issue')
+    ).toEqual({ count: 1 });
   });
 });

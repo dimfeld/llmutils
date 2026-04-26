@@ -301,6 +301,8 @@ describe('tim plans_db', () => {
       docs: ['docs/materialize.md', 'docs/sync.md'],
       changedFiles: ['src/tim/plans_db.ts', 'src/tim/db/plan.ts'],
       planGeneratedAt: '2026-03-18T10:11:12.000Z',
+      docsUpdatedAt: undefined,
+      lessonsAppliedAt: undefined,
       reviewIssues: [
         {
           severity: 'minor',
@@ -315,6 +317,8 @@ describe('tim plans_db', () => {
       epic: true,
       tasks: [
         {
+          uuid: expect.any(String),
+          orderKey: '0000000000',
           title: 'Verify round-trip',
           description: 'Load the plan back from the DB',
           done: false,
@@ -350,6 +354,8 @@ describe('tim plans_db', () => {
       docs: ['docs/materialize.md', 'docs/sync.md'],
       changedFiles: ['src/tim/plans_db.ts', 'src/tim/db/plan.ts'],
       planGeneratedAt: '2026-03-18T10:11:12.000Z',
+      docsUpdatedAt: undefined,
+      lessonsAppliedAt: undefined,
       reviewIssues: [
         {
           severity: 'minor',
@@ -366,6 +372,8 @@ describe('tim plans_db', () => {
       tags: ['db-first', 'materialize'],
       tasks: [
         {
+          uuid: expect.any(String),
+          orderKey: '0000000000',
           title: 'Verify round-trip',
           description: 'Load the plan back from the DB',
           done: false,

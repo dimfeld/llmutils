@@ -309,22 +309,22 @@ describe('tim db/plan', () => {
     expect(found?.base_change_id).toBeNull();
   });
 
-  test('getPlanTasksByUuid returns tasks ordered by task_index', () => {
+  test('getPlanTasksByUuid returns tasks ordered by order_key', () => {
     upsertPlan(db, projectId, { uuid: 'plan-order', planId: 50 });
 
     db.prepare(
       'INSERT INTO plan_task (uuid, plan_uuid, task_index, order_key, title, description, done) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).run('task-3', 'plan-order', 2, '0000000002', 'third', 'third', 0);
+    ).run('task-3', 'plan-order', 2, '0000003000', 'third', 'third', 0);
     db.prepare(
       'INSERT INTO plan_task (uuid, plan_uuid, task_index, order_key, title, description, done) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).run('task-1', 'plan-order', 0, '0000000000', 'first', 'first', 0);
+    ).run('task-1', 'plan-order', 0, '0000001000', 'first', 'first', 0);
     db.prepare(
       'INSERT INTO plan_task (uuid, plan_uuid, task_index, order_key, title, description, done) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).run('task-2', 'plan-order', 1, '0000000001', 'second', 'second', 1);
+    ).run('task-2', 'plan-order', 1, '0000000000', 'second', 'second', 1);
 
     const tasks = getPlanTasksByUuid(db, 'plan-order');
-    expect(tasks.map((task) => task.title)).toEqual(['first', 'second', 'third']);
-    expect(tasks.map((task) => task.task_index)).toEqual([0, 1, 2]);
+    expect(tasks.map((task) => task.title)).toEqual(['second', 'first', 'third']);
+    expect(tasks.map((task) => task.task_index)).toEqual([1, 0, 2]);
   });
 
   test('getPlanTasksByProject and getPlanDependenciesByProject are project-scoped', () => {
@@ -574,7 +574,7 @@ describe('tim db/plan', () => {
     expect(tasks.map((t) => t.order_key)).toEqual(['0000000000', '0000000001', '0000000002']);
   });
 
-  test('upsertPlan preserves task UUIDs when re-upserting at the same task_index', () => {
+  test('upsertPlan does not preserve UUIDs for incoming tasks without explicit UUIDs', () => {
     upsertPlan(db, projectId, {
       uuid: 'plan-uuid-preserve',
       planId: 601,
@@ -587,7 +587,6 @@ describe('tim db/plan', () => {
     const original = getPlanTasksByUuid(db, 'plan-uuid-preserve');
     const originalUuids = original.map((t) => t.uuid);
 
-    // Re-upsert with same number of tasks at same positions (no explicit UUID provided)
     upsertPlan(db, projectId, {
       uuid: 'plan-uuid-preserve',
       planId: 601,
@@ -599,11 +598,83 @@ describe('tim db/plan', () => {
 
     const updated = getPlanTasksByUuid(db, 'plan-uuid-preserve');
     expect(updated).toHaveLength(2);
-    // UUIDs preserved for same indexes
-    expect(updated.map((t) => t.uuid)).toEqual(originalUuids);
-    // Content updated
+    expect(updated.map((t) => t.uuid)).not.toEqual(originalUuids);
     expect(updated[0]?.title).toBe('alpha updated');
     expect(updated[1]?.title).toBe('beta updated');
+  });
+
+  test('upsertPlan preserves explicit task UUIDs across inserts at front and swaps', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-reorder-stable',
+      planId: 602,
+      tasks: [
+        {
+          uuid: '11111111-1111-4111-8111-111111111111',
+          title: 'alpha',
+          description: 'da',
+          done: false,
+        },
+        {
+          uuid: '22222222-2222-4222-8222-222222222222',
+          title: 'beta',
+          description: 'db',
+          done: false,
+        },
+      ],
+    });
+
+    upsertPlan(db, projectId, {
+      uuid: 'plan-reorder-stable',
+      planId: 602,
+      tasks: [
+        { title: 'new front', description: 'dn', done: false },
+        {
+          uuid: '11111111-1111-4111-8111-111111111111',
+          title: 'alpha',
+          description: 'da',
+          done: false,
+        },
+        {
+          uuid: '22222222-2222-4222-8222-222222222222',
+          title: 'beta',
+          description: 'db',
+          done: false,
+        },
+      ],
+    });
+
+    let tasks = getPlanTasksByUuid(db, 'plan-reorder-stable');
+    expect(tasks.map((task) => task.title)).toEqual(['new front', 'alpha', 'beta']);
+    expect(tasks[1]?.uuid).toBe('11111111-1111-4111-8111-111111111111');
+    expect(tasks[2]?.uuid).toBe('22222222-2222-4222-8222-222222222222');
+
+    upsertPlan(db, projectId, {
+      uuid: 'plan-reorder-stable',
+      planId: 602,
+      tasks: [
+        {
+          uuid: '22222222-2222-4222-8222-222222222222',
+          orderKey: tasks[2]!.order_key,
+          title: 'beta',
+          description: 'db',
+          done: false,
+        },
+        {
+          uuid: '11111111-1111-4111-8111-111111111111',
+          orderKey: tasks[1]!.order_key,
+          title: 'alpha',
+          description: 'da',
+          done: false,
+        },
+      ],
+    });
+
+    tasks = getPlanTasksByUuid(db, 'plan-reorder-stable');
+    expect(tasks.map((task) => task.uuid)).toEqual([
+      '22222222-2222-4222-8222-222222222222',
+      '11111111-1111-4111-8111-111111111111',
+    ]);
+    expect(tasks.map((task) => task.task_index)).toEqual([0, 1]);
   });
 
   test('tasks from two different plans have distinct UUIDs', () => {

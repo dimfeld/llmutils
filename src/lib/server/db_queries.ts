@@ -526,7 +526,7 @@ function getAllProjectBundle(db: Database): PlanQueryBundle {
   return {
     plans: db.prepare('SELECT * FROM plan ORDER BY project_id, plan_id, uuid').all() as PlanRow[],
     tasks: db
-      .prepare('SELECT * FROM plan_task ORDER BY plan_uuid, task_index, id')
+      .prepare('SELECT * FROM plan_task ORDER BY plan_uuid, order_key, uuid')
       .all() as PlanTaskRow[],
     dependencies: db
       .prepare(

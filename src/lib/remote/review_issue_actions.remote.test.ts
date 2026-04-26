@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 
 import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
 import { getPlanByUuid, getPlanTasksByUuid, upsertPlan } from '$tim/db/plan.js';
+import { listReviewIssuesForPlan } from '$tim/db/plan_review_issue.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import { getReviewIssues, createReview, insertReviewIssues } from '$tim/db/review.js';
 import { linkPlanToPr, upsertPrStatus } from '$tim/db/pr_status.js';
@@ -62,10 +63,17 @@ describe('review issue remote actions', () => {
     await invokeCommand(removeReviewIssue, { planUuid: 'plan-remove', issueIndex: 0 });
 
     const plan = getPlanByUuid(currentDb, 'plan-remove');
+    const mirroredIssues = listReviewIssuesForPlan(currentDb, 'plan-remove');
 
     expect(JSON.parse(plan?.review_issues ?? '[]')).toEqual([
       makeIssue('minor', 'style', 'Second'),
     ]);
+    expect(mirroredIssues.map((issue) => issue.content)).toEqual(['Second']);
+    expect(
+      currentDb
+        .prepare('SELECT count(*) AS count FROM plan_review_issue WHERE plan_uuid = ?')
+        .get('plan-remove')
+    ).toEqual({ count: 2 });
   });
 
   test('removeReviewIssue rejects out-of-range indexes', async () => {
@@ -119,6 +127,9 @@ describe('review issue remote actions', () => {
     expect(JSON.parse(plan?.review_issues ?? '[]')).toEqual([
       makeIssue('minor', 'style', 'Leftover issue'),
     ]);
+    expect(listReviewIssuesForPlan(currentDb, 'plan-convert').map((row) => row.content)).toEqual([
+      'Leftover issue',
+    ]);
     expect(tasks).toHaveLength(2);
     expect(tasks[1]).toMatchObject({
       task_index: 1,
@@ -155,6 +166,7 @@ describe('review issue remote actions', () => {
     const plan = getPlanByUuid(currentDb, 'plan-clear');
 
     expect(plan?.review_issues).toBeNull();
+    expect(listReviewIssuesForPlan(currentDb, 'plan-clear')).toEqual([]);
   });
 
   test('clearReviewIssues rejects missing plans', async () => {

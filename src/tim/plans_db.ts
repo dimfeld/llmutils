@@ -51,7 +51,13 @@ function resolveUuidToPlanId(uuid: string, uuidToPlanId?: Map<string, number>): 
  */
 export function planRowToSchemaInput(
   row: PlanRow,
-  tasks: Array<{ title: string; description: string; done: boolean }>,
+  tasks: Array<{
+    uuid?: string;
+    orderKey?: string;
+    title: string;
+    description: string;
+    done: boolean;
+  }>,
   dependencyUuids: string[],
   tags: string[],
   uuidToPlanId?: Map<string, number>
@@ -102,6 +108,8 @@ export function planRowToSchemaInput(
 export function planRowForTransaction(row: PlanRow, uuidToPlanId: Map<string, number>): PlanSchema {
   const db = getDatabase();
   const tasks = getPlanTasksByUuid(db, row.uuid).map((task) => ({
+    uuid: task.uuid,
+    orderKey: task.order_key,
     title: task.title,
     description: task.description,
     done: task.done === 1,
@@ -144,12 +152,14 @@ export function loadPlansFromDb(_searchDir: string, repositoryId: string): Plans
 
   const tasksByPlanUuid = new Map<
     string,
-    Array<{ title: string; description: string; done: boolean }>
+    Array<{ uuid: string; orderKey: string; title: string; description: string; done: boolean }>
   >();
   const taskRows = getPlanTasksByProject(db, project.id);
   for (const taskRow of taskRows) {
     const list = tasksByPlanUuid.get(taskRow.plan_uuid) ?? [];
     list.push({
+      uuid: taskRow.uuid,
+      orderKey: taskRow.order_key,
       title: taskRow.title,
       description: taskRow.description,
       done: taskRow.done === 1,

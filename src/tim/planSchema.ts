@@ -19,6 +19,8 @@ const createLooseObject: ObjectFactory = (shape) => z.object(shape).passthrough(
 
 export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObject) => {
   const taskSchema = objectFactory({
+    uuid: z.guid().optional(),
+    orderKey: z.string().optional(),
     title: z.string(),
     done: z.boolean().default(false),
     description: z.string(),
@@ -101,10 +103,12 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
       .array(
         objectFactory({
           ...PostProcessedReviewOutputIssueSchema.shape,
+          uuid: z.guid().optional(),
           category: z.string(),
           file: z.string().optional(),
           line: z.union([z.number(), z.string()]).optional(),
           suggestion: z.string().optional(),
+          sourceRef: z.string().optional(),
         })
       )
       .optional(),

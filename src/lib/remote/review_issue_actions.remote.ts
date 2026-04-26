@@ -6,6 +6,7 @@ import * as z from 'zod';
 import { getServerContext } from '$lib/server/init.js';
 import { createTaskFromIssue } from '$tim/commands/review.js';
 import { getPlanByUuid, getPlanTasksByUuid } from '$tim/db/plan.js';
+import { reconcileReviewIssuesForPlan } from '$tim/db/plan_review_issue.js';
 import { getReviewById, getReviewIssues, type ReviewIssueRow } from '$tim/db/review.js';
 import { getLinkedPlansByPrUrl } from '$tim/db/pr_status.js';
 import { SQL_NOW_ISO_UTC } from '$tim/db/sql_utils.js';
@@ -65,6 +66,7 @@ export const removeReviewIssue = command(issueIndexSchema, async ({ planUuid, is
     db.prepare(
       `UPDATE plan SET review_issues = ?, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
     ).run(issues.length > 0 ? JSON.stringify(issues) : null, planUuid);
+    reconcileReviewIssuesForPlan(db, planUuid, issues);
   }).immediate();
 });
 
@@ -94,6 +96,7 @@ export const convertReviewIssueToTask = command(
       db.prepare(
         `UPDATE plan SET review_issues = ?, status = 'in_progress', updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
       ).run(issues.length > 0 ? JSON.stringify(issues) : null, planUuid);
+      reconcileReviewIssuesForPlan(db, planUuid, issues);
 
       db.prepare(
         `INSERT INTO plan_task (uuid, plan_uuid, task_index, order_key, title, description, done) VALUES (?, ?, ?, ?, ?, ?, 0)`
@@ -121,6 +124,7 @@ export const clearReviewIssues = command(planUuidSchema, async ({ planUuid }) =>
     db.prepare(
       `UPDATE plan SET review_issues = NULL, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
     ).run(planUuid);
+    reconcileReviewIssuesForPlan(db, planUuid, []);
   }).immediate();
 });
 

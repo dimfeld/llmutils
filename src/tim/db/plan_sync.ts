@@ -190,7 +190,13 @@ export function toPlanUpsertInput(
   reviewIssues?: PlanSchema['reviewIssues'] | null;
   parentUuid?: string | null;
   epic: boolean;
-  tasks: Array<{ title: string; description: string; done?: boolean }>;
+  tasks: Array<{
+    uuid?: string;
+    orderKey?: string;
+    title: string;
+    description: string;
+    done?: boolean;
+  }>;
   dependencyUuids: string[];
   tags: string[];
 } {
@@ -238,6 +244,8 @@ export function toPlanUpsertInput(
     parentUuid,
     epic: plan.epic === true,
     tasks: (plan.tasks ?? []).map((task) => ({
+      uuid: task.uuid,
+      orderKey: task.orderKey,
       title: task.title,
       description: task.description ?? '',
       done: task.done,

@@ -838,17 +838,6 @@ const migrations: Migration[] = [
         db.run('CREATE INDEX idx_plan_task_order ON plan_task(plan_uuid, order_key, uuid)');
       }
 
-      if (tableExists('plan_dependency')) {
-        db.run(
-          'CREATE INDEX IF NOT EXISTS idx_plan_dependency_uuid_edge ON plan_dependency(plan_uuid, depends_on_uuid)'
-        );
-      }
-      if (tableExists('plan_tag')) {
-        db.run(
-          'CREATE UNIQUE INDEX IF NOT EXISTS idx_plan_tag_uuid_tag ON plan_tag(plan_uuid, tag)'
-        );
-      }
-
       db.run(`
         CREATE TABLE plan_review_issue (
           uuid TEXT PRIMARY KEY,
@@ -856,6 +845,9 @@ const migrations: Migration[] = [
           severity TEXT,
           category TEXT,
           content TEXT NOT NULL,
+          file TEXT,
+          line TEXT,
+          suggestion TEXT,
           source TEXT,
           source_ref TEXT,
           created_hlc TEXT,
@@ -884,19 +876,34 @@ const migrations: Migration[] = [
             severity,
             category,
             content,
+            file,
+            line,
+            suggestion,
             source,
             source_ref
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
       );
       for (const plan of planRows) {
+        if (typeof plan.review_issues !== 'string') {
+          console.warn(
+            `Skipping review_issues backfill for plan ${plan.uuid}: expected string content, saw ${typeof plan.review_issues}`
+          );
+          continue;
+        }
         let issues: unknown;
         try {
-          issues = JSON.parse(plan.review_issues ?? '[]');
-        } catch {
+          issues = JSON.parse(plan.review_issues);
+        } catch (error) {
+          console.warn(
+            `Skipping review_issues backfill for plan ${plan.uuid}: invalid JSON (${error instanceof Error ? error.message : String(error)})`
+          );
           continue;
         }
         if (!Array.isArray(issues)) {
+          console.warn(
+            `Skipping review_issues backfill for plan ${plan.uuid}: expected an array, saw ${typeof issues}`
+          );
           continue;
         }
         for (const issue of issues) {
@@ -914,6 +921,11 @@ const migrations: Migration[] = [
             typeof issueRecord.severity === 'string' ? issueRecord.severity : null,
             typeof issueRecord.category === 'string' ? issueRecord.category : null,
             content,
+            typeof issueRecord.file === 'string' ? issueRecord.file : null,
+            typeof issueRecord.line === 'string' || typeof issueRecord.line === 'number'
+              ? String(issueRecord.line)
+              : null,
+            typeof issueRecord.suggestion === 'string' ? issueRecord.suggestion : null,
             typeof issueRecord.source === 'string' ? issueRecord.source : null,
             typeof issueRecord.source_ref === 'string'
               ? issueRecord.source_ref

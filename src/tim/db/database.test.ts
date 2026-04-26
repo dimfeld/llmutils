@@ -396,10 +396,10 @@ describe('tim db/database', () => {
     expect(indices).toContain('idx_plan_parent_uuid');
     expect(indices).toContain('idx_plan_task_plan_uuid');
     expect(indices).toContain('idx_plan_task_order');
-    expect(indices).toContain('idx_plan_dependency_uuid_edge');
     expect(indices).toContain('idx_plan_tag_plan_uuid');
-    expect(indices).toContain('idx_plan_tag_uuid_tag');
     expect(indices).toContain('idx_plan_review_issue_plan_uuid');
+    expect(indices).not.toContain('idx_plan_dependency_uuid_edge');
+    expect(indices).not.toContain('idx_plan_tag_uuid_tag');
     expect(indices).toContain('idx_webhook_log_repo_id');
     expect(indices).toContain('idx_pr_check_run_unique');
     expect(indices).toContain('idx_pr_review_unique');
@@ -668,7 +668,15 @@ describe('tim db/database', () => {
         0,
         '1.plan.md',
         JSON.stringify([
-          { severity: 'minor', category: 'style', content: 'First issue', source: 'agent' },
+          {
+            severity: 'minor',
+            category: 'style',
+            content: 'First issue',
+            file: 'src/a.ts',
+            line: 12,
+            suggestion: 'Do the thing',
+            source: 'agent',
+          },
           { content: 'Second issue with no extra fields' },
         ]),
         '2026-01-01T00:00:00Z',
@@ -719,9 +727,10 @@ describe('tim db/database', () => {
 
       // Verify all 5 tasks exist
       const allTasks = db
-        .query<{ uuid: string; plan_uuid: string; task_index: number; order_key: string }, []>(
-          'SELECT uuid, plan_uuid, task_index, order_key FROM plan_task ORDER BY plan_uuid, task_index'
-        )
+        .query<
+          { uuid: string; plan_uuid: string; task_index: number; order_key: string },
+          []
+        >('SELECT uuid, plan_uuid, task_index, order_key FROM plan_task ORDER BY plan_uuid, task_index')
         .all();
       expect(allTasks).toHaveLength(5);
 
@@ -765,16 +774,27 @@ describe('tim db/database', () => {
 
       const issueFull = db
         .query<
-          { severity: string | null; category: string | null; content: string; source: string | null },
+          {
+            severity: string | null;
+            category: string | null;
+            content: string;
+            file: string | null;
+            line: string | null;
+            suggestion: string | null;
+            source: string | null;
+          },
           [string, string]
         >(
-          'SELECT severity, category, content, source FROM plan_review_issue WHERE plan_uuid = ? AND content = ?'
+          'SELECT severity, category, content, file, line, suggestion, source FROM plan_review_issue WHERE plan_uuid = ? AND content = ?'
         )
         .get('plan-a', 'First issue');
       expect(issueFull).toEqual({
         severity: 'minor',
         category: 'style',
         content: 'First issue',
+        file: 'src/a.ts',
+        line: '12',
+        suggestion: 'Do the thing',
         source: 'agent',
       });
 
@@ -782,9 +802,7 @@ describe('tim db/database', () => {
         .query<
           { severity: string | null; content: string },
           [string, string]
-        >(
-          'SELECT severity, content FROM plan_review_issue WHERE plan_uuid = ? AND content = ?'
-        )
+        >('SELECT severity, content FROM plan_review_issue WHERE plan_uuid = ? AND content = ?')
         .get('plan-a', 'Second issue with no extra fields');
       expect(issueMinimal).not.toBeNull();
       expect(issueMinimal?.severity).toBeNull();
@@ -799,9 +817,13 @@ describe('tim db/database', () => {
       expect(issueB?.count).toBe(0);
 
       // Existing plan rows are unchanged
-      const planARow = db.query<{ title: string }, [string]>('SELECT title FROM plan WHERE uuid = ?').get('plan-a');
+      const planARow = db
+        .query<{ title: string }, [string]>('SELECT title FROM plan WHERE uuid = ?')
+        .get('plan-a');
       expect(planARow?.title).toBe('Plan A');
-      const planBRow = db.query<{ title: string }, [string]>('SELECT title FROM plan WHERE uuid = ?').get('plan-b');
+      const planBRow = db
+        .query<{ title: string }, [string]>('SELECT title FROM plan WHERE uuid = ?')
+        .get('plan-b');
       expect(planBRow?.title).toBe('Plan B');
     } finally {
       db.close(false);
@@ -814,35 +836,40 @@ describe('tim db/database', () => {
     try {
       seedSchemaVersionNine(db1);
 
-      db1.prepare(
-        `INSERT INTO project (id, repository_id, highest_plan_id, created_at, updated_at)
+      db1
+        .prepare(
+          `INSERT INTO project (id, repository_id, highest_plan_id, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?)`
-      ).run(1, 'repo-idem', 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+        )
+        .run(1, 'repo-idem', 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
 
-      db1.prepare(
-        `INSERT INTO plan (uuid, project_id, plan_id, title, status, parent_uuid, epic, filename,
+      db1
+        .prepare(
+          `INSERT INTO plan (uuid, project_id, plan_id, title, status, parent_uuid, epic, filename,
           review_issues, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).run(
-        'plan-idem',
-        1,
-        1,
-        'Idem plan',
-        'pending',
-        null,
-        0,
-        '1.plan.md',
-        JSON.stringify([{ content: 'Idem issue', severity: 'major' }]),
-        '2026-01-01T00:00:00Z',
-        '2026-01-01T00:00:00Z'
-      );
+        )
+        .run(
+          'plan-idem',
+          1,
+          1,
+          'Idem plan',
+          'pending',
+          null,
+          0,
+          '1.plan.md',
+          JSON.stringify([{ content: 'Idem issue', severity: 'major' }]),
+          '2026-01-01T00:00:00Z',
+          '2026-01-01T00:00:00Z'
+        );
 
       runMigrations(db1);
 
       const count1 = db1
-        .query<{ count: number }, [string]>(
-          'SELECT count(*) AS count FROM plan_review_issue WHERE plan_uuid = ?'
-        )
+        .query<
+          { count: number },
+          [string]
+        >('SELECT count(*) AS count FROM plan_review_issue WHERE plan_uuid = ?')
         .get('plan-idem');
       expect(count1?.count).toBe(1);
     } finally {
@@ -852,13 +879,16 @@ describe('tim db/database', () => {
     // Re-open via openDatabase — migrations should not re-run, so count stays 1
     const db2 = openDatabase(dbPath);
     try {
-      const version = db2.query<{ version: number }, []>('SELECT version FROM schema_version').get();
+      const version = db2
+        .query<{ version: number }, []>('SELECT version FROM schema_version')
+        .get();
       expect(version?.version).toBe(27);
 
       const count2 = db2
-        .query<{ count: number }, [string]>(
-          'SELECT count(*) AS count FROM plan_review_issue WHERE plan_uuid = ?'
-        )
+        .query<
+          { count: number },
+          [string]
+        >('SELECT count(*) AS count FROM plan_review_issue WHERE plan_uuid = ?')
         .get('plan-idem');
       expect(count2?.count).toBe(1);
     } finally {

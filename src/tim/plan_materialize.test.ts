@@ -26,7 +26,7 @@ import {
   syncMaterializedPlan,
   withPlanAutoSync,
 } from './plan_materialize.js';
-import { readPlanFile, writePlanFile } from './plans.js';
+import { generatePlanFileContent, readPlanFile, writePlanFile } from './plans.js';
 import { handleCleanupMaterializedCommand } from './commands/cleanup-materialized.js';
 import { handleMaterializeCommand } from './commands/materialize.js';
 import { handleSyncCommand } from './commands/sync.js';
@@ -212,6 +212,14 @@ describe('tim plan_materialize', () => {
       materializedAs: 'primary',
     });
     expect(materializedPlan.tasks).toHaveLength(2);
+    expect(materializedPlan.tasks.map((task) => task.uuid)).toEqual([
+      expect.any(String),
+      expect.any(String),
+    ]);
+    expect(materializedPlan.tasks.map((task) => task.orderKey)).toEqual([
+      '0000000000',
+      '0000000001',
+    ]);
     expect(materializedPlan.reviewIssues).toHaveLength(1);
     expect(await fs.readFile(getShadowPlanPath(repoDir, 3), 'utf8')).toBe(
       await fs.readFile(planPath, 'utf8')
@@ -244,6 +252,33 @@ describe('tim plan_materialize', () => {
       const refPlan = await readPlanFile(refPath);
       expect(await Bun.file(getShadowPlanPath(repoDir, refPlan.id)).exists()).toBe(false);
     }
+  });
+
+  test('task UUIDs and order keys survive generate, parse, and upsert round trip', async () => {
+    const { db, project } = await seedProject();
+    const originalTasks = getPlanTasksByUuid(db, '33333333-3333-4333-8333-333333333333');
+    const plan = await readPlanFile(await materializePlan(3, repoDir));
+    const roundTripPath = path.join(tempDir, 'round-trip.plan.md');
+
+    await fs.writeFile(roundTripPath, generatePlanFileContent(plan), 'utf8');
+    const parsed = await readPlanFile(roundTripPath);
+    upsertPlan(db, project.id, {
+      uuid: parsed.uuid!,
+      planId: parsed.id,
+      title: parsed.title,
+      goal: parsed.goal,
+      details: parsed.details,
+      status: parsed.status,
+      tasks: parsed.tasks,
+    });
+
+    const roundTrippedTasks = getPlanTasksByUuid(db, '33333333-3333-4333-8333-333333333333');
+    expect(roundTrippedTasks.map((task) => task.uuid)).toEqual(
+      originalTasks.map((task) => task.uuid)
+    );
+    expect(roundTrippedTasks.map((task) => task.order_key)).toEqual(
+      originalTasks.map((task) => task.order_key)
+    );
   });
 
   test('materializeRelatedPlans does not overwrite an existing primary materialized plan', async () => {
@@ -545,7 +580,18 @@ describe('tim plan_materialize', () => {
     ).toEqual(editedPlan.tasks);
 
     const rematerializedPlan = await readPlanFile(planPath);
-    expect(rematerializedPlan.tasks).toEqual(editedPlan.tasks);
+    expect(
+      rematerializedPlan.tasks.map((task) => ({
+        title: task.title,
+        description: task.description,
+        done: task.done,
+      }))
+    ).toEqual(editedPlan.tasks);
+    expect(rematerializedPlan.tasks.map((task) => task.uuid)).toEqual([
+      expect.any(String),
+      expect.any(String),
+      expect.any(String),
+    ]);
   });
 
   test('syncMaterializedPlan merges file and DB changes on different fields using the shadow baseline', async () => {
@@ -1225,7 +1271,13 @@ describe('tim plan_materialize', () => {
     });
     expect(rematerializedPlan.simple).toBeUndefined();
     expect(rematerializedPlan.tdd).toBeUndefined();
-    expect(rematerializedPlan.tasks).toEqual([
+    expect(
+      rematerializedPlan.tasks.map((task) => ({
+        title: task.title,
+        description: task.description,
+        done: task.done,
+      }))
+    ).toEqual([
       { title: 'rewrite', description: 'exercise every field', done: true },
       { title: 'verify', description: 'read back from DB and disk', done: false },
     ]);

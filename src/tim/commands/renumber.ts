@@ -304,6 +304,8 @@ function snapshotOriginalDbState(
       parentUuid: row.parent_uuid,
       epic: row.epic === 1,
       tasks: getPlanTasksByUuid(db, row.uuid).map((task) => ({
+        uuid: task.uuid,
+        orderKey: task.order_key,
         title: task.title,
         description: task.description,
         done: task.done === 1,

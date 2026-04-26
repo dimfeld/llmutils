@@ -198,6 +198,8 @@ async function loadPlanSnapshot(
     }
 
     const tasks = getPlanTasksByUuid(db, row.uuid).map((task) => ({
+      uuid: task.uuid,
+      orderKey: task.order_key,
       title: task.title,
       description: task.description,
       done: task.done === 1,

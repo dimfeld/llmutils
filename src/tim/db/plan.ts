@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite';
 import { randomUUID } from 'node:crypto';
 import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 import type { PlanSchema } from '../planSchema.js';
+import { reconcileReviewIssuesForPlan } from './plan_review_issue.js';
 
 export interface PlanRow {
   uuid: string;
@@ -125,7 +126,7 @@ function replacePlanTasks(
   }>
 ): void {
   const existingTasks = getPlanTasksByUuid(db, planUuid);
-  const existingTasksByIndex = new Map(existingTasks.map((task) => [task.task_index, task]));
+  const existingTasksByUuid = new Map(existingTasks.map((task) => [task.uuid, task]));
   db.prepare('DELETE FROM plan_task WHERE plan_uuid = ?').run(planUuid);
 
   if (tasks.length === 0) {
@@ -141,20 +142,40 @@ function replacePlanTasks(
       order_key,
       title,
       description,
-      done
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      done,
+      created_hlc,
+      updated_hlc,
+      deleted_hlc
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `
   );
+  const incomingOrderKeys = tasks.map((task) => task.orderKey);
+  const canPreserveIncomingOrderKeys =
+    incomingOrderKeys.every((orderKey): orderKey is string => typeof orderKey === 'string') &&
+    incomingOrderKeys.every(
+      (orderKey, index, keys) => index === 0 || keys[index - 1]!.localeCompare(orderKey) <= 0
+    );
   tasks.forEach((task, index) => {
-    const existingTask = existingTasksByIndex.get(index);
+    const existingTask = task.uuid ? existingTasksByUuid.get(task.uuid) : undefined;
+    // Preserve round-tripped order keys when they already agree with list order.
+    // If a materialized file reorders task objects without editing orderKey, the
+    // keys no longer sort like the list, so v1 rewrites all order keys by index.
+    const orderKey = canPreserveIncomingOrderKeys
+      ? task.orderKey!
+      : String(index).padStart(10, '0');
+    const taskUuid =
+      typeof task.uuid === 'string' && task.uuid.length > 0 ? task.uuid : randomUUID();
     insertTask.run(
-      task.uuid ?? existingTask?.uuid ?? randomUUID(),
+      taskUuid,
       planUuid,
       index,
-      task.orderKey ?? existingTask?.order_key ?? String(index).padStart(10, '0'),
+      orderKey,
       task.title,
       task.description,
-      task.done ? 1 : 0
+      task.done ? 1 : 0,
+      existingTask?.created_hlc ?? null,
+      existingTask?.updated_hlc ?? null,
+      existingTask?.deleted_hlc ?? null
     );
   });
 }
@@ -321,6 +342,7 @@ export function upsertPlanInTransaction(
   replacePlanTasks(db, input.uuid, input.tasks ?? []);
   replacePlanDependencies(db, input.uuid, input.dependencyUuids ?? []);
   replacePlanTags(db, input.uuid, input.tags ?? []);
+  reconcileReviewIssuesForPlan(db, input.uuid, input.reviewIssues ?? []);
 
   const row = getPlanByUuid(db, input.uuid);
   if (!row) {
@@ -470,7 +492,7 @@ export function getPlanByPlanId(db: Database, projectId: number, planId: number)
 
 export function getPlanTasksByUuid(db: Database, planUuid: string): PlanTaskRow[] {
   return db
-    .prepare('SELECT * FROM plan_task WHERE plan_uuid = ? ORDER BY task_index, id')
+    .prepare('SELECT * FROM plan_task WHERE plan_uuid = ? ORDER BY order_key, uuid')
     .all(planUuid) as PlanTaskRow[];
 }
 
@@ -482,7 +504,7 @@ export function getPlanTasksByProject(db: Database, projectId: number): PlanTask
       FROM plan_task pt
       INNER JOIN plan p ON p.uuid = pt.plan_uuid
       WHERE p.project_id = ?
-      ORDER BY pt.plan_uuid, pt.task_index, pt.id
+      ORDER BY pt.plan_uuid, pt.order_key, pt.uuid
     `
     )
     .all(projectId) as PlanTaskRow[];
