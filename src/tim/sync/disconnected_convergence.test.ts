@@ -663,6 +663,94 @@ describe('disconnected sync convergence', () => {
     ).toEqual([{ uuid: 'task-push-cross-chunk', orderKey: '0000000042' }]);
   });
 
+  test('pending high-HLC deferred op advances clock so later local write wins on retry', () => {
+    const a = createMainNode('A');
+    const b = createMainNode('B');
+    registerPeerNode(a.db, { nodeId: b.nodeId, nodeType: 'main', label: b.name });
+
+    upsertPlan(a.db, a.projectId, {
+      uuid: 'plan-pending-hlc',
+      planId: 1,
+      title: 'Pending HLC plan',
+    });
+
+    const remotePhysical = Date.now() + 120_000;
+    const deferredSetOrder: SyncOpRecord = {
+      op_id: `${remotePhysical.toString().padStart(16, '0')}.00000000/${b.nodeId}/1`,
+      node_id: b.nodeId,
+      hlc_physical_ms: remotePhysical,
+      hlc_logical: 0,
+      local_counter: 1,
+      entity_type: 'plan_task',
+      entity_id: 'task-pending-hlc',
+      op_type: 'set_order',
+      payload: JSON.stringify({
+        planUuid: 'plan-pending-hlc',
+        orderKey: '0000000099',
+        taskIndex: 99,
+      }),
+      base: null,
+    };
+
+    const deferredResult = applyPeerOpsWithPending(a.db, b.nodeId, [deferredSetOrder]);
+    expect(deferredResult.errors).toEqual([]);
+    expect(deferredResult.skipped).toEqual([
+      {
+        opId: deferredSetOrder.op_id,
+        reason: 'plan_task set_order arrived before task task-pending-hlc create',
+        kind: 'deferred',
+      },
+    ]);
+    expect(
+      a.db
+        .prepare('SELECT count(*) AS count FROM sync_pending_op WHERE peer_node_id = ?')
+        .get(b.nodeId)
+    ).toEqual({ count: 1 });
+    const observedClock = a.db
+      .prepare('SELECT physical_ms, logical FROM sync_clock WHERE id = 1')
+      .get() as { physical_ms: number; logical: number };
+    expect(observedClock.physical_ms).toBe(remotePhysical);
+    expect(observedClock.logical).toBeGreaterThan(deferredSetOrder.hlc_logical);
+
+    upsertPlan(a.db, a.projectId, {
+      uuid: 'plan-pending-hlc',
+      planId: 1,
+      tasks: [
+        {
+          uuid: 'task-pending-hlc',
+          orderKey: '0000000000',
+          title: 'Local task',
+          description: 'Created locally after deferred remote op',
+          done: false,
+        },
+      ],
+    });
+
+    const localOrderClock = a.db
+      .prepare(
+        "SELECT hlc_physical_ms, hlc_logical FROM sync_field_clock WHERE entity_type = 'plan_task' AND entity_id = ? AND field_name = 'order_key'"
+      )
+      .get('task-pending-hlc') as { hlc_physical_ms: number; hlc_logical: number };
+    expect(localOrderClock.hlc_physical_ms).toBe(remotePhysical);
+    expect(localOrderClock.hlc_logical).toBeGreaterThan(deferredSetOrder.hlc_logical);
+
+    const retryResult = applyPeerOpsWithPending(a.db, b.nodeId, []);
+    expect(retryResult.errors).toEqual([]);
+    expect(retryResult.skipped).toEqual([]);
+    expect(retryResult.applied).toBe(1);
+    expect(
+      a.db
+        .prepare('SELECT count(*) AS count FROM sync_pending_op WHERE peer_node_id = ?')
+        .get(b.nodeId)
+    ).toEqual({ count: 0 });
+    expect(
+      getPlanTasksByUuid(a.db, 'plan-pending-hlc').map((task) => ({
+        uuid: task.uuid,
+        orderKey: task.order_key,
+      }))
+    ).toEqual([{ uuid: 'task-pending-hlc', orderKey: '0000000000' }]);
+  });
+
   test('unresolved deferred set_order stays retryable without side effects', () => {
     const a = createMainNode('A');
     upsertPlan(a.db, a.projectId, { uuid: 'plan-missing-task', planId: 1, title: 'Plan exists' });
