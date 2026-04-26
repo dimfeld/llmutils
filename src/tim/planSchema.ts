@@ -104,6 +104,7 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
         objectFactory({
           ...PostProcessedReviewOutputIssueSchema.shape,
           uuid: z.guid().optional(),
+          orderKey: z.string().optional(),
           category: z.string(),
           file: z.string().optional(),
           line: z.union([z.number(), z.string()]).optional(),

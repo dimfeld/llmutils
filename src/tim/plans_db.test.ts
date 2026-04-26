@@ -106,7 +106,26 @@ describe('tim plans_db', () => {
       ['bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 5],
     ]);
 
-    const result = planRowToSchemaInput(row, tasks, depUuids, tags, uuidToPlanId);
+    const result = planRowToSchemaInput(row, tasks, depUuids, tags, uuidToPlanId, [
+      {
+        uuid: '33333333-3333-4333-8333-333333333333',
+        plan_uuid: row.uuid,
+        order_key: '0000001000',
+        severity: 'major',
+        category: 'coverage',
+        content: 'Missing integration test',
+        file: 'src/tim/plans_db.ts',
+        line: '42',
+        suggestion: 'Add direct coverage for DB fallback parent resolution',
+        source: null,
+        source_ref: null,
+        created_hlc: null,
+        updated_hlc: null,
+        deleted_hlc: null,
+        created_at: '2026-03-02T00:00:00.000Z',
+        updated_at: '2026-03-03T00:00:00.000Z',
+      },
+    ]);
 
     expect(result).toEqual({
       id: 11,
@@ -136,11 +155,13 @@ describe('tim plans_db', () => {
       lessonsAppliedAt: '2026-03-05T00:00:00.000Z',
       reviewIssues: [
         {
+          uuid: '33333333-3333-4333-8333-333333333333',
+          orderKey: '0000001000',
           severity: 'major',
           category: 'coverage',
           content: 'Missing integration test',
           file: 'src/tim/plans_db.ts',
-          line: 42,
+          line: '42',
           suggestion: 'Add direct coverage for DB fallback parent resolution',
         },
       ],
@@ -358,11 +379,13 @@ describe('tim plans_db', () => {
       lessonsAppliedAt: undefined,
       reviewIssues: [
         {
+          uuid: expect.any(String),
+          orderKey: '0000001000',
           severity: 'minor',
           category: 'tests',
           content: 'Add integration coverage for DB deserialization',
           file: 'src/tim/plans_db.ts',
-          line: 55,
+          line: '55',
           suggestion: 'Cover loadPlansFromDb with a real database row',
         },
       ],

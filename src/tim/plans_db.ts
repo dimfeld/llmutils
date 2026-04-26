@@ -10,6 +10,7 @@ import {
   getPlanTagsByProject,
   type PlanRow,
 } from './db/plan.js';
+import { listReviewIssuesForPlan, type PlanReviewIssueRow } from './db/plan_review_issue.js';
 import { getProject } from './db/project.js';
 import type { PlanSchema, PlanSchemaInput } from './planSchema.js';
 
@@ -26,14 +27,6 @@ function parseOptionalStringArray(value: string | null): string[] | undefined {
   return JSON.parse(value) as string[];
 }
 
-function parseOptionalReviewIssues(value: string | null): PlanSchema['reviewIssues'] | undefined {
-  if (!value) {
-    return undefined;
-  }
-
-  return JSON.parse(value) as PlanSchema['reviewIssues'];
-}
-
 function resolveUuidToPlanId(uuid: string, uuidToPlanId?: Map<string, number>): number | undefined {
   const mappedPlanId = uuidToPlanId?.get(uuid);
   if (typeof mappedPlanId === 'number') {
@@ -42,6 +35,33 @@ function resolveUuidToPlanId(uuid: string, uuidToPlanId?: Map<string, number>): 
 
   const db = getDatabase();
   return getPlanByUuid(db, uuid)?.plan_id;
+}
+
+function reviewIssueRowsToSchema(
+  rows: readonly PlanReviewIssueRow[]
+): PlanSchema['reviewIssues'] | undefined {
+  if (rows.length === 0) {
+    return undefined;
+  }
+
+  return rows.map((row) => ({
+    uuid: row.uuid,
+    orderKey: row.order_key,
+    severity:
+      row.severity === 'critical' ||
+      row.severity === 'major' ||
+      row.severity === 'minor' ||
+      row.severity === 'info'
+        ? row.severity
+        : 'info',
+    category: row.category ?? 'other',
+    content: row.content,
+    file: row.file ?? undefined,
+    line: row.line ?? undefined,
+    suggestion: row.suggestion ?? undefined,
+    source: row.source === 'claude-code' || row.source === 'codex-cli' ? row.source : undefined,
+    sourceRef: row.source_ref ?? undefined,
+  }));
 }
 
 /**
@@ -60,7 +80,8 @@ export function planRowToSchemaInput(
   }>,
   dependencyUuids: string[],
   tags: string[],
-  uuidToPlanId?: Map<string, number>
+  uuidToPlanId?: Map<string, number>,
+  reviewIssueRows?: readonly PlanReviewIssueRow[]
 ): PlanSchema {
   const parent = row.parent_uuid ? resolveUuidToPlanId(row.parent_uuid, uuidToPlanId) : undefined;
 
@@ -95,7 +116,7 @@ export function planRowToSchemaInput(
     planGeneratedAt: row.plan_generated_at ?? undefined,
     docsUpdatedAt: row.docs_updated_at ?? undefined,
     lessonsAppliedAt: row.lessons_applied_at ?? undefined,
-    reviewIssues: parseOptionalReviewIssues(row.review_issues),
+    reviewIssues: reviewIssueRowsToSchema(reviewIssueRows ?? []),
     parent,
     dependencies,
     tasks,
@@ -118,7 +139,8 @@ export function planRowForTransaction(row: PlanRow, uuidToPlanId: Map<string, nu
     (dependency) => dependency.depends_on_uuid
   );
   const tags = getPlanTagsByUuid(db, row.uuid).map((tag) => tag.tag);
-  return planRowToSchemaInput(row, tasks, dependencyUuids, tags, uuidToPlanId);
+  const reviewIssueRows = listReviewIssuesForPlan(db, row.uuid);
+  return planRowToSchemaInput(row, tasks, dependencyUuids, tags, uuidToPlanId, reviewIssueRows);
 }
 
 export function invertPlanIdToUuidMap(idToUuid: Map<number, string>): Map<string, number> {
@@ -175,6 +197,11 @@ export function loadPlansFromDb(_searchDir: string, repositoryId: string): Plans
     dependencyUuidsByPlanUuid.set(dependencyRow.plan_uuid, list);
   }
 
+  const reviewIssueRowsByPlanUuid = new Map<string, PlanReviewIssueRow[]>();
+  for (const row of rows) {
+    reviewIssueRowsByPlanUuid.set(row.uuid, listReviewIssuesForPlan(db, row.uuid));
+  }
+
   const plans = new Map<number, PlanSchema>();
   const seenIds = new Map<number, string[]>();
 
@@ -188,7 +215,8 @@ export function loadPlansFromDb(_searchDir: string, repositoryId: string): Plans
       tasksByPlanUuid.get(row.uuid) ?? [],
       dependencyUuidsByPlanUuid.get(row.uuid) ?? [],
       tagsByPlanUuid.get(row.uuid) ?? [],
-      planUuidToId
+      planUuidToId,
+      reviewIssueRowsByPlanUuid.get(row.uuid) ?? []
     );
 
     plans.set(row.plan_id, plan);

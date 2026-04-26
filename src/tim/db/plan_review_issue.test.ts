@@ -49,6 +49,7 @@ describe('tim db/plan_review_issue', () => {
     expect(issue.file).toBe('src/file.ts');
     expect(issue.line).toBe('10-12');
     expect(issue.suggestion).toBe('Patch it');
+    expect(issue.order_key).toBe('0000001000');
 
     expect(listReviewIssuesForPlan(db, 'plan-review-issue')).toHaveLength(1);
     expect(softDeleteReviewIssue(db, issue.uuid)).toBe(true);
@@ -126,6 +127,34 @@ describe('tim db/plan_review_issue', () => {
     expect(listReviewIssuesForPlan(db, 'plan-review-issue')).toHaveLength(2);
   });
 
+  test('listReviewIssuesForPlan orders by order_key then uuid', () => {
+    const laterUuid = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const earlierUuid = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    createReviewIssue(db, {
+      uuid: laterUuid,
+      planUuid: 'plan-review-issue',
+      content: 'Later same key',
+      orderKey: '0000002000',
+    });
+    createReviewIssue(db, {
+      uuid: earlierUuid,
+      planUuid: 'plan-review-issue',
+      content: 'Earlier same key',
+      orderKey: '0000002000',
+    });
+    createReviewIssue(db, {
+      planUuid: 'plan-review-issue',
+      content: 'First by order key',
+      orderKey: '0000001000',
+    });
+
+    expect(listReviewIssuesForPlan(db, 'plan-review-issue').map((issue) => issue.content)).toEqual([
+      'First by order key',
+      'Earlier same key',
+      'Later same key',
+    ]);
+  });
+
   test('reconcileReviewIssuesForPlan mirrors desired JSON-shaped issues', () => {
     const stableUuid = '11111111-1111-4111-8111-111111111111';
     reconcileReviewIssuesForPlan(db, 'plan-review-issue', [
@@ -166,6 +195,7 @@ describe('tim db/plan_review_issue', () => {
     expect(activeIssues).toHaveLength(1);
     expect(activeIssues[0]).toMatchObject({
       uuid: stableUuid,
+      order_key: '0000001000',
       severity: 'critical',
       line: '7-8',
       suggestion: 'Fix it better',
@@ -177,5 +207,33 @@ describe('tim db/plan_review_issue', () => {
         )
         .get('plan-review-issue')
     ).toEqual({ count: 1 });
+  });
+
+  test('reconcileReviewIssuesForPlan does not resurrect tombstoned UUIDs', () => {
+    const issue = createReviewIssue(db, {
+      planUuid: 'plan-review-issue',
+      content: 'Deleted issue that reappears in a stale file',
+    });
+    expect(softDeleteReviewIssue(db, issue.uuid)).toBe(true);
+
+    reconcileReviewIssuesForPlan(db, 'plan-review-issue', [
+      {
+        uuid: issue.uuid,
+        severity: 'major',
+        category: 'bug',
+        content: 'Deleted issue that reappears in a stale file',
+      },
+    ]);
+
+    const originalRow = getReviewIssueByUuid(db, issue.uuid);
+    expect(originalRow?.deleted_hlc).toBeTruthy();
+
+    const activeIssues = listReviewIssuesForPlan(db, 'plan-review-issue');
+    expect(activeIssues).toHaveLength(1);
+    expect(activeIssues[0]).toMatchObject({
+      content: 'Deleted issue that reappears in a stale file',
+      order_key: '0000001000',
+    });
+    expect(activeIssues[0]?.uuid).not.toBe(issue.uuid);
   });
 });

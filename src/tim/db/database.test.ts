@@ -382,6 +382,12 @@ describe('tim db/database', () => {
     expect(taskColumns).toContain('updated_hlc');
     expect(taskColumns).toContain('deleted_hlc');
 
+    const reviewIssueColumns = db
+      .query<{ name: string }, []>("PRAGMA table_info('plan_review_issue')")
+      .all()
+      .map((row) => row.name);
+    expect(reviewIssueColumns).toContain('order_key');
+
     const indices = db
       .query<{ name: string }, []>(
         "SELECT name FROM sqlite_master WHERE type = 'index' ORDER BY name"
@@ -398,6 +404,7 @@ describe('tim db/database', () => {
     expect(indices).toContain('idx_plan_task_order');
     expect(indices).toContain('idx_plan_tag_plan_uuid');
     expect(indices).toContain('idx_plan_review_issue_plan_uuid');
+    expect(indices).toContain('idx_plan_review_issue_order');
     expect(indices).not.toContain('idx_plan_dependency_uuid_edge');
     expect(indices).not.toContain('idx_plan_tag_uuid_tag');
     expect(indices).toContain('idx_webhook_log_repo_id');
@@ -603,9 +610,9 @@ describe('tim db/database', () => {
         .get();
       const planReviewIssues = db
         .query<
-          { count: number; content: string | null; source: string | null },
+          { count: number; content: string | null; source: string | null; order_key: string },
           [string]
-        >('SELECT count(*) AS count, content, source FROM plan_review_issue WHERE plan_uuid = ?')
+        >('SELECT count(*) AS count, content, source, order_key FROM plan_review_issue WHERE plan_uuid = ?')
         .get('plan-1');
 
       expect(planCount?.count).toBe(1);
@@ -621,6 +628,7 @@ describe('tim db/database', () => {
         count: 1,
         content: 'Preserve this issue',
         source: 'codex-cli',
+        order_key: '0000001000',
       });
     } finally {
       db.close(false);
@@ -778,6 +786,7 @@ describe('tim db/database', () => {
             severity: string | null;
             category: string | null;
             content: string;
+            order_key: string;
             file: string | null;
             line: string | null;
             suggestion: string | null;
@@ -785,13 +794,14 @@ describe('tim db/database', () => {
           },
           [string, string]
         >(
-          'SELECT severity, category, content, file, line, suggestion, source FROM plan_review_issue WHERE plan_uuid = ? AND content = ?'
+          'SELECT severity, category, content, order_key, file, line, suggestion, source FROM plan_review_issue WHERE plan_uuid = ? AND content = ?'
         )
         .get('plan-a', 'First issue');
       expect(issueFull).toEqual({
         severity: 'minor',
         category: 'style',
         content: 'First issue',
+        order_key: '0000001000',
         file: 'src/a.ts',
         line: '12',
         suggestion: 'Do the thing',
@@ -800,12 +810,13 @@ describe('tim db/database', () => {
 
       const issueMinimal = db
         .query<
-          { severity: string | null; content: string },
+          { severity: string | null; content: string; order_key: string },
           [string, string]
-        >('SELECT severity, content FROM plan_review_issue WHERE plan_uuid = ? AND content = ?')
+        >('SELECT severity, content, order_key FROM plan_review_issue WHERE plan_uuid = ? AND content = ?')
         .get('plan-a', 'Second issue with no extra fields');
       expect(issueMinimal).not.toBeNull();
       expect(issueMinimal?.severity).toBeNull();
+      expect(issueMinimal?.order_key).toBe('0000002000');
 
       // Plan B has no review issues
       const issueB = db

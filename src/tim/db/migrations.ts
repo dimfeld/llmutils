@@ -842,6 +842,7 @@ const migrations: Migration[] = [
         CREATE TABLE plan_review_issue (
           uuid TEXT PRIMARY KEY,
           plan_uuid TEXT NOT NULL REFERENCES plan(uuid) ON DELETE CASCADE,
+          order_key TEXT NOT NULL,
           severity TEXT,
           category TEXT,
           content TEXT NOT NULL,
@@ -858,6 +859,9 @@ const migrations: Migration[] = [
         );
       `);
       db.run('CREATE INDEX idx_plan_review_issue_plan_uuid ON plan_review_issue(plan_uuid)');
+      db.run(
+        'CREATE INDEX idx_plan_review_issue_order ON plan_review_issue(plan_uuid, order_key, uuid)'
+      );
 
       const planColumns = tableExists('plan')
         ? (db.prepare("PRAGMA table_info('plan')").all() as Array<{ name: string }>)
@@ -873,6 +877,7 @@ const migrations: Migration[] = [
           INSERT INTO plan_review_issue (
             uuid,
             plan_uuid,
+            order_key,
             severity,
             category,
             content,
@@ -881,7 +886,7 @@ const migrations: Migration[] = [
             suggestion,
             source,
             source_ref
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
       );
       for (const plan of planRows) {
@@ -906,7 +911,7 @@ const migrations: Migration[] = [
           );
           continue;
         }
-        for (const issue of issues) {
+        for (const [index, issue] of issues.entries()) {
           if (!issue || typeof issue !== 'object') {
             continue;
           }
@@ -918,6 +923,7 @@ const migrations: Migration[] = [
           insertIssue.run(
             randomUUID(),
             plan.uuid,
+            String((index + 1) * 1000).padStart(10, '0'),
             typeof issueRecord.severity === 'string' ? issueRecord.severity : null,
             typeof issueRecord.category === 'string' ? issueRecord.category : null,
             content,

@@ -13,6 +13,7 @@ import {
   getPlanTasksByUuid,
   upsertPlan,
 } from './db/plan.js';
+import { listReviewIssuesForPlan } from './db/plan_review_issue.js';
 import { clearPlanSyncContext } from './db/plan_sync.js';
 import { getOrCreateProject } from './db/project.js';
 import {
@@ -426,6 +427,7 @@ describe('tim plan_materialize', () => {
     expect(saved?.review_issues).toBe(
       '[{"severity":"minor","category":"correctness","content":"Updated review issue from materialized file","file":"src/tim/plan_materialize.test.ts","line":1}]'
     );
+    const savedIssue = listReviewIssuesForPlan(db, '33333333-3333-4333-8333-333333333333')[0]!;
 
     const tasks = getPlanTasksByUuid(db, '33333333-3333-4333-8333-333333333333');
     expect(tasks).toHaveLength(3);
@@ -451,11 +453,13 @@ describe('tim plan_materialize', () => {
       lessonsAppliedAt: '2026-03-05T00:00:00.000Z',
       reviewIssues: [
         {
+          uuid: savedIssue.uuid,
+          orderKey: '0000001000',
           severity: 'minor',
           category: 'correctness',
           content: 'Updated review issue from materialized file',
           file: 'src/tim/plan_materialize.test.ts',
-          line: 1,
+          line: '1',
         },
       ],
       tags: ['materialize', 'verified'],
@@ -466,6 +470,21 @@ describe('tim plan_materialize', () => {
     expect(await fs.readFile(getShadowPlanPath(repoDir, 3), 'utf8')).toBe(
       await fs.readFile(planPath, 'utf8')
     );
+
+    rematerializedPlan.reviewIssues = [
+      {
+        ...rematerializedPlan.reviewIssues![0]!,
+        content: 'Edited review issue with stable uuid',
+      },
+    ];
+    await writePlanFile(planPath, rematerializedPlan, { skipSync: true });
+    await syncMaterializedPlan(3, repoDir);
+    const [updatedIssue] = listReviewIssuesForPlan(db, '33333333-3333-4333-8333-333333333333');
+    expect(updatedIssue).toMatchObject({
+      uuid: savedIssue.uuid,
+      content: 'Edited review issue with stable uuid',
+      order_key: '0000001000',
+    });
   });
 
   test('syncMaterializedPlan skips DB writes when the materialized file is unchanged from its shadow', async () => {
@@ -1254,14 +1273,14 @@ describe('tim plan_materialize', () => {
           category: 'correctness',
           content: 'Round-trip coverage must preserve review findings',
           file: 'src/tim/plan_materialize.ts',
-          line: 42,
+          line: '42',
         },
         {
           severity: 'minor',
           category: 'coverage',
           content: 'Verify cleanup cases',
           file: 'src/tim/plan_materialize.test.ts',
-          line: 1,
+          line: '1',
         },
       ],
       parent: 1,

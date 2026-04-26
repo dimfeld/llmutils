@@ -16,6 +16,7 @@ import {
   getPlanTasksByUuid,
   type PlanRow,
 } from './db/plan.js';
+import { listReviewIssuesForPlan } from './db/plan_review_issue.js';
 import { syncPlanToDb } from './db/plan_sync.js';
 import { getOrCreateProject } from './db/project.js';
 import { generatePlanFileContent, readPlanFile } from './plans.js';
@@ -278,9 +279,10 @@ function getPlanSchemaFromRow(
     (dependency) => dependency.depends_on_uuid
   );
   const tags = getPlanTagsByUuid(db, row.uuid).map((tag) => tag.tag);
+  const reviewIssueRows = listReviewIssuesForPlan(db, row.uuid);
 
   return {
-    ...planRowToSchemaInput(row, tasks, dependencyUuids, tags, uuidToPlanId),
+    ...planRowToSchemaInput(row, tasks, dependencyUuids, tags, uuidToPlanId, reviewIssueRows),
     ...(materializedAs ? { materializedAs } : {}),
   };
 }

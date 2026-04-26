@@ -13,6 +13,7 @@ import {
   upsertPlan,
 } from './db/plan.js';
 import { getDatabase } from './db/database.js';
+import { listReviewIssuesForPlan } from './db/plan_review_issue.js';
 import { toPlanUpsertInput } from './db/plan_sync.js';
 import { getOrCreateProject } from './db/project.js';
 import { resolveProjectContext } from './plan_materialize.js';
@@ -208,6 +209,7 @@ async function loadPlanSnapshot(
       (dependency) => dependency.depends_on_uuid
     );
     const tags = getPlanTagsByUuid(db, row.uuid).map((tag) => tag.tag);
+    const reviewIssueRows = listReviewIssuesForPlan(db, row.uuid);
     const uuidToPlanId =
       context?.uuidToPlanId ??
       new Map(
@@ -216,7 +218,7 @@ async function loadPlanSnapshot(
 
     return {
       row,
-      plan: planRowToSchemaInput(row, tasks, dependencyUuids, tags, uuidToPlanId),
+      plan: planRowToSchemaInput(row, tasks, dependencyUuids, tags, uuidToPlanId, reviewIssueRows),
     };
   });
 

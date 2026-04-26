@@ -11,6 +11,7 @@ export const PLACEHOLDER_LOCAL_DELETE_HLC = 'local-delete';
 export interface PlanReviewIssueRow {
   uuid: string;
   plan_uuid: string;
+  order_key: string;
   severity: string | null;
   category: string | null;
   content: string;
@@ -37,15 +38,35 @@ export interface CreateReviewIssueInput {
   suggestion?: string | null;
   source?: string | null;
   sourceRef?: string | null;
+  orderKey?: string | null;
+}
+
+function nextReviewIssueOrderKey(db: Database, planUuid: string): string {
+  const row = db
+    .prepare(
+      `
+        SELECT order_key
+        FROM plan_review_issue
+        WHERE plan_uuid = ?
+        ORDER BY order_key DESC
+        LIMIT 1
+      `
+    )
+    .get(planUuid) as { order_key: string } | null;
+  const lastOrder = row ? Number.parseInt(row.order_key, 10) : 0;
+  const nextOrder = Number.isFinite(lastOrder) ? lastOrder + 1000 : 1000;
+  return String(nextOrder).padStart(10, '0');
 }
 
 export function createReviewIssue(db: Database, input: CreateReviewIssueInput): PlanReviewIssueRow {
   const uuid = input.uuid ?? randomUUID();
+  const orderKey = input.orderKey ?? nextReviewIssueOrderKey(db, input.planUuid);
   db.prepare(
     `
       INSERT INTO plan_review_issue (
         uuid,
         plan_uuid,
+        order_key,
         severity,
         category,
         content,
@@ -54,11 +75,12 @@ export function createReviewIssue(db: Database, input: CreateReviewIssueInput): 
         suggestion,
         source,
         source_ref
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
   ).run(
     uuid,
     input.planUuid,
+    orderKey,
     input.severity ?? null,
     input.category ?? null,
     input.content,
@@ -92,7 +114,7 @@ export function listReviewIssuesForPlan(db: Database, planUuid: string): PlanRev
         FROM plan_review_issue
         WHERE plan_uuid = ?
           AND deleted_hlc IS NULL
-        ORDER BY created_at, uuid
+        ORDER BY order_key, uuid
       `
     )
     .all(planUuid) as PlanReviewIssueRow[];
@@ -139,11 +161,17 @@ function sourceRefForIssue(issue: PlanReviewIssueInput): string | null {
   return issue.sourceRef ?? null;
 }
 
-function updateReviewIssueRow(db: Database, rowUuid: string, issue: PlanReviewIssueInput): void {
+function updateReviewIssueRow(
+  db: Database,
+  rowUuid: string,
+  issue: PlanReviewIssueInput,
+  orderKey: string
+): void {
   db.prepare(
     `
       UPDATE plan_review_issue
-      SET severity = ?,
+      SET order_key = ?,
+          severity = ?,
           category = ?,
           content = ?,
           file = ?,
@@ -151,11 +179,11 @@ function updateReviewIssueRow(db: Database, rowUuid: string, issue: PlanReviewIs
           suggestion = ?,
           source = ?,
           source_ref = ?,
-          deleted_hlc = NULL,
           updated_at = ${SQL_NOW_ISO_UTC}
       WHERE uuid = ?
     `
   ).run(
+    orderKey,
     issue.severity ?? null,
     issue.category ?? null,
     issue.content,
@@ -176,7 +204,10 @@ export function reconcileReviewIssuesForPlan(
   const existingRows = db
     .prepare('SELECT * FROM plan_review_issue WHERE plan_uuid = ?')
     .all(planUuid) as PlanReviewIssueRow[];
-  const existingByUuid = new Map(existingRows.map((row) => [row.uuid, row]));
+  const existingByUuid = new Map(
+    existingRows.filter((row) => row.deleted_hlc === null).map((row) => [row.uuid, row])
+  );
+  const allExistingUuids = new Set(existingRows.map((row) => row.uuid));
   const activeByContentKey = new Map<string, PlanReviewIssueRow[]>();
 
   for (const row of existingRows) {
@@ -190,8 +221,17 @@ export function reconcileReviewIssuesForPlan(
   }
 
   const retainedUuids = new Set<string>();
+  const incomingOrderKeys = desiredIssues.map((issue) => issue.orderKey);
+  const canPreserveIncomingOrderKeys =
+    incomingOrderKeys.every((orderKey): orderKey is string => typeof orderKey === 'string') &&
+    incomingOrderKeys.every(
+      (orderKey, index, keys) => index === 0 || keys[index - 1]!.localeCompare(orderKey) <= 0
+    );
 
-  for (const issue of desiredIssues) {
+  for (const [index, issue] of desiredIssues.entries()) {
+    const orderKey = canPreserveIncomingOrderKeys
+      ? issue.orderKey!
+      : String((index + 1) * 1000).padStart(10, '0');
     const explicitUuid = issue.uuid && existingByUuid.has(issue.uuid) ? issue.uuid : null;
     const matchedByUuid = explicitUuid ? existingByUuid.get(explicitUuid) : undefined;
     const contentKey = reviewIssueContentKey(issue);
@@ -200,13 +240,13 @@ export function reconcileReviewIssuesForPlan(
     const matchedRow = matchedByUuid ?? matchedByContent;
 
     if (matchedRow) {
-      updateReviewIssueRow(db, matchedRow.uuid, issue);
+      updateReviewIssueRow(db, matchedRow.uuid, issue, orderKey);
       retainedUuids.add(matchedRow.uuid);
       continue;
     }
 
     const created = createReviewIssue(db, {
-      uuid: issue.uuid,
+      uuid: issue.uuid && !allExistingUuids.has(issue.uuid) ? issue.uuid : undefined,
       planUuid,
       severity: issue.severity ?? null,
       category: issue.category ?? null,
@@ -216,6 +256,7 @@ export function reconcileReviewIssuesForPlan(
       suggestion: issue.suggestion ?? null,
       source: issue.source ?? null,
       sourceRef: sourceRefForIssue(issue),
+      orderKey,
     });
     retainedUuids.add(created.uuid);
   }
