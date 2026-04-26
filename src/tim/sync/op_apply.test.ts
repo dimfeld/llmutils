@@ -961,4 +961,83 @@ describe('sync op application', () => {
     // Tag edge must be tombstoned
     expect(hasSyncTombstone('plan_tag', 'plan-cascade-all#mytag')).toBe(true);
   });
+
+  test('stale add_edge for tombstoned plan is skipped, op_log row persists for dedup', () => {
+    const projectId = getOrCreateProject(db, 'github.com__owner__repo').id;
+    upsertPlan(db, projectId, { uuid: 'plan-edge-deleted', planId: 90 });
+    deletePlan(db, 'plan-edge-deleted');
+    expect(getPlanByUuid(db, 'plan-edge-deleted')).toBeNull();
+
+    const staleDepAdd = makeOp(
+      'remote-c',
+      { physicalMs: Date.now() + 50_000, logical: 0 },
+      1,
+      'plan_dependency',
+      'plan-edge-deleted->some-dep',
+      'add_edge',
+      { planUuid: 'plan-edge-deleted', dependsOnUuid: 'some-dep' }
+    );
+    const staleTagAdd = makeOp(
+      'remote-c',
+      { physicalMs: Date.now() + 50_001, logical: 0 },
+      2,
+      'plan_tag',
+      'plan-edge-deleted#feature',
+      'add_edge',
+      { planUuid: 'plan-edge-deleted', tag: 'feature' }
+    );
+
+    const result = applyRemoteOps(db, [staleDepAdd, staleTagAdd]);
+    expect(result.errors).toEqual([]);
+    expect(result.skipped.map((s) => s.opId).sort()).toEqual(
+      [staleDepAdd.op_id, staleTagAdd.op_id].sort()
+    );
+
+    // Both op_log rows must persist for dedup
+    expect(
+      db.prepare('SELECT count(*) AS count FROM sync_op_log WHERE op_id = ?').get(staleDepAdd.op_id)
+    ).toEqual({ count: 1 });
+    expect(
+      db.prepare('SELECT count(*) AS count FROM sync_op_log WHERE op_id = ?').get(staleTagAdd.op_id)
+    ).toEqual({ count: 1 });
+
+    // Re-apply: dedup hit (already applied), no errors
+    const reResult = applyRemoteOps(db, [staleDepAdd, staleTagAdd]);
+    expect(reResult.errors).toEqual([]);
+    expect(reResult.applied).toBe(0);
+  });
+
+  test('add_edge with missing payload fields routes to skipped without throwing', () => {
+    const projectId = getOrCreateProject(db, 'github.com__owner__repo').id;
+    upsertPlan(db, projectId, { uuid: 'plan-bad-edge', planId: 91 });
+
+    const badDep = makeOp(
+      'remote-d',
+      { physicalMs: Date.now() + 60_000, logical: 0 },
+      1,
+      'plan_dependency',
+      'plan-bad-edge->missing',
+      'add_edge',
+      { planUuid: 'plan-bad-edge' } // missing dependsOnUuid
+    );
+    const badTag = makeOp(
+      'remote-d',
+      { physicalMs: Date.now() + 60_001, logical: 0 },
+      2,
+      'plan_tag',
+      'plan-bad-edge#missing',
+      'add_edge',
+      { planUuid: 'plan-bad-edge' } // missing tag
+    );
+
+    const result = applyRemoteOps(db, [badDep, badTag]);
+    expect(result.errors).toEqual([]);
+    expect(result.skipped).toHaveLength(2);
+    expect(
+      db.prepare('SELECT count(*) AS count FROM sync_op_log WHERE op_id = ?').get(badDep.op_id)
+    ).toEqual({ count: 1 });
+    expect(
+      db.prepare('SELECT count(*) AS count FROM sync_op_log WHERE op_id = ?').get(badTag.op_id)
+    ).toEqual({ count: 1 });
+  });
 });

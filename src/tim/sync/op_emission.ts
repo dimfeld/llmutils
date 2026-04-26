@@ -396,7 +396,7 @@ export function emitTaskSetOrder(
     taskUuid,
     'set_order',
     { planUuid, orderKey, taskIndex },
-    { order_key: orderKey, task_index: taskIndex }
+    { order_key: orderKey }
   );
   db.prepare('UPDATE plan_task SET updated_hlc = ? WHERE uuid = ? AND deleted_hlc IS NULL').run(
     emitted.hlcText,

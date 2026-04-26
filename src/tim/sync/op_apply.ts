@@ -72,16 +72,9 @@ const PLAN_FIELDS = new Set([
   'epic',
 ]);
 
-const PLAN_TASK_FIELDS = new Set([
-  'plan_uuid',
-  'order_key',
-  'title',
-  'description',
-  'done',
-]);
+const PLAN_TASK_FIELDS = new Set(['order_key', 'title', 'description', 'done']);
 
 const REVIEW_ISSUE_FIELDS = new Set([
-  'plan_uuid',
   'order_key',
   'severity',
   'category',
@@ -725,10 +718,10 @@ function latestAddEdge(db: Database, op: SyncOpRecord): SyncOpLogRow | null {
     .get(op.entity_type, op.entity_id) as SyncOpLogRow | null;
 }
 
-function applyDependencyEdge(db: Database, op: SyncOpRecord): void {
+function applyDependencyEdge(db: Database, op: SyncOpRecord): SkippedSyncOp | null {
   const payload = parsePayload(op);
   if (typeof payload.planUuid !== 'string' || typeof payload.dependsOnUuid !== 'string') {
-    throw new Error('dependency edge op missing planUuid or dependsOnUuid');
+    return { opId: op.op_id, reason: 'dependency edge op missing planUuid or dependsOnUuid' };
   }
   if (op.op_type === 'remove_edge') {
     insertTombstone(db, op);
@@ -741,6 +734,12 @@ function applyDependencyEdge(db: Database, op: SyncOpRecord): void {
     add !== null &&
     remoteWins({ physicalMs: add.hlc_physical_ms, logical: add.hlc_logical }, add.node_id, remove);
   if (present) {
+    if (
+      hasTombstone(db, 'plan', payload.planUuid) ||
+      hasTombstone(db, 'plan', payload.dependsOnUuid)
+    ) {
+      return { opId: op.op_id, reason: 'parent plan tombstoned; dropping dependency edge' };
+    }
     db.prepare(
       'INSERT OR IGNORE INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)'
     ).run(payload.planUuid, payload.dependsOnUuid);
@@ -750,12 +749,13 @@ function applyDependencyEdge(db: Database, op: SyncOpRecord): void {
       payload.dependsOnUuid
     );
   }
+  return null;
 }
 
-function applyTagEdge(db: Database, op: SyncOpRecord): void {
+function applyTagEdge(db: Database, op: SyncOpRecord): SkippedSyncOp | null {
   const payload = parsePayload(op);
   if (typeof payload.planUuid !== 'string' || typeof payload.tag !== 'string') {
-    throw new Error('tag edge op missing planUuid or tag');
+    return { opId: op.op_id, reason: 'tag edge op missing planUuid or tag' };
   }
   if (op.op_type === 'remove_edge') {
     insertTombstone(db, op);
@@ -768,6 +768,9 @@ function applyTagEdge(db: Database, op: SyncOpRecord): void {
     add !== null &&
     remoteWins({ physicalMs: add.hlc_physical_ms, logical: add.hlc_logical }, add.node_id, remove);
   if (present) {
+    if (hasTombstone(db, 'plan', payload.planUuid)) {
+      return { opId: op.op_id, reason: 'parent plan tombstoned; dropping tag edge' };
+    }
     db.prepare('INSERT OR IGNORE INTO plan_tag (plan_uuid, tag) VALUES (?, ?)').run(
       payload.planUuid,
       payload.tag
@@ -778,6 +781,7 @@ function applyTagEdge(db: Database, op: SyncOpRecord): void {
       payload.tag
     );
   }
+  return null;
 }
 
 function applyProjectSettingUpdate(db: Database, op: SyncOpRecord): SkippedSyncOp | null {
@@ -843,15 +847,13 @@ function applyKnownOp(db: Database, op: SyncOpRecord): SkippedSyncOp | null {
     op.entity_type === 'plan_dependency' &&
     (op.op_type === 'add_edge' || op.op_type === 'remove_edge')
   ) {
-    applyDependencyEdge(db, op);
-    return null;
+    return applyDependencyEdge(db, op);
   }
   if (
     op.entity_type === 'plan_tag' &&
     (op.op_type === 'add_edge' || op.op_type === 'remove_edge')
   ) {
-    applyTagEdge(db, op);
-    return null;
+    return applyTagEdge(db, op);
   }
   if (op.entity_type === 'project_setting' && op.op_type === 'update_fields') {
     return applyProjectSettingUpdate(db, op);
