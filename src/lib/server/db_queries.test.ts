@@ -864,7 +864,12 @@ describe('lib/server/db_queries', () => {
     expect(before.length).toBeGreaterThan(0);
 
     upsertPlanTasks(db, planUuid, [
-      { uuid: before[0].uuid, title: before[0].title, description: before[0].description, done: !!before[0].done },
+      {
+        uuid: before[0].uuid,
+        title: before[0].title,
+        description: before[0].description,
+        done: !!before[0].done,
+      },
     ]);
 
     const allProjectPlans = getPlansForProject(db);

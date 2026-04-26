@@ -232,8 +232,7 @@ function replacePlanTasks(
     if (existingTask.description !== task.description) fieldUpdates.description = task.description;
     if (existingTask.done !== done) fieldUpdates.done = done;
 
-    const orderChanged =
-      existingTask.order_key !== orderKey || existingTask.task_index !== index;
+    const orderChanged = existingTask.order_key !== orderKey || existingTask.task_index !== index;
     const fieldsChanged = Object.keys(fieldUpdates).length > 0;
     // Always rewrite the row: the pre-iteration sweep above sets task_index = -id
     // for every existing task to free the (plan_uuid, task_index) UNIQUE slot, so

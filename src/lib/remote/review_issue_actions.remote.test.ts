@@ -247,10 +247,7 @@ describe('review issue remote actions', () => {
       prUrl: 'https://github.com/example/repo/pull/410',
       branch: 'feature/review-issue-reconvert',
     });
-    const issue = seedReviewIssue(
-      review.id,
-      makeIssue('major', 'bug', 'Reconvertible issue')
-    );
+    const issue = seedReviewIssue(review.id, makeIssue('major', 'bug', 'Reconvertible issue'));
     seedPlan({ uuid: 'plan-reconvert', planId: 270 });
     const prStatus = upsertPrStatus(currentDb, {
       prUrl: review.pr_url,
