@@ -395,7 +395,7 @@ describe('tim db/database', () => {
     expect(indices).toContain('idx_branch_merge_requirement_check_parent');
 
     const localNodes = db
-      .query<{ count: number }, []>("SELECT count(*) AS count FROM sync_node WHERE is_local = 1")
+      .query<{ count: number }, []>('SELECT count(*) AS count FROM sync_node WHERE is_local = 1')
       .get();
     expect(localNodes?.count).toBe(1);
 

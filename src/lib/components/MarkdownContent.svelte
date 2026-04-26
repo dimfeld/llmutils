@@ -3,10 +3,7 @@
   import type { Snippet } from 'svelte';
 
   import Diff from './Diff.svelte';
-  import {
-    parseMarkdownWithDiffs,
-    type MarkdownSegment,
-  } from '$lib/utils/markdown_parser.js';
+  import { parseMarkdownWithDiffs, type MarkdownSegment } from '$lib/utils/markdown_parser.js';
 
   /**
    * Overrides are passed to each rendered Diff instance. Annotation metadata is

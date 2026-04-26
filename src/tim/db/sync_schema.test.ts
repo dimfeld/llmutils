@@ -58,7 +58,7 @@ describe('tim db/sync_schema migration', () => {
   test('allows at most one local sync node', () => {
     // openDatabase already initialized one local node — attempting to insert a second must fail.
     const existing = db
-      .prepare("SELECT count(*) AS count FROM sync_node WHERE is_local = 1")
+      .prepare('SELECT count(*) AS count FROM sync_node WHERE is_local = 1')
       .get() as { count: number };
     expect(existing.count).toBe(1);
 
@@ -97,9 +97,10 @@ describe('tim db/sync_schema migration', () => {
   });
 
   test('sync_op_log has the expected indexes', () => {
-    const indexes = db
-      .prepare("PRAGMA index_list('sync_op_log')")
-      .all() as Array<{ name: string; unique: number }>;
+    const indexes = db.prepare("PRAGMA index_list('sync_op_log')").all() as Array<{
+      name: string;
+      unique: number;
+    }>;
 
     const indexNames = indexes.map((idx) => idx.name).sort();
 

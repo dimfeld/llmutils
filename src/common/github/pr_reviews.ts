@@ -227,9 +227,7 @@ export function partitionIssuesForSubmission<T extends ReviewIssueForSubmission>
       if (inferredSide && inferredSide !== resolvedSide) {
         const inferredSideLines =
           inferredSide === 'RIGHT' ? fileIndex.additions : fileIndex.deletions;
-        const endpointsInInferredSide = endpointLines.every((line) =>
-          inferredSideLines.has(line)
-        );
+        const endpointsInInferredSide = endpointLines.every((line) => inferredSideLines.has(line));
         if (endpointsInInferredSide) {
           resolvedSide = inferredSide;
           endpointsInDiff = true;

@@ -14,10 +14,7 @@
   import { updateReviewIssueFields } from '$lib/remote/pr_review_submission.remote.js';
   import CopyButton from '$lib/components/CopyButton.svelte';
   import MarkdownContent, { type DiffOverrides } from '$lib/components/MarkdownContent.svelte';
-  import {
-    parseMarkdownWithDiffsAndToc,
-    type TocEntry,
-  } from '$lib/utils/markdown_parser.js';
+  import { parseMarkdownWithDiffsAndToc, type TocEntry } from '$lib/utils/markdown_parser.js';
   import {
     buildGuideDiffAnnotations,
     type ReviewIssueAnnotationData,
@@ -843,7 +840,7 @@
           {/if}
         </div>
         <div class="mt-2">
-          <ReviewGuideLinkedPlans projectId={projectId} linkedPlans={data.linkedPlans} />
+          <ReviewGuideLinkedPlans {projectId} linkedPlans={data.linkedPlans} />
         </div>
       </div>
       <span

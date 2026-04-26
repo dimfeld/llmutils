@@ -2,7 +2,6 @@
 
 `tim` is an AI development assistant for turning issues into plans, running agents in isolated workspaces, tracking active sessions in a web UI, and preparing review/PR follow-up work.
 
-
 ## Requirements
 
 `tim` depends on Bun features, including Bun's native SQLite client. It is not a plain Node.js application.

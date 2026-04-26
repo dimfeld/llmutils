@@ -83,9 +83,7 @@ describe('tim sync/node_identity', () => {
   test('registerPeerNode rejects changing an existing peer node_type', () => {
     registerPeerNode(db, { nodeId: 'peer-2', nodeType: 'main' });
 
-    expect(() =>
-      registerPeerNode(db, { nodeId: 'peer-2', nodeType: 'worker' })
-    ).toThrow(/type/);
+    expect(() => registerPeerNode(db, { nodeId: 'peer-2', nodeType: 'worker' })).toThrow(/type/);
   });
 
   test('registerPeerNode rejects writing the local node id', () => {
@@ -125,7 +123,8 @@ describe('tim sync/node_identity', () => {
   test('getLocalNodeId throws when no local node has been created', () => {
     // Build a bare migrated DB without going through openDatabase so no local node is initialized.
     const { Database } = require('bun:sqlite') as typeof import('bun:sqlite');
-    const { runMigrations } = require('../db/migrations.js') as typeof import('../db/migrations.js');
+    const { runMigrations } =
+      require('../db/migrations.js') as typeof import('../db/migrations.js');
     const bare = new Database(':memory:');
     try {
       bare.run('PRAGMA foreign_keys = ON');
