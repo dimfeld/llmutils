@@ -1315,4 +1315,73 @@ describe('tim plan_materialize', () => {
       `Multiple plans found for project ${project.id} with plan ID 3`
     );
   });
+
+  // ---------------------------------------------------------------------------
+  // syncMaterializedPlan – op emission only for changed fields
+  // ---------------------------------------------------------------------------
+  test('syncMaterializedPlan emits ops only for fields changed in the materialized file', async () => {
+    const { db, project } = await seedProject();
+    const planUuid = '33333333-3333-4333-8333-333333333333';
+    const planPath = await materializePlan(3, repoDir);
+
+    // Capture op count after seeding + materialization (materialize itself emits no new ops)
+    const opsBefore = (
+      db.prepare('SELECT COUNT(*) as cnt FROM sync_op_log').get() as { cnt: number }
+    ).cnt;
+
+    // Edit only title in the materialized file, leave goal unchanged
+    const editedPlan = await readPlanFile(planPath);
+    const originalGoal = editedPlan.goal;
+    editedPlan.title = 'Synced title from file edit';
+    await writePlanFile(planPath, editedPlan, { skipSync: true });
+
+    await syncMaterializedPlan(3, repoDir);
+
+    // Collect all update_fields ops for this plan emitted AFTER the seed
+    const allUpdateOps = db
+      .prepare(
+        'SELECT rowid, payload FROM sync_op_log WHERE entity_type = ? AND entity_id = ? AND op_type = ?'
+      )
+      .all('plan', planUuid, 'update_fields') as Array<{ rowid: number; payload: string }>;
+    const newUpdateOps = allUpdateOps.filter((op) => op.rowid > opsBefore);
+
+    // At least one update_fields op must have been emitted
+    expect(newUpdateOps.length).toBeGreaterThan(0);
+
+    // The update must include 'title' in its fields
+    const titleInUpdate = newUpdateOps.some((op) => {
+      const payload = JSON.parse(op.payload);
+      return 'title' in (payload.fields ?? {});
+    });
+    expect(titleInUpdate).toBe(true);
+
+    // 'goal' was NOT changed — no update_fields payload should contain 'goal'
+    const goalInUpdate = newUpdateOps.some((op) => {
+      const payload = JSON.parse(op.payload);
+      return 'goal' in (payload.fields ?? {});
+    });
+    expect(goalInUpdate).toBe(false);
+
+    // DB state is correct
+    const saved = getPlanByPlanId(db, project.id, 3);
+    expect(saved?.title).toBe('Synced title from file edit');
+    expect(saved?.goal).toBe(originalGoal);
+  });
+
+  test('syncMaterializedPlan emits no ops when the file is unchanged from its shadow', async () => {
+    const { db } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    const opsBefore = (
+      db.prepare('SELECT COUNT(*) as cnt FROM sync_op_log').get() as { cnt: number }
+    ).cnt;
+
+    // Sync without editing — shadow matches file, so no ops should be emitted
+    await syncMaterializedPlan(3, repoDir);
+
+    const opsAfter = (
+      db.prepare('SELECT COUNT(*) as cnt FROM sync_op_log').get() as { cnt: number }
+    ).cnt;
+    expect(opsAfter).toBe(opsBefore);
+  });
 });
