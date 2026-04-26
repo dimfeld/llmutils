@@ -6,6 +6,7 @@ import * as path from 'node:path';
 
 import { DATABASE_FILENAME, openDatabase } from '../db/database.js';
 import { getPlanByUuid } from '../db/plan.js';
+import { runMigrations } from '../db/migrations.js';
 import type { SyncFieldClockRow, SyncOpLogRow } from '../db/sync_schema.js';
 import { applyRemoteOps, type SyncOpRecord } from './op_apply.js';
 import { bootstrapSyncMetadata } from './bootstrap.js';
@@ -336,5 +337,140 @@ describe('sync metadata bootstrap', () => {
       updated_hlc: expect.stringMatching(/^\d+\.\d+$/),
       created_node_id: expect.any(String),
     });
+  });
+
+  test('tasks that already have created_hlc/created_node_id are not overwritten by bootstrap', () => {
+    const { projectId: _projectId } = insertLegacyData(db);
+    const existingHlc = '1000000000000.0';
+    const existingNodeId = 'pre-existing-node';
+    db.prepare(
+      `UPDATE plan_task SET created_hlc = ?, updated_hlc = ?, created_node_id = ? WHERE uuid = ?`
+    ).run(existingHlc, existingHlc, existingNodeId, 'task-legacy');
+
+    const stats = bootstrapSyncMetadata(db);
+
+    expect(stats.taskRowsStamped).toBe(0);
+    expect(
+      db
+        .prepare('SELECT created_hlc, updated_hlc, created_node_id FROM plan_task WHERE uuid = ?')
+        .get('task-legacy')
+    ).toEqual({
+      created_hlc: existingHlc,
+      updated_hlc: existingHlc,
+      created_node_id: existingNodeId,
+    });
+  });
+
+  test('review issues that already have created_hlc/created_node_id are not overwritten by bootstrap', () => {
+    insertLegacyData(db);
+    const existingHlc = '1000000000000.0';
+    const existingNodeId = 'pre-existing-node';
+    db.prepare(
+      `UPDATE plan_review_issue SET created_hlc = ?, updated_hlc = ?, created_node_id = ? WHERE uuid = ?`
+    ).run(existingHlc, existingHlc, existingNodeId, 'issue-legacy');
+
+    const stats = bootstrapSyncMetadata(db);
+
+    expect(stats.reviewIssueRowsStamped).toBe(0);
+    expect(
+      db
+        .prepare(
+          'SELECT created_hlc, updated_hlc, created_node_id FROM plan_review_issue WHERE uuid = ?'
+        )
+        .get('issue-legacy')
+    ).toEqual({
+      created_hlc: existingHlc,
+      updated_hlc: existingHlc,
+      created_node_id: existingNodeId,
+    });
+  });
+
+  test('tombstoned tasks are excluded from bootstrap', () => {
+    insertLegacyData(db);
+    const tombstoneHlc = '1000000000000.5';
+    db.prepare(`UPDATE plan_task SET deleted_hlc = ? WHERE uuid = ?`).run(
+      tombstoneHlc,
+      'task-legacy'
+    );
+
+    bootstrapSyncMetadata(db);
+
+    expect(clock(db, 'plan_task', 'task-legacy', 'title')).toBeNull();
+    const taskOps = opRows(db).filter(
+      (op) => op.entity_type === 'plan_task' && op.entity_id === 'task-legacy'
+    );
+    expect(taskOps).toHaveLength(0);
+  });
+
+  test('tombstoned review issues are excluded from bootstrap', () => {
+    insertLegacyData(db);
+    const tombstoneHlc = '1000000000000.5';
+    db.prepare(`UPDATE plan_review_issue SET deleted_hlc = ? WHERE uuid = ?`).run(
+      tombstoneHlc,
+      'issue-legacy'
+    );
+
+    bootstrapSyncMetadata(db);
+
+    expect(clock(db, 'plan_review_issue', 'issue-legacy', 'content')).toBeNull();
+    const issueOps = opRows(db).filter(
+      (op) => op.entity_type === 'plan_review_issue' && op.entity_id === 'issue-legacy'
+    );
+    expect(issueOps).toHaveLength(0);
+  });
+
+  test('migration v33 fires bootstrap for pre-existing plan rows', () => {
+    // Simulate upgrading from v32: open a fully migrated DB, roll back to v32,
+    // clear bootstrap artifacts, insert plan data, then run migrations again
+    // to trigger only v33 (which calls bootstrapSyncMetadata).
+    db.close(false);
+
+    const dbPath = path.join(tempDir, DATABASE_FILENAME);
+    db = openDatabase(dbPath);
+
+    // Roll back to v32 and clear all bootstrap artifacts so v33 will re-run.
+    db.run('DELETE FROM schema_version');
+    db.prepare('INSERT INTO schema_version (version, import_completed) VALUES (32, 1)').run();
+    db.run('DELETE FROM sync_op_log');
+    db.run('DELETE FROM sync_field_clock');
+    db.run('DELETE FROM sync_tombstone');
+
+    // Insert a plan so bootstrap has something to seed.
+    const projectRow = db
+      .prepare('SELECT id FROM project WHERE repository_id = ?')
+      .get(PROJECT_IDENTITY) as { id: number } | null;
+    let projectId: number;
+    if (projectRow) {
+      projectId = projectRow.id;
+    } else {
+      db.prepare('INSERT INTO project (repository_id, highest_plan_id) VALUES (?, 0)').run(
+        PROJECT_IDENTITY
+      );
+      projectId = (
+        db.prepare('SELECT id FROM project WHERE repository_id = ?').get(PROJECT_IDENTITY) as {
+          id: number;
+        }
+      ).id;
+    }
+
+    db.prepare(
+      `INSERT OR IGNORE INTO plan (
+        uuid, project_id, plan_id, title, goal, status, priority, simple, tdd, epic
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0)`
+    ).run('plan-pre-v33', projectId, 99, 'Pre-v33 plan', 'Some goal', 'pending', 'medium');
+
+    expect(countRows(db, 'sync_op_log')).toBe(0);
+    expect(countRows(db, 'sync_field_clock')).toBe(0);
+
+    // Running migrations will see v32 and execute v33 (bootstrap).
+    runMigrations(db);
+
+    // Verify bootstrap ran: field clocks and a synthetic create op exist for the plan.
+    expect(clock(db, 'plan', 'plan-pre-v33', 'title')).not.toBeNull();
+    const planOp = opRows(db).find(
+      (op) =>
+        op.entity_type === 'plan' && op.entity_id === 'plan-pre-v33' && op.op_type === 'create'
+    );
+    expect(planOp).not.toBeUndefined();
   });
 });
