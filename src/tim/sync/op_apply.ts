@@ -402,9 +402,9 @@ function maxTaskIndex(db: Database, planUuid: string): number {
 }
 
 function planExists(db: Database, planUuid: string): boolean {
-  const row = db.prepare('SELECT 1 AS present FROM plan WHERE uuid = ?').get(planUuid) as
-    | { present: number }
-    | null;
+  const row = db.prepare('SELECT 1 AS present FROM plan WHERE uuid = ?').get(planUuid) as {
+    present: number;
+  } | null;
   return row !== null;
 }
 

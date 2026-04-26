@@ -472,9 +472,7 @@ describe('sync op application', () => {
     upsertPlan(db, projectId, {
       uuid: 'plan-setorder',
       planId: 10,
-      tasks: [
-        { uuid: 'task-ord', title: 'Keep title', description: 'Keep desc', done: false },
-      ],
+      tasks: [{ uuid: 'task-ord', title: 'Keep title', description: 'Keep desc', done: false }],
     });
 
     const setOrderOp = makeOp(
@@ -492,11 +490,11 @@ describe('sync op application', () => {
     const row = db
       .prepare('SELECT title, description, order_key, task_index FROM plan_task WHERE uuid = ?')
       .get('task-ord') as {
-        title: string;
-        description: string;
-        order_key: string;
-        task_index: number;
-      };
+      title: string;
+      description: string;
+      order_key: string;
+      task_index: number;
+    };
     expect(row.order_key).toBe('0000000099');
     expect(row.task_index).toBe(0);
     expect(row.title).toBe('Keep title');
@@ -650,9 +648,7 @@ describe('sync op application', () => {
 
       // Now delete the issue on source and sync again
       source
-        .prepare(
-          'UPDATE plan_review_issue SET deleted_hlc = ?, updated_hlc = ? WHERE uuid = ?'
-        )
+        .prepare('UPDATE plan_review_issue SET deleted_hlc = ?, updated_hlc = ? WHERE uuid = ?')
         .run('9999999999.00000001', '9999999999.00000001', issue.uuid);
       // Emit a delete op manually
       const deleteOp = makeOp(
@@ -775,9 +771,9 @@ describe('sync op application', () => {
 
     // Plan must NOT be resurrected
     const count = (
-      db
-        .prepare('SELECT count(*) AS c FROM plan WHERE uuid = ?')
-        .get('plan-no-resurrect') as { c: number }
+      db.prepare('SELECT count(*) AS c FROM plan WHERE uuid = ?').get('plan-no-resurrect') as {
+        c: number;
+      }
     ).c;
     expect(count).toBe(0);
   });
@@ -899,9 +895,9 @@ describe('sync op application', () => {
 
     // op_log row must still be persisted for dedup
     const count = (
-      db
-        .prepare('SELECT count(*) AS c FROM sync_op_log WHERE op_id = ?')
-        .get(badOp.op_id) as { c: number }
+      db.prepare('SELECT count(*) AS c FROM sync_op_log WHERE op_id = ?').get(badOp.op_id) as {
+        c: number;
+      }
     ).c;
     expect(count).toBe(1);
   });
