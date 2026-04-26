@@ -152,7 +152,7 @@ You don't need to mark the entire plan file as complete. We will handle that for
 }
 
 const DEFAULT_DYNAMIC_SUBAGENT_INSTRUCTIONS =
-  'Prefer claude-code for frontend tasks, codex-cli for backend tasks.';
+  'Prefer claude-code for frontend tasks, codex-cli for backend tasks. When choosing executors for implementer and tester, prefer using the same executor for both to maintain consistency and leverage the same strengths.';
 
 /**
  * Builds the -x flag portion of a tim subagent command based on executor selection mode.
@@ -257,6 +257,7 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
 
   const testingPhase = `${options.batchMode ? '3' : '2'}. **Testing Phase**
    - After implementation is complete, run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - When choosing an executor dynamically, prefer using the same executor that was used for the implementer to maintain consistency and leverage the same strengths.
    - Always include \`--output-file\` with a plan-specific temp file path for this command.
    - If command output is empty, read the output file you passed to \`--output-file\` and treat it as the subagent result.
    - In the input (\`--input\` or \`--input-file\`), ask the tester to create comprehensive tests for the implemented functionality, if needed
@@ -493,6 +494,7 @@ ${taskSelectionPhase}
 
 ${options.batchMode ? '3' : '2'}. **Verification Phase**
    - Run \`tim subagent verifier ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - When choosing an executor dynamically, prefer using the same executor that was used for the implementer to maintain consistency and leverage the same strengths.
    - Always include \`--output-file\` with a plan-specific temp file path for this command.
    - If command output is empty, read the output file you passed to \`--output-file\` and treat it as the subagent result.
    - In the input (\`--input\` or \`--input-file\`), direct the verifier to:
@@ -662,6 +664,7 @@ ${buildReviewOutputCaptureGuidance(planId)}`;
   const verificationPhase = isSimpleTdd
     ? `${verificationPhaseNumber}. **Verification Phase**
    - Run \`tim subagent verifier ${planId}${executorFlag} --input "<instructions>"\` via the Bash tool with a timeout of at least 1800000 ms (30 minutes)${dynamicNote}
+   - When choosing an executor dynamically, prefer using the same executor that was used for the implementer to maintain consistency and leverage the same strengths.
    - Always include \`--output-file\` with a plan-specific temp file path for this command.
    - If command output is empty, read the output file you passed to \`--output-file\` and treat it as the subagent result.
    - In the input (\`--input\` or \`--input-file\`), include:
@@ -677,6 +680,7 @@ ${buildReviewOutputCaptureGuidance(planId)}`;
      - TDD tests output and implementer output
      - Which tasks are in scope
      - Direction to ensure tests target real implementation code
+   - When choosing an executor dynamically, prefer using the same executor that was used for the implementer to maintain consistency and leverage the same strengths.
    - Instruct tester to run tests and fix failures, then report remaining gaps
 
 ${options.batchMode ? '5' : '4'}. **Review Phase**

@@ -138,7 +138,7 @@ describe('orchestrator_prompt subagent commands', () => {
         subagentExecutor: 'dynamic',
       });
       expect(out).toContain('Subagent Executor Selection');
-      expect(out).toContain('Prefer claude-code for frontend tasks, codex-cli for backend tasks.');
+      expect(out).toContain('Prefer claude-code for frontend tasks, codex-cli for backend tasks. When choosing executors for implementer and tester, prefer using the same executor for both to maintain consistency and leverage the same strengths.');
       expect(out).toContain('-x codex-cli');
       expect(out).toContain('-x claude-code');
       // Commands should not have fixed executor flag
@@ -149,7 +149,7 @@ describe('orchestrator_prompt subagent commands', () => {
     it('includes dynamic executor guidance when subagentExecutor is not set', () => {
       const out = wrapWithOrchestration('Context', '42', { batchMode: false });
       expect(out).toContain('Subagent Executor Selection');
-      expect(out).toContain('Prefer claude-code for frontend tasks, codex-cli for backend tasks.');
+      expect(out).toContain('Prefer claude-code for frontend tasks, codex-cli for backend tasks. When choosing executors for implementer and tester, prefer using the same executor for both to maintain consistency and leverage the same strengths.');
     });
 
     it('uses custom dynamic instructions when provided', () => {
@@ -177,8 +177,8 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).toContain('temp directory');
       expect(out).toContain('--input-file <paths...>');
       expect(out).toContain('--input-file -');
-      expect(out).toContain('include the plan ID plus an extra random suffix');
-      expect(out).toContain('/tmp/claude/tim-42-<purpose>-$(Date.now() % 100000).md');
+      expect(out).toContain('Prefer deterministic names');
+      expect(out).toContain('/tmp/claude/tim-42-<purpose>.md');
     });
 
     it('includes output-file fallback guidance for subagent and review commands', () => {
@@ -221,7 +221,7 @@ describe('orchestrator_prompt subagent commands', () => {
         subagentExecutor: 'dynamic',
       });
       expect(out).toContain('Subagent Executor Selection');
-      expect(out).toContain('Prefer claude-code for frontend tasks, codex-cli for backend tasks.');
+      expect(out).toContain('Prefer claude-code for frontend tasks, codex-cli for backend tasks. When choosing executors for implementer and tester, prefer using the same executor for both to maintain consistency and leverage the same strengths.');
     });
 
     it('uses custom dynamic instructions when provided', () => {
@@ -239,8 +239,8 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).toContain('tim subagent');
       expect(out).toContain('--input');
       expect(out).toContain('--input-file');
-      expect(out).toContain('include the plan ID plus an extra random suffix');
-      expect(out).toContain('/tmp/claude/tim-55-<purpose>-$(Date.now() % 100000).md');
+      expect(out).toContain('Prefer deterministic names');
+      expect(out).toContain('/tmp/claude/tim-55-<purpose>.md');
     });
 
     it('includes fixed -x flag when subagentExecutor is claude-code', () => {
@@ -352,8 +352,8 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).toContain('tim-74-<agent>-output');
       expect(out).toContain('tim-74-review-output');
       expect(out).toContain('If command output is empty, read the output file');
-      expect(out).toContain('include the plan ID plus an extra random suffix');
-      expect(out).toContain('/tmp/claude/tim-74-<purpose>-$(Date.now() % 100000).md');
+      expect(out).toContain('Prefer deterministic names');
+      expect(out).toContain('/tmp/claude/tim-74-<purpose>.md');
     });
   });
 
