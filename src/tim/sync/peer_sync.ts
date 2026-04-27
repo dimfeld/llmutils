@@ -17,9 +17,10 @@ import {
   type SkippedSyncOp,
   type SyncOpRecord,
 } from './op_apply.js';
-import { applyPeerSnapshot, type PeerSnapshot } from './snapshot.js';
+import { applyPeerSnapshot, PeerLocallyRetiredError, type PeerSnapshot } from './snapshot.js';
 
 export const DEFAULT_PEER_SYNC_BATCH_SIZE = 500;
+const MAX_SNAPSHOT_RESYNCS_PER_SYNC = 3;
 
 export interface PullResponse {
   ops: SyncOpRecord[];
@@ -76,6 +77,13 @@ export class PeerRetiredError extends Error {
   constructor(readonly peerNodeId: string) {
     super(`Peer ${peerNodeId} has been retired`);
     this.name = 'PeerRetiredError';
+  }
+}
+
+export class SnapshotResyncLimitError extends Error {
+  constructor(readonly peerNodeId: string) {
+    super(`Peer ${peerNodeId} required too many snapshot resync attempts in one sync run`);
+    this.name = 'SnapshotResyncLimitError';
   }
 }
 
@@ -212,6 +220,12 @@ export async function runPeerSync(
   options: PeerSyncOptions = {}
 ): Promise<PeerSyncResult> {
   const batchSize = normalizeBatchSize(options.batchSize);
+  const existingPeer = db
+    .prepare('SELECT node_type FROM sync_node WHERE node_id = ?')
+    .get(peerNodeId) as { node_type: string } | null;
+  if (existingPeer?.node_type === 'retired_main') {
+    throw new PeerLocallyRetiredError(peerNodeId);
+  }
   registerPeerNode(db, { nodeId: peerNodeId, nodeType: 'main' });
 
   const result: PeerSyncResult = {
@@ -228,6 +242,7 @@ export async function runPeerSync(
   // either landed durably, permanently skipped with an op-log dedup row, or
   // been persisted into sync_pending_op for later retry.
   let pullAfter = getPeerCursor(db, peerNodeId, 'pull')?.last_op_id ?? null;
+  let snapshotResyncs = 0;
   while (true) {
     let response: PullResponse;
     try {
@@ -235,6 +250,10 @@ export async function runPeerSync(
     } catch (error) {
       if (!(error instanceof ResyncRequiredError)) {
         throw error;
+      }
+      snapshotResyncs += 1;
+      if (snapshotResyncs > MAX_SNAPSHOT_RESYNCS_PER_SYNC) {
+        throw new SnapshotResyncLimitError(peerNodeId);
       }
       const snapshot = await transport.snapshot();
       applyPeerSnapshot(db, peerNodeId, snapshot);

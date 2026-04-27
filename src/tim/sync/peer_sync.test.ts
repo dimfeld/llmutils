@@ -22,7 +22,9 @@ import { HLC_MIN_PHYSICAL_MS } from './op_validation.js';
 import {
   applyPeerOpsWithPending,
   PeerRetiredError,
+  ResyncRequiredError,
   runPeerSync,
+  SnapshotResyncLimitError,
   type PeerTransport,
 } from './peer_sync.js';
 import { setCompactedThroughSeq } from './compaction.js';
@@ -201,6 +203,26 @@ describe('peer sync transport core', () => {
     } finally {
       dbC.close(false);
     }
+  });
+
+  test('bounds repeated snapshot resync attempts in one sync run', async () => {
+    const nodeB = getLocalNodeId(dbB);
+    upsertPlan(dbB, projectB, { uuid: id('snapshot-loop-plan'), planId: 31, title: 'Loop' });
+    const snapshot = buildPeerSnapshot(dbB);
+    snapshot.highWaterSeq = 10;
+    const transport: PeerTransport = {
+      async pullChunk() {
+        throw new ResyncRequiredError(5, 10);
+      },
+      async pushChunk() {
+        return {};
+      },
+      async snapshot() {
+        return snapshot;
+      },
+    };
+
+    await expect(runPeerSync(dbA, nodeB, transport)).rejects.toThrow(SnapshotResyncLimitError);
   });
 });
 
@@ -426,7 +448,7 @@ describe('HTTP peer sync transport', () => {
     });
   });
 
-  test('HTTP pull reports resync_required when cursor equals compacted history', async () => {
+  test('HTTP pull accepts a cursor exactly at compacted history', async () => {
     upsertPlan(dbB, projectB, { uuid: id('compacted-equal-plan'), planId: 82, title: 'Equal' });
     setCompactedThroughSeq(dbB, 1);
     const handler = createPeerSyncHttpHandler(dbB, { token: 'secret-token' });
@@ -441,10 +463,10 @@ describe('HTTP peer sync transport', () => {
       })
     );
 
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
-      error: 'resync_required',
-      compactedThroughSeq: 1,
+      ops: expect.any(Array),
+      hasMore: expect.any(Boolean),
     });
   });
 
@@ -498,7 +520,45 @@ describe('HTTP peer sync transport', () => {
 
     expect(result.pullChunks).toBe(0);
     expect(getPlanByUuid(dbA, id('resync-plan'))?.title).toBe('Resync');
+    expect(getPeerCursor(dbA, nodeB, 'pull')?.last_op_id).toBe('2');
+  });
+
+  test('snapshot resync exits compacted loop when all op rows through the watermark are gone', async () => {
+    upsertPlan(dbB, projectB, {
+      uuid: id('resync-deleted-ops-plan'),
+      planId: 93,
+      title: 'Gone ops',
+    });
+    const nodeA = getLocalNodeId(dbA);
+    const nodeB = getLocalNodeId(dbB);
+    registerPeerNode(dbA, { nodeId: nodeB, nodeType: 'main' });
+    setPeerCursor(dbA, nodeB, 'pull', '0', null);
+    setCompactedThroughSeq(dbB, 1);
+    dbB.prepare('DELETE FROM sync_op_log WHERE seq <= 1').run();
+
+    const handler = createPeerSyncHttpHandler(dbB, { token: 'secret-token' });
+    let snapshotRequests = 0;
+    const fetchFn: typeof fetch = async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      if (new URL(request.url).pathname === '/sync/snapshot') {
+        snapshotRequests += 1;
+      }
+      return handler(request) as Promise<Response>;
+    };
+    const transport = createHttpPeerTransport({
+      baseUrl: 'http://peer.test',
+      token: 'secret-token',
+      localNodeId: nodeA,
+      remoteNodeId: nodeB,
+      fetch: fetchFn,
+    });
+
+    await runPeerSync(dbA, nodeB, transport);
+    await runPeerSync(dbA, nodeB, transport);
+
+    expect(getPlanByUuid(dbA, id('resync-deleted-ops-plan'))?.title).toBe('Gone ops');
     expect(getPeerCursor(dbA, nodeB, 'pull')?.last_op_id).toBe('1');
+    expect(snapshotRequests).toBe(1);
   });
 
   test('snapshot resync preserves local fields with newer clocks and pushes them back', async () => {
@@ -755,7 +815,10 @@ describe('HTTP peer sync transport', () => {
     expect(ownOps.length).toBeGreaterThanOrEqual(2);
     const handler = createPeerSyncHttpHandler(dbB, { token: 'secret-token' });
 
-    const response = await pushRequest(handler, nodeA, [ownOps[1]!, ownOps[0]!]);
+    const response = await pushRequest(handler, nodeA, [
+      { ...ownOps[1]!, seq: 1 },
+      { ...ownOps[0]!, seq: 2 },
+    ]);
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({ error: 'non_contiguous_batch' });
@@ -837,7 +900,7 @@ describe('HTTP peer sync transport', () => {
     expect(getPeerCursor(dbB, nodeA, 'pull')).toBeNull();
   });
 
-  test('HTTP push cursor advances by accepted own ops, not arbitrary pushed seq values', async () => {
+  test('HTTP push rejects non-contiguous own source seq values', async () => {
     upsertPlan(dbA, projectA, { uuid: id('http-cursor-own'), planId: 22, title: 'Own' });
     const nodeA = getLocalNodeId(dbA);
     const ownOp = (getOpLogChunkAfter(dbA, null, 100).ops as SyncOpRecord[]).find(
@@ -867,10 +930,22 @@ describe('HTTP peer sync transport', () => {
 
     const response = await pushRequest(handler, nodeA, [{ ...ownOp!, seq: 999 }, forwardedOp]);
 
-    expect(response.status).toBe(200);
-    expect(getPlanByUuid(dbB, id('http-cursor-own'))?.title).toBe('Own');
-    expect(getPlanByUuid(dbB, id('http-cursor-forwarded'))?.title).toBe('Forwarded');
-    expect(getPeerCursor(dbB, nodeA, 'pull')?.last_op_id).toBe('999');
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: 'non_contiguous_source_seq' });
+    expect(getPlanByUuid(dbB, id('http-cursor-own'))).toBeNull();
+    expect(getPlanByUuid(dbB, id('http-cursor-forwarded'))).toBeNull();
+    expect(getPeerCursor(dbB, nodeA, 'pull')).toBeNull();
+  });
+
+  test('setPeerCursor does not regress stored seq cursors', () => {
+    const nodeA = getLocalNodeId(dbA);
+    registerPeerNode(dbB, { nodeId: nodeA, nodeType: 'main' });
+
+    setPeerCursor(dbB, nodeA, 'pull', '5', null);
+    setPeerCursor(dbB, nodeA, 'pull', '3', null);
+    setPeerCursor(dbB, nodeA, 'pull', null, null);
+
+    expect(getPeerCursor(dbB, nodeA, 'pull')?.last_op_id).toBe('5');
   });
 
   test('HTTP push cursor does not advance for replayed (already-applied) own ops', async () => {

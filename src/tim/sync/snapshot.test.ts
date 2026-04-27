@@ -3,18 +3,24 @@ import type { Database } from 'bun:sqlite';
 import { randomUUID } from 'node:crypto';
 
 import { openDatabase } from '../db/database.js';
+import { getOrCreateProject, type Project } from '../db/project.js';
 import {
-  getOrCreateProject,
-  type Project,
-} from '../db/project.js';
-import { getPlanByUuid, getPlanDependenciesByUuid, getPlanTagsByUuid, upsertPlan, upsertPlanDependencies } from '../db/plan.js';
+  getPlanByUuid,
+  getPlanDependenciesByUuid,
+  getPlanTagsByUuid,
+  upsertPlan,
+  upsertPlanDependencies,
+} from '../db/plan.js';
+import { getProjectSetting, setProjectSetting } from '../db/project_settings.js';
 import { getPeerCursor, setPeerCursor } from '../db/sync_schema.js';
 import type { SyncFieldClockRow, SyncTombstoneRow } from '../db/sync_schema.js';
+import { getLocalNodeId, registerPeerNode } from './node_identity.js';
 import {
-  getLocalNodeId,
-  registerPeerNode,
-} from './node_identity.js';
-import { applyPeerSnapshot, buildPeerSnapshot, type PeerSnapshot } from './snapshot.js';
+  applyPeerSnapshot,
+  buildPeerSnapshot,
+  PeerLocallyRetiredError,
+  type PeerSnapshot,
+} from './snapshot.js';
 import {
   getCompactionFloorSeq,
   getCompactedThroughSeq,
@@ -22,7 +28,11 @@ import {
 } from './compaction.js';
 import { retireMainPeer } from './node_lifecycle.js';
 import { runPeerSync } from './peer_sync.js';
-import { createHttpPeerTransport, createPeerSyncHttpHandler, runHttpPeerSync } from './peer_transport_http.js';
+import {
+  createHttpPeerTransport,
+  createPeerSyncHttpHandler,
+  runHttpPeerSync,
+} from './peer_transport_http.js';
 import { formatHlc } from './hlc.js';
 import { HLC_MIN_PHYSICAL_MS } from './op_validation.js';
 import {
@@ -58,7 +68,8 @@ function setFieldClock(
   hlcLogical: number,
   nodeId: string
 ): void {
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO sync_field_clock (entity_type, entity_id, field_name, hlc_physical_ms, hlc_logical, node_id, deleted, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, 0, datetime('now'))
     ON CONFLICT(entity_type, entity_id, field_name) DO UPDATE SET
@@ -66,7 +77,8 @@ function setFieldClock(
       hlc_logical = excluded.hlc_logical,
       node_id = excluded.node_id,
       updated_at = excluded.updated_at
-  `).run(entityType, entityId, fieldName, hlcPhysicalMs, hlcLogical, nodeId);
+  `
+  ).run(entityType, entityId, fieldName, hlcPhysicalMs, hlcLogical, nodeId);
 }
 
 /** Insert a tombstone for an entity on the given DB. */
@@ -78,15 +90,19 @@ function insertTombstone(
   hlcLogical: number,
   nodeId: string
 ): void {
-  db.prepare(`
+  db.prepare(
+    `
     INSERT OR REPLACE INTO sync_tombstone (entity_type, entity_id, hlc_physical_ms, hlc_logical, node_id, created_at)
     VALUES (?, ?, ?, ?, ?, datetime('now'))
-  `).run(entityType, entityId, hlcPhysicalMs, hlcLogical, nodeId);
+  `
+  ).run(entityType, entityId, hlcPhysicalMs, hlcLogical, nodeId);
 }
 
 /** Count rows matching a query. */
 function countRows(db: Database, sql: string, ...params: unknown[]): number {
-  const result = db.prepare(sql).get(...(params as Parameters<ReturnType<typeof db.prepare>['get']>)) as { n: number } | null;
+  const result = db
+    .prepare(sql)
+    .get(...(params as Parameters<ReturnType<typeof db.prepare>['get']>)) as { n: number } | null;
   return result?.n ?? 0;
 }
 
@@ -108,7 +124,12 @@ describe('snapshot: apply idempotence', () => {
 
   test('applying the same snapshot twice produces identical state with no errors', () => {
     const planUuid = id('idempotent-plan');
-    upsertPlan(dbA, projectA, { uuid: planUuid, planId: 1, title: 'Idempotent plan', status: 'in_progress' });
+    upsertPlan(dbA, projectA, {
+      uuid: planUuid,
+      planId: 1,
+      title: 'Idempotent plan',
+      status: 'in_progress',
+    });
 
     const nodeA = getLocalNodeId(dbA);
     const snapshot = buildPeerSnapshot(dbA);
@@ -119,7 +140,7 @@ describe('snapshot: apply idempotence', () => {
     expect(planAfterFirst?.title).toBe('Idempotent plan');
 
     const fieldClockCountAfterFirst = (
-      dbB.prepare("SELECT count(*) AS n FROM sync_field_clock").get() as { n: number }
+      dbB.prepare('SELECT count(*) AS n FROM sync_field_clock').get() as { n: number }
     ).n;
     const pullCursorAfterFirst = getPeerCursor(dbB, nodeA, 'pull')?.last_op_id;
 
@@ -129,7 +150,7 @@ describe('snapshot: apply idempotence', () => {
     expect(planAfterSecond?.title).toBe('Idempotent plan');
 
     const fieldClockCountAfterSecond = (
-      dbB.prepare("SELECT count(*) AS n FROM sync_field_clock").get() as { n: number }
+      dbB.prepare('SELECT count(*) AS n FROM sync_field_clock').get() as { n: number }
     ).n;
     // Field clock count must not grow from duplicate apply
     expect(fieldClockCountAfterSecond).toBe(fieldClockCountAfterFirst);
@@ -237,13 +258,17 @@ describe('snapshot: tombstone semantics', () => {
     dbA.prepare('DELETE FROM plan WHERE uuid = ?').run(planUuid);
 
     const snapshot = buildPeerSnapshot(dbA);
-    expect(snapshot.tombstones.some((t) => t.entity_type === 'plan' && t.entity_id === planUuid)).toBe(true);
+    expect(
+      snapshot.tombstones.some((t) => t.entity_type === 'plan' && t.entity_id === planUuid)
+    ).toBe(true);
 
     applyPeerSnapshot(dbB, nodeA, snapshot);
     // Plan should be gone from dbB
     expect(getPlanByUuid(dbB, planUuid)).toBeNull();
     // Tombstone should now exist on dbB
-    const tombstone = dbB.prepare("SELECT 1 FROM sync_tombstone WHERE entity_type = 'plan' AND entity_id = ?").get(planUuid);
+    const tombstone = dbB
+      .prepare("SELECT 1 FROM sync_tombstone WHERE entity_type = 'plan' AND entity_id = ?")
+      .get(planUuid);
     expect(tombstone).not.toBeNull();
   });
 
@@ -267,7 +292,9 @@ describe('snapshot: tombstone semantics', () => {
     // The tombstone on dbB must prevent resurrection
     expect(getPlanByUuid(dbB, planUuid)).toBeNull();
     // The tombstone should still be present
-    const tombstone = dbB.prepare("SELECT 1 FROM sync_tombstone WHERE entity_type = 'plan' AND entity_id = ?").get(planUuid);
+    const tombstone = dbB
+      .prepare("SELECT 1 FROM sync_tombstone WHERE entity_type = 'plan' AND entity_id = ?")
+      .get(planUuid);
     expect(tombstone).not.toBeNull();
   });
 });
@@ -304,19 +331,38 @@ describe('snapshot: edge clock merge', () => {
     // dbB has an add-edge for the dependency
     const addMs = HLC_MIN_PHYSICAL_MS + 100;
     const nodeB = getLocalNodeId(dbB);
-    writeEdgeAddClock(dbB, { entityType: 'plan_dependency', edgeKey, hlc: { physicalMs: addMs, logical: 0 }, nodeId: nodeB });
-    dbB.prepare('INSERT OR IGNORE INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)').run(planUuid, depUuid);
+    writeEdgeAddClock(dbB, {
+      entityType: 'plan_dependency',
+      edgeKey,
+      hlc: { physicalMs: addMs, logical: 0 },
+      nodeId: nodeB,
+    });
+    dbB
+      .prepare('INSERT OR IGNORE INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)')
+      .run(planUuid, depUuid);
 
     // dbA has a remove-edge for the dependency (newer than dbB's add)
     const removeMs = addMs + 10_000;
     const nodeA = getLocalNodeId(dbA);
-    writeEdgeAddClock(dbA, { entityType: 'plan_dependency', edgeKey, hlc: { physicalMs: addMs, logical: 0 }, nodeId: nodeB });
-    writeEdgeRemoveClock(dbA, { entityType: 'plan_dependency', edgeKey, hlc: { physicalMs: removeMs, logical: 0 }, nodeId: nodeA });
+    writeEdgeAddClock(dbA, {
+      entityType: 'plan_dependency',
+      edgeKey,
+      hlc: { physicalMs: addMs, logical: 0 },
+      nodeId: nodeB,
+    });
+    writeEdgeRemoveClock(dbA, {
+      entityType: 'plan_dependency',
+      edgeKey,
+      hlc: { physicalMs: removeMs, logical: 0 },
+      nodeId: nodeA,
+    });
 
     const snapshot = buildPeerSnapshot(dbA);
 
     // Verify snapshot has a remove clock newer than the add clock
-    const snapshotEdge = snapshot.edgeClocks.find((e) => e.entity_type === 'plan_dependency' && e.edge_key === edgeKey);
+    const snapshotEdge = snapshot.edgeClocks.find(
+      (e) => e.entity_type === 'plan_dependency' && e.edge_key === edgeKey
+    );
     expect(snapshotEdge?.remove_hlc).not.toBeNull();
 
     applyPeerSnapshot(dbB, nodeA, snapshot);
@@ -324,7 +370,9 @@ describe('snapshot: edge clock merge', () => {
     // After snapshot apply, edge should be absent because remove wins
     const localEdgeClock = getEdgeClock(dbB, 'plan_dependency', edgeKey);
     expect(edgeClockIsPresent(localEdgeClock)).toBe(false);
-    const dep = dbB.prepare('SELECT 1 FROM plan_dependency WHERE plan_uuid = ? AND depends_on_uuid = ?').get(planUuid, depUuid);
+    const dep = dbB
+      .prepare('SELECT 1 FROM plan_dependency WHERE plan_uuid = ? AND depends_on_uuid = ?')
+      .get(planUuid, depUuid);
     expect(dep).toBeNull();
   });
 
@@ -344,15 +392,34 @@ describe('snapshot: edge clock merge', () => {
     // dbB has: add at T, then remove at T+5 → edge is absent locally
     const addMs = HLC_MIN_PHYSICAL_MS + 100;
     const removeMs = addMs + 5_000;
-    writeEdgeAddClock(dbB, { entityType: 'plan_dependency', edgeKey, hlc: { physicalMs: addMs, logical: 0 }, nodeId: nodeA });
-    writeEdgeRemoveClock(dbB, { entityType: 'plan_dependency', edgeKey, hlc: { physicalMs: removeMs, logical: 0 }, nodeId: nodeB });
+    writeEdgeAddClock(dbB, {
+      entityType: 'plan_dependency',
+      edgeKey,
+      hlc: { physicalMs: addMs, logical: 0 },
+      nodeId: nodeA,
+    });
+    writeEdgeRemoveClock(dbB, {
+      entityType: 'plan_dependency',
+      edgeKey,
+      hlc: { physicalMs: removeMs, logical: 0 },
+      nodeId: nodeB,
+    });
     // Ensure no live row on dbB
-    dbB.prepare('DELETE FROM plan_dependency WHERE plan_uuid = ? AND depends_on_uuid = ?').run(planUuid, depUuid);
+    dbB
+      .prepare('DELETE FROM plan_dependency WHERE plan_uuid = ? AND depends_on_uuid = ?')
+      .run(planUuid, depUuid);
 
     // dbA has: add at T+10 (newer than dbB's remove) → edge should be present
     const newerAddMs = removeMs + 10_000;
-    writeEdgeAddClock(dbA, { entityType: 'plan_dependency', edgeKey, hlc: { physicalMs: newerAddMs, logical: 0 }, nodeId: nodeA });
-    dbA.prepare('INSERT OR IGNORE INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)').run(planUuid, depUuid);
+    writeEdgeAddClock(dbA, {
+      entityType: 'plan_dependency',
+      edgeKey,
+      hlc: { physicalMs: newerAddMs, logical: 0 },
+      nodeId: nodeA,
+    });
+    dbA
+      .prepare('INSERT OR IGNORE INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)')
+      .run(planUuid, depUuid);
 
     const snapshot = buildPeerSnapshot(dbA);
 
@@ -361,7 +428,9 @@ describe('snapshot: edge clock merge', () => {
     // After snapshot apply, the edge should be present since add wins
     const localEdgeClock = getEdgeClock(dbB, 'plan_dependency', edgeKey);
     expect(edgeClockIsPresent(localEdgeClock)).toBe(true);
-    const dep = dbB.prepare('SELECT 1 FROM plan_dependency WHERE plan_uuid = ? AND depends_on_uuid = ?').get(planUuid, depUuid);
+    const dep = dbB
+      .prepare('SELECT 1 FROM plan_dependency WHERE plan_uuid = ? AND depends_on_uuid = ?')
+      .get(planUuid, depUuid);
     expect(dep).not.toBeNull();
   });
 });
@@ -417,6 +486,78 @@ describe('snapshot: cursor advance', () => {
     const cursor = getPeerCursor(dbB, nodeA, 'pull');
     expect(cursor?.last_op_id).toBe(secondSnapshot.highWaterSeq.toString());
   });
+
+  test('snapshot highWaterSeq is at least the compacted watermark after op rows are removed', () => {
+    upsertPlan(dbA, projectA, { uuid: id('cursor-compacted-plan'), planId: 3, title: 'Plan 3' });
+    setCompactedThroughSeq(dbA, 5);
+    dbA.prepare('DELETE FROM sync_op_log').run();
+
+    const snapshot = buildPeerSnapshot(dbA);
+
+    expect(snapshot.highWaterSeq).toBe(5);
+    applyPeerSnapshot(dbB, getLocalNodeId(dbA), snapshot);
+    expect(getPeerCursor(dbB, getLocalNodeId(dbA), 'pull')?.last_op_id).toBe('5');
+  });
+});
+
+describe('snapshot: project settings and plan id allocation', () => {
+  let dbA: Database;
+  let dbB: Database;
+
+  beforeEach(() => {
+    dbA = openDatabase(':memory:');
+    dbB = openDatabase(':memory:');
+  });
+
+  afterEach(() => {
+    dbA.close(false);
+    dbB.close(false);
+  });
+
+  test('local project settings use the sync identity and carry their field clock', () => {
+    dbA
+      .prepare(
+        "INSERT INTO project (repository_id, highest_plan_id, created_at, updated_at) VALUES ('', 0, datetime('now'), datetime('now'))"
+      )
+      .run();
+    const localProjectId = (
+      dbA.prepare("SELECT id FROM project WHERE repository_id = ''").get() as { id: number }
+    ).id;
+    setProjectSetting(dbA, localProjectId, 'abbreviation', 'LOC');
+
+    const nodeA = getLocalNodeId(dbA);
+    const snapshot = buildPeerSnapshot(dbA);
+    const setting = snapshot.projectSettings.find((row) => row.setting === 'abbreviation');
+    expect(setting?.projectIdentity).toBe(`local-project-${localProjectId}`);
+
+    applyPeerSnapshot(dbB, nodeA, snapshot);
+
+    const receivedProject = getOrCreateProject(dbB, `local-project-${localProjectId}`);
+    expect(getProjectSetting(dbB, receivedProject.id, 'abbreviation')).toBe('LOC');
+    expect(
+      dbB
+        .prepare(
+          "SELECT 1 FROM sync_field_clock WHERE entity_type = 'project_setting' AND entity_id = ? AND field_name = 'value'"
+        )
+        .get(`${setting!.projectIdentity}:abbreviation`)
+    ).not.toBeNull();
+  });
+
+  test('snapshot import allocates a local plan_id when the sender hint collides', () => {
+    const projectA = getOrCreateProject(dbA, 'github.com__owner__repo').id;
+    const projectB = getOrCreateProject(dbB, 'github.com__owner__repo').id;
+    upsertPlan(dbA, projectA, {
+      uuid: id('snapshot-collision-remote'),
+      planId: 1,
+      title: 'Remote',
+    });
+    upsertPlan(dbB, projectB, { uuid: id('snapshot-collision-local'), planId: 1, title: 'Local' });
+
+    applyPeerSnapshot(dbB, getLocalNodeId(dbA), buildPeerSnapshot(dbA));
+
+    expect(getPlanByUuid(dbB, id('snapshot-collision-local'))?.plan_id).toBe(1);
+    expect(getPlanByUuid(dbB, id('snapshot-collision-remote'))?.plan_id).toBe(2);
+  });
 });
 
 describe('snapshot: end-to-end resync with ops above watermark', () => {
@@ -449,7 +590,7 @@ describe('snapshot: end-to-end resync with ops above watermark', () => {
 
     // A syncs from B initially → sets cursor
     registerPeerNode(dbA, { nodeId: nodeB, nodeType: 'main' });
-    setPeerCursor(dbA, nodeB, 'pull', '1', null);
+    setPeerCursor(dbA, nodeB, 'pull', '0', null);
 
     // Write a second plan on B (above the snapshot watermark)
     upsertPlan(dbB, projectB, { uuid: planAfterUuid, planId: 2, title: 'After snapshot' });
@@ -457,7 +598,7 @@ describe('snapshot: end-to-end resync with ops above watermark', () => {
     // Compact B's history through seq 1
     setCompactedThroughSeq(dbB, 1);
 
-    // Verify: A's cursor (1) is at or below compacted threshold → will trigger resync
+    // Verify: A's cursor (0) is behind compacted history → will trigger resync
     expect(getCompactedThroughSeq(dbB)).toBe(1);
 
     // Run sync using HTTP handler (so ResyncRequiredError flows through)
@@ -471,6 +612,7 @@ describe('snapshot: end-to-end resync with ops above watermark', () => {
       baseUrl: 'http://peer.test',
       token: 'test-token',
       localNodeId: nodeA,
+      remoteNodeId: nodeB,
       fetch: fetchFn,
     });
 
@@ -598,6 +740,47 @@ describe('snapshot: retired peer stickiness', () => {
     expect(result.retired).toBe(false);
     if (!result.retired) expect(result.reason).toBe('not_main');
   });
+
+  test('retireMainPeer reports alreadyRetired for an already retired main peer', () => {
+    const peerId = randomUUID();
+    registerPeerNode(db, { nodeId: peerId, nodeType: 'main' });
+    expect(retireMainPeer(db, peerId)).toEqual({ retired: true, peerNodeId: peerId });
+
+    expect(retireMainPeer(db, peerId)).toEqual({
+      retired: true,
+      peerNodeId: peerId,
+      alreadyRetired: true,
+    });
+  });
+
+  test('runPeerSync and applyPeerSnapshot reject locally retired peers', async () => {
+    const dbRemote = openDatabase(':memory:');
+    try {
+      const peerId = randomUUID();
+      registerPeerNode(db, { nodeId: peerId, nodeType: 'main' });
+      retireMainPeer(db, peerId);
+
+      await expect(
+        runPeerSync(db, peerId, {
+          async pullChunk() {
+            return { ops: [], nextAfterSeq: null, hasMore: false };
+          },
+          async pushChunk() {
+            return {};
+          },
+          async snapshot() {
+            return buildPeerSnapshot(dbRemote);
+          },
+        })
+      ).rejects.toThrow(PeerLocallyRetiredError);
+
+      const snapshot = buildPeerSnapshot(dbRemote);
+      snapshot.senderNodeId = peerId;
+      expect(() => applyPeerSnapshot(db, peerId, snapshot)).toThrow(PeerLocallyRetiredError);
+    } finally {
+      dbRemote.close(false);
+    }
+  });
 });
 
 describe('snapshot: HTTP 410 on retired peer (comprehensive)', () => {
@@ -639,31 +822,37 @@ describe('snapshot: HTTP 410 on retired peer (comprehensive)', () => {
     // /sync/pull
     const pullUrl = new URL('http://peer.test/sync/pull');
     pullUrl.searchParams.set('peer_node_id', nodeA);
-    const pullResp = await handler(new Request(pullUrl, {
-      method: 'POST',
-      headers: { authorization: 'Bearer tok' },
-    }));
+    const pullResp = await handler(
+      new Request(pullUrl, {
+        method: 'POST',
+        headers: { authorization: 'Bearer tok' },
+      })
+    );
     expect(pullResp.status).toBe(410);
     await expect(pullResp.json()).resolves.toEqual({ error: 'peer_retired' });
 
     // /sync/push
     const pushUrl = new URL('http://peer.test/sync/push');
     pushUrl.searchParams.set('peer_node_id', nodeA);
-    const pushResp = await handler(new Request(pushUrl, {
-      method: 'POST',
-      headers: { authorization: 'Bearer tok', 'content-type': 'application/json' },
-      body: JSON.stringify({ ops: [] }),
-    }));
+    const pushResp = await handler(
+      new Request(pushUrl, {
+        method: 'POST',
+        headers: { authorization: 'Bearer tok', 'content-type': 'application/json' },
+        body: JSON.stringify({ ops: [] }),
+      })
+    );
     expect(pushResp.status).toBe(410);
     await expect(pushResp.json()).resolves.toEqual({ error: 'peer_retired' });
 
     // /sync/snapshot
     const snapUrl = new URL('http://peer.test/sync/snapshot');
     snapUrl.searchParams.set('peer_node_id', nodeA);
-    const snapResp = await handler(new Request(snapUrl, {
-      method: 'GET',
-      headers: { authorization: 'Bearer tok' },
-    }));
+    const snapResp = await handler(
+      new Request(snapUrl, {
+        method: 'GET',
+        headers: { authorization: 'Bearer tok' },
+      })
+    );
     expect(snapResp.status).toBe(410);
     await expect(snapResp.json()).resolves.toEqual({ error: 'peer_retired' });
   });
@@ -680,7 +869,7 @@ describe('snapshot: HTTP 410 on retired peer (comprehensive)', () => {
     retireMainPeer(dbB, nodeA);
 
     const { getOpLogChunkAfter } = await import('../db/sync_schema.js');
-    const ownOp = (getOpLogChunkAfter(dbA, null, 100).ops).find(
+    const ownOp = getOpLogChunkAfter(dbA, null, 100).ops.find(
       (op) => op.entity_id === id('cursor-seq-plan')
     );
     expect(ownOp).toBeDefined();
@@ -688,11 +877,13 @@ describe('snapshot: HTTP 410 on retired peer (comprehensive)', () => {
     const handler = createPeerSyncHttpHandler(dbB, { token: 'tok' });
     const pushUrl = new URL('http://peer.test/sync/push');
     pushUrl.searchParams.set('peer_node_id', nodeA);
-    const resp = await handler(new Request(pushUrl, {
-      method: 'POST',
-      headers: { authorization: 'Bearer tok', 'content-type': 'application/json' },
-      body: JSON.stringify({ ops: [ownOp] }),
-    }));
+    const resp = await handler(
+      new Request(pushUrl, {
+        method: 'POST',
+        headers: { authorization: 'Bearer tok', 'content-type': 'application/json' },
+        body: JSON.stringify({ ops: [ownOp] }),
+      })
+    );
 
     // Retired peer → 410
     expect(resp.status).toBe(410);

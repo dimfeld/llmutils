@@ -255,6 +255,18 @@ export function setPeerCursor(
   lastSeq: string | null,
   clockSource?: Pick<SyncOpLogRow, 'hlc_physical_ms' | 'hlc_logical'> | null
 ): SyncPeerCursorRow {
+  const existing = getPeerCursor(db, peerNodeId, direction);
+  if (existing) {
+    if (lastSeq === null) {
+      return existing;
+    }
+    const existingSeq = existing.last_op_id === null ? 0 : parseSeqCursor(existing.last_op_id);
+    const nextSeq = parseSeqCursor(lastSeq);
+    if (nextSeq <= existingSeq) {
+      return existing;
+    }
+  }
+
   const physicalMs = clockSource?.hlc_physical_ms ?? 0;
   const logical = clockSource?.hlc_logical ?? 0;
 

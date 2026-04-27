@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite';
 import { timingSafeEqual } from 'node:crypto';
 
-import { getOpLogChunkAfter, setPeerCursor } from '../db/sync_schema.js';
+import { getOpLogChunkAfter, getPeerCursor, setPeerCursor } from '../db/sync_schema.js';
 import { getCompactedThroughSeq } from './compaction.js';
 import type { SyncOpRecord } from './op_apply.js';
 import { compareHlc, type Hlc } from './hlc.js';
@@ -194,11 +194,15 @@ function validatePushOpShape(op: unknown): string | null {
 }
 
 function validatePushedOps(
+  db: Database,
   ops: SyncOpRecord[],
   peerNodeId: string,
-  localNodeId: string
+  localNodeId: string,
+  alreadyKnownOpIds: Set<string>
 ): string | null {
   let previousOwnOp: SyncOpRecord | null = null;
+  const existingCursorSeq = parseCursorSeq(getPeerCursor(db, peerNodeId, 'pull')?.last_op_id);
+  let expectedNewOwnSeq = existingCursorSeq + 1;
   for (const op of ops) {
     const shapeError = validatePushOpShape(op);
     if (shapeError) {
@@ -209,6 +213,19 @@ function validatePushedOps(
     }
     if (op.node_id !== peerNodeId) {
       continue;
+    }
+    if (op.seq === undefined || !Number.isSafeInteger(op.seq) || op.seq < 1) {
+      return 'invalid_source_seq';
+    }
+    if (op.seq <= existingCursorSeq) {
+      if (!alreadyKnownOpIds.has(op.op_id)) {
+        return 'stale_unknown_source_seq';
+      }
+    } else {
+      if (op.seq !== expectedNewOwnSeq) {
+        return 'non_contiguous_source_seq';
+      }
+      expectedNewOwnSeq += 1;
     }
     if (previousOwnOp) {
       const hlcCompare = compareHlc(opHlc(previousOwnOp), opHlc(op));
@@ -231,7 +248,7 @@ function currentHighWaterSeq(db: Database): number {
   const row = db.prepare('SELECT max(seq) AS seq FROM sync_op_log').get() as {
     seq: number | null;
   };
-  return row.seq ?? 0;
+  return Math.max(getCompactedThroughSeq(db), row.seq ?? 0);
 }
 
 function snapshotAlreadyKnownOpIds(
@@ -432,7 +449,7 @@ export function createPeerSyncHttpHandler(
         const afterSeq = url.searchParams.get('after_seq') ?? url.searchParams.get('after_op_id');
         const parsedAfterSeq = parseCursorSeq(afterSeq);
         const compactedThroughSeq = getCompactedThroughSeq(db);
-        if (compactedThroughSeq > 0 && parsedAfterSeq <= compactedThroughSeq) {
+        if (compactedThroughSeq > 0 && parsedAfterSeq < compactedThroughSeq) {
           return jsonResponse(
             {
               error: 'resync_required',
@@ -460,7 +477,17 @@ export function createPeerSyncHttpHandler(
         if (ops.length > maxPushBatch) {
           return jsonResponse({ error: 'push batch too large' }, { status: 413 });
         }
-        const pushedOpsError = validatePushedOps(ops, peerNodeId, getLocalNodeId(db));
+        // Snapshot which own op_ids are already known (in sync_op_log or
+        // sync_pending_op) BEFORE validation/apply, so source-seq replay checks
+        // can distinguish harmless replays from stale unknown writes.
+        const alreadyKnownOpIds = snapshotAlreadyKnownOpIds(db, peerNodeId, ops);
+        const pushedOpsError = validatePushedOps(
+          db,
+          ops,
+          peerNodeId,
+          getLocalNodeId(db),
+          alreadyKnownOpIds
+        );
         if (pushedOpsError) {
           return jsonResponse({ error: pushedOpsError }, { status: 400 });
         }
@@ -477,6 +504,7 @@ export function createPeerSyncHttpHandler(
               { status: 409 }
             );
           }
+          advancePushCursorByAcceptedOwnOps(db, peerNodeId, ops, alreadyKnownOpIds);
           return jsonResponse({
             pendingOpCount: workerResult.pendingOpCount,
             leaseCompleted: workerResult.leaseCompleted,
@@ -485,10 +513,6 @@ export function createPeerSyncHttpHandler(
         if (final) {
           return jsonResponse({ error: 'final_signal_requires_worker_lease' }, { status: 409 });
         }
-        // Snapshot which own op_ids are already known (in sync_op_log or
-        // sync_pending_op) BEFORE the apply, so replays of already-applied or
-        // already-deferred ops cannot drift the push cursor forward.
-        const alreadyKnownOpIds = snapshotAlreadyKnownOpIds(db, peerNodeId, ops);
         let applyResult;
         try {
           applyResult = applyPeerOpsWithPending(db, peerNodeId, ops);

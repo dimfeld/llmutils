@@ -12,7 +12,7 @@ export interface PruneEphemeralNodesResult {
 }
 
 export type RetireMainPeerResult =
-  | { retired: true; peerNodeId: string }
+  | { retired: true; peerNodeId: string; alreadyRetired?: true }
   | { retired: false; peerNodeId: string; reason: 'not_found' | 'not_main' | 'local_node' };
 
 const DEFAULT_TRANSIENT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
@@ -135,6 +135,9 @@ export function retireMainPeer(db: Database, peerNodeId: string): RetireMainPeer
     }
     if (row.is_local === 1) {
       return { retired: false, peerNodeId: nodeId, reason: 'local_node' };
+    }
+    if (row.node_type === 'retired_main') {
+      return { retired: true, peerNodeId: nodeId, alreadyRetired: true };
     }
     if (row.node_type !== 'main') {
       return { retired: false, peerNodeId: nodeId, reason: 'not_main' };

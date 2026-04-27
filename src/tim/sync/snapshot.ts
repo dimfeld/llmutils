@@ -11,6 +11,7 @@ import {
   type SyncFieldClockRow,
   type SyncTombstoneRow,
 } from '../db/sync_schema.js';
+import { getCompactedThroughSeq } from './compaction.js';
 import {
   edgeClockIsPresent,
   getEdgeClock,
@@ -30,6 +31,13 @@ import {
 } from './op_emission.js';
 
 type SqlValue = string | number | bigint | boolean | null;
+
+export class PeerLocallyRetiredError extends Error {
+  constructor(readonly peerNodeId: string) {
+    super(`Peer ${peerNodeId} is retired locally`);
+    this.name = 'PeerLocallyRetiredError';
+  }
+}
 
 export interface SnapshotProject {
   identity: string;
@@ -67,7 +75,7 @@ function currentHighWaterSeq(db: Database): number {
   const row = db.prepare('SELECT MAX(seq) AS seq FROM sync_op_log').get() as {
     seq: number | null;
   };
-  return row.seq ?? 0;
+  return Math.max(getCompactedThroughSeq(db), row.seq ?? 0);
 }
 
 function currentHighWaterHlc(db: Database): string {
@@ -91,16 +99,22 @@ export function buildPeerSnapshot(db: Database): PeerSnapshot {
       })
     );
 
-    const projectSettings = db
-      .prepare(
-        `
-          SELECT p.repository_id AS projectIdentity, ps.setting, ps.value
+    const projectSettings = (
+      db
+        .prepare(
+          `
+          SELECT p.id AS projectId, ps.setting, ps.value
           FROM project_setting ps
           JOIN project p ON p.id = ps.project_id
-          ORDER BY p.repository_id, ps.setting
+          ORDER BY p.id, ps.setting
         `
-      )
-      .all() as SnapshotProjectSetting[];
+        )
+        .all() as Array<{ projectId: number; setting: string; value: string }>
+    ).map((row) => ({
+      projectIdentity: getProjectSyncIdentity(db, row.projectId),
+      setting: row.setting,
+      value: row.value,
+    }));
 
     return {
       version: 1,
@@ -364,6 +378,32 @@ function upsertProject(db: Database, project: SnapshotProject): number {
   return created.id;
 }
 
+function allocateSnapshotPlanId(db: Database, projectId: number, planIdHint: number): number {
+  if (Number.isInteger(planIdHint) && planIdHint > 0) {
+    const existing = db
+      .prepare('SELECT uuid FROM plan WHERE project_id = ? AND plan_id = ?')
+      .get(projectId, planIdHint) as { uuid: string } | null;
+    if (!existing) {
+      db.prepare(
+        `UPDATE project SET highest_plan_id = max(highest_plan_id, ?), updated_at = ${SQL_NOW_ISO_UTC} WHERE id = ?`
+      ).run(planIdHint, projectId);
+      return planIdHint;
+    }
+  }
+
+  const row = db
+    .prepare('SELECT COALESCE(MAX(plan_id), 0) AS maxPlanId FROM plan WHERE project_id = ?')
+    .get(projectId) as { maxPlanId: number };
+  const project = db.prepare('SELECT highest_plan_id FROM project WHERE id = ?').get(projectId) as {
+    highest_plan_id: number;
+  } | null;
+  const nextPlanId = Math.max(row.maxPlanId, project?.highest_plan_id ?? 0) + 1;
+  db.prepare(
+    `UPDATE project SET highest_plan_id = max(highest_plan_id, ?), updated_at = ${SQL_NOW_ISO_UTC} WHERE id = ?`
+  ).run(nextPlanId, projectId);
+  return nextPlanId;
+}
+
 function importPlans(
   db: Database,
   snapshot: PeerSnapshot,
@@ -411,10 +451,11 @@ function importPlans(
     if (!projectId) continue;
     const existing = db.prepare('SELECT uuid FROM plan WHERE uuid = ?').get(plan.uuid);
     if (!existing) {
+      const planId = allocateSnapshotPlanId(db, projectId, plan.plan_id);
       insert.run(
         plan.uuid,
         projectId,
-        plan.plan_id,
+        planId,
         plan.title,
         plan.goal,
         plan.note,
@@ -712,9 +753,10 @@ function reconcileEdges(db: Database, snapshot: PeerSnapshot): void {
   }
 
   // Same cleanup for tags
-  const liveTags = db
-    .prepare('SELECT plan_uuid, tag FROM plan_tag')
-    .all() as Array<{ plan_uuid: string; tag: string }>;
+  const liveTags = db.prepare('SELECT plan_uuid, tag FROM plan_tag').all() as Array<{
+    plan_uuid: string;
+    tag: string;
+  }>;
   for (const liveTag of liveTags) {
     const edgeKey = `${liveTag.plan_uuid}#${liveTag.tag}`;
     if (!edgeClockIsPresent(getEdgeClock(db, 'plan_tag', edgeKey))) {
@@ -732,6 +774,13 @@ function observeSnapshotHlc(db: Database, highWaterHlc: string): void {
 }
 
 export function applyPeerSnapshot(db: Database, peerNodeId: string, snapshot: PeerSnapshot): void {
+  const localPeer = db
+    .prepare('SELECT node_type FROM sync_node WHERE node_id = ?')
+    .get(peerNodeId) as { node_type: string } | null;
+  if (localPeer?.node_type === 'retired_main') {
+    throw new PeerLocallyRetiredError(peerNodeId);
+  }
+
   if (snapshot.version !== 1) {
     throw new Error(`Unsupported peer snapshot version: ${snapshot.version}`);
   }
