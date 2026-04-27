@@ -8,11 +8,12 @@ import { DATABASE_FILENAME, openDatabase } from '../db/database.js';
 import {
   getOpLogChunkAfter,
   getPeerCursor,
+  getWorkerLease,
   setPeerCursor,
   type OpLogChunk,
 } from '../db/sync_schema.js';
 import { getOrCreateProject } from '../db/project.js';
-import { appendPlanTask, getPlanByUuid, upsertPlan } from '../db/plan.js';
+import { appendPlanTask, getPlanByUuid, getPlanTasksByUuid, upsertPlan } from '../db/plan.js';
 import { applyRemoteOps, type SyncOpRecord } from './op_apply.js';
 import { getLocalNodeId, registerPeerNode } from './node_identity.js';
 import { applyPeerOpsWithPending, runPeerSync, type PeerTransport } from './peer_sync.js';
@@ -21,6 +22,7 @@ import {
   createPeerSyncHttpHandler,
   runHttpPeerSync,
 } from './peer_transport_http.js';
+import { exportWorkerBundle, exportWorkerOps, importWorkerBundle } from './worker_bundle.js';
 
 function directTransport(remoteDb: Database, localNodeId: string): PeerTransport {
   registerPeerNode(remoteDb, { nodeId: localNodeId, nodeType: 'main' });
@@ -201,6 +203,46 @@ describe('HTTP peer sync transport', () => {
     };
   }
 
+  function pushRequest(
+    handler: (request: Request) => Response | Promise<Response>,
+    peerNodeId: string,
+    ops: SyncOpRecord[],
+    options: { final?: boolean } = {}
+  ): Promise<Response> | Response {
+    const url = new URL('http://peer.test/sync/push');
+    url.searchParams.set('peer_node_id', peerNodeId);
+    if (options.final === true) {
+      url.searchParams.set('final', '1');
+    } else if (options.final === false) {
+      url.searchParams.set('final', '0');
+    }
+    return handler(
+      new Request(url, {
+        method: 'POST',
+        headers: { authorization: 'Bearer secret-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ ops }),
+      })
+    );
+  }
+
+  function makeWorkerOps(options: { leaseExpiresAt?: string } = {}): {
+    workerNodeId: string;
+    ops: SyncOpRecord[];
+  } {
+    upsertPlan(dbB, projectB, { uuid: 'worker-target-plan', planId: 50, title: 'Worker target' });
+    const bundle = exportWorkerBundle(dbB, {
+      targetPlanUuid: 'worker-target-plan',
+      leaseExpiresAt: options.leaseExpiresAt ?? '2030-01-01T00:00:00.000Z',
+    });
+    importWorkerBundle(dbA, bundle);
+    appendPlanTask(dbA, 'worker-target-plan', {
+      uuid: 'worker-return-task',
+      title: 'Returned task',
+      description: 'From worker',
+    });
+    return { workerNodeId: bundle.worker.nodeId, ops: exportWorkerOps(dbA).ops };
+  }
+
   test('syncs over the HTTP handler without opening a socket', async () => {
     upsertPlan(dbA, projectA, { uuid: 'http-a', planId: 1, title: 'HTTP A' });
     upsertPlan(dbB, projectB, { uuid: 'http-b', planId: 2, title: 'HTTP B' });
@@ -348,6 +390,118 @@ describe('HTTP peer sync transport', () => {
     expect(
       dbA.prepare('SELECT node_type FROM sync_node WHERE node_id = ?').get(nodeB)
     ).toEqual({ node_type: 'main' });
+  });
+
+  test('HTTP worker push with an expired lease returns 409 without applying ops', async () => {
+    const { workerNodeId, ops } = makeWorkerOps({
+      leaseExpiresAt: '2000-01-01T00:00:00.000Z',
+    });
+    const handler = createPeerSyncHttpHandler(dbB, { token: 'secret-token' });
+
+    const response = await pushRequest(handler, workerNodeId, ops);
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: 'lease_expired' });
+    expect(getWorkerLease(dbB, workerNodeId)?.status).toBe('expired');
+    expect(getPlanTasksByUuid(dbB, 'worker-target-plan').map((task) => task.uuid)).not.toContain(
+      'worker-return-task'
+    );
+  });
+
+  test('HTTP worker push with a completed lease returns 409 without applying ops', async () => {
+    const { workerNodeId, ops } = makeWorkerOps();
+    dbB
+      .prepare("UPDATE sync_worker_lease SET status = 'completed' WHERE worker_node_id = ?")
+      .run(workerNodeId);
+    const handler = createPeerSyncHttpHandler(dbB, { token: 'secret-token' });
+
+    const response = await pushRequest(handler, workerNodeId, ops);
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: 'lease_completed' });
+    expect(getPlanTasksByUuid(dbB, 'worker-target-plan').map((task) => task.uuid)).not.toContain(
+      'worker-return-task'
+    );
+  });
+
+  test("HTTP worker push rejects ops whose node_id doesn't match the worker peer", async () => {
+    const { workerNodeId, ops } = makeWorkerOps();
+    const spoofedOps = ops.map((op, index) =>
+      index === 0 ? { ...op, node_id: '11111111-1111-4111-8111-111111111111' } : op
+    );
+    const handler = createPeerSyncHttpHandler(dbB, { token: 'secret-token' });
+
+    const response = await pushRequest(handler, workerNodeId, spoofedOps);
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ error: 'lease_mismatched_node_id' });
+    expect(getPlanTasksByUuid(dbB, 'worker-target-plan').map((task) => task.uuid)).not.toContain(
+      'worker-return-task'
+    );
+  });
+
+  test('HTTP worker heartbeat records return time without completing the lease', async () => {
+    const { workerNodeId, ops } = makeWorkerOps();
+    dbB
+      .prepare('UPDATE sync_worker_lease SET last_returned_at = ? WHERE worker_node_id = ?')
+      .run('2000-01-01T00:00:00.000Z', workerNodeId);
+    const handler = createPeerSyncHttpHandler(dbB, { token: 'secret-token' });
+
+    const response = await pushRequest(handler, workerNodeId, ops, { final: false });
+    const body = (await response.json()) as { pendingOpCount: number; leaseCompleted: boolean };
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ pendingOpCount: 0, leaseCompleted: false });
+    const lease = getWorkerLease(dbB, workerNodeId);
+    expect(lease?.status).toBe('active');
+    expect(lease?.last_returned_at > '2000-01-01T00:00:00.000Z').toBe(true);
+    expect(getPlanTasksByUuid(dbB, 'worker-target-plan').map((task) => task.uuid)).toContain(
+      'worker-return-task'
+    );
+  });
+
+  test('HTTP final signal from a non-worker peer returns 409', async () => {
+    const nodeA = getLocalNodeId(dbA);
+    registerPeerNode(dbB, { nodeId: nodeA, nodeType: 'main' });
+    const handler = createPeerSyncHttpHandler(dbB, { token: 'secret-token' });
+
+    const response = await pushRequest(handler, nodeA, [], { final: true });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: 'final_signal_requires_worker_lease',
+    });
+  });
+
+  test('HTTP worker multi-chunk return finalizes only on the final chunk', async () => {
+    const { workerNodeId, ops } = makeWorkerOps();
+    appendPlanTask(dbA, 'worker-target-plan', {
+      uuid: 'worker-return-task-2',
+      title: 'Returned task 2',
+      description: 'Second chunk',
+    });
+    const allOps = exportWorkerOps(dbA).ops;
+    const firstChunk = allOps.slice(0, Math.ceil(allOps.length / 2));
+    const secondChunk = allOps.slice(Math.ceil(allOps.length / 2));
+    expect(firstChunk.length).toBeGreaterThan(0);
+    expect(secondChunk.length).toBeGreaterThan(0);
+    const handler = createPeerSyncHttpHandler(dbB, { token: 'secret-token' });
+
+    const firstResponse = await pushRequest(handler, workerNodeId, firstChunk, { final: false });
+    expect(firstResponse.status).toBe(200);
+    expect(getWorkerLease(dbB, workerNodeId)?.status).toBe('active');
+
+    const finalResponse = await pushRequest(handler, workerNodeId, secondChunk, { final: true });
+    expect(finalResponse.status).toBe(200);
+    await expect(finalResponse.json()).resolves.toEqual({
+      pendingOpCount: 0,
+      leaseCompleted: true,
+    });
+    expect(getWorkerLease(dbB, workerNodeId)?.status).toBe('completed');
+    const returnedTaskUuids = getPlanTasksByUuid(dbB, 'worker-target-plan').map((task) => task.uuid);
+    expect(returnedTaskUuids).toContain('worker-return-task');
+    expect(returnedTaskUuids).toContain('worker-return-task-2');
+    expect(ops.length).toBeGreaterThan(0);
   });
 });
 

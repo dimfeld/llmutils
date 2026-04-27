@@ -38,11 +38,13 @@ export interface PushResponse {
    * recorded for retry. The sender may still advance its push cursor.
    */
   deferredSkips?: number;
+  pendingOpCount?: number;
+  leaseCompleted?: boolean;
 }
 
 export interface PeerTransport {
   pullChunk(afterSeq: string | null, limit: number): Promise<PullResponse>;
-  pushChunk(ops: SyncOpRecord[]): Promise<PushResponse>;
+  pushChunk(ops: SyncOpRecord[], options?: { final?: boolean }): Promise<PushResponse>;
 }
 
 export interface PeerSyncOptions {

@@ -2,9 +2,7 @@ import type { Database } from 'bun:sqlite';
 import { timingSafeEqual } from 'node:crypto';
 
 import {
-  completeWorkerLeaseIfReady,
   getOpLogChunkAfter,
-  markWorkerLeaseCompletionRequested,
   setPeerCursor,
 } from '../db/sync_schema.js';
 import type { SyncOpRecord } from './op_apply.js';
@@ -16,13 +14,13 @@ import {
   type PeerSyncResult,
   type PeerTransport,
 } from './peer_sync.js';
+import { applyWorkerReturn } from './worker_bundle.js';
 
 export interface HttpPeerTransportOptions {
   baseUrl: string;
   token: string;
   localNodeId: string;
   fetch?: typeof fetch;
-  final?: boolean;
 }
 
 export interface RunHttpPeerSyncOptions extends PeerSyncOptions {
@@ -216,10 +214,10 @@ export function createHttpPeerTransport(options: HttpPeerTransportOptions): Peer
       };
     },
 
-    async pushChunk(ops) {
+    async pushChunk(ops, pushOptions) {
       const url = requestUrl(options.baseUrl, '/sync/push');
       url.searchParams.set('peer_node_id', options.localNodeId);
-      if (options.final === true) {
+      if (pushOptions?.final === true) {
         url.searchParams.set('final', '1');
       }
       const response = await fetchImpl(url, {
@@ -281,8 +279,30 @@ export function createPeerSyncHttpHandler(
         const peerNodeId = asPeerNodeId(url);
         const peerNode = registerPeerNode(db, { nodeId: peerNodeId, nodeType: 'transient' });
         const ops = readOpsBody(await readJson(request, maxBodyBytes));
+        const final = url.searchParams.get('final') === '1';
         if (ops.length > maxPushBatch) {
           return jsonResponse({ error: 'push batch too large' }, { status: 413 });
+        }
+        if (peerNode.node_type === 'worker') {
+          let workerResult;
+          try {
+            workerResult = applyWorkerReturn(db, ops, { workerNodeId: peerNodeId, final });
+          } catch {
+            return jsonResponse({ error: 'apply failed' }, { status: 500 });
+          }
+          if (workerResult.rejection) {
+            return jsonResponse(
+              { error: `lease_${workerResult.rejection.reason}` },
+              { status: 409 }
+            );
+          }
+          return jsonResponse({
+            pendingOpCount: workerResult.pendingOpCount,
+            leaseCompleted: workerResult.leaseCompleted,
+          });
+        }
+        if (final) {
+          return jsonResponse({ error: 'final_signal_requires_worker_lease' }, { status: 409 });
         }
         let applyResult;
         try {
@@ -303,10 +323,6 @@ export function createPeerSyncHttpHandler(
         }, null);
         if (lastPushedOp?.seq) {
           setPeerCursor(db, peerNodeId, 'pull', lastPushedOp.seq.toString(), lastPushedOp);
-        }
-        if (url.searchParams.get('final') === '1' && peerNode.node_type === 'worker') {
-          markWorkerLeaseCompletionRequested(db, peerNodeId);
-          completeWorkerLeaseIfReady(db, peerNodeId);
         }
         return jsonResponse({
           applied: applyResult.applied,

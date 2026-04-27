@@ -95,6 +95,25 @@ export interface ApplyWorkerOpsResult extends ApplyResult {
   leaseCompleted: boolean;
 }
 
+export interface WorkerReturnContext {
+  workerNodeId: string;
+  final: boolean;
+}
+
+export type WorkerReturnRejectionReason =
+  | 'no_active_lease'
+  | 'expired'
+  | 'completed'
+  | 'mismatched_node_id';
+
+export interface WorkerReturnResult extends ApplyResult {
+  pendingOpCount: number;
+  leaseCompleted: boolean;
+  rejection?: {
+    reason: WorkerReturnRejectionReason;
+  };
+}
+
 export class WorkerBundleTooLargeError extends Error {
   constructor(
     readonly targetPlanUuid: string,
@@ -1048,38 +1067,84 @@ export function applyWorkerOps(
   ops: SyncOpRecord[],
   options: ApplyWorkerOpsOptions
 ): ApplyWorkerOpsResult {
-  const lease = getWorkerLease(db, options.workerNodeId);
-  if (!lease) {
-    throw new Error(`No worker lease found for worker node ${options.workerNodeId}`);
-  }
-  if (lease.status !== 'active') {
-    throw new Error(`Worker lease for ${options.workerNodeId} is closed (${lease.status})`);
-  }
-  if (lease.lease_expires_at <= new Date().toISOString()) {
-    expireWorkerLease(db, options.workerNodeId);
-    throw new Error(`Worker lease for ${options.workerNodeId} is closed (expired)`);
-  }
-  for (const op of ops) {
-    if (op.node_id !== options.workerNodeId) {
-      throw new Error(
-        `Worker op origin ${op.node_id} does not match leased worker ${options.workerNodeId}`
-      );
+  const result = applyWorkerReturn(db, ops, {
+    workerNodeId: options.workerNodeId,
+    final: options.final !== false,
+  });
+  if (result.rejection) {
+    switch (result.rejection.reason) {
+      case 'no_active_lease':
+        throw new Error(`No worker lease found for worker node ${options.workerNodeId}`);
+      case 'expired':
+        throw new Error(`Worker lease for ${options.workerNodeId} is closed (expired)`);
+      case 'completed': {
+        const lease = getWorkerLease(db, options.workerNodeId);
+        throw new Error(
+          `Worker lease for ${options.workerNodeId} is closed (${lease?.status ?? 'not active'})`
+        );
+      }
+      case 'mismatched_node_id': {
+        const mismatched = ops.find((op) => op.node_id !== options.workerNodeId);
+        throw new Error(
+          `Worker op origin ${mismatched?.node_id ?? '(unknown)'} does not match leased worker ${
+            options.workerNodeId
+          }`
+        );
+      }
     }
   }
-  const result = applyPeerOpsWithPending(db, options.workerNodeId, ops);
-  markWorkerLeaseReturned(db, options.workerNodeId);
-  if (options.final !== false) {
+  return {
+    applied: result.applied,
+    skipped: result.skipped,
+    errors: result.errors,
+    pendingOpCount: result.pendingOpCount,
+    leaseCompleted: result.leaseCompleted,
+  };
+}
+
+export function applyWorkerReturn(
+  db: Database,
+  ops: SyncOpRecord[],
+  ctx: WorkerReturnContext
+): WorkerReturnResult {
+  const emptyResult = (reason: WorkerReturnRejectionReason): WorkerReturnResult => ({
+    applied: 0,
+    skipped: [],
+    errors: [],
+    pendingOpCount: countPendingOps(db, ctx.workerNodeId),
+    leaseCompleted: false,
+    rejection: { reason },
+  });
+
+  const lease = getWorkerLease(db, ctx.workerNodeId);
+  if (!lease) {
+    return emptyResult('no_active_lease');
+  }
+  if (lease.lease_expires_at <= new Date().toISOString()) {
+    expireWorkerLease(db, ctx.workerNodeId);
+    return emptyResult('expired');
+  }
+  if (lease.status !== 'active') {
+    return emptyResult('completed');
+  }
+  if (ops.some((op) => op.node_id !== ctx.workerNodeId)) {
+    return emptyResult('mismatched_node_id');
+  }
+
+  const result = applyPeerOpsWithPending(db, ctx.workerNodeId, ops);
+  markWorkerLeaseReturned(db, ctx.workerNodeId);
+  if (ctx.final) {
     // Completion is sticky once completion_requested_at is set; subsequent calls
     // (including heartbeats) that drain pending ops will finalize the lease. This
     // is intentional: workers that hit the final flag once are committed to completing.
-    markWorkerLeaseCompletionRequested(db, options.workerNodeId);
-    retryPendingOps(db, options.workerNodeId);
+    markWorkerLeaseCompletionRequested(db, ctx.workerNodeId);
+    retryPendingOps(db, ctx.workerNodeId);
   }
-  const pendingOpCount = countPendingOps(db, options.workerNodeId);
+  const pendingOpCount = countPendingOps(db, ctx.workerNodeId);
   const completedLease =
-    options.final !== false && pendingOpCount === 0
-      ? completeWorkerLeaseIfReadyRow(db, options.workerNodeId)
-      : getWorkerLease(db, options.workerNodeId);
+    ctx.final && pendingOpCount === 0
+      ? completeWorkerLeaseIfReadyRow(db, ctx.workerNodeId)
+      : getWorkerLease(db, ctx.workerNodeId);
   return {
     ...result,
     pendingOpCount,

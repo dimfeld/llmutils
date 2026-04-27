@@ -24,6 +24,10 @@ function changes(db: Database): number {
 /**
  * Prune sync nodes that do not represent durable main replicas.
  *
+ * Not auto-invoked. Task 15 (sync health and repair tooling) will own
+ * scheduling -- either via a periodic CLI command or as a sync-startup hook.
+ * Until then, callers may invoke this manually.
+ *
  * Workers are safe to remove after their lease has completed or expired and no
  * deferred operations remain for that worker. Transient nodes are best-effort
  * caller records; once they are old enough and have no pending operations, they

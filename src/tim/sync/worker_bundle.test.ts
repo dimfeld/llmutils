@@ -465,16 +465,16 @@ describe('worker sync bundles', () => {
       baseUrl: 'http://peer.test',
       token: 'secret-token',
       localNodeId: bundle.worker.nodeId,
-      final: true,
       fetch: async (input, init) => {
         const request = input instanceof Request ? input : new Request(input, init);
         return handler(request) as Promise<Response>;
       },
     });
 
-    const response = await transport.pushChunk(exportWorkerOps(workerDb).ops);
+    const response = await transport.pushChunk(exportWorkerOps(workerDb).ops, { final: true });
 
-    expect(response.deferredSkips).toBe(0);
+    expect(response.pendingOpCount).toBe(0);
+    expect(response.leaseCompleted).toBe(true);
     expect(getWorkerLease(mainDb, bundle.worker.nodeId)?.status).toBe('completed');
     expect(getPlanTasksByUuid(mainDb, 'plan-target').map((task) => task.uuid)).toContain(
       'task-http-final'
