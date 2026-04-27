@@ -34,6 +34,10 @@ import { materializePlan } from '../plan_materialize.js';
 import { log, warn, error } from '../../logging.js';
 import { removeAssignment } from '../db/assignment.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import { getDatabase } from '../db/database.js';
+import { getPlanByPlanId } from '../db/plan.js';
+import { resolveProjectContext } from '../plan_materialize.js';
+import { setApplyBatchOperationHookForTesting } from '../sync/apply.js';
 
 const logSpy = vi.mocked(log);
 const warnSpy = vi.mocked(warn);
@@ -52,6 +56,7 @@ describe('tim set command', () => {
     clearAllTimCaches();
     closeDatabaseForTesting();
     clearPlanSyncContext();
+    setApplyBatchOperationHookForTesting(null);
 
     tempDir = await mkdtemp(path.join(tmpdir(), 'tim-set-test-'));
     tasksDir = path.join(tempDir, 'tasks');
@@ -81,6 +86,7 @@ describe('tim set command', () => {
     clearAllTimCaches();
     closeDatabaseForTesting();
     clearPlanSyncContext();
+    setApplyBatchOperationHookForTesting(null);
     if (tempDir) {
       await rm(tempDir, { recursive: true, force: true });
     }
@@ -815,6 +821,43 @@ describe('tim set command', () => {
     // Verify new parent has child in dependencies
     const newParent = (await resolvePlanByNumericId(206, tempDir)).plan;
     expect(newParent.dependencies).toEqual([204]);
+  });
+
+  test('rolls back child and parent changes when parent-change batch fails', async () => {
+    await createTestPlan(212, {
+      status: 'pending',
+      dependencies: [],
+    });
+    await createTestPlan(213, {
+      status: 'done',
+      dependencies: [],
+    });
+    await createTestPlan(214, {
+      parent: 212,
+    });
+
+    setApplyBatchOperationHookForTesting((index) => {
+      if (index === 1) {
+        throw new Error('injected set parent batch failure');
+      }
+    });
+
+    await expect(
+      handleSetCommand(214, { status: 'in_progress', parent: 213 }, globalOpts)
+    ).rejects.toThrow('injected set parent batch failure');
+
+    setApplyBatchOperationHookForTesting(null);
+    const child = (await resolvePlanByNumericId(214, tempDir)).plan;
+    const oldParent = (await resolvePlanByNumericId(212, tempDir)).plan;
+    const newParent = (await resolvePlanByNumericId(213, tempDir)).plan;
+    expect(child.parent).toBe(212);
+    expect(child.status).toBe('pending');
+    expect(oldParent.dependencies).toEqual([214]);
+    expect(newParent.status).toBe('done');
+    expect(newParent.dependencies ?? []).toEqual([]);
+
+    const projectContext = await resolveProjectContext(tempDir);
+    expect(getPlanByPlanId(getDatabase(), projectContext.projectId, 214)).not.toBeNull();
   });
 
   test('should prevent circular dependencies when setting parent', async () => {

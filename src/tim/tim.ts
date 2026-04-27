@@ -540,7 +540,7 @@ program
     await handleCleanupMaterializedCommand(options, command).catch(handleCommandError);
   });
 
-program
+const syncCommand = program
   .command('sync [planId]')
   .description('Sync materialized plans in .tim/plans/ back to the database')
   .option('--force', 'Sync even when the materialized file looks stale')
@@ -549,6 +549,65 @@ program
     const { handleSyncCommand } = await import('./commands/sync.js');
     const planId = parseOptionalPlanIdFromCliArg(planIdArg);
     await handleSyncCommand(planId, options, command).catch(handleCommandError);
+  });
+
+syncCommand
+  .command('status')
+  .description('Show node sync status and queue counts')
+  .action(async (options, command) => {
+    const { handleSyncStatusCommand } = await import('./commands/sync.js');
+    await handleSyncStatusCommand(options, command).catch(handleCommandError);
+  });
+
+syncCommand
+  .command('push')
+  .description('Flush pending sync operations to the main node once')
+  .option(
+    '--recover-stranded',
+    'Reset operations stuck in `sending` (use only when no other sync transport is running)'
+  )
+  .action(async (options, command) => {
+    const { handleSyncPushCommand } = await import('./commands/sync.js');
+    await handleSyncPushCommand(options, command).catch(handleCommandError);
+  });
+
+syncCommand
+  .command('run')
+  .description('Flush pending sync operations, then catch up once')
+  .option(
+    '--recover-stranded',
+    'Reset operations stuck in `sending` (use only when no other sync transport is running)'
+  )
+  .action(async (options, command) => {
+    const { handleSyncRunCommand } = await import('./commands/sync.js');
+    await handleSyncRunCommand(options, command).catch(handleCommandError);
+  });
+
+syncCommand
+  .command('catch-up')
+  .description('Fetch and apply canonical sync changes from the main node once')
+  .action(async (options, command) => {
+    const { handleSyncCatchUpCommand } = await import('./commands/sync.js');
+    await handleSyncCatchUpCommand(options, command).catch(handleCommandError);
+  });
+
+syncCommand
+  .command('conflicts')
+  .description('List open main-node sync conflicts')
+  .action(async (options, command) => {
+    const { handleSyncConflictsCommand } = await import('./commands/sync.js');
+    await handleSyncConflictsCommand(options, command).catch(handleCommandError);
+  });
+
+syncCommand
+  .command('resolve <conflictId>')
+  .description('Resolve a main-node sync conflict')
+  .option('--apply-incoming', 'Apply the incoming conflicted value')
+  .option('--apply-current', 'Discard the incoming value and keep current canonical state')
+  .option('--manual <jsonValue>', 'Apply an operator-supplied JSON value')
+  .action(async (conflictId, options, command) => {
+    const { handleSyncResolveCommand } = await import('./commands/sync.js');
+    await handleSyncResolveCommand(conflictId, options, command).catch(handleCommandError);
   });
 
 program

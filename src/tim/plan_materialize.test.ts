@@ -26,7 +26,7 @@ import {
   syncMaterializedPlan,
   withPlanAutoSync,
 } from './plan_materialize.js';
-import { readPlanFile, writePlanFile } from './plans.js';
+import { generatePlanFileContent, readPlanFile, writePlanFile } from './plans.js';
 import { handleCleanupMaterializedCommand } from './commands/cleanup-materialized.js';
 import { handleMaterializeCommand } from './commands/materialize.js';
 import { handleSyncCommand } from './commands/sync.js';
@@ -168,6 +168,43 @@ describe('tim plan_materialize', () => {
     return { db, project };
   }
 
+  function persistentSyncConfig(nodeId = 'materialize-persistent-node') {
+    return {
+      sync: {
+        role: 'persistent',
+        nodeId,
+        mainUrl: 'http://127.0.0.1:29999',
+        nodeToken: 'secret',
+        offline: true,
+      },
+    } as const;
+  }
+
+  function mainSyncConfig(nodeId = 'materialize-main-node') {
+    return {
+      sync: {
+        role: 'main',
+        nodeId,
+        nodeToken: 'secret',
+        allowedNodes: [],
+      },
+    } as const;
+  }
+
+  function localOperationConfig(nodeId = 'materialize-local-node') {
+    return {
+      sync: {
+        nodeId,
+      },
+    } as const;
+  }
+
+  function syncOperationRows() {
+    return getDatabase()
+      .prepare('SELECT operation_type, status, payload FROM sync_operation ORDER BY local_sequence')
+      .all() as Array<{ operation_type: string; status: string; payload: string }>;
+  }
+
   test('materializePlan writes the primary plan and materializeRelatedPlans writes references', async () => {
     await seedProject();
 
@@ -212,6 +249,9 @@ describe('tim plan_materialize', () => {
       materializedAs: 'primary',
     });
     expect(materializedPlan.tasks).toHaveLength(2);
+    expect(materializedPlan.tasks[0]?.uuid).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
     expect(materializedPlan.reviewIssues).toHaveLength(1);
     expect(await fs.readFile(getShadowPlanPath(repoDir, 3), 'utf8')).toBe(
       await fs.readFile(planPath, 'utf8')
@@ -246,6 +286,52 @@ describe('tim plan_materialize', () => {
     }
   });
 
+  test('task UUIDs round-trip through file, DB sync, and rematerialization', async () => {
+    await seedProject();
+
+    const planPath = await materializePlan(3, repoDir);
+    const materializedPlan = await readPlanFile(planPath);
+    const taskUuids = materializedPlan.tasks.map((task) => task.uuid);
+    expect(taskUuids.every((uuid) => typeof uuid === 'string')).toBe(true);
+
+    await syncMaterializedPlan(3, repoDir, { force: true });
+
+    const dbTasks = getPlanTasksByUuid(getDatabase(), '33333333-3333-4333-8333-333333333333');
+    expect(dbTasks.map((task) => task.uuid)).toEqual(taskUuids);
+
+    const rematerializedPlan = await readPlanFile(planPath);
+    expect(rematerializedPlan.tasks.map((task) => task.uuid)).toEqual(taskUuids);
+  });
+
+  test('plan files without task UUIDs receive stable task UUIDs on write', async () => {
+    const planPath = path.join(repoDir, 'uuidless.plan.md');
+    await fs.writeFile(
+      planPath,
+      `---
+id: 99
+uuid: 99999999-9999-4999-8999-999999999999
+title: UUIDless task plan
+goal: Preserve task identity
+tasks:
+  - title: First task
+    description: First description
+    done: false
+---
+Details
+`,
+      'utf8'
+    );
+
+    const readPlan = await readPlanFile(planPath);
+    expect(readPlan.tasks[0]?.uuid).toBeUndefined();
+
+    await writePlanFile(planPath, readPlan, { skipDb: true, skipUpdatedAt: true });
+    const reread = await readPlanFile(planPath);
+    expect(reread.tasks[0]?.uuid).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
+  });
+
   test('materializeRelatedPlans does not overwrite an existing primary materialized plan', async () => {
     await seedProject();
 
@@ -253,7 +339,7 @@ describe('tim plan_materialize', () => {
     const editedDependencyPlan = await readPlanFile(dependencyPlanPath);
     editedDependencyPlan.title = 'Dependency plan preserved from primary file';
     editedDependencyPlan.details = 'Primary edits should survive related materialization';
-    await writePlanFile(dependencyPlanPath, editedDependencyPlan, { skipSync: true });
+    await writePlanFile(dependencyPlanPath, editedDependencyPlan, { skipDb: true });
 
     const writtenPaths = await materializeRelatedPlans(3, repoDir);
 
@@ -374,7 +460,7 @@ describe('tim plan_materialize', () => {
       description: 'persist file edits',
       done: true,
     });
-    await writePlanFile(planPath, editedPlan, { skipSync: true });
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
 
     await syncMaterializedPlan(3, repoDir);
 
@@ -452,7 +538,7 @@ describe('tim plan_materialize', () => {
     // Just test that force=true works without complex mocking
     const editedPlan = await readPlanFile(planPath);
     editedPlan.title = 'Force sync test';
-    await writePlanFile(planPath, editedPlan, { skipSync: true });
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
 
     await syncMaterializedPlan(3, repoDir, { force: true });
 
@@ -487,7 +573,7 @@ describe('tim plan_materialize', () => {
 
     const editedPlan = await readPlanFile(planPath);
     editedPlan.title = 'Title changed on disk only';
-    await writePlanFile(planPath, editedPlan, { skipSync: true });
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
 
     await syncMaterializedPlan(3, repoDir);
 
@@ -510,7 +596,7 @@ describe('tim plan_materialize', () => {
 
     const editedPlan = await readPlanFile(planPath);
     editedPlan.details = 'Primary details edited only in the markdown body';
-    await writePlanFile(planPath, editedPlan, { skipSync: true });
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
 
     await syncMaterializedPlan(3, repoDir);
 
@@ -519,6 +605,397 @@ describe('tim plan_materialize', () => {
     expect(saved?.status).toBe('done');
     expect(saved?.title).toBe('Primary plan');
     expect(saved?.goal).toBe('Primary goal');
+  });
+
+  test('syncMaterializedPlan queues text patch operations on a persistent node', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.title = 'Persistent file title';
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
+
+    await syncMaterializedPlan(3, repoDir, { config: persistentSyncConfig() });
+
+    const rows = syncOperationRows();
+    expect(rows.map((row) => [row.operation_type, row.status])).toEqual([
+      ['plan.patch_text', 'queued'],
+    ]);
+    expect(JSON.parse(rows[0]!.payload)).toMatchObject({
+      type: 'plan.patch_text',
+      field: 'title',
+      base: 'Primary plan',
+      new: 'Persistent file title',
+    });
+    expect(getPlanByPlanId(db, project.id, 3)?.title).toBe('Persistent file title');
+  });
+
+  test('syncMaterializedPlan queues new task operations and writes generated task UUIDs back', async () => {
+    await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.tasks.push({
+      title: 'new uuidless materialized task',
+      description: 'gets a stable UUID',
+      done: false,
+    });
+    await fs.writeFile(planPath, generatePlanFileContent(editedPlan), 'utf8');
+    expect((await readPlanFile(planPath)).tasks.at(-1)?.uuid).toBeUndefined();
+
+    await syncMaterializedPlan(3, repoDir, { config: persistentSyncConfig() });
+
+    const rows = syncOperationRows();
+    expect(rows.map((row) => row.operation_type)).toEqual(['plan.add_task']);
+    const payload = JSON.parse(rows[0]!.payload) as { taskUuid: string; title: string };
+    expect(payload).toMatchObject({
+      type: 'plan.add_task',
+      title: 'new uuidless materialized task',
+    });
+    expect(payload.taskUuid).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
+
+    const rematerializedPlan = await readPlanFile(planPath);
+    expect(rematerializedPlan.tasks.at(-1)?.uuid).toBe(payload.taskUuid);
+  });
+
+  test('syncMaterializedPlan queues task remove, done, and text operations', async () => {
+    await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    const editedPlan = await readPlanFile(planPath);
+    const firstTaskUuid = editedPlan.tasks[0]!.uuid;
+    const secondTaskUuid = editedPlan.tasks[1]!.uuid;
+    editedPlan.tasks[0] = {
+      ...editedPlan.tasks[0]!,
+      title: 'implement via operation',
+      description: 'build materialize flow with task ops',
+      done: true,
+    };
+    editedPlan.tasks = [editedPlan.tasks[0]!];
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
+
+    await syncMaterializedPlan(3, repoDir, { config: persistentSyncConfig() });
+
+    const payloads = syncOperationRows().map((row) => JSON.parse(row.payload));
+    expect(payloads.map((payload) => payload.type)).toEqual([
+      'plan.remove_task',
+      'plan.update_task_text',
+      'plan.update_task_text',
+      'plan.mark_task_done',
+    ]);
+    expect(payloads[0]).toMatchObject({ taskUuid: secondTaskUuid });
+    expect(payloads[1]).toMatchObject({
+      taskUuid: firstTaskUuid,
+      field: 'title',
+      base: 'implement',
+      new: 'implement via operation',
+    });
+    expect(payloads[2]).toMatchObject({
+      taskUuid: firstTaskUuid,
+      field: 'description',
+      base: 'build materialize flow',
+      new: 'build materialize flow with task ops',
+    });
+    expect(payloads[3]).toMatchObject({ taskUuid: firstTaskUuid, done: true });
+  });
+
+  test('syncMaterializedPlan treats same-index title replacement as add+remove when other file tasks have UUIDs', async () => {
+    await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    const editedPlan = await readPlanFile(planPath);
+    const firstTaskUuid = editedPlan.tasks[0]!.uuid;
+    const secondTaskUuid = editedPlan.tasks[1]!.uuid;
+    expect(firstTaskUuid).toBeDefined();
+    expect(secondTaskUuid).toBeDefined();
+
+    // shadow=[A=implement(uuid), B=verify(uuid)], file=[A=implement(uuid), X=brand new(no uuid)].
+    // Because file task 0 still carries its UUID, the list shape is verifiable, so the
+    // uuidless replacement at index 1 is treated as add+remove rather than a rename of B.
+    editedPlan.tasks[1] = {
+      title: 'brand new replacement task',
+      description: 'totally different work',
+      done: false,
+    };
+    await fs.writeFile(planPath, generatePlanFileContent(editedPlan), 'utf8');
+
+    await syncMaterializedPlan(3, repoDir, { config: persistentSyncConfig() });
+
+    const payloads = syncOperationRows().map((row) => JSON.parse(row.payload));
+    const types = payloads.map((payload) => payload.type);
+    expect(types).toContain('plan.remove_task');
+    expect(types).toContain('plan.add_task');
+    expect(types).not.toContain('plan.update_task_text');
+
+    const removeOp = payloads.find((p) => p.type === 'plan.remove_task');
+    expect(removeOp).toMatchObject({ taskUuid: secondTaskUuid });
+
+    const addOp = payloads.find((p) => p.type === 'plan.add_task');
+    expect(addOp).toMatchObject({ title: 'brand new replacement task', done: false });
+    // The new task should not steal the removed task's UUID.
+    expect(addOp.taskUuid).not.toBe(secondTaskUuid);
+
+    const persistedFile = await readPlanFile(planPath);
+    expect(persistedFile.tasks[0]?.uuid).toBe(firstTaskUuid);
+    expect(persistedFile.tasks[1]?.uuid).toBeDefined();
+    expect(persistedFile.tasks[1]?.uuid).not.toBe(secondTaskUuid);
+  });
+
+  test('syncMaterializedPlan matches uuidless existing tasks by index and title', async () => {
+    await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    const editedPlan = await readPlanFile(planPath);
+    const originalUuid = editedPlan.tasks[0]!.uuid;
+    editedPlan.tasks[0] = {
+      title: editedPlan.tasks[0]!.title,
+      description: editedPlan.tasks[0]!.description,
+      done: true,
+    };
+    await fs.writeFile(planPath, generatePlanFileContent(editedPlan), 'utf8');
+    expect((await readPlanFile(planPath)).tasks[0]?.uuid).toBeUndefined();
+
+    await syncMaterializedPlan(3, repoDir, { config: persistentSyncConfig() });
+
+    const rows = syncOperationRows();
+    expect(rows.map((row) => row.operation_type)).toEqual(['plan.mark_task_done']);
+    expect(JSON.parse(rows[0]!.payload)).toMatchObject({
+      type: 'plan.mark_task_done',
+      taskUuid: originalUuid,
+      done: true,
+    });
+    expect((await readPlanFile(planPath)).tasks[0]?.uuid).toBe(originalUuid);
+  });
+
+  test('syncMaterializedPlan hydrates uuidless legacy shadow tasks but treats uuidless file title edits as add+remove when other file tasks have UUIDs', async () => {
+    await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+    const shadowPath = getShadowPlanPath(repoDir, 3);
+
+    const originalPlan = await readPlanFile(planPath);
+    const originalUuid = originalPlan.tasks[0]!.uuid;
+
+    const legacyShadow = await readPlanFile(planPath);
+    legacyShadow.tasks[0] = {
+      title: legacyShadow.tasks[0]!.title,
+      description: legacyShadow.tasks[0]!.description,
+      done: legacyShadow.tasks[0]!.done,
+    };
+    await fs.writeFile(shadowPath, generatePlanFileContent(legacyShadow), 'utf8');
+
+    const legacyFile = await readPlanFile(planPath);
+    legacyFile.tasks[0] = {
+      title: 'legacy task title edited without uuid',
+      description: legacyFile.tasks[0]!.description,
+      done: legacyFile.tasks[0]!.done,
+    };
+    await fs.writeFile(planPath, generatePlanFileContent(legacyFile), 'utf8');
+
+    await syncMaterializedPlan(3, repoDir, { config: persistentSyncConfig() });
+
+    // Shadow task[0] is hydrated by DB title match (it kept the original title), but file
+    // task[0]'s title was edited so hydrate cannot recover its UUID. Because file task[1]
+    // still carries its UUID, the list shape is verifiable and we conservatively classify
+    // the uuidless file task as add+remove rather than guessing a rename. Identity (and
+    // done state) is not silently transferred across a title change without a UUID anchor.
+    const payloads = syncOperationRows().map((row) => JSON.parse(row.payload));
+    const types = payloads.map((p) => p.type);
+    expect(types).toContain('plan.remove_task');
+    expect(types).toContain('plan.add_task');
+    expect(types).not.toContain('plan.update_task_text');
+
+    const removeOp = payloads.find((p) => p.type === 'plan.remove_task');
+    expect(removeOp).toMatchObject({ taskUuid: originalUuid });
+
+    const addOp = payloads.find((p) => p.type === 'plan.add_task');
+    expect(addOp).toMatchObject({ title: 'legacy task title edited without uuid' });
+    expect(addOp.taskUuid).not.toBe(originalUuid);
+
+    const persistedFile = await readPlanFile(planPath);
+    expect(persistedFile.tasks[0]?.uuid).toBeDefined();
+    expect(persistedFile.tasks[0]?.uuid).not.toBe(originalUuid);
+  });
+
+  test('syncMaterializedPlan does not corrupt shifted uuidless legacy tasks', async () => {
+    const { db, project } = await seedProject();
+    upsertPlan(db, project.id, {
+      uuid: '33333333-3333-4333-8333-333333333333',
+      planId: 3,
+      title: 'Primary plan',
+      goal: 'Primary goal',
+      details: 'Primary details',
+      status: 'in_progress',
+      tasks: [
+        { title: 'A', description: 'task A', done: false },
+        { title: 'B', description: 'task B', done: false },
+        { title: 'C', description: 'task C', done: false },
+      ],
+    });
+
+    const planPath = await materializePlan(3, repoDir);
+    const shadowPath = getShadowPlanPath(repoDir, 3);
+    const originalUuids = (await readPlanFile(planPath)).tasks.map((task) => task.uuid);
+
+    const legacyShadow = await readPlanFile(planPath);
+    legacyShadow.tasks = legacyShadow.tasks.map(({ title, description, done }) => ({
+      title,
+      description,
+      done,
+    }));
+    await fs.writeFile(shadowPath, generatePlanFileContent(legacyShadow), 'utf8');
+
+    const legacyFile = await readPlanFile(planPath);
+    legacyFile.tasks = [
+      { title: 'NEW', description: 'new task', done: false },
+      ...legacyFile.tasks.map(({ title, description, done }) => ({
+        title,
+        description,
+        done,
+      })),
+    ];
+    await fs.writeFile(planPath, generatePlanFileContent(legacyFile), 'utf8');
+
+    await syncMaterializedPlan(3, repoDir, { config: persistentSyncConfig() });
+
+    const rows = syncOperationRows();
+    expect(rows.map((row) => row.operation_type)).toEqual(['plan.add_task']);
+    expect(JSON.parse(rows[0]!.payload)).toMatchObject({
+      type: 'plan.add_task',
+      title: 'NEW',
+      description: 'new task',
+      taskIndex: 0,
+    });
+    const rematerializedTasks = (await readPlanFile(planPath)).tasks;
+    expect(rematerializedTasks.map((task) => task.title)).toEqual(['NEW', 'A', 'B', 'C']);
+    expect(rematerializedTasks.slice(1).map((task) => task.uuid)).toEqual(originalUuids);
+  });
+
+  test('syncMaterializedPlan queues tag and list add/remove operations', async () => {
+    await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.tags = ['sync', 'queued'];
+    editedPlan.docs = ['docs/edited.md'];
+    editedPlan.changedFiles = ['src/tim/plan_materialize.test.ts'];
+    editedPlan.issue = ['https://github.com/example/repo/issues/4'];
+    editedPlan.pullRequest = [];
+    editedPlan.reviewIssues = [
+      {
+        severity: 'minor',
+        category: 'correctness',
+        content: 'Queued review issue',
+        file: 'src/tim/plan_materialize.test.ts',
+        line: 2,
+      },
+    ];
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
+
+    await syncMaterializedPlan(3, repoDir, { config: persistentSyncConfig() });
+
+    expect(syncOperationRows().map((row) => JSON.parse(row.payload))).toEqual([
+      expect.objectContaining({ type: 'plan.remove_tag', tag: 'materialize' }),
+      expect.objectContaining({ type: 'plan.add_tag', tag: 'queued' }),
+      expect.objectContaining({
+        type: 'plan.remove_list_item',
+        list: 'issue',
+        value: 'https://github.com/example/repo/issues/3',
+      }),
+      expect.objectContaining({
+        type: 'plan.add_list_item',
+        list: 'issue',
+        value: 'https://github.com/example/repo/issues/4',
+      }),
+      expect.objectContaining({
+        type: 'plan.remove_list_item',
+        list: 'pullRequest',
+        value: 'https://github.com/example/repo/pull/30',
+      }),
+      expect.objectContaining({
+        type: 'plan.remove_list_item',
+        list: 'docs',
+        value: 'docs/primary.md',
+      }),
+      expect.objectContaining({
+        type: 'plan.add_list_item',
+        list: 'docs',
+        value: 'docs/edited.md',
+      }),
+      expect.objectContaining({
+        type: 'plan.remove_list_item',
+        list: 'changedFiles',
+        value: 'src/tim/plan_materialize.ts',
+      }),
+      expect.objectContaining({
+        type: 'plan.add_list_item',
+        list: 'changedFiles',
+        value: 'src/tim/plan_materialize.test.ts',
+      }),
+      expect.objectContaining({
+        type: 'plan.remove_list_item',
+        list: 'reviewIssues',
+        value: expect.objectContaining({ content: 'Need round-trip test' }),
+      }),
+      expect.objectContaining({
+        type: 'plan.add_list_item',
+        list: 'reviewIssues',
+        value: expect.objectContaining({ content: 'Queued review issue' }),
+      }),
+    ]);
+  });
+
+  test('syncMaterializedPlan honors preserveUpdatedAt through the shadow-diff op path', async () => {
+    const { db } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.title = 'Title with preserved timestamp';
+    editedPlan.updatedAt = '2024-02-01T00:00:00.000Z';
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
+
+    await syncMaterializedPlan(3, repoDir, {
+      preserveUpdatedAt: '2024-02-01T00:00:00.000Z',
+    });
+
+    const saved = getPlanByUuid(db, '33333333-3333-4333-8333-333333333333');
+    expect(saved?.title).toBe('Title with preserved timestamp');
+    expect(saved?.updated_at).toBe('2024-02-01T00:00:00.000Z');
+  });
+
+  test('syncMaterializedPlan applies base tracking locally without queueing sync operations', async () => {
+    const { db } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.baseCommit = 'local-base-commit';
+    editedPlan.baseChangeId = 'local-base-change';
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
+
+    await syncMaterializedPlan(3, repoDir, { config: persistentSyncConfig() });
+
+    expect(syncOperationRows()).toEqual([]);
+    const saved = getPlanByUuid(db, '33333333-3333-4333-8333-333333333333');
+    expect(saved?.base_commit).toBe('local-base-commit');
+    expect(saved?.base_change_id).toBe('local-base-change');
+  });
+
+  test('syncMaterializedPlan on a main node applies ops directly without queuing', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.title = 'Main-node title edit';
+    editedPlan.tags = ['main-node-tag'];
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
+
+    await syncMaterializedPlan(3, repoDir, { config: mainSyncConfig() });
+
+    // Main node applies ops directly — no queued rows
+    expect(syncOperationRows().filter((r) => r.status === 'queued')).toEqual([]);
+    // DB reflects the edit
+    expect(getPlanByPlanId(db, project.id, 3)?.title).toBe('Main-node title edit');
   });
 
   test('syncMaterializedPlan updates tasks when only the task list changes', async () => {
@@ -531,7 +1008,7 @@ describe('tim plan_materialize', () => {
       { title: 'verify', description: 'run tests with updated expectations', done: false },
       { title: 'document', description: 'capture task-only sync coverage', done: false },
     ];
-    await writePlanFile(planPath, editedPlan, { skipSync: true });
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
 
     await syncMaterializedPlan(3, repoDir);
 
@@ -545,7 +1022,15 @@ describe('tim plan_materialize', () => {
     ).toEqual(editedPlan.tasks);
 
     const rematerializedPlan = await readPlanFile(planPath);
-    expect(rematerializedPlan.tasks).toEqual(editedPlan.tasks);
+    expect(
+      rematerializedPlan.tasks.map((task) => ({
+        title: task.title,
+        description: task.description,
+        done: task.done,
+      }))
+    ).toEqual(
+      editedPlan.tasks.map(({ title, description, done }) => ({ title, description, done }))
+    );
   });
 
   test('syncMaterializedPlan merges file and DB changes on different fields using the shadow baseline', async () => {
@@ -562,7 +1047,7 @@ describe('tim plan_materialize', () => {
       ...editedPlan.tasks,
       { title: 'shadow merge', description: 'exercise merge behavior', done: false },
     ];
-    await writePlanFile(planPath, editedPlan, { skipSync: true });
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
 
     await syncMaterializedPlan(3, repoDir);
 
@@ -581,10 +1066,11 @@ describe('tim plan_materialize', () => {
     );
   });
 
-  test('syncMaterializedPlan falls back to full overwrite when the shadow file is missing', async () => {
+  test('syncMaterializedPlan uses op-batch DB baseline sync when the shadow file is missing', async () => {
     const { db, project } = await seedProject();
     const planPath = await materializePlan(3, repoDir);
-    await fs.unlink(getShadowPlanPath(repoDir, 3));
+    const shadowPath = getShadowPlanPath(repoDir, 3);
+    await fs.unlink(shadowPath);
 
     db.prepare(
       'UPDATE plan SET status = ?, updated_at = ? WHERE project_id = ? AND plan_id = ?'
@@ -593,17 +1079,39 @@ describe('tim plan_materialize', () => {
     const editedPlan = await readPlanFile(planPath);
     editedPlan.title = 'Fallback full overwrite title';
     editedPlan.status = 'pending';
-    await writePlanFile(planPath, editedPlan, { skipSync: true });
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
 
-    await syncMaterializedPlan(3, repoDir);
+    await syncMaterializedPlan(3, repoDir, { config: localOperationConfig() });
 
     const saved = getPlanByPlanId(db, project.id, 3);
     expect(saved?.title).toBe('Fallback full overwrite title');
     expect(saved?.status).toBe('pending');
-    expect(await Bun.file(getShadowPlanPath(repoDir, 3)).exists()).toBe(true);
+    const operations = syncOperationRows();
+    expect(operations.map((row) => row.operation_type)).toEqual(
+      expect.arrayContaining(['plan.patch_text', 'plan.set_scalar'])
+    );
+    expect(operations.every((row) => row.status === 'applied')).toBe(true);
+    expect(await Bun.file(shadowPath).exists()).toBe(true);
+    expect(await fs.readFile(shadowPath, 'utf8')).toBe(await fs.readFile(planPath, 'utf8'));
   });
 
-  test('syncMaterializedPlan falls back to full overwrite when the shadow file is malformed', async () => {
+  test('syncMaterializedPlan preserves task reorder edits when the shadow file is missing', async () => {
+    const { db } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+    await fs.unlink(getShadowPlanPath(repoDir, 3));
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.tasks = [editedPlan.tasks[1]!, editedPlan.tasks[0]!];
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
+
+    await syncMaterializedPlan(3, repoDir, { config: localOperationConfig() });
+
+    const savedTasks = getPlanTasksByUuid(db, '33333333-3333-4333-8333-333333333333');
+    expect(savedTasks.map((task) => task.uuid)).toEqual(editedPlan.tasks.map((task) => task.uuid));
+    expect(savedTasks.map((task) => task.task_index)).toEqual([0, 1]);
+  });
+
+  test('syncMaterializedPlan uses op-batch DB baseline sync when the shadow file is malformed', async () => {
     const { db, project } = await seedProject();
     const planPath = await materializePlan(3, repoDir);
     const shadowPath = getShadowPlanPath(repoDir, 3);
@@ -619,12 +1127,73 @@ describe('tim plan_materialize', () => {
     editedPlan.updatedAt = '2026-03-28T00:00:00.000Z';
     await writePlanFile(planPath, editedPlan, { skipDb: true, skipUpdatedAt: true });
 
-    await syncMaterializedPlan(3, repoDir);
+    await syncMaterializedPlan(3, repoDir, { config: localOperationConfig() });
 
     const saved = getPlanByPlanId(db, project.id, 3);
     expect(saved?.title).toBe('Fallback from malformed shadow');
     expect(saved?.status).toBe('pending');
+    expect(syncOperationRows().map((row) => row.operation_type)).toEqual(
+      expect.arrayContaining(['plan.patch_text', 'plan.set_scalar'])
+    );
     expect(await fs.readFile(shadowPath, 'utf8')).toBe(await fs.readFile(planPath, 'utf8'));
+  });
+
+  test('syncMaterializedPlan uses legacy direct DB baseline sync for local non-UUID plans', async () => {
+    const { db, project } = await seedProject();
+    upsertPlan(db, project.id, {
+      uuid: '66666666-6666-4666-8666-666666666666',
+      planId: 30,
+      title: 'Legacy materialized plan',
+      goal: 'Legacy goal',
+      details: 'Legacy details',
+      tasks: [{ title: 'legacy task', description: 'legacy task', done: false }],
+    });
+    db.prepare('UPDATE plan SET parent_uuid = ? WHERE project_id = ? AND plan_id = ?').run(
+      'legacy-parent',
+      project.id,
+      30
+    );
+    const planPath = await materializePlan(30, repoDir);
+    await fs.unlink(getShadowPlanPath(repoDir, 30));
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.title = 'Legacy title from missing shadow';
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
+
+    await syncMaterializedPlan(30, repoDir, { config: localOperationConfig() });
+
+    expect(getPlanByPlanId(db, project.id, 30)?.title).toBe('Legacy title from missing shadow');
+    expect(syncOperationRows()).toEqual([]);
+  });
+
+  test('syncMaterializedPlan rejects DB baseline sync for non-UUID plans in sync mode', async () => {
+    const { db, project } = await seedProject();
+    upsertPlan(db, project.id, {
+      uuid: '66666666-6666-4666-8666-666666666666',
+      planId: 30,
+      title: 'Legacy materialized plan',
+      goal: 'Legacy goal',
+      details: 'Legacy details',
+      tasks: [{ title: 'legacy task', description: 'legacy task', done: false }],
+    });
+    db.prepare('UPDATE plan SET parent_uuid = ? WHERE project_id = ? AND plan_id = ?').run(
+      'legacy-parent',
+      project.id,
+      30
+    );
+    const planPath = await materializePlan(30, repoDir);
+    await fs.unlink(getShadowPlanPath(repoDir, 30));
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.title = 'Should not be applied';
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
+
+    await expect(syncMaterializedPlan(30, repoDir, { config: mainSyncConfig() })).rejects.toThrow(
+      'Cannot sync materialized legacy plan through sync-main'
+    );
+
+    expect(getPlanByPlanId(db, project.id, 30)?.title).toBe('Legacy materialized plan');
+    expect(syncOperationRows()).toEqual([]);
   });
 
   test('withPlanAutoSync syncs file edits before DB changes and re-materializes after', async () => {
@@ -633,7 +1202,7 @@ describe('tim plan_materialize', () => {
 
     const editedPlan = await readPlanFile(planPath);
     editedPlan.title = 'Title from materialized file';
-    await writePlanFile(planPath, editedPlan, { skipSync: true });
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
 
     await withPlanAutoSync(3, repoDir, async () => {
       const syncedRow = getPlanByPlanId(db, project.id, 3);
@@ -672,7 +1241,7 @@ describe('tim plan_materialize', () => {
 
     const mismatchedPlan = await readPlanFile(planPath);
     mismatchedPlan.id = 30;
-    await writePlanFile(planPath, mismatchedPlan, { skipSync: true });
+    await writePlanFile(planPath, mismatchedPlan, { skipDb: true });
 
     await expect(syncMaterializedPlan(3, repoDir)).rejects.toThrow(
       `Materialized plan path ${planPath} contains plan ID 30, expected 3`
@@ -685,11 +1254,28 @@ describe('tim plan_materialize', () => {
 
     const mismatchedPlan = await readPlanFile(planPath);
     mismatchedPlan.uuid = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-    await writePlanFile(planPath, mismatchedPlan, { skipSync: true });
+    await writePlanFile(planPath, mismatchedPlan, { skipDb: true });
 
     await expect(syncMaterializedPlan(3, repoDir)).rejects.toThrow(
       `Materialized plan at ${planPath} contains UUID aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa, expected 33333333-3333-4333-8333-333333333333`
     );
+  });
+
+  test('syncMaterializedPlan rejects when the file UUID belongs to a different path plan', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    const mismatchedPlan = await readPlanFile(planPath);
+    mismatchedPlan.uuid = '44444444-4444-4444-8444-444444444444';
+    mismatchedPlan.title = 'Should not mutate child plan';
+    await writePlanFile(planPath, mismatchedPlan, { skipDb: true });
+
+    await expect(syncMaterializedPlan(3, repoDir)).rejects.toThrow(
+      `Materialized plan at ${planPath} contains UUID 44444444-4444-4444-8444-444444444444, expected 33333333-3333-4333-8333-333333333333`
+    );
+
+    expect(getPlanByPlanId(db, project.id, 3)?.title).toBe('Primary plan');
+    expect(getPlanByPlanId(db, project.id, 4)?.title).toBe('Child plan');
   });
 
   test('syncMaterializedPlan accepts quoted UUID frontmatter values with inline comments', async () => {
@@ -751,7 +1337,137 @@ describe('tim plan_materialize', () => {
     expect(saved?.status).toBe('done');
   });
 
-  test('syncMaterializedPlan updates the DB when the materialized file is newer', async () => {
+  test('syncMaterializedPlan uses file UUID lookup when the active materialized path was renumbered in DB', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    db.prepare('UPDATE plan SET plan_id = ? WHERE project_id = ? AND uuid = ?').run(
+      9,
+      project.id,
+      '33333333-3333-4333-8333-333333333333'
+    );
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.title = 'Edited through old materialized path after renumber';
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
+
+    const returnedPath = await syncMaterializedPlan(3, repoDir, {
+      config: persistentSyncConfig(),
+    });
+
+    expect(returnedPath).toBe(planPath);
+    expect(await Bun.file(planPath).exists()).toBe(true);
+    expect(await Bun.file(getMaterializedPlanPath(repoDir, 9)).exists()).toBe(false);
+    const rows = syncOperationRows();
+    expect(rows.map((row) => row.operation_type)).toEqual(['plan.patch_text']);
+    expect(JSON.parse(rows[0]!.payload)).toMatchObject({
+      type: 'plan.patch_text',
+      planUuid: '33333333-3333-4333-8333-333333333333',
+      field: 'title',
+      new: 'Edited through old materialized path after renumber',
+    });
+  });
+
+  test('syncMaterializedPlan refreshes old-path shadow after numeric ID drift changes', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+    const shadowPath = getShadowPlanPath(repoDir, 3);
+
+    db.prepare('UPDATE plan SET plan_id = ? WHERE project_id = ? AND uuid = ?').run(
+      9,
+      project.id,
+      '33333333-3333-4333-8333-333333333333'
+    );
+
+    const addTagPlan = await readPlanFile(planPath);
+    addTagPlan.tags = [...(addTagPlan.tags ?? []), 'x'];
+    await fs.writeFile(planPath, generatePlanFileContent(addTagPlan), 'utf8');
+
+    await syncMaterializedPlan(3, repoDir, { config: persistentSyncConfig() });
+
+    expect(syncOperationRows().map((row) => row.operation_type)).toEqual(['plan.add_tag']);
+    expect(await Bun.file(getMaterializedPlanPath(repoDir, 9)).exists()).toBe(false);
+    expect((await readPlanFile(planPath)).id).toBe(3);
+    expect((await readPlanFile(planPath)).tags).toContain('x');
+    expect(await fs.readFile(shadowPath, 'utf8')).toBe(await fs.readFile(planPath, 'utf8'));
+
+    const removeTagPlan = await readPlanFile(planPath);
+    removeTagPlan.tags = (removeTagPlan.tags ?? []).filter((tag) => tag !== 'x');
+    await fs.writeFile(planPath, generatePlanFileContent(removeTagPlan), 'utf8');
+
+    await syncMaterializedPlan(3, repoDir, { config: persistentSyncConfig() });
+
+    const rows = syncOperationRows();
+    expect(rows.map((row) => row.operation_type)).toEqual(['plan.add_tag', 'plan.remove_tag']);
+    expect(JSON.parse(rows[1]!.payload)).toMatchObject({
+      type: 'plan.remove_tag',
+      tag: 'x',
+    });
+    expect((await readPlanFile(planPath)).id).toBe(3);
+    expect((await readPlanFile(planPath)).tags).not.toContain('x');
+    expect(await fs.readFile(shadowPath, 'utf8')).toBe(await fs.readFile(planPath, 'utf8'));
+  });
+
+  test('syncMaterializedPlan writes generated task UUIDs back to the old path after numeric ID drift', async () => {
+    const { db, project } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+    const shadowPath = getShadowPlanPath(repoDir, 3);
+
+    db.prepare('UPDATE plan SET plan_id = ? WHERE project_id = ? AND uuid = ?').run(
+      9,
+      project.id,
+      '33333333-3333-4333-8333-333333333333'
+    );
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.tasks = [
+      ...editedPlan.tasks,
+      { title: 'drift task', description: 'created on old path', done: false },
+    ];
+    await fs.writeFile(planPath, generatePlanFileContent(editedPlan), 'utf8');
+
+    await syncMaterializedPlan(3, repoDir, { config: persistentSyncConfig() });
+
+    const rematerializedPlan = await readPlanFile(planPath);
+    const addedTask = rematerializedPlan.tasks.find((task) => task.title === 'drift task');
+    expect(syncOperationRows().map((row) => row.operation_type)).toEqual(['plan.add_task']);
+    expect(addedTask?.uuid).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
+    expect(rematerializedPlan.id).toBe(3);
+    expect(await fs.readFile(shadowPath, 'utf8')).toBe(await fs.readFile(planPath, 'utf8'));
+
+    await syncMaterializedPlan(3, repoDir, { config: persistentSyncConfig() });
+
+    expect(syncOperationRows().map((row) => row.operation_type)).toEqual(['plan.add_task']);
+    expect(
+      (await readPlanFile(planPath)).tasks.find((task) => task.title === 'drift task')?.uuid
+    ).toBe(addedTask?.uuid);
+  });
+
+  test('syncMaterializedPlan skips missing shadow dependency references during diff', async () => {
+    const { db } = await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    db.prepare('DELETE FROM plan WHERE uuid = ?').run('22222222-2222-4222-8222-222222222222');
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.dependencies = [];
+    editedPlan.title = 'Edited while stale dependency ref is gone';
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
+
+    await syncMaterializedPlan(3, repoDir, { config: persistentSyncConfig() });
+
+    const rows = syncOperationRows();
+    expect(rows.map((row) => row.operation_type)).toEqual(['plan.patch_text']);
+    expect(JSON.parse(rows[0]!.payload)).toMatchObject({
+      type: 'plan.patch_text',
+      field: 'title',
+      new: 'Edited while stale dependency ref is gone',
+    });
+  });
+
+  test('syncMaterializedPlan rolls back a guarded conflict for overlapping text edits', async () => {
     const { db, project } = await seedProject();
     const planPath = await materializePlan(3, repoDir);
 
@@ -764,10 +1480,15 @@ describe('tim plan_materialize', () => {
     newerPlan.updatedAt = '2026-03-25T00:00:00.000Z';
     await writePlanFile(planPath, newerPlan, { skipDb: true, skipUpdatedAt: true });
 
-    await syncMaterializedPlan(3, repoDir);
+    await expect(syncMaterializedPlan(3, repoDir)).rejects.toThrow(
+      'was accepted as an unresolved conflict'
+    );
 
     const saved = getPlanByPlanId(db, project.id, 3);
-    expect(saved?.title).toBe('Newer title from materialized file');
+    expect(saved?.title).toBe('Older title from DB');
+    expect(
+      (db.prepare('SELECT COUNT(*) AS count FROM sync_conflict').get() as { count: number }).count
+    ).toBe(0);
   });
 
   test('withPlanAutoSync does not materialize a file when none exists yet', async () => {
@@ -793,7 +1514,7 @@ describe('tim plan_materialize', () => {
 
     const editedPlan = await readPlanFile(planPath);
     editedPlan.title = 'Title from materialized file';
-    await writePlanFile(planPath, editedPlan, { skipSync: true });
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
 
     await expect(
       withPlanAutoSync(3, repoDir, async () => {
@@ -815,7 +1536,7 @@ describe('tim plan_materialize', () => {
 
     const editedPlan = await readPlanFile(planPath);
     editedPlan.title = 'AutoSync test title';
-    await writePlanFile(planPath, editedPlan, { skipSync: true });
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
 
     await withPlanAutoSync(3, repoDir, async () => {
       // The file's edits should have been synced to DB
@@ -884,7 +1605,7 @@ describe('tim plan_materialize', () => {
 
     const editedPlan = await readPlanFile(planPath);
     editedPlan.dependencies = [];
-    await writePlanFile(planPath, editedPlan, { skipSync: true });
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
 
     await syncMaterializedPlan(3, repoDir);
 
@@ -1008,7 +1729,7 @@ describe('tim plan_materialize', () => {
 
     const editedPlan = await readPlanFile(planPath);
     editedPlan.title = 'AutoSync test title';
-    await writePlanFile(planPath, editedPlan, { skipSync: true });
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
 
     await withPlanAutoSync(3, repoDir, async () => {
       // The file's edits should have been synced to DB
@@ -1044,7 +1765,7 @@ describe('tim plan_materialize', () => {
 
       const editedPlan = await readPlanFile(planPath);
       editedPlan.title = 'Edited via command flow';
-      await writePlanFile(planPath, editedPlan, { skipSync: true });
+      await writePlanFile(planPath, editedPlan, { skipDb: true });
 
       await handleSyncCommand(3, {}, {} as any);
       const syncedPlan = getPlanByPlanId(db, project.id, 3);
@@ -1113,7 +1834,7 @@ describe('tim plan_materialize', () => {
       { title: 'rewrite', description: 'exercise every field', done: true },
       { title: 'verify', description: 'read back from DB and disk', done: false },
     ];
-    await writePlanFile(planPath, editedPlan, { skipSync: true });
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
 
     await syncMaterializedPlan(3, repoDir);
     await materializePlan(3, repoDir);
@@ -1126,8 +1847,8 @@ describe('tim plan_materialize', () => {
       status: 'done',
       priority: 'medium',
       branch: 'feature/round-trip',
-      simple: null,
-      tdd: null,
+      simple: 0,
+      tdd: 0,
       discovered_from: 101,
       issue:
         '["https://github.com/example/repo/issues/3","https://github.com/example/repo/issues/7"]',
@@ -1225,7 +1946,13 @@ describe('tim plan_materialize', () => {
     });
     expect(rematerializedPlan.simple).toBeUndefined();
     expect(rematerializedPlan.tdd).toBeUndefined();
-    expect(rematerializedPlan.tasks).toEqual([
+    expect(
+      rematerializedPlan.tasks.map((task) => ({
+        title: task.title,
+        description: task.description,
+        done: task.done,
+      }))
+    ).toEqual([
       { title: 'rewrite', description: 'exercise every field', done: true },
       { title: 'verify', description: 'read back from DB and disk', done: false },
     ]);
@@ -1243,5 +1970,37 @@ describe('tim plan_materialize', () => {
     expect(() => getPlanByPlanId(db, project.id, 3)).toThrow(
       `Multiple plans found for project ${project.id} with plan ID 3`
     );
+  });
+
+  test('syncMaterializedPlan groups all ops from a multi-field edit into a single batch', async () => {
+    await seedProject();
+    const planPath = await materializePlan(3, repoDir);
+
+    const editedPlan = await readPlanFile(planPath);
+    editedPlan.title = 'Batched title change';
+    editedPlan.tags = ['sync', 'batched-tag'];
+    editedPlan.docs = ['docs/batched.md'];
+    await writePlanFile(planPath, editedPlan, { skipDb: true });
+
+    await syncMaterializedPlan(3, repoDir, { config: persistentSyncConfig() });
+
+    const rows = getDatabase()
+      .prepare(
+        'SELECT operation_type, status, batch_id FROM sync_operation ORDER BY local_sequence'
+      )
+      .all() as Array<{ operation_type: string; status: string; batch_id: string | null }>;
+
+    expect(rows.length).toBeGreaterThan(1);
+    const batchIds = rows.map((row) => row.batch_id);
+    expect(batchIds.every((id) => id !== null)).toBe(true);
+    // All operations share the same batch_id
+    const uniqueBatchIds = new Set(batchIds);
+    expect(uniqueBatchIds.size).toBe(1);
+
+    // Verify all expected op types are present
+    const opTypes = rows.map((row) => row.operation_type).sort();
+    expect(opTypes).toContain('plan.patch_text');
+    expect(opTypes).toContain('plan.add_tag');
+    expect(opTypes).toContain('plan.add_list_item');
   });
 });

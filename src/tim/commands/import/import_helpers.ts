@@ -1,15 +1,24 @@
 import { getDatabase } from '../../db/database.js';
-import { upsertPlan } from '../../db/plan.js';
-import { toPlanUpsertInput } from '../../db/plan_sync.js';
-import { reserveNextPlanId } from '../../db/project.js';
+import type { PlanRow } from '../../db/plan.js';
+import { previewNextPlanId, reserveNextPlanId } from '../../db/project.js';
 import { ensureReferences } from '../../utils/references.js';
 import { resolveProjectContext } from '../../plan_materialize.js';
 import { needArrayOrUndefined } from '../../../common/cli.js';
 import type { PlanSchema } from '../../planSchema.js';
+import {
+  applyPlanWritePostCommitUpdates,
+  getPlanWriteLegacyReason,
+  routePlanWriteIntoBatch,
+  writePlansLegacyDirectTransactionally,
+} from '../../plans.js';
+import { loadEffectiveConfig } from '../../configLoader.js';
+import { resolveWriteMode, usesPlanIdReserve } from '../../sync/write_mode.js';
+import { beginSyncBatch } from '../../sync/write_router.js';
 
 export type PendingImportedPlanWrite = {
   plan: PlanSchema;
   filePath: string | null;
+  syncOnly?: boolean;
 };
 
 export interface ImportCommandPlanOptions {
@@ -39,7 +48,9 @@ export async function writeImportedPlansToDbTransactionally(
     }
 
     if (!nextPlan.uuid) {
-      nextPlan.uuid = idToUuid.get(nextPlan.id) ?? crypto.randomUUID();
+      // Use || (not ??) so empty-string legacy UUIDs generate a fresh UUID rather than
+      // inheriting the legacy placeholder, allowing directUpsertPlanLegacy to replace it.
+      nextPlan.uuid = idToUuid.get(nextPlan.id) || crypto.randomUUID();
     }
     idToUuid.set(nextPlan.id, nextPlan.uuid);
 
@@ -49,17 +60,106 @@ export async function writeImportedPlansToDbTransactionally(
     };
   });
 
-  const writeTransaction = db.transaction(() => {
-    for (const entry of preparedWrites) {
-      upsertPlan(db, context.projectId, {
-        ...toPlanUpsertInput(entry.plan, idToUuid),
-        forceOverwrite: true,
-      });
+  const config = await loadEffectiveConfig(undefined, { cwd: repoRoot, quiet: true });
+  const writeMode = resolveWriteMode(config);
+  const returnedWrites = preparedWrites.filter((entry) => !entry.syncOnly);
+  let legacyReason: string | null = null;
+  for (const entry of preparedWrites) {
+    legacyReason = getPlanWriteLegacyReason(
+      db,
+      context.projectId,
+      entry.plan,
+      idToUuid,
+      context.rows
+    );
+    if (legacyReason) {
+      break;
     }
-  });
-  writeTransaction.immediate();
+  }
 
-  return preparedWrites;
+  if (legacyReason && writeMode !== 'local-operation') {
+    throw new Error(`Cannot import plans with sync-routed writes: ${legacyReason}`);
+  }
+
+  if (legacyReason) {
+    writePlansLegacyDirectTransactionally(
+      db,
+      context.projectId,
+      preparedWrites.map((entry) => entry.plan),
+      idToUuid,
+      context.rows
+    );
+  } else {
+    const batch = await beginSyncBatch(db, config);
+    const pendingRows = new Map(context.rows.map((row) => [row.uuid, row]));
+    const pendingPlans = new Map<number, PlanSchema>();
+    const postCommitUpdates = preparedWrites.flatMap((entry) => {
+      const existingRow = pendingRows.get(entry.plan.uuid!) ?? null;
+      const updates = routePlanWriteIntoBatch(
+        batch,
+        db,
+        config,
+        context.projectId,
+        entry.plan,
+        idToUuid,
+        {
+          existingRow,
+          currentPlan: pendingPlans.get(entry.plan.id!),
+        }
+      );
+      pendingRows.set(
+        entry.plan.uuid!,
+        planToPendingRow(context.projectId, entry.plan, existingRow)
+      );
+      pendingPlans.set(entry.plan.id!, structuredClone(entry.plan));
+      return updates;
+    });
+    await batch.commit();
+    applyPlanWritePostCommitUpdates(db, postCommitUpdates);
+  }
+
+  return returnedWrites;
+}
+
+function planToPendingRow(
+  projectId: number,
+  plan: PlanSchema,
+  existingRow: PlanRow | null
+): PlanRow {
+  const now = new Date().toISOString();
+  return {
+    uuid: plan.uuid!,
+    project_id: existingRow?.project_id ?? projectId,
+    plan_id: plan.id!,
+    title: plan.title ?? null,
+    goal: plan.goal ?? null,
+    note: plan.note ?? null,
+    details: plan.details ?? null,
+    status: plan.status ?? 'pending',
+    priority: plan.priority ?? null,
+    branch: plan.branch ?? null,
+    simple: plan.simple === undefined ? null : plan.simple ? 1 : 0,
+    tdd: plan.tdd === undefined ? null : plan.tdd ? 1 : 0,
+    discovered_from: plan.discoveredFrom ?? null,
+    issue: plan.issue ? JSON.stringify(plan.issue) : null,
+    pull_request: plan.pullRequest ? JSON.stringify(plan.pullRequest) : null,
+    assigned_to: plan.assignedTo ?? null,
+    base_branch: plan.baseBranch ?? null,
+    base_commit: existingRow?.base_commit ?? plan.baseCommit ?? null,
+    base_change_id: existingRow?.base_change_id ?? plan.baseChangeId ?? null,
+    temp: plan.temp === undefined ? null : plan.temp ? 1 : 0,
+    docs: plan.docs ? JSON.stringify(plan.docs) : null,
+    changed_files: plan.changedFiles ? JSON.stringify(plan.changedFiles) : null,
+    plan_generated_at: plan.planGeneratedAt ?? null,
+    review_issues: plan.reviewIssues ? JSON.stringify(plan.reviewIssues) : null,
+    docs_updated_at: plan.docsUpdatedAt ?? null,
+    lessons_applied_at: plan.lessonsAppliedAt ?? null,
+    parent_uuid: plan.parent ? null : (existingRow?.parent_uuid ?? null),
+    epic: plan.epic ? 1 : 0,
+    revision: existingRow?.revision ?? 0,
+    created_at: existingRow?.created_at ?? plan.createdAt ?? now,
+    updated_at: existingRow?.updated_at ?? plan.updatedAt ?? now,
+  };
 }
 
 export async function reserveImportedPlanStartId(
@@ -75,19 +175,29 @@ export async function reserveImportedPlanStartId(
       .filter((planId) => typeof planId === 'number')
   );
 
+  const db = getDatabase();
+  const baselineMaxId = Math.max(context.maxNumericId, planMapMaxId);
+  const config = await loadEffectiveConfig(undefined, { cwd: repoRoot, quiet: true });
+  const writeMode = resolveWriteMode(config);
   try {
-    const db = getDatabase();
-    const baselineMaxId = Math.max(context.maxNumericId, planMapMaxId);
-    const result = reserveNextPlanId(
-      db,
-      context.repository.repositoryId,
-      baselineMaxId,
-      count,
-      context.repository.remoteUrl
-    );
+    const result = usesPlanIdReserve(writeMode)
+      ? reserveNextPlanId(
+          db,
+          context.repository.repositoryId,
+          baselineMaxId,
+          count,
+          context.repository.remoteUrl
+        )
+      : previewNextPlanId(
+          db,
+          context.repository.repositoryId,
+          baselineMaxId,
+          count,
+          context.repository.remoteUrl
+        );
     return result.startId;
   } catch {
-    return Math.max(context.maxNumericId, planMapMaxId) + 1;
+    return baselineMaxId + 1;
   }
 }
 

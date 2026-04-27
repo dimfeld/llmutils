@@ -1,12 +1,12 @@
 import { command } from '$app/server';
 import { error } from '@sveltejs/kit';
-import * as z from 'zod';
+import * as z from 'zod/v4';
 
 import { getServerContext } from '$lib/server/init.js';
 import { PROJECT_COLOR_PALETTE } from '$lib/stores/project.svelte.js';
 import { branchPrefixSchema } from '$tim/branch_prefix.js';
 import { getProjectById } from '$tim/db/project.js';
-import { deleteProjectSetting, setProjectSetting } from '$tim/db/project_settings.js';
+import { writeProjectSettingDelete, writeProjectSettingSet } from '$tim/sync/write_router.js';
 
 const settingValueSchemas: Record<string, z.ZodType> = {
   featured: z.boolean(),
@@ -19,6 +19,7 @@ const updateSettingSchema = z.object({
   projectId: z.number().int().positive(),
   setting: z.string().min(1),
   value: z.unknown().refine((v) => v !== undefined, 'Value must not be undefined'),
+  baseRevision: z.number().int().nonnegative(),
 });
 
 const updateSettingsSchema = z.object({
@@ -27,6 +28,7 @@ const updateSettingsSchema = z.object({
     z.object({
       setting: z.string().min(1),
       value: z.unknown().refine((v) => v !== undefined, 'Value must not be undefined'),
+      baseRevision: z.number().int().nonnegative(),
     })
   ),
 });
@@ -34,6 +36,7 @@ const updateSettingsSchema = z.object({
 type ValidatedProjectSettingUpdate = {
   setting: string;
   value: unknown;
+  baseRevision: number;
   clear: boolean;
 };
 
@@ -49,7 +52,8 @@ function validateProjectExists(
 
 function validateProjectSettingUpdate(
   setting: string,
-  value: unknown
+  value: unknown,
+  baseRevision: number
 ): ValidatedProjectSettingUpdate {
   const settingSchema = settingValueSchemas[setting];
   if (!settingSchema) {
@@ -62,6 +66,7 @@ function validateProjectSettingUpdate(
     return {
       setting,
       value: null,
+      baseRevision,
       clear: true,
     };
   }
@@ -74,65 +79,72 @@ function validateProjectSettingUpdate(
   return {
     setting,
     value: result.data,
+    baseRevision,
     clear: false,
   };
 }
 
 export const updateProjectSetting = command(
   updateSettingSchema,
-  async ({ projectId, setting, value }) => {
-    const { db } = await getServerContext();
+  async ({ projectId, setting, value, baseRevision }) => {
+    const { db, config } = await getServerContext();
 
     validateProjectExists(projectId, db);
-    const validatedUpdate = validateProjectSettingUpdate(setting, value);
+    const validatedUpdate = validateProjectSettingUpdate(setting, value, baseRevision);
 
     if (validatedUpdate.clear) {
-      deleteProjectSetting(db, projectId, validatedUpdate.setting);
+      await writeProjectSettingDelete(
+        db,
+        config,
+        projectId,
+        validatedUpdate.setting,
+        validatedUpdate.baseRevision
+      );
       return;
     }
 
-    setProjectSetting(db, projectId, validatedUpdate.setting, validatedUpdate.value);
+    await writeProjectSettingSet(
+      db,
+      config,
+      projectId,
+      validatedUpdate.setting,
+      validatedUpdate.value,
+      validatedUpdate.baseRevision
+    );
   }
 );
 
 export const updateProjectSettings = command(
   updateSettingsSchema,
   async ({ projectId, settings }) => {
-    const { db } = await getServerContext();
+    const { db, config } = await getServerContext();
 
     validateProjectExists(projectId, db);
 
-    const validatedUpdates = settings.map(({ setting, value }) =>
-      validateProjectSettingUpdate(setting, value)
+    const validatedUpdates = settings.map(({ setting, value, baseRevision }) =>
+      validateProjectSettingUpdate(setting, value, baseRevision)
     );
 
-    const insertStatement = db.prepare(
-      `
-        INSERT OR REPLACE INTO project_setting (project_id, setting, value)
-        VALUES (?, ?, ?)
-      `
-    );
-    const deleteStatement = db.prepare(
-      'DELETE FROM project_setting WHERE project_id = ? AND setting = ?'
-    );
-
-    const applyUpdates = db.transaction(
-      (nextProjectId: number, nextSettings: ValidatedProjectSettingUpdate[]) => {
-        for (const nextSetting of nextSettings) {
-          if (nextSetting.clear) {
-            deleteStatement.run(nextProjectId, nextSetting.setting);
-            continue;
-          }
-
-          insertStatement.run(
-            nextProjectId,
-            nextSetting.setting,
-            JSON.stringify(nextSetting.value)
-          );
-        }
+    for (const nextSetting of validatedUpdates) {
+      if (nextSetting.clear) {
+        await writeProjectSettingDelete(
+          db,
+          config,
+          projectId,
+          nextSetting.setting,
+          nextSetting.baseRevision
+        );
+        continue;
       }
-    );
 
-    applyUpdates.immediate(projectId, validatedUpdates);
+      await writeProjectSettingSet(
+        db,
+        config,
+        projectId,
+        nextSetting.setting,
+        nextSetting.value,
+        nextSetting.baseRevision
+      );
+    }
   }
 );

@@ -16,6 +16,7 @@ import {
   getPlanTasksByProject,
   getPlanTasksByUuid,
   clearPlanBaseTracking,
+  setPlanBranch,
   setPlanBaseTracking,
   upsertPlan,
   upsertPlanDependencies,
@@ -71,6 +72,7 @@ describe('tim db/plan', () => {
     expect(inserted).not.toBeNull();
     expect(inserted?.project_id).toBe(projectId);
     expect(inserted?.plan_id).toBe(10);
+    expect(inserted?.revision).toBe(1);
     expect(inserted?.details).toBe('Initial details');
     expect(inserted?.simple).toBe(1);
     expect(inserted?.tdd).toBe(0);
@@ -86,6 +88,10 @@ describe('tim db/plan', () => {
     let tasks = getPlanTasksByUuid(db, 'plan-1');
     expect(tasks).toHaveLength(2);
     expect(tasks[0]?.task_index).toBe(0);
+    expect(tasks[0]?.uuid).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
+    expect(tasks[0]?.revision).toBe(1);
     expect(tasks[0]?.title).toBe('task a');
     expect(tasks[1]?.task_index).toBe(1);
     expect(tasks[1]?.done).toBe(1);
@@ -123,6 +129,7 @@ describe('tim db/plan', () => {
     expect(updated).not.toBeNull();
     expect(updated?.project_id).toBe(otherProjectId);
     expect(updated?.plan_id).toBe(20);
+    expect(updated?.revision).toBe(2);
     expect(updated?.details).toBe('Updated details');
     expect(updated?.status).toBe('in_progress');
     expect(updated?.priority).toBe('urgent');
@@ -142,6 +149,7 @@ describe('tim db/plan', () => {
     expect(tasks).toHaveLength(1);
     expect(tasks[0]?.task_index).toBe(0);
     expect(tasks[0]?.title).toBe('task c');
+    expect(tasks[0]?.revision).toBe(2);
 
     const updatedDeps = db
       .prepare(
@@ -151,15 +159,47 @@ describe('tim db/plan', () => {
     expect(updatedDeps.map((entry) => entry.depends_on_uuid)).toEqual(['dep-3']);
   });
 
+  test('upsertPlan ignores caller-supplied revisions on insert', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-ignore-revision',
+      planId: 13,
+      revision: 99,
+      tasks: [
+        {
+          uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          title: 'task',
+          description: 'desc',
+          done: false,
+          revision: 99,
+        },
+      ],
+    });
+
+    expect(getPlanByUuid(db, 'plan-ignore-revision')?.revision).toBe(1);
+    expect(getPlanTasksByUuid(db, 'plan-ignore-revision')[0]?.revision).toBe(1);
+  });
+
   test('upsertPlanTasks replaces existing task list', () => {
     upsertPlan(db, projectId, {
       uuid: 'plan-tasks',
       planId: 11,
-      tasks: [{ title: 'original', description: 'original', done: false }],
+      tasks: [
+        {
+          uuid: '11111111-1111-4111-8111-111111111111',
+          title: 'original',
+          description: 'original',
+          done: false,
+        },
+      ],
     });
 
     upsertPlanTasks(db, 'plan-tasks', [
-      { title: 'new 1', description: 'd1', done: true },
+      {
+        uuid: '11111111-1111-4111-8111-111111111111',
+        title: 'new 1',
+        description: 'd1',
+        done: true,
+      },
       { title: 'new 2', description: 'd2', done: false },
     ]);
 
@@ -167,6 +207,12 @@ describe('tim db/plan', () => {
     expect(tasks).toHaveLength(2);
     expect(tasks.map((task) => task.title)).toEqual(['new 1', 'new 2']);
     expect(tasks.map((task) => task.task_index)).toEqual([0, 1]);
+    expect(tasks[0]?.uuid).toBe('11111111-1111-4111-8111-111111111111');
+    expect(tasks[0]?.revision).toBe(2);
+    expect(tasks[1]?.uuid).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
+    expect(getPlanByUuid(db, 'plan-tasks')?.revision).toBe(2);
   });
 
   test('upsertPlanDependencies replaces existing dependencies', () => {
@@ -542,5 +588,224 @@ describe('tim db/plan', () => {
     expect(found).not.toBeNull();
     expect(found?.docs_updated_at).toBeNull();
     expect(found?.lessons_applied_at).toBeNull();
+  });
+
+  test('task revision does not bump when the task content is unchanged', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-noop-task',
+      planId: 600,
+      tasks: [
+        {
+          uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          title: 'stable task',
+          description: 'stable desc',
+          done: false,
+        },
+      ],
+    });
+
+    const afterFirst = getPlanTasksByUuid(db, 'plan-noop-task');
+    expect(afterFirst[0]?.revision).toBe(1);
+
+    upsertPlan(db, projectId, {
+      uuid: 'plan-noop-task',
+      planId: 600,
+      tasks: [
+        {
+          uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          title: 'stable task',
+          description: 'stable desc',
+          done: false,
+        },
+      ],
+    });
+
+    const afterSecond = getPlanTasksByUuid(db, 'plan-noop-task');
+    expect(afterSecond[0]?.revision).toBe(1);
+    expect(afterSecond[0]?.uuid).toBe('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+  });
+
+  test('upsertPlan does not bump plan revision when content is unchanged', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-noop',
+      planId: 603,
+      title: 'Stable',
+      details: 'Stable details',
+      tags: ['alpha'],
+      tasks: [
+        {
+          uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          title: 'stable task',
+          description: 'stable desc',
+          done: false,
+        },
+      ],
+    });
+
+    expect(getPlanByUuid(db, 'plan-noop')?.revision).toBe(1);
+
+    upsertPlan(db, projectId, {
+      uuid: 'plan-noop',
+      planId: 603,
+      title: 'Stable',
+      details: 'Stable details',
+      tags: ['alpha'],
+      tasks: [
+        {
+          uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          title: 'stable task',
+          description: 'stable desc',
+          done: false,
+        },
+      ],
+    });
+
+    expect(getPlanByUuid(db, 'plan-noop')?.revision).toBe(1);
+    expect(getPlanTasksByUuid(db, 'plan-noop')[0]?.revision).toBe(1);
+  });
+
+  test('replacing identical dependencies and tags does not bump plan revision', () => {
+    upsertPlan(db, projectId, { uuid: 'dep-plan-y', planId: 701 });
+    upsertPlan(db, projectId, {
+      uuid: 'plan-noop-sets',
+      planId: 604,
+      dependencyUuids: ['dep-plan-y'],
+      tags: ['alpha', 'beta'],
+    });
+
+    expect(getPlanByUuid(db, 'plan-noop-sets')?.revision).toBe(1);
+
+    upsertPlan(db, projectId, {
+      uuid: 'plan-noop-sets',
+      planId: 604,
+      dependencyUuids: ['dep-plan-y'],
+      tags: ['beta', 'alpha'],
+    });
+
+    expect(getPlanByUuid(db, 'plan-noop-sets')?.revision).toBe(1);
+  });
+
+  test('changing one task bumps that task and plan revision only', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-task-change',
+      planId: 605,
+      tasks: [
+        {
+          uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          title: 'changed later',
+          description: 'old',
+          done: false,
+        },
+        {
+          uuid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          title: 'unchanged',
+          description: 'same',
+          done: false,
+        },
+      ],
+    });
+
+    upsertPlan(db, projectId, {
+      uuid: 'plan-task-change',
+      planId: 605,
+      tasks: [
+        {
+          uuid: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          title: 'changed later',
+          description: 'new',
+          done: false,
+        },
+        {
+          uuid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          title: 'unchanged',
+          description: 'same',
+          done: false,
+        },
+      ],
+    });
+
+    const tasks = getPlanTasksByUuid(db, 'plan-task-change');
+    expect(getPlanByUuid(db, 'plan-task-change')?.revision).toBe(2);
+    expect(tasks[0]?.revision).toBe(2);
+    expect(tasks[1]?.revision).toBe(1);
+  });
+
+  test('plan revision bumps when only tags change', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-tag-bump',
+      planId: 601,
+      title: 'Tag bump plan',
+      tags: ['alpha'],
+    });
+
+    expect(getPlanByUuid(db, 'plan-tag-bump')?.revision).toBe(1);
+
+    upsertPlan(db, projectId, {
+      uuid: 'plan-tag-bump',
+      planId: 601,
+      title: 'Tag bump plan',
+      tags: ['alpha', 'beta'],
+    });
+
+    expect(getPlanByUuid(db, 'plan-tag-bump')?.revision).toBe(2);
+    const tags = getPlanTagsByUuid(db, 'plan-tag-bump');
+    expect(tags.map((t) => t.tag).sort()).toEqual(['alpha', 'beta']);
+  });
+
+  test('plan revision bumps when only dependencies change', () => {
+    upsertPlan(db, projectId, { uuid: 'dep-plan-x', planId: 700 });
+
+    upsertPlan(db, projectId, {
+      uuid: 'plan-dep-bump',
+      planId: 602,
+      title: 'Dep bump plan',
+      dependencyUuids: [],
+    });
+
+    expect(getPlanByUuid(db, 'plan-dep-bump')?.revision).toBe(1);
+
+    upsertPlan(db, projectId, {
+      uuid: 'plan-dep-bump',
+      planId: 602,
+      title: 'Dep bump plan',
+      dependencyUuids: ['dep-plan-x'],
+    });
+
+    expect(getPlanByUuid(db, 'plan-dep-bump')?.revision).toBe(2);
+
+    const deps = db
+      .prepare(
+        'SELECT depends_on_uuid FROM plan_dependency WHERE plan_uuid = ? ORDER BY depends_on_uuid'
+      )
+      .all('plan-dep-bump') as Array<{ depends_on_uuid: string }>;
+    expect(deps.map((d) => d.depends_on_uuid)).toEqual(['dep-plan-x']);
+  });
+
+  test('local-only branch and base tracking updates do not bump plan revision', () => {
+    upsertPlan(db, projectId, {
+      uuid: 'plan-local-tracking',
+      planId: 606,
+      title: 'Local tracking',
+    });
+
+    expect(getPlanByUuid(db, 'plan-local-tracking')?.revision).toBe(1);
+
+    setPlanBranch(db, 'plan-local-tracking', 'feature/local');
+    setPlanBaseTracking(db, 'plan-local-tracking', {
+      baseBranch: 'main',
+      baseCommit: 'abc123',
+      baseChangeId: 'change-id',
+    });
+    clearPlanBaseTracking(db, 'plan-local-tracking');
+
+    expect(getPlanByUuid(db, 'plan-local-tracking')?.revision).toBe(1);
+  });
+
+  test('getOrCreateProject assigns a UUID on creation', () => {
+    const project = getOrCreateProject(db, 'repo-uuid-check');
+    expect(project.uuid).not.toBeNull();
+    expect(project.uuid).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
   });
 });

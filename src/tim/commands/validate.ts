@@ -82,6 +82,7 @@ const { phaseSchema: strictPhaseSchema } = createPlanSchemas((shape) =>
       ...shape,
       progressNotes: z.unknown().optional(),
       references: z.record(z.string(), z.string()).optional(),
+      project: z.unknown().optional(),
     })
     .strict()
 );

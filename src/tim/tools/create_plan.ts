@@ -5,14 +5,22 @@ import {
   resolveProjectContext,
   syncMaterializedPlan,
 } from '../plan_materialize.js';
-import { resolvePlanByNumericId, writePlanFile } from '../plans.js';
+import {
+  applyPlanWritePostCommitUpdates,
+  getPlanWriteLegacyReason,
+  preparePlanForWrite,
+  resolvePlanByNumericId,
+  routePlanWriteIntoBatch,
+  writePlansLegacyDirectTransactionally,
+} from '../plans.js';
 import { validateTags } from '../utils/tags.js';
 import { ensureReferences } from '../utils/references.js';
 import { getDatabase } from '../db/database.js';
-import { getPlanByUuid, upsertPlan, type PlanRow } from '../db/plan.js';
-import { reserveNextPlanId } from '../db/project.js';
-import { toPlanUpsertInput } from '../db/plan_sync.js';
+import { getPlanByUuid, type PlanRow } from '../db/plan.js';
+import { previewNextPlanId, reserveNextPlanId } from '../db/project.js';
 import { invertPlanIdToUuidMap, planRowForTransaction } from '../plans_db.js';
+import { beginSyncBatch } from '../sync/write_router.js';
+import { resolveWriteMode, usesPlanIdReserve } from '../sync/write_mode.js';
 import type { ToolContext, ToolResult } from './context.js';
 import type { CreatePlanArguments } from './schemas.js';
 
@@ -35,13 +43,22 @@ export async function createPlanTool(
 
   const projectContext = await resolveProjectContext(context.gitRoot);
   const db = getDatabase();
-  const { startId: nextId } = reserveNextPlanId(
-    db,
-    projectContext.repository.repositoryId,
-    projectContext.maxNumericId,
-    1,
-    projectContext.repository.remoteUrl
-  );
+  const writeMode = resolveWriteMode(context.config);
+  const { startId: nextId } = usesPlanIdReserve(writeMode)
+    ? reserveNextPlanId(
+        db,
+        projectContext.repository.repositoryId,
+        projectContext.maxNumericId,
+        1,
+        projectContext.repository.remoteUrl
+      )
+    : previewNextPlanId(
+        db,
+        projectContext.repository.repositoryId,
+        projectContext.maxNumericId,
+        1,
+        projectContext.repository.remoteUrl
+      );
   const parentPlan =
     args.parent === undefined
       ? undefined
@@ -102,58 +119,118 @@ export async function createPlanTool(
     }
   }
 
-  // Atomically insert child and update parent in a single DB transaction
   let parentUpdated = false;
   let parentStatusChanged = false;
   let parentOldStatus: string | undefined;
   const idToUuid = new Map(projectContext.planIdToUuid).set(nextId, updatedPlan.uuid!);
-  const writePlans = db.transaction(() => {
-    upsertPlan(db, projectContext.projectId, {
-      ...toPlanUpsertInput(updatedPlan, idToUuid),
-      forceOverwrite: true,
-    });
+  const preparedNewPlan = preparePlanForWrite(updatedPlan);
+  let preparedParent: PlanSchema | null = null;
+  let legacyParent: PlanSchema | null = null;
+  let parentExistingRow: PlanRow | null = null;
+  let parentCurrentForDiff: PlanSchema | undefined;
 
+  if (parentPlan) {
     if (!parentPlan) {
-      return;
+      throw new Error(`Parent plan ${args.parent} not found`);
     }
 
     // Re-read parent from DB (may have been updated by sync above)
     const freshParentRow = getPlanByUuid(db, parentPlan.uuid!);
     if (!freshParentRow) {
-      return;
+      throw new Error(`Parent plan ${args.parent} not found`);
     }
 
     // Check if parent already has this dependency via DB row
     // (the in-memory parentPlan may be stale after sync)
     const freshParentResolved = resolvePlanRowForTransaction(freshParentRow, idToUuid);
-    if ((freshParentResolved.dependencies ?? []).includes(nextId)) {
-      return;
-    }
-
-    const updatedParent: PlanSchema = {
-      ...freshParentResolved,
-      dependencies: [...(freshParentResolved.dependencies ?? []), nextId],
-      updatedAt: new Date().toISOString(),
-      status:
-        freshParentResolved.status === 'done' || freshParentResolved.status === 'needs_review'
-          ? 'in_progress'
-          : freshParentResolved.status,
-    };
-    const { updatedPlan: referencedParent } = ensureReferences(updatedParent, {
-      planIdToUuid: idToUuid,
-    });
-
-    upsertPlan(db, projectContext.projectId, {
-      ...toPlanUpsertInput(referencedParent, idToUuid),
-      forceOverwrite: true,
-    });
-
-    parentUpdated = true;
-    parentOldStatus = freshParentResolved.status;
-    parentStatusChanged =
+    const parentNeedsDependency = !(freshParentResolved.dependencies ?? []).includes(nextId);
+    const parentNeedsStatus =
       freshParentResolved.status === 'done' || freshParentResolved.status === 'needs_review';
-  });
-  writePlans.immediate();
+    if (parentNeedsDependency || parentNeedsStatus) {
+      const updatedParent: PlanSchema = {
+        ...freshParentResolved,
+        dependencies: parentNeedsDependency
+          ? [...(freshParentResolved.dependencies ?? []), nextId]
+          : freshParentResolved.dependencies,
+        updatedAt: new Date().toISOString(),
+        status: parentNeedsStatus ? 'in_progress' : freshParentResolved.status,
+      };
+      const { updatedPlan: referencedParent } = ensureReferences(updatedParent, {
+        planIdToUuid: idToUuid,
+      });
+      legacyParent = preparePlanForWrite(referencedParent);
+
+      if (parentNeedsStatus) {
+        preparedParent = legacyParent;
+        parentExistingRow = freshParentRow;
+        parentCurrentForDiff = parentNeedsDependency
+          ? {
+              ...freshParentResolved,
+              dependencies: [...(freshParentResolved.dependencies ?? []), nextId],
+            }
+          : freshParentResolved;
+      }
+
+      parentUpdated = true;
+      parentOldStatus = freshParentResolved.status;
+      parentStatusChanged = parentNeedsStatus;
+    }
+  }
+
+  const routedPlans = [preparedNewPlan, ...(preparedParent ? [preparedParent] : [])];
+  const legacyPlans = [preparedNewPlan, ...(legacyParent ? [legacyParent] : [])];
+  const legacyReason = legacyPlans
+    .map((routedPlan) =>
+      getPlanWriteLegacyReason(
+        db,
+        projectContext.projectId,
+        routedPlan,
+        idToUuid,
+        projectContext.rows
+      )
+    )
+    .find((reason): reason is string => reason !== null);
+
+  if (legacyReason) {
+    if (writeMode !== 'local-operation') {
+      throw new Error(`Cannot create child plan with sync-routed writes: ${legacyReason}`);
+    }
+    writePlansLegacyDirectTransactionally(
+      db,
+      projectContext.projectId,
+      legacyPlans,
+      idToUuid,
+      projectContext.rows
+    );
+  } else {
+    const batch = await beginSyncBatch(db, context.config);
+    const postCommitUpdates = [
+      ...routePlanWriteIntoBatch(
+        batch,
+        db,
+        context.config,
+        projectContext.projectId,
+        preparedNewPlan,
+        idToUuid
+      ),
+      ...(preparedParent
+        ? routePlanWriteIntoBatch(
+            batch,
+            db,
+            context.config,
+            projectContext.projectId,
+            preparedParent,
+            idToUuid,
+            {
+              existingRow: parentExistingRow,
+              currentPlan: parentCurrentForDiff,
+            }
+          )
+        : []),
+    ];
+    await batch.commit();
+    applyPlanWritePostCommitUpdates(db, postCommitUpdates);
+  }
 
   // Re-materialize parent file after transaction if it existed
   if (parentPlan && parentMaterializedExists) {

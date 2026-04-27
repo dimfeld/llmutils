@@ -3,6 +3,7 @@ import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 
 export interface Project {
   id: number;
+  uuid: string | null;
   repository_id: string;
   remote_url: string | null;
   last_git_root: string | null;
@@ -15,6 +16,7 @@ export interface Project {
 }
 
 export interface CreateProjectOptions {
+  uuid?: string;
   remoteUrl?: string | null;
   lastGitRoot?: string | null;
   externalConfigPath?: string | null;
@@ -52,6 +54,15 @@ export function getProjectById(db: Database, projectId: number): Project | null 
   return mapRowToProject(row);
 }
 
+export function getProjectByUuid(db: Database, uuid: string): Project | null {
+  const row = db.prepare('SELECT * FROM project WHERE uuid = ?').get(uuid) as Record<
+    string,
+    unknown
+  > | null;
+
+  return mapRowToProject(row);
+}
+
 export function getOrCreateProject(
   db: Database,
   repositoryId: string,
@@ -63,6 +74,7 @@ export function getOrCreateProject(
       db.prepare(
         `
         INSERT OR IGNORE INTO project (
+          uuid,
           repository_id,
           remote_url,
           last_git_root,
@@ -72,9 +84,10 @@ export function getOrCreateProject(
           highest_plan_id,
           created_at,
           updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
       `
       ).run(
+        createOptions.uuid ?? crypto.randomUUID(),
         repoId,
         createOptions.remoteUrl ?? null,
         createOptions.lastGitRoot ?? null,
@@ -192,6 +205,26 @@ export function reserveNextPlanId(
   );
 
   return reserveInTransaction.immediate(repositoryId, localMaxId, count, remoteUrl);
+}
+
+export function previewNextPlanId(
+  db: Database,
+  repositoryId: string,
+  localMaxId: number,
+  count = 1,
+  remoteUrl?: string | null
+): { startId: number; endId: number } {
+  if (!Number.isInteger(count) || count <= 0) {
+    throw new Error(`count must be a positive integer, received: ${count}`);
+  }
+
+  const project = getOrCreateProject(
+    db,
+    repositoryId,
+    remoteUrl !== undefined ? { remoteUrl } : {}
+  );
+  const startId = Math.max(project.highest_plan_id, localMaxId) + 1;
+  return { startId, endId: startId + count - 1 };
 }
 
 export function listProjects(db: Database): Project[] {

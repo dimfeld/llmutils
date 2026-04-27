@@ -683,6 +683,139 @@ const migrations: Migration[] = [
         REFERENCES pr_review_submission(id) ON DELETE SET NULL;
     `,
   },
+  {
+    version: 26,
+    up: `
+      ALTER TABLE project ADD COLUMN uuid TEXT;
+      UPDATE project
+      SET uuid = lower(hex(randomblob(4))) || '-' ||
+        lower(hex(randomblob(2))) || '-4' ||
+        substr(lower(hex(randomblob(2))), 2) || '-' ||
+        substr('89ab', (random() & 3) + 1, 1) ||
+        substr(lower(hex(randomblob(2))), 2) || '-' ||
+        lower(hex(randomblob(6)))
+      WHERE uuid IS NULL;
+      CREATE UNIQUE INDEX idx_project_uuid_unique ON project(uuid);
+
+      ALTER TABLE plan ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;
+
+      ALTER TABLE plan_task ADD COLUMN uuid TEXT;
+      UPDATE plan_task
+      SET uuid = lower(hex(randomblob(4))) || '-' ||
+        lower(hex(randomblob(2))) || '-4' ||
+        substr(lower(hex(randomblob(2))), 2) || '-' ||
+        substr('89ab', (random() & 3) + 1, 1) ||
+        substr(lower(hex(randomblob(2))), 2) || '-' ||
+        lower(hex(randomblob(6)))
+      WHERE uuid IS NULL;
+      CREATE UNIQUE INDEX idx_plan_task_uuid_unique ON plan_task(uuid);
+      ALTER TABLE plan_task ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;
+
+      ALTER TABLE project_setting ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE project_setting ADD COLUMN updated_at TEXT;
+      UPDATE project_setting SET updated_at = ${SQL_NOW_ISO_UTC} WHERE updated_at IS NULL;
+      ALTER TABLE project_setting ADD COLUMN updated_by_node TEXT;
+
+      CREATE TABLE tim_node (
+        node_id TEXT PRIMARY KEY,
+        role TEXT NOT NULL CHECK(role IN ('main', 'persistent', 'ephemeral')),
+        label TEXT,
+        token_hash TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE sync_operation (
+        operation_uuid TEXT PRIMARY KEY,
+        project_uuid TEXT NOT NULL,
+        origin_node_id TEXT NOT NULL,
+        batch_id TEXT,
+        local_sequence INTEGER NOT NULL,
+        target_type TEXT NOT NULL,
+        target_key TEXT NOT NULL,
+        operation_type TEXT NOT NULL,
+        base_revision INTEGER,
+        base_hash TEXT,
+        payload TEXT NOT NULL,
+        status TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        acked_at TEXT,
+        ack_metadata TEXT
+      );
+      CREATE UNIQUE INDEX idx_sync_operation_origin_sequence
+        ON sync_operation(origin_node_id, local_sequence);
+      CREATE INDEX idx_sync_operation_project_status ON sync_operation(project_uuid, status);
+      CREATE INDEX idx_sync_operation_status_updated ON sync_operation(status, updated_at);
+      CREATE INDEX idx_sync_operation_batch_id ON sync_operation(batch_id);
+
+      CREATE TABLE sync_conflict (
+        conflict_id TEXT PRIMARY KEY,
+        operation_uuid TEXT NOT NULL,
+        project_uuid TEXT NOT NULL,
+        target_type TEXT NOT NULL,
+        target_key TEXT NOT NULL,
+        field_path TEXT,
+        base_value TEXT,
+        base_hash TEXT,
+        incoming_value TEXT,
+        attempted_patch TEXT,
+        current_value TEXT,
+        original_payload TEXT NOT NULL,
+        normalized_payload TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open',
+        origin_node_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        resolved_at TEXT,
+        resolution TEXT,
+        resolved_by_node TEXT
+      );
+      CREATE INDEX idx_sync_conflict_project_status ON sync_conflict(project_uuid, status);
+
+      CREATE TABLE sync_tombstone (
+        entity_type TEXT NOT NULL,
+        entity_key TEXT NOT NULL,
+        project_uuid TEXT NOT NULL,
+        deletion_operation_uuid TEXT NOT NULL,
+        deleted_revision INTEGER,
+        deleted_at TEXT NOT NULL,
+        origin_node_id TEXT NOT NULL,
+        PRIMARY KEY (entity_type, entity_key)
+      );
+
+      CREATE TABLE sync_sequence (
+        sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_uuid TEXT NOT NULL,
+        target_type TEXT NOT NULL,
+        target_key TEXT NOT NULL,
+        revision INTEGER,
+        operation_uuid TEXT,
+        origin_node_id TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX idx_sync_sequence_project_sequence ON sync_sequence(project_uuid, sequence);
+
+      CREATE TABLE tim_node_sequence (
+        node_id TEXT PRIMARY KEY,
+        next_sequence INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+      );
+
+      INSERT INTO tim_node_sequence (node_id, next_sequence, updated_at)
+      SELECT origin_node_id, COALESCE(MAX(local_sequence), -1) + 1, ${SQL_NOW_ISO_UTC}
+      FROM sync_operation
+      GROUP BY origin_node_id;
+
+      CREATE TABLE tim_node_cursor (
+        node_id TEXT PRIMARY KEY,
+        last_known_sequence_id INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+      );
+    `,
+  },
 ];
 
 function getCurrentVersion(db: Database): number {

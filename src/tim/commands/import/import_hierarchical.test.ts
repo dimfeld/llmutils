@@ -19,6 +19,14 @@ vi.mock('../../plans.js', () => ({
   getMaxNumericPlanId: vi.fn(),
   readPlanFile: vi.fn(),
   resolvePlanByNumericId: vi.fn(),
+  getPlanWriteLegacyReason: vi.fn(),
+  routePlanWriteIntoBatch: vi.fn(),
+  writePlansLegacyDirectTransactionally: vi.fn(),
+  applyPlanWritePostCommitUpdates: vi.fn(),
+}));
+
+vi.mock('../../sync/write_router.js', () => ({
+  beginSyncBatch: vi.fn(),
 }));
 
 vi.mock('../../plans_db.js', () => ({
@@ -93,7 +101,10 @@ import {
   getMaxNumericPlanId,
   readPlanFile,
   resolvePlanByNumericId,
+  getPlanWriteLegacyReason,
+  routePlanWriteIntoBatch,
 } from '../../plans.js';
+import { beginSyncBatch } from '../../sync/write_router.js';
 import { loadPlansFromDb } from '../../plans_db.js';
 import { resolveProjectContext } from '../../plan_materialize.js';
 import { getRepositoryIdentity } from '../../assignments/workspace_identifier.js';
@@ -174,6 +185,7 @@ let mockConfig: any;
 let gitRootDir: string;
 let transactionImmediateSpy: ReturnType<typeof vi.fn>;
 let upsertPlanSpy: ReturnType<typeof vi.fn>;
+let mockBatchCommit: ReturnType<typeof vi.fn>;
 
 const mockPlansResult = {
   plans: new Map(),
@@ -236,6 +248,11 @@ describe('Hierarchical Linear Import', () => {
         return wrapped;
       },
     } as any);
+
+    mockBatchCommit = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(beginSyncBatch).mockResolvedValue({ commit: mockBatchCommit } as never);
+    vi.mocked(getPlanWriteLegacyReason).mockReturnValue(null);
+    vi.mocked(routePlanWriteIntoBatch).mockReturnValue([]);
 
     vi.mocked(toPlanUpsertInput).mockImplementation((plan: PlanSchema) => ({
       planId: plan.id,
@@ -358,38 +375,83 @@ describe('Hierarchical Linear Import', () => {
       false
     );
 
-    // Plans are written to DB via writeImportedPlansToDbTransactionally, not writePlanFile
     expect(writePlanFile).not.toHaveBeenCalled();
-    expect(transactionImmediateSpy.mock.calls.length).toBeGreaterThan(0);
-    expect(upsertPlanSpy).toHaveBeenCalledTimes(3);
 
-    // Verify the upsert calls contain the expected plan data
-    const upsertCalls = upsertPlanSpy.mock.calls.map((call: any) => call[2]);
-    const parentUpsert = upsertCalls.find((u: any) => u.title === 'Parent Issue - Auth System');
-    expect(parentUpsert).toBeDefined();
-    expect(parentUpsert.planId).toBe(6);
+    // Bootstrap parent, both children, and final parent go through one batch.
+    expect(routePlanWriteIntoBatch).toHaveBeenCalledTimes(4);
+    const batchCalls = vi.mocked(routePlanWriteIntoBatch).mock.calls.map((c) => c[4]);
 
-    const child1Upsert = upsertCalls.find((u: any) => u.title === 'Child Issue - Database Setup');
-    expect(child1Upsert).toBeDefined();
-    expect(child1Upsert.planId).toBe(7);
+    const parentCall = batchCalls.find(
+      (p) => p.title === 'Parent Issue - Auth System' && (p.dependencies ?? []).length === 0
+    );
+    expect(parentCall).toBeDefined();
+    expect(parentCall!.id).toBe(6);
 
-    const child2Upsert = upsertCalls.find((u: any) => u.title === 'Child Issue - API Endpoints');
-    expect(child2Upsert).toBeDefined();
-    expect(child2Upsert.planId).toBe(8);
+    const child1Call = batchCalls.find((p) => p.title === 'Child Issue - Database Setup');
+    expect(child1Call).toBeDefined();
+    expect(child1Call!.id).toBe(7);
+
+    const child2Call = batchCalls.find((p) => p.title === 'Child Issue - API Endpoints');
+    expect(child2Call).toBeDefined();
+    expect(child2Call!.id).toBe(8);
+
+    expect(upsertPlanSpy).not.toHaveBeenCalled();
   });
 
-  test('does not write any files if the transactional DB batch fails', async () => {
-    upsertPlanSpy.mockReturnValueOnce({} as any);
-    upsertPlanSpy.mockImplementationOnce(() => {
-      throw new Error('DB write failed');
+  test('sync-configured hierarchical import writes parent before new children', async () => {
+    mockConfig.sync = {
+      role: 'main',
+      nodeId: 'main-import-node',
+      allowedNodes: [],
+    };
+
+    await handleImportCommand('TEAM-123', { withSubissues: true });
+
+    expect(upsertPlanSpy).not.toHaveBeenCalled();
+
+    expect(writePlanFile).not.toHaveBeenCalled();
+
+    // Bootstrap parent, both children, and final parent go through the batch in order.
+    expect(routePlanWriteIntoBatch).toHaveBeenCalledTimes(4);
+    const batchCalls = vi.mocked(routePlanWriteIntoBatch).mock.calls.map((c) => c[4]);
+    expect(batchCalls[0]).toMatchObject({
+      id: 6,
+      title: 'Parent Issue - Auth System',
+      dependencies: [],
     });
+    expect(batchCalls[1]).toMatchObject({
+      id: 7,
+      title: 'Child Issue - Database Setup',
+      parent: 6,
+    });
+    expect(batchCalls[2]).toMatchObject({
+      id: 8,
+      title: 'Child Issue - API Endpoints',
+      parent: 6,
+    });
+    expect(batchCalls[3]).toMatchObject({
+      id: 6,
+      title: 'Parent Issue - Auth System',
+      dependencies: [7, 8],
+    });
+    expect(vi.mocked(routePlanWriteIntoBatch).mock.calls[3]?.[6]).toEqual(
+      expect.objectContaining({
+        existingRow: expect.objectContaining({ uuid: expect.any(String) }),
+        currentPlan: expect.objectContaining({ id: 6, dependencies: [] }),
+      })
+    );
+  });
+
+  test('throws and does not commit the batch if the batch commit fails', async () => {
+    mockBatchCommit.mockRejectedValueOnce(new Error('DB write failed'));
 
     await expect(handleImportCommand('TEAM-123', { withSubissues: true })).rejects.toThrow(
       'DB write failed'
     );
 
-    expect(transactionImmediateSpy.mock.calls.length).toBeGreaterThan(0);
-    expect(writePlanFile).not.toHaveBeenCalled();
+    // The batch was built (plans routed into it) but commit threw
+    expect(routePlanWriteIntoBatch).toHaveBeenCalledTimes(4);
+    expect(mockBatchCommit).toHaveBeenCalledTimes(1);
   });
 
   test('should import Linear issue with children into one plan when --with-merged-subissues is provided', async () => {
