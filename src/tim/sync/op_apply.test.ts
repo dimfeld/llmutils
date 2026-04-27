@@ -1301,4 +1301,104 @@ describe('sync op application', () => {
       db.prepare('SELECT count(*) AS count FROM sync_op_log WHERE op_id = ?').get(badTag.op_id)
     ).toEqual({ count: 1 });
   });
+
+  test('stale add_edge between original add and remove keeps dep edge absent', () => {
+    // Sequence: add@HLC1, remove@HLC2, stale-add@HLC1.5 (between HLC1 and HLC2).
+    // The remove wins over any add with lower HLC, so edge must remain absent.
+    const projectId = getOrCreateProject(db, 'github.com__owner__repo').id;
+    upsertPlan(db, projectId, { uuid: id('plan-dep-between'), planId: 200 });
+    upsertPlan(db, projectId, { uuid: id('dep-between'), planId: 201 });
+    const depEdgeKey = `${id('plan-dep-between')}->${id('dep-between')}`;
+
+    const addDep = makeOp(
+      'remote-a',
+      { physicalMs: 1000, logical: 0 },
+      1,
+      'plan_dependency',
+      depEdgeKey,
+      'add_edge',
+      { planUuid: id('plan-dep-between'), dependsOnUuid: id('dep-between') }
+    );
+    const removeDep = makeOp(
+      'remote-a',
+      { physicalMs: 2000, logical: 0 },
+      2,
+      'plan_dependency',
+      depEdgeKey,
+      'remove_edge',
+      { planUuid: id('plan-dep-between'), dependsOnUuid: id('dep-between') }
+    );
+
+    expect(applyRemoteOps(db, [addDep, removeDep]).errors).toEqual([]);
+    expect(edgeClockIsPresent(getEdgeClock(db, 'plan_dependency', depEdgeKey))).toBe(false);
+    expect(getPlanDependenciesByUuid(db, id('plan-dep-between'))).toEqual([]);
+
+    // Stale add at HLC1500 — between add@HLC1000 and remove@HLC2000.
+    // Since HLC1500 > existing add_hlc (HLC1000), the add clock is updated to HLC1500,
+    // but the edge stays absent because remove@HLC2000 > add@HLC1500.
+    const staleAdd = makeOp(
+      'remote-b',
+      { physicalMs: 1500, logical: 0 },
+      1,
+      'plan_dependency',
+      depEdgeKey,
+      'add_edge',
+      { planUuid: id('plan-dep-between'), dependsOnUuid: id('dep-between') }
+    );
+
+    const result = applyRemoteOps(db, [staleAdd]);
+    expect(result.errors).toEqual([]);
+
+    // Edge must remain absent: remove@HLC2000 wins over stale add@HLC1500.
+    expect(edgeClockIsPresent(getEdgeClock(db, 'plan_dependency', depEdgeKey))).toBe(false);
+    expect(getPlanDependenciesByUuid(db, id('plan-dep-between'))).toEqual([]);
+  });
+
+  test('stale add_edge between original add and remove keeps tag edge absent', () => {
+    // Mirror of the dep test but for plan_tag.
+    const projectId = getOrCreateProject(db, 'github.com__owner__repo').id;
+    upsertPlan(db, projectId, { uuid: id('plan-tag-between'), planId: 202 });
+    const tagEdgeKey = `${id('plan-tag-between')}#feature`;
+
+    const addTag = makeOp(
+      'remote-a',
+      { physicalMs: 1000, logical: 0 },
+      1,
+      'plan_tag',
+      tagEdgeKey,
+      'add_edge',
+      { planUuid: id('plan-tag-between'), tag: 'feature' }
+    );
+    const removeTag = makeOp(
+      'remote-a',
+      { physicalMs: 2000, logical: 0 },
+      2,
+      'plan_tag',
+      tagEdgeKey,
+      'remove_edge',
+      { planUuid: id('plan-tag-between'), tag: 'feature' }
+    );
+
+    expect(applyRemoteOps(db, [addTag, removeTag]).errors).toEqual([]);
+    expect(edgeClockIsPresent(getEdgeClock(db, 'plan_tag', tagEdgeKey))).toBe(false);
+    expect(getPlanTagsByUuid(db, id('plan-tag-between'))).toEqual([]);
+
+    // Stale add at HLC1500 between original add@HLC1000 and remove@HLC2000.
+    const staleTagAdd = makeOp(
+      'remote-b',
+      { physicalMs: 1500, logical: 0 },
+      1,
+      'plan_tag',
+      tagEdgeKey,
+      'add_edge',
+      { planUuid: id('plan-tag-between'), tag: 'feature' }
+    );
+
+    const staleResult = applyRemoteOps(db, [staleTagAdd]);
+    expect(staleResult.errors).toEqual([]);
+
+    // Edge must remain absent: remove@HLC2000 wins over stale add@HLC1500.
+    expect(edgeClockIsPresent(getEdgeClock(db, 'plan_tag', tagEdgeKey))).toBe(false);
+    expect(getPlanTagsByUuid(db, id('plan-tag-between'))).toEqual([]);
+  });
 });

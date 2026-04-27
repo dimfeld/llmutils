@@ -19,7 +19,12 @@ import { applyRemoteOps, type SyncOpRecord } from './op_apply.js';
 import { formatOpId } from './hlc.js';
 import { getLocalNodeId, registerPeerNode } from './node_identity.js';
 import { HLC_MIN_PHYSICAL_MS } from './op_validation.js';
-import { applyPeerOpsWithPending, runPeerSync, type PeerTransport } from './peer_sync.js';
+import {
+  applyPeerOpsWithPending,
+  runPeerSync,
+  ResyncRequiredError,
+  type PeerTransport,
+} from './peer_sync.js';
 import { setCompactedThroughSeq } from './compaction.js';
 import {
   createHttpPeerTransport,
@@ -393,6 +398,35 @@ describe('HTTP peer sync transport', () => {
       error: 'resync_required',
       compactedThroughSeq: 2,
       currentHighWaterSeq: expect.any(Number),
+    });
+  });
+
+  test('HTTP transport surfaces ResyncRequiredError when cursor is behind compacted history', async () => {
+    upsertPlan(dbB, projectB, { uuid: id('resync-plan'), planId: 90, title: 'Resync' });
+    // Advance the cursor for A so it looks like A already pulled seq=1
+    const nodeA = getLocalNodeId(dbA);
+    const nodeB = getLocalNodeId(dbB);
+    registerPeerNode(dbA, { nodeId: nodeB, nodeType: 'main' });
+    setPeerCursor(dbA, nodeB, 'pull', '1', null);
+    // Mark seq 2 as compacted on B — anything at or before seq 2 is gone
+    setCompactedThroughSeq(dbB, 2);
+
+    const transport = createHttpPeerTransport({
+      baseUrl: 'http://peer.test',
+      token: 'secret-token',
+      localNodeId: nodeA,
+      fetch: handlerFetch('secret-token'),
+    });
+
+    // runPeerSync must surface a typed ResyncRequiredError (not a generic Error)
+    await expect(runPeerSync(dbA, nodeB, transport)).rejects.toThrow(ResyncRequiredError);
+
+    // The error carries enough context to trigger a snapshot resync.
+    await runPeerSync(dbA, nodeB, transport).catch((err: unknown) => {
+      if (err instanceof ResyncRequiredError) {
+        expect(err.compactedThroughSeq).toBe(2);
+        expect(typeof err.currentHighWaterSeq).toBe('number');
+      }
     });
   });
 

@@ -762,4 +762,43 @@ describe('worker sync bundles', () => {
       })
     ).toThrow(/Cycle detected/);
   });
+
+  test('bundle exports remove clock for a removed dependency and worker DB shows edge absent', () => {
+    // Add a dependency on plan-target, then remove it so the edge clock has both add + remove.
+    const depUuid = id('dep-for-remove-clock');
+    upsertPlan(mainDb, mainProjectId, { uuid: depUuid, planId: 60, title: 'Removable dep' });
+    upsertPlanDependencies(mainDb, id('plan-target'), [depUuid]);
+    upsertPlanDependencies(mainDb, id('plan-target'), []); // removes the dependency
+
+    const edgeKey = `${id('plan-target')}->${depUuid}`;
+    expect(edgeClockIsPresent(getEdgeClock(mainDb, 'plan_dependency', edgeKey))).toBe(false);
+
+    const bundle = exportWorkerBundle(mainDb, {
+      targetPlanUuid: id('plan-target'),
+      leaseExpiresAt: '2030-01-01T00:00:00.000Z',
+    });
+
+    // Bundle must carry the remove clock so the worker can derive the correct edge state.
+    const removedEdgeClock = bundle.edgeClocks.find(
+      (ec) => ec.entity_type === 'plan_dependency' && ec.edge_key === edgeKey
+    );
+    expect(removedEdgeClock).toBeDefined();
+    expect(removedEdgeClock?.remove_hlc).not.toBeNull();
+    expect(removedEdgeClock?.remove_node_id).not.toBeNull();
+
+    importWorkerBundle(workerDb, bundle);
+
+    // Worker DB has zero sync_op_log rows for the imported edges.
+    expect(workerDb.prepare('SELECT count(*) AS count FROM sync_op_log').get()).toEqual({
+      count: 0,
+    });
+
+    // Worker DB must have the edge clock row with the remove state.
+    const workerEdgeClock = getEdgeClock(workerDb, 'plan_dependency', edgeKey);
+    expect(workerEdgeClock).not.toBeNull();
+    expect(workerEdgeClock?.remove_hlc).not.toBeNull();
+
+    // Derived presence on the worker must match the main DB: absent.
+    expect(edgeClockIsPresent(workerEdgeClock)).toBe(false);
+  });
 });

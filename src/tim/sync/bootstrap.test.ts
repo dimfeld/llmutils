@@ -6,7 +6,8 @@ import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 import { DATABASE_FILENAME, openDatabase } from '../db/database.js';
-import { getPlanByUuid } from '../db/plan.js';
+import { getPlanByUuid, upsertPlan, upsertPlanDependencies } from '../db/plan.js';
+import { getOrCreateProject } from '../db/project.js';
 import { runMigrations } from '../db/migrations.js';
 import type { SyncFieldClockRow, SyncOpLogRow } from '../db/sync_schema.js';
 import { applyRemoteOps, type SyncOpRecord } from './op_apply.js';
@@ -481,6 +482,78 @@ describe('sync metadata bootstrap', () => {
       (op) => op.entity_type === 'plan_review_issue' && op.entity_id === ISSUE_LEGACY_UUID
     );
     expect(issueOps).toHaveLength(0);
+  });
+
+  test('migration v37 backfills sync_edge_clock from existing dep/tag rows and op log', () => {
+    // Create plans with an active dependency, an active tag, and a removed dependency.
+    // The removed dep leaves a remove_edge op in sync_op_log but no row in plan_dependency.
+    const projectId = getOrCreateProject(db, PROJECT_IDENTITY).id;
+    const activePlanUuid = randomUUID();
+    const depPlanUuid = randomUUID();
+    const removedDepUuid = randomUUID();
+
+    upsertPlan(db, projectId, { uuid: activePlanUuid, planId: 500, title: 'Active plan' });
+    upsertPlan(db, projectId, { uuid: depPlanUuid, planId: 501, title: 'Dep plan' });
+    upsertPlan(db, projectId, {
+      uuid: removedDepUuid,
+      planId: 502,
+      title: 'Removed dep plan',
+      tags: ['v37tag'],
+    });
+
+    // Create active dep and tag (emits add_edge ops to sync_op_log).
+    upsertPlanDependencies(db, activePlanUuid, [depPlanUuid]);
+    upsertPlan(db, projectId, {
+      uuid: activePlanUuid,
+      planId: 500,
+      tags: ['v37tag'],
+    });
+
+    // Add then remove removedDepUuid so a remove_edge op is in sync_op_log.
+    upsertPlanDependencies(db, activePlanUuid, [depPlanUuid, removedDepUuid]);
+    upsertPlanDependencies(db, activePlanUuid, [depPlanUuid]);
+
+    const removeOpRow = db
+      .prepare(
+        "SELECT * FROM sync_op_log WHERE entity_type = 'plan_dependency' AND op_type = 'remove_edge' AND entity_id = ?"
+      )
+      .get(`${activePlanUuid}->${removedDepUuid}`);
+    expect(removeOpRow).not.toBeNull();
+
+    // Roll back to v36 and clear sync_edge_clock to simulate a pre-v37 state.
+    db.run('DELETE FROM schema_version');
+    db.prepare('INSERT INTO schema_version (version, import_completed) VALUES (36, 1)').run();
+    db.run('DELETE FROM sync_edge_clock');
+    expect(countRows(db, 'sync_edge_clock')).toBe(0);
+
+    // Running migrations triggers v37 which creates the table and backfills.
+    runMigrations(db);
+
+    // Active dependency: must have add clock and be present.
+    const activeClock = getEdgeClock(
+      db,
+      'plan_dependency',
+      `${activePlanUuid}->${depPlanUuid}`
+    );
+    expect(activeClock).not.toBeNull();
+    expect(activeClock?.add_hlc).not.toBeNull();
+    expect(edgeClockIsPresent(activeClock)).toBe(true);
+
+    // Active tag: must have add clock and be present.
+    const tagClock = getEdgeClock(db, 'plan_tag', `${activePlanUuid}#v37tag`);
+    expect(tagClock).not.toBeNull();
+    expect(tagClock?.add_hlc).not.toBeNull();
+    expect(edgeClockIsPresent(tagClock)).toBe(true);
+
+    // Removed dep: must have a remove clock derived from the remove_edge op and be absent.
+    const removedClock = getEdgeClock(
+      db,
+      'plan_dependency',
+      `${activePlanUuid}->${removedDepUuid}`
+    );
+    expect(removedClock).not.toBeNull();
+    expect(removedClock?.remove_hlc).not.toBeNull();
+    expect(edgeClockIsPresent(removedClock)).toBe(false);
   });
 
   test('migration v33/v34 fires bootstrap for pre-existing plan rows and sets marker', () => {
