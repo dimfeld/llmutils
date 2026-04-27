@@ -1362,6 +1362,27 @@ const migrations: Migration[] = [
         ORDER BY hlc_physical_ms DESC, hlc_logical DESC, node_id DESC, local_counter DESC
         LIMIT 1
       `);
+      const planExists = db.prepare('SELECT 1 FROM plan WHERE uuid = ?');
+      const planTombstone = db.prepare(`
+        SELECT
+          printf('%016d.%08d', hlc_physical_ms, hlc_logical) AS hlc,
+          node_id
+        FROM sync_tombstone
+        WHERE entity_type = 'plan'
+          AND entity_id = ?
+      `);
+      const deleteDependency = db.prepare(
+        'DELETE FROM plan_dependency WHERE plan_uuid = ? AND depends_on_uuid = ?'
+      );
+      const deleteTag = db.prepare('DELETE FROM plan_tag WHERE plan_uuid = ? AND tag = ?');
+      const writeTombstoneRemove = (
+        entityType: 'plan_dependency' | 'plan_tag',
+        edgeKey: string,
+        tombstone: { hlc: string; node_id: string } | null
+      ): void => {
+        if (!tombstone) return;
+        upsertRemove.run(entityType, edgeKey, tombstone.hlc, tombstone.node_id);
+      };
 
       const dependencies = db
         .prepare(
@@ -1370,6 +1391,25 @@ const migrations: Migration[] = [
         .all() as Array<{ plan_uuid: string; depends_on_uuid: string }>;
       for (const dependency of dependencies) {
         const edgeKey = `${dependency.plan_uuid}->${dependency.depends_on_uuid}`;
+        const sourceTombstone = planTombstone.get(dependency.plan_uuid) as {
+          hlc: string;
+          node_id: string;
+        } | null;
+        const targetTombstone = planTombstone.get(dependency.depends_on_uuid) as {
+          hlc: string;
+          node_id: string;
+        } | null;
+        const sourceExists =
+          sourceTombstone === null && (planExists.get(dependency.plan_uuid) as object | null);
+        const targetExists =
+          targetTombstone === null && (planExists.get(dependency.depends_on_uuid) as object | null);
+        if (!sourceExists || !targetExists) {
+          writeTombstoneRemove('plan_dependency', edgeKey, sourceTombstone);
+          writeTombstoneRemove('plan_dependency', edgeKey, targetTombstone);
+          deleteDependency.run(dependency.plan_uuid, dependency.depends_on_uuid);
+          continue;
+        }
+
         const add = latestOp.get('plan_dependency', edgeKey, 'add_edge') as {
           hlc: string;
           node_id: string;
@@ -1390,6 +1430,18 @@ const migrations: Migration[] = [
       }>;
       for (const tag of tags) {
         const edgeKey = `${tag.plan_uuid}#${tag.tag}`;
+        const tombstone = planTombstone.get(tag.plan_uuid) as {
+          hlc: string;
+          node_id: string;
+        } | null;
+        const livePlanExists =
+          tombstone === null && (planExists.get(tag.plan_uuid) as object | null);
+        if (!livePlanExists) {
+          writeTombstoneRemove('plan_tag', edgeKey, tombstone);
+          deleteTag.run(tag.plan_uuid, tag.tag);
+          continue;
+        }
+
         const add = latestOp.get('plan_tag', edgeKey, 'add_edge') as {
           hlc: string;
           node_id: string;

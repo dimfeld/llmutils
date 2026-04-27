@@ -73,6 +73,25 @@ function opRows(db: Database): SyncOpLogRow[] {
   return db.prepare('SELECT * FROM sync_op_log ORDER BY seq').all() as SyncOpLogRow[];
 }
 
+function insertPlanTombstone(
+  db: Database,
+  planUuid: string,
+  hlc: Hlc,
+  nodeId = REMOTE_NODE_UUID
+): void {
+  db.prepare(
+    `
+      INSERT OR REPLACE INTO sync_tombstone (
+        entity_type,
+        entity_id,
+        hlc_physical_ms,
+        hlc_logical,
+        node_id
+      ) VALUES ('plan', ?, ?, ?, ?)
+    `
+  ).run(planUuid, hlc.physicalMs, hlc.logical, nodeId);
+}
+
 function bootstrapCompletedAt(db: Database): string | null {
   const row = db.prepare('SELECT bootstrap_completed_at FROM sync_clock WHERE id = 1').get() as {
     bootstrap_completed_at: string | null;
@@ -484,6 +503,77 @@ describe('sync metadata bootstrap', () => {
     expect(issueOps).toHaveLength(0);
   });
 
+  test('bootstrap deletes stale edge rows and writes remove clocks for tombstoned plans', () => {
+    const { projectId } = insertLegacyData(db);
+    const dependencyTombstoneHlc = { physicalMs: Date.UTC(2026, 0, 1), logical: 3 };
+    const tagTombstoneHlc = { physicalMs: Date.UTC(2026, 0, 1), logical: 4 };
+    const deletedTagPlanUuid = randomUUID();
+    const missingPlanUuid = randomUUID();
+
+    insertPlanTombstone(db, PLAN_DEPENDENCY_UUID, dependencyTombstoneHlc);
+    db.prepare('DELETE FROM plan WHERE uuid = ?').run(PLAN_DEPENDENCY_UUID);
+
+    db.prepare(
+      `
+        INSERT INTO plan (
+          uuid,
+          project_id,
+          plan_id,
+          title,
+          status,
+          epic
+        ) VALUES (?, ?, 3, 'Deleted tag plan', 'pending', 0)
+      `
+    ).run(deletedTagPlanUuid, projectId);
+    insertPlanTombstone(db, deletedTagPlanUuid, tagTombstoneHlc);
+    db.prepare('DELETE FROM plan WHERE uuid = ?').run(deletedTagPlanUuid);
+
+    db.run('PRAGMA foreign_keys = OFF');
+    db.prepare('INSERT INTO plan_tag (plan_uuid, tag) VALUES (?, ?)').run(
+      deletedTagPlanUuid,
+      'stale-tag'
+    );
+    db.prepare('INSERT INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)').run(
+      PLAN_LEGACY_UUID,
+      missingPlanUuid
+    );
+    db.run('PRAGMA foreign_keys = ON');
+
+    bootstrapSyncMetadata(db, { force: true });
+
+    expect(
+      db
+        .prepare('SELECT 1 FROM plan_dependency WHERE plan_uuid = ? AND depends_on_uuid = ?')
+        .get(PLAN_LEGACY_UUID, PLAN_DEPENDENCY_UUID)
+    ).toBeNull();
+    expect(
+      db
+        .prepare('SELECT 1 FROM plan_tag WHERE plan_uuid = ? AND tag = ?')
+        .get(deletedTagPlanUuid, 'stale-tag')
+    ).toBeNull();
+    expect(
+      db
+        .prepare('SELECT 1 FROM plan_dependency WHERE plan_uuid = ? AND depends_on_uuid = ?')
+        .get(PLAN_LEGACY_UUID, missingPlanUuid)
+    ).toBeNull();
+
+    const dependencyClock = getEdgeClock(
+      db,
+      'plan_dependency',
+      `${PLAN_LEGACY_UUID}->${PLAN_DEPENDENCY_UUID}`
+    );
+    expect(dependencyClock?.remove_hlc).toBe(formatHlc(dependencyTombstoneHlc));
+    expect(edgeClockIsPresent(dependencyClock)).toBe(false);
+
+    const tagClock = getEdgeClock(db, 'plan_tag', `${deletedTagPlanUuid}#stale-tag`);
+    expect(tagClock?.remove_hlc).toBe(formatHlc(tagTombstoneHlc));
+    expect(edgeClockIsPresent(tagClock)).toBe(false);
+
+    expect(
+      getEdgeClock(db, 'plan_dependency', `${PLAN_LEGACY_UUID}->${missingPlanUuid}`)
+    ).toBeNull();
+  });
+
   test('migration v37 backfills sync_edge_clock from existing dep/tag rows and op log', () => {
     // Create plans with an active dependency, an active tag, and a removed dependency.
     // The removed dep leaves a remove_edge op in sync_op_log but no row in plan_dependency.
@@ -491,6 +581,11 @@ describe('sync metadata bootstrap', () => {
     const activePlanUuid = randomUUID();
     const depPlanUuid = randomUUID();
     const removedDepUuid = randomUUID();
+    const tombstonedDepUuid = randomUUID();
+    const tombstonedTagPlanUuid = randomUUID();
+    const missingDepUuid = randomUUID();
+    const tombstoneHlc = { physicalMs: Date.UTC(2026, 0, 2), logical: 1 };
+    const tagTombstoneHlc = { physicalMs: Date.UTC(2026, 0, 2), logical: 2 };
 
     upsertPlan(db, projectId, { uuid: activePlanUuid, planId: 500, title: 'Active plan' });
     upsertPlan(db, projectId, { uuid: depPlanUuid, planId: 501, title: 'Dep plan' });
@@ -499,6 +594,16 @@ describe('sync metadata bootstrap', () => {
       planId: 502,
       title: 'Removed dep plan',
       tags: ['v37tag'],
+    });
+    upsertPlan(db, projectId, {
+      uuid: tombstonedDepUuid,
+      planId: 503,
+      title: 'Tombstoned dep plan',
+    });
+    upsertPlan(db, projectId, {
+      uuid: tombstonedTagPlanUuid,
+      planId: 504,
+      title: 'Tombstoned tag plan',
     });
 
     // Create active dep and tag (emits add_edge ops to sync_op_log).
@@ -512,6 +617,25 @@ describe('sync metadata bootstrap', () => {
     // Add then remove removedDepUuid so a remove_edge op is in sync_op_log.
     upsertPlanDependencies(db, activePlanUuid, [depPlanUuid, removedDepUuid]);
     upsertPlanDependencies(db, activePlanUuid, [depPlanUuid]);
+
+    db.prepare('INSERT INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)').run(
+      activePlanUuid,
+      tombstonedDepUuid
+    );
+    db.prepare('INSERT INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)').run(
+      activePlanUuid,
+      missingDepUuid
+    );
+    insertPlanTombstone(db, tombstonedDepUuid, tombstoneHlc);
+    db.prepare('DELETE FROM plan WHERE uuid = ?').run(tombstonedDepUuid);
+    insertPlanTombstone(db, tombstonedTagPlanUuid, tagTombstoneHlc);
+    db.prepare('DELETE FROM plan WHERE uuid = ?').run(tombstonedTagPlanUuid);
+    db.run('PRAGMA foreign_keys = OFF');
+    db.prepare('INSERT INTO plan_tag (plan_uuid, tag) VALUES (?, ?)').run(
+      tombstonedTagPlanUuid,
+      'stale-v37tag'
+    );
+    db.run('PRAGMA foreign_keys = ON');
 
     const removeOpRow = db
       .prepare(
@@ -550,6 +674,33 @@ describe('sync metadata bootstrap', () => {
     expect(removedClock).not.toBeNull();
     expect(removedClock?.remove_hlc).not.toBeNull();
     expect(edgeClockIsPresent(removedClock)).toBe(false);
+
+    const staleDepKey = `${activePlanUuid}->${tombstonedDepUuid}`;
+    expect(
+      db
+        .prepare('SELECT 1 FROM plan_dependency WHERE plan_uuid = ? AND depends_on_uuid = ?')
+        .get(activePlanUuid, tombstonedDepUuid)
+    ).toBeNull();
+    const staleDepClock = getEdgeClock(db, 'plan_dependency', staleDepKey);
+    expect(staleDepClock?.remove_hlc).toBe(formatHlc(tombstoneHlc));
+    expect(edgeClockIsPresent(staleDepClock)).toBe(false);
+
+    expect(
+      db
+        .prepare('SELECT 1 FROM plan_dependency WHERE plan_uuid = ? AND depends_on_uuid = ?')
+        .get(activePlanUuid, missingDepUuid)
+    ).toBeNull();
+    expect(getEdgeClock(db, 'plan_dependency', `${activePlanUuid}->${missingDepUuid}`)).toBeNull();
+
+    const staleTagKey = `${tombstonedTagPlanUuid}#stale-v37tag`;
+    expect(
+      db
+        .prepare('SELECT 1 FROM plan_tag WHERE plan_uuid = ? AND tag = ?')
+        .get(tombstonedTagPlanUuid, 'stale-v37tag')
+    ).toBeNull();
+    const staleTagClock = getEdgeClock(db, 'plan_tag', staleTagKey);
+    expect(staleTagClock?.remove_hlc).toBe(formatHlc(tagTombstoneHlc));
+    expect(edgeClockIsPresent(staleTagClock)).toBe(false);
   });
 
   test('migration v33/v34 fires bootstrap for pre-existing plan rows and sets marker', () => {

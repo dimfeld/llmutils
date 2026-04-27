@@ -2,7 +2,7 @@ import type { Database } from 'bun:sqlite';
 
 import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
 import { ensureLocalNode, getOrCreateClockRow } from '../db/sync_schema.js';
-import { writeEdgeAddClock } from './edge_clock.js';
+import { writeEdgeAddClock, writeEdgeRemoveClock } from './edge_clock.js';
 import { formatHlc, formatOpId, type Hlc } from './hlc.js';
 import {
   getLocalGenerator,
@@ -63,6 +63,12 @@ interface ProjectSettingRow {
 }
 
 type GetBootstrapClock = () => BootstrapClock;
+
+interface PlanTombstoneRow {
+  hlc_physical_ms: number;
+  hlc_logical: number;
+  node_id: string;
+}
 
 function tableExists(db: Database, tableName: string): boolean {
   const row = db
@@ -232,6 +238,38 @@ function projectIdentityForRow(db: Database, projectId: number): string {
     return `local-project-${projectId}`;
   }
   return getProjectSyncIdentity(db, projectId);
+}
+
+function planExists(db: Database, planUuid: string): boolean {
+  const row = db.prepare('SELECT 1 FROM plan WHERE uuid = ?').get(planUuid) as { 1: number } | null;
+  return row !== null;
+}
+
+function getPlanTombstone(db: Database, planUuid: string): PlanTombstoneRow | null {
+  return db
+    .prepare(
+      `
+        SELECT hlc_physical_ms, hlc_logical, node_id
+        FROM sync_tombstone
+        WHERE entity_type = 'plan'
+          AND entity_id = ?
+      `
+    )
+    .get(planUuid) as PlanTombstoneRow | null;
+}
+
+function writeEdgeRemoveClockFromPlanTombstone(
+  db: Database,
+  entityType: 'plan_dependency' | 'plan_tag',
+  edgeKey: string,
+  tombstone: PlanTombstoneRow
+): void {
+  writeEdgeRemoveClock(db, {
+    entityType,
+    edgeKey,
+    hlc: { physicalMs: tombstone.hlc_physical_ms, logical: tombstone.hlc_logical },
+    nodeId: tombstone.node_id,
+  });
 }
 
 function updateClockLocalCounter(db: Database, bootstrap: BootstrapClock): void {
@@ -438,8 +476,27 @@ export function bootstrapSyncMetadata(
         )
         .all() as Array<{ plan_uuid: string; depends_on_uuid: string }>;
       for (const dependency of dependencies) {
-        const bootstrapClock = getBootstrap();
         const edgeKey = `${dependency.plan_uuid}->${dependency.depends_on_uuid}`;
+        const sourceTombstone = getPlanTombstone(db, dependency.plan_uuid);
+        const targetTombstone = getPlanTombstone(db, dependency.depends_on_uuid);
+        const sourceExists = sourceTombstone === null && planExists(db, dependency.plan_uuid);
+        const targetExists = targetTombstone === null && planExists(db, dependency.depends_on_uuid);
+
+        if (!sourceExists || !targetExists) {
+          if (sourceTombstone) {
+            writeEdgeRemoveClockFromPlanTombstone(db, 'plan_dependency', edgeKey, sourceTombstone);
+          }
+          if (targetTombstone) {
+            writeEdgeRemoveClockFromPlanTombstone(db, 'plan_dependency', edgeKey, targetTombstone);
+          }
+          db.prepare('DELETE FROM plan_dependency WHERE plan_uuid = ? AND depends_on_uuid = ?').run(
+            dependency.plan_uuid,
+            dependency.depends_on_uuid
+          );
+          continue;
+        }
+
+        const bootstrapClock = getBootstrap();
         writeEdgeAddClock(db, {
           entityType: 'plan_dependency',
           edgeKey,
@@ -462,8 +519,22 @@ export function bootstrapSyncMetadata(
         .prepare('SELECT plan_uuid, tag FROM plan_tag ORDER BY plan_uuid, tag')
         .all() as Array<{ plan_uuid: string; tag: string }>;
       for (const tag of tags) {
-        const bootstrapClock = getBootstrap();
         const edgeKey = `${tag.plan_uuid}#${tag.tag}`;
+        const planTombstone = getPlanTombstone(db, tag.plan_uuid);
+        const livePlanExists = planTombstone === null && planExists(db, tag.plan_uuid);
+
+        if (!livePlanExists) {
+          if (planTombstone) {
+            writeEdgeRemoveClockFromPlanTombstone(db, 'plan_tag', edgeKey, planTombstone);
+          }
+          db.prepare('DELETE FROM plan_tag WHERE plan_uuid = ? AND tag = ?').run(
+            tag.plan_uuid,
+            tag.tag
+          );
+          continue;
+        }
+
+        const bootstrapClock = getBootstrap();
         writeEdgeAddClock(db, {
           entityType: 'plan_tag',
           edgeKey,
