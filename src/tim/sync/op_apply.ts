@@ -14,6 +14,7 @@ import {
   PLAN_TASK_LWW_FIELD_NAMES,
   REVIEW_ISSUE_LWW_FIELD_NAMES,
 } from './op_emission.js';
+import { validateOpEnvelope } from './op_validation.js';
 
 type JsonRecord = Record<string, unknown>;
 type SqlValue = string | number | bigint | boolean | null;
@@ -954,6 +955,10 @@ export function applyRemoteOps(db: Database, ops: SyncOpRecord[]): ApplyResult {
         // dedupe on retry. Deferred skips deliberately roll the row back below
         // so out-of-order ops can be re-delivered after their parents arrive.
         insertRemoteOpLog(db, nextOp);
+        const validation = validateOpEnvelope(nextOp);
+        if (!validation.ok) {
+          return permanentSkip(nextOp, validation.reason);
+        }
         if (!isSupportedOp(nextOp)) {
           observeRemoteHlc(db, nextOp);
           return {

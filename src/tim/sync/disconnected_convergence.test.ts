@@ -24,6 +24,7 @@ import {
 } from '../db/sync_schema.js';
 import { openDatabase } from '../db/database.js';
 import { getCompactionFloorSeq } from './compaction.js';
+import { formatOpId } from './hlc.js';
 import { applyRemoteOps, type SyncOpRecord } from './op_apply.js';
 import { getLocalNodeId, registerPeerNode } from './node_identity.js';
 import {
@@ -434,11 +435,12 @@ describe('disconnected sync convergence', () => {
 
     upsertPlan(controlC.db, controlC.projectId, { uuid: 'plan-c-low', planId: 3, title: 'C' });
     upsertPlan(alternateC.db, alternateC.projectId, { uuid: 'plan-c-low', planId: 3, title: 'C' });
+    const lowHlc = { physicalMs: 1, logical: 0 };
     controlC.db
       .prepare(
-        "UPDATE sync_op_log SET hlc_physical_ms = 1, hlc_logical = 0 WHERE entity_type = 'plan' AND entity_id = ?"
+        "UPDATE sync_op_log SET op_id = ?, hlc_physical_ms = ?, hlc_logical = ? WHERE entity_type = 'plan' AND entity_id = ?"
       )
-      .run('plan-c-low');
+      .run(formatOpId(lowHlc, controlC.nodeId, 1), lowHlc.physicalMs, lowHlc.logical, 'plan-c-low');
     controlC.db
       .prepare(
         'UPDATE sync_field_clock SET hlc_physical_ms = 1, hlc_logical = 0 WHERE entity_id = ?'
@@ -446,9 +448,14 @@ describe('disconnected sync convergence', () => {
       .run('plan-c-low');
     alternateC.db
       .prepare(
-        "UPDATE sync_op_log SET hlc_physical_ms = 1, hlc_logical = 0 WHERE entity_type = 'plan' AND entity_id = ?"
+        "UPDATE sync_op_log SET op_id = ?, hlc_physical_ms = ?, hlc_logical = ? WHERE entity_type = 'plan' AND entity_id = ?"
       )
-      .run('plan-c-low');
+      .run(
+        formatOpId(lowHlc, alternateC.nodeId, 1),
+        lowHlc.physicalMs,
+        lowHlc.logical,
+        'plan-c-low'
+      );
     alternateC.db
       .prepare(
         'UPDATE sync_field_clock SET hlc_physical_ms = 1, hlc_logical = 0 WHERE entity_id = ?'
@@ -754,11 +761,13 @@ describe('disconnected sync convergence', () => {
   test('unresolved deferred set_order stays retryable without side effects', () => {
     const a = createMainNode('A');
     upsertPlan(a.db, a.projectId, { uuid: 'plan-missing-task', planId: 1, title: 'Plan exists' });
+    const remoteNodeId = 'remote-node';
+    const remoteHlc = { physicalMs: Date.now() + 1_000, logical: 0 };
     const neverCreatedSetOrder: SyncOpRecord = {
-      op_id: 'never-created-set-order',
-      node_id: 'remote-node',
-      hlc_physical_ms: Date.now() + 1_000,
-      hlc_logical: 0,
+      op_id: formatOpId(remoteHlc, remoteNodeId, 1),
+      node_id: remoteNodeId,
+      hlc_physical_ms: remoteHlc.physicalMs,
+      hlc_logical: remoteHlc.logical,
       local_counter: 1,
       entity_type: 'plan_task',
       entity_id: 'task-never-created',
@@ -772,14 +781,14 @@ describe('disconnected sync convergence', () => {
       expect(result.errors).toEqual([]);
       expect(result.skipped).toEqual([
         {
-          opId: 'never-created-set-order',
+          opId: neverCreatedSetOrder.op_id,
           reason: 'plan_task set_order arrived before task task-never-created create',
           kind: 'deferred',
         },
       ]);
     }
     expect(
-      a.db.prepare('SELECT op_id FROM sync_op_log WHERE op_id = ?').get('never-created-set-order')
+      a.db.prepare('SELECT op_id FROM sync_op_log WHERE op_id = ?').get(neverCreatedSetOrder.op_id)
     ).toBeNull();
     expect(
       a.db

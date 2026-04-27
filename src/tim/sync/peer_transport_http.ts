@@ -3,7 +3,9 @@ import { timingSafeEqual } from 'node:crypto';
 
 import { getOpLogChunkAfter, setPeerCursor } from '../db/sync_schema.js';
 import type { SyncOpRecord } from './op_apply.js';
+import { compareHlc, type Hlc } from './hlc.js';
 import { getLocalNodeId, registerPeerNode } from './node_identity.js';
+import { isUuid } from './op_validation.js';
 import {
   applyPeerOpsWithPending,
   runPeerSync,
@@ -17,6 +19,7 @@ export interface HttpPeerTransportOptions {
   baseUrl: string;
   token: string;
   localNodeId: string;
+  remoteNodeId?: string;
   fetch?: typeof fetch;
 }
 
@@ -157,6 +160,66 @@ function readOpsBody(value: unknown): SyncOpRecord[] {
   return opsValue as SyncOpRecord[];
 }
 
+function opHlc(op: SyncOpRecord): Hlc {
+  return { physicalMs: op.hlc_physical_ms, logical: op.hlc_logical };
+}
+
+function validatePushedOps(
+  ops: SyncOpRecord[],
+  peerNodeId: string,
+  localNodeId: string
+): string | null {
+  let previousOwnOp: SyncOpRecord | null = null;
+  for (const op of ops) {
+    if (op.node_id === localNodeId) {
+      return 'forged_local_node';
+    }
+    if (op.node_id !== peerNodeId) {
+      continue;
+    }
+    if (!isUuid(op.node_id)) {
+      continue;
+    }
+    if (
+      typeof op.local_counter !== 'number' ||
+      !Number.isSafeInteger(op.local_counter) ||
+      op.local_counter < 0
+    ) {
+      continue;
+    }
+    if (previousOwnOp) {
+      const hlcCompare = compareHlc(opHlc(previousOwnOp), opHlc(op));
+      if (hlcCompare > 0 || op.local_counter !== previousOwnOp.local_counter + 1) {
+        return 'non_contiguous_batch';
+      }
+    }
+    previousOwnOp = op;
+  }
+  return null;
+}
+
+function parseCursorSeq(seqText: string | null | undefined): number {
+  if (!seqText) return 0;
+  const seq = Number.parseInt(seqText, 10);
+  return Number.isSafeInteger(seq) && seq >= 0 && String(seq) === seqText ? seq : 0;
+}
+
+function advancePushCursorByAcceptedOwnOps(
+  db: Database,
+  peerNodeId: string,
+  ops: SyncOpRecord[]
+): void {
+  const ownOps = ops.filter((op) => op.node_id === peerNodeId);
+  if (ownOps.length === 0) {
+    return;
+  }
+  const existing = db
+    .prepare('SELECT last_op_id FROM sync_peer_cursor WHERE peer_node_id = ? AND direction = ?')
+    .get(peerNodeId, 'pull') as { last_op_id: string | null } | null;
+  const nextSeq = parseCursorSeq(existing?.last_op_id) + ownOps.length;
+  setPeerCursor(db, peerNodeId, 'pull', nextSeq.toString(), ownOps.at(-1));
+}
+
 function requestUrl(baseUrl: string, pathname: string): URL {
   const url = new URL(baseUrl);
   url.pathname = `${url.pathname.replace(/\/$/, '')}${pathname}`;
@@ -217,10 +280,13 @@ export function createHttpPeerTransport(options: HttpPeerTransportOptions): Peer
       if (pushOptions?.final === true) {
         url.searchParams.set('final', '1');
       }
+      const pushedOps = options.remoteNodeId
+        ? ops.filter((op) => op.node_id !== options.remoteNodeId)
+        : ops;
       const response = await fetchImpl(url, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ ops }),
+        body: JSON.stringify({ ops: pushedOps }),
       });
       const body = await parseJsonResponse(response);
       if (!response.ok) {
@@ -240,6 +306,7 @@ export async function runHttpPeerSync(
     baseUrl: options.baseUrl,
     token: options.token,
     localNodeId,
+    remoteNodeId: options.peerNodeId,
     fetch: options.fetch,
   });
   return runPeerSync(db, options.peerNodeId, transport, options);
@@ -280,6 +347,10 @@ export function createPeerSyncHttpHandler(
         if (ops.length > maxPushBatch) {
           return jsonResponse({ error: 'push batch too large' }, { status: 413 });
         }
+        const pushedOpsError = validatePushedOps(ops, peerNodeId, getLocalNodeId(db));
+        if (pushedOpsError) {
+          return jsonResponse({ error: pushedOpsError }, { status: 400 });
+        }
         if (peerNode.node_type === 'worker' || peerNode.node_type === 'retired_worker') {
           let workerResult;
           try {
@@ -312,15 +383,7 @@ export function createPeerSyncHttpHandler(
         // Push advances the server's pull-from-pusher cursor after deferred
         // skips have been persisted into sync_pending_op for retry. Server-side
         // pull requests never advance any server cursor.
-        const lastPushedOp = ops.reduce<SyncOpRecord | null>((current, op) => {
-          const seq = op.seq;
-          if (typeof seq !== 'number' || !Number.isInteger(seq) || seq < 1) return current;
-          if (!current || seq > (current.seq ?? 0)) return op;
-          return current;
-        }, null);
-        if (lastPushedOp?.seq) {
-          setPeerCursor(db, peerNodeId, 'pull', lastPushedOp.seq.toString(), lastPushedOp);
-        }
+        advancePushCursorByAcceptedOwnOps(db, peerNodeId, ops);
         return jsonResponse({
           applied: applyResult.applied,
           skipped: applyResult.skipped.length,

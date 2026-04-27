@@ -3,6 +3,7 @@ import type { Database } from 'bun:sqlite';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 import { DATABASE_FILENAME, openDatabase } from '../db/database.js';
 import {
@@ -15,7 +16,9 @@ import {
 import { getOrCreateProject } from '../db/project.js';
 import { appendPlanTask, getPlanByUuid, getPlanTasksByUuid, upsertPlan } from '../db/plan.js';
 import { applyRemoteOps, type SyncOpRecord } from './op_apply.js';
+import { formatOpId } from './hlc.js';
 import { getLocalNodeId, registerPeerNode } from './node_identity.js';
+import { HLC_MIN_PHYSICAL_MS } from './op_validation.js';
 import { applyPeerOpsWithPending, runPeerSync, type PeerTransport } from './peer_sync.js';
 import {
   createHttpPeerTransport,
@@ -136,12 +139,6 @@ describe('peer sync transport core', () => {
         planId: 30,
         title: 'Offline C',
       });
-      dbC
-        .prepare(
-          "UPDATE sync_op_log SET hlc_physical_ms = 1, hlc_logical = 0 WHERE entity_type = 'plan' AND entity_id = ?"
-        )
-        .run('plan-from-c-offline');
-
       upsertPlan(dbA, projectA, {
         uuid: 'plan-from-a-high',
         planId: 10,
@@ -151,6 +148,17 @@ describe('peer sync transport core', () => {
       const nodeA = getLocalNodeId(dbA);
       const nodeB = getLocalNodeId(dbB);
       const nodeC = getLocalNodeId(dbC);
+      const oldButValidHlc = { physicalMs: HLC_MIN_PHYSICAL_MS + 1, logical: 0 };
+      dbC
+        .prepare(
+          "UPDATE sync_op_log SET op_id = ?, hlc_physical_ms = ?, hlc_logical = ? WHERE entity_type = 'plan' AND entity_id = ?"
+        )
+        .run(
+          formatOpId(oldButValidHlc, nodeC, 1),
+          oldButValidHlc.physicalMs,
+          oldButValidHlc.logical,
+          'plan-from-c-offline'
+        );
 
       const firstPull = await runPeerSync(dbB, nodeA, directTransport(dbA, nodeB));
       expect(firstPull.pulledOps).toBeGreaterThan(0);
@@ -163,7 +171,7 @@ describe('peer sync transport core', () => {
       const cOpOnA = dbA
         .prepare('SELECT seq, hlc_physical_ms FROM sync_op_log WHERE entity_id = ?')
         .get('plan-from-c-offline') as { seq: number; hlc_physical_ms: number } | null;
-      expect(cOpOnA?.hlc_physical_ms).toBe(1);
+      expect(cOpOnA?.hlc_physical_ms).toBe(oldButValidHlc.physicalMs);
       expect(cOpOnA?.seq).toBeGreaterThan(Number(bCursorAfterHighA));
 
       const secondPull = await runPeerSync(dbB, nodeA, directTransport(dbA, nodeB));
@@ -528,6 +536,78 @@ describe('HTTP peer sync transport', () => {
     });
   });
 
+  test('HTTP push rejects non-contiguous own-node batches without applying them', async () => {
+    upsertPlan(dbA, projectA, { uuid: 'http-out-of-order', planId: 20, title: 'v1' });
+    upsertPlan(dbA, projectA, { uuid: 'http-out-of-order', planId: 20, title: 'v2' });
+    const nodeA = getLocalNodeId(dbA);
+    const ownOps = (getOpLogChunkAfter(dbA, null, 100).ops as SyncOpRecord[]).filter(
+      (op) => op.node_id === nodeA
+    );
+    expect(ownOps.length).toBeGreaterThanOrEqual(2);
+    const handler = createPeerSyncHttpHandler(dbB, { token: 'secret-token' });
+
+    const response = await pushRequest(handler, nodeA, [ownOps[1]!, ownOps[0]!]);
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: 'non_contiguous_batch' });
+    expect(getPlanByUuid(dbB, 'http-out-of-order')).toBeNull();
+    expect(getPeerCursor(dbB, nodeA, 'pull')).toBeNull();
+  });
+
+  test('HTTP push rejects ops forged as the server local node without applying them', async () => {
+    upsertPlan(dbA, projectA, { uuid: 'http-forged-local', planId: 21, title: 'Forged' });
+    const nodeA = getLocalNodeId(dbA);
+    const nodeB = getLocalNodeId(dbB);
+    const op = (getOpLogChunkAfter(dbA, null, 100).ops as SyncOpRecord[]).find(
+      (nextOp) => nextOp.entity_id === 'http-forged-local'
+    );
+    expect(op).toBeDefined();
+    const handler = createPeerSyncHttpHandler(dbB, { token: 'secret-token' });
+
+    const response = await pushRequest(handler, nodeA, [{ ...op!, node_id: nodeB }]);
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: 'forged_local_node' });
+    expect(getPlanByUuid(dbB, 'http-forged-local')).toBeNull();
+    expect(getPeerCursor(dbB, nodeA, 'pull')).toBeNull();
+  });
+
+  test('HTTP push cursor advances by accepted own ops, not arbitrary pushed seq values', async () => {
+    upsertPlan(dbA, projectA, { uuid: 'http-cursor-own', planId: 22, title: 'Own' });
+    const nodeA = getLocalNodeId(dbA);
+    const ownOp = (getOpLogChunkAfter(dbA, null, 100).ops as SyncOpRecord[]).find(
+      (op) => op.entity_id === 'http-cursor-own'
+    );
+    expect(ownOp).toBeDefined();
+    const forwardedNodeId = randomUUID();
+    const forwardedHlc = { physicalMs: Date.now(), logical: 0 };
+    const forwardedOp: SyncOpRecord = {
+      op_id: formatOpId(forwardedHlc, forwardedNodeId, 1),
+      node_id: forwardedNodeId,
+      hlc_physical_ms: forwardedHlc.physicalMs,
+      hlc_logical: forwardedHlc.logical,
+      local_counter: 1,
+      entity_type: 'plan',
+      entity_id: 'http-cursor-forwarded',
+      op_type: 'create',
+      payload: JSON.stringify({
+        projectIdentity: 'github.com__owner__repo',
+        planIdHint: 23,
+        fields: { title: 'Forwarded' },
+      }),
+      base: null,
+      seq: 1000,
+    };
+    const handler = createPeerSyncHttpHandler(dbB, { token: 'secret-token' });
+
+    const response = await pushRequest(handler, nodeA, [{ ...ownOp!, seq: 999 }, forwardedOp]);
+
+    expect(response.status).toBe(200);
+    expect(getPlanByUuid(dbB, 'http-cursor-own')?.title).toBe('Own');
+    expect(getPlanByUuid(dbB, 'http-cursor-forwarded')?.title).toBe('Forwarded');
+    expect(getPeerCursor(dbB, nodeA, 'pull')?.last_op_id).toBe('1');
+  });
+
   test('HTTP worker multi-chunk return finalizes only on the final chunk', async () => {
     const { workerNodeId, ops } = makeWorkerOps();
     appendPlanTask(dbA, 'worker-target-plan', {
@@ -701,11 +781,13 @@ describe('peer sync advanced scenarios', () => {
     upsertPlan(dbA, projectA, { uuid: planUuid, planId: 10, title: 'Out-of-order plan' });
 
     const fakeTaskUuid = 'nonexistent-task-ooo';
+    const remoteNodeId = randomUUID();
+    const remoteHlc = { physicalMs: Date.now() + 5000, logical: 0 };
     const fakeOp: SyncOpRecord = {
-      op_id: 'fake-set-order-before-create-001',
-      node_id: 'fake-remote-node-ooo',
-      hlc_physical_ms: Date.now() + 5000,
-      hlc_logical: 0,
+      op_id: formatOpId(remoteHlc, remoteNodeId, 1),
+      node_id: remoteNodeId,
+      hlc_physical_ms: remoteHlc.physicalMs,
+      hlc_logical: remoteHlc.logical,
       local_counter: 1,
       entity_type: 'plan_task',
       entity_id: fakeTaskUuid,
@@ -718,14 +800,14 @@ describe('peer sync advanced scenarios', () => {
 
     expect(result.errors).toHaveLength(0);
     expect(result.skipped).toHaveLength(1);
-    expect(result.skipped[0]?.opId).toBe('fake-set-order-before-create-001');
+    expect(result.skipped[0]?.opId).toBe(fakeOp.op_id);
     expect(result.skipped[0]?.reason).toMatch(/set_order arrived before task/);
     expect(result.skipped[0]?.kind).toBe('deferred');
 
     // Deferred ops are not recorded in op_log so the same op_id can be retried.
     const opLogEntry = dbA
       .prepare('SELECT op_id FROM sync_op_log WHERE op_id = ?')
-      .get('fake-set-order-before-create-001') as { op_id: string } | null;
+      .get(fakeOp.op_id) as { op_id: string } | null;
     expect(opLogEntry).toBeNull();
 
     // No phantom field clock for the nonexistent task's order_key
