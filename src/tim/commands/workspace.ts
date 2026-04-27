@@ -1882,13 +1882,18 @@ async function pushGitBranchToWorkspace(
     return;
   }
 
-  const localExists = await spawnAndLogOutput(['git', 'rev-parse', '--verify', `refs/heads/${branch}`], {
-    cwd: destinationWorkspacePath,
-    quiet: true,
-  }).then((result) => result.exitCode === 0);
+  const localExists = await spawnAndLogOutput(
+    ['git', 'rev-parse', '--verify', `refs/heads/${branch}`],
+    {
+      cwd: destinationWorkspacePath,
+      quiet: true,
+    }
+  ).then((result) => result.exitCode === 0);
 
   const updateResult = await spawnAndLogOutput(
-    localExists ? ['git', 'branch', '-f', branch, 'FETCH_HEAD'] : ['git', 'branch', branch, 'FETCH_HEAD'],
+    localExists
+      ? ['git', 'branch', '-f', branch, 'FETCH_HEAD']
+      : ['git', 'branch', branch, 'FETCH_HEAD'],
     { cwd: destinationWorkspacePath }
   );
   if (updateResult.exitCode !== 0) {
