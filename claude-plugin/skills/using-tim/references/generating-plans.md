@@ -20,6 +20,19 @@ tim add "Plan title" --issue https://github.com/org/repo/issues/123
 
 See `adding-plans.md` for full options.
 
+## Followup Work Plans
+
+When generating a plan reveals that additional follow-on work is needed (e.g. a second phase, a cleanup task, or a related feature), create a separate plan that depends on the current one:
+
+```bash
+echo '{"title": "Followup work title", "dependsOn": [<original-plan-id>]}' | tim tools create-plan
+```
+
+**Important guidelines for followup plans:**
+- Do **not** mark the original plan as an epic
+- Do **not** set the original plan as the parent of the new plan
+- **Do** use `dependsOn` (or `--depends-on` with `tim add`) so the new plan is sequenced after the original
+
 ## Tool Schema Discovery
 
 View the JSON schema for any tool:

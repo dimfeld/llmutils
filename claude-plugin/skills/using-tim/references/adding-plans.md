@@ -30,6 +30,10 @@ tim add "Plan title" --simple                 # Skip research phase during gener
 tim add "Plan title" --edit                   # Open in editor after creation
 ```
 
+## Followup Work Plans
+
+When creating a plan for follow-on work, use `--depends-on <original-plan-id>` rather than setting the original as a parent or epic. See `generating-plans.md` for details.
+
 ## From GitHub Issues
 
 ```bash
