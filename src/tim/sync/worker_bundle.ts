@@ -9,10 +9,12 @@ import type { ProjectSetting } from '../db/project_settings.js';
 import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
 import {
   createWorkerLease,
+  completeWorkerLeaseIfReady as completeWorkerLeaseIfReadyRow,
+  countPendingOps,
   getLocalNode,
   getOrCreateClockRow,
   getWorkerLease,
-  markWorkerLeaseCompleted,
+  markWorkerLeaseCompletionRequested,
   type SyncFieldClockRow,
   type SyncTombstoneRow,
   type SyncWorkerLeaseRow,
@@ -20,7 +22,8 @@ import {
 import { formatHlc, HlcGenerator, parseHlc } from './hlc.js';
 import { getLocalNodeId, registerPeerNode } from './node_identity.js';
 import { getProjectSyncIdentity } from './op_emission.js';
-import { applyRemoteOps, type ApplyResult, type SyncOpRecord } from './op_apply.js';
+import { type ApplyResult, type SyncOpRecord } from './op_apply.js';
+import { applyPeerOpsWithPending, retryPendingOps } from './peer_sync.js';
 
 type JsonObject = Record<string, unknown>;
 
@@ -83,6 +86,11 @@ export interface ExportWorkerOpsResult {
 export interface ApplyWorkerOpsOptions {
   workerNodeId: string;
   final?: boolean;
+}
+
+export interface ApplyWorkerOpsResult extends ApplyResult {
+  pendingOpCount: number;
+  leaseCompleted: boolean;
 }
 
 export class WorkerBundleTooLargeError extends Error {
@@ -1037,7 +1045,7 @@ export function applyWorkerOps(
   db: Database,
   ops: SyncOpRecord[],
   options: ApplyWorkerOpsOptions
-): ApplyResult {
+): ApplyWorkerOpsResult {
   const lease = getWorkerLease(db, options.workerNodeId);
   if (!lease) {
     throw new Error(`No worker lease found for worker node ${options.workerNodeId}`);
@@ -1049,9 +1057,27 @@ export function applyWorkerOps(
       );
     }
   }
-  const result = applyRemoteOps(db, ops);
-  if (result.errors.length === 0 && options.final !== false) {
-    markWorkerLeaseCompleted(db, options.workerNodeId);
+  const result = applyPeerOpsWithPending(db, options.workerNodeId, ops);
+  if (options.final !== false) {
+    markWorkerLeaseCompletionRequested(db, options.workerNodeId);
+    retryPendingOps(db, options.workerNodeId);
   }
-  return result;
+  const pendingOpCount = countPendingOps(db, options.workerNodeId);
+  const completedLease =
+    options.final !== false && pendingOpCount === 0
+      ? completeWorkerLeaseIfReadyRow(db, options.workerNodeId)
+      : getWorkerLease(db, options.workerNodeId);
+  return {
+    ...result,
+    pendingOpCount,
+    leaseCompleted: completedLease?.status === 'completed',
+  };
+}
+
+export function completeWorkerLeaseIfReady(
+  db: Database,
+  workerNodeId: string
+): SyncWorkerLeaseRow | null {
+  retryPendingOps(db, workerNodeId);
+  return completeWorkerLeaseIfReadyRow(db, workerNodeId);
 }

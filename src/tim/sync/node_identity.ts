@@ -49,7 +49,15 @@ export function registerPeerNode(
           `Cannot register peer node ${nodeId}: that node id belongs to the local node`
         );
       }
-      if (existing.node_type !== nodeType) {
+      const resolvedNodeType =
+        existing.node_type === 'transient' && nodeType !== 'transient'
+          ? nodeType
+          : existing.node_type;
+      if (
+        existing.node_type !== nodeType &&
+        resolvedNodeType === existing.node_type &&
+        nodeType !== 'transient'
+      ) {
         throw new Error(
           `Cannot change sync node ${nodeId} type from '${existing.node_type}' to '${nodeType}'`
         );
@@ -58,10 +66,18 @@ export function registerPeerNode(
       db.prepare(
         `
           UPDATE sync_node
-          SET label = ?, lease_expires_at = ?, updated_at = ${SQL_NOW_ISO_UTC}
+          SET node_type = ?,
+              label = ?,
+              lease_expires_at = ?,
+              updated_at = ${SQL_NOW_ISO_UTC}
           WHERE node_id = ? AND is_local = 0
         `
-      ).run(label ?? null, leaseExpiresAt ?? null, nodeId);
+      ).run(
+        resolvedNodeType,
+        label === undefined ? existing.label : label,
+        leaseExpiresAt === undefined ? existing.lease_expires_at : leaseExpiresAt,
+        nodeId
+      );
     } else {
       db.prepare(
         `

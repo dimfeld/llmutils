@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite';
 
 import {
+  completeWorkerLeaseIfReady,
   deletePendingOp,
   getOpLogChunkAfter,
   getPeerCursor,
@@ -143,7 +144,7 @@ function parsePendingOp(row: { op_id: string; op_json: string }): SyncOpRecord |
   }
 }
 
-function retryPendingOps(db: Database, peerNodeId: string): ApplyResult {
+export function retryPendingOps(db: Database, peerNodeId: string): ApplyResult {
   const rows = listPendingOps(db, peerNodeId);
   const ops: SyncOpRecord[] = [];
   const corruptOpIds: string[] = [];
@@ -159,6 +160,7 @@ function retryPendingOps(db: Database, peerNodeId: string): ApplyResult {
     deletePendingOp(db, peerNodeId, opId);
   }
   if (ops.length === 0) {
+    completeWorkerLeaseIfReady(db, peerNodeId);
     return { applied: 0, skipped: [], errors: [] };
   }
 
@@ -176,6 +178,7 @@ function retryPendingOps(db: Database, peerNodeId: string): ApplyResult {
   });
   cleanup.immediate(ops);
   persistDeferredOps(db, peerNodeId, ops, result.skipped);
+  completeWorkerLeaseIfReady(db, peerNodeId);
   return result;
 }
 

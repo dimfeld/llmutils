@@ -86,6 +86,18 @@ describe('tim sync/node_identity', () => {
     expect(() => registerPeerNode(db, { nodeId: 'peer-2', nodeType: 'worker' })).toThrow(/type/);
   });
 
+  test('registerPeerNode can promote transient peers without downgrading durable peers', () => {
+    registerPeerNode(db, { nodeId: 'peer-transient', nodeType: 'transient' });
+
+    const promoted = registerPeerNode(db, { nodeId: 'peer-transient', nodeType: 'main' });
+    expect(promoted.node_type).toBe('main');
+
+    registerPeerNode(db, { nodeId: 'peer-transient', nodeType: 'main', label: 'Durable' });
+    const stillMain = registerPeerNode(db, { nodeId: 'peer-transient', nodeType: 'transient' });
+    expect(stillMain.node_type).toBe('main');
+    expect(stillMain.label).toBe('Durable');
+  });
+
   test('registerPeerNode rejects writing the local node id', () => {
     const localId = getLocalNodeId(db);
 

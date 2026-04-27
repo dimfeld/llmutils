@@ -217,6 +217,9 @@ describe('HTTP peer sync transport', () => {
     expect(result.pushedOps).toBeGreaterThan(0);
     expect(getPlanByUuid(dbA, 'http-b')?.title).toBe('HTTP B');
     expect(getPlanByUuid(dbB, 'http-a')?.title).toBe('HTTP A');
+    expect(
+      dbB.prepare('SELECT node_type FROM sync_node WHERE node_id = ?').get(getLocalNodeId(dbA))
+    ).toEqual({ node_type: 'transient' });
   });
 
   test('surfaces a clear error when bearer auth fails', async () => {

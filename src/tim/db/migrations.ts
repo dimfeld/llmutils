@@ -1172,6 +1172,59 @@ const migrations: Migration[] = [
       bootstrapSyncMetadata(db, { force: true });
     },
   },
+  {
+    version: 35,
+    requiresFkOff: true,
+    up: (db: Database): void => {
+      const workerLeaseColumns = db
+        .prepare("PRAGMA table_info('sync_worker_lease')")
+        .all() as Array<{
+        name: string;
+      }>;
+      if (!workerLeaseColumns.some((column) => column.name === 'completion_requested_at')) {
+        db.run('ALTER TABLE sync_worker_lease ADD COLUMN completion_requested_at TEXT');
+      }
+
+      db.run(`
+        CREATE TABLE sync_node_new (
+          node_id TEXT PRIMARY KEY,
+          node_type TEXT NOT NULL CHECK(node_type IN ('main', 'worker', 'transient')),
+          is_local INTEGER NOT NULL DEFAULT 0,
+          label TEXT,
+          lease_expires_at TEXT,
+          created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+          updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC})
+        );
+      `);
+      db.run(`
+        INSERT INTO sync_node_new (
+          node_id,
+          node_type,
+          is_local,
+          label,
+          lease_expires_at,
+          created_at,
+          updated_at
+        )
+        SELECT
+          node_id,
+          node_type,
+          is_local,
+          label,
+          lease_expires_at,
+          created_at,
+          updated_at
+        FROM sync_node;
+      `);
+      db.run('DROP TABLE sync_node');
+      db.run('ALTER TABLE sync_node_new RENAME TO sync_node');
+      db.run(`
+        CREATE UNIQUE INDEX idx_sync_node_single_local
+        ON sync_node(is_local)
+        WHERE is_local = 1;
+      `);
+    },
+  },
 ];
 
 function getCurrentVersion(db: Database): number {

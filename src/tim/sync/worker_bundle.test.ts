@@ -353,7 +353,57 @@ describe('worker sync bundles', () => {
     });
 
     expect(result.errors).toEqual([]);
+    expect(result.pendingOpCount).toBe(0);
+    expect(result.leaseCompleted).toBe(false);
     expect(getWorkerLease(mainDb, bundle.worker.nodeId)?.status).toBe('active');
+  });
+
+  test('applyWorkerOps keeps final lease open until deferred worker ops retry', () => {
+    const bundle = exportWorkerBundle(mainDb, {
+      targetPlanUuid: 'plan-target',
+      leaseExpiresAt: '2030-01-01T00:00:00.000Z',
+    });
+    importWorkerBundle(workerDb, bundle);
+    const workerProjectId = getOrCreateProject(workerDb, 'github.com__owner__repo').id;
+    upsertPlan(workerDb, workerProjectId, {
+      uuid: 'plan-worker-parent',
+      planId: 100,
+      title: 'Worker parent',
+      status: 'pending',
+      tasks: [
+        {
+          uuid: 'task-worker-child',
+          title: 'Child before parent',
+          description: 'Deferred until plan exists',
+          done: false,
+        },
+      ],
+    });
+
+    const { ops } = exportWorkerOps(workerDb);
+    const taskOps = ops.filter((op) => op.entity_type === 'plan_task');
+    const planOps = ops.filter((op) => op.entity_type === 'plan');
+    expect(taskOps.length).toBeGreaterThan(0);
+    expect(planOps.length).toBeGreaterThan(0);
+
+    const deferredResult = applyWorkerOps(mainDb, taskOps, {
+      workerNodeId: bundle.worker.nodeId,
+    });
+    expect(deferredResult.errors).toEqual([]);
+    expect(deferredResult.pendingOpCount).toBeGreaterThan(0);
+    expect(deferredResult.leaseCompleted).toBe(false);
+    expect(getWorkerLease(mainDb, bundle.worker.nodeId)?.status).toBe('active');
+
+    const resolvedResult = applyWorkerOps(mainDb, planOps, {
+      workerNodeId: bundle.worker.nodeId,
+      final: false,
+    });
+    expect(resolvedResult.errors).toEqual([]);
+    expect(resolvedResult.pendingOpCount).toBe(0);
+    expect(getWorkerLease(mainDb, bundle.worker.nodeId)?.status).toBe('completed');
+    expect(getPlanTasksByUuid(mainDb, 'plan-worker-parent').map((task) => task.uuid)).toContain(
+      'task-worker-child'
+    );
   });
 
   test('applyWorkerOps rejects ops whose origin does not match the leased worker', () => {

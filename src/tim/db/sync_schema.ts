@@ -2,7 +2,7 @@ import type { Database } from 'bun:sqlite';
 import { randomUUID } from 'node:crypto';
 import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 
-export type NodeType = 'main' | 'worker';
+export type NodeType = 'main' | 'worker' | 'transient';
 export type SyncDirection = 'pull' | 'push';
 
 export interface SyncNodeRow {
@@ -91,6 +91,7 @@ export interface SyncWorkerLeaseRow {
   lease_expires_at: string;
   status: WorkerLeaseStatus;
   last_returned_at: string | null;
+  completion_requested_at: string | null;
   metadata: string | null;
   created_at: string;
 }
@@ -331,9 +332,10 @@ export function createWorkerLease(db: Database, input: CreateWorkerLeaseInput): 
         lease_expires_at,
         status,
         last_returned_at,
+        completion_requested_at,
         metadata,
         created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'active', NULL, ?, ${SQL_NOW_ISO_UTC})
+      ) VALUES (?, ?, ?, ?, ?, ?, 'active', NULL, NULL, ?, ${SQL_NOW_ISO_UTC})
       ON CONFLICT(worker_node_id) DO UPDATE SET
         issuing_node_id = excluded.issuing_node_id,
         target_plan_uuid = excluded.target_plan_uuid,
@@ -342,6 +344,7 @@ export function createWorkerLease(db: Database, input: CreateWorkerLeaseInput): 
         lease_expires_at = excluded.lease_expires_at,
         status = 'active',
         last_returned_at = NULL,
+        completion_requested_at = NULL,
         metadata = excluded.metadata
     `
   ).run(
@@ -388,11 +391,50 @@ export function markWorkerLeaseCompleted(
     `
       UPDATE sync_worker_lease
       SET status = 'completed',
-          last_returned_at = ${SQL_NOW_ISO_UTC}
+          last_returned_at = ${SQL_NOW_ISO_UTC},
+          completion_requested_at = COALESCE(completion_requested_at, ${SQL_NOW_ISO_UTC})
       WHERE worker_node_id = ?
     `
   ).run(workerNodeId);
   return getWorkerLease(db, workerNodeId);
+}
+
+export function markWorkerLeaseCompletionRequested(
+  db: Database,
+  workerNodeId: string
+): SyncWorkerLeaseRow | null {
+  db.prepare(
+    `
+      UPDATE sync_worker_lease
+      SET completion_requested_at = COALESCE(completion_requested_at, ${SQL_NOW_ISO_UTC}),
+          last_returned_at = ${SQL_NOW_ISO_UTC}
+      WHERE worker_node_id = ?
+        AND status = 'active'
+    `
+  ).run(workerNodeId);
+  return getWorkerLease(db, workerNodeId);
+}
+
+export function countPendingOps(db: Database, peerNodeId: string): number {
+  return (
+    db
+      .prepare('SELECT count(*) AS count FROM sync_pending_op WHERE peer_node_id = ?')
+      .get(peerNodeId) as { count: number }
+  ).count;
+}
+
+export function completeWorkerLeaseIfReady(
+  db: Database,
+  workerNodeId: string
+): SyncWorkerLeaseRow | null {
+  const lease = getWorkerLease(db, workerNodeId);
+  if (!lease || lease.status !== 'active' || lease.completion_requested_at === null) {
+    return lease;
+  }
+  if (countPendingOps(db, workerNodeId) > 0) {
+    return lease;
+  }
+  return markWorkerLeaseCompleted(db, workerNodeId);
 }
 
 export function expireWorkerLease(db: Database, workerNodeId: string): SyncWorkerLeaseRow | null {
@@ -412,3 +454,4 @@ export const getLease = getWorkerLease;
 export const listActiveLeases = listActiveWorkerLeases;
 export const markLeaseCompleted = markWorkerLeaseCompleted;
 export const expireLease = expireWorkerLease;
+export const markLeaseCompletionRequested = markWorkerLeaseCompletionRequested;

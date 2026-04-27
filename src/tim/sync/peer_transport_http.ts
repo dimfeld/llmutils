@@ -260,7 +260,7 @@ export function createPeerSyncHttpHandler(
     try {
       if (url.pathname === '/sync/pull') {
         const peerNodeId = asPeerNodeId(url);
-        registerPeerNode(db, { nodeId: peerNodeId, nodeType: 'main' });
+        registerPeerNode(db, { nodeId: peerNodeId, nodeType: 'transient' });
         // Pull is read-only from the server's perspective. The pulling client
         // advances its local pull-from-server cursor after successful apply.
         const afterSeq = url.searchParams.get('after_seq') ?? url.searchParams.get('after_op_id');
@@ -270,7 +270,7 @@ export function createPeerSyncHttpHandler(
 
       if (url.pathname === '/sync/push') {
         const peerNodeId = asPeerNodeId(url);
-        registerPeerNode(db, { nodeId: peerNodeId, nodeType: 'main' });
+        registerPeerNode(db, { nodeId: peerNodeId, nodeType: 'transient' });
         const ops = readOpsBody(await readJson(request, maxBodyBytes));
         if (ops.length > maxPushBatch) {
           return jsonResponse({ error: 'push batch too large' }, { status: 413 });

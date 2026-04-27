@@ -96,6 +96,18 @@ describe('sync compaction metadata floor', () => {
     expect(getCompactionFloorSeq(db)).toBe(50);
   });
 
+  test('transient peer cursors are excluded from the durable peer floor', () => {
+    registerPeerNode(db, { nodeId: '11111111-1111-4111-8111-111111111111', nodeType: 'main' });
+    setPeerCursor(db, '11111111-1111-4111-8111-111111111111', 'push', '50');
+    registerPeerNode(db, {
+      nodeId: '44444444-4444-4444-8444-444444444444',
+      nodeType: 'transient',
+    });
+    setPeerCursor(db, '44444444-4444-4444-8444-444444444444', 'push', '5');
+
+    expect(getCompactionFloorSeq(db)).toBe(50);
+  });
+
   test('local node cursor is excluded from the durable peer floor', () => {
     // The local node is created automatically by openDatabase; set a push cursor for it
     // to verify it does not lower the floor.
