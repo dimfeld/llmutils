@@ -119,6 +119,7 @@ async function updateGitignore(gitRoot: string): Promise<void> {
   const requiredEntries = [
     '.tim/reviews',
     '.tim/config/tim.local.yml',
+    '.tim/workspaces',
     '.rmfilter/reviews',
     '.rmfilter/config/tim.local.yml',
   ];

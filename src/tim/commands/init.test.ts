@@ -245,6 +245,7 @@ describe('tim init command', () => {
     const content = await fs.readFile(gitignorePath, 'utf-8');
     expect(content).toContain('.tim/reviews');
     expect(content).toContain('.tim/config/tim.local.yml');
+    expect(content).toContain('.tim/workspaces');
     expect(content).toContain('# tim generated files');
   });
 
@@ -267,12 +268,14 @@ describe('tim init command', () => {
     expect(content).toContain('node_modules');
     expect(content).toContain('.tim/reviews');
     expect(content).toContain('.tim/config/tim.local.yml');
+    expect(content).toContain('.tim/workspaces');
     expect(content).toContain('# tim generated files');
   });
 
   test('does not duplicate entries in .gitignore if they already exist', async () => {
     const gitignorePath = path.join(tempDir, '.gitignore');
-    const existingContent = '# Existing content\n.tim/reviews\n.tim/config/tim.local.yml\n';
+    const existingContent =
+      '# Existing content\n.tim/reviews\n.tim/config/tim.local.yml\n.tim/workspaces\n';
     await fs.writeFile(gitignorePath, existingContent, 'utf-8');
 
     const command = {
@@ -287,9 +290,11 @@ describe('tim init command', () => {
     const content = await fs.readFile(gitignorePath, 'utf-8');
     const reviewsCount = (content.match(/\.tim\/reviews/g) || []).length;
     const localYmlCount = (content.match(/\.tim\/config\/tim\.local\.yml/g) || []).length;
+    const workspacesCount = (content.match(/\.tim\/workspaces/g) || []).length;
 
     expect(reviewsCount).toBe(1);
     expect(localYmlCount).toBe(1);
+    expect(workspacesCount).toBe(1);
   });
 
   test('adds only missing entries to existing .gitignore', async () => {
@@ -309,6 +314,7 @@ describe('tim init command', () => {
     const content = await fs.readFile(gitignorePath, 'utf-8');
     expect(content).toContain('.tim/reviews');
     expect(content).toContain('.tim/config/tim.local.yml');
+    expect(content).toContain('.tim/workspaces');
 
     // Verify only one instance of the existing entry
     const reviewsCount = (content.match(/\.tim\/reviews/g) || []).length;
