@@ -223,20 +223,51 @@ function parseCursorSeq(seqText: string | null | undefined): number {
   return Number.isSafeInteger(seq) && seq >= 0 && String(seq) === seqText ? seq : 0;
 }
 
-function advancePushCursorByAcceptedOwnOps(
+function snapshotAlreadyKnownOpIds(
   db: Database,
   peerNodeId: string,
   ops: SyncOpRecord[]
+): Set<string> {
+  const ownOpIds = ops.filter((op) => op.node_id === peerNodeId).map((op) => op.op_id);
+  if (ownOpIds.length === 0) {
+    return new Set();
+  }
+  const placeholders = ownOpIds.map(() => '?').join(',');
+  const known = new Set<string>();
+  const opLogRows = db
+    .prepare(`SELECT op_id FROM sync_op_log WHERE op_id IN (${placeholders})`)
+    .all(...ownOpIds) as { op_id: string }[];
+  for (const row of opLogRows) {
+    known.add(row.op_id);
+  }
+  const pendingRows = db
+    .prepare(
+      `SELECT op_id FROM sync_pending_op WHERE peer_node_id = ? AND op_id IN (${placeholders})`
+    )
+    .all(peerNodeId, ...ownOpIds) as { op_id: string }[];
+  for (const row of pendingRows) {
+    known.add(row.op_id);
+  }
+  return known;
+}
+
+function advancePushCursorByAcceptedOwnOps(
+  db: Database,
+  peerNodeId: string,
+  ops: SyncOpRecord[],
+  alreadyKnownOpIds: Set<string>
 ): void {
-  const ownOps = ops.filter((op) => op.node_id === peerNodeId);
-  if (ownOps.length === 0) {
+  const newlyAcceptedOwnOps = ops.filter(
+    (op) => op.node_id === peerNodeId && !alreadyKnownOpIds.has(op.op_id)
+  );
+  if (newlyAcceptedOwnOps.length === 0) {
     return;
   }
   const existing = db
     .prepare('SELECT last_op_id FROM sync_peer_cursor WHERE peer_node_id = ? AND direction = ?')
     .get(peerNodeId, 'pull') as { last_op_id: string | null } | null;
-  const nextSeq = parseCursorSeq(existing?.last_op_id) + ownOps.length;
-  setPeerCursor(db, peerNodeId, 'pull', nextSeq.toString(), ownOps.at(-1));
+  const nextSeq = parseCursorSeq(existing?.last_op_id) + newlyAcceptedOwnOps.length;
+  setPeerCursor(db, peerNodeId, 'pull', nextSeq.toString(), newlyAcceptedOwnOps.at(-1));
 }
 
 function requestUrl(baseUrl: string, pathname: string): URL {
@@ -391,6 +422,10 @@ export function createPeerSyncHttpHandler(
         if (final) {
           return jsonResponse({ error: 'final_signal_requires_worker_lease' }, { status: 409 });
         }
+        // Snapshot which own op_ids are already known (in sync_op_log or
+        // sync_pending_op) BEFORE the apply, so replays of already-applied or
+        // already-deferred ops cannot drift the push cursor forward.
+        const alreadyKnownOpIds = snapshotAlreadyKnownOpIds(db, peerNodeId, ops);
         let applyResult;
         try {
           applyResult = applyPeerOpsWithPending(db, peerNodeId, ops);
@@ -402,7 +437,7 @@ export function createPeerSyncHttpHandler(
         // Push advances the server's pull-from-pusher cursor after deferred
         // skips have been persisted into sync_pending_op for retry. Server-side
         // pull requests never advance any server cursor.
-        advancePushCursorByAcceptedOwnOps(db, peerNodeId, ops);
+        advancePushCursorByAcceptedOwnOps(db, peerNodeId, ops, alreadyKnownOpIds);
         return jsonResponse({
           applied: applyResult.applied,
           skipped: applyResult.skipped.length,

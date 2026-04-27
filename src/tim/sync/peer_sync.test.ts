@@ -679,6 +679,58 @@ describe('HTTP peer sync transport', () => {
     expect(getPeerCursor(dbB, nodeA, 'pull')?.last_op_id).toBe('1');
   });
 
+  test('HTTP push cursor does not advance for replayed (already-applied) own ops', async () => {
+    upsertPlan(dbA, projectA, { uuid: id('http-cursor-replay'), planId: 24, title: 'Replay' });
+    const nodeA = getLocalNodeId(dbA);
+    const ownOp = (getOpLogChunkAfter(dbA, null, 100).ops as SyncOpRecord[]).find(
+      (op) => op.entity_id === id('http-cursor-replay')
+    );
+    expect(ownOp).toBeDefined();
+    const handler = createPeerSyncHttpHandler(dbB, { token: 'secret-token' });
+
+    const firstResponse = await pushRequest(handler, nodeA, [ownOp!]);
+    expect(firstResponse.status).toBe(200);
+    expect(getPeerCursor(dbB, nodeA, 'pull')?.last_op_id).toBe('1');
+
+    // Replay the same op — must not advance the cursor.
+    const replayResponse = await pushRequest(handler, nodeA, [ownOp!]);
+    expect(replayResponse.status).toBe(200);
+    expect(getPeerCursor(dbB, nodeA, 'pull')?.last_op_id).toBe('1');
+  });
+
+  test('HTTP push cursor does not advance for replayed deferred own ops', async () => {
+    const nodeA = getLocalNodeId(dbA);
+    upsertPlan(dbB, projectB, { uuid: id('http-cursor-deferred-plan'), planId: 25, title: 'Plan' });
+    const fakeTaskUuid = id('http-cursor-deferred-task');
+    const hlc = { physicalMs: Date.now(), logical: 0 };
+    const deferredOp: SyncOpRecord = {
+      op_id: formatOpId(hlc, nodeA, 1),
+      node_id: nodeA,
+      hlc_physical_ms: hlc.physicalMs,
+      hlc_logical: hlc.logical,
+      local_counter: 1,
+      entity_type: 'plan_task',
+      entity_id: fakeTaskUuid,
+      op_type: 'set_order',
+      payload: JSON.stringify({
+        planUuid: id('http-cursor-deferred-plan'),
+        orderKey: '0000000002',
+      }),
+      base: null,
+    };
+    const handler = createPeerSyncHttpHandler(dbB, { token: 'secret-token' });
+
+    const firstResponse = await pushRequest(handler, nodeA, [deferredOp]);
+    expect(firstResponse.status).toBe(200);
+    await expect(firstResponse.json()).resolves.toMatchObject({ deferredSkips: 1 });
+    expect(getPeerCursor(dbB, nodeA, 'pull')?.last_op_id).toBe('1');
+
+    // Replay the same deferred op — must not advance the cursor again.
+    const replayResponse = await pushRequest(handler, nodeA, [deferredOp]);
+    expect(replayResponse.status).toBe(200);
+    expect(getPeerCursor(dbB, nodeA, 'pull')?.last_op_id).toBe('1');
+  });
+
   test('HTTP worker multi-chunk return finalizes only on the final chunk', async () => {
     const { workerNodeId, ops } = makeWorkerOps();
     appendPlanTask(dbA, id('worker-target-plan'), {
