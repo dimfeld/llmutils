@@ -20,6 +20,7 @@ import {
 } from './edge_clock.js';
 import { formatHlc, parseHlc, type Hlc } from './hlc.js';
 import { getLocalGenerator } from './op_emission.js';
+import { registerPeerNode } from './node_identity.js';
 import {
   PLAN_LWW_FIELD_NAMES,
   PLAN_TASK_LWW_FIELD_NAMES,
@@ -673,6 +674,23 @@ function reconcileEdges(db: Database, snapshot: PeerSnapshot): void {
     }
   }
 
+  // Purge locally live edges whose merged clock now says absent (remove-wins).
+  // An edge can be absent from snapshot.dependencies because it was removed on the
+  // sender; after mergeEdgeClocks runs, the local edge clock reflects the newer
+  // remote remove-clock and edgeClockIsPresent returns false.
+  const liveDeps = db
+    .prepare('SELECT plan_uuid, depends_on_uuid FROM plan_dependency')
+    .all() as Array<{ plan_uuid: string; depends_on_uuid: string }>;
+  for (const dep of liveDeps) {
+    const edgeKey = `${dep.plan_uuid}->${dep.depends_on_uuid}`;
+    if (!edgeClockIsPresent(getEdgeClock(db, 'plan_dependency', edgeKey))) {
+      db.prepare('DELETE FROM plan_dependency WHERE plan_uuid = ? AND depends_on_uuid = ?').run(
+        dep.plan_uuid,
+        dep.depends_on_uuid
+      );
+    }
+  }
+
   for (const tag of snapshot.tags) {
     const edgeKey = `${tag.plan_uuid}#${tag.tag}`;
     const present = edgeClockIsPresent(getEdgeClock(db, 'plan_tag', edgeKey));
@@ -692,6 +710,20 @@ function reconcileEdges(db: Database, snapshot: PeerSnapshot): void {
       );
     }
   }
+
+  // Same cleanup for tags
+  const liveTags = db
+    .prepare('SELECT plan_uuid, tag FROM plan_tag')
+    .all() as Array<{ plan_uuid: string; tag: string }>;
+  for (const liveTag of liveTags) {
+    const edgeKey = `${liveTag.plan_uuid}#${liveTag.tag}`;
+    if (!edgeClockIsPresent(getEdgeClock(db, 'plan_tag', edgeKey))) {
+      db.prepare('DELETE FROM plan_tag WHERE plan_uuid = ? AND tag = ?').run(
+        liveTag.plan_uuid,
+        liveTag.tag
+      );
+    }
+  }
 }
 
 function observeSnapshotHlc(db: Database, highWaterHlc: string): void {
@@ -706,6 +738,11 @@ export function applyPeerSnapshot(db: Database, peerNodeId: string, snapshot: Pe
   if (snapshot.senderNodeId !== peerNodeId) {
     throw new Error(`Snapshot sender ${snapshot.senderNodeId} does not match peer ${peerNodeId}`);
   }
+
+  // Ensure the peer is registered so sync_peer_cursor FK constraints are satisfied.
+  // registerPeerNode is idempotent and safe to call from within a transaction
+  // (bun:sqlite nested transactions use savepoints).
+  registerPeerNode(db, { nodeId: peerNodeId, nodeType: 'main' });
 
   const apply = db.transaction((nextSnapshot: PeerSnapshot): void => {
     const clocks = clockMap(nextSnapshot.fieldClocks);
