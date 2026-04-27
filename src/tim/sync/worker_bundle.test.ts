@@ -692,9 +692,7 @@ describe('worker sync bundles', () => {
     expect(firstResult.leaseCompleted).toBe(false);
     expect(getWorkerLease(mainDb, bundle.worker.nodeId)?.status).toBe('active');
     // completion_requested_at was stamped by applyWorkerOps (final:true)
-    expect(
-      getWorkerLease(mainDb, bundle.worker.nodeId)?.completion_requested_at
-    ).not.toBeNull();
+    expect(getWorkerLease(mainDb, bundle.worker.nodeId)?.completion_requested_at).not.toBeNull();
 
     // Apply the plan ops via a heartbeat return (final:false) to resolve the deferrals.
     applyWorkerOps(mainDb, planOps, { workerNodeId: bundle.worker.nodeId, final: false });
