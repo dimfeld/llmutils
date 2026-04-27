@@ -18,6 +18,7 @@ import { getOrCreateProject } from '../db/project.js';
 import { getProjectSetting, setProjectSetting } from '../db/project_settings.js';
 import { getWorkerLease } from '../db/sync_schema.js';
 import { getLocalNodeId } from './node_identity.js';
+import { createHttpPeerTransport, createPeerSyncHttpHandler } from './peer_transport_http.js';
 import {
   applyWorkerOps,
   completeWorkerLeaseIfReady,
@@ -336,6 +337,74 @@ describe('worker sync bundles', () => {
     expect(getWorkerLease(mainDb, bundle.worker.nodeId)?.status).toBe('completed');
   });
 
+  test('applyWorkerOps rejects a completed lease without applying returned ops', () => {
+    const bundle = exportWorkerBundle(mainDb, {
+      targetPlanUuid: 'plan-target',
+      leaseExpiresAt: '2030-01-01T00:00:00.000Z',
+    });
+    applyWorkerOps(mainDb, [], { workerNodeId: bundle.worker.nodeId });
+    importWorkerBundle(workerDb, bundle);
+    appendPlanTask(workerDb, 'plan-target', {
+      uuid: 'task-after-completion',
+      title: 'Too late',
+      description: 'Must not apply',
+    });
+
+    expect(() =>
+      applyWorkerOps(mainDb, exportWorkerOps(workerDb).ops, {
+        workerNodeId: bundle.worker.nodeId,
+      })
+    ).toThrow(/Worker lease .* is closed \(completed\)/);
+    expect(getPlanTasksByUuid(mainDb, 'plan-target').map((task) => task.uuid)).not.toContain(
+      'task-after-completion'
+    );
+    expect(
+      (
+        mainDb
+          .prepare('SELECT count(*) AS count FROM sync_pending_op WHERE peer_node_id = ?')
+          .get(bundle.worker.nodeId) as { count: number }
+      ).count
+    ).toBe(0);
+  });
+
+  test('applyWorkerOps rejects an expired lease and marks it expired', () => {
+    const bundle = exportWorkerBundle(mainDb, {
+      targetPlanUuid: 'plan-target',
+      leaseExpiresAt: '2000-01-01T00:00:00.000Z',
+    });
+    importWorkerBundle(workerDb, bundle);
+    appendPlanTask(workerDb, 'plan-target', {
+      uuid: 'task-after-expiry',
+      title: 'Expired',
+      description: 'Must not apply',
+    });
+
+    expect(() =>
+      applyWorkerOps(mainDb, exportWorkerOps(workerDb).ops, {
+        workerNodeId: bundle.worker.nodeId,
+      })
+    ).toThrow(/Worker lease .* is closed \(expired\)/);
+    expect(getWorkerLease(mainDb, bundle.worker.nodeId)?.status).toBe('expired');
+    expect(getPlanTasksByUuid(mainDb, 'plan-target').map((task) => task.uuid)).not.toContain(
+      'task-after-expiry'
+    );
+  });
+
+  test('applyWorkerOps accepts an active non-expired lease', () => {
+    const bundle = exportWorkerBundle(mainDb, {
+      targetPlanUuid: 'plan-target',
+      leaseExpiresAt: '2030-01-01T00:00:00.000Z',
+    });
+
+    const result = applyWorkerOps(mainDb, [], {
+      workerNodeId: bundle.worker.nodeId,
+      final: false,
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(getWorkerLease(mainDb, bundle.worker.nodeId)?.status).toBe('active');
+  });
+
   test('applyWorkerOps leaves lease active for non-final returns', () => {
     const bundle = exportWorkerBundle(mainDb, {
       targetPlanUuid: 'plan-target',
@@ -357,6 +426,59 @@ describe('worker sync bundles', () => {
     expect(result.pendingOpCount).toBe(0);
     expect(result.leaseCompleted).toBe(false);
     expect(getWorkerLease(mainDb, bundle.worker.nodeId)?.status).toBe('active');
+  });
+
+  test('applyWorkerOps records last_returned_at for non-final heartbeats', () => {
+    const bundle = exportWorkerBundle(mainDb, {
+      targetPlanUuid: 'plan-target',
+      leaseExpiresAt: '2030-01-01T00:00:00.000Z',
+    });
+    mainDb
+      .prepare('UPDATE sync_worker_lease SET last_returned_at = ? WHERE worker_node_id = ?')
+      .run('2000-01-01T00:00:00.000Z', bundle.worker.nodeId);
+
+    const result = applyWorkerOps(mainDb, [], {
+      workerNodeId: bundle.worker.nodeId,
+      final: false,
+    });
+
+    expect(result.errors).toEqual([]);
+    const lease = getWorkerLease(mainDb, bundle.worker.nodeId);
+    expect(lease?.status).toBe('active');
+    expect(lease?.last_returned_at).not.toBeNull();
+    expect(lease?.last_returned_at > '2000-01-01T00:00:00.000Z').toBe(true);
+  });
+
+  test('HTTP worker push with final=1 completes the lease when no pending ops remain', async () => {
+    const bundle = exportWorkerBundle(mainDb, {
+      targetPlanUuid: 'plan-target',
+      leaseExpiresAt: '2030-01-01T00:00:00.000Z',
+    });
+    importWorkerBundle(workerDb, bundle);
+    appendPlanTask(workerDb, 'plan-target', {
+      uuid: 'task-http-final',
+      title: 'HTTP final task',
+      description: 'Returned over HTTP push',
+    });
+    const handler = createPeerSyncHttpHandler(mainDb, { token: 'secret-token' });
+    const transport = createHttpPeerTransport({
+      baseUrl: 'http://peer.test',
+      token: 'secret-token',
+      localNodeId: bundle.worker.nodeId,
+      final: true,
+      fetch: async (input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        return handler(request) as Promise<Response>;
+      },
+    });
+
+    const response = await transport.pushChunk(exportWorkerOps(workerDb).ops);
+
+    expect(response.deferredSkips).toBe(0);
+    expect(getWorkerLease(mainDb, bundle.worker.nodeId)?.status).toBe('completed');
+    expect(getPlanTasksByUuid(mainDb, 'plan-target').map((task) => task.uuid)).toContain(
+      'task-http-final'
+    );
   });
 
   test('applyWorkerOps keeps final lease open until deferred worker ops retry', () => {

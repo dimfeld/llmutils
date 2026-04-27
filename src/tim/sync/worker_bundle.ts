@@ -11,10 +11,12 @@ import {
   createWorkerLease,
   completeWorkerLeaseIfReady as completeWorkerLeaseIfReadyRow,
   countPendingOps,
+  expireWorkerLease,
   getLocalNode,
   getOrCreateClockRow,
   getWorkerLease,
   markWorkerLeaseCompletionRequested,
+  markWorkerLeaseReturned,
   type SyncFieldClockRow,
   type SyncTombstoneRow,
   type SyncWorkerLeaseRow,
@@ -1050,6 +1052,13 @@ export function applyWorkerOps(
   if (!lease) {
     throw new Error(`No worker lease found for worker node ${options.workerNodeId}`);
   }
+  if (lease.status !== 'active') {
+    throw new Error(`Worker lease for ${options.workerNodeId} is closed (${lease.status})`);
+  }
+  if (lease.lease_expires_at <= new Date().toISOString()) {
+    expireWorkerLease(db, options.workerNodeId);
+    throw new Error(`Worker lease for ${options.workerNodeId} is closed (expired)`);
+  }
   for (const op of ops) {
     if (op.node_id !== options.workerNodeId) {
       throw new Error(
@@ -1058,7 +1067,11 @@ export function applyWorkerOps(
     }
   }
   const result = applyPeerOpsWithPending(db, options.workerNodeId, ops);
+  markWorkerLeaseReturned(db, options.workerNodeId);
   if (options.final !== false) {
+    // Completion is sticky once completion_requested_at is set; subsequent calls
+    // (including heartbeats) that drain pending ops will finalize the lease. This
+    // is intentional: workers that hit the final flag once are committed to completing.
     markWorkerLeaseCompletionRequested(db, options.workerNodeId);
     retryPendingOps(db, options.workerNodeId);
   }
@@ -1079,5 +1092,8 @@ export function completeWorkerLeaseIfReady(
   workerNodeId: string
 ): SyncWorkerLeaseRow | null {
   retryPendingOps(db, workerNodeId);
+  // Completion is sticky once completion_requested_at is set; subsequent calls
+  // (including heartbeats) that drain pending ops will finalize the lease. This
+  // is intentional: workers that hit the final flag once are committed to completing.
   return completeWorkerLeaseIfReadyRow(db, workerNodeId);
 }

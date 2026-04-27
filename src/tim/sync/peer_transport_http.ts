@@ -1,7 +1,12 @@
 import type { Database } from 'bun:sqlite';
 import { timingSafeEqual } from 'node:crypto';
 
-import { getOpLogChunkAfter, setPeerCursor } from '../db/sync_schema.js';
+import {
+  completeWorkerLeaseIfReady,
+  getOpLogChunkAfter,
+  markWorkerLeaseCompletionRequested,
+  setPeerCursor,
+} from '../db/sync_schema.js';
 import type { SyncOpRecord } from './op_apply.js';
 import { getLocalNodeId, registerPeerNode } from './node_identity.js';
 import {
@@ -17,6 +22,7 @@ export interface HttpPeerTransportOptions {
   token: string;
   localNodeId: string;
   fetch?: typeof fetch;
+  final?: boolean;
 }
 
 export interface RunHttpPeerSyncOptions extends PeerSyncOptions {
@@ -213,6 +219,9 @@ export function createHttpPeerTransport(options: HttpPeerTransportOptions): Peer
     async pushChunk(ops) {
       const url = requestUrl(options.baseUrl, '/sync/push');
       url.searchParams.set('peer_node_id', options.localNodeId);
+      if (options.final === true) {
+        url.searchParams.set('final', '1');
+      }
       const response = await fetchImpl(url, {
         method: 'POST',
         headers,
@@ -270,7 +279,7 @@ export function createPeerSyncHttpHandler(
 
       if (url.pathname === '/sync/push') {
         const peerNodeId = asPeerNodeId(url);
-        registerPeerNode(db, { nodeId: peerNodeId, nodeType: 'transient' });
+        const peerNode = registerPeerNode(db, { nodeId: peerNodeId, nodeType: 'transient' });
         const ops = readOpsBody(await readJson(request, maxBodyBytes));
         if (ops.length > maxPushBatch) {
           return jsonResponse({ error: 'push batch too large' }, { status: 413 });
@@ -294,6 +303,10 @@ export function createPeerSyncHttpHandler(
         }, null);
         if (lastPushedOp?.seq) {
           setPeerCursor(db, peerNodeId, 'pull', lastPushedOp.seq.toString(), lastPushedOp);
+        }
+        if (url.searchParams.get('final') === '1' && peerNode.node_type === 'worker') {
+          markWorkerLeaseCompletionRequested(db, peerNodeId);
+          completeWorkerLeaseIfReady(db, peerNodeId);
         }
         return jsonResponse({
           applied: applyResult.applied,

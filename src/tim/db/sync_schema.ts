@@ -415,6 +415,21 @@ export function markWorkerLeaseCompletionRequested(
   return getWorkerLease(db, workerNodeId);
 }
 
+export function markWorkerLeaseReturned(
+  db: Database,
+  workerNodeId: string
+): SyncWorkerLeaseRow | null {
+  db.prepare(
+    `
+      UPDATE sync_worker_lease
+      SET last_returned_at = ${SQL_NOW_ISO_UTC}
+      WHERE worker_node_id = ?
+        AND status = 'active'
+    `
+  ).run(workerNodeId);
+  return getWorkerLease(db, workerNodeId);
+}
+
 export function countPendingOps(db: Database, peerNodeId: string): number {
   return (
     db
@@ -455,3 +470,4 @@ export const listActiveLeases = listActiveWorkerLeases;
 export const markLeaseCompleted = markWorkerLeaseCompleted;
 export const expireLease = expireWorkerLease;
 export const markLeaseCompletionRequested = markWorkerLeaseCompletionRequested;
+export const markLeaseReturned = markWorkerLeaseReturned;
