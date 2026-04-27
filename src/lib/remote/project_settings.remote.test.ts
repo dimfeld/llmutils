@@ -46,20 +46,57 @@ describe('project settings remote actions', () => {
 
   test('successfully sets a project setting', async () => {
     await expect(
-      invokeCommand(updateProjectSetting, { projectId, setting: 'featured', value: true })
+      invokeCommand(updateProjectSetting, {
+        projectId,
+        setting: 'featured',
+        value: true,
+        baseRevision: 0,
+      })
     ).resolves.toBeUndefined();
 
     expect(getProjectSetting(currentDb, projectId, 'featured')).toBe(true);
   });
 
   test('successfully updates an existing project setting', async () => {
-    await invokeCommand(updateProjectSetting, { projectId, setting: 'featured', value: true });
+    await invokeCommand(updateProjectSetting, {
+      projectId,
+      setting: 'featured',
+      value: true,
+      baseRevision: 0,
+    });
 
     await expect(
-      invokeCommand(updateProjectSetting, { projectId, setting: 'featured', value: false })
+      invokeCommand(updateProjectSetting, {
+        projectId,
+        setting: 'featured',
+        value: false,
+        baseRevision: 1,
+      })
     ).resolves.toBeUndefined();
 
     expect(getProjectSetting(currentDb, projectId, 'featured')).toBe(false);
+  });
+
+  test('stale baseRevision conflicts instead of overwriting latest project setting', async () => {
+    await invokeCommand(updateProjectSetting, {
+      projectId,
+      setting: 'featured',
+      value: true,
+      baseRevision: 0,
+    });
+
+    await expect(
+      invokeCommand(updateProjectSetting, {
+        projectId,
+        setting: 'featured',
+        value: false,
+        baseRevision: 0,
+      })
+    ).rejects.toMatchObject({
+      name: 'SyncWriteConflictError',
+    });
+
+    expect(getProjectSetting(currentDb, projectId, 'featured')).toBe(true);
   });
 
   test('returns a 404 when the project does not exist', async () => {
@@ -68,6 +105,7 @@ describe('project settings remote actions', () => {
         projectId: projectId + 999,
         setting: 'featured',
         value: true,
+        baseRevision: 0,
       })
     ).rejects.toMatchObject({
       status: 404,
@@ -81,6 +119,7 @@ describe('project settings remote actions', () => {
         projectId,
         setting: 'featured',
         value: undefined,
+        baseRevision: 0,
       })
     ).rejects.toMatchObject({
       status: 400,
@@ -99,6 +138,7 @@ describe('project settings remote actions', () => {
         projectId,
         setting: 'nonexistent',
         value: true,
+        baseRevision: 0,
       })
     ).rejects.toMatchObject({
       status: 400,
@@ -114,6 +154,7 @@ describe('project settings remote actions', () => {
         projectId,
         setting: 'featured',
         value: 'yes',
+        baseRevision: 0,
       })
     ).rejects.toMatchObject({
       status: 400,
@@ -125,7 +166,12 @@ describe('project settings remote actions', () => {
 
   test('successfully sets an abbreviation setting', async () => {
     await expect(
-      invokeCommand(updateProjectSetting, { projectId, setting: 'abbreviation', value: 'AB' })
+      invokeCommand(updateProjectSetting, {
+        projectId,
+        setting: 'abbreviation',
+        value: 'AB',
+        baseRevision: 0,
+      })
     ).resolves.toBeUndefined();
 
     expect(getProjectSetting(currentDb, projectId, 'abbreviation')).toBe('AB');
@@ -137,6 +183,7 @@ describe('project settings remote actions', () => {
         projectId,
         setting: 'abbreviation',
         value: 'ABCDE',
+        baseRevision: 0,
       })
     ).rejects.toMatchObject({
       status: 400,
@@ -152,6 +199,7 @@ describe('project settings remote actions', () => {
         projectId,
         setting: 'abbreviation',
         value: 123,
+        baseRevision: 0,
       })
     ).rejects.toMatchObject({
       status: 400,
@@ -163,7 +211,12 @@ describe('project settings remote actions', () => {
 
   test('successfully sets a color setting', async () => {
     await expect(
-      invokeCommand(updateProjectSetting, { projectId, setting: 'color', value: '#e74c3c' })
+      invokeCommand(updateProjectSetting, {
+        projectId,
+        setting: 'color',
+        value: '#e74c3c',
+        baseRevision: 0,
+      })
     ).resolves.toBeUndefined();
 
     expect(getProjectSetting(currentDb, projectId, 'color')).toBe('#e74c3c');
@@ -175,6 +228,7 @@ describe('project settings remote actions', () => {
         projectId,
         setting: 'color',
         value: '#ffffff',
+        baseRevision: 0,
       })
     ).rejects.toMatchObject({
       status: 400,
@@ -190,6 +244,7 @@ describe('project settings remote actions', () => {
         projectId,
         setting: 'color',
         value: true,
+        baseRevision: 0,
       })
     ).rejects.toMatchObject({
       status: 400,
@@ -205,12 +260,18 @@ describe('project settings remote actions', () => {
       projectId,
       setting: 'color',
       value: '#e74c3c',
+      baseRevision: 0,
     });
     expect(getProjectSetting(currentDb, projectId, 'color')).toBe('#e74c3c');
 
     // Clear it with empty string
     await expect(
-      invokeCommand(updateProjectSetting, { projectId, setting: 'color', value: '' })
+      invokeCommand(updateProjectSetting, {
+        projectId,
+        setting: 'color',
+        value: '',
+        baseRevision: 1,
+      })
     ).resolves.toBeUndefined();
 
     expect(getProjectSetting(currentDb, projectId, 'color')).toBeNull();
@@ -221,11 +282,17 @@ describe('project settings remote actions', () => {
       projectId,
       setting: 'abbreviation',
       value: 'AB',
+      baseRevision: 0,
     });
     expect(getProjectSetting(currentDb, projectId, 'abbreviation')).toBe('AB');
 
     await expect(
-      invokeCommand(updateProjectSetting, { projectId, setting: 'abbreviation', value: '   ' })
+      invokeCommand(updateProjectSetting, {
+        projectId,
+        setting: 'abbreviation',
+        value: '   ',
+        baseRevision: 1,
+      })
     ).resolves.toBeUndefined();
 
     expect(getProjectSetting(currentDb, projectId, 'abbreviation')).toBeNull();
@@ -233,7 +300,12 @@ describe('project settings remote actions', () => {
 
   test('trims whitespace from abbreviation before saving', async () => {
     await expect(
-      invokeCommand(updateProjectSetting, { projectId, setting: 'abbreviation', value: ' AB ' })
+      invokeCommand(updateProjectSetting, {
+        projectId,
+        setting: 'abbreviation',
+        value: ' AB ',
+        baseRevision: 0,
+      })
     ).resolves.toBeUndefined();
 
     expect(getProjectSetting(currentDb, projectId, 'abbreviation')).toBe('AB');
@@ -241,7 +313,12 @@ describe('project settings remote actions', () => {
 
   test('successfully sets a branchPrefix setting', async () => {
     await expect(
-      invokeCommand(updateProjectSetting, { projectId, setting: 'branchPrefix', value: 'di/' })
+      invokeCommand(updateProjectSetting, {
+        projectId,
+        setting: 'branchPrefix',
+        value: 'di/',
+        baseRevision: 0,
+      })
     ).resolves.toBeUndefined();
 
     expect(getProjectSetting(currentDb, projectId, 'branchPrefix')).toBe('di/');
@@ -252,6 +329,7 @@ describe('project settings remote actions', () => {
       projectId,
       setting: 'branchPrefix',
       value: 'di/',
+      baseRevision: 0,
     });
 
     await expect(
@@ -259,6 +337,7 @@ describe('project settings remote actions', () => {
         projectId,
         setting: 'branchPrefix',
         value: 'feature-',
+        baseRevision: 1,
       })
     ).resolves.toBeUndefined();
 
@@ -271,6 +350,7 @@ describe('project settings remote actions', () => {
         projectId,
         setting: 'branchPrefix',
         value: 'a-very-long-prefix-that-exceeds',
+        baseRevision: 0,
       })
     ).rejects.toMatchObject({
       status: 400,
@@ -286,6 +366,7 @@ describe('project settings remote actions', () => {
         projectId,
         setting: 'branchPrefix',
         value: 'foo:bar',
+        baseRevision: 0,
       })
     ).rejects.toMatchObject({
       status: 400,
@@ -301,6 +382,7 @@ describe('project settings remote actions', () => {
         projectId,
         setting: 'branchPrefix',
         value: 'foo\x01bar',
+        baseRevision: 0,
       })
     ).rejects.toMatchObject({
       status: 400,
@@ -316,6 +398,7 @@ describe('project settings remote actions', () => {
         projectId,
         setting: 'branchPrefix',
         value: 'foo\x7fbar',
+        baseRevision: 0,
       })
     ).rejects.toMatchObject({
       status: 400,
@@ -330,11 +413,17 @@ describe('project settings remote actions', () => {
       projectId,
       setting: 'branchPrefix',
       value: 'di/',
+      baseRevision: 0,
     });
     expect(getProjectSetting(currentDb, projectId, 'branchPrefix')).toBe('di/');
 
     await expect(
-      invokeCommand(updateProjectSetting, { projectId, setting: 'branchPrefix', value: '' })
+      invokeCommand(updateProjectSetting, {
+        projectId,
+        setting: 'branchPrefix',
+        value: '',
+        baseRevision: 1,
+      })
     ).resolves.toBeUndefined();
 
     expect(getProjectSetting(currentDb, projectId, 'branchPrefix')).toBeNull();
@@ -345,11 +434,17 @@ describe('project settings remote actions', () => {
       projectId,
       setting: 'abbreviation',
       value: 'AB',
+      baseRevision: 0,
     });
     expect(getProjectSetting(currentDb, projectId, 'abbreviation')).toBe('AB');
 
     await expect(
-      invokeCommand(updateProjectSetting, { projectId, setting: 'abbreviation', value: '' })
+      invokeCommand(updateProjectSetting, {
+        projectId,
+        setting: 'abbreviation',
+        value: '',
+        baseRevision: 1,
+      })
     ).resolves.toBeUndefined();
 
     expect(getProjectSetting(currentDb, projectId, 'abbreviation')).toBeNull();
@@ -360,10 +455,10 @@ describe('project settings remote actions', () => {
       invokeCommand(updateProjectSettings, {
         projectId,
         settings: [
-          { setting: 'featured', value: false },
-          { setting: 'abbreviation', value: ' AB ' },
-          { setting: 'color', value: '#e74c3c' },
-          { setting: 'branchPrefix', value: 'di/' },
+          { setting: 'featured', value: false, baseRevision: 0 },
+          { setting: 'abbreviation', value: ' AB ', baseRevision: 0 },
+          { setting: 'color', value: '#e74c3c', baseRevision: 0 },
+          { setting: 'branchPrefix', value: 'di/', baseRevision: 0 },
         ],
       })
     ).resolves.toBeUndefined();
@@ -379,20 +474,22 @@ describe('project settings remote actions', () => {
       projectId,
       setting: 'featured',
       value: true,
+      baseRevision: 0,
     });
     await invokeCommand(updateProjectSetting, {
       projectId,
       setting: 'color',
       value: '#e74c3c',
+      baseRevision: 0,
     });
 
     await expect(
       invokeCommand(updateProjectSettings, {
         projectId,
         settings: [
-          { setting: 'featured', value: false },
-          { setting: 'abbreviation', value: 'ABCDE' },
-          { setting: 'color', value: '' },
+          { setting: 'featured', value: false, baseRevision: 1 },
+          { setting: 'abbreviation', value: 'ABCDE', baseRevision: 0 },
+          { setting: 'color', value: '', baseRevision: 1 },
         ],
       })
     ).rejects.toMatchObject({

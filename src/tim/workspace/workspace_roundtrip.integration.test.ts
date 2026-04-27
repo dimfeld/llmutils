@@ -158,10 +158,12 @@ describe('runPostExecutionWorkspaceSync integration', () => {
     const workspaceDir = path.join(workspaceParentDir, 'workspace');
     try {
       await seedBareRemoteWithMain(remoteDir);
-      expect((await runGit(workspaceParentDir, ['clone', remoteDir, workspaceDir])).exitCode).toBe(0);
-      expect((await runGit(workspaceDir, ['config', 'user.email', 'test@example.com'])).exitCode).toBe(
+      expect((await runGit(workspaceParentDir, ['clone', remoteDir, workspaceDir])).exitCode).toBe(
         0
       );
+      expect(
+        (await runGit(workspaceDir, ['config', 'user.email', 'test@example.com'])).exitCode
+      ).toBe(0);
       expect((await runGit(workspaceDir, ['config', 'user.name', 'Test User'])).exitCode).toBe(0);
 
       const prepareResult = await prepareExistingWorkspace(workspaceDir, {

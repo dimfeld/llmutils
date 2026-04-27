@@ -8,8 +8,10 @@ import { resolvePlanByNumericId, writePlanFile } from '../plans.js';
 import { clearAllTimCaches, stringifyPlanWithFrontmatter } from '../../testing.js';
 import { getDefaultConfig } from '../configSchema.js';
 import { handleAddCommand } from './add.js';
-import { closeDatabaseForTesting } from '../db/database.js';
+import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
+import { getPlanByPlanId } from '../db/plan.js';
 import { clearPlanSyncContext } from '../db/plan_sync.js';
+import { setApplyBatchOperationHookForTesting } from '../sync/apply.js';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -33,6 +35,10 @@ vi.mock('../../logging.js', () => ({
   warn: vi.fn(),
 }));
 
+vi.mock('./materialized_edit.js', () => ({
+  editMaterializedPlan: vi.fn(),
+}));
+
 describe('tim add command', () => {
   let tempDir: string;
   let tasksDir: string;
@@ -42,6 +48,7 @@ describe('tim add command', () => {
     clearAllTimCaches();
     closeDatabaseForTesting();
     clearPlanSyncContext();
+    setApplyBatchOperationHookForTesting(null);
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-add-test-'));
     tasksDir = path.join(tempDir, 'tasks');
@@ -81,6 +88,7 @@ describe('tim add command', () => {
 
   afterEach(async () => {
     vi.clearAllMocks();
+    setApplyBatchOperationHookForTesting(null);
     clearAllTimCaches();
     closeDatabaseForTesting();
     clearPlanSyncContext();
@@ -164,6 +172,67 @@ describe('tim add command', () => {
     const { plan } = await resolvePlanByNumericId(101, tempDir);
     expect(plan.id).toBe(101);
     expect(plan.title).toBe('New Plan Title');
+  });
+
+  test('sync-enabled main node preserves previewed numeric ID without self-renumbering', async () => {
+    await createExistingPlan(10, { title: 'Existing Plan 10' });
+
+    const configLoaderModule = await import('../configLoader.js');
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+      ...getDefaultConfig(),
+      paths: { tasks: tasksDir },
+      sync: {
+        role: 'main',
+        nodeId: 'main-add-test',
+        allowedNodes: [],
+      },
+    } as never);
+
+    const command = {
+      parent: {
+        opts: () => ({ config: path.join(tempDir, '.rmfilter', 'tim.yml') }),
+      },
+    };
+    await handleAddCommand(['Main', 'Sync', 'Plan'], {}, command);
+
+    const { plan } = await resolvePlanByNumericId(11, tempDir);
+    expect(plan.id).toBe(11);
+    expect(plan.title).toBe('Main Sync Plan');
+  });
+
+  test('sync-enabled --edit can create an empty-title stub plan', async () => {
+    const configLoaderModule = await import('../configLoader.js');
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+      ...getDefaultConfig(),
+      paths: { tasks: tasksDir },
+      sync: {
+        role: 'main',
+        nodeId: 'main-add-edit-test',
+        allowedNodes: [],
+      },
+    } as never);
+    const { editMaterializedPlan } = await import('./materialized_edit.js');
+    vi.mocked(editMaterializedPlan).mockResolvedValue(undefined);
+
+    const command = {
+      parent: {
+        opts: () => ({ config: path.join(tempDir, '.rmfilter', 'tim.yml') }),
+      },
+    };
+
+    await handleAddCommand([], { edit: true }, command);
+
+    const { plan } = await resolvePlanByNumericId(1, tempDir);
+    expect(plan.title).toBe('');
+    expect(editMaterializedPlan).toHaveBeenCalledWith(1, tempDir, undefined);
+    expect(
+      (
+        getDatabase().prepare('SELECT operation_type, status FROM sync_operation').all() as Array<{
+          operation_type: string;
+          status: string;
+        }>
+      )[0]
+    ).toEqual({ operation_type: 'plan.create', status: 'applied' });
   });
 
   test('creates plan with numeric ID ignoring non-numeric plan files', async () => {
@@ -330,6 +399,129 @@ describe('tim add command', () => {
     expect(parentPlan.uuid).toMatch(UUID_REGEX);
   });
 
+  test('rolls back child create and parent reconciliation when add --parent batch fails', async () => {
+    await createExistingPlan(
+      1,
+      {
+        title: 'Completed Parent',
+        status: 'done',
+        dependencies: [],
+      },
+      '1-completed-parent.yml'
+    );
+
+    const command = {
+      parent: {
+        opts: () => ({ config: path.join(tempDir, '.rmfilter', 'tim.yml') }),
+      },
+    };
+    setApplyBatchOperationHookForTesting((index) => {
+      if (index === 0) {
+        throw new Error('injected add parent batch failure');
+      }
+    });
+
+    await expect(handleAddCommand(['Atomic', 'Child'], { parent: 1 }, command)).rejects.toThrow(
+      'injected add parent batch failure'
+    );
+
+    setApplyBatchOperationHookForTesting(null);
+    const parentPlan = (await resolvePlanByNumericId(1, tempDir)).plan;
+    expect(parentPlan.status).toBe('done');
+    expect(parentPlan.dependencies ?? []).toEqual([]);
+    const context = await (await import('../plan_materialize.js')).resolveProjectContext(tempDir);
+    expect(getPlanByPlanId(getDatabase(), context.projectId, 2)).toBeNull();
+  });
+
+  test('sync-mode add --parent with legacy parent fails before creating child plan', async () => {
+    await createExistingPlan(
+      1,
+      {
+        title: 'Legacy Parent',
+        status: 'done',
+        dependencies: [],
+        tasks: [{ title: 'Legacy task', description: '', done: false }],
+      },
+      '1-legacy-parent.yml'
+    );
+
+    const db = getDatabase();
+    const context = await (await import('../plan_materialize.js')).resolveProjectContext(tempDir);
+    const parentRow = getPlanByPlanId(db, context.projectId, 1);
+    expect(parentRow).not.toBeNull();
+    db.prepare('UPDATE plan_task SET uuid = NULL WHERE plan_uuid = ? AND task_index = 0').run(
+      parentRow!.uuid
+    );
+
+    const configLoaderModule = await import('../configLoader.js');
+    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({
+      ...getDefaultConfig(),
+      paths: { tasks: tasksDir },
+      sync: {
+        role: 'main',
+        nodeId: 'main-add-parent-legacy-test',
+        allowedNodes: [],
+      },
+    } as never);
+
+    const command = {
+      parent: {
+        opts: () => ({ config: path.join(tempDir, '.rmfilter', 'tim.yml') }),
+      },
+    };
+    await expect(handleAddCommand(['Sync', 'Child'], { parent: 1 }, command)).rejects.toThrow(
+      'legacy task rows without UUIDs'
+    );
+
+    const parentPlan = (await resolvePlanByNumericId(1, tempDir)).plan;
+    expect(parentPlan.status).toBe('done');
+    expect(parentPlan.dependencies ?? []).toEqual([]);
+    expect(getPlanByPlanId(db, context.projectId, 2)).toBeNull();
+  });
+
+  test('local legacy add --parent rolls back child create when parent reconciliation fails', async () => {
+    await createExistingPlan(
+      1,
+      {
+        title: 'Legacy Parent',
+        status: 'done',
+        dependencies: [],
+        tasks: [{ title: 'Legacy task', description: '', done: false }],
+      },
+      '1-legacy-parent.yml'
+    );
+
+    const db = getDatabase();
+    const context = await (await import('../plan_materialize.js')).resolveProjectContext(tempDir);
+    const parentRow = getPlanByPlanId(db, context.projectId, 1);
+    expect(parentRow).not.toBeNull();
+    db.prepare('UPDATE plan_task SET uuid = NULL WHERE plan_uuid = ? AND task_index = 0').run(
+      parentRow!.uuid
+    );
+    db.prepare(
+      `CREATE TRIGGER fail_legacy_add_parent_dependency
+       BEFORE INSERT ON plan_dependency
+       WHEN NEW.plan_uuid = '${parentRow!.uuid}'
+       BEGIN
+         SELECT RAISE(FAIL, 'injected legacy add parent failure');
+       END`
+    ).run();
+
+    const command = {
+      parent: {
+        opts: () => ({ config: path.join(tempDir, '.rmfilter', 'tim.yml') }),
+      },
+    };
+    await expect(handleAddCommand(['Atomic', 'Child'], { parent: 1 }, command)).rejects.toThrow(
+      'injected legacy add parent failure'
+    );
+
+    const parentPlan = (await resolvePlanByNumericId(1, tempDir)).plan;
+    expect(parentPlan.status).toBe('done');
+    expect(parentPlan.dependencies ?? []).toEqual([]);
+    expect(getPlanByPlanId(db, context.projectId, 2)).toBeNull();
+  });
+
   test('errors when parent plan does not exist', async () => {
     const command = {
       parent: {
@@ -450,7 +642,9 @@ describe('tim add command', () => {
       expect(cleanupPlan.parent).toBe(30);
 
       const parentPlan = (await resolvePlanByNumericId(30, tempDir)).plan;
-      expect(parentPlan.dependencies).toEqual([33]);
+      // Plans 31 and 32 were created with parent: 30, so applyPlanCreate auto-links them
+      // as dependencies of plan 30. The cleanup plan 33 is then added by handleAddCommand.
+      expect(parentPlan.dependencies).toEqual([31, 32, 33]);
     });
 
     test('errors when referencing non-existent plan ID', async () => {

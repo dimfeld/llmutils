@@ -16,6 +16,7 @@
   import { registerDismissedSessionCleanup } from '$lib/stores/ui_state_cleanup.js';
   import CommandBar from '$lib/components/CommandBar.svelte';
   import RateLimitIndicator from '$lib/components/RateLimitIndicator.svelte';
+  import SyncIndicator from '$lib/components/SyncIndicator.svelte';
   import { ModeWatcher, setMode, userPrefersMode } from 'mode-watcher';
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import Sun from '@lucide/svelte/icons/sun';
@@ -181,9 +182,7 @@
       Skip to main content
     </a>
     <header class="flex items-center justify-between bg-gray-800 px-4 py-2 dark:bg-gray-900">
-      <a href={resolve('/')} class="text-lg font-semibold text-white" title="Home">
-        tim
-      </a>
+      <a href={resolve('/')} class="text-lg font-semibold text-white" title="Home"> tim </a>
       <div class="flex items-center gap-2">
         <TabNav {projectId} {showSessionsAttentionDot} />
         <Tooltip.Root>
@@ -202,6 +201,7 @@
           </Tooltip.Trigger>
           <Tooltip.Content sideOffset={8}>Open current page in new window</Tooltip.Content>
         </Tooltip.Root>
+        <SyncIndicator />
         <RateLimitIndicator />
         <Tooltip.Root>
           <Tooltip.Trigger>

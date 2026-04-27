@@ -446,7 +446,26 @@ async function importHierarchicalIssue(
     parentPlan.dependencies = newDependencies;
   }
 
+  const parentBootstrapPlan =
+    childPlanIds.length > 0
+      ? {
+          ...parentPlan,
+          dependencies: (parentPlan.dependencies ?? []).filter(
+            (dependencyId) => !childPlanIds.includes(dependencyId)
+          ),
+        }
+      : parentPlan;
+
   const pendingWrites: PendingImportedPlanWrite[] = [
+    ...(childPlanIds.length > 0
+      ? [
+          {
+            plan: parentBootstrapPlan,
+            filePath: parentPlanPath,
+            syncOnly: true,
+          },
+        ]
+      : []),
     ...childWrites.map(({ existingChildPlan: _existingChildPlan, ...entry }) => entry),
     {
       plan: parentPlan,
@@ -814,7 +833,7 @@ export async function handleImportCommand(
   command?: unknown
 ) {
   // Determine the issue specifier from either positional argument or --issue flag
-  const issueSpecifier = issue?.trim();
+  const issueSpecifier = issue?.trim() || options.issue?.trim();
   if (!issueSpecifier) {
     throw new Error('Issue ID is required');
   }

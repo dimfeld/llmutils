@@ -90,7 +90,8 @@ vi.mock('../../configLoader.js', () => ({
   loadGlobalConfigForNotifications: vi.fn(async () => ({})),
 }));
 
-vi.mock('../../configSchema.js', () => ({
+vi.mock('../../configSchema.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../configSchema.js')>()),
   getDefaultConfig: vi.fn(() => ({})),
 }));
 

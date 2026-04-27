@@ -1,6 +1,8 @@
 <script lang="ts">
   import { invalidateAll, afterNavigate } from '$app/navigation';
   import { updateProjectSettings } from '$lib/remote/project_settings.remote.js';
+  import { getProjectSettingsSyncStatus } from '$lib/remote/sync_status.remote.js';
+  import { getSettingsBannerState } from '$lib/components/sync_indicator_state.js';
   import {
     getContrastTextColor,
     getProjectAbbreviation,
@@ -26,6 +28,12 @@
   let serverAbbreviation = $derived((data.settings.abbreviation as string | undefined) ?? '');
   let serverColor = $derived((data.settings.color as string | undefined) ?? '');
   let serverBranchPrefix = $derived((data.settings.branchPrefix as string | undefined) ?? '');
+  let baseRevisions = $derived({
+    featured: data.settingMetadata.featured?.revision ?? 0,
+    abbreviation: data.settingMetadata.abbreviation?.revision ?? 0,
+    color: data.settingMetadata.color?.revision ?? 0,
+    branchPrefix: data.settingMetadata.branchPrefix?.revision ?? 0,
+  });
 
   let featured = $derived(serverFeatured);
   let abbreviation = $derived(serverAbbreviation);
@@ -42,6 +50,15 @@
   let submitting = $state(false);
   let errorMessage: string | null = $state(null);
 
+  let numericProjectId = $derived(Number(data.projectId));
+  let syncStatusQuery = $derived(
+    Number.isFinite(numericProjectId)
+      ? getProjectSettingsSyncStatus({ projectId: numericProjectId })
+      : null
+  );
+  let syncStatus = $derived(syncStatusQuery?.current ?? null);
+  let syncMessage = $derived(getSettingsBannerState(syncStatus));
+
   afterNavigate(({ from, to }) => {
     if (from && to && from.url.pathname !== to.url.pathname) {
       submitting = false;
@@ -50,31 +67,43 @@
   });
 
   async function handleSave() {
-    const numericProjectId = Number(data.projectId);
     if (Number.isNaN(numericProjectId)) return;
 
     submitting = true;
     errorMessage = null;
     try {
-      const updates: Array<{ setting: string; value: unknown }> = [];
+      const updates: Array<{ setting: string; value: unknown; baseRevision: number }> = [];
 
       if (featured !== serverFeatured) {
-        updates.push({ setting: 'featured', value: featured });
+        updates.push({
+          setting: 'featured',
+          value: featured,
+          baseRevision: baseRevisions.featured,
+        });
       }
       if (abbreviation !== serverAbbreviation) {
-        updates.push({ setting: 'abbreviation', value: abbreviation });
+        updates.push({
+          setting: 'abbreviation',
+          value: abbreviation,
+          baseRevision: baseRevisions.abbreviation,
+        });
       }
       if (color !== serverColor) {
-        updates.push({ setting: 'color', value: color });
+        updates.push({ setting: 'color', value: color, baseRevision: baseRevisions.color });
       }
       if (branchPrefix !== serverBranchPrefix) {
-        updates.push({ setting: 'branchPrefix', value: branchPrefix });
+        updates.push({
+          setting: 'branchPrefix',
+          value: branchPrefix,
+          baseRevision: baseRevisions.branchPrefix,
+        });
       }
 
       if (updates.length === 0) return;
 
       await updateProjectSettings({ projectId: numericProjectId, settings: updates });
       await invalidateAll();
+      syncStatusQuery?.refresh();
     } catch (err) {
       errorMessage = (err as Error).message || 'Failed to save settings';
     } finally {
@@ -88,6 +117,20 @@
     <h1 class="text-xl font-semibold text-foreground">Project Settings</h1>
     <p class="mt-1 text-sm text-muted-foreground">Configure settings for this project.</p>
   </div>
+
+  {#if syncMessage}
+    <div
+      class={[
+        'mb-4 rounded-md border px-3 py-2 text-sm',
+        syncMessage.tone === 'error'
+          ? 'border-red-300 bg-red-50 text-red-800 dark:border-red-700 dark:bg-red-950/40 dark:text-red-200'
+          : 'border-blue-300 bg-blue-50 text-blue-800 dark:border-blue-700 dark:bg-blue-950/40 dark:text-blue-200',
+      ]}
+      role="status"
+    >
+      {syncMessage.text}
+    </div>
+  {/if}
 
   <div class="space-y-6">
     <div class="rounded-lg border border-border p-4">

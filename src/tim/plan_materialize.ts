@@ -1,26 +1,60 @@
 import { mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import yaml from 'yaml';
+import type { Database } from 'bun:sqlite';
 import { getGitInfoExcludePath, isIgnoredByGitSharedExcludes } from '../common/git.js';
 import { warn } from '../logging.js';
+import { getDefaultConfig, type TimConfig } from './configSchema.js';
+import { loadEffectiveConfig } from './configLoader.js';
 import {
   getRepositoryIdentity,
   type RepositoryIdentity,
 } from './assignments/workspace_identifier.js';
 import { getDatabase } from './db/database.js';
 import {
+  getPlanByUuid,
   getPlanByPlanId,
   getPlanDependenciesByUuid,
   getPlansByProject,
   getPlanTagsByUuid,
   getPlanTasksByUuid,
+  type PlanTaskRow,
   type PlanRow,
 } from './db/plan.js';
 import { syncPlanToDb } from './db/plan_sync.js';
 import { getOrCreateProject } from './db/project.js';
-import { generatePlanFileContent, readPlanFile } from './plans.js';
-import { normalizeContainerToEpic, phaseSchema, type PlanSchema } from './planSchema.js';
+import { SQL_NOW_ISO_UTC } from './db/sql_utils.js';
+import {
+  generatePlanFileContent,
+  getPlanWriteLegacyReason,
+  readPlanFile,
+  writePlansLegacyDirectTransactionally,
+} from './plans.js';
+import {
+  normalizeContainerToEpic,
+  phaseSchema,
+  type PlanSchema,
+  type TaskSchema,
+} from './planSchema.js';
 import { planRowToSchemaInput } from './plans_db.js';
+import {
+  addPlanDependencyOperation,
+  addPlanListItemOperation,
+  addPlanTagOperation,
+  addPlanTaskOperation,
+  markPlanTaskDoneOperation,
+  patchPlanTextOperation,
+  removePlanDependencyOperation,
+  removePlanListItemOperation,
+  removePlanTagOperation,
+  removePlanTaskOperation,
+  setPlanParentOperation,
+  setPlanScalarOperation,
+  updatePlanTaskTextOperation,
+} from './sync/operations.js';
+import { beginSyncBatch, getProjectUuidForId } from './sync/write_router.js';
+import type { SyncPlanListName, SyncReviewIssueValue } from './sync/types.js';
+import { resolveWriteMode } from './sync/write_mode.js';
 import { DEFAULT_WORKSPACE_CLONE_LOCATION } from './workspace/workspace_paths.js';
 
 export const MATERIALIZED_DIR = path.join('.tim', 'plans');
@@ -47,6 +81,7 @@ export type ProjectContext = {
 
 type MaterializePlanOptions = {
   context?: ProjectContext;
+  config?: TimConfig;
   force?: boolean;
   skipRematerialize?: boolean;
   preserveUpdatedAt?: string;
@@ -92,6 +127,20 @@ type EditablePlanField =
 type PlanFieldDiff = {
   changedFields: Set<EditablePlanField>;
   hasChanges: boolean;
+};
+
+type PlanListField = 'issue' | 'pullRequest' | 'docs' | 'changedFiles' | 'reviewIssues';
+
+type MatchedTask = {
+  shadow: TaskSchema;
+  file: TaskSchema;
+};
+
+type TaskDiff = {
+  added: Array<{ task: TaskSchema; index: number }>;
+  removed: TaskSchema[];
+  matched: MatchedTask[];
+  wroteTaskUuids: boolean;
 };
 
 const EDITABLE_PLAN_FIELDS = [
@@ -182,9 +231,13 @@ async function materializePlanRow(
   row: PlanRow,
   targetPath: string,
   uuidToPlanId: Map<string, number>,
-  materializedAs: MaterializedPlanRole
+  materializedAs: MaterializedPlanRole,
+  options: { planIdOverride?: number } = {}
 ): Promise<string> {
   const plan = getPlanSchemaFromRow(row, uuidToPlanId, materializedAs);
+  if (options.planIdOverride !== undefined) {
+    plan.id = options.planIdOverride;
+  }
   const content = generatePlanFileContent(plan);
 
   await Bun.write(targetPath, content);
@@ -192,6 +245,37 @@ async function materializePlanRow(
     await Bun.write(getShadowPlanPathForFile(targetPath), content);
   }
   return targetPath;
+}
+
+async function refreshPrimaryMaterializedPlanAtPath(
+  row: PlanRow,
+  targetPath: string,
+  uuidToPlanId: Map<string, number>,
+  planIdForPath: number
+): Promise<string> {
+  return materializePlanRow(row, targetPath, uuidToPlanId, 'primary', {
+    planIdOverride: planIdForPath,
+  });
+}
+
+async function refreshDriftedPrimaryMaterialization(
+  repoRoot: string,
+  filePath: string,
+  planIdForPath: number,
+  planUuid: string,
+  repository?: RepositoryIdentity
+): Promise<void> {
+  const freshContext = await resolveProjectContext(repoRoot, repository);
+  const freshRow = getPlanByUuid(getDatabase(), planUuid);
+  if (!freshRow) {
+    throw new Error(`Plan ${planUuid} was not found after syncing materialized file ${filePath}`);
+  }
+  await refreshPrimaryMaterializedPlanAtPath(
+    freshRow,
+    filePath,
+    freshContext.uuidToPlanId,
+    planIdForPath
+  );
 }
 
 function getRelatedPlanIds(rows: PlanRow[], row: PlanRow, dependencyUuids: string[]): number[] {
@@ -268,9 +352,11 @@ function getPlanSchemaFromRow(
 ): PlanSchema {
   const db = getDatabase();
   const tasks = getPlanTasksByUuid(db, row.uuid).map((task) => ({
+    uuid: task.uuid ?? undefined,
     title: task.title,
     description: task.description,
     done: task.done === 1,
+    revision: task.revision,
   }));
   const dependencyUuids = getPlanDependenciesByUuid(db, row.uuid).map(
     (dependency) => dependency.depends_on_uuid
@@ -322,6 +408,607 @@ export function mergePlanWithShadow(
   }
 
   return mergedPlan;
+}
+
+async function loadConfigForMaterializedSync(
+  repoRoot: string,
+  options: MaterializePlanOptions
+): Promise<TimConfig> {
+  if (options.config) {
+    return options.config;
+  }
+  return (
+    (await loadEffectiveConfig(undefined, {
+      quiet: true,
+      cwd: repoRoot,
+    })) ?? getDefaultConfig()
+  );
+}
+
+function updatePlanBaseTrackingLocalOnly(
+  db: Database,
+  planUuid: string,
+  baseCommit: string | null,
+  baseChangeId: string | null
+): void {
+  // SYNC-EXEMPT: base commit/change tracking is machine-local state. A
+  // materialized file may update it locally, but it must never emit sync ops.
+  db.prepare(
+    `UPDATE plan SET base_commit = ?, base_change_id = ?, updated_at = ${SQL_NOW_ISO_UTC} WHERE uuid = ?`
+  ).run(baseCommit, baseChangeId, planUuid);
+}
+
+function jsonKey(value: unknown): string {
+  return JSON.stringify(value);
+}
+
+function asArray<T>(value: T[] | null | undefined): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function sameTaskIdentityByIndexAndTitle(
+  shadowTask: TaskSchema | undefined,
+  fileTask: TaskSchema
+): shadowTask is TaskSchema & { uuid: string } {
+  return Boolean(shadowTask?.uuid && !fileTask.uuid && shadowTask.title === fileTask.title);
+}
+
+function hydrateTaskUuidsFromDb(tasks: TaskSchema[], dbTasks: PlanTaskRow[]): boolean {
+  let wroteTaskUuids = false;
+  const usedTaskUuids = new Set(tasks.map((task) => task.uuid).filter(Boolean) as string[]);
+
+  for (const [index, task] of tasks.entries()) {
+    if (task.uuid) continue;
+
+    const indexedTitleMatch = dbTasks.find(
+      (candidate) =>
+        candidate.uuid &&
+        candidate.task_index === index &&
+        candidate.title === task.title &&
+        !usedTaskUuids.has(candidate.uuid)
+    );
+
+    const titleMatches = dbTasks.filter(
+      (candidate) =>
+        Boolean(candidate.uuid) &&
+        candidate.title === task.title &&
+        !usedTaskUuids.has(candidate.uuid!)
+    );
+    const matchedTask = indexedTitleMatch ?? (titleMatches.length === 1 ? titleMatches[0] : null);
+
+    if (!matchedTask?.uuid) continue;
+
+    task.uuid = matchedTask.uuid;
+    wroteTaskUuids = true;
+    usedTaskUuids.add(matchedTask.uuid);
+  }
+
+  return wroteTaskUuids;
+}
+
+function diffTasks(shadowTasks: TaskSchema[], fileTasks: TaskSchema[]): TaskDiff {
+  const shadowByUuid = new Map<string, TaskSchema>();
+  for (const task of shadowTasks) {
+    if (task.uuid) {
+      shadowByUuid.set(task.uuid, task);
+    }
+  }
+
+  const usedShadowUuids = new Set<string>();
+  const added: TaskDiff['added'] = [];
+  const matched: MatchedTask[] = [];
+  let wroteTaskUuids = false;
+
+  // Legacy-hydration fallback: only treat a uuidless file task as a rename of the same-index
+  // shadow task when the entire file is uuidless. With any uuid present in the file, the list
+  // shape is verifiable and a uuidless task at a different title is treated as add+remove.
+  const allFileTasksUuidless = fileTasks.every((task) => !task.uuid);
+
+  for (const [index, fileTask] of fileTasks.entries()) {
+    if (fileTask.uuid) {
+      const shadowTask = shadowByUuid.get(fileTask.uuid);
+      if (shadowTask) {
+        usedShadowUuids.add(fileTask.uuid);
+        matched.push({ shadow: shadowTask, file: fileTask });
+      } else {
+        added.push({ task: fileTask, index });
+      }
+      continue;
+    }
+
+    const shadowTask = shadowTasks[index];
+    const matchesByIndexAndTitle = sameTaskIdentityByIndexAndTitle(shadowTask, fileTask);
+    const matchesByLegacyHydration =
+      allFileTasksUuidless && shadowTasks.length === fileTasks.length && Boolean(shadowTask?.uuid);
+    const shadowTaskUuid =
+      matchesByIndexAndTitle || matchesByLegacyHydration ? (shadowTask?.uuid ?? null) : null;
+    if (shadowTaskUuid) {
+      fileTask.uuid = shadowTaskUuid;
+      wroteTaskUuids = true;
+      usedShadowUuids.add(shadowTaskUuid);
+      matched.push({ shadow: shadowTask, file: fileTask });
+      continue;
+    }
+
+    fileTask.uuid = crypto.randomUUID();
+    wroteTaskUuids = true;
+    added.push({ task: fileTask, index });
+  }
+
+  const removed = shadowTasks.filter((task) => task.uuid && !usedShadowUuids.has(task.uuid));
+
+  return { added, removed, matched, wroteTaskUuids };
+}
+
+function resolvePlanUuidForMaterializedId(
+  context: ProjectContext,
+  planId: number,
+  field: string,
+  options: { missing?: 'throw' | 'skip' } = {}
+): string | null {
+  const uuid = context.planIdToUuid.get(planId);
+  if (!uuid) {
+    if (options.missing === 'skip') {
+      return null;
+    }
+    throw new Error(`Materialized plan references unknown ${field} plan ID ${planId}`);
+  }
+  return uuid;
+}
+
+function resolvePlanUuidsForMaterializedIds(
+  context: ProjectContext,
+  planIds: number[] | undefined,
+  field: string,
+  options: { missing?: 'throw' | 'skip' } = {}
+): string[] {
+  return asArray(planIds).flatMap((planId) => {
+    const uuid = resolvePlanUuidForMaterializedId(context, planId, field, options);
+    return uuid ? [uuid] : [];
+  });
+}
+
+function toNullable<T>(value: T | undefined): T | null {
+  return value === undefined ? null : value;
+}
+
+async function routeMaterializedListDiff<T extends string | SyncReviewIssueValue>(
+  batch: Awaited<ReturnType<typeof beginSyncBatch>>,
+  projectUuid: string,
+  planUuid: string,
+  list: PlanListField,
+  shadowValues: T[] | undefined,
+  fileValues: T[] | undefined
+): Promise<void> {
+  const shadowItems = asArray(shadowValues);
+  const fileItems = asArray(fileValues);
+  const shadowKeys = new Set(shadowItems.map(jsonKey));
+  const fileKeys = new Set(fileItems.map(jsonKey));
+
+  for (const item of shadowItems) {
+    if (!fileKeys.has(jsonKey(item))) {
+      batch.add((options) =>
+        removePlanListItemOperation(
+          projectUuid,
+          { planUuid, list: list as SyncPlanListName as never, value: item as never },
+          options
+        )
+      );
+    }
+  }
+  for (const item of fileItems) {
+    if (!shadowKeys.has(jsonKey(item))) {
+      batch.add((options) =>
+        addPlanListItemOperation(
+          projectUuid,
+          { planUuid, list: list as SyncPlanListName as never, value: item as never },
+          options
+        )
+      );
+    }
+  }
+}
+
+async function routeMaterializedPlanChanges(
+  db: Database,
+  config: TimConfig,
+  context: ProjectContext,
+  canonicalRow: PlanRow,
+  shadowPlan: PlanSchema,
+  filePlan: PlanSchema,
+  changedFields: Set<EditablePlanField>
+): Promise<{ wroteTaskUuids: boolean }> {
+  const projectUuid = getProjectUuidForId(db, context.projectId);
+  const planUuid = canonicalRow.uuid;
+  // All ops in this batch use the canonical revision at batch-build time.
+  // Currently safe because applyOperation enforces baseRevision CAS only on
+  // project_setting ops; plan ops carry it advisorily. If plan-side CAS is added
+  // later, applyBatch must rewrite later ops' baseRevision to the post-mutation
+  // value, or this site must do so before sending.
+  const baseRevision = canonicalRow.revision;
+  const batch = await beginSyncBatch(db, config, { reason: 'materialize_sync' });
+  let baseTrackingUpdate: { baseCommit: string | null; baseChangeId: string | null } | null = null;
+
+  for (const field of ['title', 'goal', 'note', 'details'] as const) {
+    if (changedFields.has(field)) {
+      batch.add((options) =>
+        patchPlanTextOperation(
+          projectUuid,
+          {
+            planUuid,
+            field,
+            base: shadowPlan[field] ?? '',
+            new: filePlan[field] ?? '',
+            baseRevision,
+          },
+          options
+        )
+      );
+    }
+  }
+
+  if (changedFields.has('status')) {
+    batch.add((options) =>
+      setPlanScalarOperation(
+        projectUuid,
+        { planUuid, field: 'status', value: filePlan.status, baseRevision },
+        options
+      )
+    );
+  }
+
+  const scalarPairs = [
+    ['priority', toNullable(filePlan.priority)],
+    ['epic', filePlan.epic === true],
+    ['branch', toNullable(filePlan.branch)],
+    ['simple', filePlan.simple === true],
+    ['tdd', filePlan.tdd === true],
+    ['discovered_from', toNullable(filePlan.discoveredFrom)],
+    ['assigned_to', toNullable(filePlan.assignedTo)],
+    ['base_branch', toNullable(filePlan.baseBranch)],
+    ['temp', filePlan.temp === true],
+    ['plan_generated_at', toNullable(filePlan.planGeneratedAt)],
+    ['docs_updated_at', toNullable(filePlan.docsUpdatedAt)],
+    ['lessons_applied_at', toNullable(filePlan.lessonsAppliedAt)],
+  ] as const;
+  const fieldToPlanField = {
+    priority: 'priority',
+    epic: 'epic',
+    branch: 'branch',
+    simple: 'simple',
+    tdd: 'tdd',
+    discovered_from: 'discoveredFrom',
+    assigned_to: 'assignedTo',
+    base_branch: 'baseBranch',
+    temp: 'temp',
+    plan_generated_at: 'planGeneratedAt',
+    docs_updated_at: 'docsUpdatedAt',
+    lessons_applied_at: 'lessonsAppliedAt',
+  } as const satisfies Record<(typeof scalarPairs)[number][0], EditablePlanField>;
+
+  for (const [field, value] of scalarPairs) {
+    if (changedFields.has(fieldToPlanField[field])) {
+      batch.add((options) =>
+        setPlanScalarOperation(
+          projectUuid,
+          {
+            planUuid,
+            field,
+            value,
+            baseRevision,
+          },
+          options
+        )
+      );
+    }
+  }
+
+  if (changedFields.has('baseCommit') || changedFields.has('baseChangeId')) {
+    baseTrackingUpdate = {
+      baseCommit: filePlan.baseCommit ?? null,
+      baseChangeId: filePlan.baseChangeId ?? null,
+    };
+  }
+
+  if (changedFields.has('parent')) {
+    batch.add((options) =>
+      setPlanParentOperation(
+        projectUuid,
+        {
+          planUuid,
+          newParentUuid: filePlan.parent
+            ? resolvePlanUuidForMaterializedId(context, filePlan.parent, 'parent')
+            : null,
+          previousParentUuid: shadowPlan.parent
+            ? resolvePlanUuidForMaterializedId(context, shadowPlan.parent, 'parent', {
+                missing: 'skip',
+              })
+            : null,
+          baseRevision,
+        },
+        options
+      )
+    );
+  }
+
+  if (changedFields.has('dependencies')) {
+    const shadowDeps = new Set(
+      resolvePlanUuidsForMaterializedIds(context, shadowPlan.dependencies, 'dependency', {
+        missing: 'skip',
+      })
+    );
+    const fileDeps = new Set(
+      resolvePlanUuidsForMaterializedIds(context, filePlan.dependencies, 'dependency')
+    );
+    for (const dependencyUuid of shadowDeps) {
+      if (!fileDeps.has(dependencyUuid)) {
+        batch.add((options) =>
+          removePlanDependencyOperation(
+            projectUuid,
+            {
+              planUuid,
+              dependsOnPlanUuid: dependencyUuid,
+            },
+            options
+          )
+        );
+      }
+    }
+    for (const dependencyUuid of fileDeps) {
+      if (!shadowDeps.has(dependencyUuid)) {
+        batch.add((options) =>
+          addPlanDependencyOperation(
+            projectUuid,
+            {
+              planUuid,
+              dependsOnPlanUuid: dependencyUuid,
+            },
+            options
+          )
+        );
+      }
+    }
+  }
+
+  if (changedFields.has('tags')) {
+    const shadowTags = new Set(shadowPlan.tags ?? []);
+    const fileTags = new Set(filePlan.tags ?? []);
+    for (const tag of shadowTags) {
+      if (!fileTags.has(tag)) {
+        batch.add((options) => removePlanTagOperation(projectUuid, { planUuid, tag }, options));
+      }
+    }
+    for (const tag of fileTags) {
+      if (!shadowTags.has(tag)) {
+        batch.add((options) => addPlanTagOperation(projectUuid, { planUuid, tag }, options));
+      }
+    }
+  }
+
+  for (const list of ['issue', 'pullRequest', 'docs', 'changedFiles', 'reviewIssues'] as const) {
+    if (changedFields.has(list)) {
+      await routeMaterializedListDiff(
+        batch,
+        projectUuid,
+        planUuid,
+        list,
+        shadowPlan[list] as never,
+        filePlan[list] as never
+      );
+    }
+  }
+
+  let wroteTaskUuids = false;
+  if (changedFields.has('tasks')) {
+    const dbTasks = getPlanTasksByUuid(db, planUuid);
+    hydrateTaskUuidsFromDb(shadowPlan.tasks, dbTasks);
+    wroteTaskUuids = hydrateTaskUuidsFromDb(filePlan.tasks, dbTasks) || wroteTaskUuids;
+    const taskDiff = diffTasks(shadowPlan.tasks, filePlan.tasks);
+    wroteTaskUuids = taskDiff.wroteTaskUuids || wroteTaskUuids;
+
+    for (const task of taskDiff.removed) {
+      if (!task.uuid) continue;
+      const taskUuid = task.uuid;
+      batch.add((options) =>
+        removePlanTaskOperation(
+          projectUuid,
+          {
+            planUuid,
+            taskUuid,
+            // Task revision is not round-tripped through materialized YAML yet;
+            // v1 task ops from file sync are intentionally uncapped CAS.
+            baseRevision: task.revision,
+          },
+          options
+        )
+      );
+    }
+
+    for (const { task, index } of taskDiff.added) {
+      if (!task.uuid) {
+        throw new Error('Materialized task UUID generation failed');
+      }
+      const taskUuid = task.uuid;
+      batch.add((options) =>
+        addPlanTaskOperation(
+          projectUuid,
+          {
+            planUuid,
+            taskUuid,
+            title: task.title,
+            description: task.description ?? '',
+            done: task.done ?? false,
+            // Reorder-only edits are out of scope for v1. The index is used only
+            // for brand-new tasks so insertion placement is preserved.
+            taskIndex: index,
+          },
+          options
+        )
+      );
+    }
+
+    for (const { shadow, file } of taskDiff.matched) {
+      if (!file.uuid) continue;
+      const taskUuid = file.uuid;
+      if (shadow.title !== file.title) {
+        batch.add((options) =>
+          updatePlanTaskTextOperation(
+            projectUuid,
+            {
+              planUuid,
+              taskUuid,
+              field: 'title',
+              base: shadow.title,
+              new: file.title,
+              // Task revision is not round-tripped through materialized YAML yet;
+              // v1 task ops from file sync are intentionally uncapped CAS.
+              baseRevision: shadow.revision,
+            },
+            options
+          )
+        );
+      }
+      if ((shadow.description ?? '') !== (file.description ?? '')) {
+        batch.add((options) =>
+          updatePlanTaskTextOperation(
+            projectUuid,
+            {
+              planUuid,
+              taskUuid,
+              field: 'description',
+              base: shadow.description ?? '',
+              new: file.description ?? '',
+              // Task revision is not round-tripped through materialized YAML yet;
+              // v1 task ops from file sync are intentionally uncapped CAS.
+              baseRevision: shadow.revision,
+            },
+            options
+          )
+        );
+      }
+      if ((shadow.done ?? false) !== (file.done ?? false)) {
+        batch.add((options) =>
+          markPlanTaskDoneOperation(
+            projectUuid,
+            {
+              planUuid,
+              taskUuid,
+              done: file.done ?? false,
+            },
+            options
+          )
+        );
+      }
+    }
+  }
+
+  await batch.commit();
+  if (baseTrackingUpdate) {
+    updatePlanBaseTrackingLocalOnly(
+      db,
+      planUuid,
+      baseTrackingUpdate.baseCommit,
+      baseTrackingUpdate.baseChangeId
+    );
+  }
+  return { wroteTaskUuids };
+}
+
+async function syncMaterializedPlanFromDbBaseline(
+  db: Database,
+  config: TimConfig,
+  context: ProjectContext,
+  canonicalRow: PlanRow,
+  dbPlan: PlanSchema,
+  filePlan: PlanSchema,
+  changedFields: Set<EditablePlanField>,
+  options: { preserveUpdatedAt?: string }
+): Promise<{ wroteTaskUuids: boolean }> {
+  const legacyReason = getPlanWriteLegacyReason(
+    db,
+    context.projectId,
+    filePlan,
+    context.planIdToUuid,
+    context.rows
+  );
+  if (legacyReason) {
+    const mode = resolveWriteMode(config);
+    if (mode !== 'local-operation') {
+      throw new Error(`Cannot sync materialized legacy plan through ${mode}: ${legacyReason}`);
+    }
+    writePlansLegacyDirectTransactionally(
+      db,
+      context.projectId,
+      [filePlan],
+      context.planIdToUuid,
+      context.rows
+    );
+    return { wroteTaskUuids: false };
+  }
+
+  const result = await routeMaterializedPlanChanges(
+    db,
+    config,
+    context,
+    canonicalRow,
+    dbPlan,
+    filePlan,
+    changedFields
+  );
+  // preserveUpdatedAt is a local-only concern (editor-set timestamp). The sync
+  // ops don't carry updatedAt, so apply it directly after ops complete.
+  if (options.preserveUpdatedAt) {
+    db.prepare('UPDATE plan SET updated_at = ? WHERE uuid = ?').run(
+      options.preserveUpdatedAt,
+      canonicalRow.uuid
+    );
+  }
+  return result;
+}
+
+function alignTaskOrderWithMaterializedFileLocalOnly(
+  db: Database,
+  planUuid: string,
+  fileTasks: TaskSchema[]
+): boolean {
+  const desiredTaskUuids = fileTasks
+    .map((task) => task.uuid)
+    .filter((uuid): uuid is string => typeof uuid === 'string' && uuid.length > 0);
+  if (desiredTaskUuids.length !== fileTasks.length) {
+    return false;
+  }
+
+  const currentTasks = getPlanTasksByUuid(db, planUuid);
+  const currentTaskUuids = currentTasks.map((task) => task.uuid);
+  if (
+    currentTaskUuids.length !== desiredTaskUuids.length ||
+    currentTaskUuids.some((uuid, index) => uuid !== desiredTaskUuids[index])
+  ) {
+    const knownUuids = new Set(currentTaskUuids);
+    if (
+      desiredTaskUuids.length !== knownUuids.size ||
+      desiredTaskUuids.some((uuid) => !knownUuids.has(uuid))
+    ) {
+      return false;
+    }
+
+    // SYNC-EXEMPT: there is no operation type for task reordering yet. The
+    // shadow-missing recovery path must still honor the materialized file's
+    // task order, so only task_index is rewritten locally after op replay.
+    db.transaction(() => {
+      for (const taskUuid of desiredTaskUuids) {
+        db.prepare('UPDATE plan_task SET task_index = -task_index - 1 WHERE uuid = ?').run(
+          taskUuid
+        );
+      }
+      desiredTaskUuids.forEach((taskUuid, index) => {
+        db.prepare('UPDATE plan_task SET task_index = ? WHERE uuid = ?').run(index, taskUuid);
+      });
+    })();
+    return true;
+  }
+
+  return false;
 }
 
 export async function ensureMaterializeDir(repoRoot: string): Promise<string> {
@@ -594,6 +1281,15 @@ async function validateMaterializedFileUuid(
   filePath: string,
   canonicalUuid: string
 ): Promise<void> {
+  const fileUuid = await readMaterializedFileUuid(filePath);
+  if (fileUuid !== canonicalUuid) {
+    throw new Error(
+      `Materialized plan at ${filePath} contains UUID ${fileUuid}, expected ${canonicalUuid}`
+    );
+  }
+}
+
+async function readMaterializedFileUuid(filePath: string): Promise<string> {
   const content = await Bun.file(filePath).text();
   const frontmatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
   if (!frontmatterMatch) {
@@ -605,14 +1301,10 @@ async function validateMaterializedFileUuid(
   if (!fileUuid) {
     throw new Error(
       `Materialized plan at ${filePath} is missing a UUID. ` +
-        `Expected ${canonicalUuid}. Re-materialize the plan to fix this.`
+        `Re-materialize the plan to fix this.`
     );
   }
-  if (fileUuid !== canonicalUuid) {
-    throw new Error(
-      `Materialized plan at ${filePath} contains UUID ${fileUuid}, expected ${canonicalUuid}`
-    );
-  }
+  return fileUuid;
 }
 
 async function readShadowPlanFile(filePath: string): Promise<PlanSchema> {
@@ -676,11 +1368,31 @@ export async function syncMaterializedPlan(
 
   // Validate against DB before readPlanFile() to avoid its UUID auto-generation side effect
   const resolvedContext = options.context ?? (await resolveProjectContext(repoRoot));
-  const canonicalRow = getPlanByPlanId(getDatabase(), resolvedContext.projectId, planId);
+  const fileUuid = await readMaterializedFileUuid(filePath);
+  const pathPlanRow = getPlanByPlanId(getDatabase(), resolvedContext.projectId, planId);
+  if (pathPlanRow && pathPlanRow.uuid !== fileUuid) {
+    throw new Error(
+      `Materialized plan at ${filePath} contains UUID ${fileUuid}, expected ${pathPlanRow.uuid}`
+    );
+  }
+  const canonicalRow = getPlanByUuid(getDatabase(), fileUuid);
   if (!canonicalRow) {
-    throw new Error(`Plan ${planId} was not found in the database for ${repoRoot}`);
+    if (pathPlanRow) {
+      throw new Error(
+        `Materialized plan at ${filePath} contains UUID ${fileUuid}, expected ${pathPlanRow.uuid}`
+      );
+    }
+    throw new Error(
+      `Plan ${fileUuid} from materialized file ${filePath} was not found in the database for ${repoRoot}`
+    );
+  }
+  if (canonicalRow.project_id !== resolvedContext.projectId) {
+    throw new Error(
+      `Materialized plan ${filePath} belongs to project ${canonicalRow.project_id}, expected ${resolvedContext.projectId}`
+    );
   }
   await validateMaterializedFileUuid(filePath, canonicalRow.uuid);
+  const hasNumericIdDrift = canonicalRow.plan_id !== planId;
 
   const plan = await readPlanFile(filePath);
   const shadowPath = getShadowPlanPath(repoRoot, planId);
@@ -720,7 +1432,7 @@ export async function syncMaterializedPlan(
 
   const changes = shadowPlan ? diffPlanFields(shadowPlan, plan) : null;
   if (!options.force && changes && !changes.hasChanges) {
-    if (!options.skipRematerialize) {
+    if (!options.skipRematerialize && !hasNumericIdDrift) {
       const freshContext = await resolveProjectContext(repoRoot, resolvedContext.repository);
       await materializePlan(planId, repoRoot, { context: freshContext });
       await refreshRelatedRefs(planId, repoRoot, freshContext);
@@ -730,25 +1442,86 @@ export async function syncMaterializedPlan(
 
   const dbPlan = getPlanSchemaFromRow(canonicalRow, resolvedContext.uuidToPlanId);
   const mergedPlan = options.force ? plan : mergePlanWithShadow(dbPlan, shadowPlan, plan);
-  if (options.force || !shadowPlan || changes?.hasChanges) {
-    if (options.preserveUpdatedAt) {
-      mergedPlan.updatedAt = options.preserveUpdatedAt;
-    } else {
-      mergedPlan.updatedAt = new Date().toISOString();
-    }
+  if (hasNumericIdDrift) {
+    mergedPlan.id = canonicalRow.plan_id;
   }
-  await syncPlanToDb(mergedPlan, {
-    baseDir: repoRoot,
-    cwdForIdentity: repoRoot,
-    idToUuid: resolvedContext.planIdToUuid,
-    throwOnError: true,
-    force: options.force,
-  });
+  if (options.preserveUpdatedAt && (options.force || !shadowPlan || changes?.hasChanges)) {
+    mergedPlan.updatedAt = options.preserveUpdatedAt;
+  } else if (options.force) {
+    mergedPlan.updatedAt = new Date().toISOString();
+  }
+  if (!options.force && shadowPlan && changes?.hasChanges) {
+    const config = await loadConfigForMaterializedSync(repoRoot, options);
+    const { wroteTaskUuids } = await routeMaterializedPlanChanges(
+      getDatabase(),
+      config,
+      resolvedContext,
+      canonicalRow,
+      shadowPlan,
+      plan,
+      changes.changedFields
+    );
+    // preserveUpdatedAt is a local-only concern (editor-set timestamp). The sync
+    // ops don't carry updatedAt, so apply it directly after ops complete.
+    if (options.preserveUpdatedAt) {
+      getDatabase()
+        .prepare('UPDATE plan SET updated_at = ? WHERE uuid = ?')
+        .run(options.preserveUpdatedAt, canonicalRow.uuid);
+    }
+    if (wroteTaskUuids && options.skipRematerialize) {
+      // Non-skip sync persists UUIDs through the normal post-sync rematerialization.
+      await Bun.write(filePath, generatePlanFileContent(plan));
+    }
+  } else if (!options.force && !shadowPlan) {
+    const config = await loadConfigForMaterializedSync(repoRoot, options);
+    const dbBaselineChanges = diffPlanFields(dbPlan, mergedPlan);
+    const { wroteTaskUuids } = await syncMaterializedPlanFromDbBaseline(
+      getDatabase(),
+      config,
+      resolvedContext,
+      canonicalRow,
+      dbPlan,
+      mergedPlan,
+      dbBaselineChanges.changedFields,
+      { preserveUpdatedAt: options.preserveUpdatedAt }
+    );
+    const reorderedTasks = alignTaskOrderWithMaterializedFileLocalOnly(
+      getDatabase(),
+      canonicalRow.uuid,
+      mergedPlan.tasks
+    );
+    if (options.skipRematerialize) {
+      const shadowPlanForPath = hasNumericIdDrift ? { ...mergedPlan, id: planId } : mergedPlan;
+      const content = generatePlanFileContent(shadowPlanForPath);
+      if (wroteTaskUuids || reorderedTasks) {
+        await Bun.write(filePath, content);
+      }
+      await Bun.write(shadowPath, content);
+    }
+  } else if (options.force) {
+    await syncPlanToDb(mergedPlan, {
+      baseDir: repoRoot,
+      cwdForIdentity: repoRoot,
+      idToUuid: resolvedContext.planIdToUuid,
+      throwOnError: true,
+      force: options.force,
+    });
+  }
 
   if (!options.skipRematerialize) {
-    const freshContext = await resolveProjectContext(repoRoot, resolvedContext.repository);
-    await materializePlan(planId, repoRoot, { context: freshContext });
-    await refreshRelatedRefs(planId, repoRoot, freshContext);
+    if (hasNumericIdDrift) {
+      await refreshDriftedPrimaryMaterialization(
+        repoRoot,
+        filePath,
+        planId,
+        canonicalRow.uuid,
+        resolvedContext.repository
+      );
+    } else {
+      const freshContext = await resolveProjectContext(repoRoot, resolvedContext.repository);
+      await materializePlan(planId, repoRoot, { context: freshContext });
+      await refreshRelatedRefs(planId, repoRoot, freshContext);
+    }
   }
 
   return filePath;

@@ -2,7 +2,13 @@ import * as path from 'node:path';
 import { warn } from '../../logging.js';
 import { removeAssignment } from './assignment.js';
 import { getDatabase } from './database.js';
-import { deletePlan, getPlanByUuid, getPlansByProject, upsertPlan } from './plan.js';
+import {
+  deletePlan,
+  getPlanByUuid,
+  getPlanTasksByUuid,
+  getPlansByProject,
+  upsertPlan,
+} from './plan.js';
 import { getOrCreateProject } from './project.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadEffectiveConfig } from '../configLoader.js';
@@ -190,7 +196,14 @@ export function toPlanUpsertInput(
   reviewIssues?: PlanSchema['reviewIssues'] | null;
   parentUuid?: string | null;
   epic: boolean;
-  tasks: Array<{ title: string; description: string; done?: boolean }>;
+  revision?: number;
+  tasks: Array<{
+    uuid?: string;
+    title: string;
+    description: string;
+    done?: boolean;
+    revision?: number;
+  }>;
   dependencyUuids: string[];
   tags: string[];
 } {
@@ -237,14 +250,52 @@ export function toPlanUpsertInput(
     reviewIssues: plan.reviewIssues ?? null,
     parentUuid,
     epic: plan.epic === true,
+    revision: plan.revision,
     tasks: (plan.tasks ?? []).map((task) => ({
+      uuid: task.uuid,
       title: task.title,
       description: task.description ?? '',
       done: task.done,
+      revision: task.revision,
     })),
     dependencyUuids,
     tags: plan.tags ?? [],
   };
+}
+
+function preserveExistingTaskMetadata(
+  db: ReturnType<typeof getDatabase>,
+  planUuid: string,
+  tasks: ReturnType<typeof toPlanUpsertInput>['tasks']
+): ReturnType<typeof toPlanUpsertInput>['tasks'] {
+  const existingTasks = getPlanTasksByUuid(db, planUuid);
+  const existingByUuid = new Map(
+    existingTasks
+      .filter((task): task is (typeof existingTasks)[number] & { uuid: string } => {
+        return typeof task.uuid === 'string' && task.uuid.length > 0;
+      })
+      .map((task) => [task.uuid, task])
+  );
+  const existingByIndex = new Map(existingTasks.map((task) => [task.task_index, task]));
+  const existingByTitle = new Map(existingTasks.map((task) => [task.title, task]));
+
+  return tasks.map((task, index) => {
+    // A task UUID present in a plan file is treated as an explicit identity.
+    // Only UUID-less tasks may inherit identity from the existing DB row by
+    // index/title, which covers older files that predate task UUIDs.
+    const fallback = task.uuid
+      ? existingByUuid.get(task.uuid)
+      : (existingByIndex.get(index) ?? existingByTitle.get(task.title));
+    if (!fallback) {
+      return task;
+    }
+
+    return {
+      ...task,
+      uuid: fallback.uuid ?? task.uuid,
+      revision: fallback.revision,
+    };
+  });
 }
 
 export function clearPlanSyncContext(): void {
@@ -271,6 +322,7 @@ export async function syncPlanToDb(
     // data cannot resurrect values that were cleared by rebase.
     const existingPlan = getPlanByUuid(db, plan.uuid);
     if (existingPlan) {
+      upsertInput.tasks = preserveExistingTaskMetadata(db, existingPlan.uuid, upsertInput.tasks);
       upsertInput.baseCommit = existingPlan.base_commit ?? null;
       upsertInput.baseChangeId = existingPlan.base_change_id ?? null;
       // baseBranch is user-editable and normally syncs from files. Only preserve

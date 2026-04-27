@@ -221,6 +221,19 @@ function seedSchemaVersionTwelve(db: Database): void {
     );
     INSERT INTO schema_version (version, import_completed) VALUES (12, 1);
 
+    CREATE TABLE project (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      repository_id TEXT NOT NULL UNIQUE,
+      remote_url TEXT,
+      last_git_root TEXT,
+      external_config_path TEXT,
+      external_tasks_dir TEXT,
+      remote_label TEXT,
+      highest_plan_id INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE TABLE pr_status (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       pr_url TEXT NOT NULL UNIQUE,
@@ -275,6 +288,17 @@ function seedSchemaVersionTwelve(db: Database): void {
       pull_request TEXT
     );
 
+    CREATE TABLE plan_task (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      plan_uuid TEXT NOT NULL REFERENCES plan(uuid) ON DELETE CASCADE,
+      task_index INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      done INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(plan_uuid, task_index)
+    );
+    CREATE INDEX idx_plan_task_plan_uuid ON plan_task(plan_uuid);
+
     CREATE TABLE plan_pr (
       plan_uuid TEXT NOT NULL REFERENCES plan(uuid) ON DELETE CASCADE,
       pr_status_id INTEGER NOT NULL REFERENCES pr_status(id) ON DELETE CASCADE,
@@ -326,7 +350,7 @@ describe('tim db/database', () => {
         []
       >('SELECT version, import_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(25);
+    expect(version?.version).toBe(26);
     expect(version?.import_completed).toBe(1);
 
     const tables = db
@@ -358,6 +382,13 @@ describe('tim db/database', () => {
     expect(tables).toContain('branch_merge_requirements');
     expect(tables).toContain('branch_merge_requirement_source');
     expect(tables).toContain('branch_merge_requirement_check');
+    expect(tables).toContain('tim_node');
+    expect(tables).toContain('tim_node_sequence');
+    expect(tables).toContain('tim_node_cursor');
+    expect(tables).toContain('sync_operation');
+    expect(tables).toContain('sync_conflict');
+    expect(tables).toContain('sync_tombstone');
+    expect(tables).toContain('sync_sequence');
 
     const planColumns = db
       .query<{ name: string }, []>("PRAGMA table_info('plan')")
@@ -369,7 +400,35 @@ describe('tim db/database', () => {
     expect(planColumns).toContain('plan_generated_at');
     expect(planColumns).toContain('review_issues');
     expect(planColumns).toContain('note');
+    expect(planColumns).toContain('revision');
     expect(planColumns).not.toContain('filename');
+
+    const projectColumns = db
+      .query<{ name: string }, []>("PRAGMA table_info('project')")
+      .all()
+      .map((row) => row.name);
+    expect(projectColumns).toContain('uuid');
+
+    const planTaskColumns = db
+      .query<{ name: string }, []>("PRAGMA table_info('plan_task')")
+      .all()
+      .map((row) => row.name);
+    expect(planTaskColumns).toContain('uuid');
+    expect(planTaskColumns).toContain('revision');
+
+    const projectSettingColumns = db
+      .query<{ name: string }, []>("PRAGMA table_info('project_setting')")
+      .all()
+      .map((row) => row.name);
+    expect(projectSettingColumns).toContain('revision');
+    expect(projectSettingColumns).toContain('updated_at');
+    expect(projectSettingColumns).toContain('updated_by_node');
+
+    const syncOperationColumns = db
+      .query<{ name: string }, []>("PRAGMA table_info('sync_operation')")
+      .all()
+      .map((row) => row.name);
+    expect(syncOperationColumns).toContain('batch_id');
 
     const indices = db
       .query<{ name: string }, []>(
@@ -393,6 +452,14 @@ describe('tim db/database', () => {
     expect(indices).toContain('idx_branch_merge_requirements_repo_branch');
     expect(indices).toContain('idx_branch_merge_requirement_source_parent');
     expect(indices).toContain('idx_branch_merge_requirement_check_parent');
+    expect(indices).toContain('idx_project_uuid_unique');
+    expect(indices).toContain('idx_plan_task_uuid_unique');
+    expect(indices).toContain('idx_sync_operation_origin_sequence');
+    expect(indices).toContain('idx_sync_operation_project_status');
+    expect(indices).toContain('idx_sync_operation_status_updated');
+    expect(indices).toContain('idx_sync_operation_batch_id');
+    expect(indices).toContain('idx_sync_conflict_project_status');
+    expect(indices).toContain('idx_sync_sequence_project_sequence');
 
     db.close(false);
   });
@@ -410,7 +477,7 @@ describe('tim db/database', () => {
         []
       >('SELECT version, import_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(25);
+    expect(version?.version).toBe(26);
     expect(version?.import_completed).toBe(1);
     const versionRowCount = db2
       .query<{ count: number }, []>('SELECT count(*) as count FROM schema_version')
@@ -541,13 +608,32 @@ describe('tim db/database', () => {
       const schemaVersion = db
         .query<{ version: number }, []>('SELECT version FROM schema_version')
         .get();
-      expect(schemaVersion?.version).toBe(25);
+      expect(schemaVersion?.version).toBe(26);
 
       const planColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('plan')")
         .all()
         .map((row) => row.name);
       expect(planColumns).not.toContain('filename');
+      expect(planColumns).toContain('revision');
+
+      const projectRow = db
+        .query<{ uuid: string | null }, []>('SELECT uuid FROM project WHERE id = 1')
+        .get();
+      expect(projectRow?.uuid).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+      );
+
+      const taskRow = db
+        .query<
+          { uuid: string | null; revision: number },
+          []
+        >('SELECT uuid, revision FROM plan_task WHERE plan_uuid = ?')
+        .get('plan-1');
+      expect(taskRow?.uuid).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+      );
+      expect(taskRow?.revision).toBe(1);
 
       const planCount = db.query<{ count: number }, []>('SELECT count(*) AS count FROM plan').get();
       const taskCount = db
@@ -586,6 +672,24 @@ describe('tim db/database', () => {
 
     try {
       seedSchemaVersionTwelve(db);
+
+      db.prepare(
+        `INSERT INTO project (
+          id, repository_id, remote_url, last_git_root, external_config_path, external_tasks_dir,
+          remote_label, highest_plan_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        1,
+        'repo-v12',
+        null,
+        '/tmp/repo-v12',
+        null,
+        null,
+        null,
+        1,
+        '2026-03-20T00:00:00Z',
+        '2026-03-20T00:00:00Z'
+      );
 
       db.prepare(
         `
@@ -658,7 +762,7 @@ describe('tim db/database', () => {
           []
         >('SELECT version FROM schema_version ORDER BY rowid DESC LIMIT 1')
         .get();
-      expect(schemaVersion?.version).toBe(25);
+      expect(schemaVersion?.version).toBe(26);
 
       const checkRows = db
         .query<
@@ -739,6 +843,265 @@ describe('tim db/database', () => {
         .all()
         .map((row) => row.name);
       expect(checkRunIndexColumns).toEqual(['pr_status_id', 'name', 'source']);
+    } finally {
+      db.close(false);
+    }
+  });
+
+  test('runMigrations backfills unique UUIDs for multiple projects and tasks', () => {
+    const dbPath = path.join(tempDir, DATABASE_FILENAME);
+    const db = new Database(dbPath);
+
+    try {
+      db.run('PRAGMA foreign_keys = ON');
+      db.exec(`
+        CREATE TABLE schema_version (
+          version INTEGER NOT NULL DEFAULT 0,
+          import_completed INTEGER NOT NULL DEFAULT 0
+        );
+        INSERT INTO schema_version (version, import_completed) VALUES (25, 1);
+
+        CREATE TABLE project (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          repository_id TEXT NOT NULL UNIQUE,
+          remote_url TEXT,
+          last_git_root TEXT,
+          external_config_path TEXT,
+          external_tasks_dir TEXT,
+          remote_label TEXT,
+          highest_plan_id INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE plan (
+          uuid TEXT NOT NULL PRIMARY KEY,
+          project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+          plan_id INTEGER NOT NULL,
+          title TEXT,
+          goal TEXT,
+          note TEXT,
+          details TEXT,
+          status TEXT NOT NULL DEFAULT 'pending',
+          priority TEXT,
+          branch TEXT,
+          simple INTEGER,
+          tdd INTEGER,
+          discovered_from INTEGER,
+          issue TEXT,
+          pull_request TEXT,
+          assigned_to TEXT,
+          base_branch TEXT,
+          base_commit TEXT,
+          base_change_id TEXT,
+          temp INTEGER,
+          docs TEXT,
+          changed_files TEXT,
+          plan_generated_at TEXT,
+          review_issues TEXT,
+          docs_updated_at TEXT,
+          lessons_applied_at TEXT,
+          parent_uuid TEXT,
+          epic INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE plan_task (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          plan_uuid TEXT NOT NULL REFERENCES plan(uuid) ON DELETE CASCADE,
+          task_index INTEGER NOT NULL,
+          title TEXT NOT NULL,
+          description TEXT NOT NULL,
+          done INTEGER NOT NULL DEFAULT 0,
+          UNIQUE(plan_uuid, task_index)
+        );
+
+        CREATE TABLE project_setting (
+          project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+          setting TEXT NOT NULL,
+          value TEXT NOT NULL,
+          PRIMARY KEY (project_id, setting)
+        );
+      `);
+
+      for (let i = 1; i <= 5; i++) {
+        db.prepare(
+          `INSERT INTO project (id, repository_id, remote_url, last_git_root, external_config_path, external_tasks_dir, remote_label, highest_plan_id, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(i, `repo-${i}`, null, '/tmp/repo', null, null, null, 0, '2026-01-01Z', '2026-01-01Z');
+
+        db.prepare(
+          `INSERT INTO plan (uuid, project_id, plan_id, title, goal, status, epic, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(`plan-${i}`, i, i, `Plan ${i}`, 'Goal', 'pending', 0, '2026-01-01Z', '2026-01-01Z');
+
+        for (let j = 0; j < 10; j++) {
+          db.prepare(
+            'INSERT INTO plan_task (plan_uuid, task_index, title, description, done) VALUES (?, ?, ?, ?, ?)'
+          ).run(`plan-${i}`, j, `Task ${j}`, 'desc', 0);
+        }
+      }
+
+      runMigrations(db);
+
+      const projectUuids = db
+        .query<{ uuid: string }, []>('SELECT uuid FROM project ORDER BY id')
+        .all()
+        .map((r) => r.uuid);
+      expect(projectUuids).toHaveLength(5);
+      const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+      for (const uuid of projectUuids) {
+        expect(uuid).toMatch(uuidRe);
+      }
+      expect(new Set(projectUuids).size).toBe(5);
+
+      const taskUuids = db
+        .query<{ uuid: string }, []>('SELECT uuid FROM plan_task ORDER BY id')
+        .all()
+        .map((r) => r.uuid);
+      expect(taskUuids).toHaveLength(50);
+      for (const uuid of taskUuids) {
+        expect(uuid).toMatch(uuidRe);
+      }
+      expect(new Set(taskUuids).size).toBe(50);
+    } finally {
+      db.close(false);
+    }
+  });
+
+  test('runMigrations backfills sync identity metadata when upgrading from schema version 25', () => {
+    const dbPath = path.join(tempDir, DATABASE_FILENAME);
+    const db = new Database(dbPath);
+
+    try {
+      db.run('PRAGMA foreign_keys = ON');
+      db.exec(`
+        CREATE TABLE schema_version (
+          version INTEGER NOT NULL DEFAULT 0,
+          import_completed INTEGER NOT NULL DEFAULT 0
+        );
+        INSERT INTO schema_version (version, import_completed) VALUES (25, 1);
+
+        CREATE TABLE project (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          repository_id TEXT NOT NULL UNIQUE,
+          remote_url TEXT,
+          last_git_root TEXT,
+          external_config_path TEXT,
+          external_tasks_dir TEXT,
+          remote_label TEXT,
+          highest_plan_id INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE plan (
+          uuid TEXT NOT NULL PRIMARY KEY,
+          project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+          plan_id INTEGER NOT NULL,
+          title TEXT,
+          goal TEXT,
+          note TEXT,
+          details TEXT,
+          status TEXT NOT NULL DEFAULT 'pending',
+          priority TEXT,
+          branch TEXT,
+          simple INTEGER,
+          tdd INTEGER,
+          discovered_from INTEGER,
+          issue TEXT,
+          pull_request TEXT,
+          assigned_to TEXT,
+          base_branch TEXT,
+          base_commit TEXT,
+          base_change_id TEXT,
+          temp INTEGER,
+          docs TEXT,
+          changed_files TEXT,
+          plan_generated_at TEXT,
+          review_issues TEXT,
+          docs_updated_at TEXT,
+          lessons_applied_at TEXT,
+          parent_uuid TEXT,
+          epic INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE plan_task (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          plan_uuid TEXT NOT NULL REFERENCES plan(uuid) ON DELETE CASCADE,
+          task_index INTEGER NOT NULL,
+          title TEXT NOT NULL,
+          description TEXT NOT NULL,
+          done INTEGER NOT NULL DEFAULT 0,
+          UNIQUE(plan_uuid, task_index)
+        );
+
+        CREATE TABLE project_setting (
+          project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+          setting TEXT NOT NULL,
+          value TEXT NOT NULL,
+          PRIMARY KEY (project_id, setting)
+        );
+      `);
+
+      db.prepare(
+        `INSERT INTO project (
+          id, repository_id, remote_url, last_git_root, external_config_path, external_tasks_dir,
+          remote_label, highest_plan_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(1, 'repo-pre-26', null, '/tmp/repo', null, null, null, 1, '2026-01-01Z', '2026-01-01Z');
+      db.prepare(
+        `INSERT INTO plan (
+          uuid, project_id, plan_id, title, goal, status, epic, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        1,
+        1,
+        'Plan',
+        'Goal',
+        'pending',
+        0,
+        '2026-01-01Z',
+        '2026-01-01Z'
+      );
+      db.prepare(
+        'INSERT INTO plan_task (plan_uuid, task_index, title, description, done) VALUES (?, ?, ?, ?, ?)'
+      ).run('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 0, 'Task', 'Description', 0);
+      db.prepare('INSERT INTO project_setting (project_id, setting, value) VALUES (?, ?, ?)').run(
+        1,
+        'featured',
+        'true'
+      );
+
+      runMigrations(db);
+
+      expect(
+        db.query<{ version: number }, []>('SELECT version FROM schema_version').get()?.version
+      ).toBe(26);
+      expect(db.query<{ uuid: string }, []>('SELECT uuid FROM project').get()?.uuid).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+      );
+      const plan = db.query<{ revision: number }, []>('SELECT revision FROM plan').get();
+      expect(plan?.revision).toBe(1);
+      const task = db
+        .query<{ uuid: string; revision: number }, []>('SELECT uuid, revision FROM plan_task')
+        .get();
+      expect(task?.uuid).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+      );
+      expect(task?.revision).toBe(1);
+      const setting = db
+        .query<
+          { revision: number; updated_at: string | null; updated_by_node: string | null },
+          []
+        >('SELECT revision, updated_at, updated_by_node FROM project_setting')
+        .get();
+      expect(setting?.revision).toBe(1);
+      expect(setting?.updated_at).toBeTruthy();
+      expect(setting?.updated_by_node).toBeNull();
     } finally {
       db.close(false);
     }

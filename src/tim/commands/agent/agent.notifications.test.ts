@@ -123,7 +123,8 @@ vi.mock('./batch_mode.js', () => ({
   executeBatchMode: executeBatchModeSpy,
 }));
 
-vi.mock('../../configSchema.js', () => ({
+vi.mock('../../configSchema.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../configSchema.js')>()),
   getDefaultConfig: vi.fn(() => mockConfig),
 }));
 

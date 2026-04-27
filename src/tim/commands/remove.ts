@@ -3,10 +3,8 @@ import chalk from 'chalk';
 import { log, warn } from '../../logging.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { removeAssignment } from '../db/assignment.js';
 import { getDatabase } from '../db/database.js';
-import { deletePlan, getPlanByPlanId, upsertPlan, type PlanRow } from '../db/plan.js';
-import { toPlanUpsertInput } from '../db/plan_sync.js';
+import { getPlanByPlanId, type PlanRow } from '../db/plan.js';
 import {
   getMaterializedPlanPath,
   getShadowPlanPath,
@@ -16,11 +14,21 @@ import {
 } from '../plan_materialize.js';
 import { getLegacyAwareSearchDir } from '../path_resolver.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
-import { resolvePlanByNumericId, writePlanFile } from '../plans.js';
+import {
+  applyPlanWritePostCommitUpdates,
+  getPlanWriteLegacyReason,
+  preparePlanForWrite,
+  resolvePlanByNumericId,
+  routePlanWriteIntoBatch,
+  writePlanFile,
+  writePlansLegacyDirectTransactionally,
+} from '../plans.js';
 import { invertPlanIdToUuidMap, loadPlansFromDb, planRowForTransaction } from '../plans_db.js';
 import { resolveWritablePath } from '../plans/resolve_writable_path.js';
 import type { PlanSchema } from '../planSchema.js';
 import { ensureReferences } from '../utils/references.js';
+import { addPlanDeleteToBatch, beginSyncBatch, getProjectUuidForId } from '../sync/write_router.js';
+import { resolveWriteMode } from '../sync/write_mode.js';
 
 interface RemoveCommandOptions {
   force?: boolean;
@@ -36,7 +44,7 @@ export async function handleRemoveCommand(
   }
 
   const globalOpts = command.parent.opts();
-  await loadEffectiveConfig(globalOpts.config);
+  const config = await loadEffectiveConfig(globalOpts.config);
   const repoRoot = await resolveRepoRoot(globalOpts.config, process.cwd());
   const repository = await getRepositoryIdentity({ cwd: repoRoot });
 
@@ -153,29 +161,64 @@ export async function handleRemoveCommand(
   }
 
   const db = getDatabase();
+  const projectUuid = getProjectUuidForId(db, context.projectId);
   const idToUuid = new Map(context.planIdToUuid);
-  const writeChanges = db.transaction(() => {
-    for (const target of targetResolutions) {
-      if (!target.plan.uuid) {
-        continue;
-      }
-      deletePlan(db, target.plan.uuid);
-      removeAssignment(db, context.projectId, target.plan.uuid);
+  const writeMode = resolveWriteMode(config);
+  const preparedAffectedPlans: PlanSchema[] = [];
+  for (const [planId, plan] of affectedPlans.entries()) {
+    const row = getPlanByPlanId(db, context.projectId, planId);
+    if (!row) {
+      throw new Error(`Plan ${planId} not found`);
     }
+    const { updatedPlan } = ensureReferences(plan, { planIdToUuid: idToUuid });
+    preparedAffectedPlans.push(preparePlanForWrite(updatedPlan));
+  }
 
-    for (const [planId, plan] of affectedPlans.entries()) {
-      const row = getPlanByPlanId(db, context.projectId, planId);
-      if (!row) {
-        throw new Error(`Plan ${planId} not found`);
+  const targetLegacyReason =
+    targetResolutions
+      .map((target) =>
+        getPlanWriteLegacyReason(db, context.projectId, target.plan, idToUuid, context.rows)
+      )
+      .find((reason): reason is string => reason !== null) ?? null;
+  const affectedLegacyReason =
+    preparedAffectedPlans
+      .map((plan) => getPlanWriteLegacyReason(db, context.projectId, plan, idToUuid, context.rows))
+      .find((reason): reason is string => reason !== null) ?? null;
+  const legacyReason = targetLegacyReason ?? affectedLegacyReason;
+
+  if (legacyReason) {
+    if (writeMode !== 'local-operation') {
+      throw new Error(`Cannot remove plans with sync-routed writes: ${legacyReason}`);
+    }
+    writePlansLegacyDirectTransactionally(
+      db,
+      context.projectId,
+      preparedAffectedPlans,
+      idToUuid,
+      context.rows,
+      {
+        deletePlanUuids: targetResolutions
+          .map((target) => target.plan.uuid)
+          .filter((uuid): uuid is string => typeof uuid === 'string' && uuid.length > 0),
+        deletePlanIds: targetResolutions
+          .filter((target) => !target.plan.uuid)
+          .map((target) => target.plan.id),
       }
-      const { updatedPlan } = ensureReferences(plan, { planIdToUuid: idToUuid });
-      upsertPlan(db, context.projectId, {
-        ...toPlanUpsertInput(updatedPlan, idToUuid),
-        forceOverwrite: true,
+    );
+  } else {
+    const batch = await beginSyncBatch(db, config);
+    const postCommitUpdates = preparedAffectedPlans.flatMap((plan) =>
+      routePlanWriteIntoBatch(batch, db, config, context.projectId, plan, idToUuid)
+    );
+    for (const target of targetResolutions) {
+      addPlanDeleteToBatch(batch, projectUuid, {
+        planUuid: target.plan.uuid!,
+        baseRevision: target.plan.revision,
       });
     }
-  });
-  writeChanges.immediate();
+    await batch.commit();
+    applyPlanWritePostCommitUpdates(db, postCommitUpdates);
+  }
 
   const refreshedContext = await resolveProjectContext(repoRoot, repository);
   for (const [planId, outputPath] of affectedOutputPaths.entries()) {

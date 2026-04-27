@@ -5,12 +5,7 @@ import { removePlanAssignment } from '../assignments/remove_plan_assignment.js';
 import { removeAssignment } from '../db/assignment.js';
 import type { TimConfig } from '../configSchema.js';
 import { getDatabase } from '../db/database.js';
-import {
-  getPlanByPlanId,
-  getPlansByParentUuid,
-  getPlansByProject,
-  upsertPlan,
-} from '../db/plan.js';
+import { getPlanByPlanId, getPlansByParentUuid, getPlansByProject } from '../db/plan.js';
 import {
   getMaterializedPlanPath,
   resolveProjectContext,
@@ -19,9 +14,9 @@ import {
 import type { PlanSchema } from '../planSchema.js';
 import { invertPlanIdToUuidMap, planRowForTransaction } from '../plans_db.js';
 import { writePlanFile } from '../plans.js';
-import { toPlanUpsertInput } from '../db/plan_sync.js';
 import { findNextActionableItem } from './find_next.js';
 import { getCompletionStatus, isWorkCompleteStatus } from './plan_state_utils.js';
+import { getProjectUuidForId, writePlanListAdd, writePlanSetStatus } from '../sync/write_router.js';
 
 type ParentCascadeOptions = {
   baseDir?: string;
@@ -103,10 +98,22 @@ async function checkAndMarkParentDoneInDb(
       allChangedFiles.size > 0 ? Array.from(allChangedFiles).sort() : parentPlan.changedFiles,
   };
 
-  upsertPlan(db, projectId, {
-    ...toPlanUpsertInput(updatedParent, planIdToUuid),
-    forceOverwrite: true,
-  });
+  const projectUuid = getProjectUuidForId(db, projectId);
+  await writePlanSetStatus(
+    db,
+    config,
+    projectUuid,
+    parentRow.uuid,
+    updatedParent.status,
+    parentRow.revision
+  );
+  for (const file of allChangedFiles) {
+    await writePlanListAdd(db, config, projectUuid, {
+      planUuid: parentRow.uuid,
+      list: 'changedFiles',
+      value: file,
+    });
+  }
 
   return updatedParent;
 }

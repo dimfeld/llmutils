@@ -9,6 +9,7 @@ import { getOrCreateProject } from './project.js';
 import {
   deleteProjectSetting,
   getProjectSetting,
+  getProjectSettingWithMetadata,
   getProjectSettings,
   setProjectSetting,
 } from './project_settings.js';
@@ -54,6 +55,28 @@ describe('tim db/project_settings', () => {
     setProjectSetting(db, project.id, 'featured', false);
 
     expect(getProjectSetting(db, project.id, 'featured')).toBe(false);
+  });
+
+  test('setProjectSetting writes revision and update metadata', () => {
+    const project = getOrCreateProject(db, 'repo-1');
+
+    setProjectSetting(db, project.id, 'featured', true, { updatedByNode: 'node-a' });
+    const inserted = getProjectSettingWithMetadata(db, project.id, 'featured');
+    expect(inserted).toMatchObject({
+      value: true,
+      revision: 1,
+      updatedByNode: 'node-a',
+    });
+    expect(inserted?.updatedAt).toBeTruthy();
+
+    setProjectSetting(db, project.id, 'featured', false, { updatedByNode: 'node-b' });
+    const updated = getProjectSettingWithMetadata(db, project.id, 'featured');
+    expect(updated).toMatchObject({
+      value: false,
+      revision: 2,
+      updatedByNode: 'node-b',
+    });
+    expect(updated?.updatedAt).toBeTruthy();
   });
 
   test('deleteProjectSetting removes an existing setting and returns true', () => {

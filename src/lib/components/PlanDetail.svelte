@@ -20,6 +20,8 @@
     convertReviewIssueToTask,
     clearReviewIssues,
   } from '$lib/remote/review_issue_actions.remote.js';
+  import { getPlanSyncStatus } from '$lib/remote/sync_status.remote.js';
+  import { getEntityBadgeState } from './sync_indicator_state.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import StatusBadge from './StatusBadge.svelte';
   import PriorityBadge from './PriorityBadge.svelte';
@@ -45,6 +47,10 @@
   } = $props();
 
   const sessionManager = useSessionManager();
+
+  let planSyncQuery = $derived(plan.uuid ? getPlanSyncStatus({ planUuid: plan.uuid }) : null);
+  let planSyncStatus = $derived(planSyncQuery?.current ?? null);
+  let planSyncBadge = $derived(getEntityBadgeState(planSyncStatus));
 
   let openingTerminalPath: string | null = $state(null);
   let openingInEditor = $state(false);
@@ -552,6 +558,19 @@
       {/if}
     </div>
     <h2 class="text-xl font-semibold text-foreground">{plan.title ?? 'Untitled'}</h2>
+    {#if planSyncBadge}
+      <span
+        class={[
+          'rounded-full px-2 py-0.5 text-xs font-medium',
+          planSyncBadge.tone === 'error'
+            ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+            : 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+        ]}
+        title={planSyncBadge.title}
+      >
+        {planSyncBadge.label}
+      </span>
+    {/if}
   </div>
   {#if projectName}
     <div class="mt-0.5 text-sm text-muted-foreground">{projectName}</div>
@@ -624,7 +643,7 @@
               >
                 {#if chatAction.starting}
                   <span
-                    class="inline-block animate-spin rounded-full border-2 border-white border-t-transparent h-2 w-2"
+                    class="inline-block h-2 w-2 animate-spin rounded-full border-2 border-white border-t-transparent"
                   ></span>
                   {chatAction.startingLabel}
                 {:else}

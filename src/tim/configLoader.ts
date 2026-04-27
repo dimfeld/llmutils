@@ -224,7 +224,10 @@ export async function findGlobalConfigPath(): Promise<string | null> {
  * @returns The validated configuration object. Returns default configuration if configPath is null or YAML parsing fails.
  * @throws {Error} If the configuration file exists but fails schema validation.
  */
-export async function loadConfig(configPath: string | null): Promise<TimConfig> {
+export async function loadConfig(
+  configPath: string | null,
+  options: { stripSync?: boolean } = {}
+): Promise<TimConfig> {
   if (configPath === null) {
     debugLog('No configuration file specified or found. Using default configuration.');
     return getDefaultConfig();
@@ -251,6 +254,18 @@ export async function loadConfig(configPath: string | null): Promise<TimConfig> 
     error(`Error parsing YAML file ${configPath}: ${err.message}`);
     debugLog('YAML parsing failed. Falling back to default configuration.');
     return getDefaultConfig(); // Return default on YAML parse error as requested
+  }
+
+  // Sync is machine-local: when loading repo/local configs, strip the `sync`
+  // key before validation so a misconfigured repo can't break loading and
+  // can't smuggle sync config into the merge result.
+  if (
+    options.stripSync &&
+    parsedYaml &&
+    typeof parsedYaml === 'object' &&
+    !Array.isArray(parsedYaml)
+  ) {
+    delete (parsedYaml as Record<string, unknown>).sync;
   }
 
   const result = timConfigSchema.safeParse(parsedYaml);
@@ -325,6 +340,21 @@ function assertNotificationCommandConfigured(config: TimConfig): void {
   }
 }
 
+function applyReadTimeDefaults(config: TimConfig): TimConfig {
+  if (!config.sync) {
+    return config;
+  }
+
+  return {
+    ...config,
+    sync: {
+      ...config.sync,
+      disabled: config.sync.disabled ?? false,
+      offline: config.sync.offline ?? false,
+    },
+  };
+}
+
 /**
  * Orchestrates finding, loading, parsing, and validating the tim configuration.
  * Handles errors gracefully and logs user-friendly messages.
@@ -356,16 +386,28 @@ export async function loadEffectiveConfig(
     const globalConfigPath = await findGlobalConfigPath();
     const resolvedConfigPath = configPath ? path.resolve(configPath) : null;
     const resolvedGlobalConfigPath = globalConfigPath ? path.resolve(globalConfigPath) : null;
-    const shouldLoadGlobal = Boolean(
-      globalConfigPath && (!resolvedConfigPath || resolvedGlobalConfigPath !== resolvedConfigPath)
+    const configIsGlobal = Boolean(
+      resolvedConfigPath &&
+      resolvedGlobalConfigPath &&
+      resolvedGlobalConfigPath === resolvedConfigPath
     );
+    const shouldLoadGlobal = Boolean(globalConfigPath && !configIsGlobal);
+    // The global config is the only legitimate source of `sync`. When the user
+    // explicitly points --config at the global file, treat that file as the
+    // sync source instead of stripping its sync block as if it were a repo.
     const globalConfig =
       shouldLoadGlobal && globalConfigPath ? await loadConfig(globalConfigPath) : undefined;
     const configExists = configPath ? await Bun.file(configPath).exists() : false;
     const baseConfig = getDefaultConfig();
-    const config = configExists ? await loadConfig(configPath) : undefined;
+    const config = configExists
+      ? await loadConfig(configPath, { stripSync: !configIsGlobal })
+      : undefined;
     const localConfigPath = await findLocalConfigPath(configPath);
     let effectiveConfig: TimConfig;
+
+    // sync config is machine-local and must come only from the global config
+    // (or an explicit --config pointing at the global file).
+    const machineLocalSync = globalConfig?.sync ?? (configIsGlobal ? config?.sync : undefined);
 
     if (globalConfig) {
       effectiveConfig = mergeConfigs(baseConfig, globalConfig);
@@ -379,7 +421,7 @@ export async function loadEffectiveConfig(
 
     if (localConfigPath) {
       try {
-        const localConfig = await loadConfig(localConfigPath);
+        const localConfig = await loadConfig(localConfigPath, { stripSync: true });
         effectiveConfig = mergeConfigs(effectiveConfig, localConfig);
 
         const configSources = [
@@ -407,6 +449,15 @@ export async function loadEffectiveConfig(
       }
     }
 
+    // Restore machine-local sync from the global config; repo/local configs cannot influence it.
+    if (machineLocalSync !== undefined) {
+      effectiveConfig = { ...effectiveConfig, sync: machineLocalSync };
+    } else {
+      const { sync: _stripped, ...rest } = effectiveConfig;
+      effectiveConfig = rest as TimConfig;
+    }
+
+    effectiveConfig = applyReadTimeDefaults(effectiveConfig);
     assertNotificationCommandConfigured(effectiveConfig);
 
     const configWithMetadata: TimConfig = {

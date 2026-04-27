@@ -19,9 +19,11 @@ const createLooseObject: ObjectFactory = (shape) => z.object(shape).passthrough(
 
 export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObject) => {
   const taskSchema = objectFactory({
+    uuid: z.guid().optional(),
     title: z.string(),
     done: z.boolean().default(false),
     description: z.string(),
+    revision: z.number().int().positive().optional(),
   });
 
   const phaseSchema = objectFactory({
@@ -34,6 +36,7 @@ export const createPlanSchemas = (objectFactory: ObjectFactory = createLooseObje
       .describe('Plan details. This can also be in markdown content after the YAML'),
     id: z.number().int().positive(),
     uuid: z.guid().optional(),
+    revision: z.number().int().positive().optional(),
     simple: z.boolean().optional(),
     tdd: z.boolean().optional(),
     status: z.preprocess((s) => {

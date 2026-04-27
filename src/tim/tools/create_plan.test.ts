@@ -4,8 +4,11 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { clearAllTimCaches } from '../../testing.js';
 import { getDefaultConfig } from '../configSchema.js';
-import { closeDatabaseForTesting } from '../db/database.js';
+import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
+import { getPlanByPlanId } from '../db/plan.js';
 import { resolvePlanByNumericId, writePlanToDb } from '../plans.js';
+import { resolveProjectContext } from '../plan_materialize.js';
+import { setApplyBatchOperationHookForTesting } from '../sync/apply.js';
 import { createPlanTool } from './create_plan.js';
 import type { ToolContext } from './context.js';
 import type { TimConfig } from '../configSchema.js';
@@ -22,6 +25,7 @@ describe('createPlanTool references', () => {
   beforeEach(async () => {
     clearAllTimCaches();
     closeDatabaseForTesting();
+    setApplyBatchOperationHookForTesting(null);
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-create-plan-test-'));
     tasksDir = path.join(tempDir, 'tasks');
@@ -40,6 +44,7 @@ describe('createPlanTool references', () => {
   afterEach(async () => {
     clearAllTimCaches();
     closeDatabaseForTesting();
+    setApplyBatchOperationHookForTesting(null);
     if (tempDir) {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
@@ -94,6 +99,31 @@ describe('createPlanTool references', () => {
     await expect(fs.access(tasksDir)).rejects.toThrow();
   });
 
+  test('sync-enabled main node preserves previewed numeric ID without self-renumbering', async () => {
+    await seedPlan({ id: 10, title: 'Existing Plan', goal: 'Seed' });
+    context.config = {
+      ...config,
+      sync: {
+        role: 'main',
+        nodeId: 'main-create-tool-test',
+        allowedNodes: [],
+      },
+    } as TimConfig;
+
+    const result = await createPlanTool(
+      {
+        title: 'Main Tool Plan',
+        goal: 'Test goal',
+      },
+      context
+    );
+
+    const { plan } = await resolvePlanByNumericId(11, tempDir);
+    expect(plan.id).toBe(11);
+    expect(plan.title).toBe('Main Tool Plan');
+    expect(result.data).toEqual({ id: 11, path: 'plan 11' });
+  });
+
   test('creates plan with parent references and updates the parent in DB', async () => {
     const parentUuid = crypto.randomUUID();
     await seedPlan({
@@ -125,6 +155,44 @@ describe('createPlanTool references', () => {
     expect(parentPlan.dependencies).toEqual([2]);
     expect(parentPlan.references).toBeUndefined();
     expect(parentPlan.status).toBe('in_progress');
+  });
+
+  test('rolls back child create and parent status update when parent batch fails', async () => {
+    await seedPlan({
+      id: 1,
+      uuid: crypto.randomUUID(),
+      title: 'Done Parent',
+      goal: 'Parent goal',
+      status: 'done',
+      dependencies: [],
+    });
+
+    setApplyBatchOperationHookForTesting((index) => {
+      if (index === 1) {
+        throw new Error('injected create plan batch failure');
+      }
+    });
+
+    await expect(
+      createPlanTool(
+        {
+          title: 'Child Plan',
+          goal: 'Child goal',
+          details: '',
+          priority: 'medium',
+          parent: 1,
+        },
+        context
+      )
+    ).rejects.toThrow('injected create plan batch failure');
+
+    setApplyBatchOperationHookForTesting(null);
+    const { plan: parentPlan } = await resolvePlanByNumericId(1, tempDir);
+    expect(parentPlan.status).toBe('done');
+    expect(parentPlan.dependencies ?? []).toEqual([]);
+
+    const projectContext = await resolveProjectContext(tempDir);
+    expect(getPlanByPlanId(getDatabase(), projectContext.projectId, 2)).toBeNull();
   });
 
   test('creates plan with dependsOn references from DB-backed dependency plans', async () => {
