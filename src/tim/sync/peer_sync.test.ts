@@ -28,6 +28,17 @@ import {
 import { exportWorkerBundle, exportWorkerOps, importWorkerBundle } from './worker_bundle.js';
 import { pruneEphemeralNodes } from './node_lifecycle.js';
 
+const fixtureIds = new Map<string, string>();
+
+function id(label: string): string {
+  let existing = fixtureIds.get(label);
+  if (!existing) {
+    existing = randomUUID();
+    fixtureIds.set(label, existing);
+  }
+  return existing;
+}
+
 function directTransport(remoteDb: Database, localNodeId: string): PeerTransport {
   registerPeerNode(remoteDb, { nodeId: localNodeId, nodeType: 'main' });
   return {
@@ -77,13 +88,13 @@ describe('peer sync transport core', () => {
 
   test('runs a pull-then-push cycle and converges both peers', async () => {
     upsertPlan(dbA, projectA, {
-      uuid: 'plan-from-a',
+      uuid: id('plan-from-a'),
       planId: 1,
       title: 'From A',
       status: 'in_progress',
     });
     upsertPlan(dbB, projectB, {
-      uuid: 'plan-from-b',
+      uuid: id('plan-from-b'),
       planId: 2,
       title: 'From B',
       status: 'pending',
@@ -95,8 +106,8 @@ describe('peer sync transport core', () => {
 
     expect(result.pulledOps).toBeGreaterThan(0);
     expect(result.pushedOps).toBeGreaterThan(0);
-    expect(getPlanByUuid(dbA, 'plan-from-b')?.title).toBe('From B');
-    expect(getPlanByUuid(dbB, 'plan-from-a')?.title).toBe('From A');
+    expect(getPlanByUuid(dbA, id('plan-from-b'))?.title).toBe('From B');
+    expect(getPlanByUuid(dbB, id('plan-from-a'))?.title).toBe('From A');
     expect(opCount(dbA)).toBe(opCount(dbB));
     expect(getPeerCursor(dbA, nodeB, 'pull')?.last_op_id).not.toBeNull();
     expect(getPeerCursor(dbA, nodeB, 'push')?.last_op_id).not.toBeNull();
@@ -104,9 +115,9 @@ describe('peer sync transport core', () => {
   });
 
   test('resumes cursor-based sync in bounded chunks without wall-clock freshness', async () => {
-    upsertPlan(dbB, projectB, { uuid: 'chunked-plan', planId: 3, title: 'v0' });
+    upsertPlan(dbB, projectB, { uuid: id('chunked-plan'), planId: 3, title: 'v0' });
     for (let i = 1; i <= 6; i += 1) {
-      upsertPlan(dbB, projectB, { uuid: 'chunked-plan', planId: 3, title: `v${i}` });
+      upsertPlan(dbB, projectB, { uuid: id('chunked-plan'), planId: 3, title: `v${i}` });
     }
 
     const nodeA = getLocalNodeId(dbA);
@@ -124,7 +135,7 @@ describe('peer sync transport core', () => {
 
     expect(result.pullChunks).toBeGreaterThan(1);
     expect(pulledChunks.every((chunk) => chunk.ops.length <= 2)).toBe(true);
-    expect(getPlanByUuid(dbA, 'chunked-plan')?.title).toBe('v6');
+    expect(getPlanByUuid(dbA, id('chunked-plan'))?.title).toBe('v6');
     expect(getPeerCursor(dbA, nodeB, 'pull')?.last_op_id).toBe(
       getOpLogChunkAfter(dbB, null, 100).nextAfterSeq
     );
@@ -135,12 +146,12 @@ describe('peer sync transport core', () => {
     const projectC = getOrCreateProject(dbC, 'github.com__owner__repo').id;
     try {
       upsertPlan(dbC, projectC, {
-        uuid: 'plan-from-c-offline',
+        uuid: id('plan-from-c-offline'),
         planId: 30,
         title: 'Offline C',
       });
       upsertPlan(dbA, projectA, {
-        uuid: 'plan-from-a-high',
+        uuid: id('plan-from-a-high'),
         planId: 10,
         title: 'High A',
       });
@@ -157,12 +168,12 @@ describe('peer sync transport core', () => {
           formatOpId(oldButValidHlc, nodeC, 1),
           oldButValidHlc.physicalMs,
           oldButValidHlc.logical,
-          'plan-from-c-offline'
+          id('plan-from-c-offline')
         );
 
       const firstPull = await runPeerSync(dbB, nodeA, directTransport(dbA, nodeB));
       expect(firstPull.pulledOps).toBeGreaterThan(0);
-      expect(getPlanByUuid(dbB, 'plan-from-a-high')?.title).toBe('High A');
+      expect(getPlanByUuid(dbB, id('plan-from-a-high'))?.title).toBe('High A');
       const bCursorAfterHighA = getPeerCursor(dbB, nodeA, 'pull')?.last_op_id;
       expect(bCursorAfterHighA).toBe(getOpLogChunkAfter(dbA, null, 100).nextAfterSeq);
 
@@ -170,13 +181,13 @@ describe('peer sync transport core', () => {
       expect(aPullsC.pulledOps).toBeGreaterThan(0);
       const cOpOnA = dbA
         .prepare('SELECT seq, hlc_physical_ms FROM sync_op_log WHERE entity_id = ?')
-        .get('plan-from-c-offline') as { seq: number; hlc_physical_ms: number } | null;
+        .get(id('plan-from-c-offline')) as { seq: number; hlc_physical_ms: number } | null;
       expect(cOpOnA?.hlc_physical_ms).toBe(oldButValidHlc.physicalMs);
       expect(cOpOnA?.seq).toBeGreaterThan(Number(bCursorAfterHighA));
 
       const secondPull = await runPeerSync(dbB, nodeA, directTransport(dbA, nodeB));
       expect(secondPull.pulledOps).toBeGreaterThan(0);
-      expect(getPlanByUuid(dbB, 'plan-from-c-offline')?.title).toBe('Offline C');
+      expect(getPlanByUuid(dbB, id('plan-from-c-offline'))?.title).toBe('Offline C');
     } finally {
       dbC.close(false);
     }
@@ -238,14 +249,18 @@ describe('HTTP peer sync transport', () => {
     workerNodeId: string;
     ops: SyncOpRecord[];
   } {
-    upsertPlan(dbB, projectB, { uuid: 'worker-target-plan', planId: 50, title: 'Worker target' });
+    upsertPlan(dbB, projectB, {
+      uuid: id('worker-target-plan'),
+      planId: 50,
+      title: 'Worker target',
+    });
     const bundle = exportWorkerBundle(dbB, {
-      targetPlanUuid: 'worker-target-plan',
+      targetPlanUuid: id('worker-target-plan'),
       leaseExpiresAt: options.leaseExpiresAt ?? '2030-01-01T00:00:00.000Z',
     });
     importWorkerBundle(dbA, bundle);
-    appendPlanTask(dbA, 'worker-target-plan', {
-      uuid: 'worker-return-task',
+    appendPlanTask(dbA, id('worker-target-plan'), {
+      uuid: id('worker-return-task'),
       title: 'Returned task',
       description: 'From worker',
     });
@@ -253,8 +268,8 @@ describe('HTTP peer sync transport', () => {
   }
 
   test('syncs over the HTTP handler without opening a socket', async () => {
-    upsertPlan(dbA, projectA, { uuid: 'http-a', planId: 1, title: 'HTTP A' });
-    upsertPlan(dbB, projectB, { uuid: 'http-b', planId: 2, title: 'HTTP B' });
+    upsertPlan(dbA, projectA, { uuid: id('http-a'), planId: 1, title: 'HTTP A' });
+    upsertPlan(dbB, projectB, { uuid: id('http-b'), planId: 2, title: 'HTTP B' });
 
     const nodeB = getLocalNodeId(dbB);
     const result = await runHttpPeerSync(dbA, {
@@ -266,8 +281,8 @@ describe('HTTP peer sync transport', () => {
 
     expect(result.pulledOps).toBeGreaterThan(0);
     expect(result.pushedOps).toBeGreaterThan(0);
-    expect(getPlanByUuid(dbA, 'http-b')?.title).toBe('HTTP B');
-    expect(getPlanByUuid(dbB, 'http-a')?.title).toBe('HTTP A');
+    expect(getPlanByUuid(dbA, id('http-b'))?.title).toBe('HTTP B');
+    expect(getPlanByUuid(dbB, id('http-a'))?.title).toBe('HTTP A');
     expect(
       dbB.prepare('SELECT node_type FROM sync_node WHERE node_id = ?').get(getLocalNodeId(dbA))
     ).toEqual({ node_type: 'transient' });
@@ -412,9 +427,9 @@ describe('HTTP peer sync transport', () => {
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({ error: 'lease_expired' });
     expect(getWorkerLease(dbB, workerNodeId)?.status).toBe('expired');
-    expect(getPlanTasksByUuid(dbB, 'worker-target-plan').map((task) => task.uuid)).not.toContain(
-      'worker-return-task'
-    );
+    expect(
+      getPlanTasksByUuid(dbB, id('worker-target-plan')).map((task) => task.uuid)
+    ).not.toContain(id('worker-return-task'));
   });
 
   test('HTTP worker push with a completed lease returns 409 without applying ops', async () => {
@@ -428,9 +443,9 @@ describe('HTTP peer sync transport', () => {
 
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({ error: 'lease_completed' });
-    expect(getPlanTasksByUuid(dbB, 'worker-target-plan').map((task) => task.uuid)).not.toContain(
-      'worker-return-task'
-    );
+    expect(
+      getPlanTasksByUuid(dbB, id('worker-target-plan')).map((task) => task.uuid)
+    ).not.toContain(id('worker-return-task'));
   });
 
   test('late HTTP worker heartbeat after completed lease pruning is rejected', async () => {
@@ -458,9 +473,9 @@ describe('HTTP peer sync transport', () => {
     expect(
       dbB.prepare('SELECT node_type FROM sync_node WHERE node_id = ?').get(workerNodeId)
     ).toEqual({ node_type: 'retired_worker' });
-    expect(getPlanTasksByUuid(dbB, 'worker-target-plan').map((task) => task.uuid)).not.toContain(
-      'worker-return-task'
-    );
+    expect(
+      getPlanTasksByUuid(dbB, id('worker-target-plan')).map((task) => task.uuid)
+    ).not.toContain(id('worker-return-task'));
   });
 
   test('late HTTP worker heartbeat after expired lease pruning is rejected', async () => {
@@ -482,9 +497,9 @@ describe('HTTP peer sync transport', () => {
 
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({ error: 'lease_expired' });
-    expect(getPlanTasksByUuid(dbB, 'worker-target-plan').map((task) => task.uuid)).not.toContain(
-      'worker-return-task'
-    );
+    expect(
+      getPlanTasksByUuid(dbB, id('worker-target-plan')).map((task) => task.uuid)
+    ).not.toContain(id('worker-return-task'));
   });
 
   test("HTTP worker push rejects ops whose node_id doesn't match the worker peer", async () => {
@@ -498,9 +513,9 @@ describe('HTTP peer sync transport', () => {
 
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({ error: 'lease_mismatched_node_id' });
-    expect(getPlanTasksByUuid(dbB, 'worker-target-plan').map((task) => task.uuid)).not.toContain(
-      'worker-return-task'
-    );
+    expect(
+      getPlanTasksByUuid(dbB, id('worker-target-plan')).map((task) => task.uuid)
+    ).not.toContain(id('worker-return-task'));
   });
 
   test('HTTP worker heartbeat records return time without completing the lease', async () => {
@@ -518,8 +533,8 @@ describe('HTTP peer sync transport', () => {
     const lease = getWorkerLease(dbB, workerNodeId);
     expect(lease?.status).toBe('active');
     expect(lease?.last_returned_at > '2000-01-01T00:00:00.000Z').toBe(true);
-    expect(getPlanTasksByUuid(dbB, 'worker-target-plan').map((task) => task.uuid)).toContain(
-      'worker-return-task'
+    expect(getPlanTasksByUuid(dbB, id('worker-target-plan')).map((task) => task.uuid)).toContain(
+      id('worker-return-task')
     );
   });
 
@@ -537,8 +552,8 @@ describe('HTTP peer sync transport', () => {
   });
 
   test('HTTP push rejects non-contiguous own-node batches without applying them', async () => {
-    upsertPlan(dbA, projectA, { uuid: 'http-out-of-order', planId: 20, title: 'v1' });
-    upsertPlan(dbA, projectA, { uuid: 'http-out-of-order', planId: 20, title: 'v2' });
+    upsertPlan(dbA, projectA, { uuid: id('http-out-of-order'), planId: 20, title: 'v1' });
+    upsertPlan(dbA, projectA, { uuid: id('http-out-of-order'), planId: 20, title: 'v2' });
     const nodeA = getLocalNodeId(dbA);
     const ownOps = (getOpLogChunkAfter(dbA, null, 100).ops as SyncOpRecord[]).filter(
       (op) => op.node_id === nodeA
@@ -550,16 +565,72 @@ describe('HTTP peer sync transport', () => {
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({ error: 'non_contiguous_batch' });
-    expect(getPlanByUuid(dbB, 'http-out-of-order')).toBeNull();
+    expect(getPlanByUuid(dbB, id('http-out-of-order'))).toBeNull();
     expect(getPeerCursor(dbB, nodeA, 'pull')).toBeNull();
   });
 
+  test('HTTP push accepts strictly increasing own-node batches with local counter gaps', async () => {
+    upsertPlan(dbA, projectA, { uuid: id('http-gap-a'), planId: 30, title: 'Gap A' });
+    upsertPlan(dbA, projectA, { uuid: id('http-gap-b'), planId: 31, title: 'Gap B' });
+    const nodeA = getLocalNodeId(dbA);
+    const ownOps = (getOpLogChunkAfter(dbA, null, 100).ops as SyncOpRecord[]).filter(
+      (op) =>
+        op.node_id === nodeA &&
+        (op.entity_id === id('http-gap-a') || op.entity_id === id('http-gap-b'))
+    );
+    expect(ownOps).toHaveLength(2);
+    const second = {
+      ...ownOps[1]!,
+      local_counter: ownOps[0]!.local_counter + 10,
+    };
+    second.op_id = formatOpId(
+      { physicalMs: second.hlc_physical_ms, logical: second.hlc_logical },
+      second.node_id,
+      second.local_counter
+    );
+    const handler = createPeerSyncHttpHandler(dbB, { token: 'secret-token' });
+
+    const response = await pushRequest(handler, nodeA, [ownOps[0]!, second]);
+
+    expect(response.status).toBe(200);
+    expect(getPlanByUuid(dbB, id('http-gap-a'))?.title).toBe('Gap A');
+    expect(getPlanByUuid(dbB, id('http-gap-b'))?.title).toBe('Gap B');
+  });
+
+  test('HTTP push rejects malformed operation shapes with 400', async () => {
+    upsertPlan(dbA, projectA, { uuid: id('http-malformed'), planId: 32, title: 'Malformed' });
+    const nodeA = getLocalNodeId(dbA);
+    const op = (getOpLogChunkAfter(dbA, null, 100).ops as SyncOpRecord[]).find(
+      (nextOp) => nextOp.entity_id === id('http-malformed')
+    );
+    expect(op).toBeDefined();
+    const handler = createPeerSyncHttpHandler(dbB, { token: 'secret-token' });
+
+    const objectPayload = await pushRequest(handler, nodeA, [
+      { ...op!, payload: { fields: { title: 'Bad' } } } as unknown as SyncOpRecord,
+    ]);
+    expect(objectPayload.status).toBe(400);
+    await expect(objectPayload.json()).resolves.toEqual({ error: 'invalid_payload' });
+
+    const missingOpId = await pushRequest(handler, nodeA, [
+      { ...op!, op_id: undefined } as unknown as SyncOpRecord,
+    ]);
+    expect(missingOpId.status).toBe(400);
+    await expect(missingOpId.json()).resolves.toEqual({ error: 'invalid_op_id' });
+
+    const nullNodeId = await pushRequest(handler, nodeA, [
+      { ...op!, node_id: null } as unknown as SyncOpRecord,
+    ]);
+    expect(nullNodeId.status).toBe(400);
+    await expect(nullNodeId.json()).resolves.toEqual({ error: 'invalid_node_id' });
+  });
+
   test('HTTP push rejects ops forged as the server local node without applying them', async () => {
-    upsertPlan(dbA, projectA, { uuid: 'http-forged-local', planId: 21, title: 'Forged' });
+    upsertPlan(dbA, projectA, { uuid: id('http-forged-local'), planId: 21, title: 'Forged' });
     const nodeA = getLocalNodeId(dbA);
     const nodeB = getLocalNodeId(dbB);
     const op = (getOpLogChunkAfter(dbA, null, 100).ops as SyncOpRecord[]).find(
-      (nextOp) => nextOp.entity_id === 'http-forged-local'
+      (nextOp) => nextOp.entity_id === id('http-forged-local')
     );
     expect(op).toBeDefined();
     const handler = createPeerSyncHttpHandler(dbB, { token: 'secret-token' });
@@ -568,15 +639,15 @@ describe('HTTP peer sync transport', () => {
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({ error: 'forged_local_node' });
-    expect(getPlanByUuid(dbB, 'http-forged-local')).toBeNull();
+    expect(getPlanByUuid(dbB, id('http-forged-local'))).toBeNull();
     expect(getPeerCursor(dbB, nodeA, 'pull')).toBeNull();
   });
 
   test('HTTP push cursor advances by accepted own ops, not arbitrary pushed seq values', async () => {
-    upsertPlan(dbA, projectA, { uuid: 'http-cursor-own', planId: 22, title: 'Own' });
+    upsertPlan(dbA, projectA, { uuid: id('http-cursor-own'), planId: 22, title: 'Own' });
     const nodeA = getLocalNodeId(dbA);
     const ownOp = (getOpLogChunkAfter(dbA, null, 100).ops as SyncOpRecord[]).find(
-      (op) => op.entity_id === 'http-cursor-own'
+      (op) => op.entity_id === id('http-cursor-own')
     );
     expect(ownOp).toBeDefined();
     const forwardedNodeId = randomUUID();
@@ -588,7 +659,7 @@ describe('HTTP peer sync transport', () => {
       hlc_logical: forwardedHlc.logical,
       local_counter: 1,
       entity_type: 'plan',
-      entity_id: 'http-cursor-forwarded',
+      entity_id: id('http-cursor-forwarded'),
       op_type: 'create',
       payload: JSON.stringify({
         projectIdentity: 'github.com__owner__repo',
@@ -603,15 +674,15 @@ describe('HTTP peer sync transport', () => {
     const response = await pushRequest(handler, nodeA, [{ ...ownOp!, seq: 999 }, forwardedOp]);
 
     expect(response.status).toBe(200);
-    expect(getPlanByUuid(dbB, 'http-cursor-own')?.title).toBe('Own');
-    expect(getPlanByUuid(dbB, 'http-cursor-forwarded')?.title).toBe('Forwarded');
+    expect(getPlanByUuid(dbB, id('http-cursor-own'))?.title).toBe('Own');
+    expect(getPlanByUuid(dbB, id('http-cursor-forwarded'))?.title).toBe('Forwarded');
     expect(getPeerCursor(dbB, nodeA, 'pull')?.last_op_id).toBe('1');
   });
 
   test('HTTP worker multi-chunk return finalizes only on the final chunk', async () => {
     const { workerNodeId, ops } = makeWorkerOps();
-    appendPlanTask(dbA, 'worker-target-plan', {
-      uuid: 'worker-return-task-2',
+    appendPlanTask(dbA, id('worker-target-plan'), {
+      uuid: id('worker-return-task-2'),
       title: 'Returned task 2',
       description: 'Second chunk',
     });
@@ -633,11 +704,11 @@ describe('HTTP peer sync transport', () => {
       leaseCompleted: true,
     });
     expect(getWorkerLease(dbB, workerNodeId)?.status).toBe('completed');
-    const returnedTaskUuids = getPlanTasksByUuid(dbB, 'worker-target-plan').map(
+    const returnedTaskUuids = getPlanTasksByUuid(dbB, id('worker-target-plan')).map(
       (task) => task.uuid
     );
-    expect(returnedTaskUuids).toContain('worker-return-task');
-    expect(returnedTaskUuids).toContain('worker-return-task-2');
+    expect(returnedTaskUuids).toContain(id('worker-return-task'));
+    expect(returnedTaskUuids).toContain(id('worker-return-task-2'));
     expect(ops.length).toBeGreaterThan(0);
   });
 });
@@ -661,7 +732,7 @@ describe('peer sync advanced scenarios', () => {
   });
 
   test('bidirectional convergence includes tasks and field clocks', async () => {
-    const planUuid = 'plan-bidir';
+    const planUuid = id('plan-bidir');
     upsertPlan(dbA, projectA, { uuid: planUuid, planId: 1, title: 'Shared Plan' });
     upsertPlan(dbB, projectB, { uuid: planUuid, planId: 1, title: 'Shared Plan' });
 
@@ -711,7 +782,7 @@ describe('peer sync advanced scenarios', () => {
   test('pull cursor does not advance when transport throws on pull chunk', async () => {
     // Write 4 plans on B so we get multiple chunks at batchSize=2
     for (let i = 1; i <= 4; i++) {
-      upsertPlan(dbB, projectB, { uuid: `throw-plan-${i}`, planId: i, title: `Plan ${i}` });
+      upsertPlan(dbB, projectB, { uuid: id(`throw-plan-${i}`), planId: i, title: `Plan ${i}` });
     }
 
     const nodeA = getLocalNodeId(dbA);
@@ -755,7 +826,7 @@ describe('peer sync advanced scenarios', () => {
   });
 
   test('idempotent re-delivery: second sync with no new ops is a no-op', async () => {
-    upsertPlan(dbB, projectB, { uuid: 'idem-plan', planId: 1, title: 'Idempotent' });
+    upsertPlan(dbB, projectB, { uuid: id('idem-plan'), planId: 1, title: 'Idempotent' });
 
     const nodeA = getLocalNodeId(dbA);
     const nodeB = getLocalNodeId(dbB);
@@ -777,10 +848,10 @@ describe('peer sync advanced scenarios', () => {
   });
 
   test('set_order before task create is deferred and left retryable', () => {
-    const planUuid = 'plan-ooo';
+    const planUuid = id('plan-ooo');
     upsertPlan(dbA, projectA, { uuid: planUuid, planId: 10, title: 'Out-of-order plan' });
 
-    const fakeTaskUuid = 'nonexistent-task-ooo';
+    const fakeTaskUuid = id('nonexistent-task-ooo');
     const remoteNodeId = randomUUID();
     const remoteHlc = { physicalMs: Date.now() + 5000, logical: 0 };
     const fakeOp: SyncOpRecord = {
@@ -819,7 +890,7 @@ describe('peer sync advanced scenarios', () => {
 
   test('skipped ops do not block cursor advancement; create arriving later converges', async () => {
     // Set up a plan on both sides
-    const planUuid = 'plan-ooo-transport';
+    const planUuid = id('plan-ooo-transport');
     upsertPlan(dbA, projectA, { uuid: planUuid, planId: 11, title: 'OOO Transport Plan' });
     upsertPlan(dbB, projectB, { uuid: planUuid, planId: 11, title: 'OOO Transport Plan' });
 
@@ -874,7 +945,11 @@ describe('peer sync advanced scenarios', () => {
   test('chunked sync delivers all ops when count exceeds chunk limit', async () => {
     // Create 40 plans on B (each upsertPlan emits at least one op)
     for (let i = 1; i <= 40; i++) {
-      upsertPlan(dbB, projectB, { uuid: `chunk-plan-${i}`, planId: i, title: `Chunk Plan ${i}` });
+      upsertPlan(dbB, projectB, {
+        uuid: id(`chunk-plan-${i}`),
+        planId: i,
+        title: `Chunk Plan ${i}`,
+      });
     }
 
     const totalOpsOnB = opCount(dbB);
@@ -902,7 +977,7 @@ describe('peer sync advanced scenarios', () => {
     expect(pulledChunks.every((count) => count <= 10)).toBe(true);
     // All plans should be on A
     for (let i = 1; i <= 40; i++) {
-      expect(getPlanByUuid(dbA, `chunk-plan-${i}`)?.title).toBe(`Chunk Plan ${i}`);
+      expect(getPlanByUuid(dbA, id(`chunk-plan-${i}`))?.title).toBe(`Chunk Plan ${i}`);
     }
     // Cursor should be at the end
     const finalCursor = getPeerCursor(dbA, nodeB, 'pull')?.last_op_id;
@@ -913,7 +988,11 @@ describe('peer sync advanced scenarios', () => {
   test('long-offline reconnect syncs all accumulated ops without wall-clock dependency', async () => {
     // Simulate B accumulating ops while A was offline — write 100 plans
     for (let i = 1; i <= 100; i++) {
-      upsertPlan(dbB, projectB, { uuid: `offline-plan-${i}`, planId: i, title: `Offline ${i}` });
+      upsertPlan(dbB, projectB, {
+        uuid: id(`offline-plan-${i}`),
+        planId: i,
+        title: `Offline ${i}`,
+      });
     }
 
     const nodeA = getLocalNodeId(dbA);
@@ -927,9 +1006,9 @@ describe('peer sync advanced scenarios', () => {
     expect(result.pulledOps).toBeGreaterThanOrEqual(100);
 
     // Spot-check a few plans made it over
-    expect(getPlanByUuid(dbA, 'offline-plan-1')?.title).toBe('Offline 1');
-    expect(getPlanByUuid(dbA, 'offline-plan-50')?.title).toBe('Offline 50');
-    expect(getPlanByUuid(dbA, 'offline-plan-100')?.title).toBe('Offline 100');
+    expect(getPlanByUuid(dbA, id('offline-plan-1'))?.title).toBe('Offline 1');
+    expect(getPlanByUuid(dbA, id('offline-plan-50'))?.title).toBe('Offline 50');
+    expect(getPlanByUuid(dbA, id('offline-plan-100'))?.title).toBe('Offline 100');
 
     // Cursor reflects the last op delivered
     const cursor = getPeerCursor(dbA, nodeB, 'pull');
@@ -958,8 +1037,8 @@ describe('HTTP peer sync real Bun.serve() server', () => {
   });
 
   test('pull and push both work over a real HTTP server', async () => {
-    upsertPlan(dbA, projectA, { uuid: 'real-http-a', planId: 1, title: 'HTTP Server A' });
-    upsertPlan(dbB, projectB, { uuid: 'real-http-b', planId: 2, title: 'HTTP Server B' });
+    upsertPlan(dbA, projectA, { uuid: id('real-http-a'), planId: 1, title: 'HTTP Server A' });
+    upsertPlan(dbB, projectB, { uuid: id('real-http-b'), planId: 2, title: 'HTTP Server B' });
 
     const token = 'real-server-token';
     const server = Bun.serve({
@@ -978,8 +1057,8 @@ describe('HTTP peer sync real Bun.serve() server', () => {
 
       expect(result.pulledOps).toBeGreaterThan(0);
       expect(result.pushedOps).toBeGreaterThan(0);
-      expect(getPlanByUuid(dbA, 'real-http-b')?.title).toBe('HTTP Server B');
-      expect(getPlanByUuid(dbB, 'real-http-a')?.title).toBe('HTTP Server A');
+      expect(getPlanByUuid(dbA, id('real-http-b'))?.title).toBe('HTTP Server B');
+      expect(getPlanByUuid(dbB, id('real-http-a'))?.title).toBe('HTTP Server A');
     } finally {
       server.stop(true);
     }
@@ -1024,7 +1103,7 @@ describe('HTTP peer sync real Bun.serve() server', () => {
   });
 
   test('real server returns 200 for correct bearer token on pull', async () => {
-    upsertPlan(dbB, projectB, { uuid: 'auth-check-plan', planId: 99, title: 'Auth check' });
+    upsertPlan(dbB, projectB, { uuid: id('auth-check-plan'), planId: 99, title: 'Auth check' });
 
     const token = 'valid-token-here';
     const server = Bun.serve({

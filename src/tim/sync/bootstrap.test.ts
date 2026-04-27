@@ -3,6 +3,7 @@ import type { Database } from 'bun:sqlite';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 import { DATABASE_FILENAME, openDatabase } from '../db/database.js';
 import { getPlanByUuid } from '../db/plan.js';
@@ -13,6 +14,11 @@ import { bootstrapSyncMetadata } from './bootstrap.js';
 import { formatHlc, type Hlc } from './hlc.js';
 
 const PROJECT_IDENTITY = 'github.com__owner__repo';
+const PLAN_LEGACY_UUID = randomUUID();
+const PLAN_DEPENDENCY_UUID = randomUUID();
+const TASK_LEGACY_UUID = randomUUID();
+const ISSUE_LEGACY_UUID = randomUUID();
+const REMOTE_NODE_UUID = randomUUID();
 
 function makeOp(
   nodeId: string,
@@ -122,13 +128,13 @@ function insertLegacyData(db: Database): { projectId: number } {
         (?, ?, 2, 'Dependency title', NULL, NULL, NULL, 'pending', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0)
     `
   ).run(
-    'plan-legacy',
+    PLAN_LEGACY_UUID,
     projectId,
     JSON.stringify(['https://example.com/issue/1']),
     JSON.stringify(['https://github.com/owner/repo/pull/1']),
     JSON.stringify(['docs/a.md']),
     JSON.stringify(['src/a.ts']),
-    'plan-dependency',
+    PLAN_DEPENDENCY_UUID,
     projectId
   );
 
@@ -144,7 +150,7 @@ function insertLegacyData(db: Database): { projectId: number } {
         done
       ) VALUES (?, ?, 0, '0000000001', 'Task title', 'Task description', 0)
     `
-  ).run('task-legacy', 'plan-legacy');
+  ).run(TASK_LEGACY_UUID, PLAN_LEGACY_UUID);
 
   db.prepare(
     `
@@ -162,13 +168,16 @@ function insertLegacyData(db: Database): { projectId: number } {
         source_ref
       ) VALUES (?, ?, '0000000001', 'major', 'bug', 'Issue content', 'src/a.ts', '12', 'Fix it', 'review', 'thread-1')
     `
-  ).run('issue-legacy', 'plan-legacy');
+  ).run(ISSUE_LEGACY_UUID, PLAN_LEGACY_UUID);
 
   db.prepare('INSERT INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)').run(
-    'plan-legacy',
-    'plan-dependency'
+    PLAN_LEGACY_UUID,
+    PLAN_DEPENDENCY_UUID
   );
-  db.prepare('INSERT INTO plan_tag (plan_uuid, tag) VALUES (?, ?)').run('plan-legacy', 'backend');
+  db.prepare('INSERT INTO plan_tag (plan_uuid, tag) VALUES (?, ?)').run(
+    PLAN_LEGACY_UUID,
+    'backend'
+  );
   db.prepare('INSERT INTO project_setting (project_id, setting, value) VALUES (?, ?, ?)').run(
     projectId,
     'featured',
@@ -234,13 +243,13 @@ describe('sync metadata bootstrap', () => {
       prepareSpy.mockRestore();
     }
     expect(preparedSql).toEqual(['SELECT bootstrap_completed_at FROM sync_clock WHERE id = 1']);
-    expect(clock(db, 'plan', 'plan-legacy', 'title')).toBeNull();
+    expect(clock(db, 'plan', PLAN_LEGACY_UUID, 'title')).toBeNull();
 
     const stats = bootstrapSyncMetadata(db, { force: true });
 
     expect(stats.fieldClocksInserted).toBeGreaterThan(0);
     expect(stats.syntheticOpsInserted).toBe(7);
-    expect(clock(db, 'plan', 'plan-legacy', 'title')).not.toBeNull();
+    expect(clock(db, 'plan', PLAN_LEGACY_UUID, 'title')).not.toBeNull();
     expect(bootstrapCompletedAt(db)).not.toBeNull();
   });
 
@@ -251,17 +260,17 @@ describe('sync metadata bootstrap', () => {
 
     expect(stats.fieldClocksInserted).toBeGreaterThan(0);
     expect(stats.syntheticOpsInserted).toBe(7);
-    expect(clock(db, 'plan', 'plan-legacy', 'title')).not.toBeNull();
-    expect(clock(db, 'plan', 'plan-legacy', 'docs')).not.toBeNull();
-    expect(clock(db, 'plan_task', 'task-legacy', 'title')).not.toBeNull();
-    expect(clock(db, 'plan_task', 'task-legacy', 'done')).not.toBeNull();
-    expect(clock(db, 'plan_review_issue', 'issue-legacy', 'content')).not.toBeNull();
+    expect(clock(db, 'plan', PLAN_LEGACY_UUID, 'title')).not.toBeNull();
+    expect(clock(db, 'plan', PLAN_LEGACY_UUID, 'docs')).not.toBeNull();
+    expect(clock(db, 'plan_task', TASK_LEGACY_UUID, 'title')).not.toBeNull();
+    expect(clock(db, 'plan_task', TASK_LEGACY_UUID, 'done')).not.toBeNull();
+    expect(clock(db, 'plan_review_issue', ISSUE_LEGACY_UUID, 'content')).not.toBeNull();
     expect(clock(db, 'project_setting', `${PROJECT_IDENTITY}:featured`, 'value')).not.toBeNull();
 
     expect(
       db
         .prepare('SELECT created_hlc, updated_hlc, created_node_id FROM plan_task WHERE uuid = ?')
-        .get('task-legacy')
+        .get(TASK_LEGACY_UUID)
     ).toMatchObject({
       created_hlc: expect.stringMatching(/^\d+\.\d+$/),
       updated_hlc: expect.stringMatching(/^\d+\.\d+$/),
@@ -272,7 +281,7 @@ describe('sync metadata bootstrap', () => {
         .prepare(
           'SELECT created_hlc, updated_hlc, created_node_id FROM plan_review_issue WHERE uuid = ?'
         )
-        .get('issue-legacy')
+        .get(ISSUE_LEGACY_UUID)
     ).toMatchObject({
       created_hlc: expect.stringMatching(/^\d+\.\d+$/),
       updated_hlc: expect.stringMatching(/^\d+\.\d+$/),
@@ -281,12 +290,12 @@ describe('sync metadata bootstrap', () => {
 
     expect(opRows(db).map((op) => [op.entity_type, op.entity_id, op.op_type])).toEqual(
       expect.arrayContaining([
-        ['plan', 'plan-legacy', 'create'],
-        ['plan', 'plan-dependency', 'create'],
-        ['plan_task', 'task-legacy', 'create'],
-        ['plan_review_issue', 'issue-legacy', 'create'],
-        ['plan_dependency', 'plan-legacy->plan-dependency', 'add_edge'],
-        ['plan_tag', 'plan-legacy#backend', 'add_edge'],
+        ['plan', PLAN_LEGACY_UUID, 'create'],
+        ['plan', PLAN_DEPENDENCY_UUID, 'create'],
+        ['plan_task', TASK_LEGACY_UUID, 'create'],
+        ['plan_review_issue', ISSUE_LEGACY_UUID, 'create'],
+        ['plan_dependency', `${PLAN_LEGACY_UUID}->${PLAN_DEPENDENCY_UUID}`, 'add_edge'],
+        ['plan_tag', `${PLAN_LEGACY_UUID}#backend`, 'add_edge'],
         ['project_setting', `${PROJECT_IDENTITY}:featured`, 'update_fields'],
       ])
     );
@@ -295,7 +304,7 @@ describe('sync metadata bootstrap', () => {
   test('bootstrap is idempotent and does not bump existing clocks', () => {
     insertLegacyData(db);
     bootstrapSyncMetadata(db, { force: true });
-    const clockBefore = clock(db, 'plan', 'plan-legacy', 'title');
+    const clockBefore = clock(db, 'plan', PLAN_LEGACY_UUID, 'title');
     const opCountBefore = countRows(db, 'sync_op_log');
     const fieldClockCountBefore = countRows(db, 'sync_field_clock');
 
@@ -309,21 +318,21 @@ describe('sync metadata bootstrap', () => {
     });
     expect(countRows(db, 'sync_op_log')).toBe(opCountBefore);
     expect(countRows(db, 'sync_field_clock')).toBe(fieldClockCountBefore);
-    expect(clock(db, 'plan', 'plan-legacy', 'title')).toEqual(clockBefore);
+    expect(clock(db, 'plan', PLAN_LEGACY_UUID, 'title')).toEqual(clockBefore);
   });
 
   test('older remote field op after bootstrap does not overwrite existing data', () => {
     insertLegacyData(db);
     bootstrapSyncMetadata(db, { force: true });
-    const titleClock = clock(db, 'plan', 'plan-legacy', 'title');
+    const titleClock = clock(db, 'plan', PLAN_LEGACY_UUID, 'title');
     expect(titleClock).not.toBeNull();
 
     const stale = makeOp(
-      'remote-node',
+      REMOTE_NODE_UUID,
       { physicalMs: titleClock!.hlc_physical_ms - 1, logical: titleClock!.hlc_logical },
       1,
       'plan',
-      'plan-legacy',
+      PLAN_LEGACY_UUID,
       'update_fields',
       {
         projectIdentity: PROJECT_IDENTITY,
@@ -333,21 +342,21 @@ describe('sync metadata bootstrap', () => {
     );
 
     expect(applyRemoteOps(db, [stale]).errors).toEqual([]);
-    expect(getPlanByUuid(db, 'plan-legacy')?.title).toBe('Legacy title');
+    expect(getPlanByUuid(db, PLAN_LEGACY_UUID)?.title).toBe('Legacy title');
   });
 
   test('newer remote field op after bootstrap wins', () => {
     insertLegacyData(db);
     bootstrapSyncMetadata(db, { force: true });
-    const titleClock = clock(db, 'plan', 'plan-legacy', 'title');
+    const titleClock = clock(db, 'plan', PLAN_LEGACY_UUID, 'title');
     expect(titleClock).not.toBeNull();
 
     const newer = makeOp(
-      'remote-node',
+      REMOTE_NODE_UUID,
       { physicalMs: titleClock!.hlc_physical_ms + 1, logical: 0 },
       1,
       'plan',
-      'plan-legacy',
+      PLAN_LEGACY_UUID,
       'update_fields',
       {
         projectIdentity: PROJECT_IDENTITY,
@@ -357,7 +366,7 @@ describe('sync metadata bootstrap', () => {
     );
 
     expect(applyRemoteOps(db, [newer]).errors).toEqual([]);
-    expect(getPlanByUuid(db, 'plan-legacy')?.title).toBe('New remote title');
+    expect(getPlanByUuid(db, PLAN_LEGACY_UUID)?.title).toBe('New remote title');
   });
 
   test('bootstrap populates null task creation metadata', () => {
@@ -365,7 +374,7 @@ describe('sync metadata bootstrap', () => {
     expect(
       db
         .prepare('SELECT created_hlc, updated_hlc, created_node_id FROM plan_task WHERE uuid = ?')
-        .get('task-legacy')
+        .get(TASK_LEGACY_UUID)
     ).toEqual({
       created_hlc: null,
       updated_hlc: null,
@@ -377,7 +386,7 @@ describe('sync metadata bootstrap', () => {
     expect(
       db
         .prepare('SELECT created_hlc, updated_hlc, created_node_id FROM plan_task WHERE uuid = ?')
-        .get('task-legacy')
+        .get(TASK_LEGACY_UUID)
     ).toMatchObject({
       created_hlc: expect.stringMatching(/^\d+\.\d+$/),
       updated_hlc: expect.stringMatching(/^\d+\.\d+$/),
@@ -391,7 +400,7 @@ describe('sync metadata bootstrap', () => {
     const existingNodeId = 'pre-existing-node';
     db.prepare(
       `UPDATE plan_task SET created_hlc = ?, updated_hlc = ?, created_node_id = ? WHERE uuid = ?`
-    ).run(existingHlc, existingHlc, existingNodeId, 'task-legacy');
+    ).run(existingHlc, existingHlc, existingNodeId, TASK_LEGACY_UUID);
 
     const stats = bootstrapSyncMetadata(db, { force: true });
 
@@ -399,7 +408,7 @@ describe('sync metadata bootstrap', () => {
     expect(
       db
         .prepare('SELECT created_hlc, updated_hlc, created_node_id FROM plan_task WHERE uuid = ?')
-        .get('task-legacy')
+        .get(TASK_LEGACY_UUID)
     ).toEqual({
       created_hlc: existingHlc,
       updated_hlc: existingHlc,
@@ -413,7 +422,7 @@ describe('sync metadata bootstrap', () => {
     const existingNodeId = 'pre-existing-node';
     db.prepare(
       `UPDATE plan_review_issue SET created_hlc = ?, updated_hlc = ?, created_node_id = ? WHERE uuid = ?`
-    ).run(existingHlc, existingHlc, existingNodeId, 'issue-legacy');
+    ).run(existingHlc, existingHlc, existingNodeId, ISSUE_LEGACY_UUID);
 
     const stats = bootstrapSyncMetadata(db, { force: true });
 
@@ -423,7 +432,7 @@ describe('sync metadata bootstrap', () => {
         .prepare(
           'SELECT created_hlc, updated_hlc, created_node_id FROM plan_review_issue WHERE uuid = ?'
         )
-        .get('issue-legacy')
+        .get(ISSUE_LEGACY_UUID)
     ).toEqual({
       created_hlc: existingHlc,
       updated_hlc: existingHlc,
@@ -436,14 +445,14 @@ describe('sync metadata bootstrap', () => {
     const tombstoneHlc = '1000000000000.5';
     db.prepare(`UPDATE plan_task SET deleted_hlc = ? WHERE uuid = ?`).run(
       tombstoneHlc,
-      'task-legacy'
+      TASK_LEGACY_UUID
     );
 
     bootstrapSyncMetadata(db, { force: true });
 
-    expect(clock(db, 'plan_task', 'task-legacy', 'title')).toBeNull();
+    expect(clock(db, 'plan_task', TASK_LEGACY_UUID, 'title')).toBeNull();
     const taskOps = opRows(db).filter(
-      (op) => op.entity_type === 'plan_task' && op.entity_id === 'task-legacy'
+      (op) => op.entity_type === 'plan_task' && op.entity_id === TASK_LEGACY_UUID
     );
     expect(taskOps).toHaveLength(0);
   });
@@ -453,14 +462,14 @@ describe('sync metadata bootstrap', () => {
     const tombstoneHlc = '1000000000000.5';
     db.prepare(`UPDATE plan_review_issue SET deleted_hlc = ? WHERE uuid = ?`).run(
       tombstoneHlc,
-      'issue-legacy'
+      ISSUE_LEGACY_UUID
     );
 
     bootstrapSyncMetadata(db, { force: true });
 
-    expect(clock(db, 'plan_review_issue', 'issue-legacy', 'content')).toBeNull();
+    expect(clock(db, 'plan_review_issue', ISSUE_LEGACY_UUID, 'content')).toBeNull();
     const issueOps = opRows(db).filter(
-      (op) => op.entity_type === 'plan_review_issue' && op.entity_id === 'issue-legacy'
+      (op) => op.entity_type === 'plan_review_issue' && op.entity_id === ISSUE_LEGACY_UUID
     );
     expect(issueOps).toHaveLength(0);
   });

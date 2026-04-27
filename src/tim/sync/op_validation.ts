@@ -1,13 +1,11 @@
 import { formatHlc, parseHlc, type Hlc } from './hlc.js';
 import type { SyncOpRecord } from './op_apply.js';
 
-export const HLC_MIN_PHYSICAL_MS = 1;
+export const HLC_MIN_PHYSICAL_MS = Date.UTC(2020, 0, 1);
 export const HLC_MAX_FUTURE_SKEW_MS = 24 * 60 * 60 * 1000;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HLC_TEXT_PATTERN = /^\d{16}\.\d{8}$/;
-const LEGACY_STABLE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
-const LEGACY_TEST_NODE_PATTERN = /^(remote|node)-[A-Za-z0-9._:-]+$/;
 const SUPPORTED_ENTITY_TYPES = new Set([
   'plan',
   'plan_task',
@@ -25,16 +23,12 @@ export function isUuid(value: unknown): value is string {
   return typeof value === 'string' && UUID_PATTERN.test(value);
 }
 
-function isValidNodeId(value: unknown): value is string {
-  return isUuid(value) || (typeof value === 'string' && LEGACY_TEST_NODE_PATTERN.test(value));
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function isStableEntityId(value: unknown): value is string {
-  return (
-    typeof value === 'string' &&
-    value.length > 0 &&
-    (UUID_PATTERN.test(value) || LEGACY_STABLE_ID_PATTERN.test(value))
-  );
+function isValidNodeId(value: unknown): value is string {
+  return isUuid(value);
 }
 
 function parsePayload(payload: unknown): JsonRecord | string {
@@ -166,8 +160,8 @@ function validateEntityIdentity(op: SyncOpRecord, payload: JsonRecord): string |
     op.entity_type === 'plan_task' ||
     op.entity_type === 'plan_review_issue'
   ) {
-    if (!isStableEntityId(entityId)) {
-      return `${op.entity_type} entity_id is not a stable id`;
+    if (!isUuid(entityId)) {
+      return `${op.entity_type} entity_id is not a UUID`;
     }
     return (
       validateIdentityField(payload, fields, 'uuid', entityId) ??
@@ -177,8 +171,8 @@ function validateEntityIdentity(op: SyncOpRecord, payload: JsonRecord): string |
 
   if (op.entity_type === 'plan_dependency') {
     const edge = splitDependencyEntityId(entityId);
-    if (!edge || !isStableEntityId(edge.planUuid) || !isStableEntityId(edge.dependsOnUuid)) {
-      return 'plan_dependency entity_id is not planUuid->dependsOnUuid';
+    if (!edge || !isUuid(edge.planUuid) || !isUuid(edge.dependsOnUuid)) {
+      return 'plan_dependency entity_id is not uuid->uuid';
     }
     if (payload.planUuid !== edge.planUuid || payload.dependsOnUuid !== edge.dependsOnUuid) {
       return 'plan_dependency payload identity contradicts entity_id';
@@ -188,8 +182,8 @@ function validateEntityIdentity(op: SyncOpRecord, payload: JsonRecord): string |
 
   if (op.entity_type === 'plan_tag') {
     const edge = splitTagEntityId(entityId);
-    if (!edge || !isStableEntityId(edge.planUuid) || edge.tag.length === 0) {
-      return 'plan_tag entity_id is not planUuid#tag';
+    if (!edge || !isUuid(edge.planUuid) || edge.tag.length === 0) {
+      return 'plan_tag entity_id is not uuid#tag';
     }
     if (payload.planUuid !== edge.planUuid || payload.tag !== edge.tag) {
       return 'plan_tag payload identity contradicts entity_id';
@@ -215,20 +209,52 @@ function validateEntityIdentity(op: SyncOpRecord, payload: JsonRecord): string |
 }
 
 export function validateOpEnvelope(
-  op: SyncOpRecord,
+  op: SyncOpRecord | unknown,
   options: { nowMs?: number } = {}
 ): OpValidationResult {
+  if (!isRecord(op)) {
+    return { ok: false, reason: 'operation is not an object' };
+  }
+  if (typeof op.op_id !== 'string' || op.op_id.length === 0) {
+    return { ok: false, reason: 'op_id is not a non-empty string' };
+  }
+  if (typeof op.node_id !== 'string') {
+    return { ok: false, reason: 'node_id is not a string' };
+  }
+  if (typeof op.hlc_physical_ms !== 'number' || !Number.isSafeInteger(op.hlc_physical_ms)) {
+    return { ok: false, reason: 'hlc_physical_ms is not a safe integer' };
+  }
+  if (typeof op.hlc_logical !== 'number' || !Number.isSafeInteger(op.hlc_logical)) {
+    return { ok: false, reason: 'hlc_logical is not a safe integer' };
+  }
+  if (typeof op.local_counter !== 'number' || !Number.isSafeInteger(op.local_counter)) {
+    return { ok: false, reason: 'local_counter is not a safe integer' };
+  }
+  if (typeof op.entity_type !== 'string') {
+    return { ok: false, reason: 'entity_type is not a string' };
+  }
+  if (typeof op.entity_id !== 'string') {
+    return { ok: false, reason: 'entity_id is not a string' };
+  }
+  if (typeof op.op_type !== 'string') {
+    return { ok: false, reason: 'op_type is not a string' };
+  }
+  if (typeof op.payload !== 'string') {
+    return { ok: false, reason: 'payload is not a string' };
+  }
+
+  const syncOp = op as SyncOpRecord;
   const nowMs = options.nowMs ?? Date.now();
-  const parts = opIdParts(op.op_id);
+  const parts = opIdParts(syncOp.op_id);
   if (typeof parts === 'string') {
     return { ok: false, reason: parts };
   }
   const [opIdHlc, opIdNodeId, opIdLocalCounter] = parts;
 
-  if (!isValidNodeId(op.node_id)) {
+  if (!isValidNodeId(syncOp.node_id)) {
     return { ok: false, reason: 'node_id is not a valid sync node id' };
   }
-  if (opIdNodeId !== op.node_id) {
+  if (opIdNodeId !== syncOp.node_id) {
     return { ok: false, reason: 'op_id node_id does not match envelope node_id' };
   }
 
@@ -236,11 +262,11 @@ export function validateOpEnvelope(
   if (typeof parsedHlc === 'string') {
     return { ok: false, reason: parsedHlc };
   }
-  if (op.hlc_physical_ms !== parsedHlc.physicalMs || op.hlc_logical !== parsedHlc.logical) {
+  if (syncOp.hlc_physical_ms !== parsedHlc.physicalMs || syncOp.hlc_logical !== parsedHlc.logical) {
     return { ok: false, reason: 'op_id HLC does not match envelope HLC' };
   }
 
-  const localCounter = validateLocalCounter(op.local_counter);
+  const localCounter = validateLocalCounter(syncOp.local_counter);
   if (typeof localCounter === 'string') {
     return { ok: false, reason: localCounter };
   }
@@ -251,18 +277,18 @@ export function validateOpEnvelope(
     return { ok: false, reason: 'op_id local_counter does not match envelope local_counter' };
   }
 
-  if (typeof op.entity_type !== 'string' || !SUPPORTED_ENTITY_TYPES.has(op.entity_type)) {
-    return { ok: false, reason: `unsupported entity_type ${String(op.entity_type)}` };
+  if (typeof syncOp.entity_type !== 'string' || !SUPPORTED_ENTITY_TYPES.has(syncOp.entity_type)) {
+    return { ok: false, reason: `unsupported entity_type ${String(syncOp.entity_type)}` };
   }
-  if (typeof op.op_type !== 'string' || op.op_type.length === 0) {
+  if (typeof syncOp.op_type !== 'string' || syncOp.op_type.length === 0) {
     return { ok: false, reason: 'op_type is not a non-empty string' };
   }
 
-  const payload = parsePayload(op.payload);
+  const payload = parsePayload(syncOp.payload);
   if (typeof payload === 'string') {
     return { ok: false, reason: payload };
   }
-  const identityError = validateEntityIdentity(op, payload);
+  const identityError = validateEntityIdentity(syncOp, payload);
   if (identityError) {
     return { ok: false, reason: identityError };
   }

@@ -5,7 +5,6 @@ import { getOpLogChunkAfter, setPeerCursor } from '../db/sync_schema.js';
 import type { SyncOpRecord } from './op_apply.js';
 import { compareHlc, type Hlc } from './hlc.js';
 import { getLocalNodeId, registerPeerNode } from './node_identity.js';
-import { isUuid } from './op_validation.js';
 import {
   applyPeerOpsWithPending,
   runPeerSync,
@@ -164,6 +163,32 @@ function opHlc(op: SyncOpRecord): Hlc {
   return { physicalMs: op.hlc_physical_ms, logical: op.hlc_logical };
 }
 
+function validatePushOpShape(op: unknown): string | null {
+  if (!isObject(op)) return 'invalid_op_shape';
+  if (typeof op.op_id !== 'string' || op.op_id.length === 0) return 'invalid_op_id';
+  if (typeof op.node_id !== 'string') return 'invalid_node_id';
+  if (
+    typeof op.hlc_physical_ms !== 'number' ||
+    !Number.isSafeInteger(op.hlc_physical_ms) ||
+    typeof op.hlc_logical !== 'number' ||
+    !Number.isSafeInteger(op.hlc_logical)
+  ) {
+    return 'invalid_hlc';
+  }
+  if (
+    typeof op.local_counter !== 'number' ||
+    !Number.isSafeInteger(op.local_counter) ||
+    op.local_counter < 0
+  ) {
+    return 'invalid_local_counter';
+  }
+  if (typeof op.entity_type !== 'string') return 'invalid_entity_type';
+  if (typeof op.entity_id !== 'string') return 'invalid_entity_id';
+  if (typeof op.op_type !== 'string') return 'invalid_op_type';
+  if (typeof op.payload !== 'string') return 'invalid_payload';
+  return null;
+}
+
 function validatePushedOps(
   ops: SyncOpRecord[],
   peerNodeId: string,
@@ -171,25 +196,19 @@ function validatePushedOps(
 ): string | null {
   let previousOwnOp: SyncOpRecord | null = null;
   for (const op of ops) {
+    const shapeError = validatePushOpShape(op);
+    if (shapeError) {
+      return shapeError;
+    }
     if (op.node_id === localNodeId) {
       return 'forged_local_node';
     }
     if (op.node_id !== peerNodeId) {
       continue;
     }
-    if (!isUuid(op.node_id)) {
-      continue;
-    }
-    if (
-      typeof op.local_counter !== 'number' ||
-      !Number.isSafeInteger(op.local_counter) ||
-      op.local_counter < 0
-    ) {
-      continue;
-    }
     if (previousOwnOp) {
       const hlcCompare = compareHlc(opHlc(previousOwnOp), opHlc(op));
-      if (hlcCompare > 0 || op.local_counter !== previousOwnOp.local_counter + 1) {
+      if (hlcCompare > 0 || (hlcCompare === 0 && op.local_counter <= previousOwnOp.local_counter)) {
         return 'non_contiguous_batch';
       }
     }

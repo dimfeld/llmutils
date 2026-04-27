@@ -937,13 +937,91 @@ function sortOps(ops: SyncOpRecord[]): SyncOpRecord[] {
   });
 }
 
-export function applyRemoteOps(db: Database, ops: SyncOpRecord[]): ApplyResult {
-  const result: ApplyResult = { applied: 0, skipped: [], errors: [] };
+function stableOpId(op: unknown): string | null {
+  if (op === null || typeof op !== 'object' || Array.isArray(op)) {
+    return null;
+  }
+  const opId = (op as { op_id?: unknown }).op_id;
+  return typeof opId === 'string' && opId.length > 0 ? opId : null;
+}
 
-  for (const op of sortOps(ops)) {
-    const existing = db.prepare('SELECT op_id FROM sync_op_log WHERE op_id = ?').get(op.op_id) as {
-      op_id: string;
-    } | null;
+function existingOpLogRow(db: Database, opId: string): { op_id: string } | null {
+  return db.prepare('SELECT op_id FROM sync_op_log WHERE op_id = ?').get(opId) as {
+    op_id: string;
+  } | null;
+}
+
+function hasInsertableShape(op: unknown): op is SyncOpRecord {
+  return (
+    op !== null &&
+    typeof op === 'object' &&
+    !Array.isArray(op) &&
+    typeof (op as { op_id?: unknown }).op_id === 'string' &&
+    typeof (op as { node_id?: unknown }).node_id === 'string' &&
+    typeof (op as { hlc_physical_ms?: unknown }).hlc_physical_ms === 'number' &&
+    Number.isSafeInteger((op as { hlc_physical_ms?: unknown }).hlc_physical_ms) &&
+    typeof (op as { hlc_logical?: unknown }).hlc_logical === 'number' &&
+    Number.isSafeInteger((op as { hlc_logical?: unknown }).hlc_logical) &&
+    typeof (op as { local_counter?: unknown }).local_counter === 'number' &&
+    Number.isSafeInteger((op as { local_counter?: unknown }).local_counter) &&
+    typeof (op as { entity_type?: unknown }).entity_type === 'string' &&
+    typeof (op as { entity_id?: unknown }).entity_id === 'string' &&
+    typeof (op as { op_type?: unknown }).op_type === 'string' &&
+    typeof (op as { payload?: unknown }).payload === 'string'
+  );
+}
+
+export function applyRemoteOps(db: Database, ops: unknown[]): ApplyResult {
+  const result: ApplyResult = { applied: 0, skipped: [], errors: [] };
+  const validOps: SyncOpRecord[] = [];
+
+  for (const op of ops) {
+    const validation = validateOpEnvelope(op);
+    if (validation.ok) {
+      validOps.push(op as SyncOpRecord);
+      continue;
+    }
+
+    const opId = stableOpId(op);
+    if (!opId) {
+      result.skipped.push({
+        opId: '<invalid>',
+        reason: validation.reason,
+        kind: 'permanent',
+      });
+      continue;
+    }
+
+    const existing = existingOpLogRow(db, opId);
+    if (existing) {
+      result.skipped.push({ opId, reason: 'already applied' });
+      continue;
+    }
+    if (!hasInsertableShape(op)) {
+      result.skipped.push({
+        opId,
+        reason: validation.reason,
+        kind: 'permanent',
+      });
+      continue;
+    }
+
+    try {
+      const insertInvalid = db.transaction((nextOp: SyncOpRecord): SkippedSyncOp => {
+        insertRemoteOpLog(db, nextOp);
+        return permanentSkip(nextOp, validation.reason);
+      });
+      result.skipped.push(insertInvalid.immediate(op));
+    } catch (error) {
+      result.errors.push({
+        opId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  for (const op of sortOps(validOps)) {
+    const existing = existingOpLogRow(db, op.op_id);
     if (existing) {
       result.skipped.push({ opId: op.op_id, reason: 'already applied' });
       continue;
@@ -955,10 +1033,6 @@ export function applyRemoteOps(db: Database, ops: SyncOpRecord[]): ApplyResult {
         // dedupe on retry. Deferred skips deliberately roll the row back below
         // so out-of-order ops can be re-delivered after their parents arrive.
         insertRemoteOpLog(db, nextOp);
-        const validation = validateOpEnvelope(nextOp);
-        if (!validation.ok) {
-          return permanentSkip(nextOp, validation.reason);
-        }
         if (!isSupportedOp(nextOp)) {
           observeRemoteHlc(db, nextOp);
           return {

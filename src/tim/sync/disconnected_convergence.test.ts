@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import type { Database } from 'bun:sqlite';
+import { randomUUID } from 'node:crypto';
 
 import {
   appendPlanTask,
@@ -39,8 +40,19 @@ import {
   exportWorkerOps,
   importWorkerBundle,
 } from './worker_bundle.js';
+import { HLC_MIN_PHYSICAL_MS } from './op_validation.js';
 
 const PROJECT_IDENTITY = 'github.com__owner__repo';
+const fixtureIds = new Map<string, string>();
+
+function id(label: string): string {
+  let existing = fixtureIds.get(label);
+  if (!existing) {
+    existing = randomUUID();
+    fixtureIds.set(label, existing);
+  }
+  return existing;
+}
 
 interface TestNode {
   db: Database;
@@ -226,7 +238,7 @@ function assertDbsConverged(...dbs: Database[]): void {
   }
 }
 
-function createBasePlan(node: TestNode, uuid = 'plan-shared'): void {
+function createBasePlan(node: TestNode, uuid = id('plan-shared')): void {
   upsertPlan(node.db, node.projectId, {
     uuid,
     planId: 1,
@@ -251,15 +263,15 @@ describe('disconnected sync convergence', () => {
     const a = createMainNode('A');
     const b = createMainNode('B');
 
-    upsertPlan(a.db, a.projectId, { uuid: 'plan-a', planId: 1, title: 'Plan A' });
-    upsertPlan(b.db, b.projectId, { uuid: 'plan-b', planId: 2, title: 'Plan B' });
+    upsertPlan(a.db, a.projectId, { uuid: id('plan-a'), planId: 1, title: 'Plan A' });
+    upsertPlan(b.db, b.projectId, { uuid: id('plan-b'), planId: 2, title: 'Plan B' });
 
     await bidirectionalSync(a, b);
 
-    expect(getPlanByUuid(a.db, 'plan-a')?.title).toBe('Plan A');
-    expect(getPlanByUuid(a.db, 'plan-b')?.title).toBe('Plan B');
-    expect(getPlanByUuid(b.db, 'plan-a')?.title).toBe('Plan A');
-    expect(getPlanByUuid(b.db, 'plan-b')?.title).toBe('Plan B');
+    expect(getPlanByUuid(a.db, id('plan-a'))?.title).toBe('Plan A');
+    expect(getPlanByUuid(a.db, id('plan-b'))?.title).toBe('Plan B');
+    expect(getPlanByUuid(b.db, id('plan-a'))?.title).toBe('Plan A');
+    expect(getPlanByUuid(b.db, id('plan-b'))?.title).toBe('Plan B');
     expect(getPeerCursor(a.db, b.nodeId, 'pull')?.last_op_id).not.toBeNull();
     expect(getPeerCursor(a.db, b.nodeId, 'push')?.last_op_id).not.toBeNull();
     expect(getPeerCursor(b.db, a.nodeId, 'pull')?.last_op_id).not.toBeNull();
@@ -274,14 +286,14 @@ describe('disconnected sync convergence', () => {
     await bidirectionalSync(a, b);
 
     upsertPlan(a.db, a.projectId, {
-      uuid: 'plan-shared',
+      uuid: id('plan-shared'),
       planId: 1,
       title: 'Title from A',
       goal: 'Base goal',
       status: 'pending',
     });
     upsertPlan(b.db, b.projectId, {
-      uuid: 'plan-shared',
+      uuid: id('plan-shared'),
       planId: 1,
       title: 'Base',
       goal: 'Goal from B',
@@ -290,7 +302,7 @@ describe('disconnected sync convergence', () => {
 
     await bidirectionalSync(a, b);
 
-    expect(getPlanByUuid(a.db, 'plan-shared')).toMatchObject({
+    expect(getPlanByUuid(a.db, id('plan-shared'))).toMatchObject({
       title: 'Title from A',
       goal: 'Goal from B',
     });
@@ -304,14 +316,14 @@ describe('disconnected sync convergence', () => {
     await bidirectionalSync(a, b);
 
     upsertPlan(a.db, a.projectId, {
-      uuid: 'plan-shared',
+      uuid: id('plan-shared'),
       planId: 1,
       title: 'Older title from A',
       goal: 'Base goal',
     });
     bumpClockPast(b.db, a.db);
     upsertPlan(b.db, b.projectId, {
-      uuid: 'plan-shared',
+      uuid: id('plan-shared'),
       planId: 1,
       title: 'Newer title from B',
       goal: 'Base goal',
@@ -319,8 +331,8 @@ describe('disconnected sync convergence', () => {
 
     await bidirectionalSync(a, b);
 
-    expect(getPlanByUuid(a.db, 'plan-shared')?.title).toBe('Newer title from B');
-    expect(getPlanByUuid(b.db, 'plan-shared')?.title).toBe('Newer title from B');
+    expect(getPlanByUuid(a.db, id('plan-shared'))?.title).toBe('Newer title from B');
+    expect(getPlanByUuid(b.db, id('plan-shared'))?.title).toBe('Newer title from B');
     assertDbsConverged(a.db, b.db);
   });
 
@@ -330,22 +342,22 @@ describe('disconnected sync convergence', () => {
     createBasePlan(a);
     await bidirectionalSync(a, b);
 
-    appendPlanTask(b.db, 'plan-shared', {
-      uuid: 'zzzz-task-b-low-hlc',
+    appendPlanTask(b.db, id('plan-shared'), {
+      uuid: id('task-b-low-hlc'),
       title: 'Task B low HLC',
       description: 'From B',
     });
     bumpClockPast(a.db, b.db);
-    appendPlanTask(a.db, 'plan-shared', {
-      uuid: '0000-task-a-high-hlc',
+    appendPlanTask(a.db, id('plan-shared'), {
+      uuid: id('task-a-high-hlc'),
       title: 'Task A high HLC',
       description: 'From A',
     });
 
     await bidirectionalSync(a, b);
 
-    const tasks = getPlanTasksByUuid(a.db, 'plan-shared');
-    expect(tasks.map((task) => task.uuid)).toEqual(['zzzz-task-b-low-hlc', '0000-task-a-high-hlc']);
+    const tasks = getPlanTasksByUuid(a.db, id('plan-shared'));
+    expect(tasks.map((task) => task.uuid)).toEqual([id('task-b-low-hlc'), id('task-a-high-hlc')]);
     expect(tasks.map((task) => task.order_key)).toEqual(['0000000000', '0000000000']);
     expect(tasks[0]!.created_hlc! < tasks[1]!.created_hlc!).toBe(true);
     assertDbsConverged(a.db, b.db);
@@ -355,25 +367,25 @@ describe('disconnected sync convergence', () => {
     const a = createMainNode('A');
     const b = createMainNode('B');
     upsertPlan(a.db, a.projectId, {
-      uuid: 'plan-shared',
+      uuid: id('plan-shared'),
       planId: 1,
       title: 'Base',
-      tasks: [{ uuid: 'task-shared', title: 'Original', description: 'Original', done: false }],
+      tasks: [{ uuid: id('task-shared'), title: 'Original', description: 'Original', done: false }],
     });
     await bidirectionalSync(a, b);
 
-    upsertPlanTasks(a.db, 'plan-shared', []);
+    upsertPlanTasks(a.db, id('plan-shared'), []);
     bumpClockPast(b.db, a.db);
-    upsertPlanTasks(b.db, 'plan-shared', [
-      { uuid: 'task-shared', title: 'Edited on B', description: 'Original', done: false },
+    upsertPlanTasks(b.db, id('plan-shared'), [
+      { uuid: id('task-shared'), title: 'Edited on B', description: 'Original', done: false },
     ]);
 
     await bidirectionalSync(a, b);
 
-    expect(getPlanTasksByUuid(a.db, 'plan-shared')).toEqual([]);
-    expect(getPlanTasksByUuid(b.db, 'plan-shared')).toEqual([]);
+    expect(getPlanTasksByUuid(a.db, id('plan-shared'))).toEqual([]);
+    expect(getPlanTasksByUuid(b.db, id('plan-shared'))).toEqual([]);
     expect(
-      a.db.prepare('SELECT deleted_hlc FROM plan_task WHERE uuid = ?').get('task-shared') as {
+      a.db.prepare('SELECT deleted_hlc FROM plan_task WHERE uuid = ?').get(id('task-shared')) as {
         deleted_hlc: string | null;
       }
     ).toMatchObject({ deleted_hlc: expect.any(String) });
@@ -383,17 +395,17 @@ describe('disconnected sync convergence', () => {
   test('dependency remove wins over an observed add by clock', async () => {
     const a = createMainNode('A');
     const b = createMainNode('B');
-    upsertPlan(a.db, a.projectId, { uuid: 'plan-x', planId: 1, title: 'X' });
-    upsertPlan(a.db, a.projectId, { uuid: 'plan-y', planId: 2, title: 'Y' });
-    upsertPlanDependencies(a.db, 'plan-x', ['plan-y']);
+    upsertPlan(a.db, a.projectId, { uuid: id('plan-x'), planId: 1, title: 'X' });
+    upsertPlan(a.db, a.projectId, { uuid: id('plan-y'), planId: 2, title: 'Y' });
+    upsertPlanDependencies(a.db, id('plan-x'), [id('plan-y')]);
     await bidirectionalSync(a, b);
 
-    upsertPlanDependencies(b.db, 'plan-x', []);
+    upsertPlanDependencies(b.db, id('plan-x'), []);
 
     await bidirectionalSync(a, b);
 
-    expect(getPlanDependenciesByUuid(a.db, 'plan-x')).toEqual([]);
-    expect(getPlanDependenciesByUuid(b.db, 'plan-x')).toEqual([]);
+    expect(getPlanDependenciesByUuid(a.db, id('plan-x'))).toEqual([]);
+    expect(getPlanDependenciesByUuid(b.db, id('plan-x'))).toEqual([]);
     assertDbsConverged(a.db, b.db);
   });
 
@@ -428,24 +440,37 @@ describe('disconnected sync convergence', () => {
     const alternateB = createMainNode('alternate-b');
     const alternateC = createMainNode('alternate-c');
 
-    upsertPlan(controlA.db, controlA.projectId, { uuid: 'plan-a-high', planId: 1, title: 'A' });
-    upsertPlan(alternateA.db, alternateA.projectId, { uuid: 'plan-a-high', planId: 1, title: 'A' });
+    upsertPlan(controlA.db, controlA.projectId, { uuid: id('plan-a-high'), planId: 1, title: 'A' });
+    upsertPlan(alternateA.db, alternateA.projectId, {
+      uuid: id('plan-a-high'),
+      planId: 1,
+      title: 'A',
+    });
     await bidirectionalSync(controlB, controlA);
     await bidirectionalSync(alternateB, alternateA);
 
-    upsertPlan(controlC.db, controlC.projectId, { uuid: 'plan-c-low', planId: 3, title: 'C' });
-    upsertPlan(alternateC.db, alternateC.projectId, { uuid: 'plan-c-low', planId: 3, title: 'C' });
-    const lowHlc = { physicalMs: 1, logical: 0 };
+    upsertPlan(controlC.db, controlC.projectId, { uuid: id('plan-c-low'), planId: 3, title: 'C' });
+    upsertPlan(alternateC.db, alternateC.projectId, {
+      uuid: id('plan-c-low'),
+      planId: 3,
+      title: 'C',
+    });
+    const lowHlc = { physicalMs: HLC_MIN_PHYSICAL_MS + 1, logical: 0 };
     controlC.db
       .prepare(
         "UPDATE sync_op_log SET op_id = ?, hlc_physical_ms = ?, hlc_logical = ? WHERE entity_type = 'plan' AND entity_id = ?"
       )
-      .run(formatOpId(lowHlc, controlC.nodeId, 1), lowHlc.physicalMs, lowHlc.logical, 'plan-c-low');
+      .run(
+        formatOpId(lowHlc, controlC.nodeId, 1),
+        lowHlc.physicalMs,
+        lowHlc.logical,
+        id('plan-c-low')
+      );
     controlC.db
       .prepare(
-        'UPDATE sync_field_clock SET hlc_physical_ms = 1, hlc_logical = 0 WHERE entity_id = ?'
+        'UPDATE sync_field_clock SET hlc_physical_ms = ?, hlc_logical = 0 WHERE entity_id = ?'
       )
-      .run('plan-c-low');
+      .run(lowHlc.physicalMs, id('plan-c-low'));
     alternateC.db
       .prepare(
         "UPDATE sync_op_log SET op_id = ?, hlc_physical_ms = ?, hlc_logical = ? WHERE entity_type = 'plan' AND entity_id = ?"
@@ -454,19 +479,19 @@ describe('disconnected sync convergence', () => {
         formatOpId(lowHlc, alternateC.nodeId, 1),
         lowHlc.physicalMs,
         lowHlc.logical,
-        'plan-c-low'
+        id('plan-c-low')
       );
     alternateC.db
       .prepare(
-        'UPDATE sync_field_clock SET hlc_physical_ms = 1, hlc_logical = 0 WHERE entity_id = ?'
+        'UPDATE sync_field_clock SET hlc_physical_ms = ?, hlc_logical = 0 WHERE entity_id = ?'
       )
-      .run('plan-c-low');
+      .run(lowHlc.physicalMs, id('plan-c-low'));
 
     await bidirectionalSync(controlC, controlA);
     const cOpOnControlA = controlA.db
       .prepare('SELECT seq, hlc_physical_ms FROM sync_op_log WHERE entity_id = ?')
-      .get('plan-c-low') as { seq: number; hlc_physical_ms: number } | null;
-    expect(cOpOnControlA?.hlc_physical_ms).toBe(1);
+      .get(id('plan-c-low')) as { seq: number; hlc_physical_ms: number } | null;
+    expect(cOpOnControlA?.hlc_physical_ms).toBe(lowHlc.physicalMs);
     expect(cOpOnControlA?.seq).toBeGreaterThan(1);
     await bidirectionalSync(controlC, controlB);
     await bidirectionalSync(controlA, controlB);
@@ -484,33 +509,43 @@ describe('disconnected sync convergence', () => {
     const a = createMainNode('A');
     const b = createMainNode('B');
     upsertPlan(a.db, a.projectId, {
-      uuid: 'plan-shared',
+      uuid: id('plan-shared'),
       planId: 1,
       title: 'Base',
-      tasks: [{ uuid: 'task-existing', title: 'Existing', description: 'Existing', done: false }],
+      tasks: [
+        { uuid: id('task-existing'), title: 'Existing', description: 'Existing', done: false },
+      ],
     });
     await bidirectionalSync(a, b);
 
-    appendPlanTask(a.db, 'plan-shared', {
-      uuid: 'task-new',
+    appendPlanTask(a.db, id('plan-shared'), {
+      uuid: id('task-new'),
       title: 'New',
       description: 'New',
     });
-    upsertPlanTasks(a.db, 'plan-shared', [
-      { uuid: 'task-new', orderKey: '0000000000', title: 'New', description: 'New', done: false },
+    upsertPlanTasks(a.db, id('plan-shared'), [
       {
-        uuid: 'task-existing',
+        uuid: id('task-new'),
+        orderKey: '0000000000',
+        title: 'New',
+        description: 'New',
+        done: false,
+      },
+      {
+        uuid: id('task-existing'),
         orderKey: '0000000001',
         title: 'Existing',
         description: 'Existing',
         done: false,
       },
     ]);
-    const earlySetOrder = opsFor(a.db, 'plan_task', 'task-new').find(
+    const earlySetOrder = opsFor(a.db, 'plan_task', id('task-new')).find(
       (op) => op.op_type === 'set_order'
     );
-    const createNew = opsFor(a.db, 'plan_task', 'task-new').find((op) => op.op_type === 'create');
-    const existingSetOrder = opsFor(a.db, 'plan_task', 'task-existing').find(
+    const createNew = opsFor(a.db, 'plan_task', id('task-new')).find(
+      (op) => op.op_type === 'create'
+    );
+    const existingSetOrder = opsFor(a.db, 'plan_task', id('task-existing')).find(
       (op) => op.op_type === 'set_order'
     );
     expect(earlySetOrder).toBeTruthy();
@@ -518,7 +553,9 @@ describe('disconnected sync convergence', () => {
     expect(existingSetOrder).toBeTruthy();
     const earlyResult = applyRemoteOps(b.db, [earlySetOrder!]);
     expect(earlyResult.errors).toEqual([]);
-    expect(earlyResult.skipped[0]?.reason).toContain('arrived before task task-new create');
+    expect(earlyResult.skipped[0]?.reason).toContain(
+      `arrived before task ${id('task-new')} create`
+    );
     expect(earlyResult.skipped[0]?.kind).toBe('deferred');
     expect(
       b.db.prepare('SELECT op_id FROM sync_op_log WHERE op_id = ?').get(earlySetOrder!.op_id)
@@ -528,9 +565,9 @@ describe('disconnected sync convergence', () => {
     expect(retryResult.errors).toEqual([]);
     expect(retryResult.skipped).toEqual([]);
 
-    expect(getPlanTasksByUuid(b.db, 'plan-shared').map((task) => task.uuid)).toEqual([
-      'task-new',
-      'task-existing',
+    expect(getPlanTasksByUuid(b.db, id('plan-shared')).map((task) => task.uuid)).toEqual([
+      id('task-new'),
+      id('task-existing'),
     ]);
     expect(
       b.db.prepare('SELECT op_id FROM sync_op_log WHERE op_id = ?').get(earlySetOrder!.op_id)
@@ -540,27 +577,31 @@ describe('disconnected sync convergence', () => {
   test('peer sync persists cross-chunk deferred skips and retries after later chunks', async () => {
     const a = createMainNode('A');
     const b = createMainNode('B');
-    upsertPlan(a.db, a.projectId, { uuid: 'plan-cross-chunk', planId: 1, title: 'Cross chunk' });
+    upsertPlan(a.db, a.projectId, {
+      uuid: id('plan-cross-chunk'),
+      planId: 1,
+      title: 'Cross chunk',
+    });
     await bidirectionalSync(a, b);
 
-    appendPlanTask(b.db, 'plan-cross-chunk', {
-      uuid: 'task-cross-chunk',
+    appendPlanTask(b.db, id('plan-cross-chunk'), {
+      uuid: id('task-cross-chunk'),
       title: 'Cross chunk task',
       description: 'Created after reordered op',
     });
-    upsertPlanTasks(b.db, 'plan-cross-chunk', [
+    upsertPlanTasks(b.db, id('plan-cross-chunk'), [
       {
-        uuid: 'task-cross-chunk',
+        uuid: id('task-cross-chunk'),
         orderKey: '0000000099',
         title: 'Cross chunk task',
         description: 'Created after reordered op',
         done: false,
       },
     ]);
-    const createOp = opsFor(b.db, 'plan_task', 'task-cross-chunk').find(
+    const createOp = opsFor(b.db, 'plan_task', id('task-cross-chunk')).find(
       (op) => op.op_type === 'create'
     );
-    const setOrderOp = opsFor(b.db, 'plan_task', 'task-cross-chunk').find(
+    const setOrderOp = opsFor(b.db, 'plan_task', id('task-cross-chunk')).find(
       (op) => op.op_type === 'set_order'
     );
     expect(createOp?.seq).toBeGreaterThan(0);
@@ -583,32 +624,32 @@ describe('disconnected sync convergence', () => {
         .get(b.nodeId)
     ).toEqual({ count: 0 });
     expect(
-      getPlanTasksByUuid(a.db, 'plan-cross-chunk').map((task) => ({
+      getPlanTasksByUuid(a.db, id('plan-cross-chunk')).map((task) => ({
         uuid: task.uuid,
         orderKey: task.order_key,
       }))
-    ).toEqual([{ uuid: 'task-cross-chunk', orderKey: '0000000099' }]);
+    ).toEqual([{ uuid: id('task-cross-chunk'), orderKey: '0000000099' }]);
   });
 
   test('push receiver retries cross-chunk deferred skips without initiating outbound sync', async () => {
     const a = createMainNode('A');
     const b = createMainNode('B');
-    upsertPlan(a.db, a.projectId, { uuid: 'plan-push-only', planId: 1, title: 'Push only' });
-    upsertPlan(b.db, b.projectId, { uuid: 'plan-push-only', planId: 1, title: 'Push only' });
+    upsertPlan(a.db, a.projectId, { uuid: id('plan-push-only'), planId: 1, title: 'Push only' });
+    upsertPlan(b.db, b.projectId, { uuid: id('plan-push-only'), planId: 1, title: 'Push only' });
 
-    const planCreateOp = opsFor(a.db, 'plan', 'plan-push-only').find(
+    const planCreateOp = opsFor(a.db, 'plan', id('plan-push-only')).find(
       (op) => op.op_type === 'create'
     );
     expect(planCreateOp?.seq).toBeGreaterThan(0);
 
-    appendPlanTask(a.db, 'plan-push-only', {
-      uuid: 'task-push-cross-chunk',
+    appendPlanTask(a.db, id('plan-push-only'), {
+      uuid: id('task-push-cross-chunk'),
       title: 'Push cross chunk task',
       description: 'Created after pushed reorder',
     });
-    upsertPlanTasks(a.db, 'plan-push-only', [
+    upsertPlanTasks(a.db, id('plan-push-only'), [
       {
-        uuid: 'task-push-cross-chunk',
+        uuid: id('task-push-cross-chunk'),
         orderKey: '0000000042',
         title: 'Push cross chunk task',
         description: 'Created after pushed reorder',
@@ -616,10 +657,10 @@ describe('disconnected sync convergence', () => {
       },
     ]);
 
-    const createOp = opsFor(a.db, 'plan_task', 'task-push-cross-chunk').find(
+    const createOp = opsFor(a.db, 'plan_task', id('task-push-cross-chunk')).find(
       (op) => op.op_type === 'create'
     );
-    const setOrderOp = opsFor(a.db, 'plan_task', 'task-push-cross-chunk').find(
+    const setOrderOp = opsFor(a.db, 'plan_task', id('task-push-cross-chunk')).find(
       (op) => op.op_type === 'set_order'
     );
     expect(createOp?.seq).toBeGreaterThan(planCreateOp!.seq!);
@@ -663,11 +704,11 @@ describe('disconnected sync convergence', () => {
         .get(a.nodeId)
     ).toEqual({ count: 0 });
     expect(
-      getPlanTasksByUuid(b.db, 'plan-push-only').map((task) => ({
+      getPlanTasksByUuid(b.db, id('plan-push-only')).map((task) => ({
         uuid: task.uuid,
         orderKey: task.order_key,
       }))
-    ).toEqual([{ uuid: 'task-push-cross-chunk', orderKey: '0000000042' }]);
+    ).toEqual([{ uuid: id('task-push-cross-chunk'), orderKey: '0000000042' }]);
   });
 
   test('pending high-HLC deferred op advances clock so later local write wins on retry', () => {
@@ -676,7 +717,7 @@ describe('disconnected sync convergence', () => {
     registerPeerNode(a.db, { nodeId: b.nodeId, nodeType: 'main', label: b.name });
 
     upsertPlan(a.db, a.projectId, {
-      uuid: 'plan-pending-hlc',
+      uuid: id('plan-pending-hlc'),
       planId: 1,
       title: 'Pending HLC plan',
     });
@@ -689,10 +730,10 @@ describe('disconnected sync convergence', () => {
       hlc_logical: 0,
       local_counter: 1,
       entity_type: 'plan_task',
-      entity_id: 'task-pending-hlc',
+      entity_id: id('task-pending-hlc'),
       op_type: 'set_order',
       payload: JSON.stringify({
-        planUuid: 'plan-pending-hlc',
+        planUuid: id('plan-pending-hlc'),
         orderKey: '0000000099',
         taskIndex: 99,
       }),
@@ -704,7 +745,7 @@ describe('disconnected sync convergence', () => {
     expect(deferredResult.skipped).toEqual([
       {
         opId: deferredSetOrder.op_id,
-        reason: 'plan_task set_order arrived before task task-pending-hlc create',
+        reason: `plan_task set_order arrived before task ${id('task-pending-hlc')} create`,
         kind: 'deferred',
       },
     ]);
@@ -720,11 +761,11 @@ describe('disconnected sync convergence', () => {
     expect(observedClock.logical).toBeGreaterThan(deferredSetOrder.hlc_logical);
 
     upsertPlan(a.db, a.projectId, {
-      uuid: 'plan-pending-hlc',
+      uuid: id('plan-pending-hlc'),
       planId: 1,
       tasks: [
         {
-          uuid: 'task-pending-hlc',
+          uuid: id('task-pending-hlc'),
           orderKey: '0000000000',
           title: 'Local task',
           description: 'Created locally after deferred remote op',
@@ -737,7 +778,7 @@ describe('disconnected sync convergence', () => {
       .prepare(
         "SELECT hlc_physical_ms, hlc_logical FROM sync_field_clock WHERE entity_type = 'plan_task' AND entity_id = ? AND field_name = 'order_key'"
       )
-      .get('task-pending-hlc') as { hlc_physical_ms: number; hlc_logical: number };
+      .get(id('task-pending-hlc')) as { hlc_physical_ms: number; hlc_logical: number };
     expect(localOrderClock.hlc_physical_ms).toBe(remotePhysical);
     expect(localOrderClock.hlc_logical).toBeGreaterThan(deferredSetOrder.hlc_logical);
 
@@ -751,17 +792,21 @@ describe('disconnected sync convergence', () => {
         .get(b.nodeId)
     ).toEqual({ count: 0 });
     expect(
-      getPlanTasksByUuid(a.db, 'plan-pending-hlc').map((task) => ({
+      getPlanTasksByUuid(a.db, id('plan-pending-hlc')).map((task) => ({
         uuid: task.uuid,
         orderKey: task.order_key,
       }))
-    ).toEqual([{ uuid: 'task-pending-hlc', orderKey: '0000000000' }]);
+    ).toEqual([{ uuid: id('task-pending-hlc'), orderKey: '0000000000' }]);
   });
 
   test('unresolved deferred set_order stays retryable without side effects', () => {
     const a = createMainNode('A');
-    upsertPlan(a.db, a.projectId, { uuid: 'plan-missing-task', planId: 1, title: 'Plan exists' });
-    const remoteNodeId = 'remote-node';
+    upsertPlan(a.db, a.projectId, {
+      uuid: id('plan-missing-task'),
+      planId: 1,
+      title: 'Plan exists',
+    });
+    const remoteNodeId = randomUUID();
     const remoteHlc = { physicalMs: Date.now() + 1_000, logical: 0 };
     const neverCreatedSetOrder: SyncOpRecord = {
       op_id: formatOpId(remoteHlc, remoteNodeId, 1),
@@ -770,9 +815,9 @@ describe('disconnected sync convergence', () => {
       hlc_logical: remoteHlc.logical,
       local_counter: 1,
       entity_type: 'plan_task',
-      entity_id: 'task-never-created',
+      entity_id: id('task-never-created'),
       op_type: 'set_order',
-      payload: JSON.stringify({ planUuid: 'plan-missing-task', orderKey: '0000000000' }),
+      payload: JSON.stringify({ planUuid: id('plan-missing-task'), orderKey: '0000000000' }),
       base: null,
     };
 
@@ -782,7 +827,7 @@ describe('disconnected sync convergence', () => {
       expect(result.skipped).toEqual([
         {
           opId: neverCreatedSetOrder.op_id,
-          reason: 'plan_task set_order arrived before task task-never-created create',
+          reason: `plan_task set_order arrived before task ${id('task-never-created')} create`,
           kind: 'deferred',
         },
       ]);
@@ -793,7 +838,7 @@ describe('disconnected sync convergence', () => {
     expect(
       a.db
         .prepare("SELECT * FROM sync_field_clock WHERE entity_type = 'plan_task' AND entity_id = ?")
-        .all('task-never-created')
+        .all(id('task-never-created'))
     ).toEqual([]);
   });
 
@@ -801,29 +846,29 @@ describe('disconnected sync convergence', () => {
     const a = createMainNode('A');
     const b = createMainNode('B');
     const worker = createMainNode('worker');
-    upsertPlan(a.db, a.projectId, { uuid: 'plan-target', planId: 1, title: 'Target' });
+    upsertPlan(a.db, a.projectId, { uuid: id('plan-target'), planId: 1, title: 'Target' });
     await bidirectionalSync(a, b);
 
     const bundle = exportWorkerBundle(a.db, {
-      targetPlanUuid: 'plan-target',
+      targetPlanUuid: id('plan-target'),
       leaseExpiresAt: '2030-01-01T00:00:00.000Z',
     });
     importWorkerBundle(worker.db, bundle);
     const workerProjectId = getOrCreateProject(worker.db, PROJECT_IDENTITY).id;
 
     upsertPlan(worker.db, workerProjectId, {
-      uuid: 'plan-target',
+      uuid: id('plan-target'),
       planId: 1,
       title: 'Target',
       status: 'in_progress',
     });
-    appendPlanTask(worker.db, 'plan-target', {
-      uuid: 'task-worker',
+    appendPlanTask(worker.db, id('plan-target'), {
+      uuid: id('task-worker'),
       title: 'Worker task',
       description: 'Added by worker',
     });
     upsertPlan(worker.db, workerProjectId, {
-      uuid: 'plan-worker-followup',
+      uuid: id('plan-worker-followup'),
       planId: 99,
       title: 'Worker follow-up',
       status: 'pending',
@@ -838,28 +883,28 @@ describe('disconnected sync convergence', () => {
 
     await bidirectionalSync(a, b);
 
-    expect(getPlanByUuid(b.db, 'plan-target')?.status).toBe('in_progress');
-    expect(getPlanTasksByUuid(b.db, 'plan-target').map((task) => task.uuid)).toContain(
-      'task-worker'
+    expect(getPlanByUuid(b.db, id('plan-target'))?.status).toBe('in_progress');
+    expect(getPlanTasksByUuid(b.db, id('plan-target')).map((task) => task.uuid)).toContain(
+      id('task-worker')
     );
-    expect(getPlanByUuid(b.db, 'plan-worker-followup')?.title).toBe('Worker follow-up');
+    expect(getPlanByUuid(b.db, id('plan-worker-followup'))?.title).toBe('Worker follow-up');
     assertDbsConverged(a.db, b.db);
   });
 
   test('worker heartbeat keeps lease active and final replay closes it idempotently', () => {
     const a = createMainNode('A');
     const worker = createMainNode('worker');
-    upsertPlan(a.db, a.projectId, { uuid: 'plan-target', planId: 1, title: 'Target' });
+    upsertPlan(a.db, a.projectId, { uuid: id('plan-target'), planId: 1, title: 'Target' });
 
     const bundle = exportWorkerBundle(a.db, {
-      targetPlanUuid: 'plan-target',
+      targetPlanUuid: id('plan-target'),
       leaseExpiresAt: '2030-01-01T00:00:00.000Z',
     });
     importWorkerBundle(worker.db, bundle);
     const workerProjectId = getOrCreateProject(worker.db, PROJECT_IDENTITY).id;
 
     upsertPlan(worker.db, workerProjectId, {
-      uuid: 'plan-target',
+      uuid: id('plan-target'),
       planId: 1,
       title: 'Target',
       status: 'in_progress',
@@ -872,8 +917,8 @@ describe('disconnected sync convergence', () => {
     expect(heartbeatResult.errors).toEqual([]);
     expect(getWorkerLease(a.db, bundle.worker.nodeId)?.status).toBe('active');
 
-    appendPlanTask(worker.db, 'plan-target', {
-      uuid: 'task-heartbeat',
+    appendPlanTask(worker.db, id('plan-target'), {
+      uuid: id('task-heartbeat'),
       title: 'After heartbeat',
       description: 'Second batch',
     });
@@ -886,20 +931,20 @@ describe('disconnected sync convergence', () => {
     expect(finalResult.errors).toEqual([]);
     expect(finalResult.skipped.some((skip) => skip.reason === 'already applied')).toBe(true);
     expect(getWorkerLease(a.db, bundle.worker.nodeId)?.status).toBe('completed');
-    expect(getPlanByUuid(a.db, 'plan-target')?.status).toBe('in_progress');
-    expect(getPlanTasksByUuid(a.db, 'plan-target').map((task) => task.uuid)).toContain(
-      'task-heartbeat'
+    expect(getPlanByUuid(a.db, id('plan-target'))?.status).toBe('in_progress');
+    expect(getPlanTasksByUuid(a.db, id('plan-target')).map((task) => task.uuid)).toContain(
+      id('task-heartbeat')
     );
   });
 
   test('compaction floor is bounded by pushed main peer cursor and active worker lease', async () => {
     const a = createMainNode('A');
     const b = createMainNode('B');
-    upsertPlan(a.db, a.projectId, { uuid: 'plan-target', planId: 1, title: 'Target' });
-    upsertPlan(a.db, a.projectId, { uuid: 'plan-extra', planId: 2, title: 'Extra' });
+    upsertPlan(a.db, a.projectId, { uuid: id('plan-target'), planId: 1, title: 'Target' });
+    upsertPlan(a.db, a.projectId, { uuid: id('plan-extra'), planId: 2, title: 'Extra' });
 
     const bundle = exportWorkerBundle(a.db, {
-      targetPlanUuid: 'plan-target',
+      targetPlanUuid: id('plan-target'),
       leaseExpiresAt: '2030-01-01T00:00:00.000Z',
     });
     const leaseHighWater = bundle.sync.highWaterSeq;
