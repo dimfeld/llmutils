@@ -305,6 +305,50 @@ describe('HTTP peer sync transport', () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({ error: 'Invalid peer_node_id' });
   });
+
+  test('HTTP push from an unregistered caller registers as transient, not main', async () => {
+    const handlerA = createPeerSyncHttpHandler(dbA, { token: 'secret' });
+    const nodeB = getLocalNodeId(dbB);
+    const url = new URL('http://peer.test/sync/push');
+    url.searchParams.set('peer_node_id', nodeB);
+
+    const response = await handlerA(
+      new Request(url, {
+        method: 'POST',
+        headers: { authorization: 'Bearer secret', 'content-type': 'application/json' },
+        body: JSON.stringify({ ops: [] }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(
+      dbA.prepare('SELECT node_type FROM sync_node WHERE node_id = ?').get(nodeB)
+    ).toEqual({ node_type: 'transient' });
+  });
+
+  test('HTTP push does not promote an already-main peer to transient', async () => {
+    const nodeB = getLocalNodeId(dbB);
+    // Pre-register nodeB as main on dbA (as happens via runPeerSync).
+    registerPeerNode(dbA, { nodeId: nodeB, nodeType: 'main' });
+
+    const handlerA = createPeerSyncHttpHandler(dbA, { token: 'secret' });
+    const url = new URL('http://peer.test/sync/push');
+    url.searchParams.set('peer_node_id', nodeB);
+
+    const response = await handlerA(
+      new Request(url, {
+        method: 'POST',
+        headers: { authorization: 'Bearer secret', 'content-type': 'application/json' },
+        body: JSON.stringify({ ops: [] }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    // registerPeerNode with transient must not downgrade an existing main.
+    expect(
+      dbA.prepare('SELECT node_type FROM sync_node WHERE node_id = ?').get(nodeB)
+    ).toEqual({ node_type: 'main' });
+  });
 });
 
 describe('peer sync advanced scenarios', () => {

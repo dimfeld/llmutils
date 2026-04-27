@@ -20,6 +20,7 @@ import { getWorkerLease } from '../db/sync_schema.js';
 import { getLocalNodeId } from './node_identity.js';
 import {
   applyWorkerOps,
+  completeWorkerLeaseIfReady,
   exportWorkerBundle,
   exportWorkerOps,
   importWorkerBundle,
@@ -490,6 +491,100 @@ describe('worker sync bundles', () => {
 
     // Re-import should be a no-op even though the local autoincrement ids differ.
     expect(() => importWorkerBundle(workerDb, bundle)).not.toThrow();
+  });
+
+  test('deferred worker ops are persisted in sync_pending_op keyed by worker node id', () => {
+    const bundle = exportWorkerBundle(mainDb, {
+      targetPlanUuid: 'plan-target',
+      leaseExpiresAt: '2030-01-01T00:00:00.000Z',
+    });
+    importWorkerBundle(workerDb, bundle);
+    const workerProjectId = getOrCreateProject(workerDb, 'github.com__owner__repo').id;
+
+    // Create a plan whose task ops will arrive before the plan create op.
+    upsertPlan(workerDb, workerProjectId, {
+      uuid: 'plan-deferred-test',
+      planId: 200,
+      title: 'Deferred test plan',
+      status: 'pending',
+      tasks: [
+        {
+          uuid: 'task-deferred',
+          title: 'Task that needs parent',
+          description: 'Deferred until plan exists',
+          done: false,
+        },
+      ],
+    });
+
+    const { ops } = exportWorkerOps(workerDb);
+    const taskOps = ops.filter((op) => op.entity_type === 'plan_task');
+    expect(taskOps.length).toBeGreaterThan(0);
+
+    // Apply only task ops — plan does not exist yet, so tasks will be deferred.
+    applyWorkerOps(mainDb, taskOps, {
+      workerNodeId: bundle.worker.nodeId,
+      final: false,
+    });
+
+    // sync_pending_op must have rows keyed by the worker node id.
+    const pendingRows = mainDb
+      .prepare('SELECT * FROM sync_pending_op WHERE peer_node_id = ?')
+      .all(bundle.worker.nodeId) as Array<{ peer_node_id: string; op_id: string }>;
+    expect(pendingRows.length).toBeGreaterThan(0);
+    expect(pendingRows.every((row) => row.peer_node_id === bundle.worker.nodeId)).toBe(true);
+  });
+
+  test('completeWorkerLeaseIfReady drains pending ops and completes a completion-requested lease', () => {
+    const bundle = exportWorkerBundle(mainDb, {
+      targetPlanUuid: 'plan-target',
+      leaseExpiresAt: '2030-01-01T00:00:00.000Z',
+    });
+    importWorkerBundle(workerDb, bundle);
+    const workerProjectId = getOrCreateProject(workerDb, 'github.com__owner__repo').id;
+
+    upsertPlan(workerDb, workerProjectId, {
+      uuid: 'plan-ready-parent',
+      planId: 300,
+      title: 'Ready parent',
+      status: 'pending',
+      tasks: [
+        {
+          uuid: 'task-ready-child',
+          title: 'Child task',
+          description: 'Needs parent plan',
+          done: false,
+        },
+      ],
+    });
+
+    const { ops } = exportWorkerOps(workerDb);
+    const taskOps = ops.filter((op) => op.entity_type === 'plan_task');
+    const planOps = ops.filter((op) => op.entity_type === 'plan');
+
+    // First apply task ops (will defer), with final:true to request completion.
+    const firstResult = applyWorkerOps(mainDb, taskOps, {
+      workerNodeId: bundle.worker.nodeId,
+    });
+    expect(firstResult.pendingOpCount).toBeGreaterThan(0);
+    expect(firstResult.leaseCompleted).toBe(false);
+    expect(getWorkerLease(mainDb, bundle.worker.nodeId)?.status).toBe('active');
+    // completion_requested_at was stamped by applyWorkerOps (final:true)
+    expect(
+      getWorkerLease(mainDb, bundle.worker.nodeId)?.completion_requested_at
+    ).not.toBeNull();
+
+    // Apply the plan ops via a heartbeat return (final:false) to resolve the deferrals.
+    applyWorkerOps(mainDb, planOps, { workerNodeId: bundle.worker.nodeId, final: false });
+
+    // Now call completeWorkerLeaseIfReady to finalize.
+    const completed = completeWorkerLeaseIfReady(mainDb, bundle.worker.nodeId);
+    expect(completed?.status).toBe('completed');
+    expect(
+      mainDb
+        .prepare('SELECT count(*) AS count FROM sync_pending_op WHERE peer_node_id = ?')
+        .get(bundle.worker.nodeId)
+    ).toEqual({ count: 0 });
   });
 
   test('exportWorkerBundle throws on a cycle in the parent chain', () => {
