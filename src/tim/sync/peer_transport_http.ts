@@ -201,8 +201,8 @@ function validatePushedOps(
   alreadyKnownOpIds: Set<string>
 ): string | null {
   let previousOwnOp: SyncOpRecord | null = null;
+  let previousSourceSeq = 0;
   const existingCursorSeq = parseCursorSeq(getPeerCursor(db, peerNodeId, 'pull')?.last_op_id);
-  let expectedNewOwnSeq = existingCursorSeq + 1;
   for (const op of ops) {
     const shapeError = validatePushOpShape(op);
     if (shapeError) {
@@ -211,21 +211,20 @@ function validatePushedOps(
     if (op.node_id === localNodeId) {
       return 'forged_local_node';
     }
-    if (op.node_id !== peerNodeId) {
-      continue;
-    }
     if (op.seq === undefined || !Number.isSafeInteger(op.seq) || op.seq < 1) {
       return 'invalid_source_seq';
     }
+    if (op.seq <= previousSourceSeq) {
+      return 'non_contiguous_source_seq';
+    }
+    previousSourceSeq = op.seq;
     if (op.seq <= existingCursorSeq) {
       if (!alreadyKnownOpIds.has(op.op_id)) {
         return 'stale_unknown_source_seq';
       }
-    } else {
-      if (op.seq !== expectedNewOwnSeq) {
-        return 'non_contiguous_source_seq';
-      }
-      expectedNewOwnSeq += 1;
+    }
+    if (op.node_id !== peerNodeId) {
+      continue;
     }
     if (previousOwnOp) {
       const hlcCompare = compareHlc(opHlc(previousOwnOp), opHlc(op));
@@ -256,15 +255,17 @@ function snapshotAlreadyKnownOpIds(
   peerNodeId: string,
   ops: SyncOpRecord[]
 ): Set<string> {
-  const ownOpIds = ops.filter((op) => op.node_id === peerNodeId).map((op) => op.op_id);
-  if (ownOpIds.length === 0) {
+  const opIds = ops
+    .map((op) => op.op_id)
+    .filter((opId): opId is string => typeof opId === 'string' && opId.length > 0);
+  if (opIds.length === 0) {
     return new Set();
   }
-  const placeholders = ownOpIds.map(() => '?').join(',');
+  const placeholders = opIds.map(() => '?').join(',');
   const known = new Set<string>();
   const opLogRows = db
     .prepare(`SELECT op_id FROM sync_op_log WHERE op_id IN (${placeholders})`)
-    .all(...ownOpIds) as { op_id: string }[];
+    .all(...opIds) as { op_id: string }[];
   for (const row of opLogRows) {
     known.add(row.op_id);
   }
@@ -272,35 +273,31 @@ function snapshotAlreadyKnownOpIds(
     .prepare(
       `SELECT op_id FROM sync_pending_op WHERE peer_node_id = ? AND op_id IN (${placeholders})`
     )
-    .all(peerNodeId, ...ownOpIds) as { op_id: string }[];
+    .all(peerNodeId, ...opIds) as { op_id: string }[];
   for (const row of pendingRows) {
     known.add(row.op_id);
   }
   return known;
 }
 
-function advancePushCursorByAcceptedOwnOps(
+function advancePushCursorByAcceptedSenderSeq(
   db: Database,
   peerNodeId: string,
-  ops: SyncOpRecord[],
-  alreadyKnownOpIds: Set<string>
+  ops: SyncOpRecord[]
 ): void {
-  const newlyAcceptedOwnOps = ops.filter(
-    (op) => op.node_id === peerNodeId && !alreadyKnownOpIds.has(op.op_id)
-  );
-  if (newlyAcceptedOwnOps.length === 0) {
-    return;
-  }
-  const newestOwnOp = newlyAcceptedOwnOps.reduce<SyncOpRecord | null>((current, op) => {
+  const existingCursorSeq = parseCursorSeq(getPeerCursor(db, peerNodeId, 'pull')?.last_op_id);
+  const newestAcceptedOp = ops.reduce<SyncOpRecord | null>((current, op) => {
     const seq = op.seq;
-    if (seq === undefined || !Number.isSafeInteger(seq) || seq < 1) return current;
+    if (seq === undefined || !Number.isSafeInteger(seq) || seq <= existingCursorSeq) {
+      return current;
+    }
     if (!current || seq > (current.seq ?? 0)) return op;
     return current;
   }, null);
-  if (!newestOwnOp?.seq) {
+  if (!newestAcceptedOp?.seq) {
     return;
   }
-  setPeerCursor(db, peerNodeId, 'pull', newestOwnOp.seq.toString(), newestOwnOp);
+  setPeerCursor(db, peerNodeId, 'pull', newestAcceptedOp.seq.toString(), newestAcceptedOp);
 }
 
 function requestUrl(baseUrl: string, pathname: string): URL {
@@ -504,7 +501,7 @@ export function createPeerSyncHttpHandler(
               { status: 409 }
             );
           }
-          advancePushCursorByAcceptedOwnOps(db, peerNodeId, ops, alreadyKnownOpIds);
+          advancePushCursorByAcceptedSenderSeq(db, peerNodeId, ops);
           return jsonResponse({
             pendingOpCount: workerResult.pendingOpCount,
             leaseCompleted: workerResult.leaseCompleted,
@@ -524,7 +521,7 @@ export function createPeerSyncHttpHandler(
         // Push advances the server's pull-from-pusher cursor after deferred
         // skips have been persisted into sync_pending_op for retry. Server-side
         // pull requests never advance any server cursor.
-        advancePushCursorByAcceptedOwnOps(db, peerNodeId, ops, alreadyKnownOpIds);
+        advancePushCursorByAcceptedSenderSeq(db, peerNodeId, ops);
         return jsonResponse({
           applied: applyResult.applied,
           skipped: applyResult.skipped.length,

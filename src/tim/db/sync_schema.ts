@@ -263,6 +263,8 @@ export function setPeerCursor(
     const existingSeq = existing.last_op_id === null ? 0 : parseSeqCursor(existing.last_op_id);
     const nextSeq = parseSeqCursor(lastSeq);
     if (nextSeq <= existingSeq) {
+      // Equal or older seq writes intentionally drop any clockSource update too:
+      // the cursor row represents a monotonic transport position, not a clock log.
       return existing;
     }
   }
@@ -285,6 +287,8 @@ export function setPeerCursor(
         hlc_logical = excluded.hlc_logical,
         last_op_id = excluded.last_op_id,
         updated_at = ${SQL_NOW_ISO_UTC}
+      WHERE CAST(excluded.last_op_id AS INTEGER) >
+        COALESCE(CAST(sync_peer_cursor.last_op_id AS INTEGER), 0)
     `
   ).run(peerNodeId, direction, physicalMs, logical, lastSeq);
 

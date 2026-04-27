@@ -900,41 +900,130 @@ describe('HTTP peer sync transport', () => {
     expect(getPeerCursor(dbB, nodeA, 'pull')).toBeNull();
   });
 
-  test('HTTP push rejects non-contiguous own source seq values', async () => {
-    upsertPlan(dbA, projectA, { uuid: id('http-cursor-own'), planId: 22, title: 'Own' });
+  test('HTTP push accepts sender-local source seq gaps', async () => {
+    upsertPlan(dbA, projectA, { uuid: id('http-cursor-gap-1'), planId: 22, title: 'Gap 1' });
+    upsertPlan(dbA, projectA, { uuid: id('http-cursor-gap-2'), planId: 23, title: 'Gap 2' });
     const nodeA = getLocalNodeId(dbA);
-    const ownOp = (getOpLogChunkAfter(dbA, null, 100).ops as SyncOpRecord[]).find(
-      (op) => op.entity_id === id('http-cursor-own')
-    );
-    expect(ownOp).toBeDefined();
-    const forwardedNodeId = randomUUID();
+    const ops = getOpLogChunkAfter(dbA, null, 100).ops as SyncOpRecord[];
+    const firstOp = ops.find((op) => op.entity_id === id('http-cursor-gap-1'));
+    const secondOp = ops.find((op) => op.entity_id === id('http-cursor-gap-2'));
+    expect(firstOp).toBeDefined();
+    expect(secondOp).toBeDefined();
+    const handler = createPeerSyncHttpHandler(dbB, { token: 'secret-token' });
+
+    const response = await pushRequest(handler, nodeA, [firstOp!, { ...secondOp!, seq: 99 }]);
+
+    expect(response.status).toBe(200);
+    expect(getPlanByUuid(dbB, id('http-cursor-gap-1'))?.title).toBe('Gap 1');
+    expect(getPlanByUuid(dbB, id('http-cursor-gap-2'))?.title).toBe('Gap 2');
+    expect(getPeerCursor(dbB, nodeA, 'pull')?.last_op_id).toBe('99');
+  });
+
+  test('HTTP push rejects non-monotonic sender-local source seq values', async () => {
+    upsertPlan(dbA, projectA, { uuid: id('http-cursor-monotonic-1'), planId: 24, title: 'One' });
+    upsertPlan(dbA, projectA, { uuid: id('http-cursor-monotonic-2'), planId: 25, title: 'Two' });
+    const nodeA = getLocalNodeId(dbA);
+    const ops = getOpLogChunkAfter(dbA, null, 100).ops as SyncOpRecord[];
+    const firstOp = ops.find((op) => op.entity_id === id('http-cursor-monotonic-1'));
+    const secondOp = ops.find((op) => op.entity_id === id('http-cursor-monotonic-2'));
+    expect(firstOp).toBeDefined();
+    expect(secondOp).toBeDefined();
+    const handler = createPeerSyncHttpHandler(dbB, { token: 'secret-token' });
+
+    const response = await pushRequest(handler, nodeA, [
+      { ...secondOp!, seq: 99 },
+      { ...firstOp!, seq: 1 },
+    ]);
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: 'non_contiguous_source_seq' });
+    expect(getPlanByUuid(dbB, id('http-cursor-monotonic-1'))).toBeNull();
+    expect(getPlanByUuid(dbB, id('http-cursor-monotonic-2'))).toBeNull();
+    expect(getPeerCursor(dbB, nodeA, 'pull')).toBeNull();
+  });
+
+  test('HTTP push applies forwarded ops and advances the sender-local cursor', async () => {
+    upsertPlan(dbA, projectA, {
+      uuid: id('http-cursor-forwarded-own-1'),
+      planId: 26,
+      title: 'Own 1',
+    });
+    upsertPlan(dbA, projectA, {
+      uuid: id('http-cursor-forwarded-own-2'),
+      planId: 27,
+      title: 'Own 2',
+    });
+    const nodeA = getLocalNodeId(dbA);
+    const nodeC = randomUUID();
+    const ops = getOpLogChunkAfter(dbA, null, 100).ops as SyncOpRecord[];
+    const firstOwnOp = ops.find((op) => op.entity_id === id('http-cursor-forwarded-own-1'));
+    const secondOwnOp = ops.find((op) => op.entity_id === id('http-cursor-forwarded-own-2'));
+    expect(firstOwnOp).toBeDefined();
+    expect(secondOwnOp).toBeDefined();
     const forwardedHlc = { physicalMs: Date.now(), logical: 0 };
     const forwardedOp: SyncOpRecord = {
-      op_id: formatOpId(forwardedHlc, forwardedNodeId, 1),
-      node_id: forwardedNodeId,
+      op_id: formatOpId(forwardedHlc, nodeC, 1),
+      node_id: nodeC,
       hlc_physical_ms: forwardedHlc.physicalMs,
       hlc_logical: forwardedHlc.logical,
       local_counter: 1,
       entity_type: 'plan',
-      entity_id: id('http-cursor-forwarded'),
+      entity_id: id('http-cursor-forwarded-c'),
       op_type: 'create',
       payload: JSON.stringify({
         projectIdentity: 'github.com__owner__repo',
-        planIdHint: 23,
-        fields: { title: 'Forwarded' },
+        planIdHint: 28,
+        fields: { title: 'Forwarded C' },
       }),
       base: null,
-      seq: 1000,
+      seq: 2,
     };
     const handler = createPeerSyncHttpHandler(dbB, { token: 'secret-token' });
 
-    const response = await pushRequest(handler, nodeA, [{ ...ownOp!, seq: 999 }, forwardedOp]);
+    const response = await pushRequest(handler, nodeA, [
+      { ...firstOwnOp!, seq: 1 },
+      forwardedOp,
+      { ...secondOwnOp!, seq: 3 },
+    ]);
 
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toEqual({ error: 'non_contiguous_source_seq' });
-    expect(getPlanByUuid(dbB, id('http-cursor-own'))).toBeNull();
-    expect(getPlanByUuid(dbB, id('http-cursor-forwarded'))).toBeNull();
-    expect(getPeerCursor(dbB, nodeA, 'pull')).toBeNull();
+    expect(response.status).toBe(200);
+    expect(getPlanByUuid(dbB, id('http-cursor-forwarded-own-1'))?.title).toBe('Own 1');
+    expect(getPlanByUuid(dbB, id('http-cursor-forwarded-c'))?.title).toBe('Forwarded C');
+    expect(getPlanByUuid(dbB, id('http-cursor-forwarded-own-2'))?.title).toBe('Own 2');
+    expect(getPeerCursor(dbB, nodeA, 'pull')?.last_op_id).toBe('3');
+  });
+
+  test('HTTP push advances cursor for already-known forwarded-only chunks', async () => {
+    const nodeA = getLocalNodeId(dbA);
+    const nodeC = randomUUID();
+    const forwardedHlc = { physicalMs: Date.now(), logical: 0 };
+    const forwardedOp: SyncOpRecord = {
+      op_id: formatOpId(forwardedHlc, nodeC, 1),
+      node_id: nodeC,
+      hlc_physical_ms: forwardedHlc.physicalMs,
+      hlc_logical: forwardedHlc.logical,
+      local_counter: 1,
+      entity_type: 'plan',
+      entity_id: id('http-cursor-known-forwarded-c'),
+      op_type: 'create',
+      payload: JSON.stringify({
+        projectIdentity: 'github.com__owner__repo',
+        planIdHint: 29,
+        fields: { title: 'Known forwarded C' },
+      }),
+      base: null,
+      seq: 7,
+    };
+    applyRemoteOps(dbB, [forwardedOp]);
+    const handler = createPeerSyncHttpHandler(dbB, { token: 'secret-token' });
+
+    const response = await pushRequest(handler, nodeA, [forwardedOp]);
+
+    expect(response.status).toBe(200);
+    expect(getPlanByUuid(dbB, id('http-cursor-known-forwarded-c'))?.title).toBe(
+      'Known forwarded C'
+    );
+    expect(getPeerCursor(dbB, nodeA, 'pull')?.last_op_id).toBe('7');
   });
 
   test('setPeerCursor does not regress stored seq cursors', () => {
