@@ -8,12 +8,14 @@ import { compareHlc, type Hlc } from './hlc.js';
 import { getLocalNodeId, registerPeerNode } from './node_identity.js';
 import {
   applyPeerOpsWithPending,
+  PeerRetiredError,
   ResyncRequiredError,
   runPeerSync,
   type PeerSyncOptions,
   type PeerSyncResult,
   type PeerTransport,
 } from './peer_sync.js';
+import { buildPeerSnapshot, type PeerSnapshot } from './snapshot.js';
 import { applyWorkerReturn } from './worker_bundle.js';
 
 export interface HttpPeerTransportOptions {
@@ -272,11 +274,16 @@ function advancePushCursorByAcceptedOwnOps(
   if (newlyAcceptedOwnOps.length === 0) {
     return;
   }
-  const existing = db
-    .prepare('SELECT last_op_id FROM sync_peer_cursor WHERE peer_node_id = ? AND direction = ?')
-    .get(peerNodeId, 'pull') as { last_op_id: string | null } | null;
-  const nextSeq = parseCursorSeq(existing?.last_op_id) + newlyAcceptedOwnOps.length;
-  setPeerCursor(db, peerNodeId, 'pull', nextSeq.toString(), newlyAcceptedOwnOps.at(-1));
+  const newestOwnOp = newlyAcceptedOwnOps.reduce<SyncOpRecord | null>((current, op) => {
+    const seq = op.seq;
+    if (seq === undefined || !Number.isSafeInteger(seq) || seq < 1) return current;
+    if (!current || seq > (current.seq ?? 0)) return op;
+    return current;
+  }, null);
+  if (!newestOwnOp?.seq) {
+    return;
+  }
+  setPeerCursor(db, peerNodeId, 'pull', newestOwnOp.seq.toString(), newestOwnOp);
 }
 
 function requestUrl(baseUrl: string, pathname: string): URL {
@@ -294,6 +301,9 @@ async function parseJsonResponse(response: Response): Promise<unknown> {
 }
 
 function httpError(endpoint: string, response: Response, body: unknown): Error {
+  if (response.status === 410 && isObject(body) && body.error === 'peer_retired') {
+    return new PeerRetiredError('remote');
+  }
   if (
     response.status === 409 &&
     isObject(body) &&
@@ -362,6 +372,20 @@ export function createHttpPeerTransport(options: HttpPeerTransportOptions): Peer
       }
       return isObject(body) ? body : {};
     },
+
+    async snapshot() {
+      const url = requestUrl(options.baseUrl, '/sync/snapshot');
+      url.searchParams.set('peer_node_id', options.localNodeId);
+      const response = await fetchImpl(url, { method: 'GET', headers });
+      const body = await parseJsonResponse(response);
+      if (!response.ok) {
+        throw httpError('/sync/snapshot', response, body);
+      }
+      if (!isObject(body) || body.version !== 1) {
+        throw new Error('Peer sync /sync/snapshot returned an invalid response body');
+      }
+      return body as unknown as PeerSnapshot;
+    },
   };
 }
 
@@ -391,15 +415,18 @@ export function createPeerSyncHttpHandler(
     if (!isAuthorized(request, options.token)) {
       return jsonResponse({ error: 'Unauthorized' }, { status: 401 });
     }
-    if (request.method !== 'POST') {
-      return jsonResponse({ error: 'Method Not Allowed' }, { status: 405 });
-    }
 
     const url = new URL(request.url);
     try {
       if (url.pathname === '/sync/pull') {
+        if (request.method !== 'POST') {
+          return jsonResponse({ error: 'Method Not Allowed' }, { status: 405 });
+        }
         const peerNodeId = asPeerNodeId(url);
-        registerPeerNode(db, { nodeId: peerNodeId, nodeType: 'transient' });
+        const peerNode = registerPeerNode(db, { nodeId: peerNodeId, nodeType: 'transient' });
+        if (peerNode.node_type === 'retired_main') {
+          return jsonResponse({ error: 'peer_retired' }, { status: 410 });
+        }
         // Pull is read-only from the server's perspective. The pulling client
         // advances its local pull-from-server cursor after successful apply.
         const afterSeq = url.searchParams.get('after_seq') ?? url.searchParams.get('after_op_id');
@@ -420,8 +447,14 @@ export function createPeerSyncHttpHandler(
       }
 
       if (url.pathname === '/sync/push') {
+        if (request.method !== 'POST') {
+          return jsonResponse({ error: 'Method Not Allowed' }, { status: 405 });
+        }
         const peerNodeId = asPeerNodeId(url);
         const peerNode = registerPeerNode(db, { nodeId: peerNodeId, nodeType: 'transient' });
+        if (peerNode.node_type === 'retired_main') {
+          return jsonResponse({ error: 'peer_retired' }, { status: 410 });
+        }
         const ops = readOpsBody(await readJson(request, maxBodyBytes));
         const final = url.searchParams.get('final') === '1';
         if (ops.length > maxPushBatch) {
@@ -473,6 +506,18 @@ export function createPeerSyncHttpHandler(
           skipped: applyResult.skipped.length,
           deferredSkips,
         });
+      }
+
+      if (url.pathname === '/sync/snapshot') {
+        if (request.method !== 'GET') {
+          return jsonResponse({ error: 'Method Not Allowed' }, { status: 405 });
+        }
+        const peerNodeId = asPeerNodeId(url);
+        const peerNode = registerPeerNode(db, { nodeId: peerNodeId, nodeType: 'transient' });
+        if (peerNode.node_type === 'retired_main') {
+          return jsonResponse({ error: 'peer_retired' }, { status: 410 });
+        }
+        return jsonResponse(buildPeerSnapshot(db));
       }
     } catch (error) {
       if (error instanceof HttpRequestError) {

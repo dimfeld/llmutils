@@ -11,6 +11,10 @@ export interface PruneEphemeralNodesResult {
   prunedTransientNodes: number;
 }
 
+export type RetireMainPeerResult =
+  | { retired: true; peerNodeId: string }
+  | { retired: false; peerNodeId: string; reason: 'not_found' | 'not_main' | 'local_node' };
+
 const DEFAULT_TRANSIENT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 function cutoffIso(now: Date, maxAgeMs: number): string {
@@ -119,4 +123,39 @@ export function pruneEphemeralNodes(
   });
 
   return prune.immediate();
+}
+
+export function retireMainPeer(db: Database, peerNodeId: string): RetireMainPeerResult {
+  const retire = db.transaction((nodeId: string): RetireMainPeerResult => {
+    const row = db
+      .prepare('SELECT node_id, node_type, is_local FROM sync_node WHERE node_id = ?')
+      .get(nodeId) as { node_id: string; node_type: string; is_local: number } | null;
+    if (!row) {
+      return { retired: false, peerNodeId: nodeId, reason: 'not_found' };
+    }
+    if (row.is_local === 1) {
+      return { retired: false, peerNodeId: nodeId, reason: 'local_node' };
+    }
+    if (row.node_type !== 'main') {
+      return { retired: false, peerNodeId: nodeId, reason: 'not_main' };
+    }
+
+    db.prepare('DELETE FROM sync_peer_cursor WHERE peer_node_id = ?').run(nodeId);
+    db.prepare('DELETE FROM sync_pending_op WHERE peer_node_id = ?').run(nodeId);
+    db.prepare(
+      `
+        UPDATE sync_node
+        SET node_type = 'retired_main',
+            lease_expires_at = NULL,
+            updated_at = ?
+        WHERE node_id = ?
+          AND is_local = 0
+          AND node_type = 'main'
+      `
+    ).run(new Date().toISOString(), nodeId);
+
+    return { retired: true, peerNodeId: nodeId };
+  });
+
+  return retire.immediate(peerNodeId);
 }

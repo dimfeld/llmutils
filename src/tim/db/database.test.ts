@@ -541,7 +541,7 @@ describe('tim db/database', () => {
       ).run('plan-1', 0, 'task', 'desc', 0);
       db.prepare('INSERT INTO plan_dependency (plan_uuid, depends_on_uuid) VALUES (?, ?)').run(
         'plan-1',
-        'dep-1'
+        'plan-1'
       );
       db.prepare('INSERT INTO plan_tag (plan_uuid, tag) VALUES (?, ?)').run('plan-1', 'db');
       db.prepare(

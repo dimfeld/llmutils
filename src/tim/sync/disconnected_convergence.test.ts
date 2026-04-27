@@ -41,6 +41,7 @@ import {
   importWorkerBundle,
 } from './worker_bundle.js';
 import { HLC_MIN_PHYSICAL_MS } from './op_validation.js';
+import { buildPeerSnapshot } from './snapshot.js';
 
 const PROJECT_IDENTITY = 'github.com__owner__repo';
 const fixtureIds = new Map<string, string>();
@@ -88,6 +89,9 @@ function directTransport(remote: TestNode, local: TestNode): PeerTransport {
         setPeerCursor(remote.db, local.nodeId, 'pull', lastPushed.seq.toString(), lastPushed);
       }
       return { applied: result.applied, skipped: result.skipped.length, deferredSkips };
+    },
+    async snapshot() {
+      return buildPeerSnapshot(remote.db);
     },
   };
 }
@@ -705,6 +709,9 @@ describe('disconnected sync convergence', () => {
           setPeerCursor(b.db, a.nodeId, 'pull', lastPushed.seq.toString(), lastPushed);
         }
         return { applied: result.applied, skipped: result.skipped.length, deferredSkips };
+      },
+      async snapshot() {
+        return buildPeerSnapshot(b.db);
       },
     };
 

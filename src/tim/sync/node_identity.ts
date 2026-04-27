@@ -50,8 +50,8 @@ export function registerPeerNode(
         );
       }
       const resolvedNodeType =
-        existing.node_type === 'retired_worker'
-          ? 'retired_worker'
+        existing.node_type === 'retired_worker' || existing.node_type === 'retired_main'
+          ? existing.node_type
           : existing.node_type === 'transient' && nodeType !== 'transient'
             ? nodeType
             : existing.node_type;
@@ -59,6 +59,7 @@ export function registerPeerNode(
         existing.node_type !== nodeType &&
         resolvedNodeType === existing.node_type &&
         existing.node_type !== 'retired_worker' &&
+        existing.node_type !== 'retired_main' &&
         nodeType !== 'transient'
       ) {
         throw new Error(

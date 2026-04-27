@@ -34,6 +34,7 @@ describe('tim db/sync_schema migration', () => {
 
     expect(tables.map((table) => table.name)).toEqual([
       'sync_clock',
+      'sync_edge_clock',
       'sync_field_clock',
       'sync_node',
       'sync_op_log',
@@ -66,6 +67,7 @@ describe('tim db/sync_schema migration', () => {
       'local_counter',
       'updated_at',
       'bootstrap_completed_at',
+      'compacted_through_seq',
     ]);
 
     const workerLeaseColumns = db.prepare("PRAGMA table_info('sync_worker_lease')").all() as Array<{
@@ -74,7 +76,7 @@ describe('tim db/sync_schema migration', () => {
     expect(workerLeaseColumns.map((column) => column.name)).toContain('completion_requested_at');
   });
 
-  test('permits transient and retired worker sync nodes', () => {
+  test('permits transient and retired sync nodes', () => {
     db.prepare(
       `
         INSERT INTO sync_node (node_id, node_type, is_local)
@@ -87,6 +89,12 @@ describe('tim db/sync_schema migration', () => {
         VALUES ('retired-worker-1', 'retired_worker', 0)
       `
     ).run();
+    db.prepare(
+      `
+        INSERT INTO sync_node (node_id, node_type, is_local)
+        VALUES ('retired-main-1', 'retired_main', 0)
+      `
+    ).run();
 
     expect(
       db.prepare("SELECT node_type FROM sync_node WHERE node_id = 'transient-1'").get()
@@ -94,6 +102,9 @@ describe('tim db/sync_schema migration', () => {
     expect(
       db.prepare("SELECT node_type FROM sync_node WHERE node_id = 'retired-worker-1'").get()
     ).toEqual({ node_type: 'retired_worker' });
+    expect(
+      db.prepare("SELECT node_type FROM sync_node WHERE node_id = 'retired-main-1'").get()
+    ).toEqual({ node_type: 'retired_main' });
   });
 
   test('sync_pending_op has the expected primary key', () => {

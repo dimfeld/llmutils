@@ -21,8 +21,8 @@ import { getLocalNodeId, registerPeerNode } from './node_identity.js';
 import { HLC_MIN_PHYSICAL_MS } from './op_validation.js';
 import {
   applyPeerOpsWithPending,
+  PeerRetiredError,
   runPeerSync,
-  ResyncRequiredError,
   type PeerTransport,
 } from './peer_sync.js';
 import { setCompactedThroughSeq } from './compaction.js';
@@ -32,7 +32,8 @@ import {
   runHttpPeerSync,
 } from './peer_transport_http.js';
 import { exportWorkerBundle, exportWorkerOps, importWorkerBundle } from './worker_bundle.js';
-import { pruneEphemeralNodes } from './node_lifecycle.js';
+import { pruneEphemeralNodes, retireMainPeer } from './node_lifecycle.js';
+import { buildPeerSnapshot } from './snapshot.js';
 
 const fixtureIds = new Map<string, string>();
 
@@ -63,6 +64,9 @@ function directTransport(remoteDb: Database, localNodeId: string): PeerTransport
         setPeerCursor(remoteDb, localNodeId, 'pull', lastPushedOp.seq.toString(), lastPushedOp);
       }
       return { applied: result.applied, skipped: result.skipped.length, deferredSkips };
+    },
+    async snapshot() {
+      return buildPeerSnapshot(remoteDb);
     },
   };
 }
@@ -473,7 +477,7 @@ describe('HTTP peer sync transport', () => {
     expect(body.ops.length).toBeGreaterThan(0);
   });
 
-  test('HTTP transport surfaces ResyncRequiredError when cursor is behind compacted history', async () => {
+  test('HTTP transport fetches and applies a snapshot when cursor is behind compacted history', async () => {
     upsertPlan(dbB, projectB, { uuid: id('resync-plan'), planId: 90, title: 'Resync' });
     // Advance the cursor for A so it looks like A already pulled seq=1
     const nodeA = getLocalNodeId(dbA);
@@ -490,16 +494,36 @@ describe('HTTP peer sync transport', () => {
       fetch: handlerFetch('secret-token'),
     });
 
-    // runPeerSync must surface a typed ResyncRequiredError (not a generic Error)
-    await expect(runPeerSync(dbA, nodeB, transport)).rejects.toThrow(ResyncRequiredError);
+    const result = await runPeerSync(dbA, nodeB, transport);
 
-    // The error carries enough context to trigger a snapshot resync.
-    await runPeerSync(dbA, nodeB, transport).catch((err: unknown) => {
-      if (err instanceof ResyncRequiredError) {
-        expect(err.compactedThroughSeq).toBe(2);
-        expect(typeof err.currentHighWaterSeq).toBe('number');
-      }
+    expect(result.pullChunks).toBe(0);
+    expect(getPlanByUuid(dbA, id('resync-plan'))?.title).toBe('Resync');
+    expect(getPeerCursor(dbA, nodeB, 'pull')?.last_op_id).toBe('1');
+  });
+
+  test('snapshot resync preserves local fields with newer clocks and pushes them back', async () => {
+    const planUuid = id('snapshot-local-wins');
+    upsertPlan(dbB, projectB, { uuid: planUuid, planId: 91, title: 'remote old' });
+    const nodeA = getLocalNodeId(dbA);
+    const nodeB = getLocalNodeId(dbB);
+    await runPeerSync(dbA, nodeB, directTransport(dbB, nodeA));
+
+    upsertPlan(dbA, projectA, { uuid: planUuid, planId: 91, title: 'local new' });
+    setPeerCursor(dbA, nodeB, 'pull', '1', null);
+    setCompactedThroughSeq(dbB, 1);
+
+    const transport = createHttpPeerTransport({
+      baseUrl: 'http://peer.test',
+      token: 'secret-token',
+      localNodeId: nodeA,
+      remoteNodeId: nodeB,
+      fetch: handlerFetch('secret-token'),
     });
+
+    await runPeerSync(dbA, nodeB, transport);
+
+    expect(getPlanByUuid(dbA, planUuid)?.title).toBe('local new');
+    expect(getPlanByUuid(dbB, planUuid)?.title).toBe('local new');
   });
 
   test('HTTP push from an unregistered caller registers as transient, not main', async () => {
@@ -544,6 +568,46 @@ describe('HTTP peer sync transport', () => {
     expect(dbA.prepare('SELECT node_type FROM sync_node WHERE node_id = ?').get(nodeB)).toEqual({
       node_type: 'main',
     });
+  });
+
+  test('HTTP endpoints reject retired main peers with 410', async () => {
+    const nodeA = getLocalNodeId(dbA);
+    registerPeerNode(dbB, { nodeId: nodeA, nodeType: 'main' });
+    expect(retireMainPeer(dbB, nodeA)).toEqual({ retired: true, peerNodeId: nodeA });
+    const handler = createPeerSyncHttpHandler(dbB, { token: 'secret-token' });
+
+    for (const pathname of ['/sync/pull', '/sync/snapshot']) {
+      const url = new URL(`http://peer.test${pathname}`);
+      url.searchParams.set('peer_node_id', nodeA);
+      const response = await handler(
+        new Request(url, {
+          method: pathname === '/sync/snapshot' ? 'GET' : 'POST',
+          headers: { authorization: 'Bearer secret-token' },
+        })
+      );
+      expect(response.status).toBe(410);
+      await expect(response.json()).resolves.toEqual({ error: 'peer_retired' });
+    }
+
+    const pushResponse = await pushRequest(handler, nodeA, []);
+    expect(pushResponse.status).toBe(410);
+    await expect(pushResponse.json()).resolves.toEqual({ error: 'peer_retired' });
+  });
+
+  test('HTTP transport surfaces retired peers as a typed error', async () => {
+    const nodeA = getLocalNodeId(dbA);
+    const nodeB = getLocalNodeId(dbB);
+    registerPeerNode(dbB, { nodeId: nodeA, nodeType: 'main' });
+    retireMainPeer(dbB, nodeA);
+
+    const transport = createHttpPeerTransport({
+      baseUrl: 'http://peer.test',
+      token: 'secret-token',
+      localNodeId: nodeA,
+      fetch: handlerFetch('secret-token'),
+    });
+
+    await expect(runPeerSync(dbA, nodeB, transport)).rejects.toThrow(PeerRetiredError);
   });
 
   test('HTTP worker push with an expired lease returns 409 without applying ops', async () => {
@@ -806,7 +870,7 @@ describe('HTTP peer sync transport', () => {
     expect(response.status).toBe(200);
     expect(getPlanByUuid(dbB, id('http-cursor-own'))?.title).toBe('Own');
     expect(getPlanByUuid(dbB, id('http-cursor-forwarded'))?.title).toBe('Forwarded');
-    expect(getPeerCursor(dbB, nodeA, 'pull')?.last_op_id).toBe('1');
+    expect(getPeerCursor(dbB, nodeA, 'pull')?.last_op_id).toBe('999');
   });
 
   test('HTTP push cursor does not advance for replayed (already-applied) own ops', async () => {
@@ -847,6 +911,7 @@ describe('HTTP peer sync transport', () => {
         orderKey: '0000000002',
       }),
       base: null,
+      seq: 1,
     };
     const handler = createPeerSyncHttpHandler(dbB, { token: 'secret-token' });
 
@@ -982,6 +1047,9 @@ describe('peer sync advanced scenarios', () => {
       },
       async pushChunk() {
         return {};
+      },
+      async snapshot() {
+        return buildPeerSnapshot(dbB);
       },
     };
 
@@ -1149,6 +1217,7 @@ describe('peer sync advanced scenarios', () => {
         return chunk;
       },
       pushChunk: baseTransport.pushChunk,
+      snapshot: baseTransport.snapshot,
     };
 
     const result = await runPeerSync(dbA, nodeB, trackingTransport, { batchSize: 10 });

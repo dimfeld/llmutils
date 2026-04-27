@@ -17,6 +17,7 @@ import {
   type SkippedSyncOp,
   type SyncOpRecord,
 } from './op_apply.js';
+import { applyPeerSnapshot, type PeerSnapshot } from './snapshot.js';
 
 export const DEFAULT_PEER_SYNC_BATCH_SIZE = 500;
 
@@ -45,6 +46,7 @@ export interface PushResponse {
 export interface PeerTransport {
   pullChunk(afterSeq: string | null, limit: number): Promise<PullResponse>;
   pushChunk(ops: SyncOpRecord[], options?: { final?: boolean }): Promise<PushResponse>;
+  snapshot(): Promise<PeerSnapshot>;
 }
 
 export interface PeerSyncOptions {
@@ -67,6 +69,13 @@ export class ResyncRequiredError extends Error {
       `Peer requires snapshot resync: compacted through seq ${compactedThroughSeq}, current high-water seq ${currentHighWaterSeq}`
     );
     this.name = 'ResyncRequiredError';
+  }
+}
+
+export class PeerRetiredError extends Error {
+  constructor(readonly peerNodeId: string) {
+    super(`Peer ${peerNodeId} has been retired`);
+    this.name = 'PeerRetiredError';
   }
 }
 
@@ -220,7 +229,21 @@ export async function runPeerSync(
   // been persisted into sync_pending_op for later retry.
   let pullAfter = getPeerCursor(db, peerNodeId, 'pull')?.last_op_id ?? null;
   while (true) {
-    const response = await transport.pullChunk(pullAfter, batchSize);
+    let response: PullResponse;
+    try {
+      response = await transport.pullChunk(pullAfter, batchSize);
+    } catch (error) {
+      if (!(error instanceof ResyncRequiredError)) {
+        throw error;
+      }
+      const snapshot = await transport.snapshot();
+      applyPeerSnapshot(db, peerNodeId, snapshot);
+      pullAfter = snapshot.highWaterSeq.toString();
+      if (snapshot.highWaterSeq <= error.compactedThroughSeq) {
+        break;
+      }
+      continue;
+    }
     if (response.ops.length === 0) {
       break;
     }

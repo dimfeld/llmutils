@@ -1157,6 +1157,18 @@ const migrations: Migration[] = [
   {
     version: 33,
     up: (db: Database): void => {
+      db.run(`
+        CREATE TABLE IF NOT EXISTS sync_edge_clock (
+          entity_type TEXT NOT NULL CHECK(entity_type IN ('plan_dependency', 'plan_tag')),
+          edge_key TEXT NOT NULL,
+          add_hlc TEXT,
+          add_node_id TEXT,
+          remove_hlc TEXT,
+          remove_node_id TEXT,
+          updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+          PRIMARY KEY(entity_type, edge_key)
+        );
+      `);
       bootstrapSyncMetadata(db);
     },
   },
@@ -1371,10 +1383,18 @@ const migrations: Migration[] = [
         WHERE entity_type = 'plan'
           AND entity_id = ?
       `);
-      const deleteDependency = db.prepare(
-        'DELETE FROM plan_dependency WHERE plan_uuid = ? AND depends_on_uuid = ?'
-      );
-      const deleteTag = db.prepare('DELETE FROM plan_tag WHERE plan_uuid = ? AND tag = ?');
+      const tableExists = (tableName: string): boolean =>
+        db
+          .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
+          .get(tableName) !== null;
+      const hasPlanDependency = tableExists('plan_dependency');
+      const hasPlanTag = tableExists('plan_tag');
+      const deleteDependency = hasPlanDependency
+        ? db.prepare('DELETE FROM plan_dependency WHERE plan_uuid = ? AND depends_on_uuid = ?')
+        : null;
+      const deleteTag = hasPlanTag
+        ? db.prepare('DELETE FROM plan_tag WHERE plan_uuid = ? AND tag = ?')
+        : null;
       const writeTombstoneRemove = (
         entityType: 'plan_dependency' | 'plan_tag',
         edgeKey: string,
@@ -1384,11 +1404,13 @@ const migrations: Migration[] = [
         upsertRemove.run(entityType, edgeKey, tombstone.hlc, tombstone.node_id);
       };
 
-      const dependencies = db
-        .prepare(
-          'SELECT plan_uuid, depends_on_uuid FROM plan_dependency ORDER BY plan_uuid, depends_on_uuid'
-        )
-        .all() as Array<{ plan_uuid: string; depends_on_uuid: string }>;
+      const dependencies = hasPlanDependency
+        ? (db
+            .prepare(
+              'SELECT plan_uuid, depends_on_uuid FROM plan_dependency ORDER BY plan_uuid, depends_on_uuid'
+            )
+            .all() as Array<{ plan_uuid: string; depends_on_uuid: string }>)
+        : [];
       for (const dependency of dependencies) {
         const edgeKey = `${dependency.plan_uuid}->${dependency.depends_on_uuid}`;
         const sourceTombstone = planTombstone.get(dependency.plan_uuid) as {
@@ -1406,7 +1428,7 @@ const migrations: Migration[] = [
         if (!sourceExists || !targetExists) {
           writeTombstoneRemove('plan_dependency', edgeKey, sourceTombstone);
           writeTombstoneRemove('plan_dependency', edgeKey, targetTombstone);
-          deleteDependency.run(dependency.plan_uuid, dependency.depends_on_uuid);
+          deleteDependency?.run(dependency.plan_uuid, dependency.depends_on_uuid);
           continue;
         }
 
@@ -1422,12 +1444,14 @@ const migrations: Migration[] = [
         );
       }
 
-      const tags = db
-        .prepare('SELECT plan_uuid, tag FROM plan_tag ORDER BY plan_uuid, tag')
-        .all() as Array<{
-        plan_uuid: string;
-        tag: string;
-      }>;
+      const tags = hasPlanTag
+        ? (db
+            .prepare('SELECT plan_uuid, tag FROM plan_tag ORDER BY plan_uuid, tag')
+            .all() as Array<{
+            plan_uuid: string;
+            tag: string;
+          }>)
+        : [];
       for (const tag of tags) {
         const edgeKey = `${tag.plan_uuid}#${tag.tag}`;
         const tombstone = planTombstone.get(tag.plan_uuid) as {
@@ -1438,7 +1462,7 @@ const migrations: Migration[] = [
           tombstone === null && (planExists.get(tag.plan_uuid) as object | null);
         if (!livePlanExists) {
           writeTombstoneRemove('plan_tag', edgeKey, tombstone);
-          deleteTag.run(tag.plan_uuid, tag.tag);
+          deleteTag?.run(tag.plan_uuid, tag.tag);
           continue;
         }
 
@@ -1505,6 +1529,50 @@ const migrations: Migration[] = [
       }
 
       db.run("DELETE FROM sync_tombstone WHERE entity_type IN ('plan_dependency', 'plan_tag')");
+    },
+  },
+  {
+    version: 38,
+    requiresFkOff: true,
+    up: (db: Database): void => {
+      db.run(`
+        CREATE TABLE sync_node_new (
+          node_id TEXT PRIMARY KEY,
+          node_type TEXT NOT NULL CHECK(node_type IN ('main', 'worker', 'transient', 'retired_worker', 'retired_main')),
+          is_local INTEGER NOT NULL DEFAULT 0,
+          label TEXT,
+          lease_expires_at TEXT,
+          created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+          updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC})
+        );
+      `);
+      db.run(`
+        INSERT INTO sync_node_new (
+          node_id,
+          node_type,
+          is_local,
+          label,
+          lease_expires_at,
+          created_at,
+          updated_at
+        )
+        SELECT
+          node_id,
+          node_type,
+          is_local,
+          label,
+          lease_expires_at,
+          created_at,
+          updated_at
+        FROM sync_node;
+      `);
+      db.run('DROP TABLE sync_node');
+      db.run('ALTER TABLE sync_node_new RENAME TO sync_node');
+      db.run(`
+        CREATE UNIQUE INDEX idx_sync_node_single_local
+        ON sync_node(is_local)
+        WHERE is_local = 1;
+      `);
     },
   },
 ];

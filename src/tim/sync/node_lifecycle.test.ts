@@ -7,7 +7,7 @@ import * as path from 'node:path';
 import { DATABASE_FILENAME, openDatabase } from '../db/database.js';
 import { createWorkerLease } from '../db/sync_schema.js';
 import { registerPeerNode } from './node_identity.js';
-import { pruneEphemeralNodes } from './node_lifecycle.js';
+import { pruneEphemeralNodes, retireMainPeer } from './node_lifecycle.js';
 
 describe('sync node lifecycle pruning', () => {
   let tempDir: string;
@@ -229,5 +229,69 @@ describe('sync node lifecycle pruning', () => {
         .prepare('SELECT node_type FROM sync_node WHERE node_id = ?')
         .get('11111111-1111-4111-8111-111111111111')
     ).toEqual({ node_type: 'main' });
+  });
+
+  test('retires durable main peers and removes cursors and pending ops', () => {
+    const peerNodeId = '99999999-9999-4999-8999-999999999999';
+    registerPeerNode(db, { nodeId: peerNodeId, nodeType: 'main' });
+    db.prepare(
+      `
+        INSERT INTO sync_peer_cursor (
+          peer_node_id,
+          direction,
+          hlc_physical_ms,
+          hlc_logical,
+          last_op_id
+        ) VALUES (?, 'push', 1, 0, '42')
+      `
+    ).run(peerNodeId);
+    db.prepare(
+      "INSERT INTO sync_pending_op (peer_node_id, op_id, op_json) VALUES (?, 'op-pending', '{}')"
+    ).run(peerNodeId);
+
+    const result = retireMainPeer(db, peerNodeId);
+
+    expect(result).toEqual({ retired: true, peerNodeId });
+    expect(db.prepare('SELECT node_type FROM sync_node WHERE node_id = ?').get(peerNodeId)).toEqual(
+      { node_type: 'retired_main' }
+    );
+    expect(
+      db
+        .prepare('SELECT count(*) AS count FROM sync_peer_cursor WHERE peer_node_id = ?')
+        .get(peerNodeId)
+    ).toEqual({ count: 0 });
+    expect(
+      db
+        .prepare('SELECT count(*) AS count FROM sync_pending_op WHERE peer_node_id = ?')
+        .get(peerNodeId)
+    ).toEqual({ count: 0 });
+  });
+
+  test('retireMainPeer refuses missing, local, and non-main nodes', () => {
+    const missing = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    expect(retireMainPeer(db, missing)).toEqual({
+      retired: false,
+      peerNodeId: missing,
+      reason: 'not_found',
+    });
+
+    const localNodeId = (
+      db.prepare('SELECT node_id FROM sync_node WHERE is_local = 1').get() as {
+        node_id: string;
+      }
+    ).node_id;
+    expect(retireMainPeer(db, localNodeId)).toEqual({
+      retired: false,
+      peerNodeId: localNodeId,
+      reason: 'local_node',
+    });
+
+    const transient = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    registerPeerNode(db, { nodeId: transient, nodeType: 'transient' });
+    expect(retireMainPeer(db, transient)).toEqual({
+      retired: false,
+      peerNodeId: transient,
+      reason: 'not_main',
+    });
   });
 });
