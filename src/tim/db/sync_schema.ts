@@ -2,7 +2,7 @@ import type { Database } from 'bun:sqlite';
 import { randomUUID } from 'node:crypto';
 import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 
-export type NodeType = 'main' | 'worker' | 'transient';
+export type NodeType = 'main' | 'worker' | 'transient' | 'retired_worker';
 export type SyncDirection = 'pull' | 'push';
 
 export interface SyncNodeRow {

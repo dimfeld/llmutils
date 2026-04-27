@@ -23,7 +23,7 @@ describe('sync node lifecycle pruning', () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  test('expires and prunes worker nodes only after pending ops are resolved', () => {
+  test('expires and retires worker nodes only after pending ops are resolved', () => {
     registerPeerNode(db, {
       nodeId: '33333333-3333-4333-8333-333333333333',
       nodeType: 'worker',
@@ -59,12 +59,14 @@ describe('sync node lifecycle pruning', () => {
     });
     expect(second.prunedWorkerNodes).toBe(1);
     expect(
-      db.prepare('SELECT count(*) AS count FROM sync_node WHERE node_type = ?').get('worker')
+      db
+        .prepare('SELECT node_type FROM sync_node WHERE node_id = ?')
+        .get('33333333-3333-4333-8333-333333333333')
     ).toEqual({
-      count: 0,
+      node_type: 'retired_worker',
     });
-    expect(db.prepare('SELECT count(*) AS count FROM sync_worker_lease').get()).toEqual({
-      count: 0,
+    expect(db.prepare('SELECT status FROM sync_worker_lease').get()).toEqual({
+      status: 'expired',
     });
   });
 
@@ -98,7 +100,7 @@ describe('sync node lifecycle pruning', () => {
     ).toEqual({ count: 0 });
   });
 
-  test('completed (not expired) worker lease is pruned once pending ops are cleared', () => {
+  test('completed worker lease is retired once pending ops are cleared', () => {
     registerPeerNode(db, {
       nodeId: '55555555-5555-4555-8555-555555555555',
       nodeType: 'worker',
@@ -111,8 +113,19 @@ describe('sync node lifecycle pruning', () => {
     db.prepare("UPDATE sync_worker_lease SET status = 'completed' WHERE worker_node_id = ?").run(
       '55555555-5555-4555-8555-555555555555'
     );
+    db.prepare(
+      `
+        INSERT INTO sync_peer_cursor (
+          peer_node_id,
+          direction,
+          hlc_physical_ms,
+          hlc_logical,
+          last_op_id
+        ) VALUES (?, 'pull', 1, 0, '10')
+      `
+    ).run('55555555-5555-4555-8555-555555555555');
 
-    // No pending ops — should be pruned immediately.
+    // No pending ops — should be retired immediately.
     const result = pruneEphemeralNodes(db, {
       now: new Date('2026-02-01T00:00:00.000Z'),
     });
@@ -120,13 +133,20 @@ describe('sync node lifecycle pruning', () => {
     expect(result.expiredLeases).toBe(0);
     expect(result.prunedWorkerNodes).toBe(1);
     expect(
-      db.prepare('SELECT count(*) AS count FROM sync_node WHERE node_id = ?').get(
-        '55555555-5555-4555-8555-555555555555'
-      )
+      db
+        .prepare('SELECT node_type FROM sync_node WHERE node_id = ?')
+        .get('55555555-5555-4555-8555-555555555555')
+    ).toEqual({ node_type: 'retired_worker' });
+    expect(
+      db
+        .prepare('SELECT status FROM sync_worker_lease WHERE worker_node_id = ?')
+        .get('55555555-5555-4555-8555-555555555555')
+    ).toEqual({ status: 'completed' });
+    expect(
+      db
+        .prepare('SELECT count(*) AS count FROM sync_peer_cursor WHERE peer_node_id = ?')
+        .get('55555555-5555-4555-8555-555555555555')
     ).toEqual({ count: 0 });
-    expect(db.prepare('SELECT count(*) AS count FROM sync_worker_lease').get()).toEqual({
-      count: 0,
-    });
   });
 
   test('completed worker lease with pending ops is not pruned', () => {
@@ -152,9 +172,9 @@ describe('sync node lifecycle pruning', () => {
 
     expect(result.prunedWorkerNodes).toBe(0);
     expect(
-      db.prepare('SELECT count(*) AS count FROM sync_node WHERE node_id = ?').get(
-        '66666666-6666-4666-8666-666666666666'
-      )
+      db
+        .prepare('SELECT count(*) AS count FROM sync_node WHERE node_id = ?')
+        .get('66666666-6666-4666-8666-666666666666')
     ).toEqual({ count: 1 });
   });
 
@@ -205,9 +225,9 @@ describe('sync node lifecycle pruning', () => {
     expect(result.prunedTransientNodes).toBe(0);
     // The registered peer main node must still be present.
     expect(
-      db.prepare('SELECT node_type FROM sync_node WHERE node_id = ?').get(
-        '11111111-1111-4111-8111-111111111111'
-      )
+      db
+        .prepare('SELECT node_type FROM sync_node WHERE node_id = ?')
+        .get('11111111-1111-4111-8111-111111111111')
     ).toEqual({ node_type: 'main' });
   });
 });

@@ -1,10 +1,7 @@
 import type { Database } from 'bun:sqlite';
 import { timingSafeEqual } from 'node:crypto';
 
-import {
-  getOpLogChunkAfter,
-  setPeerCursor,
-} from '../db/sync_schema.js';
+import { getOpLogChunkAfter, setPeerCursor } from '../db/sync_schema.js';
 import type { SyncOpRecord } from './op_apply.js';
 import { getLocalNodeId, registerPeerNode } from './node_identity.js';
 import {
@@ -283,7 +280,7 @@ export function createPeerSyncHttpHandler(
         if (ops.length > maxPushBatch) {
           return jsonResponse({ error: 'push batch too large' }, { status: 413 });
         }
-        if (peerNode.node_type === 'worker') {
+        if (peerNode.node_type === 'worker' || peerNode.node_type === 'retired_worker') {
           let workerResult;
           try {
             workerResult = applyWorkerReturn(db, ops, { workerNodeId: peerNodeId, final });

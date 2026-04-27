@@ -11,7 +11,7 @@ import {
   openDatabase,
   DATABASE_FILENAME,
 } from './database.js';
-import { runMigrations } from './migrations.js';
+import { LATEST_SCHEMA_VERSION, runMigrations } from './migrations.js';
 
 async function createTempDir(prefix: string): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), prefix));
@@ -326,7 +326,7 @@ describe('tim db/database', () => {
         []
       >('SELECT version, import_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(35);
+    expect(version?.version).toBe(LATEST_SCHEMA_VERSION);
     expect(version?.import_completed).toBe(1);
 
     const tables = db
@@ -439,7 +439,7 @@ describe('tim db/database', () => {
         []
       >('SELECT version, import_completed FROM schema_version')
       .get();
-    expect(version?.version).toBe(35);
+    expect(version?.version).toBe(LATEST_SCHEMA_VERSION);
     expect(version?.import_completed).toBe(1);
     const versionRowCount = db2
       .query<{ count: number }, []>('SELECT count(*) as count FROM schema_version')
@@ -577,7 +577,7 @@ describe('tim db/database', () => {
       const schemaVersion = db
         .query<{ version: number }, []>('SELECT version FROM schema_version')
         .get();
-      expect(schemaVersion?.version).toBe(35);
+      expect(schemaVersion?.version).toBe(LATEST_SCHEMA_VERSION);
 
       const planColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('plan')")
@@ -739,7 +739,7 @@ describe('tim db/database', () => {
 
       // Verify schema version
       const version = db.query<{ version: number }, []>('SELECT version FROM schema_version').get();
-      expect(version?.version).toBe(35);
+      expect(version?.version).toBe(LATEST_SCHEMA_VERSION);
 
       // Verify all 5 tasks exist
       const allTasks = db
@@ -901,7 +901,7 @@ describe('tim db/database', () => {
       const version = db2
         .query<{ version: number }, []>('SELECT version FROM schema_version')
         .get();
-      expect(version?.version).toBe(35);
+      expect(version?.version).toBe(LATEST_SCHEMA_VERSION);
 
       const count2 = db2
         .query<
@@ -993,7 +993,7 @@ describe('tim db/database', () => {
           []
         >('SELECT version FROM schema_version ORDER BY rowid DESC LIMIT 1')
         .get();
-      expect(schemaVersion?.version).toBe(35);
+      expect(schemaVersion?.version).toBe(LATEST_SCHEMA_VERSION);
 
       const checkRows = db
         .query<

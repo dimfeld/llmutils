@@ -74,17 +74,26 @@ describe('tim db/sync_schema migration', () => {
     expect(workerLeaseColumns.map((column) => column.name)).toContain('completion_requested_at');
   });
 
-  test('permits transient sync nodes', () => {
+  test('permits transient and retired worker sync nodes', () => {
     db.prepare(
       `
         INSERT INTO sync_node (node_id, node_type, is_local)
         VALUES ('transient-1', 'transient', 0)
       `
     ).run();
+    db.prepare(
+      `
+        INSERT INTO sync_node (node_id, node_type, is_local)
+        VALUES ('retired-worker-1', 'retired_worker', 0)
+      `
+    ).run();
 
     expect(
       db.prepare("SELECT node_type FROM sync_node WHERE node_id = 'transient-1'").get()
     ).toEqual({ node_type: 'transient' });
+    expect(
+      db.prepare("SELECT node_type FROM sync_node WHERE node_id = 'retired-worker-1'").get()
+    ).toEqual({ node_type: 'retired_worker' });
   });
 
   test('sync_pending_op has the expected primary key', () => {

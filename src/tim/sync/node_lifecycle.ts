@@ -28,10 +28,12 @@ function changes(db: Database): number {
  * scheduling -- either via a periodic CLI command or as a sync-startup hook.
  * Until then, callers may invoke this manually.
  *
- * Workers are safe to remove after their lease has completed or expired and no
- * deferred operations remain for that worker. Transient nodes are best-effort
- * caller records; once they are old enough and have no pending operations, they
- * can be dropped without affecting compaction floors.
+ * Workers are retired after their lease has completed or expired and no deferred
+ * operations remain for that worker. Their identity row is retained so late
+ * worker returns are rejected instead of being re-registered as transient
+ * callers. Transient nodes are best-effort caller records; once they are old
+ * enough and have no pending operations, they can be dropped without affecting
+ * compaction floors.
  */
 export function pruneEphemeralNodes(
   db: Database,
@@ -52,9 +54,36 @@ export function pruneEphemeralNodes(
     ).run(now.toISOString());
     const expiredLeases = changes(db);
 
+    const retiredWorkerRows = db
+      .prepare(
+        `
+          SELECT node_id
+          FROM sync_node
+          WHERE node_type = 'worker'
+            AND is_local = 0
+            AND node_id IN (
+              SELECT lease.worker_node_id
+              FROM sync_worker_lease lease
+              WHERE lease.status IN ('completed', 'expired')
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM sync_pending_op pending
+                  WHERE pending.peer_node_id = lease.worker_node_id
+                )
+            )
+        `
+      )
+      .all() as Array<{ node_id: string }>;
+    for (const row of retiredWorkerRows) {
+      db.prepare('DELETE FROM sync_peer_cursor WHERE peer_node_id = ?').run(row.node_id);
+    }
+
     db.prepare(
       `
-        DELETE FROM sync_node
+        UPDATE sync_node
+        SET node_type = 'retired_worker',
+            lease_expires_at = NULL,
+            updated_at = ?
         WHERE node_type = 'worker'
           AND is_local = 0
           AND node_id IN (
@@ -68,7 +97,7 @@ export function pruneEphemeralNodes(
               )
           )
       `
-    ).run();
+    ).run(now.toISOString());
     const prunedWorkerNodes = changes(db);
 
     db.prepare(

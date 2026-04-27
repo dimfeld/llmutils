@@ -98,6 +98,24 @@ describe('tim sync/node_identity', () => {
     expect(stillMain.label).toBe('Durable');
   });
 
+  test('registerPeerNode keeps retired workers retired', () => {
+    registerPeerNode(db, { nodeId: 'retired-worker-1', nodeType: 'worker' });
+    db.prepare("UPDATE sync_node SET node_type = 'retired_worker' WHERE node_id = ?").run(
+      'retired-worker-1'
+    );
+
+    const stillRetired = registerPeerNode(db, {
+      nodeId: 'retired-worker-1',
+      nodeType: 'main',
+      label: 'attempted main',
+    });
+
+    expect(stillRetired.node_type).toBe('retired_worker');
+    expect(
+      db.prepare('SELECT node_type, label FROM sync_node WHERE node_id = ?').get('retired-worker-1')
+    ).toEqual({ node_type: 'retired_worker', label: 'attempted main' });
+  });
+
   test('registerPeerNode rejects writing the local node id', () => {
     const localId = getLocalNodeId(db);
 
