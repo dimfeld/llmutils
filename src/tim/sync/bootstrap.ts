@@ -255,15 +255,12 @@ function emptyStats(): BootstrapStats {
 
 function getBootstrapCompletedAt(db: Database): string | null {
   try {
-    const row = db
-      .prepare('SELECT bootstrap_completed_at FROM sync_clock WHERE id = 1')
-      .get() as { bootstrap_completed_at: string | null } | null;
+    const row = db.prepare('SELECT bootstrap_completed_at FROM sync_clock WHERE id = 1').get() as {
+      bootstrap_completed_at: string | null;
+    } | null;
     return row?.bootstrap_completed_at ?? null;
   } catch (error) {
-    if (
-      error instanceof Error &&
-      /no such column: bootstrap_completed_at/.test(error.message)
-    ) {
+    if (error instanceof Error && /no such column: bootstrap_completed_at/.test(error.message)) {
       return null;
     }
     throw error;
@@ -282,10 +279,7 @@ function markBootstrapCompleted(db: Database): void {
       `
     ).run();
   } catch (error) {
-    if (
-      error instanceof Error &&
-      /no such column: bootstrap_completed_at/.test(error.message)
-    ) {
+    if (error instanceof Error && /no such column: bootstrap_completed_at/.test(error.message)) {
       return;
     }
     throw error;

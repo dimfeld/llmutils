@@ -66,9 +66,9 @@ function opRows(db: Database): SyncOpLogRow[] {
 }
 
 function bootstrapCompletedAt(db: Database): string | null {
-  const row = db
-    .prepare('SELECT bootstrap_completed_at FROM sync_clock WHERE id = 1')
-    .get() as { bootstrap_completed_at: string | null } | null;
+  const row = db.prepare('SELECT bootstrap_completed_at FROM sync_clock WHERE id = 1').get() as {
+    bootstrap_completed_at: string | null;
+  } | null;
   return row?.bootstrap_completed_at ?? null;
 }
 
